@@ -1,6 +1,6 @@
 ## RustRover setup
 
-[RustRover]((https://www.jetbrains.com/rust/)) is the Pycharm equivalent for Rust
+[RustRover](https://www.jetbrains.com/rust/) is the Pycharm equivalent for Rust
 and provides a great IDE for Rust development if you are already familiar with PyCharm.
 
 ### Code analysis and formatting

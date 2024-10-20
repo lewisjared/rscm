@@ -15,7 +15,7 @@
 # %% [markdown]
 # # Coupled models
 #
-# When modelling a complex systemm
+# When modelling a complex system
 # often you need more than one component coupled together.
 # Each component will model a particular aspect of the Earth System
 # using a set of equations with some known inputs and outputs.
@@ -33,13 +33,13 @@ import pandas as pd
 import pydot
 import scmdata
 
-from rscm._lib.core import TimeseriesCollection
 from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
 from rscm.core import (
     InterpolationStrategy,
     ModelBuilder,
     TimeAxis,
     Timeseries,
+    TimeseriesCollection,
 )
 
 # %% [markdown]

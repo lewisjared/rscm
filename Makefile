@@ -73,6 +73,19 @@ clean:
 	rm -rf perf.data*
 	rm -rf python/rscm/*.so
 
+
+.PHONY: docs
+docs:  ## build the docs
+	uv run mkdocs build
+
+.PHONY: docs-strict
+docs-strict: ## build the docs strictly (e.g. raise an error on warnings, this most closely mirrors what we do in the CI)
+	uv run mkdocs build --strict
+
+.PHONY: docs-serve
+docs-serve: ## serve the docs locally
+	uv run mkdocs serve
+
 .phony: docs-rust
 docs-rust:  # Build Rust documentation
 	RUSTDOCFLAGS="--html-in-header ./assets/katex-header.html" cargo doc --no-deps --workspace
