@@ -10,7 +10,7 @@
 /// The required variables are identified when building the model.
 /// If a required exogenous variable isn't provided, then the build step will fail.
 use crate::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType, State,
+    Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
@@ -60,9 +60,9 @@ impl Component for NullComponent {
         &self,
         _t_current: Time,
         _t_next: Time,
-        input_state: &InputState,
+        _input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        Ok(OutputState::from(input_state.clone()))
+        Ok(OutputState::new())
     }
 }
 
@@ -77,7 +77,7 @@ impl Component for NullComponent {
 pub struct ModelBuilder {
     components: Vec<C>,
     exogenous_variables: TimeseriesCollection,
-    initial_values: InputState,
+    initial_values: HashMap<String, FloatValue>,
     pub time_axis: Arc<TimeAxis>,
 }
 
@@ -102,6 +102,32 @@ fn verify_definition(
             );
         }
     }
+}
+
+/// Extract the input state for the current time step
+///
+/// By default, for endogenous variables which are calculated as part of the model
+/// the most recent value is used, whereas, for exogenous variables the values are linearly
+/// interpolated.
+/// This ensures that state calculated from previous components within the same timestep
+/// is used.
+///
+/// The result should contain values for the current time step for all input variable
+pub fn extract_state(
+    collection: &TimeseriesCollection,
+    input_names: Vec<String>,
+    t_current: Time,
+) -> InputState {
+    let mut state = Vec::new();
+
+    input_names.into_iter().for_each(|name| {
+        let ts = collection
+            .get_by_name(name.as_str())
+            .unwrap_or_else(|| panic!("No timeseries with variable='{}'", name));
+        state.push(ts);
+    });
+
+    InputState::build(state, t_current)
 }
 
 /// Check that a component graph is valid
@@ -132,7 +158,7 @@ impl ModelBuilder {
     pub fn new() -> Self {
         Self {
             components: vec![],
-            initial_values: InputState::empty(),
+            initial_values: HashMap::new(),
             exogenous_variables: TimeseriesCollection::new(),
             time_axis: Arc::new(TimeAxis::from_values(Array::range(2000.0, 2100.0, 1.0))),
         }
@@ -179,8 +205,13 @@ impl ModelBuilder {
     /// next timestep.
     /// Building a model where any variables which have `RequirementType::InputAndOutput`, but
     /// do not have an initial value will result in an error.
-    pub fn with_initial_values(&mut self, initial_values: InputState) -> &mut Self {
-        self.initial_values.merge(initial_values);
+    pub fn with_initial_values(
+        &mut self,
+        initial_values: HashMap<String, FloatValue>,
+    ) -> &mut Self {
+        for (name, value) in initial_values.into_iter() {
+            self.initial_values.insert(name, value);
+        }
         self
     }
 
@@ -262,14 +293,14 @@ impl ModelBuilder {
 
             if exogenous.contains(&name) {
                 // Exogenous variable is expected to be supplied
-                if self.initial_values.has(&name) {
+                if self.initial_values.contains_key(&name) {
                     // An initial value was provided
                     let mut ts = Timeseries::new_empty(
                         self.time_axis.clone(),
                         definition.unit,
                         InterpolationStrategy::from(LinearSplineStrategy::new(true)),
                     );
-                    ts.set(0, *self.initial_values.get(&name));
+                    ts.set(0, self.initial_values[&name]);
 
                     // Note that timeseries that are initialised are defined as Endogenous
                     // all but the first time point come from the model.
@@ -379,7 +410,11 @@ impl Model {
     /// The output state defines the values at the next time index as it represents the state
     /// at the start of the next timestep.
     fn step_model_component(&mut self, component: C) {
-        let input_state = component.extract_state(&self.collection, self.current_time());
+        let input_state = extract_state(
+            &self.collection,
+            component.input_names(),
+            self.current_time(),
+        );
 
         let (start, end) = self.current_time_bounds();
 
@@ -542,8 +577,11 @@ mod tests {
         model.step();
 
         let serialised = serde_json::to_string_pretty(&model).unwrap();
+        println!("Pretty JSON");
         println!("{}", serialised);
         let serialised = toml::to_string(&model).unwrap();
+        println!("TOML");
+        println!("{}", serialised);
 
         let expected = r#"initial_node = 0
 time_index = 1
@@ -574,7 +612,7 @@ interpolation_strategy = "Linear"
 [collection.timeseries.timeseries.values]
 v = 1
 dim = [5]
-data = [nan, 0.65, nan, nan, nan]
+data = [nan, 5.0, nan, nan, nan]
 
 [collection.timeseries.timeseries.time_axis.bounds]
 v = 1

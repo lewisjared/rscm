@@ -1,7 +1,7 @@
 use crate::constants::GTC_PER_PPM;
 use ode_solvers::Vector3;
 use rscm_core::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType, State,
+    Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
@@ -87,12 +87,12 @@ impl Component for CarbonCycleComponent {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let y0 = ModelState::new(
-            *input_state.get("Atmospheric Concentration|CO2"),
-            *input_state.get("Cumulative Land Uptake"),
-            *input_state.get("Cumulative Emissions|CO2"),
+            input_state.get_latest("Atmospheric Concentration|CO2"),
+            input_state.get_latest("Cumulative Land Uptake"),
+            input_state.get_latest("Cumulative Emissions|CO2"),
         );
 
-        let solver = IVPBuilder::new(Arc::new(self.to_owned()), input_state.clone(), y0);
+        let solver = IVPBuilder::new(Arc::new(self.to_owned()), &input_state, y0);
 
         let mut solver = solver.to_rk4(t_current, t_next, self.solver_options.step_size);
         solver.integrate().expect("Failed solving");
@@ -104,10 +104,7 @@ impl Component for CarbonCycleComponent {
         output.insert("Cumulative Land Uptake".to_string(), results[1]);
         output.insert("Cumulative Emissions|CO2".to_string(), results[2]);
 
-        Ok(OutputState::from_hashmap_and_verify(
-            output,
-            self.output_names(),
-        ))
+        Ok(output)
     }
 }
 
@@ -119,9 +116,9 @@ impl IVP<Time, ModelState> for CarbonCycleComponent {
         _y: &Vector3<FloatValue>,
         dy_dt: &mut Vector3<FloatValue>,
     ) {
-        let emissions = input_state.get("Emissions|CO2|Anthropogenic");
-        let temperature = input_state.get("Surface Temperature");
-        let conc = input_state.get("Atmospheric Concentration|CO2");
+        let emissions = input_state.get_latest("Emissions|CO2|Anthropogenic");
+        let temperature = input_state.get_latest("Surface Temperature");
+        let conc = input_state.get_latest("Atmospheric Concentration|CO2");
 
         // dC / dt = E - (C - C_0) / (\tau \exp(alpha_temperature * temperature))
         let lifetime =
@@ -130,6 +127,6 @@ impl IVP<Time, ModelState> for CarbonCycleComponent {
 
         dy_dt[0] = emissions / GTC_PER_PPM - uptake; // ppm / yr
         dy_dt[1] = uptake * GTC_PER_PPM; // GtC / yr
-        dy_dt[2] = *emissions // GtC / yr
+        dy_dt[2] = emissions // GtC / yr
     }
 }

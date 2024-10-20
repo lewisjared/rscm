@@ -28,16 +28,16 @@ pub trait IVP<T, S> {
 
 /// Builds a solver for an initial value problem
 #[derive(Clone)]
-pub struct IVPBuilder<C, S> {
+pub struct IVPBuilder<'a, C, S> {
     /// Model component to be solving
     // This needs to be a box/arc-like data type as the size of C is not known at compile time.
     component: Arc<C>,
     /// Initial
     y0: S,
-    input_state: InputState,
+    input_state: &'a InputState<'a>,
 }
 
-impl<T, D: Dim, C> System<T, OVector<T, D>> for IVPBuilder<C, OVector<T, D>>
+impl<T, D: Dim, C> System<T, OVector<T, D>> for IVPBuilder<'_, C, OVector<T, D>>
 where
     T: FloatNumber,
     C: IVP<T, OVector<T, D>>,
@@ -49,14 +49,14 @@ where
     }
 }
 
-impl<T, D: Dim, C> IVPBuilder<C, OVector<T, D>>
+impl<'a, T, D: Dim, C> IVPBuilder<'a, C, OVector<T, D>>
 where
     T: FloatNumber,
     C: IVP<T, OVector<T, D>>,
     OVector<T, D>: std::ops::Mul<T, Output = OVector<T, D>>,
     DefaultAllocator: Allocator<T, D>,
 {
-    pub fn new(component: Arc<C>, input_state: InputState, y0: OVector<T, D>) -> Self {
+    pub fn new(component: Arc<C>, input_state: &'a InputState<'a>, y0: OVector<T, D>) -> Self {
         Self {
             component,
             y0,
@@ -70,7 +70,7 @@ where
         t0: T,
         t1: T,
         step: T,
-    ) -> Rk4<T, OVector<T, D>, IVPBuilder<C, OVector<T, D>>> {
+    ) -> Rk4<T, OVector<T, D>, IVPBuilder<'a, C, OVector<T, D>>> {
         let y0 = self.y0.clone();
         Rk4::new(self, t0, y0, t1, step)
     }

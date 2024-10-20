@@ -3,10 +3,10 @@ use numpy::ndarray::Array;
 use rscm_components::{
     CO2ERFParameters, CarbonCycleComponent, CarbonCycleParameters, SolverOptions, CO2ERF,
 };
-use rscm_core::component::InputState;
 use rscm_core::interpolate::strategies::{InterpolationStrategy, NextStrategy, PreviousStrategy};
 use rscm_core::model::ModelBuilder;
 use rscm_core::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[test]
@@ -69,14 +69,11 @@ fn test_carbon_cycle() {
             })
             .with_solver_options(SolverOptions { step_size }),
         ))
-        .with_initial_values(InputState::from_vectors(
-            vec![0.0, 0.0, conc_initial],
-            vec![
-                "Cumulative Land Uptake".to_string(),
-                "Cumulative Emissions|CO2".to_string(),
-                "Atmospheric Concentration|CO2".to_string(),
-            ],
-        ))
+        .with_initial_values(HashMap::from([
+            ("Cumulative Land Uptake".to_string(), 0.0),
+            ("Cumulative Emissions|CO2".to_string(), 0.0),
+            ("Atmospheric Concentration|CO2".to_string(), conc_initial),
+        ]))
         .with_time_axis(time_axis.clone())
         .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
         .with_exogenous_variable("Surface Temperature", temperature)
@@ -164,14 +161,11 @@ fn test_coupled_model() {
         .with_time_axis(time_axis)
         .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
         .with_exogenous_variable("Surface Temperature", surface_temp)
-        .with_initial_values(InputState::from_vectors(
-            vec![0.0, 0.0, 300.0],
-            vec![
-                "Cumulative Land Uptake".to_string(),
-                "Cumulative Emissions|CO2".to_string(),
-                "Atmospheric Concentration|CO2".to_string(),
-            ],
-        ))
+        .with_initial_values(HashMap::from([
+            ("Cumulative Land Uptake".to_string(), 0.0),
+            ("Cumulative Emissions|CO2".to_string(), 0.0),
+            ("Atmospheric Concentration|CO2".to_string(), 300.0),
+        ]))
         .build();
 
     let mut variable_names: Vec<&str> =
