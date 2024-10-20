@@ -16,10 +16,12 @@ The aim is to provide a framework for building components in both Rust and Pytho
 
 <!--- --8<-- [start:getting-started] -->
 
-In this example we are going to use the `pyo3` crate to create a Python extension module.
-This provides a mechanism to interact with the rust codebase from Python.
+This project comprises of a Rust library and a Python package (`rcsm`)
+which includes a Python extension module to provide access to the Rust library.
 
 ### Dependencies
+
+The following dependencies are required to build the project:
 
 * Rust
 * [uv](https://github.com/astral-sh/uv) (Python package management)
@@ -30,8 +32,8 @@ after these dependencies have been installed the local Python environment can be
 make virtual-environment
 ```
 
-Since Rust is a compiled language,
-the extension module must be recompiled after any changes to the Rust code.
+Rust is a compiled language,
+the Python extension module must be recompiled after any changes to the Rust code.
 This can be done using:
 
 ```
