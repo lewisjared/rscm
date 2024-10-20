@@ -144,7 +144,7 @@ impl Component for CarbonCycleComponent {
         output.insert("Cumulative Land Uptake".to_string(), results[1]);
         output.insert("Cumulative Emissions|CO2".to_string(), results[2]);
 
-        Ok(OutputState::from_hashmap_and_verify(
+        Ok(OutputState::(
             output,
             self.output_names(),
         ))

@@ -1,109 +1,9 @@
 use crate::errors::RSCMResult;
-use crate::timeseries::{FloatValue, Time};
-use crate::timeseries_collection::{TimeseriesCollection, VariableType};
+pub use crate::state::{InputState, OutputState};
+use crate::timeseries::Time;
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt::Debug;
-use std::iter::zip;
-
-/// Generic state representation
-///
-/// A state is a collection of values
-/// that can be used to represent the state of a system at a given time.
-///
-/// This is very similar to a Hashmap (with likely worse performance),
-/// but provides strong type separation.
-pub trait State<T> {
-    fn get(&self, name: &str) -> &T;
-}
-
-#[derive(Debug, Clone)]
-pub struct InputState {
-    state: Vec<(String, FloatValue)>,
-}
-
-impl InputState {
-    pub fn from_vectors(values: Vec<FloatValue>, names: Vec<String>) -> Self {
-        assert_eq!(values.len(), names.len());
-        let state: Vec<(String, FloatValue)> = zip(names, values).collect();
-        Self { state }
-    }
-
-    pub fn empty() -> Self {
-        Self { state: vec![] }
-    }
-
-    pub fn from_hashmap(items: HashMap<String, FloatValue>) -> Self {
-        let mut state = vec![];
-        items.into_iter().for_each(|(name, value)| {
-            state.push((name, value));
-        });
-        Self { state }
-    }
-
-    pub fn from_hashmap_and_verify(
-        items: HashMap<String, FloatValue>,
-        expected_items: Vec<String>,
-    ) -> Self {
-        let mut keys: Vec<&String> = items.keys().collect();
-        keys.sort_unstable();
-        let mut expected_items: Vec<&String> = expected_items.iter().collect();
-        expected_items.sort_unstable();
-
-        assert_eq!(keys, expected_items);
-
-        Self::from_hashmap(items)
-    }
-
-    pub fn has(&self, name: &str) -> bool {
-        self.state.iter().any(|(n, _)| *n == name)
-    }
-
-    /// Merge state into this state
-    ///
-    /// Overrides any existing values with the same name
-    pub fn merge(&mut self, state: InputState) -> &mut Self {
-        state.into_iter().for_each(|(key, value)| {
-            let existing = self.state.iter_mut().find(|(n, _)| *n == key);
-
-            match existing {
-                Some(item) => *item = (key, value),
-                None => self.state.push((key, value)),
-            }
-        });
-        self
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &(String, FloatValue)> {
-        self.state.iter()
-    }
-
-    /// Converts the state into an equivalent hashmap
-    pub fn to_hashmap(self) -> HashMap<String, FloatValue> {
-        HashMap::from_iter(self.state)
-    }
-}
-impl State<FloatValue> for InputState {
-    fn get(&self, name: &str) -> &FloatValue {
-        let found = self.state.iter().find(|(n, _)| *n == name).map(|(_, v)| v);
-        match found {
-            Some(val) => val,
-            None => panic!("No state named {} found in {:?}", name, self),
-        }
-    }
-}
-
-impl IntoIterator for InputState {
-    type Item = (String, FloatValue);
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.state.into_iter()
-    }
-}
-
-pub type OutputState = InputState;
 
 #[pyclass]
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
@@ -193,33 +93,6 @@ pub trait Component: Debug + Send + Sync {
         self.outputs().into_iter().map(|d| d.name).collect()
     }
 
-    /// Extract the input state for the current time step
-    ///
-    /// By default, for endogenous variables which are calculated as part of the model
-    /// the most recent value is used, whereas, for exogenous variables the values are linearly
-    /// interpolated.
-    /// This ensures that state calculated from previous components within the same timestep
-    /// is used.
-    ///
-    /// The result should contain values for the current time step for all input variable
-    fn extract_state(&self, collection: &TimeseriesCollection, t_current: Time) -> InputState {
-        let mut state = HashMap::new();
-
-        self.input_names().into_iter().for_each(|name| {
-            let ts = collection
-                .get_by_name(name.as_str())
-                .unwrap_or_else(|| panic!("No timeseries with variable='{}'", name));
-
-            let result = match ts.variable_type {
-                VariableType::Exogenous => ts.timeseries.at_time(t_current).unwrap(),
-                VariableType::Endogenous => ts.timeseries.latest_value().unwrap(),
-            };
-            state.insert(name, result);
-        });
-
-        InputState::from_hashmap_and_verify(state, self.input_names())
-    }
-
     /// Solve the component until `t_next`
     ///
     /// The result should contain values for the current time step for all output variables
@@ -235,14 +108,25 @@ pub trait Component: Debug + Send + Sync {
 mod tests {
     use super::*;
     use crate::example_components::{TestComponent, TestComponentParameters};
+    use crate::timeseries::Timeseries;
+    use crate::timeseries_collection::{TimeseriesItem, VariableType};
+    use ndarray::array;
 
     #[test]
     fn solve() {
         let component = TestComponent::from_parameters(TestComponentParameters { p: 2.0 });
 
-        let input_state = component.extract_state(&TimeseriesCollection::new(), 2020.0);
+        let emissions_co2 = TimeseriesItem {
+            timeseries: Timeseries::from_values(array![1.1, 1.3], array![2020.0, 2021.0]),
+            name: "Emissions|CO2".to_string(),
+            variable_type: VariableType::Exogenous,
+        };
+
+        let input_state = InputState::build(vec![&emissions_co2], 2020.0);
+        assert_eq!(input_state.get_latest("Emissions|CO2"), 1.1);
+
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
-        assert_eq!(*output_state.get("Concentrations|CO2"), 2.0 * 1.3);
+        assert_eq!(*output_state.get("Concentrations|CO2").unwrap(), 1.1 * 2.0);
     }
 }

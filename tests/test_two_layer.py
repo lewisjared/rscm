@@ -1,4 +1,12 @@
+import numpy as np
+
 from rscm import TwoLayerComponentBuilder
+from rscm._lib.core import (
+    InterpolationStrategy,
+    TimeAxis,
+    Timeseries,
+    TimeseriesCollection,
+)
 
 
 def test_create_component():
@@ -12,5 +20,17 @@ def test_create_component():
             heat_capacity_surface=1,
         )
     ).build()
-    res = component.solve(2000, 2010, {"Effective Radiative Forcing": 12})
+
+    collection = TimeseriesCollection()
+    collection.add_timeseries(
+        "Effective Radiative Forcing",
+        Timeseries(
+            np.asarray([12.0]),
+            TimeAxis.from_bounds(np.asarray([2000.0, 2010.0])),
+            "GtC",
+            InterpolationStrategy.Previous,
+        ),
+    )
+
+    res = component.solve(2000, 2010, collection)
     assert isinstance(res, dict)

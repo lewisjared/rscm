@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 
 use ode_solvers::*;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use rscm_core::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType, State,
+    Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{IVPBuilder, IVP};
@@ -40,7 +41,7 @@ impl IVP<Time, ModelState> for TwoLayerComponent {
     ) {
         let temperature_surface = y[0];
         let temperature_deep = y[1];
-        let erf = input_state.get("Effective Radiative Forcing");
+        let erf = input_state.get_latest("Effective Radiative Forcing");
 
         let temperature_difference = temperature_surface - temperature_deep;
 
@@ -86,11 +87,11 @@ impl Component for TwoLayerComponent {
         t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let erf = input_state.get("Effective Radiative Forcing");
+        let erf = input_state.get_latest("Effective Radiative Forcing");
 
         let y0 = ModelState::new(0.0, 0.0, 0.0);
 
-        let solver = IVPBuilder::new(Arc::new(self.to_owned()), input_state.clone(), y0);
+        let solver = IVPBuilder::new(Arc::new(self.to_owned()), input_state, y0);
         println!("Solving {:?} with state: {:?}", self, input_state);
 
         let mut solver = solver.to_rk4(t_current, t_next, 0.1);
@@ -103,10 +104,10 @@ impl Component for TwoLayerComponent {
 
         // Create the solver
 
-        Ok(OutputState::from_vectors(
-            vec![erf * self.parameters.lambda0],
-            self.output_names(),
-        ))
+        Ok(HashMap::from([(
+            "Surface Temperature".to_string(),
+            erf * self.parameters.lambda0,
+        )]))
     }
 }
 
@@ -114,13 +115,14 @@ impl Component for TwoLayerComponent {
 mod tests {
     use super::*;
     use numpy::array;
+    use rscm_core::model::extract_state;
     use rscm_core::timeseries::Timeseries;
     use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
 
     #[test]
     fn it_works() {
         // Solve the two layer component in isolation
-        let model = TwoLayerComponent::from_parameters(TwoLayerComponentParameters {
+        let component = TwoLayerComponent::from_parameters(TwoLayerComponentParameters {
             lambda0: 0.5,
             a: 0.01,
             efficacy: 0.5,
@@ -139,14 +141,13 @@ mod tests {
             VariableType::Exogenous,
         );
 
-        let input_state = model.extract_state(&ts_collection, 1848.0);
-        println!("Input: {:?}", input_state);
+        let input_state = extract_state(&ts_collection, component.input_names(), 1848.0);
 
         // Create the solver
-        let output_state = model.solve(1848.0, 1849.0, &input_state);
+        let output_state = component.solve(1848.0, 1849.0, &input_state);
 
         println!("Output: {:?}", output_state);
         let output_state = output_state.unwrap();
-        assert_eq!(*output_state.get("Surface Temperature"), 0.5);
+        assert_eq!(*output_state.get("Surface Temperature").unwrap(), 0.5);
     }
 }

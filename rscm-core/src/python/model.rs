@@ -1,4 +1,3 @@
-use crate::component::InputState;
 use crate::model::{Model, ModelBuilder};
 use crate::python::component::PyPythonComponent;
 use crate::python::timeseries::{PyTimeAxis, PyTimeseries};
@@ -53,7 +52,6 @@ impl PyModelBuilder {
         mut self_: PyRefMut<Self>,
         initial_values: HashMap<String, FloatValue>,
     ) -> PyRefMut<Self> {
-        let initial_values = InputState::from_hashmap(initial_values);
         self_.0.with_initial_values(initial_values);
         self_
     }
