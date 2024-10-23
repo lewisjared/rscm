@@ -14,9 +14,9 @@ runs:
   using: "composite"
   steps:
     - name: Install rust stable
-    - uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@stable
     - name: Cache rust
-    - uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@v2
     - name: Install uv
       uses: astral-sh/setup-uv@v3
       with:
@@ -27,7 +27,6 @@ runs:
       run: uv python install ${{ inputs.python-version }}
     # Install dependencies and builds the rust crate
     - name: Install the project
-      shell: bash
       run: |
         uv sync --all-extras --dev --locked
       env:
