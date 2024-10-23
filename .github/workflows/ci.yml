@@ -23,13 +23,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Install rust stable
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache rust
-        uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+        with:
+          python-version: ${{ matrix.python-version }}
+          uv-version: 0.4.20
       - name: Run python tests
         run: uv run pytest tests
       - name: Run rust tests
@@ -42,6 +39,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+        with:
+          python-version: 3.11
+          uv-version: 0.4.20
       - name: docs
         run: |
           make docs-strict

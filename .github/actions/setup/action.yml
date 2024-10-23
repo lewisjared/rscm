@@ -1,14 +1,30 @@
-name: "Setup Python and uv"
+name: "Setup Rust, Python and uv"
 description: "setup Python and uv with caches"
+inputs:
+  python-version:
+    description: "The version of Python to use"
+    required: true
+    default: "3.11"
+  uv-version:
+    description: "The version of uv to use"
+    required: true
+    default: "0.4.20"
 
 runs:
   using: "composite"
   steps:
+    - name: Install rust stable
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Cache rust
+    - uses: Swatinem/rust-cache@v2
     - name: Install uv
       uses: astral-sh/setup-uv@v3
       with:
-        version: "0.4.20"
+        version: ${{ inputs.uv-version }}
         enable-cache: true
+    # Install a specific version of python
+    - name: Set up Python ${{ matrix.python-version }}
+      run: uv python install ${{ inputs.python-version }}
     # Install dependencies and builds the rust crate
     - name: Install the project
       shell: bash
