@@ -8,3 +8,4 @@ pub mod timeseries;
 pub mod timeseries_collection;
 
 pub mod errors;
+mod state;

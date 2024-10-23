@@ -2,11 +2,12 @@
 use numpy::array;
 use numpy::ndarray::Array1;
 use rscm_core::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType, State,
+    Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::iter::zip;
 
 /// Parameters for the Ocean Surface Partial Pressure component
@@ -110,13 +111,14 @@ impl OceanSurfacePartialPressure {
         Self { parameters }
     }
 
-    fn calculate_ospp(&self, delta_dissolved_inorganic_carbon: &FloatValue) -> FloatValue {
+    fn calculate_ospp(&self, delta_dissolved_inorganic_carbon: FloatValue) -> FloatValue {
+        // TODO: investigate units
         // let delta_dioc_scaled = ((delta_dissolved_inorganic_carbon
         //     / UNIT_REGISTRY.Quantity(1, DISSOLVED_INORGANIC_CARBON_UNITS))
         // .to("dimensionless")
         // .magnitude);
         //
-        let delta_dioc_scaled = *delta_dissolved_inorganic_carbon;
+        let delta_dioc_scaled = delta_dissolved_inorganic_carbon;
         let delta_dissolved_inorganic_carbon_bits = array![
             delta_dioc_scaled,
             delta_dioc_scaled.powi(2) * 10e-3,
@@ -164,8 +166,8 @@ impl Component for OceanSurfacePartialPressure {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let delta_sea_surface_temperature = input_state.get("Sea Surface Temperature");
-        let delta_dissolved_inorganic_carbon = input_state.get("Dissolved Inorganic Carbon");
+        let delta_sea_surface_temperature = input_state.get_latest("Sea Surface Temperature");
+        let delta_dissolved_inorganic_carbon = input_state.get_latest("Dissolved Inorganic Carbon");
 
         let delta_ocean_surface_partial_pressure =
             self.calculate_ospp(delta_dissolved_inorganic_carbon);
@@ -176,10 +178,10 @@ impl Component for OceanSurfacePartialPressure {
             * (self.parameters.sensitivity_ospp_to_temperature * delta_sea_surface_temperature)
                 .exp();
 
-        Ok(OutputState::from_vectors(
-            vec![ocean_surface_partial_pressure],
-            self.output_names(),
-        ))
+        Ok(HashMap::from([(
+            "Ocean Surface Partial Pressure|CO2".to_string(),
+            ocean_surface_partial_pressure,
+        )]))
     }
 }
 
@@ -187,7 +189,37 @@ impl Component for OceanSurfacePartialPressure {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use rscm_core::model::extract_state;
+    use rscm_core::timeseries::Timeseries;
+    use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
     use rstest::rstest;
+    use std::f64;
+
+    fn build_timeseries_collection(
+        sea_surface_temperature: f64,
+        dissolved_inorganic_carbon: f64,
+    ) -> TimeseriesCollection {
+        let mut collection = TimeseriesCollection::new();
+
+        collection.add_timeseries(
+            "Sea Surface Temperature".to_string(),
+            Timeseries::from_values(
+                array![sea_surface_temperature, f64::NAN],
+                array![2020.0, 2021.0],
+            ),
+            VariableType::Exogenous,
+        );
+
+        collection.add_timeseries(
+            "Dissolved Inorganic Carbon".to_string(),
+            Timeseries::from_values(
+                array![dissolved_inorganic_carbon, f64::NAN],
+                array![2020.0, 2021.0],
+            ),
+            VariableType::Exogenous,
+        );
+        collection
+    }
 
     #[rstest]
     #[case(
@@ -216,17 +248,14 @@ mod tests {
     ) {
         let component = OceanSurfacePartialPressure::from_parameters(parameters);
 
-        let input_state = InputState::from_vectors(
-            vec![4.0, 5.0],
-            vec![
-                "Sea Surface Temperature".to_string(),
-                "Dissolved Inorganic Carbon".to_string(),
-            ],
-        );
+        let collection = build_timeseries_collection(4.0, 5.0);
+        let input_state = extract_state(&collection, component.input_names(), 2020.0);
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
         assert_relative_eq!(
-            *output_state.get("Ocean Surface Partial Pressure|CO2"),
+            *output_state
+                .get("Ocean Surface Partial Pressure|CO2")
+                .unwrap(),
             expected_ospp,
             max_relative = 10e-5
         )

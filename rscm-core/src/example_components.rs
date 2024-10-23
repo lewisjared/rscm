@@ -1,11 +1,10 @@
 #![allow(dead_code)]
 
 use crate::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType, State,
+    Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use crate::errors::RSCMResult;
 use crate::timeseries::{FloatValue, Time};
-use crate::timeseries_collection::TimeseriesCollection;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,22 +32,21 @@ impl Component for TestComponent {
         ]
     }
 
-    fn extract_state(&self, _collection: &TimeseriesCollection, _t_current: Time) -> InputState {
-        InputState::from_vectors(vec![1.3], self.input_names())
-    }
     fn solve(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let emission_co2 = input_state.get("Emissions|CO2");
+        let emission_co2 = input_state.get_latest("Emissions|CO2");
 
         println!("Solving {:?} with state: {:?}", self, input_state);
 
-        Ok(OutputState::from_vectors(
-            vec![emission_co2 * self.parameters.p],
-            self.output_names(),
-        ))
+        let mut output_state = OutputState::new();
+        output_state.insert(
+            "Concentrations|CO2".to_string(),
+            emission_co2 * self.parameters.p,
+        );
+        Ok(output_state)
     }
 }

@@ -71,7 +71,10 @@ class VariableType(Enum):
 class TimeseriesCollection:
     def __init__(self) -> TimeseriesCollection: ...
     def add_timeseries(
-        self, name: str, timeseries: Timeseries, variable_type: VariableType
+        self,
+        name: str,
+        timeseries: Timeseries,
+        variable_type: VariableType = VariableType.Exogenous,
     ): ...
     def get_timeseries_by_name(self, name: str) -> Timeseries | None:
         """
@@ -120,7 +123,7 @@ class Component(Protocol):
 
     def definitions(self) -> list[RequirementDefinition]: ...
     def solve(
-        self, t_current: float, t_next: float, input_state: dict[str, float]
+        self, t_current: float, t_next: float, collection: TimeseriesCollection
     ) -> dict[str, float]: ...
 
 class RustComponent(Component):

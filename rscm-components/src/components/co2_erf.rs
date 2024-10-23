@@ -1,9 +1,10 @@
 use rscm_core::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType, State,
+    Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CO2ERFParameters {
@@ -52,10 +53,13 @@ impl Component for CO2ERF {
     ) -> RSCMResult<OutputState> {
         let erf = self.parameters.erf_2xco2 / 2.0_f64.log10()
             * (1.0
-                + (input_state.get("Atmospheric Concentration|CO2") - self.parameters.conc_pi)
+                + (input_state.get_latest("Atmospheric Concentration|CO2")
+                    - self.parameters.conc_pi)
                     / self.parameters.conc_pi)
                 .log10();
-
-        Ok(OutputState::from_vectors(vec![erf], self.output_names()))
+        Ok(HashMap::from([(
+            "Effective Radiative Forcing|CO2".to_string(),
+            erf,
+        )]))
     }
 }

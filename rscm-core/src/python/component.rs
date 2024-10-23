@@ -9,30 +9,6 @@ use std::sync::Arc;
 // Reexport the Requirement Definition
 pub use crate::component::{RequirementDefinition, RequirementType};
 
-/// Expose component-related functionality to python
-#[macro_export]
-macro_rules! impl_component {
-    ($py_component:ty) => {
-        #[pymethods]
-        impl $py_component {
-            fn definitions(&self) -> Vec<RequirementDefinition> {
-                self.0.definitions()
-            }
-
-            pub fn solve(
-                &mut self,
-                t_current: Time,
-                t_next: Time,
-                input_state: HashMap<String, FloatValue>,
-            ) -> PyResult<HashMap<String, FloatValue>> {
-                let state = InputState::from_hashmap(input_state);
-                let output_state = self.0.solve(t_current, t_next, &state)?;
-                Ok(output_state.to_hashmap())
-            }
-        }
-    };
-}
-
 /// Create a component builder that can be used by python to instantiate components created Rust.
 #[macro_export]
 macro_rules! create_component_builder {
@@ -59,6 +35,32 @@ macro_rules! create_component_builder {
                 PyRustComponent(std::sync::Arc::new(<$rust_component>::from_parameters(
                     self.parameters.clone(),
                 )))
+            }
+        }
+    };
+}
+
+/// Expose component-related functionality to python
+#[macro_export]
+macro_rules! impl_component {
+    ($py_component:ty) => {
+        #[pymethods]
+        impl $py_component {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                self.0.definitions()
+            }
+
+            pub fn solve(
+                &mut self,
+                t_current: Time,
+                t_next: Time,
+                collection: crate::python::timeseries_collection::PyTimeseriesCollection,
+            ) -> PyResult<HashMap<String, FloatValue>> {
+                let input_state =
+                    crate::model::extract_state(&collection.0, self.0.input_names(), t_current);
+
+                let output_state = self.0.solve(t_current, t_next, &input_state)?;
+                Ok(output_state)
             }
         }
     };
@@ -124,8 +126,8 @@ impl Component for PythonComponent {
                 )
                 .unwrap();
 
-            let state = OutputState::from_hashmap(py_result.extract().unwrap());
-            Ok(state)
+            let output_state = py_result.extract().unwrap();
+            Ok(output_state)
         })
     }
 }

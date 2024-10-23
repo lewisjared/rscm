@@ -67,6 +67,7 @@ where
                 (time1, time2, y1, y2)
             }
             SegmentOptions::ExtrapolateForward => {
+                assert!(y.len() >= 2);
                 // Use last two points (excludes the influence of the bound of the last value
                 let time1 = time[y.len() - 2];
                 let y1 = y[y.len() - 2];

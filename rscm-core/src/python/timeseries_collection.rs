@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 
 #[pyclass]
 #[pyo3(name = "TimeseriesCollection")]
+#[derive(Clone)]
 pub struct PyTimeseriesCollection(pub TimeseriesCollection);
 
 #[pymethods]
@@ -19,6 +20,7 @@ impl PyTimeseriesCollection {
         format!("<TimeseriesCollection names={:?}>", names)
     }
 
+    #[pyo3(signature = (name, timeseries, variable_type=VariableType::Exogenous))]
     pub fn add_timeseries(
         &mut self,
         name: String,
