@@ -23,7 +23,7 @@ runs:
         version: ${{ inputs.uv-version }}
         enable-cache: true
     # Install a specific version of python
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python ${{ inputs.python-version }}
       run: uv python install ${{ inputs.python-version }}
     # Install dependencies and builds the rust crate
     - name: Install the project
