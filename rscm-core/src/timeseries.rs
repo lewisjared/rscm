@@ -190,6 +190,20 @@ impl TimeAxis {
 
 /// A contiguous set of values
 ///
+/// # Examples
+///
+/// ```rust
+/// use std::sync::Arc;
+/// use numpy::array;
+/// use numpy::ndarray::Array;
+/// use rscm_core::timeseries::{FloatValue, TimeAxis, Timeseries};
+///
+/// let timeseries: Timeseries<FloatValue> = Timeseries::from_values(array![1.0, 2.0, 3.0, 4.0, 5.0], Array::range(2000.0, 2050.0, 10.0));
+///
+/// assert_eq!(timeseries.len(), 5);
+/// assert_eq!(timeseries.latest_value().unwrap(), 5.0);
+/// assert_eq!(timeseries.at(0).unwrap(), 1.0);
+/// assert_eq!(timeseries.at_time(2040.0).unwrap(), 5.0);
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Timeseries<T>
 where
@@ -201,7 +215,7 @@ where
     // time axis.
     time_axis: Arc<TimeAxis>,
     /// Latest value specified
-    latest: isize,
+    latest: usize,
     interpolation_strategy: InterpolationStrategy,
 }
 
@@ -221,11 +235,12 @@ where
             .iter()
             .take_while(|x| !x.is_nan())
             .count()
-            .to_isize()
+            .to_usize()
             .unwrap();
 
-        if latest >= values.len() as isize {
-            latest = (values.len() - 1).to_isize().unwrap();
+        // Clamp latest to the length of the values array
+        if latest >= values.len() {
+            latest = values.len() - 1
         }
 
         Self {
@@ -272,14 +287,14 @@ where
         self.values[time_index] = value;
 
         if !value.is_nan() {
-            self.latest = max(self.latest, time_index.to_isize().unwrap())
+            self.latest = max(self.latest, time_index)
         }
     }
 
     /// Get the index of the latest valid timestep
     ///
     /// Doesn't verify that all prior values are non-nan
-    pub fn latest(&self) -> &isize {
+    pub fn latest(&self) -> &usize {
         &self.latest
     }
 
@@ -287,10 +302,10 @@ where
     ///
     /// Doesn't verify that all prior values are non-nan
     pub fn latest_value(&self) -> Option<T> {
-        match (self.latest < 0) || (self.latest.to_usize().unwrap() > self.len()) {
-            true => None,
-            false => Option::from(self.values[self.latest.to_usize().unwrap()]),
-        }
+        assert!(self.latest < self.len());
+
+        // Technically, this should never return None
+        Option::from(self.values[self.latest])
     }
 
     pub fn new_empty(

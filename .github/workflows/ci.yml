@@ -18,6 +18,7 @@ jobs:
         python-version:
           - '3.11'
           - '3.12'
+          - '3.13'
 
     runs-on: ubuntu-latest
 
@@ -42,6 +43,8 @@ jobs:
         with:
           python-version: 3.11
           uv-version: 0.4.20
+      - name: Setup Graphviz
+        uses: ts-graphviz/setup-graphviz@v2
       - name: docs
         run: |
           make docs-strict

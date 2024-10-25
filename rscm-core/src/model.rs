@@ -625,7 +625,7 @@ variable_type = "Exogenous"
 
 [collection.timeseries.timeseries]
 units = "GtC / yr"
-latest = 5
+latest = 4
 interpolation_strategy = "Previous"
 
 [collection.timeseries.timeseries.values]
