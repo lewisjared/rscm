@@ -22,9 +22,9 @@
 # description of the model, including its components and state.
 
 # %%
-from helpers.models import example_model_builder
+from docs.notebooks.helpers.models import example_model_builder
 
-from rscm._lib.core import Model
+from rscm.core import Model
 
 # %%
 # Create a simple example coupled model with some exogenous data
@@ -49,7 +49,7 @@ print(serialised_model)
 # %% [markdown]
 # ## Recreating the model state
 #
-# A new model can be initialised using the TOML represenation.
+# A new model can be initialised using the TOML representation.
 # The new model will have the same state and components as the original model
 
 # %%

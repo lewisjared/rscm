@@ -133,7 +133,7 @@ impl PyTimeseries {
     }
 
     #[getter]
-    fn latest(&self) -> isize {
+    fn latest(&self) -> usize {
         *self.0.latest()
     }
 

@@ -27,13 +27,26 @@ dev-dependencies = [
     "ruff>=0.6.2",
     "pytest>=8.3.2",
     "pip>=24.2",
-    "jupytext>=1.16.4",
     "notebook>=7.2.2",
-    "seaborn>=0.13.2",
-    "matplotlib>=3.9.2",
     "pydot>=3.0.1",
     "towncrier>=24.8.0",
     "bump-my-version>=0.26.1",
+    # Docs
+    "mkdocs>=1.6.0",
+    "mkdocstrings[python]>=0.25.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocs-gen-files>=0.5.0",
+    "mkdocs-section-index>=0.3.9",
+    "mkdocs-literate-nav>=0.6.1",
+    "mkdocs-autorefs>=1.0.1",
+    "mkdocs-jupyter>=0.24.0",
+    "myst-nb>=1.1.1",
+    "jupyterlab>=4.2.0",
+    "jupytext>=1.16.4",
+    "matplotlib>=3.9.2",
+    "seaborn>=0.13.2",
+    "mike>=2.1.3",
+    "mkdocs-minify-plugin>=0.8.0",
 ]
 
 
@@ -82,7 +95,7 @@ docstring-code-format = true
     "S101", # S101 Use of `assert` detected
     "PLR2004" # Magic value used in comparison
 ]
-"notebooks/*" = [
+"docs/notebooks/*" = [
     "D100", # Missing docstring at the top of file
     "E402", # Module level import not at top of file
     "S101", # Use of `assert` detected
