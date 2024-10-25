@@ -471,7 +471,7 @@ mod tests {
         let serialised = serde_json::to_string(&timeseries).unwrap();
         assert_eq!(
             serialised,
-            r#"{"units":"","values":{"v":1,"dim":[3],"data":[1.0,1.5,2.0]},"time_axis":{"bounds":{"v":1,"dim":[4],"data":[2020.0,2021.0,2022.0,2023.0]}},"latest":3,"interpolation_strategy":"Linear"}"#
+            r#"{"units":"","values":{"v":1,"dim":[3],"data":[1.0,1.5,2.0]},"time_axis":{"bounds":{"v":1,"dim":[4],"data":[2020.0,2021.0,2022.0,2023.0]}},"latest":2,"interpolation_strategy":"Linear"}"#
         );
 
         let deserialised = serde_json::from_str::<Timeseries<f64>>(&serialised).unwrap();
