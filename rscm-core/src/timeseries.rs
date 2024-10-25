@@ -217,12 +217,16 @@ where
     ) -> Self {
         assert_eq!(values.len(), time_axis.values().len());
 
-        let latest = values
+        let mut latest = values
             .iter()
             .take_while(|x| !x.is_nan())
             .count()
             .to_isize()
             .unwrap();
+
+        if latest >= values.len() as isize {
+            latest = (values.len() - 1).to_isize().unwrap();
+        }
 
         Self {
             units,

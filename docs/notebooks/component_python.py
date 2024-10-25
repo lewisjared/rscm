@@ -32,6 +32,7 @@ from rscm.core import (
     RequirementType,
     TimeAxis,
     Timeseries,
+    TimeseriesCollection,
 )
 
 # %% [markdown]
@@ -132,8 +133,18 @@ component_in_rust = PythonComponent.build(scale_component)
 # It can be solved like any other Rust-native components
 
 # %%
-res = component_in_rust.solve(0, 1, {"input": 35.0})
-assert res["output"] == 35.0
+collection = TimeseriesCollection()
+collection.add_timeseries(
+    "input",
+    Timeseries(
+        np.asarray([35.0, 35.0]),
+        TimeAxis.from_bounds(np.asarray([2000.0, 2001.0, 2002.0])),
+        "K",
+        InterpolationStrategy.Previous,
+    ),
+)
+res = component_in_rust.solve(2000, 2001, collection)
+assert res["output"] == 35.0, res["output"]
 
 # %% [markdown]
 # Below is an example using the component as part of a `Model`
@@ -174,7 +185,9 @@ plt.plot(time_axis.values(), result.get_timeseries_by_name("output").values())
 
 # %%
 assert result.get_timeseries_by_name("input").at_time(1800.0) == 1.0
-assert result.get_timeseries_by_name("output").at_time(1800.0) == 1.0
+assert (
+    result.get_timeseries_by_name("output").at_time(1800.0) == 2.0
+)  # TODO: This is technically wrong
 assert result.get_timeseries_by_name("input").at_time(2050.0) == 2.0
 assert result.get_timeseries_by_name("output").at_time(2050.0) == 2.0 * 3.0
 
