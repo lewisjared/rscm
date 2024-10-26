@@ -422,11 +422,10 @@ impl Model {
 
         match result {
             Ok(output_state) => output_state.iter().for_each(|(key, value)| {
-                let ts = self.collection.get_timeseries_by_name_mut(key).unwrap();
                 // The next time index is used as this output state represents the value of a
                 // variable at the end of the current time step.
                 // This is the same as the start of the next timestep.
-                ts.set(self.time_index + 1, *value)
+                self.collection.set_value(key, self.time_index + 1, *value)
             }),
             Err(err) => {
                 println!("Solving failed: {}", err)

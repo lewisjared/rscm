@@ -1,4 +1,6 @@
 use crate::timeseries::{FloatValue, Timeseries};
+use petgraph::graph::NodeIndex;
+use petgraph::Graph;
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, PartialOrd, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -21,7 +23,8 @@ pub struct TimeseriesItem {
 /// Allows for easy access to time series data by name across the whole model
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeseriesCollection {
-    timeseries: Vec<TimeseriesItem>,
+    node_indexes: Vec<NodeIndex>,
+    graph: Graph<TimeseriesItem, f64>,
 }
 
 impl Default for TimeseriesCollection {
@@ -33,7 +36,8 @@ impl Default for TimeseriesCollection {
 impl TimeseriesCollection {
     pub fn new() -> Self {
         Self {
-            timeseries: Vec::new(),
+            node_indexes: Vec::new(),
+            graph: Graph::default(),
         }
     }
 
@@ -47,37 +51,85 @@ impl TimeseriesCollection {
         timeseries: Timeseries<FloatValue>,
         variable_type: VariableType,
     ) {
-        if self.timeseries.iter().any(|x| x.name == name) {
-            panic!("timeseries {} already exists", name)
-        }
-        self.timeseries.push(TimeseriesItem {
+        self.iter().for_each(|x| {
+            if x.name == name {
+                panic!("timeseries {} already exists", name)
+            }
+        });
+
+        let node_index = self.graph.add_node(TimeseriesItem {
             timeseries,
             name,
             variable_type,
         });
-        // Ensure the order of the serialised timeseries is stable
-        self.timeseries.sort_unstable_by_key(|x| x.name.clone());
+        self.node_indexes.push(node_index);
+    }
+
+    pub fn add_nested_timeseries(&mut self, parent_name: String, child_name: String) {
+        self.add_nested_timeseries_with_weight(parent_name, child_name, 1.0);
+    }
+
+    pub fn add_nested_timeseries_with_weight(
+        &mut self,
+        parent_name: String,
+        child_name: String,
+        weight: f64,
+    ) {
+        let parent = self
+            .get_by_name(&parent_name)
+            .expect("Parent timeseries not found");
+        let timeseries = parent.timeseries.clone();
+        {
+            self.add_timeseries(child_name.clone(), timeseries, parent.variable_type);
+        }
+
+        self.graph.add_edge(
+            *self.get_index(&parent_name),
+            *self.get_index(&child_name),
+            weight,
+        );
+    }
+
+    fn get_index(&self, name: &str) -> &NodeIndex {
+        self.node_indexes
+            .iter()
+            .find(|x| self.graph[**x].name == name)
+            .expect("Timeseries not found")
     }
 
     pub fn get_by_name(&self, name: &str) -> Option<&TimeseriesItem> {
-        self.timeseries.iter().find(|x| x.name == name)
+        self.node_indexes
+            .iter()
+            .find(|x| self.graph[**x].name == name)
+            .map(|x| &self.graph[*x])
+    }
+
+    pub fn get_by_name_mut(&mut self, name: &str) -> Option<&mut TimeseriesItem> {
+        self.node_indexes
+            .iter()
+            .find(|x| self.graph[**x].name == name)
+            .map(|x| &mut self.graph[*x])
     }
 
     pub fn get_timeseries_by_name(&self, name: &str) -> Option<&Timeseries<FloatValue>> {
         self.get_by_name(name).map(|item| &item.timeseries)
     }
-    pub fn get_timeseries_by_name_mut(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut Timeseries<FloatValue>> {
-        self.timeseries
-            .iter_mut()
-            .find(|x| x.name == name)
+    fn get_timeseries_by_name_mut(&mut self, name: &str) -> Option<&mut Timeseries<FloatValue>> {
+        self.node_indexes
+            .iter()
+            .find(|x| self.graph[**x].name == name)
+            .map(|x| &mut self.graph[*x])
             .map(|item| &mut item.timeseries)
     }
 
+    pub fn set_value(&mut self, name: &str, time_index: usize, value: FloatValue) {
+        self.get_timeseries_by_name_mut(name)
+            .expect("Timeseries not found")
+            .set(time_index, value);
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &TimeseriesItem> {
-        self.timeseries.iter()
+        self.node_indexes.iter().map(move |x| &self.graph[*x])
     }
 }
 
@@ -86,7 +138,11 @@ impl IntoIterator for TimeseriesCollection {
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.timeseries.into_iter()
+        self.node_indexes
+            .iter()
+            .map(move |x| self.graph[*x].clone())
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
 
@@ -112,6 +168,35 @@ mod tests {
             timeseries.clone(),
             VariableType::Endogenous,
         );
+    }
+
+    #[test]
+    fn hierarchical_timeseries() {
+        let mut collection = TimeseriesCollection::new();
+
+        let timeseries =
+            Timeseries::from_values(array![1.0, 2.0, 3.0], Array::range(2020.0, 2023.0, 1.0));
+        collection.add_timeseries(
+            "Emissions|CO2".to_string(),
+            timeseries.clone(),
+            VariableType::Exogenous,
+        );
+
+        collection.add_nested_timeseries_with_weight(
+            "Emissions|CO2".to_string(),
+            "Emissions|CO2|Fossil and Industrial".to_string(),
+            1.0,
+        );
+        collection.add_nested_timeseries_with_weight(
+            "Emissions|CO2".to_string(),
+            "Emissions|CO2|LULUCF".to_string(),
+            1.0,
+        );
+
+        let ts = collection
+            .get_timeseries_by_name("Emissions|CO2|Fossil and Industrial")
+            .unwrap();
+        assert_eq!(ts.time_axis().values(), array![2020.0, 2021.0, 2022.0]);
     }
 
     #[test]
