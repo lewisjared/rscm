@@ -192,7 +192,7 @@ impl ModelBuilder {
     pub fn with_exogenous_collection(&mut self, collection: TimeseriesCollection) -> &mut Self {
         collection.into_iter().for_each(|x| {
             self.exogenous_variables
-                .add_timeseries(x.name, x.timeseries, x.variable_type)
+                .add_timeseries(x.name, x.timeseries, x.variable_type);
         });
         self
     }
@@ -305,20 +305,22 @@ impl ModelBuilder {
                     // Note that timeseries that are initialised are defined as Endogenous
                     // all but the first time point come from the model.
                     // This could potentially be defined as a different VariableType if needed.
-                    collection.add_timeseries(name, ts, VariableType::Endogenous)
+                    collection.add_timeseries(name, ts, VariableType::Endogenous);
                 } else {
                     // Check if the timeseries is available in the provided exogenous variables
                     // then interpolate to the right timebase
                     let timeseries = self.exogenous_variables.get_timeseries_by_name(&name);
 
                     match timeseries {
-                        Some(timeseries) => collection.add_timeseries(
-                            name,
-                            timeseries
-                                .to_owned()
-                                .interpolate_into(self.time_axis.clone()),
-                            VariableType::Exogenous,
-                        ),
+                        Some(timeseries) => {
+                            collection.add_timeseries(
+                                name,
+                                timeseries
+                                    .to_owned()
+                                    .interpolate_into(self.time_axis.clone()),
+                                VariableType::Exogenous,
+                            );
+                        }
                         None => println!("No exogenous data for {}", definition.name),
                     }
                 }
@@ -332,7 +334,7 @@ impl ModelBuilder {
                         InterpolationStrategy::from(LinearSplineStrategy::new(true)),
                     ),
                     VariableType::Endogenous,
-                )
+                );
             }
         }
 
