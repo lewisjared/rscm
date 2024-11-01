@@ -15,7 +15,7 @@ numpy = "0.21.0"
 rscm-core = { path = "rscm-core" }
 rscm-components = { path = "rscm-components" }
 pythonize = "0.21.1"
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.214", features = ["derive"] }
 typetag = "0.2"
 
 
