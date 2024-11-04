@@ -76,6 +76,22 @@ class TimeseriesCollection:
         timeseries: Timeseries,
         variable_type: VariableType = VariableType.Exogenous,
     ): ...
+    def add_nested_timeseries(self, name: str, child_name: str) -> None:
+        """
+        Add a nested timeseries to the collection
+
+        Adds a new timeseries to the collection
+        and creates a parent-child relationship between the two
+        where the parent is always the sum of the children values.
+        All parent-child timeseries share a common time axis to simplify operations.
+
+        Parameters
+        ----------
+        name
+            Name of the parent timeseries
+        child_name
+            Name of the new child timeseries to be created
+        """
     def get_timeseries_by_name(self, name: str) -> Timeseries | None:
         """
         Get a timeseries from the collection by name
@@ -92,6 +108,16 @@ class TimeseriesCollection:
         -------
         A clone of the timeseries or None if the collection doesn't contain
         a timeseries by that name.
+        """
+    def set_value(self, name: str, time_index: int, value: float) -> None:
+        """
+        Set a value in a timeseries
+
+        Parameters
+        ----------
+        name
+        time_index
+        value
         """
     def names(self) -> list[str]: ...
     def timeseries(self) -> list[Timeseries]:
