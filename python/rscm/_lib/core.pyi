@@ -116,8 +116,11 @@ class TimeseriesCollection:
         Parameters
         ----------
         name
+            Name of the timeseries to modify
         time_index
+            Time index to modify
         value
+            New value to set
         """
     def names(self) -> list[str]: ...
     def timeseries(self) -> list[Timeseries]:
