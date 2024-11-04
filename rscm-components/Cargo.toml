@@ -11,7 +11,7 @@ workspace = ".."
 [dependencies]
 rscm-core = { path = "../rscm-core" }
 pythonize = "0.21.1"
-ode_solvers = "0.4.0"
+ode_solvers = "0.5.0"
 serde = { version = "1.0.214", features = ["derive"] }
 typetag = "0.2"
 numpy = "0.21.0"
