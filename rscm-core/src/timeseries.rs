@@ -291,6 +291,11 @@ where
         }
     }
 
+    /// Fill the timeseries with a given value
+    pub fn fill(&mut self, value: T) {
+        self.values.fill(value);
+    }
+
     /// Get the index of the latest valid timestep
     ///
     /// Doesn't verify that all prior values are non-nan
