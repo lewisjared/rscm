@@ -401,7 +401,7 @@ dependencies = [
  "nalgebra",
  "num-traits",
  "simba",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -480,9 +480,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.86"
+version = "1.0.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e719e8df665df0d1c8fbfd238015744736151d4445ec0836b8e628aae103b77"
+checksum = "37d3544b3f2748c54e147655edb5025752e2303145b5aefb3c3ea2c78b973bb0"
 dependencies = [
  "unicode-ident",
 ]
@@ -677,7 +677,7 @@ dependencies = [
  "pythonize",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 2.0.3",
  "toml",
  "typetag",
 ]
@@ -825,9 +825,9 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "syn"
-version = "2.0.86"
+version = "2.0.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e89275301d38033efb81a6e60e3497e734dfcc62571f2854bf4b16690398824c"
+checksum = "919d3b74a5dd0ccd15aeb8f93e7006bd9e14c295087c9896a110f490752bcf31"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -842,18 +842,38 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "thiserror"
-version = "1.0.64"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d50af8abc119fb8bb6dbabcfa89656f46f84aa0ac7688088608076ad2b459a84"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c006c85c7651b3cf2ada4584faa36773bd07bac24acfb39f3c431b36d7e667aa"
+dependencies = [
+ "thiserror-impl 2.0.3",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.64"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08904e7672f5eb876eaaf87e0ce17857500934f4981c4a0ab2b4aa98baac7fc3"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f077553d607adc1caf65430528a576c757a71ed73944b66ebb58ef2bbd243568"
 dependencies = [
  "proc-macro2",
  "quote",
