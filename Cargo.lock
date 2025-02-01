@@ -518,9 +518,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.22.5"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc38c5feeb496c8321091edf3d63e9a6829eab4b863b4a6a65f26f3e9cc6b179"
+checksum = "1cd3927b5a78757a0d71aa9dff669f903b1eb64b54142a9bd9f757f8fde65fd7"
 dependencies = [
  "once_cell",
  "target-lexicon",
@@ -638,7 +638,7 @@ dependencies = [
  "numpy",
  "ode_solvers",
  "pyo3",
- "pyo3-build-config 0.22.5",
+ "pyo3-build-config 0.23.4",
  "pythonize",
  "rscm-components",
  "rscm-core",
