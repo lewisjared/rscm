@@ -24,7 +24,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       # Install UV + Python
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
