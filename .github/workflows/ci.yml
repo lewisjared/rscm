@@ -27,7 +27,6 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           python-version: ${{ matrix.python-version }}
-          uv-version: 0.4.20
       - name: Run python tests
         run: uv run pytest tests
       - name: Run rust tests
@@ -41,8 +40,7 @@ jobs:
         uses: actions/checkout@v4
       - uses: ./.github/actions/setup
         with:
-          python-version: 3.11
-          uv-version: 0.4.20
+          python-version: "3.11"
       - name: Setup Graphviz
         uses: ts-graphviz/setup-graphviz@v2
       - name: docs
