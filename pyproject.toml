@@ -22,8 +22,8 @@ bindings = 'pyo3'
 features = ["pyo3/extension-module"]
 
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ruff>=0.6.2",
     "pytest>=8.3.2",
     "pip>=24.2",
