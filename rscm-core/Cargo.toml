@@ -13,7 +13,7 @@ ode_solvers = "0.4.0"
 ndarray = { version = "*", features = ["serde-1"] }
 numpy = "0.21.0"
 # Pin nlgebra until new release of ode_solvers
-nalgebra = "0.32.6"
+nalgebra = "0.34.1"
 petgraph = { version = "0.6.5", features = ["serde-1"] }
 serde = { version = "1.0", features = ["derive", "rc"] }
 typetag = "0.2"
