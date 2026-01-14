@@ -96,6 +96,18 @@ Keep commit messages and plans concise
 
 Models and components serialize to JSON/TOML via serde. The `#[typetag::serde(tag = "type")]` pattern enables deserializing trait objects.
 
+### Python Type Stubs (.pyi files)
+
+Type stub files in `python/rscm/_lib/*.pyi` provide type hints for the PyO3 bindings. These files must be kept in sync with the Rust Python bindings.
+
+**When to update .pyi files:**
+
+- After adding new PyO3 classes or functions in `rscm-core/src/python/` or `rscm-components/src/python/`
+- After changing method signatures on existing PyO3 classes
+- After adding new enum variants or class attributes
+
+**Note:** PyO3 automatically generates accurate Python bindings from Rust code, but type stubs must be manually maintained to provide IDE support and type checking.
+
 ## Conventions
 
 - British English spelling
