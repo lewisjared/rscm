@@ -3,7 +3,7 @@ name = "rscm"
 version = "0.1.0"
 description = "Simple Climate Model framework implemented in Rust"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
 authors = [
     {name = "Jared Lewis", email = "jared.lewis@climate-energy-college.org"}
@@ -14,7 +14,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -33,7 +32,7 @@ Documentation = "https://lewisjared.github.io/rscm/"
 
 [build-system]
 requires = [
-    'maturin>=1,<2'
+    'maturin>=1.7,<2'
 ]
 build-backend = 'maturin'
 
@@ -74,7 +73,7 @@ dev = [
 
 [tool.ruff]
 src = ["python"]
-target-version = "py310"
+target-version = "py311"
 # Provide some leeway for long docstring
 line-length = 88
 

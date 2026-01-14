@@ -3,7 +3,7 @@ use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, NextStrategy, PreviousStrategy,
 };
 use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
-use numpy::{PyArray1, PyArrayMethods, ToPyArray};
+use numpy::{PyArray1, PyArrayMethods, ToPyArray as _};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::sync::Arc;
@@ -28,11 +28,11 @@ impl PyTimeAxis {
     }
 
     fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<Time>> {
-        self.0.values().to_pyarray_bound(py)
+        self.0.values().to_pyarray(py)
     }
 
     fn bounds<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<Time>> {
-        self.0.bounds().to_pyarray_bound(py)
+        self.0.bounds().to_pyarray(py)
     }
 
     fn __len__(&self) -> usize {
@@ -125,7 +125,7 @@ impl PyTimeseries {
     }
 
     fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<FloatValue>> {
-        self.0.values().to_pyarray_bound(py)
+        self.0.values().to_pyarray(py)
     }
 
     fn __len__(&self) -> usize {

@@ -5,6 +5,7 @@ use crate::timeseries::{FloatValue, Time};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::sync::Arc;
 // Reexport the Requirement Definition
 pub use crate::component::{RequirementDefinition, RequirementType};
@@ -25,7 +26,7 @@ macro_rules! create_component_builder {
                 use pyo3::exceptions::PyValueError;
 
                 // todo: figure out how to use an attrs class as parameters instead of a dict
-                let parameters = pythonize::depythonize_bound::<$component_parameters>(parameters);
+                let parameters = pythonize::depythonize::<$component_parameters>(&parameters);
                 match parameters {
                     Ok(parameters) => Ok(Self { parameters }),
                     Err(e) => Err(PyValueError::new_err(format!("{}", e))),
@@ -89,16 +90,16 @@ pub struct PyRustComponent(pub Arc<dyn Component + Send + Sync>);
 
 impl_component!(PyRustComponent);
 
-/// Wrapper to convert a PyObject (Python Class) into a Component
+/// Wrapper to convert a Py<PyAny> (Python Class) into a Component
 #[derive(Debug)]
 pub struct PythonComponent {
-    pub component: PyObject,
+    pub component: Py<PyAny>,
 }
 
 #[typetag::serde]
 impl Component for PythonComponent {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_result = self
                 .component
                 .bind(py)
@@ -115,7 +116,7 @@ impl Component for PythonComponent {
         t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_result = self
                 .component
                 .bind(py)
@@ -137,7 +138,7 @@ impl Serialize for PythonComponent {
     where
         S: serde::Serializer,
     {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_result = self
                 .component
                 .bind(py)
@@ -155,11 +156,9 @@ impl<'de> Deserialize<'de> for PythonComponent {
         D: serde::Deserializer<'de>,
     {
         let s: String = Deserialize::deserialize(deserializer)?;
-        Python::with_gil(|py| {
-            let component = py
-                .eval_bound(&format!("Component.from_json('{}')", s), None, None)
-                .unwrap()
-                .to_object(py);
+        Python::attach(|py| {
+            let code = CString::new(format!("Component.from_json('{}')", s)).unwrap();
+            let component = py.eval(code.as_c_str(), None, None).unwrap().unbind();
             Ok(PythonComponent { component })
         })
     }
