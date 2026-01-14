@@ -88,6 +88,7 @@ use pyo3::{pymodule, Bound, PyResult};
 mod component;
 mod example_component;
 mod model;
+pub mod spatial;
 pub mod timeseries;
 mod timeseries_collection;
 
@@ -100,6 +101,12 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<timeseries::PyInterpolationStrategy>()?;
     m.add_class::<timeseries_collection::PyTimeseriesCollection>()?;
     m.add_class::<timeseries_collection::VariableType>()?;
+    m.add_class::<spatial::PyScalarRegion>()?;
+    m.add_class::<spatial::PyScalarGrid>()?;
+    m.add_class::<spatial::PyFourBoxRegion>()?;
+    m.add_class::<spatial::PyFourBoxGrid>()?;
+    m.add_class::<spatial::PyHemisphericRegion>()?;
+    m.add_class::<spatial::PyHemisphericGrid>()?;
     m.add_class::<component::PyPythonComponent>()?;
     m.add_class::<component::RequirementDefinition>()?;
     m.add_class::<component::RequirementType>()?;
