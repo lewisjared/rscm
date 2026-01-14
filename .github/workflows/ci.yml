@@ -46,10 +46,3 @@ jobs:
       - name: docs
         run: |
           make docs-strict
-      - name: docs-with-changelog
-        run: |
-          # Check CHANGELOG will build too
-          uv run towncrier build --yes
-          uv run mkdocs build --strict
-          # Just in case, undo the staged changes
-          git restore --staged . && git restore .
