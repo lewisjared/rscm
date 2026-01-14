@@ -1,19 +1,55 @@
 use crate::errors::RSCMResult;
-pub use crate::state::{InputState, OutputState};
+pub use crate::state::{
+    FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, InputState, OutputState, TimeseriesWindow,
+};
 use crate::timeseries::Time;
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
+/// Type of requirement (input, output, or both)
 #[pyclass]
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub enum RequirementType {
     Input,
     Output,
-    InputAndOutput, // TODO: Figure out how to compose input and output together
+    InputAndOutput,
     EmptyLink,
 }
 
+/// Spatial grid type for a variable
+///
+/// Specifies what spatial resolution a variable operates at.
+/// This enables type-safe coupling validation between components.
+#[pyclass]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Serialize, Deserialize, Default)]
+pub enum GridType {
+    /// Scalar (global average or non-spatial) - default for backwards compatibility
+    #[default]
+    Scalar,
+    /// Four-box model (NorthernOcean, NorthernLand, SouthernOcean, SouthernLand)
+    FourBox,
+    /// Two-region hemispheric (Northern, Southern)
+    Hemispheric,
+}
+
+impl std::fmt::Display for GridType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GridType::Scalar => write!(f, "Scalar"),
+            GridType::FourBox => write!(f, "FourBox"),
+            GridType::Hemispheric => write!(f, "Hemispheric"),
+        }
+    }
+}
+
+/// Definition of a component's input or output requirement
+///
+/// Each requirement specifies:
+/// - `name`: Variable identifier (e.g., "Atmospheric Concentration|CO2")
+/// - `unit`: Physical units (e.g., "ppm", "W / m^2")
+/// - `requirement_type`: Whether this is an input, output, or both
+/// - `grid_type`: Spatial resolution (Scalar, FourBox, Hemispheric)
 #[pyclass]
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct RequirementDefinition {
@@ -23,15 +59,94 @@ pub struct RequirementDefinition {
     pub unit: String,
     #[pyo3(get, set)]
     pub requirement_type: RequirementType,
+    #[pyo3(get, set)]
+    pub grid_type: GridType,
 }
 
 impl RequirementDefinition {
+    /// Create a new scalar requirement (default, backwards compatible)
     pub fn new(name: &str, unit: &str, requirement_type: RequirementType) -> Self {
         Self {
             name: name.to_string(),
             unit: unit.to_string(),
             requirement_type,
+            grid_type: GridType::Scalar,
         }
+    }
+
+    /// Create a new requirement with an explicit grid type
+    pub fn with_grid(
+        name: &str,
+        unit: &str,
+        requirement_type: RequirementType,
+        grid_type: GridType,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            unit: unit.to_string(),
+            requirement_type,
+            grid_type,
+        }
+    }
+
+    /// Create a scalar input requirement
+    pub fn scalar_input(name: &str, unit: &str) -> Self {
+        Self::new(name, unit, RequirementType::Input)
+    }
+
+    /// Create a scalar output requirement
+    pub fn scalar_output(name: &str, unit: &str) -> Self {
+        Self::new(name, unit, RequirementType::Output)
+    }
+
+    /// Create a scalar input/output requirement
+    pub fn scalar_input_output(name: &str, unit: &str) -> Self {
+        Self::new(name, unit, RequirementType::InputAndOutput)
+    }
+
+    /// Create a four-box input requirement
+    pub fn four_box_input(name: &str, unit: &str) -> Self {
+        Self::with_grid(name, unit, RequirementType::Input, GridType::FourBox)
+    }
+
+    /// Create a four-box output requirement
+    pub fn four_box_output(name: &str, unit: &str) -> Self {
+        Self::with_grid(name, unit, RequirementType::Output, GridType::FourBox)
+    }
+
+    /// Create a four-box input/output requirement
+    pub fn four_box_input_output(name: &str, unit: &str) -> Self {
+        Self::with_grid(
+            name,
+            unit,
+            RequirementType::InputAndOutput,
+            GridType::FourBox,
+        )
+    }
+
+    /// Create a hemispheric input requirement
+    pub fn hemispheric_input(name: &str, unit: &str) -> Self {
+        Self::with_grid(name, unit, RequirementType::Input, GridType::Hemispheric)
+    }
+
+    /// Create a hemispheric output requirement
+    pub fn hemispheric_output(name: &str, unit: &str) -> Self {
+        Self::with_grid(name, unit, RequirementType::Output, GridType::Hemispheric)
+    }
+
+    /// Create a hemispheric input/output requirement
+    pub fn hemispheric_input_output(name: &str, unit: &str) -> Self {
+        Self::with_grid(
+            name,
+            unit,
+            RequirementType::InputAndOutput,
+            GridType::Hemispheric,
+        )
+    }
+
+    /// Check if this requirement is spatially resolved (non-scalar)
+    pub fn is_spatial(&self) -> bool {
+        self.grid_type != GridType::Scalar
     }
 }
 
@@ -131,5 +246,60 @@ mod tests {
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
         assert_eq!(*output_state.get("Concentrations|CO2").unwrap(), 1.1 * 2.0);
+    }
+
+    #[test]
+    fn test_requirement_definition_new_is_scalar() {
+        let req = RequirementDefinition::new("Emissions|CO2", "GtC / yr", RequirementType::Input);
+        assert_eq!(req.grid_type, GridType::Scalar);
+        assert!(!req.is_spatial());
+    }
+
+    #[test]
+    fn test_requirement_definition_with_grid() {
+        let req = RequirementDefinition::with_grid(
+            "Temperature",
+            "K",
+            RequirementType::Output,
+            GridType::FourBox,
+        );
+        assert_eq!(req.grid_type, GridType::FourBox);
+        assert!(req.is_spatial());
+    }
+
+    #[test]
+    fn test_requirement_definition_convenience_constructors() {
+        let scalar_in = RequirementDefinition::scalar_input("Emissions|CO2", "GtC / yr");
+        assert_eq!(scalar_in.grid_type, GridType::Scalar);
+        assert_eq!(scalar_in.requirement_type, RequirementType::Input);
+
+        let scalar_out = RequirementDefinition::scalar_output("Concentrations|CO2", "ppm");
+        assert_eq!(scalar_out.grid_type, GridType::Scalar);
+        assert_eq!(scalar_out.requirement_type, RequirementType::Output);
+
+        let four_box_in = RequirementDefinition::four_box_input("Temperature", "K");
+        assert_eq!(four_box_in.grid_type, GridType::FourBox);
+        assert_eq!(four_box_in.requirement_type, RequirementType::Input);
+
+        let four_box_out = RequirementDefinition::four_box_output("Surface Temperature", "K");
+        assert_eq!(four_box_out.grid_type, GridType::FourBox);
+        assert_eq!(four_box_out.requirement_type, RequirementType::Output);
+
+        let hemi_in = RequirementDefinition::hemispheric_input("Precipitation", "mm / yr");
+        assert_eq!(hemi_in.grid_type, GridType::Hemispheric);
+        assert_eq!(hemi_in.requirement_type, RequirementType::Input);
+    }
+
+    #[test]
+    fn test_grid_type_display() {
+        assert_eq!(format!("{}", GridType::Scalar), "Scalar");
+        assert_eq!(format!("{}", GridType::FourBox), "FourBox");
+        assert_eq!(format!("{}", GridType::Hemispheric), "Hemispheric");
+    }
+
+    #[test]
+    fn test_grid_type_default() {
+        let default: GridType = Default::default();
+        assert_eq!(default, GridType::Scalar);
     }
 }

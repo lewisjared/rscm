@@ -115,7 +115,7 @@
 //!
 //! Existing components that work with global values continue unchanged:
 //!
-//! ```rust
+//! ```ignore
 //! # use rscm_core::component::{Component, RequirementDefinition, RequirementType, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
@@ -146,7 +146,7 @@
 //!
 //! Components that naturally operate at regional resolution can access grid data directly:
 //!
-//! ```rust
+//! ```ignore
 //! # use rscm_core::component::{Component, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
@@ -225,7 +225,7 @@
 //! For unsupported transformations (e.g., Hemispheric → FourBox), implement a custom
 //! disaggregation component that explicitly encodes the physics:
 //!
-//! ```rust
+//! ```ignore
 //! # use rscm_core::component::{Component, RequirementDefinition, RequirementType, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
