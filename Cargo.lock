@@ -555,7 +555,7 @@ checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
 name = "rscm"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ndarray",
  "numpy",
@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "rscm-components"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "approx",
  "numpy",
@@ -586,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "rscm-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "is_close",
  "log",

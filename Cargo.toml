@@ -1,6 +1,6 @@
 [package]
 name = "rscm"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "Rust Simple Climate Model - A framework for building reduced-complexity climate models"
 readme = "README.md"
@@ -35,7 +35,7 @@ features = ["abi3-py311"]
 members = ["rscm-core", "rscm-components"]
 
 [workspace.package]
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/lewisjared/rscm"
@@ -44,8 +44,8 @@ keywords = ["physics", "scm", "climate"]
 categories = ["science"]
 
 [workspace.dependencies]
-rscm-core = { version = "0.2.2", path = "rscm-core" }
-rscm-components = { version = "0.2.2", path = "rscm-components" }
+rscm-core = { version = "0.2.3", path = "rscm-core" }
+rscm-components = { version = "0.2.3", path = "rscm-components" }
 
 [build-dependencies]
 pyo3-build-config = "0.27"
