@@ -1,3 +1,8 @@
+## rscm 0.2.2 (2026-01-14)
+
+No significant changes.
+
+
 ## rscm 0.2.1 (2026-01-14)
 
 No significant changes.

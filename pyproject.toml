@@ -1,6 +1,6 @@
 [project]
 name = "rscm"
-version = "0.2.1"
+version = "0.2.2"
 description = "Simple Climate Model framework implemented in Rust"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -161,7 +161,7 @@ type = [
 ]
 
 [tool.bumpversion]
-current_version = "0.2.1"
+current_version = "0.2.2"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 search = 'version = "{current_version}"'
