@@ -1,15 +1,14 @@
 [package]
 name = "rscm-core"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Core traits and functionalities for the creation of reduced-complexity climate models"
 readme = "README.md"
-license = "Apache-2.0"
-repository = "https://github.com/lewisjared/rscm"
-authors = ["Jared Lewis <jared.lewis@climate-resource.com>"]
-keywords = ["physics", "scm", "climate"]
-categories = ["science"]
-workspace = ".."
 
 [dependencies]
 ode_solvers = "0.4.0"
