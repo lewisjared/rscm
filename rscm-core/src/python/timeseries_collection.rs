@@ -43,10 +43,14 @@ impl PyTimeseriesCollection {
         self.0.iter().map(|x| x.name.clone()).collect()
     }
 
+    /// Get all scalar timeseries from the collection
+    ///
+    /// Note: This only returns scalar timeseries, not grid timeseries.
+    /// Grid timeseries support in Python bindings is planned for future releases.
     pub fn timeseries(&self) -> Vec<PyTimeseries> {
         self.0
             .iter()
-            .map(|x| PyTimeseries(x.timeseries.clone()))
+            .filter_map(|x| x.data.as_scalar().map(|ts| PyTimeseries(ts.clone())))
             .collect()
     }
 }

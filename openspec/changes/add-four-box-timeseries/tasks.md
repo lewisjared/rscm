@@ -91,12 +91,12 @@
 
 ## 10. TimeseriesCollection Integration
 
-- [ ] 10.1 Update `TimeseriesItem` to support grid timeseries
-- [ ] 10.2 Update `TimeseriesCollection::add_timeseries()` to accept grid timeseries
-- [ ] 10.3 Add `TimeseriesCollection::add_grid_timeseries()` method
-- [ ] 10.4 Update `TimeseriesCollection::get_by_name()` to handle grid timeseries
-- [ ] 10.5 Write unit tests for adding and retrieving grid timeseries from collection
-- [ ] 10.6 Test mixed collection with scalar and grid timeseries
+- [x] 10.1 Update `TimeseriesItem` to support grid timeseries (created `TimeseriesData` enum with Scalar/FourBox/Hemispheric variants)
+- [x] 10.2 Update `TimeseriesCollection::add_timeseries()` to accept grid timeseries (kept scalar-only, added new methods)
+- [x] 10.3 Add `TimeseriesCollection::add_grid_timeseries()` method (added `add_four_box_timeseries()` and `add_hemispheric_timeseries()`)
+- [x] 10.4 Update `TimeseriesCollection::get_by_name()` to handle grid timeseries (added `get_data()` and `get_data_mut()`)
+- [x] 10.5 Write unit tests for adding and retrieving grid timeseries from collection
+- [x] 10.6 Test mixed collection with scalar and grid timeseries
 
 ## 11. Documentation
 

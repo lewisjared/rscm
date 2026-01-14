@@ -191,10 +191,7 @@ impl ModelBuilder {
     ///
     /// Any unneeded timeseries will be ignored.
     pub fn with_exogenous_collection(&mut self, collection: TimeseriesCollection) -> &mut Self {
-        collection.into_iter().for_each(|x| {
-            self.exogenous_variables
-                .add_timeseries(x.name, x.timeseries, x.variable_type)
-        });
+        self.exogenous_variables.extend(collection);
         self
     }
 
@@ -608,17 +605,17 @@ p = 0.5
 name = "Concentrations|CO2"
 variable_type = "Endogenous"
 
-[collection.timeseries.timeseries]
+[collection.timeseries.data.Scalar]
 units = "ppm"
 latest = 1
 interpolation_strategy = "Linear"
 
-[collection.timeseries.timeseries.values]
+[collection.timeseries.data.Scalar.values]
 v = 1
 dim = [5, 1]
 data = [nan, 5.0, nan, nan, nan]
 
-[collection.timeseries.timeseries.time_axis.bounds]
+[collection.timeseries.data.Scalar.time_axis.bounds]
 v = 1
 dim = [6]
 data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
@@ -627,17 +624,17 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 name = "Emissions|CO2"
 variable_type = "Exogenous"
 
-[collection.timeseries.timeseries]
+[collection.timeseries.data.Scalar]
 units = "GtC / yr"
 latest = 4
 interpolation_strategy = "Previous"
 
-[collection.timeseries.timeseries.values]
+[collection.timeseries.data.Scalar.values]
 v = 1
 dim = [5, 1]
 data = [10.0, 10.0, 10.0, 10.0, 10.0]
 
-[collection.timeseries.timeseries.time_axis.bounds]
+[collection.timeseries.data.Scalar.time_axis.bounds]
 v = 1
 dim = [6]
 data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
