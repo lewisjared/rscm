@@ -2,6 +2,13 @@
 name = "rscm"
 version = "0.1.0"
 edition = "2021"
+description = "Rust Simple Climate Model - A framework for building reduced-complexity climate models"
+readme = "README.md"
+license = "Apache-2.0"
+repository = "https://github.com/lewisjared/rscm"
+authors = ["Jared Lewis <jared.lewis@climate-energy-college.org>"]
+keywords = ["physics", "scm", "climate", "climate-model"]
+categories = ["science"]
 
 [lib]
 name = "rscm"
@@ -12,8 +19,8 @@ crate-type = ["cdylib", "rlib"]
 ode_solvers = "0.4.0"
 ndarray = { version = "*", features = ["serde"] }
 numpy = "0.21.0"
-rscm-core = { path = "rscm-core" }
-rscm-components = { path = "rscm-components" }
+rscm-core = { version = "0.1.0", path = "rscm-core" }
+rscm-components = { version = "0.1.0", path = "rscm-components" }
 pythonize = "0.21.1"
 serde = { version = "1.0.214", features = ["derive"] }
 typetag = "0.2"

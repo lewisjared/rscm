@@ -4,10 +4,32 @@ version = "0.1.0"
 description = "Simple Climate Model framework implemented in Rust"
 readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Jared Lewis", email = "jared.lewis@climate-energy-college.org"}
+]
+keywords = ["climate", "climate-model", "scm", "physics", "rust"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+]
 dependencies = [
     "numpy",
     "scmdata>=0.17.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/lewisjared/rscm"
+Repository = "https://github.com/lewisjared/rscm"
+Documentation = "https://lewisjared.github.io/rscm/"
 
 [build-system]
 requires = [

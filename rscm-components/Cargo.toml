@@ -4,12 +4,15 @@ version = "0.1.0"
 edition = "2021"
 description = "Example components that are useful in reduced-complexity climate models"
 readme = "README.md"
+license = "Apache-2.0"
+repository = "https://github.com/lewisjared/rscm"
+authors = ["Jared Lewis <jared.lewis@climate-energy-college.org>"]
 keywords = ["physics", "scm", "climate"]
 categories = ["science"]
 workspace = ".."
 
 [dependencies]
-rscm-core = { path = "../rscm-core" }
+rscm-core = { version = "0.1.0", path = "../rscm-core" }
 pythonize = "0.21.1"
 ode_solvers = "0.4.0"
 serde = { version = "1.0.214", features = ["derive"] }
