@@ -48,7 +48,7 @@ rscm-core = { version = "0.2.0", path = "rscm-core" }
 rscm-components = { version = "0.2.0", path = "rscm-components" }
 
 [build-dependencies]
-pyo3-build-config = "*"
+pyo3-build-config = "0.27"
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--html-in-header", "assets/katex-header.html" ]
