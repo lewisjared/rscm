@@ -1,10 +1,11 @@
 use numpy::array;
-use numpy::ndarray::Array;
+use numpy::ndarray::{Array, Axis};
 use rscm_components::{
     CO2ERFParameters, CarbonCycleComponent, CarbonCycleParameters, SolverOptions, CO2ERF,
 };
 use rscm_core::interpolate::strategies::{InterpolationStrategy, NextStrategy, PreviousStrategy};
 use rscm_core::model::ModelBuilder;
+use rscm_core::spatial::ScalarGrid;
 use rscm_core::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -41,7 +42,7 @@ fn test_carbon_cycle() {
     };
 
     let emissions = Timeseries::new(
-        array![0.0, 0.0, emissions_level, emissions_level],
+        array![0.0, 0.0, emissions_level, emissions_level].insert_axis(Axis(1)),
         Arc::new(TimeAxis::from_bounds(array![
             t_initial,
             (t_initial + step_year) / 2.0,
@@ -49,12 +50,14 @@ fn test_carbon_cycle() {
             step_year + 50.0,
             2100.0
         ])),
+        ScalarGrid,
         "GtC / yr".to_string(),
         InterpolationStrategy::from(PreviousStrategy::new(true)),
     );
     let temperature = Timeseries::new(
-        array![temperature_value],
+        array![temperature_value].insert_axis(Axis(1)),
         Arc::new(TimeAxis::from_bounds(array![t_initial, 2100.0])),
+        ScalarGrid,
         "K".to_string(),
         InterpolationStrategy::from(NextStrategy::new(true)),
     );
@@ -106,7 +109,10 @@ fn test_carbon_cycle() {
             false => emissions_level,
         })
         .collect();
-    assert_eq!(co2_emissions.values().to_vec(), expected_emissions);
+    assert_eq!(
+        co2_emissions.values().column(0).to_vec(),
+        expected_emissions
+    );
     // Conc are currently wrong
     // assert_eq!(co2_conc.values().to_vec(), expected_concentrations);
 }
@@ -125,7 +131,7 @@ fn test_coupled_model() {
 
     let time_axis = TimeAxis::from_values(Array::range(t_initial, 2100.0, 1.0));
     let emissions = Timeseries::new(
-        array![0.0, 0.0, step_size, step_size],
+        array![0.0, 0.0, step_size, step_size].insert_axis(Axis(1)),
         Arc::new(TimeAxis::from_bounds(array![
             t_initial,
             (t_initial + step_year) / 2.0,
@@ -133,12 +139,14 @@ fn test_coupled_model() {
             step_year + 50.0,
             2100.0
         ])),
+        ScalarGrid,
         "GtC / yr".to_string(),
         InterpolationStrategy::from(PreviousStrategy::new(true)),
     );
     let surface_temp = Timeseries::new(
-        array![0.42],
+        array![0.42].insert_axis(Axis(1)),
         Arc::new(TimeAxis::from_bounds(array![t_initial, 2100.0])),
+        ScalarGrid,
         "K".to_string(),
         InterpolationStrategy::from(PreviousStrategy::new(true)),
     );

@@ -1,3 +1,4 @@
+use crate::spatial::ScalarRegion;
 use crate::timeseries::{FloatValue, Time};
 use crate::timeseries_collection::{TimeseriesItem, VariableType};
 use num::Float;
@@ -38,7 +39,10 @@ impl<'a> InputState<'a> {
             .expect("No item found");
 
         match item.variable_type {
-            VariableType::Exogenous => item.timeseries.at_time(self.current_time).unwrap(),
+            VariableType::Exogenous => item
+                .timeseries
+                .at_time(self.current_time, ScalarRegion::Global)
+                .unwrap(),
             VariableType::Endogenous => item.timeseries.latest_value().unwrap(),
         }
     }

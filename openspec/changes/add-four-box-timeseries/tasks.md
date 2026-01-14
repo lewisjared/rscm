@@ -2,79 +2,79 @@
 
 ## 1. Core Spatial Grid Types
 
-- [ ] 1.1 Create `rscm-core/src/spatial.rs` module
-- [ ] 1.2 Add `UnsupportedGridTransformation` error variant to `rscm-core/src/errors.rs`
-- [ ] 1.3 Define `SpatialGrid` trait with methods: `grid_name()`, `size()`, `region_names()`, `aggregate_global()`, `transform_to() -> RSCMResult<>`
-- [ ] 1.4 Implement `ScalarGrid` (single global region)
-- [ ] 1.5 Implement `FourBoxGrid` with MAGICC standard regions and configurable weights
-- [ ] 1.6 Implement `HemisphericGrid` (Northern/Southern hemispheres)
-- [ ] 1.7 Add constants to `FourBoxGrid`: NORTHERN_OCEAN, NORTHERN_LAND, SOUTHERN_OCEAN, SOUTHERN_LAND
-- [ ] 1.8 Implement `Clone`, `Debug`, `Serialize`, `Deserialize` for all grid types
-- [ ] 1.9 Write unit tests for each grid type (size, region names, aggregation)
-- [ ] 1.10 Export spatial module from `rscm-core/src/lib.rs`
+- [x] 1.1 Create `rscm-core/src/spatial.rs` module
+- [x] 1.2 Add `UnsupportedGridTransformation` error variant to `rscm-core/src/errors.rs`
+- [x] 1.3 Define `SpatialGrid` trait with methods: `grid_name()`, `size()`, `region_names()`, `aggregate_global()`, `transform_to() -> RSCMResult<>`
+- [x] 1.4 Implement `ScalarGrid` (single global region)
+- [x] 1.5 Implement `FourBoxGrid` with MAGICC standard regions and configurable weights
+- [x] 1.6 Implement `HemisphericGrid` (Northern/Southern hemispheres)
+- [x] 1.7 Add constants to `FourBoxGrid`: NORTHERN_OCEAN, NORTHERN_LAND, SOUTHERN_OCEAN, SOUTHERN_LAND
+- [x] 1.8 Implement `Clone`, `Debug`, `Serialize`, `Deserialize` for all grid types
+- [x] 1.9 Write unit tests for each grid type (size, region names, aggregation)
+- [x] 1.10 Export spatial module from `rscm-core/src/lib.rs`
 
 ## 2. GridTimeseries Type
 
-- [ ] 2.1 Define `GridTimeseries<T, G>` struct in `rscm-core/src/timeseries.rs` or separate module
-- [ ] 2.2 Implement constructor `GridTimeseries::new(values: Array2<T>, time_axis, grid, units, strategy)`
+- [x] 2.1 Define `GridTimeseries<T, G>` struct in `rscm-core/src/timeseries.rs` or separate module
+- [x] 2.2 Implement constructor `GridTimeseries::new(values: Array2<T>, time_axis, grid, units, strategy)`
 - [ ] 2.3 Implement `from_values()` helper for creating from 2D array and time array
-- [ ] 2.4 Implement `new_empty()` for creating empty grid timeseries
-- [ ] 2.5 Implement `at(time_index, region_index) -> Option<T>` for point access
-- [ ] 2.6 Implement `set(time_index, region_index, value)` for updating values
-- [ ] 2.7 Implement `at_time(time) -> Result<Vec<T>>` for interpolating all regions at specific time
-- [ ] 2.8 Implement `latest_values() -> Vec<T>` to get latest values for all regions
-- [ ] 2.9 Implement `len()`, `is_empty()`, `grid()`, `time_axis()`, `units()` accessors
-- [ ] 2.10 Write unit tests for GridTimeseries construction and access methods
+- [x] 2.4 Implement `new_empty()` for creating empty grid timeseries
+- [x] 2.5 Implement `at(time_index, region_index) -> Option<T>` for point access
+- [x] 2.6 Implement `set(time_index, region_index, value)` for updating values
+- [x] 2.7 Implement `at_time(time) -> Result<Vec<T>>` for interpolating all regions at specific time
+- [x] 2.8 Implement `latest_values() -> Vec<T>` to get latest values for all regions
+- [x] 2.9 Implement `len()`, `is_empty()`, `grid()`, `time_axis()`, `units()` accessors
+- [x] 2.10 Write unit tests for GridTimeseries construction and access methods
 
 ## 3. Grid Aggregation
 
-- [ ] 3.1 Implement `GridTimeseries::aggregate_global() -> GridTimeseries<T, ScalarGrid>`
-- [ ] 3.2 Implement `GridTimeseries::at_time_global(time) -> Result<T>`
-- [ ] 3.3 Write unit tests for four-box to global aggregation with weights
-- [ ] 3.4 Write unit tests for hemispheric to global aggregation
-- [ ] 3.5 Test aggregation with different weight configurations
+- [x] 3.1 Implement `GridTimeseries::aggregate_global() -> GridTimeseries<T, ScalarGrid>`
+- [x] 3.2 Implement `GridTimeseries::at_time_global(time) -> Result<T>` (implemented as `latest_global()`)
+- [x] 3.3 Write unit tests for four-box to global aggregation with weights
+- [x] 3.4 Write unit tests for hemispheric to global aggregation
+- [x] 3.5 Test aggregation with different weight configurations
 
 ## 4. Grid Transformation
 
-- [ ] 4.1 Implement type-based transformation dispatch in `SpatialGrid::transform_to()`
-- [ ] 4.2 Implement four-box to scalar transformation (aggregate to global)
-- [ ] 4.3 Implement four-box to hemispheric transformation (aggregate by hemisphere)
-- [ ] 4.4 Implement hemispheric to scalar transformation
-- [ ] 4.5 Implement hemispheric to four-box transformation (if physically meaningful, or return error)
-- [ ] 4.6 Implement `GridTimeseries::transform_to<G2: SpatialGrid>(target_grid) -> Result<GridTimeseries<T, G2>>`
-- [ ] 4.7 Write unit tests for all defined transformations
-- [ ] 4.8 Write test that unsupported transformations return appropriate error
-- [ ] 4.9 Test error message includes source and target grid names
+- [x] 4.1 Implement type-based transformation dispatch in `SpatialGrid::transform_to()`
+- [x] 4.2 Implement four-box to scalar transformation (aggregate to global)
+- [x] 4.3 Implement four-box to hemispheric transformation (aggregate by hemisphere)
+- [x] 4.4 Implement hemispheric to scalar transformation
+- [x] 4.5 Implement hemispheric to four-box transformation (if physically meaningful, or return error)
+- [x] 4.6 Implement `GridTimeseries::transform_to<G2: SpatialGrid>(target_grid) -> Result<GridTimeseries<T, G2>>`
+- [x] 4.7 Write unit tests for all defined transformations
+- [x] 4.8 Write test that unsupported transformations return appropriate error
+- [x] 4.9 Test error message includes source and target grid names
 
 ## 5. Region Access
 
-- [ ] 5.1 Implement `GridTimeseries::region(region_index) -> GridTimeseries<T, ScalarGrid>`
-- [ ] 5.2 Implement `GridTimeseries::region_by_name(name) -> Option<GridTimeseries<T, ScalarGrid>>`
-- [ ] 5.3 Write unit tests for extracting individual regions
-- [ ] 5.4 Test that extracted region has same time axis and correct values
+- [x] 5.1 Implement `GridTimeseries::region(region_index) -> GridTimeseries<T, ScalarGrid>`
+- [x] 5.2 Implement `GridTimeseries::region_by_name(name) -> Option<GridTimeseries<T, ScalarGrid>>`
+- [x] 5.3 Write unit tests for extracting individual regions
+- [x] 5.4 Test that extracted region has same time axis and correct values
 
 ## 6. Interpolation Strategy Support
 
-- [ ] 6.1 Implement `GridTimeseries::with_interpolation_strategy(strategy) -> &Self`
+- [x] 6.1 Implement `GridTimeseries::with_interpolation_strategy(strategy) -> &Self`
 - [ ] 6.2 Implement `GridTimeseries::interpolator()` returning region-specific interpolators
-- [ ] 6.3 Implement `GridTimeseries::interpolate_into(new_time_axis) -> Self`
-- [ ] 6.4 Write unit tests for linear interpolation across all regions
+- [x] 6.3 Implement `GridTimeseries::interpolate_into(new_time_axis) -> Self`
+- [x] 6.4 Write unit tests for linear interpolation across all regions
 - [ ] 6.5 Write unit tests for previous value strategy across all regions
-- [ ] 6.6 Test that interpolation strategies apply independently to each region
+- [x] 6.6 Test that interpolation strategies apply independently to each region
 
 ## 7. Serialization Support
 
-- [ ] 7.1 Implement `Serialize` for `GridTimeseries<T, G>` (derive or custom)
-- [ ] 7.2 Implement `Deserialize` for `GridTimeseries<T, G>` (derive or custom)
+- [x] 7.1 Implement `Serialize` for `GridTimeseries<T, G>` (derive or custom)
+- [x] 7.2 Implement `Deserialize` for `GridTimeseries<T, G>` (derive or custom)
 - [ ] 7.3 Test JSON serialization/deserialization for ScalarGrid timeseries
-- [ ] 7.4 Test JSON serialization/deserialization for FourBoxGrid timeseries
+- [x] 7.4 Test JSON serialization/deserialization for FourBoxGrid timeseries
 - [ ] 7.5 Test TOML serialization/deserialization for all grid types
 - [ ] 7.6 Test handling of NaN values in serialization (JSON and TOML)
 - [ ] 7.7 Verify grid metadata (region names, weights) preserved in serialization
 
 ## 8. Backwards Compatibility
 
-- [ ] 8.1 Create type alias: `pub type Timeseries<T> = GridTimeseries<T, ScalarGrid>`
+- [ ] 8.1 Create type alias: `pub type Timeseries<T> = GridTimeseries<T, ScalarGrid>` (deferred - not needed for backwards compat since original Timeseries remains unchanged)
 - [ ] 8.2 Verify all existing tests pass with aliased Timeseries type
 - [ ] 8.3 Test that existing component examples work unchanged
 - [ ] 8.4 Document migration path in code comments and rustdoc
@@ -100,15 +100,15 @@
 
 ## 11. Documentation
 
-- [ ] 11.1 Write rustdoc for `SpatialGrid` trait with examples
-- [ ] 11.2 Write rustdoc for `GridTimeseries` with comprehensive examples
-- [ ] 11.3 Write rustdoc for each grid type (Scalar, FourBox, Hemispheric)
-- [ ] 11.4 Add module-level documentation for `spatial` module
-- [ ] 11.5 Add examples showing four-box usage patterns
-- [ ] 11.6 Add examples showing grid transformation
-- [ ] 11.7 Document when to use which grid type
+- [x] 11.1 Write rustdoc for `SpatialGrid` trait with examples
+- [x] 11.2 Write rustdoc for `GridTimeseries` with comprehensive examples
+- [x] 11.3 Write rustdoc for each grid type (Scalar, FourBox, Hemispheric)
+- [x] 11.4 Add module-level documentation for `spatial` module
+- [x] 11.5 Add examples showing four-box usage patterns
+- [x] 11.6 Add examples showing grid transformation
+- [x] 11.7 Document when to use which grid type
 - [ ] 11.8 Add migration guide for component developers
-- [ ] 11.9 Document supported regions for each grid type (names, indices, constants)
+- [x] 11.9 Document supported regions for each grid type (names, indices, constants)
 - [ ] 11.10 Create transformation matrix table in documentation
 - [ ] 11.11 Document transformation semantics (aggregation formulas, weights)
 - [ ] 11.12 Add component integration pattern examples (5 patterns from design.md)

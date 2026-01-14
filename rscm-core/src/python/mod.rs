@@ -29,6 +29,7 @@
 ///
 /// ```rust
 /// use numpy::array;
+/// use rscm_core::spatial::ScalarRegion;
 /// use rscm_core::timeseries::Timeseries;
 /// use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
 /// let mut collection = TimeseriesCollection::new();
@@ -37,19 +38,19 @@
 /// collection.add_timeseries("Surface Temperature".to_string(), timeseries, VariableType::Exogenous);
 /// // We can't access timeseries anymore because the collection has taken ownership
 /// // The line below generates a compiler error if uncommented
-/// // timeseries.at(0)
+/// // timeseries.at(0, ScalarRegion::Global)
 ///
 /// {
 ///     // Get a mutable reference which enables modifying the timeseries
 ///     let mut timeseries = collection.get_timeseries_by_name_mut("Surface Temperature").unwrap();
-///     timeseries.set(0, 2.0);
+///     timeseries.set(0, ScalarRegion::Global, 2.0);
 /// }
 /// {
 ///     // Get a mutable reference which enables modifying the timeseries
 ///     let timeseries = collection.get_timeseries_by_name("Surface Temperature").unwrap();
 ///     // We can't modify this timeseries because we don't have a mutable reference
-///     // timeseries.set(0, 2.0);
-///     assert_eq!(timeseries.at(0).unwrap(), 2.0);
+///     // timeseries.set(0, ScalarRegion::Global, 2.0);
+///     assert_eq!(timeseries.at(0, ScalarRegion::Global).unwrap(), 2.0);
 /// }
 /// ```
 ///
