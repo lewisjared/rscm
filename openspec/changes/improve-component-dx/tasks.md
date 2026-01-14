@@ -1,0 +1,107 @@
+## 1. Core Infrastructure
+
+- [ ] 1.1 Add `TimeseriesWindow` struct to `rscm-core/src/state.rs`
+- [ ] 1.2 Implement `current()`, `previous()`, `at_offset()` methods
+- [ ] 1.3 Implement `last_n()` returning `ArrayView1`
+- [ ] 1.4 Implement `interpolate()` delegating to timeseries strategy
+- [ ] 1.5 Add `GridTimeseriesWindow` for grid-based timeseries
+- [ ] 1.6 Add unit tests for `TimeseriesWindow` with scalar timeseries
+- [ ] 1.7 Add unit tests for `GridTimeseriesWindow` with FourBox timeseries
+
+## 2. Typed Output Slices
+
+- [ ] 2.1 Add `FourBoxSlice` zero-cost wrapper with `#[repr(transparent)]`
+- [ ] 2.2 Implement `new()`, `with()`, `set()`, `get()` for FourBoxSlice
+- [ ] 2.3 Add `HemisphericSlice` wrapper
+- [ ] 2.4 Add `Into<Vec<FloatValue>>` for slice types
+- [ ] 2.5 Add unit tests for typed slices
+- [ ] 2.6 Add Python bindings for slice types with named kwargs
+
+## 3. RequirementDefinition Updates
+
+- [ ] 3.1 Add `RequirementType::State` variant to `component.rs`
+- [ ] 3.2 Add `GridType` enum (Scalar, FourBox, Hemispheric, Any)
+- [ ] 3.3 Add `grid: GridType` field to `RequirementDefinition`
+- [ ] 3.4 Update `inputs()` to include State requirements
+- [ ] 3.5 Update `outputs()` to include State requirements
+- [ ] 3.6 Remove `RequirementType::InputAndOutput`
+- [ ] 3.7 Add tests for new requirement types
+
+## 4. Coupler Grid Validation
+
+- [ ] 4.1 Add grid compatibility checking in `ModelBuilder::build()`
+- [ ] 4.2 Create `GridMismatch` error type with descriptive message
+- [ ] 4.3 Add `GridTransformComponent` for auto-aggregation
+- [ ] 4.4 Implement FourBox → Scalar aggregation transform
+- [ ] 4.5 Implement FourBox → Hemispheric aggregation transform
+- [ ] 4.6 Implement Hemispheric → Scalar aggregation transform
+- [ ] 4.7 Add integration tests for grid auto-transform
+- [ ] 4.8 Add integration tests for grid mismatch errors
+
+## 5. Rust Derive Macro (rscm-macros crate)
+
+- [ ] 5.1 Create `rscm-macros` crate with proc-macro setup
+- [ ] 5.2 Add `rscm-macros` to workspace Cargo.toml
+- [ ] 5.3 Implement `#[derive(Component)]` basic parsing
+- [ ] 5.4 Parse `#[component(...)]` attribute for inputs/outputs/state
+- [ ] 5.5 Generate `{Name}Inputs` struct with TimeseriesWindow fields
+- [ ] 5.6 Generate `{Name}Outputs` struct with typed slice fields
+- [ ] 5.7 Handle grid-aware field types (FourBoxSlice for FourBox, FloatValue for Scalar)
+- [ ] 5.8 Implement `Into<OutputState>` for generated outputs
+- [ ] 5.9 Generate `definitions()` implementation from attributes
+- [ ] 5.10 Generate `solve()` wrapper that converts InputState to typed inputs
+- [ ] 5.11 Re-export macro from `rscm-core`
+- [ ] 5.12 Add compile-fail tests for invalid field access
+
+## 6. Rewrite Existing Components
+
+- [ ] 6.1 Rewrite `CO2ERF` component using derive macro
+- [ ] 6.2 Rewrite `CarbonCycleComponent` using derive macro
+- [ ] 6.3 Update `TestComponent` example component
+- [ ] 6.4 Remove old `InputState.get_latest()` API
+- [ ] 6.5 Update all component tests
+
+## 7. Python Typed Inputs
+
+- [ ] 7.1 Create `ComponentMeta` metaclass for Python components
+- [ ] 7.2 Implement dataclass generation from `inputs`/`outputs` lists
+- [ ] 7.3 Create `PyTimeseriesWindow` PyO3 class
+- [ ] 7.4 Implement `current`, `previous` properties
+- [ ] 7.5 Implement `last_n()` returning numpy array view
+- [ ] 7.6 Create `PyGridTimeseriesWindow` for grid variables
+- [ ] 7.7 Implement `region()` method for single-region access
+- [ ] 7.8 Update `PythonComponent` to construct typed inputs
+- [ ] 7.9 Add Python tests for typed scalar input access
+- [ ] 7.10 Add Python tests for typed grid input access
+
+## 8. Python Typed Outputs
+
+- [ ] 8.1 Create `PyFourBoxSlice` with named kwargs constructor
+- [ ] 8.2 Create `PyHemisphericSlice` with named kwargs
+- [ ] 8.3 Generate output dataclass using typed slices
+- [ ] 8.4 Implement `__post_init__` validation for required fields
+- [ ] 8.5 Convert typed outputs to dict for Rust interop
+- [ ] 8.6 Add Python tests for typed slice outputs
+
+## 9. Error Handling Improvements
+
+- [ ] 9.1 Add `MissingInitialValue` error variant
+- [ ] 9.2 Add `GridMismatch` error variant with component names
+- [ ] 9.3 Add `InvalidGridTransform` error for impossible transforms
+- [ ] 9.4 Update error messages to include resolution hints
+
+## 10. Documentation
+
+- [ ] 10.1 Add docstrings to all new public types
+- [ ] 10.2 Document grid compatibility rules
+- [ ] 10.3 Add example component using derive macro in docs
+- [ ] 10.4 Add example Python component with typed inputs
+- [ ] 10.5 Update CLAUDE.md with new component patterns
+
+## 11. Integration Testing
+
+- [ ] 11.1 Test model with multiple components using derive macro
+- [ ] 11.2 Test model with grid auto-transform between components
+- [ ] 11.3 Test Python component with typed inputs/outputs
+- [ ] 11.4 Test serialisation/deserialisation with new components
+- [ ] 11.5 Test error messages for common mistakes
