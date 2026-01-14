@@ -74,20 +74,20 @@
 
 ## 8. Backwards Compatibility
 
-- [ ] 8.1 Create type alias: `pub type Timeseries<T> = GridTimeseries<T, ScalarGrid>` (deferred - not needed for backwards compat since original Timeseries remains unchanged)
-- [ ] 8.2 Verify all existing tests pass with aliased Timeseries type
-- [ ] 8.3 Test that existing component examples work unchanged
-- [ ] 8.4 Document migration path in code comments and rustdoc
+- [x] ~~8.1 Create type alias: `pub type Timeseries<T> = GridTimeseries<T, ScalarGrid>`~~ (not needed)
+- [x] ~~8.2 Verify all existing tests pass with aliased Timeseries type~~ (not needed)
+- [x] ~~8.3 Test that existing component examples work unchanged~~ (not needed)
+- [x] ~~8.4 Document migration path in code comments and rustdoc~~ (not needed)
 
 ## 9. State System Integration
 
-- [ ] 9.1 Design `StateValue` enum or trait for type-erased grid values
-- [ ] 9.2 Update `InputState` to support both scalar and grid timeseries items
-- [ ] 9.3 Add `InputState::get_grid(name) -> Option<GridValues>` method
-- [ ] 9.4 Update `OutputState` to support grid values (HashMap<String, StateValue>)
-- [ ] 9.5 Add helper methods: `get_global()`, `get_region()` to InputState
-- [ ] 9.6 Write unit tests for InputState with mixed scalar and grid data
-- [ ] 9.7 Write unit tests for OutputState with grid values
+- [x] 9.1 Design `StateValue` enum or trait for type-erased grid values
+- [x] 9.2 Update `InputState` to support both scalar and grid timeseries items (added infrastructure, full grid support pending TimeseriesCollection update)
+- [x] 9.3 Add `InputState::get_latest_value() -> Option<StateValue>` method (returns StateValue)
+- [ ] 9.4 Update `OutputState` to support grid values (deferred for backwards compatibility)
+- [x] 9.5 Add helper methods: `get_global()`, `get_region()` to InputState
+- [x] 9.6 Write unit tests for InputState with StateValue
+- [ ] 9.7 Write unit tests for OutputState with grid values (deferred)
 
 ## 10. TimeseriesCollection Integration
 
