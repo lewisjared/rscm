@@ -4,6 +4,7 @@ use pyo3::wrap_pymodule;
 use rscm_components::python::components;
 use rscm_core::create_component_builder;
 use rscm_core::python::{core, PyRustComponent};
+use std::ffi::CString;
 
 create_component_builder!(
     TwoLayerComponentBuilder,
@@ -26,14 +27,12 @@ fn rscm(m: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 fn set_path(m: &Bound<'_, PyModule>, path: &str, module: &str) -> PyResult<()> {
-    m.py().run_bound(
-        &format!(
-            "\
+    let code = CString::new(format!(
+        "\
 import sys
 sys.modules['{path}'] = {module}
     "
-        ),
-        None,
-        Some(&m.dict()),
-    )
+    ))
+    .unwrap();
+    m.py().run(code.as_c_str(), None, Some(&m.dict()))
 }

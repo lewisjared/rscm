@@ -27,7 +27,7 @@ class TestTimeAxis:
         assert time_axis.values()[0] == 1850.0
 
     def test_time_axis_create_from_list(self):
-        match = "'list' object cannot be converted to 'PyArray<T, D>'"
+        match = "'list' object cannot be cast as 'ndarray'"
         with pytest.raises(TypeError, match=match):
             # noinspection PyTypeChecker
             TimeAxis.from_values([2000.0, 2020.0, 2040.0])

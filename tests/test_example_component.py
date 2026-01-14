@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
 
-from rscm._lib.core import TestComponentBuilder, VariableType
+from rscm._lib.core import TestComponentBuilder as ExampleComponentBuilder
+from rscm._lib.core import VariableType
 from rscm.core import (
     InterpolationStrategy,
     PythonComponent,
@@ -24,7 +25,7 @@ class ExamplePythonComponent:
 
 
 def test_component_definitions():
-    component = TestComponentBuilder.from_parameters({"p": 12}).build()
+    component = ExampleComponentBuilder.from_parameters({"p": 12}).build()
 
     definitions = component.definitions()
     assert len(definitions) == 2
@@ -34,14 +35,14 @@ def test_component_definitions():
 
 def test_component_invalid():
     with pytest.raises(ValueError, match="missing field `p`"):
-        TestComponentBuilder.from_parameters({})
+        ExampleComponentBuilder.from_parameters({})
 
     with pytest.raises(
         ValueError,
-        match="unexpected type: 'NoneType' object cannot be converted to 'Mapping'",
+        match="unexpected type: 'NoneType' object cannot be cast as 'Mapping'",
     ):
         # noinspection PyTypeChecker
-        TestComponentBuilder.from_parameters(None).build()
+        ExampleComponentBuilder.from_parameters(None).build()
 
 
 @pytest.mark.xfail(reason="component definitions are not implemented")

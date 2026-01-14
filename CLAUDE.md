@@ -82,3 +82,10 @@ Models and components serialize to JSON/TOML via serde. The `#[typetag::serde(ta
 - Conventional commits for commit messages
 - Changelog fragments in `changelog/` directory (towncrier)
 - Docstrings follow numpy convention (Python) and rustdoc with KaTeX for math (Rust)
+
+## Active Technologies
+- Rust 1.75+ (2021 edition), Python 3.10+ + maturin (PyO3 bindings), GitHub Actions, cargo, uv (001-publish-packages)
+- N/A (CI/CD configuration only) (001-publish-packages)
+
+## Recent Changes
+- 001-publish-packages: Added Rust 1.75+ (2021 edition), Python 3.10+ + maturin (PyO3 bindings), GitHub Actions, cargo, uv

@@ -2,6 +2,13 @@
 name = "rscm"
 version = "0.1.0"
 edition = "2021"
+description = "Rust Simple Climate Model - A framework for building reduced-complexity climate models"
+readme = "README.md"
+license = "Apache-2.0"
+repository = "https://github.com/lewisjared/rscm"
+authors = ["Jared Lewis <jared.lewis@climate-energy-college.org>"]
+keywords = ["physics", "scm", "climate", "climate-model"]
+categories = ["science"]
 
 [lib]
 name = "rscm"
@@ -10,23 +17,35 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ode_solvers = "0.4.0"
-ndarray = { version = "*", features = ["serde"] }
-numpy = "0.21.0"
-rscm-core = { path = "rscm-core" }
-rscm-components = { path = "rscm-components" }
-pythonize = "0.21.1"
-serde = { version = "1.0.214", features = ["derive"] }
+ndarray = { version = "0.17", features = ["serde"] }
+numpy = "0.27.1"
+rscm-core.workspace = true
+rscm-components.workspace = true
+pythonize = "0.27.0"
+serde = { version = "1.0", features = ["derive"] }
 typetag = "0.2"
 
 
 [dependencies.pyo3]
-# This is pinned to 0.21 until a new release of the numpy crate (https://github.com/PyO3/rust-numpy/pull/435)
-version = "0.21.0"
-# "abi3-py38" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.8
-features = ["abi3-py38"]
+version = "0.27.2"
+# "abi3-py311" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.11
+features = ["abi3-py311"]
 
 [workspace]
 members = ["rscm-core", "rscm-components"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/lewisjared/rscm"
+authors = ["Jared Lewis <jared.lewis@climate-resource.com>"]
+keywords = ["physics", "scm", "climate"]
+categories = ["science"]
+
+[workspace.dependencies]
+rscm-core = { version = "0.1.0", path = "rscm-core" }
+rscm-components = { version = "0.1.0", path = "rscm-components" }
 
 [build-dependencies]
 pyo3-build-config = "*"
