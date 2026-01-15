@@ -336,4 +336,160 @@ mod tests {
         assert_eq!(defs[1].name, "Precipitation");
         assert_eq!(defs[1].grid_type, GridType::Scalar);
     }
+
+    // Integration tests for grid auto-transform
+    mod integration_tests {
+        use super::*;
+        use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+        use crate::spatial::FourBoxGrid;
+        use crate::timeseries::{GridTimeseries, TimeAxis};
+        use crate::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use numpy::array;
+        use numpy::ndarray::Array2;
+        use std::sync::Arc;
+
+        /// Helper to create a FourBox timeseries item for testing
+        fn create_four_box_item(name: &str, values: [FloatValue; 4]) -> TimeseriesItem {
+            let grid = FourBoxGrid::magicc_standard();
+            let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
+            let data = Array2::from_shape_vec(
+                (2, 4),
+                vec![
+                    values[0], values[1], values[2], values[3], // Time 0
+                    values[0], values[1], values[2], values[3], // Time 1
+                ],
+            )
+            .unwrap();
+
+            let ts = GridTimeseries::new(
+                data,
+                time_axis,
+                grid,
+                "K".to_string(),
+                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+            );
+
+            TimeseriesItem {
+                data: TimeseriesData::FourBox(ts),
+                name: name.to_string(),
+                variable_type: VariableType::Endogenous,
+            }
+        }
+
+        /// Helper to create a Hemispheric timeseries item for testing
+        fn create_hemispheric_item(name: &str, values: [FloatValue; 2]) -> TimeseriesItem {
+            use crate::spatial::HemisphericGrid;
+
+            let grid = HemisphericGrid::equal_weights();
+            let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
+            let data = Array2::from_shape_vec(
+                (2, 2),
+                vec![
+                    values[0], values[1], // Time 0
+                    values[0], values[1], // Time 1
+                ],
+            )
+            .unwrap();
+
+            let ts = GridTimeseries::new(
+                data,
+                time_axis,
+                grid,
+                "mm/yr".to_string(),
+                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+            );
+
+            TimeseriesItem {
+                data: TimeseriesData::Hemispheric(ts),
+                name: name.to_string(),
+                variable_type: VariableType::Endogenous,
+            }
+        }
+
+        #[test]
+        fn test_four_box_to_scalar_transform_solve() {
+            // Create transform component
+            let transform = FourBoxToScalarTransform::with_standard_weights("Temperature", "K");
+
+            // Create input state with FourBox values
+            // Values: NO=16.0, NL=14.0, SO=12.0, SL=10.0
+            // With equal weights, global average = (16+14+12+10)/4 = 13.0
+            let item = create_four_box_item("Temperature|FourBox", [16.0, 14.0, 12.0, 10.0]);
+            let input_state = InputState::build(vec![&item], 2000.0);
+
+            // Run the transform
+            let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
+
+            // Check the output is correctly aggregated
+            assert_eq!(output.get("Temperature"), Some(&13.0));
+        }
+
+        #[test]
+        fn test_four_box_to_scalar_transform_with_nan_input() {
+            let transform = FourBoxToScalarTransform::with_standard_weights("Temperature", "K");
+
+            // Create empty input state (missing variable)
+            let input_state = InputState::empty();
+
+            // Run the transform - should produce NaN when variable is missing
+            let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
+
+            assert!(output.get("Temperature").unwrap().is_nan());
+        }
+
+        #[test]
+        fn test_hemispheric_to_scalar_transform_solve() {
+            // Create transform component
+            let transform =
+                HemisphericToScalarTransform::with_equal_weights("Precipitation", "mm/yr");
+
+            // Create input state with Hemispheric values
+            // Values: N=1000.0, S=500.0
+            // With equal weights, global average = (1000+500)/2 = 750.0
+            let item = create_hemispheric_item("Precipitation|Hemispheric", [1000.0, 500.0]);
+            let input_state = InputState::build(vec![&item], 2000.0);
+
+            // Run the transform
+            let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
+
+            // Check the output is correctly aggregated
+            assert_eq!(output.get("Precipitation"), Some(&750.0));
+        }
+
+        #[test]
+        fn test_hemispheric_to_scalar_with_weighted_grid() {
+            // Create transform with custom weights (70% NH, 30% SH)
+            let grid = HemisphericGrid::with_weights([0.7, 0.3]);
+            let transform = HemisphericToScalarTransform::new("Precipitation", "mm/yr", grid);
+
+            // Create input state with Hemispheric values
+            // Values: N=1000.0, S=500.0
+            // With weights 0.7/0.3, global average = 1000*0.7 + 500*0.3 = 700 + 150 = 850.0
+            let item = create_hemispheric_item("Precipitation|Hemispheric", [1000.0, 500.0]);
+            let input_state = InputState::build(vec![&item], 2000.0);
+
+            // Run the transform
+            let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
+
+            // Check the output is correctly aggregated
+            assert_eq!(output.get("Precipitation"), Some(&850.0));
+        }
+
+        #[test]
+        fn test_four_box_to_scalar_with_weighted_grid() {
+            // Create a grid with custom weights (ocean-heavy: 40% NO, 10% NL, 40% SO, 10% SL)
+            let grid = FourBoxGrid::with_weights([0.4, 0.1, 0.4, 0.1]);
+            let transform = FourBoxToScalarTransform::new("Temperature", "K", grid);
+
+            // Values: NO=16.0, NL=14.0, SO=12.0, SL=10.0
+            // Weighted average = 16*0.4 + 14*0.1 + 12*0.4 + 10*0.1 = 6.4 + 1.4 + 4.8 + 1.0 = 13.6
+            let item = create_four_box_item("Temperature|FourBox", [16.0, 14.0, 12.0, 10.0]);
+            let input_state = InputState::build(vec![&item], 2000.0);
+
+            let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
+
+            let expected = 16.0 * 0.4 + 14.0 * 0.1 + 12.0 * 0.4 + 10.0 * 0.1;
+            assert!((output.get("Temperature").unwrap() - expected).abs() < 1e-10);
+        }
+    }
 }
