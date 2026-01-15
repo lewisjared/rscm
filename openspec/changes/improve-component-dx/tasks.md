@@ -19,22 +19,22 @@
 
 ## 3. RequirementDefinition Updates
 
-- [ ] 3.1 Add `RequirementType::State` variant to `component.rs`
+- [x] 3.1 Add `RequirementType::State` variant to `component.rs`
 - [x] 3.2 Add `GridType` enum (Scalar, FourBox, Hemispheric, Any)
 - [x] 3.3 Add `grid: GridType` field to `RequirementDefinition`
-- [ ] 3.4 Update `inputs()` to include State requirements
-- [ ] 3.5 Update `outputs()` to include State requirements
-- [ ] 3.6 Remove `RequirementType::InputAndOutput`
+- [x] 3.4 Update `inputs()` to include State requirements
+- [x] 3.5 Update `outputs()` to include State requirements
+- [x] 3.6 Remove `RequirementType::InputAndOutput`
 - [x] 3.7 Add tests for new requirement types
 
 ## 4. Coupler Grid Validation
 
 - [x] 4.1 Add grid compatibility checking in `ModelBuilder::build()`
 - [x] 4.2 Create `GridMismatch` error type with descriptive message
-- [ ] 4.3 Add `GridTransformComponent` for auto-aggregation
-- [ ] 4.4 Implement FourBox → Scalar aggregation transform
-- [ ] 4.5 Implement FourBox → Hemispheric aggregation transform
-- [ ] 4.6 Implement Hemispheric → Scalar aggregation transform
+- [x] 4.3 Add `GridTransformComponent` for auto-aggregation
+- [x] 4.4 Implement FourBox → Scalar aggregation transform
+- [x] 4.5 Implement FourBox → Hemispheric aggregation transform
+- [x] 4.6 Implement Hemispheric → Scalar aggregation transform
 - [ ] 4.7 Add integration tests for grid auto-transform
 - [x] 4.8 Add integration tests for grid mismatch errors
 

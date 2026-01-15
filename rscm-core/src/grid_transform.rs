@@ -8,7 +8,7 @@ use crate::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use crate::errors::RSCMResult;
-use crate::spatial::{FourBoxGrid, HemisphericGrid};
+use crate::spatial::{FourBoxGrid, HemisphericGrid, SpatialGrid};
 use crate::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
