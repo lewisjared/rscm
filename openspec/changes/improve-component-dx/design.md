@@ -56,28 +56,32 @@ impl TimeseriesWindow<'_> {
 
 ### Decision 2: Typed State Accessors via Macro
 
-**What**: A derive macro generates typed input/output structs from component definitions.
+**What**: A derive macro generates typed input/output structs from component definitions using struct-level attributes.
 
 **Why**: Eliminates string-based lookups, provides IDE autocomplete, catches typos at compile time.
 
 ```rust
-#[derive(Component)]
-#[component(
-    input("Emissions|CO2", "GtC/yr", emissions_co2, grid = Scalar),
-    input("Surface Temperature", "K", temperature, grid = FourBox),
-    state("Atmospheric Concentration|CO2", "ppm", concentration_co2, grid = Scalar),
-    output("Regional Uptake", "GtC", uptake, grid = FourBox),
+#[derive(ComponentIO)]
+#[inputs(
+    emissions_co2 { name = "Emissions|CO2", unit = "GtC/yr" },
+    temperature { name = "Surface Temperature", unit = "K", grid = "FourBox" },
 )]
-struct CarbonCycle {
-    tau: f64,
-    conc_pi: f64,
+#[states(
+    concentration_co2 { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+)]
+#[outputs(
+    uptake { name = "Regional Uptake", unit = "GtC", grid = "FourBox" },
+)]
+pub struct CarbonCycle {
+    pub tau: f64,
+    pub conc_pi: f64,
 }
 
 // Generated:
 struct CarbonCycleInputs<'a> {
-    pub emissions_co2: TimeseriesWindow<'a>,           // Scalar
+    pub emissions_co2: TimeseriesWindow<'a>,            // Scalar
     pub temperature: GridTimeseriesWindow<'a, FourBox>, // FourBox
-    pub concentration_co2: TimeseriesWindow<'a>,       // State as input
+    pub concentration_co2: TimeseriesWindow<'a>,        // State as input
 }
 
 struct CarbonCycleOutputs {
@@ -86,11 +90,22 @@ struct CarbonCycleOutputs {
 }
 ```
 
+**Design rationale for struct-level attributes**:
+
+Using `#[inputs(...)]` and `#[outputs(...)]` at the struct level rather than marker fields with `#[input]` attributes avoids several DX problems:
+
+1. **No phantom fields**: No need for `_emissions: ()` placeholder fields that store nothing
+2. **No serde ceremony**: No `#[serde(skip)]` required on each marker field
+3. **No underscore convention**: No need to prefix fields with `_` to suppress unused warnings
+4. **Clean constructors**: No explicit initialization of phantom fields in `new()` methods
+5. **Clear separation**: Component parameters (like `tau`, `conc_pi`) are clearly distinct from I/O declarations
+
 **Alternatives considered**:
 
 - VarKey registry without macro - still requires manual struct definition
 - Trait-based access patterns - more complex, less ergonomic
 - Keep string-based with better errors - doesn't provide autocomplete
+- Phantom field approach with `#[input]` on fields - requires `()` fields, `#[serde(skip)]`, and underscore prefixes
 
 ### Decision 3: RequirementType::State Replacing InputAndOutput
 
@@ -242,7 +257,7 @@ Error: Grid mismatch connecting components
 rscm/
 ├── rscm-macros/        # New: proc-macro crate
 │   ├── Cargo.toml
-│   └── src/lib.rs      # #[derive(Component)]
+│   └── src/lib.rs      # #[derive(ComponentIO)]
 ├── rscm-core/          # Re-exports macro, defines traits
 └── rscm-components/    # Uses macro
 ```
@@ -351,7 +366,7 @@ Macros require proc-macro crate and increase compile times. Builder pattern is m
 ## Migration Plan
 
 1. Implement `TimeseriesWindow` and new `RequirementType::State`
-2. Create `rscm-macros` crate with `#[derive(Component)]`
+2. Create `rscm-macros` crate with `#[derive(ComponentIO)]` using struct-level attributes
 3. Rewrite `CO2ERF` component using new macro (simplest component)
 4. Rewrite `CarbonCycleComponent` using new macro (has state variables)
 5. Remove old `InputState.get_latest()` API

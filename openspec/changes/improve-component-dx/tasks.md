@@ -35,7 +35,7 @@
 - [x] 4.4 Implement FourBox → Scalar aggregation transform
 - [x] 4.5 Implement FourBox → Hemispheric aggregation transform
 - [x] 4.6 Implement Hemispheric → Scalar aggregation transform
-- [ ] 4.7 Add integration tests for grid auto-transform
+- [x] 4.7 Add integration tests for grid auto-transform
 - [x] 4.8 Add integration tests for grid mismatch errors
 
 ## 5. Rust Derive Macro (rscm-macros crate)
@@ -49,7 +49,7 @@
 - [x] 5.7 Handle grid-aware field types (FourBoxSlice for FourBox, FloatValue for Scalar)
 - [x] 5.8 Implement `Into<OutputState>` for generated outputs
 - [x] 5.9 Generate `definitions()` implementation from attributes
-- [ ] 5.10 Generate `solve()` wrapper that converts InputState to typed inputs
+- [x] 5.10 Generate `solve()` wrapper that converts InputState to typed inputs
 - [x] 5.11 Re-export macro from `rscm-core`
 - [ ] 5.12 Add compile-fail tests for invalid field access
 
@@ -57,8 +57,8 @@
 
 - [x] 6.1 Rewrite `CO2ERF` component using derive macro
 - [x] 6.2 Rewrite `CarbonCycleComponent` using derive macro
-- [ ] 6.3 Update `TestComponent` example component
-- [ ] 6.4 Remove old `InputState.get_latest()` API
+- [x] 6.3 Update `TestComponent` example component
+- [x] 6.4 Remove old `InputState.get_latest()` API
 - [x] 6.5 Update all component tests
 
 ## 7. Python Typed Inputs
@@ -94,13 +94,13 @@
 
 - [x] 10.1 Add docstrings to all new public types
 - [x] 10.2 Document grid compatibility rules
-- [ ] 10.3 Add example component using derive macro in docs
+- [x] 10.3 Add example component using derive macro in docs
 - [ ] 10.4 Add example Python component with typed inputs
-- [ ] 10.5 Update CLAUDE.md with new component patterns
+- [x] 10.5 Update CLAUDE.md with new component patterns
 
 ## 11. Integration Testing
 
-- [ ] 11.1 Test model with multiple components using derive macro
+- [x] 11.1 Test model with multiple components using derive macro
 - [ ] 11.2 Test model with grid auto-transform between components
 - [x] 11.3 Test Python component with typed inputs/outputs
 - [x] 11.4 Test serialisation/deserialisation with new components
