@@ -55,6 +55,15 @@ impl TimeseriesData {
         self.len() == 0
     }
 
+    /// Get the index of the latest valid timestep
+    pub fn latest(&self) -> usize {
+        match self {
+            TimeseriesData::Scalar(ts) => ts.latest(),
+            TimeseriesData::FourBox(ts) => ts.latest(),
+            TimeseriesData::Hemispheric(ts) => ts.latest(),
+        }
+    }
+
     /// Get the scalar timeseries if this is a Scalar variant
     pub fn as_scalar(&self) -> Option<&Timeseries<FloatValue>> {
         match self {

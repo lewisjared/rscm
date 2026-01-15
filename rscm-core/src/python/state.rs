@@ -347,7 +347,7 @@ pub struct PyTimeseriesWindow {
 impl PyTimeseriesWindow {
     #[new]
     #[pyo3(signature = (values, current_index))]
-    fn new(values: Vec<FloatValue>, current_index: usize) -> PyResult<Self> {
+    pub fn new(values: Vec<FloatValue>, current_index: usize) -> PyResult<Self> {
         if current_index >= values.len() && !values.is_empty() {
             return Err(PyValueError::new_err(format!(
                 "current_index {} out of bounds for values of length {}",
@@ -459,7 +459,7 @@ pub struct PyFourBoxTimeseriesWindow {
 impl PyFourBoxTimeseriesWindow {
     #[new]
     #[pyo3(signature = (values, current_index))]
-    fn new(values: Vec<[FloatValue; 4]>, current_index: usize) -> PyResult<Self> {
+    pub fn new(values: Vec<[FloatValue; 4]>, current_index: usize) -> PyResult<Self> {
         if current_index >= values.len() && !values.is_empty() {
             return Err(PyValueError::new_err(format!(
                 "current_index {} out of bounds for values of length {}",
@@ -541,7 +541,7 @@ pub struct PyHemisphericTimeseriesWindow {
 impl PyHemisphericTimeseriesWindow {
     #[new]
     #[pyo3(signature = (values, current_index))]
-    fn new(values: Vec<[FloatValue; 2]>, current_index: usize) -> PyResult<Self> {
+    pub fn new(values: Vec<[FloatValue; 2]>, current_index: usize) -> PyResult<Self> {
         if current_index >= values.len() && !values.is_empty() {
             return Err(PyValueError::new_err(format!(
                 "current_index {} out of bounds for values of length {}",

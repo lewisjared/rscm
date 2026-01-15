@@ -33,6 +33,115 @@
 //! - `CO2ERFComponentInputs` with a `concentration_co2: TimeseriesWindow<'a>` field
 //! - `CO2ERFComponentOutputs` with an `erf_co2: f64` field
 //! - Implementation of `generated_definitions()` returning the appropriate `RequirementDefinition`s
+//!
+//! # Compile-time Safety
+//!
+//! The generated structs provide compile-time validation of field access:
+//!
+//! ## Invalid Input Field Access
+//!
+//! ```compile_fail
+//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! # use rscm_core::timeseries::Time;
+//! # use serde::{Serialize, Deserialize};
+//! #
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//! )]
+//! #[outputs(
+//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//! )]
+//! struct TestComponent { conversion: f64 }
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: no field `temperature` on type `TestComponentInputs`
+//!         let temp = inputs.temperature.current();
+//!         TestComponentOutputs { concentration: temp }
+//!     }
+//! }
+//! ```
+//!
+//! ## Invalid Output Field
+//!
+//! ```compile_fail
+//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! # use rscm_core::timeseries::Time;
+//! # use serde::{Serialize, Deserialize};
+//! #
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//! )]
+//! #[outputs(
+//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//! )]
+//! struct TestComponent { conversion: f64 }
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: no field `uptake` on type `TestComponentOutputs`
+//!         TestComponentOutputs {
+//!             concentration: 280.0,
+//!             uptake: 5.0,
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! ## Missing Required Output Field
+//!
+//! ```compile_fail
+//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! # use rscm_core::timeseries::Time;
+//! # use serde::{Serialize, Deserialize};
+//! #
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//! )]
+//! #[outputs(
+//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//!     uptake { name = "Carbon Uptake", unit = "GtC" },
+//! )]
+//! struct TestComponent { conversion: f64 }
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: missing field `uptake` in initializer of `TestComponentOutputs`
+//!         TestComponentOutputs {
+//!             concentration: 280.0,
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! ## Wrong Type for Grid Output
+//!
+//! ```compile_fail
+//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! # use rscm_core::timeseries::Time;
+//! # use serde::{Serialize, Deserialize};
+//! #
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     temperature { name = "Temperature", unit = "K", grid = "FourBox" },
+//! )]
+//! #[outputs(
+//!     heat_flux { name = "Heat Flux", unit = "W/m^2", grid = "FourBox" },
+//! )]
+//! struct TestComponent;
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: expected `FourBoxSlice`, found `f64`
+//!         TestComponentOutputs {
+//!             heat_flux: 5.0,  // Should be FourBoxSlice::uniform(5.0)
+//!         }
+//!     }
+//! }
+//! ```
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};

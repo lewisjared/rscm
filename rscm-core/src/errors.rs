@@ -47,5 +47,5 @@ pub enum RSCMError {
     CircularDependency { cycle: String },
 }
 
-/// Convenience type for `Result<T, EosError>`.
+/// Convenience type for `Result<T, RSCMError>`.
 pub type RSCMResult<T> = Result<T, RSCMError>;

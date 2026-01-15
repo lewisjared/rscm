@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from typing import Protocol, Self, TypeVar
+from typing import Any, Protocol, Self, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -362,17 +362,22 @@ class RustComponent(Component):
 
 class CustomComponent(Protocol):
     """
-    Interface required for registering Python-based component
+    Interface required for registering Python-based component.
+
+    Components can use either:
+    - dict-based interface:
+        solve(..., input_state: dict[str, float]) -> dict[str, float]
+    - Typed interface: solve(..., inputs: TypedInputs) -> TypedOutputs
+
+    The typed interface is provided by inheriting from rscm.component.Component.
 
     See Also
     --------
-    UserDefinedComponent
+    rscm.component.Component : Base class for typed Python components
     """
 
     def definitions(self) -> list[RequirementDefinition]: ...
-    def solve(
-        self, t_current: float, t_next: float, input_state: dict[str, float]
-    ) -> dict[str, float]: ...
+    def solve(self, t_current: float, t_next: float, inputs: Any) -> Any: ...
 
 class ComponentBuilder(Protocol):
     """A component of the model that can be solved"""
