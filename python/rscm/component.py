@@ -51,7 +51,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from rscm.core import (
+from rscm._lib.core import (
     FourBoxSlice,
     FourBoxTimeseriesWindow,
     GridType,
