@@ -322,6 +322,295 @@ impl PyHemisphericSlice {
 }
 
 // =============================================================================
+// Python TimeseriesWindow
+// =============================================================================
+
+/// Python wrapper for TimeseriesWindow
+///
+/// Provides zero-cost view-like access to scalar timeseries data.
+/// Since Python can't handle Rust lifetimes, this stores a copy of the
+/// values and current position.
+///
+/// Example:
+///     window = TimeseriesWindow(values=[1.0, 2.0, 3.0], current_index=2)
+///     print(window.current)  # 3.0
+///     print(window.previous)  # 2.0
+#[pyclass]
+#[pyo3(name = "TimeseriesWindow")]
+#[derive(Debug, Clone)]
+pub struct PyTimeseriesWindow {
+    values: Vec<FloatValue>,
+    current_index: usize,
+}
+
+#[pymethods]
+impl PyTimeseriesWindow {
+    #[new]
+    #[pyo3(signature = (values, current_index))]
+    fn new(values: Vec<FloatValue>, current_index: usize) -> PyResult<Self> {
+        if current_index >= values.len() && !values.is_empty() {
+            return Err(PyValueError::new_err(format!(
+                "current_index {} out of bounds for values of length {}",
+                current_index,
+                values.len()
+            )));
+        }
+        Ok(Self {
+            values,
+            current_index,
+        })
+    }
+
+    /// Get the current value (at current_index)
+    #[getter]
+    fn current(&self) -> PyResult<FloatValue> {
+        self.values
+            .get(self.current_index)
+            .copied()
+            .ok_or_else(|| PyValueError::new_err("No current value available"))
+    }
+
+    /// Get the previous value (at current_index - 1)
+    #[getter]
+    fn previous(&self) -> PyResult<FloatValue> {
+        if self.current_index == 0 {
+            return Err(PyValueError::new_err("No previous value available"));
+        }
+        self.values
+            .get(self.current_index - 1)
+            .copied()
+            .ok_or_else(|| PyValueError::new_err("No previous value available"))
+    }
+
+    /// Get value at offset from current (negative = past, positive = future)
+    fn at_offset(&self, offset: isize) -> PyResult<FloatValue> {
+        let index = self.current_index as isize + offset;
+        if index < 0 || index >= self.values.len() as isize {
+            return Err(PyValueError::new_err(format!(
+                "Offset {} results in index {} which is out of bounds",
+                offset, index
+            )));
+        }
+        Ok(self.values[index as usize])
+    }
+
+    /// Get last n values as numpy array (including current)
+    fn last_n<'py>(&self, py: Python<'py>, n: usize) -> PyResult<Bound<'py, PyArray1<FloatValue>>> {
+        if n == 0 {
+            return Ok(Vec::<FloatValue>::new().to_pyarray(py));
+        }
+        let start = if n > self.current_index + 1 {
+            0
+        } else {
+            self.current_index + 1 - n
+        };
+        let end = self.current_index + 1;
+        let slice: Vec<FloatValue> = self.values[start..end].to_vec();
+        Ok(slice.to_pyarray(py))
+    }
+
+    /// Get all values as numpy array
+    fn to_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<FloatValue>> {
+        self.values.clone().to_pyarray(py)
+    }
+
+    /// Get the current index
+    #[getter]
+    fn current_index(&self) -> usize {
+        self.current_index
+    }
+
+    /// Get the number of values
+    fn __len__(&self) -> usize {
+        self.values.len()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TimeseriesWindow(len={}, current_index={}, current={})",
+            self.values.len(),
+            self.current_index,
+            self.values
+                .get(self.current_index)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".to_string())
+        )
+    }
+}
+
+/// Python wrapper for GridTimeseriesWindow (FourBox)
+///
+/// Provides view-like access to grid timeseries data with regional access.
+///
+/// Example:
+///     window = FourBoxTimeseriesWindow(values=[[1,2,3,4], [5,6,7,8]], current_index=1)
+///     print(window.current)  # [5, 6, 7, 8]
+///     print(window.region(0))  # TimeseriesWindow for northern ocean
+#[pyclass]
+#[pyo3(name = "FourBoxTimeseriesWindow")]
+#[derive(Debug, Clone)]
+pub struct PyFourBoxTimeseriesWindow {
+    /// Values stored as [timestep][region]
+    values: Vec<[FloatValue; 4]>,
+    current_index: usize,
+}
+
+#[pymethods]
+impl PyFourBoxTimeseriesWindow {
+    #[new]
+    #[pyo3(signature = (values, current_index))]
+    fn new(values: Vec<[FloatValue; 4]>, current_index: usize) -> PyResult<Self> {
+        if current_index >= values.len() && !values.is_empty() {
+            return Err(PyValueError::new_err(format!(
+                "current_index {} out of bounds for values of length {}",
+                current_index,
+                values.len()
+            )));
+        }
+        Ok(Self {
+            values,
+            current_index,
+        })
+    }
+
+    /// Get the current slice as FourBoxSlice
+    #[getter]
+    fn current(&self) -> PyResult<PyFourBoxSlice> {
+        self.values
+            .get(self.current_index)
+            .map(|v| PyFourBoxSlice(FourBoxSlice::from_array(*v)))
+            .ok_or_else(|| PyValueError::new_err("No current value available"))
+    }
+
+    /// Get the previous slice as FourBoxSlice
+    #[getter]
+    fn previous(&self) -> PyResult<PyFourBoxSlice> {
+        if self.current_index == 0 {
+            return Err(PyValueError::new_err("No previous value available"));
+        }
+        self.values
+            .get(self.current_index - 1)
+            .map(|v| PyFourBoxSlice(FourBoxSlice::from_array(*v)))
+            .ok_or_else(|| PyValueError::new_err("No previous value available"))
+    }
+
+    /// Get a single region's timeseries as a TimeseriesWindow
+    fn region(&self, region: usize) -> PyResult<PyTimeseriesWindow> {
+        if region >= 4 {
+            return Err(PyValueError::new_err(format!(
+                "Invalid region index: {}. Must be 0-3.",
+                region
+            )));
+        }
+        let values: Vec<FloatValue> = self.values.iter().map(|v| v[region]).collect();
+        Ok(PyTimeseriesWindow {
+            values,
+            current_index: self.current_index,
+        })
+    }
+
+    /// Get current index
+    #[getter]
+    fn current_index(&self) -> usize {
+        self.current_index
+    }
+
+    fn __len__(&self) -> usize {
+        self.values.len()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "FourBoxTimeseriesWindow(len={}, current_index={})",
+            self.values.len(),
+            self.current_index
+        )
+    }
+}
+
+/// Python wrapper for GridTimeseriesWindow (Hemispheric)
+#[pyclass]
+#[pyo3(name = "HemisphericTimeseriesWindow")]
+#[derive(Debug, Clone)]
+pub struct PyHemisphericTimeseriesWindow {
+    values: Vec<[FloatValue; 2]>,
+    current_index: usize,
+}
+
+#[pymethods]
+impl PyHemisphericTimeseriesWindow {
+    #[new]
+    #[pyo3(signature = (values, current_index))]
+    fn new(values: Vec<[FloatValue; 2]>, current_index: usize) -> PyResult<Self> {
+        if current_index >= values.len() && !values.is_empty() {
+            return Err(PyValueError::new_err(format!(
+                "current_index {} out of bounds for values of length {}",
+                current_index,
+                values.len()
+            )));
+        }
+        Ok(Self {
+            values,
+            current_index,
+        })
+    }
+
+    /// Get the current slice as HemisphericSlice
+    #[getter]
+    fn current(&self) -> PyResult<PyHemisphericSlice> {
+        self.values
+            .get(self.current_index)
+            .map(|v| PyHemisphericSlice(HemisphericSlice::from_array(*v)))
+            .ok_or_else(|| PyValueError::new_err("No current value available"))
+    }
+
+    /// Get the previous slice as HemisphericSlice
+    #[getter]
+    fn previous(&self) -> PyResult<PyHemisphericSlice> {
+        if self.current_index == 0 {
+            return Err(PyValueError::new_err("No previous value available"));
+        }
+        self.values
+            .get(self.current_index - 1)
+            .map(|v| PyHemisphericSlice(HemisphericSlice::from_array(*v)))
+            .ok_or_else(|| PyValueError::new_err("No previous value available"))
+    }
+
+    /// Get a single region's timeseries as a TimeseriesWindow
+    fn region(&self, region: usize) -> PyResult<PyTimeseriesWindow> {
+        if region >= 2 {
+            return Err(PyValueError::new_err(format!(
+                "Invalid region index: {}. Must be 0-1.",
+                region
+            )));
+        }
+        let values: Vec<FloatValue> = self.values.iter().map(|v| v[region]).collect();
+        Ok(PyTimeseriesWindow {
+            values,
+            current_index: self.current_index,
+        })
+    }
+
+    /// Get current index
+    #[getter]
+    fn current_index(&self) -> usize {
+        self.current_index
+    }
+
+    fn __len__(&self) -> usize {
+        self.values.len()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "HemisphericTimeseriesWindow(len={}, current_index={})",
+            self.values.len(),
+            self.current_index
+        )
+    }
+}
+
+// =============================================================================
 // GridType Python Enum
 // =============================================================================
 

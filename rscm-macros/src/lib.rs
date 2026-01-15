@@ -224,6 +224,26 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         })
         .collect();
 
+    // Generate Into<OutputState> conversion for each output field
+    let output_conversions: Vec<TokenStream2> = output_fields
+        .iter()
+        .map(|f| {
+            let name = &f.rust_name;
+            let var_name = &f.variable_name;
+            match f.grid_type.as_str() {
+                "FourBox" => quote! {
+                    map.insert(#var_name.to_string(), self.#name.to_vec());
+                },
+                "Hemispheric" => quote! {
+                    map.insert(#var_name.to_string(), self.#name.to_vec());
+                },
+                _ => quote! {
+                    map.insert(#var_name.to_string(), self.#name);
+                },
+            }
+        })
+        .collect();
+
     // Generate the expanded code
     let expanded = quote! {
         /// Generated input struct for #struct_name
@@ -245,6 +265,14 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
                     #(#input_definitions,)*
                     #(#output_definitions,)*
                 ]
+            }
+        }
+
+        impl From<#outputs_name> for OutputState {
+            fn from(outputs: #outputs_name) -> Self {
+                let mut map = std::collections::HashMap::new();
+                #(#output_conversions)*
+                map
             }
         }
     };

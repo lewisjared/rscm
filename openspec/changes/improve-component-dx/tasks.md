@@ -47,10 +47,10 @@
 - [x] 5.5 Generate `{Name}Inputs` struct with TimeseriesWindow fields
 - [x] 5.6 Generate `{Name}Outputs` struct with typed slice fields
 - [x] 5.7 Handle grid-aware field types (FourBoxSlice for FourBox, FloatValue for Scalar)
-- [ ] 5.8 Implement `Into<OutputState>` for generated outputs
+- [x] 5.8 Implement `Into<OutputState>` for generated outputs
 - [x] 5.9 Generate `definitions()` implementation from attributes
 - [ ] 5.10 Generate `solve()` wrapper that converts InputState to typed inputs
-- [ ] 5.11 Re-export macro from `rscm-core`
+- [x] 5.11 Re-export macro from `rscm-core`
 - [ ] 5.12 Add compile-fail tests for invalid field access
 
 ## 6. Rewrite Existing Components
@@ -65,14 +65,14 @@
 
 - [ ] 7.1 Create `ComponentMeta` metaclass for Python components
 - [ ] 7.2 Implement dataclass generation from `inputs`/`outputs` lists
-- [ ] 7.3 Create `PyTimeseriesWindow` PyO3 class
-- [ ] 7.4 Implement `current`, `previous` properties
-- [ ] 7.5 Implement `last_n()` returning numpy array view
-- [ ] 7.6 Create `PyGridTimeseriesWindow` for grid variables
-- [ ] 7.7 Implement `region()` method for single-region access
+- [x] 7.3 Create `PyTimeseriesWindow` PyO3 class
+- [x] 7.4 Implement `current`, `previous` properties
+- [x] 7.5 Implement `last_n()` returning numpy array view
+- [x] 7.6 Create `PyGridTimeseriesWindow` for grid variables
+- [x] 7.7 Implement `region()` method for single-region access
 - [ ] 7.8 Update `PythonComponent` to construct typed inputs
-- [ ] 7.9 Add Python tests for typed scalar input access
-- [ ] 7.10 Add Python tests for typed grid input access
+- [x] 7.9 Add Python tests for typed scalar input access
+- [x] 7.10 Add Python tests for typed grid input access
 
 ## 8. Python Typed Outputs
 

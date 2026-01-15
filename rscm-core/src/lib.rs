@@ -10,3 +10,6 @@ pub mod timeseries;
 pub mod timeseries_collection;
 
 pub mod errors;
+
+// Re-export derive macro for convenience
+pub use rscm_macros::ComponentIO;

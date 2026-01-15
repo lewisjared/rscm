@@ -94,7 +94,10 @@ pub mod timeseries;
 mod timeseries_collection;
 
 pub use component::PyRustComponent;
-pub use state::{PyFourBoxSlice, PyHemisphericSlice};
+pub use state::{
+    PyFourBoxSlice, PyFourBoxTimeseriesWindow, PyHemisphericSlice, PyHemisphericTimeseriesWindow,
+    PyTimeseriesWindow,
+};
 
 #[pymodule]
 pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -118,6 +121,9 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<example_component::TestComponentBuilder>()?;
     m.add_class::<state::PyFourBoxSlice>()?;
     m.add_class::<state::PyHemisphericSlice>()?;
+    m.add_class::<state::PyTimeseriesWindow>()?;
+    m.add_class::<state::PyFourBoxTimeseriesWindow>()?;
+    m.add_class::<state::PyHemisphericTimeseriesWindow>()?;
     Ok(())
 }
 

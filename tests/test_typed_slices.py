@@ -7,10 +7,13 @@ import pytest
 
 from rscm.core import (
     FourBoxSlice,
+    FourBoxTimeseriesWindow,
     GridType,
     HemisphericSlice,
+    HemisphericTimeseriesWindow,
     RequirementDefinition,
     RequirementType,
+    TimeseriesWindow,
 )
 
 
@@ -271,6 +274,163 @@ class TestGridType:
         assert hasattr(GridType, "Scalar")
         assert hasattr(GridType, "FourBox")
         assert hasattr(GridType, "Hemispheric")
+
+
+class TestTimeseriesWindow:
+    """Tests for TimeseriesWindow type."""
+
+    def test_constructor(self):
+        """Test basic construction."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
+        assert w.current_index == 1
+        assert len(w) == 3
+
+    def test_current(self):
+        """Test current property."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 2)
+        assert w.current == 3.0
+
+    def test_previous(self):
+        """Test previous property."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 2)
+        assert w.previous == 2.0
+
+    def test_previous_at_start_raises(self):
+        """Test previous at index 0 raises."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 0)
+        with pytest.raises(ValueError, match="No previous value"):
+            _ = w.previous
+
+    def test_at_offset(self):
+        """Test at_offset method."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0, 4.0, 5.0], 3)
+        assert w.at_offset(0) == 4.0
+        assert w.at_offset(-1) == 3.0
+        assert w.at_offset(-2) == 2.0
+        assert w.at_offset(1) == 5.0
+
+    def test_at_offset_out_of_bounds(self):
+        """Test at_offset out of bounds raises."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
+        with pytest.raises(ValueError, match="out of bounds"):
+            w.at_offset(-5)
+        with pytest.raises(ValueError, match="out of bounds"):
+            w.at_offset(5)
+
+    def test_last_n(self):
+        """Test last_n method."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0, 4.0, 5.0], 3)
+        arr = w.last_n(3)
+        np.testing.assert_array_equal(arr, [2.0, 3.0, 4.0])
+
+    def test_last_n_more_than_available(self):
+        """Test last_n when asking for more than available."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
+        arr = w.last_n(5)  # Only 2 values available (indices 0,1)
+        np.testing.assert_array_equal(arr, [1.0, 2.0])
+
+    def test_to_array(self):
+        """Test to_array method."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
+        arr = w.to_array()
+        np.testing.assert_array_equal(arr, [1.0, 2.0, 3.0])
+
+    def test_repr(self):
+        """Test string representation."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
+        r = repr(w)
+        assert "TimeseriesWindow" in r
+        assert "len=3" in r
+        assert "current_index=1" in r
+
+    def test_invalid_current_index(self):
+        """Test that invalid current_index raises."""
+        with pytest.raises(ValueError, match="out of bounds"):
+            TimeseriesWindow([1.0, 2.0], 5)
+
+
+class TestFourBoxTimeseriesWindow:
+    """Tests for FourBoxTimeseriesWindow type."""
+
+    def test_constructor(self):
+        """Test basic construction."""
+        values = [[1, 2, 3, 4], [5, 6, 7, 8]]
+        w = FourBoxTimeseriesWindow(values, 1)
+        assert w.current_index == 1
+        assert len(w) == 2
+
+    def test_current(self):
+        """Test current returns FourBoxSlice."""
+        values = [[1, 2, 3, 4], [5, 6, 7, 8]]
+        w = FourBoxTimeseriesWindow(values, 1)
+        current = w.current
+        assert current.northern_ocean == 5.0
+        assert current.northern_land == 6.0
+        assert current.southern_ocean == 7.0
+        assert current.southern_land == 8.0
+
+    def test_previous(self):
+        """Test previous returns FourBoxSlice."""
+        values = [[1, 2, 3, 4], [5, 6, 7, 8]]
+        w = FourBoxTimeseriesWindow(values, 1)
+        prev = w.previous
+        assert prev.northern_ocean == 1.0
+
+    def test_region(self):
+        """Test region returns scalar TimeseriesWindow."""
+        values = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]
+        w = FourBoxTimeseriesWindow(values, 2)
+        region_0 = w.region(0)  # northern_ocean
+        assert region_0.current == 9.0
+        assert region_0.previous == 5.0
+
+    def test_region_invalid_index(self):
+        """Test region with invalid index raises."""
+        values = [[1, 2, 3, 4]]
+        w = FourBoxTimeseriesWindow(values, 0)
+        with pytest.raises(ValueError, match="Invalid region index"):
+            w.region(4)
+
+    def test_repr(self):
+        """Test string representation."""
+        values = [[1, 2, 3, 4], [5, 6, 7, 8]]
+        w = FourBoxTimeseriesWindow(values, 1)
+        r = repr(w)
+        assert "FourBoxTimeseriesWindow" in r
+
+
+class TestHemisphericTimeseriesWindow:
+    """Tests for HemisphericTimeseriesWindow type."""
+
+    def test_constructor(self):
+        """Test basic construction."""
+        values = [[1, 2], [3, 4]]
+        w = HemisphericTimeseriesWindow(values, 1)
+        assert w.current_index == 1
+        assert len(w) == 2
+
+    def test_current(self):
+        """Test current returns HemisphericSlice."""
+        values = [[1, 2], [3, 4]]
+        w = HemisphericTimeseriesWindow(values, 1)
+        current = w.current
+        assert current.northern == 3.0
+        assert current.southern == 4.0
+
+    def test_region(self):
+        """Test region returns scalar TimeseriesWindow."""
+        values = [[1, 2], [3, 4], [5, 6]]
+        w = HemisphericTimeseriesWindow(values, 2)
+        region_0 = w.region(0)  # northern
+        assert region_0.current == 5.0
+        assert region_0.previous == 3.0
+
+    def test_region_invalid_index(self):
+        """Test region with invalid index raises."""
+        values = [[1, 2]]
+        w = HemisphericTimeseriesWindow(values, 0)
+        with pytest.raises(ValueError, match="Invalid region index"):
+            w.region(2)
 
 
 class TestRequirementDefinitionWithGridType:
