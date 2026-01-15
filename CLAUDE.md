@@ -1,6 +1,23 @@
-# CLAUDE.md
+<!-- OPENSPEC:START -->
+# OpenSpec Instructions
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+These instructions are for AI assistants working in this project.
+
+Always open `@/openspec/AGENTS.md` when the request:
+
+- Mentions planning or proposals (words like proposal, spec, change, plan)
+- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
+- Sounds ambiguous and you need the authoritative spec before coding
+
+Use `@/openspec/AGENTS.md` to learn:
+
+- How to create and apply change proposals
+- Spec format and conventions
+- Project structure and guidelines
+
+Keep this managed block so 'openspec update' can refresh the instructions.
+
+<!-- OPENSPEC:END -->
 
 ## Project Overview
 
@@ -40,6 +57,9 @@ uv run ruff check             # Python only
 make format
 ```
 
+Always run make format before committing.
+Keep commit messages and plans concise
+
 ## Architecture
 
 ### Workspace Structure
@@ -76,6 +96,18 @@ make format
 
 Models and components serialize to JSON/TOML via serde. The `#[typetag::serde(tag = "type")]` pattern enables deserializing trait objects.
 
+### Python Type Stubs (.pyi files)
+
+Type stub files in `python/rscm/_lib/*.pyi` provide type hints for the PyO3 bindings. These files must be kept in sync with the Rust Python bindings.
+
+**When to update .pyi files:**
+
+- After adding new PyO3 classes or functions in `rscm-core/src/python/` or `rscm-components/src/python/`
+- After changing method signatures on existing PyO3 classes
+- After adding new enum variants or class attributes
+
+**Note:** PyO3 automatically generates accurate Python bindings from Rust code, but type stubs must be manually maintained to provide IDE support and type checking.
+
 ## Conventions
 
 - British English spelling
@@ -84,8 +116,5 @@ Models and components serialize to JSON/TOML via serde. The `#[typetag::serde(ta
 - Docstrings follow numpy convention (Python) and rustdoc with KaTeX for math (Rust)
 
 ## Active Technologies
-- Rust 1.75+ (2021 edition), Python 3.10+ + maturin (PyO3 bindings), GitHub Actions, cargo, uv (001-publish-packages)
-- N/A (CI/CD configuration only) (001-publish-packages)
 
-## Recent Changes
-- 001-publish-packages: Added Rust 1.75+ (2021 edition), Python 3.10+ + maturin (PyO3 bindings), GitHub Actions, cargo, uv
+- Rust 1.75+ (2021 edition), Python 3.10+ + maturin (PyO3 bindings), GitHub Actions, cargo, uv (001-publish-packages)

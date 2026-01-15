@@ -2,7 +2,9 @@ use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, NextStrategy, PreviousStrategy,
 };
+use crate::spatial::{ScalarGrid, ScalarRegion};
 use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
+use numpy::ndarray::Axis;
 use numpy::{PyArray1, PyArrayMethods, ToPyArray as _};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -92,9 +94,12 @@ impl PyTimeseries {
         if values.len() != time_axis.len() {
             Err(PyValueError::new_err("Lengths do not match"))
         } else {
+            // Convert 1D array to 2D with shape (n, 1) for ScalarGrid
+            let values_2d = values.insert_axis(Axis(1));
             Ok(Self(Timeseries::new(
-                values,
+                values_2d,
                 time_axis,
+                ScalarGrid,
                 units,
                 interpolation_strategy,
             )))
@@ -121,11 +126,12 @@ impl PyTimeseries {
     }
 
     fn set(&mut self, time_index: usize, value: FloatValue) {
-        self.0.set(time_index, value)
+        self.0.set(time_index, ScalarRegion::Global, value)
     }
 
     fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<FloatValue>> {
-        self.0.values().to_pyarray(py)
+        // Extract the first (and only) column for scalar timeseries
+        self.0.values().column(0).to_owned().to_pyarray(py)
     }
 
     fn __len__(&self) -> usize {
@@ -134,7 +140,7 @@ impl PyTimeseries {
 
     #[getter]
     fn latest(&self) -> usize {
-        *self.0.latest()
+        self.0.latest()
     }
 
     #[getter]
@@ -159,11 +165,11 @@ impl PyTimeseries {
     }
 
     fn at(&self, time_index: usize) -> Option<FloatValue> {
-        self.0.at(time_index)
+        self.0.at(time_index, ScalarRegion::Global)
     }
 
     fn at_time(&self, time: Time) -> RSCMResult<FloatValue> {
-        self.0.at_time(time)
+        self.0.at_time(time, ScalarRegion::Global)
     }
 }
 

@@ -117,7 +117,10 @@ mod tests {
         let component = TestComponent::from_parameters(TestComponentParameters { p: 2.0 });
 
         let emissions_co2 = TimeseriesItem {
-            timeseries: Timeseries::from_values(array![1.1, 1.3], array![2020.0, 2021.0]),
+            data: crate::timeseries_collection::TimeseriesData::Scalar(Timeseries::from_values(
+                array![1.1, 1.3],
+                array![2020.0, 2021.0],
+            )),
             name: "Emissions|CO2".to_string(),
             variable_type: VariableType::Exogenous,
         };
