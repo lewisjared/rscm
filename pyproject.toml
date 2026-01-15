@@ -45,14 +45,16 @@ features = ["pyo3/extension-module"]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.6.2",
+    "ruff>=0.14.0",
     "pytest>=8.3.2",
     "pip>=24.2",
     "notebook>=7.2.2",
     "pydot>=3.0.1",
     "towncrier>=24.8.0",
     "bump-my-version>=0.26.1",
-    # Docs
+]
+
+docs = [
     "mkdocs>=1.6.0",
     "mkdocstrings[python]>=0.25.0",
     "mkdocs-material>=9.5.0",
