@@ -573,13 +573,14 @@ where
     /// use numpy::array;
     /// use numpy::ndarray::Array;
     /// use rscm_core::timeseries::{FloatValue, TimeAxis, Timeseries};
+    /// use rscm_core::spatial::{ScalarRegion};
     ///
     /// let timeseries: Timeseries<FloatValue> = Timeseries::from_values(array![1.0, 2.0, 3.0, 4.0, 5.0], Array::range(2000.0, 2050.0, 10.0));
     ///
     /// assert_eq!(timeseries.len(), 5);
     /// assert_eq!(timeseries.latest_value().unwrap(), 5.0);
     /// assert_eq!(timeseries.at_scalar(0).unwrap(), 1.0);
-    /// assert_eq!(timeseries.at_time_scalar(2040.0).unwrap(), 5.0);
+    /// assert_eq!(timeseries.at_time(2040.0, ScalarRegion::Global).unwrap(), 5.0);
     /// ```
     pub fn from_values(values: Array1<T>, time: Array1<Time>) -> Self {
         use crate::spatial::ScalarGrid;
@@ -646,18 +647,6 @@ where
     /// Get the latest scalar value
     pub fn latest_value(&self) -> Option<T> {
         self.at_scalar(self.latest)
-    }
-
-    /// Get the scalar value at a given time (with interpolation)
-    ///
-    /// # Deprecated
-    /// Use `at_time(time, ScalarRegion::Global)` instead for type safety
-    #[deprecated(
-        since = "0.3.0",
-        note = "Use at_time(time, ScalarRegion::Global) instead"
-    )]
-    pub fn at_time_scalar(&self, time: Time) -> RSCMResult<T> {
-        self.at_time(time, crate::spatial::ScalarRegion::Global)
     }
 }
 

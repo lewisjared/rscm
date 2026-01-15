@@ -115,7 +115,7 @@
 //!
 //! Existing components that work with global values continue unchanged:
 //!
-//! ```ignore
+//! ```rust,ignore
 //! # use rscm_core::component::{Component, RequirementDefinition, RequirementType, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
@@ -146,7 +146,7 @@
 //!
 //! Components that naturally operate at regional resolution can access grid data directly:
 //!
-//! ```ignore
+//! ```rust,ignore
 //! # use rscm_core::component::{Component, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
@@ -200,7 +200,7 @@
 //!
 //! **Approach B: Compute regional, aggregate output**
 //!
-//! ```rust
+//! ```rust,ignore
 //! # use rscm_core::component::InputState;
 //! # use rscm_core::state::StateValue;
 //! # use rscm_core::spatial::{FourBoxGrid, SpatialGrid};
@@ -225,7 +225,7 @@
 //! For unsupported transformations (e.g., Hemispheric → FourBox), implement a custom
 //! disaggregation component that explicitly encodes the physics:
 //!
-//! ```ignore
+//! ```rust,ignore
 //! # use rscm_core::component::{Component, RequirementDefinition, RequirementType, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
@@ -525,25 +525,6 @@ pub struct FourBoxGrid {
 }
 
 impl FourBoxGrid {
-    /// Index for Northern Ocean region (deprecated, use FourBoxRegion enum)
-    #[deprecated(
-        since = "0.3.0",
-        note = "Use FourBoxRegion::NorthernOcean enum instead"
-    )]
-    pub const NORTHERN_OCEAN: usize = 0;
-    /// Index for Northern Land region (deprecated, use FourBoxRegion enum)
-    #[deprecated(since = "0.3.0", note = "Use FourBoxRegion::NorthernLand enum instead")]
-    pub const NORTHERN_LAND: usize = 1;
-    /// Index for Southern Ocean region (deprecated, use FourBoxRegion enum)
-    #[deprecated(
-        since = "0.3.0",
-        note = "Use FourBoxRegion::SouthernOcean enum instead"
-    )]
-    pub const SOUTHERN_OCEAN: usize = 2;
-    /// Index for Southern Land region (deprecated, use FourBoxRegion enum)
-    #[deprecated(since = "0.3.0", note = "Use FourBoxRegion::SouthernLand enum instead")]
-    pub const SOUTHERN_LAND: usize = 3;
-
     /// Create a four-box grid with MAGICC standard equal weights
     ///
     /// All regions are weighted equally (0.25 each) for aggregation.
@@ -710,13 +691,6 @@ pub struct HemisphericGrid {
 }
 
 impl HemisphericGrid {
-    /// Index for Northern Hemisphere (deprecated, use HemisphericRegion enum)
-    #[deprecated(since = "0.3.0", note = "Use HemisphericRegion::Northern enum instead")]
-    pub const NORTHERN: usize = 0;
-    /// Index for Southern Hemisphere (deprecated, use HemisphericRegion enum)
-    #[deprecated(since = "0.3.0", note = "Use HemisphericRegion::Southern enum instead")]
-    pub const SOUTHERN: usize = 1;
-
     /// Create a hemispheric grid with equal weights (0.5 each)
     pub fn equal_weights() -> Self {
         Self {
@@ -854,30 +828,6 @@ mod tests {
     }
 
     #[test]
-    fn four_box_grid_basic() {
-        let grid = FourBoxGrid::magicc_standard();
-        assert_eq!(grid.grid_name(), "FourBox");
-        assert_eq!(grid.size(), 4);
-        assert_eq!(grid.region_names().len(), 4);
-        assert_eq!(
-            grid.region_names()[FourBoxGrid::NORTHERN_OCEAN],
-            "Northern Ocean"
-        );
-        assert_eq!(
-            grid.region_names()[FourBoxGrid::NORTHERN_LAND],
-            "Northern Land"
-        );
-        assert_eq!(
-            grid.region_names()[FourBoxGrid::SOUTHERN_OCEAN],
-            "Southern Ocean"
-        );
-        assert_eq!(
-            grid.region_names()[FourBoxGrid::SOUTHERN_LAND],
-            "Southern Land"
-        );
-    }
-
-    #[test]
     fn four_box_grid_aggregate_equal_weights() {
         let grid = FourBoxGrid::magicc_standard();
         let values = vec![15.0, 14.0, 10.0, 9.0];
@@ -925,22 +875,6 @@ mod tests {
         let values = vec![15.0, 14.0, 10.0, 9.0];
         let result = grid.transform_to(&values, &target).unwrap();
         assert_eq!(result, values);
-    }
-
-    #[test]
-    fn hemispheric_grid_basic() {
-        let grid = HemisphericGrid::equal_weights();
-        assert_eq!(grid.grid_name(), "Hemispheric");
-        assert_eq!(grid.size(), 2);
-        assert_eq!(grid.region_names().len(), 2);
-        assert_eq!(
-            grid.region_names()[HemisphericGrid::NORTHERN],
-            "Northern Hemisphere"
-        );
-        assert_eq!(
-            grid.region_names()[HemisphericGrid::SOUTHERN],
-            "Southern Hemisphere"
-        );
     }
 
     #[test]

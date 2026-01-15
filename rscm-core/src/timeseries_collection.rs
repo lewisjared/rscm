@@ -88,17 +88,6 @@ pub struct TimeseriesItem {
     pub variable_type: VariableType,
 }
 
-impl TimeseriesItem {
-    /// Get the underlying timeseries as scalar (backwards compatibility)
-    ///
-    /// # Deprecated
-    /// Use `data` field directly for grid-aware access
-    #[deprecated(since = "0.3.0", note = "Use data field directly")]
-    pub fn timeseries(&self) -> Option<&Timeseries<FloatValue>> {
-        self.data.as_scalar()
-    }
-}
-
 /// A collection of time series data.
 /// Allows for easy access to time series data by name across the whole model
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,7 +252,7 @@ mod tests {
     use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
     use crate::timeseries::TimeAxis;
     use numpy::array;
-    use numpy::ndarray::{Array, Array2, Axis};
+    use numpy::ndarray::{Array, Array2};
     use std::sync::Arc;
 
     #[test]
