@@ -1,0 +1,10 @@
+[gtr]
+  ai = claude
+  editor = vscode
+
+[gtr "copy"]
+  include = .claude/settings.local.json
+
+[gtr "hook"]
+  postCreate = make virtual-environment
+  postCreate = make build-dev
