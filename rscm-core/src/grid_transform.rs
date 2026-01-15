@@ -319,9 +319,9 @@ mod tests {
         let defs = transform.definitions();
 
         assert_eq!(defs.len(), 2);
-        assert_eq!(defs[0].name, "Temperature|FourBox");
+        assert_eq!(defs[0].variable_name, "Temperature|FourBox");
         assert_eq!(defs[0].grid_type, GridType::FourBox);
-        assert_eq!(defs[1].name, "Temperature");
+        assert_eq!(defs[1].variable_name, "Temperature");
         assert_eq!(defs[1].grid_type, GridType::Scalar);
     }
 
@@ -331,9 +331,9 @@ mod tests {
         let defs = transform.definitions();
 
         assert_eq!(defs.len(), 2);
-        assert_eq!(defs[0].name, "Precipitation|Hemispheric");
+        assert_eq!(defs[0].variable_name, "Precipitation|Hemispheric");
         assert_eq!(defs[0].grid_type, GridType::Hemispheric);
-        assert_eq!(defs[1].name, "Precipitation");
+        assert_eq!(defs[1].variable_name, "Precipitation");
         assert_eq!(defs[1].grid_type, GridType::Scalar);
     }
 
@@ -373,6 +373,7 @@ mod tests {
                 data: TimeseriesData::FourBox(ts),
                 name: name.to_string(),
                 variable_type: VariableType::Endogenous,
+                preindustrial: None,
             }
         }
 
@@ -403,6 +404,7 @@ mod tests {
                 data: TimeseriesData::Hemispheric(ts),
                 name: name.to_string(),
                 variable_type: VariableType::Endogenous,
+                preindustrial: None,
             }
         }
 

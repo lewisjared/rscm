@@ -8,6 +8,7 @@ use ode_solvers::Vector3;
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
+use rscm_core::standard_variables::VAR_CO2_CONCENTRATION;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,9 +17,10 @@ use std::sync::Arc;
 type ModelState = Vector3<FloatValue>;
 
 // Variable name constants
+// Note: Some variables are component-specific and not registered in the standard registry yet
 const VAR_EMISSIONS_CO2: &str = "Emissions|CO2|Anthropogenic";
 const VAR_SURFACE_TEMP: &str = "Surface Temperature";
-const VAR_CONC_CO2: &str = "Atmospheric Concentration|CO2";
+const VAR_CONC_CO2: &str = VAR_CO2_CONCENTRATION.name;
 const VAR_CUM_EMISSIONS: &str = "Cumulative Emissions|CO2";
 const VAR_CUM_UPTAKE: &str = "Cumulative Land Uptake";
 

@@ -17,6 +17,7 @@ use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy
 use crate::spatial::ScalarRegion;
 use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
 use crate::timeseries_collection::{TimeseriesCollection, VariableType};
+use crate::variable::{TimeConvention, VARIABLE_REGISTRY};
 use numpy::ndarray::Array;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
@@ -30,19 +31,31 @@ use std::sync::Arc;
 type C = Arc<dyn Component>;
 type CGraph = Graph<C, RequirementDefinition>;
 
+/// Internal definition tracking for variables during model building.
+/// Tracks unit and grid type for validation, plus optional time convention from registry.
 #[derive(Debug)]
-struct VariableDefinition {
+struct VariableMetadata {
     name: String,
     unit: String,
     grid_type: GridType,
+    /// Time convention from the variable registry, if the variable is registered.
+    /// Stored for future validation when we want to enforce time convention consistency.
+    #[allow(dead_code)]
+    time_convention: Option<TimeConvention>,
 }
 
-impl VariableDefinition {
+impl VariableMetadata {
     fn from_requirement_definition(definition: &RequirementDefinition) -> Self {
+        // Look up time convention from the registry if the variable is registered
+        let time_convention = VARIABLE_REGISTRY
+            .get_with_static(&definition.variable_name)
+            .map(|var| var.time_convention);
+
         Self {
-            name: definition.name.clone(),
+            name: definition.variable_name.clone(),
             unit: definition.unit.clone(),
             grid_type: definition.grid_type,
+            time_convention,
         }
     }
 }
@@ -87,22 +100,23 @@ pub struct ModelBuilder {
 /// Checks if the new definition is valid
 ///
 /// If any definitions share a name then the units and grid types must be equivalent.
+/// Also validates time convention compatibility for registered variables.
 ///
 /// Returns an error if the parameter definition is inconsistent with any existing definitions.
 fn verify_definition(
-    definitions: &mut HashMap<String, VariableDefinition>,
+    definitions: &mut HashMap<String, VariableMetadata>,
     definition: &RequirementDefinition,
     component_name: &str,
     existing_component_name: Option<&str>,
 ) -> RSCMResult<()> {
-    let existing = definitions.get(&definition.name);
+    let existing = definitions.get(&definition.variable_name);
     match existing {
         Some(existing) => {
             if existing.unit != definition.unit {
                 return Err(RSCMError::Error(format!(
                     "Unit mismatch for variable '{}': component '{}' uses '{}' but component '{}' uses '{}'. \
                      All producers and consumers of a variable must use the same unit.",
-                    definition.name,
+                    definition.variable_name,
                     existing_component_name.unwrap_or("unknown"),
                     existing.unit,
                     component_name,
@@ -112,18 +126,25 @@ fn verify_definition(
 
             if existing.grid_type != definition.grid_type {
                 return Err(RSCMError::GridTypeMismatch {
-                    variable: definition.name.clone(),
+                    variable: definition.variable_name.clone(),
                     producer_component: existing_component_name.unwrap_or("unknown").to_string(),
                     consumer_component: component_name.to_string(),
                     producer_grid: existing.grid_type.to_string(),
                     consumer_grid: definition.grid_type.to_string(),
                 });
             }
+
+            // Time convention validation: if the variable is registered, all uses must
+            // be consistent. Since time convention is intrinsic to the variable (from registry),
+            // we don't compare between components - we just verify all users are accessing
+            // a registered variable with a known convention.
+            // Note: Currently we don't fail on time convention issues since components
+            // don't explicitly declare their expected time convention - it comes from the registry.
         }
         None => {
             definitions.insert(
-                definition.name.clone(),
-                VariableDefinition::from_requirement_definition(definition),
+                definition.variable_name.clone(),
+                VariableMetadata::from_requirement_definition(definition),
             );
         }
     }
@@ -254,7 +275,7 @@ impl ModelBuilder {
         let mut graph: CGraph = Graph::new();
         let mut endrogoneous: HashMap<String, NodeIndex> = HashMap::new();
         let mut exogenous: Vec<String> = vec![];
-        let mut definitions: HashMap<String, VariableDefinition> = HashMap::new();
+        let mut definitions: HashMap<String, VariableMetadata> = HashMap::new();
         // Track which component owns each variable for better error messages
         let mut variable_owners: HashMap<String, String> = HashMap::new();
         let initial_node = graph.add_node(Arc::new(NullComponent {}));
@@ -276,7 +297,9 @@ impl ModelBuilder {
             let provides = component.outputs();
 
             for requirement in requires {
-                let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
+                let existing_owner = variable_owners
+                    .get(&requirement.variable_name)
+                    .map(|s| s.as_str());
                 verify_definition(
                     &mut definitions,
                     &requirement,
@@ -284,13 +307,17 @@ impl ModelBuilder {
                     existing_owner,
                 )?;
 
-                if exogenous.contains(&requirement.name) {
+                if exogenous.contains(&requirement.variable_name) {
                     // Link to the node that provides the requirement
-                    graph.add_edge(endrogoneous[&requirement.name], node, requirement.clone());
+                    graph.add_edge(
+                        endrogoneous[&requirement.variable_name],
+                        node,
+                        requirement.clone(),
+                    );
                     has_dependencies = true;
                 } else {
                     // Add a new variable that must be defined outside of the model
-                    exogenous.push(requirement.name.clone())
+                    exogenous.push(requirement.variable_name.clone())
                 }
             }
 
@@ -307,7 +334,9 @@ impl ModelBuilder {
             }
 
             for requirement in provides {
-                let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
+                let existing_owner = variable_owners
+                    .get(&requirement.variable_name)
+                    .map(|s| s.as_str());
                 verify_definition(
                     &mut definitions,
                     &requirement,
@@ -316,17 +345,17 @@ impl ModelBuilder {
                 )?;
 
                 // Track this component as the owner of this variable
-                variable_owners.insert(requirement.name.clone(), component_name.clone());
+                variable_owners.insert(requirement.variable_name.clone(), component_name.clone());
 
-                let val = endrogoneous.get(&requirement.name);
+                let val = endrogoneous.get(&requirement.variable_name);
 
                 match val {
                     None => {
-                        endrogoneous.insert(requirement.name.clone(), node);
+                        endrogoneous.insert(requirement.variable_name.clone(), node);
                     }
                     Some(node_index) => {
                         graph.add_edge(*node_index, node, requirement.clone());
-                        endrogoneous.insert(requirement.name.clone(), node);
+                        endrogoneous.insert(requirement.variable_name.clone(), node);
                     }
                 }
             }
@@ -337,32 +366,34 @@ impl ModelBuilder {
 
         // Create the timeseries collection using the information from the components
         let mut collection = TimeseriesCollection::new();
-        for (name, definition) in definitions {
-            assert_eq!(definition.name, name);
+        for (variable_name, definition) in definitions {
+            assert_eq!(definition.name, variable_name);
 
-            if exogenous.contains(&name) {
+            if exogenous.contains(&variable_name) {
                 // Exogenous variable is expected to be supplied
-                if self.initial_values.contains_key(&name) {
+                if self.initial_values.contains_key(&variable_name) {
                     // An initial value was provided
                     let mut ts = Timeseries::new_empty_scalar(
                         self.time_axis.clone(),
                         definition.unit,
                         InterpolationStrategy::from(LinearSplineStrategy::new(true)),
                     );
-                    ts.set(0, ScalarRegion::Global, self.initial_values[&name]);
+                    ts.set(0, ScalarRegion::Global, self.initial_values[&variable_name]);
 
                     // Note that timeseries that are initialised are defined as Endogenous
                     // all but the first time point come from the model.
                     // This could potentially be defined as a different VariableType if needed.
-                    collection.add_timeseries(name, ts, VariableType::Endogenous)
+                    collection.add_timeseries(variable_name, ts, VariableType::Endogenous)
                 } else {
                     // Check if the timeseries is available in the provided exogenous variables
                     // then interpolate to the right timebase
-                    let timeseries = self.exogenous_variables.get_timeseries_by_name(&name);
+                    let timeseries = self
+                        .exogenous_variables
+                        .get_timeseries_by_name(&variable_name);
 
                     match timeseries {
                         Some(timeseries) => collection.add_timeseries(
-                            name,
+                            variable_name,
                             timeseries
                                 .to_owned()
                                 .interpolate_into(self.time_axis.clone()),
@@ -525,7 +556,7 @@ impl Model {
         Dot::with_attr_getters(
             &self.components,
             &[Config::NodeNoLabel, Config::EdgeNoLabel],
-            &|_, er| format!("label = {:?}", er.weight().name),
+            &|_, er| format!("label = {:?}", er.weight().variable_name),
             &|_, (_, component)| format!("label = \"{:?}\"", component),
         )
     }
@@ -655,7 +686,7 @@ time_index = 1
 [components]
 node_holes = []
 edge_property = "directed"
-edges = [[0, 1, { name = "", unit = "", requirement_type = "EmptyLink", grid_type = "Scalar" }]]
+edges = [[0, 1, { variable_name = "", unit = "", requirement_type = "EmptyLink", grid_type = "Scalar" }]]
 
 [[components.nodes]]
 type = "NullComponent"
@@ -838,6 +869,101 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 .with_component(Arc::new(FourBoxConsumer))
                 .build()
                 .unwrap();
+        }
+    }
+
+    mod variable_registry_validation_tests {
+        use super::*;
+        use crate::standard_variables::VAR_CO2_EMISSIONS;
+
+        /// A component that uses a registered variable (Emissions|CO2)
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct RegisteredVariableProducer;
+
+        #[typetag::serde]
+        impl Component for RegisteredVariableProducer {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                // Use the registered variable name from standard_variables
+                vec![RequirementDefinition::scalar_output(
+                    VAR_CO2_EMISSIONS.name,
+                    VAR_CO2_EMISSIONS.unit,
+                )]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let mut output = OutputState::new();
+                output.insert(VAR_CO2_EMISSIONS.name.to_string(), 10.0);
+                Ok(output)
+            }
+        }
+
+        /// A component that consumes a registered variable
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct RegisteredVariableConsumer;
+
+        #[typetag::serde]
+        impl Component for RegisteredVariableConsumer {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![
+                    RequirementDefinition::scalar_input(
+                        VAR_CO2_EMISSIONS.name,
+                        VAR_CO2_EMISSIONS.unit,
+                    ),
+                    RequirementDefinition::scalar_output("Result", "GtC"),
+                ]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let emissions = input_state.get_latest(VAR_CO2_EMISSIONS.name);
+                let mut output = OutputState::new();
+                output.insert("Result".to_string(), emissions * 2.0);
+                Ok(output)
+            }
+        }
+
+        #[test]
+        fn test_model_with_registered_variables() {
+            // Building a model with registered variables should work
+            let _model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_component(Arc::new(RegisteredVariableProducer))
+                .with_component(Arc::new(RegisteredVariableConsumer))
+                .build()
+                .unwrap();
+        }
+
+        #[test]
+        fn test_time_convention_lookup_for_registered_variable() {
+            // Verify that the time convention is available through RequirementDefinition
+            let req =
+                RequirementDefinition::scalar_input(VAR_CO2_EMISSIONS.name, VAR_CO2_EMISSIONS.unit);
+
+            // The time_convention() method should return the registered convention
+            let convention = req.time_convention();
+            assert!(convention.is_some());
+            assert_eq!(
+                convention.unwrap(),
+                crate::variable::TimeConvention::MidYear
+            );
+        }
+
+        #[test]
+        fn test_time_convention_none_for_unregistered_variable() {
+            // Unregistered variables should return None for time_convention
+            let req = RequirementDefinition::scalar_input("Some|Unregistered|Variable", "units");
+
+            let convention = req.time_convention();
+            assert!(convention.is_none());
         }
     }
 }

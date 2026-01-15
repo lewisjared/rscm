@@ -3,6 +3,7 @@ pub use crate::state::{
     FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, InputState, OutputState, TimeseriesWindow,
 };
 use crate::timeseries::Time;
+use crate::variable::{TimeConvention, VARIABLE_REGISTRY};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -58,15 +59,21 @@ impl std::fmt::Display for GridType {
 /// Definition of a component's input or output requirement
 ///
 /// Each requirement specifies:
-/// - `name`: Variable identifier (e.g., "Atmospheric Concentration|CO2")
-/// - `unit`: Physical units (e.g., "ppm", "W / m^2")
+/// - `variable_name`: Variable identifier (e.g., "Atmospheric Concentration|CO2")
+/// - `unit`: Physical units (e.g., "ppm", "W / m^2") - the component's expected/produced unit
 /// - `requirement_type`: Whether this is an input, output, or both
 /// - `grid_type`: Spatial resolution (Scalar, FourBox, Hemispheric)
+///
+/// The `time_convention()` method looks up the variable in the registry to get its
+/// intrinsic time convention (start-of-year, mid-year, or instantaneous).
 #[pyclass]
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct RequirementDefinition {
+    /// Variable identifier (e.g., "Atmospheric Concentration|CO2")
     #[pyo3(get, set)]
-    pub name: String,
+    #[serde(alias = "name")]
+    pub variable_name: String,
+    /// Component's expected/produced unit (e.g., "ppm", "GtC / yr")
     #[pyo3(get, set)]
     pub unit: String,
     #[pyo3(get, set)]
@@ -76,10 +83,37 @@ pub struct RequirementDefinition {
 }
 
 impl RequirementDefinition {
+    /// Get the variable name (alias for `variable_name` for backwards compatibility)
+    #[deprecated(since = "0.3.0", note = "Use variable_name field directly")]
+    pub fn name(&self) -> &str {
+        &self.variable_name
+    }
+
+    /// Get the time convention for this variable from the registry.
+    ///
+    /// Returns `None` if the variable is not registered in the registry.
+    /// Time conventions are intrinsic to variables (not component-specific).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let req = RequirementDefinition::scalar_input("Atmospheric Concentration|CO2", "ppm");
+    /// if let Some(convention) = req.time_convention() {
+    ///     println!("Time convention: {:?}", convention);
+    /// }
+    /// ```
+    pub fn time_convention(&self) -> Option<TimeConvention> {
+        VARIABLE_REGISTRY
+            .get_with_static(&self.variable_name)
+            .map(|var| var.time_convention)
+    }
+}
+
+impl RequirementDefinition {
     /// Create a new scalar requirement (default, backwards compatible)
     pub fn new(name: &str, unit: &str, requirement_type: RequirementType) -> Self {
         Self {
-            name: name.to_string(),
+            variable_name: name.to_string(),
             unit: unit.to_string(),
             requirement_type,
             grid_type: GridType::Scalar,
@@ -94,7 +128,7 @@ impl RequirementDefinition {
         grid_type: GridType,
     ) -> Self {
         Self {
-            name: name.to_string(),
+            variable_name: name.to_string(),
             unit: unit.to_string(),
             requirement_type,
             grid_type,
@@ -191,7 +225,7 @@ pub trait Component: Debug + Send + Sync {
             .collect()
     }
     fn input_names(&self) -> Vec<String> {
-        self.inputs().into_iter().map(|d| d.name).collect()
+        self.inputs().into_iter().map(|d| d.variable_name).collect()
     }
 
     /// Variables that are solved by this component
@@ -215,7 +249,10 @@ pub trait Component: Debug + Send + Sync {
             .collect()
     }
     fn output_names(&self) -> Vec<String> {
-        self.outputs().into_iter().map(|d| d.name).collect()
+        self.outputs()
+            .into_iter()
+            .map(|d| d.variable_name)
+            .collect()
     }
 
     /// Solve the component until `t_next`
@@ -251,6 +288,7 @@ mod tests {
             )),
             name: "Emissions|CO2".to_string(),
             variable_type: VariableType::Exogenous,
+            preindustrial: None,
         };
 
         let input_state = InputState::build(vec![&emissions_co2], 2020.0);

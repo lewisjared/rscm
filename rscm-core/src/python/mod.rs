@@ -92,6 +92,7 @@ pub mod spatial;
 pub mod state;
 pub mod timeseries;
 mod timeseries_collection;
+mod variable;
 
 pub use component::PyRustComponent;
 pub use state::{
@@ -124,6 +125,14 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<state::PyTimeseriesWindow>()?;
     m.add_class::<state::PyFourBoxTimeseriesWindow>()?;
     m.add_class::<state::PyHemisphericTimeseriesWindow>()?;
+    // Variable registration
+    m.add_class::<variable::PyTimeConvention>()?;
+    m.add_class::<variable::PyVariableDefinition>()?;
+    m.add_class::<variable::PyPreindustrialValue>()?;
+    m.add_function(wrap_pyfunction!(variable::register_variable, m)?)?;
+    m.add_function(wrap_pyfunction!(variable::get_variable, m)?)?;
+    m.add_function(wrap_pyfunction!(variable::list_variables, m)?)?;
+    m.add_function(wrap_pyfunction!(variable::is_variable_registered, m)?)?;
     Ok(())
 }
 

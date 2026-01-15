@@ -70,7 +70,7 @@ def test_typed_component_definitions():
     assert len(defs) == 3
 
     # Check each definition
-    def_names = {d.name for d in defs}
+    def_names = {d.variable_name for d in defs}
     assert "Emissions|CO2" in def_names
     assert "Atmospheric Concentration|CO2" in def_names
     assert "Carbon Uptake" in def_names
@@ -233,7 +233,7 @@ def test_typed_component_inheritance():
 
     # Should have all 4 definitions
     assert len(defs) == 4
-    def_names = {d.name for d in defs}
+    def_names = {d.variable_name for d in defs}
     assert "BaseInput" in def_names
     assert "BaseOutput" in def_names
     assert "DerivedInput" in def_names

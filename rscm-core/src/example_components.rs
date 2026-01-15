@@ -5,6 +5,7 @@ use crate::component::{
     TimeseriesWindow,
 };
 use crate::errors::RSCMResult;
+use crate::standard_variables::{VAR_CO2_CONCENTRATION, VAR_CO2_EMISSIONS};
 use crate::timeseries::{FloatValue, Time};
 use crate::ComponentIO;
 use serde::{Deserialize, Serialize};
@@ -19,13 +20,15 @@ pub(crate) struct TestComponentParameters {
     pub conversion_factor: FloatValue,
 }
 
-/// Example component using the ComponentIO derive macro
+/// Example component using the ComponentIO derive macro with standard variables
 ///
 /// This demonstrates the recommended pattern for new components:
 /// 1. Use `#[derive(ComponentIO)]` with struct-level attributes
-/// 2. Declare inputs with `#[inputs(field { name = "...", unit = "..." })]`
-/// 3. Declare outputs with `#[outputs(field { name = "...", unit = "..." })]`
-/// 4. Use the generated `{Name}Inputs` struct with `from_input_state()`
+/// 2. Declare inputs/outputs using registered standard variable names and units
+/// 3. Use the generated `{Name}Inputs` struct with `from_input_state()`
+///
+/// **Important**: Variable names and units should match those in `standard_variables.rs`.
+/// This ensures consistency across components and enables registry-based validation.
 ///
 /// The macro generates:
 /// - `TestComponentInputs<'a>` with `emissions_co2: TimeseriesWindow<'a>`
@@ -33,10 +36,10 @@ pub(crate) struct TestComponentParameters {
 /// - `TestComponent::generated_definitions()` for the Component trait
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[inputs(
-    emissions_co2 { name = "Emissions|CO2", unit = "GtCO2" },
+    emissions_co2 { name = "Emissions|CO2", unit = "GtC / yr" },
 )]
 #[outputs(
-    concentration_co2 { name = "Concentrations|CO2", unit = "ppm" },
+    concentration_co2 { name = "Atmospheric Concentration|CO2", unit = "ppm" },
 )]
 pub(crate) struct TestComponent {
     /// Component parameters (not marked as input/output)
@@ -117,14 +120,14 @@ mod tests {
 
         // Check input definition
         let input_def = &defs[0];
-        assert_eq!(input_def.name, "Emissions|CO2");
+        assert_eq!(input_def.variable_name, "Emissions|CO2");
         assert_eq!(input_def.unit, "GtCO2");
         assert_eq!(input_def.requirement_type, RequirementType::Input);
         assert_eq!(input_def.grid_type, GridType::Scalar);
 
         // Check output definition
         let output_def = &defs[1];
-        assert_eq!(output_def.name, "Concentrations|CO2");
+        assert_eq!(output_def.variable_name, "Concentrations|CO2");
         assert_eq!(output_def.unit, "ppm");
         assert_eq!(output_def.requirement_type, RequirementType::Output);
     }

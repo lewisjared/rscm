@@ -5,6 +5,7 @@ use crate::spatial::{
 };
 use crate::timeseries::{FloatValue, GridTimeseries, Time, Timeseries};
 use crate::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+use crate::variable::PreindustrialValue;
 use ndarray::ArrayView1;
 use num::Float;
 use std::collections::HashMap;
@@ -741,6 +742,39 @@ impl<'a> InputState<'a> {
         })
     }
 
+    /// Get the preindustrial value for a variable.
+    ///
+    /// Returns the preindustrial reference value if one is set for this variable.
+    /// Preindustrial values are scenario-dependent and stored with the timeseries data.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// if let Some(pi) = input_state.get_preindustrial("Atmospheric Concentration|CO2") {
+    ///     let delta = current_conc - pi.to_scalar();
+    /// }
+    /// ```
+    pub fn get_preindustrial(&self, name: &str) -> Option<&PreindustrialValue> {
+        self.iter()
+            .find(|item| item.name == name)
+            .and_then(|item| item.preindustrial.as_ref())
+    }
+
+    /// Get the preindustrial value as a scalar.
+    ///
+    /// This is a convenience method for the common case of needing a scalar preindustrial value.
+    /// For grid preindustrial values, uses area-weighted averaging to compute the global value.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let pi_co2 = input_state.get_preindustrial_scalar("Atmospheric Concentration|CO2")
+    ///     .unwrap_or(278.0);  // Default preindustrial CO2 in ppm
+    /// ```
+    pub fn get_preindustrial_scalar(&self, name: &str) -> Option<FloatValue> {
+        self.get_preindustrial(name).map(|pi| pi.to_scalar())
+    }
+
     /// Test if the state contains a value with the given name
     pub fn has(&self, name: &str) -> bool {
         self.state.iter().any(|x| x.name == name)
@@ -907,6 +941,7 @@ mod tests {
             data: TimeseriesData::Scalar(ts),
             name: "CO2".to_string(),
             variable_type: VariableType::Endogenous,
+            preindustrial: None,
         };
 
         let state = InputState::build(vec![&item], 2000.5);
@@ -938,6 +973,7 @@ mod tests {
             data: TimeseriesData::Scalar(ts),
             name: "Temperature".to_string(),
             variable_type: VariableType::Endogenous,
+            preindustrial: None,
         };
 
         let state = InputState::build(vec![&item], 2000.5);
@@ -976,6 +1012,7 @@ mod tests {
             data: TimeseriesData::FourBox(ts),
             name: "Temperature".to_string(),
             variable_type: VariableType::Endogenous,
+            preindustrial: None,
         };
 
         let state = InputState::build(vec![&item], 2000.5);
@@ -1024,6 +1061,7 @@ mod tests {
             data: TimeseriesData::FourBox(ts),
             name: "Temperature".to_string(),
             variable_type: VariableType::Endogenous,
+            preindustrial: None,
         };
 
         let state = InputState::build(vec![&item], 2000.5);
@@ -1449,6 +1487,7 @@ mod input_state_window_tests {
             data: TimeseriesData::Scalar(ts),
             name: name.to_string(),
             variable_type: VariableType::Endogenous,
+            preindustrial: None,
         }
     }
 
@@ -1475,6 +1514,7 @@ mod input_state_window_tests {
             data: TimeseriesData::FourBox(ts),
             name: name.to_string(),
             variable_type: VariableType::Endogenous,
+            preindustrial: None,
         }
     }
 
@@ -1500,6 +1540,7 @@ mod input_state_window_tests {
             data: TimeseriesData::Hemispheric(ts),
             name: name.to_string(),
             variable_type: VariableType::Endogenous,
+            preindustrial: None,
         }
     }
 
@@ -1573,5 +1614,95 @@ mod input_state_window_tests {
         let item = create_scalar_item("CO2", vec![280.0, 285.0]);
         let state = InputState::build(vec![&item], 2023.5);
         assert_eq!(state.current_time(), 2023.5);
+    }
+
+    #[test]
+    fn test_get_preindustrial_scalar() {
+        use crate::variable::PreindustrialValue;
+
+        // Create time axis that matches values length
+        let time_axis = Arc::new(TimeAxis::from_values(ndarray::Array1::from_vec(vec![
+            2000.0, 2001.0,
+        ])));
+        let values_arr = ndarray::Array1::from_vec(vec![280.0, 285.0]).insert_axis(Axis(1));
+        let ts = Timeseries::new(
+            values_arr,
+            time_axis,
+            ScalarGrid,
+            "ppm".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+        let item = TimeseriesItem {
+            data: TimeseriesData::Scalar(ts),
+            name: "CO2".to_string(),
+            variable_type: VariableType::Endogenous,
+            preindustrial: Some(PreindustrialValue::Scalar(278.0)),
+        };
+
+        let state = InputState::build(vec![&item], 2000.0);
+
+        // Test get_preindustrial returns the full PreindustrialValue
+        let pi = state.get_preindustrial("CO2").unwrap();
+        assert_eq!(pi.to_scalar(), 278.0);
+
+        // Test get_preindustrial_scalar returns the scalar directly
+        assert_eq!(state.get_preindustrial_scalar("CO2"), Some(278.0));
+    }
+
+    #[test]
+    fn test_get_preindustrial_four_box() {
+        use crate::variable::PreindustrialValue;
+
+        let grid = FourBoxGrid::magicc_standard();
+        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
+        let values =
+            Array2::from_shape_vec((2, 4), vec![15.0, 14.0, 10.0, 9.0, 16.0, 15.0, 11.0, 10.0])
+                .unwrap();
+        let ts = GridTimeseries::new(
+            values,
+            time_axis,
+            grid,
+            "K".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+
+        let pi_values = [14.0, 13.0, 9.0, 8.0];
+        let item = TimeseriesItem {
+            data: TimeseriesData::FourBox(ts),
+            name: "Temperature".to_string(),
+            variable_type: VariableType::Endogenous,
+            preindustrial: Some(PreindustrialValue::FourBox(pi_values)),
+        };
+
+        let state = InputState::build(vec![&item], 2000.0);
+
+        // Test get_preindustrial returns the full PreindustrialValue
+        let pi = state.get_preindustrial("Temperature").unwrap();
+        assert_eq!(pi.as_four_box(), Some(pi_values));
+
+        // Test get_preindustrial_scalar returns the weighted average
+        let scalar = state.get_preindustrial_scalar("Temperature").unwrap();
+        // MAGICC standard weights are equal, so average is (14 + 13 + 9 + 8) / 4 = 11.0
+        assert_eq!(scalar, 11.0);
+    }
+
+    #[test]
+    fn test_get_preindustrial_none() {
+        let item = create_scalar_item("CO2", vec![280.0, 285.0]);
+        let state = InputState::build(vec![&item], 2000.0);
+
+        // Item without preindustrial should return None
+        assert!(state.get_preindustrial("CO2").is_none());
+        assert!(state.get_preindustrial_scalar("CO2").is_none());
+    }
+
+    #[test]
+    fn test_get_preindustrial_missing_variable() {
+        let item = create_scalar_item("CO2", vec![280.0, 285.0]);
+        let state = InputState::build(vec![&item], 2000.0);
+
+        // Non-existent variable should return None
+        assert!(state.get_preindustrial("NonExistent").is_none());
+        assert!(state.get_preindustrial_scalar("NonExistent").is_none());
     }
 }

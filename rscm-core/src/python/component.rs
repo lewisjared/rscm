@@ -82,7 +82,7 @@ impl RequirementDefinition {
         grid_type: GridType,
     ) -> Self {
         Self {
-            name,
+            variable_name: name,
             unit,
             requirement_type,
             grid_type,

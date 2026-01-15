@@ -188,6 +188,7 @@ mod tests {
             )),
             name: "Effective Radiative Forcing|Aggregated".to_string(),
             variable_type: VariableType::Exogenous,
+            preindustrial: None,
         };
 
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
@@ -225,6 +226,7 @@ mod tests {
             )),
             name: "Effective Radiative Forcing|Aggregated".to_string(),
             variable_type: VariableType::Exogenous,
+            preindustrial: None,
         };
 
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);

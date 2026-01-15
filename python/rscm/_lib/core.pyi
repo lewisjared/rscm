@@ -237,18 +237,175 @@ class GridType(Enum):
     Hemispheric = auto()
 
 class RequirementDefinition:
-    name: str
-    units: str
+    variable_name: str
+    unit: str
     requirement_type: RequirementType
     grid_type: GridType
 
     def __init__(
         self,
-        name: str,
-        units: str,
+        variable_name: str,
+        unit: str,
         requirement_type: RequirementType,
         grid_type: GridType = GridType.Scalar,
     ): ...
+    def time_convention(self) -> TimeConvention | None:
+        """
+        Get the time convention for this variable from the registry.
+
+        Returns None if the variable is not registered.
+        """
+
+# =============================================================================
+# Variable Registration System
+# =============================================================================
+
+class TimeConvention(Enum):
+    """
+    Specifies when during a time period a variable's value is valid.
+
+    Time conventions are critical for proper temporal alignment between components.
+    """
+
+    StartOfYear = auto()
+    """Value applies at the start of the year (Jan 1). For stocks."""
+    MidYear = auto()
+    """Value applies at mid-year (Jul 1). For flow variables."""
+    Instantaneous = auto()
+    """Instantaneous value with no temporal averaging."""
+
+    @staticmethod
+    def start_of_year() -> TimeConvention: ...
+    @staticmethod
+    def mid_year() -> TimeConvention: ...
+    @staticmethod
+    def instantaneous() -> TimeConvention: ...
+
+class VariableDefinition:
+    """
+    Metadata about a variable including name, unit, time convention, and description.
+
+    Variables are registered in the global registry and can be looked up by name.
+    """
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def unit(self) -> str: ...
+    @property
+    def time_convention(self) -> TimeConvention: ...
+    @property
+    def description(self) -> str: ...
+    def __init__(
+        self,
+        name: str,
+        unit: str,
+        time_convention: TimeConvention,
+        description: str,
+    ) -> None: ...
+
+class PreindustrialValue:
+    """
+    Preindustrial reference values for variables.
+
+    Can be scalar, four-box regional, or hemispheric.
+    """
+
+    @staticmethod
+    def scalar(value: float) -> PreindustrialValue:
+        """Create a scalar preindustrial value."""
+    @staticmethod
+    def four_box(values: tuple[float, float, float, float]) -> PreindustrialValue:
+        """
+        Create a four-box regional preindustrial value.
+
+        Parameters
+        ----------
+        values
+            Array of 4 values [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand]
+        """
+    @staticmethod
+    def hemispheric(values: tuple[float, float]) -> PreindustrialValue:
+        """
+        Create a hemispheric preindustrial value.
+
+        Parameters
+        ----------
+        values
+            Array of 2 values [Northern, Southern]
+        """
+    def to_scalar(self) -> float:
+        """
+        Get the value as a global scalar.
+
+        For FourBox and Hemispheric variants, uses area-weighted averaging.
+        """
+    def is_scalar(self) -> bool: ...
+    def is_four_box(self) -> bool: ...
+    def is_hemispheric(self) -> bool: ...
+    def as_scalar(self) -> float | None: ...
+    def as_four_box(self) -> tuple[float, float, float, float] | None: ...
+    def as_hemispheric(self) -> tuple[float, float] | None: ...
+
+def register_variable(var: VariableDefinition) -> None:
+    """
+    Register a variable definition at runtime.
+
+    Variables registered via Python are stored in the global registry and can be
+    looked up by name from both Rust and Python code.
+
+    Parameters
+    ----------
+    var
+        The variable definition to register
+
+    Raises
+    ------
+    ValueError
+        If a variable with the same name already exists.
+    """
+
+def get_variable(name: str) -> VariableDefinition | None:
+    """
+    Get a variable definition by name from the registry.
+
+    Searches both static (Rust-defined) and runtime (Python-defined) variables.
+
+    Parameters
+    ----------
+    name
+        The variable name to look up
+
+    Returns
+    -------
+    The variable definition if found, otherwise None.
+    """
+
+def list_variables() -> list[VariableDefinition]:
+    """
+    List all registered variables.
+
+    Returns both static (Rust-defined) and runtime (Python-defined) variables,
+    sorted by name.
+
+    Returns
+    -------
+    A list of all variable definitions.
+    """
+
+def is_variable_registered(name: str) -> bool:
+    """
+    Check if a variable is registered.
+
+    Parameters
+    ----------
+    name
+        The variable name to check
+
+    Returns
+    -------
+    True if the variable is registered, False otherwise.
+    """
 
 # =============================================================================
 # Typed Output Slices

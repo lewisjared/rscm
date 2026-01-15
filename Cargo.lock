@@ -588,6 +588,7 @@ dependencies = [
 name = "rscm-core"
 version = "0.2.3"
 dependencies = [
+ "inventory",
  "is_close",
  "log",
  "nalgebra",

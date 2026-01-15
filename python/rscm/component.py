@@ -10,6 +10,7 @@ Example
 ```python
 from rscm.component import Component, Input, Output, State
 
+
 class CarbonCycle(Component):
     # Declare inputs
     emissions = Input("Emissions|CO2", unit="GtCO2")
@@ -25,10 +26,7 @@ class CarbonCycle(Component):
         self.sensitivity = sensitivity
 
     def solve(
-        self,
-        t_current: float,
-        t_next: float,
-        inputs: "CarbonCycle.Inputs"
+        self, t_current: float, t_next: float, inputs: "CarbonCycle.Inputs"
     ) -> "CarbonCycle.Outputs":
         # Type-safe access to inputs
         emissions = inputs.emissions.current

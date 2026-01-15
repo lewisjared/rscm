@@ -47,6 +47,19 @@ pub enum RSCMError {
     /// Component cycle detected in dependency graph
     #[error("Circular dependency detected in component graph: {cycle}. Components cannot form cycles. Consider splitting the cycle by introducing intermediate state variables or restructuring the component dependencies.")]
     CircularDependency { cycle: String },
+
+    /// Unregistered variable error
+    #[error("Variable '{variable}' used by component '{component}' is not registered. Register it using define_static_variable! in Rust or register_variable() in Python before using it in a model.")]
+    UnregisteredVariable { variable: String, component: String },
+
+    /// Time convention mismatch between connected components
+    #[error("Time convention mismatch for variable '{variable}': registered as {registered_convention} but components disagree on interpretation. \n\nProducer '{producer_component}' and consumer '{consumer_component}' must both respect the registered time convention. \n\nTime conventions:\n  - StartOfYear: Value applies at Jan 1 (stocks like concentrations)\n  - MidYear: Value applies at Jul 1 (flows like emissions)\n  - Instantaneous: No temporal averaging (derived quantities)")]
+    TimeConventionMismatch {
+        variable: String,
+        registered_convention: String,
+        producer_component: String,
+        consumer_component: String,
+    },
 }
 
 /// Convenience type for `Result<T, RSCMError>`.

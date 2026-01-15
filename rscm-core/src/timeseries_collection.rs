@@ -1,5 +1,6 @@
-use crate::spatial::{FourBoxGrid, HemisphericGrid, ScalarGrid, SpatialGrid};
+use crate::spatial::{FourBoxGrid, HemisphericGrid, SpatialGrid};
 use crate::timeseries::{FloatValue, GridTimeseries, Timeseries};
+use crate::variable::PreindustrialValue;
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, PartialOrd, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -95,6 +96,13 @@ pub struct TimeseriesItem {
     pub data: TimeseriesData,
     pub name: String,
     pub variable_type: VariableType,
+    /// Optional preindustrial reference value for this variable.
+    ///
+    /// Preindustrial values are scenario-dependent and stored with the timeseries data
+    /// rather than in variable definitions. Components can access this value via
+    /// `InputState::get_preindustrial()` for forcing calculations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preindustrial: Option<PreindustrialValue>,
 }
 
 /// A collection of time series data.
@@ -127,6 +135,20 @@ impl TimeseriesCollection {
         timeseries: Timeseries<FloatValue>,
         variable_type: VariableType,
     ) {
+        self.add_timeseries_with_preindustrial(name, timeseries, variable_type, None);
+    }
+
+    /// Add a new scalar timeseries to the collection with an optional preindustrial value
+    ///
+    /// # Panics
+    /// Panics if a timeseries with the same name already exists in the collection
+    pub fn add_timeseries_with_preindustrial(
+        &mut self,
+        name: String,
+        timeseries: Timeseries<FloatValue>,
+        variable_type: VariableType,
+        preindustrial: Option<PreindustrialValue>,
+    ) {
         if self.timeseries.iter().any(|x| x.name == name) {
             panic!("timeseries {} already exists", name)
         }
@@ -134,6 +156,7 @@ impl TimeseriesCollection {
             data: TimeseriesData::Scalar(timeseries),
             name,
             variable_type,
+            preindustrial,
         });
         // Ensure the order of the serialised timeseries is stable
         self.timeseries.sort_unstable_by_key(|x| x.name.clone());
@@ -149,6 +172,20 @@ impl TimeseriesCollection {
         timeseries: GridTimeseries<FloatValue, FourBoxGrid>,
         variable_type: VariableType,
     ) {
+        self.add_four_box_timeseries_with_preindustrial(name, timeseries, variable_type, None);
+    }
+
+    /// Add a new four-box grid timeseries to the collection with an optional preindustrial value
+    ///
+    /// # Panics
+    /// Panics if a timeseries with the same name already exists in the collection
+    pub fn add_four_box_timeseries_with_preindustrial(
+        &mut self,
+        name: String,
+        timeseries: GridTimeseries<FloatValue, FourBoxGrid>,
+        variable_type: VariableType,
+        preindustrial: Option<PreindustrialValue>,
+    ) {
         if self.timeseries.iter().any(|x| x.name == name) {
             panic!("timeseries {} already exists", name)
         }
@@ -156,6 +193,7 @@ impl TimeseriesCollection {
             data: TimeseriesData::FourBox(timeseries),
             name,
             variable_type,
+            preindustrial,
         });
         self.timeseries.sort_unstable_by_key(|x| x.name.clone());
     }
@@ -170,6 +208,20 @@ impl TimeseriesCollection {
         timeseries: GridTimeseries<FloatValue, HemisphericGrid>,
         variable_type: VariableType,
     ) {
+        self.add_hemispheric_timeseries_with_preindustrial(name, timeseries, variable_type, None);
+    }
+
+    /// Add a new hemispheric grid timeseries to the collection with an optional preindustrial value
+    ///
+    /// # Panics
+    /// Panics if a timeseries with the same name already exists in the collection
+    pub fn add_hemispheric_timeseries_with_preindustrial(
+        &mut self,
+        name: String,
+        timeseries: GridTimeseries<FloatValue, HemisphericGrid>,
+        variable_type: VariableType,
+        preindustrial: Option<PreindustrialValue>,
+    ) {
         if self.timeseries.iter().any(|x| x.name == name) {
             panic!("timeseries {} already exists", name)
         }
@@ -177,6 +229,7 @@ impl TimeseriesCollection {
             data: TimeseriesData::Hemispheric(timeseries),
             name,
             variable_type,
+            preindustrial,
         });
         self.timeseries.sort_unstable_by_key(|x| x.name.clone());
     }

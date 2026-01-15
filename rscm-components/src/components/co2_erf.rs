@@ -5,13 +5,14 @@
 
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
+use rscm_core::standard_variables::{VAR_CO2_CONCENTRATION, VAR_CO2_ERF};
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// Variable name constants to avoid magic strings
-const VAR_CONC_CO2: &str = "Atmospheric Concentration|CO2";
-const VAR_ERF_CO2: &str = "Effective Radiative Forcing|CO2";
+// Re-export variable names for use in this module
+const VAR_CONC_CO2: &str = VAR_CO2_CONCENTRATION.name;
+const VAR_ERF_CO2: &str = VAR_CO2_ERF.name;
 
 /// Parameters for the CO2 ERF component
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,7 +114,7 @@ mod tests {
         let defs = component.definitions();
 
         assert_eq!(defs.len(), 2);
-        assert_eq!(defs[0].name, VAR_CONC_CO2);
-        assert_eq!(defs[1].name, VAR_ERF_CO2);
+        assert_eq!(defs[0].variable_name, VAR_CONC_CO2);
+        assert_eq!(defs[1].variable_name, VAR_ERF_CO2);
     }
 }
