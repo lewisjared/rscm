@@ -12,12 +12,18 @@ build:
     python: "3.11"
   apt_packages:
     - graphviz
-  commands:
-    - asdf plugin add uv
-    - asdf install uv latest
-    - asdf global uv latest
-    - uv sync --group docs --frozen
-    - NO_COLOR=1 uv run mkdocs build --strict --site-dir $READTHEDOCS_OUTPUT/html
+
+  jobs:
+    install:
+      - asdf plugin add uv
+      - asdf install uv latest
+      - asdf global uv latest
+      - uv sync --group docs --frozen
+      - command -v dot
+      - dot -V
+    build:
+      html:
+        - NO_COLOR=1 uv run mkdocs build --strict --site-dir $READTHEDOCS_OUTPUT/html
 
 mkdocs:
   configuration: mkdocs.yml
