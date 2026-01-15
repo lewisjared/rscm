@@ -15,7 +15,7 @@ Creating new RSCM components requires significant boilerplate and uses string-ba
 
 ### Rust API
 
-- Add `#[derive(Component)]` macro (in separate `rscm-macros` crate) to reduce boilerplate
+- Add `#[derive(ComponentIO)]` macro (in separate `rscm-macros` crate) to reduce boilerplate
 - Introduce `TimeseriesWindow` type providing zero-cost access to current, historical, and interpolated values
 - Add `RequirementType::State` to replace `InputAndOutput` with explicit semantics
 - Add spatial grid requirements to `RequirementDefinition` (e.g., `grid = FourBox`)
