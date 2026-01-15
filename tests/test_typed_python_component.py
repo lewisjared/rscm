@@ -3,14 +3,11 @@
 import numpy as np
 import pytest
 
+from rscm.component import Component, Input, Output, State
 from rscm.core import (
-    Component,
-    Input,
     InterpolationStrategy,
     ModelBuilder,
-    Output,
     PythonComponent,
-    State,
     TimeAxis,
     Timeseries,
 )
@@ -227,8 +224,8 @@ def test_typed_component_inheritance():
             self, t_current: float, t_next: float, inputs: "DerivedComponent.Inputs"
         ) -> "DerivedComponent.Outputs":
             return self.Outputs(
-                base_output=inputs.base_input.current(),
-                derived_output=inputs.derived_input.current(),
+                base_output=inputs.base_input.current,
+                derived_output=inputs.derived_input.current,
             )
 
     comp = DerivedComponent()

@@ -78,7 +78,10 @@ impl PyModelBuilder {
     }
 
     fn build(&self) -> PyResult<PyModel> {
-        Ok(PyModel(self.0.build()))
+        self.0
+            .build()
+            .map(PyModel)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 }
 

@@ -17,9 +17,11 @@ pub enum RSCMError {
     UnsupportedGridTransformation { from: String, to: String },
 
     /// Grid type mismatch between connected components
-    #[error("Grid type mismatch for variable '{variable}': producer outputs {producer_grid} but consumer expects {consumer_grid}. Use a grid transformation component or ensure matching grid types.")]
+    #[error("Grid type mismatch for variable '{variable}': producer component '{producer_component}' outputs {producer_grid} but consumer component '{consumer_component}' expects {consumer_grid}. \n\nPossible resolutions:\n  1. Change {producer_component} to output {consumer_grid}\n  2. Change {consumer_component} to accept {producer_grid}\n  3. Insert a grid transformation component between them\n  4. If aggregation is acceptable, the model coupler can auto-transform from finer to coarser grids")]
     GridTypeMismatch {
         variable: String,
+        producer_component: String,
+        consumer_component: String,
         producer_grid: String,
         consumer_grid: String,
     },

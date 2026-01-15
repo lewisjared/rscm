@@ -27,15 +27,7 @@ from rscm._lib.core import (
     VariableType,
 )
 
-# Typed component base class and descriptors
-from rscm.component import Component, Input, Output, State
-
 __all__ = [
-    # Typed component support
-    "Component",
-    "Input",
-    "Output",
-    "State",
     # Core types
     "FourBoxGrid",
     "FourBoxRegion",

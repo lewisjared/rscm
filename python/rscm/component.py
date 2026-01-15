@@ -51,7 +51,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from rscm.core import (
+from rscm._lib.core import (
     FourBoxSlice,
     FourBoxTimeseriesWindow,
     GridType,
@@ -189,7 +189,7 @@ class ComponentMeta(type):
     Metaclass for Component that generates typed Inputs and Outputs classes.
 
     This metaclass collects Input, Output, and State declarations as class
-    atributes and generates corresponding typed Inputs and Outputs classes.
+    attributes and generates corresponding typed Inputs and Outputs classes.
     """
 
     def __new__(  # noqa: D102
@@ -351,7 +351,7 @@ def _create_outputs_class(
             Dictionary mapping variable names to output values
             """
             result: dict[str, Any] = {}
-            for field_name, (var_name, grid, _) in self._field_info.items():
+            for field_name, (var_name, _grid, _) in self._field_info.items():
                 value = getattr(self, field_name)
                 # Convert slice types to their underlying values
                 if isinstance(value, FourBoxSlice | HemisphericSlice):

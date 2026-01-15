@@ -142,7 +142,8 @@ mod tests {
                 },
             )))
             .with_exogenous_variable("Emissions|CO2", create_emissions_timeseries())
-            .build();
+            .build()
+            .unwrap();
 
         model.run();
         assert!(model.finished());
@@ -172,7 +173,8 @@ mod tests {
                 },
             )))
             .with_exogenous_variable("Emissions|CO2", create_emissions_timeseries())
-            .build();
+            .build()
+            .unwrap();
 
         model.run();
         assert!(model.finished());
