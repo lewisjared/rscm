@@ -76,27 +76,30 @@ The maturin build configuration SHALL point to the correct crate location within
 - **THEN** all crates in `crates/` MUST compile successfully
 - **AND** the rscm crate MUST link against all component crates
 
-### Requirement: Testing Module Location
+### Requirement: Core Submodules for Spatial and State Types
 
-The `rscm-core` crate SHALL provide test utilities in a dedicated `testing` module, with Python bindings exported separately from core types.
+The `rscm._lib.core` module SHALL provide submodules for spatial grid types and state access types.
 
-#### Scenario: Rust testing module
+#### Scenario: Spatial submodule
 
-- **WHEN** examining `crates/rscm-core/src/`
-- **THEN** it MUST include `testing.rs` (renamed from `example_components.rs`)
-- **AND** it MUST export `TestComponent` and `TestComponentParameters`
+- **WHEN** importing from `rscm._lib.core.spatial`
+- **THEN** the following types MUST be available:
+  - `ScalarRegion`, `ScalarGrid`
+  - `FourBoxRegion`, `FourBoxGrid`
+  - `HemisphericRegion`, `HemisphericGrid`
 
-#### Scenario: Python testing submodule
+#### Scenario: State submodule
 
-- **WHEN** importing `TestComponentBuilder`
-- **THEN** it MUST be imported via `from rscm._lib.testing import TestComponentBuilder`
-- **AND** it MUST NOT be available from `rscm._lib.core`
+- **WHEN** importing from `rscm._lib.core.state`
+- **THEN** the following types MUST be available:
+  - `FourBoxSlice`, `HemisphericSlice`
+  - `TimeseriesWindow`, `FourBoxTimeseriesWindow`, `HemisphericTimeseriesWindow`
 
-#### Scenario: Testing module registered in sys.modules
+#### Scenario: Submodules registered in sys.modules
 
 - **WHEN** the `_lib` extension is loaded
-- **THEN** `rscm._lib.testing` MUST be accessible
-- **AND** it MUST contain `TestComponentBuilder`
+- **THEN** `rscm._lib.core.spatial` MUST be in `sys.modules`
+- **AND** `rscm._lib.core.state` MUST be in `sys.modules`
 
 ### Requirement: Spatial Module Organisation
 

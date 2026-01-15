@@ -282,7 +282,7 @@ impl Component for CO2ERFComponent {
     fn definitions(&self) -> Vec<RequirementDefinition> {
         vec![
             RequirementDefinition::new("Atmospheric Concentration|CO2", "ppm", RequirementType::Input),
-            RequirementDefinition::new("ERF|CO2", "W/m²", RequirementType::Output),
+            RequirementDefinition::new("ERF|CO2", "W/m^2", RequirementType::Output),
         ]
     }
 
@@ -315,12 +315,12 @@ impl Component for FourBoxOceanHeatUptakeComponent {
         vec![
             RequirementDefinition::new(
                 "ERF|Aggregated",
-                "W/m²",
+                "W/m^2",
                 RequirementType::Input
             ),
             RequirementDefinition::new(
                 "Ocean Heat Uptake",
-                "W/m²",
+                "W/m^2",
                 RequirementType::Output
             ).with_grid_type(GridType::FourBox), // Metadata about expected grid
         ]
@@ -494,18 +494,18 @@ Table showing which transformations are explicitly supported:
 **Legend:**
 
 - **Identity:** No transformation needed (same grid type)
-- **Aggregate:** Weighted average of regions → coarser resolution
+- **Aggregate:** Weighted average of regions -> coarser resolution
 - **Broadcast:** Copy scalar value to all regions (information duplication)
 - **ERROR:** No physically meaningful transformation defined
 
 **Notes:**
 
 - `*` Broadcast transformations: Use with caution. The scalar value is copied to all regions, which may not be physically accurate. Only use when the variable is truly uniform spatially.
-- `**` Hemispheric → FourBox: Not supported because we cannot infer ocean/land split from hemisphere data. Component must explicitly disaggregate if needed.
+- `**` Hemispheric -> FourBox: Not supported because we cannot infer ocean/land split from hemisphere data. Component must explicitly disaggregate if needed.
 
 ### Detailed Transformation Semantics
 
-#### FourBox → Scalar (Aggregation)
+#### FourBox -> Scalar (Aggregation)
 
 ```rust
 global_value =
@@ -517,7 +517,7 @@ global_value =
 
 where weights sum to 1.0 (typically based on area fractions)
 
-#### FourBox → Hemispheric (Aggregation)
+#### FourBox -> Hemispheric (Aggregation)
 
 ```rust
 northern_hemisphere = (northern_ocean * weight_NO + northern_land * weight_NL)
@@ -526,7 +526,7 @@ southern_hemisphere = (southern_ocean * weight_SO + southern_land * weight_SL)
                     / (weight_SO + weight_SL)
 ```
 
-#### Hemispheric → Scalar (Aggregation)
+#### Hemispheric -> Scalar (Aggregation)
 
 ```rust
 global_value = northern * weight_N + southern * weight_S
@@ -534,7 +534,7 @@ global_value = northern * weight_N + southern * weight_S
 
 where weights sum to 1.0 (typically 0.5 each unless using actual hemisphere areas)
 
-#### Scalar → FourBox (Broadcast)
+#### Scalar -> FourBox (Broadcast)
 
 ```rust
 [global_value, global_value, global_value, global_value]
@@ -552,17 +552,17 @@ where weights sum to 1.0 (typically 0.5 each unless using actual hemisphere area
 - Regional emissions (spatially heterogeneous by definition)
 - Ocean properties (land-ocean differences)
 
-#### Scalar → Hemispheric (Broadcast)
+#### Scalar -> Hemispheric (Broadcast)
 
 ```rust
 [global_value, global_value]
 ```
 
-Same caveats as Scalar → FourBox
+Same caveats as Scalar -> FourBox
 
 ### Adding Custom Transformations
 
-For unsupported transformations (e.g., Hemispheric → FourBox), components must implement explicit logic:
+For unsupported transformations (e.g., Hemispheric -> FourBox), components must implement explicit logic:
 
 ```rust
 impl Component for MyDisaggregatorComponent {
@@ -603,7 +603,7 @@ Error: Unsupported grid transformation
 
   To resolve:
   1. Create a custom component that explicitly disaggregates based on your model's physics
-  2. Use an intermediate transformation (e.g., Hemispheric → Scalar → FourBox with broadcast)
+  2. Use an intermediate transformation (e.g., Hemispheric -> Scalar -> FourBox with broadcast)
   3. Consider if your component should work at a different resolution
 
   See docs: https://lewisjared.github.io/rscm/grid-transformations.html

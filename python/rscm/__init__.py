@@ -7,7 +7,6 @@ A framework for simple climate models built it Rust.
 import importlib.metadata
 import warnings
 
-from ._lib import TwoLayerComponentBuilder  # noqa
 from ._lib import __version__ as _lib_version
 
 __version__ = importlib.metadata.version("rscm")

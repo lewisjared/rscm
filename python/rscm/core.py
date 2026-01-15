@@ -3,28 +3,32 @@ Core classes and functions for Rust Simple Climate Models (RSCMs)
 """
 
 from rscm._lib.core import (
-    FourBoxGrid,
-    FourBoxRegion,
-    FourBoxSlice,
-    FourBoxTimeseriesWindow,
     GridType,
-    HemisphericGrid,
-    HemisphericRegion,
-    HemisphericSlice,
-    HemisphericTimeseriesWindow,
     InterpolationStrategy,
     Model,
     ModelBuilder,
     PythonComponent,
     RequirementDefinition,
     RequirementType,
-    ScalarGrid,
-    ScalarRegion,
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
-    TimeseriesWindow,
     VariableType,
+)
+from rscm._lib.core.spatial import (
+    FourBoxGrid,
+    FourBoxRegion,
+    HemisphericGrid,
+    HemisphericRegion,
+    ScalarGrid,
+    ScalarRegion,
+)
+from rscm._lib.core.state import (
+    FourBoxSlice,
+    FourBoxTimeseriesWindow,
+    HemisphericSlice,
+    HemisphericTimeseriesWindow,
+    TimeseriesWindow,
 )
 
 __all__ = [

@@ -21,14 +21,18 @@ The current flat workspace structure mixes the root PyO3 bindings crate with the
 - Create `crates/rscm-magicc/` scaffold with domain subdirectories
 
 **Module Reorganisation (rscm-core):**
-- Split `spatial.rs` (923 lines) into `spatial/` subdirectory:
+- Split `spatial.rs` (922 lines) into `spatial/` subdirectory:
   - `spatial/mod.rs` - `SpatialGrid` trait and module documentation
   - `spatial/scalar.rs` - `ScalarGrid`, `ScalarRegion`
   - `spatial/four_box.rs` - `FourBoxGrid`, `FourBoxRegion`
   - `spatial/hemispheric.rs` - `HemisphericGrid`, `HemisphericRegion`
 - Split `python/spatial.rs` to mirror the Rust structure
-- Rename `example_components.rs` to `testing.rs`
-- Move `TestComponentBuilder` Python export from `rscm._lib.core` to `rscm._lib.testing`
+
+**Python Core Module Reorganisation:**
+- Split `rscm._lib.core` into logical submodules:
+  - `rscm._lib.core` - Essential types (14 classes): Timeseries, TimeAxis, Model, ModelBuilder, Component types, TimeseriesCollection, TestComponentBuilder
+  - `rscm._lib.core.spatial` - Spatial types (6 classes): ScalarRegion/Grid, FourBoxRegion/Grid, HemisphericRegion/Grid
+  - `rscm._lib.core.state` - State types (5 classes): FourBoxSlice, HemisphericSlice, TimeseriesWindow variants
 
 **Python Namespace Pattern:**
 - `rscm` package exports only core data structures (Model, ModelBuilder, Timeseries, TimeseriesCollection)

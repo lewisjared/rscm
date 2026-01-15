@@ -1,0 +1,3 @@
+from rscm._lib.core import ComponentBuilder
+
+class TwoLayerComponentBuilder(ComponentBuilder): ...

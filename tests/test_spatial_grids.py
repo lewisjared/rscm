@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from rscm._lib.core import (
+from rscm._lib.core.spatial import (
     FourBoxGrid,
     FourBoxRegion,
     HemisphericGrid,

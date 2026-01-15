@@ -128,26 +128,33 @@ spatial/
 
 The `python/spatial.rs` (206 lines) follows the same split pattern, keeping PyO3 wrappers adjacent to their Rust counterparts.
 
-### Testing Module Rename
+### Core Module Submodules
 
-The `example_components.rs` module contains `TestComponent` used for testing the component infrastructure. This will be renamed to `testing.rs` and the Python bindings moved from `rscm._lib.core` to `rscm._lib.testing`:
+The `rscm._lib.core` module will be split into logical submodules for better discoverability and maintainability:
 
-```rust
-// crates/rscm-core/src/testing.rs (renamed from example_components.rs)
-pub struct TestComponent { ... }
-pub struct TestComponentParameters { ... }
+**`rscm._lib.core` (14 essential types):**
+- Time management: `TimeAxis`, `Timeseries`, `InterpolationStrategy`
+- State management: `TimeseriesCollection`, `VariableType`
+- Orchestration: `ModelBuilder`, `Model`
+- Components: `PythonComponent`, `RequirementDefinition`, `RequirementType`, `GridType`
+- Example: `TestComponentBuilder`
 
-// crates/rscm-core/src/python/testing.rs (renamed from example_component.rs)
-create_component_builder!(TestComponentBuilder, TestComponent, TestComponentParameters);
+**`rscm._lib.core.spatial` (6 types):**
+Spatial grid definitions and region enums, created via `#[pymodule]` wrapper:
+- `ScalarRegion`, `ScalarGrid`
+- `FourBoxRegion`, `FourBoxGrid`
+- `HemisphericRegion`, `HemisphericGrid`
 
-#[pymodule]
-pub fn testing(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<TestComponentBuilder>()?;
-    Ok(())
-}
-```
+**`rscm._lib.core.state` (5 types):**
+State access patterns and typed slices, created via `#[pymodule]` wrapper:
+- `FourBoxSlice`, `HemisphericSlice`
+- `TimeseriesWindow`, `FourBoxTimeseriesWindow`, `HemisphericTimeseriesWindow`
 
-**Rationale:** Separating test utilities from core exports clarifies their purpose and keeps the `core` module focused on production types.
+**Rationale:**
+- Spatial types are self-contained and don't mix concerns with time/model management
+- State types (slices, windows) are implementation details of the state machinery
+- Core module stays focused on essential orchestration and component infrastructure
+- Users accessing grids explicitly import from `spatial` submodule, making intent clear
 
 ### Alternatives Considered
 

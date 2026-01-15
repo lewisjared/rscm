@@ -170,8 +170,8 @@ class CarbonCycle(Component):
 **Why**: Enables the coupler to:
 
 - Validate grid compatibility at build time
-- Auto-insert aggregation transforms (FourBox → Scalar)
-- Fail fast when incompatible grids connect (Scalar → FourBox)
+- Auto-insert aggregation transforms (FourBox -> Scalar)
+- Fail fast when incompatible grids connect (Scalar -> FourBox)
 
 ```rust
 pub struct RequirementDefinition {

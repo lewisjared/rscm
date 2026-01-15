@@ -32,9 +32,9 @@
 - [x] 4.1 Add grid compatibility checking in `ModelBuilder::build()`
 - [x] 4.2 Create `GridMismatch` error type with descriptive message
 - [x] 4.3 Add `GridTransformComponent` for auto-aggregation
-- [x] 4.4 Implement FourBox → Scalar aggregation transform
-- [x] 4.5 Implement FourBox → Hemispheric aggregation transform
-- [x] 4.6 Implement Hemispheric → Scalar aggregation transform
+- [x] 4.4 Implement FourBox -> Scalar aggregation transform
+- [x] 4.5 Implement FourBox -> Hemispheric aggregation transform
+- [x] 4.6 Implement Hemispheric -> Scalar aggregation transform
 - [x] 4.7 Add integration tests for grid auto-transform
 - [x] 4.8 Add integration tests for grid mismatch errors
 

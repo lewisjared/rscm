@@ -7,7 +7,7 @@ This directory contains detailed documentation for each scientific module in MAG
 MAGICC is a reduced-complexity climate model that chains several Initial Value Problems (IVPs):
 
 ```
-EMISSIONS → CONCENTRATIONS → RADIATIVE FORCING → TEMPERATURE → CARBON CYCLE FEEDBACKS
+EMISSIONS -> CONCENTRATIONS -> RADIATIVE FORCING -> TEMPERATURE -> CARBON CYCLE FEEDBACKS
                                                        ↑                    |
                                                        └────────────────────┘
 ```
@@ -42,7 +42,7 @@ MAGICC uses a 4-box spatial discretization (hardcoded):
 | [07b - RF Aggregation](module_07b_rf_aggregation.md) | `deltaq_calculations.f90` | Sum forcing agents, apply efficacies | None |
 | [08 - Climate](module_08_climate.md) | `climate_and_ocean.f90` | Energy balance, ocean heat uptake | 12 monthly substeps |
 
-### Chemistry Modules (Emissions → Concentrations)
+### Chemistry Modules (Emissions -> Concentrations)
 
 | Module | File | Purpose | Iteration Type |
 |--------|------|---------|----------------|
@@ -51,7 +51,7 @@ MAGICC uses a 4-box spatial discretization (hardcoded):
 | [03 - Halocarbon Chemistry](module_03_halocarbon_chemistry.md) | `deltaq_calculations.f90` | ~41 species exponential decay | None |
 | [04 - Ozone](module_04_ozone.md) | `deltaq_calculations.f90` | Tropospheric + stratospheric O3 | None |
 
-### Forcing Modules (Concentrations → W/m²)
+### Forcing Modules (Concentrations -> W/m^2)
 
 | Module | File | Purpose | Swappable Methods |
 |--------|------|---------|-------------------|
@@ -86,7 +86,7 @@ CH4 CHEMISTRY ←──────────┐        HALO CHEMISTRY
    ↓                     │              ↓
 N2O CHEMISTRY            │         OZONE MODULE
    ↓                     │              ↓
-   └──────────→ RADIATIVE FORCING ←─────┘
+   └──────────-> RADIATIVE FORCING ←─────┘
                     AGGREGATOR
                          ↓
                 ┌────────┴────────┐
