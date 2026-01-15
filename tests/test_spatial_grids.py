@@ -1,4 +1,5 @@
 """Tests for spatial grid types."""
+
 import numpy as np
 import pytest
 

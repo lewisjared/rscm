@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::sync::Arc;
-// Reexport the Requirement Definition
-pub use crate::component::{RequirementDefinition, RequirementType};
+// Reexport the Requirement Definition and GridType
+pub use crate::component::{GridType, RequirementDefinition, RequirementType};
 
 /// Create a component builder that can be used by python to instantiate components created Rust.
 #[macro_export]
@@ -70,11 +70,18 @@ macro_rules! impl_component {
 #[pymethods]
 impl RequirementDefinition {
     #[new]
-    pub fn new_python(name: String, unit: String, requirement_type: RequirementType) -> Self {
+    #[pyo3(signature = (name, unit, requirement_type, grid_type=GridType::Scalar))]
+    pub fn new_python(
+        name: String,
+        unit: String,
+        requirement_type: RequirementType,
+        grid_type: GridType,
+    ) -> Self {
         Self {
             name,
             unit,
             requirement_type,
+            grid_type,
         }
     }
 }
