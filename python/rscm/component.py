@@ -351,7 +351,7 @@ def _create_outputs_class(
             Dictionary mapping variable names to output values
             """
             result: dict[str, Any] = {}
-            for field_name, (var_name, grid, _) in self._field_info.items():
+            for field_name, (var_name, _grid, _) in self._field_info.items():
                 value = getattr(self, field_name)
                 # Convert slice types to their underlying values
                 if isinstance(value, FourBoxSlice | HemisphericSlice):
