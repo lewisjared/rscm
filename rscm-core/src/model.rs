@@ -576,6 +576,7 @@ mod tests {
     use super::*;
     use crate::example_components::{TestComponent, TestComponentParameters};
     use crate::interpolate::strategies::PreviousStrategy;
+    use crate::standard_variables::{VAR_CO2_CONCENTRATION, VAR_CO2_EMISSIONS};
     use is_close::is_close;
     use numpy::array;
     use numpy::ndarray::{Array, Axis};
@@ -588,7 +589,7 @@ mod tests {
             values,
             Arc::new(TimeAxis::from_bounds(array![1800.0, 1850.0, 2100.0])),
             ScalarGrid,
-            "GtC / yr".to_string(),
+            VAR_CO2_EMISSIONS.unit.to_string(),
             InterpolationStrategy::from(PreviousStrategy::new(true)),
         )
     }
@@ -603,7 +604,7 @@ mod tests {
                     conversion_factor: 0.5,
                 },
             )))
-            .with_exogenous_variable("Emissions|CO2", get_emissions())
+            .with_exogenous_variable(VAR_CO2_EMISSIONS.name, get_emissions())
             .build()
             .unwrap();
 
@@ -618,7 +619,7 @@ mod tests {
 
         let concentrations = model
             .collection
-            .get_timeseries_by_name("Concentrations|CO2")
+            .get_timeseries_by_name(VAR_CO2_CONCENTRATION.name)
             .unwrap();
 
         println!("{:?}", concentrations.values());
@@ -643,7 +644,7 @@ mod tests {
                     conversion_factor: 0.5,
                 },
             )))
-            .with_exogenous_variable("Emissions|CO2", get_emissions())
+            .with_exogenous_variable(VAR_CO2_EMISSIONS.name, get_emissions())
             .build()
             .unwrap();
 
@@ -667,7 +668,7 @@ mod tests {
                     conversion_factor: 0.5,
                 },
             )))
-            .with_exogenous_variable("Emissions|CO2", get_emissions())
+            .with_exogenous_variable(VAR_CO2_EMISSIONS.name, get_emissions())
             .build()
             .unwrap();
 
@@ -698,7 +699,7 @@ type = "TestComponent"
 conversion_factor = 0.5
 
 [[collection.timeseries]]
-name = "Concentrations|CO2"
+name = "Atmospheric Concentration|CO2"
 variable_type = "Endogenous"
 
 [collection.timeseries.data.Scalar]

@@ -31,8 +31,9 @@ def test_component_definitions():
 
     definitions = component.definitions()
     assert len(definitions) == 2
+    # Uses standard variable names from the registry
     assert definitions[0].variable_name == "Emissions|CO2"
-    assert definitions[1].variable_name == "Concentrations|CO2"
+    assert definitions[1].variable_name == "Atmospheric Concentration|CO2"
 
 
 def test_component_invalid():

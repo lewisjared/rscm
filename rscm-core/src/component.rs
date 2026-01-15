@@ -299,7 +299,13 @@ mod tests {
 
         // New typed API uses window.current() which returns latest available value
         // For exogenous data at latest() index (1), that's 1.3
-        assert_eq!(*output_state.get("Concentrations|CO2").unwrap(), 1.3 * 2.0);
+        // Output uses standard variable name from registry
+        assert_eq!(
+            *output_state
+                .get(crate::standard_variables::VAR_CO2_CONCENTRATION.name)
+                .unwrap(),
+            1.3 * 2.0
+        );
     }
 
     #[test]
