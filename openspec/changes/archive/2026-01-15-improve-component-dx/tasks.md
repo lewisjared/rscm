@@ -51,7 +51,7 @@
 - [x] 5.9 Generate `definitions()` implementation from attributes
 - [x] 5.10 Generate `solve()` wrapper that converts InputState to typed inputs
 - [x] 5.11 Re-export macro from `rscm-core`
-- [ ] 5.12 Add compile-fail tests for invalid field access
+- [x] 5.12 Add compile-fail tests for invalid field access
 
 ## 6. Rewrite Existing Components
 
@@ -63,14 +63,14 @@
 
 ## 7. Python Typed Inputs
 
-- [ ] 7.1 Create `ComponentMeta` metaclass for Python components
-- [ ] 7.2 Implement dataclass generation from `inputs`/`outputs` lists
+- [x] 7.1 Create `ComponentMeta` metaclass for Python components
+- [x] 7.2 Implement dataclass generation from `inputs`/`outputs` lists
 - [x] 7.3 Create `PyTimeseriesWindow` PyO3 class
 - [x] 7.4 Implement `current`, `previous` properties
 - [x] 7.5 Implement `last_n()` returning numpy array view
 - [x] 7.6 Create `PyGridTimeseriesWindow` for grid variables
 - [x] 7.7 Implement `region()` method for single-region access
-- [ ] 7.8 Update `PythonComponent` to construct typed inputs
+- [x] 7.8 Update `PythonComponent` to construct typed inputs
 - [x] 7.9 Add Python tests for typed scalar input access
 - [x] 7.10 Add Python tests for typed grid input access
 
@@ -78,9 +78,9 @@
 
 - [x] 8.1 Create `PyFourBoxSlice` with named kwargs constructor
 - [x] 8.2 Create `PyHemisphericSlice` with named kwargs
-- [ ] 8.3 Generate output dataclass using typed slices
-- [ ] 8.4 Implement `__post_init__` validation for required fields
-- [ ] 8.5 Convert typed outputs to dict for Rust interop
+- [x] 8.3 Generate output dataclass using typed slices
+- [x] 8.4 Implement `__post_init__` validation for required fields
+- [x] 8.5 Convert typed outputs to dict for Rust interop
 - [x] 8.6 Add Python tests for typed slice outputs
 
 ## 9. Error Handling Improvements
@@ -95,13 +95,13 @@
 - [x] 10.1 Add docstrings to all new public types
 - [x] 10.2 Document grid compatibility rules
 - [x] 10.3 Add example component using derive macro in docs
-- [ ] 10.4 Add example Python component with typed inputs
+- [x] 10.4 Add example Python component with typed inputs
 - [x] 10.5 Update CLAUDE.md with new component patterns
 
 ## 11. Integration Testing
 
 - [x] 11.1 Test model with multiple components using derive macro
-- [ ] 11.2 Test model with grid auto-transform between components
+- [x] 11.2 Test model with grid auto-transform between components
 - [x] 11.3 Test Python component with typed inputs/outputs
 - [x] 11.4 Test serialisation/deserialisation with new components
 - [x] 11.5 Test error messages for common mistakes
