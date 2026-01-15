@@ -1,5 +1,6 @@
 pub mod component;
 mod example_components;
+pub mod grid_transform;
 pub mod interpolate;
 pub mod ivp;
 pub mod model;

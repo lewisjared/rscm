@@ -7,13 +7,25 @@ use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
-/// Type of requirement (input, output, or both)
+/// Type of requirement (input, output, state, or internal link)
+///
+/// # Variants
+///
+/// - `Input`: Read-only variable from external source or other component
+/// - `Output`: Write-only variable produced by this component each timestep
+/// - `State`: Variable that reads its previous value and writes a new value each timestep.
+///   State variables require an initial value to be provided at model build time.
+/// - `EmptyLink`: Internal graph connectivity (not for user code)
 #[pyclass]
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub enum RequirementType {
+    /// Read from external source or other component
     Input,
+    /// Write new value each timestep
     Output,
-    InputAndOutput,
+    /// Read previous value and write new value (requires initial value)
+    State,
+    /// Internal graph connectivity (not for user code)
     EmptyLink,
 }
 
@@ -99,9 +111,9 @@ impl RequirementDefinition {
         Self::new(name, unit, RequirementType::Output)
     }
 
-    /// Create a scalar input/output requirement
-    pub fn scalar_input_output(name: &str, unit: &str) -> Self {
-        Self::new(name, unit, RequirementType::InputAndOutput)
+    /// Create a scalar state requirement (reads previous, writes new value)
+    pub fn scalar_state(name: &str, unit: &str) -> Self {
+        Self::new(name, unit, RequirementType::State)
     }
 
     /// Create a four-box input requirement
@@ -114,14 +126,9 @@ impl RequirementDefinition {
         Self::with_grid(name, unit, RequirementType::Output, GridType::FourBox)
     }
 
-    /// Create a four-box input/output requirement
-    pub fn four_box_input_output(name: &str, unit: &str) -> Self {
-        Self::with_grid(
-            name,
-            unit,
-            RequirementType::InputAndOutput,
-            GridType::FourBox,
-        )
+    /// Create a four-box state requirement (reads previous, writes new value)
+    pub fn four_box_state(name: &str, unit: &str) -> Self {
+        Self::with_grid(name, unit, RequirementType::State, GridType::FourBox)
     }
 
     /// Create a hemispheric input requirement
@@ -134,14 +141,9 @@ impl RequirementDefinition {
         Self::with_grid(name, unit, RequirementType::Output, GridType::Hemispheric)
     }
 
-    /// Create a hemispheric input/output requirement
-    pub fn hemispheric_input_output(name: &str, unit: &str) -> Self {
-        Self::with_grid(
-            name,
-            unit,
-            RequirementType::InputAndOutput,
-            GridType::Hemispheric,
-        )
+    /// Create a hemispheric state requirement (reads previous, writes new value)
+    pub fn hemispheric_state(name: &str, unit: &str) -> Self {
+        Self::with_grid(name, unit, RequirementType::State, GridType::Hemispheric)
     }
 
     /// Check if this requirement is spatially resolved (non-scalar)
@@ -174,12 +176,16 @@ pub trait Component: Debug + Send + Sync {
     fn definitions(&self) -> Vec<RequirementDefinition>;
 
     /// Variables that are required to solve this component
+    ///
+    /// Returns all `Input` and `State` requirements.
     fn inputs(&self) -> Vec<RequirementDefinition> {
         self.definitions()
             .iter()
             .filter(|d| {
-                (d.requirement_type == RequirementType::Input)
-                    || (d.requirement_type == RequirementType::InputAndOutput)
+                matches!(
+                    d.requirement_type,
+                    RequirementType::Input | RequirementType::State
+                )
             })
             .cloned()
             .collect()
@@ -194,12 +200,16 @@ pub trait Component: Debug + Send + Sync {
     /// i.e. No two components within a model can produce the same variable names.
     /// These names can contain '|' to namespace variables to avoid collisions,
     /// for example, 'Emissions|CO2' and 'Atmospheric Concentrations|CO2'
+    ///
+    /// Returns all `Output` and `State` requirements.
     fn outputs(&self) -> Vec<RequirementDefinition> {
         self.definitions()
             .iter()
             .filter(|d| {
-                (d.requirement_type == RequirementType::Output)
-                    || (d.requirement_type == RequirementType::InputAndOutput)
+                matches!(
+                    d.requirement_type,
+                    RequirementType::Output | RequirementType::State
+                )
             })
             .cloned()
             .collect()

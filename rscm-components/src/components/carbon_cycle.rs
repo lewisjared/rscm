@@ -89,9 +89,9 @@ impl Component for CarbonCycleComponent {
         vec![
             RequirementDefinition::scalar_input(VAR_EMISSIONS_CO2, "GtC / yr"),
             RequirementDefinition::scalar_input(VAR_SURFACE_TEMP, "K"),
-            RequirementDefinition::scalar_input_output(VAR_CONC_CO2, "ppm"),
-            RequirementDefinition::scalar_input_output(VAR_CUM_EMISSIONS, "Gt C"),
-            RequirementDefinition::scalar_input_output(VAR_CUM_UPTAKE, "Gt C"),
+            RequirementDefinition::scalar_state(VAR_CONC_CO2, "ppm"),
+            RequirementDefinition::scalar_state(VAR_CUM_EMISSIONS, "Gt C"),
+            RequirementDefinition::scalar_state(VAR_CUM_UPTAKE, "Gt C"),
         ]
     }
 

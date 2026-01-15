@@ -210,10 +210,10 @@ impl ModelBuilder {
     /// Adds some state to the set of initial values
     ///
     /// These initial values are used to provide some initial values at `t_0`.
-    /// Initial values are used for requirements which have a type of `RequirementType::InputAndOutput`.
-    /// These requirements use state from the current timestep in order to generate a value for the
-    /// next timestep.
-    /// Building a model where any variables which have `RequirementType::InputAndOutput`, but
+    /// Initial values are used for requirements which have a type of `RequirementType::State`.
+    /// State variables read their value from the previous timestep in order to generate a new value
+    /// for the next timestep.
+    /// Building a model where any variables which have `RequirementType::State`, but
     /// do not have an initial value will result in an error.
     pub fn with_initial_values(
         &mut self,

@@ -109,7 +109,7 @@ class TimeseriesCollection:
 class RequirementType(Enum):
     Input = auto()
     Output = auto()
-    InputAndOutput = auto()
+    State = auto()
     EmptyLink = auto()
 
 class GridType(Enum):

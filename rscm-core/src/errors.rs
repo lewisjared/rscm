@@ -25,7 +25,7 @@ pub enum RSCMError {
     },
 
     /// Missing initial value for a state variable
-    #[error("Missing initial value for state variable '{variable}' in component '{component}'. State variables (InputAndOutput) require an initial value. Use ModelBuilder::with_initial_value(\"{variable}\", value) to provide one, or set a default in the component's parameter configuration.")]
+    #[error("Missing initial value for state variable '{variable}' in component '{component}'. State variables require an initial value. Use ModelBuilder::with_initial_value(\"{variable}\", value) to provide one, or set a default in the component's parameter configuration.")]
     MissingInitialValue { variable: String, component: String },
 
     /// Variable not found in state
