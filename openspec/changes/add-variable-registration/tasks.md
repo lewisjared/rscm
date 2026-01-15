@@ -35,18 +35,17 @@
 
 ## 5. Refactor RequirementDefinition
 
-- [ ] 5.1 Replace name/unit fields with `variable_name: String`
-- [ ] 5.2 Implement new constructors: `input()`, `output()`, `state()`
-- [ ] 5.3 Implement grid-specific constructors: `four_box_input()`, `four_box_output()`, etc.
-- [ ] 5.4 Add accessor methods: `name()`, `unit()`, `time_convention()` (registry lookup)
-- [ ] 5.5 Update serialization for variable name storage
-- [ ] 5.6 Add unit tests for RequirementDefinition
+- [ ] 5.1 Rename `name` field to `variable_name` (keep `unit` field - components declare expected units)
+- [ ] 5.2 Keep existing constructors (API unchanged: `scalar_input(name, unit)`, etc.)
+- [ ] 5.3 Add `time_convention()` accessor method (registry lookup - intrinsic to variable)
+- [ ] 5.4 Update serialization to use `variable_name` field name
+- [ ] 5.5 Add unit tests for RequirementDefinition
 
 ## 6. Model Builder Validation
 
 - [ ] 6.1 Add variable existence validation (check registry)
-- [ ] 6.2 Add unit compatibility validation
-- [ ] 6.3 Add time convention compatibility validation (error on mismatch)
+- [ ] 6.2 Add unit compatibility validation (compare between connected components, not registry)
+- [ ] 6.3 Add time convention compatibility validation (from registry, error on mismatch)
 - [ ] 6.4 Create RSCMError variants: UnregisteredVariableError, UnitMismatchError, TimeConventionMismatchError
 - [ ] 6.5 Add integration tests for validation scenarios
 
@@ -64,7 +63,7 @@
 - [ ] 8.1 Update TestComponent to use registered variables
 - [ ] 8.2 Update CO2ERF component
 - [ ] 8.3 Update CarbonCycle component
-- [ ] 8.4 Update any other existing components
+- [ ] 8.4 Update FourBoxOceanHeatUptake component
 - [ ] 8.5 Verify all Rust tests pass after migration
 
 ## 9. Python Bindings

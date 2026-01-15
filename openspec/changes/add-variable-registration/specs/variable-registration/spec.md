@@ -6,9 +6,13 @@ The system SHALL provide a `VariableDefinition` struct that captures intrinsic m
 
 A `VariableDefinition` SHALL include:
 - `name`: Unique identifier using pipe-delimited namespacing (e.g., "Atmospheric Concentration|CO2")
-- `unit`: Physical unit string (e.g., "ppm", "W / m^2", "GtC / yr")
+- `unit`: Canonical physical unit string (e.g., "ppm", "W / m^2", "GtC / yr") - for documentation and future unit conversion support
 - `time_convention`: When the value applies within a timestep (StartOfYear, MidYear, or Instantaneous)
 - `description`: Human-readable description of the variable
+
+**Note on canonical unit**: The `unit` field represents the canonical/preferred unit for the variable. Components may declare different units in their `RequirementDefinition` (e.g., "MtC / yr" instead of "GtC / yr"). Unit validation compares between connected components, not against this canonical unit. The canonical unit serves for:
+- Documentation and variable discovery
+- Future automatic unit conversion in the coupler
 
 #### Scenario: Define a concentration variable
 
@@ -196,41 +200,43 @@ Runtime registration SHALL:
 
 ---
 
-### Requirement: Requirement Definition with Variable Name
+### Requirement: Requirement Definition with Variable Name and Unit
 
-The `RequirementDefinition` struct SHALL reference variables by name, with metadata resolved from the registry.
+The `RequirementDefinition` struct SHALL reference variables by name and declare the component's expected/produced unit.
 
 RequirementDefinition SHALL include:
 - `variable_name`: Name of the registered variable
+- `unit`: The unit this component expects (for inputs) or produces (for outputs)
 - `requirement_type`: Whether this is Input, Output, or State
 - `grid_type`: Spatial resolution (Scalar, FourBox, Hemispheric)
 
-The struct SHALL provide accessor methods that look up the variable in the registry:
+The struct SHALL provide accessor methods:
 - `name()`: Returns the variable name
-- `unit()`: Returns the unit from the registry
-- `time_convention()`: Returns the time convention from the registry
+- `unit()`: Returns the component's declared unit
+- `time_convention()`: Returns the time convention from the registry (intrinsic to variable)
 
 #### Scenario: Create scalar input requirement
 
 - **GIVEN** a registered CO2 concentration variable
-- **WHEN** a component creates `RequirementDefinition::input("Atmospheric Concentration|CO2")`
-- **THEN** the requirement stores the variable name
+- **WHEN** a component creates `RequirementDefinition::scalar_input("Atmospheric Concentration|CO2", "ppm")`
+- **THEN** the requirement stores the variable name and unit
 - **AND** requirement_type is Input
-- **AND** grid_type defaults to Scalar
+- **AND** grid_type is Scalar
 
 #### Scenario: Create four-box output requirement
 
 - **GIVEN** a registered temperature variable
-- **WHEN** a component creates `RequirementDefinition::four_box_output("Surface Temperature")`
-- **THEN** the requirement stores the variable name
+- **WHEN** a component creates `RequirementDefinition::four_box_output("Surface Temperature", "K")`
+- **THEN** the requirement stores the variable name and unit
 - **AND** requirement_type is Output
 - **AND** grid_type is FourBox
 
-#### Scenario: Accessor methods resolve from registry
+#### Scenario: Component declares different unit than registry canonical
 
-- **GIVEN** a requirement referencing "Atmospheric Concentration|CO2"
-- **WHEN** `unit()` is called
-- **THEN** the registry is consulted and "ppm" is returned
+- **GIVEN** a registry with "Emissions|CO2" having canonical unit "GtC / yr"
+- **WHEN** a component creates `RequirementDefinition::scalar_output("Emissions|CO2", "MtC / yr")`
+- **THEN** the requirement stores "MtC / yr" as the unit
+- **AND** the registry canonical unit is not affected
 
 ---
 
@@ -264,9 +270,9 @@ Validation SHALL:
 The `ModelBuilder` SHALL validate unit compatibility when connecting component inputs to outputs.
 
 Validation SHALL:
-- Look up units from the registry for each variable
-- Compare unit strings between connected requirements
-- Fail the build if units do not match exactly
+- Compare unit strings between connected component declarations (output unit vs input unit)
+- NOT compare against the registry's canonical unit (registry unit is for documentation only)
+- Fail the build if units do not match exactly (future: auto-convert compatible units)
 - Provide clear error messages identifying the mismatched components and variables
 
 #### Scenario: Compatible units pass validation
@@ -283,6 +289,14 @@ Validation SHALL:
 - **WHEN** the model is built
 - **THEN** validation fails with an error indicating the unit mismatch
 - **AND** the error identifies both components and the variable name
+
+#### Scenario: Registry canonical unit does not affect validation
+
+- **GIVEN** the registry defines "Emissions|CO2" with canonical unit "GtC / yr"
+- **AND** component A outputs "Emissions|CO2" with unit "MtC / yr"
+- **AND** component B inputs "Emissions|CO2" with unit "MtC / yr"
+- **WHEN** the model is built
+- **THEN** validation passes (both components agree on unit, regardless of registry canonical)
 
 ---
 

@@ -120,32 +120,42 @@ impl InputState {
 - Data loaders can set preindustrial when loading scenario files
 - Keeps VariableDefinition focused on intrinsic metadata
 
-### Decision 4: RequirementDefinition with Variable Name
+### Decision 4: RequirementDefinition with Variable Name and Unit
 
-`RequirementDefinition` stores variable name, with metadata resolved from registry:
+`RequirementDefinition` stores the variable name and the component's expected/produced unit:
 
 ```rust
 pub struct RequirementDefinition {
     pub variable_name: String,
+    pub unit: String,           // Component's expected/produced unit
     pub requirement_type: RequirementType,
     pub grid_type: GridType,
 }
 
-// Usage
-RequirementDefinition::input("Atmospheric Concentration|CO2")
-RequirementDefinition::four_box_output("Surface Temperature")
+// Usage (unchanged from current API)
+RequirementDefinition::scalar_input("Atmospheric Concentration|CO2", "ppm")
+RequirementDefinition::four_box_output("Surface Temperature", "K")
 ```
 
-**Rationale**: Name-based lookup enables both Rust and Python variables. Simpler serialization than storing references.
+**Rationale**: Components declare their expected units. This enables future unit conversion in the coupler - one component can output `GtC / yr` while another expects `MtC / yr`. The coupler validates compatibility and (in future) handles translation. For now, mismatched units are an error.
+
+**Registry canonical unit**: The `VariableDefinition` in the registry also has a `unit` field, but this serves as documentation/introspection only. It represents the "canonical" unit for the variable. Validation compares units between connected components, not against the registry.
 
 ### Decision 5: Validation at Model Build Time
 
 `ModelBuilder::build()` validates:
 1. All referenced variables exist in the registry
 2. All output variables have unique names
-3. Connected input/output pairs have compatible units (string equality)
-4. Connected pairs have compatible time conventions (error for mismatches)
+3. Connected input/output pairs have compatible units (string equality between component declarations)
+4. Connected pairs have compatible time conventions (from registry, error for mismatches)
 5. Connected pairs have compatible grid types (already implemented)
+
+**Unit validation detail**: Units are compared between the output's declared unit and the input's declared unit. The registry's canonical unit is not used for validation - it exists for documentation and future conversion support. For example:
+- Component A outputs "Emissions|CO2" with unit "GtC / yr"
+- Component B inputs "Emissions|CO2" with unit "GtC / yr" → passes
+- Component B inputs "Emissions|CO2" with unit "MtC / yr" → fails (future: auto-convert)
+
+**Time convention validation detail**: Unlike units, time conventions are intrinsic to the variable and looked up from the registry. A variable cannot have different time conventions in different components.
 
 **Rationale**: Catch errors before simulation runs. Validation is cheap compared to multi-year climate runs.
 
