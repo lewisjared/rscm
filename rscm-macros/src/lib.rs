@@ -6,8 +6,8 @@
 //! # Overview
 //!
 //! The `ComponentIO` derive macro generates:
-//! - A typed `Inputs` struct from fields marked with `#[input]`
-//! - A typed `Outputs` struct from fields marked with `#[output]`
+//! - A typed `Inputs` struct from `#[inputs(...)]` attribute
+//! - A typed `Outputs` struct from `#[outputs(...)]` and `#[states(...)]` attributes
 //! - Automatic `definitions()` implementation for the Component trait
 //!
 //! # Example
@@ -16,15 +16,14 @@
 //! use rscm_macros::ComponentIO;
 //!
 //! #[derive(ComponentIO)]
-//! #[component(name = "CO2ERF")]
+//! #[inputs(
+//!     concentration_co2 { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+//! )]
+//! #[outputs(
+//!     erf_co2 { name = "Effective Radiative Forcing|CO2", unit = "W / m^2" },
+//! )]
 //! pub struct CO2ERFComponent {
-//!     #[input(name = "Atmospheric Concentration|CO2", unit = "ppm")]
-//!     concentration_co2: f64,
-//!
-//!     #[output(name = "Effective Radiative Forcing|CO2", unit = "W / m^2")]
-//!     erf_co2: f64,
-//!
-//!     // Parameters (not marked as input/output)
+//!     // Only actual parameters - no phantom fields needed
 //!     pub erf_2xco2: f64,
 //!     pub conc_pi: f64,
 //! }
@@ -33,12 +32,192 @@
 //! This generates:
 //! - `CO2ERFComponentInputs` with a `concentration_co2: TimeseriesWindow<'a>` field
 //! - `CO2ERFComponentOutputs` with an `erf_co2: f64` field
-//! - Implementation of `definitions()` returning the appropriate `RequirementDefinition`s
+//! - Implementation of `generated_definitions()` returning the appropriate `RequirementDefinition`s
+//!
+//! # Compile-time Safety
+//!
+//! The generated structs provide compile-time validation of field access:
+//!
+//! ## Invalid Input Field Access
+//!
+//! ```compile_fail
+//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! # use rscm_core::timeseries::Time;
+//! # use serde::{Serialize, Deserialize};
+//! #
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//! )]
+//! #[outputs(
+//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//! )]
+//! struct TestComponent { conversion: f64 }
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: no field `temperature` on type `TestComponentInputs`
+//!         let temp = inputs.temperature.current();
+//!         TestComponentOutputs { concentration: temp }
+//!     }
+//! }
+//! ```
+//!
+//! ## Invalid Output Field
+//!
+//! ```compile_fail
+//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! # use rscm_core::timeseries::Time;
+//! # use serde::{Serialize, Deserialize};
+//! #
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//! )]
+//! #[outputs(
+//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//! )]
+//! struct TestComponent { conversion: f64 }
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: no field `uptake` on type `TestComponentOutputs`
+//!         TestComponentOutputs {
+//!             concentration: 280.0,
+//!             uptake: 5.0,
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! ## Missing Required Output Field
+//!
+//! ```compile_fail
+//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! # use rscm_core::timeseries::Time;
+//! # use serde::{Serialize, Deserialize};
+//! #
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//! )]
+//! #[outputs(
+//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//!     uptake { name = "Carbon Uptake", unit = "GtC" },
+//! )]
+//! struct TestComponent { conversion: f64 }
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: missing field `uptake` in initializer of `TestComponentOutputs`
+//!         TestComponentOutputs {
+//!             concentration: 280.0,
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! ## Wrong Type for Grid Output
+//!
+//! ```compile_fail
+//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! # use rscm_core::timeseries::Time;
+//! # use serde::{Serialize, Deserialize};
+//! #
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     temperature { name = "Temperature", unit = "K", grid = "FourBox" },
+//! )]
+//! #[outputs(
+//!     heat_flux { name = "Heat Flux", unit = "W/m^2", grid = "FourBox" },
+//! )]
+//! struct TestComponent;
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: expected `FourBoxSlice`, found `f64`
+//!         TestComponentOutputs {
+//!             heat_flux: 5.0,  // Should be FourBoxSlice::uniform(5.0)
+//!         }
+//!     }
+//! }
+//! ```
 
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields, Ident, LitStr};
+use syn::{
+    braced, parse::Parse, parse::ParseStream, parse_macro_input, punctuated::Punctuated, Attribute,
+    Data, DeriveInput, Ident, LitStr, Token,
+};
+
+/// A single I/O field declaration like: `emissions_co2 { name = "...", unit = "...", grid = "..." }`
+struct IoFieldDecl {
+    rust_name: Ident,
+    variable_name: String,
+    unit: String,
+    grid_type: String,
+}
+
+impl Parse for IoFieldDecl {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let rust_name: Ident = input.parse()?;
+
+        let content;
+        braced!(content in input);
+
+        let mut variable_name = None;
+        let mut unit = None;
+        let mut grid_type = String::from("Scalar");
+
+        while !content.is_empty() {
+            let key: Ident = content.parse()?;
+            content.parse::<Token![=]>()?;
+            let value: LitStr = content.parse()?;
+
+            match key.to_string().as_str() {
+                "name" => variable_name = Some(value.value()),
+                "unit" => unit = Some(value.value()),
+                "grid" => grid_type = value.value(),
+                other => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("unknown attribute key: {}", other),
+                    ))
+                }
+            }
+
+            // Consume optional trailing comma
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            }
+        }
+
+        let variable_name = variable_name
+            .ok_or_else(|| syn::Error::new(rust_name.span(), "missing `name` attribute"))?;
+        let unit = unit.unwrap_or_default();
+
+        Ok(IoFieldDecl {
+            rust_name,
+            variable_name,
+            unit,
+            grid_type,
+        })
+    }
+}
+
+/// List of I/O field declarations: `field1 { ... }, field2 { ... }`
+struct IoFieldList {
+    fields: Punctuated<IoFieldDecl, Token![,]>,
+}
+
+impl Parse for IoFieldList {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        // Parse directly - tokens already exclude outer parentheses
+        let fields = Punctuated::parse_terminated(input)?;
+        Ok(IoFieldList { fields })
+    }
+}
 
 /// Metadata for an input field
 struct InputField {
@@ -56,71 +235,60 @@ struct OutputField {
     grid_type: String,
 }
 
-/// Parse a #[input(...)] or #[output(...)] attribute using syn 2.0 API
-fn parse_io_attribute(attr: &Attribute, rust_name: &Ident) -> Option<(String, String, String)> {
-    let mut name = None;
-    let mut unit = None;
-    let mut grid = String::from("Scalar");
-
-    attr.parse_nested_meta(|meta| {
-        if meta.path.is_ident("name") {
-            let value: LitStr = meta.value()?.parse()?;
-            name = Some(value.value());
-        } else if meta.path.is_ident("unit") {
-            let value: LitStr = meta.value()?.parse()?;
-            unit = Some(value.value());
-        } else if meta.path.is_ident("grid") {
-            let value: LitStr = meta.value()?.parse()?;
-            grid = value.value();
-        }
-        Ok(())
-    })
-    .ok()?;
-
-    // Use rust field name if name not specified
-    let name = name.unwrap_or_else(|| rust_name.to_string());
-    let unit = unit.unwrap_or_default();
-
-    Some((name, unit, grid))
+/// Metadata for a state field (appears in both inputs and outputs)
+struct StateField {
+    rust_name: Ident,
+    variable_name: String,
+    unit: String,
+    grid_type: String,
 }
 
-/// Extract input/output fields from the struct
-fn extract_io_fields(fields: &Fields) -> (Vec<InputField>, Vec<OutputField>) {
+/// Parse a struct-level attribute like `#[inputs(...)]` or `#[outputs(...)]`
+fn parse_io_list_attribute(attr: &Attribute) -> syn::Result<Vec<IoFieldDecl>> {
+    let list: IoFieldList = syn::parse2(attr.meta.require_list()?.tokens.clone())?;
+    Ok(list.fields.into_iter().collect())
+}
+
+/// Extract inputs, outputs, and states from struct-level attributes
+fn extract_io_from_attrs(
+    attrs: &[Attribute],
+) -> syn::Result<(Vec<InputField>, Vec<OutputField>, Vec<StateField>)> {
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
+    let mut states = Vec::new();
 
-    if let Fields::Named(named) = fields {
-        for field in &named.named {
-            let rust_name = field
-                .ident
-                .clone()
-                .expect("Named fields should have idents");
-
-            for attr in &field.attrs {
-                if attr.path().is_ident("input") {
-                    if let Some((name, unit, grid)) = parse_io_attribute(attr, &rust_name) {
-                        inputs.push(InputField {
-                            rust_name: rust_name.clone(),
-                            variable_name: name,
-                            unit,
-                            grid_type: grid,
-                        });
-                    }
-                } else if attr.path().is_ident("output") {
-                    if let Some((name, unit, grid)) = parse_io_attribute(attr, &rust_name) {
-                        outputs.push(OutputField {
-                            rust_name: rust_name.clone(),
-                            variable_name: name,
-                            unit,
-                            grid_type: grid,
-                        });
-                    }
-                }
+    for attr in attrs {
+        if attr.path().is_ident("inputs") {
+            for decl in parse_io_list_attribute(attr)? {
+                inputs.push(InputField {
+                    rust_name: decl.rust_name,
+                    variable_name: decl.variable_name,
+                    unit: decl.unit,
+                    grid_type: decl.grid_type,
+                });
+            }
+        } else if attr.path().is_ident("outputs") {
+            for decl in parse_io_list_attribute(attr)? {
+                outputs.push(OutputField {
+                    rust_name: decl.rust_name,
+                    variable_name: decl.variable_name,
+                    unit: decl.unit,
+                    grid_type: decl.grid_type,
+                });
+            }
+        } else if attr.path().is_ident("states") {
+            for decl in parse_io_list_attribute(attr)? {
+                states.push(StateField {
+                    rust_name: decl.rust_name,
+                    variable_name: decl.variable_name,
+                    unit: decl.unit,
+                    grid_type: decl.grid_type,
+                });
             }
         }
     }
 
-    (inputs, outputs)
+    Ok((inputs, outputs, states))
 }
 
 /// Generate the grid type token
@@ -154,9 +322,10 @@ fn output_type(grid: &str) -> TokenStream2 {
 ///
 /// # Attributes
 ///
-/// ## Field attributes
-/// - `#[input(name = "...", unit = "...", grid = "...")]` - Mark as input variable
-/// - `#[output(name = "...", unit = "...", grid = "...")]` - Mark as output variable
+/// ## Struct-level attributes
+/// - `#[inputs(field { name = "...", unit = "...", grid = "..." }, ...)]` - Declare input variables
+/// - `#[outputs(field { name = "...", unit = "...", grid = "..." }, ...)]` - Declare output variables
+/// - `#[states(field { name = "...", unit = "...", grid = "..." }, ...)]` - Declare state variables
 ///
 /// Where `grid` can be: "Scalar" (default), "FourBox", or "Hemispheric"
 ///
@@ -165,21 +334,34 @@ fn output_type(grid: &str) -> TokenStream2 {
 /// For a struct `Foo`, this macro generates:
 /// - `FooInputs<'a>` - Input struct with `TimeseriesWindow` or `GridTimeseriesWindow` fields
 /// - `FooOutputs` - Output struct with typed fields
-#[proc_macro_derive(ComponentIO, attributes(input, output))]
+/// - `Foo::generated_definitions()` - Returns `Vec<RequirementDefinition>` for the Component trait
+#[proc_macro_derive(ComponentIO, attributes(inputs, outputs, states))]
 pub fn derive_component_io(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let struct_name = &input.ident;
     let inputs_name = format_ident!("{}Inputs", struct_name);
     let outputs_name = format_ident!("{}Outputs", struct_name);
 
-    let fields = match &input.data {
-        Data::Struct(data) => &data.fields,
-        _ => panic!("ComponentIO can only be derived for structs"),
+    // Verify it's a struct
+    match &input.data {
+        Data::Struct(_) => {}
+        _ => {
+            return syn::Error::new(
+                Span::call_site(),
+                "ComponentIO can only be derived for structs",
+            )
+            .to_compile_error()
+            .into()
+        }
     };
 
-    let (input_fields, output_fields) = extract_io_fields(fields);
+    // Extract I/O declarations from struct-level attributes
+    let (input_fields, output_fields, state_fields) = match extract_io_from_attrs(&input.attrs) {
+        Ok(result) => result,
+        Err(e) => return e.to_compile_error().into(),
+    };
 
-    // Generate Inputs struct fields
+    // Generate Inputs struct fields (inputs + states)
     let input_struct_fields: Vec<TokenStream2> = input_fields
         .iter()
         .map(|f| {
@@ -187,9 +369,14 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
             let ty = input_window_type(&f.grid_type);
             quote! { pub #name: #ty }
         })
+        .chain(state_fields.iter().map(|f| {
+            let name = &f.rust_name;
+            let ty = input_window_type(&f.grid_type);
+            quote! { pub #name: #ty }
+        }))
         .collect();
 
-    // Generate Outputs struct fields
+    // Generate Outputs struct fields (outputs + states)
     let output_struct_fields: Vec<TokenStream2> = output_fields
         .iter()
         .map(|f| {
@@ -197,6 +384,11 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
             let ty = output_type(&f.grid_type);
             quote! { pub #name: #ty }
         })
+        .chain(state_fields.iter().map(|f| {
+            let name = &f.rust_name;
+            let ty = output_type(&f.grid_type);
+            quote! { pub #name: #ty }
+        }))
         .collect();
 
     // Generate definitions() items
@@ -224,6 +416,18 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         })
         .collect();
 
+    let state_definitions: Vec<TokenStream2> = state_fields
+        .iter()
+        .map(|f| {
+            let name = &f.variable_name;
+            let unit = &f.unit;
+            let grid = grid_type_token(&f.grid_type);
+            quote! {
+                RequirementDefinition::with_grid(#name, #unit, RequirementType::State, #grid)
+            }
+        })
+        .collect();
+
     // Generate Into<OutputState> conversion for each output field
     let output_conversions: Vec<TokenStream2> = output_fields
         .iter()
@@ -231,17 +435,61 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
             let name = &f.rust_name;
             let var_name = &f.variable_name;
             match f.grid_type.as_str() {
-                "FourBox" => quote! {
-                    map.insert(#var_name.to_string(), self.#name.to_vec());
-                },
-                "Hemispheric" => quote! {
-                    map.insert(#var_name.to_string(), self.#name.to_vec());
+                "FourBox" | "Hemispheric" => quote! {
+                    map.insert(#var_name.to_string(), outputs.#name.to_vec());
                 },
                 _ => quote! {
-                    map.insert(#var_name.to_string(), self.#name);
+                    map.insert(#var_name.to_string(), outputs.#name);
                 },
             }
         })
+        .chain(state_fields.iter().map(|f| {
+            let name = &f.rust_name;
+            let var_name = &f.variable_name;
+            match f.grid_type.as_str() {
+                "FourBox" | "Hemispheric" => quote! {
+                    map.insert(#var_name.to_string(), outputs.#name.to_vec());
+                },
+                _ => quote! {
+                    map.insert(#var_name.to_string(), outputs.#name);
+                },
+            }
+        }))
+        .collect();
+
+    // Generate code to construct Inputs from InputState
+    let input_field_constructions: Vec<TokenStream2> = input_fields
+        .iter()
+        .map(|f| {
+            let name = &f.rust_name;
+            let var_name = &f.variable_name;
+            match f.grid_type.as_str() {
+                "FourBox" => quote! {
+                    #name: input_state.get_four_box_window(#var_name)
+                },
+                "Hemispheric" => quote! {
+                    #name: input_state.get_hemispheric_window(#var_name)
+                },
+                _ => quote! {
+                    #name: input_state.get_scalar_window(#var_name)
+                },
+            }
+        })
+        .chain(state_fields.iter().map(|f| {
+            let name = &f.rust_name;
+            let var_name = &f.variable_name;
+            match f.grid_type.as_str() {
+                "FourBox" => quote! {
+                    #name: input_state.get_four_box_window(#var_name)
+                },
+                "Hemispheric" => quote! {
+                    #name: input_state.get_hemispheric_window(#var_name)
+                },
+                _ => quote! {
+                    #name: input_state.get_scalar_window(#var_name)
+                },
+            }
+        }))
         .collect();
 
     // Generate the expanded code
@@ -250,6 +498,23 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         #[derive(Debug)]
         pub struct #inputs_name<'a> {
             #(#input_struct_fields,)*
+        }
+
+        impl<'a> #inputs_name<'a> {
+            /// Construct typed inputs from an InputState
+            ///
+            /// This extracts the appropriate TimeseriesWindow for each input field
+            /// from the provided input state.
+            ///
+            /// # Panics
+            ///
+            /// Panics if any required variable is missing from the input state
+            /// or if a variable has the wrong grid type.
+            pub fn from_input_state(input_state: &'a InputState<'_>) -> Self {
+                Self {
+                    #(#input_field_constructions,)*
+                }
+            }
         }
 
         /// Generated output struct for #struct_name
@@ -264,6 +529,7 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
                 vec![
                     #(#input_definitions,)*
                     #(#output_definitions,)*
+                    #(#state_definitions,)*
                 ]
             }
         }

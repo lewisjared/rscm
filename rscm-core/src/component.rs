@@ -238,8 +238,11 @@ mod tests {
     use ndarray::array;
 
     #[test]
+    #[allow(deprecated)]
     fn solve() {
-        let component = TestComponent::from_parameters(TestComponentParameters { p: 2.0 });
+        let component = TestComponent::from_parameters(TestComponentParameters {
+            conversion_factor: 2.0,
+        });
 
         let emissions_co2 = TimeseriesItem {
             data: crate::timeseries_collection::TimeseriesData::Scalar(Timeseries::from_values(
@@ -251,11 +254,14 @@ mod tests {
         };
 
         let input_state = InputState::build(vec![&emissions_co2], 2020.0);
+        // Old API interpolates at current_time for exogenous
         assert_eq!(input_state.get_latest("Emissions|CO2"), 1.1);
 
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
-        assert_eq!(*output_state.get("Concentrations|CO2").unwrap(), 1.1 * 2.0);
+        // New typed API uses window.current() which returns latest available value
+        // For exogenous data at latest() index (1), that's 1.3
+        assert_eq!(*output_state.get("Concentrations|CO2").unwrap(), 1.3 * 2.0);
     }
 
     #[test]

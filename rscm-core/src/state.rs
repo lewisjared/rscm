@@ -633,6 +633,13 @@ impl<'a> InputState<'a> {
     ///
     /// # Panics
     /// Panics if the variable is not found or is not scalar.
+    ///
+    /// # Deprecated
+    /// Use `get_scalar_window(name).current()` for typed access with history support.
+    #[deprecated(
+        since = "0.3.0",
+        note = "Use get_scalar_window(name).current() for typed, compile-time safe access"
+    )]
     pub fn get_latest(&self, name: &str) -> FloatValue {
         let item = self
             .iter()
@@ -741,6 +748,78 @@ impl<'a> InputState<'a> {
 
     pub fn iter(&self) -> impl Iterator<Item = &&TimeseriesItem> {
         self.state.iter()
+    }
+
+    /// Get the current time
+    pub fn current_time(&self) -> Time {
+        self.current_time
+    }
+
+    /// Get a scalar TimeseriesWindow for the named variable
+    ///
+    /// This provides zero-cost access to current, previous, and historical values.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the variable is not found or is not a scalar timeseries.
+    pub fn get_scalar_window(&self, name: &str) -> TimeseriesWindow<'_> {
+        let item = self
+            .iter()
+            .find(|item| item.name == name)
+            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
+
+        let ts = item
+            .data
+            .as_scalar()
+            .unwrap_or_else(|| panic!("Variable '{}' is not a scalar timeseries", name));
+
+        // Use latest() for all variable types - the model interpolates exogenous
+        // data to the common time axis before solving, so latest() is correct.
+        let current_index = ts.latest();
+
+        TimeseriesWindow::new(ts, current_index, self.current_time)
+    }
+
+    /// Get a FourBox GridTimeseriesWindow for the named variable
+    ///
+    /// # Panics
+    ///
+    /// Panics if the variable is not found or is not a FourBox timeseries.
+    pub fn get_four_box_window(&self, name: &str) -> GridTimeseriesWindow<'_, FourBoxGrid> {
+        let item = self
+            .iter()
+            .find(|item| item.name == name)
+            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
+
+        let ts = item
+            .data
+            .as_four_box()
+            .unwrap_or_else(|| panic!("Variable '{}' is not a FourBox timeseries", name));
+
+        let current_index = ts.latest();
+
+        GridTimeseriesWindow::new(ts, current_index, self.current_time)
+    }
+
+    /// Get a Hemispheric GridTimeseriesWindow for the named variable
+    ///
+    /// # Panics
+    ///
+    /// Panics if the variable is not found or is not a Hemispheric timeseries.
+    pub fn get_hemispheric_window(&self, name: &str) -> GridTimeseriesWindow<'_, HemisphericGrid> {
+        let item = self
+            .iter()
+            .find(|item| item.name == name)
+            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
+
+        let ts = item
+            .data
+            .as_hemispheric()
+            .unwrap_or_else(|| panic!("Variable '{}' is not a Hemispheric timeseries", name));
+
+        let current_index = ts.latest();
+
+        GridTimeseriesWindow::new(ts, current_index, self.current_time)
     }
 
     /// Converts the state into an equivalent hashmap
@@ -1340,5 +1419,159 @@ mod typed_slice_tests {
 
         let hemispheric = HemisphericSlice::default();
         assert!(hemispheric.get(HemisphericRegion::Northern).is_nan());
+    }
+}
+
+#[cfg(test)]
+mod input_state_window_tests {
+    use super::*;
+    use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+    use crate::spatial::{FourBoxGrid, HemisphericGrid};
+    use crate::timeseries::{GridTimeseries, TimeAxis, Timeseries};
+    use numpy::array;
+    use numpy::ndarray::{Array2, Axis};
+    use std::sync::Arc;
+
+    fn create_scalar_item(name: &str, values: Vec<FloatValue>) -> TimeseriesItem {
+        // Create time axis that matches values length
+        let n = values.len();
+        let time_vals: Vec<f64> = (0..n).map(|i| 2000.0 + i as f64).collect();
+        let time_axis = Arc::new(TimeAxis::from_values(ndarray::Array1::from_vec(time_vals)));
+        let values_arr = ndarray::Array1::from_vec(values).insert_axis(Axis(1));
+        let ts = Timeseries::new(
+            values_arr,
+            time_axis,
+            ScalarGrid,
+            "unit".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+        TimeseriesItem {
+            data: TimeseriesData::Scalar(ts),
+            name: name.to_string(),
+            variable_type: VariableType::Endogenous,
+        }
+    }
+
+    fn create_four_box_item(name: &str) -> TimeseriesItem {
+        let grid = FourBoxGrid::magicc_standard();
+        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0, 2002.0]));
+        let values = Array2::from_shape_vec(
+            (3, 4),
+            vec![
+                15.0, 14.0, 10.0, 9.0, // 2000
+                16.0, 15.0, 11.0, 10.0, // 2001
+                17.0, 16.0, 12.0, 11.0, // 2002
+            ],
+        )
+        .unwrap();
+        let ts = GridTimeseries::new(
+            values,
+            time_axis,
+            grid,
+            "C".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+        TimeseriesItem {
+            data: TimeseriesData::FourBox(ts),
+            name: name.to_string(),
+            variable_type: VariableType::Endogenous,
+        }
+    }
+
+    fn create_hemispheric_item(name: &str) -> TimeseriesItem {
+        let grid = HemisphericGrid::equal_weights();
+        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
+        let values = Array2::from_shape_vec(
+            (2, 2),
+            vec![
+                1000.0, 500.0, // 2000
+                1100.0, 550.0, // 2001
+            ],
+        )
+        .unwrap();
+        let ts = GridTimeseries::new(
+            values,
+            time_axis,
+            grid,
+            "mm/yr".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+        TimeseriesItem {
+            data: TimeseriesData::Hemispheric(ts),
+            name: name.to_string(),
+            variable_type: VariableType::Endogenous,
+        }
+    }
+
+    #[test]
+    fn test_get_scalar_window() {
+        let item = create_scalar_item("CO2", vec![280.0, 285.0, 290.0, 295.0, 300.0]);
+        let state = InputState::build(vec![&item], 2002.0);
+
+        let window = state.get_scalar_window("CO2");
+
+        // latest() returns the highest index with valid data = 4 (300.0)
+        assert_eq!(window.current(), 300.0);
+        assert_eq!(window.previous(), Some(295.0));
+        assert_eq!(window.len(), 5);
+    }
+
+    #[test]
+    fn test_get_four_box_window() {
+        let item = create_four_box_item("Temperature");
+        let state = InputState::build(vec![&item], 2001.0);
+
+        let window = state.get_four_box_window("Temperature");
+
+        // latest() = 2 (2002 values: [17.0, 16.0, 12.0, 11.0])
+        assert_eq!(window.current(FourBoxRegion::NorthernOcean), 17.0);
+        assert_eq!(window.current(FourBoxRegion::SouthernLand), 11.0);
+        assert_eq!(window.current_all(), vec![17.0, 16.0, 12.0, 11.0]);
+        assert_eq!(window.previous_all(), Some(vec![16.0, 15.0, 11.0, 10.0]));
+    }
+
+    #[test]
+    fn test_get_hemispheric_window() {
+        let item = create_hemispheric_item("Precipitation");
+        let state = InputState::build(vec![&item], 2000.0);
+
+        let window = state.get_hemispheric_window("Precipitation");
+
+        // latest() = 1 (2001 values: [1100.0, 550.0])
+        assert_eq!(window.current(HemisphericRegion::Northern), 1100.0);
+        assert_eq!(window.current(HemisphericRegion::Southern), 550.0);
+        assert_eq!(window.current_global(), 825.0); // Equal weights mean
+    }
+
+    #[test]
+    #[should_panic(expected = "Variable 'NonExistent' not found")]
+    fn test_get_scalar_window_missing_variable() {
+        let item = create_scalar_item("CO2", vec![280.0, 285.0]);
+        let state = InputState::build(vec![&item], 2000.0);
+        let _ = state.get_scalar_window("NonExistent");
+    }
+
+    #[test]
+    #[should_panic(expected = "not a scalar timeseries")]
+    fn test_get_scalar_window_wrong_type() {
+        let item = create_four_box_item("Temperature");
+        let state = InputState::build(vec![&item], 2000.0);
+        // Attempting to get scalar window for a FourBox variable should panic
+        let _ = state.get_scalar_window("Temperature");
+    }
+
+    #[test]
+    #[should_panic(expected = "not a FourBox timeseries")]
+    fn test_get_four_box_window_wrong_type() {
+        let item = create_scalar_item("CO2", vec![280.0, 285.0]);
+        let state = InputState::build(vec![&item], 2000.0);
+        let _ = state.get_four_box_window("CO2");
+    }
+
+    #[test]
+    fn test_current_time_accessor() {
+        let item = create_scalar_item("CO2", vec![280.0, 285.0]);
+        let state = InputState::build(vec![&item], 2023.5);
+        assert_eq!(state.current_time(), 2023.5);
     }
 }

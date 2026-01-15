@@ -524,7 +524,9 @@ mod tests {
         let mut model = ModelBuilder::new()
             .with_time_axis(time_axis)
             .with_component(Arc::new(TestComponent::from_parameters(
-                TestComponentParameters { p: 0.5 },
+                TestComponentParameters {
+                    conversion_factor: 0.5,
+                },
             )))
             .with_exogenous_variable("Emissions|CO2", get_emissions())
             .build();
@@ -561,14 +563,16 @@ mod tests {
         let model = ModelBuilder::new()
             .with_time_axis(time_axis)
             .with_component(Arc::new(TestComponent::from_parameters(
-                TestComponentParameters { p: 0.5 },
+                TestComponentParameters {
+                    conversion_factor: 0.5,
+                },
             )))
             .with_exogenous_variable("Emissions|CO2", get_emissions())
             .build();
 
         let exp = r#"digraph {
     0 [ label = "NullComponent"]
-    1 [ label = "TestComponent { parameters: TestComponentParameters { p: 0.5 } }"]
+    1 [ label = "TestComponent { parameters: TestComponentParameters { conversion_factor: 0.5 } }"]
     0 -> 1 [ label = ""]
 }
 "#;
@@ -582,7 +586,9 @@ mod tests {
         let mut model = ModelBuilder::new()
             .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
             .with_component(Arc::new(TestComponent::from_parameters(
-                TestComponentParameters { p: 0.5 },
+                TestComponentParameters {
+                    conversion_factor: 0.5,
+                },
             )))
             .with_exogenous_variable("Emissions|CO2", get_emissions())
             .build();
@@ -611,7 +617,7 @@ type = "NullComponent"
 type = "TestComponent"
 
 [components.nodes.parameters]
-p = 0.5
+conversion_factor = 0.5
 
 [[collection.timeseries]]
 name = "Concentrations|CO2"

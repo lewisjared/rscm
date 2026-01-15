@@ -111,7 +111,7 @@ The system SHALL automatically insert grid transformation nodes when a finer gri
 
 ### Requirement: Typed Input Accessors (Rust)
 
-The system SHALL provide a derive macro that generates typed input structs from component definitions.
+The system SHALL provide a derive macro that generates typed input structs from struct-level attribute declarations.
 
 Generated input structs MUST:
 
@@ -120,17 +120,25 @@ Generated input structs MUST:
 - Use `GridTimeseriesWindow` type for grid fields
 - Be lifetime-parameterised to avoid data copying
 
+The macro MUST use struct-level attributes (`#[inputs(...)]`, `#[states(...)]`) rather than phantom fields to avoid:
+
+- Placeholder `()` fields that store nothing
+- `#[serde(skip)]` annotations on marker fields
+- Underscore-prefixed field names to suppress unused warnings
+- Explicit initialization of phantom fields in constructors
+
 #### Scenario: Macro generates typed inputs
 
-- **WHEN** a component uses `#[derive(Component)]` with input declarations
+- **WHEN** a component uses `#[derive(ComponentIO)]` with `#[inputs(...)]` and `#[states(...)]` attributes
 - **THEN** an `{ComponentName}Inputs` struct is generated
 - **AND** each input variable becomes a field with snake_case naming
+- **AND** the component struct contains only actual parameters (no phantom fields)
 - **AND** grid inputs have array-based access methods
 
 #### Scenario: Compile-time validation of variable access
 
 - **WHEN** component code accesses `inputs.emissions_co2`
-- **AND** no input named "Emissions|CO2" was declared
+- **AND** no input named "Emissions|CO2" was declared in `#[inputs(...)]`
 - **THEN** compilation fails with an error pointing to the invalid field access
 
 ---
@@ -148,7 +156,7 @@ Generated output structs MUST:
 
 #### Scenario: Macro generates typed outputs
 
-- **WHEN** a component uses `#[derive(Component)]` with output declarations
+- **WHEN** a component uses `#[derive(ComponentIO)]` with `#[outputs(...)]` and `#[states(...)]` attributes
 - **THEN** a `{ComponentName}Outputs` struct is generated
 - **AND** the struct implements `Into<OutputState>`
 
@@ -235,7 +243,7 @@ The system SHALL generate typed dataclasses for Python component outputs.
 
 ### Requirement: Derive Macro in Separate Crate
 
-The system SHALL provide the `#[derive(Component)]` macro in a dedicated `rscm-macros` crate.
+The system SHALL provide the `#[derive(ComponentIO)]` macro in a dedicated `rscm-macros` crate.
 
 #### Scenario: Macro crate is a workspace member
 
@@ -246,5 +254,5 @@ The system SHALL provide the `#[derive(Component)]` macro in a dedicated `rscm-m
 #### Scenario: Components use macro via rscm-core
 
 - **WHEN** a component imports from `rscm_core`
-- **THEN** the `Component` derive macro is available
+- **THEN** the `ComponentIO` derive macro is available
 - **AND** no direct dependency on `rscm-macros` is required

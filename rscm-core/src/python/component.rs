@@ -1,7 +1,11 @@
 /// Macros for exposing a component to Python and using python-defined modules in rust
 use crate::component::{Component, InputState, OutputState};
 use crate::errors::RSCMResult;
+use crate::python::state::{
+    PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyTimeseriesWindow,
+};
 use crate::timeseries::{FloatValue, Time};
+use crate::timeseries_collection::TimeseriesData;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -124,15 +128,38 @@ impl Component for PythonComponent {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         Python::attach(|py| {
-            let py_result = self
-                .component
-                .bind(py)
-                .call_method(
-                    "solve",
-                    (t_current, t_next, input_state.clone().to_hashmap()),
-                    None,
-                )
-                .unwrap();
+            let component = self.component.bind(py);
+
+            // Check if this is a typed component (has _component_inputs attribute)
+            let is_typed = component.hasattr("_component_inputs").unwrap_or(false);
+
+            let py_result = if is_typed {
+                // New typed component - pass TimeseriesWindow dict
+                let windows = input_state_to_py_windows(py, input_state)
+                    .expect("Failed to create Python window objects");
+
+                // Get the Inputs class and construct typed inputs
+                let inputs_class = component.getattr("Inputs").unwrap();
+                let typed_inputs = inputs_class
+                    .call_method("from_input_state", (windows,), None)
+                    .unwrap();
+
+                let result = component
+                    .call_method("solve", (t_current, t_next, typed_inputs), None)
+                    .unwrap();
+
+                // Convert typed outputs to dict
+                result.call_method("to_dict", (), None).unwrap()
+            } else {
+                // Legacy component - pass raw hashmap
+                component
+                    .call_method(
+                        "solve",
+                        (t_current, t_next, input_state.clone().to_hashmap()),
+                        None,
+                    )
+                    .unwrap()
+            };
 
             let output_state = py_result.extract().unwrap();
             Ok(output_state)
@@ -185,3 +212,50 @@ impl PyPythonComponent {
 }
 
 impl_component!(PyPythonComponent);
+
+/// Convert an InputState to a Python dict of TimeseriesWindow objects
+///
+/// This creates a dictionary mapping variable names to typed TimeseriesWindow
+/// objects that provide access to current, previous, and historical values.
+fn input_state_to_py_windows(py: Python<'_>, input_state: &InputState) -> PyResult<Py<PyAny>> {
+    let dict = pyo3::types::PyDict::new(py);
+
+    for item in input_state.clone().into_iter() {
+        let name = &item.name;
+        let current_index = item.data.latest();
+
+        let window: Py<PyAny> = match &item.data {
+            TimeseriesData::Scalar(ts) => {
+                // Extract scalar values up to and including current_index
+                let values: Vec<FloatValue> = (0..=current_index)
+                    .filter_map(|i| ts.at_scalar(i))
+                    .collect();
+                PyTimeseriesWindow::new(values, current_index)
+                    .map(|w| w.into_pyobject(py).unwrap().into_any().unbind())?
+            }
+            TimeseriesData::FourBox(ts) => {
+                // Extract all regional values for each timestep
+                let values: Vec<[FloatValue; 4]> = (0..=current_index)
+                    .filter_map(|i| {
+                        ts.at_time_index(i)
+                            .map(|vals| [vals[0], vals[1], vals[2], vals[3]])
+                    })
+                    .collect();
+                PyFourBoxTimeseriesWindow::new(values, current_index)
+                    .map(|w| w.into_pyobject(py).unwrap().into_any().unbind())?
+            }
+            TimeseriesData::Hemispheric(ts) => {
+                // Extract all regional values for each timestep
+                let values: Vec<[FloatValue; 2]> = (0..=current_index)
+                    .filter_map(|i| ts.at_time_index(i).map(|vals| [vals[0], vals[1]]))
+                    .collect();
+                PyHemisphericTimeseriesWindow::new(values, current_index)
+                    .map(|w| w.into_pyobject(py).unwrap().into_any().unbind())?
+            }
+        };
+
+        dict.set_item(name, window)?;
+    }
+
+    Ok(dict.into_any().unbind())
+}
