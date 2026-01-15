@@ -76,6 +76,28 @@ The maturin build configuration SHALL point to the correct crate location within
 - **THEN** all crates in `crates/` MUST compile successfully
 - **AND** the rscm crate MUST link against all component crates
 
+### Requirement: Testing Module Location
+
+The `rscm-core` crate SHALL provide test utilities in a dedicated `testing` module, with Python bindings exported separately from core types.
+
+#### Scenario: Rust testing module
+
+- **WHEN** examining `crates/rscm-core/src/`
+- **THEN** it MUST include `testing.rs` (renamed from `example_components.rs`)
+- **AND** it MUST export `TestComponent` and `TestComponentParameters`
+
+#### Scenario: Python testing submodule
+
+- **WHEN** importing `TestComponentBuilder`
+- **THEN** it MUST be imported via `from rscm._lib.testing import TestComponentBuilder`
+- **AND** it MUST NOT be available from `rscm._lib.core`
+
+#### Scenario: Testing module registered in sys.modules
+
+- **WHEN** the `_lib` extension is loaded
+- **THEN** `rscm._lib.testing` MUST be accessible
+- **AND** it MUST contain `TestComponentBuilder`
+
 ### Requirement: Spatial Module Organisation
 
 The `rscm-core` crate SHALL organise spatial grid types into a `spatial/` subdirectory with separate files for each grid implementation.

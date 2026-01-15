@@ -27,6 +27,8 @@ The current flat workspace structure mixes the root PyO3 bindings crate with the
   - `spatial/four_box.rs` - `FourBoxGrid`, `FourBoxRegion`
   - `spatial/hemispheric.rs` - `HemisphericGrid`, `HemisphericRegion`
 - Split `python/spatial.rs` to mirror the Rust structure
+- Rename `example_components.rs` to `testing.rs`
+- Move `TestComponentBuilder` Python export from `rscm._lib.core` to `rscm._lib.testing`
 
 **Python Namespace Pattern:**
 - `rscm` package exports only core data structures (Model, ModelBuilder, Timeseries, TimeseriesCollection)

@@ -128,6 +128,27 @@ spatial/
 
 The `python/spatial.rs` (206 lines) follows the same split pattern, keeping PyO3 wrappers adjacent to their Rust counterparts.
 
+### Testing Module Rename
+
+The `example_components.rs` module contains `TestComponent` used for testing the component infrastructure. This will be renamed to `testing.rs` and the Python bindings moved from `rscm._lib.core` to `rscm._lib.testing`:
+
+```rust
+// crates/rscm-core/src/testing.rs (renamed from example_components.rs)
+pub struct TestComponent { ... }
+pub struct TestComponentParameters { ... }
+
+// crates/rscm-core/src/python/testing.rs (renamed from example_component.rs)
+create_component_builder!(TestComponentBuilder, TestComponent, TestComponentParameters);
+
+#[pymodule]
+pub fn testing(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<TestComponentBuilder>()?;
+    Ok(())
+}
+```
+
+**Rationale:** Separating test utilities from core exports clarifies their purpose and keeps the `core` module focused on production types.
+
 ### Alternatives Considered
 
 1. **Multiple extension modules (rscm._core, rscm._two_layer):** Would complicate installation and require multiple maturin builds. Rejected for added complexity without clear benefit.
