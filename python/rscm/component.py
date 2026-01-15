@@ -189,7 +189,7 @@ class ComponentMeta(type):
     Metaclass for Component that generates typed Inputs and Outputs classes.
 
     This metaclass collects Input, Output, and State declarations as class
-    atributes and generates corresponding typed Inputs and Outputs classes.
+    attributes and generates corresponding typed Inputs and Outputs classes.
     """
 
     def __new__(  # noqa: D102

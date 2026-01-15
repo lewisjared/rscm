@@ -15,7 +15,8 @@ The window MUST support:
 
 - **WHEN** a component receives a `TimeseriesWindow` for a variable
 - **THEN** calling `current()` returns the value at the current time index
-- **AND** calling `previous()` returns the value at the previous time index or `None` if at the first timestep
+- **AND** calling `previous()` returns the value at the previous time index
+- **AND** calling `previous()` at the first timestep raises a `ValueError` with message "No previous value available"
 
 #### Scenario: Access historical slice
 
@@ -54,19 +55,13 @@ State variables MUST require an initial value to be provided at model build time
 
 The system SHALL support declaring spatial grid requirements on each input, output, and state variable.
 
-Supported grid types MUST include: Scalar, FourBox, Hemispheric, and Any.
+Supported grid types MUST include: Scalar, FourBox, and Hemispheric.
 
 #### Scenario: Component declares grid requirements
 
 - **WHEN** a component declares an input with `grid = FourBox`
 - **THEN** the requirement definition includes the grid type
 - **AND** the coupler can validate grid compatibility
-
-#### Scenario: Any grid accepts all types
-
-- **WHEN** a component declares an input with `grid = Any`
-- **THEN** the component accepts Scalar, FourBox, or Hemispheric inputs
-- **AND** the component handles grid-specific logic internally
 
 ---
 

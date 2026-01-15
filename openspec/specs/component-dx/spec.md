@@ -1,7 +1,8 @@
 # component-dx Specification
 
 ## Purpose
-TBD - created by archiving change improve-component-dx. Update Purpose after archive.
+
+This specification addresses the developer experience challenges of RSCM's component API, which previously relied on stringly-typed variable access patterns that were error-prone and lacked compile-time validation. The changes introduce type-safe input/output declarations for both Rust and Python components through a `ComponentIO` derive macro and Python dataclass generation, zero-cost `TimeseriesWindow` views for temporal data access, spatial grid type annotations (Scalar, FourBox, Hemispheric) with automatic transformation between grid resolutions, and compile-time validation of component I/O contracts. The intended audience is component authors—both Rust developers building climate model components and Python developers writing research prototypes—who will benefit from IDE autocomplete, compile-time error detection for missing or misspelled variables, and type-safe region access for spatial grids. Success is achieved when components can be written with full type safety, invalid variable access is caught at compile time rather than runtime, and the zero-cost abstraction design ensures no performance overhead compared to the previous stringly-typed API.
 ## Requirements
 ### Requirement: TimeseriesWindow State Access
 
