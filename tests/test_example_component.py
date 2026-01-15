@@ -25,7 +25,9 @@ class ExamplePythonComponent:
 
 
 def test_component_definitions():
-    component = ExampleComponentBuilder.from_parameters({"p": 12}).build()
+    component = ExampleComponentBuilder.from_parameters(
+        {"conversion_factor": 0.5}
+    ).build()
 
     definitions = component.definitions()
     assert len(definitions) == 2
@@ -34,7 +36,7 @@ def test_component_definitions():
 
 
 def test_component_invalid():
-    with pytest.raises(ValueError, match="missing field `p`"):
+    with pytest.raises(ValueError, match="missing field `conversion_factor`"):
         ExampleComponentBuilder.from_parameters({})
 
     with pytest.raises(

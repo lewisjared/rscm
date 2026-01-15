@@ -80,7 +80,8 @@ fn test_carbon_cycle() {
         .with_time_axis(time_axis.clone())
         .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
         .with_exogenous_variable("Surface Temperature", temperature)
-        .build();
+        .build()
+        .unwrap();
 
     model.run();
 
@@ -174,7 +175,8 @@ fn test_coupled_model() {
             ("Cumulative Emissions|CO2".to_string(), 0.0),
             ("Atmospheric Concentration|CO2".to_string(), 300.0),
         ]))
-        .build();
+        .build()
+        .unwrap();
 
     let mut variable_names: Vec<&str> =
         model.timeseries().iter().map(|x| x.name.as_str()).collect();

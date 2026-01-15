@@ -87,6 +87,60 @@ Keep commit messages and plans concise
 
 ### Adding a New Component
 
+**Recommended: Use the ComponentIO derive macro with struct-level attributes:**
+
+```rust
+use rscm_core::{ComponentIO, component::{InputState, OutputState, RequirementDefinition}};
+
+#[derive(Debug, Serialize, Deserialize, ComponentIO)]
+#[inputs(
+    emissions { name = "Emissions|CO2", unit = "GtCO2" },
+)]
+#[outputs(
+    concentration { name = "Concentration|CO2", unit = "ppm" },
+)]
+pub struct MyComponent {
+    // Only actual parameters - no phantom fields needed
+    pub sensitivity: f64,
+}
+
+#[typetag::serde]
+impl Component for MyComponent {
+    fn definitions(&self) -> Vec<RequirementDefinition> {
+        Self::generated_definitions()  // Uses macro-generated definitions
+    }
+
+    fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
+        // Use typed inputs with TimeseriesWindow
+        let inputs = MyComponentInputs::from_input_state(input_state);
+        let emissions = inputs.emissions.current();  // Type-safe access
+
+        // Return typed outputs
+        let outputs = MyComponentOutputs {
+            concentration: emissions * self.sensitivity,
+        };
+        Ok(outputs.into())
+    }
+}
+```
+
+The macro generates:
+- `MyComponentInputs<'a>` with `TimeseriesWindow` fields for each input in `#[inputs(...)]`
+- `MyComponentOutputs` with typed fields for each output in `#[outputs(...)]`
+- `MyComponent::generated_definitions()` for the Component trait
+- `From<MyComponentOutputs> for OutputState` conversion
+
+**For state variables** (read previous, write new):
+- Use `#[states(field { name = "...", unit = "..." })]`
+- State variables appear in both `Inputs` and `Outputs` structs
+
+**For grid-based variables:**
+- Use `grid = "FourBox"` or `grid = "Hemispheric"` in the field declaration
+- Access via `inputs.field.current(FourBoxRegion::NorthernOcean)` or `inputs.field.current_all()`
+- Output types become `FourBoxSlice` or `HemisphericSlice` for grid outputs
+
+**Manual implementation (legacy):**
+
 1. Create struct with parameters in `rscm-components/src/components/`
 2. Implement `Component` trait with `#[typetag::serde]`
 3. Export from `rscm-components/src/components/mod.rs`

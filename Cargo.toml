@@ -32,7 +32,7 @@ version = "0.27.2"
 features = ["abi3-py311"]
 
 [workspace]
-members = ["rscm-core", "rscm-components"]
+members = ["rscm-core", "rscm-components", "rscm-macros"]
 
 [workspace.package]
 version = "0.2.3"
@@ -46,6 +46,7 @@ categories = ["science"]
 [workspace.dependencies]
 rscm-core = { version = "0.2.3", path = "rscm-core" }
 rscm-components = { version = "0.2.3", path = "rscm-components" }
+rscm-macros = { version = "0.2.3", path = "rscm-macros" }
 
 [build-dependencies]
 pyo3-build-config = "0.27"

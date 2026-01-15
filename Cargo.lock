@@ -598,11 +598,22 @@ dependencies = [
  "petgraph",
  "pyo3",
  "pythonize",
+ "rscm-macros",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
  "toml",
  "typetag",
+]
+
+[[package]]
+name = "rscm-macros"
+version = "0.2.3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rscm-core",
+ "syn",
 ]
 
 [[package]]

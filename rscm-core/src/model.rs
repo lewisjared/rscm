@@ -10,9 +10,9 @@
 /// The required variables are identified when building the model.
 /// If a required exogenous variable isn't provided, then the build step will fail.
 use crate::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
-use crate::errors::RSCMResult;
+use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::spatial::ScalarRegion;
 use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
@@ -34,6 +34,7 @@ type CGraph = Graph<C, RequirementDefinition>;
 struct VariableDefinition {
     name: String,
     unit: String,
+    grid_type: GridType,
 }
 
 impl VariableDefinition {
@@ -41,6 +42,7 @@ impl VariableDefinition {
         Self {
             name: definition.name.clone(),
             unit: definition.unit.clone(),
+            grid_type: definition.grid_type,
         }
     }
 }
@@ -84,17 +86,39 @@ pub struct ModelBuilder {
 
 /// Checks if the new definition is valid
 ///
-/// If any definitions share a name then the units must be equivalent
+/// If any definitions share a name then the units and grid types must be equivalent.
 ///
-/// Panics if the parameter definition is inconsistent with any existing definitions.
+/// Returns an error if the parameter definition is inconsistent with any existing definitions.
 fn verify_definition(
     definitions: &mut HashMap<String, VariableDefinition>,
     definition: &RequirementDefinition,
-) {
+    component_name: &str,
+    existing_component_name: Option<&str>,
+) -> RSCMResult<()> {
     let existing = definitions.get(&definition.name);
     match existing {
         Some(existing) => {
-            assert_eq!(existing.unit, definition.unit);
+            if existing.unit != definition.unit {
+                return Err(RSCMError::Error(format!(
+                    "Unit mismatch for variable '{}': component '{}' uses '{}' but component '{}' uses '{}'. \
+                     All producers and consumers of a variable must use the same unit.",
+                    definition.name,
+                    existing_component_name.unwrap_or("unknown"),
+                    existing.unit,
+                    component_name,
+                    definition.unit
+                )));
+            }
+
+            if existing.grid_type != definition.grid_type {
+                return Err(RSCMError::GridTypeMismatch {
+                    variable: definition.name.clone(),
+                    producer_component: existing_component_name.unwrap_or("unknown").to_string(),
+                    consumer_component: component_name.to_string(),
+                    producer_grid: existing.grid_type.to_string(),
+                    consumer_grid: definition.grid_type.to_string(),
+                });
+            }
         }
         None => {
             definitions.insert(
@@ -103,6 +127,7 @@ fn verify_definition(
             );
         }
     }
+    Ok(())
 }
 
 /// Extract the input state for the current time step
@@ -198,10 +223,10 @@ impl ModelBuilder {
     /// Adds some state to the set of initial values
     ///
     /// These initial values are used to provide some initial values at `t_0`.
-    /// Initial values are used for requirements which have a type of `RequirementType::InputAndOutput`.
-    /// These requirements use state from the current timestep in order to generate a value for the
-    /// next timestep.
-    /// Building a model where any variables which have `RequirementType::InputAndOutput`, but
+    /// Initial values are used for requirements which have a type of `RequirementType::State`.
+    /// State variables read their value from the previous timestep in order to generate a new value
+    /// for the next timestep.
+    /// Building a model where any variables which have `RequirementType::State`, but
     /// do not have an initial value will result in an error.
     pub fn with_initial_values(
         &mut self,
@@ -223,24 +248,41 @@ impl ModelBuilder {
 
     /// Builds the component graph for the registered components and creates a concrete model
     ///
-    /// Panics if the required data to build a model is not available.
-    pub fn build(&self) -> Model {
+    /// Returns an error if the component definitions are inconsistent.
+    pub fn build(&self) -> RSCMResult<Model> {
         // todo: refactor once this is more stable
         let mut graph: CGraph = Graph::new();
         let mut endrogoneous: HashMap<String, NodeIndex> = HashMap::new();
         let mut exogenous: Vec<String> = vec![];
         let mut definitions: HashMap<String, VariableDefinition> = HashMap::new();
+        // Track which component owns each variable for better error messages
+        let mut variable_owners: HashMap<String, String> = HashMap::new();
         let initial_node = graph.add_node(Arc::new(NullComponent {}));
 
-        self.components.iter().for_each(|component| {
+        for component in &self.components {
             let node = graph.add_node(component.clone());
             let mut has_dependencies = false;
+
+            // Get component name from Debug implementation
+            let component_name = format!("{:?}", component);
+            // Extract just the type name (before the first '{' or ' ')
+            let component_name = component_name
+                .split(|c| c == '{' || c == ' ' || c == '(')
+                .next()
+                .unwrap_or("UnknownComponent")
+                .to_string();
 
             let requires = component.inputs();
             let provides = component.outputs();
 
-            requires.iter().for_each(|requirement| {
-                verify_definition(&mut definitions, requirement);
+            for requirement in requires {
+                let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
+                verify_definition(
+                    &mut definitions,
+                    &requirement,
+                    &component_name,
+                    existing_owner,
+                )?;
 
                 if exogenous.contains(&requirement.name) {
                     // Link to the node that provides the requirement
@@ -250,7 +292,7 @@ impl ModelBuilder {
                     // Add a new variable that must be defined outside of the model
                     exogenous.push(requirement.name.clone())
                 }
-            });
+            }
 
             if !has_dependencies {
                 // If the node has no dependencies on other components,
@@ -264,8 +306,17 @@ impl ModelBuilder {
                 );
             }
 
-            provides.iter().for_each(|requirement| {
-                verify_definition(&mut definitions, requirement);
+            for requirement in provides {
+                let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
+                verify_definition(
+                    &mut definitions,
+                    &requirement,
+                    &component_name,
+                    existing_owner,
+                )?;
+
+                // Track this component as the owner of this variable
+                variable_owners.insert(requirement.name.clone(), component_name.clone());
 
                 let val = endrogoneous.get(&requirement.name);
 
@@ -278,8 +329,8 @@ impl ModelBuilder {
                         endrogoneous.insert(requirement.name.clone(), node);
                     }
                 }
-            });
-        });
+            }
+        }
 
         // Check that the component graph doesn't contain any loops
         assert!(!is_valid_graph(&graph));
@@ -335,7 +386,12 @@ impl ModelBuilder {
         }
 
         // Add the components to the graph
-        Model::new(graph, initial_node, collection, self.time_axis.clone())
+        Ok(Model::new(
+            graph,
+            initial_node,
+            collection,
+            self.time_axis.clone(),
+        ))
     }
 }
 
@@ -512,10 +568,13 @@ mod tests {
         let mut model = ModelBuilder::new()
             .with_time_axis(time_axis)
             .with_component(Arc::new(TestComponent::from_parameters(
-                TestComponentParameters { p: 0.5 },
+                TestComponentParameters {
+                    conversion_factor: 0.5,
+                },
             )))
             .with_exogenous_variable("Emissions|CO2", get_emissions())
-            .build();
+            .build()
+            .unwrap();
 
         assert_eq!(model.time_index, 0);
         model.step();
@@ -549,14 +608,17 @@ mod tests {
         let model = ModelBuilder::new()
             .with_time_axis(time_axis)
             .with_component(Arc::new(TestComponent::from_parameters(
-                TestComponentParameters { p: 0.5 },
+                TestComponentParameters {
+                    conversion_factor: 0.5,
+                },
             )))
             .with_exogenous_variable("Emissions|CO2", get_emissions())
-            .build();
+            .build()
+            .unwrap();
 
         let exp = r#"digraph {
     0 [ label = "NullComponent"]
-    1 [ label = "TestComponent { parameters: TestComponentParameters { p: 0.5 } }"]
+    1 [ label = "TestComponent { parameters: TestComponentParameters { conversion_factor: 0.5 } }"]
     0 -> 1 [ label = ""]
 }
 "#;
@@ -570,10 +632,13 @@ mod tests {
         let mut model = ModelBuilder::new()
             .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
             .with_component(Arc::new(TestComponent::from_parameters(
-                TestComponentParameters { p: 0.5 },
+                TestComponentParameters {
+                    conversion_factor: 0.5,
+                },
             )))
             .with_exogenous_variable("Emissions|CO2", get_emissions())
-            .build();
+            .build()
+            .unwrap();
 
         model.step();
 
@@ -590,7 +655,7 @@ time_index = 1
 [components]
 node_holes = []
 edge_property = "directed"
-edges = [[0, 1, { name = "", unit = "", requirement_type = "EmptyLink" }]]
+edges = [[0, 1, { name = "", unit = "", requirement_type = "EmptyLink", grid_type = "Scalar" }]]
 
 [[components.nodes]]
 type = "NullComponent"
@@ -599,7 +664,7 @@ type = "NullComponent"
 type = "TestComponent"
 
 [components.nodes.parameters]
-p = 0.5
+conversion_factor = 0.5
 
 [[collection.timeseries]]
 name = "Concentrations|CO2"
@@ -665,5 +730,114 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 
         assert_eq!(model.current_time_bounds(), (2021.0, 2022.0));
         assert_eq!(deserialised.current_time_bounds(), (2021.0, 2022.0));
+    }
+
+    mod grid_validation_tests {
+        use super::*;
+
+        /// A component that produces a FourBox output
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct FourBoxProducer;
+
+        #[typetag::serde]
+        impl Component for FourBoxProducer {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![RequirementDefinition::four_box_output("Temperature", "K")]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let mut output = OutputState::new();
+                output.insert("Temperature".to_string(), 288.0);
+                Ok(output)
+            }
+        }
+
+        /// A component that expects a Scalar input
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ScalarConsumer;
+
+        #[typetag::serde]
+        impl Component for ScalarConsumer {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![
+                    RequirementDefinition::scalar_input("Temperature", "K"),
+                    RequirementDefinition::scalar_output("Result", "W / m^2"),
+                ]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let temp = input_state.get_latest("Temperature");
+                let mut output = OutputState::new();
+                output.insert("Result".to_string(), temp * 2.0);
+                Ok(output)
+            }
+        }
+
+        /// A component that expects a FourBox input (compatible with FourBoxProducer)
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct FourBoxConsumer;
+
+        #[typetag::serde]
+        impl Component for FourBoxConsumer {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![
+                    RequirementDefinition::four_box_input("Temperature", "K"),
+                    RequirementDefinition::scalar_output("GlobalTemperature", "K"),
+                ]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let temp = input_state.get_latest("Temperature");
+                let mut output = OutputState::new();
+                output.insert("GlobalTemperature".to_string(), temp);
+                Ok(output)
+            }
+        }
+
+        #[test]
+        fn test_grid_type_mismatch_returns_error() {
+            // This should return an error because FourBoxProducer outputs FourBox
+            // but ScalarConsumer expects Scalar
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_component(Arc::new(FourBoxProducer))
+                .with_component(Arc::new(ScalarConsumer))
+                .build();
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            let err_msg = err.to_string();
+            assert!(err_msg.contains("Grid type mismatch for variable 'Temperature'"));
+            assert!(err_msg.contains("FourBoxProducer"));
+            assert!(err_msg.contains("ScalarConsumer"));
+            assert!(err_msg.contains("FourBox"));
+            assert!(err_msg.contains("Scalar"));
+        }
+
+        #[test]
+        fn test_matching_grid_types_ok() {
+            // This should work because both use FourBox for Temperature
+            let _model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_component(Arc::new(FourBoxProducer))
+                .with_component(Arc::new(FourBoxConsumer))
+                .build()
+                .unwrap();
+        }
     }
 }
