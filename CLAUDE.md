@@ -189,6 +189,14 @@ Type stub files in `python/rscm/_lib/*.pyi` provide type hints for the PyO3 bind
 - Changelog fragments in `changelog/` directory (towncrier)
 - Docstrings follow numpy convention (Python) and rustdoc with KaTeX for math (Rust)
 
-## Active Technologies
+## Tech Stack
 
-- Rust 1.75+ (2021 edition), Python 3.10+ + maturin (PyO3 bindings), GitHub Actions, cargo, uv (001-publish-packages)
+**Languages:** Rust 1.75+ (2021 edition), Python 3.11+
+
+**Build:** cargo, maturin (PyO3), uv
+
+**Key Rust deps:** pyo3, serde + typetag, ndarray, ode_solvers, petgraph, thiserror
+
+**Key Python deps:** numpy, scmdata
+
+**Dev tools:** ruff, clippy, pytest, rstest, towncrier, mkdocs
