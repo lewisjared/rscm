@@ -2,6 +2,7 @@ use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::interpolate::Interp1d;
 use crate::spatial::SpatialGrid;
+use crate::state::{FourBoxSlice, HemisphericSlice};
 use num::Float;
 use numpy::ndarray::prelude::*;
 use numpy::ndarray::{Array, Array1, Array2, Axis};
@@ -373,6 +374,35 @@ where
         }
     }
 
+    /// Set all regional values at a specific time index
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - `time_index` is out of bounds
+    /// - `values` length doesn't match grid size
+    pub fn set_all(&mut self, time_index: usize, values: &[T]) {
+        assert_eq!(
+            values.len(),
+            self.grid.size(),
+            "Values length ({}) must match grid size ({})",
+            values.len(),
+            self.grid.size()
+        );
+
+        for (region_index, &value) in values.iter().enumerate() {
+            self.values[(time_index, region_index)] = value;
+        }
+
+        // Update latest if all regions are now valid
+        if time_index >= self.latest {
+            let row = self.values.row(time_index);
+            if row.iter().all(|v| !v.is_nan()) {
+                self.latest = time_index;
+            }
+        }
+    }
+
     /// Get all regional values at a specific time index
     ///
     /// Returns `None` if time index is out of bounds
@@ -729,6 +759,20 @@ where
         GridTimeseries::set_index(self, time_index, region as usize, value);
     }
 
+    /// Set all values at a given time index from a FourBoxSlice (type-safe for FourBoxGrid)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `time_index` is out of bounds
+    pub fn set_from_slice(&mut self, time_index: usize, slice: &FourBoxSlice) {
+        let values: Vec<T> = slice
+            .as_array()
+            .iter()
+            .map(|&v| <T as From<Time>>::from(v))
+            .collect();
+        self.set_all(time_index, &values);
+    }
+
     /// Get the value at a given time with interpolation (type-safe for FourBoxGrid)
     pub fn at_time(&self, time: Time, region: crate::spatial::FourBoxRegion) -> RSCMResult<T> {
         let result = self.at_time_all(time)?;
@@ -749,6 +793,20 @@ where
     /// Set the value at a given time index and region (type-safe for HemisphericGrid)
     pub fn set(&mut self, time_index: usize, region: crate::spatial::HemisphericRegion, value: T) {
         GridTimeseries::set_index(self, time_index, region as usize, value);
+    }
+
+    /// Set all values at a given time index from a HemisphericSlice (type-safe for HemisphericGrid)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `time_index` is out of bounds
+    pub fn set_from_slice(&mut self, time_index: usize, slice: &HemisphericSlice) {
+        let values: Vec<T> = slice
+            .as_array()
+            .iter()
+            .map(|&v| <T as From<Time>>::from(v))
+            .collect();
+        self.set_all(time_index, &values);
     }
 
     /// Get the value at a given time with interpolation (type-safe for HemisphericGrid)

@@ -5,6 +5,7 @@ use rscm_core::component::{
     Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use rscm_core::errors::RSCMResult;
+use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -180,7 +181,7 @@ impl Component for OceanSurfacePartialPressure {
 
         Ok(HashMap::from([(
             "Ocean Surface Partial Pressure|CO2".to_string(),
-            ocean_surface_partial_pressure,
+            StateValue::Scalar(ocean_surface_partial_pressure),
         )]))
     }
 }
@@ -190,6 +191,7 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use rscm_core::model::extract_state;
+    use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
     use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
     use rstest::rstest;
@@ -252,12 +254,14 @@ mod tests {
         let input_state = extract_state(&collection, component.input_names(), 2020.0);
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
-        assert_relative_eq!(
-            *output_state
-                .get("Ocean Surface Partial Pressure|CO2")
-                .unwrap(),
-            expected_ospp,
-            max_relative = 10e-5
-        )
+        let ospp_value = match output_state
+            .get("Ocean Surface Partial Pressure|CO2")
+            .unwrap()
+        {
+            StateValue::Scalar(value) => *value,
+            _ => panic!("Expected Scalar output"),
+        };
+
+        assert_relative_eq!(ospp_value, expected_ospp, max_relative = 10e-5)
     }
 }

@@ -65,7 +65,12 @@ macro_rules! impl_component {
                     crate::model::extract_state(&collection.0, self.0.input_names(), t_current);
 
                 let output_state = self.0.solve(t_current, t_next, &input_state)?;
-                Ok(output_state)
+                // Convert StateValue to scalar values for Python interoperability
+                let scalar_output = output_state
+                    .into_iter()
+                    .map(|(key, state_value)| (key, state_value.to_scalar()))
+                    .collect();
+                Ok(scalar_output)
             }
         }
     };
@@ -161,7 +166,12 @@ impl Component for PythonComponent {
                     .unwrap()
             };
 
-            let output_state = py_result.extract().unwrap();
+            let scalar_output: HashMap<String, FloatValue> = py_result.extract().unwrap();
+            // Convert scalar values from Python to StateValue
+            let output_state = scalar_output
+                .into_iter()
+                .map(|(key, value)| (key, crate::state::StateValue::Scalar(value)))
+                .collect();
             Ok(output_state)
         })
     }

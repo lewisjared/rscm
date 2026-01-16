@@ -9,6 +9,7 @@ use rscm_core::component::{
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{IVPBuilder, IVP};
+use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 
@@ -106,7 +107,7 @@ impl Component for TwoLayerComponent {
 
         Ok(HashMap::from([(
             "Surface Temperature".to_string(),
-            erf * self.parameters.lambda0,
+            StateValue::Scalar(erf * self.parameters.lambda0),
         )]))
     }
 }
@@ -148,6 +149,9 @@ mod tests {
 
         println!("Output: {:?}", output_state);
         let output_state = output_state.unwrap();
-        assert_eq!(*output_state.get("Surface Temperature").unwrap(), 0.5);
+        assert_eq!(
+            *output_state.get("Surface Temperature").unwrap(),
+            StateValue::Scalar(0.5)
+        );
     }
 }

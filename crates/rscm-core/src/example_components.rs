@@ -151,12 +151,17 @@ mod tests {
 
     #[test]
     fn test_derived_component_outputs_conversion() {
+        use crate::state::StateValue;
+
         let outputs = TestComponentOutputs {
             concentration_co2: 42.5,
         };
 
         let state: OutputState = outputs.into();
-        assert_eq!(state.get("Concentrations|CO2"), Some(&42.5));
+        assert_eq!(
+            state.get("Concentrations|CO2"),
+            Some(&StateValue::Scalar(42.5))
+        );
     }
 
     #[test]
