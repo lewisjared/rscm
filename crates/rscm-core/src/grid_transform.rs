@@ -9,7 +9,7 @@ use crate::component::{
 };
 use crate::errors::RSCMResult;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, SpatialGrid};
-use crate::timeseries::{FloatValue, Time};
+use crate::timeseries::Time;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -73,20 +73,9 @@ impl Component for FourBoxToScalarTransform {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let input_value = input_state.get_latest_value(&self.input_name());
-
-        let global = match input_value {
-            Some(crate::state::StateValue::FourBox(slice)) => {
-                self.grid.aggregate_global(slice.as_array().as_ref())
-            }
-            Some(crate::state::StateValue::Hemispheric(slice)) => {
-                let values = slice.as_array().to_vec();
-                let hemispheric_grid = crate::spatial::HemisphericGrid::equal_weights();
-                hemispheric_grid.aggregate_global(&values)
-            }
-            Some(crate::state::StateValue::Scalar(v)) => v, // Already scalar
-            None => FloatValue::NAN,
-        };
+        let window = input_state.get_four_box_window(&self.input_name());
+        let values = window.current_all();
+        let global = self.grid.aggregate_global(&values);
 
         let mut output = HashMap::new();
         output.insert(
@@ -159,17 +148,10 @@ impl Component for FourBoxToHemisphericTransform {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let input_value = input_state.get_latest_value(&self.input_name());
-
-        let hemispheric = match input_value {
-            Some(crate::state::StateValue::FourBox(slice)) => {
-                let target = HemisphericGrid::equal_weights();
-                self.grid.transform_to(slice.as_array().as_ref(), &target)?
-            }
-            Some(crate::state::StateValue::Hemispheric(slice)) => slice.as_array().to_vec(),
-            Some(crate::state::StateValue::Scalar(v)) => vec![v, v], // Broadcast scalar
-            None => vec![FloatValue::NAN, FloatValue::NAN],
-        };
+        let window = input_state.get_four_box_window(&self.input_name());
+        let values = window.current_all();
+        let target = HemisphericGrid::equal_weights();
+        let hemispheric = self.grid.transform_to(&values, &target)?;
 
         let mut output = HashMap::new();
         output.insert(
@@ -240,15 +222,9 @@ impl Component for HemisphericToScalarTransform {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let input_value = input_state.get_latest_value(&self.input_name());
-
-        let global = match input_value {
-            Some(crate::state::StateValue::Hemispheric(slice)) => {
-                self.grid.aggregate_global(slice.as_array().as_ref())
-            }
-            Some(crate::state::StateValue::Scalar(v)) => v, // Already scalar
-            _ => FloatValue::NAN,
-        };
+        let window = input_state.get_hemispheric_window(&self.input_name());
+        let values = window.current_all();
+        let global = self.grid.aggregate_global(&values);
 
         let mut output = HashMap::new();
         output.insert(
@@ -360,7 +336,7 @@ mod tests {
         use super::*;
         use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
         use crate::spatial::FourBoxGrid;
-        use crate::timeseries::{GridTimeseries, TimeAxis};
+        use crate::timeseries::{FloatValue, GridTimeseries, TimeAxis};
         use crate::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
         use numpy::array;
         use numpy::ndarray::Array2;
@@ -446,21 +422,17 @@ mod tests {
         }
 
         #[test]
-        fn test_four_box_to_scalar_transform_with_nan_input() {
+        #[should_panic(expected = "Variable 'Temperature|FourBox' not found in input state")]
+        fn test_four_box_to_scalar_transform_with_missing_input() {
             let transform = FourBoxToScalarTransform::with_standard_weights("Temperature", "K");
 
             // Create empty input state (missing variable)
             let input_state = InputState::empty();
 
-            // Run the transform - should produce NaN when variable is missing
-            let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
-
-            let value = output.get("Temperature").unwrap();
-            if let crate::state::StateValue::Scalar(v) = value {
-                assert!(v.is_nan());
-            } else {
-                panic!("Expected scalar output");
-            }
+            // Run the transform - should panic when variable is missing
+            // The model builder ensures all required inputs are present,
+            // so a missing variable is a programming error
+            let _ = transform.solve(2000.0, 2001.0, &input_state);
         }
 
         #[test]

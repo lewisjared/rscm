@@ -359,7 +359,10 @@ impl ModelBuilder {
                 } else {
                     // Check if the timeseries is available in the provided exogenous variables
                     // then interpolate to the right timebase
-                    let timeseries = self.exogenous_variables.get_timeseries_by_name(&name);
+                    let timeseries = self
+                        .exogenous_variables
+                        .get_data(&name)
+                        .and_then(|data| data.as_scalar());
 
                     match timeseries {
                         Some(timeseries) => collection.add_timeseries(
@@ -631,7 +634,8 @@ mod tests {
 
         let concentrations = model
             .collection
-            .get_timeseries_by_name("Concentrations|CO2")
+            .get_data("Concentrations|CO2")
+            .and_then(|data| data.as_scalar())
             .unwrap();
 
         println!("{:?}", concentrations.values());
@@ -761,12 +765,14 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
         assert!(zip(
             model
                 .collection
-                .get_timeseries_by_name("Emissions|CO2")
+                .get_data("Emissions|CO2")
+                .and_then(|data| data.as_scalar())
                 .unwrap()
                 .values(),
             deserialised
                 .collection
-                .get_timeseries_by_name("Emissions|CO2")
+                .get_data("Emissions|CO2")
+                .and_then(|data| data.as_scalar())
                 .unwrap()
                 .values()
         )
@@ -825,7 +831,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 input_state: &InputState,
             ) -> RSCMResult<OutputState> {
                 use crate::state::StateValue;
-                let temp = input_state.get_latest("Temperature");
+                let temp = input_state.get_scalar_window("Temperature").current();
                 let mut output = OutputState::new();
                 output.insert("Result".to_string(), StateValue::Scalar(temp * 2.0));
                 Ok(output)
@@ -852,7 +858,9 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 input_state: &InputState,
             ) -> RSCMResult<OutputState> {
                 use crate::state::StateValue;
-                let temp = input_state.get_latest("Temperature");
+                let temp = input_state
+                    .get_four_box_window("Temperature")
+                    .current_global();
                 let mut output = OutputState::new();
                 output.insert("GlobalTemperature".to_string(), StateValue::Scalar(temp));
                 Ok(output)

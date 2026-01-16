@@ -133,10 +133,10 @@
 //!
 //!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
 //!         // Works with scalar values - InputState handles grid aggregation automatically
-//!         let co2 = input_state.get_latest("Atmospheric Concentration|CO2");
+//!         let co2 = input_state.get_scalar_window("Atmospheric Concentration|CO2").current();
 //!         // ... compute ERF ...
 //!         let mut output = HashMap::new();
-//!         output.insert("ERF|CO2".to_string(), co2 * 5.35_f64.ln());
+//!         output.insert("ERF|CO2".to_string(), StateValue::Scalar(co2 * 5.35_f64.ln()));
 //!         Ok(output)
 //!     }
 //! }
@@ -144,41 +144,34 @@
 //!
 //! ## Pattern 2: Grid-Native Component
 //!
-//! Components that naturally operate at regional resolution can access grid data directly:
+//! Components that naturally operate at regional resolution can access grid data directly
+//! using the typed window API:
 //!
 //! ```rust,ignore
 //! # use rscm_core::component::{Component, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
-//! # use rscm_core::state::StateValue;
+//! # use rscm_core::state::{StateValue, FourBoxSlice};
 //! # use std::collections::HashMap;
 //! # use rscm_core::spatial::FourBoxGrid;
-//! # #[derive(Debug)]
-//! # struct FourBoxOceanHeatUptakeComponent;
 //! fn solve_grid_component(input_state: &InputState, t_current: Time) -> RSCMResult<OutputState> {
-//!     // Get grid values using get_latest_value
-//!     let erf_value = input_state.get_latest_value("ERF|Aggregated")
-//!         .expect("ERF not found");
-//!
-//!     // Extract regional values
-//!     let erf_regions = match erf_value {
-//!         StateValue::Grid(values) => values,
-//!         StateValue::Scalar(v) => vec![v, v, v, v], // Broadcast if needed
-//!     };
+//!     // Get grid values using the typed window API
+//!     let window = input_state.get_four_box_window("ERF|FourBox");
+//!     let erf_regions = window.current_all();
 //!
 //!     // Compute regional heat uptake
-//!     let mut heat_uptake = Vec::new();
-//!     for erf in &erf_regions {
-//!         heat_uptake.push(erf * 0.9); // Example: 90% absorbed by ocean
-//!     }
+//!     let heat_uptake: Vec<f64> = erf_regions.iter()
+//!         .map(|erf| erf * 0.9) // Example: 90% absorbed by ocean
+//!         .collect();
 //!
-//!     // Return scalar output (component system currently only supports scalar outputs)
-//!     // Use aggregate_global() to get weighted mean
-//!     let grid = FourBoxGrid::magicc_standard();
-//!     let global_uptake = grid.aggregate_global(&heat_uptake);
-//!
+//!     // Return FourBox output with regional values
 //!     let mut output = HashMap::new();
-//!     output.insert("Ocean Heat Uptake".to_string(), global_uptake);
+//!     output.insert(
+//!         "Ocean Heat Uptake|FourBox".to_string(),
+//!         StateValue::FourBox(FourBoxSlice::from_array([
+//!             heat_uptake[0], heat_uptake[1], heat_uptake[2], heat_uptake[3]
+//!         ])),
+//!     );
 //!     Ok(output)
 //! }
 //! ```
@@ -202,17 +195,16 @@
 //!
 //! ```rust,ignore
 //! # use rscm_core::component::InputState;
-//! # use rscm_core::state::StateValue;
 //! # use rscm_core::spatial::{FourBoxGrid, SpatialGrid};
-//! # fn example(input_state: &InputState, t_current: f64) {
+//! # fn example(input_state: &InputState) {
 //! // Get grid values, compute regionally, then aggregate
-//! if let Some(StateValue::Grid(temps)) = input_state.get_latest_value("Surface Temperature") {
-//!     let regional_responses: Vec<f64> = temps.iter()
-//!         .map(|t| t * 0.5) // Different response per region
-//!         .collect();
-//!     let grid = FourBoxGrid::magicc_standard();
-//!     let global_response = grid.aggregate_global(&regional_responses);
-//! }
+//! let window = input_state.get_four_box_window("Surface Temperature|FourBox");
+//! let temps = window.current_all();
+//! let regional_responses: Vec<f64> = temps.iter()
+//!     .map(|t| t * 0.5) // Different response per region
+//!     .collect();
+//! let grid = FourBoxGrid::magicc_standard();
+//! let global_response = grid.aggregate_global(&regional_responses);
 //! # }
 //! ```
 //!
@@ -226,10 +218,10 @@
 //! disaggregation component that explicitly encodes the physics:
 //!
 //! ```rust,ignore
-//! # use rscm_core::component::{Component, RequirementDefinition, RequirementType, InputState, OutputState};
+//! # use rscm_core::component::{Component, RequirementDefinition, RequirementType, InputState, OutputState, GridType};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
-//! # use rscm_core::state::StateValue;
+//! # use rscm_core::state::{StateValue, FourBoxSlice};
 //! # use std::collections::HashMap;
 //! # #[derive(Debug)]
 //! # struct HemisphericToFourBoxDisaggregator { ocean_land_ratio: f64 }
@@ -237,37 +229,27 @@
 //! impl Component for HemisphericToFourBoxDisaggregator {
 //!     fn definitions(&self) -> Vec<RequirementDefinition> {
 //!         vec![
-//!             RequirementDefinition::new("Temperature|Hemispheric", "degC", RequirementType::Input),
-//!             RequirementDefinition::new("Temperature|FourBox", "degC", RequirementType::Output),
+//!             RequirementDefinition::with_grid("Temperature|Hemispheric", "degC", RequirementType::Input, GridType::Hemispheric),
+//!             RequirementDefinition::with_grid("Temperature|FourBox", "degC", RequirementType::Output, GridType::FourBox),
 //!         ]
 //!     }
 //!
 //!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
-//!         // Get hemispheric input
-//!         let hemispheric_value = input_state.get_latest_value("Temperature|Hemispheric")
-//!             .expect("Temperature not found");
-//!
-//!         let [northern, southern] = match hemispheric_value {
-//!             StateValue::Grid(values) if values.len() == 2 => [values[0], values[1]],
-//!             _ => panic!("Expected hemispheric grid with 2 values"),
-//!         };
+//!         // Get hemispheric input using typed window API
+//!         let window = input_state.get_hemispheric_window("Temperature|Hemispheric");
+//!         let [northern, southern] = window.current_all();
 //!
 //!         // Custom disaggregation based on physical reasoning
 //!         // Example: Ocean regions slightly warmer, land regions cooler
-//!         let four_box_values = [
+//!         let four_box_values = FourBoxSlice::from_array([
 //!             northern * 1.1,  // Northern Ocean
 //!             northern * 0.9,  // Northern Land
 //!             southern * 1.05, // Southern Ocean
 //!             southern * 0.85, // Southern Land (Southern Hemisphere land is colder)
-//!         ];
-//!
-//!         // Currently output only supports scalar, so aggregate
-//!         // In future, components will be able to output grid values directly
-//!         let grid = rscm_core::spatial::FourBoxGrid::magicc_standard();
-//!         let global = grid.aggregate_global(&four_box_values);
+//!         ]);
 //!
 //!         let mut output = HashMap::new();
-//!         output.insert("Temperature|FourBox".to_string(), global);
+//!         output.insert("Temperature|FourBox".to_string(), StateValue::FourBox(four_box_values));
 //!         Ok(output)
 //!     }
 //! }
@@ -312,7 +294,6 @@
 
 use crate::errors::RSCMResult;
 use crate::timeseries::FloatValue;
-use serde::{Deserialize, Serialize};
 
 pub mod four_box;
 pub mod hemispheric;

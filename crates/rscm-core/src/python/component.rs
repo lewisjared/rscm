@@ -170,7 +170,7 @@ impl Component for PythonComponent {
 
             // Extract the result dict
             let py_dict = py_result
-                .downcast::<pyo3::types::PyDict>()
+                .cast::<pyo3::types::PyDict>()
                 .expect("solve() must return a dict");
 
             let mut output_state = OutputState::new();

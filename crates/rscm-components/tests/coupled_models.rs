@@ -87,12 +87,14 @@ fn test_carbon_cycle() {
 
     let _co2_conc = model
         .timeseries()
-        .get_timeseries_by_name("Atmospheric Concentration|CO2")
+        .get_data("Atmospheric Concentration|CO2")
+        .and_then(|data| data.as_scalar())
         .unwrap();
 
     let co2_emissions = model
         .timeseries()
-        .get_timeseries_by_name("Emissions|CO2|Anthropogenic")
+        .get_data("Emissions|CO2|Anthropogenic")
+        .and_then(|data| data.as_scalar())
         .unwrap();
     let _expected_concentrations: Vec<FloatValue> = time_axis
         .values()

@@ -309,34 +309,6 @@ impl TimeseriesCollection {
         self.get_by_name_mut(name).map(|item| &mut item.data)
     }
 
-    /// Get a scalar timeseries by name (backwards compatibility)
-    ///
-    /// Returns None if the variable is not scalar or doesn't exist.
-    ///
-    /// # Deprecated
-    /// Use `get_data()` for grid-aware access
-    #[deprecated(since = "0.3.0", note = "Use get_data() for grid-aware access")]
-    pub fn get_timeseries_by_name(&self, name: &str) -> Option<&Timeseries<FloatValue>> {
-        self.get_data(name).and_then(|data| data.as_scalar())
-    }
-
-    /// Get a mutable scalar timeseries by name (backwards compatibility)
-    ///
-    /// Returns None if the variable is not scalar or doesn't exist.
-    ///
-    /// # Deprecated
-    /// Use `get_data_mut()` for grid-aware access
-    #[deprecated(since = "0.3.0", note = "Use get_data_mut() for grid-aware access")]
-    pub fn get_timeseries_by_name_mut(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut Timeseries<FloatValue>> {
-        self.get_data_mut(name).and_then(|data| match data {
-            TimeseriesData::Scalar(ts) => Some(ts),
-            _ => None,
-        })
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = &TimeseriesItem> {
         self.timeseries.iter()
     }

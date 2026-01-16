@@ -649,73 +649,6 @@ impl<'a> InputState<'a> {
         }
     }
 
-    /// Get the latest scalar value for a variable
-    ///
-    /// This method assumes the variable is scalar (single global value).
-    /// For grid variables, use `get_latest_value()` or `get_global()`.
-    ///
-    /// # Panics
-    /// Panics if the variable is not found or is not scalar.
-    ///
-    /// # Deprecated
-    /// Use `get_scalar_window(name).current()` for typed access with history support.
-    #[deprecated(
-        since = "0.3.0",
-        note = "Use get_scalar_window(name).current() for typed, compile-time safe access"
-    )]
-    pub fn get_latest(&self, name: &str) -> FloatValue {
-        let item = self
-            .iter()
-            .find(|item| item.name == name)
-            .expect("No item found");
-
-        match &item.data {
-            TimeseriesData::Scalar(ts) => match item.variable_type {
-                VariableType::Exogenous => {
-                    ts.at_time(self.current_time, ScalarRegion::Global).unwrap()
-                }
-                VariableType::Endogenous => ts.latest_value().unwrap(),
-            },
-            _ => panic!("Variable {} is not scalar", name),
-        }
-    }
-
-    /// Get the latest value as a StateValue (scalar or grid)
-    ///
-    /// For grid timeseries, returns all regional values wrapped in the appropriate StateValue variant.
-    /// For scalar timeseries, returns a single value wrapped in StateValue::Scalar.
-    pub fn get_latest_value(&self, name: &str) -> Option<StateValue> {
-        let item = self.iter().find(|item| item.name == name)?;
-
-        match &item.data {
-            TimeseriesData::Scalar(ts) => {
-                let value = match item.variable_type {
-                    VariableType::Exogenous => {
-                        ts.at_time(self.current_time, ScalarRegion::Global).ok()?
-                    }
-                    VariableType::Endogenous => ts.latest_value()?,
-                };
-                Some(StateValue::Scalar(value))
-            }
-            TimeseriesData::FourBox(ts) => {
-                let values = match item.variable_type {
-                    VariableType::Exogenous => ts.at_time_all(self.current_time).ok()?,
-                    VariableType::Endogenous => ts.latest_values(),
-                };
-                let slice = FourBoxSlice::from_array([values[0], values[1], values[2], values[3]]);
-                Some(StateValue::FourBox(slice))
-            }
-            TimeseriesData::Hemispheric(ts) => {
-                let values = match item.variable_type {
-                    VariableType::Exogenous => ts.at_time_all(self.current_time).ok()?,
-                    VariableType::Endogenous => ts.latest_values(),
-                };
-                let slice = HemisphericSlice::from_array([values[0], values[1]]);
-                Some(StateValue::Hemispheric(slice))
-            }
-        }
-    }
-
     /// Get the global aggregated value for a variable
     ///
     /// For scalar variables, returns the scalar value.
@@ -743,40 +676,6 @@ impl<'a> InputState<'a> {
                 Some(ts.grid().aggregate_global(&values))
             }
         }
-    }
-
-    /// Get a specific region's value for a grid variable
-    ///
-    /// For scalar variables, always returns the scalar value regardless of region_index.
-    /// For grid variables, returns the value for the specified region.
-    ///
-    /// # Arguments
-    /// * `name` - Variable name
-    /// * `region_index` - Index of the region (0 for scalar variables)
-    pub fn get_region(&self, name: &str, region_index: usize) -> Option<FloatValue> {
-        self.get_latest_value(name).and_then(|sv| match sv {
-            StateValue::Scalar(v) => {
-                if region_index == 0 {
-                    Some(v)
-                } else {
-                    None
-                }
-            }
-            StateValue::FourBox(slice) => {
-                if region_index < 4 {
-                    Some(slice.as_array()[region_index])
-                } else {
-                    None
-                }
-            }
-            StateValue::Hemispheric(slice) => {
-                if region_index < 2 {
-                    Some(slice.as_array()[region_index])
-                } else {
-                    None
-                }
-            }
-        })
     }
 
     /// Test if the state contains a value with the given name
@@ -981,42 +880,9 @@ mod tests {
 
         let state = InputState::build(vec![&item], 2000.5);
 
-        // For Endogenous variables, get_latest returns the latest_value (index 1)
+        // For Endogenous variables, get_scalar_window().current() returns latest_value (index 1)
         assert_eq!(state.get_global("CO2"), Some(285.0));
-        assert_eq!(state.get_latest("CO2"), 285.0);
-    }
-
-    #[test]
-    fn test_input_state_get_region_scalar() {
-        use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
-        use crate::timeseries::{TimeAxis, Timeseries};
-        use numpy::array;
-        use numpy::ndarray::Axis;
-        use std::sync::Arc;
-
-        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
-        let values = array![15.0, 16.0].insert_axis(Axis(1));
-        let ts = Timeseries::new(
-            values,
-            time_axis,
-            crate::spatial::ScalarGrid,
-            "degC".to_string(),
-            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-        );
-
-        let item = TimeseriesItem {
-            data: TimeseriesData::Scalar(ts),
-            name: "Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
-        };
-
-        let state = InputState::build(vec![&item], 2000.5);
-
-        // For Endogenous variables, returns latest_value (index 1)
-        // Scalar values accessible as region 0
-        assert_eq!(state.get_region("Temperature", 0), Some(16.0));
-        // Other regions return None for scalar
-        assert_eq!(state.get_region("Temperature", 1), None);
+        assert_eq!(state.get_scalar_window("CO2").current(), 285.0);
     }
 
     #[test]
@@ -1050,22 +916,14 @@ mod tests {
 
         let state = InputState::build(vec![&item], 2000.5);
 
-        // Test get_latest_value returns FourBox variant
-        let value = state.get_latest_value("Temperature").unwrap();
-        assert!(value.is_four_box());
-        let expected_slice = FourBoxSlice::from_array([16.0, 15.0, 11.0, 10.0]);
-        assert_eq!(value.as_four_box(), Some(&expected_slice));
+        // Test get_four_box_window returns current values
+        let window = state.get_four_box_window("Temperature");
+        let values = window.current_all();
+        assert_eq!(values, [16.0, 15.0, 11.0, 10.0]);
 
         // Test get_global aggregates using weights (equal weights = mean)
         let global = state.get_global("Temperature").unwrap();
         assert_eq!(global, 13.0); // (16 + 15 + 11 + 10) / 4
-
-        // Test get_region for individual regions
-        assert_eq!(state.get_region("Temperature", 0), Some(16.0));
-        assert_eq!(state.get_region("Temperature", 1), Some(15.0));
-        assert_eq!(state.get_region("Temperature", 2), Some(11.0));
-        assert_eq!(state.get_region("Temperature", 3), Some(10.0));
-        assert_eq!(state.get_region("Temperature", 4), None); // Out of bounds
     }
 
     #[test]

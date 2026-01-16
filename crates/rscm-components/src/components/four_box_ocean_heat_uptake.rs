@@ -14,13 +14,14 @@
 //! This simplified model uses fixed regional fractions to distribute global forcing.
 
 use rscm_core::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    TimeseriesWindow,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::Time;
+use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Parameters for the four-box ocean heat uptake component
 ///
@@ -70,7 +71,13 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 /// let params = FourBoxOceanHeatUptakeParameters::default();
 /// let component = FourBoxOceanHeatUptakeComponent::from_parameters(params);
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
+#[inputs(
+    erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
+)]
+#[outputs(
+    heat_uptake { name = "Ocean Heat Uptake|FourBox", unit = "W/m^2", grid = "FourBox" },
+)]
 pub struct FourBoxOceanHeatUptakeComponent {
     pub parameters: FourBoxOceanHeatUptakeParameters,
 }
@@ -98,14 +105,7 @@ impl FourBoxOceanHeatUptakeComponent {
 #[typetag::serde]
 impl Component for FourBoxOceanHeatUptakeComponent {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![
-            RequirementDefinition::new(
-                "Effective Radiative Forcing|Aggregated",
-                "W/m^2",
-                RequirementType::Input,
-            ),
-            RequirementDefinition::four_box_output("Ocean Heat Uptake|FourBox", "W/m^2"),
-        ]
+        Self::generated_definitions()
     }
 
     fn solve(
@@ -114,26 +114,23 @@ impl Component for FourBoxOceanHeatUptakeComponent {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        // Get scalar ERF input
-        let erf = input_state.get_latest("Effective Radiative Forcing|Aggregated");
+        // Get scalar ERF input using typed inputs
+        let inputs = FourBoxOceanHeatUptakeComponentInputs::from_input_state(input_state);
+        let erf = inputs.erf.current();
 
         // Disaggregate to four regions using ratios
         // Regional uptake = global ERF * (regional/global ratio)
         // In a real model, this would be based on physical parameterizations
-        let regional_uptake = [
-            erf * self.parameters.northern_ocean_ratio,
-            erf * self.parameters.northern_land_ratio,
-            erf * self.parameters.southern_ocean_ratio,
-            erf * self.parameters.southern_land_ratio,
-        ];
+        let outputs = FourBoxOceanHeatUptakeComponentOutputs {
+            heat_uptake: FourBoxSlice::from_array([
+                erf * self.parameters.northern_ocean_ratio,
+                erf * self.parameters.northern_land_ratio,
+                erf * self.parameters.southern_ocean_ratio,
+                erf * self.parameters.southern_land_ratio,
+            ]),
+        };
 
-        // Return regional grid values directly
-        let mut output = HashMap::new();
-        output.insert(
-            "Ocean Heat Uptake|FourBox".to_string(),
-            StateValue::FourBox(FourBoxSlice::from_array(regional_uptake)),
-        );
-        Ok(output)
+        Ok(outputs.into())
     }
 }
 
@@ -176,10 +173,11 @@ mod tests {
             FourBoxOceanHeatUptakeParameters::default(),
         );
 
-        // Create ERF input
+        // Create ERF input - use consistent values since get_scalar_window().current()
+        // returns the latest value in the timeseries
         let erf_timeseries = TimeseriesItem {
             data: TimeseriesData::Scalar(Timeseries::from_values(
-                array![2.5, 2.7],
+                array![2.5, 2.5],
                 array![2020.0, 2021.0],
             )),
             name: "Effective Radiative Forcing|Aggregated".to_string(),
@@ -188,8 +186,10 @@ mod tests {
 
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
 
-        // Verify input value
-        let erf_value = input_state.get_latest("Effective Radiative Forcing|Aggregated");
+        // Verify input value using the new API
+        let erf_value = input_state
+            .get_scalar_window("Effective Radiative Forcing|Aggregated")
+            .current();
         println!("ERF input value: {}", erf_value);
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
@@ -234,7 +234,9 @@ mod tests {
         };
 
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
-        let erf_value = input_state.get_latest("Effective Radiative Forcing|Aggregated");
+        let erf_value = input_state
+            .get_scalar_window("Effective Radiative Forcing|Aggregated")
+            .current();
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 

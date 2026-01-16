@@ -1,10 +1,9 @@
-#![allow(dead_code)]
-
 use crate::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
     TimeseriesWindow,
 };
 use crate::errors::RSCMResult;
+use crate::state::StateValue;
 use crate::timeseries::{FloatValue, Time};
 use crate::ComponentIO;
 use serde::{Deserialize, Serialize};

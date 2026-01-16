@@ -1,16 +1,15 @@
-#![allow(dead_code)]
-
 use ode_solvers::*;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use rscm_core::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    TimeseriesWindow,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{IVPBuilder, IVP};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
 // Define some types that are used by OdeSolvers
@@ -26,7 +25,13 @@ pub struct TwoLayerComponentParameters {
     pub heat_capacity_deep: FloatValue,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
+#[inputs(
+    erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
+)]
+#[outputs(
+    surface_temperature { name = "Surface Temperature", unit = "K" },
+)]
 pub struct TwoLayerComponent {
     parameters: TwoLayerComponentParameters,
 }
@@ -42,7 +47,8 @@ impl IVP<Time, ModelState> for TwoLayerComponent {
     ) {
         let temperature_surface = y[0];
         let temperature_deep = y[1];
-        let erf = input_state.get_latest("Effective Radiative Forcing");
+        let inputs = TwoLayerComponentInputs::from_input_state(input_state);
+        let erf = inputs.erf.current();
 
         let temperature_difference = temperature_surface - temperature_deep;
 
@@ -72,14 +78,7 @@ impl TwoLayerComponent {
 #[typetag::serde]
 impl Component for TwoLayerComponent {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![
-            RequirementDefinition::new(
-                "Effective Radiative Forcing",
-                "W/m^2",
-                RequirementType::Input,
-            ),
-            RequirementDefinition::new("Surface Temperature", "K", RequirementType::Output),
-        ]
+        Self::generated_definitions()
     }
 
     fn solve(
@@ -88,7 +87,8 @@ impl Component for TwoLayerComponent {
         t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let erf = input_state.get_latest("Effective Radiative Forcing");
+        let inputs = TwoLayerComponentInputs::from_input_state(input_state);
+        let erf = inputs.erf.current();
 
         let y0 = ModelState::new(0.0, 0.0, 0.0);
 
@@ -103,12 +103,11 @@ impl Component for TwoLayerComponent {
         println!("Stats {:?}", stats);
         println!("Results {:?}", results);
 
-        // Create the solver
+        let outputs = TwoLayerComponentOutputs {
+            surface_temperature: erf * self.parameters.lambda0,
+        };
 
-        Ok(HashMap::from([(
-            "Surface Temperature".to_string(),
-            StateValue::Scalar(erf * self.parameters.lambda0),
-        )]))
+        Ok(outputs.into())
     }
 }
 
@@ -117,6 +116,7 @@ mod tests {
     use super::*;
     use numpy::array;
     use rscm_core::model::extract_state;
+    use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
     use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
 
@@ -133,10 +133,11 @@ mod tests {
         });
 
         let mut ts_collection = TimeseriesCollection::new();
+        // Use consistent ERF values since get_scalar_window().current() returns the latest value
         ts_collection.add_timeseries(
             "Effective Radiative Forcing".to_string(),
             Timeseries::from_values(
-                array![1.0, 1.5, 2.0, 2.0],
+                array![1.0, 1.0, 1.0, 1.0],
                 array![1848.0, 1849.0, 1850.0, 1900.0],
             ),
             VariableType::Exogenous,
@@ -149,6 +150,7 @@ mod tests {
 
         println!("Output: {:?}", output_state);
         let output_state = output_state.unwrap();
+        // erf (1.0) * lambda0 (0.5) = 0.5
         assert_eq!(
             *output_state.get("Surface Temperature").unwrap(),
             StateValue::Scalar(0.5)
