@@ -94,7 +94,7 @@ mod tests {
 
         let strategy = PreviousStrategy::new(false);
 
-        zip(target.into_iter(), exps.into_iter()).for_each(|(t, e)| {
+        zip(target, exps).for_each(|(t, e)| {
             println!("target={}, expected={}", t, e);
             assert!(is_close!(strategy.interpolate(&time, &y, t).unwrap(), e));
         })
@@ -129,7 +129,7 @@ mod tests {
 
         let strategy = PreviousStrategy::new(true);
 
-        zip(target.into_iter(), exps.into_iter()).for_each(|(t, e)| {
+        zip(target, exps).for_each(|(t, e)| {
             let value = strategy.interpolate(&time, &y, t).unwrap();
             println!("target={}, expected={} found={}", t, e, value);
             assert!(is_close!(value, e));
