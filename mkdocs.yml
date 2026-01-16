@@ -49,6 +49,7 @@ plugins:
   # https://oprypin.github.io/mkdocs-literate-nav/
   - literate-nav:
       nav_file: NAVIGATION.md
+      tab_length: 2
   # Notebook support.
   # Working out how to make this play with nb-exec would be nice,
   # then it wouldn't run every time.

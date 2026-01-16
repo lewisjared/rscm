@@ -83,28 +83,26 @@ impl Component for TestComponent {
     }
 }
 
-// ============================================================================
-// TaggedTestComponent - demonstrates the #[component()] attribute
-// ============================================================================
-
-/// Example component with tags and category
-///
-/// This demonstrates the `#[component()]` attribute for documentation generation.
-#[derive(Debug, Serialize, Deserialize, ComponentIO)]
-#[component(tags = ["test", "example", "simple"], category = "Testing")]
-#[inputs(
-    input_var { name = "Test Input", unit = "units" },
-)]
-#[outputs(
-    output_var { name = "Test Output", unit = "units" },
-)]
-pub(crate) struct TaggedTestComponent {
-    pub multiplier: FloatValue,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ComponentIO;
+
+    /// Example component with tags and category
+    ///
+    /// This demonstrates the `#[component()]` attribute for documentation generation.
+    #[derive(Debug, Serialize, Deserialize, ComponentIO)]
+    #[component(tags = ["test", "example", "simple"], category = "Testing")]
+    #[inputs(
+        input_var { name = "Test Input", unit = "units" },
+    )]
+    #[outputs(
+        output_var { name = "Test Output", unit = "units" },
+    )]
+    struct TaggedTestComponent {
+        #[allow(dead_code)]
+        pub multiplier: FloatValue,
+    }
     use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
     use crate::model::ModelBuilder;
     use crate::spatial::ScalarGrid;

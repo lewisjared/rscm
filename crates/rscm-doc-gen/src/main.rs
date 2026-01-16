@@ -113,8 +113,9 @@ fn main() {
         let output_path = args.output.join(&filename);
 
         let json = serde_json::to_string_pretty(component).expect("Failed to serialize JSON");
+        let json_with_newline = format!("{}\n", json);
 
-        if let Err(e) = fs::write(&output_path, json) {
+        if let Err(e) = fs::write(&output_path, json_with_newline) {
             eprintln!("Failed to write {}: {}", output_path.display(), e);
         } else if args.verbose {
             println!("Wrote {}", output_path.display());

@@ -75,19 +75,6 @@ pub fn extract_description(doc: &str) -> String {
     without_equations.trim().to_string()
 }
 
-/// Parse a unit annotation from doc comments
-///
-/// Looks for patterns like:
-/// - `/// unit: K`
-/// - `unit = "K"`
-pub fn extract_unit_from_docs(doc: &str) -> Option<String> {
-    // Look for "unit: <value>" or "unit = <value>" pattern
-    let re = Regex::new(r#"(?i)unit\s*[:=]\s*"?([^"\n]+)"?"#).expect("Invalid regex");
-    re.captures(doc)
-        .and_then(|caps| caps.get(1))
-        .map(|m| m.as_str().trim().to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,16 +110,6 @@ Some more text.
         assert!(desc.contains("This is a component description"));
         assert!(desc.contains("Some more text"));
         assert!(!desc.contains("$$"));
-    }
-
-    #[test]
-    fn test_extract_unit_from_docs() {
-        assert_eq!(extract_unit_from_docs("/// unit: K"), Some("K".to_string()));
-        assert_eq!(
-            extract_unit_from_docs(r#"unit = "W / m^2""#),
-            Some("W / m^2".to_string())
-        );
-        assert_eq!(extract_unit_from_docs("no unit here"), None);
     }
 
     #[test]

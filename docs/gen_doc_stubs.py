@@ -435,4 +435,4 @@ write_component_docs()
 
 # Render navigation
 with mkdocs_gen_files.open(ROOT_DIR / "NAVIGATION.md", "w") as fh:
-    fh.writelines(nav.build_literate_nav())
+    fh.writelines(nav.build_literate_nav(indentation=2))

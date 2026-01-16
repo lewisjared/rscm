@@ -11,8 +11,9 @@ See https://oprypin.github.io/mkdocs-literate-nav/
   * [Coupled Models](notebooks/coupled_model.py)
   * [State Serialisation](notebooks/state_serialisation.py)
 * [Key Concepts](key_concepts.md)
-* [Components](components/index.md)
-* [Scientific Reference](modules/)
-* [API reference](api/)
+* Components
+  * [Overview](components/index.md)
+  * components/*.md
+* [API reference](api/rscm/index.md)
 * [Development](developers/index.md)
 * [Changelog](changelog.md)
