@@ -2,37 +2,9 @@
 
 ## Purpose
 
-This specification addresses the developer experience challenges of RSCM's component API, which previously relied on stringly-typed variable access patterns that were error-prone and lacked compile-time validation. The changes introduce type-safe input/output declarations for both Rust and Python components through a `ComponentIO` derive macro and Python dataclass generation, zero-cost `TimeseriesWindow` views for temporal data access, spatial grid type annotations (Scalar, FourBox, Hemispheric) with automatic transformation between grid resolutions, and compile-time validation of component I/O contracts. The intended audience is component authors—both Rust developers building climate model components and Python developers writing research prototypes—who will benefit from IDE autocomplete, compile-time error detection for missing or misspelled variables, and type-safe region access for spatial grids. Success is achieved when components can be written with full type safety, invalid variable access is caught at compile time rather than runtime, and the zero-cost abstraction design ensures no performance overhead compared to the previous stringly-typed API.
+Defines the `ComponentIO` derive macro and related code generation for type-safe component I/O declarations. Covers compile-time validation of variable access, spatial grid type annotations, and automatic grid transformations in the coupler. Runtime behavior of generated types is specified in `component-state`.
+
 ## Requirements
-### Requirement: TimeseriesWindow State Access
-
-The system SHALL provide a `TimeseriesWindow` type that gives components zero-cost access to timeseries data at a specific time index.
-
-The window MUST support:
-
-- Current value access
-- Previous value access
-- Offset-based historical access (last N values)
-- Time-based interpolation
-
-#### Scenario: Access current and previous values
-
-- **WHEN** a component receives a `TimeseriesWindow` for a variable
-- **THEN** calling `current()` returns the value at the current time index
-- **AND** calling `previous()` returns the value at the previous time index or `None` if at the first timestep
-
-#### Scenario: Access historical slice
-
-- **WHEN** a component calls `last_n(5)` on a `TimeseriesWindow`
-- **THEN** it receives an array view of the 5 most recent values including current
-- **AND** no data is copied (zero-cost view)
-
-#### Scenario: Interpolate at arbitrary time
-
-- **WHEN** a component calls `interpolate(t)` on a `TimeseriesWindow`
-- **THEN** it receives the interpolated value using the timeseries interpolation strategy
-
----
 
 ### Requirement: State Requirement Type
 
@@ -120,8 +92,8 @@ The system SHALL provide a derive macro that generates typed input structs from 
 Generated input structs MUST:
 
 - Have fields for each declared input and state variable
-- Use `TimeseriesWindow` type for scalar fields
-- Use `GridTimeseriesWindow` type for grid fields
+- Use `TimeseriesWindow` type for scalar fields (see `component-state` for behavior)
+- Use `GridTimeseriesWindow` type for grid fields (see `component-state` for behavior)
 - Be lifetime-parameterised to avoid data copying
 
 The macro MUST use struct-level attributes (`#[inputs(...)]`, `#[states(...)]`) rather than phantom fields to avoid:
@@ -174,33 +146,26 @@ Generated output structs MUST:
 
 ### Requirement: Typed Grid Output Slices
 
-The system SHALL provide zero-cost wrapper types for grid outputs that enforce type-safe region access.
+The `ComponentIO` macro SHALL generate code that uses typed slice wrappers for grid outputs.
 
-Typed slices MUST:
+The generated `Into<OutputState>` implementation MUST:
 
-- Use `#[repr(transparent)]` for zero-cost representation
-- Provide region-enum-based accessors instead of raw indices
-- Support builder pattern for ergonomic construction
-- Be provided for each grid type (FourBoxSlice, HemisphericSlice)
+- Use `FourBoxSlice` for FourBox grid outputs
+- Use `HemisphericSlice` for Hemispheric grid outputs
+- Convert slices to the appropriate `StateValue` variant
 
-#### Scenario: FourBox output with typed slice
+**Note:** The runtime behavior of `FourBoxSlice` and `HemisphericSlice` types is specified in `component-state`.
 
-- **WHEN** a component returns a FourBox output
-- **THEN** it uses `FourBoxSlice` type
-- **AND** values are set using `FourBoxRegion` enum variants
-- **AND** IDE autocomplete shows available regions
+#### Scenario: Macro generates FourBoxSlice usage
 
-#### Scenario: Builder pattern construction
+- **WHEN** a component declares `#[outputs(temp { name = "Temperature", unit = "K", grid = "FourBox" })]`
+- **THEN** the generated `{ComponentName}Outputs` struct has a `temp: FourBoxSlice` field
+- **AND** the `Into<OutputState>` implementation converts it correctly
 
-- **WHEN** a component constructs a `FourBoxSlice`
-- **THEN** it can chain `.with(region, value)` calls
-- **AND** unset regions default to NaN
+#### Scenario: Macro generates HemisphericSlice usage
 
-#### Scenario: Type-safe region access
-
-- **WHEN** component code calls `slice.set(FourBoxRegion::NorthernOcean, 1.5)`
-- **THEN** the value is stored at the correct array index
-- **AND** using an invalid region variant causes a compile error
+- **WHEN** a component declares `#[outputs(precip { name = "Precipitation", unit = "mm", grid = "Hemispheric" })]`
+- **THEN** the generated `{ComponentName}Outputs` struct has a `precip: HemisphericSlice` field
 
 ---
 
