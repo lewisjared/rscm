@@ -5,14 +5,21 @@ See https://oprypin.github.io/mkdocs-literate-nav/
 -->
 * [RSCM](index.md)
 * [Getting Started](getting_started.md)
-* How-to guides
-  * [Components in Python](notebooks/component_python.py)
-  * [Components in Rust](notebooks/component_rust.md)
+* [Key Concepts](key_concepts.md)
+* [Tutorials](tutorials.md)
+  * [Python Components](notebooks/component_python.py)
   * [Coupled Models](notebooks/coupled_model.py)
   * [State Serialisation](notebooks/state_serialisation.py)
-* [Key Concepts](key_concepts.md)
+* Reference
+  * [Spatial Grids](grids.md)
+  * [API Reference](api/)
 * [Components](components/index.md)
   * components/*.md
-* [API reference](api/rscm/)
-* [Development](developers/index.md)
+* Development
+  * [Developer Guide](developers/index.md)
+  * [Rust Components](notebooks/component_rust.md)
+  * [Development Practices](developers/development.md)
+  * [Documentation](developers/documenting_components.md)
+  * [Rust Tips](developers/rust_tips.md)
+  * [Troubleshooting](developers/troubleshooting.md)
 * [Changelog](changelog.md)

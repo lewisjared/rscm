@@ -11,6 +11,7 @@ repos:
       - id: check-merge-conflict
       - id: check-symlinks
       - id: check-yaml
+        args: ['--unsafe']  # Allow PyYAML constructors (used by mkdocs-material)
       - id: debug-statements
       - id: detect-private-key
       - id: end-of-file-fixer
