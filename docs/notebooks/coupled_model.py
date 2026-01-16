@@ -32,6 +32,7 @@ import numpy as np
 import pandas as pd
 import pydot
 import scmdata
+from IPython.display import Image, display
 
 from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
 from rscm.core import (
@@ -220,9 +221,14 @@ model = (
 # %%
 # This requires graphviz to be installed
 def view_pydot(pdot):
-    """Show a dot graph inside a notebook"""
-    from IPython.display import Image, display
+    """
+    Show a dot graph inside a notebook.
 
+    Parameters
+    ----------
+    pdot
+        Pydot graph object to display.
+    """
     plt = Image(pdot.create_png())
     display(plt)
 
@@ -249,7 +255,7 @@ model.current_time_bounds()
 
 
 # %%
-class RSCMRun(scmdata.run.BaseScmRun):
+class RSCMRun(scmdata.run.BaseScmRun):  # type: ignore
     """ScmRun object with minimal required metadata"""
 
     required_cols = ("variable", "unit")

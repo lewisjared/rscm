@@ -1,12 +1,12 @@
 import numpy as np
 
-from rscm import TwoLayerComponentBuilder
 from rscm._lib.core import (
     InterpolationStrategy,
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
 )
+from rscm._lib.two_layer import TwoLayerComponentBuilder
 
 
 def test_create_component():

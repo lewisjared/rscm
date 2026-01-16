@@ -9,114 +9,6 @@ This rewrite should result in improved performance and maintainability.
 The project combines a high-performance Rust core with Python bindings via PyO3/maturin,
 enabling climate scientists to leverage Rust's speed while maintaining Python's ease of use for scientific workflows.
 
-## Tech Stack
-
-### Core Languages
-
-- **Rust 1.75+** (2021 edition) - Core library and performance-critical components
-- **Python 3.11+** - User-facing API and scientific workflows
-
-### Build & Packaging
-
-- **maturin** - PyO3-based Python extension builder
-- **cargo** - Rust package manager and build system
-- **uv** - Fast Python package and environment manager
-
-### Key Rust Dependencies
-
-- `pyo3` (0.27.0) - Rust/Python FFI bindings with abi3-py38 stable ABI
-- `serde` + `typetag` - Serialization with trait object support
-- `ndarray` - N-dimensional arrays (NumPy-compatible)
-- `ode_solvers` - ODE numerical integration
-- `petgraph` - Graph data structures for dependency resolution
-- `thiserror` - Error handling
-
-### Key Python Dependencies
-
-- `numpy` - Numerical computing
-- `scmdata` (>=0.17.0) - Climate model data structures
-
-### Development Tools
-
-- `ruff` - Python linting and formatting
-- `clippy` - Rust linting
-- `pytest` - Python testing
-- `rstest` + `approx` - Rust testing
-- `towncrier` - Changelog management
-- `bump-my-version` - Version management
-- `mkdocs` + `mkdocs-material` - Documentation
-
-## Project Conventions
-
-### Code Style
-
-**Rust:**
-
-- Standard rustfmt formatting
-- Clippy lints enabled (run with `--tests`)
-- KaTeX math notation in rustdoc comments
-- All public items documented
-
-**Python:**
-
-- ruff for linting and formatting (line-length: 88)
-- numpy docstring convention
-- Type hints encouraged
-
-**General:**
-
-- British English spelling throughout
-- No emojis unless explicitly requested
-
-### Architecture Patterns
-
-**Workspace Structure:**
-
-```
-rscm/           # Root crate: PyO3 Python bindings
-rscm-core/      # Core traits: Component, Model, Timeseries
-rscm-components/# Concrete climate model components
-python/rscm/    # Python package wrapping Rust extension (_lib)
-```
-
-**Component Trait Pattern:**
-
-- Components declare inputs/outputs via `definitions()`
-- Implement `solve(t_current, t_next, input_state) -> OutputState`
-- Use `#[typetag::serde]` macro for serialization support
-
-**Model Orchestration:**
-
-- `ModelBuilder` constructs dependency graph between components
-- Components solved in dependency order via BFS traversal
-- State flows through `TimeseriesCollection`
-
-**Serialization:**
-
-- JSON/TOML via serde
-- `#[typetag::serde(tag = "type")]` for trait object deserialization
-
-### Testing Strategy
-
-- Every function must have tests
-- Tests must be accurate, reflect real usage, and reveal flaws
-- Tests should be verbose for debugging purposes
-- No "cheater" tests that just pass
-
-**Commands:**
-
-```bash
-cargo test --workspace        # Rust tests
-uv run pytest                 # Python tests (requires build-dev)
-```
-
-### Git Workflow
-
-- **Main branch:** `main`
-- **Commit style:** Conventional commits (feat:, fix:, chore:, docs:, etc.)
-- **Changelog:** Fragments in `changelog/` directory (towncrier)
-- **Releases:** Managed via bump-my-version with automatic changelog build
-
 ## Domain Context
 
 **Climate Modelling Terms:**
@@ -135,61 +27,18 @@ uv run pytest                 # Python tests (requires build-dev)
 
 ## Important Constraints
 
-- **Rust ABI Stability:** Using pyo3 abi3-py38 for stable Python ABI
-- **Minimum Python:** 3.10+
+- **Rust ABI Stability:** Using pyo3 abi3-py311 for stable Python ABI
+- **Minimum Python:** 3.11+
 - **Minimum Rust:** 1.75+
 - **License:** Apache-2.0
 - **Computational Efficiency:** Climate models run many timesteps; performance is critical
-- **Backwards Compatibility:** Changes must not break existing components or models
 
 ## External Dependencies
 
 - **GitHub:** Repository hosting and CI/CD (Actions)
 - **Documentation:** Hosted at <https://lewisjared.github.io/rscm/>
-- **PyPI/crates.io:** Package distribution (planned)
-
-## Common Development Tasks
-
-### Building
-
-```bash
-# Setup environment (first time)
-make virtual-environment
-
-# Rebuild Rust extension after code changes
-make build-dev
-
-# Run all tests
-make test
-
-# Linting and formatting
-make lint
-make format
-```
-
-### Testing
-
-```bash
-# Run tests separately
-cargo test --workspace        # Rust tests only
-uv run pytest                 # Python tests only
-
-# Run a single Rust test
-cargo test test_name --workspace
-
-# Run a single Python test
-uv run pytest tests/test_file.py::test_name
-```
-
-### Documentation
-
-```bash
-# Build Rust documentation
-cargo doc --no-deps --open
-
-# Build Python documentation (if configured)
-cd docs && mkdocs serve
-```
+- **crates.io:** [Rust Package distribution](https://crates.io/crates/rscm)
+- **PyPI:** [Python Package distribution](https://pypi.org/project/rscm/)
 
 ## Design Principles
 
@@ -204,19 +53,154 @@ cd docs && mkdocs serve
 
 **Implemented:**
 
-- Component trait and basic model orchestration
-- Scalar timeseries with interpolation
-- Basic carbon cycle and CO2 ERF components
-- Python bindings for core types
-- Serialization support (JSON/TOML)
+- Core framework: Component trait, Model orchestration, ModelBuilder
+- Timeseries with interpolation strategies (linear, previous, next)
+- Spatial grid types: Scalar, FourBox, Hemispheric with typed slices
+- ComponentIO derive macro for type-safe I/O declarations
+- TimeseriesWindow for zero-cost temporal data access
+- Components: CarbonCycle, CO2 ERF, FourBoxOceanHeatUptake, TwoLayer
+- Python bindings for core types via PyO3
+- Serialization support (JSON/TOML) with typetag for trait objects
+- Workspace structure with crates/ subdirectory organisation
 
 **In Progress:**
 
 - Grid-based timeseries for spatial resolution (four-box)
-- Additional MAGICC-equivalent components
+- Python namespace pattern (rscm.two_layer, rscm.magicc)
 
-**Planned:**
+## Planned Improvements
 
-- Full MAGICC parity
-- Performance benchmarking and optimization
-- Enhanced Python API (integration with scmdata)
+The following areas represent substantial work packages suitable for OpenSpec proposals.
+
+### 1. MAGICC Carbon Cycle Components
+
+Implement the carbon cycle components that form the foundation of MAGICC's carbon-climate feedback system.
+
+**Scope:**
+
+- Terrestrial carbon cycle (land biosphere uptake, temperature feedback)
+- Ocean carbon cycle (surface-deep exchange, solubility pump, biological pump)
+- Permafrost carbon release module
+- Land-use change emissions handling
+
+**Dependencies:** Requires grid-based timeseries (in progress)
+
+**Success criteria:** Carbon cycle outputs match MAGICC7 reference within 1% for standard scenarios
+
+### 2. MAGICC Atmospheric Chemistry Components
+
+Implement atmospheric chemistry for non-CO2 greenhouse gases.
+
+**Scope:**
+
+- Methane (CH4) lifetime and concentration
+- Nitrous oxide (N2O) chemistry
+- Tropospheric ozone from precursors
+- Halocarbon (CFC, HCFC, HFC) atmospheric lifetimes
+- Stratospheric chemistry interactions
+
+**Dependencies:** Core component framework (complete)
+
+**Success criteria:** Concentration projections match MAGICC7 for SSP scenarios
+
+### 3. MAGICC Radiative Forcing Components
+
+Implement radiative forcing calculations for all forcing agents.
+
+**Scope:**
+
+- Well-mixed GHG forcing (CO2, CH4, N2O, halocarbons)
+- Aerosol forcing (direct and indirect effects)
+- Tropospheric ozone forcing
+- Stratospheric ozone forcing
+- Land-use albedo change
+- Volcanic forcing
+- Solar forcing
+
+**Dependencies:** Atmospheric chemistry components
+
+**Success criteria:** ERF outputs match MAGICC7 for AR6 forcing timeseries
+
+### 4. MAGICC Climate Response Components
+
+Implement the climate response system.
+
+**Scope:**
+
+- Energy balance model (ocean heat uptake)
+- Multi-layer ocean temperature model
+- Hemispheric temperature patterns
+- Sea level rise (thermal expansion, ice sheets, glaciers)
+- Climate sensitivity parameterisation
+
+**Dependencies:** Radiative forcing components
+
+**Success criteria:** GMST and sea level match MAGICC7 for calibrated parameter sets
+
+### 5. Python API Enhancement
+
+Improve the Python developer experience and scientific workflow integration.
+
+**Scope:**
+
+- scmdata integration for scenario I/O (read/write ScmRun objects) (potentially remove scmdata in preference for pure pandas)
+- High-level convenience API for common workflows
+- Improved error messages with actionable suggestions
+- Batch model execution with parallel processing
+- Progress reporting for long-running simulations
+- Jupyter notebook integration (rich repr, plotting helpers)
+
+**Dependencies:** Core Python bindings (complete)
+
+**Success criteria:** Scientists can run RSCM models with same ergonomics as existing Python SCMs
+
+### 6. Model Validation Framework
+
+Establish infrastructure for validating RSCM against reference implementations.
+
+**Scope:**
+
+- Reference data management (MAGICC7 outputs, RCMIP benchmarks)
+- Automated comparison test suite
+- Tolerance specifications for numerical comparisons
+- Regression testing infrastructure
+- Validation report generation
+- CI integration for validation on every PR
+
+**Dependencies:** At least one complete component chain (forcing -> climate)
+
+**Success criteria:** Automated validation catches regressions and quantifies MAGICC7 agreement
+
+### 7. Performance Benchmarking Infrastructure
+
+Establish benchmarking to guide optimisation and prevent regressions.
+
+**Scope:**
+
+- Criterion-based microbenchmarks for hot paths
+- End-to-end scenario benchmarks
+- Memory profiling integration
+- Baseline measurements and tracking
+- CI integration for benchmark regressions
+- Comparison with MAGICC7 and other SCMs
+
+**Dependencies:** Core framework (complete)
+
+**Success criteria:** Performance baselines established; regressions caught in CI
+
+### 8. Configuration and Parameterisation System
+
+Enable model configuration management for reproducible science.
+
+**Scope:**
+
+- Named parameter sets (MAGICC7 defaults, AR6 calibrations)
+- Configuration file format (TOML/YAML)
+- Parameter validation with range checking
+- Import from existing MAGICC .CFG files
+- Configuration diff and merge tools
+- Documentation of parameter meanings and sources
+
+**Dependencies:** Components to configure
+
+**Success criteria:** Scientists can share and reproduce model configurations

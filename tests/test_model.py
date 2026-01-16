@@ -1,8 +1,8 @@
 import numpy as np
 import numpy.testing as npt
 
-from rscm._lib import TwoLayerComponentBuilder
 from rscm._lib.core import InterpolationStrategy, Model, Timeseries
+from rscm._lib.two_layer import TwoLayerComponentBuilder
 from rscm.core import ModelBuilder
 
 

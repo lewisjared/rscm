@@ -1,0 +1,24 @@
+[package]
+name = "rscm-magicc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "MAGICC components for RSCM"
+readme = "README.md"
+
+[dependencies]
+rscm-core.workspace = true
+serde = { version = "1.0", features = ["derive"] }
+typetag = "0.2"
+
+[dependencies.pyo3]
+version = "0.27.2"
+# "abi3-py311" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.11
+features = ["abi3-py311", "multiple-pymethods"]
+
+[package.metadata.docs.rs]
+rustdoc-args = [ "--html-in-header", "../../assets/katex-header.html" ]

@@ -32,7 +32,7 @@ Creating new RSCM components requires significant boilerplate and uses string-ba
 
 - Validate grid compatibility between connected components at build time
 - Auto-insert grid aggregation transforms when output grid is finer than input grid
-- Fail fast with clear errors when grid transformation is impossible (e.g., Scalar → FourBox)
+- Fail fast with clear errors when grid transformation is impossible (e.g., Scalar -> FourBox)
 - Enable parallel execution of independent components within same BFS level (future)
 
 ### Not In Scope

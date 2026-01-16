@@ -1,0 +1,39 @@
+[package]
+name = "rscm"
+version.workspace = true
+edition.workspace = true
+description = "Rust Simple Climate Model - PyO3 Python bindings"
+readme = "../../README.md"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "rscm"
+# "cdylib" is necessary to produce a shared library for Python to import from.
+crate-type = ["cdylib", "rlib"]
+
+[build-dependencies]
+pyo3-build-config = "0.27"
+
+[dependencies]
+rscm-core.workspace = true
+rscm-components.workspace = true
+rscm-two-layer.workspace = true
+rscm-magicc.workspace = true
+ode_solvers = "0.4.0"
+ndarray = { version = "0.17", features = ["serde"] }
+numpy = "0.27.1"
+pythonize = "0.27.0"
+serde = { version = "1.0", features = ["derive"] }
+typetag = "0.2"
+
+[dependencies.pyo3]
+version = "0.27.2"
+# "abi3-py311" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.11
+features = ["abi3-py311"]
+
+[package.metadata.docs.rs]
+rustdoc-args = [ "--html-in-header", "../../assets/katex-header.html" ]

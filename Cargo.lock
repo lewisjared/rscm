@@ -565,6 +565,8 @@ dependencies = [
  "pythonize",
  "rscm-components",
  "rscm-core",
+ "rscm-magicc",
+ "rscm-two-layer",
  "serde",
  "typetag",
 ]
@@ -614,6 +616,29 @@ dependencies = [
  "quote",
  "rscm-core",
  "syn",
+]
+
+[[package]]
+name = "rscm-magicc"
+version = "0.2.3"
+dependencies = [
+ "pyo3",
+ "rscm-core",
+ "serde",
+ "typetag",
+]
+
+[[package]]
+name = "rscm-two-layer"
+version = "0.2.3"
+dependencies = [
+ "numpy",
+ "ode_solvers",
+ "pyo3",
+ "pythonize",
+ "rscm-core",
+ "serde",
+ "typetag",
 ]
 
 [[package]]

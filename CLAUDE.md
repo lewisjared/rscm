@@ -64,26 +64,43 @@ Keep commit messages and plans concise
 
 ### Workspace Structure
 
-- **rscm/** - Root crate: PyO3 Python bindings
-- **rscm-core/** - Core traits and abstractions (Component, Model, Timeseries)
-- **rscm-components/** - Concrete climate model components (carbon cycle, CO2 ERF, etc.)
-- **python/rscm/** - Python package that wraps the Rust extension (`_lib`)
+```
+rscm/
+├── Cargo.toml                 # Workspace root (workspace-only, no package)
+├── pyproject.toml             # Python build config (manifest-path = crates/rscm/Cargo.toml)
+├── python/
+│   └── rscm/                  # Python package wrapping Rust extension (_lib)
+│       ├── __init__.py
+│       ├── two_layer/         # Two-layer model namespace
+│       ├── magicc/            # MAGICC components namespace (scaffold)
+│       └── _lib/              # PyO3 extension module
+├── crates/
+│   ├── rscm/                  # PyO3 Python bindings (root extension module)
+│   ├── rscm-core/             # Core traits and abstractions (Component, Model, Timeseries)
+│   ├── rscm-components/       # Shared/generic climate model components
+│   ├── rscm-macros/           # Procedural macros for component development
+│   ├── rscm-two-layer/        # Two-layer model component (extracted from root)
+│   └── rscm-magicc/           # MAGICC components scaffold (future implementations)
+```
+
+All Rust crates are in the `crates/` subdirectory. The root `Cargo.toml` is workspace-only.
+The pyproject.toml uses `manifest-path = "crates/rscm/Cargo.toml"` to point to the PyO3 crate.
 
 ### Key Concepts
 
-**Component trait** (`rscm-core/src/component.rs`): The fundamental building block. Each component:
+**Component trait** (`crates/rscm-core/src/component.rs`): The fundamental building block. Each component:
 
 - Declares input/output requirements via `definitions()`
 - Implements `solve(t_current, t_next, input_state) -> OutputState`
 - Must use `#[typetag::serde]` macro for serialization support
 
-**Model** (`rscm-core/src/model.rs`): Orchestrates multiple components:
+**Model** (`crates/rscm-core/src/model.rs`): Orchestrates multiple components:
 
 - `ModelBuilder` constructs the dependency graph between components
 - Components are solved in dependency order via BFS traversal
 - State flows between components through `TimeseriesCollection`
 
-**Timeseries** (`rscm-core/src/timeseries.rs`): Time-indexed data with interpolation strategies (linear, previous, next).
+**Timeseries** (`crates/rscm-core/src/timeseries.rs`): Time-indexed data with interpolation strategies (linear, previous, next).
 
 ### Adding a New Component
 
@@ -125,16 +142,19 @@ impl Component for MyComponent {
 ```
 
 The macro generates:
+
 - `MyComponentInputs<'a>` with `TimeseriesWindow` fields for each input in `#[inputs(...)]`
 - `MyComponentOutputs` with typed fields for each output in `#[outputs(...)]`
 - `MyComponent::generated_definitions()` for the Component trait
 - `From<MyComponentOutputs> for OutputState` conversion
 
 **For state variables** (read previous, write new):
+
 - Use `#[states(field { name = "...", unit = "..." })]`
 - State variables appear in both `Inputs` and `Outputs` structs
 
 **For grid-based variables:**
+
 - Use `grid = "FourBox"` or `grid = "Hemispheric"` in the field declaration
 - Access via `inputs.field.current(FourBoxRegion::NorthernOcean)` or `inputs.field.current_all()`
 - Output types become `FourBoxSlice` or `HemisphericSlice` for grid outputs
@@ -156,7 +176,7 @@ Type stub files in `python/rscm/_lib/*.pyi` provide type hints for the PyO3 bind
 
 **When to update .pyi files:**
 
-- After adding new PyO3 classes or functions in `rscm-core/src/python/` or `rscm-components/src/python/`
+- After adding new PyO3 classes or functions in `crates/*/src/python/`
 - After changing method signatures on existing PyO3 classes
 - After adding new enum variants or class attributes
 
@@ -169,6 +189,14 @@ Type stub files in `python/rscm/_lib/*.pyi` provide type hints for the PyO3 bind
 - Changelog fragments in `changelog/` directory (towncrier)
 - Docstrings follow numpy convention (Python) and rustdoc with KaTeX for math (Rust)
 
-## Active Technologies
+## Tech Stack
 
-- Rust 1.75+ (2021 edition), Python 3.10+ + maturin (PyO3 bindings), GitHub Actions, cargo, uv (001-publish-packages)
+**Languages:** Rust 1.75+ (2021 edition), Python 3.11+
+
+**Build:** cargo, maturin (PyO3), uv
+
+**Key Rust deps:** pyo3, serde + typetag, ndarray, ode_solvers, petgraph, thiserror
+
+**Key Python deps:** numpy, scmdata
+
+**Dev tools:** ruff, clippy, pytest, rstest, towncrier, mkdocs

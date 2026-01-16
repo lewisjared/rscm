@@ -1,0 +1,39 @@
+[package]
+name = "rscm-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Core traits and functionalities for the creation of reduced-complexity climate models"
+readme = "README.md"
+
+[dependencies]
+ode_solvers = "0.4.0"
+ndarray = { version = "0.17", features = ["serde"] }
+numpy = "0.27.1"
+# Pinned to match ode_solvers requirement
+nalgebra = "0.32.6"
+petgraph = { version = "0.8.3", features = ["serde-1"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
+typetag = "0.2"
+log = "0.4"
+num = "0.4"
+is_close = "0.1"
+thiserror = "2.0"
+pythonize = "0.27.0"
+toml = "0.9"
+rscm-macros.workspace = true
+
+[dependencies.pyo3]
+version = "0.27.2"
+# "abi3-py311" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.11
+features = ["abi3-py311", "multiple-pymethods"]
+
+[dev-dependencies]
+serde_json = "1.0"
+
+[package.metadata.docs.rs]
+rustdoc-args = [ "--html-in-header", "../../assets/katex-header.html" ]
