@@ -438,19 +438,19 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
                 "FourBox" => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::FourBox(outputs.#name),
+                        rscm_core::state::StateValue::FourBox(outputs.#name),
                     );
                 },
                 "Hemispheric" => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::Hemispheric(outputs.#name),
+                        rscm_core::state::StateValue::Hemispheric(outputs.#name),
                     );
                 },
                 _ => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::Scalar(outputs.#name),
+                        rscm_core::state::StateValue::Scalar(outputs.#name),
                     );
                 },
             }
@@ -462,19 +462,19 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
                 "FourBox" => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::FourBox(outputs.#name),
+                        rscm_core::state::StateValue::FourBox(outputs.#name),
                     );
                 },
                 "Hemispheric" => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::Hemispheric(outputs.#name),
+                        rscm_core::state::StateValue::Hemispheric(outputs.#name),
                     );
                 },
                 _ => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::Scalar(outputs.#name),
+                        rscm_core::state::StateValue::Scalar(outputs.#name),
                     );
                 },
             }

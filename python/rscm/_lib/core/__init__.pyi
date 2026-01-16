@@ -4,11 +4,17 @@ from typing import Any, Protocol, Self, TypeVar
 import numpy as np
 from numpy.typing import NDArray
 
+from .state import FourBoxSlice, HemisphericSlice, StateValue
+
 T = TypeVar("T")
 
 # RSCM uses 64bit floats throughout
 Arr = NDArray[np.float64]
 F = np.float64 | float
+
+# Re-export StateValue for convenience
+# See state.pyi for documentation on the three variants (Scalar, FourBox, Hemispheric)
+__all__ = ["FourBoxSlice", "HemisphericSlice", "StateValue"]
 
 class TimeAxis:
     @staticmethod

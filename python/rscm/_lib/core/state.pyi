@@ -5,6 +5,17 @@ from numpy.typing import NDArray
 Arr = NDArray[np.float64]
 F = np.float64 | float
 
+# StateValue represents values that can be scalar or spatially-resolved.
+# In the Rust core, this is an enum with three variants:
+#   - Scalar(float): A single global value
+#   - FourBox(FourBoxSlice): Four-box regional values
+#   - Hemispheric(HemisphericSlice): Hemispheric values
+#
+# Note: In the Python API, component solve() currently returns scalars
+# (aggregated via to_scalar()). This type alias documents the underlying
+# type system for components that may work with grid values directly.
+StateValue = float | "FourBoxSlice" | "HemisphericSlice"
+
 class FourBoxSlice:
     @property
     def northern_ocean(self) -> float: ...

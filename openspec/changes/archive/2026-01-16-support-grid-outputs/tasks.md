@@ -5,6 +5,7 @@
 All phases (1-6) have been successfully completed with all tests passing.
 
 **Final Test Results:**
+
 - `cargo test --workspace`: 110+ tests passing
 - All component migrations complete
 - All documentation updated
@@ -243,6 +244,24 @@ Tasks are ordered by dependency - earlier tasks must complete before later ones.
 **Note:** Component trait documentation is comprehensive and rustdoc examples work with the existing code. The macro-based approach is documented in CLAUDE.md which is the primary reference for developers. Additional rustdoc was deferred as the CLAUDE.md update provides sufficient guidance for new components.
 
 **Alternative:** Users should refer to CLAUDE.md examples and existing component implementations for guidance on grid outputs.
+
+### Task 6.3: Update Python Type Stubs (.pyi files)
+
+**Files:** `python/rscm/_lib/*.pyi`
+
+Type stub files must be updated to reflect the new StateValue variants (FourBox, Hemispheric) added to the core state system.
+
+**Changes required:**
+
+- Update `StateValue` type union to include `FourBox` and `Hemispheric` variants alongside `Scalar`
+- Adjust the `OutputState` type alias if exposed to Python
+- Update any component .pyi files that reference `OutputState` or PyO3-exposed methods whose signatures changed
+- Ensure type hints accurately match the PyO3 bindings
+
+**Verification:**
+
+- Run `uv run mypy python/rscm` to verify type hints match the PyO3 bindings
+- Check that IDE autocompletion correctly shows the new StateValue variants
 
 ## Parallelisation Notes
 
