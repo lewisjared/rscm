@@ -6,11 +6,11 @@ from rscm._lib.core import (
     Timeseries,
     TimeseriesCollection,
 )
-from rscm._lib.two_layer import TwoLayerComponentBuilder
+from rscm._lib.two_layer import TwoLayerBuilder
 
 
 def test_create_component():
-    component = TwoLayerComponentBuilder.from_parameters(
+    component = TwoLayerBuilder.from_parameters(
         dict(
             lambda0=0.3,
             efficacy=31,

@@ -203,7 +203,7 @@ pub struct VariableMetadata {
 /// tags, and categorisation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ComponentMetadata {
-    /// Component struct name (e.g., "CarbonCycleComponent")
+    /// Component struct name (e.g., "CarbonCycle")
     pub name: String,
     /// Tags for filtering (e.g., ["carbon-cycle", "simple", "stable"])
     pub tags: Vec<String>,

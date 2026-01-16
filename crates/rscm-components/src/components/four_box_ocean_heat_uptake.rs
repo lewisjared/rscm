@@ -64,12 +64,12 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 ///
 /// ```rust
 /// use rscm_components::{
-///     FourBoxOceanHeatUptakeComponent,
+///     FourBoxOceanHeatUptake,
 ///     FourBoxOceanHeatUptakeParameters,
 /// };
 ///
 /// let params = FourBoxOceanHeatUptakeParameters::default();
-/// let component = FourBoxOceanHeatUptakeComponent::from_parameters(params);
+/// let component = FourBoxOceanHeatUptake::from_parameters(params);
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["temperature", "ocean", "regional", "four-box", "experimental"], category = "Ocean")]
@@ -79,11 +79,11 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 #[outputs(
     heat_uptake { name = "Ocean Heat Uptake|FourBox", unit = "W/m^2", grid = "FourBox" },
 )]
-pub struct FourBoxOceanHeatUptakeComponent {
+pub struct FourBoxOceanHeatUptake {
     pub parameters: FourBoxOceanHeatUptakeParameters,
 }
 
-impl FourBoxOceanHeatUptakeComponent {
+impl FourBoxOceanHeatUptake {
     pub fn from_parameters(parameters: FourBoxOceanHeatUptakeParameters) -> Self {
         // Validate that ratios average to approximately 1.0 with equal weights
         // This ensures the area-weighted mean equals the global value
@@ -104,7 +104,7 @@ impl FourBoxOceanHeatUptakeComponent {
 }
 
 #[typetag::serde]
-impl Component for FourBoxOceanHeatUptakeComponent {
+impl Component for FourBoxOceanHeatUptake {
     fn definitions(&self) -> Vec<RequirementDefinition> {
         Self::generated_definitions()
     }
@@ -116,13 +116,13 @@ impl Component for FourBoxOceanHeatUptakeComponent {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         // Get scalar ERF input using typed inputs
-        let inputs = FourBoxOceanHeatUptakeComponentInputs::from_input_state(input_state);
+        let inputs = FourBoxOceanHeatUptakeInputs::from_input_state(input_state);
         let erf = inputs.erf.current();
 
         // Disaggregate to four regions using ratios
         // Regional uptake = global ERF * (regional/global ratio)
         // In a real model, this would be based on physical parameterizations
-        let outputs = FourBoxOceanHeatUptakeComponentOutputs {
+        let outputs = FourBoxOceanHeatUptakeOutputs {
             heat_uptake: FourBoxSlice::from_array([
                 erf * self.parameters.northern_ocean_ratio,
                 erf * self.parameters.northern_land_ratio,
@@ -165,14 +165,13 @@ mod tests {
             southern_ocean_ratio: 2.0,
             southern_land_ratio: 2.0,
         };
-        FourBoxOceanHeatUptakeComponent::from_parameters(params);
+        FourBoxOceanHeatUptake::from_parameters(params);
     }
 
     #[test]
     fn test_solve_basic() {
-        let component = FourBoxOceanHeatUptakeComponent::from_parameters(
-            FourBoxOceanHeatUptakeParameters::default(),
-        );
+        let component =
+            FourBoxOceanHeatUptake::from_parameters(FourBoxOceanHeatUptakeParameters::default());
 
         // Create ERF input - use consistent values since get_scalar_window().current()
         // returns the latest value in the timeseries
@@ -223,7 +222,7 @@ mod tests {
             southern_ocean_ratio: 1.5,
             southern_land_ratio: 0.5,
         };
-        let component = FourBoxOceanHeatUptakeComponent::from_parameters(params);
+        let component = FourBoxOceanHeatUptake::from_parameters(params);
 
         let erf_timeseries = TimeseriesItem {
             data: TimeseriesData::Scalar(Timeseries::from_values(
@@ -260,9 +259,8 @@ mod tests {
 
     #[test]
     fn test_component_definitions() {
-        let component = FourBoxOceanHeatUptakeComponent::from_parameters(
-            FourBoxOceanHeatUptakeParameters::default(),
-        );
+        let component =
+            FourBoxOceanHeatUptake::from_parameters(FourBoxOceanHeatUptakeParameters::default());
 
         let inputs = component.input_names();
         assert_eq!(inputs.len(), 1);

@@ -59,7 +59,7 @@ The `rscm-doc-gen` crate generates JSON files with this structure:
 ```json
 {
   "$schema": "component_metadata_schema.json",
-  "name": "TwoLayerComponent",
+  "name": "TwoLayer",
   "module_path": "rscm_two_layer::component",
   "language": "rust",
   "description": "Docstring content here...",

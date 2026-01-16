@@ -107,6 +107,8 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Time types
     m.add_class::<timeseries::PyTimeAxis>()?;
     m.add_class::<timeseries::PyTimeseries>()?;
+    m.add_class::<timeseries::PyFourBoxTimeseries>()?;
+    m.add_class::<timeseries::PyHemisphericTimeseries>()?;
     m.add_class::<timeseries::PyInterpolationStrategy>()?;
 
     // State management

@@ -1,4 +1,4 @@
 pub mod component;
 pub mod python;
 
-pub use component::{TwoLayerComponent, TwoLayerComponentParameters};
+pub use component::{TwoLayer, TwoLayerParameters};

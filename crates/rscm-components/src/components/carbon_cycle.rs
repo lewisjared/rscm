@@ -67,12 +67,12 @@ pub struct SolverOptions {
     cumulative_emissions { name = "Cumulative Emissions|CO2", unit = "Gt C" },
     cumulative_uptake { name = "Cumulative Land Uptake", unit = "Gt C" },
 )]
-pub struct CarbonCycleComponent {
+pub struct CarbonCycle {
     parameters: CarbonCycleParameters,
     solver_options: SolverOptions,
 }
 
-impl CarbonCycleComponent {
+impl CarbonCycle {
     /// Create a new carbon cycle component from parameters
     pub fn from_parameters(parameters: CarbonCycleParameters) -> Self {
         Self {
@@ -91,7 +91,7 @@ impl CarbonCycleComponent {
 }
 
 #[typetag::serde]
-impl Component for CarbonCycleComponent {
+impl Component for CarbonCycle {
     fn definitions(&self) -> Vec<RequirementDefinition> {
         Self::generated_definitions()
     }
@@ -102,7 +102,7 @@ impl Component for CarbonCycleComponent {
         t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let inputs = CarbonCycleComponentInputs::from_input_state(input_state);
+        let inputs = CarbonCycleInputs::from_input_state(input_state);
 
         let y0 = ModelState::new(
             inputs.concentration.current(),
@@ -117,7 +117,7 @@ impl Component for CarbonCycleComponent {
 
         let results = get_last_step(solver.results(), t_next);
 
-        let outputs = CarbonCycleComponentOutputs {
+        let outputs = CarbonCycleOutputs {
             concentration: results[0],
             cumulative_uptake: results[1],
             cumulative_emissions: results[2],
@@ -127,7 +127,7 @@ impl Component for CarbonCycleComponent {
     }
 }
 
-impl IVP<Time, ModelState> for CarbonCycleComponent {
+impl IVP<Time, ModelState> for CarbonCycle {
     fn calculate_dy_dt(
         &self,
         _t: Time,
@@ -135,7 +135,7 @@ impl IVP<Time, ModelState> for CarbonCycleComponent {
         y: &Vector3<FloatValue>,
         dy_dt: &mut Vector3<FloatValue>,
     ) {
-        let inputs = CarbonCycleComponentInputs::from_input_state(input_state);
+        let inputs = CarbonCycleInputs::from_input_state(input_state);
 
         // Inputs come from input_state
         let emissions = inputs.emissions.current();

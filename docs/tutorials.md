@@ -47,7 +47,9 @@ Learn RSCM through hands-on examples. Each tutorial builds on concepts from prev
 - Output types: `FourBoxSlice`, `HemisphericSlice`
 - Grid aggregation and transformation
 
-[**Learn more: Spatial Grids Reference**](grids.md)
+[**Start Tutorial: Working with Spatial Grids**](notebooks/grid_variables.py)
+
+[**Reference: Spatial Grids Documentation**](grids.md)
 
 ---
 

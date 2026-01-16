@@ -26,7 +26,7 @@ from rscm.core import (
     Timeseries,
     InterpolationStrategy,
 )
-from rscm.two_layer import TwoLayerComponentBuilder
+from rscm.two_layer import TwoLayerBuilder
 ```
 
 ### Step 2: Define the Time Axis
@@ -56,7 +56,7 @@ forcing = Timeseries(
 
 ```python
 # Create a two-layer climate component with default parameters
-two_layer = TwoLayerComponentBuilder.from_parameters({
+two_layer = TwoLayerBuilder.from_parameters({
     "lambda_0": 1.2,      # Climate feedback parameter (W/m^2/K)
     "efficacy": 1.0,      # Ocean heat uptake efficacy
     "eta": 0.8,           # Ocean heat transfer coefficient (W/m^2/K)
@@ -104,7 +104,7 @@ RSCM ships with pre-built components for common climate modelling tasks:
 
 | Component | Module | Description |
 |-----------|--------|-------------|
-| `TwoLayerComponentBuilder` | `rscm.two_layer` | Two-layer energy balance model for temperature |
+| `TwoLayerBuilder` | `rscm.two_layer` | Two-layer energy balance model for temperature |
 | `CarbonCycleBuilder` | `rscm.components` | Simple carbon cycle (emissions to concentration) |
 | `CO2ERFBuilder` | `rscm.components` | CO2 concentration to effective radiative forcing |
 
@@ -114,12 +114,12 @@ Components can be coupled together. Here's an emissions-to-temperature pipeline:
 
 ```python
 from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
-from rscm.two_layer import TwoLayerComponentBuilder
+from rscm.two_layer import TwoLayerBuilder
 
 # Create components
 carbon_cycle = CarbonCycleBuilder.from_parameters({...}).build()
 co2_erf = CO2ERFBuilder.from_parameters({...}).build()
-two_layer = TwoLayerComponentBuilder.from_parameters({...}).build()
+two_layer = TwoLayerBuilder.from_parameters({...}).build()
 
 # Build coupled model
 model = (
