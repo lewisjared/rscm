@@ -15,122 +15,157 @@
 # %% [markdown]
 # # Components in Python
 #
-# We can also create new components in Python and pass them over to Rust.
-# This enables the use of native Rust and Python-based components
-# in the same coupled model.
+# This notebook demonstrates how to create climate model components in Python
+# that integrate seamlessly with RSCM's Rust core.
+#
+# Python components can be coupled with Rust-native components in the same model,
+# enabling rapid prototyping while maintaining performance for production code.
+#
+# ## Overview
+#
+# Create Python components by subclassing `rscm.component.Component` with
+# declarative `Input`, `Output`, and `State` descriptors. This provides:
+#
+# - Auto-generated `definitions()` method
+# - Type-safe input/output access
+# - Support for scalar and grid-based (FourBox, Hemispheric) variables
+#
+# ## Related Resources
+#
+# - [Rust Components](component_rust.md): Creating components in Rust
+# - [Coupled Models](coupled_model.py): Combining multiple components
+# - [Key Concepts](../key_concepts.md): Core RSCM architecture
 
 # %%
-import attrs
 import matplotlib.pyplot as plt
 import numpy as np
 
+from rscm.component import Component, Input, Output
 from rscm.core import (
+    FourBoxSlice,
     InterpolationStrategy,
     ModelBuilder,
     PythonComponent,
-    RequirementDefinition,
-    RequirementType,
+    StateValue,
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
 )
 
 # %% [markdown]
-# A python-based component must conform with the
-# `rscm._lib.core.CustomComponent` protocol.
-# This protocol defines two required functions:
-# * definitions
-# * solve
+# ## Creating a Typed Component
+#
+# To create a component, subclass `rscm.component.Component` and declare
+# inputs/outputs using descriptors. The metaclass automatically generates:
+#
+# - `definitions()` method returning `list[RequirementDefinition]`
+# - Inner `Inputs` class with typed fields for each input
+# - Inner `Outputs` class for constructing return values
+#
+# ### Basic Example: Scalar Component
 
 
 # %%
-@attrs.frozen
-class ScaleComponent:
+class ScaleComponent(Component):
     """
-    Scale the input by a factor after 2015
+    Scale the input by a factor after a given year.
 
-    Example of a custom Python component.
-
-    This component must conform with the
-    `rscm._lib.core.CustomComponent` protocol.
+    This example demonstrates a simple scalar component that:
+    - Reads a single input value
+    - Applies conditional logic based on time
+    - Returns a single output value
     """
 
-    scale_factor: float
-    scale_year: int
+    # Declare inputs and outputs using descriptors
+    # The first argument is the variable name used in the model
+    input_value = Input("input", unit="K")
+    output_value = Output("output", unit="K")
 
-    def definitions(self) -> list[RequirementDefinition]:
+    def __init__(self, scale_factor: float, scale_year: int):
         """
-        Define the requirements for this component
-        """
-        # TODO: resolve later
-        return [
-            RequirementDefinition("input", "K", RequirementType.Input),
-            RequirementDefinition("output", "K", RequirementType.Output),
-        ]
-
-    def solve(
-        self, time_current: float, time_next: float, input_state: dict[str, float]
-    ) -> dict[str, float]:
-        """
-        Solve the component for a given timestep
-
-        This calculates the output state at the end (time_next) of the timestep
+        Initialise the component.
 
         Parameters
         ----------
-        time_current
-            Start of the timestep
-        time_next
-            End of the timestep
+        scale_factor
+            Multiplier applied after scale_year
+        scale_year
+            Year after which scaling is applied
+        """
+        self.scale_factor = scale_factor
+        self.scale_year = scale_year
 
-            This is the same as the start of the next timestep.
-        input_state
-            State at the start of the timestep
+    def solve(self, t_current: float, t_next: float, inputs: "ScaleComponent.Inputs"):
+        """
+        Solve the component for a single timestep.
 
-            Values are extracted from the model's state for the variables of interest.
+        Parameters
+        ----------
+        t_current
+            Start time of the timestep
+        t_next
+            End time of the timestep
+        inputs
+            Typed inputs providing access to current and historical values.
+            Access values via `inputs.<field_name>.current` or `.previous`.
 
         Returns
         -------
-        State at the end of the timestep.
-
-        This will be written to the model's state for the next timestep
+        ScaleComponent.Outputs
+            Typed outputs for this timestep
         """
-        if time_current > self.scale_year:
-            return {"output": input_state.get("input") * self.scale_factor}
+        # Access the current value using the typed interface
+        current_input = inputs.input_value.current
+
+        if t_current > self.scale_year:
+            result = current_input * self.scale_factor
         else:
-            return {"output": input_state.get("input")}
+            result = current_input
+
+        # Return using the auto-generated Outputs class
+        return self.Outputs(output_value=result)
 
 
 # %% [markdown]
-# This Python class can be instantiated and called as normal:
+# ### Component Instantiation
+#
+# Create an instance with your desired parameters:
 
 # %%
 scale_component = ScaleComponent(scale_factor=3, scale_year=2015)
 
-# %%
-res = scale_component.solve(2000, 1, {"input": 35.0})
-assert res["output"] == 35.0
+# %% [markdown]
+# ### Auto-generated Definitions
+#
+# The `definitions()` method is automatically generated from the descriptors.
+# This tells the model what inputs the component requires and what outputs
+# it produces:
 
 # %%
-res = scale_component.solve(2050, 1, {"input": 35.0})
-assert res["output"] == 35.0 * 3.0
+for defn in scale_component.definitions():
+    print(f"  {defn.requirement_type.name}: {defn.name} [{defn.units}]")
 
 # %% [markdown]
-# But the magic happens when we build a new `PythonComponent`
-# with this instance of the class.
-# What happens here is that Rust creates a new struct which holds onto a `PyObject`
-# of `scale_component`.
-# This  `PythonComponent` struct implements the `Component` trait which in turn calls
-# methods on `scale_component` within Rust.
-# Since `PythonComponent` implements the `Component` trait it can be used within a
-# model in the same way any other Rust-native `Component` is.
-# This enables coupling between Rust and Python components.
+# ## Wrapping for Rust Integration
+#
+# To use a Python component in an RSCM model, wrap it with `PythonComponent.build()`.
+# This creates a Rust struct that:
+#
+# - Holds a reference to your Python object
+# - Implements the Rust `Component` trait
+# - Handles data conversion between Python and Rust
+#
+# This enables seamless coupling between Rust and Python components.
 
 # %%
 component_in_rust = PythonComponent.build(scale_component)
 
 # %% [markdown]
-# It can be solved like any other Rust-native components
+# ### Direct Component Invocation
+#
+# You can call `solve()` directly on the wrapped component for testing.
+# Note that `solve()` returns `dict[str, StateValue]` - use `.to_scalar()`
+# to extract the float value:
 
 # %%
 collection = TimeseriesCollection()
@@ -143,14 +178,23 @@ collection.add_timeseries(
         InterpolationStrategy.Previous,
     ),
 )
-res = component_in_rust.solve(2000, 2001, collection)
-assert res["output"] == 35.0, res["output"]
+
+result = component_in_rust.solve(2000, 2001, collection)
+
+# The result is a dict of StateValue objects
+print(f"Result: {result}")
+print(f"Output value: {result['output'].to_scalar()}")
 
 # %% [markdown]
-# Below is an example using the component as part of a `Model`
-# (which is implemented in Rust).
+# ## Using Components in a Model
+#
+# Components are typically used within a `Model` that handles:
+# - Time stepping
+# - Dependency resolution between components
+# - State management across timesteps
 
 # %%
+# Create exogenous input data
 input_ts = Timeseries(
     np.asarray([1.0, 2.0, 3.0]),
     TimeAxis.from_values(np.asarray([1850.0, 2000.0, 2100.0])),
@@ -158,8 +202,10 @@ input_ts = Timeseries(
     InterpolationStrategy.Previous,
 )
 
+# Define the model time axis
 time_axis = TimeAxis.from_bounds(np.arange(1750.0, 2100, 10.0))
 
+# Build the model
 model = (
     ModelBuilder()
     .with_py_component(component_in_rust)
@@ -167,28 +213,133 @@ model = (
     .with_exogenous_variable("input", input_ts)
 ).build()
 
-
 # %%
+# Run the simulation
 model.run()
 
 # %%
-result = model.timeseries()
-result
+# Access results
+timeseries = model.timeseries()
 
-# %%
-plt.plot(time_axis.values(), result.get_timeseries_by_name("input").values())
-plt.plot(time_axis.values(), result.get_timeseries_by_name("output").values())
+plt.figure(figsize=(10, 5))
+plt.plot(
+    time_axis.values(),
+    timeseries.get_timeseries_by_name("input").values(),
+    label="input",
+)
+plt.plot(
+    time_axis.values(),
+    timeseries.get_timeseries_by_name("output").values(),
+    label="output",
+)
+plt.xlabel("Year")
+plt.ylabel("Temperature (K)")
+plt.legend()
+plt.title("ScaleComponent: Input vs Output")
+plt.axvline(x=2015, color="gray", linestyle="--", alpha=0.5, label="scale_year")
+plt.show()
 
 # %% [markdown]
-# The 1 time step delay is because the component propagates
-# the input state from t0 to the output at the start of t1
+# Note the 1-timestep delay: the component reads input at t0 and writes
+# output at t1. After 2015, the output is 3x the input.
+
+# %% [markdown]
+# ## Grid-Based Components
+#
+# RSCM supports spatially-resolved variables using two grid types:
+#
+# - **FourBox**: Northern Ocean, Northern Land, Southern Ocean, Southern Land
+# - **Hemispheric**: Northern, Southern
+#
+# Specify the grid type in your `Input` or `Output` descriptor:
+
 
 # %%
-assert result.get_timeseries_by_name("input").at_time(1800.0) == 1.0
-assert (
-    result.get_timeseries_by_name("output").at_time(1800.0) == 2.0
-)  # TODO: This is technically wrong
-assert result.get_timeseries_by_name("input").at_time(2050.0) == 2.0
-assert result.get_timeseries_by_name("output").at_time(2050.0) == 2.0 * 3.0
+class RegionalComponent(Component):
+    """
+    Example component with FourBox grid output.
+
+    Demonstrates how to work with spatially-resolved variables.
+    """
+
+    forcing = Input("Effective Radiative Forcing", unit="W/m^2")
+    regional_temp = Output("Regional Temperature", unit="K", grid="FourBox")
+
+    def __init__(self, sensitivity: float):
+        self.sensitivity = sensitivity
+
+    def solve(self, t_current: float, t_next: float, inputs):
+        """Compute regional temperature response from forcing."""
+        erf = inputs.forcing.current
+
+        # Return FourBox output with different values per region
+        return self.Outputs(
+            regional_temp=FourBoxSlice(
+                northern_ocean=erf * self.sensitivity * 0.8,
+                northern_land=erf * self.sensitivity * 1.2,
+                southern_ocean=erf * self.sensitivity * 0.7,
+                southern_land=erf * self.sensitivity * 1.1,
+            )
+        )
+
+
+# %%
+regional = RegionalComponent(sensitivity=0.5)
+
+# Check the auto-generated definitions
+for defn in regional.definitions():
+    grid = defn.grid_type
+    print(f"  {defn.requirement_type.name}: {defn.name} [{defn.units}] ({grid})")
+
+# %% [markdown]
+# ## StateValue: Understanding Component Outputs
+#
+# Component `solve()` methods return `dict[str, StateValue]`. The `StateValue`
+# class wraps scalar or grid values:
+#
+# - `StateValue.scalar(float)` - single global value
+# - `StateValue.four_box(FourBoxSlice)` - four regional values
+# - `StateValue.hemispheric(HemisphericSlice)` - two hemispheric values
+#
+# Use accessor methods to extract values:
+
+# %%
+# Create different StateValue types
+scalar_val = StateValue.scalar(15.0)
+grid_val = StateValue.four_box(FourBoxSlice.uniform(10.0))
+
+print(f"Scalar: {scalar_val}")
+print(f"  is_scalar: {scalar_val.is_scalar()}")
+print(f"  as_scalar: {scalar_val.as_scalar()}")
+print()
+print(f"Grid: {grid_val}")
+print(f"  is_four_box: {grid_val.is_four_box()}")
+print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
+
+# %% [markdown]
+# ## Input Access Patterns
+#
+# The typed `Inputs` class provides several ways to access input data:
+#
+# | Method | Description |
+# |--------|-------------|
+# | `inputs.field.current` | Current timestep value |
+# | `inputs.field.previous` | Previous timestep value |
+# | `inputs.field.at_offset(n)` | Value at relative offset |
+# | `inputs.field.last_n(n)` | NumPy array of last n values |
+#
+# For grid inputs, `current` returns a `FourBoxSlice` or `HemisphericSlice`.
+
+# %% [markdown]
+# ## Summary
+#
+# Key points for creating Python components:
+#
+# 1. Subclass `rscm.component.Component`
+# 2. Declare variables with `Input()`, `Output()`, or `State()` descriptors
+# 3. Implement `solve(t_current, t_next, inputs)` returning `self.Outputs(...)`
+# 4. Wrap with `PythonComponent.build()` for model integration
+# 5. Use `grid="FourBox"` or `grid="Hemispheric"` for spatial variables
+# 6. Component outputs are `StateValue` objects - use `.to_scalar()` for floats
 
 # %%

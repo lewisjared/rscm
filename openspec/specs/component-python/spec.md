@@ -14,7 +14,7 @@ The system SHALL provide a `Component` Protocol that defines the Python interfac
 
 - **WHEN** a class implements the `Component` protocol
 - **THEN** it MUST implement `definitions() -> list[RequirementDefinition]`
-- **AND** implement `solve(t_current: float, t_next: float, collection: TimeseriesCollection) -> dict[str, float]`
+- **AND** implement `solve(t_current: float, t_next: float, collection: TimeseriesCollection) -> dict[str, StateValue]`
 
 ### Requirement: CustomComponent Protocol
 
@@ -72,7 +72,7 @@ The system SHALL provide a `RustComponent` class that exposes Rust-defined compo
 
 - **WHEN** using a `RustComponent` in Python
 - **THEN** `definitions()` MUST return `list[RequirementDefinition]`
-- **AND** `solve()` MUST accept `TimeseriesCollection` and return `dict[str, float]`
+- **AND** `solve()` MUST accept `TimeseriesCollection` and return `dict[str, StateValue]`
 
 ### Requirement: ComponentBuilder Protocol
 
@@ -147,19 +147,21 @@ The system SHALL provide a `Component` base class with metaclass-based code gene
 - **WHEN** a class attribute is set to `Input(name, unit, grid="Scalar")`
 - **THEN** it MUST be collected as a component input
 - **AND** the field name becomes the accessor name on `Inputs` class
-- **AND** `grid` defaults to "Scalar" but accepts "FourBox" or "Hemispheric"
+- **AND** `grid` MUST be a `Literal["Scalar", "FourBox", "Hemispheric"]` defaulting to "Scalar"
 
 #### Scenario: Declare outputs with Output descriptor
 
 - **WHEN** a class attribute is set to `Output(name, unit, grid="Scalar")`
 - **THEN** it MUST be collected as a component output
 - **AND** the field name becomes the required field on `Outputs` class
+- **AND** `grid` MUST be a `Literal["Scalar", "FourBox", "Hemispheric"]` defaulting to "Scalar"
 
 #### Scenario: Declare state with State descriptor
 
 - **WHEN** a class attribute is set to `State(name, unit, grid="Scalar")`
 - **THEN** it MUST appear in BOTH `Inputs` and `Outputs` classes
 - **AND** require an initial value at model build time
+- **AND** `grid` MUST be a `Literal["Scalar", "FourBox", "Hemispheric"]` defaulting to "Scalar"
 
 #### Scenario: Metaclass generates Inputs class
 
@@ -176,7 +178,7 @@ The system SHALL provide a `Component` base class with metaclass-based code gene
 - **AND** have typed fields for each output and state
 - **AND** validate all required fields are provided in `__init__`
 - **AND** raise `TypeError` for missing or extra fields
-- **AND** provide `to_dict()` method for Rust interop
+- **AND** provide `to_dict() -> dict[str, StateValue]` method for Rust interop
 
 #### Scenario: definitions() auto-generated
 
@@ -214,6 +216,36 @@ The system SHALL provide Python slice types for typed component output construct
 - **WHEN** using a `HemisphericSlice` in Python
 - **THEN** regions MUST be accessible via `northern` and `southern` properties
 - **AND** same construction patterns as `FourBoxSlice` MUST be supported
+
+### Requirement: Python StateValue Type
+
+The system SHALL provide a `StateValue` class for representing scalar or spatially-resolved values.
+
+#### Scenario: StateValue factory methods
+
+- **WHEN** creating a `StateValue` in Python
+- **THEN** `StateValue.scalar(value)` MUST create a scalar StateValue
+- **AND** `StateValue.four_box(slice)` MUST create a FourBox StateValue
+- **AND** `StateValue.hemispheric(slice)` MUST create a Hemispheric StateValue
+
+#### Scenario: StateValue type checking
+
+- **WHEN** using a `StateValue` in Python
+- **THEN** `is_scalar()`, `is_four_box()`, `is_hemispheric()` MUST return the correct boolean
+- **AND** only one type check method returns `True` for any instance
+
+#### Scenario: StateValue accessors
+
+- **WHEN** accessing the inner value of a `StateValue`
+- **THEN** `as_scalar()` MUST return `float | None` (None if not scalar)
+- **AND** `as_four_box()` MUST return `FourBoxSlice | None`
+- **AND** `as_hemispheric()` MUST return `HemisphericSlice | None`
+- **AND** `to_scalar()` MUST return a float, aggregating grid values if necessary
+
+#### Scenario: StateValue public export
+
+- **WHEN** importing from the `rscm` package
+- **THEN** `StateValue`, `FourBoxSlice`, and `HemisphericSlice` MUST be available as public exports
 
 ### Requirement: ModelBuilder Python Interface
 
