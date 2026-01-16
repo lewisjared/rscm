@@ -88,13 +88,30 @@ impl FourBoxGrid {
     ///
     /// # Panics
     ///
-    /// Panics if weights do not sum to approximately 1.0 (within 1e-6)
+    /// Panics if weights do not sum to approximately 1.0 (within 1e-6), or if
+    /// the northern hemisphere weights (NorthernOcean + NorthernLand) or
+    /// southern hemisphere weights (SouthernOcean + SouthernLand) sum to zero,
+    /// which would cause division by zero in hemispheric transformations.
     pub fn with_weights(weights: [FloatValue; 4]) -> Self {
         let sum: FloatValue = weights.iter().sum();
         assert!(
             (sum - 1.0).abs() < 1e-6,
             "Weights must sum to 1.0, got {}",
             sum
+        );
+        let northern_sum = weights[FourBoxRegion::NorthernOcean as usize]
+            + weights[FourBoxRegion::NorthernLand as usize];
+        let southern_sum = weights[FourBoxRegion::SouthernOcean as usize]
+            + weights[FourBoxRegion::SouthernLand as usize];
+        assert!(
+            northern_sum > 1e-10,
+            "Northern hemisphere weights must be non-zero for hemispheric transformation, got {}",
+            northern_sum
+        );
+        assert!(
+            southern_sum > 1e-10,
+            "Southern hemisphere weights must be non-zero for hemispheric transformation, got {}",
+            southern_sum
         );
         Self { weights }
     }

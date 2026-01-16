@@ -221,7 +221,14 @@ model = (
 # %%
 # This requires graphviz to be installed
 def view_pydot(pdot):
-    """Show a dot graph inside a notebook"""
+    """
+    Show a dot graph inside a notebook.
+
+    Parameters
+    ----------
+    pdot
+        Pydot graph object to display.
+    """
     plt = Image(pdot.create_png())
     display(plt)
 

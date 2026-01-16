@@ -25,7 +25,7 @@ tags: [openspec, change]
 5. **Present the options** to the user and gather feedback before committing to a design direction.
 6. Capture architectural reasoning in `design.md`, including the chosen approach, why alternatives were rejected, and any trade-offs accepted.
 7. Map the change into concrete capabilities or requirements, breaking multi-scope efforts into distinct spec deltas with clear relationships and sequencing.
-8. Draft spec deltas in `changes/<id>/specs/<capability>/spec.md` (one folder per capability) using `## ADDED|MODIFIED|REMOVED Requirements` with at least one `#### Scenario:` per requirement and cross-reference related capabilities when relevant.
+8. Draft spec deltas in `openspec/changes/<id>/specs/<capability>/spec.md` (one folder per capability) using `## ADDED|MODIFIED|REMOVED Requirements` with at least one `#### Scenario:` per requirement and cross-reference related capabilities when relevant.
 9. Draft `tasks.md` as an ordered list of small, verifiable work items that deliver user-visible progress, include validation (tests, tooling), and highlight dependencies or parallelizable work.
 10. Validate with `openspec validate <id> --strict --no-interactive` and resolve every issue before sharing the proposal.
 

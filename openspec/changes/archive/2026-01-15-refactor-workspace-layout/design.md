@@ -130,6 +130,8 @@ The `python/spatial.rs` (206 lines) follows the same split pattern, keeping PyO3
 
 ### Core Module Submodules
 
+Related change: PR #55
+
 The `rscm._lib.core` module will be split into logical submodules for better discoverability and maintainability:
 
 **`rscm._lib.core` (14 essential types):**

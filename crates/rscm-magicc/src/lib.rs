@@ -1,5 +1,6 @@
-// MAGICC components for RSCM
-// This crate scaffolds the structure for future MAGICC component implementations
+//! MAGICC components for RSCM
+//!
+//! This crate scaffolds the structure for future MAGICC component implementations
 
 pub mod carbon;
 pub mod chemistry;
