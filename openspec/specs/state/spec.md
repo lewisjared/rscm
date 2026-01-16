@@ -1,4 +1,4 @@
-# component-state Specification
+# state Specification
 
 ## Purpose
 

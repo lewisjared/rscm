@@ -135,7 +135,7 @@ output.insert("Temperature".to_string(), StateValue::Scalar(288.0));
 ## Dependencies
 
 - Requires: `grid-timeseries` spec (complete)
-- Requires: `component-state` spec (complete, will be updated)
+- Requires: `state` spec (complete, will be updated)
 
 ## Success Criteria
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines the `ComponentIO` derive macro and related code generation for type-safe component I/O declarations. Covers compile-time validation of variable access, spatial grid type annotations, and automatic grid transformations in the coupler. Runtime behavior of generated types is specified in `component-state`.
+Defines the `ComponentIO` derive macro and related code generation for type-safe component I/O declarations. Covers compile-time validation of variable access, spatial grid type annotations, and automatic grid transformations in the coupler. Runtime behavior of generated types is specified in `state`.
 ## Requirements
 ### Requirement: Spatial Grid Requirements in Definitions
 
@@ -70,8 +70,8 @@ The system SHALL provide a derive macro that generates typed input structs from 
 Generated input structs MUST:
 
 - Have fields for each declared input and state variable
-- Use `TimeseriesWindow` type for scalar fields (see `component-state` for behavior)
-- Use `GridTimeseriesWindow` type for grid fields (see `component-state` for behavior)
+- Use `TimeseriesWindow` type for scalar fields (see `state` for behavior)
+- Use `GridTimeseriesWindow` type for grid fields (see `state` for behavior)
 - Be lifetime-parameterised to avoid data copying
 
 The macro MUST use struct-level attributes (`#[inputs(...)]`, `#[states(...)]`) rather than phantom fields to avoid:
