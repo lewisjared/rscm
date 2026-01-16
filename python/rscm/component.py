@@ -1,9 +1,34 @@
 """
-Typed Python components for RSCM
+Typed Python components for RSCM.
 
 This module provides a base class for creating Python components with
 type-safe input and output declarations, similar to the Rust ComponentIO
 derive macro.
+
+Classes
+-------
+Component
+    Base class for typed Python components. Subclass this to create
+    custom climate model components.
+Input
+    Descriptor for declaring input variables.
+Output
+    Descriptor for declaring output variables.
+State
+    Descriptor for declaring state variables (read previous, write new).
+
+Usage Pattern
+-------------
+1. Subclass ``Component``
+2. Declare variables using ``Input``, ``Output``, ``State`` class attributes
+3. Implement ``solve(t_current, t_next, inputs)`` returning ``self.Outputs(...)``
+4. Wrap with ``PythonComponent.build()`` for model integration
+
+The metaclass automatically generates:
+
+- ``definitions()`` method returning ``list[RequirementDefinition]``
+- ``Inputs`` inner class with ``TimeseriesWindow`` fields for each input/state
+- ``Outputs`` inner class for constructing return values
 
 Example
 -------
@@ -42,6 +67,23 @@ class CarbonCycle(Component):
             uptake=uptake,
         )
 ```
+
+Grid Support
+------------
+Specify spatial grids with the ``grid`` parameter:
+
+- ``grid="Scalar"`` (default): Single global value
+- ``grid="FourBox"``: MAGICC four-box (NO, NL, SO, SL)
+- ``grid="Hemispheric"``: Northern/Southern hemispheres
+
+Grid outputs should return ``FourBoxSlice`` or ``HemisphericSlice`` objects.
+
+See Also
+--------
+rscm.core : Core types including ModelBuilder, TimeAxis, Timeseries
+rscm.core.FourBoxSlice : Container for four-box regional values
+rscm.core.HemisphericSlice : Container for hemispheric values
+rscm.core.PythonComponent : Wrapper for using Python components in models
 """
 
 from __future__ import annotations

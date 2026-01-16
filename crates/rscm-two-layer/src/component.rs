@@ -15,16 +15,125 @@ use serde::{Deserialize, Serialize};
 // Define some types that are used by OdeSolvers
 type ModelState = Vector3<FloatValue>;
 
+/// Parameters for the two-layer energy balance model
+///
+/// This parameterisation follows Held et al. (2010) and represents the climate
+/// system as two coupled thermal reservoirs: a surface layer (mixed layer ocean
+/// + atmosphere) and a deep ocean layer.
+///
+/// # References
+///
+/// Held, I. M., Winton, M., Takahashi, K., Delworth, T., Zeng, F., & Vallis, G. K. (2010).
+/// Probing the fast and slow components of global warming by returning abruptly to
+/// preindustrial forcing. Journal of Climate, 23(9), 2418-2427.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TwoLayerComponentParameters {
+    /// Climate feedback parameter at zero warming
+    ///
+    /// Units: W/(m² K)
+    ///
+    /// Controls the strength of radiative feedback. Higher values mean stronger
+    /// negative feedback and lower climate sensitivity. Typical values: 0.8-1.5
     pub lambda0: FloatValue,
+
+    /// Nonlinear feedback coefficient
+    ///
+    /// Units: W/(m² K²)
+    ///
+    /// Represents state-dependence of climate feedbacks. Positive values indicate
+    /// that feedback weakens (sensitivity increases) as temperature rises.
+    /// Set to 0 for a linear model. Typical values: 0-0.1
     pub a: FloatValue,
+
+    /// Ocean heat uptake efficacy
+    ///
+    /// Units: dimensionless
+    ///
+    /// Ratio of the feedback parameter for ocean heat uptake to the equilibrium
+    /// feedback parameter. Values > 1 indicate that ocean heat uptake is more
+    /// effective at reducing surface warming than the equilibrium response suggests.
+    /// Typical values: 1.0-1.8
     pub efficacy: FloatValue,
+
+    /// Heat exchange coefficient between surface and deep layers
+    ///
+    /// Units: W/(m² K)
+    ///
+    /// Controls the rate of heat transfer from the surface to the deep ocean.
+    /// Higher values mean faster equilibration between layers.
+    /// Typical values: 0.5-1.0
     pub eta: FloatValue,
+
+    /// Heat capacity of the surface layer (mixed layer ocean + atmosphere)
+    ///
+    /// Units: W yr/(m² K)
+    ///
+    /// Determines the thermal inertia of the fast-responding surface layer.
+    /// Typical values: 5-15 (corresponding to ~50-150m mixed layer depth)
     pub heat_capacity_surface: FloatValue,
+
+    /// Heat capacity of the deep ocean layer
+    ///
+    /// Units: W yr/(m² K)
+    ///
+    /// Determines the thermal inertia of the slow-responding deep ocean.
+    /// Typical values: 50-200 (much larger than surface layer)
     pub heat_capacity_deep: FloatValue,
 }
 
+/// Two-layer energy balance climate model component
+///
+/// Implements a two-layer energy balance model following Held et al. (2010).
+/// The model represents the climate system as two coupled thermal reservoirs:
+///
+/// - **Surface layer**: Fast-responding mixed layer ocean + atmosphere
+/// - **Deep layer**: Slow-responding deep ocean
+///
+/// # Governing Equations
+///
+/// The model solves the following coupled ODEs:
+///
+/// $$
+/// C_s \frac{dT_s}{dt} = F - \lambda(T_s) T_s - \varepsilon \eta (T_s - T_d)
+/// $$
+///
+/// $$
+/// C_d \frac{dT_d}{dt} = \eta (T_s - T_d)
+/// $$
+///
+/// where:
+///
+/// | Symbol | Description | Units |
+/// |--------|-------------|-------|
+/// | $T_s$ | Surface temperature anomaly | K |
+/// | $T_d$ | Deep ocean temperature anomaly | K |
+/// | $F$ | Effective radiative forcing | W/m² |
+/// | $\lambda(T_s) = \lambda_0 - a T_s$ | State-dependent feedback | W/(m² K) |
+/// | $\varepsilon$ | Ocean heat uptake efficacy | dimensionless |
+/// | $\eta$ | Heat exchange coefficient | W/(m² K) |
+/// | $C_s$ | Surface layer heat capacity | W yr/(m² K) |
+/// | $C_d$ | Deep ocean heat capacity | W yr/(m² K) |
+///
+/// # Example
+///
+/// ```rust
+/// use rscm_two_layer::{TwoLayerComponent, TwoLayerComponentParameters};
+///
+/// let component = TwoLayerComponent::from_parameters(TwoLayerComponentParameters {
+///     lambda0: 1.0,              // Climate feedback parameter
+///     a: 0.0,                    // Linear model (no state-dependence)
+///     efficacy: 1.0,             // Standard efficacy
+///     eta: 0.7,                  // Heat exchange coefficient
+///     heat_capacity_surface: 8.0, // ~80m mixed layer
+///     heat_capacity_deep: 100.0,  // Deep ocean
+/// });
+/// ```
+///
+/// # References
+///
+/// Held, I. M., Winton, M., Takahashi, K., Delworth, T., Zeng, F., & Vallis, G. K. (2010).
+/// Probing the fast and slow components of global warming by returning abruptly to
+/// preindustrial forcing. Journal of Climate, 23(9), 2418-2427.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[inputs(
     erf { name = "Effective Radiative Forcing", unit = "W/m^2" },

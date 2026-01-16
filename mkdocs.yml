@@ -108,6 +108,12 @@ plugins:
 markdown_extensions:
   # https://squidfunk.github.io/mkdocs-material/setup/extensions/python-markdown/#attribute-lists
   - attr_list
+  # Support markdown inside HTML blocks (needed for grid cards)
+  - md_in_html
+  # Emoji support (for icons in grid cards)
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   # Allow admonitions, useful for deprecation warnings
   # https://facelessuser.github.io/pymdown-extensions/extensions/blocks/plugins/admonition/
   - pymdownx.blocks.admonition

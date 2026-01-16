@@ -1,10 +1,30 @@
 ---8<--- "README.md:description"
 
-## Where to next?
+## Getting Started
 
-If you want to use the tool to create components,
-we recommend going to our how-to guides to get started.
-Some other potential points of interest:
+<div class="grid cards" markdown>
 
-- Getting Started instructions: [Getting Started][getting-started]
-- The full API docs: [API reference](api/rscm/)
+- :material-rocket-launch:{ .lg .middle } **Use Existing Models**
+
+    ---
+
+    Install from PyPI and run climate simulations with pre-built components.
+    No Rust required.
+
+    [:octicons-arrow-right-24: Getting Started](getting_started.md)
+
+- :material-wrench:{ .lg .middle } **Extend the Framework**
+
+    ---
+
+    Build new components in Rust or Python. Contribute to RSCM development.
+
+    [:octicons-arrow-right-24: Developer Guide](developers/index.md)
+
+</div>
+
+## Quick Links
+
+- **[Tutorials](tutorials.md)**: Hands-on guides for common tasks
+- **[Key Concepts](key_concepts.md)**: Understand Components, Models, and Timeseries
+- **[API Reference](api/rscm/)**: Full Python API documentation
