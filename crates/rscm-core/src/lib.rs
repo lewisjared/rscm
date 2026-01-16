@@ -1,3 +1,6 @@
+// Allow macro-generated code to reference this crate by name
+extern crate self as rscm_core;
+
 pub mod component;
 mod example_components;
 pub mod grid_transform;

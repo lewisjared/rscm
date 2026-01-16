@@ -36,6 +36,12 @@ extra:
 
 extra_css:
   - stylesheets/style.css
+  - https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js
+  - https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js
+  - javascripts/katex.js
 
 plugins:
   # https://mkdocstrings.github.io/autorefs/
@@ -49,6 +55,7 @@ plugins:
   # https://oprypin.github.io/mkdocs-literate-nav/
   - literate-nav:
       nav_file: NAVIGATION.md
+      tab_length: 2
   # Notebook support.
   # Working out how to make this play with nb-exec would be nice,
   # then it wouldn't run every time.
@@ -135,8 +142,14 @@ markdown_extensions:
   # Ensure that there are links to table of contents items
   - toc:
       permalink: "#"
+  # Math rendering with KaTeX
+  # https://facelessuser.github.io/pymdown-extensions/extensions/arithmatex/
+  - pymdownx.arithmatex:
+      generic: true
 
 watch:
   - README.md
   # Auto-generate if `python` changes (because this changes API docs)
   - python
+  # Auto-generate if component metadata changes
+  - docs/component_metadata

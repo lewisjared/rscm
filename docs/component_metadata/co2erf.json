@@ -1,0 +1,45 @@
+{
+  "$schema": "component_metadata_schema.json",
+  "name": "CO2ERF",
+  "module_path": "rscm_components::components::co2_erf",
+  "language": "rust",
+  "description": "CO2 Effective Radiative Forcing component\n\nThis component calculates the effective radiative forcing (ERF) from CO2 concentrations\nusing the standard logarithmic relationship.\n\nCO2 effective radiative forcing (ERF) calculations\n\nComputes ERF using the standard logarithmic relationship:\n\n\nWhere:\n- $ERF_{2xCO2}$ is the ERF for a doubling of CO2\n- $C$ is the current CO2 concentration\n- $C_0$ is the pre-industrial CO2 concentration",
+  "equations": "$$ ERF = \\frac{ERF_{2xCO2}}{\\log(2)} \\cdot \\log\\left(1 + \\frac{C - C_0}{C_0}\\right) $$",
+  "category": "Radiative Forcing",
+  "tags": [
+    "radiative-forcing",
+    "co2",
+    "simple",
+    "stable"
+  ],
+  "inputs": [
+    {
+      "rust_name": "concentration",
+      "variable_name": "Atmospheric Concentration|CO2",
+      "unit": "ppm",
+      "grid": "Scalar"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "erf",
+      "variable_name": "Effective Radiative Forcing|CO2",
+      "unit": "W / m^2",
+      "grid": "Scalar"
+    }
+  ],
+  "states": [],
+  "parameters": [
+    {
+      "name": "erf_2xco2",
+      "type": "FloatValue",
+      "description": "ERF due to a doubling of atmospheric CO2 concentrations\nunit: W / m^2"
+    },
+    {
+      "name": "conc_pi",
+      "type": "FloatValue",
+      "description": "Pre-industrial atmospheric CO2 concentration\nunit: ppm"
+    }
+  ],
+  "source_file": "crates/rscm-components/src/components/co2_erf.rs"
+}
