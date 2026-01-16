@@ -47,7 +47,7 @@ class CarbonCycle(Component):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from rscm._lib.core import (
     GridType,
@@ -59,11 +59,15 @@ from rscm._lib.core.state import (
     FourBoxTimeseriesWindow,
     HemisphericSlice,
     HemisphericTimeseriesWindow,
+    StateValue,
     TimeseriesWindow,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+#: Valid grid type literals for component I/O declarations
+GridLiteral = Literal["Scalar", "FourBox", "Hemispheric"]
 
 
 @dataclass(frozen=True)
@@ -82,7 +86,7 @@ class Input:
 
     name: str
     unit: str = ""
-    grid: str = "Scalar"
+    grid: GridLiteral = "Scalar"
 
     def to_requirement(self) -> RequirementDefinition:
         """Convert to a RequirementDefinition."""
@@ -108,7 +112,7 @@ class Output:
 
     name: str
     unit: str = ""
-    grid: str = "Scalar"
+    grid: GridLiteral = "Scalar"
 
     def to_requirement(self) -> RequirementDefinition:
         """Convert to a RequirementDefinition."""
@@ -137,7 +141,7 @@ class State:
 
     name: str
     unit: str = ""
-    grid: str = "Scalar"
+    grid: GridLiteral = "Scalar"
 
     def to_requirement(self) -> RequirementDefinition:
         """Convert to a RequirementDefinition."""
@@ -147,14 +151,13 @@ class State:
         )
 
 
-def _parse_grid_type(grid: str) -> GridType:
-    """Parse a grid type string to GridType enum."""
-    grid_lower = grid.lower()
-    if grid_lower == "scalar":
+def _parse_grid_type(grid: GridLiteral) -> GridType:
+    """Parse a grid type literal to GridType enum."""
+    if grid == "Scalar":
         return GridType.Scalar
-    elif grid_lower == "fourbox":
+    elif grid == "FourBox":
         return GridType.FourBox
-    elif grid_lower == "hemispheric":
+    elif grid == "Hemispheric":
         return GridType.Hemispheric
     else:
         raise ValueError(  # noqa: TRY003
@@ -162,23 +165,21 @@ def _parse_grid_type(grid: str) -> GridType:
         )
 
 
-def _get_window_type(grid: str) -> type:
+def _get_window_type(grid: GridLiteral) -> type:
     """Get the appropriate TimeseriesWindow type for a grid."""
-    grid_lower = grid.lower()
-    if grid_lower == "fourbox":
+    if grid == "FourBox":
         return FourBoxTimeseriesWindow
-    elif grid_lower == "hemispheric":
+    elif grid == "Hemispheric":
         return HemisphericTimeseriesWindow
     else:
         return TimeseriesWindow
 
 
-def _get_output_type(grid: str) -> type:
+def _get_output_type(grid: GridLiteral) -> type:
     """Get the appropriate output type for a grid."""
-    grid_lower = grid.lower()
-    if grid_lower == "fourbox":
+    if grid == "FourBox":
         return FourBoxSlice
-    elif grid_lower == "hemispheric":
+    elif grid == "Hemispheric":
         return HemisphericSlice
     else:
         return float
@@ -343,21 +344,23 @@ def _create_outputs_class(
             for name, value in kwargs.items():
                 setattr(self, name, value)
 
-        def to_dict(self) -> dict[str, Any]:
+        def to_dict(self) -> dict[str, StateValue]:
             """Convert outputs to a dictionary for Rust interop.
 
             Returns
             -------
-            Dictionary mapping variable names to output values
+            Dictionary mapping variable names to StateValue objects
             """
-            result: dict[str, Any] = {}
+            result: dict[str, StateValue] = {}
             for field_name, (var_name, _grid, _) in self._field_info.items():
                 value = getattr(self, field_name)
-                # Convert slice types to their underlying values
-                if isinstance(value, FourBoxSlice | HemisphericSlice):
-                    result[var_name] = value.to_list()
+                # Wrap values in StateValue for Rust interop
+                if isinstance(value, FourBoxSlice):
+                    result[var_name] = StateValue.four_box(value)
+                elif isinstance(value, HemisphericSlice):
+                    result[var_name] = StateValue.hemispheric(value)
                 else:
-                    result[var_name] = value
+                    result[var_name] = StateValue.scalar(value)
             return result
 
         def __repr__(self) -> str:

@@ -2,7 +2,7 @@
 use crate::component::{Component, InputState, OutputState};
 use crate::errors::RSCMResult;
 use crate::python::state::{
-    PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyTimeseriesWindow,
+    PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyStateValue, PyTimeseriesWindow,
 };
 use crate::timeseries::{FloatValue, Time};
 use crate::timeseries_collection::TimeseriesData;
@@ -60,17 +60,19 @@ macro_rules! impl_component {
                 t_current: Time,
                 t_next: Time,
                 collection: crate::python::timeseries_collection::PyTimeseriesCollection,
-            ) -> PyResult<HashMap<String, FloatValue>> {
+            ) -> PyResult<HashMap<String, crate::python::state::PyStateValue>> {
                 let input_state =
                     crate::model::extract_state(&collection.0, self.0.input_names(), t_current);
 
                 let output_state = self.0.solve(t_current, t_next, &input_state)?;
-                // Convert StateValue to scalar values for Python interoperability
-                let scalar_output = output_state
+                // Return StateValue wrapped in PyStateValue for Python interoperability
+                let py_output = output_state
                     .into_iter()
-                    .map(|(key, state_value)| (key, state_value.to_scalar()))
+                    .map(|(key, state_value)| {
+                        (key, crate::python::state::PyStateValue(state_value))
+                    })
                     .collect();
-                Ok(scalar_output)
+                Ok(py_output)
             }
         }
     };
@@ -166,12 +168,30 @@ impl Component for PythonComponent {
                     .unwrap()
             };
 
-            let scalar_output: HashMap<String, FloatValue> = py_result.extract().unwrap();
-            // Convert scalar values from Python to StateValue
-            let output_state = scalar_output
-                .into_iter()
-                .map(|(key, value)| (key, crate::state::StateValue::Scalar(value)))
-                .collect();
+            // Extract the result dict
+            let py_dict = py_result
+                .downcast::<pyo3::types::PyDict>()
+                .expect("solve() must return a dict");
+
+            let mut output_state = OutputState::new();
+            for (key, value) in py_dict.iter() {
+                let key: String = key.extract().expect("dict key must be a string");
+
+                // Try to extract as PyStateValue first
+                let state_value = if let Ok(py_state_value) = value.extract::<PyStateValue>() {
+                    py_state_value.0
+                } else if let Ok(float_value) = value.extract::<FloatValue>() {
+                    // Legacy component returning raw floats
+                    crate::state::StateValue::Scalar(float_value)
+                } else {
+                    panic!(
+                        "Component output value for '{}' must be StateValue or float, got: {:?}",
+                        key, value
+                    );
+                };
+
+                output_state.insert(key, state_value);
+            }
             Ok(output_state)
         })
     }

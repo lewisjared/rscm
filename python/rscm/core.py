@@ -28,6 +28,7 @@ from rscm._lib.core.state import (
     FourBoxTimeseriesWindow,
     HemisphericSlice,
     HemisphericTimeseriesWindow,
+    StateValue,
     TimeseriesWindow,
 )
 
@@ -50,6 +51,7 @@ __all__ = [
     "RequirementType",
     "ScalarGrid",
     "ScalarRegion",
+    "StateValue",
     "TimeAxis",
     "Timeseries",
     "TimeseriesCollection",

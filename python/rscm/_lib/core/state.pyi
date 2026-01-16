@@ -5,16 +5,54 @@ from numpy.typing import NDArray
 Arr = NDArray[np.float64]
 F = np.float64 | float
 
-# StateValue represents values that can be scalar or spatially-resolved.
-# In the Rust core, this is an enum with three variants:
-#   - Scalar(float): A single global value
-#   - FourBox(FourBoxSlice): Four-box regional values
-#   - Hemispheric(HemisphericSlice): Hemispheric values
-#
-# Note: In the Python API, component solve() currently returns scalars
-# (aggregated via to_scalar()). This type alias documents the underlying
-# type system for components that may work with grid values directly.
-StateValue = float | "FourBoxSlice" | "HemisphericSlice"
+class StateValue:
+    """Represents a value that can be scalar or spatially-resolved.
+
+    In the Rust core, this is an enum with three variants:
+      - Scalar(float): A single global value
+      - FourBox(FourBoxSlice): Four-box regional values
+      - Hemispheric(HemisphericSlice): Hemispheric values
+    """
+
+    @staticmethod
+    def scalar(value: float) -> StateValue:
+        """Create a scalar StateValue."""
+        ...
+    @staticmethod
+    def four_box(slice: FourBoxSlice) -> StateValue:
+        """Create a FourBox StateValue from a FourBoxSlice."""
+        ...
+    @staticmethod
+    def hemispheric(slice: HemisphericSlice) -> StateValue:
+        """Create a Hemispheric StateValue from a HemisphericSlice."""
+        ...
+    def is_scalar(self) -> bool:
+        """Check if this is a scalar value."""
+        ...
+    def is_four_box(self) -> bool:
+        """Check if this is a FourBox grid value."""
+        ...
+    def is_hemispheric(self) -> bool:
+        """Check if this is a Hemispheric grid value."""
+        ...
+    def as_scalar(self) -> float | None:
+        """Get the scalar value if this is a Scalar variant, otherwise None."""
+        ...
+    def as_four_box(self) -> FourBoxSlice | None:
+        """Get the FourBoxSlice if this is a FourBox variant, otherwise None."""
+        ...
+    def as_hemispheric(self) -> HemisphericSlice | None:
+        """Get the HemisphericSlice if this is a Hemispheric variant, otherwise None."""
+        ...
+    def to_scalar(self) -> float:
+        """Convert to a scalar value, aggregating grid values if necessary.
+
+        For Scalar: returns the value directly.
+        For FourBox: returns the weighted mean of all 4 regional values.
+        For Hemispheric: returns the mean of both hemispheres.
+        """
+        ...
+    def __repr__(self) -> str: ...
 
 class FourBoxSlice:
     @property

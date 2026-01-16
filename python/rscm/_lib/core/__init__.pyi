@@ -143,12 +143,17 @@ class Component(Protocol):
     def definitions(self) -> list[RequirementDefinition]: ...
     def solve(
         self, t_current: float, t_next: float, collection: TimeseriesCollection
-    ) -> dict[str, float]: ...
+    ) -> dict[str, StateValue]: ...
 
 class RustComponent(Component):
     """
     Component that has been defined in Rust
     """
+
+    def definitions(self) -> list[RequirementDefinition]: ...
+    def solve(
+        self, t_current: float, t_next: float, collection: TimeseriesCollection
+    ) -> dict[str, StateValue]: ...
 
 class CustomComponent(Protocol):
     """
