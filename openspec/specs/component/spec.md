@@ -1,4 +1,4 @@
-# component Specification
+# Component Specification
 
 ## Purpose
 
