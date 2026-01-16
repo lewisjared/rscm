@@ -191,7 +191,19 @@ temp = results.get_timeseries_by_name("Surface Temperature")
 | **Exogenous**  | Provided externally          | Emissions scenarios, prescribed forcing |
 | **Endogenous** | Computed by model components | CO2 concentration, temperature          |
 
-Variables that are inputs to one or more components but not outputs of any component must be provided as exogenous data.
+Whether a variable is exogenous or endogenous is determined by the components in the model, not by any intrinsic property of the variable itself. During the build phase, the `ModelBuilder` analyses all component definitions to identify:
+
+1. **Required inputs**: Variables that components need to read
+2. **Produced outputs**: Variables that components write
+
+Any required input that is not produced by another component in the model must be supplied as exogenous data via `with_exogenous_variable()`. The same variable can be exogenous in one model configuration and endogenous in another, depending on which components are included.
+
+For example, CO2 concentration might be:
+
+- **Endogenous** in a full carbon-cycle model where a component calculates concentration from emissions
+- **Exogenous** in a temperature-only model where concentration is prescribed directly
+
+The builder will raise an error if any required inputs cannot be satisfied by either component outputs or exogenous data.
 
 ## Timeseries
 
