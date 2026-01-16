@@ -4,30 +4,31 @@
 
 Defines how components access input data and produce output data during model execution.
 The state system provides type-safe, zero-cost abstractions for accessing timeseries data with support for both scalar and spatially-resolved (grid) variables.
-
 ## Requirements
-
 ### Requirement: StateValue Type
 
 The system SHALL provide a `StateValue` enum that represents values which can be either scalar or spatially-resolved.
 
-#### Scenario: Scalar state value
+**Modifications from original spec:**
+- Replace generic `Grid(Vec<FloatValue>)` variant with typed variants: `FourBox(FourBoxSlice)` and `Hemispheric(HemisphericSlice)`
+- Remove `is_grid()` and `as_grid()` methods
+- Add `is_four_box()`, `is_hemispheric()`, `as_four_box()`, `as_hemispheric()` methods
 
-- **WHEN** creating `StateValue::Scalar(value)`
-- **THEN** `is_scalar()` MUST return true
-- **AND** `is_grid()` MUST return false
-- **AND** `as_scalar()` MUST return `Some(value)`
-- **AND** `as_grid()` MUST return `None`
-- **AND** `to_scalar()` MUST return the value unchanged
+#### Scenario: FourBox state value
 
-#### Scenario: Grid state value
-
-- **WHEN** creating `StateValue::Grid(values)`
+- **WHEN** creating `StateValue::FourBox(slice)`
 - **THEN** `is_scalar()` MUST return false
-- **AND** `is_grid()` MUST return true
-- **AND** `as_scalar()` MUST return `None`
-- **AND** `as_grid()` MUST return `Some(&values)`
-- **AND** `to_scalar()` MUST return the mean of all values
+- **AND** `is_four_box()` MUST return true
+- **AND** `as_four_box()` MUST return `Some(&slice)`
+- **AND** `to_scalar()` MUST return the mean of all four regions
+
+#### Scenario: Hemispheric state value
+
+- **WHEN** creating `StateValue::Hemispheric(slice)`
+- **THEN** `is_scalar()` MUST return false
+- **AND** `is_hemispheric()` MUST return true
+- **AND** `as_hemispheric()` MUST return `Some(&slice)`
+- **AND** `to_scalar()` MUST return the mean of both hemispheres
 
 ### Requirement: InputState Container
 
@@ -232,14 +233,24 @@ The system SHALL provide a `HemisphericSlice` type for type-safe hemispheric out
 
 The system SHALL provide an `OutputState` type for components to return their computed values.
 
-#### Scenario: Current scalar-only output (pre-grid support)
+**Modifications from original spec:**
+- Changed from `HashMap<String, FloatValue>` to `HashMap<String, StateValue>`
+- Components can now return grid outputs directly without aggregation
+- Grid outputs are written to appropriate grid timeseries by the model
 
-- **WHEN** a component returns `OutputState`
-- **THEN** it MUST be a `HashMap<String, FloatValue>`
-- **AND** only support scalar values
-- **AND** require grid components to aggregate before returning
+#### Scenario: FourBox output
 
-**Note:** This requirement will be superseded by the `support-grid-outputs` change which updates OutputState to `HashMap<String, StateValue>`.
+- **WHEN** a component returns a FourBox output
+- **THEN** the value MUST be `StateValue::FourBox(slice)`
+- **AND** all four regions MUST contain values
+- **AND** the model MUST write to a FourBox timeseries without aggregation
+
+#### Scenario: Hemispheric output
+
+- **WHEN** a component returns a Hemispheric output
+- **THEN** the value MUST be `StateValue::Hemispheric(slice)`
+- **AND** both hemispheres MUST contain values
+- **AND** the model MUST write to a Hemispheric timeseries without aggregation
 
 ### Requirement: Exogenous vs Endogenous Variable Handling
 

@@ -1,5 +1,13 @@
 # Proposal: Support Grid Values in OutputState
 
+## Why
+
+The RSCM framework currently supports grid-based inputs (components can consume FourBox and Hemispheric inputs) but only scalar outputs. This asymmetry prevents spatial information from flowing through component networks - components that compute regional values must aggregate them to scalars before returning, losing valuable spatial detail. This blocks proper implementation of climate models like MAGICC that require spatially-resolved state flow between components.
+
+## What Changes
+
+OutputState will be extended to support three StateValue variants (Scalar, FourBox, Hemispheric) instead of just scalar values. Components will return grid outputs natively, the model layer will route them to appropriate grid timeseries, and the ComponentIO macro will automatically wrap outputs in StateValue variants.
+
 ## Summary
 
 Enable components to return spatially-resolved (grid) output values natively, instead of requiring aggregation to scalars.

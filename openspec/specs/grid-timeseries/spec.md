@@ -3,9 +3,7 @@
 ## Purpose
 
 Defines the `GridTimeseries<T, G>` type for representing time-varying data over spatial grids. Covers the `SpatialGrid` trait, standard grid implementations (Scalar, FourBox, Hemispheric), grid transformations, aggregation, and serialization.
-
 ## Requirements
-
 ### Requirement: SpatialGrid Trait
 
 The system SHALL provide a trait `SpatialGrid` that defines the spatial structure and transformation operations for grid-based timeseries.
@@ -31,25 +29,28 @@ The system SHALL provide a trait `SpatialGrid` that defines the spatial structur
 
 The system SHALL provide a `GridTimeseries<T, G>` type that represents time-varying values over a spatial grid.
 
-#### Scenario: Create grid timeseries from values
+**Modifications from original spec:**
+- Add `set_all(&mut self, time_index: usize, values: &[T])` method to set all regional values at a time index
+- Add `set_from_slice(&mut self, time_index: usize, slice: &FourBoxSlice)` for FourBox grids
+- Add `set_from_slice(&mut self, time_index: usize, slice: &HemisphericSlice)` for Hemispheric grids
+- These methods enable components to write grid outputs without explicit per-region iteration
 
-- **WHEN** creating a `GridTimeseries` with values, time axis, and grid
-- **THEN** the values MUST have shape (time_steps, grid_regions)
-- **AND** the number of columns MUST equal `grid.size()`
-- **AND** the number of rows MUST equal `time_axis.len()`
+#### Scenario: Set all regional values at a time index
 
-#### Scenario: Access values at specific time and region
+- **WHEN** calling `grid_timeseries.set_all(time_index, values)`
+- **THEN** it MUST set values for all regions at the specified time
+- **AND** update the `latest` index if the time_index is newer
+- **AND** panic if `values.len()` does not equal `grid.size()`
 
-- **WHEN** calling `grid_timeseries.at(time_index, region_index)`
-- **THEN** it MUST return the value at the specified time and spatial region
-- **AND** return None if indices are out of bounds
+#### Scenario: Set FourBox values from slice
 
-#### Scenario: Interpolate to specific time across all regions
+- **WHEN** calling `grid_timeseries.set_from_slice(time_index, slice)` with a `FourBoxSlice`
+- **THEN** it MUST set all four region values from the slice at the specified time
 
-- **WHEN** calling `grid_timeseries.at_time(time)`
-- **THEN** it MUST interpolate values for all spatial regions at the given time
-- **AND** return an array with length equal to `grid.size()`
-- **AND** use the configured interpolation strategy
+#### Scenario: Set Hemispheric values from slice
+
+- **WHEN** calling `grid_timeseries.set_from_slice(time_index, slice)` with a `HemisphericSlice`
+- **THEN** it MUST set both hemisphere values from the slice at the specified time
 
 ### Requirement: Grid Aggregation
 

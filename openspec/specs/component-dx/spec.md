@@ -3,9 +3,7 @@
 ## Purpose
 
 Defines the `ComponentIO` derive macro and related code generation for type-safe component I/O declarations. Covers compile-time validation of variable access, spatial grid type annotations, and automatic grid transformations in the coupler. Runtime behavior of generated types is specified in `component-state`.
-
 ## Requirements
-
 ### Requirement: Spatial Grid Requirements in Definitions
 
 The system SHALL support declaring spatial grid requirements on each input, output, and state variable.
@@ -128,26 +126,29 @@ Generated output structs MUST:
 
 The `ComponentIO` macro SHALL generate code that uses typed slice wrappers for grid outputs.
 
-The generated `Into<OutputState>` implementation MUST:
+**Modifications from original spec:**
+- The generated `Into<OutputState>` implementation now wraps values in `StateValue` variants
+- For FourBox outputs, use `StateValue::FourBox(slice)` instead of aggregating to scalar
+- For Hemispheric outputs, use `StateValue::Hemispheric(slice)` instead of aggregating to scalar
+- Scalar outputs continue to use `StateValue::Scalar(value)`
 
-- Use `FourBoxSlice` for FourBox grid outputs
-- Use `HemisphericSlice` for Hemispheric grid outputs
-- Convert slices to the appropriate `StateValue` variant
-
-**Note:** The runtime behavior of `FourBoxSlice` and `HemisphericSlice` types is specified in `component-state`.
-
-#### Scenario: Macro generates FourBoxSlice usage
+#### Scenario: FourBoxSlice converted to StateValue::FourBox
 
 - **WHEN** a component declares `#[outputs(temp { name = "Temperature", unit = "K", grid = "FourBox" })]`
 - **THEN** the generated `{ComponentName}Outputs` struct has a `temp: FourBoxSlice` field
-- **AND** the `Into<OutputState>` implementation converts it correctly
+- **AND** the `Into<OutputState>` implementation inserts `StateValue::FourBox(outputs.temp)`
+- **AND** no aggregation to scalar occurs
 
-#### Scenario: Macro generates HemisphericSlice usage
+#### Scenario: HemisphericSlice converted to StateValue::Hemispheric
 
 - **WHEN** a component declares `#[outputs(precip { name = "Precipitation", unit = "mm", grid = "Hemispheric" })]`
 - **THEN** the generated `{ComponentName}Outputs` struct has a `precip: HemisphericSlice` field
+- **AND** the `Into<OutputState>` implementation inserts `StateValue::Hemispheric(outputs.precip)`
 
----
+#### Scenario: Scalar output converted to StateValue::Scalar
+
+- **WHEN** a component declares `#[outputs(co2 { name = "CO2", unit = "ppm" })]` (no grid specified)
+- **THEN** the `Into<OutputState>` implementation inserts `StateValue::Scalar(outputs.co2)`
 
 ### Requirement: Derive Macro in Separate Crate
 
