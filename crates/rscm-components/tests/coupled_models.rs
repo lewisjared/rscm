@@ -85,7 +85,7 @@ fn test_carbon_cycle() {
 
     model.run();
 
-    let _co2_conc = model
+    let co2_conc = model
         .timeseries()
         .get_data("Atmospheric Concentration|CO2")
         .and_then(|data| data.as_scalar())
@@ -96,7 +96,7 @@ fn test_carbon_cycle() {
         .get_data("Emissions|CO2|Anthropogenic")
         .and_then(|data| data.as_scalar())
         .unwrap();
-    let _expected_concentrations: Vec<FloatValue> = time_axis
+    let expected_concentrations: Vec<FloatValue> = time_axis
         .values()
         .iter()
         .map(|t| match *t < step_year {
@@ -116,8 +116,28 @@ fn test_carbon_cycle() {
         co2_emissions.values().column(0).to_vec(),
         expected_emissions
     );
-    // Conc are currently wrong
-    // assert_eq!(co2_conc.values().to_vec(), expected_concentrations);
+
+    // Verify CO2 concentrations match the analytical solution
+    let actual_concentrations: Vec<FloatValue> = co2_conc.values().column(0).to_vec();
+    for (i, (actual, expected)) in actual_concentrations
+        .iter()
+        .zip(expected_concentrations.iter())
+        .enumerate()
+    {
+        let rel_error = if expected.abs() > 1e-10 {
+            (actual - expected).abs() / expected.abs()
+        } else {
+            (actual - expected).abs()
+        };
+        assert!(
+            rel_error < 0.01,
+            "Concentration mismatch at index {}: actual={}, expected={}, rel_error={}",
+            i,
+            actual,
+            expected,
+            rel_error
+        );
+    }
 }
 
 #[test]

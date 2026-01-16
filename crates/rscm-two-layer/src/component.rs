@@ -6,7 +6,7 @@ use rscm_core::component::{
     TimeseriesWindow,
 };
 use rscm_core::errors::RSCMResult;
-use rscm_core::ivp::{IVPBuilder, IVP};
+use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -87,24 +87,17 @@ impl Component for TwoLayerComponent {
         t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let inputs = TwoLayerComponentInputs::from_input_state(input_state);
-        let erf = inputs.erf.current();
-
         let y0 = ModelState::new(0.0, 0.0, 0.0);
 
         let solver = IVPBuilder::new(Arc::new(self.to_owned()), input_state, y0);
-        println!("Solving {:?} with state: {:?}", self, input_state);
 
         let mut solver = solver.to_rk4(t_current, t_next, 0.1);
-        let stats = solver.integrate().expect("Failed solving");
+        solver.integrate().expect("Failed solving");
 
-        let results = solver.results();
-
-        println!("Stats {:?}", stats);
-        println!("Results {:?}", results);
+        let results = get_last_step(solver.results(), t_next);
 
         let outputs = TwoLayerComponentOutputs {
-            surface_temperature: erf * self.parameters.lambda0,
+            surface_temperature: results[0],
         };
 
         Ok(outputs.into())
@@ -120,40 +113,137 @@ mod tests {
     use rscm_core::timeseries::Timeseries;
     use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
 
-    #[test]
-    fn it_works() {
-        // Solve the two layer component in isolation
-        let component = TwoLayerComponent::from_parameters(TwoLayerComponentParameters {
-            lambda0: 0.5,
-            a: 0.01,
-            efficacy: 0.5,
-            eta: 0.1,
-            heat_capacity_surface: 1.0,
-            heat_capacity_deep: 100.0,
-        });
+    fn create_component() -> TwoLayerComponent {
+        TwoLayerComponent::from_parameters(TwoLayerComponentParameters {
+            lambda0: 1.0,               // W/(m^2 K) - climate feedback parameter
+            a: 0.0,                     // No nonlinear feedback for simpler testing
+            efficacy: 1.0,              // Ocean heat uptake efficacy
+            eta: 0.7,                   // W/(m^2 K) - heat exchange coefficient
+            heat_capacity_surface: 8.0, // W yr / (m^2 K) - realistic ocean mixed layer
+            heat_capacity_deep: 100.0,  // W yr / (m^2 K) - deep ocean
+        })
+    }
 
+    fn create_input_state_with_erf(
+        erf_value: FloatValue,
+        t_start: Time,
+        t_end: Time,
+    ) -> TimeseriesCollection {
         let mut ts_collection = TimeseriesCollection::new();
-        // Use consistent ERF values since get_scalar_window().current() returns the latest value
         ts_collection.add_timeseries(
             "Effective Radiative Forcing".to_string(),
-            Timeseries::from_values(
-                array![1.0, 1.0, 1.0, 1.0],
-                array![1848.0, 1849.0, 1850.0, 1900.0],
-            ),
+            Timeseries::from_values(array![erf_value, erf_value], array![t_start, t_end]),
             VariableType::Exogenous,
         );
+        ts_collection
+    }
 
-        let input_state = extract_state(&ts_collection, component.input_names(), 1848.0);
+    #[test]
+    fn test_positive_erf_causes_warming() {
+        let component = create_component();
+        let ts_collection = create_input_state_with_erf(4.0, 2000.0, 2001.0);
+        let input_state = extract_state(&ts_collection, component.input_names(), 2000.0);
 
-        // Create the solver
-        let output_state = component.solve(1848.0, 1849.0, &input_state);
+        let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
+        let temperature = match output_state.get("Surface Temperature").unwrap() {
+            StateValue::Scalar(t) => *t,
+            _ => panic!("Expected scalar output"),
+        };
 
-        println!("Output: {:?}", output_state);
-        let output_state = output_state.unwrap();
-        // erf (1.0) * lambda0 (0.5) = 0.5
-        assert_eq!(
-            *output_state.get("Surface Temperature").unwrap(),
-            StateValue::Scalar(0.5)
+        // Positive ERF should cause warming (T > 0)
+        assert!(
+            temperature > 0.0,
+            "Positive ERF should cause warming, got T = {}",
+            temperature
+        );
+
+        // Temperature should be less than equilibrium value (ERF/lambda0 = 4.0/1.0 = 4.0 K)
+        // since we're only integrating for 1 year
+        assert!(
+            temperature < 4.0,
+            "Temperature {} should be below equilibrium (4.0 K)",
+            temperature
+        );
+    }
+
+    #[test]
+    fn test_zero_erf_no_warming() {
+        let component = create_component();
+        let ts_collection = create_input_state_with_erf(0.0, 2000.0, 2001.0);
+        let input_state = extract_state(&ts_collection, component.input_names(), 2000.0);
+
+        let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
+        let temperature = match output_state.get("Surface Temperature").unwrap() {
+            StateValue::Scalar(t) => *t,
+            _ => panic!("Expected scalar output"),
+        };
+
+        // Zero ERF from zero initial state should stay at zero
+        assert!(
+            temperature.abs() < 1e-10,
+            "Zero ERF should cause no warming, got T = {}",
+            temperature
+        );
+    }
+
+    #[test]
+    fn test_negative_erf_causes_cooling() {
+        let component = create_component();
+        let ts_collection = create_input_state_with_erf(-2.0, 2000.0, 2001.0);
+        let input_state = extract_state(&ts_collection, component.input_names(), 2000.0);
+
+        let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
+        let temperature = match output_state.get("Surface Temperature").unwrap() {
+            StateValue::Scalar(t) => *t,
+            _ => panic!("Expected scalar output"),
+        };
+
+        // Negative ERF should cause cooling (T < 0)
+        assert!(
+            temperature < 0.0,
+            "Negative ERF should cause cooling, got T = {}",
+            temperature
+        );
+    }
+
+    #[test]
+    fn test_larger_erf_causes_more_warming() {
+        let component = create_component();
+
+        // Integrate with ERF = 2.0
+        let ts_collection_small = create_input_state_with_erf(2.0, 2000.0, 2001.0);
+        let input_state_small =
+            extract_state(&ts_collection_small, component.input_names(), 2000.0);
+        let output_small = component.solve(2000.0, 2001.0, &input_state_small).unwrap();
+        let temp_small = match output_small.get("Surface Temperature").unwrap() {
+            StateValue::Scalar(t) => *t,
+            _ => panic!("Expected scalar output"),
+        };
+
+        // Integrate with ERF = 4.0
+        let ts_collection_large = create_input_state_with_erf(4.0, 2000.0, 2001.0);
+        let input_state_large =
+            extract_state(&ts_collection_large, component.input_names(), 2000.0);
+        let output_large = component.solve(2000.0, 2001.0, &input_state_large).unwrap();
+        let temp_large = match output_large.get("Surface Temperature").unwrap() {
+            StateValue::Scalar(t) => *t,
+            _ => panic!("Expected scalar output"),
+        };
+
+        // Larger ERF should cause more warming
+        assert!(
+            temp_large > temp_small,
+            "Larger ERF ({}) should cause more warming than smaller ERF ({})",
+            temp_large,
+            temp_small
+        );
+
+        // For linear system (a=0), doubling ERF should approximately double the response
+        let ratio = temp_large / temp_small;
+        assert!(
+            (ratio - 2.0).abs() < 0.1,
+            "Doubling ERF should approximately double temperature response, got ratio = {}",
+            ratio
         );
     }
 }

@@ -187,6 +187,28 @@ impl TimeAxis {
         }
         found
     }
+
+    /// Find the index of a time value in the axis
+    ///
+    /// Returns `Some(index)` if the value is found, `None` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use numpy::array;
+    /// use rscm_core::timeseries::TimeAxis;
+    /// let ta = TimeAxis::from_values(array![1.0, 2.0, 3.0]);
+    /// assert_eq!(ta.index_of(2.0), Some(1));
+    /// assert_eq!(ta.index_of(27.0), None);
+    /// ```
+    pub fn index_of(&self, value: Time) -> Option<usize> {
+        for (i, v) in self.values().iter().enumerate() {
+            if (*v - value).abs() < 1e-10 {
+                return Some(i);
+            }
+        }
+        None
+    }
 }
 
 /// A spatially-resolved timeseries with values on a grid

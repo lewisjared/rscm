@@ -131,14 +131,17 @@ impl IVP<Time, ModelState> for CarbonCycleComponent {
         &self,
         _t: Time,
         input_state: &InputState,
-        _y: &Vector3<FloatValue>,
+        y: &Vector3<FloatValue>,
         dy_dt: &mut Vector3<FloatValue>,
     ) {
         let inputs = CarbonCycleComponentInputs::from_input_state(input_state);
 
+        // Inputs come from input_state
         let emissions = inputs.emissions.current();
         let temperature = inputs.temperature.current();
-        let conc = inputs.concentration.current();
+
+        // State variables come from the ODE state vector y
+        let conc = y[0];
 
         // dC / dt = E - (C - C_0) / (tau * exp(alpha_temperature * temperature))
         let lifetime =

@@ -710,9 +710,16 @@ impl<'a> InputState<'a> {
             .as_scalar()
             .unwrap_or_else(|| panic!("Variable '{}' is not a scalar timeseries", name));
 
-        // Use latest() for all variable types - the model interpolates exogenous
-        // data to the common time axis before solving, so latest() is correct.
-        let current_index = ts.latest();
+        // Find the index corresponding to current_time in the timeseries
+        let current_index = ts
+            .time_axis()
+            .index_of(self.current_time)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Time {} not found in timeseries '{}' time axis",
+                    self.current_time, name
+                )
+            });
 
         TimeseriesWindow::new(ts, current_index, self.current_time)
     }
@@ -733,7 +740,16 @@ impl<'a> InputState<'a> {
             .as_four_box()
             .unwrap_or_else(|| panic!("Variable '{}' is not a FourBox timeseries", name));
 
-        let current_index = ts.latest();
+        // Find the index corresponding to current_time in the timeseries
+        let current_index = ts
+            .time_axis()
+            .index_of(self.current_time)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Time {} not found in timeseries '{}' time axis",
+                    self.current_time, name
+                )
+            });
 
         GridTimeseriesWindow::new(ts, current_index, self.current_time)
     }
@@ -754,7 +770,16 @@ impl<'a> InputState<'a> {
             .as_hemispheric()
             .unwrap_or_else(|| panic!("Variable '{}' is not a Hemispheric timeseries", name));
 
-        let current_index = ts.latest();
+        // Find the index corresponding to current_time in the timeseries
+        let current_index = ts
+            .time_axis()
+            .index_of(self.current_time)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Time {} not found in timeseries '{}' time axis",
+                    self.current_time, name
+                )
+            });
 
         GridTimeseriesWindow::new(ts, current_index, self.current_time)
     }
@@ -878,9 +903,10 @@ mod tests {
             variable_type: VariableType::Endogenous,
         };
 
-        let state = InputState::build(vec![&item], 2000.5);
+        // Use a time that exists in the time axis
+        let state = InputState::build(vec![&item], 2001.0);
 
-        // For Endogenous variables, get_scalar_window().current() returns latest_value (index 1)
+        // current() returns value at index corresponding to current_time (index 1)
         assert_eq!(state.get_global("CO2"), Some(285.0));
         assert_eq!(state.get_scalar_window("CO2").current(), 285.0);
     }
@@ -914,9 +940,10 @@ mod tests {
             variable_type: VariableType::Endogenous,
         };
 
-        let state = InputState::build(vec![&item], 2000.5);
+        // Use a time that exists in the time axis
+        let state = InputState::build(vec![&item], 2001.0);
 
-        // Test get_four_box_window returns current values
+        // Test get_four_box_window returns current values at index 1
         let window = state.get_four_box_window("Temperature");
         let values = window.current_all();
         assert_eq!(values, [16.0, 15.0, 11.0, 10.0]);
@@ -1471,38 +1498,42 @@ mod input_state_window_tests {
     #[test]
     fn test_get_scalar_window() {
         let item = create_scalar_item("CO2", vec![280.0, 285.0, 290.0, 295.0, 300.0]);
+        // Time 2002.0 corresponds to index 2 in the timeseries [2000, 2001, 2002, 2003, 2004]
         let state = InputState::build(vec![&item], 2002.0);
 
         let window = state.get_scalar_window("CO2");
 
-        // latest() returns the highest index with valid data = 4 (300.0)
-        assert_eq!(window.current(), 300.0);
-        assert_eq!(window.previous(), Some(295.0));
+        // current() returns the value at the index corresponding to current_time
+        assert_eq!(window.current(), 290.0);
+        assert_eq!(window.previous(), Some(285.0));
         assert_eq!(window.len(), 5);
     }
 
     #[test]
     fn test_get_four_box_window() {
         let item = create_four_box_item("Temperature");
+        // Time 2001.0 corresponds to index 1 in the timeseries [2000, 2001, 2002]
         let state = InputState::build(vec![&item], 2001.0);
 
         let window = state.get_four_box_window("Temperature");
 
-        // latest() = 2 (2002 values: [17.0, 16.0, 12.0, 11.0])
-        assert_eq!(window.current(FourBoxRegion::NorthernOcean), 17.0);
-        assert_eq!(window.current(FourBoxRegion::SouthernLand), 11.0);
-        assert_eq!(window.current_all(), vec![17.0, 16.0, 12.0, 11.0]);
-        assert_eq!(window.previous_all(), Some(vec![16.0, 15.0, 11.0, 10.0]));
+        // current() returns values at index 1 (2001 values: [16.0, 15.0, 11.0, 10.0])
+        assert_eq!(window.current(FourBoxRegion::NorthernOcean), 16.0);
+        assert_eq!(window.current(FourBoxRegion::SouthernLand), 10.0);
+        assert_eq!(window.current_all(), vec![16.0, 15.0, 11.0, 10.0]);
+        // previous is index 0 (2000 values: [15.0, 14.0, 10.0, 9.0])
+        assert_eq!(window.previous_all(), Some(vec![15.0, 14.0, 10.0, 9.0]));
     }
 
     #[test]
     fn test_get_hemispheric_window() {
         let item = create_hemispheric_item("Precipitation");
-        let state = InputState::build(vec![&item], 2000.0);
+        // Time 2001.0 corresponds to index 1 in the timeseries [2000, 2001]
+        let state = InputState::build(vec![&item], 2001.0);
 
         let window = state.get_hemispheric_window("Precipitation");
 
-        // latest() = 1 (2001 values: [1100.0, 550.0])
+        // current() returns values at index 1 (2001 values: [1100.0, 550.0])
         assert_eq!(window.current(HemisphericRegion::Northern), 1100.0);
         assert_eq!(window.current(HemisphericRegion::Southern), 550.0);
         assert_eq!(window.current_global(), 825.0); // Equal weights mean
