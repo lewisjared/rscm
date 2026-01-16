@@ -501,11 +501,7 @@ impl PyTimeseriesWindow {
         if n == 0 {
             return Ok(Vec::<FloatValue>::new().to_pyarray(py));
         }
-        let start = if n > self.current_index + 1 {
-            0
-        } else {
-            self.current_index + 1 - n
-        };
+        let start = (self.current_index + 1).saturating_sub(n);
         let end = self.current_index + 1;
         let slice: Vec<FloatValue> = self.values[start..end].to_vec();
         Ok(slice.to_pyarray(py))

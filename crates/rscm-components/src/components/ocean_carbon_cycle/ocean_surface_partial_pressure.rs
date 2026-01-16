@@ -128,7 +128,7 @@ impl OceanSurfacePartialPressure {
             -delta_dioc_scaled.powi(4) * 10e-10,
         ];
 
-        let delta_ocean_surface_partial_pressure = Array1::from_iter(
+        Array1::from_iter(
             zip(
                 self.parameters.delta_ospp_offsets,
                 self.parameters.delta_ospp_coefficients,
@@ -137,9 +137,7 @@ impl OceanSurfacePartialPressure {
                 offset + coeff * self.parameters.sea_surface_temperature_preindustrial
             }),
         )
-        .dot(&delta_dissolved_inorganic_carbon_bits);
-
-        delta_ocean_surface_partial_pressure
+        .dot(&delta_dissolved_inorganic_carbon_bits)
     }
 }
 

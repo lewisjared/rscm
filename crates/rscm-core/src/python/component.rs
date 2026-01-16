@@ -59,7 +59,7 @@ macro_rules! impl_component {
                 &mut self,
                 t_current: Time,
                 t_next: Time,
-                collection: crate::python::timeseries_collection::PyTimeseriesCollection,
+                collection: $crate::python::timeseries_collection::PyTimeseriesCollection,
             ) -> PyResult<HashMap<String, crate::python::state::PyStateValue>> {
                 let input_state =
                     crate::model::extract_state(&collection.0, self.0.input_names(), t_current);

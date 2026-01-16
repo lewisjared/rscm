@@ -144,7 +144,7 @@ pub fn extract_state(
     collection: &TimeseriesCollection,
     input_names: Vec<String>,
     t_current: Time,
-) -> InputState {
+) -> InputState<'_> {
     let mut state = Vec::new();
 
     input_names.into_iter().for_each(|name| {
@@ -268,7 +268,7 @@ impl ModelBuilder {
             let component_name = format!("{:?}", component);
             // Extract just the type name (before the first '{' or ' ')
             let component_name = component_name
-                .split(|c| c == '{' || c == ' ' || c == '(')
+                .split(['{', ' ', '('])
                 .next()
                 .unwrap_or("UnknownComponent")
                 .to_string();
@@ -565,7 +565,7 @@ impl Model {
     /// Create a diagram the represents the component graph
     ///
     /// Useful for debugging
-    pub fn as_dot(&self) -> Dot<&CGraph> {
+    pub fn as_dot(&self) -> Dot<'_, &CGraph> {
         Dot::with_attr_getters(
             &self.components,
             &[Config::NodeNoLabel, Config::EdgeNoLabel],

@@ -17,7 +17,6 @@ use rscm_core::component::{
     Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use rscm_core::errors::RSCMResult;
-use rscm_core::spatial::SpatialGrid;
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::Time;
 use serde::{Deserialize, Serialize};

@@ -45,7 +45,7 @@ where
     DefaultAllocator: Allocator<T, D>,
 {
     fn system(&self, t: T, y: &OVector<T, D>, dy: &mut OVector<T, D>) {
-        self.component.calculate_dy_dt(t, &self.input_state, y, dy)
+        self.component.calculate_dy_dt(t, self.input_state, y, dy)
     }
 }
 

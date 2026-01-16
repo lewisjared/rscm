@@ -92,11 +92,11 @@ impl TimeAxis {
         Self::new(bounds)
     }
 
-    pub fn values(&self) -> ArrayView1<Time> {
+    pub fn values(&self) -> ArrayView1<'_, Time> {
         self.bounds.slice(s![0..self.len()])
     }
 
-    pub fn bounds(&self) -> ArrayView1<Time> {
+    pub fn bounds(&self) -> ArrayView1<'_, Time> {
         self.bounds.view()
     }
 

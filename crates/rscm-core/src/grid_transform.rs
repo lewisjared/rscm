@@ -77,7 +77,7 @@ impl Component for FourBoxToScalarTransform {
 
         let global = match input_value {
             Some(crate::state::StateValue::FourBox(slice)) => {
-                self.grid.aggregate_global(&slice.as_array().to_vec())
+                self.grid.aggregate_global(slice.as_array().as_ref())
             }
             Some(crate::state::StateValue::Hemispheric(slice)) => {
                 let values = slice.as_array().to_vec();
@@ -164,8 +164,7 @@ impl Component for FourBoxToHemisphericTransform {
         let hemispheric = match input_value {
             Some(crate::state::StateValue::FourBox(slice)) => {
                 let target = HemisphericGrid::equal_weights();
-                self.grid
-                    .transform_to(&slice.as_array().to_vec(), &target)?
+                self.grid.transform_to(slice.as_array().as_ref(), &target)?
             }
             Some(crate::state::StateValue::Hemispheric(slice)) => slice.as_array().to_vec(),
             Some(crate::state::StateValue::Scalar(v)) => vec![v, v], // Broadcast scalar
@@ -245,7 +244,7 @@ impl Component for HemisphericToScalarTransform {
 
         let global = match input_value {
             Some(crate::state::StateValue::Hemispheric(slice)) => {
-                self.grid.aggregate_global(&slice.as_array().to_vec())
+                self.grid.aggregate_global(slice.as_array().as_ref())
             }
             Some(crate::state::StateValue::Scalar(v)) => v, // Already scalar
             _ => FloatValue::NAN,

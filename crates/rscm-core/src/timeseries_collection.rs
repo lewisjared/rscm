@@ -1,5 +1,5 @@
 use crate::errors::RSCMResult;
-use crate::spatial::{FourBoxGrid, HemisphericGrid, ScalarGrid, SpatialGrid};
+use crate::spatial::{FourBoxGrid, HemisphericGrid, SpatialGrid};
 use crate::state::{FourBoxSlice, HemisphericSlice};
 use crate::timeseries::{FloatValue, GridTimeseries, Timeseries};
 use serde::{Deserialize, Serialize};
