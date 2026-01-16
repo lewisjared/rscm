@@ -38,7 +38,7 @@ enabling climate scientists to leverage Rust's speed while maintaining Python's 
 - **GitHub:** Repository hosting and CI/CD (Actions)
 - **Documentation:** Hosted at <https://lewisjared.github.io/rscm/>
 - **crates.io:** [Rust Package distribution](https://crates.io/crates/rscm)
-- **pypi.:** [Python Package distribution](https://pypi.org/project/rscm/)
+- **PyPI:** [Python Package distribution](https://pypi.org/project/rscm/)
 
 ## Design Principles
 
