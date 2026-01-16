@@ -22,13 +22,79 @@
 # description of the model, including its components and state.
 
 # %%
-from docs.notebooks.helpers.models import example_model_builder
+import numpy as np
 
-from rscm.core import Model
+from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
+from rscm.core import (
+    InterpolationStrategy,
+    Model,
+    ModelBuilder,
+    TimeAxis,
+    Timeseries,
+)
+
+# %% [markdown]
+# ## Create a simple coupled model
+#
+# We first create a simple coupled model with a carbon cycle and CO2 ERF component.
 
 # %%
-# Create a simple example coupled model with some exogenous data
-model = example_model_builder(1750, 2100).build()
+t_initial = 1750
+t_final = 2100
+
+time_axis = TimeAxis.from_values(
+    np.concat([np.arange(t_initial, 2015.0, 5), np.arange(2015.0, t_final + 1, 1.0)])
+)
+
+# Carbon cycle parameters
+tau = 20.3
+conc_pi = 280.0
+erf_2xco2 = 4.0
+alpha_temperature = 0.0  # No temperature feedback
+
+co2_erf_component = CO2ERFBuilder.from_parameters(
+    dict(erf_2xco2=erf_2xco2, conc_pi=conc_pi)
+).build()
+carbon_cycle_component = CarbonCycleBuilder.from_parameters(
+    dict(tau=tau, conc_pi=conc_pi, alpha_temperature=alpha_temperature)
+).build()
+
+initial_state = {
+    "Cumulative Land Uptake": 0.0,
+    "Cumulative Emissions|CO2": 0.0,
+    "Atmospheric Concentration|CO2": 300.0,
+}
+
+# Create step emissions scenario
+step_year = 1850.0
+step_size = 10.0
+
+emissions_bounds = np.asarray(
+    [t_initial, (t_initial + step_year) / 2.0, step_year, step_year + 50.0, t_final]
+)
+emissions = Timeseries(
+    np.asarray([0.0, 0.0, step_size, step_size]),
+    TimeAxis.from_bounds(emissions_bounds),
+    "GtC / yr",
+    InterpolationStrategy.Previous,
+)
+
+surface_temp = Timeseries(
+    np.asarray([0.42]),
+    TimeAxis.from_bounds(np.asarray([float(t_initial), float(t_final)])),
+    "K",
+    InterpolationStrategy.Previous,
+)
+
+model = (
+    ModelBuilder()
+    .with_rust_component(carbon_cycle_component)
+    .with_rust_component(co2_erf_component)
+    .with_time_axis(time_axis)
+    .with_exogenous_variable("Surface Temperature", surface_temp)
+    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
+    .with_initial_values(initial_state)
+).build()
 
 # %%
 # We can then step the model forward in time

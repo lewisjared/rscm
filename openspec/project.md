@@ -143,7 +143,7 @@ Improve the Python developer experience and scientific workflow integration.
 
 **Scope:**
 
-- scmdata integration for scenario I/O (read/write ScmRun objects) (potentially remove scmdata in preference for pure pandas)
+- Pandas integration for scenario I/O (read/write pandas dataframes)
 - High-level convenience API for common workflows
 - Improved error messages with actionable suggestions
 - Batch model execution with parallel processing

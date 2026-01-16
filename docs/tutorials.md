@@ -100,6 +100,30 @@ Learn RSCM through hands-on examples. Each tutorial builds on concepts from prev
 
 ---
 
+## Tutorial 5: Building a Complete Scenario Pipeline
+
+**Learn to**: Run climate scenarios from a common historical baseline
+
+**You will**:
+
+- Run a historical spin-up period with observed emissions
+- Save model state at a branch point (e.g., 2015)
+- Run multiple future scenarios (SSP-like pathways) from that point
+- Collect and compare results across scenarios
+- Export data for further analysis
+
+**Topics covered**:
+
+- Historical/future branching workflow
+- State extraction with `model.timeseries()`
+- Multi-scenario data management with `pandas`
+- Time axis configuration for different periods
+- End-of-century summary statistics
+
+[**Start Tutorial: Building a Complete Scenario Pipeline**](notebooks/scenario_pipeline.py)
+
+---
+
 ## Quick Reference
 
 ### Common Patterns
