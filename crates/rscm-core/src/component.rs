@@ -3,7 +3,7 @@ pub use crate::state::{
     FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, InputState, OutputState, TimeseriesWindow,
 };
 use crate::timeseries::Time;
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -16,7 +16,7 @@ use std::fmt::Debug;
 /// - `State`: Variable that reads its previous value and writes a new value each timestep.
 ///   State variables require an initial value to be provided at model build time.
 /// - `EmptyLink`: Internal graph connectivity (not for user code)
-#[pyclass]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub enum RequirementType {
     /// Read from external source or other component
@@ -29,11 +29,25 @@ pub enum RequirementType {
     EmptyLink,
 }
 
+#[pymethods]
+impl RequirementType {
+    /// Get the name of this requirement type variant
+    #[getter]
+    fn name(&self) -> &'static str {
+        match self {
+            RequirementType::Input => "Input",
+            RequirementType::Output => "Output",
+            RequirementType::State => "State",
+            RequirementType::EmptyLink => "EmptyLink",
+        }
+    }
+}
+
 /// Spatial grid type for a variable
 ///
 /// Specifies what spatial resolution a variable operates at.
 /// This enables type-safe coupling validation between components.
-#[pyclass]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Serialize, Deserialize, Default)]
 pub enum GridType {
     /// Scalar (global average or non-spatial) - default for backwards compatibility
@@ -43,6 +57,19 @@ pub enum GridType {
     FourBox,
     /// Two-region hemispheric (Northern, Southern)
     Hemispheric,
+}
+
+#[pymethods]
+impl GridType {
+    /// Get the name of this grid type variant
+    #[getter]
+    fn name(&self) -> &'static str {
+        match self {
+            GridType::Scalar => "Scalar",
+            GridType::FourBox => "FourBox",
+            GridType::Hemispheric => "Hemispheric",
+        }
+    }
 }
 
 impl std::fmt::Display for GridType {
@@ -261,7 +288,10 @@ mod tests {
 
         // New typed API uses window.current() which returns latest available value
         // For exogenous data at latest() index (1), that's 1.3
-        assert_eq!(*output_state.get("Concentrations|CO2").unwrap(), 1.3 * 2.0);
+        assert_eq!(
+            output_state.get("Concentrations|CO2").unwrap(),
+            &crate::state::StateValue::Scalar(1.3 * 2.0)
+        );
     }
 
     #[test]

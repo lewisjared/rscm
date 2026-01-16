@@ -17,7 +17,7 @@ use rscm_core::component::{
     Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use rscm_core::errors::RSCMResult;
-use rscm_core::spatial::SpatialGrid;
+use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::Time;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -104,11 +104,7 @@ impl Component for FourBoxOceanHeatUptakeComponent {
                 "W/m^2",
                 RequirementType::Input,
             ),
-            RequirementDefinition::new(
-                "Ocean Heat Uptake|FourBox",
-                "W/m^2",
-                RequirementType::Output,
-            ),
+            RequirementDefinition::four_box_output("Ocean Heat Uptake|FourBox", "W/m^2"),
         ]
     }
 
@@ -131,14 +127,12 @@ impl Component for FourBoxOceanHeatUptakeComponent {
             erf * self.parameters.southern_land_ratio,
         ];
 
-        // Current OutputState only supports scalar values
-        // So we aggregate back to global for now
-        // In future, components will be able to return grid values directly
-        let grid = rscm_core::spatial::FourBoxGrid::magicc_standard();
-        let global_uptake = grid.aggregate_global(&regional_uptake);
-
+        // Return regional grid values directly
         let mut output = HashMap::new();
-        output.insert("Ocean Heat Uptake|FourBox".to_string(), global_uptake);
+        output.insert(
+            "Ocean Heat Uptake|FourBox".to_string(),
+            StateValue::FourBox(FourBoxSlice::from_array(regional_uptake)),
+        );
         Ok(output)
     }
 }
@@ -147,6 +141,8 @@ impl Component for FourBoxOceanHeatUptakeComponent {
 mod tests {
     use super::*;
     use numpy::array;
+    use rscm_core::spatial::SpatialGrid;
+    use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
     use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
 
@@ -198,13 +194,23 @@ mod tests {
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
-        // Output should be aggregated heat uptake
+        // Output should be FourBox heat uptake
         assert!(output.contains_key("Ocean Heat Uptake|FourBox"));
-        let uptake = output.get("Ocean Heat Uptake|FourBox").unwrap();
-        println!("Heat uptake output: {}", uptake);
+        let uptake_state = output.get("Ocean Heat Uptake|FourBox").unwrap();
+
+        // Extract the FourBox grid from the StateValue
+        let uptake_slice = match uptake_state {
+            StateValue::FourBox(slice) => slice,
+            _ => panic!("Expected FourBox output"),
+        };
+        println!("Heat uptake output: {:?}", uptake_slice);
+
+        // Aggregate back to global to verify
+        let grid = rscm_core::spatial::FourBoxGrid::magicc_standard();
+        let global_uptake = grid.aggregate_global(&uptake_slice.0);
 
         // Since fractions sum to 1.0, global uptake should equal input ERF
-        assert!((*uptake - erf_value).abs() < 0.01);
+        assert!((global_uptake - erf_value).abs() < 0.01);
     }
 
     #[test]
@@ -232,11 +238,21 @@ mod tests {
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
-        let uptake = output.get("Ocean Heat Uptake|FourBox").unwrap();
+        let uptake_state = output.get("Ocean Heat Uptake|FourBox").unwrap();
+
+        // Extract the FourBox grid from the StateValue
+        let uptake_slice = match uptake_state {
+            StateValue::FourBox(slice) => slice,
+            _ => panic!("Expected FourBox output"),
+        };
+
+        // Aggregate back to global to verify
+        let grid = rscm_core::spatial::FourBoxGrid::magicc_standard();
+        let global_uptake = grid.aggregate_global(&uptake_slice.0);
 
         // With equal weights in grid and ratios averaging to 1.0,
         // aggregated uptake should equal input ERF
-        assert!((*uptake - erf_value).abs() < 0.01);
+        assert!((global_uptake - erf_value).abs() < 0.01);
     }
 
     #[test]

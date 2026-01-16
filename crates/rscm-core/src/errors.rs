@@ -47,6 +47,14 @@ pub enum RSCMError {
     /// Component cycle detected in dependency graph
     #[error("Circular dependency detected in component graph: {cycle}. Components cannot form cycles. Consider splitting the cycle by introducing intermediate state variables or restructuring the component dependencies.")]
     CircularDependency { cycle: String },
+
+    /// Grid output type mismatch between component output and variable definition
+    #[error("Grid output mismatch for variable '{variable}': component tried to output {component_grid} but variable expects {expected_grid}. Ensure the component's StateValue variant matches the RequirementDefinition's grid_type.")]
+    GridOutputMismatch {
+        variable: String,
+        expected_grid: String,
+        component_grid: String,
+    },
 }
 
 /// Convenience type for `Result<T, RSCMError>`.

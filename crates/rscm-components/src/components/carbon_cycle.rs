@@ -8,6 +8,7 @@ use ode_solvers::Vector3;
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
+use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -115,9 +116,12 @@ impl Component for CarbonCycleComponent {
         let results = get_last_step(solver.results(), t_next);
 
         let mut output = HashMap::new();
-        output.insert(VAR_CONC_CO2.to_string(), results[0]);
-        output.insert(VAR_CUM_UPTAKE.to_string(), results[1]);
-        output.insert(VAR_CUM_EMISSIONS.to_string(), results[2]);
+        output.insert(VAR_CONC_CO2.to_string(), StateValue::Scalar(results[0]));
+        output.insert(VAR_CUM_UPTAKE.to_string(), StateValue::Scalar(results[1]));
+        output.insert(
+            VAR_CUM_EMISSIONS.to_string(),
+            StateValue::Scalar(results[2]),
+        );
 
         Ok(output)
     }

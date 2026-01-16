@@ -429,9 +429,6 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .collect();
 
     // Generate Into<OutputState> conversion for each output field
-    // TODO: OutputState currently only supports scalar values (HashMap<String, FloatValue>).
-    // Grid outputs are temporarily converted to scalars using simple mean aggregation.
-    // Proper grid support requires changing OutputState to HashMap<String, StateValue>.
     let output_conversions: Vec<TokenStream2> = output_fields
         .iter()
         .map(|f| {
@@ -439,19 +436,22 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
             let var_name = &f.variable_name;
             match f.grid_type.as_str() {
                 "FourBox" => quote! {
-                    // Convert FourBox to scalar using simple mean
-                    let values = outputs.#name.as_array();
-                    let mean = values.iter().sum::<FloatValue>() / 4.0;
-                    map.insert(#var_name.to_string(), mean);
+                    map.insert(
+                        #var_name.to_string(),
+                        crate::state::StateValue::FourBox(outputs.#name),
+                    );
                 },
                 "Hemispheric" => quote! {
-                    // Convert Hemispheric to scalar using simple mean
-                    let values = outputs.#name.as_array();
-                    let mean = values.iter().sum::<FloatValue>() / 2.0;
-                    map.insert(#var_name.to_string(), mean);
+                    map.insert(
+                        #var_name.to_string(),
+                        crate::state::StateValue::Hemispheric(outputs.#name),
+                    );
                 },
                 _ => quote! {
-                    map.insert(#var_name.to_string(), outputs.#name);
+                    map.insert(
+                        #var_name.to_string(),
+                        crate::state::StateValue::Scalar(outputs.#name),
+                    );
                 },
             }
         })
@@ -460,19 +460,22 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
             let var_name = &f.variable_name;
             match f.grid_type.as_str() {
                 "FourBox" => quote! {
-                    // Convert FourBox to scalar using simple mean
-                    let values = outputs.#name.as_array();
-                    let mean = values.iter().sum::<FloatValue>() / 4.0;
-                    map.insert(#var_name.to_string(), mean);
+                    map.insert(
+                        #var_name.to_string(),
+                        crate::state::StateValue::FourBox(outputs.#name),
+                    );
                 },
                 "Hemispheric" => quote! {
-                    // Convert Hemispheric to scalar using simple mean
-                    let values = outputs.#name.as_array();
-                    let mean = values.iter().sum::<FloatValue>() / 2.0;
-                    map.insert(#var_name.to_string(), mean);
+                    map.insert(
+                        #var_name.to_string(),
+                        crate::state::StateValue::Hemispheric(outputs.#name),
+                    );
                 },
                 _ => quote! {
-                    map.insert(#var_name.to_string(), outputs.#name);
+                    map.insert(
+                        #var_name.to_string(),
+                        crate::state::StateValue::Scalar(outputs.#name),
+                    );
                 },
             }
         }))

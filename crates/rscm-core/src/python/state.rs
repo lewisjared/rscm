@@ -4,7 +4,7 @@
 //! and typed output slices (FourBoxSlice, HemisphericSlice).
 
 use crate::spatial::{FourBoxRegion, HemisphericRegion};
-use crate::state::{FourBoxSlice, HemisphericSlice};
+use crate::state::{FourBoxSlice, HemisphericSlice, StateValue};
 use crate::timeseries::FloatValue;
 use numpy::{PyArray1, ToPyArray};
 use pyo3::exceptions::PyValueError;
@@ -323,6 +323,107 @@ impl PyHemisphericSlice {
 }
 
 // =============================================================================
+// Python StateValue
+// =============================================================================
+
+/// Python wrapper for StateValue enum
+///
+/// Represents a value that can be scalar or spatially-resolved (FourBox/Hemispheric).
+///
+/// Example:
+///     scalar = StateValue.scalar(15.0)
+///     four_box = StateValue.four_box(FourBoxSlice.uniform(10.0))
+///     hemispheric = StateValue.hemispheric(HemisphericSlice(northern=15.0, southern=10.0))
+#[pyclass]
+#[pyo3(name = "StateValue")]
+#[derive(Debug, Clone)]
+pub struct PyStateValue(pub StateValue);
+
+#[pymethods]
+impl PyStateValue {
+    /// Create a scalar StateValue
+    #[staticmethod]
+    fn scalar(value: FloatValue) -> Self {
+        Self(StateValue::Scalar(value))
+    }
+
+    /// Create a FourBox StateValue from a FourBoxSlice
+    #[staticmethod]
+    fn four_box(slice: PyFourBoxSlice) -> Self {
+        Self(StateValue::FourBox(slice.0))
+    }
+
+    /// Create a Hemispheric StateValue from a HemisphericSlice
+    #[staticmethod]
+    fn hemispheric(slice: PyHemisphericSlice) -> Self {
+        Self(StateValue::Hemispheric(slice.0))
+    }
+
+    /// Check if this is a scalar value
+    fn is_scalar(&self) -> bool {
+        self.0.is_scalar()
+    }
+
+    /// Check if this is a FourBox grid value
+    fn is_four_box(&self) -> bool {
+        self.0.is_four_box()
+    }
+
+    /// Check if this is a Hemispheric grid value
+    fn is_hemispheric(&self) -> bool {
+        self.0.is_hemispheric()
+    }
+
+    /// Get the scalar value if this is a Scalar variant, otherwise None
+    fn as_scalar(&self) -> Option<FloatValue> {
+        self.0.as_scalar()
+    }
+
+    /// Get the FourBoxSlice if this is a FourBox variant, otherwise None
+    fn as_four_box(&self) -> Option<PyFourBoxSlice> {
+        self.0.as_four_box().map(|s| PyFourBoxSlice(*s))
+    }
+
+    /// Get the HemisphericSlice if this is a Hemispheric variant, otherwise None
+    fn as_hemispheric(&self) -> Option<PyHemisphericSlice> {
+        self.0.as_hemispheric().map(|s| PyHemisphericSlice(*s))
+    }
+
+    /// Convert to a scalar value, aggregating grid values if necessary
+    ///
+    /// For Scalar: returns the value directly
+    /// For FourBox: returns the arithmetic mean of all 4 regional values
+    ///              (sum of all regions divided by 4, giving equal weight to each region)
+    /// For Hemispheric: returns the arithmetic mean of both hemispheres
+    ///                  (sum of northern and southern divided by 2, giving equal weight to each)
+    fn to_scalar(&self) -> FloatValue {
+        self.0.to_scalar()
+    }
+
+    fn __repr__(&self) -> String {
+        match &self.0 {
+            StateValue::Scalar(v) => format!("StateValue.scalar({})", v),
+            StateValue::FourBox(slice) => {
+                format!(
+                    "StateValue.four_box(FourBoxSlice(northern_ocean={}, northern_land={}, southern_ocean={}, southern_land={}))",
+                    slice.get(FourBoxRegion::NorthernOcean),
+                    slice.get(FourBoxRegion::NorthernLand),
+                    slice.get(FourBoxRegion::SouthernOcean),
+                    slice.get(FourBoxRegion::SouthernLand)
+                )
+            }
+            StateValue::Hemispheric(slice) => {
+                format!(
+                    "StateValue.hemispheric(HemisphericSlice(northern={}, southern={}))",
+                    slice.get(HemisphericRegion::Northern),
+                    slice.get(HemisphericRegion::Southern)
+                )
+            }
+        }
+    }
+}
+
+// =============================================================================
 // Python TimeseriesWindow
 // =============================================================================
 
@@ -400,11 +501,7 @@ impl PyTimeseriesWindow {
         if n == 0 {
             return Ok(Vec::<FloatValue>::new().to_pyarray(py));
         }
-        let start = if n > self.current_index + 1 {
-            0
-        } else {
-            self.current_index + 1 - n
-        };
+        let start = (self.current_index + 1).saturating_sub(n);
         let end = self.current_index + 1;
         let slice: Vec<FloatValue> = self.values[start..end].to_vec();
         Ok(slice.to_pyarray(py))
@@ -622,6 +719,7 @@ pub use crate::component::GridType;
 pub fn state(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFourBoxSlice>()?;
     m.add_class::<PyHemisphericSlice>()?;
+    m.add_class::<PyStateValue>()?;
     m.add_class::<PyTimeseriesWindow>()?;
     m.add_class::<PyFourBoxTimeseriesWindow>()?;
     m.add_class::<PyHemisphericTimeseriesWindow>()?;

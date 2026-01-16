@@ -60,10 +60,7 @@ where
     ) -> RSCMResult<Ay::Elem> {
         let segment_info = find_segment(time_target, time, self.extrapolate);
 
-        let (segment_options, end_segment_idx) = match segment_info {
-            Ok(info) => info,
-            Err(e) => return Err(e),
-        };
+        let (segment_options, end_segment_idx) = segment_info?;
 
         if segment_options == SegmentOptions::OnBoundary {
             // Fast return

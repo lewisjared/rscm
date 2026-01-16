@@ -61,10 +61,7 @@ where
     ) -> RSCMResult<Ay::Elem> {
         let segment_info = find_segment(time_target, time, self.extrapolate);
 
-        let (segment_options, end_segment_idx) = match segment_info {
-            Ok(info) => info,
-            Err(e) => return Err(e),
-        };
+        let (segment_options, end_segment_idx) = segment_info?;
         // Clip the index to exclude the last bound
         let end_segment_idx = min(end_segment_idx, y.len() - 1);
 

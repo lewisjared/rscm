@@ -374,7 +374,7 @@ impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
 /// assert_eq!(slice.get(FourBoxRegion::NorthernOcean), 15.0);
 /// ```
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FourBoxSlice(pub [FloatValue; 4]);
 
 impl FourBoxSlice {
@@ -484,7 +484,7 @@ impl std::ops::IndexMut<FourBoxRegion> for FourBoxSlice {
 ///
 /// Similar to `FourBoxSlice` but for the two-region hemispheric grid.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HemisphericSlice(pub [FloatValue; 2]);
 
 impl HemisphericSlice {
@@ -590,12 +590,35 @@ impl std::ops::IndexMut<HemisphericRegion> for HemisphericSlice {
 // =============================================================================
 
 /// Represents a value that can be either scalar or spatially-resolved
-#[derive(Debug, Clone, PartialEq)]
+///
+/// `StateValue` is the enum used for both input state retrieval and output state
+/// in components. It provides type-safe handling of scalar and grid-based values.
+///
+/// # Examples
+///
+/// ```rust
+/// use rscm_core::state::{StateValue, FourBoxSlice, HemisphericSlice};
+///
+/// // Scalar value
+/// let scalar = StateValue::Scalar(288.0);
+/// assert_eq!(scalar.to_scalar(), 288.0);
+///
+/// // FourBox value
+/// let four_box = StateValue::FourBox(FourBoxSlice::from_array([15.0, 14.0, 10.0, 9.0]));
+/// assert_eq!(four_box.to_scalar(), 12.0); // Mean of all regions
+///
+/// // Hemispheric value
+/// let hemispheric = StateValue::Hemispheric(HemisphericSlice::from_array([15.0, 10.0]));
+/// assert_eq!(hemispheric.to_scalar(), 12.5); // Mean of both hemispheres
+/// ```
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum StateValue {
     /// A single scalar value (global average or non-spatial variable)
     Scalar(FloatValue),
-    /// Multiple regional values from a grid timeseries
-    Grid(Vec<FloatValue>),
+    /// Four-box regional values (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
+    FourBox(FourBoxSlice),
+    /// Hemispheric values (Northern, Southern)
+    Hemispheric(HemisphericSlice),
 }
 
 /// Input state for a component
@@ -659,7 +682,7 @@ impl<'a> InputState<'a> {
 
     /// Get the latest value as a StateValue (scalar or grid)
     ///
-    /// For grid timeseries, returns all regional values.
+    /// For grid timeseries, returns all regional values wrapped in the appropriate StateValue variant.
     /// For scalar timeseries, returns a single value wrapped in StateValue::Scalar.
     pub fn get_latest_value(&self, name: &str) -> Option<StateValue> {
         let item = self.iter().find(|item| item.name == name)?;
@@ -679,14 +702,16 @@ impl<'a> InputState<'a> {
                     VariableType::Exogenous => ts.at_time_all(self.current_time).ok()?,
                     VariableType::Endogenous => ts.latest_values(),
                 };
-                Some(StateValue::Grid(values))
+                let slice = FourBoxSlice::from_array([values[0], values[1], values[2], values[3]]);
+                Some(StateValue::FourBox(slice))
             }
             TimeseriesData::Hemispheric(ts) => {
                 let values = match item.variable_type {
                     VariableType::Exogenous => ts.at_time_all(self.current_time).ok()?,
                     VariableType::Endogenous => ts.latest_values(),
                 };
-                Some(StateValue::Grid(values))
+                let slice = HemisphericSlice::from_array([values[0], values[1]]);
+                Some(StateValue::Hemispheric(slice))
             }
         }
     }
@@ -737,7 +762,20 @@ impl<'a> InputState<'a> {
                     None
                 }
             }
-            StateValue::Grid(values) => values.get(region_index).copied(),
+            StateValue::FourBox(slice) => {
+                if region_index < 4 {
+                    Some(slice.as_array()[region_index])
+                } else {
+                    None
+                }
+            }
+            StateValue::Hemispheric(slice) => {
+                if region_index < 2 {
+                    Some(slice.as_array()[region_index])
+                } else {
+                    None
+                }
+            }
         })
     }
 
@@ -848,12 +886,14 @@ impl<'a> IntoIterator for InputState<'a> {
 
 /// Output state from a component
 ///
-/// Currently stores only scalar values for backwards compatibility.
-/// In the future, this may be updated to support `StateValue` to handle grid values.
+/// A collection of named values that a component produces. Each value can be:
+/// - `StateValue::Scalar` for global/non-spatial values
+/// - `StateValue::FourBox` for four-box regional values
+/// - `StateValue::Hemispheric` for hemispheric values
 ///
-/// Components that produce grid outputs can aggregate to global values before returning,
-/// or we can introduce a new `GridOutputState` type in the future.
-pub type OutputState = HashMap<String, FloatValue>;
+/// The model writes these values to the appropriate timeseries based on the
+/// variable's grid type in `RequirementDefinition`.
+pub type OutputState = HashMap<String, StateValue>;
 
 #[cfg(test)]
 mod tests {
@@ -863,26 +903,56 @@ mod tests {
     fn test_state_value_scalar() {
         let sv = StateValue::Scalar(42.0);
         assert!(sv.is_scalar());
-        assert!(!sv.is_grid());
+        assert!(!sv.is_four_box());
+        assert!(!sv.is_hemispheric());
         assert_eq!(sv.as_scalar(), Some(42.0));
-        assert_eq!(sv.as_grid(), None);
+        assert_eq!(sv.as_four_box(), None);
+        assert_eq!(sv.as_hemispheric(), None);
         assert_eq!(sv.to_scalar(), 42.0);
     }
 
     #[test]
-    fn test_state_value_grid() {
-        let sv = StateValue::Grid(vec![1.0, 2.0, 3.0, 4.0]);
+    fn test_state_value_four_box() {
+        let slice = FourBoxSlice::from_array([1.0, 2.0, 3.0, 4.0]);
+        let sv = StateValue::FourBox(slice);
         assert!(!sv.is_scalar());
-        assert!(sv.is_grid());
+        assert!(sv.is_four_box());
+        assert!(!sv.is_hemispheric());
         assert_eq!(sv.as_scalar(), None);
-        assert_eq!(sv.as_grid(), Some(&[1.0, 2.0, 3.0, 4.0][..]));
+        assert_eq!(sv.as_four_box(), Some(&slice));
+        assert_eq!(sv.as_hemispheric(), None);
         assert_eq!(sv.to_scalar(), 2.5); // Mean of [1, 2, 3, 4]
     }
 
     #[test]
-    fn test_state_value_grid_aggregation() {
-        let sv = StateValue::Grid(vec![10.0, 20.0]);
-        assert_eq!(sv.to_scalar(), 15.0);
+    fn test_state_value_hemispheric() {
+        let slice = HemisphericSlice::from_array([10.0, 20.0]);
+        let sv = StateValue::Hemispheric(slice);
+        assert!(!sv.is_scalar());
+        assert!(!sv.is_four_box());
+        assert!(sv.is_hemispheric());
+        assert_eq!(sv.as_scalar(), None);
+        assert_eq!(sv.as_four_box(), None);
+        assert_eq!(sv.as_hemispheric(), Some(&slice));
+        assert_eq!(sv.to_scalar(), 15.0); // Mean of [10, 20]
+    }
+
+    #[test]
+    fn test_state_value_from_impls() {
+        // Test From<FloatValue> for StateValue
+        let sv: StateValue = 42.0.into();
+        assert!(sv.is_scalar());
+        assert_eq!(sv.as_scalar(), Some(42.0));
+
+        // Test From<FourBoxSlice> for StateValue
+        let slice = FourBoxSlice::from_array([1.0, 2.0, 3.0, 4.0]);
+        let sv: StateValue = slice.into();
+        assert!(sv.is_four_box());
+
+        // Test From<HemisphericSlice> for StateValue
+        let slice = HemisphericSlice::from_array([10.0, 20.0]);
+        let sv: StateValue = slice.into();
+        assert!(sv.is_hemispheric());
     }
 
     #[test]
@@ -980,10 +1050,11 @@ mod tests {
 
         let state = InputState::build(vec![&item], 2000.5);
 
-        // Test get_latest_value returns Grid variant
+        // Test get_latest_value returns FourBox variant
         let value = state.get_latest_value("Temperature").unwrap();
-        assert!(value.is_grid());
-        assert_eq!(value.as_grid(), Some(&[16.0, 15.0, 11.0, 10.0][..]));
+        assert!(value.is_four_box());
+        let expected_slice = FourBoxSlice::from_array([16.0, 15.0, 11.0, 10.0]);
+        assert_eq!(value.as_four_box(), Some(&expected_slice));
 
         // Test get_global aggregates using weights (equal weights = mean)
         let global = state.get_global("Temperature").unwrap();
@@ -1038,16 +1109,21 @@ impl StateValue {
     /// Convert to a scalar value, aggregating if necessary
     ///
     /// For Scalar variants, returns the value directly.
-    /// For Grid variants, computes the mean of all regional values.
+    /// For FourBox variants, computes the mean of all 4 regional values.
+    /// For Hemispheric variants, computes the mean of both hemispheres.
     ///
     /// Note: This simple averaging may not be physically appropriate for all variables.
     /// Use grid-aware aggregation methods when the grid weights are known.
     pub fn to_scalar(&self) -> FloatValue {
         match self {
             StateValue::Scalar(v) => *v,
-            StateValue::Grid(values) => {
-                let sum: FloatValue = values.iter().sum();
-                sum / (values.len() as FloatValue)
+            StateValue::FourBox(slice) => {
+                let values = slice.as_array();
+                values.iter().sum::<FloatValue>() / 4.0
+            }
+            StateValue::Hemispheric(slice) => {
+                let values = slice.as_array();
+                values.iter().sum::<FloatValue>() / 2.0
             }
         }
     }
@@ -1057,25 +1133,56 @@ impl StateValue {
         matches!(self, StateValue::Scalar(_))
     }
 
-    /// Check if this is a grid value
-    pub fn is_grid(&self) -> bool {
-        matches!(self, StateValue::Grid(_))
+    /// Check if this is a FourBox grid value
+    pub fn is_four_box(&self) -> bool {
+        matches!(self, StateValue::FourBox(_))
+    }
+
+    /// Check if this is a Hemispheric grid value
+    pub fn is_hemispheric(&self) -> bool {
+        matches!(self, StateValue::Hemispheric(_))
     }
 
     /// Get the scalar value if this is a Scalar variant
     pub fn as_scalar(&self) -> Option<FloatValue> {
         match self {
             StateValue::Scalar(v) => Some(*v),
-            StateValue::Grid(_) => None,
+            _ => None,
         }
     }
 
-    /// Get the grid values if this is a Grid variant
-    pub fn as_grid(&self) -> Option<&[FloatValue]> {
+    /// Get the FourBoxSlice if this is a FourBox variant
+    pub fn as_four_box(&self) -> Option<&FourBoxSlice> {
         match self {
-            StateValue::Scalar(_) => None,
-            StateValue::Grid(values) => Some(values),
+            StateValue::FourBox(slice) => Some(slice),
+            _ => None,
         }
+    }
+
+    /// Get the HemisphericSlice if this is a Hemispheric variant
+    pub fn as_hemispheric(&self) -> Option<&HemisphericSlice> {
+        match self {
+            StateValue::Hemispheric(slice) => Some(slice),
+            _ => None,
+        }
+    }
+}
+
+impl From<FloatValue> for StateValue {
+    fn from(value: FloatValue) -> Self {
+        StateValue::Scalar(value)
+    }
+}
+
+impl From<FourBoxSlice> for StateValue {
+    fn from(slice: FourBoxSlice) -> Self {
+        StateValue::FourBox(slice)
+    }
+}
+
+impl From<HemisphericSlice> for StateValue {
+    fn from(slice: HemisphericSlice) -> Self {
+        StateValue::Hemispheric(slice)
     }
 }
 

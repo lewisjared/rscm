@@ -16,7 +16,7 @@ impl PyScalarRegion {
     const GLOBAL: usize = ScalarRegion::Global as usize;
 
     fn __repr__(&self) -> String {
-        format!("ScalarRegion.GLOBAL")
+        "ScalarRegion.GLOBAL".to_string()
     }
 }
 

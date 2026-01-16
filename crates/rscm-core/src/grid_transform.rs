@@ -76,13 +76,23 @@ impl Component for FourBoxToScalarTransform {
         let input_value = input_state.get_latest_value(&self.input_name());
 
         let global = match input_value {
-            Some(crate::state::StateValue::Grid(values)) => self.grid.aggregate_global(&values),
+            Some(crate::state::StateValue::FourBox(slice)) => {
+                self.grid.aggregate_global(slice.as_array().as_ref())
+            }
+            Some(crate::state::StateValue::Hemispheric(slice)) => {
+                let values = slice.as_array().to_vec();
+                let hemispheric_grid = crate::spatial::HemisphericGrid::equal_weights();
+                hemispheric_grid.aggregate_global(&values)
+            }
             Some(crate::state::StateValue::Scalar(v)) => v, // Already scalar
             None => FloatValue::NAN,
         };
 
         let mut output = HashMap::new();
-        output.insert(self.variable_name.clone(), global);
+        output.insert(
+            self.variable_name.clone(),
+            crate::state::StateValue::Scalar(global),
+        );
         Ok(output)
     }
 }
@@ -152,20 +162,23 @@ impl Component for FourBoxToHemisphericTransform {
         let input_value = input_state.get_latest_value(&self.input_name());
 
         let hemispheric = match input_value {
-            Some(crate::state::StateValue::Grid(values)) => {
+            Some(crate::state::StateValue::FourBox(slice)) => {
                 let target = HemisphericGrid::equal_weights();
-                self.grid.transform_to(&values, &target)?
+                self.grid.transform_to(slice.as_array().as_ref(), &target)?
             }
+            Some(crate::state::StateValue::Hemispheric(slice)) => slice.as_array().to_vec(),
             Some(crate::state::StateValue::Scalar(v)) => vec![v, v], // Broadcast scalar
             None => vec![FloatValue::NAN, FloatValue::NAN],
         };
 
-        // Note: For hemispheric output we need grid timeseries support
-        // For now, just output the northern value as a simple case
         let mut output = HashMap::new();
-        // TODO: This should output a grid timeseries, not a scalar
-        // For now, we output the average as a placeholder
-        output.insert(self.output_name(), (hemispheric[0] + hemispheric[1]) / 2.0);
+        output.insert(
+            self.output_name(),
+            crate::state::StateValue::Hemispheric(crate::state::HemisphericSlice::from_array([
+                hemispheric[0],
+                hemispheric[1],
+            ])),
+        );
         Ok(output)
     }
 }
@@ -230,13 +243,18 @@ impl Component for HemisphericToScalarTransform {
         let input_value = input_state.get_latest_value(&self.input_name());
 
         let global = match input_value {
-            Some(crate::state::StateValue::Grid(values)) => self.grid.aggregate_global(&values),
+            Some(crate::state::StateValue::Hemispheric(slice)) => {
+                self.grid.aggregate_global(slice.as_array().as_ref())
+            }
             Some(crate::state::StateValue::Scalar(v)) => v, // Already scalar
-            None => FloatValue::NAN,
+            _ => FloatValue::NAN,
         };
 
         let mut output = HashMap::new();
-        output.insert(self.variable_name.clone(), global);
+        output.insert(
+            self.variable_name.clone(),
+            crate::state::StateValue::Scalar(global),
+        );
         Ok(output)
     }
 }
@@ -421,7 +439,10 @@ mod tests {
             let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
 
             // Check the output is correctly aggregated
-            assert_eq!(output.get("Temperature"), Some(&13.0));
+            assert_eq!(
+                output.get("Temperature"),
+                Some(&crate::state::StateValue::Scalar(13.0))
+            );
         }
 
         #[test]
@@ -434,7 +455,12 @@ mod tests {
             // Run the transform - should produce NaN when variable is missing
             let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
 
-            assert!(output.get("Temperature").unwrap().is_nan());
+            let value = output.get("Temperature").unwrap();
+            if let crate::state::StateValue::Scalar(v) = value {
+                assert!(v.is_nan());
+            } else {
+                panic!("Expected scalar output");
+            }
         }
 
         #[test]
@@ -453,7 +479,10 @@ mod tests {
             let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
 
             // Check the output is correctly aggregated
-            assert_eq!(output.get("Precipitation"), Some(&750.0));
+            assert_eq!(
+                output.get("Precipitation"),
+                Some(&crate::state::StateValue::Scalar(750.0))
+            );
         }
 
         #[test]
@@ -472,7 +501,10 @@ mod tests {
             let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
 
             // Check the output is correctly aggregated
-            assert_eq!(output.get("Precipitation"), Some(&850.0));
+            assert_eq!(
+                output.get("Precipitation"),
+                Some(&crate::state::StateValue::Scalar(850.0))
+            );
         }
 
         #[test]
@@ -489,7 +521,12 @@ mod tests {
             let output = transform.solve(2000.0, 2001.0, &input_state).unwrap();
 
             let expected = 16.0 * 0.4 + 14.0 * 0.1 + 12.0 * 0.4 + 10.0 * 0.1;
-            assert!((output.get("Temperature").unwrap() - expected).abs() < 1e-10);
+            let value = output.get("Temperature").unwrap();
+            if let crate::state::StateValue::Scalar(v) = value {
+                assert!((v - expected).abs() < 1e-10);
+            } else {
+                panic!("Expected scalar output");
+            }
         }
     }
 }

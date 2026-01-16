@@ -5,6 +5,7 @@
 
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
+use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -71,7 +72,10 @@ impl Component for CO2ERF {
         let concentration = input_state.get_latest(VAR_CONC_CO2);
         let erf = self.calculate_erf(concentration);
 
-        Ok(HashMap::from([(VAR_ERF_CO2.to_string(), erf)]))
+        Ok(HashMap::from([(
+            VAR_ERF_CO2.to_string(),
+            StateValue::Scalar(erf),
+        )]))
     }
 }
 

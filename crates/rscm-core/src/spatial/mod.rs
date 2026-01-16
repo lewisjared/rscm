@@ -310,7 +310,7 @@
 //! assert_eq!(hemispheric_temps[1], 9.5);  // (10.0 + 9.0) / 2
 //! ```
 
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::RSCMResult;
 use crate::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 

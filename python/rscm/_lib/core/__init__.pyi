@@ -4,11 +4,17 @@ from typing import Any, Protocol, Self, TypeVar
 import numpy as np
 from numpy.typing import NDArray
 
+from .state import FourBoxSlice, HemisphericSlice, StateValue
+
 T = TypeVar("T")
 
 # RSCM uses 64bit floats throughout
 Arr = NDArray[np.float64]
 F = np.float64 | float
+
+# Re-export StateValue for convenience
+# See state.pyi for documentation on the three variants (Scalar, FourBox, Hemispheric)
+__all__ = ["FourBoxSlice", "HemisphericSlice", "StateValue"]
 
 class TimeAxis:
     @staticmethod
@@ -119,14 +125,15 @@ class GridType(Enum):
 
 class RequirementDefinition:
     name: str
-    units: str
+    # TODO: fix naming inconsistency between 'unit' and 'units'
+    unit: str
     requirement_type: RequirementType
     grid_type: GridType
 
     def __init__(
         self,
         name: str,
-        units: str,
+        unit: str,
         requirement_type: RequirementType,
         grid_type: GridType = GridType.Scalar,
     ): ...
@@ -137,12 +144,17 @@ class Component(Protocol):
     def definitions(self) -> list[RequirementDefinition]: ...
     def solve(
         self, t_current: float, t_next: float, collection: TimeseriesCollection
-    ) -> dict[str, float]: ...
+    ) -> dict[str, StateValue]: ...
 
 class RustComponent(Component):
     """
     Component that has been defined in Rust
     """
+
+    def definitions(self) -> list[RequirementDefinition]: ...
+    def solve(
+        self, t_current: float, t_next: float, collection: TimeseriesCollection
+    ) -> dict[str, StateValue]: ...
 
 class CustomComponent(Protocol):
     """

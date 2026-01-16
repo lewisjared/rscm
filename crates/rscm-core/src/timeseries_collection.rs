@@ -1,4 +1,6 @@
-use crate::spatial::{FourBoxGrid, HemisphericGrid, ScalarGrid, SpatialGrid};
+use crate::errors::RSCMResult;
+use crate::spatial::{FourBoxGrid, HemisphericGrid, SpatialGrid};
+use crate::state::{FourBoxSlice, HemisphericSlice};
 use crate::timeseries::{FloatValue, GridTimeseries, Timeseries};
 use serde::{Deserialize, Serialize};
 
@@ -85,6 +87,114 @@ impl TimeseriesData {
         match self {
             TimeseriesData::Hemispheric(ts) => Some(ts),
             _ => None,
+        }
+    }
+
+    /// Get a mutable reference to the scalar timeseries if this is a Scalar variant
+    pub fn as_scalar_mut(&mut self) -> Option<&mut Timeseries<FloatValue>> {
+        match self {
+            TimeseriesData::Scalar(ts) => Some(ts),
+            _ => None,
+        }
+    }
+
+    /// Get a mutable reference to the four-box timeseries if this is a FourBox variant
+    pub fn as_four_box_mut(&mut self) -> Option<&mut GridTimeseries<FloatValue, FourBoxGrid>> {
+        match self {
+            TimeseriesData::FourBox(ts) => Some(ts),
+            _ => None,
+        }
+    }
+
+    /// Get a mutable reference to the hemispheric timeseries if this is a Hemispheric variant
+    pub fn as_hemispheric_mut(
+        &mut self,
+    ) -> Option<&mut GridTimeseries<FloatValue, HemisphericGrid>> {
+        match self {
+            TimeseriesData::Hemispheric(ts) => Some(ts),
+            _ => None,
+        }
+    }
+
+    /// Set a scalar value at the given index
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if this is not a Scalar timeseries
+    pub fn set_scalar(&mut self, name: &str, index: usize, value: FloatValue) -> RSCMResult<()> {
+        match self {
+            TimeseriesData::Scalar(ts) => {
+                ts.set(index, crate::spatial::ScalarRegion::Global, value);
+                Ok(())
+            }
+            TimeseriesData::FourBox(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
+                variable: name.to_string(),
+                expected_grid: "Scalar".to_string(),
+                component_grid: "FourBox".to_string(),
+            }),
+            TimeseriesData::Hemispheric(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
+                variable: name.to_string(),
+                expected_grid: "Scalar".to_string(),
+                component_grid: "Hemispheric".to_string(),
+            }),
+        }
+    }
+
+    /// Set a FourBox slice of values at the given index
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if this is not a FourBox timeseries
+    pub fn set_four_box(
+        &mut self,
+        name: &str,
+        index: usize,
+        slice: &FourBoxSlice,
+    ) -> RSCMResult<()> {
+        match self {
+            TimeseriesData::FourBox(ts) => {
+                ts.set_from_slice(index, slice);
+                Ok(())
+            }
+            TimeseriesData::Scalar(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
+                variable: name.to_string(),
+                expected_grid: "FourBox".to_string(),
+                component_grid: "Scalar".to_string(),
+            }),
+            TimeseriesData::Hemispheric(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
+                variable: name.to_string(),
+                expected_grid: "FourBox".to_string(),
+                component_grid: "Hemispheric".to_string(),
+            }),
+        }
+    }
+
+    /// Set a Hemispheric slice of values at the given index
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if this is not a Hemispheric timeseries
+    pub fn set_hemispheric(
+        &mut self,
+        name: &str,
+        index: usize,
+        slice: &HemisphericSlice,
+    ) -> RSCMResult<()> {
+        match self {
+            TimeseriesData::Hemispheric(ts) => {
+                ts.set_from_slice(index, slice);
+                Ok(())
+            }
+            TimeseriesData::Scalar(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
+                variable: name.to_string(),
+                expected_grid: "Hemispheric".to_string(),
+                component_grid: "Scalar".to_string(),
+            }),
+            TimeseriesData::FourBox(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
+                variable: name.to_string(),
+                expected_grid: "Hemispheric".to_string(),
+                component_grid: "FourBox".to_string(),
+            }),
         }
     }
 }
