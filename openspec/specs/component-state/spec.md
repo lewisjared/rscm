@@ -44,7 +44,8 @@ The system SHALL provide an `InputState` type that allows components to access t
 
 - **WHEN** calling `input_state.get_latest_value(name)`
 - **THEN** it MUST return `Some(StateValue::Scalar(v))` for scalar variables
-- **AND** return `Some(StateValue::Grid(values))` for grid variables
+- **AND** return `Some(StateValue::FourBox(slice))` for FourBox variables
+- **AND** return `Some(StateValue::Hemispheric(slice))` for Hemispheric variables
 - **AND** return `None` if the variable does not exist
 
 #### Scenario: Get global aggregated value
