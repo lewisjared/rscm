@@ -26,6 +26,7 @@ pub struct TwoLayerComponentParameters {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
+#[component(tags = ["temperature", "ocean", "two-layer", "stable"], category = "Temperature")]
 #[inputs(
     erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]

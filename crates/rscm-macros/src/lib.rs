@@ -243,6 +243,82 @@ struct StateField {
     grid_type: String,
 }
 
+/// Component-level attributes (tags and category)
+#[derive(Default)]
+struct ComponentAttrs {
+    tags: Vec<String>,
+    category: Option<String>,
+}
+
+/// Parse `#[component(tags = ["tag1", "tag2"], category = "Category")]` attribute
+fn parse_component_attr(attr: &Attribute) -> syn::Result<ComponentAttrs> {
+    let mut attrs = ComponentAttrs::default();
+
+    let meta_list = attr.meta.require_list()?;
+    let tokens = meta_list.tokens.clone();
+
+    if tokens.is_empty() {
+        return Ok(attrs);
+    }
+
+    // Parse key = value pairs
+    let parser = |input: ParseStream| {
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+
+            match key.to_string().as_str() {
+                "tags" => {
+                    // Parse array of strings: ["tag1", "tag2"]
+                    let content;
+                    syn::bracketed!(content in input);
+                    let tags: Punctuated<LitStr, Token![,]> =
+                        Punctuated::parse_terminated(&content)?;
+                    attrs.tags = tags.iter().map(|s| s.value()).collect();
+                }
+                "category" => {
+                    let value: LitStr = input.parse()?;
+                    attrs.category = Some(value.value());
+                }
+                other => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("unknown component attribute: {}", other),
+                    ))
+                }
+            }
+
+            // Consume optional trailing comma
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            }
+        }
+        Ok(())
+    };
+
+    syn::parse2(tokens)
+        .and_then(|_: proc_macro2::TokenStream| {
+            syn::parse2::<proc_macro2::TokenStream>(meta_list.tokens.clone()).ok();
+            Ok(())
+        })
+        .ok();
+
+    // Actually parse the tokens
+    let _ = syn::parse::Parser::parse2(parser, meta_list.tokens.clone())?;
+
+    Ok(attrs)
+}
+
+/// Extract component attributes from struct-level attributes
+fn extract_component_attrs(attrs: &[Attribute]) -> syn::Result<ComponentAttrs> {
+    for attr in attrs {
+        if attr.path().is_ident("component") {
+            return parse_component_attr(attr);
+        }
+    }
+    Ok(ComponentAttrs::default())
+}
+
 /// Parse a struct-level attribute like `#[inputs(...)]` or `#[outputs(...)]`
 fn parse_io_list_attribute(attr: &Attribute) -> syn::Result<Vec<IoFieldDecl>> {
     let list: IoFieldList = syn::parse2(attr.meta.require_list()?.tokens.clone())?;
@@ -335,10 +411,11 @@ fn output_type(grid: &str) -> TokenStream2 {
 /// - `FooInputs<'a>` - Input struct with `TimeseriesWindow` or `GridTimeseriesWindow` fields
 /// - `FooOutputs` - Output struct with typed fields
 /// - `Foo::generated_definitions()` - Returns `Vec<RequirementDefinition>` for the Component trait
-#[proc_macro_derive(ComponentIO, attributes(inputs, outputs, states))]
+#[proc_macro_derive(ComponentIO, attributes(inputs, outputs, states, component))]
 pub fn derive_component_io(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let struct_name = &input.ident;
+    let struct_name_str = struct_name.to_string();
     let inputs_name = format_ident!("{}Inputs", struct_name);
     let outputs_name = format_ident!("{}Outputs", struct_name);
 
@@ -358,6 +435,12 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
     // Extract I/O declarations from struct-level attributes
     let (input_fields, output_fields, state_fields) = match extract_io_from_attrs(&input.attrs) {
         Ok(result) => result,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    // Extract component attributes (tags, category)
+    let component_attrs = match extract_component_attrs(&input.attrs) {
+        Ok(attrs) => attrs,
         Err(e) => return e.to_compile_error().into(),
     };
 
@@ -517,6 +600,73 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         }))
         .collect();
 
+    // Generate component metadata
+    let tags = &component_attrs.tags;
+    let category_token = match &component_attrs.category {
+        Some(cat) => quote! { Some(#cat.to_string()) },
+        None => quote! { None },
+    };
+
+    // Generate VariableMetadata for inputs (using fully qualified path for cross-crate compatibility)
+    let input_metadata: Vec<TokenStream2> = input_fields
+        .iter()
+        .map(|f| {
+            let rust_name = f.rust_name.to_string();
+            let variable_name = &f.variable_name;
+            let unit = &f.unit;
+            let grid = grid_type_token(&f.grid_type);
+            quote! {
+                ::rscm_core::component::VariableMetadata {
+                    rust_name: #rust_name.to_string(),
+                    variable_name: #variable_name.to_string(),
+                    unit: #unit.to_string(),
+                    grid: #grid,
+                    description: String::new(),
+                }
+            }
+        })
+        .collect();
+
+    // Generate VariableMetadata for outputs (using fully qualified path for cross-crate compatibility)
+    let output_metadata: Vec<TokenStream2> = output_fields
+        .iter()
+        .map(|f| {
+            let rust_name = f.rust_name.to_string();
+            let variable_name = &f.variable_name;
+            let unit = &f.unit;
+            let grid = grid_type_token(&f.grid_type);
+            quote! {
+                ::rscm_core::component::VariableMetadata {
+                    rust_name: #rust_name.to_string(),
+                    variable_name: #variable_name.to_string(),
+                    unit: #unit.to_string(),
+                    grid: #grid,
+                    description: String::new(),
+                }
+            }
+        })
+        .collect();
+
+    // Generate VariableMetadata for states (using fully qualified path for cross-crate compatibility)
+    let state_metadata: Vec<TokenStream2> = state_fields
+        .iter()
+        .map(|f| {
+            let rust_name = f.rust_name.to_string();
+            let variable_name = &f.variable_name;
+            let unit = &f.unit;
+            let grid = grid_type_token(&f.grid_type);
+            quote! {
+                ::rscm_core::component::VariableMetadata {
+                    rust_name: #rust_name.to_string(),
+                    variable_name: #variable_name.to_string(),
+                    unit: #unit.to_string(),
+                    grid: #grid,
+                    description: String::new(),
+                }
+            }
+        })
+        .collect();
+
     // Generate the expanded code
     let expanded = quote! {
         /// Generated input struct for #struct_name
@@ -556,6 +706,20 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
                     #(#output_definitions,)*
                     #(#state_definitions,)*
                 ]
+            }
+
+            /// Returns metadata about this component for documentation generation
+            ///
+            /// This includes the component's name, tags, category, and I/O definitions.
+            pub fn component_metadata() -> ::rscm_core::component::ComponentMetadata {
+                ::rscm_core::component::ComponentMetadata {
+                    name: #struct_name_str.to_string(),
+                    tags: vec![#(#tags.to_string()),*],
+                    category: #category_token,
+                    inputs: vec![#(#input_metadata),*],
+                    outputs: vec![#(#output_metadata),*],
+                    states: vec![#(#state_metadata),*],
+                }
             }
         }
 

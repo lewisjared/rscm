@@ -140,3 +140,5 @@ watch:
   - README.md
   # Auto-generate if `python` changes (because this changes API docs)
   - python
+  # Auto-generate if component metadata changes
+  - docs/component_metadata

@@ -57,6 +57,7 @@ pub struct SolverOptions {
 /// - $\alpha_T$ is the temperature sensitivity (1/K)
 /// - $T$ is the surface temperature anomaly (K)
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
+#[component(tags = ["carbon-cycle", "simple", "stable"], category = "Carbon Cycle")]
 #[inputs(
     emissions { name = "Emissions|CO2|Anthropogenic", unit = "GtC / yr" },
     temperature { name = "Surface Temperature", unit = "K" },

@@ -179,6 +179,44 @@ impl RequirementDefinition {
     }
 }
 
+/// Metadata about a variable (input, output, or state)
+///
+/// Used for documentation generation and introspection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VariableMetadata {
+    /// Rust field name (e.g., "concentration_co2")
+    pub rust_name: String,
+    /// Variable name in the model (e.g., "Atmospheric Concentration|CO2")
+    pub variable_name: String,
+    /// Physical units (e.g., "ppm")
+    pub unit: String,
+    /// Spatial grid type
+    pub grid: GridType,
+    /// Description from doc comments (if available)
+    pub description: String,
+}
+
+/// Metadata about a component for documentation generation
+///
+/// This struct contains all the information needed to generate
+/// documentation pages for a component, including I/O definitions,
+/// tags, and categorisation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentMetadata {
+    /// Component struct name (e.g., "CarbonCycleComponent")
+    pub name: String,
+    /// Tags for filtering (e.g., ["carbon-cycle", "simple", "stable"])
+    pub tags: Vec<String>,
+    /// Primary category for grouping (e.g., "Carbon Cycle")
+    pub category: Option<String>,
+    /// Input variable definitions
+    pub inputs: Vec<VariableMetadata>,
+    /// Output variable definitions
+    pub outputs: Vec<VariableMetadata>,
+    /// State variable definitions
+    pub states: Vec<VariableMetadata>,
+}
+
 /// Component of a reduced complexity climate model
 ///
 /// Each component encapsulates some set of physics that can be solved for a given time step.

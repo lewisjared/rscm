@@ -13,9 +13,11 @@ https://mkdocstrings.github.io/crystal/quickstart/migrate.html
 from __future__ import annotations
 
 import importlib
+import json
 import pkgutil
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import mkdocs_gen_files
 from attrs import define
@@ -41,6 +43,9 @@ def write_subpackage_pages(package: object) -> tuple[PackageInfo, ...]:
     """
     sub_packages = []
     for _, name, is_pkg in pkgutil.walk_packages(package.__path__):
+        # Skip "private" packages
+        if name.startswith("_"):
+            continue
         subpackage_full_name = package.__name__ + "." + name
         sub_package_info = write_module_page(subpackage_full_name)
         sub_packages.append(sub_package_info)
@@ -133,7 +138,301 @@ def write_module_page(
     return PackageInfo(package_full_name, package_name, summary)
 
 
+# =============================================================================
+# Component Documentation Generation
+# =============================================================================
+
+COMPONENT_META_DIR = Path("docs/component_metadata")
+COMPONENT_DOCS_DIR = Path("components")
+
+
+def load_component_metadata() -> dict[str, dict[str, Any]]:
+    """Load all component metadata JSON files."""
+    metadata = {}
+    if not COMPONENT_META_DIR.exists():
+        return metadata
+
+    for json_file in COMPONENT_META_DIR.glob("*.json"):
+        try:
+            with open(json_file) as f:
+                data = json.load(f)
+                metadata[data["name"]] = data
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Warning: Failed to load {json_file}: {e}")
+
+    return metadata
+
+
+def generate_component_page(meta: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
+    """Generate markdown for a component documentation page."""
+    lines = [
+        f"# {meta['name']}",
+        "",
+    ]
+
+    # Metadata badges
+    if meta.get("category"):
+        lines.append(f"**Category:** {meta['category']}  ")
+    if meta.get("tags"):
+        tags_str = " ".join(f"`{t}`" for t in meta["tags"])
+        lines.append(f"**Tags:** {tags_str}  ")
+    lines.append(f"**Language:** {meta.get('language', 'rust').title()}")
+    lines.append("")
+
+    # Description
+    if meta.get("description"):
+        lines.append(meta["description"])
+        lines.append("")
+
+    # Mathematical formulation
+    if meta.get("equations"):
+        lines.extend(
+            [
+                "## Mathematical Formulation",
+                "",
+                meta["equations"],
+                "",
+            ]
+        )
+
+    # Inputs
+    if meta.get("inputs"):
+        lines.extend(
+            [
+                "## Inputs",
+                "",
+                "| Variable | Unit | Grid | Description |",
+                "|----------|------|------|-------------|",
+            ]
+        )
+        for inp in meta["inputs"]:
+            var_name = inp.get("variable_name", inp.get("rust_name", ""))
+            unit = inp.get("unit", "")
+            grid = inp.get("grid", "Scalar")
+            desc = inp.get("description", "")
+            lines.append(f"| `{var_name}` | {unit} | {grid} | {desc} |")
+        lines.append("")
+
+    # Outputs
+    if meta.get("outputs"):
+        lines.extend(
+            [
+                "## Outputs",
+                "",
+                "| Variable | Unit | Grid | Description |",
+                "|----------|------|------|-------------|",
+            ]
+        )
+        for out in meta["outputs"]:
+            var_name = out.get("variable_name", out.get("rust_name", ""))
+            unit = out.get("unit", "")
+            grid = out.get("grid", "Scalar")
+            desc = out.get("description", "")
+            lines.append(f"| `{var_name}` | {unit} | {grid} | {desc} |")
+        lines.append("")
+
+    # States
+    if meta.get("states"):
+        lines.extend(
+            [
+                "## States",
+                "",
+                "| Variable | Unit | Grid | Description |",
+                "|----------|------|------|-------------|",
+            ]
+        )
+        for state in meta["states"]:
+            var_name = state.get("variable_name", state.get("rust_name", ""))
+            unit = state.get("unit", "")
+            grid = state.get("grid", "Scalar")
+            desc = state.get("description", "")
+            lines.append(f"| `{var_name}` | {unit} | {grid} | {desc} |")
+        lines.append("")
+
+    # Parameters
+    if meta.get("parameters"):
+        lines.extend(
+            [
+                "## Parameters",
+                "",
+                "| Name | Type | Unit | Description |",
+                "|------|------|------|-------------|",
+            ]
+        )
+        for param in meta["parameters"]:
+            name = param.get("name", "")
+            param_type = param.get("type", "")
+            unit = param.get("unit", "")
+            desc = param.get("description", "")
+            lines.append(f"| `{name}` | {param_type} | {unit} | {desc} |")
+        lines.append("")
+
+    # Usage examples
+    lines.extend(["## Usage", ""])
+
+    component_name = meta["name"]
+    if meta.get("language") == "rust":
+        # Python usage (via builder)
+        if meta.get("python_builder"):
+            builder_name = meta["python_builder"].split(".")[-1]
+            lines.extend(
+                [
+                    "### Python",
+                    "",
+                    "```python",
+                    f"from rscm.components import {builder_name}",
+                    "",
+                    f"component = {builder_name}.from_parameters({{",
+                    "    # parameters here",
+                    "}}).build()",
+                    "```",
+                    "",
+                ]
+            )
+        else:
+            # Infer builder name
+            builder_name = f"{component_name}Builder"
+            lines.extend(
+                [
+                    "### Python",
+                    "",
+                    "```python",
+                    f"from rscm.components import {builder_name}",
+                    "",
+                    f"component = {builder_name}.from_parameters({{",
+                    "    # parameters here",
+                    "}}).build()",
+                    "```",
+                    "",
+                ]
+            )
+
+        # Rust usage
+        lines.extend(
+            [
+                "### Rust",
+                "",
+                "```rust",
+                f"use rscm_components::{component_name};",
+                "",
+                f"let component = {component_name}::from_parameters({component_name}Parameters {{",  # noqa: E501
+                "    // parameters here",
+                "}});",
+                "```",
+                "",
+            ]
+        )
+    else:
+        # Python-only component
+        module_path = meta.get("module_path", "").rsplit(".", 1)[0]
+        lines.extend(
+            [
+                "### Python",
+                "",
+                "```python",
+                f"from {module_path} import {component_name}",
+                "",
+                f"component = {component_name}(",
+                "    # parameters here",
+                ")",
+                "```",
+                "",
+            ]
+        )
+
+    # Source reference
+    if meta.get("source_file"):
+        lines.extend(
+            [
+                "---",
+                "",
+                f"*Source: `{meta['source_file']}`*",
+            ]
+        )
+
+    return "\n".join(lines)
+
+
+def generate_component_index(
+    all_metadata: dict[str, dict[str, Any]], long_description_cutoff: int = 60
+) -> str:
+    """Generate the components index page with filtering."""
+    # Group by category
+    by_category: dict[str, list[dict[str, Any]]] = {}
+    all_tags: set[str] = set()
+
+    for meta in all_metadata.values():
+        category = meta.get("category", "Other")
+        if category is None:
+            category = "Other"
+        by_category.setdefault(category, []).append(meta)
+        all_tags.update(meta.get("tags", []))
+
+    lines = [
+        "# Components",
+        "",
+        "This page lists all RSCM components with their inputs, outputs, and parameters.",  # noqa: E501
+        "",
+    ]
+
+    # Add component tables by category
+    for category, components in sorted(by_category.items()):
+        lines.extend(
+            [
+                f"## {category}",
+                "",
+                "| Component | Language | Description | Tags |",
+                "|-----------|----------|-------------|------|",
+            ]
+        )
+        for meta in sorted(components, key=lambda m: m["name"]):
+            name = meta["name"]
+            slug = name.lower()
+            lang = meta.get("language", "rust").title()
+            desc = (meta.get("description") or "")[:long_description_cutoff]
+            if len(meta.get("description", "") or "") > long_description_cutoff:
+                desc += "..."
+            # Clean up description for table
+            desc = desc.replace("\n", " ").replace("|", "\\|")
+            tags = " ".join(f"`{t}`" for t in meta.get("tags", []))
+            lines.append(f"| [{name}]({slug}.md) | {lang} | {desc} | {tags} |")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def write_component_docs():
+    """Write all component documentation pages."""
+    all_metadata = load_component_metadata()
+
+    if not all_metadata:
+        print("No component metadata found. Run rscm-doc-gen first.")
+        return
+
+    # Write individual component pages
+    for name, meta in all_metadata.items():
+        page_content = generate_component_page(meta)
+        page_path = COMPONENT_DOCS_DIR / f"{name.lower()}.md"
+
+        with mkdocs_gen_files.open(page_path, "w") as fh:
+            fh.write(page_content)
+
+    # Write index page
+    index_content = generate_component_index(all_metadata)
+    index_path = COMPONENT_DOCS_DIR / "index.md"
+
+    with mkdocs_gen_files.open(index_path, "w") as fh:
+        fh.write(index_content)
+
+    print(f"Generated documentation for {len(all_metadata)} components")
+
+
+# Write module pages
 write_module_page("rscm")
 
+# Generate component documentation
+write_component_docs()
+
+# Render navigation
 with mkdocs_gen_files.open(ROOT_DIR / "NAVIGATION.md", "w") as fh:
     fh.writelines(nav.build_literate_nav())

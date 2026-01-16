@@ -83,6 +83,25 @@ impl Component for TestComponent {
     }
 }
 
+// ============================================================================
+// TaggedTestComponent - demonstrates the #[component()] attribute
+// ============================================================================
+
+/// Example component with tags and category
+///
+/// This demonstrates the `#[component()]` attribute for documentation generation.
+#[derive(Debug, Serialize, Deserialize, ComponentIO)]
+#[component(tags = ["test", "example", "simple"], category = "Testing")]
+#[inputs(
+    input_var { name = "Test Input", unit = "units" },
+)]
+#[outputs(
+    output_var { name = "Test Output", unit = "units" },
+)]
+pub(crate) struct TaggedTestComponent {
+    pub multiplier: FloatValue,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,5 +205,55 @@ mod tests {
         // Verify the output timeseries was produced
         let ts_collection = model.timeseries();
         assert!(ts_collection.get_by_name("Concentrations|CO2").is_some());
+    }
+
+    #[test]
+    fn test_component_metadata_without_tags() {
+        let metadata = TestComponent::component_metadata();
+
+        assert_eq!(metadata.name, "TestComponent");
+        assert!(metadata.tags.is_empty());
+        assert!(metadata.category.is_none());
+        assert_eq!(metadata.inputs.len(), 1);
+        assert_eq!(metadata.outputs.len(), 1);
+        assert!(metadata.states.is_empty());
+
+        // Check input metadata
+        let input = &metadata.inputs[0];
+        assert_eq!(input.rust_name, "emissions_co2");
+        assert_eq!(input.variable_name, "Emissions|CO2");
+        assert_eq!(input.unit, "GtCO2");
+        assert_eq!(input.grid, GridType::Scalar);
+
+        // Check output metadata
+        let output = &metadata.outputs[0];
+        assert_eq!(output.rust_name, "concentration_co2");
+        assert_eq!(output.variable_name, "Concentrations|CO2");
+        assert_eq!(output.unit, "ppm");
+        assert_eq!(output.grid, GridType::Scalar);
+    }
+
+    #[test]
+    fn test_component_metadata_with_tags() {
+        let metadata = TaggedTestComponent::component_metadata();
+
+        assert_eq!(metadata.name, "TaggedTestComponent");
+        assert_eq!(metadata.tags, vec!["test", "example", "simple"]);
+        assert_eq!(metadata.category, Some("Testing".to_string()));
+        assert_eq!(metadata.inputs.len(), 1);
+        assert_eq!(metadata.outputs.len(), 1);
+        assert!(metadata.states.is_empty());
+
+        // Check input metadata
+        let input = &metadata.inputs[0];
+        assert_eq!(input.rust_name, "input_var");
+        assert_eq!(input.variable_name, "Test Input");
+        assert_eq!(input.unit, "units");
+
+        // Check output metadata
+        let output = &metadata.outputs[0];
+        assert_eq!(output.rust_name, "output_var");
+        assert_eq!(output.variable_name, "Test Output");
+        assert_eq!(output.unit, "units");
     }
 }
