@@ -73,11 +73,37 @@ Learn RSCM through hands-on examples. Each tutorial builds on concepts from prev
 
 ---
 
+## Tutorial 4: Model Debugging and Inspection
+
+**Learn to**: Debug models and trace data flow through components
+
+**You will**:
+
+- Visualise the component dependency graph
+- Inspect variables in `TimeseriesCollection`
+- Trace data flow between components
+- Step through model execution for debugging
+- Use serialisation for checkpoints and state inspection
+- Understand common error messages and their causes
+
+**Topics covered**:
+
+- The `as_dot()` method for graph visualisation
+- Accessing variables with `get_timeseries_by_name()`
+- Step-by-step execution with `model.step()`
+- Model serialisation with `to_toml()` and `from_toml()`
+- Diagnosing missing variable and initial value errors
+
+[**Start Tutorial: Model Debugging and Inspection**](notebooks/debugging_inspection.py)
+
+---
+
 ## Quick Reference
 
 ### Common Patterns
 
 **Building a model (Python)**:
+
 ```python
 model = (
     ModelBuilder()
@@ -89,6 +115,7 @@ model = (
 ```
 
 **Running and getting results**:
+
 ```python
 model.run()
 results = model.timeseries()
