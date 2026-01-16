@@ -6,26 +6,6 @@ Defines the `ComponentIO` derive macro and related code generation for type-safe
 
 ## Requirements
 
-### Requirement: State Requirement Type
-
-The system SHALL support a `RequirementType::State` for variables that read their previous value and write a new value each timestep.
-
-State variables MUST require an initial value to be provided at model build time or runtime configuration.
-
-#### Scenario: State variable in component definition
-
-- **WHEN** a component declares a variable with `RequirementType::State`
-- **THEN** the variable appears in both `inputs()` and `outputs()`
-- **AND** the model builder validates that an initial value is provided
-
-#### Scenario: State variable without initial value
-
-- **WHEN** a model is built with a component that has a State variable
-- **AND** no initial value is provided for that variable
-- **THEN** the build fails with a descriptive error identifying the missing variable
-
----
-
 ### Requirement: Spatial Grid Requirements in Definitions
 
 The system SHALL support declaring spatial grid requirements on each input, output, and state variable.
@@ -166,47 +146,6 @@ The generated `Into<OutputState>` implementation MUST:
 
 - **WHEN** a component declares `#[outputs(precip { name = "Precipitation", unit = "mm", grid = "Hemispheric" })]`
 - **THEN** the generated `{ComponentName}Outputs` struct has a `precip: HemisphericSlice` field
-
----
-
-### Requirement: Python Typed Inputs
-
-The system SHALL generate typed dataclasses for Python component inputs.
-
-Generated Python input classes MUST:
-
-- Have attributes for each declared input and state variable
-- Provide `TimeseriesWindow`-like access (current, previous, last_n as numpy views)
-- Support grid-aware access for grid inputs
-
-#### Scenario: Python component receives typed inputs
-
-- **WHEN** a Python component's `solve()` method is called
-- **THEN** it receives an instance of `{ComponentName}.Inputs`
-- **AND** scalar attribute access like `inputs.emissions_co2.current` returns a float
-- **AND** grid attribute access like `inputs.temperature.current` returns a numpy array
-
-#### Scenario: Python grid region access
-
-- **WHEN** a Python component accesses `inputs.temperature.region(FourBoxRegion.NorthernOcean)`
-- **THEN** it receives the scalar value for that specific region
-
----
-
-### Requirement: Python Typed Outputs
-
-The system SHALL generate typed dataclasses for Python component outputs.
-
-#### Scenario: Python component returns typed outputs
-
-- **WHEN** a Python component's `solve()` method returns
-- **THEN** it returns an instance of `{ComponentName}.Outputs`
-- **AND** constructing the outputs validates all required fields are provided
-
-#### Scenario: Missing Python output raises error
-
-- **WHEN** a Python component constructs outputs without setting a required field
-- **THEN** a validation error is raised with a clear message identifying the missing output
 
 ---
 
