@@ -32,11 +32,10 @@ impl PyTimeseriesCollection {
     }
 
     pub fn get_timeseries_by_name(&self, name: &str) -> Option<PyTimeseries> {
-        match self.0.get_timeseries_by_name(name) {
-            // We must clone the result because we cannot return references to rust owned data
-            Some(ts) => Option::from(PyTimeseries(ts.clone())),
-            None => Option::None,
-        }
+        self.0
+            .get_data(name)
+            .and_then(|data| data.as_scalar())
+            .map(|ts| PyTimeseries(ts.clone()))
     }
 
     pub fn names(&self) -> Vec<String> {

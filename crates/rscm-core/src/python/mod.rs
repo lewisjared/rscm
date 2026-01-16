@@ -41,15 +41,18 @@
 /// // timeseries.at(0, ScalarRegion::Global)
 ///
 /// {
-///     // Get a mutable reference which enables modifying the timeseries
-///     let mut timeseries = collection.get_timeseries_by_name_mut("Surface Temperature").unwrap();
-///     timeseries.set(0, ScalarRegion::Global, 2.0);
+///     // Get mutable data which enables modifying the timeseries
+///     if let Some(data) = collection.get_data_mut("Surface Temperature") {
+///         if let Some(ts) = data.as_scalar_mut() {
+///             ts.set(0, ScalarRegion::Global, 2.0);
+///         }
+///     }
 /// }
 /// {
-///     // Get a mutable reference which enables modifying the timeseries
-///     let timeseries = collection.get_timeseries_by_name("Surface Temperature").unwrap();
-///     // We can't modify this timeseries because we don't have a mutable reference
-///     // timeseries.set(0, ScalarRegion::Global, 2.0);
+///     // Get an immutable reference to the timeseries data
+///     let timeseries = collection.get_data("Surface Temperature")
+///         .and_then(|data| data.as_scalar())
+///         .unwrap();
 ///     assert_eq!(timeseries.at(0, ScalarRegion::Global).unwrap(), 2.0);
 /// }
 /// ```

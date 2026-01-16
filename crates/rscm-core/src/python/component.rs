@@ -60,16 +60,16 @@ macro_rules! impl_component {
                 t_current: Time,
                 t_next: Time,
                 collection: $crate::python::timeseries_collection::PyTimeseriesCollection,
-            ) -> PyResult<HashMap<String, crate::python::state::PyStateValue>> {
+            ) -> PyResult<HashMap<String, $crate::python::state::PyStateValue>> {
                 let input_state =
-                    crate::model::extract_state(&collection.0, self.0.input_names(), t_current);
+                    $crate::model::extract_state(&collection.0, self.0.input_names(), t_current);
 
                 let output_state = self.0.solve(t_current, t_next, &input_state)?;
                 // Return StateValue wrapped in PyStateValue for Python interoperability
                 let py_output = output_state
                     .into_iter()
                     .map(|(key, state_value)| {
-                        (key, crate::python::state::PyStateValue(state_value))
+                        (key, $crate::python::state::PyStateValue(state_value))
                     })
                     .collect();
                 Ok(py_output)
@@ -170,7 +170,7 @@ impl Component for PythonComponent {
 
             // Extract the result dict
             let py_dict = py_result
-                .downcast::<pyo3::types::PyDict>()
+                .cast::<pyo3::types::PyDict>()
                 .expect("solve() must return a dict");
 
             let mut output_state = OutputState::new();

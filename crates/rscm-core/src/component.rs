@@ -280,17 +280,19 @@ mod tests {
             variable_type: VariableType::Exogenous,
         };
 
+        // current_time=2020.0 corresponds to index 0 in the timeseries
         let input_state = InputState::build(vec![&emissions_co2], 2020.0);
-        // Old API interpolates at current_time for exogenous
-        assert_eq!(input_state.get_latest("Emissions|CO2"), 1.1);
+
+        // current() returns the value at the index corresponding to current_time (index 0)
+        assert_eq!(
+            input_state.get_scalar_window("Emissions|CO2").current(),
+            1.1
+        );
 
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();
-
-        // New typed API uses window.current() which returns latest available value
-        // For exogenous data at latest() index (1), that's 1.3
         assert_eq!(
             output_state.get("Concentrations|CO2").unwrap(),
-            &crate::state::StateValue::Scalar(1.3 * 2.0)
+            &crate::state::StateValue::Scalar(1.1 * 2.0)
         );
     }
 

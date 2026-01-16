@@ -3,16 +3,15 @@
 //! This component calculates the effective radiative forcing (ERF) from CO2 concentrations
 //! using the standard logarithmic relationship.
 
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{
+    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    TimeseriesWindow,
+};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-
-// Variable name constants to avoid magic strings
-const VAR_CONC_CO2: &str = "Atmospheric Concentration|CO2";
-const VAR_ERF_CO2: &str = "Effective Radiative Forcing|CO2";
 
 /// Parameters for the CO2 ERF component
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,7 +33,13 @@ pub struct CO2ERFParameters {
 /// - $ERF_{2xCO2}$ is the ERF for a doubling of CO2
 /// - $C$ is the current CO2 concentration
 /// - $C_0$ is the pre-industrial CO2 concentration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
+#[inputs(
+    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+)]
+#[outputs(
+    erf { name = "Effective Radiative Forcing|CO2", unit = "W / m^2" },
+)]
 pub struct CO2ERF {
     parameters: CO2ERFParameters,
 }
@@ -57,10 +62,7 @@ impl CO2ERF {
 #[typetag::serde]
 impl Component for CO2ERF {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![
-            RequirementDefinition::scalar_input(VAR_CONC_CO2, "ppm"),
-            RequirementDefinition::scalar_output(VAR_ERF_CO2, "W / m^2"),
-        ]
+        Self::generated_definitions()
     }
 
     fn solve(
@@ -69,13 +71,11 @@ impl Component for CO2ERF {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let concentration = input_state.get_latest(VAR_CONC_CO2);
+        let inputs = CO2ERFInputs::from_input_state(input_state);
+        let concentration = inputs.concentration.current();
         let erf = self.calculate_erf(concentration);
 
-        Ok(HashMap::from([(
-            VAR_ERF_CO2.to_string(),
-            StateValue::Scalar(erf),
-        )]))
+        Ok(CO2ERFOutputs { erf }.into())
     }
 }
 
@@ -117,7 +117,7 @@ mod tests {
         let defs = component.definitions();
 
         assert_eq!(defs.len(), 2);
-        assert_eq!(defs[0].name, VAR_CONC_CO2);
-        assert_eq!(defs[1].name, VAR_ERF_CO2);
+        assert_eq!(defs[0].name, "Atmospheric Concentration|CO2");
+        assert_eq!(defs[1].name, "Effective Radiative Forcing|CO2");
     }
 }

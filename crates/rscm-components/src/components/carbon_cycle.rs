@@ -5,23 +5,19 @@
 
 use crate::constants::GTC_PER_PPM;
 use ode_solvers::Vector3;
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{
+    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    TimeseriesWindow,
+};
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 type ModelState = Vector3<FloatValue>;
-
-// Variable name constants
-const VAR_EMISSIONS_CO2: &str = "Emissions|CO2|Anthropogenic";
-const VAR_SURFACE_TEMP: &str = "Surface Temperature";
-const VAR_CONC_CO2: &str = "Atmospheric Concentration|CO2";
-const VAR_CUM_EMISSIONS: &str = "Cumulative Emissions|CO2";
-const VAR_CUM_UPTAKE: &str = "Cumulative Land Uptake";
 
 /// Parameters for the one-box carbon cycle component
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,7 +56,16 @@ pub struct SolverOptions {
 /// - $\tau$ is the baseline lifetime (yr)
 /// - $\alpha_T$ is the temperature sensitivity (1/K)
 /// - $T$ is the surface temperature anomaly (K)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
+#[inputs(
+    emissions { name = "Emissions|CO2|Anthropogenic", unit = "GtC / yr" },
+    temperature { name = "Surface Temperature", unit = "K" },
+)]
+#[states(
+    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    cumulative_emissions { name = "Cumulative Emissions|CO2", unit = "Gt C" },
+    cumulative_uptake { name = "Cumulative Land Uptake", unit = "Gt C" },
+)]
 pub struct CarbonCycleComponent {
     parameters: CarbonCycleParameters,
     solver_options: SolverOptions,
@@ -87,13 +92,7 @@ impl CarbonCycleComponent {
 #[typetag::serde]
 impl Component for CarbonCycleComponent {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![
-            RequirementDefinition::scalar_input(VAR_EMISSIONS_CO2, "GtC / yr"),
-            RequirementDefinition::scalar_input(VAR_SURFACE_TEMP, "K"),
-            RequirementDefinition::scalar_state(VAR_CONC_CO2, "ppm"),
-            RequirementDefinition::scalar_state(VAR_CUM_EMISSIONS, "Gt C"),
-            RequirementDefinition::scalar_state(VAR_CUM_UPTAKE, "Gt C"),
-        ]
+        Self::generated_definitions()
     }
 
     fn solve(
@@ -102,10 +101,12 @@ impl Component for CarbonCycleComponent {
         t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
+        let inputs = CarbonCycleComponentInputs::from_input_state(input_state);
+
         let y0 = ModelState::new(
-            input_state.get_latest(VAR_CONC_CO2),
-            input_state.get_latest(VAR_CUM_UPTAKE),
-            input_state.get_latest(VAR_CUM_EMISSIONS),
+            inputs.concentration.current(),
+            inputs.cumulative_uptake.current(),
+            inputs.cumulative_emissions.current(),
         );
 
         let solver = IVPBuilder::new(Arc::new(self.to_owned()), input_state, y0);
@@ -115,15 +116,13 @@ impl Component for CarbonCycleComponent {
 
         let results = get_last_step(solver.results(), t_next);
 
-        let mut output = HashMap::new();
-        output.insert(VAR_CONC_CO2.to_string(), StateValue::Scalar(results[0]));
-        output.insert(VAR_CUM_UPTAKE.to_string(), StateValue::Scalar(results[1]));
-        output.insert(
-            VAR_CUM_EMISSIONS.to_string(),
-            StateValue::Scalar(results[2]),
-        );
+        let outputs = CarbonCycleComponentOutputs {
+            concentration: results[0],
+            cumulative_uptake: results[1],
+            cumulative_emissions: results[2],
+        };
 
-        Ok(output)
+        Ok(outputs.into())
     }
 }
 
@@ -132,12 +131,17 @@ impl IVP<Time, ModelState> for CarbonCycleComponent {
         &self,
         _t: Time,
         input_state: &InputState,
-        _y: &Vector3<FloatValue>,
+        y: &Vector3<FloatValue>,
         dy_dt: &mut Vector3<FloatValue>,
     ) {
-        let emissions = input_state.get_latest(VAR_EMISSIONS_CO2);
-        let temperature = input_state.get_latest(VAR_SURFACE_TEMP);
-        let conc = input_state.get_latest(VAR_CONC_CO2);
+        let inputs = CarbonCycleComponentInputs::from_input_state(input_state);
+
+        // Inputs come from input_state
+        let emissions = inputs.emissions.current();
+        let temperature = inputs.temperature.current();
+
+        // State variables come from the ODE state vector y
+        let conc = y[0];
 
         // dC / dt = E - (C - C_0) / (tau * exp(alpha_temperature * temperature))
         let lifetime =

@@ -2,13 +2,14 @@
 use numpy::array;
 use numpy::ndarray::Array1;
 use rscm_core::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    TimeseriesWindow,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::iter::zip;
 
 /// Parameters for the Ocean Surface Partial Pressure component
@@ -102,7 +103,14 @@ pub struct OceanSurfacePartialPressureParameters {
 /// The former would make more sense given the brackets in the lines below in the paper. (#208)
 ///
 /// [`joos_et_al_2001_feedbacks`]: https://doi.org/10.1029/2000GB001375
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
+#[inputs(
+    sea_surface_temperature { name = "Sea Surface Temperature", unit = "K" },
+    dissolved_inorganic_carbon { name = "Dissolved Inorganic Carbon", unit = "micromol / kg" },
+)]
+#[outputs(
+    ospp_co2 { name = "Ocean Surface Partial Pressure|CO2", unit = "ppm" },
+)]
 pub struct OceanSurfacePartialPressure {
     parameters: OceanSurfacePartialPressureParameters,
 }
@@ -144,19 +152,7 @@ impl OceanSurfacePartialPressure {
 #[typetag::serde]
 impl Component for OceanSurfacePartialPressure {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![
-            RequirementDefinition::new("Sea Surface Temperature", "K", RequirementType::Input),
-            RequirementDefinition::new(
-                "Dissolved Inorganic Carbon",
-                "micromol / kg",
-                RequirementType::Input,
-            ),
-            RequirementDefinition::new(
-                "Ocean Surface Partial Pressure|CO2",
-                "ppm",
-                RequirementType::Output,
-            ),
-        ]
+        Self::generated_definitions()
     }
 
     fn solve(
@@ -165,8 +161,9 @@ impl Component for OceanSurfacePartialPressure {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let delta_sea_surface_temperature = input_state.get_latest("Sea Surface Temperature");
-        let delta_dissolved_inorganic_carbon = input_state.get_latest("Dissolved Inorganic Carbon");
+        let inputs = OceanSurfacePartialPressureInputs::from_input_state(input_state);
+        let delta_sea_surface_temperature = inputs.sea_surface_temperature.current();
+        let delta_dissolved_inorganic_carbon = inputs.dissolved_inorganic_carbon.current();
 
         let delta_ocean_surface_partial_pressure =
             self.calculate_ospp(delta_dissolved_inorganic_carbon);
@@ -177,10 +174,10 @@ impl Component for OceanSurfacePartialPressure {
             * (self.parameters.sensitivity_ospp_to_temperature * delta_sea_surface_temperature)
                 .exp();
 
-        Ok(HashMap::from([(
-            "Ocean Surface Partial Pressure|CO2".to_string(),
-            StateValue::Scalar(ocean_surface_partial_pressure),
-        )]))
+        Ok(OceanSurfacePartialPressureOutputs {
+            ospp_co2: ocean_surface_partial_pressure,
+        }
+        .into())
     }
 }
 

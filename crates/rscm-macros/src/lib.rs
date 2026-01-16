@@ -429,6 +429,7 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .collect();
 
     // Generate Into<OutputState> conversion for each output field
+    // Use StateValue directly since users must import it
     let output_conversions: Vec<TokenStream2> = output_fields
         .iter()
         .map(|f| {
@@ -438,19 +439,19 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
                 "FourBox" => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::FourBox(outputs.#name),
+                        StateValue::FourBox(outputs.#name),
                     );
                 },
                 "Hemispheric" => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::Hemispheric(outputs.#name),
+                        StateValue::Hemispheric(outputs.#name),
                     );
                 },
                 _ => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::Scalar(outputs.#name),
+                        StateValue::Scalar(outputs.#name),
                     );
                 },
             }
@@ -462,19 +463,19 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
                 "FourBox" => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::FourBox(outputs.#name),
+                        StateValue::FourBox(outputs.#name),
                     );
                 },
                 "Hemispheric" => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::Hemispheric(outputs.#name),
+                        StateValue::Hemispheric(outputs.#name),
                     );
                 },
                 _ => quote! {
                     map.insert(
                         #var_name.to_string(),
-                        crate::state::StateValue::Scalar(outputs.#name),
+                        StateValue::Scalar(outputs.#name),
                     );
                 },
             }
