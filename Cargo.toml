@@ -1,10 +1,15 @@
 
 [workspace]
 members = [
+    # Python interface
     "crates/rscm",
+    # Core functionality
     "crates/rscm-core",
     "crates/rscm-components",
+    # Utilities and macros
     "crates/rscm-macros",
+    "crates/rscm-doc-gen",
+    # Models
     "crates/rscm-two-layer",
     "crates/rscm-magicc",
 ]

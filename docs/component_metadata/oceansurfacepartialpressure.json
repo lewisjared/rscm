@@ -1,0 +1,65 @@
+{
+  "$schema": "component_metadata_schema.json",
+  "name": "OceanSurfacePartialPressure",
+  "module_path": "rscm_components::components::ocean_carbon_cycle::ocean_surface_partial_pressure",
+  "language": "rust",
+  "description": "Calculate partial pressure of |CO2| at the ocean's surface\n\n# Requirements\ndelta_sea_surface_temperature\n   Change in sea surface temperature relative to pre-industrial\n   Units: `delta_degC`\n\ndelta_dissolved_inorganic_carbon\n   Change in dissolved inorganic carbon relative to pre-industrial\n   Units: `micromol / kg`\n\nReturns\n-------\nPartial pressure of |CO2| at the ocean's surface \\[ppm\\]\n\nNotes\n-----\nEq. A24 and A25 of [`joos_et_al_2001_feedbacks`]\n\n```math\n\n    \\text{CO}_{2_s} = [\n        p\\text{CO}_{2_{s_0}}\n        + \\delta p \\text{CO}_{2_s}\n    ] \\exp (\\alpha \\Delta T) \\\\\n\n    \\delta p \\text{CO}_{2_s} =\n        (\\vec{\\beta} + T_0 \\vec{\\gamma})\n        \\cdot \\vec{\\Sigma} \\\\\n\n    \\vec{\\Sigma} = \\begin{pmatrix}\n        \\Delta \\Sigma \\text{CO}_2\n        & (\\Delta \\Sigma \\text{CO}_2)^2 \\times 10^{-3}\n        & -(\\Delta \\Sigma \\text{CO}_2)^3 \\times 10^{-5}\n        & (\\Delta \\Sigma \\text{CO}_2)^4 \\times 10^{-7}\n        & -(\\Delta \\Sigma \\text{CO}_2)^5 \\times 10^{-10}\n    \\end{pmatrix}\n```\n\nand e.g.\n\n```math\n    \\vec{\\beta} = \\begin{pmatrix}\n        1.5568\n        & 7.4706\n        & 1.2748\n        & 2.4491\n        & 1.5468\n    \\end{pmatrix} \\\\\n\n    \\vec{\\gamma} = \\begin{pmatrix}\n        -0.013993\n        & -0.20207\n        & -0.12015\n        & -0.12639\n        & -0.15326\n    \\end{pmatrix}\n```\n\nIs there a typo in Joos et al., 2001? Should it be\n(1.5568 - 1.3993 T_0) * 10 ** -2 rather than (1.5568 - 1.3993 T_0 * 10 ** -2) ?\nThe former would make more sense given the brackets in the lines below in the paper. (#208)\n\n[`joos_et_al_2001_feedbacks`]: https://doi.org/10.1029/2000GB001375",
+  "category": "Ocean Carbon Cycle",
+  "tags": [
+    "ocean",
+    "carbon-cycle",
+    "magicc",
+    "experimental"
+  ],
+  "inputs": [
+    {
+      "rust_name": "sea_surface_temperature",
+      "variable_name": "Sea Surface Temperature",
+      "unit": "K",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "dissolved_inorganic_carbon",
+      "variable_name": "Dissolved Inorganic Carbon",
+      "unit": "micromol / kg",
+      "grid": "Scalar"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "ospp_co2",
+      "variable_name": "Ocean Surface Partial Pressure|CO2",
+      "unit": "ppm",
+      "grid": "Scalar"
+    }
+  ],
+  "states": [],
+  "parameters": [
+    {
+      "name": "ospp_preindustrial",
+      "type": "f64",
+      "description": "Pre-industrial ocean surface partial pressure\nUnits: `ppm`"
+    },
+    {
+      "name": "sensitivity_ospp_to_temperature",
+      "type": "f64",
+      "description": "Sensitivity of the ocean surface's partial pressure to changes in sea\nsurface temperature relative to pre-industrial\nUnits: `1 / delta_degC`"
+    },
+    {
+      "name": "sea_surface_temperature_preindustrial",
+      "type": "f64",
+      "description": "Pre-industrial sea surface temperature\nUnits: `degC`"
+    },
+    {
+      "name": "delta_ospp_offsets",
+      "type": "[f64;5]",
+      "description": "Vector of length 5 of offsets to be used when calculating the change in\nocean surface partial pressure\nUnits: `ppm`"
+    },
+    {
+      "name": "delta_ospp_coefficients",
+      "type": "[f64;5]",
+      "description": "Vector of length 5 of coefficients (applied to pre-industrial sea surface temperatures)\nto be used when calculating the change in\nocean surface partial pressure\n\nUnits: `ppm / delta_degC`"
+    }
+  ],
+  "source_file": "crates/rscm-components/src/components/ocean_carbon_cycle/ocean_surface_partial_pressure.rs"
+}

@@ -72,6 +72,7 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 /// let component = FourBoxOceanHeatUptakeComponent::from_parameters(params);
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
+#[component(tags = ["temperature", "ocean", "regional", "four-box", "experimental"], category = "Ocean")]
 #[inputs(
     erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
 )]

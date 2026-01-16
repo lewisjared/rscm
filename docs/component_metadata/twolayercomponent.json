@@ -1,0 +1,58 @@
+{
+  "$schema": "component_metadata_schema.json",
+  "name": "TwoLayerComponent",
+  "module_path": "rscm_two_layer::component",
+  "language": "rust",
+  "description": "",
+  "category": "Temperature",
+  "tags": [
+    "temperature",
+    "ocean",
+    "two-layer",
+    "stable"
+  ],
+  "inputs": [
+    {
+      "rust_name": "erf",
+      "variable_name": "Effective Radiative Forcing",
+      "unit": "W/m^2",
+      "grid": "Scalar"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "surface_temperature",
+      "variable_name": "Surface Temperature",
+      "unit": "K",
+      "grid": "Scalar"
+    }
+  ],
+  "states": [],
+  "parameters": [
+    {
+      "name": "lambda0",
+      "type": "FloatValue"
+    },
+    {
+      "name": "a",
+      "type": "FloatValue"
+    },
+    {
+      "name": "efficacy",
+      "type": "FloatValue"
+    },
+    {
+      "name": "eta",
+      "type": "FloatValue"
+    },
+    {
+      "name": "heat_capacity_surface",
+      "type": "FloatValue"
+    },
+    {
+      "name": "heat_capacity_deep",
+      "type": "FloatValue"
+    }
+  ],
+  "source_file": "crates/rscm-two-layer/src/component.rs"
+}

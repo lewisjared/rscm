@@ -123,17 +123,17 @@ See the [Rust Components Tutorial](../notebooks/component_rust.md) for details.
 
 ## Common Commands
 
-| Command | Description |
-|---------|-------------|
-| `make virtual-environment` | Set up Python environment |
-| `make build-dev` | Build Rust extension (debug mode) |
-| `make test` | Run all tests (Rust + Python) |
-| `cargo test --workspace` | Run Rust tests only |
-| `uv run pytest` | Run Python tests only |
-| `make lint` | Run linters (ruff + clippy) |
-| `make format` | Format code (ruff + rustfmt) |
-| `make docs` | Build documentation |
-| `cargo doc --workspace --open` | Build and open Rust docs |
+| Command                        | Description                       |
+| ------------------------------ | --------------------------------- |
+| `make virtual-environment`     | Set up Python environment         |
+| `make build-dev`               | Build Rust extension (debug mode) |
+| `make test`                    | Run all tests (Rust + Python)     |
+| `cargo test --workspace`       | Run Rust tests only               |
+| `uv run pytest`                | Run Python tests only             |
+| `make lint`                    | Run linters (ruff + clippy)       |
+| `make format`                  | Format code (ruff + rustfmt)      |
+| `make docs`                    | Build documentation               |
+| `cargo doc --workspace --open` | Build and open Rust docs          |
 
 ## Further Reading
 

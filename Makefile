@@ -74,18 +74,24 @@ clean:
 	rm -rf python/rscm/*.so
 
 
+.PHONY: docs-metadata
+docs-metadata: ## Generate component metadata JSON from Rust sources
+	cargo run -p rscm-doc-gen -- \
+		--crates crates/rscm-components,crates/rscm-two-layer \
+		--output docs/component_metadata/
+
 .PHONY: docs
-docs:  ## build the docs
+docs: build-dev docs-metadata  ## build the docs
 	uv run --group docs mkdocs build
 
 .PHONY: docs-strict
-docs-strict: ## build the docs strictly (e.g. raise an error on warnings, this most closely mirrors what we do in the CI)
+docs-strict: build-dev docs-metadata ## build the docs strictly (e.g. raise an error on warnings, this most closely mirrors what we do in the CI)
 	uv run --group docs mkdocs build --strict
 
 .PHONY: docs-serve
-docs-serve: ## serve the docs locally
+docs-serve: build-dev docs-metadata ## serve the docs locally
 	uv run --group docs mkdocs serve
 
-.phony: docs-rust
-docs-rust:  # Build Rust documentation
+.PHONY: docs-rust
+docs-rust:  ## Build Rust documentation
 	RUSTDOCFLAGS="--html-in-header ./assets/katex-header.html" cargo doc --no-deps --workspace

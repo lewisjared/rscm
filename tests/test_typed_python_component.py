@@ -209,10 +209,95 @@ def test_typed_component_output_validation():
         comp.Outputs(output1=1.0)
 
 
+def test_component_registry_auto_registration():
+    """Test that components are automatically registered when defined."""
+    # Clear registry for clean test
+    Component._registry.clear()
+
+    class AutoRegisteredComponent(Component):
+        value = Output("Value", unit="")
+
+        def solve(self, t_current, t_next, inputs):
+            return self.Outputs(value=1.0)
+
+    # Component should be in registry
+    registry = Component.get_registered_components()
+    assert "AutoRegisteredComponent" in registry
+    assert registry["AutoRegisteredComponent"] is AutoRegisteredComponent
+
+
+def test_component_registry_opt_out():
+    """Test that components can opt out of registration."""
+    # Clear registry for clean test
+    Component._registry.clear()
+
+    class UnregisteredComponent(Component, register=False):
+        value = Output("Value", unit="")
+
+        def solve(self, t_current, t_next, inputs):
+            return self.Outputs(value=1.0)
+
+    # Component should NOT be in registry
+    registry = Component.get_registered_components()
+    assert "UnregisteredComponent" not in registry
+
+
+def test_component_registry_get_component():
+    """Test get_component retrieves registered components by name."""
+    # Clear registry for clean test
+    Component._registry.clear()
+
+    class LookupTestComponent(Component):
+        value = Output("Value", unit="")
+
+        def solve(self, t_current, t_next, inputs):
+            return self.Outputs(value=1.0)
+
+    # Should be able to retrieve by name
+    retrieved = Component.get_component("LookupTestComponent")
+    assert retrieved is LookupTestComponent
+
+
+def test_component_registry_get_component_not_found():
+    """Test get_component raises KeyError for unknown components."""
+    with pytest.raises(KeyError, match="No component registered with name"):
+        Component.get_component("NonExistentComponent")
+
+
+def test_component_registry_multiple_components():
+    """Test that multiple components are tracked correctly."""
+    # Clear registry for clean test
+    Component._registry.clear()
+
+    class ComponentA(Component):
+        a = Output("A", unit="")
+
+        def solve(self, t_current, t_next, inputs):
+            return self.Outputs(a=1.0)
+
+    class ComponentB(Component):
+        b = Output("B", unit="")
+
+        def solve(self, t_current, t_next, inputs):
+            return self.Outputs(b=2.0)
+
+    class ComponentC(Component, register=False):
+        c = Output("C", unit="")
+
+        def solve(self, t_current, t_next, inputs):
+            return self.Outputs(c=3.0)
+
+    registry = Component.get_registered_components()
+    assert len(registry) == 2
+    assert "ComponentA" in registry
+    assert "ComponentB" in registry
+    assert "ComponentC" not in registry
+
+
 def test_typed_component_inheritance():
     """Test that typed component declarations are inherited."""
 
-    class BaseComponent(Component):
+    class BaseComponent(Component, register=False):
         base_input = Input("BaseInput", unit="")
         base_output = Output("BaseOutput", unit="")
 

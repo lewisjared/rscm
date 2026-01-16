@@ -34,6 +34,7 @@ pub struct CO2ERFParameters {
 /// - $C$ is the current CO2 concentration
 /// - $C_0$ is the pre-industrial CO2 concentration
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
+#[component(tags = ["radiative-forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
 #[inputs(
     concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
 )]
