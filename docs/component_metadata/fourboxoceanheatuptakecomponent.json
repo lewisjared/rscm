@@ -31,8 +31,24 @@
   "states": [],
   "parameters": [
     {
-      "name": "parameters",
-      "type": "FourBoxOceanHeatUptakeParameters"
+      "name": "northern_ocean_ratio",
+      "type": "f64",
+      "description": "Ratio of Northern Ocean uptake to global ERF (regional / global)"
+    },
+    {
+      "name": "northern_land_ratio",
+      "type": "f64",
+      "description": "Ratio of Northern Land uptake to global ERF (regional / global)"
+    },
+    {
+      "name": "southern_ocean_ratio",
+      "type": "f64",
+      "description": "Ratio of Southern Ocean uptake to global ERF (regional / global)"
+    },
+    {
+      "name": "southern_land_ratio",
+      "type": "f64",
+      "description": "Ratio of Southern Land uptake to global ERF (regional / global)"
     }
   ],
   "source_file": "crates/rscm-components/src/components/four_box_ocean_heat_uptake.rs"

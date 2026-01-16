@@ -36,6 +36,12 @@ extra:
 
 extra_css:
   - stylesheets/style.css
+  - https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js
+  - https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js
+  - javascripts/katex.js
 
 plugins:
   # https://mkdocstrings.github.io/autorefs/
@@ -61,7 +67,7 @@ plugins:
       # Use filenames for titles
       ignore_h1_titles: True
       include: ["*.py"]
-      execute: true
+      execute: false
       # Toggle off for faster builds
       # execute: false
       allow_errors: false
@@ -136,6 +142,10 @@ markdown_extensions:
   # Ensure that there are links to table of contents items
   - toc:
       permalink: "#"
+  # Math rendering with KaTeX
+  # https://facelessuser.github.io/pymdown-extensions/extensions/arithmatex/
+  - pymdownx.arithmatex:
+      generic: true
 
 watch:
   - README.md

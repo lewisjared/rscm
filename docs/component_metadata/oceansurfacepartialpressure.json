@@ -36,8 +36,29 @@
   "states": [],
   "parameters": [
     {
-      "name": "parameters",
-      "type": "OceanSurfacePartialPressureParameters"
+      "name": "ospp_preindustrial",
+      "type": "f64",
+      "description": "Pre-industrial ocean surface partial pressure\nUnits: `ppm`"
+    },
+    {
+      "name": "sensitivity_ospp_to_temperature",
+      "type": "f64",
+      "description": "Sensitivity of the ocean surface's partial pressure to changes in sea\nsurface temperature relative to pre-industrial\nUnits: `1 / delta_degC`"
+    },
+    {
+      "name": "sea_surface_temperature_preindustrial",
+      "type": "f64",
+      "description": "Pre-industrial sea surface temperature\nUnits: `degC`"
+    },
+    {
+      "name": "delta_ospp_offsets",
+      "type": "[f64;5]",
+      "description": "Vector of length 5 of offsets to be used when calculating the change in\nocean surface partial pressure\nUnits: `ppm`"
+    },
+    {
+      "name": "delta_ospp_coefficients",
+      "type": "[f64;5]",
+      "description": "Vector of length 5 of coefficients (applied to pre-industrial sea surface temperatures)\nto be used when calculating the change in\nocean surface partial pressure\n\nUnits: `ppm / delta_degC`"
     }
   ],
   "source_file": "crates/rscm-components/src/components/ocean_carbon_cycle/ocean_surface_partial_pressure.rs"

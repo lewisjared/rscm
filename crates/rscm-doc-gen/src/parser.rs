@@ -24,14 +24,26 @@ pub fn parse_file(path: &Path) -> Vec<ComponentDocMetadata> {
         }
     };
 
+    // First pass: collect all structs by name for parameter struct lookup
+    let mut all_structs: std::collections::HashMap<String, &ItemStruct> =
+        std::collections::HashMap::new();
+    for item in &syntax.items {
+        if let Item::Struct(item_struct) = item {
+            all_structs.insert(item_struct.ident.to_string(), item_struct);
+        }
+    }
+
     let mut components = Vec::new();
 
     // Extract module-level documentation
     let module_docs = extract_doc_comments(&syntax.attrs);
 
+    // Second pass: parse components and resolve their parameter structs
     for item in &syntax.items {
         if let Item::Struct(item_struct) = item {
-            if let Some(metadata) = parse_component_struct(item_struct, path, &module_docs) {
+            if let Some(metadata) =
+                parse_component_struct(item_struct, path, &module_docs, &all_structs)
+            {
                 components.push(metadata);
             }
         }
@@ -60,6 +72,7 @@ fn parse_component_struct(
     item: &ItemStruct,
     source_path: &Path,
     module_docs: &str,
+    all_structs: &std::collections::HashMap<String, &ItemStruct>,
 ) -> Option<ComponentDocMetadata> {
     // Only process structs with ComponentIO derive
     if !has_component_io_derive(&item.attrs) {
@@ -106,11 +119,21 @@ fn parse_component_struct(
         }
     }
 
-    // Parse struct fields as parameters
+    // Parse struct fields and resolve parameter structs
     if let Fields::Named(fields) = &item.fields {
         for field in &fields.named {
-            if let Some(param) = parse_parameter_field(field) {
-                metadata.parameters.push(param);
+            let field_type = type_to_string(&field.ty);
+
+            // Check if this field's type is a *Parameters struct we can expand
+            if let Some(params_struct) = all_structs.get(&field_type) {
+                // Extract fields from the parameters struct
+                if let Fields::Named(param_fields) = &params_struct.fields {
+                    for param_field in &param_fields.named {
+                        if let Some(param) = parse_parameter_field(param_field) {
+                            metadata.parameters.push(param);
+                        }
+                    }
+                }
             }
         }
     }

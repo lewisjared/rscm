@@ -30,8 +30,28 @@
   "states": [],
   "parameters": [
     {
-      "name": "parameters",
-      "type": "TwoLayerComponentParameters"
+      "name": "lambda0",
+      "type": "FloatValue"
+    },
+    {
+      "name": "a",
+      "type": "FloatValue"
+    },
+    {
+      "name": "efficacy",
+      "type": "FloatValue"
+    },
+    {
+      "name": "eta",
+      "type": "FloatValue"
+    },
+    {
+      "name": "heat_capacity_surface",
+      "type": "FloatValue"
+    },
+    {
+      "name": "heat_capacity_deep",
+      "type": "FloatValue"
     }
   ],
   "source_file": "crates/rscm-two-layer/src/component.rs"
