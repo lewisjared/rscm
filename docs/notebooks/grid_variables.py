@@ -29,11 +29,11 @@
 #
 # RSCM provides three grid types to capture this:
 #
-# | Grid Type       | Regions                  | Use Case                               | # noqa: E501
-# |-----------------|--------------------------|----------------------------------------| # noqa: E501
-# | **Scalar**      | 1 (global)               | Well-mixed quantities, global averages | # noqa: E501
-# | **Hemispheric** | 2 (Northern/Southern)    | Latitudinal gradients                  | # noqa: E501
-# | **FourBox**     | 4 (NO/NL/SO/SL)          | MAGICC-style ocean-land resolution     | # noqa: E501
+# | Grid Type       | Regions              | Use Case                    |
+# |-----------------|----------------------|-----------------------------|
+# | **Scalar**      | 1 (global)           | Well-mixed, global averages |
+# | **Hemispheric** | 2 (Northern/Southern)| Latitudinal gradients       |
+# | **FourBox**     | 4 (NO/NL/SO/SL)      | MAGICC-style ocean-land     |
 #
 # ## Related Resources
 #

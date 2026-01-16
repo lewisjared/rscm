@@ -152,7 +152,7 @@ data = results.get_timeseries_by_name("Output Variable")
 
 - [Key Concepts](key_concepts.md): Detailed explanation of core abstractions
 - [Spatial Grids](grids.md): Complete grid system documentation
-- [API Reference](api/): Full Python API documentation
+- [Python API](api/rscm/): Full API documentation
 
 ---
 

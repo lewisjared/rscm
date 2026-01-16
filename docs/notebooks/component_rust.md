@@ -15,7 +15,7 @@ Components are the building blocks of RSCM models. Each component:
 - [Components in Python](component_python.py): Creating components in Python
 - [Coupled Models](coupled_model.py): Combining multiple components
 - [Key Concepts](../key_concepts.md): Core RSCM architecture
-- [API Reference](../api/): Complete API documentation
+- [Python API](../api/rscm/): Complete API documentation
 
 ## Creating a Component
 
