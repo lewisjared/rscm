@@ -13,6 +13,6 @@ See https://oprypin.github.io/mkdocs-literate-nav/
 * [Key Concepts](key_concepts.md)
 * [Components](components/index.md)
   * components/*.md
-* [API reference](api/rscm/index.md)
+* [API reference](api/rscm/)
 * [Development](developers/index.md)
 * [Changelog](changelog.md)
