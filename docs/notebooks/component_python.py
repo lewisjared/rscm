@@ -143,7 +143,7 @@ scale_component = ScaleComponent(scale_factor=3, scale_year=2015)
 
 # %%
 for defn in scale_component.definitions():
-    print(f"  {defn.requirement_type}: {defn.name} [{defn.units}]")
+    print(f"  {defn.requirement_type}: {defn.name} [{defn.unit}]")
 
 # %% [markdown]
 # ## Wrapping for Rust Integration
@@ -289,7 +289,7 @@ regional = RegionalComponent(sensitivity=0.5)
 # Check the auto-generated definitions
 for defn in regional.definitions():
     grid = defn.grid_type
-    print(f"  {defn.requirement_type.name}: {defn.name} [{defn.units}] ({grid})")
+    print(f"  {defn.requirement_type.name}: {defn.name} [{defn.unit}] ({grid})")
 
 # %% [markdown]
 # ## StateValue: Understanding Component Outputs

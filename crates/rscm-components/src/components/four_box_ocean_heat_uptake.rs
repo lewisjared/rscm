@@ -141,6 +141,7 @@ impl Component for FourBoxOceanHeatUptakeComponent {
 mod tests {
     use super::*;
     use numpy::array;
+    use rscm_core::spatial::SpatialGrid;
     use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
     use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};

@@ -125,14 +125,15 @@ class GridType(Enum):
 
 class RequirementDefinition:
     name: str
-    units: str
+    # TODO: fix naming inconsistency between 'unit' and 'units'
+    unit: str
     requirement_type: RequirementType
     grid_type: GridType
 
     def __init__(
         self,
         name: str,
-        units: str,
+        unit: str,
         requirement_type: RequirementType,
         grid_type: GridType = GridType.Scalar,
     ): ...
