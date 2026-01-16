@@ -392,8 +392,10 @@ impl PyStateValue {
     /// Convert to a scalar value, aggregating grid values if necessary
     ///
     /// For Scalar: returns the value directly
-    /// For FourBox: returns the mean of all 4 regional values
-    /// For Hemispheric: returns the mean of both hemispheres
+    /// For FourBox: returns the arithmetic mean of all 4 regional values
+    ///              (sum of all regions divided by 4, giving equal weight to each region)
+    /// For Hemispheric: returns the arithmetic mean of both hemispheres
+    ///                  (sum of northern and southern divided by 2, giving equal weight to each)
     fn to_scalar(&self) -> FloatValue {
         self.0.to_scalar()
     }

@@ -13,17 +13,24 @@
 # ---
 
 # %% [markdown]
-# # Coupled models
+# # Coupled Models
 #
-# When modelling a complex system
-# often you need more than one component coupled together.
-# Each component will model a particular aspect of the Earth System
-# using a set of equations with some known inputs and outputs.
-# These inputs can come from other components or prescribed as
-# exogenous variables if not components produce that variable as output.
+# This notebook demonstrates how to build coupled climate models by combining
+# multiple components that exchange state information.
 #
-# Typically, a model consists of more than one component.
-# These components will interact with each other by passing state amongst them.
+# ## Overview
+#
+# When modelling a complex system, you typically need multiple components
+# coupled together. Each component models a particular aspect of the Earth System
+# using a set of equations with known inputs and outputs. These inputs can come
+# from other components or be prescribed as exogenous variables.
+#
+# ## Related Resources
+#
+# - [Components in Python](component_python.py): Creating Python components
+# - [Components in Rust](component_rust.md): Creating Rust components
+# - [Key Concepts](../key_concepts.md): Core RSCM architecture
+# - [State Serialisation](state_serialisation.py): Saving and loading model state
 
 
 # %%
@@ -44,12 +51,12 @@ from rscm.core import (
 )
 
 # %% [markdown]
-# ## Building the model
+# ## Building a Model
 #
-# The `ModelBuilder` class can be used to build up a coupled model.
-# This builder class captures the requirements for the model including components,
-# time axis and exogenous variables before creating a concrete model.
-# This makes it easier to share model setups and extend them if needed.
+# The `ModelBuilder` class constructs coupled models from components.
+# It captures the model's requirements (components, time axis, exogenous variables)
+# before creating a concrete model. This pattern makes it easy to share and
+# extend model configurations.
 
 # %%
 model_builder = ModelBuilder()
@@ -83,19 +90,21 @@ model_builder.with_time_axis(time_axis)
 #
 # A model consists of one or more components.
 #
-# Below we create a model that consists of a basic carbon cycle
-# and a CO2 ERF calculation.
-# The CO2 ERF component calculates the radiative forcing of CO2
-# modified CO2 concentrations from the Carbon Cycle component.
+# Components can be implemented in either Rust (for performance)
+# or Python (for rapid prototyping).
+# See [Components in Rust](component_rust.md) and
+# [Components in Python](component_python.py) for implementation details.
+#
+# Below we create a model with a basic carbon cycle and CO2 ERF calculation.
+# The CO2 ERF component calculates the radiative forcing based on CO2
+# concentrations from the Carbon Cycle component.
 
 # %%
-# Some parameters for the components
-# We don't have a cononical way of dealing with parameters yet.
-# Ideally they should be decoupled from describing how the components interact
+# Component parameters
 tau = 20.3
 conc_pi = 280.0
 erf_2xco2 = 4.0
-alpha_temperature = 0.0  # Have no temperature feedback
+alpha_temperature = 0.0  # No temperature feedback
 
 # %%
 co2_erf_component = CO2ERFBuilder.from_parameters(
@@ -111,8 +120,12 @@ model_builder.with_rust_component(carbon_cycle_component).with_rust_component(
 )
 
 # %% [markdown]
-# ## Exogenous variables
+# ## Exogenous Variables
 #
+# Variables that are not produced by any component must be provided as
+# exogenous (external) data.
+# Each exogenous variable is a `Timeseries` with values, time axis, units,
+# and interpolation strategy.
 
 # %%
 # model the CO2 emissions as a heaviside function at step_year
@@ -143,8 +156,7 @@ emissions = Timeseries(
 plt.plot(emissions.time_axis.values(), emissions.values())
 
 # %%
-# Post interpolation onto the time_axis of the model
-# TODO
+# Interpolation onto the model time_axis happens automatically during solve()
 
 # %%
 surface_temp = Timeseries(
@@ -155,8 +167,6 @@ surface_temp = Timeseries(
 )
 
 # %%
-# TODO: Figure out how to make a nested timeseries.
-#  i.e. Emissions|CO2 = Emissions|CO2|Anthropogenic + Emissions|CO2|LULUCF
 model_builder.with_exogenous_variable(
     "Surface Temperature", surface_temp
 ).with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
@@ -164,12 +174,10 @@ model_builder.with_exogenous_variable(
 # %% [markdown]
 # ## Initial Values
 #
-# The Carbon Cycle component is a coupled set of ordinary differential equations
-# that are solved as an initial value problem.
-# In order to solve these equations the state ot t=0 must be known.
-# For later time steps the state from the previous time step is used
-#
-# This step might be refactored to be included in the component builder.
+# Components that track state (using `#[states(...)]` in Rust or `State()`
+# in Python) require initial values.
+# These values are used at the first timestep;
+# subsequent timesteps use the state from the previous step.
 
 # %%
 initial_state = {
@@ -181,16 +189,12 @@ initial_state = {
 model_builder.with_initial_values(initial_state)
 
 # %% [markdown]
-# ## Build the model
+# ## Build the Model
 #
-# We can now build the model.
-# This step generates a directed graph of the relationships between the components.
-# This graph is then used by the model to determine the order in which
-# it should solve the components.
-# If any required information is missing then this step will fail
-# with an exceptions which explains what it required.
-#
-# Often additional exogenous data is required.
+# Building the model generates a directed graph of component relationships.
+# The model uses this graph to determine the solve order via breadth-first search.
+# If any required information is missing, the build step will fail with an
+# exception explaining what is needed.
 #
 
 # %%
@@ -294,8 +298,17 @@ as_scmrun(model.timeseries()).filter(variable="Cumulative *", keep=False).line_p
 )
 
 # %% [markdown]
-# ## Features to add
+# ## Summary
 #
-# * Hierachy of timeseries / n box timeseries
-# * Better hinting of required parameters
-# * Parameter handling
+# This notebook demonstrated how to:
+#
+# 1. Create a `ModelBuilder` with a time axis
+# 2. Add Rust components with parameters
+# 3. Provide exogenous variables as `Timeseries` objects
+# 4. Set initial values for state variables
+# 5. Build and run the model
+# 6. Extract results as `TimeseriesCollection`
+#
+# For more details on creating custom components, see the
+# [Components in Python](component_python.py) and
+# [Components in Rust](component_rust.md) guides.

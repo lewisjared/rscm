@@ -143,7 +143,7 @@ scale_component = ScaleComponent(scale_factor=3, scale_year=2015)
 
 # %%
 for defn in scale_component.definitions():
-    print(f"  {defn.requirement_type.name}: {defn.name} [{defn.units}]")
+    print(f"  {defn.requirement_type}: {defn.name} [{defn.units}]")
 
 # %% [markdown]
 # ## Wrapping for Rust Integration
