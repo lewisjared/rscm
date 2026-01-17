@@ -24,8 +24,8 @@ class TwoLayerParams(TypedDict):
 class TwoLayerBuilder(ComponentBuilder):
     """Two-layer energy balance model component implementation."""
 
-    @staticmethod
-    def from_parameters(parameters: TwoLayerParams) -> TwoLayerBuilder:
+    @classmethod
+    def from_parameters(cls, parameters: TwoLayerParams) -> TwoLayerBuilder:
         """Create a builder from a parameter dictionary."""
         ...
     def build(self) -> RustComponent:

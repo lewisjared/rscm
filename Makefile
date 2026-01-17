@@ -81,6 +81,7 @@ docs-metadata: ## Generate component metadata JSON and Python type stubs from Ru
 		--output docs/component_metadata/ \
 		--generate-stubs \
 		--stubs-output python/rscm/_lib/
+	uv run ruff format python/rscm/_lib/*.pyi
 
 .PHONY: docs
 docs: build-dev docs-metadata  ## build the docs

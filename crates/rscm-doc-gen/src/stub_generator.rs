@@ -185,9 +185,9 @@ fn generate_builder_class(
 
     // Generate from_parameters method with proper signature
     if !component.parameters.is_empty() {
-        lines.push(format!("    @staticmethod"));
+        lines.push(format!("    @classmethod"));
         lines.push(format!(
-            "    def from_parameters(parameters: {}) -> {}:",
+            "    def from_parameters(cls, parameters: {}) -> {}:",
             typeddict_name, builder_name
         ));
         lines.push(format!(

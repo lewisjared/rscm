@@ -22,9 +22,9 @@ class OceanSurfacePartialPressureParams(TypedDict):
 class OceanSurfacePartialPressureBuilder(ComponentBuilder):
     """Calculate partial pressure of |CO2| at the ocean's surface"""
 
-    @staticmethod
+    @classmethod
     def from_parameters(
-        parameters: OceanSurfacePartialPressureParams,
+        cls, parameters: OceanSurfacePartialPressureParams
     ) -> OceanSurfacePartialPressureBuilder:
         """Create a builder from a parameter dictionary."""
         ...

@@ -245,14 +245,25 @@ class ComponentBuilder(Protocol):
     """A component of the model that can be solved"""
 
     @classmethod
-    def from_parameters(cls: type[T], parameters: dict[str, F]) -> T:
+    def from_parameters(cls: type[T], parameters: Any) -> T:
         """
-        Create a builder object from parameters
+        Create a builder object from parameters.
+
+        Concrete implementations may use specific TypedDict types for parameters
+        to provide type checking, while generic usage accepts dict[str, float].
+
+        Parameters
+        ----------
+
+        Parameters
+        ----------
+            Component parameters as a dict or TypedDict
 
         Returns
         -------
         Builder that can create a Component
         """
+
     def build(self) -> RustComponent:
         """
         Create a concrete component

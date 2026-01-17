@@ -20,9 +20,9 @@ class FourBoxOceanHeatUptakeParams(TypedDict):
 class FourBoxOceanHeatUptakeBuilder(ComponentBuilder):
     """Four-box ocean heat uptake component"""
 
-    @staticmethod
+    @classmethod
     def from_parameters(
-        parameters: FourBoxOceanHeatUptakeParams,
+        cls, parameters: FourBoxOceanHeatUptakeParams
     ) -> FourBoxOceanHeatUptakeBuilder:
         """Create a builder from a parameter dictionary."""
         ...
@@ -43,8 +43,8 @@ class CarbonCycleParams(TypedDict):
 class CarbonCycleBuilder(ComponentBuilder):
     """Carbon cycle component"""
 
-    @staticmethod
-    def from_parameters(parameters: CarbonCycleParams) -> CarbonCycleBuilder:
+    @classmethod
+    def from_parameters(cls, parameters: CarbonCycleParams) -> CarbonCycleBuilder:
         """Create a builder from a parameter dictionary."""
         ...
     def build(self) -> RustComponent:
@@ -62,8 +62,8 @@ class CO2ERFParams(TypedDict):
 class CO2ERFBuilder(ComponentBuilder):
     """CO2 Effective Radiative Forcing component"""
 
-    @staticmethod
-    def from_parameters(parameters: CO2ERFParams) -> CO2ERFBuilder:
+    @classmethod
+    def from_parameters(cls, parameters: CO2ERFParams) -> CO2ERFBuilder:
         """Create a builder from a parameter dictionary."""
         ...
     def build(self) -> RustComponent:
