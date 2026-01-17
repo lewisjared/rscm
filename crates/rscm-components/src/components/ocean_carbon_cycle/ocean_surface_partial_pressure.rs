@@ -105,6 +105,7 @@ pub struct OceanSurfacePartialPressureParameters {
 /// [`joos_et_al_2001_feedbacks`]: https://doi.org/10.1029/2000GB001375
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["ocean", "carbon-cycle", "magicc", "experimental"], category = "Ocean Carbon Cycle")]
+#[parameters(OceanSurfacePartialPressureParameters)]
 #[inputs(
     sea_surface_temperature { name = "Sea Surface Temperature", unit = "K" },
     dissolved_inorganic_carbon { name = "Dissolved Inorganic Carbon", unit = "micromol / kg" },

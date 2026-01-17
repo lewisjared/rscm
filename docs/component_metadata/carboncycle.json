@@ -49,22 +49,24 @@
   "parameters": [
     {
       "name": "tau",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "yr",
       "description": "Timescale of the box's response\nunit: yr"
     },
     {
       "name": "conc_pi",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "ppm",
       "description": "Pre-industrial atmospheric CO2 concentration\nunit: ppm"
     },
     {
       "name": "alpha_temperature",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "1 / K",
       "description": "Sensitivity of lifetime to changes in global-mean temperature\nunit: 1 / K"
-    },
-    {
-      "name": "step_size",
-      "type": "FloatValue"
     }
   ],
   "source_file": "crates/rscm-components/src/components/carbon_cycle.rs"

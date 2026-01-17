@@ -14,6 +14,7 @@
 mod extractor;
 mod parser;
 mod schema;
+mod stub_generator;
 
 use clap::Parser;
 use std::fs;
@@ -34,6 +35,14 @@ struct Args {
     /// Output directory for JSON files
     #[arg(short, long)]
     output: PathBuf,
+
+    /// Generate Python type stubs (.pyi files)
+    #[arg(long)]
+    generate_stubs: bool,
+
+    /// Output directory for Python type stubs
+    #[arg(long)]
+    stubs_output: Option<PathBuf>,
 
     /// Print parsed components (verbose mode)
     #[arg(short, long)]
@@ -127,6 +136,32 @@ fn main() {
         all_components.len(),
         args.output.display()
     );
+
+    // Generate Python type stubs if requested
+    if args.generate_stubs {
+        let stubs_output = args
+            .stubs_output
+            .unwrap_or_else(|| PathBuf::from("python/rscm/_lib"));
+
+        if let Err(e) = fs::create_dir_all(&stubs_output) {
+            eprintln!("Failed to create stubs output directory: {}", e);
+            std::process::exit(1);
+        }
+
+        match stub_generator::generate_stubs(&all_components, &stubs_output) {
+            Ok(_) => {
+                println!(
+                    "Generated {} Python stub files in {}",
+                    all_components.len(),
+                    stubs_output.display()
+                );
+            }
+            Err(e) => {
+                eprintln!("Failed to generate Python stubs: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
 }
 
 /// Convert an absolute path to a workspace-relative path

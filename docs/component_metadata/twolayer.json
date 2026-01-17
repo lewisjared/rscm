@@ -3,7 +3,7 @@
   "name": "TwoLayer",
   "module_path": "rscm_two_layer::component",
   "language": "rust",
-  "description": "Two-layer energy balance climate model component\n\nImplements a two-layer energy balance model following Held et al. (2010).\nThe model represents the climate system as two coupled thermal reservoirs:\n\n- **Surface layer**: Fast-responding mixed layer ocean + atmosphere\n- **Deep layer**: Slow-responding deep ocean\n\n# Governing Equations\n\nThe model solves the following coupled ODEs:\n\n\n\n\n\nwhere:\n\n| Symbol | Description | Units |\n|--------|-------------|-------|\n| $T_s$ | Surface temperature anomaly | K |\n| $T_d$ | Deep ocean temperature anomaly | K |\n| $F$ | Effective radiative forcing | W/m² |\n| $\\lambda(T_s) = \\lambda_0 - a T_s$ | State-dependent feedback | W/(m² K) |\n| $\\varepsilon$ | Ocean heat uptake efficacy | dimensionless |\n| $\\eta$ | Heat exchange coefficient | W/(m² K) |\n| $C_s$ | Surface layer heat capacity | W yr/(m² K) |\n| $C_d$ | Deep ocean heat capacity | W yr/(m² K) |\n\n# Example\n\n```rust\nuse rscm_two_layer::{TwoLayer, TwoLayerParameters};\n\nlet component = TwoLayer::from_parameters(TwoLayerParameters {\n    lambda0: 1.0,              // Climate feedback parameter\n    a: 0.0,                    // Linear model (no state-dependence)\n    efficacy: 1.0,             // Standard efficacy\n    eta: 0.7,                  // Heat exchange coefficient\n    heat_capacity_surface: 8.0, // ~80m mixed layer\n    heat_capacity_deep: 100.0,  // Deep ocean\n});\n```\n\n# References\n\nHeld, I. M., Winton, M., Takahashi, K., Delworth, T., Zeng, F., & Vallis, G. K. (2010).\nProbing the fast and slow components of global warming by returning abruptly to\npreindustrial forcing. Journal of Climate, 23(9), 2418-2427.",
+  "description": "Two-layer energy balance model component implementation.\n\nThis module contains the core [`TwoLayer`] component and its associated\n[`TwoLayerParameters`] configuration. The component integrates with the\nRSCM framework via the [`Component`] trait.\n\nSee the [crate-level documentation](crate) for scientific background and usage examples.\n\nTwo-layer energy balance climate model component\n\nImplements a two-layer energy balance model following Held et al. (2010).\nThe model represents the climate system as two coupled thermal reservoirs:\n\n- **Surface layer**: Fast-responding mixed layer ocean + atmosphere\n- **Deep layer**: Slow-responding deep ocean\n\n# Governing Equations\n\nThe model solves the following coupled ODEs:\n\n\n\n\n\nwhere:\n\n| Symbol | Description | Units |\n|--------|-------------|-------|\n| $T_s$ | Surface temperature anomaly | K |\n| $T_d$ | Deep ocean temperature anomaly | K |\n| $F$ | Effective radiative forcing | W/m² |\n| $\\lambda(T_s) = \\lambda_0 - a T_s$ | State-dependent feedback | W/(m² K) |\n| $\\varepsilon$ | Ocean heat uptake efficacy | dimensionless |\n| $\\eta$ | Heat exchange coefficient | W/(m² K) |\n| $C_s$ | Surface layer heat capacity | W yr/(m² K) |\n| $C_d$ | Deep ocean heat capacity | W yr/(m² K) |\n\n# Example\n\n```rust\nuse rscm_two_layer::{TwoLayer, TwoLayerParameters};\n\nlet component = TwoLayer::from_parameters(TwoLayerParameters {\n    lambda0: 1.0,              // Climate feedback parameter\n    a: 0.0,                    // Linear model (no state-dependence)\n    efficacy: 1.0,             // Standard efficacy\n    eta: 0.7,                  // Heat exchange coefficient\n    heat_capacity_surface: 8.0, // ~80m mixed layer\n    heat_capacity_deep: 100.0,  // Deep ocean\n});\n```\n\n# References\n\nHeld, I. M., Winton, M., Takahashi, K., Delworth, T., Zeng, F., & Vallis, G. K. (2010).\nProbing the fast and slow components of global warming by returning abruptly to\npreindustrial forcing. Journal of Climate, 23(9), 2418-2427.",
   "equations": "$$\nC_s \\frac{dT_s}{dt} = F - \\lambda(T_s) T_s - \\varepsilon \\eta (T_s - T_d)\n$$\n\n$$\nC_d \\frac{dT_d}{dt} = \\eta (T_s - T_d)\n$$",
   "category": "Temperature",
   "tags": [
@@ -32,32 +32,44 @@
   "parameters": [
     {
       "name": "lambda0",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "W/(m² K)",
       "description": "Climate feedback parameter at zero warming\n\nUnits: W/(m² K)\n\nControls the strength of radiative feedback. Higher values mean stronger\nnegative feedback and lower climate sensitivity. Typical values: 0.8-1.5"
     },
     {
       "name": "a",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "W/(m² K²)",
       "description": "Nonlinear feedback coefficient\n\nUnits: W/(m² K²)\n\nRepresents state-dependence of climate feedbacks. Positive values indicate\nthat feedback weakens (sensitivity increases) as temperature rises.\nSet to 0 for a linear model. Typical values: 0-0.1"
     },
     {
       "name": "efficacy",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "dimensionless",
       "description": "Ocean heat uptake efficacy\n\nUnits: dimensionless\n\nRatio of the feedback parameter for ocean heat uptake to the equilibrium\nfeedback parameter. Values > 1 indicate that ocean heat uptake is more\neffective at reducing surface warming than the equilibrium response suggests.\nTypical values: 1.0-1.8"
     },
     {
       "name": "eta",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "W/(m² K)",
       "description": "Heat exchange coefficient between surface and deep layers\n\nUnits: W/(m² K)\n\nControls the rate of heat transfer from the surface to the deep ocean.\nHigher values mean faster equilibration between layers.\nTypical values: 0.5-1.0"
     },
     {
       "name": "heat_capacity_surface",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "W yr/(m² K)",
       "description": "Heat capacity of the surface layer (mixed layer ocean + atmosphere)\n\nUnits: W yr/(m² K)\n\nDetermines the thermal inertia of the fast-responding surface layer.\nTypical values: 5-15 (corresponding to ~50-150m mixed layer depth)"
     },
     {
       "name": "heat_capacity_deep",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "W yr/(m² K)",
       "description": "Heat capacity of the deep ocean layer\n\nUnits: W yr/(m² K)\n\nDetermines the thermal inertia of the slow-responding deep ocean.\nTypical values: 50-200 (much larger than surface layer)"
     }
   ],

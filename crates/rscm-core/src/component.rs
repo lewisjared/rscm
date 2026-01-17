@@ -196,6 +196,27 @@ pub struct VariableMetadata {
     pub description: String,
 }
 
+/// Metadata about a component parameter
+///
+/// Used for documentation generation and Python type stub generation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParameterMetadata {
+    /// Parameter name (e.g., "erf_2xco2")
+    pub name: String,
+    /// Rust type (e.g., "f64", "FloatValue")
+    pub rust_type: String,
+    /// Python type for type stubs (e.g., "float")
+    pub python_type: String,
+    /// Physical units (e.g., "W / m^2")
+    pub unit: String,
+    /// Description from doc comments
+    pub description: String,
+    /// Default value (if available)
+    pub default: Option<String>,
+    /// Nested fields for complex types (if applicable)
+    pub nested_fields: Option<Vec<ParameterMetadata>>,
+}
+
 /// Metadata about a component for documentation generation
 ///
 /// This struct contains all the information needed to generate
@@ -215,6 +236,8 @@ pub struct ComponentMetadata {
     pub outputs: Vec<VariableMetadata>,
     /// State variable definitions
     pub states: Vec<VariableMetadata>,
+    /// Parameter definitions for building components from Python
+    pub parameters: Vec<ParameterMetadata>,
 }
 
 /// Component of a reduced complexity climate model

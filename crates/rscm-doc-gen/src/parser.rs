@@ -101,6 +101,7 @@ fn parse_component_struct(
     };
 
     // Parse struct-level attributes
+    let mut parameters_struct_name: Option<String> = None;
     for attr in &item.attrs {
         if attr.path().is_ident("component") {
             parse_component_attr(attr, &mut metadata);
@@ -116,22 +117,19 @@ fn parse_component_struct(
             if let Ok(vars) = parse_io_attr(attr) {
                 metadata.states = vars;
             }
+        } else if attr.path().is_ident("parameters") {
+            parameters_struct_name = parse_parameters_attr(attr);
         }
     }
 
     // Parse struct fields and resolve parameter structs
-    if let Fields::Named(fields) = &item.fields {
-        for field in &fields.named {
-            let field_type = type_to_string(&field.ty);
-
-            // Check if this field's type is a *Parameters struct we can expand
-            if let Some(params_struct) = all_structs.get(&field_type) {
-                // Extract fields from the parameters struct
-                if let Fields::Named(param_fields) = &params_struct.fields {
-                    for param_field in &param_fields.named {
-                        if let Some(param) = parse_parameter_field(param_field) {
-                            metadata.parameters.push(param);
-                        }
+    if let Some(params_struct_name) = parameters_struct_name {
+        // Use the explicitly specified parameters struct from #[parameters(...)]
+        if let Some(params_struct) = all_structs.get(&params_struct_name) {
+            if let Fields::Named(param_fields) = &params_struct.fields {
+                for param_field in &param_fields.named {
+                    if let Some(param) = parse_parameter_field(param_field) {
+                        metadata.parameters.push(param);
                     }
                 }
             }
@@ -139,6 +137,20 @@ fn parse_component_struct(
     }
 
     Some(metadata)
+}
+
+/// Parse #[parameters(StructName)] attribute
+fn parse_parameters_attr(attr: &Attribute) -> Option<String> {
+    if let Meta::List(MetaList { tokens, .. }) = &attr.meta {
+        let tokens_str = tokens.to_string();
+        // Extract the struct name from the tokens
+        // Format: StructName
+        let name = tokens_str.trim().to_string();
+        if !name.is_empty() {
+            return Some(name);
+        }
+    }
+    None
 }
 
 /// Parse #[component(tags = [...], category = "...")] attribute
@@ -246,16 +258,65 @@ fn parse_io_attr(attr: &Attribute) -> Result<Vec<VariableMetadata>, ()> {
 /// Parse a struct field as a parameter
 fn parse_parameter_field(field: &syn::Field) -> Option<ParameterMetadata> {
     let name = field.ident.as_ref()?.to_string();
-    let param_type = type_to_string(&field.ty);
+    let rust_type = type_to_string(&field.ty);
     let docs = extract_doc_comments(&field.attrs);
+
+    // Extract unit from doc comments
+    // Look for patterns like "unit: W / m^2" or "Units: ppm"
+    let unit = extract_unit_from_docs(&docs);
+
+    // Map Rust types to Python types
+    let python_type = rust_type_to_python_type(&rust_type);
 
     Some(ParameterMetadata {
         name,
-        param_type,
-        unit: String::new(),
+        rust_type,
+        python_type,
+        unit,
         description: docs,
         default: None,
+        nested_fields: None,
     })
+}
+
+/// Extract unit information from documentation string
+/// Looks for patterns like "unit: W / m^2" or "Units: ppm"
+fn extract_unit_from_docs(docs: &str) -> String {
+    // Look for patterns like "unit: ..." or "Units: ..."
+    for line in docs.lines() {
+        let line_lower = line.to_lowercase();
+        if line_lower.contains("unit") {
+            // Try to extract the unit part after "unit:"
+            if let Some(idx) = line_lower.find("unit") {
+                let after_unit = &line[idx + 4..];
+                if let Some(colon_idx) = after_unit.find(':') {
+                    let unit_part = &after_unit[colon_idx + 1..].trim();
+                    // Remove common punctuation and return
+                    return unit_part
+                        .trim_end_matches(',')
+                        .trim_end_matches('.')
+                        .to_string();
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+/// Map Rust types to Python types for type stubs
+fn rust_type_to_python_type(rust_type: &str) -> String {
+    match rust_type {
+        "f64" => "float".to_string(),
+        "f32" => "float".to_string(),
+        "FloatValue" => "float".to_string(),
+        "i32" => "int".to_string(),
+        "i64" => "int".to_string(),
+        "bool" => "bool".to_string(),
+        ty if ty.starts_with("[f64;") => "list[float]".to_string(),
+        ty if ty.starts_with("[f32;") => "list[float]".to_string(),
+        ty if ty.contains("Vec<") => "list".to_string(),
+        _ => "Any".to_string(), // Default for unknown types
+    }
 }
 
 /// Convert a syn::Type to a string representation

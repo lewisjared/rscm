@@ -75,10 +75,12 @@ clean:
 
 
 .PHONY: docs-metadata
-docs-metadata: ## Generate component metadata JSON from Rust sources
+docs-metadata: ## Generate component metadata JSON and Python type stubs from Rust sources
 	cargo run -p rscm-doc-gen -- \
 		--crates crates/rscm-components,crates/rscm-two-layer \
-		--output docs/component_metadata/
+		--output docs/component_metadata/ \
+		--generate-stubs \
+		--stubs-output python/rscm/_lib/
 
 .PHONY: docs
 docs: build-dev docs-metadata  ## build the docs

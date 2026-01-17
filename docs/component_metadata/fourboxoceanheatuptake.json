@@ -32,22 +32,26 @@
   "parameters": [
     {
       "name": "northern_ocean_ratio",
-      "type": "f64",
+      "rust_type": "f64",
+      "python_type": "float",
       "description": "Ratio of Northern Ocean uptake to global ERF (regional / global)"
     },
     {
       "name": "northern_land_ratio",
-      "type": "f64",
+      "rust_type": "f64",
+      "python_type": "float",
       "description": "Ratio of Northern Land uptake to global ERF (regional / global)"
     },
     {
       "name": "southern_ocean_ratio",
-      "type": "f64",
+      "rust_type": "f64",
+      "python_type": "float",
       "description": "Ratio of Southern Ocean uptake to global ERF (regional / global)"
     },
     {
       "name": "southern_land_ratio",
-      "type": "f64",
+      "rust_type": "f64",
+      "python_type": "float",
       "description": "Ratio of Southern Land uptake to global ERF (regional / global)"
     }
   ],

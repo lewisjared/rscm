@@ -26,8 +26,10 @@ pub struct ParameterMetadata {
     /// Parameter name
     pub name: String,
     /// Rust type (e.g., "f64", "SolverOptions")
-    #[serde(rename = "type")]
-    pub param_type: String,
+    pub rust_type: String,
+    /// Python type for type stubs (e.g., "float")
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub python_type: String,
     /// Physical units (if documented)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub unit: String,
@@ -37,6 +39,9 @@ pub struct ParameterMetadata {
     /// Default value (if any)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<String>,
+    /// Nested fields for complex types (if applicable)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested_fields: Option<Vec<ParameterMetadata>>,
 }
 
 /// Complete metadata for a component

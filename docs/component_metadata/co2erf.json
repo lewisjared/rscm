@@ -32,12 +32,16 @@
   "parameters": [
     {
       "name": "erf_2xco2",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "W / m^2",
       "description": "ERF due to a doubling of atmospheric CO2 concentrations\nunit: W / m^2"
     },
     {
       "name": "conc_pi",
-      "type": "FloatValue",
+      "rust_type": "FloatValue",
+      "python_type": "float",
+      "unit": "ppm",
       "description": "Pre-industrial atmospheric CO2 concentration\nunit: ppm"
     }
   ],

@@ -183,11 +183,12 @@ struct StateField {
     grid_type: String,
 }
 
-/// Component-level attributes (tags and category)
+/// Component-level attributes (tags, category, and parameters)
 #[derive(Default)]
 struct ComponentAttrs {
     tags: Vec<String>,
     category: Option<String>,
+    parameters_struct: Option<String>,
 }
 
 /// Parse `#[component(tags = ["tag1", "tag2"], category = "Category")]` attribute
@@ -249,14 +250,26 @@ fn parse_component_attr(attr: &Attribute) -> syn::Result<ComponentAttrs> {
     Ok(attrs)
 }
 
+/// Parse `#[parameters(StructName)]` attribute
+fn parse_parameters_attr(attr: &Attribute) -> syn::Result<String> {
+    let meta_list = attr.meta.require_list()?;
+    let struct_name: Ident = syn::parse2(meta_list.tokens.clone())?;
+    Ok(struct_name.to_string())
+}
+
 /// Extract component attributes from struct-level attributes
 fn extract_component_attrs(attrs: &[Attribute]) -> syn::Result<ComponentAttrs> {
+    let mut result = ComponentAttrs::default();
+
     for attr in attrs {
         if attr.path().is_ident("component") {
-            return parse_component_attr(attr);
+            result = parse_component_attr(attr)?;
+        } else if attr.path().is_ident("parameters") {
+            result.parameters_struct = Some(parse_parameters_attr(attr)?);
         }
     }
-    Ok(ComponentAttrs::default())
+
+    Ok(result)
 }
 
 /// Parse a struct-level attribute like `#[inputs(...)]` or `#[outputs(...)]`
@@ -344,6 +357,7 @@ fn output_type(grid: &str) -> TokenStream2 {
 /// - `#[states(field { name = "...", unit = "...", grid = "..." }, ...)]` - Declare state variables
 ///   (states appear in both Inputs and Outputs structs)
 /// - `#[component(tags = ["tag1", "tag2"], category = "Category Name")]` - Metadata for documentation
+/// - `#[parameters(ParameterStructName)]` - Associate a parameter struct for metadata generation
 ///
 /// Where `grid` can be: "Scalar" (default), "FourBox", or "Hemispheric"
 ///
@@ -354,7 +368,10 @@ fn output_type(grid: &str) -> TokenStream2 {
 /// - `FooOutputs` - Output struct with typed fields
 /// - `Foo::generated_definitions()` - Returns `Vec<RequirementDefinition>` for the Component trait
 /// - `Foo::component_metadata()` - Returns `ComponentMetadata` for documentation generation
-#[proc_macro_derive(ComponentIO, attributes(inputs, outputs, states, component))]
+#[proc_macro_derive(
+    ComponentIO,
+    attributes(inputs, outputs, states, component, parameters)
+)]
 pub fn derive_component_io(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let struct_name = &input.ident;
@@ -653,7 +670,7 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
 
             /// Returns metadata about this component for documentation generation
             ///
-            /// This includes the component's name, tags, category, and I/O definitions.
+            /// This includes the component's name, tags, category, I/O definitions, and parameters.
             pub fn component_metadata() -> ::rscm_core::component::ComponentMetadata {
                 ::rscm_core::component::ComponentMetadata {
                     name: #struct_name_str.to_string(),
@@ -662,6 +679,7 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
                     inputs: vec![#(#input_metadata),*],
                     outputs: vec![#(#output_metadata),*],
                     states: vec![#(#state_metadata),*],
+                    parameters: vec![],
                 }
             }
         }

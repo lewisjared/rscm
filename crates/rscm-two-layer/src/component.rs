@@ -144,6 +144,7 @@ pub struct TwoLayerParameters {
 /// preindustrial forcing. Journal of Climate, 23(9), 2418-2427.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["temperature", "ocean", "two-layer", "stable"], category = "Temperature")]
+#[parameters(TwoLayerParameters)]
 #[inputs(
     erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]

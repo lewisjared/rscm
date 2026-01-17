@@ -73,6 +73,7 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["temperature", "ocean", "regional", "four-box", "experimental"], category = "Ocean")]
+#[parameters(FourBoxOceanHeatUptakeParameters)]
 #[inputs(
     erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
 )]
