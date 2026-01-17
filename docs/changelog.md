@@ -1,3 +1,18 @@
+## rscm 0.4.0 (2026-01-17)
+
+### ⚠️ Breaking Changes ⚠️
+
+- Renamed components to remove the trailing "Component" suffix (e.g., `TwoLayerComponent` is now `TwoLayer`, `CarbonCycleComponent` is now `CarbonCycle`). ([#61](https://github.com/lewisjared/rscm/pulls/61))
+
+### Improvements
+
+- Added mermaid diagram rendering support in documentation. ([#61](https://github.com/lewisjared/rscm/pulls/61))
+
+### Improved Documentation
+
+- Expanded documentation with new tutorials for spatial grids, debugging, and scenario pipelines. Added cross-references from documentation pages to the Python API. ([#61](https://github.com/lewisjared/rscm/pulls/61))
+
+
 ## rscm 0.3.0 (2026-01-16)
 
 ### ⚠️ Breaking Changes ⚠️
