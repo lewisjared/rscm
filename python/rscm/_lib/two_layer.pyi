@@ -28,34 +28,34 @@ class TwoLayerBuilder(ComponentBuilder):
 
     where lambda(T_s) = lambda0 - a * T_s allows for state-dependent feedbacks.
 
-    Parameters
-    ----------
-    lambda0 : float
-        Climate feedback parameter at zero warming (W/(m^2 K)).
-        Controls the strength of radiative feedback. Higher values mean stronger
-        negative feedback and lower climate sensitivity. Typical values: 0.8-1.5
-    a : float
-        Nonlinear feedback coefficient (W/(m^2 K^2)).
-        Represents state-dependence of climate feedbacks. Positive values indicate
-        that feedback weakens (sensitivity increases) as temperature rises.
-        Set to 0 for a linear model. Typical values: 0-0.1
-    efficacy : float
-        Ocean heat uptake efficacy (dimensionless).
-        Ratio of the feedback parameter for ocean heat uptake to the equilibrium
-        feedback parameter. Values > 1 indicate that ocean heat uptake is more
-        effective at reducing surface warming. Typical values: 1.0-1.8
-    eta : float
-        Heat exchange coefficient between surface and deep layers (W/(m^2 K)).
-        Controls the rate of heat transfer from surface to deep ocean.
-        Higher values mean faster equilibration. Typical values: 0.5-1.0
-    heat_capacity_surface : float
-        Heat capacity of the surface layer (W yr/(m^2 K)).
-        Determines thermal inertia of the fast-responding layer.
-        Typical values: 5-15 (corresponding to ~50-150m mixed layer depth)
-    heat_capacity_deep : float
-        Heat capacity of the deep ocean layer (W yr/(m^2 K)).
-        Determines thermal inertia of the slow-responding deep ocean.
-        Typical values: 50-200 (much larger than surface layer)
+    # Parameters
+    # ----------
+    # lambda0 : float
+    #     Climate feedback parameter at zero warming (W/(m^2 K)).
+    #     Controls the strength of radiative feedback. Higher values mean stronger
+    #     negative feedback and lower climate sensitivity. Typical values: 0.8-1.5
+    # a : float
+    #     Nonlinear feedback coefficient (W/(m^2 K^2)).
+    #     Represents state-dependence of climate feedbacks. Positive values indicate
+    #     that feedback weakens (sensitivity increases) as temperature rises.
+    #     Set to 0 for a linear model. Typical values: 0-0.1
+    # efficacy : float
+    #     Ocean heat uptake efficacy (dimensionless).
+    #     Ratio of the feedback parameter for ocean heat uptake to the equilibrium
+    #     feedback parameter. Values > 1 indicate that ocean heat uptake is more
+    #     effective at reducing surface warming. Typical values: 1.0-1.8
+    # eta : float
+    #     Heat exchange coefficient between surface and deep layers (W/(m^2 K)).
+    #     Controls the rate of heat transfer from surface to deep ocean.
+    #     Higher values mean faster equilibration. Typical values: 0.5-1.0
+    # heat_capacity_surface : float
+    #     Heat capacity of the surface layer (W yr/(m^2 K)).
+    #     Determines thermal inertia of the fast-responding layer.
+    #     Typical values: 5-15 (corresponding to ~50-150m mixed layer depth)
+    # heat_capacity_deep : float
+    #     Heat capacity of the deep ocean layer (W yr/(m^2 K)).
+    #     Determines thermal inertia of the slow-responding deep ocean.
+    #     Typical values: 50-200 (much larger than surface layer)
 
     Inputs
     ------

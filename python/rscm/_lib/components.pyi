@@ -25,14 +25,14 @@ class CarbonCycleBuilder(ComponentBuilder):
     - Land uptake removes CO2 at a rate that depends on the concentration anomaly
     - The uptake rate is temperature-dependent
 
-    Parameters
-    ----------
-    tau : float
-        Timescale of the box's response (years).
-    conc_pi : float
-        Pre-industrial atmospheric CO2 concentration (ppm).
-    alpha_temperature : float
-        Sensitivity of lifetime to changes in global-mean temperature (1/K).
+    # Parameters
+    # ----------
+    # tau : float
+    #     Timescale of the box's response (years).
+    # conc_pi : float
+    #     Pre-industrial atmospheric CO2 concentration (ppm).
+    # alpha_temperature : float
+    #     Sensitivity of lifetime to changes in global-mean temperature (1/K).
 
     Inputs
     ------
@@ -79,14 +79,14 @@ class CO2ERFBuilder(ComponentBuilder):
     where ERF_2xCO2 is the forcing for a CO2 doubling, C is the current
     concentration, and C0 is the pre-industrial concentration.
 
-    Parameters
-    ----------
-    erf_2xco2 : float
-        ERF due to a doubling of atmospheric CO2 concentrations (W/m^2).
-        Typical value: 3.7 W/m^2.
-    conc_pi : float
-        Pre-industrial atmospheric CO2 concentration (ppm).
-        Typical value: 278 ppm.
+    # Parameters
+    # ----------
+    # erf_2xco2 : float
+    #     ERF due to a doubling of atmospheric CO2 concentrations (W/m^2).
+    #     Typical value: 3.7 W/m^2.
+    # conc_pi : float
+    #     Pre-industrial atmospheric CO2 concentration (ppm).
+    #     Typical value: 278 ppm.
 
     Inputs
     ------
@@ -125,16 +125,16 @@ class FourBoxOceanHeatUptakeBuilder(ComponentBuilder):
     The component demonstrates disaggregation from scalar to grid resolution.
     Regional uptake is calculated as: regional = global_ERF * ratio
 
-    Parameters
-    ----------
-    northern_ocean_ratio : float
-        Ratio of Northern Ocean uptake to global ERF. Default: 1.2
-    northern_land_ratio : float
-        Ratio of Northern Land uptake to global ERF. Default: 0.6
-    southern_ocean_ratio : float
-        Ratio of Southern Ocean uptake to global ERF. Default: 1.6
-    southern_land_ratio : float
-        Ratio of Southern Land uptake to global ERF. Default: 0.6
+    # Parameters
+    # ----------
+    # northern_ocean_ratio : float
+    #     Ratio of Northern Ocean uptake to global ERF. Default: 1.2
+    # northern_land_ratio : float
+    #     Ratio of Northern Land uptake to global ERF. Default: 0.6
+    # southern_ocean_ratio : float
+    #     Ratio of Southern Ocean uptake to global ERF. Default: 1.6
+    # southern_land_ratio : float
+    #     Ratio of Southern Land uptake to global ERF. Default: 0.6
 
     Note: Ratios must average to 1.0 for conservation.
 
