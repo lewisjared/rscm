@@ -42,6 +42,8 @@ extra_javascript:
   - https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js
   - https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js
   - javascripts/katex.js
+  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
+  - javascripts/mermaid.js
 
 plugins:
   # https://mkdocstrings.github.io/autorefs/
@@ -137,7 +139,11 @@ markdown_extensions:
   - pymdownx.snippets
   # Support more complicated indents etc.
   # https://facelessuser.github.io/pymdown-extensions/extensions/superfences/
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   # Tabbed sections (e.g. for our installation options)
   # https://facelessuser.github.io/pymdown-extensions/extensions/tabbed/
   - pymdownx.tabbed:

@@ -45,7 +45,7 @@ pub struct ComponentDocMetadata {
     /// JSON schema reference
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
-    /// Component struct name (e.g., "CarbonCycleComponent")
+    /// Component struct name (e.g., "CarbonCycle")
     pub name: String,
     /// Full module path (e.g., "rscm_components::components::carbon_cycle")
     pub module_path: String,

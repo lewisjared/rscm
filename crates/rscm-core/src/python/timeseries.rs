@@ -2,10 +2,10 @@ use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, NextStrategy, PreviousStrategy,
 };
-use crate::spatial::{ScalarGrid, ScalarRegion};
-use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
+use crate::spatial::{FourBoxGrid, HemisphericGrid, ScalarGrid, ScalarRegion};
+use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis, Timeseries};
 use numpy::ndarray::Axis;
-use numpy::{PyArray1, PyArrayMethods, ToPyArray as _};
+use numpy::{PyArray1, PyArray2, PyArrayMethods, ToPyArray as _};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::sync::Arc;
@@ -176,5 +176,77 @@ impl PyTimeseries {
 impl From<PyTimeseries> for Timeseries<FloatValue> {
     fn from(value: PyTimeseries) -> Self {
         value.0
+    }
+}
+
+/// Python wrapper for FourBox grid timeseries
+#[pyclass]
+#[pyo3(name = "FourBoxTimeseries")]
+pub struct PyFourBoxTimeseries(pub GridTimeseries<FloatValue, FourBoxGrid>);
+
+#[pymethods]
+impl PyFourBoxTimeseries {
+    fn __repr__(&self) -> String {
+        format!("<FourBoxTimeseries len={}>", self.0.len())
+    }
+
+    fn __len__(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Get all values as a 2D array with shape (n_times, 4)
+    fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<FloatValue>> {
+        self.0.values().to_pyarray(py)
+    }
+
+    #[getter]
+    fn latest(&self) -> usize {
+        self.0.latest()
+    }
+
+    #[getter]
+    fn units(&self) -> String {
+        self.0.units().to_string()
+    }
+
+    #[getter]
+    fn time_axis(&self) -> PyTimeAxis {
+        PyTimeAxis(self.0.time_axis())
+    }
+}
+
+/// Python wrapper for Hemispheric grid timeseries
+#[pyclass]
+#[pyo3(name = "HemisphericTimeseries")]
+pub struct PyHemisphericTimeseries(pub GridTimeseries<FloatValue, HemisphericGrid>);
+
+#[pymethods]
+impl PyHemisphericTimeseries {
+    fn __repr__(&self) -> String {
+        format!("<HemisphericTimeseries len={}>", self.0.len())
+    }
+
+    fn __len__(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Get all values as a 2D array with shape (n_times, 2)
+    fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<FloatValue>> {
+        self.0.values().to_pyarray(py)
+    }
+
+    #[getter]
+    fn latest(&self) -> usize {
+        self.0.latest()
+    }
+
+    #[getter]
+    fn units(&self) -> String {
+        self.0.units().to_string()
+    }
+
+    #[getter]
+    fn time_axis(&self) -> PyTimeAxis {
+        PyTimeAxis(self.0.time_axis())
     }
 }

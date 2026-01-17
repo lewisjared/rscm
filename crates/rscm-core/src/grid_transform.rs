@@ -1,8 +1,43 @@
-//! Grid transformation components for automatic grid conversion
+//! Grid transformation components for automatic spatial resolution conversion.
 //!
-//! These components are automatically inserted by the model builder when
-//! connecting components with different grid types. They perform the
-//! necessary aggregation to transform values from finer to coarser grids.
+//! When components with different spatial resolutions are connected in a model,
+//! the framework needs to aggregate values from finer grids to coarser grids.
+//! This module provides transformation components that are automatically inserted
+//! by the [`ModelBuilder`](crate::model::ModelBuilder) to handle these conversions.
+//!
+//! # Supported Transformations
+//!
+//! The framework supports aggregation from finer to coarser grids:
+//!
+//! | From | To | Transform Component |
+//! |------|-----|---------------------|
+//! | FourBox | Scalar | [`FourBoxToScalarTransform`] |
+//! | FourBox | Hemispheric | [`FourBoxToHemisphericTransform`] |
+//! | Hemispheric | Scalar | [`HemisphericToScalarTransform`] |
+//!
+//! Disaggregation (coarser to finer) is **not supported** because it requires
+//! additional assumptions about regional distribution that should be made
+//! explicitly by the user.
+//!
+//! # Aggregation Weights
+//!
+//! Each grid type defines weights that determine how regional values are combined:
+//!
+//! - **FourBox (MAGICC standard)**: Equal weights (0.25 each) for Northern Ocean,
+//!   Northern Land, Southern Ocean, Southern Land
+//! - **Hemispheric**: Equal weights (0.5 each) for Northern and Southern hemispheres
+//!
+//! Custom weights can be specified when creating transform components.
+//!
+//! # Variable Naming Convention
+//!
+//! When a component produces output at a finer resolution than a consumer expects,
+//! the transform component reads from a grid-suffixed variable name and writes
+//! to the base name:
+//!
+//! - `"Temperature|FourBox"` -> `"Temperature"` (FourBox to Scalar)
+//! - `"Temperature|FourBox"` -> `"Temperature|Hemispheric"` (FourBox to Hemispheric)
+//! - `"Temperature|Hemispheric"` -> `"Temperature"` (Hemispheric to Scalar)
 
 use crate::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
@@ -13,17 +48,34 @@ use crate::timeseries::Time;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Component that transforms grid values from FourBox to Scalar (global aggregation)
+/// Transforms four-box regional values to a global scalar via weighted aggregation.
 ///
-/// This component is automatically inserted by the model builder when a FourBox
-/// producer connects to a Scalar consumer.
+/// This component reads a variable with suffix `|FourBox` and outputs a scalar
+/// value computed as the weighted average of the four regional values.
+///
+/// # Automatic Insertion
+///
+/// The [`ModelBuilder`](crate::model::ModelBuilder) automatically inserts this
+/// transform when a component producing FourBox output is connected to a component
+/// expecting Scalar input.
+///
+/// # Weights
+///
+/// By default, uses MAGICC standard weights (equal 0.25 for each region).
+/// The global value is computed as:
+///
+/// $$
+/// T_{global} = \sum_{i} w_i \cdot T_i
+/// $$
+///
+/// where $w_i$ are the regional weights and $T_i$ are the regional values.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FourBoxToScalarTransform {
-    /// Name of the variable being transformed
+    /// Base variable name (without grid suffix)
     variable_name: String,
-    /// Unit of the variable
+    /// Physical units of the variable
     unit: String,
-    /// Grid weights for aggregation
+    /// Grid definition with aggregation weights
     grid: FourBoxGrid,
 }
 
@@ -86,14 +138,22 @@ impl Component for FourBoxToScalarTransform {
     }
 }
 
-/// Component that transforms grid values from FourBox to Hemispheric
+/// Transforms four-box regional values to hemispheric values.
+///
+/// This component aggregates the four MAGICC regions into two hemispheric values:
+/// - Northern Hemisphere = weighted average of Northern Ocean + Northern Land
+/// - Southern Hemisphere = weighted average of Southern Ocean + Southern Land
+///
+/// # Variable Names
+///
+/// Reads from `"Variable|FourBox"` and outputs to `"Variable|Hemispheric"`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FourBoxToHemisphericTransform {
-    /// Name of the variable being transformed
+    /// Base variable name (without grid suffix)
     variable_name: String,
-    /// Unit of the variable
+    /// Physical units of the variable
     unit: String,
-    /// Grid weights for aggregation
+    /// Grid definition with aggregation weights
     grid: FourBoxGrid,
 }
 
@@ -165,14 +225,25 @@ impl Component for FourBoxToHemisphericTransform {
     }
 }
 
-/// Component that transforms grid values from Hemispheric to Scalar
+/// Transforms hemispheric values to a global scalar via weighted aggregation.
+///
+/// This component reads a variable with suffix `|Hemispheric` and outputs a scalar
+/// value computed as the weighted average of the two hemispheric values.
+///
+/// # Variable Names
+///
+/// Reads from `"Variable|Hemispheric"` and outputs to `"Variable"`.
+///
+/// # Default Weights
+///
+/// Uses equal weights (0.5 each) for Northern and Southern hemispheres by default.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HemisphericToScalarTransform {
-    /// Name of the variable being transformed
+    /// Base variable name (without grid suffix)
     variable_name: String,
-    /// Unit of the variable
+    /// Physical units of the variable
     unit: String,
-    /// Grid weights for aggregation
+    /// Grid definition with aggregation weights
     grid: HemisphericGrid,
 }
 
@@ -235,11 +306,27 @@ impl Component for HemisphericToScalarTransform {
     }
 }
 
-/// Helper function to check if two grid types are compatible for connection
+/// Check if two grid types can be connected (possibly with a transform).
 ///
-/// Returns true if:
-/// - Grid types are identical
-/// - Producer has finer grid than consumer (can aggregate)
+/// Two grid types are compatible if:
+/// - They are identical (no transform needed)
+/// - The producer has a finer resolution than the consumer (aggregation is possible)
+///
+/// # Arguments
+///
+/// * `producer` - Grid type of the component producing the variable
+/// * `consumer` - Grid type expected by the consuming component
+///
+/// # Returns
+///
+/// `true` if the connection is valid, `false` otherwise.
+///
+/// # Grid Hierarchy
+///
+/// From finest to coarsest: FourBox > Hemispheric > Scalar
+///
+/// Finer-to-coarser connections are allowed (aggregation), but coarser-to-finer
+/// connections are not (disaggregation would require assumptions).
 pub fn grids_compatible(producer: GridType, consumer: GridType) -> bool {
     match (producer, consumer) {
         // Same type always compatible
@@ -259,7 +346,32 @@ pub fn grids_compatible(producer: GridType, consumer: GridType) -> bool {
     }
 }
 
-/// Check if auto-transformation is needed between two grid types
+/// Check if a grid transformation component should be inserted.
+///
+/// Returns `true` if:
+/// - The grid types differ (transform needed)
+/// - The connection is compatible (aggregation is possible)
+///
+/// # Arguments
+///
+/// * `producer` - Grid type of the component producing the variable
+/// * `consumer` - Grid type expected by the consuming component
+///
+/// # Example
+///
+/// ```
+/// use rscm_core::component::GridType;
+/// use rscm_core::grid_transform::needs_transform;
+///
+/// // FourBox producer to Scalar consumer: needs transform
+/// assert!(needs_transform(GridType::FourBox, GridType::Scalar));
+///
+/// // Same grid type: no transform needed
+/// assert!(!needs_transform(GridType::Scalar, GridType::Scalar));
+///
+/// // Incompatible (Scalar to FourBox): returns false (would error elsewhere)
+/// assert!(!needs_transform(GridType::Scalar, GridType::FourBox));
+/// ```
 pub fn needs_transform(producer: GridType, consumer: GridType) -> bool {
     producer != consumer && grids_compatible(producer, consumer)
 }

@@ -1,3 +1,11 @@
+//! Two-layer energy balance model component implementation.
+//!
+//! This module contains the core [`TwoLayer`] component and its associated
+//! [`TwoLayerParameters`] configuration. The component integrates with the
+//! RSCM framework via the [`Component`] trait.
+//!
+//! See the [crate-level documentation](crate) for scientific background and usage examples.
+
 use ode_solvers::*;
 use std::sync::Arc;
 
@@ -27,7 +35,7 @@ type ModelState = Vector3<FloatValue>;
 /// Probing the fast and slow components of global warming by returning abruptly to
 /// preindustrial forcing. Journal of Climate, 23(9), 2418-2427.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TwoLayerComponentParameters {
+pub struct TwoLayerParameters {
     /// Climate feedback parameter at zero warming
     ///
     /// Units: W/(m² K)
@@ -117,9 +125,9 @@ pub struct TwoLayerComponentParameters {
 /// # Example
 ///
 /// ```rust
-/// use rscm_two_layer::{TwoLayerComponent, TwoLayerComponentParameters};
+/// use rscm_two_layer::{TwoLayer, TwoLayerParameters};
 ///
-/// let component = TwoLayerComponent::from_parameters(TwoLayerComponentParameters {
+/// let component = TwoLayer::from_parameters(TwoLayerParameters {
 ///     lambda0: 1.0,              // Climate feedback parameter
 ///     a: 0.0,                    // Linear model (no state-dependence)
 ///     efficacy: 1.0,             // Standard efficacy
@@ -142,12 +150,12 @@ pub struct TwoLayerComponentParameters {
 #[outputs(
     surface_temperature { name = "Surface Temperature", unit = "K" },
 )]
-pub struct TwoLayerComponent {
-    parameters: TwoLayerComponentParameters,
+pub struct TwoLayer {
+    parameters: TwoLayerParameters,
 }
 
 // Create the set of ODEs to represent the two layer model
-impl IVP<Time, ModelState> for TwoLayerComponent {
+impl IVP<Time, ModelState> for TwoLayer {
     fn calculate_dy_dt(
         &self,
         _t: Time,
@@ -157,7 +165,7 @@ impl IVP<Time, ModelState> for TwoLayerComponent {
     ) {
         let temperature_surface = y[0];
         let temperature_deep = y[1];
-        let inputs = TwoLayerComponentInputs::from_input_state(input_state);
+        let inputs = TwoLayerInputs::from_input_state(input_state);
         let erf = inputs.erf.current();
 
         let temperature_difference = temperature_surface - temperature_deep;
@@ -179,14 +187,34 @@ impl IVP<Time, ModelState> for TwoLayerComponent {
     }
 }
 
-impl TwoLayerComponent {
-    pub fn from_parameters(parameters: TwoLayerComponentParameters) -> Self {
+impl TwoLayer {
+    /// Creates a new two-layer model component from the given parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `parameters` - Physical parameters controlling the model behaviour
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use rscm_two_layer::{TwoLayer, TwoLayerParameters};
+    ///
+    /// let component = TwoLayer::from_parameters(TwoLayerParameters {
+    ///     lambda0: 1.0,
+    ///     a: 0.0,
+    ///     efficacy: 1.2,
+    ///     eta: 0.7,
+    ///     heat_capacity_surface: 8.0,
+    ///     heat_capacity_deep: 100.0,
+    /// });
+    /// ```
+    pub fn from_parameters(parameters: TwoLayerParameters) -> Self {
         Self { parameters }
     }
 }
 
 #[typetag::serde]
-impl Component for TwoLayerComponent {
+impl Component for TwoLayer {
     fn definitions(&self) -> Vec<RequirementDefinition> {
         Self::generated_definitions()
     }
@@ -206,7 +234,7 @@ impl Component for TwoLayerComponent {
 
         let results = get_last_step(solver.results(), t_next);
 
-        let outputs = TwoLayerComponentOutputs {
+        let outputs = TwoLayerOutputs {
             surface_temperature: results[0],
         };
 
@@ -223,8 +251,8 @@ mod tests {
     use rscm_core::timeseries::Timeseries;
     use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
 
-    fn create_component() -> TwoLayerComponent {
-        TwoLayerComponent::from_parameters(TwoLayerComponentParameters {
+    fn create_component() -> TwoLayer {
+        TwoLayer::from_parameters(TwoLayerParameters {
             lambda0: 1.0,               // W/(m^2 K) - climate feedback parameter
             a: 0.0,                     // No nonlinear feedback for simpler testing
             efficacy: 1.0,              // Ocean heat uptake efficacy

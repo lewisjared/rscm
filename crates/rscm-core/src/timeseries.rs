@@ -215,7 +215,7 @@ impl TimeAxis {
 ///
 /// `GridTimeseries` extends the concept of a timeseries to include spatial dimensions.
 /// It stores values as a 2D array with shape `(time, space)`, where the spatial
-/// dimension is defined by a [`SpatialGrid`](crate::spatial::SpatialGrid).
+/// dimension is defined by a [`SpatialGrid`].
 ///
 /// # Type Parameters
 ///
@@ -265,7 +265,7 @@ where
 {
     #[serde(default, skip)]
     grid: G,
-    /// Values stored as Array2<T>: shape (time, space)
+    /// Values stored as `Array2<T>`: shape (time, space)
     values: Array2<T>,
     time_axis: Arc<TimeAxis>,
     units: String,

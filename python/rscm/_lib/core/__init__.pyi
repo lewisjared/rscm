@@ -33,6 +33,8 @@ class InterpolationStrategy(Enum):
     Previous = auto()
 
 class Timeseries:
+    """Scalar (1D) timeseries with interpolation support."""
+
     def __init__(
         self, values: Arr, time_axis: TimeAxis, units: str, interpolation_strategy
     ) -> Timeseries: ...
@@ -70,6 +72,32 @@ class Timeseries:
 
         """
 
+class FourBoxTimeseries:
+    """FourBox grid timeseries with 4 regional values per timestep."""
+
+    def __len__(self) -> int: ...
+    def values(self) -> NDArray[np.float64]:
+        """Get all values as a 2D array with shape (n_times, 4)."""
+    @property
+    def latest(self) -> int: ...
+    @property
+    def units(self) -> str: ...
+    @property
+    def time_axis(self) -> TimeAxis: ...
+
+class HemisphericTimeseries:
+    """Hemispheric grid timeseries with 2 regional values per timestep."""
+
+    def __len__(self) -> int: ...
+    def values(self) -> NDArray[np.float64]:
+        """Get all values as a 2D array with shape (n_times, 2)."""
+    @property
+    def latest(self) -> int: ...
+    @property
+    def units(self) -> str: ...
+    @property
+    def time_axis(self) -> TimeAxis: ...
+
 class VariableType(Enum):
     Exogenous = auto()
     Endogenous = auto()
@@ -84,7 +112,7 @@ class TimeseriesCollection:
     ): ...
     def get_timeseries_by_name(self, name: str) -> Timeseries | None:
         """
-        Get a timeseries from the collection by name
+        Get a scalar timeseries from the collection by name.
 
         Any modifications to the returned timeseries will not be reflected
         in the collection as this function returns a cloned timeseries.
@@ -97,19 +125,53 @@ class TimeseriesCollection:
         Returns
         -------
         A clone of the timeseries or None if the collection doesn't contain
-        a timeseries by that name.
+        a scalar timeseries by that name.
+        """
+    def get_fourbox_timeseries_by_name(self, name: str) -> FourBoxTimeseries | None:
+        """
+        Get a FourBox grid timeseries from the collection by name.
+
+        Parameters
+        ----------
+        name
+            Name of the timeseries to query
+
+        Returns
+        -------
+        A clone of the timeseries or None if the collection doesn't contain
+        a FourBox timeseries by that name.
+        """
+    def get_hemispheric_timeseries_by_name(
+        self, name: str
+    ) -> HemisphericTimeseries | None:
+        """
+        Get a Hemispheric grid timeseries from the collection by name.
+
+        Parameters
+        ----------
+        name
+            Name of the timeseries to query
+
+        Returns
+        -------
+        A clone of the timeseries or None if the collection doesn't contain
+        a Hemispheric timeseries by that name.
         """
     def names(self) -> list[str]: ...
     def timeseries(self) -> list[Timeseries]:
         """
-        Get a list of timeseries stored in the collection.
+        Get a list of scalar timeseries stored in the collection.
 
         These are clones of the original timeseries,
         so they can be modified without affecting the original.
 
+        Note: This only returns scalar timeseries. Use
+        get_fourbox_timeseries_by_name() or get_hemispheric_timeseries_by_name()
+        to retrieve grid timeseries.
+
         Returns
         -------
-        List of timeseries
+        List of scalar timeseries
         """
 
 class RequirementType(Enum):
@@ -152,6 +214,10 @@ class RustComponent(Component):
     """
 
     def definitions(self) -> list[RequirementDefinition]: ...
+    def input_names(self) -> list[str]:
+        """Get the names of all input variables required by this component."""
+    def output_names(self) -> list[str]:
+        """Get the names of all output variables produced by this component."""
     def solve(
         self, t_current: float, t_next: float, collection: TimeseriesCollection
     ) -> dict[str, StateValue]: ...

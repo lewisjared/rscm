@@ -55,6 +55,14 @@ macro_rules! impl_component {
                 self.0.definitions()
             }
 
+            fn input_names(&self) -> Vec<String> {
+                self.0.input_names()
+            }
+
+            fn output_names(&self) -> Vec<String> {
+                self.0.output_names()
+            }
+
             pub fn solve(
                 &mut self,
                 t_current: Time,

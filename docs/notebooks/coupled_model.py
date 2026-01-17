@@ -38,7 +38,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pydot
-import scmdata
 from IPython.display import Image, display
 
 from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
@@ -255,47 +254,69 @@ model.current_time_bounds()
 
 # %% [markdown]
 # The results from the run can be extracted using `timeseries` and then converted to a
-# scmdata object for easier plotting
+# pandas DataFrame for easier manipulation and plotting.
 
 
 # %%
-class RSCMRun(scmdata.run.BaseScmRun):  # type: ignore
-    """ScmRun object with minimal required metadata"""
+def as_dataframe(
+    timeseries_collection: TimeseriesCollection, time_axis: TimeAxis
+) -> pd.DataFrame:
+    """
+    Convert a collection of timeseries to a pandas DataFrame with multi-index.
 
-    required_cols = ("variable", "unit")
+    Parameters
+    ----------
+    timeseries_collection
+        RSCM timeseries collection
+    time_axis
+        Time axis for column labels
 
-
-def as_scmrun(timeseries_collection: TimeseriesCollection) -> RSCMRun:
-    """Convert a collection of timeseries to a scmdata object"""
+    Returns
+    -------
+        DataFrame with (variable, unit) multi-index and time columns
+    """
     data = []
-    columns = []
+    index_tuples = []
     for name in timeseries_collection.names():
         ts = timeseries_collection.get_timeseries_by_name(name)
 
-        columns.append({"variable": name, "unit": ts.units})
+        index_tuples.append((name, ts.units))
         data.append(ts.values())
 
-    as_dataframe = pd.DataFrame(
+    return pd.DataFrame(
         data,
         columns=time_axis.values(),
-        index=pd.MultiIndex.from_frame(pd.DataFrame(columns)),
+        index=pd.MultiIndex.from_tuples(index_tuples, names=["variable", "unit"]),
     )
-    return RSCMRun(as_dataframe)
 
 
-results = as_scmrun(model.timeseries())
+results = as_dataframe(model.timeseries(), time_axis)
 results
 
 # %%
-results.filter(variable="Cumulative *", keep=False).line_plot(hue="variable")
+# Filter out cumulative variables and plot
+filtered = results.loc[
+    ~results.index.get_level_values("variable").str.startswith("Cumulative")
+]
+filtered.T.plot(figsize=(10, 5))
+plt.xlabel("Year")
+plt.ylabel("Value")
+plt.legend(filtered.index.get_level_values("variable"))
+plt.show()
 
 # %%
 model.run()
 
 # %%
-as_scmrun(model.timeseries()).filter(variable="Cumulative *", keep=False).line_plot(
-    hue="variable"
-)
+results = as_dataframe(model.timeseries(), time_axis)
+filtered = results.loc[
+    ~results.index.get_level_values("variable").str.startswith("Cumulative")
+]
+filtered.T.plot(figsize=(10, 5))
+plt.xlabel("Year")
+plt.ylabel("Value")
+plt.legend(filtered.index.get_level_values("variable"))
+plt.show()
 
 # %% [markdown]
 # ## Summary

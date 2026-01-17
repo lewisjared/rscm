@@ -2,12 +2,12 @@ import numpy as np
 import numpy.testing as npt
 
 from rscm._lib.core import InterpolationStrategy, Model, Timeseries
-from rscm._lib.two_layer import TwoLayerComponentBuilder
+from rscm._lib.two_layer import TwoLayerBuilder
 from rscm.core import ModelBuilder
 
 
 def test_model(time_axis):
-    component = TwoLayerComponentBuilder.from_parameters(
+    component = TwoLayerBuilder.from_parameters(
         dict(
             lambda0=0.0,
             a=0.0,
@@ -41,7 +41,7 @@ def test_model(time_axis):
 
 
 def test_model_serialisation(time_axis):
-    component = TwoLayerComponentBuilder.from_parameters(
+    component = TwoLayerBuilder.from_parameters(
         dict(
             lambda0=0.0,
             a=0.0,

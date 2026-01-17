@@ -2,6 +2,8 @@
 
 This page explains the core abstractions in RSCM: **Components**, **Models**, and **Timeseries**.
 
+See the [Python API](api/rscm/) for full class documentation.
+
 ## Components
 
 Components are the fundamental building blocks of RSCM.
@@ -43,6 +45,8 @@ graph LR
 3. **Solve phase**: At each timestep, `solve(t_current, t_next, input_state)` is called
 
 ### Creating Components in Python
+
+Use [`Component`][rscm.component.Component] with [`Input`][rscm.component.Input], [`Output`][rscm.component.Output], and [`State`][rscm.component.State] descriptors:
 
 ```python
 from rscm.component import Component, Input, Output, State
@@ -118,7 +122,7 @@ A **Model** couples multiple components together, managing the flow of state bet
 
 ### ModelBuilder Pattern
 
-Models are constructed using the builder pattern:
+Models are constructed using the [`ModelBuilder`][rscm.core.ModelBuilder] pattern:
 
 ```python
 from rscm.core import ModelBuilder, TimeAxis, Timeseries
@@ -191,11 +195,23 @@ temp = results.get_timeseries_by_name("Surface Temperature")
 | **Exogenous**  | Provided externally          | Emissions scenarios, prescribed forcing |
 | **Endogenous** | Computed by model components | CO2 concentration, temperature          |
 
-Variables that are inputs to one or more components but not outputs of any component must be provided as exogenous data.
+Whether a variable is exogenous or endogenous is determined by the components in the model, not by any intrinsic property of the variable itself. During the build phase, the `ModelBuilder` analyses all component definitions to identify:
+
+1. **Required inputs**: Variables that components need to read
+2. **Produced outputs**: Variables that components write
+
+Any required input that is not produced by another component in the model must be supplied as exogenous data via `with_exogenous_variable()`. The same variable can be exogenous in one model configuration and endogenous in another, depending on which components are included.
+
+For example, CO2 concentration might be:
+
+- **Endogenous** in a full carbon-cycle model where a component calculates concentration from emissions
+- **Exogenous** in a temperature-only model where concentration is prescribed directly
+
+The builder will raise an error if any required inputs cannot be satisfied by either component outputs or exogenous data.
 
 ## Timeseries
 
-RSCM uses **timeseries** to represent time-varying data with support for different interpolation strategies.
+RSCM uses [`Timeseries`][rscm.core.Timeseries] objects to represent time-varying data with support for different interpolation strategies.
 
 ### TimeAxis
 
@@ -229,7 +245,7 @@ emissions = Timeseries(
 
 ### Interpolation Strategies
 
-When the model time axis differs from the timeseries time axis, values are interpolated:
+When the model time axis differs from the timeseries time axis, values are interpolated according to the `InterpolationStrategy`:
 
 | Strategy   | Behaviour                                     |
 | ---------- | --------------------------------------------- |
@@ -251,7 +267,7 @@ graph LR
 
 ### TimeseriesCollection
 
-A `TimeseriesCollection` holds multiple named timeseries:
+A [`TimeseriesCollection`][rscm.core.TimeseriesCollection] holds multiple named timeseries:
 
 ```python
 from rscm.core import TimeseriesCollection

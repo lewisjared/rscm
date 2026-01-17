@@ -1,3 +1,123 @@
+//! Example components demonstrating the ComponentIO derive macro pattern.
+//!
+//! # Compile-time Safety
+//!
+//! The `ComponentIO` macro generates type-safe input/output structs that catch
+//! errors at compile time rather than runtime.
+//!
+//! ## Invalid Input Field Access
+//!
+//! Accessing a field that doesn't exist in the inputs fails at compile time:
+//!
+//! ```compile_fail
+//! use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! use rscm_core::timeseries::Time;
+//! use serde::{Serialize, Deserialize};
+//!
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//! )]
+//! #[outputs(
+//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//! )]
+//! struct TestComponent { conversion: f64 }
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: no field `temperature` on type `TestComponentInputs`
+//!         let temp = inputs.temperature.current();
+//!         TestComponentOutputs { concentration: temp }
+//!     }
+//! }
+//! ```
+//!
+//! ## Invalid Output Field
+//!
+//! Trying to set an output field that doesn't exist fails:
+//!
+//! ```compile_fail
+//! use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! use rscm_core::timeseries::Time;
+//! use serde::{Serialize, Deserialize};
+//!
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//! )]
+//! #[outputs(
+//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//! )]
+//! struct TestComponent { conversion: f64 }
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: no field `uptake` on type `TestComponentOutputs`
+//!         TestComponentOutputs {
+//!             concentration: 280.0,
+//!             uptake: 5.0,
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! ## Missing Required Output Field
+//!
+//! All output fields must be provided:
+//!
+//! ```compile_fail
+//! use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! use rscm_core::timeseries::Time;
+//! use serde::{Serialize, Deserialize};
+//!
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//! )]
+//! #[outputs(
+//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//!     uptake { name = "Carbon Uptake", unit = "GtC" },
+//! )]
+//! struct TestComponent { conversion: f64 }
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: missing field `uptake` in initializer of `TestComponentOutputs`
+//!         TestComponentOutputs {
+//!             concentration: 280.0,
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! ## Wrong Type for Grid Output
+//!
+//! Grid outputs must use the correct slice type:
+//!
+//! ```compile_fail
+//! use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
+//! use rscm_core::timeseries::Time;
+//! use serde::{Serialize, Deserialize};
+//!
+//! #[derive(ComponentIO, Serialize, Deserialize)]
+//! #[inputs(
+//!     temperature { name = "Temperature", unit = "K", grid = "FourBox" },
+//! )]
+//! #[outputs(
+//!     heat_flux { name = "Heat Flux", unit = "W/m^2", grid = "FourBox" },
+//! )]
+//! struct TestComponent;
+//!
+//! impl TestComponent {
+//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
+//!         // ERROR: expected `FourBoxSlice`, found `f64`
+//!         TestComponentOutputs {
+//!             heat_flux: 5.0,  // Should be FourBoxSlice::uniform(5.0)
+//!         }
+//!     }
+//! }
+//! ```
+
 use crate::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
     TimeseriesWindow,

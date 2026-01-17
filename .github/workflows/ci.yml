@@ -43,6 +43,16 @@ jobs:
           python-version: "3.11"
       - name: Setup Graphviz
         uses: ts-graphviz/setup-graphviz@v2
-      - name: docs
+      - name: Python docs
         run: |
           make docs-strict
+      - name: Rust docs
+        run: |
+          RUSTDOCFLAGS="--html-in-header ./assets/katex-header.html" cargo doc --no-deps --workspace
+      - name: Upload docs artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs
+          path: |
+            target/doc
+            site

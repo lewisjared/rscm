@@ -1,5 +1,5 @@
 """Two-layer climate model component."""
 
-from rscm._lib.two_layer import TwoLayerComponentBuilder
+from rscm._lib.two_layer import TwoLayerBuilder
 
-__all__ = ["TwoLayerComponentBuilder"]
+__all__ = ["TwoLayerBuilder"]

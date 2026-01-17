@@ -27,4 +27,4 @@
 
 - **[Tutorials](tutorials.md)**: Hands-on guides for common tasks
 - **[Key Concepts](key_concepts.md)**: Understand Components, Models, and Timeseries
-- **[API Reference](api/rscm/)**: Full Python API documentation
+- **[Python API](api/rscm/)**: Full API documentation

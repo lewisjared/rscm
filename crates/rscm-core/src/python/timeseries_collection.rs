@@ -1,4 +1,4 @@
-use crate::python::timeseries::PyTimeseries;
+use crate::python::timeseries::{PyFourBoxTimeseries, PyHemisphericTimeseries, PyTimeseries};
 use crate::timeseries_collection::TimeseriesCollection;
 pub use crate::timeseries_collection::VariableType;
 use pyo3::prelude::*;
@@ -31,11 +31,37 @@ impl PyTimeseriesCollection {
         self.0.add_timeseries(name, timeseries, variable_type);
     }
 
+    /// Get a scalar timeseries by name
+    ///
+    /// Returns None if the timeseries is not found or is not a scalar timeseries.
     pub fn get_timeseries_by_name(&self, name: &str) -> Option<PyTimeseries> {
         self.0
             .get_data(name)
             .and_then(|data| data.as_scalar())
             .map(|ts| PyTimeseries(ts.clone()))
+    }
+
+    /// Get a FourBox grid timeseries by name
+    ///
+    /// Returns None if the timeseries is not found or is not a FourBox timeseries.
+    pub fn get_fourbox_timeseries_by_name(&self, name: &str) -> Option<PyFourBoxTimeseries> {
+        self.0
+            .get_data(name)
+            .and_then(|data| data.as_four_box())
+            .map(|ts| PyFourBoxTimeseries(ts.clone()))
+    }
+
+    /// Get a Hemispheric grid timeseries by name
+    ///
+    /// Returns None if the timeseries is not found or is not a Hemispheric timeseries.
+    pub fn get_hemispheric_timeseries_by_name(
+        &self,
+        name: &str,
+    ) -> Option<PyHemisphericTimeseries> {
+        self.0
+            .get_data(name)
+            .and_then(|data| data.as_hemispheric())
+            .map(|ts| PyHemisphericTimeseries(ts.clone()))
     }
 
     pub fn names(&self) -> Vec<String> {
@@ -45,7 +71,8 @@ impl PyTimeseriesCollection {
     /// Get all scalar timeseries from the collection
     ///
     /// Note: This only returns scalar timeseries, not grid timeseries.
-    /// Grid timeseries support in Python bindings is planned for future releases.
+    /// Use get_fourbox_timeseries_by_name() or get_hemispheric_timeseries_by_name()
+    /// to retrieve grid timeseries.
     pub fn timeseries(&self) -> Vec<PyTimeseries> {
         self.0
             .iter()

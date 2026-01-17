@@ -2,6 +2,8 @@
 
 RSCM supports spatially-resolved variables using a grid system that balances physical realism with computational simplicity. This page explains the available grid types and how to use them.
 
+See the [Python API](api/rscm/) for full class documentation.
+
 ## Overview
 
 Climate variables often have spatial structure - temperatures differ between land and ocean, and between hemispheres. RSCM provides three grid types to capture this:
@@ -349,18 +351,15 @@ class HemisphericToFourBox(Component):
 
 This makes the disaggregation assumptions explicit and configurable.
 
-## API Reference
+## Quick Reference
 
 ### Python
 
-| Class                           | Description                          |
-| ------------------------------- | ------------------------------------ |
-| `FourBoxSlice(no, nl, so, sl)`  | Container for four regional values   |
-| `HemisphericSlice(n, s)`        | Container for two hemispheric values |
-| `StateValue.scalar(v)`          | Wrap a scalar value                  |
-| `StateValue.four_box(slice)`    | Wrap a FourBox slice                 |
-| `StateValue.hemispheric(slice)` | Wrap a Hemispheric slice             |
-| `StateValue.to_scalar()`        | Aggregate any grid to scalar         |
+| Class             | Description                          |
+| ----------------- | ------------------------------------ |
+| `FourBoxSlice`    | Container for four regional values   |
+| `HemisphericSlice`| Container for two hemispheric values |
+| `StateValue`      | Wrap scalar or grid values           |
 
 ### Rust
 

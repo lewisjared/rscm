@@ -1,9 +1,9 @@
 {
   "$schema": "component_metadata_schema.json",
-  "name": "FourBoxOceanHeatUptakeComponent",
+  "name": "FourBoxOceanHeatUptake",
   "module_path": "rscm_components::components::four_box_ocean_heat_uptake",
   "language": "rust",
-  "description": "Four-box ocean heat uptake component\n\nThis example component demonstrates using grid timeseries in RSCM.\nIt takes scalar effective radiative forcing (ERF) as input and produces\nregional ocean heat uptake values for a four-box grid structure.\n\n# Physics\n\nOcean heat uptake varies by region due to:\n- Ocean vs. land: Oceans have higher heat capacity and absorb more energy\n- Latitude: Polar regions have different uptake characteristics\n- Mixing: Deep ocean mixing affects heat penetration\n\nThis simplified model uses fixed regional fractions to distribute global forcing.\n\nFour-box ocean heat uptake component\n\nTakes scalar ERF input and produces regional ocean heat uptake.\nDemonstrates disaggregation from scalar to grid resolution.\n\n# Example\n\n```rust\nuse rscm_components::{\n    FourBoxOceanHeatUptakeComponent,\n    FourBoxOceanHeatUptakeParameters,\n};\n\nlet params = FourBoxOceanHeatUptakeParameters::default();\nlet component = FourBoxOceanHeatUptakeComponent::from_parameters(params);\n```",
+  "description": "Four-box ocean heat uptake component\n\nThis example component demonstrates using grid timeseries in RSCM.\nIt takes scalar effective radiative forcing (ERF) as input and produces\nregional ocean heat uptake values for a four-box grid structure.\n\n# Physics\n\nOcean heat uptake varies by region due to:\n- Ocean vs. land: Oceans have higher heat capacity and absorb more energy\n- Latitude: Polar regions have different uptake characteristics\n- Mixing: Deep ocean mixing affects heat penetration\n\nThis simplified model uses fixed regional fractions to distribute global forcing.\n\nFour-box ocean heat uptake component\n\nTakes scalar ERF input and produces regional ocean heat uptake.\nDemonstrates disaggregation from scalar to grid resolution.\n\n# Example\n\n```rust\nuse rscm_components::{\n    FourBoxOceanHeatUptake,\n    FourBoxOceanHeatUptakeParameters,\n};\n\nlet params = FourBoxOceanHeatUptakeParameters::default();\nlet component = FourBoxOceanHeatUptake::from_parameters(params);\n```",
   "category": "Ocean",
   "tags": [
     "temperature",
