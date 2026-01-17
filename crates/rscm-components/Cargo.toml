@@ -28,4 +28,4 @@ rstest = "0.26.1"
 approx = "0.5.1"
 
 [package.metadata.docs.rs]
-rustdoc-args = [ "--html-in-header", "../../assets/katex-header.html" ]
+rustdoc-args = [ "--html-in-header", "katex-header.html" ]

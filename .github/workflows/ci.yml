@@ -41,6 +41,16 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           python-version: "3.11"
+      - name: Verify katex-header.html files are in sync
+        run: |
+          for crate in rscm rscm-core rscm-components rscm-two-layer rscm-magicc; do
+            if ! diff -q assets/katex-header.html "crates/$crate/katex-header.html" > /dev/null 2>&1; then
+              echo "ERROR: crates/$crate/katex-header.html differs from assets/katex-header.html"
+              echo "Run 'make sync-katex' to fix this"
+              exit 1
+            fi
+          done
+          echo "All katex-header.html files are in sync"
       - name: Setup Graphviz
         uses: ts-graphviz/setup-graphviz@v2
       - name: Python docs

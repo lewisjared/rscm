@@ -21,4 +21,4 @@ version = "0.27.2"
 features = ["abi3-py311", "multiple-pymethods"]
 
 [package.metadata.docs.rs]
-rustdoc-args = [ "--html-in-header", "../../assets/katex-header.html" ]
+rustdoc-args = [ "--html-in-header", "katex-header.html" ]

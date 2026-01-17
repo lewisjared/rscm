@@ -92,6 +92,14 @@ docs-strict: build-dev docs-metadata ## build the docs strictly (e.g. raise an e
 docs-serve: build-dev docs-metadata ## serve the docs locally
 	uv run --group docs mkdocs serve
 
+.PHONY: sync-katex
+sync-katex:  ## Sync katex-header.html to all crates
+	cp assets/katex-header.html crates/rscm/katex-header.html
+	cp assets/katex-header.html crates/rscm-core/katex-header.html
+	cp assets/katex-header.html crates/rscm-components/katex-header.html
+	cp assets/katex-header.html crates/rscm-two-layer/katex-header.html
+	cp assets/katex-header.html crates/rscm-magicc/katex-header.html
+
 .PHONY: docs-rust
 docs-rust:  ## Build Rust documentation
 	RUSTDOCFLAGS="--html-in-header ./assets/katex-header.html" cargo doc --no-deps --workspace
