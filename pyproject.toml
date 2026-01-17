@@ -42,6 +42,7 @@ module-name = "rscm._lib"
 manifest-path = "crates/rscm/Cargo.toml"
 bindings = 'pyo3'
 features = ["pyo3/extension-module"]
+include = ["LICENSE"]
 
 
 [dependency-groups]
