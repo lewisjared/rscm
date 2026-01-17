@@ -215,7 +215,7 @@ RSCM uses [`Timeseries`][rscm.core.Timeseries] objects to represent time-varying
 
 ### TimeAxis
 
-A [`TimeAxis`][rscm.core.TimeAxis] defines the temporal grid for a timeseries:
+A `TimeAxis` defines the temporal grid for a timeseries:
 
 ```python
 from rscm.core import TimeAxis
@@ -230,7 +230,7 @@ time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0, 2050.0, 2100.0]))
 
 ### Timeseries
 
-A [`Timeseries`][rscm.core.Timeseries] combines values, time axis, units, and interpolation strategy:
+A `Timeseries` combines values, time axis, units, and interpolation strategy:
 
 ```python
 from rscm.core import Timeseries, InterpolationStrategy
@@ -245,7 +245,7 @@ emissions = Timeseries(
 
 ### Interpolation Strategies
 
-When the model time axis differs from the timeseries time axis, values are interpolated according to the [`InterpolationStrategy`][rscm.core.InterpolationStrategy]:
+When the model time axis differs from the timeseries time axis, values are interpolated according to the `InterpolationStrategy`:
 
 | Strategy   | Behaviour                                     |
 | ---------- | --------------------------------------------- |

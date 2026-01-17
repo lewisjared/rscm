@@ -355,11 +355,11 @@ This makes the disaggregation assumptions explicit and configurable.
 
 ### Python
 
-| Class                           | Description                          |
-| ------------------------------- | ------------------------------------ |
-| [`FourBoxSlice`][rscm.core.FourBoxSlice] | Container for four regional values   |
-| [`HemisphericSlice`][rscm.core.HemisphericSlice] | Container for two hemispheric values |
-| [`StateValue`][rscm.core.StateValue] | Wrap scalar or grid values           |
+| Class             | Description                          |
+| ----------------- | ------------------------------------ |
+| `FourBoxSlice`    | Container for four regional values   |
+| `HemisphericSlice`| Container for two hemispheric values |
+| `StateValue`      | Wrap scalar or grid values           |
 
 ### Rust
 
