@@ -1,26 +1,86 @@
+//! Named collections of timeseries for managing model state.
+//!
+//! This module provides [`TimeseriesCollection`], the central data structure for
+//! storing all timeseries data during a model simulation. It holds both exogenous
+//! (externally provided) and endogenous (model-computed) variables.
+//!
+//! # Overview
+//!
+//! A `TimeseriesCollection` maps variable names to their timeseries data. Variable
+//! names follow the convention `"Category|Subcategory|Species"`, for example:
+//! - `"Emissions|CO2"` - CO2 emissions in GtC/yr
+//! - `"Atmospheric Concentration|CO2"` - CO2 concentration in ppm
+//! - `"Effective Radiative Forcing|CO2"` - CO2 forcing in W/m^2
+//!
+//! # Spatial Resolution
+//!
+//! The collection supports three spatial resolutions via [`TimeseriesData`]:
+//! - **Scalar**: Global mean values
+//! - **FourBox**: Regional values (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
+//! - **Hemispheric**: Hemispheric values (Northern, Southern)
+
 use crate::errors::RSCMResult;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, SpatialGrid};
 use crate::state::{FourBoxSlice, HemisphericSlice};
 use crate::timeseries::{FloatValue, GridTimeseries, Timeseries};
 use serde::{Deserialize, Serialize};
 
+/// Indicates whether a variable is determined inside or outside the model.
+///
+/// This distinction affects how the model handles the variable during simulation:
+/// - **Exogenous** variables are interpolated from provided data
+/// - **Endogenous** variables are computed by components and their latest value is used
 #[derive(Copy, Clone, PartialOrd, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[pyo3::pyclass]
 pub enum VariableType {
-    /// Values that are defined outside of the model
+    /// Values provided externally (e.g., emissions scenarios, solar irradiance).
+    /// These are interpolated to model timesteps.
     Exogenous,
-    /// Values that are determined within the model
+    /// Values computed by model components (e.g., concentrations, temperatures).
+    /// The most recent computed value is used.
     Endogenous,
 }
 
-/// Container for timeseries data that can be either scalar or grid-based
+/// Container for timeseries data at different spatial resolutions.
+///
+/// This enum wraps the different spatial grid types supported by the model,
+/// providing a unified interface for storing and accessing timeseries data
+/// regardless of spatial resolution.
+///
+/// # Variants
+///
+/// - **Scalar**: Single global value per timestep (most common)
+/// - **FourBox**: Four regional values following MAGICC conventions
+/// - **Hemispheric**: Two hemispheric values
+///
+/// # Example
+///
+/// ```ignore
+/// match data {
+///     TimeseriesData::Scalar(ts) => {
+///         let global_value = ts.at_scalar(time_index).unwrap();
+///     }
+///     TimeseriesData::FourBox(ts) => {
+///         let no_value = ts.at(time_index, FourBoxRegion::NorthernOcean);
+///     }
+///     TimeseriesData::Hemispheric(ts) => {
+///         let nh_value = ts.at(time_index, HemisphericRegion::Northern);
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TimeseriesData {
-    /// Scalar (global-only) timeseries
+    /// Scalar (global mean) timeseries - a single value per timestep.
     Scalar(Timeseries<FloatValue>),
-    /// Four-box regional timeseries (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
+    /// Four-box regional timeseries with values for:
+    /// - Northern Ocean
+    /// - Northern Land
+    /// - Southern Ocean
+    /// - Southern Land
     FourBox(GridTimeseries<FloatValue, FourBoxGrid>),
-    /// Hemispheric timeseries (Northern, Southern)
+    /// Hemispheric timeseries with values for:
+    /// - Northern Hemisphere
+    /// - Southern Hemisphere
     Hemispheric(GridTimeseries<FloatValue, HemisphericGrid>),
 }
 
@@ -199,18 +259,53 @@ impl TimeseriesData {
     }
 }
 
+/// A named timeseries with metadata about its origin.
+///
+/// This struct bundles a timeseries with its variable name and type,
+/// forming the items stored in a [`TimeseriesCollection`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeseriesItem {
+    /// The timeseries data (scalar, four-box, or hemispheric)
     #[serde(alias = "timeseries")]
     pub data: TimeseriesData,
+    /// Variable name (e.g., "Emissions|CO2", "Surface Temperature")
     pub name: String,
+    /// Whether this variable is exogenous (input) or endogenous (computed)
     pub variable_type: VariableType,
 }
 
-/// A collection of time series data.
-/// Allows for easy access to time series data by name across the whole model
+/// A named collection of timeseries that holds all model state.
+///
+/// `TimeseriesCollection` is the central data structure for managing model state
+/// during simulation. It provides:
+/// - Named access to variables via string keys
+/// - Support for multiple spatial resolutions
+/// - Iteration over all contained timeseries
+///
+/// # Usage
+///
+/// ```ignore
+/// use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
+/// use rscm_core::timeseries::Timeseries;
+///
+/// let mut collection = TimeseriesCollection::new();
+///
+/// // Add a scalar timeseries
+/// collection.add_timeseries(
+///     "Emissions|CO2".to_string(),
+///     emissions_ts,
+///     VariableType::Exogenous,
+/// );
+///
+/// // Retrieve by name
+/// if let Some(data) = collection.get_data("Emissions|CO2") {
+///     let scalar = data.as_scalar().unwrap();
+///     // Use the timeseries...
+/// }
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeseriesCollection {
+    /// Internal storage for timeseries items, kept sorted by name for stable serialisation
     timeseries: Vec<TimeseriesItem>,
 }
 
@@ -221,6 +316,7 @@ impl Default for TimeseriesCollection {
 }
 
 impl TimeseriesCollection {
+    /// Create a new empty collection.
     pub fn new() -> Self {
         Self {
             timeseries: Vec::new(),
@@ -291,24 +387,50 @@ impl TimeseriesCollection {
         self.timeseries.sort_unstable_by_key(|x| x.name.clone());
     }
 
+    /// Get a timeseries item by variable name.
+    ///
+    /// Returns the full [`TimeseriesItem`] including metadata. Use [`get_data`](Self::get_data)
+    /// if you only need the timeseries data.
     pub fn get_by_name(&self, name: &str) -> Option<&TimeseriesItem> {
         self.timeseries.iter().find(|x| x.name == name)
     }
 
+    /// Get a mutable reference to a timeseries item by variable name.
     pub fn get_by_name_mut(&mut self, name: &str) -> Option<&mut TimeseriesItem> {
         self.timeseries.iter_mut().find(|x| x.name == name)
     }
 
-    /// Get the timeseries data for a variable by name
+    /// Get the timeseries data for a variable by name.
+    ///
+    /// This is the most common way to access timeseries data. Returns
+    /// the [`TimeseriesData`] enum which can be pattern-matched or converted
+    /// to the appropriate grid type.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// if let Some(data) = collection.get_data("Surface Temperature") {
+    ///     match data {
+    ///         TimeseriesData::Scalar(ts) => println!("Global: {:?}", ts.latest_value()),
+    ///         TimeseriesData::FourBox(ts) => println!("Regional: {:?}", ts.latest_values()),
+    ///         _ => {}
+    ///     }
+    /// }
+    /// ```
     pub fn get_data(&self, name: &str) -> Option<&TimeseriesData> {
         self.get_by_name(name).map(|item| &item.data)
     }
 
-    /// Get mutable timeseries data for a variable by name
+    /// Get mutable timeseries data for a variable by name.
+    ///
+    /// Use this when you need to update values in a timeseries during simulation.
     pub fn get_data_mut(&mut self, name: &str) -> Option<&mut TimeseriesData> {
         self.get_by_name_mut(name).map(|item| &mut item.data)
     }
 
+    /// Iterate over all timeseries items in the collection.
+    ///
+    /// Items are returned in sorted order by name for deterministic iteration.
     pub fn iter(&self) -> impl Iterator<Item = &TimeseriesItem> {
         self.timeseries.iter()
     }

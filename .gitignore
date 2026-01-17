@@ -255,6 +255,11 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# Generated API docs (created by gen_doc_stubs.py)
+docs/api/rscm/
+docs/api/NAVIGATION.md
+docs/components/
+
 # mypy
 .mypy_cache/
 .dmypy.json

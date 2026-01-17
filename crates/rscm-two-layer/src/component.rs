@@ -1,3 +1,11 @@
+//! Two-layer energy balance model component implementation.
+//!
+//! This module contains the core [`TwoLayer`] component and its associated
+//! [`TwoLayerParameters`] configuration. The component integrates with the
+//! RSCM framework via the [`Component`] trait.
+//!
+//! See the [crate-level documentation](crate) for scientific background and usage examples.
+
 use ode_solvers::*;
 use std::sync::Arc;
 
@@ -180,6 +188,26 @@ impl IVP<Time, ModelState> for TwoLayer {
 }
 
 impl TwoLayer {
+    /// Creates a new two-layer model component from the given parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `parameters` - Physical parameters controlling the model behaviour
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use rscm_two_layer::{TwoLayer, TwoLayerParameters};
+    ///
+    /// let component = TwoLayer::from_parameters(TwoLayerParameters {
+    ///     lambda0: 1.0,
+    ///     a: 0.0,
+    ///     efficacy: 1.2,
+    ///     eta: 0.7,
+    ///     heat_capacity_surface: 8.0,
+    ///     heat_capacity_deep: 100.0,
+    /// });
+    /// ```
     pub fn from_parameters(parameters: TwoLayerParameters) -> Self {
         Self { parameters }
     }

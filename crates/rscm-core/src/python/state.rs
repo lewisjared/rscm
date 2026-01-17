@@ -541,7 +541,7 @@ impl PyTimeseriesWindow {
 /// Provides view-like access to grid timeseries data with regional access.
 ///
 /// Example:
-///     window = FourBoxTimeseriesWindow(values=[[1,2,3,4], [5,6,7,8]], current_index=1)
+///     window = FourBoxTimeseriesWindow(values=\[\[1,2,3,4\], \[5,6,7,8\]\], current_index=1)
 ///     print(window.current)  # [5, 6, 7, 8]
 ///     print(window.region(0))  # TimeseriesWindow for northern ocean
 #[pyclass]

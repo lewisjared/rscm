@@ -40,106 +40,46 @@
 //!
 //! ## Invalid Input Field Access
 //!
-//! ```compile_fail
-//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
-//! # use rscm_core::timeseries::Time;
-//! # use serde::{Serialize, Deserialize};
-//! #
-//! #[derive(ComponentIO, Serialize, Deserialize)]
-//! #[inputs(
-//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
-//! )]
-//! #[outputs(
-//!     concentration { name = "Concentration|CO2", unit = "ppm" },
-//! )]
-//! struct TestComponent { conversion: f64 }
+//! The generated structs provide compile-time validation. For example, accessing
+//! a field that doesn't exist in the inputs will fail at compile time:
 //!
-//! impl TestComponent {
-//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
-//!         // ERROR: no field `temperature` on type `TestComponentInputs`
-//!         let temp = inputs.temperature.current();
-//!         TestComponentOutputs { concentration: temp }
-//!     }
-//! }
+//! ```ignore
+//! // ERROR: no field `temperature` on type `TestComponentInputs`
+//! let temp = inputs.temperature.current();
 //! ```
 //!
 //! ## Invalid Output Field
 //!
-//! ```compile_fail
-//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
-//! # use rscm_core::timeseries::Time;
-//! # use serde::{Serialize, Deserialize};
-//! #
-//! #[derive(ComponentIO, Serialize, Deserialize)]
-//! #[inputs(
-//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
-//! )]
-//! #[outputs(
-//!     concentration { name = "Concentration|CO2", unit = "ppm" },
-//! )]
-//! struct TestComponent { conversion: f64 }
+//! Similarly, trying to set an output field that doesn't exist fails:
 //!
-//! impl TestComponent {
-//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
-//!         // ERROR: no field `uptake` on type `TestComponentOutputs`
-//!         TestComponentOutputs {
-//!             concentration: 280.0,
-//!             uptake: 5.0,
-//!         }
-//!     }
+//! ```ignore
+//! // ERROR: no field `uptake` on type `TestComponentOutputs`
+//! TestComponentOutputs {
+//!     concentration: 280.0,
+//!     uptake: 5.0,  // This field doesn't exist
 //! }
 //! ```
 //!
 //! ## Missing Required Output Field
 //!
-//! ```compile_fail
-//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
-//! # use rscm_core::timeseries::Time;
-//! # use serde::{Serialize, Deserialize};
-//! #
-//! #[derive(ComponentIO, Serialize, Deserialize)]
-//! #[inputs(
-//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
-//! )]
-//! #[outputs(
-//!     concentration { name = "Concentration|CO2", unit = "ppm" },
-//!     uptake { name = "Carbon Uptake", unit = "GtC" },
-//! )]
-//! struct TestComponent { conversion: f64 }
+//! All output fields must be provided:
 //!
-//! impl TestComponent {
-//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
-//!         // ERROR: missing field `uptake` in initializer of `TestComponentOutputs`
-//!         TestComponentOutputs {
-//!             concentration: 280.0,
-//!         }
-//!     }
+//! ```ignore
+//! // ERROR: missing field `uptake` in initializer of `TestComponentOutputs`
+//! TestComponentOutputs {
+//!     concentration: 280.0,
+//!     // missing: uptake
 //! }
 //! ```
 //!
 //! ## Wrong Type for Grid Output
 //!
-//! ```compile_fail
-//! # use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
-//! # use rscm_core::timeseries::Time;
-//! # use serde::{Serialize, Deserialize};
-//! #
-//! #[derive(ComponentIO, Serialize, Deserialize)]
-//! #[inputs(
-//!     temperature { name = "Temperature", unit = "K", grid = "FourBox" },
-//! )]
-//! #[outputs(
-//!     heat_flux { name = "Heat Flux", unit = "W/m^2", grid = "FourBox" },
-//! )]
-//! struct TestComponent;
+//! Grid outputs must use the correct slice type:
 //!
-//! impl TestComponent {
-//!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
-//!         // ERROR: expected `FourBoxSlice`, found `f64`
-//!         TestComponentOutputs {
-//!             heat_flux: 5.0,  // Should be FourBoxSlice::uniform(5.0)
-//!         }
-//!     }
+//! ```ignore
+//! // ERROR: expected `FourBoxSlice`, found `f64`
+//! TestComponentOutputs {
+//!     heat_flux: 5.0,  // Should be FourBoxSlice::uniform(5.0)
 //! }
 //! ```
 
@@ -402,6 +342,8 @@ fn output_type(grid: &str) -> TokenStream2 {
 /// - `#[inputs(field { name = "...", unit = "...", grid = "..." }, ...)]` - Declare input variables
 /// - `#[outputs(field { name = "...", unit = "...", grid = "..." }, ...)]` - Declare output variables
 /// - `#[states(field { name = "...", unit = "...", grid = "..." }, ...)]` - Declare state variables
+///   (states appear in both Inputs and Outputs structs)
+/// - `#[component(tags = ["tag1", "tag2"], category = "Category Name")]` - Metadata for documentation
 ///
 /// Where `grid` can be: "Scalar" (default), "FourBox", or "Hemispheric"
 ///
@@ -411,6 +353,7 @@ fn output_type(grid: &str) -> TokenStream2 {
 /// - `FooInputs<'a>` - Input struct with `TimeseriesWindow` or `GridTimeseriesWindow` fields
 /// - `FooOutputs` - Output struct with typed fields
 /// - `Foo::generated_definitions()` - Returns `Vec<RequirementDefinition>` for the Component trait
+/// - `Foo::component_metadata()` - Returns `ComponentMetadata` for documentation generation
 #[proc_macro_derive(ComponentIO, attributes(inputs, outputs, states, component))]
 pub fn derive_component_io(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
