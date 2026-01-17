@@ -2,6 +2,8 @@
 
 This page explains the core abstractions in RSCM: **Components**, **Models**, and **Timeseries**.
 
+See the [Python API](api/rscm/) for full class documentation.
+
 ## Components
 
 Components are the fundamental building blocks of RSCM.
@@ -43,6 +45,8 @@ graph LR
 3. **Solve phase**: At each timestep, `solve(t_current, t_next, input_state)` is called
 
 ### Creating Components in Python
+
+Use [`Component`][rscm.component.Component] with [`Input`][rscm.component.Input], [`Output`][rscm.component.Output], and [`State`][rscm.component.State] descriptors:
 
 ```python
 from rscm.component import Component, Input, Output, State
@@ -118,7 +122,7 @@ A **Model** couples multiple components together, managing the flow of state bet
 
 ### ModelBuilder Pattern
 
-Models are constructed using the builder pattern:
+Models are constructed using the [`ModelBuilder`][rscm.core.ModelBuilder] pattern:
 
 ```python
 from rscm.core import ModelBuilder, TimeAxis, Timeseries
@@ -207,11 +211,11 @@ The builder will raise an error if any required inputs cannot be satisfied by ei
 
 ## Timeseries
 
-RSCM uses **timeseries** to represent time-varying data with support for different interpolation strategies.
+RSCM uses [`Timeseries`][rscm.core.Timeseries] objects to represent time-varying data with support for different interpolation strategies.
 
 ### TimeAxis
 
-A `TimeAxis` defines the temporal grid for a timeseries:
+A [`TimeAxis`][rscm.core.TimeAxis] defines the temporal grid for a timeseries:
 
 ```python
 from rscm.core import TimeAxis
@@ -226,7 +230,7 @@ time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0, 2050.0, 2100.0]))
 
 ### Timeseries
 
-A `Timeseries` combines values, time axis, units, and interpolation strategy:
+A [`Timeseries`][rscm.core.Timeseries] combines values, time axis, units, and interpolation strategy:
 
 ```python
 from rscm.core import Timeseries, InterpolationStrategy
@@ -241,7 +245,7 @@ emissions = Timeseries(
 
 ### Interpolation Strategies
 
-When the model time axis differs from the timeseries time axis, values are interpolated:
+When the model time axis differs from the timeseries time axis, values are interpolated according to the [`InterpolationStrategy`][rscm.core.InterpolationStrategy]:
 
 | Strategy   | Behaviour                                     |
 | ---------- | --------------------------------------------- |
@@ -263,7 +267,7 @@ graph LR
 
 ### TimeseriesCollection
 
-A `TimeseriesCollection` holds multiple named timeseries:
+A [`TimeseriesCollection`][rscm.core.TimeseriesCollection] holds multiple named timeseries:
 
 ```python
 from rscm.core import TimeseriesCollection

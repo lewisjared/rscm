@@ -1,6 +1,6 @@
 # Tutorials
 
-Learn RSCM through hands-on examples. Each tutorial builds on concepts from previous ones.
+Learn RSCM through hands-on examples. Each tutorial builds on concepts from previous ones. See the [Python API](api/rscm/) for full class documentation.
 
 ## Tutorial 1: Coupled Models
 

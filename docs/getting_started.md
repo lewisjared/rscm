@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks you through installing RSCM and running your first climate model simulation.
+This guide walks you through installing RSCM and running your first climate model simulation. See the [Python API](api/rscm/) for full class documentation.
 
 ## Installation
 
@@ -102,11 +102,11 @@ plt.show()
 
 RSCM ships with pre-built components for common climate modelling tasks:
 
-| Component | Module | Description |
-|-----------|--------|-------------|
-| `TwoLayerBuilder` | `rscm.two_layer` | Two-layer energy balance model for temperature |
+| Component            | Module            | Description                                      |
+| -------------------- | ----------------- | ------------------------------------------------ |
+| `TwoLayerBuilder`    | `rscm.two_layer`  | Two-layer energy balance model for temperature   |
 | `CarbonCycleBuilder` | `rscm.components` | Simple carbon cycle (emissions to concentration) |
-| `CO2ERFBuilder` | `rscm.components` | CO2 concentration to effective radiative forcing |
+| `CO2ERFBuilder`      | `rscm.components` | CO2 concentration to effective radiative forcing |
 
 ### Coupling Components
 
