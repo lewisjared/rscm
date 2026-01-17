@@ -663,7 +663,7 @@ checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
 name = "rscm"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "ndarray",
  "numpy",
@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "rscm-components"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "approx",
  "numpy",
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "rscm-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "is_close",
  "log",
@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "rscm-macros"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -741,7 +741,7 @@ dependencies = [
 
 [[package]]
 name = "rscm-magicc"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "pyo3",
  "rscm-core",
@@ -751,7 +751,7 @@ dependencies = [
 
 [[package]]
 name = "rscm-two-layer"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "numpy",
  "ode_solvers",
