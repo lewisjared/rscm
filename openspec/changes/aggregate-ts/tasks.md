@@ -26,15 +26,15 @@
 - [x] 3.4 Validate grid type consistency between contributors and aggregates
 - [x] 3.5 Validate weighted aggregate weights count matches contributors count
 - [x] 3.6 Detect circular aggregate dependencies
-- [x] 3.7 Add error variants to `RSCMError`: `UndefinedContributor`, `SchemaUnitMismatch`, `SchemaGridTypeMismatch`, `WeightCountMismatch`, `AggregateCircularDependency`
+- [x] 3.7 Add error variants to `RSCMError`: `UndefinedContributor`, `SchemaUnitMismatch`, `SchemaGridTypeMismatch`, `WeightCountMismatch`, `AggregateCircularDependency`, `SchemaUndefinedOutput`, `SchemaUndefinedInput`, `ComponentSchemaUnitMismatch`, `ComponentSchemaGridMismatch`
 
 ## 4. ModelBuilder Integration
 
-- [ ] 4.1 Add `schema: Option<VariableSchema>` field to `ModelBuilder`
-- [ ] 4.2 Implement `ModelBuilder::with_schema(schema)`
-- [ ] 4.3 Validate component outputs against schema in `build()`
-- [ ] 4.4 Validate component inputs against schema in `build()`
-- [ ] 4.5 Create timeseries for schema variables not written by components (NaN)
+- [x] 4.1 Add `schema: Option<VariableSchema>` field to `ModelBuilder`
+- [x] 4.2 Implement `ModelBuilder::with_schema(schema)`
+- [x] 4.3 Validate component outputs against schema in `build()`
+- [x] 4.4 Validate component inputs against schema in `build()`
+- [x] 4.5 Create timeseries for schema variables not written by components (NaN)
 
 ## 5. Aggregate Execution
 
@@ -69,7 +69,7 @@
 - [ ] 8.5 Integration test: model with mean aggregate
 - [ ] 8.6 Integration test: model with weighted aggregate
 - [ ] 8.7 Integration test: aggregate with NaN contributors
-- [ ] 8.8 Integration test: schema variable with no writer (NaN)
+- [x] 8.8 Integration test: schema variable with no writer (NaN)
 - [ ] 8.9 Python integration test for schema API
 
 ## 9. Documentation

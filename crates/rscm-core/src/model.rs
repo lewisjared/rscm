@@ -14,6 +14,7 @@ use crate::component::{
 };
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+use crate::schema::VariableSchema;
 use crate::spatial::ScalarRegion;
 use crate::state::StateValue;
 use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
@@ -83,6 +84,7 @@ pub struct ModelBuilder {
     exogenous_variables: TimeseriesCollection,
     initial_values: HashMap<String, FloatValue>,
     pub time_axis: Arc<TimeAxis>,
+    schema: Option<VariableSchema>,
 }
 
 /// Checks if the new definition is valid
@@ -188,7 +190,23 @@ impl ModelBuilder {
             initial_values: HashMap::new(),
             exogenous_variables: TimeseriesCollection::new(),
             time_axis: Arc::new(TimeAxis::from_values(Array::range(2000.0, 2100.0, 1.0))),
+            schema: None,
         }
+    }
+
+    /// Set the variable schema for the model
+    ///
+    /// The schema defines all variables (including aggregates) that the model uses.
+    /// When a schema is provided, the builder validates:
+    /// - Component outputs are defined in the schema
+    /// - Component inputs are defined in the schema or produced by other components
+    /// - Units and grid types match between components and schema
+    ///
+    /// Variables defined in the schema but not produced by any component will
+    /// be initialised to NaN.
+    pub fn with_schema(&mut self, schema: VariableSchema) -> &mut Self {
+        self.schema = Some(schema);
+        self
     }
 
     /// Register a component with the builder
@@ -245,6 +263,104 @@ impl ModelBuilder {
     pub fn with_time_axis(&mut self, time_axis: TimeAxis) -> &mut Self {
         self.time_axis = Arc::new(time_axis);
         self
+    }
+
+    /// Validate a component's requirements against the schema
+    ///
+    /// Checks that:
+    /// - All outputs are defined in the schema (as variables or aggregates)
+    /// - All inputs are defined in the schema (as variables or aggregates)
+    /// - Units match between component and schema
+    /// - Grid types match between component and schema
+    fn validate_component_against_schema(
+        &self,
+        schema: &VariableSchema,
+        component_name: &str,
+        inputs: &[RequirementDefinition],
+        outputs: &[RequirementDefinition],
+        endogenous: &HashMap<String, NodeIndex>,
+    ) -> RSCMResult<()> {
+        // Validate outputs (4.3)
+        for output in outputs {
+            // Check if output is defined in schema
+            if !schema.contains(&output.name) {
+                return Err(RSCMError::SchemaUndefinedOutput {
+                    component: component_name.to_string(),
+                    variable: output.name.clone(),
+                    unit: output.unit.clone(),
+                });
+            }
+
+            // Check unit matches
+            if let Some(schema_unit) = schema.get_unit(&output.name) {
+                if schema_unit != output.unit {
+                    return Err(RSCMError::ComponentSchemaUnitMismatch {
+                        variable: output.name.clone(),
+                        component: component_name.to_string(),
+                        component_unit: output.unit.clone(),
+                        schema_unit: schema_unit.to_string(),
+                    });
+                }
+            }
+
+            // Check grid type matches
+            if let Some(schema_grid) = schema.get_grid_type(&output.name) {
+                if schema_grid != output.grid_type {
+                    return Err(RSCMError::ComponentSchemaGridMismatch {
+                        variable: output.name.clone(),
+                        component: component_name.to_string(),
+                        component_grid: format!("{:?}", output.grid_type),
+                        schema_grid: format!("{:?}", schema_grid),
+                    });
+                }
+            }
+        }
+
+        // Validate inputs (4.4)
+        for input in inputs {
+            // Skip empty links
+            if input.requirement_type == RequirementType::EmptyLink {
+                continue;
+            }
+
+            // Input is valid if:
+            // 1. It's defined in the schema (as variable or aggregate), OR
+            // 2. It's produced by another component (endogenous)
+            if !schema.contains(&input.name) && !endogenous.contains_key(&input.name) {
+                return Err(RSCMError::SchemaUndefinedInput {
+                    component: component_name.to_string(),
+                    variable: input.name.clone(),
+                    unit: input.unit.clone(),
+                });
+            }
+
+            // If it's in the schema, check unit and grid type match
+            if schema.contains(&input.name) {
+                if let Some(schema_unit) = schema.get_unit(&input.name) {
+                    if schema_unit != input.unit {
+                        return Err(RSCMError::ComponentSchemaUnitMismatch {
+                            variable: input.name.clone(),
+                            component: component_name.to_string(),
+                            component_unit: input.unit.clone(),
+                            schema_unit: schema_unit.to_string(),
+                        });
+                    }
+                }
+
+                if let Some(schema_grid) = schema.get_grid_type(&input.name) {
+                    if schema_grid != input.grid_type {
+                        return Err(RSCMError::ComponentSchemaGridMismatch {
+                            variable: input.name.clone(),
+                            component: component_name.to_string(),
+                            component_grid: format!("{:?}", input.grid_type),
+                            schema_grid: format!("{:?}", schema_grid),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Builds the component graph for the registered components and creates a concrete model
@@ -336,6 +452,63 @@ impl ModelBuilder {
         // Check that the component graph doesn't contain any loops
         assert!(!is_valid_graph(&graph));
 
+        // Validate against schema if provided
+        if let Some(schema) = &self.schema {
+            // First validate the schema itself
+            schema.validate()?;
+
+            // Validate each component against the schema
+            for component in &self.components {
+                let component_name = format!("{:?}", component);
+                let component_name = component_name
+                    .split(['{', ' ', '('])
+                    .next()
+                    .unwrap_or("UnknownComponent")
+                    .to_string();
+
+                self.validate_component_against_schema(
+                    schema,
+                    &component_name,
+                    &component.inputs(),
+                    &component.outputs(),
+                    &endrogoneous,
+                )?;
+            }
+
+            // Add schema variables not produced by components to definitions (4.5)
+            // These will be initialised to NaN
+            for (name, var_def) in &schema.variables {
+                if !definitions.contains_key(name) {
+                    definitions.insert(
+                        name.clone(),
+                        VariableDefinition {
+                            name: name.clone(),
+                            unit: var_def.unit.clone(),
+                            grid_type: var_def.grid_type,
+                        },
+                    );
+                    // Mark as exogenous since it's not produced by any component
+                    exogenous.push(name.clone());
+                }
+            }
+
+            // Add aggregate variables to definitions (they will be computed later)
+            for (name, agg_def) in &schema.aggregates {
+                if !definitions.contains_key(name) {
+                    definitions.insert(
+                        name.clone(),
+                        VariableDefinition {
+                            name: name.clone(),
+                            unit: agg_def.unit.clone(),
+                            grid_type: agg_def.grid_type,
+                        },
+                    );
+                    // Aggregates are endogenous (computed by the model)
+                    // but not tracked in endrogoneous HashMap (no component produces them directly)
+                }
+            }
+        }
+
         // Create the timeseries collection using the information from the components
         let mut collection = TimeseriesCollection::new();
         for (name, definition) in definitions {
@@ -372,7 +545,55 @@ impl ModelBuilder {
                                 .interpolate_into(self.time_axis.clone()),
                             VariableType::Exogenous,
                         ),
-                        None => println!("No exogenous data for {}", definition.name),
+                        None => {
+                            // No exogenous data provided - create empty timeseries (all NaN)
+                            // This is expected for schema variables without writers
+                            match definition.grid_type {
+                                GridType::Scalar => collection.add_timeseries(
+                                    definition.name,
+                                    Timeseries::new_empty_scalar(
+                                        self.time_axis.clone(),
+                                        definition.unit,
+                                        InterpolationStrategy::from(LinearSplineStrategy::new(
+                                            true,
+                                        )),
+                                    ),
+                                    VariableType::Exogenous,
+                                ),
+                                GridType::FourBox => {
+                                    use crate::spatial::FourBoxGrid;
+                                    let grid = FourBoxGrid::magicc_standard();
+                                    collection.add_four_box_timeseries(
+                                        definition.name,
+                                        crate::timeseries::GridTimeseries::new_empty(
+                                            self.time_axis.clone(),
+                                            grid,
+                                            definition.unit,
+                                            InterpolationStrategy::from(LinearSplineStrategy::new(
+                                                true,
+                                            )),
+                                        ),
+                                        VariableType::Exogenous,
+                                    )
+                                }
+                                GridType::Hemispheric => {
+                                    use crate::spatial::HemisphericGrid;
+                                    let grid = HemisphericGrid::equal_weights();
+                                    collection.add_hemispheric_timeseries(
+                                        definition.name,
+                                        crate::timeseries::GridTimeseries::new_empty(
+                                            self.time_axis.clone(),
+                                            grid,
+                                            definition.unit,
+                                            InterpolationStrategy::from(LinearSplineStrategy::new(
+                                                true,
+                                            )),
+                                        ),
+                                        VariableType::Exogenous,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -787,7 +1008,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 
         /// A component that produces a FourBox output
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        struct FourBoxProducer;
+        pub struct FourBoxProducer;
 
         #[typetag::serde]
         impl Component for FourBoxProducer {
@@ -840,7 +1061,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 
         /// A component that expects a FourBox input (compatible with FourBoxProducer)
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        struct FourBoxConsumer;
+        pub struct FourBoxConsumer;
 
         #[typetag::serde]
         impl Component for FourBoxConsumer {
@@ -894,6 +1115,261 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
                 .with_component(Arc::new(FourBoxProducer))
                 .with_component(Arc::new(FourBoxConsumer))
+                .build()
+                .unwrap();
+        }
+    }
+
+    mod schema_validation_tests {
+        use super::grid_validation_tests::{FourBoxConsumer, FourBoxProducer};
+        use super::*;
+        use crate::schema::{AggregateOp, VariableSchema};
+
+        #[test]
+        fn test_model_with_valid_schema() {
+            // Schema that matches component requirements
+            let schema = VariableSchema::new()
+                .variable("Emissions|CO2", "GtCO2")
+                .variable("Concentrations|CO2", "ppm");
+
+            let _model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(TestComponent::from_parameters(
+                    TestComponentParameters {
+                        conversion_factor: 0.5,
+                    },
+                )))
+                .with_exogenous_variable("Emissions|CO2", get_emissions())
+                .build()
+                .unwrap();
+        }
+
+        #[test]
+        fn test_schema_rejects_undefined_output() {
+            // Schema missing the output variable
+            let schema = VariableSchema::new().variable("Emissions|CO2", "GtCO2");
+            // Missing "Concentrations|CO2"
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(TestComponent::from_parameters(
+                    TestComponentParameters {
+                        conversion_factor: 0.5,
+                    },
+                )))
+                .with_exogenous_variable("Emissions|CO2", get_emissions())
+                .build();
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains("Concentrations|CO2"),
+                "Error should mention missing variable: {}",
+                msg
+            );
+            assert!(
+                msg.contains("not defined in the schema"),
+                "Error should indicate schema issue: {}",
+                msg
+            );
+        }
+
+        #[test]
+        fn test_schema_rejects_undefined_input() {
+            // Schema missing the input variable (and no component produces it)
+            let schema = VariableSchema::new().variable("Concentrations|CO2", "ppm");
+            // Missing "Emissions|CO2"
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(TestComponent::from_parameters(
+                    TestComponentParameters {
+                        conversion_factor: 0.5,
+                    },
+                )))
+                .build();
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains("Emissions|CO2"),
+                "Error should mention missing variable: {}",
+                msg
+            );
+        }
+
+        #[test]
+        fn test_schema_rejects_unit_mismatch() {
+            // Schema with wrong unit for output variable
+            let schema = VariableSchema::new()
+                .variable("Emissions|CO2", "GtCO2")
+                .variable("Concentrations|CO2", "GtC"); // Wrong unit - should be "ppm"
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(TestComponent::from_parameters(
+                    TestComponentParameters {
+                        conversion_factor: 0.5,
+                    },
+                )))
+                .with_exogenous_variable("Emissions|CO2", get_emissions())
+                .build();
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains("Unit mismatch"),
+                "Error should indicate unit mismatch: {}",
+                msg
+            );
+            assert!(
+                msg.contains("Concentrations|CO2"),
+                "Error should mention the variable: {}",
+                msg
+            );
+        }
+
+        #[test]
+        fn test_schema_rejects_grid_type_mismatch() {
+            // Schema with wrong grid type
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::Scalar) // Should be FourBox
+                .variable("GlobalTemperature", "K");
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxProducer))
+                .with_component(Arc::new(FourBoxConsumer))
+                .build();
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains("Grid type mismatch"),
+                "Error should indicate grid type mismatch: {}",
+                msg
+            );
+        }
+
+        #[test]
+        fn test_schema_with_aggregate_validates() {
+            // Schema with an aggregate definition
+            let schema = VariableSchema::new()
+                .variable("Emissions|CO2", "GtCO2")
+                .variable("Concentrations|CO2", "ppm")
+                .aggregate("Total Concentrations", "ppm", AggregateOp::Sum)
+                .from("Concentrations|CO2")
+                .build();
+
+            let _model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(TestComponent::from_parameters(
+                    TestComponentParameters {
+                        conversion_factor: 0.5,
+                    },
+                )))
+                .with_exogenous_variable("Emissions|CO2", get_emissions())
+                .build()
+                .unwrap();
+        }
+
+        #[test]
+        fn test_schema_creates_nan_for_unwritten_variables() {
+            // Schema has a variable that no component writes to
+            let schema = VariableSchema::new()
+                .variable("Emissions|CO2", "GtCO2")
+                .variable("Concentrations|CO2", "ppm")
+                .variable("Concentrations|CH4", "ppb"); // No component writes this
+
+            let model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(TestComponent::from_parameters(
+                    TestComponentParameters {
+                        conversion_factor: 0.5,
+                    },
+                )))
+                .with_exogenous_variable("Emissions|CO2", get_emissions())
+                .build()
+                .unwrap();
+
+            // The CH4 variable should exist but be all NaN
+            let ch4 = model
+                .timeseries()
+                .get_data("Concentrations|CH4")
+                .and_then(|d| d.as_scalar());
+            assert!(
+                ch4.is_some(),
+                "CH4 timeseries should exist even though no component writes it"
+            );
+            let ch4 = ch4.unwrap();
+            assert!(
+                ch4.values().iter().all(|v| v.is_nan()),
+                "All CH4 values should be NaN since no component writes to it"
+            );
+        }
+
+        #[test]
+        fn test_schema_invalid_aggregate_fails() {
+            // Schema with invalid aggregate (circular dependency)
+            let mut schema = VariableSchema::new();
+            schema.aggregates.insert(
+                "A".to_string(),
+                crate::schema::AggregateDefinition {
+                    name: "A".to_string(),
+                    unit: "units".to_string(),
+                    grid_type: GridType::Scalar,
+                    operation: AggregateOp::Sum,
+                    contributors: vec!["B".to_string()],
+                },
+            );
+            schema.aggregates.insert(
+                "B".to_string(),
+                crate::schema::AggregateDefinition {
+                    name: "B".to_string(),
+                    unit: "units".to_string(),
+                    grid_type: GridType::Scalar,
+                    operation: AggregateOp::Sum,
+                    contributors: vec!["A".to_string()],
+                },
+            );
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .build();
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains("Circular dependency"),
+                "Error should indicate circular dependency: {}",
+                msg
+            );
+        }
+
+        #[test]
+        fn test_model_without_schema_still_works() {
+            // Ensure models without schema still work as before
+            let _model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_component(Arc::new(TestComponent::from_parameters(
+                    TestComponentParameters {
+                        conversion_factor: 0.5,
+                    },
+                )))
+                .with_exogenous_variable("Emissions|CO2", get_emissions())
                 .build()
                 .unwrap();
         }
