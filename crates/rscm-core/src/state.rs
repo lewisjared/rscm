@@ -219,6 +219,19 @@ where
         }
     }
 
+    /// Get all regional values at a relative offset from the current timestep.
+    ///
+    /// Positive offsets look forward in time, negative offsets look backward.
+    /// Returns `None` if the resulting index is out of bounds.
+    pub fn at_offset_all(&self, offset: isize) -> Option<Vec<FloatValue>> {
+        let index = self.current_index as isize + offset;
+        if index < 0 || index as usize >= self.timeseries.len() {
+            None
+        } else {
+            self.timeseries.at_time_index(index as usize)
+        }
+    }
+
     /// Get the current time value.
     pub fn time(&self) -> Time {
         self.current_time

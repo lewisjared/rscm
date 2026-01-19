@@ -35,6 +35,13 @@
 //! - [`AggregateOp::Weighted`]: Weighted sum with provided weights
 //!
 //! NaN values are excluded from computations (treated as missing data).
+//!
+//! # Aggregate Execution
+//!
+//! When a model has a schema with aggregates, virtual aggregator components are
+//! inserted into the component graph during `ModelBuilder::build()`. These
+//! aggregators read from their contributor variables and write to the aggregate
+//! variable after all contributors have been solved.
 
 use crate::component::GridType;
 use crate::errors::{RSCMError, RSCMResult};
@@ -441,6 +448,66 @@ impl VariableSchema {
         Ok(())
     }
 
+    /// Return aggregates in topological order (dependencies before dependents).
+    ///
+    /// This ensures that when processing aggregates, any aggregate that references
+    /// another aggregate will be processed after its dependencies.
+    ///
+    /// # Returns
+    ///
+    /// A vector of aggregate names in topological order.
+    pub fn topological_order_aggregates(&self) -> Vec<String> {
+        // Build in-degree map and adjacency list
+        let mut in_degree: HashMap<String, usize> = HashMap::new();
+        let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+
+        for name in self.aggregates.keys() {
+            in_degree.entry(name.clone()).or_insert(0);
+            dependents.entry(name.clone()).or_default();
+        }
+
+        // Count in-degrees (how many aggregates each aggregate depends on)
+        for (name, agg_def) in &self.aggregates {
+            for contributor in &agg_def.contributors {
+                // Only count dependencies on other aggregates
+                if self.aggregates.contains_key(contributor) {
+                    *in_degree.get_mut(name).unwrap() += 1;
+                    dependents.get_mut(contributor).unwrap().push(name.clone());
+                }
+            }
+        }
+
+        // Kahn's algorithm for topological sort
+        let mut result = Vec::new();
+        let mut queue: Vec<String> = in_degree
+            .iter()
+            .filter(|(_, &deg)| deg == 0)
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        // Sort for deterministic ordering
+        queue.sort();
+
+        while let Some(name) = queue.pop() {
+            result.push(name.clone());
+
+            if let Some(deps) = dependents.get(&name) {
+                for dep in deps {
+                    if let Some(deg) = in_degree.get_mut(dep) {
+                        *deg -= 1;
+                        if *deg == 0 {
+                            // Insert in sorted order for determinism
+                            let pos = queue.binary_search(dep).unwrap_or_else(|e| e);
+                            queue.insert(pos, dep.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
     /// Check for circular dependencies in aggregate definitions.
     ///
     /// Uses depth-first search to detect cycles in the aggregate dependency graph.
@@ -622,6 +689,246 @@ impl AggregateBuilder {
         let name = self.aggregate.name.clone();
         self.schema.aggregates.insert(name, self.aggregate);
         self.schema
+    }
+}
+
+// =============================================================================
+// Aggregate Computation
+// =============================================================================
+
+/// Compute an aggregate value from contributor values.
+///
+/// NaN values are excluded from the computation (treated as missing data).
+/// If all contributors are NaN, the result is NaN.
+///
+/// For `Weighted` aggregates, weights corresponding to NaN values are also excluded.
+///
+/// # Arguments
+///
+/// * `contributors` - The contributor values (may contain NaN)
+/// * `op` - The aggregation operation to apply
+///
+/// # Returns
+///
+/// The computed aggregate value, or NaN if all contributors are NaN.
+///
+/// # Examples
+///
+/// ```
+/// use rscm_core::schema::{compute_aggregate, AggregateOp};
+///
+/// // Sum operation
+/// let values = vec![1.0, 2.0, 3.0];
+/// assert_eq!(compute_aggregate(&values, &AggregateOp::Sum), 6.0);
+///
+/// // Sum with NaN excluded
+/// let values_nan = vec![1.0, f64::NAN, 3.0];
+/// assert_eq!(compute_aggregate(&values_nan, &AggregateOp::Sum), 4.0);
+///
+/// // Mean divides by count of valid values
+/// let values = vec![1.0, 2.0, 3.0];
+/// assert_eq!(compute_aggregate(&values, &AggregateOp::Mean), 2.0);
+///
+/// // Weighted sum
+/// let values = vec![10.0, 20.0];
+/// let op = AggregateOp::Weighted(vec![0.3, 0.7]);
+/// assert_eq!(compute_aggregate(&values, &op), 17.0); // 10*0.3 + 20*0.7
+/// ```
+pub fn compute_aggregate(contributors: &[f64], op: &AggregateOp) -> f64 {
+    match op {
+        AggregateOp::Sum => {
+            let valid: Vec<f64> = contributors
+                .iter()
+                .filter(|v| !v.is_nan())
+                .copied()
+                .collect();
+            if valid.is_empty() {
+                f64::NAN
+            } else {
+                valid.iter().sum()
+            }
+        }
+        AggregateOp::Mean => {
+            let valid: Vec<f64> = contributors
+                .iter()
+                .filter(|v| !v.is_nan())
+                .copied()
+                .collect();
+            if valid.is_empty() {
+                f64::NAN
+            } else {
+                valid.iter().sum::<f64>() / valid.len() as f64
+            }
+        }
+        AggregateOp::Weighted(weights) => {
+            // Filter out NaN values and their corresponding weights
+            let valid_pairs: Vec<(f64, f64)> = contributors
+                .iter()
+                .zip(weights.iter())
+                .filter(|(v, _)| !v.is_nan())
+                .map(|(v, w)| (*v, *w))
+                .collect();
+
+            if valid_pairs.is_empty() {
+                f64::NAN
+            } else {
+                valid_pairs.iter().map(|(v, w)| v * w).sum()
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Aggregator Component
+// =============================================================================
+
+use crate::component::{
+    Component, InputState, OutputState, RequirementDefinition, RequirementType,
+};
+use crate::state::StateValue;
+use crate::timeseries::Time;
+
+/// A virtual component that computes aggregate values from contributors.
+///
+/// `AggregatorComponent` is automatically created by `ModelBuilder` when a
+/// schema with aggregates is provided. It reads values from all contributors
+/// and writes the computed aggregate to its output variable.
+///
+/// This component is internal and should not be created directly by users.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregatorComponent {
+    /// The name of the aggregate variable this component produces
+    pub aggregate_name: String,
+    /// The unit of the aggregate variable
+    pub unit: String,
+    /// The grid type of the aggregate
+    pub grid_type: GridType,
+    /// The aggregation operation to apply
+    pub operation: AggregateOp,
+    /// The names of the contributor variables to read
+    pub contributors: Vec<String>,
+}
+
+impl AggregatorComponent {
+    /// Create a new aggregator component from an aggregate definition.
+    pub fn from_definition(def: &AggregateDefinition) -> Self {
+        Self {
+            aggregate_name: def.name.clone(),
+            unit: def.unit.clone(),
+            grid_type: def.grid_type,
+            operation: def.operation.clone(),
+            contributors: def.contributors.clone(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl Component for AggregatorComponent {
+    fn definitions(&self) -> Vec<RequirementDefinition> {
+        let mut defs = Vec::with_capacity(self.contributors.len() + 1);
+
+        // Input: read from each contributor
+        for contributor in &self.contributors {
+            defs.push(RequirementDefinition::with_grid(
+                contributor,
+                &self.unit,
+                RequirementType::Input,
+                self.grid_type,
+            ));
+        }
+
+        // Output: the aggregate variable
+        defs.push(RequirementDefinition::with_grid(
+            &self.aggregate_name,
+            &self.unit,
+            RequirementType::Output,
+            self.grid_type,
+        ));
+
+        defs
+    }
+
+    fn solve(
+        &self,
+        _t_current: Time,
+        _t_next: Time,
+        input_state: &InputState,
+    ) -> RSCMResult<OutputState> {
+        let mut output = OutputState::new();
+
+        // Aggregators need to read values that were just computed in this timestep.
+        // Component outputs are written to time_index + 1, so we read at offset +1
+        // from the current time (which is time_index).
+
+        match self.grid_type {
+            GridType::Scalar => {
+                // Collect scalar values from all contributors at offset +1
+                let values: Vec<f64> = self
+                    .contributors
+                    .iter()
+                    .map(|name| {
+                        let window = input_state.get_scalar_window(name);
+                        // Read from offset +1 where values were just written
+                        window.at_offset(1).unwrap_or_else(|| window.current())
+                    })
+                    .collect();
+
+                let result = compute_aggregate(&values, &self.operation);
+                output.insert(self.aggregate_name.clone(), StateValue::Scalar(result));
+            }
+            GridType::FourBox => {
+                use crate::state::FourBoxSlice;
+
+                // For FourBox, we need to aggregate per-region
+                let mut region_values: [Vec<f64>; 4] = Default::default();
+
+                for name in &self.contributors {
+                    let window = input_state.get_four_box_window(name);
+                    // Read from offset +1 where values were just written
+                    let values = window
+                        .at_offset_all(1)
+                        .unwrap_or_else(|| window.current_all());
+                    for (i, val) in values.into_iter().enumerate() {
+                        region_values[i].push(val);
+                    }
+                }
+
+                let mut result = FourBoxSlice::new();
+                for (i, vals) in region_values.iter().enumerate() {
+                    let agg = compute_aggregate(vals, &self.operation);
+                    result.0[i] = agg;
+                }
+
+                output.insert(self.aggregate_name.clone(), StateValue::FourBox(result));
+            }
+            GridType::Hemispheric => {
+                use crate::state::HemisphericSlice;
+
+                // For Hemispheric, we need to aggregate per-region
+                let mut region_values: [Vec<f64>; 2] = Default::default();
+
+                for name in &self.contributors {
+                    let window = input_state.get_hemispheric_window(name);
+                    // Read from offset +1 where values were just written
+                    let values = window
+                        .at_offset_all(1)
+                        .unwrap_or_else(|| window.current_all());
+                    for (i, val) in values.into_iter().enumerate() {
+                        region_values[i].push(val);
+                    }
+                }
+
+                let mut result = HemisphericSlice::new();
+                for (i, vals) in region_values.iter().enumerate() {
+                    let agg = compute_aggregate(vals, &self.operation);
+                    result.0[i] = agg;
+                }
+
+                output.insert(self.aggregate_name.clone(), StateValue::Hemispheric(result));
+            }
+        }
+
+        Ok(output)
     }
 }
 
@@ -1132,5 +1439,147 @@ mod tests {
             .build();
 
         assert!(schema.validate().is_ok());
+    }
+
+    // compute_aggregate tests
+
+    #[test]
+    fn test_compute_aggregate_sum() {
+        let values = vec![1.0, 2.0, 3.0, 4.0];
+        let result = compute_aggregate(&values, &AggregateOp::Sum);
+        assert_eq!(result, 10.0);
+    }
+
+    #[test]
+    fn test_compute_aggregate_sum_with_nan() {
+        let values = vec![1.0, f64::NAN, 3.0, 4.0];
+        let result = compute_aggregate(&values, &AggregateOp::Sum);
+        assert_eq!(result, 8.0); // 1 + 3 + 4, NaN excluded
+    }
+
+    #[test]
+    fn test_compute_aggregate_sum_all_nan() {
+        let values = vec![f64::NAN, f64::NAN];
+        let result = compute_aggregate(&values, &AggregateOp::Sum);
+        assert!(result.is_nan());
+    }
+
+    #[test]
+    fn test_compute_aggregate_sum_empty() {
+        let values: Vec<f64> = vec![];
+        let result = compute_aggregate(&values, &AggregateOp::Sum);
+        assert!(result.is_nan());
+    }
+
+    #[test]
+    fn test_compute_aggregate_mean() {
+        let values = vec![1.0, 2.0, 3.0, 4.0];
+        let result = compute_aggregate(&values, &AggregateOp::Mean);
+        assert_eq!(result, 2.5); // (1+2+3+4) / 4
+    }
+
+    #[test]
+    fn test_compute_aggregate_mean_with_nan() {
+        let values = vec![1.0, f64::NAN, 3.0];
+        let result = compute_aggregate(&values, &AggregateOp::Mean);
+        assert_eq!(result, 2.0); // (1 + 3) / 2 (NaN excluded from count)
+    }
+
+    #[test]
+    fn test_compute_aggregate_mean_all_nan() {
+        let values = vec![f64::NAN, f64::NAN];
+        let result = compute_aggregate(&values, &AggregateOp::Mean);
+        assert!(result.is_nan());
+    }
+
+    #[test]
+    fn test_compute_aggregate_weighted() {
+        let values = vec![10.0, 20.0, 30.0];
+        let weights = vec![0.5, 0.3, 0.2];
+        let result = compute_aggregate(&values, &AggregateOp::Weighted(weights));
+        assert_eq!(result, 17.0); // 10*0.5 + 20*0.3 + 30*0.2 = 5 + 6 + 6 = 17
+    }
+
+    #[test]
+    fn test_compute_aggregate_weighted_with_nan() {
+        let values = vec![10.0, f64::NAN, 30.0];
+        let weights = vec![0.5, 0.3, 0.2];
+        let result = compute_aggregate(&values, &AggregateOp::Weighted(weights));
+        assert_eq!(result, 11.0); // 10*0.5 + 30*0.2 = 5 + 6 = 11 (NaN value and its weight excluded)
+    }
+
+    #[test]
+    fn test_compute_aggregate_weighted_all_nan() {
+        let values = vec![f64::NAN, f64::NAN];
+        let weights = vec![0.6, 0.4];
+        let result = compute_aggregate(&values, &AggregateOp::Weighted(weights));
+        assert!(result.is_nan());
+    }
+
+    // AggregatorComponent tests
+
+    #[test]
+    fn test_aggregator_component_from_definition() {
+        let def = AggregateDefinition {
+            name: "Total ERF".to_string(),
+            unit: "W/m^2".to_string(),
+            grid_type: GridType::Scalar,
+            operation: AggregateOp::Sum,
+            contributors: vec!["ERF|CO2".to_string(), "ERF|CH4".to_string()],
+        };
+
+        let agg = AggregatorComponent::from_definition(&def);
+
+        assert_eq!(agg.aggregate_name, "Total ERF");
+        assert_eq!(agg.unit, "W/m^2");
+        assert_eq!(agg.grid_type, GridType::Scalar);
+        assert_eq!(agg.operation, AggregateOp::Sum);
+        assert_eq!(agg.contributors, vec!["ERF|CO2", "ERF|CH4"]);
+    }
+
+    #[test]
+    fn test_aggregator_component_definitions() {
+        let def = AggregateDefinition {
+            name: "Total ERF".to_string(),
+            unit: "W/m^2".to_string(),
+            grid_type: GridType::Scalar,
+            operation: AggregateOp::Sum,
+            contributors: vec!["ERF|CO2".to_string(), "ERF|CH4".to_string()],
+        };
+
+        let agg = AggregatorComponent::from_definition(&def);
+        let defs = agg.definitions();
+
+        // Should have 2 inputs + 1 output
+        assert_eq!(defs.len(), 3);
+
+        // First two are inputs
+        assert_eq!(defs[0].name, "ERF|CO2");
+        assert_eq!(defs[0].requirement_type, RequirementType::Input);
+        assert_eq!(defs[1].name, "ERF|CH4");
+        assert_eq!(defs[1].requirement_type, RequirementType::Input);
+
+        // Last one is output
+        assert_eq!(defs[2].name, "Total ERF");
+        assert_eq!(defs[2].requirement_type, RequirementType::Output);
+    }
+
+    #[test]
+    fn test_aggregator_component_serialization() {
+        let def = AggregateDefinition {
+            name: "Total".to_string(),
+            unit: "units".to_string(),
+            grid_type: GridType::Scalar,
+            operation: AggregateOp::Mean,
+            contributors: vec!["A".to_string(), "B".to_string()],
+        };
+
+        let agg = AggregatorComponent::from_definition(&def);
+        let json = serde_json::to_string(&agg).unwrap();
+        let deserialized: AggregatorComponent = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(agg.aggregate_name, deserialized.aggregate_name);
+        assert_eq!(agg.operation, deserialized.operation);
+        assert_eq!(agg.contributors, deserialized.contributors);
     }
 }

@@ -38,13 +38,13 @@
 
 ## 5. Aggregate Execution
 
-- [ ] 5.1 Create virtual aggregator component type (internal)
-- [ ] 5.2 Insert aggregator nodes into component graph during `build()`
-- [ ] 5.3 Add dependency edges from contributor-producing components to aggregator
-- [ ] 5.4 Implement `compute_aggregate(contributors, op)` function
-- [ ] 5.5 Handle NaN contributors (exclude from computation, filter corresponding weights for Weighted)
-- [ ] 5.6 Ensure Mean uses count of valid values as divisor
-- [ ] 5.7 Write aggregate values to timeseries collection after contributors solve
+- [x] 5.1 Create virtual aggregator component type (internal)
+- [x] 5.2 Insert aggregator nodes into component graph during `build()`
+- [x] 5.3 Add dependency edges from contributor-producing components to aggregator
+- [x] 5.4 Implement `compute_aggregate(contributors, op)` function
+- [x] 5.5 Handle NaN contributors (exclude from computation, filter corresponding weights for Weighted)
+- [x] 5.6 Ensure Mean uses count of valid values as divisor
+- [x] 5.7 Write aggregate values to timeseries collection after contributors solve
 
 ## 6. Serialization
 
@@ -65,10 +65,10 @@
 - [x] 8.1 Unit tests for `VariableSchema` builder
 - [x] 8.2 Unit tests for schema validation (happy path)
 - [x] 8.3 Unit tests for schema validation (error cases)
-- [ ] 8.4 Integration test: model with sum aggregate
-- [ ] 8.5 Integration test: model with mean aggregate
-- [ ] 8.6 Integration test: model with weighted aggregate
-- [ ] 8.7 Integration test: aggregate with NaN contributors
+- [x] 8.4 Integration test: model with sum aggregate
+- [x] 8.5 Integration test: model with mean aggregate
+- [x] 8.6 Integration test: model with weighted aggregate
+- [x] 8.7 Integration test: aggregate with NaN contributors
 - [x] 8.8 Integration test: schema variable with no writer (NaN)
 - [ ] 8.9 Python integration test for schema API
 
