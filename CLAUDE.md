@@ -102,6 +102,44 @@ The pyproject.toml uses `manifest-path = "crates/rscm/Cargo.toml"` to point to t
 
 **Timeseries** (`crates/rscm-core/src/timeseries.rs`): Time-indexed data with interpolation strategies (linear, previous, next).
 
+**VariableSchema** (`crates/rscm-core/src/schema.rs`): Declares model variables and aggregation relationships:
+
+- Variables are first-class entities declared separately from components
+- Aggregates compute derived values (Sum, Mean, Weighted) from multiple contributors
+- Schema validation ensures unit/grid consistency between contributors and aggregates
+- Virtual aggregator components are inserted into the component graph during build
+
+### Variable Schema Usage
+
+Use `VariableSchema` when you need to aggregate multiple component outputs:
+
+```rust
+use rscm_core::schema::{AggregateOp, VariableSchema};
+use rscm_core::model::ModelBuilder;
+
+// Declare schema with variables and aggregates
+let schema = VariableSchema::new()
+    .variable("ERF|CO2", "W/m^2")
+    .variable("ERF|CH4", "W/m^2")
+    .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+        .from("ERF|CO2")
+        .from("ERF|CH4")
+        .build();
+
+// Build model with schema
+let model = ModelBuilder::new()
+    .with_schema(schema)
+    .with_component(co2_erf_component)
+    .with_component(ch4_erf_component)
+    .build()?;
+```
+
+Key behaviours:
+- Contributors can be variables or other aggregates (enabling hierarchical aggregation)
+- NaN contributors are excluded from computation (treated as missing data)
+- Schema variables with no writer remain NaN (enables partial model configurations)
+- Validation on deserialization ensures loaded schemas are consistent
+
 ### Adding a New Component
 
 **Recommended: Use the ComponentIO derive macro with struct-level attributes:**

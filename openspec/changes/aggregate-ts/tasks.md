@@ -49,7 +49,7 @@
 ## 6. Serialization
 
 - [x] 6.1 Add `#[derive(Serialize, Deserialize)]` to all schema types
-- [ ] 6.2 Add validation on deserialization
+- [x] 6.2 Add validation on deserialization
 - [x] 6.3 Test round-trip JSON serialization
 
 ## 7. Python Bindings
@@ -74,8 +74,8 @@
 
 ## 9. Documentation
 
-- [ ] 9.1 Rustdoc for all public types
-- [ ] 9.2 Update CLAUDE.md with schema usage example
+- [x] 9.1 Rustdoc for all public types
+- [x] 9.2 Update CLAUDE.md with schema usage example
 - [x] 9.3 Update Python type stubs (.pyi files)
 
 ## Dependencies

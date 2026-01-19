@@ -261,7 +261,7 @@ impl AggregateDefinition {
 ///         .build();
 /// ```
 #[pyclass]
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct VariableSchema {
     /// Regular variable definitions indexed by name
     #[pyo3(get)]
@@ -270,6 +270,29 @@ pub struct VariableSchema {
     /// Aggregate definitions indexed by name
     #[pyo3(get)]
     pub aggregates: HashMap<String, AggregateDefinition>,
+}
+
+/// Helper struct for deserializing VariableSchema without validation
+/// Used internally to avoid infinite recursion in custom Deserialize impl
+#[derive(Deserialize)]
+struct VariableSchemaRaw {
+    variables: HashMap<String, SchemaVariableDefinition>,
+    aggregates: HashMap<String, AggregateDefinition>,
+}
+
+impl<'de> Deserialize<'de> for VariableSchema {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = VariableSchemaRaw::deserialize(deserializer)?;
+        let schema = VariableSchema {
+            variables: raw.variables,
+            aggregates: raw.aggregates,
+        };
+        schema.validate().map_err(serde::de::Error::custom)?;
+        Ok(schema)
+    }
 }
 
 impl VariableSchema {
@@ -1581,5 +1604,198 @@ mod tests {
         assert_eq!(agg.aggregate_name, deserialized.aggregate_name);
         assert_eq!(agg.operation, deserialized.operation);
         assert_eq!(agg.contributors, deserialized.contributors);
+    }
+
+    // Deserialization validation tests
+
+    #[test]
+    fn test_deserialize_valid_schema_json() {
+        let json = r#"{
+            "variables": {
+                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid_type": "Scalar"},
+                "ERF|CH4": {"name": "ERF|CH4", "unit": "W/m^2", "grid_type": "Scalar"}
+            },
+            "aggregates": {
+                "Total ERF": {
+                    "name": "Total ERF",
+                    "unit": "W/m^2",
+                    "grid_type": "Scalar",
+                    "operation": "Sum",
+                    "contributors": ["ERF|CO2", "ERF|CH4"]
+                }
+            }
+        }"#;
+
+        let schema: VariableSchema = serde_json::from_str(json).unwrap();
+        assert_eq!(schema.variables.len(), 2);
+        assert_eq!(schema.aggregates.len(), 1);
+    }
+
+    #[test]
+    fn test_deserialize_invalid_schema_undefined_contributor() {
+        let json = r#"{
+            "variables": {
+                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid_type": "Scalar"}
+            },
+            "aggregates": {
+                "Total ERF": {
+                    "name": "Total ERF",
+                    "unit": "W/m^2",
+                    "grid_type": "Scalar",
+                    "operation": "Sum",
+                    "contributors": ["ERF|CO2", "ERF|CH4"]
+                }
+            }
+        }"#;
+
+        let result: Result<VariableSchema, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Undefined contributor"),
+            "Expected undefined contributor error, got: {}",
+            err
+        );
+        assert!(
+            err.contains("ERF|CH4"),
+            "Error should mention missing contributor: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_deserialize_invalid_schema_unit_mismatch() {
+        let json = r#"{
+            "variables": {
+                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid_type": "Scalar"},
+                "Emissions|CO2": {"name": "Emissions|CO2", "unit": "GtCO2/yr", "grid_type": "Scalar"}
+            },
+            "aggregates": {
+                "Total": {
+                    "name": "Total",
+                    "unit": "W/m^2",
+                    "grid_type": "Scalar",
+                    "operation": "Sum",
+                    "contributors": ["ERF|CO2", "Emissions|CO2"]
+                }
+            }
+        }"#;
+
+        let result: Result<VariableSchema, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Unit mismatch"),
+            "Expected unit mismatch error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_deserialize_invalid_schema_circular_dependency() {
+        let json = r#"{
+            "variables": {},
+            "aggregates": {
+                "A": {
+                    "name": "A",
+                    "unit": "units",
+                    "grid_type": "Scalar",
+                    "operation": "Sum",
+                    "contributors": ["B"]
+                },
+                "B": {
+                    "name": "B",
+                    "unit": "units",
+                    "grid_type": "Scalar",
+                    "operation": "Sum",
+                    "contributors": ["A"]
+                }
+            }
+        }"#;
+
+        let result: Result<VariableSchema, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Circular dependency"),
+            "Expected circular dependency error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_deserialize_invalid_schema_weight_count_mismatch() {
+        let json = r#"{
+            "variables": {
+                "A": {"name": "A", "unit": "units", "grid_type": "Scalar"},
+                "B": {"name": "B", "unit": "units", "grid_type": "Scalar"},
+                "C": {"name": "C", "unit": "units", "grid_type": "Scalar"}
+            },
+            "aggregates": {
+                "Total": {
+                    "name": "Total",
+                    "unit": "units",
+                    "grid_type": "Scalar",
+                    "operation": {"Weighted": [0.5, 0.5]},
+                    "contributors": ["A", "B", "C"]
+                }
+            }
+        }"#;
+
+        let result: Result<VariableSchema, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Weight count mismatch"),
+            "Expected weight count mismatch error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_deserialize_valid_schema_toml() {
+        // TOML keys must match the name in the contributor list
+        // The HashMap key is used for lookup, so keys must match contributor references
+        let toml = r#"
+            [variables."ERF|CO2"]
+            name = "ERF|CO2"
+            unit = "W/m^2"
+            grid_type = "Scalar"
+
+            [aggregates.Total]
+            name = "Total"
+            unit = "W/m^2"
+            grid_type = "Scalar"
+            operation = "Sum"
+            contributors = ["ERF|CO2"]
+        "#;
+
+        let schema: VariableSchema = toml::from_str(toml).unwrap();
+        assert_eq!(schema.variables.len(), 1);
+        assert_eq!(schema.aggregates.len(), 1);
+    }
+
+    #[test]
+    fn test_deserialize_invalid_schema_toml_undefined_contributor() {
+        // Need to include variables field (can be empty)
+        let toml = r#"
+            [variables]
+
+            [aggregates.Total]
+            name = "Total"
+            unit = "W/m^2"
+            grid_type = "Scalar"
+            operation = "Sum"
+            contributors = ["Missing"]
+        "#;
+
+        let result: Result<VariableSchema, _> = toml::from_str(toml);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Undefined contributor"),
+            "Expected undefined contributor error, got: {}",
+            err
+        );
     }
 }
