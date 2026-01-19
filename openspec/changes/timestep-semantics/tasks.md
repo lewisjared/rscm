@@ -37,9 +37,9 @@
 
 ## 4. Update AggregatorComponent
 
-- [ ] 4.1 Replace `at_offset(1).unwrap_or_else(|| window.current())` with `at_end().unwrap_or_else(|| window.at_start())`
-- [ ] 4.2 Update comment to reference new method names
-- [ ] 4.3 Update for grid windows similarly
+- [x] 4.1 Replace `at_offset(1).unwrap_or_else(|| window.current())` with `at_end().unwrap_or_else(|| window.at_start())`
+- [x] 4.2 Update comment to reference new method names
+- [x] 4.3 Update for grid windows similarly
 
 **File:** `crates/rscm-core/src/schema.rs`
 
@@ -47,10 +47,11 @@
 
 ## 5. Update Existing Components
 
-- [ ] 5.1 Update `CO2ERF` to use appropriate timestep accessor
-- [ ] 5.2 Update `CarbonCycle` to use `at_start()` for state variable initial conditions
-- [ ] 5.3 Update `FourBoxOceanHeatUptake` to use appropriate timestep accessor
-- [ ] 5.4 Update `TwoLayer` to use `at_start()` for state variables
+- [x] 5.1 Update `CO2ERF` to use appropriate timestep accessor
+- [x] 5.2 Update `CarbonCycle` to use `at_start()` for state variable initial conditions
+- [x] 5.3 Update `FourBoxOceanHeatUptake` to use appropriate timestep accessor
+- [x] 5.4 Update `TwoLayer` to use `at_start()` for state variables
+- [x] 5.5 Update `OceanSurfacePartialPressure` to use `at_start()` for inputs
 
 **Files:** `crates/rscm-components/src/components/*.rs`, `crates/rscm-two-layer/src/component.rs`
 
