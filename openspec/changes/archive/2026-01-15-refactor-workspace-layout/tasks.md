@@ -122,12 +122,14 @@ This change depends on the `dx` branch (improve-component-dx) being merged first
 **Files Modified:**
 
 Rust:
+
 - `rscm-core/src/python/spatial.rs` - Added `#[pymodule] pub fn spatial()` exporting 6 grid/region types
 - `rscm-core/src/python/state.rs` - Added `#[pymodule] pub fn state()` exporting 5 state types
 - `rscm-core/src/python/mod.rs` - Registered submodules with `wrap_pymodule!()`, removed spatial/state from core exports
 - `src/python/mod.rs` - Added `set_submodule_path()` function to register `rscm._lib.core.spatial` and `rscm._lib.core.state` in `sys.modules`
 
 Python:
+
 - `python/rscm/_lib/core.pyi` - Removed 11 spatial/state type definitions
 - `python/rscm/_lib/core/spatial.pyi` - New file with 6 spatial grid type stubs
 - `python/rscm/_lib/core/state.pyi` - New file with 5 state type stubs
@@ -136,11 +138,13 @@ Python:
 - `tests/test_spatial_grids.py` - Updated import from `rscm._lib.core` to `rscm._lib.core.spatial`
 
 OpenSpec:
+
 - `proposal.md` - Added "Python Core Module Reorganisation" section
 - `design.md` - Added "Core Module Submodules" section
 - `specs/workspace-structure/spec.md` - Replaced "Testing Module Location" with "Core Submodules for Spatial and State Types"
 
 **New Module Structure:**
+
 ```
 rscm._lib.core (14 types)
   - TimeAxis, Timeseries, InterpolationStrategy
@@ -160,6 +164,7 @@ rscm._lib.core.state (5 types)
 ```
 
 **Verification:**
+
 - ✓ All 89 Python tests pass
 - ✓ Rust builds without errors
 - ✓ Direct submodule imports work: `from rscm._lib.core.spatial import FourBoxGrid`

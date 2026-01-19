@@ -7,6 +7,7 @@ The Ocean Carbon Cycle module simulates the uptake of CO2 by the global ocean th
 The module implements an **Impulse Response Function (IRF) approach** rather than a full ocean circulation model. This choice allows MAGICC to emulate the behavior of more complex 3D ocean models (like GFDL, HILDA, or the Bern 2.5D model) while maintaining computational efficiency suitable for large ensemble runs and scenario exploration. The IRF captures how the mixed layer "remembers" past carbon uptake events through convolution with the flux history.
 
 Key physical processes represented:
+
 1. **Air-sea gas exchange** driven by the CO2 partial pressure difference between atmosphere and surface ocean
 2. **Ocean carbonate chemistry** (Revelle factor / buffering) that reduces uptake efficiency as dissolved inorganic carbon (DIC) accumulates
 3. **Temperature sensitivity** of CO2 solubility (warmer water holds less CO2)
@@ -21,6 +22,7 @@ The fundamental flux equation is:
 $$F_{atm \rightarrow ocn} = k \cdot (pCO2_{atm} - pCO2_{ocn})$$
 
 Where:
+
 - $F_{atm \rightarrow ocn}$ = atmosphere to ocean carbon flux (ppm/month)
 - $k$ = gas exchange coefficient (month$^{-1}$), scaled by `OCEANCC_SCALE_GASXCHANGE`
 - $pCO2_{atm}$ = atmospheric CO2 partial pressure (ppm)
@@ -62,6 +64,7 @@ The change in surface ocean DIC is computed via convolution of the flux history 
 $$\Delta DIC(t) = \frac{\mu}{h \cdot A} \int_0^t F_{atm \rightarrow ocn}(t') \cdot IRF(t - t') \, dt'$$
 
 Where:
+
 - $\mu$ = `OCEAN_MICROMOL_PER_PPM_M3_PER_KG` = unit conversion factor ($\approx 1.72 \times 10^{17}$ micromol ppm$^{-1}$ m$^3$ kg$^{-1}$)
 - $h$ = mixed layer depth (m)
 - $A$ = ocean surface area (m$^2$)
@@ -77,6 +80,7 @@ The ocean surface CO2 partial pressure is calculated following Joos et al. (2001
 $$\Delta pCO2_{DIC} = \sum_{i=1}^{5} (b_i + c_i \cdot T_0) \cdot g_i(\Delta DIC)$$
 
 Where:
+
 - $b_i$ = offset coefficients (`delta_ospp_offsets`)
 - $c_i$ = temperature-dependent coefficients (`delta_ospp_coefficients`)
 - $T_0$ = preindustrial sea surface temperature
@@ -87,6 +91,7 @@ Where:
 $$pCO2_{ocn} = (pCO2_0 + \Delta pCO2_{DIC}) \cdot \exp(\alpha_T \cdot \Delta T_{SST})$$
 
 Where:
+
 - $pCO2_0$ = preindustrial ocean pCO2 (set equal to preindustrial atmospheric CO2)
 - $\alpha_T$ = `OCEANCC_TEMPFEEDBACK` (default: 0.0423 K$^{-1}$ from Takahashi et al., ~4.23%/K)
 - $\Delta T_{SST}$ = change in sea surface temperature from preindustrial
@@ -359,6 +364,7 @@ The ocean carbon cycle runs on a **monthly timestep** (12 steps per year), even 
 ```
 
 This design choice:
+
 - Increases computational cost by 12x for this module
 - Is likely unnecessary with proper numerical integration
 - Creates complexity in unit handling (flux is internally in ppm/month, but stored as ppm/yr)
@@ -408,6 +414,7 @@ OCEAN_MICROMOL_PER_PPM_M3_PER_KG = 1.0D6 / OCEAN_PPM_PER_MOL / OCEANCC_DENSITY_K
 ```
 
 Where:
+
 - `OCEAN_PPM_PER_MOL` = 5.65770e-15 ppm/mol
 - `OCEANCC_DENSITY_KG_PER_M3` = 1026.5 kg/m^3
 
@@ -422,6 +429,7 @@ This evaluates to approximately 1.72e17 micromol ppm^-1 m^3 kg^-1.
 **Reality:** Partially true. The code is well-encapsulated in the `CarbonCycleOceanCalculatorMAGICCConstantStepTimeAxis` class, BUT:
 
 1. **Hardcoded coefficients:** The pCO2-DIC polynomial coefficients are hardcoded in `oceancc_init` (not exposed as parameters):
+
    ```fortran
    ! can hard-code for now
    ! TODO: make model/config parameters
@@ -431,6 +439,7 @@ This evaluates to approximately 1.72e17 micromol ppm^-1 m^3 kg^-1.
    ```
 
 2. **Model selection via string:** Using a string parameter to select fundamentally different models is noted as problematic:
+
    ```fortran
    ! Zeb's opinion is that this is an abuse of the concept of a model and
    ! this sort of wrapping should be done at a different (much higher)
@@ -438,6 +447,7 @@ This evaluates to approximately 1.72e17 micromol ppm^-1 m^3 kg^-1.
    ```
 
 3. **Monthly loop in main driver:** The monthly sub-stepping loop lives in MAGICC7.f90, not in the ocean module:
+
    ```fortran
    do month = 1, stepsperyear
        ! ... ocean carbon calculations ...
@@ -451,6 +461,7 @@ This evaluates to approximately 1.72e17 micromol ppm^-1 m^3 kg^-1.
 **Answer: Yes, but with significant caveats.**
 
 The models (3D-GFDL, 2D-BERN, HILDA, BOXDIFF) share the same interface but differ in:
+
 - IRF functional forms (polynomial vs. exponential)
 - IRF coefficients
 - Gas exchange timescales
@@ -488,6 +499,7 @@ The ocean carbon cycle has non-trivial coupling with:
 4. **Time stepping:** Monthly stepping while rest of model is annual
 
 The coupling is bidirectional within a single annual timestep:
+
 - Atmosphere provides CO2 to ocean
 - Ocean returns flux that modifies CO2
 - This feedback is resolved via the monthly sub-loop
@@ -507,11 +519,13 @@ The coupling is bidirectional within a single annual timestep:
    - #211: Remove CO2 cap from physics
 
 4. **Comment about design philosophy:**
+
    ```fortran
    ! Constants are hard-coded here. It doesn't make sense to expose these
    ! constants because of the 'on the fly' coupling approach that results
    ! from using a model name as a MAGICC parameter.
    ```
+
    This suggests the developers recognized the design was suboptimal.
 
 ### 9.6 Potential Bugs and Edge Cases
@@ -538,12 +552,14 @@ The coupling is bidirectional within a single annual timestep:
 **Purpose:** Verify that pCO2_atm = pCO2_ocn produces zero flux.
 
 **Setup:**
+
 ```
 c_atm = 280.0 ppm
 c_ocn = 280.0 ppm
 ```
 
 **Expected output:**
+
 - `flux = 0.0` exactly
 - Ocean pCO2 remains at 280.0 ppm
 
@@ -552,6 +568,7 @@ c_ocn = 280.0 ppm
 **Purpose:** Verify ocean absorbs CO2 when atmosphere > ocean.
 
 **Setup:**
+
 ```
 c_atm = 400.0 ppm
 c_ocn = 280.0 ppm
@@ -560,6 +577,7 @@ OCEANCC_SCALE_GASXCHANGE = 1.0
 ```
 
 **Expected output:**
+
 - `flux > 0` (atmosphere to ocean)
 - Flux proportional to (400 - 280) = 120 ppm difference
 - With k = 1/(7.66*12), flux ~ 1.3 ppm/month = 15.6 ppm/yr
@@ -569,6 +587,7 @@ OCEANCC_SCALE_GASXCHANGE = 1.0
 **Purpose:** Verify warming increases ocean pCO2.
 
 **Setup:**
+
 ```
 delta_dic = 0 (no DIC change)
 delta_sst = 1.0 K
@@ -576,7 +595,8 @@ OCEANCC_TEMPFEEDBACK = 0.0423
 ```
 
 **Expected output:**
-- pCO2_ocean = pCO2_preindustrial * exp(0.0423 * 1.0) ~ 1.043 * pCO2_preindustrial
+
+- pCO2_ocean = pCO2_preindustrial *exp(0.0423* 1.0) ~ 1.043 * pCO2_preindustrial
 - ~4.3% increase per degree warming
 
 ### 10.4 Unit Test: DIC Effect on pCO2 (Revelle Buffer)
@@ -584,6 +604,7 @@ OCEANCC_TEMPFEEDBACK = 0.0423
 **Purpose:** Verify DIC increase raises pCO2.
 
 **Setup:**
+
 ```
 delta_sst = 0
 delta_dic = 50 micromol/kg
@@ -591,6 +612,7 @@ T_preindustrial = 17.7
 ```
 
 **Expected output:**
+
 - Calculate using Joos A24 polynomial
 - pCO2 should increase more than proportionally to DIC (Revelle factor > 1)
 
@@ -599,10 +621,12 @@ T_preindustrial = 17.7
 **Purpose:** Verify IRF convolution produces expected DIC.
 
 **Setup:**
+
 - Constant flux of 1 ppm/yr for 100 years
 - 3D-GFDL model
 
 **Expected output:**
+
 - DIC should approach steady state as IRF decays
 - Most carbon should remain in mixed layer initially, then penetrate deeper
 - After 100 years, significant fraction should have entered deep ocean
@@ -612,10 +636,12 @@ T_preindustrial = 17.7
 **Purpose:** Verify different models give different but reasonable results.
 
 **Setup:**
+
 - Run 1%/yr CO2 increase scenario for 140 years
 - Compare 3D-GFDL, 2D-BERN, HILDA, BOXDIFF
 
 **Expected output:**
+
 - All models show ocean uptake
 - Uptake rates differ by 10-30%
 - HILDA has deeper mixed layer, may show different transient response
@@ -626,12 +652,14 @@ T_preindustrial = 17.7
 **Purpose:** Test behavior at extreme CO2 levels.
 
 **Setup:**
+
 ```
 c_atm = 2000.0 ppm (very high)
 Run for 500 years
 ```
 
 **Expected output:**
+
 - Ocean uptake continues but efficiency decreases
 - pCO2 polynomial may extrapolate poorly
 - Check for numerical stability
@@ -641,9 +669,11 @@ Run for 500 years
 **Purpose:** Verify stability limiter engages correctly.
 
 **Setup:**
+
 - Sharp step change in atmospheric CO2 (e.g., instant doubling)
 
 **Expected output:**
+
 - Flux should be limited to change by at most 0.04 ppm/yr per month
 - No numerical instabilities or oscillations
 
@@ -692,6 +722,7 @@ Run for 500 years
 ### 11.3 IRF Coefficients (Full Listing)
 
 **3D-GFDL Polynomial (before 1 year):**
+
 ```fortran
 irf_polynomial_coefficients = (/ &
     1.0, -2.2617, 14.002, -48.770, 82.986, -67.527, 21.037 &
@@ -699,6 +730,7 @@ irf_polynomial_coefficients = (/ &
 ```
 
 **3D-GFDL Exponential (after 1 year):**
+
 ```fortran
 irf_exponential_coefficients = (/ &
     0.01481, 0.019439, 0.038344, 0.066485, 0.24966, 0.70367 &
@@ -709,6 +741,7 @@ irf_exponential_lifetimes = MONTHS_PER_YEAR * (/ &
 ```
 
 **2D-BERN (before 9.9 years):**
+
 ```fortran
 irf_exponential_coefficients = (/ &
     0.058648, 0.07515, 0.079338, 0.41413, 0.24845, 0.12429 &
@@ -719,6 +752,7 @@ irf_exponential_lifetimes = MONTHS_PER_YEAR * (/ &
 ```
 
 **2D-BERN (after 9.9 years):**
+
 ```fortran
 irf_exponential_coefficients = (/ &
     0.01369, 0.012456, 0.026933, 0.026994, 0.036608, 0.06738 &
@@ -729,6 +763,7 @@ irf_exponential_lifetimes = MONTHS_PER_YEAR * (/ &
 ```
 
 **HILDA (before 2 years):**
+
 ```fortran
 irf_exponential_coefficients = (/ &
     0.12935, 0.24093, 0.24071, 0.17003, 0.21898 &
@@ -739,6 +774,7 @@ irf_exponential_lifetimes = MONTHS_PER_YEAR * (/ &
 ```
 
 **HILDA (after 2 years):**
+
 ```fortran
 irf_exponential_coefficients = (/ &
     0.022936, 0.035549, 0.037820, 0.089318, 0.13963, 0.24278 &
@@ -749,6 +785,7 @@ irf_exponential_lifetimes = MONTHS_PER_YEAR * (/ &
 ```
 
 **BOXDIFF (before 3.2 years) - Special power-law form:**
+
 ```fortran
 irf_val = ( &
     0.1476804 / (t_year + 0.026540147)**0.3881032 &
@@ -757,6 +794,7 @@ irf_val = ( &
 ```
 
 **BOXDIFF (after 3.2 years):**
+
 ```fortran
 irf_exponential_coefficients = (/ &
     0.0197368421, 0.0315281, 0.0104691, 0.0504693, 0.076817, 0.118034, 0.168507 &
@@ -773,12 +811,14 @@ irf_exponential_lifetimes = MONTHS_PER_YEAR * (/ &
 The Ocean Carbon Cycle module implements a computationally efficient IRF-based approach to simulate ocean CO2 uptake. The core mathematics (air-sea flux, IRF convolution, Joos pCO2 equations) are well-established and correctly implemented.
 
 **Strengths:**
+
 - Well-encapsulated calculator classes
 - Multiple ocean model emulators available
 - Physically-based pCO2 calculation with temperature and DIC effects
 - Modular design allows model swapping
 
 **Weaknesses:**
+
 - Monthly sub-stepping likely unnecessary with proper integration
 - Ad-hoc stability limiter instead of proper numerical method
 - Extensive hardcoded coefficients not exposed as parameters
@@ -787,6 +827,7 @@ The Ocean Carbon Cycle module implements a computationally efficient IRF-based a
 - No biological pump or circulation change feedbacks
 
 For reimplementation, the mathematical formulation is complete in this document. Key attention should be paid to:
+
 1. Unit handling (ppm/yr vs ppm/month internally)
 2. IRF scaling function at the switch time
 3. Correct implementation of Riemann sum convolution

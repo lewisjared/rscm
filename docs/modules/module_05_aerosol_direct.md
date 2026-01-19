@@ -57,6 +57,7 @@ ALPHA(t) = ([NOx-N(t)] * [NH3-N(t)]) / (1 + LAMBDA_SO2 * [SOx-S(t)] / [NH3-N(t)]
 ```
 
 Where:
+
 - All concentrations are in molar units (Tg divided by molecular weight: N=14, S=32)
 - `LAMBDA_SO2` = `RF_NO3_LAMBDASO2` (default 1.6) represents sulfate priority for ammonia neutralization
 - Natural emissions (`RF_NOXN_EMIS`, `RF_NH3N_EMIS`, `DAT_SOXN_EMIS`) are added to anthropogenic emissions
@@ -66,21 +67,25 @@ The formula captures that nitrate formation requires both NOx and NH3, but sulfa
 Source: MAGICC7.f90 lines 1977-1988.
 
 **Step 2: Atmospheric Burden**
+
 ```
 B(NO3-)(t) = PREIND_BURDEN * (ALPHA(t) / ALPHA(0))
 ```
 
 **Step 3: Optical Thickness**
+
 ```
 OT(NO3-)(t) = PREIND_OT * (B(NO3-) / PREIND_BURDEN)^BURDEN2OT_EXP
 ```
 
 **Step 4: Radiative Forcing**
+
 ```
 RF(t) = WM2 * (OT(t) - PREIND_OT) / (OT(YR) - PREIND_OT)
 ```
 
 **Step 5: Hemispheric Split**
+
 ```
 RF_NH(t) = 2 * RF(t) * [NOx-NH][NH3-NH] / SUM([NOx-Y][NH3-Y])
 RF_SH(t) = 2 * RF(t) * [NOx-SH][NH3-SH] / SUM([NOx-Y][NH3-Y])
@@ -374,6 +379,7 @@ END SUBROUTINE
 ### 7.4 Time Loop Contribution
 
 During the main time loop (DELTAQ), the aerosol forcing is:
+
 - Held constant after `RF_AER_CONSTANTAFTERYR` if specified
 - Held constant after `RF_TOTAL_CONSTANTAFTERYR` if specified
 - Combined with other forcings for total anthropogenic forcing
@@ -391,18 +397,21 @@ extender_midyear = (extender(i+1,:) + extender(i,:)) / 2.0D0
 ### 8.2 Division by Zero Protection
 
 The code includes checks for zero denominators:
+
 - In nitrate forcing calculation: `IF (denominator == 0.0D0) THEN rf = 0.0D0`
 - In scaling: `IF (DAT_RF % DATGLOBE(YR_IDX) /= 0.0D0) THEN scale ELSE F=1.0`
 
 ### 8.3 Preindustrial Reference
 
 The forcing is calculated relative to a preindustrial reference year (`RF_PREIND_REFERENCEYR`, default 1750). Two initialization methods are available:
+
 - `JUMPSTART`: Forcing relative to preindustrial
 - `ZEROSTARTSHIFT`: Forcing relative to first simulation year
 
 ### 8.4 Constant Forcing After Year
 
 Multiple "constant after year" parameters can constrain the forcing:
+
 - `RF_AER_CONSTANTAFTERYR` (default 10000 = disabled)
 - `RF_MINERALDUST_CONSTANTAFTERYR` (default 2018)
 - `RF_TOTAL_CONSTANTAFTERYR` (default 10000)
@@ -412,12 +421,14 @@ Multiple "constant after year" parameters can constrain the forcing:
 ### 9.1 Critical Issues
 
 **SOx/NO3 APPLY=0 Override**: The code forcibly overrides `RF_SOXI_DIR_APPLY=0`, `RF_SOXB_DIR_APPLY=0`, and `RF_NO3T_DIR_APPLY=0` to `=1` with a warning:
+
 ```fortran
 IF (RF_SOXI_DIR_APPLY == 0) THEN
     call logger % error("JUMPONSTAGE", "RF_SOXI_DIR_APPLY must not equal 0, setting to 1")
     RF_SOXI_DIR_APPLY = 1
 END IF
 ```
+
 This means users cannot disable scaling for sulfate and nitrate forcing - they are always scaled to a target. This is a silent behavioral override that could cause confusion.
 
 **APPLY=3 Undocumented Behavior**: The `APPLY=3` option for biomass species (BCB, OCB, SOXB) uses the industrial sector's factor, but this is not well-documented and creates an implicit dependency between industrial and biomass parameters.
@@ -425,6 +436,7 @@ This means users cannot disable scaling for sulfate and nitrate forcing - they a
 ### 9.2 Architectural Issues
 
 **Scattered Calculation Logic**: Aerosol forcing calculations are spread across:
+
 - `JUMPONSTAGE` for initialization and scaling
 - `EXTRAP_RF_WITH_EMIS` for extrapolation
 - `RF_APPLY_SCALING` for factor application
@@ -439,10 +451,12 @@ This makes the full calculation flow difficult to trace.
 **Switch Year Edge Cases**: The code has special handling for `SWITCHYEAR_IDX < 2` that directly uses emissions as forcing, which may produce unexpected results if historical forcing data is very short.
 
 **Extrapolation Method Sensitivity**: The `extend_rf_box_from_switchyear_with_emissions` uses land emissions to scale both ocean and land boxes:
+
 ```fortran
 ! always scale with land emissions
 extrapolation_values = extender_midyear(:, 2 * hemis_idx + 2)
 ```
+
 This assumes a constant land-ocean forcing ratio, which may not hold under changing emission patterns.
 
 ### 9.4 Documentation Gaps
@@ -450,6 +464,7 @@ This assumes a constant land-ocean forcing ratio, which may not hold under chang
 **Missing Comments**: Key scaling and extrapolation logic lacks inline comments explaining the scientific rationale.
 
 **Parameter Dependencies**: The interplay between APPLY, FACTOR, YR, and WM2 parameters is complex and not well-documented. Users may not understand that:
+
 - If APPLY=1, FACTOR is output (calculated), not input
 - If APPLY=2, WM2 is ignored
 - If APPLY=3, both FACTOR and WM2 are partially ignored
@@ -457,17 +472,20 @@ This assumes a constant land-ocean forcing ratio, which may not hold under chang
 ### 9.5 Potential Bugs
 
 **RF_INITIALIZATION_METHOD Ignored for Nitrate**: A TODO comment indicates:
+
 ```fortran
 ! TODO: check intended. RF_INITIALIZATION_METHOD flag will do nothing as this
 ! setup hard-codes the first year of forcing to always be zero.
 ```
 
 **Surface Forcing Excludes BCSNOW**: A comment notes:
+
 ```fortran
 ! note, the surface forcing is now NOT including the BCSnow component,
 ! as that mainly acts over ice/snow areas.. maybe less important for
 ! precipitation inference... to be checked.
 ```
+
 This design decision should be validated.
 
 ## 10. Test Cases
@@ -475,6 +493,7 @@ This design decision should be validated.
 ### 10.1 Basic Scaling Tests
 
 **Test: APPLY=1 Scales to Target**
+
 ```
 Input:
   RF_BCI_DIR_APPLY = 1
@@ -489,6 +508,7 @@ Expected:
 ```
 
 **Test: APPLY=2 Uses Fixed Factor**
+
 ```
 Input:
   RF_BCI_DIR_APPLY = 2
@@ -500,6 +520,7 @@ Expected:
 ```
 
 **Test: APPLY=3 Uses Industrial Factor**
+
 ```
 Input:
   RF_BCB_DIR_APPLY = 3
@@ -513,6 +534,7 @@ Expected:
 ### 10.2 Nitrate Forcing Tests
 
 **Test: Zero Emissions Produce Zero Forcing**
+
 ```
 Input:
   All NOx emissions = 0
@@ -526,6 +548,7 @@ Expected:
 ```
 
 **Test: Hemispheric Split Conservation**
+
 ```
 Input:
   Any valid emission scenario
@@ -538,6 +561,7 @@ Expected:
 ### 10.3 Emission Extrapolation Tests
 
 **Test: Linear Emission Growth**
+
 ```
 Input:
   Historical forcing to 2015
@@ -551,6 +575,7 @@ Expected:
 ```
 
 **Test: Zero Emission Future**
+
 ```
 Input:
   Historical forcing to 2015
@@ -564,6 +589,7 @@ Expected:
 ### 10.4 Regional Pattern Tests
 
 **Test: Regional Forcing Sums to Global**
+
 ```
 Input:
   Any forcing scenario
@@ -576,6 +602,7 @@ Expected:
 ### 10.5 Efficacy Tests
 
 **Test: EFFICACY_APPLY=0 No Modification**
+
 ```
 Input:
   RF_EFFICACY_APPLY = 0
@@ -585,6 +612,7 @@ Expected:
 ```
 
 **Test: EFFICACY_APPLY=2 Uses Prescribed Efficacies**
+
 ```
 Input:
   RF_EFFICACY_APPLY = 2
@@ -611,6 +639,7 @@ Expected:
 ### 11.2 Key Subroutines
 
 **JUMPONSTAGE (MAGICC7.f90)**
+
 - Lines ~1850-2500: Aerosol forcing initialization
 - BC processing: lines 1851-1877
 - OC processing: lines 1885-1904
@@ -620,14 +649,17 @@ Expected:
 - Total direct aerosol: lines 2460-2485
 
 **EXTRAP_RF_WITH_EMIS (MAGICC7.f90)**
+
 - Lines 9441-9579
 - Handles emission-based extrapolation and scaling
 
 **RF_APPLY_SCALING (MAGICC7.f90)**
+
 - Lines 9353-9396
 - Core scaling logic for APPLY flag
 
 **extend_rf_box_from_switchyear_with_emissions (datastore.f90)**
+
 - Lines 572-688
 - Box-level extrapolation with emission scaling
 
@@ -671,6 +703,7 @@ The Aerosol Direct Forcing module is a complex component that handles multiple a
 4. Limited documentation of parameter interactions
 
 For a clean rewrite, consider:
+
 - Making the harmonization system more explicit and documented
 - Unifying the aerosol calculation approach where scientifically appropriate
 - Providing clearer error messages when parameter combinations are invalid

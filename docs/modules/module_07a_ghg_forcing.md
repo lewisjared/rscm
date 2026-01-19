@@ -24,6 +24,7 @@ The IPCC TAR method uses simplified analytical formulas derived from fitting to 
 $$RF_{CO2} = \frac{\Delta Q_{2\times CO2}}{\ln(2)} \cdot \ln\left(\frac{C}{C_0}\right)$$
 
 Where:
+
 - $C$ = current CO2 concentration (ppm)
 - $C_0$ = pre-industrial CO2 concentration (ppm)
 - $\Delta Q_{2\times CO2}$ = radiative forcing for CO2 doubling (default: 3.71 W/m2)
@@ -37,6 +38,7 @@ $$\alpha_{CO2} = \frac{\Delta Q_{2\times CO2}}{\ln(2)} \approx 5.35 \text{ W/m}^
 $$RF_{CH4} = \beta_{CH4} \cdot \left(\sqrt{C_{CH4}} - \sqrt{C_{CH4,0}}\right) + 0.47 \cdot \ln\left(\frac{1 + f(C_{CH4,0}, C_{N2O,0})}{1 + f(C_{CH4}, C_{N2O,0})}\right)$$
 
 Where:
+
 - $C_{CH4}$ = current CH4 concentration (ppb)
 - $C_{CH4,0}$ = pre-industrial CH4 concentration (ppb)
 - $\beta_{CH4}$ = CH4 radiative efficiency (W/m2/ppb), converted from `CH4_RADEFF_WM2PERPPB`
@@ -47,6 +49,7 @@ Where:
 $$RF_{N2O} = \beta_{N2O} \cdot \left(\sqrt{C_{N2O}} - \sqrt{C_{N2O,0}}\right) + 0.47 \cdot \ln\left(\frac{1 + f(C_{CH4,0}, C_{N2O,0})}{1 + f(C_{CH4,0}, C_{N2O})}\right)$$
 
 Where:
+
 - $C_{N2O}$ = current N2O concentration (ppb)
 - $C_{N2O,0}$ = pre-industrial N2O concentration (ppb)
 - $\beta_{N2O}$ = N2O radiative efficiency (W/m2/ppb), converted from `N2O_RADEFF_WM2PERPPB`
@@ -81,6 +84,7 @@ $$\alpha_{CO2} = a_1 \cdot (C - C_0)^2 + b_1 \cdot (C - C_0) + d_1 + c_1 \cdot \
 $$\alpha_{CO2} = -\frac{b_1^2}{4 a_1} + d_1 + c_1 \cdot \sqrt{N}$$
 
 Where:
+
 - $C_{max} = \frac{2 a_1 C_0 - b_1}{2 a_1}$ (concentration at which alpha reaches maximum)
 - $N$ = N2O concentration (ppb)
 - $a_1, b_1, c_1, d_1$ = OLBL coefficients for CO2
@@ -113,6 +117,7 @@ Both methods calculate an additional forcing from stratospheric water vapor prod
 $$RF_{strH2O} = RF_{CH4,pure} \cdot f_{strH2O}$$
 
 Where:
+
 - $RF_{CH4,pure}$ = CH4 forcing calculated *without* the overlap correction (pure CH4 effect)
 - $f_{strH2O}$ = `CH4_ADDEDSTRATH2O_PERCENT` (default: 0.0923, i.e., ~9.2%)
 
@@ -397,6 +402,7 @@ CH4 and N2O formulas use `sqrt(C)`. Negative concentrations would cause NaN. No 
 ### 8.3 Division in Alpha Calculation
 
 The OLBL alpha calculation includes:
+
 - `alphamax_co2_conc = (2*a1*co2_ppm_pi - b1) / (2*a1)`
 - `alpha_wo_n2o = -b1^2 / (4*a1) + d1`
 
@@ -407,9 +413,11 @@ If `a1 = 0`, these divisions would fail. With the default `a1 = -2.4785e-07`, th
 For very high CO2 concentrations, the OLBL method caps the alpha at its maximum value (when `C >= alphamax_co2_conc`). This provides implicit saturation behavior and prevents runaway forcing at extreme concentrations.
 
 The threshold concentration is calculated dynamically:
+
 ```
 alphamax_co2_conc = (2*a1*co2_ppm_pi - b1) / (2*a1)
 ```
+
 With defaults: `(2*(-2.4785e-07)*278 - 0.00075906) / (2*(-2.4785e-07))` = ~1810 ppm
 
 ### 8.5 Precision
@@ -425,14 +433,16 @@ The code uses `REAL(8)` (double precision) throughout and `DLOG` for natural log
 **Answer: No, they are fundamentally different.**
 
 Key differences:
+
 1. **CO2:** IPCCTAR uses a fixed alpha (5.35), OLBL uses concentration-dependent alpha
 2. **Rapid adjustments:** Only OLBL includes rapid adjustment factors
 3. **Overlap treatment:** Different mathematical forms for the overlap corrections
 4. **CO2-N2O overlap:** Only OLBL includes this (IPCCTAR only has CH4-N2O overlap)
 
 **Comparison at pre-industrial + 280 ppm CO2 = 556 ppm (2x):**
+
 - IPCCTAR: RF = 3.71 W/m2 (by definition via CORE_DELQ2XCO2)
-- OLBL: RF = 1.05 * alpha * ln(2), where alpha depends on N2O
+- OLBL: RF = 1.05 *alpha* ln(2), where alpha depends on N2O
 
 These methods will give different results for identical inputs.
 
@@ -445,6 +455,7 @@ There is a potential inconsistency in how `CORE_DELQ2XCO2` is used:
 3. However, there's a derived variable `CORE_DELQ2XCO2_EFF` that may be set differently
 
 Comment in MAGICC7.f90 (line 5298):
+
 ```
 !   CORE_DELQ2XCO2_EFF SHOULD BE UPDATED WHEN THE OLBL APPROACH IS USED.
 ```
@@ -467,6 +478,7 @@ The function `calcluate_ch4_or_n2o_ipcc_tar_rf` (line 1089) has a typo: "calclua
 ### 9.5 Rapid Adjustment Factor Asymmetry
 
 The rapid adjustment factors have inconsistent sign implications:
+
 - CO2: 1.05 (ERF > RF) - positive adjustment implies tropospheric warming increases forcing
 - CH4: 0.86 (ERF < RF) - implies rapid responses reduce net forcing
 - N2O: 1.0 (ERF = RF) - no rapid adjustment
@@ -489,6 +501,7 @@ These are conceptually similar (both remove the N2O overlap effect) but mathemat
 ### 9.8 Missing C3 Coefficient
 
 The OLBL CH4 formulation uses A3, B3, D3 but **no C3 coefficient**. This suggests either:
+
 1. The C3 term was determined to be negligible
 2. The implementation is incomplete
 3. The original Etminan formulation doesn't have a CO2-CH4 overlap term for CH4 forcing
@@ -502,6 +515,7 @@ The N2O formulation does have all four coefficients (A2, B2, C2, D2).
 **Purpose:** Verify CO2 doubling produces expected forcing.
 
 **Setup:**
+
 ```
 CORE_CO2CH4N2O_RFMETHOD = "IPCCTAR"
 CORE_DELQ2XCO2 = 3.71
@@ -512,6 +526,7 @@ n2o_ppb = n2o_ppb_pi = 270.0 (to eliminate N2O contribution)
 ```
 
 **Expected Output:**
+
 - `co2_rf = 3.71 W/m2` (exactly)
 - `ch4_rf = 0.0 W/m2`
 - `n2o_rf = 0.0 W/m2`
@@ -521,6 +536,7 @@ n2o_ppb = n2o_ppb_pi = 270.0 (to eliminate N2O contribution)
 **Purpose:** Verify OLBL produces reasonable CO2 forcing.
 
 **Setup:**
+
 ```
 CORE_CO2CH4N2O_RFMETHOD = "OLBL"
 co2_ppm = 556.0
@@ -530,6 +546,7 @@ Default OLBL coefficients
 ```
 
 **Expected Output:**
+
 - `alpha = d1 + c1*sqrt(n2o) = 5.2 + (-0.0021492)*sqrt(270) = 5.165`
 - `co2_rf = 1.05 * 5.165 * ln(2) = 3.76 W/m2`
 
@@ -538,6 +555,7 @@ Default OLBL coefficients
 **Purpose:** Verify overlap reduces combined forcing.
 
 **Setup:**
+
 ```
 CORE_CO2CH4N2O_RFMETHOD = "IPCCTAR"
 ch4_ppb = 1800.0
@@ -549,6 +567,7 @@ N2O_RADEFF_WM2PERPPB = 0.12
 ```
 
 **Calculations:**
+
 1. Calculate overlap terms:
    - `f(1800/1000, 270/1000) = 0.6356*(1.8*0.27)^0.75 + 0.007*1.8*(1.8*0.27)^1.52`
    - `f(700/1000, 270/1000) = ...`
@@ -559,6 +578,7 @@ N2O_RADEFF_WM2PERPPB = 0.12
 4. Combined forcing should be LESS than sum due to overlap
 
 **Expected Output:**
+
 - Total CH4+N2O forcing < 0.79 W/m2 (the sum without overlap)
 
 ### 10.4 Unit Test: Pre-industrial Concentrations
@@ -566,6 +586,7 @@ N2O_RADEFF_WM2PERPPB = 0.12
 **Purpose:** Verify zero forcing at pre-industrial.
 
 **Setup:**
+
 ```
 co2_ppm = co2_ppm_pi = 278.0
 ch4_ppb = ch4_ppb_pi = 700.0
@@ -573,6 +594,7 @@ n2o_ppb = n2o_ppb_pi = 270.0
 ```
 
 **Expected Output (both methods):**
+
 - `co2_rf = 0.0 W/m2`
 - `ch4_rf = 0.0 W/m2`
 - `n2o_rf = 0.0 W/m2`
@@ -582,12 +604,14 @@ n2o_ppb = n2o_ppb_pi = 270.0
 **Purpose:** Verify strat H2O forcing calculation.
 
 **Setup:**
+
 ```
 pure_methane_forcing = 0.5 W/m2
 CH4_ADDEDSTRATH2O_PERCENT = 0.0923
 ```
 
 **Expected Output:**
+
 - `ch4oxstrath2o_rf = 0.5 * 0.0923 = 0.04615 W/m2`
 
 ### 10.6 Integration Test: Historical Forcing
@@ -597,6 +621,7 @@ CH4_ADDEDSTRATH2O_PERCENT = 0.0923
 **Setup:** Run from 1750-2020 with observed concentrations.
 
 **Validation (approximate 2019 values from IPCC AR6):**
+
 - CO2 forcing: ~2.1 W/m2
 - CH4 forcing: ~0.5 W/m2
 - N2O forcing: ~0.2 W/m2
@@ -615,6 +640,7 @@ CH4_ADDEDSTRATH2O_PERCENT = 0.0923
 **Purpose:** Test OLBL alpha saturation.
 
 **Setup:**
+
 ```
 co2_ppm = 2000.0 (above alphamax threshold ~1810 ppm)
 ```
@@ -670,12 +696,14 @@ The Well-Mixed GHG Forcing module implements two distinct methods for calculatin
 2. **OLBL** - More sophisticated polynomial formulas based on Etminan et al. (2016) with concentration-dependent coefficients and rapid adjustment factors
 
 **Key strengths:**
+
 - Clean separation of calculation functions
 - Support for both legacy (IPCCTAR) and modern (OLBL) approaches
 - Includes inter-species overlap corrections
 - Handles stratospheric H2O from CH4 oxidation
 
 **Key concerns:**
+
 - Methods give different results by design; users should understand which they are using
 - Some hardcoded magic numbers that should ideally be configurable
 - Typo in function name (`calcluate` -> `calculate`)
@@ -683,6 +711,7 @@ The Well-Mixed GHG Forcing module implements two distinct methods for calculatin
 - First-year initialization code is duplicative and error-prone
 
 For reimplementation, the mathematical formulations are well-defined and the code is reasonably readable, but care should be taken to:
+
 1. Choose the appropriate method for the application
 2. Document which coefficients are used and their sources
 3. Add numerical safeguards for edge cases

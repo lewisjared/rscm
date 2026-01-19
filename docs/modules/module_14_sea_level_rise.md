@@ -44,6 +44,7 @@ The code explicitly warns (MAGICC7.f90 lines 14-16):
 Thermal expansion calculates the volumetric change of ocean water due to temperature changes at each ocean layer.
 
 **Expansion coefficient calculation** (empirical polynomial):
+
 ```
 SLR_EXPANSION_COEFE = SLR_EXPANSION_PARAMS(1) +
     SLR_EXPANSION_PARAMS(2) * TL1 * (12.9635 - 1.0833 * PPL) -
@@ -54,22 +55,26 @@ SLR_EXPANSION_COEFE = SLR_EXPANSION_PARAMS(1) +
 ```
 
 Where:
+
 - `TL1` = mean layer temperature (initial profile + delta)
 - `TL2` = TL1^2
 - `TL3` = TL1^3 / 6000
 - `PPL` = pressure at layer from `OCN_PRESSURE_PROFILE`
 
 **Layer expansion**:
+
 ```
 DLR = (SLR_EXPANSION_COEFE * DELTOC * ZLAYER) / 1000
 ```
 
 **Total expansion** (area-weighted sum across layers):
+
 ```
 EXPAN = SUM(DLR * OCN_AREAFACTOR_AVERAGE) / OCN_LAYERBOUND_AREAS(1)
 ```
 
 **Cumulative contribution**:
+
 ```
 SLR_EXPANSION(t+1) = SLR_EXPANSION(t) + EXPAN * SLR_EXPANSION_SCALING
 ```
@@ -79,10 +84,12 @@ SLR_EXPANSION(t+1) = SLR_EXPANSION(t) + EXPAN * SLR_EXPANSION_SCALING
 Based on Wigley & Raper (2005) modified equation 5, using equilibrium relationships from Marzeion data.
 
 **Equilibrium interpolation**:
+
 1. Look up `SLR_GL_EQUISLRCURRENTTEMP` from temperature using `SLR_GL_EQUITEMP[]` / `SLR_GL_EQUISLR[]` tables
 2. Look up `SLR_GL_EQUITEMPCURRENTSLR` from current SLR contribution using same tables
 
 **Rate equation**:
+
 ```
 SLR_GL(t+1) = SLR_GL(t) + SLR_GL_SENS_MMPYRDEG *
     ((SLR_GL_EQUISLRCURRENTTEMP - SLR_GL(t)) / SLR_GL_NORMPARA_VOL) *
@@ -96,6 +103,7 @@ Note: The SIGN function is applied first, then divided by NORMPARA_TEMP, then th
 Two parameterizations available:
 
 **DEFAULT parameterization**:
+
 ```
 SLR_GIS_SMB(t+1) = SLR_GIS_SMB(t) +
     SLR_GIS_SMB_COEF1 * (
@@ -105,6 +113,7 @@ SLR_GIS_SMB(t+1) = SLR_GIS_SMB(t) +
 ```
 
 **FETTWEIS parameterization**:
+
 ```
 SLR_GIS_SMB(t+1) = SLR_GIS_SMB(t) +
     (SLR_GIS_SMB_COEF_FW1 * T - SLR_GIS_SMB_COEF_FW2 * T^2 - SLR_GIS_SMB_COEF_FW3 * T^3) / (-361)
@@ -115,17 +124,20 @@ SLR_GIS_SMB(t+1) = SLR_GIS_SMB(t) +
 Based on Nick et al. (2013), with LOW/HIGH bounding cases.
 
 **Annual discharge rate**:
+
 ```
 GIS_SID_DISCHARGE = MIN(0, -DSCHRG_SENS * DSCHRGVOL * EXP(TEMPSENS_EXPONENT * T_global))
 GIS_SID_DISCHARGE = MAX(GIS_SID_DISCHARGE, -DSCHRGVOL)  // Cannot exceed remaining volume
 ```
 
 **Volume depletion**:
+
 ```
 DSCHRGVOL(t+1) = MAX(DSCHRGVOL(t) + GIS_SID_DISCHARGE, 0)
 ```
 
 **SLR contribution** (interpolated between LOW/HIGH):
+
 ```
 SLR_GIS_SID = ((HIGH - LOW) * SLR_GIS_SID_CASE + LOW) * SLR_GIS_SID_SCALING
 ```
@@ -133,6 +145,7 @@ SLR_GIS_SID = ((HIGH - LOW) * SLR_GIS_SID_CASE + LOW) * SLR_GIS_SID_SCALING
 ### 3.5 Antarctic Ice Sheet - Surface Mass Balance (AIS SMB)
 
 Simpler than GIS, representing snowfall increase with warming:
+
 ```
 SLR_AIS_SMB(t+1) = SLR_AIS_SMB(t) +
     SLR_AIS_SMB_COEF1 * (
@@ -150,6 +163,7 @@ Two methods available:
 #### DECONTO Method
 
 Includes threshold-based "fast rate" for ice cliff instability:
+
 ```
 IF T_global < SLR_AIS_SID_THRESHOLDTEMP:
     DISCHARGE = DSCHRG_SENS * DSCHRGVOL * SIGN(|T - ZEROTEMP|^TEMPSENS_EXPONENT, T - ZEROTEMP)
@@ -163,17 +177,20 @@ ELSE:
 Uses impulse response functions (IRF) for 4 Antarctic regions with time-delayed convolution:
 
 **Ocean forcing**:
+
 ```
 OCNFORCE(R,t) = TEMPSCALING(R) * (T(t) - T(start)) * BASALMELT
 FORCING(R,t) = OCNFORCE(R,t) - OCNFORCE(R,start)
 ```
 
 **Impulse response** (4th order polynomial, clamped to 0):
+
 ```
 R(x) = MAX(0, IRF(1)*x^4 + IRF(2)*x^3 + IRF(3)*x^2 + IRF(4)*x + IRF(5))
 ```
 
 **Convolution**:
+
 ```
 CONV_TOTAL(R,t) = FORCING(R,t) * R(0) +
     SUM(FORCING(R,t-i) * R(i) for i=1..t-2) +
@@ -181,6 +198,7 @@ CONV_TOTAL(R,t) = FORCING(R,t) * R(0) +
 ```
 
 **Total AIS SID**:
+
 ```
 SLR_AIS_SID(t+1) = SUM(CONV_TOTAL(R,t) * 1000) for R in [Amundsen, EastAntarctica, Ross, Weddell]
 ```
@@ -188,6 +206,7 @@ SLR_AIS_SID(t+1) = SUM(CONV_TOTAL(R,t) * 1000) for R in [Amundsen, EastAntarctic
 ### 3.7 Land Water Storage
 
 Uses prescribed time series with volume depletion after switch year:
+
 ```
 IF year > SWITCHYEAR:
     SLR_LANDWATER(t+1) = SLR_LANDWATER(t) + MMPYEAR(t) *
@@ -199,6 +218,7 @@ ELSE:
 ### 3.8 Semi-Empirical Method (Rahmstorf)
 
 Alternative simple approach:
+
 ```
 BASETEMP = MEAN(T over TEMPBASEPERIOD)
 RATE = RATE_SENS * (T - BASETEMP - ZERORATETEMP)
@@ -712,6 +732,7 @@ The module uses ocean structure parameters set during climate initialization:
 ### 9.5 Initial Ocean Temperature Profile
 
 Three options for initial ocean temperature profile (controlled by `CORE_SWITCH_OCN_TEMPPROFILE`):
+
 1. Exponential profile: `TEMP_INITIAL_OCEAN_EXP_PROFILE`
 2. CMIP5 profile: `TEMP_INITIAL_OCEAN_CMIP5_PROFILE`
 3. Simple profile: `TEMP_OCEAN_INI_PROFILE_ONE`

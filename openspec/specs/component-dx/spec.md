@@ -3,7 +3,9 @@
 ## Purpose
 
 Defines the `ComponentIO` derive macro and related code generation for type-safe component I/O declarations. Covers compile-time validation of variable access, spatial grid type annotations, and automatic grid transformations in the coupler. Runtime behavior of generated types is specified in `state`.
+
 ## Requirements
+
 ### Requirement: Spatial Grid Requirements in Definitions
 
 The system SHALL support declaring spatial grid requirements on each input, output, and state variable.
@@ -127,6 +129,7 @@ Generated output structs MUST:
 The `ComponentIO` macro SHALL generate code that uses typed slice wrappers for grid outputs.
 
 **Modifications from original spec:**
+
 - The generated `Into<OutputState>` implementation now wraps values in `StateValue` variants
 - For FourBox outputs, use `StateValue::FourBox(slice)` instead of aggregating to scalar
 - For Hemispheric outputs, use `StateValue::Hemispheric(slice)` instead of aggregating to scalar

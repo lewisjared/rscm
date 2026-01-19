@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/markdownlint.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

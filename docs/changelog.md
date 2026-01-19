@@ -2,7 +2,6 @@
 
 No significant changes.
 
-
 ## rscm 0.4.0 (2026-01-17)
 
 ### ⚠️ Breaking Changes ⚠️
@@ -16,7 +15,6 @@ No significant changes.
 ### Improved Documentation
 
 - Expanded documentation with new tutorials for spatial grids, debugging, and scenario pipelines. Added cross-references from documentation pages to the Python API. ([#61](https://github.com/lewisjared/rscm/pulls/61))
-
 
 ## rscm 0.3.0 (2026-01-16)
 
@@ -59,21 +57,17 @@ No significant changes.
 
 - [#58](https://github.com/lewisjared/rscm/pulls/58)
 
-
 ## rscm 0.2.3 (2026-01-14)
 
 No significant changes.
-
 
 ## rscm 0.2.2 (2026-01-14)
 
 No significant changes.
 
-
 ## rscm 0.2.1 (2026-01-14)
 
 No significant changes.
-
 
 ## rscm 0.2.0 (2026-01-14)
 
@@ -99,7 +93,6 @@ No significant changes.
 ### Trivial/Internal Changes
 
 - [#39](https://github.com/lewisjared/rscm/pulls/39)
-
 
 ## rscm 0.1.0 (2024-09-24)
 
