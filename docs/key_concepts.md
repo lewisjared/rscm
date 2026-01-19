@@ -300,6 +300,77 @@ def solve(self, t_current, t_next, inputs):
     history = inputs.emissions.last_n(5)
 ```
 
+## Variable Schema
+
+A **VariableSchema** declares model variables and their aggregation relationships, enabling derived values to be computed automatically from multiple component outputs.
+
+### Why Use Variable Schema?
+
+When building climate models, you often need to aggregate multiple forcing agents into totals:
+
+- Sum CO2, CH4, and N2O forcing into "GHG Forcing"
+- Compute weighted averages across regions
+- Build hierarchical aggregates (e.g., "Total Forcing" from sub-totals)
+
+Without a schema, you'd need to write custom aggregation components. With VariableSchema, you declare the relationships and RSCM handles the rest.
+
+### Declaring a Schema
+
+```python
+from rscm.core import VariableSchema
+
+schema = (
+    VariableSchema()
+    # Declare individual variables
+    .add_variable("ERF|CO2", "W/m^2")
+    .add_variable("ERF|CH4", "W/m^2")
+    .add_variable("ERF|N2O", "W/m^2")
+    # Declare an aggregate
+    .add_aggregate("ERF|GHG", "W/m^2", "Sum")
+        .from_variable("ERF|CO2")
+        .from_variable("ERF|CH4")
+        .from_variable("ERF|N2O")
+        .build()
+)
+```
+
+### Aggregation Operations
+
+| Operation | Description |
+|-----------|-------------|
+| `Sum` | Sum of all contributors |
+| `Mean` | Arithmetic mean |
+| `Weighted` | Weighted average (requires weights) |
+
+### Using Schema with ModelBuilder
+
+```python
+model = (
+    ModelBuilder()
+    .with_time_axis(time_axis)
+    .with_schema(schema)
+    .with_rust_component(co2_forcing)
+    .with_rust_component(ch4_forcing)
+    .with_rust_component(n2o_forcing)
+    # ... exogenous data and initial values
+).build()
+```
+
+During build, RSCM:
+
+1. Validates that all aggregate contributors exist
+2. Checks for circular dependencies
+3. Inserts virtual aggregator components into the dependency graph
+4. Ensures unit consistency between contributors and aggregates
+
+### Key Behaviours
+
+- **NaN handling**: Contributors with NaN values are excluded from computation (treated as missing data)
+- **Hierarchical aggregates**: Aggregates can reference other aggregates as contributors
+- **Partial models**: Schema variables with no writer component remain NaN
+
+For a complete walkthrough, see [Tutorial 3: Variable Schemas](tutorials.md#tutorial-3-variable-schemas).
+
 ## Putting It Together
 
 Here's how the concepts connect in a complete workflow:

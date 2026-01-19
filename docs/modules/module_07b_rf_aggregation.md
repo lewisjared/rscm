@@ -824,6 +824,41 @@ pub enum AggregationError {
 6. **Freeze Tests**: Verify forcing held constant after freeze year
 7. **NaN Detection Tests**: Ensure proper error propagation
 
+### Using VariableSchema for Aggregation
+
+The hierarchical forcing aggregation described in this module can be implemented using RSCM's [VariableSchema](../key_concepts.md#variable-schema) feature. Instead of writing custom aggregation code, you declare the aggregation hierarchy:
+
+```python
+from rscm.core import VariableSchema
+
+schema = (
+    VariableSchema()
+    # Individual agents
+    .add_variable("ERF|CO2", "W/m^2")
+    .add_variable("ERF|CH4", "W/m^2")
+    .add_variable("ERF|N2O", "W/m^2")
+    .add_variable("ERF|Aerosol|Direct", "W/m^2")
+    .add_variable("ERF|Aerosol|Indirect", "W/m^2")
+    # Intermediate aggregates
+    .add_aggregate("ERF|GHG", "W/m^2", "Sum")
+        .from_variable("ERF|CO2")
+        .from_variable("ERF|CH4")
+        .from_variable("ERF|N2O")
+        .build()
+    .add_aggregate("ERF|Aerosol", "W/m^2", "Sum")
+        .from_variable("ERF|Aerosol|Direct")
+        .from_variable("ERF|Aerosol|Indirect")
+        .build()
+    # Top-level aggregate
+    .add_aggregate("ERF|Total|Anthropogenic", "W/m^2", "Sum")
+        .from_variable("ERF|GHG")
+        .from_variable("ERF|Aerosol")
+        .build()
+)
+```
+
+This approach provides automatic validation, cycle detection, and NaN handling consistent with the MAGICC design. See [Tutorial 3: Variable Schemas](../tutorials.md#tutorial-3-variable-schemas) for a complete walkthrough.
+
 ---
 
 ## 12. References

@@ -140,6 +140,7 @@ RSCM automatically resolves component dependencies and executes them in the corr
 - **[Tutorials](tutorials.md)**: Step-by-step guides for common tasks
 - **[Key Concepts](key_concepts.md)**: Understand Components, Models, and Timeseries
 - **[Spatial Grids](grids.md)**: Work with regional climate data
+- **[Variable Schemas](tutorials.md#tutorial-3-variable-schemas)**: Aggregate outputs from multiple components (e.g., sum forcing agents into totals)
 - **[Python API](api/rscm/)**: Full API documentation
 
 ### Want to Extend RSCM?
