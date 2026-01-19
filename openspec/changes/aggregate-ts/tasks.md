@@ -2,21 +2,21 @@
 
 ## 1. Core Types
 
-- [ ] 1.1 Create `crates/rscm-core/src/schema.rs` with `AggregateOp` enum
-- [ ] 1.2 Add `VariableDefinition` struct
-- [ ] 1.3 Add `AggregateDefinition` struct
-- [ ] 1.4 Add `VariableSchema` struct with `variables` and `aggregates` HashMaps
-- [ ] 1.5 Export from `crates/rscm-core/src/lib.rs`
+- [x] 1.1 Create `crates/rscm-core/src/schema.rs` with `AggregateOp` enum
+- [x] 1.2 Add `VariableDefinition` struct (named `SchemaVariableDefinition` to avoid conflict with model.rs)
+- [x] 1.3 Add `AggregateDefinition` struct
+- [x] 1.4 Add `VariableSchema` struct with `variables` and `aggregates` HashMaps
+- [x] 1.5 Export from `crates/rscm-core/src/lib.rs`
 
 ## 2. Builder API
 
-- [ ] 2.1 Implement `VariableSchema::new()`
-- [ ] 2.2 Implement `VariableSchema::variable(name, unit)` for scalar variables
-- [ ] 2.3 Implement `VariableSchema::variable_with_grid(name, unit, grid_type)`
-- [ ] 2.4 Create `AggregateBuilder` struct
-- [ ] 2.5 Implement `VariableSchema::aggregate(name, unit, op)` returning `AggregateBuilder`
-- [ ] 2.6 Implement `AggregateBuilder::from(contributor)` for adding contributors
-- [ ] 2.7 Implement `AggregateBuilder::build()` returning `VariableSchema`
+- [x] 2.1 Implement `VariableSchema::new()`
+- [x] 2.2 Implement `VariableSchema::variable(name, unit)` for scalar variables
+- [x] 2.3 Implement `VariableSchema::variable_with_grid(name, unit, grid_type)`
+- [x] 2.4 Create `AggregateBuilder` struct
+- [x] 2.5 Implement `VariableSchema::aggregate(name, unit, op)` returning `AggregateBuilder`
+- [x] 2.6 Implement `AggregateBuilder::from(contributor)` for adding contributors
+- [x] 2.7 Implement `AggregateBuilder::build()` returning `VariableSchema`
 
 ## 3. Schema Validation
 
@@ -48,21 +48,21 @@
 
 ## 6. Serialization
 
-- [ ] 6.1 Add `#[derive(Serialize, Deserialize)]` to all schema types
+- [x] 6.1 Add `#[derive(Serialize, Deserialize)]` to all schema types
 - [ ] 6.2 Add validation on deserialization
-- [ ] 6.3 Test round-trip JSON serialization
+- [x] 6.3 Test round-trip JSON serialization
 
 ## 7. Python Bindings
 
-- [ ] 7.1 Add `#[pyclass]` to `AggregateOp`
-- [ ] 7.2 Add `#[pyclass]` to `VariableSchema`
-- [ ] 7.3 Implement `#[pymethods]` for builder pattern
+- [x] 7.1 Add `#[pyclass]` to `AggregateOp` (Note: complex enum - using string-based API instead)
+- [x] 7.2 Add `#[pyclass]` to `VariableSchema`
+- [x] 7.3 Implement `#[pymethods]` for builder pattern
 - [ ] 7.4 Add `with_schema()` to Python `ModelBuilder`
 - [ ] 7.5 Export from `crates/rscm/src/python/mod.rs`
 
 ## 8. Testing
 
-- [ ] 8.1 Unit tests for `VariableSchema` builder
+- [x] 8.1 Unit tests for `VariableSchema` builder
 - [ ] 8.2 Unit tests for schema validation (happy path)
 - [ ] 8.3 Unit tests for schema validation (error cases)
 - [ ] 8.4 Integration test: model with sum aggregate

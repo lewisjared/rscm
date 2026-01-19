@@ -115,6 +115,7 @@ pub mod interpolate;
 pub mod ivp;
 pub mod model;
 pub mod python;
+pub mod schema;
 pub mod spatial;
 pub mod state;
 pub mod timeseries;
