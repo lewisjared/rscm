@@ -57,8 +57,8 @@
 - [x] 7.1 Add `#[pyclass]` to `AggregateOp` (Note: complex enum - using string-based API instead)
 - [x] 7.2 Add `#[pyclass]` to `VariableSchema`
 - [x] 7.3 Implement `#[pymethods]` for builder pattern
-- [ ] 7.4 Add `with_schema()` to Python `ModelBuilder`
-- [ ] 7.5 Export from `crates/rscm/src/python/mod.rs`
+- [x] 7.4 Add `with_schema()` to Python `ModelBuilder`
+- [x] 7.5 Export from `crates/rscm/src/python/mod.rs`
 
 ## 8. Testing
 
@@ -70,13 +70,13 @@
 - [x] 8.6 Integration test: model with weighted aggregate
 - [x] 8.7 Integration test: aggregate with NaN contributors
 - [x] 8.8 Integration test: schema variable with no writer (NaN)
-- [ ] 8.9 Python integration test for schema API
+- [x] 8.9 Python integration test for schema API
 
 ## 9. Documentation
 
 - [ ] 9.1 Rustdoc for all public types
 - [ ] 9.2 Update CLAUDE.md with schema usage example
-- [ ] 9.3 Update Python type stubs (.pyi files)
+- [x] 9.3 Update Python type stubs (.pyi files)
 
 ## Dependencies
 

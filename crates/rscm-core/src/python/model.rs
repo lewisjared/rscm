@@ -3,6 +3,7 @@ use crate::python::component::PyPythonComponent;
 use crate::python::timeseries::{PyTimeAxis, PyTimeseries};
 use crate::python::timeseries_collection::PyTimeseriesCollection;
 use crate::python::PyRustComponent;
+use crate::schema::VariableSchema;
 use crate::timeseries::{FloatValue, Time};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -74,6 +75,19 @@ impl PyModelBuilder {
         self_
             .0
             .with_exogenous_collection(timeseries.borrow().0.clone());
+        self_
+    }
+
+    /// Add a variable schema to the model for validation and aggregation.
+    ///
+    /// The schema defines the variables the model expects and any aggregates
+    /// that should be computed. Component inputs/outputs are validated against
+    /// the schema at build time.
+    fn with_schema<'py>(
+        mut self_: PyRefMut<'py, Self>,
+        schema: Bound<'py, VariableSchema>,
+    ) -> PyRefMut<'py, Self> {
+        self_.0.with_schema(schema.borrow().clone());
         self_
     }
 

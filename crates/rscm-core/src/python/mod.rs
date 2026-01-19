@@ -84,6 +84,7 @@
 /// This tradeoff might be worth it if we need to expose a lot of functionality to Python,
 /// and it would also reduce the amount of boilerplate code.
 use crate::errors::RSCMError;
+use crate::schema::{AggregateDefinition, SchemaVariableDefinition, VariableSchema};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::{pymodule, wrap_pymodule, Bound, PyResult};
@@ -124,6 +125,11 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Model orchestration
     m.add_class::<model::PyModelBuilder>()?;
     m.add_class::<model::PyModel>()?;
+
+    // Schema types (for variable definitions and aggregates)
+    m.add_class::<VariableSchema>()?;
+    m.add_class::<SchemaVariableDefinition>()?;
+    m.add_class::<AggregateDefinition>()?;
 
     // Example component
     m.add_class::<example_component::TestComponentBuilder>()?;

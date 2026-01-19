@@ -277,6 +277,118 @@ class PythonComponent(Component):
     @staticmethod
     def build(component: CustomComponent) -> PythonComponent: ...
 
+class SchemaVariableDefinition:
+    """Definition of a single variable in the schema."""
+
+    name: str
+    unit: str
+    grid_type: GridType
+
+    def __init__(
+        self,
+        name: str,
+        unit: str,
+        grid_type: GridType | None = None,
+    ) -> None: ...
+
+class AggregateDefinition:
+    """Definition of an aggregate variable."""
+
+    name: str
+    unit: str
+    grid_type: GridType
+    contributors: list[str]
+
+    @property
+    def operation_type(self) -> str:
+        """Get the operation type as a string ("Sum", "Mean", or "Weighted")."""
+
+    @property
+    def weights(self) -> list[float] | None:
+        """Get the weights for a Weighted operation, or None for Sum/Mean."""
+
+class VariableSchema:
+    """
+    Complete variable schema for a model.
+
+    The schema declares all variables (regular and aggregates) for a model.
+    Components declare which variables they read/write, and the
+    ModelBuilder validates consistency.
+
+    Example
+    -------
+    >>> schema = VariableSchema()
+    >>> schema.add_variable("Emissions|CO2", "GtCO2/yr")
+    >>> schema.add_variable("Emissions|CH4", "GtCH4/yr")
+    >>> schema.add_aggregate(
+    ...     "Total Emissions", "GtCO2/yr", "Sum", ["Emissions|CO2", "Emissions|CH4"]
+    ... )
+    >>> schema.validate()
+    """
+
+    variables: dict[str, SchemaVariableDefinition]
+    aggregates: dict[str, AggregateDefinition]
+
+    def __init__(self) -> None: ...
+    def add_variable(
+        self, name: str, unit: str, grid_type: GridType | None = None
+    ) -> None:
+        """Add a variable to the schema."""
+
+    def add_aggregate(
+        self,
+        name: str,
+        unit: str,
+        operation: str,
+        contributors: list[str],
+        weights: list[float] | None = None,
+        grid_type: GridType | None = None,
+    ) -> None:
+        """
+        Add an aggregate to the schema.
+
+        Parameters
+        ----------
+        name
+            Variable identifier for the aggregate result
+        unit
+            Physical units (must match contributors)
+        operation
+            Operation type: "Sum", "Mean", or "Weighted"
+        contributors
+            Names of variables that contribute to this aggregate
+        weights
+            Weights for Weighted operation (required if operation="Weighted")
+        grid_type
+            Spatial resolution (defaults to Scalar)
+
+        Raises
+        ------
+        ValueError
+            If operation is "Weighted" but weights not provided, or
+            if operation is not one of "Sum", "Mean", "Weighted".
+        """
+
+    def contains(self, name: str) -> bool:
+        """Check if a name exists in the schema (as variable or aggregate)."""
+
+    def validate(self) -> None:
+        """
+        Validate the schema for consistency.
+
+        Performs the following checks:
+        - All aggregate contributors exist in the schema
+        - Unit consistency between contributors and their aggregates
+        - Grid type consistency between contributors and their aggregates
+        - Weighted aggregate weight counts match contributor counts
+        - No circular dependencies between aggregates
+
+        Raises
+        ------
+        ValueError
+            If validation fails.
+        """
+
 class ModelBuilder:
     """Builder for a model"""
 
@@ -287,6 +399,23 @@ class ModelBuilder:
     def with_initial_values(self, input_state: dict[str, F]) -> Self: ...
     def with_exogenous_variable(self, name: str, timeseries: Timeseries) -> Self: ...
     def with_exogenous_collection(self, timeseries: TimeseriesCollection) -> Self: ...
+    def with_schema(self, schema: VariableSchema) -> Self:
+        """
+        Add a variable schema to the model for validation and aggregation.
+
+        The schema defines the variables the model expects and any aggregates
+        that should be computed. Component inputs/outputs are validated against
+        the schema at build time.
+
+        Parameters
+        ----------
+        schema
+            The variable schema to use for validation and aggregation
+
+        Returns
+        -------
+        Self for method chaining
+        """
     def build(self) -> Model:
         """
         Build a concrete model from the provided information.
