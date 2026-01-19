@@ -37,9 +37,10 @@
 //! NaN values are excluded from computations (treated as missing data).
 
 use crate::component::GridType;
+use crate::errors::{RSCMError, RSCMResult};
 use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Operation for computing aggregate values from contributors.
 ///
@@ -358,6 +359,151 @@ impl VariableSchema {
             .map(|v| v.grid_type)
             .or_else(|| self.aggregates.get(name).map(|a| a.grid_type))
     }
+
+    /// Validate the schema for consistency.
+    ///
+    /// Performs the following checks:
+    /// - All aggregate contributors exist in the schema (as variables or aggregates)
+    /// - Unit consistency between contributors and their aggregates
+    /// - Grid type consistency between contributors and their aggregates
+    /// - Weighted aggregate weight counts match contributor counts
+    /// - No circular dependencies between aggregates
+    ///
+    /// # Errors
+    ///
+    /// Returns an error describing the first validation failure encountered.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use rscm_core::schema::{AggregateOp, VariableSchema};
+    ///
+    /// let schema = VariableSchema::new()
+    ///     .variable("ERF|CO2", "W/m^2")
+    ///     .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+    ///         .from("ERF|CO2")
+    ///         .build();
+    ///
+    /// assert!(schema.validate().is_ok());
+    /// ```
+    pub fn validate(&self) -> RSCMResult<()> {
+        // Check each aggregate
+        for (agg_name, agg_def) in &self.aggregates {
+            // 3.2: Validate contributor references exist
+            for contributor in &agg_def.contributors {
+                if !self.contains(contributor) {
+                    return Err(RSCMError::UndefinedContributor {
+                        contributor: contributor.clone(),
+                        aggregate: agg_name.clone(),
+                    });
+                }
+
+                // 3.3: Validate unit consistency
+                if let Some(contributor_unit) = self.get_unit(contributor) {
+                    if contributor_unit != agg_def.unit {
+                        return Err(RSCMError::SchemaUnitMismatch {
+                            aggregate: agg_name.clone(),
+                            contributor: contributor.clone(),
+                            contributor_unit: contributor_unit.to_string(),
+                            aggregate_unit: agg_def.unit.clone(),
+                        });
+                    }
+                }
+
+                // 3.4: Validate grid type consistency
+                if let Some(contributor_grid) = self.get_grid_type(contributor) {
+                    if contributor_grid != agg_def.grid_type {
+                        return Err(RSCMError::SchemaGridTypeMismatch {
+                            aggregate: agg_name.clone(),
+                            contributor: contributor.clone(),
+                            contributor_grid: format!("{:?}", contributor_grid),
+                            aggregate_grid: format!("{:?}", agg_def.grid_type),
+                        });
+                    }
+                }
+            }
+
+            // 3.5: Validate weighted aggregate weight count
+            if let AggregateOp::Weighted(weights) = &agg_def.operation {
+                if weights.len() != agg_def.contributors.len() {
+                    return Err(RSCMError::WeightCountMismatch {
+                        aggregate: agg_name.clone(),
+                        weight_count: weights.len(),
+                        contributor_count: agg_def.contributors.len(),
+                    });
+                }
+            }
+        }
+
+        // 3.6: Detect circular dependencies
+        self.check_circular_dependencies()?;
+
+        Ok(())
+    }
+
+    /// Check for circular dependencies in aggregate definitions.
+    ///
+    /// Uses depth-first search to detect cycles in the aggregate dependency graph.
+    fn check_circular_dependencies(&self) -> RSCMResult<()> {
+        // Track visited nodes and current path for cycle detection
+        let mut visited = HashSet::new();
+        let mut path = Vec::new();
+        let mut path_set = HashSet::new();
+
+        // Check from each aggregate
+        for agg_name in self.aggregates.keys() {
+            if !visited.contains(agg_name) {
+                self.dfs_cycle_check(agg_name, &mut visited, &mut path, &mut path_set)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Depth-first search for cycle detection.
+    fn dfs_cycle_check(
+        &self,
+        current: &str,
+        visited: &mut HashSet<String>,
+        path: &mut Vec<String>,
+        path_set: &mut HashSet<String>,
+    ) -> RSCMResult<()> {
+        // If we've seen this node in the current path, we have a cycle
+        if path_set.contains(current) {
+            // Build cycle description
+            let cycle_start = path.iter().position(|n| n == current).unwrap();
+            let mut cycle_nodes: Vec<_> = path[cycle_start..].to_vec();
+            cycle_nodes.push(current.to_string());
+            let cycle = cycle_nodes.join(" -> ");
+            return Err(RSCMError::AggregateCircularDependency { cycle });
+        }
+
+        // Skip if already fully processed
+        if visited.contains(current) {
+            return Ok(());
+        }
+
+        // Add to current path
+        path.push(current.to_string());
+        path_set.insert(current.to_string());
+
+        // Check all contributors that are themselves aggregates
+        if let Some(agg_def) = self.aggregates.get(current) {
+            for contributor in &agg_def.contributors {
+                // Only follow edges to other aggregates (variables are leaf nodes)
+                if self.aggregates.contains_key(contributor) {
+                    self.dfs_cycle_check(contributor, visited, path, path_set)?;
+                }
+            }
+        }
+
+        // Remove from current path and mark as visited
+        path.pop();
+        path_set.remove(current);
+        visited.insert(current.to_string());
+
+        Ok(())
+    }
 }
 
 #[pymethods]
@@ -433,6 +579,15 @@ impl VariableSchema {
     #[pyo3(name = "contains")]
     fn py_contains(&self, name: &str) -> bool {
         self.contains(name)
+    }
+
+    /// Validate the schema for consistency (Python API)
+    ///
+    /// Raises ValueError if validation fails.
+    #[pyo3(name = "validate")]
+    fn py_validate(&self) -> pyo3::PyResult<()> {
+        self.validate()
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
     }
 
     fn __repr__(&self) -> String {
@@ -681,5 +836,301 @@ mod tests {
         assert!(schema.variables.is_empty());
         assert!(schema.aggregates.is_empty());
         assert!(!schema.contains("anything"));
+    }
+
+    // Validation tests - happy path
+
+    #[test]
+    fn test_validate_valid_schema() {
+        let schema = VariableSchema::new()
+            .variable("ERF|CO2", "W/m^2")
+            .variable("ERF|CH4", "W/m^2")
+            .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+            .from("ERF|CO2")
+            .from("ERF|CH4")
+            .build();
+
+        assert!(schema.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_empty_schema() {
+        let schema = VariableSchema::new();
+        assert!(schema.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_chained_aggregates() {
+        let schema = VariableSchema::new()
+            .variable("ERF|CO2", "W/m^2")
+            .variable("ERF|CH4", "W/m^2")
+            .variable("ERF|Other", "W/m^2")
+            .aggregate("ERF|GHG", "W/m^2", AggregateOp::Sum)
+            .from("ERF|CO2")
+            .from("ERF|CH4")
+            .build()
+            .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+            .from("ERF|GHG")
+            .from("ERF|Other")
+            .build();
+
+        assert!(schema.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_weighted_aggregate_matching_weights() {
+        let schema = VariableSchema::new()
+            .variable("A", "units")
+            .variable("B", "units")
+            .aggregate("Total", "units", AggregateOp::Weighted(vec![0.6, 0.4]))
+            .from("A")
+            .from("B")
+            .build();
+
+        assert!(schema.validate().is_ok());
+    }
+
+    // Validation tests - error cases
+
+    #[test]
+    fn test_validate_undefined_contributor() {
+        let schema = VariableSchema::new()
+            .variable("ERF|CO2", "W/m^2")
+            .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+            .from("ERF|CO2")
+            .from("ERF|CH4") // Not defined
+            .build();
+
+        let err = schema.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Undefined contributor"),
+            "Expected UndefinedContributor error, got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("ERF|CH4"),
+            "Error should mention the missing contributor: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validate_unit_mismatch() {
+        let schema = VariableSchema::new()
+            .variable("ERF|CO2", "W/m^2")
+            .variable("Emissions|CO2", "GtCO2/yr") // Different unit
+            .aggregate("Total", "W/m^2", AggregateOp::Sum)
+            .from("ERF|CO2")
+            .from("Emissions|CO2") // Unit mismatch
+            .build();
+
+        let err = schema.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Unit mismatch"),
+            "Expected SchemaUnitMismatch error, got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("GtCO2/yr"),
+            "Error should mention mismatched unit: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validate_grid_type_mismatch() {
+        let schema = VariableSchema::new()
+            .variable("Global Temp", "K")
+            .variable_with_grid("Regional Temp", "K", GridType::FourBox)
+            .aggregate("Total Temp", "K", AggregateOp::Sum) // Scalar aggregate
+            .from("Global Temp")
+            .from("Regional Temp") // FourBox contributor
+            .build();
+
+        let err = schema.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Grid type mismatch"),
+            "Expected SchemaGridTypeMismatch error, got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("FourBox"),
+            "Error should mention FourBox: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validate_weight_count_mismatch() {
+        let schema = VariableSchema::new()
+            .variable("A", "units")
+            .variable("B", "units")
+            .variable("C", "units")
+            .aggregate(
+                "Total",
+                "units",
+                AggregateOp::Weighted(vec![0.5, 0.5]), // Only 2 weights
+            )
+            .from("A")
+            .from("B")
+            .from("C") // 3 contributors
+            .build();
+
+        let err = schema.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Weight count mismatch"),
+            "Expected WeightCountMismatch error, got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("2 weights"),
+            "Error should mention weight count: {}",
+            msg
+        );
+        assert!(
+            msg.contains("3 contributors"),
+            "Error should mention contributor count: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validate_circular_dependency_direct() {
+        // Create schema with direct circular reference: A -> B -> A
+        let mut schema = VariableSchema::new();
+        schema.aggregates.insert(
+            "A".to_string(),
+            AggregateDefinition {
+                name: "A".to_string(),
+                unit: "units".to_string(),
+                grid_type: GridType::Scalar,
+                operation: AggregateOp::Sum,
+                contributors: vec!["B".to_string()],
+            },
+        );
+        schema.aggregates.insert(
+            "B".to_string(),
+            AggregateDefinition {
+                name: "B".to_string(),
+                unit: "units".to_string(),
+                grid_type: GridType::Scalar,
+                operation: AggregateOp::Sum,
+                contributors: vec!["A".to_string()],
+            },
+        );
+
+        let err = schema.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Circular dependency"),
+            "Expected AggregateCircularDependency error, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validate_circular_dependency_self_reference() {
+        // Create schema with self-reference: A -> A
+        let mut schema = VariableSchema::new();
+        schema.aggregates.insert(
+            "A".to_string(),
+            AggregateDefinition {
+                name: "A".to_string(),
+                unit: "units".to_string(),
+                grid_type: GridType::Scalar,
+                operation: AggregateOp::Sum,
+                contributors: vec!["A".to_string()],
+            },
+        );
+
+        let err = schema.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Circular dependency"),
+            "Expected AggregateCircularDependency error, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validate_circular_dependency_indirect() {
+        // Create schema with indirect cycle: A -> B -> C -> A
+        let mut schema = VariableSchema::new();
+        schema.aggregates.insert(
+            "A".to_string(),
+            AggregateDefinition {
+                name: "A".to_string(),
+                unit: "units".to_string(),
+                grid_type: GridType::Scalar,
+                operation: AggregateOp::Sum,
+                contributors: vec!["B".to_string()],
+            },
+        );
+        schema.aggregates.insert(
+            "B".to_string(),
+            AggregateDefinition {
+                name: "B".to_string(),
+                unit: "units".to_string(),
+                grid_type: GridType::Scalar,
+                operation: AggregateOp::Sum,
+                contributors: vec!["C".to_string()],
+            },
+        );
+        schema.aggregates.insert(
+            "C".to_string(),
+            AggregateDefinition {
+                name: "C".to_string(),
+                unit: "units".to_string(),
+                grid_type: GridType::Scalar,
+                operation: AggregateOp::Sum,
+                contributors: vec!["A".to_string()],
+            },
+        );
+
+        let err = schema.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Circular dependency"),
+            "Expected AggregateCircularDependency error, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validate_diamond_dependency_no_cycle() {
+        // Diamond pattern is valid (no cycle): A -> B -> D, A -> C -> D
+        let schema = VariableSchema::new()
+            .variable("X", "units")
+            .aggregate("B", "units", AggregateOp::Sum)
+            .from("X")
+            .build()
+            .aggregate("C", "units", AggregateOp::Sum)
+            .from("X")
+            .build()
+            .aggregate("A", "units", AggregateOp::Sum)
+            .from("B")
+            .from("C")
+            .build();
+
+        assert!(schema.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_aggregate_referencing_aggregate() {
+        // Valid case: aggregate references another aggregate
+        let schema = VariableSchema::new()
+            .variable("X", "units")
+            .aggregate("Inner", "units", AggregateOp::Sum)
+            .from("X")
+            .build()
+            .aggregate("Outer", "units", AggregateOp::Sum)
+            .from("Inner")
+            .build();
+
+        assert!(schema.validate().is_ok());
     }
 }

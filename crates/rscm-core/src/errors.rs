@@ -55,6 +55,45 @@ pub enum RSCMError {
         expected_grid: String,
         component_grid: String,
     },
+
+    /// Aggregate contributor not defined in schema
+    #[error("Undefined contributor '{contributor}' in aggregate '{aggregate}'. The contributor must be defined as a variable or aggregate in the schema before it can be used.")]
+    UndefinedContributor {
+        contributor: String,
+        aggregate: String,
+    },
+
+    /// Unit mismatch between schema variable/aggregate and its contributor
+    #[error("Unit mismatch in aggregate '{aggregate}': contributor '{contributor}' has unit '{contributor_unit}' but aggregate expects '{aggregate_unit}'.")]
+    SchemaUnitMismatch {
+        aggregate: String,
+        contributor: String,
+        contributor_unit: String,
+        aggregate_unit: String,
+    },
+
+    /// Grid type mismatch between schema aggregate and its contributor
+    #[error("Grid type mismatch in aggregate '{aggregate}': contributor '{contributor}' has grid type '{contributor_grid}' but aggregate expects '{aggregate_grid}'.")]
+    SchemaGridTypeMismatch {
+        aggregate: String,
+        contributor: String,
+        contributor_grid: String,
+        aggregate_grid: String,
+    },
+
+    /// Weight count mismatch for weighted aggregate
+    #[error("Weight count mismatch in weighted aggregate '{aggregate}': {weight_count} weights provided but {contributor_count} contributors defined.")]
+    WeightCountMismatch {
+        aggregate: String,
+        weight_count: usize,
+        contributor_count: usize,
+    },
+
+    /// Circular dependency detected in aggregate graph
+    #[error(
+        "Circular dependency detected in aggregate schema: {cycle}. Aggregates cannot form cycles."
+    )]
+    AggregateCircularDependency { cycle: String },
 }
 
 /// Convenience type for `Result<T, RSCMError>`.

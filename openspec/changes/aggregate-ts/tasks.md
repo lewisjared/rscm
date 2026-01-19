@@ -20,13 +20,13 @@
 
 ## 3. Schema Validation
 
-- [ ] 3.1 Add `VariableSchema::validate()` method
-- [ ] 3.2 Validate contributor references exist in schema (as variable or aggregate)
-- [ ] 3.3 Validate unit consistency between contributors and aggregates
-- [ ] 3.4 Validate grid type consistency between contributors and aggregates
-- [ ] 3.5 Validate weighted aggregate weights count matches contributors count
-- [ ] 3.6 Detect circular aggregate dependencies
-- [ ] 3.7 Add error variants to `RSCMError`: `UndefinedContributor`, `UnitMismatch`, `GridTypeMismatch`, `WeightCountMismatch`, `CircularDependency`
+- [x] 3.1 Add `VariableSchema::validate()` method
+- [x] 3.2 Validate contributor references exist in schema (as variable or aggregate)
+- [x] 3.3 Validate unit consistency between contributors and aggregates
+- [x] 3.4 Validate grid type consistency between contributors and aggregates
+- [x] 3.5 Validate weighted aggregate weights count matches contributors count
+- [x] 3.6 Detect circular aggregate dependencies
+- [x] 3.7 Add error variants to `RSCMError`: `UndefinedContributor`, `SchemaUnitMismatch`, `SchemaGridTypeMismatch`, `WeightCountMismatch`, `AggregateCircularDependency`
 
 ## 4. ModelBuilder Integration
 
@@ -63,8 +63,8 @@
 ## 8. Testing
 
 - [x] 8.1 Unit tests for `VariableSchema` builder
-- [ ] 8.2 Unit tests for schema validation (happy path)
-- [ ] 8.3 Unit tests for schema validation (error cases)
+- [x] 8.2 Unit tests for schema validation (happy path)
+- [x] 8.3 Unit tests for schema validation (error cases)
 - [ ] 8.4 Integration test: model with sum aggregate
 - [ ] 8.5 Integration test: model with mean aggregate
 - [ ] 8.6 Integration test: model with weighted aggregate
