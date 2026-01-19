@@ -39,14 +39,14 @@
 
 **File:** `crates/rscm-core/src/model.rs`
 
-- [ ] 5.1 Modify `validate_component_against_schema()` to allow coarser input grids (read-side)
-- [ ] 5.2 Modify `validate_component_against_schema()` to allow finer output grids (write-side)
-- [ ] 5.3 Track required read transformations (variable, component_grid, direction=Read)
-- [ ] 5.4 Track required write transformations (variable, component_grid, direction=Write)
-- [ ] 5.5 Return error for unsupported read transformations (finer-from-coarser)
-- [ ] 5.6 Return error for unsupported write transformations (coarser-to-finer)
-- [ ] 5.7 Add tests for relaxed input validation
-- [ ] 5.8 Add tests for relaxed output validation
+- [x] 5.1 Modify `validate_component_against_schema()` to allow coarser input grids (read-side)
+- [x] 5.2 Modify `validate_component_against_schema()` to allow finer output grids (write-side)
+- [x] 5.3 Track required read transformations (variable, component_grid, direction=Read)
+- [x] 5.4 Track required write transformations (variable, component_grid, direction=Write)
+- [x] 5.5 Return error for unsupported read transformations (finer-from-coarser)
+- [x] 5.6 Return error for unsupported write transformations (coarser-to-finer)
+- [x] 5.7 Add tests for relaxed input validation
+- [x] 5.8 Add tests for relaxed output validation
 
 ## 6. Transformer Insertion in Build
 
