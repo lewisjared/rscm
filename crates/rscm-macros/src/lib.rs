@@ -237,14 +237,13 @@ fn parse_component_attr(attr: &Attribute) -> syn::Result<ComponentAttrs> {
     };
 
     syn::parse2(tokens)
-        .and_then(|_: proc_macro2::TokenStream| {
+        .map(|_: proc_macro2::TokenStream| {
             syn::parse2::<proc_macro2::TokenStream>(meta_list.tokens.clone()).ok();
-            Ok(())
         })
         .ok();
 
     // Actually parse the tokens
-    let _ = syn::parse::Parser::parse2(parser, meta_list.tokens.clone())?;
+    syn::parse::Parser::parse2(parser, meta_list.tokens.clone())?;
 
     Ok(attrs)
 }

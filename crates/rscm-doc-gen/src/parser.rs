@@ -185,9 +185,9 @@ fn parse_io_attr(attr: &Attribute) -> Result<Vec<VariableMetadata>, ()> {
         let mut current_unit = String::new();
         let mut current_grid = "Scalar".to_string();
         let mut in_braces = false;
-        let mut chars = tokens_str.chars().peekable();
+        let chars = tokens_str.chars().peekable();
 
-        while let Some(c) = chars.next() {
+        for c in chars {
             match c {
                 '{' => {
                     in_braces = true;
@@ -285,13 +285,11 @@ fn infer_module_path(path: &Path) -> String {
         .replace('-', "_");
 
     // Remove mod suffix if the file is named mod.rs
-    let path_str = if path_str.ends_with("::mod") {
+    if path_str.ends_with("::mod") {
         path_str[..path_str.len() - 5].to_string()
     } else {
         path_str
-    };
-
-    path_str
+    }
 }
 
 #[cfg(test)]

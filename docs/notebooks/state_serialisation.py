@@ -43,7 +43,12 @@ t_initial = 1750
 t_final = 2100
 
 time_axis = TimeAxis.from_values(
-    np.concatenate([np.arange(t_initial, 2015.0, 5), np.arange(2015.0, t_final + 1, 1.0)])
+    np.concatenate(
+        [
+            np.arange(t_initial, 2015.0, 5),
+            np.arange(2015.0, t_final + 1, 1.0),
+        ]
+    )
 )
 
 # Carbon cycle parameters
