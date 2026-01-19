@@ -23,6 +23,7 @@ The module tracks contributions from five aerosol species, each split by source 
 | Sea Salt (SS) | - | SSNAT | Natural only, constant |
 
 **Four-Box Regional Structure**: Like other MAGICC forcing calculations, this module operates on a 4-box spatial structure:
+
 - Box 1: Northern Hemisphere Ocean (NHO)
 - Box 2: Northern Hemisphere Land (NHL)
 - Box 3: Southern Hemisphere Ocean (SHO)
@@ -45,6 +46,7 @@ NORM_species = FGNO * NI(t_norm, 1) + FGNL * NI(t_norm, 2) + FGSO * NI(t_norm, 3
 ```
 
 Area fractions (from `mod_areas`):
+
 - FGNO = NH Ocean fraction
 - FGNL = NH Land fraction
 - FGSO = SH Ocean fraction
@@ -63,6 +65,7 @@ NA_TOT(t, region) = w_NO3 * NI_NO3 +
 ```
 
 **Default Weights** (from MAGCFG_DEFAULTALL.CFG):
+
 | Species | Weight | Normalized Weight |
 |---------|--------|-------------------|
 | SOX | 0.265 | 26.5% |
@@ -82,6 +85,7 @@ CDNC(t, region) = log10(NA_TOT(t, region))
 ```
 
 **Historical Note**: The code contains a commented-out Gultepe and Isaac parameterization:
+
 - Ocean: `CDNC = 162 * log10(NA) - 273`
 - Land: `CDNC = 298 * log10(NA) - 595`
 
@@ -102,6 +106,7 @@ DELTA_CDNC_ALBEDO(t, region) = DELTA_CDNC(t, region) / DELTA_CDNC(t_norm, region
 ```
 
 **Default Regional Patterns** (`RF_REGIONS_CLOUD_ALBEDO`):
+
 - NHO: -0.966 W/m^2
 - NHL: -1.399 W/m^2
 - SHO: -0.342 W/m^2
@@ -118,6 +123,7 @@ DELTA_CDNC_COVER(t, region) = DELTA_CDNC(t, region) / DELTA_CDNC(t_norm, region)
 ```
 
 **Default Regional Patterns** (`RF_REGIONS_CLOUD_COVER`):
+
 - NHO: -1.333 W/m^2
 - NHL: -1.581 W/m^2
 - SHO: -0.529 W/m^2
@@ -135,6 +141,7 @@ RF_DATBOX(t, region) = DELTA_CDNC_*(t, region) * SCALE_FACTOR
 ```
 
 **Default Harmonization Values** (AR6 calibration):
+
 - Albedo Effect: RF_CLOUD_ALBEDO_AER_WM2 = -0.89 W/m^2 in 2019
 - Cover Effect: RF_CLOUD_COVER_AER_WM2 = 0.0 W/m^2 in 2019
 
@@ -292,6 +299,7 @@ Each NI variable has a corresponding `PREIND_DATBOX_NI_*` (dimension 4) storing 
 | `DAT_CLOUD_TOT_SRF` | Total cloud surface RF |
 
 Each datastore contains:
+
 - `DATGLOBE(NYEARS)` - Global mean time series
 - `DATBOX(NYEARS, 4)` - 4-box regional time series
 
@@ -419,6 +427,7 @@ INPUT: SWITCH_APPLY_SCALING, SCALE_YR, SCALE_WM2, SCALE_FACTOR, DAT_RF, CDNC, NO
 ### 7.3 Sector Emission Handling
 
 The module supports a complex "sector mode" where it runs twice:
+
 1. First run with total emissions - saves normalization factors
 2. Second run with sector-adjusted emissions - applies saved factors
 
@@ -429,6 +438,7 @@ This ensures consistent normalization when sectoral emissions modify the totals.
 ### 8.1 Division by Zero Protection
 
 Multiple checks prevent division by zero:
+
 ```fortran
 IF (CLOUD % NORM_NO3 == 0.0D0) CLOUD % NORM_NO3 = 1.0D0
 IF (CLOUD % NORM_OC == 0.0D0) CLOUD % NORM_OC = 1.0D0
@@ -440,6 +450,7 @@ IF (CLOUD % NORM_SS == 0.0D0) CLOUD % NORM_SS = 1.0D0
 ### 8.2 Zero Delta CDNC Handling
 
 If DELTA_CDNC at normyear is zero, the entire regional forcing is set to zero:
+
 ```fortran
 IF (CLOUD % DELTA_CDNC(RF_REGIONS_NORMYEARIDX, I) /= 0.0D0) THEN
     ! Normal calculation
@@ -455,6 +466,7 @@ The code uses `MIN(IDX_FUTYR + 1, NYEARS)` to prevent array out-of-bounds when s
 ### 8.4 Pointer vs Value Copy
 
 The code explicitly adds `+ 0.0D0` when copying arrays to ensure deep copies rather than pointer references:
+
 ```fortran
 CLOUD % NI_NO3(:, I) = DAT_NO3T_RF % DATBOX(:, I) + 0.0D0
 ```
@@ -462,6 +474,7 @@ CLOUD % NI_NO3(:, I) = DAT_NO3T_RF % DATBOX(:, I) + 0.0D0
 ### 8.5 Emission Averaging
 
 Future scaling uses the average of current and next year emissions to provide smoother transitions:
+
 ```fortran
 (DAT_*_EMIS(FUTYR:NYEARS-1, box) + DAT_*_EMIS(FUTYR+1:NYEARS, box)) / 2.0
 ```
@@ -471,6 +484,7 @@ Future scaling uses the average of current and next year emissions to provide sm
 ### 9.1 CRITICAL: Missing Attribution
 
 **Line 73-74 of cloudstore.f90:**
+
 ```fortran
 ! THIS SUBROUTINE CACULATES THE INDIRECT AERSOSOL RADIATIVE FORCING EFFECT DUE TO
 ! CLOUD ALBEDO AND LIFETIME CHANGES - USING A SIMPLE FORMULA BY xxxxx AS USED AS WELL IN
@@ -491,6 +505,7 @@ This reveals that the forcing is essentially empirically scaled rather than phys
 ### 9.4 MODERATE: Inconsistent Normalization Years
 
 Each species uses a different `IDX_FUTYR` based on data availability:
+
 - NO3: from NO3T_RF or NOXI_EMIS HISTLASTYEAR
 - OC: MIN of OCI_OT, OCB_OT, OCN_OT HISTLASTYEAR
 - BC: MIN of BCI_OT, BCB_OT HISTLASTYEAR
@@ -511,6 +526,7 @@ The pattern for processing each aerosol species is nearly identical but repeated
 ### 9.7 MINOR: Incomplete Comment "Proceed Here"
 
 Multiple occurrences of "proceed here" and "continue here" comments suggest incomplete documentation or development notes:
+
 - Line 76: "PROCEED HERE AND CHECK TEXT"
 - Line 115: "continue here, check that lastyear is set correctly"
 - Line 148: "continue here: do something for the NOXB emissions"
@@ -526,6 +542,7 @@ Real CCN activation depends on aerosol size distribution and supersaturation. Th
 ### 9.10 DESIGN: Linear Superposition
 
 Species contributions are linearly summed, ignoring:
+
 - Competition for water vapor during activation
 - Chemical interactions between species
 - Size-dependent activation differences
@@ -535,6 +552,7 @@ Species contributions are linearly summed, ignoring:
 ### 10.1 Zero Emissions Test
 
 **Purpose:** Verify forcing is zero when all anthropogenic aerosols are zero
+
 ```python
 # Set all aerosol emissions and optical thickness to pre-industrial
 # Expected: DAT_CLOUD_TOT_RF = 0.0 for all years and regions
@@ -543,6 +561,7 @@ Species contributions are linearly summed, ignoring:
 ### 10.2 Harmonization Test
 
 **Purpose:** Verify forcing matches target in harmonization year
+
 ```python
 # Run with default AR6 settings
 # Expected: DAT_CLOUD_ALBEDO_RF global mean = -0.89 W/m^2 in 2019
@@ -552,6 +571,7 @@ Species contributions are linearly summed, ignoring:
 ### 10.3 Single Species Test
 
 **Purpose:** Verify each species contributes according to weight
+
 ```python
 # Set only SOX emissions, all others zero
 # Expected: NA_TOT = CLOUD_WEIGHT_SOX * NI_SOXI (normalized)
@@ -560,6 +580,7 @@ Species contributions are linearly summed, ignoring:
 ### 10.4 Regional Pattern Test
 
 **Purpose:** Verify regional patterns are applied correctly
+
 ```python
 # Uniform global aerosol change
 # Expected: Regional RF ratios match RF_REGIONS_CLOUD_ALBEDO ratios
@@ -568,6 +589,7 @@ Species contributions are linearly summed, ignoring:
 ### 10.5 BC Solubility Test
 
 **Purpose:** Verify BCI reduction by solubility ratio
+
 ```python
 # Set only BCI optical thickness, BCB = 0
 # Expected: NI_BCI = OT_BCI * CLOUD_BCI2BCB_SOLUBLE_RATIO / NORM_BC
@@ -576,6 +598,7 @@ Species contributions are linearly summed, ignoring:
 ### 10.6 Future Scaling Test
 
 **Purpose:** Verify emission-based scaling after IDX_FUTYR
+
 ```python
 # Double SOX emissions after 2020
 # Expected: NI_SOXI roughly doubles after 2020 relative to IDX_FUTYR value
@@ -584,6 +607,7 @@ Species contributions are linearly summed, ignoring:
 ### 10.7 Constant Natural Source Test
 
 **Purpose:** Verify sea salt and natural OC remain constant
+
 ```python
 # Run to 2100
 # Expected: NI_SSNAT(2100) = NI_SSNAT(IDX_FUTYR)
@@ -593,6 +617,7 @@ Species contributions are linearly summed, ignoring:
 ### 10.8 Maximum Limit Test
 
 **Purpose:** Verify CLOUD_LIMIT_MAX is applied
+
 ```python
 # Set CLOUD_APPLY_LIMIT_MAX = 1, CLOUD_LIMIT_MAX = 0.0
 # Scenario with decreasing aerosols (forcing becoming less negative)
@@ -602,6 +627,7 @@ Species contributions are linearly summed, ignoring:
 ### 10.9 Initialization Method Test
 
 **Purpose:** Verify ZEROSTARTSHIFT vs JUMPSTART behavior
+
 ```python
 # ZEROSTARTSHIFT: First year forcing should be exactly 0.0
 # JUMPSTART: First year forcing equals calculated value (no offset)
@@ -610,6 +636,7 @@ Species contributions are linearly summed, ignoring:
 ### 10.10 Sector Mode Test
 
 **Purpose:** Verify two-pass sector emission handling
+
 ```python
 # Run with SECTOR_INCLUDE != 'NOSECTOR'
 # First run: Saves SECTOR_CLOUD_NORM_* values
@@ -658,12 +685,14 @@ Species contributions are linearly summed, ignoring:
 This module implements aerosol indirect effects on clouds using a highly parameterized approach. Key characteristics:
 
 **Strengths:**
+
 - Tracks multiple aerosol species with different sources
 - Supports AR6-style harmonization to observed/modeled forcing
 - Regional forcing patterns from detailed models
 - Handles historical data transition to emission-based projections
 
 **Limitations:**
+
 - Simplified log-linear CCN-CDNC relationship
 - Cloud cover effect disabled by default
 - Optical thickness used as CCN proxy (ignores size distribution)
@@ -671,6 +700,7 @@ This module implements aerosol indirect effects on clouds using a highly paramet
 - Missing scientific attribution in code comments
 
 **For Rewrite Considerations:**
+
 1. Consider implementing a more physically-based CCN activation scheme
 2. Enable cloud cover effect with appropriate default value
 3. Add aerosol size distribution sensitivity

@@ -11,11 +11,12 @@ This module calculates a "limitation factor" (0 to 1) that is applied to NPP to 
 **WARNING: THIS MODULE IS EXPLICITLY MARKED AS UNFINISHED IN THE CODE.**
 
 At line 38 of `nitrogen_limitation.f90`, when the module is activated (`NCYCLE_APPLY == 1`), it logs:
+
 ```fortran
 CALL logger % warning('NITROGEN_INIT', "Careful using the nitrogen cycle, it's not finished yet")
 ```
 
-### Known Issues:
+### Known Issues
 
 1. **Copy-Paste Bug**: There is a clear bug at lines 106-107, 156-157, 326-327, and 388-389 where `DAT_NH3I_EMIS` is used twice instead of using both `DAT_NH3I_EMIS` and `DAT_NH3B_EMIS`. This means biomass burning NH3 emissions are ignored when calculating nitrogen deposition from emissions.
 
@@ -40,6 +41,7 @@ dN/dt = 0 = (F_dep + F_recyc + F_fix) - (F_up + F_loss)
 ```
 
 Where:
+
 - `F_dep` = Nitrogen deposition flux (Pg N yr^-1)
 - `F_recyc` = Nitrogen recycling from decomposition (Pg N yr^-1)
 - `F_fix` = Biological nitrogen fixation (Pg N yr^-1)
@@ -51,14 +53,17 @@ Where:
 Two modes:
 
 **Mode 1: External Input** (`NCYCLE_APPLY_NDEP_FROM_EMIS == 0`):
+
 ```
 F_dep = DAT_NCYCLE_NDEP(t)
 ```
 
 **Mode 2: From Emissions** (`NCYCLE_APPLY_NDEP_FROM_EMIS == 1`):
+
 ```
 F_dep = NCYCLE_FRAC_NDEP_LAND * 1e-3 * (NOx_i + NOx_b + NH3_i + NH3_i)
 ```
+
 Note: The `NH3_i + NH3_i` is a bug - should be `NH3_i + NH3_b`.
 
 ### 3.3 Nitrogen Recycling
@@ -76,6 +81,7 @@ Where `RH` is heterotrophic respiration (or NPP in year 1).
 ### 3.4 Nitrogen Fixation
 
 **Mode 1: External Input** (`NCYCLE_APPLY_PROGNOSTIC_NFIX == 0`):
+
 ```
 F_fix = DAT_NCYCLE_NFIX(t)
 ```
@@ -83,11 +89,13 @@ F_fix = DAT_NCYCLE_NFIX(t)
 **Mode 2: Prognostic** (`NCYCLE_APPLY_PROGNOSTIC_NFIX == 1`):
 
 For initial (pre-fertilization) period:
+
 ```
 F_fix = 1e-3 * (NCYCLE_NFIX_VMAX * NPP) / (NCYCLE_NFIX_KM + NPP)
 ```
 
 For active period (Michaelis-Menten with N-availability modulation):
+
 ```
 phi_N = (1 + A) / (A + exp(-C * (N^2/(N + S) - k_up * NPP)))
 phi_N_0 = (1 + A) / (A + exp(-C * (N_0^2/(N_0 + S) - k_up * NPP_0)))
@@ -96,6 +104,7 @@ F_fix = 1e-3 * (NCYCLE_NFIX_VMAX * NPP * (phi_N/phi_N_0)) / (NCYCLE_NFIX_KM + NP
 ```
 
 Where:
+
 - A = `NCYCLE_NPP2NAVAIL_FACTOR_A`
 - C = `NCYCLE_NPP2NAVAIL_FACTOR_C`
 - S = `NCYCLE_NCRATIO_UPTAKE_SUPPLY`
@@ -106,11 +115,13 @@ Where:
 ### 3.5 Plant Nitrogen Uptake
 
 For initial period:
+
 ```
 F_up = NCYCLE_NCRATIO_UPTAKE * NPP
 ```
 
 For active period:
+
 ```
 F_up = NCYCLE_NCRATIO_UPTAKE * NPP * (phi_N / phi_N_0)
 ```
@@ -124,11 +135,13 @@ F_loss = N / NCYCLE_TURNOVERTIME_LOSSES
 ### 3.7 Nitrogen Limitation Factor
 
 Before `CO2_FERTILIZATION_YRSTART`:
+
 ```
 NCYCLE_LIMIT_FACTOR = 1.0
 ```
 
 After `CO2_FERTILIZATION_YRSTART`:
+
 ```
 NCYCLE_LIMIT_FACTOR = (phi_N) / (phi_N_0)
 ```
@@ -138,6 +151,7 @@ Where phi_N and phi_N_0 are as defined in section 3.4.
 ### 3.8 Application to NPP
 
 In MAGICC7.f90 (line 7296):
+
 ```
 CO2_CURRENT_NPP = NCYCLE_LIMIT_FACTOR * CO2_CURRENT_NPP
 ```
@@ -145,6 +159,7 @@ CO2_CURRENT_NPP = NCYCLE_LIMIT_FACTOR * CO2_CURRENT_NPP
 ### 3.9 Numerical Solution
 
 The module uses a **bisection root-finding method** to solve for N where dN/dt = 0:
+
 - Search interval: [-100, 1000] Pg N
 - Tolerance: 1e-5 Pg N
 - Max iterations: 200
@@ -365,12 +380,14 @@ SUBROUTINE BISECTION(F, x1, x2, eps) -> root:
 The nitrogen limitation module is tightly coupled with the terrestrial carbon cycle:
 
 **Inputs from Carbon Cycle** (defined in `mod_carbon_cycle`):
+
 - `CO2_CURRENT_NPP` - Current net primary production
 - `CO2_TOTALRESPIRATION` - Heterotrophic respiration (proxy for RH)
 - `CO2_EFF_FERTILIZATION_FACTOR` - CO2 fertilization effect
 - `CO2_EFF_NPP_TEMPFEEDBACK` - Temperature feedback on NPP
 
 **Outputs to Carbon Cycle**:
+
 - `NCYCLE_LIMIT_FACTOR` is multiplied by `CO2_CURRENT_NPP` in MAGICC7.f90 line 7296
 
 **Timing**: The N_CALC_LIMITATION_FACTOR is called AFTER the carbon cycle calculates NPP but BEFORE the NPP value is finalized, allowing the limitation factor to reduce the effective NPP.
@@ -380,6 +397,7 @@ The nitrogen limitation module is tightly coupled with the terrestrial carbon cy
 ### 9.2 Coupling with Emissions Handler
 
 When `NCYCLE_APPLY_NDEP_FROM_EMIS == 1`:
+
 - Uses NOx emissions (`DAT_NOXI_EMIS`, `DAT_NOXB_EMIS`)
 - Uses NH3 emissions (`DAT_NH3I_EMIS`) - note: NH3B is missing due to bug
 
@@ -415,64 +433,66 @@ magicc_cleanup():
 ### 10.1 Critical Bugs
 
 1. **NH3 Emissions Bug** (Lines 106-107, 156-157, 326-327, 388-389):
+
    ```fortran
    + DAT_NH3I_EMIS % DATGLOBE(CURRENT_YEAR_IDX) &
    + DAT_NH3I_EMIS % DATGLOBE(CURRENT_YEAR_IDX))  ! SHOULD BE NH3B_EMIS
    ```
+
    This doubles industrial NH3 and ignores biomass burning NH3 entirely.
 
 ### 10.2 Missing Initialization
 
-2. **Uninitialized Parameters**: `NCYCLE_NFIX_VMAX` and `NCYCLE_NFIX_KM` have no defaults in `MAGCFG_DEFAULTALL.CFG`. Using `NCYCLE_APPLY_PROGNOSTIC_NFIX == 1` will use uninitialized (garbage) values.
+1. **Uninitialized Parameters**: `NCYCLE_NFIX_VMAX` and `NCYCLE_NFIX_KM` have no defaults in `MAGCFG_DEFAULTALL.CFG`. Using `NCYCLE_APPLY_PROGNOSTIC_NFIX == 1` will use uninitialized (garbage) values.
 
-3. **Uninitialized NCYCLE_RECYC2CNRATIO_FACTOR**: This parameter is used in calculations but has no visible default value in the CFG file, though it may be set elsewhere.
+2. **Uninitialized NCYCLE_RECYC2CNRATIO_FACTOR**: This parameter is used in calculations but has no visible default value in the CFG file, though it may be set elsewhere.
 
 ### 10.3 Unused Code
 
-4. **Unused Input Files**: `FILE_NRECYC_IN` and `FILE_NLOSS_IN` are read but `DAT_NCYCLE_NRECYC` and `DAT_NCYCLE_NLOSS` are never used in any calculation. This suggests either:
+1. **Unused Input Files**: `FILE_NRECYC_IN` and `FILE_NLOSS_IN` are read but `DAT_NCYCLE_NRECYC` and `DAT_NCYCLE_NLOSS` are never used in any calculation. This suggests either:
    - Incomplete implementation
    - Dead code that should be removed
    - A planned feature that was never completed
 
 ### 10.4 Hardcoded Values
 
-5. **Magic Number 1.0D-03**: Unit conversion factor appears repeatedly without documentation. Appears to be kt -> Pg conversion for emissions.
+1. **Magic Number 1.0D-03**: Unit conversion factor appears repeatedly without documentation. Appears to be kt -> Pg conversion for emissions.
 
-6. **Bisection Search Bounds**: The search range `[-100, 1000]` for nitrogen pool is hardcoded with no scientific justification. A negative nitrogen pool is physically meaningless.
+2. **Bisection Search Bounds**: The search range `[-100, 1000]` for nitrogen pool is hardcoded with no scientific justification. A negative nitrogen pool is physically meaningless.
 
-7. **Singularity Check**: The bisection method checks `IF (ABS(F(ROOT)) < 1.0)` to distinguish roots from singularities. The threshold of 1.0 is arbitrary.
+3. **Singularity Check**: The bisection method checks `IF (ABS(F(ROOT)) < 1.0)` to distinguish roots from singularities. The threshold of 1.0 is arbitrary.
 
 ### 10.5 Numerical Concerns
 
-8. **Steady-State Assumption**: The module assumes dN/dt = 0 every timestep, which is a strong assumption. The nitrogen pool cannot accumulate or draw down over time, which may not be realistic for transient scenarios.
+1. **Steady-State Assumption**: The module assumes dN/dt = 0 every timestep, which is a strong assumption. The nitrogen pool cannot accumulate or draw down over time, which may not be realistic for transient scenarios.
 
-9. **No Convergence Checking**: The bisection method always returns a result even if the initial condition `F(x1)*F(x2) > 0` fails. The code sets `FLAG = 0` but this flag is never checked by the caller.
+2. **No Convergence Checking**: The bisection method always returns a result even if the initial condition `F(x1)*F(x2) > 0` fails. The code sets `FLAG = 0` but this flag is never checked by the caller.
 
-10. **Potential Division by Zero**: Several expressions involve divisions that could fail:
+3. **Potential Division by Zero**: Several expressions involve divisions that could fail:
     - `N + NCYCLE_NCRATIO_UPTAKE_SUPPLY` (safe if S > 0)
     - `NCYCLE_NFIX_KM + NPP*ratio` (could be near zero)
     - `NCYCLE_TURNOVERTIME_LOSSES` (safe if > 0)
 
 ### 10.6 Documentation Issues
 
-11. **Inconsistent Units**: The code mixes Pg and kt units without clear documentation. The 1.0D-03 factor converts kt N to Pg N (since 1 Pg = 10^12 kg = 10^9 Mg = 10^6 kt).
+1. **Inconsistent Units**: The code mixes Pg and kt units without clear documentation. The 1.0D-03 factor converts kt N to Pg N (since 1 Pg = 10^12 kg = 10^9 Mg = 10^6 kt).
 
-12. **No Physical Bounds Checking**: There is no validation that:
+2. **No Physical Bounds Checking**: There is no validation that:
     - Nitrogen pool remains positive
     - Limitation factor stays in [0, 1]
     - Fluxes remain physically reasonable
 
 ### 10.7 Code Quality
 
-13. **Code Duplication**: The NITROGEN_BALANCE and NITROGEN_BALANCE_INITIAL functions share ~70% identical code. Should be refactored.
+1. **Code Duplication**: The NITROGEN_BALANCE and NITROGEN_BALANCE_INITIAL functions share ~70% identical code. Should be refactored.
 
-14. **Flux Calculation Duplication**: Flux calculations in N_CALC_LIMITATION_FACTOR duplicate what's computed in the balance functions.
+2. **Flux Calculation Duplication**: Flux calculations in N_CALC_LIMITATION_FACTOR duplicate what's computed in the balance functions.
 
-15. **Missing Comments**: Despite the mathematical complexity, there are minimal inline comments explaining the physical meaning of equations.
+3. **Missing Comments**: Despite the mathematical complexity, there are minimal inline comments explaining the physical meaning of equations.
 
 ### 10.8 Legacy Issues
 
-16. **Orphaned Tuning File**: `MAGTUNE_1PCTCO2_CN.CFG` uses parameter names that don't exist in the codebase, suggesting it's obsolete or the module was refactored without updating calibration files.
+1. **Orphaned Tuning File**: `MAGTUNE_1PCTCO2_CN.CFG` uses parameter names that don't exist in the codebase, suggesting it's obsolete or the module was refactored without updating calibration files.
 
 ## 11. Fortran Code References
 

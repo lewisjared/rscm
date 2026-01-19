@@ -69,9 +69,9 @@ The steps required are the following:
 
 1. Bump the version: manually trigger the "bump" stage from the latest commit
    in main (pipelines are [here](https://github.com/lewisjared/rscm/actions/workflows/bump.yaml)).
-   A valid "bump_rule" (see https://python-poetry.org/docs/cli/#version)
+   A valid "bump_rule" (see <https://python-poetry.org/docs/cli/#version>)
    will need to be specified via the "BUMP_RULE" CI
-   variable (see https://docs.gitlab.com/ee/ci/variables/). This will then
+   variable (see <https://docs.gitlab.com/ee/ci/variables/>). This will then
    trigger a release, including publication to PyPI.
 
 1. This will create a draft release with the release notes partially completed

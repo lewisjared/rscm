@@ -9,6 +9,7 @@ This module models the atmospheric chemistry of halocarbons - synthetic compound
 2. **Montreal Protocol Gases (MHALO)**: CFCs, HCFCs, halons, methyl chloride, methyl bromide, carbon tetrachloride, etc. These deplete stratospheric ozone AND contribute to radiative forcing.
 
 The module tracks:
+
 - Atmospheric concentrations via exponential decay with species-specific lifetimes
 - Radiative forcing from infrared absorption
 - Equivalent Effective Stratospheric Chlorine (EESC) for ozone depletion calculations
@@ -25,6 +26,7 @@ dC/dt = E - C/tau_effective
 ```
 
 Where:
+
 - `C` = atmospheric concentration (ppt)
 - `E` = emissions (converted to ppt/yr)
 - `tau_effective` = effective total lifetime (years)
@@ -32,11 +34,13 @@ Where:
 The discrete solution implemented uses two numerical schemes depending on lifetime:
 
 **For long-lived species (tau >= 5 years) - Crank-Nicolson implicit:**
+
 ```
 C(t+1) = [C(t) * (1 - 1/(2*tau)) + E(t) * conv_factor] / (1 + 1/(2*tau))
 ```
 
 **For short-lived species (tau < 5 years) - Exact exponential:**
+
 ```
 ex = exp(-1/tau)
 C(t+1) = tau * E(t) * conv_factor * (1 - ex) + C(t) * ex
@@ -49,6 +53,7 @@ conv_factor = (M_air / (M_atm * M_mol * f_mix))
 ```
 
 Where:
+
 - `M_air` = molar mass of air (28.984 g/mol)
 - `M_atm` = total atmospheric mass (5.133 x 10^21 g)
 - `M_mol` = molecular mass of species (calculated from atomic composition)
@@ -82,15 +87,19 @@ tau_other = 1 / (1/tau_tot - 1/tau_OH - 1/tau_strat)
 ### 2.5 Lifetime Scale Factors
 
 **OH-dependent lifetime scaling (optional):**
+
 ```
 scale_OH = CH4_tauOH_effective(t) / CH4_tauOH_init
 ```
+
 Uses methane OH lifetime as proxy for oxidation capacity changes.
 
 **Stratospheric lifetime scaling (optional):**
+
 ```
 scale_strat = 1 / (1 + T_meridional * GEN_MERIDFLUX_CHNGPERDEG * TAUSTRAT_SENS2MERIDFLUX)
 ```
+
 Based on Butchart & Scaife (2001) - ~3% increase in meridional flux per decade.
 
 ### 2.6 Radiative Forcing
@@ -114,6 +123,7 @@ EESC += C_delayed * (n_Cl * f_release * f_CFC11 + alpha_Br * n_Br * f_release * 
 ```
 
 Where:
+
 - `C_delayed` = concentration at (t - delay) years, typically 3 years
 - `n_Cl, n_Br` = number of chlorine/bromine atoms in molecule
 - `f_release` = fractional release factor (species-specific)
@@ -423,6 +433,7 @@ END SUBROUTINE
 ### 8.1 Stability
 
 The numerical scheme is unconditionally stable:
+
 - Long-lived species (tau >= 5 yr): Crank-Nicolson implicit is stable for any timestep
 - Short-lived species (tau < 5 yr): Exact exponential solution is analytically stable
 
@@ -437,10 +448,12 @@ The numerical scheme is unconditionally stable:
 ### 8.3 Known Bugs
 
 1. **HFC-134a index hardcoded**: At line 4571, the code has:
+
    ```fortran
    ! TODO - fix bug: HFC134A is not index 8
    hfc134a_idx = 8
    ```
+
    This overrides the dynamic lookup and assumes HFC-134a is always at index 8 in `FGAS_NAMES`.
 
 2. **Dimensional inconsistency in RF box fractions**: The `calculate_halo_rf_box_fractions` function has a TODO noting dimensional inconsistency in the interpolation between high and low tau regimes (lines 746-752).
@@ -464,6 +477,7 @@ The numerical scheme is unconditionally stable:
 ### 9.3 Parallel Processing Issues
 
 Each species is processed independently in a loop. The loops could potentially be parallelized, but:
+
 - The EESC accumulation uses a shared variable that would need atomic operations
 - DataStore writes to `*SUM_RF` variables are accumulating
 
@@ -635,14 +649,17 @@ def test_stratoz_rf_scaling():
 ## 11. Fortran Code References
 
 ### 11.1 Core Module Definition
+
 - **File:** `/Users/jared/code/magicc/magicc/src/libmagicc/core.f90`
 - **Lines 100-131:** `MOD_HALOS` module with `CALC_HALOS_MOLMASS` subroutine
 
 ### 11.2 DataStore Definitions
+
 - **File:** `/Users/jared/code/magicc/magicc/src/libmagicc/utils/datastore.f90`
 - **Lines 130-196:** FGAS and MHALO array declarations
 
 ### 11.3 Physics Calculations
+
 - **File:** `/Users/jared/code/magicc/magicc/src/libmagicc/physics/deltaq_calculations.f90`
 - **Lines 430-453:** `calculate_halo_tautot` - effective lifetime
 - **Lines 455-490:** `calculate_halo_kton_per_yr_to_ppt_conv_factor` - unit conversion
@@ -655,6 +672,7 @@ def test_stratoz_rf_scaling():
 - **Lines 954-1002:** `calculate_stratospheric_ozone_rf` - ozone depletion RF
 
 ### 11.4 Main Processing Loop
+
 - **File:** `/Users/jared/code/magicc/magicc/src/libmagicc/MAGICC7.f90`
 - **Lines 4418-4427:** EESC initialization and delay setup
 - **Lines 4429-4565:** F-gas processing loop
@@ -664,11 +682,13 @@ def test_stratoz_rf_scaling():
 - **Lines 4739-4760:** Stratospheric ozone RF calculation
 
 ### 11.5 Initialization
+
 - **File:** `/Users/jared/code/magicc/magicc/src/libmagicc/MAGICC7.f90`
 - **Lines 2520-2541:** Molecular mass calculation and tau_other derivation for F-gases
 - **Lines 2544-2561:** Same for MHALO
 
 ### 11.6 Configuration Defaults
+
 - **File:** `/Users/jared/code/magicc/magicc/run/MAGCFG_DEFAULTALL.CFG`
 - **Lines 140-167:** FGAS parameters
 - **Lines 273-301:** MHALO parameters

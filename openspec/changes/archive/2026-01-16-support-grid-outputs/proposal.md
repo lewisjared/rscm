@@ -41,11 +41,13 @@ This change affects:
 ### OutputState Type Change
 
 Change from:
+
 ```rust
 pub type OutputState = HashMap<String, FloatValue>;
 ```
 
 To:
+
 ```rust
 pub type OutputState = HashMap<String, StateValue>;
 ```
@@ -53,6 +55,7 @@ pub type OutputState = HashMap<String, StateValue>;
 ### StateValue Enum Extension
 
 Extend `StateValue` with grid-specific variants:
+
 ```rust
 pub enum StateValue {
     Scalar(FloatValue),
@@ -62,6 +65,7 @@ pub enum StateValue {
 ```
 
 This provides:
+
 - Type safety at the enum level
 - Zero-cost conversion from typed slices
 - Explicit grid type matching in Model.step_model_component
@@ -84,6 +88,7 @@ impl From<MyOutputs> for OutputState {
 ### Model Integration
 
 `Model.step_model_component` will match on `StateValue` variants:
+
 ```rust
 match value {
     StateValue::Scalar(v) => ts.set(index, ScalarRegion::Global, v),
@@ -99,11 +104,13 @@ match value {
 ### Initial Values Extension
 
 Extend `ModelBuilder::initial_values` to support grid types:
+
 ```rust
 initial_values: HashMap<String, StateValue>
 ```
 
 With convenience methods:
+
 ```rust
 fn with_initial_value(&mut self, name: &str, value: FloatValue) -> &mut Self
 fn with_initial_four_box(&mut self, name: &str, values: FourBoxSlice) -> &mut Self

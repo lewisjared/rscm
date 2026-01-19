@@ -3,6 +3,7 @@
 **STATUS: EXPERIMENTAL - This module is marked as experimental and may not be fit for production use.**
 
 The source code itself contains the warning (line 3 of permafrost.f90):
+
 ```fortran
 ! TODO: update this (all out of date/conflicting with MAGCFG_DEFAULTALL.CFG)
 ```
@@ -69,10 +70,12 @@ The thawing (or refreezing if negative) rate depends on how far the summer tempe
 $$R_{thaw}(t,i) = sign(T_{summer,max}) \times |T_{summer,max}(t,i)|^{\alpha} \times R_{base}$$
 
 Where:
+
 - $\alpha$ = `PF_x_THAWFREEZE_EXP_TEMP` (default 1.0 for both MS and PEAT)
 - $R_{base}$ = `PF_x_THAWFREEZE_PERCPERK_RATE` (fraction per Kelvin per year)
 
 Default rates:
+
 - Mineral soil: 0.1 (10% per K per year)
 - Peat: 0.05 (5% per K per year)
 
@@ -85,6 +88,7 @@ A sinusoidal seasonal cycle is applied to determine monthly soil temperatures:
 $$T_{soil}(t,i,m) = T_{summer,max}(t,i) + \frac{A_{annual}}{2} \times (\sin(\pi \times (m-1)/11) - 1)$$
 
 Where:
+
 - $m$ = month index (1-12)
 - $A_{annual}$ = `PF_TSOILANNUALCYCLE_AMPL` (default 5.0 K)
 
@@ -97,6 +101,7 @@ Soil moisture is a linear function of temperature, bounded between a minimum and
 $$W_{soil}(t,i,m) = \min(1.0, \max(W_{min}, M \times T_{soil}(t,i,m) + W_{offset}))$$
 
 Where:
+
 - $M$ = `PF_SOILWATER_M` (default 0.02)
 - $W_{offset}$ = `PF_SOILWATER_OFFSET` (default 0.2)
 - $W_{min}$ = `PF_SOILWATER_MINW` (default 0.2)
@@ -112,6 +117,7 @@ The decomposition rate depends on temperature via a Q10-like formulation (from S
 $$Q_{10}(T) = \exp\left(\alpha \times \left(\frac{1}{T_1} - \frac{1}{T_{soil} + T_2}\right)\right)$$
 
 Where:
+
 - $\alpha$ = `PF_Q10_x_y_ALPHA` (default 308.56 for all four combinations)
 - $T_1$ = `PF_Q10_TEMP1` (default 56.02)
 - $T_2$ = `PF_Q10_TEMP2` (default 46.02)
@@ -135,6 +141,7 @@ $$D_{PEAT,aerob}(m) = \frac{r_{peat}}{\tau_{MS,aerob}} \times Q_{10,PEAT,aerob}(
 $$D_{PEAT,anaerob}(m) = \frac{r_{peat} \times r_{anaerob}}{\tau_{MS,aerob}} \times Q_{10,PEAT,anaerob}(m)$$
 
 Where:
+
 - $\tau_{MS,aerob}$ = `PF_MS_AEROB_DECOMP_TURNOVERTIME` (default 20 years)
 - $r_{anaerob}$ = `PF_DECOMPRATE_ANAEROB_OVER_AEROB_RATIO` (default 0.1)
 - $r_{peat}$ = `PF_DECOMPRATE_PEAT_OVER_MS_RATIO` (default 0.5)
@@ -148,11 +155,13 @@ The fraction of thawed area that is anaerobic (water-saturated) depends on moist
 $$f_{anaerob}(m) = \max\left(0, \min\left(f_{anaerob,max}, f_{anaerob,init} + (f_{anaerob,max} - f_{anaerob,init}) \times f_{moisture}(m) \times S_{moist}\right)\right)$$
 
 Where:
+
 - $f_{anaerob,init}$ = `PF_x_ANAEROB_INITIAL_AREAFRACTION`
 - $f_{anaerob,max}$ = `PF_x_ANAEROB_MAX_AREAFRACTION`
 - $S_{moist}$ = `PF_x_ANAEROB_MOISTSENS` (default 0.0, i.e., disabled)
 
 Default values:
+
 | Parameter | Mineral Soil | Peat |
 |-----------|--------------|------|
 | Initial anaerobic fraction | 0.05 | 0.8 |
@@ -184,6 +193,7 @@ The net CH4 emissions are:
 $$E_{CH4} = \sum_{i} E_{anaerob}(i) \times \frac{16000}{12 \times 2} \times (1 - f_{ox})$$
 
 Where:
+
 - The factor 16000/12 converts from GtC to MtCH4
 - The factor 1/2 accounts for methanogenesis producing equal parts CO2 and CH4
 - $f_{ox}$ = oxidation fraction
@@ -483,6 +493,7 @@ The module loops over 12 months for every zonal band and every year to compute s
 ### 9.1 Critical: Documentation Mismatch
 
 **Line 3 of permafrost.f90 explicitly states:**
+
 ```fortran
 ! TODO: update this (all out of date/conflicting with MAGCFG_DEFAULTALL.CFG)
 ```
@@ -501,6 +512,7 @@ All four decomposition pathways use the same Q10 alpha value (308.56):
 | Peat Anaerobic | 308.56 |
 
 This means there is no differentiation in temperature sensitivity between:
+
 - Mineral soil vs. peat
 - Aerobic vs. anaerobic conditions
 
@@ -509,6 +521,7 @@ Physically, anaerobic decomposition (methanogenesis) should have different tempe
 ### 9.3 Disabled Moisture Dynamics
 
 The moisture sensitivity parameters are all set to 0.0 by default:
+
 - `PF_MS_ANAEROB_MOISTSENS = 0.0`
 - `PF_PEAT_ANAEROB_MOISTSENS = 0.0`
 
@@ -517,6 +530,7 @@ This means the aerobic/anaerobic partitioning does not respond to moisture chang
 ### 9.4 Simple Linear Thaw Model
 
 The thaw rate is simply linear in temperature (exponent = 1.0). Real permafrost thaw involves:
+
 - Active layer deepening (nonlinear with temperature)
 - Talik formation (abrupt transitions)
 - Thermokarst processes (positive feedback)
@@ -527,6 +541,7 @@ The linear approximation may underestimate nonlinear thaw acceleration.
 ### 9.5 No Refreezing Dynamics
 
 While the code allows for refreezing (negative thaw rates), the physics of refreezing are different from thawing:
+
 - Refreezing takes much longer than thawing
 - Refrozen carbon may be more labile
 - Hysteresis effects are not captured
@@ -544,6 +559,7 @@ In reality, carbon density varies with depth and location. Newly thawed shallow 
 ### 9.7 No Thermokarst Representation
 
 Thermokarst (abrupt permafrost collapse forming lakes) is a major CH4 emission pathway. The module's gradual thaw model does not capture:
+
 - Abrupt lake formation
 - Lake edge erosion
 - Anaerobic conditions in lake sediments
@@ -551,6 +567,7 @@ Thermokarst (abrupt permafrost collapse forming lakes) is a major CH4 emission p
 ### 9.8 No Vegetation Response
 
 Vegetation changes in response to warming are not modeled:
+
 - Shrub expansion affects albedo and snow retention
 - Boreal forest advance changes carbon inputs
 - Changed evapotranspiration affects soil moisture
@@ -558,6 +575,7 @@ Vegetation changes in response to warming are not modeled:
 ### 9.9 Conservation Issues with MAX(0,...) Clipping
 
 The use of MAX(0.0D0, ...) for all pool and area updates can cause mass conservation violations:
+
 - If a pool would go negative (due to excessive decomposition), it is clipped to zero
 - The "missing" carbon is not accounted for
 - The diagnostic `PF_TOTPLUSEMIS_POOL` may drift from `PF_TOT_POOL`
@@ -601,12 +619,14 @@ This means they persist between calls, which could cause issues if the module is
 ### 9.13 Lack of Scientific Validation
 
 The module lacks:
+
 - References to peer-reviewed literature
 - Comparison with process-based permafrost models
 - Validation against observed permafrost carbon fluxes
 - Uncertainty characterization
 
 The comment in MAGICC7.f90 (line 15) explicitly warns:
+
 ```fortran
 !   and not fit-for-use. This includes sea level rise projections, the permafrost module,
 ```
@@ -618,6 +638,7 @@ The comment in MAGICC7.f90 (line 15) explicitly warns:
 **Purpose:** Verify no thaw occurs without temperature increase.
 
 **Setup:**
+
 ```
 PF_APPLY = 1
 PF_TOT_POOL = 800.0
@@ -625,6 +646,7 @@ DAT_SURFACE_TEMP = 0.0 (constant)
 ```
 
 **Expected:**
+
 - All frozen areas remain 1.0
 - All thawed areas remain 0.0
 - All emissions are zero
@@ -635,6 +657,7 @@ DAT_SURFACE_TEMP = 0.0 (constant)
 **Purpose:** Verify basic thaw mechanics for southernmost band.
 
 **Setup:**
+
 ```
 PF_NBANDS = 1
 PF_MELTINGTEMP_MIN = 1.0
@@ -643,6 +666,7 @@ DAT_SURFACE_TEMP = 1.0 K (constant, so T_arctic = 1.7 K)
 ```
 
 **Expected:**
+
 - Summer max temp = 1.7 - 1.0 = 0.7 K
 - Thaw rate = 0.7 * 0.1 = 0.07 per year (7%)
 - After 10 years, ~70% of area should be thawed
@@ -653,11 +677,13 @@ DAT_SURFACE_TEMP = 1.0 K (constant, so T_arctic = 1.7 K)
 **Purpose:** Verify carbon conservation.
 
 **Setup:**
+
 ```
 Any warming scenario, run 100 years
 ```
 
 **Expected:**
+
 - `PF_TOT_TOT_POOL + cumulative_CO2 + cumulative_CH4_as_C = PF_TOT_POOL` (within tolerance)
 - `PF_TOTPLUSEMIS_POOL(t)` should be approximately constant
 
@@ -666,6 +692,7 @@ Any warming scenario, run 100 years
 **Purpose:** Verify correct partitioning between aerobic and anaerobic emissions.
 
 **Setup:**
+
 ```
 PF_MINSOIL_SOUTHERN_POOLFRACTION = 0.5 (equal MS and peat)
 PF_MS_ANAEROB_INITIAL_AREAFRACTION = 0.1
@@ -673,6 +700,7 @@ PF_PEAT_ANAEROB_INITIAL_AREAFRACTION = 0.9
 ```
 
 **Expected:**
+
 - MS emissions mostly CO2 (90% aerobic)
 - Peat emissions mostly CH4 (90% anaerobic)
 - CH4 oxidation reduces net CH4 by 25% (MS) and 60% (peat)
@@ -682,6 +710,7 @@ PF_PEAT_ANAEROB_INITIAL_AREAFRACTION = 0.9
 **Purpose:** Verify carbon distribution across bands.
 
 **Setup:**
+
 ```
 PF_NBANDS = 10
 PF_ZONAL_POOLDISTR = -1.0 (most carbon in north)
@@ -689,6 +718,7 @@ Moderate warming to thaw only southern bands
 ```
 
 **Expected:**
+
 - Southern bands thaw first
 - But have less carbon, so emissions are smaller
 - Northern bands with more carbon thaw later
@@ -698,12 +728,14 @@ Moderate warming to thaw only southern bands
 **Purpose:** Verify reasonable emissions under typical scenario.
 
 **Setup:**
+
 ```
 Run with historical temperatures 1850-2020
 Then RCP4.5 scenario to 2100
 ```
 
 **Validation:**
+
 - Check emissions are in reasonable range (literature: 50-200 GtC cumulative by 2100)
 - Check thawed area is reasonable (literature: 30-70% by 2100 under RCP4.5)
 
@@ -712,12 +744,14 @@ Then RCP4.5 scenario to 2100
 **Purpose:** Test behavior when all permafrost thaws.
 
 **Setup:**
+
 ```
 Very high sustained warming (e.g., 10 K global = 17 K Arctic)
 Run until all bands thawed
 ```
 
 **Expected:**
+
 - All frozen areas approach zero
 - Thawed pools eventually deplete through decomposition
 - No numerical instabilities
@@ -728,12 +762,14 @@ Run until all bands thawed
 **Purpose:** Test refreezing behavior.
 
 **Setup:**
+
 ```
 Initial warming period (partial thaw)
 Then cooling (negative temperature anomaly)
 ```
 
 **Expected:**
+
 - Thawed areas should decrease (refreeze)
 - Carbon transfers from thawed to frozen pools
 - Emissions decrease as temperature drops
@@ -792,6 +828,7 @@ Then cooling (negative temperature anomaly)
 The Permafrost Feedback module is a simplified representation of permafrost carbon release that:
 
 **Captures:**
+
 - Zonal gradients in permafrost thaw vulnerability
 - Distinction between mineral soil and peat
 - Aerobic (CO2) vs. anaerobic (CH4) decomposition pathways
@@ -800,6 +837,7 @@ The Permafrost Feedback module is a simplified representation of permafrost carb
 - Arctic amplification of global warming
 
 **Does not capture:**
+
 - Nonlinear thaw processes (thermokarst, talik formation)
 - Depth-dependent carbon profiles
 - Vegetation-permafrost interactions
@@ -807,6 +845,7 @@ The Permafrost Feedback module is a simplified representation of permafrost carb
 - Methane ebullition from lakes
 
 **Key concerns:**
+
 1. Documentation explicitly states it is out of date
 2. All Q10 parameters are identical (no process differentiation)
 3. Moisture dynamics are effectively disabled

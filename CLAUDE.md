@@ -160,6 +160,7 @@ The macro generates:
 - Output types become `FourBoxSlice` or `HemisphericSlice` for grid outputs
 - The macro automatically wraps grid outputs in `StateValue::FourBox` or `StateValue::Hemispheric`
 - Example:
+
   ```rust
   #[derive(Debug, Serialize, Deserialize, ComponentIO)]
   #[inputs(

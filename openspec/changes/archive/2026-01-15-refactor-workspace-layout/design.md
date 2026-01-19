@@ -7,6 +7,7 @@ This change depends on the `dx` branch (improve-component-dx) being merged first
 RSCM is growing from a simple prototype to a full MAGICC reimplementation. The current flat workspace structure with `rscm-core/`, `rscm-components/`, and root `src/` for PyO3 bindings works but doesn't scale well. Adding 16+ MAGICC components requires clear separation between the framework and model implementations.
 
 Key stakeholders:
+
 - Climate scientists using Python API
 - Rust developers adding components
 - Future maintainers extracting rscm-magicc
@@ -14,12 +15,14 @@ Key stakeholders:
 ## Goals / Non-Goals
 
 **Goals:**
+
 - Establish clear workspace organisation that scales to 5+ crates
 - Enable future extraction of rscm-magicc as standalone package
 - Provide intuitive Python namespace for accessing model components
 - Maintain single pip install for end users
 
 **Non-Goals:**
+
 - Implement MAGICC components (scaffold only)
 - Change core Component/Model APIs
 - Support multiple Python extension modules (single _lib remains)
@@ -121,6 +124,7 @@ spatial/
 ```
 
 **Rationale:**
+
 - Each grid type is self-contained with its own region enum, struct, and `SpatialGrid` impl
 - Tests can live alongside each grid type or in a separate `tests.rs`
 - Adding new grid types (e.g., `LatitudinalGrid`) becomes straightforward
@@ -135,6 +139,7 @@ Related change: PR #55
 The `rscm._lib.core` module will be split into logical submodules for better discoverability and maintainability:
 
 **`rscm._lib.core` (14 essential types):**
+
 - Time management: `TimeAxis`, `Timeseries`, `InterpolationStrategy`
 - State management: `TimeseriesCollection`, `VariableType`
 - Orchestration: `ModelBuilder`, `Model`
@@ -143,16 +148,19 @@ The `rscm._lib.core` module will be split into logical submodules for better dis
 
 **`rscm._lib.core.spatial` (6 types):**
 Spatial grid definitions and region enums, created via `#[pymodule]` wrapper:
+
 - `ScalarRegion`, `ScalarGrid`
 - `FourBoxRegion`, `FourBoxGrid`
 - `HemisphericRegion`, `HemisphericGrid`
 
 **`rscm._lib.core.state` (5 types):**
 State access patterns and typed slices, created via `#[pymodule]` wrapper:
+
 - `FourBoxSlice`, `HemisphericSlice`
 - `TimeseriesWindow`, `FourBoxTimeseriesWindow`, `HemisphericTimeseriesWindow`
 
 **Rationale:**
+
 - Spatial types are self-contained and don't mix concerns with time/model management
 - State types (slices, windows) are implementation details of the state machinery
 - Core module stays focused on essential orchestration and component infrastructure

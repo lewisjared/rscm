@@ -7,6 +7,7 @@
 The `ComponentIO` macro SHALL generate code that uses typed slice wrappers for grid outputs.
 
 **Modifications from original spec:**
+
 - The generated `Into<OutputState>` implementation now wraps values in `StateValue` variants
 - For FourBox outputs, use `StateValue::FourBox(slice)` instead of aggregating to scalar
 - For Hemispheric outputs, use `StateValue::Hemispheric(slice)` instead of aggregating to scalar

@@ -668,17 +668,20 @@ Year N                                          Year N+1
 The terrestrial carbon cycle (`TERRCARBON2`, lines 7054-7542) is called from DELTAQ:
 
 **Inputs from Main Loop:**
+
 - `FEEDBACK_TEMPERATURE`: Temperature for respiration feedback
 - `DAT_CO2_CONC%DATGLOBE`: CO2 for fertilization
 - `DAT_CO2B_EMIS`: Land-use emissions
 
 **Outputs to Main Loop:**
+
 - `CO2_TERRBIO_AND_FOSSIL_EMIS`: Net terrestrial flux + fossil
 - `CO2_PLANT_POOL`: Updated plant carbon
 - `CO2_DETRITUS_POOL`: Updated detritus carbon
 - `CO2_SOIL_POOL`: Updated soil carbon
 
 **Call Context:**
+
 ```fortran
 ! In DELTAQ (line 4820)
 CALL TERRCARBON2(CO2_FEED_DELTATEMP_LAND)
@@ -689,14 +692,17 @@ CALL TERRCARBON2(CO2_FEED_DELTATEMP_LAND)
 The ocean carbon cycle runs on a monthly sub-loop within DELTAQ:
 
 **Inputs:**
+
 - `c_atm_for_oceancc`: Atmospheric CO2 (ppm)
 - `co2_feed_deltatemp`: Temperature anomaly for solubility
 
 **Outputs:**
+
 - `co2_air2ocean_flux`: Air-sea CO2 flux (GtC/yr)
 - `dat_pco2s_conc`: Ocean surface pCO2
 
 **Call Context:**
+
 ```fortran
 ! In DELTAQ (lines 4849-4952)
 do month = 1, stepsperyear
@@ -715,6 +721,7 @@ DELTAQ (lines 3735-7042) is called at the start of each year:
 **Timing:** Before sub-annual climate stepping
 
 **Purpose:**
+
 1. Calculate next year's concentrations and forcing
 2. These forcing values are then interpolated during sub-annual stepping
 
@@ -723,10 +730,12 @@ DELTAQ (lines 3735-7042) is called at the start of each year:
 The climate calculations are embedded in `magicc_step_year`:
 
 **Inputs from DELTAQ:**
+
 - `dat_total_effrf`: Total effective forcing (4 boxes)
 - `dat_volcanic_effrf`: Volcanic forcing (if enabled)
 
 **Outputs to Other Modules:**
+
 - `DAT_SURFACE_TEMP`: For carbon cycle feedbacks (next year)
 - `TEMP_OCEANLAYERS`: For sea level thermal expansion
 - `DAT_HEATUPTAKE_EBALANCE_TOTAL`: For energy budget diagnostics
@@ -736,15 +745,18 @@ The climate calculations are embedded in `magicc_step_year`:
 When enabled (`PF_APPLY = 1`), permafrost is called from DELTAQ:
 
 **Inputs:**
+
 - `DAT_SURFACE_TEMP`: Global temperature
 - Soil carbon pools from terrestrial model
 
 **Outputs:**
+
 - `DAT_CH4PF_EMIS`: CH4 from permafrost
 - `DAT_CO2PF_EMIS`: CO2 from permafrost
 - Updated permafrost carbon pools
 
 **Call Context:**
+
 ```fortran
 ! In DELTAQ (lines 3923-3925)
 IF (PF_APPLY == 1) THEN
@@ -757,15 +769,18 @@ END IF
 Sea level is calculated at the end of each year:
 
 **Inputs:**
+
 - `TEMP_OCEANLAYERS`: Ocean temperature profile
 - `DAT_SURFACE_TEMP`: Global temperature
 - `DAT_HEATCONTENT_AGGREG`: Ocean heat content
 
 **Outputs:**
+
 - Sea level rise components (thermal, glacier, ice sheet)
 - Total sea level rise
 
 **Call Context:**
+
 ```fortran
 ! In magicc_step_year (line 3726)
 CALL sealevel_calc
@@ -778,6 +793,7 @@ When enabled (`NCYCLE_APPLY = 1`), nitrogen limitation modifies NPP:
 **Called From:** `TERRCARBON2` (line 7293-7300)
 
 **Effect:**
+
 ```fortran
 IF (NCYCLE_APPLY == 1) THEN
     CALL N_CALC_LIMITATION_FACTOR()
@@ -807,6 +823,7 @@ END IF
 ### 9.4 Conservation Checks
 
 Energy conservation should satisfy:
+
 ```
 dH/dt = Q_total - lambda * T_global
 ```

@@ -5,6 +5,7 @@
 This module documents the DELTAQ subroutine's radiative forcing aggregation logic in MAGICC7. While individual forcing calculations are handled by other modules (GHG forcing in Module 7a, aerosols in Modules 5-6, etc.), this module focuses on how all forcing agents are combined into total effective radiative forcing that drives the climate system.
 
 **Source Files:**
+
 - `/src/libmagicc/MAGICC7.f90` - DELTAQ subroutine (lines 3735-7042), LAMCALC, CALC_INTERNAL_EFFICACY
 - `/src/libmagicc/physics/deltaq_calculations.f90` - Helper functions
 - `/src/libmagicc/physics/radiative_forcing.f90` - RF module declarations
@@ -95,6 +96,7 @@ Effective Radiative Forcing = Raw Radiative Forcing * Efficacy
 ```
 
 For an agent X:
+
 ```
 EFFRF_X = RF_X * EFFICACY_X
 ```
@@ -166,6 +168,7 @@ END SUBROUTINE
 ```
 
 **Physical Interpretation:**
+
 - If forcing is concentrated in high-latitude land areas (high feedback), efficacy > 1
 - If forcing is concentrated in tropical oceans (low feedback), efficacy < 1
 - CO2 forcing with uniform pattern serves as reference (efficacy ~1)

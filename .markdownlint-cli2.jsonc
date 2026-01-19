@@ -1,0 +1,14 @@
+{
+  // Default config for all markdown files
+  "config": {
+    "default": true,
+    // Disable line length rule (handled by editors/formatters)
+    "MD013": false
+  },
+  "ignores": [
+    "target/**",
+    ".venv/**",
+    "node_modules/**",
+    ".claude/commands/**"
+  ]
+}

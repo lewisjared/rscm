@@ -100,7 +100,7 @@ tags: [openspec, change, proposal]
 
 **Steps:**
 
-5. **Create proposal.md**
+1. **Create proposal.md**
    Based on the approved approach from investigation.md:
 
    ```markdown
@@ -121,7 +121,7 @@ tags: [openspec, change, proposal]
    - Affected code: [key files/systems - from investigation]
    ```
 
-6. **Create design.md** (if needed)
+2. **Create design.md** (if needed)
    Include design.md if the change involves:
    - Cross-cutting concerns (multiple modules/crates)
    - New architectural patterns
@@ -129,6 +129,7 @@ tags: [openspec, change, proposal]
    - Security, performance, or migration complexity
 
    Structure:
+
    ```markdown
    ## Context
    [From investigation - constraints, stakeholders]
@@ -146,14 +147,14 @@ tags: [openspec, change, proposal]
    [If applicable]
    ```
 
-7. **Create spec deltas**
+3. **Create spec deltas**
    In `openspec/changes/<change-id>/specs/<capability>/spec.md`:
    - Map the change to concrete requirements
    - Use `## ADDED|MODIFIED|REMOVED|RENAMED Requirements`
    - Include at least one `#### Scenario:` per requirement
    - Cross-reference related capabilities when relevant
 
-8. **Create tasks.md**
+4. **Create tasks.md**
    Ordered list of small, verifiable work items:
    - Each task should deliver visible progress
    - Include validation steps (tests, checks)
@@ -170,11 +171,11 @@ tags: [openspec, change, proposal]
    ...
    ```
 
-9. **Validate**
+5. **Validate**
    Run `openspec validate <change-id> --strict --no-interactive`
    Resolve all issues before presenting the complete proposal.
 
-10. **Present complete proposal for final approval**
+6. **Present complete proposal for final approval**
     Summarize the full proposal and ask user to confirm before implementation.
 
 ---

@@ -4,12 +4,15 @@
 
 Defines how components access input data and produce output data during model execution.
 The state system provides type-safe, zero-cost abstractions for accessing timeseries data with support for both scalar and spatially-resolved (grid) variables.
+
 ## Requirements
+
 ### Requirement: StateValue Type
 
 The system SHALL provide a `StateValue` enum that represents values which can be either scalar or spatially-resolved.
 
 **Modifications from original spec:**
+
 - Replace generic `Grid(Vec<FloatValue>)` variant with typed variants: `FourBox(FourBoxSlice)` and `Hemispheric(HemisphericSlice)`
 - Remove `is_grid()` and `as_grid()` methods
 - Add `is_four_box()`, `is_hemispheric()`, `as_four_box()`, `as_hemispheric()` methods
@@ -235,6 +238,7 @@ The system SHALL provide a `HemisphericSlice` type for type-safe hemispheric out
 The system SHALL provide an `OutputState` type for components to return their computed values.
 
 **Modifications from original spec:**
+
 - Changed from `HashMap<String, FloatValue>` to `HashMap<String, StateValue>`
 - Components can now return grid outputs directly without aggregation
 - Grid outputs are written to appropriate grid timeseries by the model

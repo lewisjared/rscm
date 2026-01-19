@@ -3,7 +3,9 @@
 ## Purpose
 
 Defines the `GridTimeseries<T, G>` type for representing time-varying data over spatial grids. Covers the `SpatialGrid` trait, standard grid implementations (Scalar, FourBox, Hemispheric), grid transformations, aggregation, and serialization.
+
 ## Requirements
+
 ### Requirement: SpatialGrid Trait
 
 The system SHALL provide a trait `SpatialGrid` that defines the spatial structure and transformation operations for grid-based timeseries.
@@ -30,6 +32,7 @@ The system SHALL provide a trait `SpatialGrid` that defines the spatial structur
 The system SHALL provide a `GridTimeseries<T, G>` type that represents time-varying values over a spatial grid.
 
 **Modifications from original spec:**
+
 - Add `set_all(&mut self, time_index: usize, values: &[T])` method to set all regional values at a time index
 - Add `set_from_slice(&mut self, time_index: usize, slice: &FourBoxSlice)` for FourBox grids
 - Add `set_from_slice(&mut self, time_index: usize, slice: &HemisphericSlice)` for Hemispheric grids
