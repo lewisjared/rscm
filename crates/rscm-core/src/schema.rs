@@ -802,12 +802,13 @@ pub fn compute_aggregate(contributors: &[f64], op: &AggregateOp) -> f64 {
 }
 
 // =============================================================================
-// Aggregator Component
+// Virtual Components (Aggregator and Grid Transformer)
 // =============================================================================
 
 use crate::component::{
     Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
+use crate::spatial::{FourBoxGrid, HemisphericGrid, SpatialGrid};
 use crate::state::StateValue;
 use crate::timeseries::Time;
 
@@ -948,6 +949,248 @@ impl Component for AggregatorComponent {
                 }
 
                 output.insert(self.aggregate_name.clone(), StateValue::Hemispheric(result));
+            }
+        }
+
+        Ok(output)
+    }
+}
+
+// =============================================================================
+// Grid Transformer Component
+// =============================================================================
+
+/// A virtual component that transforms values from a finer grid to a coarser grid.
+///
+/// `GridTransformerComponent` is automatically created by `ModelBuilder` when schema-driven
+/// auto-aggregation detects that a component needs to read a variable at a coarser resolution
+/// than the schema declares, or when a component produces output at a finer resolution than
+/// the schema declares.
+///
+/// # Transformation Types
+///
+/// Supports the following aggregation transformations:
+/// - FourBox → Scalar: weighted average of all four regions
+/// - FourBox → Hemispheric: weighted average within each hemisphere
+/// - Hemispheric → Scalar: weighted average of both hemispheres
+///
+/// Disaggregation (coarser to finer) is not supported and will result in a build error.
+///
+/// # Variable Naming
+///
+/// The transformer reads from the source variable (at the finer grid) and writes to an
+/// intermediate variable with the naming convention: `"VarName|_to_<target_grid>"`.
+///
+/// # Example
+///
+/// ```ignore
+/// // Schema declares Temperature at FourBox resolution
+/// // Consumer component wants Scalar
+/// // GridTransformerComponent is inserted:
+/// //   - Reads: "Temperature" (FourBox)
+/// //   - Writes: "Temperature|_to_scalar" (Scalar)
+/// // Consumer then reads "Temperature|_to_scalar"
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GridTransformerComponent {
+    /// The name of the source variable to read (at finer resolution)
+    pub source_var: String,
+    /// The unit of the variable
+    pub unit: String,
+    /// The source grid type (finer resolution)
+    pub source_grid: GridType,
+    /// The target grid type (coarser resolution)
+    pub target_grid: GridType,
+    /// Weights for FourBox grid aggregation (if source is FourBox)
+    pub four_box_weights: Option<[f64; 4]>,
+    /// Weights for Hemispheric grid aggregation (if source is Hemispheric)
+    pub hemispheric_weights: Option<[f64; 2]>,
+}
+
+impl GridTransformerComponent {
+    /// Create a new grid transformer component.
+    ///
+    /// # Arguments
+    ///
+    /// * `source_var` - The name of the source variable (at finer resolution)
+    /// * `unit` - The physical unit of the variable
+    /// * `source_grid` - The grid type of the source variable
+    /// * `target_grid` - The desired target grid type (must be coarser)
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(GridTransformerComponent)` if the transformation is valid,
+    /// or `Err` if the transformation is not supported (e.g., disaggregation).
+    pub fn new(
+        source_var: impl Into<String>,
+        unit: impl Into<String>,
+        source_grid: GridType,
+        target_grid: GridType,
+    ) -> RSCMResult<Self> {
+        // Validate that this is a valid aggregation (not disaggregation)
+        if !source_grid.can_aggregate_to(target_grid) {
+            return Err(RSCMError::GridTransformationNotSupported {
+                source_grid: source_grid.to_string(),
+                target_grid: target_grid.to_string(),
+                variable: source_var.into(),
+            });
+        }
+
+        Ok(Self {
+            source_var: source_var.into(),
+            unit: unit.into(),
+            source_grid,
+            target_grid,
+            four_box_weights: None,
+            hemispheric_weights: None,
+        })
+    }
+
+    /// Create with custom FourBox weights.
+    ///
+    /// Used when the model has custom area-based weights configured.
+    pub fn with_four_box_weights(mut self, weights: [f64; 4]) -> Self {
+        self.four_box_weights = Some(weights);
+        self
+    }
+
+    /// Create with custom Hemispheric weights.
+    ///
+    /// Used when the model has custom area-based weights configured.
+    pub fn with_hemispheric_weights(mut self, weights: [f64; 2]) -> Self {
+        self.hemispheric_weights = Some(weights);
+        self
+    }
+
+    /// Get the output variable name for this transformer.
+    ///
+    /// Uses the naming convention: `"VarName|_to_<target_grid>"`.
+    pub fn output_name(&self) -> String {
+        let target_suffix = match self.target_grid {
+            GridType::Scalar => "scalar",
+            GridType::Hemispheric => "hemispheric",
+            GridType::FourBox => "fourbox",
+        };
+        format!("{}|_to_{}", self.source_var, target_suffix)
+    }
+
+    /// Get the FourBox grid to use for aggregation.
+    fn get_four_box_grid(&self) -> FourBoxGrid {
+        match self.four_box_weights {
+            Some(weights) => FourBoxGrid::with_weights(weights),
+            None => FourBoxGrid::magicc_standard(),
+        }
+    }
+
+    /// Get the Hemispheric grid to use for aggregation.
+    fn get_hemispheric_grid(&self) -> HemisphericGrid {
+        match self.hemispheric_weights {
+            Some(weights) => HemisphericGrid::with_weights(weights),
+            None => HemisphericGrid::equal_weights(),
+        }
+    }
+}
+
+#[typetag::serde]
+impl Component for GridTransformerComponent {
+    fn definitions(&self) -> Vec<RequirementDefinition> {
+        vec![
+            RequirementDefinition::with_grid(
+                &self.source_var,
+                &self.unit,
+                RequirementType::Input,
+                self.source_grid,
+            ),
+            RequirementDefinition::with_grid(
+                &self.output_name(),
+                &self.unit,
+                RequirementType::Output,
+                self.target_grid,
+            ),
+        ]
+    }
+
+    fn solve(
+        &self,
+        _t_current: Time,
+        _t_next: Time,
+        input_state: &InputState,
+    ) -> RSCMResult<OutputState> {
+        use crate::state::{FourBoxSlice, HemisphericSlice};
+
+        let mut output = OutputState::new();
+
+        match (self.source_grid, self.target_grid) {
+            // FourBox → Scalar
+            (GridType::FourBox, GridType::Scalar) => {
+                let window = input_state.get_four_box_window(&self.source_var);
+                let values = window.current_all();
+                let grid = self.get_four_box_grid();
+                let scalar = grid.aggregate_global(&values);
+                output.insert(self.output_name(), StateValue::Scalar(scalar));
+            }
+
+            // FourBox → Hemispheric
+            (GridType::FourBox, GridType::Hemispheric) => {
+                let window = input_state.get_four_box_window(&self.source_var);
+                let values = window.current_all();
+                let grid = self.get_four_box_grid();
+                let target = self.get_hemispheric_grid();
+                let hemispheric = grid.transform_to(&values, &target)?;
+                output.insert(
+                    self.output_name(),
+                    StateValue::Hemispheric(HemisphericSlice::from_array([
+                        hemispheric[0],
+                        hemispheric[1],
+                    ])),
+                );
+            }
+
+            // Hemispheric → Scalar
+            (GridType::Hemispheric, GridType::Scalar) => {
+                let window = input_state.get_hemispheric_window(&self.source_var);
+                let values = window.current_all();
+                let grid = self.get_hemispheric_grid();
+                let scalar = grid.aggregate_global(&values);
+                output.insert(self.output_name(), StateValue::Scalar(scalar));
+            }
+
+            // Same grid → identity (shouldn't happen, but handle it)
+            (s, t) if s == t => match s {
+                GridType::Scalar => {
+                    let window = input_state.get_scalar_window(&self.source_var);
+                    let value = window.current();
+                    output.insert(self.output_name(), StateValue::Scalar(value));
+                }
+                GridType::FourBox => {
+                    let window = input_state.get_four_box_window(&self.source_var);
+                    let values = window.current_all();
+                    output.insert(
+                        self.output_name(),
+                        StateValue::FourBox(FourBoxSlice::from_array([
+                            values[0], values[1], values[2], values[3],
+                        ])),
+                    );
+                }
+                GridType::Hemispheric => {
+                    let window = input_state.get_hemispheric_window(&self.source_var);
+                    let values = window.current_all();
+                    output.insert(
+                        self.output_name(),
+                        StateValue::Hemispheric(HemisphericSlice::from_array([
+                            values[0], values[1],
+                        ])),
+                    );
+                }
+            },
+
+            // Unsupported transformation (disaggregation)
+            _ => {
+                return Err(RSCMError::GridTransformationNotSupported {
+                    source_grid: self.source_grid.to_string(),
+                    target_grid: self.target_grid.to_string(),
+                    variable: self.source_var.clone(),
+                });
             }
         }
 
@@ -1797,5 +2040,371 @@ mod tests {
             "Expected undefined contributor error, got: {}",
             err
         );
+    }
+
+    // GridTransformerComponent tests
+
+    #[test]
+    fn test_grid_transformer_new_valid_fourbox_to_scalar() {
+        let transformer =
+            GridTransformerComponent::new("Temperature", "K", GridType::FourBox, GridType::Scalar)
+                .unwrap();
+        assert_eq!(transformer.source_var, "Temperature");
+        assert_eq!(transformer.unit, "K");
+        assert_eq!(transformer.source_grid, GridType::FourBox);
+        assert_eq!(transformer.target_grid, GridType::Scalar);
+        assert_eq!(transformer.output_name(), "Temperature|_to_scalar");
+    }
+
+    #[test]
+    fn test_grid_transformer_new_valid_fourbox_to_hemispheric() {
+        let transformer = GridTransformerComponent::new(
+            "Temperature",
+            "K",
+            GridType::FourBox,
+            GridType::Hemispheric,
+        )
+        .unwrap();
+        assert_eq!(transformer.output_name(), "Temperature|_to_hemispheric");
+    }
+
+    #[test]
+    fn test_grid_transformer_new_valid_hemispheric_to_scalar() {
+        let transformer = GridTransformerComponent::new(
+            "Temperature",
+            "K",
+            GridType::Hemispheric,
+            GridType::Scalar,
+        )
+        .unwrap();
+        assert_eq!(transformer.output_name(), "Temperature|_to_scalar");
+    }
+
+    #[test]
+    fn test_grid_transformer_new_invalid_scalar_to_fourbox() {
+        let result =
+            GridTransformerComponent::new("Temperature", "K", GridType::Scalar, GridType::FourBox);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Grid transformation not supported"),
+            "Expected transformation not supported error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_grid_transformer_new_invalid_scalar_to_hemispheric() {
+        let result = GridTransformerComponent::new(
+            "Temperature",
+            "K",
+            GridType::Scalar,
+            GridType::Hemispheric,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_grid_transformer_new_invalid_hemispheric_to_fourbox() {
+        let result = GridTransformerComponent::new(
+            "Temperature",
+            "K",
+            GridType::Hemispheric,
+            GridType::FourBox,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_grid_transformer_same_grid_is_valid() {
+        // Same-grid transformations are identity operations and are valid
+        let transformer =
+            GridTransformerComponent::new("Temperature", "K", GridType::Scalar, GridType::Scalar)
+                .unwrap();
+        assert_eq!(transformer.output_name(), "Temperature|_to_scalar");
+    }
+
+    #[test]
+    fn test_grid_transformer_definitions() {
+        let transformer =
+            GridTransformerComponent::new("Temperature", "K", GridType::FourBox, GridType::Scalar)
+                .unwrap();
+        let defs = transformer.definitions();
+
+        assert_eq!(defs.len(), 2);
+        // Input: FourBox
+        assert_eq!(defs[0].name, "Temperature");
+        assert_eq!(defs[0].unit, "K");
+        assert_eq!(defs[0].requirement_type, RequirementType::Input);
+        assert_eq!(defs[0].grid_type, GridType::FourBox);
+        // Output: Scalar
+        assert_eq!(defs[1].name, "Temperature|_to_scalar");
+        assert_eq!(defs[1].unit, "K");
+        assert_eq!(defs[1].requirement_type, RequirementType::Output);
+        assert_eq!(defs[1].grid_type, GridType::Scalar);
+    }
+
+    #[test]
+    fn test_grid_transformer_with_custom_fourbox_weights() {
+        let transformer =
+            GridTransformerComponent::new("Temperature", "K", GridType::FourBox, GridType::Scalar)
+                .unwrap()
+                .with_four_box_weights([0.36, 0.14, 0.36, 0.14]);
+
+        assert_eq!(transformer.four_box_weights, Some([0.36, 0.14, 0.36, 0.14]));
+    }
+
+    #[test]
+    fn test_grid_transformer_with_custom_hemispheric_weights() {
+        let transformer = GridTransformerComponent::new(
+            "Temperature",
+            "K",
+            GridType::Hemispheric,
+            GridType::Scalar,
+        )
+        .unwrap()
+        .with_hemispheric_weights([0.7, 0.3]);
+
+        assert_eq!(transformer.hemispheric_weights, Some([0.7, 0.3]));
+    }
+
+    #[test]
+    fn test_grid_transformer_serialization() {
+        let transformer =
+            GridTransformerComponent::new("Temperature", "K", GridType::FourBox, GridType::Scalar)
+                .unwrap();
+
+        let json = serde_json::to_string(&transformer).unwrap();
+        let deserialized: GridTransformerComponent = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(transformer.source_var, deserialized.source_var);
+        assert_eq!(transformer.unit, deserialized.unit);
+        assert_eq!(transformer.source_grid, deserialized.source_grid);
+        assert_eq!(transformer.target_grid, deserialized.target_grid);
+    }
+
+    #[test]
+    fn test_grid_transformer_serialization_with_weights() {
+        let transformer =
+            GridTransformerComponent::new("Temperature", "K", GridType::FourBox, GridType::Scalar)
+                .unwrap()
+                .with_four_box_weights([0.36, 0.14, 0.36, 0.14]);
+
+        let json = serde_json::to_string(&transformer).unwrap();
+        let deserialized: GridTransformerComponent = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(transformer.four_box_weights, deserialized.four_box_weights);
+    }
+
+    // GridTransformerComponent solve() integration tests
+    mod grid_transformer_solve_tests {
+        use super::*;
+        use crate::component::Component;
+        use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+        use crate::spatial::{FourBoxGrid, HemisphericGrid};
+        use crate::state::StateValue;
+        use crate::timeseries::{FloatValue, GridTimeseries, TimeAxis};
+        use crate::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use numpy::array;
+        use numpy::ndarray::Array2;
+        use std::sync::Arc;
+
+        fn create_four_box_item(name: &str, values: [FloatValue; 4]) -> TimeseriesItem {
+            let grid = FourBoxGrid::magicc_standard();
+            let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
+            let data = Array2::from_shape_vec(
+                (2, 4),
+                vec![
+                    values[0], values[1], values[2], values[3], // Time 0
+                    values[0], values[1], values[2], values[3], // Time 1
+                ],
+            )
+            .unwrap();
+
+            let ts = GridTimeseries::new(
+                data,
+                time_axis,
+                grid,
+                "K".to_string(),
+                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+            );
+
+            TimeseriesItem {
+                data: TimeseriesData::FourBox(ts),
+                name: name.to_string(),
+                variable_type: VariableType::Endogenous,
+            }
+        }
+
+        fn create_hemispheric_item(name: &str, values: [FloatValue; 2]) -> TimeseriesItem {
+            let grid = HemisphericGrid::equal_weights();
+            let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
+            let data = Array2::from_shape_vec(
+                (2, 2),
+                vec![
+                    values[0], values[1], // Time 0
+                    values[0], values[1], // Time 1
+                ],
+            )
+            .unwrap();
+
+            let ts = GridTimeseries::new(
+                data,
+                time_axis,
+                grid,
+                "K".to_string(),
+                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+            );
+
+            TimeseriesItem {
+                data: TimeseriesData::Hemispheric(ts),
+                name: name.to_string(),
+                variable_type: VariableType::Endogenous,
+            }
+        }
+
+        #[test]
+        fn test_grid_transformer_solve_fourbox_to_scalar() {
+            let transformer = GridTransformerComponent::new(
+                "Temperature",
+                "K",
+                GridType::FourBox,
+                GridType::Scalar,
+            )
+            .unwrap();
+
+            // Values: NO=16.0, NL=14.0, SO=12.0, SL=10.0
+            // With equal weights (0.25 each), global = (16+14+12+10)/4 = 13.0
+            let item = create_four_box_item("Temperature", [16.0, 14.0, 12.0, 10.0]);
+            let input_state = InputState::build(vec![&item], 2000.0);
+
+            let output = transformer.solve(2000.0, 2001.0, &input_state).unwrap();
+
+            assert_eq!(
+                output.get("Temperature|_to_scalar"),
+                Some(&StateValue::Scalar(13.0))
+            );
+        }
+
+        #[test]
+        fn test_grid_transformer_solve_fourbox_to_scalar_with_custom_weights() {
+            let transformer = GridTransformerComponent::new(
+                "Temperature",
+                "K",
+                GridType::FourBox,
+                GridType::Scalar,
+            )
+            .unwrap()
+            .with_four_box_weights([0.4, 0.1, 0.4, 0.1]); // Ocean-heavy weights
+
+            // Values: NO=16.0, NL=14.0, SO=12.0, SL=10.0
+            // Weighted: 16*0.4 + 14*0.1 + 12*0.4 + 10*0.1 = 6.4 + 1.4 + 4.8 + 1.0 = 13.6
+            let item = create_four_box_item("Temperature", [16.0, 14.0, 12.0, 10.0]);
+            let input_state = InputState::build(vec![&item], 2000.0);
+
+            let output = transformer.solve(2000.0, 2001.0, &input_state).unwrap();
+
+            let expected = 16.0 * 0.4 + 14.0 * 0.1 + 12.0 * 0.4 + 10.0 * 0.1;
+            let value = output.get("Temperature|_to_scalar").unwrap();
+            if let StateValue::Scalar(v) = value {
+                assert!(
+                    (v - expected).abs() < 1e-10,
+                    "Expected {}, got {}",
+                    expected,
+                    v
+                );
+            } else {
+                panic!("Expected scalar output, got {:?}", value);
+            }
+        }
+
+        #[test]
+        fn test_grid_transformer_solve_fourbox_to_hemispheric() {
+            let transformer = GridTransformerComponent::new(
+                "Temperature",
+                "K",
+                GridType::FourBox,
+                GridType::Hemispheric,
+            )
+            .unwrap();
+
+            // Values: NO=16.0, NL=14.0, SO=12.0, SL=10.0
+            // With equal weights: NH = (16+14)/2 = 15.0, SH = (12+10)/2 = 11.0
+            let item = create_four_box_item("Temperature", [16.0, 14.0, 12.0, 10.0]);
+            let input_state = InputState::build(vec![&item], 2000.0);
+
+            let output = transformer.solve(2000.0, 2001.0, &input_state).unwrap();
+
+            let value = output.get("Temperature|_to_hemispheric").unwrap();
+            if let StateValue::Hemispheric(slice) = value {
+                assert!(
+                    (slice.0[0] - 15.0).abs() < 1e-10,
+                    "NH expected 15.0, got {}",
+                    slice.0[0]
+                );
+                assert!(
+                    (slice.0[1] - 11.0).abs() < 1e-10,
+                    "SH expected 11.0, got {}",
+                    slice.0[1]
+                );
+            } else {
+                panic!("Expected hemispheric output, got {:?}", value);
+            }
+        }
+
+        #[test]
+        fn test_grid_transformer_solve_hemispheric_to_scalar() {
+            let transformer = GridTransformerComponent::new(
+                "Temperature",
+                "K",
+                GridType::Hemispheric,
+                GridType::Scalar,
+            )
+            .unwrap();
+
+            // Values: NH=15.0, SH=11.0
+            // With equal weights: global = (15+11)/2 = 13.0
+            let item = create_hemispheric_item("Temperature", [15.0, 11.0]);
+            let input_state = InputState::build(vec![&item], 2000.0);
+
+            let output = transformer.solve(2000.0, 2001.0, &input_state).unwrap();
+
+            assert_eq!(
+                output.get("Temperature|_to_scalar"),
+                Some(&StateValue::Scalar(13.0))
+            );
+        }
+
+        #[test]
+        fn test_grid_transformer_solve_hemispheric_to_scalar_with_custom_weights() {
+            let transformer = GridTransformerComponent::new(
+                "Temperature",
+                "K",
+                GridType::Hemispheric,
+                GridType::Scalar,
+            )
+            .unwrap()
+            .with_hemispheric_weights([0.7, 0.3]);
+
+            // Values: NH=15.0, SH=11.0
+            // Weighted: 15*0.7 + 11*0.3 = 10.5 + 3.3 = 13.8
+            let item = create_hemispheric_item("Temperature", [15.0, 11.0]);
+            let input_state = InputState::build(vec![&item], 2000.0);
+
+            let output = transformer.solve(2000.0, 2001.0, &input_state).unwrap();
+
+            let expected = 15.0 * 0.7 + 11.0 * 0.3;
+            let value = output.get("Temperature|_to_scalar").unwrap();
+            if let StateValue::Scalar(v) = value {
+                assert!(
+                    (v - expected).abs() < 1e-10,
+                    "Expected {}, got {}",
+                    expected,
+                    v
+                );
+            } else {
+                panic!("Expected scalar output, got {:?}", value);
+            }
+        }
     }
 }

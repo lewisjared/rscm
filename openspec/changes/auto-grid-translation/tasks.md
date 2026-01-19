@@ -29,11 +29,11 @@
 
 **File:** `crates/rscm-core/src/schema.rs`
 
-- [ ] 4.1 Create `GridTransformerComponent` struct with fields: source_var, target_grid, weights
-- [ ] 4.2 Implement `Component` trait for `GridTransformerComponent`
-- [ ] 4.3 Implement `solve()` to read source variable and apply `transform_to()`
-- [ ] 4.4 Add `#[typetag::serde]` for serialization support
-- [ ] 4.5 Add tests for GridTransformerComponent solve logic
+- [x] 4.1 Create `GridTransformerComponent` struct with fields: source_var, target_grid, weights
+- [x] 4.2 Implement `Component` trait for `GridTransformerComponent`
+- [x] 4.3 Implement `solve()` to read source variable and apply `transform_to()`
+- [x] 4.4 Add `#[typetag::serde]` for serialization support
+- [x] 4.5 Add tests for GridTransformerComponent solve logic
 
 ## 5. Relaxed Validation (Read and Write)
 
