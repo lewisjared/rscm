@@ -839,7 +839,12 @@ impl Model {
             &self.components,
             &[Config::NodeNoLabel, Config::EdgeNoLabel],
             &|_, er| format!("label = {:?}", er.weight().name),
-            &|_, (_, component)| format!("label = \"{:?}\"", component),
+            &|_, (_, component)| {
+                // Escape quotes and backslashes for DOT format
+                let debug_str = format!("{:?}", component);
+                let escaped = debug_str.replace('\\', "\\\\").replace('"', "\\\"");
+                format!("label = \"{}\"", escaped)
+            },
         )
     }
 

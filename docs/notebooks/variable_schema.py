@@ -318,10 +318,10 @@ view_pydot(graph)
 #
 # RSCM supports three aggregation operations:
 #
-# | Operation | Description | Use Case |
-# |-----------|-------------|----------|
-# | `Sum` | Add all contributor values | Total forcing, total emissions |
-# | `Mean` | Arithmetic average | Average temperature across regions |
+# | Operation  | Description | Use Case |
+# |------------|-------------|----------|
+# | `Sum`      | Add all contributor values | Total forcing, total emissions |
+# | `Mean`     | Arithmetic average | Average temperature across regions |
 # | `Weighted` | Weighted sum with specified weights | Area-weighted global average |
 #
 # ### Mean Aggregation

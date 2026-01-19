@@ -9,6 +9,7 @@ See https://oprypin.github.io/mkdocs-literate-nav/
 * [Tutorials](tutorials.md)
   * [Coupled Models](notebooks/coupled_model.py)
   * [Spatial Grids](notebooks/grid_variables.py)
+  * [Variable Schemas](notebooks/variable_schema.py)
   * [State Serialisation](notebooks/state_serialisation.py)
   * [Debugging and Inspection](notebooks/debugging_inspection.py)
   * [Scenario Pipeline](notebooks/scenario_pipeline.py)
