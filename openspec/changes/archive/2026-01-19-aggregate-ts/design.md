@@ -87,16 +87,16 @@ pub struct VariableSchema {
 
 ModelBuilder performs these validations when a schema is provided:
 
-| Rule                                                   | Error                  |
-| ------------------------------------------------------ | ---------------------- |
-| Component output not in schema variables or aggregates | `UndefinedVariable`    |
-| Component input not in schema or component outputs     | `UndefinedVariable`    |
-| Unit mismatch between schema and component             | `UnitMismatch`         |
+| Rule                                                                   | Error                  |
+| ---------------------------------------------------------------------- | ---------------------- |
+| Component output not in schema variables or aggregates                 | `UndefinedVariable`    |
+| Component input not in schema or component outputs                     | `UndefinedVariable`    |
+| Unit mismatch between schema and component                             | `UnitMismatch`         |
 | Aggregate contributor not defined in schema (as variable or aggregate) | `UndefinedContributor` |
-| Aggregate contributor unit mismatch                    | `UnitMismatch`         |
-| Aggregate contributor grid type mismatch               | `GridTypeMismatch`     |
-| Circular aggregate dependency                          | `CircularDependency`   |
-| Weighted aggregate weights count != contributors count | `WeightCountMismatch`  |
+| Aggregate contributor unit mismatch                                    | `UnitMismatch`         |
+| Aggregate contributor grid type mismatch                               | `GridTypeMismatch`     |
+| Circular aggregate dependency                                          | `CircularDependency`   |
+| Weighted aggregate weights count != contributors count                 | `WeightCountMismatch`  |
 
 Note: Aggregates can reference other aggregates as contributors. The dependency graph ensures aggregates are computed in the correct order.
 
@@ -139,6 +139,7 @@ If an aggregate has no contributors that produced values (all NaN), the aggregat
 If some contributors are NaN, they are excluded from the computation (treated as missing data).
 
 For `Weighted` aggregates with NaN contributors:
+
 - Both the value and its corresponding weight are excluded
 - The aggregate is computed from remaining value-weight pairs
 - If all contributors are NaN, the result is NaN
