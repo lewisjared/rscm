@@ -53,7 +53,32 @@ Learn RSCM through hands-on examples. Each tutorial builds on concepts from prev
 
 ---
 
-## Tutorial 3: State Serialisation
+## Tutorial 3: Variable Schemas and Aggregation
+
+**Learn to**: Combine multiple component outputs into derived values
+
+**You will**:
+
+- Create a `VariableSchema` declaring variables and aggregates
+- Use Sum, Mean, and Weighted aggregation operations
+- Build hierarchical aggregates (aggregates of aggregates)
+- Handle missing data (NaN values) in aggregations
+- Understand schema validation and error messages
+
+**Topics covered**:
+
+- The `VariableSchema` class and builder pattern
+- Aggregation operations: `Sum`, `Mean`, `Weighted`
+- Hierarchical forcing structures (e.g., Total ERF = GHG + Aerosol)
+- NaN handling in aggregations
+- Schema validation constraints
+- Serialisation to JSON/TOML
+
+[**Start Tutorial: Variable Schemas and Aggregation**](notebooks/variable_schema.py)
+
+---
+
+## Tutorial 4: State Serialisation
 
 **Learn to**: Save and restore model state for reproducibility
 
@@ -75,7 +100,7 @@ Learn RSCM through hands-on examples. Each tutorial builds on concepts from prev
 
 ---
 
-## Tutorial 4: Model Debugging and Inspection
+## Tutorial 5: Model Debugging and Inspection
 
 **Learn to**: Debug models and trace data flow through components
 
@@ -100,7 +125,7 @@ Learn RSCM through hands-on examples. Each tutorial builds on concepts from prev
 
 ---
 
-## Tutorial 5: Building a Complete Scenario Pipeline
+## Tutorial 6: Building a Complete Scenario Pipeline
 
 **Learn to**: Run climate scenarios from a common historical baseline
 

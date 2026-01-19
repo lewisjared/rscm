@@ -52,6 +52,12 @@ TimeseriesWindow
 FourBoxTimeseriesWindow, HemisphericTimeseriesWindow
     Grid-typed variants of TimeseriesWindow.
 
+Variable Schema
+---------------
+VariableSchema
+    Declares model variables and aggregation relationships.
+    Enables automatic computation of derived values (sums, means, weighted sums).
+
 Examples
 --------
 Building a simple model:
@@ -83,6 +89,7 @@ from rscm._lib.core import (
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
+    VariableSchema,
     VariableType,
 )
 from rscm._lib.core.spatial import (
@@ -126,5 +133,6 @@ __all__ = [
     "Timeseries",
     "TimeseriesCollection",
     "TimeseriesWindow",
+    "VariableSchema",
     "VariableType",
 ]
