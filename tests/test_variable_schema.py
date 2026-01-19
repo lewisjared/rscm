@@ -193,7 +193,7 @@ class ERFComponent(Component):
     def solve(
         self, t_current, t_next, inputs: "ERFComponent.Inputs"
     ) -> "ERFComponent.Outputs":
-        conc = inputs.concentration.current
+        conc = inputs.concentration.at_start()
         return self.Outputs(erf=conc * self.forcing_per_ppm)
 
 
@@ -271,7 +271,7 @@ class TestSchemaModelIntegration:
             def solve(
                 self, t_current, t_next, inputs: "CO2ERF.Inputs"
             ) -> "CO2ERF.Outputs":
-                return self.Outputs(erf=inputs.concentration.current * 0.01)
+                return self.Outputs(erf=inputs.concentration.at_start() * 0.01)
 
         class CH4ERF(Component):
             concentration = Input("Concentration|CH4", unit="ppb")
@@ -280,7 +280,7 @@ class TestSchemaModelIntegration:
             def solve(
                 self, t_current, t_next, inputs: "CH4ERF.Inputs"
             ) -> "CH4ERF.Outputs":
-                return self.Outputs(erf=inputs.concentration.current * 0.001)
+                return self.Outputs(erf=inputs.concentration.at_start() * 0.001)
 
         # Create schema with aggregate
         schema = VariableSchema()

@@ -16,7 +16,6 @@ The system SHALL provide explicit methods for accessing values at different poin
 
 - **WHEN** calling `window.at_start()`
 - **THEN** it MUST return the value at the current timestep index (N)
-- **AND** this is equivalent to the deprecated `current()` method
 - **AND** NOT allocate memory
 
 #### Scenario: Access value at end of timestep
@@ -47,13 +46,6 @@ The system SHALL provide explicit methods for accessing values at different poin
 ### Requirement: TimeseriesWindow for Scalar Access
 
 The system SHALL provide a `TimeseriesWindow` type that provides zero-cost access to scalar timeseries data with temporal navigation, including explicit timestep-semantic methods.
-
-#### Scenario: Get current value (DEPRECATED)
-
-- **WHEN** calling `window.current()`
-- **THEN** it MUST return the same value as `at_start()`
-- **AND** the method SHALL be marked as deprecated
-- **AND** this method is deprecated in favour of `at_start()`
 
 ### Requirement: GridTimeseriesWindow for Grid Access
 

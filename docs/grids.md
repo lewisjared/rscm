@@ -71,7 +71,10 @@ temp = Input("Temperature|Hemispheric", unit="K", grid="Hemispheric")
 response = Output("Response|Hemispheric", unit="W/m^2", grid="Hemispheric")
 
 def solve(self, t_current, t_next, inputs):
-    temp_n, temp_s = inputs.temp.current  # Returns tuple
+    # Access all regions at start of timestep
+    temp_slice = inputs.temp.current_all_at_start()
+    temp_n = temp_slice.northern
+    temp_s = temp_slice.southern
 
     return self.Outputs(
         response=HemisphericSlice(
@@ -121,7 +124,7 @@ erf = Input("ERF", unit="W/m^2")
 heat_uptake = Output("Heat Uptake", unit="W/m^2", grid="FourBox")
 
 def solve(self, t_current, t_next, inputs):
-    erf_val = inputs.erf.current
+    erf_val = inputs.erf.at_start()
 
     return self.Outputs(
         heat_uptake=FourBoxSlice(
@@ -151,7 +154,7 @@ fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState)
     -> RSCMResult<OutputState>
 {
     let inputs = FourBoxHeatUptakeInputs::from_input_state(input_state);
-    let erf = inputs.erf.current();
+    let erf = inputs.erf.at_start();
 
     let outputs = FourBoxHeatUptakeOutputs {
         heat_uptake: FourBoxSlice::from_array([
@@ -173,16 +176,23 @@ fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState)
 
 ```python
 def solve(self, t_current, t_next, inputs):
-    # Scalar input - single value
-    scalar_val = inputs.emissions.current
+    # Scalar input - single value at start of timestep
+    scalar_val = inputs.emissions.at_start()
 
-    # FourBox input - access all regions
-    fb_values = inputs.regional_temp.current  # Returns tuple of 4 values
-    no, nl, so, sl = fb_values
+    # FourBox input - access all regions at start of timestep
+    fb_slice = inputs.regional_temp.current_all_at_start()  # Returns FourBoxSlice
+    no = fb_slice.northern_ocean
+    nl = fb_slice.northern_land
+    so = fb_slice.southern_ocean
+    sl = fb_slice.southern_land
+
+    # Or access individual regions by index
+    no = inputs.regional_temp.at_start(region=0)  # northern_ocean
 
     # Hemispheric input
-    hemi_values = inputs.hemi_temp.current  # Returns tuple of 2 values
-    northern, southern = hemi_values
+    hemi_slice = inputs.hemi_temp.current_all_at_start()  # Returns HemisphericSlice
+    northern = hemi_slice.northern
+    southern = hemi_slice.southern
 ```
 
 **Rust:**
@@ -194,14 +204,14 @@ fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState)
     let inputs = MyComponentInputs::from_input_state(input_state);
 
     // Scalar input
-    let scalar_val = inputs.emissions.current();
+    let scalar_val = inputs.emissions.at_start();
 
     // FourBox input - access individual regions
-    let no = inputs.regional_temp.current(FourBoxRegion::NorthernOcean);
-    let nl = inputs.regional_temp.current(FourBoxRegion::NorthernLand);
+    let no = inputs.regional_temp.at_start(FourBoxRegion::NorthernOcean);
+    let nl = inputs.regional_temp.at_start(FourBoxRegion::NorthernLand);
 
     // Or get all at once
-    let all_regions = inputs.regional_temp.current_all();  // [f64; 4]
+    let all_regions = inputs.regional_temp.current_all_at_start();  // Vec<f64>
 
     // Global aggregate (weighted average)
     let global_mean = inputs.regional_temp.current_global();
@@ -337,7 +347,9 @@ class HemisphericToFourBox(Component):
         self.ocean_land_ratio = ocean_land_ratio
 
     def solve(self, t_current, t_next, inputs):
-        n, s = inputs.hemi_temp.current
+        hemi_slice = inputs.hemi_temp.current_all_at_start()
+        n = hemi_slice.northern
+        s = hemi_slice.southern
 
         return self.Outputs(
             fb_temp=FourBoxSlice(
@@ -355,11 +367,11 @@ This makes the disaggregation assumptions explicit and configurable.
 
 ### Python
 
-| Class             | Description                          |
-| ----------------- | ------------------------------------ |
-| `FourBoxSlice`    | Container for four regional values   |
-| `HemisphericSlice`| Container for two hemispheric values |
-| `StateValue`      | Wrap scalar or grid values           |
+| Class              | Description                          |
+| ------------------ | ------------------------------------ |
+| `FourBoxSlice`     | Container for four regional values   |
+| `HemisphericSlice` | Container for two hemispheric values |
+| `StateValue`       | Wrap scalar or grid values           |
 
 ### Rust
 

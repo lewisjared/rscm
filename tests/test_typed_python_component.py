@@ -33,8 +33,8 @@ class SimpleCarbonCycle(Component):
     ) -> "SimpleCarbonCycle.Outputs":
         """Calculate carbon cycle dynamics."""
         # Type-safe access to inputs via TimeseriesWindow
-        emissions = inputs.emissions.current
-        conc_prev = inputs.concentration.current
+        emissions = inputs.emissions.at_start()
+        conc_prev = inputs.concentration.at_start()
 
         # Calculate outputs
         new_conc = conc_prev + emissions * self.sensitivity
@@ -133,8 +133,8 @@ def test_typed_component_timeseries_window_access():
         def solve(
             self, t_current: float, t_next: float, inputs: "HistoryTestComponent.Inputs"
         ) -> "HistoryTestComponent.Outputs":
-            # Access current and previous values
-            current = inputs.temperature.current
+            # Access current and previous values using at_start() for exogenous input
+            current = inputs.temperature.at_start()
             try:
                 previous = inputs.temperature.previous
                 delta = current - previous
@@ -309,8 +309,8 @@ def test_typed_component_inheritance():
             self, t_current: float, t_next: float, inputs: "DerivedComponent.Inputs"
         ) -> "DerivedComponent.Outputs":
             return self.Outputs(
-                base_output=inputs.base_input.current,
-                derived_output=inputs.derived_input.current,
+                base_output=inputs.base_input.at_start(),
+                derived_output=inputs.derived_input.at_start(),
             )
 
     comp = DerivedComponent()
@@ -347,7 +347,7 @@ def test_exogenous_input_returns_correct_timestep_value():
         def solve(
             self, t_current: float, t_next: float, inputs: "DebugComponent.Inputs"
         ) -> "DebugComponent.Outputs":
-            conc_value = inputs.concentration.current
+            conc_value = inputs.concentration.at_start()
             observed_values.append((t_current, conc_value))
             return self.Outputs(erf=conc_value * 0.01)
 

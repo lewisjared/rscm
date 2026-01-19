@@ -61,9 +61,9 @@ class SimpleCarbonCycle(Component):
         self.sensitivity = sensitivity
 
     def solve(self, t_current, t_next, inputs):
-        # Access current values via typed inputs
-        emis = inputs.emissions.current
-        conc_prev = inputs.concentration.current
+        # Access values at start of timestep (index N)
+        emis = inputs.emissions.at_start()
+        conc_prev = inputs.concentration.at_start()
 
         # Compute new values
         new_conc = conc_prev + emis * self.sensitivity
@@ -104,8 +104,8 @@ impl Component for SimpleCarbonCycle {
     {
         let inputs = SimpleCarbonCycleInputs::from_input_state(input_state);
 
-        let emis = inputs.emissions.current();
-        let conc_prev = inputs.concentration.current();
+        let emis = inputs.emissions.at_start();
+        let conc_prev = inputs.concentration.at_start();
 
         let outputs = SimpleCarbonCycleOutputs {
             concentration: conc_prev + emis * self.sensitivity,
@@ -283,14 +283,18 @@ print(ts.values())
 
 ### Input Access in Components
 
-Within a component's `solve()` method, inputs are accessed via `TimeseriesWindow`:
+Within a component's `solve()` method, inputs are accessed via `TimeseriesWindow`. The key methods are `at_start()` and `at_end()`, which correspond to different points in the timestep execution:
 
 ```python
 def solve(self, t_current, t_next, inputs):
-    # Current value at this timestep
-    current = inputs.emissions.current
+    # Value at start of timestep (index N) - use for state variables and exogenous inputs
+    value = inputs.emissions.at_start()
 
-    # Previous timestep's value
+    # Value at end of timestep (index N+1) - use for upstream component outputs
+    # Returns None if at the last timestep
+    upstream_value = inputs.forcing.at_end()
+
+    # Previous timestep's value (index N-1)
     previous = inputs.emissions.previous
 
     # Value at relative offset (-2 = two steps back)
@@ -299,6 +303,8 @@ def solve(self, t_current, t_next, inputs):
     # Array of last n values
     history = inputs.emissions.last_n(5)
 ```
+
+See [Timestep Semantics](#timestep-semantics) for detailed guidance on when to use each accessor.
 
 ## Variable Schema
 
@@ -336,10 +342,10 @@ schema = (
 
 ### Aggregation Operations
 
-| Operation | Description |
-|-----------|-------------|
-| `Sum` | Sum of all contributors |
-| `Mean` | Arithmetic mean |
+| Operation  | Description                         |
+| ---------- | ----------------------------------- |
+| `Sum`      | Sum of all contributors             |
+| `Mean`     | Arithmetic mean                     |
 | `Weighted` | Weighted average (requires weights) |
 
 ### Using Schema with ModelBuilder
@@ -370,6 +376,134 @@ During build, RSCM:
 - **Partial models**: Schema variables with no writer component remain NaN
 
 For a complete walkthrough, see [Tutorial 3: Variable Schemas](tutorials.md#tutorial-3-variable-schemas).
+
+## Timestep Semantics
+
+Understanding when to use `at_start()` vs `at_end()` is crucial for correctly reading values in component `solve()` methods. These accessors correspond to different points in the model's timestep execution.
+
+### Execution Model
+
+During each timestep, the model:
+
+1. Sets the current time index to N (pointing to `t_current`)
+2. Solves components in dependency order (upstream before downstream)
+3. Each component writes its outputs to index N+1 (corresponding to `t_next`)
+4. After all components complete, advances to the next timestep
+
+```mermaid
+sequenceDiagram
+    participant Model
+    participant C1 as Upstream Component
+    participant C2 as Downstream Component
+    participant State as Timeseries State
+
+    Note over State: Index N has values from previous timestep
+    Model->>C1: solve(t_current, t_next)
+    C1->>State: Read at_start() [index N]
+    C1->>State: Write outputs [index N+1]
+    Model->>C2: solve(t_current, t_next)
+    C2->>State: Read at_start() [index N] or at_end() [index N+1]
+    C2->>State: Write outputs [index N+1]
+    Note over State: Index N+1 now has new values
+```
+
+### When to Use `at_start()`
+
+Use `at_start()` to read values at index N (the start of the current timestep):
+
+| Variable Type | Who Wrote It | When Written |
+|---------------|--------------|--------------|
+| **State variables** | You (same component) | Previous timestep |
+| **Exogenous inputs** | External data | Pre-populated before run |
+
+**Example - Reading your own state:**
+
+```python
+class TemperatureComponent(Component):
+    temperature = State("Temperature", unit="K")
+    forcing = Input("Forcing", unit="W/m^2")
+
+    def solve(self, t_current, t_next, inputs):
+        # Read YOUR previous temperature (you wrote this last timestep)
+        temp_prev = inputs.temperature.at_start()
+        forcing = inputs.forcing.at_start()
+
+        # Compute new temperature
+        new_temp = temp_prev + forcing * 0.5
+
+        return self.Outputs(temperature=new_temp)
+```
+
+### When to Use `at_end()`
+
+Use `at_end()` to read values at index N+1 (written by upstream components during this timestep):
+
+| Variable Type | Who Wrote It | When Written |
+|---------------|--------------|--------------|
+| **Upstream outputs** | Other component | This timestep (before you ran) |
+
+**Example - Reading upstream component output:**
+
+```python
+class ClimateResponse(Component):
+    # ERF is computed by an upstream ForcingComponent
+    effective_radiative_forcing = Input("ERF", unit="W/m^2")
+    temperature = State("Temperature", unit="K")
+
+    def solve(self, t_current, t_next, inputs):
+        temp_prev = inputs.temperature.at_start()  # Your own state
+
+        # Read forcing written by upstream component THIS timestep
+        # Falls back to at_start() if at final timestep (at_end returns None)
+        erf = inputs.effective_radiative_forcing.at_end()
+        if erf is None:
+            erf = inputs.effective_radiative_forcing.at_start()
+
+        new_temp = temp_prev + erf * self.sensitivity
+
+        return self.Outputs(temperature=new_temp)
+```
+
+### Quick Reference
+
+| What you're reading | Who wrote it | Method |
+|---------------------|--------------|--------|
+| Your own previous state | You, last timestep | `at_start()` |
+| Exogenous input (external forcing) | Pre-populated | `at_start()` |
+| Upstream component output | They ran this timestep | `at_end()` |
+
+### Grid Variables
+
+For grid-based variables (`FourBox` or `Hemispheric`), the same semantics apply with region-specific access:
+
+```python
+# Scalar window
+value = inputs.temperature.at_start()
+value = inputs.temperature.at_end()  # Returns None at last timestep
+
+# Grid window - single region
+value = inputs.regional_temp.at_start(region=0)  # Northern ocean
+value = inputs.regional_temp.at_end(region=1)    # Northern land
+
+# Grid window - all regions at once
+slice = inputs.regional_temp.current_all_at_start()  # Returns FourBoxSlice
+slice = inputs.regional_temp.current_all_at_end()    # Returns FourBoxSlice or None
+```
+
+### Handling the Final Timestep
+
+`at_end()` returns `None` when at the final timestep (there is no index N+1). Handle this with a fallback:
+
+```python
+def solve(self, t_current, t_next, inputs):
+    # Pattern: try at_end, fall back to at_start
+    erf = inputs.forcing.at_end()
+    if erf is None:
+        erf = inputs.forcing.at_start()
+
+    # Or using Python's or operator (if 0.0 is not a valid fallback)
+    erf = inputs.forcing.at_end() or inputs.forcing.at_start()
+```
 
 ## Putting It Together
 

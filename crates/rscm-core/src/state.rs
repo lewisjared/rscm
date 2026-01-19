@@ -163,17 +163,6 @@ impl<'a> TimeseriesWindow<'a> {
         }
     }
 
-    /// Get the value at the current timestep.
-    ///
-    /// This is the most common operation - getting the current value of an input.
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use `at_start()` or `at_end()` based on variable semantics. See TimeseriesWindow docs for guidance."
-    )]
-    pub fn current(&self) -> FloatValue {
-        self.at_start()
-    }
-
     /// Get the value at the previous timestep, if available.
     ///
     /// Returns `None` if at the first timestep (no previous value exists).
@@ -461,15 +450,6 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
         }
     }
 
-    /// Get a single region's value at the current timestep.
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use `at_start()` or `at_end()` based on variable semantics. See TimeseriesWindow docs."
-    )]
-    pub fn current(&self, region: FourBoxRegion) -> FloatValue {
-        self.at_start(region)
-    }
-
     /// Get a single region's value at the previous timestep.
     pub fn previous(&self, region: FourBoxRegion) -> Option<FloatValue> {
         if self.current_index == 0 {
@@ -522,15 +502,6 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
         }
     }
 
-    /// Get a single region's value at the current timestep.
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use `at_start()` or `at_end()` based on variable semantics. See TimeseriesWindow docs."
-    )]
-    pub fn current(&self, region: HemisphericRegion) -> FloatValue {
-        self.at_start(region)
-    }
-
     /// Get a single region's value at the previous timestep.
     pub fn previous(&self, region: HemisphericRegion) -> Option<FloatValue> {
         if self.current_index == 0 {
@@ -579,15 +550,6 @@ impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
         } else {
             self.timeseries.at(next_index, ScalarRegion::Global)
         }
-    }
-
-    /// Get the current scalar value.
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use `at_start()` or `at_end()` based on variable semantics. See TimeseriesWindow docs."
-    )]
-    pub fn current(&self) -> FloatValue {
-        self.at_start()
     }
 
     /// Get the previous scalar value.
@@ -1386,17 +1348,6 @@ mod timeseries_window_tests {
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn test_timeseries_window_current() {
-        let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::new(&ts, 2, 2002.0);
-
-        // current() is deprecated alias for at_start()
-        assert_eq!(window.current(), 3.0);
-        assert_eq!(window.current(), window.at_start());
-    }
-
-    #[test]
     fn test_timeseries_window_previous() {
         let ts = create_scalar_timeseries();
 
@@ -1566,20 +1517,6 @@ mod grid_timeseries_window_tests {
         // At last index, returns None
         let window_end = GridTimeseriesWindow::new(&ts, 2, 2002.0);
         assert_eq!(window_end.current_all_at_end(), None);
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_grid_window_current() {
-        let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
-
-        // current() is deprecated alias for at_start()
-        assert_eq!(window.current(FourBoxRegion::NorthernOcean), 16.0);
-        assert_eq!(
-            window.current(FourBoxRegion::NorthernOcean),
-            window.at_start(FourBoxRegion::NorthernOcean)
-        );
     }
 
     #[test]

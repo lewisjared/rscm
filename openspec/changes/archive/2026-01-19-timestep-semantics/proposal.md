@@ -20,11 +20,11 @@ Add explicit timestep-semantic methods (`at_start()`, `at_end()`) rather than au
 
 **Key insight:** The determining factor is execution order, not variable classification:
 
-| What you're reading | Who wrote it | Use |
-|---------------------|--------------|-----|
-| Your own state variable | You haven't run yet | `at_start()` |
-| Upstream component output | They already ran | `at_end()` |
-| Exogenous input | Pre-populated | `at_start()` |
+| What you're reading       | Who wrote it        | Use          |
+| ------------------------- | ------------------- | ------------ |
+| Your own state variable   | You haven't run yet | `at_start()` |
+| Upstream component output | They already ran    | `at_end()`   |
+| Exogenous input           | Pre-populated       | `at_start()` |
 
 Component authors must explicitly choose - there is no universal default.
 

@@ -463,13 +463,27 @@ impl PyTimeseriesWindow {
         })
     }
 
-    /// Get the current value (at current_index)
-    #[getter]
-    fn current(&self) -> PyResult<FloatValue> {
+    /// Get the value at the start of the timestep (index N).
+    ///
+    /// Use this for:
+    /// - State variables (reading your own previous state)
+    /// - Exogenous inputs (external forcing data)
+    fn at_start(&self) -> PyResult<FloatValue> {
         self.values
             .get(self.current_index)
             .copied()
-            .ok_or_else(|| PyValueError::new_err("No current value available"))
+            .ok_or_else(|| PyValueError::new_err("No value available at current index"))
+    }
+
+    /// Get the value at the end of the timestep (index N+1), if available.
+    ///
+    /// Use this for:
+    /// - Upstream component outputs (values written during this timestep)
+    ///
+    /// Returns None if at the last timestep.
+    fn at_end(&self) -> Option<FloatValue> {
+        let next_index = self.current_index + 1;
+        self.values.get(next_index).copied()
     }
 
     /// Get the previous value (at current_index - 1)
@@ -571,13 +585,57 @@ impl PyFourBoxTimeseriesWindow {
         })
     }
 
-    /// Get the current slice as FourBoxSlice
-    #[getter]
-    fn current(&self) -> PyResult<PyFourBoxSlice> {
+    /// Get a single region's value at the start of the timestep (index N).
+    ///
+    /// Use this for:
+    /// - State variables (reading your own previous state)
+    /// - Exogenous inputs (external forcing data)
+    fn at_start(&self, region: usize) -> PyResult<FloatValue> {
+        if region >= 4 {
+            return Err(PyValueError::new_err(format!(
+                "Invalid region index: {}. Must be 0-3.",
+                region
+            )));
+        }
+        self.values
+            .get(self.current_index)
+            .map(|v| v[region])
+            .ok_or_else(|| PyValueError::new_err("No value available at current index"))
+    }
+
+    /// Get a single region's value at the end of the timestep (index N+1), if available.
+    ///
+    /// Use this for:
+    /// - Upstream component outputs (values written during this timestep)
+    ///
+    /// Returns None if at the last timestep.
+    fn at_end(&self, region: usize) -> PyResult<Option<FloatValue>> {
+        if region >= 4 {
+            return Err(PyValueError::new_err(format!(
+                "Invalid region index: {}. Must be 0-3.",
+                region
+            )));
+        }
+        let next_index = self.current_index + 1;
+        Ok(self.values.get(next_index).map(|v| v[region]))
+    }
+
+    /// Get all regional values at the start of the timestep (index N).
+    fn current_all_at_start(&self) -> PyResult<PyFourBoxSlice> {
         self.values
             .get(self.current_index)
             .map(|v| PyFourBoxSlice(FourBoxSlice::from_array(*v)))
-            .ok_or_else(|| PyValueError::new_err("No current value available"))
+            .ok_or_else(|| PyValueError::new_err("No value available at current index"))
+    }
+
+    /// Get all regional values at the end of the timestep (index N+1), if available.
+    ///
+    /// Returns None if at the last timestep.
+    fn current_all_at_end(&self) -> Option<PyFourBoxSlice> {
+        let next_index = self.current_index + 1;
+        self.values
+            .get(next_index)
+            .map(|v| PyFourBoxSlice(FourBoxSlice::from_array(*v)))
     }
 
     /// Get the previous slice as FourBoxSlice
@@ -653,13 +711,57 @@ impl PyHemisphericTimeseriesWindow {
         })
     }
 
-    /// Get the current slice as HemisphericSlice
-    #[getter]
-    fn current(&self) -> PyResult<PyHemisphericSlice> {
+    /// Get a single region's value at the start of the timestep (index N).
+    ///
+    /// Use this for:
+    /// - State variables (reading your own previous state)
+    /// - Exogenous inputs (external forcing data)
+    fn at_start(&self, region: usize) -> PyResult<FloatValue> {
+        if region >= 2 {
+            return Err(PyValueError::new_err(format!(
+                "Invalid region index: {}. Must be 0-1.",
+                region
+            )));
+        }
+        self.values
+            .get(self.current_index)
+            .map(|v| v[region])
+            .ok_or_else(|| PyValueError::new_err("No value available at current index"))
+    }
+
+    /// Get a single region's value at the end of the timestep (index N+1), if available.
+    ///
+    /// Use this for:
+    /// - Upstream component outputs (values written during this timestep)
+    ///
+    /// Returns None if at the last timestep.
+    fn at_end(&self, region: usize) -> PyResult<Option<FloatValue>> {
+        if region >= 2 {
+            return Err(PyValueError::new_err(format!(
+                "Invalid region index: {}. Must be 0-1.",
+                region
+            )));
+        }
+        let next_index = self.current_index + 1;
+        Ok(self.values.get(next_index).map(|v| v[region]))
+    }
+
+    /// Get all regional values at the start of the timestep (index N).
+    fn current_all_at_start(&self) -> PyResult<PyHemisphericSlice> {
         self.values
             .get(self.current_index)
             .map(|v| PyHemisphericSlice(HemisphericSlice::from_array(*v)))
-            .ok_or_else(|| PyValueError::new_err("No current value available"))
+            .ok_or_else(|| PyValueError::new_err("No value available at current index"))
+    }
+
+    /// Get all regional values at the end of the timestep (index N+1), if available.
+    ///
+    /// Returns None if at the last timestep.
+    fn current_all_at_end(&self) -> Option<PyHemisphericSlice> {
+        let next_index = self.current_index + 1;
+        self.values
+            .get(next_index)
+            .map(|v| PyHemisphericSlice(HemisphericSlice::from_array(*v)))
     }
 
     /// Get the previous slice as HemisphericSlice

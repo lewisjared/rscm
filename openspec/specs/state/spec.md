@@ -4,7 +4,9 @@
 
 Defines how components access input data and produce output data during model execution.
 The state system provides type-safe, zero-cost abstractions for accessing timeseries data with support for both scalar and spatially-resolved (grid) variables.
+
 ## Requirements
+
 ### Requirement: StateValue Type
 
 The system SHALL provide a `StateValue` enum that represents values which can be either scalar or spatially-resolved.
@@ -38,13 +40,6 @@ The system SHALL provide an `InputState` type that allows components to access t
 ### Requirement: TimeseriesWindow for Scalar Access
 
 The system SHALL provide a `TimeseriesWindow` type that provides zero-cost access to scalar timeseries data with temporal navigation, including explicit timestep-semantic methods.
-
-#### Scenario: Get current value (DEPRECATED)
-
-- **WHEN** calling `window.current()`
-- **THEN** it MUST return the same value as `at_start()`
-- **AND** the method SHALL be marked as deprecated
-- **AND** this method is deprecated in favour of `at_start()`
 
 ### Requirement: GridTimeseriesWindow for Grid Access
 
@@ -207,7 +202,6 @@ The system SHALL provide explicit methods for accessing values at different poin
 
 - **WHEN** calling `window.at_start()`
 - **THEN** it MUST return the value at the current timestep index (N)
-- **AND** this is equivalent to the deprecated `current()` method
 - **AND** NOT allocate memory
 
 #### Scenario: Access value at end of timestep
