@@ -323,3 +323,75 @@ def test_typed_component_inheritance():
     assert "BaseOutput" in def_names
     assert "DerivedInput" in def_names
     assert "DerivedOutput" in def_names
+
+
+def test_exogenous_input_returns_correct_timestep_value():
+    """Test that TimeseriesWindow.current returns the value at current timestep.
+
+    Regression test for GitHub issue #65: Python component TimeseriesWindow.current
+    always returns last value instead of the value at the current timestep.
+
+    Before the fix, exogenous variables that were pre-populated with all values
+    would always return the last value because the code used .latest() instead
+    of computing the index from the current time.
+    """
+    # Track values seen at each timestep to verify correctness
+    observed_values = []
+
+    class DebugComponent(Component, register=False):
+        """Component that records the concentration value seen at each timestep."""
+
+        concentration = Input("Concentration|CO2", unit="ppm")
+        erf = Output("ERF|Test", unit="W/m^2")
+
+        def solve(
+            self, t_current: float, t_next: float, inputs: "DebugComponent.Inputs"
+        ) -> "DebugComponent.Outputs":
+            conc_value = inputs.concentration.current
+            observed_values.append((t_current, conc_value))
+            return self.Outputs(erf=conc_value * 0.01)
+
+    time_axis = TimeAxis.from_values(np.arange(2020.0, 2025.0, 1.0))
+
+    # Create concentration timeseries with distinct values at each timestep
+    # so we can verify which value is actually being returned
+    concentration_ts = Timeseries(
+        np.array([400.0, 410.0, 420.0, 430.0, 440.0]),
+        time_axis,
+        "ppm",
+        InterpolationStrategy.Previous,
+    )
+
+    comp = PythonComponent.build(DebugComponent())
+    model = (
+        ModelBuilder()
+        .with_time_axis(time_axis)
+        .with_py_component(comp)
+        .with_exogenous_variable("Concentration|CO2", concentration_ts)
+        .build()
+    )
+
+    # Run all timesteps
+    for _ in range(4):
+        model.step()
+
+    # Verify that each timestep received the correct value
+    # Before the fix, all timesteps would see 440.0 (the last value)
+    # After the fix, each timestep should see its corresponding value
+    assert len(observed_values) == 4
+
+    expected_values = [
+        (2020.0, 400.0),
+        (2021.0, 410.0),
+        (2022.0, 420.0),
+        (2023.0, 430.0),
+    ]
+
+    for (t_observed, val_observed), (t_expected, val_expected) in zip(
+        observed_values, expected_values
+    ):
+        assert t_observed == t_expected, f"Time mismatch at {t_expected}"
+        assert abs(val_observed - val_expected) < 0.001, (
+            f"At t={t_expected}, expected concentration={val_expected}, "
+            f"got {val_observed}"
+        )
