@@ -196,8 +196,8 @@ def load_python_components() -> dict[str, dict[str, Any]]:
 
     try:
         # Import modules that contain components to trigger registration
-        import rscm.example_components  # noqa: F401
-        from rscm.component import Component
+        import rscm.example_components  # noqa: F401, PLC0415
+        from rscm.component import Component  # noqa: PLC0415
     except ImportError as e:
         print(f"Warning: Could not import Python components: {e}")
         return metadata
@@ -224,10 +224,7 @@ def extract_python_component_metadata(
     module_name
         The fully qualified module name (e.g., "rscm.example_components")
     """
-    try:
-        from rscm.component import Input, Output, State
-    except ImportError:
-        return None
+    from rscm.component import Input, Output, State  # noqa: PLC0415
 
     name = cls.__name__
     docstring = inspect.getdoc(cls) or ""
