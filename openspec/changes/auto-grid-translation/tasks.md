@@ -19,11 +19,11 @@
 
 **File:** `crates/rscm-core/src/model.rs`
 
-- [ ] 3.1 Add `grid_weights: HashMap<GridType, Vec<f64>>` field to `ModelBuilder`
-- [ ] 3.2 Implement `ModelBuilder::with_grid_weights(grid_type, weights)` method
-- [ ] 3.3 Validate weights sum to 1.0 in `with_grid_weights()`
-- [ ] 3.4 Pass weights to Model for use during execution
-- [ ] 3.5 Add `grid_weights` field to `Model` struct
+- [x] 3.1 Add `grid_weights: HashMap<GridType, Vec<f64>>` field to `ModelBuilder`
+- [x] 3.2 Implement `ModelBuilder::with_grid_weights(grid_type, weights)` method
+- [x] 3.3 Validate weights sum to 1.0 in `with_grid_weights()`
+- [x] 3.4 Pass weights to Model for use during execution
+- [x] 3.5 Add `grid_weights` field to `Model` struct
 
 ## 4. GridTransformerComponent
 

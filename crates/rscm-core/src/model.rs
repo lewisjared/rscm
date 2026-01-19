@@ -85,6 +85,11 @@ pub struct ModelBuilder {
     initial_values: HashMap<String, FloatValue>,
     pub time_axis: Arc<TimeAxis>,
     schema: Option<VariableSchema>,
+    /// Custom weights for grid aggregation, keyed by grid type
+    ///
+    /// When provided, these override the default weights used when creating
+    /// timeseries and performing grid transformations. Weights must sum to 1.0.
+    grid_weights: HashMap<GridType, Vec<f64>>,
 }
 
 /// Checks if the new definition is valid
@@ -191,6 +196,97 @@ impl ModelBuilder {
             exogenous_variables: TimeseriesCollection::new(),
             time_axis: Arc::new(TimeAxis::from_values(Array::range(2000.0, 2100.0, 1.0))),
             schema: None,
+            grid_weights: HashMap::new(),
+        }
+    }
+
+    /// Set custom weights for a grid type
+    ///
+    /// These weights override the default grid weights used when:
+    /// - Creating timeseries for grid-based variables
+    /// - Performing automatic grid transformations (when enabled)
+    ///
+    /// # Arguments
+    ///
+    /// * `grid_type` - The grid type to configure (FourBox or Hemispheric)
+    /// * `weights` - Area-based weights that must sum to 1.0
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - `grid_type` is `Scalar` (scalars have no weights)
+    /// - `weights` length does not match the grid size (4 for FourBox, 2 for Hemispheric)
+    /// - `weights` do not sum to approximately 1.0 (within 1e-6)
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use rscm_core::model::ModelBuilder;
+    /// use rscm_core::component::GridType;
+    ///
+    /// let mut builder = ModelBuilder::new();
+    /// // Area-based weights for FourBox grid
+    /// builder.with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14]);
+    /// ```
+    pub fn with_grid_weights(&mut self, grid_type: GridType, weights: Vec<f64>) -> &mut Self {
+        // Validate grid type
+        let expected_size = match grid_type {
+            GridType::Scalar => {
+                panic!("Cannot set weights for Scalar grid type (scalars have no regional weights)")
+            }
+            GridType::FourBox => 4,
+            GridType::Hemispheric => 2,
+        };
+
+        // Validate weights length
+        assert_eq!(
+            weights.len(),
+            expected_size,
+            "Weights length {} does not match {} grid size {}",
+            weights.len(),
+            grid_type,
+            expected_size
+        );
+
+        // Validate weights sum to 1.0
+        let sum: f64 = weights.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-6,
+            "Weights must sum to 1.0, got {}",
+            sum
+        );
+
+        self.grid_weights.insert(grid_type, weights);
+        self
+    }
+
+    /// Create a FourBoxGrid using custom weights if configured, otherwise use defaults
+    fn create_four_box_grid(&self) -> crate::spatial::FourBoxGrid {
+        use crate::spatial::FourBoxGrid;
+        match self.grid_weights.get(&GridType::FourBox) {
+            Some(weights) => {
+                let weights_arr: [f64; 4] = weights
+                    .as_slice()
+                    .try_into()
+                    .expect("FourBox weights should have 4 elements");
+                FourBoxGrid::with_weights(weights_arr)
+            }
+            None => FourBoxGrid::magicc_standard(),
+        }
+    }
+
+    /// Create a HemisphericGrid using custom weights if configured, otherwise use defaults
+    fn create_hemispheric_grid(&self) -> crate::spatial::HemisphericGrid {
+        use crate::spatial::HemisphericGrid;
+        match self.grid_weights.get(&GridType::Hemispheric) {
+            Some(weights) => {
+                let weights_arr: [f64; 2] = weights
+                    .as_slice()
+                    .try_into()
+                    .expect("Hemispheric weights should have 2 elements");
+                HemisphericGrid::with_weights(weights_arr)
+            }
+            None => HemisphericGrid::equal_weights(),
         }
     }
 
@@ -605,38 +701,30 @@ impl ModelBuilder {
                                     ),
                                     VariableType::Exogenous,
                                 ),
-                                GridType::FourBox => {
-                                    use crate::spatial::FourBoxGrid;
-                                    let grid = FourBoxGrid::magicc_standard();
-                                    collection.add_four_box_timeseries(
-                                        definition.name,
-                                        crate::timeseries::GridTimeseries::new_empty(
-                                            self.time_axis.clone(),
-                                            grid,
-                                            definition.unit,
-                                            InterpolationStrategy::from(LinearSplineStrategy::new(
-                                                true,
-                                            )),
-                                        ),
-                                        VariableType::Exogenous,
-                                    )
-                                }
-                                GridType::Hemispheric => {
-                                    use crate::spatial::HemisphericGrid;
-                                    let grid = HemisphericGrid::equal_weights();
-                                    collection.add_hemispheric_timeseries(
-                                        definition.name,
-                                        crate::timeseries::GridTimeseries::new_empty(
-                                            self.time_axis.clone(),
-                                            grid,
-                                            definition.unit,
-                                            InterpolationStrategy::from(LinearSplineStrategy::new(
-                                                true,
-                                            )),
-                                        ),
-                                        VariableType::Exogenous,
-                                    )
-                                }
+                                GridType::FourBox => collection.add_four_box_timeseries(
+                                    definition.name,
+                                    crate::timeseries::GridTimeseries::new_empty(
+                                        self.time_axis.clone(),
+                                        self.create_four_box_grid(),
+                                        definition.unit,
+                                        InterpolationStrategy::from(LinearSplineStrategy::new(
+                                            true,
+                                        )),
+                                    ),
+                                    VariableType::Exogenous,
+                                ),
+                                GridType::Hemispheric => collection.add_hemispheric_timeseries(
+                                    definition.name,
+                                    crate::timeseries::GridTimeseries::new_empty(
+                                        self.time_axis.clone(),
+                                        self.create_hemispheric_grid(),
+                                        definition.unit,
+                                        InterpolationStrategy::from(LinearSplineStrategy::new(
+                                            true,
+                                        )),
+                                    ),
+                                    VariableType::Exogenous,
+                                ),
                             }
                         }
                     }
@@ -653,44 +741,37 @@ impl ModelBuilder {
                         ),
                         VariableType::Endogenous,
                     ),
-                    GridType::FourBox => {
-                        use crate::spatial::FourBoxGrid;
-                        let grid = FourBoxGrid::magicc_standard();
-                        collection.add_four_box_timeseries(
-                            definition.name,
-                            crate::timeseries::GridTimeseries::new_empty(
-                                self.time_axis.clone(),
-                                grid,
-                                definition.unit,
-                                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                            ),
-                            VariableType::Endogenous,
-                        )
-                    }
-                    GridType::Hemispheric => {
-                        use crate::spatial::HemisphericGrid;
-                        let grid = HemisphericGrid::equal_weights();
-                        collection.add_hemispheric_timeseries(
-                            definition.name,
-                            crate::timeseries::GridTimeseries::new_empty(
-                                self.time_axis.clone(),
-                                grid,
-                                definition.unit,
-                                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                            ),
-                            VariableType::Endogenous,
-                        )
-                    }
+                    GridType::FourBox => collection.add_four_box_timeseries(
+                        definition.name,
+                        crate::timeseries::GridTimeseries::new_empty(
+                            self.time_axis.clone(),
+                            self.create_four_box_grid(),
+                            definition.unit,
+                            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+                        ),
+                        VariableType::Endogenous,
+                    ),
+                    GridType::Hemispheric => collection.add_hemispheric_timeseries(
+                        definition.name,
+                        crate::timeseries::GridTimeseries::new_empty(
+                            self.time_axis.clone(),
+                            self.create_hemispheric_grid(),
+                            definition.unit,
+                            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+                        ),
+                        VariableType::Endogenous,
+                    ),
                 }
             }
         }
 
         // Add the components to the graph
-        Ok(Model::new(
+        Ok(Model::with_grid_weights(
             graph,
             initial_node,
             collection,
             self.time_axis.clone(),
+            self.grid_weights.clone(),
         ))
     }
 }
@@ -731,6 +812,11 @@ pub struct Model {
     collection: TimeseriesCollection,
     time_axis: Arc<TimeAxis>,
     time_index: usize,
+    /// Custom weights for grid aggregation, keyed by grid type
+    ///
+    /// Used for grid transformations during model execution.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    grid_weights: HashMap<GridType, Vec<f64>>,
 }
 
 impl Model {
@@ -740,13 +826,40 @@ impl Model {
         collection: TimeseriesCollection,
         time_axis: Arc<TimeAxis>,
     ) -> Self {
+        Self::with_grid_weights(
+            components,
+            initial_node,
+            collection,
+            time_axis,
+            HashMap::new(),
+        )
+    }
+
+    /// Create a new Model with custom grid weights
+    ///
+    /// The grid_weights are used for grid transformations during model execution.
+    pub fn with_grid_weights(
+        components: CGraph,
+        initial_node: NodeIndex,
+        collection: TimeseriesCollection,
+        time_axis: Arc<TimeAxis>,
+        grid_weights: HashMap<GridType, Vec<f64>>,
+    ) -> Self {
         Self {
             components,
             initial_node,
             collection,
             time_axis,
             time_index: 0,
+            grid_weights,
         }
+    }
+
+    /// Get the configured grid weights
+    ///
+    /// Returns the custom weights if configured, or None if using defaults.
+    pub fn get_grid_weights(&self, grid_type: GridType) -> Option<&Vec<f64>> {
+        self.grid_weights.get(&grid_type)
     }
 
     /// Gets the time value at the current step
@@ -1788,6 +1901,131 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 dot.contains("AggregatorComponent"),
                 "Graph should contain AggregatorComponent: {}",
                 dot
+            );
+        }
+    }
+
+    mod grid_weight_tests {
+        use super::*;
+
+        #[test]
+        fn test_with_grid_weights_fourbox_valid() {
+            let mut builder = ModelBuilder::new();
+            builder.with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14]);
+
+            assert_eq!(
+                builder.grid_weights.get(&GridType::FourBox),
+                Some(&vec![0.36, 0.14, 0.36, 0.14])
+            );
+        }
+
+        #[test]
+        fn test_with_grid_weights_hemispheric_valid() {
+            let mut builder = ModelBuilder::new();
+            builder.with_grid_weights(GridType::Hemispheric, vec![0.6, 0.4]);
+
+            assert_eq!(
+                builder.grid_weights.get(&GridType::Hemispheric),
+                Some(&vec![0.6, 0.4])
+            );
+        }
+
+        #[test]
+        #[should_panic(expected = "Cannot set weights for Scalar")]
+        fn test_with_grid_weights_scalar_panics() {
+            let mut builder = ModelBuilder::new();
+            builder.with_grid_weights(GridType::Scalar, vec![1.0]);
+        }
+
+        #[test]
+        #[should_panic(expected = "Weights length")]
+        fn test_with_grid_weights_wrong_length_panics() {
+            let mut builder = ModelBuilder::new();
+            builder.with_grid_weights(GridType::FourBox, vec![0.5, 0.5]); // Wrong: 2 instead of 4
+        }
+
+        #[test]
+        #[should_panic(expected = "Weights must sum to 1.0")]
+        fn test_with_grid_weights_wrong_sum_panics() {
+            let mut builder = ModelBuilder::new();
+            builder.with_grid_weights(GridType::FourBox, vec![0.3, 0.3, 0.3, 0.3]);
+            // Sum = 1.2
+        }
+
+        #[test]
+        fn test_custom_weights_applied_to_fourbox_timeseries() {
+            use crate::schema::VariableSchema;
+
+            // Custom weights: different from default [0.25, 0.25, 0.25, 0.25]
+            let custom_weights = vec![0.36, 0.14, 0.36, 0.14];
+
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
+
+            let model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_grid_weights(GridType::FourBox, custom_weights.clone())
+                .build()
+                .unwrap();
+
+            // Verify custom weights are stored in the Model
+            let model_weights = model.get_grid_weights(GridType::FourBox);
+            assert_eq!(model_weights, Some(&custom_weights));
+        }
+
+        #[test]
+        fn test_model_get_grid_weights_returns_none_for_unset() {
+            let model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .build()
+                .unwrap();
+
+            assert!(model.get_grid_weights(GridType::FourBox).is_none());
+            assert!(model.get_grid_weights(GridType::Hemispheric).is_none());
+            assert!(model.get_grid_weights(GridType::Scalar).is_none());
+        }
+
+        #[test]
+        fn test_grid_weights_serialisation_roundtrip() {
+            use crate::schema::VariableSchema;
+
+            let custom_weights = vec![0.36, 0.14, 0.36, 0.14];
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
+
+            let model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_grid_weights(GridType::FourBox, custom_weights.clone())
+                .build()
+                .unwrap();
+
+            // Serialise and deserialise
+            let serialised = toml::to_string(&model).unwrap();
+            let deserialised: Model = toml::from_str(&serialised).unwrap();
+
+            // Verify weights are preserved
+            assert_eq!(
+                deserialised.get_grid_weights(GridType::FourBox),
+                Some(&custom_weights)
+            );
+        }
+
+        #[test]
+        fn test_empty_grid_weights_not_serialised() {
+            let model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .build()
+                .unwrap();
+
+            let serialised = toml::to_string(&model).unwrap();
+
+            // The grid_weights section should not appear
+            assert!(
+                !serialised.contains("grid_weights"),
+                "Empty grid_weights should not be serialised: {}",
+                serialised
             );
         }
     }
