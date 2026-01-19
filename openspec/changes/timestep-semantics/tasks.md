@@ -59,14 +59,14 @@
 
 ## 6. Documentation
 
-- [ ] 6.1 Add rustdoc to `at_start()` explaining when to use it (state variables, exogenous)
-- [ ] 6.2 Add rustdoc to `at_end()` explaining when to use it (upstream outputs, aggregation)
-- [ ] 6.3 Update CLAUDE.md component development section with guidance on which method to use
+- [x] 6.1 Add rustdoc to `at_start()` explaining when to use it (state variables, exogenous)
+- [x] 6.2 Add rustdoc to `at_end()` explaining when to use it (upstream outputs, aggregation)
+- [x] 6.3 Update CLAUDE.md component development section with guidance on which method to use
 
 **Verification:** `cargo doc --package rscm-core --open`
 
 ## 7. Final Validation
 
-- [ ] 7.1 Run full test suite: `cargo test --workspace`
-- [ ] 7.2 Run clippy: `cargo clippy --workspace --tests`
-- [ ] 7.3 Verify no compile warnings for deprecated usage in core crates
+- [x] 7.1 Run full test suite: `cargo test --workspace`
+- [x] 7.2 Run clippy: `cargo clippy --workspace --tests`
+- [x] 7.3 Verify no compile warnings for deprecated usage in core crates
