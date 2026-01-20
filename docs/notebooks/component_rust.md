@@ -81,7 +81,7 @@ impl Component for CO2ERF {
         let inputs = CO2ERFInputs::from_input_state(input_state);
 
         // Access values via typed fields
-        let concentration = inputs.concentration.current();
+        let concentration = inputs.concentration.at_start();
         let erf = self.calculate_erf(concentration);
 
         // Return using the generated outputs struct
@@ -129,12 +129,12 @@ impl CO2ERF {
 
 The `TimeseriesWindow` type provides several methods:
 
-| Method | Description |
-|--------|-------------|
-| `current()` | Value at current timestep |
-| `previous()` | Value at previous timestep |
-| `at_offset(n)` | Value at relative offset |
-| `last_n(n)` | Array of last n values |
+| Method         | Description                |
+| -------------- | -------------------------- |
+| `current()`    | Value at current timestep  |
+| `previous()`   | Value at previous timestep |
+| `at_offset(n)` | Value at relative offset   |
+| `last_n(n)`    | Array of last n values     |
 
 ## State Variables
 
@@ -196,7 +196,7 @@ impl Component for RegionalClimate {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let inputs = RegionalClimateInputs::from_input_state(input_state);
-        let forcing = inputs.forcing.current();
+        let forcing = inputs.forcing.at_start();
 
         // FourBox outputs use FourBoxSlice
         let outputs = RegionalClimateOutputs {

@@ -163,8 +163,8 @@ impl Component for OceanSurfacePartialPressure {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let inputs = OceanSurfacePartialPressureInputs::from_input_state(input_state);
-        let delta_sea_surface_temperature = inputs.sea_surface_temperature.current();
-        let delta_dissolved_inorganic_carbon = inputs.dissolved_inorganic_carbon.current();
+        let delta_sea_surface_temperature = inputs.sea_surface_temperature.at_start();
+        let delta_dissolved_inorganic_carbon = inputs.dissolved_inorganic_carbon.at_start();
 
         let delta_ocean_surface_partial_pressure =
             self.calculate_ospp(delta_dissolved_inorganic_carbon);

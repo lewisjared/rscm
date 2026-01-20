@@ -257,10 +257,15 @@ impl_component!(PyPythonComponent);
 /// objects that provide access to current, previous, and historical values.
 fn input_state_to_py_windows(py: Python<'_>, input_state: &InputState) -> PyResult<Py<PyAny>> {
     let dict = pyo3::types::PyDict::new(py);
+    let current_time = input_state.current_time();
 
     for item in input_state.clone().into_iter() {
         let name = &item.name;
-        let current_index = item.data.latest();
+        // Use the actual current time to determine the index, not the latest populated index
+        let current_index = item
+            .data
+            .index_of_time(current_time)
+            .unwrap_or_else(|| item.data.latest());
 
         let window: Py<PyAny> = match &item.data {
             TimeseriesData::Scalar(ts) => {

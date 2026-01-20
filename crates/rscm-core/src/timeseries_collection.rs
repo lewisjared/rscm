@@ -126,6 +126,17 @@ impl TimeseriesData {
         }
     }
 
+    /// Get the index corresponding to a time value
+    ///
+    /// Returns `None` if the time is not found in the time axis.
+    pub fn index_of_time(&self, time: crate::timeseries::Time) -> Option<usize> {
+        match self {
+            TimeseriesData::Scalar(ts) => ts.time_axis().index_of(time),
+            TimeseriesData::FourBox(ts) => ts.time_axis().index_of(time),
+            TimeseriesData::Hemispheric(ts) => ts.time_axis().index_of(time),
+        }
+    }
+
     /// Get the scalar timeseries if this is a Scalar variant
     pub fn as_scalar(&self) -> Option<&Timeseries<FloatValue>> {
         match self {

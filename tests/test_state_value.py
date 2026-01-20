@@ -99,7 +99,7 @@ class TestStateValueInComponents:
             output_var = Output("Output", unit="K")
 
             def solve(self, t_current, t_next, inputs):
-                return self.Outputs(output_var=inputs.input_var.current * 2.0)
+                return self.Outputs(output_var=inputs.input_var.at_start() * 2.0)
 
         component = ScalarComponent()
 
@@ -216,7 +216,7 @@ class TestStateValueInModel:
             output_var = Output("Regional Temperature", unit="K", grid="FourBox")
 
             def solve(self, t_current, t_next, inputs):
-                forcing = inputs.input_var.current
+                forcing = inputs.input_var.at_start()
                 # Different response in each region
                 return self.Outputs(
                     output_var=FourBoxSlice(

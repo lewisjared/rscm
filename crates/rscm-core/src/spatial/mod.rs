@@ -133,7 +133,7 @@
 //!
 //!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
 //!         // Works with scalar values - InputState handles grid aggregation automatically
-//!         let co2 = input_state.get_scalar_window("Atmospheric Concentration|CO2").current();
+//!         let co2 = input_state.get_scalar_window("Atmospheric Concentration|CO2").at_start();
 //!         // ... compute ERF ...
 //!         let mut output = HashMap::new();
 //!         output.insert("ERF|CO2".to_string(), StateValue::Scalar(co2 * 5.35_f64.ln()));

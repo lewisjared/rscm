@@ -35,105 +35,26 @@ The system SHALL provide a `StateValue` enum that represents values which can be
 
 ### Requirement: InputState Container
 
-The system SHALL provide an `InputState` type that allows components to access their input variables during the solve phase.
-
-#### Scenario: Query variable existence
-
-- **WHEN** calling `input_state.has(name)`
-- **THEN** it MUST return true if a variable with that name exists
-- **AND** return false otherwise
-
-#### Scenario: Get latest value as StateValue
-
-- **WHEN** calling `input_state.get_latest_value(name)`
-- **THEN** it MUST return `Some(StateValue::Scalar(v))` for scalar variables
-- **AND** return `Some(StateValue::FourBox(slice))` for FourBox variables
-- **AND** return `Some(StateValue::Hemispheric(slice))` for Hemispheric variables
-- **AND** return `None` if the variable does not exist
-
-#### Scenario: Get global aggregated value
-
-- **WHEN** calling `input_state.get_global(name)`
-- **THEN** it MUST return the scalar value for scalar variables
-- **AND** return the weighted aggregate for grid variables using grid weights
-- **AND** return `None` if the variable does not exist
-
-#### Scenario: Get specific region value
-
-- **WHEN** calling `input_state.get_region(name, region_index)`
-- **THEN** it MUST return the scalar value if region_index is 0 for scalar variables
-- **AND** return `None` for scalar variables if region_index > 0
-- **AND** return the value at the specified region for grid variables
-- **AND** return `None` if the region index is out of bounds
-
-#### Scenario: Get current time
-
-- **WHEN** calling `input_state.current_time()`
-- **THEN** it MUST return the time at which the component is being solved
+The system SHALL provide an `InputState` type that allows components to access their input variables during the solve phase via window accessors with explicit timestep semantics.
 
 ### Requirement: TimeseriesWindow for Scalar Access
 
-The system SHALL provide a `TimeseriesWindow` type that provides zero-cost access to scalar timeseries data with temporal navigation.
-
-#### Scenario: Get current value
-
-- **WHEN** calling `window.current()`
-- **THEN** it MUST return the value at the current timestep
-- **AND** NOT allocate memory
-
-#### Scenario: Get previous value
-
-- **WHEN** calling `window.previous()`
-- **THEN** it MUST return `Some(value)` for the previous timestep
-- **AND** return `None` if at the first timestep (no history available)
-
-#### Scenario: Get value at relative offset
-
-- **WHEN** calling `window.at_offset(offset)`
-- **THEN** negative offsets MUST look backward in time
-- **AND** positive offsets MUST look forward in time
-- **AND** return `None` if the resulting index is out of bounds
-
-#### Scenario: Get last N values
-
-- **WHEN** calling `window.last_n(n)`
-- **THEN** it MUST return an array view of the last n values ending at current
-- **AND** panic if n exceeds available history
-- **AND** NOT copy the underlying data
-
-#### Scenario: Interpolate to arbitrary time
-
-- **WHEN** calling `window.interpolate(t)`
-- **THEN** it MUST use the timeseries's interpolation strategy
-- **AND** return a Result that may contain interpolation errors
+The system SHALL provide a `TimeseriesWindow` type that provides zero-cost access to scalar timeseries data with temporal navigation, including explicit timestep-semantic methods.
 
 ### Requirement: GridTimeseriesWindow for Grid Access
 
-The system SHALL provide a `GridTimeseriesWindow<G>` type that provides zero-cost access to grid timeseries data with both temporal and spatial navigation.
+The system SHALL provide a `GridTimeseriesWindow<G>` type that provides zero-cost access to grid timeseries data with both temporal and spatial navigation, including explicit timestep-semantic methods.
 
-#### Scenario: Get all regional values at current time
+#### Scenario: Get all regional values at start of timestep
 
-- **WHEN** calling `window.current_all()`
-- **THEN** it MUST return a Vec containing values for all regions
-- **AND** the length MUST equal `grid.size()`
+- **WHEN** calling `window.current_all_at_start()`
+- **THEN** it MUST return a Vec containing values for all regions at index N
 
-#### Scenario: Get previous all regional values
+#### Scenario: Get all regional values at end of timestep
 
-- **WHEN** calling `window.previous_all()`
-- **THEN** it MUST return `Some(Vec)` with all regional values from previous timestep
-- **AND** return `None` if at the first timestep
-
-#### Scenario: Get global aggregate at current time
-
-- **WHEN** calling `window.current_global()`
-- **THEN** it MUST return the weighted aggregate of all regions
-- **AND** use the grid's weights for aggregation
-
-#### Scenario: Interpolate all regions to arbitrary time
-
-- **WHEN** calling `window.interpolate_all(t)`
-- **THEN** it MUST interpolate each region independently
-- **AND** return a Vec with interpolated values for all regions
+- **WHEN** calling `window.current_all_at_end()`
+- **THEN** it MUST return `Some(Vec)` containing values for all regions at index N+1
+- **AND** return `None` if at the final timestep
 
 ### Requirement: Type-Safe FourBox Window Access
 
@@ -272,3 +193,36 @@ The system SHALL handle exogenous (external input) and endogenous (model-compute
 - **WHEN** accessing an endogenous variable
 - **THEN** the latest computed value MUST be returned
 - **AND** NOT interpolate (use discrete timestep value)
+
+### Requirement: Timestep Access Semantics
+
+The system SHALL provide explicit methods for accessing values at different points within a timestep, reflecting the forward-Euler time-stepping scheme where values at index N represent state at the start of timestep N, and components write outputs to index N+1.
+
+#### Scenario: Access value at start of timestep
+
+- **WHEN** calling `window.at_start()`
+- **THEN** it MUST return the value at the current timestep index (N)
+- **AND** NOT allocate memory
+
+#### Scenario: Access value at end of timestep
+
+- **WHEN** calling `window.at_end()`
+- **THEN** it MUST return the value at the next timestep index (N+1)
+- **AND** return the same value as `at_offset(1)`
+- **AND** return `None` if at the final timestep (no N+1 exists)
+
+#### Scenario: Guidance for state variable initial conditions
+
+- **WHEN** a component reads its own state variable (appears in both inputs and outputs)
+- **THEN** it SHOULD use `at_start()` because the N+1 slot has not been written yet
+
+#### Scenario: Guidance for upstream component outputs
+
+- **WHEN** a component reads an output from an upstream component in the dependency graph
+- **THEN** it SHOULD use `at_end()` to get the value just computed by the upstream component
+
+#### Scenario: Guidance for exogenous inputs
+
+- **WHEN** a component reads exogenous (externally provided) input data
+- **THEN** it SHOULD use `at_start()` for the value at the start of the timestep
+- **OR** use `interpolate(t)` for values at intermediate times during ODE integration

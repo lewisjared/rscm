@@ -121,8 +121,18 @@ class TimeseriesWindow:
     current_index: int
 
     def __init__(self, values: list[float], current_index: int) -> None: ...
-    @property
-    def current(self) -> float: ...
+    def at_start(self) -> float:
+        """Get value at start of timestep (index N).
+
+        Use for state variables and exogenous inputs.
+        """
+        ...
+    def at_end(self) -> float | None:
+        """Get value at end of timestep (index N+1), if available.
+
+        Use for upstream component outputs. Returns None at last timestep.
+        """
+        ...
     @property
     def previous(self) -> float: ...
     def at_offset(self, offset: int) -> float: ...
@@ -137,8 +147,27 @@ class FourBoxTimeseriesWindow:
     current_index: int
 
     def __init__(self, values: list[list[float]], current_index: int) -> None: ...
-    @property
-    def current(self) -> FourBoxSlice: ...
+    def at_start(self, region: int) -> float:
+        """Get region value at start of timestep (index N).
+
+        Use for state variables and exogenous inputs.
+        """
+        ...
+    def at_end(self, region: int) -> float | None:
+        """Get region value at end of timestep (index N+1), if available.
+
+        Use for upstream component outputs. Returns None at last timestep.
+        """
+        ...
+    def current_all_at_start(self) -> FourBoxSlice:
+        """Get all regional values at start of timestep (index N)."""
+        ...
+    def current_all_at_end(self) -> FourBoxSlice | None:
+        """Get all regional values at end of timestep (index N+1), if available.
+
+        Returns None at last timestep.
+        """
+        ...
     @property
     def previous(self) -> FourBoxSlice: ...
     def region(self, region: int) -> TimeseriesWindow: ...
@@ -151,8 +180,27 @@ class HemisphericTimeseriesWindow:
     current_index: int
 
     def __init__(self, values: list[list[float]], current_index: int) -> None: ...
-    @property
-    def current(self) -> HemisphericSlice: ...
+    def at_start(self, region: int) -> float:
+        """Get region value at start of timestep (index N).
+
+        Use for state variables and exogenous inputs.
+        """
+        ...
+    def at_end(self, region: int) -> float | None:
+        """Get region value at end of timestep (index N+1), if available.
+
+        Use for upstream component outputs. Returns None at last timestep.
+        """
+        ...
+    def current_all_at_start(self) -> HemisphericSlice:
+        """Get all regional values at start of timestep (index N)."""
+        ...
+    def current_all_at_end(self) -> HemisphericSlice | None:
+        """Get all regional values at end of timestep (index N+1), if available.
+
+        Returns None at last timestep.
+        """
+        ...
     @property
     def previous(self) -> HemisphericSlice: ...
     def region(self, region: int) -> TimeseriesWindow: ...

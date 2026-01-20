@@ -374,7 +374,6 @@ mod tests {
     use ndarray::array;
 
     #[test]
-    #[allow(deprecated)]
     fn solve() {
         let component = TestComponent::from_parameters(TestComponentParameters {
             conversion_factor: 2.0,
@@ -394,7 +393,7 @@ mod tests {
 
         // current() returns the value at the index corresponding to current_time (index 0)
         assert_eq!(
-            input_state.get_scalar_window("Emissions|CO2").current(),
+            input_state.get_scalar_window("Emissions|CO2").at_start(),
             1.1
         );
 

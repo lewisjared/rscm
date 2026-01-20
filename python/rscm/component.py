@@ -445,7 +445,7 @@ class Component(metaclass=ComponentMeta):
             self.factor = factor
 
         def solve(self, t_current, t_next, inputs):
-            return self.Outputs(concentration=inputs.emissions.current() * self.factor)
+            return self.Outputs(concentration=inputs.emissions.at_start() * self.factor)
     ```
 
     To exclude a component from the registry (e.g., for abstract base classes):

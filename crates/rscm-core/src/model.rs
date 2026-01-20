@@ -566,13 +566,15 @@ impl ModelBuilder {
                     self.schema.is_some(),
                 )?;
 
-                if exogenous.contains(&requirement.name) {
+                if let Some(&producer_node) = endrogoneous.get(&requirement.name) {
                     // Link to the node that provides the requirement
-                    graph.add_edge(endrogoneous[&requirement.name], node, requirement.clone());
+                    graph.add_edge(producer_node, node, requirement.clone());
                     has_dependencies = true;
                 } else {
                     // Add a new variable that must be defined outside of the model
-                    exogenous.push(requirement.name.clone())
+                    if !exogenous.contains(&requirement.name) {
+                        exogenous.push(requirement.name.clone());
+                    }
                 }
             }
 
@@ -1294,7 +1296,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 input_state: &InputState,
             ) -> RSCMResult<OutputState> {
                 use crate::state::StateValue;
-                let temp = input_state.get_scalar_window("Temperature").current();
+                let temp = input_state.get_scalar_window("Temperature").at_start();
                 let mut output = OutputState::new();
                 output.insert("Result".to_string(), StateValue::Scalar(temp * 2.0));
                 Ok(output)
@@ -1652,7 +1654,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
             ) -> RSCMResult<OutputState> {
                 let conc = input_state
                     .get_scalar_window("Concentrations|CO2")
-                    .current();
+                    .at_start();
                 let mut output = OutputState::new();
                 output.insert(
                     "ERF|CO2".to_string(),
@@ -1685,7 +1687,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
             ) -> RSCMResult<OutputState> {
                 let conc = input_state
                     .get_scalar_window("Concentrations|CH4")
-                    .current();
+                    .at_start();
                 let mut output = OutputState::new();
                 output.insert(
                     "ERF|CH4".to_string(),
@@ -2223,7 +2225,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 _t_next: Time,
                 input_state: &InputState,
             ) -> RSCMResult<OutputState> {
-                let value = input_state.get_scalar_window(&self.input_var).current();
+                let value = input_state.get_scalar_window(&self.input_var).at_start();
                 let mut output = OutputState::new();
                 output.insert(self.output_var.clone(), StateValue::Scalar(value * 2.0));
                 Ok(output)

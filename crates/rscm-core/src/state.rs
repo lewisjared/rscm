@@ -15,14 +15,29 @@ use std::collections::HashMap;
 /// values without copying data. This is the primary way components access their input
 /// variables.
 ///
+/// # Timestep Access Semantics
+///
+/// Components must explicitly choose which timestep index to read from:
+/// - [`at_start()`](Self::at_start) - Value at index N (start of timestep). Use for:
+///   - State variables (your own previous state)
+///   - Exogenous inputs (external forcing data)
+/// - [`at_end()`](Self::at_end) - Value at index N+1 (written this timestep). Use for:
+///   - Upstream component outputs (values written before your component ran)
+///   - Aggregation (combining outputs from multiple components)
+///
 /// # Examples
 ///
 /// ```ignore
 /// fn solve(&self, inputs: MyComponentInputs) -> MyComponentOutputs {
-///     let current_co2 = inputs.emissions_co2.current();
-///     let previous_co2 = inputs.emissions_co2.previous();
+///     // Read exogenous input at start of timestep
+///     let emissions = inputs.emissions_co2.at_start();
+///
+///     // Read previous value for derivative calculation
+///     let previous = inputs.emissions_co2.previous();
+///     let derivative = (emissions - previous.unwrap_or(emissions)) / dt;
+///
+///     // Access historical values
 ///     let last_5 = inputs.emissions_co2.last_n(5);
-///     let derivative = (current_co2 - previous_co2.unwrap_or(current_co2)) / dt;
 ///     // ...
 /// }
 /// ```
@@ -53,13 +68,99 @@ impl<'a> TimeseriesWindow<'a> {
         }
     }
 
-    /// Get the value at the current timestep.
+    /// Get the value at the start of the timestep (index N).
     ///
-    /// This is the most common operation - getting the current value of an input.
-    pub fn current(&self) -> FloatValue {
+    /// This is the primary accessor for reading input values. The "start of timestep"
+    /// refers to the state before any components have executed during this timestep.
+    ///
+    /// # When to use `at_start()`
+    ///
+    /// - **State variables**: Reading your own component's state from the previous solve
+    ///   (e.g., temperature at the beginning of the timestep before you update it)
+    /// - **Exogenous inputs**: External forcing data that was pre-populated before the
+    ///   model run (e.g., emissions scenarios, solar irradiance)
+    /// - **Any input where you need the value at index N**
+    ///
+    /// # Execution order context
+    ///
+    /// Components execute in dependency order. When your component runs:
+    /// - Index N contains values from before this timestep started
+    /// - Index N+1 may contain values written by upstream components (use [`at_end()`])
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
+    ///     let inputs = MyComponentInputs::from_input_state(input_state);
+    ///
+    ///     // Read state variable (your own previous output)
+    ///     let prev_temperature = inputs.temperature.at_start();
+    ///
+    ///     // Read exogenous forcing
+    ///     let emissions = inputs.emissions.at_start();
+    ///
+    ///     // Compute new state
+    ///     let new_temperature = prev_temperature + emissions * self.sensitivity;
+    ///     // ...
+    /// }
+    /// ```
+    ///
+    /// [`at_end()`]: TimeseriesWindow::at_end
+    pub fn at_start(&self) -> FloatValue {
         self.timeseries
             .at(self.current_index, ScalarRegion::Global)
             .expect("Current index out of bounds")
+    }
+
+    /// Get the value at the end of the timestep (index N+1), if available.
+    ///
+    /// This accessor reads values that were written during the current timestep by
+    /// components that executed before you in the dependency order.
+    ///
+    /// # When to use `at_end()`
+    ///
+    /// - **Upstream component outputs**: When you depend on another component's output
+    ///   from this timestep (they ran before you and wrote to index N+1)
+    /// - **Aggregation**: Combining outputs from multiple components that all wrote
+    ///   during the current timestep
+    ///
+    /// # Returns
+    ///
+    /// - `Some(value)` if index N+1 exists in the timeseries
+    /// - `None` if at the last timestep (index N+1 is out of bounds)
+    ///
+    /// # Execution order context
+    ///
+    /// The model solves components in dependency order. Upstream components write their
+    /// outputs to index N+1 before downstream components run. This method lets you read
+    /// those freshly-written values.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
+    ///     let inputs = MyComponentInputs::from_input_state(input_state);
+    ///
+    ///     // Read upstream component output (written this timestep)
+    ///     // Fall back to start value if at final timestep
+    ///     let erf = inputs.effective_radiative_forcing
+    ///         .at_end()
+    ///         .unwrap_or_else(|| inputs.effective_radiative_forcing.at_start());
+    ///
+    ///     // Use the forcing to compute temperature response
+    ///     let temp_change = erf * self.climate_sensitivity;
+    ///     // ...
+    /// }
+    /// ```
+    ///
+    /// [`at_start()`]: TimeseriesWindow::at_start
+    pub fn at_end(&self) -> Option<FloatValue> {
+        let next_index = self.current_index + 1;
+        if next_index >= self.timeseries.len() {
+            None
+        } else {
+            self.timeseries.at(next_index, ScalarRegion::Global)
+        }
     }
 
     /// Get the value at the previous timestep, if available.
@@ -162,15 +263,19 @@ impl<'a> TimeseriesWindow<'a> {
 ///
 /// * `G` - The spatial grid type (e.g., `FourBoxGrid`, `HemisphericGrid`)
 ///
+/// # Timestep Access Semantics
+///
+/// See [`TimeseriesWindow`] for detailed guidance on when to use `at_start()` vs `at_end()`.
+///
 /// # Examples
 ///
 /// ```ignore
 /// fn solve(&self, inputs: MyComponentInputs) -> MyComponentOutputs {
-///     // Access individual regions
-///     let northern_ocean = inputs.temperature.current(FourBoxRegion::NorthernOcean);
+///     // Access individual regions at start of timestep
+///     let northern_ocean = inputs.temperature.at_start(FourBoxRegion::NorthernOcean);
 ///
 ///     // Get all regions at once
-///     let all_temps = inputs.temperature.current_all();
+///     let all_temps = inputs.temperature.current_all_at_start();
 ///
 ///     // Compute global aggregate
 ///     let global_temp = inputs.temperature.current_global();
@@ -203,11 +308,55 @@ where
         }
     }
 
-    /// Get all regional values at the current timestep.
-    pub fn current_all(&self) -> Vec<FloatValue> {
+    /// Get all regional values at the start of the timestep (index N).
+    ///
+    /// Returns values for all regions in the grid at the beginning of the timestep,
+    /// before any components have executed during this timestep.
+    ///
+    /// # When to use
+    ///
+    /// - **State variables**: Reading your component's previous regional state
+    /// - **Exogenous inputs**: External forcing data pre-populated before the run
+    ///
+    /// See [`TimeseriesWindow::at_start()`] for detailed execution order semantics.
+    pub fn current_all_at_start(&self) -> Vec<FloatValue> {
         self.timeseries
             .at_time_index(self.current_index)
             .expect("Current index out of bounds")
+    }
+
+    /// Get all regional values at the end of the timestep (index N+1), if available.
+    ///
+    /// Returns values for all regions written during the current timestep by upstream
+    /// components that executed before you.
+    ///
+    /// # When to use
+    ///
+    /// - **Upstream component outputs**: Regional values written by components that ran before you
+    /// - **Aggregation**: Combining regional outputs from multiple components in the same timestep
+    ///
+    /// # Returns
+    ///
+    /// - `Some(Vec<FloatValue>)` with values for all regions if index N+1 exists
+    /// - `None` if at the last timestep
+    ///
+    /// See [`TimeseriesWindow::at_end()`] for detailed execution order semantics.
+    pub fn current_all_at_end(&self) -> Option<Vec<FloatValue>> {
+        let next_index = self.current_index + 1;
+        if next_index >= self.timeseries.len() {
+            None
+        } else {
+            self.timeseries.at_time_index(next_index)
+        }
+    }
+
+    /// Get all regional values at the current timestep.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use `current_all_at_start()` or `current_all_at_end()` based on variable semantics."
+    )]
+    pub fn current_all(&self) -> Vec<FloatValue> {
+        self.current_all_at_start()
     }
 
     /// Get all regional values at the previous timestep.
@@ -265,11 +414,40 @@ where
 
 /// Type-safe accessors for FourBoxGrid windows
 impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
-    /// Get a single region's value at the current timestep.
-    pub fn current(&self, region: FourBoxRegion) -> FloatValue {
+    /// Get a single region's value at the start of the timestep (index N).
+    ///
+    /// See [`TimeseriesWindow::at_start()`] for detailed semantics on when to use this method.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let inputs = MyComponentInputs::from_input_state(input_state);
+    /// let northern_ocean_temp = inputs.temperature.at_start(FourBoxRegion::NorthernOcean);
+    /// ```
+    pub fn at_start(&self, region: FourBoxRegion) -> FloatValue {
         self.timeseries
             .at(self.current_index, region)
             .expect("Current index out of bounds")
+    }
+
+    /// Get a single region's value at the end of the timestep (index N+1), if available.
+    ///
+    /// See [`TimeseriesWindow::at_end()`] for detailed semantics on when to use this method.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Read upstream forcing written this timestep
+    /// let erf = inputs.erf.at_end(FourBoxRegion::NorthernOcean)
+    ///     .unwrap_or_else(|| inputs.erf.at_start(FourBoxRegion::NorthernOcean));
+    /// ```
+    pub fn at_end(&self, region: FourBoxRegion) -> Option<FloatValue> {
+        let next_index = self.current_index + 1;
+        if next_index >= self.timeseries.len() {
+            None
+        } else {
+            self.timeseries.at(next_index, region)
+        }
     }
 
     /// Get a single region's value at the previous timestep.
@@ -281,11 +459,11 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
         }
     }
 
-    /// Get the global aggregate at the current timestep.
+    /// Get the global aggregate at the start of the timestep (index N).
     ///
     /// Uses the grid's weights to compute a weighted average of all regions.
     pub fn current_global(&self) -> FloatValue {
-        let values = self.current_all();
+        let values = self.current_all_at_start();
         self.timeseries.grid().aggregate_global(&values)
     }
 
@@ -303,11 +481,25 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
 
 /// Type-safe accessors for HemisphericGrid windows
 impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
-    /// Get a single region's value at the current timestep.
-    pub fn current(&self, region: HemisphericRegion) -> FloatValue {
+    /// Get a single region's value at the start of the timestep (index N).
+    ///
+    /// See [`TimeseriesWindow::at_start()`] for detailed semantics on when to use this method.
+    pub fn at_start(&self, region: HemisphericRegion) -> FloatValue {
         self.timeseries
             .at(self.current_index, region)
             .expect("Current index out of bounds")
+    }
+
+    /// Get a single region's value at the end of the timestep (index N+1), if available.
+    ///
+    /// See [`TimeseriesWindow::at_end()`] for detailed semantics on when to use this method.
+    pub fn at_end(&self, region: HemisphericRegion) -> Option<FloatValue> {
+        let next_index = self.current_index + 1;
+        if next_index >= self.timeseries.len() {
+            None
+        } else {
+            self.timeseries.at(next_index, region)
+        }
     }
 
     /// Get a single region's value at the previous timestep.
@@ -319,9 +511,9 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
         }
     }
 
-    /// Get the global aggregate at the current timestep.
+    /// Get the global aggregate at the start of the timestep (index N).
     pub fn current_global(&self) -> FloatValue {
-        let values = self.current_all();
+        let values = self.current_all_at_start();
         self.timeseries.grid().aggregate_global(&values)
     }
 
@@ -339,11 +531,25 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
 
 /// Type-safe accessors for ScalarGrid windows (convenience wrapper)
 impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
-    /// Get the current scalar value.
-    pub fn current(&self) -> FloatValue {
+    /// Get the scalar value at the start of the timestep (index N).
+    ///
+    /// See [`TimeseriesWindow::at_start()`] for detailed semantics on when to use this method.
+    pub fn at_start(&self) -> FloatValue {
         self.timeseries
             .at(self.current_index, ScalarRegion::Global)
             .expect("Current index out of bounds")
+    }
+
+    /// Get the scalar value at the end of the timestep (index N+1), if available.
+    ///
+    /// See [`TimeseriesWindow::at_end()`] for detailed semantics on when to use this method.
+    pub fn at_end(&self) -> Option<FloatValue> {
+        let next_index = self.current_index + 1;
+        if next_index >= self.timeseries.len() {
+            None
+        } else {
+            self.timeseries.at(next_index, ScalarRegion::Global)
+        }
     }
 
     /// Get the previous scalar value.
@@ -919,9 +1125,9 @@ mod tests {
         // Use a time that exists in the time axis
         let state = InputState::build(vec![&item], 2001.0);
 
-        // current() returns value at index corresponding to current_time (index 1)
+        // at_start() returns value at index corresponding to current_time (index 1)
         assert_eq!(state.get_global("CO2"), Some(285.0));
-        assert_eq!(state.get_scalar_window("CO2").current(), 285.0);
+        assert_eq!(state.get_scalar_window("CO2").at_start(), 285.0);
     }
 
     #[test]
@@ -956,9 +1162,9 @@ mod tests {
         // Use a time that exists in the time axis
         let state = InputState::build(vec![&item], 2001.0);
 
-        // Test get_four_box_window returns current values at index 1
+        // Test get_four_box_window returns values at index 1 using at_start()
         let window = state.get_four_box_window("Temperature");
-        let values = window.current_all();
+        let values = window.current_all_at_start();
         assert_eq!(values, [16.0, 15.0, 11.0, 10.0]);
 
         // Test get_global aggregates using weights (equal weights = mean)
@@ -1106,13 +1312,39 @@ mod timeseries_window_tests {
     }
 
     #[test]
-    fn test_timeseries_window_current() {
+    fn test_timeseries_window_at_start() {
         let ts = create_scalar_timeseries();
         let window = TimeseriesWindow::new(&ts, 2, 2002.0);
 
-        assert_eq!(window.current(), 3.0);
+        // at_start() returns value at index N (the current index)
+        assert_eq!(window.at_start(), 3.0);
         assert_eq!(window.time(), 2002.0);
         assert_eq!(window.index(), 2);
+
+        // At index 0
+        let window_start = TimeseriesWindow::new(&ts, 0, 2000.0);
+        assert_eq!(window_start.at_start(), 1.0);
+
+        // At last index
+        let window_end = TimeseriesWindow::new(&ts, 4, 2004.0);
+        assert_eq!(window_end.at_start(), 5.0);
+    }
+
+    #[test]
+    fn test_timeseries_window_at_end() {
+        let ts = create_scalar_timeseries();
+
+        // At index 2, at_end() should return value at index 3
+        let window = TimeseriesWindow::new(&ts, 2, 2002.0);
+        assert_eq!(window.at_end(), Some(4.0));
+
+        // At index 0, at_end() should return value at index 1
+        let window_start = TimeseriesWindow::new(&ts, 0, 2000.0);
+        assert_eq!(window_start.at_end(), Some(2.0));
+
+        // At last index, at_end() should return None (out of bounds)
+        let window_end = TimeseriesWindow::new(&ts, 4, 2004.0);
+        assert_eq!(window_end.at_end(), None);
     }
 
     #[test]
@@ -1220,23 +1452,83 @@ mod grid_timeseries_window_tests {
     }
 
     #[test]
-    fn test_grid_window_current() {
+    fn test_grid_window_at_start() {
         let ts = create_four_box_timeseries();
         let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
 
-        assert_eq!(window.current(FourBoxRegion::NorthernOcean), 16.0);
-        assert_eq!(window.current(FourBoxRegion::NorthernLand), 15.0);
-        assert_eq!(window.current(FourBoxRegion::SouthernOcean), 11.0);
-        assert_eq!(window.current(FourBoxRegion::SouthernLand), 10.0);
+        // at_start() returns value at index N (the current index)
+        assert_eq!(window.at_start(FourBoxRegion::NorthernOcean), 16.0);
+        assert_eq!(window.at_start(FourBoxRegion::NorthernLand), 15.0);
+        assert_eq!(window.at_start(FourBoxRegion::SouthernOcean), 11.0);
+        assert_eq!(window.at_start(FourBoxRegion::SouthernLand), 10.0);
+
+        // At first index
+        let window_start = GridTimeseriesWindow::new(&ts, 0, 2000.0);
+        assert_eq!(window_start.at_start(FourBoxRegion::NorthernOcean), 15.0);
+
+        // At last index
+        let window_end = GridTimeseriesWindow::new(&ts, 2, 2002.0);
+        assert_eq!(window_end.at_start(FourBoxRegion::NorthernOcean), 17.0);
     }
 
     #[test]
+    fn test_grid_window_at_end() {
+        let ts = create_four_box_timeseries();
+
+        // At index 1, at_end() should return value at index 2
+        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
+        assert_eq!(
+            window.at_end(FourBoxRegion::NorthernOcean),
+            Some(17.0) // 2002 value
+        );
+
+        // At index 0, at_end() should return value at index 1
+        let window_start = GridTimeseriesWindow::new(&ts, 0, 2000.0);
+        assert_eq!(
+            window_start.at_end(FourBoxRegion::NorthernOcean),
+            Some(16.0)
+        );
+
+        // At last index, at_end() should return None (out of bounds)
+        let window_end = GridTimeseriesWindow::new(&ts, 2, 2002.0);
+        assert_eq!(window_end.at_end(FourBoxRegion::NorthernOcean), None);
+    }
+
+    #[test]
+    fn test_grid_window_current_all_at_start() {
+        let ts = create_four_box_timeseries();
+        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
+
+        let all = window.current_all_at_start();
+        assert_eq!(all, vec![16.0, 15.0, 11.0, 10.0]);
+    }
+
+    #[test]
+    fn test_grid_window_current_all_at_end() {
+        let ts = create_four_box_timeseries();
+
+        // At index 1, at_end returns values at index 2
+        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
+        assert_eq!(
+            window.current_all_at_end(),
+            Some(vec![17.0, 16.0, 12.0, 11.0])
+        );
+
+        // At last index, returns None
+        let window_end = GridTimeseriesWindow::new(&ts, 2, 2002.0);
+        assert_eq!(window_end.current_all_at_end(), None);
+    }
+
+    #[test]
+    #[allow(deprecated)]
     fn test_grid_window_current_all() {
         let ts = create_four_box_timeseries();
         let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
 
+        // current_all() is deprecated alias for current_all_at_start()
         let all = window.current_all();
         assert_eq!(all, vec![16.0, 15.0, 11.0, 10.0]);
+        assert_eq!(all, window.current_all_at_start());
     }
 
     #[test]
@@ -1516,8 +1808,8 @@ mod input_state_window_tests {
 
         let window = state.get_scalar_window("CO2");
 
-        // current() returns the value at the index corresponding to current_time
-        assert_eq!(window.current(), 290.0);
+        // at_start() returns the value at the index corresponding to current_time
+        assert_eq!(window.at_start(), 290.0);
         assert_eq!(window.previous(), Some(285.0));
         assert_eq!(window.len(), 5);
     }
@@ -1530,10 +1822,10 @@ mod input_state_window_tests {
 
         let window = state.get_four_box_window("Temperature");
 
-        // current() returns values at index 1 (2001 values: [16.0, 15.0, 11.0, 10.0])
-        assert_eq!(window.current(FourBoxRegion::NorthernOcean), 16.0);
-        assert_eq!(window.current(FourBoxRegion::SouthernLand), 10.0);
-        assert_eq!(window.current_all(), vec![16.0, 15.0, 11.0, 10.0]);
+        // at_start() returns values at index 1 (2001 values: [16.0, 15.0, 11.0, 10.0])
+        assert_eq!(window.at_start(FourBoxRegion::NorthernOcean), 16.0);
+        assert_eq!(window.at_start(FourBoxRegion::SouthernLand), 10.0);
+        assert_eq!(window.current_all_at_start(), vec![16.0, 15.0, 11.0, 10.0]);
         // previous is index 0 (2000 values: [15.0, 14.0, 10.0, 9.0])
         assert_eq!(window.previous_all(), Some(vec![15.0, 14.0, 10.0, 9.0]));
     }
@@ -1546,9 +1838,9 @@ mod input_state_window_tests {
 
         let window = state.get_hemispheric_window("Precipitation");
 
-        // current() returns values at index 1 (2001 values: [1100.0, 550.0])
-        assert_eq!(window.current(HemisphericRegion::Northern), 1100.0);
-        assert_eq!(window.current(HemisphericRegion::Southern), 550.0);
+        // at_start() returns values at index 1 (2001 values: [1100.0, 550.0])
+        assert_eq!(window.at_start(HemisphericRegion::Northern), 1100.0);
+        assert_eq!(window.at_start(HemisphericRegion::Southern), 550.0);
         assert_eq!(window.current_global(), 825.0); // Equal weights mean
     }
 

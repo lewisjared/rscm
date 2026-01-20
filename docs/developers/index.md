@@ -80,7 +80,7 @@ class MyComponent(Component):
     y = Output("Output Variable", unit="unit")
 
     def solve(self, t_current, t_next, inputs):
-        return self.Outputs(y=inputs.x.current * 2)
+        return self.Outputs(y=inputs.x.at_start() * 2)
 ```
 
 See the [Python Components Tutorial](../notebooks/component_python.py) for details.
@@ -112,7 +112,7 @@ impl Component for MyComponent {
     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
         let inputs = MyComponentInputs::from_input_state(input_state);
         let outputs = MyComponentOutputs {
-            temperature: inputs.forcing.current() * self.sensitivity,
+            temperature: inputs.forcing.at_start() * self.sensitivity,
         };
         Ok(outputs.into())
     }
