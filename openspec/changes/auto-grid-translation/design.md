@@ -89,9 +89,11 @@ Similar to `AggregatorComponent`, `GridTransformerComponent` is a virtual compon
 
 - **Input**: Variable at native resolution
 - **Output**: Variable at requested resolution (with internal naming like `"VarName|_to_scalar"`)
-- **Execution**: Reads native grid, applies `transform_to()`, writes coarser grid
+- **Execution**: Reads native grid using `at_end()` (falling back to `at_start()` at final timestep), applies `transform_to()`, writes coarser grid
 
 These appear in the component graph (`.to_dot()`) for debugging.
+
+**Timestep semantics:** The transformer uses `at_end()` because it reads from an upstream component's output. The upstream component writes to index N+1 during timestep N, so the transformer must read from N+1 to get the freshly computed value. At the final timestep, N+1 doesn't exist, so it falls back to `at_start()` (index N).
 
 ### Transformation Caching
 

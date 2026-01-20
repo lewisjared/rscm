@@ -90,6 +90,12 @@ The system SHALL provide a virtual component for performing grid transformations
 - **THEN** a `GridTransformerComponent` node MUST appear in the component graph
 - **AND** it MUST have an edge from the component that produces the native-resolution variable
 
+#### Scenario: Timestep access semantics
+
+- **WHEN** the transformer reads from the native-resolution variable
+- **THEN** it MUST use `at_end()` to read the value written by the upstream component this timestep
+- **AND** fall back to `at_start()` if at the final timestep (when `at_end()` returns `None`)
+
 #### Scenario: Transformer naming convention
 
 - **WHEN** a transformer aggregates variable "Temperature" to Scalar
