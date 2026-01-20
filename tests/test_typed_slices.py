@@ -434,30 +434,30 @@ class TestFourBoxTimeseriesWindow:
         with pytest.raises(ValueError, match="Invalid region index"):
             w.at_end(4)
 
-    def test_current_all_at_start(self):
-        """Test current_all_at_start returns FourBoxSlice at current index."""
+    def test_at_start_all(self):
+        """Test at_start_all returns FourBoxSlice at current index."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8]]
         w = FourBoxTimeseriesWindow(values, 1)
-        slice_at_start = w.current_all_at_start()
+        slice_at_start = w.at_start_all()
         assert slice_at_start.northern_ocean == 5.0
         assert slice_at_start.northern_land == 6.0
         assert slice_at_start.southern_ocean == 7.0
         assert slice_at_start.southern_land == 8.0
 
-    def test_current_all_at_end(self):
-        """Test current_all_at_end returns FourBoxSlice at next index."""
+    def test_at_end_all(self):
+        """Test at_end_all returns FourBoxSlice at next index."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]
         w = FourBoxTimeseriesWindow(values, 1)
-        slice_at_end = w.current_all_at_end()
+        slice_at_end = w.at_end_all()
         assert slice_at_end is not None
         assert slice_at_end.northern_ocean == 9.0
         assert slice_at_end.southern_land == 12.0
 
-    def test_current_all_at_end_returns_none_at_last_timestep(self):
-        """Test current_all_at_end returns None when at last timestep."""
+    def test_at_end_all_returns_none_at_last_timestep(self):
+        """Test at_end_all returns None when at last timestep."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8]]
         w = FourBoxTimeseriesWindow(values, 1)
-        assert w.current_all_at_end() is None
+        assert w.at_end_all() is None
 
 
 class TestHemisphericTimeseriesWindow:
@@ -519,28 +519,28 @@ class TestHemisphericTimeseriesWindow:
         with pytest.raises(ValueError, match="Invalid region index"):
             w.at_end(2)
 
-    def test_current_all_at_start(self):
-        """Test current_all_at_start returns HemisphericSlice at current index."""
+    def test_at_start_all(self):
+        """Test at_start_all returns HemisphericSlice at current index."""
         values = [[1, 2], [3, 4]]
         w = HemisphericTimeseriesWindow(values, 1)
-        slice_at_start = w.current_all_at_start()
+        slice_at_start = w.at_start_all()
         assert slice_at_start.northern == 3.0
         assert slice_at_start.southern == 4.0
 
-    def test_current_all_at_end(self):
-        """Test current_all_at_end returns HemisphericSlice at next index."""
+    def test_at_end_all(self):
+        """Test at_end_all returns HemisphericSlice at next index."""
         values = [[1, 2], [3, 4], [5, 6]]
         w = HemisphericTimeseriesWindow(values, 1)
-        slice_at_end = w.current_all_at_end()
+        slice_at_end = w.at_end_all()
         assert slice_at_end is not None
         assert slice_at_end.northern == 5.0
         assert slice_at_end.southern == 6.0
 
-    def test_current_all_at_end_returns_none_at_last_timestep(self):
-        """Test current_all_at_end returns None when at last timestep."""
+    def test_at_end_all_returns_none_at_last_timestep(self):
+        """Test at_end_all returns None when at last timestep."""
         values = [[1, 2], [3, 4]]
         w = HemisphericTimeseriesWindow(values, 1)
-        assert w.current_all_at_end() is None
+        assert w.at_end_all() is None
 
 
 class TestRequirementDefinitionWithGridType:

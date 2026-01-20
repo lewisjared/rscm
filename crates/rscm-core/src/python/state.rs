@@ -487,6 +487,8 @@ impl PyTimeseriesWindow {
     }
 
     /// Get the previous value (at current_index - 1)
+    ///
+    /// Deprecated: Use `at_offset(-1)` for consistent timestep-relative access.
     #[getter]
     fn previous(&self) -> PyResult<FloatValue> {
         if self.current_index == 0 {
@@ -621,7 +623,7 @@ impl PyFourBoxTimeseriesWindow {
     }
 
     /// Get all regional values at the start of the timestep (index N).
-    fn current_all_at_start(&self) -> PyResult<PyFourBoxSlice> {
+    fn at_start_all(&self) -> PyResult<PyFourBoxSlice> {
         self.values
             .get(self.current_index)
             .map(|v| PyFourBoxSlice(FourBoxSlice::from_array(*v)))
@@ -631,7 +633,7 @@ impl PyFourBoxTimeseriesWindow {
     /// Get all regional values at the end of the timestep (index N+1), if available.
     ///
     /// Returns None if at the last timestep.
-    fn current_all_at_end(&self) -> Option<PyFourBoxSlice> {
+    fn at_end_all(&self) -> Option<PyFourBoxSlice> {
         let next_index = self.current_index + 1;
         self.values
             .get(next_index)
@@ -639,6 +641,8 @@ impl PyFourBoxTimeseriesWindow {
     }
 
     /// Get the previous slice as FourBoxSlice
+    ///
+    /// Deprecated: Use `region(i).at_offset(-1)` for consistent timestep-relative access.
     #[getter]
     fn previous(&self) -> PyResult<PyFourBoxSlice> {
         if self.current_index == 0 {
@@ -747,7 +751,7 @@ impl PyHemisphericTimeseriesWindow {
     }
 
     /// Get all regional values at the start of the timestep (index N).
-    fn current_all_at_start(&self) -> PyResult<PyHemisphericSlice> {
+    fn at_start_all(&self) -> PyResult<PyHemisphericSlice> {
         self.values
             .get(self.current_index)
             .map(|v| PyHemisphericSlice(HemisphericSlice::from_array(*v)))
@@ -757,7 +761,7 @@ impl PyHemisphericTimeseriesWindow {
     /// Get all regional values at the end of the timestep (index N+1), if available.
     ///
     /// Returns None if at the last timestep.
-    fn current_all_at_end(&self) -> Option<PyHemisphericSlice> {
+    fn at_end_all(&self) -> Option<PyHemisphericSlice> {
         let next_index = self.current_index + 1;
         self.values
             .get(next_index)
@@ -765,6 +769,8 @@ impl PyHemisphericTimeseriesWindow {
     }
 
     /// Get the previous slice as HemisphericSlice
+    ///
+    /// Deprecated: Use `region(i).at_offset(-1)` for consistent timestep-relative access.
     #[getter]
     fn previous(&self) -> PyResult<PyHemisphericSlice> {
         if self.current_index == 0 {

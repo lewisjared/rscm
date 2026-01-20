@@ -330,7 +330,7 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # | `inputs.field.at_offset(n)` | Value at relative offset |
 # | `inputs.field.last_n(n)` | NumPy array of last n values |
 #
-# For grid inputs, use `current_all_at_start()` / `current_all_at_end()` to get
+# For grid inputs, use `at_start_all()` / `at_end_all()` to get
 # a `FourBoxSlice` or `HemisphericSlice`, or `at_start(region)` / `at_end(region)`
 # for individual regions.
 #

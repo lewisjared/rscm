@@ -275,7 +275,7 @@ impl<'a> TimeseriesWindow<'a> {
 ///     let northern_ocean = inputs.temperature.at_start(FourBoxRegion::NorthernOcean);
 ///
 ///     // Get all regions at once
-///     let all_temps = inputs.temperature.current_all_at_start();
+///     let all_temps = inputs.temperature.at_start_all();
 ///
 ///     // Compute global aggregate
 ///     let global_temp = inputs.temperature.current_global();
@@ -319,7 +319,7 @@ where
     /// - **Exogenous inputs**: External forcing data pre-populated before the run
     ///
     /// See [`TimeseriesWindow::at_start()`] for detailed execution order semantics.
-    pub fn current_all_at_start(&self) -> Vec<FloatValue> {
+    pub fn at_start_all(&self) -> Vec<FloatValue> {
         self.timeseries
             .at_time_index(self.current_index)
             .expect("Current index out of bounds")
@@ -341,7 +341,7 @@ where
     /// - `None` if at the last timestep
     ///
     /// See [`TimeseriesWindow::at_end()`] for detailed execution order semantics.
-    pub fn current_all_at_end(&self) -> Option<Vec<FloatValue>> {
+    pub fn at_end_all(&self) -> Option<Vec<FloatValue>> {
         let next_index = self.current_index + 1;
         if next_index >= self.timeseries.len() {
             None
@@ -353,10 +353,10 @@ where
     /// Get all regional values at the current timestep.
     #[deprecated(
         since = "0.2.0",
-        note = "Use `current_all_at_start()` or `current_all_at_end()` based on variable semantics."
+        note = "Use `at_start_all()` or `at_end_all()` based on variable semantics."
     )]
-    pub fn current_all(&self) -> Vec<FloatValue> {
-        self.current_all_at_start()
+    pub fn all(&self) -> Vec<FloatValue> {
+        self.at_start_all()
     }
 
     /// Get all regional values at the previous timestep.
@@ -463,7 +463,7 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
     ///
     /// Uses the grid's weights to compute a weighted average of all regions.
     pub fn current_global(&self) -> FloatValue {
-        let values = self.current_all_at_start();
+        let values = self.at_start_all();
         self.timeseries.grid().aggregate_global(&values)
     }
 
@@ -513,7 +513,7 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
 
     /// Get the global aggregate at the start of the timestep (index N).
     pub fn current_global(&self) -> FloatValue {
-        let values = self.current_all_at_start();
+        let values = self.at_start_all();
         self.timeseries.grid().aggregate_global(&values)
     }
 
@@ -1164,7 +1164,7 @@ mod tests {
 
         // Test get_four_box_window returns values at index 1 using at_start()
         let window = state.get_four_box_window("Temperature");
-        let values = window.current_all_at_start();
+        let values = window.at_start_all();
         assert_eq!(values, [16.0, 15.0, 11.0, 10.0]);
 
         // Test get_global aggregates using weights (equal weights = mean)
@@ -1495,40 +1495,37 @@ mod grid_timeseries_window_tests {
     }
 
     #[test]
-    fn test_grid_window_current_all_at_start() {
+    fn test_grid_window_at_start_all() {
         let ts = create_four_box_timeseries();
         let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
 
-        let all = window.current_all_at_start();
+        let all = window.at_start_all();
         assert_eq!(all, vec![16.0, 15.0, 11.0, 10.0]);
     }
 
     #[test]
-    fn test_grid_window_current_all_at_end() {
+    fn test_grid_window_at_end_all() {
         let ts = create_four_box_timeseries();
 
         // At index 1, at_end returns values at index 2
         let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
-        assert_eq!(
-            window.current_all_at_end(),
-            Some(vec![17.0, 16.0, 12.0, 11.0])
-        );
+        assert_eq!(window.at_end_all(), Some(vec![17.0, 16.0, 12.0, 11.0]));
 
         // At last index, returns None
         let window_end = GridTimeseriesWindow::new(&ts, 2, 2002.0);
-        assert_eq!(window_end.current_all_at_end(), None);
+        assert_eq!(window_end.at_end_all(), None);
     }
 
     #[test]
     #[allow(deprecated)]
-    fn test_grid_window_current_all() {
+    fn test_grid_window_all() {
         let ts = create_four_box_timeseries();
         let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
 
-        // current_all() is deprecated alias for current_all_at_start()
-        let all = window.current_all();
+        // all() is deprecated alias for at_start_all()
+        let all = window.all();
         assert_eq!(all, vec![16.0, 15.0, 11.0, 10.0]);
-        assert_eq!(all, window.current_all_at_start());
+        assert_eq!(all, window.at_start_all());
     }
 
     #[test]
@@ -1810,6 +1807,7 @@ mod input_state_window_tests {
 
         // at_start() returns the value at the index corresponding to current_time
         assert_eq!(window.at_start(), 290.0);
+        assert_eq!(window.at_end().unwrap(), 295.0);
         assert_eq!(window.previous(), Some(285.0));
         assert_eq!(window.len(), 5);
     }
@@ -1825,7 +1823,7 @@ mod input_state_window_tests {
         // at_start() returns values at index 1 (2001 values: [16.0, 15.0, 11.0, 10.0])
         assert_eq!(window.at_start(FourBoxRegion::NorthernOcean), 16.0);
         assert_eq!(window.at_start(FourBoxRegion::SouthernLand), 10.0);
-        assert_eq!(window.current_all_at_start(), vec![16.0, 15.0, 11.0, 10.0]);
+        assert_eq!(window.at_start_all(), vec![16.0, 15.0, 11.0, 10.0]);
         // previous is index 0 (2000 values: [15.0, 14.0, 10.0, 9.0])
         assert_eq!(window.previous_all(), Some(vec![15.0, 14.0, 10.0, 9.0]));
     }

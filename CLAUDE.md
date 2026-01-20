@@ -194,7 +194,7 @@ The macro generates:
 **For grid-based variables:**
 
 - Use `grid = "FourBox"` or `grid = "Hemispheric"` in the field declaration
-- Access via `inputs.field.at_start(FourBoxRegion::NorthernOcean)` or `inputs.field.current_all_at_start()`
+- Access via `inputs.field.at_start(FourBoxRegion::NorthernOcean)` or `inputs.field.at_start_all()`
 - Output types become `FourBoxSlice` or `HemisphericSlice` for grid outputs
 - The macro automatically wraps grid outputs in `StateValue::FourBox` or `StateValue::Hemispheric`
 - Example:

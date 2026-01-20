@@ -909,9 +909,7 @@ impl Component for AggregatorComponent {
                 for name in &self.contributors {
                     let window = input_state.get_four_box_window(name);
                     // Read from at_end() where upstream values were just written
-                    let values = window
-                        .current_all_at_end()
-                        .unwrap_or_else(|| window.current_all_at_start());
+                    let values = window.at_end_all().unwrap_or_else(|| window.at_start_all());
                     for (i, val) in values.into_iter().enumerate() {
                         region_values[i].push(val);
                     }
@@ -934,9 +932,7 @@ impl Component for AggregatorComponent {
                 for name in &self.contributors {
                     let window = input_state.get_hemispheric_window(name);
                     // Read from at_end() where upstream values were just written
-                    let values = window
-                        .current_all_at_end()
-                        .unwrap_or_else(|| window.current_all_at_start());
+                    let values = window.at_end_all().unwrap_or_else(|| window.at_start_all());
                     for (i, val) in values.into_iter().enumerate() {
                         region_values[i].push(val);
                     }
@@ -1124,7 +1120,7 @@ impl Component for GridTransformerComponent {
             // FourBox → Scalar
             (GridType::FourBox, GridType::Scalar) => {
                 let window = input_state.get_four_box_window(&self.source_var);
-                let values = window.current_all_at_start();
+                let values = window.at_start_all();
                 let grid = self.get_four_box_grid();
                 let scalar = grid.aggregate_global(&values);
                 output.insert(self.output_name(), StateValue::Scalar(scalar));
@@ -1133,7 +1129,7 @@ impl Component for GridTransformerComponent {
             // FourBox → Hemispheric
             (GridType::FourBox, GridType::Hemispheric) => {
                 let window = input_state.get_four_box_window(&self.source_var);
-                let values = window.current_all_at_start();
+                let values = window.at_start_all();
                 let grid = self.get_four_box_grid();
                 let target = self.get_hemispheric_grid();
                 let hemispheric = grid.transform_to(&values, &target)?;
@@ -1149,7 +1145,7 @@ impl Component for GridTransformerComponent {
             // Hemispheric → Scalar
             (GridType::Hemispheric, GridType::Scalar) => {
                 let window = input_state.get_hemispheric_window(&self.source_var);
-                let values = window.current_all_at_start();
+                let values = window.at_start_all();
                 let grid = self.get_hemispheric_grid();
                 let scalar = grid.aggregate_global(&values);
                 output.insert(self.output_name(), StateValue::Scalar(scalar));
@@ -1164,7 +1160,7 @@ impl Component for GridTransformerComponent {
                 }
                 GridType::FourBox => {
                     let window = input_state.get_four_box_window(&self.source_var);
-                    let values = window.current_all_at_start();
+                    let values = window.at_start_all();
                     output.insert(
                         self.output_name(),
                         StateValue::FourBox(FourBoxSlice::from_array([
@@ -1174,7 +1170,7 @@ impl Component for GridTransformerComponent {
                 }
                 GridType::Hemispheric => {
                     let window = input_state.get_hemispheric_window(&self.source_var);
-                    let values = window.current_all_at_start();
+                    let values = window.at_start_all();
                     output.insert(
                         self.output_name(),
                         StateValue::Hemispheric(HemisphericSlice::from_array([

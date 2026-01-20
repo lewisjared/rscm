@@ -486,8 +486,8 @@ value = inputs.regional_temp.at_start(region=0)  # Northern ocean
 value = inputs.regional_temp.at_end(region=1)    # Northern land
 
 # Grid window - all regions at once
-slice = inputs.regional_temp.current_all_at_start()  # Returns FourBoxSlice
-slice = inputs.regional_temp.current_all_at_end()    # Returns FourBoxSlice or None
+slice = inputs.regional_temp.at_start_all()  # Returns FourBoxSlice
+slice = inputs.regional_temp.at_end_all()    # Returns FourBoxSlice or None
 ```
 
 ### Handling the Final Timestep

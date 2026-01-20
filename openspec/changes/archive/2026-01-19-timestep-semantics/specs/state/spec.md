@@ -53,12 +53,12 @@ The system SHALL provide a `GridTimeseriesWindow<G>` type that provides zero-cos
 
 #### Scenario: Get all regional values at start of timestep
 
-- **WHEN** calling `window.current_all_at_start()`
+- **WHEN** calling `window.at_start_all()`
 - **THEN** it MUST return a Vec containing values for all regions at index N
 
 #### Scenario: Get all regional values at end of timestep
 
-- **WHEN** calling `window.current_all_at_end()`
+- **WHEN** calling `window.at_end_all()`
 - **THEN** it MUST return `Some(Vec)` containing values for all regions at index N+1
 - **AND** return `None` if at the final timestep
 
