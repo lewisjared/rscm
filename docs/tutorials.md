@@ -43,7 +43,7 @@ Learn RSCM through hands-on examples. Each tutorial builds on concepts from prev
 
 - Grid types: `Scalar`, `FourBox`, `Hemispheric`
 - Declaring grids: `grid="FourBox"` in Python, `grid = "FourBox"` in Rust
-- Accessing regional values: `current_all()`, `current(region)`
+- Accessing regional values: `all()`, `current(region)`
 - Output types: `FourBoxSlice`, `HemisphericSlice`
 - Grid aggregation and transformation
 

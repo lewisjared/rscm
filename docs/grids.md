@@ -72,7 +72,7 @@ response = Output("Response|Hemispheric", unit="W/m^2", grid="Hemispheric")
 
 def solve(self, t_current, t_next, inputs):
     # Access all regions at start of timestep
-    temp_slice = inputs.temp.current_all_at_start()
+    temp_slice = inputs.temp.at_start_all()
     temp_n = temp_slice.northern
     temp_s = temp_slice.southern
 
@@ -180,7 +180,7 @@ def solve(self, t_current, t_next, inputs):
     scalar_val = inputs.emissions.at_start()
 
     # FourBox input - access all regions at start of timestep
-    fb_slice = inputs.regional_temp.current_all_at_start()  # Returns FourBoxSlice
+    fb_slice = inputs.regional_temp.at_start_all()  # Returns FourBoxSlice
     no = fb_slice.northern_ocean
     nl = fb_slice.northern_land
     so = fb_slice.southern_ocean
@@ -190,7 +190,7 @@ def solve(self, t_current, t_next, inputs):
     no = inputs.regional_temp.at_start(region=0)  # northern_ocean
 
     # Hemispheric input
-    hemi_slice = inputs.hemi_temp.current_all_at_start()  # Returns HemisphericSlice
+    hemi_slice = inputs.hemi_temp.at_start_all()  # Returns HemisphericSlice
     northern = hemi_slice.northern
     southern = hemi_slice.southern
 ```
@@ -211,7 +211,7 @@ fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState)
     let nl = inputs.regional_temp.at_start(FourBoxRegion::NorthernLand);
 
     // Or get all at once
-    let all_regions = inputs.regional_temp.current_all_at_start();  // Vec<f64>
+    let all_regions = inputs.regional_temp.at_start_all();  // Vec<f64>
 
     // Global aggregate (weighted average)
     let global_mean = inputs.regional_temp.current_global();
@@ -347,7 +347,7 @@ class HemisphericToFourBox(Component):
         self.ocean_land_ratio = ocean_land_ratio
 
     def solve(self, t_current, t_next, inputs):
-        hemi_slice = inputs.hemi_temp.current_all_at_start()
+        hemi_slice = inputs.hemi_temp.at_start_all()
         n = hemi_slice.northern
         s = hemi_slice.southern
 

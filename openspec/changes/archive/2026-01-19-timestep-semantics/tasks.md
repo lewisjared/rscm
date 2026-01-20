@@ -6,8 +6,8 @@
 - [x] 1.2 Add `at_end()` method to `TimeseriesWindow` (returns `Option<FloatValue>` at index N+1)
 - [x] 1.3 Add `at_start()` method to `GridTimeseriesWindow` (single region access)
 - [x] 1.4 Add `at_end()` method to `GridTimeseriesWindow` (single region access, returns Option)
-- [x] 1.5 Add `current_all_at_start()` method to `GridTimeseriesWindow` (all regions at N)
-- [x] 1.6 Add `current_all_at_end()` method to `GridTimeseriesWindow` (all regions at N+1, returns Option)
+- [x] 1.5 Add `at_start_all()` method to `GridTimeseriesWindow` (all regions at N)
+- [x] 1.6 Add `at_end_all()` method to `GridTimeseriesWindow` (all regions at N+1, returns Option)
 - [x] 1.7 Add tests for new methods
 
 **File:** `crates/rscm-core/src/state.rs`
@@ -18,7 +18,7 @@
 
 - [x] 2.1 Add `#[deprecated]` attribute to `TimeseriesWindow::current()` with message pointing to `at_start()`
 - [x] 2.2 Add `#[deprecated]` attribute to `GridTimeseriesWindow::current()` with message pointing to `at_start()`
-- [x] 2.3 Add `#[deprecated]` attribute to `GridTimeseriesWindow::current_all()` with message pointing to `current_all_at_start()`
+- [x] 2.3 Add `#[deprecated]` attribute to `GridTimeseriesWindow::all()` with message pointing to `at_start_all()`
 
 **File:** `crates/rscm-core/src/state.rs`
 
