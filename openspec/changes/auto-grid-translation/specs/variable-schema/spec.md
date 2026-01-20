@@ -2,16 +2,16 @@
 
 ## ADDED Requirements
 
-### Requirement: Grid Auto-Aggregation
+### Requirement: Grid Auto-Aggregation on Read
 
-The system SHALL automatically aggregate variables when a component requests a coarser grid than the schema's native resolution.
+The system SHALL automatically aggregate variables at access time when a component requests a coarser grid than the schema's native resolution. Transformations occur in InputState when the component reads the variable, not via virtual components.
 
 #### Scenario: Component reads scalar from FourBox variable
 
 - **WHEN** a schema declares a variable with `GridType::FourBox`
 - **AND** a component declares an input for that variable with `GridType::Scalar`
 - **THEN** the model MUST build successfully
-- **AND** a virtual `GridTransformerComponent` MUST be inserted into the graph
+- **AND** when the component calls `get_scalar_window(name)`, InputState MUST aggregate the FourBox data
 - **AND** the component MUST receive area-weighted aggregated values
 
 #### Scenario: Component reads scalar from Hemispheric variable
@@ -19,6 +19,7 @@ The system SHALL automatically aggregate variables when a component requests a c
 - **WHEN** a schema declares a variable with `GridType::Hemispheric`
 - **AND** a component declares an input for that variable with `GridType::Scalar`
 - **THEN** the model MUST build successfully
+- **AND** when the component calls `get_scalar_window(name)`, InputState MUST aggregate the Hemispheric data
 - **AND** the component MUST receive area-weighted aggregated values
 
 #### Scenario: Component reads Hemispheric from FourBox variable
@@ -26,13 +27,21 @@ The system SHALL automatically aggregate variables when a component requests a c
 - **WHEN** a schema declares a variable with `GridType::FourBox`
 - **AND** a component declares an input for that variable with `GridType::Hemispheric`
 - **THEN** the model MUST build successfully
+- **AND** when the component calls `get_hemispheric_window(name)`, InputState MUST aggregate the FourBox data
 - **AND** the component MUST receive per-hemisphere aggregated values
 
 #### Scenario: Component reads at native resolution
 
 - **WHEN** a component declares an input with the same grid type as the schema
-- **THEN** no transformer MUST be inserted
+- **THEN** no transformation MUST occur
 - **AND** the component MUST receive values directly
+
+#### Scenario: Timestep semantics preserved
+
+- **WHEN** a component calls `window.at_start()` on an aggregated view
+- **THEN** the aggregation MUST use source data at index N
+- **AND** **WHEN** a component calls `window.at_end()` on an aggregated view
+- **THEN** the aggregation MUST use source data at index N+1
 
 #### Scenario: Component requests finer grid than schema (error)
 
@@ -49,29 +58,28 @@ The system SHALL automatically aggregate variables when a component requests a c
 
 ### Requirement: Grid Auto-Aggregation on Write
 
-The system SHALL automatically aggregate component outputs when a component produces a finer grid than the schema declares.
+The system SHALL automatically aggregate component outputs at write time when a component produces a finer grid than the schema declares. Transformations occur in the Model's step function when writing outputs to the collection.
 
 #### Scenario: Component writes FourBox to Scalar variable
 
 - **WHEN** a schema declares a variable with `GridType::Scalar`
 - **AND** a component declares an output for that variable with `GridType::FourBox`
 - **THEN** the model MUST build successfully
-- **AND** a virtual `GridTransformerComponent` MUST be inserted after the component
-- **AND** the FourBox output MUST be aggregated to Scalar before storage
+- **AND** the Model MUST aggregate FourBox to Scalar when writing to the collection
 
 #### Scenario: Component writes Hemispheric to Scalar variable
 
 - **WHEN** a schema declares a variable with `GridType::Scalar`
 - **AND** a component declares an output for that variable with `GridType::Hemispheric`
 - **THEN** the model MUST build successfully
-- **AND** the Hemispheric output MUST be aggregated to Scalar before storage
+- **AND** the Model MUST aggregate Hemispheric to Scalar when writing to the collection
 
 #### Scenario: Component writes FourBox to Hemispheric variable
 
 - **WHEN** a schema declares a variable with `GridType::Hemispheric`
 - **AND** a component declares an output for that variable with `GridType::FourBox`
 - **THEN** the model MUST build successfully
-- **AND** the FourBox output MUST be aggregated to Hemispheric before storage
+- **AND** the Model MUST aggregate FourBox to Hemispheric when writing to the collection
 
 #### Scenario: Component writes coarser than schema (error)
 
@@ -79,40 +87,6 @@ The system SHALL automatically aggregate component outputs when a component prod
 - **AND** a component declares an output for that variable with `GridType::Scalar`
 - **THEN** the build MUST fail with `GridTransformationNotSupported` error
 - **AND** the error MUST indicate that broadcast/disaggregation is not supported on write
-
-### Requirement: GridTransformerComponent
-
-The system SHALL provide a virtual component for performing grid transformations.
-
-#### Scenario: Transformer in component graph
-
-- **WHEN** a model requires grid transformation
-- **THEN** a `GridTransformerComponent` node MUST appear in the component graph
-- **AND** it MUST have an edge from the component that produces the native-resolution variable
-
-#### Scenario: Timestep access semantics
-
-- **WHEN** the transformer reads from the native-resolution variable
-- **THEN** it MUST use `at_end()` to read the value written by the upstream component this timestep
-- **AND** fall back to `at_start()` if at the final timestep (when `at_end()` returns `None`)
-
-#### Scenario: Transformer naming convention
-
-- **WHEN** a transformer aggregates variable "Temperature" to Scalar
-- **THEN** the transformed output MUST use name "Temperature|_to_scalar"
-- **AND** the original variable MUST remain at native resolution
-
-#### Scenario: Graph visualisation
-
-- **WHEN** calling `model.to_dot()`
-- **THEN** transformer nodes MUST be visible with a distinguishable style
-- **AND** labelled with the transformation (e.g., "FourBox→Scalar")
-
-#### Scenario: Transformer caching
-
-- **WHEN** multiple components request the same transformation
-- **THEN** only one transformer MUST be created for that (variable, target_grid) pair
-- **AND** all requesting components MUST share the transformed output
 
 ### Requirement: Aggregation Weight Configuration
 
@@ -136,6 +110,21 @@ The system SHALL support configurable area weights for grid aggregation.
 - **THEN** weights MUST sum to approximately 1.0 (within 1e-6)
 - **AND** build MUST fail if weights are invalid
 
+### Requirement: Transformation Tracking
+
+The system SHALL track required transformations for debugging and introspection, even though virtual components are not used.
+
+#### Scenario: Query active transformations
+
+- **WHEN** calling `model.required_transformations()`
+- **THEN** it MUST return a list of (variable, source_grid, target_grid, direction) tuples
+- **AND** direction MUST be either `Read` or `Write`
+
+#### Scenario: Logging transformations
+
+- **WHEN** a transformation occurs during model execution
+- **THEN** it MAY be logged at debug level for troubleshooting
+
 ## MODIFIED Requirements
 
 ### Requirement: Schema Validation (modified)
@@ -147,11 +136,17 @@ The system SHALL validate component inputs against the schema, allowing coarser 
 - **WHEN** validating a component input against the schema
 - **AND** the component's grid type is coarser than the schema's grid type
 - **THEN** validation MUST pass (not fail with `ComponentSchemaGridMismatch`)
-- **AND** a transformation MUST be scheduled
+- **AND** the transformation MUST be recorded for runtime execution
 
-#### Scenario: Output grid validation unchanged
+#### Scenario: Output grid validation relaxed for finer grids
 
 - **WHEN** validating a component output against the schema
-- **AND** the component's grid type differs from the schema's grid type
-- **THEN** validation MUST fail with `ComponentSchemaGridMismatch`
-- **AND** writers MUST match the schema's native resolution
+- **AND** the component's grid type is finer than the schema's grid type
+- **THEN** validation MUST pass
+- **AND** the transformation MUST be recorded for runtime execution
+
+#### Scenario: Disaggregation rejected
+
+- **WHEN** validating a component input or output against the schema
+- **AND** the transformation would require disaggregation (coarser to finer)
+- **THEN** validation MUST fail with `GridTransformationNotSupported`

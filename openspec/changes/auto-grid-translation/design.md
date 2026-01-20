@@ -8,20 +8,20 @@ Climate models often work at different spatial resolutions. Some components prod
 2. Manual transformer components
 3. Modifying components to match grids
 
-The VariableSchema already declares grid types for variables and inserts virtual AggregatorComponent nodes for aggregates. This infrastructure can be extended for grid transformations.
+The VariableSchema already declares grid types for variables. We can extend this to support automatic grid transformation.
 
 **Constraints:**
 
 - Must not break existing models (backwards compatible)
 - Aggregation weights must be physically meaningful (area-based)
 - Performance overhead should be minimal
-- Transformations should be visible in the component graph
+- Timestep semantics must be preserved (caller controls `at_start()` vs `at_end()`)
 
 ## Decision
 
 ### Schema as Source of Truth
 
-The VariableSchema declares the "native" grid type for each variable. This is the resolution at which the variable is stored and at which writers must produce values.
+The VariableSchema declares the "native" grid type for each variable. This is the resolution at which the variable is stored.
 
 ```rust
 let schema = VariableSchema::new()
@@ -33,9 +33,9 @@ let schema = VariableSchema::new()
 
 The system provides symmetric aggregation for both inputs and outputs:
 
-**Read-side (inputs):** When a component declares an input at a coarser resolution than the schema, the model aggregates data before the component reads it.
+**Read-side (inputs):** When a component declares an input at a coarser resolution than the schema, InputState aggregates data when the component reads it.
 
-**Write-side (outputs):** When a component produces output at a finer resolution than the schema, the model aggregates data before storing it.
+**Write-side (outputs):** When a component produces output at a finer resolution than the schema, the Model aggregates data when writing to the collection.
 
 **Valid transformations (aggregation only):**
 
@@ -83,23 +83,71 @@ Aggregation requires area weights. These come from the grid configuration:
 
 3. **Weights stored in Model** - Available for all transformations during execution.
 
-### Virtual Transformer Components
+### Transform on Read (InputState)
 
-Similar to `AggregatorComponent`, `GridTransformerComponent` is a virtual component inserted during `ModelBuilder::build()`:
+Transformations happen at access time in InputState, not via virtual components:
 
-- **Input**: Variable at native resolution
-- **Output**: Variable at requested resolution (with internal naming like `"VarName|_to_scalar"`)
-- **Execution**: Reads native grid using `at_end()` (falling back to `at_start()` at final timestep), applies `transform_to()`, writes coarser grid
+```rust
+// Component declares scalar input for "Temperature"
+// Schema says "Temperature" is FourBox
+// In component's solve():
+let inputs = MyComponentInputs::from_input_state(input_state);
+let temp = inputs.temperature.at_start();  // Returns aggregated scalar
+```
 
-These appear in the component graph (`.to_dot()`) for debugging.
+**Implementation:**
 
-**Timestep semantics:** The transformer uses `at_end()` because it reads from an upstream component's output. The upstream component writes to index N+1 during timestep N, so the transformer must read from N+1 to get the freshly computed value. At the final timestep, N+1 doesn't exist, so it falls back to `at_start()` (index N).
+1. InputState holds a reference to the Model's grid weights and required transformations
+2. When `get_scalar_window(name)` is called for a FourBox variable:
+   - InputState detects the mismatch from the transformation registry
+   - Returns a `TimeseriesWindow` that lazily aggregates on access
+3. The caller's choice of `at_start()` or `at_end()` determines which timestep index is aggregated
 
-### Transformation Caching
+**Benefits:**
 
-Multiple components may request the same transformation (e.g., three components all want scalar temperature from FourBox). Only one transformer is created per unique (variable, target_grid) pair.
+- No timestep complexity at transformation level - caller specifies via `at_start()`/`at_end()`
+- No intermediate variable names (`|_to_scalar`)
+- No input remapping - component reads the variable it declared
+- Simpler component graph - no extra nodes
+
+### Transform on Write (Model.step)
+
+Write-side transformations happen in the Model's step function:
+
+```rust
+// Component produces FourBox output for "Heat Flux"
+// Schema declares "Heat Flux" as Scalar
+// In Model.step():
+for (name, value) in component_output {
+    if let Some(transform) = self.write_transforms.get(&name) {
+        let aggregated = transform.apply(value, &self.grid_weights);
+        collection.set(name, aggregated);
+    } else {
+        collection.set(name, value);
+    }
+}
+```
+
+### Transformation Tracking
+
+Required transformations are recorded during model build for:
+
+1. **Validation** - Ensure only valid aggregations are requested
+2. **Runtime execution** - InputState and Model know which transforms to apply
+3. **Introspection** - `model.required_transformations()` returns the list for debugging
 
 ## Alternatives Rejected
+
+### Virtual Transformer Components
+
+Initially considered inserting `GridTransformerComponent` nodes into the component graph (similar to `AggregatorComponent`). Rejected because:
+
+- **Timestep complexity** - Transformers must use `at_end()` for upstream outputs with fallback to `at_start()`, adding subtle correctness requirements
+- **Input remapping** - Components declare `"Temperature"` but must read from `"Temperature|_to_scalar"`
+- **Graph complexity** - Extra nodes for each transformation
+- **Intermediate variables** - Internal naming scheme pollutes the namespace
+
+Transform-on-read eliminates all these issues by pushing transformation to access time.
 
 ### Per-Variable Weight Configuration
 
@@ -128,14 +176,16 @@ Rejected because:
 
 ## Trade-offs Accepted
 
-1. **Writers must match native resolution** - Components cannot output finer data than schema declares. This ensures schema is authoritative but may require component changes.
+1. **Hidden transformations** - Transformations don't appear in the component graph. Mitigated by:
+   - `model.required_transformations()` for introspection
+   - Debug logging when transformations occur
+   - Component declarations still show the requested grid type
 
-2. **Aggregation loses information** - Auto-aggregation discards spatial detail. This is acceptable because:
+2. **Potential repeated computation** - Multiple calls to `at_start()` on the same aggregated window may recompute. Mitigated by:
+   - Typical usage is one call per timestep
+   - Can add per-timestep caching if profiling shows it's needed
+
+3. **Aggregation loses information** - Auto-aggregation discards spatial detail. This is acceptable because:
    - Components explicitly request coarser resolution
    - Information loss is visible in component declarations
    - Native data is preserved in storage
-
-3. **Graph complexity increases** - Transformer nodes add to the component graph. Mitigated by:
-   - Clear naming convention (`|_to_scalar`)
-   - Visible in `.to_dot()` for debugging
-   - Minimal runtime overhead (simple weighted average)

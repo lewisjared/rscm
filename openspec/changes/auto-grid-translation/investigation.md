@@ -253,23 +253,34 @@ This makes broadcast explicit in the schema, documenting the intent.
 
 ## Recommendation
 
-**Schema-Driven Grid Translation with Auto-Aggregation:**
+**Schema-Driven Grid Translation with Transform-on-Read:**
 
 1. **Schema is source of truth** - Defines native resolution for each variable
 2. **Aggregation is automatic** - Components can read at coarser resolution
 3. **Broadcast is explicit** - Requires `.broadcast()` declaration in schema
-4. **Follows AggregatorComponent pattern** - Virtual transformer nodes in graph
+4. **Transform at access time** - InputState aggregates when component reads, Model aggregates when writing
+
+**Why not virtual transformer components?**
+
+Initially considered inserting `GridTransformerComponent` nodes (like `AggregatorComponent`), but this approach has issues:
+- Timestep complexity - transformers must handle `at_end()` vs `at_start()` correctly
+- Input remapping - components declare "Temperature" but read from "Temperature|_to_scalar"
+- Graph complexity - extra nodes for each transformation
+
+Transform-on-read is simpler: the caller specifies which timestep via `at_start()`/`at_end()`, and the transformation naturally follows.
 
 **Benefits:**
 - Single variable names (no "Temperature" vs "Temperature|FourBox")
 - Schema documents resolution decisions
 - Safe default (aggregation only)
-- Leverages existing infrastructure
+- No timestep complexity at transformation layer
+- Simpler component graph
 
 **Changes Required:**
 1. Relax `ComponentSchemaGridMismatch` for inputs when component grid is coarser
-2. Add `GridTransformerComponent` similar to `AggregatorComponent`
-3. Add `.broadcast()` method to VariableSchema builder
-4. Modify InputState to provide transformed views
+2. Record required transformations during model build
+3. Modify InputState to aggregate on read when transformation is needed
+4. Modify Model.step() to aggregate on write when transformation is needed
+5. Add `.broadcast()` method to VariableSchema builder (optional, for explicit broadcast)
 
-This approach is consistent with the project's design principle of **explicitness** - transformations are visible in the schema, and unsafe operations (broadcast) require explicit declaration.
+This approach is consistent with the project's design principle of **explicitness** - transformations are recorded and can be queried, and unsafe operations (broadcast) require explicit declaration.

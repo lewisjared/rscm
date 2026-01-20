@@ -63,7 +63,7 @@ pub enum TransformDirection {
 /// A required grid transformation identified during validation.
 ///
 /// These are collected during component validation against the schema
-/// and used to create `GridTransformerComponent` nodes during build.
+/// and used to configure runtime grid aggregation (transform-on-read/write).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RequiredTransformation {
     /// The variable name being transformed
@@ -726,9 +726,11 @@ impl ModelBuilder {
             }
         }
 
-        // TODO(Task 6): Insert GridTransformerComponent nodes for each required transformation
-        // The all_transformations vector contains the transformations needed for grid
-        // auto-aggregation. This will be implemented in the next task.
+        // TODO(Task 6): Store transformations for runtime grid auto-aggregation
+        // The all_transformations vector contains the transformations needed for:
+        // - Read-side: InputState aggregates when component reads coarser grid than stored
+        // - Write-side: Model aggregates when component writes finer grid than schema declares
+        // No virtual components are inserted; transformation happens at access/write time.
         let _ = &all_transformations;
 
         // Create the timeseries collection using the information from the components

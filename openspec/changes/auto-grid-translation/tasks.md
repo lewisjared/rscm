@@ -25,15 +25,17 @@
 - [x] 3.4 Pass weights to Model for use during execution
 - [x] 3.5 Add `grid_weights` field to `Model` struct
 
-## 4. GridTransformerComponent
+## 4. ~~GridTransformerComponent~~ (SUPERSEDED)
 
-**File:** `crates/rscm-core/src/schema.rs`
+**Status:** Removed in favour of transform-on-read approach.
 
-- [x] 4.1 Create `GridTransformerComponent` struct with fields: source_var, target_grid, weights
-- [x] 4.2 Implement `Component` trait for `GridTransformerComponent`
-- [x] 4.3 Implement `solve()` to read source variable and apply `transform_to()`
-- [x] 4.4 Add `#[typetag::serde]` for serialization support
-- [x] 4.5 Add tests for GridTransformerComponent solve logic
+The virtual component approach was rejected because:
+
+- Timestep complexity (transformers need `at_end()` with fallback)
+- Input remapping (components declare "Temperature" but read "Temperature|_to_scalar")
+- Graph complexity (extra nodes for each transformation)
+
+See design.md "Alternatives Rejected" section for details.
 
 ## 5. Relaxed Validation (Read and Write)
 
@@ -48,51 +50,57 @@
 - [x] 5.7 Add tests for relaxed input validation
 - [x] 5.8 Add tests for relaxed output validation
 
-## 6. Transformer Insertion in Build
+## 6. Store Transformations for Runtime
 
 **File:** `crates/rscm-core/src/model.rs`
 
-- [ ] 6.1 Collect all required transformations after component validation
-- [ ] 6.2 Deduplicate transformations (one per variable+target_grid pair)
-- [ ] 6.3 Create `GridTransformerComponent` for each unique transformation
-- [ ] 6.4 Insert transformer nodes into component graph
-- [ ] 6.5 Create edges: producer → transformer, transformer → consumers
-- [ ] 6.6 Create intermediate timeseries for transformed outputs (e.g., "Var|_to_scalar")
-- [ ] 6.7 Add tests for transformer insertion
+- [ ] 6.1 Add `read_transforms: HashMap<String, RequiredTransformation>` to `Model`
+- [ ] 6.2 Add `write_transforms: HashMap<String, RequiredTransformation>` to `Model`
+- [ ] 6.3 Populate transforms from `all_transformations` during `ModelBuilder::build()`
+- [ ] 6.4 Add `Model::required_transformations()` method for introspection
+- [ ] 6.5 Serialise/deserialise transforms with Model
 
-## 7. Timeseries Creation for Transforms
+## 7. Transform-on-Read in InputState
+
+**File:** `crates/rscm-core/src/state.rs`
+
+- [ ] 7.1 Add transformation context to `InputState` (reference to read transforms + weights)
+- [ ] 7.2 Modify `get_scalar_window()` to detect FourBox/Hemispheric source and return aggregating window
+- [ ] 7.3 Modify `get_hemispheric_window()` to detect FourBox source and return aggregating window
+- [ ] 7.4 Create `AggregatingTimeseriesWindow` wrapper that aggregates on `at_start()`/`at_end()` calls
+- [ ] 7.5 Use Model's grid weights for aggregation calculations
+- [ ] 7.6 Add tests for aggregating window behaviour
+
+## 8. Transform-on-Write in Model.step()
 
 **File:** `crates/rscm-core/src/model.rs`
 
-- [ ] 7.1 Add transformed variable definitions to `definitions` map
-- [ ] 7.2 Ensure TimeseriesCollection creates timeseries at target grid type
-- [ ] 7.3 Wire consumer components to read from transformed variable name
-
-## 8. Graph Visualisation
-
-**File:** `crates/rscm-core/src/model.rs`
-
-- [ ] 8.1 Add distinguishing style for transformer nodes in `to_dot()`
-- [ ] 8.2 Label transformer nodes with transformation (e.g., "Temperature: FourBox→Scalar")
+- [ ] 8.1 After component solve, check output variables against write_transforms
+- [ ] 8.2 If transform needed, aggregate StateValue before writing to collection
+- [ ] 8.3 Add helper function `aggregate_state_value(value, source_grid, target_grid, weights)`
+- [ ] 8.4 Add tests for write-side aggregation
 
 ## 9. Integration Tests
 
 **File:** `crates/rscm-core/src/model.rs` (tests module)
 
 **Read-side tests:**
+
 - [ ] 9.1 Test: FourBox schema variable with scalar consumer - auto-aggregates on read
 - [ ] 9.2 Test: FourBox schema variable with hemispheric consumer - auto-aggregates on read
 - [ ] 9.3 Test: Hemispheric schema variable with scalar consumer - auto-aggregates on read
-- [ ] 9.4 Test: Multiple consumers at different resolutions - shares read transformers
+- [ ] 9.4 Test: Multiple consumers at different resolutions - each gets correct aggregation
 - [ ] 9.5 Test: Scalar schema variable with FourBox consumer - errors (no broadcast)
 
 **Write-side tests:**
+
 - [ ] 9.6 Test: Scalar schema variable with FourBox producer - auto-aggregates on write
 - [ ] 9.7 Test: Scalar schema variable with Hemispheric producer - auto-aggregates on write
 - [ ] 9.8 Test: Hemispheric schema variable with FourBox producer - auto-aggregates on write
 - [ ] 9.9 Test: FourBox schema variable with Scalar producer - errors (no broadcast)
 
 **Combined tests:**
+
 - [ ] 9.10 Test: Chain with write-aggregate then read-aggregate
 - [ ] 9.11 Test: Custom weights affect aggregation results
 - [ ] 9.12 Test: Model without schema - unchanged behaviour (no auto-aggregation)
