@@ -120,7 +120,7 @@
 
 use crate::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    TimeseriesWindow,
+    ScalarWindow,
 };
 use crate::errors::RSCMResult;
 use crate::state::StateValue;

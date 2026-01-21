@@ -3,7 +3,7 @@ use numpy::array;
 use numpy::ndarray::Array1;
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    TimeseriesWindow,
+    ScalarWindow,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;

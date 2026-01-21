@@ -1,3 +1,4 @@
+use crate::component::GridType;
 use crate::errors::RSCMResult;
 use crate::spatial::{
     FourBoxGrid, FourBoxRegion, HemisphericGrid, HemisphericRegion, ScalarGrid, ScalarRegion,
@@ -251,6 +252,479 @@ impl<'a> TimeseriesWindow<'a> {
     /// Check if the underlying timeseries is empty.
     pub fn is_empty(&self) -> bool {
         self.timeseries.is_empty()
+    }
+}
+
+// =============================================================================
+// Grid-Aggregating Scalar Windows
+// =============================================================================
+
+/// A transformation context for grid aggregation.
+///
+/// This holds the information needed to transform grid data to scalar values
+/// during read operations.
+#[derive(Debug, Clone)]
+pub struct ReadTransformInfo {
+    /// The source grid type (finer resolution data)
+    pub source_grid: GridType,
+    /// The weights to use for aggregation (from Model's grid_weights)
+    /// If None, use the grid's default weights
+    pub weights: Option<Vec<f64>>,
+}
+
+/// A scalar window that aggregates from a FourBox timeseries.
+///
+/// This provides the same API as `TimeseriesWindow` but reads from a FourBox
+/// timeseries and aggregates to a scalar value on each access.
+#[derive(Debug)]
+pub struct AggregatingFourBoxWindow<'a> {
+    timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
+    current_index: usize,
+    current_time: Time,
+    weights: Option<[f64; 4]>,
+}
+
+impl<'a> AggregatingFourBoxWindow<'a> {
+    pub fn new(
+        timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
+        current_index: usize,
+        current_time: Time,
+        weights: Option<Vec<f64>>,
+    ) -> Self {
+        let weights = weights.map(|w| {
+            let arr: [f64; 4] = w
+                .as_slice()
+                .try_into()
+                .expect("FourBox weights must have 4 elements");
+            arr
+        });
+        Self {
+            timeseries,
+            current_index,
+            current_time,
+            weights,
+        }
+    }
+
+    fn aggregate(&self, values: &[FloatValue]) -> FloatValue {
+        match &self.weights {
+            Some(weights) => {
+                let mut sum = 0.0;
+                for (v, w) in values.iter().zip(weights.iter()) {
+                    if !v.is_nan() {
+                        sum += v * w;
+                    }
+                }
+                sum
+            }
+            None => self.timeseries.grid().aggregate_global(values),
+        }
+    }
+
+    /// Get the aggregated scalar value at the start of the timestep (index N).
+    pub fn at_start(&self) -> FloatValue {
+        let values = self
+            .timeseries
+            .at_time_index(self.current_index)
+            .expect("Current index out of bounds");
+        self.aggregate(&values)
+    }
+
+    /// Get the aggregated scalar value at the end of the timestep (index N+1), if available.
+    pub fn at_end(&self) -> Option<FloatValue> {
+        let next_index = self.current_index + 1;
+        if next_index >= self.timeseries.len() {
+            None
+        } else {
+            let values = self
+                .timeseries
+                .at_time_index(next_index)
+                .expect("Next index out of bounds");
+            Some(self.aggregate(&values))
+        }
+    }
+
+    /// Get the aggregated value at the previous timestep.
+    pub fn previous(&self) -> Option<FloatValue> {
+        if self.current_index == 0 {
+            None
+        } else {
+            let values = self
+                .timeseries
+                .at_time_index(self.current_index - 1)
+                .expect("Previous index out of bounds");
+            Some(self.aggregate(&values))
+        }
+    }
+
+    /// Get the current time value.
+    pub fn time(&self) -> Time {
+        self.current_time
+    }
+
+    /// Get the current time index.
+    pub fn index(&self) -> usize {
+        self.current_index
+    }
+
+    /// Get the total length of the underlying timeseries.
+    pub fn len(&self) -> usize {
+        self.timeseries.len()
+    }
+
+    /// Check if the underlying timeseries is empty.
+    pub fn is_empty(&self) -> bool {
+        self.timeseries.is_empty()
+    }
+}
+
+/// A scalar window that aggregates from a Hemispheric timeseries.
+#[derive(Debug)]
+pub struct AggregatingHemisphericWindow<'a> {
+    timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
+    current_index: usize,
+    current_time: Time,
+    weights: Option<[f64; 2]>,
+}
+
+impl<'a> AggregatingHemisphericWindow<'a> {
+    pub fn new(
+        timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
+        current_index: usize,
+        current_time: Time,
+        weights: Option<Vec<f64>>,
+    ) -> Self {
+        let weights = weights.map(|w| {
+            let arr: [f64; 2] = w
+                .as_slice()
+                .try_into()
+                .expect("Hemispheric weights must have 2 elements");
+            arr
+        });
+        Self {
+            timeseries,
+            current_index,
+            current_time,
+            weights,
+        }
+    }
+
+    fn aggregate(&self, values: &[FloatValue]) -> FloatValue {
+        match &self.weights {
+            Some(weights) => {
+                let mut sum = 0.0;
+                for (v, w) in values.iter().zip(weights.iter()) {
+                    if !v.is_nan() {
+                        sum += v * w;
+                    }
+                }
+                sum
+            }
+            None => self.timeseries.grid().aggregate_global(values),
+        }
+    }
+
+    /// Get the aggregated scalar value at the start of the timestep (index N).
+    pub fn at_start(&self) -> FloatValue {
+        let values = self
+            .timeseries
+            .at_time_index(self.current_index)
+            .expect("Current index out of bounds");
+        self.aggregate(&values)
+    }
+
+    /// Get the aggregated scalar value at the end of the timestep (index N+1), if available.
+    pub fn at_end(&self) -> Option<FloatValue> {
+        let next_index = self.current_index + 1;
+        if next_index >= self.timeseries.len() {
+            None
+        } else {
+            let values = self
+                .timeseries
+                .at_time_index(next_index)
+                .expect("Next index out of bounds");
+            Some(self.aggregate(&values))
+        }
+    }
+
+    /// Get the aggregated value at the previous timestep.
+    pub fn previous(&self) -> Option<FloatValue> {
+        if self.current_index == 0 {
+            None
+        } else {
+            let values = self
+                .timeseries
+                .at_time_index(self.current_index - 1)
+                .expect("Previous index out of bounds");
+            Some(self.aggregate(&values))
+        }
+    }
+
+    /// Get the current time value.
+    pub fn time(&self) -> Time {
+        self.current_time
+    }
+
+    /// Get the current time index.
+    pub fn index(&self) -> usize {
+        self.current_index
+    }
+
+    /// Get the total length of the underlying timeseries.
+    pub fn len(&self) -> usize {
+        self.timeseries.len()
+    }
+
+    /// Check if the underlying timeseries is empty.
+    pub fn is_empty(&self) -> bool {
+        self.timeseries.is_empty()
+    }
+}
+
+/// A unified scalar window that can be either direct or aggregating.
+///
+/// This enum allows `InputState::get_scalar_window()` to return the same type
+/// regardless of whether the underlying data is scalar or needs aggregation.
+#[derive(Debug)]
+pub enum ScalarWindow<'a> {
+    /// Direct access to a scalar timeseries
+    Direct(TimeseriesWindow<'a>),
+    /// Aggregating access to a FourBox timeseries
+    FromFourBox(AggregatingFourBoxWindow<'a>),
+    /// Aggregating access to a Hemispheric timeseries
+    FromHemispheric(AggregatingHemisphericWindow<'a>),
+}
+
+impl<'a> ScalarWindow<'a> {
+    /// Get the scalar value at the start of the timestep (index N).
+    pub fn at_start(&self) -> FloatValue {
+        match self {
+            ScalarWindow::Direct(w) => w.at_start(),
+            ScalarWindow::FromFourBox(w) => w.at_start(),
+            ScalarWindow::FromHemispheric(w) => w.at_start(),
+        }
+    }
+
+    /// Get the scalar value at the end of the timestep (index N+1), if available.
+    pub fn at_end(&self) -> Option<FloatValue> {
+        match self {
+            ScalarWindow::Direct(w) => w.at_end(),
+            ScalarWindow::FromFourBox(w) => w.at_end(),
+            ScalarWindow::FromHemispheric(w) => w.at_end(),
+        }
+    }
+
+    /// Get the value at the previous timestep, if available.
+    pub fn previous(&self) -> Option<FloatValue> {
+        match self {
+            ScalarWindow::Direct(w) => w.previous(),
+            ScalarWindow::FromFourBox(w) => w.previous(),
+            ScalarWindow::FromHemispheric(w) => w.previous(),
+        }
+    }
+
+    /// Get the current time value.
+    pub fn time(&self) -> Time {
+        match self {
+            ScalarWindow::Direct(w) => w.time(),
+            ScalarWindow::FromFourBox(w) => w.time(),
+            ScalarWindow::FromHemispheric(w) => w.time(),
+        }
+    }
+
+    /// Get the current time index.
+    pub fn index(&self) -> usize {
+        match self {
+            ScalarWindow::Direct(w) => w.index(),
+            ScalarWindow::FromFourBox(w) => w.index(),
+            ScalarWindow::FromHemispheric(w) => w.index(),
+        }
+    }
+
+    /// Get the total length of the underlying timeseries.
+    pub fn len(&self) -> usize {
+        match self {
+            ScalarWindow::Direct(w) => w.len(),
+            ScalarWindow::FromFourBox(w) => w.len(),
+            ScalarWindow::FromHemispheric(w) => w.len(),
+        }
+    }
+
+    /// Check if the underlying timeseries is empty.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            ScalarWindow::Direct(w) => w.is_empty(),
+            ScalarWindow::FromFourBox(w) => w.is_empty(),
+            ScalarWindow::FromHemispheric(w) => w.is_empty(),
+        }
+    }
+}
+
+/// A scalar window that aggregates from a Hemispheric timeseries to Hemispheric output.
+///
+/// This is used when reading a FourBox timeseries but the component wants Hemispheric data.
+#[derive(Debug)]
+pub struct AggregatingFourBoxToHemisphericWindow<'a> {
+    timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
+    current_index: usize,
+    current_time: Time,
+}
+
+impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
+    pub fn new(
+        timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
+        current_index: usize,
+        current_time: Time,
+    ) -> Self {
+        Self {
+            timeseries,
+            current_index,
+            current_time,
+        }
+    }
+
+    fn aggregate_to_hemispheric(&self, values: &[FloatValue]) -> [FloatValue; 2] {
+        // FourBox: [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand]
+        // Hemispheric: [Northern, Southern]
+        // Average ocean+land for each hemisphere
+        let northern = (values[0] + values[1]) / 2.0;
+        let southern = (values[2] + values[3]) / 2.0;
+        [northern, southern]
+    }
+
+    /// Get all regional values at the start of the timestep.
+    pub fn at_start_all(&self) -> Vec<FloatValue> {
+        let values = self
+            .timeseries
+            .at_time_index(self.current_index)
+            .expect("Current index out of bounds");
+        self.aggregate_to_hemispheric(&values).to_vec()
+    }
+
+    /// Get all regional values at the end of the timestep.
+    pub fn at_end_all(&self) -> Option<Vec<FloatValue>> {
+        let next_index = self.current_index + 1;
+        if next_index >= self.timeseries.len() {
+            None
+        } else {
+            let values = self
+                .timeseries
+                .at_time_index(next_index)
+                .expect("Next index out of bounds");
+            Some(self.aggregate_to_hemispheric(&values).to_vec())
+        }
+    }
+
+    /// Get a single region's value at the start of the timestep.
+    pub fn at_start(&self, region: HemisphericRegion) -> FloatValue {
+        let values = self.at_start_all();
+        values[region as usize]
+    }
+
+    /// Get a single region's value at the end of the timestep.
+    pub fn at_end(&self, region: HemisphericRegion) -> Option<FloatValue> {
+        self.at_end_all().map(|v| v[region as usize])
+    }
+
+    /// Get the current time value.
+    pub fn time(&self) -> Time {
+        self.current_time
+    }
+
+    /// Get the current time index.
+    pub fn index(&self) -> usize {
+        self.current_index
+    }
+
+    /// Get the total length of the underlying timeseries.
+    pub fn len(&self) -> usize {
+        self.timeseries.len()
+    }
+
+    /// Check if the underlying timeseries is empty.
+    pub fn is_empty(&self) -> bool {
+        self.timeseries.is_empty()
+    }
+}
+
+/// A unified hemispheric window that can be either direct or aggregating.
+#[derive(Debug)]
+pub enum HemisphericWindow<'a> {
+    /// Direct access to a Hemispheric timeseries
+    Direct(GridTimeseriesWindow<'a, HemisphericGrid>),
+    /// Aggregating access from a FourBox timeseries
+    FromFourBox(AggregatingFourBoxToHemisphericWindow<'a>),
+}
+
+impl<'a> HemisphericWindow<'a> {
+    /// Get all regional values at the start of the timestep.
+    pub fn at_start_all(&self) -> Vec<FloatValue> {
+        match self {
+            HemisphericWindow::Direct(w) => w.at_start_all(),
+            HemisphericWindow::FromFourBox(w) => w.at_start_all(),
+        }
+    }
+
+    /// Get all regional values at the end of the timestep.
+    pub fn at_end_all(&self) -> Option<Vec<FloatValue>> {
+        match self {
+            HemisphericWindow::Direct(w) => w.at_end_all(),
+            HemisphericWindow::FromFourBox(w) => w.at_end_all(),
+        }
+    }
+
+    /// Get a single region's value at the start of the timestep.
+    pub fn at_start(&self, region: HemisphericRegion) -> FloatValue {
+        match self {
+            HemisphericWindow::Direct(w) => w.at_start(region),
+            HemisphericWindow::FromFourBox(w) => w.at_start(region),
+        }
+    }
+
+    /// Get a single region's value at the end of the timestep.
+    pub fn at_end(&self, region: HemisphericRegion) -> Option<FloatValue> {
+        match self {
+            HemisphericWindow::Direct(w) => w.at_end(region),
+            HemisphericWindow::FromFourBox(w) => w.at_end(region),
+        }
+    }
+
+    /// Get the current time value.
+    pub fn time(&self) -> Time {
+        match self {
+            HemisphericWindow::Direct(w) => w.time(),
+            HemisphericWindow::FromFourBox(w) => w.time(),
+        }
+    }
+
+    /// Get the current time index.
+    pub fn index(&self) -> usize {
+        match self {
+            HemisphericWindow::Direct(w) => w.index(),
+            HemisphericWindow::FromFourBox(w) => w.index(),
+        }
+    }
+
+    /// Get the total length of the underlying timeseries.
+    pub fn len(&self) -> usize {
+        match self {
+            HemisphericWindow::Direct(w) => w.len(),
+            HemisphericWindow::FromFourBox(w) => w.len(),
+        }
+    }
+
+    /// Check if the underlying timeseries is empty.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            HemisphericWindow::Direct(w) => w.is_empty(),
+            HemisphericWindow::FromFourBox(w) => w.is_empty(),
+        }
+    }
+
+    /// Get the global aggregate at the start of the timestep.
+    pub fn current_global(&self) -> FloatValue {
+        let values = self.at_start_all();
+        (values[0] + values[1]) / 2.0 // Simple average for now
     }
 }
 
@@ -840,6 +1314,16 @@ pub enum StateValue {
     Hemispheric(HemisphericSlice),
 }
 
+/// Transform context for automatic grid aggregation.
+///
+/// This holds the information needed to transform grid data during read operations.
+/// It is passed to InputState when the model has configured grid transformations.
+#[derive(Debug, Clone, Default)]
+pub struct TransformContext {
+    /// Map from variable name to the read transformation info
+    pub read_transforms: HashMap<String, ReadTransformInfo>,
+}
+
 /// Input state for a component
 ///
 /// A state is a collection of values
@@ -851,6 +1335,8 @@ pub enum StateValue {
 pub struct InputState<'a> {
     current_time: Time,
     state: Vec<&'a TimeseriesItem>,
+    /// Optional transform context for grid aggregation
+    transform_context: Option<TransformContext>,
 }
 
 impl<'a> InputState<'a> {
@@ -858,6 +1344,20 @@ impl<'a> InputState<'a> {
         Self {
             current_time,
             state: values,
+            transform_context: None,
+        }
+    }
+
+    /// Build an InputState with transform context for grid aggregation.
+    pub fn build_with_transforms(
+        values: Vec<&'a TimeseriesItem>,
+        current_time: Time,
+        transform_context: TransformContext,
+    ) -> Self {
+        Self {
+            current_time,
+            state: values,
+            transform_context: Some(transform_context),
         }
     }
 
@@ -865,6 +1365,7 @@ impl<'a> InputState<'a> {
         Self {
             current_time: Time::nan(),
             state: vec![],
+            transform_context: None,
         }
     }
 
@@ -914,22 +1415,93 @@ impl<'a> InputState<'a> {
     /// Get a scalar TimeseriesWindow for the named variable
     ///
     /// This provides zero-cost access to current, previous, and historical values.
+    /// If the underlying data is stored at a finer grid resolution (FourBox or Hemispheric)
+    /// and a read transform is configured, the data will be automatically aggregated
+    /// to a scalar value on each access.
     ///
     /// # Panics
     ///
-    /// Panics if the variable is not found or is not a scalar timeseries.
-    pub fn get_scalar_window(&self, name: &str) -> TimeseriesWindow<'_> {
+    /// Panics if the variable is not found or cannot be accessed as scalar.
+    pub fn get_scalar_window(&self, name: &str) -> ScalarWindow<'_> {
         let item = self
             .iter()
             .find(|item| item.name == name)
             .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
 
+        // Check if there's a read transform for this variable
+        let transform = self
+            .transform_context
+            .as_ref()
+            .and_then(|ctx| ctx.read_transforms.get(name));
+
+        // If there's a transform, use the source grid type
+        if let Some(transform) = transform {
+            match transform.source_grid {
+                GridType::FourBox => {
+                    let ts = item.data.as_four_box().unwrap_or_else(|| {
+                        panic!(
+                            "Variable '{}' requires FourBox->Scalar transform but is not FourBox",
+                            name
+                        )
+                    });
+
+                    let current_index =
+                        ts.time_axis()
+                            .index_of(self.current_time)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "Time {} not found in timeseries '{}' time axis",
+                                    self.current_time, name
+                                )
+                            });
+
+                    return ScalarWindow::FromFourBox(AggregatingFourBoxWindow::new(
+                        ts,
+                        current_index,
+                        self.current_time,
+                        transform.weights.clone(),
+                    ));
+                }
+                GridType::Hemispheric => {
+                    let ts = item
+                        .data
+                        .as_hemispheric()
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "Variable '{}' requires Hemispheric->Scalar transform but is not Hemispheric",
+                                name
+                            )
+                        });
+
+                    let current_index =
+                        ts.time_axis()
+                            .index_of(self.current_time)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "Time {} not found in timeseries '{}' time axis",
+                                    self.current_time, name
+                                )
+                            });
+
+                    return ScalarWindow::FromHemispheric(AggregatingHemisphericWindow::new(
+                        ts,
+                        current_index,
+                        self.current_time,
+                        transform.weights.clone(),
+                    ));
+                }
+                GridType::Scalar => {
+                    // No transform needed, fall through to direct access
+                }
+            }
+        }
+
+        // Direct scalar access (no transform needed)
         let ts = item
             .data
             .as_scalar()
             .unwrap_or_else(|| panic!("Variable '{}' is not a scalar timeseries", name));
 
-        // Find the index corresponding to current_time in the timeseries
         let current_index = ts
             .time_axis()
             .index_of(self.current_time)
@@ -940,7 +1512,7 @@ impl<'a> InputState<'a> {
                 )
             });
 
-        TimeseriesWindow::new(ts, current_index, self.current_time)
+        ScalarWindow::Direct(TimeseriesWindow::new(ts, current_index, self.current_time))
     }
 
     /// Get a FourBox GridTimeseriesWindow for the named variable
@@ -977,19 +1549,59 @@ impl<'a> InputState<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the variable is not found or is not a Hemispheric timeseries.
-    pub fn get_hemispheric_window(&self, name: &str) -> GridTimeseriesWindow<'_, HemisphericGrid> {
+    /// If the underlying data is stored at FourBox resolution and a read transform
+    /// is configured, the data will be automatically aggregated to Hemispheric
+    /// on each access.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the variable is not found or cannot be accessed as Hemispheric.
+    pub fn get_hemispheric_window(&self, name: &str) -> HemisphericWindow<'_> {
         let item = self
             .iter()
             .find(|item| item.name == name)
             .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
 
+        // Check if there's a read transform for this variable
+        let transform = self
+            .transform_context
+            .as_ref()
+            .and_then(|ctx| ctx.read_transforms.get(name));
+
+        // If there's a transform from FourBox, aggregate
+        if let Some(transform) = transform {
+            if transform.source_grid == GridType::FourBox {
+                let ts = item.data.as_four_box().unwrap_or_else(|| {
+                    panic!(
+                        "Variable '{}' requires FourBox->Hemispheric transform but is not FourBox",
+                        name
+                    )
+                });
+
+                let current_index =
+                    ts.time_axis()
+                        .index_of(self.current_time)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "Time {} not found in timeseries '{}' time axis",
+                                self.current_time, name
+                            )
+                        });
+
+                return HemisphericWindow::FromFourBox(AggregatingFourBoxToHemisphericWindow::new(
+                    ts,
+                    current_index,
+                    self.current_time,
+                ));
+            }
+        }
+
+        // Direct hemispheric access
         let ts = item
             .data
             .as_hemispheric()
             .unwrap_or_else(|| panic!("Variable '{}' is not a Hemispheric timeseries", name));
 
-        // Find the index corresponding to current_time in the timeseries
         let current_index = ts
             .time_axis()
             .index_of(self.current_time)
@@ -1000,7 +1612,11 @@ impl<'a> InputState<'a> {
                 )
             });
 
-        GridTimeseriesWindow::new(ts, current_index, self.current_time)
+        HemisphericWindow::Direct(GridTimeseriesWindow::new(
+            ts,
+            current_index,
+            self.current_time,
+        ))
     }
 
     /// Converts the state into an equivalent hashmap

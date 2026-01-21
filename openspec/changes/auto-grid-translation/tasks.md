@@ -54,21 +54,21 @@ See design.md "Alternatives Rejected" section for details.
 
 **File:** `crates/rscm-core/src/model.rs`
 
-- [ ] 6.1 Add `read_transforms: HashMap<String, RequiredTransformation>` to `Model`
-- [ ] 6.2 Add `write_transforms: HashMap<String, RequiredTransformation>` to `Model`
-- [ ] 6.3 Populate transforms from `all_transformations` during `ModelBuilder::build()`
-- [ ] 6.4 Add `Model::required_transformations()` method for introspection
-- [ ] 6.5 Serialise/deserialise transforms with Model
+- [x] 6.1 Add `read_transforms: HashMap<String, RequiredTransformation>` to `Model`
+- [x] 6.2 Add `write_transforms: HashMap<String, RequiredTransformation>` to `Model`
+- [x] 6.3 Populate transforms from `all_transformations` during `ModelBuilder::build()`
+- [x] 6.4 Add `Model::required_transformations()` method for introspection
+- [x] 6.5 Serialise/deserialise transforms with Model
 
 ## 7. Transform-on-Read in InputState
 
 **File:** `crates/rscm-core/src/state.rs`
 
-- [ ] 7.1 Add transformation context to `InputState` (reference to read transforms + weights)
-- [ ] 7.2 Modify `get_scalar_window()` to detect FourBox/Hemispheric source and return aggregating window
-- [ ] 7.3 Modify `get_hemispheric_window()` to detect FourBox source and return aggregating window
-- [ ] 7.4 Create `AggregatingTimeseriesWindow` wrapper that aggregates on `at_start()`/`at_end()` calls
-- [ ] 7.5 Use Model's grid weights for aggregation calculations
+- [x] 7.1 Add transformation context to `InputState` (reference to read transforms + weights)
+- [x] 7.2 Modify `get_scalar_window()` to detect FourBox/Hemispheric source and return aggregating window
+- [x] 7.3 Modify `get_hemispheric_window()` to detect FourBox source and return aggregating window
+- [x] 7.4 Create `AggregatingTimeseriesWindow` wrapper that aggregates on `at_start()`/`at_end()` calls
+- [x] 7.5 Use Model's grid weights for aggregation calculations
 - [ ] 7.6 Add tests for aggregating window behaviour
 
 ## 8. Transform-on-Write in Model.step()

@@ -50,7 +50,7 @@ impl VariableDefinition {
 }
 
 /// Direction of a grid transformation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TransformDirection {
     /// Read-side: aggregating schema data before component reads it
     /// (e.g., schema has FourBox, component wants Scalar)
@@ -64,7 +64,7 @@ pub enum TransformDirection {
 ///
 /// These are collected during component validation against the schema
 /// and used to configure runtime grid aggregation (transform-on-read/write).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RequiredTransformation {
     /// The variable name being transformed
     pub variable: String,
@@ -172,6 +172,8 @@ fn verify_definition(
     Ok(())
 }
 
+use crate::state::{ReadTransformInfo, TransformContext};
+
 /// Extract the input state for the current time step
 ///
 /// By default, for endogenous variables which are calculated as part of the model
@@ -196,6 +198,28 @@ pub fn extract_state(
     });
 
     InputState::build(state, t_current)
+}
+
+/// Extract the input state with transform context for grid aggregation.
+///
+/// Like `extract_state`, but includes transformation context for automatic
+/// grid aggregation when reading variables at coarser resolutions.
+pub fn extract_state_with_transforms(
+    collection: &TimeseriesCollection,
+    input_names: Vec<String>,
+    t_current: Time,
+    transform_context: TransformContext,
+) -> InputState<'_> {
+    let mut state = Vec::new();
+
+    input_names.into_iter().for_each(|name| {
+        let ts = collection
+            .get_by_name(name.as_str())
+            .unwrap_or_else(|| panic!("No timeseries with variable='{}'", name));
+        state.push(ts);
+    });
+
+    InputState::build_with_transforms(state, t_current, transform_context)
 }
 
 /// Check that a component graph is valid
@@ -726,12 +750,21 @@ impl ModelBuilder {
             }
         }
 
-        // TODO(Task 6): Store transformations for runtime grid auto-aggregation
-        // The all_transformations vector contains the transformations needed for:
-        // - Read-side: InputState aggregates when component reads coarser grid than stored
-        // - Write-side: Model aggregates when component writes finer grid than schema declares
-        // No virtual components are inserted; transformation happens at access/write time.
-        let _ = &all_transformations;
+        // Store transformations for runtime grid auto-aggregation
+        // Split into read and write transforms for efficient lookup during execution
+        let mut read_transforms: HashMap<String, RequiredTransformation> = HashMap::new();
+        let mut write_transforms: HashMap<String, RequiredTransformation> = HashMap::new();
+
+        for transform in all_transformations {
+            match transform.direction {
+                TransformDirection::Read => {
+                    read_transforms.insert(transform.variable.clone(), transform);
+                }
+                TransformDirection::Write => {
+                    write_transforms.insert(transform.variable.clone(), transform);
+                }
+            }
+        }
 
         // Create the timeseries collection using the information from the components
         let mut collection = TimeseriesCollection::new();
@@ -849,12 +882,14 @@ impl ModelBuilder {
         }
 
         // Add the components to the graph
-        Ok(Model::with_grid_weights(
+        Ok(Model::with_transforms(
             graph,
             initial_node,
             collection,
             self.time_axis.clone(),
             self.grid_weights.clone(),
+            read_transforms,
+            write_transforms,
         ))
     }
 }
@@ -900,6 +935,18 @@ pub struct Model {
     /// Used for grid transformations during model execution.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     grid_weights: HashMap<GridType, Vec<f64>>,
+    /// Read-side transformations: variable name -> transformation needed when component reads
+    ///
+    /// When a component reads a variable at a coarser grid than the schema declares,
+    /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    read_transforms: HashMap<String, RequiredTransformation>,
+    /// Write-side transformations: variable name -> transformation needed when component writes
+    ///
+    /// When a component writes a variable at a finer grid than the schema declares,
+    /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    write_transforms: HashMap<String, RequiredTransformation>,
 }
 
 impl Model {
@@ -928,6 +975,30 @@ impl Model {
         time_axis: Arc<TimeAxis>,
         grid_weights: HashMap<GridType, Vec<f64>>,
     ) -> Self {
+        Self::with_transforms(
+            components,
+            initial_node,
+            collection,
+            time_axis,
+            grid_weights,
+            HashMap::new(),
+            HashMap::new(),
+        )
+    }
+
+    /// Create a new Model with grid weights and transformations
+    ///
+    /// This is the full constructor that includes both grid weights and the
+    /// read/write transformations for automatic grid aggregation.
+    pub fn with_transforms(
+        components: CGraph,
+        initial_node: NodeIndex,
+        collection: TimeseriesCollection,
+        time_axis: Arc<TimeAxis>,
+        grid_weights: HashMap<GridType, Vec<f64>>,
+        read_transforms: HashMap<String, RequiredTransformation>,
+        write_transforms: HashMap<String, RequiredTransformation>,
+    ) -> Self {
         Self {
             components,
             initial_node,
@@ -935,6 +1006,8 @@ impl Model {
             time_axis,
             time_index: 0,
             grid_weights,
+            read_transforms,
+            write_transforms,
         }
     }
 
@@ -943,6 +1016,33 @@ impl Model {
     /// Returns the custom weights if configured, or None if using defaults.
     pub fn get_grid_weights(&self, grid_type: GridType) -> Option<&Vec<f64>> {
         self.grid_weights.get(&grid_type)
+    }
+
+    /// Get all required transformations for introspection
+    ///
+    /// Returns a vector of all required transformations, both read-side and write-side.
+    /// This is useful for debugging and understanding what grid aggregations will occur.
+    pub fn required_transformations(&self) -> Vec<&RequiredTransformation> {
+        self.read_transforms
+            .values()
+            .chain(self.write_transforms.values())
+            .collect()
+    }
+
+    /// Get read-side transformations
+    ///
+    /// These transformations aggregate data when components read variables at coarser
+    /// resolutions than the schema declares.
+    pub fn read_transforms(&self) -> &HashMap<String, RequiredTransformation> {
+        &self.read_transforms
+    }
+
+    /// Get write-side transformations
+    ///
+    /// These transformations aggregate data when components write variables at finer
+    /// resolutions than the schema declares.
+    pub fn write_transforms(&self) -> &HashMap<String, RequiredTransformation> {
+        &self.write_transforms
     }
 
     /// Gets the time value at the current step
@@ -960,11 +1060,39 @@ impl Model {
     /// The output state defines the values at the next time index as it represents the state
     /// at the start of the next timestep.
     fn step_model_component(&mut self, component: C) {
-        let input_state = extract_state(
-            &self.collection,
-            component.input_names(),
-            self.current_time(),
-        );
+        // Build transform context for read-side aggregation
+        let input_names = component.input_names();
+        let input_state = if self.read_transforms.is_empty() {
+            extract_state(&self.collection, input_names, self.current_time())
+        } else {
+            // Build transform context with only the transforms relevant to this component's inputs
+            let mut read_transform_info = HashMap::new();
+            for name in &input_names {
+                if let Some(transform) = self.read_transforms.get(name) {
+                    read_transform_info.insert(
+                        name.clone(),
+                        ReadTransformInfo {
+                            source_grid: transform.source_grid,
+                            weights: self.grid_weights.get(&transform.source_grid).cloned(),
+                        },
+                    );
+                }
+            }
+
+            if read_transform_info.is_empty() {
+                extract_state(&self.collection, input_names, self.current_time())
+            } else {
+                let context = TransformContext {
+                    read_transforms: read_transform_info,
+                };
+                extract_state_with_transforms(
+                    &self.collection,
+                    input_names,
+                    self.current_time(),
+                    context,
+                )
+            }
+        };
 
         let (start, end) = self.current_time_bounds();
 

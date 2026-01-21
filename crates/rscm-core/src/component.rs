@@ -1,6 +1,7 @@
 use crate::errors::RSCMResult;
 pub use crate::state::{
-    FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, InputState, OutputState, TimeseriesWindow,
+    FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, HemisphericWindow, InputState,
+    OutputState, ScalarWindow, TimeseriesWindow,
 };
 use crate::timeseries::Time;
 use pyo3::{pyclass, pymethods};
