@@ -75,10 +75,10 @@ See design.md "Alternatives Rejected" section for details.
 
 **File:** `crates/rscm-core/src/model.rs`
 
-- [ ] 8.1 After component solve, check output variables against write_transforms
-- [ ] 8.2 If transform needed, aggregate StateValue before writing to collection
-- [ ] 8.3 Add helper function `aggregate_state_value(value, source_grid, target_grid, weights)`
-- [ ] 8.4 Add tests for write-side aggregation
+- [x] 8.1 After component solve, check output variables against write_transforms
+- [x] 8.2 If transform needed, aggregate StateValue before writing to collection
+- [x] 8.3 Add helper function `aggregate_state_value(value, source_grid, target_grid, weights)`
+- [x] 8.4 Add tests for write-side aggregation
 
 ## 9. Integration Tests
 
@@ -94,16 +94,16 @@ See design.md "Alternatives Rejected" section for details.
 
 **Write-side tests:**
 
-- [ ] 9.6 Test: Scalar schema variable with FourBox producer - auto-aggregates on write
-- [ ] 9.7 Test: Scalar schema variable with Hemispheric producer - auto-aggregates on write
-- [ ] 9.8 Test: Hemispheric schema variable with FourBox producer - auto-aggregates on write
-- [ ] 9.9 Test: FourBox schema variable with Scalar producer - errors (no broadcast)
+- [x] 9.6 Test: Scalar schema variable with FourBox producer - auto-aggregates on write
+- [x] 9.7 Test: Scalar schema variable with Hemispheric producer - auto-aggregates on write
+- [x] 9.8 Test: Hemispheric schema variable with FourBox producer - auto-aggregates on write
+- [x] 9.9 Test: FourBox schema variable with Scalar producer - errors (no broadcast)
 
 **Combined tests:**
 
 - [ ] 9.10 Test: Chain with write-aggregate then read-aggregate
-- [ ] 9.11 Test: Custom weights affect aggregation results
-- [ ] 9.12 Test: Model without schema - unchanged behaviour (no auto-aggregation)
+- [x] 9.11 Test: Custom weights affect aggregation results
+- [x] 9.12 Test: Model without schema - unchanged behaviour (no auto-aggregation)
 
 ## 10. Python Bindings
 

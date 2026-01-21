@@ -15,8 +15,8 @@ use crate::component::{
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::schema::VariableSchema;
-use crate::spatial::ScalarRegion;
-use crate::state::StateValue;
+use crate::spatial::{FourBoxGrid, FourBoxRegion, HemisphericGrid, ScalarRegion};
+use crate::state::{HemisphericSlice, StateValue};
 use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
 use crate::timeseries_collection::{TimeseriesCollection, VariableType};
 use numpy::ndarray::Array;
@@ -220,6 +220,126 @@ pub fn extract_state_with_transforms(
     });
 
     InputState::build_with_transforms(state, t_current, transform_context)
+}
+
+/// Aggregate a StateValue from a finer grid to a coarser grid.
+///
+/// This function performs write-side grid transformation, aggregating component output
+/// at a finer resolution to the schema's declared coarser resolution before storage.
+///
+/// # Arguments
+///
+/// * `value` - The StateValue to aggregate
+/// * `source_grid` - The grid type the component produced (finer resolution)
+/// * `target_grid` - The grid type the schema expects (coarser resolution)
+/// * `weights` - Optional custom weights for aggregation; uses default grid weights if None
+///
+/// # Supported transformations
+///
+/// * FourBox -> Scalar: weighted average of all 4 regions
+/// * FourBox -> Hemispheric: weighted average within each hemisphere
+/// * Hemispheric -> Scalar: weighted average of 2 hemispheres
+///
+/// # Errors
+///
+/// Returns an error if:
+/// * The source grid is coarser than the target (disaggregation not supported)
+/// * The StateValue variant doesn't match the declared source_grid
+fn aggregate_state_value(
+    value: &StateValue,
+    source_grid: GridType,
+    target_grid: GridType,
+    weights: Option<&Vec<f64>>,
+) -> RSCMResult<StateValue> {
+    match (source_grid, target_grid) {
+        // FourBox -> Scalar: aggregate all 4 regions to global
+        (GridType::FourBox, GridType::Scalar) => {
+            let slice = match value {
+                StateValue::FourBox(s) => s,
+                _ => panic!(
+                    "StateValue type mismatch: expected FourBox but got {:?}",
+                    value
+                ),
+            };
+            let grid = match weights {
+                Some(w) => {
+                    let arr: [f64; 4] = w.as_slice().try_into().unwrap_or_else(|_| {
+                        panic!("FourBox weights must have 4 elements, got {}", w.len())
+                    });
+                    FourBoxGrid::with_weights(arr)
+                }
+                None => FourBoxGrid::magicc_standard(),
+            };
+            Ok(StateValue::Scalar(slice.aggregate_global(&grid)))
+        }
+
+        // FourBox -> Hemispheric: aggregate by hemisphere
+        (GridType::FourBox, GridType::Hemispheric) => {
+            let slice = match value {
+                StateValue::FourBox(s) => s,
+                _ => panic!(
+                    "StateValue type mismatch: expected FourBox but got {:?}",
+                    value
+                ),
+            };
+            let grid_weights = match weights {
+                Some(w) => {
+                    let arr: [f64; 4] = w.as_slice().try_into().unwrap_or_else(|_| {
+                        panic!("FourBox weights must have 4 elements, got {}", w.len())
+                    });
+                    arr
+                }
+                None => [0.25, 0.25, 0.25, 0.25],
+            };
+
+            // Aggregate by hemisphere using weighted averages
+            let values = slice.as_array();
+            let no = FourBoxRegion::NorthernOcean as usize;
+            let nl = FourBoxRegion::NorthernLand as usize;
+            let so = FourBoxRegion::SouthernOcean as usize;
+            let sl = FourBoxRegion::SouthernLand as usize;
+
+            let northern = (values[no] * grid_weights[no] + values[nl] * grid_weights[nl])
+                / (grid_weights[no] + grid_weights[nl]);
+            let southern = (values[so] * grid_weights[so] + values[sl] * grid_weights[sl])
+                / (grid_weights[so] + grid_weights[sl]);
+
+            Ok(StateValue::Hemispheric(HemisphericSlice::from([
+                northern, southern,
+            ])))
+        }
+
+        // Hemispheric -> Scalar: aggregate both hemispheres to global
+        (GridType::Hemispheric, GridType::Scalar) => {
+            let slice = match value {
+                StateValue::Hemispheric(s) => s,
+                _ => panic!(
+                    "StateValue type mismatch: expected Hemispheric but got {:?}",
+                    value
+                ),
+            };
+            let grid = match weights {
+                Some(w) => {
+                    let arr: [f64; 2] = w.as_slice().try_into().unwrap_or_else(|_| {
+                        panic!("Hemispheric weights must have 2 elements, got {}", w.len())
+                    });
+                    HemisphericGrid::with_weights(arr)
+                }
+                None => HemisphericGrid::default(),
+            };
+            Ok(StateValue::Scalar(slice.aggregate_global(&grid)))
+        }
+
+        // Same grid type: no transformation needed (identity)
+        (s, t) if s == t => Ok(value.clone()),
+
+        // Any other combination is not supported (disaggregation)
+        _ => Err(RSCMError::GridTransformationNotSupported {
+            source_grid: format!("{:?}", source_grid),
+            target_grid: format!("{:?}", target_grid),
+            variable: "unknown".to_string(),
+        }),
+    }
 }
 
 /// Check that a component graph is valid
@@ -847,7 +967,14 @@ impl ModelBuilder {
                 }
             } else {
                 // Create a placeholder for data that will be generated by the model
-                match definition.grid_type {
+                // If there's a write transform, use the target grid type (schema's type)
+                // instead of the component's declared output type
+                let storage_grid_type = write_transforms
+                    .get(&name)
+                    .map(|t| t.target_grid)
+                    .unwrap_or(definition.grid_type);
+
+                match storage_grid_type {
                     GridType::Scalar => collection.add_timeseries(
                         definition.name,
                         Timeseries::new_empty_scalar(
@@ -1102,10 +1229,31 @@ impl Model {
             Ok(output_state) => {
                 for (key, state_value) in output_state.iter() {
                     let data = self.collection.get_data_mut(key).unwrap();
+
+                    // Apply write-side transformation if needed (component produces finer grid
+                    // than schema expects)
+                    let final_value = if let Some(transform) = self.write_transforms.get(key) {
+                        let weights = self.grid_weights.get(&transform.source_grid);
+                        match aggregate_state_value(
+                            state_value,
+                            transform.source_grid,
+                            transform.target_grid,
+                            weights,
+                        ) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                println!("Write-side aggregation failed for {}: {}", key, e);
+                                continue;
+                            }
+                        }
+                    } else {
+                        state_value.clone()
+                    };
+
                     // The next time index is used as this output state represents the value of a
                     // variable at the end of the current time step.
                     // This is the same as the start of the next timestep.
-                    let result = match state_value {
+                    let result = match &final_value {
                         StateValue::Scalar(v) => data.set_scalar(key, self.time_index + 1, *v),
                         StateValue::FourBox(slice) => {
                             data.set_four_box(key, self.time_index + 1, slice)
@@ -2641,6 +2789,500 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 result.is_ok(),
                 "Same grid types should always be allowed: {:?}",
                 result.err()
+            );
+        }
+    }
+
+    /// Integration tests for write-side grid aggregation during model execution
+    mod write_side_integration_tests {
+        use super::*;
+        use crate::state::FourBoxSlice;
+        use is_close::is_close;
+
+        /// Component that produces FourBox output with known values
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct FourBoxWriter {
+            var_name: String,
+            /// Values to produce: [NO, NL, SO, SL]
+            values: [FloatValue; 4],
+        }
+
+        #[typetag::serde]
+        impl Component for FourBoxWriter {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![RequirementDefinition::four_box_output(&self.var_name, "K")]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let mut output = OutputState::new();
+                output.insert(
+                    self.var_name.clone(),
+                    StateValue::FourBox(FourBoxSlice::from_array(self.values)),
+                );
+                Ok(output)
+            }
+        }
+
+        /// Component that produces Hemispheric output with known values
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct HemisphericWriter {
+            var_name: String,
+            /// Values to produce: [Northern, Southern]
+            values: [FloatValue; 2],
+        }
+
+        #[typetag::serde]
+        impl Component for HemisphericWriter {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![RequirementDefinition::hemispheric_output(
+                    &self.var_name,
+                    "K",
+                )]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let mut output = OutputState::new();
+                output.insert(
+                    self.var_name.clone(),
+                    StateValue::Hemispheric(HemisphericSlice::from(self.values)),
+                );
+                Ok(output)
+            }
+        }
+
+        #[test]
+        fn test_write_aggregation_fourbox_to_scalar_execution() {
+            // Schema declares Scalar, component produces FourBox
+            // The model should aggregate FourBox values to Scalar on write
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0], // [NO, NL, SO, SL]
+                }))
+                .build()
+                .expect("Model should build");
+
+            // Verify write transform is registered
+            assert!(
+                model.write_transforms().contains_key("Temperature"),
+                "Write transform should be registered"
+            );
+
+            // Run one step
+            model.step();
+
+            // Check the collection has scalar data (not FourBox)
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            let ts = data.as_scalar().expect("Should be stored as Scalar");
+
+            // Get the value at index 1 (after first step)
+            let value = ts.at_scalar(1).expect("Should have value at index 1");
+
+            // With default equal weights [0.25, 0.25, 0.25, 0.25]:
+            // 10*0.25 + 20*0.25 + 30*0.25 + 40*0.25 = 25.0
+            assert!(
+                is_close!(value, 25.0),
+                "Expected aggregated value 25.0, got {}",
+                value
+            );
+        }
+
+        #[test]
+        fn test_write_aggregation_fourbox_to_scalar_custom_weights() {
+            // Schema declares Scalar, component produces FourBox
+            // Use custom weights for aggregation
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14])
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0],
+                }))
+                .build()
+                .expect("Model should build");
+
+            model.step();
+
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            let ts = data.as_scalar().expect("Should be stored as Scalar");
+            let value = ts.at_scalar(1).expect("Should have value at index 1");
+
+            // With custom weights [0.36, 0.14, 0.36, 0.14]:
+            // 10*0.36 + 20*0.14 + 30*0.36 + 40*0.14 = 3.6 + 2.8 + 10.8 + 5.6 = 22.8
+            assert!(
+                is_close!(value, 22.8),
+                "Expected aggregated value 22.8, got {}",
+                value
+            );
+        }
+
+        #[test]
+        fn test_write_aggregation_fourbox_to_hemispheric_execution() {
+            // Schema declares Hemispheric, component produces FourBox
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Hemispheric);
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0],
+                }))
+                .build()
+                .expect("Model should build");
+
+            model.step();
+
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            let ts = data
+                .as_hemispheric()
+                .expect("Should be stored as Hemispheric");
+
+            let northern = ts.at_index(1, 0).expect("Should have northern value");
+            let southern = ts.at_index(1, 1).expect("Should have southern value");
+
+            // With equal weights [0.25, 0.25, 0.25, 0.25]:
+            // Northern = (10*0.25 + 20*0.25) / (0.25 + 0.25) = 7.5 / 0.5 = 15.0
+            // Southern = (30*0.25 + 40*0.25) / (0.25 + 0.25) = 17.5 / 0.5 = 35.0
+            assert!(
+                is_close!(northern, 15.0),
+                "Expected northern 15.0, got {}",
+                northern
+            );
+            assert!(
+                is_close!(southern, 35.0),
+                "Expected southern 35.0, got {}",
+                southern
+            );
+        }
+
+        #[test]
+        fn test_write_aggregation_hemispheric_to_scalar_execution() {
+            // Schema declares Scalar, component produces Hemispheric
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(HemisphericWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [15.0, 35.0], // [Northern, Southern]
+                }))
+                .build()
+                .expect("Model should build");
+
+            model.step();
+
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            let ts = data.as_scalar().expect("Should be stored as Scalar");
+            let value = ts.at_scalar(1).expect("Should have value at index 1");
+
+            // With default equal weights [0.5, 0.5]:
+            // 15*0.5 + 35*0.5 = 25.0
+            assert!(
+                is_close!(value, 25.0),
+                "Expected aggregated value 25.0, got {}",
+                value
+            );
+        }
+
+        #[test]
+        fn test_write_aggregation_multiple_steps() {
+            // Run multiple steps to ensure aggregation works consistently
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0],
+                }))
+                .build()
+                .expect("Model should build");
+
+            // Run all steps
+            model.run();
+
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            let ts = data.as_scalar().expect("Should be stored as Scalar");
+
+            // Check values at all indices after initial
+            for i in 1..5 {
+                let value = ts
+                    .at_scalar(i)
+                    .unwrap_or_else(|| panic!("Should have value at index {}", i));
+                assert!(
+                    is_close!(value, 25.0),
+                    "Expected aggregated value 25.0 at index {}, got {}",
+                    i,
+                    value
+                );
+            }
+        }
+
+        #[test]
+        fn test_no_schema_no_aggregation() {
+            // Without a schema, no aggregation should happen
+            // Component produces FourBox, it should stay as FourBox
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0],
+                }))
+                .build()
+                .expect("Model should build without schema");
+
+            // Verify no write transforms
+            assert!(
+                model.write_transforms().is_empty(),
+                "Should have no write transforms without schema"
+            );
+
+            model.step();
+
+            // Data should remain as FourBox
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            assert!(
+                data.as_four_box().is_some(),
+                "Should be stored as FourBox without schema"
+            );
+        }
+    }
+
+    /// Tests for the aggregate_state_value helper function
+    mod aggregate_state_value_tests {
+        use super::*;
+        use crate::state::FourBoxSlice;
+        use is_close::is_close;
+
+        #[test]
+        fn test_fourbox_to_scalar_default_weights() {
+            // With equal weights (default MAGICC standard), result is mean
+            let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+
+            let result =
+                aggregate_state_value(&fourbox, GridType::FourBox, GridType::Scalar, None).unwrap();
+
+            match result {
+                StateValue::Scalar(v) => {
+                    // Default weights are equal [0.25, 0.25, 0.25, 0.25]
+                    // 10*0.25 + 20*0.25 + 30*0.25 + 40*0.25 = 25.0
+                    assert!(is_close!(v, 25.0), "Expected 25.0, got {}", v);
+                }
+                _ => panic!("Expected Scalar, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_fourbox_to_scalar_custom_weights() {
+            let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+            let weights = vec![0.36, 0.14, 0.36, 0.14]; // Ocean-biased weights
+
+            let result = aggregate_state_value(
+                &fourbox,
+                GridType::FourBox,
+                GridType::Scalar,
+                Some(&weights),
+            )
+            .unwrap();
+
+            match result {
+                StateValue::Scalar(v) => {
+                    // 10*0.36 + 20*0.14 + 30*0.36 + 40*0.14 = 3.6 + 2.8 + 10.8 + 5.6 = 22.8
+                    assert!(is_close!(v, 22.8), "Expected 22.8, got {}", v);
+                }
+                _ => panic!("Expected Scalar, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_fourbox_to_hemispheric_default_weights() {
+            let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+
+            let result =
+                aggregate_state_value(&fourbox, GridType::FourBox, GridType::Hemispheric, None)
+                    .unwrap();
+
+            match result {
+                StateValue::Hemispheric(slice) => {
+                    // With equal weights [0.25, 0.25, 0.25, 0.25]:
+                    // Northern = (10*0.25 + 20*0.25) / (0.25 + 0.25) = 7.5 / 0.5 = 15.0
+                    // Southern = (30*0.25 + 40*0.25) / (0.25 + 0.25) = 17.5 / 0.5 = 35.0
+                    assert!(
+                        is_close!(slice.as_array()[0], 15.0),
+                        "Expected Northern=15.0, got {}",
+                        slice.as_array()[0]
+                    );
+                    assert!(
+                        is_close!(slice.as_array()[1], 35.0),
+                        "Expected Southern=35.0, got {}",
+                        slice.as_array()[1]
+                    );
+                }
+                _ => panic!("Expected Hemispheric, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_fourbox_to_hemispheric_custom_weights() {
+            let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+            let weights = vec![0.36, 0.14, 0.36, 0.14]; // Ocean-biased
+
+            let result = aggregate_state_value(
+                &fourbox,
+                GridType::FourBox,
+                GridType::Hemispheric,
+                Some(&weights),
+            )
+            .unwrap();
+
+            match result {
+                StateValue::Hemispheric(slice) => {
+                    // Northern = (10*0.36 + 20*0.14) / (0.36 + 0.14) = (3.6 + 2.8) / 0.5 = 12.8
+                    // Southern = (30*0.36 + 40*0.14) / (0.36 + 0.14) = (10.8 + 5.6) / 0.5 = 32.8
+                    assert!(
+                        is_close!(slice.as_array()[0], 12.8),
+                        "Expected Northern=12.8, got {}",
+                        slice.as_array()[0]
+                    );
+                    assert!(
+                        is_close!(slice.as_array()[1], 32.8),
+                        "Expected Southern=32.8, got {}",
+                        slice.as_array()[1]
+                    );
+                }
+                _ => panic!("Expected Hemispheric, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_hemispheric_to_scalar_default_weights() {
+            let hemispheric = StateValue::Hemispheric(HemisphericSlice::from([15.0, 35.0]));
+
+            let result =
+                aggregate_state_value(&hemispheric, GridType::Hemispheric, GridType::Scalar, None)
+                    .unwrap();
+
+            match result {
+                StateValue::Scalar(v) => {
+                    // Default weights [0.5, 0.5] -> mean
+                    // 15*0.5 + 35*0.5 = 25.0
+                    assert!(is_close!(v, 25.0), "Expected 25.0, got {}", v);
+                }
+                _ => panic!("Expected Scalar, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_hemispheric_to_scalar_custom_weights() {
+            let hemispheric = StateValue::Hemispheric(HemisphericSlice::from([10.0, 30.0]));
+            let weights = vec![0.4, 0.6]; // Southern-biased
+
+            let result = aggregate_state_value(
+                &hemispheric,
+                GridType::Hemispheric,
+                GridType::Scalar,
+                Some(&weights),
+            )
+            .unwrap();
+
+            match result {
+                StateValue::Scalar(v) => {
+                    // 10*0.4 + 30*0.6 = 4 + 18 = 22.0
+                    assert!(is_close!(v, 22.0), "Expected 22.0, got {}", v);
+                }
+                _ => panic!("Expected Scalar, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_identity_transformation_scalar() {
+            let scalar = StateValue::Scalar(42.0);
+
+            let result =
+                aggregate_state_value(&scalar, GridType::Scalar, GridType::Scalar, None).unwrap();
+
+            match result {
+                StateValue::Scalar(v) => assert_eq!(v, 42.0),
+                _ => panic!("Expected Scalar, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_identity_transformation_fourbox() {
+            let fourbox = StateValue::FourBox(FourBoxSlice::from([1.0, 2.0, 3.0, 4.0]));
+
+            let result =
+                aggregate_state_value(&fourbox, GridType::FourBox, GridType::FourBox, None)
+                    .unwrap();
+
+            match result {
+                StateValue::FourBox(slice) => {
+                    assert_eq!(*slice.as_array(), [1.0, 2.0, 3.0, 4.0]);
+                }
+                _ => panic!("Expected FourBox, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_disaggregation_scalar_to_fourbox_rejected() {
+            let scalar = StateValue::Scalar(25.0);
+
+            let result = aggregate_state_value(&scalar, GridType::Scalar, GridType::FourBox, None);
+
+            assert!(
+                result.is_err(),
+                "Disaggregation Scalar->FourBox should be rejected"
+            );
+        }
+
+        #[test]
+        fn test_disaggregation_scalar_to_hemispheric_rejected() {
+            let scalar = StateValue::Scalar(25.0);
+
+            let result =
+                aggregate_state_value(&scalar, GridType::Scalar, GridType::Hemispheric, None);
+
+            assert!(
+                result.is_err(),
+                "Disaggregation Scalar->Hemispheric should be rejected"
+            );
+        }
+
+        #[test]
+        fn test_disaggregation_hemispheric_to_fourbox_rejected() {
+            let hemispheric = StateValue::Hemispheric(HemisphericSlice::from([15.0, 35.0]));
+
+            let result =
+                aggregate_state_value(&hemispheric, GridType::Hemispheric, GridType::FourBox, None);
+
+            assert!(
+                result.is_err(),
+                "Disaggregation Hemispheric->FourBox should be rejected"
             );
         }
     }
