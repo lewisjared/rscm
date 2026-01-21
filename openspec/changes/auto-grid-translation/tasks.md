@@ -116,7 +116,7 @@ See design.md "Alternatives Rejected" section for details.
 
 **File:** `docs/grids.md`
 
-- [ ] 11.1 Document schema-driven auto-aggregation feature
-- [ ] 11.2 Add example showing FourBox→Scalar auto-aggregation
-- [ ] 11.3 Document weight configuration via ModelBuilder
-- [ ] 11.4 Update troubleshooting section for new error type
+- [x] 11.1 Document schema-driven auto-aggregation feature
+- [x] 11.2 Add example showing FourBox→Scalar auto-aggregation
+- [x] 11.3 Document weight configuration via ModelBuilder
+- [x] 11.4 Update troubleshooting section for new error type

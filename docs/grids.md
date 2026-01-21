@@ -279,12 +279,155 @@ let hemi_values = four_box.transform_to(&fb_values, &hemispheric)?;
 // hemi_values = [14.5, 9.5]  (averages of ocean+land per hemisphere)
 ```
 
-## Grid Coupling Validation
+## Schema-Driven Auto-Aggregation
 
-When building a model, RSCM validates that connected components use compatible grid types:
+When using a `VariableSchema`, RSCM can automatically aggregate grid data when components use different resolutions. The schema declares the "native" grid type for each variable, and the model handles transformations transparently.
+
+### How It Works
+
+**Read-side aggregation:** When a component declares an input at a coarser resolution than the schema, the data is automatically aggregated when the component reads it.
+
+**Write-side aggregation:** When a component produces output at a finer resolution than the schema declares, the data is automatically aggregated when writing to the collection.
+
+```text
+Supported transformations (aggregation only):
+
+FourBox     -> Hemispheric  (aggregate ocean+land per hemisphere)
+FourBox     -> Scalar       (weighted average of all regions)
+Hemispheric -> Scalar       (weighted average of hemispheres)
+```
+
+Disaggregation (broadcasting from coarser to finer grids) is **not supported** because it would require inventing spatial structure.
+
+### Example: FourBox to Scalar Auto-Aggregation
+
+A component producing FourBox output can feed directly into a component expecting Scalar input, as long as the schema declares the appropriate grid type:
+
+**Python:**
 
 ```python
-# This will fail at build time:
+from rscm import ModelBuilder, PythonComponent, TimeAxis
+from rscm._lib.core import VariableSchema, GridType
+from rscm._lib.core.state import FourBoxSlice
+from rscm.component import Component, Input, Output
+
+
+class RegionalProducer(Component):
+    """Produces FourBox temperature data."""
+
+    temp = Output("Surface Temperature", unit="K", grid="FourBox")
+
+    def solve(self, t_current, t_next, inputs):
+        # Regional temperatures: [NO, NL, SO, SL]
+        return self.Outputs(
+            temp=FourBoxSlice.from_array([288.0, 292.0, 285.0, 289.0])
+        )
+
+
+class GlobalConsumer(Component):
+    """Consumes scalar (global average) temperature."""
+
+    temp = Input("Surface Temperature", unit="K")  # Scalar input
+    response = Output("Climate Response", unit="W/m^2")
+
+    def solve(self, t_current, t_next, inputs):
+        # Automatically receives aggregated global average
+        global_temp = inputs.temp.at_start()
+        return self.Outputs(response=global_temp * 0.1)
+
+
+# Schema declares FourBox as the native grid type
+schema = VariableSchema()
+schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+schema.add_variable("Climate Response", "W/m^2", GridType.Scalar)
+
+model = (
+    ModelBuilder()
+    .with_time_axis(TimeAxis.from_bounds(2020.0, 2025.0, 1.0))
+    .with_schema(schema)
+    .with_py_component(PythonComponent.build(RegionalProducer()))
+    .with_py_component(PythonComponent.build(GlobalConsumer()))
+    .build()
+)
+
+# GlobalConsumer receives the weighted average of [288, 292, 285, 289]
+# With equal weights: (288 + 292 + 285 + 289) / 4 = 213.5 K
+model.run()
+```
+
+**Rust:**
+
+```rust
+let schema = VariableSchema::new()
+    .variable_with_grid("Surface Temperature", "K", GridType::FourBox)
+    .variable("Climate Response", "W/m^2");
+
+let model = ModelBuilder::new()
+    .with_time_axis(time_axis)
+    .with_schema(schema)
+    .with_component(Arc::new(regional_producer))
+    .with_component(Arc::new(global_consumer))
+    .build()?;
+```
+
+### Configuring Aggregation Weights
+
+By default, aggregation uses equal weights. For physically meaningful results, configure area-based weights via `ModelBuilder`:
+
+**Python:**
+
+```python
+from rscm import ModelBuilder
+from rscm._lib.core import GridType
+
+# MAGICC-style area weights: ~36% ocean, ~14% land per hemisphere
+model = (
+    ModelBuilder()
+    .with_schema(schema)
+    .with_grid_weights(GridType.FourBox, [0.36, 0.14, 0.36, 0.14])
+    .with_grid_weights(GridType.Hemispheric, [0.5, 0.5])
+    # ... add components
+    .build()
+)
+```
+
+**Rust:**
+
+```rust
+let model = ModelBuilder::new()
+    .with_schema(schema)
+    .with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14])
+    .with_grid_weights(GridType::Hemispheric, vec![0.5, 0.5])
+    .with_component(...)
+    .build()?;
+```
+
+**Weight order:**
+
+| Grid Type   | Weight Order                                         |
+| ----------- | ---------------------------------------------------- |
+| FourBox     | [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand] |
+| Hemispheric | [Northern, Southern]                                 |
+
+Weights must sum to 1.0.
+
+### Introspection
+
+To see which transformations the model will perform:
+
+```python
+model = builder.build()
+transforms = model.required_transformations()
+for var_name, transform in transforms.items():
+    print(f"{var_name}: {transform}")
+```
+
+## Grid Coupling Validation
+
+When building a model **without a schema**, RSCM validates that connected components use compatible grid types:
+
+```python
+# Without schema - this will fail at build time:
 class Producer(Component):
     output = Output("Temperature", unit="K", grid="FourBox")
 
@@ -299,7 +442,11 @@ GridTypeMismatch: Variable 'Temperature' has grid type 'FourBox' from Producer
 but Consumer expects 'Scalar'
 ```
 
-**Fix:** Ensure producer and consumer use the same grid type, or add an explicit aggregation component.
+**Fixes:**
+
+1. **Add a schema** to enable auto-aggregation (recommended)
+2. Ensure producer and consumer use the same grid type
+3. Add an explicit aggregation component
 
 ## Best Practices
 

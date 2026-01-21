@@ -144,6 +144,63 @@ UnsupportedGridTransformation: from='Hemispheric', to='FourBox'
 
 **Fix:** Create a custom component that implements the transformation with appropriate physics.
 
+#### GridTransformationNotSupported
+
+```
+GridTransformationNotSupported: variable='Temperature', source_grid='Scalar', target_grid='FourBox'
+```
+
+**Cause:** A component requires a finer grid resolution than the schema or producer provides. This occurs with [schema-driven auto-aggregation](../grids.md#schema-driven-auto-aggregation) when:
+
+- A component declares a FourBox input but the schema declares Scalar
+- A component declares a Hemispheric input but the schema declares Scalar
+- A component declares a FourBox input but the schema declares Hemispheric
+
+Disaggregation (broadcasting coarse data to finer grids) is not supported because it would require inventing spatial structure that doesn't exist.
+
+**Fixes:**
+
+1. **Change the consumer component** to accept the coarser resolution:
+
+    ```python
+    # Instead of:
+    temp = Input("Temperature", unit="K", grid="FourBox")
+
+    # Use:
+    temp = Input("Temperature", unit="K")  # Scalar
+    ```
+
+2. **Change the schema** to provide finer resolution (if a component produces it):
+
+    ```python
+    schema.add_variable("Temperature", "K", GridType.FourBox)
+    ```
+
+3. **Create an explicit disaggregation component** with domain-specific assumptions:
+
+    ```python
+    class ScalarToFourBox(Component):
+        """Disaggregate scalar to FourBox with configurable ratios."""
+
+        scalar_temp = Input("Temperature|Global", unit="K")
+        regional_temp = Output("Temperature", unit="K", grid="FourBox")
+
+        def __init__(self, ocean_ratio=1.05, land_ratio=0.95):
+            self.ocean_ratio = ocean_ratio
+            self.land_ratio = land_ratio
+
+        def solve(self, t_current, t_next, inputs):
+            global_temp = inputs.scalar_temp.at_start()
+            return self.Outputs(
+                regional_temp=FourBoxSlice(
+                    northern_ocean=global_temp * self.ocean_ratio,
+                    northern_land=global_temp * self.land_ratio,
+                    southern_ocean=global_temp * self.ocean_ratio,
+                    southern_land=global_temp * self.land_ratio,
+                )
+            )
+    ```
+
 #### CircularDependency
 
 ```
