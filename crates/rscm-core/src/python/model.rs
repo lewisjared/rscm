@@ -91,6 +91,64 @@ impl PyModelBuilder {
         self_
     }
 
+    /// Set custom weights for a grid type.
+    ///
+    /// These weights override the default grid weights used when:
+    /// - Creating timeseries for grid-based variables
+    /// - Performing automatic grid transformations (aggregation)
+    ///
+    /// Args:
+    ///     grid_type: The grid type to set weights for (FourBox or Hemispheric)
+    ///     weights: The weights for each region. Must sum to 1.0.
+    ///         - FourBox: [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand]
+    ///         - Hemispheric: [Northern, Southern]
+    ///
+    /// Raises:
+    ///     ValueError: If grid_type is Scalar, weights have wrong length, or don't sum to 1.0
+    ///
+    /// Example:
+    ///     >>> builder = ModelBuilder()
+    ///     >>> builder.with_grid_weights(GridType.FourBox, [0.36, 0.14, 0.36, 0.14])
+    fn with_grid_weights<'py>(
+        mut self_: PyRefMut<'py, Self>,
+        grid_type: crate::component::GridType,
+        weights: Vec<f64>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        use pyo3::exceptions::PyValueError;
+
+        // Validate grid type
+        let expected_size =
+            match grid_type {
+                crate::component::GridType::Scalar => return Err(PyValueError::new_err(
+                    "Cannot set weights for Scalar grid type (scalars have no regional weights)",
+                )),
+                crate::component::GridType::FourBox => 4,
+                crate::component::GridType::Hemispheric => 2,
+            };
+
+        // Validate weights length
+        if weights.len() != expected_size {
+            return Err(PyValueError::new_err(format!(
+                "Weights length ({}) does not match grid type {} (expected {})",
+                weights.len(),
+                grid_type,
+                expected_size
+            )));
+        }
+
+        // Validate weights sum to 1.0
+        let sum: f64 = weights.iter().sum();
+        if (sum - 1.0).abs() >= 1e-6 {
+            return Err(PyValueError::new_err(format!(
+                "Weights must sum to 1.0, got {}",
+                sum
+            )));
+        }
+
+        self_.0.with_grid_weights(grid_type, weights);
+        Ok(self_)
+    }
+
     fn build(&self) -> PyResult<PyModel> {
         self.0
             .build()

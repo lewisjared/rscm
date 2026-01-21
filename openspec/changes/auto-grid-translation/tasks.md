@@ -86,11 +86,11 @@ See design.md "Alternatives Rejected" section for details.
 
 **Read-side tests:**
 
-- [ ] 9.1 Test: FourBox schema variable with scalar consumer - auto-aggregates on read
-- [ ] 9.2 Test: FourBox schema variable with hemispheric consumer - auto-aggregates on read
-- [ ] 9.3 Test: Hemispheric schema variable with scalar consumer - auto-aggregates on read
-- [ ] 9.4 Test: Multiple consumers at different resolutions - each gets correct aggregation
-- [ ] 9.5 Test: Scalar schema variable with FourBox consumer - errors (no broadcast)
+- [x] 9.1 Test: FourBox schema variable with scalar consumer - auto-aggregates on read
+- [x] 9.2 Test: FourBox schema variable with hemispheric consumer - auto-aggregates on read
+- [x] 9.3 Test: Hemispheric schema variable with scalar consumer - auto-aggregates on read
+- [x] 9.4 Test: Multiple consumers at different resolutions - each gets correct aggregation
+- [x] 9.5 Test: Scalar schema variable with FourBox consumer - errors (no broadcast)
 
 **Write-side tests:**
 
@@ -101,16 +101,16 @@ See design.md "Alternatives Rejected" section for details.
 
 **Combined tests:**
 
-- [ ] 9.10 Test: Chain with write-aggregate then read-aggregate
+- [x] 9.10 Test: Chain with write-aggregate then read-aggregate
 - [x] 9.11 Test: Custom weights affect aggregation results
 - [x] 9.12 Test: Model without schema - unchanged behaviour (no auto-aggregation)
 
 ## 10. Python Bindings
 
-**File:** `crates/rscm/src/python/mod.rs`
+**File:** `crates/rscm-core/src/python/model.rs`
 
-- [ ] 10.1 Expose `with_grid_weights()` on Python `ModelBuilder`
-- [ ] 10.2 Add Python test for grid auto-aggregation
+- [x] 10.1 Expose `with_grid_weights()` on Python `ModelBuilder`
+- [x] 10.2 Add Python test for grid auto-aggregation
 
 ## 11. Documentation
 
