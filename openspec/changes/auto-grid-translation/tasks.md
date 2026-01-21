@@ -69,7 +69,7 @@ See design.md "Alternatives Rejected" section for details.
 - [x] 7.3 Modify `get_hemispheric_window()` to detect FourBox source and return aggregating window
 - [x] 7.4 Create `AggregatingTimeseriesWindow` wrapper that aggregates on `at_start()`/`at_end()` calls
 - [x] 7.5 Use Model's grid weights for aggregation calculations
-- [ ] 7.6 Add tests for aggregating window behaviour
+- [x] 7.6 Add tests for aggregating window behaviour
 
 ## 8. Transform-on-Write in Model.step()
 

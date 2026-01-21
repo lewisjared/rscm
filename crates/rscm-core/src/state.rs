@@ -2490,3 +2490,380 @@ mod input_state_window_tests {
         assert_eq!(state.current_time(), 2023.5);
     }
 }
+
+#[cfg(test)]
+mod aggregating_window_tests {
+    use super::*;
+    use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+    use crate::spatial::{FourBoxGrid, HemisphericGrid};
+    use crate::timeseries::{GridTimeseries, TimeAxis};
+    use numpy::array;
+    use numpy::ndarray::Array2;
+    use std::sync::Arc;
+
+    fn create_four_box_timeseries() -> GridTimeseries<FloatValue, FourBoxGrid> {
+        let grid = FourBoxGrid::magicc_standard();
+        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0, 2002.0]));
+        // Values chosen for easy arithmetic: each timestep increases by 1
+        let values = Array2::from_shape_vec(
+            (3, 4),
+            vec![
+                10.0, 20.0, 30.0, 40.0, // 2000: mean = 25.0
+                11.0, 21.0, 31.0, 41.0, // 2001: mean = 26.0
+                12.0, 22.0, 32.0, 42.0, // 2002: mean = 27.0
+            ],
+        )
+        .unwrap();
+
+        GridTimeseries::new(
+            values,
+            time_axis,
+            grid,
+            "W/m^2".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        )
+    }
+
+    fn create_hemispheric_timeseries() -> GridTimeseries<FloatValue, HemisphericGrid> {
+        let grid = HemisphericGrid::equal_weights();
+        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0, 2002.0]));
+        let values = Array2::from_shape_vec(
+            (3, 2),
+            vec![
+                100.0, 200.0, // 2000: mean = 150.0
+                110.0, 220.0, // 2001: mean = 165.0
+                120.0, 240.0, // 2002: mean = 180.0
+            ],
+        )
+        .unwrap();
+
+        GridTimeseries::new(
+            values,
+            time_axis,
+            grid,
+            "W/m^2".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        )
+    }
+
+    // =========================================================================
+    // AggregatingFourBoxWindow tests (FourBox -> Scalar aggregation)
+    // =========================================================================
+
+    #[test]
+    fn test_aggregating_four_box_window_at_start_default_weights() {
+        let ts = create_four_box_timeseries();
+        // Index 1 = year 2001, values [11, 21, 31, 41]
+        let window = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, None);
+
+        // With equal weights: (11 + 21 + 31 + 41) / 4 = 26.0
+        assert_eq!(window.at_start(), 26.0);
+    }
+
+    #[test]
+    fn test_aggregating_four_box_window_at_start_custom_weights() {
+        let ts = create_four_box_timeseries();
+        // Custom weights that sum to 1.0
+        let weights = vec![0.5, 0.2, 0.2, 0.1];
+        let window = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, Some(weights));
+
+        // With custom weights: 11*0.5 + 21*0.2 + 31*0.2 + 41*0.1 = 5.5 + 4.2 + 6.2 + 4.1 = 20.0
+        assert_eq!(window.at_start(), 20.0);
+    }
+
+    #[test]
+    fn test_aggregating_four_box_window_at_end() {
+        let ts = create_four_box_timeseries();
+        // Index 1, at_end should return value at index 2
+        let window = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, None);
+
+        // Index 2 values [12, 22, 32, 42], mean = 27.0
+        assert_eq!(window.at_end(), Some(27.0));
+    }
+
+    #[test]
+    fn test_aggregating_four_box_window_at_end_last_index() {
+        let ts = create_four_box_timeseries();
+        // At last index, at_end should return None
+        let window = AggregatingFourBoxWindow::new(&ts, 2, 2002.0, None);
+
+        assert_eq!(window.at_end(), None);
+    }
+
+    #[test]
+    fn test_aggregating_four_box_window_previous() {
+        let ts = create_four_box_timeseries();
+        let window = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, None);
+
+        // Index 0 values [10, 20, 30, 40], mean = 25.0
+        assert_eq!(window.previous(), Some(25.0));
+    }
+
+    #[test]
+    fn test_aggregating_four_box_window_previous_at_first() {
+        let ts = create_four_box_timeseries();
+        let window = AggregatingFourBoxWindow::new(&ts, 0, 2000.0, None);
+
+        assert_eq!(window.previous(), None);
+    }
+
+    #[test]
+    fn test_aggregating_four_box_window_metadata() {
+        let ts = create_four_box_timeseries();
+        let window = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, None);
+
+        assert_eq!(window.time(), 2001.0);
+        assert_eq!(window.index(), 1);
+        assert_eq!(window.len(), 3);
+        assert!(!window.is_empty());
+    }
+
+    #[test]
+    fn test_aggregating_four_box_window_nan_handling() {
+        // Test that NaN values are excluded from aggregation
+        let grid = FourBoxGrid::magicc_standard();
+        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
+        let values = Array2::from_shape_vec(
+            (2, 4),
+            vec![
+                10.0,
+                f64::NAN,
+                30.0,
+                40.0, // 2000: has NaN
+                20.0,
+                20.0,
+                20.0,
+                20.0, // 2001: all valid
+            ],
+        )
+        .unwrap();
+        let ts = GridTimeseries::new(
+            values,
+            time_axis,
+            grid,
+            "test".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+
+        let weights = vec![0.25, 0.25, 0.25, 0.25];
+        let window = AggregatingFourBoxWindow::new(&ts, 0, 2000.0, Some(weights));
+
+        // NaN is skipped: 10*0.25 + 30*0.25 + 40*0.25 = 2.5 + 7.5 + 10.0 = 20.0
+        assert_eq!(window.at_start(), 20.0);
+    }
+
+    // =========================================================================
+    // AggregatingHemisphericWindow tests (Hemispheric -> Scalar aggregation)
+    // =========================================================================
+
+    #[test]
+    fn test_aggregating_hemispheric_window_at_start_default_weights() {
+        let ts = create_hemispheric_timeseries();
+        let window = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, None);
+
+        // Equal weights: (110 + 220) / 2 = 165.0
+        assert_eq!(window.at_start(), 165.0);
+    }
+
+    #[test]
+    fn test_aggregating_hemispheric_window_at_start_custom_weights() {
+        let ts = create_hemispheric_timeseries();
+        let weights = vec![0.7, 0.3];
+        let window = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, Some(weights));
+
+        // 110*0.7 + 220*0.3 = 77.0 + 66.0 = 143.0
+        assert_eq!(window.at_start(), 143.0);
+    }
+
+    #[test]
+    fn test_aggregating_hemispheric_window_at_end() {
+        let ts = create_hemispheric_timeseries();
+        let window = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, None);
+
+        // Index 2 values [120, 240], mean = 180.0
+        assert_eq!(window.at_end(), Some(180.0));
+    }
+
+    #[test]
+    fn test_aggregating_hemispheric_window_at_end_last_index() {
+        let ts = create_hemispheric_timeseries();
+        let window = AggregatingHemisphericWindow::new(&ts, 2, 2002.0, None);
+
+        assert_eq!(window.at_end(), None);
+    }
+
+    #[test]
+    fn test_aggregating_hemispheric_window_previous() {
+        let ts = create_hemispheric_timeseries();
+        let window = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, None);
+
+        // Index 0 values [100, 200], mean = 150.0
+        assert_eq!(window.previous(), Some(150.0));
+    }
+
+    #[test]
+    fn test_aggregating_hemispheric_window_metadata() {
+        let ts = create_hemispheric_timeseries();
+        let window = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, None);
+
+        assert_eq!(window.time(), 2001.0);
+        assert_eq!(window.index(), 1);
+        assert_eq!(window.len(), 3);
+        assert!(!window.is_empty());
+    }
+
+    // =========================================================================
+    // AggregatingFourBoxToHemisphericWindow tests (FourBox -> Hemispheric)
+    // =========================================================================
+
+    #[test]
+    fn test_aggregating_four_box_to_hemispheric_at_start_all() {
+        let ts = create_four_box_timeseries();
+        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, 2001.0);
+
+        // Index 1 values [11, 21, 31, 41]
+        // Northern = (11 + 21) / 2 = 16.0
+        // Southern = (31 + 41) / 2 = 36.0
+        let result = window.at_start_all();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], 16.0); // Northern
+        assert_eq!(result[1], 36.0); // Southern
+    }
+
+    #[test]
+    fn test_aggregating_four_box_to_hemispheric_at_start_single_region() {
+        let ts = create_four_box_timeseries();
+        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, 2001.0);
+
+        assert_eq!(window.at_start(HemisphericRegion::Northern), 16.0);
+        assert_eq!(window.at_start(HemisphericRegion::Southern), 36.0);
+    }
+
+    #[test]
+    fn test_aggregating_four_box_to_hemispheric_at_end_all() {
+        let ts = create_four_box_timeseries();
+        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, 2001.0);
+
+        // Index 2 values [12, 22, 32, 42]
+        // Northern = (12 + 22) / 2 = 17.0
+        // Southern = (32 + 42) / 2 = 37.0
+        let result = window.at_end_all().unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], 17.0);
+        assert_eq!(result[1], 37.0);
+    }
+
+    #[test]
+    fn test_aggregating_four_box_to_hemispheric_at_end_last_index() {
+        let ts = create_four_box_timeseries();
+        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 2, 2002.0);
+
+        assert_eq!(window.at_end_all(), None);
+        assert_eq!(window.at_end(HemisphericRegion::Northern), None);
+    }
+
+    #[test]
+    fn test_aggregating_four_box_to_hemispheric_metadata() {
+        let ts = create_four_box_timeseries();
+        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, 2001.0);
+
+        assert_eq!(window.time(), 2001.0);
+        assert_eq!(window.index(), 1);
+        assert_eq!(window.len(), 3);
+        assert!(!window.is_empty());
+    }
+
+    // =========================================================================
+    // ScalarWindow enum tests (unified scalar interface)
+    // =========================================================================
+
+    #[test]
+    fn test_scalar_window_direct_variant() {
+        use crate::timeseries::Timeseries;
+        use numpy::ndarray::Axis;
+
+        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0, 2002.0]));
+        let values = array![100.0, 200.0, 300.0].insert_axis(Axis(1));
+        let ts = Timeseries::new(
+            values,
+            time_axis,
+            ScalarGrid,
+            "test".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+        let inner = TimeseriesWindow::new(&ts, 1, 2001.0);
+        let window = ScalarWindow::Direct(inner);
+
+        assert_eq!(window.at_start(), 200.0);
+        assert_eq!(window.at_end(), Some(300.0));
+        assert_eq!(window.previous(), Some(100.0));
+        assert_eq!(window.time(), 2001.0);
+        assert_eq!(window.index(), 1);
+        assert_eq!(window.len(), 3);
+        assert!(!window.is_empty());
+    }
+
+    #[test]
+    fn test_scalar_window_from_four_box_variant() {
+        let ts = create_four_box_timeseries();
+        let inner = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, None);
+        let window = ScalarWindow::FromFourBox(inner);
+
+        // Same behavior as AggregatingFourBoxWindow
+        assert_eq!(window.at_start(), 26.0);
+        assert_eq!(window.at_end(), Some(27.0));
+        assert_eq!(window.previous(), Some(25.0));
+        assert_eq!(window.time(), 2001.0);
+        assert_eq!(window.index(), 1);
+        assert_eq!(window.len(), 3);
+    }
+
+    #[test]
+    fn test_scalar_window_from_hemispheric_variant() {
+        let ts = create_hemispheric_timeseries();
+        let inner = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, None);
+        let window = ScalarWindow::FromHemispheric(inner);
+
+        // Same behavior as AggregatingHemisphericWindow
+        assert_eq!(window.at_start(), 165.0);
+        assert_eq!(window.at_end(), Some(180.0));
+        assert_eq!(window.previous(), Some(150.0));
+        assert_eq!(window.time(), 2001.0);
+    }
+
+    // =========================================================================
+    // HemisphericWindow enum tests (unified hemispheric interface)
+    // =========================================================================
+
+    #[test]
+    fn test_hemispheric_window_direct_variant() {
+        let ts = create_hemispheric_timeseries();
+        let inner = GridTimeseriesWindow::new(&ts, 1, 2001.0);
+        let window = HemisphericWindow::Direct(inner);
+
+        assert_eq!(window.at_start(HemisphericRegion::Northern), 110.0);
+        assert_eq!(window.at_start(HemisphericRegion::Southern), 220.0);
+        assert_eq!(window.at_start_all(), vec![110.0, 220.0]);
+        assert_eq!(window.at_end_all(), Some(vec![120.0, 240.0]));
+        assert_eq!(window.time(), 2001.0);
+        assert_eq!(window.index(), 1);
+        assert_eq!(window.len(), 3);
+        assert!(!window.is_empty());
+    }
+
+    #[test]
+    fn test_hemispheric_window_from_four_box_variant() {
+        let ts = create_four_box_timeseries();
+        let inner = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, 2001.0);
+        let window = HemisphericWindow::FromFourBox(inner);
+
+        // Aggregated values: Northern=(11+21)/2=16, Southern=(31+41)/2=36
+        assert_eq!(window.at_start(HemisphericRegion::Northern), 16.0);
+        assert_eq!(window.at_start(HemisphericRegion::Southern), 36.0);
+        assert_eq!(window.at_start_all(), vec![16.0, 36.0]);
+        // Index 2: Northern=(12+22)/2=17, Southern=(32+42)/2=37
+        assert_eq!(window.at_end_all(), Some(vec![17.0, 37.0]));
+        assert_eq!(window.time(), 2001.0);
+        assert_eq!(window.index(), 1);
+    }
+}
