@@ -5,7 +5,7 @@
 
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    TimeseriesWindow,
+    ScalarWindow,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
@@ -73,7 +73,7 @@ impl Component for CO2ERF {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let inputs = CO2ERFInputs::from_input_state(input_state);
-        let concentration = inputs.concentration.current();
+        let concentration = inputs.concentration.at_start();
         let erf = self.calculate_erf(concentration);
 
         Ok(CO2ERFOutputs { erf }.into())

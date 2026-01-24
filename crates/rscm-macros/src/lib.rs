@@ -45,7 +45,7 @@
 //!
 //! ```ignore
 //! // ERROR: no field `temperature` on type `TestComponentInputs`
-//! let temp = inputs.temperature.current();
+//! let temp = inputs.temperature.at_start();
 //! ```
 //!
 //! ## Invalid Output Field
@@ -319,8 +319,8 @@ fn grid_type_token(grid: &str) -> TokenStream2 {
 fn input_window_type(grid: &str) -> TokenStream2 {
     match grid {
         "FourBox" => quote! { GridTimeseriesWindow<'a, FourBoxGrid> },
-        "Hemispheric" => quote! { GridTimeseriesWindow<'a, HemisphericGrid> },
-        _ => quote! { TimeseriesWindow<'a> },
+        "Hemispheric" => quote! { HemisphericWindow<'a> },
+        _ => quote! { ScalarWindow<'a> },
     }
 }
 

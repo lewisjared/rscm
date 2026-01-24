@@ -15,10 +15,10 @@ use crate::component::{
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::schema::VariableSchema;
-use crate::spatial::ScalarRegion;
-use crate::state::StateValue;
+use crate::spatial::{FourBoxGrid, FourBoxRegion, HemisphericGrid, ScalarRegion};
+use crate::state::{HemisphericSlice, StateValue};
 use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
-use crate::timeseries_collection::{TimeseriesCollection, VariableType};
+use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData, VariableType};
 use numpy::ndarray::Array;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
@@ -47,6 +47,35 @@ impl VariableDefinition {
             grid_type: definition.grid_type,
         }
     }
+}
+
+/// Direction of a grid transformation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TransformDirection {
+    /// Read-side: aggregating schema data before component reads it
+    /// (e.g., schema has FourBox, component wants Scalar)
+    Read,
+    /// Write-side: aggregating component output before storing in schema
+    /// (e.g., component produces FourBox, schema wants Scalar)
+    Write,
+}
+
+/// A required grid transformation identified during validation.
+///
+/// These are collected during component validation against the schema
+/// and used to configure runtime grid aggregation (transform-on-read/write).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RequiredTransformation {
+    /// The variable name being transformed
+    pub variable: String,
+    /// The unit of the variable
+    pub unit: String,
+    /// The source grid type (finer resolution)
+    pub source_grid: GridType,
+    /// The target grid type (coarser resolution)
+    pub target_grid: GridType,
+    /// Direction of the transformation
+    pub direction: TransformDirection,
 }
 
 /// A null component that does nothing
@@ -85,11 +114,18 @@ pub struct ModelBuilder {
     initial_values: HashMap<String, FloatValue>,
     pub time_axis: Arc<TimeAxis>,
     schema: Option<VariableSchema>,
+    /// Custom weights for grid aggregation, keyed by grid type
+    ///
+    /// When provided, these override the default weights used when creating
+    /// timeseries and performing grid transformations. Weights must sum to 1.0.
+    grid_weights: HashMap<GridType, Vec<f64>>,
 }
 
 /// Checks if the new definition is valid
 ///
 /// If any definitions share a name then the units and grid types must be equivalent.
+/// When `has_schema` is true, grid type checking is skipped because the schema validation
+/// will handle grid compatibility with relaxed rules (allowing aggregation).
 ///
 /// Returns an error if the parameter definition is inconsistent with any existing definitions.
 fn verify_definition(
@@ -97,6 +133,7 @@ fn verify_definition(
     definition: &RequirementDefinition,
     component_name: &str,
     existing_component_name: Option<&str>,
+    has_schema: bool,
 ) -> RSCMResult<()> {
     let existing = definitions.get(&definition.name);
     match existing {
@@ -113,7 +150,9 @@ fn verify_definition(
                 )));
             }
 
-            if existing.grid_type != definition.grid_type {
+            // Skip grid type check when schema is present - schema validation handles it
+            // with relaxed rules that allow aggregation
+            if !has_schema && existing.grid_type != definition.grid_type {
                 return Err(RSCMError::GridTypeMismatch {
                     variable: definition.name.clone(),
                     producer_component: existing_component_name.unwrap_or("unknown").to_string(),
@@ -132,6 +171,8 @@ fn verify_definition(
     }
     Ok(())
 }
+
+use crate::state::{ReadTransformInfo, TransformContext};
 
 /// Extract the input state for the current time step
 ///
@@ -157,6 +198,148 @@ pub fn extract_state(
     });
 
     InputState::build(state, t_current)
+}
+
+/// Extract the input state with transform context for grid aggregation.
+///
+/// Like `extract_state`, but includes transformation context for automatic
+/// grid aggregation when reading variables at coarser resolutions.
+pub fn extract_state_with_transforms(
+    collection: &TimeseriesCollection,
+    input_names: Vec<String>,
+    t_current: Time,
+    transform_context: TransformContext,
+) -> InputState<'_> {
+    let mut state = Vec::new();
+
+    input_names.into_iter().for_each(|name| {
+        let ts = collection
+            .get_by_name(name.as_str())
+            .unwrap_or_else(|| panic!("No timeseries with variable='{}'", name));
+        state.push(ts);
+    });
+
+    InputState::build_with_transforms(state, t_current, transform_context)
+}
+
+/// Aggregate a StateValue from a finer grid to a coarser grid.
+///
+/// This function performs write-side grid transformation, aggregating component output
+/// at a finer resolution to the schema's declared coarser resolution before storage.
+///
+/// # Arguments
+///
+/// * `value` - The StateValue to aggregate
+/// * `source_grid` - The grid type the component produced (finer resolution)
+/// * `target_grid` - The grid type the schema expects (coarser resolution)
+/// * `weights` - Optional custom weights for aggregation; uses default grid weights if None
+///
+/// # Supported transformations
+///
+/// * FourBox -> Scalar: weighted average of all 4 regions
+/// * FourBox -> Hemispheric: weighted average within each hemisphere
+/// * Hemispheric -> Scalar: weighted average of 2 hemispheres
+///
+/// # Errors
+///
+/// Returns an error if:
+/// * The source grid is coarser than the target (disaggregation not supported)
+/// * The StateValue variant doesn't match the declared source_grid
+fn aggregate_state_value(
+    value: &StateValue,
+    source_grid: GridType,
+    target_grid: GridType,
+    weights: Option<&Vec<f64>>,
+) -> RSCMResult<StateValue> {
+    match (source_grid, target_grid) {
+        // FourBox -> Scalar: aggregate all 4 regions to global
+        (GridType::FourBox, GridType::Scalar) => {
+            let slice = match value {
+                StateValue::FourBox(s) => s,
+                _ => panic!(
+                    "StateValue type mismatch: expected FourBox but got {:?}",
+                    value
+                ),
+            };
+            let grid = match weights {
+                Some(w) => {
+                    let arr: [f64; 4] = w.as_slice().try_into().unwrap_or_else(|_| {
+                        panic!("FourBox weights must have 4 elements, got {}", w.len())
+                    });
+                    FourBoxGrid::with_weights(arr)
+                }
+                None => FourBoxGrid::magicc_standard(),
+            };
+            Ok(StateValue::Scalar(slice.aggregate_global(&grid)))
+        }
+
+        // FourBox -> Hemispheric: aggregate by hemisphere
+        (GridType::FourBox, GridType::Hemispheric) => {
+            let slice = match value {
+                StateValue::FourBox(s) => s,
+                _ => panic!(
+                    "StateValue type mismatch: expected FourBox but got {:?}",
+                    value
+                ),
+            };
+            let grid_weights = match weights {
+                Some(w) => {
+                    let arr: [f64; 4] = w.as_slice().try_into().unwrap_or_else(|_| {
+                        panic!("FourBox weights must have 4 elements, got {}", w.len())
+                    });
+                    arr
+                }
+                None => [0.25, 0.25, 0.25, 0.25],
+            };
+
+            // Aggregate by hemisphere using weighted averages
+            let values = slice.as_array();
+            let no = FourBoxRegion::NorthernOcean as usize;
+            let nl = FourBoxRegion::NorthernLand as usize;
+            let so = FourBoxRegion::SouthernOcean as usize;
+            let sl = FourBoxRegion::SouthernLand as usize;
+
+            let northern = (values[no] * grid_weights[no] + values[nl] * grid_weights[nl])
+                / (grid_weights[no] + grid_weights[nl]);
+            let southern = (values[so] * grid_weights[so] + values[sl] * grid_weights[sl])
+                / (grid_weights[so] + grid_weights[sl]);
+
+            Ok(StateValue::Hemispheric(HemisphericSlice::from([
+                northern, southern,
+            ])))
+        }
+
+        // Hemispheric -> Scalar: aggregate both hemispheres to global
+        (GridType::Hemispheric, GridType::Scalar) => {
+            let slice = match value {
+                StateValue::Hemispheric(s) => s,
+                _ => panic!(
+                    "StateValue type mismatch: expected Hemispheric but got {:?}",
+                    value
+                ),
+            };
+            let grid = match weights {
+                Some(w) => {
+                    let arr: [f64; 2] = w.as_slice().try_into().unwrap_or_else(|_| {
+                        panic!("Hemispheric weights must have 2 elements, got {}", w.len())
+                    });
+                    HemisphericGrid::with_weights(arr)
+                }
+                None => HemisphericGrid::default(),
+            };
+            Ok(StateValue::Scalar(slice.aggregate_global(&grid)))
+        }
+
+        // Same grid type: no transformation needed (identity)
+        (s, t) if s == t => Ok(value.clone()),
+
+        // Any other combination is not supported (disaggregation)
+        _ => Err(RSCMError::GridTransformationNotSupported {
+            source_grid: format!("{:?}", source_grid),
+            target_grid: format!("{:?}", target_grid),
+            variable: "unknown".to_string(),
+        }),
+    }
 }
 
 /// Check that a component graph is valid
@@ -191,6 +374,97 @@ impl ModelBuilder {
             exogenous_variables: TimeseriesCollection::new(),
             time_axis: Arc::new(TimeAxis::from_values(Array::range(2000.0, 2100.0, 1.0))),
             schema: None,
+            grid_weights: HashMap::new(),
+        }
+    }
+
+    /// Set custom weights for a grid type
+    ///
+    /// These weights override the default grid weights used when:
+    /// - Creating timeseries for grid-based variables
+    /// - Performing automatic grid transformations (when enabled)
+    ///
+    /// # Arguments
+    ///
+    /// * `grid_type` - The grid type to configure (FourBox or Hemispheric)
+    /// * `weights` - Area-based weights that must sum to 1.0
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - `grid_type` is `Scalar` (scalars have no weights)
+    /// - `weights` length does not match the grid size (4 for FourBox, 2 for Hemispheric)
+    /// - `weights` do not sum to approximately 1.0 (within 1e-6)
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use rscm_core::model::ModelBuilder;
+    /// use rscm_core::component::GridType;
+    ///
+    /// let mut builder = ModelBuilder::new();
+    /// // Area-based weights for FourBox grid
+    /// builder.with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14]);
+    /// ```
+    pub fn with_grid_weights(&mut self, grid_type: GridType, weights: Vec<f64>) -> &mut Self {
+        // Validate grid type
+        let expected_size = match grid_type {
+            GridType::Scalar => {
+                panic!("Cannot set weights for Scalar grid type (scalars have no regional weights)")
+            }
+            GridType::FourBox => 4,
+            GridType::Hemispheric => 2,
+        };
+
+        // Validate weights length
+        assert_eq!(
+            weights.len(),
+            expected_size,
+            "Weights length {} does not match {} grid size {}",
+            weights.len(),
+            grid_type,
+            expected_size
+        );
+
+        // Validate weights sum to 1.0
+        let sum: f64 = weights.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-6,
+            "Weights must sum to 1.0, got {}",
+            sum
+        );
+
+        self.grid_weights.insert(grid_type, weights);
+        self
+    }
+
+    /// Create a FourBoxGrid using custom weights if configured, otherwise use defaults
+    fn create_four_box_grid(&self) -> crate::spatial::FourBoxGrid {
+        use crate::spatial::FourBoxGrid;
+        match self.grid_weights.get(&GridType::FourBox) {
+            Some(weights) => {
+                let weights_arr: [f64; 4] = weights
+                    .as_slice()
+                    .try_into()
+                    .expect("FourBox weights should have 4 elements");
+                FourBoxGrid::with_weights(weights_arr)
+            }
+            None => FourBoxGrid::magicc_standard(),
+        }
+    }
+
+    /// Create a HemisphericGrid using custom weights if configured, otherwise use defaults
+    fn create_hemispheric_grid(&self) -> crate::spatial::HemisphericGrid {
+        use crate::spatial::HemisphericGrid;
+        match self.grid_weights.get(&GridType::Hemispheric) {
+            Some(weights) => {
+                let weights_arr: [f64; 2] = weights
+                    .as_slice()
+                    .try_into()
+                    .expect("Hemispheric weights should have 2 elements");
+                HemisphericGrid::with_weights(weights_arr)
+            }
+            None => HemisphericGrid::equal_weights(),
         }
     }
 
@@ -271,7 +545,9 @@ impl ModelBuilder {
     /// - All outputs are defined in the schema (as variables or aggregates)
     /// - All inputs are defined in the schema (as variables or aggregates)
     /// - Units match between component and schema
-    /// - Grid types match between component and schema
+    /// - Grid types are compatible (allowing aggregation where valid)
+    ///
+    /// Returns a list of required grid transformations for mismatched grids.
     fn validate_component_against_schema(
         &self,
         schema: &VariableSchema,
@@ -279,8 +555,11 @@ impl ModelBuilder {
         inputs: &[RequirementDefinition],
         outputs: &[RequirementDefinition],
         endogenous: &HashMap<String, NodeIndex>,
-    ) -> RSCMResult<()> {
-        // Validate outputs (4.3)
+    ) -> RSCMResult<Vec<RequiredTransformation>> {
+        let mut transformations = Vec::new();
+
+        // Validate outputs
+        // Write-side: component produces finer grid than schema → aggregate before storage
         for output in outputs {
             // Check if output is defined in schema
             if !schema.contains(&output.name) {
@@ -303,20 +582,35 @@ impl ModelBuilder {
                 }
             }
 
-            // Check grid type matches
+            // Check grid type compatibility
             if let Some(schema_grid) = schema.get_grid_type(&output.name) {
                 if schema_grid != output.grid_type {
-                    return Err(RSCMError::ComponentSchemaGridMismatch {
-                        variable: output.name.clone(),
-                        component: component_name.to_string(),
-                        component_grid: format!("{:?}", output.grid_type),
-                        schema_grid: format!("{:?}", schema_grid),
-                    });
+                    // Write-side: component grid can aggregate to schema grid?
+                    // Component produces finer data → aggregation to schema is OK
+                    if output.grid_type.can_aggregate_to(schema_grid) {
+                        // Valid write-side aggregation needed
+                        transformations.push(RequiredTransformation {
+                            variable: output.name.clone(),
+                            unit: output.unit.clone(),
+                            source_grid: output.grid_type,
+                            target_grid: schema_grid,
+                            direction: TransformDirection::Write,
+                        });
+                    } else {
+                        // Invalid: would require disaggregation (broadcast)
+                        // Component produces coarser data than schema expects
+                        return Err(RSCMError::GridTransformationNotSupported {
+                            variable: output.name.clone(),
+                            source_grid: output.grid_type.to_string(),
+                            target_grid: schema_grid.to_string(),
+                        });
+                    }
                 }
             }
         }
 
-        // Validate inputs (4.4)
+        // Validate inputs
+        // Read-side: component wants coarser grid than schema → aggregate before read
         for input in inputs {
             // Skip empty links
             if input.requirement_type == RequirementType::EmptyLink {
@@ -334,7 +628,7 @@ impl ModelBuilder {
                 });
             }
 
-            // If it's in the schema, check unit and grid type match
+            // If it's in the schema, check unit and grid type compatibility
             if schema.contains(&input.name) {
                 if let Some(schema_unit) = schema.get_unit(&input.name) {
                     if schema_unit != input.unit {
@@ -349,18 +643,32 @@ impl ModelBuilder {
 
                 if let Some(schema_grid) = schema.get_grid_type(&input.name) {
                     if schema_grid != input.grid_type {
-                        return Err(RSCMError::ComponentSchemaGridMismatch {
-                            variable: input.name.clone(),
-                            component: component_name.to_string(),
-                            component_grid: format!("{:?}", input.grid_type),
-                            schema_grid: format!("{:?}", schema_grid),
-                        });
+                        // Read-side: schema grid can aggregate to component grid?
+                        // Schema has finer data → aggregation for component is OK
+                        if schema_grid.can_aggregate_to(input.grid_type) {
+                            // Valid read-side aggregation needed
+                            transformations.push(RequiredTransformation {
+                                variable: input.name.clone(),
+                                unit: input.unit.clone(),
+                                source_grid: schema_grid,
+                                target_grid: input.grid_type,
+                                direction: TransformDirection::Read,
+                            });
+                        } else {
+                            // Invalid: would require disaggregation (broadcast)
+                            // Component wants finer data than schema provides
+                            return Err(RSCMError::GridTransformationNotSupported {
+                                variable: input.name.clone(),
+                                source_grid: schema_grid.to_string(),
+                                target_grid: input.grid_type.to_string(),
+                            });
+                        }
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(transformations)
     }
 
     /// Builds the component graph for the registered components and creates a concrete model
@@ -399,15 +707,18 @@ impl ModelBuilder {
                     &requirement,
                     &component_name,
                     existing_owner,
+                    self.schema.is_some(),
                 )?;
 
-                if exogenous.contains(&requirement.name) {
+                if let Some(&producer_node) = endrogoneous.get(&requirement.name) {
                     // Link to the node that provides the requirement
-                    graph.add_edge(endrogoneous[&requirement.name], node, requirement.clone());
+                    graph.add_edge(producer_node, node, requirement.clone());
                     has_dependencies = true;
                 } else {
                     // Add a new variable that must be defined outside of the model
-                    exogenous.push(requirement.name.clone())
+                    if !exogenous.contains(&requirement.name) {
+                        exogenous.push(requirement.name.clone());
+                    }
                 }
             }
 
@@ -430,6 +741,7 @@ impl ModelBuilder {
                     &requirement,
                     &component_name,
                     existing_owner,
+                    self.schema.is_some(),
                 )?;
 
                 // Track this component as the owner of this variable
@@ -452,12 +764,15 @@ impl ModelBuilder {
         // Check that the component graph doesn't contain any loops
         assert!(!is_valid_graph(&graph));
 
+        // Collect all required grid transformations
+        let mut all_transformations: Vec<RequiredTransformation> = Vec::new();
+
         // Validate against schema if provided
         if let Some(schema) = &self.schema {
             // First validate the schema itself
             schema.validate()?;
 
-            // Validate each component against the schema
+            // Validate each component against the schema and collect transformations
             for component in &self.components {
                 let component_name = format!("{:?}", component);
                 let component_name = component_name
@@ -466,19 +781,24 @@ impl ModelBuilder {
                     .unwrap_or("UnknownComponent")
                     .to_string();
 
-                self.validate_component_against_schema(
+                let component_transforms = self.validate_component_against_schema(
                     schema,
                     &component_name,
                     &component.inputs(),
                     &component.outputs(),
                     &endrogoneous,
                 )?;
+                all_transformations.extend(component_transforms);
             }
 
-            // Add schema variables not produced by components to definitions (4.5)
-            // These will be initialised to NaN
+            // Handle schema variables (4.5)
+            // For variables only declared as inputs (not produced by any component),
+            // add them to definitions using the schema's grid type.
+            // For variables that are produced by components, update the grid type
+            // to match the schema (the schema is the source of truth for storage grid type).
             for (name, var_def) in &schema.variables {
                 if !definitions.contains_key(name) {
+                    // Variable not produced by any component - add it as exogenous
                     definitions.insert(
                         name.clone(),
                         VariableDefinition {
@@ -489,6 +809,17 @@ impl ModelBuilder {
                     );
                     // Mark as exogenous since it's not produced by any component
                     exogenous.push(name.clone());
+                } else {
+                    // Variable exists (from component input declaration) - update grid type to match schema
+                    // This ensures storage uses schema's grid type, and read transforms will handle conversion
+                    if let Some(def) = definitions.get_mut(name) {
+                        if def.grid_type != var_def.grid_type && !endrogoneous.contains_key(name) {
+                            // Only update if this variable is exogenous (input-only)
+                            // If a component outputs this variable, the write transform will handle conversion
+                            def.grid_type = var_def.grid_type;
+                            exogenous.push(name.clone());
+                        }
+                    }
                 }
             }
 
@@ -554,6 +885,22 @@ impl ModelBuilder {
             }
         }
 
+        // Store transformations for runtime grid auto-aggregation
+        // Split into read and write transforms for efficient lookup during execution
+        let mut read_transforms: HashMap<String, RequiredTransformation> = HashMap::new();
+        let mut write_transforms: HashMap<String, RequiredTransformation> = HashMap::new();
+
+        for transform in all_transformations {
+            match transform.direction {
+                TransformDirection::Read => {
+                    read_transforms.insert(transform.variable.clone(), transform);
+                }
+                TransformDirection::Write => {
+                    write_transforms.insert(transform.variable.clone(), transform);
+                }
+            }
+        }
+
         // Create the timeseries collection using the information from the components
         let mut collection = TimeseriesCollection::new();
         for (name, definition) in definitions {
@@ -577,21 +924,34 @@ impl ModelBuilder {
                 } else {
                     // Check if the timeseries is available in the provided exogenous variables
                     // then interpolate to the right timebase
-                    let timeseries = self
-                        .exogenous_variables
-                        .get_data(&name)
-                        .and_then(|data| data.as_scalar());
+                    // Look for exogenous data matching the schema's grid type
+                    let exogenous_data = self.exogenous_variables.get_data(&name);
 
-                    match timeseries {
-                        Some(timeseries) => collection.add_timeseries(
-                            name,
-                            timeseries
-                                .to_owned()
-                                .interpolate_into(self.time_axis.clone()),
-                            VariableType::Exogenous,
-                        ),
-                        None => {
-                            // No exogenous data provided - create empty timeseries (all NaN)
+                    match (exogenous_data, definition.grid_type) {
+                        (Some(TimeseriesData::Scalar(ts)), GridType::Scalar) => {
+                            collection.add_timeseries(
+                                name,
+                                ts.to_owned().interpolate_into(self.time_axis.clone()),
+                                VariableType::Exogenous,
+                            );
+                        }
+                        (Some(TimeseriesData::FourBox(ts)), GridType::FourBox) => {
+                            collection.add_four_box_timeseries(
+                                name,
+                                ts.to_owned().interpolate_into(self.time_axis.clone()),
+                                VariableType::Exogenous,
+                            );
+                        }
+                        (Some(TimeseriesData::Hemispheric(ts)), GridType::Hemispheric) => {
+                            collection.add_hemispheric_timeseries(
+                                name,
+                                ts.to_owned().interpolate_into(self.time_axis.clone()),
+                                VariableType::Exogenous,
+                            );
+                        }
+                        _ => {
+                            // No exogenous data provided or grid type mismatch
+                            // Create empty timeseries (all NaN) matching the schema's grid type
                             // This is expected for schema variables without writers
                             match definition.grid_type {
                                 GridType::Scalar => collection.add_timeseries(
@@ -605,45 +965,44 @@ impl ModelBuilder {
                                     ),
                                     VariableType::Exogenous,
                                 ),
-                                GridType::FourBox => {
-                                    use crate::spatial::FourBoxGrid;
-                                    let grid = FourBoxGrid::magicc_standard();
-                                    collection.add_four_box_timeseries(
-                                        definition.name,
-                                        crate::timeseries::GridTimeseries::new_empty(
-                                            self.time_axis.clone(),
-                                            grid,
-                                            definition.unit,
-                                            InterpolationStrategy::from(LinearSplineStrategy::new(
-                                                true,
-                                            )),
-                                        ),
-                                        VariableType::Exogenous,
-                                    )
-                                }
-                                GridType::Hemispheric => {
-                                    use crate::spatial::HemisphericGrid;
-                                    let grid = HemisphericGrid::equal_weights();
-                                    collection.add_hemispheric_timeseries(
-                                        definition.name,
-                                        crate::timeseries::GridTimeseries::new_empty(
-                                            self.time_axis.clone(),
-                                            grid,
-                                            definition.unit,
-                                            InterpolationStrategy::from(LinearSplineStrategy::new(
-                                                true,
-                                            )),
-                                        ),
-                                        VariableType::Exogenous,
-                                    )
-                                }
+                                GridType::FourBox => collection.add_four_box_timeseries(
+                                    definition.name,
+                                    crate::timeseries::GridTimeseries::new_empty(
+                                        self.time_axis.clone(),
+                                        self.create_four_box_grid(),
+                                        definition.unit,
+                                        InterpolationStrategy::from(LinearSplineStrategy::new(
+                                            true,
+                                        )),
+                                    ),
+                                    VariableType::Exogenous,
+                                ),
+                                GridType::Hemispheric => collection.add_hemispheric_timeseries(
+                                    definition.name,
+                                    crate::timeseries::GridTimeseries::new_empty(
+                                        self.time_axis.clone(),
+                                        self.create_hemispheric_grid(),
+                                        definition.unit,
+                                        InterpolationStrategy::from(LinearSplineStrategy::new(
+                                            true,
+                                        )),
+                                    ),
+                                    VariableType::Exogenous,
+                                ),
                             }
                         }
                     }
                 }
             } else {
                 // Create a placeholder for data that will be generated by the model
-                match definition.grid_type {
+                // If there's a write transform, use the target grid type (schema's type)
+                // instead of the component's declared output type
+                let storage_grid_type = write_transforms
+                    .get(&name)
+                    .map(|t| t.target_grid)
+                    .unwrap_or(definition.grid_type);
+
+                match storage_grid_type {
                     GridType::Scalar => collection.add_timeseries(
                         definition.name,
                         Timeseries::new_empty_scalar(
@@ -653,44 +1012,39 @@ impl ModelBuilder {
                         ),
                         VariableType::Endogenous,
                     ),
-                    GridType::FourBox => {
-                        use crate::spatial::FourBoxGrid;
-                        let grid = FourBoxGrid::magicc_standard();
-                        collection.add_four_box_timeseries(
-                            definition.name,
-                            crate::timeseries::GridTimeseries::new_empty(
-                                self.time_axis.clone(),
-                                grid,
-                                definition.unit,
-                                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                            ),
-                            VariableType::Endogenous,
-                        )
-                    }
-                    GridType::Hemispheric => {
-                        use crate::spatial::HemisphericGrid;
-                        let grid = HemisphericGrid::equal_weights();
-                        collection.add_hemispheric_timeseries(
-                            definition.name,
-                            crate::timeseries::GridTimeseries::new_empty(
-                                self.time_axis.clone(),
-                                grid,
-                                definition.unit,
-                                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                            ),
-                            VariableType::Endogenous,
-                        )
-                    }
+                    GridType::FourBox => collection.add_four_box_timeseries(
+                        definition.name,
+                        crate::timeseries::GridTimeseries::new_empty(
+                            self.time_axis.clone(),
+                            self.create_four_box_grid(),
+                            definition.unit,
+                            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+                        ),
+                        VariableType::Endogenous,
+                    ),
+                    GridType::Hemispheric => collection.add_hemispheric_timeseries(
+                        definition.name,
+                        crate::timeseries::GridTimeseries::new_empty(
+                            self.time_axis.clone(),
+                            self.create_hemispheric_grid(),
+                            definition.unit,
+                            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+                        ),
+                        VariableType::Endogenous,
+                    ),
                 }
             }
         }
 
         // Add the components to the graph
-        Ok(Model::new(
+        Ok(Model::with_transforms(
             graph,
             initial_node,
             collection,
             self.time_axis.clone(),
+            self.grid_weights.clone(),
+            read_transforms,
+            write_transforms,
         ))
     }
 }
@@ -731,6 +1085,23 @@ pub struct Model {
     collection: TimeseriesCollection,
     time_axis: Arc<TimeAxis>,
     time_index: usize,
+    /// Custom weights for grid aggregation, keyed by grid type
+    ///
+    /// Used for grid transformations during model execution.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    grid_weights: HashMap<GridType, Vec<f64>>,
+    /// Read-side transformations: variable name -> transformation needed when component reads
+    ///
+    /// When a component reads a variable at a coarser grid than the schema declares,
+    /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    read_transforms: HashMap<String, RequiredTransformation>,
+    /// Write-side transformations: variable name -> transformation needed when component writes
+    ///
+    /// When a component writes a variable at a finer grid than the schema declares,
+    /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    write_transforms: HashMap<String, RequiredTransformation>,
 }
 
 impl Model {
@@ -740,13 +1111,93 @@ impl Model {
         collection: TimeseriesCollection,
         time_axis: Arc<TimeAxis>,
     ) -> Self {
+        Self::with_grid_weights(
+            components,
+            initial_node,
+            collection,
+            time_axis,
+            HashMap::new(),
+        )
+    }
+
+    /// Create a new Model with custom grid weights
+    ///
+    /// The grid_weights are used for grid transformations during model execution.
+    pub fn with_grid_weights(
+        components: CGraph,
+        initial_node: NodeIndex,
+        collection: TimeseriesCollection,
+        time_axis: Arc<TimeAxis>,
+        grid_weights: HashMap<GridType, Vec<f64>>,
+    ) -> Self {
+        Self::with_transforms(
+            components,
+            initial_node,
+            collection,
+            time_axis,
+            grid_weights,
+            HashMap::new(),
+            HashMap::new(),
+        )
+    }
+
+    /// Create a new Model with grid weights and transformations
+    ///
+    /// This is the full constructor that includes both grid weights and the
+    /// read/write transformations for automatic grid aggregation.
+    pub fn with_transforms(
+        components: CGraph,
+        initial_node: NodeIndex,
+        collection: TimeseriesCollection,
+        time_axis: Arc<TimeAxis>,
+        grid_weights: HashMap<GridType, Vec<f64>>,
+        read_transforms: HashMap<String, RequiredTransformation>,
+        write_transforms: HashMap<String, RequiredTransformation>,
+    ) -> Self {
         Self {
             components,
             initial_node,
             collection,
             time_axis,
             time_index: 0,
+            grid_weights,
+            read_transforms,
+            write_transforms,
         }
+    }
+
+    /// Get the configured grid weights
+    ///
+    /// Returns the custom weights if configured, or None if using defaults.
+    pub fn get_grid_weights(&self, grid_type: GridType) -> Option<&Vec<f64>> {
+        self.grid_weights.get(&grid_type)
+    }
+
+    /// Get all required transformations for introspection
+    ///
+    /// Returns a vector of all required transformations, both read-side and write-side.
+    /// This is useful for debugging and understanding what grid aggregations will occur.
+    pub fn required_transformations(&self) -> Vec<&RequiredTransformation> {
+        self.read_transforms
+            .values()
+            .chain(self.write_transforms.values())
+            .collect()
+    }
+
+    /// Get read-side transformations
+    ///
+    /// These transformations aggregate data when components read variables at coarser
+    /// resolutions than the schema declares.
+    pub fn read_transforms(&self) -> &HashMap<String, RequiredTransformation> {
+        &self.read_transforms
+    }
+
+    /// Get write-side transformations
+    ///
+    /// These transformations aggregate data when components write variables at finer
+    /// resolutions than the schema declares.
+    pub fn write_transforms(&self) -> &HashMap<String, RequiredTransformation> {
+        &self.write_transforms
     }
 
     /// Gets the time value at the current step
@@ -764,11 +1215,39 @@ impl Model {
     /// The output state defines the values at the next time index as it represents the state
     /// at the start of the next timestep.
     fn step_model_component(&mut self, component: C) {
-        let input_state = extract_state(
-            &self.collection,
-            component.input_names(),
-            self.current_time(),
-        );
+        // Build transform context for read-side aggregation
+        let input_names = component.input_names();
+        let input_state = if self.read_transforms.is_empty() {
+            extract_state(&self.collection, input_names, self.current_time())
+        } else {
+            // Build transform context with only the transforms relevant to this component's inputs
+            let mut read_transform_info = HashMap::new();
+            for name in &input_names {
+                if let Some(transform) = self.read_transforms.get(name) {
+                    read_transform_info.insert(
+                        name.clone(),
+                        ReadTransformInfo {
+                            source_grid: transform.source_grid,
+                            weights: self.grid_weights.get(&transform.source_grid).cloned(),
+                        },
+                    );
+                }
+            }
+
+            if read_transform_info.is_empty() {
+                extract_state(&self.collection, input_names, self.current_time())
+            } else {
+                let context = TransformContext {
+                    read_transforms: read_transform_info,
+                };
+                extract_state_with_transforms(
+                    &self.collection,
+                    input_names,
+                    self.current_time(),
+                    context,
+                )
+            }
+        };
 
         let (start, end) = self.current_time_bounds();
 
@@ -778,10 +1257,31 @@ impl Model {
             Ok(output_state) => {
                 for (key, state_value) in output_state.iter() {
                     let data = self.collection.get_data_mut(key).unwrap();
+
+                    // Apply write-side transformation if needed (component produces finer grid
+                    // than schema expects)
+                    let final_value = if let Some(transform) = self.write_transforms.get(key) {
+                        let weights = self.grid_weights.get(&transform.source_grid);
+                        match aggregate_state_value(
+                            state_value,
+                            transform.source_grid,
+                            transform.target_grid,
+                            weights,
+                        ) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                println!("Write-side aggregation failed for {}: {}", key, e);
+                                continue;
+                            }
+                        }
+                    } else {
+                        state_value.clone()
+                    };
+
                     // The next time index is used as this output state represents the value of a
                     // variable at the end of the current time step.
                     // This is the same as the start of the next timestep.
-                    let result = match state_value {
+                    let result = match &final_value {
                         StateValue::Scalar(v) => data.set_scalar(key, self.time_index + 1, *v),
                         StateValue::FourBox(slice) => {
                             data.set_four_box(key, self.time_index + 1, slice)
@@ -1102,7 +1602,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 input_state: &InputState,
             ) -> RSCMResult<OutputState> {
                 use crate::state::StateValue;
-                let temp = input_state.get_scalar_window("Temperature").current();
+                let temp = input_state.get_scalar_window("Temperature").at_start();
                 let mut output = OutputState::new();
                 output.insert("Result".to_string(), StateValue::Scalar(temp * 2.0));
                 Ok(output)
@@ -1287,25 +1787,31 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
         }
 
         #[test]
-        fn test_schema_rejects_grid_type_mismatch() {
-            // Schema with wrong grid type
+        fn test_schema_rejects_disaggregation_on_read() {
+            // Schema has Scalar temperature, but FourBoxConsumer wants FourBox input
+            // This is a disaggregation (broadcast) attempt and should fail
             let schema = VariableSchema::new()
-                .variable_with_grid("Temperature", "K", GridType::Scalar) // Should be FourBox
+                .variable_with_grid("Temperature", "K", GridType::Scalar)
                 .variable("GlobalTemperature", "K");
 
             let result = ModelBuilder::new()
                 .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
                 .with_schema(schema)
-                .with_component(Arc::new(FourBoxProducer))
-                .with_component(Arc::new(FourBoxConsumer))
+                .with_component(Arc::new(FourBoxProducer)) // Writes FourBox, aggregated to Scalar (OK)
+                .with_component(Arc::new(FourBoxConsumer)) // Reads FourBox from Scalar schema (ERROR)
                 .build();
 
             assert!(result.is_err());
             let err = result.unwrap_err();
             let msg = err.to_string();
             assert!(
-                msg.contains("Grid type mismatch"),
-                "Error should indicate grid type mismatch: {}",
+                msg.contains("Grid transformation not supported"),
+                "Error should indicate unsupported transformation: {}",
+                msg
+            );
+            assert!(
+                msg.contains("Scalar") && msg.contains("FourBox"),
+                "Error should mention the grid types: {}",
                 msg
             );
         }
@@ -1454,7 +1960,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
             ) -> RSCMResult<OutputState> {
                 let conc = input_state
                     .get_scalar_window("Concentrations|CO2")
-                    .current();
+                    .at_start();
                 let mut output = OutputState::new();
                 output.insert(
                     "ERF|CO2".to_string(),
@@ -1487,7 +1993,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
             ) -> RSCMResult<OutputState> {
                 let conc = input_state
                     .get_scalar_window("Concentrations|CH4")
-                    .current();
+                    .at_start();
                 let mut output = OutputState::new();
                 output.insert(
                     "ERF|CH4".to_string(),
@@ -1788,6 +2294,1507 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 dot.contains("AggregatorComponent"),
                 "Graph should contain AggregatorComponent: {}",
                 dot
+            );
+        }
+    }
+
+    mod grid_weight_tests {
+        use super::*;
+
+        #[test]
+        fn test_with_grid_weights_fourbox_valid() {
+            let mut builder = ModelBuilder::new();
+            builder.with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14]);
+
+            assert_eq!(
+                builder.grid_weights.get(&GridType::FourBox),
+                Some(&vec![0.36, 0.14, 0.36, 0.14])
+            );
+        }
+
+        #[test]
+        fn test_with_grid_weights_hemispheric_valid() {
+            let mut builder = ModelBuilder::new();
+            builder.with_grid_weights(GridType::Hemispheric, vec![0.6, 0.4]);
+
+            assert_eq!(
+                builder.grid_weights.get(&GridType::Hemispheric),
+                Some(&vec![0.6, 0.4])
+            );
+        }
+
+        #[test]
+        #[should_panic(expected = "Cannot set weights for Scalar")]
+        fn test_with_grid_weights_scalar_panics() {
+            let mut builder = ModelBuilder::new();
+            builder.with_grid_weights(GridType::Scalar, vec![1.0]);
+        }
+
+        #[test]
+        #[should_panic(expected = "Weights length")]
+        fn test_with_grid_weights_wrong_length_panics() {
+            let mut builder = ModelBuilder::new();
+            builder.with_grid_weights(GridType::FourBox, vec![0.5, 0.5]); // Wrong: 2 instead of 4
+        }
+
+        #[test]
+        #[should_panic(expected = "Weights must sum to 1.0")]
+        fn test_with_grid_weights_wrong_sum_panics() {
+            let mut builder = ModelBuilder::new();
+            builder.with_grid_weights(GridType::FourBox, vec![0.3, 0.3, 0.3, 0.3]);
+            // Sum = 1.2
+        }
+
+        #[test]
+        fn test_custom_weights_applied_to_fourbox_timeseries() {
+            use crate::schema::VariableSchema;
+
+            // Custom weights: different from default [0.25, 0.25, 0.25, 0.25]
+            let custom_weights = vec![0.36, 0.14, 0.36, 0.14];
+
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
+
+            let model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_grid_weights(GridType::FourBox, custom_weights.clone())
+                .build()
+                .unwrap();
+
+            // Verify custom weights are stored in the Model
+            let model_weights = model.get_grid_weights(GridType::FourBox);
+            assert_eq!(model_weights, Some(&custom_weights));
+        }
+
+        #[test]
+        fn test_model_get_grid_weights_returns_none_for_unset() {
+            let model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .build()
+                .unwrap();
+
+            assert!(model.get_grid_weights(GridType::FourBox).is_none());
+            assert!(model.get_grid_weights(GridType::Hemispheric).is_none());
+            assert!(model.get_grid_weights(GridType::Scalar).is_none());
+        }
+
+        #[test]
+        fn test_grid_weights_serialisation_roundtrip() {
+            use crate::schema::VariableSchema;
+
+            let custom_weights = vec![0.36, 0.14, 0.36, 0.14];
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
+
+            let model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_grid_weights(GridType::FourBox, custom_weights.clone())
+                .build()
+                .unwrap();
+
+            // Serialise and deserialise
+            let serialised = toml::to_string(&model).unwrap();
+            let deserialised: Model = toml::from_str(&serialised).unwrap();
+
+            // Verify weights are preserved
+            assert_eq!(
+                deserialised.get_grid_weights(GridType::FourBox),
+                Some(&custom_weights)
+            );
+        }
+
+        #[test]
+        fn test_empty_grid_weights_not_serialised() {
+            let model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .build()
+                .unwrap();
+
+            let serialised = toml::to_string(&model).unwrap();
+
+            // The grid_weights section should not appear
+            assert!(
+                !serialised.contains("grid_weights"),
+                "Empty grid_weights should not be serialised: {}",
+                serialised
+            );
+        }
+    }
+
+    mod relaxed_grid_validation_tests {
+        use super::*;
+        use crate::schema::VariableSchema;
+        use crate::state::{FourBoxSlice, HemisphericSlice, StateValue};
+
+        /// A component that produces FourBox output
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct FourBoxProducer {
+            var_name: String,
+        }
+
+        #[typetag::serde]
+        impl Component for FourBoxProducer {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![RequirementDefinition::four_box_output(&self.var_name, "K")]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let mut output = OutputState::new();
+                output.insert(
+                    self.var_name.clone(),
+                    StateValue::FourBox(FourBoxSlice::from_array([1.0, 2.0, 3.0, 4.0])),
+                );
+                Ok(output)
+            }
+        }
+
+        /// A component that produces Hemispheric output
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct HemisphericProducer {
+            var_name: String,
+        }
+
+        #[typetag::serde]
+        impl Component for HemisphericProducer {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![RequirementDefinition::hemispheric_output(
+                    &self.var_name,
+                    "K",
+                )]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let mut output = OutputState::new();
+                output.insert(
+                    self.var_name.clone(),
+                    StateValue::Hemispheric(HemisphericSlice::from_array([1.0, 2.0])),
+                );
+                Ok(output)
+            }
+        }
+
+        /// A component that produces Scalar output
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ScalarProducer {
+            var_name: String,
+        }
+
+        #[typetag::serde]
+        impl Component for ScalarProducer {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![RequirementDefinition::scalar_output(&self.var_name, "K")]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let mut output = OutputState::new();
+                output.insert(self.var_name.clone(), StateValue::Scalar(1.5));
+                Ok(output)
+            }
+        }
+
+        /// A component that consumes Scalar input
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ScalarConsumer {
+            input_var: String,
+            output_var: String,
+        }
+
+        #[typetag::serde]
+        impl Component for ScalarConsumer {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![
+                    RequirementDefinition::scalar_input(&self.input_var, "K"),
+                    RequirementDefinition::scalar_output(&self.output_var, "K"),
+                ]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let value = input_state.get_scalar_window(&self.input_var).at_start();
+                let mut output = OutputState::new();
+                output.insert(self.output_var.clone(), StateValue::Scalar(value * 2.0));
+                Ok(output)
+            }
+        }
+
+        /// A component that consumes FourBox input
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct FourBoxConsumer {
+            input_var: String,
+            output_var: String,
+        }
+
+        #[typetag::serde]
+        impl Component for FourBoxConsumer {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![
+                    RequirementDefinition::four_box_input(&self.input_var, "K"),
+                    RequirementDefinition::scalar_output(&self.output_var, "K"),
+                ]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let value = input_state
+                    .get_four_box_window(&self.input_var)
+                    .current_global();
+                let mut output = OutputState::new();
+                output.insert(self.output_var.clone(), StateValue::Scalar(value));
+                Ok(output)
+            }
+        }
+
+        // Write-side aggregation tests
+
+        #[test]
+        fn test_write_side_fourbox_to_scalar_allowed() {
+            // Schema declares Scalar, component produces FourBox
+            // Should be allowed (write-side aggregation)
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxProducer {
+                    var_name: "Temperature".to_string(),
+                }))
+                .build();
+
+            assert!(
+                result.is_ok(),
+                "Write-side FourBox->Scalar aggregation should be allowed: {:?}",
+                result.err()
+            );
+        }
+
+        #[test]
+        fn test_write_side_fourbox_to_hemispheric_allowed() {
+            // Schema declares Hemispheric, component produces FourBox
+            // Should be allowed (write-side aggregation)
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Hemispheric);
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxProducer {
+                    var_name: "Temperature".to_string(),
+                }))
+                .build();
+
+            assert!(
+                result.is_ok(),
+                "Write-side FourBox->Hemispheric aggregation should be allowed: {:?}",
+                result.err()
+            );
+        }
+
+        #[test]
+        fn test_write_side_hemispheric_to_scalar_allowed() {
+            // Schema declares Scalar, component produces Hemispheric
+            // Should be allowed (write-side aggregation)
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(HemisphericProducer {
+                    var_name: "Temperature".to_string(),
+                }))
+                .build();
+
+            assert!(
+                result.is_ok(),
+                "Write-side Hemispheric->Scalar aggregation should be allowed: {:?}",
+                result.err()
+            );
+        }
+
+        #[test]
+        fn test_write_side_scalar_to_fourbox_rejected() {
+            // Schema declares FourBox, component produces Scalar
+            // Should be rejected (cannot broadcast/disaggregate)
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(ScalarProducer {
+                    var_name: "Temperature".to_string(),
+                }))
+                .build();
+
+            assert!(result.is_err());
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("Grid transformation not supported"),
+                "Should indicate transformation not supported: {}",
+                err
+            );
+        }
+
+        #[test]
+        fn test_write_side_scalar_to_hemispheric_rejected() {
+            // Schema declares Hemispheric, component produces Scalar
+            // Should be rejected (cannot broadcast/disaggregate)
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Hemispheric);
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(ScalarProducer {
+                    var_name: "Temperature".to_string(),
+                }))
+                .build();
+
+            assert!(result.is_err());
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("Grid transformation not supported"),
+                "Should indicate transformation not supported: {}",
+                err
+            );
+        }
+
+        #[test]
+        fn test_write_side_hemispheric_to_fourbox_rejected() {
+            // Schema declares FourBox, component produces Hemispheric
+            // Should be rejected (cannot disaggregate)
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(HemisphericProducer {
+                    var_name: "Temperature".to_string(),
+                }))
+                .build();
+
+            assert!(result.is_err());
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("Grid transformation not supported"),
+                "Should indicate transformation not supported: {}",
+                err
+            );
+        }
+
+        // Read-side aggregation tests
+
+        #[test]
+        fn test_read_side_fourbox_schema_scalar_consumer_allowed() {
+            // Schema declares FourBox, component consumes Scalar
+            // Should be allowed (read-side aggregation)
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::FourBox)
+                .variable("Output", "K");
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxProducer {
+                    var_name: "Temperature".to_string(),
+                }))
+                .with_component(Arc::new(ScalarConsumer {
+                    input_var: "Temperature".to_string(),
+                    output_var: "Output".to_string(),
+                }))
+                .build();
+
+            assert!(
+                result.is_ok(),
+                "Read-side FourBox->Scalar aggregation should be allowed: {:?}",
+                result.err()
+            );
+        }
+
+        #[test]
+        fn test_read_side_hemispheric_schema_scalar_consumer_allowed() {
+            // Schema declares Hemispheric, component consumes Scalar
+            // Should be allowed (read-side aggregation)
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::Hemispheric)
+                .variable("Output", "K");
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(HemisphericProducer {
+                    var_name: "Temperature".to_string(),
+                }))
+                .with_component(Arc::new(ScalarConsumer {
+                    input_var: "Temperature".to_string(),
+                    output_var: "Output".to_string(),
+                }))
+                .build();
+
+            assert!(
+                result.is_ok(),
+                "Read-side Hemispheric->Scalar aggregation should be allowed: {:?}",
+                result.err()
+            );
+        }
+
+        #[test]
+        fn test_read_side_scalar_schema_fourbox_consumer_rejected() {
+            // Schema declares Scalar, component consumes FourBox
+            // Should be rejected (cannot disaggregate/broadcast)
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::Scalar)
+                .variable("Output", "K");
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(ScalarProducer {
+                    var_name: "Temperature".to_string(),
+                }))
+                .with_component(Arc::new(FourBoxConsumer {
+                    input_var: "Temperature".to_string(),
+                    output_var: "Output".to_string(),
+                }))
+                .build();
+
+            assert!(result.is_err());
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("Grid transformation not supported"),
+                "Should indicate transformation not supported: {}",
+                err
+            );
+        }
+
+        #[test]
+        fn test_same_grid_always_allowed() {
+            // Same grid types should always be allowed
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::FourBox)
+                .variable("Output", "K");
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxProducer {
+                    var_name: "Temperature".to_string(),
+                }))
+                .with_component(Arc::new(FourBoxConsumer {
+                    input_var: "Temperature".to_string(),
+                    output_var: "Output".to_string(),
+                }))
+                .build();
+
+            assert!(
+                result.is_ok(),
+                "Same grid types should always be allowed: {:?}",
+                result.err()
+            );
+        }
+    }
+
+    /// Integration tests for write-side grid aggregation during model execution
+    mod write_side_integration_tests {
+        use super::*;
+        use crate::state::FourBoxSlice;
+        use is_close::is_close;
+
+        /// Component that produces FourBox output with known values
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct FourBoxWriter {
+            var_name: String,
+            /// Values to produce: [NO, NL, SO, SL]
+            values: [FloatValue; 4],
+        }
+
+        #[typetag::serde]
+        impl Component for FourBoxWriter {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![RequirementDefinition::four_box_output(&self.var_name, "K")]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let mut output = OutputState::new();
+                output.insert(
+                    self.var_name.clone(),
+                    StateValue::FourBox(FourBoxSlice::from_array(self.values)),
+                );
+                Ok(output)
+            }
+        }
+
+        /// Component that produces Hemispheric output with known values
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct HemisphericWriter {
+            var_name: String,
+            /// Values to produce: [Northern, Southern]
+            values: [FloatValue; 2],
+        }
+
+        #[typetag::serde]
+        impl Component for HemisphericWriter {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![RequirementDefinition::hemispheric_output(
+                    &self.var_name,
+                    "K",
+                )]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let mut output = OutputState::new();
+                output.insert(
+                    self.var_name.clone(),
+                    StateValue::Hemispheric(HemisphericSlice::from(self.values)),
+                );
+                Ok(output)
+            }
+        }
+
+        #[test]
+        fn test_write_aggregation_fourbox_to_scalar_execution() {
+            // Schema declares Scalar, component produces FourBox
+            // The model should aggregate FourBox values to Scalar on write
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0], // [NO, NL, SO, SL]
+                }))
+                .build()
+                .expect("Model should build");
+
+            // Verify write transform is registered
+            assert!(
+                model.write_transforms().contains_key("Temperature"),
+                "Write transform should be registered"
+            );
+
+            // Run one step
+            model.step();
+
+            // Check the collection has scalar data (not FourBox)
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            let ts = data.as_scalar().expect("Should be stored as Scalar");
+
+            // Get the value at index 1 (after first step)
+            let value = ts.at_scalar(1).expect("Should have value at index 1");
+
+            // With default equal weights [0.25, 0.25, 0.25, 0.25]:
+            // 10*0.25 + 20*0.25 + 30*0.25 + 40*0.25 = 25.0
+            assert!(
+                is_close!(value, 25.0),
+                "Expected aggregated value 25.0, got {}",
+                value
+            );
+        }
+
+        #[test]
+        fn test_write_aggregation_fourbox_to_scalar_custom_weights() {
+            // Schema declares Scalar, component produces FourBox
+            // Use custom weights for aggregation
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14])
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0],
+                }))
+                .build()
+                .expect("Model should build");
+
+            model.step();
+
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            let ts = data.as_scalar().expect("Should be stored as Scalar");
+            let value = ts.at_scalar(1).expect("Should have value at index 1");
+
+            // With custom weights [0.36, 0.14, 0.36, 0.14]:
+            // 10*0.36 + 20*0.14 + 30*0.36 + 40*0.14 = 3.6 + 2.8 + 10.8 + 5.6 = 22.8
+            assert!(
+                is_close!(value, 22.8),
+                "Expected aggregated value 22.8, got {}",
+                value
+            );
+        }
+
+        #[test]
+        fn test_write_aggregation_fourbox_to_hemispheric_execution() {
+            // Schema declares Hemispheric, component produces FourBox
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Hemispheric);
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0],
+                }))
+                .build()
+                .expect("Model should build");
+
+            model.step();
+
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            let ts = data
+                .as_hemispheric()
+                .expect("Should be stored as Hemispheric");
+
+            let northern = ts.at_index(1, 0).expect("Should have northern value");
+            let southern = ts.at_index(1, 1).expect("Should have southern value");
+
+            // With equal weights [0.25, 0.25, 0.25, 0.25]:
+            // Northern = (10*0.25 + 20*0.25) / (0.25 + 0.25) = 7.5 / 0.5 = 15.0
+            // Southern = (30*0.25 + 40*0.25) / (0.25 + 0.25) = 17.5 / 0.5 = 35.0
+            assert!(
+                is_close!(northern, 15.0),
+                "Expected northern 15.0, got {}",
+                northern
+            );
+            assert!(
+                is_close!(southern, 35.0),
+                "Expected southern 35.0, got {}",
+                southern
+            );
+        }
+
+        #[test]
+        fn test_write_aggregation_hemispheric_to_scalar_execution() {
+            // Schema declares Scalar, component produces Hemispheric
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(HemisphericWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [15.0, 35.0], // [Northern, Southern]
+                }))
+                .build()
+                .expect("Model should build");
+
+            model.step();
+
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            let ts = data.as_scalar().expect("Should be stored as Scalar");
+            let value = ts.at_scalar(1).expect("Should have value at index 1");
+
+            // With default equal weights [0.5, 0.5]:
+            // 15*0.5 + 35*0.5 = 25.0
+            assert!(
+                is_close!(value, 25.0),
+                "Expected aggregated value 25.0, got {}",
+                value
+            );
+        }
+
+        #[test]
+        fn test_write_aggregation_multiple_steps() {
+            // Run multiple steps to ensure aggregation works consistently
+            let schema =
+                VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0],
+                }))
+                .build()
+                .expect("Model should build");
+
+            // Run all steps
+            model.run();
+
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            let ts = data.as_scalar().expect("Should be stored as Scalar");
+
+            // Check values at all indices after initial
+            for i in 1..5 {
+                let value = ts
+                    .at_scalar(i)
+                    .unwrap_or_else(|| panic!("Should have value at index {}", i));
+                assert!(
+                    is_close!(value, 25.0),
+                    "Expected aggregated value 25.0 at index {}, got {}",
+                    i,
+                    value
+                );
+            }
+        }
+
+        #[test]
+        fn test_no_schema_no_aggregation() {
+            // Without a schema, no aggregation should happen
+            // Component produces FourBox, it should stay as FourBox
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0],
+                }))
+                .build()
+                .expect("Model should build without schema");
+
+            // Verify no write transforms
+            assert!(
+                model.write_transforms().is_empty(),
+                "Should have no write transforms without schema"
+            );
+
+            model.step();
+
+            // Data should remain as FourBox
+            let data = model.timeseries().get_data("Temperature").unwrap();
+            assert!(
+                data.as_four_box().is_some(),
+                "Should be stored as FourBox without schema"
+            );
+        }
+    }
+
+    /// Tests for read-side grid auto-aggregation during model execution
+    ///
+    /// These tests verify that when a component reads a variable at a coarser resolution
+    /// than the schema declares, the model automatically aggregates the data on read.
+    mod read_side_integration_tests {
+        use super::*;
+        use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+        use crate::spatial::{FourBoxGrid, HemisphericGrid};
+        use crate::state::FourBoxSlice;
+        use crate::timeseries::GridTimeseries;
+        use is_close::is_close;
+        use numpy::ndarray::Array2;
+
+        /// Component that reads a scalar input and outputs a scalar result
+        /// Used to test read-side aggregation when schema has FourBox/Hemispheric data
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ScalarReader {
+            input_var: String,
+            output_var: String,
+        }
+
+        #[typetag::serde]
+        impl Component for ScalarReader {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![
+                    RequirementDefinition::scalar_input(&self.input_var, "K"),
+                    RequirementDefinition::scalar_output(&self.output_var, "K"),
+                ]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                // Read scalar value (model should auto-aggregate if source is grid)
+                let value = input_state.get_scalar_window(&self.input_var).at_start();
+                let mut output = OutputState::new();
+                output.insert(self.output_var.clone(), StateValue::Scalar(value));
+                Ok(output)
+            }
+        }
+
+        /// Component that reads hemispheric input and outputs a scalar result
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct HemisphericReader {
+            input_var: String,
+            output_var: String,
+        }
+
+        #[typetag::serde]
+        impl Component for HemisphericReader {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![
+                    RequirementDefinition::hemispheric_input(&self.input_var, "K"),
+                    RequirementDefinition::scalar_output(&self.output_var, "K"),
+                ]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let window = input_state.get_hemispheric_window(&self.input_var);
+                let northern = window.at_start(crate::spatial::HemisphericRegion::Northern);
+                let southern = window.at_start(crate::spatial::HemisphericRegion::Southern);
+                // Return mean as output
+                let mean = (northern + southern) / 2.0;
+                let mut output = OutputState::new();
+                output.insert(self.output_var.clone(), StateValue::Scalar(mean));
+                Ok(output)
+            }
+        }
+
+        /// Component that reads FourBox input (used for error case testing)
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct FourBoxReader {
+            input_var: String,
+            output_var: String,
+        }
+
+        #[typetag::serde]
+        impl Component for FourBoxReader {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![
+                    RequirementDefinition::four_box_input(&self.input_var, "K"),
+                    RequirementDefinition::scalar_output(&self.output_var, "K"),
+                ]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let window = input_state.get_four_box_window(&self.input_var);
+                let global = window.current_global();
+                let mut output = OutputState::new();
+                output.insert(self.output_var.clone(), StateValue::Scalar(global));
+                Ok(output)
+            }
+        }
+
+        /// Component that writes FourBox output (producer for chained tests)
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct FourBoxWriter {
+            var_name: String,
+            values: [FloatValue; 4],
+        }
+
+        #[typetag::serde]
+        impl Component for FourBoxWriter {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![RequirementDefinition::four_box_output(&self.var_name, "K")]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                let mut output = OutputState::new();
+                output.insert(
+                    self.var_name.clone(),
+                    StateValue::FourBox(FourBoxSlice::from_array(self.values)),
+                );
+                Ok(output)
+            }
+        }
+
+        /// Helper to create FourBox exogenous data
+        fn create_four_box_exogenous(
+            name: &str,
+            values: [[f64; 4]; 3], // 3 timesteps, 4 regions each
+        ) -> (String, GridTimeseries<FloatValue, FourBoxGrid>) {
+            let grid = FourBoxGrid::magicc_standard();
+            let time_axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)));
+            let flat_values: Vec<f64> = values.iter().flat_map(|row| row.iter().copied()).collect();
+            let data = Array2::from_shape_vec((3, 4), flat_values).unwrap();
+
+            let ts = GridTimeseries::new(
+                data,
+                time_axis,
+                grid,
+                "K".to_string(),
+                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+            );
+            (name.to_string(), ts)
+        }
+
+        /// Helper to create Hemispheric exogenous data
+        fn create_hemispheric_exogenous(
+            name: &str,
+            values: [[f64; 2]; 3], // 3 timesteps, 2 hemispheres each
+        ) -> (String, GridTimeseries<FloatValue, HemisphericGrid>) {
+            let grid = HemisphericGrid::equal_weights();
+            let time_axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)));
+            let flat_values: Vec<f64> = values.iter().flat_map(|row| row.iter().copied()).collect();
+            let data = Array2::from_shape_vec((3, 2), flat_values).unwrap();
+
+            let ts = GridTimeseries::new(
+                data,
+                time_axis,
+                grid,
+                "K".to_string(),
+                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+            );
+            (name.to_string(), ts)
+        }
+
+        #[test]
+        fn test_read_aggregation_fourbox_to_scalar() {
+            // Schema declares FourBox variable, component reads as Scalar
+            // Model should auto-aggregate FourBox to Scalar on read
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::FourBox)
+                .variable("GlobalTemp", "K");
+
+            // FourBox data: [NO, NL, SO, SL] for each timestep
+            let (name, ts) = create_four_box_exogenous(
+                "Temperature",
+                [
+                    [10.0, 20.0, 30.0, 40.0], // t=2020
+                    [11.0, 21.0, 31.0, 41.0], // t=2021
+                    [12.0, 22.0, 32.0, 42.0], // t=2022
+                ],
+            );
+
+            let mut builder = ModelBuilder::new();
+            builder
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(ScalarReader {
+                    input_var: "Temperature".to_string(),
+                    output_var: "GlobalTemp".to_string(),
+                }));
+            builder
+                .exogenous_variables
+                .add_four_box_timeseries(name, ts, VariableType::Exogenous);
+
+            let mut model = builder.build().expect("Model should build");
+
+            // Verify read transform is registered
+            assert!(
+                model.read_transforms().contains_key("Temperature"),
+                "Read transform should be registered for Temperature"
+            );
+
+            // Run one step
+            model.step();
+
+            // Check the output - should be the aggregated (mean) of the FourBox values
+            let data = model.timeseries().get_data("GlobalTemp").unwrap();
+            let ts = data.as_scalar().expect("Should be Scalar");
+            let value = ts.at_scalar(1).expect("Should have value at index 1");
+
+            // With equal weights [0.25, 0.25, 0.25, 0.25] at t=2020:
+            // (10 + 20 + 30 + 40) / 4 = 25.0
+            assert!(
+                is_close!(value, 25.0),
+                "Expected aggregated value 25.0, got {}",
+                value
+            );
+        }
+
+        #[test]
+        fn test_read_aggregation_fourbox_to_hemispheric() {
+            // Schema declares FourBox variable, component reads as Hemispheric
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::FourBox)
+                .variable("MeanTemp", "K");
+
+            let (name, ts) = create_four_box_exogenous(
+                "Temperature",
+                [
+                    [10.0, 20.0, 30.0, 40.0], // [NO, NL, SO, SL]
+                    [10.0, 20.0, 30.0, 40.0],
+                    [10.0, 20.0, 30.0, 40.0],
+                ],
+            );
+
+            let mut builder = ModelBuilder::new();
+            builder
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(HemisphericReader {
+                    input_var: "Temperature".to_string(),
+                    output_var: "MeanTemp".to_string(),
+                }));
+            builder
+                .exogenous_variables
+                .add_four_box_timeseries(name, ts, VariableType::Exogenous);
+
+            let mut model = builder.build().expect("Model should build");
+
+            // Verify read transform is registered
+            assert!(
+                model.read_transforms().contains_key("Temperature"),
+                "Read transform should be registered"
+            );
+
+            model.step();
+
+            let data = model.timeseries().get_data("MeanTemp").unwrap();
+            let ts = data.as_scalar().expect("Should be Scalar");
+            let value = ts.at_scalar(1).expect("Should have value at index 1");
+
+            // FourBox [10, 20, 30, 40] -> Hemispheric [15, 35] (mean of each hemisphere)
+            // Then component computes mean: (15 + 35) / 2 = 25.0
+            assert!(
+                is_close!(value, 25.0),
+                "Expected mean of hemispheres 25.0, got {}",
+                value
+            );
+        }
+
+        #[test]
+        fn test_read_aggregation_hemispheric_to_scalar() {
+            // Schema declares Hemispheric variable, component reads as Scalar
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::Hemispheric)
+                .variable("GlobalTemp", "K");
+
+            let (name, ts) = create_hemispheric_exogenous(
+                "Temperature",
+                [
+                    [15.0, 35.0], // [Northern, Southern]
+                    [16.0, 36.0],
+                    [17.0, 37.0],
+                ],
+            );
+
+            let mut builder = ModelBuilder::new();
+            builder
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(ScalarReader {
+                    input_var: "Temperature".to_string(),
+                    output_var: "GlobalTemp".to_string(),
+                }));
+            builder.exogenous_variables.add_hemispheric_timeseries(
+                name,
+                ts,
+                VariableType::Exogenous,
+            );
+
+            let mut model = builder.build().expect("Model should build");
+
+            assert!(
+                model.read_transforms().contains_key("Temperature"),
+                "Read transform should be registered"
+            );
+
+            model.step();
+
+            let data = model.timeseries().get_data("GlobalTemp").unwrap();
+            let ts = data.as_scalar().expect("Should be Scalar");
+            let value = ts.at_scalar(1).expect("Should have value at index 1");
+
+            // With equal weights [0.5, 0.5]: (15 + 35) / 2 = 25.0
+            assert!(
+                is_close!(value, 25.0),
+                "Expected aggregated value 25.0, got {}",
+                value
+            );
+        }
+
+        #[test]
+        fn test_read_aggregation_multiple_consumers() {
+            // Two components reading same FourBox variable at different resolutions
+            // One reads as Scalar, other reads as Hemispheric
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::FourBox)
+                .variable("GlobalTemp", "K")
+                .variable("HemisphericMean", "K");
+
+            let (name, ts) = create_four_box_exogenous(
+                "Temperature",
+                [
+                    [10.0, 20.0, 30.0, 40.0],
+                    [10.0, 20.0, 30.0, 40.0],
+                    [10.0, 20.0, 30.0, 40.0],
+                ],
+            );
+
+            let mut builder = ModelBuilder::new();
+            builder
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(ScalarReader {
+                    input_var: "Temperature".to_string(),
+                    output_var: "GlobalTemp".to_string(),
+                }))
+                .with_component(Arc::new(HemisphericReader {
+                    input_var: "Temperature".to_string(),
+                    output_var: "HemisphericMean".to_string(),
+                }));
+            builder
+                .exogenous_variables
+                .add_four_box_timeseries(name, ts, VariableType::Exogenous);
+
+            let mut model = builder.build().expect("Model should build");
+
+            model.step();
+
+            // ScalarReader should get mean of all 4: 25.0
+            let global = model
+                .timeseries()
+                .get_data("GlobalTemp")
+                .unwrap()
+                .as_scalar()
+                .unwrap()
+                .at_scalar(1)
+                .unwrap();
+            assert!(
+                is_close!(global, 25.0),
+                "Expected global 25.0, got {}",
+                global
+            );
+
+            // HemisphericReader gets hemispheric aggregation [15, 35], then computes mean: 25.0
+            let hemi_mean = model
+                .timeseries()
+                .get_data("HemisphericMean")
+                .unwrap()
+                .as_scalar()
+                .unwrap()
+                .at_scalar(1)
+                .unwrap();
+            assert!(
+                is_close!(hemi_mean, 25.0),
+                "Expected hemispheric mean 25.0, got {}",
+                hemi_mean
+            );
+        }
+
+        #[test]
+        fn test_read_disaggregation_scalar_to_fourbox_rejected() {
+            // Schema declares Scalar, but component wants FourBox input
+            // This is disaggregation (broadcast) and should be rejected at build time
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::Scalar)
+                .variable("Result", "K");
+
+            let result = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxReader {
+                    input_var: "Temperature".to_string(),
+                    output_var: "Result".to_string(),
+                }))
+                .build();
+
+            assert!(result.is_err(), "Disaggregation should be rejected");
+            let err = result.unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains("Grid transformation not supported"),
+                "Error should mention unsupported transformation: {}",
+                msg
+            );
+        }
+
+        #[test]
+        fn test_read_aggregation_chain_write_then_read() {
+            // Test: FourBoxWriter writes FourBox -> schema is FourBox
+            //       -> ScalarReader reads at_start (from previous timestep) as Scalar (read aggregation)
+            //
+            // ScalarReader uses at_start() which reads from the previous timestep.
+            // We need to run at least 2 steps: first step populates, second step reads.
+            let schema = VariableSchema::new()
+                .variable_with_grid("Temperature", "K", GridType::FourBox)
+                .variable("GlobalTemp", "K");
+
+            let mut model = ModelBuilder::new()
+                .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2024.0, 1.0)))
+                .with_schema(schema)
+                .with_component(Arc::new(FourBoxWriter {
+                    var_name: "Temperature".to_string(),
+                    values: [10.0, 20.0, 30.0, 40.0],
+                }))
+                .with_component(Arc::new(ScalarReader {
+                    input_var: "Temperature".to_string(),
+                    output_var: "GlobalTemp".to_string(),
+                }))
+                .build()
+                .expect("Model should build");
+
+            // FourBoxWriter writes FourBox, ScalarReader reads as Scalar via read aggregation
+            assert!(
+                model.read_transforms().contains_key("Temperature"),
+                "Read transform should be registered"
+            );
+
+            // First step: FourBoxWriter writes to index 1, ScalarReader reads from index 0 (NaN)
+            model.step();
+
+            // Second step: FourBoxWriter writes to index 2, ScalarReader reads from index 1 (the FourBox value)
+            model.step();
+
+            // Check the value at index 2 - ScalarReader read the aggregated value from step 1
+            let value = model
+                .timeseries()
+                .get_data("GlobalTemp")
+                .unwrap()
+                .as_scalar()
+                .unwrap()
+                .at_scalar(2)
+                .unwrap();
+
+            // FourBox [10, 20, 30, 40] aggregated to Scalar: 25.0
+            assert!(
+                is_close!(value, 25.0),
+                "Expected aggregated value 25.0, got {}",
+                value
+            );
+        }
+    }
+
+    /// Tests for the aggregate_state_value helper function
+    mod aggregate_state_value_tests {
+        use super::*;
+        use crate::state::FourBoxSlice;
+        use is_close::is_close;
+
+        #[test]
+        fn test_fourbox_to_scalar_default_weights() {
+            // With equal weights (default MAGICC standard), result is mean
+            let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+
+            let result =
+                aggregate_state_value(&fourbox, GridType::FourBox, GridType::Scalar, None).unwrap();
+
+            match result {
+                StateValue::Scalar(v) => {
+                    // Default weights are equal [0.25, 0.25, 0.25, 0.25]
+                    // 10*0.25 + 20*0.25 + 30*0.25 + 40*0.25 = 25.0
+                    assert!(is_close!(v, 25.0), "Expected 25.0, got {}", v);
+                }
+                _ => panic!("Expected Scalar, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_fourbox_to_scalar_custom_weights() {
+            let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+            let weights = vec![0.36, 0.14, 0.36, 0.14]; // Ocean-biased weights
+
+            let result = aggregate_state_value(
+                &fourbox,
+                GridType::FourBox,
+                GridType::Scalar,
+                Some(&weights),
+            )
+            .unwrap();
+
+            match result {
+                StateValue::Scalar(v) => {
+                    // 10*0.36 + 20*0.14 + 30*0.36 + 40*0.14 = 3.6 + 2.8 + 10.8 + 5.6 = 22.8
+                    assert!(is_close!(v, 22.8), "Expected 22.8, got {}", v);
+                }
+                _ => panic!("Expected Scalar, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_fourbox_to_hemispheric_default_weights() {
+            let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+
+            let result =
+                aggregate_state_value(&fourbox, GridType::FourBox, GridType::Hemispheric, None)
+                    .unwrap();
+
+            match result {
+                StateValue::Hemispheric(slice) => {
+                    // With equal weights [0.25, 0.25, 0.25, 0.25]:
+                    // Northern = (10*0.25 + 20*0.25) / (0.25 + 0.25) = 7.5 / 0.5 = 15.0
+                    // Southern = (30*0.25 + 40*0.25) / (0.25 + 0.25) = 17.5 / 0.5 = 35.0
+                    assert!(
+                        is_close!(slice.as_array()[0], 15.0),
+                        "Expected Northern=15.0, got {}",
+                        slice.as_array()[0]
+                    );
+                    assert!(
+                        is_close!(slice.as_array()[1], 35.0),
+                        "Expected Southern=35.0, got {}",
+                        slice.as_array()[1]
+                    );
+                }
+                _ => panic!("Expected Hemispheric, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_fourbox_to_hemispheric_custom_weights() {
+            let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+            let weights = vec![0.36, 0.14, 0.36, 0.14]; // Ocean-biased
+
+            let result = aggregate_state_value(
+                &fourbox,
+                GridType::FourBox,
+                GridType::Hemispheric,
+                Some(&weights),
+            )
+            .unwrap();
+
+            match result {
+                StateValue::Hemispheric(slice) => {
+                    // Northern = (10*0.36 + 20*0.14) / (0.36 + 0.14) = (3.6 + 2.8) / 0.5 = 12.8
+                    // Southern = (30*0.36 + 40*0.14) / (0.36 + 0.14) = (10.8 + 5.6) / 0.5 = 32.8
+                    assert!(
+                        is_close!(slice.as_array()[0], 12.8),
+                        "Expected Northern=12.8, got {}",
+                        slice.as_array()[0]
+                    );
+                    assert!(
+                        is_close!(slice.as_array()[1], 32.8),
+                        "Expected Southern=32.8, got {}",
+                        slice.as_array()[1]
+                    );
+                }
+                _ => panic!("Expected Hemispheric, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_hemispheric_to_scalar_default_weights() {
+            let hemispheric = StateValue::Hemispheric(HemisphericSlice::from([15.0, 35.0]));
+
+            let result =
+                aggregate_state_value(&hemispheric, GridType::Hemispheric, GridType::Scalar, None)
+                    .unwrap();
+
+            match result {
+                StateValue::Scalar(v) => {
+                    // Default weights [0.5, 0.5] -> mean
+                    // 15*0.5 + 35*0.5 = 25.0
+                    assert!(is_close!(v, 25.0), "Expected 25.0, got {}", v);
+                }
+                _ => panic!("Expected Scalar, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_hemispheric_to_scalar_custom_weights() {
+            let hemispheric = StateValue::Hemispheric(HemisphericSlice::from([10.0, 30.0]));
+            let weights = vec![0.4, 0.6]; // Southern-biased
+
+            let result = aggregate_state_value(
+                &hemispheric,
+                GridType::Hemispheric,
+                GridType::Scalar,
+                Some(&weights),
+            )
+            .unwrap();
+
+            match result {
+                StateValue::Scalar(v) => {
+                    // 10*0.4 + 30*0.6 = 4 + 18 = 22.0
+                    assert!(is_close!(v, 22.0), "Expected 22.0, got {}", v);
+                }
+                _ => panic!("Expected Scalar, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_identity_transformation_scalar() {
+            let scalar = StateValue::Scalar(42.0);
+
+            let result =
+                aggregate_state_value(&scalar, GridType::Scalar, GridType::Scalar, None).unwrap();
+
+            match result {
+                StateValue::Scalar(v) => assert_eq!(v, 42.0),
+                _ => panic!("Expected Scalar, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_identity_transformation_fourbox() {
+            let fourbox = StateValue::FourBox(FourBoxSlice::from([1.0, 2.0, 3.0, 4.0]));
+
+            let result =
+                aggregate_state_value(&fourbox, GridType::FourBox, GridType::FourBox, None)
+                    .unwrap();
+
+            match result {
+                StateValue::FourBox(slice) => {
+                    assert_eq!(*slice.as_array(), [1.0, 2.0, 3.0, 4.0]);
+                }
+                _ => panic!("Expected FourBox, got {:?}", result),
+            }
+        }
+
+        #[test]
+        fn test_disaggregation_scalar_to_fourbox_rejected() {
+            let scalar = StateValue::Scalar(25.0);
+
+            let result = aggregate_state_value(&scalar, GridType::Scalar, GridType::FourBox, None);
+
+            assert!(
+                result.is_err(),
+                "Disaggregation Scalar->FourBox should be rejected"
+            );
+        }
+
+        #[test]
+        fn test_disaggregation_scalar_to_hemispheric_rejected() {
+            let scalar = StateValue::Scalar(25.0);
+
+            let result =
+                aggregate_state_value(&scalar, GridType::Scalar, GridType::Hemispheric, None);
+
+            assert!(
+                result.is_err(),
+                "Disaggregation Scalar->Hemispheric should be rejected"
+            );
+        }
+
+        #[test]
+        fn test_disaggregation_hemispheric_to_fourbox_rejected() {
+            let hemispheric = StateValue::Hemispheric(HemisphericSlice::from([15.0, 35.0]));
+
+            let result =
+                aggregate_state_value(&hemispheric, GridType::Hemispheric, GridType::FourBox, None);
+
+            assert!(
+                result.is_err(),
+                "Disaggregation Hemispheric->FourBox should be rejected"
             );
         }
     }

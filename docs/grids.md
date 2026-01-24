@@ -71,7 +71,10 @@ temp = Input("Temperature|Hemispheric", unit="K", grid="Hemispheric")
 response = Output("Response|Hemispheric", unit="W/m^2", grid="Hemispheric")
 
 def solve(self, t_current, t_next, inputs):
-    temp_n, temp_s = inputs.temp.current  # Returns tuple
+    # Access all regions at start of timestep
+    temp_slice = inputs.temp.at_start_all()
+    temp_n = temp_slice.northern
+    temp_s = temp_slice.southern
 
     return self.Outputs(
         response=HemisphericSlice(
@@ -121,7 +124,7 @@ erf = Input("ERF", unit="W/m^2")
 heat_uptake = Output("Heat Uptake", unit="W/m^2", grid="FourBox")
 
 def solve(self, t_current, t_next, inputs):
-    erf_val = inputs.erf.current
+    erf_val = inputs.erf.at_start()
 
     return self.Outputs(
         heat_uptake=FourBoxSlice(
@@ -151,7 +154,7 @@ fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState)
     -> RSCMResult<OutputState>
 {
     let inputs = FourBoxHeatUptakeInputs::from_input_state(input_state);
-    let erf = inputs.erf.current();
+    let erf = inputs.erf.at_start();
 
     let outputs = FourBoxHeatUptakeOutputs {
         heat_uptake: FourBoxSlice::from_array([
@@ -173,16 +176,23 @@ fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState)
 
 ```python
 def solve(self, t_current, t_next, inputs):
-    # Scalar input - single value
-    scalar_val = inputs.emissions.current
+    # Scalar input - single value at start of timestep
+    scalar_val = inputs.emissions.at_start()
 
-    # FourBox input - access all regions
-    fb_values = inputs.regional_temp.current  # Returns tuple of 4 values
-    no, nl, so, sl = fb_values
+    # FourBox input - access all regions at start of timestep
+    fb_slice = inputs.regional_temp.at_start_all()  # Returns FourBoxSlice
+    no = fb_slice.northern_ocean
+    nl = fb_slice.northern_land
+    so = fb_slice.southern_ocean
+    sl = fb_slice.southern_land
+
+    # Or access individual regions by index
+    no = inputs.regional_temp.at_start(region=0)  # northern_ocean
 
     # Hemispheric input
-    hemi_values = inputs.hemi_temp.current  # Returns tuple of 2 values
-    northern, southern = hemi_values
+    hemi_slice = inputs.hemi_temp.at_start_all()  # Returns HemisphericSlice
+    northern = hemi_slice.northern
+    southern = hemi_slice.southern
 ```
 
 **Rust:**
@@ -194,14 +204,14 @@ fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState)
     let inputs = MyComponentInputs::from_input_state(input_state);
 
     // Scalar input
-    let scalar_val = inputs.emissions.current();
+    let scalar_val = inputs.emissions.at_start();
 
     // FourBox input - access individual regions
-    let no = inputs.regional_temp.current(FourBoxRegion::NorthernOcean);
-    let nl = inputs.regional_temp.current(FourBoxRegion::NorthernLand);
+    let no = inputs.regional_temp.at_start(FourBoxRegion::NorthernOcean);
+    let nl = inputs.regional_temp.at_start(FourBoxRegion::NorthernLand);
 
     // Or get all at once
-    let all_regions = inputs.regional_temp.current_all();  // [f64; 4]
+    let all_regions = inputs.regional_temp.at_start_all();  // Vec<f64>
 
     // Global aggregate (weighted average)
     let global_mean = inputs.regional_temp.current_global();
@@ -269,12 +279,155 @@ let hemi_values = four_box.transform_to(&fb_values, &hemispheric)?;
 // hemi_values = [14.5, 9.5]  (averages of ocean+land per hemisphere)
 ```
 
-## Grid Coupling Validation
+## Schema-Driven Auto-Aggregation
 
-When building a model, RSCM validates that connected components use compatible grid types:
+When using a `VariableSchema`, RSCM can automatically aggregate grid data when components use different resolutions. The schema declares the "native" grid type for each variable, and the model handles transformations transparently.
+
+### How It Works
+
+**Read-side aggregation:** When a component declares an input at a coarser resolution than the schema, the data is automatically aggregated when the component reads it.
+
+**Write-side aggregation:** When a component produces output at a finer resolution than the schema declares, the data is automatically aggregated when writing to the collection.
+
+```text
+Supported transformations (aggregation only):
+
+FourBox     -> Hemispheric  (aggregate ocean+land per hemisphere)
+FourBox     -> Scalar       (weighted average of all regions)
+Hemispheric -> Scalar       (weighted average of hemispheres)
+```
+
+Disaggregation (broadcasting from coarser to finer grids) is **not supported** because it would require inventing spatial structure.
+
+### Example: FourBox to Scalar Auto-Aggregation
+
+A component producing FourBox output can feed directly into a component expecting Scalar input, as long as the schema declares the appropriate grid type:
+
+**Python:**
 
 ```python
-# This will fail at build time:
+from rscm import ModelBuilder, PythonComponent, TimeAxis
+from rscm._lib.core import VariableSchema, GridType
+from rscm._lib.core.state import FourBoxSlice
+from rscm.component import Component, Input, Output
+
+
+class RegionalProducer(Component):
+    """Produces FourBox temperature data."""
+
+    temp = Output("Surface Temperature", unit="K", grid="FourBox")
+
+    def solve(self, t_current, t_next, inputs):
+        # Regional temperatures: [NO, NL, SO, SL]
+        return self.Outputs(
+            temp=FourBoxSlice.from_array([288.0, 292.0, 285.0, 289.0])
+        )
+
+
+class GlobalConsumer(Component):
+    """Consumes scalar (global average) temperature."""
+
+    temp = Input("Surface Temperature", unit="K")  # Scalar input
+    response = Output("Climate Response", unit="W/m^2")
+
+    def solve(self, t_current, t_next, inputs):
+        # Automatically receives aggregated global average
+        global_temp = inputs.temp.at_start()
+        return self.Outputs(response=global_temp * 0.1)
+
+
+# Schema declares FourBox as the native grid type
+schema = VariableSchema()
+schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+schema.add_variable("Climate Response", "W/m^2", GridType.Scalar)
+
+model = (
+    ModelBuilder()
+    .with_time_axis(TimeAxis.from_bounds(2020.0, 2025.0, 1.0))
+    .with_schema(schema)
+    .with_py_component(PythonComponent.build(RegionalProducer()))
+    .with_py_component(PythonComponent.build(GlobalConsumer()))
+    .build()
+)
+
+# GlobalConsumer receives the weighted average of [288, 292, 285, 289]
+# With equal weights: (288 + 292 + 285 + 289) / 4 = 213.5 K
+model.run()
+```
+
+**Rust:**
+
+```rust
+let schema = VariableSchema::new()
+    .variable_with_grid("Surface Temperature", "K", GridType::FourBox)
+    .variable("Climate Response", "W/m^2");
+
+let model = ModelBuilder::new()
+    .with_time_axis(time_axis)
+    .with_schema(schema)
+    .with_component(Arc::new(regional_producer))
+    .with_component(Arc::new(global_consumer))
+    .build()?;
+```
+
+### Configuring Aggregation Weights
+
+By default, aggregation uses equal weights. For physically meaningful results, configure area-based weights via `ModelBuilder`:
+
+**Python:**
+
+```python
+from rscm import ModelBuilder
+from rscm._lib.core import GridType
+
+# MAGICC-style area weights: ~36% ocean, ~14% land per hemisphere
+model = (
+    ModelBuilder()
+    .with_schema(schema)
+    .with_grid_weights(GridType.FourBox, [0.36, 0.14, 0.36, 0.14])
+    .with_grid_weights(GridType.Hemispheric, [0.5, 0.5])
+    # ... add components
+    .build()
+)
+```
+
+**Rust:**
+
+```rust
+let model = ModelBuilder::new()
+    .with_schema(schema)
+    .with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14])
+    .with_grid_weights(GridType::Hemispheric, vec![0.5, 0.5])
+    .with_component(...)
+    .build()?;
+```
+
+**Weight order:**
+
+| Grid Type   | Weight Order                                         |
+| ----------- | ---------------------------------------------------- |
+| FourBox     | [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand] |
+| Hemispheric | [Northern, Southern]                                 |
+
+Weights must sum to 1.0.
+
+### Introspection
+
+To see which transformations the model will perform:
+
+```python
+model = builder.build()
+transforms = model.required_transformations()
+for var_name, transform in transforms.items():
+    print(f"{var_name}: {transform}")
+```
+
+## Grid Coupling Validation
+
+When building a model **without a schema**, RSCM validates that connected components use compatible grid types:
+
+```python
+# Without schema - this will fail at build time:
 class Producer(Component):
     output = Output("Temperature", unit="K", grid="FourBox")
 
@@ -289,7 +442,11 @@ GridTypeMismatch: Variable 'Temperature' has grid type 'FourBox' from Producer
 but Consumer expects 'Scalar'
 ```
 
-**Fix:** Ensure producer and consumer use the same grid type, or add an explicit aggregation component.
+**Fixes:**
+
+1. **Add a schema** to enable auto-aggregation (recommended)
+2. Ensure producer and consumer use the same grid type
+3. Add an explicit aggregation component
 
 ## Best Practices
 
@@ -337,7 +494,9 @@ class HemisphericToFourBox(Component):
         self.ocean_land_ratio = ocean_land_ratio
 
     def solve(self, t_current, t_next, inputs):
-        n, s = inputs.hemi_temp.current
+        hemi_slice = inputs.hemi_temp.at_start_all()
+        n = hemi_slice.northern
+        s = hemi_slice.southern
 
         return self.Outputs(
             fb_temp=FourBoxSlice(
@@ -355,11 +514,11 @@ This makes the disaggregation assumptions explicit and configurable.
 
 ### Python
 
-| Class             | Description                          |
-| ----------------- | ------------------------------------ |
-| `FourBoxSlice`    | Container for four regional values   |
-| `HemisphericSlice`| Container for two hemispheric values |
-| `StateValue`      | Wrap scalar or grid values           |
+| Class              | Description                          |
+| ------------------ | ------------------------------------ |
+| `FourBoxSlice`     | Container for four regional values   |
+| `HemisphericSlice` | Container for two hemispheric values |
+| `StateValue`       | Wrap scalar or grid values           |
 
 ### Rust
 

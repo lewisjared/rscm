@@ -104,7 +104,7 @@ class CO2Forcing(Component):
 
     def solve(self, t_current: float, t_next: float, inputs: "CO2Forcing.Inputs"):
         """Compute CO2 forcing for a single timestep."""
-        concentration = inputs.concentration.current
+        concentration = inputs.concentration.at_start()
         # Simplified logarithmic forcing
         forcing = self.alpha * np.log(concentration / self.c_pi)
         return self.Outputs(forcing=forcing)
@@ -137,7 +137,7 @@ class CH4Forcing(Component):
 
     def solve(self, t_current: float, t_next: float, inputs: "CH4Forcing.Inputs"):
         """Compute CH4 forcing for a single timestep."""
-        concentration = inputs.concentration.current
+        concentration = inputs.concentration.at_start()
         # Simplified square-root forcing
         forcing = self.alpha * (np.sqrt(concentration) - np.sqrt(self.c_pi))
         return self.Outputs(forcing=forcing)
@@ -448,7 +448,7 @@ class AerosolForcing(Component):
 
     def solve(self, t_current: float, t_next: float, inputs: "AerosolForcing.Inputs"):
         """Compute aerosol forcing for a single timestep."""
-        emissions = inputs.emissions.current
+        emissions = inputs.emissions.at_start()
         forcing = emissions * self.efficiency
         return self.Outputs(forcing=forcing)
 

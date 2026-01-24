@@ -26,7 +26,7 @@
 //! impl TestComponent {
 //!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
 //!         // ERROR: no field `temperature` on type `TestComponentInputs`
-//!         let temp = inputs.temperature.current();
+//!         let temp = inputs.temperature.at_start();
 //!         TestComponentOutputs { concentration: temp }
 //!     }
 //! }
@@ -120,7 +120,7 @@
 
 use crate::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    TimeseriesWindow,
+    ScalarWindow,
 };
 use crate::errors::RSCMResult;
 use crate::state::StateValue;
@@ -188,8 +188,8 @@ impl Component for TestComponent {
         // Use the generated typed inputs struct
         let inputs = TestComponentInputs::from_input_state(input_state);
 
-        // Access emissions using typed window - provides current(), previous(), etc.
-        let emissions = inputs.emissions_co2.current();
+        // Access emissions using typed window - provides at_start(), at_end(), previous(), etc.
+        let emissions = inputs.emissions_co2.at_start();
 
         // Calculate the output
         let concentration = self.calculate_concentration(emissions);

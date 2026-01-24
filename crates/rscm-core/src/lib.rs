@@ -85,7 +85,7 @@
 //!
 //!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
 //!         let inputs = CO2ERFInputs::from_input_state(input_state);
-//!         let concentration = inputs.concentration.current();
+//!         let concentration = inputs.concentration.at_start();
 //!         let erf = self.erf_2xco2 / 2.0_f64.ln()
 //!             * (1.0 + (concentration - self.conc_pi) / self.conc_pi).ln();
 //!         Ok(CO2ERFOutputs { erf }.into())

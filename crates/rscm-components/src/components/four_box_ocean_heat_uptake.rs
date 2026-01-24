@@ -15,7 +15,7 @@
 
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    TimeseriesWindow,
+    ScalarWindow,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, StateValue};
@@ -115,9 +115,9 @@ impl Component for FourBoxOceanHeatUptake {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        // Get scalar ERF input using typed inputs
+        // Get scalar ERF input using typed inputs (exogenous forcing at start of timestep)
         let inputs = FourBoxOceanHeatUptakeInputs::from_input_state(input_state);
-        let erf = inputs.erf.current();
+        let erf = inputs.erf.at_start();
 
         // Disaggregate to four regions using ratios
         // Regional uptake = global ERF * (regional/global ratio)
@@ -173,8 +173,8 @@ mod tests {
         let component =
             FourBoxOceanHeatUptake::from_parameters(FourBoxOceanHeatUptakeParameters::default());
 
-        // Create ERF input - use consistent values since get_scalar_window().current()
-        // returns the latest value in the timeseries
+        // Create ERF input - use consistent values since get_scalar_window().at_start()
+        // returns the value at the current timestep index
         let erf_timeseries = TimeseriesItem {
             data: TimeseriesData::Scalar(Timeseries::from_values(
                 array![2.5, 2.5],
@@ -189,7 +189,7 @@ mod tests {
         // Verify input value using the new API
         let erf_value = input_state
             .get_scalar_window("Effective Radiative Forcing|Aggregated")
-            .current();
+            .at_start();
         println!("ERF input value: {}", erf_value);
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
@@ -236,7 +236,7 @@ mod tests {
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
         let erf_value = input_state
             .get_scalar_window("Effective Radiative Forcing|Aggregated")
-            .current();
+            .at_start();
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 

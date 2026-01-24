@@ -126,7 +126,7 @@ impl Component for FourBoxToScalarTransform {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let window = input_state.get_four_box_window(&self.input_name());
-        let values = window.current_all();
+        let values = window.at_start_all();
         let global = self.grid.aggregate_global(&values);
 
         let mut output = HashMap::new();
@@ -209,7 +209,7 @@ impl Component for FourBoxToHemisphericTransform {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let window = input_state.get_four_box_window(&self.input_name());
-        let values = window.current_all();
+        let values = window.at_start_all();
         let target = HemisphericGrid::equal_weights();
         let hemispheric = self.grid.transform_to(&values, &target)?;
 
@@ -294,7 +294,7 @@ impl Component for HemisphericToScalarTransform {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let window = input_state.get_hemispheric_window(&self.input_name());
-        let values = window.current_all();
+        let values = window.at_start_all();
         let global = self.grid.aggregate_global(&values);
 
         let mut output = HashMap::new();

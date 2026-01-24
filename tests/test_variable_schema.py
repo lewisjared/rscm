@@ -10,6 +10,7 @@ from rscm._lib.core import (
     Timeseries,
     VariableSchema,
 )
+from rscm._lib.core.state import FourBoxSlice, HemisphericSlice
 from rscm.component import Component, Input, Output
 from rscm.core import ModelBuilder, PythonComponent
 
@@ -193,7 +194,7 @@ class ERFComponent(Component):
     def solve(
         self, t_current, t_next, inputs: "ERFComponent.Inputs"
     ) -> "ERFComponent.Outputs":
-        conc = inputs.concentration.current
+        conc = inputs.concentration.at_start()
         return self.Outputs(erf=conc * self.forcing_per_ppm)
 
 
@@ -271,7 +272,7 @@ class TestSchemaModelIntegration:
             def solve(
                 self, t_current, t_next, inputs: "CO2ERF.Inputs"
             ) -> "CO2ERF.Outputs":
-                return self.Outputs(erf=inputs.concentration.current * 0.01)
+                return self.Outputs(erf=inputs.concentration.at_start() * 0.01)
 
         class CH4ERF(Component):
             concentration = Input("Concentration|CH4", unit="ppb")
@@ -280,7 +281,7 @@ class TestSchemaModelIntegration:
             def solve(
                 self, t_current, t_next, inputs: "CH4ERF.Inputs"
             ) -> "CH4ERF.Outputs":
-                return self.Outputs(erf=inputs.concentration.current * 0.001)
+                return self.Outputs(erf=inputs.concentration.at_start() * 0.001)
 
         # Create schema with aggregate
         schema = VariableSchema()
@@ -336,3 +337,144 @@ class TestSchemaModelIntegration:
         # Check that the last value is the sum (this is robust to timing issues)
         expected_total = co2_erf.values()[-1] + ch4_erf.values()[-1]
         np.testing.assert_allclose(total_erf.values()[-1], expected_total)
+
+
+class TestGridAutoAggregation:
+    """Tests for automatic grid aggregation (FourBox -> Scalar, etc.)."""
+
+    @pytest.fixture
+    def time_axis(self):
+        return TimeAxis.from_values(np.arange(2020.0, 2025.0, 1.0))
+
+    def test_with_grid_weights_fourbox(self, time_axis):
+        """Test setting custom FourBox weights on ModelBuilder."""
+
+        class FourBoxProducer(Component):
+            """Component that produces FourBox output."""
+
+            regional_temp = Output("Temperature|Regional", unit="K", grid="FourBox")
+
+            def solve(
+                self, t_current, t_next, inputs: "FourBoxProducer.Inputs"
+            ) -> "FourBoxProducer.Outputs":
+                # Return distinct regional values
+                return self.Outputs(
+                    regional_temp=FourBoxSlice.from_array([10.0, 20.0, 30.0, 40.0])
+                )
+
+        # Schema declares the variable as Scalar - model should auto-aggregate
+        schema = VariableSchema()
+        schema.add_variable("Temperature|Regional", "K", GridType.Scalar)
+
+        # Custom weights: ocean-heavy
+        custom_weights = [0.36, 0.14, 0.36, 0.14]
+
+        model = (
+            ModelBuilder()
+            .with_time_axis(time_axis)
+            .with_schema(schema)
+            .with_grid_weights(GridType.FourBox, custom_weights)
+            .with_py_component(PythonComponent.build(FourBoxProducer()))
+            .build()
+        )
+
+        model.step()
+
+        # The result should be stored as Scalar (aggregated)
+        ts = model.timeseries()
+        temp_ts = ts.get_timeseries_by_name("Temperature|Regional")
+        assert temp_ts is not None
+
+        # With custom weights: 10*0.36 + 20*0.14 + 30*0.36 + 40*0.14 = 22.0
+        expected = 10.0 * 0.36 + 20.0 * 0.14 + 30.0 * 0.36 + 40.0 * 0.14
+        np.testing.assert_allclose(temp_ts.at(1), expected)
+
+    def test_with_grid_weights_hemispheric(self, time_axis):
+        """Test setting custom Hemispheric weights on ModelBuilder."""
+
+        class HemisphericProducer(Component):
+            """Component that produces Hemispheric output."""
+
+            temp = Output("Temperature|Hemispheric", unit="K", grid="Hemispheric")
+
+            def solve(
+                self, t_current, t_next, inputs: "HemisphericProducer.Inputs"
+            ) -> "HemisphericProducer.Outputs":
+                # Northern = 20K, Southern = 10K
+                return self.Outputs(temp=HemisphericSlice.from_array([20.0, 10.0]))
+
+        schema = VariableSchema()
+        schema.add_variable("Temperature|Hemispheric", "K", GridType.Scalar)
+
+        # Custom weights: northern-heavy
+        custom_weights = [0.6, 0.4]
+
+        model = (
+            ModelBuilder()
+            .with_time_axis(time_axis)
+            .with_schema(schema)
+            .with_grid_weights(GridType.Hemispheric, custom_weights)
+            .with_py_component(PythonComponent.build(HemisphericProducer()))
+            .build()
+        )
+
+        model.step()
+
+        ts = model.timeseries()
+        temp_ts = ts.get_timeseries_by_name("Temperature|Hemispheric")
+        assert temp_ts is not None
+
+        # With custom weights: 20*0.6 + 10*0.4 = 16.0
+        expected = 20.0 * 0.6 + 10.0 * 0.4
+        np.testing.assert_allclose(temp_ts.at(1), expected)
+
+    def test_with_grid_weights_validation_scalar_rejected(self, time_axis):
+        """Test that setting weights for Scalar grid type raises ValueError."""
+        with pytest.raises(ValueError, match="Cannot set weights for Scalar"):
+            ModelBuilder().with_grid_weights(GridType.Scalar, [1.0])
+
+    def test_with_grid_weights_validation_wrong_length(self, time_axis):
+        """Test that weights with wrong length raises ValueError."""
+        with pytest.raises(ValueError, match="Weights length"):
+            ModelBuilder().with_grid_weights(GridType.FourBox, [0.5, 0.5])
+
+    def test_with_grid_weights_validation_wrong_sum(self, time_axis):
+        """Test that weights not summing to 1.0 raises ValueError."""
+        with pytest.raises(ValueError, match=r"Weights must sum to 1\.0"):
+            ModelBuilder().with_grid_weights(GridType.FourBox, [0.3, 0.3, 0.3, 0.3])
+
+    def test_broadcast_not_supported(self, time_axis):
+        """Test that reading finer resolution than schema declares fails."""
+
+        class ScalarWriter(Component):
+            temp = Output("Temperature", unit="K")  # Scalar
+
+            def solve(
+                self, t_current, t_next, inputs: "ScalarWriter.Inputs"
+            ) -> "ScalarWriter.Outputs":
+                return self.Outputs(temp=15.0)
+
+        class FourBoxReader(Component):
+            temp = Input("Temperature", unit="K", grid="FourBox")  # FourBox
+            output = Output("Processed", unit="K")
+
+            def solve(
+                self, t_current, t_next, inputs: "FourBoxReader.Inputs"
+            ) -> "FourBoxReader.Outputs":
+                # This should fail - can't broadcast scalar to FourBox
+                return self.Outputs(output=0.0)
+
+        schema = VariableSchema()
+        schema.add_variable("Temperature", "K", GridType.Scalar)
+        schema.add_variable("Processed", "K", GridType.Scalar)
+
+        # Should fail during build - broadcast is not supported
+        with pytest.raises(ValueError, match="cannot transform from Scalar to FourBox"):
+            (
+                ModelBuilder()
+                .with_time_axis(time_axis)
+                .with_schema(schema)
+                .with_py_component(PythonComponent.build(ScalarWriter()))
+                .with_py_component(PythonComponent.build(FourBoxReader()))
+                .build()
+            )

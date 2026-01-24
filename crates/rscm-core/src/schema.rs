@@ -802,7 +802,7 @@ pub fn compute_aggregate(contributors: &[f64], op: &AggregateOp) -> f64 {
 }
 
 // =============================================================================
-// Aggregator Component
+// Virtual Components (Aggregator)
 // =============================================================================
 
 use crate::component::{
@@ -879,20 +879,20 @@ impl Component for AggregatorComponent {
     ) -> RSCMResult<OutputState> {
         let mut output = OutputState::new();
 
-        // Aggregators need to read values that were just computed in this timestep.
-        // Component outputs are written to time_index + 1, so we read at offset +1
-        // from the current time (which is time_index).
+        // Aggregators read values that upstream components just wrote in this timestep.
+        // Use at_end() to read from timestep N+1 where outputs were written, falling
+        // back to at_start() (index N) if at_end() returns None (e.g., last timestep).
 
         match self.grid_type {
             GridType::Scalar => {
-                // Collect scalar values from all contributors at offset +1
+                // Collect scalar values from all contributors at end of timestep
                 let values: Vec<f64> = self
                     .contributors
                     .iter()
                     .map(|name| {
                         let window = input_state.get_scalar_window(name);
-                        // Read from offset +1 where values were just written
-                        window.at_offset(1).unwrap_or_else(|| window.current())
+                        // Read from at_end() where upstream values were just written
+                        window.at_end().unwrap_or_else(|| window.at_start())
                     })
                     .collect();
 
@@ -907,10 +907,8 @@ impl Component for AggregatorComponent {
 
                 for name in &self.contributors {
                     let window = input_state.get_four_box_window(name);
-                    // Read from offset +1 where values were just written
-                    let values = window
-                        .at_offset_all(1)
-                        .unwrap_or_else(|| window.current_all());
+                    // Read from at_end() where upstream values were just written
+                    let values = window.at_end_all().unwrap_or_else(|| window.at_start_all());
                     for (i, val) in values.into_iter().enumerate() {
                         region_values[i].push(val);
                     }
@@ -932,10 +930,8 @@ impl Component for AggregatorComponent {
 
                 for name in &self.contributors {
                     let window = input_state.get_hemispheric_window(name);
-                    // Read from offset +1 where values were just written
-                    let values = window
-                        .at_offset_all(1)
-                        .unwrap_or_else(|| window.current_all());
+                    // Read from at_end() where upstream values were just written
+                    let values = window.at_end_all().unwrap_or_else(|| window.at_start_all());
                     for (i, val) in values.into_iter().enumerate() {
                         region_values[i].push(val);
                     }

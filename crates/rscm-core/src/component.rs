@@ -1,6 +1,7 @@
 use crate::errors::RSCMResult;
 pub use crate::state::{
-    FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, InputState, OutputState, TimeseriesWindow,
+    FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, HemisphericWindow, InputState,
+    OutputState, ScalarWindow, TimeseriesWindow,
 };
 use crate::timeseries::Time;
 use pyo3::{pyclass, pymethods};
@@ -69,6 +70,77 @@ impl GridType {
             GridType::FourBox => "FourBox",
             GridType::Hemispheric => "Hemispheric",
         }
+    }
+}
+
+impl GridType {
+    /// Returns true if `self` is strictly coarser (lower resolution) than `other`.
+    ///
+    /// The grid hierarchy from finest to coarsest is:
+    /// - FourBox (4 regions) > Hemispheric (2 regions) > Scalar (1 value)
+    ///
+    /// A grid is coarser if it has fewer spatial divisions. Same grids are not
+    /// considered coarser than each other.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rscm_core::component::GridType;
+    ///
+    /// assert!(GridType::Scalar.is_coarser_than(GridType::FourBox));
+    /// assert!(GridType::Scalar.is_coarser_than(GridType::Hemispheric));
+    /// assert!(GridType::Hemispheric.is_coarser_than(GridType::FourBox));
+    /// assert!(!GridType::FourBox.is_coarser_than(GridType::Scalar));
+    /// assert!(!GridType::Scalar.is_coarser_than(GridType::Scalar));
+    /// ```
+    pub fn is_coarser_than(&self, other: GridType) -> bool {
+        match (self, other) {
+            // Scalar is coarser than everything except itself
+            (GridType::Scalar, GridType::FourBox) => true,
+            (GridType::Scalar, GridType::Hemispheric) => true,
+            // Hemispheric is coarser than FourBox only
+            (GridType::Hemispheric, GridType::FourBox) => true,
+            // All other cases: same grid or finer
+            _ => false,
+        }
+    }
+
+    /// Returns true if `self` can be aggregated to `target`.
+    ///
+    /// Aggregation transforms a finer grid to a coarser grid via weighted averaging.
+    /// This is valid when `target` is coarser than or equal to `self`.
+    ///
+    /// Returns false if `target` is finer than `self` (disaggregation/broadcast),
+    /// as that would require inventing spatial structure.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rscm_core::component::GridType;
+    ///
+    /// // Aggregation from fine to coarse is valid
+    /// assert!(GridType::FourBox.can_aggregate_to(GridType::Scalar));
+    /// assert!(GridType::FourBox.can_aggregate_to(GridType::Hemispheric));
+    /// assert!(GridType::Hemispheric.can_aggregate_to(GridType::Scalar));
+    ///
+    /// // Same grid is valid (no-op)
+    /// assert!(GridType::FourBox.can_aggregate_to(GridType::FourBox));
+    /// assert!(GridType::Scalar.can_aggregate_to(GridType::Scalar));
+    ///
+    /// // Disaggregation (coarse to fine) is NOT valid
+    /// assert!(!GridType::Scalar.can_aggregate_to(GridType::FourBox));
+    /// assert!(!GridType::Scalar.can_aggregate_to(GridType::Hemispheric));
+    /// assert!(!GridType::Hemispheric.can_aggregate_to(GridType::FourBox));
+    /// ```
+    pub fn can_aggregate_to(&self, target: GridType) -> bool {
+        // Can aggregate if target is coarser or same as self
+        // i.e., NOT if target is finer (which would be target.is_coarser_than(self) == false
+        // but we need target NOT coarser... wait, let me think through this more carefully)
+        //
+        // If target == self: valid (no-op)
+        // If target is coarser than self: valid (aggregation)
+        // If self is coarser than target: invalid (disaggregation)
+        *self == target || target.is_coarser_than(*self)
     }
 }
 
@@ -303,7 +375,6 @@ mod tests {
     use ndarray::array;
 
     #[test]
-    #[allow(deprecated)]
     fn solve() {
         let component = TestComponent::from_parameters(TestComponentParameters {
             conversion_factor: 2.0,
@@ -323,7 +394,7 @@ mod tests {
 
         // current() returns the value at the index corresponding to current_time (index 0)
         assert_eq!(
-            input_state.get_scalar_window("Emissions|CO2").current(),
+            input_state.get_scalar_window("Emissions|CO2").at_start(),
             1.1
         );
 
@@ -387,5 +458,64 @@ mod tests {
     fn test_grid_type_default() {
         let default: GridType = Default::default();
         assert_eq!(default, GridType::Scalar);
+    }
+
+    #[test]
+    fn test_is_coarser_than_scalar_coarser_than_all_finer_grids() {
+        // Scalar is coarser than FourBox and Hemispheric
+        assert!(GridType::Scalar.is_coarser_than(GridType::FourBox));
+        assert!(GridType::Scalar.is_coarser_than(GridType::Hemispheric));
+    }
+
+    #[test]
+    fn test_is_coarser_than_hemispheric_coarser_than_fourbox() {
+        // Hemispheric (2 regions) is coarser than FourBox (4 regions)
+        assert!(GridType::Hemispheric.is_coarser_than(GridType::FourBox));
+    }
+
+    #[test]
+    fn test_is_coarser_than_fourbox_not_coarser_than_anything() {
+        // FourBox is the finest grid, not coarser than anything
+        assert!(!GridType::FourBox.is_coarser_than(GridType::Scalar));
+        assert!(!GridType::FourBox.is_coarser_than(GridType::Hemispheric));
+        assert!(!GridType::FourBox.is_coarser_than(GridType::FourBox));
+    }
+
+    #[test]
+    fn test_is_coarser_than_same_grid_not_coarser() {
+        // Same grids are not considered coarser than each other
+        assert!(!GridType::Scalar.is_coarser_than(GridType::Scalar));
+        assert!(!GridType::Hemispheric.is_coarser_than(GridType::Hemispheric));
+        assert!(!GridType::FourBox.is_coarser_than(GridType::FourBox));
+    }
+
+    #[test]
+    fn test_is_coarser_than_hemispheric_not_coarser_than_scalar() {
+        // Hemispheric is finer than Scalar, so not coarser
+        assert!(!GridType::Hemispheric.is_coarser_than(GridType::Scalar));
+    }
+
+    #[test]
+    fn test_can_aggregate_to_same_grid_always_valid() {
+        // Aggregation to same grid is always valid (no-op)
+        assert!(GridType::Scalar.can_aggregate_to(GridType::Scalar));
+        assert!(GridType::Hemispheric.can_aggregate_to(GridType::Hemispheric));
+        assert!(GridType::FourBox.can_aggregate_to(GridType::FourBox));
+    }
+
+    #[test]
+    fn test_can_aggregate_to_coarser_valid() {
+        // Aggregation from finer to coarser is valid
+        assert!(GridType::FourBox.can_aggregate_to(GridType::Scalar));
+        assert!(GridType::FourBox.can_aggregate_to(GridType::Hemispheric));
+        assert!(GridType::Hemispheric.can_aggregate_to(GridType::Scalar));
+    }
+
+    #[test]
+    fn test_can_aggregate_to_finer_invalid_disaggregation() {
+        // Disaggregation (coarse to fine) is NOT valid
+        assert!(!GridType::Scalar.can_aggregate_to(GridType::FourBox));
+        assert!(!GridType::Scalar.can_aggregate_to(GridType::Hemispheric));
+        assert!(!GridType::Hemispheric.can_aggregate_to(GridType::FourBox));
     }
 }

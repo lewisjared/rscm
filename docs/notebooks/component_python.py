@@ -107,15 +107,16 @@ class ScaleComponent(Component):
             End time of the timestep
         inputs
             Typed inputs providing access to current and historical values.
-            Access values via `inputs.<field_name>.current` or `.previous`.
+            Access values via `inputs.<field_name>.at_start()` for exogenous inputs
+            and state variables (see Timestep Semantics in key_concepts.md).
 
         Returns
         -------
         ScaleComponent.Outputs
             Typed outputs for this timestep
         """
-        # Access the current value using the typed interface
-        current_input = inputs.input_value.current
+        # Access the current value at start of timestep using the typed interface
+        current_input = inputs.input_value.at_start()
 
         if t_current > self.scale_year:
             result = current_input * self.scale_factor
@@ -270,7 +271,7 @@ class RegionalComponent(Component):
 
     def solve(self, t_current: float, t_next: float, inputs):
         """Compute regional temperature response from forcing."""
-        erf = inputs.forcing.current
+        erf = inputs.forcing.at_start()
 
         # Return FourBox output with different values per region
         return self.Outputs(
@@ -323,12 +324,17 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 #
 # | Method | Description |
 # |--------|-------------|
-# | `inputs.field.current` | Current timestep value |
-# | `inputs.field.previous` | Previous timestep value |
+# | `inputs.field.at_start()` | Value at start of timestep (index N) |
+# | `inputs.field.at_end()` | Value at end of timestep (index N+1), or None |
+# | `inputs.field.previous` | Previous timestep value (index N-1) |
 # | `inputs.field.at_offset(n)` | Value at relative offset |
 # | `inputs.field.last_n(n)` | NumPy array of last n values |
 #
-# For grid inputs, `current` returns a `FourBoxSlice` or `HemisphericSlice`.
+# For grid inputs, use `at_start_all()` / `at_end_all()` to get
+# a `FourBoxSlice` or `HemisphericSlice`, or `at_start(region)` / `at_end(region)`
+# for individual regions.
+#
+# See "Timestep Semantics" in key_concepts.md for `at_start()` vs `at_end()` usage.
 
 # %% [markdown]
 # ## Summary

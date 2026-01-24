@@ -56,6 +56,19 @@ pub enum RSCMError {
         component_grid: String,
     },
 
+    /// Grid transformation not supported (disaggregation/broadcast attempt)
+    ///
+    /// This error occurs when a component requires a finer grid resolution than
+    /// the schema or producer provides. Disaggregation (broadcasting coarse data
+    /// to finer grids) is not supported because it would require inventing
+    /// spatial structure that doesn't exist in the source data.
+    #[error("Grid transformation not supported for variable '{variable}': cannot transform from {source_grid} to {target_grid}. Disaggregation (broadcasting from coarser to finer grids) is not supported because it would require inventing spatial structure. \n\nPossible resolutions:\n  1. Change the consumer component to accept {source_grid} resolution\n  2. Change the producer component or schema to provide {target_grid} resolution\n  3. Create an explicit disaggregation component with domain-specific assumptions")]
+    GridTransformationNotSupported {
+        variable: String,
+        source_grid: String,
+        target_grid: String,
+    },
+
     /// Aggregate contributor not defined in schema
     #[error("Undefined contributor '{contributor}' in aggregate '{aggregate}'. The contributor must be defined as a variable or aggregate in the schema before it can be used.")]
     UndefinedContributor {

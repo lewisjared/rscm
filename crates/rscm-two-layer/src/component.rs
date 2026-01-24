@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    TimeseriesWindow,
+    ScalarWindow,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
@@ -166,7 +166,7 @@ impl IVP<Time, ModelState> for TwoLayer {
         let temperature_surface = y[0];
         let temperature_deep = y[1];
         let inputs = TwoLayerInputs::from_input_state(input_state);
-        let erf = inputs.erf.current();
+        let erf = inputs.erf.at_start();
 
         let temperature_difference = temperature_surface - temperature_deep;
 

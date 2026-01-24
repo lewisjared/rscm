@@ -7,7 +7,7 @@ use crate::constants::GTC_PER_PPM;
 use ode_solvers::Vector3;
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    TimeseriesWindow,
+    ScalarWindow,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
@@ -105,9 +105,9 @@ impl Component for CarbonCycle {
         let inputs = CarbonCycleInputs::from_input_state(input_state);
 
         let y0 = ModelState::new(
-            inputs.concentration.current(),
-            inputs.cumulative_uptake.current(),
-            inputs.cumulative_emissions.current(),
+            inputs.concentration.at_start(),
+            inputs.cumulative_uptake.at_start(),
+            inputs.cumulative_emissions.at_start(),
         );
 
         let solver = IVPBuilder::new(Arc::new(self.to_owned()), input_state, y0);
@@ -137,9 +137,9 @@ impl IVP<Time, ModelState> for CarbonCycle {
     ) {
         let inputs = CarbonCycleInputs::from_input_state(input_state);
 
-        // Inputs come from input_state
-        let emissions = inputs.emissions.current();
-        let temperature = inputs.temperature.current();
+        // Inputs come from input_state (exogenous data at start of timestep)
+        let emissions = inputs.emissions.at_start();
+        let temperature = inputs.temperature.at_start();
 
         // State variables come from the ODE state vector y
         let conc = y[0];

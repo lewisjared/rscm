@@ -416,6 +416,37 @@ class ModelBuilder:
         -------
         Self for method chaining
         """
+    def with_grid_weights(self, grid_type: GridType, weights: list[float]) -> Self:
+        """
+        Set custom weights for a grid type.
+
+        These weights override the default grid weights used when:
+        - Creating timeseries for grid-based variables
+        - Performing automatic grid transformations (aggregation)
+
+        Parameters
+        ----------
+        grid_type
+            The grid type to set weights for (FourBox or Hemispheric)
+        weights
+            The weights for each region. Must sum to 1.0.
+            - FourBox: [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand]
+            - Hemispheric: [Northern, Southern]
+
+        Returns
+        -------
+        Self for method chaining
+
+        Raises
+        ------
+        ValueError
+            If grid_type is Scalar, weights have wrong length, or don't sum to 1.0
+
+        Example
+        -------
+        >>> builder = ModelBuilder()
+        >>> builder.with_grid_weights(GridType.FourBox, [0.36, 0.14, 0.36, 0.14])
+        """
     def build(self) -> Model:
         """
         Build a concrete model from the provided information.
