@@ -53,7 +53,10 @@ dev = [
     "pydot>=3.0.1",
     "towncrier>=24.8.0",
     "bump-my-version>=0.26.1",
-    "maturin"
+    "maturin",
+    "mypy>=1.14.0",
+    "pandas-stubs>=2.0.0",
+    "types-tqdm>=4.0.0",
 ]
 
 docs = [
@@ -150,6 +153,49 @@ convention = "numpy"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+show_error_codes = true
+# Check type stubs are valid but don't require full strict mode for implementation
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+
+# Strict validation for type stub files (.pyi)
+[[tool.mypy.overrides]]
+module = "rscm._lib.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+
+# Relaxed settings for calibrate helpers (uses optional deps and monkey-patching)
+[[tool.mypy.overrides]]
+module = "rscm.calibrate.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+# Ignore dynamic method assignment (monkey-patching Chain.to_dataframe)
+disable_error_code = ["method-assign", "var-annotated", "attr-defined", "call-overload", "assignment"]
+
+# Ignore dynamic metaclass patterns in component module
+[[tool.mypy.overrides]]
+module = "rscm.component"
+disable_error_code = ["attr-defined"]
+
+# Ignore dynamic types in example components
+[[tool.mypy.overrides]]
+module = "rscm.example_components"
+disable_error_code = ["attr-defined", "valid-type"]
+
+# Ignore test and doc files
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+[[tool.mypy.overrides]]
+module = "docs.*"
+ignore_errors = true
 
 [tool.towncrier]
 package = "rscm"

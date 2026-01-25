@@ -32,6 +32,7 @@ format:
 lint-python:
 	uv run ruff check
 	uv run ruff format --check
+	uv run mypy python/rscm
 
 .PHONY: lint-rust
 lint-rust:

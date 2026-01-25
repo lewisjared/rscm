@@ -5,7 +5,7 @@ This module provides calibration and parameter estimation functionality.
 """
 
 from collections.abc import Callable, Sequence
-from typing import Self
+from typing import Any, Self
 
 import numpy as np
 from numpy.typing import NDArray
@@ -449,7 +449,7 @@ class Target:
 
     @staticmethod
     def from_dataframe(
-        df,
+        df: Any,
         time_col: str = "time",
         value_col: str = "value",
         uncertainty_col: str | None = None,
@@ -834,7 +834,7 @@ class Chain:
     def __len__(self) -> int:
         """Return number of stored samples per walker."""
 
-    def to_dataframe(self, discard: int = 0):
+    def to_dataframe(self, discard: int = 0) -> Any:
         """
         Convert chain to pandas DataFrame.
 
