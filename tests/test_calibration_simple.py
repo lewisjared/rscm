@@ -65,7 +65,7 @@ def test_point_estimation_simple():
     # Run random search
     from rscm.calibrate import Optimizer  # noqa: PLC0415
 
-    result = estimator.optimize(Optimizer.random_search(), n_samples=100)
+    result = estimator.optimize(Optimizer.random_search(), n_samples=1000)
 
     # Check results
     best_params_vec = result.best_params
@@ -80,7 +80,7 @@ def test_point_estimation_simple():
     assert 0.0 <= best_params["b"] <= 5.0
 
     # Should have explored multiple points
-    assert estimator.n_evaluations == 100
+    assert estimator.n_evaluations == 1000
 
     # Log likelihood should be finite
     assert np.isfinite(result.best_log_likelihood)
