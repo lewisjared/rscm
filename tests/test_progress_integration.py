@@ -71,7 +71,7 @@ def test_progress_tracker():
 
     # Run short chain
     n_iterations = 10
-    _chain = sampler.run_with_progress(
+    sampler.run_with_progress(
         n_iterations=n_iterations,
         progress_callback=tracker,
         init=WalkerInit.from_prior(),
@@ -105,7 +105,7 @@ def test_simple_callback(capsys):
 
     # Run short chain
     n_iterations = 10
-    _chain = sampler.run_with_progress(
+    sampler.run_with_progress(
         n_iterations=n_iterations,
         progress_callback=callback,
         init=WalkerInit.from_prior(),
@@ -134,7 +134,7 @@ def test_tqdm_callback():
 
     # Run short chain
     n_iterations = 10
-    _chain = sampler.run_with_progress(
+    sampler.run_with_progress(
         n_iterations=n_iterations,
         progress_callback=callback,
         init=WalkerInit.from_prior(),
@@ -166,7 +166,7 @@ def test_tracker_with_print(capsys):
 
     # Run short chain
     n_iterations = 10
-    _chain = sampler.run_with_progress(
+    sampler.run_with_progress(
         n_iterations=n_iterations,
         progress_callback=tracker,
         init=WalkerInit.from_prior(),

@@ -597,8 +597,8 @@ climate_estimator = PointEstimator(
 )
 
 # Run random search
-print("Running point estimation (100 samples)...")
-climate_result = climate_estimator.optimize(Optimizer.random_search(), n_samples=100)
+print("Running point estimation (1000 samples)...")
+climate_result = climate_estimator.optimize(Optimizer.random_search(), n_samples=1000)
 
 # Extract results
 best_climate_params_vec = climate_result.best_params
@@ -844,22 +844,17 @@ print("Samples are concatenated in order")
 # ## DataFrame Integration (requires pandas)
 
 # %%
-try:
-    import pandas as pd
+# Convert chain to DataFrame
+df = chain.to_dataframe(discard=200)
 
-    # Convert chain to DataFrame
-    df = chain.to_dataframe(discard=200)
+print("=== Chain as DataFrame ===")
+print(f"\nShape: {df.shape}")
+print("\nFirst few rows:")
+print(df.head())
 
-    print("=== Chain as DataFrame ===")
-    print(f"\nShape: {df.shape}")
-    print("\nFirst few rows:")
-    print(df.head())
+print("\nSummary statistics:")
+print(df.describe())
 
-    print("\nSummary statistics:")
-    print(df.describe())
-
-except ImportError:
-    print("Pandas not installed - skipping DataFrame integration")
 
 # %% [markdown]
 # ## Progress Tracking with ProgressTracker
