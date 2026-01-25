@@ -1,0 +1,35 @@
+[package]
+name = "rscm-calibrate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Parameter calibration and uncertainty quantification for reduced-complexity climate models"
+readme = "README.md"
+
+[dependencies]
+rscm-core.workspace = true
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+rand = "0.8"
+rand_distr = "0.4"
+rayon = "1.10"
+ndarray = { version = "0.17", features = ["serde", "rayon"] }
+statrs = "0.18"
+indexmap = { version = "2.0", features = ["serde"] }
+typetag = "0.2"
+bincode = "1.3"
+pyo3 = { workspace = true, optional = true }
+numpy = { workspace = true, optional = true }
+
+[features]
+python = ["pyo3", "numpy"]
+
+[dev-dependencies]
+approx = "0.5"
+serde_json = "1.0"
+rand_chacha = "0.3"
+tempfile = "3.0"

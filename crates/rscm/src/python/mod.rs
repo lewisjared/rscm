@@ -33,6 +33,7 @@
 
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;
+use rscm_calibrate::python::calibrate;
 use rscm_components::python::components;
 use rscm_core::python::core;
 use rscm_magicc::python::magicc;
@@ -51,11 +52,13 @@ fn rscm(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(components))?;
     m.add_wrapped(wrap_pymodule!(two_layer))?;
     m.add_wrapped(wrap_pymodule!(magicc))?;
+    m.add_wrapped(wrap_pymodule!(calibrate))?;
 
     set_path(m, "rscm._lib.core", "core")?;
     set_path(m, "rscm._lib.components", "components")?;
     set_path(m, "rscm._lib.two_layer", "two_layer")?;
     set_path(m, "rscm._lib.magicc", "magicc")?;
+    set_path(m, "rscm._lib.calibrate", "calibrate")?;
     set_submodule_path(m, "rscm._lib.core.spatial", "core", "spatial")?;
     set_submodule_path(m, "rscm._lib.core.state", "core", "state")?;
 
