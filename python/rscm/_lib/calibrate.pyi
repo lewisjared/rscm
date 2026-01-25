@@ -5,7 +5,7 @@ This module provides calibration and parameter estimation functionality.
 """
 
 from collections.abc import Callable, Sequence
-from typing import Any, Self
+from typing import Self
 
 import numpy as np
 from numpy.typing import NDArray
@@ -69,7 +69,7 @@ class Normal:
         """Sample a random value from the distribution."""
     def ln_pdf(self, x: F) -> F:
         """Compute the log probability density at x."""
-    def bounds(self) -> None:
+    def bounds(self) -> tuple[F, F] | None:
         """Return None (unbounded distribution)."""
     @property
     def mean(self) -> F:
@@ -120,8 +120,8 @@ class LogNormal:
         """Sample a random value from the distribution."""
     def ln_pdf(self, x: F) -> F:
         """Compute the log probability density at x."""
-    def bounds(self) -> None:
-        """Return None (unbounded distribution, though x > 0)."""
+    def bounds(self) -> tuple[F, F] | None:
+        """Return (0, inf) bounds for log-normal distribution."""
     @property
     def mu(self) -> F:
         """Mean of the underlying normal distribution (log-space)."""
@@ -160,12 +160,6 @@ class Bound:
         """Compute the log probability density at x (unnormalized)."""
     def bounds(self) -> tuple[F, F]:
         """Return the (low, high) bounds."""
-    @property
-    def low(self) -> F:
-        """Lower bound."""
-    @property
-    def high(self) -> F:
-        """Upper bound."""
 
 # ==================== Parameter Set ====================
 
@@ -260,15 +254,15 @@ class ParameterSet:
         ValueError
             If params length doesn't match number of parameters
         """
-    def bounds(self) -> tuple[Arr, Arr]:
+    def bounds(self) -> tuple[list[F], list[F]]:
         """
         Get parameter bounds for optimization.
 
         Returns
         -------
-        lower : NDArray[np.float64]
+        lower : list[float]
             Lower bounds for each parameter (-inf for unbounded)
-        upper : NDArray[np.float64]
+        upper : list[float]
             Upper bounds for each parameter (+inf for unbounded)
         """
     @property
@@ -311,6 +305,11 @@ class VariableTarget:
     """
     Collection of observations for a single variable.
 
+    Parameters
+    ----------
+    name : str
+        Variable name (e.g., "Temperature|Global")
+
     Properties
     ----------
     name : str
@@ -321,6 +320,7 @@ class VariableTarget:
         Reference period for anomaly calculation, if set
     """
 
+    def __init__(self, name: str) -> None: ...
     @property
     def name(self) -> str:
         """Variable name."""
@@ -330,6 +330,77 @@ class VariableTarget:
     @property
     def reference_period(self) -> tuple[F, F] | None:
         """Reference period (start, end) for anomaly calculation, or None."""
+    def add(self, time: F, value: F, uncertainty: F) -> Self:
+        """
+        Add an observation.
+
+        Parameters
+        ----------
+        time : float
+            Time coordinate
+        value : float
+            Observed value
+        uncertainty : float
+            1-sigma uncertainty (must be positive)
+
+        Returns
+        -------
+        Self
+            Returns self for method chaining
+
+        Raises
+        ------
+        ValueError
+            If uncertainty is not positive
+        """
+    def add_relative(self, time: F, value: F, relative_uncertainty: F) -> Self:
+        """
+        Add an observation with relative uncertainty.
+
+        Parameters
+        ----------
+        time : float
+            Time coordinate
+        value : float
+            Observed value
+        relative_uncertainty : float
+            Relative uncertainty as a fraction (e.g., 0.05 for 5%)
+
+        Returns
+        -------
+        Self
+            Returns self for method chaining
+
+        Raises
+        ------
+        ValueError
+            If computed uncertainty is not positive
+        """
+    def with_reference_period(self, start: F, end: F) -> Self:
+        """
+        Set the reference period for anomaly calculation.
+
+        Parameters
+        ----------
+        start : float
+            Start of reference period
+        end : float
+            End of reference period
+
+        Returns
+        -------
+        Self
+            Returns self for method chaining
+        """
+    def time_range(self) -> tuple[F, F] | None:
+        """
+        Get the time range covered by observations.
+
+        Returns
+        -------
+        tuple[float, float] | None
+            (min_time, max_time) or None if no observations
+        """
 
 class Target:
     """
@@ -424,7 +495,7 @@ class Target:
         ValueError
             If variable not found
         """
-    def get_variable(self, name: str) -> VariableTarget:
+    def get_variable(self, name: str) -> VariableTarget | None:
         """
         Get observations for a specific variable.
 
@@ -435,49 +506,21 @@ class Target:
 
         Returns
         -------
-        VariableTarget
-            Clone of the variable target
-
-        Raises
-        ------
-        ValueError
-            If variable not found
+        VariableTarget | None
+            Clone of the variable target, or None if not found
         """
-    @property
     def variable_names(self) -> list[str]:
         """Get names of all variables with observations."""
-
-    @staticmethod
-    def from_dataframe(
-        df: Any,
-        time_col: str = "time",
-        value_col: str = "value",
-        uncertainty_col: str | None = None,
-        relative_error: F | None = None,
-    ) -> Target:
+    def total_observations(self) -> int:
+        """Get the total number of observations across all variables."""
+    def time_range(self) -> tuple[F, F] | None:
         """
-        Create a Target from a pandas DataFrame.
-
-        This is a convenience constructor added by the pandas_helpers module
-        when pandas is available. See rscm.calibrate.pandas_helpers for details.
-
-        Parameters
-        ----------
-        df : pandas.DataFrame
-            DataFrame with observations
-        time_col : str, optional
-            Name of time column (default: "time")
-        value_col : str, optional
-            Name of value column (default: "value")
-        uncertainty_col : str, optional
-            Name of uncertainty column (default: None)
-        relative_error : float, optional
-            Relative error fraction (default: None)
+        Get the time range covered by all observations.
 
         Returns
         -------
-        Target
-            Target object with observations from DataFrame
+        tuple[float, float] | None
+            (min_time, max_time) or None if no observations
         """
 
 # ==================== Likelihood ====================
@@ -492,36 +535,16 @@ class GaussianLikelihood:
     Parameters
     ----------
     normalize : bool, optional
-        Whether to include normalization constant (default: False for MCMC)
+        Whether to include normalization constant (default: False for MCMC).
+        Set to True for maximum likelihood estimation or model comparison.
 
-    Examples
-    --------
-    >>> likelihood = GaussianLikelihood()
-    >>> log_like = likelihood.compute(model_output, target)
+    Notes
+    -----
+    The log-likelihood is computed internally by EnsembleSampler and
+    PointEstimator. This class is not intended to be called directly.
     """
 
     def __init__(self, normalize: bool = False) -> None: ...
-    def compute(self, model_output: dict[str, dict[F, F]], target: Target) -> F:
-        """
-        Compute log-likelihood for model output vs observations.
-
-        Parameters
-        ----------
-        model_output : dict[str, dict[float, float]]
-            Model outputs as {variable_name: {time: value}}
-        target : Target
-            Observation targets
-
-        Returns
-        -------
-        float
-            Log-likelihood value
-
-        Raises
-        ------
-        ValueError
-            If required variables/times missing or model output is invalid
-        """
 
 # ==================== Model Runner ====================
 
@@ -590,7 +613,7 @@ class ProgressInfo:
     ----------
     iteration : int
         Current iteration number
-    total_iterations : int
+    total : int
         Total iterations to run
     acceptance_rate : float
         Mean acceptance rate across walkers
@@ -602,7 +625,7 @@ class ProgressInfo:
     def iteration(self) -> int:
         """Current iteration."""
     @property
-    def total_iterations(self) -> int:
+    def total(self) -> int:
         """Total iterations."""
     @property
     def acceptance_rate(self) -> F:
@@ -646,14 +669,14 @@ class WalkerInit:
             Radius of ball (default: 0.01)
         """
     @staticmethod
-    def explicit(positions: Arr) -> WalkerInit:
+    def explicit(positions: list[list[F]]) -> WalkerInit:
         """
         Initialize walkers at explicit positions.
 
         Parameters
         ----------
-        positions : NDArray[np.float64]
-            Walker positions with shape (n_walkers, n_params)
+        positions : list[list[float]]
+            2D list of walker positions, shape (n_walkers, n_params)
         """
 
 class Chain:
@@ -834,24 +857,6 @@ class Chain:
     def __len__(self) -> int:
         """Return number of stored samples per walker."""
 
-    def to_dataframe(self, discard: int = 0) -> Any:
-        """
-        Convert chain to pandas DataFrame.
-
-        This method is added by the pandas_helpers module when pandas is available.
-        See rscm.calibrate.pandas_helpers for details.
-
-        Parameters
-        ----------
-        discard : int, optional
-            Number of initial samples to discard as burn-in
-
-        Returns
-        -------
-        pandas.DataFrame
-            DataFrame with multi-index (walker, iteration) and parameter columns
-        """
-
 class EnsembleSampler:
     """
     Affine-invariant ensemble MCMC sampler.
@@ -869,15 +874,11 @@ class EnsembleSampler:
         Likelihood function
     target : Target
         Observation targets
-    stretch_param : float, optional
-        Stretch move parameter (default: 2.0)
 
     Examples
     --------
     >>> sampler = EnsembleSampler(params, runner, likelihood, target)
-    >>> chain = sampler.run(
-    ...     n_iterations=1000, n_walkers=32, init=WalkerInit.from_prior(), thin=1
-    ... )
+    >>> chain = sampler.run(1000, WalkerInit.from_prior(), thin=1)
     """
 
     def __init__(
@@ -886,13 +887,20 @@ class EnsembleSampler:
         runner: ModelRunner,
         likelihood: GaussianLikelihood,
         target: Target,
-        stretch_param: F = 2.0,
     ) -> None: ...
+    def default_n_walkers(self) -> int:
+        """
+        Get the default number of walkers for this sampler.
+
+        Returns
+        -------
+        int
+            Default number of walkers (max(2 * n_params, 32))
+        """
     def run(
         self,
         n_iterations: int,
-        n_walkers: int | None = None,
-        init: WalkerInit | None = None,
+        init: WalkerInit,
         thin: int = 1,
     ) -> Chain:
         """
@@ -902,10 +910,8 @@ class EnsembleSampler:
         ----------
         n_iterations : int
             Number of iterations to run
-        n_walkers : int, optional
-            Number of walkers (default: max(2 * n_params, 32))
-        init : WalkerInit, optional
-            Initialization strategy (default: from_prior)
+        init : WalkerInit
+            Initialization strategy
         thin : int, optional
             Store every Nth sample (default: 1)
 
@@ -917,10 +923,9 @@ class EnsembleSampler:
     def run_with_progress(
         self,
         n_iterations: int,
-        callback: Callable[[ProgressInfo], None],
-        n_walkers: int | None = None,
-        init: WalkerInit | None = None,
-        thin: int = 1,
+        init: WalkerInit,
+        thin: int,
+        progress_callback: Callable[[ProgressInfo], None],
     ) -> Chain:
         """
         Run MCMC with progress callback.
@@ -929,14 +934,12 @@ class EnsembleSampler:
         ----------
         n_iterations : int
             Number of iterations to run
-        callback : callable
+        init : WalkerInit
+            Initialization strategy
+        thin : int
+            Thinning interval (store every thin-th sample)
+        progress_callback : callable
             Function called with ProgressInfo after each iteration
-        n_walkers : int, optional
-            Number of walkers (default: max(2 * n_params, 32))
-        init : WalkerInit, optional
-            Initialization strategy (default: from_prior)
-        thin : int, optional
-            Store every Nth sample (default: 1)
 
         Returns
         -------
@@ -946,12 +949,11 @@ class EnsembleSampler:
     def run_with_checkpoint(
         self,
         n_iterations: int,
-        checkpoint_path: str,
+        init: WalkerInit,
+        thin: int,
         checkpoint_every: int,
-        n_walkers: int | None = None,
-        init: WalkerInit | None = None,
-        thin: int = 1,
-        callback: Callable[[ProgressInfo], None] | None = None,
+        checkpoint_path: str,
+        progress_callback: Callable[[ProgressInfo], None] | None = None,
     ) -> Chain:
         """
         Run MCMC with checkpointing.
@@ -960,17 +962,15 @@ class EnsembleSampler:
         ----------
         n_iterations : int
             Number of iterations to run
-        checkpoint_path : str
-            Path for checkpoint files
+        init : WalkerInit
+            Initialization strategy
+        thin : int
+            Thinning interval (store every thin-th sample)
         checkpoint_every : int
-            Checkpoint interval
-        n_walkers : int, optional
-            Number of walkers (default: max(2 * n_params, 32))
-        init : WalkerInit, optional
-            Initialization strategy (default: from_prior)
-        thin : int, optional
-            Store every Nth sample (default: 1)
-        callback : callable, optional
+            Save checkpoint every N iterations
+        checkpoint_path : str
+            Base path for checkpoint files (will append .state and .chain)
+        progress_callback : callable, optional
             Progress callback function
 
         Returns
@@ -1007,6 +1007,41 @@ class EnsembleSampler:
         Chain
             MCMC chain with all samples (original + new)
         """
+    @staticmethod
+    def with_stretch_param(
+        params: ParameterSet,
+        runner: ModelRunner,
+        likelihood: GaussianLikelihood,
+        target: Target,
+        a: F,
+    ) -> EnsembleSampler:
+        """
+        Create a sampler with custom stretch move parameter.
+
+        Parameters
+        ----------
+        params : ParameterSet
+            Parameter set defining prior distributions
+        runner : ModelRunner
+            Model runner for evaluating parameter sets
+        likelihood : GaussianLikelihood
+            Likelihood function for computing log probability
+        target : Target
+            Target observations to calibrate against
+        a : float
+            Stretch move parameter (default is 2.0). Must be > 1.0.
+
+        Returns
+        -------
+        EnsembleSampler
+            New sampler with custom stretch parameter
+
+        Notes
+        -----
+        The stretch parameter controls the proposal distribution. Larger values
+        lead to more aggressive proposals. The default of 2.0 is recommended
+        for most applications.
+        """
 
 # ==================== Point Estimation ====================
 
@@ -1034,9 +1069,13 @@ class OptimizationResult:
     best_params : list[float]
         Best parameter values found
     best_log_likelihood : float
-        Log-likelihood at best parameters
+        Log-likelihood at best parameters (not including prior)
+    best_log_posterior : float
+        Log posterior at best parameters (prior + likelihood)
     n_evaluations : int
         Number of model evaluations performed
+    converged : bool
+        Whether the optimizer converged
     """
 
     @property
@@ -1044,10 +1083,16 @@ class OptimizationResult:
         """Best parameter values."""
     @property
     def best_log_likelihood(self) -> F:
-        """Best log-likelihood found."""
+        """Best log-likelihood found (not including prior)."""
+    @property
+    def best_log_posterior(self) -> F:
+        """Best log posterior found (prior + likelihood)."""
     @property
     def n_evaluations(self) -> int:
         """Number of evaluations performed."""
+    @property
+    def converged(self) -> bool:
+        """Whether the optimizer converged."""
 
 class PointEstimator:
     """
