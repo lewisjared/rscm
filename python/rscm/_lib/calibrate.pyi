@@ -457,7 +457,7 @@ class Target:
         """
         Add an observation with relative uncertainty.
 
-        Computes uncertainty as relative_error * abs(value).
+        Computes uncertainty as relative_uncertainty * abs(value).
 
         Parameters
         ----------
@@ -478,7 +478,7 @@ class Target:
         Raises
         ------
         ValueError
-            If relative_error <= 0 or computed uncertainty <= 0
+            If relative_uncertainty <= 0 or computed uncertainty <= 0
         """
     def set_reference_period(self, variable: str, start: F, end: F) -> Self:
         """
@@ -682,8 +682,8 @@ class WalkerInit:
         ----------
         center : array-like
             Center point for initialization
-        radius : float, optional
-            Radius of ball (default: 0.01)
+        radius : float
+            Radius of ball for random initialization
         """
     @staticmethod
     def explicit(positions: list[list[F]]) -> WalkerInit:
