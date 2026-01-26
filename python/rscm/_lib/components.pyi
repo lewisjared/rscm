@@ -15,8 +15,11 @@ Components are instantiated using the builder pattern:
 The built component can then be added to a model via ModelBuilder.
 """
 
-from rscm._lib.core import ComponentBuilder, RustComponent
+from typing import final
 
+from rscm._lib.core import Component, ComponentBuilder
+
+@final
 class CarbonCycleBuilder(ComponentBuilder):
     """Builder for the one-box carbon cycle component.
 
@@ -65,9 +68,10 @@ class CarbonCycleBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: dict[str, float]) -> CarbonCycleBuilder:
         """Create a builder from a parameter dictionary."""
-    def build(self) -> RustComponent:
+    def build(self) -> Component:
         """Build the carbon cycle component."""
 
+@final
 class CO2ERFBuilder(ComponentBuilder):
     """Builder for the CO2 effective radiative forcing component.
 
@@ -112,9 +116,10 @@ class CO2ERFBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: dict[str, float]) -> CO2ERFBuilder:
         """Create a builder from a parameter dictionary."""
-    def build(self) -> RustComponent:
+    def build(self) -> Component:
         """Build the CO2 ERF component."""
 
+@final
 class FourBoxOceanHeatUptakeBuilder(ComponentBuilder):
     """Builder for the four-box ocean heat uptake component.
 
@@ -164,5 +169,5 @@ class FourBoxOceanHeatUptakeBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: dict[str, float]) -> FourBoxOceanHeatUptakeBuilder:
         """Create a builder from a parameter dictionary."""
-    def build(self) -> RustComponent:
+    def build(self) -> Component:
         """Build the four-box ocean heat uptake component."""
