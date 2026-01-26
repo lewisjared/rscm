@@ -310,3 +310,6 @@ debug/
 
 # Ignore claude settings
 .claude/settings.local.json
+
+# Ignore OhMyClaude metadata
+.omc

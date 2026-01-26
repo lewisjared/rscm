@@ -13,6 +13,7 @@ See https://oprypin.github.io/mkdocs-literate-nav/
   * [State Serialisation](notebooks/state_serialisation.py)
   * [Debugging and Inspection](notebooks/debugging_inspection.py)
   * [Scenario Pipeline](notebooks/scenario_pipeline.py)
+  * [Calibration](notebooks/calibration_tutorial.py)
 * Reference
   * [Spatial Grids](grids.md)
   * [Python API](api/rscm/)

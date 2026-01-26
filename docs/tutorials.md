@@ -149,6 +149,34 @@ Learn RSCM through hands-on examples. Each tutorial builds on concepts from prev
 
 ---
 
+## Tutorial 7: Model Calibration and Uncertainty Quantification
+
+**Learn to**: Estimate model parameters from observations and quantify uncertainty
+
+**You will**:
+
+- Define parameter priors with uniform, normal, and bounded distributions
+- Create observation targets with measurement uncertainties
+- Use point estimation (random search) to find best-fit parameters
+- Run MCMC sampling to explore the full posterior distribution
+- Check convergence with R-hat, effective sample size, and autocorrelation
+- Visualise posterior distributions and parameter correlations
+- Use checkpointing for long-running calibrations
+
+**Topics covered**:
+
+- The `ParameterSet` class for defining priors
+- `Target` and `Observation` for calibration targets
+- `PointEstimator` for maximum likelihood estimation
+- `EnsembleSampler` for MCMC with the affine-invariant algorithm
+- Convergence diagnostics: R-hat, ESS, autocorrelation time
+- Chain persistence: save, load, merge, and checkpoint
+- DataFrame integration for posterior analysis
+
+[**Start Tutorial: Model Calibration**](notebooks/calibration_tutorial.py)
+
+---
+
 ## Quick Reference
 
 ### Common Patterns
