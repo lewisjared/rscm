@@ -120,6 +120,7 @@ pub mod spatial;
 pub mod state;
 pub mod timeseries;
 pub mod timeseries_collection;
+pub mod utils;
 
 pub mod errors;
 

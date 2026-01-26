@@ -163,15 +163,17 @@ Each module document follows this structure:
 
 The existing [RSCM framework](https://github.com/climate-resource/rscm) provides most infrastructure needed:
 
-| Feature          | RSCM Status | Notes                                                      |
-| ---------------- | ----------- | ---------------------------------------------------------- |
-| Component trait  | ✅          | `solve(t, t_next, input_state) -> RSCMResult<OutputState>` |
-| Timeseries       | ✅          | With interpolation (Linear, Previous, Next)                |
-| State management | ✅          | TimeseriesCollection                                       |
-| PyO3 bindings    | ✅          | Builder pattern                                            |
-| Dependency graph | ✅          | Automatic from requirements                                |
+| Feature            | RSCM Status | Notes                                                       |
+| ------------------ | ----------- | ----------------------------------------------------------- |
+| Component trait    | ✅          | `solve(t, t_next, input_state) -> RSCMResult<OutputState>`  |
+| Timeseries         | ✅          | With interpolation (Linear, Previous, Next)                 |
+| State management   | ✅          | TimeseriesCollection                                        |
+| PyO3 bindings      | ✅          | Builder pattern                                             |
+| Dependency graph   | ✅          | Automatic from requirements                                 |
+| Historical access  | ✅          | `previous()` for t-1, `at_offset(-n)` for arbitrary history |
+| Sub-annual stepping| ✅          | Component responsibility (e.g., TwoLayer uses RK4 internally) |
+| Spatial grids      | ✅          | FourBox and Hemispheric grids with aggregation              |
 
 **Required Additions:**
 
-1. `get_at_time()` method in InputState for historical access (N2O needs t-1, t-2)
-2. Tridiagonal solver utility (Thomas algorithm for ocean diffusion)
+1. Tridiagonal solver utility (Thomas algorithm for UDEB ocean diffusion)
