@@ -991,10 +991,11 @@ mod tests {
         let likelihood = GaussianLikelihood::new();
 
         // Run sampler
+        // Use enough iterations for reliable R-hat convergence (stochastic test)
         let sampler = EnsembleSampler::new(params.clone(), runner, likelihood, target.clone());
-        let n_iterations = 1000;
+        let n_iterations = 2000;
         let n_walkers = 32;
-        let burn_in = 500;
+        let burn_in = 1000;
 
         let chain = sampler
             .run_with_walkers(
