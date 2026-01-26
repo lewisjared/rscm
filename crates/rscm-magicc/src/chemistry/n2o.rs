@@ -495,8 +495,10 @@ mod tests {
     #[test]
     fn test_zero_emissions_decay() {
         // With zero total emissions, N2O should decay
-        let mut params = N2OChemistryParameters::default();
-        params.natural_emissions = 0.0;
+        let params = N2OChemistryParameters {
+            natural_emissions: 0.0,
+            ..Default::default()
+        };
         let component = N2OChemistry::from_parameters(params);
 
         let n2o_elevated = 350.0;

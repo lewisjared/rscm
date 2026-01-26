@@ -539,8 +539,10 @@ mod tests {
 
     #[test]
     fn test_temperature_feedback_can_be_disabled() {
-        let mut params = TerrestrialCarbonParameters::default();
-        params.enable_temp_feedback = false;
+        let params = TerrestrialCarbonParameters {
+            enable_temp_feedback: false,
+            ..Default::default()
+        };
         let component = TerrestrialCarbon::from_parameters(params);
 
         let co2_pi = component.parameters.co2_pi;

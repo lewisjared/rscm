@@ -203,6 +203,7 @@ impl CH4Chemistry {
     /// Perform one Prather iteration
     ///
     /// Returns (new_burden, delta_burden, effective_oh_lifetime)
+    #[allow(clippy::too_many_arguments)]
     fn prather_iteration(
         &self,
         burden_current: FloatValue,
@@ -240,6 +241,7 @@ impl CH4Chemistry {
     }
 
     /// Run the full Prather iteration scheme (4 iterations)
+    #[allow(clippy::too_many_arguments)]
     pub fn solve_concentration(
         &self,
         ch4_prev: FloatValue,
@@ -447,8 +449,10 @@ mod tests {
 
     #[test]
     fn test_temperature_feedback_disabled() {
-        let mut params = CH4ChemistryParameters::default();
-        params.include_temp_feedback = false;
+        let params = CH4ChemistryParameters {
+            include_temp_feedback: false,
+            ..Default::default()
+        };
         let component = CH4Chemistry::from_parameters(params);
         let ch4_pi = component.parameters.ch4_pi;
 
@@ -592,8 +596,10 @@ mod tests {
         let ch4_elevated = 1800.0;
 
         // With zero total emissions, CH4 should decay
-        let mut params = CH4ChemistryParameters::default();
-        params.natural_emissions = 0.0;
+        let params = CH4ChemistryParameters {
+            natural_emissions: 0.0,
+            ..Default::default()
+        };
         let component_no_natural = CH4Chemistry::from_parameters(params);
 
         let (new_conc, _) = component_no_natural.solve_concentration(

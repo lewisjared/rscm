@@ -818,8 +818,10 @@ mod tests {
     #[test]
     fn test_flux_history_bounded() {
         // Create component with small history limit for testing
-        let mut params = OceanCarbonParameters::default();
-        params.max_history_months = 24; // 2 years
+        let params = OceanCarbonParameters {
+            max_history_months: 24, // 2 years
+            ..Default::default()
+        };
         let component = OceanCarbon::from_parameters(params);
         let mut state = OceanCarbonState::default();
 

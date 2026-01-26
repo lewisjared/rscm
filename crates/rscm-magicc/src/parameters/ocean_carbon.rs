@@ -276,9 +276,9 @@ impl OceanCarbonParameters {
 
         // Calculate effective coefficients (offset + T_pi * temp_coeff)
         let mut delta_pco2 = 0.0;
-        for i in 0..5 {
+        for (i, &dic_power) in dic_powers.iter().enumerate() {
             let coeff = self.delta_ospp_offsets[i] + self.delta_ospp_coefficients[i] * self.sst_pi;
-            delta_pco2 += coeff * dic_powers[i];
+            delta_pco2 += coeff * dic_power;
         }
 
         delta_pco2
@@ -476,8 +476,10 @@ mod tests {
 
     #[test]
     fn test_ocean_pco2_temp_feedback_disabled() {
-        let mut params = OceanCarbonParameters::default();
-        params.enable_temp_feedback = false;
+        let params = OceanCarbonParameters {
+            enable_temp_feedback: false,
+            ..Default::default()
+        };
 
         let pco2_cold = params.ocean_pco2(0.0, 0.0);
         let pco2_warm = params.ocean_pco2(0.0, 5.0);

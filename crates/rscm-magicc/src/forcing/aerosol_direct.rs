@@ -167,14 +167,14 @@ impl AerosolDirect {
 
         // Calculate weighted regional pattern
         let mut regional = [0.0; 4];
-        for i in 0..4 {
+        for (i, region) in regional.iter_mut().enumerate() {
             let weighted_pattern = (species.sox.abs() * p.sox_regional[i]
                 + species.bc.abs() * p.bc_regional[i]
                 + species.oc.abs() * p.oc_regional[i]
                 + species.nitrate.abs() * p.nitrate_regional[i])
                 / total_abs;
 
-            regional[i] = total_forcing * weighted_pattern;
+            *region = total_forcing * weighted_pattern;
         }
 
         FourBoxSlice::from_array(regional)
