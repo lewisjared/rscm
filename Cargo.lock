@@ -442,6 +442,7 @@ checksum = "26aecdf64b707efd1310e3544d709c5c0ac61c13756046aaaba41be5c4f66a3b"
 dependencies = [
  "approx",
  "matrixmultiply",
+ "nalgebra-macros",
  "num-complex",
  "num-rational",
  "num-traits",
@@ -917,7 +918,7 @@ version = "0.4.1"
 dependencies = [
  "is_close",
  "log",
- "nalgebra 0.32.6",
+ "nalgebra 0.33.2",
  "ndarray",
  "num",
  "numpy",
