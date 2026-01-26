@@ -1,0 +1,12 @@
+{
+  "startyear": 1750,
+  "endyear": 2100,
+  "file_emisscen": "SSP245_EMMS.SCEN7",
+  "core_climatesensitivity": 3.0,
+  "out_forcing": 1,
+  "out_concentrations": 1,
+  "out_emissions": 1,
+  "out_temperature": 1,
+  "out_carboncycle": 1,
+  "out_ascii_binary": "ASCII"
+}

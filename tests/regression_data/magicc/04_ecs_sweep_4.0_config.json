@@ -1,0 +1,19 @@
+{
+  "startyear": 1750,
+  "endyear": 2100,
+  "co2_switchfromconc2emis_year": 5000,
+  "ch4_switchfromconc2emis_year": 5000,
+  "n2o_switchfromconc2emis_year": 5000,
+  "file_co2_conc": "SSP245_CO2_CONC.IN",
+  "file_ch4_conc": "SSP245_CH4_CONC.IN",
+  "file_n2o_conc": "SSP245_N2O_CONC.IN",
+  "core_climatesensitivity": 4.0,
+  "core_delq2xco2": 3.71,
+  "core_co2ch4n2o_rfmethod": "IPCCTAR",
+  "rf_solar_scale": 0.0,
+  "rf_volcanic_scale": 0.0,
+  "out_forcing": 1,
+  "out_concentrations": 1,
+  "out_temperature": 1,
+  "out_ascii_binary": "ASCII"
+}
