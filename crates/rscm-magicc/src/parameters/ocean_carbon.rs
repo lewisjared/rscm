@@ -116,6 +116,11 @@ pub struct OceanCarbonParameters {
     /// default: 12
     pub steps_per_year: usize,
 
+    /// Maximum flux history length in months.
+    /// Limits memory usage for IRF convolution (6000 months = 500 years).
+    /// default: 6000
+    pub max_history_months: usize,
+
     /// IRF switch time (years).
     /// Time at which to switch from early to late IRF coefficients.
     /// default: 9.9 (2D-BERN model)
@@ -182,6 +187,9 @@ impl Default for OceanCarbonParameters {
 
             // Sub-stepping
             steps_per_year: 12,
+
+            // History limit (500 years = 6000 months)
+            max_history_months: 6000,
 
             // Feedback switches
             enable_temp_feedback: true,

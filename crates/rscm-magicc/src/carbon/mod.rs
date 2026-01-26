@@ -13,5 +13,5 @@ mod ocean;
 mod terrestrial;
 
 pub use budget::CO2Budget;
-pub use ocean::OceanCarbon;
+pub use ocean::{OceanCarbon, OceanCarbonState};
 pub use terrestrial::TerrestrialCarbon;

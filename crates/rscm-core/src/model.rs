@@ -10,7 +10,8 @@
 /// The required variables are identified when building the model.
 /// If a required exogenous variable isn't provided, then the build step will fail.
 use crate::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
+    RequirementType,
 };
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
@@ -25,7 +26,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::{Bfs, IntoNeighbors, IntoNodeIdentifiers, Visitable};
 use petgraph::Graph;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Index;
 use std::sync::Arc;
 
@@ -1037,7 +1038,7 @@ impl ModelBuilder {
         }
 
         // Add the components to the graph
-        Ok(Model::with_transforms(
+        let mut model = Model::with_transforms(
             graph,
             initial_node,
             collection,
@@ -1045,7 +1046,16 @@ impl ModelBuilder {
             self.grid_weights.clone(),
             read_transforms,
             write_transforms,
-        ))
+        );
+
+        // Initialize component states for each node
+        for node_idx in model.components.node_indices() {
+            let component = &model.components[node_idx];
+            let state = component.create_initial_state();
+            model.component_states.insert(node_idx, state);
+        }
+
+        Ok(model)
     }
 }
 
@@ -1102,6 +1112,10 @@ pub struct Model {
     /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     write_transforms: HashMap<String, RequiredTransformation>,
+    /// Internal state for each component, keyed by node index.
+    /// Uses Box<dyn ComponentState> with typetag for serialization.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    component_states: BTreeMap<NodeIndex, Box<dyn ComponentState>>,
 }
 
 impl Model {
@@ -1163,7 +1177,40 @@ impl Model {
             grid_weights,
             read_transforms,
             write_transforms,
+            component_states: BTreeMap::new(),
         }
+    }
+
+    /// Get a reference to a component's internal state
+    pub fn get_component_state(&self, node_index: NodeIndex) -> Option<&dyn ComponentState> {
+        self.component_states.get(&node_index).map(|b| b.as_ref())
+    }
+
+    /// Create a checkpoint of the model state that can be serialized.
+    ///
+    /// The checkpoint includes:
+    /// - All timeseries data (including current state)
+    /// - Component internal states (flux_history, etc.)
+    /// - Current time index
+    ///
+    /// Use this to save model state mid-run for later resumption.
+    pub fn checkpoint(&self) -> RSCMResult<String> {
+        serde_json::to_string(self)
+            .map_err(|e| RSCMError::Error(format!("Serialization failed: {}", e)))
+    }
+
+    /// Restore a model from a JSON checkpoint string.
+    ///
+    /// This recreates the exact state of the model at checkpoint time,
+    /// including component internal states.
+    pub fn from_checkpoint(json: &str) -> RSCMResult<Self> {
+        serde_json::from_str(json)
+            .map_err(|e| RSCMError::Error(format!("Deserialization failed: {}", e)))
+    }
+
+    /// Get the current time index (useful for checkpointing).
+    pub fn time_index(&self) -> usize {
+        self.time_index
     }
 
     /// Get the configured grid weights
@@ -1214,7 +1261,7 @@ impl Model {
     /// to be later used by other components.
     /// The output state defines the values at the next time index as it represents the state
     /// at the start of the next timestep.
-    fn step_model_component(&mut self, component: C) {
+    fn step_model_component(&mut self, component: C, node_index: NodeIndex) {
         // Build transform context for read-side aggregation
         let input_names = component.input_names();
         let input_state = if self.read_transforms.is_empty() {
@@ -1251,7 +1298,13 @@ impl Model {
 
         let (start, end) = self.current_time_bounds();
 
-        let result = component.solve(start, end, &input_state);
+        // Get component state - must exist since we initialize all states in build()
+        let internal_state = self
+            .component_states
+            .get_mut(&node_index)
+            .expect("Component state not initialized - this is a bug in Model::build()");
+
+        let result = component.solve_with_state(start, end, &input_state, internal_state.as_mut());
 
         match result {
             Ok(output_state) => {
@@ -1310,7 +1363,7 @@ impl Model {
         let mut bfs = Bfs::new(&self.components, self.initial_node);
         while let Some(nx) = bfs.next(&self.components) {
             let c = self.components.index(nx);
-            self.step_model_component(c.clone())
+            self.step_model_component(c.clone(), nx)
         }
     }
 
@@ -1527,6 +1580,12 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 v = 1
 dim = [6]
 data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
+
+[component_states.0]
+state_type = "unit"
+
+[component_states.1]
+state_type = "unit"
 "#;
 
         assert_eq!(serialised, expected);
@@ -3797,5 +3856,192 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
                 "Disaggregation Hemispheric->FourBox should be rejected"
             );
         }
+    }
+
+    // Module-level types for checkpoint test to enable proper serialization/deserialization
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct StatefulTestComponentState {
+        call_count: usize,
+    }
+
+    #[typetag::serde]
+    impl ComponentState for StatefulTestComponentState {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct StatefulTestComponent {}
+
+    #[typetag::serde]
+    impl Component for StatefulTestComponent {
+        fn definitions(&self) -> Vec<RequirementDefinition> {
+            vec![RequirementDefinition::scalar_input("input", "m")]
+        }
+
+        fn solve(
+            &self,
+            _t_current: Time,
+            _t_next: Time,
+            _input_state: &InputState,
+        ) -> RSCMResult<OutputState> {
+            Ok(OutputState::new())
+        }
+
+        fn create_initial_state(&self) -> Box<dyn ComponentState> {
+            Box::new(StatefulTestComponentState { call_count: 0 })
+        }
+
+        fn solve_with_state(
+            &self,
+            t_current: Time,
+            t_next: Time,
+            input_state: &InputState,
+            internal_state: &mut dyn ComponentState,
+        ) -> RSCMResult<OutputState> {
+            let state = internal_state
+                .as_any_mut()
+                .downcast_mut::<StatefulTestComponentState>()
+                .expect("Invalid state type");
+            state.call_count += 1;
+            self.solve(t_current, t_next, input_state)
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_roundtrip_preserves_state() {
+        // Build model with stateful component
+        let time_axis = TimeAxis::from_values(array![2020.0, 2021.0, 2022.0, 2023.0]);
+        let mut model = ModelBuilder::new()
+            .with_time_axis(time_axis)
+            .with_exogenous_variable(
+                "input",
+                Timeseries::from_values(
+                    array![1.0, 2.0, 3.0, 4.0],
+                    array![2020.0, 2021.0, 2022.0, 2023.0],
+                ),
+            )
+            .with_component(Arc::new(StatefulTestComponent {}))
+            .build()
+            .unwrap();
+
+        // Find the stateful component node (may not be at index 0 if virtual aggregators are present)
+        let stateful_node = (0..2)
+            .find(|i| {
+                if let Some(state) = model.get_component_state(NodeIndex::new(*i)) {
+                    state.as_any().is::<StatefulTestComponentState>()
+                } else {
+                    false
+                }
+            })
+            .map(NodeIndex::new);
+
+        // Run model for 2 steps
+        model.step();
+        model.step();
+
+        // Checkpoint
+        let checkpoint = model.checkpoint().unwrap();
+
+        // Restore from checkpoint
+        let mut restored = Model::from_checkpoint(&checkpoint).unwrap();
+
+        // Verify time index is preserved
+        assert_eq!(
+            restored.time_index(),
+            model.time_index(),
+            "Time index should be preserved"
+        );
+
+        // Verify component states are preserved across checkpoint/restore
+        let stateful_node = stateful_node.expect("Stateful component should be found");
+
+        // Check that both models have the stateful component state
+        assert!(
+            model.get_component_state(stateful_node).is_some(),
+            "Original model should have stateful component state"
+        );
+        assert!(
+            restored.get_component_state(stateful_node).is_some(),
+            "Restored model should have stateful component state after checkpoint"
+        );
+
+        // Extract call_count from model before additional steps
+        let model_state_before = model
+            .get_component_state(stateful_node)
+            .expect("Component state should exist");
+        let model_call_count_before = model_state_before
+            .as_any()
+            .downcast_ref::<StatefulTestComponentState>()
+            .expect("Should be StatefulTestComponentState")
+            .call_count;
+
+        // Extract call_count from restored model before additional steps
+        let restored_state_before = restored
+            .get_component_state(stateful_node)
+            .expect("Component state should exist");
+        let restored_call_count_before = restored_state_before
+            .as_any()
+            .downcast_ref::<StatefulTestComponentState>()
+            .expect("Should be StatefulTestComponentState")
+            .call_count;
+
+        // Verify call_count is preserved across checkpoint/restore
+        assert_eq!(
+            restored_call_count_before, model_call_count_before,
+            "Component call_count should be preserved across checkpoint/restore"
+        );
+        assert_eq!(
+            model_call_count_before, 2,
+            "After 2 steps, call_count should be 2"
+        );
+
+        // Run both models for 1 more step
+        model.step();
+        restored.step();
+
+        // The final time index should match
+        assert_eq!(
+            restored.time_index(),
+            model.time_index(),
+            "Final time index should match"
+        );
+
+        // Verify component states match after running additional steps
+        let model_state_after = model
+            .get_component_state(stateful_node)
+            .expect("Component state should exist");
+        let model_call_count_after = model_state_after
+            .as_any()
+            .downcast_ref::<StatefulTestComponentState>()
+            .expect("Should be StatefulTestComponentState")
+            .call_count;
+
+        let restored_state_after = restored
+            .get_component_state(stateful_node)
+            .expect("Component state should exist");
+        let restored_call_count_after = restored_state_after
+            .as_any()
+            .downcast_ref::<StatefulTestComponentState>()
+            .expect("Should be StatefulTestComponentState")
+            .call_count;
+
+        // Both should have incremented to 3
+        assert_eq!(
+            model_call_count_after, 3,
+            "After 1 additional step, original model call_count should be 3"
+        );
+        assert_eq!(
+            restored_call_count_after, 3,
+            "After 1 additional step, restored model call_count should be 3"
+        );
+        assert_eq!(
+            model_call_count_after, restored_call_count_after,
+            "After additional steps, call_counts should still match"
+        );
     }
 }

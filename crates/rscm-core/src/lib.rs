@@ -126,3 +126,9 @@ pub mod errors;
 
 // Re-export derive macro for convenience
 pub use rscm_macros::ComponentIO;
+
+// Re-export component types
+pub use component::{
+    Component, ComponentMetadata, ComponentState, GridType, RequirementDefinition, RequirementType,
+    VariableMetadata,
+};

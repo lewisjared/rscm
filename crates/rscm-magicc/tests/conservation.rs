@@ -5,7 +5,7 @@
 //! - Energy conservation in the climate system
 
 use approx::assert_relative_eq;
-use rscm_magicc::carbon::{OceanCarbon, TerrestrialCarbon};
+use rscm_magicc::carbon::{OceanCarbon, OceanCarbonState, TerrestrialCarbon};
 use rscm_magicc::parameters::{OceanCarbonParameters, TerrestrialCarbonParameters};
 
 mod carbon_cycle_conservation {
@@ -96,7 +96,8 @@ mod carbon_cycle_conservation {
     /// Test that ocean carbon accumulates correctly.
     #[test]
     fn test_ocean_carbon_cumulative_uptake() {
-        let mut component = OceanCarbon::from_parameters(OceanCarbonParameters::default());
+        let component = OceanCarbon::from_parameters(OceanCarbonParameters::default());
+        let mut state = OceanCarbonState::default();
         let params = OceanCarbonParameters::default();
 
         let co2_elevated = 400.0;
@@ -109,7 +110,7 @@ mod carbon_cycle_conservation {
 
         for _ in 0..50 {
             let (new_pco2, new_cumulative, flux) =
-                component.solve_ocean(co2_elevated, sst, pco2, cumulative, dt);
+                component.solve_ocean(&mut state, co2_elevated, sst, pco2, cumulative, dt);
 
             total_flux += flux * dt;
             pco2 = new_pco2;
@@ -123,7 +124,8 @@ mod carbon_cycle_conservation {
     /// Test that ocean pCO2 approaches atmospheric CO2 at equilibrium.
     #[test]
     fn test_ocean_pco2_approaches_equilibrium() {
-        let mut component = OceanCarbon::from_parameters(OceanCarbonParameters::default());
+        let component = OceanCarbon::from_parameters(OceanCarbonParameters::default());
+        let mut state = OceanCarbonState::default();
         let params = OceanCarbonParameters::default();
 
         let co2_target = 400.0;
@@ -135,7 +137,7 @@ mod carbon_cycle_conservation {
         // Run for a long time
         for _ in 0..500 {
             let (new_pco2, new_cumulative, _) =
-                component.solve_ocean(co2_target, sst, pco2, cumulative, dt);
+                component.solve_ocean(&mut state, co2_target, sst, pco2, cumulative, dt);
             pco2 = new_pco2;
             cumulative = new_cumulative;
         }

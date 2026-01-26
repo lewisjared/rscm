@@ -6,6 +6,7 @@ pub use crate::state::{
 use crate::timeseries::Time;
 use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::fmt::Debug;
 
 /// Type of requirement (input, output, state, or internal link)
@@ -289,6 +290,42 @@ pub struct ComponentMetadata {
     pub states: Vec<VariableMetadata>,
 }
 
+/// Trait for component internal state with automatic serialization support.
+///
+/// Internal state is private to a component and persists across solve() calls.
+/// Unlike coupled state (RequirementType::State), internal state is not shared
+/// between components.
+///
+/// # Implementors
+///
+/// - Use `()` for stateless components (most components)
+/// - Define a custom struct for components that need sub-stepping history
+///
+/// # Serialization
+///
+/// Uses `#[typetag::serde]` for automatic type registry, enabling polymorphic
+/// serialization of `Box<dyn ComponentState>` without manual type tagging.
+#[typetag::serde(tag = "state_type")]
+pub trait ComponentState: Debug + Send + Sync + Any {
+    /// Downcast to concrete type for component use
+    fn as_any(&self) -> &dyn Any;
+    /// Downcast to concrete type for mutable access
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+/// Marker implementation for stateless components.
+///
+/// Most components don't need internal state and can use `()` as their state type.
+#[typetag::serde(name = "unit")]
+impl ComponentState for () {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
 /// Component of a reduced complexity climate model
 ///
 /// Each component encapsulates some set of physics that can be solved for a given time step.
@@ -364,6 +401,37 @@ pub trait Component: Debug + Send + Sync {
         t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState>;
+
+    /// Solve with internal state support.
+    ///
+    /// Override this method for components that need persistent internal state.
+    /// The default implementation ignores the state and calls `solve()`.
+    ///
+    /// # Arguments
+    ///
+    /// * `t_current` - Current time
+    /// * `t_next` - Next time step
+    /// * `input_state` - Input state from model
+    /// * `internal_state` - Mutable reference to component's internal state
+    fn solve_with_state(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+    ) -> RSCMResult<OutputState> {
+        // Default: ignore state, call existing solve()
+        let _ = internal_state;
+        self.solve(t_current, t_next, input_state)
+    }
+
+    /// Create the initial state for this component.
+    ///
+    /// Default returns `Box::new(())` for stateless components.
+    /// Override for components that need internal state.
+    fn create_initial_state(&self) -> Box<dyn ComponentState> {
+        Box::new(())
+    }
 }
 
 #[cfg(test)]
@@ -517,5 +585,47 @@ mod tests {
         assert!(!GridType::Scalar.can_aggregate_to(GridType::FourBox));
         assert!(!GridType::Scalar.can_aggregate_to(GridType::Hemispheric));
         assert!(!GridType::Hemispheric.can_aggregate_to(GridType::FourBox));
+    }
+
+    #[test]
+    fn test_component_state_unit_type_serialization() {
+        // Test that the unit type () can be serialized as ComponentState
+        let state: Box<dyn ComponentState> = Box::new(());
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"state_type\":\"unit\""));
+
+        // Test deserialization
+        let deserialized: Box<dyn ComponentState> = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.as_any().is::<()>());
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct TestComponentState {
+        value: f64,
+    }
+
+    #[typetag::serde]
+    impl ComponentState for TestComponentState {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    #[test]
+    fn test_component_state_custom_type_serialization() {
+        // Test that custom state types can be serialized
+        let state: Box<dyn ComponentState> = Box::new(TestComponentState { value: 42.0 });
+        let json = serde_json::to_string(&state).unwrap();
+
+        // Deserialize and verify
+        let deserialized: Box<dyn ComponentState> = serde_json::from_str(&json).unwrap();
+        let concrete = deserialized
+            .as_any()
+            .downcast_ref::<TestComponentState>()
+            .unwrap();
+        assert_eq!(concrete.value, 42.0);
     }
 }
