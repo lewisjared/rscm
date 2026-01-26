@@ -9,6 +9,11 @@ to validate the Rust implementation at key checkpoints:
 3. Full Integration - End-to-end validation
 
 Usage:
+    # Set MAGICC_ROOT environment variable first:
+    export MAGICC_ROOT=/path/to/magicc-v7.5.3
+
+    # Or create a .env file with MAGICC_ROOT=/path/to/magicc-v7.5.3
+
     uv run --with pymagicc --with scmdata --with pyarrow \
         scripts/generate_magicc_regression_data.py
 
@@ -19,26 +24,50 @@ Output:
 
 import json
 import os
+import platform
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
 
 import pandas as pd
 
-# Set MAGICC path before importing pymagicc
-MAGICC_ROOT = Path(
-    "/Users/jared/code/other/gcages/tests/regression/ar6/ar6-workflow-inputs/magicc-v7.5.3"
-)
-os.environ["MAGICC_EXECUTABLE_7"] = str(MAGICC_ROOT / "bin" / "magicc-darwin-arm64")
+# Load MAGICC path from environment
+# Set MAGICC_ROOT in .env or environment before running
+MAGICC_ROOT_STR = os.environ.get("MAGICC_ROOT")
+if not MAGICC_ROOT_STR:
+    msg = (
+        "MAGICC_ROOT environment variable not set. "
+        "Set it to your MAGICC installation directory, e.g.:\n"
+        "  export MAGICC_ROOT=/path/to/magicc-v7.5.3"
+    )
+    raise RuntimeError(msg)
+
+MAGICC_ROOT = Path(MAGICC_ROOT_STR)
+
+# Determine executable name based on platform
+if platform.system() == "Darwin":
+    if platform.machine() == "arm64":
+        executable_name = "magicc-darwin-arm64"
+    else:
+        executable_name = "magicc-darwin-x86_64"
+elif platform.system() == "Linux":
+    executable_name = "magicc-linux-x86_64"
+else:
+    executable_name = "magicc"  # Fallback
+
+MAGICC_EXECUTABLE = MAGICC_ROOT / "bin" / executable_name
+if not MAGICC_EXECUTABLE.exists():
+    msg = f"MAGICC executable not found: {MAGICC_EXECUTABLE}"
+    raise RuntimeError(msg)
+
+os.environ["MAGICC_EXECUTABLE_7"] = str(MAGICC_EXECUTABLE)
 
 import scmdata  # noqa: E402
 from pymagicc import MAGICC7  # noqa: E402
 from pymagicc import config as pymagicc_config  # noqa: E402
 
 # Explicitly set pymagicc config
-pymagicc_config.config["EXECUTABLE_7"] = str(
-    MAGICC_ROOT / "bin" / "magicc-darwin-arm64"
-)
+pymagicc_config.config["EXECUTABLE_7"] = str(MAGICC_EXECUTABLE)
 
 
 @contextmanager
