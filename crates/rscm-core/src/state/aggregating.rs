@@ -6,7 +6,6 @@
 use crate::component::GridType;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, HemisphericRegion, SpatialGrid};
 use crate::timeseries::{FloatValue, GridTimeseries, Time};
-use num::Float as NumFloat;
 
 use super::windows::GridTimeseriesWindow;
 
@@ -62,7 +61,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
             Some(weights) => {
                 let mut sum = 0.0;
                 for (v, w) in values.iter().zip(weights.iter()) {
-                    if !NumFloat::is_nan(*v) {
+                    if !v.is_nan() {
                         sum += v * w;
                     }
                 }
@@ -165,7 +164,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
             Some(weights) => {
                 let mut sum = 0.0;
                 for (v, w) in values.iter().zip(weights.iter()) {
-                    if !NumFloat::is_nan(*v) {
+                    if !v.is_nan() {
                         sum += v * w;
                     }
                 }

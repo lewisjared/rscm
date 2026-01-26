@@ -29,7 +29,6 @@ use crate::component::GridType;
 use crate::spatial::{FourBoxGrid, ScalarRegion, SpatialGrid};
 use crate::timeseries::{FloatValue, Time};
 use crate::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
-use num::Float;
 use std::collections::HashMap;
 
 // =============================================================================
@@ -198,7 +197,7 @@ impl<'a> InputState<'a> {
 
     pub fn empty() -> Self {
         Self {
-            current_time: Time::nan(),
+            current_time: f64::NAN,
             state: vec![],
             transform_context: None,
         }
