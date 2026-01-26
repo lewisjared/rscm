@@ -1,3 +1,33 @@
+## rscm 0.5.0 (2026-01-26)
+
+### ⚠️ Breaking Changes ⚠️
+
+- Replaced ambiguous `current()` and `next()` methods on `TimeseriesWindow` with explicit `at_start()` and `at_end()` accessors that clearly communicate timestep semantics. ([#67](https://github.com/lewisjared/rscm/pulls/67))
+
+### Features
+
+- Added VariableSchema for declaring model variables and aggregation relationships. Supports Sum, Mean, and Weighted aggregation operations with hierarchical aggregates, automatic validation, and cycle detection. Virtual aggregator components are inserted into the model graph during build. ([#66](https://github.com/lewisjared/rscm/pulls/66))
+- Added schema-driven grid auto-aggregation. Components can now read variables at coarser resolutions than the schema declares (e.g., reading a Scalar when the schema stores FourBox data), and write at finer resolutions. The model automatically aggregates using configurable area weights via `ModelBuilder.with_grid_weights()`. ([#68](https://github.com/lewisjared/rscm/pulls/68))
+- Added model calibration and uncertainty quantification framework (`rscm.calibrate`). Supports MCMC sampling via affine-invariant ensemble sampler (Goodman & Weare 2010), point estimation, convergence diagnostics (R-hat, ESS), and chain persistence. Includes Python bindings with tqdm progress bars and pandas DataFrame integration. ([#69](https://github.com/lewisjared/rscm/pulls/69))
+
+### Improvements
+
+- Improved the `/proposal` OpenSpec command with a two-phase workflow that separates investigation from specification, requiring user approval between phases. ([#62](https://github.com/lewisjared/rscm/pulls/62))
+- Split CI docs into parallel jobs with path filtering for faster builds. ([#63](https://github.com/lewisjared/rscm/pulls/63))
+
+### Bug Fixes
+
+- Fixed DOT graph output to properly escape quotes in component labels, enabling compatibility with pydot and other DOT parsers. ([#66](https://github.com/lewisjared/rscm/pulls/66))
+
+### Improved Documentation
+
+- Added Variable Schemas tutorial covering aggregation operations (Sum, Mean, Weighted), hierarchical aggregates, NaN handling, and schema validation. ([#66](https://github.com/lewisjared/rscm/pulls/66))
+
+### Trivial/Internal Changes
+
+- [#64](https://github.com/lewisjared/rscm/pulls/64)
+
+
 ## rscm 0.4.1 (2026-01-17)
 
 No significant changes.
