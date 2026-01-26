@@ -16,8 +16,11 @@ Probing the fast and slow components of global warming by returning abruptly to
 preindustrial forcing. Journal of Climate, 23(9), 2418-2427.
 """
 
-from rscm._lib.core import ComponentBuilder, RustComponent
+from typing import final
 
+from rscm._lib.core import Component, ComponentBuilder
+
+@final
 class TwoLayerBuilder(ComponentBuilder):
     """Builder for the two-layer energy balance model component.
 
@@ -98,5 +101,5 @@ class TwoLayerBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: dict[str, float]) -> TwoLayerBuilder:
         """Create a builder from a parameter dictionary."""
-    def build(self) -> RustComponent:
+    def build(self) -> Component:
         """Build the two-layer model component."""

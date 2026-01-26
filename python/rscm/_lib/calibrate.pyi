@@ -5,7 +5,7 @@ This module provides calibration and parameter estimation functionality.
 """
 
 from collections.abc import Callable, Sequence
-from typing import Self
+from typing import Self, final
 
 import numpy as np
 from numpy.typing import NDArray
@@ -16,6 +16,7 @@ F = np.float64 | float
 
 # ==================== Distribution Types ====================
 
+@final
 class Uniform:
     """
     Uniform distribution over a bounded interval.
@@ -47,6 +48,7 @@ class Uniform:
     def high(self) -> F:
         """Upper bound of the distribution."""
 
+@final
 class Normal:
     """
     Normal (Gaussian) distribution.
@@ -78,6 +80,7 @@ class Normal:
     def std_dev(self) -> F:
         """Standard deviation of the distribution."""
 
+@final
 class LogNormal:
     """
     Log-normal distribution.
@@ -129,6 +132,7 @@ class LogNormal:
     def sigma(self) -> F:
         """Standard deviation of the underlying normal distribution (log-space)."""
 
+@final
 class Bound:
     """
     Bounded wrapper for any distribution.
@@ -163,6 +167,7 @@ class Bound:
 
 # ==================== Parameter Set ====================
 
+@final
 class ParameterSet:
     """
     Collection of named parameters with prior distributions.
@@ -271,6 +276,7 @@ class ParameterSet:
 
 # ==================== Observations and Targets ====================
 
+@final
 class Observation:
     """
     Single observation at a specific time.
@@ -301,6 +307,7 @@ class Observation:
     def uncertainty(self) -> F:
         """Observation uncertainty (standard deviation)."""
 
+@final
 class VariableTarget:
     """
     Collection of observations for a single variable.
@@ -402,6 +409,7 @@ class VariableTarget:
             (min_time, max_time) or None if no observations
         """
 
+@final
 class Target:
     """
     Collection of observation targets for multiple variables.
@@ -444,12 +452,12 @@ class Target:
             If uncertainty <= 0
         """
     def add_observation_relative(
-        self, variable: str, time: F, value: F, relative_error: F
+        self, variable: str, time: F, value: F, relative_uncertainty: F
     ) -> Self:
         """
         Add an observation with relative uncertainty.
 
-        Computes uncertainty as relative_error * abs(value).
+        Computes uncertainty as relative_uncertainty * abs(value).
 
         Parameters
         ----------
@@ -459,8 +467,8 @@ class Target:
             Observation time
         value : float
             Observed value
-        relative_error : float
-            Relative error as a fraction (e.g., 0.1 for 10%)
+        relative_uncertainty : float
+            Relative uncertainty as a fraction (e.g., 0.1 for 10%)
 
         Returns
         -------
@@ -470,7 +478,7 @@ class Target:
         Raises
         ------
         ValueError
-            If relative_error <= 0 or computed uncertainty <= 0
+            If relative_uncertainty <= 0 or computed uncertainty <= 0
         """
     def set_reference_period(self, variable: str, start: F, end: F) -> Self:
         """
@@ -525,6 +533,7 @@ class Target:
 
 # ==================== Likelihood ====================
 
+@final
 class GaussianLikelihood:
     """
     Gaussian likelihood function for model-data comparison.
@@ -548,6 +557,7 @@ class GaussianLikelihood:
 
 # ==================== Model Runner ====================
 
+@final
 class ModelRunner:
     """
     Model runner that executes a model callable with parameter vectors.
@@ -582,12 +592,12 @@ class ModelRunner:
     ) -> None: ...
     def run(self, params: Sequence[F]) -> dict[str, dict[F, F]]:
         """
-        Run model with parameter vector.
+        Run the model with a parameter vector.
 
         Parameters
         ----------
-        params : array-like
-            Parameter values in param_names order
+        params : list[float]
+            Parameter values in the order specified by param_names
 
         Returns
         -------
@@ -596,15 +606,21 @@ class ModelRunner:
 
         Raises
         ------
+        ValueError
+            If params length doesn't match param_names
         Exception
             If model execution fails
         """
     @property
     def param_names(self) -> list[str]:
         """Get parameter names."""
+    @property
+    def output_variables(self) -> list[str]:
+        """Get output variable names."""
 
 # ==================== MCMC Ensemble Sampling ====================
 
+@final
 class ProgressInfo:
     """
     Progress information for MCMC sampling.
@@ -634,6 +650,7 @@ class ProgressInfo:
     def mean_log_prob(self) -> F:
         """Mean log probability."""
 
+@final
 class WalkerInit:
     """
     Walker initialization strategy for MCMC sampler.
@@ -657,7 +674,7 @@ class WalkerInit:
     def from_prior() -> WalkerInit:
         """Sample initial walker positions from parameter priors."""
     @staticmethod
-    def ball(center: Sequence[F], radius: F = 0.01) -> WalkerInit:
+    def ball(center: Sequence[F], radius: F) -> WalkerInit:
         """
         Initialize walkers in a ball around a point.
 
@@ -665,8 +682,8 @@ class WalkerInit:
         ----------
         center : array-like
             Center point for initialization
-        radius : float, optional
-            Radius of ball (default: 0.01)
+        radius : float
+            Radius of ball for random initialization
         """
     @staticmethod
     def explicit(positions: list[list[F]]) -> WalkerInit:
@@ -679,6 +696,7 @@ class WalkerInit:
             2D list of walker positions, shape (n_walkers, n_params)
         """
 
+@final
 class Chain:
     """
     MCMC chain storage with diagnostics.
@@ -857,6 +875,7 @@ class Chain:
     def __len__(self) -> int:
         """Return number of stored samples per walker."""
 
+@final
 class EnsembleSampler:
     """
     Affine-invariant ensemble MCMC sampler.
@@ -1045,6 +1064,7 @@ class EnsembleSampler:
 
 # ==================== Point Estimation ====================
 
+@final
 class Optimizer:
     """
     Optimization algorithm selector.
@@ -1060,6 +1080,7 @@ class Optimizer:
     def random_search() -> Optimizer:
         """Random search optimizer (samples n points, returns best)."""
 
+@final
 class OptimizationResult:
     """
     Result from point estimation optimization.
@@ -1094,6 +1115,7 @@ class OptimizationResult:
     def converged(self) -> bool:
         """Whether the optimizer converged."""
 
+@final
 class PointEstimator:
     """
     Point estimation optimizer for finding best-fit parameters.

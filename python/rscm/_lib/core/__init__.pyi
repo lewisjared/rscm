@@ -1,10 +1,10 @@
 from enum import Enum, auto
-from typing import Any, Protocol, Self, TypeVar
+from typing import Any, Protocol, Self, TypeVar, final
 
 import numpy as np
 from numpy.typing import NDArray
 
-from .state import FourBoxSlice, HemisphericSlice, StateValue
+from .state import StateValue
 
 T = TypeVar("T")
 
@@ -12,26 +12,28 @@ T = TypeVar("T")
 Arr = NDArray[np.float64]
 F = np.float64 | float
 
-# Re-export StateValue for convenience
-# See state.pyi for documentation on the three variants (Scalar, FourBox, Hemispheric)
-__all__ = ["FourBoxSlice", "HemisphericSlice", "StateValue"]
+# Note: __all__ is defined by PyO3 at runtime, not in the stub
+# The runtime __all__ includes all exported classes from this module
 
+@final
 class TimeAxis:
     @staticmethod
     def from_values(values: Arr) -> TimeAxis: ...
     @staticmethod
-    def from_bounds(values: Arr) -> TimeAxis: ...
+    def from_bounds(bounds: Arr) -> TimeAxis: ...
     def values(self) -> Arr: ...
     def bounds(self) -> Arr: ...
     def __len__(self) -> int: ...
     def at(self, index: int) -> F: ...
     def at_bounds(self, index: int) -> tuple[F, F]: ...
 
+@final
 class InterpolationStrategy(Enum):
     Linear = auto()
     Next = auto()
     Previous = auto()
 
+@final
 class Timeseries:
     """Scalar (1D) timeseries with interpolation support."""
 
@@ -42,11 +44,13 @@ class Timeseries:
         units: str,
         interpolation_strategy: InterpolationStrategy,
     ) -> None: ...
+    @staticmethod
+    def from_values(values: Arr, time: TimeAxis) -> Timeseries: ...
     def with_interpolation_strategy(
         self, interpolation_strategy: InterpolationStrategy
     ) -> Timeseries: ...
     def __len__(self) -> int: ...
-    def set(self, index: int, value: float) -> None: ...
+    def set(self, time_index: int, value: float) -> None: ...
     def values(self) -> Arr: ...
     @property
     def latest(self) -> int: ...
@@ -55,7 +59,7 @@ class Timeseries:
     @property
     def time_axis(self) -> TimeAxis: ...
     def latest_value(self) -> F | None: ...
-    def at(self, index: int) -> F: ...
+    def at(self, time_index: int) -> F: ...
     def at_time(self, time: F) -> F:
         """
         Interpolates a value for a given time using the current interpolation strategy.
@@ -78,6 +82,7 @@ class Timeseries:
 
         """
 
+@final
 class FourBoxTimeseries:
     """FourBox grid timeseries with 4 regional values per timestep."""
 
@@ -91,6 +96,7 @@ class FourBoxTimeseries:
     @property
     def time_axis(self) -> TimeAxis: ...
 
+@final
 class HemisphericTimeseries:
     """Hemispheric grid timeseries with 2 regional values per timestep."""
 
@@ -104,10 +110,12 @@ class HemisphericTimeseries:
     @property
     def time_axis(self) -> TimeAxis: ...
 
+@final
 class VariableType(Enum):
     Exogenous = auto()
     Endogenous = auto()
 
+@final
 class TimeseriesCollection:
     def __init__(self) -> None: ...
     def add_timeseries(
@@ -180,17 +188,20 @@ class TimeseriesCollection:
         List of scalar timeseries
         """
 
+@final
 class RequirementType(Enum):
     Input = auto()
     Output = auto()
     State = auto()
     EmptyLink = auto()
 
+@final
 class GridType(Enum):
     Scalar = auto()
     FourBox = auto()
     Hemispheric = auto()
 
+@final
 class RequirementDefinition:
     name: str
     # TODO: fix naming inconsistency between 'unit' and 'units'
@@ -210,20 +221,6 @@ class Component(Protocol):
     """A component of the model that can be solved"""
 
     def definitions(self) -> list[RequirementDefinition]: ...
-    def solve(
-        self, t_current: float, t_next: float, collection: TimeseriesCollection
-    ) -> dict[str, StateValue]: ...
-
-class RustComponent(Component):
-    """
-    Component that has been defined in Rust
-    """
-
-    def definitions(self) -> list[RequirementDefinition]: ...
-    def input_names(self) -> list[str]:
-        """Get the names of all input variables required by this component."""
-    def output_names(self) -> list[str]:
-        """Get the names of all output variables produced by this component."""
     def solve(
         self, t_current: float, t_next: float, collection: TimeseriesCollection
     ) -> dict[str, StateValue]: ...
@@ -250,8 +247,8 @@ class CustomComponent(Protocol):
 class ComponentBuilder(Protocol):
     """A component of the model that can be solved"""
 
-    @classmethod
-    def from_parameters(cls: type[T], parameters: dict[str, F]) -> T:
+    @staticmethod
+    def from_parameters(parameters: dict[str, F]) -> ComponentBuilder:
         """
         Create a builder object from parameters
 
@@ -259,7 +256,7 @@ class ComponentBuilder(Protocol):
         -------
         Builder that can create a Component
         """
-    def build(self) -> RustComponent:
+    def build(self) -> Component:
         """
         Create a concrete component
 
@@ -269,8 +266,10 @@ class ComponentBuilder(Protocol):
         or coupled with other components via a `Model`.
         """
 
+@final
 class TestComponentBuilder(ComponentBuilder): ...
 
+@final
 class PythonComponent(Component):
     """
     A component defined in Python.
@@ -282,7 +281,12 @@ class PythonComponent(Component):
 
     @staticmethod
     def build(component: CustomComponent) -> PythonComponent: ...
+    def input_names(self) -> list[str]:
+        """Get the names of all input variables required by this component."""
+    def output_names(self) -> list[str]:
+        """Get the names of all output variables produced by this component."""
 
+@final
 class SchemaVariableDefinition:
     """Definition of a single variable in the schema."""
 
@@ -297,6 +301,7 @@ class SchemaVariableDefinition:
         grid_type: GridType | None = None,
     ) -> None: ...
 
+@final
 class AggregateDefinition:
     """Definition of an aggregate variable."""
 
@@ -313,6 +318,7 @@ class AggregateDefinition:
     def weights(self) -> list[float] | None:
         """Get the weights for a Weighted operation, or None for Sum/Mean."""
 
+@final
 class VariableSchema:
     """
     Complete variable schema for a model.
@@ -395,14 +401,15 @@ class VariableSchema:
             If validation fails.
         """
 
+@final
 class ModelBuilder:
     """Builder for a model"""
 
     def __init__(self) -> None: ...
     def with_time_axis(self, time_axis: TimeAxis) -> Self: ...
     def with_py_component(self, component: PythonComponent) -> Self: ...
-    def with_rust_component(self, component: RustComponent) -> Self: ...
-    def with_initial_values(self, input_state: dict[str, F]) -> Self: ...
+    def with_rust_component(self, component: Component) -> Self: ...
+    def with_initial_values(self, initial_values: dict[str, F]) -> Self: ...
     def with_exogenous_variable(self, name: str, timeseries: Timeseries) -> Self: ...
     def with_exogenous_collection(self, timeseries: TimeseriesCollection) -> Self: ...
     def with_schema(self, schema: VariableSchema) -> Self:
@@ -470,6 +477,7 @@ class ModelBuilder:
         Concrete model that can be solved
         """
 
+@final
 class Model:
     """
     A coupled set of components that are solved on a common time axis.
@@ -521,14 +529,14 @@ class Model:
         the model at a later time.
         """
 
-    @classmethod
-    def from_toml(cls: type[T], serialised_model: str) -> T:
+    @staticmethod
+    def from_toml(string: str) -> Model:
         """
         Create a model from a TOML string.
 
         Parameters
         ----------
-        serialised_model
+        string
             TOML string representing the model
 
         Returns
