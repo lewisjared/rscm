@@ -41,9 +41,12 @@
 //! - **El Niño/AMV modes**: Internal variability modes. Not implemented.
 //! - **Ground heat reservoir**: Land heat capacity damping. Not implemented.
 
+use std::any::Any;
+
 use crate::parameters::ClimateUDEBParameters;
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
+    RequirementType,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::spatial::{FourBoxGrid, FourBoxRegion};
@@ -52,6 +55,45 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::utils::linear_algebra::thomas_solve;
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
+
+/// Internal state for ClimateUDEB component.
+///
+/// This holds the ocean layer temperatures and upwelling rates that persist
+/// across solve() calls. Unlike coupled state (RequirementType::State), this
+/// is private to the component and not shared between components.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ClimateUDEBState {
+    /// Ocean layer temperatures for each hemisphere (NH=0, SH=1).
+    /// Shape: [hemisphere][layer], layer 0 is mixed layer.
+    pub ocean_temps: Vec<Vec<FloatValue>>,
+
+    /// Current upwelling rate for each hemisphere (m/yr).
+    pub upwelling_rates: [FloatValue; 2],
+
+    /// Whether the state has been initialized with parameters.
+    pub initialized: bool,
+}
+
+impl ClimateUDEBState {
+    /// Create a new state for a given number of layers and initial upwelling rate.
+    pub fn new(n_layers: usize, w_initial: FloatValue) -> Self {
+        Self {
+            ocean_temps: vec![vec![0.0; n_layers]; 2],
+            upwelling_rates: [w_initial; 2],
+            initialized: true,
+        }
+    }
+}
+
+#[typetag::serde]
+impl ComponentState for ClimateUDEBState {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
 
 /// 4-box UDEB climate model component.
 ///
@@ -83,15 +125,6 @@ use serde::{Deserialize, Serialize};
 pub struct ClimateUDEB {
     parameters: ClimateUDEBParameters,
 
-    /// Ocean layer temperatures for each hemisphere (NH=0, SH=1).
-    /// Shape: [hemisphere][layer], layer 0 is mixed layer.
-    #[serde(skip)]
-    ocean_temps: Vec<Vec<FloatValue>>,
-
-    /// Current upwelling rate for each hemisphere (m/yr).
-    #[serde(skip)]
-    upwelling_rates: [FloatValue; 2],
-
     /// Ocean feedback parameter ($\text{W/m}^2\text{/K}$).
     #[serde(skip)]
     lambda_ocean: FloatValue,
@@ -109,8 +142,6 @@ impl ClimateUDEB {
 
     /// Create a new ClimateUDEB component from parameters.
     pub fn from_parameters(parameters: ClimateUDEBParameters) -> Self {
-        let n_layers = parameters.n_layers;
-
         // Calculate lambda_ocean and lambda_land from ECS and RLO
         // Using simplified derivation:
         //   lambda_global = Q_2x / ECS
@@ -127,10 +158,17 @@ impl ClimateUDEB {
 
         Self {
             parameters: parameters.clone(),
-            ocean_temps: vec![vec![0.0; n_layers]; 2],
-            upwelling_rates: [parameters.w_initial; 2],
             lambda_ocean,
             lambda_land,
+        }
+    }
+
+    /// Initialize or ensure state is properly configured.
+    fn ensure_state_initialized(&self, state: &mut ClimateUDEBState) {
+        if !state.initialized {
+            state.ocean_temps = vec![vec![0.0; self.parameters.n_layers]; 2];
+            state.upwelling_rates = [self.parameters.w_initial; 2];
+            state.initialized = true;
         }
     }
 
@@ -140,6 +178,7 @@ impl ClimateUDEB {
     ///
     /// # Arguments
     ///
+    /// * `state` - Mutable reference to component state
     /// * `hemi` - Hemisphere index (0 = NH, 1 = SH)
     /// * `forcing` - Forcing for this hemisphere's ocean box ($\text{W/m}^2$)
     /// * `dt` - Timestep in years
@@ -147,10 +186,16 @@ impl ClimateUDEB {
     /// # Returns
     ///
     /// Mixed layer temperature anomaly (K)
-    fn step_hemisphere(&mut self, hemi: usize, forcing: FloatValue, dt: FloatValue) -> FloatValue {
+    fn step_hemisphere(
+        &self,
+        state: &mut ClimateUDEBState,
+        hemi: usize,
+        forcing: FloatValue,
+        dt: FloatValue,
+    ) -> FloatValue {
         let n = self.parameters.n_layers;
         let kappa = self.parameters.kappa_m2_per_yr();
-        let w = self.upwelling_rates[hemi];
+        let w = state.upwelling_rates[hemi];
         let dz = self.parameters.layer_thickness;
         let dz_mix = self.parameters.mixed_layer_depth;
         let pi_ratio = self.parameters.polar_sinking_ratio;
@@ -173,7 +218,7 @@ impl ClimateUDEB {
 
         b[0] = 1.0 + term_feedback * dt + term_diff + term_upwell * pi_ratio;
         c[0] = -(term_diff + term_upwell);
-        d[0] = self.ocean_temps[hemi][0] + forcing / c_mix * dt;
+        d[0] = state.ocean_temps[hemi][0] + forcing / c_mix * dt;
 
         // Layers 1 to n-2 (interior layers)
         for i in 1..n - 1 {
@@ -186,8 +231,8 @@ impl ClimateUDEB {
             c[i] = -(term_diff_down + term_upwell_layer);
 
             // Entrainment term from polar sinking
-            d[i] = self.ocean_temps[hemi][i]
-                + pi_ratio * term_upwell_layer * self.ocean_temps[hemi][0];
+            d[i] = state.ocean_temps[hemi][i]
+                + pi_ratio * term_upwell_layer * state.ocean_temps[hemi][0];
         }
 
         // Bottom layer (layer n-1)
@@ -199,8 +244,8 @@ impl ClimateUDEB {
         b[n - 1] = 1.0 + term_diff_up + term_upwell_bottom;
         // c[n-1] = 0 (no layer below)
 
-        d[n - 1] = self.ocean_temps[hemi][n - 1]
-            + pi_ratio * term_upwell_bottom * self.ocean_temps[hemi][0];
+        d[n - 1] = state.ocean_temps[hemi][n - 1]
+            + pi_ratio * term_upwell_bottom * state.ocean_temps[hemi][0];
 
         // Solve tridiagonal system
         let new_temps = thomas_solve(&a, &b, &c, &d);
@@ -208,10 +253,10 @@ impl ClimateUDEB {
         // Apply temperature cap
         let max_temp = self.parameters.max_temperature;
         for (i, &temp) in new_temps.iter().enumerate() {
-            self.ocean_temps[hemi][i] = temp.min(max_temp);
+            state.ocean_temps[hemi][i] = temp.min(max_temp);
         }
 
-        self.ocean_temps[hemi][0]
+        state.ocean_temps[hemi][0]
     }
 
     /// Update upwelling rate based on global temperature.
@@ -219,7 +264,7 @@ impl ClimateUDEB {
     /// Upwelling decreases with warming (thermohaline circulation weakening):
     ///
     /// $$w = w_0 \times (1 - f_{var} \times T_{global} / T_{threshold})$$
-    fn update_upwelling(&mut self, global_temp: FloatValue) {
+    fn update_upwelling(&self, state: &mut ClimateUDEBState, global_temp: FloatValue) {
         let w_0 = self.parameters.w_initial;
         let f_var = self.parameters.w_variable_fraction;
         let w_min = w_0 * (1.0 - f_var);
@@ -227,12 +272,12 @@ impl ClimateUDEB {
         // NH upwelling
         let t_thresh_nh = self.parameters.w_threshold_temp_nh;
         let w_nh = w_0 * (1.0 - f_var * (global_temp / t_thresh_nh).min(1.0));
-        self.upwelling_rates[0] = w_nh.max(w_min);
+        state.upwelling_rates[0] = w_nh.max(w_min);
 
         // SH upwelling
         let t_thresh_sh = self.parameters.w_threshold_temp_sh;
         let w_sh = w_0 * (1.0 - f_var * (global_temp / t_thresh_sh).min(1.0));
-        self.upwelling_rates[1] = w_sh.max(w_min);
+        state.upwelling_rates[1] = w_sh.max(w_min);
     }
 
     /// Calculate land temperature from ocean temperature (equilibrium assumption).
@@ -320,7 +365,7 @@ impl ClimateUDEB {
     /// Calculate total ocean heat content ($\text{J/m}^2$).
     ///
     /// Integrates temperature anomaly over all ocean layers weighted by depth.
-    fn calculate_ocean_heat_content(&self) -> FloatValue {
+    fn calculate_ocean_heat_content(&self, state: &ClimateUDEBState) -> FloatValue {
         let dz = self.parameters.layer_thickness;
         let dz_mix = self.parameters.mixed_layer_depth;
 
@@ -331,37 +376,28 @@ impl ClimateUDEB {
 
         for hemi in 0..2 {
             // Mixed layer contribution
-            total_heat += rho_c * dz_mix * self.ocean_temps[hemi][0];
+            total_heat += rho_c * dz_mix * state.ocean_temps[hemi][0];
 
             // Deep layer contributions
             for layer in 1..self.parameters.n_layers {
-                total_heat += rho_c * dz * self.ocean_temps[hemi][layer];
+                total_heat += rho_c * dz * state.ocean_temps[hemi][layer];
             }
         }
 
         // Average over both hemispheres
         total_heat / 2.0
     }
-}
 
-impl Default for ClimateUDEB {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[typetag::serde]
-impl Component for ClimateUDEB {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        Self::generated_definitions()
-    }
-
-    fn solve(
+    /// Internal solve implementation used by both solve() and solve_with_state().
+    fn solve_impl(
         &self,
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
+        state: &mut ClimateUDEBState,
     ) -> RSCMResult<OutputState> {
+        self.ensure_state_initialized(state);
+
         let inputs = ClimateUDEBInputs::from_input_state(input_state);
 
         // Get forcing for each box
@@ -388,57 +424,54 @@ impl Component for ClimateUDEB {
                 .at_start(FourBoxRegion::SouthernLand),
         ]);
 
-        // Clone self to make mutable for stepping (interior mutability alternative)
-        let mut model = self.clone();
-
         // Initialize ocean temps from previous state if this is first step
-        if model.ocean_temps[0][0] == 0.0 && prev_temp.0[0] != 0.0 {
-            model.ocean_temps[0][0] = prev_temp.get(FourBoxRegion::NorthernOcean);
-            model.ocean_temps[1][0] = prev_temp.get(FourBoxRegion::SouthernOcean);
+        if state.ocean_temps[0][0] == 0.0 && prev_temp.0[0] != 0.0 {
+            state.ocean_temps[0][0] = prev_temp.get(FourBoxRegion::NorthernOcean);
+            state.ocean_temps[1][0] = prev_temp.get(FourBoxRegion::SouthernOcean);
         }
 
         let dt_year = t_next - t_current;
-        let dt_sub = dt_year / model.parameters.steps_per_year as FloatValue;
+        let dt_sub = dt_year / self.parameters.steps_per_year as FloatValue;
 
         // Monthly sub-stepping
-        for _ in 0..model.parameters.steps_per_year {
+        for _ in 0..self.parameters.steps_per_year {
             // Step each hemisphere's ocean
             let sst_nh =
-                model.step_hemisphere(0, forcing.get(FourBoxRegion::NorthernOcean), dt_sub);
+                self.step_hemisphere(state, 0, forcing.get(FourBoxRegion::NorthernOcean), dt_sub);
             let sst_sh =
-                model.step_hemisphere(1, forcing.get(FourBoxRegion::SouthernOcean), dt_sub);
+                self.step_hemisphere(state, 1, forcing.get(FourBoxRegion::SouthernOcean), dt_sub);
 
             // Update upwelling based on global SST
             let global_sst = 0.5 * (sst_nh + sst_sh);
-            model.update_upwelling(global_sst);
+            self.update_upwelling(state, global_sst);
         }
 
         // Get final ocean surface temperatures
-        let sst_nh = model.ocean_temps[0][0];
-        let sst_sh = model.ocean_temps[1][0];
+        let sst_nh = state.ocean_temps[0][0];
+        let sst_sh = state.ocean_temps[1][0];
 
         // Convert SST to air temperature over ocean
-        let t_air_nho = model.sst_to_air_temperature(sst_nh);
-        let t_air_sho = model.sst_to_air_temperature(sst_sh);
+        let t_air_nho = self.sst_to_air_temperature(sst_nh);
+        let t_air_sho = self.sst_to_air_temperature(sst_sh);
 
         // Calculate land temperatures
-        let t_air_nhl = model.calculate_land_temperature(
+        let t_air_nhl = self.calculate_land_temperature(
             t_air_nho,
             forcing.get(FourBoxRegion::NorthernLand),
-            model.parameters.nh_land_fraction,
+            self.parameters.nh_land_fraction,
         );
-        let t_air_shl = model.calculate_land_temperature(
+        let t_air_shl = self.calculate_land_temperature(
             t_air_sho,
             forcing.get(FourBoxRegion::SouthernLand),
-            model.parameters.sh_land_fraction,
+            self.parameters.sh_land_fraction,
         );
 
         let surface_temperature =
             FourBoxSlice::from_array([t_air_nho, t_air_nhl, t_air_sho, t_air_shl]);
 
         // Calculate diagnostics
-        let heat_uptake = model.calculate_heat_uptake(&forcing, &surface_temperature);
-        let ocean_heat_content = model.calculate_ocean_heat_content();
+        let heat_uptake = self.calculate_heat_uptake(&forcing, &surface_temperature);
+        let ocean_heat_content = self.calculate_ocean_heat_content(state);
 
         let outputs = ClimateUDEBOutputs {
             surface_temperature,
@@ -450,6 +483,51 @@ impl Component for ClimateUDEB {
     }
 }
 
+impl Default for ClimateUDEB {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[typetag::serde]
+impl Component for ClimateUDEB {
+    fn definitions(&self) -> Vec<RequirementDefinition> {
+        Self::generated_definitions()
+    }
+
+    fn solve(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+    ) -> RSCMResult<OutputState> {
+        // For standalone use, create a temporary state
+        let mut state = ClimateUDEBState::default();
+        self.solve_impl(t_current, t_next, input_state, &mut state)
+    }
+
+    fn create_initial_state(&self) -> Box<dyn ComponentState> {
+        Box::new(ClimateUDEBState::new(
+            self.parameters.n_layers,
+            self.parameters.w_initial,
+        ))
+    }
+
+    fn solve_with_state(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+    ) -> RSCMResult<OutputState> {
+        let state = internal_state
+            .as_any_mut()
+            .downcast_mut::<ClimateUDEBState>()
+            .expect("ClimateUDEB: invalid state type (expected ClimateUDEBState)");
+        self.solve_impl(t_current, t_next, input_state, state)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -458,12 +536,20 @@ mod tests {
         ClimateUDEB::from_parameters(ClimateUDEBParameters::default())
     }
 
+    fn default_state(component: &ClimateUDEB) -> ClimateUDEBState {
+        ClimateUDEBState::new(
+            component.parameters.n_layers,
+            component.parameters.w_initial,
+        )
+    }
+
     #[test]
     fn test_new_component() {
         let component = default_component();
-        assert_eq!(component.ocean_temps.len(), 2);
-        assert_eq!(component.ocean_temps[0].len(), 50);
-        assert_eq!(component.ocean_temps[1].len(), 50);
+        let state = default_state(&component);
+        assert_eq!(state.ocean_temps.len(), 2);
+        assert_eq!(state.ocean_temps[0].len(), 50);
+        assert_eq!(state.ocean_temps[1].len(), 50);
     }
 
     #[test]
@@ -481,14 +567,15 @@ mod tests {
 
     #[test]
     fn test_positive_forcing_causes_warming() {
-        let mut component = default_component();
+        let component = default_component();
+        let mut state = default_state(&component);
 
         // Apply positive forcing for one substep
         let forcing = 3.71; // W/m^2
         let dt = 1.0 / 12.0; // One month
 
-        let initial_temp = component.ocean_temps[0][0];
-        let new_temp = component.step_hemisphere(0, forcing, dt);
+        let initial_temp = state.ocean_temps[0][0];
+        let new_temp = component.step_hemisphere(&mut state, 0, forcing, dt);
 
         assert!(
             new_temp > initial_temp,
@@ -526,41 +613,43 @@ mod tests {
 
     #[test]
     fn test_upwelling_decreases_with_warming() {
-        let mut component = default_component();
-        let initial_w = component.upwelling_rates[0];
+        let component = default_component();
+        let mut state = default_state(&component);
+        let initial_w = state.upwelling_rates[0];
 
-        component.update_upwelling(4.0); // 4K warming
+        component.update_upwelling(&mut state, 4.0); // 4K warming
 
         assert!(
-            component.upwelling_rates[0] < initial_w,
+            state.upwelling_rates[0] < initial_w,
             "Upwelling should decrease with warming"
         );
 
         // At threshold temperature, upwelling should reach minimum
-        component.update_upwelling(10.0); // Above threshold
+        component.update_upwelling(&mut state, 10.0); // Above threshold
         let w_min =
             component.parameters.w_initial * (1.0 - component.parameters.w_variable_fraction);
         assert!(
-            (component.upwelling_rates[0] - w_min).abs() < 1e-10,
+            (state.upwelling_rates[0] - w_min).abs() < 1e-10,
             "Upwelling should reach minimum at threshold"
         );
     }
 
     #[test]
     fn test_heat_content_increases_with_warming() {
-        let mut component = default_component();
+        let component = default_component();
+        let mut state = default_state(&component);
 
-        let initial_heat = component.calculate_ocean_heat_content();
+        let initial_heat = component.calculate_ocean_heat_content(&state);
         assert!(
             initial_heat.abs() < 1e-10,
             "Initial heat content should be zero"
         );
 
         // Warm the mixed layer
-        component.ocean_temps[0][0] = 1.0;
-        component.ocean_temps[1][0] = 1.0;
+        state.ocean_temps[0][0] = 1.0;
+        state.ocean_temps[1][0] = 1.0;
 
-        let new_heat = component.calculate_ocean_heat_content();
+        let new_heat = component.calculate_ocean_heat_content(&state);
         assert!(
             new_heat > 0.0,
             "Heat content should be positive after warming"

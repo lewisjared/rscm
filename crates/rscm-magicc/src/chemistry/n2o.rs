@@ -221,14 +221,27 @@ impl Component for N2OChemistry {
         // Use current as previous if no history (first timestep)
         let n2o_prev = inputs.n2o_concentration.previous().unwrap_or(n2o_current);
 
-        // For the lagged concentration (used in sink term), we need the average
-        // of (t-delay) and (t-delay-1). With delay=1 and annual timesteps:
-        // - t-1 = n2o_prev (available)
-        // - t-2 = need to approximate
+        // For the lagged concentration (used in the sink term), we use the
+        // average of concentrations at (t - delay) and (t - delay - 1),
+        // where `delay` is the stratospheric transport delay parameter.
         //
-        // We use n2o_prev as an approximation for the average, which slightly
-        // underestimates the sink lag but is reasonable for smooth trajectories.
-        let n2o_lagged = n2o_prev;
+        // When insufficient history is available (early timesteps), we fall
+        // back to the closest available values:
+        //   - (t - delay) falls back to `n2o_prev`
+        //   - (t - delay - 1) falls back to (t - delay)
+        let delay = self.parameters.strat_delay.max(1);
+        let delay_isize = delay as isize;
+
+        let t_delay = inputs
+            .n2o_concentration
+            .at_offset(-delay_isize)
+            .unwrap_or(n2o_prev);
+        let t_delay_minus1 = inputs
+            .n2o_concentration
+            .at_offset(-(delay_isize + 1))
+            .unwrap_or(t_delay);
+
+        let n2o_lagged = (t_delay + t_delay_minus1) / 2.0;
 
         let emissions = inputs.n2o_emissions.at_start();
 

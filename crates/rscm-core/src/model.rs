@@ -3929,16 +3929,14 @@ state_type = "unit"
             .build()
             .unwrap();
 
-        // Find the stateful component node (may not be at index 0 if virtual aggregators are present)
-        let stateful_node = (0..2)
-            .find(|i| {
-                if let Some(state) = model.get_component_state(NodeIndex::new(*i)) {
-                    state.as_any().is::<StatefulTestComponentState>()
-                } else {
-                    false
-                }
-            })
-            .map(NodeIndex::new);
+        // Find the stateful component node by scanning all component nodes
+        let stateful_node = model.components.node_indices().find(|i| {
+            if let Some(state) = model.get_component_state(*i) {
+                state.as_any().is::<StatefulTestComponentState>()
+            } else {
+                false
+            }
+        });
 
         // Run model for 2 steps
         model.step();

@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 /// - $\tau_{init}$ is the base lifetime
 /// - $\bar{B}$ is the mid-year burden estimate
 /// - $B_0$ is the reference burden at pre-industrial
-/// - $S$ is the feedback exponent (negative, meaning lifetime increases with burden)
+/// - $S$ is the feedback exponent (negative, so lifetime decreases slightly with higher burden)
 ///
 /// # Stratospheric Delay
 ///

@@ -107,6 +107,25 @@ impl<'a> AggregatingFourBoxWindow<'a> {
         }
     }
 
+    /// Get a value at an offset from the current index.
+    ///
+    /// Negative offsets access past values, positive offsets access future values.
+    /// Returns None if the resulting index would be out of bounds.
+    pub fn at_offset(&self, offset: isize) -> Option<FloatValue> {
+        let target_index = if offset >= 0 {
+            self.current_index.checked_add(offset as usize)?
+        } else {
+            self.current_index.checked_sub((-offset) as usize)?
+        };
+
+        if target_index >= self.timeseries.len() {
+            return None;
+        }
+
+        let values = self.timeseries.at_time_index(target_index)?;
+        Some(self.aggregate(&values))
+    }
+
     /// Get the current time value.
     pub fn time(&self) -> Time {
         self.current_time
@@ -210,6 +229,25 @@ impl<'a> AggregatingHemisphericWindow<'a> {
         }
     }
 
+    /// Get a value at an offset from the current index.
+    ///
+    /// Negative offsets access past values, positive offsets access future values.
+    /// Returns None if the resulting index would be out of bounds.
+    pub fn at_offset(&self, offset: isize) -> Option<FloatValue> {
+        let target_index = if offset >= 0 {
+            self.current_index.checked_add(offset as usize)?
+        } else {
+            self.current_index.checked_sub((-offset) as usize)?
+        };
+
+        if target_index >= self.timeseries.len() {
+            return None;
+        }
+
+        let values = self.timeseries.at_time_index(target_index)?;
+        Some(self.aggregate(&values))
+    }
+
     /// Get the current time value.
     pub fn time(&self) -> Time {
         self.current_time
@@ -270,6 +308,26 @@ impl<'a> ScalarWindow<'a> {
             ScalarWindow::Direct(w) => w.previous(),
             ScalarWindow::FromFourBox(w) => w.previous(),
             ScalarWindow::FromHemispheric(w) => w.previous(),
+        }
+    }
+
+    /// Get a value at an offset from the current index.
+    ///
+    /// Negative offsets access past values, positive offsets access future values.
+    /// Returns None if the resulting index would be out of bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let prev = window.at_offset(-1);  // Same as previous()
+    /// let two_back = window.at_offset(-2);
+    /// let next = window.at_offset(1);   // Future value (if available)
+    /// ```
+    pub fn at_offset(&self, offset: isize) -> Option<FloatValue> {
+        match self {
+            ScalarWindow::Direct(w) => w.at_offset(offset),
+            ScalarWindow::FromFourBox(w) => w.at_offset(offset),
+            ScalarWindow::FromHemispheric(w) => w.at_offset(offset),
         }
     }
 

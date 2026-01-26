@@ -8,4 +8,4 @@
 
 mod udeb;
 
-pub use udeb::ClimateUDEB;
+pub use udeb::{ClimateUDEB, ClimateUDEBState};
