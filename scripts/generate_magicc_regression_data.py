@@ -367,6 +367,8 @@ def test_05_co2_only_forcing():
         "file_n2o_conc": "SSP245_N2O_CONC.IN",
         # Run only CO2 forcing
         "rf_total_runmodus": "CO2",
+        "rf_solar_scale": 0.0,
+        "rf_volcanic_scale": 0.0,
         "core_co2ch4n2o_rfmethod": "IPCCTAR",
         "core_climatesensitivity": 3.0,
         "core_delq2xco2": 3.71,
