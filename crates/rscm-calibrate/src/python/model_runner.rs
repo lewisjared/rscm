@@ -129,6 +129,50 @@ impl PyModelRunner {
             self.param_names, self.output_variables
         )
     }
+
+    /// Run the model with a parameter vector.
+    ///
+    /// Parameters
+    /// ----------
+    /// params : list[float]
+    ///     Parameter values in the order specified by param_names
+    ///
+    /// Returns
+    /// -------
+    /// dict[str, dict[float, float]]
+    ///     Model outputs as {variable_name: {time: value}}
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If params length doesn't match param_names
+    /// Exception
+    ///     If model execution fails
+    #[pyo3(name = "run")]
+    fn py_run(&self, py: Python<'_>, params: Vec<f64>) -> PyResult<Py<PyAny>> {
+        if params.len() != self.param_names.len() {
+            return Err(PyValueError::new_err(format!(
+                "Expected {} parameters, got {}",
+                self.param_names.len(),
+                params.len()
+            )));
+        }
+
+        // Build parameter dict
+        let param_dict = PyDict::new(py);
+        for (name, value) in self.param_names.iter().zip(params.iter()) {
+            param_dict.set_item(name, value)?;
+        }
+
+        // Call factory and return result directly
+        let factory = self.factory.lock().unwrap();
+        let result = factory
+            .bind(py)
+            .call1((param_dict,))
+            .map_err(|e| PyValueError::new_err(format!("Model factory failed: {}", e)))?;
+
+        Ok(result.into())
+    }
 }
 
 impl ModelRunner for PyModelRunner {

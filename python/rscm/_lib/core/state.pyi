@@ -1,3 +1,5 @@
+from typing import final
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -5,6 +7,7 @@ from numpy.typing import NDArray
 Arr = NDArray[np.float64]
 F = np.float64 | float
 
+@final
 class StateValue:
     """Represents a value that can be scalar or spatially-resolved.
 
@@ -54,6 +57,7 @@ class StateValue:
         ...
     def __repr__(self) -> str: ...
 
+@final
 class FourBoxSlice:
     @property
     def northern_ocean(self) -> float: ...
@@ -92,6 +96,7 @@ class FourBoxSlice:
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
 
+@final
 class HemisphericSlice:
     northern: float
     southern: float
@@ -115,6 +120,7 @@ class HemisphericSlice:
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
 
+@final
 class TimeseriesWindow:
     """Zero-cost view into scalar timeseries data."""
 
@@ -143,6 +149,7 @@ class TimeseriesWindow:
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
 
+@final
 class FourBoxTimeseriesWindow:
     """View into FourBox grid timeseries data."""
 
@@ -178,6 +185,7 @@ class FourBoxTimeseriesWindow:
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
 
+@final
 class HemisphericTimeseriesWindow:
     """View into Hemispheric grid timeseries data."""
 

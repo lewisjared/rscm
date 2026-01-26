@@ -1,8 +1,12 @@
+from typing import final
+
+@final
 class ScalarRegion:
     """Region enum for scalar (global) grid"""
 
     GLOBAL: int = 0
 
+@final
 class FourBoxRegion:
     """Region enum for four-box grid"""
 
@@ -11,12 +15,14 @@ class FourBoxRegion:
     SOUTHERN_OCEAN: int = 2
     SOUTHERN_LAND: int = 3
 
+@final
 class HemisphericRegion:
     """Region enum for hemispheric grid"""
 
     NORTHERN: int = 0
     SOUTHERN: int = 1
 
+@final
 class ScalarGrid:
     """
     Single global region (scalar grid).
@@ -43,6 +49,7 @@ class ScalarGrid:
         Aggregated global value
         """
 
+@final
 class FourBoxGrid:
     """
     MAGICC standard four-box grid structure.
@@ -81,6 +88,7 @@ class FourBoxGrid:
         Weighted global average
         """
 
+@final
 class HemisphericGrid:
     """
     Simple north-south hemispheric split.

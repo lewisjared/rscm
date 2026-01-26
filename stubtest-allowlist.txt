@@ -1,0 +1,45 @@
+# stubtest allowlist for rscm._lib (PyO3 bindings)
+#
+# PyO3 generates Python bindings from Rust that have certain quirks that stubtest
+# flags but don't affect the user-facing API. This file allowlists known patterns.
+#
+# Stubtest supports regex patterns with (?s:PATTERN) syntax.
+#
+# Categories of allowlisted items:
+# 1. __all__ - PyO3 modules define __all__ at runtime but stubs may not match
+# 2. Submodule exports - PyO3 submodules exist but aren't listed in parent __init__.pyi
+# 3. Type aliases - Stub-only type aliases for readability (Arr, F, T)
+# 4. __new__ vs __init__ - PyO3 uses __new__ for construction, stubs use __init__
+# 5. Protocol classes - Stub-only Protocol types for type checking
+#
+# Note: PyO3 classes are marked @final in stubs since they cannot be subclassed.
+
+# =============================================================================
+# Module-level __all__ (PyO3 modules define __all__ differently than stubs)
+# =============================================================================
+(?s:rscm\._lib(\.[a-z_]+)*\.__all__)
+
+# =============================================================================
+# Submodule exports (PyO3 submodules exist but aren't exported from parent)
+# =============================================================================
+(?s:rscm\._lib\.(calibrate|components|core|magicc|two_layer)$)
+(?s:rscm\._lib\.core\.(spatial|state)$)
+
+# =============================================================================
+# Type aliases (stub-only for readability, not present at runtime)
+# =============================================================================
+(?s:rscm\._lib(\.[a-z_]+)*\.(Arr|F|T)$)
+
+# =============================================================================
+# Protocol/ABC classes (stub-only for type checking)
+# =============================================================================
+rscm._lib.core.Component
+rscm._lib.core.ComponentBuilder
+rscm._lib.core.CustomComponent
+
+# =============================================================================
+# PyO3 class constructors (__init__ and __new__ mismatch between runtime/stubs)
+# PyO3 uses __new__ for construction; stubs use __init__ for better IDE support
+# =============================================================================
+(?s:rscm\._lib(\.[a-z_]+)*\.[A-Z][A-Za-z]*\.__init__$)
+(?s:rscm\._lib(\.[a-z_]+)*\.[A-Z][A-Za-z]*\.__new__$)

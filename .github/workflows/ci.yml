@@ -70,6 +70,8 @@ jobs:
         run: uv run ruff format --check
       - name: Mypy type check
         run: uv run mypy python/rscm
+      - name: Validate .pyi stubs
+        run: uv run python -m mypy.stubtest rscm._lib --allowlist stubtest-allowlist.txt
       - name: Rust format check
         run: cargo fmt --all -- --check
       - name: Clippy
