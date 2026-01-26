@@ -339,7 +339,7 @@ impl ModelBuilder {
 
         // todo: refactor once this is more stable
         let mut graph: CGraph = Graph::new();
-        let mut endrogoneous: HashMap<String, NodeIndex> = HashMap::new();
+        let mut endogenous: HashMap<String, NodeIndex> = HashMap::new();
         let mut exogenous: Vec<String> = vec![];
         let mut definitions: HashMap<String, VariableDefinition> = HashMap::new();
         // Track which component owns each variable for better error messages
@@ -372,7 +372,7 @@ impl ModelBuilder {
                     self.schema.is_some(),
                 )?;
 
-                if let Some(&producer_node) = endrogoneous.get(&requirement.name) {
+                if let Some(&producer_node) = endogenous.get(&requirement.name) {
                     // Link to the node that provides the requirement
                     graph.add_edge(producer_node, node, requirement.clone());
                     has_dependencies = true;
@@ -409,15 +409,15 @@ impl ModelBuilder {
                 // Track this component as the owner of this variable
                 variable_owners.insert(requirement.name.clone(), component_name.clone());
 
-                let val = endrogoneous.get(&requirement.name);
+                let val = endogenous.get(&requirement.name);
 
                 match val {
                     None => {
-                        endrogoneous.insert(requirement.name.clone(), node);
+                        endogenous.insert(requirement.name.clone(), node);
                     }
                     Some(node_index) => {
                         graph.add_edge(*node_index, node, requirement.clone());
-                        endrogoneous.insert(requirement.name.clone(), node);
+                        endogenous.insert(requirement.name.clone(), node);
                     }
                 }
             }
@@ -448,7 +448,7 @@ impl ModelBuilder {
                     &component_name,
                     &component.inputs(),
                     &component.outputs(),
-                    &endrogoneous,
+                    &endogenous,
                 )?;
                 all_transformations.extend(component_transforms);
             }
@@ -475,7 +475,7 @@ impl ModelBuilder {
                     // Variable exists (from component input declaration) - update grid type to match schema
                     // This ensures storage uses schema's grid type, and read transforms will handle conversion
                     if let Some(def) = definitions.get_mut(name) {
-                        if def.grid_type != var_def.grid_type && !endrogoneous.contains_key(name) {
+                        if def.grid_type != var_def.grid_type && !endogenous.contains_key(name) {
                             // Only update if this variable is exogenous (input-only)
                             // If a component outputs this variable, the write transform will handle conversion
                             def.grid_type = var_def.grid_type;
@@ -505,7 +505,7 @@ impl ModelBuilder {
                 let mut has_dependencies = false;
                 for contributor in &agg_def.contributors {
                     // Find the node that produces this contributor
-                    if let Some(&producer_node) = endrogoneous.get(contributor) {
+                    if let Some(&producer_node) = endogenous.get(contributor) {
                         // Add edge from producer to aggregator
                         graph.add_edge(
                             producer_node,
@@ -533,7 +533,7 @@ impl ModelBuilder {
                 }
 
                 // Register the aggregate output as endogenous
-                endrogoneous.insert(agg_name.clone(), agg_node);
+                endogenous.insert(agg_name.clone(), agg_node);
 
                 // Add aggregate variable to definitions
                 definitions.insert(
