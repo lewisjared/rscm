@@ -34,6 +34,10 @@ lint-python:
 	uv run ruff format --check
 	uv run mypy python/rscm
 
+.PHONY: validate-pyi
+validate-pyi: build-dev  ## Validate .pyi stubs match the actual module
+	uv run python -m mypy.stubtest rscm._lib --allowlist stubtest-allowlist.txt
+
 .PHONY: lint-rust
 lint-rust:
 	cargo fmt --version
