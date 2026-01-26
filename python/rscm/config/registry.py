@@ -18,8 +18,12 @@ Example:
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from .exceptions import ComponentNotFoundError
+
+if TYPE_CHECKING:
+    from rscm._lib.core import ComponentBuilder
 
 __all__ = ["ComponentRegistry", "component_registry", "register_component"]
 
@@ -40,9 +44,9 @@ class ComponentRegistry:
 
     def __init__(self) -> None:
         """Initialize an empty registry."""
-        self._registry: dict[str, type] = {}
+        self._registry: dict[str, type[ComponentBuilder]] = {}
 
-    def register(self, name: str, builder_class: type) -> None:
+    def register(self, name: str, builder_class: type[ComponentBuilder]) -> None:
         """
         Register a component builder by name.
 
@@ -63,7 +67,7 @@ class ComponentRegistry:
             raise ValueError(msg)
         self._registry[name] = builder_class
 
-    def get(self, name: str) -> type:
+    def get(self, name: str) -> type[ComponentBuilder]:
         """
         Get builder class by name.
 
@@ -74,7 +78,7 @@ class ComponentRegistry:
 
         Returns
         -------
-        type
+        type[ComponentBuilder]
             Builder class associated with the name.
 
         Raises
@@ -118,7 +122,9 @@ class ComponentRegistry:
 component_registry = ComponentRegistry()
 
 
-def register_component(name: str) -> Callable[[type], type]:
+def register_component(
+    name: str,
+) -> Callable[[type[ComponentBuilder]], type[ComponentBuilder]]:
     """
     Register a component builder via decorator.
 
@@ -129,7 +135,7 @@ def register_component(name: str) -> Callable[[type], type]:
 
     Returns
     -------
-    Callable[[type], type]
+    Callable[[type[ComponentBuilder]], type[ComponentBuilder]]
         Decorator that registers the class and returns it unchanged.
 
     Example:
@@ -138,7 +144,7 @@ def register_component(name: str) -> Callable[[type], type]:
         ...     pass
     """
 
-    def decorator(cls: type) -> type:
+    def decorator(cls: type[ComponentBuilder]) -> type[ComponentBuilder]:
         component_registry.register(name, cls)
         return cls
 
