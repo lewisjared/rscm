@@ -592,12 +592,12 @@ class ModelRunner:
     ) -> None: ...
     def run(self, params: Sequence[F]) -> dict[str, dict[F, F]]:
         """
-        Run model with parameter vector.
+        Run the model with a parameter vector.
 
         Parameters
         ----------
-        params : array-like
-            Parameter values in param_names order
+        params : list[float]
+            Parameter values in the order specified by param_names
 
         Returns
         -------
@@ -606,6 +606,8 @@ class ModelRunner:
 
         Raises
         ------
+        ValueError
+            If params length doesn't match param_names
         Exception
             If model execution fails
         """
