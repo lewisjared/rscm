@@ -15,6 +15,7 @@ See https://oprypin.github.io/mkdocs-literate-nav/
   * [Scenario Pipeline](notebooks/scenario_pipeline.py)
   * [Calibration](notebooks/calibration_tutorial.py)
 * Reference
+  * [Configuration Layer](model_configuration.md)
   * [Spatial Grids](grids.md)
   * [Python API](api/rscm/)
 * [Components](components/index.md)
