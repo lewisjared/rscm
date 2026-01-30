@@ -48,6 +48,7 @@ from rscm.core import (
     Timeseries,
     TimeseriesCollection,
 )
+from rscm.two_layer import TwoLayerBuilder
 
 # %% [markdown]
 # ## Building a Model
@@ -319,6 +320,268 @@ plt.legend(filtered.index.get_level_values("variable"))
 plt.show()
 
 # %% [markdown]
+# ## Complex Coupled Model with Feedback
+#
+# The example above uses a prescribed surface temperature.
+# In reality, temperature responds to radiative forcing, and temperature changes
+# can affect carbon cycle processes (e.g., soil respiration, ocean solubility).
+#
+# Below we build a more complex coupled model that demonstrates these feedbacks:
+#
+# ```
+# Emissions → Carbon Cycle → CO2 Concentration → CO2 ERF → Two-Layer → Temperature
+#                  ↑                                                          │
+#                  └──────────────────── feedback ────────────────────────────┘
+# ```
+#
+# This creates a feedback loop where:
+#
+# 1. **Carbon Cycle**: Converts emissions to atmospheric CO2 concentration
+# 2. **CO2 ERF**: Calculates radiative forcing from CO2 concentration
+# 3. **Two-Layer Model**: Computes surface temperature from radiative forcing
+# 4. **Temperature Feedback**: Surface temperature affects carbon cycle lifetime
+#    (warmer temperatures reduce CO2 uptake efficiency)
+
+# %%
+# Create components for the feedback-coupled model
+# Enable temperature feedback in the carbon cycle
+carbon_cycle_feedback = CarbonCycleBuilder.from_parameters(
+    dict(
+        tau=25.0,  # Baseline atmospheric lifetime (years)
+        conc_pi=278.0,  # Pre-industrial CO2 (ppm)
+        alpha_temperature=0.05,  # Temperature sensitivity (1/K)
+    )
+).build()
+
+co2_erf = CO2ERFBuilder.from_parameters(
+    dict(
+        erf_2xco2=3.7,  # Forcing from CO2 doubling (W/m²)
+        conc_pi=278.0,  # Pre-industrial CO2 (ppm)
+    )
+).build()
+
+two_layer = TwoLayerBuilder.from_parameters(
+    dict(
+        lambda0=1.1,  # Climate feedback parameter (W/m²/K)
+        a=0.0,  # Nonlinear feedback coefficient
+        efficacy=1.3,  # Ocean heat uptake efficacy
+        eta=0.7,  # Heat exchange coefficient (W/m²/K)
+        heat_capacity_surface=8.0,  # Surface heat capacity (W yr/m²/K)
+        heat_capacity_deep=100.0,  # Deep ocean heat capacity (W yr/m²/K)
+    )
+).build()
+
+# %% [markdown]
+# ### Emissions Scenario
+#
+# We create a more realistic emissions scenario with:
+#
+# - Pre-industrial period (1750-1850): near-zero emissions
+# - Historical growth (1850-2020): exponential increase
+# - Future scenario (2020-2100): peak and decline (SSP1-like pathway)
+
+# %%
+# Create emissions scenario
+years = np.array([1750, 1850, 1950, 2000, 2020, 2050, 2100])
+emission_values = np.array([0.0, 0.5, 3.0, 7.0, 10.0, 5.0, 1.0])  # GtC/yr
+
+emissions_scenario = Timeseries(
+    emission_values,
+    TimeAxis.from_bounds(
+        np.concatenate([years, [2101]])  # bounds need n+1 values
+    ),
+    "GtC / yr",
+    InterpolationStrategy.Linear,
+)
+
+# %%
+# Plot the emissions scenario
+plt.figure(figsize=(10, 4))
+# Interpolate to yearly values for plotting
+plot_years = np.arange(1750, 2101)
+plt.plot(years, emission_values, "o", markersize=8, label="Scenario points")
+plt.fill_between(years, emission_values, alpha=0.3, label="Emissions pathway")
+plt.xlabel("Year")
+plt.ylabel("Emissions (GtC/yr)")
+plt.title("CO2 Emissions Scenario")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
+
+# %% [markdown]
+# ### Build the Feedback-Coupled Model
+#
+# Note that we don't need to provide `Surface Temperature` as an exogenous variable
+# because the Two-Layer model produces it. The model builder automatically resolves
+# the dependency graph.
+
+# %%
+feedback_model = (
+    ModelBuilder()
+    .with_time_axis(time_axis)
+    # Components
+    .with_rust_component(carbon_cycle_feedback)
+    .with_rust_component(co2_erf)
+    .with_rust_component(two_layer)
+    # Exogenous input - only emissions needed
+    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions_scenario)
+    # Initial state
+    .with_initial_values(
+        {
+            "Cumulative Land Uptake": 0.0,
+            "Cumulative Emissions|CO2": 0.0,
+            "Atmospheric Concentration|CO2": 278.0,
+            "Surface Temperature": 0.0,  # Anomaly from pre-industrial
+        }
+    )
+).build()
+
+# %% [markdown]
+# ### Visualise the Dependency Graph
+#
+# The graph now shows the feedback structure with three components and their
+# data flow connections.
+
+# %%
+graph = pydot.graph_from_dot_data(feedback_model.as_dot())[0]
+view_pydot(graph)
+
+# %% [markdown]
+# The dependency graph shows:
+#
+# - **Node 0**: Root/entry point
+# - **CarbonCycle**: Takes emissions and temperature, outputs CO2 concentration
+# - **CO2ERF**: Takes CO2 concentration, outputs radiative forcing
+# - **TwoLayer**: Takes radiative forcing, outputs surface temperature
+#
+# The edges show which variables flow between components.
+
+# %%
+# Run the feedback-coupled model
+feedback_model.run()
+
+# %%
+# Extract and plot results
+feedback_results = as_dataframe(feedback_model.timeseries(), time_axis)
+
+# Select key variables for plotting
+key_vars = [
+    "Emissions|CO2|Anthropogenic",
+    "Atmospheric Concentration|CO2",
+    "Effective Radiative Forcing|CO2",
+    "Surface Temperature",
+]
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+axes = axes.flatten()
+
+for ax, var in zip(axes, key_vars):
+    if var in feedback_results.index.get_level_values("variable"):
+        data = feedback_results.loc[var]
+        unit = data.index.get_level_values("unit")[0]
+        ax.plot(data.columns, data.values.flatten())
+        ax.set_xlabel("Year")
+        ax.set_ylabel(f"{var}\n({unit})")
+        ax.set_title(var)
+        ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# ### Comparing With and Without Temperature Feedback
+#
+# To see the effect of temperature feedback on the carbon cycle, let's run
+# the model with feedback disabled and compare.
+
+# %%
+# Model without temperature feedback
+carbon_cycle_no_feedback = CarbonCycleBuilder.from_parameters(
+    dict(
+        tau=25.0,
+        conc_pi=278.0,
+        alpha_temperature=0.0,  # No feedback
+    )
+).build()
+
+no_feedback_model = (
+    ModelBuilder()
+    .with_time_axis(time_axis)
+    .with_rust_component(carbon_cycle_no_feedback)
+    .with_rust_component(co2_erf)
+    .with_rust_component(two_layer)
+    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions_scenario)
+    .with_initial_values(
+        {
+            "Cumulative Land Uptake": 0.0,
+            "Cumulative Emissions|CO2": 0.0,
+            "Atmospheric Concentration|CO2": 278.0,
+            "Surface Temperature": 0.0,
+        }
+    )
+).build()
+
+no_feedback_model.run()
+no_feedback_results = as_dataframe(no_feedback_model.timeseries(), time_axis)
+
+# %%
+# Compare temperature response
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+# CO2 concentration comparison
+ax = axes[0]
+ax.plot(
+    feedback_results.columns,
+    feedback_results.loc["Atmospheric Concentration|CO2"].values.flatten(),
+    label="With feedback",
+)
+ax.plot(
+    no_feedback_results.columns,
+    no_feedback_results.loc["Atmospheric Concentration|CO2"].values.flatten(),
+    "--",
+    label="Without feedback",
+)
+ax.set_xlabel("Year")
+ax.set_ylabel("CO2 Concentration (ppm)")
+ax.set_title("CO2 Concentration")
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+# Temperature comparison
+ax = axes[1]
+ax.plot(
+    feedback_results.columns,
+    feedback_results.loc["Surface Temperature"].values.flatten(),
+    label="With feedback",
+)
+ax.plot(
+    no_feedback_results.columns,
+    no_feedback_results.loc["Surface Temperature"].values.flatten(),
+    "--",
+    label="Without feedback",
+)
+ax.set_xlabel("Year")
+ax.set_ylabel("Temperature Anomaly (K)")
+ax.set_title("Surface Temperature")
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# The temperature feedback amplifies warming by reducing the efficiency of
+# natural carbon sinks at higher temperatures. This positive feedback loop
+# results in:
+#
+# - Higher CO2 concentrations
+# - Greater radiative forcing
+# - Higher surface temperatures
+#
+# This demonstrates why coupled climate-carbon models are important for
+# projecting future climate change.
+
+# %% [markdown]
 # ## Summary
 #
 # This notebook demonstrated how to:
@@ -329,6 +592,9 @@ plt.show()
 # 4. Set initial values for state variables
 # 5. Build and run the model
 # 6. Extract results as `TimeseriesCollection`
+# 7. Build complex feedback-coupled models with multiple components
+# 8. Visualise dependency graphs showing component relationships
+# 9. Compare model behaviour with and without feedback processes
 #
 # For more details on creating custom components, see the
 # [Components in Python](component_python.py) and
