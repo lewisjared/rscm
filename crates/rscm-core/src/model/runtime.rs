@@ -63,6 +63,12 @@ pub struct Model {
     /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     write_transforms: HashMap<String, RequiredTransformation>,
+    /// Unit conversions needed at runtime.
+    ///
+    /// Key: (variable_name, component_name) -> conversion factor
+    /// The factor converts from schema units to component units when reading.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    unit_conversions: HashMap<(String, String), f64>,
 }
 
 impl Model {
@@ -116,6 +122,38 @@ impl Model {
         read_transforms: HashMap<String, RequiredTransformation>,
         write_transforms: HashMap<String, RequiredTransformation>,
     ) -> Self {
+        Self::with_unit_conversions(
+            components,
+            initial_node,
+            collection,
+            time_axis,
+            grid_weights,
+            read_transforms,
+            write_transforms,
+            HashMap::new(),
+        )
+    }
+
+    /// Create a new Model with all transformations including unit conversions.
+    ///
+    /// This is the complete constructor that includes grid weights, read/write
+    /// transformations, and unit conversions for automatic unit translation at runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `unit_conversions` - Map from (variable_name, component_name) to conversion factor.
+    ///   The factor is multiplied with the stored value to convert from schema units to
+    ///   component units when reading.
+    pub fn with_unit_conversions(
+        components: CGraph,
+        initial_node: NodeIndex,
+        collection: TimeseriesCollection,
+        time_axis: Arc<TimeAxis>,
+        grid_weights: HashMap<GridType, Vec<f64>>,
+        read_transforms: HashMap<String, RequiredTransformation>,
+        write_transforms: HashMap<String, RequiredTransformation>,
+        unit_conversions: HashMap<(String, String), f64>,
+    ) -> Self {
         Self {
             components,
             initial_node,
@@ -125,6 +163,7 @@ impl Model {
             grid_weights,
             read_transforms,
             write_transforms,
+            unit_conversions,
         }
     }
 
@@ -162,6 +201,26 @@ impl Model {
         &self.write_transforms
     }
 
+    /// Get unit conversions.
+    ///
+    /// Returns the unit conversion factors keyed by (variable_name, component_name).
+    /// Each factor converts from schema units to component units when reading.
+    pub fn unit_conversions(&self) -> &HashMap<(String, String), f64> {
+        &self.unit_conversions
+    }
+
+    /// Extract component name from a Component for unit conversion lookup.
+    ///
+    /// Extracts the type name (before the first '{', ' ', or '(') from the Debug output.
+    fn extract_component_name(component: &C) -> String {
+        let debug_str = format!("{:?}", component);
+        debug_str
+            .split(['{', ' ', '('])
+            .next()
+            .unwrap_or("UnknownComponent")
+            .to_string()
+    }
+
     /// Gets the time value at the current step.
     pub fn current_time(&self) -> Time {
         self.time_axis.at(self.time_index).unwrap()
@@ -179,20 +238,45 @@ impl Model {
     /// The output state defines the values at the next time index as it represents the state
     /// at the start of the next timestep.
     fn step_model_component(&mut self, component: C) {
-        // Build transform context for read-side aggregation
+        // Get component name for unit conversion lookup
+        let component_name = Self::extract_component_name(&component);
+
+        // Build transform context for read-side aggregation and unit conversion
         let input_names = component.input_names();
-        let input_state = if self.read_transforms.is_empty() {
+        let has_transforms = !self.read_transforms.is_empty() || !self.unit_conversions.is_empty();
+
+        let input_state = if !has_transforms {
             extract_state(&self.collection, input_names, self.current_time())
         } else {
-            // Build transform context with only the transforms relevant to this component's inputs
+            // Build transform context with grid transforms and unit conversions
             let mut read_transform_info = HashMap::new();
             for name in &input_names {
+                // Look up unit conversion factor for this (variable, component) pair
+                let unit_factor = self
+                    .unit_conversions
+                    .get(&(name.clone(), component_name.clone()))
+                    .copied()
+                    .unwrap_or(1.0);
+
+                // Check if we also need grid transformation
                 if let Some(transform) = self.read_transforms.get(name) {
                     read_transform_info.insert(
                         name.clone(),
                         ReadTransformInfo {
                             source_grid: transform.source_grid,
                             weights: self.grid_weights.get(&transform.source_grid).cloned(),
+                            unit_conversion_factor: unit_factor,
+                        },
+                    );
+                } else if (unit_factor - 1.0).abs() > f64::EPSILON {
+                    // No grid transform but needs unit conversion
+                    // Use Scalar as placeholder since there's no actual grid transform
+                    read_transform_info.insert(
+                        name.clone(),
+                        ReadTransformInfo {
+                            source_grid: crate::component::GridType::Scalar,
+                            weights: None,
+                            unit_conversion_factor: unit_factor,
                         },
                     );
                 }

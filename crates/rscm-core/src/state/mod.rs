@@ -268,8 +268,10 @@ impl<'a> InputState<'a> {
             .as_ref()
             .and_then(|ctx| ctx.read_transforms.get(name));
 
-        // If there's a transform, use the source grid type
+        // If there's a transform, use the source grid type and unit conversion factor
         if let Some(transform) = transform {
+            let unit_factor = transform.unit_conversion_factor;
+
             match transform.source_grid {
                 GridType::FourBox => {
                     let ts = item.data.as_four_box().unwrap_or_else(|| {
@@ -289,12 +291,15 @@ impl<'a> InputState<'a> {
                                 )
                             });
 
-                    return ScalarWindow::FromFourBox(AggregatingFourBoxWindow::new(
-                        ts,
-                        current_index,
-                        self.current_time,
-                        transform.weights.clone(),
-                    ));
+                    return ScalarWindow::FromFourBox(
+                        AggregatingFourBoxWindow::with_unit_conversion(
+                            ts,
+                            current_index,
+                            self.current_time,
+                            transform.weights.clone(),
+                            unit_factor,
+                        ),
+                    );
                 }
                 GridType::Hemispheric => {
                     let ts = item
@@ -317,15 +322,38 @@ impl<'a> InputState<'a> {
                                 )
                             });
 
-                    return ScalarWindow::FromHemispheric(AggregatingHemisphericWindow::new(
+                    return ScalarWindow::FromHemispheric(
+                        AggregatingHemisphericWindow::with_unit_conversion(
+                            ts,
+                            current_index,
+                            self.current_time,
+                            transform.weights.clone(),
+                            unit_factor,
+                        ),
+                    );
+                }
+                GridType::Scalar => {
+                    // Scalar->Scalar with possible unit conversion
+                    let ts = item.data.as_scalar().unwrap_or_else(|| {
+                        panic!("Variable '{}' is not a scalar timeseries", name)
+                    });
+
+                    let current_index =
+                        ts.time_axis()
+                            .index_of(self.current_time)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "Time {} not found in timeseries '{}' time axis",
+                                    self.current_time, name
+                                )
+                            });
+
+                    return ScalarWindow::Direct(TimeseriesWindow::with_unit_conversion(
                         ts,
                         current_index,
                         self.current_time,
-                        transform.weights.clone(),
+                        unit_factor,
                     ));
-                }
-                GridType::Scalar => {
-                    // No transform needed, fall through to direct access
                 }
             }
         }
@@ -350,6 +378,9 @@ impl<'a> InputState<'a> {
     }
 
     /// Get a FourBox GridTimeseriesWindow for the named variable
+    ///
+    /// If a read transform with unit conversion is configured for this variable,
+    /// the conversion factor will be applied to all returned values.
     ///
     /// # Panics
     ///
@@ -376,16 +407,30 @@ impl<'a> InputState<'a> {
                 )
             });
 
-        GridTimeseriesWindow::new(ts, current_index, self.current_time)
+        // Check if there's a unit conversion factor
+        let unit_factor = self
+            .transform_context
+            .as_ref()
+            .and_then(|ctx| ctx.read_transforms.get(name))
+            .map(|t| t.unit_conversion_factor)
+            .unwrap_or(1.0);
+
+        GridTimeseriesWindow::with_unit_conversion(
+            ts,
+            current_index,
+            self.current_time,
+            unit_factor,
+        )
     }
 
     /// Get a Hemispheric GridTimeseriesWindow for the named variable
     ///
-    /// # Panics
-    ///
     /// If the underlying data is stored at FourBox resolution and a read transform
     /// is configured, the data will be automatically aggregated to Hemispheric
     /// on each access.
+    ///
+    /// If a read transform with unit conversion is configured for this variable,
+    /// the conversion factor will be applied to all returned values.
     ///
     /// # Panics
     ///
@@ -404,6 +449,8 @@ impl<'a> InputState<'a> {
 
         // If there's a transform from FourBox, aggregate
         if let Some(transform) = transform {
+            let unit_factor = transform.unit_conversion_factor;
+
             if transform.source_grid == GridType::FourBox {
                 let ts = item.data.as_four_box().unwrap_or_else(|| {
                     panic!(
@@ -422,15 +469,42 @@ impl<'a> InputState<'a> {
                             )
                         });
 
-                return HemisphericWindow::FromFourBox(AggregatingFourBoxToHemisphericWindow::new(
+                return HemisphericWindow::FromFourBox(
+                    AggregatingFourBoxToHemisphericWindow::with_unit_conversion(
+                        ts,
+                        current_index,
+                        self.current_time,
+                        unit_factor,
+                    ),
+                );
+            }
+
+            // Hemispheric->Hemispheric with possible unit conversion
+            if transform.source_grid == GridType::Hemispheric {
+                let ts = item.data.as_hemispheric().unwrap_or_else(|| {
+                    panic!("Variable '{}' is not a Hemispheric timeseries", name)
+                });
+
+                let current_index =
+                    ts.time_axis()
+                        .index_of(self.current_time)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "Time {} not found in timeseries '{}' time axis",
+                                self.current_time, name
+                            )
+                        });
+
+                return HemisphericWindow::Direct(GridTimeseriesWindow::with_unit_conversion(
                     ts,
                     current_index,
                     self.current_time,
+                    unit_factor,
                 ));
             }
         }
 
-        // Direct hemispheric access
+        // Direct hemispheric access (no transform)
         let ts = item
             .data
             .as_hemispheric()
@@ -818,5 +892,136 @@ mod input_state_window_tests {
         let item = create_scalar_item("CO2", vec![280.0, 285.0]);
         let state = InputState::build(vec![&item], 2023.5);
         assert_eq!(state.current_time(), 2023.5);
+    }
+
+    // =========================================================================
+    // Unit conversion integration tests through InputState
+    // =========================================================================
+
+    #[test]
+    fn test_input_state_scalar_window_with_unit_conversion() {
+        use std::collections::HashMap;
+
+        let item = create_scalar_item("Emissions", vec![1.0, 2.0, 3.0]);
+
+        // Create transform context with unit conversion factor
+        let mut read_transforms = HashMap::new();
+        read_transforms.insert(
+            "Emissions".to_string(),
+            ReadTransformInfo::with_unit_conversion(1000.0), // Convert Gt to Mt
+        );
+        let transform_ctx = TransformContext { read_transforms };
+
+        let state = InputState::build_with_transforms(vec![&item], 2001.0, transform_ctx);
+
+        let window = state.get_scalar_window("Emissions");
+
+        // Raw value at index 1 is 2.0, converted should be 2000.0
+        assert_eq!(window.at_start(), 2000.0);
+        assert_eq!(window.at_end(), Some(3000.0));
+        assert_eq!(window.previous(), Some(1000.0));
+    }
+
+    #[test]
+    fn test_input_state_four_box_window_with_unit_conversion() {
+        use std::collections::HashMap;
+
+        let item = create_four_box_item("Temperature");
+
+        // Create transform context with unit conversion factor
+        let mut read_transforms = HashMap::new();
+        read_transforms.insert(
+            "Temperature".to_string(),
+            ReadTransformInfo::with_unit_conversion(0.1), // Convert from deci-degrees to degrees
+        );
+        let transform_ctx = TransformContext { read_transforms };
+
+        let state = InputState::build_with_transforms(vec![&item], 2001.0, transform_ctx);
+
+        let window = state.get_four_box_window("Temperature");
+
+        // Raw values at index 1: [16.0, 15.0, 11.0, 10.0]
+        // Converted: [1.6, 1.5, 1.1, 1.0]
+        assert_eq!(window.at_start(FourBoxRegion::NorthernOcean), 1.6);
+        assert_eq!(window.at_start_all(), vec![1.6, 1.5, 1.1, 1.0]);
+    }
+
+    #[test]
+    fn test_input_state_four_box_to_scalar_with_unit_conversion() {
+        use crate::component::GridType;
+        use std::collections::HashMap;
+
+        let item = create_four_box_item("Forcing");
+
+        // Create transform context with grid aggregation AND unit conversion
+        let mut read_transforms = HashMap::new();
+        read_transforms.insert(
+            "Forcing".to_string(),
+            ReadTransformInfo::new(GridType::FourBox, None).with_conversion_factor(2.0),
+        );
+        let transform_ctx = TransformContext { read_transforms };
+
+        let state = InputState::build_with_transforms(vec![&item], 2001.0, transform_ctx);
+
+        let window = state.get_scalar_window("Forcing");
+
+        // Raw values at index 1: [16.0, 15.0, 11.0, 10.0], mean = 13.0
+        // Converted: 13.0 * 2.0 = 26.0
+        assert_eq!(window.at_start(), 26.0);
+    }
+
+    #[test]
+    fn test_input_state_hemispheric_window_with_unit_conversion() {
+        use crate::component::GridType;
+        use std::collections::HashMap;
+
+        let item = create_hemispheric_item("Precipitation");
+
+        // Create transform context with unit conversion
+        let mut read_transforms = HashMap::new();
+        read_transforms.insert(
+            "Precipitation".to_string(),
+            ReadTransformInfo {
+                source_grid: GridType::Hemispheric,
+                weights: None,
+                unit_conversion_factor: 0.001, // Convert mm/yr to m/yr
+            },
+        );
+        let transform_ctx = TransformContext { read_transforms };
+
+        let state = InputState::build_with_transforms(vec![&item], 2001.0, transform_ctx);
+
+        let window = state.get_hemispheric_window("Precipitation");
+
+        // Raw values at index 1: [1100.0, 550.0]
+        // Converted: [1.1, 0.55]
+        assert_eq!(window.at_start(HemisphericRegion::Northern), 1.1);
+        assert_eq!(window.at_start(HemisphericRegion::Southern), 0.55);
+    }
+
+    #[test]
+    fn test_input_state_four_box_to_hemispheric_with_unit_conversion() {
+        use crate::component::GridType;
+        use std::collections::HashMap;
+
+        let item = create_four_box_item("Temperature");
+
+        // Create transform context to aggregate FourBox -> Hemispheric with conversion
+        let mut read_transforms = HashMap::new();
+        read_transforms.insert(
+            "Temperature".to_string(),
+            ReadTransformInfo::new(GridType::FourBox, None).with_conversion_factor(2.0),
+        );
+        let transform_ctx = TransformContext { read_transforms };
+
+        let state = InputState::build_with_transforms(vec![&item], 2001.0, transform_ctx);
+
+        let window = state.get_hemispheric_window("Temperature");
+
+        // Raw values at index 1: [16.0, 15.0, 11.0, 10.0]
+        // Hemispheric aggregation: Northern = (16+15)/2 = 15.5, Southern = (11+10)/2 = 10.5
+        // With 2.0 conversion: [31.0, 21.0]
+        assert_eq!(window.at_start(HemisphericRegion::Northern), 31.0);
+        assert_eq!(window.at_start(HemisphericRegion::Southern), 21.0);
     }
 }

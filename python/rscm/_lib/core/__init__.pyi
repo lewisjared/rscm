@@ -478,6 +478,88 @@ class ModelBuilder:
         """
 
 @final
+class Unit:
+    """A physical unit with parsing, normalization, and conversion support.
+
+    This class provides comprehensive support for working with physical units
+    in climate models. It handles parsing of unit strings with flexible syntax,
+    dimensional analysis, and conversion factor calculation.
+
+    Parsing
+    -------
+    The parser accepts several equivalent notations:
+
+    - Exponents: `m^2`, `m**2`, `m2`
+    - Division: `W/m^2`, `W m^-2`, `W per m^2`
+    - Multiplication: `kg m`, `kg*m`
+    - Whitespace: `W/m^2` == `W / m ^ 2`
+
+    Examples
+    --------
+    >>> from rscm._lib.core import Unit
+    >>>
+    >>> # Parse and compare units
+    >>> u1 = Unit("W/m^2")
+    >>> u2 = Unit("W / m ^ 2")
+    >>> assert u1 == u2  # Same normalized form
+    >>>
+    >>> # Convert between compatible units
+    >>> gtc = Unit("GtC/yr")
+    >>> mtco2 = Unit("MtCO2/yr")
+    >>> factor = gtc.conversion_factor(mtco2)  # ~3666.67
+    """
+
+    def __init__(self, unit_str: str) -> None:
+        """Create a new Unit from a unit string.
+
+        Parameters
+        ----------
+        unit_str
+            The unit string to parse.
+
+        Raises
+        ------
+        ValueError
+            If the unit string cannot be parsed.
+        """
+
+    @property
+    def original(self) -> str:
+        """Return the original input string used to create this unit."""
+
+    def normalized(self) -> str:
+        """Return the normalized string representation of this unit."""
+
+    def is_dimensionless(self) -> bool:
+        """Check if this unit is dimensionless."""
+
+    def is_compatible(self, other: Unit) -> bool:
+        """Check if this unit can be converted to another unit."""
+
+    def conversion_factor(self, target: Unit) -> float:
+        """Calculate the conversion factor from this unit to another unit.
+
+        Raises
+        ------
+        ValueError
+            If the units have incompatible dimensions.
+        """
+
+    def convert(self, value: float, target: Unit) -> float:
+        """Convert a value from this unit to another unit.
+
+        Raises
+        ------
+        ValueError
+            If the units have incompatible dimensions.
+        """
+
+    def __repr__(self) -> str: ...
+    def __str__(self) -> str: ...
+    def __eq__(self, other: Unit) -> bool: ...  # type: ignore[override]
+    def __hash__(self) -> int: ...
+
+@final
 class Model:
     """
     A coupled set of components that are solved on a common time axis.
