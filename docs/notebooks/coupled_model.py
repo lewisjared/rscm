@@ -382,13 +382,13 @@ two_layer = TwoLayerBuilder.from_parameters(
 
 # %%
 # Create emissions scenario
-years = np.array([1750, 1850, 1950, 2000, 2020, 2050, 2100])
+years = np.array([1750.0, 1850.0, 1950.0, 2000.0, 2020.0, 2050.0, 2100.0])
 emission_values = np.array([0.0, 0.5, 3.0, 7.0, 10.0, 5.0, 1.0])  # GtC/yr
 
 emissions_scenario = Timeseries(
     emission_values,
     TimeAxis.from_bounds(
-        np.concatenate([years, [2101]])  # bounds need n+1 values
+        np.concatenate([years, [2101.0]])  # bounds need n+1 values
     ),
     "GtC / yr",
     InterpolationStrategy.Linear,
