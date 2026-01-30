@@ -1,0 +1,51 @@
+# Two-Layer Energy Balance Model - Default Configuration
+#
+# This config provides sensible defaults for the two-layer EBM.
+# Based on Held et al. (2010), Journal of Climate.
+
+[model]
+name = "two-layer-default"
+type = "two-layer"
+version = "1.0.0"
+config_schema = "1.0.0"
+description = "Two-layer energy balance model with default parameters"
+
+[time]
+start = 1750
+end = 2100
+
+[components.climate]
+type = "TwoLayer"
+
+[components.climate.parameters]
+# Climate feedback parameter at zero warming (W/(m² K))
+# Controls the strength of radiative feedback. Typical: 0.8-1.5
+lambda0 = 1.0
+
+# Nonlinear feedback coefficient (W/(m² K²))
+# Set to 0 for linear model
+a = 0.0
+
+# Ocean heat uptake efficacy (dimensionless)
+# Typical: 1.0-1.8
+efficacy = 1.0
+
+# Heat exchange coefficient (W/(m² K))
+# Controls heat transfer between surface and deep ocean
+eta = 0.7
+
+# Surface layer heat capacity (W yr/(m² K))
+# Represents mixed layer + atmosphere
+heat_capacity_surface = 8.0
+
+# Deep ocean heat capacity (W yr/(m² K))
+heat_capacity_deep = 100.0
+
+[inputs]
+# Input files would be specified here
+# "Effective Radiative Forcing" = { file = "data/erf.csv", unit = "W/m^2" }
+
+[initial_values]
+# Initial state variable values (defaults to 0 if not specified)
+# "Surface Temperature" = 0.0
+# "Deep Ocean Temperature" = 0.0

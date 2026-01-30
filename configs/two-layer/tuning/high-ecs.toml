@@ -1,0 +1,15 @@
+# High Climate Sensitivity Tuning Override
+#
+# This file demonstrates layered configuration.
+# Use with: load_config_layers("configs/two-layer/defaults.toml", "configs/two-layer/tuning/high-ecs.toml")
+
+[model]
+name = "two-layer-high-ecs"
+description = "Two-layer model tuned for high climate sensitivity"
+
+[components.climate.parameters]
+# Lower feedback = higher climate sensitivity
+lambda0 = 0.7
+
+# Slightly higher efficacy
+efficacy = 1.3
