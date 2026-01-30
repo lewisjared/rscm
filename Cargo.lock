@@ -960,9 +960,12 @@ dependencies = [
 name = "rscm-magicc"
 version = "0.5.0"
 dependencies = [
+ "approx",
  "pyo3",
+ "pythonize",
  "rscm-core",
  "serde",
+ "serde_json",
  "typetag",
 ]
 

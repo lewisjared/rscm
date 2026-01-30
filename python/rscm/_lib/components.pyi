@@ -151,7 +151,7 @@ class FourBoxOceanHeatUptakeBuilder(ComponentBuilder):
 
     Outputs
     -------
-    Ocean Heat Uptake|FourBox : FourBoxSlice
+    Heat Uptake|Ocean : FourBoxSlice
         Regional ocean heat uptake (W/m^2) for each of the four boxes
 
     Examples

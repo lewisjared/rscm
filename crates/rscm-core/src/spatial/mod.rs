@@ -157,7 +157,7 @@
 //! fn solve_grid_component(input_state: &InputState, t_current: Time) -> RSCMResult<OutputState> {
 //!     // Get grid values using the typed window API
 //!     let window = input_state.get_four_box_window("ERF|FourBox");
-//!     let erf_regions = window.all();
+//!     let erf_regions = window.at_start_all();
 //!
 //!     // Compute regional heat uptake
 //!     let heat_uptake: Vec<f64> = erf_regions.iter()
@@ -167,7 +167,7 @@
 //!     // Return FourBox output with regional values
 //!     let mut output = HashMap::new();
 //!     output.insert(
-//!         "Ocean Heat Uptake|FourBox".to_string(),
+//!         "Heat Uptake|Ocean".to_string(),
 //!         StateValue::FourBox(FourBoxSlice::from_array([
 //!             heat_uptake[0], heat_uptake[1], heat_uptake[2], heat_uptake[3]
 //!         ])),
@@ -199,7 +199,7 @@
 //! # fn example(input_state: &InputState) {
 //! // Get grid values, compute regionally, then aggregate
 //! let window = input_state.get_four_box_window("Surface Temperature|FourBox");
-//! let temps = window.all();
+//! let temps = window.at_start_all();
 //! let regional_responses: Vec<f64> = temps.iter()
 //!     .map(|t| t * 0.5) // Different response per region
 //!     .collect();
@@ -237,7 +237,8 @@
 //!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
 //!         // Get hemispheric input using typed window API
 //!         let window = input_state.get_hemispheric_window("Temperature|Hemispheric");
-//!         let [northern, southern] = window.all();
+//!         let values = window.at_start_all();
+//!         let (northern, southern) = (values[0], values[1]);
 //!
 //!         // Custom disaggregation based on physical reasoning
 //!         // Example: Ocean regions slightly warmer, land regions cooler

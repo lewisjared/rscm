@@ -699,7 +699,7 @@ impl ModelBuilder {
         }
 
         // Add the components to the graph
-        Ok(Model::with_transforms(
+        let mut model = Model::with_transforms(
             graph,
             initial_node,
             collection,
@@ -707,7 +707,16 @@ impl ModelBuilder {
             self.grid_weights.clone(),
             read_transforms,
             write_transforms,
-        ))
+        );
+
+        // Initialize component states for each node
+        for node_idx in model.components.node_indices() {
+            let component = &model.components[node_idx];
+            let state = component.create_initial_state();
+            model.component_states.insert(node_idx, state);
+        }
+
+        Ok(model)
     }
 }
 

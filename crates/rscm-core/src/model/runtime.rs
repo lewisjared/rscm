@@ -1,6 +1,7 @@
 //! Model struct and runtime execution.
 
-use crate::component::GridType;
+use crate::component::{ComponentState, GridType};
+use crate::errors::{RSCMError, RSCMResult};
 use crate::state::{ReadTransformInfo, StateValue, TransformContext};
 use crate::timeseries::{Time, TimeAxis};
 use crate::timeseries_collection::TimeseriesCollection;
@@ -8,7 +9,7 @@ use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::Bfs;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Index;
 use std::sync::Arc;
 
@@ -36,7 +37,7 @@ pub struct Model {
     /// between nodes.
     /// This graph is traversed on every time step to ensure that any state dependencies are
     /// solved before another component needs the state.
-    components: CGraph,
+    pub(crate) components: CGraph,
     /// The base node of the graph from where to begin traversing.
     initial_node: NodeIndex,
     /// The model state.
@@ -63,6 +64,10 @@ pub struct Model {
     /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     write_transforms: HashMap<String, RequiredTransformation>,
+    /// Internal state for each component, keyed by node index.
+    /// Uses Box<dyn ComponentState> with typetag for serialization.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) component_states: BTreeMap<NodeIndex, Box<dyn ComponentState>>,
 }
 
 impl Model {
@@ -125,7 +130,40 @@ impl Model {
             grid_weights,
             read_transforms,
             write_transforms,
+            component_states: BTreeMap::new(),
         }
+    }
+
+    /// Get a reference to a component's internal state.
+    pub fn get_component_state(&self, node_index: NodeIndex) -> Option<&dyn ComponentState> {
+        self.component_states.get(&node_index).map(|b| b.as_ref())
+    }
+
+    /// Create a checkpoint of the model state that can be serialized.
+    ///
+    /// The checkpoint includes:
+    /// - All timeseries data (including current state)
+    /// - Component internal states (flux_history, etc.)
+    /// - Current time index
+    ///
+    /// Use this to save model state mid-run for later resumption.
+    pub fn checkpoint(&self) -> RSCMResult<String> {
+        serde_json::to_string(self)
+            .map_err(|e| RSCMError::Error(format!("Serialization failed: {}", e)))
+    }
+
+    /// Restore a model from a JSON checkpoint string.
+    ///
+    /// This recreates the exact state of the model at checkpoint time,
+    /// including component internal states.
+    pub fn from_checkpoint(json: &str) -> RSCMResult<Self> {
+        serde_json::from_str(json)
+            .map_err(|e| RSCMError::Error(format!("Deserialization failed: {}", e)))
+    }
+
+    /// Get the current time index (useful for checkpointing).
+    pub fn time_index(&self) -> usize {
+        self.time_index
     }
 
     /// Get the configured grid weights.
@@ -178,7 +216,7 @@ impl Model {
     /// to be later used by other components.
     /// The output state defines the values at the next time index as it represents the state
     /// at the start of the next timestep.
-    fn step_model_component(&mut self, component: C) {
+    fn step_model_component(&mut self, component: C, node_index: NodeIndex) {
         // Build transform context for read-side aggregation
         let input_names = component.input_names();
         let input_state = if self.read_transforms.is_empty() {
@@ -215,7 +253,13 @@ impl Model {
 
         let (start, end) = self.current_time_bounds();
 
-        let result = component.solve(start, end, &input_state);
+        // Get component state - must exist since we initialize all states in build()
+        let internal_state = self
+            .component_states
+            .get_mut(&node_index)
+            .expect("Component state not initialized - this is a bug in Model::build()");
+
+        let result = component.solve_with_state(start, end, &input_state, internal_state.as_mut());
 
         match result {
             Ok(output_state) => {
@@ -274,7 +318,7 @@ impl Model {
         let mut bfs = Bfs::new(&self.components, self.initial_node);
         while let Some(nx) = bfs.next(&self.components) {
             let c = self.components.index(nx);
-            self.step_model_component(c.clone())
+            self.step_model_component(c.clone(), nx)
         }
     }
 

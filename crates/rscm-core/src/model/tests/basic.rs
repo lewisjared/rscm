@@ -1,13 +1,16 @@
 //! Basic model tests: step, dot, serialisation.
 
+use crate::component::{Component, ComponentState, InputState, OutputState, RequirementDefinition};
+use crate::errors::RSCMResult;
 use crate::example_components::{TestComponent, TestComponentParameters};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
-use crate::model::ModelBuilder;
+use crate::model::{Model, ModelBuilder};
 use crate::spatial::{ScalarGrid, ScalarRegion};
-use crate::timeseries::{FloatValue, TimeAxis, Timeseries};
+use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
 use is_close::is_close;
 use numpy::array;
 use numpy::ndarray::{Array, Axis};
+use serde::{Deserialize, Serialize};
 use std::iter::zip;
 use std::sync::Arc;
 
@@ -167,6 +170,12 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 v = 1
 dim = [6]
 data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
+
+[component_states.0]
+state_type = "unit"
+
+[component_states.1]
+state_type = "unit"
 "#;
 
     assert_eq!(serialised, expected);
@@ -191,4 +200,120 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 
     assert_eq!(model.current_time_bounds(), (2021.0, 2022.0));
     assert_eq!(deserialised.current_time_bounds(), (2021.0, 2022.0));
+}
+
+// Module-level types for checkpoint test to enable proper serialization/deserialization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StatefulTestComponentState {
+    call_count: usize,
+}
+
+#[typetag::serde]
+impl ComponentState for StatefulTestComponentState {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StatefulTestComponent {}
+
+#[typetag::serde]
+impl Component for StatefulTestComponent {
+    fn definitions(&self) -> Vec<RequirementDefinition> {
+        vec![RequirementDefinition::scalar_input("input", "m")]
+    }
+
+    fn solve(
+        &self,
+        _t_current: Time,
+        _t_next: Time,
+        _input_state: &InputState,
+    ) -> RSCMResult<OutputState> {
+        Ok(OutputState::new())
+    }
+
+    fn create_initial_state(&self) -> Box<dyn ComponentState> {
+        Box::new(StatefulTestComponentState { call_count: 0 })
+    }
+
+    fn solve_with_state(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+    ) -> RSCMResult<OutputState> {
+        let state = internal_state
+            .as_any_mut()
+            .downcast_mut::<StatefulTestComponentState>()
+            .expect("Wrong state type");
+        state.call_count += 1;
+        self.solve(t_current, t_next, input_state)
+    }
+}
+
+#[test]
+fn test_checkpoint_preserves_component_state() {
+    // Build a model with a stateful component
+    let time_axis = TimeAxis::from_values(Array::range(2020.0, 2030.0, 1.0));
+    let input_ts = Timeseries::new(
+        array![1.0, 2.0].insert_axis(Axis(1)),
+        Arc::new(TimeAxis::from_bounds(array![2020.0, 2025.0, 2030.0])),
+        ScalarGrid,
+        "m".to_string(),
+        InterpolationStrategy::from(PreviousStrategy::new(true)),
+    );
+
+    let mut model = ModelBuilder::new()
+        .with_time_axis(time_axis)
+        .with_component(Arc::new(StatefulTestComponent {}))
+        .with_exogenous_variable("input", input_ts)
+        .build()
+        .unwrap();
+
+    // Run a few steps
+    model.step();
+    model.step();
+    model.step();
+
+    // Find the stateful component node by scanning all component nodes
+    let stateful_node = model.components.node_indices().find(|i| {
+        if let Some(state) = model.get_component_state(*i) {
+            state.as_any().is::<StatefulTestComponentState>()
+        } else {
+            false
+        }
+    });
+
+    let node_idx = stateful_node.expect("Should find stateful component");
+    let state = model.get_component_state(node_idx).unwrap();
+    let typed_state = state
+        .as_any()
+        .downcast_ref::<StatefulTestComponentState>()
+        .unwrap();
+    assert_eq!(typed_state.call_count, 3, "Should have been called 3 times");
+
+    // Checkpoint and restore
+    let checkpoint = model.checkpoint().unwrap();
+    let restored = Model::from_checkpoint(&checkpoint).unwrap();
+
+    // Verify state was preserved
+    let restored_state = restored.get_component_state(node_idx).unwrap();
+    let restored_typed = restored_state
+        .as_any()
+        .downcast_ref::<StatefulTestComponentState>()
+        .unwrap();
+    assert_eq!(
+        restored_typed.call_count, 3,
+        "Restored state should have same call_count"
+    );
+    assert_eq!(
+        restored.time_index(),
+        model.time_index(),
+        "Time index should be preserved"
+    );
 }

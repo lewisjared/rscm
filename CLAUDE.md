@@ -135,6 +135,7 @@ let model = ModelBuilder::new()
 ```
 
 Key behaviours:
+
 - Contributors can be variables or other aggregates (enabling hierarchical aggregation)
 - NaN contributors are excluded from computation (treated as missing data)
 - Schema variables with no writer remain NaN (enables partial model configurations)
@@ -242,6 +243,7 @@ Components must explicitly choose which timestep index to read from:
 - `at_end()` - Returns value at index N+1 (written by upstream components this timestep)
 
 For aggregators or components reading upstream outputs:
+
 ```rust
 // Read value written by upstream component, fall back to start if at final timestep
 let erf = inputs.erf.at_end().unwrap_or_else(|| inputs.erf.at_start());
@@ -276,6 +278,7 @@ Type stub files in `python/rscm/_lib/*.pyi` provide type hints for the PyO3 bind
 - Conventional commits for commit messages
 - Changelog fragments in `changelog/` directory (towncrier)
 - Docstrings follow numpy convention (Python) and rustdoc with KaTeX for math (Rust)
+- Don't use unicode latin characters. Prefer to write latex equations which render better in documentation.
 
 ## Tech Stack
 
