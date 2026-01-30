@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn test_lifetime_feedback_sign() {
         let params = N2OChemistryParameters::default();
-        // Feedback should be negative (lifetime increases with concentration)
+        // Feedback should be negative (lifetime decreases with concentration)
         assert!(
             params.lifetime_feedback < 0.0,
             "N2O lifetime feedback should be negative"

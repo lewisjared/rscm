@@ -125,6 +125,8 @@ impl AerosolIndirect {
     /// RF = alpha * ln(1 + (B - B_pi) / B0)
     ///
     /// The forcing is relative to pre-industrial to ensure RF=0 at PI.
+    /// When burden is at or below pre-industrial (delta_burden <= 0), returns 0
+    /// to avoid undefined/positive forcing from the logarithmic term.
     pub fn calculate_cloud_albedo(&self, sox: FloatValue, oc: FloatValue) -> FloatValue {
         let p = &self.parameters;
 
@@ -133,7 +135,8 @@ impl AerosolIndirect {
         let delta_burden = burden - burden_pi;
 
         if delta_burden <= 0.0 {
-            // At or below pre-industrial: no forcing
+            // At or below pre-industrial: no forcing (avoids log of values <= 1
+            // which would give zero or positive forcing from a negative coefficient)
             return 0.0;
         }
 
