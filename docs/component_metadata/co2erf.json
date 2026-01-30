@@ -3,8 +3,7 @@
   "name": "CO2ERF",
   "module_path": "rscm_components::components::co2_erf",
   "language": "rust",
-  "description": "CO2 Effective Radiative Forcing component\n\nThis component calculates the effective radiative forcing (ERF) from CO2 concentrations\nusing the standard logarithmic relationship.\n\nCO2 effective radiative forcing (ERF) calculations\n\nComputes ERF using the standard logarithmic relationship:\n\n\nWhere:\n- $ERF_{2xCO2}$ is the ERF for a doubling of CO2\n- $C$ is the current CO2 concentration\n- $C_0$ is the pre-industrial CO2 concentration",
-  "equations": "$$ ERF = \\frac{ERF_{2xCO2}}{\\log(2)} \\cdot \\log\\left(1 + \\frac{C - C_0}{C_0}\\right) $$",
+  "description": "CO2 Effective Radiative Forcing component\n\nThis component calculates the effective radiative forcing (ERF) from CO2 concentrations\nusing the standard logarithmic relationship.\n\nCO2 effective radiative forcing (ERF) calculations\n\nComputes ERF using the standard logarithmic relationship:\n$$ ERF = \\frac{ERF_{2xCO2}}{\\log(2)} \\cdot \\log\\left(1 + \\frac{C - C_0}{C_0}\\right) $$\n\nWhere:\n- $ERF_{2xCO2}$ is the ERF for a doubling of CO2\n- $C$ is the current CO2 concentration\n- $C_0$ is the pre-industrial CO2 concentration",
   "category": "Radiative Forcing",
   "tags": [
     "radiative-forcing",
