@@ -23,7 +23,7 @@
     {
       "rust_name": "erf",
       "variable_name": "Effective Radiative Forcing|CO2",
-      "unit": "W / m^2",
+      "unit": "W/m^2",
       "grid": "Scalar"
     }
   ],
@@ -32,7 +32,7 @@
     {
       "name": "erf_2xco2",
       "type": "FloatValue",
-      "description": "ERF due to a doubling of atmospheric CO2 concentrations\nunit: W / m^2"
+      "description": "ERF due to a doubling of atmospheric CO2 concentrations\nunit: W/m^2"
     },
     {
       "name": "conc_pi",

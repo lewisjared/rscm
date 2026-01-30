@@ -42,14 +42,17 @@ pub struct SolverOptions {
 /// One-box carbon cycle component
 ///
 /// This component models the carbon cycle using a simple one-box model where:
+///
 /// - CO2 emissions increase atmospheric concentrations
 /// - Land uptake removes CO2 at a rate that depends on the concentration anomaly
 /// - The uptake rate is temperature-dependent
 ///
 /// The governing equations are:
+///
 /// $$ \frac{dC}{dt} = E - \frac{C - C_0}{\tau \exp(\alpha_T \cdot T)} $$
 ///
 /// Where:
+///
 /// - $C$ is atmospheric CO2 concentration (ppm)
 /// - $E$ is emissions (GtC/yr converted to ppm/yr)
 /// - $C_0$ is pre-industrial concentration (ppm)
