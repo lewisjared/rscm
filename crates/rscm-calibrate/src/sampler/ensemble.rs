@@ -349,6 +349,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// * `checkpoint_every` - Save checkpoint every N iterations (0 = no checkpointing)
     /// * `checkpoint_path` - Base path for checkpoint files
     /// * `progress_callback` - Optional callback for progress reporting
+    #[allow(clippy::too_many_arguments)]
     pub fn run_with_checkpoint_and_walkers<F, P>(
         &self,
         n_iterations: usize,
@@ -556,6 +557,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// * `checkpoint_every` - Save checkpoint every N iterations
     /// * `checkpoint_path` - Base path for checkpoint files
     /// * `progress_callback` - Optional callback for progress reporting
+    #[allow(clippy::too_many_arguments)]
     fn resume_with_state<F, P>(
         &self,
         state: SamplerState,
@@ -1288,12 +1290,12 @@ mod tests {
 
             fn run(&self, params: &[f64]) -> crate::Result<ModelOutput> {
                 let mut output = std::collections::HashMap::new();
-                for i in 0..self.n_params {
+                for (i, &param_val) in params.iter().enumerate().take(self.n_params) {
                     output.insert(
                         format!("x{}", i),
                         VariableOutput {
                             name: format!("x{}", i),
-                            values: vec![("0.000000".to_string(), params[i])]
+                            values: vec![("0.000000".to_string(), param_val)]
                                 .into_iter()
                                 .collect(),
                         },

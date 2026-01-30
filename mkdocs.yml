@@ -4,7 +4,7 @@ site_url: https://lewisjared.github.io/rscm
 edit_uri: blob/master/docs/
 
 repo_name: lewisjared/rscm
-repo_url: https://github.com/lewisjared/rcsm
+repo_url: https://github.com/lewisjared/rscm
 
 theme:
   name: "material"
