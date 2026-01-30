@@ -9,10 +9,10 @@ use crate::timeseries::{FloatValue, GridTimeseries, Time};
 
 use super::windows::GridTimeseriesWindow;
 
-/// A transformation context for grid aggregation.
+/// A transformation context for grid aggregation and unit conversion.
 ///
 /// This holds the information needed to transform grid data to scalar values
-/// during read operations.
+/// and apply unit conversions during read operations.
 #[derive(Debug, Clone)]
 pub struct ReadTransformInfo {
     /// The source grid type (finer resolution data)
@@ -20,18 +20,68 @@ pub struct ReadTransformInfo {
     /// The weights to use for aggregation (from Model's grid_weights)
     /// If None, use the grid's default weights
     pub weights: Option<Vec<f64>>,
+    /// Unit conversion factor to apply when reading values.
+    ///
+    /// The stored value is multiplied by this factor to convert from the
+    /// producer's unit to the consumer's unit.
+    ///
+    /// For example, if a schema stores emissions in GtC/yr but a component
+    /// requests MtCO2/yr, the factor would be 3666.67.
+    ///
+    /// Default is 1.0 (no conversion).
+    pub unit_conversion_factor: f64,
+}
+
+impl Default for ReadTransformInfo {
+    fn default() -> Self {
+        Self {
+            source_grid: GridType::Scalar,
+            weights: None,
+            unit_conversion_factor: 1.0,
+        }
+    }
+}
+
+impl ReadTransformInfo {
+    /// Create a new ReadTransformInfo with just grid transformation.
+    pub fn new(source_grid: GridType, weights: Option<Vec<f64>>) -> Self {
+        Self {
+            source_grid,
+            weights,
+            unit_conversion_factor: 1.0,
+        }
+    }
+
+    /// Create a new ReadTransformInfo with unit conversion only (no grid transform).
+    pub fn with_unit_conversion(factor: f64) -> Self {
+        Self {
+            source_grid: GridType::Scalar,
+            weights: None,
+            unit_conversion_factor: factor,
+        }
+    }
+
+    /// Add unit conversion to an existing transform.
+    pub fn with_conversion_factor(mut self, factor: f64) -> Self {
+        self.unit_conversion_factor = factor;
+        self
+    }
 }
 
 /// A scalar window that aggregates from a FourBox timeseries.
 ///
 /// This provides the same API as `TimeseriesWindow` but reads from a FourBox
 /// timeseries and aggregates to a scalar value on each access.
+///
+/// Optionally applies a unit conversion factor after aggregation.
 #[derive(Debug)]
 pub struct AggregatingFourBoxWindow<'a> {
     timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
     current_index: usize,
     current_time: Time,
     weights: Option<[f64; 4]>,
+    /// Unit conversion factor applied to all returned values.
+    unit_conversion_factor: f64,
 }
 
 impl<'a> AggregatingFourBoxWindow<'a> {
@@ -40,6 +90,17 @@ impl<'a> AggregatingFourBoxWindow<'a> {
         current_index: usize,
         current_time: Time,
         weights: Option<Vec<f64>>,
+    ) -> Self {
+        Self::with_unit_conversion(timeseries, current_index, current_time, weights, 1.0)
+    }
+
+    /// Create a new window with unit conversion.
+    pub fn with_unit_conversion(
+        timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
+        current_index: usize,
+        current_time: Time,
+        weights: Option<Vec<f64>>,
+        unit_conversion_factor: f64,
     ) -> Self {
         let weights = weights.map(|w| {
             let arr: [f64; 4] = w
@@ -53,11 +114,12 @@ impl<'a> AggregatingFourBoxWindow<'a> {
             current_index,
             current_time,
             weights,
+            unit_conversion_factor,
         }
     }
 
     fn aggregate(&self, values: &[FloatValue]) -> FloatValue {
-        match &self.weights {
+        let aggregated = match &self.weights {
             Some(weights) => {
                 let mut sum = 0.0;
                 for (v, w) in values.iter().zip(weights.iter()) {
@@ -68,7 +130,8 @@ impl<'a> AggregatingFourBoxWindow<'a> {
                 sum
             }
             None => self.timeseries.grid().aggregate_global(values),
-        }
+        };
+        aggregated * self.unit_conversion_factor
     }
 
     /// Get the aggregated scalar value at the start of the timestep (index N).
@@ -129,12 +192,16 @@ impl<'a> AggregatingFourBoxWindow<'a> {
 }
 
 /// A scalar window that aggregates from a Hemispheric timeseries.
+///
+/// Optionally applies a unit conversion factor after aggregation.
 #[derive(Debug)]
 pub struct AggregatingHemisphericWindow<'a> {
     timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
     current_index: usize,
     current_time: Time,
     weights: Option<[f64; 2]>,
+    /// Unit conversion factor applied to all returned values.
+    unit_conversion_factor: f64,
 }
 
 impl<'a> AggregatingHemisphericWindow<'a> {
@@ -143,6 +210,17 @@ impl<'a> AggregatingHemisphericWindow<'a> {
         current_index: usize,
         current_time: Time,
         weights: Option<Vec<f64>>,
+    ) -> Self {
+        Self::with_unit_conversion(timeseries, current_index, current_time, weights, 1.0)
+    }
+
+    /// Create a new window with unit conversion.
+    pub fn with_unit_conversion(
+        timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
+        current_index: usize,
+        current_time: Time,
+        weights: Option<Vec<f64>>,
+        unit_conversion_factor: f64,
     ) -> Self {
         let weights = weights.map(|w| {
             let arr: [f64; 2] = w
@@ -156,11 +234,12 @@ impl<'a> AggregatingHemisphericWindow<'a> {
             current_index,
             current_time,
             weights,
+            unit_conversion_factor,
         }
     }
 
     fn aggregate(&self, values: &[FloatValue]) -> FloatValue {
-        match &self.weights {
+        let aggregated = match &self.weights {
             Some(weights) => {
                 let mut sum = 0.0;
                 for (v, w) in values.iter().zip(weights.iter()) {
@@ -171,7 +250,8 @@ impl<'a> AggregatingHemisphericWindow<'a> {
                 sum
             }
             None => self.timeseries.grid().aggregate_global(values),
-        }
+        };
+        aggregated * self.unit_conversion_factor
     }
 
     /// Get the aggregated scalar value at the start of the timestep (index N).
@@ -310,14 +390,17 @@ impl<'a> ScalarWindow<'a> {
     }
 }
 
-/// A scalar window that aggregates from a Hemispheric timeseries to Hemispheric output.
+/// A window that aggregates from a FourBox timeseries to Hemispheric output.
 ///
 /// This is used when reading a FourBox timeseries but the component wants Hemispheric data.
+/// Optionally applies a unit conversion factor after aggregation.
 #[derive(Debug)]
 pub struct AggregatingFourBoxToHemisphericWindow<'a> {
     timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
     current_index: usize,
     current_time: Time,
+    /// Unit conversion factor applied to all returned values.
+    unit_conversion_factor: f64,
 }
 
 impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
@@ -326,19 +409,30 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
         current_index: usize,
         current_time: Time,
     ) -> Self {
+        Self::with_unit_conversion(timeseries, current_index, current_time, 1.0)
+    }
+
+    /// Create a new window with unit conversion.
+    pub fn with_unit_conversion(
+        timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
+        current_index: usize,
+        current_time: Time,
+        unit_conversion_factor: f64,
+    ) -> Self {
         Self {
             timeseries,
             current_index,
             current_time,
+            unit_conversion_factor,
         }
     }
 
     fn aggregate_to_hemispheric(&self, values: &[FloatValue]) -> [FloatValue; 2] {
         // FourBox: [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand]
         // Hemispheric: [Northern, Southern]
-        // Average ocean+land for each hemisphere
-        let northern = (values[0] + values[1]) / 2.0;
-        let southern = (values[2] + values[3]) / 2.0;
+        // Average ocean+land for each hemisphere, then apply unit conversion
+        let northern = (values[0] + values[1]) / 2.0 * self.unit_conversion_factor;
+        let southern = (values[2] + values[3]) / 2.0 * self.unit_conversion_factor;
         [northern, southern]
     }
 
@@ -851,5 +945,102 @@ mod aggregating_window_tests {
         assert_eq!(window.at_end_all(), Some(vec![17.0, 37.0]));
         assert_eq!(window.time(), 2001.0);
         assert_eq!(window.index(), 1);
+    }
+
+    // =========================================================================
+    // Unit conversion tests for aggregating windows
+    // =========================================================================
+
+    #[test]
+    fn test_aggregating_four_box_window_unit_conversion() {
+        let ts = create_four_box_timeseries();
+        // Index 1 values [11, 21, 31, 41], mean = 26.0
+        // With 2.0 conversion factor: 52.0
+        let window = AggregatingFourBoxWindow::with_unit_conversion(&ts, 1, 2001.0, None, 2.0);
+
+        assert_eq!(window.at_start(), 52.0);
+        assert_eq!(window.at_end(), Some(54.0)); // 27.0 * 2.0
+        assert_eq!(window.previous(), Some(50.0)); // 25.0 * 2.0
+    }
+
+    #[test]
+    fn test_aggregating_four_box_window_unit_conversion_with_custom_weights() {
+        let ts = create_four_box_timeseries();
+        // Custom weights that sum to 1.0
+        let weights = vec![0.5, 0.2, 0.2, 0.1];
+        // Index 1: 11*0.5 + 21*0.2 + 31*0.2 + 41*0.1 = 5.5 + 4.2 + 6.2 + 4.1 = 20.0
+        // With 3.0 conversion factor: 60.0
+        let window =
+            AggregatingFourBoxWindow::with_unit_conversion(&ts, 1, 2001.0, Some(weights), 3.0);
+
+        assert_eq!(window.at_start(), 60.0);
+    }
+
+    #[test]
+    fn test_aggregating_hemispheric_window_unit_conversion() {
+        let ts = create_hemispheric_timeseries();
+        // Index 1: [110, 220], mean = 165.0
+        // With 0.5 conversion factor: 82.5
+        let window = AggregatingHemisphericWindow::with_unit_conversion(&ts, 1, 2001.0, None, 0.5);
+
+        assert_eq!(window.at_start(), 82.5);
+        assert_eq!(window.at_end(), Some(90.0)); // 180.0 * 0.5
+        assert_eq!(window.previous(), Some(75.0)); // 150.0 * 0.5
+    }
+
+    #[test]
+    fn test_aggregating_four_box_to_hemispheric_unit_conversion() {
+        let ts = create_four_box_timeseries();
+        // Index 1 values [11, 21, 31, 41]
+        // Northern = (11 + 21) / 2 = 16.0
+        // Southern = (31 + 41) / 2 = 36.0
+        // With 2.0 conversion factor: [32.0, 72.0]
+        let window =
+            AggregatingFourBoxToHemisphericWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+
+        assert_eq!(window.at_start(HemisphericRegion::Northern), 32.0);
+        assert_eq!(window.at_start(HemisphericRegion::Southern), 72.0);
+        assert_eq!(window.at_start_all(), vec![32.0, 72.0]);
+    }
+
+    #[test]
+    fn test_aggregating_four_box_to_hemispheric_unit_conversion_at_end() {
+        let ts = create_four_box_timeseries();
+        // Index 2 values [12, 22, 32, 42]
+        // Northern = (12 + 22) / 2 = 17.0
+        // Southern = (32 + 42) / 2 = 37.0
+        // With 2.0 conversion factor: [34.0, 74.0]
+        let window =
+            AggregatingFourBoxToHemisphericWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+
+        assert_eq!(window.at_end(HemisphericRegion::Northern), Some(34.0));
+        assert_eq!(window.at_end(HemisphericRegion::Southern), Some(74.0));
+        assert_eq!(window.at_end_all(), Some(vec![34.0, 74.0]));
+    }
+
+    #[test]
+    fn test_read_transform_info_default() {
+        let info = ReadTransformInfo::default();
+        assert_eq!(info.source_grid, GridType::Scalar);
+        assert!(info.weights.is_none());
+        assert_eq!(info.unit_conversion_factor, 1.0);
+    }
+
+    #[test]
+    fn test_read_transform_info_with_unit_conversion() {
+        let info = ReadTransformInfo::with_unit_conversion(3.667);
+        assert_eq!(info.source_grid, GridType::Scalar);
+        assert!(info.weights.is_none());
+        assert!((info.unit_conversion_factor - 3.667).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_read_transform_info_builder() {
+        let info = ReadTransformInfo::new(GridType::FourBox, Some(vec![0.25, 0.25, 0.25, 0.25]))
+            .with_conversion_factor(2.5);
+
+        assert_eq!(info.source_grid, GridType::FourBox);
+        assert!(info.weights.is_some());
+        assert_eq!(info.unit_conversion_factor, 2.5);
     }
 }

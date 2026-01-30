@@ -1,6 +1,7 @@
 //! Type definitions for the model module.
 
 use crate::component::{Component, GridType, RequirementDefinition};
+use crate::units::Unit;
 use petgraph::Graph;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -15,18 +16,45 @@ pub type CGraph = Graph<C, RequirementDefinition>;
 #[derive(Debug)]
 pub(crate) struct VariableDefinition {
     pub name: String,
+    /// The unit string (original, preserved for display/error messages).
     pub unit: String,
+    /// The parsed unit (if parsing succeeded), used for compatibility checks.
+    pub parsed_unit: Option<Unit>,
     pub grid_type: GridType,
 }
 
 impl VariableDefinition {
     pub fn from_requirement_definition(definition: &RequirementDefinition) -> Self {
+        // Attempt to parse the unit; store None if parsing fails
+        // (the error will be reported separately during validation)
+        let parsed_unit = Unit::parse(&definition.unit).ok();
+
         Self {
             name: definition.name.clone(),
             unit: definition.unit.clone(),
+            parsed_unit,
             grid_type: definition.grid_type,
         }
     }
+}
+
+/// Information about a unit conversion needed at runtime.
+///
+/// When two components use different (but compatible) units for the same variable,
+/// a conversion factor must be applied when passing data between them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnitConversionInfo {
+    /// The variable name.
+    pub variable: String,
+    /// The component name that needs the conversion applied on input.
+    pub component: String,
+    /// The conversion factor to multiply values by.
+    /// `converted = original * factor`
+    pub factor: f64,
+    /// The source unit (what the producer outputs).
+    pub source_unit: String,
+    /// The target unit (what the consumer expects).
+    pub target_unit: String,
 }
 
 /// Direction of a grid transformation.

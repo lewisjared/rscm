@@ -17,6 +17,7 @@ See https://oprypin.github.io/mkdocs-literate-nav/
 * Reference
   * [Configuration Layer](model_configuration.md)
   * [Spatial Grids](grids.md)
+  * [Physical Units](notebooks/units_tutorial.ipynb)
   * [Python API](api/rscm/)
 * [Components](components/index.md)
   * components/*.md

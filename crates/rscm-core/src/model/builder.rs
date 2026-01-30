@@ -6,6 +6,7 @@ use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy
 use crate::schema::VariableSchema;
 use crate::timeseries::{FloatValue, TimeAxis, Timeseries};
 use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData, VariableType};
+use crate::units::Unit;
 use numpy::ndarray::Array;
 use petgraph::graph::NodeIndex;
 use petgraph::Graph;
@@ -14,7 +15,9 @@ use std::sync::Arc;
 
 use super::null_component::NullComponent;
 use super::runtime::Model;
-use super::types::{CGraph, RequiredTransformation, TransformDirection, VariableDefinition, C};
+use super::types::{
+    CGraph, RequiredTransformation, TransformDirection, UnitConversionInfo, VariableDefinition, C,
+};
 use super::validation::verify_definition;
 
 /// Build a new model from a set of components.
@@ -204,10 +207,12 @@ impl ModelBuilder {
     /// Checks that:
     /// - All outputs are defined in the schema (as variables or aggregates)
     /// - All inputs are defined in the schema (as variables or aggregates)
-    /// - Units match between component and schema
+    /// - Units are dimensionally compatible between component and schema
     /// - Grid types are compatible (allowing aggregation where valid)
     ///
-    /// Returns a list of required grid transformations for mismatched grids.
+    /// Returns a tuple of:
+    /// - A list of required grid transformations for mismatched grids
+    /// - A list of unit conversions needed at runtime
     fn validate_component_against_schema(
         &self,
         schema: &VariableSchema,
@@ -215,8 +220,9 @@ impl ModelBuilder {
         inputs: &[RequirementDefinition],
         outputs: &[RequirementDefinition],
         endogenous: &HashMap<String, NodeIndex>,
-    ) -> RSCMResult<Vec<RequiredTransformation>> {
+    ) -> RSCMResult<(Vec<RequiredTransformation>, Vec<UnitConversionInfo>)> {
         let mut transformations = Vec::new();
+        let mut unit_conversions = Vec::new();
 
         // Validate outputs
         // Write-side: component produces finer grid than schema -> aggregate before storage
@@ -230,15 +236,15 @@ impl ModelBuilder {
                 });
             }
 
-            // Check unit matches
+            // Check unit compatibility (not just string equality)
             if let Some(schema_unit) = schema.get_unit(&output.name) {
-                if schema_unit != output.unit {
-                    return Err(RSCMError::ComponentSchemaUnitMismatch {
-                        variable: output.name.clone(),
-                        component: component_name.to_string(),
-                        component_unit: output.unit.clone(),
-                        schema_unit: schema_unit.to_string(),
-                    });
+                if let Some(conversion) = Self::check_unit_compatibility(
+                    &output.name,
+                    component_name,
+                    schema_unit,
+                    &output.unit,
+                )? {
+                    unit_conversions.push(conversion);
                 }
             }
 
@@ -291,13 +297,13 @@ impl ModelBuilder {
             // If it's in the schema, check unit and grid type compatibility
             if schema.contains(&input.name) {
                 if let Some(schema_unit) = schema.get_unit(&input.name) {
-                    if schema_unit != input.unit {
-                        return Err(RSCMError::ComponentSchemaUnitMismatch {
-                            variable: input.name.clone(),
-                            component: component_name.to_string(),
-                            component_unit: input.unit.clone(),
-                            schema_unit: schema_unit.to_string(),
-                        });
+                    if let Some(conversion) = Self::check_unit_compatibility(
+                        &input.name,
+                        component_name,
+                        schema_unit,
+                        &input.unit,
+                    )? {
+                        unit_conversions.push(conversion);
                     }
                 }
 
@@ -328,7 +334,81 @@ impl ModelBuilder {
             }
         }
 
-        Ok(transformations)
+        Ok((transformations, unit_conversions))
+    }
+
+    /// Check if two units are compatible and return conversion info if needed.
+    ///
+    /// Returns:
+    /// - `Ok(None)` if units are identical (no conversion needed)
+    /// - `Ok(Some(conversion))` if units are compatible but different
+    /// - `Err(...)` if units are incompatible (different dimensions)
+    fn check_unit_compatibility(
+        variable: &str,
+        component: &str,
+        schema_unit: &str,
+        component_unit: &str,
+    ) -> RSCMResult<Option<UnitConversionInfo>> {
+        // Fast path: exact string match
+        if schema_unit == component_unit {
+            return Ok(None);
+        }
+
+        // Parse both units
+        let parsed_schema = Unit::parse(schema_unit).map_err(|e| RSCMError::UnitParseError {
+            variable: variable.to_string(),
+            unit_string: schema_unit.to_string(),
+            details: e.to_string(),
+        })?;
+
+        let parsed_component =
+            Unit::parse(component_unit).map_err(|e| RSCMError::UnitParseError {
+                variable: variable.to_string(),
+                unit_string: component_unit.to_string(),
+                details: e.to_string(),
+            })?;
+
+        // Check if they're the same after normalization
+        if parsed_schema == parsed_component {
+            return Ok(None);
+        }
+
+        // Check dimensional compatibility
+        if !parsed_schema.is_compatible(&parsed_component) {
+            let dim_schema = parsed_schema
+                .dimension()
+                .map(|d| d.to_string())
+                .unwrap_or_else(|_| "unknown".to_string());
+            let dim_component = parsed_component
+                .dimension()
+                .map(|d| d.to_string())
+                .unwrap_or_else(|_| "unknown".to_string());
+
+            return Err(RSCMError::IncompatibleUnits {
+                variable: variable.to_string(),
+                unit1: schema_unit.to_string(),
+                unit2: component_unit.to_string(),
+                dim1: dim_schema,
+                dim2: dim_component,
+            });
+        }
+
+        // Calculate conversion factor from schema unit to component unit
+        let factor = parsed_schema
+            .conversion_factor(&parsed_component)
+            .map_err(|e| RSCMError::UnitParseError {
+                variable: variable.to_string(),
+                unit_string: format!("{schema_unit} -> {component_unit}"),
+                details: e.to_string(),
+            })?;
+
+        Ok(Some(UnitConversionInfo {
+            variable: variable.to_string(),
+            component: component.to_string(),
+            factor,
+            source_unit: schema_unit.to_string(),
+            target_unit: component_unit.to_string(),
+        }))
     }
 
     /// Builds the component graph for the registered components and creates a concrete model.
@@ -344,6 +424,9 @@ impl ModelBuilder {
         let mut definitions: HashMap<String, VariableDefinition> = HashMap::new();
         // Track which component owns each variable for better error messages
         let mut variable_owners: HashMap<String, String> = HashMap::new();
+        // Collect unit conversion factors needed at runtime
+        // Key: (variable_name, component_name) -> conversion info
+        let mut unit_conversions: Vec<UnitConversionInfo> = Vec::new();
         let initial_node = graph.add_node(Arc::new(NullComponent {}));
 
         for component in &self.components {
@@ -364,13 +447,16 @@ impl ModelBuilder {
 
             for requirement in requires {
                 let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
-                verify_definition(
+                if let Some(conversion) = verify_definition(
                     &mut definitions,
                     &requirement,
                     &component_name,
                     existing_owner,
                     self.schema.is_some(),
-                )?;
+                )? {
+                    // Store the conversion info for runtime use
+                    unit_conversions.push(conversion);
+                }
 
                 if let Some(&producer_node) = endogenous.get(&requirement.name) {
                     // Link to the node that provides the requirement
@@ -398,13 +484,16 @@ impl ModelBuilder {
 
             for requirement in provides {
                 let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
-                verify_definition(
+                if let Some(conversion) = verify_definition(
                     &mut definitions,
                     &requirement,
                     &component_name,
                     existing_owner,
                     self.schema.is_some(),
-                )?;
+                )? {
+                    // Store the conversion info for runtime use
+                    unit_conversions.push(conversion);
+                }
 
                 // Track this component as the owner of this variable
                 variable_owners.insert(requirement.name.clone(), component_name.clone());
@@ -443,14 +532,16 @@ impl ModelBuilder {
                     .unwrap_or("UnknownComponent")
                     .to_string();
 
-                let component_transforms = self.validate_component_against_schema(
-                    schema,
-                    &component_name,
-                    &component.inputs(),
-                    &component.outputs(),
-                    &endogenous,
-                )?;
+                let (component_transforms, component_unit_conversions) = self
+                    .validate_component_against_schema(
+                        schema,
+                        &component_name,
+                        &component.inputs(),
+                        &component.outputs(),
+                        &endogenous,
+                    )?;
                 all_transformations.extend(component_transforms);
+                unit_conversions.extend(component_unit_conversions);
             }
 
             // Handle schema variables (4.5)
@@ -461,11 +552,13 @@ impl ModelBuilder {
             for (name, var_def) in &schema.variables {
                 if !definitions.contains_key(name) {
                     // Variable not produced by any component - add it as exogenous
+                    let parsed_unit = Unit::parse(&var_def.unit).ok();
                     definitions.insert(
                         name.clone(),
                         VariableDefinition {
                             name: name.clone(),
                             unit: var_def.unit.clone(),
+                            parsed_unit,
                             grid_type: var_def.grid_type,
                         },
                     );
@@ -536,11 +629,13 @@ impl ModelBuilder {
                 endogenous.insert(agg_name.clone(), agg_node);
 
                 // Add aggregate variable to definitions
+                let parsed_unit = Unit::parse(&agg_def.unit).ok();
                 definitions.insert(
                     agg_name.clone(),
                     VariableDefinition {
                         name: agg_name.clone(),
                         unit: agg_def.unit.clone(),
+                        parsed_unit,
                         grid_type: agg_def.grid_type,
                     },
                 );
@@ -698,8 +793,15 @@ impl ModelBuilder {
             }
         }
 
+        // Build unit conversion map from collected conversion info
+        // Key: (variable_name, component_name) -> conversion factor
+        let unit_conversion_map: HashMap<(String, String), f64> = unit_conversions
+            .into_iter()
+            .map(|info| ((info.variable.clone(), info.component.clone()), info.factor))
+            .collect();
+
         // Add the components to the graph
-        Ok(Model::with_transforms(
+        Ok(Model::with_unit_conversions(
             graph,
             initial_node,
             collection,
@@ -707,6 +809,7 @@ impl ModelBuilder {
             self.grid_weights.clone(),
             read_transforms,
             write_transforms,
+            unit_conversion_map,
         ))
     }
 }
