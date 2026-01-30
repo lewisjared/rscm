@@ -26,6 +26,7 @@ thiserror = "2.0"
 pythonize = "0.27.0"
 toml = "0.9"
 rscm-macros.workspace = true
+tracing.workspace = true
 
 [dependencies.pyo3]
 version = "0.27.2"

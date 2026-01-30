@@ -5,6 +5,7 @@ use crate::errors::{RSCMError, RSCMResult};
 use crate::units::Unit;
 use petgraph::visit::{IntoNeighbors, IntoNodeIdentifiers, Visitable};
 use std::collections::HashMap;
+use tracing::warn;
 
 use super::types::{UnitConversionInfo, VariableDefinition};
 
@@ -85,10 +86,16 @@ pub(crate) fn verify_definition(
         }
         None => {
             // Validate that the unit can be parsed before adding the definition
-            if Unit::parse(&definition.unit).is_err() {
+            if let Err(e) = Unit::parse(&definition.unit) {
                 // Log a warning but don't fail - the unit might be a custom/unknown unit
-                // that we can't parse but is still valid for string comparison
-                // The error will be caught later if incompatible units are encountered
+                // that we can't parse but is still valid for string comparison.
+                // The error will be caught later if incompatible units are encountered.
+                warn!(
+                    variable = %definition.name,
+                    unit = %definition.unit,
+                    error = %e,
+                    "Could not parse unit string; unit conversion will not be available"
+                );
             }
             definitions.insert(
                 definition.name.clone(),
