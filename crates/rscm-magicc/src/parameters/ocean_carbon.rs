@@ -65,6 +65,7 @@ pub const DELTA_OSPP_COEFFICIENTS: [FloatValue; 5] =
 /// 1. **Joos A24**: DIC effect on pCO2 via polynomial expansion
 /// 2. **Joos A25**: Temperature effect: $pCO2 = pCO2_{DIC} \times e^{\alpha_T \Delta T}$
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OceanCarbonParameters {
     /// Pre-industrial atmospheric CO2 (ppm).
     /// Used as reference for pCO2 calculations.

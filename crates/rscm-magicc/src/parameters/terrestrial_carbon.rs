@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
 /// 2. **Temperature-Respiration Feedback**: Warmer temperatures accelerate decay:
 ///    $$f_T = \exp(\gamma \times \Delta T)$$
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TerrestrialCarbonParameters {
     /// Pre-industrial Net Primary Production (NPP)
     /// unit: GtC/yr

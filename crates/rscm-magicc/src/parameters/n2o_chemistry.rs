@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 /// average burden to account for the time required for tropospheric N2O to
 /// mix into the stratosphere where destruction occurs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct N2OChemistryParameters {
     /// Pre-industrial N2O concentration used as reference for feedbacks
     /// unit: ppb

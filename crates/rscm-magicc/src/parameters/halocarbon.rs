@@ -104,6 +104,7 @@ impl HalocarbonSpecies {
 ///
 /// where $\alpha_{Br}$ is the bromine vs chlorine efficiency multiplier.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HalocarbonParameters {
     /// F-gas species (HFCs, PFCs, SF6, etc.)
     /// These are greenhouse gases but do not deplete stratospheric ozone.

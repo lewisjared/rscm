@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// where fluxes are positive when removing CO2 from the atmosphere.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CO2BudgetParameters {
     /// Conversion factor: GtC per ppm CO2.
     ///

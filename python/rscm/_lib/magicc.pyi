@@ -27,11 +27,41 @@ Forcing:
 - AerosolIndirectBuilder: Indirect aerosol cloud effects
 """
 
-from typing import final
+from typing import TypedDict, final
 
 from rscm._lib.core import Component, ComponentBuilder
 
 # Climate Components
+
+class ClimateUDEBParams(TypedDict, total=False):
+    """Parameters for ClimateUDEB component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    n_layers: int
+    mixed_layer_depth: float
+    layer_thickness: float
+    kappa: float
+    kappa_min: float
+    kappa_dkdt: float
+    w_initial: float
+    w_variable_fraction: float
+    w_threshold_temp_nh: float
+    w_threshold_temp_sh: float
+    ecs: float
+    rf_2xco2: float
+    rlo: float
+    k_lo: float
+    k_ns: float
+    amplify_ocean_to_land: float
+    nh_land_fraction: float
+    sh_land_fraction: float
+    temp_adjust_alpha: float
+    temp_adjust_gamma: float
+    polar_sinking_ratio: float
+    steps_per_year: int
+    max_temperature: float
 
 @final
 class ClimateUDEBBuilder(ComponentBuilder):
@@ -120,12 +150,37 @@ class ClimateUDEBBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> ClimateUDEBBuilder:
+    def from_parameters(parameters: ClimateUDEBParams) -> ClimateUDEBBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the UDEB climate model component."""
 
 # Chemistry Components
+
+class CH4ChemistryParams(TypedDict, total=False):
+    """Parameters for CH4 chemistry component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    ch4_pi: float
+    natural_emissions: float
+    tau_oh: float
+    tau_soil: float
+    tau_strat: float
+    tau_trop_cl: float
+    ch4_self_feedback: float
+    oh_sensitivity_scale: float
+    oh_nox_sensitivity: float
+    oh_co_sensitivity: float
+    oh_nmvoc_sensitivity: float
+    temp_sensitivity: float
+    include_temp_feedback: bool
+    include_emissions_feedback: bool
+    ppb_to_tg: float
+    nox_reference: float
+    co_reference: float
+    nmvoc_reference: float
 
 @final
 class CH4ChemistryBuilder(ComponentBuilder):
@@ -209,10 +264,23 @@ class CH4ChemistryBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> CH4ChemistryBuilder:
+    def from_parameters(parameters: CH4ChemistryParams) -> CH4ChemistryBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the CH4 chemistry component."""
+
+class N2OChemistryParams(TypedDict, total=False):
+    """Parameters for N2O chemistry component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    n2o_pi: float
+    natural_emissions: float
+    tau_n2o: float
+    lifetime_feedback: float
+    strat_delay: int
+    ppb_to_tg: float
 
 @final
 class N2OChemistryBuilder(ComponentBuilder):
@@ -264,10 +332,23 @@ class N2OChemistryBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> N2OChemistryBuilder:
+    def from_parameters(parameters: N2OChemistryParams) -> N2OChemistryBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the N2O chemistry component."""
+
+class HalocarbonChemistryParams(TypedDict, total=False):
+    """Parameters for halocarbon chemistry component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    br_multiplier: float
+    cfc11_release_normalisation: float
+    eesc_delay: float
+    air_molar_mass: float
+    atmospheric_mass_tg: float
+    mixing_box_fraction: float
 
 @final
 class HalocarbonChemistryBuilder(ComponentBuilder):
@@ -330,12 +411,41 @@ class HalocarbonChemistryBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> HalocarbonChemistryBuilder:
+    def from_parameters(  # type: ignore[override]
+        parameters: HalocarbonChemistryParams,
+    ) -> HalocarbonChemistryBuilder:
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the halocarbon chemistry component."""
 
 # Carbon Cycle Components
+
+class TerrestrialCarbonParams(TypedDict, total=False):
+    """Parameters for terrestrial carbon cycle component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    npp_pi: float
+    co2_pi: float
+    beta: float
+    npp_temp_sensitivity: float
+    resp_temp_sensitivity: float
+    detritus_temp_sensitivity: float
+    soil_temp_sensitivity: float
+    humus_temp_sensitivity: float
+    plant_pool_pi: float
+    detritus_pool_pi: float
+    soil_pool_pi: float
+    humus_pool_pi: float
+    respiration_pi: float
+    frac_npp_to_plant: float
+    frac_npp_to_detritus: float
+    frac_plant_to_detritus: float
+    frac_detritus_to_soil: float
+    frac_soil_to_humus: float
+    enable_fertilization: bool
+    enable_temp_feedback: bool
 
 @final
 class TerrestrialCarbonBuilder(ComponentBuilder):
@@ -425,10 +535,38 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> TerrestrialCarbonBuilder:
+    def from_parameters(  # type: ignore[override]
+        parameters: TerrestrialCarbonParams,
+    ) -> TerrestrialCarbonBuilder:
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the terrestrial carbon cycle component."""
+
+class OceanCarbonParams(TypedDict, total=False):
+    """Parameters for ocean carbon cycle component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    co2_pi: float
+    pco2_pi: float
+    gas_exchange_scale: float
+    gas_exchange_tau: float
+    temp_sensitivity: float
+    irf_scale: float
+    mixed_layer_depth: float
+    ocean_surface_area: float
+    sst_pi: float
+    steps_per_year: int
+    max_history_months: int
+    irf_switch_time: float
+    irf_early_coefficients: list[float]
+    irf_early_timescales: list[float]
+    irf_late_coefficients: list[float]
+    irf_late_timescales: list[float]
+    delta_ospp_offsets: list[float]
+    delta_ospp_coefficients: list[float]
+    enable_temp_feedback: bool
 
 @final
 class OceanCarbonBuilder(ComponentBuilder):
@@ -510,10 +648,19 @@ class OceanCarbonBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> OceanCarbonBuilder:
+    def from_parameters(parameters: OceanCarbonParams) -> OceanCarbonBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the ocean carbon cycle component."""
+
+class CO2BudgetParams(TypedDict, total=False):
+    """Parameters for CO2 budget component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    gtc_per_ppm: float
+    co2_pi: float
 
 @final
 class CO2BudgetBuilder(ComponentBuilder):
@@ -563,12 +710,32 @@ class CO2BudgetBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> CO2BudgetBuilder:
+    def from_parameters(parameters: CO2BudgetParams) -> CO2BudgetBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the CO2 budget component."""
 
 # Forcing Components
+
+class OzoneForcingParams(TypedDict, total=False):
+    """Parameters for ozone forcing component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    eesc_reference: float
+    strat_o3_scale: float
+    strat_cl_exponent: float
+    trop_radeff: float
+    trop_oz_ch4: float
+    trop_oz_nox: float
+    trop_oz_co: float
+    trop_oz_voc: float
+    ch4_pi: float
+    nox_pi: float
+    co_pi: float
+    nmvoc_pi: float
+    temp_feedback_scale: float
 
 @final
 class OzoneForcingBuilder(ComponentBuilder):
@@ -643,10 +810,32 @@ class OzoneForcingBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> OzoneForcingBuilder:
+    def from_parameters(parameters: OzoneForcingParams) -> OzoneForcingBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the ozone forcing component."""
+
+class AerosolDirectParams(TypedDict, total=False):
+    """Parameters for direct aerosol forcing component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    sox_coefficient: float
+    bc_coefficient: float
+    oc_coefficient: float
+    nitrate_coefficient: float
+    sox_regional: list[float]
+    bc_regional: list[float]
+    oc_regional: list[float]
+    nitrate_regional: list[float]
+    sox_pi: float
+    bc_pi: float
+    oc_pi: float
+    nox_pi: float
+    harmonize: bool
+    harmonize_year: float
+    harmonize_target: float
 
 @final
 class AerosolDirectBuilder(ComponentBuilder):
@@ -717,10 +906,26 @@ class AerosolDirectBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> AerosolDirectBuilder:
+    def from_parameters(parameters: AerosolDirectParams) -> AerosolDirectBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the direct aerosol forcing component."""
+
+class AerosolIndirectParams(TypedDict, total=False):
+    """Parameters for indirect aerosol forcing component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    cloud_albedo_coefficient: float
+    reference_burden: float
+    sox_weight: float
+    oc_weight: float
+    sox_pi: float
+    oc_pi: float
+    harmonize: bool
+    harmonize_year: float
+    harmonize_target: float
 
 @final
 class AerosolIndirectBuilder(ComponentBuilder):
@@ -775,7 +980,7 @@ class AerosolIndirectBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> AerosolIndirectBuilder:
+    def from_parameters(parameters: AerosolIndirectParams) -> AerosolIndirectBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the indirect aerosol forcing component."""

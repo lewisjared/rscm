@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 /// Optional harmonisation scales the forcing to match a target value at a
 /// reference year. This is useful for calibrating to observed/modelled forcing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AerosolDirectParameters {
     // === Species Forcing Coefficients ===
     /// SOx forcing coefficient (W/m² per Tg S/yr).
@@ -178,6 +179,7 @@ impl Default for AerosolDirectParameters {
 /// - **Optical thickness proxy**: MAGICC7 uses aerosol optical thickness.
 ///   Here, emissions are used directly as a proxy.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AerosolIndirectParameters {
     /// Cloud albedo effect coefficient (W/m² per ln-unit).
     ///
@@ -338,5 +340,31 @@ mod tests {
             (params.cloud_albedo_coefficient - restored.cloud_albedo_coefficient).abs() < 1e-10
         );
         assert!((params.reference_burden - restored.reference_burden).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_partial_deserialization() {
+        // Test that #[serde(default)] allows partial deserialization for both structs
+
+        // Direct parameters
+        let json_direct = r#"{"sox_coefficient": -0.005, "harmonize": true}"#;
+        let params: AerosolDirectParameters =
+            serde_json::from_str(json_direct).expect("Partial deserialization failed");
+
+        assert!((params.sox_coefficient + 0.005).abs() < 1e-10);
+        assert!(params.harmonize);
+        // Defaults for unspecified fields
+        assert!((params.bc_coefficient - 0.0077).abs() < 1e-10);
+        assert!((params.harmonize_year - 2019.0).abs() < 1e-10);
+
+        // Indirect parameters
+        let json_indirect = r#"{"cloud_albedo_coefficient": -1.5}"#;
+        let params: AerosolIndirectParameters =
+            serde_json::from_str(json_indirect).expect("Partial deserialization failed");
+
+        assert!((params.cloud_albedo_coefficient + 1.5).abs() < 1e-10);
+        // Defaults for unspecified fields
+        assert!((params.reference_burden - 50.0).abs() < 1e-10);
+        assert!((params.sox_weight - 1.0).abs() < 1e-10);
     }
 }

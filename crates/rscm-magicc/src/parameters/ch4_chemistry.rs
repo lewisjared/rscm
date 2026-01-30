@@ -26,8 +26,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// $$\frac{1}{\tau_{total}} = \frac{1}{\tau_{OH}} + \frac{1}{\tau_{soil}} + \frac{1}{\tau_{strat}} + \frac{1}{\tau_{trop\_cl}}$$
 ///
-/// where τ_OH varies with CH4 concentration and co-emitted species.
+/// where ${\tau_{OH}}$ varies with CH4 concentration and co-emitted species.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CH4ChemistryParameters {
     /// Pre-industrial CH4 concentration used as reference for feedbacks
     /// unit: ppb
@@ -206,5 +207,21 @@ mod tests {
         // CO and NMVOC decrease OH (negative coefficients)
         assert!(params.oh_co_sensitivity < 0.0);
         assert!(params.oh_nmvoc_sensitivity < 0.0);
+    }
+
+    #[test]
+    fn test_partial_deserialization() {
+        // Test that #[serde(default)] allows partial deserialization
+        let json = r#"{"tau_oh": 10.5, "include_temp_feedback": false}"#;
+        let params: CH4ChemistryParameters =
+            serde_json::from_str(json).expect("Partial deserialization failed");
+
+        // Specified fields from JSON
+        assert!((params.tau_oh - 10.5).abs() < 1e-10);
+        assert!(!params.include_temp_feedback);
+
+        // Other fields should be defaults
+        assert!((params.ch4_pi - 722.0).abs() < 1e-10);
+        assert!((params.tau_soil - 150.0).abs() < 1e-10);
     }
 }

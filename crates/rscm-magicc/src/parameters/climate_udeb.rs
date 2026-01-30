@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Default values match MAGICC7 defaults from `MAGCFG_DEFAULTALL.CFG`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ClimateUDEBParameters {
     // Ocean structure parameters
     /// Number of ocean layers (including mixed layer).
@@ -308,5 +309,21 @@ mod tests {
 
         assert_eq!(params.n_layers, parsed.n_layers);
         assert!((params.ecs - parsed.ecs).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_partial_deserialization() {
+        // Test that #[serde(default)] allows partial deserialization
+        let json = r#"{"ecs": 4.5}"#;
+        let params: ClimateUDEBParameters =
+            serde_json::from_str(json).expect("Partial deserialization failed");
+
+        // ecs should be from JSON
+        assert!((params.ecs - 4.5).abs() < 1e-10);
+
+        // Other fields should be defaults
+        assert_eq!(params.n_layers, 50);
+        assert!((params.kappa - 0.75).abs() < 1e-10);
+        assert!((params.rf_2xco2 - 3.71).abs() < 1e-10);
     }
 }

@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// $$RF_{temp} = \gamma \cdot \Delta T$$
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OzoneForcingParameters {
     // === Stratospheric Ozone Parameters ===
     /// EESC reference value (ppt) at threshold year (1979).
