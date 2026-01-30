@@ -1,6 +1,5 @@
 //! Doc comment and attribute extraction utilities
 
-use regex::Regex;
 use syn::{Attribute, Expr, ExprLit, Lit, Meta};
 
 /// Extract doc comments from attributes
@@ -59,20 +58,12 @@ fn clean_doc_string(doc: &str) -> String {
         .to_string()
 }
 
-/// Extract LaTeX equations from a doc string
+/// Extract description from doc string
 ///
-/// Looks for content between `$$` markers.
-pub fn extract_equations(doc: &str) -> String {
-    let re = Regex::new(r"\$\$[\s\S]*?\$\$").expect("Invalid regex");
-    let equations: Vec<&str> = re.find_iter(doc).map(|m| m.as_str()).collect();
-    equations.join("\n\n")
-}
-
-/// Extract description (doc string without equations)
+/// Returns the full doc string including any LaTeX equations.
+/// Equations use `$$...$$` delimiters and are rendered by KaTeX.
 pub fn extract_description(doc: &str) -> String {
-    let re = Regex::new(r"\$\$[\s\S]*?\$\$").expect("Invalid regex");
-    let without_equations = re.replace_all(doc, "");
-    without_equations.trim().to_string()
+    doc.trim().to_string()
 }
 
 #[cfg(test)]
@@ -80,36 +71,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_equations() {
+    fn test_extract_description_preserves_equations() {
         let doc = r#"
 This is a component description.
 
 $$ \frac{dC}{dt} = E - \frac{C - C_0}{\tau} $$
 
 Some more text.
-
-$$ T = T_0 + \Delta T $$
-
-Final text.
-"#;
-        let equations = extract_equations(doc);
-        assert!(equations.contains(r"$$ \frac{dC}{dt}"));
-        assert!(equations.contains(r"$$ T = T_0"));
-    }
-
-    #[test]
-    fn test_extract_description() {
-        let doc = r#"
-This is a component description.
-
-$$ \frac{dC}{dt} = E $$
-
-Some more text.
 "#;
         let desc = extract_description(doc);
         assert!(desc.contains("This is a component description"));
         assert!(desc.contains("Some more text"));
-        assert!(!desc.contains("$$"));
+        // Equations should be preserved
+        assert!(desc.contains(r"$$ \frac{dC}{dt}"));
     }
 
     #[test]

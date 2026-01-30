@@ -53,9 +53,6 @@ pub struct ComponentDocMetadata {
     pub language: String,
     /// Component description extracted from doc comments
     pub description: String,
-    /// LaTeX equations extracted from doc comments (between $$ markers)
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub equations: String,
     /// Primary category for grouping
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
@@ -88,7 +85,6 @@ impl Default for ComponentDocMetadata {
             module_path: String::new(),
             language: "rust".to_string(),
             description: String::new(),
-            equations: String::new(),
             category: None,
             tags: Vec::new(),
             inputs: Vec::new(),

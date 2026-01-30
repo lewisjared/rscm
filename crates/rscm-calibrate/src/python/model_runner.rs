@@ -208,7 +208,7 @@ impl ModelRunner for PyModelRunner {
 
             // Parse result: dict[str, dict[float, float]]
             let result_dict = result
-                .downcast::<PyDict>()
+                .cast::<PyDict>()
                 .map_err(|_| Error::ModelError("Model factory must return a dict".to_string()))?;
 
             let mut output = ModelOutput::new();
@@ -223,7 +223,7 @@ impl ModelRunner for PyModelRunner {
                     continue;
                 }
 
-                let var_dict = var_data.downcast::<PyDict>().map_err(|_| {
+                let var_dict = var_data.cast::<PyDict>().map_err(|_| {
                     Error::ModelError(format!("Variable '{}' data must be a dict", var_name_str))
                 })?;
 
