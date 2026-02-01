@@ -166,6 +166,10 @@ impl SamplerState {
             .map_err(|e| Error::SamplingError(format!("Failed to open checkpoint file: {}", e)))?;
         let mut reader = BufReader::new(file);
 
+        // Note: postcard requires reading to a buffer before deserialization.
+        // While it has a from_io method, it requires a pre-allocated buffer and
+        // has a more complex API. Reading to Vec first is the recommended approach
+        // for std environments.
         let mut bytes = Vec::new();
         reader
             .read_to_end(&mut bytes)
