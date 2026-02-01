@@ -579,6 +579,7 @@ impl ModelBuilder {
                             unit: var_def.unit.clone(),
                             parsed_unit,
                             grid_type: var_def.grid_type,
+                            requirement_type: RequirementType::Input, // Schema-only variables are inputs
                         },
                     );
                     // Mark as exogenous since it's not produced by any component
@@ -656,6 +657,7 @@ impl ModelBuilder {
                         unit: agg_def.unit.clone(),
                         parsed_unit,
                         grid_type: agg_def.grid_type,
+                        requirement_type: RequirementType::Output, // Aggregates are outputs
                     },
                 );
             }
@@ -665,6 +667,22 @@ impl ModelBuilder {
                 if let Some(&agg_node) = endogenous.get(&var_name) {
                     graph.add_edge(agg_node, component_node, requirement);
                 }
+            }
+        }
+
+        // Validate that all state variables have initial values
+        for (name, def) in &definitions {
+            if def.requirement_type == RequirementType::State
+                && !self.initial_values.contains_key(name)
+            {
+                let component = variable_owners
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".to_string());
+                return Err(RSCMError::MissingInitialValue {
+                    variable: name.clone(),
+                    component,
+                });
             }
         }
 
