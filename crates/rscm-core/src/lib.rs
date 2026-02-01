@@ -121,8 +121,15 @@ pub mod state;
 pub mod timeseries;
 pub mod timeseries_collection;
 pub mod units;
+pub mod utils;
 
 pub mod errors;
 
 // Re-export derive macro for convenience
 pub use rscm_macros::ComponentIO;
+
+// Re-export component types
+pub use component::{
+    Component, ComponentMetadata, ComponentState, GridType, RequirementDefinition, RequirementType,
+    VariableMetadata,
+};

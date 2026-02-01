@@ -265,7 +265,7 @@ for name in collection.names():
 
 # %%
 # Get the gridded output
-heat_uptake_ts = collection.get_fourbox_timeseries_by_name("Ocean Heat Uptake|FourBox")
+heat_uptake_ts = collection.get_fourbox_timeseries_by_name("Heat Uptake|Ocean")
 
 print("Heat Uptake Variable:")
 print(f"  Units: {heat_uptake_ts.units}")

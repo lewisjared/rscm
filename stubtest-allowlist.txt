@@ -38,6 +38,11 @@ rscm._lib.core.ComponentBuilder
 rscm._lib.core.CustomComponent
 
 # =============================================================================
+# TypedDict parameter classes (stub-only for builder method kwargs)
+# =============================================================================
+(?s:rscm\._lib\.magicc\.[A-Z][A-Za-z0-9]*Params$)
+
+# =============================================================================
 # PyO3 class constructors (__init__ and __new__ mismatch between runtime/stubs)
 # PyO3 uses __new__ for construction; stubs use __init__ for better IDE support
 # =============================================================================

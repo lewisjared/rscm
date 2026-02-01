@@ -77,7 +77,7 @@ impl Default for FourBoxOceanHeatUptakeParameters {
     erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
 )]
 #[outputs(
-    heat_uptake { name = "Ocean Heat Uptake|FourBox", unit = "W/m^2", grid = "FourBox" },
+    heat_uptake { name = "Heat Uptake|Ocean", unit = "W/m^2", grid = "FourBox" },
 )]
 pub struct FourBoxOceanHeatUptake {
     pub parameters: FourBoxOceanHeatUptakeParameters,
@@ -195,8 +195,8 @@ mod tests {
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
         // Output should be FourBox heat uptake
-        assert!(output.contains_key("Ocean Heat Uptake|FourBox"));
-        let uptake_state = output.get("Ocean Heat Uptake|FourBox").unwrap();
+        assert!(output.contains_key("Heat Uptake|Ocean"));
+        let uptake_state = output.get("Heat Uptake|Ocean").unwrap();
 
         // Extract the FourBox grid from the StateValue
         let uptake_slice = match uptake_state {
@@ -240,7 +240,7 @@ mod tests {
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
-        let uptake_state = output.get("Ocean Heat Uptake|FourBox").unwrap();
+        let uptake_state = output.get("Heat Uptake|Ocean").unwrap();
 
         // Extract the FourBox grid from the StateValue
         let uptake_slice = match uptake_state {
@@ -268,6 +268,6 @@ mod tests {
 
         let outputs = component.output_names();
         assert_eq!(outputs.len(), 1);
-        assert!(outputs.contains(&"Ocean Heat Uptake|FourBox".to_string()));
+        assert!(outputs.contains(&"Heat Uptake|Ocean".to_string()));
     }
 }

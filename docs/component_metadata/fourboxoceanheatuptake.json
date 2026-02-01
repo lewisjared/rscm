@@ -23,7 +23,7 @@
   "outputs": [
     {
       "rust_name": "heat_uptake",
-      "variable_name": "Ocean Heat Uptake|FourBox",
+      "variable_name": "Heat Uptake|Ocean",
       "unit": "W/m^2",
       "grid": "FourBox"
     }
