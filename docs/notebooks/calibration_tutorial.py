@@ -185,8 +185,8 @@ likelihood = GaussianLikelihood()
 # Create point estimator
 estimator = PointEstimator(params, runner, likelihood, target)
 
-# Run random search with 500 samples
-result = estimator.optimize(Optimizer.random_search(), n_samples=50000)
+# Run random search with 1000 samples (sufficient for 3 parameters)
+result = estimator.optimize(Optimizer.random_search(), n_samples=1000)
 
 # Extract best parameters
 best_params_vec = result.best_params
