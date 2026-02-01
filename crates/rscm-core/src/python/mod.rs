@@ -85,6 +85,7 @@
 /// and it would also reduce the amount of boilerplate code.
 use crate::errors::RSCMError;
 use crate::schema::{AggregateDefinition, SchemaVariableDefinition, VariableSchema};
+use crate::units::python::PyUnit;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::{pymodule, wrap_pymodule, Bound, PyResult};
@@ -133,6 +134,9 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Example component
     m.add_class::<example_component::TestComponentBuilder>()?;
+
+    // Unit types
+    m.add_class::<PyUnit>()?;
 
     // Register submodules
     m.add_wrapped(wrap_pymodule!(spatial::spatial))?;

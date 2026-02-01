@@ -205,6 +205,7 @@ data = results.get_timeseries_by_name("Output Variable")
 
 - [Key Concepts](key_concepts.md): Detailed explanation of core abstractions
 - [Spatial Grids](grids.md): Complete grid system documentation
+- [Physical Units](notebooks/units_tutorial.ipynb): Unit parsing, conversion, and climate-specific units
 - [Python API](api/rscm/): Full API documentation
 
 ---

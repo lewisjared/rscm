@@ -1,6 +1,6 @@
 //! Rust source file parser for extracting component metadata
 
-use crate::extractor::{extract_description, extract_doc_comments, extract_equations};
+use crate::extractor::{extract_description, extract_doc_comments};
 use crate::schema::{ComponentDocMetadata, ParameterMetadata, VariableMetadata};
 use std::fs;
 use std::path::Path;
@@ -95,7 +95,6 @@ fn parse_component_struct(
         name: struct_name.clone(),
         module_path: infer_module_path(source_path),
         description: extract_description(&combined_docs),
-        equations: extract_equations(&combined_docs),
         source_file: source_path.to_string_lossy().to_string(),
         ..Default::default()
     };

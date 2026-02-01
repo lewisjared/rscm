@@ -24,6 +24,7 @@ class CarbonCycleBuilder(ComponentBuilder):
     """Builder for the one-box carbon cycle component.
 
     This component models the carbon cycle using a simple one-box model where:
+
     - CO2 emissions increase atmospheric concentrations
     - Land uptake removes CO2 at a rate that depends on the concentration anomaly
     - The uptake rate is temperature-dependent

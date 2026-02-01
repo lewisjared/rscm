@@ -26,4 +26,4 @@ mod tests;
 pub use builder::ModelBuilder;
 pub use runtime::Model;
 pub use state_extraction::{extract_state, extract_state_with_transforms};
-pub use types::{RequiredTransformation, TransformDirection};
+pub use types::{RequiredTransformation, TransformDirection, UnitConversionInfo};

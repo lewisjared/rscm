@@ -102,11 +102,12 @@ fn test_schema_rejects_undefined_input() {
 }
 
 #[test]
-fn test_schema_rejects_unit_mismatch() {
-    // Schema with wrong unit for output variable
+fn test_schema_rejects_incompatible_units() {
+    // Schema with dimensionally incompatible unit for output variable
+    // The component outputs "ppm" (dimensionless) but schema expects "GtC" (mass)
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtCO2")
-        .variable("Concentrations|CO2", "GtC"); // Wrong unit - should be "ppm"
+        .variable("Concentrations|CO2", "GtC"); // Wrong dimension - should be "ppm"
 
     let result = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -122,14 +123,21 @@ fn test_schema_rejects_unit_mismatch() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     let msg = err.to_string();
+    // Now correctly identifies incompatible dimensions rather than string mismatch
     assert!(
-        msg.contains("Unit mismatch"),
-        "Error should indicate unit mismatch: {}",
+        msg.contains("Incompatible units"),
+        "Error should indicate incompatible units: {}",
         msg
     );
     assert!(
         msg.contains("Concentrations|CO2"),
         "Error should mention the variable: {}",
+        msg
+    );
+    // Should explain the dimension mismatch
+    assert!(
+        msg.contains("dimension"),
+        "Error should mention dimensions: {}",
         msg
     );
 }

@@ -141,6 +141,28 @@ pub enum RSCMError {
         component_grid: String,
         schema_grid: String,
     },
+
+    /// Failed to parse a unit string
+    #[error("Failed to parse unit '{unit_string}' for variable '{variable}': {details}")]
+    UnitParseError {
+        variable: String,
+        unit_string: String,
+        details: String,
+    },
+
+    /// Units have incompatible physical dimensions
+    ///
+    /// This error occurs when two components use units with different physical dimensions
+    /// for the same variable. For example, one component using "W/m^2" (radiative flux)
+    /// and another using "GtC/yr" (mass rate) - these cannot be converted between.
+    #[error("Incompatible units for variable '{variable}': '{unit1}' has dimension {dim1} but '{unit2}' has dimension {dim2}. These units measure different physical quantities and cannot be converted.")]
+    IncompatibleUnits {
+        variable: String,
+        unit1: String,
+        unit2: String,
+        dim1: String,
+        dim2: String,
+    },
 }
 
 /// Convenience type for `Result<T, RSCMError>`.

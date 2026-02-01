@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CO2ERFParameters {
     /// ERF due to a doubling of atmospheric CO2 concentrations
-    /// unit: W / m^2
+    /// unit: W/m^2
     pub erf_2xco2: FloatValue,
     /// Pre-industrial atmospheric CO2 concentration
     /// unit: ppm
@@ -39,7 +39,7 @@ pub struct CO2ERFParameters {
     concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
 )]
 #[outputs(
-    erf { name = "Effective Radiative Forcing|CO2", unit = "W / m^2" },
+    erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
 )]
 pub struct CO2ERF {
     parameters: CO2ERFParameters,

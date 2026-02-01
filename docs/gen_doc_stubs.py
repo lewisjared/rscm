@@ -326,7 +326,7 @@ def generate_component_page(meta: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0
     lines.append(f"**Language:** {meta.get('language', 'rust').title()}")
     lines.append("")
 
-    # Description (may include equations - developer controls placement)
+    # Description
     if meta.get("description"):
         lines.extend(meta["description"].splitlines())
         lines.append("")

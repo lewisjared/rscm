@@ -48,6 +48,9 @@ pub struct TimeseriesWindow<'a> {
     timeseries: &'a Timeseries<FloatValue>,
     current_index: usize,
     current_time: Time,
+    /// Unit conversion factor applied to all returned values.
+    /// Default is 1.0 (no conversion).
+    unit_conversion_factor: f64,
 }
 
 impl<'a> TimeseriesWindow<'a> {
@@ -67,6 +70,25 @@ impl<'a> TimeseriesWindow<'a> {
             timeseries,
             current_index,
             current_time,
+            unit_conversion_factor: 1.0,
+        }
+    }
+
+    /// Create a new TimeseriesWindow with unit conversion.
+    ///
+    /// The returned values will be multiplied by the conversion factor.
+    /// This is used when the stored data uses different units than the component expects.
+    pub fn with_unit_conversion(
+        timeseries: &'a Timeseries<FloatValue>,
+        current_index: usize,
+        current_time: Time,
+        unit_conversion_factor: f64,
+    ) -> Self {
+        Self {
+            timeseries,
+            current_index,
+            current_time,
+            unit_conversion_factor,
         }
     }
 
@@ -112,6 +134,7 @@ impl<'a> TimeseriesWindow<'a> {
         self.timeseries
             .at(self.current_index, ScalarRegion::Global)
             .expect("Current index out of bounds")
+            * self.unit_conversion_factor
     }
 
     /// Get the value at the end of the timestep (index N+1), if available.
@@ -161,7 +184,9 @@ impl<'a> TimeseriesWindow<'a> {
         if next_index >= self.timeseries.len() {
             None
         } else {
-            self.timeseries.at(next_index, ScalarRegion::Global)
+            self.timeseries
+                .at(next_index, ScalarRegion::Global)
+                .map(|v| v * self.unit_conversion_factor)
         }
     }
 
@@ -174,6 +199,7 @@ impl<'a> TimeseriesWindow<'a> {
         } else {
             self.timeseries
                 .at(self.current_index - 1, ScalarRegion::Global)
+                .map(|v| v * self.unit_conversion_factor)
         }
     }
 
@@ -194,7 +220,9 @@ impl<'a> TimeseriesWindow<'a> {
         if index < 0 || index as usize >= self.timeseries.len() {
             None
         } else {
-            self.timeseries.at(index as usize, ScalarRegion::Global)
+            self.timeseries
+                .at(index as usize, ScalarRegion::Global)
+                .map(|v| v * self.unit_conversion_factor)
         }
     }
 
@@ -202,6 +230,9 @@ impl<'a> TimeseriesWindow<'a> {
     ///
     /// This is useful for computing moving averages, derivatives, or any operation
     /// that needs historical context.
+    ///
+    /// **Note:** This method returns raw values without unit conversion applied.
+    /// Use [`last_n_converted()`](Self::last_n_converted) if you need converted values.
     ///
     /// # Panics
     ///
@@ -226,13 +257,32 @@ impl<'a> TimeseriesWindow<'a> {
         self.timeseries.values().slice(ndarray::s![start..end, 0])
     }
 
+    /// Get the last N values with unit conversion applied.
+    ///
+    /// Unlike [`last_n()`](Self::last_n), this returns owned data with the
+    /// unit conversion factor applied to each value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is greater than `current_index + 1` (not enough history).
+    pub fn last_n_converted(&self, n: usize) -> Vec<FloatValue> {
+        self.last_n(n)
+            .iter()
+            .map(|v| v * self.unit_conversion_factor)
+            .collect()
+    }
+
     /// Interpolate the value at an arbitrary time point.
     ///
     /// Uses the timeseries's interpolation strategy to compute the value.
     /// This is useful for sub-timestep calculations or when comparing with
     /// observational data at non-model times.
+    ///
+    /// The returned value has the unit conversion factor applied.
     pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
-        self.timeseries.at_time(t, ScalarRegion::Global)
+        self.timeseries
+            .at_time(t, ScalarRegion::Global)
+            .map(|v| v * self.unit_conversion_factor)
     }
 
     /// Get the current time value.
@@ -291,6 +341,9 @@ where
     timeseries: &'a GridTimeseries<FloatValue, G>,
     current_index: usize,
     current_time: Time,
+    /// Unit conversion factor applied to all returned values.
+    /// Default is 1.0 (no conversion).
+    unit_conversion_factor: f64,
 }
 
 impl<'a, G> GridTimeseriesWindow<'a, G>
@@ -307,6 +360,36 @@ where
             timeseries,
             current_index,
             current_time,
+            unit_conversion_factor: 1.0,
+        }
+    }
+
+    /// Create a new GridTimeseriesWindow with unit conversion.
+    ///
+    /// The returned values will be multiplied by the conversion factor.
+    pub fn with_unit_conversion(
+        timeseries: &'a GridTimeseries<FloatValue, G>,
+        current_index: usize,
+        current_time: Time,
+        unit_conversion_factor: f64,
+    ) -> Self {
+        Self {
+            timeseries,
+            current_index,
+            current_time,
+            unit_conversion_factor,
+        }
+    }
+
+    /// Helper to apply unit conversion to a vector of values.
+    fn apply_conversion(&self, values: Vec<FloatValue>) -> Vec<FloatValue> {
+        if (self.unit_conversion_factor - 1.0).abs() < f64::EPSILON {
+            values
+        } else {
+            values
+                .into_iter()
+                .map(|v| v * self.unit_conversion_factor)
+                .collect()
         }
     }
 
@@ -322,9 +405,11 @@ where
     ///
     /// See [`TimeseriesWindow::at_start()`] for detailed execution order semantics.
     pub fn at_start_all(&self) -> Vec<FloatValue> {
-        self.timeseries
+        let values = self
+            .timeseries
             .at_time_index(self.current_index)
-            .expect("Current index out of bounds")
+            .expect("Current index out of bounds");
+        self.apply_conversion(values)
     }
 
     /// Get all regional values at the end of the timestep (index N+1), if available.
@@ -348,7 +433,9 @@ where
         if next_index >= self.timeseries.len() {
             None
         } else {
-            self.timeseries.at_time_index(next_index)
+            self.timeseries
+                .at_time_index(next_index)
+                .map(|v| self.apply_conversion(v))
         }
     }
 
@@ -366,7 +453,9 @@ where
         if self.current_index == 0 {
             None
         } else {
-            self.timeseries.at_time_index(self.current_index - 1)
+            self.timeseries
+                .at_time_index(self.current_index - 1)
+                .map(|v| self.apply_conversion(v))
         }
     }
 
@@ -379,7 +468,9 @@ where
         if index < 0 || index as usize >= self.timeseries.len() {
             None
         } else {
-            self.timeseries.at_time_index(index as usize)
+            self.timeseries
+                .at_time_index(index as usize)
+                .map(|v| self.apply_conversion(v))
         }
     }
 
@@ -410,7 +501,9 @@ where
 
     /// Interpolate all regional values at an arbitrary time point.
     pub fn interpolate_all(&self, t: Time) -> RSCMResult<Vec<FloatValue>> {
-        self.timeseries.at_time_all(t)
+        self.timeseries
+            .at_time_all(t)
+            .map(|v| self.apply_conversion(v))
     }
 }
 
@@ -430,6 +523,7 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
         self.timeseries
             .at(self.current_index, region)
             .expect("Current index out of bounds")
+            * self.unit_conversion_factor
     }
 
     /// Get a single region's value at the end of the timestep (index N+1), if available.
@@ -448,7 +542,9 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
         if next_index >= self.timeseries.len() {
             None
         } else {
-            self.timeseries.at(next_index, region)
+            self.timeseries
+                .at(next_index, region)
+                .map(|v| v * self.unit_conversion_factor)
         }
     }
 
@@ -457,13 +553,16 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
         if self.current_index == 0 {
             None
         } else {
-            self.timeseries.at(self.current_index - 1, region)
+            self.timeseries
+                .at(self.current_index - 1, region)
+                .map(|v| v * self.unit_conversion_factor)
         }
     }
 
     /// Get the global aggregate at the start of the timestep (index N).
     ///
     /// Uses the grid's weights to compute a weighted average of all regions.
+    /// Note: Unit conversion is already applied in at_start_all().
     pub fn current_global(&self) -> FloatValue {
         let values = self.at_start_all();
         self.timeseries.grid().aggregate_global(&values)
@@ -477,7 +576,9 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
 
     /// Interpolate a single region's value at an arbitrary time.
     pub fn interpolate(&self, t: Time, region: FourBoxRegion) -> RSCMResult<FloatValue> {
-        self.timeseries.at_time(t, region)
+        self.timeseries
+            .at_time(t, region)
+            .map(|v| v * self.unit_conversion_factor)
     }
 }
 
@@ -490,6 +591,7 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
         self.timeseries
             .at(self.current_index, region)
             .expect("Current index out of bounds")
+            * self.unit_conversion_factor
     }
 
     /// Get a single region's value at the end of the timestep (index N+1), if available.
@@ -500,7 +602,9 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
         if next_index >= self.timeseries.len() {
             None
         } else {
-            self.timeseries.at(next_index, region)
+            self.timeseries
+                .at(next_index, region)
+                .map(|v| v * self.unit_conversion_factor)
         }
     }
 
@@ -509,11 +613,14 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
         if self.current_index == 0 {
             None
         } else {
-            self.timeseries.at(self.current_index - 1, region)
+            self.timeseries
+                .at(self.current_index - 1, region)
+                .map(|v| v * self.unit_conversion_factor)
         }
     }
 
     /// Get the global aggregate at the start of the timestep (index N).
+    /// Note: Unit conversion is already applied in at_start_all().
     pub fn current_global(&self) -> FloatValue {
         let values = self.at_start_all();
         self.timeseries.grid().aggregate_global(&values)
@@ -527,7 +634,9 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
 
     /// Interpolate a single region's value at an arbitrary time.
     pub fn interpolate(&self, t: Time, region: HemisphericRegion) -> RSCMResult<FloatValue> {
-        self.timeseries.at_time(t, region)
+        self.timeseries
+            .at_time(t, region)
+            .map(|v| v * self.unit_conversion_factor)
     }
 }
 
@@ -540,6 +649,7 @@ impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
         self.timeseries
             .at(self.current_index, ScalarRegion::Global)
             .expect("Current index out of bounds")
+            * self.unit_conversion_factor
     }
 
     /// Get the scalar value at the end of the timestep (index N+1), if available.
@@ -550,7 +660,9 @@ impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
         if next_index >= self.timeseries.len() {
             None
         } else {
-            self.timeseries.at(next_index, ScalarRegion::Global)
+            self.timeseries
+                .at(next_index, ScalarRegion::Global)
+                .map(|v| v * self.unit_conversion_factor)
         }
     }
 
@@ -561,12 +673,15 @@ impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
         } else {
             self.timeseries
                 .at(self.current_index - 1, ScalarRegion::Global)
+                .map(|v| v * self.unit_conversion_factor)
         }
     }
 
     /// Interpolate the value at an arbitrary time.
     pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
-        self.timeseries.at_time(t, ScalarRegion::Global)
+        self.timeseries
+            .at_time(t, ScalarRegion::Global)
+            .map(|v| v * self.unit_conversion_factor)
     }
 }
 
@@ -696,6 +811,88 @@ mod timeseries_window_tests {
 
         assert_eq!(window.len(), 5);
         assert!(!window.is_empty());
+    }
+
+    // =========================================================================
+    // Unit conversion tests for TimeseriesWindow
+    // =========================================================================
+
+    #[test]
+    fn test_timeseries_window_unit_conversion_at_start() {
+        let ts = create_scalar_timeseries();
+        // Apply a 2x conversion factor
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, 2002.0, 2.0);
+
+        // Raw value is 3.0, converted should be 6.0
+        assert_eq!(window.at_start(), 6.0);
+    }
+
+    #[test]
+    fn test_timeseries_window_unit_conversion_at_end() {
+        let ts = create_scalar_timeseries();
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, 2002.0, 2.0);
+
+        // Raw value at index 3 is 4.0, converted should be 8.0
+        assert_eq!(window.at_end(), Some(8.0));
+    }
+
+    #[test]
+    fn test_timeseries_window_unit_conversion_previous() {
+        let ts = create_scalar_timeseries();
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, 2002.0, 2.0);
+
+        // Raw value at index 1 is 2.0, converted should be 4.0
+        assert_eq!(window.previous(), Some(4.0));
+    }
+
+    #[test]
+    fn test_timeseries_window_unit_conversion_at_offset() {
+        let ts = create_scalar_timeseries();
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, 2002.0, 0.5);
+
+        assert_eq!(window.at_offset(0), Some(1.5)); // 3.0 * 0.5
+        assert_eq!(window.at_offset(-1), Some(1.0)); // 2.0 * 0.5
+        assert_eq!(window.at_offset(1), Some(2.0)); // 4.0 * 0.5
+    }
+
+    #[test]
+    fn test_timeseries_window_unit_conversion_interpolate() {
+        let ts = create_scalar_timeseries();
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, 2002.0, 3.0);
+
+        // Interpolated raw value at 2001.5 is 2.5, converted should be 7.5
+        let mid = window.interpolate(2001.5).unwrap();
+        assert_eq!(mid, 7.5);
+    }
+
+    #[test]
+    fn test_timeseries_window_unit_conversion_last_n_converted() {
+        let ts = create_scalar_timeseries();
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 4, 2004.0, 2.0);
+
+        let converted = window.last_n_converted(3);
+        assert_eq!(converted, vec![6.0, 8.0, 10.0]); // [3, 4, 5] * 2
+    }
+
+    #[test]
+    fn test_timeseries_window_unit_conversion_last_n_raw() {
+        let ts = create_scalar_timeseries();
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 4, 2004.0, 2.0);
+
+        // last_n returns raw values without conversion
+        let raw = window.last_n(3);
+        assert_eq!(raw[0], 3.0);
+        assert_eq!(raw[1], 4.0);
+        assert_eq!(raw[2], 5.0);
+    }
+
+    #[test]
+    fn test_timeseries_window_default_conversion_factor_is_one() {
+        let ts = create_scalar_timeseries();
+        let window = TimeseriesWindow::new(&ts, 2, 2002.0);
+
+        // Should return raw value (factor = 1.0)
+        assert_eq!(window.at_start(), 3.0);
     }
 }
 
@@ -873,5 +1070,87 @@ mod grid_timeseries_window_tests {
         assert_eq!(window.len(), 3);
         assert!(!window.is_empty());
         assert_eq!(window.grid().size(), 4);
+    }
+
+    // =========================================================================
+    // Unit conversion tests for GridTimeseriesWindow
+    // =========================================================================
+
+    #[test]
+    fn test_grid_window_unit_conversion_at_start() {
+        let ts = create_four_box_timeseries();
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+
+        // Raw values at index 1: [16.0, 15.0, 11.0, 10.0]
+        // Converted: [32.0, 30.0, 22.0, 20.0]
+        assert_eq!(window.at_start(FourBoxRegion::NorthernOcean), 32.0);
+        assert_eq!(window.at_start(FourBoxRegion::NorthernLand), 30.0);
+        assert_eq!(window.at_start(FourBoxRegion::SouthernOcean), 22.0);
+        assert_eq!(window.at_start(FourBoxRegion::SouthernLand), 20.0);
+    }
+
+    #[test]
+    fn test_grid_window_unit_conversion_at_start_all() {
+        let ts = create_four_box_timeseries();
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 0.5);
+
+        // Raw: [16.0, 15.0, 11.0, 10.0], Converted: [8.0, 7.5, 5.5, 5.0]
+        assert_eq!(window.at_start_all(), vec![8.0, 7.5, 5.5, 5.0]);
+    }
+
+    #[test]
+    fn test_grid_window_unit_conversion_at_end() {
+        let ts = create_four_box_timeseries();
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+
+        // Raw at index 2: [17.0, 16.0, 12.0, 11.0]
+        // Converted: [34.0, 32.0, 24.0, 22.0]
+        assert_eq!(window.at_end(FourBoxRegion::NorthernOcean), Some(34.0));
+        assert_eq!(window.at_end_all(), Some(vec![34.0, 32.0, 24.0, 22.0]));
+    }
+
+    #[test]
+    fn test_grid_window_unit_conversion_previous() {
+        let ts = create_four_box_timeseries();
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+
+        // Raw at index 0: [15.0, 14.0, 10.0, 9.0]
+        // Converted: [30.0, 28.0, 20.0, 18.0]
+        assert_eq!(window.previous(FourBoxRegion::NorthernOcean), Some(30.0));
+        assert_eq!(window.previous_all(), Some(vec![30.0, 28.0, 20.0, 18.0]));
+    }
+
+    #[test]
+    fn test_grid_window_unit_conversion_current_global() {
+        let ts = create_four_box_timeseries();
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+
+        // Raw: [16.0, 15.0, 11.0, 10.0] -> (sum = 52.0) / 4 = 13.0
+        // After conversion: 13.0 * 2.0 = 26.0 (conversion applied to values first)
+        // Actually: [32.0, 30.0, 22.0, 20.0] -> sum = 104.0 -> mean = 26.0
+        assert_eq!(window.current_global(), 26.0);
+    }
+
+    #[test]
+    fn test_grid_window_unit_conversion_interpolate() {
+        let ts = create_four_box_timeseries();
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+
+        // Raw interpolated at 2000.5: 15.5
+        // Converted: 31.0
+        let mid = window
+            .interpolate(2000.5, FourBoxRegion::NorthernOcean)
+            .unwrap();
+        assert_eq!(mid, 31.0);
+    }
+
+    #[test]
+    fn test_grid_window_unit_conversion_interpolate_all() {
+        let ts = create_four_box_timeseries();
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+
+        // Raw: [15.5, 14.5, 10.5, 9.5], Converted: [31.0, 29.0, 21.0, 19.0]
+        let mid = window.interpolate_all(2000.5).unwrap();
+        assert_eq!(mid, vec![31.0, 29.0, 21.0, 19.0]);
     }
 }

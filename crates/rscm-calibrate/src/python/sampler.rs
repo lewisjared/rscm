@@ -311,13 +311,13 @@ impl PyEnsembleSampler {
         n_iterations: usize,
         init: PyWalkerInit,
         thin: usize,
-        progress_callback: PyObject,
+        progress_callback: Py<PyAny>,
     ) -> PyResult<PyChain> {
         let rust_init = init.to_rust();
 
         // Create a Rust closure that calls the Python callback
         let callback = move |info: &ProgressInfo| {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_info = PyProgressInfo::from(info);
                 if let Err(e) = progress_callback.call1(py, (py_info,)) {
                     eprintln!("Error in progress callback: {}", e);
@@ -366,6 +366,7 @@ impl PyEnsembleSampler {
     /// >>> chain = sampler.run_with_checkpoint(
     /// ...     1000, WalkerInit.from_prior(), 1, 100, "checkpoint"
     /// ... )
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (n_iterations, init, thin, checkpoint_every, checkpoint_path, progress_callback=None))]
     fn run_with_checkpoint(
         &self,
@@ -375,14 +376,14 @@ impl PyEnsembleSampler {
         thin: usize,
         checkpoint_every: usize,
         checkpoint_path: String,
-        progress_callback: Option<PyObject>,
+        progress_callback: Option<Py<PyAny>>,
     ) -> PyResult<PyChain> {
         let rust_init = init.to_rust();
 
         // Create optional callback closure
         let callback = progress_callback.map(|cb| {
             move |info: &ProgressInfo| {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let py_info = PyProgressInfo::from(info);
                     if let Err(e) = cb.call1(py, (py_info,)) {
                         eprintln!("Error in progress callback: {}", e);
@@ -442,12 +443,12 @@ impl PyEnsembleSampler {
         thin: usize,
         checkpoint_every: usize,
         checkpoint_path: String,
-        progress_callback: Option<PyObject>,
+        progress_callback: Option<Py<PyAny>>,
     ) -> PyResult<PyChain> {
         // Create optional callback closure
         let callback = progress_callback.map(|cb| {
             move |info: &ProgressInfo| {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let py_info = PyProgressInfo::from(info);
                     if let Err(e) = cb.call1(py, (py_info,)) {
                         eprintln!("Error in progress callback: {}", e);

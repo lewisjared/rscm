@@ -58,45 +58,42 @@ pub struct OceanSurfacePartialPressureParameters {
 /// -----
 /// Eq. A24 and A25 of [`joos_et_al_2001_feedbacks`]
 ///
-/// ```math
+/// $$
+/// \text{CO}_{2_s} = \left[
+///     p\text{CO}_{2_{s_0}}
+///     + \delta p \text{CO}_{2_s}
+/// \right] \exp (\alpha \Delta T)
+/// $$
 ///
-///     \text{CO}_{2_s} = [
-///         p\text{CO}_{2_{s_0}}
-///         + \delta p \text{CO}_{2_s}
-///     ] \exp (\alpha \Delta T) \\
+/// $$
+/// \delta p \text{CO}_{2_s} =
+///     (\vec{\beta} + T_0 \vec{\gamma})
+///     \cdot \vec{\Sigma}
+/// $$
 ///
-///     \delta p \text{CO}_{2_s} =
-///         (\vec{\beta} + T_0 \vec{\gamma})
-///         \cdot \vec{\Sigma} \\
-///
-///     \vec{\Sigma} = \begin{pmatrix}
-///         \Delta \Sigma \text{CO}_2
-///         & (\Delta \Sigma \text{CO}_2)^2 \times 10^{-3}
-///         & -(\Delta \Sigma \text{CO}_2)^3 \times 10^{-5}
-///         & (\Delta \Sigma \text{CO}_2)^4 \times 10^{-7}
-///         & -(\Delta \Sigma \text{CO}_2)^5 \times 10^{-10}
-///     \end{pmatrix}
-/// ```
+/// $$
+/// \vec{\Sigma} = \begin{pmatrix}
+///     \Delta \Sigma \text{CO}_2 \\
+///     (\Delta \Sigma \text{CO}_2)^2 \times 10^{-3} \\
+///     -(\Delta \Sigma \text{CO}_2)^3 \times 10^{-5} \\
+///     (\Delta \Sigma \text{CO}_2)^4 \times 10^{-7} \\
+///     -(\Delta \Sigma \text{CO}_2)^5 \times 10^{-10}
+/// \end{pmatrix}
+/// $$
 ///
 /// and e.g.
 ///
-/// ```math
-///     \vec{\beta} = \begin{pmatrix}
-///         1.5568
-///         & 7.4706
-///         & 1.2748
-///         & 2.4491
-///         & 1.5468
-///     \end{pmatrix} \\
+/// $$
+/// \vec{\beta} = \begin{pmatrix}
+///     1.5568 & 7.4706 & 1.2748 & 2.4491 & 1.5468
+/// \end{pmatrix}
+/// $$
 ///
-///     \vec{\gamma} = \begin{pmatrix}
-///         -0.013993
-///         & -0.20207
-///         & -0.12015
-///         & -0.12639
-///         & -0.15326
-///     \end{pmatrix}
-/// ```
+/// $$
+/// \vec{\gamma} = \begin{pmatrix}
+///     -0.013993 & -0.20207 & -0.12015 & -0.12639 & -0.15326
+/// \end{pmatrix}
+/// $$
 ///
 /// Is there a typo in Joos et al., 2001? Should it be
 /// (1.5568 - 1.3993 T_0) * 10 ** -2 rather than (1.5568 - 1.3993 T_0 * 10 ** -2) ?
