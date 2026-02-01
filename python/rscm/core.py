@@ -58,6 +58,11 @@ VariableSchema
     Declares model variables and aggregation relationships.
     Enables automatic computation of derived values (sums, means, weighted sums).
 
+Units
+-----
+Unit
+    Physical unit with parsing, normalisation, and conversion support.
+
 Examples
 --------
 Building a simple model:
@@ -89,6 +94,7 @@ from rscm._lib.core import (
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
+    Unit,
     VariableSchema,
     VariableType,
 )
@@ -133,6 +139,7 @@ __all__ = [
     "Timeseries",
     "TimeseriesCollection",
     "TimeseriesWindow",
+    "Unit",
     "VariableSchema",
     "VariableType",
 ]
