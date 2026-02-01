@@ -442,6 +442,7 @@ checksum = "26aecdf64b707efd1310e3544d709c5c0ac61c13756046aaaba41be5c4f66a3b"
 dependencies = [
  "approx",
  "matrixmultiply",
+ "nalgebra-macros",
  "num-complex",
  "num-rational",
  "num-traits",
@@ -571,14 +572,15 @@ dependencies = [
 
 [[package]]
 name = "ode_solvers"
-version = "0.4.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4a9193898d78b3d44e4ff2d9b886b1d5f8b1dfeaa44554803a1194ff968af2e"
+checksum = "1f6dded742520a47ff6e4d61c9e88f3a437657221216f7b328c94bc282feca7a"
 dependencies = [
- "nalgebra 0.32.6",
+ "nalgebra 0.33.2",
  "num-traits",
- "simba 0.8.1",
- "thiserror 1.0.69",
+ "serde",
+ "simba 0.9.1",
+ "thiserror",
 ]
 
 [[package]]
@@ -892,7 +894,7 @@ dependencies = [
  "serde_json",
  "statrs",
  "tempfile",
- "thiserror 2.0.18",
+ "thiserror",
  "typetag",
 ]
 
@@ -928,7 +930,7 @@ dependencies = [
  "rscm-macros",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
+ "thiserror",
  "toml",
  "tracing",
  "typetag",
@@ -1201,31 +1203,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
 dependencies = [
- "thiserror-impl 2.0.18",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "thiserror-impl",
 ]
 
 [[package]]
