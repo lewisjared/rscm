@@ -93,7 +93,7 @@ jobs:
         run: |
           make docs-strict
       - name: Upload Python docs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: docs-python
           path: site
@@ -123,7 +123,7 @@ jobs:
         run: |
           RUSTDOCFLAGS="--html-in-header ./assets/katex-header.html" cargo doc --no-deps --workspace
       - name: Upload Rust docs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: docs-rust
           path: target/doc
