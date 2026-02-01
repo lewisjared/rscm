@@ -2,6 +2,34 @@
 
 Learn RSCM through hands-on examples. Each tutorial builds on concepts from previous ones. See the [Python API](api/rscm/) for full class documentation.
 
+## Learning Paths
+
+Choose your path based on what you want to achieve:
+
+### Running Existing Models
+If you want to use RSCM to run climate simulations with pre-built components:
+
+1. [Getting Started](getting_started.md) - Installation and first model
+2. [Coupled Models](#tutorial-1-coupled-models) - Combine components
+3. [Scenario Pipeline](#tutorial-6-building-a-complete-scenario-pipeline) - Historical + future runs
+
+### Calibrating Models
+If you want to estimate model parameters from observations:
+
+1. [Getting Started](getting_started.md) - Installation and basics
+2. [Coupled Models](#tutorial-1-coupled-models) - Understand model structure
+3. [Calibration](#tutorial-7-model-calibration-and-uncertainty-quantification) - Parameter estimation and MCMC
+
+### Creating New Components
+If you want to extend RSCM with custom physics:
+
+1. [Key Concepts](key_concepts.md) - Core architecture
+2. [Python Components](#extending-rscm) - Rapid prototyping
+3. [Rust Components](#extending-rscm) - Production performance
+4. [Variable Schemas](#tutorial-3-variable-schemas-and-aggregation) - Aggregation patterns
+
+---
+
 ## Tutorial 1: Coupled Models
 
 **Learn to**: Combine multiple components into a complete climate model
@@ -205,7 +233,7 @@ data = results.get_timeseries_by_name("Output Variable")
 
 - [Key Concepts](key_concepts.md): Detailed explanation of core abstractions
 - [Spatial Grids](grids.md): Complete grid system documentation
-- [Physical Units](notebooks/units_tutorial.ipynb): Unit parsing, conversion, and climate-specific units
+- [Physical Units](notebooks/units_tutorial.py): Unit parsing, conversion, and climate-specific units
 - [Python API](api/rscm/): Full API documentation
 
 ---
