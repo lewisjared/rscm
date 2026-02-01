@@ -272,7 +272,7 @@ print(f"Attempting to convert {gtc} to {flux}...")
 print(f"Compatible: {gtc.is_compatible(flux)}")
 
 try:
-    factor = gtc.conversion_factor(flux)
+    gtc.conversion_factor(flux)
 except ValueError as e:
     print(f"\nError: {e}")
 

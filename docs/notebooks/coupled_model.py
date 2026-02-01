@@ -422,11 +422,6 @@ plt.show()
 
 # %%
 # Create schema declaring all model variables and the ERF aggregation
-#
-# The CO2ERF component outputs "Effective Radiative Forcing|CO2", but the
-# Two-Layer model expects "Effective Radiative Forcing" as input. We use
-# a Sum aggregate to bridge this gap. This pattern makes it easy to add
-# more forcing components (CH4, N2O, aerosols) later.
 erf_schema = VariableSchema()
 
 # Declare all variables used in the model
