@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.18.1
+#       jupytext_version: 1.19.1
 #   kernelspec:
 #     display_name: rscm (3.13.6)
 #     language: python
@@ -32,7 +32,7 @@
 # - [Components in Rust](component_rust.md): Creating Rust components
 # - [Key Concepts](../key_concepts.md): Core RSCM architecture
 # - [State Serialisation](state_serialisation.py): Saving and loading model state
-
+#
 
 # %%
 import matplotlib.pyplot as plt
