@@ -197,7 +197,7 @@ where
     T: FloatNumber,
     C: IVP<T, OVector<T, D>>,
     OVector<T, D>: std::ops::Mul<T, Output = OVector<T, D>>,
-    DefaultAllocator: Allocator<T, D>,
+    DefaultAllocator: Allocator<D>,
 {
     fn system(&self, t: T, y: &OVector<T, D>, dy: &mut OVector<T, D>) {
         self.component.calculate_dy_dt(t, self.input_state, y, dy)
@@ -209,7 +209,7 @@ where
     T: FloatNumber,
     C: IVP<T, OVector<T, D>>,
     OVector<T, D>: std::ops::Mul<T, Output = OVector<T, D>>,
-    DefaultAllocator: Allocator<T, D>,
+    DefaultAllocator: Allocator<D>,
 {
     /// Create a new IVP builder.
     ///
