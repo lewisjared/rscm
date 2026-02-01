@@ -99,5 +99,10 @@ def build_two_layer_model(config: Any) -> Model:
     # Add component
     model_builder = model_builder.with_rust_component(component)
 
+    # Add initial values for state variables
+    model_builder = model_builder.with_initial_values(
+        {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+    )
+
     # Build and return model
     return model_builder.build()
