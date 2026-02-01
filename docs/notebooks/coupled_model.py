@@ -351,7 +351,7 @@ carbon_cycle_feedback = CarbonCycleBuilder.from_parameters(
     dict(
         tau=25.0,  # Baseline atmospheric lifetime (years)
         conc_pi=278.0,  # Pre-industrial CO2 (ppm)
-        alpha_temperature=0.05,  # Temperature sensitivity (1/K)
+        alpha_temperature=0.1,  # Temperature sensitivity (1/K) - stronger feedback
     )
 ).build()
 
@@ -559,6 +559,7 @@ no_feedback_model = (
             "Cumulative Emissions|CO2": 0.0,
             "Atmospheric Concentration|CO2": 278.0,
             "Surface Temperature": 0.0,
+            "Deep Ocean Temperature": 0.0,
         }
     )
 ).build()
