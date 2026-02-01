@@ -48,15 +48,20 @@ def synthetic_observations():
     component = TwoLayerBuilder.from_parameters(true_params).build()
 
     # Simple forcing scenario
+    time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0]))
     collection = TimeseriesCollection()
     collection.add_timeseries(
         "Effective Radiative Forcing",
-        Timeseries(
-            np.array([3.0]),
-            TimeAxis.from_bounds(np.array([2000.0, 2010.0])),
-            "W/m^2",
-            InterpolationStrategy.Previous,
-        ),
+        Timeseries(np.array([3.0]), time_axis, "W/m^2", InterpolationStrategy.Previous),
+    )
+    # Add state variables required by TwoLayer
+    collection.add_timeseries(
+        "Surface Temperature",
+        Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
+    )
+    collection.add_timeseries(
+        "Deep Ocean Temperature",
+        Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
     )
 
     result = component.solve(2000, 2010, collection)
@@ -126,15 +131,22 @@ def create_model_runner(fixed_params):
         component = TwoLayerBuilder.from_parameters(all_params).build()
 
         # Run model with simple forcing scenario (single timestep)
+        time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0]))
         collection = TimeseriesCollection()
         collection.add_timeseries(
             "Effective Radiative Forcing",
             Timeseries(
-                np.array([3.0]),
-                TimeAxis.from_bounds(np.array([2000.0, 2010.0])),
-                "W/m^2",
-                InterpolationStrategy.Previous,
+                np.array([3.0]), time_axis, "W/m^2", InterpolationStrategy.Previous
             ),
+        )
+        # Add state variables required by TwoLayer
+        collection.add_timeseries(
+            "Surface Temperature",
+            Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
+        )
+        collection.add_timeseries(
+            "Deep Ocean Temperature",
+            Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
         )
 
         result = component.solve(2000, 2010, collection)

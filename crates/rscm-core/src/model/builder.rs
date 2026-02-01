@@ -429,6 +429,17 @@ impl ModelBuilder {
         let mut unit_conversions: Vec<UnitConversionInfo> = Vec::new();
         let initial_node = graph.add_node(Arc::new(NullComponent {}));
 
+        // Track pending aggregate dependencies: (component_node, variable_name, requirement)
+        // These will be resolved after aggregators are added to the graph
+        let mut pending_aggregate_deps: Vec<(NodeIndex, String, RequirementDefinition)> = vec![];
+
+        // Get aggregate names for forward reference (if schema exists)
+        let aggregate_names: std::collections::HashSet<String> = self
+            .schema
+            .as_ref()
+            .map(|s| s.aggregates.keys().cloned().collect())
+            .unwrap_or_default();
+
         for component in &self.components {
             let node = graph.add_node(component.clone());
             let mut has_dependencies = false;
@@ -462,6 +473,14 @@ impl ModelBuilder {
                     // Link to the node that provides the requirement
                     graph.add_edge(producer_node, node, requirement.clone());
                     has_dependencies = true;
+                } else if aggregate_names.contains(&requirement.name) {
+                    // This requirement will be provided by an aggregate - defer edge creation
+                    pending_aggregate_deps.push((
+                        node,
+                        requirement.name.clone(),
+                        requirement.clone(),
+                    ));
+                    has_dependencies = true; // Mark as having dependencies to avoid NullComponent edge
                 } else {
                     // Add a new variable that must be defined outside of the model
                     if !exogenous.contains(&requirement.name) {
@@ -560,6 +579,7 @@ impl ModelBuilder {
                             unit: var_def.unit.clone(),
                             parsed_unit,
                             grid_type: var_def.grid_type,
+                            requirement_type: RequirementType::Input, // Schema-only variables are inputs
                         },
                     );
                     // Mark as exogenous since it's not produced by any component
@@ -637,8 +657,32 @@ impl ModelBuilder {
                         unit: agg_def.unit.clone(),
                         parsed_unit,
                         grid_type: agg_def.grid_type,
+                        requirement_type: RequirementType::Output, // Aggregates are outputs
                     },
                 );
+            }
+
+            // Resolve pending aggregate dependencies now that aggregators are in the graph
+            for (component_node, var_name, requirement) in pending_aggregate_deps {
+                if let Some(&agg_node) = endogenous.get(&var_name) {
+                    graph.add_edge(agg_node, component_node, requirement);
+                }
+            }
+        }
+
+        // Validate that all state variables have initial values
+        for (name, def) in &definitions {
+            if def.requirement_type == RequirementType::State
+                && !self.initial_values.contains_key(name)
+            {
+                let component = variable_owners
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".to_string());
+                return Err(RSCMError::MissingInitialValue {
+                    variable: name.clone(),
+                    component,
+                });
             }
         }
 

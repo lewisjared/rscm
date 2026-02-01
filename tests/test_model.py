@@ -33,7 +33,13 @@ def test_model(time_axis):
         InterpolationStrategy.Next,
     )
 
-    model = builder.with_exogenous_variable("Effective Radiative Forcing", erf).build()
+    model = (
+        builder.with_exogenous_variable("Effective Radiative Forcing", erf)
+        .with_initial_values(
+            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+        )
+        .build()
+    )
 
     print(model.as_dot())
 
@@ -61,7 +67,13 @@ def test_model_serialisation(time_axis):
         InterpolationStrategy.Next,
     )
 
-    model = builder.with_exogenous_variable("Effective Radiative Forcing", erf).build()
+    model = (
+        builder.with_exogenous_variable("Effective Radiative Forcing", erf)
+        .with_initial_values(
+            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+        )
+        .build()
+    )
 
     model.step()
 

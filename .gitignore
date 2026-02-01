@@ -314,3 +314,6 @@ debug/
 
 # Ignore OhMyClaude metadata
 .omc
+
+# Ignore Jupyter notebooks in docs/notebooks
+docs/notebooks/*.ipynb

@@ -1,13 +1,14 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.4
+#       jupytext_version: 1.19.1
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: rscm (3.13.6)
 #     language: python
 #     name: python3
 # ---
@@ -31,7 +32,7 @@
 # - [Components in Rust](component_rust.md): Creating Rust components
 # - [Key Concepts](../key_concepts.md): Core RSCM architecture
 # - [State Serialisation](state_serialisation.py): Saving and loading model state
-
+#
 
 # %%
 import matplotlib.pyplot as plt
@@ -47,6 +48,7 @@ from rscm.core import (
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
+    VariableSchema,
 )
 from rscm.two_layer import TwoLayerBuilder
 
@@ -349,7 +351,7 @@ carbon_cycle_feedback = CarbonCycleBuilder.from_parameters(
     dict(
         tau=25.0,  # Baseline atmospheric lifetime (years)
         conc_pi=278.0,  # Pre-industrial CO2 (ppm)
-        alpha_temperature=0.05,  # Temperature sensitivity (1/K)
+        alpha_temperature=0.1,  # Temperature sensitivity (1/K) - stronger feedback
     )
 ).build()
 
@@ -409,6 +411,37 @@ plt.grid(True, alpha=0.3)
 plt.show()
 
 # %% [markdown]
+# ### Variable Schema for ERF Aggregation
+#
+# The CO2ERF component outputs `Effective Radiative Forcing|CO2`, but the Two-Layer
+# model expects `Effective Radiative Forcing` as input. We use a `VariableSchema` to
+# aggregate the CO2 forcing into total ERF.
+#
+# This pattern enables adding other forcing components (CH4, N2O, aerosols) later -
+# they would each contribute to the total ERF through the schema.
+
+# %%
+# Create schema declaring all model variables and the ERF aggregation
+erf_schema = VariableSchema()
+
+# Declare all variables used in the model
+erf_schema.add_variable("Emissions|CO2|Anthropogenic", "GtC / yr")
+erf_schema.add_variable("Surface Temperature", "K")
+erf_schema.add_variable("Atmospheric Concentration|CO2", "ppm")
+erf_schema.add_variable("Cumulative Land Uptake", "Gt C")
+erf_schema.add_variable("Cumulative Emissions|CO2", "Gt C")
+erf_schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
+erf_schema.add_variable("Deep Ocean Temperature", "K")
+
+# Aggregate CO2 forcing into total ERF (add more contributors here for multi-gas models)
+erf_schema.add_aggregate(
+    "Effective Radiative Forcing",
+    "W/m^2",
+    "Sum",
+    ["Effective Radiative Forcing|CO2"],
+)
+
+# %% [markdown]
 # ### Build the Feedback-Coupled Model
 #
 # Note that we don't need to provide `Surface Temperature` as an exogenous variable
@@ -419,6 +452,8 @@ plt.show()
 feedback_model = (
     ModelBuilder()
     .with_time_axis(time_axis)
+    # Variable schema for ERF aggregation
+    .with_schema(erf_schema)
     # Components
     .with_rust_component(carbon_cycle_feedback)
     .with_rust_component(co2_erf)
@@ -432,6 +467,7 @@ feedback_model = (
             "Cumulative Emissions|CO2": 0.0,
             "Atmospheric Concentration|CO2": 278.0,
             "Surface Temperature": 0.0,  # Anomaly from pre-industrial
+            "Deep Ocean Temperature": 0.0,  # Deep ocean starts at equilibrium
         }
     )
 ).build()
@@ -507,6 +543,7 @@ carbon_cycle_no_feedback = CarbonCycleBuilder.from_parameters(
 no_feedback_model = (
     ModelBuilder()
     .with_time_axis(time_axis)
+    .with_schema(erf_schema)  # Same schema for ERF aggregation
     .with_rust_component(carbon_cycle_no_feedback)
     .with_rust_component(co2_erf)
     .with_rust_component(two_layer)
@@ -517,6 +554,7 @@ no_feedback_model = (
             "Cumulative Emissions|CO2": 0.0,
             "Atmospheric Concentration|CO2": 278.0,
             "Surface Temperature": 0.0,
+            "Deep Ocean Temperature": 0.0,
         }
     )
 ).build()
