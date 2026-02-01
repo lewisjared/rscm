@@ -147,8 +147,9 @@ pub struct TwoLayerParameters {
 #[inputs(
     erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
-#[outputs(
+#[states(
     surface_temperature { name = "Surface Temperature", unit = "K" },
+    deep_temperature { name = "Deep Ocean Temperature", unit = "K" },
 )]
 pub struct TwoLayer {
     parameters: TwoLayerParameters,
@@ -227,7 +228,14 @@ impl Component for TwoLayer {
         t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let y0 = ModelState::new(0.0, 0.0, 0.0);
+        // Read previous state from input (state variables appear in both inputs and outputs)
+        let inputs = TwoLayerInputs::from_input_state(input_state);
+        let prev_surface_temp = inputs.surface_temperature.at_start();
+        let prev_deep_temp = inputs.deep_temperature.at_start();
+
+        // Initialize ODE with previous state
+        // y[0] = surface temperature, y[1] = deep temperature, y[2] = cumulative heat
+        let y0 = ModelState::new(prev_surface_temp, prev_deep_temp, 0.0);
 
         let solver = IVPBuilder::new(Arc::new(self.to_owned()), input_state, y0);
 
@@ -238,6 +246,7 @@ impl Component for TwoLayer {
 
         let outputs = TwoLayerOutputs {
             surface_temperature: results[0],
+            deep_temperature: results[1],
         };
 
         Ok(outputs.into())
@@ -274,6 +283,17 @@ mod tests {
             "Effective Radiative Forcing".to_string(),
             Timeseries::from_values(array![erf_value, erf_value], array![t_start, t_end]),
             VariableType::Exogenous,
+        );
+        // Add state variables with zero initial values
+        ts_collection.add_timeseries(
+            "Surface Temperature".to_string(),
+            Timeseries::from_values(array![0.0, 0.0], array![t_start, t_end]),
+            VariableType::Endogenous,
+        );
+        ts_collection.add_timeseries(
+            "Deep Ocean Temperature".to_string(),
+            Timeseries::from_values(array![0.0, 0.0], array![t_start, t_end]),
+            VariableType::Endogenous,
         );
         ts_collection
     }

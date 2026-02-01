@@ -19,15 +19,21 @@
       "grid": "Scalar"
     }
   ],
-  "outputs": [
+  "outputs": [],
+  "states": [
     {
       "rust_name": "surface_temperature",
       "variable_name": "Surface Temperature",
       "unit": "K",
       "grid": "Scalar"
+    },
+    {
+      "rust_name": "deep_temperature",
+      "variable_name": "Deep Ocean Temperature",
+      "unit": "K",
+      "grid": "Scalar"
     }
   ],
-  "states": [],
   "parameters": [
     {
       "name": "lambda0",
