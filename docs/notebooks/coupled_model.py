@@ -436,6 +436,7 @@ erf_schema.add_variable("Atmospheric Concentration|CO2", "ppm")
 erf_schema.add_variable("Cumulative Land Uptake", "Gt C")
 erf_schema.add_variable("Cumulative Emissions|CO2", "Gt C")
 erf_schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
+erf_schema.add_variable("Deep Ocean Temperature", "K")
 
 # Aggregate CO2 forcing into total ERF (add more contributors here for multi-gas models)
 erf_schema.add_aggregate(
@@ -471,6 +472,7 @@ feedback_model = (
             "Cumulative Emissions|CO2": 0.0,
             "Atmospheric Concentration|CO2": 278.0,
             "Surface Temperature": 0.0,  # Anomaly from pre-industrial
+            "Deep Ocean Temperature": 0.0,  # Deep ocean starts at equilibrium
         }
     )
 ).build()
