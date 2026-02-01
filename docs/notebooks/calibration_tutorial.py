@@ -496,6 +496,16 @@ forcing_collection.add_timeseries(
         InterpolationStrategy.Previous,
     ),
 )
+# Initial state for temperature variables (starting from equilibrium)
+time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0]))
+forcing_collection.add_timeseries(
+    "Surface Temperature",
+    Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
+)
+forcing_collection.add_timeseries(
+    "Deep Ocean Temperature",
+    Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
+)
 
 # Run model
 result = true_component.solve(2000, 2010, forcing_collection)
@@ -561,15 +571,25 @@ def climate_model_factory(param_values):
     # Create and run model
     component = TwoLayerBuilder.from_parameters(all_params).build()
 
+    time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0]))
     forcing = TimeseriesCollection()
     forcing.add_timeseries(
         "Effective Radiative Forcing",
         Timeseries(
             np.array([3.0]),
-            TimeAxis.from_bounds(np.array([2000.0, 2010.0])),
+            time_axis,
             "W/m^2",
             InterpolationStrategy.Previous,
         ),
+    )
+    # Initial state for temperature variables (starting from equilibrium)
+    forcing.add_timeseries(
+        "Surface Temperature",
+        Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
+    )
+    forcing.add_timeseries(
+        "Deep Ocean Temperature",
+        Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
     )
 
     result = component.solve(2000, 2010, forcing)
