@@ -115,9 +115,9 @@ impl Component for FourBoxOceanHeatUptake {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        // Get scalar ERF input using typed inputs (exogenous forcing at start of timestep)
+        // Get scalar ERF input using typed inputs
         let inputs = FourBoxOceanHeatUptakeInputs::from_input_state(input_state);
-        let erf = inputs.erf.at_start();
+        let erf = inputs.erf.get();
 
         // Disaggregate to four regions using ratios
         // Regional uptake = global ERF * (regional/global ratio)

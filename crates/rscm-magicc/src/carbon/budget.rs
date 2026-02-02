@@ -178,11 +178,13 @@ impl Component for CO2Budget {
     ) -> RSCMResult<OutputState> {
         let inputs = CO2BudgetInputs::from_input_state(input_state);
 
-        // Get current inputs
-        let fossil = inputs.fossil_emissions.at_start();
-        let landuse = inputs.landuse_emissions.at_start();
+        // Get current inputs (use get() for flexibility with exogenous or upstream sources)
+        let fossil = inputs.fossil_emissions.get();
+        let landuse = inputs.landuse_emissions.get();
         let terrestrial = inputs.terrestrial_flux.get();
         let ocean = inputs.ocean_flux.get();
+
+        // Get state variable (always at_start for own previous state)
         let co2 = inputs.co2_concentration.at_start();
 
         let dt = t_next - t_current;

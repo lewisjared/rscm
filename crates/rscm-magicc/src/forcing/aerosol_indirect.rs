@@ -174,8 +174,8 @@ impl Component for AerosolIndirect {
     ) -> RSCMResult<OutputState> {
         let inputs = AerosolIndirectInputs::from_input_state(input_state);
 
-        let sox = inputs.sox_emissions.at_start();
-        let oc = inputs.oc_emissions.at_start();
+        let sox = inputs.sox_emissions.get();
+        let oc = inputs.oc_emissions.get();
 
         let forcing = self.calculate_forcing(sox, oc);
 

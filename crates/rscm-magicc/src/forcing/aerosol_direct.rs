@@ -233,10 +233,10 @@ impl Component for AerosolDirect {
     ) -> RSCMResult<OutputState> {
         let inputs = AerosolDirectInputs::from_input_state(input_state);
 
-        let sox = inputs.sox_emissions.at_start();
-        let bc = inputs.bc_emissions.at_start();
-        let oc = inputs.oc_emissions.at_start();
-        let nox = inputs.nox_emissions.at_start();
+        let sox = inputs.sox_emissions.get();
+        let bc = inputs.bc_emissions.get();
+        let oc = inputs.oc_emissions.get();
+        let nox = inputs.nox_emissions.get();
 
         let regional_forcing = self.calculate_forcing(sox, bc, oc, nox);
 

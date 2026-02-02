@@ -239,12 +239,12 @@ impl Component for OzoneForcing {
     ) -> RSCMResult<OutputState> {
         let inputs = OzoneForcingInputs::from_input_state(input_state);
 
-        let eesc = inputs.eesc.at_start();
-        let ch4 = inputs.ch4_concentration.at_start();
-        let nox = inputs.nox_emissions.at_start();
-        let co = inputs.co_emissions.at_start();
-        let nmvoc = inputs.nmvoc_emissions.at_start();
-        let temperature = inputs.temperature.at_start();
+        let eesc = inputs.eesc.get();
+        let ch4 = inputs.ch4_concentration.get();
+        let nox = inputs.nox_emissions.get();
+        let co = inputs.co_emissions.get();
+        let nmvoc = inputs.nmvoc_emissions.get();
+        let temperature = inputs.temperature.get();
 
         let result = self.calculate_forcings(eesc, ch4, nox, co, nmvoc, temperature);
 

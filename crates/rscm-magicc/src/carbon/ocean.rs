@@ -273,11 +273,11 @@ impl OceanCarbon {
     ) -> RSCMResult<OutputState> {
         let inputs = OceanCarbonInputs::from_input_state(input_state);
 
-        // Get current inputs
-        let co2 = inputs.co2_concentration.at_start();
-        let sst = inputs.sst.at_start();
+        // Get current inputs (use get() for flexibility with exogenous or upstream sources)
+        let co2 = inputs.co2_concentration.get();
+        let sst = inputs.sst.get();
 
-        // Get current states
+        // Get current states (always at_start for own previous state)
         let pco2 = inputs.ocean_pco2.at_start();
         let cumulative = inputs.cumulative_uptake.at_start();
 
