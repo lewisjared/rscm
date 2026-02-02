@@ -3,6 +3,7 @@
 //! This module provides zero-cost views into timeseries data at specific time indices,
 //! supporting both scalar and grid-based timeseries.
 
+use super::VariableSource;
 use crate::errors::RSCMResult;
 use crate::spatial::{
     FourBoxGrid, FourBoxRegion, HemisphericGrid, HemisphericRegion, ScalarGrid, ScalarRegion,
@@ -51,6 +52,8 @@ pub struct TimeseriesWindow<'a> {
     /// Unit conversion factor applied to all returned values.
     /// Default is 1.0 (no conversion).
     unit_conversion_factor: f64,
+    /// Source type determining get() behavior
+    variable_source: VariableSource,
 }
 
 impl<'a> TimeseriesWindow<'a> {
@@ -71,6 +74,7 @@ impl<'a> TimeseriesWindow<'a> {
             current_index,
             current_time,
             unit_conversion_factor: 1.0,
+            variable_source: VariableSource::Exogenous,
         }
     }
 
@@ -89,6 +93,24 @@ impl<'a> TimeseriesWindow<'a> {
             current_index,
             current_time,
             unit_conversion_factor,
+            variable_source: VariableSource::Exogenous,
+        }
+    }
+
+    /// Create a TimeseriesWindow with all options including variable source.
+    pub fn with_source(
+        timeseries: &'a Timeseries<FloatValue>,
+        current_index: usize,
+        current_time: Time,
+        unit_conversion_factor: f64,
+        variable_source: VariableSource,
+    ) -> Self {
+        Self {
+            timeseries,
+            current_index,
+            current_time,
+            unit_conversion_factor,
+            variable_source,
         }
     }
 
@@ -187,6 +209,27 @@ impl<'a> TimeseriesWindow<'a> {
             self.timeseries
                 .at(next_index, ScalarRegion::Global)
                 .map(|v| v * self.unit_conversion_factor)
+        }
+    }
+
+    /// Get the value using automatic timestep resolution based on variable source.
+    ///
+    /// - `Exogenous`: Returns `at_start()` (external data at index N)
+    /// - `UpstreamOutput`: Returns `at_end()` if available, else `at_start()` (upstream wrote to N+1)
+    /// - `OwnState`: Returns `at_start()` (your own previous state at index N)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Instead of:
+    /// let erf = inputs.erf.at_end().unwrap_or_else(|| inputs.erf.at_start());
+    /// // Use:
+    /// let erf = inputs.erf.get();
+    /// ```
+    pub fn get(&self) -> FloatValue {
+        match self.variable_source {
+            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(),
+            VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
         }
     }
 
@@ -344,6 +387,8 @@ where
     /// Unit conversion factor applied to all returned values.
     /// Default is 1.0 (no conversion).
     unit_conversion_factor: f64,
+    /// Source type determining get() behavior
+    variable_source: VariableSource,
 }
 
 impl<'a, G> GridTimeseriesWindow<'a, G>
@@ -361,6 +406,7 @@ where
             current_index,
             current_time,
             unit_conversion_factor: 1.0,
+            variable_source: VariableSource::Exogenous,
         }
     }
 
@@ -378,6 +424,24 @@ where
             current_index,
             current_time,
             unit_conversion_factor,
+            variable_source: VariableSource::Exogenous,
+        }
+    }
+
+    /// Create a GridTimeseriesWindow with all options including variable source.
+    pub fn with_source(
+        timeseries: &'a GridTimeseries<FloatValue, G>,
+        current_index: usize,
+        current_time: Time,
+        unit_conversion_factor: f64,
+        variable_source: VariableSource,
+    ) -> Self {
+        Self {
+            timeseries,
+            current_index,
+            current_time,
+            unit_conversion_factor,
+            variable_source,
         }
     }
 
@@ -436,6 +500,16 @@ where
             self.timeseries
                 .at_time_index(next_index)
                 .map(|v| self.apply_conversion(v))
+        }
+    }
+
+    /// Get all regional values using automatic timestep resolution based on variable source.
+    pub fn get_all(&self) -> Vec<FloatValue> {
+        match self.variable_source {
+            VariableSource::Exogenous | VariableSource::OwnState => self.at_start_all(),
+            VariableSource::UpstreamOutput => {
+                self.at_end_all().unwrap_or_else(|| self.at_start_all())
+            }
         }
     }
 
@@ -548,6 +622,16 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
         }
     }
 
+    /// Get a single region's value using automatic timestep resolution.
+    pub fn get(&self, region: FourBoxRegion) -> FloatValue {
+        match self.variable_source {
+            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(region),
+            VariableSource::UpstreamOutput => {
+                self.at_end(region).unwrap_or_else(|| self.at_start(region))
+            }
+        }
+    }
+
     /// Get a single region's value at the previous timestep.
     pub fn previous(&self, region: FourBoxRegion) -> Option<FloatValue> {
         if self.current_index == 0 {
@@ -608,6 +692,16 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
         }
     }
 
+    /// Get a single region's value using automatic timestep resolution.
+    pub fn get(&self, region: HemisphericRegion) -> FloatValue {
+        match self.variable_source {
+            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(region),
+            VariableSource::UpstreamOutput => {
+                self.at_end(region).unwrap_or_else(|| self.at_start(region))
+            }
+        }
+    }
+
     /// Get a single region's value at the previous timestep.
     pub fn previous(&self, region: HemisphericRegion) -> Option<FloatValue> {
         if self.current_index == 0 {
@@ -663,6 +757,14 @@ impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
             self.timeseries
                 .at(next_index, ScalarRegion::Global)
                 .map(|v| v * self.unit_conversion_factor)
+        }
+    }
+
+    /// Get the scalar value using automatic timestep resolution.
+    pub fn get(&self) -> FloatValue {
+        match self.variable_source {
+            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(),
+            VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
         }
     }
 
@@ -893,6 +995,66 @@ mod timeseries_window_tests {
 
         // Should return raw value (factor = 1.0)
         assert_eq!(window.at_start(), 3.0);
+    }
+
+    // =========================================================================
+    // Tests for get() method with VariableSource
+    // =========================================================================
+
+    #[test]
+    fn test_timeseries_window_get_exogenous() {
+        let ts = create_scalar_timeseries();
+        // Exogenous source should use at_start()
+        let window = TimeseriesWindow::with_source(&ts, 2, 2002.0, 1.0, VariableSource::Exogenous);
+
+        assert_eq!(window.get(), 3.0); // Same as at_start()
+        assert_eq!(window.get(), window.at_start());
+    }
+
+    #[test]
+    fn test_timeseries_window_get_own_state() {
+        let ts = create_scalar_timeseries();
+        // OwnState source should use at_start()
+        let window = TimeseriesWindow::with_source(&ts, 2, 2002.0, 1.0, VariableSource::OwnState);
+
+        assert_eq!(window.get(), 3.0); // Same as at_start()
+        assert_eq!(window.get(), window.at_start());
+    }
+
+    #[test]
+    fn test_timeseries_window_get_upstream_output() {
+        let ts = create_scalar_timeseries();
+        // UpstreamOutput source should use at_end() with fallback to at_start()
+        let window =
+            TimeseriesWindow::with_source(&ts, 2, 2002.0, 1.0, VariableSource::UpstreamOutput);
+
+        // at_end() exists, should use it
+        assert_eq!(window.get(), 4.0); // Value at index 3 (at_end())
+        assert_eq!(window.get(), window.at_end().unwrap());
+    }
+
+    #[test]
+    fn test_timeseries_window_get_upstream_output_at_end() {
+        let ts = create_scalar_timeseries();
+        // At last timestep, at_end() returns None, should fallback to at_start()
+        let window =
+            TimeseriesWindow::with_source(&ts, 4, 2004.0, 1.0, VariableSource::UpstreamOutput);
+
+        assert_eq!(window.get(), 5.0); // Fallback to at_start() when at_end() is None
+        assert_eq!(window.at_end(), None);
+        assert_eq!(window.get(), window.at_start());
+    }
+
+    #[test]
+    fn test_timeseries_window_get_with_unit_conversion() {
+        let ts = create_scalar_timeseries();
+        // Test that get() respects unit conversion
+        let window =
+            TimeseriesWindow::with_source(&ts, 2, 2002.0, 2.0, VariableSource::UpstreamOutput);
+
+        // at_end() = 4.0, with 2x conversion = 8.0
+        assert_eq!(window.get(), 8.0);
+        assert_eq!(window.get(), window.at_end().unwrap());
     }
 }
 

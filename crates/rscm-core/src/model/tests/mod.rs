@@ -20,4 +20,6 @@ mod schema_validation;
 #[cfg(test)]
 mod unit_validation;
 #[cfg(test)]
+mod variable_source_disambiguation;
+#[cfg(test)]
 mod write_side_integration;

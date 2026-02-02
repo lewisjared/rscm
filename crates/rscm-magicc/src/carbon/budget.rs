@@ -181,8 +181,8 @@ impl Component for CO2Budget {
         // Get current inputs
         let fossil = inputs.fossil_emissions.at_start();
         let landuse = inputs.landuse_emissions.at_start();
-        let terrestrial = inputs.terrestrial_flux.at_start();
-        let ocean = inputs.ocean_flux.at_start();
+        let terrestrial = inputs.terrestrial_flux.get();
+        let ocean = inputs.ocean_flux.get();
         let co2 = inputs.co2_concentration.at_start();
 
         let dt = t_next - t_current;

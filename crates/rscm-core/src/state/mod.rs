@@ -29,6 +29,7 @@ use crate::component::GridType;
 use crate::spatial::{FourBoxGrid, ScalarRegion, SpatialGrid};
 use crate::timeseries::{FloatValue, Time};
 use crate::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // =============================================================================
@@ -146,6 +147,26 @@ impl From<HemisphericSlice> for StateValue {
     fn from(slice: HemisphericSlice) -> Self {
         StateValue::Hemispheric(slice)
     }
+}
+
+/// Describes the source/origin of a variable in the model.
+///
+/// This is used by `get()` to determine the correct timestep index to read from.
+/// The source is computed at model build time based on the dependency graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum VariableSource {
+    /// Variable is provided externally (exogenous input).
+    /// Read from `at_start()` (index N).
+    #[default]
+    Exogenous,
+
+    /// Variable is written by an upstream component in the dependency graph.
+    /// Read from `at_end()` (index N+1), falling back to `at_start()` if at last timestep.
+    UpstreamOutput,
+
+    /// Variable is this component's own state from the previous timestep.
+    /// Read from `at_start()` (index N).
+    OwnState,
 }
 
 /// Transform context for automatic grid aggregation.
@@ -291,15 +312,14 @@ impl<'a> InputState<'a> {
                                 )
                             });
 
-                    return ScalarWindow::FromFourBox(
-                        AggregatingFourBoxWindow::with_unit_conversion(
-                            ts,
-                            current_index,
-                            self.current_time,
-                            transform.weights.clone(),
-                            unit_factor,
-                        ),
-                    );
+                    return ScalarWindow::FromFourBox(AggregatingFourBoxWindow::with_source(
+                        ts,
+                        current_index,
+                        self.current_time,
+                        transform.weights.clone(),
+                        unit_factor,
+                        transform.variable_source,
+                    ));
                 }
                 GridType::Hemispheric => {
                     let ts = item
@@ -323,12 +343,13 @@ impl<'a> InputState<'a> {
                             });
 
                     return ScalarWindow::FromHemispheric(
-                        AggregatingHemisphericWindow::with_unit_conversion(
+                        AggregatingHemisphericWindow::with_source(
                             ts,
                             current_index,
                             self.current_time,
                             transform.weights.clone(),
                             unit_factor,
+                            transform.variable_source,
                         ),
                     );
                 }
@@ -348,11 +369,12 @@ impl<'a> InputState<'a> {
                                 )
                             });
 
-                    return ScalarWindow::Direct(TimeseriesWindow::with_unit_conversion(
+                    return ScalarWindow::Direct(TimeseriesWindow::with_source(
                         ts,
                         current_index,
                         self.current_time,
                         unit_factor,
+                        transform.variable_source,
                     ));
                 }
             }
@@ -374,7 +396,21 @@ impl<'a> InputState<'a> {
                 )
             });
 
-        ScalarWindow::Direct(TimeseriesWindow::new(ts, current_index, self.current_time))
+        // Get variable source from transform context if available
+        let source = self
+            .transform_context
+            .as_ref()
+            .and_then(|ctx| ctx.read_transforms.get(name))
+            .map(|t| t.variable_source)
+            .unwrap_or(VariableSource::Exogenous);
+
+        ScalarWindow::Direct(TimeseriesWindow::with_source(
+            ts,
+            current_index,
+            self.current_time,
+            1.0, // no unit conversion for direct access
+            source,
+        ))
     }
 
     /// Get a FourBox GridTimeseriesWindow for the named variable
@@ -407,20 +443,15 @@ impl<'a> InputState<'a> {
                 )
             });
 
-        // Check if there's a unit conversion factor
-        let unit_factor = self
+        // Check if there's a unit conversion factor and variable source
+        let (unit_factor, source) = self
             .transform_context
             .as_ref()
             .and_then(|ctx| ctx.read_transforms.get(name))
-            .map(|t| t.unit_conversion_factor)
-            .unwrap_or(1.0);
+            .map(|t| (t.unit_conversion_factor, t.variable_source))
+            .unwrap_or((1.0, VariableSource::Exogenous));
 
-        GridTimeseriesWindow::with_unit_conversion(
-            ts,
-            current_index,
-            self.current_time,
-            unit_factor,
-        )
+        GridTimeseriesWindow::with_source(ts, current_index, self.current_time, unit_factor, source)
     }
 
     /// Get a Hemispheric GridTimeseriesWindow for the named variable
@@ -470,11 +501,12 @@ impl<'a> InputState<'a> {
                         });
 
                 return HemisphericWindow::FromFourBox(
-                    AggregatingFourBoxToHemisphericWindow::with_unit_conversion(
+                    AggregatingFourBoxToHemisphericWindow::with_source(
                         ts,
                         current_index,
                         self.current_time,
                         unit_factor,
+                        transform.variable_source,
                     ),
                 );
             }
@@ -495,11 +527,12 @@ impl<'a> InputState<'a> {
                             )
                         });
 
-                return HemisphericWindow::Direct(GridTimeseriesWindow::with_unit_conversion(
+                return HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
                     ts,
                     current_index,
                     self.current_time,
                     unit_factor,
+                    transform.variable_source,
                 ));
             }
         }
@@ -520,10 +553,20 @@ impl<'a> InputState<'a> {
                 )
             });
 
-        HemisphericWindow::Direct(GridTimeseriesWindow::new(
+        // Get variable source from transform context if available
+        let source = self
+            .transform_context
+            .as_ref()
+            .and_then(|ctx| ctx.read_transforms.get(name))
+            .map(|t| t.variable_source)
+            .unwrap_or(VariableSource::Exogenous);
+
+        HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
             ts,
             current_index,
             self.current_time,
+            1.0,
+            source,
         ))
     }
 
@@ -985,6 +1028,7 @@ mod input_state_window_tests {
                 source_grid: GridType::Hemispheric,
                 weights: None,
                 unit_conversion_factor: 0.001, // Convert mm/yr to m/yr
+                variable_source: VariableSource::Exogenous,
             },
         );
         let transform_ctx = TransformContext { read_transforms };

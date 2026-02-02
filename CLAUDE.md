@@ -229,9 +229,28 @@ The macro generates:
   }
   ```
 
-**Timestep access methods** (`at_start()` vs `at_end()`):
+**Timestep access methods** (`get()`, `at_start()`, `at_end()`):
 
-Components must explicitly choose which timestep index to read from:
+**Recommended: Use `get()` for automatic resolution:**
+
+The `get()` method automatically resolves the correct timestep based on how the variable was classified at model build time:
+
+```rust
+let erf = inputs.erf.get();  // Automatically uses correct timestep
+```
+
+The framework tracks variable sources (`VariableSource` enum) and `get()` behaves as follows:
+
+| Source Type | What It Means | `get()` Returns |
+|-------------|---------------|-----------------|
+| `Exogenous` | External forcing data | `at_start()` |
+| `OwnState` | Your component's previous state | `at_start()` |
+| `UpstreamOutput` | Written by upstream component this timestep | `at_end()` (with fallback) |
+
+**Manual access methods (for explicit control):**
+
+- `at_start()` - Returns value at index N (start of timestep, before any components run)
+- `at_end()` - Returns value at index N+1 (written by upstream components this timestep)
 
 | What you're reading | Who wrote it | Method |
 |---------------------|--------------|--------|
@@ -239,13 +258,10 @@ Components must explicitly choose which timestep index to read from:
 | Exogenous input (external forcing) | Pre-populated | `at_start()` |
 | Upstream component output | They ran this timestep | `at_end()` |
 
-- `at_start()` - Returns value at index N (start of timestep, before any components run)
-- `at_end()` - Returns value at index N+1 (written by upstream components this timestep)
-
-For aggregators or components reading upstream outputs:
+For legacy code or explicit control:
 
 ```rust
-// Read value written by upstream component, fall back to start if at final timestep
+// Manual pattern (legacy - prefer get() instead)
 let erf = inputs.erf.at_end().unwrap_or_else(|| inputs.erf.at_start());
 ```
 

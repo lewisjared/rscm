@@ -4,6 +4,7 @@ use crate::component::{Component, GridType, RequirementDefinition, RequirementTy
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::schema::VariableSchema;
+use crate::state::VariableSource;
 use crate::timeseries::{FloatValue, TimeAxis, Timeseries};
 use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData, VariableType};
 use crate::units::Unit;
@@ -427,6 +428,10 @@ impl ModelBuilder {
         // Collect unit conversion factors needed at runtime
         // Key: (variable_name, component_name) -> conversion info
         let mut unit_conversions: Vec<UnitConversionInfo> = Vec::new();
+        // Track variable sources keyed by (variable_name, component_name)
+        // This enables different components to have different source classifications
+        // for the same variable (e.g., State for owner, UpstreamOutput for consumers)
+        let mut variable_sources: HashMap<(String, String), VariableSource> = HashMap::new();
         let initial_node = graph.add_node(Arc::new(NullComponent {}));
 
         // Track pending aggregate dependencies: (component_node, variable_name, requirement)
@@ -455,6 +460,29 @@ impl ModelBuilder {
 
             let requires = component.inputs();
             let provides = component.outputs();
+
+            // Classify variable sources for this component's inputs
+            for requirement in &requires {
+                if requirement.requirement_type == RequirementType::EmptyLink {
+                    continue;
+                }
+
+                let source = if requirement.requirement_type == RequirementType::State {
+                    // State variables: component reads its own previous state
+                    VariableSource::OwnState
+                } else if endogenous.contains_key(&requirement.name) {
+                    // Another component produces this - read upstream output
+                    VariableSource::UpstreamOutput
+                } else if aggregate_names.contains(&requirement.name) {
+                    // Will be produced by an aggregator - read upstream output
+                    VariableSource::UpstreamOutput
+                } else {
+                    // Exogenous (external input)
+                    VariableSource::Exogenous
+                };
+
+                variable_sources.insert((requirement.name.clone(), component_name.clone()), source);
+            }
 
             for requirement in requires {
                 let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
@@ -845,7 +873,7 @@ impl ModelBuilder {
             .collect();
 
         // Add the components to the graph
-        let mut model = Model::with_unit_conversions(
+        let mut model = Model::with_variable_sources(
             graph,
             initial_node,
             collection,
@@ -854,6 +882,7 @@ impl ModelBuilder {
             read_transforms,
             write_transforms,
             unit_conversion_map,
+            variable_sources,
         );
 
         // Initialize component states for each node
