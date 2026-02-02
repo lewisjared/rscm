@@ -371,7 +371,9 @@ impl Model {
 
         // Build transform context for read-side aggregation and unit conversion
         let input_names = component.input_names();
-        let has_transforms = !self.read_transforms.is_empty() || !self.unit_conversions.is_empty();
+        let has_transforms = !self.read_transforms.is_empty()
+            || !self.unit_conversions.is_empty()
+            || !self.variable_sources.is_empty();
 
         let input_state = if !has_transforms {
             extract_state(&self.collection, input_names, self.current_time())
@@ -404,8 +406,10 @@ impl Model {
                             variable_source,
                         },
                     );
-                } else if (unit_factor - 1.0).abs() > f64::EPSILON {
-                    // No grid transform but needs unit conversion
+                } else if (unit_factor - 1.0).abs() > f64::EPSILON
+                    || variable_source != VariableSource::Exogenous
+                {
+                    // No grid transform but needs unit conversion or non-default variable source
                     // Use Scalar as placeholder since there's no actual grid transform
                     read_transform_info.insert(
                         name.clone(),

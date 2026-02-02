@@ -93,12 +93,9 @@ impl Component for TemperatureConsumer {
     ) -> RSCMResult<OutputState> {
         let inputs = TemperatureConsumerInputs::from_input_state(input_state);
 
-        // Read temperature from upstream producer
-        // Use at_end() to get the value just written by the producer
-        let temperature = inputs.temperature.at_end().unwrap_or_else(|| {
-            // Fall back to at_start() at the last timestep
-            inputs.temperature.at_start()
-        });
+        // Read temperature from upstream producer using get()
+        // The framework knows this is UpstreamOutput and will use at_end() with fallback
+        let temperature = inputs.temperature.get();
 
         // Calculate heat content
         let heat_content = temperature * self.heat_capacity;
@@ -328,10 +325,8 @@ fn test_multiple_consumers_same_upstream() {
         ) -> RSCMResult<OutputState> {
             let inputs = AlbedoCalculatorInputs::from_input_state(input_state);
 
-            let temperature = inputs
-                .temperature
-                .at_end()
-                .unwrap_or_else(|| inputs.temperature.at_start());
+            // Use get() to automatically resolve upstream temperature
+            let temperature = inputs.temperature.get();
 
             let outputs = AlbedoCalculatorOutputs {
                 albedo: 0.3 - (temperature * self.temp_coefficient),
