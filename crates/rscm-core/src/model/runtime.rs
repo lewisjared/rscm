@@ -2,13 +2,13 @@
 
 use crate::component::{ComponentState, GridType};
 use crate::errors::{RSCMError, RSCMResult};
-use crate::state::{ReadTransformInfo, StateValue, TransformContext};
+use crate::state::{ReadTransformInfo, StateValue, TransformContext, VariableSource};
 use crate::timeseries::{Time, TimeAxis};
 use crate::timeseries_collection::TimeseriesCollection;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::Bfs;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Index;
 use std::sync::Arc;
@@ -16,6 +16,36 @@ use std::sync::Arc;
 use super::state_extraction::{extract_state, extract_state_with_transforms};
 use super::transformations::aggregate_state_value;
 use super::types::{CGraph, RequiredTransformation, C};
+
+/// Custom serialization for HashMap<(String, String), T> to work with JSON.
+/// Serializes as a Vec of (key1, key2, value) tuples.
+mod tuple_map_serde {
+    use super::*;
+
+    pub fn serialize<S, T>(
+        map: &HashMap<(String, String), T>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Serialize,
+    {
+        let vec: Vec<(&str, &str, &T)> = map
+            .iter()
+            .map(|((k1, k2), v)| (k1.as_str(), k2.as_str(), v))
+            .collect();
+        vec.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<HashMap<(String, String), T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        let vec: Vec<(String, String, T)> = Vec::deserialize(deserializer)?;
+        Ok(vec.into_iter().map(|(k1, k2, v)| ((k1, k2), v)).collect())
+    }
+}
 
 /// A coupled set of components that are solved on a common time axis.
 ///
@@ -68,8 +98,22 @@ pub struct Model {
     ///
     /// Key: (variable_name, component_name) -> conversion factor
     /// The factor converts from schema units to component units when reading.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "HashMap::is_empty",
+        with = "tuple_map_serde"
+    )]
     unit_conversions: HashMap<(String, String), f64>,
+    /// Variable source types for get() behavior.
+    /// Key: (variable_name, component_name) -> source type.
+    /// This matches the unit_conversions pattern since the same variable
+    /// can have different sources for different components.
+    #[serde(
+        default,
+        skip_serializing_if = "HashMap::is_empty",
+        with = "tuple_map_serde"
+    )]
+    variable_sources: HashMap<(String, String), VariableSource>,
     /// Internal state for each component, keyed by node index.
     /// Uses Box<dyn ComponentState> with typetag for serialization.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -159,6 +203,42 @@ impl Model {
         write_transforms: HashMap<String, RequiredTransformation>,
         unit_conversions: HashMap<(String, String), f64>,
     ) -> Self {
+        Self::with_variable_sources(
+            components,
+            initial_node,
+            collection,
+            time_axis,
+            grid_weights,
+            read_transforms,
+            write_transforms,
+            unit_conversions,
+            HashMap::new(),
+        )
+    }
+
+    /// Create a new Model with all transformations including unit conversions and variable sources.
+    ///
+    /// This is the most complete constructor that includes grid weights, read/write
+    /// transformations, unit conversions, and variable source information.
+    ///
+    /// # Arguments
+    ///
+    /// * `unit_conversions` - Map from (variable_name, component_name) to conversion factor.
+    ///   The factor is multiplied with the stored value to convert from schema units to
+    ///   component units when reading.
+    /// * `variable_sources` - Map from (variable_name, component_name) to source type.
+    ///   Used by TimeseriesWindow to determine correct timestep index (at_start vs at_end).
+    pub fn with_variable_sources(
+        components: CGraph,
+        initial_node: NodeIndex,
+        collection: TimeseriesCollection,
+        time_axis: Arc<TimeAxis>,
+        grid_weights: HashMap<GridType, Vec<f64>>,
+        read_transforms: HashMap<String, RequiredTransformation>,
+        write_transforms: HashMap<String, RequiredTransformation>,
+        unit_conversions: HashMap<(String, String), f64>,
+        variable_sources: HashMap<(String, String), VariableSource>,
+    ) -> Self {
         Self {
             components,
             initial_node,
@@ -169,6 +249,7 @@ impl Model {
             read_transforms,
             write_transforms,
             unit_conversions,
+            variable_sources,
             component_states: BTreeMap::new(),
         }
     }
@@ -247,6 +328,15 @@ impl Model {
         &self.unit_conversions
     }
 
+    /// Get variable sources.
+    ///
+    /// Returns the variable source types keyed by (variable_name, component_name).
+    /// This enables different components to have different source classifications for the same variable.
+    /// For example, a state variable is `OwnState` for the producer component but `UpstreamOutput` for consumers.
+    pub fn variable_sources(&self) -> &HashMap<(String, String), VariableSource> {
+        &self.variable_sources
+    }
+
     /// Extract component name from a Component for unit conversion lookup.
     ///
     /// Extracts the type name (before the first '{', ' ', or '(') from the Debug output.
@@ -281,7 +371,9 @@ impl Model {
 
         // Build transform context for read-side aggregation and unit conversion
         let input_names = component.input_names();
-        let has_transforms = !self.read_transforms.is_empty() || !self.unit_conversions.is_empty();
+        let has_transforms = !self.read_transforms.is_empty()
+            || !self.unit_conversions.is_empty()
+            || !self.variable_sources.is_empty();
 
         let input_state = if !has_transforms {
             extract_state(&self.collection, input_names, self.current_time())
@@ -296,6 +388,13 @@ impl Model {
                     .copied()
                     .unwrap_or(1.0);
 
+                // Look up variable source for this (variable, component) pair
+                let variable_source = self
+                    .variable_sources
+                    .get(&(name.clone(), component_name.clone()))
+                    .copied()
+                    .unwrap_or_default();
+
                 // Check if we also need grid transformation
                 if let Some(transform) = self.read_transforms.get(name) {
                     read_transform_info.insert(
@@ -304,10 +403,13 @@ impl Model {
                             source_grid: transform.source_grid,
                             weights: self.grid_weights.get(&transform.source_grid).cloned(),
                             unit_conversion_factor: unit_factor,
+                            variable_source,
                         },
                     );
-                } else if (unit_factor - 1.0).abs() > f64::EPSILON {
-                    // No grid transform but needs unit conversion
+                } else if (unit_factor - 1.0).abs() > f64::EPSILON
+                    || variable_source != VariableSource::Exogenous
+                {
+                    // No grid transform but needs unit conversion or non-default variable source
                     // Use Scalar as placeholder since there's no actual grid transform
                     read_transform_info.insert(
                         name.clone(),
@@ -315,6 +417,7 @@ impl Model {
                             source_grid: crate::component::GridType::Scalar,
                             weights: None,
                             unit_conversion_factor: unit_factor,
+                            variable_source,
                         },
                     );
                 }

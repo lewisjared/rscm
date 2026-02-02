@@ -317,15 +317,17 @@ impl Component for CH4Chemistry {
     ) -> RSCMResult<OutputState> {
         let inputs = CH4ChemistryInputs::from_input_state(input_state);
 
-        // Get inputs
+        // Get state variable (always at_start for own previous state)
         let ch4_current = inputs.ch4_concentration.at_start();
         // Use current as previous if no history (first timestep)
         let ch4_prev = inputs.ch4_concentration.previous().unwrap_or(ch4_current);
-        let emissions = inputs.ch4_emissions.at_start();
-        let temperature = inputs.temperature.at_start();
-        let nox = inputs.nox_emissions.at_start();
-        let co = inputs.co_emissions.at_start();
-        let nmvoc = inputs.nmvoc_emissions.at_start();
+
+        // Get inputs (use get() for flexibility with exogenous or upstream sources)
+        let emissions = inputs.ch4_emissions.get();
+        let temperature = inputs.temperature.get();
+        let nox = inputs.nox_emissions.get();
+        let co = inputs.co_emissions.get();
+        let nmvoc = inputs.nmvoc_emissions.get();
 
         // Solve for new concentration
         let (new_concentration, lifetime) = self.solve_concentration(

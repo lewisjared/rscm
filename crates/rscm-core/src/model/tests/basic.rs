@@ -113,6 +113,7 @@ fn serialise_and_deserialise_model() {
 
     let expected = r#"initial_node = 0
 time_index = 1
+variable_sources = [["Emissions|CO2", "TestComponent", "Exogenous"]]
 
 [components]
 node_holes = []

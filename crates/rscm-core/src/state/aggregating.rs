@@ -8,6 +8,7 @@ use crate::spatial::{FourBoxGrid, HemisphericGrid, HemisphericRegion, SpatialGri
 use crate::timeseries::{FloatValue, GridTimeseries, Time};
 
 use super::windows::GridTimeseriesWindow;
+use super::VariableSource;
 
 /// A transformation context for grid aggregation and unit conversion.
 ///
@@ -30,6 +31,8 @@ pub struct ReadTransformInfo {
     ///
     /// Default is 1.0 (no conversion).
     pub unit_conversion_factor: f64,
+    /// The source type of this variable, determining how `get()` reads values.
+    pub variable_source: VariableSource,
 }
 
 impl Default for ReadTransformInfo {
@@ -38,6 +41,7 @@ impl Default for ReadTransformInfo {
             source_grid: GridType::Scalar,
             weights: None,
             unit_conversion_factor: 1.0,
+            variable_source: VariableSource::Exogenous,
         }
     }
 }
@@ -49,6 +53,7 @@ impl ReadTransformInfo {
             source_grid,
             weights,
             unit_conversion_factor: 1.0,
+            variable_source: VariableSource::Exogenous,
         }
     }
 
@@ -58,12 +63,19 @@ impl ReadTransformInfo {
             source_grid: GridType::Scalar,
             weights: None,
             unit_conversion_factor: factor,
+            variable_source: VariableSource::Exogenous,
         }
     }
 
     /// Add unit conversion to an existing transform.
     pub fn with_conversion_factor(mut self, factor: f64) -> Self {
         self.unit_conversion_factor = factor;
+        self
+    }
+
+    /// Set the variable source type for `get()` behavior.
+    pub fn with_source(mut self, source: VariableSource) -> Self {
+        self.variable_source = source;
         self
     }
 }
@@ -82,6 +94,8 @@ pub struct AggregatingFourBoxWindow<'a> {
     weights: Option<[f64; 4]>,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
+    /// Source type determining get() behavior
+    variable_source: VariableSource,
 }
 
 impl<'a> AggregatingFourBoxWindow<'a> {
@@ -91,7 +105,14 @@ impl<'a> AggregatingFourBoxWindow<'a> {
         current_time: Time,
         weights: Option<Vec<f64>>,
     ) -> Self {
-        Self::with_unit_conversion(timeseries, current_index, current_time, weights, 1.0)
+        Self::with_source(
+            timeseries,
+            current_index,
+            current_time,
+            weights,
+            1.0,
+            VariableSource::Exogenous,
+        )
     }
 
     /// Create a new window with unit conversion.
@@ -101,6 +122,25 @@ impl<'a> AggregatingFourBoxWindow<'a> {
         current_time: Time,
         weights: Option<Vec<f64>>,
         unit_conversion_factor: f64,
+    ) -> Self {
+        Self::with_source(
+            timeseries,
+            current_index,
+            current_time,
+            weights,
+            unit_conversion_factor,
+            VariableSource::Exogenous,
+        )
+    }
+
+    /// Create a new window with all options including variable source.
+    pub fn with_source(
+        timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
+        current_index: usize,
+        current_time: Time,
+        weights: Option<Vec<f64>>,
+        unit_conversion_factor: f64,
+        variable_source: VariableSource,
     ) -> Self {
         let weights = weights.map(|w| {
             let arr: [f64; 4] = w
@@ -115,6 +155,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
             current_time,
             weights,
             unit_conversion_factor,
+            variable_source,
         }
     }
 
@@ -154,6 +195,14 @@ impl<'a> AggregatingFourBoxWindow<'a> {
                 .at_time_index(next_index)
                 .expect("Next index out of bounds");
             Some(self.aggregate(&values))
+        }
+    }
+
+    /// Get the value using automatic timestep resolution based on variable source.
+    pub fn get(&self) -> FloatValue {
+        match self.variable_source {
+            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(),
+            VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
         }
     }
 
@@ -221,6 +270,8 @@ pub struct AggregatingHemisphericWindow<'a> {
     weights: Option<[f64; 2]>,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
+    /// Source type determining get() behavior
+    variable_source: VariableSource,
 }
 
 impl<'a> AggregatingHemisphericWindow<'a> {
@@ -230,7 +281,14 @@ impl<'a> AggregatingHemisphericWindow<'a> {
         current_time: Time,
         weights: Option<Vec<f64>>,
     ) -> Self {
-        Self::with_unit_conversion(timeseries, current_index, current_time, weights, 1.0)
+        Self::with_source(
+            timeseries,
+            current_index,
+            current_time,
+            weights,
+            1.0,
+            VariableSource::Exogenous,
+        )
     }
 
     /// Create a new window with unit conversion.
@@ -240,6 +298,25 @@ impl<'a> AggregatingHemisphericWindow<'a> {
         current_time: Time,
         weights: Option<Vec<f64>>,
         unit_conversion_factor: f64,
+    ) -> Self {
+        Self::with_source(
+            timeseries,
+            current_index,
+            current_time,
+            weights,
+            unit_conversion_factor,
+            VariableSource::Exogenous,
+        )
+    }
+
+    /// Create a new window with all options including variable source.
+    pub fn with_source(
+        timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
+        current_index: usize,
+        current_time: Time,
+        weights: Option<Vec<f64>>,
+        unit_conversion_factor: f64,
+        variable_source: VariableSource,
     ) -> Self {
         let weights = weights.map(|w| {
             let arr: [f64; 2] = w
@@ -254,6 +331,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
             current_time,
             weights,
             unit_conversion_factor,
+            variable_source,
         }
     }
 
@@ -293,6 +371,14 @@ impl<'a> AggregatingHemisphericWindow<'a> {
                 .at_time_index(next_index)
                 .expect("Next index out of bounds");
             Some(self.aggregate(&values))
+        }
+    }
+
+    /// Get the value using automatic timestep resolution based on variable source.
+    pub fn get(&self) -> FloatValue {
+        match self.variable_source {
+            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(),
+            VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
         }
     }
 
@@ -382,6 +468,17 @@ impl<'a> ScalarWindow<'a> {
         }
     }
 
+    /// Get the value using automatic timestep resolution based on variable source.
+    ///
+    /// See [`TimeseriesWindow::get()`] for detailed semantics.
+    pub fn get(&self) -> FloatValue {
+        match self {
+            ScalarWindow::Direct(w) => w.get(),
+            ScalarWindow::FromFourBox(w) => w.get(),
+            ScalarWindow::FromHemispheric(w) => w.get(),
+        }
+    }
+
     /// Get the value at the previous timestep, if available.
     pub fn previous(&self) -> Option<FloatValue> {
         match self {
@@ -459,6 +556,8 @@ pub struct AggregatingFourBoxToHemisphericWindow<'a> {
     current_time: Time,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
+    /// Source type determining get() behavior
+    variable_source: VariableSource,
 }
 
 impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
@@ -467,7 +566,13 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
         current_index: usize,
         current_time: Time,
     ) -> Self {
-        Self::with_unit_conversion(timeseries, current_index, current_time, 1.0)
+        Self::with_source(
+            timeseries,
+            current_index,
+            current_time,
+            1.0,
+            VariableSource::Exogenous,
+        )
     }
 
     /// Create a new window with unit conversion.
@@ -477,11 +582,29 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
         current_time: Time,
         unit_conversion_factor: f64,
     ) -> Self {
+        Self::with_source(
+            timeseries,
+            current_index,
+            current_time,
+            unit_conversion_factor,
+            VariableSource::Exogenous,
+        )
+    }
+
+    /// Create a new window with all options including variable source.
+    pub fn with_source(
+        timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
+        current_index: usize,
+        current_time: Time,
+        unit_conversion_factor: f64,
+        variable_source: VariableSource,
+    ) -> Self {
         Self {
             timeseries,
             current_index,
             current_time,
             unit_conversion_factor,
+            variable_source,
         }
     }
 
@@ -526,6 +649,26 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     /// Get a single region's value at the end of the timestep.
     pub fn at_end(&self, region: HemisphericRegion) -> Option<FloatValue> {
         self.at_end_all().map(|v| v[region as usize])
+    }
+
+    /// Get a single region's value using automatic timestep resolution.
+    pub fn get(&self, region: HemisphericRegion) -> FloatValue {
+        match self.variable_source {
+            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(region),
+            VariableSource::UpstreamOutput => {
+                self.at_end(region).unwrap_or_else(|| self.at_start(region))
+            }
+        }
+    }
+
+    /// Get all regional values using automatic timestep resolution.
+    pub fn get_all(&self) -> Vec<FloatValue> {
+        match self.variable_source {
+            VariableSource::Exogenous | VariableSource::OwnState => self.at_start_all(),
+            VariableSource::UpstreamOutput => {
+                self.at_end_all().unwrap_or_else(|| self.at_start_all())
+            }
+        }
     }
 
     /// Get the current time value.
@@ -588,6 +731,22 @@ impl<'a> HemisphericWindow<'a> {
         match self {
             HemisphericWindow::Direct(w) => w.at_end(region),
             HemisphericWindow::FromFourBox(w) => w.at_end(region),
+        }
+    }
+
+    /// Get a single region's value using automatic timestep resolution.
+    pub fn get(&self, region: HemisphericRegion) -> FloatValue {
+        match self {
+            HemisphericWindow::Direct(w) => w.get(region),
+            HemisphericWindow::FromFourBox(w) => w.get(region),
+        }
+    }
+
+    /// Get all regional values using automatic timestep resolution.
+    pub fn get_all(&self) -> Vec<FloatValue> {
+        match self {
+            HemisphericWindow::Direct(w) => w.get_all(),
+            HemisphericWindow::FromFourBox(w) => w.get_all(),
         }
     }
 
@@ -1082,6 +1241,7 @@ mod aggregating_window_tests {
         assert_eq!(info.source_grid, GridType::Scalar);
         assert!(info.weights.is_none());
         assert_eq!(info.unit_conversion_factor, 1.0);
+        assert_eq!(info.variable_source, VariableSource::Exogenous);
     }
 
     #[test]

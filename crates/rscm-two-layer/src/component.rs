@@ -167,9 +167,7 @@ impl IVP<Time, ModelState> for TwoLayer {
         let temperature_surface = y[0];
         let temperature_deep = y[1];
         let inputs = TwoLayerInputs::from_input_state(input_state);
-        // Read ERF from upstream component output (at_end) if available,
-        // otherwise fall back to exogenous input (at_start)
-        let erf = inputs.erf.at_end().unwrap_or_else(|| inputs.erf.at_start());
+        let erf = inputs.erf.get();
 
         let temperature_difference = temperature_surface - temperature_deep;
 

@@ -350,12 +350,12 @@ impl Component for TerrestrialCarbon {
     ) -> RSCMResult<OutputState> {
         let inputs = TerrestrialCarbonInputs::from_input_state(input_state);
 
-        // Get current inputs
-        let co2 = inputs.co2_concentration.at_start();
-        let temperature = inputs.temperature.at_start();
-        let landuse = inputs.landuse_emissions.at_start();
+        // Get current inputs (use get() for flexibility with exogenous or upstream sources)
+        let co2 = inputs.co2_concentration.get();
+        let temperature = inputs.temperature.get();
+        let landuse = inputs.landuse_emissions.get();
 
-        // Get current pool states
+        // Get current pool states (always at_start for own previous state)
         let plant = inputs.plant_pool.at_start();
         let detritus = inputs.detritus_pool.at_start();
         let soil = inputs.soil_pool.at_start();

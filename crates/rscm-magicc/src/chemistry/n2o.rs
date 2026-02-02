@@ -259,7 +259,7 @@ impl Component for N2OChemistry {
 
         let n2o_lagged = (t_delay + t_delay_minus1) / 2.0;
 
-        let emissions = inputs.n2o_emissions.at_start();
+        let emissions = inputs.n2o_emissions.get();
 
         // Solve for new concentration
         let (new_concentration, lifetime) =

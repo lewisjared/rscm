@@ -140,9 +140,9 @@ impl IVP<Time, ModelState> for CarbonCycle {
     ) {
         let inputs = CarbonCycleInputs::from_input_state(input_state);
 
-        // Inputs come from input_state (exogenous data at start of timestep)
-        let emissions = inputs.emissions.at_start();
-        let temperature = inputs.temperature.at_start();
+        // Inputs come from input_state (could be exogenous or upstream)
+        let emissions = inputs.emissions.get();
+        let temperature = inputs.temperature.get();
 
         // State variables come from the ODE state vector y
         let conc = y[0];
