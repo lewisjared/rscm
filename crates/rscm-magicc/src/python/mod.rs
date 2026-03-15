@@ -7,11 +7,12 @@ use rscm_core::python::PyRustComponent;
 use crate::carbon::{CO2Budget, OceanCarbon, TerrestrialCarbon};
 use crate::chemistry::{CH4Chemistry, HalocarbonChemistry, N2OChemistry};
 use crate::climate::ClimateUDEB;
-use crate::forcing::{AerosolDirect, AerosolIndirect, OzoneForcing};
+use crate::forcing::{AerosolDirect, AerosolIndirect, GhgForcing, OzoneForcing};
 use crate::parameters::{
     AerosolDirectParameters, AerosolIndirectParameters, CH4ChemistryParameters,
-    CO2BudgetParameters, ClimateUDEBParameters, HalocarbonParameters, N2OChemistryParameters,
-    OceanCarbonParameters, OzoneForcingParameters, TerrestrialCarbonParameters,
+    CO2BudgetParameters, ClimateUDEBParameters, GhgForcingParameters, HalocarbonParameters,
+    N2OChemistryParameters, OceanCarbonParameters, OzoneForcingParameters,
+    TerrestrialCarbonParameters,
 };
 
 // Climate components
@@ -36,6 +37,7 @@ create_component_builder!(OceanCarbonBuilder, OceanCarbon, OceanCarbonParameters
 create_component_builder!(CO2BudgetBuilder, CO2Budget, CO2BudgetParameters);
 
 // Forcing components
+create_component_builder!(GhgForcingBuilder, GhgForcing, GhgForcingParameters);
 create_component_builder!(OzoneForcingBuilder, OzoneForcing, OzoneForcingParameters);
 create_component_builder!(AerosolDirectBuilder, AerosolDirect, AerosolDirectParameters);
 create_component_builder!(
@@ -57,6 +59,7 @@ pub fn magicc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<OceanCarbonBuilder>()?;
     m.add_class::<CO2BudgetBuilder>()?;
     // Forcing
+    m.add_class::<GhgForcingBuilder>()?;
     m.add_class::<OzoneForcingBuilder>()?;
     m.add_class::<AerosolDirectBuilder>()?;
     m.add_class::<AerosolIndirectBuilder>()?;
