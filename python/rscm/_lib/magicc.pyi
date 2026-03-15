@@ -27,7 +27,7 @@ Forcing:
 - AerosolIndirectBuilder: Indirect aerosol cloud effects
 """
 
-from typing import TypedDict, final
+from typing import Literal, TypedDict, final
 
 from rscm._lib.core import Component, ComponentBuilder
 
@@ -984,3 +984,95 @@ class AerosolIndirectBuilder(ComponentBuilder):
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the indirect aerosol forcing component."""
+
+# GHG Forcing
+
+class GhgForcingParams(TypedDict, total=False):
+    """Parameters for GhgForcing component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    method: Literal["Ipcctar", "Etminan"]
+    co2_pi: float
+    ch4_pi: float
+    n2o_pi: float
+    delq2xco2: float
+    ch4_radeff: float
+    n2o_radeff: float
+    etminan_co2_a1: float
+    etminan_co2_a2: float
+    etminan_co2_a3_n2o: float
+    etminan_co2_a3_offset: float
+    etminan_ch4_b1: float
+    etminan_ch4_b2: float
+    etminan_ch4_b3: float
+    etminan_n2o_c1: float
+    etminan_n2o_c2: float
+    etminan_n2o_c3: float
+    adjust_co2: float
+    adjust_ch4: float
+    adjust_n2o: float
+
+@final
+class GhgForcingBuilder(ComponentBuilder):
+    """Builder for the GHG radiative forcing component.
+
+    Calculates effective radiative forcing from CO2, CH4, and N2O
+    concentrations using IPCCTAR or Etminan methods with optional
+    rapid adjustment factors.
+
+    # Parameters
+    # ----------
+    # method : str
+    #     Forcing method: "Ipcctar" or "Etminan". Default: "Etminan"
+    # co2_pi : float
+    #     Pre-industrial CO2 (ppm). Default: 278.0
+    # ch4_pi : float
+    #     Pre-industrial CH4 (ppb). Default: 722.0
+    # n2o_pi : float
+    #     Pre-industrial N2O (ppb). Default: 270.0
+    # delq2xco2 : float
+    #     Forcing for CO2 doubling (W/m2). Default: 3.71
+    # adjust_co2 : float
+    #     Rapid adjustment factor for CO2. Default: 1.05
+    # adjust_ch4 : float
+    #     Rapid adjustment factor for CH4. Default: 0.86
+    # adjust_n2o : float
+    #     Rapid adjustment factor for N2O. Default: 0.93
+
+    Inputs
+    ------
+    Atmospheric Concentration|CO2 : float
+        CO2 concentration (ppm)
+    Atmospheric Concentration|CH4 : float
+        CH4 concentration (ppb)
+    Atmospheric Concentration|N2O : float
+        N2O concentration (ppb)
+
+    Outputs
+    -------
+    Effective Radiative Forcing|CO2 : float
+        CO2 effective radiative forcing (W/m^2)
+    Effective Radiative Forcing|CH4 : float
+        CH4 effective radiative forcing (W/m^2)
+    Effective Radiative Forcing|N2O : float
+        N2O effective radiative forcing (W/m^2)
+
+    Examples
+    --------
+    >>> builder = GhgForcingBuilder.from_parameters(
+    ...     {
+    ...         "method": "Ipcctar",
+    ...         "delq2xco2": 3.71,
+    ...         "adjust_co2": 1.05,
+    ...     }
+    ... )
+    >>> component = builder.build()
+    """
+
+    @staticmethod
+    def from_parameters(parameters: GhgForcingParams) -> GhgForcingBuilder:  # type: ignore[override]
+        """Create a builder from a parameter dictionary."""
+    def build(self) -> Component:
+        """Build the GHG radiative forcing component."""
