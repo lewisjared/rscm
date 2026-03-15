@@ -177,3 +177,58 @@ The existing [RSCM framework](https://github.com/climate-resource/rscm) provides
 **Required Additions:**
 
 1. Tridiagonal solver utility (Thomas algorithm for UDEB ocean diffusion)
+
+## RSCM Implementation Status
+
+Tracks which MAGICC modules have been ported to Rust and what gaps remain.
+See linked GitHub issues for detailed acceptance criteria.
+
+### Core Pathway
+
+| Module               | RSCM Component           | Status                     | Issue |
+| -------------------- | ------------------------ | -------------------------- | ----- |
+| 00 - Initialization  | N/A (ModelBuilder)       | Framework handles          | -     |
+| 07b - RF Aggregation | VariableSchema (partial) | Efficacy framework missing | #114  |
+| 08 - Climate UDEB    | `ClimateUDEB`            | Implemented (simplified)   | #108  |
+| 15 - Main Timestep   | N/A (Model orchestrator) | Framework handles          | -     |
+
+### Chemistry Modules
+
+| Module                    | RSCM Component        | Status                   | Issue |
+| ------------------------- | --------------------- | ------------------------ | ----- |
+| 01 - CH4 Chemistry        | `CH4Chemistry`        | Implemented (simplified) | #109  |
+| 02 - N2O Chemistry        | `N2OChemistry`        | Implemented (simplified) | #109  |
+| 03 - Halocarbon Chemistry | `HalocarbonChemistry` | Implemented (simplified) | #109  |
+| 04 - Ozone Forcing        | `OzoneForcing`        | Implemented (simplified) | #110  |
+
+### Forcing Modules
+
+| Module                | RSCM Component    | Status                   | Issue |
+| --------------------- | ----------------- | ------------------------ | ----- |
+| 05 - Aerosol Direct   | `AerosolDirect`   | Implemented (simplified) | #110  |
+| 06 - Aerosol Indirect | `AerosolIndirect` | Implemented (simplified) | #110  |
+| 07a - GHG Forcing     | `GhgForcing`      | Implemented              | -     |
+| Volcanic/Solar        | Not implemented   | Missing                  | #106  |
+| Land-use Albedo       | Not implemented   | Missing                  | #107  |
+
+### Carbon Cycle Modules
+
+| Module                  | RSCM Component      | Status                   | Issue |
+| ----------------------- | ------------------- | ------------------------ | ----- |
+| 09 - Terrestrial Carbon | `TerrestrialCarbon` | Implemented (simplified) | #109  |
+| 10 - Ocean Carbon       | `OceanCarbon`       | Implemented (simplified) | #109  |
+| 11 - CO2 Budget         | `CO2Budget`         | Implemented (simplified) | #109  |
+
+### Experimental Modules
+
+| Module                   | RSCM Component  | Status                 | Issue |
+| ------------------------ | --------------- | ---------------------- | ----- |
+| 12 - Permafrost          | Not implemented | Missing (experimental) | #115  |
+| 13 - Nitrogen Limitation | Not implemented | Missing (experimental) | #116  |
+| 14 - Sea Level Rise      | Not implemented | Missing (experimental) | #117  |
+
+### Validation
+
+| Item                      | Status                              | Issue |
+| ------------------------- | ----------------------------------- | ----- |
+| Regression test framework | Infrastructure ready, tests skipped | #105  |
