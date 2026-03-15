@@ -6,7 +6,7 @@
 //! # What This Component Does
 //!
 //! 1. Calculates instantaneous radiative forcing from CO2, CH4, and N2O
-//!    concentrations using either IPCCTAR or Etminan methods
+//!    concentrations using either IPCCTAR or OLBL methods
 //! 2. Accounts for CH4-N2O absorption band overlap
 //! 3. Applies rapid adjustment factors to convert to effective radiative forcing
 //!
@@ -29,12 +29,11 @@
 //! Simple analytical formulae: logarithmic for CO2, square-root for CH4/N2O,
 //! with overlap correction.
 //!
-//! ## Etminan (Etminan et al. 2016)
+//! ## Oslo line-by-line (OLBL)
 //!
-//! Concentration-dependent coefficients derived from line-by-line radiative
-//! transfer calculations. Accounts for shortwave absorption in CO2 and
-//! state-dependent forcing efficiency for CH4/N2O. Used as the OLBL proxy
-//! in AR6 assessments.
+//! Concentration-dependent coefficients calibrated against line-by-line
+//! radiative transfer calculations. Uses square-root overlap terms for
+//! CH4/N2O and a quadratic alpha with saturation for CO2.
 
 use crate::parameters::{ForcingMethod, GhgForcingParameters};
 use rscm_core::component::{
@@ -55,11 +54,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// $$F_{CO2} = \frac{\Delta Q_{2 \times CO2}}{\ln 2} \cdot \ln\left(\frac{C}{C_0}\right)$$
 ///
-/// # CO2 Forcing (Etminan)
+/// # CO2 Forcing (OLBL)
 ///
-/// $$(a_1 \cdot (\Delta C)^2 + a_2 \cdot |\Delta C| + a_3) \cdot \ln\left(\frac{C}{C_0}\right)$$
-///
-/// where $a_3 = a_{3,N2O} \cdot \bar{N} + a_{3,offset}$
+/// $$\alpha = a_1 (\Delta C)^2 + b_1 \Delta C + d_1 + c_1 \sqrt{N_2O}$$
+/// $$F_{CO2} = \alpha \cdot \ln(C / C_0)$$
 ///
 /// # CH4-N2O Overlap (IPCCTAR)
 ///
@@ -128,12 +126,12 @@ impl GhgForcing {
 
     /// Calculate CO2 forcing (dispatches to method)
     ///
-    /// The `n2o` parameter is needed for the Etminan method (N2O affects CO2
-    /// forcing coefficients). For IPCCTAR it is unused.
+    /// The `n2o` parameter is needed for the OLBL method (N2O affects CO2
+    /// forcing coefficients via overlap). For IPCCTAR it is unused.
     pub fn calculate_co2_forcing(&self, co2: FloatValue, n2o: FloatValue) -> FloatValue {
         match self.parameters.method {
             ForcingMethod::Ipcctar => self.co2_forcing_ipcctar(co2),
-            ForcingMethod::Etminan => self.co2_forcing_etminan(co2, n2o),
+            ForcingMethod::Olbl => self.co2_forcing_olbl(co2, n2o),
         }
     }
 
@@ -141,15 +139,23 @@ impl GhgForcing {
     pub fn calculate_ch4_forcing(&self, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
         match self.parameters.method {
             ForcingMethod::Ipcctar => self.ch4_forcing_ipcctar(ch4, n2o),
-            ForcingMethod::Etminan => self.ch4_forcing_etminan(ch4, n2o),
+            ForcingMethod::Olbl => self.ch4_forcing_olbl(ch4, n2o),
         }
     }
 
     /// Calculate N2O forcing (dispatches to method)
-    pub fn calculate_n2o_forcing(&self, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
+    ///
+    /// The `co2` parameter is needed for the OLBL method (CO2 affects N2O
+    /// forcing via overlap). For IPCCTAR it is unused.
+    pub fn calculate_n2o_forcing(
+        &self,
+        co2: FloatValue,
+        ch4: FloatValue,
+        n2o: FloatValue,
+    ) -> FloatValue {
         match self.parameters.method {
             ForcingMethod::Ipcctar => self.n2o_forcing_ipcctar(ch4, n2o),
-            ForcingMethod::Etminan => self.n2o_forcing_etminan(ch4, n2o),
+            ForcingMethod::Olbl => self.n2o_forcing_olbl(co2, ch4, n2o),
         }
     }
 
@@ -188,37 +194,69 @@ impl GhgForcing {
         direct - overlap
     }
 
-    // === Etminan implementations ===
+    // === OLBL implementations (MAGICC7 v7.5.3) ===
 
-    fn co2_forcing_etminan(&self, co2: FloatValue, n2o: FloatValue) -> FloatValue {
+    /// CO2 forcing using OLBL method
+    ///
+    /// $$\alpha = a_1 (\Delta C)^2 + b_1 \Delta C + d_1 + c_1 \sqrt{N_2O}$$
+    /// $$F_{CO2} = \alpha \cdot \ln(C / C_0)$$
+    ///
+    /// With saturation: if $C > C_{max}$, alpha is capped at its maximum.
+    fn co2_forcing_olbl(&self, co2: FloatValue, n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
         let co2_pi = p.co2_pi;
-        let n2o_bar = (n2o + p.n2o_pi) / 2.0;
         let delta_co2 = co2 - co2_pi;
 
-        let a1 = p.etminan_co2_a1 * delta_co2 * delta_co2;
-        let a2 = p.etminan_co2_a2 * delta_co2.abs();
-        let a3 = p.etminan_co2_a3_n2o * n2o_bar + p.etminan_co2_a3_offset;
+        // N2O overlap term uses sqrt of current N2O concentration
+        let n2o_overlap = p.olbl_co2_c1 * n2o.sqrt();
 
-        (a1 + a2 + a3) * (co2 / co2_pi).ln()
+        // Saturation concentration: vertex of the quadratic
+        // C_max = C0 - b1 / (2*a1)
+        let c_max = co2_pi - p.olbl_co2_b1 / (2.0 * p.olbl_co2_a1);
+
+        let alpha = if co2 >= c_max {
+            // Saturated regime: alpha at maximum (vertex of parabola)
+            -p.olbl_co2_b1 * p.olbl_co2_b1 / (4.0 * p.olbl_co2_a1) + p.olbl_co2_d1 + n2o_overlap
+        } else if co2 <= co2_pi {
+            // Below PI: no quadratic/linear contribution
+            p.olbl_co2_d1 + n2o_overlap
+        } else {
+            // Normal regime: full quadratic
+            p.olbl_co2_a1 * delta_co2 * delta_co2
+                + p.olbl_co2_b1 * delta_co2
+                + p.olbl_co2_d1
+                + n2o_overlap
+        };
+
+        alpha * (co2 / co2_pi).ln()
     }
 
-    fn ch4_forcing_etminan(&self, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
+    /// CH4 forcing using OLBL method
+    ///
+    /// $$F_{CH4} = (a_3 \sqrt{CH_4} + b_3 \sqrt{N_2O} + d_3) \cdot (\sqrt{CH_4} - \sqrt{CH_{4,pi}})$$
+    ///
+    /// Note: Stratospheric H2O from CH4 oxidation (`ch4_strat_h2o_fraction`)
+    /// is reported as a separate forcing agent in MAGICC7 and is not included
+    /// in the CH4 ERF output.
+    fn ch4_forcing_olbl(&self, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
-        let ch4_bar = (ch4 + p.ch4_pi) / 2.0;
-        let n2o_bar = (n2o + p.n2o_pi) / 2.0;
 
-        let coeff = p.etminan_ch4_b1 * ch4_bar + p.etminan_ch4_b2 * n2o_bar + p.etminan_ch4_b3;
+        let coeff = p.olbl_ch4_a3 * ch4.sqrt() + p.olbl_ch4_b3 * n2o.sqrt() + p.olbl_ch4_d3;
 
         coeff * (ch4.sqrt() - p.ch4_pi.sqrt())
     }
 
-    fn n2o_forcing_etminan(&self, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
+    /// N2O forcing using OLBL method
+    ///
+    /// $$F_{N_2O} = (a_2 \sqrt{CO_2} + b_2 \sqrt{N_2O} + c_2 \sqrt{CH_4} + d_2)
+    ///     \cdot (\sqrt{N_2O} - \sqrt{N_{2}O_{pi}})$$
+    fn n2o_forcing_olbl(&self, co2: FloatValue, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
-        let ch4_bar = (ch4 + p.ch4_pi) / 2.0;
-        let n2o_bar = (n2o + p.n2o_pi) / 2.0;
 
-        let coeff = p.etminan_n2o_c1 * ch4_bar + p.etminan_n2o_c2 * n2o_bar + p.etminan_n2o_c3;
+        let coeff = p.olbl_n2o_a2 * co2.sqrt()
+            + p.olbl_n2o_b2 * n2o.sqrt()
+            + p.olbl_n2o_c2 * ch4.sqrt()
+            + p.olbl_n2o_d2;
 
         coeff * (n2o.sqrt() - p.n2o_pi.sqrt())
     }
@@ -234,7 +272,7 @@ impl GhgForcing {
 
         let co2_raw = self.calculate_co2_forcing(co2, n2o);
         let ch4_raw = self.calculate_ch4_forcing(ch4, n2o);
-        let n2o_raw = self.calculate_n2o_forcing(ch4, n2o);
+        let n2o_raw = self.calculate_n2o_forcing(co2, ch4, n2o);
 
         GhgForcingResult {
             co2_erf: co2_raw * p.adjust_co2,
@@ -296,9 +334,9 @@ mod tests {
         })
     }
 
-    fn etminan_component() -> GhgForcing {
+    fn olbl_component() -> GhgForcing {
         GhgForcing::from_parameters(GhgForcingParameters {
-            method: ForcingMethod::Etminan,
+            method: ForcingMethod::Olbl,
             adjust_co2: 1.0,
             adjust_ch4: 1.0,
             adjust_n2o: 1.0,
@@ -386,7 +424,7 @@ mod tests {
     #[test]
     fn test_ipcctar_n2o_zero_at_preindustrial() {
         let c = ipcctar_component();
-        let f = c.calculate_n2o_forcing(722.0, 270.0);
+        let f = c.calculate_n2o_forcing(278.0, 722.0, 270.0);
         assert!(
             f.abs() < 1e-10,
             "N2O forcing at PI should be zero, got {}",
@@ -397,7 +435,7 @@ mod tests {
     #[test]
     fn test_ipcctar_n2o_positive_above_pi() {
         let c = ipcctar_component();
-        let f = c.calculate_n2o_forcing(722.0, 332.0);
+        let f = c.calculate_n2o_forcing(278.0, 722.0, 332.0);
         assert!(
             f > 0.0,
             "N2O forcing above PI should be positive, got {}",
@@ -408,7 +446,7 @@ mod tests {
     #[test]
     fn test_ipcctar_n2o_realistic_modern() {
         let c = ipcctar_component();
-        let f = c.calculate_n2o_forcing(722.0, 332.0);
+        let f = c.calculate_n2o_forcing(278.0, 722.0, 332.0);
         // AR6: N2O forcing ~0.21 W/m2
         assert!(
             f > 0.1 && f < 0.4,
@@ -441,7 +479,7 @@ mod tests {
         // Same for N2O
         let n2o: f64 = 332.0;
         let direct_n2o = p.n2o_radeff * (n2o.sqrt() - p.n2o_pi.sqrt());
-        let actual_n2o = c.calculate_n2o_forcing(p.ch4_pi, n2o);
+        let actual_n2o = c.calculate_n2o_forcing(p.co2_pi, p.ch4_pi, n2o);
 
         assert!(
             actual_n2o < direct_n2o,
@@ -451,11 +489,11 @@ mod tests {
         );
     }
 
-    // ===== Etminan CO2 Tests =====
+    // ===== OLBL CO2 Tests =====
 
     #[test]
-    fn test_etminan_co2_zero_at_preindustrial() {
-        let c = etminan_component();
+    fn test_olbl_co2_zero_at_preindustrial() {
+        let c = olbl_component();
         let f = c.calculate_co2_forcing(278.0, 270.0);
         assert!(
             f.abs() < 1e-10,
@@ -465,8 +503,8 @@ mod tests {
     }
 
     #[test]
-    fn test_etminan_co2_positive_above_pi() {
-        let c = etminan_component();
+    fn test_olbl_co2_positive_above_pi() {
+        let c = olbl_component();
         let f = c.calculate_co2_forcing(400.0, 270.0);
         assert!(
             f > 0.0,
@@ -476,33 +514,33 @@ mod tests {
     }
 
     #[test]
-    fn test_etminan_co2_differs_from_ipcctar() {
+    fn test_olbl_co2_differs_from_ipcctar() {
         let ipcc = ipcctar_component();
-        let etm = etminan_component();
+        let olbl = olbl_component();
 
         let f_ipcc = ipcc.calculate_co2_forcing(560.0, 270.0);
-        let f_etm = etm.calculate_co2_forcing(560.0, 270.0);
+        let f_olbl = olbl.calculate_co2_forcing(560.0, 270.0);
 
         // They should give similar but not identical results
         assert!(
-            (f_ipcc - f_etm).abs() > 0.01,
-            "IPCCTAR and Etminan should give different results at 2xCO2: {} vs {}",
+            (f_ipcc - f_olbl).abs() > 1e-4,
+            "IPCCTAR and OLBL should give different results at 2xCO2: {} vs {}",
             f_ipcc,
-            f_etm
+            f_olbl
         );
         assert!(
-            (f_ipcc - f_etm).abs() < 1.0,
+            (f_ipcc - f_olbl).abs() < 1.0,
             "But the difference should be modest: {} vs {}",
             f_ipcc,
-            f_etm
+            f_olbl
         );
     }
 
-    // ===== Etminan CH4 Tests =====
+    // ===== OLBL CH4 Tests =====
 
     #[test]
-    fn test_etminan_ch4_zero_at_preindustrial() {
-        let c = etminan_component();
+    fn test_olbl_ch4_zero_at_preindustrial() {
+        let c = olbl_component();
         let f = c.calculate_ch4_forcing(722.0, 270.0);
         assert!(
             f.abs() < 1e-10,
@@ -512,8 +550,8 @@ mod tests {
     }
 
     #[test]
-    fn test_etminan_ch4_positive_above_pi() {
-        let c = etminan_component();
+    fn test_olbl_ch4_positive_above_pi() {
+        let c = olbl_component();
         let f = c.calculate_ch4_forcing(1900.0, 270.0);
         assert!(
             f > 0.0,
@@ -522,12 +560,12 @@ mod tests {
         );
     }
 
-    // ===== Etminan N2O Tests =====
+    // ===== OLBL N2O Tests =====
 
     #[test]
-    fn test_etminan_n2o_zero_at_preindustrial() {
-        let c = etminan_component();
-        let f = c.calculate_n2o_forcing(722.0, 270.0);
+    fn test_olbl_n2o_zero_at_preindustrial() {
+        let c = olbl_component();
+        let f = c.calculate_n2o_forcing(278.0, 722.0, 270.0);
         assert!(
             f.abs() < 1e-10,
             "N2O forcing at PI should be zero, got {}",
@@ -536,9 +574,9 @@ mod tests {
     }
 
     #[test]
-    fn test_etminan_n2o_positive_above_pi() {
-        let c = etminan_component();
-        let f = c.calculate_n2o_forcing(722.0, 332.0);
+    fn test_olbl_n2o_positive_above_pi() {
+        let c = olbl_component();
+        let f = c.calculate_n2o_forcing(278.0, 722.0, 332.0);
         assert!(
             f > 0.0,
             "N2O forcing above PI should be positive, got {}",
@@ -670,8 +708,8 @@ mod tests {
     }
 
     #[test]
-    fn test_etminan_all_forcings_positive_above_pi() {
-        let c = etminan_component();
+    fn test_olbl_all_forcings_positive_above_pi() {
+        let c = olbl_component();
         let result = c.calculate_forcings(400.0, 1900.0, 332.0);
 
         assert!(
