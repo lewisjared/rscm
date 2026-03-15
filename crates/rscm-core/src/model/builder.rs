@@ -616,11 +616,13 @@ impl ModelBuilder {
                     // Variable exists (from component input declaration) - update grid type to match schema
                     // This ensures storage uses schema's grid type, and read transforms will handle conversion
                     if let Some(def) = definitions.get_mut(name) {
-                        if def.grid_type != var_def.grid_type && !endogenous.contains_key(name) {
-                            // Only update if this variable is exogenous (input-only)
-                            // If a component outputs this variable, the write transform will handle conversion
+                        if def.grid_type != var_def.grid_type {
+                            // Update storage grid type to match schema
+                            // Read/write transforms handle conversion between component and schema grid types
                             def.grid_type = var_def.grid_type;
-                            exogenous.push(name.clone());
+                            if !endogenous.contains_key(name) {
+                                exogenous.push(name.clone());
+                            }
                         }
                     }
                 }
@@ -732,173 +734,97 @@ impl ModelBuilder {
 
         // Create the timeseries collection using the information from the components
         let mut collection = TimeseriesCollection::new();
+        let interp = InterpolationStrategy::from(LinearSplineStrategy::new(true));
+
         for (name, definition) in definitions {
             assert_eq!(definition.name, name);
 
-            if exogenous.contains(&name) {
-                // Exogenous variable is expected to be supplied
-                if self.initial_values.contains_key(&name) {
-                    // An initial value was provided
-                    let initial_val = self.initial_values[&name];
-
-                    match definition.grid_type {
-                        GridType::FourBox => {
-                            // Create FourBox timeseries with uniform initial value
-                            use crate::spatial::FourBoxGrid;
-                            let grid = FourBoxGrid::magicc_standard();
-                            let mut ts = GridTimeseries::new_empty(
-                                self.time_axis.clone(),
-                                grid,
-                                definition.unit,
-                                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                            );
-                            use crate::spatial::FourBoxRegion;
-                            ts.set(0, FourBoxRegion::NorthernOcean, initial_val);
-                            ts.set(0, FourBoxRegion::NorthernLand, initial_val);
-                            ts.set(0, FourBoxRegion::SouthernOcean, initial_val);
-                            ts.set(0, FourBoxRegion::SouthernLand, initial_val);
-                            collection.add_four_box_timeseries(name, ts, VariableType::Endogenous);
-                        }
-                        GridType::Hemispheric => {
-                            // Create Hemispheric timeseries with uniform initial value
-                            use crate::spatial::HemisphericGrid;
-                            let grid = HemisphericGrid::default();
-                            let mut ts = GridTimeseries::new_empty(
-                                self.time_axis.clone(),
-                                grid,
-                                definition.unit,
-                                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                            );
-                            use crate::spatial::HemisphericRegion;
-                            ts.set(0, HemisphericRegion::Northern, initial_val);
-                            ts.set(0, HemisphericRegion::Southern, initial_val);
-                            collection.add_hemispheric_timeseries(
-                                name,
-                                ts,
-                                VariableType::Endogenous,
-                            );
-                        }
-                        GridType::Scalar => {
-                            let mut ts = Timeseries::new_empty_scalar(
-                                self.time_axis.clone(),
-                                definition.unit,
-                                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                            );
-                            ts.set(0, ScalarRegion::Global, initial_val);
-                            collection.add_timeseries(name, ts, VariableType::Endogenous);
-                        }
-                    }
-                } else {
-                    // Check if the timeseries is available in the provided exogenous variables
-                    // then interpolate to the right timebase
-                    // Look for exogenous data matching the schema's grid type
-                    let exogenous_data = self.exogenous_variables.get_data(&name);
-
-                    match (exogenous_data, definition.grid_type) {
-                        (Some(TimeseriesData::Scalar(ts)), GridType::Scalar) => {
-                            collection.add_timeseries(
-                                name,
-                                ts.to_owned().interpolate_into(self.time_axis.clone()),
-                                VariableType::Exogenous,
-                            );
-                        }
-                        (Some(TimeseriesData::FourBox(ts)), GridType::FourBox) => {
-                            collection.add_four_box_timeseries(
-                                name,
-                                ts.to_owned().interpolate_into(self.time_axis.clone()),
-                                VariableType::Exogenous,
-                            );
-                        }
-                        (Some(TimeseriesData::Hemispheric(ts)), GridType::Hemispheric) => {
-                            collection.add_hemispheric_timeseries(
-                                name,
-                                ts.to_owned().interpolate_into(self.time_axis.clone()),
-                                VariableType::Exogenous,
-                            );
-                        }
-                        _ => {
-                            // No exogenous data provided or grid type mismatch
-                            // Create empty timeseries (all NaN) matching the schema's grid type
-                            // This is expected for schema variables without writers
-                            match definition.grid_type {
-                                GridType::Scalar => collection.add_timeseries(
-                                    definition.name,
-                                    Timeseries::new_empty_scalar(
-                                        self.time_axis.clone(),
-                                        definition.unit,
-                                        InterpolationStrategy::from(LinearSplineStrategy::new(
-                                            true,
-                                        )),
-                                    ),
-                                    VariableType::Exogenous,
-                                ),
-                                GridType::FourBox => collection.add_four_box_timeseries(
-                                    definition.name,
-                                    crate::timeseries::GridTimeseries::new_empty(
-                                        self.time_axis.clone(),
-                                        self.create_four_box_grid(),
-                                        definition.unit,
-                                        InterpolationStrategy::from(LinearSplineStrategy::new(
-                                            true,
-                                        )),
-                                    ),
-                                    VariableType::Exogenous,
-                                ),
-                                GridType::Hemispheric => collection.add_hemispheric_timeseries(
-                                    definition.name,
-                                    crate::timeseries::GridTimeseries::new_empty(
-                                        self.time_axis.clone(),
-                                        self.create_hemispheric_grid(),
-                                        definition.unit,
-                                        InterpolationStrategy::from(LinearSplineStrategy::new(
-                                            true,
-                                        )),
-                                    ),
-                                    VariableType::Exogenous,
-                                ),
-                            }
-                        }
-                    }
-                }
+            let is_endogenous = endogenous.contains_key(&name);
+            let var_type = if is_endogenous {
+                VariableType::Endogenous
             } else {
-                // Create a placeholder for data that will be generated by the model
-                // If there's a write transform, use the target grid type (schema's type)
-                // instead of the component's declared output type
-                let storage_grid_type = write_transforms
-                    .get(&name)
-                    .map(|t| t.target_grid)
-                    .unwrap_or(definition.grid_type);
+                VariableType::Exogenous
+            };
 
-                match storage_grid_type {
-                    GridType::Scalar => collection.add_timeseries(
-                        definition.name,
-                        Timeseries::new_empty_scalar(
+            // Determine storage grid type: write transforms override the definition
+            let storage_grid = write_transforms
+                .get(&name)
+                .map(|t| t.target_grid)
+                .unwrap_or(definition.grid_type);
+
+            // Try to populate from: (1) exogenous data, (2) initial value, (3) empty
+            let exogenous_data = if exogenous.contains(&name) {
+                self.exogenous_variables.get_data(&name)
+            } else {
+                None
+            };
+            let initial_val = self.initial_values.get(&name).copied();
+
+            match storage_grid {
+                GridType::Scalar => {
+                    if let Some(TimeseriesData::Scalar(ts)) = exogenous_data {
+                        collection.add_timeseries(
+                            name,
+                            ts.to_owned().interpolate_into(self.time_axis.clone()),
+                            var_type,
+                        );
+                    } else {
+                        let mut ts = Timeseries::new_empty_scalar(
                             self.time_axis.clone(),
                             definition.unit,
-                            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                        ),
-                        VariableType::Endogenous,
-                    ),
-                    GridType::FourBox => collection.add_four_box_timeseries(
-                        definition.name,
-                        crate::timeseries::GridTimeseries::new_empty(
+                            interp.clone(),
+                        );
+                        if let Some(val) = initial_val {
+                            ts.set(0, ScalarRegion::Global, val);
+                        }
+                        collection.add_timeseries(name, ts, var_type);
+                    }
+                }
+                GridType::FourBox => {
+                    if let Some(TimeseriesData::FourBox(ts)) = exogenous_data {
+                        collection.add_four_box_timeseries(
+                            name,
+                            ts.to_owned().interpolate_into(self.time_axis.clone()),
+                            var_type,
+                        );
+                    } else {
+                        let mut ts = GridTimeseries::new_empty(
                             self.time_axis.clone(),
                             self.create_four_box_grid(),
                             definition.unit,
-                            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                        ),
-                        VariableType::Endogenous,
-                    ),
-                    GridType::Hemispheric => collection.add_hemispheric_timeseries(
-                        definition.name,
-                        crate::timeseries::GridTimeseries::new_empty(
+                            interp.clone(),
+                        );
+                        if let Some(val) = initial_val {
+                            use crate::spatial::FourBoxRegion;
+                            ts.set(0, FourBoxRegion::NorthernOcean, val);
+                            ts.set(0, FourBoxRegion::NorthernLand, val);
+                            ts.set(0, FourBoxRegion::SouthernOcean, val);
+                            ts.set(0, FourBoxRegion::SouthernLand, val);
+                        }
+                        collection.add_four_box_timeseries(name, ts, var_type);
+                    }
+                }
+                GridType::Hemispheric => {
+                    if let Some(TimeseriesData::Hemispheric(ts)) = exogenous_data {
+                        collection.add_hemispheric_timeseries(
+                            name,
+                            ts.to_owned().interpolate_into(self.time_axis.clone()),
+                            var_type,
+                        );
+                    } else {
+                        let mut ts = GridTimeseries::new_empty(
                             self.time_axis.clone(),
                             self.create_hemispheric_grid(),
                             definition.unit,
-                            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                        ),
-                        VariableType::Endogenous,
-                    ),
+                            interp.clone(),
+                        );
+                        if let Some(val) = initial_val {
+                            use crate::spatial::HemisphericRegion;
+                            ts.set(0, HemisphericRegion::Northern, val);
+                            ts.set(0, HemisphericRegion::Southern, val);
+                        }
+                        collection.add_hemispheric_timeseries(name, ts, var_type);
+                    }
                 }
             }
         }
