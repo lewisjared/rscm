@@ -24,6 +24,7 @@ features = ["abi3-py311", "multiple-pymethods"]
 [dev-dependencies]
 serde_json = "1.0"
 approx = "0.5"
+ndarray = "0.17"
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--html-in-header", "katex-header.html" ]

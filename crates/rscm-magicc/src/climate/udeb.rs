@@ -121,6 +121,7 @@ impl ComponentState for ClimateUDEBState {
 #[outputs(
     heat_uptake { name = "Heat Uptake", unit = "W/m^2" },
     ocean_heat_content { name = "Ocean Heat Content", unit = "J/m^2" },
+    sst { name = "Sea Surface Temperature", unit = "K" },
 )]
 pub struct ClimateUDEB {
     parameters: ClimateUDEBParameters,
@@ -473,10 +474,14 @@ impl ClimateUDEB {
         let heat_uptake = self.calculate_heat_uptake(&forcing, &surface_temperature);
         let ocean_heat_content = self.calculate_ocean_heat_content(state);
 
+        // SST is the mean of the two ocean box temperatures
+        let sst = (sst_nh + sst_sh) / 2.0;
+
         let outputs = ClimateUDEBOutputs {
             surface_temperature,
             heat_uptake,
             ocean_heat_content,
+            sst,
         };
 
         Ok(outputs.into())
@@ -678,14 +683,101 @@ mod tests {
         let component = default_component();
         let defs = component.definitions();
 
-        // Should have: 1 input + 1 state + 2 outputs = 4 definitions
-        assert_eq!(defs.len(), 4);
+        // Should have: 1 input + 1 state + 3 outputs = 5 definitions
+        assert_eq!(defs.len(), 5);
 
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"Effective Radiative Forcing"));
         assert!(names.contains(&"Surface Temperature"));
         assert!(names.contains(&"Heat Uptake"));
         assert!(names.contains(&"Ocean Heat Content"));
+        assert!(names.contains(&"Sea Surface Temperature"));
+    }
+
+    #[test]
+    fn test_sst_is_mean_of_ocean_boxes() {
+        use ndarray::Array2;
+        use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+        use rscm_core::spatial::FourBoxGrid;
+        use rscm_core::state::StateValue;
+        use rscm_core::timeseries::{GridTimeseries, TimeAxis};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use std::sync::Arc;
+
+        let component = default_component();
+        let mut state = default_state(&component);
+
+        // Build FourBox ERF timeseries: [NH Ocean, NH Land, SH Ocean, SH Land] constant 3.71
+        let grid = FourBoxGrid::magicc_standard();
+        let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![
+            2000.0_f64, 2001.0_f64
+        ]));
+        let erf_values =
+            Array2::from_shape_vec((2, 4), vec![3.71, 3.71, 3.71, 3.71, 3.71, 3.71, 3.71, 3.71])
+                .unwrap();
+        let erf_ts = GridTimeseries::new(
+            erf_values,
+            time_axis.clone(),
+            grid,
+            "W/m^2".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+        let erf_item = TimeseriesItem {
+            data: TimeseriesData::FourBox(erf_ts),
+            name: "Effective Radiative Forcing|Total".to_string(),
+            variable_type: VariableType::Exogenous,
+        };
+
+        // Build FourBox surface temperature timeseries initialised to zero
+        let surf_grid = FourBoxGrid::magicc_standard();
+        let surf_values = Array2::zeros((2, 4));
+        let surf_ts = GridTimeseries::new(
+            surf_values,
+            time_axis,
+            surf_grid,
+            "K".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+        let surf_item = TimeseriesItem {
+            data: TimeseriesData::FourBox(surf_ts),
+            name: "Surface Temperature".to_string(),
+            variable_type: VariableType::Endogenous,
+        };
+
+        let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
+
+        let output = component
+            .solve_impl(2000.0, 2001.0, &input_state, &mut state)
+            .expect("solve_impl failed");
+
+        // Extract SST from output
+        let sst_val = match output
+            .get("Sea Surface Temperature")
+            .expect("SST not found in output")
+        {
+            StateValue::Scalar(v) => *v,
+            other => panic!("Expected scalar SST, got {:?}", other),
+        };
+
+        // SST should equal mean of the two ocean mixed-layer temperatures
+        let nh_ocean = state.ocean_temps[0][0];
+        let sh_ocean = state.ocean_temps[1][0];
+        let expected_sst = (nh_ocean + sh_ocean) / 2.0;
+
+        assert!(
+            (sst_val - expected_sst).abs() < 1e-10,
+            "SST ({}) should be mean of NH ocean ({}) and SH ocean ({}) = {}",
+            sst_val,
+            nh_ocean,
+            sh_ocean,
+            expected_sst
+        );
+
+        // SST should be positive after applying positive forcing
+        assert!(
+            sst_val > 0.0,
+            "SST should be positive after positive forcing"
+        );
     }
 
     #[test]
