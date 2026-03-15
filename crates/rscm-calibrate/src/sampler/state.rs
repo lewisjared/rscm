@@ -8,7 +8,7 @@ use crate::{Error, Result};
 use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
 /// Information about sampling progress.
@@ -142,7 +142,7 @@ impl SamplerState {
         })?;
         let mut writer = BufWriter::new(file);
 
-        bincode::serialize_into(&mut writer, self)
+        postcard::to_io(self, &mut writer)
             .map_err(|e| Error::SamplingError(format!("Failed to serialize checkpoint: {}", e)))?;
 
         writer
@@ -164,9 +164,28 @@ impl SamplerState {
     pub fn load_checkpoint<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file = File::open(path)
             .map_err(|e| Error::SamplingError(format!("Failed to open checkpoint file: {}", e)))?;
-        let mut reader = BufReader::new(file);
 
-        let state: SamplerState = bincode::deserialize_from(&mut reader).map_err(|e| {
+        const MAX_CHECKPOINT_FILE_SIZE: u64 = 1024 * 1024 * 1024; // 1 GiB
+        let file_size = file
+            .metadata()
+            .map_err(|e| {
+                Error::SamplingError(format!("Failed to read checkpoint file metadata: {}", e))
+            })?
+            .len();
+        if file_size > MAX_CHECKPOINT_FILE_SIZE {
+            return Err(Error::SamplingError(format!(
+                "Checkpoint file too large: {} bytes (max {} bytes)",
+                file_size, MAX_CHECKPOINT_FILE_SIZE
+            )));
+        }
+
+        let mut reader = BufReader::new(file);
+        let mut bytes = Vec::with_capacity(file_size as usize);
+        reader
+            .read_to_end(&mut bytes)
+            .map_err(|e| Error::SamplingError(format!("Failed to read checkpoint file: {}", e)))?;
+
+        let state: SamplerState = postcard::from_bytes(&bytes).map_err(|e| {
             Error::SamplingError(format!("Failed to deserialize checkpoint: {}", e))
         })?;
 

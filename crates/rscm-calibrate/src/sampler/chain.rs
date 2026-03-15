@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
 /// Storage for MCMC chain samples.
@@ -192,7 +192,7 @@ impl Chain {
             .map_err(|e| Error::SamplingError(format!("Failed to create chain file: {}", e)))?;
         let mut writer = BufWriter::new(file);
 
-        bincode::serialize_into(&mut writer, self)
+        postcard::to_io(self, &mut writer)
             .map_err(|e| Error::SamplingError(format!("Failed to serialize chain: {}", e)))?;
 
         writer
@@ -214,9 +214,28 @@ impl Chain {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file = File::open(path)
             .map_err(|e| Error::SamplingError(format!("Failed to open chain file: {}", e)))?;
-        let mut reader = BufReader::new(file);
 
-        let chain: Chain = bincode::deserialize_from(&mut reader)
+        const MAX_CHAIN_FILE_SIZE: u64 = 1024 * 1024 * 1024; // 1 GiB
+        let file_size = file
+            .metadata()
+            .map_err(|e| {
+                Error::SamplingError(format!("Failed to read chain file metadata: {}", e))
+            })?
+            .len();
+        if file_size > MAX_CHAIN_FILE_SIZE {
+            return Err(Error::SamplingError(format!(
+                "Chain file too large: {} bytes (max {} bytes)",
+                file_size, MAX_CHAIN_FILE_SIZE
+            )));
+        }
+
+        let mut reader = BufReader::new(file);
+        let mut bytes = Vec::with_capacity(file_size as usize);
+        reader
+            .read_to_end(&mut bytes)
+            .map_err(|e| Error::SamplingError(format!("Failed to read chain file: {}", e)))?;
+
+        let chain: Chain = postcard::from_bytes(&bytes)
             .map_err(|e| Error::SamplingError(format!("Failed to deserialize chain: {}", e)))?;
 
         Ok(chain)
