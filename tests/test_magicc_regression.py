@@ -26,8 +26,25 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 
-from rscm._lib.core import InterpolationStrategy, TimeAxis, Timeseries
-from rscm._lib.magicc import GhgForcingBuilder
+from rscm._lib.core import (
+    GridType,
+    InterpolationStrategy,
+    TimeAxis,
+    Timeseries,
+    VariableSchema,
+)
+from rscm._lib.magicc import (
+    AerosolDirectBuilder,
+    AerosolIndirectBuilder,
+    CH4ChemistryBuilder,
+    ClimateUDEBBuilder,
+    CO2BudgetBuilder,
+    GhgForcingBuilder,
+    N2OChemistryBuilder,
+    OceanCarbonBuilder,
+    OzoneForcingBuilder,
+    TerrestrialCarbonBuilder,
+)
 from rscm.core import ModelBuilder
 
 # Reference data location (relative to this file)
@@ -374,29 +391,285 @@ def test_02_ghg_forcing_olbl():
     )
 
 
-@pytest.mark.skip(reason="Requires full carbon cycle + chemistry component chain")
+def _build_emissions_schema():
+    """Build the VariableSchema for a full emissions-driven MAGICC model."""
+    schema = VariableSchema()
+
+    # Concentration variables
+    schema.add_variable("Atmospheric Concentration|CO2", "ppm")
+    schema.add_variable("Atmospheric Concentration|CH4", "ppb")
+    schema.add_variable("Atmospheric Concentration|N2O", "ppb")
+
+    # Emission variables
+    schema.add_variable("Emissions|CO2|Fossil", "GtC/yr")
+    schema.add_variable("Emissions|CO2|Land Use", "GtC/yr")
+    schema.add_variable("Emissions|CH4", "Mt CH4/yr")
+    schema.add_variable("Emissions|N2O", "Mt N/yr")
+    schema.add_variable("Emissions|NOx", "Mt N/yr")
+    schema.add_variable("Emissions|CO", "Mt CO/yr")
+    schema.add_variable("Emissions|NMVOC", "Mt NMVOC/yr")
+    schema.add_variable("Emissions|SOx", "Mt S/yr")
+    schema.add_variable("Emissions|BC", "Mt BC/yr")
+    schema.add_variable("Emissions|OC", "Mt OC/yr")
+    schema.add_variable("EESC", "ppt")
+
+    # Forcing variables
+    schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
+    schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
+    schema.add_variable("Effective Radiative Forcing|N2O", "W/m^2")
+    schema.add_variable("Effective Radiative Forcing|O3|Stratospheric", "W/m^2")
+    schema.add_variable("Effective Radiative Forcing|O3|Tropospheric", "W/m^2")
+    schema.add_variable("Effective Radiative Forcing|O3|Temperature Feedback", "W/m^2")
+    schema.add_variable("Effective Radiative Forcing|Aerosol|Direct", "W/m^2")
+    schema.add_variable("Effective Radiative Forcing|Aerosol|Indirect", "W/m^2")
+
+    # Climate variables
+    schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+    schema.add_variable("Heat Uptake", "W/m^2")
+    schema.add_variable("Ocean Heat Content", "J/m^2")
+    schema.add_variable("Sea Surface Temperature", "K")
+
+    # Carbon cycle variables
+    schema.add_variable("Carbon Flux|Terrestrial", "GtC/yr")
+    schema.add_variable("Carbon Flux|Ocean", "GtC/yr")
+    schema.add_variable("Carbon Pool|Plant", "GtC")
+    schema.add_variable("Carbon Pool|Detritus", "GtC")
+    schema.add_variable("Carbon Pool|Soil", "GtC")
+    schema.add_variable("Carbon Pool|Humus", "GtC")
+    schema.add_variable("Ocean Surface pCO2", "ppm")
+    schema.add_variable("Cumulative Ocean Uptake", "GtC")
+    schema.add_variable("Emissions|CO2|Net", "GtC/yr")
+    schema.add_variable("Airborne Fraction|CO2", "1")
+    schema.add_variable("Lifetime|CH4", "yr")
+    schema.add_variable("Lifetime|N2O", "yr")
+
+    # ERF aggregation
+    schema.add_aggregate(
+        "Effective Radiative Forcing",
+        "W/m^2",
+        "Sum",
+        [
+            "Effective Radiative Forcing|CO2",
+            "Effective Radiative Forcing|CH4",
+            "Effective Radiative Forcing|N2O",
+            "Effective Radiative Forcing|O3|Stratospheric",
+            "Effective Radiative Forcing|O3|Tropospheric",
+            "Effective Radiative Forcing|O3|Temperature Feedback",
+            "Effective Radiative Forcing|Aerosol|Direct",
+            "Effective Radiative Forcing|Aerosol|Indirect",
+        ],
+    )
+
+    return schema
+
+
+def build_emissions_driven_model(
+    years,
+    emissions,
+    initial_conditions,
+    config,
+):
+    """
+    Build a full emissions-driven MAGICC model.
+
+    Parameters
+    ----------
+    years
+        Array of year values (1750-2100)
+    emissions
+        Dict mapping variable name -> (values_array, unit_string)
+    initial_conditions
+        Dict mapping state variable name -> initial value (float)
+    config
+        MAGICC config dict
+
+    Returns
+    -------
+    Model ready to run
+    """
+    time_axis = TimeAxis.from_bounds(
+        np.concatenate([years, [years[-1] + 1.0]]).astype(np.float64)
+    )
+
+    # Build components with default parameters
+    ghg = GhgForcingBuilder.from_parameters(
+        {
+            "method": "Ipcctar",
+            "delq2xco2": config.get("core_delq2xco2", 3.71),
+            "co2_pi": initial_conditions.get("Atmospheric Concentration|CO2", 278.0),
+            "ch4_pi": initial_conditions.get("Atmospheric Concentration|CH4", 700.0),
+            "n2o_pi": initial_conditions.get("Atmospheric Concentration|N2O", 270.0),
+        }
+    ).build()
+
+    climate = ClimateUDEBBuilder.from_parameters(
+        {
+            "ecs": config.get("core_climatesensitivity", 3.0),
+            "forcing_2xco2": config.get("core_delq2xco2", 3.71),
+        }
+    ).build()
+
+    ch4_chem = CH4ChemistryBuilder.from_parameters({}).build()
+    n2o_chem = N2OChemistryBuilder.from_parameters({}).build()
+    terrestrial = TerrestrialCarbonBuilder.from_parameters({}).build()
+    ocean = OceanCarbonBuilder.from_parameters({}).build()
+    co2_budget = CO2BudgetBuilder.from_parameters({}).build()
+    ozone = OzoneForcingBuilder.from_parameters({}).build()
+    aerosol_direct = AerosolDirectBuilder.from_parameters({}).build()
+    aerosol_indirect = AerosolIndirectBuilder.from_parameters({}).build()
+
+    schema = _build_emissions_schema()
+
+    # Wire components
+    builder = (
+        ModelBuilder()
+        .with_time_axis(time_axis)
+        .with_schema(schema)
+        .with_rust_component(ch4_chem)
+        .with_rust_component(n2o_chem)
+        .with_rust_component(ghg)
+        .with_rust_component(ozone)
+        .with_rust_component(aerosol_direct)
+        .with_rust_component(aerosol_indirect)
+        .with_rust_component(climate)
+        .with_rust_component(terrestrial)
+        .with_rust_component(ocean)
+        .with_rust_component(co2_budget)
+    )
+
+    # Add exogenous emissions timeseries
+    for var_name, (values, unit) in emissions.items():
+        ts = Timeseries(
+            values.astype(np.float64),
+            time_axis,
+            unit,
+            InterpolationStrategy.Linear,
+        )
+        builder = builder.with_exogenous_variable(var_name, ts)
+
+    # Set initial conditions for all state variables
+    builder = builder.with_initial_values(initial_conditions)
+
+    return builder.build()
+
+
+@pytest.mark.skip(reason="Requires emissions input data (regenerate with MAGICC7)")
 def test_03_emissions_driven():
     """
     Test 3: Emissions-driven run with full carbon cycle.
 
-    Validates the complete emissions-to-concentration-to-forcing-to-temperature
+    Validates the complete emissions -> concentrations -> forcing -> temperature
     pathway using SSP245 emissions scenario.
 
     Variables compared:
     - Atmospheric Concentrations|CO2/CH4/N2O (calculated from emissions)
     - Surface Temperature
     """
-    df, _config = load_regression_data("03_emissions_driven")
+    df, config = load_regression_data("03_emissions_driven")
 
-    # Extract expected values
+    # Extract expected outputs (MAGICC uses plural "Concentrations")
     years, expected_co2_conc = get_variable_values(df, "Atmospheric Concentrations|CO2")
-    _, _expected_ch4_conc = get_variable_values(df, "Atmospheric Concentrations|CH4")
-    _, _expected_n2o_conc = get_variable_values(df, "Atmospheric Concentrations|N2O")
-    _, _expected_temp = get_variable_values(df, "Surface Temperature")
+    _, expected_ch4_conc = get_variable_values(df, "Atmospheric Concentrations|CH4")
+    _, expected_n2o_conc = get_variable_values(df, "Atmospheric Concentrations|N2O")
+    _, expected_temp = get_variable_values(df, "Surface Temperature")
 
-    # Verify data was loaded
-    assert len(years) > 0
-    assert len(expected_co2_conc) == len(years)
+    # Extract emissions inputs from reference data
+    emissions = {}
+    emission_vars = [
+        ("Emissions|CO2|Fossil", "GtC/yr"),
+        ("Emissions|CO2|Land Use", "GtC/yr"),
+        ("Emissions|CH4", "Mt CH4/yr"),
+        ("Emissions|N2O", "Mt N/yr"),
+        ("Emissions|NOx", "Mt N/yr"),
+        ("Emissions|CO", "Mt CO/yr"),
+        ("Emissions|NMVOC", "Mt NMVOC/yr"),
+        ("Emissions|SOx", "Mt S/yr"),
+        ("Emissions|BC", "Mt BC/yr"),
+        ("Emissions|OC", "Mt OC/yr"),
+    ]
+    for var_name, unit in emission_vars:
+        try:
+            _, values = get_variable_values(df, var_name)
+            emissions[var_name] = (values, unit)
+        except ValueError:
+            # Variable not in reference data, provide zeros
+            emissions[var_name] = (np.zeros_like(years, dtype=np.float64), unit)
+
+    # Provide exogenous EESC=0 (no halocarbons wired)
+    emissions["EESC"] = (np.zeros_like(years, dtype=np.float64), "ppt")
+
+    # Initial conditions for all state variables
+    initial_conditions = {
+        # Concentrations from first-year reference values
+        "Atmospheric Concentration|CO2": float(expected_co2_conc[0]),
+        "Atmospheric Concentration|CH4": float(expected_ch4_conc[0]),
+        "Atmospheric Concentration|N2O": float(expected_n2o_conc[0]),
+        # Climate starts at zero anomaly
+        "Surface Temperature": 0.0,
+        # Ocean carbon: pCO2 starts near atmospheric, cumulative uptake at 0
+        "Ocean Surface pCO2": float(expected_co2_conc[0]),
+        "Cumulative Ocean Uptake": 0.0,
+        # Terrestrial carbon pools: PI defaults from TerrestrialCarbonParameters
+        "Carbon Pool|Plant": 884.86,
+        "Carbon Pool|Detritus": 92.77,
+        "Carbon Pool|Soil": 1681.53,
+        "Carbon Pool|Humus": 836.0,
+    }
+
+    model = build_emissions_driven_model(years, emissions, initial_conditions, config)
+    model.run()
+
+    results = model.timeseries()
+
+    # Relaxed tolerances for initial wiring validation
+    # Tighter tolerances require physics refinements tracked in #108, #109, #110
+    emissions_rtol = 5e-2  # 5% relative tolerance
+
+    # Compare CO2 concentration (RSCM uses singular "Concentration")
+    actual_co2 = results.get_timeseries_by_name(
+        "Atmospheric Concentration|CO2"
+    ).values()[1:]
+    npt.assert_allclose(
+        actual_co2,
+        expected_co2_conc[:-1],
+        rtol=emissions_rtol,
+        atol=DEFAULT_ATOL,
+        err_msg="CO2 concentration mismatch",
+    )
+
+    # Compare CH4 concentration
+    actual_ch4 = results.get_timeseries_by_name(
+        "Atmospheric Concentration|CH4"
+    ).values()[1:]
+    npt.assert_allclose(
+        actual_ch4,
+        expected_ch4_conc[:-1],
+        rtol=emissions_rtol,
+        atol=DEFAULT_ATOL,
+        err_msg="CH4 concentration mismatch",
+    )
+
+    # Compare N2O concentration
+    actual_n2o = results.get_timeseries_by_name(
+        "Atmospheric Concentration|N2O"
+    ).values()[1:]
+    npt.assert_allclose(
+        actual_n2o,
+        expected_n2o_conc[:-1],
+        rtol=emissions_rtol,
+        atol=DEFAULT_ATOL,
+        err_msg="N2O concentration mismatch",
+    )
+
+    # Compare Sea Surface Temperature (scalar proxy for global mean)
+    actual_sst = results.get_timeseries_by_name("Sea Surface Temperature").values()[1:]
+    npt.assert_allclose(
+        actual_sst,
+        expected_temp[:-1],
+        rtol=emissions_rtol,
+        atol=DEFAULT_ATOL,
+        err_msg="Temperature mismatch",
+    )
 
 
 @pytest.mark.skip(
