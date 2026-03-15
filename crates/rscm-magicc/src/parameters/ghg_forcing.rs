@@ -116,12 +116,6 @@ pub struct GhgForcingParameters {
     /// Default: 0.045
     pub olbl_ch4_d3: f64,
 
-    /// Stratospheric H2O contribution from CH4 oxidation (fraction).
-    ///
-    /// Added to CH4 forcing to account for stratospheric water vapour
-    /// produced by CH4 oxidation. Default: 0.0923 (9.23%)
-    pub ch4_strat_h2o_fraction: f64,
-
     // N2O: RF = (a2*sqrt(CO2) + b2*sqrt(N2O) + c2*sqrt(CH4) + d2) * (sqrt(N2O) - sqrt(N2O_pi))
     /// OLBL N2O CO2 overlap coefficient a2 (W/m2/sqrt(ppm)).
     /// Default: -3.4197e-4
@@ -179,7 +173,6 @@ impl Default for GhgForcingParameters {
             olbl_ch4_a3: -8.9603e-5,
             olbl_ch4_b3: -1.2462e-4,
             olbl_ch4_d3: 0.045,
-            ch4_strat_h2o_fraction: 0.0923,
             olbl_n2o_a2: -3.4197e-4,
             olbl_n2o_b2: 2.5455e-4,
             olbl_n2o_c2: -2.4357e-4,

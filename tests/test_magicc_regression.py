@@ -164,7 +164,7 @@ def build_ghg_forcing_model(
         method = "Olbl"
         adjust_co2 = config.get("core_rfrapidadjust_co2", 1.05)
         adjust_ch4 = config.get("core_rfrapidadjust_ch4", 0.86)
-        adjust_n2o = config.get("core_rfrapidadjust_n2o", 0.93)
+        adjust_n2o = config.get("core_rfrapidadjust_n2o", 1.0)
     else:
         msg = f"Unsupported forcing method: {rf_method}"
         raise ValueError(msg)

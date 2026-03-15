@@ -130,12 +130,12 @@ def simple_calibration_setup():
 @pytest.mark.slow
 def test_large_chain_memory(simple_calibration_setup):
     """
-    Test that large chains (100k+ samples) don't cause memory issues.
+    Test that moderately sized chains (~4k samples) don't cause memory issues.
 
-    This test runs a long MCMC chain with heavy thinning to verify:
+    This test runs a 1000-iteration MCMC chain (4 walkers, no thinning) to verify:
     - Memory usage remains stable
-    - Chain operations work with large sample counts
-    - Diagnostics can be computed on large chains
+    - Chain operations work with moderate sample counts
+    - Diagnostics can be computed efficiently
     """
     setup = simple_calibration_setup
 

@@ -235,9 +235,8 @@ impl GhgForcing {
     ///
     /// $$F_{CH4} = (a_3 \sqrt{CH_4} + b_3 \sqrt{N_2O} + d_3) \cdot (\sqrt{CH_4} - \sqrt{CH_{4,pi}})$$
     ///
-    /// Note: Stratospheric H2O from CH4 oxidation (`ch4_strat_h2o_fraction`)
-    /// is reported as a separate forcing agent in MAGICC7 and is not included
-    /// in the CH4 ERF output.
+    /// Note: Stratospheric H2O from CH4 oxidation is reported as a separate
+    /// forcing agent in MAGICC7 and is not included in the CH4 ERF output.
     fn ch4_forcing_olbl(&self, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
 
