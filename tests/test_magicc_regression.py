@@ -553,7 +553,65 @@ def build_emissions_driven_model(
     return builder.build()
 
 
-@pytest.mark.skip(reason="Requires emissions input data (regenerate with MAGICC7)")
+def _extract_emissions(df, years):
+    """Extract emissions from MAGICC reference data, summing sector splits."""
+    emissions = {}
+
+    def _get_or_zero(var, unit):
+        try:
+            _, vals = get_variable_values(df, var)
+        except ValueError:
+            return np.zeros_like(years, dtype=np.float64)
+        else:
+            return vals
+
+    def _sum_sectors(base_var, unit):
+        total = np.zeros_like(years, dtype=np.float64)
+        for sector in ["MAGICC Fossil and Industrial", "MAGICC AFOLU"]:
+            total += _get_or_zero(f"{base_var}|{sector}", unit)
+        return (total, unit)
+
+    # CO2: total available, assign all to fossil (no LU split in output)
+    co2_unit = "GtC/yr"
+    emissions["Emissions|CO2|Fossil"] = (
+        _get_or_zero("Emissions|CO2", co2_unit),
+        co2_unit,
+    )
+    emissions["Emissions|CO2|Land Use"] = (
+        np.zeros_like(years, dtype=np.float64),
+        co2_unit,
+    )
+
+    # CH4 and N2O totals
+    emissions["Emissions|CH4"] = (
+        _get_or_zero("Emissions|CH4", "Mt CH4/yr"),
+        "Mt CH4/yr",
+    )
+    emissions["Emissions|N2O"] = (
+        _get_or_zero("Emissions|N2O", "Mt N/yr"),
+        "Mt N/yr",
+    )
+
+    # Species emissions: sum MAGICC sectors
+    for var, unit in [
+        ("Emissions|NOx", "Mt N/yr"),
+        ("Emissions|CO", "Mt CO/yr"),
+        ("Emissions|NMVOC", "Mt NMVOC/yr"),
+        ("Emissions|SOx", "Mt S/yr"),
+        ("Emissions|BC", "Mt BC/yr"),
+        ("Emissions|OC", "Mt OC/yr"),
+    ]:
+        emissions[var] = _sum_sectors(var, unit)
+
+    # No halocarbons wired
+    emissions["EESC"] = (np.zeros_like(years, dtype=np.float64), "ppt")
+
+    return emissions
+
+
+@pytest.mark.xfail(
+    reason="Diverges from MAGICC7 due to documented simplifications (#108, #109, #110)"
+)
 def test_03_emissions_driven():
     """
     Test 3: Emissions-driven run with full carbon cycle.
@@ -573,30 +631,7 @@ def test_03_emissions_driven():
     _, expected_n2o_conc = get_variable_values(df, "Atmospheric Concentrations|N2O")
     _, expected_temp = get_variable_values(df, "Surface Temperature")
 
-    # Extract emissions inputs from reference data
-    emissions = {}
-    emission_vars = [
-        ("Emissions|CO2|Fossil", "GtC/yr"),
-        ("Emissions|CO2|Land Use", "GtC/yr"),
-        ("Emissions|CH4", "Mt CH4/yr"),
-        ("Emissions|N2O", "Mt N/yr"),
-        ("Emissions|NOx", "Mt N/yr"),
-        ("Emissions|CO", "Mt CO/yr"),
-        ("Emissions|NMVOC", "Mt NMVOC/yr"),
-        ("Emissions|SOx", "Mt S/yr"),
-        ("Emissions|BC", "Mt BC/yr"),
-        ("Emissions|OC", "Mt OC/yr"),
-    ]
-    for var_name, unit in emission_vars:
-        try:
-            _, values = get_variable_values(df, var_name)
-            emissions[var_name] = (values, unit)
-        except ValueError:
-            # Variable not in reference data, provide zeros
-            emissions[var_name] = (np.zeros_like(years, dtype=np.float64), unit)
-
-    # Provide exogenous EESC=0 (no halocarbons wired)
-    emissions["EESC"] = (np.zeros_like(years, dtype=np.float64), "ppt")
+    emissions = _extract_emissions(df, years)
 
     # Initial conditions for all state variables
     initial_conditions = {

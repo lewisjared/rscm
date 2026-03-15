@@ -315,6 +315,7 @@ python/rscm/librscm.dylib.dSYM/
 
 # Ignore OhMyClaude metadata
 .omc
+superpowers
 
 # Ignore Jupyter notebooks in docs/notebooks
 docs/notebooks/*.ipynb
