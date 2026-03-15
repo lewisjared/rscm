@@ -164,9 +164,23 @@ impl SamplerState {
     pub fn load_checkpoint<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file = File::open(path)
             .map_err(|e| Error::SamplingError(format!("Failed to open checkpoint file: {}", e)))?;
-        let mut reader = BufReader::new(file);
 
-        let mut bytes = Vec::new();
+        const MAX_CHECKPOINT_FILE_SIZE: u64 = 1024 * 1024 * 1024; // 1 GiB
+        let file_size = file
+            .metadata()
+            .map_err(|e| {
+                Error::SamplingError(format!("Failed to read checkpoint file metadata: {}", e))
+            })?
+            .len();
+        if file_size > MAX_CHECKPOINT_FILE_SIZE {
+            return Err(Error::SamplingError(format!(
+                "Checkpoint file too large: {} bytes (max {} bytes)",
+                file_size, MAX_CHECKPOINT_FILE_SIZE
+            )));
+        }
+
+        let mut reader = BufReader::new(file);
+        let mut bytes = Vec::with_capacity(file_size as usize);
         reader
             .read_to_end(&mut bytes)
             .map_err(|e| Error::SamplingError(format!("Failed to read checkpoint file: {}", e)))?;
