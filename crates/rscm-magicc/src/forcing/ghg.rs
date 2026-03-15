@@ -120,10 +120,10 @@ impl GhgForcing {
     /// $$f(M, N) = 0.47 \cdot \ln\left(1 + 2.01 \times 10^{-5} (MN)^{0.75}
     ///     + 5.31 \times 10^{-15} M (MN)^{1.52}\right)$$
     ///
-    /// where $M = \sqrt{CH4}$, $N = \sqrt{N2O}$ (both in ppb)
-    fn overlap_f(m: FloatValue, n: FloatValue) -> FloatValue {
-        let mn = m * n;
-        0.47 * (1.0 + 2.01e-5 * mn.powf(0.75) + 5.31e-15 * m * mn.powf(1.52)).ln()
+    /// where $M$ and $N$ are CH4 and N2O concentrations in ppb.
+    fn overlap_f(ch4_ppb: FloatValue, n2o_ppb: FloatValue) -> FloatValue {
+        let mn = ch4_ppb * n2o_ppb;
+        0.47 * (1.0 + 2.01e-5 * mn.powf(0.75) + 5.31e-15 * ch4_ppb * mn.powf(1.52)).ln()
     }
 
     /// Calculate CO2 forcing (dispatches to method)
@@ -161,34 +161,29 @@ impl GhgForcing {
         alpha * (co2 / p.co2_pi).ln()
     }
 
-    fn ch4_forcing_ipcctar(&self, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
+    fn ch4_forcing_ipcctar(&self, ch4: FloatValue, _n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
-        let m = ch4.sqrt();
-        let m0 = p.ch4_pi.sqrt();
-        let n = n2o.sqrt();
 
-        // Direct term
-        let direct = p.ch4_radeff * (m - m0);
+        // Direct term (square-root relationship)
+        let direct = p.ch4_radeff * (ch4.sqrt() - p.ch4_pi.sqrt());
 
-        // Overlap correction using current N2O (Myhre et al. 1998)
-        // The overlap between CH4 and N2O absorption bands means that
-        // the marginal forcing from CH4 depends on N2O concentration.
-        let overlap = Self::overlap_f(m, n) - Self::overlap_f(m0, n);
+        // Overlap correction (Myhre et al. 1998)
+        // overlap_f takes concentrations in ppb directly.
+        // CH4 overlap uses PI N2O baseline: f(M, N0) - f(M0, N0)
+        let overlap = Self::overlap_f(ch4, p.n2o_pi) - Self::overlap_f(p.ch4_pi, p.n2o_pi);
 
         direct - overlap
     }
 
-    fn n2o_forcing_ipcctar(&self, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
+    fn n2o_forcing_ipcctar(&self, _ch4: FloatValue, n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
-        let n = n2o.sqrt();
-        let n0 = p.n2o_pi.sqrt();
-        let m = ch4.sqrt();
 
-        // Direct term
-        let direct = p.n2o_radeff * (n - n0);
+        // Direct term (square-root relationship)
+        let direct = p.n2o_radeff * (n2o.sqrt() - p.n2o_pi.sqrt());
 
-        // Overlap correction using current CH4 (Myhre et al. 1998)
-        let overlap = Self::overlap_f(m, n) - Self::overlap_f(m, n0);
+        // Overlap correction (Myhre et al. 1998)
+        // N2O overlap uses PI CH4 baseline: f(M0, N) - f(M0, N0)
+        let overlap = Self::overlap_f(p.ch4_pi, n2o) - Self::overlap_f(p.ch4_pi, p.n2o_pi);
 
         direct - overlap
     }
@@ -425,27 +420,34 @@ mod tests {
     // ===== CH4-N2O Overlap Tests =====
 
     #[test]
-    fn test_ipcctar_overlap_nonzero() {
+    fn test_ipcctar_overlap_reduces_forcing() {
         let c = ipcctar_component();
+        let p = c.parameters();
 
-        let ch4 = 1900.0;
-        let n2o = 332.0;
-
-        let f_ch4_with_overlap = c.calculate_ch4_forcing(ch4, n2o);
-        let f_ch4_no_overlap = c.calculate_ch4_forcing(ch4, 270.0);
-
-        let f_n2o_with_overlap = c.calculate_n2o_forcing(ch4, n2o);
-        let f_n2o_no_overlap = c.calculate_n2o_forcing(722.0, n2o);
-
-        // Both overlaps should be non-zero
-        let ch4_overlap = f_ch4_no_overlap - f_ch4_with_overlap;
-        let n2o_overlap = f_n2o_no_overlap - f_n2o_with_overlap;
+        // The overlap correction reduces the forcing from the direct term.
+        // At elevated CH4 (above PI), the overlap should make the CH4
+        // forcing smaller than the pure direct term alone.
+        let ch4: f64 = 1900.0;
+        let direct_ch4 = p.ch4_radeff * (ch4.sqrt() - p.ch4_pi.sqrt());
+        let actual_ch4 = c.calculate_ch4_forcing(ch4, p.n2o_pi);
 
         assert!(
-            ch4_overlap.abs() > 1e-6 || n2o_overlap.abs() > 1e-6,
-            "Overlap corrections should be non-zero: CH4={}, N2O={}",
-            ch4_overlap,
-            n2o_overlap
+            actual_ch4 < direct_ch4,
+            "Overlap should reduce CH4 forcing: actual={}, direct={}",
+            actual_ch4,
+            direct_ch4
+        );
+
+        // Same for N2O
+        let n2o: f64 = 332.0;
+        let direct_n2o = p.n2o_radeff * (n2o.sqrt() - p.n2o_pi.sqrt());
+        let actual_n2o = c.calculate_n2o_forcing(p.ch4_pi, n2o);
+
+        assert!(
+            actual_n2o < direct_n2o,
+            "Overlap should reduce N2O forcing: actual={}, direct={}",
+            actual_n2o,
+            direct_n2o
         );
     }
 

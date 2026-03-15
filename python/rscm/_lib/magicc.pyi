@@ -27,7 +27,7 @@ Forcing:
 - AerosolIndirectBuilder: Indirect aerosol cloud effects
 """
 
-from typing import TypedDict, final
+from typing import Literal, TypedDict, final
 
 from rscm._lib.core import Component, ComponentBuilder
 
@@ -993,7 +993,7 @@ class GhgForcingParams(TypedDict, total=False):
     All fields optional - defaults provided by Rust.
     """
 
-    method: str
+    method: Literal["Ipcctar", "Etminan"]
     co2_pi: float
     ch4_pi: float
     n2o_pi: float
