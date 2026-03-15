@@ -50,7 +50,7 @@ use rscm_core::component::{
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::spatial::{FourBoxGrid, FourBoxRegion};
-use rscm_core::state::{FourBoxSlice, GridTimeseriesWindow, StateValue};
+use rscm_core::state::{FourBoxSlice, GridTimeseriesWindow, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::utils::linear_algebra::thomas_solve;
 use rscm_core::ComponentIO;
@@ -113,7 +113,7 @@ impl ComponentState for ClimateUDEBState {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["climate", "udeb", "magicc"], category = "Climate")]
 #[inputs(
-    total_erf { name = "Effective Radiative Forcing", unit = "W/m^2", grid = "FourBox" },
+    total_erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[states(
     surface_temperature { name = "Surface Temperature", unit = "K", grid = "FourBox" },
@@ -401,13 +401,10 @@ impl ClimateUDEB {
 
         let inputs = ClimateUDEBInputs::from_input_state(input_state);
 
-        // Get forcing for each box
-        let forcing = FourBoxSlice::from_array([
-            inputs.total_erf.at_start(FourBoxRegion::NorthernOcean),
-            inputs.total_erf.at_start(FourBoxRegion::NorthernLand),
-            inputs.total_erf.at_start(FourBoxRegion::SouthernOcean),
-            inputs.total_erf.at_start(FourBoxRegion::SouthernLand),
-        ]);
+        // Get forcing - broadcast scalar to uniform FourBox
+        // When regional forcing distribution is available, this can accept FourBox input directly
+        let erf = inputs.total_erf.get();
+        let forcing = FourBoxSlice::from_array([erf, erf, erf, erf]);
 
         // Get previous surface temperature state
         let prev_temp = FourBoxSlice::from_array([
@@ -712,19 +709,13 @@ mod tests {
         let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![
             2000.0_f64, 2001.0_f64
         ]));
-        let erf_values =
-            Array2::from_shape_vec((2, 4), vec![3.71, 3.71, 3.71, 3.71, 3.71, 3.71, 3.71, 3.71])
-                .unwrap();
-        let erf_ts = GridTimeseries::new(
-            erf_values,
-            time_axis.clone(),
-            grid,
-            "W/m^2".to_string(),
-            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        let erf_ts = rscm_core::timeseries::Timeseries::from_values(
+            ndarray::array![3.71, 3.71],
+            ndarray::array![2000.0_f64, 2001.0_f64],
         );
         let erf_item = TimeseriesItem {
-            data: TimeseriesData::FourBox(erf_ts),
-            name: "Effective Radiative Forcing|Total".to_string(),
+            data: TimeseriesData::Scalar(erf_ts),
+            name: "Effective Radiative Forcing".to_string(),
             variable_type: VariableType::Exogenous,
         };
 

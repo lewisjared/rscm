@@ -5,7 +5,7 @@ use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::schema::VariableSchema;
 use crate::state::VariableSource;
-use crate::timeseries::{FloatValue, TimeAxis, Timeseries};
+use crate::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
 use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData, VariableType};
 use crate::units::Unit;
 use numpy::ndarray::Array;
@@ -739,17 +739,55 @@ impl ModelBuilder {
                 // Exogenous variable is expected to be supplied
                 if self.initial_values.contains_key(&name) {
                     // An initial value was provided
-                    let mut ts = Timeseries::new_empty_scalar(
-                        self.time_axis.clone(),
-                        definition.unit,
-                        InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-                    );
-                    ts.set(0, ScalarRegion::Global, self.initial_values[&name]);
+                    let initial_val = self.initial_values[&name];
 
-                    // Note that timeseries that are initialised are defined as Endogenous
-                    // all but the first time point come from the model.
-                    // This could potentially be defined as a different VariableType if needed.
-                    collection.add_timeseries(name, ts, VariableType::Endogenous)
+                    match definition.grid_type {
+                        GridType::FourBox => {
+                            // Create FourBox timeseries with uniform initial value
+                            use crate::spatial::FourBoxGrid;
+                            let grid = FourBoxGrid::magicc_standard();
+                            let mut ts = GridTimeseries::new_empty(
+                                self.time_axis.clone(),
+                                grid,
+                                definition.unit,
+                                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+                            );
+                            use crate::spatial::FourBoxRegion;
+                            ts.set(0, FourBoxRegion::NorthernOcean, initial_val);
+                            ts.set(0, FourBoxRegion::NorthernLand, initial_val);
+                            ts.set(0, FourBoxRegion::SouthernOcean, initial_val);
+                            ts.set(0, FourBoxRegion::SouthernLand, initial_val);
+                            collection.add_four_box_timeseries(name, ts, VariableType::Endogenous);
+                        }
+                        GridType::Hemispheric => {
+                            // Create Hemispheric timeseries with uniform initial value
+                            use crate::spatial::HemisphericGrid;
+                            let grid = HemisphericGrid::default();
+                            let mut ts = GridTimeseries::new_empty(
+                                self.time_axis.clone(),
+                                grid,
+                                definition.unit,
+                                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+                            );
+                            use crate::spatial::HemisphericRegion;
+                            ts.set(0, HemisphericRegion::Northern, initial_val);
+                            ts.set(0, HemisphericRegion::Southern, initial_val);
+                            collection.add_hemispheric_timeseries(
+                                name,
+                                ts,
+                                VariableType::Endogenous,
+                            );
+                        }
+                        GridType::Scalar => {
+                            let mut ts = Timeseries::new_empty_scalar(
+                                self.time_axis.clone(),
+                                definition.unit,
+                                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+                            );
+                            ts.set(0, ScalarRegion::Global, initial_val);
+                            collection.add_timeseries(name, ts, VariableType::Endogenous);
+                        }
+                    }
                 } else {
                     // Check if the timeseries is available in the provided exogenous variables
                     // then interpolate to the right timebase
