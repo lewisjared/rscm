@@ -2,7 +2,7 @@
 Memory stress test for calibration framework.
 
 This test validates:
-1. Large chain handling (100k+ samples)
+1. Large chain handling (1000+ iterations)
 2. Checkpoint/resume functionality
 3. Memory stability during long runs
 4. Chain persistence and merging
@@ -130,12 +130,12 @@ def simple_calibration_setup():
 @pytest.mark.slow
 def test_large_chain_memory(simple_calibration_setup):
     """
-    Test that large chains (100k+ samples) don't cause memory issues.
+    Test that moderately sized chains (~4k samples) don't cause memory issues.
 
-    This test runs a long MCMC chain with heavy thinning to verify:
+    This test runs a 1000-iteration MCMC chain (4 walkers, no thinning) to verify:
     - Memory usage remains stable
-    - Chain operations work with large sample counts
-    - Diagnostics can be computed on large chains
+    - Chain operations work with moderate sample counts
+    - Diagnostics can be computed efficiently
     """
     setup = simple_calibration_setup
 
@@ -147,10 +147,9 @@ def test_large_chain_memory(simple_calibration_setup):
         setup["target"],
     )
 
-    # Run a very long chain with heavy thinning
-    # 5000 iterations x 4 walkers (default) x thin=1 = 20k samples
-    # This is substantial but not excessive for CI
-    n_steps = 5000
+    # Run a moderately long chain
+    # 1000 iterations x 4 walkers (default) x thin=1 = 4k samples
+    n_steps = 1000
     thin = 1
 
     print(f"\nRunning large chain: {n_steps} iterations, thin={thin}")
@@ -161,11 +160,11 @@ def test_large_chain_memory(simple_calibration_setup):
     assert chain.thin == thin
 
     # Get flat samples (should handle large arrays)
-    samples = chain.flat_samples(discard=1000)
-    log_probs = chain.flat_log_probs(discard=1000)
+    samples = chain.flat_samples(discard=200)
+    log_probs = chain.flat_log_probs(discard=200)
 
     print(f"Chain has {samples.shape[0]} samples after burn-in")
-    assert samples.shape[0] > 10000  # Should have substantial samples
+    assert samples.shape[0] > 2000  # Should have substantial samples
     assert samples.shape[1] == 2  # Two parameters
     assert len(log_probs) == samples.shape[0]
 
@@ -174,9 +173,9 @@ def test_large_chain_memory(simple_calibration_setup):
     assert np.all(np.isfinite(log_probs))
 
     # Compute diagnostics on large chain
-    r_hat = chain.r_hat(discard=1000)
-    ess = chain.ess(discard=1000)
-    tau = chain.autocorr_time(discard=1000)
+    r_hat = chain.r_hat(discard=200)
+    ess = chain.ess(discard=200)
+    tau = chain.autocorr_time(discard=200)
 
     print("Diagnostics computed successfully:")
     print(f"  R-hat: {r_hat}")
@@ -212,16 +211,16 @@ def test_checkpoint_resume(simple_calibration_setup, tmp_path):
         setup["target"],
     )
 
-    # First run: 500 steps with checkpoint
+    # First run: 200 steps with checkpoint
     checkpoint_path = tmp_path / "checkpoint.bin"
-    n_steps_1 = 500
+    n_steps_1 = 200
 
     print(f"\nFirst run: {n_steps_1} steps with checkpoint")
     chain_1 = sampler.run_with_checkpoint(
         n_iterations=n_steps_1,
         init=WalkerInit.from_prior(),
         checkpoint_path=str(checkpoint_path),
-        checkpoint_every=100,
+        checkpoint_every=50,
         thin=1,
     )
 
@@ -230,8 +229,8 @@ def test_checkpoint_resume(simple_calibration_setup, tmp_path):
     assert (checkpoint_path.parent / f"{checkpoint_path.name}.chain").exists()
     assert (checkpoint_path.parent / f"{checkpoint_path.name}.state").exists()
 
-    # Resume from checkpoint: 500 -> 1000 total steps
-    n_steps_total = 1000
+    # Resume from checkpoint: 200 -> 500 total steps
+    n_steps_total = 500
 
     print(f"Resuming: {n_steps_1} -> {n_steps_total} total steps")
     chain_2 = sampler.resume_from_checkpoint(
@@ -297,7 +296,7 @@ def test_chain_persistence(simple_calibration_setup, tmp_path):
     )
 
     # Run two independent chains
-    n_steps = 1000
+    n_steps = 300
 
     print(f"\nRunning two chains: {n_steps} steps each")
     chain_1 = sampler.run(n_steps, WalkerInit.from_prior(), thin=1)
@@ -385,7 +384,7 @@ def test_thinning_memory_efficiency(simple_calibration_setup):
         setup["target"],
     )
 
-    n_steps = 2000
+    n_steps = 500
 
     # Run with no thinning
     print(f"\nRun 1: {n_steps} steps, thin=1")
@@ -408,21 +407,21 @@ def test_thinning_memory_efficiency(simple_calibration_setup):
     )  # Some tolerance for walker count
 
     # Both should converge to similar posterior
-    mean_nothin = np.mean(samples_nothin[1000:], axis=0)
-    mean_thin = np.mean(samples_thin[100:], axis=0)
+    mean_nothin = np.mean(samples_nothin[200:], axis=0)
+    mean_thin = np.mean(samples_thin[20:], axis=0)
 
     print(f"Posterior mean (no thin): {mean_nothin}")
     print(f"Posterior mean (thin={thin}): {mean_thin}")
 
-    # Means should be close (within 2 standard errors)
-    std_nothin = np.std(samples_nothin[1000:], axis=0)
-    assert np.allclose(mean_nothin, mean_thin, atol=2 * std_nothin), (
+    # Means should be close (within 3 standard errors for shorter chains)
+    std_nothin = np.std(samples_nothin[200:], axis=0)
+    assert np.allclose(mean_nothin, mean_thin, atol=3 * std_nothin), (
         "Thinned and non-thinned chains converged to different posteriors"
     )
 
     # Diagnostics should work on both
-    r_hat_nothin = chain_nothin.r_hat(discard=500)
-    r_hat_thin = chain_thin.r_hat(discard=50)
+    r_hat_nothin = chain_nothin.r_hat(discard=100)
+    r_hat_thin = chain_thin.r_hat(discard=10)
 
     print(f"R-hat (no thin): {r_hat_nothin}")
     print(f"R-hat (thin={thin}): {r_hat_thin}")

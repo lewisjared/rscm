@@ -993,7 +993,7 @@ class GhgForcingParams(TypedDict, total=False):
     All fields optional - defaults provided by Rust.
     """
 
-    method: Literal["Ipcctar", "Etminan"]
+    method: Literal["Ipcctar", "Olbl"]
     co2_pi: float
     ch4_pi: float
     n2o_pi: float
@@ -1025,7 +1025,7 @@ class GhgForcingBuilder(ComponentBuilder):
     # Parameters
     # ----------
     # method : str
-    #     Forcing method: "Ipcctar" or "Etminan". Default: "Etminan"
+    #     Forcing method: "Ipcctar" or "Olbl". Default: "Olbl"
     # co2_pi : float
     #     Pre-industrial CO2 (ppm). Default: 278.0
     # ch4_pi : float

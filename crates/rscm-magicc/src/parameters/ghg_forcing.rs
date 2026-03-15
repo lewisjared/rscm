@@ -1,7 +1,7 @@
 //! GHG radiative forcing parameters
 //!
 //! Parameters for well-mixed greenhouse gas (CO2, CH4, N2O) radiative
-//! forcing calculations using IPCCTAR or Etminan methods.
+//! forcing calculations using IPCCTAR or OLBL methods.
 
 use serde::{Deserialize, Serialize};
 
@@ -17,11 +17,12 @@ pub enum ForcingMethod {
     /// Used for backward compatibility and simpler validation.
     Ipcctar,
 
-    /// Etminan method (Etminan et al. 2016)
+    /// OLBL method (Optimised Line-By-Line)
     ///
-    /// Concentration-dependent forcing coefficients that account for
-    /// shortwave absorption. Used as the OLBL proxy in AR6 assessments.
-    Etminan,
+    /// Concentration-dependent forcing coefficients calibrated against
+    /// line-by-line radiative transfer calculations. This is the method
+    /// used in MAGICC7 v7.5.3 for AR6 assessments.
+    Olbl,
 }
 
 /// Parameters for GHG radiative forcing
@@ -34,10 +35,11 @@ pub enum ForcingMethod {
 ///
 /// $$F_{CO2} = \frac{\Delta Q_{2 \times CO2}}{\ln 2} \cdot \ln\left(\frac{C}{C_0}\right)$$
 ///
-/// ## Etminan (Etminan et al. 2016)
+/// ## OLBL (MAGICC7 v7.5.3)
 ///
-/// Concentration-dependent coefficients that capture shortwave
-/// absorption effects not present in the simpler IPCCTAR formulae.
+/// Concentration-dependent alpha coefficients calibrated against
+/// line-by-line radiative transfer. CO2 uses a quadratic alpha
+/// with saturation, CH4 and N2O use square-root overlap terms.
 ///
 /// # Rapid Adjustment
 ///
@@ -83,69 +85,75 @@ pub struct GhgForcingParameters {
     /// Default: 0.12
     pub n2o_radeff: f64,
 
-    // === Etminan-specific coefficients ===
-    // These follow Etminan et al. (2016) Table 1
-    /// Etminan CO2 coefficient a1 scale (per ppm^2).
-    /// Default: -2.4e-7
-    pub etminan_co2_a1: f64,
+    // === OLBL coefficients (MAGICC7 v7.5.3) ===
+    // CO2: alpha = a1*(C-C0)^2 + b1*(C-C0) + d1 + c1*sqrt(N2O)
+    /// OLBL CO2 quadratic coefficient a1 (W/m2/ppm^2).
+    /// Default: -2.4785e-7
+    pub olbl_co2_a1: f64,
 
-    /// Etminan CO2 coefficient a2 scale (per ppm).
-    /// Default: 7.2e-4
-    pub etminan_co2_a2: f64,
+    /// OLBL CO2 linear coefficient b1 (W/m2/ppm).
+    /// Default: 7.5906e-4
+    pub olbl_co2_b1: f64,
 
-    /// Etminan CO2 a3 N2O sensitivity (per ppb).
-    /// Default: -2.1e-4
-    pub etminan_co2_a3_n2o: f64,
+    /// OLBL CO2 N2O overlap coefficient c1 (W/m2/sqrt(ppb)).
+    /// Default: -2.1492e-3
+    pub olbl_co2_c1: f64,
 
-    /// Etminan CO2 a3 offset.
-    /// Default: 5.36
-    pub etminan_co2_a3_offset: f64,
+    /// OLBL CO2 constant d1 (W/m2).
+    /// Default: 5.2
+    pub olbl_co2_d1: f64,
 
-    /// Etminan CH4 coefficient b1 (per ppb).
-    /// Default: -1.3e-6
-    pub etminan_ch4_b1: f64,
+    // CH4: RF = (a3*sqrt(CH4) + b3*sqrt(N2O) + d3) * (sqrt(CH4) - sqrt(CH4_pi))
+    /// OLBL CH4 self-overlap coefficient a3 (W/m2/sqrt(ppb)).
+    /// Default: -8.9603e-5
+    pub olbl_ch4_a3: f64,
 
-    /// Etminan CH4 coefficient b2 (per ppb).
-    /// Default: -8.2e-6
-    pub etminan_ch4_b2: f64,
+    /// OLBL CH4 N2O overlap coefficient b3 (W/m2/sqrt(ppb)).
+    /// Default: -1.2462e-4
+    pub olbl_ch4_b3: f64,
 
-    /// Etminan CH4 coefficient b3.
-    /// Default: 0.043
-    pub etminan_ch4_b3: f64,
+    /// OLBL CH4 constant d3 (W/m2).
+    /// Default: 0.045
+    pub olbl_ch4_d3: f64,
 
-    /// Etminan N2O coefficient c1 (per ppb).
-    /// Default: -8.0e-6
-    pub etminan_n2o_c1: f64,
+    // N2O: RF = (a2*sqrt(CO2) + b2*sqrt(N2O) + c2*sqrt(CH4) + d2) * (sqrt(N2O) - sqrt(N2O_pi))
+    /// OLBL N2O CO2 overlap coefficient a2 (W/m2/sqrt(ppm)).
+    /// Default: -3.4197e-4
+    pub olbl_n2o_a2: f64,
 
-    /// Etminan N2O coefficient c2 (per ppb).
-    /// Default: 4.2e-6
-    pub etminan_n2o_c2: f64,
+    /// OLBL N2O self-overlap coefficient b2 (W/m2/sqrt(ppb)).
+    /// Default: 2.5455e-4
+    pub olbl_n2o_b2: f64,
 
-    /// Etminan N2O coefficient c3.
-    /// Default: 0.12
-    pub etminan_n2o_c3: f64,
+    /// OLBL N2O CH4 overlap coefficient c2 (W/m2/sqrt(ppb)).
+    /// Default: -2.4357e-4
+    pub olbl_n2o_c2: f64,
+
+    /// OLBL N2O constant d2 (W/m2).
+    /// Default: 0.14
+    pub olbl_n2o_d2: f64,
 
     // === Rapid adjustment factors ===
     /// Rapid adjustment factor for CO2 forcing.
     ///
-    /// Converts instantaneous forcing to ERF. AR6 default: 1.05
+    /// Converts instantaneous forcing to ERF. Default: 1.05
     pub adjust_co2: f64,
 
     /// Rapid adjustment factor for CH4 forcing.
     ///
-    /// AR6 default: 0.86 (CH4 has negative tropospheric adjustment)
+    /// Default: 0.86 (CH4 has negative tropospheric adjustment)
     pub adjust_ch4: f64,
 
     /// Rapid adjustment factor for N2O forcing.
     ///
-    /// AR6 default: 0.93
+    /// Default: 1.0 (no adjustment in MAGICC7 v7.5.3)
     pub adjust_n2o: f64,
 }
 
 impl Default for GhgForcingParameters {
     fn default() -> Self {
         Self {
-            method: ForcingMethod::Etminan,
+            method: ForcingMethod::Olbl,
 
             // Pre-industrial concentrations
             co2_pi: 278.0, // ppm
@@ -157,22 +165,23 @@ impl Default for GhgForcingParameters {
             ch4_radeff: 0.036,
             n2o_radeff: 0.12,
 
-            // Etminan coefficients (Table 1, Etminan et al. 2016)
-            etminan_co2_a1: -2.4e-7,
-            etminan_co2_a2: 7.2e-4,
-            etminan_co2_a3_n2o: -2.1e-4,
-            etminan_co2_a3_offset: 5.36,
-            etminan_ch4_b1: -1.3e-6,
-            etminan_ch4_b2: -8.2e-6,
-            etminan_ch4_b3: 0.043,
-            etminan_n2o_c1: -8.0e-6,
-            etminan_n2o_c2: 4.2e-6,
-            etminan_n2o_c3: 0.12,
+            // OLBL coefficients (MAGICC7 v7.5.3 MAGCFG_DEFAULTALL.CFG)
+            olbl_co2_a1: -2.4785e-7,
+            olbl_co2_b1: 7.5906e-4,
+            olbl_co2_c1: -2.1492e-3,
+            olbl_co2_d1: 5.2,
+            olbl_ch4_a3: -8.9603e-5,
+            olbl_ch4_b3: -1.2462e-4,
+            olbl_ch4_d3: 0.045,
+            olbl_n2o_a2: -3.4197e-4,
+            olbl_n2o_b2: 2.5455e-4,
+            olbl_n2o_c2: -2.4357e-4,
+            olbl_n2o_d2: 0.14,
 
-            // Rapid adjustment factors (AR6 defaults)
+            // Rapid adjustment factors (MAGICC7 v7.5.3 defaults)
             adjust_co2: 1.05,
             adjust_ch4: 0.86,
-            adjust_n2o: 0.93,
+            adjust_n2o: 1.0,
         }
     }
 }
@@ -185,7 +194,7 @@ mod tests {
     fn test_default_parameters() {
         let params = GhgForcingParameters::default();
 
-        assert_eq!(params.method, ForcingMethod::Etminan);
+        assert_eq!(params.method, ForcingMethod::Olbl);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
         assert!((params.ch4_pi - 722.0).abs() < 1e-10);
         assert!((params.n2o_pi - 270.0).abs() < 1e-10);
