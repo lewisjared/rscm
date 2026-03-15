@@ -113,7 +113,7 @@ impl ComponentState for ClimateUDEBState {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["climate", "udeb", "magicc"], category = "Climate")]
 #[inputs(
-    total_erf { name = "Effective Radiative Forcing|Total", unit = "W/m^2", grid = "FourBox" },
+    total_erf { name = "Effective Radiative Forcing", unit = "W/m^2", grid = "FourBox" },
 )]
 #[states(
     surface_temperature { name = "Surface Temperature", unit = "K", grid = "FourBox" },
@@ -682,7 +682,7 @@ mod tests {
         assert_eq!(defs.len(), 4);
 
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert!(names.contains(&"Effective Radiative Forcing|Total"));
+        assert!(names.contains(&"Effective Radiative Forcing"));
         assert!(names.contains(&"Surface Temperature"));
         assert!(names.contains(&"Heat Uptake"));
         assert!(names.contains(&"Ocean Heat Content"));

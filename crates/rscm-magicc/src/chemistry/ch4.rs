@@ -76,7 +76,7 @@ const PRATHER_ITERATIONS: usize = 4;
 #[component(tags = ["chemistry", "ch4", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
     ch4_emissions { name = "Emissions|CH4", unit = "Tg CH4/yr" },
-    temperature { name = "Surface Temperature|Global", unit = "K" },
+    temperature { name = "Surface Temperature", unit = "K" },
     nox_emissions { name = "Emissions|NOx", unit = "Tg N/yr" },
     co_emissions { name = "Emissions|CO", unit = "Tg CO/yr" },
     nmvoc_emissions { name = "Emissions|NMVOC", unit = "Tg NMVOC/yr" },
@@ -586,7 +586,7 @@ mod tests {
 
         let names: Vec<_> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"Emissions|CH4"));
-        assert!(names.contains(&"Surface Temperature|Global"));
+        assert!(names.contains(&"Surface Temperature"));
         assert!(names.contains(&"Atmospheric Concentration|CH4"));
         assert!(names.contains(&"Lifetime|CH4"));
     }
