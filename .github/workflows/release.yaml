@@ -62,7 +62,7 @@ jobs:
           args: --release
 
       - name: Upload wheels as artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.target }}
           path: target/wheels/
@@ -82,7 +82,7 @@ jobs:
           args: --out dist
 
       - name: Upload sdist as artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: dist/
