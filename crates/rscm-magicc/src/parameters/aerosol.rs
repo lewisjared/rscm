@@ -28,28 +28,28 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct AerosolDirectParameters {
     // === Species Forcing Coefficients ===
-    /// SOx forcing coefficient (W/m² per Tg S/yr).
+    /// SOx forcing coefficient (W/m² per Mt S/yr).
     ///
     /// Negative (cooling) because sulfate aerosols scatter incoming solar radiation.
-    /// Default: -0.0035 W/m²/(Tg S/yr), calibrated to AR6 best estimate.
+    /// Default: -0.0035 W/m²/(Mt S/yr), calibrated to AR6 best estimate.
     pub sox_coefficient: f64,
 
-    /// Black carbon forcing coefficient (W/m² per Tg BC/yr).
+    /// Black carbon forcing coefficient (W/m² per Mt BC/yr).
     ///
     /// Positive (warming) because BC absorbs solar radiation.
-    /// Default: 0.0077 W/m²/(Tg BC/yr)
+    /// Default: 0.0077 W/m²/(Mt BC/yr)
     pub bc_coefficient: f64,
 
-    /// Organic carbon forcing coefficient (W/m² per Tg OC/yr).
+    /// Organic carbon forcing coefficient (W/m² per Mt OC/yr).
     ///
     /// Negative (cooling) because OC primarily scatters radiation.
-    /// Default: -0.002 W/m²/(Tg OC/yr)
+    /// Default: -0.002 W/m²/(Mt OC/yr)
     pub oc_coefficient: f64,
 
-    /// Nitrate forcing coefficient (W/m² per Tg N/yr).
+    /// Nitrate forcing coefficient (W/m² per Mt N/yr).
     ///
     /// Negative (cooling) because nitrate aerosols scatter radiation.
-    /// Default: -0.001 W/m²/(Tg N/yr)
+    /// Default: -0.001 W/m²/(Mt N/yr)
     pub nitrate_coefficient: f64,
 
     // === Regional Distribution Weights ===
@@ -75,24 +75,24 @@ pub struct AerosolDirectParameters {
     pub nitrate_regional: [f64; 4],
 
     // === Pre-industrial emissions (baseline) ===
-    /// Pre-industrial SOx emissions (Tg S/yr).
+    /// Pre-industrial SOx emissions (Mt S/yr).
     ///
-    /// Default: 1.0 Tg S/yr (natural volcanic)
+    /// Default: 1.0 Mt S/yr (natural volcanic)
     pub sox_pi: f64,
 
-    /// Pre-industrial BC emissions (Tg BC/yr).
+    /// Pre-industrial BC emissions (Mt BC/yr).
     ///
-    /// Default: 2.5 Tg BC/yr (biomass burning)
+    /// Default: 2.5 Mt BC/yr (biomass burning)
     pub bc_pi: f64,
 
-    /// Pre-industrial OC emissions (Tg OC/yr).
+    /// Pre-industrial OC emissions (Mt OC/yr).
     ///
-    /// Default: 10.0 Tg OC/yr (biomass burning)
+    /// Default: 10.0 Mt OC/yr (biomass burning)
     pub oc_pi: f64,
 
-    /// Pre-industrial NOx emissions for nitrate (Tg N/yr).
+    /// Pre-industrial NOx emissions for nitrate (Mt N/yr).
     ///
-    /// Default: 10.0 Tg N/yr (natural sources)
+    /// Default: 10.0 Mt N/yr (natural sources)
     pub nox_pi: f64,
 
     // === Harmonisation ===
@@ -130,10 +130,10 @@ impl Default for AerosolDirectParameters {
             nitrate_regional: [0.15, 0.50, 0.15, 0.20],
 
             // Pre-industrial emissions
-            sox_pi: 1.0,  // Tg S/yr
-            bc_pi: 2.5,   // Tg BC/yr
-            oc_pi: 10.0,  // Tg OC/yr
-            nox_pi: 10.0, // Tg N/yr
+            sox_pi: 1.0,  // Mt S/yr
+            bc_pi: 2.5,   // Mt BC/yr
+            oc_pi: 10.0,  // Mt OC/yr
+            nox_pi: 10.0, // Mt N/yr
 
             // Harmonisation disabled by default
             harmonize: false,
@@ -208,14 +208,14 @@ pub struct AerosolIndirectParameters {
     pub oc_weight: f64,
 
     // === Pre-industrial emissions (baseline) ===
-    /// Pre-industrial SOx emissions (Tg S/yr).
+    /// Pre-industrial SOx emissions (Mt S/yr).
     ///
-    /// Default: 1.0 Tg S/yr
+    /// Default: 1.0 Mt S/yr
     pub sox_pi: f64,
 
-    /// Pre-industrial OC emissions (Tg OC/yr).
+    /// Pre-industrial OC emissions (Mt OC/yr).
     ///
-    /// Default: 10.0 Tg OC/yr
+    /// Default: 10.0 Mt OC/yr
     pub oc_pi: f64,
 
     // === Harmonisation ===
@@ -245,8 +245,8 @@ impl Default for AerosolIndirectParameters {
             oc_weight: 0.3,  // OC less effective
 
             // Pre-industrial emissions
-            sox_pi: 1.0, // Tg S/yr
-            oc_pi: 10.0, // Tg OC/yr
+            sox_pi: 1.0, // Mt S/yr
+            oc_pi: 10.0, // Mt OC/yr
 
             // Harmonisation disabled by default
             harmonize: false,
