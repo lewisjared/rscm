@@ -801,10 +801,10 @@ def test_03_emissions_driven():
 
 @pytest.mark.xfail(
     reason=(
-        "ClimateUDEB simplified implementation diverges from MAGICC7"
-        " (~20% warm bias). Missing: LAMCALC iterations,"
-        " temperature-dependent diffusivity,"
-        " depth-dependent ocean area, internal variability modes."
+        "ClimateUDEB diverges from MAGICC7 (9-22% cool bias)."
+        " Implemented: LAMCALC, temp-dependent diffusivity,"
+        " time-varying ECS. Missing: depth-dependent ocean area,"
+        " inter-hemispheric heat exchange sub-stepping."
     )
 )
 @pytest.mark.parametrize("ecs", [1.5, 2.0, 3.0, 4.0, 4.5])
@@ -855,10 +855,10 @@ def test_04_ecs_sweep(ecs: float):
 
 @pytest.mark.xfail(
     reason=(
-        "ClimateUDEB simplified implementation diverges from MAGICC7"
-        " (~20% warm bias). Missing: LAMCALC iterations,"
-        " temperature-dependent diffusivity,"
-        " depth-dependent ocean area, internal variability modes."
+        "ClimateUDEB diverges from MAGICC7 (9-22% cool bias)."
+        " Implemented: LAMCALC, temp-dependent diffusivity,"
+        " time-varying ECS. Missing: depth-dependent ocean area,"
+        " inter-hemispheric heat exchange sub-stepping."
     )
 )
 def test_05_co2_only_forcing():
