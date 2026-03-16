@@ -85,7 +85,7 @@ pub fn params_with_fixed_ecs(ecs: FloatValue) -> ClimateUDEBParameters {
 /// land, and global means, plus the actual land-ocean warming ratio.
 #[derive(Debug, Clone)]
 pub struct EquilibriumTemperatures {
-    /// Per-box temperatures: \[T_NO, T_NL, T_SO, T_SL\].
+    /// Per-box temperatures: $[T_{NO}, T_{NL}, T_{SO}, T_{SL}]$.
     pub box_temps: [FloatValue; 4],
     /// Area-weighted ocean mean temperature.
     pub ocean_mean: FloatValue,
@@ -101,8 +101,8 @@ pub struct EquilibriumTemperatures {
 /// lambda values, returning both the per-box temperatures and the aggregated
 /// ocean, land, and global means.
 ///
-/// Solves `M * T = Q * f` where `M` is the coupling matrix, `Q` is the
-/// radiative forcing for CO2 doubling, and `f` is the area fraction vector.
+/// Solves $M \cdot T = Q \cdot f$ where $M$ is the coupling matrix, $Q$ is the
+/// radiative forcing for CO2 doubling, and $f$ is the area fraction vector.
 pub fn compute_equilibrium_temperatures(
     params: &LamcalcParams,
     lam_o: FloatValue,

@@ -446,7 +446,8 @@ mod rlo_sweep {
             "RLO", "lambda_ocean", "lambda_land", "lam_global", "ocean_T"
         );
 
-        let lam_global = default_lamcalc_params().q_2xco2 / default_lamcalc_params().ecs;
+        let params_default = default_lamcalc_params();
+        let lam_global = params_default.q_2xco2 / params_default.ecs;
 
         let mut results: Vec<(FloatValue, LamcalcResult)> = Vec::new();
 
