@@ -152,7 +152,7 @@ mod time_varying_ecs {
             ..Default::default()
         };
 
-        let component = ClimateUDEB::from_parameters(params.clone());
+        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = ClimateUDEBState::new(params.n_layers, params.w_initial);
 
         let erf = params.rf_2xco2;
@@ -298,7 +298,7 @@ mod heat_uptake_consistency {
         // We verify that the component-reported heat_uptake matches this
         // formula computed from the same temperatures and lambda values.
         let params = params_with_fixed_ecs(3.0);
-        let component = ClimateUDEB::from_parameters(params.clone());
+        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = ClimateUDEBState::new(params.n_layers, params.w_initial);
 
         let erf = params.rf_2xco2;

@@ -200,12 +200,20 @@ impl Default for ClimateUDEBParameters {
     }
 }
 
+/// Conversion factor from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
+///
+/// $100 \, (\text{cm}^2 \to \text{m}^2) \times 31.5576 \, (\text{s} \to \text{yr}) = 3155.76$
+pub const DIFFUSIVITY_CM2S_TO_M2YR: FloatValue = 3155.76;
+
 impl ClimateUDEBParameters {
     /// Convert vertical diffusivity from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
-    ///
-    /// Conversion factor: $100 \, (\text{cm}^2 \to \text{m}^2) \times 31.5576 \, (\text{s} \to \text{yr}) = 3155.76$
     pub fn kappa_m2_per_yr(&self) -> FloatValue {
-        self.kappa * 3155.76
+        self.kappa * DIFFUSIVITY_CM2S_TO_M2YR
+    }
+
+    /// Convert minimum vertical diffusivity from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
+    pub fn kappa_min_m2_per_yr(&self) -> FloatValue {
+        self.kappa_min * DIFFUSIVITY_CM2S_TO_M2YR
     }
 
     /// Get the global climate feedback parameter ($\text{W/m}^2\text{/K}$).

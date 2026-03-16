@@ -44,12 +44,12 @@
 use std::any::Any;
 
 use crate::climate::lamcalc::{self, LamcalcParams, LamcalcResult};
-use crate::parameters::ClimateUDEBParameters;
+use crate::parameters::{ClimateUDEBParameters, DIFFUSIVITY_CM2S_TO_M2YR};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
     RequirementType,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::spatial::{FourBoxGrid, FourBoxRegion};
 use rscm_core::state::{FourBoxSlice, GridTimeseriesWindow, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -74,8 +74,14 @@ pub struct ClimateUDEBState {
     /// Whether the state has been initialized with parameters.
     pub initialized: bool,
 
-    /// History of global mean temperature for cumulative-T ECS adjustment.
+    /// History of year-weighted global mean temperature for cumulative-T ECS adjustment.
+    /// Each entry stores `temperature * dt_years`, so the sum over entries gives
+    /// the cumulative temperature in K-years regardless of timestep size.
     pub temperature_history: Vec<FloatValue>,
+
+    /// History of timestep sizes (years) corresponding to each temperature_history entry.
+    /// Used to determine how many entries span the `feedback_cumt_period` window.
+    pub dt_history: Vec<FloatValue>,
 }
 
 impl ClimateUDEBState {
@@ -86,6 +92,7 @@ impl ClimateUDEBState {
             upwelling_rates: [w_initial; 2],
             initialized: true,
             temperature_history: Vec::new(),
+            dt_history: Vec::new(),
         }
     }
 }
@@ -142,12 +149,22 @@ pub struct ClimateUDEB {
 
 impl ClimateUDEB {
     /// Create a new ClimateUDEB component with default parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if LAMCALC iteration fails to converge for default parameters
+    /// (should never happen).
     pub fn new() -> Self {
         Self::from_parameters(ClimateUDEBParameters::default())
+            .expect("LAMCALC failed to converge with default parameters")
     }
 
     /// Create a new ClimateUDEB component from parameters.
-    pub fn from_parameters(parameters: ClimateUDEBParameters) -> Self {
+    ///
+    /// Returns an error if the LAMCALC iteration fails to converge for the
+    /// given parameter combination. This can happen with extreme or
+    /// inconsistent user-supplied configurations.
+    pub fn from_parameters(parameters: ClimateUDEBParameters) -> RSCMResult<Self> {
         // Calculate lambda_ocean and lambda_land via LAMCALC iteration.
         // This accounts for inter-box heat exchange when matching the
         // land-ocean warming ratio (RLO) at the given ECS.
@@ -164,15 +181,20 @@ impl ClimateUDEB {
             fgso,
             fgsl,
         })
-        .expect("LAMCALC iteration failed to converge");
+        .ok_or_else(|| {
+            RSCMError::Error(format!(
+                "LAMCALC iteration failed to converge for ECS={}, RLO={}",
+                parameters.ecs, parameters.rlo
+            ))
+        })?;
         let lambda_ocean = lam_result.lambda_ocean;
         let lambda_land = lam_result.lambda_land;
 
-        Self {
+        Ok(Self {
             parameters: parameters.clone(),
             lambda_ocean,
             lambda_land,
-        }
+        })
     }
 
     /// Initialize or ensure state is properly configured.
@@ -200,7 +222,7 @@ impl ClimateUDEB {
         let t_top = state.ocean_temps[hemi][0];
         let t_bottom = state.ocean_temps[hemi][n - 1];
 
-        let kappa_min_m2yr = self.parameters.kappa_min * 3155.76;
+        let kappa_min_m2yr = self.parameters.kappa_min_m2_per_yr();
 
         let mut kappa = Vec::with_capacity(n - 1);
         for l in 0..n - 1 {
@@ -210,7 +232,7 @@ impl ClimateUDEB {
 
             let k = ((1.0 - relative_depth) * self.parameters.kappa_dkdt * (t_top - t_bottom)
                 + self.parameters.kappa)
-                * 3155.76;
+                * DIFFUSIVITY_CM2S_TO_M2YR;
             kappa.push(k.max(kappa_min_m2yr));
         }
 
@@ -222,21 +244,37 @@ impl ClimateUDEB {
     /// Adjusts ECS based on cumulative temperature history and current
     /// forcing level (MAGICC7.f90 lines 2747-2763).
     ///
-    /// $$ECS_{adj} = ECS \times (1 + \alpha_T \times \frac{\sum T - \sum T_{2x}}{\sum T_{2x}})
+    /// Temperature history is stored as year-weighted entries (`T * dt_years`)
+    /// so that the cumulative sum is correct regardless of model timestep size.
+    ///
+    /// $$ECS_{adj} = ECS \times (1 + \alpha_T \times \frac{\sum T \, dt - \sum T_{2x}}{\sum T_{2x}})
     ///                       \times (1 + \alpha_Q \times (\max(0, Q) - Q_{2x}))$$
-    fn adjusted_ecs(
-        &self,
-        global_forcing: FloatValue,
-        temperature_history: &[FloatValue],
-    ) -> FloatValue {
+    fn adjusted_ecs(&self, global_forcing: FloatValue, state: &ClimateUDEBState) -> FloatValue {
         let cumt_2x = self.parameters.ecs * self.parameters.feedback_cumt_period;
+        let period = self.parameters.feedback_cumt_period;
 
-        let period = self.parameters.feedback_cumt_period as usize;
-        let cum_t: FloatValue = if temperature_history.is_empty() {
+        // Sum year-weighted temperatures over the last `period` years,
+        // walking backwards through the history.
+        let cum_t: FloatValue = if state.temperature_history.is_empty() {
             0.0
         } else {
-            let start = temperature_history.len().saturating_sub(period);
-            temperature_history[start..].iter().sum()
+            let mut years_remaining = period;
+            let mut sum = 0.0;
+            for i in (0..state.temperature_history.len()).rev() {
+                if years_remaining <= 0.0 {
+                    break;
+                }
+                let dt = state.dt_history[i];
+                if dt <= years_remaining {
+                    sum += state.temperature_history[i];
+                    years_remaining -= dt;
+                } else {
+                    // Partial contribution from this entry
+                    sum += state.temperature_history[i] * (years_remaining / dt);
+                    years_remaining = 0.0;
+                }
+            }
+            sum
         };
 
         let cumt_factor = if cumt_2x.abs() > 1e-15 {
@@ -535,7 +573,7 @@ impl ClimateUDEB {
         let dt_sub = dt_year / self.parameters.steps_per_year as FloatValue;
 
         // Time-varying ECS adjustment
-        let adjusted_ecs = self.adjusted_ecs(erf, &state.temperature_history);
+        let adjusted_ecs = self.adjusted_ecs(erf, state);
 
         let (current_lambda_ocean, current_lambda_land) =
             if (adjusted_ecs - self.parameters.ecs).abs() > 1e-10 {
@@ -611,13 +649,15 @@ impl ClimateUDEB {
         let surface_temperature =
             FourBoxSlice::from_array([t_air_nho, t_air_nhl, t_air_sho, t_air_shl]);
 
-        // Track temperature history for cumulative-T adjustment
+        // Track year-weighted temperature history for cumulative-T adjustment.
+        // Each entry stores T * dt so the sum gives K-years regardless of timestep.
         let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
         let global_temp = surface_temperature.0[0] * fgno
             + surface_temperature.0[1] * fgnl
             + surface_temperature.0[2] * fgso
             + surface_temperature.0[3] * fgsl;
-        state.temperature_history.push(global_temp);
+        state.temperature_history.push(global_temp * dt_year);
+        state.dt_history.push(dt_year);
 
         // Calculate diagnostics
         let heat_uptake = self.calculate_heat_uptake(
@@ -694,7 +734,7 @@ mod tests {
     use rscm_core::timeseries::GridTimeseries;
 
     fn default_component() -> ClimateUDEB {
-        ClimateUDEB::from_parameters(ClimateUDEBParameters::default())
+        ClimateUDEB::from_parameters(ClimateUDEBParameters::default()).unwrap()
     }
 
     fn default_state(component: &ClimateUDEB) -> ClimateUDEBState {
@@ -987,7 +1027,7 @@ mod tests {
         );
 
         // But never below minimum
-        let kappa_min = component.parameters.kappa_min * 3155.76;
+        let kappa_min = component.parameters.kappa_min_m2_per_yr();
         for &k in &kappa_warm {
             assert!(
                 k >= kappa_min - 1e-10,
@@ -1005,6 +1045,22 @@ mod tests {
         assert_eq!(component.parameters.n_layers, parsed.parameters.n_layers);
     }
 
+    /// Helper to build a ClimateUDEBState with year-weighted temperature history.
+    ///
+    /// Takes raw per-year temperatures and converts to year-weighted entries
+    /// (each with dt=1.0 year).
+    fn state_with_history(
+        component: &ClimateUDEB,
+        yearly_temps: &[FloatValue],
+    ) -> ClimateUDEBState {
+        let mut state = default_state(component);
+        for &t in yearly_temps {
+            state.temperature_history.push(t * 1.0); // T * dt_years
+            state.dt_history.push(1.0);
+        }
+        state
+    }
+
     #[test]
     fn test_adjusted_ecs_with_defaults() {
         let component = default_component();
@@ -1012,7 +1068,8 @@ mod tests {
         // With empty history and forcing equal to rf_2xco2, the q_factor is 1.0.
         // The cumt_factor = 1 + 0.08 * (0 - 900) / 900 = 0.92
         // So ecs_adj = 3.0 * 0.92 = 2.76
-        let ecs_adj = component.adjusted_ecs(3.71, &[]);
+        let empty_state = default_state(&component);
+        let ecs_adj = component.adjusted_ecs(3.71, &empty_state);
         let expected =
             component.parameters.ecs * (1.0 - component.parameters.feedback_cumt_sensitivity);
         assert!(
@@ -1026,7 +1083,8 @@ mod tests {
         // Each year contributes cumt_2x/period temperature to reach cumT == cumT_2x
         let t_per_year = cumt_2x / period as FloatValue;
         let equilibrium_history: Vec<FloatValue> = vec![t_per_year; period];
-        let ecs_eq = component.adjusted_ecs(component.parameters.rf_2xco2, &equilibrium_history);
+        let eq_state = state_with_history(&component, &equilibrium_history);
+        let ecs_eq = component.adjusted_ecs(component.parameters.rf_2xco2, &eq_state);
         assert!(
             (ecs_eq - component.parameters.ecs).abs() < 0.01,
             "Equilibrium history should leave ECS unchanged: got {ecs_eq}"
@@ -1037,11 +1095,12 @@ mod tests {
     fn test_adjusted_ecs_with_large_sensitivity() {
         let mut params = ClimateUDEBParameters::default();
         params.feedback_cumt_sensitivity = 0.5; // exaggerated
-        let component = ClimateUDEB::from_parameters(params);
+        let component = ClimateUDEB::from_parameters(params).unwrap();
 
         // After 100 years of 1K warming: cumT = 100, cumT_2x = 3.0 * 300 = 900
-        let history: Vec<FloatValue> = vec![1.0; 100];
-        let ecs_adj = component.adjusted_ecs(3.71, &history);
+        let yearly_temps: Vec<FloatValue> = vec![1.0; 100];
+        let state = state_with_history(&component, &yearly_temps);
+        let ecs_adj = component.adjusted_ecs(3.71, &state);
 
         // Below-equilibrium cumT should reduce effective ECS
         assert!(

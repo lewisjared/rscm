@@ -643,7 +643,7 @@ mod climate_udeb_equilibrium {
         // 3. SST (the raw ocean quantity) converges towards ECS
         let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
 
-        let component = ClimateUDEB::from_parameters(params.clone());
+        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = ClimateUDEBState::new(params.n_layers, params.w_initial);
 
         let erf = params.rf_2xco2;
@@ -752,7 +752,7 @@ mod climate_udeb_equilibrium {
     fn test_zero_forcing_produces_zero_temperature() {
         let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
 
-        let component = ClimateUDEB::from_parameters(params.clone());
+        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = ClimateUDEBState::new(params.n_layers, params.w_initial);
 
         let erf = 0.0;
@@ -892,7 +892,7 @@ mod climate_udeb_equilibrium {
         let direct_result = lamcalc(&lamcalc_params).expect("Direct LAMCALC call should converge");
 
         // ClimateUDEB internally calls lamcalc during from_parameters
-        let component = ClimateUDEB::from_parameters(params);
+        let component = ClimateUDEB::from_parameters(params).unwrap();
 
         // We cannot access lambda_ocean/lambda_land directly since they are private,
         // but we can verify through serialisation: lambda_ocean and lambda_land are

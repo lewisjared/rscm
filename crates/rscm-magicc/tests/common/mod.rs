@@ -219,7 +219,7 @@ pub fn run_udeb_simulation(
     erf: FloatValue,
     n_years: usize,
 ) -> Vec<YearRecord> {
-    let component = ClimateUDEB::from_parameters(params.clone());
+    let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
     let mut state = ClimateUDEBState::new(params.n_layers, params.w_initial);
     let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
     let mut records = Vec::with_capacity(n_years);
