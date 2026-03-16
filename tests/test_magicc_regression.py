@@ -801,10 +801,12 @@ def test_03_emissions_driven():
 
 @pytest.mark.xfail(
     reason=(
-        "ClimateUDEB diverges from MAGICC7 (-15% to +4% bias, ECS-dependent)."
+        "ClimateUDEB diverges from MAGICC7 (-29% to -17% cool bias, ECS-dependent)."
         " Implemented: LAMCALC, temp-dependent diffusivity,"
-        " time-varying ECS. Missing: depth-dependent ocean area,"
-        " inter-hemispheric heat exchange sub-stepping."
+        " time-varying ECS, depth-dependent ocean area,"
+        " inter-hemispheric heat exchange sub-stepping,"
+        " ground heat capacity."
+        " Missing: land forcing amplification."
     )
 )
 @pytest.mark.parametrize("ecs", [1.5, 2.0, 3.0, 4.0, 4.5])
@@ -855,10 +857,12 @@ def test_04_ecs_sweep(ecs: float):
 
 @pytest.mark.xfail(
     reason=(
-        "ClimateUDEB diverges from MAGICC7 (-8% cool bias at year 2100)."
+        "ClimateUDEB diverges from MAGICC7 (-10% cool bias at year 2100)."
         " Implemented: LAMCALC, temp-dependent diffusivity,"
-        " time-varying ECS. Missing: depth-dependent ocean area,"
-        " inter-hemispheric heat exchange sub-stepping."
+        " time-varying ECS, depth-dependent ocean area,"
+        " inter-hemispheric heat exchange sub-stepping,"
+        " ground heat capacity."
+        " Missing: land forcing amplification."
     )
 )
 def test_05_co2_only_forcing():
