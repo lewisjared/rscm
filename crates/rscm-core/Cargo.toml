@@ -10,6 +10,10 @@ categories.workspace = true
 description = "Core traits and functionalities for the creation of reduced-complexity climate models"
 readme = "README.md"
 
+[features]
+default = ["rich-debug"]
+rich-debug = ["owo-colors"]
+
 [dependencies]
 ode_solvers = "0.6.1"
 ndarray = { version = "0.17", features = ["serde"] }
@@ -26,6 +30,7 @@ is_close = "0.1"
 thiserror = "2.0"
 pythonize = "0.27.0"
 toml = "0.9"
+owo-colors = { version = "4", optional = true }
 rscm-macros.workspace = true
 tracing.workspace = true
 
