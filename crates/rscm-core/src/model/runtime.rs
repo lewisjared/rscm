@@ -69,7 +69,7 @@ pub struct Model {
     /// solved before another component needs the state.
     pub(crate) components: CGraph,
     /// The base node of the graph from where to begin traversing.
-    initial_node: NodeIndex,
+    pub(crate) initial_node: NodeIndex,
     /// The model state.
     ///
     /// Variable names within the model are unique and these variable names are used by
