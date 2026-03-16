@@ -108,8 +108,8 @@ mod energy_conservation {
             let mut params = default_lamcalc_params();
             params.ecs = ecs;
 
-            let result =
-                lamcalc(&params).expect(&format!("LAMCALC should converge for ECS = {:.1}", ecs));
+            let result = lamcalc(&params)
+                .unwrap_or_else(|| panic!("LAMCALC should converge for ECS = {:.1}", ecs));
             let eq =
                 compute_equilibrium_temperatures(&params, result.lambda_ocean, result.lambda_land);
             let temps = eq.box_temps;
@@ -757,8 +757,8 @@ mod coupling_matrix_properties {
             let mut params = default_lamcalc_params();
             params.ecs = ecs;
 
-            let result =
-                lamcalc(&params).expect(&format!("LAMCALC should converge for ECS = {}", ecs));
+            let result = lamcalc(&params)
+                .unwrap_or_else(|| panic!("LAMCALC should converge for ECS = {}", ecs));
 
             let matrix = build_coupling_matrix(&params, result.lambda_ocean, result.lambda_land);
 

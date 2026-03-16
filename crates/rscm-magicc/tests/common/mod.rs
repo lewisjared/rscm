@@ -109,7 +109,12 @@ pub fn compute_equilibrium_temperatures(
     lam_l: FloatValue,
 ) -> EquilibriumTemperatures {
     let matrix = build_coupling_matrix(params, lam_o, lam_l);
-    let inv = invert_4x4(&matrix).expect("Coupling matrix should be invertible");
+    let inv = invert_4x4(&matrix).unwrap_or_else(|| {
+        panic!(
+            "Coupling matrix should be invertible for lam_o={}, lam_l={}",
+            lam_o, lam_l
+        )
+    });
 
     let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
     let q = params.q_2xco2;
