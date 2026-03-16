@@ -88,6 +88,18 @@ pub struct ClimateUDEBParameters {
     /// Default: 1.317
     pub rlo: FloatValue,
 
+    /// Sensitivity of ECS to forcing level (dimensionless).
+    /// Default: 7.84e-9
+    pub feedback_q_sensitivity: FloatValue,
+
+    /// Sensitivity of ECS to cumulative temperature (dimensionless).
+    /// Default: 0.08
+    pub feedback_cumt_sensitivity: FloatValue,
+
+    /// Period for cumulative temperature integration (years).
+    /// Default: 300.0
+    pub feedback_cumt_period: FloatValue,
+
     // Heat exchange parameters
     /// Land-ocean heat exchange coefficient ($\text{W/m}^2\text{/K}$).
     /// Default: 1.44
@@ -161,6 +173,9 @@ impl Default for ClimateUDEBParameters {
             ecs: 3.0,
             rf_2xco2: 3.71,
             rlo: 1.317,
+            feedback_q_sensitivity: 7.84e-9,
+            feedback_cumt_sensitivity: 0.08,
+            feedback_cumt_period: 300.0,
 
             // Heat exchange
             k_lo: 1.44,
@@ -215,6 +230,19 @@ impl ClimateUDEBParameters {
     /// Assumes equal hemisphere areas (0.5 each).
     pub fn global_ocean_fraction(&self) -> FloatValue {
         0.5 * (self.nh_ocean_fraction() + self.sh_ocean_fraction())
+    }
+
+    /// Get per-box global area fractions (FGNO, FGNL, FGSO, FGSL).
+    ///
+    /// These are fractions of the total globe, not of each hemisphere.
+    /// Order: (NH ocean, NH land, SH ocean, SH land).
+    /// Matches MAGICC's GLOBALAREAFRACTIONS ordering.
+    pub fn global_box_fractions(&self) -> (FloatValue, FloatValue, FloatValue, FloatValue) {
+        let fgnl = self.nh_land_fraction / 2.0;
+        let fgno = 0.5 - fgnl;
+        let fgsl = self.sh_land_fraction / 2.0;
+        let fgso = 0.5 - fgsl;
+        (fgno, fgnl, fgso, fgsl)
     }
 
     /// Get the global land fraction.
@@ -309,6 +337,26 @@ mod tests {
 
         assert_eq!(params.n_layers, parsed.n_layers);
         assert!((params.ecs - parsed.ecs).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_per_box_global_fractions() {
+        let params = ClimateUDEBParameters::default();
+        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+
+        assert!((fgnl - 0.21).abs() < 1e-10);
+        assert!((fgno - 0.29).abs() < 1e-10);
+        assert!((fgsl - 0.105).abs() < 1e-10);
+        assert!((fgso - 0.395).abs() < 1e-10);
+        assert!((fgno + fgnl + fgso + fgsl - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_time_varying_ecs_defaults() {
+        let params = ClimateUDEBParameters::default();
+        assert!((params.feedback_q_sensitivity - 7.84e-9).abs() < 1e-12);
+        assert!((params.feedback_cumt_sensitivity - 0.08).abs() < 1e-10);
+        assert!((params.feedback_cumt_period - 300.0).abs() < 1e-10);
     }
 
     #[test]
