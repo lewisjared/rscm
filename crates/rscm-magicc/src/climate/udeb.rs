@@ -632,17 +632,19 @@ impl ClimateUDEB {
         let t_air_nho = self.sst_to_air_temperature(sst_nh);
         let t_air_sho = self.sst_to_air_temperature(sst_sh);
 
-        // Calculate land temperatures
+        // Calculate land temperatures using global box fractions (FGNL/FGSL)
+        // to be consistent with the LAMCALC coupling matrix calibration.
+        let (_, fgnl, _, fgsl) = self.parameters.global_box_fractions();
         let t_air_nhl = self.calculate_land_temperature(
             t_air_nho,
             forcing.get(FourBoxRegion::NorthernLand),
-            self.parameters.nh_land_fraction,
+            fgnl,
             current_lambda_land,
         );
         let t_air_shl = self.calculate_land_temperature(
             t_air_sho,
             forcing.get(FourBoxRegion::SouthernLand),
-            self.parameters.sh_land_fraction,
+            fgsl,
             current_lambda_land,
         );
 

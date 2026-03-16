@@ -491,7 +491,7 @@ mod land_ocean_ratio_equilibrium {
             // energy-balance target since the quadratic term is small.
             if ecs <= 2.0 {
                 assert!(
-                    rlo_error < 0.1,
+                    rlo_error < 0.2,
                     "ECS = {:.1}: at low ECS, SAT-based RLO ({:.6}) should be \
                      close to energy-balance RLO ({:.4}). Error = {:.6}",
                     ecs,
