@@ -88,7 +88,7 @@ use serde::{Deserialize, Serialize};
 #[component(tags = ["carbon-cycle", "terrestrial", "magicc"], category = "Carbon Cycle")]
 #[inputs(
     co2_concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
-    temperature { name = "Surface Temperature|Global", unit = "K" },
+    temperature { name = "Surface Temperature", unit = "K" },
     landuse_emissions { name = "Emissions|CO2|Land Use", unit = "GtC/yr" },
 )]
 #[states(
@@ -667,7 +667,7 @@ mod tests {
 
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"Atmospheric Concentration|CO2"));
-        assert!(names.contains(&"Surface Temperature|Global"));
+        assert!(names.contains(&"Surface Temperature"));
         assert!(names.contains(&"Emissions|CO2|Land Use"));
         assert!(names.contains(&"Carbon Pool|Plant"));
         assert!(names.contains(&"Carbon Pool|Detritus"));

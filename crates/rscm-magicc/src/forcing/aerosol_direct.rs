@@ -13,10 +13,10 @@
 //!
 //! # Inputs
 //!
-//! - `Emissions|SOx` (Tg S/yr) - Sulfur dioxide emissions
-//! - `Emissions|BC` (Tg BC/yr) - Black carbon emissions
-//! - `Emissions|OC` (Tg OC/yr) - Organic carbon emissions
-//! - `Emissions|NOx` (Tg N/yr) - NOx emissions (for nitrate formation)
+//! - `Emissions|SOx` (Mt S/yr) - Sulfur dioxide emissions
+//! - `Emissions|BC` (Mt BC/yr) - Black carbon emissions
+//! - `Emissions|OC` (Mt OC/yr) - Organic carbon emissions
+//! - `Emissions|NOx` (Mt N/yr) - NOx emissions (for nitrate formation)
 //!
 //! # Outputs
 //!
@@ -76,10 +76,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["forcing", "aerosol", "direct", "magicc"], category = "Radiative Forcing")]
 #[inputs(
-    sox_emissions { name = "Emissions|SOx", unit = "Tg S/yr" },
-    bc_emissions { name = "Emissions|BC", unit = "Tg BC/yr" },
-    oc_emissions { name = "Emissions|OC", unit = "Tg OC/yr" },
-    nox_emissions { name = "Emissions|NOx", unit = "Tg N/yr" },
+    sox_emissions { name = "Emissions|SOx", unit = "Mt S/yr" },
+    bc_emissions { name = "Emissions|BC", unit = "Mt BC/yr" },
+    oc_emissions { name = "Emissions|OC", unit = "Mt OC/yr" },
+    nox_emissions { name = "Emissions|NOx", unit = "Mt N/yr" },
 )]
 #[outputs(
     direct_erf { name = "Effective Radiative Forcing|Aerosol|Direct", unit = "W/m^2", grid = "FourBox" },
@@ -266,7 +266,7 @@ mod tests {
         let p = component.parameters();
 
         // Elevated SOx emissions above pre-industrial
-        let sox = p.sox_pi + 50.0; // +50 Tg S/yr
+        let sox = p.sox_pi + 50.0; // +50 Mt S/yr
         let species = component.calculate_species_forcing(sox, p.bc_pi, p.oc_pi, p.nox_pi);
 
         assert!(
@@ -290,7 +290,7 @@ mod tests {
         let p = component.parameters();
 
         // Elevated BC emissions above pre-industrial
-        let bc = p.bc_pi + 5.0; // +5 Tg BC/yr
+        let bc = p.bc_pi + 5.0; // +5 Mt BC/yr
         let species = component.calculate_species_forcing(p.sox_pi, bc, p.oc_pi, p.nox_pi);
 
         assert!(
@@ -306,7 +306,7 @@ mod tests {
         let p = component.parameters();
 
         // Elevated OC emissions above pre-industrial
-        let oc = p.oc_pi + 20.0; // +20 Tg OC/yr
+        let oc = p.oc_pi + 20.0; // +20 Mt OC/yr
         let species = component.calculate_species_forcing(p.sox_pi, p.bc_pi, oc, p.nox_pi);
 
         assert!(
@@ -322,7 +322,7 @@ mod tests {
         let p = component.parameters();
 
         // Elevated NOx emissions above pre-industrial
-        let nox = p.nox_pi + 30.0; // +30 Tg N/yr
+        let nox = p.nox_pi + 30.0; // +30 Mt N/yr
         let species = component.calculate_species_forcing(p.sox_pi, p.bc_pi, p.oc_pi, nox);
 
         assert!(
@@ -451,10 +451,10 @@ mod tests {
         let component = default_component();
 
         // Approximate modern emissions (circa 2019)
-        // SOx: ~50-60 Tg S/yr anthropogenic
-        // BC: ~8-10 Tg BC/yr
-        // OC: ~30-40 Tg OC/yr
-        // NOx: ~40-50 Tg N/yr
+        // SOx: ~50-60 Mt S/yr anthropogenic
+        // BC: ~8-10 Mt BC/yr
+        // OC: ~30-40 Mt OC/yr
+        // NOx: ~40-50 Mt N/yr
         let global = component.calculate_global_forcing(
             60.0, // SOx
             10.0, // BC

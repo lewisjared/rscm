@@ -104,6 +104,15 @@ MAGICC_VAR_MAP = {
     "DAT_CH4A_EMIS": "Emissions|CH4|MAGICC Fossil and Industrial",
     "DAT_CH4N_EMIS": "Emissions|CH4|MAGICC AFOLU",
     "DAT_N2O_EMIS": "Emissions|N2O",
+    "DAT_CO2_EMIS": "Emissions|CO2",
+    "DAT_CO2I_EMIS": "Emissions|CO2|Fossil",
+    "DAT_CO2B_EMIS": "Emissions|CO2|Land Use",
+    "DAT_NOX_EMIS": "Emissions|NOx",
+    "DAT_CO_EMIS": "Emissions|CO",
+    "DAT_NMVOC_EMIS": "Emissions|NMVOC",
+    "DAT_SOX_EMIS": "Emissions|SOx",
+    "DAT_BC_EMIS": "Emissions|BC",
+    "DAT_OC_EMIS": "Emissions|OC",
 }
 
 
@@ -297,6 +306,7 @@ def test_03_emissions_driven():
     }
 
     out_vars = [
+        # Model outputs
         "DAT_CO2_CONC",
         "DAT_CH4_CONC",
         "DAT_N2O_CONC",
@@ -306,6 +316,26 @@ def test_03_emissions_driven():
         "DAT_TOTAL_INCLVOLCANIC_RF",
         "DAT_TOTAL_INCLVOLCANIC_ERF",
         "DAT_SURFACE_TEMP",
+        # Emissions (MAGICC outputs these when out_emissions=1)
+        "DAT_CO2_EMIS",
+        "DAT_CO2I_EMIS",
+        "DAT_CO2B_EMIS",
+        "DAT_CH4_EMIS",
+        "DAT_N2O_EMIS",
+        # Species emissions (use scmdata variable names since DAT_ names
+        # may not all be mapped)
+        "Emissions|NOx|MAGICC Fossil and Industrial",
+        "Emissions|NOx|MAGICC AFOLU",
+        "Emissions|CO|MAGICC Fossil and Industrial",
+        "Emissions|CO|MAGICC AFOLU",
+        "Emissions|NMVOC|MAGICC Fossil and Industrial",
+        "Emissions|NMVOC|MAGICC AFOLU",
+        "Emissions|SOx|MAGICC Fossil and Industrial",
+        "Emissions|SOx|MAGICC AFOLU",
+        "Emissions|BC|MAGICC Fossil and Industrial",
+        "Emissions|BC|MAGICC AFOLU",
+        "Emissions|OC|MAGICC Fossil and Industrial",
+        "Emissions|OC|MAGICC AFOLU",
     ]
 
     with run_magicc() as m:

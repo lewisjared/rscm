@@ -312,9 +312,6 @@ debug/
 .claude
 .claude/settings.local.json
 
-# Ignore OhMyClaude metadata
-.omc
-
 # Ignore Jupyter notebooks in docs/notebooks
 docs/notebooks/*.ipynb
 
@@ -323,3 +320,4 @@ docs/notebooks/*.ipynb
 
 # Plugin/tool metadata
 docs/superpowers/
+.omc

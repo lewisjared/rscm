@@ -18,7 +18,7 @@
 //!
 //! # Inputs
 //!
-//! - `Emissions|N2O` (Tg N/yr) - Anthropogenic N2O emissions
+//! - `Emissions|N2O` (Mt N/yr) - Anthropogenic N2O emissions
 //!
 //! # Outputs
 //!
@@ -78,7 +78,7 @@ const PRATHER_ITERATIONS: usize = 4;
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["chemistry", "n2o", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
-    n2o_emissions { name = "Emissions|N2O", unit = "Tg N/yr" },
+    n2o_emissions { name = "Emissions|N2O", unit = "Mt N/yr" },
 )]
 #[states(
     n2o_concentration { name = "Atmospheric Concentration|N2O", unit = "ppb" },
@@ -166,7 +166,7 @@ impl N2OChemistry {
     /// * `n2o_prev` - N2O concentration at start of timestep (ppb)
     /// * `n2o_current` - Current N2O concentration estimate (ppb)
     /// * `n2o_lagged` - Lagged N2O concentration for sink term (ppb)
-    /// * `anthropogenic_emissions` - Anthropogenic N2O emissions (Tg N/yr)
+    /// * `anthropogenic_emissions` - Anthropogenic N2O emissions (Mt N/yr)
     /// * `dt` - Timestep length (years)
     pub fn solve_concentration(
         &self,
@@ -366,7 +366,7 @@ mod tests {
 
         // Add anthropogenic emissions
         let (new_conc, _) = component.solve_concentration(
-            n2o_pi, n2o_pi, n2o_pi, 5.0, // 5 Tg N/yr anthropogenic
+            n2o_pi, n2o_pi, n2o_pi, 5.0, // 5 Mt N/yr anthropogenic
             1.0, // dt = 1 year
         );
 
