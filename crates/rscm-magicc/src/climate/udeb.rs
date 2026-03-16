@@ -693,19 +693,17 @@ mod tests {
 
     #[test]
     fn test_sst_is_mean_of_ocean_boxes() {
-        use ndarray::Array2;
         use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
-        use rscm_core::timeseries::{GridTimeseries, TimeAxis};
+        use rscm_core::timeseries::TimeAxis;
         use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
         use std::sync::Arc;
 
         let component = default_component();
         let mut state = default_state(&component);
 
-        // Build FourBox ERF timeseries: [NH Ocean, NH Land, SH Ocean, SH Land] constant 3.71
-        let grid = FourBoxGrid::magicc_standard();
+        // Build scalar ERF timeseries: constant 3.71 W/m^2
         let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![
             2000.0_f64, 2001.0_f64
         ]));

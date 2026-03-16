@@ -509,8 +509,16 @@ def build_emissions_driven_model(
         }
     ).build()
 
-    ch4_chem = CH4ChemistryBuilder.from_parameters({}).build()
-    n2o_chem = N2OChemistryBuilder.from_parameters({}).build()
+    ch4_chem = CH4ChemistryBuilder.from_parameters(
+        {
+            "ch4_pi": initial_conditions.get("Atmospheric Concentration|CH4", 722.0),
+        }
+    ).build()
+    n2o_chem = N2OChemistryBuilder.from_parameters(
+        {
+            "n2o_pi": initial_conditions.get("Atmospheric Concentration|N2O", 270.0),
+        }
+    ).build()
     terrestrial = TerrestrialCarbonBuilder.from_parameters({}).build()
     ocean = OceanCarbonBuilder.from_parameters({}).build()
     co2_budget = CO2BudgetBuilder.from_parameters({}).build()
