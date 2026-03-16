@@ -451,13 +451,8 @@ impl ClimateUDEB {
         lambda_ocean: FloatValue,
         lambda_land: FloatValue,
     ) -> FloatValue {
-        // Area-weighted global average
-        let weights = [
-            0.5 * self.parameters.nh_ocean_fraction(),
-            0.5 * self.parameters.nh_land_fraction,
-            0.5 * self.parameters.sh_ocean_fraction(),
-            0.5 * self.parameters.sh_land_fraction,
-        ];
+        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
+        let weights = [fgno, fgnl, fgso, fgsl];
         let lambdas = [lambda_ocean, lambda_land, lambda_ocean, lambda_land];
 
         let mut q_global = 0.0;
