@@ -438,13 +438,18 @@ impl ClimateUDEB {
 
     /// Calculate ocean heat uptake ($\text{W/m}^2$).
     ///
-    /// $$\text{Heat uptake} = Q - \lambda \times T$$ (global average)
+    /// $$\text{Heat uptake} = Q - \sum_i f_i \lambda_i T_i$$
+    ///
+    /// where $f_i$ are global area fractions, $\lambda_i$ is the per-box
+    /// feedback parameter (ocean or land), and $T_i$ is the per-box temperature.
+    /// This ensures the diagnostic is consistent with the LAMCALC-solved
+    /// feedback parameters and any time-varying ECS adjustments.
     fn calculate_heat_uptake(
         &self,
         forcing: &FourBoxSlice,
         temperature: &FourBoxSlice,
-        _lambda_ocean: FloatValue,
-        _lambda_land: FloatValue,
+        lambda_ocean: FloatValue,
+        lambda_land: FloatValue,
     ) -> FloatValue {
         // Area-weighted global average
         let weights = [
@@ -453,17 +458,17 @@ impl ClimateUDEB {
             0.5 * self.parameters.sh_ocean_fraction(),
             0.5 * self.parameters.sh_land_fraction,
         ];
+        let lambdas = [lambda_ocean, lambda_land, lambda_ocean, lambda_land];
 
         let mut q_global = 0.0;
-        let mut t_global = 0.0;
+        let mut feedback_global = 0.0;
         for (i, &w) in weights.iter().enumerate() {
             q_global += w * forcing.0[i];
-            t_global += w * temperature.0[i];
+            feedback_global += w * lambdas[i] * temperature.0[i];
         }
 
-        // Heat uptake = Q - lambda * T
-        let lambda_global = self.parameters.lambda_global();
-        q_global - lambda_global * t_global
+        // Heat uptake = Q - sum(f_i * lambda_i * T_i)
+        q_global - feedback_global
     }
 
     /// Calculate total ocean heat content ($\text{J/m}^2$).
