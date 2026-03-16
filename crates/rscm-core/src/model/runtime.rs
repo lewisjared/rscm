@@ -69,7 +69,7 @@ pub struct Model {
     /// solved before another component needs the state.
     pub(crate) components: CGraph,
     /// The base node of the graph from where to begin traversing.
-    initial_node: NodeIndex,
+    pub(crate) initial_node: NodeIndex,
     /// The model state.
     ///
     /// Variable names within the model are unique and these variable names are used by
@@ -340,7 +340,7 @@ impl Model {
     /// Extract component name from a Component for unit conversion lookup.
     ///
     /// Extracts the type name (before the first '{', ' ', or '(') from the Debug output.
-    fn extract_component_name(component: &C) -> String {
+    pub(crate) fn extract_component_name(component: &C) -> String {
         let debug_str = format!("{:?}", component);
         debug_str
             .split(['{', ' ', '('])

@@ -317,3 +317,9 @@ debug/
 
 # Ignore Jupyter notebooks in docs/notebooks
 docs/notebooks/*.ipynb
+
+# Build artifacts
+*.dSYM/
+
+# Plugin/tool metadata
+docs/superpowers/

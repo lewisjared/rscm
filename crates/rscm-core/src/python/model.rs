@@ -193,6 +193,30 @@ impl PyModel {
         PyTimeseriesCollection(self.0.timeseries().clone())
     }
 
+    /// Generate debug information about the model's execution graph.
+    ///
+    /// Returns a string describing the execution order, inputs, outputs,
+    /// states, grid types, variable sources, grid transforms, and unit conversions.
+    ///
+    /// Parameters
+    /// ----------
+    /// format : str, optional
+    ///     Output format: "rich" (coloured terminal, default), "plain" (no colours),
+    ///     or "json" (structured JSON).
+    #[pyo3(signature = (format = "rich"))]
+    fn debug_info(&self, format: &str) -> PyResult<String> {
+        let info = self.0.debug_info();
+        match format {
+            "rich" => Ok(info.to_rich()),
+            "plain" => Ok(format!("{}", info)),
+            "json" => Ok(info.to_json()),
+            _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown format '{}'. Expected 'rich', 'plain', or 'json'.",
+                format
+            ))),
+        }
+    }
+
     /// Generate a JSON representation of the model
     ///
     /// This includes the components, their internal state and the model's
