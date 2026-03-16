@@ -31,7 +31,7 @@
 //! This is a simplified implementation. The full MAGICC7 module includes:
 //!
 //! - **LAMCALC iterations**: Iterative calculation of land/ocean feedback parameters
-//!   to match land-ocean warming ratio. Not implemented - uses prescribed lambda.
+//!   to match land-ocean warming ratio. Implemented - see [`lamcalc`](super::lamcalc).
 //! - **Time-varying ECS**: Climate sensitivity that changes with forcing level and
 //!   cumulative temperature. Implemented - see `adjusted_ecs()`.
 //! - **Temperature-dependent diffusivity**: Diffusivity that varies with vertical
