@@ -533,6 +533,8 @@ impl Component for ClimateUDEB {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ndarray::Array2;
+    use rscm_core::timeseries::GridTimeseries;
 
     fn default_component() -> ClimateUDEB {
         ClimateUDEB::from_parameters(ClimateUDEBParameters::default())
