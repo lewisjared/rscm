@@ -31,11 +31,11 @@
 //! This is a simplified implementation. The full MAGICC7 module includes:
 //!
 //! - **LAMCALC iterations**: Iterative calculation of land/ocean feedback parameters
-//!   to match land-ocean warming ratio. Not implemented - uses prescribed lambda.
+//!   to match land-ocean warming ratio. Implemented - see [`lamcalc`](super::lamcalc).
 //! - **Time-varying ECS**: Climate sensitivity that changes with forcing level and
-//!   cumulative temperature. Not implemented - constant ECS.
+//!   cumulative temperature. Implemented - see `adjusted_ecs()`.
 //! - **Temperature-dependent diffusivity**: Diffusivity that varies with vertical
-//!   temperature gradient. Not implemented - constant diffusivity.
+//!   temperature gradient. Implemented - see `layer_diffusivities()`.
 //! - **Depth-dependent ocean area**: Basin narrowing with depth. Not implemented -
 //!   cylindrical ocean.
 //! - **El Niño/AMV modes**: Internal variability modes. Not implemented.
@@ -43,12 +43,13 @@
 
 use std::any::Any;
 
-use crate::parameters::ClimateUDEBParameters;
+use crate::climate::lamcalc::{self, LamcalcParams, LamcalcResult};
+use crate::parameters::{ClimateUDEBParameters, DIFFUSIVITY_CM2S_TO_M2YR};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
     RequirementType,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::spatial::{FourBoxGrid, FourBoxRegion};
 use rscm_core::state::{FourBoxSlice, GridTimeseriesWindow, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -72,6 +73,17 @@ pub struct ClimateUDEBState {
 
     /// Whether the state has been initialized with parameters.
     pub initialized: bool,
+
+    /// History of year-weighted global mean temperature for cumulative-T ECS adjustment.
+    /// Each entry stores `temperature * dt_years`, so the sum over entries gives
+    /// the cumulative temperature in K-years regardless of timestep size.
+    #[serde(default)]
+    pub temperature_history: Vec<FloatValue>,
+
+    /// History of timestep sizes (years) corresponding to each temperature_history entry.
+    /// Used to determine how many entries span the `feedback_cumt_period` window.
+    #[serde(default)]
+    pub dt_history: Vec<FloatValue>,
 }
 
 impl ClimateUDEBState {
@@ -81,6 +93,8 @@ impl ClimateUDEBState {
             ocean_temps: vec![vec![0.0; n_layers]; 2],
             upwelling_rates: [w_initial; 2],
             initialized: true,
+            temperature_history: Vec::new(),
+            dt_history: Vec::new(),
         }
     }
 }
@@ -137,31 +151,59 @@ pub struct ClimateUDEB {
 
 impl ClimateUDEB {
     /// Create a new ClimateUDEB component with default parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if LAMCALC iteration fails to converge for default parameters
+    /// (should never happen).
     pub fn new() -> Self {
         Self::from_parameters(ClimateUDEBParameters::default())
+            .expect("LAMCALC failed to converge with default parameters")
     }
 
     /// Create a new ClimateUDEB component from parameters.
-    pub fn from_parameters(parameters: ClimateUDEBParameters) -> Self {
-        // Calculate lambda_ocean and lambda_land from ECS and RLO
-        // Using simplified derivation:
-        //   lambda_global = Q_2x / ECS
-        //   lambda_l = RLO * lambda_o (at equilibrium)
-        //   lambda_global = f_o * lambda_o + f_l * lambda_l
-        // Solving: lambda_o = lambda_global / (f_o + f_l * RLO)
-        let lambda_global = parameters.lambda_global();
-        let f_o = parameters.global_ocean_fraction();
-        let f_l = parameters.global_land_fraction();
-        let rlo = parameters.rlo;
+    ///
+    /// Returns an error if the LAMCALC iteration fails to converge for the
+    /// given parameter combination. This can happen with extreme or
+    /// inconsistent user-supplied configurations.
+    pub fn from_parameters(parameters: ClimateUDEBParameters) -> RSCMResult<Self> {
+        if parameters.n_layers < 2 {
+            return Err(RSCMError::Error(format!(
+                "invalid n_layers: must be >= 2, got {}",
+                parameters.n_layers
+            )));
+        }
 
-        let lambda_ocean = lambda_global / (f_o + f_l * rlo);
-        let lambda_land = lambda_ocean * rlo;
+        // Calculate lambda_ocean and lambda_land via LAMCALC iteration.
+        // This accounts for inter-box heat exchange when matching the
+        // land-ocean warming ratio (RLO) at the given ECS.
+        let (fgno, fgnl, fgso, fgsl) = parameters.global_box_fractions();
+        let lam_result = lamcalc::lamcalc(&LamcalcParams {
+            q_2xco2: parameters.rf_2xco2,
+            k_lo: parameters.k_lo,
+            k_ns: parameters.k_ns,
+            ecs: parameters.ecs,
+            rlo: parameters.rlo,
+            amplify_ocean_to_land: parameters.amplify_ocean_to_land,
+            fgno,
+            fgnl,
+            fgso,
+            fgsl,
+        })
+        .ok_or_else(|| {
+            RSCMError::Error(format!(
+                "LAMCALC iteration failed to converge for ECS={}, RLO={}",
+                parameters.ecs, parameters.rlo
+            ))
+        })?;
+        let lambda_ocean = lam_result.lambda_ocean;
+        let lambda_land = lam_result.lambda_land;
 
-        Self {
+        Ok(Self {
             parameters: parameters.clone(),
             lambda_ocean,
             lambda_land,
-        }
+        })
     }
 
     /// Initialize or ensure state is properly configured.
@@ -171,6 +213,90 @@ impl ClimateUDEB {
             state.upwelling_rates = [self.parameters.w_initial; 2];
             state.initialized = true;
         }
+    }
+
+    /// Calculate depth-dependent vertical diffusivity for each layer boundary.
+    ///
+    /// Diffusivity varies with the temperature gradient between the surface
+    /// and bottom layer, decreasing linearly with relative depth:
+    ///
+    /// $$K(z) = \max(K_{min}, K_0 + \frac{dK}{dT} \times (1 - z/z_{max}) \times (T_{top} - T_{bottom})) \times 3155.76$$
+    ///
+    /// Returns a Vec of length `n_layers - 1` (diffusivity at each layer boundary).
+    fn layer_diffusivities(&self, state: &ClimateUDEBState, hemi: usize) -> Vec<FloatValue> {
+        let n = self.parameters.n_layers;
+        let dz = self.parameters.layer_thickness;
+        let total_depth = self.parameters.mixed_layer_depth + (n as FloatValue - 1.0) * dz;
+
+        let t_top = state.ocean_temps[hemi][0];
+        let t_bottom = state.ocean_temps[hemi][n - 1];
+
+        let kappa_min_m2yr = self.parameters.kappa_min_m2_per_yr();
+
+        let mut kappa = Vec::with_capacity(n - 1);
+        for l in 0..n - 1 {
+            // Depth of layer boundary
+            let depth = self.parameters.mixed_layer_depth + l as FloatValue * dz;
+            let relative_depth = depth / total_depth;
+
+            let k = ((1.0 - relative_depth) * self.parameters.kappa_dkdt * (t_top - t_bottom)
+                + self.parameters.kappa)
+                * DIFFUSIVITY_CM2S_TO_M2YR;
+            kappa.push(k.max(kappa_min_m2yr));
+        }
+
+        kappa
+    }
+
+    /// Calculate time-varying equilibrium climate sensitivity.
+    ///
+    /// Adjusts ECS based on cumulative temperature history and current
+    /// forcing level (MAGICC7.f90 lines 2747-2763).
+    ///
+    /// Temperature history is stored as year-weighted entries (`T * dt_years`)
+    /// so that the cumulative sum is correct regardless of model timestep size.
+    ///
+    /// $$ECS_{adj} = ECS \times (1 + \alpha_T \times \frac{\sum T \, dt - \sum T_{2x}}{\sum T_{2x}})
+    ///                       \times (1 + \alpha_Q \times (\max(0, Q) - Q_{2x}))$$
+    fn adjusted_ecs(&self, global_forcing: FloatValue, state: &ClimateUDEBState) -> FloatValue {
+        let cumt_2x = self.parameters.ecs * self.parameters.feedback_cumt_period;
+        let period = self.parameters.feedback_cumt_period;
+
+        // Sum year-weighted temperatures over the last `period` years,
+        // walking backwards through the history.
+        let cum_t: FloatValue = if state.temperature_history.is_empty() {
+            0.0
+        } else {
+            let mut years_remaining = period;
+            let mut sum = 0.0;
+            for i in (0..state.temperature_history.len()).rev() {
+                if years_remaining <= 0.0 {
+                    break;
+                }
+                let dt = state.dt_history[i];
+                if dt <= years_remaining {
+                    sum += state.temperature_history[i];
+                    years_remaining -= dt;
+                } else {
+                    // Partial contribution from this entry
+                    sum += state.temperature_history[i] * (years_remaining / dt);
+                    years_remaining = 0.0;
+                }
+            }
+            sum
+        };
+
+        let cumt_factor = if cumt_2x.abs() > 1e-15 {
+            1.0 + self.parameters.feedback_cumt_sensitivity * (cum_t - cumt_2x) / cumt_2x
+        } else {
+            1.0
+        };
+
+        let q_factor = 1.0
+            + self.parameters.feedback_q_sensitivity
+                * (global_forcing.max(0.0) - self.parameters.rf_2xco2);
+
+        self.parameters.ecs * cumt_factor * q_factor
     }
 
     /// Step forward by dt (in years) for a single hemisphere.
@@ -183,6 +309,8 @@ impl ClimateUDEB {
     /// * `hemi` - Hemisphere index (0 = NH, 1 = SH)
     /// * `forcing` - Forcing for this hemisphere's ocean box ($\text{W/m}^2$)
     /// * `dt` - Timestep in years
+    /// * `lambda_ocean` - Ocean feedback parameter ($\text{W/m}^2\text{/K}$)
+    /// * `lambda_land` - Land feedback parameter ($\text{W/m}^2\text{/K}$)
     ///
     /// # Returns
     ///
@@ -193,9 +321,11 @@ impl ClimateUDEB {
         hemi: usize,
         forcing: FloatValue,
         dt: FloatValue,
+        lambda_ocean: FloatValue,
+        lambda_land: FloatValue,
     ) -> FloatValue {
         let n = self.parameters.n_layers;
-        let kappa = self.parameters.kappa_m2_per_yr();
+        let kappas = self.layer_diffusivities(state, hemi);
         let w = state.upwelling_rates[hemi];
         let dz = self.parameters.layer_thickness;
         let dz_mix = self.parameters.mixed_layer_depth;
@@ -213,8 +343,25 @@ impl ClimateUDEB {
 
         // Mixed layer (layer 0)
         // dT/dt = (Q - lambda*T)/C + diffusion + upwelling
-        let term_feedback = self.lambda_ocean / c_mix;
-        let term_diff = kappa / (dz_mix * dz) * dt;
+        // Coupled ocean-land feedback term (TERM_OCN_LAND_FEEDBACK)
+        // Accounts for land feedback coupling through the mixed layer.
+        // MAGICC7.f90 lines 2806-2820
+        let f_l_hemi = if hemi == 0 {
+            self.parameters.nh_land_fraction / 2.0
+        } else {
+            self.parameters.sh_land_fraction / 2.0
+        };
+        let f_o_hemi = 0.5 - f_l_hemi;
+        let alpha_eff = self.parameters.temp_adjust_alpha;
+        let denominator = f_o_hemi * (self.parameters.k_lo + f_l_hemi * lambda_land);
+        let term_feedback = alpha_eff / c_mix
+            * (lambda_ocean
+                + lambda_land
+                    * self.parameters.k_lo
+                    * self.parameters.amplify_ocean_to_land
+                    * f_l_hemi
+                    / denominator);
+        let term_diff = kappas[0] / (dz_mix * dz) * dt;
         let term_upwell = w / dz_mix * dt;
 
         b[0] = 1.0 + term_feedback * dt + term_diff + term_upwell * pi_ratio;
@@ -223,8 +370,8 @@ impl ClimateUDEB {
 
         // Layers 1 to n-2 (interior layers)
         for i in 1..n - 1 {
-            let term_diff_up = kappa / (dz * dz) * dt;
-            let term_diff_down = kappa / (dz * dz) * dt;
+            let term_diff_up = kappas[i - 1] / (dz * dz) * dt;
+            let term_diff_down = kappas[i] / (dz * dz) * dt;
             let term_upwell_layer = w / dz * dt;
 
             a[i] = -term_diff_up;
@@ -238,7 +385,7 @@ impl ClimateUDEB {
 
         // Bottom layer (layer n-1)
         // No flux boundary condition at bottom
-        let term_diff_up = kappa / (dz * dz) * dt;
+        let term_diff_up = kappas[n - 2] / (dz * dz) * dt;
         let term_upwell_bottom = w / dz * dt;
 
         a[n - 1] = -term_diff_up;
@@ -295,12 +442,13 @@ impl ClimateUDEB {
         ocean_temp: FloatValue,
         land_forcing: FloatValue,
         land_fraction: FloatValue,
+        lambda_land: FloatValue,
     ) -> FloatValue {
         let k_lo = self.parameters.k_lo;
         let alpha = self.parameters.amplify_ocean_to_land;
 
         let numerator = land_forcing * land_fraction + k_lo * alpha * ocean_temp;
-        let denominator = self.lambda_land * land_fraction + k_lo;
+        let denominator = lambda_land * land_fraction + k_lo;
 
         (numerator / denominator).min(self.parameters.max_temperature)
     }
@@ -337,30 +485,32 @@ impl ClimateUDEB {
 
     /// Calculate ocean heat uptake ($\text{W/m}^2$).
     ///
-    /// $$\text{Heat uptake} = Q - \lambda \times T$$ (global average)
+    /// $$\text{Heat uptake} = Q - \sum_i f_i \lambda_i T_i$$
+    ///
+    /// where $f_i$ are global area fractions, $\lambda_i$ is the per-box
+    /// feedback parameter (ocean or land), and $T_i$ is the per-box temperature.
+    /// This ensures the diagnostic is consistent with the LAMCALC-solved
+    /// feedback parameters and any time-varying ECS adjustments.
     fn calculate_heat_uptake(
         &self,
         forcing: &FourBoxSlice,
         temperature: &FourBoxSlice,
+        lambda_ocean: FloatValue,
+        lambda_land: FloatValue,
     ) -> FloatValue {
-        // Area-weighted global average
-        let weights = [
-            0.5 * self.parameters.nh_ocean_fraction(),
-            0.5 * self.parameters.nh_land_fraction,
-            0.5 * self.parameters.sh_ocean_fraction(),
-            0.5 * self.parameters.sh_land_fraction,
-        ];
+        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
+        let weights = [fgno, fgnl, fgso, fgsl];
+        let lambdas = [lambda_ocean, lambda_land, lambda_ocean, lambda_land];
 
         let mut q_global = 0.0;
-        let mut t_global = 0.0;
+        let mut feedback_global = 0.0;
         for (i, &w) in weights.iter().enumerate() {
             q_global += w * forcing.0[i];
-            t_global += w * temperature.0[i];
+            feedback_global += w * lambdas[i] * temperature.0[i];
         }
 
-        // Heat uptake = Q - lambda * T
-        let lambda_global = self.parameters.lambda_global();
-        q_global - lambda_global * t_global
+        // Heat uptake = Q - sum(f_i * lambda_i * T_i)
+        q_global - feedback_global
     }
 
     /// Calculate total ocean heat content ($\text{J/m}^2$).
@@ -431,13 +581,52 @@ impl ClimateUDEB {
         let dt_year = t_next - t_current;
         let dt_sub = dt_year / self.parameters.steps_per_year as FloatValue;
 
+        // Time-varying ECS adjustment
+        let adjusted_ecs = self.adjusted_ecs(erf, state);
+
+        let (current_lambda_ocean, current_lambda_land) =
+            if (adjusted_ecs - self.parameters.ecs).abs() > 1e-10 {
+                let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
+                let result = lamcalc::lamcalc(&LamcalcParams {
+                    q_2xco2: self.parameters.rf_2xco2,
+                    k_lo: self.parameters.k_lo,
+                    k_ns: self.parameters.k_ns,
+                    ecs: adjusted_ecs,
+                    rlo: self.parameters.rlo,
+                    amplify_ocean_to_land: self.parameters.amplify_ocean_to_land,
+                    fgno,
+                    fgnl,
+                    fgso,
+                    fgsl,
+                })
+                .unwrap_or(LamcalcResult {
+                    lambda_ocean: self.lambda_ocean,
+                    lambda_land: self.lambda_land,
+                });
+                (result.lambda_ocean, result.lambda_land)
+            } else {
+                (self.lambda_ocean, self.lambda_land)
+            };
+
         // Monthly sub-stepping
         for _ in 0..self.parameters.steps_per_year {
             // Step each hemisphere's ocean
-            let sst_nh =
-                self.step_hemisphere(state, 0, forcing.get(FourBoxRegion::NorthernOcean), dt_sub);
-            let sst_sh =
-                self.step_hemisphere(state, 1, forcing.get(FourBoxRegion::SouthernOcean), dt_sub);
+            let sst_nh = self.step_hemisphere(
+                state,
+                0,
+                forcing.get(FourBoxRegion::NorthernOcean),
+                dt_sub,
+                current_lambda_ocean,
+                current_lambda_land,
+            );
+            let sst_sh = self.step_hemisphere(
+                state,
+                1,
+                forcing.get(FourBoxRegion::SouthernOcean),
+                dt_sub,
+                current_lambda_ocean,
+                current_lambda_land,
+            );
 
             // Update upwelling based on global SST
             let global_sst = 0.5 * (sst_nh + sst_sh);
@@ -452,23 +641,42 @@ impl ClimateUDEB {
         let t_air_nho = self.sst_to_air_temperature(sst_nh);
         let t_air_sho = self.sst_to_air_temperature(sst_sh);
 
-        // Calculate land temperatures
+        // Calculate land temperatures using global box fractions (FGNL/FGSL)
+        // to be consistent with the LAMCALC coupling matrix calibration.
+        let (_, fgnl, _, fgsl) = self.parameters.global_box_fractions();
         let t_air_nhl = self.calculate_land_temperature(
             t_air_nho,
             forcing.get(FourBoxRegion::NorthernLand),
-            self.parameters.nh_land_fraction,
+            fgnl,
+            current_lambda_land,
         );
         let t_air_shl = self.calculate_land_temperature(
             t_air_sho,
             forcing.get(FourBoxRegion::SouthernLand),
-            self.parameters.sh_land_fraction,
+            fgsl,
+            current_lambda_land,
         );
 
         let surface_temperature =
             FourBoxSlice::from_array([t_air_nho, t_air_nhl, t_air_sho, t_air_shl]);
 
+        // Track year-weighted temperature history for cumulative-T adjustment.
+        // Each entry stores T * dt so the sum gives K-years regardless of timestep.
+        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
+        let global_temp = surface_temperature.0[0] * fgno
+            + surface_temperature.0[1] * fgnl
+            + surface_temperature.0[2] * fgso
+            + surface_temperature.0[3] * fgsl;
+        state.temperature_history.push(global_temp * dt_year);
+        state.dt_history.push(dt_year);
+
         // Calculate diagnostics
-        let heat_uptake = self.calculate_heat_uptake(&forcing, &surface_temperature);
+        let heat_uptake = self.calculate_heat_uptake(
+            &forcing,
+            &surface_temperature,
+            current_lambda_ocean,
+            current_lambda_land,
+        );
         let ocean_heat_content = self.calculate_ocean_heat_content(state);
 
         // SST is the mean of the two ocean box temperatures
@@ -537,7 +745,7 @@ mod tests {
     use rscm_core::timeseries::GridTimeseries;
 
     fn default_component() -> ClimateUDEB {
-        ClimateUDEB::from_parameters(ClimateUDEBParameters::default())
+        ClimateUDEB::from_parameters(ClimateUDEBParameters::default()).unwrap()
     }
 
     fn default_state(component: &ClimateUDEB) -> ClimateUDEBState {
@@ -564,9 +772,26 @@ mod tests {
         let lambda_global = component.parameters.lambda_global();
         assert!((lambda_global - 1.237).abs() < 0.01);
 
-        // lambda_land / lambda_ocean should equal RLO
-        let ratio = component.lambda_land / component.lambda_ocean;
-        assert!((ratio - 1.317).abs() < 0.01);
+        // With LAMCALC, both feedback parameters should be positive
+        assert!(
+            component.lambda_ocean > 0.0,
+            "lambda_ocean should be positive, got {}",
+            component.lambda_ocean
+        );
+        assert!(
+            component.lambda_land.is_finite(),
+            "lambda_land should be finite, got {}",
+            component.lambda_land
+        );
+
+        // With LAMCALC the ratio lambda_land/lambda_ocean need not equal RLO
+        // exactly because inter-box heat exchange is accounted for.
+        // lambda_land can even be negative (positive feedback on land) depending
+        // on the parameter combination; we just verify it is finite.
+        println!(
+            "lambda_ocean = {:.6}, lambda_land = {:.6}",
+            component.lambda_ocean, component.lambda_land
+        );
     }
 
     #[test]
@@ -579,7 +804,14 @@ mod tests {
         let dt = 1.0 / 12.0; // One month
 
         let initial_temp = state.ocean_temps[0][0];
-        let new_temp = component.step_hemisphere(&mut state, 0, forcing, dt);
+        let new_temp = component.step_hemisphere(
+            &mut state,
+            0,
+            forcing,
+            dt,
+            component.lambda_ocean,
+            component.lambda_land,
+        );
 
         assert!(
             new_temp > initial_temp,
@@ -669,7 +901,12 @@ mod tests {
         let forcing = 3.71;
         let land_fraction = 0.42;
 
-        let land_temp = component.calculate_land_temperature(ocean_temp, forcing, land_fraction);
+        let land_temp = component.calculate_land_temperature(
+            ocean_temp,
+            forcing,
+            land_fraction,
+            component.lambda_land,
+        );
 
         // Land temperature depends on the forcing and heat exchange
         // With RLO > 1, land should eventually be warmer
@@ -772,11 +1009,114 @@ mod tests {
     }
 
     #[test]
+    fn test_diffusivity_varies_with_temperature() {
+        let component = default_component();
+        let state = default_state(&component);
+
+        // With zero temperature gradient, diffusivity should equal base kappa
+        let kappa_uniform = component.layer_diffusivities(&state, 0);
+        let base_kappa = component.parameters.kappa_m2_per_yr();
+        for &k in &kappa_uniform {
+            assert!(
+                (k - base_kappa).abs() < 1e-6,
+                "Zero gradient: K={k} should equal base {base_kappa}"
+            );
+        }
+
+        // With positive gradient (warm top, cold bottom), diffusivity should
+        // decrease near surface (dK/dT is negative, gradient is positive)
+        let mut warm_state = default_state(&component);
+        warm_state.ocean_temps[0][0] = 3.0; // warm surface
+        let kappa_warm = component.layer_diffusivities(&warm_state, 0);
+
+        // Surface layers should have lower diffusivity
+        assert!(
+            kappa_warm[0] < base_kappa,
+            "Warm surface: K[0]={} should be less than base {}",
+            kappa_warm[0],
+            base_kappa
+        );
+
+        // But never below minimum
+        let kappa_min = component.parameters.kappa_min_m2_per_yr();
+        for &k in &kappa_warm {
+            assert!(
+                k >= kappa_min - 1e-10,
+                "K={k} should not go below min {kappa_min}"
+            );
+        }
+    }
+
+    #[test]
     fn test_serialization() {
         let component = default_component();
         let json = serde_json::to_string(&component).expect("Serialization failed");
         let parsed: ClimateUDEB = serde_json::from_str(&json).expect("Deserialization failed");
 
         assert_eq!(component.parameters.n_layers, parsed.parameters.n_layers);
+    }
+
+    /// Helper to build a ClimateUDEBState with year-weighted temperature history.
+    ///
+    /// Takes raw per-year temperatures and converts to year-weighted entries
+    /// (each with dt=1.0 year).
+    fn state_with_history(
+        component: &ClimateUDEB,
+        yearly_temps: &[FloatValue],
+    ) -> ClimateUDEBState {
+        let mut state = default_state(component);
+        for &t in yearly_temps {
+            state.temperature_history.push(t * 1.0); // T * dt_years
+            state.dt_history.push(1.0);
+        }
+        state
+    }
+
+    #[test]
+    fn test_adjusted_ecs_with_defaults() {
+        let component = default_component();
+
+        // With empty history and forcing equal to rf_2xco2, the q_factor is 1.0.
+        // The cumt_factor = 1 + 0.08 * (0 - 900) / 900 = 0.92
+        // So ecs_adj = 3.0 * 0.92 = 2.76
+        let empty_state = default_state(&component);
+        let ecs_adj = component.adjusted_ecs(3.71, &empty_state);
+        let expected =
+            component.parameters.ecs * (1.0 - component.parameters.feedback_cumt_sensitivity);
+        assert!(
+            (ecs_adj - expected).abs() < 0.01,
+            "Empty history should reduce ECS by cumt_sensitivity fraction: got {ecs_adj}, expected {expected}"
+        );
+
+        // With equilibrium history (cumT == cumT_2x), ECS should be unchanged
+        let cumt_2x = component.parameters.ecs * component.parameters.feedback_cumt_period;
+        let period = component.parameters.feedback_cumt_period as usize;
+        // Each year contributes cumt_2x/period temperature to reach cumT == cumT_2x
+        let t_per_year = cumt_2x / period as FloatValue;
+        let equilibrium_history: Vec<FloatValue> = vec![t_per_year; period];
+        let eq_state = state_with_history(&component, &equilibrium_history);
+        let ecs_eq = component.adjusted_ecs(component.parameters.rf_2xco2, &eq_state);
+        assert!(
+            (ecs_eq - component.parameters.ecs).abs() < 0.01,
+            "Equilibrium history should leave ECS unchanged: got {ecs_eq}"
+        );
+    }
+
+    #[test]
+    fn test_adjusted_ecs_with_large_sensitivity() {
+        let mut params = ClimateUDEBParameters::default();
+        params.feedback_cumt_sensitivity = 0.5; // exaggerated
+        let component = ClimateUDEB::from_parameters(params).unwrap();
+
+        // After 100 years of 1K warming: cumT = 100, cumT_2x = 3.0 * 300 = 900
+        let yearly_temps: Vec<FloatValue> = vec![1.0; 100];
+        let state = state_with_history(&component, &yearly_temps);
+        let ecs_adj = component.adjusted_ecs(3.71, &state);
+
+        // Below-equilibrium cumT should reduce effective ECS
+        assert!(
+            ecs_adj < component.parameters.ecs,
+            "Below-equilibrium cumT should reduce ECS: got {ecs_adj}"
+        );
     }
 }

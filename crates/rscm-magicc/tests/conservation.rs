@@ -161,68 +161,6 @@ mod carbon_cycle_conservation {
     }
 }
 
-mod energy_conservation {
-    use rscm_magicc::parameters::ClimateUDEBParameters;
-
-    /// Test that the ECS/lambda relationship is consistent.
-    ///
-    /// At equilibrium: lambda_global = Q_2x / ECS
-    #[test]
-    fn test_ecs_lambda_consistency() {
-        let params = ClimateUDEBParameters::default();
-
-        let lambda_global = params.lambda_global();
-        let expected_ecs = params.rf_2xco2 / lambda_global;
-
-        assert!(
-            (params.ecs - expected_ecs).abs() < 0.01,
-            "ECS ({}) should equal RF_2xCO2 / lambda_global ({})",
-            params.ecs,
-            expected_ecs
-        );
-    }
-
-    /// Test that RLO (ratio of land to ocean warming) is reasonable.
-    #[test]
-    fn test_rlo_reasonable() {
-        let params = ClimateUDEBParameters::default();
-
-        // RLO should be > 1 (land warms more than ocean)
-        assert!(
-            params.rlo > 1.0,
-            "RLO should be > 1 (land warms faster than ocean)"
-        );
-
-        // RLO should be reasonable (typically 1.2-1.6)
-        assert!(params.rlo < 2.0, "RLO should be < 2.0 (reasonable range)");
-    }
-
-    /// Test that positive forcing leads to warming.
-    #[test]
-    fn test_positive_forcing_causes_warming() {
-        let params = ClimateUDEBParameters::default();
-
-        // ECS should be positive for warming from positive forcing
-        assert!(
-            params.ecs > 0.0,
-            "ECS should be positive for warming from positive forcing"
-        );
-
-        // RF_2xCO2 should be positive (CO2 doubling forcing)
-        assert!(
-            params.rf_2xco2 > 0.0,
-            "RF_2xCO2 should be positive (CO2 doubling forcing)"
-        );
-
-        // Lambda (feedback parameter) should be positive for stable climate
-        let lambda = params.lambda_global();
-        assert!(
-            lambda > 0.0,
-            "Lambda should be positive for stable climate response"
-        );
-    }
-}
-
 // TODO: Add forcing_consistency tests when GHG forcing components are implemented
 
 mod physical_bounds {

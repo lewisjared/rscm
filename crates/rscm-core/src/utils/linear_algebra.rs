@@ -75,6 +75,91 @@ pub fn thomas_solve(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {
     x
 }
 
+/// Invert a $4 \times 4$ matrix using Gauss-Jordan elimination with partial pivoting.
+///
+/// Returns `None` if the matrix is singular (i.e. a pivot element is smaller
+/// than $10^{-15}$ in absolute value).
+///
+/// # Arguments
+/// * `m` - The $4 \times 4$ matrix to invert, stored as row-major nested arrays.
+///
+/// # Returns
+/// `Some(inverse)` if the matrix is invertible, `None` otherwise.
+///
+/// # Example
+/// ```
+/// use rscm_core::utils::linear_algebra::invert_4x4;
+///
+/// let identity = [
+///     [1.0, 0.0, 0.0, 0.0],
+///     [0.0, 1.0, 0.0, 0.0],
+///     [0.0, 0.0, 1.0, 0.0],
+///     [0.0, 0.0, 0.0, 1.0],
+/// ];
+/// let inv = invert_4x4(&identity).unwrap();
+/// assert!((inv[0][0] - 1.0).abs() < 1e-15);
+/// ```
+pub fn invert_4x4(m: &[[f64; 4]; 4]) -> Option<[[f64; 4]; 4]> {
+    // Augmented matrix [A | I]
+    let mut aug = [[0.0f64; 8]; 4];
+    for i in 0..4 {
+        for j in 0..4 {
+            aug[i][j] = m[i][j];
+        }
+        aug[i][i + 4] = 1.0;
+    }
+
+    // Gauss-Jordan elimination with partial pivoting
+    for col in 0..4 {
+        // Find pivot row (largest absolute value in this column)
+        let mut max_row = col;
+        let mut max_val = aug[col][col].abs();
+        for row in (col + 1)..4 {
+            let val = aug[row][col].abs();
+            if val > max_val {
+                max_val = val;
+                max_row = row;
+            }
+        }
+
+        if max_val < 1e-15 {
+            return None;
+        }
+
+        // Swap rows
+        if max_row != col {
+            aug.swap(col, max_row);
+        }
+
+        // Scale pivot row
+        let pivot = aug[col][col];
+        for j in 0..8 {
+            aug[col][j] /= pivot;
+        }
+
+        // Eliminate column in all other rows
+        for row in 0..4 {
+            if row == col {
+                continue;
+            }
+            let factor = aug[row][col];
+            for j in 0..8 {
+                aug[row][j] -= factor * aug[col][j];
+            }
+        }
+    }
+
+    // Extract inverse from augmented matrix
+    let mut inv = [[0.0f64; 4]; 4];
+    for i in 0..4 {
+        for j in 0..4 {
+            inv[i][j] = aug[i][j + 4];
+        }
+    }
+
+    Some(inv)
+}
+
 /// In-place version of Thomas algorithm (avoids allocations).
 ///
 /// Modifies `d` in-place to contain the solution.
@@ -301,5 +386,103 @@ mod tests {
         let d = vec![1.0, 1.0, 1.0];
 
         let _ = thomas_solve(&a, &b, &c, &d);
+    }
+
+    #[test]
+    fn test_invert_4x4_identity() {
+        let identity = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+
+        let inv = invert_4x4(&identity).expect("Identity matrix should be invertible");
+
+        println!("Inverse of identity:");
+        for row in &inv {
+            println!("  {:?}", row);
+        }
+
+        for i in 0..4 {
+            for j in 0..4 {
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!(
+                    (inv[i][j] - expected).abs() < 1e-15,
+                    "inv[{}][{}] = {} (expected {})",
+                    i,
+                    j,
+                    inv[i][j],
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_invert_4x4_known_matrix() {
+        // Coupling matrix similar to the LAMCALC four-box structure
+        let m = [
+            [2.0, -0.5, -0.3, 0.0],
+            [-0.5, 1.5, 0.0, 0.0],
+            [-0.3, 0.0, 2.0, -0.5],
+            [0.0, 0.0, -0.5, 1.5],
+        ];
+
+        let inv = invert_4x4(&m).expect("Coupling matrix should be invertible");
+
+        println!("Inverse of coupling matrix:");
+        for row in &inv {
+            println!("  {:?}", row);
+        }
+
+        // Verify A * A_inv = I
+        let mut product = [[0.0f64; 4]; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                for k in 0..4 {
+                    product[i][j] += m[i][k] * inv[k][j];
+                }
+            }
+        }
+
+        println!("Product A * A_inv:");
+        for row in &product {
+            println!("  {:?}", row);
+        }
+
+        for i in 0..4 {
+            for j in 0..4 {
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!(
+                    (product[i][j] - expected).abs() < 1e-12,
+                    "product[{}][{}] = {} (expected {})",
+                    i,
+                    j,
+                    product[i][j],
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_invert_4x4_singular_returns_none() {
+        // Matrix with a zero row is singular
+        let singular = [
+            [1.0, 2.0, 3.0, 4.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [9.0, 10.0, 11.0, 12.0],
+        ];
+
+        let result = invert_4x4(&singular);
+
+        println!("Inversion of singular matrix returned: {:?}", result);
+        assert!(
+            result.is_none(),
+            "Singular matrix should return None, got {:?}",
+            result
+        );
     }
 }

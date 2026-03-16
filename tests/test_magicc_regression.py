@@ -146,6 +146,90 @@ def rscm_to_magicc_variable(rscm_var: str) -> str:
     return rscm_var.replace("Concentration|", "Concentrations|")
 
 
+def build_erf_to_temperature_model(
+    years: np.ndarray,
+    erf: np.ndarray,
+    config: dict,
+):
+    """
+    Build a model with only ClimateUDEB for ERF-driven temperature runs.
+
+    This decouples the temperature response from forcing calculation,
+    allowing independent validation of the climate component.
+
+    Parameters
+    ----------
+    years
+        Array of year values
+    erf
+        Effective radiative forcing array (W/m^2) matching years
+    config
+        MAGICC config dictionary with climate parameters
+
+    Returns
+    -------
+    Model ready to run
+    """
+    climate = ClimateUDEBBuilder.from_parameters(
+        {
+            "ecs": config.get("core_climatesensitivity", 3.0),
+            "forcing_2xco2": config.get("core_delq2xco2", 3.71),
+        }
+    ).build()
+
+    time_axis = TimeAxis.from_bounds(
+        np.concatenate([years, [years[-1] + 1.0]]).astype(np.float64)
+    )
+
+    erf_ts = Timeseries(
+        erf.astype(np.float64),
+        time_axis,
+        "W/m^2",
+        InterpolationStrategy.Linear,
+    )
+
+    schema = VariableSchema()
+    schema.add_variable("Effective Radiative Forcing", "W/m^2")
+    schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+    schema.add_variable("Heat Uptake", "W/m^2")
+    schema.add_variable("Ocean Heat Content", "J/m^2")
+    schema.add_variable("Sea Surface Temperature", "K")
+
+    model = (
+        ModelBuilder()
+        .with_time_axis(time_axis)
+        .with_schema(schema)
+        .with_rust_component(climate)
+        .with_exogenous_variable("Effective Radiative Forcing", erf_ts)
+        .with_initial_values({"Surface Temperature": 0.0})
+        .build()
+    )
+
+    return model
+
+
+def fourbox_global_mean(values_2d: np.ndarray) -> np.ndarray:
+    """
+    Compute area-weighted global mean from FourBox temperature data.
+
+    Uses MAGICC default area fractions:
+    - NH ocean: 0.58, NH land: 0.42
+    - SH ocean: 0.79, SH land: 0.21
+
+    Parameters
+    ----------
+    values_2d
+        Array of shape (n_times, 4) with columns
+        [NH ocean, NH land, SH ocean, SH land]
+
+    Returns
+    -------
+    1D array of global mean values
+    """
+    weights = np.array([0.5 * 0.58, 0.5 * 0.42, 0.5 * 0.79, 0.5 * 0.21])
+    return values_2d @ weights
+
+
 def build_ghg_forcing_model(
     years: np.ndarray,
     co2_conc: np.ndarray,
@@ -715,17 +799,22 @@ def test_03_emissions_driven():
     )
 
 
-@pytest.mark.skip(
-    reason="Requires scalar-to-FourBox bridging for ClimateUDEB integration"
+@pytest.mark.xfail(
+    reason=(
+        "ClimateUDEB diverges from MAGICC7 (-15% to +4% bias, ECS-dependent)."
+        " Implemented: LAMCALC, temp-dependent diffusivity,"
+        " time-varying ECS. Missing: depth-dependent ocean area,"
+        " inter-hemispheric heat exchange sub-stepping."
+    )
 )
 @pytest.mark.parametrize("ecs", [1.5, 2.0, 3.0, 4.0, 4.5])
 def test_04_ecs_sweep(ecs: float):
     """
-    Test 4: Climate sensitivity parameter sweep.
+    Test 4: Climate sensitivity parameter sweep (ERF -> temperature only).
 
-    Validates climate response for different Equilibrium Climate Sensitivity
-    (ECS) values ranging from 1.5K to 4.5K using SSP245 CO2 concentration
-    pathway.
+    Decoupled test that validates the ClimateUDEB temperature response
+    independently of forcing calculation. Feeds reference ERF|CO2 directly
+    as exogenous forcing into the climate component.
 
     Parameters
     ----------
@@ -733,40 +822,59 @@ def test_04_ecs_sweep(ecs: float):
         Equilibrium Climate Sensitivity value in Kelvin
 
     Variables compared:
-    - Surface Temperature (primary validation target)
-    - Effective Radiative Forcing|CO2 (should be identical across ECS values)
+    - Surface Temperature (global mean from FourBox output)
     """
     df, config = load_regression_data(f"04_ecs_sweep_{ecs}")
 
     # Verify config matches expected ECS
     assert config.get("core_climatesensitivity") == ecs
 
-    # Extract expected values
-    years, expected_temp = get_variable_values(df, "Surface Temperature")
-    _, _expected_erf_co2 = get_variable_values(df, "Effective Radiative Forcing|CO2")
+    # Extract reference ERF as exogenous input (decoupled from concentration calc)
+    years, erf_co2 = get_variable_values(df, "Effective Radiative Forcing|CO2")
+    _, expected_temp = get_variable_values(df, "Surface Temperature")
 
-    # Verify data was loaded
-    assert len(years) > 0
-    assert len(expected_temp) == len(years)
+    # Build ERF -> temperature model (ClimateUDEB only)
+    model = build_erf_to_temperature_model(years, erf_co2, config)
+    model.run()
+
+    results = model.timeseries()
+
+    # Extract FourBox surface temperature and compute global mean
+    temp_4box = results.get_fourbox_timeseries_by_name("Surface Temperature")
+    assert temp_4box is not None, "Surface Temperature not found in results"
+    actual_temp = fourbox_global_mean(temp_4box.values()[1:])
+
+    npt.assert_allclose(
+        actual_temp,
+        expected_temp[:-1],
+        rtol=5e-2,
+        atol=DEFAULT_ATOL,
+        err_msg=f"Temperature mismatch for ECS={ecs}K",
+    )
 
 
-@pytest.mark.skip(
-    reason="Requires scalar-to-FourBox bridging for ClimateUDEB integration"
+@pytest.mark.xfail(
+    reason=(
+        "ClimateUDEB diverges from MAGICC7 (-8% cool bias at year 2100)."
+        " Implemented: LAMCALC, temp-dependent diffusivity,"
+        " time-varying ECS. Missing: depth-dependent ocean area,"
+        " inter-hemispheric heat exchange sub-stepping."
+    )
 )
 def test_05_co2_only_forcing():
     """
-    Test 5: CO2-only forcing mode.
+    Test 5: CO2-only forcing mode (ERF -> temperature).
 
-    Validates that total forcing equals CO2 forcing when running in CO2-only
-    mode. This isolates the CO2 forcing pathway for clean validation.
+    Decoupled test that validates ClimateUDEB using CO2-only forcing.
+    In this mode, total ERF equals CO2 ERF, providing the simplest
+    possible forcing pathway for clean temperature validation.
 
     Config:
     - rf_total_runmodus: CO2 (only CO2 forcing contributes)
 
     Variables compared:
-    - Effective Radiative Forcing (total should equal CO2 forcing)
-    - Effective Radiative Forcing|CO2
-    - Surface Temperature
+    - Effective Radiative Forcing (sanity: total == CO2)
+    - Surface Temperature (global mean from FourBox output)
     """
     df, config = load_regression_data("05_co2_only_forcing")
 
@@ -776,11 +884,28 @@ def test_05_co2_only_forcing():
     # Extract expected values
     years, expected_total_erf = get_variable_values(df, "Effective Radiative Forcing")
     _, expected_erf_co2 = get_variable_values(df, "Effective Radiative Forcing|CO2")
-    _, _expected_temp = get_variable_values(df, "Surface Temperature")
-
-    # Verify data was loaded
-    assert len(years) > 0
+    _, expected_temp = get_variable_values(df, "Surface Temperature")
 
     # In CO2-only mode, total ERF should equal CO2 ERF
-    # (This is a sanity check on the reference data)
+    # (Sanity check on the reference data)
     npt.assert_allclose(expected_total_erf, expected_erf_co2, rtol=1e-6)
+
+    # Build ERF -> temperature model (ClimateUDEB only)
+    # Use total ERF as the exogenous forcing
+    model = build_erf_to_temperature_model(years, expected_total_erf, config)
+    model.run()
+
+    results = model.timeseries()
+
+    # Extract FourBox surface temperature and compute global mean
+    temp_4box = results.get_fourbox_timeseries_by_name("Surface Temperature")
+    assert temp_4box is not None, "Surface Temperature not found in results"
+    actual_temp = fourbox_global_mean(temp_4box.values()[1:])
+
+    npt.assert_allclose(
+        actual_temp,
+        expected_temp[:-1],
+        rtol=5e-2,
+        atol=DEFAULT_ATOL,
+        err_msg="Temperature mismatch (CO2-only forcing)",
+    )

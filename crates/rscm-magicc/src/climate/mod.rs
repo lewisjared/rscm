@@ -6,6 +6,7 @@
 //! - `ClimateUDEB`: 4-box upwelling-diffusion energy balance model with
 //!   50-layer ocean
 
+pub mod lamcalc;
 mod udeb;
 
 pub use udeb::{ClimateUDEB, ClimateUDEBState};
