@@ -411,6 +411,18 @@ impl ClimateUDEB {
         let term_diff = kappas[0] / (dz_mix * dz) * dt;
         let term_upwell = w / dz_mix * dt;
 
+        // Land forcing amplification.
+        //
+        // Eliminating $T_l$ from the coupled land-ocean system produces both a
+        // modified feedback (TERM_OCN_LAND_FEEDBACK above) and a modified forcing:
+        //
+        // $$Q_{eff} = Q \cdot \left(1 + \frac{K_{lo} \cdot f_l}{f_o \cdot (f_l \cdot \lambda_l + K_{lo})}\right)$$
+        //
+        // The amplification arises because land forcing propagates to the ocean
+        // through the $K_{lo}$ coupling: land receives $f_l \cdot Q$ of forcing
+        // but has no thermal inertia, so it passes heat to the ocean mixed layer.
+        let forcing_amp = 1.0 + self.parameters.k_lo * f_l_hemi / denominator;
+
         // Inter-hemispheric heat exchange: K_NS * (T_this - T_other)
         // Implicit on diagonal (self-coupling), explicit on RHS (cross-coupling).
         let k_ns_term = self.parameters.k_ns / c_mix * dt;
@@ -421,7 +433,9 @@ impl ClimateUDEB {
             + term_upwell * pi_ratio * af_bot[0]
             + k_ns_term;
         c[0] = -(term_diff + term_upwell) * af_bot[0];
-        d[0] = state.ocean_temps[hemi][0] + forcing / c_mix * dt + k_ns_term * other_hemi_sst;
+        d[0] = state.ocean_temps[hemi][0]
+            + forcing * forcing_amp / c_mix * dt
+            + k_ns_term * other_hemi_sst;
 
         // Ground heat capacity: subtract heat flowing from land to ground reservoir.
         // The ground absorbs K_lg * (T_land - T_ground) per unit globe area.
