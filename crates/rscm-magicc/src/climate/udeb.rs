@@ -43,6 +43,7 @@
 
 use std::any::Any;
 
+use crate::climate::lamcalc::{self, LamcalcParams};
 use crate::parameters::ClimateUDEBParameters;
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
@@ -143,19 +144,25 @@ impl ClimateUDEB {
 
     /// Create a new ClimateUDEB component from parameters.
     pub fn from_parameters(parameters: ClimateUDEBParameters) -> Self {
-        // Calculate lambda_ocean and lambda_land from ECS and RLO
-        // Using simplified derivation:
-        //   lambda_global = Q_2x / ECS
-        //   lambda_l = RLO * lambda_o (at equilibrium)
-        //   lambda_global = f_o * lambda_o + f_l * lambda_l
-        // Solving: lambda_o = lambda_global / (f_o + f_l * RLO)
-        let lambda_global = parameters.lambda_global();
-        let f_o = parameters.global_ocean_fraction();
-        let f_l = parameters.global_land_fraction();
-        let rlo = parameters.rlo;
-
-        let lambda_ocean = lambda_global / (f_o + f_l * rlo);
-        let lambda_land = lambda_ocean * rlo;
+        // Calculate lambda_ocean and lambda_land via LAMCALC iteration.
+        // This accounts for inter-box heat exchange when matching the
+        // land-ocean warming ratio (RLO) at the given ECS.
+        let (fgno, fgnl, fgso, fgsl) = parameters.global_box_fractions();
+        let lam_result = lamcalc::lamcalc(&LamcalcParams {
+            q_2xco2: parameters.rf_2xco2,
+            k_lo: parameters.k_lo,
+            k_ns: parameters.k_ns,
+            ecs: parameters.ecs,
+            rlo: parameters.rlo,
+            amplify_ocean_to_land: parameters.amplify_ocean_to_land,
+            fgno,
+            fgnl,
+            fgso,
+            fgsl,
+        })
+        .expect("LAMCALC iteration failed to converge");
+        let lambda_ocean = lam_result.lambda_ocean;
+        let lambda_land = lam_result.lambda_land;
 
         Self {
             parameters: parameters.clone(),
@@ -213,7 +220,24 @@ impl ClimateUDEB {
 
         // Mixed layer (layer 0)
         // dT/dt = (Q - lambda*T)/C + diffusion + upwelling
-        let term_feedback = self.lambda_ocean / c_mix;
+        // Coupled ocean-land feedback term (TERM_OCN_LAND_FEEDBACK)
+        // Accounts for land feedback coupling through the mixed layer.
+        // MAGICC7.f90 lines 2806-2820
+        let f_l_hemi = if hemi == 0 {
+            self.parameters.nh_land_fraction / 2.0
+        } else {
+            self.parameters.sh_land_fraction / 2.0
+        };
+        let f_o_hemi = 0.5 - f_l_hemi;
+        let alpha_eff = self.parameters.temp_adjust_alpha;
+        let denominator = f_o_hemi * (self.parameters.k_lo + f_l_hemi * self.lambda_land);
+        let term_feedback = alpha_eff / c_mix
+            * (self.lambda_ocean
+                + self.lambda_land
+                    * self.parameters.k_lo
+                    * self.parameters.amplify_ocean_to_land
+                    * f_l_hemi
+                    / denominator);
         let term_diff = kappa / (dz_mix * dz) * dt;
         let term_upwell = w / dz_mix * dt;
 
@@ -564,9 +588,26 @@ mod tests {
         let lambda_global = component.parameters.lambda_global();
         assert!((lambda_global - 1.237).abs() < 0.01);
 
-        // lambda_land / lambda_ocean should equal RLO
-        let ratio = component.lambda_land / component.lambda_ocean;
-        assert!((ratio - 1.317).abs() < 0.01);
+        // With LAMCALC, both feedback parameters should be positive
+        assert!(
+            component.lambda_ocean > 0.0,
+            "lambda_ocean should be positive, got {}",
+            component.lambda_ocean
+        );
+        assert!(
+            component.lambda_land.is_finite(),
+            "lambda_land should be finite, got {}",
+            component.lambda_land
+        );
+
+        // With LAMCALC the ratio lambda_land/lambda_ocean need not equal RLO
+        // exactly because inter-box heat exchange is accounted for.
+        // lambda_land can even be negative (positive feedback on land) depending
+        // on the parameter combination; we just verify it is finite.
+        println!(
+            "lambda_ocean = {:.6}, lambda_land = {:.6}",
+            component.lambda_ocean, component.lambda_land
+        );
     }
 
     #[test]
