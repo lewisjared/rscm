@@ -340,7 +340,7 @@ impl Model {
     /// Extract component name from a Component for unit conversion lookup.
     ///
     /// Extracts the type name (before the first '{', ' ', or '(') from the Debug output.
-    fn extract_component_name(component: &C) -> String {
+    pub(crate) fn extract_component_name(component: &C) -> String {
         let debug_str = format!("{:?}", component);
         debug_str
             .split(['{', ' ', '('])

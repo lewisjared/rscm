@@ -321,12 +321,7 @@ impl Model {
             let component = &self.components[nx];
 
             // Skip the NullComponent (graph root)
-            let debug_str = format!("{:?}", component);
-            let component_name = debug_str
-                .split(['{', ' ', '('])
-                .next()
-                .unwrap_or("Unknown")
-                .to_string();
+            let component_name = Model::extract_component_name(component);
 
             if component_name == "NullComponent" {
                 continue;
@@ -386,8 +381,8 @@ impl Model {
         // Collect grid transforms
         let grid_transforms = collect_transforms(self.read_transforms(), self.write_transforms());
 
-        // Collect unit conversions
-        let unit_conversions: Vec<ConversionInfo> = self
+        // Collect unit conversions (sorted for deterministic output)
+        let mut unit_conversions: Vec<ConversionInfo> = self
             .unit_conversions()
             .iter()
             .map(|((var, comp), factor)| ConversionInfo {
@@ -396,6 +391,8 @@ impl Model {
                 factor: *factor,
             })
             .collect();
+        unit_conversions
+            .sort_by(|a, b| (&a.variable, &a.component).cmp(&(&b.variable, &b.component)));
 
         ModelDebugInfo {
             components,
@@ -429,7 +426,14 @@ fn collect_transforms(
         });
     }
 
-    transforms.sort_by(|a, b| a.variable.cmp(&b.variable));
+    transforms.sort_by(|a, b| {
+        (&a.variable, &a.direction, &a.from, &a.to).cmp(&(
+            &b.variable,
+            &b.direction,
+            &b.from,
+            &b.to,
+        ))
+    });
     transforms
 }
 

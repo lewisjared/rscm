@@ -50,7 +50,9 @@ impl RequirementType {
 /// Specifies what spatial resolution a variable operates at.
 /// This enables type-safe coupling validation between components.
 #[pyclass(eq, eq_int)]
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Serialize, Deserialize, Default,
+)]
 pub enum GridType {
     /// Scalar (global average or non-spatial) - default for backwards compatibility
     #[default]
