@@ -77,10 +77,12 @@ pub struct ClimateUDEBState {
     /// History of year-weighted global mean temperature for cumulative-T ECS adjustment.
     /// Each entry stores `temperature * dt_years`, so the sum over entries gives
     /// the cumulative temperature in K-years regardless of timestep size.
+    #[serde(default)]
     pub temperature_history: Vec<FloatValue>,
 
     /// History of timestep sizes (years) corresponding to each temperature_history entry.
     /// Used to determine how many entries span the `feedback_cumt_period` window.
+    #[serde(default)]
     pub dt_history: Vec<FloatValue>,
 }
 
@@ -165,6 +167,13 @@ impl ClimateUDEB {
     /// given parameter combination. This can happen with extreme or
     /// inconsistent user-supplied configurations.
     pub fn from_parameters(parameters: ClimateUDEBParameters) -> RSCMResult<Self> {
+        if parameters.n_layers < 2 {
+            return Err(RSCMError::Error(format!(
+                "invalid n_layers: must be >= 2, got {}",
+                parameters.n_layers
+            )));
+        }
+
         // Calculate lambda_ocean and lambda_land via LAMCALC iteration.
         // This accounts for inter-box heat exchange when matching the
         // land-ocean warming ratio (RLO) at the given ECS.

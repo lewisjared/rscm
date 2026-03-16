@@ -894,9 +894,8 @@ mod climate_udeb_equilibrium {
         // ClimateUDEB internally calls lamcalc during from_parameters
         let component = ClimateUDEB::from_parameters(params).unwrap();
 
-        // We cannot access lambda_ocean/lambda_land directly since they are private,
-        // but we can verify through serialisation: lambda_ocean and lambda_land are
-        // #[serde(skip)] so they are recalculated on deserialisation.
+        // We cannot access lambda_ocean/lambda_land directly since they are private
+        // and #[serde(skip)] (they deserialise as 0.0, not recalculated).
         // Instead, we verify by running both through the equilibrium calculation.
         let (_, _, global_mean, rlo_actual) =
             compute_equilibrium_temperatures(&lamcalc_params, &direct_result);

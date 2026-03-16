@@ -193,13 +193,29 @@ mod time_varying_ecs {
                 + prev_temps.0[1] * fgnl
                 + prev_temps.0[2] * fgso
                 + prev_temps.0[3] * fgsl;
-            temp_history.push(global_sat);
 
-            // Reconstruct adjusted ECS using the same formula as ClimateUDEB
+            // Store year-weighted temperature (T * dt_years) matching adjusted_ecs()
+            let dt_years = 1.0;
+            temp_history.push(global_sat * dt_years);
+
+            // Reconstruct adjusted ECS using the same year-weighted walk-back
+            // as ClimateUDEB::adjusted_ecs()
             let cumt_2x = params.ecs * params.feedback_cumt_period;
-            let period = params.feedback_cumt_period as usize;
-            let start = temp_history.len().saturating_sub(period);
-            let cum_t: FloatValue = temp_history[start..].iter().sum();
+            let period = params.feedback_cumt_period;
+            let mut years_remaining = period;
+            let mut cum_t: FloatValue = 0.0;
+            for i in (0..temp_history.len()).rev() {
+                if years_remaining <= 0.0 {
+                    break;
+                }
+                if dt_years <= years_remaining {
+                    cum_t += temp_history[i];
+                    years_remaining -= dt_years;
+                } else {
+                    cum_t += temp_history[i] * (years_remaining / dt_years);
+                    years_remaining = 0.0;
+                }
+            }
 
             let cumt_factor = if cumt_2x.abs() > 1e-15 {
                 1.0 + params.feedback_cumt_sensitivity * (cum_t - cumt_2x) / cumt_2x
