@@ -35,7 +35,7 @@
 //! - **Time-varying ECS**: Climate sensitivity that changes with forcing level and
 //!   cumulative temperature. Not implemented - constant ECS.
 //! - **Temperature-dependent diffusivity**: Diffusivity that varies with vertical
-//!   temperature gradient. Not implemented - constant diffusivity.
+//!   temperature gradient. Implemented - see `layer_diffusivities()`.
 //! - **Depth-dependent ocean area**: Basin narrowing with depth. Not implemented -
 //!   cylindrical ocean.
 //! - **El Niño/AMV modes**: Internal variability modes. Not implemented.
@@ -180,6 +180,39 @@ impl ClimateUDEB {
         }
     }
 
+    /// Calculate depth-dependent vertical diffusivity for each layer boundary.
+    ///
+    /// Diffusivity varies with the temperature gradient between the surface
+    /// and bottom layer, decreasing linearly with relative depth:
+    ///
+    /// $$K(z) = \max(K_{min}, K_0 + \frac{dK}{dT} \times (1 - z/z_{max}) \times (T_{top} - T_{bottom})) \times 3155.76$$
+    ///
+    /// Returns a Vec of length `n_layers - 1` (diffusivity at each layer boundary).
+    fn layer_diffusivities(&self, state: &ClimateUDEBState, hemi: usize) -> Vec<FloatValue> {
+        let n = self.parameters.n_layers;
+        let dz = self.parameters.layer_thickness;
+        let total_depth = self.parameters.mixed_layer_depth + (n as FloatValue - 1.0) * dz;
+
+        let t_top = state.ocean_temps[hemi][0];
+        let t_bottom = state.ocean_temps[hemi][n - 1];
+
+        let kappa_min_m2yr = self.parameters.kappa_min * 3155.76;
+
+        let mut kappa = Vec::with_capacity(n - 1);
+        for l in 0..n - 1 {
+            // Depth of layer boundary
+            let depth = self.parameters.mixed_layer_depth + l as FloatValue * dz;
+            let relative_depth = depth / total_depth;
+
+            let k = ((1.0 - relative_depth) * self.parameters.kappa_dkdt * (t_top - t_bottom)
+                + self.parameters.kappa)
+                * 3155.76;
+            kappa.push(k.max(kappa_min_m2yr));
+        }
+
+        kappa
+    }
+
     /// Step forward by dt (in years) for a single hemisphere.
     ///
     /// Uses implicit Thomas algorithm for the diffusion-advection equation.
@@ -202,7 +235,7 @@ impl ClimateUDEB {
         dt: FloatValue,
     ) -> FloatValue {
         let n = self.parameters.n_layers;
-        let kappa = self.parameters.kappa_m2_per_yr();
+        let kappas = self.layer_diffusivities(state, hemi);
         let w = state.upwelling_rates[hemi];
         let dz = self.parameters.layer_thickness;
         let dz_mix = self.parameters.mixed_layer_depth;
@@ -238,7 +271,7 @@ impl ClimateUDEB {
                     * self.parameters.amplify_ocean_to_land
                     * f_l_hemi
                     / denominator);
-        let term_diff = kappa / (dz_mix * dz) * dt;
+        let term_diff = kappas[0] / (dz_mix * dz) * dt;
         let term_upwell = w / dz_mix * dt;
 
         b[0] = 1.0 + term_feedback * dt + term_diff + term_upwell * pi_ratio;
@@ -247,8 +280,8 @@ impl ClimateUDEB {
 
         // Layers 1 to n-2 (interior layers)
         for i in 1..n - 1 {
-            let term_diff_up = kappa / (dz * dz) * dt;
-            let term_diff_down = kappa / (dz * dz) * dt;
+            let term_diff_up = kappas[i - 1] / (dz * dz) * dt;
+            let term_diff_down = kappas[i] / (dz * dz) * dt;
             let term_upwell_layer = w / dz * dt;
 
             a[i] = -term_diff_up;
@@ -262,7 +295,7 @@ impl ClimateUDEB {
 
         // Bottom layer (layer n-1)
         // No flux boundary condition at bottom
-        let term_diff_up = kappa / (dz * dz) * dt;
+        let term_diff_up = kappas[n - 2] / (dz * dz) * dt;
         let term_upwell_bottom = w / dz * dt;
 
         a[n - 1] = -term_diff_up;
@@ -810,6 +843,45 @@ mod tests {
             sst_val > 0.0,
             "SST should be positive after positive forcing"
         );
+    }
+
+    #[test]
+    fn test_diffusivity_varies_with_temperature() {
+        let component = default_component();
+        let state = default_state(&component);
+
+        // With zero temperature gradient, diffusivity should equal base kappa
+        let kappa_uniform = component.layer_diffusivities(&state, 0);
+        let base_kappa = component.parameters.kappa_m2_per_yr();
+        for &k in &kappa_uniform {
+            assert!(
+                (k - base_kappa).abs() < 1e-6,
+                "Zero gradient: K={k} should equal base {base_kappa}"
+            );
+        }
+
+        // With positive gradient (warm top, cold bottom), diffusivity should
+        // decrease near surface (dK/dT is negative, gradient is positive)
+        let mut warm_state = default_state(&component);
+        warm_state.ocean_temps[0][0] = 3.0; // warm surface
+        let kappa_warm = component.layer_diffusivities(&warm_state, 0);
+
+        // Surface layers should have lower diffusivity
+        assert!(
+            kappa_warm[0] < base_kappa,
+            "Warm surface: K[0]={} should be less than base {}",
+            kappa_warm[0],
+            base_kappa
+        );
+
+        // But never below minimum
+        let kappa_min = component.parameters.kappa_min * 3155.76;
+        for &k in &kappa_warm {
+            assert!(
+                k >= kappa_min - 1e-10,
+                "K={k} should not go below min {kappa_min}"
+            );
+        }
     }
 
     #[test]
