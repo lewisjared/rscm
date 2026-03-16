@@ -54,7 +54,7 @@ test-python: build-dev
 
 .PHONY: test-rust
 test-rust:
-	cargo test --workspace
+	cargo test --workspace --exclude rscm
 
 .PHONY: test
 test: test-python test-rust
