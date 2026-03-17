@@ -339,15 +339,21 @@ impl ClimateUDEBParameters {
 
     /// Compute area factors for the tridiagonal ocean solver.
     ///
-    /// Returns `(af_top, af_bottom)` vectors of length `n_layers` where:
+    /// Returns `(af_top, af_bottom, af_diff)` vectors of length `n_layers` where:
     /// - `af_top[l]`  = area at top boundary of layer `l` / average area of layer `l`
     /// - `af_bottom[l]` = area at bottom boundary of layer `l` / average area of layer `l`
+    /// - `af_diff[l]` = (area at top - area at bottom) / average area of layer `l`
     ///
-    /// For a cylindrical ocean (`depth_dependent_area = 0`), all factors are 1.0.
-    pub fn compute_area_factors(&self) -> (Vec<FloatValue>, Vec<FloatValue>) {
+    /// `af_diff` is used for the entrainment terms (polar sinking water entering
+    /// each deep layer). Matches MAGICC7 AREAFACTOR_DIFFFLOW.
+    ///
+    /// For a cylindrical ocean (`depth_dependent_area = 0`), all factors are 1.0
+    /// (and `af_diff` is 0.0).
+    pub fn compute_area_factors(&self) -> (Vec<FloatValue>, Vec<FloatValue>, Vec<FloatValue>) {
         let n = self.n_layers;
         let mut af_top = Vec::with_capacity(n);
         let mut af_bottom = Vec::with_capacity(n);
+        let mut af_diff = Vec::with_capacity(n);
 
         for l in 0..n {
             let (z_top, z_bottom) = if l == 0 {
@@ -364,9 +370,11 @@ impl ClimateUDEBParameters {
 
             af_top.push(a_top / a_avg);
             af_bottom.push(a_bottom / a_avg);
+            // MAGICC7 AREAFACTOR_DIFFFLOW: (A_top - A_bottom) / A_avg
+            af_diff.push((a_top - a_bottom) / a_avg);
         }
 
-        (af_top, af_bottom)
+        (af_top, af_bottom, af_diff)
     }
 
     /// Calculate heat capacity of the mixed layer per unit area ($\text{W yr / m}^2\text{ K}$).

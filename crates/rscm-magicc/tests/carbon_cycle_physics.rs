@@ -667,16 +667,11 @@ mod climate_tcr {
     /// CO2 increase scenario (when CO2 has doubled). The forcing ramps as:
     /// $$Q(t) = Q_{2x} \times \log_2(1.01^t)$$
     ///
-    /// For typical parameters, TCR/ECS should be in the range 0.4-0.7.
-    ///
-    /// **XFAIL**: TCR/ECS = 0.84, above the 0.3-0.8 range. The land forcing
-    /// amplification (implemented in the mixed-layer equation) boosts the
-    /// transient response above what simple models typically produce. This
-    /// needs investigation: the SST-to-air temperature conversion may also
-    /// inflate the diagnostic global mean relative to the energy-balance
-    /// temperature. See also `ecs_diagnostics::test_transient_model_approaches_ecs`.
+    /// For typical parameters, TCR/ECS should be in the range 0.3-0.8.
+    /// With the DZ1 half-thickness correction, AREAFACTOR_DIFFFLOW entrainment,
+    /// time-varying alpha_eff, and area-weighted upwelling temperature, the
+    /// TCR/ECS ratio now falls within the expected range.
     #[test]
-    #[should_panic(expected = "TCR/ECS ratio")]
     fn test_tcr_in_expected_range() {
         let ecs = 3.0;
         let params = params_with_fixed_ecs(ecs);

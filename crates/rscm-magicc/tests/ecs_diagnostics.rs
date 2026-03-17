@@ -315,25 +315,11 @@ mod transient_ecs_convergence {
     /// mean. This test checks that the transient 1D ocean model also approaches
     /// that equilibrium when run for a very long time.
     ///
-    /// Currently expected to fail because the transient mixed-layer equation
-    /// does not include the land forcing contribution to the effective ocean
-    /// forcing. When land temperature is eliminated diagnostically, the
-    /// coupling matrix produces both a modified feedback (TERM_OCN_LAND_FEEDBACK,
-    /// implemented) and a modified forcing ($Q_{eff} > Q$, not yet implemented).
-    /// Without the forcing amplification, the transient model equilibrates at
-    /// approximately $\frac{Q}{\alpha_{eff} \cdot \lambda_{eff}}$, which is
-    /// about 30% below the coupling-matrix ECS.
-    ///
-    /// Both ground heat capacity and land forcing amplification are now
-    /// implemented. Land forcing amplification correctly propagates land
-    /// forcing to the ocean mixed layer through $K_{lo}$ coupling, but
-    /// the transient model still overshoots the coupling-matrix ECS.
-    /// This is because the SST-to-air temperature conversion ($\alpha_{eff}$)
-    /// creates a mismatch between the energy-balance equilibrium and the
-    /// air-temperature-based global mean diagnostic. The remaining bias
-    /// requires SST-to-air consistency in the coupling matrix calibration.
+    /// With the DZ1 half-thickness correction, AREAFACTOR_DIFFFLOW entrainment,
+    /// time-varying alpha_eff ($T_{air}/T_{sst}$), and area-weighted global
+    /// air temperature for upwelling, the transient model now converges to
+    /// within a few percent of the coupling-matrix ECS.
     #[test]
-    #[should_panic(expected = "should be within 10%")]
     fn test_transient_model_approaches_ecs() {
         let params = params_with_fixed_ecs(3.0);
         let erf = params.rf_2xco2;

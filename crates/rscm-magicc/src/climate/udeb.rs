@@ -128,13 +128,16 @@ impl ComponentState for ClimateUDEBState {
 ///
 /// These factors modify the diffusion and upwelling terms in the tridiagonal
 /// solver to account for the ocean basin narrowing with depth (hypsometry).
-/// For a cylindrical ocean, all factors are 1.0.
+/// For a cylindrical ocean, `af_top` and `af_bottom` are 1.0 and `af_diff` is 0.0.
 #[derive(Debug, Clone, Default)]
 pub struct OceanAreaFactors {
     /// Area factor for flux from above: `A(z_top) / A(z_avg)` per layer.
     pub af_top: Vec<FloatValue>,
     /// Area factor for flux to below: `A(z_bottom) / A(z_avg)` per layer.
     pub af_bottom: Vec<FloatValue>,
+    /// Area factor for entrainment (polar sinking): `(A(z_top) - A(z_bottom)) / A(z_avg)`.
+    /// Matches MAGICC7 `AREAFACTOR_DIFFFLOW`.
+    pub af_diff: Vec<FloatValue>,
 }
 
 /// 4-box UDEB climate model component.
@@ -232,8 +235,12 @@ impl ClimateUDEB {
         let lambda_land = lam_result.lambda_land;
 
         // Pre-compute depth-dependent ocean area factors
-        let (af_top, af_bottom) = parameters.compute_area_factors();
-        let area_factors = OceanAreaFactors { af_top, af_bottom };
+        let (af_top, af_bottom, af_diff) = parameters.compute_area_factors();
+        let area_factors = OceanAreaFactors {
+            af_top,
+            af_bottom,
+            af_diff,
+        };
 
         Ok(Self {
             parameters: parameters.clone(),
@@ -377,6 +384,7 @@ impl ClimateUDEB {
         let pi_ratio = self.parameters.polar_sinking_ratio;
         let af_top = &self.area_factors.af_top;
         let af_bot = &self.area_factors.af_bottom;
+        let af_diff = &self.area_factors.af_diff;
 
         // Heat capacity of mixed layer (W yr / m^2 K)
         let c_mix = self.parameters.mixed_layer_heat_capacity();
@@ -399,7 +407,15 @@ impl ClimateUDEB {
             self.parameters.sh_land_fraction / 2.0
         };
         let f_o_hemi = 0.5 - f_l_hemi;
-        let alpha_eff = self.parameters.temp_adjust_alpha;
+        // Time-varying alpha_eff: MAGICC7.f90 lines 3171-3187
+        // CORE_TEMPADJUST_OCN2ATM_ALPHAEFF = T_air / T_sst (or base alpha if SST ~ 0)
+        let sst_prev = state.ocean_temps[hemi][0];
+        let alpha_eff = if sst_prev.abs() < 1e-15 {
+            self.parameters.temp_adjust_alpha
+        } else {
+            let t_air_prev = self.sst_to_air_temperature(sst_prev);
+            t_air_prev / sst_prev
+        };
         let denominator = f_o_hemi * (self.parameters.k_lo + f_l_hemi * lambda_land);
         let term_feedback = alpha_eff / c_mix
             * (lambda_ocean
@@ -408,7 +424,10 @@ impl ClimateUDEB {
                     * self.parameters.amplify_ocean_to_land
                     * f_l_hemi
                     / denominator);
-        let term_diff = kappas[0] / (dz_mix * dz) * dt;
+        // DZ1 = DZ/2: half-thickness for the gradient between mixed layer and
+        // the first deep layer (MAGICC7.f90 DZ1 = DZ/2, asymmetric spacing).
+        let dz1 = dz / 2.0;
+        let term_diff = kappas[0] / (dz_mix * dz1) * dt;
         let term_upwell = w / dz_mix * dt;
 
         // Land forcing amplification.
@@ -447,7 +466,11 @@ impl ClimateUDEB {
 
         // Layers 1 to n-2 (interior layers)
         for i in 1..n - 1 {
-            let term_diff_up = kappas[i - 1] / (dz * dz) * dt;
+            // Layer 1 (MAGICC layer 2) uses DZ1 = DZ/2 for upward diffusion
+            // to the mixed layer (MAGICC7.f90 VERTICALDIFF(1)/DZ1).
+            // All deeper layers use the full DZ spacing.
+            let dz_up = if i == 1 { dz1 } else { dz };
+            let term_diff_up = kappas[i - 1] / (dz * dz_up) * dt;
             let term_diff_down = kappas[i] / (dz * dz) * dt;
             let term_upwell_layer = w / dz * dt;
 
@@ -458,9 +481,9 @@ impl ClimateUDEB {
                 + term_upwell_layer * af_top[i];
             c[i] = -(term_diff_down + term_upwell_layer) * af_bot[i];
 
-            // Entrainment term from polar sinking
+            // Entrainment term from polar sinking (MAGICC7 AREAFACTOR_DIFFFLOW)
             d[i] = state.ocean_temps[hemi][i]
-                + pi_ratio * term_upwell_layer * state.ocean_temps[hemi][0];
+                + pi_ratio * term_upwell_layer * state.ocean_temps[hemi][0] * af_diff[i];
         }
 
         // Bottom layer (layer n-1)
@@ -472,8 +495,9 @@ impl ClimateUDEB {
         b[n - 1] = 1.0 + (term_diff_up + term_upwell_bottom) * af_top[n - 1];
         // c[n-1] = 0 (no layer below)
 
+        // Entrainment term from polar sinking (MAGICC7 AREAFACTOR_DIFFFLOW)
         d[n - 1] = state.ocean_temps[hemi][n - 1]
-            + pi_ratio * term_upwell_bottom * state.ocean_temps[hemi][0];
+            + pi_ratio * term_upwell_bottom * state.ocean_temps[hemi][0] * af_diff[n - 1];
 
         // Solve tridiagonal system
         let new_temps = thomas_solve(&a, &b, &c, &d);
@@ -760,9 +784,14 @@ impl ClimateUDEB {
                 }
             }
 
-            // Update upwelling based on global SST
-            let global_sst = 0.5 * (sst_nh + sst_sh);
-            self.update_upwelling(state, global_sst);
+            // Update upwelling based on area-weighted global air temperature
+            // (MAGICC7.f90 line 3298: GLOBET = SUM(CURRENT_TIME_TEMPERATURE * GLOBALAREAFRACTIONS))
+            let (fgno_loop, _, fgso_loop, _) = self.parameters.global_box_fractions();
+            let global_temp = t_air_nho * fgno_loop
+                + state.land_temps[0] * fgnl
+                + t_air_sho * fgso_loop
+                + state.land_temps[1] * fgsl;
+            self.update_upwelling(state, global_temp);
         }
 
         // Get final temperatures from the last substep
