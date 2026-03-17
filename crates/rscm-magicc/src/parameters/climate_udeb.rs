@@ -122,6 +122,15 @@ pub struct ClimateUDEBParameters {
     /// Default: 0.21
     pub sh_land_fraction: FloatValue,
 
+    /// Depth-dependent ocean area scale factor (0-1).
+    ///
+    /// Controls the strength of basin narrowing with depth:
+    /// - 0.0 = cylindrical ocean (no narrowing)
+    /// - 1.0 = full hypsometric profile
+    ///
+    /// Default: 1.0
+    pub depth_dependent_area: FloatValue,
+
     // Ocean temperature adjustment
     /// Ocean-to-atmosphere temperature adjustment alpha (dimensionless).
     /// Linear coefficient for SAT/SST relationship.
@@ -138,6 +147,30 @@ pub struct ClimateUDEBParameters {
     /// Fraction of surface temperature in polar sinking water.
     /// Default: 0.2
     pub polar_sinking_ratio: FloatValue,
+
+    // Ground heat reservoir parameters
+    /// Enable ground heat reservoir (`CORE_LANDHEATCAPACITY_APPLY`).
+    ///
+    /// When enabled, a ground heat reservoir damps the land temperature
+    /// response by absorbing/releasing heat from the land surface.
+    /// Default: true
+    pub land_heat_capacity_enabled: bool,
+
+    /// Land-ground heat exchange coefficient ($\text{W/m}^2\text{/K}$)
+    /// (`CORE_HEATXCHANGE_LANDGROUND`).
+    ///
+    /// Per unit globe area. Controls the rate of heat exchange between
+    /// the land surface and the ground heat reservoir.
+    /// Default: 0.1
+    pub k_lg: FloatValue,
+
+    /// Effective thickness of ground heat reservoir (m)
+    /// (`CORE_LANDHC_EFFTHICKNESS`).
+    ///
+    /// Ocean-water-equivalent depth parameterising the total land heat
+    /// reservoir thermal inertia.
+    /// Default: 300.0
+    pub land_hc_eff_thickness: FloatValue,
 
     // Integration parameters
     /// Steps per year for sub-annual integration.
@@ -185,6 +218,7 @@ impl Default for ClimateUDEBParameters {
             // Area fractions
             nh_land_fraction: 0.42,
             sh_land_fraction: 0.21,
+            depth_dependent_area: 1.0,
 
             // Temperature adjustment
             temp_adjust_alpha: 1.04,
@@ -192,6 +226,11 @@ impl Default for ClimateUDEBParameters {
 
             // Polar sinking
             polar_sinking_ratio: 0.2,
+
+            // Ground heat reservoir
+            land_heat_capacity_enabled: true,
+            k_lg: 0.1,
+            land_hc_eff_thickness: 300.0,
 
             // Integration
             steps_per_year: 12,
@@ -204,6 +243,22 @@ impl Default for ClimateUDEBParameters {
 ///
 /// $100 \, (\text{cm}^2 \to \text{m}^2) \times 31.5576 \, (\text{s} \to \text{yr}) = 3155.76$
 pub const DIFFUSIVITY_CM2S_TO_M2YR: FloatValue = 3155.76;
+
+/// Density of seawater ($\text{kg/m}^3$).
+pub const RHO_SEAWATER: FloatValue = 1026.0;
+
+/// Specific heat capacity of seawater ($\text{J/(kg K)}$).
+pub const CP_SEAWATER: FloatValue = 3985.0;
+
+/// Seconds per Julian year ($\text{s/yr}$).
+pub const SECONDS_PER_YEAR: FloatValue = 31557600.0;
+
+/// Volumetric heat capacity of seawater per unit depth ($\text{W yr / m}^2\text{ K}$).
+///
+/// $$\frac{\rho \, c_p \, d}{\text{seconds per year}}$$
+pub fn heat_capacity_per_unit_area(depth_m: FloatValue) -> FloatValue {
+    RHO_SEAWATER * CP_SEAWATER * depth_m / SECONDS_PER_YEAR
+}
 
 impl ClimateUDEBParameters {
     /// Convert vertical diffusivity from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
@@ -258,20 +313,98 @@ impl ClimateUDEBParameters {
         0.5 * (self.nh_land_fraction + self.sh_land_fraction)
     }
 
-    /// Calculate heat capacity of the mixed layer per unit area ($\text{W yr / m}^2\text{ K}$).
+    /// Compute the ocean area fraction at a given depth using the hypsometric profile.
     ///
-    /// Uses standard seawater properties:
-    /// - $\rho = 1026 \, \text{kg/m}^3$
-    /// - $c_p = 3985 \, \text{J/(kg K)}$
-    /// - Convert J to W yr: $1 \, \text{W yr} = 3.15576 \times 10^7 \, \text{J}$
+    /// Returns the fraction of ocean surface area that is still ocean at depth `z` metres.
+    /// The result is scaled by [`depth_dependent_area`](Self::depth_dependent_area):
+    /// when that parameter is 0 the ocean is cylindrical ($A = 1$), when 1 the full
+    /// hypsometric profile is used.
+    ///
+    /// Based on global ocean bathymetry (ETOPO/GEBCO).
+    pub fn ocean_area_at_depth(&self, depth_m: FloatValue) -> FloatValue {
+        /// Depth breakpoints (metres) for the hypsometric lookup table.
+        const DEPTH: [FloatValue; 12] = [
+            0.0, 200.0, 500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0,
+            5000.0,
+        ];
+        /// Fraction of ocean surface area remaining at each depth breakpoint.
+        const AREA: [FloatValue; 12] = [
+            1.0, 0.975, 0.95, 0.92, 0.91, 0.87, 0.81, 0.72, 0.55, 0.38, 0.18, 0.05,
+        ];
+
+        // Linearly interpolate the hypsometric profile
+        let hydro = if depth_m <= DEPTH[0] {
+            AREA[0]
+        } else if depth_m >= DEPTH[DEPTH.len() - 1] {
+            AREA[AREA.len() - 1]
+        } else {
+            let mut a = AREA[0];
+            for i in 1..DEPTH.len() {
+                if depth_m <= DEPTH[i] {
+                    let frac = (depth_m - DEPTH[i - 1]) / (DEPTH[i] - DEPTH[i - 1]);
+                    a = AREA[i - 1] + frac * (AREA[i] - AREA[i - 1]);
+                    break;
+                }
+            }
+            a
+        };
+
+        // Blend between cylindrical (1.0) and full hypsometric profile
+        1.0 + self.depth_dependent_area * (hydro - 1.0)
+    }
+
+    /// Compute area factors for the tridiagonal ocean solver.
+    ///
+    /// Returns `(af_top, af_bottom, af_diff)` vectors of length `n_layers` where:
+    /// - `af_top[l]`  = area at top boundary of layer `l` / average area of layer `l`
+    /// - `af_bottom[l]` = area at bottom boundary of layer `l` / average area of layer `l`
+    /// - `af_diff[l]` = (area at top - area at bottom) / average area of layer `l`
+    ///
+    /// `af_diff` is used for the entrainment terms (polar sinking water entering
+    /// each deep layer). Matches MAGICC7 AREAFACTOR_DIFFFLOW.
+    ///
+    /// For a cylindrical ocean (`depth_dependent_area = 0`), all factors are 1.0
+    /// (and `af_diff` is 0.0).
+    pub fn compute_area_factors(&self) -> (Vec<FloatValue>, Vec<FloatValue>, Vec<FloatValue>) {
+        let n = self.n_layers;
+        let mut af_top = Vec::with_capacity(n);
+        let mut af_bottom = Vec::with_capacity(n);
+        let mut af_diff = Vec::with_capacity(n);
+
+        for l in 0..n {
+            let (z_top, z_bottom) = if l == 0 {
+                (0.0, self.mixed_layer_depth)
+            } else {
+                let top = self.mixed_layer_depth + (l as FloatValue - 1.0) * self.layer_thickness;
+                let bot = top + self.layer_thickness;
+                (top, bot)
+            };
+
+            let a_top = self.ocean_area_at_depth(z_top);
+            let a_bottom = self.ocean_area_at_depth(z_bottom);
+            let a_avg = (a_top + a_bottom) / 2.0;
+
+            af_top.push(a_top / a_avg);
+            af_bottom.push(a_bottom / a_avg);
+            // MAGICC7 AREAFACTOR_DIFFFLOW: (A_top - A_bottom) / A_avg
+            af_diff.push((a_top - a_bottom) / a_avg);
+        }
+
+        (af_top, af_bottom, af_diff)
+    }
+
+    /// Calculate heat capacity of the mixed layer per unit area ($\text{W yr / m}^2\text{ K}$).
     pub fn mixed_layer_heat_capacity(&self) -> FloatValue {
-        // rho * c_p * depth / (seconds_per_year)
-        // = 1026 * 3985 * depth / 31557600
-        // ~= 0.1295 * depth (W yr / m^2 K)
-        let rho = 1026.0; // kg/m^3
-        let c_p = 3985.0; // J/(kg K)
-        let seconds_per_year = 31557600.0; // s/yr
-        rho * c_p * self.mixed_layer_depth / seconds_per_year
+        heat_capacity_per_unit_area(self.mixed_layer_depth)
+    }
+
+    /// Calculate heat capacity of the ground reservoir per unit area
+    /// ($\text{W yr / m}^2\text{ K}$).
+    ///
+    /// Uses ocean-water-equivalent heat capacity with the effective ground
+    /// thickness parameterising the total land heat reservoir.
+    pub fn ground_heat_capacity(&self) -> FloatValue {
+        heat_capacity_per_unit_area(self.land_hc_eff_thickness)
     }
 }
 
@@ -365,6 +498,38 @@ mod tests {
         assert!((params.feedback_q_sensitivity - 7.84e-9).abs() < 1e-12);
         assert!((params.feedback_cumt_sensitivity - 0.08).abs() < 1e-10);
         assert!((params.feedback_cumt_period - 300.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_ground_heat_capacity() {
+        let params = ClimateUDEBParameters::default();
+        let c_ground = params.ground_heat_capacity();
+
+        // For 300m effective thickness, expect ~38.8 W yr / m^2 K
+        // (1026 * 3985 * 300) / 31557600 ~= 38.8
+        assert!(
+            c_ground > 35.0 && c_ground < 42.0,
+            "C_ground = {}",
+            c_ground
+        );
+
+        // Ground capacity should scale linearly with thickness
+        let ratio = c_ground / params.mixed_layer_heat_capacity();
+        let expected_ratio = params.land_hc_eff_thickness / params.mixed_layer_depth;
+        assert!(
+            (ratio - expected_ratio).abs() < 1e-10,
+            "Ground/mixed capacity ratio should equal thickness ratio: {} vs {}",
+            ratio,
+            expected_ratio
+        );
+    }
+
+    #[test]
+    fn test_ground_heat_defaults() {
+        let params = ClimateUDEBParameters::default();
+        assert!(params.land_heat_capacity_enabled);
+        assert!((params.k_lg - 0.1).abs() < 1e-10);
+        assert!((params.land_hc_eff_thickness - 300.0).abs() < 1e-10);
     }
 
     #[test]

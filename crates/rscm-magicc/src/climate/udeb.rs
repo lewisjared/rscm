@@ -24,7 +24,8 @@
 //! - $F_{diffusion}$ = diffusive heat flux from deeper ocean
 //! - $F_{upwelling}$ = advective heat flux from upwelling
 //!
-//! Land temperatures are calculated assuming equilibrium with adjacent ocean box.
+//! Land temperatures are calculated assuming equilibrium with adjacent ocean box,
+//! with optional ground heat reservoir damping.
 //!
 //! # Differences from MAGICC7 Module 08
 //!
@@ -36,15 +37,18 @@
 //!   cumulative temperature. Implemented - see `adjusted_ecs()`.
 //! - **Temperature-dependent diffusivity**: Diffusivity that varies with vertical
 //!   temperature gradient. Implemented - see `layer_diffusivities()`.
-//! - **Depth-dependent ocean area**: Basin narrowing with depth. Not implemented -
-//!   cylindrical ocean.
+//! - **Depth-dependent ocean area**: Basin narrowing with depth using a standard
+//!   hypsometric profile. Implemented - see [`OceanAreaFactors`].
 //! - **El Niño/AMV modes**: Internal variability modes. Not implemented.
-//! - **Ground heat reservoir**: Land heat capacity damping. Not implemented.
+//! - **Ground heat reservoir**: Land heat capacity damping. Implemented - see
+//!   [`land_heat_capacity_enabled`](super::parameters::ClimateUDEBParameters::land_heat_capacity_enabled).
 
 use std::any::Any;
 
 use crate::climate::lamcalc::{self, LamcalcParams, LamcalcResult};
-use crate::parameters::{ClimateUDEBParameters, DIFFUSIVITY_CM2S_TO_M2YR};
+use crate::parameters::{
+    ClimateUDEBParameters, CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER,
+};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
     RequirementType,
@@ -84,6 +88,17 @@ pub struct ClimateUDEBState {
     /// Used to determine how many entries span the `feedback_cumt_period` window.
     #[serde(default)]
     pub dt_history: Vec<FloatValue>,
+
+    /// Land surface temperatures for each hemisphere (K).
+    /// Index 0 = NH, 1 = SH. Updated each substep when ground heat
+    /// capacity is enabled.
+    #[serde(default)]
+    pub land_temps: [FloatValue; 2],
+
+    /// Ground heat reservoir temperatures for each hemisphere (K).
+    /// Index 0 = NH, 1 = SH.
+    #[serde(default)]
+    pub ground_temps: [FloatValue; 2],
 }
 
 impl ClimateUDEBState {
@@ -95,6 +110,8 @@ impl ClimateUDEBState {
             initialized: true,
             temperature_history: Vec::new(),
             dt_history: Vec::new(),
+            land_temps: [0.0; 2],
+            ground_temps: [0.0; 2],
         }
     }
 }
@@ -107,6 +124,22 @@ impl ComponentState for ClimateUDEBState {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+}
+
+/// Pre-computed ocean area factors for depth-dependent basin narrowing.
+///
+/// These factors modify the diffusion and upwelling terms in the tridiagonal
+/// solver to account for the ocean basin narrowing with depth (hypsometry).
+/// For a cylindrical ocean, `af_top` and `af_bottom` are 1.0 and `af_diff` is 0.0.
+#[derive(Debug, Clone, Default)]
+pub struct OceanAreaFactors {
+    /// Area factor for flux from above: `A(z_top) / A(z_avg)` per layer.
+    pub af_top: Vec<FloatValue>,
+    /// Area factor for flux to below: `A(z_bottom) / A(z_avg)` per layer.
+    pub af_bottom: Vec<FloatValue>,
+    /// Area factor for entrainment (polar sinking): `(A(z_top) - A(z_bottom)) / A(z_avg)`.
+    /// Matches MAGICC7 `AREAFACTOR_DIFFFLOW`.
+    pub af_diff: Vec<FloatValue>,
 }
 
 /// 4-box UDEB climate model component.
@@ -147,6 +180,10 @@ pub struct ClimateUDEB {
     /// Land feedback parameter ($\text{W/m}^2\text{/K}$).
     #[serde(skip)]
     lambda_land: FloatValue,
+
+    /// Pre-computed ocean area factors for depth-dependent basin narrowing.
+    #[serde(skip)]
+    area_factors: OceanAreaFactors,
 }
 
 impl ClimateUDEB {
@@ -199,10 +236,19 @@ impl ClimateUDEB {
         let lambda_ocean = lam_result.lambda_ocean;
         let lambda_land = lam_result.lambda_land;
 
+        // Pre-compute depth-dependent ocean area factors
+        let (af_top, af_bottom, af_diff) = parameters.compute_area_factors();
+        let area_factors = OceanAreaFactors {
+            af_top,
+            af_bottom,
+            af_diff,
+        };
+
         Ok(Self {
             parameters: parameters.clone(),
             lambda_ocean,
             lambda_land,
+            area_factors,
         })
     }
 
@@ -301,7 +347,9 @@ impl ClimateUDEB {
 
     /// Step forward by dt (in years) for a single hemisphere.
     ///
-    /// Uses implicit Thomas algorithm for the diffusion-advection equation.
+    /// Uses implicit Thomas algorithm for the diffusion-advection equation
+    /// with depth-dependent ocean area factors and inter-hemispheric heat
+    /// exchange.
     ///
     /// # Arguments
     ///
@@ -311,6 +359,9 @@ impl ClimateUDEB {
     /// * `dt` - Timestep in years
     /// * `lambda_ocean` - Ocean feedback parameter ($\text{W/m}^2\text{/K}$)
     /// * `lambda_land` - Land feedback parameter ($\text{W/m}^2\text{/K}$)
+    /// * `other_hemi_sst` - Other hemisphere's ocean SST for $K_{NS}$ exchange
+    /// * `land_temp_prev` - Previous substep's land temperature for ground heat coupling
+    /// * `ground_temp` - Current ground reservoir temperature for ground heat coupling
     ///
     /// # Returns
     ///
@@ -323,6 +374,9 @@ impl ClimateUDEB {
         dt: FloatValue,
         lambda_ocean: FloatValue,
         lambda_land: FloatValue,
+        other_hemi_sst: FloatValue,
+        land_temp_prev: FloatValue,
+        ground_temp: FloatValue,
     ) -> FloatValue {
         let n = self.parameters.n_layers;
         let kappas = self.layer_diffusivities(state, hemi);
@@ -330,6 +384,9 @@ impl ClimateUDEB {
         let dz = self.parameters.layer_thickness;
         let dz_mix = self.parameters.mixed_layer_depth;
         let pi_ratio = self.parameters.polar_sinking_ratio;
+        let af_top = &self.area_factors.af_top;
+        let af_bot = &self.area_factors.af_bottom;
+        let af_diff = &self.area_factors.af_diff;
 
         // Heat capacity of mixed layer (W yr / m^2 K)
         let c_mix = self.parameters.mixed_layer_heat_capacity();
@@ -342,7 +399,7 @@ impl ClimateUDEB {
         let mut d = vec![0.0; n]; // RHS
 
         // Mixed layer (layer 0)
-        // dT/dt = (Q - lambda*T)/C + diffusion + upwelling
+        // dT/dt = (Q - lambda*T)/C + diffusion + upwelling + K_NS exchange
         // Coupled ocean-land feedback term (TERM_OCN_LAND_FEEDBACK)
         // Accounts for land feedback coupling through the mixed layer.
         // MAGICC7.f90 lines 2806-2820
@@ -352,7 +409,15 @@ impl ClimateUDEB {
             self.parameters.sh_land_fraction / 2.0
         };
         let f_o_hemi = 0.5 - f_l_hemi;
-        let alpha_eff = self.parameters.temp_adjust_alpha;
+        // Time-varying alpha_eff: MAGICC7.f90 lines 3171-3187
+        // CORE_TEMPADJUST_OCN2ATM_ALPHAEFF = T_air / T_sst (or base alpha if SST ~ 0)
+        let sst_prev = state.ocean_temps[hemi][0];
+        let alpha_eff = if sst_prev.abs() < 1e-15 {
+            self.parameters.temp_adjust_alpha
+        } else {
+            let t_air_prev = self.sst_to_air_temperature(sst_prev);
+            t_air_prev / sst_prev
+        };
         let denominator = f_o_hemi * (self.parameters.k_lo + f_l_hemi * lambda_land);
         let term_feedback = alpha_eff / c_mix
             * (lambda_ocean
@@ -361,26 +426,66 @@ impl ClimateUDEB {
                     * self.parameters.amplify_ocean_to_land
                     * f_l_hemi
                     / denominator);
-        let term_diff = kappas[0] / (dz_mix * dz) * dt;
+        // DZ1 = DZ/2: half-thickness for the gradient between mixed layer and
+        // the first deep layer (MAGICC7.f90 DZ1 = DZ/2, asymmetric spacing).
+        let dz1 = dz / 2.0;
+        let term_diff = kappas[0] / (dz_mix * dz1) * dt;
         let term_upwell = w / dz_mix * dt;
 
-        b[0] = 1.0 + term_feedback * dt + term_diff + term_upwell * pi_ratio;
-        c[0] = -(term_diff + term_upwell);
-        d[0] = state.ocean_temps[hemi][0] + forcing / c_mix * dt;
+        // Land forcing amplification.
+        //
+        // Eliminating $T_l$ from the coupled land-ocean system produces both a
+        // modified feedback (TERM_OCN_LAND_FEEDBACK above) and a modified forcing:
+        //
+        // $$Q_{eff} = Q \cdot \left(1 + \frac{K_{lo} \cdot f_l}{f_o \cdot (f_l \cdot \lambda_l + K_{lo})}\right)$$
+        //
+        // The amplification arises because land forcing propagates to the ocean
+        // through the $K_{lo}$ coupling: land receives $f_l \cdot Q$ of forcing
+        // but has no thermal inertia, so it passes heat to the ocean mixed layer.
+        let forcing_amp = 1.0 + self.parameters.k_lo * f_l_hemi / denominator;
+
+        // Inter-hemispheric heat exchange: K_NS * (T_this - T_other)
+        // Implicit on diagonal (self-coupling), explicit on RHS (cross-coupling).
+        let k_ns_term = self.parameters.k_ns / c_mix * dt;
+
+        b[0] = 1.0
+            + term_feedback * dt
+            + term_diff * af_bot[0]
+            + term_upwell * pi_ratio * af_bot[0]
+            + k_ns_term;
+        c[0] = -(term_diff + term_upwell) * af_bot[0];
+        d[0] = state.ocean_temps[hemi][0]
+            + forcing * forcing_amp / c_mix * dt
+            + k_ns_term * other_hemi_sst;
+
+        // Ground heat capacity: subtract heat flowing from land to ground reservoir.
+        // The ground absorbs K_lg * (T_land - T_ground) per unit globe area.
+        // Scale by f_l/f_o to convert to per unit ocean area for the mixed layer.
+        if self.parameters.land_heat_capacity_enabled {
+            let ground_flux = self.parameters.k_lg * (land_temp_prev - ground_temp);
+            d[0] -= ground_flux * f_l_hemi / f_o_hemi / c_mix * dt;
+        }
 
         // Layers 1 to n-2 (interior layers)
         for i in 1..n - 1 {
-            let term_diff_up = kappas[i - 1] / (dz * dz) * dt;
+            // Layer 1 (MAGICC layer 2) uses DZ1 = DZ/2 for upward diffusion
+            // to the mixed layer (MAGICC7.f90 VERTICALDIFF(1)/DZ1).
+            // All deeper layers use the full DZ spacing.
+            let dz_up = if i == 1 { dz1 } else { dz };
+            let term_diff_up = kappas[i - 1] / (dz * dz_up) * dt;
             let term_diff_down = kappas[i] / (dz * dz) * dt;
             let term_upwell_layer = w / dz * dt;
 
-            a[i] = -term_diff_up;
-            b[i] = 1.0 + term_diff_up + term_diff_down + term_upwell_layer;
-            c[i] = -(term_diff_down + term_upwell_layer);
+            a[i] = -term_diff_up * af_top[i];
+            b[i] = 1.0
+                + term_diff_up * af_top[i]
+                + term_diff_down * af_bot[i]
+                + term_upwell_layer * af_top[i];
+            c[i] = -(term_diff_down + term_upwell_layer) * af_bot[i];
 
-            // Entrainment term from polar sinking
+            // Entrainment term from polar sinking (MAGICC7 AREAFACTOR_DIFFFLOW)
             d[i] = state.ocean_temps[hemi][i]
-                + pi_ratio * term_upwell_layer * state.ocean_temps[hemi][0];
+                + pi_ratio * term_upwell_layer * state.ocean_temps[hemi][0] * af_diff[i];
         }
 
         // Bottom layer (layer n-1)
@@ -388,12 +493,13 @@ impl ClimateUDEB {
         let term_diff_up = kappas[n - 2] / (dz * dz) * dt;
         let term_upwell_bottom = w / dz * dt;
 
-        a[n - 1] = -term_diff_up;
-        b[n - 1] = 1.0 + term_diff_up + term_upwell_bottom;
+        a[n - 1] = -term_diff_up * af_top[n - 1];
+        b[n - 1] = 1.0 + (term_diff_up + term_upwell_bottom) * af_top[n - 1];
         // c[n-1] = 0 (no layer below)
 
+        // Entrainment term from polar sinking (MAGICC7 AREAFACTOR_DIFFFLOW)
         d[n - 1] = state.ocean_temps[hemi][n - 1]
-            + pi_ratio * term_upwell_bottom * state.ocean_temps[hemi][0];
+            + pi_ratio * term_upwell_bottom * state.ocean_temps[hemi][0] * af_diff[n - 1];
 
         // Solve tridiagonal system
         let new_temps = thomas_solve(&a, &b, &c, &d);
@@ -520,8 +626,7 @@ impl ClimateUDEB {
         let dz = self.parameters.layer_thickness;
         let dz_mix = self.parameters.mixed_layer_depth;
 
-        // Heat capacity per meter depth (J / m^3 K)
-        let rho_c = 1026.0 * 3985.0; // rho * c_p
+        let rho_c = RHO_SEAWATER * CP_SEAWATER;
 
         let mut total_heat = 0.0;
 
@@ -551,9 +656,13 @@ impl ClimateUDEB {
 
         let inputs = ClimateUDEBInputs::from_input_state(input_state);
 
-        // Get forcing - broadcast scalar to uniform FourBox
-        // When regional forcing distribution is available, this can accept FourBox input directly
-        let erf = inputs.total_erf.get();
+        // Use timestep-average forcing for better agreement with MAGICC's
+        // within-step concentration interpolation.  For constant forcing this
+        // is identical to at_start(); for a step onset it halves the
+        // transition step, matching MAGICC's sub-annual forcing ramp.
+        let erf_start = inputs.total_erf.at_start();
+        let erf_end = inputs.total_erf.at_end().unwrap_or(erf_start);
+        let erf = (erf_start + erf_end) / 2.0;
         let forcing = FourBoxSlice::from_array([erf, erf, erf, erf]);
 
         // Get previous surface temperature state
@@ -572,10 +681,16 @@ impl ClimateUDEB {
                 .at_start(FourBoxRegion::SouthernLand),
         ]);
 
-        // Initialize ocean temps from previous state if this is first step
+        // Initialize internal state from previous surface temperatures if this
+        // is a restart with non-zero initial conditions (e.g. warm-start).
         if state.ocean_temps[0][0] == 0.0 && prev_temp.0[0] != 0.0 {
             state.ocean_temps[0][0] = prev_temp.get(FourBoxRegion::NorthernOcean);
             state.ocean_temps[1][0] = prev_temp.get(FourBoxRegion::SouthernOcean);
+            state.land_temps[0] = prev_temp.get(FourBoxRegion::NorthernLand);
+            state.land_temps[1] = prev_temp.get(FourBoxRegion::SouthernLand);
+            // Set ground temps equal to land temps to avoid artificial initial flux
+            state.ground_temps[0] = state.land_temps[0];
+            state.ground_temps[1] = state.land_temps[1];
         }
 
         let dt_year = t_next - t_current;
@@ -608,9 +723,28 @@ impl ClimateUDEB {
                 (self.lambda_ocean, self.lambda_land)
             };
 
+        // Pre-compute global box fractions needed in the substep loop
+        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
+
+        // Pre-compute ground heat capacity if enabled
+        let c_ground = if self.parameters.land_heat_capacity_enabled {
+            self.parameters.ground_heat_capacity()
+        } else {
+            0.0
+        };
+
         // Monthly sub-stepping
         for _ in 0..self.parameters.steps_per_year {
-            // Step each hemisphere's ocean
+            // Save start-of-step values for symmetric inter-hemispheric exchange
+            // and explicit ground heat coupling
+            let nh_sst_start = state.ocean_temps[0][0];
+            let sh_sst_start = state.ocean_temps[1][0];
+            let nh_land_prev = state.land_temps[0];
+            let sh_land_prev = state.land_temps[1];
+            let nh_ground = state.ground_temps[0];
+            let sh_ground = state.ground_temps[1];
+
+            // Step each hemisphere's ocean with K_NS exchange and ground heat
             let sst_nh = self.step_hemisphere(
                 state,
                 0,
@@ -618,6 +752,9 @@ impl ClimateUDEB {
                 dt_sub,
                 current_lambda_ocean,
                 current_lambda_land,
+                sh_sst_start,
+                nh_land_prev,
+                nh_ground,
             );
             let sst_sh = self.step_hemisphere(
                 state,
@@ -626,43 +763,60 @@ impl ClimateUDEB {
                 dt_sub,
                 current_lambda_ocean,
                 current_lambda_land,
+                nh_sst_start,
+                sh_land_prev,
+                sh_ground,
             );
 
-            // Update upwelling based on global SST
-            let global_sst = 0.5 * (sst_nh + sst_sh);
-            self.update_upwelling(state, global_sst);
+            // Update land temperatures from new ocean SSTs (equilibrium assumption)
+            let t_air_nho = self.sst_to_air_temperature(sst_nh);
+            let t_air_sho = self.sst_to_air_temperature(sst_sh);
+            state.land_temps[0] = self.calculate_land_temperature(
+                t_air_nho,
+                forcing.get(FourBoxRegion::NorthernLand),
+                fgnl,
+                current_lambda_land,
+            );
+            state.land_temps[1] = self.calculate_land_temperature(
+                t_air_sho,
+                forcing.get(FourBoxRegion::SouthernLand),
+                fgsl,
+                current_lambda_land,
+            );
+
+            // Update ground heat reservoir temperatures (forward Euler).
+            //
+            // $$\frac{dT_{ground}}{dt} = \frac{K_{lg} \cdot (T_{land} - T_{ground})}{f_l \cdot C \cdot d_{eff}}$$
+            if self.parameters.land_heat_capacity_enabled {
+                for (hemi, &f_l) in [fgnl, fgsl].iter().enumerate() {
+                    let flux =
+                        self.parameters.k_lg * (state.land_temps[hemi] - state.ground_temps[hemi]);
+                    state.ground_temps[hemi] += flux / (f_l * c_ground) * dt_sub;
+                }
+            }
+
+            // Update upwelling based on area-weighted global air temperature
+            // (MAGICC7.f90 line 3298: GLOBET = SUM(CURRENT_TIME_TEMPERATURE * GLOBALAREAFRACTIONS))
+            let global_temp = t_air_nho * fgno
+                + state.land_temps[0] * fgnl
+                + t_air_sho * fgso
+                + state.land_temps[1] * fgsl;
+            self.update_upwelling(state, global_temp);
         }
 
-        // Get final ocean surface temperatures
+        // Get final temperatures from the last substep
         let sst_nh = state.ocean_temps[0][0];
         let sst_sh = state.ocean_temps[1][0];
-
-        // Convert SST to air temperature over ocean
         let t_air_nho = self.sst_to_air_temperature(sst_nh);
         let t_air_sho = self.sst_to_air_temperature(sst_sh);
-
-        // Calculate land temperatures using global box fractions (FGNL/FGSL)
-        // to be consistent with the LAMCALC coupling matrix calibration.
-        let (_, fgnl, _, fgsl) = self.parameters.global_box_fractions();
-        let t_air_nhl = self.calculate_land_temperature(
-            t_air_nho,
-            forcing.get(FourBoxRegion::NorthernLand),
-            fgnl,
-            current_lambda_land,
-        );
-        let t_air_shl = self.calculate_land_temperature(
-            t_air_sho,
-            forcing.get(FourBoxRegion::SouthernLand),
-            fgsl,
-            current_lambda_land,
-        );
+        let t_air_nhl = state.land_temps[0];
+        let t_air_shl = state.land_temps[1];
 
         let surface_temperature =
             FourBoxSlice::from_array([t_air_nho, t_air_nhl, t_air_sho, t_air_shl]);
 
         // Track year-weighted temperature history for cumulative-T adjustment.
         // Each entry stores T * dt so the sum gives K-years regardless of timestep.
-        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
         let global_temp = surface_temperature.0[0] * fgno
             + surface_temperature.0[1] * fgnl
             + surface_temperature.0[2] * fgso
@@ -811,6 +965,9 @@ mod tests {
             dt,
             component.lambda_ocean,
             component.lambda_land,
+            0.0, // other hemisphere SST
+            0.0, // land temp prev
+            0.0, // ground temp
         );
 
         assert!(

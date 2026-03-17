@@ -150,6 +150,7 @@ known-first-party = ["src"]
 convention = "numpy"
 
 [tool.pytest.ini_options]
+pythonpath = ["tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]

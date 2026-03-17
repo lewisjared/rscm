@@ -17,7 +17,9 @@ mod terrestrial_carbon;
 
 pub use aerosol::{AerosolDirectParameters, AerosolIndirectParameters};
 pub use ch4_chemistry::CH4ChemistryParameters;
-pub use climate_udeb::{ClimateUDEBParameters, DIFFUSIVITY_CM2S_TO_M2YR};
+pub use climate_udeb::{
+    ClimateUDEBParameters, CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER,
+};
 pub use co2_budget::CO2BudgetParameters;
 pub use ghg_forcing::{ForcingMethod, GhgForcingParameters};
 pub use halocarbon::{HalocarbonParameters, HalocarbonSpecies};
