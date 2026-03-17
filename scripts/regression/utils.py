@@ -62,9 +62,17 @@ MAGICC_ROOT = _setup_magicc()
 import scmdata  # noqa: E402
 from pymagicc import MAGICC7  # noqa: E402
 
-#: Default output directory: ``tests/regression_data/magicc/`` relative to repo root.
-OUTPUT_DIR = Path(__file__).parent.parent / "tests" / "regression_data" / "magicc"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+#: Root for regression data: ``tests/regression/data/`` relative to repo root.
+REGRESSION_DATA_ROOT = (
+    Path(__file__).parent.parent.parent / "tests" / "regression" / "data"
+)
+
+
+def output_dir(suite: str) -> Path:
+    """Return and create the output directory for a regression suite."""
+    d = REGRESSION_DATA_ROOT / suite
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 #: Mapping from MAGICC internal DAT_* names to scmdata variable names.
@@ -227,7 +235,7 @@ def save_results(
     The CSV contains all matching variables from the run.
     The JSON captures the exact configuration used.
     """
-    out = output_dir or OUTPUT_DIR
+    out = output_dir
     out.mkdir(parents=True, exist_ok=True)
 
     # Filter to requested variables
@@ -260,6 +268,7 @@ def save_results(
 def run_suite(
     suite_name: str,
     tests: list[tuple[str, str, callable]],
+    suite_output_dir: Path,
 ) -> dict[str, scmdata.ScmRun]:
     """
     Run a list of regression tests and report results.
@@ -270,14 +279,11 @@ def run_suite(
         Printed as header.
     tests
         List of ``(test_id, description, callable)`` tuples.
-
-    Returns
-    -------
-    dict
-        Mapping of test_id to results for tests that succeeded.
+    suite_output_dir
+        Directory where this suite writes CSV/JSON files.
     """
     print(f"Generating {suite_name}...")
-    print(f"Output directory: {OUTPUT_DIR}")
+    print(f"Output directory: {suite_output_dir}")
     print(f"MAGICC root: {MAGICC_ROOT}")
     print()
 
@@ -293,11 +299,11 @@ def run_suite(
 
     print()
     print("=" * 60)
-    total_size = sum(f.stat().st_size for f in OUTPUT_DIR.glob("*.csv"))
+    total_size = sum(f.stat().st_size for f in suite_output_dir.glob("*.csv"))
     print(f"Total CSV size: {total_size / 1024:.1f} KB")
     print()
     print("Files generated:")
-    for f in sorted(OUTPUT_DIR.glob("*.csv")):
+    for f in sorted(suite_output_dir.glob("*.csv")):
         size_kb = f.stat().st_size / 1024
         print(f"  {f.name}: {size_kb:.1f} KB")
 

@@ -14,7 +14,7 @@ from rscm.config.models.magicc.parameters import (
     get_coverage_stats,
 )
 
-REGRESSION_DIR = Path(__file__).parent / "regression_data" / "magicc"
+REGRESSION_DIR = Path(__file__).parent / "regression" / "data"
 
 
 class TestRegressionConfigImport:
@@ -23,7 +23,7 @@ class TestRegressionConfigImport:
     @pytest.fixture
     def regression_configs(self):
         """Get all regression config JSON files."""
-        configs = list(REGRESSION_DIR.glob("*_config.json"))
+        configs = list(REGRESSION_DIR.glob("**/*_config.json"))
         if not configs:
             pytest.skip("No regression config files found")
         return configs
@@ -34,7 +34,7 @@ class TestRegressionConfigImport:
 
     @pytest.mark.parametrize(
         "config_file",
-        list(REGRESSION_DIR.glob("*_config.json")),
+        list(REGRESSION_DIR.glob("**/*_config.json")),
         ids=lambda p: p.name,
     )
     def test_config_imports_without_error(self, config_file):
@@ -51,7 +51,7 @@ class TestRegressionConfigImport:
 
     @pytest.mark.parametrize(
         "config_file",
-        list(REGRESSION_DIR.glob("*_config.json")),
+        list(REGRESSION_DIR.glob("**/*_config.json")),
         ids=lambda p: p.name,
     )
     def test_config_has_required_fields(self, config_file):
@@ -67,7 +67,7 @@ class TestRegressionConfigImport:
 
     @pytest.mark.parametrize(
         "config_file",
-        list(REGRESSION_DIR.glob("*_config.json")),
+        list(REGRESSION_DIR.glob("**/*_config.json")),
         ids=lambda p: p.name,
     )
     def test_config_imports_time_correctly(self, config_file):
@@ -85,7 +85,7 @@ class TestRegressionConfigImport:
 
     @pytest.mark.parametrize(
         "config_file",
-        list(REGRESSION_DIR.glob("*_config.json")),
+        list(REGRESSION_DIR.glob("**/*_config.json")),
         ids=lambda p: p.name,
     )
     def test_config_imports_climate_params(self, config_file):
@@ -197,7 +197,7 @@ class TestRegressionConfigSpecifics:
 
     def test_ecs_sweep_configs(self):
         """Test ECS sweep configs import correctly with different ECS values."""
-        ecs_configs = list(REGRESSION_DIR.glob("04_ecs_sweep_*_config.json"))
+        ecs_configs = list(REGRESSION_DIR.glob("**/04_ecs_sweep_*_config.json"))
         if not ecs_configs:
             pytest.skip("No ECS sweep configs found")
 
@@ -276,7 +276,7 @@ class TestRegressionConfigCoverage:
 
     def test_all_regression_configs_have_common_params(self):
         """All regression configs should have time bounds and climate sensitivity."""
-        config_files = list(REGRESSION_DIR.glob("*_config.json"))
+        config_files = list(REGRESSION_DIR.glob("**/*_config.json"))
         if not config_files:
             pytest.skip("No regression configs found")
 
@@ -293,7 +293,7 @@ class TestRegressionConfigCoverage:
 
     def test_regression_configs_use_known_parameters(self):
         """All parameters in regression configs should be in registry."""
-        config_files = list(REGRESSION_DIR.glob("*_config.json"))
+        config_files = list(REGRESSION_DIR.glob("**/*_config.json"))
         if not config_files:
             pytest.skip("No regression configs found")
 

@@ -9,23 +9,26 @@ Usage:
     export MAGICC_ROOT=/path/to/magicc-v7.5.3
 
     uv run --with pymagicc --with scmdata --with "pandas<3" \
-        scripts/generate_ocean_regression_data.py
+        scripts/regression/generate_ocean_udeb.py
 
 Output:
-    tests/regression_data/magicc/ocean_*.csv
-    tests/regression_data/magicc/ocean_*_config.json
+    tests/regression/data/ocean_udeb/*.csv
+    tests/regression/data/ocean_udeb/*_config.json
 """
 
-from magicc_regression_utils import (
+from utils import (
     CO2_ONLY,
     CONC_DRIVEN,
     DEFAULT_CLIMATE,
     NO_VARIABILITY,
     make_config,
+    output_dir,
     run_magicc,
     run_suite,
     save_results,
 )
+
+OUT = output_dir("ocean_udeb")
 
 OCEAN_OUT_VARS = [
     "DAT_SURFACE_TEMP",
@@ -78,7 +81,7 @@ def test_01_diffusion_only():
     )
 
     res = run_magicc(config)
-    save_results(res, "ocean_01_diffusion_only", config, OCEAN_OUT_VARS)
+    save_results(res, "01_diffusion_only", config, OCEAN_OUT_VARS, output_dir=OUT)
     return res
 
 
@@ -98,7 +101,7 @@ def test_02_constant_upwelling():
     )
 
     res = run_magicc(config)
-    save_results(res, "ocean_02_constant_upwelling", config, OCEAN_OUT_VARS)
+    save_results(res, "02_constant_upwelling", config, OCEAN_OUT_VARS, output_dir=OUT)
     return res
 
 
@@ -120,7 +123,7 @@ def test_03_depth_dependent_area():
     )
 
     res = run_magicc(config)
-    save_results(res, "ocean_03_depth_dependent_area", config, OCEAN_OUT_VARS)
+    save_results(res, "03_depth_dependent_area", config, OCEAN_OUT_VARS, output_dir=OUT)
     return res
 
 
@@ -142,7 +145,7 @@ def test_04_variable_upwelling():
     )
 
     res = run_magicc(config)
-    save_results(res, "ocean_04_variable_upwelling", config, OCEAN_OUT_VARS)
+    save_results(res, "04_variable_upwelling", config, OCEAN_OUT_VARS, output_dir=OUT)
     return res
 
 
@@ -163,7 +166,13 @@ def test_05_temp_dependent_diffusivity():
     )
 
     res = run_magicc(config)
-    save_results(res, "ocean_05_temp_dependent_diffusivity", config, OCEAN_OUT_VARS)
+    save_results(
+        res,
+        "05_temp_dependent_diffusivity",
+        config,
+        OCEAN_OUT_VARS,
+        output_dir=OUT,
+    )
     return res
 
 
@@ -186,7 +195,7 @@ def test_06_ground_heat():
     )
 
     res = run_magicc(config)
-    save_results(res, "ocean_06_ground_heat", config, OCEAN_OUT_VARS)
+    save_results(res, "06_ground_heat", config, OCEAN_OUT_VARS, output_dir=OUT)
     return res
 
 
@@ -207,7 +216,13 @@ def test_07_interhemispheric_exchange():
     )
 
     res = run_magicc(config)
-    save_results(res, "ocean_07_interhemispheric_exchange", config, OCEAN_OUT_VARS)
+    save_results(
+        res,
+        "07_interhemispheric_exchange",
+        config,
+        OCEAN_OUT_VARS,
+        output_dir=OUT,
+    )
     return res
 
 
@@ -228,7 +243,7 @@ def test_08_sst_to_sat():
     out_vars = ["DAT_SURFACE_TEMP"]
 
     res = run_magicc(config)
-    save_results(res, "ocean_08_sst_to_sat", config, out_vars)
+    save_results(res, "08_sst_to_sat", config, out_vars, output_dir=OUT)
     return res
 
 
@@ -251,7 +266,7 @@ def test_09_time_varying_ecs():
     )
 
     res = run_magicc(config)
-    save_results(res, "ocean_09_time_varying_ecs", config, OCEAN_OUT_VARS)
+    save_results(res, "09_time_varying_ecs", config, OCEAN_OUT_VARS, output_dir=OUT)
     return res
 
 
@@ -272,7 +287,7 @@ def test_10_full_default():
     out_vars = [*OCEAN_OUT_VARS, "DAT_HEATCONTENT_AGGREG_TOTAL"]
 
     res = run_magicc(config)
-    save_results(res, "ocean_10_full_default", config, out_vars)
+    save_results(res, "10_full_default", config, out_vars, output_dir=OUT)
     return res
 
 
@@ -291,4 +306,4 @@ TESTS = [
 
 
 if __name__ == "__main__":
-    run_suite("Ocean UDEB regression data", TESTS)
+    run_suite("Ocean UDEB regression data", TESTS, OUT)

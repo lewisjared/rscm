@@ -9,23 +9,26 @@ Usage:
     export MAGICC_ROOT=/path/to/magicc-v7.5.3
 
     uv run --with pymagicc --with scmdata --with "pandas<3" \
-        scripts/generate_magicc_regression_data.py
+        scripts/regression/generate_ghg_forcing.py
 
 Output:
-    tests/regression_data/magicc/*.csv
-    tests/regression_data/magicc/*_config.json
+    tests/regression/data/ghg_forcing/*.csv
+    tests/regression/data/ghg_forcing/*_config.json
 """
 
-from magicc_regression_utils import (
+from utils import (
     CO2_ONLY,
     CONC_DRIVEN,
     DEFAULT_CLIMATE,
     NO_VARIABILITY,
     make_config,
+    output_dir,
     run_magicc,
     run_suite,
     save_results,
 )
+
+OUT = output_dir("ghg_forcing")
 
 
 def test_01_concentration_driven():
@@ -59,7 +62,7 @@ def test_01_concentration_driven():
     ]
 
     res = run_magicc(config)
-    save_results(res, "01_concentration_driven", config, out_vars)
+    save_results(res, "01_concentration_driven", config, out_vars, output_dir=OUT)
     return res
 
 
@@ -97,7 +100,7 @@ def test_02_ghg_forcing_olbl():
     ]
 
     res = run_magicc(config)
-    save_results(res, "02_ghg_forcing_olbl", config, out_vars)
+    save_results(res, "02_ghg_forcing_olbl", config, out_vars, output_dir=OUT)
     return res
 
 
@@ -140,7 +143,7 @@ def test_03_emissions_driven():
     ]
 
     res = run_magicc(config)
-    save_results(res, "03_emissions_driven", config, out_vars)
+    save_results(res, "03_emissions_driven", config, out_vars, output_dir=OUT)
     return res
 
 
@@ -167,7 +170,7 @@ def test_04_ecs_sweep():
         )
 
         res = run_magicc(config)
-        save_results(res, f"04_ecs_sweep_{ecs}", config, out_vars)
+        save_results(res, f"04_ecs_sweep_{ecs}", config, out_vars, output_dir=OUT)
 
 
 def test_05_co2_only_forcing():
@@ -195,7 +198,7 @@ def test_05_co2_only_forcing():
     ]
 
     res = run_magicc(config)
-    save_results(res, "05_co2_only_forcing", config, out_vars)
+    save_results(res, "05_co2_only_forcing", config, out_vars, output_dir=OUT)
     return res
 
 
@@ -209,4 +212,4 @@ TESTS = [
 
 
 if __name__ == "__main__":
-    run_suite("GHG forcing and chemistry regression data", TESTS)
+    run_suite("GHG forcing and chemistry regression data", TESTS, OUT)
