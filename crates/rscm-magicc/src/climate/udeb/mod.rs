@@ -29,21 +29,23 @@
 //!
 //! # Module Structure
 //!
-//! - [`state`](super::state): Internal state (`ClimateUDEBState`, `OceanAreaFactors`)
-//! - [`ocean_column`](super::ocean_column): Ocean column solver (tridiagonal diffusion,
+//! - `state`: Internal state (`ClimateUDEBState`, `OceanAreaFactors`)
+//! - `ocean_column`: Ocean column solver (tridiagonal diffusion,
 //!   upwelling, heat uptake/content diagnostics)
-//! - [`lamcalc`](super::lamcalc): Iterative feedback parameter solver
+//! - `lamcalc`: Iterative feedback parameter solver
 //!
 //! # Differences from MAGICC7 Module 08
 //!
 //! - **LAMCALC iterations**: Implemented - see [`lamcalc`](super::lamcalc).
 //! - **Time-varying ECS**: Implemented - see `adjusted_ecs()`.
 //! - **Temperature-dependent diffusivity**: Implemented - see
-//!   [`ocean_column`](super::ocean_column) `layer_diffusivities()`.
-//! - **Depth-dependent ocean area**: Implemented - see [`OceanAreaFactors`](super::state::OceanAreaFactors).
-//! - **El Nino/AMV modes**: Internal variability modes. Not implemented.
+//!   `ocean_column::layer_diffusivities()`.
+//! - **Depth-dependent ocean area**: Implemented - see `OceanAreaFactors`.
+//! - **El Niño/AMV modes**: Internal variability modes. Not implemented.
 //! - **Ground heat reservoir**: Implemented - see
-//!   [`land_heat_capacity_enabled`](super::super::parameters::ClimateUDEBParameters::land_heat_capacity_enabled).
+//!   [`land_heat_capacity_enabled`](crate::parameters::ClimateUDEBParameters::land_heat_capacity_enabled).
+
+mod ocean_column;
 
 use crate::climate::lamcalc::{self, LamcalcParams, LamcalcResult};
 use crate::climate::state::{ClimateUDEBState, OceanAreaFactors};
@@ -88,19 +90,19 @@ use serde::{Deserialize, Serialize};
     sst { name = "Sea Surface Temperature", unit = "K" },
 )]
 pub struct ClimateUDEB {
-    pub(crate) parameters: ClimateUDEBParameters,
+    parameters: ClimateUDEBParameters,
 
     /// Ocean feedback parameter ($\text{W/m}^2\text{/K}$).
     #[serde(skip)]
-    pub(crate) lambda_ocean: FloatValue,
+    lambda_ocean: FloatValue,
 
     /// Land feedback parameter ($\text{W/m}^2\text{/K}$).
     #[serde(skip)]
-    pub(crate) lambda_land: FloatValue,
+    lambda_land: FloatValue,
 
     /// Pre-computed ocean area factors for depth-dependent basin narrowing.
     #[serde(skip)]
-    pub(crate) area_factors: OceanAreaFactors,
+    area_factors: OceanAreaFactors,
 }
 
 impl ClimateUDEB {
@@ -188,11 +190,7 @@ impl ClimateUDEB {
     ///
     /// $$ECS_{adj} = ECS \times (1 + \alpha_T \times \frac{\sum T \, dt - \sum T_{2x}}{\sum T_{2x}})
     ///                       \times (1 + \alpha_Q \times (\max(0, Q) - Q_{2x}))$$
-    pub(crate) fn adjusted_ecs(
-        &self,
-        global_forcing: FloatValue,
-        state: &ClimateUDEBState,
-    ) -> FloatValue {
+    fn adjusted_ecs(&self, global_forcing: FloatValue, state: &ClimateUDEBState) -> FloatValue {
         let cumt_2x = self.parameters.ecs * self.parameters.feedback_cumt_period;
         let period = self.parameters.feedback_cumt_period;
 
@@ -242,7 +240,7 @@ impl ClimateUDEB {
     /// Solving for $T_l$:
     ///
     /// $$T_l = \frac{Q_l \times f_l + K_{lo} \times \alpha \times T_o}{\lambda_l \times f_l + K_{lo}}$$
-    pub(crate) fn calculate_land_temperature(
+    fn calculate_land_temperature(
         &self,
         ocean_temp: FloatValue,
         land_forcing: FloatValue,
@@ -267,7 +265,7 @@ impl ClimateUDEB {
     /// For $T_{sst} \geq T^*$:
     ///
     /// $$T_{air} = T_{sst} + \delta_{max}$$
-    pub(crate) fn sst_to_air_temperature(&self, sst: FloatValue) -> FloatValue {
+    fn sst_to_air_temperature(&self, sst: FloatValue) -> FloatValue {
         let alpha = self.parameters.temp_adjust_alpha;
         let gamma = self.parameters.temp_adjust_gamma;
 

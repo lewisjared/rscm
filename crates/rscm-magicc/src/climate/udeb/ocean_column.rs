@@ -4,8 +4,8 @@
 //! physics: depth-dependent diffusivity, upwelling dynamics, heat uptake,
 //! and ocean heat content diagnostics.
 
+use super::ClimateUDEB;
 use crate::climate::state::ClimateUDEBState;
-use crate::climate::ClimateUDEB;
 use crate::parameters::{CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER};
 use rscm_core::state::FourBoxSlice;
 use rscm_core::timeseries::FloatValue;
@@ -20,7 +20,7 @@ impl ClimateUDEB {
     /// $$K(z) = \max(K_{min}, K_0 + \frac{dK}{dT} \times (1 - z/z_{max}) \times (T_{top} - T_{bottom})) \times 3155.76$$
     ///
     /// Returns a Vec of length `n_layers - 1` (diffusivity at each layer boundary).
-    pub(crate) fn layer_diffusivities(
+    pub(super) fn layer_diffusivities(
         &self,
         state: &ClimateUDEBState,
         hemi: usize,
@@ -70,7 +70,7 @@ impl ClimateUDEB {
     /// # Returns
     ///
     /// Mixed layer temperature anomaly (K)
-    pub(crate) fn step_hemisphere(
+    pub(super) fn step_hemisphere(
         &self,
         state: &mut ClimateUDEBState,
         hemi: usize,
@@ -222,7 +222,7 @@ impl ClimateUDEB {
     /// Upwelling decreases with warming (thermohaline circulation weakening):
     ///
     /// $$w = w_0 \times (1 - f_{var} \times T_{global} / T_{threshold})$$
-    pub(crate) fn update_upwelling(&self, state: &mut ClimateUDEBState, global_temp: FloatValue) {
+    pub(super) fn update_upwelling(&self, state: &mut ClimateUDEBState, global_temp: FloatValue) {
         let w_0 = self.parameters.w_initial;
         let f_var = self.parameters.w_variable_fraction;
         let w_min = w_0 * (1.0 - f_var);
@@ -246,7 +246,7 @@ impl ClimateUDEB {
     /// feedback parameter (ocean or land), and $T_i$ is the per-box temperature.
     /// This ensures the diagnostic is consistent with the LAMCALC-solved
     /// feedback parameters and any time-varying ECS adjustments.
-    pub(crate) fn calculate_heat_uptake(
+    pub(super) fn calculate_heat_uptake(
         &self,
         forcing: &FourBoxSlice,
         temperature: &FourBoxSlice,
@@ -271,7 +271,7 @@ impl ClimateUDEB {
     /// Calculate total ocean heat content ($\text{J/m}^2$).
     ///
     /// Integrates temperature anomaly over all ocean layers weighted by depth.
-    pub(crate) fn calculate_ocean_heat_content(&self, state: &ClimateUDEBState) -> FloatValue {
+    pub(super) fn calculate_ocean_heat_content(&self, state: &ClimateUDEBState) -> FloatValue {
         let dz = self.parameters.layer_thickness;
         let dz_mix = self.parameters.mixed_layer_depth;
 
