@@ -244,6 +244,22 @@ impl Default for ClimateUDEBParameters {
 /// $100 \, (\text{cm}^2 \to \text{m}^2) \times 31.5576 \, (\text{s} \to \text{yr}) = 3155.76$
 pub const DIFFUSIVITY_CM2S_TO_M2YR: FloatValue = 3155.76;
 
+/// Density of seawater ($\text{kg/m}^3$).
+pub const RHO_SEAWATER: FloatValue = 1026.0;
+
+/// Specific heat capacity of seawater ($\text{J/(kg K)}$).
+pub const CP_SEAWATER: FloatValue = 3985.0;
+
+/// Seconds per Julian year ($\text{s/yr}$).
+pub const SECONDS_PER_YEAR: FloatValue = 31557600.0;
+
+/// Volumetric heat capacity of seawater per unit depth ($\text{W yr / m}^2\text{ K}$).
+///
+/// $$\frac{\rho \, c_p \, d}{\text{seconds per year}}$$
+pub fn heat_capacity_per_unit_area(depth_m: FloatValue) -> FloatValue {
+    RHO_SEAWATER * CP_SEAWATER * depth_m / SECONDS_PER_YEAR
+}
+
 impl ClimateUDEBParameters {
     /// Convert vertical diffusivity from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
     pub fn kappa_m2_per_yr(&self) -> FloatValue {
@@ -378,32 +394,17 @@ impl ClimateUDEBParameters {
     }
 
     /// Calculate heat capacity of the mixed layer per unit area ($\text{W yr / m}^2\text{ K}$).
-    ///
-    /// Uses standard seawater properties:
-    /// - $\rho = 1026 \, \text{kg/m}^3$
-    /// - $c_p = 3985 \, \text{J/(kg K)}$
-    /// - Convert J to W yr: $1 \, \text{W yr} = 3.15576 \times 10^7 \, \text{J}$
     pub fn mixed_layer_heat_capacity(&self) -> FloatValue {
-        // rho * c_p * depth / (seconds_per_year)
-        // = 1026 * 3985 * depth / 31557600
-        // ~= 0.1295 * depth (W yr / m^2 K)
-        let rho = 1026.0; // kg/m^3
-        let c_p = 3985.0; // J/(kg K)
-        let seconds_per_year = 31557600.0; // s/yr
-        rho * c_p * self.mixed_layer_depth / seconds_per_year
+        heat_capacity_per_unit_area(self.mixed_layer_depth)
     }
 
     /// Calculate heat capacity of the ground reservoir per unit area
     /// ($\text{W yr / m}^2\text{ K}$).
     ///
-    /// Uses the same seawater properties as [`mixed_layer_heat_capacity`](Self::mixed_layer_heat_capacity)
-    /// with the effective ground thickness. The effective thickness parameterises
-    /// the total land heat reservoir in ocean-water-equivalent depth.
+    /// Uses ocean-water-equivalent heat capacity with the effective ground
+    /// thickness parameterising the total land heat reservoir.
     pub fn ground_heat_capacity(&self) -> FloatValue {
-        let rho = 1026.0; // kg/m^3
-        let c_p = 3985.0; // J/(kg K)
-        let seconds_per_year = 31557600.0; // s/yr
-        rho * c_p * self.land_hc_eff_thickness / seconds_per_year
+        heat_capacity_per_unit_area(self.land_hc_eff_thickness)
     }
 }
 

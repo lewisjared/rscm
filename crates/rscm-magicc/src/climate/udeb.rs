@@ -46,7 +46,9 @@
 use std::any::Any;
 
 use crate::climate::lamcalc::{self, LamcalcParams, LamcalcResult};
-use crate::parameters::{ClimateUDEBParameters, DIFFUSIVITY_CM2S_TO_M2YR};
+use crate::parameters::{
+    ClimateUDEBParameters, CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER,
+};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
     RequirementType,
@@ -624,8 +626,7 @@ impl ClimateUDEB {
         let dz = self.parameters.layer_thickness;
         let dz_mix = self.parameters.mixed_layer_depth;
 
-        // Heat capacity per meter depth (J / m^3 K)
-        let rho_c = 1026.0 * 3985.0; // rho * c_p
+        let rho_c = RHO_SEAWATER * CP_SEAWATER;
 
         let mut total_heat = 0.0;
 
@@ -719,7 +720,7 @@ impl ClimateUDEB {
             };
 
         // Pre-compute global box fractions needed in the substep loop
-        let (_, fgnl, _, fgsl) = self.parameters.global_box_fractions();
+        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
 
         // Pre-compute ground heat capacity if enabled
         let c_ground = if self.parameters.land_heat_capacity_enabled {
@@ -792,10 +793,9 @@ impl ClimateUDEB {
 
             // Update upwelling based on area-weighted global air temperature
             // (MAGICC7.f90 line 3298: GLOBET = SUM(CURRENT_TIME_TEMPERATURE * GLOBALAREAFRACTIONS))
-            let (fgno_loop, _, fgso_loop, _) = self.parameters.global_box_fractions();
-            let global_temp = t_air_nho * fgno_loop
+            let global_temp = t_air_nho * fgno
                 + state.land_temps[0] * fgnl
-                + t_air_sho * fgso_loop
+                + t_air_sho * fgso
                 + state.land_temps[1] * fgsl;
             self.update_upwelling(state, global_temp);
         }
@@ -813,7 +813,6 @@ impl ClimateUDEB {
 
         // Track year-weighted temperature history for cumulative-T adjustment.
         // Each entry stores T * dt so the sum gives K-years regardless of timestep.
-        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
         let global_temp = surface_temperature.0[0] * fgno
             + surface_temperature.0[1] * fgnl
             + surface_temperature.0[2] * fgso
