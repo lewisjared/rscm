@@ -656,9 +656,13 @@ impl ClimateUDEB {
 
         let inputs = ClimateUDEBInputs::from_input_state(input_state);
 
-        // Get forcing - broadcast scalar to uniform FourBox
-        // When regional forcing distribution is available, this can accept FourBox input directly
-        let erf = inputs.total_erf.get();
+        // Use timestep-average forcing for better agreement with MAGICC's
+        // within-step concentration interpolation.  For constant forcing this
+        // is identical to at_start(); for a step onset it halves the
+        // transition step, matching MAGICC's sub-annual forcing ramp.
+        let erf_start = inputs.total_erf.at_start();
+        let erf_end = inputs.total_erf.at_end().unwrap_or(erf_start);
+        let erf = (erf_start + erf_end) / 2.0;
         let forcing = FourBoxSlice::from_array([erf, erf, erf, erf]);
 
         // Get previous surface temperature state

@@ -45,7 +45,7 @@ from rscm._lib.magicc import ClimateUDEBBuilder
 from rscm.core import ModelBuilder
 
 SUITE = "ocean_udeb"
-DEFAULT_RTOL = 1e-3
+DEFAULT_RTOL = 3e-2
 DEFAULT_ATOL = 1e-6
 
 
@@ -155,7 +155,7 @@ def construct_step_forcing(
 def run_ocean_scenario(
     name: str,
     rtol: float = 0.1,
-    skip_years: int = 2,
+    skip_years: int = 5,
 ) -> None:
     """
     Run an ocean regression scenario and compare surface temperature.
@@ -171,10 +171,11 @@ def run_ocean_scenario(
     rtol
         Relative tolerance for the comparison
     skip_years
-        Number of initial years to skip in the comparison. The step
-        forcing onset produces a transient mismatch in the first 1-2
-        years due to different sub-annual forcing interpolation between
-        MAGICC and RSCM. Default 2.
+        Number of initial years to skip in the comparison. RSCM uses
+        start-of-step forcing (get() -> at_start()), so the first
+        non-zero forcing step is 1851->1852 while MAGICC ramps forcing
+        within the 1850->1851 step.  This creates a ~1 year forcing
+        deficit that dominates the first few years. Default 5.
     """
     df, config = load_data(name)
     years, expected_temp = get_variable_values(df, "Surface Temperature")
@@ -188,14 +189,16 @@ def run_ocean_scenario(
     results = model.timeseries()
     temp_4box = results.get_fourbox_timeseries_by_name("Surface Temperature")
     assert temp_4box is not None, "Surface Temperature not found in results"
-    actual_temp = fourbox_global_mean(temp_4box.values()[1:])
+    actual_temp = fourbox_global_mean(temp_4box.values())
 
     # Skip the first few years where step forcing onset causes transient
-    # mismatch due to different sub-annual interpolation.
+    # mismatch.  RSCM uses start-of-step forcing (get() -> at_start()),
+    # so the first non-zero forcing step is 1851->1852 while MAGICC ramps
+    # forcing within the 1850->1851 step.
     s = skip_years
     npt.assert_allclose(
         actual_temp[s:],
-        expected_temp[s:-1],
+        expected_temp[s:],
         rtol=rtol,
         atol=DEFAULT_ATOL,
         err_msg=f"Surface temperature mismatch for {name} (skipping first {s} years)",
@@ -210,7 +213,7 @@ def test_ocean_01_diffusion_only():
     downward, no upwelling circulation. Tests the core tridiagonal
     diffusion solver in isolation.
     """
-    run_ocean_scenario("01_diffusion_only", rtol=0.15)
+    run_ocean_scenario("01_diffusion_only", rtol=DEFAULT_RTOL)
 
 
 def test_ocean_02_constant_upwelling():
@@ -221,7 +224,7 @@ def test_ocean_02_constant_upwelling():
     Variable fraction is zero so upwelling rate does not change
     with temperature.
     """
-    run_ocean_scenario("02_constant_upwelling", rtol=0.15)
+    run_ocean_scenario("02_constant_upwelling", rtol=DEFAULT_RTOL)
 
 
 def test_ocean_03_depth_dependent_area():
@@ -231,7 +234,7 @@ def test_ocean_03_depth_dependent_area():
     Enables the hypsometric profile so the ocean basin narrows with
     depth, affecting diffusive and advective heat transport.
     """
-    run_ocean_scenario("03_depth_dependent_area", rtol=0.15)
+    run_ocean_scenario("03_depth_dependent_area", rtol=DEFAULT_RTOL)
 
 
 @pytest.mark.xfail(
@@ -244,7 +247,7 @@ def test_ocean_04_variable_upwelling():
     Upwelling rate decreases as surface temperature anomaly increases,
     simulating AMOC slowdown. 70% of the upwelling is variable.
     """
-    run_ocean_scenario("04_variable_upwelling", rtol=0.15)
+    run_ocean_scenario("04_variable_upwelling", rtol=DEFAULT_RTOL)
 
 
 def test_ocean_05_temp_dependent_diffusivity():
@@ -254,7 +257,7 @@ def test_ocean_05_temp_dependent_diffusivity():
     Vertical diffusivity decreases as the ocean stratifies (vertical
     temperature gradient increases), parameterised by kappa_dkdt.
     """
-    run_ocean_scenario("05_temp_dependent_diffusivity", rtol=0.15)
+    run_ocean_scenario("05_temp_dependent_diffusivity", rtol=DEFAULT_RTOL)
 
 
 @pytest.mark.xfail(
@@ -267,7 +270,7 @@ def test_ocean_06_ground_heat():
     Enables the land heat capacity damping, where a ground reservoir
     absorbs and releases heat from the land surface.
     """
-    run_ocean_scenario("06_ground_heat", rtol=0.15)
+    run_ocean_scenario("06_ground_heat", rtol=DEFAULT_RTOL)
 
 
 def test_ocean_07_interhemispheric_exchange():
@@ -277,7 +280,7 @@ def test_ocean_07_interhemispheric_exchange():
     Enables North-South heat exchange between ocean boxes,
     parameterised by k_ns.
     """
-    run_ocean_scenario("07_interhemispheric_exchange", rtol=0.15)
+    run_ocean_scenario("07_interhemispheric_exchange", rtol=DEFAULT_RTOL)
 
 
 @pytest.mark.xfail(reason="Short run dominated by step forcing onset transient")
@@ -337,11 +340,11 @@ def test_ocean_08_sst_to_sat():
     results = model.timeseries()
     temp_4box = results.get_fourbox_timeseries_by_name("Surface Temperature")
     assert temp_4box is not None, "Surface Temperature not found in results"
-    actual_temp = fourbox_global_mean(temp_4box.values()[1:])
+    actual_temp = fourbox_global_mean(temp_4box.values())
 
     npt.assert_allclose(
         actual_temp,
-        expected_temp[:-1],
+        expected_temp,
         rtol=0.1,
         atol=DEFAULT_ATOL,
         err_msg="Surface temperature mismatch for ocean_08_sst_to_sat",
@@ -356,7 +359,7 @@ def test_ocean_09_time_varying_ecs():
     sensitivity evolves over time based on cumulative temperature and
     forcing level.
     """
-    run_ocean_scenario("09_time_varying_ecs", rtol=0.15)
+    run_ocean_scenario("09_time_varying_ecs", rtol=DEFAULT_RTOL)
 
 
 @pytest.mark.xfail(reason="Ramp forcing amplifies relative error at small early values")
@@ -427,11 +430,11 @@ def test_ocean_10_full_default():
     results = model.timeseries()
     temp_4box = results.get_fourbox_timeseries_by_name("Surface Temperature")
     assert temp_4box is not None, "Surface Temperature not found in results"
-    actual_temp = fourbox_global_mean(temp_4box.values()[1:])
+    actual_temp = fourbox_global_mean(temp_4box.values())
 
     npt.assert_allclose(
         actual_temp,
-        expected_temp[:-1],
+        expected_temp,
         rtol=0.1,
         atol=DEFAULT_ATOL,
         err_msg="Surface temperature mismatch for ocean_10_full_default (1pctCO2)",

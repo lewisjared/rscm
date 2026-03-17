@@ -30,6 +30,21 @@ from utils import (
 
 OUT = output_dir("ghg_forcing")
 
+GHG_FORCING_OUT_VARS = [
+    "DAT_CO2_CONC",
+    "DAT_CH4_CONC",
+    "DAT_N2O_CONC",
+    "DAT_CO2_RF",
+    "DAT_CO2_ERF",
+    "DAT_CH4_RF",
+    "DAT_CH4_ERF",
+    "DAT_N2O_RF",
+    "DAT_N2O_ERF",
+    "DAT_TOTAL_INCLVOLCANIC_RF",
+    "DAT_TOTAL_INCLVOLCANIC_ERF",
+    "DAT_SURFACE_TEMP",
+]
+
 
 def test_01_concentration_driven():
     """Concentration-driven run with SSP245 concentrations (IPCCTAR)."""
@@ -46,23 +61,10 @@ def test_01_concentration_driven():
         rf_volcanic_scale=0.0,
     )
 
-    out_vars = [
-        "DAT_CO2_CONC",
-        "DAT_CH4_CONC",
-        "DAT_N2O_CONC",
-        "DAT_CO2_RF",
-        "DAT_CO2_ERF",
-        "DAT_CH4_RF",
-        "DAT_CH4_ERF",
-        "DAT_N2O_RF",
-        "DAT_N2O_ERF",
-        "DAT_TOTAL_INCLVOLCANIC_RF",
-        "DAT_TOTAL_INCLVOLCANIC_ERF",
-        "DAT_SURFACE_TEMP",
-    ]
-
     res = run_magicc(config)
-    save_results(res, "01_concentration_driven", config, out_vars, output_dir=OUT)
+    save_results(
+        res, "01_concentration_driven", config, GHG_FORCING_OUT_VARS, output_dir=OUT
+    )
     return res
 
 
@@ -84,23 +86,10 @@ def test_02_ghg_forcing_olbl():
         rf_volcanic_scale=0.0,
     )
 
-    out_vars = [
-        "DAT_CO2_CONC",
-        "DAT_CH4_CONC",
-        "DAT_N2O_CONC",
-        "DAT_CO2_RF",
-        "DAT_CO2_ERF",
-        "DAT_CH4_RF",
-        "DAT_CH4_ERF",
-        "DAT_N2O_RF",
-        "DAT_N2O_ERF",
-        "DAT_TOTAL_INCLVOLCANIC_RF",
-        "DAT_TOTAL_INCLVOLCANIC_ERF",
-        "DAT_SURFACE_TEMP",
-    ]
-
     res = run_magicc(config)
-    save_results(res, "02_ghg_forcing_olbl", config, out_vars, output_dir=OUT)
+    save_results(
+        res, "02_ghg_forcing_olbl", config, GHG_FORCING_OUT_VARS, output_dir=OUT
+    )
     return res
 
 
