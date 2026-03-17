@@ -676,10 +676,16 @@ impl ClimateUDEB {
                 .at_start(FourBoxRegion::SouthernLand),
         ]);
 
-        // Initialize ocean temps from previous state if this is first step
+        // Initialize internal state from previous surface temperatures if this
+        // is a restart with non-zero initial conditions (e.g. warm-start).
         if state.ocean_temps[0][0] == 0.0 && prev_temp.0[0] != 0.0 {
             state.ocean_temps[0][0] = prev_temp.get(FourBoxRegion::NorthernOcean);
             state.ocean_temps[1][0] = prev_temp.get(FourBoxRegion::SouthernOcean);
+            state.land_temps[0] = prev_temp.get(FourBoxRegion::NorthernLand);
+            state.land_temps[1] = prev_temp.get(FourBoxRegion::SouthernLand);
+            // Set ground temps equal to land temps to avoid artificial initial flux
+            state.ground_temps[0] = state.land_temps[0];
+            state.ground_temps[1] = state.land_temps[1];
         }
 
         let dt_year = t_next - t_current;

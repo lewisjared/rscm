@@ -227,7 +227,8 @@ def save_results(
     name: str,
     config: dict[str, Any],
     out_vars: list[str],
-    output_dir: Path | None = None,
+    *,
+    output_dir: Path,
 ) -> None:
     """
     Save results as CSV timeseries and config as JSON.
