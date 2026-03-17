@@ -156,7 +156,9 @@ class TestRegressionConfigSpecifics:
 
     def test_concentration_driven_config(self):
         """Test concentration-driven config imports correctly."""
-        config_file = REGRESSION_DIR / "01_concentration_driven_config.json"
+        config_file = (
+            REGRESSION_DIR / "ghg_forcing" / "01_concentration_driven_config.json"
+        )
         if not config_file.exists():
             pytest.skip("Concentration driven config not found")
 
@@ -174,7 +176,7 @@ class TestRegressionConfigSpecifics:
 
     def test_co2_only_forcing_config(self):
         """Test CO2-only forcing config imports correctly."""
-        config_file = REGRESSION_DIR / "05_co2_only_forcing_config.json"
+        config_file = REGRESSION_DIR / "ghg_forcing" / "05_co2_only_forcing_config.json"
         if not config_file.exists():
             pytest.skip("CO2-only forcing config not found")
 
