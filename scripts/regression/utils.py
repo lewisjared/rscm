@@ -7,8 +7,8 @@ used across regression test generation scripts.
 Setup:
     export MAGICC_ROOT=/path/to/magicc-v7.5.3
 
-    uv run --with pymagicc --with scmdata \
-        scripts/generate_<suite>_regression_data.py
+    uv run --with pymagicc --with scmdata --with "pandas<3" \
+        scripts/regression/generate_<suite>.py
 """
 
 import json
