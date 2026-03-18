@@ -69,7 +69,8 @@ impl ClimateUDEB {
     /// * `dt` - Timestep in years
     /// * `lambda_ocean` - Ocean feedback parameter ($\text{W/m}^2\text{/K}$)
     /// * `lambda_land` - Land feedback parameter ($\text{W/m}^2\text{/K}$)
-    /// * `other_hemi_sst` - Other hemisphere's ocean SST for $K_{NS}$ exchange
+    /// * `hemi_heat_exchange` - Inter-hemispheric heat exchange ($\text{W/m}^2$), computed
+    ///   explicitly from previous substep air temperatures (MAGICC7 lines 3174-3177)
     /// * `ground_temp` - Current ground reservoir temperature for ground heat coupling
     /// * `alpha_eff` - Effective SST-to-air-temperature ratio, computed once per annual
     ///   timestep from the end-of-previous-year SST (MAGICC7 behaviour)
@@ -85,7 +86,7 @@ impl ClimateUDEB {
         dt: FloatValue,
         lambda_ocean: FloatValue,
         lambda_land: FloatValue,
-        other_hemi_sst: FloatValue,
+        hemi_heat_exchange: FloatValue,
         ground_temp: FloatValue,
         alpha_eff: FloatValue,
     ) -> FloatValue {
@@ -150,20 +151,18 @@ impl ClimateUDEB {
         // Land forcing amplification (denominator includes K_lg when enabled)
         let forcing_amp = 1.0 + self.parameters.k_lo * f_l_hemi / denominator;
 
-        // Inter-hemispheric heat exchange
-        let k_ns_term = self.parameters.k_ns / c_mix * dt;
-
         // MAGICC7 applies af_top to the feedback term and af_top to the
         // forcing/exchange terms on the RHS (lines 2826-2856).
+        // Inter-hemispheric heat exchange is explicit on the RHS (not implicit
+        // on the diagonal), folded into the forcing term alongside ocean and
+        // land forcing (MAGICC7 lines 2793-2800).
         b[0] = 1.0
             + term_feedback * dt * af_top[0]
             + term_diff * af_bot[0]
-            + term_upwell * pi_ratio * af_bot[0]
-            + k_ns_term;
+            + term_upwell * pi_ratio * af_bot[0];
         c[0] = -(term_diff + term_upwell) * af_bot[0];
         d[0] = state.ocean_temps[hemi][0]
-            + forcing * forcing_amp / c_mix * dt * af_top[0]
-            + k_ns_term * other_hemi_sst;
+            + (forcing * forcing_amp + hemi_heat_exchange) / c_mix * dt * af_top[0];
 
         // Ground temperature contributes as an explicit forcing through the
         // coupled land-ocean system: K_lo * K_lg * T_ground / (D * C_mix)
