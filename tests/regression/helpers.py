@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -101,6 +102,147 @@ def fourbox_global_mean(values_2d: np.ndarray) -> np.ndarray:
     return values_2d @ weights
 
 
+@dataclass
+class PhaseResult:
+    """Metrics for a single comparison phase."""
+
+    name: str
+    rtol: float
+    max_rel_err: float
+    mean_rel_err: float
+    n_points: int
+
+    @property
+    def passed(self) -> bool:
+        return self.max_rel_err <= self.rtol
+
+
+@dataclass
+class PhasedComparisonResult:
+    """Result of a phased comparison between actual and expected arrays."""
+
+    label: str
+    phases: list[PhaseResult] = field(default_factory=list)
+    bias_sign: str = ""
+
+    @property
+    def passed(self) -> bool:
+        return all(p.passed for p in self.phases)
+
+    def summary_row(self) -> dict:
+        """Return a flat dict suitable for tabulation."""
+        row: dict = {"test": self.label, "status": "PASS" if self.passed else "FAIL"}
+        for p in self.phases:
+            row[p.name] = f"{p.max_rel_err:.2%}"
+            row[f"{p.name}_threshold"] = f"{p.rtol:.2%}"
+            row[f"{p.name}_pass"] = p.passed
+        row["bias"] = self.bias_sign
+        return row
+
+    def to_csv_rows(self) -> list[dict]:
+        """Return a list of flat dicts (one per phase) for CSV output."""
+        rows = []
+        for p in self.phases:
+            if p.n_points > 0:
+                rows.append(
+                    {
+                        "test": self.label,
+                        "phase": p.name,
+                        "threshold": p.rtol,
+                        "actual": p.max_rel_err,
+                        "mean_bias": p.mean_rel_err,
+                        "n_points": p.n_points,
+                        "pass": p.passed,
+                        "bias_sign": self.bias_sign,
+                    }
+                )
+        return rows
+
+
+# Module-level collector: assert_allclose_phased appends results here.
+# The conftest session finalizer writes these to CSV.
+_collected_results: list[PhasedComparisonResult] = []
+
+
+def compute_phased_metrics(  # noqa: PLR0913
+    actual: np.ndarray,
+    expected: np.ndarray,
+    *,
+    skip: int = 5,
+    shock_end: int = 25,
+    converge_start: int = 55,
+    shock_rtol: float = 3e-2,
+    converge_rtol: float = 2e-2,
+    final_rtol: float = 2e-2,
+    final_years: int = 20,
+    atol: float = 1e-6,
+    name: str = "",
+) -> PhasedComparisonResult:
+    """
+    Compute phased error metrics between actual and expected arrays.
+
+    Returns a ``PhasedComparisonResult`` with per-phase max/mean errors
+    and pass/fail status against the given tolerances. Does not raise
+    on failure -- use ``assert_allclose_phased`` for test assertions.
+
+    Parameters
+    ----------
+    actual, expected
+        Arrays to compare (same length).
+    skip
+        Initial indices to skip entirely (forcing onset, index < skip).
+    shock_end
+        End of shock phase (index). Shock = [skip, shock_end).
+    converge_start
+        Start of convergence phase (index). Convergence = [converge_start, end).
+        Indices in [shock_end, converge_start) are checked with shock_rtol.
+    shock_rtol
+        Relative tolerance for the shock and transition phases.
+    converge_rtol
+        Relative tolerance for the convergence phase.
+    final_rtol
+        Relative tolerance for the last ``final_years`` indices.
+    final_years
+        Number of trailing indices checked at the tightest tolerance.
+    atol
+        Absolute tolerance (applied to all phases).
+    name
+        Label for the result.
+    """
+    n = len(actual)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rel_err = np.where(np.abs(expected) > atol, (actual - expected) / expected, 0.0)
+
+    s_end = min(shock_end, n)
+    c_start = min(converge_start, n)
+    f_start = max(c_start, n - final_years)
+
+    def _phase(label: str, start: int, end: int, rtol: float) -> PhaseResult:
+        if start >= end:
+            return PhaseResult(label, rtol, 0.0, 0.0, 0)
+        chunk = rel_err[start:end]
+        return PhaseResult(
+            label,
+            rtol,
+            float(np.max(np.abs(chunk))),
+            float(np.mean(chunk)),
+            len(chunk),
+        )
+
+    phases = [
+        _phase("shock", skip, s_end, shock_rtol),
+        _phase("transition", s_end, c_start, shock_rtol),
+        _phase("converge", c_start, n, converge_rtol),
+        _phase("final", f_start, n, final_rtol),
+    ]
+
+    # Overall bias direction from the convergence phase
+    converge_mean = phases[2].mean_rel_err if phases[2].n_points > 0 else 0.0
+    bias_sign = "warm" if converge_mean > 0 else "cool"
+
+    return PhasedComparisonResult(label=name, phases=phases, bias_sign=bias_sign)
+
+
 def assert_allclose_phased(  # noqa: PLR0913
     actual: np.ndarray,
     expected: np.ndarray,
@@ -114,81 +256,41 @@ def assert_allclose_phased(  # noqa: PLR0913
     final_years: int = 20,
     atol: float = 1e-6,
     name: str = "",
-) -> None:
+) -> PhasedComparisonResult:
     """
     Assert allclose with tighter tolerances as the solution converges.
 
-    Splits the comparison into phases to distinguish step forcing onset
-    transient from steady-state agreement. All index parameters are
-    relative to the start of the arrays (not calendar years).
+    Computes phased metrics then asserts each phase passes. Returns the
+    ``PhasedComparisonResult`` for reporting even when all phases pass.
 
-    Parameters
-    ----------
-    actual, expected
-        Arrays to compare (same length).
-    skip
-        Initial indices to skip entirely (forcing onset, index < skip).
-    shock_end
-        End of shock phase (index). Shock = [skip, shock_end).
-    converge_start
-        Start of convergence phase (index). Convergence = [converge_start, end).
-        Indices in [shock_end, converge_start) are checked with shock_rtol
-        (transition period).
-    shock_rtol
-        Relative tolerance for the shock and transition phases.
-    converge_rtol
-        Relative tolerance for the convergence phase.
-    final_rtol
-        Relative tolerance for the last ``final_years`` indices.
-    final_years
-        Number of trailing indices checked at the tightest tolerance.
-    atol
-        Absolute tolerance (applied to all phases).
-    name
-        Label for error messages.
+    See ``compute_phased_metrics`` for parameter descriptions.
     """
-    n = len(actual)
+    result = compute_phased_metrics(
+        actual,
+        expected,
+        skip=skip,
+        shock_end=shock_end,
+        converge_start=converge_start,
+        shock_rtol=shock_rtol,
+        converge_rtol=converge_rtol,
+        final_rtol=final_rtol,
+        final_years=final_years,
+        atol=atol,
+        name=name,
+    )
+
     prefix = f"{name}: " if name else ""
+    for phase in result.phases:
+        if phase.n_points > 0 and not phase.passed:
+            npt.assert_allclose(
+                np.array([phase.max_rel_err]),
+                np.array([0.0]),
+                atol=phase.rtol,
+                err_msg=(
+                    f"{prefix}{phase.name} phase: max_rel_err={phase.max_rel_err:.4%}"
+                    f" exceeds rtol={phase.rtol:.4%}"
+                ),
+            )
 
-    # Shock phase: [skip, shock_end)
-    s_end = min(shock_end, n)
-    if skip < s_end:
-        npt.assert_allclose(
-            actual[skip:s_end],
-            expected[skip:s_end],
-            rtol=shock_rtol,
-            atol=atol,
-            err_msg=f"{prefix}shock phase (index {skip}-{s_end})",
-        )
-
-    # Transition phase: [shock_end, converge_start)
-    c_start = min(converge_start, n)
-    if s_end < c_start:
-        npt.assert_allclose(
-            actual[s_end:c_start],
-            expected[s_end:c_start],
-            rtol=shock_rtol,
-            atol=atol,
-            err_msg=f"{prefix}transition phase (index {s_end}-{c_start})",
-        )
-
-    # Convergence phase: [converge_start, end)
-    if c_start < n:
-        npt.assert_allclose(
-            actual[c_start:],
-            expected[c_start:],
-            rtol=converge_rtol,
-            atol=atol,
-            err_msg=f"{prefix}convergence phase (index {c_start}+)",
-        )
-
-    # Final phase: last final_years indices (tightest)
-    f_start = max(c_start, n - final_years)
-    if f_start < n:
-        npt.assert_allclose(
-            actual[f_start:],
-            expected[f_start:],
-            rtol=final_rtol,
-            atol=atol,
-            err_msg=f"{prefix}final phase (last {n - f_start} indices)",
-        )
+    _collected_results.append(result)
+    return result
