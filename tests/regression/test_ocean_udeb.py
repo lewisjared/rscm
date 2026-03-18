@@ -213,6 +213,8 @@ def run_ocean_scenario(  # noqa: PLR0913
         final_rtol=final_rtol,
         atol=DEFAULT_ATOL,
         name=name,
+        suite="ocean_udeb",
+        variable="Surface Temperature",
     )
 
 

@@ -122,6 +122,8 @@ class PhasedComparisonResult:
     """Result of a phased comparison between actual and expected arrays."""
 
     label: str
+    suite: str = ""
+    variable: str = ""
     phases: list[PhaseResult] = field(default_factory=list)
     bias_sign: str = ""
 
@@ -146,7 +148,9 @@ class PhasedComparisonResult:
             if p.n_points > 0:
                 rows.append(
                     {
+                        "suite": self.suite,
                         "test": self.label,
+                        "variable": self.variable,
                         "phase": p.name,
                         "threshold": f"{p.rtol:.4g}",
                         "actual": f"{p.max_rel_err:.4g}",
@@ -177,6 +181,8 @@ def compute_phased_metrics(  # noqa: PLR0913
     final_years: int = 20,
     atol: float = 1e-6,
     name: str = "",
+    suite: str = "",
+    variable: str = "",
 ) -> PhasedComparisonResult:
     """
     Compute phased error metrics between actual and expected arrays.
@@ -207,7 +213,11 @@ def compute_phased_metrics(  # noqa: PLR0913
     atol
         Absolute tolerance (applied to all phases).
     name
-        Label for the result.
+        Test scenario label.
+    suite
+        Test suite label (e.g. "ghg_forcing", "ocean_udeb").
+    variable
+        Variable being compared (e.g. "Surface Temperature", "ERF|CO2").
     """
     n = len(actual)
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -240,7 +250,9 @@ def compute_phased_metrics(  # noqa: PLR0913
     converge_mean = phases[2].mean_rel_err if phases[2].n_points > 0 else 0.0
     bias_sign = "warm" if converge_mean > 0 else "cool"
 
-    return PhasedComparisonResult(label=name, phases=phases, bias_sign=bias_sign)
+    return PhasedComparisonResult(
+        label=name, suite=suite, variable=variable, phases=phases, bias_sign=bias_sign
+    )
 
 
 def assert_allclose_phased(  # noqa: PLR0913
@@ -256,6 +268,8 @@ def assert_allclose_phased(  # noqa: PLR0913
     final_years: int = 20,
     atol: float = 1e-6,
     name: str = "",
+    suite: str = "",
+    variable: str = "",
 ) -> PhasedComparisonResult:
     """
     Assert allclose with tighter tolerances as the solution converges.
@@ -277,6 +291,8 @@ def assert_allclose_phased(  # noqa: PLR0913
         final_years=final_years,
         atol=atol,
         name=name,
+        suite=suite,
+        variable=variable,
     )
 
     # Record before asserting so xfail tests still capture metrics
@@ -298,13 +314,15 @@ def assert_allclose_phased(  # noqa: PLR0913
     return result
 
 
-def assert_allclose_recorded(
+def assert_allclose_recorded(  # noqa: PLR0913
     actual: np.ndarray,
     expected: np.ndarray,
     *,
     rtol: float = 1e-5,
     atol: float = 1e-6,
     name: str = "",
+    suite: str = "",
+    variable: str = "",
 ) -> None:
     """
     Assert allclose and record the result for CSV reporting.
@@ -318,7 +336,9 @@ def assert_allclose_recorded(
     mean_err = float(np.mean(rel_err))
     phase = PhaseResult("all", rtol, max_err, mean_err, len(actual))
     bias = "warm" if mean_err > 0 else "cool"
-    result = PhasedComparisonResult(label=name, phases=[phase], bias_sign=bias)
+    result = PhasedComparisonResult(
+        label=name, suite=suite, variable=variable, phases=[phase], bias_sign=bias
+    )
     _collected_results.append(result)
 
     npt.assert_allclose(actual, expected, rtol=rtol, atol=atol, err_msg=name)

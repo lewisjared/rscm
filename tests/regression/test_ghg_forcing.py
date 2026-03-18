@@ -287,21 +287,27 @@ def test_01_concentration_driven():
         expected_erf_co2[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        name="ghg/01_ipcctar/ERF|CO2",
+        suite="ghg_forcing",
+        name="01_ipcctar",
+        variable="ERF|CO2",
     )
     assert_allclose_recorded(
         actual_erf_ch4,
         expected_erf_ch4[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        name="ghg/01_ipcctar/ERF|CH4",
+        suite="ghg_forcing",
+        name="01_ipcctar",
+        variable="ERF|CH4",
     )
     assert_allclose_recorded(
         actual_erf_n2o,
         expected_erf_n2o[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        name="ghg/01_ipcctar/ERF|N2O",
+        suite="ghg_forcing",
+        name="01_ipcctar",
+        variable="ERF|N2O",
     )
 
 
@@ -364,21 +370,27 @@ def test_02_ghg_forcing_olbl():
         expected_erf_co2[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        name="ghg/02_olbl/ERF|CO2",
+        suite="ghg_forcing",
+        name="02_olbl",
+        variable="ERF|CO2",
     )
     assert_allclose_recorded(
         actual_erf_ch4,
         expected_erf_ch4[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        name="ghg/02_olbl/ERF|CH4",
+        suite="ghg_forcing",
+        name="02_olbl",
+        variable="ERF|CH4",
     )
     assert_allclose_recorded(
         actual_erf_n2o,
         expected_erf_n2o[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        name="ghg/02_olbl/ERF|N2O",
+        suite="ghg_forcing",
+        name="02_olbl",
+        variable="ERF|N2O",
     )
 
 
@@ -668,7 +680,9 @@ def test_03_emissions_driven():
         expected_co2_conc[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        name="ghg/03_emissions/Conc|CO2",
+        suite="ghg_forcing",
+        name="03_emissions",
+        variable="Conc|CO2",
     )
 
     # Compare CH4 concentration
@@ -680,7 +694,9 @@ def test_03_emissions_driven():
         expected_ch4_conc[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        name="ghg/03_emissions/Conc|CH4",
+        suite="ghg_forcing",
+        name="03_emissions",
+        variable="Conc|CH4",
     )
 
     # Compare N2O concentration
@@ -692,7 +708,9 @@ def test_03_emissions_driven():
         expected_n2o_conc[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        name="ghg/03_emissions/Conc|N2O",
+        suite="ghg_forcing",
+        name="03_emissions",
+        variable="Conc|N2O",
     )
 
     # Compare Sea Surface Temperature (scalar proxy for global mean)
@@ -702,7 +720,9 @@ def test_03_emissions_driven():
         expected_temp[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        name="ghg/03_emissions/Temperature",
+        suite="ghg_forcing",
+        name="03_emissions",
+        variable="Temperature",
     )
 
 
@@ -756,7 +776,9 @@ def test_04_ecs_sweep(ecs: float):
         converge_rtol=3e-2,
         final_rtol=3e-2,
         atol=DEFAULT_ATOL,
-        name=f"ECS={ecs}K temperature",
+        suite="ghg_forcing",
+        name=f"04_ecs_sweep_{ecs}",
+        variable="Surface Temperature",
     )
 
 
@@ -812,5 +834,7 @@ def test_05_co2_only_forcing():
         converge_rtol=3e-2,
         final_rtol=3e-2,
         atol=DEFAULT_ATOL,
-        name="CO2-only temperature",
+        suite="ghg_forcing",
+        name="05_co2_only",
+        variable="Surface Temperature",
     )

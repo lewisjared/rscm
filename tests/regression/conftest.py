@@ -7,7 +7,9 @@ from pathlib import Path
 
 PARITY_CSV = Path(__file__).parent / "parity_results.csv"
 CSV_FIELDS = [
+    "suite",
     "test",
+    "variable",
     "phase",
     "threshold",
     "actual",
