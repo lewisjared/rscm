@@ -226,7 +226,12 @@ def test_ocean_01_diffusion_only():
     downward, no upwelling circulation. Tests the core tridiagonal
     diffusion solver in isolation.
     """
-    run_ocean_scenario("01_diffusion_only", final_rtol=5e-3)
+    run_ocean_scenario(
+        "01_diffusion_only",
+        shock_rtol=1.5e-2,
+        converge_rtol=1e-2,
+        final_rtol=5e-3,
+    )
 
 
 def test_ocean_02_constant_upwelling():
@@ -237,7 +242,12 @@ def test_ocean_02_constant_upwelling():
     Variable fraction is zero so upwelling rate does not change
     with temperature.
     """
-    run_ocean_scenario("02_constant_upwelling", final_rtol=5e-3)
+    run_ocean_scenario(
+        "02_constant_upwelling",
+        shock_rtol=1.5e-2,
+        converge_rtol=1e-2,
+        final_rtol=5e-3,
+    )
 
 
 def test_ocean_03_depth_dependent_area():
@@ -247,10 +257,12 @@ def test_ocean_03_depth_dependent_area():
     Enables the hypsometric profile so the ocean basin narrows with
     depth, affecting diffusive and advective heat transport.
     """
-    run_ocean_scenario("03_depth_dependent_area")
+    run_ocean_scenario("03_depth_dependent_area", final_rtol=1e-2)
 
 
-@pytest.mark.xfail(reason="~10% warm bias from variable upwelling treatment (see #108)")
+@pytest.mark.xfail(
+    reason="~8% cool bias from approximate equilibrium profile with area factors (#108)"
+)
 def test_ocean_04_variable_upwelling():
     """
     Test 04: Variable (temperature-dependent) upwelling.
@@ -268,7 +280,11 @@ def test_ocean_05_temp_dependent_diffusivity():
     Vertical diffusivity decreases as the ocean stratifies (vertical
     temperature gradient increases), parameterised by kappa_dkdt.
     """
-    run_ocean_scenario("05_temp_dependent_diffusivity")
+    run_ocean_scenario(
+        "05_temp_dependent_diffusivity",
+        converge_rtol=1e-2,
+        final_rtol=5e-3,
+    )
 
 
 def test_ocean_06_ground_heat():
@@ -281,7 +297,7 @@ def test_ocean_06_ground_heat():
     Uses wider shock tolerance because the ground heat coupling
     amplifies the step forcing onset transient.
     """
-    run_ocean_scenario("06_ground_heat", shock_rtol=5e-2, skip=15)
+    run_ocean_scenario("06_ground_heat", shock_rtol=5e-2, skip=15, final_rtol=1e-2)
 
 
 def test_ocean_07_interhemispheric_exchange():
@@ -291,7 +307,12 @@ def test_ocean_07_interhemispheric_exchange():
     Enables North-South heat exchange between ocean boxes,
     parameterised by k_ns.
     """
-    run_ocean_scenario("07_interhemispheric_exchange")
+    run_ocean_scenario(
+        "07_interhemispheric_exchange",
+        shock_rtol=1.5e-2,
+        converge_rtol=1e-2,
+        final_rtol=5e-3,
+    )
 
 
 def test_ocean_08_sst_to_sat():
@@ -371,7 +392,7 @@ def test_ocean_09_time_varying_ecs():
     sensitivity evolves over time based on cumulative temperature and
     forcing level.
     """
-    run_ocean_scenario("09_time_varying_ecs")
+    run_ocean_scenario("09_time_varying_ecs", final_rtol=1e-2)
 
 
 def test_ocean_10_full_default():

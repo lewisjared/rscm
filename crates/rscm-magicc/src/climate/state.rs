@@ -56,6 +56,13 @@ pub struct ClimateUDEBState {
     #[serde(default)]
     pub alpha_eff: [FloatValue; 2],
 
+    /// Inter-hemispheric heat exchange (W/m^2) from the previous substep.
+    /// Persists across annual timesteps (MAGICC7 module-level variable,
+    /// initialized once at startup in climate_and_ocean.f90 line 140).
+    /// Index 0 = NH, 1 = SH.
+    #[serde(default)]
+    pub hemi_heat_exchange: [FloatValue; 2],
+
     /// Initial equilibrium ocean temperature profile (K).
     ///
     /// Computed once at initialization using an exponential profile
@@ -121,6 +128,7 @@ impl ClimateUDEBState {
             land_temps: [0.0; 2],
             ground_temps: [0.0; 2],
             alpha_eff: [alpha_initial; 2],
+            hemi_heat_exchange: [0.0; 2],
             initial_ocean_profile,
             polar_sinking_temp: t_polar,
             mixed_layer_initial_temp: t_mix,

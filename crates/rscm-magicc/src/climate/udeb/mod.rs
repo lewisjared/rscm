@@ -431,13 +431,10 @@ impl ClimateUDEB {
                 }
             }
 
-            // Save start-of-step values for symmetric inter-hemispheric exchange
-            let nh_sst_start = state.ocean_temps[0][0];
-            let sh_sst_start = state.ocean_temps[1][0];
             let nh_ground = state.ground_temps[0];
             let sh_ground = state.ground_temps[1];
 
-            // Step each hemisphere's ocean with K_NS exchange and ground heat.
+            // Step each hemisphere's ocean with explicit K_NS exchange.
             // alpha_eff is fixed for the entire year (read above, outside the loop).
             let sst_nh = self.step_hemisphere(
                 state,
@@ -446,7 +443,7 @@ impl ClimateUDEB {
                 dt_sub,
                 current_lambda_ocean,
                 current_lambda_land,
-                sh_sst_start,
+                state.hemi_heat_exchange[0],
                 nh_ground,
                 alpha_eff_nh,
             );
@@ -457,7 +454,7 @@ impl ClimateUDEB {
                 dt_sub,
                 current_lambda_ocean,
                 current_lambda_land,
-                nh_sst_start,
+                state.hemi_heat_exchange[1],
                 sh_ground,
                 alpha_eff_sh,
             );
@@ -480,6 +477,17 @@ impl ClimateUDEB {
                 current_lambda_land,
                 state.ground_temps[1],
             );
+
+            // Update inter-hemispheric heat exchange for the NEXT substep
+            // using this substep's air temperatures (MAGICC7 lines 3174-3177).
+            // HX(hemi) = K_NS / FGO(hemi) * (T_air_other_ocean - T_air_self_ocean)
+            let k_ns = self.parameters.k_ns;
+            if fgno > 1e-15 {
+                state.hemi_heat_exchange[0] = k_ns / fgno * (t_air_sho - t_air_nho);
+            }
+            if fgso > 1e-15 {
+                state.hemi_heat_exchange[1] = k_ns / fgso * (t_air_nho - t_air_sho);
+            }
 
             // Update upwelling based on area-weighted global air temperature
             // (MAGICC7.f90 line 3298: GLOBET = SUM(CURRENT_TIME_TEMPERATURE * GLOBALAREAFRACTIONS))
