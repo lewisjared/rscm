@@ -644,7 +644,13 @@ mod climate_udeb_equilibrium {
         let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
 
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
-        let mut state = ClimateUDEBState::new(params.n_layers, params.w_initial);
+        let mut state = ClimateUDEBState::new(
+            params.n_layers,
+            params.w_initial,
+            params.temp_adjust_alpha,
+            params.kappa_m2_per_yr(),
+            params.layer_thickness,
+        );
 
         let erf = params.rf_2xco2;
         let n_years = 500;
@@ -753,7 +759,13 @@ mod climate_udeb_equilibrium {
         let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
 
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
-        let mut state = ClimateUDEBState::new(params.n_layers, params.w_initial);
+        let mut state = ClimateUDEBState::new(
+            params.n_layers,
+            params.w_initial,
+            params.temp_adjust_alpha,
+            params.kappa_m2_per_yr(),
+            params.layer_thickness,
+        );
 
         let erf = 0.0;
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);

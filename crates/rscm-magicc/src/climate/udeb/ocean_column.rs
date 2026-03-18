@@ -71,6 +71,8 @@ impl ClimateUDEB {
     /// * `lambda_land` - Land feedback parameter ($\text{W/m}^2\text{/K}$)
     /// * `other_hemi_sst` - Other hemisphere's ocean SST for $K_{NS}$ exchange
     /// * `ground_temp` - Current ground reservoir temperature for ground heat coupling
+    /// * `alpha_eff` - Effective SST-to-air-temperature ratio, computed once per annual
+    ///   timestep from the end-of-previous-year SST (MAGICC7 behaviour)
     ///
     /// # Returns
     ///
@@ -85,6 +87,7 @@ impl ClimateUDEB {
         lambda_land: FloatValue,
         other_hemi_sst: FloatValue,
         ground_temp: FloatValue,
+        alpha_eff: FloatValue,
     ) -> FloatValue {
         let n = self.parameters.n_layers;
         let kappas = self.layer_diffusivities(state, hemi);
@@ -116,13 +119,6 @@ impl ClimateUDEB {
             self.parameters.sh_land_fraction / 2.0
         };
         let f_o_hemi = 0.5 - f_l_hemi;
-        let sst_prev = state.ocean_temps[hemi][0];
-        let alpha_eff = if sst_prev.abs() < 1e-15 {
-            self.parameters.temp_adjust_alpha
-        } else {
-            let t_air_prev = self.sst_to_air_temperature(sst_prev);
-            t_air_prev / sst_prev
-        };
 
         // Ground heat coupling modifies the coupled land-ocean denominator.
         // Without ground heat: D = f_o * (K_lo + f_l * lambda_l)
@@ -203,6 +199,32 @@ impl ClimateUDEB {
         // Entrainment term from polar sinking (MAGICC7 AREAFACTOR_DIFFFLOW)
         d[n - 1] = state.ocean_temps[hemi][n - 1]
             + pi_ratio * term_upwell_bottom * state.ocean_temps[hemi][0] * af_diff[n - 1];
+
+        // Variable upwelling correction terms (MAGICC7.f90 lines 2858-2874, 2957-2991, 3012-3039).
+        //
+        // When upwelling changes from its initial value, the equilibrium ocean temperature
+        // profile shifts. These terms compensate for that shift by adjusting the RHS (D)
+        // based on the initial temperature profile and the upwelling change.
+        let delta_w = w - self.parameters.w_initial;
+        if delta_w.abs() > 1e-15 {
+            let init = &state.initial_ocean_profile;
+            let t_polar = state.polar_sinking_temp;
+
+            // Mixed layer (layer 0): MAGICC7 line 2858-2874
+            let dt_per_dz_mix = dt / dz_mix;
+            d[0] += dt_per_dz_mix * delta_w * (init[1] - t_polar) * af_bot[0];
+
+            // Interior layers 1..n-2
+            let dt_per_dz = dt / dz;
+            for i in 1..n - 1 {
+                d[i] += dt_per_dz * delta_w * (init[i + 1] * af_bot[i] - init[i] * af_top[i]);
+                d[i] += dt_per_dz * delta_w * t_polar * af_diff[i];
+            }
+
+            // Bottom layer (n-1): no layer below, so only af_top term
+            d[n - 1] += dt_per_dz * delta_w * (-init[n - 1] * af_top[n - 1]);
+            d[n - 1] += dt_per_dz * delta_w * t_polar * af_diff[n - 1];
+        }
 
         // Solve tridiagonal system
         let new_temps = thomas_solve(&a, &b, &c, &d);

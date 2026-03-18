@@ -172,6 +172,16 @@ pub struct ClimateUDEBParameters {
     /// Default: 300.0
     pub land_hc_eff_thickness: FloatValue,
 
+    // Regional CO2 forcing
+    /// Regional CO2 radiative forcing pattern (NH ocean, NH land, SH ocean, SH land).
+    ///
+    /// Relative weights used to compute per-box CO2 forcing fractions for the
+    /// LAMCALC solver. Normalized against global-area-weighted sum following
+    /// MAGICC7.f90 lines 8146-8165.
+    ///
+    /// Default: `[1.0; 4]` (uniform, qfrac = 1.0 for all boxes).
+    pub rf_regions_co2: [FloatValue; 4],
+
     // Integration parameters
     /// Steps per year for sub-annual integration.
     /// Default: 12 (monthly)
@@ -231,6 +241,9 @@ impl Default for ClimateUDEBParameters {
             land_heat_capacity_enabled: true,
             k_lg: 0.1,
             land_hc_eff_thickness: 300.0,
+
+            // Regional CO2 forcing
+            rf_regions_co2: [1.0; 4],
 
             // Integration
             steps_per_year: 12,

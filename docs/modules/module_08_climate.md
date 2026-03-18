@@ -258,6 +258,16 @@ Where:
 
 This parameterization ensures $T_{air} \geq T_{SST}$ (air warms more than SST).
 
+#### Note: alpha_eff Update Timing
+
+In MAGICC7, the ratio $\alpha_{eff} = T_{air} / T_{SST}$ is not a fixed constant but is computed dynamically from the current temperatures. However, its update schedule is decoupled from the sub-annual integration loop:
+
+- `alpha_eff` is updated **once per annual timestep**, after all 12 monthly substeps have completed (MAGICC7.f90 lines 3171-3187).
+- The `alpha_eff` derived at the end of year $n$ is then used for **all substeps** in year $n+1$.
+- Within the ocean mixed layer energy balance, `alpha_eff` appears in the feedback term (MAGICC7.f90 line 2809) as a scaling of the mixed layer temperature before applying the feedback parameter.
+
+This means there is a one-year lag in `alpha_eff`: the feedback term for a given year uses the ocean-to-atmosphere amplification ratio computed from the prior year's temperatures, not the current year's.
+
 ### 2.12 Land Temperature (Equilibrium with Ocean)
 
 Land temperature is calculated assuming equilibrium with the adjacent ocean box:
@@ -512,6 +522,16 @@ END ITERATE
 12. Calculate internal efficacies for all forcing agents
 ```
 
+#### Note: Regionally-Varying CO2 Forcing in LAMCALC
+
+MAGICC7 does not apply uniform CO2 forcing across all four boxes when computing equilibrium temperatures in step 7 above. Instead it uses **regionally-varying CO2 forcing patterns** (`RF_REGIONS_CO2`) to determine the per-box forcing fraction (MAGICC7.f90 lines 8146-8275):
+
+$$QFRAC_{box} = \frac{RF\_REGIONS\_CO2(box)}{\sum_{box} RF\_REGIONS\_CO2(box) \times GLOBALAREAFRACTIONS(box)}$$
+
+Each box's effective forcing is then $Q_{box} = Q_{2x} \times QFRAC_{box}$, so the equilibrium temperature calculation and the derived $\lambda$ values reflect the spatial pattern of CO2 forcing rather than a uniform distribution.
+
+After LAMCALC converges, MAGICC7 also computes **internal efficacies** for each non-CO2 forcing agent by repeating the equilibrium temperature calculation with that agent's regional forcing pattern and taking the ratio of the resulting global temperature response to the CO2 response at the same global-mean forcing. These efficacies scale how each agent's forcing is weighted in the feedback term during the transient integration.
+
 ## 8. Numerical Considerations
 
 ### 8.1 Implicit Scheme Stability
@@ -641,6 +661,22 @@ Several commented-out code blocks remain:
 - Lines 119-135 in `climate_and_ocean.f90` (old initialization)
 - Lines 3420-3422 in `MAGICC7.f90` (wrong annual mean calculation)
 - Multiple "PROCEED HERE" comments indicating incomplete work
+
+### 9.11 Known Differences from MAGICC7 in Current RSCM Implementation
+
+The following gaps exist between the current RSCM implementation and MAGICC7 behaviour identified through Fortran source review:
+
+**alpha_eff update frequency**
+
+MAGICC7 updates `alpha_eff` once per annual timestep (after all monthly substeps complete) and uses the prior year's value for all substeps in the current year. The current RSCM implementation recomputes `alpha_eff` at every substep using the current substep's temperatures. This means RSCM's feedback term can respond to within-year temperature changes that MAGICC7 would not see until the following year.
+
+**LAMCALC uses uniform CO2 forcing instead of regional patterns**
+
+MAGICC7 applies `RF_REGIONS_CO2` per-box forcing fractions when solving for equilibrium temperatures in LAMCALC (lines 8146-8275). RSCM currently uses a uniform forcing fraction (`qfrac = 1.0`) for all four boxes. This changes the derived $\lambda_o$ and $\lambda_l$ values and, consequently, the transient temperature response for scenarios with spatially non-uniform forcing.
+
+**Internal efficacies not computed**
+
+After LAMCALC converges, MAGICC7 computes internal efficacies for each non-CO2 forcing agent by comparing the agent's regional temperature response to an equivalent CO2 response. These efficacies scale the effective forcing of each agent inside the energy balance. RSCM does not currently compute or apply internal efficacies, meaning all forcing agents are treated as having the same spatial efficacy as CO2.
 
 ## 10. Test Cases
 

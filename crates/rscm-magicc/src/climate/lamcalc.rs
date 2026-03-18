@@ -44,6 +44,16 @@ pub struct LamcalcParams {
     pub fgso: FloatValue,
     /// Southern hemisphere land global fraction.
     pub fgsl: FloatValue,
+    /// Regional CO2 radiative forcing pattern (NH ocean, NH land, SH ocean, SH land).
+    ///
+    /// Used to compute per-box forcing fractions (qfrac) following MAGICC7:
+    ///
+    /// $$\text{qfrac}_i = \frac{\text{rf\_regions\_co2}_i}{\sum_j \text{rf\_regions\_co2}_j \times f_j}$$
+    ///
+    /// Default `[1.0; 4]` produces uniform qfrac = 1.0 for all boxes.
+    ///
+    /// Reference: MAGICC7.f90 lines 8146-8165.
+    pub rf_regions_co2: [FloatValue; 4],
 }
 
 /// Result of the LAMCALC iteration.
@@ -104,8 +114,23 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
 
     let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
 
-    // Uniform CO2 forcing: qfrac = 1.0 for all boxes
-    let qfrac = [1.0_f64; 4];
+    // Compute per-box CO2 forcing fractions from regional pattern.
+    // MAGICC7.f90 lines 8146-8165:
+    //   QFRAC_i = RF_REGIONS_CO2_i / SUM(RF_REGIONS_CO2 * GLOBALAREAFRACTIONS)
+    let rf_sum: FloatValue = params.rf_regions_co2[0] * params.fgno
+        + params.rf_regions_co2[1] * params.fgnl
+        + params.rf_regions_co2[2] * params.fgso
+        + params.rf_regions_co2[3] * params.fgsl;
+    let qfrac: [FloatValue; 4] = if rf_sum.abs() > 1e-15 {
+        [
+            params.rf_regions_co2[0] / rf_sum,
+            params.rf_regions_co2[1] / rf_sum,
+            params.rf_regions_co2[2] / rf_sum,
+            params.rf_regions_co2[3] / rf_sum,
+        ]
+    } else {
+        [1.0; 4]
+    };
 
     // Storage for iteration history
     let mut lamo = vec![0.0; MAX_ITERATIONS + 2];
@@ -220,6 +245,7 @@ mod tests {
             fgnl: nh_land / 2.0,
             fgso: 0.5 - sh_land / 2.0,
             fgsl: sh_land / 2.0,
+            rf_regions_co2: [1.0; 4],
         }
     }
 
@@ -481,5 +507,96 @@ mod tests {
             matrix[2][0],
             -params.k_ns
         );
+    }
+
+    #[test]
+    fn test_non_uniform_rf_regions_produces_different_lambdas() {
+        // Uniform forcing (default): all boxes receive equal CO2 forcing fraction.
+        let uniform_params = default_params();
+        let uniform_result =
+            lamcalc(&uniform_params).expect("LAMCALC should converge with uniform forcing");
+
+        // Non-uniform forcing: NH receives ~20% stronger CO2 forcing than SH.
+        // This matches a typical MAGICC7 regional CO2 pattern where forcing
+        // is not perfectly symmetric across hemispheres.
+        let mut nonuniform_params = default_params();
+        nonuniform_params.rf_regions_co2 = [1.2, 1.2, 0.8, 0.8];
+
+        let nonuniform_result =
+            lamcalc(&nonuniform_params).expect("LAMCALC should converge with non-uniform forcing");
+
+        println!(
+            "Uniform:     lambda_ocean = {:.6}, lambda_land = {:.6}",
+            uniform_result.lambda_ocean, uniform_result.lambda_land
+        );
+        println!(
+            "Non-uniform: lambda_ocean = {:.6}, lambda_land = {:.6}",
+            nonuniform_result.lambda_ocean, nonuniform_result.lambda_land
+        );
+
+        // Non-uniform regional forcing must produce different lambda values.
+        let ocean_diff = (uniform_result.lambda_ocean - nonuniform_result.lambda_ocean).abs();
+        let land_diff = (uniform_result.lambda_land - nonuniform_result.lambda_land).abs();
+        assert!(
+            ocean_diff > 1e-6 || land_diff > 1e-6,
+            "Non-uniform rf_regions_co2 should produce different lambdas: \
+             uniform=({:.6}, {:.6}), non-uniform=({:.6}, {:.6})",
+            uniform_result.lambda_ocean,
+            uniform_result.lambda_land,
+            nonuniform_result.lambda_ocean,
+            nonuniform_result.lambda_land,
+        );
+
+        // Both results must still satisfy the RLO constraint.
+        for (label, params, result) in [
+            ("uniform", &uniform_params, &uniform_result),
+            ("non-uniform", &nonuniform_params, &nonuniform_result),
+        ] {
+            let matrix = build_coupling_matrix(params, result.lambda_ocean, result.lambda_land);
+            let inv = invert_4x4(&matrix).expect("Coupling matrix should be invertible");
+            let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+
+            let rf_sum: FloatValue = params.rf_regions_co2[0] * params.fgno
+                + params.rf_regions_co2[1] * params.fgnl
+                + params.rf_regions_co2[2] * params.fgso
+                + params.rf_regions_co2[3] * params.fgsl;
+            let qfrac = if rf_sum.abs() > 1e-15 {
+                [
+                    params.rf_regions_co2[0] / rf_sum,
+                    params.rf_regions_co2[1] / rf_sum,
+                    params.rf_regions_co2[2] / rf_sum,
+                    params.rf_regions_co2[3] / rf_sum,
+                ]
+            } else {
+                [1.0; 4]
+            };
+
+            let q = params.q_2xco2;
+            let mut temps = [0.0_f64; 4];
+            for row in 0..4 {
+                for col in 0..4 {
+                    temps[row] += inv[row][col] * area[col] * qfrac[col];
+                }
+                temps[row] *= q;
+            }
+
+            let ocean_mean =
+                (params.fgno * temps[0] + params.fgso * temps[2]) / (params.fgno + params.fgso);
+            let land_mean =
+                (params.fgnl * temps[1] + params.fgsl * temps[3]) / (params.fgnl + params.fgsl);
+            let rlo_actual = land_mean / ocean_mean;
+
+            println!(
+                "{}: target RLO = {:.4}, actual RLO = {:.4}",
+                label, params.rlo, rlo_actual
+            );
+            assert!(
+                (params.rlo - rlo_actual).abs() < RLO_TOLERANCE,
+                "{}: RLO constraint not satisfied: target = {}, actual = {}",
+                label,
+                params.rlo,
+                rlo_actual
+            );
+        }
     }
 }

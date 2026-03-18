@@ -38,6 +38,7 @@ pub fn default_lamcalc_params() -> LamcalcParams {
         fgnl: nh_land / 2.0,
         fgso: 0.5 - sh_land / 2.0,
         fgsl: sh_land / 2.0,
+        rf_regions_co2: [1.0; 4],
     }
 }
 
@@ -55,6 +56,7 @@ pub fn lamcalc_params_from_udeb(params: &ClimateUDEBParameters) -> LamcalcParams
         fgnl,
         fgso,
         fgsl,
+        rf_regions_co2: params.rf_regions_co2,
     }
 }
 
@@ -225,7 +227,13 @@ pub fn run_udeb_simulation(
     n_years: usize,
 ) -> Vec<YearRecord> {
     let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
-    let mut state = ClimateUDEBState::new(params.n_layers, params.w_initial);
+    let mut state = ClimateUDEBState::new(
+        params.n_layers,
+        params.w_initial,
+        params.temp_adjust_alpha,
+        params.kappa_m2_per_yr(),
+        params.layer_thickness,
+    );
     let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
     let mut records = Vec::with_capacity(n_years);
 

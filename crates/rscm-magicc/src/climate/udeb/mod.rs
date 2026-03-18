@@ -145,6 +145,7 @@ impl ClimateUDEB {
             fgnl,
             fgso,
             fgsl,
+            rf_regions_co2: parameters.rf_regions_co2,
         })
         .ok_or_else(|| {
             RSCMError::Error(format!(
@@ -174,8 +175,19 @@ impl ClimateUDEB {
     /// Initialize or ensure state is properly configured.
     fn ensure_state_initialized(&self, state: &mut ClimateUDEBState) {
         if !state.initialized {
-            state.ocean_temps = vec![vec![0.0; self.parameters.n_layers]; 2];
-            state.upwelling_rates = [self.parameters.w_initial; 2];
+            let fresh = ClimateUDEBState::new(
+                self.parameters.n_layers,
+                self.parameters.w_initial,
+                self.parameters.temp_adjust_alpha,
+                self.parameters.kappa_m2_per_yr(),
+                self.parameters.layer_thickness,
+            );
+            state.ocean_temps = fresh.ocean_temps;
+            state.upwelling_rates = fresh.upwelling_rates;
+            state.alpha_eff = fresh.alpha_eff;
+            state.initial_ocean_profile = fresh.initial_ocean_profile;
+            state.polar_sinking_temp = fresh.polar_sinking_temp;
+            state.mixed_layer_initial_temp = fresh.mixed_layer_initial_temp;
             state.initialized = true;
         }
     }
@@ -363,6 +375,7 @@ impl ClimateUDEB {
                     fgnl,
                     fgso,
                     fgsl,
+                    rf_regions_co2: self.parameters.rf_regions_co2,
                 })
                 .unwrap_or(LamcalcResult {
                     lambda_ocean: self.lambda_ocean,
@@ -382,6 +395,12 @@ impl ClimateUDEB {
         } else {
             0.0
         };
+
+        // Read alpha_eff once per annual timestep (set at end of previous year).
+        // All monthly substeps within this year use the same fixed values,
+        // matching MAGICC7 behaviour where alpha_eff is not updated mid-year.
+        let alpha_eff_nh = state.alpha_eff[0];
+        let alpha_eff_sh = state.alpha_eff[1];
 
         // Monthly sub-stepping
         for _ in 0..self.parameters.steps_per_year {
@@ -406,7 +425,8 @@ impl ClimateUDEB {
             let nh_ground = state.ground_temps[0];
             let sh_ground = state.ground_temps[1];
 
-            // Step each hemisphere's ocean with K_NS exchange and ground heat
+            // Step each hemisphere's ocean with K_NS exchange and ground heat.
+            // alpha_eff is fixed for the entire year (read above, outside the loop).
             let sst_nh = self.step_hemisphere(
                 state,
                 0,
@@ -416,6 +436,7 @@ impl ClimateUDEB {
                 current_lambda_land,
                 sh_sst_start,
                 nh_ground,
+                alpha_eff_nh,
             );
             let sst_sh = self.step_hemisphere(
                 state,
@@ -426,6 +447,7 @@ impl ClimateUDEB {
                 current_lambda_land,
                 nh_sst_start,
                 sh_ground,
+                alpha_eff_sh,
             );
 
             // Update land temperatures from new ocean SSTs (equilibrium with
@@ -459,6 +481,22 @@ impl ClimateUDEB {
         // Get final temperatures from the last substep
         let sst_nh = state.ocean_temps[0][0];
         let sst_sh = state.ocean_temps[1][0];
+
+        // Update alpha_eff from end-of-year SST for use in the NEXT annual timestep.
+        // This matches MAGICC7: alpha_eff is set once per year from the previous
+        // year's final SST, not recalculated each monthly substep.
+        let alpha = self.parameters.temp_adjust_alpha;
+        state.alpha_eff[0] = if sst_nh.abs() < 1e-15 {
+            alpha
+        } else {
+            self.sst_to_air_temperature(sst_nh) / sst_nh
+        };
+        state.alpha_eff[1] = if sst_sh.abs() < 1e-15 {
+            alpha
+        } else {
+            self.sst_to_air_temperature(sst_sh) / sst_sh
+        };
+
         let t_air_nho = self.sst_to_air_temperature(sst_nh);
         let t_air_sho = self.sst_to_air_temperature(sst_sh);
         let t_air_nhl = state.land_temps[0];
@@ -526,6 +564,9 @@ impl Component for ClimateUDEB {
         Box::new(ClimateUDEBState::new(
             self.parameters.n_layers,
             self.parameters.w_initial,
+            self.parameters.temp_adjust_alpha,
+            self.parameters.kappa_m2_per_yr(),
+            self.parameters.layer_thickness,
         ))
     }
 
@@ -558,6 +599,9 @@ mod tests {
         ClimateUDEBState::new(
             component.parameters.n_layers,
             component.parameters.w_initial,
+            component.parameters.temp_adjust_alpha,
+            component.parameters.kappa_m2_per_yr(),
+            component.parameters.layer_thickness,
         )
     }
 
@@ -617,8 +661,9 @@ mod tests {
             dt,
             component.lambda_ocean,
             component.lambda_land,
-            0.0, // other hemisphere SST
-            0.0, // ground temp
+            0.0,                                    // other hemisphere SST
+            0.0,                                    // ground temp
+            component.parameters.temp_adjust_alpha, // alpha_eff (initial value, SST=0)
         );
 
         assert!(

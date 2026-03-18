@@ -48,11 +48,70 @@ pub struct ClimateUDEBState {
     /// Index 0 = NH, 1 = SH.
     #[serde(default)]
     pub ground_temps: [FloatValue; 2],
+
+    /// Effective SST-to-air-temperature ratio for each hemisphere.
+    /// Computed once per annual timestep from the end-of-year SST, then held
+    /// fixed for all monthly substeps of the following year (MAGICC7 behaviour).
+    /// Index 0 = NH, 1 = SH.
+    #[serde(default)]
+    pub alpha_eff: [FloatValue; 2],
+
+    /// Initial equilibrium ocean temperature profile (K).
+    ///
+    /// Computed once at initialization using an exponential profile
+    /// (MAGICC7 CORE_SWITCH_OCN_TEMPPROFILE=1). Index 0 is the mixed layer.
+    /// Used to compute variable upwelling correction terms in the tridiagonal RHS.
+    #[serde(default)]
+    pub initial_ocean_profile: Vec<FloatValue>,
+
+    /// Initial temperature of polar sinking water (K).
+    /// MAGICC7 default: 1.0 K.
+    #[serde(default = "default_polar_sinking_temp")]
+    pub polar_sinking_temp: FloatValue,
+
+    /// Initial mixed-layer temperature for the exponential profile (K).
+    /// MAGICC7 default: 17.2 K.
+    #[serde(default = "default_mixed_layer_initial_temp")]
+    pub mixed_layer_initial_temp: FloatValue,
+}
+
+fn default_polar_sinking_temp() -> FloatValue {
+    1.0
+}
+
+fn default_mixed_layer_initial_temp() -> FloatValue {
+    17.2
 }
 
 impl ClimateUDEBState {
-    /// Create a new state for a given number of layers and initial upwelling rate.
-    pub fn new(n_layers: usize, w_initial: FloatValue) -> Self {
+    /// Create a new state for a given number of layers and initial conditions.
+    ///
+    /// `alpha_initial` is the SST-to-air-temperature ratio used before any
+    /// ocean temperature has developed (i.e. `temp_adjust_alpha` from parameters).
+    /// `kappa_m2_per_yr` is the base vertical diffusivity in m2/yr used to
+    /// compute the exponential initial ocean profile.
+    /// `layer_thickness` is the thickness of deep layers in metres.
+    pub fn new(
+        n_layers: usize,
+        w_initial: FloatValue,
+        alpha_initial: FloatValue,
+        kappa_m2_per_yr: FloatValue,
+        layer_thickness: FloatValue,
+    ) -> Self {
+        let t_mix = 17.2_f64;
+        let t_polar = 1.0_f64;
+
+        let mut initial_ocean_profile = vec![0.0; n_layers];
+        initial_ocean_profile[0] = t_mix;
+        for l in 1..n_layers {
+            // Depth from the bottom of the mixed layer to the centre of layer l.
+            // Fortran layer l (1-based, l>=2) maps to Rust index l (0-based, l>=1).
+            // depth_from_bottom_mixed = (l - 1) * dz + 0.5 * dz (Fortran: (l-2)*dz + 0.5*dz for l>=2)
+            let depth = (l as f64 - 1.0) * layer_thickness + 0.5 * layer_thickness;
+            initial_ocean_profile[l] =
+                t_polar + (t_mix - t_polar) * (-w_initial * depth / kappa_m2_per_yr).exp();
+        }
+
         Self {
             ocean_temps: vec![vec![0.0; n_layers]; 2],
             upwelling_rates: [w_initial; 2],
@@ -61,6 +120,10 @@ impl ClimateUDEBState {
             dt_history: Vec::new(),
             land_temps: [0.0; 2],
             ground_temps: [0.0; 2],
+            alpha_eff: [alpha_initial; 2],
+            initial_ocean_profile,
+            polar_sinking_temp: t_polar,
+            mixed_layer_initial_temp: t_mix,
         }
     }
 }
