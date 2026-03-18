@@ -148,9 +148,9 @@ class PhasedComparisonResult:
                     {
                         "test": self.label,
                         "phase": p.name,
-                        "threshold": p.rtol,
-                        "actual": p.max_rel_err,
-                        "mean_bias": p.mean_rel_err,
+                        "threshold": f"{p.rtol:.4g}",
+                        "actual": f"{p.max_rel_err:.4g}",
+                        "mean_bias": f"{p.mean_rel_err:.4g}",
                         "n_points": p.n_points,
                         "pass": p.passed,
                         "bias_sign": self.bias_sign,
