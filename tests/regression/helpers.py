@@ -168,6 +168,11 @@ class PhasedComparisonResult:
 _collected_results: list[PhasedComparisonResult] = []
 
 
+def clear_collected_results() -> None:
+    """Empty the module-level results collector to avoid stale data across runs."""
+    _collected_results.clear()
+
+
 def compute_phased_metrics(  # noqa: PLR0913
     actual: np.ndarray,
     expected: np.ndarray,
@@ -254,6 +259,12 @@ def compute_phased_metrics(  # noqa: PLR0913
         _phase("converge", c_start, f_start, converge_rtol),
         _phase("final", f_start, n, final_rtol),
     ]
+
+    total_points = sum(p.n_points for p in phases)
+    if total_points == 0:
+        label = f"{name}: " if name else ""
+        msg = f"{label}no points compared (all phases empty after skip={skip})"
+        raise AssertionError(msg)
 
     # Overall bias direction from the convergence phase
     converge_mean = phases[2].mean_rel_err if phases[2].n_points > 0 else 0.0

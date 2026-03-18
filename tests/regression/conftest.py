@@ -20,6 +20,13 @@ CSV_FIELDS = [
 ]
 
 
+def pytest_sessionstart(session):
+    """Clear any stale parity results from prior runs in the same process."""
+    from regression.helpers import clear_collected_results  # noqa: PLC0415
+
+    clear_collected_results()
+
+
 def pytest_sessionfinish(session, exitstatus):
     """Write collected regression parity results to CSV after all tests."""
     from regression.helpers import _collected_results  # noqa: PLC0415
