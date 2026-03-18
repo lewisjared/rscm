@@ -30,6 +30,7 @@ import numpy.testing as npt
 import pytest
 
 from regression.helpers import (
+    assert_allclose_phased,
     fourbox_global_mean,
     get_variable_values,
     load_regression_data,
@@ -45,8 +46,8 @@ from rscm._lib.magicc import ClimateUDEBBuilder
 from rscm.core import ModelBuilder
 
 SUITE = "ocean_udeb"
-DEFAULT_RTOL = 3e-2
 DEFAULT_ATOL = 1e-6
+DEFAULT_RTOL = 3e-2
 
 
 def load_data(name: str):
@@ -152,30 +153,40 @@ def construct_step_forcing(
     return np.where(years >= step_year, rf_2xco2, 0.0)
 
 
-def run_ocean_scenario(
+def run_ocean_scenario(  # noqa: PLR0913
     name: str,
-    rtol: float = 0.1,
-    skip_years: int = 5,
+    *,
+    shock_rtol: float = DEFAULT_RTOL,
+    converge_rtol: float = 2e-2,
+    final_rtol: float = 2e-2,
+    skip: int = 5,
+    shock_end: int = 25,
+    converge_start: int = 55,
 ) -> None:
     """
     Run an ocean regression scenario and compare surface temperature.
 
     Loads reference data, constructs step forcing from the config,
     builds and runs the RSCM model, then compares the global mean
-    surface temperature against the MAGICC reference.
+    surface temperature against the MAGICC reference using phased
+    tolerances (shock, convergence, final).
 
     Parameters
     ----------
     name
         Scenario name (e.g., "02_constant_upwelling")
-    rtol
-        Relative tolerance for the comparison
-    skip_years
-        Number of initial years to skip in the comparison. RSCM uses
-        start-of-step forcing (get() -> at_start()), so the first
-        non-zero forcing step is 1851->1852 while MAGICC ramps forcing
-        within the 1850->1851 step.  This creates a ~1 year forcing
-        deficit that dominates the first few years. Default 5.
+    shock_rtol
+        Relative tolerance for the shock and transition phases.
+    converge_rtol
+        Relative tolerance for the convergence phase.
+    final_rtol
+        Relative tolerance for the last 20 indices.
+    skip
+        Initial indices to skip (step forcing onset transient).
+    shock_end
+        End of shock phase (index).
+    converge_start
+        Start of convergence phase (index).
     """
     df, config = load_data(name)
     years, expected_temp = get_variable_values(df, "Surface Temperature")
@@ -191,17 +202,17 @@ def run_ocean_scenario(
     assert temp_4box is not None, "Surface Temperature not found in results"
     actual_temp = fourbox_global_mean(temp_4box.values())
 
-    # Skip the first few years where step forcing onset causes transient
-    # mismatch.  RSCM uses start-of-step forcing (get() -> at_start()),
-    # so the first non-zero forcing step is 1851->1852 while MAGICC ramps
-    # forcing within the 1850->1851 step.
-    s = skip_years
-    npt.assert_allclose(
-        actual_temp[s:],
-        expected_temp[s:],
-        rtol=rtol,
+    assert_allclose_phased(
+        actual_temp,
+        expected_temp,
+        skip=skip,
+        shock_end=shock_end,
+        converge_start=converge_start,
+        shock_rtol=shock_rtol,
+        converge_rtol=converge_rtol,
+        final_rtol=final_rtol,
         atol=DEFAULT_ATOL,
-        err_msg=f"Surface temperature mismatch for {name} (skipping first {s} years)",
+        name=name,
     )
 
 
@@ -213,7 +224,7 @@ def test_ocean_01_diffusion_only():
     downward, no upwelling circulation. Tests the core tridiagonal
     diffusion solver in isolation.
     """
-    run_ocean_scenario("01_diffusion_only", rtol=DEFAULT_RTOL)
+    run_ocean_scenario("01_diffusion_only", final_rtol=5e-3)
 
 
 def test_ocean_02_constant_upwelling():
@@ -224,7 +235,7 @@ def test_ocean_02_constant_upwelling():
     Variable fraction is zero so upwelling rate does not change
     with temperature.
     """
-    run_ocean_scenario("02_constant_upwelling", rtol=DEFAULT_RTOL)
+    run_ocean_scenario("02_constant_upwelling", final_rtol=5e-3)
 
 
 def test_ocean_03_depth_dependent_area():
@@ -234,12 +245,10 @@ def test_ocean_03_depth_dependent_area():
     Enables the hypsometric profile so the ocean basin narrows with
     depth, affecting diffusive and advective heat transport.
     """
-    run_ocean_scenario("03_depth_dependent_area", rtol=DEFAULT_RTOL)
+    run_ocean_scenario("03_depth_dependent_area")
 
 
-@pytest.mark.xfail(
-    reason="Missing variable upwelling profile correction terms from MAGICC7"
-)
+@pytest.mark.xfail(reason="~10% warm bias from variable upwelling treatment (see #108)")
 def test_ocean_04_variable_upwelling():
     """
     Test 04: Variable (temperature-dependent) upwelling.
@@ -247,7 +256,7 @@ def test_ocean_04_variable_upwelling():
     Upwelling rate decreases as surface temperature anomaly increases,
     simulating AMOC slowdown. 70% of the upwelling is variable.
     """
-    run_ocean_scenario("04_variable_upwelling", rtol=DEFAULT_RTOL)
+    run_ocean_scenario("04_variable_upwelling")
 
 
 def test_ocean_05_temp_dependent_diffusivity():
@@ -257,7 +266,7 @@ def test_ocean_05_temp_dependent_diffusivity():
     Vertical diffusivity decreases as the ocean stratifies (vertical
     temperature gradient increases), parameterised by kappa_dkdt.
     """
-    run_ocean_scenario("05_temp_dependent_diffusivity", rtol=DEFAULT_RTOL)
+    run_ocean_scenario("05_temp_dependent_diffusivity")
 
 
 def test_ocean_06_ground_heat():
@@ -267,11 +276,10 @@ def test_ocean_06_ground_heat():
     Enables the land heat capacity damping, where a ground reservoir
     absorbs and releases heat from the land surface.
 
-    Uses skip_years=15 because the ground heat coupling amplifies the
-    step forcing onset transient (same physical cause as other tests
-    but more pronounced due to the extra damping pathway).
+    Uses wider shock tolerance because the ground heat coupling
+    amplifies the step forcing onset transient.
     """
-    run_ocean_scenario("06_ground_heat", rtol=DEFAULT_RTOL, skip_years=15)
+    run_ocean_scenario("06_ground_heat", shock_rtol=5e-2, skip=15)
 
 
 def test_ocean_07_interhemispheric_exchange():
@@ -281,7 +289,7 @@ def test_ocean_07_interhemispheric_exchange():
     Enables North-South heat exchange between ocean boxes,
     parameterised by k_ns.
     """
-    run_ocean_scenario("07_interhemispheric_exchange", rtol=DEFAULT_RTOL)
+    run_ocean_scenario("07_interhemispheric_exchange")
 
 
 @pytest.mark.xfail(reason="Short run dominated by step forcing onset transient")
@@ -360,7 +368,7 @@ def test_ocean_09_time_varying_ecs():
     sensitivity evolves over time based on cumulative temperature and
     forcing level.
     """
-    run_ocean_scenario("09_time_varying_ecs", rtol=DEFAULT_RTOL)
+    run_ocean_scenario("09_time_varying_ecs")
 
 
 @pytest.mark.xfail(reason="Ramp forcing amplifies relative error at small early values")
