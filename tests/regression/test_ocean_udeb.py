@@ -261,7 +261,7 @@ def test_ocean_03_depth_dependent_area():
 
 
 @pytest.mark.xfail(
-    reason="~8% cool bias from variable upwelling + area interaction (#108)"
+    reason="~8% cool bias from approximate equilibrium profile with area factors (#108)"
 )
 def test_ocean_04_variable_upwelling():
     """
