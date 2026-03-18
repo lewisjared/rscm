@@ -26,11 +26,11 @@ Test scenarios:
 from __future__ import annotations
 
 import numpy as np
-import numpy.testing as npt
 import pytest
 
 from regression.helpers import (
     assert_allclose_phased,
+    assert_allclose_recorded,
     fourbox_global_mean,
     get_variable_values,
     load_regression_data,
@@ -353,12 +353,14 @@ def test_ocean_08_sst_to_sat():
     assert temp_4box is not None, "Surface Temperature not found in results"
     actual_temp = fourbox_global_mean(temp_4box.values())
 
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_temp,
         expected_temp,
         rtol=0.1,
         atol=DEFAULT_ATOL,
-        err_msg="Surface temperature mismatch for ocean_08_sst_to_sat",
+        suite="ocean_udeb",
+        name="08_sst_to_sat",
+        variable="Surface Temperature",
     )
 
 
@@ -443,10 +445,12 @@ def test_ocean_10_full_default():
     assert temp_4box is not None, "Surface Temperature not found in results"
     actual_temp = fourbox_global_mean(temp_4box.values())
 
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_temp,
         expected_temp,
         rtol=0.1,
         atol=DEFAULT_ATOL,
-        err_msg="Surface temperature mismatch for ocean_10_full_default (1pctCO2)",
+        suite="ocean_udeb",
+        name="10_full_default",
+        variable="Surface Temperature",
     )
