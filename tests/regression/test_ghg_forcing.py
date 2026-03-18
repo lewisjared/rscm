@@ -24,6 +24,7 @@ import pytest
 
 from regression.helpers import (
     assert_allclose_phased,
+    assert_allclose_recorded,
     fourbox_global_mean,
     get_variable_values,
     load_regression_data,
@@ -281,26 +282,26 @@ def test_01_concentration_driven():
     ).values()[1:]
 
     # Compare ERF outputs against MAGICC7 reference
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_co2,
         expected_erf_co2[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="CO2 ERF mismatch (IPCCTAR method)",
+        name="ghg/01_ipcctar/ERF|CO2",
     )
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_ch4,
         expected_erf_ch4[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="CH4 ERF mismatch (IPCCTAR method)",
+        name="ghg/01_ipcctar/ERF|CH4",
     )
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_n2o,
         expected_erf_n2o[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="N2O ERF mismatch (IPCCTAR method)",
+        name="ghg/01_ipcctar/ERF|N2O",
     )
 
 
@@ -358,26 +359,26 @@ def test_02_ghg_forcing_olbl():
     ).values()[1:]
 
     # Compare ERF outputs against MAGICC7 reference
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_co2,
         expected_erf_co2[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="CO2 ERF mismatch (OLBL method)",
+        name="ghg/02_olbl/ERF|CO2",
     )
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_ch4,
         expected_erf_ch4[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="CH4 ERF mismatch (OLBL method)",
+        name="ghg/02_olbl/ERF|CH4",
     )
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_n2o,
         expected_erf_n2o[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="N2O ERF mismatch (OLBL method)",
+        name="ghg/02_olbl/ERF|N2O",
     )
 
 
@@ -662,46 +663,46 @@ def test_03_emissions_driven():
     actual_co2 = results.get_timeseries_by_name(
         "Atmospheric Concentration|CO2"
     ).values()[1:]
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_co2,
         expected_co2_conc[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        err_msg="CO2 concentration mismatch",
+        name="ghg/03_emissions/Conc|CO2",
     )
 
     # Compare CH4 concentration
     actual_ch4 = results.get_timeseries_by_name(
         "Atmospheric Concentration|CH4"
     ).values()[1:]
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_ch4,
         expected_ch4_conc[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        err_msg="CH4 concentration mismatch",
+        name="ghg/03_emissions/Conc|CH4",
     )
 
     # Compare N2O concentration
     actual_n2o = results.get_timeseries_by_name(
         "Atmospheric Concentration|N2O"
     ).values()[1:]
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_n2o,
         expected_n2o_conc[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        err_msg="N2O concentration mismatch",
+        name="ghg/03_emissions/Conc|N2O",
     )
 
     # Compare Sea Surface Temperature (scalar proxy for global mean)
     actual_sst = results.get_timeseries_by_name("Sea Surface Temperature").values()[1:]
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_sst,
         expected_temp[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        err_msg="Temperature mismatch",
+        name="ghg/03_emissions/Temperature",
     )
 
 

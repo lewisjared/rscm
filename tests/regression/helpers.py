@@ -279,6 +279,9 @@ def assert_allclose_phased(  # noqa: PLR0913
         name=name,
     )
 
+    # Record before asserting so xfail tests still capture metrics
+    _collected_results.append(result)
+
     prefix = f"{name}: " if name else ""
     for phase in result.phases:
         if phase.n_points > 0 and not phase.passed:
@@ -292,5 +295,30 @@ def assert_allclose_phased(  # noqa: PLR0913
                 ),
             )
 
-    _collected_results.append(result)
     return result
+
+
+def assert_allclose_recorded(
+    actual: np.ndarray,
+    expected: np.ndarray,
+    *,
+    rtol: float = 1e-5,
+    atol: float = 1e-6,
+    name: str = "",
+) -> None:
+    """
+    Assert allclose and record the result for CSV reporting.
+
+    For simple single-tolerance comparisons (e.g. GHG forcing ERF).
+    """
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rel_err = np.where(np.abs(expected) > atol, (actual - expected) / expected, 0.0)
+
+    max_err = float(np.max(np.abs(rel_err)))
+    mean_err = float(np.mean(rel_err))
+    phase = PhaseResult("all", rtol, max_err, mean_err, len(actual))
+    bias = "warm" if mean_err > 0 else "cool"
+    result = PhasedComparisonResult(label=name, phases=[phase], bias_sign=bias)
+    _collected_results.append(result)
+
+    npt.assert_allclose(actual, expected, rtol=rtol, atol=atol, err_msg=name)
