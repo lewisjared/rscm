@@ -1,131 +1,74 @@
-# Time Conventions: MAGICC7 vs RSCM
+# ClimateUDEB Time Conventions
 
-This document describes the sub-annual time-stepping conventions used by
-MAGICC7 and RSCM, and the implications for numerical agreement.
+Sub-annual time-stepping and output conventions for the ClimateUDEB
+ocean-atmosphere energy balance model.
 
-## MAGICC7 Sub-Annual Time Structure
+## Annual Timestep
 
-MAGICC7 uses monthly sub-stepping (STEPSPERYEAR = 12) with an **overlapping**
-year boundary scheme.
+The RSCM framework calls `solve(t_current, t_next, input_state)` once per year.
+`t_current` and `t_next` are decimal years (e.g. 1750.0, 1751.0). The component
+receives forcing at both boundaries and returns temperature at `t_next`.
 
-### Time axis
+## Sub-Annual Stepping
 
-The sub-annual time axis is constructed as:
-
-```
-alltimes_d(idx) = year + (step - 1) / 12
-```
-
-For year 1750: `1750.0, 1750.083, 1750.167, ..., 1750.917`
-For year 1751: `1751.0, 1751.083, 1751.167, ..., 1751.917`
-
-Note: These are the times at which forcing is queried. For a normal year
-running steps 1..12, forcing is queried at the time indices corresponding to
-`year+0/12` through `year+11/12` (steps 1..12 of the year's allocation in
-`alltimes_d`). However, step 12 of year N actually uses the index that falls
-at `(year+1)+0/12 = year+1.0` due to the overlapping scheme (see below).
-
-### Substep loop
-
-The loop for each year runs `CURRENT_STEP = STARTSTEP` to `ENDSTEP`:
-
-- **First year (year_idx=1):** `STARTSTEP=0`, `ENDSTEP=12` (13 substeps)
-- **Normal years:** `STARTSTEP=1`, `ENDSTEP=12` (12 substeps)
-- **Last year (year_idx=NYEARS):** `STARTSTEP=1`, `ENDSTEP=11` (11 substeps)
-
-Reference: MAGICC7.f90 lines 2702-2716
-
-The **overlapping scheme** means:
-
-- Year 1 runs steps 0..12 → covers times 1750.0 to 1751.0 (13 substeps)
-- Year 2 runs steps 1..12 → covers times 1751.083 to 1752.0 (12 substeps)
-- Year 3 runs steps 1..12 → covers times 1752.083 to 1753.0 (12 substeps)
-
-Step 12 of year N occurs at time `(N+1) + 0/12 = N+1.0`, which is also the
-location of step 0 for year N+1 (if it existed). The "January of next year"
-step is **included** in the current year's loop, not the next year's.
-
-### Forcing interpolation
-
-Forcing is interpolated to each substep time:
-
-```fortran
-q = datastore_get_box_with_interpolation(dat_total_effrf, alltimes_d(current_time_idx))
-```
-
-Reference: MAGICC7.f90 line 2724
-
-### Temperature outputs
-
-MAGICC7 produces two temperature outputs:
-
-1. **`DAT_SURFACE_TEMP`** (point-in-time):
-   - Stored at `NEXT_YEAR_IDX = CURRENT_YEAR_IDX + 1`
-   - Value is `CURRENT_TIME_TEMPERATURE` after the **last substep** (step 12)
-   - Represents the temperature at January 1 of the next year
-   - Reference: MAGICC7.f90 line 3462
-
-2. **`DAT_SURFACE_ANNUALMEANTEMP`** (annual mean):
-   - Stored at `CURRENT_YEAR_IDX`
-   - Arithmetic mean of `THISYEAR_TEMPERATURE_STEPS(1:12, :)`
-   - Note: step 0 (when it exists) is **excluded** from the average
-   - Reference: MAGICC7.f90 lines 3426-3428
-
-The standard output (`OUT_TEMPERATURE`) writes `DAT_SURFACE_TEMP` (point-in-time).
-
-## RSCM Sub-Annual Time Structure
-
-RSCM runs a fixed 12 substeps per year, with forcing times aligned to
-MAGICC7's normal-year convention (steps 1..12).
-
-### Substep loop
+ClimateUDEB divides each annual timestep into 12 monthly substeps (matching
+MAGICC7's `STEPSPERYEAR = 12`). The substep loop runs from step 1 to step 12:
 
 ```rust
 for step_idx in 1..=self.parameters.steps_per_year {
-    // 12 substeps: step 1, 2, ..., 12
+    let frac = step_idx as FloatValue / steps;
+    let erf = erf_start + frac * (erf_end - erf_start);
+    // ... solve ocean diffusion-advection ...
 }
 ```
 
 ### Forcing interpolation
 
-```rust
-let frac = step_idx as FloatValue / steps;
-let erf = erf_start + frac * (erf_end - erf_start);
-```
+Forcing is linearly interpolated between the annual boundaries at each substep:
 
-- Step 1: `erf_start + 1/12 * (erf_end - erf_start)` (forcing at t_current + 1/12)
-- Step 12: `erf_end` (forcing at t_next)
+| Step | Fraction | Forcing time | Value |
+|------|----------|-------------|-------|
+| 1 | 1/12 | t_current + 1/12 | erf_start + 1/12 * (erf_end - erf_start) |
+| 2 | 2/12 | t_current + 2/12 | erf_start + 2/12 * (erf_end - erf_start) |
+| ... | ... | ... | ... |
+| 12 | 12/12 | t_next | erf_end |
+
+The last substep uses forcing at exactly `t_next`.
 
 ### Temperature output
 
-The output from `solve_impl` is the temperature after the last substep (step 12).
-This represents the temperature at `t_next`, matching MAGICC7's `DAT_SURFACE_TEMP`
-(point-in-time at January 1 of the next year).
+The output from `solve_impl` is the temperature after the last substep (step 12),
+representing the state at `t_next` (January 1 of the next year). This is a
+**point-in-time** value, not an annual mean.
 
-## Resolved: Substep Forcing Timing
+## Known Differences from MAGICC7
 
-The original RSCM implementation used steps 0..11 with forcing at
-`year+0/12` through `year+11/12`, stopping 1/12 year short of the
-year boundary. This was resolved by shifting to steps 1..12 with
-forcing at `year+1/12` through `year+12/12`, matching MAGICC7's
-normal-year convention.
+### First-year boundary handling
 
-## Remaining Differences
+MAGICC7 uses an overlapping year boundary scheme where the first year runs 13
+substeps (steps 0..12) instead of the normal 12 (steps 1..12). Step 0 covers
+the initial boundary at the start of the simulation. RSCM always runs exactly
+12 substeps. This affects the initial transient ("shock" phase) but has
+negligible impact on converged temperatures.
 
-| Aspect | MAGICC7 | RSCM | Impact |
-|--------|---------|------|--------|
-| Substeps per year (normal) | 12 (steps 1..12) | 12 (steps 1..12) | Matched |
-| Last substep forcing time | `year+12/12 = year+1.0` | `year+12/12 = year+1.0` | Matched |
-| Output temperature time | January 1 of next year | t_next (= January 1 of next year) | Matched |
-| First year substeps | 13 (steps 0..12) | 12 (steps 1..12) | MAGICC7 has extra step |
+Reference: MAGICC7.f90 lines 2702-2716
 
-The remaining first-year difference (13 vs 12 substeps) affects the initial
-transient ("shock" phase) but has negligible impact on converged temperatures.
+### Last-year boundary handling
 
-## Potential Future Improvements
+MAGICC7 runs only 11 substeps in the final year (steps 1..11). RSCM always
+runs 12. This has minimal impact since the final year is typically well past
+the transient phase.
 
-1. **Add an extra substep for the first year** (matching MAGICC7's 13-step first year):
-   Only affects initial transient but may help shock-phase parity.
+### Temperature output semantics
 
-2. **Report annual mean** instead of point-in-time: Would need to accumulate
-   substep temperatures and average. Only needed if reference data uses annual means.
+MAGICC7 produces two temperature variables:
+
+- `DAT_SURFACE_TEMP`: Point-in-time at the end of the year (January 1 of next
+  year). This is the standard output written by `OUT_TEMPERATURE`.
+- `DAT_SURFACE_ANNUALMEANTEMP`: Arithmetic mean of the 12 substep temperatures
+  within the year.
+
+RSCM outputs point-in-time values, matching `DAT_SURFACE_TEMP`. Annual means
+are not currently computed.
+
+Reference: MAGICC7.f90 lines 3426-3464
