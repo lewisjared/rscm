@@ -319,13 +319,13 @@ impl ClimateUDEB {
         let inputs = ClimateUDEBInputs::from_input_state(input_state);
 
         // MAGICC7 interpolates forcing at each sub-annual time point:
-        //   q(step) = ERF(year + (step-1)/steps_per_year)
+        //   q(step) = ERF(year + step/steps_per_year)
         // We store start and end forcing and linearly interpolate per substep.
         //
         // Note: erf_start is the forcing at t_current (start of year),
         // erf_end is the forcing at t_next (start of next year).
         // MAGICC7's substep loop runs from step 1..12, with forcing times
-        // at year+0/12, year+1/12, ..., year+11/12.
+        // at year+1/12, year+2/12, ..., year+12/12 (= t_next).
         let erf_start = inputs.total_erf.at_start();
         let erf_end = inputs.total_erf.at_end().unwrap_or(erf_start);
         let steps = self.parameters.steps_per_year as FloatValue;

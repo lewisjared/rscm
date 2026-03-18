@@ -19,6 +19,12 @@ alltimes_d(idx) = year + (step - 1) / 12
 For year 1750: `1750.0, 1750.083, 1750.167, ..., 1750.917`
 For year 1751: `1751.0, 1751.083, 1751.167, ..., 1751.917`
 
+Note: These are the times at which forcing is queried. For a normal year
+running steps 1..12, forcing is queried at the time indices corresponding to
+`year+0/12` through `year+11/12` (steps 1..12 of the year's allocation in
+`alltimes_d`). However, step 12 of year N actually uses the index that falls
+at `(year+1)+0/12 = year+1.0` due to the overlapping scheme (see below).
+
 ### Substep loop
 
 The loop for each year runs `CURRENT_STEP = STARTSTEP` to `ENDSTEP`:
@@ -69,13 +75,14 @@ The standard output (`OUT_TEMPERATURE`) writes `DAT_SURFACE_TEMP` (point-in-time
 
 ## RSCM Sub-Annual Time Structure
 
-RSCM runs a fixed 12 substeps per year with no overlapping scheme.
+RSCM runs a fixed 12 substeps per year, with forcing times aligned to
+MAGICC7's normal-year convention (steps 1..12).
 
 ### Substep loop
 
 ```rust
-for step_idx in 0..self.parameters.steps_per_year {
-    // 12 substeps: step 0, 1, ..., 11
+for step_idx in 1..=self.parameters.steps_per_year {
+    // 12 substeps: step 1, 2, ..., 12
 }
 ```
 
@@ -86,37 +93,39 @@ let frac = step_idx as FloatValue / steps;
 let erf = erf_start + frac * (erf_end - erf_start);
 ```
 
-- Step 0: `erf_start` (forcing at t_current)
-- Step 11: `erf_start + 11/12 * (erf_end - erf_start)` (forcing at t_current + 11/12)
+- Step 1: `erf_start + 1/12 * (erf_end - erf_start)` (forcing at t_current + 1/12)
+- Step 12: `erf_end` (forcing at t_next)
 
 ### Temperature output
 
-The output from `solve_impl` is the temperature after the last substep (step 11).
-This represents the temperature at `t_current + 11/12`, NOT at `t_next`.
+The output from `solve_impl` is the temperature after the last substep (step 12).
+This represents the temperature at `t_next`, matching MAGICC7's `DAT_SURFACE_TEMP`
+(point-in-time at January 1 of the next year).
 
-## The Timing Mismatch
+## Resolved: Substep Forcing Timing
 
-| Aspect | MAGICC7 | RSCM | Difference |
-|--------|---------|------|------------|
-| Substeps per year (normal) | 12 (steps 1..12) | 12 (steps 0..11) | Same count |
-| Last substep forcing time | `year + 12/12 = year+1.0` | `year + 11/12` | 1/12 year later in MAGICC7 |
-| Output temperature time | January 1 of next year | ~December 1 of current year | ~1 month offset |
-| First year substeps | 13 (steps 0..12) | 12 (steps 0..11) | MAGICC7 has extra step |
-| Energy input (normal year) | Forcing at steps 1..12 | Forcing at steps 0..11 | RSCM starts earlier, ends earlier |
+The original RSCM implementation used steps 0..11 with forcing at
+`year+0/12` through `year+11/12`, stopping 1/12 year short of the
+year boundary. This was resolved by shifting to steps 1..12 with
+forcing at `year+1/12` through `year+12/12`, matching MAGICC7's
+normal-year convention.
 
-The net effect: RSCM's output temperature is ~1 month behind MAGICC7's.
-For slowly-varying forcing this is negligible, but during rapid forcing changes
-(the "shock" phase), this creates a systematic cool bias because RSCM
-hasn't integrated the final month's worth of forcing.
+## Remaining Differences
 
-## Resolution Options
+| Aspect | MAGICC7 | RSCM | Impact |
+|--------|---------|------|--------|
+| Substeps per year (normal) | 12 (steps 1..12) | 12 (steps 1..12) | Matched |
+| Last substep forcing time | `year+12/12 = year+1.0` | `year+12/12 = year+1.0` | Matched |
+| Output temperature time | January 1 of next year | t_next (= January 1 of next year) | Matched |
+| First year substeps | 13 (steps 0..12) | 12 (steps 1..12) | MAGICC7 has extra step |
 
-1. **Run 12 substeps from step 1 to step 12** (matching MAGICC7's normal year):
-   Interpolate forcing at `year + step/12` for step=1..12, not step=0..11.
-   This shifts the forcing window to end at t_next instead of stopping 1/12 short.
+The remaining first-year difference (13 vs 12 substeps) affects the initial
+transient ("shock" phase) but has negligible impact on converged temperatures.
 
-2. **Add an extra substep for the first year** (matching MAGICC7's 13-step first year):
+## Potential Future Improvements
+
+1. **Add an extra substep for the first year** (matching MAGICC7's 13-step first year):
    Only affects initial transient but may help shock-phase parity.
 
-3. **Report annual mean** instead of point-in-time: Would need to accumulate
+2. **Report annual mean** instead of point-in-time: Would need to accumulate
    substep temperatures and average. Only needed if reference data uses annual means.
