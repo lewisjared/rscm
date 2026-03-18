@@ -318,14 +318,17 @@ impl ClimateUDEB {
 
         let inputs = ClimateUDEBInputs::from_input_state(input_state);
 
-        // Use timestep-average forcing for better agreement with MAGICC's
-        // within-step concentration interpolation.  For constant forcing this
-        // is identical to at_start(); for a step onset it halves the
-        // transition step, matching MAGICC's sub-annual forcing ramp.
+        // MAGICC7 interpolates forcing at each sub-annual time point:
+        //   q(step) = ERF(year + step/steps_per_year)
+        // We store start and end forcing and linearly interpolate per substep.
+        //
+        // Note: erf_start is the forcing at t_current (start of year),
+        // erf_end is the forcing at t_next (start of next year).
+        // MAGICC7's substep loop runs from step 1..12, with forcing times
+        // at year+1/12, year+2/12, ..., year+12/12 (= t_next).
         let erf_start = inputs.total_erf.at_start();
         let erf_end = inputs.total_erf.at_end().unwrap_or(erf_start);
-        let erf = (erf_start + erf_end) / 2.0;
-        let forcing = FourBoxSlice::from_array([erf, erf, erf, erf]);
+        let steps = self.parameters.steps_per_year as FloatValue;
 
         // Get previous surface temperature state
         let prev_temp = FourBoxSlice::from_array([
@@ -358,8 +361,9 @@ impl ClimateUDEB {
         let dt_year = t_next - t_current;
         let dt_sub = dt_year / self.parameters.steps_per_year as FloatValue;
 
-        // Time-varying ECS adjustment
-        let adjusted_ecs = self.adjusted_ecs(erf, state);
+        // Time-varying ECS uses midpoint forcing (average of start and end)
+        let erf_mid = (erf_start + erf_end) / 2.0;
+        let adjusted_ecs = self.adjusted_ecs(erf_mid, state);
 
         let (current_lambda_ocean, current_lambda_land) =
             if (adjusted_ecs - self.parameters.ecs).abs() > 1e-10 {
@@ -402,8 +406,16 @@ impl ClimateUDEB {
         let alpha_eff_nh = state.alpha_eff[0];
         let alpha_eff_sh = state.alpha_eff[1];
 
-        // Monthly sub-stepping
-        for _ in 0..self.parameters.steps_per_year {
+        // Monthly sub-stepping with per-substep forcing interpolation.
+        //
+        // MAGICC7 runs steps 1..12 for normal years, with forcing queried at:
+        //   step 1: year + 1/12, step 2: year + 2/12, ..., step 12: year + 12/12
+        // The last substep (step 12) is at t_next (start of next year).
+        // See docs/modules/time_conventions.md for details.
+        for step_idx in 1..=self.parameters.steps_per_year {
+            let frac = step_idx as FloatValue / steps;
+            let erf = erf_start + frac * (erf_end - erf_start);
+            let forcing = FourBoxSlice::from_array([erf, erf, erf, erf]);
             // Update ground heat reservoir temperatures BEFORE the ocean solve
             // (forward Euler, using previous substep's land temperatures).
             //
@@ -514,9 +526,10 @@ impl ClimateUDEB {
         state.temperature_history.push(global_temp * dt_year);
         state.dt_history.push(dt_year);
 
-        // Calculate diagnostics
+        // Calculate diagnostics using end-of-year forcing
+        let forcing_end = FourBoxSlice::from_array([erf_end, erf_end, erf_end, erf_end]);
         let heat_uptake = self.calculate_heat_uptake(
-            &forcing,
+            &forcing_end,
             &surface_temperature,
             current_lambda_ocean,
             current_lambda_land,

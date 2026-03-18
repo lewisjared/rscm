@@ -294,7 +294,6 @@ def test_ocean_07_interhemispheric_exchange():
     run_ocean_scenario("07_interhemispheric_exchange")
 
 
-@pytest.mark.xfail(reason="Short run dominated by step forcing onset transient")
 def test_ocean_08_sst_to_sat():
     """
     Test 08: SST-to-SAT adjustment.
@@ -375,7 +374,6 @@ def test_ocean_09_time_varying_ecs():
     run_ocean_scenario("09_time_varying_ecs")
 
 
-@pytest.mark.xfail(reason="Ramp forcing amplifies relative error at small early values")
 def test_ocean_10_full_default():
     """
     Test 10: Full default MAGICC7 configuration (1pctCO2 scenario).
