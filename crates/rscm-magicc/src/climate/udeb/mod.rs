@@ -391,6 +391,9 @@ impl ClimateUDEB {
             // $$\frac{dT_{ground}}{dt} = \frac{K_{lg} \cdot (T_{land} - T_{ground})}{f_l \cdot C \cdot d_{eff}}$$
             if self.parameters.land_heat_capacity_enabled {
                 for (hemi, &f_l) in [fgnl, fgsl].iter().enumerate() {
+                    if f_l < 1e-15 {
+                        continue;
+                    }
                     let flux =
                         self.parameters.k_lg * (state.land_temps[hemi] - state.ground_temps[hemi]);
                     state.ground_temps[hemi] += flux / (f_l * c_ground) * dt_sub;

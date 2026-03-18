@@ -220,12 +220,20 @@ def compute_phased_metrics(  # noqa: PLR0913
         Variable being compared (e.g. "Surface Temperature", "ERF|CO2").
     """
     n = len(actual)
+    if len(expected) != n:
+        msg = f"length mismatch: actual={n}, expected={len(expected)}"
+        if name:
+            msg = f"{name}: {msg}"
+        raise AssertionError(msg)
+
     with np.errstate(divide="ignore", invalid="ignore"):
         rel_err = np.where(np.abs(expected) > atol, (actual - expected) / expected, 0.0)
 
     s_end = min(shock_end, n)
     c_start = min(converge_start, n)
-    f_start = max(c_start, n - final_years)
+    # Final phase starts from max(skip, n - final_years) so short series
+    # still get final-phase coverage even when n < converge_start.
+    f_start = max(skip, n - final_years)
 
     def _phase(label: str, start: int, end: int, rtol: float) -> PhaseResult:
         if start >= end:
@@ -239,10 +247,11 @@ def compute_phased_metrics(  # noqa: PLR0913
             len(chunk),
         )
 
+    # Convergence stops at f_start so it doesn't overlap with the final phase
     phases = [
         _phase("shock", skip, s_end, shock_rtol),
         _phase("transition", s_end, c_start, shock_rtol),
-        _phase("converge", c_start, n, converge_rtol),
+        _phase("converge", c_start, f_start, converge_rtol),
         _phase("final", f_start, n, final_rtol),
     ]
 
