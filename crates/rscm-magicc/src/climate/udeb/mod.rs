@@ -233,25 +233,33 @@ impl ClimateUDEB {
 
     /// Calculate land temperature from ocean temperature (equilibrium assumption).
     ///
-    /// At equilibrium:
+    /// When ground heat capacity is enabled, the ground reservoir couples into
+    /// the land equilibrium:
     ///
-    /// $$\lambda_l \times T_l \times f_l + K_{lo} \times (T_l - \alpha \times T_o) = Q_l \times f_l$$
+    /// $$\lambda_l f_l T_l + K_{lo}(T_l - \alpha T_o) + K_{lg}(T_l - T_g) = Q_l f_l$$
     ///
     /// Solving for $T_l$:
     ///
-    /// $$T_l = \frac{Q_l \times f_l + K_{lo} \times \alpha \times T_o}{\lambda_l \times f_l + K_{lo}}$$
+    /// $$T_l = \frac{Q_l f_l + K_{lo} \alpha T_o + K_{lg} T_g}{\lambda_l f_l + K_{lo} + K_{lg}}$$
     fn calculate_land_temperature(
         &self,
         ocean_temp: FloatValue,
         land_forcing: FloatValue,
         land_fraction: FloatValue,
         lambda_land: FloatValue,
+        ground_temp: FloatValue,
     ) -> FloatValue {
         let k_lo = self.parameters.k_lo;
         let alpha = self.parameters.amplify_ocean_to_land;
+        let k_lg = if self.parameters.land_heat_capacity_enabled {
+            self.parameters.k_lg
+        } else {
+            0.0
+        };
 
-        let numerator = land_forcing * land_fraction + k_lo * alpha * ocean_temp;
-        let denominator = lambda_land * land_fraction + k_lo;
+        let numerator =
+            land_forcing * land_fraction + k_lo * alpha * ocean_temp + k_lg * ground_temp;
+        let denominator = lambda_land * land_fraction + k_lo + k_lg;
 
         (numerator / denominator).min(self.parameters.max_temperature)
     }
@@ -377,12 +385,24 @@ impl ClimateUDEB {
 
         // Monthly sub-stepping
         for _ in 0..self.parameters.steps_per_year {
+            // Update ground heat reservoir temperatures BEFORE the ocean solve
+            // (forward Euler, using previous substep's land temperatures).
+            //
+            // $$\frac{dT_{ground}}{dt} = \frac{K_{lg} \cdot (T_{land} - T_{ground})}{f_l \cdot C \cdot d_{eff}}$$
+            if self.parameters.land_heat_capacity_enabled {
+                for (hemi, &f_l) in [fgnl, fgsl].iter().enumerate() {
+                    if f_l < 1e-15 {
+                        continue;
+                    }
+                    let flux =
+                        self.parameters.k_lg * (state.land_temps[hemi] - state.ground_temps[hemi]);
+                    state.ground_temps[hemi] += flux / (f_l * c_ground) * dt_sub;
+                }
+            }
+
             // Save start-of-step values for symmetric inter-hemispheric exchange
-            // and explicit ground heat coupling
             let nh_sst_start = state.ocean_temps[0][0];
             let sh_sst_start = state.ocean_temps[1][0];
-            let nh_land_prev = state.land_temps[0];
-            let sh_land_prev = state.land_temps[1];
             let nh_ground = state.ground_temps[0];
             let sh_ground = state.ground_temps[1];
 
@@ -395,7 +415,6 @@ impl ClimateUDEB {
                 current_lambda_ocean,
                 current_lambda_land,
                 sh_sst_start,
-                nh_land_prev,
                 nh_ground,
             );
             let sst_sh = self.step_hemisphere(
@@ -406,11 +425,11 @@ impl ClimateUDEB {
                 current_lambda_ocean,
                 current_lambda_land,
                 nh_sst_start,
-                sh_land_prev,
                 sh_ground,
             );
 
-            // Update land temperatures from new ocean SSTs (equilibrium assumption)
+            // Update land temperatures from new ocean SSTs (equilibrium with
+            // ground reservoir when enabled)
             let t_air_nho = self.sst_to_air_temperature(sst_nh);
             let t_air_sho = self.sst_to_air_temperature(sst_sh);
             state.land_temps[0] = self.calculate_land_temperature(
@@ -418,24 +437,15 @@ impl ClimateUDEB {
                 forcing.get(FourBoxRegion::NorthernLand),
                 fgnl,
                 current_lambda_land,
+                state.ground_temps[0],
             );
             state.land_temps[1] = self.calculate_land_temperature(
                 t_air_sho,
                 forcing.get(FourBoxRegion::SouthernLand),
                 fgsl,
                 current_lambda_land,
+                state.ground_temps[1],
             );
-
-            // Update ground heat reservoir temperatures (forward Euler).
-            //
-            // $$\frac{dT_{ground}}{dt} = \frac{K_{lg} \cdot (T_{land} - T_{ground})}{f_l \cdot C \cdot d_{eff}}$$
-            if self.parameters.land_heat_capacity_enabled {
-                for (hemi, &f_l) in [fgnl, fgsl].iter().enumerate() {
-                    let flux =
-                        self.parameters.k_lg * (state.land_temps[hemi] - state.ground_temps[hemi]);
-                    state.ground_temps[hemi] += flux / (f_l * c_ground) * dt_sub;
-                }
-            }
 
             // Update upwelling based on area-weighted global air temperature
             // (MAGICC7.f90 line 3298: GLOBET = SUM(CURRENT_TIME_TEMPERATURE * GLOBALAREAFRACTIONS))
@@ -608,7 +618,6 @@ mod tests {
             component.lambda_ocean,
             component.lambda_land,
             0.0, // other hemisphere SST
-            0.0, // land temp prev
             0.0, // ground temp
         );
 
@@ -705,6 +714,7 @@ mod tests {
             forcing,
             land_fraction,
             component.lambda_land,
+            0.0, // ground temp
         );
 
         // Land temperature depends on the forcing and heat exchange

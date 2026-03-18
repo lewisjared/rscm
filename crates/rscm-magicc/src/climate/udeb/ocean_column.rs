@@ -55,6 +55,12 @@ impl ClimateUDEB {
     /// with depth-dependent ocean area factors and inter-hemispheric heat
     /// exchange.
     ///
+    /// When ground heat capacity is enabled, $K_{lg}$ is incorporated into
+    /// the coupled land-ocean feedback equations rather than applied as a
+    /// separate correction. This modifies both the feedback parameter and
+    /// forcing amplification to account for the ground reservoir absorbing
+    /// heat from the land surface.
+    ///
     /// # Arguments
     ///
     /// * `state` - Mutable reference to component state
@@ -64,7 +70,6 @@ impl ClimateUDEB {
     /// * `lambda_ocean` - Ocean feedback parameter ($\text{W/m}^2\text{/K}$)
     /// * `lambda_land` - Land feedback parameter ($\text{W/m}^2\text{/K}$)
     /// * `other_hemi_sst` - Other hemisphere's ocean SST for $K_{NS}$ exchange
-    /// * `land_temp_prev` - Previous substep's land temperature for ground heat coupling
     /// * `ground_temp` - Current ground reservoir temperature for ground heat coupling
     ///
     /// # Returns
@@ -79,7 +84,6 @@ impl ClimateUDEB {
         lambda_ocean: FloatValue,
         lambda_land: FloatValue,
         other_hemi_sst: FloatValue,
-        land_temp_prev: FloatValue,
         ground_temp: FloatValue,
     ) -> FloatValue {
         let n = self.parameters.n_layers;
@@ -103,18 +107,15 @@ impl ClimateUDEB {
         let mut d = vec![0.0; n]; // RHS
 
         // Mixed layer (layer 0)
-        // dT/dt = (Q - lambda*T)/C + diffusion + upwelling + K_NS exchange
         // Coupled ocean-land feedback term (TERM_OCN_LAND_FEEDBACK)
-        // Accounts for land feedback coupling through the mixed layer.
-        // MAGICC7.f90 lines 2806-2820
+        // When ground heat is enabled, K_lg enters the coupled denominator,
+        // modifying both the feedback strength and forcing amplification.
         let f_l_hemi = if hemi == 0 {
             self.parameters.nh_land_fraction / 2.0
         } else {
             self.parameters.sh_land_fraction / 2.0
         };
         let f_o_hemi = 0.5 - f_l_hemi;
-        // Time-varying alpha_eff: MAGICC7.f90 lines 3171-3187
-        // CORE_TEMPADJUST_OCN2ATM_ALPHAEFF = T_air / T_sst (or base alpha if SST ~ 0)
         let sst_prev = state.ocean_temps[hemi][0];
         let alpha_eff = if sst_prev.abs() < 1e-15 {
             self.parameters.temp_adjust_alpha
@@ -122,34 +123,38 @@ impl ClimateUDEB {
             let t_air_prev = self.sst_to_air_temperature(sst_prev);
             t_air_prev / sst_prev
         };
-        let denominator = f_o_hemi * (self.parameters.k_lo + f_l_hemi * lambda_land);
+
+        // Ground heat coupling modifies the coupled land-ocean denominator.
+        // Without ground heat: D = f_o * (K_lo + f_l * lambda_l)
+        // With ground heat:    D = f_o * (K_lo + f_l * lambda_l + K_lg)
+        let k_lg_eff = if self.parameters.land_heat_capacity_enabled {
+            self.parameters.k_lg
+        } else {
+            0.0
+        };
+        let denominator = f_o_hemi * (self.parameters.k_lo + f_l_hemi * lambda_land + k_lg_eff);
+
+        // Feedback term: with ground heat, the numerator gains K_lg alongside
+        // the f_l*lambda_l term, because the ground reservoir adds another
+        // pathway that damps the land-ocean coupling.
+        //
+        // Without ground heat: lambda_l * K_lo * alpha * f_l / D
+        // With ground heat:    K_lo * alpha * (f_l * lambda_l + K_lg) / D
         let term_feedback = alpha_eff / c_mix
             * (lambda_ocean
-                + lambda_land
-                    * self.parameters.k_lo
+                + self.parameters.k_lo
                     * self.parameters.amplify_ocean_to_land
-                    * f_l_hemi
+                    * (f_l_hemi * lambda_land + k_lg_eff)
                     / denominator);
-        // DZ1 = DZ/2: half-thickness for the gradient between mixed layer and
-        // the first deep layer (MAGICC7.f90 DZ1 = DZ/2, asymmetric spacing).
+
         let dz1 = dz / 2.0;
         let term_diff = kappas[0] / (dz_mix * dz1) * dt;
         let term_upwell = w / dz_mix * dt;
 
-        // Land forcing amplification.
-        //
-        // Eliminating $T_l$ from the coupled land-ocean system produces both a
-        // modified feedback (TERM_OCN_LAND_FEEDBACK above) and a modified forcing:
-        //
-        // $$Q_{eff} = Q \cdot \left(1 + \frac{K_{lo} \cdot f_l}{f_o \cdot (f_l \cdot \lambda_l + K_{lo})}\right)$$
-        //
-        // The amplification arises because land forcing propagates to the ocean
-        // through the $K_{lo}$ coupling: land receives $f_l \cdot Q$ of forcing
-        // but has no thermal inertia, so it passes heat to the ocean mixed layer.
+        // Land forcing amplification (denominator includes K_lg when enabled)
         let forcing_amp = 1.0 + self.parameters.k_lo * f_l_hemi / denominator;
 
-        // Inter-hemispheric heat exchange: K_NS * (T_this - T_other)
-        // Implicit on diagonal (self-coupling), explicit on RHS (cross-coupling).
+        // Inter-hemispheric heat exchange
         let k_ns_term = self.parameters.k_ns / c_mix * dt;
 
         b[0] = 1.0
@@ -162,19 +167,15 @@ impl ClimateUDEB {
             + forcing * forcing_amp / c_mix * dt
             + k_ns_term * other_hemi_sst;
 
-        // Ground heat capacity: subtract heat flowing from land to ground reservoir.
-        // The ground absorbs K_lg * (T_land - T_ground) per unit globe area.
-        // Scale by f_l/f_o to convert to per unit ocean area for the mixed layer.
+        // Ground temperature contributes as an explicit forcing through the
+        // coupled land-ocean system: K_lo * K_lg * T_ground / (D * C_mix)
         if self.parameters.land_heat_capacity_enabled {
-            let ground_flux = self.parameters.k_lg * (land_temp_prev - ground_temp);
-            d[0] -= ground_flux * f_l_hemi / f_o_hemi / c_mix * dt;
+            d[0] += self.parameters.k_lo * self.parameters.k_lg * ground_temp / denominator / c_mix
+                * dt;
         }
 
         // Layers 1 to n-2 (interior layers)
         for i in 1..n - 1 {
-            // Layer 1 (MAGICC layer 2) uses DZ1 = DZ/2 for upward diffusion
-            // to the mixed layer (MAGICC7.f90 VERTICALDIFF(1)/DZ1).
-            // All deeper layers use the full DZ spacing.
             let dz_up = if i == 1 { dz1 } else { dz };
             let term_diff_up = kappas[i - 1] / (dz * dz_up) * dt;
             let term_diff_down = kappas[i] / (dz * dz) * dt;
@@ -193,13 +194,11 @@ impl ClimateUDEB {
         }
 
         // Bottom layer (layer n-1)
-        // No flux boundary condition at bottom
         let term_diff_up = kappas[n - 2] / (dz * dz) * dt;
         let term_upwell_bottom = w / dz * dt;
 
         a[n - 1] = -term_diff_up * af_top[n - 1];
         b[n - 1] = 1.0 + (term_diff_up + term_upwell_bottom) * af_top[n - 1];
-        // c[n-1] = 0 (no layer below)
 
         // Entrainment term from polar sinking (MAGICC7 AREAFACTOR_DIFFFLOW)
         d[n - 1] = state.ocean_temps[hemi][n - 1]
@@ -241,11 +240,6 @@ impl ClimateUDEB {
     /// Calculate ocean heat uptake ($\text{W/m}^2$).
     ///
     /// $$\text{Heat uptake} = Q - \sum_i f_i \lambda_i T_i$$
-    ///
-    /// where $f_i$ are global area fractions, $\lambda_i$ is the per-box
-    /// feedback parameter (ocean or land), and $T_i$ is the per-box temperature.
-    /// This ensures the diagnostic is consistent with the LAMCALC-solved
-    /// feedback parameters and any time-varying ECS adjustments.
     pub(super) fn calculate_heat_uptake(
         &self,
         forcing: &FourBoxSlice,
@@ -264,7 +258,6 @@ impl ClimateUDEB {
             feedback_global += w * lambdas[i] * temperature.0[i];
         }
 
-        // Heat uptake = Q - sum(f_i * lambda_i * T_i)
         q_global - feedback_global
     }
 

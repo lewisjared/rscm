@@ -23,6 +23,8 @@ import numpy.testing as npt
 import pytest
 
 from regression.helpers import (
+    assert_allclose_phased,
+    assert_allclose_recorded,
     fourbox_global_mean,
     get_variable_values,
     load_regression_data,
@@ -49,7 +51,7 @@ from rscm._lib.magicc import (
 from rscm.core import ModelBuilder
 
 SUITE = "ghg_forcing"
-DEFAULT_RTOL = 1e-3
+DEFAULT_RTOL = 1e-5  # GHG forcing is analytical, near-exact match expected
 DEFAULT_ATOL = 1e-6
 
 
@@ -280,26 +282,32 @@ def test_01_concentration_driven():
     ).values()[1:]
 
     # Compare ERF outputs against MAGICC7 reference
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_co2,
         expected_erf_co2[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="CO2 ERF mismatch (IPCCTAR method)",
+        suite="ghg_forcing",
+        name="01_ipcctar",
+        variable="ERF|CO2",
     )
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_ch4,
         expected_erf_ch4[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="CH4 ERF mismatch (IPCCTAR method)",
+        suite="ghg_forcing",
+        name="01_ipcctar",
+        variable="ERF|CH4",
     )
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_n2o,
         expected_erf_n2o[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="N2O ERF mismatch (IPCCTAR method)",
+        suite="ghg_forcing",
+        name="01_ipcctar",
+        variable="ERF|N2O",
     )
 
 
@@ -357,26 +365,32 @@ def test_02_ghg_forcing_olbl():
     ).values()[1:]
 
     # Compare ERF outputs against MAGICC7 reference
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_co2,
         expected_erf_co2[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="CO2 ERF mismatch (OLBL method)",
+        suite="ghg_forcing",
+        name="02_olbl",
+        variable="ERF|CO2",
     )
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_ch4,
         expected_erf_ch4[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="CH4 ERF mismatch (OLBL method)",
+        suite="ghg_forcing",
+        name="02_olbl",
+        variable="ERF|CH4",
     )
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_erf_n2o,
         expected_erf_n2o[:-1],
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
-        err_msg="N2O ERF mismatch (OLBL method)",
+        suite="ghg_forcing",
+        name="02_olbl",
+        variable="ERF|N2O",
     )
 
 
@@ -661,56 +675,61 @@ def test_03_emissions_driven():
     actual_co2 = results.get_timeseries_by_name(
         "Atmospheric Concentration|CO2"
     ).values()[1:]
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_co2,
         expected_co2_conc[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        err_msg="CO2 concentration mismatch",
+        suite="ghg_forcing",
+        name="03_emissions",
+        variable="Conc|CO2",
     )
 
     # Compare CH4 concentration
     actual_ch4 = results.get_timeseries_by_name(
         "Atmospheric Concentration|CH4"
     ).values()[1:]
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_ch4,
         expected_ch4_conc[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        err_msg="CH4 concentration mismatch",
+        suite="ghg_forcing",
+        name="03_emissions",
+        variable="Conc|CH4",
     )
 
     # Compare N2O concentration
     actual_n2o = results.get_timeseries_by_name(
         "Atmospheric Concentration|N2O"
     ).values()[1:]
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_n2o,
         expected_n2o_conc[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        err_msg="N2O concentration mismatch",
+        suite="ghg_forcing",
+        name="03_emissions",
+        variable="Conc|N2O",
     )
 
     # Compare Sea Surface Temperature (scalar proxy for global mean)
     actual_sst = results.get_timeseries_by_name("Sea Surface Temperature").values()[1:]
-    npt.assert_allclose(
+    assert_allclose_recorded(
         actual_sst,
         expected_temp[:-1],
         rtol=emissions_rtol,
         atol=DEFAULT_ATOL,
-        err_msg="Temperature mismatch",
+        suite="ghg_forcing",
+        name="03_emissions",
+        variable="Temperature",
     )
 
 
 @pytest.mark.xfail(
     reason=(
-        "ClimateUDEB diverges from MAGICC7 (ECS-dependent bias)."
-        " Implemented: LAMCALC, temp-dependent diffusivity,"
-        " time-varying ECS, depth-dependent ocean area,"
-        " inter-hemispheric heat exchange sub-stepping,"
-        " ground heat capacity, land forcing amplification."
+        "ClimateUDEB diverges from MAGICC7 (~5% bias, ECS-dependent)."
+        " Likely caused by variable upwelling treatment."
     )
 )
 @pytest.mark.parametrize("ecs", [1.5, 2.0, 3.0, 4.0, 4.5])
@@ -750,22 +769,23 @@ def test_04_ecs_sweep(ecs: float):
     assert temp_4box is not None, "Surface Temperature not found in results"
     actual_temp = fourbox_global_mean(temp_4box.values()[1:])
 
-    npt.assert_allclose(
+    assert_allclose_phased(
         actual_temp,
         expected_temp[:-1],
-        rtol=5e-2,
+        shock_rtol=5e-2,
+        converge_rtol=3e-2,
+        final_rtol=3e-2,
         atol=DEFAULT_ATOL,
-        err_msg=f"Temperature mismatch for ECS={ecs}K",
+        suite="ghg_forcing",
+        name=f"04_ecs_sweep_{ecs}",
+        variable="Surface Temperature",
     )
 
 
 @pytest.mark.xfail(
     reason=(
-        "ClimateUDEB diverges from MAGICC7 (bias at year 2100)."
-        " Implemented: LAMCALC, temp-dependent diffusivity,"
-        " time-varying ECS, depth-dependent ocean area,"
-        " inter-hemispheric heat exchange sub-stepping,"
-        " ground heat capacity, land forcing amplification."
+        "ClimateUDEB diverges from MAGICC7 (~5% bias)."
+        " Likely caused by variable upwelling treatment."
     )
 )
 def test_05_co2_only_forcing():
@@ -794,11 +814,9 @@ def test_05_co2_only_forcing():
     _, expected_temp = get_variable_values(df, "Surface Temperature")
 
     # In CO2-only mode, total ERF should equal CO2 ERF
-    # (Sanity check on the reference data)
     npt.assert_allclose(expected_total_erf, expected_erf_co2, rtol=1e-6)
 
     # Build ERF -> temperature model (ClimateUDEB only)
-    # Use total ERF as the exogenous forcing
     model = build_erf_to_temperature_model(years, expected_total_erf, config)
     model.run()
 
@@ -809,10 +827,14 @@ def test_05_co2_only_forcing():
     assert temp_4box is not None, "Surface Temperature not found in results"
     actual_temp = fourbox_global_mean(temp_4box.values()[1:])
 
-    npt.assert_allclose(
+    assert_allclose_phased(
         actual_temp,
         expected_temp[:-1],
-        rtol=5e-2,
+        shock_rtol=5e-2,
+        converge_rtol=3e-2,
+        final_rtol=3e-2,
         atol=DEFAULT_ATOL,
-        err_msg="Temperature mismatch (CO2-only forcing)",
+        suite="ghg_forcing",
+        name="05_co2_only",
+        variable="Surface Temperature",
     )

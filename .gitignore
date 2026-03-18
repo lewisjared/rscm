@@ -1,3 +1,6 @@
+# Generated regression parity results (regenerated on each test run)
+tests/regression/parity_results.csv
+
 # Created by https://www.toptal.com/developers/gitignore/api/pycharm,python,rust
 # Edit at https://www.toptal.com/developers/gitignore?templates=pycharm,python,rust
 
@@ -309,7 +312,6 @@ debug/
 # End of https://www.toptal.com/developers/gitignore/api/pycharm,python,rust
 
 # Ignore claude settings
-.claude
 .claude/settings.local.json
 
 # Ignore Jupyter notebooks in docs/notebooks
