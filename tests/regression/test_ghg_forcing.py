@@ -23,6 +23,7 @@ import numpy.testing as npt
 import pytest
 
 from regression.helpers import (
+    assert_allclose_phased,
     fourbox_global_mean,
     get_variable_values,
     load_regression_data,
@@ -49,7 +50,7 @@ from rscm._lib.magicc import (
 from rscm.core import ModelBuilder
 
 SUITE = "ghg_forcing"
-DEFAULT_RTOL = 1e-3
+DEFAULT_RTOL = 1e-5  # GHG forcing is analytical, near-exact match expected
 DEFAULT_ATOL = 1e-6
 
 
@@ -706,11 +707,8 @@ def test_03_emissions_driven():
 
 @pytest.mark.xfail(
     reason=(
-        "ClimateUDEB diverges from MAGICC7 (ECS-dependent bias)."
-        " Implemented: LAMCALC, temp-dependent diffusivity,"
-        " time-varying ECS, depth-dependent ocean area,"
-        " inter-hemispheric heat exchange sub-stepping,"
-        " ground heat capacity, land forcing amplification."
+        "ClimateUDEB diverges from MAGICC7 (~5% bias, ECS-dependent)."
+        " Likely caused by variable upwelling treatment."
     )
 )
 @pytest.mark.parametrize("ecs", [1.5, 2.0, 3.0, 4.0, 4.5])
@@ -750,22 +748,21 @@ def test_04_ecs_sweep(ecs: float):
     assert temp_4box is not None, "Surface Temperature not found in results"
     actual_temp = fourbox_global_mean(temp_4box.values()[1:])
 
-    npt.assert_allclose(
+    assert_allclose_phased(
         actual_temp,
         expected_temp[:-1],
-        rtol=5e-2,
+        shock_rtol=5e-2,
+        converge_rtol=3e-2,
+        final_rtol=3e-2,
         atol=DEFAULT_ATOL,
-        err_msg=f"Temperature mismatch for ECS={ecs}K",
+        name=f"ECS={ecs}K temperature",
     )
 
 
 @pytest.mark.xfail(
     reason=(
-        "ClimateUDEB diverges from MAGICC7 (bias at year 2100)."
-        " Implemented: LAMCALC, temp-dependent diffusivity,"
-        " time-varying ECS, depth-dependent ocean area,"
-        " inter-hemispheric heat exchange sub-stepping,"
-        " ground heat capacity, land forcing amplification."
+        "ClimateUDEB diverges from MAGICC7 (~5% bias)."
+        " Likely caused by variable upwelling treatment."
     )
 )
 def test_05_co2_only_forcing():
@@ -794,11 +791,9 @@ def test_05_co2_only_forcing():
     _, expected_temp = get_variable_values(df, "Surface Temperature")
 
     # In CO2-only mode, total ERF should equal CO2 ERF
-    # (Sanity check on the reference data)
     npt.assert_allclose(expected_total_erf, expected_erf_co2, rtol=1e-6)
 
     # Build ERF -> temperature model (ClimateUDEB only)
-    # Use total ERF as the exogenous forcing
     model = build_erf_to_temperature_model(years, expected_total_erf, config)
     model.run()
 
@@ -809,10 +804,12 @@ def test_05_co2_only_forcing():
     assert temp_4box is not None, "Surface Temperature not found in results"
     actual_temp = fourbox_global_mean(temp_4box.values()[1:])
 
-    npt.assert_allclose(
+    assert_allclose_phased(
         actual_temp,
         expected_temp[:-1],
-        rtol=5e-2,
+        shock_rtol=5e-2,
+        converge_rtol=3e-2,
+        final_rtol=3e-2,
         atol=DEFAULT_ATOL,
-        err_msg="Temperature mismatch (CO2-only forcing)",
+        name="CO2-only temperature",
     )
