@@ -94,6 +94,7 @@ def build_ocean_model(
         "k_ns": config.get("core_heatxchange_northsouth", 0.31),
         "feedback_cumt_sensitivity": config.get("core_feedback_cumtsensitivity", 0.08),
         "feedback_q_sensitivity": config.get("core_feedback_qsensitivity", 7.84e-9),
+        "efficacy_apply": config.get("rf_efficacy_apply", 0),
     }
 
     climate = ClimateUDEBBuilder.from_parameters(params).build()
@@ -471,5 +472,99 @@ def test_ocean_10_full_default():
         atol=DEFAULT_ATOL,
         suite="ocean_udeb",
         name="10_full_default",
+        variable="Surface Temperature",
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="~5% cool bias in shock phase from initial transient mismatch"
+    " (same as ECS sweep tests)",
+)
+def test_ocean_11_efficacy_ar6():
+    """
+    Test 11: AR6 internal efficacy mode (ABRUPT-2XCO2).
+
+    Enables efficacy_apply=2 so that effective forcing is adjusted by
+    the CO2 internal efficacy computed after LAMCALC convergence. Uses
+    full default MAGICC7 parameters otherwise.
+
+    The CO2 internal efficacy with AR6 default RF_REGIONS_CO2 is near
+    but not equal to 1.0, so temperature response differs slightly
+    from the non-efficacy case (test_10).
+    """
+    run_ocean_scenario("11_efficacy_ar6", final_rtol=1e-2)
+
+
+def test_ocean_12_efficacy_ar6_1pctco2():
+    """
+    Test 12: AR6 internal efficacy mode (1pctCO2).
+
+    Same as test_11 but with gradually ramping forcing to test efficacy
+    interaction with time-varying ECS feedback.
+
+    Config:
+    - Full default MAGICC7 parameters
+    - RF_EFFICACY_APPLY=2
+    - file_co2_conc: 1PCTCO2_CO2_CONC.IN
+    - startyear: 1850, endyear: 2000
+    """
+    df, config = load_data("12_efficacy_ar6_1pctco2")
+    years, expected_temp = get_variable_values(df, "Surface Temperature")
+
+    # 1pctCO2 forcing from concentration pathway
+    rf_2xco2 = config.get("core_delq2xco2", 3.71)
+    start_year = config.get("startyear", 1850)
+    dt = years - start_year
+    co2_ratio = np.where(dt > 0, 1.01**dt, 1.0)
+    erf = rf_2xco2 * np.log(co2_ratio) / np.log(2.0)
+
+    params = {
+        "ecs": config.get("core_climatesensitivity", 3.0),
+        "rf_2xco2": rf_2xco2,
+        "efficacy_apply": config.get("rf_efficacy_apply", 2),
+    }
+    climate = ClimateUDEBBuilder.from_parameters(params).build()
+
+    time_axis = TimeAxis.from_bounds(
+        np.concatenate([years, [years[-1] + 1.0]]).astype(np.float64)
+    )
+    erf_ts = Timeseries(
+        erf.astype(np.float64),
+        time_axis,
+        "W/m^2",
+        InterpolationStrategy.Linear,
+    )
+
+    schema = VariableSchema()
+    schema.add_variable("Effective Radiative Forcing", "W/m^2")
+    schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+    schema.add_variable("Heat Uptake", "W/m^2")
+    schema.add_variable("Ocean Heat Content", "J/m^2")
+    schema.add_variable("Sea Surface Temperature", "K")
+
+    model = (
+        ModelBuilder()
+        .with_time_axis(time_axis)
+        .with_schema(schema)
+        .with_rust_component(climate)
+        .with_exogenous_variable("Effective Radiative Forcing", erf_ts)
+        .with_initial_values({"Surface Temperature": 0.0})
+        .build()
+    )
+    model.run()
+
+    results = model.timeseries()
+    temp_4box = results.get_fourbox_timeseries_by_name("Surface Temperature")
+    assert temp_4box is not None, "Surface Temperature not found in results"
+    actual_temp = fourbox_global_mean(temp_4box.values())
+
+    assert_allclose_recorded(
+        actual_temp,
+        expected_temp,
+        rtol=0.1,
+        atol=DEFAULT_ATOL,
+        suite="ocean_udeb",
+        name="12_efficacy_ar6_1pctco2",
         variable="Surface Temperature",
     )

@@ -179,8 +179,19 @@ pub struct ClimateUDEBParameters {
     /// LAMCALC solver. Normalized against global-area-weighted sum following
     /// MAGICC7.f90 lines 8146-8165.
     ///
-    /// Default: `[1.0; 4]` (uniform, qfrac = 1.0 for all boxes).
+    /// Default values from `MAGCFG_DEFAULTALL.CFG` (AR6 calibration):
+    /// `[1.4089, 1.37045, 1.43333, 1.33257]`.
     pub rf_regions_co2: [FloatValue; 4],
+
+    // Efficacy parameters
+    /// Efficacy application mode (matches MAGICC7 `RF_EFFICACY_APPLY`).
+    ///
+    /// - `0` = disabled (default): all agents treated with uniform spatial efficacy.
+    /// - `2` = AR6 mode: effective forcing adjusted by `prescribed_efficacy / internal_efficacy`.
+    ///
+    /// Currently only CO2 internal efficacy is computed (Phase 1).
+    #[serde(default)]
+    pub efficacy_apply: u8,
 
     // Integration parameters
     /// Steps per year for sub-annual integration.
@@ -242,8 +253,11 @@ impl Default for ClimateUDEBParameters {
             k_lg: 0.1,
             land_hc_eff_thickness: 300.0,
 
-            // Regional CO2 forcing
-            rf_regions_co2: [1.0; 4],
+            // Regional CO2 forcing (MAGCFG_DEFAULTALL.CFG)
+            rf_regions_co2: [1.4089, 1.37045, 1.43333, 1.33257],
+
+            // Efficacy
+            efficacy_apply: 0,
 
             // Integration
             steps_per_year: 12,

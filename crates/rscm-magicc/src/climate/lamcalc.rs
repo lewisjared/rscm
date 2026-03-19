@@ -63,6 +63,11 @@ pub struct LamcalcResult {
     pub lambda_ocean: FloatValue,
     /// Converged land feedback parameter (W/m$^2$/K).
     pub lambda_land: FloatValue,
+    /// Inverse of the converged $4 \times 4$ coupling matrix.
+    pub matrix_inverse: [[FloatValue; 4]; 4],
+    /// Internal efficacy of CO2 forcing (ratio of CO2 global temperature
+    /// response to the ECS-implied response). Near 1.0 for typical parameters.
+    pub co2_internal_efficacy: FloatValue,
 }
 
 /// Build the $4 \times 4$ coupling matrix for the four-box energy balance.
@@ -98,6 +103,70 @@ pub fn build_coupling_matrix(
     ]
 }
 
+/// Compute per-box forcing fractions from a regional forcing pattern.
+///
+/// Normalizes `rf_regions` by the area-weighted sum to produce `qfrac` values
+/// such that area-weighted forcing is preserved. Returns `[1.0; 4]` if the
+/// weighted sum is near zero.
+///
+/// $$\text{qfrac}_i = \frac{\text{rf\_regions}_i}{\sum_j \text{rf\_regions}_j \times f_j}$$
+///
+/// Reference: MAGICC7.f90 lines 8146-8165.
+pub fn compute_qfrac(rf_regions: &[FloatValue; 4], area: &[FloatValue; 4]) -> [FloatValue; 4] {
+    let rf_sum: FloatValue = rf_regions.iter().zip(area.iter()).map(|(r, a)| r * a).sum();
+
+    if rf_sum.abs() <= 1e-15 {
+        [1.0; 4]
+    } else {
+        [
+            rf_regions[0] / rf_sum,
+            rf_regions[1] / rf_sum,
+            rf_regions[2] / rf_sum,
+            rf_regions[3] / rf_sum,
+        ]
+    }
+}
+
+/// Compute the internal efficacy of a forcing agent given its regional pattern.
+///
+/// Internal efficacy measures how effectively an agent's spatial forcing pattern
+/// translates into global temperature change relative to ECS. Agents concentrated
+/// in high-feedback regions (land, high latitudes) get efficacy > 1, while those
+/// in low-feedback regions (ocean, tropics) get efficacy < 1.
+///
+/// In AR6 mode: $\text{EFFRF} = \text{RF} \times \text{prescribed\_efficacy} / \text{internal\_efficacy}$.
+///
+/// Returns 1.0 as fallback if `rf_regions` sums to zero.
+///
+/// Reference: MAGICC7.f90 lines 8267-8278.
+pub fn calc_internal_efficacy(
+    q_2xco2: FloatValue,
+    matrix_inverse: &[[FloatValue; 4]; 4],
+    area: &[FloatValue; 4],
+    rf_regions: &[FloatValue; 4],
+    ecs: FloatValue,
+) -> FloatValue {
+    let rf_sum: FloatValue = rf_regions.iter().zip(area.iter()).map(|(r, a)| r * a).sum();
+
+    if rf_sum.abs() <= 1e-15 {
+        return 1.0;
+    }
+
+    let qfrac = compute_qfrac(rf_regions, area);
+
+    let mut temps = [0.0_f64; 4];
+    for row in 0..4 {
+        let mut sum = 0.0;
+        for col in 0..4 {
+            sum += matrix_inverse[row][col] * area[col] * qfrac[col];
+        }
+        temps[row] = q_2xco2 * sum;
+    }
+
+    let t_global: FloatValue = area.iter().zip(temps.iter()).map(|(a, t)| a * t).sum();
+    t_global / ecs
+}
+
 /// Run the LAMCALC iterative solver.
 ///
 /// Iteratively finds $\lambda_{\text{ocean}}$ and $\lambda_{\text{land}}$ such that
@@ -115,22 +184,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
     let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
 
     // Compute per-box CO2 forcing fractions from regional pattern.
-    // MAGICC7.f90 lines 8146-8165:
-    //   QFRAC_i = RF_REGIONS_CO2_i / SUM(RF_REGIONS_CO2 * GLOBALAREAFRACTIONS)
-    let rf_sum: FloatValue = params.rf_regions_co2[0] * params.fgno
-        + params.rf_regions_co2[1] * params.fgnl
-        + params.rf_regions_co2[2] * params.fgso
-        + params.rf_regions_co2[3] * params.fgsl;
-    let qfrac: [FloatValue; 4] = if rf_sum.abs() > 1e-15 {
-        [
-            params.rf_regions_co2[0] / rf_sum,
-            params.rf_regions_co2[1] / rf_sum,
-            params.rf_regions_co2[2] / rf_sum,
-            params.rf_regions_co2[3] / rf_sum,
-        ]
-    } else {
-        [1.0; 4]
-    };
+    let qfrac = compute_qfrac(&params.rf_regions_co2, &area);
 
     // Storage for iteration history
     let mut lamo = vec![0.0; MAX_ITERATIONS + 2];
@@ -145,6 +199,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
 
     let mut converged_lam_o = 0.0;
     let mut converged_lam_l = 0.0;
+    let mut converged_inv: Option<[[FloatValue; 4]; 4]> = None;
     let mut found = false;
 
     for i in 2..=MAX_ITERATIONS {
@@ -181,6 +236,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
         if diff[i].abs() < RLO_TOLERANCE {
             converged_lam_o = lam_o;
             converged_lam_l = lam_l;
+            converged_inv = Some(inv);
             found = true;
             break;
         }
@@ -217,9 +273,22 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
     }
 
     if found {
+        // Use the matrix inverse cached from the converged iteration.
+        let final_inv = converged_inv.expect("inv is set when found=true");
+
+        let co2_internal_efficacy = calc_internal_efficacy(
+            params.q_2xco2,
+            &final_inv,
+            &area,
+            &params.rf_regions_co2,
+            params.ecs,
+        );
+
         Some(LamcalcResult {
             lambda_ocean: converged_lam_o,
             lambda_land: converged_lam_l,
+            matrix_inverse: final_inv,
+            co2_internal_efficacy,
         })
     } else {
         None
@@ -556,20 +625,7 @@ mod tests {
             let inv = invert_4x4(&matrix).expect("Coupling matrix should be invertible");
             let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
 
-            let rf_sum: FloatValue = params.rf_regions_co2[0] * params.fgno
-                + params.rf_regions_co2[1] * params.fgnl
-                + params.rf_regions_co2[2] * params.fgso
-                + params.rf_regions_co2[3] * params.fgsl;
-            let qfrac = if rf_sum.abs() > 1e-15 {
-                [
-                    params.rf_regions_co2[0] / rf_sum,
-                    params.rf_regions_co2[1] / rf_sum,
-                    params.rf_regions_co2[2] / rf_sum,
-                    params.rf_regions_co2[3] / rf_sum,
-                ]
-            } else {
-                [1.0; 4]
-            };
+            let qfrac = compute_qfrac(&params.rf_regions_co2, &area);
 
             let q = params.q_2xco2;
             let mut temps = [0.0_f64; 4];
@@ -598,5 +654,129 @@ mod tests {
                 rlo_actual
             );
         }
+    }
+
+    #[test]
+    fn test_lamcalc_returns_valid_matrix_inverse() {
+        let params = default_params();
+        let result = lamcalc(&params).expect("LAMCALC should converge");
+
+        // Reconstruct the coupling matrix and verify matrix * inverse ≈ identity
+        let matrix = build_coupling_matrix(&params, result.lambda_ocean, result.lambda_land);
+        let inv = &result.matrix_inverse;
+
+        for i in 0..4 {
+            for j in 0..4 {
+                let mut dot = 0.0;
+                for k in 0..4 {
+                    dot += matrix[i][k] * inv[k][j];
+                }
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!(
+                    (dot - expected).abs() < 1e-10,
+                    "matrix * inverse [{i}][{j}] = {dot}, expected {expected}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_co2_internal_efficacy_near_unity() {
+        // With AR6 defaults, CO2 efficacy should be close to 1.0
+        let params = default_params();
+        let result = lamcalc(&params).expect("LAMCALC should converge");
+
+        println!(
+            "CO2 internal efficacy = {:.6}",
+            result.co2_internal_efficacy
+        );
+        assert!(
+            result.co2_internal_efficacy > 0.90 && result.co2_internal_efficacy < 1.10,
+            "CO2 efficacy should be near 1.0, got {}",
+            result.co2_internal_efficacy
+        );
+    }
+
+    #[test]
+    fn test_calc_internal_efficacy_uniform_pattern() {
+        // Uniform rf_regions [1;4] with uniform lamcalc params should give efficacy = 1.0
+        let mut params = default_params();
+        params.rf_regions_co2 = [1.0; 4];
+        let result = lamcalc(&params).expect("LAMCALC should converge");
+
+        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+        let uniform_rf = [1.0; 4];
+        let efficacy = calc_internal_efficacy(
+            params.q_2xco2,
+            &result.matrix_inverse,
+            &area,
+            &uniform_rf,
+            params.ecs,
+        );
+
+        println!("Uniform pattern efficacy = {:.6}", efficacy);
+        assert!(
+            (efficacy - 1.0).abs() < 0.01,
+            "Uniform pattern should give efficacy ~1.0, got {efficacy}"
+        );
+    }
+
+    #[test]
+    fn test_calc_internal_efficacy_asymmetric_patterns() {
+        // Different spatial patterns should produce different efficacies
+        let params = default_params();
+        let result = lamcalc(&params).expect("LAMCALC should converge");
+        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+
+        // CO2-like pattern (slight land enhancement)
+        let co2_pattern = [1.4089, 1.37045, 1.43333, 1.33257];
+        let co2_eff = calc_internal_efficacy(
+            params.q_2xco2,
+            &result.matrix_inverse,
+            &area,
+            &co2_pattern,
+            params.ecs,
+        );
+
+        // Tropospheric ozone-like pattern (NH land-dominated)
+        let trop_o3_pattern = [1.0, 3.0, 0.5, 0.5];
+        let o3_eff = calc_internal_efficacy(
+            params.q_2xco2,
+            &result.matrix_inverse,
+            &area,
+            &trop_o3_pattern,
+            params.ecs,
+        );
+
+        println!("CO2 efficacy = {co2_eff:.6}, Trop O3 efficacy = {o3_eff:.6}");
+
+        // Land-concentrated forcing (O3) should have higher efficacy than CO2
+        // because land has stronger feedback
+        assert!(
+            o3_eff > co2_eff,
+            "NH land-concentrated O3 forcing should have higher efficacy than CO2: \
+             CO2={co2_eff:.6}, O3={o3_eff:.6}"
+        );
+    }
+
+    #[test]
+    fn test_calc_internal_efficacy_zero_pattern() {
+        let params = default_params();
+        let result = lamcalc(&params).expect("LAMCALC should converge");
+        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+
+        let zero_rf = [0.0; 4];
+        let efficacy = calc_internal_efficacy(
+            params.q_2xco2,
+            &result.matrix_inverse,
+            &area,
+            &zero_rf,
+            params.ecs,
+        );
+
+        assert!(
+            (efficacy - 1.0).abs() < 1e-15,
+            "Zero pattern should return fallback 1.0, got {efficacy}"
+        );
     }
 }

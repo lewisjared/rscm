@@ -133,6 +133,14 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         description="Forcing run mode (e.g., CO2-only)",
         category="forcing",
     ),
+    "rf_efficacy_apply": ParameterInfo(
+        name="rf_efficacy_apply",
+        status=ParameterStatus.SUPPORTED,
+        rscm_path="components.climate.parameters.efficacy_apply",
+        unit=None,
+        description="Efficacy application mode (0=disabled, 2=AR6 mode)",
+        category="forcing",
+    ),
     # Concentration/emissions switching
     "co2_switchfromconc2emis_year": ParameterInfo(
         name="co2_switchfromconc2emis_year",

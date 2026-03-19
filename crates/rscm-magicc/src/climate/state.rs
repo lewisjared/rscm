@@ -98,22 +98,32 @@ impl ClimateUDEBState {
     /// `kappa_m2_per_yr` is the base vertical diffusivity in m2/yr used to
     /// compute the exponential initial ocean profile.
     /// `layer_thickness` is the thickness of deep layers in metres.
+    /// `area_factors` is accepted for forward compatibility but the initial
+    /// profile always uses the analytical exponential (MAGICC7
+    /// `CORE_SWITCH_OCN_TEMPPROFILE=1`). The variable upwelling correction
+    /// terms in `ocean_column.rs` are calibrated against this profile.
+    /// `polar_sinking_ratio` is accepted for forward compatibility.
     pub fn new(
         n_layers: usize,
         w_initial: FloatValue,
         alpha_initial: FloatValue,
         kappa_m2_per_yr: FloatValue,
         layer_thickness: FloatValue,
+        _area_factors: &OceanAreaFactors,
+        _polar_sinking_ratio: FloatValue,
     ) -> Self {
         let t_mix = 17.2_f64;
         let t_polar = 1.0_f64;
 
+        // Exponential decay profile (MAGICC7 CORE_SWITCH_OCN_TEMPPROFILE=1).
+        // This is the analytical steady-state for a cylindrical ocean with
+        // uniform diffusivity and upwelling. The variable upwelling correction
+        // terms use this profile as a reference baseline — they already apply
+        // area factors to the transport coefficients, so using an area-factor-
+        // aware equilibrium here would double-count the geometry.
         let mut initial_ocean_profile = vec![0.0; n_layers];
         initial_ocean_profile[0] = t_mix;
         for l in 1..n_layers {
-            // Depth from the bottom of the mixed layer to the centre of layer l.
-            // Fortran layer l (1-based, l>=2) maps to Rust index l (0-based, l>=1).
-            // depth_from_bottom_mixed = (l - 1) * dz + 0.5 * dz (Fortran: (l-2)*dz + 0.5*dz for l>=2)
             let depth = (l as f64 - 1.0) * layer_thickness + 0.5 * layer_thickness;
             initial_ocean_profile[l] =
                 t_polar + (t_mix - t_polar) * (-w_initial * depth / kappa_m2_per_yr).exp();

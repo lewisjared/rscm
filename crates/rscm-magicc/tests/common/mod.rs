@@ -11,8 +11,8 @@ use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
 use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
 use rscm_core::utils::linear_algebra::invert_4x4;
-use rscm_magicc::climate::lamcalc::{build_coupling_matrix, LamcalcParams};
-use rscm_magicc::climate::{ClimateUDEB, ClimateUDEBState};
+use rscm_magicc::climate::lamcalc::{build_coupling_matrix, compute_qfrac, LamcalcParams};
+use rscm_magicc::climate::ClimateUDEB;
 use rscm_magicc::parameters::ClimateUDEBParameters;
 use std::sync::Arc;
 
@@ -103,8 +103,9 @@ pub struct EquilibriumTemperatures {
 /// lambda values, returning both the per-box temperatures and the aggregated
 /// ocean, land, and global means.
 ///
-/// Solves $M \cdot T = Q \cdot f$ where $M$ is the coupling matrix, $Q$ is the
-/// radiative forcing for CO2 doubling, and $f$ is the area fraction vector.
+/// Solves $M \cdot T = Q \cdot f \cdot qfrac$ where $M$ is the coupling matrix,
+/// $Q$ is the radiative forcing for CO2 doubling, $f$ is the area fraction
+/// vector, and $qfrac$ accounts for regional CO2 forcing patterns.
 pub fn compute_equilibrium_temperatures(
     params: &LamcalcParams,
     lam_o: FloatValue,
@@ -121,11 +122,13 @@ pub fn compute_equilibrium_temperatures(
     let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
     let q = params.q_2xco2;
 
+    let qfrac = compute_qfrac(&params.rf_regions_co2, &area);
+
     let mut box_temps = [0.0_f64; 4];
     for row in 0..4 {
         let mut sum = 0.0;
         for col in 0..4 {
-            sum += inv[row][col] * area[col];
+            sum += inv[row][col] * area[col] * qfrac[col];
         }
         box_temps[row] = q * sum;
     }
@@ -227,13 +230,7 @@ pub fn run_udeb_simulation(
     n_years: usize,
 ) -> Vec<YearRecord> {
     let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
-    let mut state = ClimateUDEBState::new(
-        params.n_layers,
-        params.w_initial,
-        params.temp_adjust_alpha,
-        params.kappa_m2_per_yr(),
-        params.layer_thickness,
-    );
+    let mut state = component.initial_state();
     let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
     let mut records = Vec::with_capacity(n_years);
 
