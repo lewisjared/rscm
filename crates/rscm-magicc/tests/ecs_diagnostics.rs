@@ -21,7 +21,7 @@ use rscm_core::component::{Component, InputState};
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::FloatValue;
 use rscm_magicc::climate::lamcalc::lamcalc;
-use rscm_magicc::climate::{ClimateUDEB, ClimateUDEBState};
+use rscm_magicc::climate::ClimateUDEB;
 use rscm_magicc::parameters::ClimateUDEBParameters;
 
 // ---------------------------------------------------------------------------
@@ -153,13 +153,7 @@ mod time_varying_ecs {
         };
 
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
-        let mut state = ClimateUDEBState::new(
-            params.n_layers,
-            params.w_initial,
-            params.temp_adjust_alpha,
-            params.kappa_m2_per_yr(),
-            params.layer_thickness,
-        );
+        let mut state = component.initial_state();
 
         let erf = params.rf_2xco2;
         let n_years = 500;
@@ -376,13 +370,7 @@ mod heat_uptake_consistency {
         // formula computed from the same temperatures and lambda values.
         let params = params_with_fixed_ecs(3.0);
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
-        let mut state = ClimateUDEBState::new(
-            params.n_layers,
-            params.w_initial,
-            params.temp_adjust_alpha,
-            params.kappa_m2_per_yr(),
-            params.layer_thickness,
-        );
+        let mut state = component.initial_state();
 
         let erf = params.rf_2xco2;
         let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
@@ -748,13 +736,7 @@ mod ground_heat_capacity {
     fn test_ground_temperature_tracks_land() {
         let params = params_with_fixed_ecs(3.0);
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
-        let mut state = ClimateUDEBState::new(
-            params.n_layers,
-            params.w_initial,
-            params.temp_adjust_alpha,
-            params.kappa_m2_per_yr(),
-            params.layer_thickness,
-        );
+        let mut state = component.initial_state();
 
         let erf = params.rf_2xco2;
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
@@ -838,13 +820,7 @@ mod ground_heat_capacity {
         };
 
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
-        let mut state = ClimateUDEBState::new(
-            params.n_layers,
-            params.w_initial,
-            params.temp_adjust_alpha,
-            params.kappa_m2_per_yr(),
-            params.layer_thickness,
-        );
+        let mut state = component.initial_state();
 
         let erf = params.rf_2xco2;
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);

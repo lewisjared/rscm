@@ -291,6 +291,54 @@ def test_10_full_default():
     return res
 
 
+def test_11_efficacy_ar6():
+    """
+    AR6 internal efficacy mode (ABRUPT-2XCO2).
+
+    Enables RF_EFFICACY_APPLY=2 so that effective forcing is divided by the
+    CO2 internal efficacy computed after LAMCALC convergence. Uses full
+    default parameters otherwise (depth-dependent area, upwelling, ground
+    heat, etc.).
+
+    This is the simplest test of the efficacy pathway: single agent (CO2),
+    step forcing, long integration to equilibrium.
+    """
+    config = make_config(
+        _OCEAN_BASE,
+        startyear=1850,
+        endyear=2150,
+        file_co2_conc="ABRUPT-2XCO2_CO2_CONC.IN",
+        rf_efficacy_apply=2,
+    )
+
+    res = run_magicc(config)
+    save_results(res, "11_efficacy_ar6", config, OCEAN_OUT_VARS, output_dir=OUT)
+    return res
+
+
+def test_12_efficacy_ar6_1pctco2():
+    """
+    AR6 internal efficacy mode (1pctCO2).
+
+    Same as test_11 but with gradually ramping forcing to test efficacy
+    interaction with time-varying ECS feedback. Uses full default parameters
+    including CORE_FEEDBACK_CUMTSENSITIVITY and CORE_FEEDBACK_QSENSITIVITY.
+    """
+    config = make_config(
+        _OCEAN_BASE,
+        startyear=1850,
+        endyear=2000,
+        file_co2_conc="1PCTCO2_CO2_CONC.IN",
+        rf_efficacy_apply=2,
+    )
+
+    out_vars = [*OCEAN_OUT_VARS, "DAT_HEATCONTENT_AGGREG_TOTAL"]
+
+    res = run_magicc(config)
+    save_results(res, "12_efficacy_ar6_1pctco2", config, out_vars, output_dir=OUT)
+    return res
+
+
 TESTS = [
     ("01", "Diffusion Only", test_01_diffusion_only),
     ("02", "Constant Upwelling", test_02_constant_upwelling),
@@ -302,6 +350,8 @@ TESTS = [
     ("08", "SST-to-SAT Conversion", test_08_sst_to_sat),
     ("09", "Time-Varying ECS", test_09_time_varying_ecs),
     ("10", "Full Default (1pctCO2)", test_10_full_default),
+    ("11", "Efficacy AR6 (ABRUPT-2XCO2)", test_11_efficacy_ar6),
+    ("12", "Efficacy AR6 (1pctCO2)", test_12_efficacy_ar6_1pctco2),
 ]
 
 

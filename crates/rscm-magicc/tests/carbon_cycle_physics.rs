@@ -656,7 +656,7 @@ mod climate_tcr {
     use rscm_core::component::{Component, InputState};
     use rscm_core::state::{FourBoxSlice, StateValue};
     use rscm_core::timeseries::FloatValue;
-    use rscm_magicc::climate::{ClimateUDEB, ClimateUDEBState};
+    use rscm_magicc::climate::ClimateUDEB;
 
     use super::common::{build_udeb_input_state, params_with_fixed_ecs};
 
@@ -677,13 +677,7 @@ mod climate_tcr {
         let params = params_with_fixed_ecs(ecs);
         let rf_2xco2 = params.rf_2xco2;
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
-        let mut state = ClimateUDEBState::new(
-            params.n_layers,
-            params.w_initial,
-            params.temp_adjust_alpha,
-            params.kappa_m2_per_yr(),
-            params.layer_thickness,
-        );
+        let mut state = component.initial_state();
         let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
 
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
@@ -780,13 +774,7 @@ mod climate_tcr {
             let params = params_with_fixed_ecs(ecs);
             let rf_2xco2 = params.rf_2xco2;
             let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
-            let mut state = ClimateUDEBState::new(
-                params.n_layers,
-                params.w_initial,
-                params.temp_adjust_alpha,
-                params.kappa_m2_per_yr(),
-                params.layer_thickness,
-            );
+            let mut state = component.initial_state();
             let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
 
             let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);

@@ -103,6 +103,15 @@ pub struct ClimateUDEB {
     /// Pre-computed ocean area factors for depth-dependent basin narrowing.
     #[serde(skip)]
     area_factors: OceanAreaFactors,
+
+    /// Inverse of the converged LAMCALC coupling matrix.
+    /// Used for computing per-agent internal efficacies.
+    #[serde(skip)]
+    matrix_inverse: [[FloatValue; 4]; 4],
+
+    /// Internal efficacy of CO2 forcing from the initial LAMCALC solve.
+    #[serde(skip)]
+    co2_internal_efficacy: FloatValue,
 }
 
 impl ClimateUDEB {
@@ -115,6 +124,23 @@ impl ClimateUDEB {
     pub fn new() -> Self {
         Self::from_parameters(ClimateUDEBParameters::default())
             .expect("LAMCALC failed to converge with default parameters")
+    }
+
+    /// Create a properly initialized state for this component.
+    ///
+    /// This accounts for the component's area factors when computing the
+    /// initial ocean temperature profile (needed for variable upwelling
+    /// corrections).
+    pub fn initial_state(&self) -> ClimateUDEBState {
+        ClimateUDEBState::new(
+            self.parameters.n_layers,
+            self.parameters.w_initial,
+            self.parameters.temp_adjust_alpha,
+            self.parameters.kappa_m2_per_yr(),
+            self.parameters.layer_thickness,
+            &self.area_factors,
+            self.parameters.polar_sinking_ratio,
+        )
     }
 
     /// Create a new ClimateUDEB component from parameters.
@@ -155,6 +181,8 @@ impl ClimateUDEB {
         })?;
         let lambda_ocean = lam_result.lambda_ocean;
         let lambda_land = lam_result.lambda_land;
+        let matrix_inverse = lam_result.matrix_inverse;
+        let co2_internal_efficacy = lam_result.co2_internal_efficacy;
 
         // Pre-compute depth-dependent ocean area factors
         let (af_top, af_bottom, af_diff) = parameters.compute_area_factors();
@@ -169,7 +197,19 @@ impl ClimateUDEB {
             lambda_ocean,
             lambda_land,
             area_factors,
+            matrix_inverse,
+            co2_internal_efficacy,
         })
+    }
+
+    /// Get the inverse of the converged LAMCALC coupling matrix.
+    pub fn matrix_inverse(&self) -> &[[FloatValue; 4]; 4] {
+        &self.matrix_inverse
+    }
+
+    /// Get the CO2 internal efficacy from the initial LAMCALC solve.
+    pub fn co2_internal_efficacy(&self) -> FloatValue {
+        self.co2_internal_efficacy
     }
 
     /// Initialize or ensure state is properly configured.
@@ -181,6 +221,8 @@ impl ClimateUDEB {
                 self.parameters.temp_adjust_alpha,
                 self.parameters.kappa_m2_per_yr(),
                 self.parameters.layer_thickness,
+                &self.area_factors,
+                self.parameters.polar_sinking_ratio,
             );
             state.ocean_temps = fresh.ocean_temps;
             state.upwelling_rates = fresh.upwelling_rates;
@@ -365,7 +407,7 @@ impl ClimateUDEB {
         let erf_mid = (erf_start + erf_end) / 2.0;
         let adjusted_ecs = self.adjusted_ecs(erf_mid, state);
 
-        let (current_lambda_ocean, current_lambda_land) =
+        let (current_lambda_ocean, current_lambda_land, current_co2_efficacy) =
             if (adjusted_ecs - self.parameters.ecs).abs() > 1e-10 {
                 let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
                 let result = lamcalc::lamcalc(&LamcalcParams {
@@ -384,10 +426,20 @@ impl ClimateUDEB {
                 .unwrap_or(LamcalcResult {
                     lambda_ocean: self.lambda_ocean,
                     lambda_land: self.lambda_land,
+                    matrix_inverse: self.matrix_inverse,
+                    co2_internal_efficacy: self.co2_internal_efficacy,
                 });
-                (result.lambda_ocean, result.lambda_land)
+                (
+                    result.lambda_ocean,
+                    result.lambda_land,
+                    result.co2_internal_efficacy,
+                )
             } else {
-                (self.lambda_ocean, self.lambda_land)
+                (
+                    self.lambda_ocean,
+                    self.lambda_land,
+                    self.co2_internal_efficacy,
+                )
             };
 
         // Pre-compute global box fractions needed in the substep loop
@@ -415,7 +467,13 @@ impl ClimateUDEB {
         for step_idx in 1..=self.parameters.steps_per_year {
             let frac = step_idx as FloatValue / steps;
             let erf = erf_start + frac * (erf_end - erf_start);
-            let forcing = FourBoxSlice::from_array([erf, erf, erf, erf]);
+            let erf_adjusted = if self.parameters.efficacy_apply == 2 {
+                // AR6 mode: prescribed_efficacy=1.0 for CO2, so EFFRF = RF / internal_efficacy
+                erf / current_co2_efficacy
+            } else {
+                erf
+            };
+            let forcing = FourBoxSlice::from_array([erf_adjusted; 4]);
             // Update ground heat reservoir temperatures BEFORE the ocean solve
             // (forward Euler, using previous substep's land temperatures).
             //
@@ -582,13 +640,7 @@ impl Component for ClimateUDEB {
     }
 
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
-        Box::new(ClimateUDEBState::new(
-            self.parameters.n_layers,
-            self.parameters.w_initial,
-            self.parameters.temp_adjust_alpha,
-            self.parameters.kappa_m2_per_yr(),
-            self.parameters.layer_thickness,
-        ))
+        Box::new(self.initial_state())
     }
 
     fn solve_with_state(
@@ -617,13 +669,7 @@ mod tests {
     }
 
     fn default_state(component: &ClimateUDEB) -> ClimateUDEBState {
-        ClimateUDEBState::new(
-            component.parameters.n_layers,
-            component.parameters.w_initial,
-            component.parameters.temp_adjust_alpha,
-            component.parameters.kappa_m2_per_yr(),
-            component.parameters.layer_thickness,
-        )
+        component.initial_state()
     }
 
     #[test]
@@ -633,6 +679,59 @@ mod tests {
         assert_eq!(state.ocean_temps.len(), 2);
         assert_eq!(state.ocean_temps[0].len(), 50);
         assert_eq!(state.ocean_temps[1].len(), 50);
+    }
+
+    #[test]
+    fn test_initial_state_profile() {
+        let component = default_component();
+        let state = component.initial_state();
+
+        let n = component.parameters.n_layers;
+        assert_eq!(state.initial_ocean_profile.len(), n);
+
+        // Mixed layer should be t_mix
+        assert!((state.initial_ocean_profile[0] - 17.2).abs() < 1e-10);
+
+        // Profile should decrease monotonically from t_mix toward t_polar
+        for l in 1..n {
+            assert!(
+                state.initial_ocean_profile[l] < state.initial_ocean_profile[l - 1],
+                "profile should decrease with depth: layer {} ({}) >= layer {} ({})",
+                l,
+                state.initial_ocean_profile[l],
+                l - 1,
+                state.initial_ocean_profile[l - 1]
+            );
+            assert!(
+                state.initial_ocean_profile[l] >= 1.0,
+                "profile should stay above t_polar=1.0: layer {} = {}",
+                l,
+                state.initial_ocean_profile[l]
+            );
+        }
+
+        // Deep layers should approach t_polar = 1.0
+        let deepest = state.initial_ocean_profile[n - 1];
+        assert!(
+            deepest < 2.0,
+            "deepest layer should be close to t_polar=1.0, got {deepest}"
+        );
+    }
+
+    #[test]
+    fn test_initial_state_anomalies_are_zero() {
+        let component = default_component();
+        let state = component.initial_state();
+
+        for hemi in 0..2 {
+            for (l, &t) in state.ocean_temps[hemi].iter().enumerate() {
+                assert!(
+                    t.abs() < 1e-15,
+                    "initial anomaly temps should be zero: hemi={hemi} layer={l} T={t}"
+                );
+            }
+        }
+        assert_eq!(state.upwelling_rates, [component.parameters.w_initial; 2]);
     }
 
     #[test]
@@ -993,5 +1092,188 @@ mod tests {
             ecs_adj < component.parameters.ecs,
             "Below-equilibrium cumT should reduce ECS: got {ecs_adj}"
         );
+    }
+
+    #[test]
+    fn test_efficacy_accessors() {
+        let component = default_component();
+
+        // matrix_inverse should be a valid 4x4 matrix
+        let inv = component.matrix_inverse();
+        for row in inv {
+            for &val in row {
+                assert!(val.is_finite(), "matrix_inverse entry should be finite");
+            }
+        }
+
+        // CO2 efficacy should be near 1.0
+        let eff = component.co2_internal_efficacy();
+        println!("CO2 internal efficacy from ClimateUDEB = {eff:.6}");
+        assert!(
+            eff > 0.90 && eff < 1.10,
+            "CO2 efficacy should be near 1.0, got {eff}"
+        );
+    }
+
+    #[test]
+    fn test_efficacy_mode_zero_unchanged() {
+        use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+        use rscm_core::spatial::FourBoxGrid;
+        use rscm_core::state::StateValue;
+        use rscm_core::timeseries::TimeAxis;
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use std::sync::Arc;
+
+        // Mode 0 (default) should produce identical results to a component
+        // that has no efficacy fields at all.
+        let mut params = ClimateUDEBParameters::default();
+        params.efficacy_apply = 0;
+        let component = ClimateUDEB::from_parameters(params).unwrap();
+        let mut state = default_state(&component);
+
+        let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![2000.0, 2001.0]));
+        let erf_ts = rscm_core::timeseries::Timeseries::from_values(
+            ndarray::array![3.71, 3.71],
+            ndarray::array![2000.0, 2001.0],
+        );
+        let erf_item = TimeseriesItem {
+            data: TimeseriesData::Scalar(erf_ts),
+            name: "Effective Radiative Forcing".to_string(),
+            variable_type: VariableType::Exogenous,
+        };
+
+        let surf_grid = FourBoxGrid::magicc_standard();
+        let surf_values = Array2::zeros((2, 4));
+        let surf_ts = GridTimeseries::new(
+            surf_values,
+            time_axis,
+            surf_grid,
+            "K".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+        let surf_item = TimeseriesItem {
+            data: TimeseriesData::FourBox(surf_ts),
+            name: "Surface Temperature".to_string(),
+            variable_type: VariableType::Endogenous,
+        };
+
+        let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
+        let output = component
+            .solve_impl(2000.0, 2001.0, &input_state, &mut state)
+            .expect("solve_impl failed");
+
+        // Compare with default component (also mode 0)
+        let default_comp = default_component();
+        let mut default_st = default_state(&default_comp);
+        let output_default = default_comp
+            .solve_impl(2000.0, 2001.0, &input_state, &mut default_st)
+            .expect("solve_impl failed");
+
+        let sst_mode0 = match output.get("Sea Surface Temperature").unwrap() {
+            StateValue::Scalar(v) => *v,
+            other => panic!("Expected scalar, got {:?}", other),
+        };
+        let sst_default = match output_default.get("Sea Surface Temperature").unwrap() {
+            StateValue::Scalar(v) => *v,
+            other => panic!("Expected scalar, got {:?}", other),
+        };
+
+        assert!(
+            (sst_mode0 - sst_default).abs() < 1e-15,
+            "Mode 0 should be identical to default: mode0={sst_mode0}, default={sst_default}"
+        );
+    }
+
+    #[test]
+    fn test_efficacy_mode_two_adjusts_temperature() {
+        use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+        use rscm_core::spatial::FourBoxGrid;
+        use rscm_core::state::StateValue;
+        use rscm_core::timeseries::TimeAxis;
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use std::sync::Arc;
+
+        let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![2000.0, 2001.0]));
+        let erf_ts = rscm_core::timeseries::Timeseries::from_values(
+            ndarray::array![3.71, 3.71],
+            ndarray::array![2000.0, 2001.0],
+        );
+        let erf_item = TimeseriesItem {
+            data: TimeseriesData::Scalar(erf_ts),
+            name: "Effective Radiative Forcing".to_string(),
+            variable_type: VariableType::Exogenous,
+        };
+
+        let surf_grid = FourBoxGrid::magicc_standard();
+        let surf_values = Array2::zeros((2, 4));
+        let surf_ts = GridTimeseries::new(
+            surf_values,
+            time_axis,
+            surf_grid,
+            "K".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
+        let surf_item = TimeseriesItem {
+            data: TimeseriesData::FourBox(surf_ts),
+            name: "Surface Temperature".to_string(),
+            variable_type: VariableType::Endogenous,
+        };
+
+        let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
+
+        // Mode 0: no efficacy adjustment
+        let mut params_0 = ClimateUDEBParameters::default();
+        params_0.efficacy_apply = 0;
+        let comp_0 = ClimateUDEB::from_parameters(params_0).unwrap();
+        let mut state_0 = default_state(&comp_0);
+        let out_0 = comp_0
+            .solve_impl(2000.0, 2001.0, &input_state, &mut state_0)
+            .expect("solve failed");
+
+        // Mode 2: AR6 efficacy adjustment
+        let mut params_2 = ClimateUDEBParameters::default();
+        params_2.efficacy_apply = 2;
+        let comp_2 = ClimateUDEB::from_parameters(params_2).unwrap();
+        let mut state_2 = default_state(&comp_2);
+        let out_2 = comp_2
+            .solve_impl(2000.0, 2001.0, &input_state, &mut state_2)
+            .expect("solve failed");
+
+        let sst_0 = match out_0.get("Sea Surface Temperature").unwrap() {
+            StateValue::Scalar(v) => *v,
+            other => panic!("Expected scalar, got {:?}", other),
+        };
+        let sst_2 = match out_2.get("Sea Surface Temperature").unwrap() {
+            StateValue::Scalar(v) => *v,
+            other => panic!("Expected scalar, got {:?}", other),
+        };
+
+        println!("SST mode 0 = {sst_0:.6}, SST mode 2 = {sst_2:.6}");
+        println!(
+            "CO2 internal efficacy = {:.6}",
+            comp_2.co2_internal_efficacy()
+        );
+
+        // Mode 2 divides forcing by co2_internal_efficacy.
+        // With AR6 defaults the efficacy is near 1.0 but not exactly 1.0,
+        // so temperatures should differ.
+        assert!(
+            (sst_0 - sst_2).abs() > 1e-6,
+            "Mode 2 should shift temperature: mode0={sst_0}, mode2={sst_2}"
+        );
+
+        // The direction depends on whether co2_efficacy > 1 or < 1.
+        // With default AR6 rf_regions_co2, CO2 efficacy is typically slightly != 1.
+        if comp_2.co2_internal_efficacy() > 1.0 {
+            assert!(
+                sst_2 < sst_0,
+                "Efficacy > 1 should reduce effective forcing: mode0={sst_0}, mode2={sst_2}"
+            );
+        } else {
+            assert!(
+                sst_2 > sst_0,
+                "Efficacy < 1 should increase effective forcing: mode0={sst_0}, mode2={sst_2}"
+            );
+        }
     }
 }
