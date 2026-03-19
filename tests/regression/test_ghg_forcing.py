@@ -729,13 +729,7 @@ def test_03_emissions_driven():
 @pytest.mark.parametrize(
     "ecs",
     [
-        pytest.param(
-            1.5,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="~3.2% cool bias in converge phase, borderline",
-            ),
-        ),
+        1.5,
         pytest.param(
             2.0,
             marks=pytest.mark.xfail(
