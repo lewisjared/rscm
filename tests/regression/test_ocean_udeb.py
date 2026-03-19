@@ -477,8 +477,9 @@ def test_ocean_10_full_default():
 
 
 @pytest.mark.xfail(
+    strict=True,
     reason="~5% cool bias in shock phase from initial transient mismatch"
-    " (same as ECS sweep tests)"
+    " (same as ECS sweep tests)",
 )
 def test_ocean_11_efficacy_ar6():
     """

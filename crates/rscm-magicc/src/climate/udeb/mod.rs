@@ -128,9 +128,10 @@ impl ClimateUDEB {
 
     /// Create a properly initialized state for this component.
     ///
-    /// This accounts for the component's area factors when computing the
-    /// initial ocean temperature profile (needed for variable upwelling
-    /// corrections).
+    /// The initial ocean temperature profile uses an analytical exponential
+    /// decay (MAGICC7 `CORE_SWITCH_OCN_TEMPPROFILE=1`). Area factors and
+    /// polar sinking ratio are passed for forward compatibility but are
+    /// not currently used in the profile calculation.
     pub fn initial_state(&self) -> ClimateUDEBState {
         ClimateUDEBState::new(
             self.parameters.n_layers,
@@ -467,7 +468,10 @@ impl ClimateUDEB {
         for step_idx in 1..=self.parameters.steps_per_year {
             let frac = step_idx as FloatValue / steps;
             let erf = erf_start + frac * (erf_end - erf_start);
-            let erf_adjusted = if self.parameters.efficacy_apply == 2 {
+            let erf_adjusted = if self.parameters.efficacy_apply == 2
+                && current_co2_efficacy.is_finite()
+                && current_co2_efficacy > 0.0
+            {
                 // AR6 mode: prescribed_efficacy=1.0 for CO2, so EFFRF = RF / internal_efficacy
                 erf / current_co2_efficacy
             } else {

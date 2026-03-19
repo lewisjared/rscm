@@ -95,8 +95,8 @@ $$ECS_{eff}(t) = ECS_0 \cdot \left(1 + \alpha_T \cdot \frac{\sum T(t) - \sum T_{
 
 Where:
 
-- `CORE_FEEDBACK_QSENSITIVITY` = $\alpha_Q$ (forcing sensitivity)
-- `CORE_FEEDBACK_CUMTSENSITIVITY` = $\alpha_T$ (cumulative temperature sensitivity)
+- `CORE_FEEDBACK_QSENSITIVITY` = $\alpha_Q$ (forcing sensitivity, units: $1/(\text{W/m}^2)$; default $7.84 \times 10^{-9}$)
+- `CORE_FEEDBACK_CUMTSENSITIVITY` = $\alpha_T$ (cumulative temperature sensitivity, dimensionless)
 - `CORE_FEEDBACK_CUMTPERIOD` = period for cumulative temperature calculation
 
 ### 2.5 Ocean Mixed Layer Energy Balance
@@ -653,7 +653,7 @@ The LAMCALC routine:
 
 - Uses iterative matrix inversion (not direct solution)
 - Calculates internal efficacies for ~20 forcing agents
-- Is called every sub-step (12 times per year with default settings)
+- Is called once per annual timestep (only re-solved when ECS is time-varying)
 - Could be simplified if land-ocean warming ratio was derived post-hoc
 
 ### 9.10 Dead Code and Comments

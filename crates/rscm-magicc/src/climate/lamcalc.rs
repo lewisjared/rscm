@@ -761,8 +761,8 @@ mod tests {
         // Land-concentrated forcing (O3) should have higher efficacy than CO2
         // because land has stronger feedback
         assert!(
-            (co2_eff - o3_eff).abs() > 0.001,
-            "Different spatial patterns should produce different efficacies: \
+            o3_eff > co2_eff,
+            "NH land-concentrated O3 forcing should have higher efficacy than CO2: \
              CO2={co2_eff:.6}, O3={o3_eff:.6}"
         );
     }
