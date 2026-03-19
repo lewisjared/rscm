@@ -103,6 +103,30 @@ pub fn build_coupling_matrix(
     ]
 }
 
+/// Compute per-box forcing fractions from a regional forcing pattern.
+///
+/// Normalizes `rf_regions` by the area-weighted sum to produce `qfrac` values
+/// such that area-weighted forcing is preserved. Returns `[1.0; 4]` if the
+/// weighted sum is near zero.
+///
+/// $$\text{qfrac}_i = \frac{\text{rf\_regions}_i}{\sum_j \text{rf\_regions}_j \times f_j}$$
+///
+/// Reference: MAGICC7.f90 lines 8146-8165.
+pub fn compute_qfrac(rf_regions: &[FloatValue; 4], area: &[FloatValue; 4]) -> [FloatValue; 4] {
+    let rf_sum: FloatValue = rf_regions.iter().zip(area.iter()).map(|(r, a)| r * a).sum();
+
+    if rf_sum.abs() <= 1e-15 {
+        [1.0; 4]
+    } else {
+        [
+            rf_regions[0] / rf_sum,
+            rf_regions[1] / rf_sum,
+            rf_regions[2] / rf_sum,
+            rf_regions[3] / rf_sum,
+        ]
+    }
+}
+
 /// Compute the internal efficacy of a forcing agent given its regional pattern.
 ///
 /// Internal efficacy measures how effectively an agent's spatial forcing pattern
@@ -128,12 +152,7 @@ pub fn calc_internal_efficacy(
         return 1.0;
     }
 
-    let qfrac: [FloatValue; 4] = [
-        rf_regions[0] / rf_sum,
-        rf_regions[1] / rf_sum,
-        rf_regions[2] / rf_sum,
-        rf_regions[3] / rf_sum,
-    ];
+    let qfrac = compute_qfrac(rf_regions, area);
 
     let mut temps = [0.0_f64; 4];
     for row in 0..4 {
@@ -165,22 +184,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
     let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
 
     // Compute per-box CO2 forcing fractions from regional pattern.
-    // MAGICC7.f90 lines 8146-8165:
-    //   QFRAC_i = RF_REGIONS_CO2_i / SUM(RF_REGIONS_CO2 * GLOBALAREAFRACTIONS)
-    let rf_sum: FloatValue = params.rf_regions_co2[0] * params.fgno
-        + params.rf_regions_co2[1] * params.fgnl
-        + params.rf_regions_co2[2] * params.fgso
-        + params.rf_regions_co2[3] * params.fgsl;
-    let qfrac: [FloatValue; 4] = if rf_sum.abs() > 1e-15 {
-        [
-            params.rf_regions_co2[0] / rf_sum,
-            params.rf_regions_co2[1] / rf_sum,
-            params.rf_regions_co2[2] / rf_sum,
-            params.rf_regions_co2[3] / rf_sum,
-        ]
-    } else {
-        [1.0; 4]
-    };
+    let qfrac = compute_qfrac(&params.rf_regions_co2, &area);
 
     // Storage for iteration history
     let mut lamo = vec![0.0; MAX_ITERATIONS + 2];
@@ -621,20 +625,7 @@ mod tests {
             let inv = invert_4x4(&matrix).expect("Coupling matrix should be invertible");
             let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
 
-            let rf_sum: FloatValue = params.rf_regions_co2[0] * params.fgno
-                + params.rf_regions_co2[1] * params.fgnl
-                + params.rf_regions_co2[2] * params.fgso
-                + params.rf_regions_co2[3] * params.fgsl;
-            let qfrac = if rf_sum.abs() > 1e-15 {
-                [
-                    params.rf_regions_co2[0] / rf_sum,
-                    params.rf_regions_co2[1] / rf_sum,
-                    params.rf_regions_co2[2] / rf_sum,
-                    params.rf_regions_co2[3] / rf_sum,
-                ]
-            } else {
-                [1.0; 4]
-            };
+            let qfrac = compute_qfrac(&params.rf_regions_co2, &area);
 
             let q = params.q_2xco2;
             let mut temps = [0.0_f64; 4];

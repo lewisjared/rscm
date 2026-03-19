@@ -11,7 +11,7 @@ use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
 use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
 use rscm_core::utils::linear_algebra::invert_4x4;
-use rscm_magicc::climate::lamcalc::{build_coupling_matrix, LamcalcParams};
+use rscm_magicc::climate::lamcalc::{build_coupling_matrix, compute_qfrac, LamcalcParams};
 use rscm_magicc::climate::ClimateUDEB;
 use rscm_magicc::parameters::ClimateUDEBParameters;
 use std::sync::Arc;
@@ -122,21 +122,7 @@ pub fn compute_equilibrium_temperatures(
     let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
     let q = params.q_2xco2;
 
-    // Compute qfrac from rf_regions_co2 (same logic as lamcalc.rs)
-    let rf_sum: FloatValue = params.rf_regions_co2[0] * params.fgno
-        + params.rf_regions_co2[1] * params.fgnl
-        + params.rf_regions_co2[2] * params.fgso
-        + params.rf_regions_co2[3] * params.fgsl;
-    let qfrac: [FloatValue; 4] = if rf_sum.abs() > 1e-15 {
-        [
-            params.rf_regions_co2[0] / rf_sum,
-            params.rf_regions_co2[1] / rf_sum,
-            params.rf_regions_co2[2] / rf_sum,
-            params.rf_regions_co2[3] / rf_sum,
-        ]
-    } else {
-        [1.0; 4]
-    };
+    let qfrac = compute_qfrac(&params.rf_regions_co2, &area);
 
     let mut box_temps = [0.0_f64; 4];
     for row in 0..4 {
