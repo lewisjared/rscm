@@ -117,6 +117,7 @@ pub struct ClimateUDEB {
     ///
     /// Computed as `qfrac[i] = rf_regions_co2[i] / sum(rf_regions_co2[j] * area[j])`.
     /// The area-weighted sum equals 1.0, preserving global mean forcing.
+    /// Falls back to `[1.0; 4]` (uniform) if the weighted sum is near zero.
     #[serde(skip)]
     co2_qfrac: [FloatValue; 4],
 }
