@@ -726,13 +726,40 @@ def test_03_emissions_driven():
     )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "ClimateUDEB diverges from MAGICC7 (~5% bias, ECS-dependent)."
-        " Likely caused by variable upwelling treatment."
-    )
+@pytest.mark.parametrize(
+    "ecs",
+    [
+        1.5,
+        pytest.param(
+            2.0,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="~4% cool bias in converge phase, ECS-dependent",
+            ),
+        ),
+        pytest.param(
+            3.0,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="~5% cool bias across all phases, ECS-dependent",
+            ),
+        ),
+        pytest.param(
+            4.0,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="~5.7% cool bias across all phases, ECS-dependent",
+            ),
+        ),
+        pytest.param(
+            4.5,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="~6% cool bias across all phases, ECS-dependent",
+            ),
+        ),
+    ],
 )
-@pytest.mark.parametrize("ecs", [1.5, 2.0, 3.0, 4.0, 4.5])
 def test_04_ecs_sweep(ecs: float):
     """
     Test 4: Climate sensitivity parameter sweep (ERF -> temperature only).
@@ -764,14 +791,17 @@ def test_04_ecs_sweep(ecs: float):
 
     results = model.timeseries()
 
-    # Extract FourBox surface temperature and compute global mean
+    # Extract FourBox surface temperature and compute global mean.
+    # Surface Temperature is a state variable with a valid initial value (0.0)
+    # at index 0, so no [1:] shift is needed (unlike computed outputs like ERF
+    # which are NaN at index 0).
     temp_4box = results.get_fourbox_timeseries_by_name("Surface Temperature")
     assert temp_4box is not None, "Surface Temperature not found in results"
-    actual_temp = fourbox_global_mean(temp_4box.values()[1:])
+    actual_temp = fourbox_global_mean(temp_4box.values())
 
     assert_allclose_phased(
         actual_temp,
-        expected_temp[:-1],
+        expected_temp,
         shock_rtol=5e-2,
         converge_rtol=3e-2,
         final_rtol=3e-2,
@@ -822,14 +852,16 @@ def test_05_co2_only_forcing():
 
     results = model.timeseries()
 
-    # Extract FourBox surface temperature and compute global mean
+    # Extract FourBox surface temperature and compute global mean.
+    # Surface Temperature is a state variable with a valid initial value (0.0)
+    # at index 0, so no [1:] shift is needed.
     temp_4box = results.get_fourbox_timeseries_by_name("Surface Temperature")
     assert temp_4box is not None, "Surface Temperature not found in results"
-    actual_temp = fourbox_global_mean(temp_4box.values()[1:])
+    actual_temp = fourbox_global_mean(temp_4box.values())
 
     assert_allclose_phased(
         actual_temp,
-        expected_temp[:-1],
+        expected_temp,
         shock_rtol=5e-2,
         converge_rtol=3e-2,
         final_rtol=3e-2,
