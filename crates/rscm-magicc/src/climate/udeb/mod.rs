@@ -164,6 +164,15 @@ impl ClimateUDEB {
             )));
         }
 
+        if !parameters.prescribed_efficacy_co2.is_finite()
+            || parameters.prescribed_efficacy_co2 <= 0.0
+        {
+            return Err(RSCMError::Error(format!(
+                "invalid prescribed_efficacy_co2: must be finite and positive, got {}",
+                parameters.prescribed_efficacy_co2
+            )));
+        }
+
         // Calculate lambda_ocean and lambda_land via LAMCALC iteration.
         // This accounts for inter-box heat exchange when matching the
         // land-ocean warming ratio (RLO) at the given ECS.
@@ -228,6 +237,31 @@ impl ClimateUDEB {
     /// Get the per-box CO2 forcing fractions.
     pub fn co2_qfrac(&self) -> &[FloatValue; 4] {
         &self.co2_qfrac
+    }
+
+    /// Apply efficacy adjustment and regional CO2 qfrac distribution to scalar ERF.
+    ///
+    /// NOTE: This applies the CO2 regional forcing pattern to the *total* ERF input,
+    /// not just the CO2 component. This is correct when forcing is CO2-only, but
+    /// when non-CO2 agents contribute to total ERF, their forcing is also distributed
+    /// using the CO2 pattern. This matches MAGICC's single-agent architecture where
+    /// LAMCALC is calibrated against the same total ERF, but breaks physical
+    /// consistency for multi-agent forcing mixes. Per-agent regional patterns would
+    /// require decomposed forcing inputs (future work).
+    fn apply_efficacy_and_qfrac(&self, erf: FloatValue, co2_efficacy: FloatValue) -> FourBoxSlice {
+        let erf_adjusted = match self.parameters.efficacy_apply {
+            1 => erf * self.parameters.prescribed_efficacy_co2,
+            2 if co2_efficacy.is_finite() && co2_efficacy > 0.0 => {
+                erf * self.parameters.prescribed_efficacy_co2 / co2_efficacy
+            }
+            _ => erf,
+        };
+        FourBoxSlice::from_array([
+            erf_adjusted * self.co2_qfrac[0],
+            erf_adjusted * self.co2_qfrac[1],
+            erf_adjusted * self.co2_qfrac[2],
+            erf_adjusted * self.co2_qfrac[3],
+        ])
     }
 
     /// Initialize or ensure state is properly configured.
@@ -485,19 +519,7 @@ impl ClimateUDEB {
         for step_idx in 1..=self.parameters.steps_per_year {
             let frac = step_idx as FloatValue / steps;
             let erf = erf_start + frac * (erf_end - erf_start);
-            let erf_adjusted = match self.parameters.efficacy_apply {
-                1 => erf * self.parameters.prescribed_efficacy_co2,
-                2 if current_co2_efficacy.is_finite() && current_co2_efficacy > 0.0 => {
-                    erf * self.parameters.prescribed_efficacy_co2 / current_co2_efficacy
-                }
-                _ => erf,
-            };
-            let forcing = FourBoxSlice::from_array([
-                erf_adjusted * self.co2_qfrac[0],
-                erf_adjusted * self.co2_qfrac[1],
-                erf_adjusted * self.co2_qfrac[2],
-                erf_adjusted * self.co2_qfrac[3],
-            ]);
+            let forcing = self.apply_efficacy_and_qfrac(erf, current_co2_efficacy);
             // Update ground heat reservoir temperatures BEFORE the ocean solve
             // (forward Euler, using previous substep's land temperatures).
             //
@@ -618,19 +640,7 @@ impl ClimateUDEB {
 
         // Calculate diagnostics using end-of-year forcing, adjusted for efficacy
         // so that N = Q_eff - lambda*T is consistent with the forcing used to drive T.
-        let erf_end_adjusted = match self.parameters.efficacy_apply {
-            1 => erf_end * self.parameters.prescribed_efficacy_co2,
-            2 if current_co2_efficacy.is_finite() && current_co2_efficacy > 0.0 => {
-                erf_end * self.parameters.prescribed_efficacy_co2 / current_co2_efficacy
-            }
-            _ => erf_end,
-        };
-        let forcing_end = FourBoxSlice::from_array([
-            erf_end_adjusted * self.co2_qfrac[0],
-            erf_end_adjusted * self.co2_qfrac[1],
-            erf_end_adjusted * self.co2_qfrac[2],
-            erf_end_adjusted * self.co2_qfrac[3],
-        ]);
+        let forcing_end = self.apply_efficacy_and_qfrac(erf_end, current_co2_efficacy);
         let heat_uptake = self.calculate_heat_uptake(
             &forcing_end,
             &surface_temperature,
@@ -1584,6 +1594,39 @@ mod tests {
             sst_2b > sst_2a,
             "Higher prescribed efficacy should produce more warming: \
              presc=1.0: {sst_2a}, presc=1.1: {sst_2b}"
+        );
+    }
+
+    #[test]
+    fn test_invalid_prescribed_efficacy_rejected() {
+        let mut params = ClimateUDEBParameters::default();
+
+        // Zero should be rejected
+        params.prescribed_efficacy_co2 = 0.0;
+        assert!(
+            ClimateUDEB::from_parameters(params.clone()).is_err(),
+            "prescribed_efficacy_co2=0.0 should be rejected"
+        );
+
+        // Negative should be rejected
+        params.prescribed_efficacy_co2 = -1.0;
+        assert!(
+            ClimateUDEB::from_parameters(params.clone()).is_err(),
+            "prescribed_efficacy_co2=-1.0 should be rejected"
+        );
+
+        // NaN should be rejected
+        params.prescribed_efficacy_co2 = FloatValue::NAN;
+        assert!(
+            ClimateUDEB::from_parameters(params.clone()).is_err(),
+            "prescribed_efficacy_co2=NaN should be rejected"
+        );
+
+        // Positive value should be accepted
+        params.prescribed_efficacy_co2 = 0.5;
+        assert!(
+            ClimateUDEB::from_parameters(params).is_ok(),
+            "prescribed_efficacy_co2=0.5 should be accepted"
         );
     }
 }
