@@ -195,6 +195,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
 
     let mut converged_lam_o = 0.0;
     let mut converged_lam_l = 0.0;
+    let mut converged_inv: Option<[[FloatValue; 4]; 4]> = None;
     let mut found = false;
 
     for i in 2..=MAX_ITERATIONS {
@@ -231,6 +232,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
         if diff[i].abs() < RLO_TOLERANCE {
             converged_lam_o = lam_o;
             converged_lam_l = lam_l;
+            converged_inv = Some(inv);
             found = true;
             break;
         }
@@ -267,9 +269,8 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
     }
 
     if found {
-        // Reconstruct the final coupling matrix and its inverse for efficacy computation.
-        let final_matrix = build_coupling_matrix(params, converged_lam_o, converged_lam_l);
-        let final_inv = invert_4x4(&final_matrix)?;
+        // Use the matrix inverse cached from the converged iteration.
+        let final_inv = converged_inv.expect("inv is set when found=true");
 
         let co2_internal_efficacy = calc_internal_efficacy(
             params.q_2xco2,

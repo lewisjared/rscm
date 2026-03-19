@@ -596,8 +596,17 @@ impl ClimateUDEB {
         state.temperature_history.push(global_temp * dt_year);
         state.dt_history.push(dt_year);
 
-        // Calculate diagnostics using end-of-year forcing
-        let forcing_end = FourBoxSlice::from_array([erf_end, erf_end, erf_end, erf_end]);
+        // Calculate diagnostics using end-of-year forcing, adjusted for efficacy
+        // so that N = Q_eff - lambda*T is consistent with the forcing used to drive T.
+        let erf_end_adjusted = if self.parameters.efficacy_apply == 2
+            && current_co2_efficacy.is_finite()
+            && current_co2_efficacy > 0.0
+        {
+            erf_end / current_co2_efficacy
+        } else {
+            erf_end
+        };
+        let forcing_end = FourBoxSlice::from_array([erf_end_adjusted; 4]);
         let heat_uptake = self.calculate_heat_uptake(
             &forcing_end,
             &surface_temperature,
