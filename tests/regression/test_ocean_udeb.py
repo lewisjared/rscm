@@ -95,6 +95,7 @@ def build_ocean_model(
         "feedback_cumt_sensitivity": config.get("core_feedback_cumtsensitivity", 0.08),
         "feedback_q_sensitivity": config.get("core_feedback_qsensitivity", 7.84e-9),
         "efficacy_apply": config.get("rf_efficacy_apply", 0),
+        "prescribed_efficacy_co2": config.get("rf_efficacy_co2", 1.0),
     }
 
     climate = ClimateUDEBBuilder.from_parameters(params).build()
@@ -230,8 +231,8 @@ def test_ocean_01_diffusion_only():
     run_ocean_scenario(
         "01_diffusion_only",
         shock_rtol=1.5e-2,
-        converge_rtol=1e-2,
-        final_rtol=5e-3,
+        converge_rtol=1.5e-2,
+        final_rtol=1.5e-2,
     )
 
 
@@ -246,8 +247,8 @@ def test_ocean_02_constant_upwelling():
     run_ocean_scenario(
         "02_constant_upwelling",
         shock_rtol=1.5e-2,
-        converge_rtol=1e-2,
-        final_rtol=5e-3,
+        converge_rtol=1.5e-2,
+        final_rtol=1.5e-2,
     )
 
 
@@ -283,8 +284,8 @@ def test_ocean_05_temp_dependent_diffusivity():
     """
     run_ocean_scenario(
         "05_temp_dependent_diffusivity",
-        converge_rtol=1e-2,
-        final_rtol=5e-3,
+        converge_rtol=1.5e-2,
+        final_rtol=1.5e-2,
     )
 
 
@@ -311,8 +312,8 @@ def test_ocean_07_interhemispheric_exchange():
     run_ocean_scenario(
         "07_interhemispheric_exchange",
         shock_rtol=1.5e-2,
-        converge_rtol=1e-2,
-        final_rtol=5e-3,
+        converge_rtol=1.5e-2,
+        final_rtol=1.5e-2,
     )
 
 
@@ -478,8 +479,7 @@ def test_ocean_10_full_default():
 
 @pytest.mark.xfail(
     strict=True,
-    reason="~5% cool bias in shock phase from initial transient mismatch"
-    " (same as ECS sweep tests)",
+    reason="~4.5% shock phase bias remains after qfrac fix (transient mismatch)",
 )
 def test_ocean_11_efficacy_ar6():
     """

@@ -187,11 +187,19 @@ pub struct ClimateUDEBParameters {
     /// Efficacy application mode (matches MAGICC7 `RF_EFFICACY_APPLY`).
     ///
     /// - `0` = disabled (default): all agents treated with uniform spatial efficacy.
-    /// - `2` = AR6 mode: effective forcing adjusted by `prescribed_efficacy / internal_efficacy`.
-    ///
-    /// Currently only CO2 internal efficacy is computed (Phase 1).
+    /// - `1` = prescribed mode: effective forcing scaled by `prescribed_efficacy_co2`.
+    /// - `2` = AR6 mode: effective forcing adjusted by `prescribed_efficacy_co2 / internal_efficacy`.
     #[serde(default)]
     pub efficacy_apply: u8,
+
+    /// Prescribed CO2 efficacy factor (matches MAGICC7 `RF_EFFICACY_CO2`).
+    ///
+    /// In mode 1: $\text{EFFRF} = \text{ERF} \times \text{prescribed\_efficacy\_co2}$.
+    /// In mode 2: $\text{EFFRF} = \text{ERF} \times \text{prescribed\_efficacy\_co2} / \text{internal\_efficacy}$.
+    ///
+    /// Default: 1.0 (no-op).
+    #[serde(default = "default_prescribed_efficacy_co2")]
+    pub prescribed_efficacy_co2: FloatValue,
 
     // Integration parameters
     /// Steps per year for sub-annual integration.
@@ -258,12 +266,17 @@ impl Default for ClimateUDEBParameters {
 
             // Efficacy
             efficacy_apply: 0,
+            prescribed_efficacy_co2: 1.0,
 
             // Integration
             steps_per_year: 12,
             max_temperature: 25.0,
         }
     }
+}
+
+fn default_prescribed_efficacy_co2() -> FloatValue {
+    1.0
 }
 
 /// Conversion factor from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.

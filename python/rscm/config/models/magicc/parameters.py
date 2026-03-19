@@ -138,7 +138,15 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         status=ParameterStatus.SUPPORTED,
         rscm_path="components.climate.parameters.efficacy_apply",
         unit=None,
-        description="Efficacy application mode (0=disabled, 2=AR6 mode)",
+        description="Efficacy application mode (0=disabled, 1=prescribed, 2=AR6 mode)",
+        category="forcing",
+    ),
+    "rf_efficacy_co2": ParameterInfo(
+        name="rf_efficacy_co2",
+        status=ParameterStatus.SUPPORTED,
+        rscm_path="components.climate.parameters.prescribed_efficacy_co2",
+        unit=None,
+        description="Prescribed CO2 efficacy factor (default 1.0)",
         category="forcing",
     ),
     # Concentration/emissions switching
