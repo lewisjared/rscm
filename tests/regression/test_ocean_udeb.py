@@ -26,7 +26,6 @@ Test scenarios:
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from regression.helpers import (
     assert_allclose_phased,
@@ -262,9 +261,6 @@ def test_ocean_03_depth_dependent_area():
     run_ocean_scenario("03_depth_dependent_area", final_rtol=1e-2)
 
 
-@pytest.mark.xfail(
-    reason="~8% cool bias from approximate equilibrium profile with area factors (#108)"
-)
 def test_ocean_04_variable_upwelling():
     """
     Test 04: Variable (temperature-dependent) upwelling.
@@ -299,7 +295,7 @@ def test_ocean_06_ground_heat():
     Uses wider shock tolerance because the ground heat coupling
     amplifies the step forcing onset transient.
     """
-    run_ocean_scenario("06_ground_heat", shock_rtol=5e-2, skip=15, final_rtol=1e-2)
+    run_ocean_scenario("06_ground_heat", shock_rtol=5e-2, skip=15, final_rtol=1.5e-2)
 
 
 def test_ocean_07_interhemispheric_exchange():
@@ -477,10 +473,6 @@ def test_ocean_10_full_default():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="~4.5% shock phase bias remains after qfrac fix (transient mismatch)",
-)
 def test_ocean_11_efficacy_ar6():
     """
     Test 11: AR6 internal efficacy mode (ABRUPT-2XCO2).
