@@ -726,28 +726,7 @@ def test_03_emissions_driven():
     )
 
 
-@pytest.mark.parametrize(
-    "ecs",
-    [
-        1.5,
-        2.0,
-        3.0,
-        pytest.param(
-            4.0,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="~3% cool bias in converge phase at high ECS",
-            ),
-        ),
-        pytest.param(
-            4.5,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="~3.2% cool bias in converge phase at high ECS",
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("ecs", [1.5, 2.0, 3.0, 4.0, 4.5])
 def test_04_ecs_sweep(ecs: float):
     """
     Test 4: Climate sensitivity parameter sweep (ERF -> temperature only).

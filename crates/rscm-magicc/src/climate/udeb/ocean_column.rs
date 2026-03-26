@@ -112,8 +112,7 @@ impl ClimateUDEB {
 
         // Mixed layer (layer 0)
         // Coupled ocean-land feedback term (TERM_OCN_LAND_FEEDBACK)
-        // When ground heat is enabled, K_lg enters the coupled denominator,
-        // modifying both the feedback strength and forcing amplification.
+        // MAGICC7.f90 lines 2803-2820.
         let f_l_hemi = if hemi == 0 {
             self.parameters.nh_land_fraction / 2.0
         } else {
@@ -121,34 +120,26 @@ impl ClimateUDEB {
         };
         let f_o_hemi = 0.5 - f_l_hemi;
 
-        // Ground heat coupling modifies the coupled land-ocean denominator.
-        // Without ground heat: D = f_o * (K_lo + f_l * lambda_l)
-        // With ground heat:    D = f_o * (K_lo + f_l * lambda_l + K_lg)
-        let k_lg_eff = if self.parameters.land_heat_capacity_enabled {
-            self.parameters.k_lg
-        } else {
-            0.0
-        };
-        let denominator = f_o_hemi * (self.parameters.k_lo + f_l_hemi * lambda_land + k_lg_eff);
+        // Land feedback denominator (MAGICC7 line 2803-2804).
+        // Ground heat (K_lg) is NOT included here -- it is handled as a
+        // separate explicit term on the RHS (MAGICC7 lines 2893-2902).
+        let denominator = f_o_hemi * (self.parameters.k_lo + f_l_hemi * lambda_land);
 
-        // Feedback term: with ground heat, the numerator gains K_lg alongside
-        // the f_l*lambda_l term, because the ground reservoir adds another
-        // pathway that damps the land-ocean coupling.
-        //
-        // Without ground heat: lambda_l * K_lo * alpha * f_l / D
-        // With ground heat:    K_lo * alpha * (f_l * lambda_l + K_lg) / D
+        // Feedback term: MAGICC7 lines 2806-2820.
+        // lambda_l * K_lo * alpha * f_l / DENOM
         let term_feedback = alpha_eff / c_mix
             * (lambda_ocean
-                + self.parameters.k_lo
+                + lambda_land
+                    * self.parameters.k_lo
                     * self.parameters.amplify_ocean_to_land
-                    * (f_l_hemi * lambda_land + k_lg_eff)
+                    * f_l_hemi
                     / denominator);
 
         let dz1 = dz / 2.0;
         let term_diff = kappas[0] / (dz_mix * dz1) * dt;
         let term_upwell = w / dz_mix * dt;
 
-        // Land forcing amplification (denominator includes K_lg when enabled)
+        // Land forcing amplification (MAGICC7 lines 2843-2845).
         let forcing_amp = 1.0 + self.parameters.k_lo * f_l_hemi / denominator;
 
         // MAGICC7 applies af_top to the feedback term and af_top to the
@@ -164,10 +155,13 @@ impl ClimateUDEB {
         d[0] = state.ocean_temps[hemi][0]
             + (forcing * forcing_amp + hemi_heat_exchange) / c_mix * dt * af_top[0];
 
-        // Ground temperature contributes as an explicit forcing through the
-        // coupled land-ocean system: K_lo * K_lg * T_ground / (D * C_mix)
+        // Ground heat as explicit subtraction on D(1) (MAGICC7 lines 2893-2902).
+        // The ground reservoir heat flux damps the mixed layer by subtracting
+        // K_lg * (T_land - T_ground) / (C_mix * FGO) from the RHS.
+        // Uses previous-substep land and ground temperatures (explicit).
         if self.parameters.land_heat_capacity_enabled {
-            d[0] += self.parameters.k_lo * self.parameters.k_lg * ground_temp / denominator / c_mix
+            let land_temp = state.land_temps[hemi];
+            d[0] -= self.parameters.k_lg * (land_temp - ground_temp) / (c_mix * f_o_hemi)
                 * dt
                 * af_top[0];
         }

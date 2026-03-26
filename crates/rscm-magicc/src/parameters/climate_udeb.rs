@@ -6,6 +6,17 @@
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
+/// Initial ocean temperature profile mode (`CORE_SWITCH_OCN_TEMPPROFILE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OceanTempProfile {
+    /// Analytical exponential decay (uniform diffusivity + upwelling).
+    #[serde(rename = "1")]
+    Analytical = 1,
+    /// CMIP5 multi-model mean observational profile (default).
+    #[serde(rename = "2")]
+    Cmip5 = 2,
+}
+
 /// Parameters for the 4-box UDEB climate model.
 ///
 /// The UDEB model couples a 4-box atmosphere (Northern Ocean, Northern Land,
@@ -204,16 +215,11 @@ pub struct ClimateUDEBParameters {
     // Initial ocean temperature profile
     /// Initial ocean temperature profile mode (`CORE_SWITCH_OCN_TEMPPROFILE`).
     ///
-    /// - `1` = Analytical exponential decay (uniform diffusivity + upwelling).
-    /// - `2` = CMIP5 multi-model mean observational profile (default).
-    ///
     /// The profile is used as a reference baseline for variable upwelling
     /// correction terms. When upwelling changes from its initial value, these
     /// corrections compensate for the shift in equilibrium profile. Using the
     /// CMIP5 profile matches MAGICC7's default behaviour.
-    ///
-    /// Default: 2
-    pub ocean_temp_profile: u8,
+    pub ocean_temp_profile: OceanTempProfile,
 
     // Integration parameters
     /// Steps per year for sub-annual integration.
@@ -283,7 +289,7 @@ impl Default for ClimateUDEBParameters {
             prescribed_efficacy_co2: 1.0,
 
             // Initial ocean profile
-            ocean_temp_profile: 2,
+            ocean_temp_profile: OceanTempProfile::Cmip5,
 
             // Integration
             steps_per_year: 12,
@@ -469,12 +475,19 @@ impl ClimateUDEBParameters {
     /// Returns a Vec of length `n_layers` with the initial temperature (K)
     /// for each ocean layer. Layer 0 is the mixed layer.
     ///
-    /// When `ocean_temp_profile == 2` (default), returns the CMIP5 multi-model
-    /// mean profile. When `ocean_temp_profile == 1`, returns the analytical
-    /// exponential decay profile.
+    /// When `ocean_temp_profile` is [`OceanTempProfile::Cmip5`] (default),
+    /// returns the CMIP5 multi-model mean profile. When
+    /// [`OceanTempProfile::Analytical`], returns the analytical exponential
+    /// decay profile.
     pub fn initial_ocean_profile(&self, hemi: usize) -> Vec<FloatValue> {
+        assert!(
+            hemi < 2,
+            "initial_ocean_profile: hemi must be 0 (NH) or 1 (SH), got {}",
+            hemi
+        );
+
         match self.ocean_temp_profile {
-            2 => {
+            OceanTempProfile::Cmip5 => {
                 let cmip5 = if hemi == 0 {
                     &CMIP5_PROFILE_NH
                 } else {
@@ -492,8 +505,7 @@ impl ClimateUDEBParameters {
                 }
                 profile
             }
-            _ => {
-                // Mode 1: analytical exponential decay
+            OceanTempProfile::Analytical => {
                 let t_mix = 17.2_f64;
                 let t_polar = 1.0_f64;
                 let kappa = self.kappa_m2_per_yr();

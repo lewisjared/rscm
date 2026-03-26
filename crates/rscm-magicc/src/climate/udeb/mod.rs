@@ -141,7 +141,7 @@ impl ClimateUDEB {
     /// - Mode 2 (default): CMIP5 multi-model mean profile
     /// - Mode 1: Analytical exponential decay
     pub fn initial_state(&self) -> ClimateUDEBState {
-        let profiles = vec![
+        let profiles = [
             self.parameters.initial_ocean_profile(0),
             self.parameters.initial_ocean_profile(1),
         ];
@@ -269,7 +269,7 @@ impl ClimateUDEB {
     /// Initialize or ensure state is properly configured.
     fn ensure_state_initialized(&self, state: &mut ClimateUDEBState) {
         if !state.initialized {
-            let profiles = vec![
+            let profiles = [
                 self.parameters.initial_ocean_profile(0),
                 self.parameters.initial_ocean_profile(1),
             ];
@@ -342,33 +342,25 @@ impl ClimateUDEB {
 
     /// Calculate land temperature from ocean temperature (equilibrium assumption).
     ///
-    /// When ground heat capacity is enabled, the ground reservoir couples into
-    /// the land equilibrium:
+    /// MAGICC7.f90 lines 3214-3222:
     ///
-    /// $$\lambda_l f_l T_l + K_{lo}(T_l - \alpha T_o) + K_{lg}(T_l - T_g) = Q_l f_l$$
+    /// $$T_l = \frac{Q_l f_l + K_{lo} \alpha T_o}{\lambda_l f_l + K_{lo}}$$
     ///
-    /// Solving for $T_l$:
-    ///
-    /// $$T_l = \frac{Q_l f_l + K_{lo} \alpha T_o + K_{lg} T_g}{\lambda_l f_l + K_{lo} + K_{lg}}$$
+    /// Ground heat capacity is NOT included in the land equilibrium -- it is
+    /// handled as a separate explicit term in the ocean mixed layer equation
+    /// and the ground temperature forward Euler update.
     fn calculate_land_temperature(
         &self,
         ocean_temp: FloatValue,
         land_forcing: FloatValue,
         land_fraction: FloatValue,
         lambda_land: FloatValue,
-        ground_temp: FloatValue,
     ) -> FloatValue {
         let k_lo = self.parameters.k_lo;
         let alpha = self.parameters.amplify_ocean_to_land;
-        let k_lg = if self.parameters.land_heat_capacity_enabled {
-            self.parameters.k_lg
-        } else {
-            0.0
-        };
 
-        let numerator =
-            land_forcing * land_fraction + k_lo * alpha * ocean_temp + k_lg * ground_temp;
-        let denominator = lambda_land * land_fraction + k_lo + k_lg;
+        let numerator = land_forcing * land_fraction + k_lo * alpha * ocean_temp;
+        let denominator = lambda_land * land_fraction + k_lo;
 
         (numerator / denominator).min(self.parameters.max_temperature)
     }
@@ -566,8 +558,7 @@ impl ClimateUDEB {
                 alpha_eff_sh,
             );
 
-            // Update land temperatures from new ocean SSTs (equilibrium with
-            // ground reservoir when enabled)
+            // Update land temperatures from new ocean SSTs (MAGICC7 lines 3214-3222)
             let t_air_nho = self.sst_to_air_temperature(sst_nh);
             let t_air_sho = self.sst_to_air_temperature(sst_sh);
             state.land_temps[0] = self.calculate_land_temperature(
@@ -575,14 +566,12 @@ impl ClimateUDEB {
                 forcing.get(FourBoxRegion::NorthernLand),
                 fgnl,
                 current_lambda_land,
-                state.ground_temps[0],
             );
             state.land_temps[1] = self.calculate_land_temperature(
                 t_air_sho,
                 forcing.get(FourBoxRegion::SouthernLand),
                 fgsl,
                 current_lambda_land,
-                state.ground_temps[1],
             );
 
             // Update inter-hemispheric heat exchange for the NEXT substep
@@ -943,7 +932,6 @@ mod tests {
             forcing,
             land_fraction,
             component.lambda_land,
-            0.0, // ground temp
         );
 
         // Land temperature depends on the forcing and heat exchange

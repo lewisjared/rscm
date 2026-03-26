@@ -74,7 +74,7 @@ pub struct ClimateUDEBState {
     ///
     /// Used to compute variable upwelling correction terms in the tridiagonal RHS.
     #[serde(default)]
-    pub initial_ocean_profile: Vec<Vec<FloatValue>>,
+    pub initial_ocean_profile: [Vec<FloatValue>; 2],
 
     /// Initial temperature of polar sinking water (K).
     /// MAGICC7 default: 1.0 K.
@@ -106,8 +106,23 @@ impl ClimateUDEBState {
         n_layers: usize,
         w_initial: FloatValue,
         alpha_initial: FloatValue,
-        profiles: Vec<Vec<FloatValue>>,
+        profiles: [Vec<FloatValue>; 2],
     ) -> Self {
+        assert!(
+            n_layers >= 2,
+            "ClimateUDEBState::new requires n_layers >= 2, got {}",
+            n_layers
+        );
+        for (i, hemi_profile) in profiles.iter().enumerate() {
+            assert!(
+                hemi_profile.len() == n_layers,
+                "ClimateUDEBState::new requires hemisphere {} profile to have {} layers, got {}",
+                i,
+                n_layers,
+                hemi_profile.len()
+            );
+        }
+
         let t_polar = 1.0_f64;
         let t_mix = profiles[0][0];
 
