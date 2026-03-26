@@ -14,7 +14,7 @@ pub enum OceanTempProfile {
     Analytical = 1,
     /// CMIP5 multi-model mean observational profile (default).
     #[serde(rename = "2")]
-    Cmip5 = 2,
+    CMIP5 = 2,
 }
 
 /// Parameters for the 4-box UDEB climate model.
@@ -289,7 +289,7 @@ impl Default for ClimateUDEBParameters {
             prescribed_efficacy_co2: 1.0,
 
             // Initial ocean profile
-            ocean_temp_profile: OceanTempProfile::Cmip5,
+            ocean_temp_profile: OceanTempProfile::CMIP5,
 
             // Integration
             steps_per_year: 12,
@@ -475,7 +475,7 @@ impl ClimateUDEBParameters {
     /// Returns a Vec of length `n_layers` with the initial temperature (K)
     /// for each ocean layer. Layer 0 is the mixed layer.
     ///
-    /// When `ocean_temp_profile` is [`OceanTempProfile::Cmip5`] (default),
+    /// When `ocean_temp_profile` is [`OceanTempProfile::CMIP5`] (default),
     /// returns the CMIP5 multi-model mean profile. When
     /// [`OceanTempProfile::Analytical`], returns the analytical exponential
     /// decay profile.
@@ -487,7 +487,7 @@ impl ClimateUDEBParameters {
         );
 
         match self.ocean_temp_profile {
-            OceanTempProfile::Cmip5 => {
+            OceanTempProfile::CMIP5 => {
                 let cmip5 = if hemi == 0 {
                     &CMIP5_PROFILE_NH
                 } else {
