@@ -63,13 +63,18 @@ pub struct ClimateUDEBState {
     #[serde(default)]
     pub hemi_heat_exchange: [FloatValue; 2],
 
-    /// Initial equilibrium ocean temperature profile (K).
+    /// Initial equilibrium ocean temperature profile per hemisphere (K).
     ///
-    /// Computed once at initialization using an exponential profile
-    /// (MAGICC7 CORE_SWITCH_OCN_TEMPPROFILE=1). Index 0 is the mixed layer.
+    /// Shape: `[hemisphere][layer]`, where hemisphere 0 = NH, 1 = SH.
+    /// Layer 0 is the mixed layer.
+    ///
+    /// By default uses the CMIP5 multi-model mean profile
+    /// (`CORE_SWITCH_OCN_TEMPPROFILE=2`). Falls back to an analytical
+    /// exponential profile when mode 1 is selected.
+    ///
     /// Used to compute variable upwelling correction terms in the tridiagonal RHS.
     #[serde(default)]
-    pub initial_ocean_profile: Vec<FloatValue>,
+    pub initial_ocean_profile: Vec<Vec<FloatValue>>,
 
     /// Initial temperature of polar sinking water (K).
     /// MAGICC7 default: 1.0 K.
@@ -95,39 +100,16 @@ impl ClimateUDEBState {
     ///
     /// `alpha_initial` is the SST-to-air-temperature ratio used before any
     /// ocean temperature has developed (i.e. `temp_adjust_alpha` from parameters).
-    /// `kappa_m2_per_yr` is the base vertical diffusivity in m2/yr used to
-    /// compute the exponential initial ocean profile.
-    /// `layer_thickness` is the thickness of deep layers in metres.
-    /// `area_factors` is accepted for forward compatibility but the initial
-    /// profile always uses the analytical exponential (MAGICC7
-    /// `CORE_SWITCH_OCN_TEMPPROFILE=1`). The variable upwelling correction
-    /// terms in `ocean_column.rs` are calibrated against this profile.
-    /// `polar_sinking_ratio` is accepted for forward compatibility.
+    /// `profiles` is the per-hemisphere initial ocean temperature profiles,
+    /// computed by [`ClimateUDEBParameters::initial_ocean_profile()`].
     pub fn new(
         n_layers: usize,
         w_initial: FloatValue,
         alpha_initial: FloatValue,
-        kappa_m2_per_yr: FloatValue,
-        layer_thickness: FloatValue,
-        _area_factors: &OceanAreaFactors,
-        _polar_sinking_ratio: FloatValue,
+        profiles: Vec<Vec<FloatValue>>,
     ) -> Self {
-        let t_mix = 17.2_f64;
         let t_polar = 1.0_f64;
-
-        // Exponential decay profile (MAGICC7 CORE_SWITCH_OCN_TEMPPROFILE=1).
-        // This is the analytical steady-state for a cylindrical ocean with
-        // uniform diffusivity and upwelling. The variable upwelling correction
-        // terms use this profile as a reference baseline — they already apply
-        // area factors to the transport coefficients, so using an area-factor-
-        // aware equilibrium here would double-count the geometry.
-        let mut initial_ocean_profile = vec![0.0; n_layers];
-        initial_ocean_profile[0] = t_mix;
-        for l in 1..n_layers {
-            let depth = (l as f64 - 1.0) * layer_thickness + 0.5 * layer_thickness;
-            initial_ocean_profile[l] =
-                t_polar + (t_mix - t_polar) * (-w_initial * depth / kappa_m2_per_yr).exp();
-        }
+        let t_mix = profiles[0][0];
 
         Self {
             ocean_temps: vec![vec![0.0; n_layers]; 2],
@@ -139,7 +121,7 @@ impl ClimateUDEBState {
             ground_temps: [0.0; 2],
             alpha_eff: [alpha_initial; 2],
             hemi_heat_exchange: [0.0; 2],
-            initial_ocean_profile,
+            initial_ocean_profile: profiles,
             polar_sinking_temp: t_polar,
             mixed_layer_initial_temp: t_mix,
         }

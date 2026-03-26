@@ -262,9 +262,6 @@ def test_ocean_03_depth_dependent_area():
     run_ocean_scenario("03_depth_dependent_area", final_rtol=1e-2)
 
 
-@pytest.mark.xfail(
-    reason="~8% cool bias from approximate equilibrium profile with area factors (#108)"
-)
 def test_ocean_04_variable_upwelling():
     """
     Test 04: Variable (temperature-dependent) upwelling.
@@ -479,7 +476,7 @@ def test_ocean_10_full_default():
 
 @pytest.mark.xfail(
     strict=True,
-    reason="~4.5% shock phase bias remains after qfrac fix (transient mismatch)",
+    reason="~3.5% shock phase bias (transient mismatch in first 20 years)",
 )
 def test_ocean_11_efficacy_ar6():
     """

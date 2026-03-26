@@ -731,25 +731,19 @@ def test_03_emissions_driven():
     [
         1.5,
         2.0,
-        pytest.param(
-            3.0,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="~5% cool bias across all phases, ECS-dependent",
-            ),
-        ),
+        3.0,
         pytest.param(
             4.0,
             marks=pytest.mark.xfail(
                 strict=True,
-                reason="~5.7% cool bias across all phases, ECS-dependent",
+                reason="~3% cool bias in converge phase at high ECS",
             ),
         ),
         pytest.param(
             4.5,
             marks=pytest.mark.xfail(
                 strict=True,
-                reason="~6% cool bias across all phases, ECS-dependent",
+                reason="~3.2% cool bias in converge phase at high ECS",
             ),
         ),
     ],
@@ -806,12 +800,6 @@ def test_04_ecs_sweep(ecs: float):
     )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "ClimateUDEB diverges from MAGICC7 (~5% bias)."
-        " Likely caused by variable upwelling treatment."
-    )
-)
 def test_05_co2_only_forcing():
     """
     Test 5: CO2-only forcing mode (ERF -> temperature).

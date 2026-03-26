@@ -189,7 +189,7 @@ See linked GitHub issues for detailed acceptance criteria.
 | -------------------- | ------------------------ | -------------------------- | ----- |
 | 00 - Initialization  | N/A (ModelBuilder)       | Framework handles          | -     |
 | 07b - RF Aggregation | VariableSchema (partial) | Efficacy framework missing | #114  |
-| 08 - Climate UDEB    | `ClimateUDEB`            | Implemented (simplified)   | #108  |
+| 08 - Climate UDEB    | `ClimateUDEB`            | Implemented                | #108  |
 | 15 - Main Timestep   | N/A (Model orchestrator) | Framework handles          | -     |
 
 ### Chemistry Modules

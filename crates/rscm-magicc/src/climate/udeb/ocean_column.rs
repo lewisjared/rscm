@@ -210,7 +210,7 @@ impl ClimateUDEB {
         // based on the initial temperature profile and the upwelling change.
         let delta_w = w - self.parameters.w_initial;
         if delta_w.abs() > 1e-15 {
-            let init = &state.initial_ocean_profile;
+            let init = &state.initial_ocean_profile[hemi];
             let t_polar = state.polar_sinking_temp;
 
             // Mixed layer (layer 0): MAGICC7 line 2858-2874

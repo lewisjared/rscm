@@ -136,19 +136,20 @@ impl ClimateUDEB {
 
     /// Create a properly initialized state for this component.
     ///
-    /// The initial ocean temperature profile uses an analytical exponential
-    /// decay (MAGICC7 `CORE_SWITCH_OCN_TEMPPROFILE=1`). Area factors and
-    /// polar sinking ratio are passed for forward compatibility but are
-    /// not currently used in the profile calculation.
+    /// The initial ocean temperature profile mode is controlled by the
+    /// `ocean_temp_profile` parameter:
+    /// - Mode 2 (default): CMIP5 multi-model mean profile
+    /// - Mode 1: Analytical exponential decay
     pub fn initial_state(&self) -> ClimateUDEBState {
+        let profiles = vec![
+            self.parameters.initial_ocean_profile(0),
+            self.parameters.initial_ocean_profile(1),
+        ];
         ClimateUDEBState::new(
             self.parameters.n_layers,
             self.parameters.w_initial,
             self.parameters.temp_adjust_alpha,
-            self.parameters.kappa_m2_per_yr(),
-            self.parameters.layer_thickness,
-            &self.area_factors,
-            self.parameters.polar_sinking_ratio,
+            profiles,
         )
     }
 
@@ -268,14 +269,15 @@ impl ClimateUDEB {
     /// Initialize or ensure state is properly configured.
     fn ensure_state_initialized(&self, state: &mut ClimateUDEBState) {
         if !state.initialized {
+            let profiles = vec![
+                self.parameters.initial_ocean_profile(0),
+                self.parameters.initial_ocean_profile(1),
+            ];
             let fresh = ClimateUDEBState::new(
                 self.parameters.n_layers,
                 self.parameters.w_initial,
                 self.parameters.temp_adjust_alpha,
-                self.parameters.kappa_m2_per_yr(),
-                self.parameters.layer_thickness,
-                &self.area_factors,
-                self.parameters.polar_sinking_ratio,
+                profiles,
             );
             state.ocean_temps = fresh.ocean_temps;
             state.upwelling_rates = fresh.upwelling_rates;
@@ -735,34 +737,48 @@ mod tests {
         let state = component.initial_state();
 
         let n = component.parameters.n_layers;
-        assert_eq!(state.initial_ocean_profile.len(), n);
+        // Per-hemisphere profiles
+        assert_eq!(state.initial_ocean_profile.len(), 2);
+        assert_eq!(state.initial_ocean_profile[0].len(), n);
+        assert_eq!(state.initial_ocean_profile[1].len(), n);
 
-        // Mixed layer should be t_mix
-        assert!((state.initial_ocean_profile[0] - 17.2).abs() < 1e-10);
+        // Both hemispheres should decrease monotonically
+        for hemi in 0..2 {
+            let profile = &state.initial_ocean_profile[hemi];
+            for l in 1..n {
+                assert!(
+                    profile[l] < profile[l - 1],
+                    "hemi {} profile should decrease with depth: layer {} ({}) >= layer {} ({})",
+                    hemi,
+                    l,
+                    profile[l],
+                    l - 1,
+                    profile[l - 1]
+                );
+                assert!(
+                    profile[l] >= 0.7,
+                    "hemi {} profile should stay above 0.7: layer {} = {}",
+                    hemi,
+                    l,
+                    profile[l]
+                );
+            }
 
-        // Profile should decrease monotonically from t_mix toward t_polar
-        for l in 1..n {
+            // Deep layers should be cold
+            let deepest = profile[n - 1];
             assert!(
-                state.initial_ocean_profile[l] < state.initial_ocean_profile[l - 1],
-                "profile should decrease with depth: layer {} ({}) >= layer {} ({})",
-                l,
-                state.initial_ocean_profile[l],
-                l - 1,
-                state.initial_ocean_profile[l - 1]
-            );
-            assert!(
-                state.initial_ocean_profile[l] >= 1.0,
-                "profile should stay above t_polar=1.0: layer {} = {}",
-                l,
-                state.initial_ocean_profile[l]
+                deepest < 2.0,
+                "hemi {} deepest layer should be < 2.0, got {deepest}",
+                hemi
             );
         }
 
-        // Deep layers should approach t_polar = 1.0
-        let deepest = state.initial_ocean_profile[n - 1];
+        // NH mixed layer should be warmer than SH (CMIP5 default)
         assert!(
-            deepest < 2.0,
-            "deepest layer should be close to t_polar=1.0, got {deepest}"
+            state.initial_ocean_profile[0][0] > state.initial_ocean_profile[1][0],
+            "NH mixed layer ({}) should be warmer than SH ({})",
+            state.initial_ocean_profile[0][0],
+            state.initial_ocean_profile[1][0]
         );
     }
 
