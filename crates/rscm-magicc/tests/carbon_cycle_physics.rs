@@ -355,11 +355,11 @@ mod ocean_temperature_pco2 {
             pct_per_k, expected_pct
         );
 
-        // Should be approximately 4.3% per K
+        // MAGICC7 default OCEANCC_TEMPFEEDBACK = 0.03717879 gives ~3.79%/K
         assert_relative_eq!(pct_per_k, expected_pct, epsilon = 0.01);
         assert!(
-            pct_per_k > 4.0 && pct_per_k < 5.0,
-            "Takahashi sensitivity should be ~4.3%%/K, got {:.2}%%/K",
+            pct_per_k > 3.5 && pct_per_k < 4.5,
+            "Temperature sensitivity should be ~3.8%%/K, got {:.2}%%/K",
             pct_per_k
         );
 
