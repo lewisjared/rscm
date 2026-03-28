@@ -180,32 +180,32 @@ pub struct TerrestrialCarbonParameters {
 impl Default for TerrestrialCarbonParameters {
     fn default() -> Self {
         Self {
-            npp_pi: 66.27,
+            npp_pi: 66.2716,
             co2_pi: 278.0,
-            beta: 0.6486,
-            fertilization_method: 1.10,
+            beta: 0.6485981,
+            fertilization_method: 1.100486,
             fertilization_factor2: 100.0,
             gifford_conc_for_zero_npp: 80.0,
             fertilization_yrstart: 1900.0,
 
-            npp_temp_sensitivity: 0.0107,
-            resp_temp_sensitivity: 0.0685,
-            detritus_temp_sensitivity: -0.1358,
-            soil_temp_sensitivity: 0.1541,
+            npp_temp_sensitivity: 0.01070037,
+            resp_temp_sensitivity: 0.06845893,
+            detritus_temp_sensitivity: -0.1357817,
+            soil_temp_sensitivity: 0.1540879,
             tempfeedback_yrstart: 1900.0,
 
-            plant_pool_pi: 884.86,
-            detritus_pool_pi: 92.77,
-            soil_pool_pi: 1681.53,
+            plant_pool_pi: 884.8584,
+            detritus_pool_pi: 92.7738,
+            soil_pool_pi: 1681.525,
 
-            respiration_pi: 12.26,
+            respiration_pi: 12.26025,
             plantbox_resp_method: 1,
             plantbox_resp_fertscale: 0.0,
 
-            frac_npp_to_plant: 0.4483,
-            frac_npp_to_detritus: 0.3998,
-            frac_plant_to_detritus: 0.9989,
-            frac_detritus_to_soil: 0.001,
+            frac_npp_to_plant: 0.4482615,
+            frac_npp_to_detritus: 0.3998165,
+            frac_plant_to_detritus: 0.9989021,
+            frac_detritus_to_soil: 0.00100763,
 
             frac_deforest_plant: 0.70,
             frac_deforest_detritus: 0.05,
@@ -313,9 +313,9 @@ mod tests {
     #[test]
     fn test_default_parameters() {
         let params = TerrestrialCarbonParameters::default();
-        assert!((params.npp_pi - 66.27).abs() < 1e-10);
+        assert!((params.npp_pi - 66.2716).abs() < 1e-10);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
-        assert!((params.fertilization_method - 1.10).abs() < 1e-10);
+        assert!((params.fertilization_method - 1.100486).abs() < 1e-10);
         assert_eq!(params.plantbox_resp_method, 1);
     }
 
