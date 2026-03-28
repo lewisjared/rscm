@@ -61,10 +61,6 @@ pub struct TerrestrialCarbonState {
     /// Evolve without CO2 fertilization or temperature feedbacks.
     pub nofeedback_pools: [FloatValue; 3],
 
-    /// No-feedback, no-deforestation reference pools [plant, detritus, soil] (GtC).
-    /// Used to compute regrowth.
-    pub nofeedback_nodefo_pools: [FloatValue; 3],
-
     /// Previous year regrowth fluxes [plant, detritus, soil] (GtC/yr).
     pub prev_regrowth: [FloatValue; 3],
 
@@ -91,7 +87,6 @@ impl Default for TerrestrialCarbonState {
     fn default() -> Self {
         Self {
             nofeedback_pools: [0.0; 3],
-            nofeedback_nodefo_pools: [0.0; 3],
             prev_regrowth: [0.0; 3],
             co2_ref: 0.0,
             co2_ref_max: 0.0,
@@ -410,7 +405,6 @@ impl TerrestrialCarbon {
         // not the current CO2 which would give beta = 1.0).
         let mut state = TerrestrialCarbonState {
             nofeedback_pools: pools,
-            nofeedback_nodefo_pools: pools,
             co2_ref: self.parameters.co2_pi,
             co2_ref_max: self.parameters.co2_pi,
             co2_history: [co2, co2],
@@ -446,7 +440,6 @@ impl TerrestrialCarbon {
         // as the baseline (supports non-PI initial conditions)
         if !state.initialized {
             state.nofeedback_pools = pools;
-            state.nofeedback_nodefo_pools = pools;
             state.co2_ref = co2;
             state.co2_ref_max = co2;
             state.co2_history = [co2, co2];
@@ -507,58 +500,105 @@ impl TerrestrialCarbon {
             p.flux_into_soil_pi(),
         );
 
-        // Step 8: Advance no-feedback, no-defo pools (for regrowth calculation)
-        let nf_npp = p.npp_pi; // No fertilization, no temp feedback
-        let nf_resp = p.respiration_pi;
-        let zero_defo = [0.0; 3];
-        let (new_nf_nodefo, _, _, _) = self.advance_pools(
-            &state.nofeedback_nodefo_pools,
-            nf_npp,
-            nf_resp,
-            &zero_defo,
-            tau_plant,
-            tau_detritus,
-            tau_soil,
-            1.0, // no temp feedback
-            1.0,
-            dt,
-        );
+        // Steps 8-12: MAGICC7 regrowth calculation
+        //
+        // For each pool, the algorithm is:
+        // 1. Compute a preliminary no-feedback advance without current regrowth
+        // 2. Algebraically derive the current regrowth from that preliminary state
+        // 3. Compute gross deforestation = net deforestation + regrowth
+        // 4. Re-advance the no-feedback pool with gross deforestation
+        //
+        // This matches the TERRCARBON2 Fortran subroutine exactly.
 
-        // Step 9: Advance nofeedback pools with deforestation, then compute regrowth
-        let mut regrowth = [0.0; 3];
-        let nf_defo = [
+        let nf_net_flux_plant = p.npp_pi * p.frac_npp_to_plant - p.respiration_pi;
+        let net_defo = [
             p.frac_deforest_plant * landuse_emissions,
             p.frac_deforest_detritus * landuse_emissions,
             p.frac_deforest_soil() * landuse_emissions,
         ];
 
-        // Add previous regrowth to get gross deforestation for no-feedback pools
-        let nf_gross_defo = std::array::from_fn(|i| nf_defo[i] + state.prev_regrowth[i]);
+        let taus = [tau_plant, tau_detritus, tau_soil];
+        let mut regrowth = [0.0; 3];
+        let mut gross_defo = [0.0; 3];
+        let mut new_nf_pools = state.nofeedback_pools;
 
-        let (new_nf_pools, _, _, _) = self.advance_pools(
-            &state.nofeedback_pools,
-            nf_npp,
-            nf_resp,
-            &nf_gross_defo,
-            tau_plant,
-            tau_detritus,
-            tau_soil,
-            1.0,
-            1.0,
-            dt,
-        );
+        // Plant pool regrowth (Step 10 in MAGICC7)
+        {
+            let half_k = 0.5 / tau_plant;
+            let nf_pool = state.nofeedback_pools[0];
 
-        // Update regrowth: the difference in pool changes between no-defo and with-defo
-        for i in 0..3 {
-            let delta_nodefo = new_nf_nodefo[i] - state.nofeedback_nodefo_pools[i];
-            let delta_withdefo = new_nf_pools[i] - state.nofeedback_pools[i];
-            regrowth[i] = delta_nodefo - delta_withdefo;
+            // Preliminary advance: subtract net defo and previous regrowth
+            let nf_new_no_regrwth = (nf_pool * (1.0 - half_k) + nf_net_flux_plant
+                - net_defo[0]
+                - state.prev_regrowth[0])
+                / (1.0 + half_k);
+
+            // Algebraic regrowth calculation
+            regrowth[0] = nf_new_no_regrwth * (1.0 + half_k) - nf_pool * (1.0 + half_k)
+                + net_defo[0]
+                + state.prev_regrowth[0];
+
+            gross_defo[0] = net_defo[0] + regrowth[0];
+
+            // Re-advance no-feedback pool with gross deforestation
+            new_nf_pools[0] =
+                (nf_pool * (1.0 - half_k) + nf_net_flux_plant - gross_defo[0]) / (1.0 + half_k);
+            new_nf_pools[0] = new_nf_pools[0].max(0.0);
         }
 
-        // Step 10: Gross deforestation for main pools
-        let gross_defo = std::array::from_fn(|i| nf_defo[i] + regrowth[i]);
+        // Compute no-feedback plant turnover for detritus/soil flux calculation
+        let nf_turnover_plant = 0.5 / tau_plant * (state.nofeedback_pools[0] + new_nf_pools[0]);
 
-        // Step 11: Advance main pools with feedbacks
+        // Detritus pool regrowth (Step 11 in MAGICC7)
+        {
+            let half_k = 0.5 / tau_detritus;
+            let nf_pool = state.nofeedback_pools[1];
+            let nf_net_flux =
+                p.npp_pi * p.frac_npp_to_detritus + p.frac_plant_to_detritus * nf_turnover_plant;
+
+            let nf_new_no_regrwth =
+                (nf_pool * (1.0 - half_k) + nf_net_flux - net_defo[1] - state.prev_regrowth[1])
+                    / (1.0 + half_k);
+
+            regrowth[1] = (nf_new_no_regrwth - nf_pool) * (1.0 + half_k)
+                + net_defo[1]
+                + state.prev_regrowth[1];
+
+            gross_defo[1] = net_defo[1] + regrowth[1];
+
+            new_nf_pools[1] =
+                (nf_pool * (1.0 - half_k) + nf_net_flux - gross_defo[1]) / (1.0 + half_k);
+            new_nf_pools[1] = new_nf_pools[1].max(0.0);
+        }
+
+        // No-feedback detritus turnover for soil
+        let nf_turnover_detritus =
+            0.5 / tau_detritus * (state.nofeedback_pools[1] + new_nf_pools[1]);
+
+        // Soil pool regrowth (Step 12 in MAGICC7)
+        {
+            let half_k = 0.5 / tau_soil;
+            let nf_pool = state.nofeedback_pools[2];
+            let nf_net_flux = p.npp_pi * p.frac_npp_to_soil()
+                + (1.0 - p.frac_plant_to_detritus) * nf_turnover_plant
+                + p.frac_detritus_to_soil * nf_turnover_detritus;
+
+            let nf_new_no_regrwth =
+                (nf_pool * (1.0 - half_k) + nf_net_flux - net_defo[2] - state.prev_regrowth[2])
+                    / (1.0 + half_k);
+
+            regrowth[2] = (nf_new_no_regrwth - nf_pool) * (1.0 + half_k)
+                + net_defo[2]
+                + state.prev_regrowth[2];
+
+            gross_defo[2] = net_defo[2] + regrowth[2];
+
+            new_nf_pools[2] =
+                (nf_pool * (1.0 - half_k) + nf_net_flux - gross_defo[2]) / (1.0 + half_k);
+            new_nf_pools[2] = new_nf_pools[2].max(0.0);
+        }
+
+        // Step 13: Advance main pools with feedbacks using gross deforestation
         let (mut new_pools, _turnover_plant, turnover_detritus, turnover_soil) = self
             .advance_pools(
                 &pools,
@@ -573,14 +613,13 @@ impl TerrestrialCarbon {
                 dt,
             );
 
-        // Step 12: Mass conservation correction (ensure non-negative pools)
+        // Step 14: Mass conservation correction (ensure non-negative pools)
         let nf_delta: FloatValue = (0..3)
             .map(|i| new_nf_pools[i] - state.nofeedback_pools[i])
             .sum();
         let correction = landuse_emissions * dt + nf_delta;
         new_pools[0] = (new_pools[0] - correction).max(0.0);
-        let mut corrected_nf = new_nf_pools;
-        corrected_nf[0] = (corrected_nf[0] - correction).max(0.0);
+        new_nf_pools[0] = (new_nf_pools[0] - correction).max(0.0);
 
         // Step 13: Calculate net flux and diagnostics
         let detritus_to_atm = (1.0 - p.frac_detritus_to_soil) * turnover_detritus;
@@ -594,8 +633,7 @@ impl TerrestrialCarbon {
         let net_flux = pool_change / dt;
 
         // Update state for next timestep
-        state.nofeedback_pools = corrected_nf;
-        state.nofeedback_nodefo_pools = new_nf_nodefo;
+        state.nofeedback_pools = new_nf_pools;
         state.prev_regrowth = regrowth;
         state.cumulative_landuse += landuse_emissions * dt;
         state.co2_history[0] = state.co2_history[1];
