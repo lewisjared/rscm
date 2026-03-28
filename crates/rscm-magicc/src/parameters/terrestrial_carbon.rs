@@ -190,7 +190,7 @@ impl Default for TerrestrialCarbonParameters {
 
             npp_temp_sensitivity: 0.0107,
             resp_temp_sensitivity: 0.0685,
-            detritus_temp_sensitivity: 0.1358,
+            detritus_temp_sensitivity: -0.1358,
             soil_temp_sensitivity: 0.1541,
             tempfeedback_yrstart: 1900.0,
 
@@ -224,9 +224,12 @@ impl TerrestrialCarbonParameters {
     }
 
     /// Fraction of deforestation emissions from soil pool (derived).
+    ///
+    /// Clamps the sum of plant + detritus fractions to [0, 1] before deriving
+    /// the soil fraction, preventing total deforestation fraction from exceeding 1.0.
     pub fn frac_deforest_soil(&self) -> FloatValue {
-        let f = 1.0 - self.frac_deforest_plant - self.frac_deforest_detritus;
-        f.max(0.0)
+        let total = (self.frac_deforest_plant + self.frac_deforest_detritus).clamp(0.0, 1.0);
+        1.0 - total
     }
 
     /// Net flux to plant pool at pre-industrial (NPP to plant - respiration).

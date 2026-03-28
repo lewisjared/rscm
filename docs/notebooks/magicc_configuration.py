@@ -261,11 +261,10 @@ terrestrial_params = {
     "frac_npp_to_plant": 0.4483,
     "frac_npp_to_detritus": 0.3998,
     "frac_plant_to_detritus": 0.9989,
-    "frac_detritus_to_soil": 0.3,
-    "frac_soil_to_humus": 0.1,
-    # Feedbacks
-    "enable_fertilization": True,
-    "enable_temp_feedback": True,
+    "frac_detritus_to_soil": 0.001,
+    # Fertilization and temperature feedback control
+    "fertilization_method": 1.10,
+    "tempfeedback_yrstart": 1900.0,
 }
 
 terrestrial_component = TerrestrialCarbonBuilder.from_parameters(
