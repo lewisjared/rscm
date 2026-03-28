@@ -230,19 +230,23 @@ class TestCO2FertilizationParity:
 
     def test_plant_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Carbon Pool|Plant", rtol=0.20)
+        _compare_variable(results, df, years, "Carbon Pool|Plant", rtol=0.05)
 
     def test_detritus_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Carbon Pool|Detritus", rtol=0.20)
+        _compare_variable(results, df, years, "Carbon Pool|Detritus", rtol=0.02)
 
     def test_soil_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Carbon Pool|Soil", rtol=0.20)
+        _compare_variable(results, df, years, "Carbon Pool|Soil", rtol=0.01)
 
     def test_npp(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Net Primary Production", rtol=0.20)
+        _compare_variable(results, df, years, "Net Primary Production", rtol=0.01)
+
+    def test_respiration(self):
+        results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
+        _compare_variable(results, df, years, "Respiration|Terrestrial", rtol=0.03)
 
 
 @pytest.mark.slow
@@ -256,11 +260,15 @@ class TestCO2AndTempParity:
 
     def test_plant_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Carbon Pool|Plant", rtol=0.30)
+        _compare_variable(results, df, years, "Carbon Pool|Plant", rtol=0.05)
 
     def test_npp(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Net Primary Production", rtol=0.30)
+        _compare_variable(results, df, years, "Net Primary Production", rtol=0.01)
+
+    def test_soil_pool(self):
+        results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
+        _compare_variable(results, df, years, "Carbon Pool|Soil", rtol=0.01)
 
 
 @pytest.mark.slow
@@ -275,8 +283,12 @@ class TestGiffordParity:
 
     def test_plant_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Carbon Pool|Plant", rtol=0.20)
+        _compare_variable(results, df, years, "Carbon Pool|Plant", rtol=0.05)
 
     def test_npp(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Net Primary Production", rtol=0.20)
+        _compare_variable(results, df, years, "Net Primary Production", rtol=0.01)
+
+    def test_soil_pool(self):
+        results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
+        _compare_variable(results, df, years, "Carbon Pool|Soil", rtol=0.01)
