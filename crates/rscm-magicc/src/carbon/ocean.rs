@@ -35,8 +35,8 @@
 //!
 //! This is a simplified implementation:
 //!
-//! - **Single IRF model**: Only 2D-BERN is implemented. MAGICC7 supports
-//!   3D-GFDL, HILDA, BOXDIFF, and 2D-BERN with runtime selection.
+//! - **Three IRF models**: 3D-GFDL (default), 2D-BERN, and HILDA are
+//!   implemented. MAGICC7 also supports BOXDIFF.
 //! - **No stability limiter**: MAGICC7 has an ad-hoc flux change limiter
 //!   (0.04 ppm/yr per month). Not implemented as it's noted as a workaround.
 //! - **No radiative-only mode**: MAGICC7 can make ocean "see" only PI CO2.
@@ -86,9 +86,9 @@ impl ComponentState for OceanCarbonState {
 
 /// Ocean carbon cycle component using IRF-based deep ocean mixing.
 ///
-/// Implements a simplified MAGICC7-style ocean carbon model using the
-/// 2D-BERN Impulse Response Function to represent carbon transport
-/// from the mixed layer to the deep ocean.
+/// Implements a MAGICC7-style ocean carbon model using an Impulse Response
+/// Function (IRF) to represent carbon transport from the mixed layer to
+/// the deep ocean. Supports 3D-GFDL (default), 2D-BERN, and HILDA models.
 ///
 /// # Algorithm
 ///
