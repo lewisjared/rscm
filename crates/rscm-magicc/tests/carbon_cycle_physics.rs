@@ -43,7 +43,6 @@ mod terrestrial_fertilisation {
             params.plant_pool_pi,
             params.detritus_pool_pi,
             params.soil_pool_pi,
-            params.humus_pool_pi,
         ];
 
         let (_, flux_pi) = component.solve_pools(co2_pi, 0.0, 0.0, pools, 1.0);
@@ -82,7 +81,6 @@ mod terrestrial_fertilisation {
             params.plant_pool_pi,
             params.detritus_pool_pi,
             params.soil_pool_pi,
-            params.humus_pool_pi,
         ];
 
         let mut pools = initial_pools;
@@ -144,7 +142,6 @@ mod terrestrial_temperature_feedback {
             params.plant_pool_pi,
             params.detritus_pool_pi,
             params.soil_pool_pi,
-            params.humus_pool_pi,
         ];
 
         let delta_t = 2.0; // +2K warming
@@ -215,7 +212,6 @@ mod terrestrial_temperature_feedback {
             params.plant_pool_pi,
             params.detritus_pool_pi,
             params.soil_pool_pi,
-            params.humus_pool_pi,
         ];
 
         // First year: no warming
@@ -262,30 +258,28 @@ mod terrestrial_steady_state {
             params.plant_pool_pi,
             params.detritus_pool_pi,
             params.soil_pool_pi,
-            params.humus_pool_pi,
         ];
 
         let mut pools = initial_pools;
-        let pool_names = ["Plant", "Detritus", "Soil", "Humus"];
+        let pool_names = ["Plant", "Detritus", "Soil"];
 
         println!();
         println!(
-            "{:>8} | {:>12} {:>12} {:>12} {:>12}",
-            "Year", "Plant", "Detritus", "Soil", "Humus"
+            "{:>8} | {:>12} {:>12} {:>12}",
+            "Year", "Plant", "Detritus", "Soil"
         );
-        println!("{}", "-".repeat(60));
+        println!("{}", "-".repeat(52));
 
         for year in 0..100 {
             let (new_pools, _) = component.solve_pools(co2_pi, 0.0, 0.0, pools, 1.0);
 
             if year == 0 || year == 9 || year == 49 || year == 99 {
                 println!(
-                    "{:>8} | {:>12.4} {:>12.4} {:>12.4} {:>12.4}",
+                    "{:>8} | {:>12.4} {:>12.4} {:>12.4}",
                     year + 1,
                     new_pools[0],
                     new_pools[1],
-                    new_pools[2],
-                    new_pools[3]
+                    new_pools[2]
                 );
             }
 
@@ -485,7 +479,6 @@ mod co2_budget_mass_balance {
             terr_params.plant_pool_pi,
             terr_params.detritus_pool_pi,
             terr_params.soil_pool_pi,
-            terr_params.humus_pool_pi,
         ];
         let mut ocean_pco2 = ocean_params.pco2_pi;
         let mut ocean_cumulative = 0.0;

@@ -20,17 +20,14 @@ mod carbon_cycle_conservation {
         let component = TerrestrialCarbon::from_parameters(TerrestrialCarbonParameters::default());
         let params = TerrestrialCarbonParameters::default();
 
-        // Initial pool sizes
         let pools = [
             params.plant_pool_pi,
             params.detritus_pool_pi,
             params.soil_pool_pi,
-            params.humus_pool_pi,
         ];
 
         let total_initial: f64 = pools.iter().sum();
 
-        // Run for 10 years with elevated CO2 (net uptake scenario)
         let co2 = params.co2_pi * 1.5;
         let temperature = 0.0;
         let landuse = 0.0;
@@ -50,8 +47,6 @@ mod carbon_cycle_conservation {
         let total_final: f64 = current_pools.iter().sum();
         let pool_change = total_final - total_initial;
 
-        // Pool change should approximately equal cumulative net flux
-        // (positive flux = uptake from atmosphere = increase in pools)
         assert_relative_eq!(pool_change, cumulative_flux, epsilon = 1.0);
     }
 
@@ -65,13 +60,11 @@ mod carbon_cycle_conservation {
             params.plant_pool_pi,
             params.detritus_pool_pi,
             params.soil_pool_pi,
-            params.humus_pool_pi,
         ];
 
-        // Extreme scenario: high warming, high land use
         let co2 = params.co2_pi;
-        let temperature = 10.0; // Extreme warming
-        let landuse = 10.0; // High deforestation
+        let temperature = 10.0;
+        let landuse = 10.0;
         let dt = 1.0;
 
         let mut current_pools = pools;
@@ -84,7 +77,7 @@ mod carbon_cycle_conservation {
                 assert!(
                     pool >= 0.0,
                     "Pool {} went negative: {}",
-                    ["Plant", "Detritus", "Soil", "Humus"][i],
+                    ["Plant", "Detritus", "Soil"][i],
                     pool
                 );
             }
@@ -117,7 +110,6 @@ mod carbon_cycle_conservation {
             cumulative = new_cumulative;
         }
 
-        // Cumulative uptake should match integrated flux
         assert_relative_eq!(cumulative, total_flux, epsilon = 1.0);
     }
 
@@ -134,7 +126,6 @@ mod carbon_cycle_conservation {
         let mut cumulative = 0.0;
         let dt = 1.0;
 
-        // Run for a long time
         for _ in 0..500 {
             let (new_pco2, new_cumulative, _) =
                 component.solve_ocean(&mut state, co2_target, sst, pco2, cumulative, dt);
@@ -142,7 +133,6 @@ mod carbon_cycle_conservation {
             cumulative = new_cumulative;
         }
 
-        // Ocean pCO2 should approach (but not exceed) atmospheric
         assert!(
             pco2 < co2_target,
             "Ocean pCO2 {} should be less than atmospheric {}",
@@ -150,8 +140,6 @@ mod carbon_cycle_conservation {
             co2_target
         );
 
-        // Should have approached within ~100 ppm (the Revelle factor limits how close
-        // the surface can get to the atmosphere without deep ocean equilibration)
         assert!(
             pco2 > co2_target - 100.0,
             "Ocean pCO2 {} should have approached atmospheric {} within 100 ppm",
@@ -161,8 +149,6 @@ mod carbon_cycle_conservation {
     }
 }
 
-// TODO: Add forcing_consistency tests when GHG forcing components are implemented
-
 mod physical_bounds {
     use super::*;
 
@@ -171,10 +157,7 @@ mod physical_bounds {
     fn test_npp_positive() {
         let params = TerrestrialCarbonParameters::default();
 
-        // NPP should be positive at pre-industrial
         assert!(params.npp_pi > 0.0, "Pre-industrial NPP should be positive");
-
-        // Respiration should be positive
         assert!(
             params.respiration_pi > 0.0,
             "Pre-industrial respiration should be positive"
@@ -186,7 +169,6 @@ mod physical_bounds {
     fn test_ocean_exchange_positive() {
         let params = OceanCarbonParameters::default();
 
-        // Gas exchange rate should be positive
         let k = params.gas_exchange_rate();
         assert!(k > 0.0, "Gas exchange rate should be positive");
     }

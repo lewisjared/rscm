@@ -438,7 +438,6 @@ def _build_emissions_schema():
     schema.add_variable("Carbon Pool|Plant", "GtC")
     schema.add_variable("Carbon Pool|Detritus", "GtC")
     schema.add_variable("Carbon Pool|Soil", "GtC")
-    schema.add_variable("Carbon Pool|Humus", "GtC")
     schema.add_variable("Ocean Surface pCO2", "ppm")
     schema.add_variable("Cumulative Ocean Uptake", "GtC")
     schema.add_variable("Emissions|CO2|Net", "GtC/yr")
@@ -659,7 +658,6 @@ def test_03_emissions_driven():
         "Carbon Pool|Plant": 884.86,
         "Carbon Pool|Detritus": 92.77,
         "Carbon Pool|Soil": 1681.53,
-        "Carbon Pool|Humus": 836.0,
     }
 
     model = build_emissions_driven_model(years, emissions, initial_conditions, config)
