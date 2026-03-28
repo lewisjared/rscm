@@ -109,6 +109,9 @@ TERR_VARS = [
     "NOFEED_PLANT_POOL",
     "NOFEED_SOIL_POOL",
     "NOFEED_DETRITUS_POOL",
+    "NETHUMAN_CO2EMIS",
+    "TERRBIO_AND_FOSSIL_EMIS",
+    "CO2B_EMIS",
 ]
 
 # Map CARBONCYCLE column names to RSCM-style variable names for the CSV
@@ -133,6 +136,9 @@ VAR_NAME_MAP = {
     "NOFEED_PLANT_POOL": "No-Feedback Pool|Plant",
     "NOFEED_SOIL_POOL": "No-Feedback Pool|Soil",
     "NOFEED_DETRITUS_POOL": "No-Feedback Pool|Detritus",
+    "NETHUMAN_CO2EMIS": "Emissions|CO2|Net Human",
+    "TERRBIO_AND_FOSSIL_EMIS": "Emissions|CO2|Terrestrial Bio and Fossil",
+    "CO2B_EMIS": "Emissions|CO2|Land Use",
 }
 
 # Unit mapping
@@ -157,6 +163,8 @@ VAR_UNIT_MAP = {
     "No-Feedback Pool|Plant": "GtC",
     "No-Feedback Pool|Soil": "GtC",
     "No-Feedback Pool|Detritus": "GtC",
+    "Emissions|CO2|Net Human": "GtC/yr",
+    "Emissions|CO2|Terrestrial Bio and Fossil": "GtC/yr",
 }
 
 
@@ -289,6 +297,34 @@ def carboncycle_to_regression_csv(
     print(f"  Saved: {name}.csv ({size_kb:.1f} KB, {n_total} vars)")
 
 
+def _parse_dat_file_global(out_dir: str, filename: str) -> dict[int, float]:
+    """Parse a DAT_*.OUT file and return {year: global_value}."""
+    fpath = os.path.join(out_dir, filename)
+    if not os.path.exists(fpath):
+        return {}
+
+    with open(fpath) as f:
+        lines = f.readlines()
+
+    first_data = 18
+    for line in lines:
+        if "THISFILE_FIRSTDATAROW" in line:
+            first_data = int(line.split("=")[1].split(",")[0].strip())
+            break
+
+    result = {}
+    for line in lines[first_data - 1 :]:
+        parts = line.split()
+        if len(parts) >= 2:  # noqa: PLR2004
+            try:
+                year = int(float(parts[0]))
+                val = float(parts[1])  # First data column = GLOBAL
+                result[year] = val
+            except ValueError:
+                continue
+    return result
+
+
 def run_with_carboncycle(config: dict) -> tuple:
     """Run MAGICC7 with carbon cycle output enabled.
 
@@ -307,7 +343,14 @@ def run_with_carboncycle(config: dict) -> tuple:
             temperature=True,
         )
         res = m.run(out_carboncycle=1, **config)
-        cc_df = parse_carboncycle_out(os.path.join(m.root_dir, "out"))
+        out_dir = os.path.join(m.root_dir, "out")
+        cc_df = parse_carboncycle_out(out_dir)
+
+        # Also parse raw land-use emissions (not in CARBONCYCLE.OUT)
+        co2b = _parse_dat_file_global(out_dir, "DAT_CO2B_EMIS.OUT")
+        if co2b:
+            cc_df["CO2B_EMIS"] = cc_df["YEARS"].map(co2b).fillna(0.0)
+
     return cc_df, res
 
 
