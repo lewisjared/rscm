@@ -17,7 +17,7 @@ Chemistry:
 - HalocarbonChemistryBuilder: F-gases and Montreal Protocol gases
 
 Carbon Cycle:
-- TerrestrialCarbonBuilder: 4-pool terrestrial carbon cycle
+- TerrestrialCarbonBuilder: 3-pool terrestrial carbon cycle (MAGICC7)
 - OceanCarbonBuilder: IRF-based ocean carbon uptake
 - CO2BudgetBuilder: Carbon mass balance integrator
 
@@ -429,79 +429,42 @@ class TerrestrialCarbonParams(TypedDict, total=False):
     npp_pi: float
     co2_pi: float
     beta: float
+    fertilization_method: float
+    fertilization_factor2: float
+    gifford_conc_for_zero_npp: float
+    fertilization_yrstart: float
     npp_temp_sensitivity: float
     resp_temp_sensitivity: float
     detritus_temp_sensitivity: float
     soil_temp_sensitivity: float
-    humus_temp_sensitivity: float
+    tempfeedback_yrstart: float
     plant_pool_pi: float
     detritus_pool_pi: float
     soil_pool_pi: float
-    humus_pool_pi: float
     respiration_pi: float
+    plantbox_resp_method: int
+    plantbox_resp_fertscale: float
     frac_npp_to_plant: float
     frac_npp_to_detritus: float
     frac_plant_to_detritus: float
     frac_detritus_to_soil: float
-    frac_soil_to_humus: float
-    enable_fertilization: bool
-    enable_temp_feedback: bool
+    frac_deforest_plant: float
+    frac_deforest_detritus: float
+    norgrwth_frac_defo: float
 
 @final
 class TerrestrialCarbonBuilder(ComponentBuilder):
     """Builder for the terrestrial carbon cycle component.
 
-    Implements a 4-pool terrestrial carbon model with CO2 fertilization and
-    temperature feedbacks (plant biomass, detritus, soil, humus).
-
-    # Parameters
-    # ----------
-    # npp_pi : float
-    #     Pre-industrial Net Primary Production (GtC/yr). Default: 66.27
-    # co2_pi : float
-    #     Pre-industrial CO2 concentration (ppm). Default: 278.0
-    # beta : float
-    #     CO2 fertilization factor. Default: 0.6486
-    # npp_temp_sensitivity : float
-    #     NPP temperature sensitivity coefficient (K^-1). Default: 0.0107
-    # resp_temp_sensitivity : float
-    #     Respiration temperature sensitivity (K^-1). Default: 0.0685
-    # detritus_temp_sensitivity : float
-    #     Detritus decay temperature sensitivity (K^-1). Default: 0.1358
-    # soil_temp_sensitivity : float
-    #     Soil decay temperature sensitivity (K^-1). Default: 0.1541
-    # humus_temp_sensitivity : float
-    #     Humus decay temperature sensitivity (K^-1). Default: 0.05
-    # plant_pool_pi : float
-    #     Pre-industrial plant pool (GtC). Default: 884.86
-    # detritus_pool_pi : float
-    #     Pre-industrial detritus pool (GtC). Default: 92.77
-    # soil_pool_pi : float
-    #     Pre-industrial soil pool (GtC). Default: 1681.53
-    # humus_pool_pi : float
-    #     Pre-industrial humus pool (GtC). Default: 836.0
-    # respiration_pi : float
-    #     Pre-industrial respiration (GtC/yr). Default: 12.26
-    # frac_npp_to_plant : float
-    #     Fraction of NPP to plant pool. Default: 0.4483
-    # frac_npp_to_detritus : float
-    #     Fraction of NPP to detritus pool. Default: 0.3998
-    # frac_plant_to_detritus : float
-    #     Fraction of plant turnover to detritus. Default: 0.9989
-    # frac_detritus_to_soil : float
-    #     Fraction of detritus decay to soil. Default: 0.3
-    # frac_soil_to_humus : float
-    #     Fraction of soil decay to humus. Default: 0.1
-    # enable_fertilization : bool
-    #     Enable CO2 fertilization feedback. Default: True
-    # enable_temp_feedback : bool
-    #     Enable temperature feedback. Default: True
+    Implements the MAGICC7 3-pool terrestrial carbon model with three CO2
+    fertilization methods, two respiration methods, time-varying turnover
+    times, no-feedback reference pools, and mass conservation correction.
 
     Inputs
     ------
     Atmospheric Concentration|CO2 : float
         Atmospheric CO2 concentration (ppm)
-    Surface Temperature|Global : float
+    Surface Temperature : float
         Global mean surface temperature anomaly (K)
     Emissions|CO2|Land Use : float
         Land use change CO2 emissions (GtC/yr)
@@ -514,13 +477,19 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
         Detritus carbon pool (GtC)
     Carbon Pool|Soil : float
         Soil carbon pool (GtC)
-    Carbon Pool|Humus : float
-        Humus carbon pool (GtC)
 
     Outputs
     -------
     Carbon Flux|Terrestrial : float
         Net terrestrial carbon uptake (GtC/yr)
+    Emissions|CO2|Gross Deforestation : float
+        Gross deforestation emissions (GtC/yr)
+    Carbon Flux|Regrowth : float
+        Regrowth carbon flux (GtC/yr)
+    Net Primary Production : float
+        NPP with feedbacks (GtC/yr)
+    Respiration|Terrestrial : float
+        Total terrestrial respiration (GtC/yr)
 
     Examples
     --------
@@ -528,7 +497,7 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
     ...     {
     ...         "npp_pi": 66.27,
     ...         "beta": 0.6486,
-    ...         "enable_fertilization": True,
+    ...         "fertilization_method": 1.10,
     ...     }
     ... )
     >>> component = builder.build()
