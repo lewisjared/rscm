@@ -1,0 +1,12 @@
+{
+  "core_climatesensitivity": 3.0,
+  "core_delq2xco2": 3.71,
+  "core_amv_apply": 0,
+  "core_elnino_apply": 0,
+  "rf_solar_scale": 0.0,
+  "rf_volcanic_scale": 0.0,
+  "startyear": 1750,
+  "endyear": 2100,
+  "co2_tempfeedback_switch": 1,
+  "co2_fertilization_method": 1.1
+}
