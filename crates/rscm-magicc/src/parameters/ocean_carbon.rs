@@ -18,6 +18,7 @@
 //! The IRF form varies by model and time regime:
 //! - **3D-GFDL**: Polynomial (pre-switch, first year) + exponential sum (post-switch)
 //! - **2D-BERN**: Exponential sum for both regimes (switch at 9.9 years)
+//! - **HILDA**: Exponential sum for both regimes (switch at 2.0 years)
 //!
 //! See `docs/modules/module_10_ocean_carbon.md` for full specification.
 
@@ -109,6 +110,13 @@ impl IrfForm {
                 coefficients,
                 timescales,
             } => {
+                debug_assert_eq!(
+                    coefficients.len(),
+                    timescales.len(),
+                    "ExponentialSum coefficients ({}) and timescales ({}) must have equal length",
+                    coefficients.len(),
+                    timescales.len()
+                );
                 let mut sum = 0.0;
                 for (a, tau) in coefficients.iter().zip(timescales.iter()) {
                     sum += a * (-t / tau).exp();
@@ -141,6 +149,14 @@ impl IrfForm {
 #[serde(default)]
 pub struct OceanCarbonParameters {
     /// Ocean carbon model selection.
+    ///
+    /// This field is informational only; it does not automatically select the
+    /// corresponding IRF coefficients or physical parameters. Use the named
+    /// constructors (`gfdl_3d()`, `bern_2d()`, `hilda()`) to get a
+    /// self-consistent parameter set for a given model. Setting only this
+    /// field via serde partial deserialization will leave the IRF parameters
+    /// at their default (GFDL3D) values regardless of the variant chosen.
+    ///
     /// default: GFDL3D (matches MAGICC7 OCEANCC_MODEL = "3D-GFDL")
     pub model: OceanCarbonModel,
 
@@ -485,6 +501,78 @@ mod tests {
             "HILDA IRF should continue decaying at t=100"
         );
         assert!(irf_100 > 0.0, "HILDA IRF should remain positive");
+    }
+
+    #[test]
+    fn test_irf_switch_time_gfdl_3d() {
+        // 3D-GFDL switches from polynomial to exponential sum at 1.0 year.
+        // The forms are different, so a small discontinuity is expected,
+        // but both values should be positive and in a reasonable range.
+        let params = OceanCarbonParameters::gfdl_3d();
+        let eps = 1e-6;
+
+        let before = params.irf(params.irf_switch_time - eps);
+        let after = params.irf(params.irf_switch_time + eps);
+
+        assert!(
+            before > 0.0 && before < 1.5,
+            "IRF just before switch should be in (0, 1.5), got {:.6}",
+            before
+        );
+        assert!(
+            after > 0.0 && after < 1.5,
+            "IRF just after switch should be in (0, 1.5), got {:.6}",
+            after
+        );
+        // Both sides should be in the same order of magnitude
+        assert!(
+            (before / after) > 0.1 && (before / after) < 10.0,
+            "IRF should not jump by more than 10x at switch: before={:.6}, after={:.6}",
+            before,
+            after
+        );
+    }
+
+    #[test]
+    fn test_irf_switch_time_bern_2d() {
+        // 2D-BERN uses exponential sums on both sides of switch at 9.9 years.
+        let params = OceanCarbonParameters::bern_2d();
+        let eps = 1e-6;
+
+        let before = params.irf(params.irf_switch_time - eps);
+        let after = params.irf(params.irf_switch_time + eps);
+
+        assert!(
+            before > 0.0,
+            "IRF just before switch should be positive, got {:.6}",
+            before
+        );
+        assert!(
+            after > 0.0,
+            "IRF just after switch should be positive, got {:.6}",
+            after
+        );
+    }
+
+    #[test]
+    fn test_irf_switch_time_hilda() {
+        // HILDA uses exponential sums on both sides of switch at 2.0 years.
+        let params = OceanCarbonParameters::hilda();
+        let eps = 1e-6;
+
+        let before = params.irf(params.irf_switch_time - eps);
+        let after = params.irf(params.irf_switch_time + eps);
+
+        assert!(
+            before > 0.0,
+            "IRF just before switch should be positive, got {:.6}",
+            before
+        );
+        assert!(
+            after > 0.0,
+            "IRF just after switch should be positive, got {:.6}",
+            after
+        );
     }
 
     #[test]
