@@ -27,6 +27,7 @@ from utils import (
     DEFAULT_CLIMATE,
     MAGICC_ROOT,
     NO_VARIABILITY,
+    filter_results,
     make_config,
     output_dir,
     run_magicc_ctx,
@@ -200,9 +201,15 @@ def carboncycle_to_regression_csv(
     cc_df: pd.DataFrame,
     name: str,
     config: dict,
+    std_results=None,
     variables: list[str] | None = None,
 ) -> None:
-    """Convert CARBONCYCLE DataFrame to regression CSV format (matching helpers.py)."""
+    """Convert CARBONCYCLE DataFrame to regression CSV format (matching helpers.py).
+
+    If ``std_results`` is provided, also includes CO2 concentration,
+    surface temperature, and land-use emissions from the standard MAGICC
+    output as driving inputs for RSCM parity comparisons.
+    """
     if variables is None:
         variables = TERR_VARS
 
@@ -229,6 +236,41 @@ def carboncycle_to_regression_csv(
 
         rows.append(row)
 
+    # Add driving inputs from standard MAGICC output
+    if std_results is not None:
+        driving_vars = [
+            "DAT_CO2_CONC",
+            "DAT_SURFACE_TEMP",
+            "DAT_CO2B_EMIS",
+        ]
+        driving_units = {
+            "Atmospheric Concentrations|CO2": "ppm",
+            "Surface Temperature": "K",
+            "Emissions|CO2|Land Use": "GtC/yr",
+        }
+        filtered = filter_results(std_results, driving_vars)
+        for scm_var in filtered.get_unique_meta("variable"):
+            sub = filtered.filter(variable=scm_var, region="World")
+            if len(sub) == 0:
+                sub = filtered.filter(variable=scm_var)
+            if len(sub) == 0:
+                continue
+            ts = sub.timeseries().iloc[0]
+            unit = driving_units.get(scm_var, str(sub.get_unique_meta("unit")[0]))
+            row = {
+                "climate_model": "MAGICC7",
+                "model": "unspecified",
+                "region": "World",
+                "scenario": name,
+                "todo": "SET",
+                "unit": unit,
+                "variable": scm_var,
+            }
+            for dt_idx, val in ts.items():
+                timestamp = f"{dt_idx.year}-01-01 00:00:00"
+                row[timestamp] = val
+            rows.append(row)
+
     wide_df = pd.DataFrame(rows)
     csv_path = OUT / f"{name}.csv"
     wide_df.to_csv(csv_path, index=False)
@@ -242,12 +284,18 @@ def carboncycle_to_regression_csv(
     with open(json_path, "w") as f:
         json.dump(config_clean, f, indent=2)
 
+    n_total = len(variables) + (3 if std_results else 0)
     size_kb = csv_path.stat().st_size / 1024
-    print(f"  Saved: {name}.csv ({size_kb:.1f} KB, {len(variables)} vars)")
+    print(f"  Saved: {name}.csv ({size_kb:.1f} KB, {n_total} vars)")
 
 
-def run_with_carboncycle(config: dict) -> pd.DataFrame:
-    """Run MAGICC7 with carbon cycle output enabled and return parsed data."""
+def run_with_carboncycle(config: dict) -> tuple:
+    """Run MAGICC7 with carbon cycle output enabled.
+
+    Returns (carboncycle_df, standard_results) so callers can extract
+    both CARBONCYCLE.OUT diagnostics and standard DAT_* outputs
+    (CO2 concentration, temperature, land-use emissions).
+    """
     with run_magicc_ctx() as m:
         m.set_output_variables(
             write_ascii=True,
@@ -258,9 +306,9 @@ def run_with_carboncycle(config: dict) -> pd.DataFrame:
             forcing=True,
             temperature=True,
         )
-        _res = m.run(out_carboncycle=1, **config)
+        res = m.run(out_carboncycle=1, **config)
         cc_df = parse_carboncycle_out(os.path.join(m.root_dir, "out"))
-    return cc_df
+    return cc_df, res
 
 
 def test_01_pi_steady_state():
@@ -278,8 +326,8 @@ def test_01_pi_steady_state():
         file_n2o_conc="CONST_N2O_CONC.IN",
     )
 
-    cc_df = run_with_carboncycle(config)
-    carboncycle_to_regression_csv(cc_df, "01_pi_steady_state", config)
+    cc_df, res = run_with_carboncycle(config)
+    carboncycle_to_regression_csv(cc_df, "01_pi_steady_state", config, std_results=res)
 
 
 def test_02_co2_fertilization_only():
@@ -299,8 +347,10 @@ def test_02_co2_fertilization_only():
         co2_fertilization_method=1.10,
     )
 
-    cc_df = run_with_carboncycle(config)
-    carboncycle_to_regression_csv(cc_df, "02_co2_fertilization_only", config)
+    cc_df, res = run_with_carboncycle(config)
+    carboncycle_to_regression_csv(
+        cc_df, "02_co2_fertilization_only", config, std_results=res
+    )
 
 
 def test_03_co2_and_temperature():
@@ -320,8 +370,10 @@ def test_03_co2_and_temperature():
         co2_fertilization_method=1.10,
     )
 
-    cc_df = run_with_carboncycle(config)
-    carboncycle_to_regression_csv(cc_df, "03_co2_and_temperature", config)
+    cc_df, res = run_with_carboncycle(config)
+    carboncycle_to_regression_csv(
+        cc_df, "03_co2_and_temperature", config, std_results=res
+    )
 
 
 def test_04_emissions_driven():
@@ -335,8 +387,8 @@ def test_04_emissions_driven():
         co2_fertilization_method=1.10,
     )
 
-    cc_df = run_with_carboncycle(config)
-    carboncycle_to_regression_csv(cc_df, "04_emissions_driven", config)
+    cc_df, res = run_with_carboncycle(config)
+    carboncycle_to_regression_csv(cc_df, "04_emissions_driven", config, std_results=res)
 
 
 def test_05_gifford_fertilization():
@@ -356,8 +408,10 @@ def test_05_gifford_fertilization():
         co2_fertilization_method=2.0,
     )
 
-    cc_df = run_with_carboncycle(config)
-    carboncycle_to_regression_csv(cc_df, "05_gifford_fertilization", config)
+    cc_df, res = run_with_carboncycle(config)
+    carboncycle_to_regression_csv(
+        cc_df, "05_gifford_fertilization", config, std_results=res
+    )
 
 
 def test_06_resp_method2():
@@ -379,8 +433,8 @@ def test_06_resp_method2():
         co2_plantboxresp_fertscale=0.5,
     )
 
-    cc_df = run_with_carboncycle(config)
-    carboncycle_to_regression_csv(cc_df, "06_resp_method2", config)
+    cc_df, res = run_with_carboncycle(config)
+    carboncycle_to_regression_csv(cc_df, "06_resp_method2", config, std_results=res)
 
 
 TESTS = [
