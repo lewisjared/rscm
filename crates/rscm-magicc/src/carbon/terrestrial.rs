@@ -219,8 +219,7 @@ impl TerrestrialCarbon {
     ///
     /// Requires `beta > 1.0` for meaningful sigmoid fertilization. If `beta <= 1.0`,
     /// the asymptote is clamped to just above 1.0 and the sigmoid provides no
-    /// fertilization enhancement. Users setting `fertilization_method >= 2.0` should
-    /// ensure `beta > 1.0` (e.g., beta = 1.4 for moderate sigmoid response).
+    /// fertilization enhancement.
     fn fert_sigmoid(&self, co2: FloatValue, co2_ref: FloatValue) -> FloatValue {
         let a = self.parameters.beta.max(1.0 + 1e-10);
         let b = self.parameters.fertilization_factor2;
@@ -239,24 +238,25 @@ impl TerrestrialCarbon {
     ///
     /// MAGICC7: CO2_EFF_FERTILIZATION_FACTOR
     fn fertilization_factor(&self, co2: FloatValue, co2_ref: FloatValue) -> FloatValue {
-        let method = self.parameters.fertilization_method;
+        use crate::parameters::FertilizationMethod;
 
-        if method < 1.0 {
-            return 1.0;
-        }
-
-        let method = method.min(3.0);
-
-        let result = if method <= 2.0 {
-            let w = method - 1.0;
-            let beta_log = self.fert_logarithmic(co2, co2_ref);
-            let beta_giff = self.fert_gifford(co2, co2_ref);
-            (1.0 - w) * beta_log + w * beta_giff
-        } else {
-            let w = method - 2.0;
-            let beta_giff = self.fert_gifford(co2, co2_ref);
-            let beta_sig = self.fert_sigmoid(co2, co2_ref);
-            (1.0 - w) * beta_giff + w * beta_sig
+        let result = match &self.parameters.fertilization_method {
+            FertilizationMethod::None => return 1.0,
+            FertilizationMethod::Logarithmic => self.fert_logarithmic(co2, co2_ref),
+            FertilizationMethod::Gifford => self.fert_gifford(co2, co2_ref),
+            FertilizationMethod::Sigmoid => self.fert_sigmoid(co2, co2_ref),
+            FertilizationMethod::Blended(method) => {
+                let method = method.clamp(1.0, 3.0);
+                if method <= 2.0 {
+                    let w = method - 1.0;
+                    (1.0 - w) * self.fert_logarithmic(co2, co2_ref)
+                        + w * self.fert_gifford(co2, co2_ref)
+                } else {
+                    let w = method - 2.0;
+                    (1.0 - w) * self.fert_gifford(co2, co2_ref)
+                        + w * self.fert_sigmoid(co2, co2_ref)
+                }
+            }
         };
 
         result.max(0.1) // Floor to prevent negative/zero fertilization
@@ -271,30 +271,27 @@ impl TerrestrialCarbon {
 
     /// Calculate respiration from plant pool with feedbacks.
     ///
-    /// Supports MAGICC7 Method 1 and Method 2.
+    /// R_h = R_h0 * (1 + alpha*(beta-1)) * min(1, C_P/C_P0) * f_T
+    ///
+    /// Pool-ratio scaling ensures respiration decreases when the plant pool
+    /// shrinks below PI (e.g., from deforestation). The `alpha` parameter
+    /// (`plantbox_resp_fertscale`) controls how much CO2 fertilization
+    /// amplifies respiration.
     fn calculate_respiration(
         &self,
         beta_fert: FloatValue,
         temperature: FloatValue,
         plant_pool: FloatValue,
     ) -> FloatValue {
+        let alpha = self.parameters.plantbox_resp_fertscale;
+        let pool_ratio = (plant_pool / self.parameters.plant_pool_pi).clamp(0.0, 1.0);
         let temp_effect =
             self.temperature_factor(temperature, self.parameters.resp_temp_sensitivity);
 
-        match self.parameters.plantbox_resp_method {
-            2 => {
-                let alpha = self.parameters.plantbox_resp_fertscale;
-                let pool_ratio = (plant_pool / self.parameters.plant_pool_pi).clamp(0.0, 1.0);
-                self.parameters.respiration_pi
-                    * (1.0 + alpha * (beta_fert - 1.0))
-                    * pool_ratio
-                    * temp_effect
-            }
-            _ => {
-                // Method 1 (default)
-                self.parameters.respiration_pi * beta_fert * temp_effect
-            }
-        }
+        self.parameters.respiration_pi
+            * (1.0 + alpha * (beta_fert - 1.0))
+            * pool_ratio
+            * temp_effect
     }
 
     /// Update a carbon pool using implicit trapezoidal integration.
@@ -507,8 +504,6 @@ impl TerrestrialCarbon {
         // 2. Algebraically derive the current regrowth from that preliminary state
         // 3. Compute gross deforestation = net deforestation + regrowth
         // 4. Re-advance the no-feedback pool with gross deforestation
-        //
-        // This matches the TERRCARBON2 Fortran subroutine exactly.
 
         let nf_net_flux_plant = p.npp_pi * p.frac_npp_to_plant - p.respiration_pi;
         let net_defo = [
@@ -517,12 +512,12 @@ impl TerrestrialCarbon {
             p.frac_deforest_soil() * landuse_emissions,
         ];
 
-        let taus = [tau_plant, tau_detritus, tau_soil];
         let mut regrowth = [0.0; 3];
         let mut gross_defo = [0.0; 3];
         let mut new_nf_pools = state.nofeedback_pools;
 
         // Plant pool regrowth (Step 10 in MAGICC7)
+        let nf_preliminary_plant;
         {
             let half_k = 0.5 / tau_plant;
             let nf_pool = state.nofeedback_pools[0];
@@ -532,6 +527,8 @@ impl TerrestrialCarbon {
                 - net_defo[0]
                 - state.prev_regrowth[0])
                 / (1.0 + half_k);
+
+            nf_preliminary_plant = nf_new_no_regrwth;
 
             // Algebraic regrowth calculation
             regrowth[0] = nf_new_no_regrwth * (1.0 + half_k) - nf_pool * (1.0 + half_k)
@@ -546,10 +543,13 @@ impl TerrestrialCarbon {
             new_nf_pools[0] = new_nf_pools[0].max(0.0);
         }
 
-        // Compute no-feedback plant turnover for detritus/soil flux calculation
-        let nf_turnover_plant = 0.5 / tau_plant * (state.nofeedback_pools[0] + new_nf_pools[0]);
+        // No-feedback plant turnover uses preliminary pool (before gross defo),
+        // matching MAGICC7's NOFEED_CURNTFLUX_PLANT2DETRSOIL
+        let nf_turnover_plant =
+            0.5 / tau_plant * (state.nofeedback_pools[0] + nf_preliminary_plant);
 
         // Detritus pool regrowth (Step 11 in MAGICC7)
+        let nf_preliminary_detritus;
         {
             let half_k = 0.5 / tau_detritus;
             let nf_pool = state.nofeedback_pools[1];
@@ -559,6 +559,8 @@ impl TerrestrialCarbon {
             let nf_new_no_regrwth =
                 (nf_pool * (1.0 - half_k) + nf_net_flux - net_defo[1] - state.prev_regrowth[1])
                     / (1.0 + half_k);
+
+            nf_preliminary_detritus = nf_new_no_regrwth;
 
             regrowth[1] = (nf_new_no_regrwth - nf_pool) * (1.0 + half_k)
                 + net_defo[1]
@@ -571,9 +573,9 @@ impl TerrestrialCarbon {
             new_nf_pools[1] = new_nf_pools[1].max(0.0);
         }
 
-        // No-feedback detritus turnover for soil
+        // No-feedback detritus turnover for soil (uses preliminary pool)
         let nf_turnover_detritus =
-            0.5 / tau_detritus * (state.nofeedback_pools[1] + new_nf_pools[1]);
+            0.5 / tau_detritus * (state.nofeedback_pools[1] + nf_preliminary_detritus);
 
         // Soil pool regrowth (Step 12 in MAGICC7)
         {
@@ -752,6 +754,7 @@ impl Component for TerrestrialCarbon {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parameters::FertilizationMethod;
 
     fn default_component() -> TerrestrialCarbon {
         TerrestrialCarbon::from_parameters(TerrestrialCarbonParameters::default())
@@ -859,7 +862,7 @@ mod tests {
     #[test]
     fn test_fertilization_blending_method_1_pure_log() {
         let params = TerrestrialCarbonParameters {
-            fertilization_method: 1.0,
+            fertilization_method: FertilizationMethod::Logarithmic,
             ..Default::default()
         };
         let component = TerrestrialCarbon::from_parameters(params);
@@ -878,7 +881,7 @@ mod tests {
     #[test]
     fn test_fertilization_blending_method_2_pure_gifford() {
         let params = TerrestrialCarbonParameters {
-            fertilization_method: 2.0,
+            fertilization_method: FertilizationMethod::Gifford,
             ..Default::default()
         };
         let component = TerrestrialCarbon::from_parameters(params);
@@ -897,7 +900,7 @@ mod tests {
     #[test]
     fn test_fertilization_no_fert_below_1() {
         let params = TerrestrialCarbonParameters {
-            fertilization_method: 0.5,
+            fertilization_method: FertilizationMethod::None,
             ..Default::default()
         };
         let component = TerrestrialCarbon::from_parameters(params);
@@ -912,13 +915,12 @@ mod tests {
     #[test]
     fn test_respiration_method2_at_pi() {
         let params = TerrestrialCarbonParameters {
-            plantbox_resp_method: 2,
             plantbox_resp_fertscale: 0.5,
             ..Default::default()
         };
         let component = TerrestrialCarbon::from_parameters(params.clone());
 
-        // At PI: beta=1, temp=0, pool=pool_pi -> should match method 1
+        // At PI: beta=1, temp=0, pool=pool_pi -> resp = resp_pi
         let resp = component.calculate_respiration(1.0, 0.0, params.plant_pool_pi);
         assert!(
             (resp - params.respiration_pi).abs() < 1e-10,

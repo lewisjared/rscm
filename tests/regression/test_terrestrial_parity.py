@@ -230,15 +230,15 @@ class TestCO2FertilizationParity:
 
     def test_plant_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Carbon Pool|Plant", rtol=0.05)
+        _compare_variable(results, df, years, "Carbon Pool|Plant", rtol=0.001)
 
     def test_detritus_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Carbon Pool|Detritus", rtol=0.02)
+        _compare_variable(results, df, years, "Carbon Pool|Detritus", rtol=0.001)
 
     def test_soil_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Carbon Pool|Soil", rtol=0.01)
+        _compare_variable(results, df, years, "Carbon Pool|Soil", rtol=0.001)
 
     def test_npp(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
@@ -246,7 +246,7 @@ class TestCO2FertilizationParity:
 
     def test_respiration(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Respiration|Terrestrial", rtol=0.03)
+        _compare_variable(results, df, years, "Respiration|Terrestrial", rtol=0.005)
 
 
 @pytest.mark.slow
@@ -283,7 +283,7 @@ class TestGiffordParity:
 
     def test_plant_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Carbon Pool|Plant", rtol=0.05)
+        _compare_variable(results, df, years, "Carbon Pool|Plant", rtol=0.001)
 
     def test_npp(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
@@ -291,4 +291,4 @@ class TestGiffordParity:
 
     def test_soil_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
-        _compare_variable(results, df, years, "Carbon Pool|Soil", rtol=0.01)
+        _compare_variable(results, df, years, "Carbon Pool|Soil", rtol=0.001)

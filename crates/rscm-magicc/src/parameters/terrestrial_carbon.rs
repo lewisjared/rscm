@@ -11,6 +11,64 @@
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
+/// CO2 fertilization method selector.
+///
+/// MAGICC7 uses a continuous float (1.0-3.0) that blends adjacent methods.
+/// This enum provides named variants for the three pure methods plus
+/// a `Blended` variant for fractional values.
+///
+/// MAGICC7: CO2_FERTILIZATION_METHOD
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "FloatValue", into = "FloatValue")]
+pub enum FertilizationMethod {
+    /// No CO2 fertilization (MAGICC7 value < 1.0)
+    None,
+    /// Logarithmic (Keeling-Bacastow 1973) (MAGICC7 value = 1.0)
+    Logarithmic,
+    /// Gifford rectangular hyperbolic / Michaelis-Menten (MAGICC7 value = 2.0)
+    Gifford,
+    /// Saturating sigmoid, Norton (MAGICC7 value = 3.0)
+    Sigmoid,
+    /// Blend between adjacent methods using MAGICC7 continuous parameter.
+    /// Value in range [1.0, 3.0]: 1.0-2.0 blends log/Gifford, 2.0-3.0 blends Gifford/sigmoid.
+    Blended(FloatValue),
+}
+
+impl FertilizationMethod {
+    /// MAGICC7 continuous parameter value.
+    pub fn as_f64(&self) -> FloatValue {
+        match self {
+            Self::None => 0.0,
+            Self::Logarithmic => 1.0,
+            Self::Gifford => 2.0,
+            Self::Sigmoid => 3.0,
+            Self::Blended(v) => *v,
+        }
+    }
+}
+
+impl From<FloatValue> for FertilizationMethod {
+    fn from(v: FloatValue) -> Self {
+        if v < 1.0 {
+            Self::None
+        } else if v == 1.0 {
+            Self::Logarithmic
+        } else if v == 2.0 {
+            Self::Gifford
+        } else if v == 3.0 {
+            Self::Sigmoid
+        } else {
+            Self::Blended(v.clamp(1.0, 3.0))
+        }
+    }
+}
+
+impl From<FertilizationMethod> for FloatValue {
+    fn from(m: FertilizationMethod) -> Self {
+        m.as_f64()
+    }
+}
+
 /// Parameters for terrestrial carbon cycle calculations.
 ///
 /// The terrestrial carbon cycle tracks three carbon pools:
@@ -56,15 +114,9 @@ pub struct TerrestrialCarbonParameters {
     /// MAGICC7: CO2_FERTILIZATION_FACTOR
     pub beta: FloatValue,
 
-    /// CO2 fertilization method selector (float for blending):
-    /// `< 1.0` = no fertilization,
-    /// `1.0` = logarithmic (Keeling-Bacastow 1973),
-    /// `2.0` = Gifford rectangular hyperbolic (Michaelis-Menten),
-    /// `3.0` = saturating sigmoid (Norton).
-    /// Fractional values blend adjacent methods.
-    /// unit: dimensionless.
+    /// CO2 fertilization method.
     /// MAGICC7: CO2_FERTILIZATION_METHOD
-    pub fertilization_method: FloatValue,
+    pub fertilization_method: FertilizationMethod,
 
     /// Curvature parameter for sigmoid fertilization method.
     /// unit: ppm
@@ -130,13 +182,8 @@ pub struct TerrestrialCarbonParameters {
     /// MAGICC7: CO2_RESPIRATION_INITIAL
     pub respiration_pi: FloatValue,
 
-    /// Plant box respiration method.
-    /// - 1: R_h = R_h0 * beta * f_T_resp
-    /// - 2: R_h = R_h0 * (1 + alpha*(beta-1)) * min(1, C_P/C_P0) * f_T_resp
-    /// MAGICC7: CO2_PLANTBOXRESP_METHOD
-    pub plantbox_resp_method: u8,
-
-    /// Scaling of fertilization effect on respiration (method 2 only).
+    /// Scaling of fertilization effect on plant respiration.
+    /// R_h = R_h0 * (1 + alpha*(beta-1)) * min(1, C_P/C_P0) * f_T_resp
     /// unit: dimensionless
     /// MAGICC7: CO2_PLANTBOXRESP_FERTSCALE
     pub plantbox_resp_fertscale: FloatValue,
@@ -183,7 +230,7 @@ impl Default for TerrestrialCarbonParameters {
             npp_pi: 66.2716,
             co2_pi: 278.0,
             beta: 0.6485981,
-            fertilization_method: 1.100486,
+            fertilization_method: FertilizationMethod::Blended(1.100486),
             fertilization_factor2: 100.0,
             gifford_conc_for_zero_npp: 80.0,
             fertilization_yrstart: 1900.0,
@@ -199,8 +246,7 @@ impl Default for TerrestrialCarbonParameters {
             soil_pool_pi: 1681.525,
 
             respiration_pi: 12.26025,
-            plantbox_resp_method: 1,
-            plantbox_resp_fertscale: 0.0,
+            plantbox_resp_fertscale: 0.95,
 
             frac_npp_to_plant: 0.4482615,
             frac_npp_to_detritus: 0.3998165,
@@ -315,8 +361,8 @@ mod tests {
         let params = TerrestrialCarbonParameters::default();
         assert!((params.npp_pi - 66.2716).abs() < 1e-10);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
-        assert!((params.fertilization_method - 1.100486).abs() < 1e-10);
-        assert_eq!(params.plantbox_resp_method, 1);
+        assert!((params.fertilization_method.as_f64() - 1.100486).abs() < 1e-10);
+        assert!((params.plantbox_resp_fertscale - 0.95).abs() < 1e-10);
     }
 
     #[test]
