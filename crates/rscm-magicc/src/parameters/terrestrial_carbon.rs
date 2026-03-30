@@ -51,11 +51,11 @@ impl From<FloatValue> for FertilizationMethod {
     fn from(v: FloatValue) -> Self {
         if v < 1.0 {
             Self::None
-        } else if v == 1.0 {
+        } else if (v - 1.0).abs() < f64::EPSILON {
             Self::Logarithmic
-        } else if v == 2.0 {
+        } else if (v - 2.0).abs() < f64::EPSILON {
             Self::Gifford
-        } else if v == 3.0 {
+        } else if (v - 3.0).abs() < f64::EPSILON {
             Self::Sigmoid
         } else {
             Self::Blended(v.clamp(1.0, 3.0))
@@ -271,11 +271,18 @@ impl TerrestrialCarbonParameters {
 
     /// Fraction of deforestation emissions from soil pool (derived).
     ///
-    /// Clamps the sum of plant + detritus fractions to [0, 1] before deriving
-    /// the soil fraction, preventing total deforestation fraction from exceeding 1.0.
+    /// Validates that plant + detritus fractions do not exceed 1.0 and derives
+    /// the soil fraction as the residual.
     pub fn frac_deforest_soil(&self) -> FloatValue {
-        let total = (self.frac_deforest_plant + self.frac_deforest_detritus).clamp(0.0, 1.0);
-        1.0 - total
+        let total = self.frac_deforest_plant + self.frac_deforest_detritus;
+        assert!(
+            total <= 1.0 + 1e-9,
+            "frac_deforest_plant ({}) + frac_deforest_detritus ({}) must not exceed 1.0, got {}",
+            self.frac_deforest_plant,
+            self.frac_deforest_detritus,
+            total
+        );
+        (1.0 - total).max(0.0)
     }
 
     /// Net flux to plant pool at pre-industrial (NPP to plant - respiration).

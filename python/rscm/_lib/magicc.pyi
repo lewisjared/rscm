@@ -442,7 +442,6 @@ class TerrestrialCarbonParams(TypedDict, total=False):
     detritus_pool_pi: float
     soil_pool_pi: float
     respiration_pi: float
-    plantbox_resp_method: int
     plantbox_resp_fertscale: float
     frac_npp_to_plant: float
     frac_npp_to_detritus: float

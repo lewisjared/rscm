@@ -221,9 +221,20 @@ class TestEmissionsDriven:
 
     def test_gross_defo_includes_regrowth(self):
         df, _cfg = _load(self.NAME)
+        _years, gross_defo = _get(df, "Emissions|CO2|Gross Deforestation")
+        _years, net_land_use = _get(df, "Emissions|CO2|Land Use")
         _years, regrowth = _get(df, "Carbon Flux|Regrowth")
+
+        late_gross = gross_defo[50:]
+        late_net_lu = net_land_use[50:]
         late_regrowth = regrowth[50:]
-        assert np.any(late_regrowth > 0), "Expected positive regrowth in later years"
+
+        assert np.allclose(
+            late_gross,
+            late_net_lu + late_regrowth,
+            rtol=1e-3,
+            atol=1e-3,
+        ), "Gross deforestation should equal net land-use emissions plus regrowth"
 
     def test_turnover_times_decrease(self):
         df, _cfg = _load(self.NAME)

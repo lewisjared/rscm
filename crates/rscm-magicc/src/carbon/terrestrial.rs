@@ -66,7 +66,8 @@ pub struct TerrestrialCarbonState {
 
     /// Reference CO2 for fertilization (ppm).
     /// Tracks current CO2 before fertilization start year; after the start year
-    /// it is capped at `co2_ref_max` so it can decrease but not increase.
+    /// it is capped at `co2_ref_max` (cannot exceed this ceiling, but may
+    /// still vary below it).
     pub co2_ref: FloatValue,
 
     /// CO2 reference ceiling (ppm). Set to the CO2 value at the fertilization
@@ -162,7 +163,7 @@ impl TerrestrialCarbon {
     ///
     /// MAGICC7: `CO2_EXTRAP = (3*CO2(t-2) - 10*CO2(t-1) + 15*CO2(t)) / 8`
     fn extrapolate_co2(&self, state: &TerrestrialCarbonState, co2: FloatValue) -> FloatValue {
-        if !state.initialized || state.co2_history[0] == 0.0 || state.co2_history[1] == 0.0 {
+        if !state.initialized {
             return co2;
         }
         (3.0 * state.co2_history[0] - 10.0 * state.co2_history[1] + 15.0 * co2) / 8.0
@@ -623,7 +624,7 @@ impl TerrestrialCarbon {
         new_pools[0] = (new_pools[0] - correction).max(0.0);
         new_nf_pools[0] = (new_nf_pools[0] - correction).max(0.0);
 
-        // Step 13: Calculate net flux and diagnostics
+        // Step 15: Calculate net flux and diagnostics
         let detritus_to_atm = (1.0 - p.frac_detritus_to_soil) * turnover_detritus;
         let soil_to_atm = turnover_soil;
         let total_respiration = respiration + detritus_to_atm + soil_to_atm;
@@ -670,6 +671,10 @@ impl TerrestrialCarbon {
         let soil = inputs.soil_pool.at_start();
 
         let dt = t_next - t_current;
+        assert!(
+            (dt - 1.0).abs() < 1e-6,
+            "TerrestrialCarbon only supports annual timesteps (dt=1.0), got dt={dt}"
+        );
 
         let result = self.solve_terrestrial(
             state,

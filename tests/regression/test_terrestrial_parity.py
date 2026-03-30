@@ -96,17 +96,15 @@ def _build_terrestrial_model(  # noqa: PLR0913
     )
 
     # Add exogenous driving inputs
-    for var_name, values in [
-        ("Atmospheric Concentration|CO2", co2),
-        ("Surface Temperature", temperature),
-        ("Emissions|CO2|Land Use", landuse),
+    for var_name, values, unit in [
+        ("Atmospheric Concentration|CO2", co2, "ppm"),
+        ("Surface Temperature", temperature, "K"),
+        ("Emissions|CO2|Land Use", landuse, "GtC/yr"),
     ]:
         ts = Timeseries(
             values.astype(np.float64),
             time_axis,
-            "ppm"
-            if "CO2" in var_name and "Emission" not in var_name
-            else ("K" if "Temp" in var_name else "GtC/yr"),
+            unit,
             InterpolationStrategy.Linear,
         )
         builder = builder.with_exogenous_variable(var_name, ts)
@@ -114,6 +112,9 @@ def _build_terrestrial_model(  # noqa: PLR0913
     builder = builder.with_initial_values(initial_pools)
 
     return builder.build()
+
+
+_parity_cache: dict = {}
 
 
 def _run_parity_test(
@@ -125,8 +126,14 @@ def _run_parity_test(
 ):
     """Run RSCM and compare against MAGICC7 reference data.
 
-    Returns (rscm_results, magicc_ref_df) for further assertions.
+    Returns (rscm_results, magicc_ref_df, years).
+    Results are cached by (test_name, params) to avoid rebuilding the model
+    for each variable comparison within a test class.
     """
+    cache_key = (test_name, tuple(sorted(params.items())) if params else ())
+    if cache_key in _parity_cache:
+        return _parity_cache[cache_key]
+
     df, _cfg = _load(test_name)
 
     # Extract driving inputs from reference data
@@ -164,7 +171,9 @@ def _run_parity_test(
     model.run()
     results = model.timeseries()
 
-    return results, df, years
+    result = (results, df, years)
+    _parity_cache[cache_key] = result
+    return result
 
 
 def _get_rscm_values(results, var_name: str) -> np.ndarray:

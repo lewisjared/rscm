@@ -255,7 +255,6 @@ terrestrial_params = {
     "plant_pool_pi": 884.86,
     "detritus_pool_pi": 92.77,
     "soil_pool_pi": 1681.53,
-    "humus_pool_pi": 836.0,
     "respiration_pi": 12.26,  # GtC/yr
     # Transfer fractions
     "frac_npp_to_plant": 0.4483,
