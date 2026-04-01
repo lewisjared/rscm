@@ -31,5 +31,5 @@ python = ["pyo3", "numpy"]
 [dev-dependencies]
 approx = "0.5"
 serde_json = "1.0"
-rand_chacha = "0.3"
+rand_chacha = "0.10"
 tempfile = "3.27"
