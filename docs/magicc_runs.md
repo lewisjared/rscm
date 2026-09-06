@@ -1,5 +1,8 @@
 # Partial MAGICC runs
 
+For an offline SSP245 comparison and its interpretation limits, see the
+[concentration baseline](magicc_baseline.md).
+
 `rscm.magicc.run_magicc` runs concentrations through GHG forcing, forcing
 aggregation and ClimateUDEB. It also supports a partial CO2 emissions mode using
 CO2Budget with prescribed land and ocean uptake. These configurations let us test
