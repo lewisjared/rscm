@@ -104,6 +104,10 @@ def parameters(config: dict, concentrations: dict) -> tuple[dict, dict]:
     if any(config.get(k) != v for k, v in required.items()):
         msg = "Configuration does not describe the supported concentration case"
         raise ValueError(msg)
+    missing = {"core_delq2xco2", "core_climatesensitivity"} - config.keys()
+    if missing:
+        msg = f"Configuration is missing mapped parameters: {sorted(missing)}"
+        raise ValueError(msg)
     forcing = {"method": "Ipcctar", "delq2xco2": config["core_delq2xco2"]}
     for gas in GASES:
         forcing[f"{gas.lower()}_pi"] = float(concentrations[gas][0])
@@ -237,6 +241,8 @@ def build_report(data_dir: Path = DATA_DIR) -> tuple[pd.DataFrame, dict, str]:
         )
         for p in sorted(ROOT.glob(pattern))
     }
+    with Path(rust_lib.__file__).open("rb") as extension:
+        extension_hash = hashlib.file_digest(extension, "sha256").hexdigest()
     metadata = {
         "schema_version": 1,
         "case": CASE,
@@ -246,9 +252,7 @@ def build_report(data_dir: Path = DATA_DIR) -> tuple[pd.DataFrame, dict, str]:
         "fixture_hashes": hashes,
         "rscm_revision": revision,
         "source_hashes": source_hashes,
-        "extension_sha256": hashlib.sha256(
-            Path(rust_lib.__file__).read_bytes()
-        ).hexdigest(),
+        "extension_sha256": extension_hash,
         "reference_config_overrides": config,
         "supplied_parameters": {"forcing": forcing, "climate": climate},
         "effective_parameters": effective_parameters(forcing, climate),
@@ -296,7 +300,7 @@ def build_report(data_dir: Path = DATA_DIR) -> tuple[pd.DataFrame, dict, str]:
 
 def write_report(output_dir: Path, data_dir: Path = DATA_DIR) -> None:
     """Publish a complete report into a new directory, rejecting collisions."""
-    if output_dir.exists():
+    if output_dir.exists() or output_dir.is_symlink():
         msg = f"Output directory already exists: {output_dir}"
         raise FileExistsError(msg)
     table, metadata, summary = build_report(data_dir)
@@ -310,7 +314,7 @@ def write_report(output_dir: Path, data_dir: Path = DATA_DIR) -> None:
             json.dumps(metadata, indent=2, sort_keys=True, allow_nan=False) + "\n"
         )
         (staged / "summary.md").write_text(summary)
-        if output_dir.exists():
+        if output_dir.exists() or output_dir.is_symlink():
             msg = f"Output directory already exists: {output_dir}"
             raise FileExistsError(msg)
         staged.rename(output_dir)

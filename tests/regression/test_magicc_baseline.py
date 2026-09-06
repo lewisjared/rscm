@@ -156,6 +156,22 @@ def test_failed_serialization_leaves_no_bundle(tmp_path, monkeypatch):
     assert not list(tmp_path.iterdir())
 
 
+def test_dangling_output_symlink_rejected_before_run(tmp_path, monkeypatch):
+    output = tmp_path / "output"
+    target = tmp_path / "missing"
+    output.symlink_to(target)
+
+    def unexpected_run(*args, **kwargs):
+        pytest.fail("Existing output must be rejected before running the model")
+
+    monkeypatch.setattr(baseline, "build_report", unexpected_run)
+    with pytest.raises(FileExistsError):
+        baseline.write_report(output)
+    assert output.is_symlink()
+    assert output.readlink() == target
+    assert not target.exists()
+
+
 def test_cli_offline_from_another_directory(tmp_path):
     command = [
         sys.executable,
@@ -215,3 +231,13 @@ def test_failed_model_leaves_no_bundle(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="component failed"):
         baseline.write_report(tmp_path / "output")
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("key", ["core_delq2xco2", "core_climatesensitivity"])
+def test_missing_mapped_parameter_fails(fixture_dir, key):
+    path = fixture_dir / (baseline.CASE + "_config.json")
+    config = json.loads(path.read_text())
+    del config[key]
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError, match=key):
+        baseline.build_report(fixture_dir)
