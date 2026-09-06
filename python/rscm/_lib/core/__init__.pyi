@@ -582,8 +582,17 @@ class Model:
 
     def current_time(self) -> F: ...
     def current_time_bounds(self) -> tuple[F, F]: ...
-    def step(self) -> None: ...
-    def run(self) -> None: ...
+    def step(self) -> None:
+        """Advance one interval, raising RuntimeError on execution failure.
+
+        After a failure, rebuild the model before retrying; component state
+        may have changed even though the time index has not advanced.
+        """
+    def run(self) -> None:
+        """Run to completion, raising RuntimeError on execution failure.
+
+        Rebuild the model before retrying a failed run.
+        """
     def as_dot(self) -> str: ...
     def finished(self) -> bool: ...
     def debug_info(self, format: Literal["rich", "plain", "json"] = "rich") -> str:
