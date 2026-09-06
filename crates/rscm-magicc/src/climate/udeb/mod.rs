@@ -241,6 +241,18 @@ impl ClimateUDEB {
         &self.co2_qfrac
     }
 
+    /// Heat uptake at initialization with zero temperature anomalies.
+    /// Uses the same efficacy and regional forcing adjustments as annual diagnostics.
+    pub fn initial_heat_uptake(&self, erf: FloatValue) -> FloatValue {
+        let forcing = self.apply_efficacy_and_qfrac(erf, self.co2_internal_efficacy);
+        self.calculate_heat_uptake(
+            &forcing,
+            &FourBoxSlice::from_array([0.0; 4]),
+            self.lambda_ocean,
+            self.lambda_land,
+        )
+    }
+
     /// Apply efficacy adjustment and regional CO2 qfrac distribution to scalar ERF.
     ///
     /// NOTE: This applies the CO2 regional forcing pattern to the *total* ERF input,

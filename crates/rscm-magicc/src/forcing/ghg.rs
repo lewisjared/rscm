@@ -301,9 +301,21 @@ impl Component for GhgForcing {
     ) -> RSCMResult<OutputState> {
         let inputs = GhgForcingInputs::from_input_state(input_state);
 
-        let co2 = inputs.co2_concentration.get();
-        let ch4 = inputs.ch4_concentration.get();
-        let n2o = inputs.n2o_concentration.get();
+        // Forcing is an instantaneous diagnostic at t_next, where the model
+        // stores this output. Read that boundary for prescribed concentrations
+        // as well as concentrations just calculated by an upstream budget.
+        let co2 = inputs
+            .co2_concentration
+            .at_end()
+            .unwrap_or_else(|| inputs.co2_concentration.at_start());
+        let ch4 = inputs
+            .ch4_concentration
+            .at_end()
+            .unwrap_or_else(|| inputs.ch4_concentration.at_start());
+        let n2o = inputs
+            .n2o_concentration
+            .at_end()
+            .unwrap_or_else(|| inputs.n2o_concentration.at_start());
 
         let result = self.calculate_forcings(co2, ch4, n2o);
 
