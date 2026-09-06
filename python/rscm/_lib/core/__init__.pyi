@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from typing import Any, Protocol, Self, TypeVar, final
+from typing import Any, Literal, Protocol, Self, TypeVar, final
 
 import numpy as np
 from numpy.typing import NDArray
@@ -586,6 +586,19 @@ class Model:
     def run(self) -> None: ...
     def as_dot(self) -> str: ...
     def finished(self) -> bool: ...
+    def debug_info(self, format: Literal["rich", "plain", "json"] = "rich") -> str:
+        """
+        Generate debug information about the model's execution graph.
+
+        Shows execution order, inputs (with exo/upstream/own_state source),
+        outputs, states, grid types, grid transforms, and unit conversions.
+
+        Parameters
+        ----------
+        format
+            Output format: "rich" (coloured terminal, default), "plain" (no colours),
+            or "json" (structured JSON).
+        """
     def timeseries(self) -> TimeseriesCollection:
         """
         Get the timeseries associated with the model.

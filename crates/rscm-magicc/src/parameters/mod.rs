@@ -17,11 +17,13 @@ mod terrestrial_carbon;
 
 pub use aerosol::{AerosolDirectParameters, AerosolIndirectParameters};
 pub use ch4_chemistry::CH4ChemistryParameters;
-pub use climate_udeb::ClimateUDEBParameters;
+pub use climate_udeb::{
+    ClimateUDEBParameters, OceanTempProfile, CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER,
+};
 pub use co2_budget::CO2BudgetParameters;
 pub use ghg_forcing::{ForcingMethod, GhgForcingParameters};
 pub use halocarbon::{HalocarbonParameters, HalocarbonSpecies};
 pub use n2o_chemistry::N2OChemistryParameters;
-pub use ocean_carbon::OceanCarbonParameters;
+pub use ocean_carbon::{IrfForm, OceanCarbonModel, OceanCarbonParameters};
 pub use ozone_forcing::OzoneForcingParameters;
 pub use terrestrial_carbon::TerrestrialCarbonParameters;

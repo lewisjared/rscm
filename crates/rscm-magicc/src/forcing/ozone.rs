@@ -95,7 +95,7 @@ use serde::{Deserialize, Serialize};
     nox_emissions { name = "Emissions|NOx", unit = "Mt N/yr" },
     co_emissions { name = "Emissions|CO", unit = "Mt CO/yr" },
     nmvoc_emissions { name = "Emissions|NMVOC", unit = "Mt NMVOC/yr" },
-    temperature { name = "Surface Temperature|Global", unit = "K" },
+    temperature { name = "Surface Temperature", unit = "K" },
 )]
 #[outputs(
     strat_o3_erf { name = "Effective Radiative Forcing|O3|Stratospheric", unit = "W/m^2" },
@@ -568,7 +568,7 @@ mod tests {
         assert!(input_names.contains(&"Emissions|NOx"));
         assert!(input_names.contains(&"Emissions|CO"));
         assert!(input_names.contains(&"Emissions|NMVOC"));
-        assert!(input_names.contains(&"Surface Temperature|Global"));
+        assert!(input_names.contains(&"Surface Temperature"));
 
         let output_names: Vec<_> = defs
             .iter()

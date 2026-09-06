@@ -91,12 +91,12 @@ The feedback parameters are iteratively solved in `LAMCALC` to satisfy both the 
 
 Climate sensitivity can vary with forcing and cumulative temperature:
 
-$$ECS_{eff}(t) = ECS_0 \cdot \left(1 + \alpha_Q \cdot \frac{Q(t) - Q_{2x}}{Q_{2x}}\right) \cdot \left(1 + \alpha_T \cdot \frac{\sum T(t) - \sum T_{2x}}{\sum T_{2x}}\right)$$
+$$ECS_{eff}(t) = ECS_0 \cdot \left(1 + \alpha_T \cdot \frac{\sum T(t) - \sum T_{2x}}{\sum T_{2x}}\right) \cdot \left(1 + \alpha_Q \cdot (\max(0, Q(t)) - Q_{2x})\right)$$
 
 Where:
 
-- `CORE_FEEDBACK_QSENSITIVITY` = $\alpha_Q$ (forcing sensitivity)
-- `CORE_FEEDBACK_CUMTSENSITIVITY` = $\alpha_T$ (cumulative temperature sensitivity)
+- `CORE_FEEDBACK_QSENSITIVITY` = $\alpha_Q$ (forcing sensitivity, units: $1/(\text{W/m}^2)$; default $7.84 \times 10^{-9}$)
+- `CORE_FEEDBACK_CUMTSENSITIVITY` = $\alpha_T$ (cumulative temperature sensitivity, dimensionless)
 - `CORE_FEEDBACK_CUMTPERIOD` = period for cumulative temperature calculation
 
 ### 2.5 Ocean Mixed Layer Energy Balance
@@ -120,6 +120,8 @@ This couples ocean temperature feedback with land feedback through heat exchange
 - $F_{diffusion}$ = diffusive heat flux from layer below
 - $F_{upwelling}$ = advective heat flux from upwelling
 - $F_{exchange}$ = land-ocean and inter-hemispheric heat exchange
+
+> **Note**: The inter-hemispheric heat exchange uses ocean **air** temperatures (i.e., SST after the alpha_eff ocean-to-atmosphere adjustment), not raw SST values. The exchange flux is also normalized by each hemisphere's ocean area fraction $f_o$ (`FGO(hemisphere)`).
 
 ### 2.6 Ocean Vertical Diffusion-Advection Equation
 
@@ -191,6 +193,8 @@ D(N) = T(N) + entrainment_term + delta_w_terms
 
 Where `AF_top`, `AF_bottom` are area factors accounting for basin narrowing with depth.
 
+> **Note on layer 1 coefficient naming**: For the mixed layer (l=1), the Fortran overloads `A(1)` as the diagonal element (there is no sub-diagonal for the first row of the tridiagonal system), and `B(1)` is the single off-diagonal (super-diagonal) element. This differs from the general convention used for layers 2..N, where `A` is the sub-diagonal, `B` is the diagonal, and `C` is the super-diagonal.
+
 ### 2.9 Thomas Algorithm for Tridiagonal Solve
 
 The tridiagonal system is solved using the Thomas algorithm (forward elimination, back substitution):
@@ -238,6 +242,8 @@ Where:
   - "HEMISPHERIC": Respective hemisphere ocean temperature
   - "NOSCALING": Constant upwelling
   - "PRESCRIBED": Read from file
+
+> **AR6 Configuration**: Only the `GLOBE` upwelling scaling method is used. The `NOSCALING`, `PRESCRIBED`, `OCEAN`, and `HEMISPHERIC` methods are dead code and do not need to be implemented.
 
 ### 2.11 Ocean-to-Atmosphere Temperature Amplification
 
@@ -355,6 +361,8 @@ Where:
 
 ### 4.7 El Nino Parameters
 
+> **Dead code**: El Nino forcing is disabled in AR6 configurations (`CORE_ELNINO_APPLY=0`). This feature does not need to be implemented.
+
 | Parameter | Fortran Name | Units | Default | Valid Range | Description |
 |-----------|--------------|-------|---------|-------------|-------------|
 | Apply El Nino | `CORE_ELNINO_APPLY` | - | 0 | 0,1 | Enable El Nino variability |
@@ -362,6 +370,8 @@ Where:
 | El Nino relax factor | `CORE_ELNINO_RELAXFACTOR` | - | 0.0265 | 0-0.1 | Relaxation rate for heat anomaly |
 
 ### 4.8 AMV (Atlantic Multidecadal Variability) Parameters
+
+> **Dead code**: Atlantic Multidecadal Variability is disabled in AR6 configurations (`CORE_AMV_APPLY=0`). This feature does not need to be implemented.
 
 | Parameter | Fortran Name | Units | Default | Valid Range | Description |
 |-----------|--------------|-------|---------|-------------|-------------|
@@ -379,6 +389,8 @@ Where:
 | AMV index | - | External file | If AMV_APPLY=1 | `DAT_AMV_INDEX` |
 | Prescribed upwelling rate | m/yr | External file | If method="PRESCRIBED" | `DAT_UPWELLING_RATE` |
 | Prescribed surface temperature | K | External file | If PRESCRTEMP_APPLY=1 | `DAT_RAW_SURFACE_TEMP` |
+
+> **Dead code**: Prescribed temperature mode is disabled in AR6 configurations (`CORE_PRESCRTEMP_APPLY=0`). This feature does not need to be implemented.
 
 ## 6. Outputs (per timestep)
 
@@ -418,11 +430,11 @@ Where:
 FOR each year:
     1. Calculate radiative forcing from DELTAQ
 
-    2. Calculate cumulative-T adjusted climate sensitivity
-
-    3. Call LAMCALC to get ocean/land feedback parameters
-
     FOR each sub-annual step (1 to STEPSPERYEAR):
+        2. Calculate cumulative-T adjusted climate sensitivity
+
+        3. Call LAMCALC to get ocean/land feedback parameters
+
         4. Get interpolated forcing Q for this timestep
 
         5. Add volcanic forcing if applicable
@@ -511,6 +523,16 @@ END ITERATE
 
 12. Calculate internal efficacies for all forcing agents
 ```
+
+#### Note: Regionally-Varying CO2 Forcing in LAMCALC
+
+MAGICC7 does not apply uniform CO2 forcing across all four boxes when computing equilibrium temperatures in step 7 above. Instead it uses **regionally-varying CO2 forcing patterns** (`RF_REGIONS_CO2`) to determine the per-box forcing fraction (MAGICC7.f90 lines 8146-8275):
+
+$$QFRAC_{box} = \frac{RF\_REGIONS\_CO2(box)}{\sum_{box} RF\_REGIONS\_CO2(box) \times GLOBALAREAFRACTIONS(box)}$$
+
+Each box's effective forcing is then $Q_{box} = Q_{2x} \times QFRAC_{box}$, so the equilibrium temperature calculation and the derived $\lambda$ values reflect the spatial pattern of CO2 forcing rather than a uniform distribution.
+
+After LAMCALC converges, MAGICC7 also computes **internal efficacies** for each non-CO2 forcing agent by repeating the equilibrium temperature calculation with that agent's regional forcing pattern and taking the ratio of the resulting global temperature response to the CO2 response at the same global-mean forcing. These efficacies scale how each agent's forcing is weighted in the feedback term during the transient integration.
 
 ## 8. Numerical Considerations
 
@@ -631,7 +653,7 @@ The LAMCALC routine:
 
 - Uses iterative matrix inversion (not direct solution)
 - Calculates internal efficacies for ~20 forcing agents
-- Is called every year (potentially every sub-step)
+- Is called once per annual timestep (only re-solved when ECS is time-varying)
 - Could be simplified if land-ocean warming ratio was derived post-hoc
 
 ### 9.10 Dead Code and Comments
@@ -641,6 +663,24 @@ Several commented-out code blocks remain:
 - Lines 119-135 in `climate_and_ocean.f90` (old initialization)
 - Lines 3420-3422 in `MAGICC7.f90` (wrong annual mean calculation)
 - Multiple "PROCEED HERE" comments indicating incomplete work
+
+### 9.11 Known Differences from MAGICC7 in Current RSCM Implementation
+
+The following gaps exist between the current RSCM implementation and MAGICC7 behaviour identified through Fortran source review.
+
+#### Resolved
+
+**LAMCALC regional CO2 forcing** -- RSCM now uses the MAGICC7 default `RF_REGIONS_CO2 = [1.4089, 1.37045, 1.43333, 1.33257]` from `MAGCFG_DEFAULTALL.CFG`. The LAMCALC solver applies per-box `qfrac` forcing fractions when computing equilibrium temperatures, matching MAGICC7.f90 lines 8146-8275.
+
+**alpha_eff update frequency** -- RSCM now updates `alpha_eff` once per annual timestep from the prior year's end-of-year SST, matching MAGICC7 behaviour. All monthly substeps within a year use the same fixed `alpha_eff`.
+
+**CO2 internal efficacy computed** -- RSCM now computes the CO2 internal efficacy after LAMCALC converges by comparing the CO2 regional temperature response to the ECS-implied response. The `calc_internal_efficacy()` function is public and can compute efficacy for any agent's regional forcing pattern. When `efficacy_apply = 2` (AR6 mode), effective forcing is adjusted by `prescribed_efficacy / internal_efficacy`. Multi-agent efficacy application is a future phase.
+
+#### Open
+
+**Non-CO2 internal efficacies not applied**
+
+MAGICC7 computes internal efficacies for each non-CO2 forcing agent (~20 agents) by repeating the equilibrium temperature calculation with that agent's regional forcing pattern. RSCM currently only computes and applies the CO2 internal efficacy. Per-agent efficacy computation infrastructure (`calc_internal_efficacy`) is in place but not yet wired to the multi-agent forcing pipeline.
 
 ## 10. Test Cases
 

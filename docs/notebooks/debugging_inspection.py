@@ -102,11 +102,50 @@ model = (
 ).build()
 
 # %% [markdown]
-# ## Inspecting the Dependency Graph
+# ## Inspecting the Execution Graph
 #
-# The dependency graph shows how components are connected. Each node
-# represents a component, and edges show data dependencies (which
-# variable flows from one component to another).
+# The most useful debugging tool is `debug_info()`, which shows
+# the model's execution order, variable flow, and source classifications.
+#
+# For each component, you can see:
+#
+# - **`<-` (green)**: Input variables, tagged with their source:
+#   - `(exo)` = exogenous (externally provided)
+#   - `(upstream)` = produced by a component earlier in the execution order
+#   - `(own_state)` = this component's own state from the previous timestep
+# - **`<>` (magenta)**: State variables (read previous value, write new value)
+# - **`->` (blue)**: Output variables produced by this component
+# - **Grid tags** (yellow): Non-scalar grid types (e.g. `[FourBox]`)
+#
+# The `format` parameter controls the output style:
+#
+# - `"rich"` (default) - coloured terminal output
+# - `"plain"` - plain text (no ANSI codes)
+# - `"json"` - structured JSON for programmatic use
+
+# %%
+print(model.debug_info())
+
+# %%
+# The JSON format is useful for programmatic analysis
+import json
+
+debug_data = json.loads(model.debug_info("json"))
+print(f"Components: {len(debug_data['components'])}")
+for comp in debug_data["components"]:
+    n_in = len(comp.get("inputs", []))
+    n_out = len(comp.get("outputs", []))
+    n_state = len(comp.get("states", []))
+    print(
+        f"  [{comp['order']}] {comp['name']}: {n_in} inputs, {n_out} outputs, {n_state} states"
+    )
+
+# %% [markdown]
+# ### Structural Dependency Graph
+#
+# The DOT graph provides a complementary view showing how components are
+# connected. Each node represents a component, and edges show data
+# dependencies (which variable flows from one component to another).
 #
 # Use `model.as_dot()` to get the graph in DOT format, which can be
 # visualised using Graphviz.
@@ -120,21 +159,6 @@ def view_graph(model):
 
 
 view_graph(model)
-
-# %% [markdown]
-# ### Reading the Dependency Graph
-#
-# In the graph above:
-#
-# - **Nodes** are components (showing their type and key parameters)
-# - **Edges** are labelled with the variable name that flows between components
-# - The **root node (0)** is the starting point for breadth-first traversal
-#
-# This helps you understand:
-#
-# - Which component produces each variable
-# - Which component consumes each variable
-# - The execution order (BFS from root)
 
 # %%
 # You can also print the raw DOT format for programmatic analysis
@@ -395,22 +419,26 @@ except Exception as e:
 # %% [markdown]
 # ### Debugging Tips Summary
 #
-# 1. **Check the dependency graph** - Use `model.as_dot()` to visualise
-#    component connections and verify the expected data flow
+# 1. **Inspect the execution graph** - Use `model.debug_info()` to see
+#    execution order, variable sources (exo/upstream/own_state), grid types,
+#    and any runtime transformations
 #
-# 2. **List all variables** - Use `collection.names()` to see what
+# 2. **Check the dependency graph** - Use `model.as_dot()` to visualise
+#    the structural component connections
+#
+# 3. **List all variables** - Use `collection.names()` to see what
 #    variables exist in the model
 #
-# 3. **Inspect specific values** - Use `get_timeseries_by_name()` to
+# 4. **Inspect specific values** - Use `get_timeseries_by_name()` to
 #    access individual variable timeseries
 #
-# 4. **Step through execution** - Use `model.step()` for fine-grained
+# 5. **Step through execution** - Use `model.step()` for fine-grained
 #    control and inspect state after each timestep
 #
-# 5. **Use serialisation** - Save model state with `to_toml()` to create
+# 6. **Use serialisation** - Save model state with `to_toml()` to create
 #    checkpoints or share problematic states
 #
-# 6. **Read error messages** - Build errors include details about missing
+# 7. **Read error messages** - Build errors include details about missing
 #    variables and available alternatives
 
 # %% [markdown]
@@ -418,12 +446,13 @@ except Exception as e:
 #
 # This notebook demonstrated how to:
 #
-# 1. Visualise the dependency graph with `as_dot()`
-# 2. Access variables via `TimeseriesCollection`
-# 3. Trace data flow between components
-# 4. Step through execution for detailed debugging
-# 5. Use serialisation for checkpoints and state inspection
-# 6. Understand common error messages
+# 1. Inspect execution order and variable flow with `debug_info()`
+# 2. Visualise the dependency graph with `as_dot()`
+# 3. Access variables via `TimeseriesCollection`
+# 4. Trace data flow between components
+# 5. Step through execution for detailed debugging
+# 6. Use serialisation for checkpoints and state inspection
+# 7. Understand common error messages
 #
 # For more advanced debugging of Rust components, see the
 # [Rust Development Tips](../developers/rust_tips.md) guide.

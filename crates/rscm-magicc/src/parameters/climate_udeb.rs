@@ -6,6 +6,17 @@
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
+/// Initial ocean temperature profile mode (`CORE_SWITCH_OCN_TEMPPROFILE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OceanTempProfile {
+    /// Analytical exponential decay (uniform diffusivity + upwelling).
+    #[serde(rename = "1")]
+    Analytical = 1,
+    /// CMIP5 multi-model mean observational profile (default).
+    #[serde(rename = "2")]
+    CMIP5 = 2,
+}
+
 /// Parameters for the 4-box UDEB climate model.
 ///
 /// The UDEB model couples a 4-box atmosphere (Northern Ocean, Northern Land,
@@ -88,6 +99,18 @@ pub struct ClimateUDEBParameters {
     /// Default: 1.317
     pub rlo: FloatValue,
 
+    /// Sensitivity of ECS to forcing level (dimensionless).
+    /// Default: 7.84e-9
+    pub feedback_q_sensitivity: FloatValue,
+
+    /// Sensitivity of ECS to cumulative temperature (dimensionless).
+    /// Default: 0.08
+    pub feedback_cumt_sensitivity: FloatValue,
+
+    /// Period for cumulative temperature integration (years).
+    /// Default: 300.0
+    pub feedback_cumt_period: FloatValue,
+
     // Heat exchange parameters
     /// Land-ocean heat exchange coefficient ($\text{W/m}^2\text{/K}$).
     /// Default: 1.44
@@ -110,6 +133,15 @@ pub struct ClimateUDEBParameters {
     /// Default: 0.21
     pub sh_land_fraction: FloatValue,
 
+    /// Depth-dependent ocean area scale factor (0-1).
+    ///
+    /// Controls the strength of basin narrowing with depth:
+    /// - 0.0 = cylindrical ocean (no narrowing)
+    /// - 1.0 = full hypsometric profile
+    ///
+    /// Default: 1.0
+    pub depth_dependent_area: FloatValue,
+
     // Ocean temperature adjustment
     /// Ocean-to-atmosphere temperature adjustment alpha (dimensionless).
     /// Linear coefficient for SAT/SST relationship.
@@ -126,6 +158,68 @@ pub struct ClimateUDEBParameters {
     /// Fraction of surface temperature in polar sinking water.
     /// Default: 0.2
     pub polar_sinking_ratio: FloatValue,
+
+    // Ground heat reservoir parameters
+    /// Enable ground heat reservoir (`CORE_LANDHEATCAPACITY_APPLY`).
+    ///
+    /// When enabled, a ground heat reservoir damps the land temperature
+    /// response by absorbing/releasing heat from the land surface.
+    /// Default: true
+    pub land_heat_capacity_enabled: bool,
+
+    /// Land-ground heat exchange coefficient ($\text{W/m}^2\text{/K}$)
+    /// (`CORE_HEATXCHANGE_LANDGROUND`).
+    ///
+    /// Per unit globe area. Controls the rate of heat exchange between
+    /// the land surface and the ground heat reservoir.
+    /// Default: 0.1
+    pub k_lg: FloatValue,
+
+    /// Effective thickness of ground heat reservoir (m)
+    /// (`CORE_LANDHC_EFFTHICKNESS`).
+    ///
+    /// Ocean-water-equivalent depth parameterising the total land heat
+    /// reservoir thermal inertia.
+    /// Default: 300.0
+    pub land_hc_eff_thickness: FloatValue,
+
+    // Regional CO2 forcing
+    /// Regional CO2 radiative forcing pattern (NH ocean, NH land, SH ocean, SH land).
+    ///
+    /// Relative weights used to compute per-box CO2 forcing fractions for the
+    /// LAMCALC solver. Normalized against global-area-weighted sum following
+    /// MAGICC7.f90 lines 8146-8165.
+    ///
+    /// Default values from `MAGCFG_DEFAULTALL.CFG` (AR6 calibration):
+    /// `[1.4089, 1.37045, 1.43333, 1.33257]`.
+    pub rf_regions_co2: [FloatValue; 4],
+
+    // Efficacy parameters
+    /// Efficacy application mode (matches MAGICC7 `RF_EFFICACY_APPLY`).
+    ///
+    /// - `0` = disabled (default): all agents treated with uniform spatial efficacy.
+    /// - `1` = prescribed mode: effective forcing scaled by `prescribed_efficacy_co2`.
+    /// - `2` = AR6 mode: effective forcing adjusted by `prescribed_efficacy_co2 / internal_efficacy`.
+    #[serde(default)]
+    pub efficacy_apply: u8,
+
+    /// Prescribed CO2 efficacy factor (matches MAGICC7 `RF_EFFICACY_CO2`).
+    ///
+    /// In mode 1: $\text{EFFRF} = \text{ERF} \times \text{prescribed\_efficacy\_co2}$.
+    /// In mode 2: $\text{EFFRF} = \text{ERF} \times \text{prescribed\_efficacy\_co2} / \text{internal\_efficacy}$.
+    ///
+    /// Default: 1.0 (no-op).
+    #[serde(default = "default_prescribed_efficacy_co2")]
+    pub prescribed_efficacy_co2: FloatValue,
+
+    // Initial ocean temperature profile
+    /// Initial ocean temperature profile mode (`CORE_SWITCH_OCN_TEMPPROFILE`).
+    ///
+    /// The profile is used as a reference baseline for variable upwelling
+    /// correction terms. When upwelling changes from its initial value, these
+    /// corrections compensate for the shift in equilibrium profile. Using the
+    /// CMIP5 profile matches MAGICC7's default behaviour.
+    pub ocean_temp_profile: OceanTempProfile,
 
     // Integration parameters
     /// Steps per year for sub-annual integration.
@@ -161,6 +255,9 @@ impl Default for ClimateUDEBParameters {
             ecs: 3.0,
             rf_2xco2: 3.71,
             rlo: 1.317,
+            feedback_q_sensitivity: 7.84e-9,
+            feedback_cumt_sensitivity: 0.08,
+            feedback_cumt_period: 300.0,
 
             // Heat exchange
             k_lo: 1.44,
@@ -170,6 +267,7 @@ impl Default for ClimateUDEBParameters {
             // Area fractions
             nh_land_fraction: 0.42,
             sh_land_fraction: 0.21,
+            depth_dependent_area: 1.0,
 
             // Temperature adjustment
             temp_adjust_alpha: 1.04,
@@ -178,6 +276,21 @@ impl Default for ClimateUDEBParameters {
             // Polar sinking
             polar_sinking_ratio: 0.2,
 
+            // Ground heat reservoir
+            land_heat_capacity_enabled: true,
+            k_lg: 0.1,
+            land_hc_eff_thickness: 300.0,
+
+            // Regional CO2 forcing (MAGCFG_DEFAULTALL.CFG)
+            rf_regions_co2: [1.4089, 1.37045, 1.43333, 1.33257],
+
+            // Efficacy
+            efficacy_apply: 0,
+            prescribed_efficacy_co2: 1.0,
+
+            // Initial ocean profile
+            ocean_temp_profile: OceanTempProfile::CMIP5,
+
             // Integration
             steps_per_year: 12,
             max_temperature: 25.0,
@@ -185,12 +298,40 @@ impl Default for ClimateUDEBParameters {
     }
 }
 
+fn default_prescribed_efficacy_co2() -> FloatValue {
+    1.0
+}
+
+/// Conversion factor from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
+///
+/// $100 \, (\text{cm}^2 \to \text{m}^2) \times 31.5576 \, (\text{s} \to \text{yr}) = 3155.76$
+pub const DIFFUSIVITY_CM2S_TO_M2YR: FloatValue = 3155.76;
+
+/// Density of seawater ($\text{kg/m}^3$).
+pub const RHO_SEAWATER: FloatValue = 1026.0;
+
+/// Specific heat capacity of seawater ($\text{J/(kg K)}$).
+pub const CP_SEAWATER: FloatValue = 3985.0;
+
+/// Seconds per Julian year ($\text{s/yr}$).
+pub const SECONDS_PER_YEAR: FloatValue = 31557600.0;
+
+/// Volumetric heat capacity of seawater per unit depth ($\text{W yr / m}^2\text{ K}$).
+///
+/// $$\frac{\rho \, c_p \, d}{\text{seconds per year}}$$
+pub fn heat_capacity_per_unit_area(depth_m: FloatValue) -> FloatValue {
+    RHO_SEAWATER * CP_SEAWATER * depth_m / SECONDS_PER_YEAR
+}
+
 impl ClimateUDEBParameters {
     /// Convert vertical diffusivity from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
-    ///
-    /// Conversion factor: $100 \, (\text{cm}^2 \to \text{m}^2) \times 31.5576 \, (\text{s} \to \text{yr}) = 3155.76$
     pub fn kappa_m2_per_yr(&self) -> FloatValue {
-        self.kappa * 3155.76
+        self.kappa * DIFFUSIVITY_CM2S_TO_M2YR
+    }
+
+    /// Convert minimum vertical diffusivity from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
+    pub fn kappa_min_m2_per_yr(&self) -> FloatValue {
+        self.kappa_min * DIFFUSIVITY_CM2S_TO_M2YR
     }
 
     /// Get the global climate feedback parameter ($\text{W/m}^2\text{/K}$).
@@ -217,27 +358,286 @@ impl ClimateUDEBParameters {
         0.5 * (self.nh_ocean_fraction() + self.sh_ocean_fraction())
     }
 
+    /// Get per-box global area fractions (FGNO, FGNL, FGSO, FGSL).
+    ///
+    /// These are fractions of the total globe, not of each hemisphere.
+    /// Order: (NH ocean, NH land, SH ocean, SH land).
+    /// Matches MAGICC's GLOBALAREAFRACTIONS ordering.
+    pub fn global_box_fractions(&self) -> (FloatValue, FloatValue, FloatValue, FloatValue) {
+        let fgnl = self.nh_land_fraction / 2.0;
+        let fgno = 0.5 - fgnl;
+        let fgsl = self.sh_land_fraction / 2.0;
+        let fgso = 0.5 - fgsl;
+        (fgno, fgnl, fgso, fgsl)
+    }
+
     /// Get the global land fraction.
     pub fn global_land_fraction(&self) -> FloatValue {
         0.5 * (self.nh_land_fraction + self.sh_land_fraction)
     }
 
-    /// Calculate heat capacity of the mixed layer per unit area ($\text{W yr / m}^2\text{ K}$).
+    /// Compute the ocean area fraction at a given depth using the hypsometric profile.
     ///
-    /// Uses standard seawater properties:
-    /// - $\rho = 1026 \, \text{kg/m}^3$
-    /// - $c_p = 3985 \, \text{J/(kg K)}$
-    /// - Convert J to W yr: $1 \, \text{W yr} = 3.15576 \times 10^7 \, \text{J}$
+    /// Returns the fraction of ocean surface area that is still ocean at depth `z` metres.
+    /// The result is scaled by [`depth_dependent_area`](Self::depth_dependent_area):
+    /// when that parameter is 0 the ocean is cylindrical ($A = 1$), when 1 the full
+    /// hypsometric profile is used.
+    ///
+    /// Based on global ocean bathymetry (ETOPO/GEBCO).
+    pub fn ocean_area_at_depth(&self, depth_m: FloatValue) -> FloatValue {
+        /// Depth breakpoints (metres) for the hypsometric lookup table.
+        const DEPTH: [FloatValue; 12] = [
+            0.0, 200.0, 500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0,
+            5000.0,
+        ];
+        /// Fraction of ocean surface area remaining at each depth breakpoint.
+        const AREA: [FloatValue; 12] = [
+            1.0, 0.975, 0.95, 0.92, 0.91, 0.87, 0.81, 0.72, 0.55, 0.38, 0.18, 0.05,
+        ];
+
+        // Linearly interpolate the hypsometric profile
+        let hydro = if depth_m <= DEPTH[0] {
+            AREA[0]
+        } else if depth_m >= DEPTH[DEPTH.len() - 1] {
+            AREA[AREA.len() - 1]
+        } else {
+            let mut a = AREA[0];
+            for i in 1..DEPTH.len() {
+                if depth_m <= DEPTH[i] {
+                    let frac = (depth_m - DEPTH[i - 1]) / (DEPTH[i] - DEPTH[i - 1]);
+                    a = AREA[i - 1] + frac * (AREA[i] - AREA[i - 1]);
+                    break;
+                }
+            }
+            a
+        };
+
+        // Blend between cylindrical (1.0) and full hypsometric profile
+        1.0 + self.depth_dependent_area * (hydro - 1.0)
+    }
+
+    /// Compute area factors for the tridiagonal ocean solver.
+    ///
+    /// Returns `(af_top, af_bottom, af_diff)` vectors of length `n_layers` where:
+    /// - `af_top[l]`  = area at top boundary of layer `l` / average area of layer `l`
+    /// - `af_bottom[l]` = area at bottom boundary of layer `l` / average area of layer `l`
+    /// - `af_diff[l]` = (area at top - area at bottom) / average area of layer `l`
+    ///
+    /// `af_diff` is used for the entrainment terms (polar sinking water entering
+    /// each deep layer). Matches MAGICC7 AREAFACTOR_DIFFFLOW.
+    ///
+    /// For a cylindrical ocean (`depth_dependent_area = 0`), all factors are 1.0
+    /// (and `af_diff` is 0.0).
+    pub fn compute_area_factors(&self) -> (Vec<FloatValue>, Vec<FloatValue>, Vec<FloatValue>) {
+        let n = self.n_layers;
+        let mut af_top = Vec::with_capacity(n);
+        let mut af_bottom = Vec::with_capacity(n);
+        let mut af_diff = Vec::with_capacity(n);
+
+        for l in 0..n {
+            let (z_top, z_bottom) = if l == 0 {
+                (0.0, self.mixed_layer_depth)
+            } else {
+                let top = self.mixed_layer_depth + (l as FloatValue - 1.0) * self.layer_thickness;
+                let bot = top + self.layer_thickness;
+                (top, bot)
+            };
+
+            let a_top = self.ocean_area_at_depth(z_top);
+            let a_bottom = self.ocean_area_at_depth(z_bottom);
+            let a_avg = (a_top + a_bottom) / 2.0;
+
+            af_top.push(a_top / a_avg);
+            af_bottom.push(a_bottom / a_avg);
+            // MAGICC7 AREAFACTOR_DIFFFLOW: (A_top - A_bottom) / A_avg
+            af_diff.push((a_top - a_bottom) / a_avg);
+        }
+
+        (af_top, af_bottom, af_diff)
+    }
+
+    /// Calculate heat capacity of the mixed layer per unit area ($\text{W yr / m}^2\text{ K}$).
     pub fn mixed_layer_heat_capacity(&self) -> FloatValue {
-        // rho * c_p * depth / (seconds_per_year)
-        // = 1026 * 3985 * depth / 31557600
-        // ~= 0.1295 * depth (W yr / m^2 K)
-        let rho = 1026.0; // kg/m^3
-        let c_p = 3985.0; // J/(kg K)
-        let seconds_per_year = 31557600.0; // s/yr
-        rho * c_p * self.mixed_layer_depth / seconds_per_year
+        heat_capacity_per_unit_area(self.mixed_layer_depth)
+    }
+
+    /// Calculate heat capacity of the ground reservoir per unit area
+    /// ($\text{W yr / m}^2\text{ K}$).
+    ///
+    /// Uses ocean-water-equivalent heat capacity with the effective ground
+    /// thickness parameterising the total land heat reservoir.
+    pub fn ground_heat_capacity(&self) -> FloatValue {
+        heat_capacity_per_unit_area(self.land_hc_eff_thickness)
+    }
+
+    /// Compute the initial ocean temperature profile for a given hemisphere.
+    ///
+    /// Returns a Vec of length `n_layers` with the initial temperature (K)
+    /// for each ocean layer. Layer 0 is the mixed layer.
+    ///
+    /// When `ocean_temp_profile` is [`OceanTempProfile::CMIP5`] (default),
+    /// returns the CMIP5 multi-model mean profile. When
+    /// [`OceanTempProfile::Analytical`], returns the analytical exponential
+    /// decay profile.
+    pub fn initial_ocean_profile(&self, hemi: usize) -> Vec<FloatValue> {
+        assert!(
+            hemi < 2,
+            "initial_ocean_profile: hemi must be 0 (NH) or 1 (SH), got {}",
+            hemi
+        );
+
+        match self.ocean_temp_profile {
+            OceanTempProfile::CMIP5 => {
+                let cmip5 = if hemi == 0 {
+                    &CMIP5_PROFILE_NH
+                } else {
+                    &CMIP5_PROFILE_SH
+                };
+                // Truncate or pad to n_layers
+                let mut profile = vec![0.0; self.n_layers];
+                for (i, val) in profile.iter_mut().enumerate() {
+                    *val = if i < cmip5.len() {
+                        cmip5[i]
+                    } else {
+                        // Extrapolate with last value
+                        cmip5[cmip5.len() - 1]
+                    };
+                }
+                profile
+            }
+            OceanTempProfile::Analytical => {
+                let t_mix = 17.2_f64;
+                let t_polar = 1.0_f64;
+                let kappa = self.kappa_m2_per_yr();
+                let w = self.w_initial;
+                let dz = self.layer_thickness;
+
+                let mut profile = vec![0.0; self.n_layers];
+                profile[0] = t_mix;
+                for l in 1..self.n_layers {
+                    let depth = (l as f64 - 1.0) * dz + 0.5 * dz;
+                    profile[l] = t_polar + (t_mix - t_polar) * (-w * depth / kappa).exp();
+                }
+                profile
+            }
+        }
     }
 }
+
+/// CMIP5 multi-model mean initial ocean temperature profile for the
+/// Northern Hemisphere (50 layers, K).
+///
+/// Source: MAGICC7 `OCN_INITIAL_PROFILE_CMIP5MEAN.CFG`.
+/// Layer 0 is the mixed layer (~19 K), layer 49 is the deepest (~1.2 K).
+const CMIP5_PROFILE_NH: [FloatValue; 50] = [
+    1.89503822e+01,
+    1.58484640e+01,
+    1.27692938e+01,
+    1.11237631e+01,
+    9.93378544e+00,
+    8.89700890e+00,
+    8.01173782e+00,
+    7.24060631e+00,
+    6.58022213e+00,
+    5.99888515e+00,
+    5.47700644e+00,
+    5.02416515e+00,
+    4.62269211e+00,
+    4.27446032e+00,
+    3.95875454e+00,
+    3.70120311e+00,
+    3.47130036e+00,
+    3.26678157e+00,
+    3.08187413e+00,
+    2.93045211e+00,
+    2.79141068e+00,
+    2.66952801e+00,
+    2.55478907e+00,
+    2.44816899e+00,
+    2.35198379e+00,
+    2.26331019e+00,
+    2.18005610e+00,
+    2.10292435e+00,
+    2.02744699e+00,
+    1.95637441e+00,
+    1.89118743e+00,
+    1.82867718e+00,
+    1.76954043e+00,
+    1.71074319e+00,
+    1.65469503e+00,
+    1.60236323e+00,
+    1.55269921e+00,
+    1.50864816e+00,
+    1.47147048e+00,
+    1.44045138e+00,
+    1.41173756e+00,
+    1.38347185e+00,
+    1.35783422e+00,
+    1.33539736e+00,
+    1.31498563e+00,
+    1.29516900e+00,
+    1.27472460e+00,
+    1.25263810e+00,
+    1.22954643e+00,
+    1.20586693e+00,
+];
+
+/// CMIP5 multi-model mean initial ocean temperature profile for the
+/// Southern Hemisphere (50 layers, K).
+///
+/// Source: MAGICC7 `OCN_INITIAL_PROFILE_CMIP5MEAN.CFG`.
+const CMIP5_PROFILE_SH: [FloatValue; 50] = [
+    1.62849369e+01,
+    1.35041571e+01,
+    1.10637445e+01,
+    9.45342350e+00,
+    8.30402851e+00,
+    7.37928152e+00,
+    6.60113478e+00,
+    5.90550613e+00,
+    5.29829597e+00,
+    4.77080584e+00,
+    4.31242418e+00,
+    3.93976259e+00,
+    3.62348270e+00,
+    3.35576391e+00,
+    3.11617875e+00,
+    2.93644977e+00,
+    2.77795982e+00,
+    2.63738632e+00,
+    2.50925493e+00,
+    2.40222931e+00,
+    2.30221725e+00,
+    2.21322107e+00,
+    2.12794638e+00,
+    2.04543614e+00,
+    1.96889246e+00,
+    1.89580762e+00,
+    1.82651293e+00,
+    1.75886285e+00,
+    1.69188118e+00,
+    1.62586987e+00,
+    1.56049752e+00,
+    1.49373257e+00,
+    1.42720032e+00,
+    1.35796928e+00,
+    1.28947854e+00,
+    1.22542751e+00,
+    1.16357803e+00,
+    1.10515058e+00,
+    1.05139232e+00,
+    1.00322735e+00,
+    9.58882809e-01,
+    9.15422320e-01,
+    8.75476420e-01,
+    8.43416333e-01,
+    8.16016912e-01,
+    7.90101945e-01,
+    7.68699825e-01,
+    7.51805604e-01,
+    7.36583769e-01,
+    7.25481987e-01,
+];
 
 #[cfg(test)]
 mod tests {
@@ -309,6 +709,58 @@ mod tests {
 
         assert_eq!(params.n_layers, parsed.n_layers);
         assert!((params.ecs - parsed.ecs).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_per_box_global_fractions() {
+        let params = ClimateUDEBParameters::default();
+        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+
+        assert!((fgnl - 0.21).abs() < 1e-10);
+        assert!((fgno - 0.29).abs() < 1e-10);
+        assert!((fgsl - 0.105).abs() < 1e-10);
+        assert!((fgso - 0.395).abs() < 1e-10);
+        assert!((fgno + fgnl + fgso + fgsl - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_time_varying_ecs_defaults() {
+        let params = ClimateUDEBParameters::default();
+        assert!((params.feedback_q_sensitivity - 7.84e-9).abs() < 1e-12);
+        assert!((params.feedback_cumt_sensitivity - 0.08).abs() < 1e-10);
+        assert!((params.feedback_cumt_period - 300.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_ground_heat_capacity() {
+        let params = ClimateUDEBParameters::default();
+        let c_ground = params.ground_heat_capacity();
+
+        // For 300m effective thickness, expect ~38.8 W yr / m^2 K
+        // (1026 * 3985 * 300) / 31557600 ~= 38.8
+        assert!(
+            c_ground > 35.0 && c_ground < 42.0,
+            "C_ground = {}",
+            c_ground
+        );
+
+        // Ground capacity should scale linearly with thickness
+        let ratio = c_ground / params.mixed_layer_heat_capacity();
+        let expected_ratio = params.land_hc_eff_thickness / params.mixed_layer_depth;
+        assert!(
+            (ratio - expected_ratio).abs() < 1e-10,
+            "Ground/mixed capacity ratio should equal thickness ratio: {} vs {}",
+            ratio,
+            expected_ratio
+        );
+    }
+
+    #[test]
+    fn test_ground_heat_defaults() {
+        let params = ClimateUDEBParameters::default();
+        assert!(params.land_heat_capacity_enabled);
+        assert!((params.k_lg - 0.1).abs() < 1e-10);
+        assert!((params.land_hc_eff_thickness - 300.0).abs() < 1e-10);
     }
 
     #[test]

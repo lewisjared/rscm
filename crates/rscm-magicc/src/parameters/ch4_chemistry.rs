@@ -36,7 +36,7 @@ pub struct CH4ChemistryParameters {
     pub ch4_pi: FloatValue,
 
     /// Natural CH4 emissions (wetlands, termites, oceans, etc.)
-    /// unit: Tg CH4/yr
+    /// unit: Mt CH4/yr
     /// default: 209.0
     pub natural_emissions: FloatValue,
 
@@ -76,19 +76,19 @@ pub struct CH4ChemistryParameters {
 
     /// NOx emissions effect on OH (A_NOx)
     /// Positive: more NOx → more OH → shorter CH4 lifetime
-    /// unit: (Tg N/yr)^-1
+    /// unit: (Mt N/yr)^-1
     /// default: 0.0042
     pub oh_nox_sensitivity: FloatValue,
 
     /// CO emissions effect on OH (A_CO)
     /// Negative: more CO → less OH → longer CH4 lifetime
-    /// unit: (Tg CO/yr)^-1
+    /// unit: (Mt CO/yr)^-1
     /// default: -0.000105
     pub oh_co_sensitivity: FloatValue,
 
     /// NMVOC emissions effect on OH (A_VOC)
     /// Negative: more VOC → less OH → longer CH4 lifetime
-    /// unit: (Tg NMVOC/yr)^-1
+    /// unit: (Mt NMVOC/yr)^-1
     /// default: -0.000315
     pub oh_nmvoc_sensitivity: FloatValue,
 
@@ -113,17 +113,17 @@ pub struct CH4ChemistryParameters {
     pub ppb_to_tg: FloatValue,
 
     /// Reference year NOx emissions for delta calculation
-    /// unit: Tg N/yr
+    /// unit: Mt N/yr
     /// default: 0.0
     pub nox_reference: FloatValue,
 
     /// Reference year CO emissions for delta calculation
-    /// unit: Tg CO/yr
+    /// unit: Mt CO/yr
     /// default: 0.0
     pub co_reference: FloatValue,
 
     /// Reference year NMVOC emissions for delta calculation
-    /// unit: Tg NMVOC/yr
+    /// unit: Mt NMVOC/yr
     /// default: 0.0
     pub nmvoc_reference: FloatValue,
 }

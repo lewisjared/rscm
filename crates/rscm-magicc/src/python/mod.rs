@@ -16,7 +16,32 @@ use crate::parameters::{
 };
 
 // Climate components
-create_component_builder!(ClimateUDEBBuilder, ClimateUDEB, ClimateUDEBParameters);
+// ClimateUDEB uses a manual builder because from_parameters returns Result
+#[pyclass]
+pub struct ClimateUDEBBuilder {
+    parameters: ClimateUDEBParameters,
+}
+
+#[pymethods]
+impl ClimateUDEBBuilder {
+    #[staticmethod]
+    pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
+        use pyo3::exceptions::PyValueError;
+
+        let parameters = pythonize::depythonize::<ClimateUDEBParameters>(&parameters);
+        match parameters {
+            Ok(parameters) => Ok(Self { parameters }),
+            Err(e) => Err(PyValueError::new_err(format!("{}", e))),
+        }
+    }
+    pub fn build(&self) -> PyResult<PyRustComponent> {
+        use pyo3::exceptions::PyValueError;
+
+        let component = ClimateUDEB::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+        Ok(PyRustComponent(std::sync::Arc::new(component)))
+    }
+}
 
 // Chemistry components
 create_component_builder!(CH4ChemistryBuilder, CH4Chemistry, CH4ChemistryParameters);

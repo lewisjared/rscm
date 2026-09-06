@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.18.1
 #   kernelspec:
 #     display_name: rscm (3.13.6)
 #     language: python
@@ -202,6 +202,16 @@ model_builder.with_initial_values(initial_state)
 # %%
 model = model_builder.build()
 
+
+# %% [markdown]
+# ### Inspecting the Execution Graph
+#
+# After building a model, you can inspect its execution order, variable flow,
+# and source classifications using `debug_info()`. Output formats include
+# `"rich"` (coloured terminal, default), `"plain"` (no colours), or `"json"`.
+
+# %%
+print(model.debug_info())
 
 # %% [markdown]
 # These steps can also be chained together as shown below:
@@ -475,8 +485,11 @@ feedback_model = (
 # %% [markdown]
 # ### Visualise the Dependency Graph
 #
-# The graph now shows the feedback structure with three components and their
-# data flow connections.
+# The debug info shows execution order, variable flow, and source classifications.
+# The dot graph shows the structural dependency graph between components.
+
+# %%
+print(feedback_model.debug_info())
 
 # %%
 graph = pydot.graph_from_dot_data(feedback_model.as_dot())[0]
@@ -629,10 +642,11 @@ plt.show()
 # 3. Provide exogenous variables as `Timeseries` objects
 # 4. Set initial values for state variables
 # 5. Build and run the model
-# 6. Extract results as `TimeseriesCollection`
-# 7. Build complex feedback-coupled models with multiple components
-# 8. Visualise dependency graphs showing component relationships
-# 9. Compare model behaviour with and without feedback processes
+# 6. Inspect model structure with `debug_info()` (rich, plain, or json formats)
+# 7. Extract results as `TimeseriesCollection`
+# 8. Build complex feedback-coupled models with multiple components
+# 9. Visualise dependency graphs showing component relationships
+# 10. Compare model behaviour with and without feedback processes
 #
 # For more details on creating custom components, see the
 # [Components in Python](component_python.py) and

@@ -11,8 +11,8 @@
 //!
 //! # Inputs
 //!
-//! - `Emissions|SOx` (Tg S/yr) - Sulfur dioxide emissions (primary CCN source)
-//! - `Emissions|OC` (Tg OC/yr) - Organic carbon emissions (secondary CCN source)
+//! - `Emissions|SOx` (Mt S/yr) - Sulfur dioxide emissions (primary CCN source)
+//! - `Emissions|OC` (Mt OC/yr) - Organic carbon emissions (secondary CCN source)
 //!
 //! # Outputs
 //!
@@ -78,8 +78,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["forcing", "aerosol", "indirect", "cloud", "magicc"], category = "Radiative Forcing")]
 #[inputs(
-    sox_emissions { name = "Emissions|SOx", unit = "Tg S/yr" },
-    oc_emissions { name = "Emissions|OC", unit = "Tg OC/yr" },
+    sox_emissions { name = "Emissions|SOx", unit = "Mt S/yr" },
+    oc_emissions { name = "Emissions|OC", unit = "Mt OC/yr" },
 )]
 #[outputs(
     indirect_erf { name = "Effective Radiative Forcing|Aerosol|Indirect", unit = "W/m^2" },
@@ -331,8 +331,8 @@ mod tests {
         let component = default_component();
 
         // Approximate modern emissions (circa 2019)
-        // SOx: ~50-60 Tg S/yr anthropogenic
-        // OC: ~30-40 Tg OC/yr
+        // SOx: ~50-60 Mt S/yr anthropogenic
+        // OC: ~30-40 Mt OC/yr
         let forcing = component.calculate_forcing(60.0, 40.0);
 
         // AR6 cloud albedo (ERFaci): -0.89 [-1.68 to -0.09] W/m²

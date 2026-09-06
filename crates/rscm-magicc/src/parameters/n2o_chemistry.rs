@@ -44,7 +44,7 @@ pub struct N2OChemistryParameters {
     pub n2o_pi: FloatValue,
 
     /// Natural N2O emissions (soils, oceans, etc.)
-    /// unit: Tg N/yr
+    /// unit: Mt N/yr
     /// default: 11.0
     pub natural_emissions: FloatValue,
 
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn test_natural_emissions_reasonable() {
         let params = N2OChemistryParameters::default();
-        // Natural emissions should be in reasonable range (9-13 Tg N/yr)
+        // Natural emissions should be in reasonable range (9-13 Mt N/yr)
         assert!(
             params.natural_emissions > 5.0 && params.natural_emissions < 20.0,
             "Natural emissions should be in reasonable range"
