@@ -26,4 +26,4 @@ pub use halocarbon::{HalocarbonParameters, HalocarbonSpecies};
 pub use n2o_chemistry::N2OChemistryParameters;
 pub use ocean_carbon::{IrfForm, OceanCarbonModel, OceanCarbonParameters};
 pub use ozone_forcing::OzoneForcingParameters;
-pub use terrestrial_carbon::TerrestrialCarbonParameters;
+pub use terrestrial_carbon::{FertilizationMethod, TerrestrialCarbonParameters};

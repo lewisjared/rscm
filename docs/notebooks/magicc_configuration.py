@@ -238,7 +238,7 @@ print(f"  Outputs: {halocarbon_component.output_names()}")
 #
 # ### Terrestrial Carbon
 #
-# 4-pool terrestrial carbon cycle with CO2 fertilisation and temperature feedbacks.
+# 3-pool terrestrial carbon cycle with CO2 fertilisation and temperature feedbacks.
 # Pools: Plant, Detritus, Soil, Humus.
 
 # %%
@@ -250,22 +250,19 @@ terrestrial_params = {
     "resp_temp_sensitivity": 0.0685,  # K^-1
     "detritus_temp_sensitivity": 0.1358,  # K^-1
     "soil_temp_sensitivity": 0.1541,  # K^-1
-    "humus_temp_sensitivity": 0.05,  # K^-1
     # Initial pool sizes (GtC)
     "plant_pool_pi": 884.86,
     "detritus_pool_pi": 92.77,
     "soil_pool_pi": 1681.53,
-    "humus_pool_pi": 836.0,
     "respiration_pi": 12.26,  # GtC/yr
     # Transfer fractions
     "frac_npp_to_plant": 0.4483,
     "frac_npp_to_detritus": 0.3998,
     "frac_plant_to_detritus": 0.9989,
-    "frac_detritus_to_soil": 0.3,
-    "frac_soil_to_humus": 0.1,
-    # Feedbacks
-    "enable_fertilization": True,
-    "enable_temp_feedback": True,
+    "frac_detritus_to_soil": 0.001,
+    # Fertilization and temperature feedback control
+    "fertilization_method": 1.10,
+    "tempfeedback_yrstart": 1900.0,
 }
 
 terrestrial_component = TerrestrialCarbonBuilder.from_parameters(
@@ -453,7 +450,7 @@ print(f"  Outputs: {aerosol_indirect_component.output_names()}")
 # | Chemistry | `CH4ChemistryBuilder` | CH4 with Prather iteration |
 # | Chemistry | `N2OChemistryBuilder` | N2O with stratospheric delay |
 # | Chemistry | `HalocarbonChemistryBuilder` | CFCs, HCFCs, HFCs (41 species) |
-# | Carbon | `TerrestrialCarbonBuilder` | 4-pool land carbon cycle |
+# | Carbon | `TerrestrialCarbonBuilder` | 3-pool land carbon cycle |
 # | Carbon | `OceanCarbonBuilder` | IRF-based ocean uptake |
 # | Carbon | `CO2BudgetBuilder` | Carbon mass balance |
 # | Forcing | `OzoneForcingBuilder` | Stratospheric + tropospheric O3 |

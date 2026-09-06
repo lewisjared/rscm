@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from rscm.config.models.magicc.legacy import (
     LEGACY_MAPPING,
     from_legacy_dict,
@@ -301,3 +303,11 @@ class TestEdgeCases:
         config = from_legacy_dict(legacy)
 
         assert config["components"]["climate"]["parameters"]["forcing_2xco2"] == 3.71
+
+
+@pytest.mark.parametrize("key", ["co2_tempfeedback_switch", "CO2_TEMPFEEDBACK_SWITCH"])
+@pytest.mark.parametrize("value", [0, 1])
+def test_global_temperature_switch_is_not_silently_ignored(key, value):
+    """Unsupported feedback controls must not turn into Rust's enabled default."""
+    with pytest.raises(ValueError, match="co2_tempfeedback_switch is not supported"):
+        from_legacy_dict({key: value, "startyear": 1750, "endyear": 2100})

@@ -37,15 +37,21 @@ class TestRegressionConfigImport:
         list(REGRESSION_DIR.glob("**/*_config.json")),
         ids=lambda p: p.name,
     )
-    def test_config_imports_without_error(self, config_file):
-        """Each regression config should import without raising."""
+    def test_config_imports_or_rejects_unsupported_switch(self, config_file):
+        """Import supported configs and explicitly reject the global feedback switch."""
         with open(config_file) as f:
             data = json.load(f)
 
         # Get the config dict (may be nested under 'config' key)
         config_dict = data.get("config", data)
 
-        # Should not raise
+        if "co2_tempfeedback_switch" in config_dict:
+            with pytest.raises(
+                ValueError, match="co2_tempfeedback_switch is not supported"
+            ):
+                from_legacy_dict(config_dict)
+            return
+
         result = from_legacy_dict(config_dict)
         assert isinstance(result, dict)
 
@@ -76,7 +82,11 @@ class TestRegressionConfigImport:
             data = json.load(f)
 
         config_dict = data.get("config", data)
-        result = from_legacy_dict(config_dict)
+        # Global-switch rejection is tested separately above.
+        importable = {
+            k: v for k, v in config_dict.items() if k != "co2_tempfeedback_switch"
+        }
+        result = from_legacy_dict(importable)
 
         # Verify time section exists and has correct values
         assert "time" in result
@@ -94,7 +104,11 @@ class TestRegressionConfigImport:
             data = json.load(f)
 
         config_dict = data.get("config", data)
-        result = from_legacy_dict(config_dict)
+        # Global-switch rejection is tested separately above.
+        importable = {
+            k: v for k, v in config_dict.items() if k != "co2_tempfeedback_switch"
+        }
+        result = from_legacy_dict(importable)
 
         # If climate sensitivity is in source, it should be in result
         if "core_climatesensitivity" in config_dict:

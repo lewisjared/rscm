@@ -346,6 +346,36 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         description="Include CH4 oxidation to CO2 feedback (0/1)",
         category="carbon_cycle",
     ),
+    "co2_tempfeedback_switch": ParameterInfo(
+        name="co2_tempfeedback_switch",
+        status=ParameterStatus.NOT_IMPLEMENTED,
+        unit=None,
+        description="Global CO2 temperature feedback switch (0/1); rejected on import",
+        category="carbon_cycle",
+    ),
+    "co2_fertilization_method": ParameterInfo(
+        name="co2_fertilization_method",
+        status=ParameterStatus.SUPPORTED,
+        rscm_path="components.terrestrial_carbon.parameters.fertilization_method",
+        unit=None,
+        description="CO2 fertilization method (1=log, 2=Gifford, 3=sigmoid)",
+        category="carbon_cycle",
+    ),
+    "co2_plantboxresp_method": ParameterInfo(
+        name="co2_plantboxresp_method",
+        status=ParameterStatus.NOT_NEEDED,
+        unit=None,
+        description="Plant box respiration method",
+        category="carbon_cycle",
+    ),
+    "co2_plantboxresp_fertscale": ParameterInfo(
+        name="co2_plantboxresp_fertscale",
+        status=ParameterStatus.SUPPORTED,
+        rscm_path="components.terrestrial_carbon.parameters.plantbox_resp_fertscale",
+        unit=None,
+        description="Fertilization effect on respiration",
+        category="carbon_cycle",
+    ),
 }
 
 

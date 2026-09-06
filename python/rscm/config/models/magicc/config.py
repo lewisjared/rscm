@@ -6,7 +6,13 @@ from dataclasses import dataclass, field
 
 from rscm.config.base import ModelConfig
 
-__all__ = ["AggregationConfig", "ClimateConfig", "ForcingConfig", "MAGICCConfig"]
+__all__ = [
+    "AggregationConfig",
+    "ClimateConfig",
+    "ForcingConfig",
+    "MAGICCConfig",
+    "TerrestrialCarbonConfig",
+]
 
 
 @dataclass
@@ -40,6 +46,17 @@ class AggregationConfig:
 
 
 @dataclass
+class TerrestrialCarbonConfig:
+    """MAGICC terrestrial carbon cycle parameters."""
+
+    fertilization_method: float = 1.100486
+    """CO2 fertilization method (1=log, 2=Gifford, 3=sigmoid)."""
+
+    plantbox_resp_fertscale: float = 0.95
+    """Scaling of fertilization effect on plant respiration."""
+
+
+@dataclass
 class MAGICCConfig(ModelConfig):
     """Configuration for MAGICC model.
 
@@ -67,3 +84,6 @@ class MAGICCConfig(ModelConfig):
     climate: ClimateConfig = field(default_factory=ClimateConfig)
     forcing: ForcingConfig = field(default_factory=ForcingConfig)
     aggregation: AggregationConfig = field(default_factory=AggregationConfig)
+    terrestrial_carbon: TerrestrialCarbonConfig = field(
+        default_factory=TerrestrialCarbonConfig
+    )
