@@ -4,7 +4,7 @@
 //! parameter distributions with both dict-based and fluent builder APIs.
 
 use indexmap::IndexMap;
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 
 use crate::{Distribution, Error, Result};
@@ -158,14 +158,14 @@ impl ParameterSet {
     /// assert_eq!(samples.shape(), &[100, 2]);
     /// ```
     pub fn sample_random(&self, n: usize) -> ndarray::Array2<f64> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         self.sample_random_with_rng(n, &mut rng)
     }
 
     /// Sample n parameter vectors with a specific RNG.
     ///
     /// Useful for reproducible sampling with a seeded RNG.
-    pub fn sample_random_with_rng<R: Rng>(&self, n: usize, rng: &mut R) -> ndarray::Array2<f64> {
+    pub fn sample_random_with_rng<R: RngExt>(&self, n: usize, rng: &mut R) -> ndarray::Array2<f64> {
         let n_params = self.len();
         let mut samples = ndarray::Array2::zeros((n, n_params));
 
@@ -199,12 +199,12 @@ impl ParameterSet {
     /// assert_eq!(samples.shape(), &[100, 2]);
     /// ```
     pub fn sample_lhs(&self, n: usize) -> ndarray::Array2<f64> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         self.sample_lhs_with_rng(n, &mut rng)
     }
 
     /// Sample n parameter vectors using LHS with a specific RNG.
-    pub fn sample_lhs_with_rng<R: Rng>(&self, n: usize, rng: &mut R) -> ndarray::Array2<f64> {
+    pub fn sample_lhs_with_rng<R: RngExt>(&self, n: usize, rng: &mut R) -> ndarray::Array2<f64> {
         let n_params = self.len();
         let mut samples = ndarray::Array2::zeros((n, n_params));
 
@@ -215,7 +215,7 @@ impl ParameterSet {
                 .map(|i| {
                     let interval_size = 1.0 / n as f64;
                     let interval_start = i as f64 * interval_size;
-                    interval_start + rng.gen::<f64>() * interval_size
+                    interval_start + rng.random::<f64>() * interval_size
                 })
                 .collect();
 
@@ -319,7 +319,7 @@ impl Default for ParameterSet {
 /// This is used for LHS sampling when distributions don't have closed-form quantile functions.
 /// For simple distributions like Uniform, this could be optimised, but the general approach
 /// works for all distributions.
-fn quantile_via_sampling<R: Rng>(dist: &dyn Distribution, u: f64, rng: &mut R) -> f64 {
+fn quantile_via_sampling<R: RngExt>(dist: &dyn Distribution, u: f64, rng: &mut R) -> f64 {
     // For bounded distributions, use bounds-based binary search
     if let Some((low, high)) = dist.bounds() {
         // Special case: Uniform distribution has closed-form quantile

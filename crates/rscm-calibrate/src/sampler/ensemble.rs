@@ -377,7 +377,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
         }
 
         // Initialize walkers
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let positions = init.initialize(n_walkers, &self.params, &mut rng)?;
 
         // Create initial state
@@ -433,7 +433,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
         }
 
         // Initialize walkers
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let positions = init.initialize(n_walkers, &self.params, &mut rng)?;
 
         // Create initial state
@@ -493,7 +493,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// * `active_range` - Range of walker indices to update
     /// * `complementary_range` - Range of walker indices to use as complementary ensemble
     /// * `rng` - Random number generator
-    fn update_group<Rng: rand::Rng>(
+    fn update_group<Rng: rand::RngExt>(
         &self,
         state: &mut SamplerState,
         active_range: std::ops::Range<usize>,
@@ -534,7 +534,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
 
             // Accept/reject
             state.n_proposed[walker_idx] += 1;
-            if rng.gen::<f64>() < accept_prob {
+            if rng.random::<f64>() < accept_prob {
                 // Accept
                 state.positions.row_mut(walker_idx).assign(proposal);
                 state.log_probs[walker_idx] = log_prob_new;
@@ -629,7 +629,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
         let chain_path = format!("{}.chain", checkpoint_path.as_ref().display());
 
         // Run MCMC iterations
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for iteration in 0..n_iterations {
             // Split walkers into two groups
@@ -1088,7 +1088,7 @@ mod tests {
     fn test_parallel_determinism() {
         use crate::distribution::Normal;
         use crate::likelihood::{ModelOutput, VariableOutput};
-        use rand::Rng;
+        use rand::RngExt;
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
 
@@ -1150,7 +1150,7 @@ mod tests {
         let n_walkers = 16;
         let n_params = 2;
         let mut rng = ChaCha8Rng::seed_from_u64(12345);
-        let positions = Array2::from_shape_fn((n_walkers, n_params), |_| rng.gen::<f64>() * 2.0);
+        let positions = Array2::from_shape_fn((n_walkers, n_params), |_| rng.random::<f64>() * 2.0);
 
         // Run sampler twice with same initial positions
         let init = WalkerInit::Explicit(positions.clone());
@@ -1354,7 +1354,7 @@ mod tests {
     fn test_edge_case_all_walkers_same_init() {
         use crate::distribution::Normal;
         use crate::likelihood::{ModelOutput, VariableOutput};
-        use rand::Rng;
+        use rand::RngExt;
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
 
@@ -1416,8 +1416,8 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(555);
         let mut positions = Array2::zeros((n_walkers, 2));
         for i in 0..n_walkers {
-            positions[[i, 0]] = rng.gen::<f64>() * 0.001;
-            positions[[i, 1]] = rng.gen::<f64>() * 0.001;
+            positions[[i, 0]] = rng.random::<f64>() * 0.001;
+            positions[[i, 1]] = rng.random::<f64>() * 0.001;
         }
         let init = WalkerInit::Explicit(positions);
 

@@ -5,7 +5,7 @@
 
 use crate::{Error, Result};
 use ndarray::{Array1, Array2, ArrayView1};
-use rand::Rng;
+use rand::RngExt;
 
 /// Configuration for the stretch move proposal.
 ///
@@ -52,8 +52,8 @@ impl StretchMove {
     /// # Returns
     ///
     /// A stretch factor z in the range [1/a, a]
-    pub fn sample_z<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
-        let u: f64 = rng.gen(); // Uniform(0, 1)
+    pub fn sample_z<R: RngExt + ?Sized>(&self, rng: &mut R) -> f64 {
+        let u: f64 = rng.random(); // Uniform(0, 1)
 
         ((self.a - 1.0) * u + 1.0).powi(2) / self.a
     }
@@ -107,7 +107,7 @@ impl StretchMove {
     /// # Returns
     ///
     /// Tuple of (proposed_position, stretch_factor)
-    pub fn propose<R: Rng + ?Sized>(
+    pub fn propose<R: RngExt + ?Sized>(
         &self,
         rng: &mut R,
         current_pos: ArrayView1<f64>,
@@ -118,7 +118,7 @@ impl StretchMove {
 
         // Select random complementary walker
         let n_complementary = complementary_positions.nrows();
-        let comp_idx = rng.gen_range(0..n_complementary);
+        let comp_idx = rng.random_range(0..n_complementary);
         let comp_pos = complementary_positions.row(comp_idx);
 
         // Compute proposal: y = c + z * (x - c)

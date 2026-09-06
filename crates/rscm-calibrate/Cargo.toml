@@ -14,8 +14,8 @@ readme = "README.md"
 rscm-core.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
-rand = "0.8"
-rand_distr = "0.4"
+rand = "0.10"
+rand_distr = "0.6"
 rayon = "1.10"
 ndarray = { version = "0.17", features = ["serde", "rayon"] }
 statrs = "0.18"
@@ -31,5 +31,5 @@ python = ["pyo3", "numpy"]
 [dev-dependencies]
 approx = "0.5"
 serde_json = "1.0"
-rand_chacha = "0.3"
+rand_chacha = "0.10"
 tempfile = "3.27"
