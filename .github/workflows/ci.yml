@@ -28,6 +28,7 @@ jobs:
               - 'python/**'
               - 'mkdocs.yml'
               - 'pyproject.toml'
+              - 'uv.lock'
               - 'crates/**'
             docs-rust:
               - 'crates/**'
