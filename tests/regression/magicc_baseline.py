@@ -146,6 +146,8 @@ def compare_values(
     actual: np.ndarray, reference: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute signed and relative errors without hiding zero-reference errors."""
+    actual = np.asarray(actual, dtype=np.float64)
+    reference = np.asarray(reference, dtype=np.float64)
     if actual.shape != reference.shape or not np.isfinite([actual, reference]).all():
         msg = "Comparison requires matching, finite arrays"
         raise ValueError(msg)

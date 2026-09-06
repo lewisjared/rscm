@@ -69,6 +69,16 @@ def test_invalid_fixture_fails(fixture_dir, damage):
         baseline.load_case(fixture_dir)
 
 
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64, np.float64])
+def test_integer_and_float_comparisons(dtype):
+    signed, relative = baseline.compare_values(
+        np.array([2, 1], dtype=dtype), np.array([0, 2], dtype=dtype)
+    )
+    np.testing.assert_array_equal(signed, [2.0, -1.0])
+    assert np.isnan(relative[0])
+    assert relative[1] == -0.5
+
+
 def test_zero_and_small_reference_errors():
     signed, relative = baseline.compare_values(
         np.array([2.0, 2e-30]), np.array([0.0, 1e-30])
