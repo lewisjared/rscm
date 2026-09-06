@@ -5,7 +5,7 @@ use crate::python::timeseries_collection::PyTimeseriesCollection;
 use crate::python::PyRustComponent;
 use crate::schema::VariableSchema;
 use crate::timeseries::{FloatValue, Time};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 
@@ -173,11 +173,17 @@ impl PyModel {
         self.0.current_time_bounds()
     }
 
-    fn step(mut self_: PyRefMut<Self>) {
-        self_.0.step()
+    fn step(mut self_: PyRefMut<Self>) -> PyResult<()> {
+        self_
+            .0
+            .try_step()
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))
     }
-    fn run(mut self_: PyRefMut<Self>) {
-        self_.0.run()
+    fn run(mut self_: PyRefMut<Self>) -> PyResult<()> {
+        self_
+            .0
+            .try_run()
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))
     }
 
     fn as_dot(&self) -> String {

@@ -13,6 +13,103 @@ use numpy::ndarray::{Array, Axis};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ChainForcing {
+    input: Option<String>,
+    output: String,
+}
+
+#[typetag::serde]
+impl Component for ChainForcing {
+    fn definitions(&self) -> Vec<RequirementDefinition> {
+        let mut defs = vec![RequirementDefinition::scalar_output(&self.output, "W/m^2")];
+        if let Some(input) = &self.input {
+            defs.push(RequirementDefinition::scalar_input(input, "W/m^2"));
+        }
+        defs
+    }
+
+    fn solve(&self, _t: Time, _next: Time, inputs: &InputState) -> RSCMResult<OutputState> {
+        let upstream = self
+            .input
+            .as_ref()
+            .map(|name| inputs.get_scalar_window(name).get())
+            .unwrap_or(0.0);
+        Ok(OutputState::from([(
+            self.output.clone(),
+            StateValue::Scalar(upstream + 1.0),
+        )]))
+    }
+}
+
+#[test]
+fn test_aggregate_waits_for_unequal_length_branches() {
+    let schema = VariableSchema::new()
+        .variable("root", "W/m^2")
+        .variable("middle", "W/m^2")
+        .variable("long", "W/m^2")
+        .variable("short", "W/m^2")
+        .aggregate("total", "W/m^2", AggregateOp::Sum)
+        .from("short")
+        .from("long")
+        .build();
+    let mut builder = ModelBuilder::new();
+    builder
+        .with_schema(schema)
+        .with_time_axis(TimeAxis::from_values(array![0.0, 1.0, 2.0]));
+    for (input, output) in [
+        (None, "root"),
+        (Some("root"), "middle"),
+        (Some("middle"), "long"),
+        (None, "short"),
+    ] {
+        builder.with_component(Arc::new(ChainForcing {
+            input: input.map(String::from),
+            output: output.into(),
+        }));
+    }
+    let mut model = builder.build().unwrap();
+    model.run();
+    let values = model
+        .timeseries()
+        .get_data("total")
+        .unwrap()
+        .as_scalar()
+        .unwrap();
+    assert_eq!(values.at(1, ScalarRegion::Global).unwrap(), 4.0);
+    assert_eq!(values.at(2, ScalarRegion::Global).unwrap(), 4.0);
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FailingForcing;
+
+#[typetag::serde]
+impl Component for FailingForcing {
+    fn definitions(&self) -> Vec<RequirementDefinition> {
+        vec![RequirementDefinition::scalar_output("failed", "W/m^2")]
+    }
+
+    fn solve(&self, _t: Time, _next: Time, _inputs: &InputState) -> RSCMResult<OutputState> {
+        Err(crate::errors::RSCMError::Error(
+            "forcing unavailable".into(),
+        ))
+    }
+}
+
+#[test]
+fn test_run_reports_component_error_without_advancing_time() {
+    let mut model = ModelBuilder::new()
+        .with_time_axis(TimeAxis::from_values(array![1750.0, 1751.0]))
+        .with_component(Arc::new(FailingForcing))
+        .build()
+        .unwrap();
+    let error = model.try_run().unwrap_err().to_string();
+    assert!(error.contains("FailingForcing"));
+    assert!(error.contains("1750..1751"));
+    assert!(error.contains("forcing unavailable"));
+    assert_eq!(model.time_index(), 0);
+}
+
 /// A simple component that produces ERF|CO2
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CO2ERFComponent {

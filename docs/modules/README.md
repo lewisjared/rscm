@@ -2,6 +2,9 @@
 
 This directory contains detailed documentation for each scientific module in MAGICC (Model for the Assessment of Greenhouse Gas Induced Climate Change). These documents are intended to guide the Rust reimplementation while maintaining exact numerical fidelity with the Fortran original.
 
+For runnable concentration-driven and partial CO2 emissions-driven experiments,
+see [Partial MAGICC runs](../magicc_runs.md).
+
 ## Architecture Overview
 
 MAGICC is a reduced-complexity climate model that chains several Initial Value Problems (IVPs):
