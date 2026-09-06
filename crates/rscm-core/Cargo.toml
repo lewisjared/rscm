@@ -15,7 +15,7 @@ default = ["rich-debug"]
 rich-debug = ["owo-colors"]
 
 [dependencies]
-ode_solvers = "0.6.1"
+ode_solvers = "0.6.2"
 ndarray = { version = "0.17", features = ["serde"] }
 numpy = "0.27.1"
 # Pinned to match ode_solvers requirement
