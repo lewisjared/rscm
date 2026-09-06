@@ -7,7 +7,7 @@ use crate::timeseries::{Time, TimeAxis};
 use crate::timeseries_collection::TimeseriesCollection;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
-use petgraph::visit::Bfs;
+use petgraph::visit::{EdgeFiltered, EdgeRef};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Index;
@@ -365,7 +365,7 @@ impl Model {
     /// to be later used by other components.
     /// The output state defines the values at the next time index as it represents the state
     /// at the start of the next timestep.
-    fn step_model_component(&mut self, component: C, node_index: NodeIndex) {
+    fn step_model_component(&mut self, component: C, node_index: NodeIndex) -> RSCMResult<()> {
         // Get component name for unit conversion lookup
         let component_name = Self::extract_component_name(&component);
 
@@ -446,84 +446,105 @@ impl Model {
             .get_mut(&node_index)
             .expect("Component state not initialized - this is a bug in Model::build()");
 
-        let result = component.solve_with_state(start, end, &input_state, internal_state.as_mut());
+        let output_state = component
+            .solve_with_state(start, end, &input_state, internal_state.as_mut())
+            .map_err(|err| {
+                RSCMError::Error(format!(
+                    "{component_name} failed during {start}..{end}: {err}"
+                ))
+            })?;
 
-        match result {
-            Ok(output_state) => {
-                for (key, state_value) in output_state.iter() {
-                    let data = self.collection.get_data_mut(key).unwrap();
-
-                    // Apply write-side transformation if needed (component produces finer grid
-                    // than schema expects)
-                    let final_value = if let Some(transform) = self.write_transforms.get(key) {
-                        let weights = self.grid_weights.get(&transform.source_grid);
-                        match aggregate_state_value(
-                            state_value,
-                            transform.source_grid,
-                            transform.target_grid,
-                            weights,
-                        ) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                println!("Write-side aggregation failed for {}: {}", key, e);
-                                continue;
-                            }
-                        }
-                    } else {
-                        state_value.clone()
-                    };
-
-                    // The next time index is used as this output state represents the value of a
-                    // variable at the end of the current time step.
-                    // This is the same as the start of the next timestep.
-                    let result = match &final_value {
-                        StateValue::Scalar(v) => data.set_scalar(key, self.time_index + 1, *v),
-                        StateValue::FourBox(slice) => {
-                            data.set_four_box(key, self.time_index + 1, slice)
-                        }
-                        StateValue::Hemispheric(slice) => {
-                            data.set_hemispheric(key, self.time_index + 1, slice)
-                        }
-                    };
-                    if let Err(e) = result {
-                        println!("Failed to set output {}: {}", key, e);
-                    }
+        for (key, state_value) in &output_state {
+            let data = self.collection.get_data_mut(key).ok_or_else(|| {
+                RSCMError::Error(format!(
+                    "{component_name} returned undeclared output {key} during {start}..{end}"
+                ))
+            })?;
+            let final_value = if let Some(transform) = self.write_transforms.get(key) {
+                aggregate_state_value(
+                    state_value,
+                    transform.source_grid,
+                    transform.target_grid,
+                    self.grid_weights.get(&transform.source_grid),
+                )
+                .map_err(|err| {
+                    RSCMError::Error(format!(
+                        "{component_name} could not aggregate {key} during {start}..{end}: {err}"
+                    ))
+                })?
+            } else {
+                state_value.clone()
+            };
+            // Integrated states and boundary diagnostics belong to t_next.
+            let result = match &final_value {
+                StateValue::Scalar(v) => data.set_scalar(key, self.time_index + 1, *v),
+                StateValue::FourBox(slice) => data.set_four_box(key, self.time_index + 1, slice),
+                StateValue::Hemispheric(slice) => {
+                    data.set_hemispheric(key, self.time_index + 1, slice)
                 }
-            }
-            Err(err) => {
-                println!("Solving failed: {}", err)
-            }
+            };
+            result.map_err(|err| {
+                RSCMError::Error(format!(
+                    "{component_name} could not write {key} during {start}..{end}: {err}"
+                ))
+            })?;
         }
+        Ok(())
     }
 
     /// Step the model forward a step by solving each component for the current time step.
     ///
-    /// A breadth-first search across the component graph starting at the initial node
-    /// will solve the components in a way that ensures any models with dependencies are solved
-    /// after the dependent component is first solved.
-    fn step_model(&mut self) {
-        let mut bfs = Bfs::new(&self.components, self.initial_node);
-        while let Some(nx) = bfs.next(&self.components) {
+    /// Execute every producer before its consumers, including when branches
+    /// of different lengths feed an aggregate. Self-edges describe a component's
+    /// own state and do not constrain the order within a timestep.
+    fn step_model(&mut self) -> RSCMResult<()> {
+        let graph = EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
+        let order = petgraph::algo::toposort(&graph, None).map_err(|cycle| {
+            RSCMError::CircularDependency {
+                cycle: format!("component {:?}", cycle.node_id()),
+            }
+        })?;
+        for nx in order {
             let c = self.components.index(nx);
-            self.step_model_component(c.clone(), nx)
+            self.step_model_component(c.clone(), nx)?;
         }
+        Ok(())
     }
 
     /// Steps the model forward one time step.
     ///
     /// This solves the current time step and then updates the index.
     pub fn step(&mut self) {
-        assert!(self.time_index < self.time_axis.len() - 1);
-        self.step_model();
-
-        self.time_index += 1;
+        self.try_step().expect("Model timestep failed");
     }
 
-    /// Steps the model until the end of the time axis.
-    pub fn run(&mut self) {
-        while self.time_index < self.time_axis.len() - 1 {
-            self.step();
+    /// Fallible timestep execution. On failure the time index is not advanced.
+    /// Components already executed may have updated their state; rebuild the
+    /// model before retrying a failed run.
+    pub fn try_step(&mut self) -> RSCMResult<()> {
+        if self.time_index + 1 >= self.time_axis.len() {
+            return Err(RSCMError::Error(
+                "Model is already at its final boundary".into(),
+            ));
         }
+        self.step_model()?;
+        self.time_index += 1;
+        Ok(())
+    }
+
+    /// Steps the model until the end of the time axis, panicking on failure.
+    /// Use `try_run` to handle component errors.
+    pub fn run(&mut self) {
+        self.try_run().expect("Model run failed");
+    }
+
+    /// Run to completion, returning the first component or output error.
+    /// As with `try_step`, discard the model after a failed run.
+    pub fn try_run(&mut self) -> RSCMResult<()> {
+        while self.time_index + 1 < self.time_axis.len() {
+            self.try_step()?;
+        }
+        Ok(())
     }
 
     /// Create a diagram that represents the component graph.
