@@ -205,11 +205,15 @@ def _compare_variable(  # noqa: PLR0913
     rscm_vals = rscm_vals[:n]
     ref_vals = ref_vals[:n]
 
-    # Filter out NaN (output variables have NaN before first solve)
-    # and near-zero reference values
-    mask = np.isfinite(rscm_vals) & np.isfinite(ref_vals) & (np.abs(ref_vals) > 1e-6)
-    if not np.any(mask):
-        return 0.0
+    # Output diagnostics have no initial value, but every solved step must be finite.
+    if n and np.isnan(rscm_vals[0]):
+        rscm_vals = rscm_vals[1:]
+        ref_vals = ref_vals[1:]
+    assert rscm_vals.size, f"{var_name}: no model output to compare"
+    assert np.all(np.isfinite(rscm_vals)), f"{var_name}: nonfinite model output"
+    assert np.all(np.isfinite(ref_vals)), f"{var_name}: nonfinite reference output"
+    mask = np.abs(ref_vals) > 1e-6
+    assert np.any(mask), f"{var_name}: no nonzero reference values to compare"
 
     rel_err = np.abs((rscm_vals[mask] - ref_vals[mask]) / ref_vals[mask])
     max_err = float(rel_err.max())
@@ -301,3 +305,14 @@ class TestGiffordParity:
     def test_soil_pool(self):
         results, df, years = _run_parity_test(self.NAME, params=self.PARAMS)
         _compare_variable(results, df, years, "Carbon Pool|Soil", rtol=0.001)
+
+
+@pytest.mark.parametrize("values", [[np.nan, np.nan], [np.nan, np.inf], []])
+def test_parity_comparison_rejects_invalid_output(monkeypatch, values):
+    """Missing or nonfinite solved values must not count as successful parity."""
+    monkeypatch.setitem(globals(), "_get_rscm_values", lambda *_: np.array(values))
+    monkeypatch.setitem(
+        globals(), "get_variable_values", lambda *_: (None, np.array([1.0, 1.0, 0.0]))
+    )
+    with pytest.raises(AssertionError):
+        _compare_variable(None, None, None, "Carbon Pool|Plant")

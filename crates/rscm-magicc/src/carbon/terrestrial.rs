@@ -386,10 +386,14 @@ impl TerrestrialCarbon {
         )
     }
 
-    /// Solve the terrestrial carbon cycle for one timestep (public API without state).
+    /// Solve the terrestrial carbon cycle for one annual timestep (public API without state).
     ///
     /// This is a simplified interface that creates a temporary state. For full
     /// MAGICC7 fidelity (regrowth, mass conservation), use `solve_with_state`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `dt` is not one year.
     pub fn solve_pools(
         &self,
         co2: FloatValue,
@@ -432,6 +436,11 @@ impl TerrestrialCarbon {
         dt: FloatValue,
         current_year: Option<FloatValue>,
     ) -> TerrestrialResult {
+        assert!(
+            (dt - 1.0).abs() < 1e-6,
+            "TerrestrialCarbon only supports annual timesteps (dt=1.0), got dt={dt}"
+        );
+
         let p = &self.parameters;
 
         // Initialize state on first call, using provided pool state and CO2
@@ -602,19 +611,18 @@ impl TerrestrialCarbon {
         }
 
         // Step 13: Advance main pools with feedbacks using gross deforestation
-        let (mut new_pools, _turnover_plant, turnover_detritus, turnover_soil) = self
-            .advance_pools(
-                &pools,
-                npp,
-                respiration,
-                &gross_defo,
-                tau_plant,
-                tau_detritus,
-                tau_soil,
-                temp_detritus,
-                temp_soil,
-                dt,
-            );
+        let (mut new_pools, _, _, _) = self.advance_pools(
+            &pools,
+            npp,
+            respiration,
+            &gross_defo,
+            tau_plant,
+            tau_detritus,
+            tau_soil,
+            temp_detritus,
+            temp_soil,
+            dt,
+        );
 
         // Step 14: Mass conservation correction (ensure non-negative pools)
         let nf_delta: FloatValue = (0..3)
@@ -625,15 +633,14 @@ impl TerrestrialCarbon {
         new_nf_pools[0] = (new_nf_pools[0] - correction).max(0.0);
 
         // Step 15: Calculate net flux and diagnostics
-        let detritus_to_atm = (1.0 - p.frac_detritus_to_soil) * turnover_detritus;
-        let soil_to_atm = turnover_soil;
-        let total_respiration = respiration + detritus_to_atm + soil_to_atm;
         let total_gross_defo: FloatValue = gross_defo.iter().sum();
         let total_regrowth: FloatValue = regrowth.iter().sum();
 
         // Net flux = change in total pool (positive = land uptake)
         let pool_change: FloatValue = (0..3).map(|i| new_pools[i] - pools[i]).sum();
         let net_flux = pool_change / dt;
+        // Include the mass correction in respiration, matching TERRCARBON2.
+        let total_respiration = npp - net_flux - total_gross_defo;
 
         // Update state for next timestep
         state.nofeedback_pools = new_nf_pools;
@@ -671,10 +678,6 @@ impl TerrestrialCarbon {
         let soil = inputs.soil_pool.at_start();
 
         let dt = t_next - t_current;
-        assert!(
-            (dt - 1.0).abs() < 1e-6,
-            "TerrestrialCarbon only supports annual timesteps (dt=1.0), got dt={dt}"
-        );
 
         let result = self.solve_terrestrial(
             state,
@@ -772,6 +775,38 @@ mod tests {
             params.detritus_pool_pi,
             params.soil_pool_pi,
         ]
+    }
+
+    #[test]
+    #[should_panic(expected = "only supports annual timesteps")]
+    fn test_solve_pools_rejects_nonannual_timestep() {
+        let component = TerrestrialCarbon::from_parameters(TerrestrialCarbonParameters::default());
+        let p = &component.parameters;
+        component.solve_pools(
+            p.co2_pi,
+            0.0,
+            2.0,
+            [p.plant_pool_pi, p.detritus_pool_pi, p.soil_pool_pi],
+            0.5,
+        );
+    }
+
+    #[test]
+    fn test_respiration_balances_corrected_pools() {
+        let component = TerrestrialCarbon::from_parameters(TerrestrialCarbonParameters::default());
+        let p = &component.parameters;
+        let mut state = TerrestrialCarbonState::default();
+        let mut pools = [p.plant_pool_pi, p.detritus_pool_pi, p.soil_pool_pi];
+        for _ in 0..10 {
+            let result =
+                component.solve_terrestrial(&mut state, p.co2_pi, 0.0, 2.0, pools, 1.0, None);
+            let balance = result.npp
+                - result.total_respiration
+                - result.gross_deforestation
+                - result.net_flux;
+            assert!(balance.abs() < 1e-10, "carbon balance residual: {balance}");
+            pools = result.new_pools;
+        }
     }
 
     #[test]
