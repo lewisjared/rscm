@@ -5,7 +5,7 @@
 //! - Log probability density for likelihood evaluation
 //! - Bounds for constrained optimisation
 
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 
 use crate::{Error, Result};
@@ -51,7 +51,7 @@ pub trait Distribution: Send + Sync {
     ///
     /// This method is object-safe and works with trait objects.
     /// For convenience when using concrete types, use the `sample()` method instead.
-    fn sample_dyn(&self, rng: &mut dyn rand::RngCore) -> f64;
+    fn sample_dyn(&self, rng: &mut dyn rand::Rng) -> f64;
 
     /// Compute the natural logarithm of the probability density at `x`.
     ///
@@ -82,7 +82,7 @@ pub trait Distribution: Send + Sync {
 impl dyn Distribution {
     /// Sample a value from the distribution using the thread-local RNG.
     pub fn sample(&self) -> f64 {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         self.sample_dyn(&mut rng)
     }
 }
@@ -150,8 +150,8 @@ impl Uniform {
 
 #[typetag::serde]
 impl Distribution for Uniform {
-    fn sample_dyn(&self, rng: &mut dyn rand::RngCore) -> f64 {
-        self.low + rng.gen::<f64>() * (self.high - self.low)
+    fn sample_dyn(&self, rng: &mut dyn rand::Rng) -> f64 {
+        self.low + rng.random::<f64>() * (self.high - self.low)
     }
 
     fn ln_pdf(&self, x: f64) -> f64 {
@@ -173,8 +173,8 @@ impl Distribution for Uniform {
 
 impl Uniform {
     /// Sample a value from the distribution.
-    pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
-        self.low + rng.gen::<f64>() * (self.high - self.low)
+    pub fn sample<R: RngExt + ?Sized>(&self, rng: &mut R) -> f64 {
+        self.low + rng.random::<f64>() * (self.high - self.low)
     }
 }
 
@@ -247,7 +247,7 @@ impl Normal {
 
 #[typetag::serde]
 impl Distribution for Normal {
-    fn sample_dyn(&self, rng: &mut dyn rand::RngCore) -> f64 {
+    fn sample_dyn(&self, rng: &mut dyn rand::Rng) -> f64 {
         let dist = rand_distr::Normal::new(self.mean, self.std_dev)
             .expect("Normal parameters validated at construction");
         rng.sample(dist)
@@ -269,7 +269,7 @@ impl Distribution for Normal {
 
 impl Normal {
     /// Sample a value from the distribution.
-    pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
+    pub fn sample<R: RngExt + ?Sized>(&self, rng: &mut R) -> f64 {
         let dist = rand_distr::Normal::new(self.mean, self.std_dev)
             .expect("Normal parameters validated at construction");
         rng.sample(dist)
@@ -344,7 +344,7 @@ impl LogNormal {
 
 #[typetag::serde]
 impl Distribution for LogNormal {
-    fn sample_dyn(&self, rng: &mut dyn rand::RngCore) -> f64 {
+    fn sample_dyn(&self, rng: &mut dyn rand::Rng) -> f64 {
         let dist = rand_distr::LogNormal::new(self.mu, self.sigma)
             .expect("LogNormal parameters validated at construction");
         rng.sample(dist)
@@ -370,7 +370,7 @@ impl Distribution for LogNormal {
 
 impl LogNormal {
     /// Sample a value from the distribution.
-    pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
+    pub fn sample<R: RngExt + ?Sized>(&self, rng: &mut R) -> f64 {
         let dist = rand_distr::LogNormal::new(self.mu, self.sigma)
             .expect("LogNormal parameters validated at construction");
         rng.sample(dist)
@@ -477,7 +477,7 @@ impl Bound {
 
 #[typetag::serde]
 impl Distribution for Bound {
-    fn sample_dyn(&self, rng: &mut dyn rand::RngCore) -> f64 {
+    fn sample_dyn(&self, rng: &mut dyn rand::Rng) -> f64 {
         // Rejection sampling: keep sampling until we get a value in bounds.
         loop {
             let x = self.distribution.sample_dyn(rng);
@@ -507,7 +507,7 @@ impl Distribution for Bound {
 
 impl Bound {
     /// Sample a value from the distribution.
-    pub fn sample<R: Rng>(&self, rng: &mut R) -> f64 {
+    pub fn sample<R: RngExt>(&self, rng: &mut R) -> f64 {
         loop {
             let x = self.distribution.sample_dyn(rng);
             if x >= self.low && x <= self.high {
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn test_uniform_sampling() {
         let dist = Uniform::new(0.0, 1.0).unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..100 {
             let x = dist.sample(&mut rng);
@@ -560,7 +560,7 @@ mod tests {
     #[test]
     fn test_normal_sampling() {
         let dist = Normal::new(0.0, 1.0).unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let mut sum = 0.0;
         let n = 10000;
@@ -595,7 +595,7 @@ mod tests {
     #[test]
     fn test_lognormal_sampling() {
         let dist = LogNormal::new(0.0, 1.0).unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..100 {
             let x = dist.sample(&mut rng);
@@ -622,7 +622,7 @@ mod tests {
         let dist = LogNormal::from_mean_std(mean, std_dev).unwrap();
 
         // Check that samples are positive
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..100 {
             let x = dist.sample(&mut rng);
             assert!(x > 0.0);
@@ -640,7 +640,7 @@ mod tests {
     #[test]
     fn test_bound_sampling() {
         let dist = Bound::new(Box::new(Normal::new(0.0, 1.0).unwrap()), -2.0, 2.0).unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..100 {
             let x = dist.sample(&mut rng);

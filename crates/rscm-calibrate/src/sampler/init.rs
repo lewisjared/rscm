@@ -5,7 +5,7 @@
 
 use crate::{parameter_set::ParameterSet, Error, Result};
 use ndarray::Array2;
-use rand::Rng;
+use rand::RngExt;
 
 /// Walker initialization strategy for the ensemble sampler.
 #[derive(Debug, Clone)]
@@ -37,7 +37,7 @@ impl WalkerInit {
     /// # Returns
     ///
     /// Array of shape (n_walkers, n_params) with initial positions.
-    pub fn initialize<R: Rng>(
+    pub fn initialize<R: RngExt>(
         &self,
         n_walkers: usize,
         params: &ParameterSet,
@@ -64,7 +64,7 @@ impl WalkerInit {
                 for i in 0..n_walkers {
                     for j in 0..n_params {
                         // Sample from normal distribution around center
-                        let offset = rng.gen::<f64>() - 0.5; // Uniform(-0.5, 0.5)
+                        let offset = rng.random::<f64>() - 0.5; // Uniform(-0.5, 0.5)
                         positions[[i, j]] = center[j] + offset * radius;
                     }
                 }

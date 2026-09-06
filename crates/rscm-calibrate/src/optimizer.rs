@@ -19,7 +19,7 @@
 //! ```
 
 use crate::{point_estimator::PointEstimator, Result};
-use rand::Rng;
+use rand::RngExt;
 
 /// Optimization algorithm to use for point estimation.
 #[derive(Debug, Clone, Copy)]
@@ -129,13 +129,13 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
         let (lower, upper) = self.bounds();
         let n_params = lower.len();
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut samples = Vec::with_capacity(n);
 
         for _ in 0..n {
             let mut sample = Vec::with_capacity(n_params);
             for i in 0..n_params {
-                let value = rng.gen::<f64>() * (upper[i] - lower[i]) + lower[i];
+                let value = rng.random::<f64>() * (upper[i] - lower[i]) + lower[i];
                 sample.push(value);
             }
             samples.push(sample);

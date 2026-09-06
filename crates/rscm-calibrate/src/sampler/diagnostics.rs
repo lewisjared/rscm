@@ -659,7 +659,7 @@ mod tests {
 
     #[test]
     fn test_autocorr_time_independent_samples() {
-        use rand::Rng;
+        use rand::RngExt;
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
 
@@ -676,7 +676,7 @@ mod tests {
         for _ in 0..n_samples {
             let mut positions = Array2::zeros((n_walkers, 1));
             for i in 0..n_walkers {
-                positions[[i, 0]] = rng.gen::<f64>() * 2.0 - 1.0; // Uniform(-1, 1)
+                positions[[i, 0]] = rng.random::<f64>() * 2.0 - 1.0; // Uniform(-1, 1)
             }
             chain.push(positions, Array1::zeros(n_walkers));
         }
@@ -724,7 +724,7 @@ mod tests {
 
     #[test]
     fn test_autocorr_time_multiple_parameters() {
-        use rand::Rng;
+        use rand::RngExt;
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
 
@@ -739,7 +739,7 @@ mod tests {
         for _ in 0..n_samples {
             let mut positions = Array2::zeros((n_walkers, 2));
             for i in 0..n_walkers {
-                positions[[i, 0]] = rng.gen::<f64>(); // x: independent
+                positions[[i, 0]] = rng.random::<f64>(); // x: independent
                 positions[[i, 1]] = positions[[i, 1]].max(0.0) + 0.1; // y: autocorrelated
             }
             chain.push(positions, Array1::zeros(n_walkers));
@@ -776,7 +776,7 @@ mod tests {
 
     #[test]
     fn test_autocorr_time_relation_to_ess() {
-        use rand::Rng;
+        use rand::RngExt;
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
 
@@ -794,7 +794,7 @@ mod tests {
             let mut positions = Array2::zeros((n_walkers, 1));
             for i in 0..n_walkers {
                 // AR(1) process: x_t = 0.7 * x_{t-1} + noise
-                prev_value = 0.7 * prev_value + rng.gen::<f64>() * 0.3;
+                prev_value = 0.7 * prev_value + rng.random::<f64>() * 0.3;
                 positions[[i, 0]] = prev_value;
             }
             chain.push(positions, Array1::zeros(n_walkers));
