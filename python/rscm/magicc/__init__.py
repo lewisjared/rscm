@@ -15,22 +15,28 @@ from rscm._lib.magicc import (
     CH4ChemistryBuilder,
     ClimateUDEBBuilder,
     CO2BudgetBuilder,
+    GhgForcingBuilder,
     HalocarbonChemistryBuilder,
     N2OChemistryBuilder,
     OceanCarbonBuilder,
     OzoneForcingBuilder,
     TerrestrialCarbonBuilder,
 )
+from rscm.magicc.runner import CO2Emissions, MAGICCResult, run_magicc
 
 __all__ = [
     "AerosolDirectBuilder",
     "AerosolIndirectBuilder",
     "CH4ChemistryBuilder",
     "CO2BudgetBuilder",
+    "CO2Emissions",
     "ClimateUDEBBuilder",
+    "GhgForcingBuilder",
     "HalocarbonChemistryBuilder",
+    "MAGICCResult",
     "N2OChemistryBuilder",
     "OceanCarbonBuilder",
     "OzoneForcingBuilder",
     "TerrestrialCarbonBuilder",
+    "run_magicc",
 ]

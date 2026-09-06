@@ -49,6 +49,7 @@ from rscm._lib.magicc import (
     TerrestrialCarbonBuilder,
 )
 from rscm.core import ModelBuilder
+from rscm.magicc import run_magicc
 
 SUITE = "ghg_forcing"
 DEFAULT_RTOL = 1e-5  # GHG forcing is analytical, near-exact match expected
@@ -137,7 +138,7 @@ def build_erf_to_temperature_model(
     return model
 
 
-def build_ghg_forcing_model(
+def run_concentration_case(
     years: np.ndarray,
     co2_conc: np.ndarray,
     ch4_conc: np.ndarray,
@@ -145,7 +146,7 @@ def build_ghg_forcing_model(
     config: dict,
 ):
     """
-    Build a model with GhgForcing component for concentration-driven runs.
+    Run concentrations through GHG forcing and UDEB, excluding other forcing.
 
     Parameters
     ----------
@@ -158,7 +159,7 @@ def build_ghg_forcing_model(
 
     Returns
     -------
-    Model ready to run
+    Completed partial MAGICC run with boundary-aligned outputs
     """
     # Map MAGICC config to GhgForcing parameters
     rf_method = config.get("core_co2ch4n2o_rfmethod", "IPCCTAR")
@@ -191,46 +192,16 @@ def build_ghg_forcing_model(
         "adjust_n2o": adjust_n2o,
     }
 
-    ghg_component = GhgForcingBuilder.from_parameters(ghg_params).build()
-
-    # Create time axis from year values
-    # years are annual (e.g. 1750, 1751, ..., 2100)
-    # TimeAxis needs bounds: one more value than data points
-    time_axis = TimeAxis.from_bounds(
-        np.concatenate([years, [years[-1] + 1.0]]).astype(np.float64)
+    return run_magicc(
+        years,
+        {"CO2": co2_conc, "CH4": ch4_conc, "N2O": n2o_conc},
+        other_forcing=np.zeros_like(years),
+        forcing_parameters=ghg_params,
+        climate_parameters={
+            "ecs": config.get("core_climatesensitivity", 3.0),
+            "rf_2xco2": config.get("core_delq2xco2", 3.71),
+        },
     )
-
-    # Create concentration timeseries
-    co2_ts = Timeseries(
-        co2_conc.astype(np.float64),
-        time_axis,
-        "ppm",
-        InterpolationStrategy.Linear,
-    )
-    ch4_ts = Timeseries(
-        ch4_conc.astype(np.float64),
-        time_axis,
-        "ppb",
-        InterpolationStrategy.Linear,
-    )
-    n2o_ts = Timeseries(
-        n2o_conc.astype(np.float64),
-        time_axis,
-        "ppb",
-        InterpolationStrategy.Linear,
-    )
-
-    model = (
-        ModelBuilder()
-        .with_time_axis(time_axis)
-        .with_rust_component(ghg_component)
-        .with_exogenous_variable("Atmospheric Concentration|CO2", co2_ts)
-        .with_exogenous_variable("Atmospheric Concentration|CH4", ch4_ts)
-        .with_exogenous_variable("Atmospheric Concentration|N2O", n2o_ts)
-        .build()
-    )
-
-    return model
 
 
 def test_01_concentration_driven():
@@ -243,8 +214,8 @@ def test_01_concentration_driven():
     Variables compared:
     - Effective Radiative Forcing|CO2/CH4/N2O
 
-    Note: Surface Temperature comparison requires ClimateUDEB integration
-    which needs scalar-to-FourBox bridging (not yet implemented).
+    Runs the coupled concentration-to-temperature path. Forcing parity is
+    checked here; climate output must be finite throughout the run.
     """
     df, config = load_data("01_concentration_driven")
 
@@ -263,28 +234,19 @@ def test_01_concentration_driven():
     _, expected_erf_n2o = get_variable_values(df, "Effective Radiative Forcing|N2O")
 
     # Build and run model
-    model = build_ghg_forcing_model(years, co2_conc, ch4_conc, n2o_conc, config)
-    model.run()
-
-    results = model.timeseries()
+    results = run_concentration_case(years, co2_conc, ch4_conc, n2o_conc, config)
+    assert np.isfinite(results.values["Surface Temperature"]).all()
 
     # Extract actual forcing outputs
-    # The model outputs NaN at index 0 (initial state) and writes solve
-    # results starting at index 1. So actual[1:] aligns with expected[:-1].
-    actual_erf_co2 = results.get_timeseries_by_name(
-        "Effective Radiative Forcing|CO2"
-    ).values()[1:]
-    actual_erf_ch4 = results.get_timeseries_by_name(
-        "Effective Radiative Forcing|CH4"
-    ).values()[1:]
-    actual_erf_n2o = results.get_timeseries_by_name(
-        "Effective Radiative Forcing|N2O"
-    ).values()[1:]
+    # Initial forcing is evaluated explicitly; every output shares its input year.
+    actual_erf_co2 = results.values["Effective Radiative Forcing|CO2"]
+    actual_erf_ch4 = results.values["Effective Radiative Forcing|CH4"]
+    actual_erf_n2o = results.values["Effective Radiative Forcing|N2O"]
 
     # Compare ERF outputs against MAGICC7 reference
     assert_allclose_recorded(
         actual_erf_co2,
-        expected_erf_co2[:-1],
+        expected_erf_co2,
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
         suite="ghg_forcing",
@@ -293,7 +255,7 @@ def test_01_concentration_driven():
     )
     assert_allclose_recorded(
         actual_erf_ch4,
-        expected_erf_ch4[:-1],
+        expected_erf_ch4,
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
         suite="ghg_forcing",
@@ -302,7 +264,7 @@ def test_01_concentration_driven():
     )
     assert_allclose_recorded(
         actual_erf_n2o,
-        expected_erf_n2o[:-1],
+        expected_erf_n2o,
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
         suite="ghg_forcing",
@@ -325,8 +287,8 @@ def test_02_ghg_forcing_olbl():
     Variables compared:
     - Effective Radiative Forcing|CO2/CH4/N2O
 
-    Note: Surface Temperature comparison requires ClimateUDEB integration
-    which needs scalar-to-FourBox bridging (not yet implemented).
+    Runs the coupled concentration-to-temperature path. Forcing parity is
+    checked here; climate output must be finite throughout the run.
     """
     df, config = load_data("02_ghg_forcing_olbl")
 
@@ -348,26 +310,18 @@ def test_02_ghg_forcing_olbl():
     _, expected_erf_n2o = get_variable_values(df, "Effective Radiative Forcing|N2O")
 
     # Build and run model
-    model = build_ghg_forcing_model(years, co2_conc, ch4_conc, n2o_conc, config)
-    model.run()
+    results = run_concentration_case(years, co2_conc, ch4_conc, n2o_conc, config)
+    assert np.isfinite(results.values["Surface Temperature"]).all()
 
-    results = model.timeseries()
-
-    # Extract actual forcing outputs (skip index 0 = NaN initial state)
-    actual_erf_co2 = results.get_timeseries_by_name(
-        "Effective Radiative Forcing|CO2"
-    ).values()[1:]
-    actual_erf_ch4 = results.get_timeseries_by_name(
-        "Effective Radiative Forcing|CH4"
-    ).values()[1:]
-    actual_erf_n2o = results.get_timeseries_by_name(
-        "Effective Radiative Forcing|N2O"
-    ).values()[1:]
+    # Extract forcing at every boundary, including the initial and final years.
+    actual_erf_co2 = results.values["Effective Radiative Forcing|CO2"]
+    actual_erf_ch4 = results.values["Effective Radiative Forcing|CH4"]
+    actual_erf_n2o = results.values["Effective Radiative Forcing|N2O"]
 
     # Compare ERF outputs against MAGICC7 reference
     assert_allclose_recorded(
         actual_erf_co2,
-        expected_erf_co2[:-1],
+        expected_erf_co2,
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
         suite="ghg_forcing",
@@ -376,7 +330,7 @@ def test_02_ghg_forcing_olbl():
     )
     assert_allclose_recorded(
         actual_erf_ch4,
-        expected_erf_ch4[:-1],
+        expected_erf_ch4,
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
         suite="ghg_forcing",
@@ -385,7 +339,7 @@ def test_02_ghg_forcing_olbl():
     )
     assert_allclose_recorded(
         actual_erf_n2o,
-        expected_erf_n2o[:-1],
+        expected_erf_n2o,
         rtol=DEFAULT_RTOL,
         atol=DEFAULT_ATOL,
         suite="ghg_forcing",

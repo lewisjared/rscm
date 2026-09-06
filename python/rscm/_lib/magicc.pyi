@@ -57,6 +57,8 @@ class ClimateUDEBParams(TypedDict, total=False):
     amplify_ocean_to_land: float
     nh_land_fraction: float
     sh_land_fraction: float
+    efficacy_apply: int
+    prescribed_efficacy_co2: float
     temp_adjust_alpha: float
     temp_adjust_gamma: float
     polar_sinking_ratio: float
@@ -149,6 +151,8 @@ class ClimateUDEBBuilder(ComponentBuilder):
     >>> component = builder.build()
     """
 
+    def initial_values(self, erf: float) -> dict[str, float]:
+        """Return initial state and diagnostics at zero temperature anomaly."""
     @staticmethod
     def from_parameters(parameters: ClimateUDEBParams) -> ClimateUDEBBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
@@ -968,16 +972,17 @@ class GhgForcingParams(TypedDict, total=False):
     delq2xco2: float
     ch4_radeff: float
     n2o_radeff: float
-    etminan_co2_a1: float
-    etminan_co2_a2: float
-    etminan_co2_a3_n2o: float
-    etminan_co2_a3_offset: float
-    etminan_ch4_b1: float
-    etminan_ch4_b2: float
-    etminan_ch4_b3: float
-    etminan_n2o_c1: float
-    etminan_n2o_c2: float
-    etminan_n2o_c3: float
+    olbl_co2_a1: float
+    olbl_co2_b1: float
+    olbl_co2_c1: float
+    olbl_co2_d1: float
+    olbl_ch4_a3: float
+    olbl_ch4_b3: float
+    olbl_ch4_d3: float
+    olbl_n2o_a2: float
+    olbl_n2o_b2: float
+    olbl_n2o_c2: float
+    olbl_n2o_d2: float
     adjust_co2: float
     adjust_ch4: float
     adjust_n2o: float
@@ -987,7 +992,7 @@ class GhgForcingBuilder(ComponentBuilder):
     """Builder for the GHG radiative forcing component.
 
     Calculates effective radiative forcing from CO2, CH4, and N2O
-    concentrations using IPCCTAR or Etminan methods with optional
+    concentrations using IPCCTAR or OLBL methods with optional
     rapid adjustment factors.
 
     # Parameters
@@ -1007,7 +1012,7 @@ class GhgForcingBuilder(ComponentBuilder):
     # adjust_ch4 : float
     #     Rapid adjustment factor for CH4. Default: 0.86
     # adjust_n2o : float
-    #     Rapid adjustment factor for N2O. Default: 0.93
+    #     Rapid adjustment factor for N2O. Default: 1.0
 
     Inputs
     ------
@@ -1044,3 +1049,10 @@ class GhgForcingBuilder(ComponentBuilder):
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the GHG radiative forcing component."""
+    def calculate_forcings(
+        self, co2: float, ch4: float, n2o: float
+    ) -> dict[str, float]:
+        """Evaluate boundary ERF in W/m², keyed by CO2, CH4 and N2O.
+
+        Concentrations must be finite and positive, in ppm, ppb and ppb.
+        """

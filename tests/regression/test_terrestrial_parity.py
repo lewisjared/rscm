@@ -319,7 +319,7 @@ def test_parity_comparison_rejects_invalid_output(monkeypatch, values):
 
 
 @pytest.mark.parametrize("operation", ["run", "step"])
-def test_nonannual_model_interval_returns_value_error(operation):
+def test_nonannual_model_interval_returns_runtime_error(operation):
     """The Python model must report unsupported timesteps as ordinary errors."""
     years = np.array([2000.0, 2000.5, 2001.0])
     model = _build_terrestrial_model(
@@ -333,6 +333,6 @@ def test_nonannual_model_interval_returns_value_error(operation):
             "Carbon Pool|Soil": 1500.0,
         },
     )
-    with pytest.raises(ValueError, match="only supports annual timesteps"):
+    with pytest.raises(RuntimeError, match="only supports annual timesteps"):
         getattr(model, operation)()
     assert model.current_time() == years[0]

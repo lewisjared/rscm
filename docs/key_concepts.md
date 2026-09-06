@@ -149,7 +149,7 @@ When you add components to a model, the builder constructs a **dependency graph*
 
 ### Model Execution
 
-The model solves components in dependency order using breadth-first search (BFS):
+The model solves components in dependency order using a topological sort:
 
 ```mermaid
 sequenceDiagram
