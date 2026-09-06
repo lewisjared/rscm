@@ -115,7 +115,6 @@ TERR_VARS = [
     "NOFEED_DETRITUS_POOL",
     "NETHUMAN_CO2EMIS",
     "TERRBIO_AND_FOSSIL_EMIS",
-    "CO2B_EMIS",
 ]
 
 # Map CARBONCYCLE column names to RSCM-style variable names for the CSV
@@ -175,6 +174,7 @@ VAR_UNIT_MAP = {
     "No-Feedback Pool|Plant": "GtC",
     "No-Feedback Pool|Soil": "GtC",
     "No-Feedback Pool|Detritus": "GtC",
+    "Emissions|CO2|Land Use": "GtC/yr",
     "Emissions|CO2|Net Human": "GtC/yr",
     "Emissions|CO2|Terrestrial Bio and Fossil": "GtC/yr",
 }
@@ -231,7 +231,10 @@ def carboncycle_to_regression_csv(
     output as driving inputs for RSCM parity comparisons.
     """
     if variables is None:
-        variables = TERR_VARS
+        variables = list(TERR_VARS)
+        # This optional driving input is not a CARBONCYCLE.OUT diagnostic.
+        if "CO2B_EMIS" in cc_df.columns:
+            variables.append("CO2B_EMIS")
 
     # Build wide-format CSV matching the existing regression data format
     rows = []
@@ -289,6 +292,8 @@ def carboncycle_to_regression_csv(
             for dt_idx, val in ts.items():
                 timestamp = f"{dt_idx.year}-01-01 00:00:00"
                 row[timestamp] = val
+            # Prefer standard driving inputs over any optional raw DAT fallback.
+            rows = [r for r in rows if r["variable"] != scm_var]
             rows.append(row)
 
     wide_df = pd.DataFrame(rows)

@@ -45,7 +45,7 @@ use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
     RequirementType,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -667,6 +667,12 @@ impl TerrestrialCarbon {
         input_state: &InputState,
         state: &mut TerrestrialCarbonState,
     ) -> RSCMResult<OutputState> {
+        let dt = t_next - t_current;
+        if !dt.is_finite() || (dt - 1.0).abs() >= 1e-6 {
+            return Err(RSCMError::Error(format!(
+                "TerrestrialCarbon only supports annual timesteps (dt=1.0), got dt={dt}"
+            )));
+        }
         let inputs = TerrestrialCarbonInputs::from_input_state(input_state);
 
         let co2 = inputs.co2_concentration.get();
@@ -676,8 +682,6 @@ impl TerrestrialCarbon {
         let plant = inputs.plant_pool.at_start();
         let detritus = inputs.detritus_pool.at_start();
         let soil = inputs.soil_pool.at_start();
-
-        let dt = t_next - t_current;
 
         let result = self.solve_terrestrial(
             state,

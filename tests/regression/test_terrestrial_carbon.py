@@ -22,7 +22,6 @@ Run with:
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from regression.helpers import (
     get_variable_values,
@@ -176,11 +175,8 @@ class TestCO2AndTemperature:
         )
 
     def test_warming_reduces_sink_vs_no_temp(self):
-        try:
-            df_no_temp, _ = _load("02_co2_fertilization_only")
-            df_with_temp, _ = _load(self.NAME)
-        except Exception:
-            pytest.skip("Requires both test 02 and 03 reference data")
+        df_no_temp, _ = _load("02_co2_fertilization_only")
+        df_with_temp, _ = _load(self.NAME)
 
         _, pools_no_temp = _get(df_no_temp, "Carbon Pool|Plant")
         _, pools_with_temp = _get(df_with_temp, "Carbon Pool|Plant")
@@ -287,11 +283,8 @@ class TestGiffordFertilization:
 
     def test_gifford_differs_from_default_blend(self):
         """Pure Gifford (method=2.0) should differ from default blend (method=1.10)."""
-        try:
-            df_blend, _ = _load("02_co2_fertilization_only")
-            df_giff, _ = _load(self.NAME)
-        except Exception:
-            pytest.skip("Requires both test 02 and 05 reference data")
+        df_blend, _ = _load("02_co2_fertilization_only")
+        df_giff, _ = _load(self.NAME)
 
         _, fert_blend = _get(df_blend, "CO2 Fertilization Factor")
         _, fert_giff = _get(df_giff, "CO2 Fertilization Factor")
@@ -322,11 +315,8 @@ class TestRespirationMethod2:
     NAME = "06_resp_method2"
 
     def test_respiration_differs_from_method1(self):
-        try:
-            df_m1, _ = _load("03_co2_and_temperature")
-            df_m2, _ = _load(self.NAME)
-        except Exception:
-            pytest.skip("Requires both test 03 and 06 reference data")
+        df_m1, _ = _load("03_co2_and_temperature")
+        df_m2, _ = _load(self.NAME)
 
         _, resp_m1 = _get(df_m1, "Respiration|Terrestrial")
         _, resp_m2 = _get(df_m2, "Respiration|Terrestrial")

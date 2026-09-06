@@ -173,11 +173,17 @@ impl PyModel {
         self.0.current_time_bounds()
     }
 
-    fn step(mut self_: PyRefMut<Self>) {
-        self_.0.step()
+    fn step(mut self_: PyRefMut<Self>) -> PyResult<()> {
+        self_
+            .0
+            .try_step()
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
-    fn run(mut self_: PyRefMut<Self>) {
-        self_.0.run()
+    fn run(mut self_: PyRefMut<Self>) -> PyResult<()> {
+        self_
+            .0
+            .try_run()
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     fn as_dot(&self) -> String {

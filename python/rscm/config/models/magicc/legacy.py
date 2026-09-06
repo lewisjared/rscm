@@ -57,7 +57,9 @@ def from_legacy_dict(legacy: dict[str, Any]) -> dict[str, Any]:
     Notes
     -----
     - SUPPORTED parameters: imported and used
-    - NOT_IMPLEMENTED: logged at INFO, ignored
+    - The global CO2 temperature-feedback switch is rejected: configure
+      feedbacks explicitly on the individual components instead.
+    - Other NOT_IMPLEMENTED parameters: logged at INFO, ignored
     - NOT_NEEDED: ignored silently
     - DEPRECATED: logged at WARNING, ignored
     - Unknown: logged at WARNING
@@ -66,6 +68,14 @@ def from_legacy_dict(legacy: dict[str, Any]) -> dict[str, Any]:
 
     for key, value in legacy.items():
         key_lower = key.lower()
+
+        if key_lower == "co2_tempfeedback_switch":
+            msg = (
+                "co2_tempfeedback_switch is not supported. Configure temperature "
+                "feedbacks explicitly on each component, including terrestrial "
+                "tempfeedback_yrstart, instead of importing the global switch."
+            )
+            raise ValueError(msg)
 
         if key_lower in LEGACY_MAPPING:
             # SUPPORTED parameter - map to RSCM config

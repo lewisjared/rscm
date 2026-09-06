@@ -365,7 +365,7 @@ impl Model {
     /// to be later used by other components.
     /// The output state defines the values at the next time index as it represents the state
     /// at the start of the next timestep.
-    fn step_model_component(&mut self, component: C, node_index: NodeIndex) {
+    fn step_model_component(&mut self, component: C, node_index: NodeIndex) -> RSCMResult<()> {
         // Get component name for unit conversion lookup
         let component_name = Self::extract_component_name(&component);
 
@@ -490,10 +490,9 @@ impl Model {
                     }
                 }
             }
-            Err(err) => {
-                println!("Solving failed: {}", err)
-            }
+            Err(err) => return Err(err),
         }
+        Ok(())
     }
 
     /// Step the model forward a step by solving each component for the current time step.
@@ -501,29 +500,48 @@ impl Model {
     /// A breadth-first search across the component graph starting at the initial node
     /// will solve the components in a way that ensures any models with dependencies are solved
     /// after the dependent component is first solved.
-    fn step_model(&mut self) {
+    fn step_model(&mut self) -> RSCMResult<()> {
         let mut bfs = Bfs::new(&self.components, self.initial_node);
         while let Some(nx) = bfs.next(&self.components) {
             let c = self.components.index(nx);
-            self.step_model_component(c.clone(), nx)
+            self.step_model_component(c.clone(), nx)?;
         }
+        Ok(())
     }
 
     /// Steps the model forward one time step.
     ///
-    /// This solves the current time step and then updates the index.
+    /// Panics on a component error. Use [`Self::try_step`] to handle errors.
     pub fn step(&mut self) {
-        assert!(self.time_index < self.time_axis.len() - 1);
-        self.step_model();
+        self.try_step().expect("Model step failed");
+    }
 
+    /// Steps the model, returning component errors without advancing the time index.
+    ///
+    /// Earlier components may already have updated their state or outputs when a
+    /// later component fails. Discard or restore the model before retrying.
+    pub fn try_step(&mut self) -> RSCMResult<()> {
+        assert!(self.time_index < self.time_axis.len() - 1);
+        self.step_model()?;
         self.time_index += 1;
+        Ok(())
     }
 
     /// Steps the model until the end of the time axis.
+    ///
+    /// Panics on a component error. Use [`Self::try_run`] to handle errors.
     pub fn run(&mut self) {
+        self.try_run().expect("Model run failed");
+    }
+
+    /// Runs until the end of the time axis or the first component error.
+    ///
+    /// As with [`Self::try_step`], a failed step may have partially updated state.
+    pub fn try_run(&mut self) -> RSCMResult<()> {
         while self.time_index < self.time_axis.len() - 1 {
-            self.step();
+            self.try_step()?;
         }
+        Ok(())
     }
 
     /// Create a diagram that represents the component graph.

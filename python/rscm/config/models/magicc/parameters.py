@@ -350,7 +350,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         name="co2_tempfeedback_switch",
         status=ParameterStatus.NOT_IMPLEMENTED,
         unit=None,
-        description="Enable/disable CO2 temperature feedback (0/1)",
+        description="Global CO2 temperature feedback switch (0/1); rejected on import",
         category="carbon_cycle",
     ),
     "co2_fertilization_method": ParameterInfo(
