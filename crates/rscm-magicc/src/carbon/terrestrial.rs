@@ -21,7 +21,8 @@
 //! # Inputs
 //!
 //! - `Atmospheric Concentration|CO2` (ppm)
-//! - `Surface Temperature` (K) - temperature anomaly
+//! - `Surface Temperature` (K) - temperature anomaly. The feedbacks use the
+//!   warming since `tempfeedback_yrstart`, floored at zero
 //! - `Emissions|CO2|Land Use` (GtC/yr)
 //!
 //! # States (tracked between timesteps)
@@ -41,6 +42,7 @@
 use std::any::Any;
 
 use crate::parameters::TerrestrialCarbonParameters;
+use crate::reference::feedback_warming;
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
     RequirementType,
@@ -676,7 +678,11 @@ impl TerrestrialCarbon {
         let inputs = TerrestrialCarbonInputs::from_input_state(input_state);
 
         let co2 = inputs.co2_concentration.get();
-        let temperature = inputs.temperature.get();
+        let temperature = feedback_warming(
+            &inputs.temperature,
+            t_current,
+            self.parameters.tempfeedback_yrstart,
+        );
         let landuse = inputs.landuse_emissions.get();
 
         let plant = inputs.plant_pool.at_start();

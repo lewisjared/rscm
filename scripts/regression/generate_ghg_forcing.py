@@ -24,6 +24,7 @@ from utils import (
     make_config,
     output_dir,
     run_magicc,
+    run_magicc_ctx,
     run_suite,
     save_results,
 )
@@ -93,45 +94,95 @@ def test_02_ghg_forcing_olbl():
     return res
 
 
+#: MAGICC7 outputs for the emissions-driven case, written via OUT_DYNAMIC_VARS.
+#: Enabling every output category exceeds the Fortran file unit limit.
+EMISSIONS_DRIVEN_DAT_VARS = [
+    "DAT_CO2_CONC",
+    "DAT_CH4_CONC",
+    "DAT_N2O_CONC",
+    "DAT_PCO2S_CONC",
+    "DAT_CO2I_EMIS",
+    "DAT_CO2B_EMIS",
+    "DAT_CH4I_EMIS",
+    "DAT_CH4B_EMIS",
+    "DAT_CH4N_EMIS",
+    "DAT_N2OI_EMIS",
+    "DAT_N2OB_EMIS",
+    "DAT_N2ON_EMIS",
+    "DAT_NOXI_EMIS",
+    "DAT_NOXB_EMIS",
+    "DAT_COI_EMIS",
+    "DAT_COB_EMIS",
+    "DAT_NMVOCI_EMIS",
+    "DAT_NMVOCB_EMIS",
+    "DAT_CH4_2CO2_OXIDISATION_EMIS",
+    "DAT_CO2_AIR2LAND_FLUX",
+    "DAT_CO2_AIR2OCEAN_FLUX",
+    "DAT_CH4_TAUTOT",
+    "DAT_N2O_TAUTOT",
+    "DAT_CO2_ERF",
+    "DAT_CH4_ERF",
+    "DAT_N2O_ERF",
+    "DAT_TOTAL_INCLVOLCANIC_ERF",
+    "DAT_SURFACE_TEMP",
+]
+
+
 def test_03_emissions_driven():
-    """Emissions-driven run with SSP245."""
+    """Emissions-driven SSP245 with coupled carbon cycle and chemistry.
+
+    CO2, CH4 and N2O are emissions-driven from the first year. Permafrost,
+    volcanic and solar forcing and internal variability are disabled: RSCM has
+    no permafrost module, and annual residual forcing cannot carry MAGICC7's
+    sub-annual volcanic forcing.
+    """
     config = make_config(
         DEFAULT_CLIMATE,
+        NO_VARIABILITY,
         startyear=1750,
-        endyear=2100,
+        endyear=2105,
         file_emisscen="SSP245_EMMS.SCEN7",
+        co2_switchfromconc2emis_year=1750,
+        ch4_switchfromconc2emis_year=1750,
+        n2o_switchfromconc2emis_year=1750,
+        pf_apply=0,
     )
 
+    with run_magicc_ctx() as m:
+        m.set_output_variables(write_ascii=True, write_binary=False)
+        res = m.run(**config, out_dynamic_vars=EMISSIONS_DRIVEN_DAT_VARS)
+    res = res.filter(year=range(1750, 2101))
+
     out_vars = [
-        "DAT_CO2_CONC",
-        "DAT_CH4_CONC",
-        "DAT_N2O_CONC",
-        "DAT_CO2_RF",
-        "DAT_CH4_RF",
-        "DAT_N2O_RF",
-        "DAT_TOTAL_INCLVOLCANIC_RF",
-        "DAT_TOTAL_INCLVOLCANIC_ERF",
-        "DAT_SURFACE_TEMP",
-        "DAT_CO2_EMIS",
-        "DAT_CO2I_EMIS",
-        "DAT_CO2B_EMIS",
-        "DAT_CH4_EMIS",
-        "DAT_N2O_EMIS",
+        "Atmospheric Concentrations|CO2",
+        "Atmospheric Concentrations|CH4",
+        "Atmospheric Concentrations|N2O",
+        "PCO2S_CONC",
+        "Emissions|CO2|MAGICC Fossil and Industrial",
+        "Emissions|CO2|MAGICC AFOLU",
+        "Emissions|CH4|MAGICC Fossil and Industrial",
+        "Emissions|CH4|MAGICC AFOLU",
+        "CH4N_EMIS",
+        "Emissions|N2O|MAGICC Fossil and Industrial",
+        "Emissions|N2O|MAGICC AFOLU",
+        "N2ON_EMIS",
         "Emissions|NOx|MAGICC Fossil and Industrial",
         "Emissions|NOx|MAGICC AFOLU",
         "Emissions|CO|MAGICC Fossil and Industrial",
         "Emissions|CO|MAGICC AFOLU",
         "Emissions|NMVOC|MAGICC Fossil and Industrial",
         "Emissions|NMVOC|MAGICC AFOLU",
-        "Emissions|SOx|MAGICC Fossil and Industrial",
-        "Emissions|SOx|MAGICC AFOLU",
-        "Emissions|BC|MAGICC Fossil and Industrial",
-        "Emissions|BC|MAGICC AFOLU",
-        "Emissions|OC|MAGICC Fossil and Industrial",
-        "Emissions|OC|MAGICC AFOLU",
+        "CH4_2CO2_OXIDISATION_EMIS",
+        "Net Atmosphere to Land Flux|CO2",
+        "Net Atmosphere to Ocean Flux|CO2",
+        "CH4_TAUTOT",
+        "N2O_TAUTOT",
+        "Effective Radiative Forcing|CO2",
+        "Effective Radiative Forcing|CH4",
+        "Effective Radiative Forcing|N2O",
+        "Effective Radiative Forcing",
+        "Surface Temperature",
     ]
-
-    res = run_magicc(config)
     save_results(res, "03_emissions_driven", config, out_vars, output_dir=OUT)
     return res
 

@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 /// The CO2 budget integrates emissions and uptakes to calculate the change
 /// in atmospheric CO2 concentration:
 ///
-/// $$\Delta C_{atm} = \frac{E_{fossil} + E_{landuse} - F_{land} - F_{ocean}}{GtC\_per\_ppm}$$
+/// $$\Delta C_{atm} = \frac{E_{fossil} + E_{CH_4\,ox} - F_{land} - F_{ocean}}{GtC\_per\_ppm}$$
 ///
-/// where fluxes are positive when removing CO2 from the atmosphere.
+/// where fluxes are positive when removing CO2 from the atmosphere and the
+/// land flux includes land-use emissions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CO2BudgetParameters {

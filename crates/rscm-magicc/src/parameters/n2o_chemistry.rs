@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 /// where:
 /// - $\tau_{init}$ is the base lifetime
 /// - $\bar{B}$ is the mid-year burden estimate
-/// - $B_0$ is the reference burden at pre-industrial
+/// - $B_0$ is the reference burden in the year before `feedback_start_year`
 /// - $S$ is the feedback exponent (negative, so lifetime decreases slightly with higher burden)
 ///
 /// # Stratospheric Delay
@@ -38,14 +38,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct N2OChemistryParameters {
-    /// Pre-industrial N2O concentration used as reference for feedbacks
-    /// unit: ppb
-    /// default: 270.0
-    pub n2o_pi: FloatValue,
+    /// Year from which the concentration feedback is measured (`N2O_FEED_YRSTART`).
+    /// The reference concentration is taken from the year before.
+    /// unit: year
+    /// default: 1925.0
+    pub feedback_start_year: FloatValue,
 
     /// Natural N2O emissions (soils, oceans, etc.)
+    /// MAGICC7 closes the 1982-1991 budget against observed concentrations.
+    /// The default is the value it derives for its standard historical inputs.
     /// unit: Mt N/yr
-    /// default: 11.0
+    /// default: 8.0345017
     pub natural_emissions: FloatValue,
 
     /// Base atmospheric lifetime (τ_init)
@@ -57,7 +60,6 @@ pub struct N2OChemistryParameters {
     /// Lifetime feedback exponent (S)
     /// With S < 0, higher concentrations give slightly shorter lifetime:
     /// tau = tau_init * max(1, ratio)^S, and ratio^(-0.04) < 1 when ratio > 1.
-    /// This is a very weak feedback compared to CH4 (S = -0.04 vs CH4's ~-0.23).
     /// unit: dimensionless
     /// default: -0.04
     pub lifetime_feedback: FloatValue,
@@ -69,21 +71,46 @@ pub struct N2OChemistryParameters {
     pub strat_delay: usize,
 
     /// Conversion factor from ppb to Tg N
-    /// Based on molecular weight (28 g/mol for N in N2O) and atmospheric moles
     /// unit: Tg N/ppb
     /// default: 4.79
     pub ppb_to_tg: FloatValue,
+
+    /// Enable the stratospheric lifetime response to meridional flux changes
+    /// (`N2O_USE_TAUSTRAT_VAR`)
+    /// default: true
+    pub include_meridional_flux_feedback: bool,
+
+    /// Fractional change in meridional flux per degree of warming
+    /// (`GEN_MERIDFLUX_CHNGPERDEG`)
+    /// unit: K^-1
+    /// default: 0.15
+    pub meridional_flux_change_per_degree: FloatValue,
+
+    /// Lifetime sensitivity to meridional flux changes (`N2O_TAUSTRAT_SENS2MERIDFLUX`)
+    /// unit: dimensionless
+    /// default: 0.04
+    pub tau_sensitivity_to_meridional_flux: FloatValue,
+
+    /// Year from which warming changes the meridional flux
+    /// (`GEN_CHANGE_MERIDIONALFLUX_YR`)
+    /// unit: year
+    /// default: 1980.0
+    pub meridional_flux_reference_year: FloatValue,
 }
 
 impl Default for N2OChemistryParameters {
     fn default() -> Self {
         Self {
-            n2o_pi: 270.0,
-            natural_emissions: 11.0,
+            feedback_start_year: 1925.0,
+            natural_emissions: 8.0345017,
             tau_n2o: 139.275,
             lifetime_feedback: -0.04,
             strat_delay: 1,
             ppb_to_tg: 4.79,
+            include_meridional_flux_feedback: true,
+            meridional_flux_change_per_degree: 0.15,
+            tau_sensitivity_to_meridional_flux: 0.04,
+            meridional_flux_reference_year: 1980.0,
         }
     }
 }
@@ -95,7 +122,7 @@ mod tests {
     #[test]
     fn test_default_parameters() {
         let params = N2OChemistryParameters::default();
-        assert!((params.n2o_pi - 270.0).abs() < 1e-10);
+        assert!((params.feedback_start_year - 1925.0).abs() < 1e-10);
         assert!((params.tau_n2o - 139.275).abs() < 1e-10);
         assert!((params.ppb_to_tg - 4.79).abs() < 1e-10);
     }
@@ -123,7 +150,6 @@ mod tests {
     #[test]
     fn test_natural_emissions_reasonable() {
         let params = N2OChemistryParameters::default();
-        // Natural emissions should be in reasonable range (9-13 Mt N/yr)
         assert!(
             params.natural_emissions > 5.0 && params.natural_emissions < 20.0,
             "Natural emissions should be in reasonable range"

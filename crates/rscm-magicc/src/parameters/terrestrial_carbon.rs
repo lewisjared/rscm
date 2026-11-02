@@ -157,7 +157,8 @@ pub struct TerrestrialCarbonParameters {
     /// MAGICC7: CO2_FEEDBACKFACTOR_SOIL
     pub soil_temp_sensitivity: FloatValue,
 
-    /// Year before which temperature feedbacks are disabled.
+    /// Year from which warming drives the temperature feedbacks.
+    /// Feedbacks use the warming since this year, floored at zero.
     /// unit: year
     /// MAGICC7: CO2_TEMPFEEDBACK_YRSTART
     pub tempfeedback_yrstart: FloatValue,

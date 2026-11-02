@@ -9,6 +9,7 @@
 //! 1. Calculates the effective N2O atmospheric lifetime including:
 //!    - Stratospheric photolysis/destruction (primary sink)
 //!    - Concentration-dependent feedback (with default parameters, higher N2O → shorter lifetime)
+//!    - Faster stratospheric overturning with warming (meridional flux feedback)
 //!
 //! 2. Solves the mass balance equation using 4 fixed-point iterations:
 //!    $$\frac{dB}{dt} = E - \frac{\bar{B}_{lagged}}{\tau}$$
@@ -19,27 +20,29 @@
 //! # Inputs
 //!
 //! - `Emissions|N2O` (Mt N/yr) - Anthropogenic N2O emissions
+//! - `Surface Temperature` (K) - Global mean surface temperature anomaly
 //!
 //! # Outputs
 //!
 //! - `Atmospheric Concentration|N2O` (ppb) - Updated N2O concentration
 //! - `Lifetime|N2O` (yr) - Effective N2O lifetime
 //!
-//! # Differences from MAGICC7 Module 02
+//! # Feedback references
 //!
-//! This is a simplified implementation:
+//! As in MAGICC7, the concentration feedback is measured from the year before
+//! `feedback_start_year`, and warming changes the meridional flux relative to
+//! `meridional_flux_reference_year`. References outside the run are clamped to
+//! its first or last year.
+//!
+//! # Differences from MAGICC7 Module 02
 //!
 //! - **Budget initialisation**: MAGICC7 calculates natural emissions to close
 //!   the budget over a reference period. Here, natural emissions are fixed.
-//! - **Meridional flux feedback**: MAGICC7 can adjust lifetime based on
-//!   Brewer-Dobson circulation changes with temperature. Not implemented.
 //! - **Prescribed/calculated switch**: MAGICC7 can switch between prescribed
 //!   and calculated concentrations by year. Here, always emissions-driven.
-//! - **Stratospheric delay history**: MAGICC7 uses concentrations from both
-//!   t-delay and t-delay-1. Here, we use t-1 and t-2 concentrations assuming
-//!   annual timesteps with delay=1.
 
 use crate::parameters::N2OChemistryParameters;
+use crate::reference::value_at_year;
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
@@ -49,36 +52,20 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// Number of fixed-point iterations (matches MAGICC7)
+/// Number of fixed-point iterations (fixed per MAGICC7 implementation)
 const PRATHER_ITERATIONS: usize = 4;
 
 /// N2O atmospheric chemistry component
 ///
-/// Implements Prather-style fixed-point iterations for solving the N2O mass
-/// balance equation. The method accounts for:
-///
-/// 1. **Concentration feedback**: With default parameters (S = -0.04), higher
-///    N2O concentrations lead to slightly shorter lifetime.
-///
-/// 2. **Stratospheric delay**: The sink term uses lagged concentrations
-///    because N2O must first be transported from the troposphere to the
-///    stratosphere before destruction can occur.
-///
-/// # Algorithm
-///
-/// For each timestep, performs 4 fixed-point iterations:
-///
-/// 1. Calculate mid-year burden: $\bar{B}_n = (B + B_{n-1}) / 2$
-/// 2. Calculate effective lifetime: $\tau_n = \tau_0 \cdot \max(1, \bar{B}_n/B_{ref})^S$
-/// 3. Calculate burden change: $\Delta B_n = E - \bar{B}_{lagged}/\tau_n$
-/// 4. Update burden: $B_n = B_{prev} + \Delta B_n$
-///
-/// Note: Unlike CH4, the sink term uses the lagged average burden
-/// ($\bar{B}_{lagged}$), not the current mid-year estimate.
+/// Implements the MAGICC7 `NITROUS` scheme. Starting from the burden $B$ at the
+/// start of the year, each iteration estimates the mid-year burden, evaluates
+/// the lifetime from it and integrates the sink using the burden averaged over
+/// the delayed years.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["chemistry", "n2o", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
     n2o_emissions { name = "Emissions|N2O", unit = "Mt N/yr" },
+    temperature { name = "Surface Temperature", unit = "K" },
 )]
 #[states(
     n2o_concentration { name = "Atmospheric Concentration|N2O", unit = "ppb" },
@@ -111,101 +98,54 @@ impl N2OChemistry {
         burden / self.parameters.ppb_to_tg
     }
 
-    /// Calculate effective lifetime with concentration feedback
-    ///
-    /// $$\tau = \tau_{init} \cdot \max\left(1, \frac{\bar{B}}{B_{ref}}\right)^S$$
-    ///
-    /// With the default $S = -0.04$, higher concentrations give slightly shorter
-    /// lifetime (ratio^(-0.04) < 1 when ratio > 1). This is a very weak feedback
-    /// compared to CH4.
-    ///
-    /// Note: The floor `max(1, ratio)` ensures lifetime never increases above
-    /// `tau_init` when concentration is below reference.
-    fn calculate_effective_lifetime(
-        &self,
-        burden_mid: FloatValue,
-        burden_reference: FloatValue,
-    ) -> FloatValue {
-        let ratio = (burden_mid / burden_reference).max(1.0);
-        self.parameters.tau_n2o * ratio.powf(self.parameters.lifetime_feedback)
+    /// Lifetime scaling from faster stratospheric overturning with warming
+    fn meridional_flux_scale(&self, temperature_change: FloatValue) -> FloatValue {
+        if !self.parameters.include_meridional_flux_feedback {
+            return 1.0;
+        }
+        let p = &self.parameters;
+        1.0 / (1.0
+            + temperature_change.max(0.0)
+                * p.meridional_flux_change_per_degree
+                * p.tau_sensitivity_to_meridional_flux)
     }
 
-    /// Perform one fixed-point iteration
+    /// Solve one timestep with 4 fixed-point iterations
     ///
-    /// Returns (new_burden, effective_lifetime)
-    fn iteration(
-        &self,
-        burden_current: FloatValue,
-        burden_prev: FloatValue,
-        burden_reference: FloatValue,
-        burden_lagged: FloatValue,
-        total_emissions: FloatValue,
-        dt: FloatValue,
-    ) -> (FloatValue, FloatValue) {
-        // 1. Calculate mid-timestep burden estimate
-        let burden_mid = (burden_prev + burden_current) / 2.0;
-
-        // 2. Calculate effective lifetime with concentration feedback
-        let tau_eff = self.calculate_effective_lifetime(burden_mid, burden_reference);
-
-        // 3. Calculate burden change rate (Tg/yr), then scale by timestep length
-        // dB/dt = E - B_lagged/tau, so delta_B = (E - B_lagged/tau) * dt
-        let burden_change_rate = total_emissions - burden_lagged / tau_eff;
-        let delta_burden = burden_change_rate * dt;
-
-        // 4. New burden
-        let new_burden = burden_prev + delta_burden;
-
-        (new_burden, tau_eff)
-    }
-
-    /// Run the full iteration scheme (4 iterations)
-    ///
-    /// # Arguments
-    ///
-    /// * `n2o_prev` - N2O concentration at start of timestep (ppb)
-    /// * `n2o_current` - Current N2O concentration estimate (ppb)
-    /// * `n2o_lagged` - Lagged N2O concentration for sink term (ppb)
-    /// * `anthropogenic_emissions` - Anthropogenic N2O emissions (Mt N/yr)
-    /// * `dt` - Timestep length (years)
+    /// `n2o_lagged` is the mean concentration over the delayed years and
+    /// `temperature_change` is the warming since the meridional flux reference.
+    /// Returns the concentration at the end of the step and the lifetime.
     pub fn solve_concentration(
         &self,
-        n2o_prev: FloatValue,
-        n2o_current: FloatValue,
+        n2o_start: FloatValue,
+        n2o_reference: FloatValue,
         n2o_lagged: FloatValue,
         anthropogenic_emissions: FloatValue,
+        temperature_change: FloatValue,
         dt: FloatValue,
     ) -> (FloatValue, FloatValue) {
-        // Total emissions = anthropogenic + natural
         let total_emissions = anthropogenic_emissions + self.parameters.natural_emissions;
-
-        // Convert to burdens
-        let burden_prev = self.concentration_to_burden(n2o_prev);
+        let burden = self.concentration_to_burden(n2o_start);
+        let burden_reference = self.concentration_to_burden(n2o_reference);
         let burden_lagged = self.concentration_to_burden(n2o_lagged);
-        let burden_reference = self.concentration_to_burden(self.parameters.n2o_pi);
+        let tau_base = self.meridional_flux_scale(temperature_change) * self.parameters.tau_n2o;
 
-        // Initial guess: burden at start of timestep
-        let mut burden = self.concentration_to_burden(n2o_current);
-        let mut tau_eff = self.parameters.tau_n2o;
-
-        // Run fixed-point iterations
-        for _ in 0..PRATHER_ITERATIONS {
-            let (new_burden, tau) = self.iteration(
-                burden,
-                burden_prev,
-                burden_reference,
-                burden_lagged,
-                total_emissions,
-                dt,
-            );
-            burden = new_burden;
-            tau_eff = tau;
+        let mut burden_next = burden;
+        let mut tau = tau_base;
+        for iteration in 0..PRATHER_ITERATIONS {
+            let burden_mean = if iteration == 0 {
+                burden
+            } else {
+                (burden + burden_next) / 2.0
+            };
+            tau = tau_base
+                * (burden_mean / burden_reference)
+                    .max(1.0)
+                    .powf(self.parameters.lifetime_feedback);
+            burden_next = burden + (total_emissions - burden_lagged / tau) * dt;
         }
 
-        // Convert back to concentration
-        let new_concentration = self.burden_to_concentration(burden);
-
-        (new_concentration, tau_eff)
+        (self.burden_to_concentration(burden_next), tau)
     }
 }
 
@@ -228,42 +168,46 @@ impl Component for N2OChemistry {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let inputs = N2OChemistryInputs::from_input_state(input_state);
+        let p = &self.parameters;
+        let concentration = &inputs.n2o_concentration;
 
-        // Calculate timestep length in years
-        let dt = t_next - t_current;
+        let n2o_start = concentration.at_start();
+        let n2o_reference = if t_current < p.feedback_start_year {
+            n2o_start
+        } else {
+            value_at_year(concentration, t_current, p.feedback_start_year - 1.0)
+        };
 
-        // Get current and historical concentrations
-        let n2o_current = inputs.n2o_concentration.at_start();
-        // Use current as previous if no history (first timestep)
-        let n2o_prev = inputs.n2o_concentration.previous().unwrap_or(n2o_current);
+        // MAGICC7 clamps delayed indices to the first year of the run
+        let delay = p.strat_delay as isize;
+        let index = concentration.index() as isize;
+        let delayed = |offset: isize| {
+            concentration
+                .at_offset((-offset).max(-index))
+                .unwrap_or(n2o_start)
+        };
+        let n2o_lagged = (delayed(delay) + delayed(delay + 1)) / 2.0;
 
-        // For the lagged concentration (used in the sink term), we use the
-        // average of concentrations at (t - delay) and (t - delay - 1),
-        // where `delay` is the stratospheric transport delay parameter.
-        //
-        // When insufficient history is available (early timesteps), we fall
-        // back to the closest available values:
-        //   - (t - delay) falls back to `n2o_prev`
-        //   - (t - delay - 1) falls back to (t - delay)
-        let delay = self.parameters.strat_delay.max(1);
-        let delay_isize = delay as isize;
+        let temperature = inputs.temperature.at_start();
+        let temperature_change = if t_current > p.meridional_flux_reference_year {
+            temperature
+                - value_at_year(
+                    &inputs.temperature,
+                    t_current,
+                    p.meridional_flux_reference_year,
+                )
+        } else {
+            0.0
+        };
 
-        let t_delay = inputs
-            .n2o_concentration
-            .at_offset(-delay_isize)
-            .unwrap_or(n2o_prev);
-        let t_delay_minus1 = inputs
-            .n2o_concentration
-            .at_offset(-(delay_isize + 1))
-            .unwrap_or(t_delay);
-
-        let n2o_lagged = (t_delay + t_delay_minus1) / 2.0;
-
-        let emissions = inputs.n2o_emissions.get();
-
-        // Solve for new concentration
-        let (new_concentration, lifetime) =
-            self.solve_concentration(n2o_prev, n2o_current, n2o_lagged, emissions, dt);
+        let (new_concentration, lifetime) = self.solve_concentration(
+            n2o_start,
+            n2o_reference,
+            n2o_lagged,
+            inputs.n2o_emissions.get(),
+            temperature_change,
+            t_next - t_current,
+        );
 
         let outputs = N2OChemistryOutputs {
             n2o_concentration: new_concentration,
@@ -282,366 +226,103 @@ mod tests {
         N2OChemistry::from_parameters(N2OChemistryParameters::default())
     }
 
-    // ===== Steady State Tests =====
-
-    #[test]
-    fn test_steady_state_at_preindustrial() {
-        // At pre-industrial with only natural emissions, concentration should be stable
-        let component = default_component();
-        let n2o_pi = component.parameters.n2o_pi;
-
-        // Solve starting from pre-industrial (annual timestep)
-        let (new_conc, lifetime) = component.solve_concentration(
-            n2o_pi, // previous
-            n2o_pi, // current
-            n2o_pi, // lagged
-            0.0,    // no anthropogenic emissions
-            1.0,    // dt = 1 year
-        );
-
-        // Check lifetime is close to base value at pre-industrial
-        let expected_tau = component.parameters.tau_n2o;
-        let tau_relative_diff = ((lifetime - expected_tau) / expected_tau).abs();
-        assert!(
-            tau_relative_diff < 0.01,
-            "At pre-industrial, lifetime should be close to tau_n2o. \
-             Got {:.2} vs expected {:.2}",
-            lifetime,
-            expected_tau
-        );
-
-        // Concentration should be close to pre-industrial
-        // With balanced natural emissions, the concentration should be stable
-        let relative_change = ((new_conc - n2o_pi) / n2o_pi).abs();
-        assert!(
-            relative_change < 0.05,
-            "At pre-industrial with natural emissions only, concentration should be stable. \
-             Got {:.2} vs PI={:.2}, change={:.2}%",
-            new_conc,
-            n2o_pi,
-            relative_change * 100.0
-        );
+    /// Concentration at which natural emissions balance the base lifetime
+    fn natural_steady_state(component: &N2OChemistry) -> FloatValue {
+        let p = &component.parameters;
+        component.burden_to_concentration(p.natural_emissions * p.tau_n2o)
     }
 
     #[test]
-    fn test_steady_state_emissions_balance() {
-        // Calculate what emissions would balance a given concentration
+    fn test_steady_state_with_natural_emissions() {
         let component = default_component();
-        let n2o_conc = 320.0; // ppb
-        let burden = n2o_conc * component.parameters.ppb_to_tg;
-        let tau = component.calculate_effective_lifetime(
-            burden,
-            component.parameters.n2o_pi * component.parameters.ppb_to_tg,
-        );
-
-        // At steady state: E = B/tau
-        let balanced_emissions = burden / tau;
-        let anthropogenic_emissions = balanced_emissions - component.parameters.natural_emissions;
-
-        let (new_conc, _) = component.solve_concentration(
-            n2o_conc,
-            n2o_conc,
-            n2o_conc,
-            anthropogenic_emissions.max(0.0),
-            1.0, // dt = 1 year
-        );
-
-        let relative_change = ((new_conc - n2o_conc) / n2o_conc).abs();
-        assert!(
-            relative_change < 0.02,
-            "With balanced emissions, concentration should be stable. \
-             Got {:.2} vs {:.2}, change={:.2}%",
-            new_conc,
-            n2o_conc,
-            relative_change * 100.0
-        );
+        let c = natural_steady_state(&component);
+        let (new_conc, lifetime) = component.solve_concentration(c, c, c, 0.0, 0.0, 1.0);
+        assert!((new_conc - c).abs() < 1e-9, "Expected {c}, got {new_conc}");
+        assert!((lifetime - component.parameters.tau_n2o).abs() < 1e-9);
     }
 
-    // ===== Emissions Response Tests =====
+    #[test]
+    fn test_matches_magicc_first_year() {
+        // MAGICC7 v7.5.3 SSP245, emissions-driven from 1750: 273.865 -> 273.587 ppb
+        let component = default_component();
+        let (new_conc, lifetime) =
+            component.solve_concentration(273.865, 273.865, 273.865, 0.05474145, 0.0, 1.0);
+        assert!((new_conc - 273.587).abs() < 1e-3, "Got {new_conc}");
+        assert!((lifetime - 139.275).abs() < 1e-9);
+    }
 
     #[test]
     fn test_emissions_increase_raises_concentration() {
         let component = default_component();
-        let n2o_pi = component.parameters.n2o_pi;
-
-        // Add anthropogenic emissions
-        let (new_conc, _) = component.solve_concentration(
-            n2o_pi, n2o_pi, n2o_pi, 5.0, // 5 Mt N/yr anthropogenic
-            1.0, // dt = 1 year
-        );
-
-        assert!(
-            new_conc > n2o_pi,
-            "Adding emissions should increase concentration. Got {:.2} vs PI={:.2}",
-            new_conc,
-            n2o_pi
-        );
+        let c = natural_steady_state(&component);
+        let (new_conc, _) = component.solve_concentration(c, c, c, 5.0, 0.0, 1.0);
+        assert!(new_conc > c);
     }
-
-    #[test]
-    fn test_higher_emissions_higher_concentration() {
-        let component = default_component();
-        let n2o_pi = component.parameters.n2o_pi;
-
-        let (conc_low, _) = component.solve_concentration(n2o_pi, n2o_pi, n2o_pi, 3.0, 1.0);
-
-        let (conc_high, _) = component.solve_concentration(n2o_pi, n2o_pi, n2o_pi, 8.0, 1.0);
-
-        assert!(
-            conc_high > conc_low,
-            "Higher emissions should give higher concentration. Got {:.2} vs {:.2}",
-            conc_high,
-            conc_low
-        );
-    }
-
-    // ===== Concentration Feedback Tests =====
 
     #[test]
     fn test_concentration_lifetime_feedback() {
-        // With S = -0.04 (negative), higher concentration gives slightly shorter
-        // lifetime: ratio^(-0.04) < 1 when ratio > 1
         let component = default_component();
-        let burden_ref = component.parameters.n2o_pi * component.parameters.ppb_to_tg;
-
-        // At pre-industrial
-        let tau_at_ref = component.calculate_effective_lifetime(burden_ref, burden_ref);
-
-        // At elevated concentration (350 ppb vs 270 ppb reference)
-        let burden_high = 350.0 * component.parameters.ppb_to_tg;
-        let tau_at_high = component.calculate_effective_lifetime(burden_high, burden_ref);
-
-        // With S = -0.04: tau_high = tau_init * (350/270)^(-0.04) < tau_init
-        assert!(
-            tau_at_high < tau_at_ref,
-            "With S < 0, higher N2O concentration gives slightly shorter lifetime. \
-             Got high={:.2} vs ref={:.2}",
-            tau_at_high,
-            tau_at_ref
-        );
-
-        // Verify the feedback is weak (< 2% change)
-        let relative_change = (tau_at_ref - tau_at_high) / tau_at_ref;
-        assert!(
-            relative_change < 0.02,
-            "N2O lifetime feedback should be weak (< 2%). Got {:.2}%",
-            relative_change * 100.0
-        );
+        let (_, tau_ref) = component.solve_concentration(270.0, 270.0, 270.0, 3.0, 0.0, 1.0);
+        let (_, tau_high) = component.solve_concentration(330.0, 270.0, 330.0, 3.0, 0.0, 1.0);
+        assert!(tau_high < tau_ref, "Lifetime should shorten with burden");
     }
 
     #[test]
     fn test_lifetime_floor_at_low_concentration() {
         let component = default_component();
-        let burden_ref = component.parameters.n2o_pi * component.parameters.ppb_to_tg;
-
-        // At low concentration (below reference)
-        let burden_low = 200.0 * component.parameters.ppb_to_tg;
-        let tau = component.calculate_effective_lifetime(burden_low, burden_ref);
-
-        // Due to MAX(1.0, ratio), lifetime should equal base value
-        let expected = component.parameters.tau_n2o;
-        assert!(
-            (tau - expected).abs() < 1e-10,
-            "Below reference, lifetime should be tau_n2o. Got {:.2} vs {:.2}",
-            tau,
-            expected
-        );
-    }
-
-    // ===== Iteration Convergence Tests =====
-
-    #[test]
-    fn test_iteration_convergence() {
-        // Verify results are physically reasonable
-        let component = default_component();
-        let n2o_elevated = 330.0;
-
-        let (new_conc, lifetime) = component.solve_concentration(
-            n2o_elevated,
-            n2o_elevated,
-            n2o_elevated,
-            6.0, // moderate anthropogenic emissions
-            1.0, // dt = 1 year
-        );
-
-        assert!(new_conc > 0.0, "Concentration should be positive");
-        assert!(
-            new_conc < 500.0,
-            "Concentration should be reasonable (< 500 ppb)"
-        );
-        assert!(lifetime > 100.0, "Lifetime should be > 100 years");
-        assert!(lifetime < 200.0, "Lifetime should be < 200 years");
+        let (_, tau) = component.solve_concentration(200.0, 270.0, 200.0, 0.0, 0.0, 1.0);
+        assert!((tau - component.parameters.tau_n2o).abs() < 1e-9);
     }
 
     #[test]
-    fn test_three_vs_four_iterations_close() {
-        // Indirectly test convergence by checking the result is stable
-        // Run with same inputs twice - should give same result
+    fn test_warming_shortens_lifetime() {
         let component = default_component();
-        let n2o = 310.0;
-        let emissions = 5.0;
-
-        let (conc1, tau1) = component.solve_concentration(n2o, n2o, n2o, emissions, 1.0);
-        let (conc2, tau2) = component.solve_concentration(n2o, n2o, n2o, emissions, 1.0);
-
-        assert!(
-            (conc1 - conc2).abs() < 1e-10,
-            "Same inputs should give same concentration"
-        );
-        assert!(
-            (tau1 - tau2).abs() < 1e-10,
-            "Same inputs should give same lifetime"
-        );
+        let (_, tau_cold) = component.solve_concentration(300.0, 270.0, 300.0, 5.0, 0.0, 1.0);
+        let (_, tau_warm) = component.solve_concentration(300.0, 270.0, 300.0, 5.0, 2.0, 1.0);
+        let expected = tau_cold / (1.0 + 2.0 * 0.15 * 0.04);
+        assert!((tau_warm / expected - 1.0).abs() < 1e-5);
     }
 
-    // ===== Component Trait Tests =====
+    #[test]
+    fn test_meridional_feedback_disabled() {
+        let component = N2OChemistry::from_parameters(N2OChemistryParameters {
+            include_meridional_flux_feedback: false,
+            ..Default::default()
+        });
+        let (_, tau_cold) = component.solve_concentration(300.0, 270.0, 300.0, 5.0, 0.0, 1.0);
+        let (_, tau_warm) = component.solve_concentration(300.0, 270.0, 300.0, 5.0, 2.0, 1.0);
+        assert!((tau_warm - tau_cold).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_lagged_concentration_sets_sink() {
+        let component = default_component();
+        let (conc_low_lag, _) = component.solve_concentration(300.0, 270.0, 290.0, 5.0, 0.0, 1.0);
+        let (conc_high_lag, _) = component.solve_concentration(300.0, 270.0, 310.0, 5.0, 0.0, 1.0);
+        assert!(conc_low_lag > conc_high_lag);
+    }
+
+    #[test]
+    fn test_zero_emissions_decay() {
+        let component = N2OChemistry::from_parameters(N2OChemistryParameters {
+            natural_emissions: 0.0,
+            ..Default::default()
+        });
+        let (new_conc, _) = component.solve_concentration(320.0, 270.0, 320.0, 0.0, 0.0, 1.0);
+        assert!(new_conc < 320.0);
+    }
 
     #[test]
     fn test_definitions() {
         let component = default_component();
-        let defs = component.definitions();
-
-        // Should have: 1 input + 1 state (in/out) + 1 output
-        assert!(defs.len() >= 3, "Should have at least 3 definitions");
-
-        let names: Vec<_> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert!(names.contains(&"Emissions|N2O"));
-        assert!(names.contains(&"Atmospheric Concentration|N2O"));
-        assert!(names.contains(&"Lifetime|N2O"));
-    }
-
-    // ===== Edge Case Tests =====
-
-    #[test]
-    fn test_zero_emissions_decay() {
-        // With zero total emissions, N2O should decay
-        let params = N2OChemistryParameters {
-            natural_emissions: 0.0,
-            ..Default::default()
-        };
-        let component = N2OChemistry::from_parameters(params);
-
-        let n2o_elevated = 350.0;
-        let (new_conc, _) = component.solve_concentration(
-            n2o_elevated,
-            n2o_elevated,
-            n2o_elevated,
-            0.0, // no anthropogenic
-            1.0, // dt = 1 year
-        );
-
-        assert!(
-            new_conc < n2o_elevated,
-            "With zero emissions, concentration should decay. Got {:.2} vs initial {:.2}",
-            new_conc,
-            n2o_elevated
-        );
-    }
-
-    #[test]
-    fn test_very_high_concentration() {
-        let component = default_component();
-        let n2o_extreme = 500.0; // Very high concentration
-
-        let (new_conc, lifetime) =
-            component.solve_concentration(n2o_extreme, n2o_extreme, n2o_extreme, 10.0, 1.0);
-
-        assert!(new_conc > 0.0, "Concentration should remain positive");
-        assert!(!new_conc.is_nan(), "Concentration should not be NaN");
-        assert!(!lifetime.is_nan(), "Lifetime should not be NaN");
-    }
-
-    #[test]
-    fn test_lagged_concentration_effect() {
-        // Test that lower lagged concentration increases effective sink
-        let component = default_component();
-        let n2o_current = 320.0;
-
-        // Higher lagged concentration = more sink = lower final concentration
-        let (conc_high_lag, _) = component.solve_concentration(
-            n2o_current,
-            n2o_current,
-            350.0, // high lagged
-            5.0,
-            1.0, // dt = 1 year
-        );
-
-        let (conc_low_lag, _) = component.solve_concentration(
-            n2o_current,
-            n2o_current,
-            280.0, // low lagged
-            5.0,
-            1.0, // dt = 1 year
-        );
-
-        assert!(
-            conc_low_lag > conc_high_lag,
-            "Lower lagged concentration should give higher final concentration (less sink). \
-             Got low_lag={:.2} vs high_lag={:.2}",
-            conc_low_lag,
-            conc_high_lag
-        );
-    }
-
-    // ===== Timestep Length Tests =====
-
-    #[test]
-    fn test_half_year_timestep() {
-        // Two half-year steps should give approximately the same result as one annual step
-        let component = default_component();
-        let n2o_initial = 320.0;
-        let emissions = 5.0;
-
-        // Single annual step
-        let (conc_annual, _) =
-            component.solve_concentration(n2o_initial, n2o_initial, n2o_initial, emissions, 1.0);
-
-        // Two half-year steps
-        let (conc_half1, _) =
-            component.solve_concentration(n2o_initial, n2o_initial, n2o_initial, emissions, 0.5);
-        let (conc_half2, _) = component.solve_concentration(
-            conc_half1,
-            conc_half1,
-            n2o_initial, // lagged still from initial
-            emissions,
-            0.5,
-        );
-
-        // Results should be similar (not identical due to nonlinearity)
-        let relative_diff = ((conc_annual - conc_half2) / conc_annual).abs();
-        assert!(
-            relative_diff < 0.05,
-            "Two half-year steps should approximate one annual step. \
-             Annual={:.3}, 2x0.5yr={:.3}, diff={:.2}%",
-            conc_annual,
-            conc_half2,
-            relative_diff * 100.0
-        );
-    }
-
-    #[test]
-    fn test_timestep_scaling() {
-        // Concentration change should scale approximately with timestep length
-        let component = default_component();
-        let n2o_initial = 320.0;
-        let emissions = 5.0;
-
-        let (conc_1yr, _) =
-            component.solve_concentration(n2o_initial, n2o_initial, n2o_initial, emissions, 1.0);
-
-        let (conc_half, _) =
-            component.solve_concentration(n2o_initial, n2o_initial, n2o_initial, emissions, 0.5);
-
-        let change_1yr = conc_1yr - n2o_initial;
-        let change_half = conc_half - n2o_initial;
-
-        // Half timestep should give approximately half the change
-        let ratio = change_half / change_1yr;
-        assert!(
-            (ratio - 0.5).abs() < 0.1,
-            "Half timestep should give roughly half the change. \
-             Ratio={:.3}, expected ~0.5",
-            ratio
-        );
+        let names: Vec<_> = component
+            .definitions()
+            .iter()
+            .map(|d| d.name.clone())
+            .collect();
+        assert!(names.contains(&"Emissions|N2O".to_string()));
+        assert!(names.contains(&"Surface Temperature".to_string()));
+        assert!(names.contains(&"Atmospheric Concentration|N2O".to_string()));
+        assert!(names.contains(&"Lifetime|N2O".to_string()));
     }
 }

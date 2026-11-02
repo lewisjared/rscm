@@ -15,12 +15,18 @@
 //!    - DIC accumulation (Joos A24 polynomial)
 //!    - Temperature effect on solubility (Joos A25)
 //!
-//! 4. Uses monthly sub-stepping (12 steps per year) for numerical stability
+//! 4. Uses monthly sub-stepping (12 steps per year). As in MAGICC7, atmospheric
+//!    CO2 evolves within the year from the other carbon sources and the ocean
+//!    uptake, so the uptake responds to the rising concentration.
 //!
 //! # Inputs
 //!
-//! - `Atmospheric Concentration|CO2` (ppm) - Atmospheric CO2 concentration
-//! - `Sea Surface Temperature` (K) - Temperature anomaly from pre-industrial
+//! - `Atmospheric Concentration|CO2` (ppm) - Concentration at the start of the year
+//! - `Surface Temperature` (K) - Drives the pCO2 feedback through the warming
+//!   since `tempfeedback_yrstart`, floored at zero
+//! - `Emissions|CO2|Fossil` (GtC/yr) - Fossil and industrial emissions
+//! - `Emissions|CO2|CH4 Oxidation` (GtC/yr) - CO2 from oxidised fossil CH4
+//! - `Carbon Flux|Terrestrial` (GtC/yr) - Net land uptake, including land use
 //!
 //! # States (tracked between timesteps)
 //!
@@ -29,16 +35,12 @@
 //!
 //! # Outputs
 //!
-//! - `Carbon Flux|Ocean` (GtC/yr) - Air-sea carbon flux (positive = ocean uptake)
+//! - `Carbon Flux|Ocean` (GtC/yr) - Annual mean air-sea flux (positive = ocean uptake)
 //!
 //! # Differences from MAGICC7 Module 10
 //!
-//! This is a simplified implementation:
-//!
 //! - **Three IRF models**: 3D-GFDL (default), 2D-BERN, and HILDA are
 //!   implemented. MAGICC7 also supports BOXDIFF.
-//! - **No stability limiter**: MAGICC7 has an ad-hoc flux change limiter
-//!   (0.04 ppm/yr per month). Not implemented as it's noted as a workaround.
 //! - **No radiative-only mode**: MAGICC7 can make ocean "see" only PI CO2.
 //!   Not implemented.
 //! - **No biological pump**: Only abiotic chemistry is represented.
@@ -48,6 +50,7 @@ use std::any::Any;
 use std::collections::VecDeque;
 
 use crate::parameters::OceanCarbonParameters;
+use crate::reference::feedback_warming;
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
     RequirementType,
@@ -58,20 +61,25 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// Conversion factor from ppm to GtC.
-/// 1 ppm atmospheric CO2 ≈ 2.124 GtC
-const PPM_TO_GTC: FloatValue = 2.124;
-
 /// Internal state for OceanCarbon component.
 ///
-/// This holds the flux history that persists across solve() calls.
-/// Unlike coupled state (RequirementType::State), this is private
-/// to the component and not shared between components.
+/// Holds the flux history and the last monthly sub-step of the previous year,
+/// which persist across solve() calls. Unlike coupled state
+/// (RequirementType::State), this is private to the component.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OceanCarbonState {
     /// Flux history for IRF convolution (ppm/month).
     /// Each element represents the flux in one month.
     pub flux_history: VecDeque<FloatValue>,
+
+    /// Atmospheric CO2 one sub-step before the start of the year (ppm).
+    pub co2_previous: Option<FloatValue>,
+
+    /// Ocean pCO2 one sub-step before the start of the year (ppm).
+    pub pco2_previous: Option<FloatValue>,
+
+    /// Unperturbed ocean pCO2 (ppm), fixed on the first step.
+    pub pco2_reference: Option<FloatValue>,
 }
 
 #[typetag::serde]
@@ -79,9 +87,23 @@ impl ComponentState for OceanCarbonState {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+}
+
+/// Result of one annual ocean solve.
+#[derive(Debug, Clone, Copy)]
+pub struct OceanStepResult {
+    /// Ocean pCO2 at the end of the year (ppm)
+    pub pco2: FloatValue,
+    /// Cumulative ocean uptake at the end of the year (GtC)
+    pub cumulative_uptake: FloatValue,
+    /// Annual mean air-sea flux (GtC/yr)
+    pub flux: FloatValue,
+    /// Atmospheric CO2 at the end of the year implied by the sub-steps (ppm)
+    pub co2: FloatValue,
 }
 
 /// Ocean carbon cycle component using IRF-based deep ocean mixing.
@@ -92,10 +114,11 @@ impl ComponentState for OceanCarbonState {
 ///
 /// # Algorithm
 ///
-/// For each sub-step (monthly):
+/// For each monthly sub-step:
 ///
-/// 1. Calculate air-sea flux:
-///    $$F = k \times (pCO2_{atm} - pCO2_{ocn})$$
+/// 1. Calculate air-sea flux from the mean of the last two sub-steps:
+///    $$F = k \times (\overline{pCO2}_{atm} - \overline{pCO2}_{ocn})$$
+///    limiting its change from the previous sub-step to `flux_change_limit`
 ///
 /// 2. Add flux to history and convolve with IRF to get $\Delta DIC$:
 ///    $$\Delta DIC = \int_0^t F(t') \times IRF(t - t') \, dt'$$
@@ -104,11 +127,16 @@ impl ComponentState for OceanCarbonState {
 ///
 /// 4. Apply temperature effect (Joos A25):
 ///    $$pCO2_{ocn} = (pCO2_{pi} + \Delta pCO2) \times e^{\alpha_T \Delta T}$$
+///
+/// 5. Update atmospheric CO2 with the other sources and the ocean uptake
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "ocean", "magicc"], category = "Carbon Cycle")]
 #[inputs(
     co2_concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
-    sst { name = "Sea Surface Temperature", unit = "K" },
+    temperature { name = "Surface Temperature", unit = "K" },
+    fossil_emissions { name = "Emissions|CO2|Fossil", unit = "GtC/yr" },
+    ch4_oxidation { name = "Emissions|CO2|CH4 Oxidation", unit = "GtC/yr" },
+    terrestrial_flux { name = "Carbon Flux|Terrestrial", unit = "GtC/yr" },
 )]
 #[states(
     ocean_pco2 { name = "Ocean Surface pCO2", unit = "ppm" },
@@ -136,126 +164,96 @@ impl OceanCarbon {
     ///
     /// $$F = k \times (pCO2_{atm} - pCO2_{ocn})$$
     ///
-    /// # Arguments
-    ///
-    /// * `pco2_atm` - Atmospheric CO2 partial pressure (ppm)
-    /// * `pco2_ocn` - Ocean surface CO2 partial pressure (ppm)
-    ///
-    /// # Returns
-    ///
-    /// Flux in ppm/month (positive = into ocean)
+    /// Positive values are fluxes into the ocean.
     fn calculate_flux(&self, pco2_atm: FloatValue, pco2_ocn: FloatValue) -> FloatValue {
         self.parameters.gas_exchange_rate() * (pco2_atm - pco2_ocn)
     }
 
     /// Calculate delta DIC via IRF convolution.
     ///
-    /// The change in dissolved inorganic carbon is computed by convolving
-    /// the flux history with the impulse response function:
-    ///
     /// $$\Delta DIC = \text{factor} \times \sum_{i=1}^{n} F_i \times IRF(t_n - t_i) \times \Delta t$$
     ///
-    /// Uses a left-hand Riemann sum for the integral.
-    ///
-    /// # Arguments
-    ///
-    /// * `flux_history` - Ring buffer of monthly fluxes (ppm/month)
-    ///
-    /// # Returns
-    ///
-    /// Change in DIC (micromol/kg)
+    /// Uses a left-hand Riemann sum over the monthly fluxes (ppm/month).
+    /// Returns the change in DIC (micromol/kg).
     fn calculate_delta_dic(&self, flux_history: &VecDeque<FloatValue>) -> FloatValue {
-        if flux_history.is_empty() {
-            return 0.0;
-        }
-
         let n = flux_history.len();
-        let dt_months = 1.0; // Monthly timesteps
-        let dt_years = dt_months / 12.0;
-
-        let mut integral = 0.0;
-
-        for (i, &flux) in flux_history.iter().enumerate() {
-            // Time since this pulse (in years)
-            // At position i, the pulse happened (n - 1 - i) months ago
-            let t_since_pulse = (n - 1 - i) as FloatValue * dt_years;
-
-            // IRF value at this time
-            let irf = self.parameters.irf(t_since_pulse);
-
-            // Accumulate: flux * IRF * dt
-            integral += flux * irf * dt_months;
-        }
-
-        // Convert to DIC units
+        let integral: FloatValue = flux_history
+            .iter()
+            .enumerate()
+            .map(|(i, &flux)| flux * self.parameters.irf((n - 1 - i) as FloatValue / 12.0))
+            .sum();
         integral * self.parameters.dic_conversion_factor()
     }
 
-    /// Solve the ocean carbon cycle for one timestep.
+    /// Solve the ocean carbon cycle for one timestep with monthly sub-steps.
     ///
-    /// Performs monthly sub-stepping for stability.
-    ///
-    /// # Arguments
-    ///
-    /// * `state` - Mutable reference to component state (holds flux history)
-    /// * `co2_atm` - Atmospheric CO2 concentration (ppm)
-    /// * `delta_sst` - SST anomaly from pre-industrial (K)
-    /// * `pco2_initial` - Initial ocean pCO2 (ppm)
-    /// * `cumulative_initial` - Initial cumulative uptake (GtC)
-    /// * `dt` - Timestep (years)
-    ///
-    /// # Returns
-    ///
-    /// (new_pco2, new_cumulative, annual_mean_flux)
+    /// `other_sources` is the net carbon added to the atmosphere by everything
+    /// except the ocean (GtC/yr) and `warming` drives the pCO2 temperature
+    /// feedback (K).
+    #[allow(clippy::too_many_arguments)]
     pub fn solve_ocean(
         &self,
         state: &mut OceanCarbonState,
-        co2_atm: FloatValue,
-        delta_sst: FloatValue,
-        pco2_initial: FloatValue,
-        cumulative_initial: FloatValue,
+        co2_start: FloatValue,
+        other_sources: FloatValue,
+        warming: FloatValue,
+        pco2_start: FloatValue,
+        cumulative_start: FloatValue,
         dt: FloatValue,
-    ) -> (FloatValue, FloatValue, FloatValue) {
-        let steps = self.parameters.steps_per_year;
-        let dt_month = dt / steps as FloatValue;
+    ) -> OceanStepResult {
+        let p = &self.parameters;
+        let steps = p.steps_per_year as FloatValue;
+        let pco2_reference = *state
+            .pco2_reference
+            .get_or_insert(p.pco2_pi.unwrap_or(pco2_start));
 
-        let mut pco2_ocn = pco2_initial;
-        let mut cumulative = cumulative_initial;
-        let mut total_flux_gtc = 0.0;
+        let mut co2 = co2_start;
+        let mut co2_previous = state.co2_previous.unwrap_or(co2_start);
+        let mut pco2 = pco2_start;
+        let mut pco2_previous = state.pco2_previous.unwrap_or(pco2_start);
+        let sources_per_step = other_sources * dt / steps / p.gtc_per_ppm;
+        let mut total_flux = 0.0;
 
-        for _ in 0..steps {
-            // Calculate air-sea flux (ppm/month)
-            let flux_ppm = self.calculate_flux(co2_atm, pco2_ocn);
-
-            // Store flux in history (bounded ring buffer)
-            state.flux_history.push_back(flux_ppm);
-            if state.flux_history.len() > self.parameters.max_history_months {
-                state.flux_history.pop_front();
+        for _ in 0..p.steps_per_year {
+            // Flux in ppm/yr, from the means of the last two sub-steps
+            let mut flux = steps
+                * self.calculate_flux((co2_previous + co2) / 2.0, (pco2_previous + pco2) / 2.0);
+            if let (Some(&last), true) = (state.flux_history.back(), p.flux_change_limit > 0.0) {
+                let last = last * steps;
+                flux = flux.clamp(last - p.flux_change_limit, last + p.flux_change_limit);
             }
 
-            // Convert flux to GtC/yr for output and accumulation
-            let flux_gtc_yr = flux_ppm * 12.0 * PPM_TO_GTC;
-            total_flux_gtc += flux_gtc_yr / steps as FloatValue;
+            state.flux_history.push_back(flux / steps);
+            if state.flux_history.len() > p.max_history_months {
+                state.flux_history.pop_front();
+            }
+            total_flux += flux;
 
-            // Accumulate uptake
-            cumulative += flux_gtc_yr * dt_month;
+            let delta_pco2 = p.delta_pco2_from_dic(self.calculate_delta_dic(&state.flux_history));
+            let pco2_next = p.ocean_pco2(pco2_reference, delta_pco2, warming);
+            let co2_next = co2 + sources_per_step - flux * dt / steps;
 
-            // Calculate new delta DIC from convolution
-            let delta_dic = self.calculate_delta_dic(&state.flux_history);
-
-            // Calculate delta pCO2 from DIC (Joos A24)
-            let delta_pco2_dic = self.parameters.delta_pco2_from_dic(delta_dic);
-
-            // Apply temperature effect (Joos A25)
-            pco2_ocn = self.parameters.ocean_pco2(delta_pco2_dic, delta_sst);
+            co2_previous = co2;
+            co2 = co2_next;
+            pco2_previous = pco2;
+            pco2 = pco2_next;
         }
 
-        (pco2_ocn, cumulative, total_flux_gtc)
+        state.co2_previous = Some(co2_previous);
+        state.pco2_previous = Some(pco2_previous);
+
+        let mean_flux = total_flux / steps * p.gtc_per_ppm;
+        OceanStepResult {
+            pco2,
+            cumulative_uptake: cumulative_start + mean_flux * dt,
+            flux: mean_flux,
+            co2,
+        }
     }
 
-    /// Reset the flux history (for initialization or testing).
+    /// Reset the flux history and sub-step memory (for initialization or testing).
     pub fn reset_history(&self, state: &mut OceanCarbonState) {
-        state.flux_history.clear();
+        *state = OceanCarbonState::default();
     }
 
     /// Get the current flux history length (months).
@@ -273,24 +271,36 @@ impl OceanCarbon {
     ) -> RSCMResult<OutputState> {
         let inputs = OceanCarbonInputs::from_input_state(input_state);
 
-        // Get current inputs (use get() for flexibility with exogenous or upstream sources)
-        let co2 = inputs.co2_concentration.get();
-        let sst = inputs.sst.get();
+        let warming = feedback_warming(
+            &inputs.temperature,
+            t_current,
+            self.parameters.tempfeedback_yrstart,
+        );
+        let other_sources = inputs.fossil_emissions.get() + inputs.ch4_oxidation.get()
+            - inputs.terrestrial_flux.get();
+        if state.pco2_reference.is_none() {
+            let first = -(inputs.ocean_pco2.index() as isize);
+            state.pco2_reference = Some(
+                self.parameters
+                    .pco2_pi
+                    .unwrap_or_else(|| inputs.ocean_pco2.at_offset(first).unwrap_or(0.0)),
+            );
+        }
 
-        // Get current states (always at_start for own previous state)
-        let pco2 = inputs.ocean_pco2.at_start();
-        let cumulative = inputs.cumulative_uptake.at_start();
-
-        let dt = t_next - t_current;
-
-        // Solve for new values
-        let (new_pco2, new_cumulative, flux) =
-            self.solve_ocean(state, co2, sst, pco2, cumulative, dt);
+        let result = self.solve_ocean(
+            state,
+            inputs.co2_concentration.at_start(),
+            other_sources,
+            warming,
+            inputs.ocean_pco2.at_start(),
+            inputs.cumulative_uptake.at_start(),
+            t_next - t_current,
+        );
 
         let outputs = OceanCarbonOutputs {
-            ocean_pco2: new_pco2,
-            cumulative_uptake: new_cumulative,
-            air_sea_flux: flux,
+            ocean_pco2: result.pco2,
+            cumulative_uptake: result.cumulative_uptake,
+            air_sea_flux: result.flux,
         };
 
         Ok(outputs.into())
@@ -343,585 +353,190 @@ impl Component for OceanCarbon {
 mod tests {
     use super::*;
 
+    const PI: FloatValue = 278.0;
+
     fn default_component() -> OceanCarbon {
         OceanCarbon::from_parameters(OceanCarbonParameters::default())
     }
 
-    // ===== Air-Sea Flux Tests =====
+    /// Run `years` annual steps with constant sources, returning the final result
+    fn run_years(
+        component: &OceanCarbon,
+        state: &mut OceanCarbonState,
+        co2: FloatValue,
+        other_sources: FloatValue,
+        warming: FloatValue,
+        years: usize,
+    ) -> OceanStepResult {
+        let (mut co2, mut pco2, mut cumulative) = (co2, PI, 0.0);
+        let mut result = None;
+        for _ in 0..years {
+            let r =
+                component.solve_ocean(state, co2, other_sources, warming, pco2, cumulative, 1.0);
+            co2 = r.co2;
+            pco2 = r.pco2;
+            cumulative = r.cumulative_uptake;
+            result = Some(r);
+        }
+        result.unwrap()
+    }
+
+    fn fresh_state() -> OceanCarbonState {
+        OceanCarbonState {
+            pco2_reference: Some(PI),
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn test_zero_flux_at_equilibrium() {
         let component = default_component();
-        let pco2 = component.parameters.pco2_pi;
-
-        // When atm = ocean pCO2, flux should be zero
-        let flux = component.calculate_flux(pco2, pco2);
-        assert!(
-            flux.abs() < 1e-15,
-            "Flux should be zero at equilibrium, got {:.6e}",
-            flux
-        );
+        assert!(component.calculate_flux(PI, PI).abs() < 1e-15);
     }
 
     #[test]
-    fn test_positive_flux_when_atm_exceeds_ocean() {
+    fn test_flux_sign_follows_gradient() {
         let component = default_component();
-        let pco2_pi = component.parameters.pco2_pi;
-
-        // Higher atmospheric CO2 should drive flux into ocean
-        let flux = component.calculate_flux(pco2_pi + 100.0, pco2_pi);
-        assert!(
-            flux > 0.0,
-            "Flux should be positive when atm > ocean, got {:.6}",
-            flux
-        );
-    }
-
-    #[test]
-    fn test_negative_flux_when_ocean_exceeds_atm() {
-        let component = default_component();
-        let pco2_pi = component.parameters.pco2_pi;
-
-        // Higher ocean pCO2 should drive outgassing
-        let flux = component.calculate_flux(pco2_pi, pco2_pi + 50.0);
-        assert!(
-            flux < 0.0,
-            "Flux should be negative when ocean > atm, got {:.6}",
-            flux
-        );
+        assert!(component.calculate_flux(PI + 100.0, PI) > 0.0);
+        assert!(component.calculate_flux(PI, PI + 50.0) < 0.0);
     }
 
     #[test]
     fn test_flux_proportional_to_gradient() {
         let component = default_component();
-        let pco2_pi = component.parameters.pco2_pi;
-
-        let flux_50 = component.calculate_flux(pco2_pi + 50.0, pco2_pi);
-        let flux_100 = component.calculate_flux(pco2_pi + 100.0, pco2_pi);
-
-        // Flux should double when gradient doubles
-        assert!(
-            (flux_100 / flux_50 - 2.0).abs() < 1e-10,
-            "Flux should be proportional to gradient: {:.6} vs {:.6}",
-            flux_50,
-            flux_100
-        );
+        let flux_50 = component.calculate_flux(PI + 50.0, PI);
+        let flux_100 = component.calculate_flux(PI + 100.0, PI);
+        assert!((flux_100 / flux_50 - 2.0).abs() < 1e-10);
     }
-
-    // ===== IRF Convolution Tests =====
 
     #[test]
     fn test_delta_dic_zero_for_empty_history() {
         let component = default_component();
-        let delta_dic = component.calculate_delta_dic(&VecDeque::new());
-
-        assert!(
-            delta_dic.abs() < 1e-15,
-            "Delta DIC should be zero for empty history"
-        );
+        assert!(component.calculate_delta_dic(&VecDeque::new()).abs() < 1e-15);
     }
 
     #[test]
     fn test_delta_dic_positive_for_positive_flux() {
         let component = default_component();
-
-        // Constant positive flux for 12 months
-        let flux_history: VecDeque<FloatValue> = vec![1.0; 12].into();
-        let delta_dic = component.calculate_delta_dic(&flux_history);
-
-        assert!(
-            delta_dic > 0.0,
-            "Delta DIC should be positive for positive flux, got {:.6}",
-            delta_dic
-        );
-    }
-
-    #[test]
-    fn test_delta_dic_grows_with_time() {
-        let component = default_component();
-
-        // Constant flux over increasing time
-        let flux_1yr: VecDeque<FloatValue> = vec![1.0; 12].into();
-        let flux_2yr: VecDeque<FloatValue> = vec![1.0; 24].into();
-        let flux_5yr: VecDeque<FloatValue> = vec![1.0; 60].into();
-
-        let dic_1yr = component.calculate_delta_dic(&flux_1yr);
-        let dic_2yr = component.calculate_delta_dic(&flux_2yr);
-        let dic_5yr = component.calculate_delta_dic(&flux_5yr);
-
-        assert!(
-            dic_2yr > dic_1yr,
-            "DIC should increase with time: 2yr={:.4} vs 1yr={:.4}",
-            dic_2yr,
-            dic_1yr
-        );
-        assert!(
-            dic_5yr > dic_2yr,
-            "DIC should continue increasing: 5yr={:.4} vs 2yr={:.4}",
-            dic_5yr,
-            dic_2yr
-        );
-    }
-
-    // ===== Temperature Feedback Tests =====
-
-    #[test]
-    fn test_warming_increases_pco2() {
-        let params = OceanCarbonParameters::default();
-
-        let pco2_cold = params.ocean_pco2(0.0, 0.0);
-        let pco2_warm = params.ocean_pco2(0.0, 1.0);
-
-        assert!(
-            pco2_warm > pco2_cold,
-            "Warming should increase pCO2: cold={:.2}, warm={:.2}",
-            pco2_cold,
-            pco2_warm
-        );
-    }
-
-    #[test]
-    fn test_warming_reduces_uptake() {
-        let component = default_component();
-        let co2_elevated = 400.0;
-        let pco2_pi = component.parameters.pco2_pi;
-
-        // Run for one year with no warming
-        let mut state_cold = OceanCarbonState::default();
-        let (_, cumulative_cold, flux_cold) =
-            component.solve_ocean(&mut state_cold, co2_elevated, 0.0, pco2_pi, 0.0, 1.0);
-
-        // Run with warming (new state)
-        let mut state_warm = OceanCarbonState::default();
-        let (_, cumulative_warm, flux_warm) =
-            component.solve_ocean(&mut state_warm, co2_elevated, 2.0, pco2_pi, 0.0, 1.0);
-
-        // Warming should reduce uptake
-        assert!(
-            flux_warm < flux_cold,
-            "Warming should reduce flux: cold={:.2}, warm={:.2}",
-            flux_cold,
-            flux_warm
-        );
-        assert!(
-            cumulative_warm < cumulative_cold,
-            "Warming should reduce cumulative uptake: cold={:.2}, warm={:.2}",
-            cumulative_cold,
-            cumulative_warm
-        );
-    }
-
-    // ===== Integration Tests =====
-
-    #[test]
-    fn test_solve_ocean_one_year() {
-        let component = default_component();
-        let mut state = OceanCarbonState::default();
-        let co2_elevated = 400.0;
-        let pco2_pi = component.parameters.pco2_pi;
-
-        let (new_pco2, cumulative, flux) =
-            component.solve_ocean(&mut state, co2_elevated, 0.0, pco2_pi, 0.0, 1.0);
-
-        // Ocean should have absorbed carbon
-        assert!(
-            cumulative > 0.0,
-            "Ocean should have positive cumulative uptake"
-        );
-        assert!(
-            flux > 0.0,
-            "Flux should be positive when atm CO2 > ocean pCO2"
-        );
-
-        // Ocean pCO2 should have increased
-        assert!(
-            new_pco2 > pco2_pi,
-            "Ocean pCO2 should increase after uptake: {:.2} vs {:.2}",
-            new_pco2,
-            pco2_pi
-        );
-
-        // History should have 12 entries (monthly)
-        assert_eq!(
-            component.history_length(&state),
-            12,
-            "Should have 12 months of history"
-        );
-    }
-
-    #[test]
-    fn test_multi_year_uptake() {
-        let component = default_component();
-        let mut state = OceanCarbonState::default();
-        let co2_elevated = 400.0;
-
-        let mut pco2 = component.parameters.pco2_pi;
-        let mut cumulative = 0.0;
-        let mut prev_flux = f64::MAX;
-
-        // Run for 10 years
-        for year in 0..10 {
-            let (new_pco2, new_cumulative, flux) =
-                component.solve_ocean(&mut state, co2_elevated, 0.0, pco2, cumulative, 1.0);
-
-            // Flux should decrease over time as ocean pCO2 rises
-            if year > 0 {
-                assert!(
-                    flux < prev_flux,
-                    "Flux should decrease over time: year {} flux={:.2} vs prev={:.2}",
-                    year,
-                    flux,
-                    prev_flux
-                );
-            }
-
-            // Cumulative should monotonically increase
-            assert!(
-                new_cumulative > cumulative,
-                "Cumulative should increase: {:.2} vs {:.2}",
-                new_cumulative,
-                cumulative
-            );
-
-            pco2 = new_pco2;
-            cumulative = new_cumulative;
-            prev_flux = flux;
-        }
+        let history: VecDeque<_> = std::iter::repeat_n(0.1, 12).collect();
+        assert!(component.calculate_delta_dic(&history) > 0.0);
     }
 
     #[test]
     fn test_steady_state_at_equilibrium() {
         let component = default_component();
-        let mut state = OceanCarbonState::default();
-        let co2_pi = component.parameters.co2_pi;
-        let pco2_pi = component.parameters.pco2_pi;
-
-        // At equilibrium, there should be minimal change
-        let (new_pco2, cumulative, flux) =
-            component.solve_ocean(&mut state, co2_pi, 0.0, pco2_pi, 0.0, 1.0);
-
-        // Flux should be very small (near equilibrium)
-        assert!(
-            flux.abs() < 0.1,
-            "Flux should be near zero at equilibrium, got {:.4}",
-            flux
-        );
-
-        // pCO2 should stay near initial
-        assert!(
-            (new_pco2 - pco2_pi).abs() < 1.0,
-            "pCO2 should stay near equilibrium: {:.2} vs {:.2}",
-            new_pco2,
-            pco2_pi
-        );
-
-        // Cumulative should be near zero
-        assert!(
-            cumulative.abs() < 0.5,
-            "Cumulative uptake should be near zero at equilibrium"
-        );
+        let mut state = fresh_state();
+        let result = run_years(&component, &mut state, PI, 0.0, 0.0, 10);
+        assert!(result.flux.abs() < 1e-12);
+        assert!((result.co2 - PI).abs() < 1e-12);
+        assert!((result.pco2 - PI).abs() < 1e-12);
     }
 
-    // ===== Magnitude Tests =====
+    #[test]
+    fn test_uptake_lowers_atmospheric_co2_within_year() {
+        // With no other sources, uptake from an elevated atmosphere draws it down
+        let component = default_component();
+        let mut state = fresh_state();
+        let result = component.solve_ocean(&mut state, 400.0, 0.0, 0.0, PI, 0.0, 1.0);
+        assert!(result.flux > 0.0);
+        let expected = 400.0 - result.flux / component.parameters.gtc_per_ppm;
+        assert!((result.co2 - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_sources_raise_uptake() {
+        let component = default_component();
+        let low = run_years(&component, &mut fresh_state(), PI, 2.0, 0.0, 20);
+        let high = run_years(&component, &mut fresh_state(), PI, 8.0, 0.0, 20);
+        assert!(high.flux > low.flux && low.flux > 0.0);
+        assert!(high.cumulative_uptake > low.cumulative_uptake);
+    }
+
+    #[test]
+    fn test_warming_reduces_uptake() {
+        let component = default_component();
+        let cold = run_years(&component, &mut fresh_state(), PI, 8.0, 0.0, 20);
+        let warm = run_years(&component, &mut fresh_state(), PI, 8.0, 2.0, 20);
+        assert!(warm.flux < cold.flux);
+        assert!(warm.pco2 > cold.pco2);
+    }
+
+    #[test]
+    fn test_flux_change_limited() {
+        let component = default_component();
+        let mut state = fresh_state();
+        component.solve_ocean(&mut state, PI, 0.0, 0.0, PI, 0.0, 1.0);
+        // A sudden jump in atmospheric CO2 can only raise the flux gradually
+        component.solve_ocean(&mut state, 1000.0, 0.0, 0.0, PI, 0.0, 1.0);
+        let months: Vec<_> = state.flux_history.iter().map(|f| f * 12.0).collect();
+        for pair in months.windows(2) {
+            assert!(pair[1] - pair[0] <= 0.04 + 1e-12);
+        }
+    }
 
     #[test]
     fn test_flux_magnitude_reasonable() {
+        // Around 2 GtC/yr uptake for a ~100 ppm imbalance after decades of emissions
         let component = default_component();
-        let mut state = OceanCarbonState::default();
-
-        // The initial flux with ocean at PI (278 ppm) and atmosphere at 400 ppm
-        // gives a large gradient (122 ppm). This is correct physics but doesn't
-        // represent steady-state uptake.
-        //
-        // Run for several years to let the ocean pCO2 adjust towards the
-        // atmospheric value, then check that quasi-steady-state flux is reasonable.
-        let mut pco2 = component.parameters.pco2_pi;
-        let mut cumulative = 0.0;
-        let mut flux = 0.0;
-
-        // Run for 50 years to approach quasi-steady state
-        for _ in 0..50 {
-            let (new_pco2, new_cumulative, new_flux) =
-                component.solve_ocean(&mut state, 400.0, 0.0, pco2, cumulative, 1.0);
-            pco2 = new_pco2;
-            cumulative = new_cumulative;
-            flux = new_flux;
-        }
-
-        // After 50 years, flux should have decreased as ocean pCO2 catches up
-        // Expected range is 0.5-5 GtC/yr for quasi-steady-state ocean uptake
+        let result = run_years(&component, &mut fresh_state(), PI, 8.0, 0.0, 50);
         assert!(
-            flux > 0.1 && flux < 10.0,
-            "Quasi-steady-state flux should be in reasonable range (0.1-10 GtC/yr), got {:.2}",
-            flux
+            result.flux > 0.5 && result.flux < 6.0,
+            "Got {}",
+            result.flux
         );
     }
 
     #[test]
-    fn test_pco2_increase_reasonable() {
-        let component = default_component();
-        let mut state = OceanCarbonState::default();
-
-        // Run for 100 years at elevated CO2
-        let mut pco2 = component.parameters.pco2_pi;
-        let mut cumulative = 0.0;
-
-        for _ in 0..100 {
-            let (new_pco2, new_cumulative, _) =
-                component.solve_ocean(&mut state, 450.0, 0.0, pco2, cumulative, 1.0);
-            pco2 = new_pco2;
-            cumulative = new_cumulative;
-        }
-
-        // Ocean pCO2 should approach but not exceed atmospheric
-        assert!(
-            pco2 < 450.0,
-            "Ocean pCO2 should be less than atmospheric: {:.2}",
-            pco2
-        );
-        assert!(
-            pco2 > component.parameters.pco2_pi + 50.0,
-            "Ocean pCO2 should have increased significantly: {:.2}",
-            pco2
-        );
-
-        // Cumulative uptake should be substantial (50-200 GtC over 100 years)
-        assert!(
-            cumulative > 50.0 && cumulative < 500.0,
-            "Cumulative uptake should be in reasonable range: {:.1} GtC",
-            cumulative
-        );
-    }
-
-    // ===== Edge Cases =====
-
-    #[test]
-    fn test_very_high_co2() {
-        let component = default_component();
-        let mut state = OceanCarbonState::default();
-
-        // Very high CO2 scenario (like PETM)
-        let (new_pco2, cumulative, flux) = component.solve_ocean(
-            &mut state,
-            2000.0,
-            0.0,
-            component.parameters.pco2_pi,
-            0.0,
-            1.0,
-        );
-
-        assert!(
-            new_pco2.is_finite(),
-            "pCO2 should remain finite at high CO2"
-        );
-        assert!(
-            cumulative.is_finite() && cumulative > 0.0,
-            "Cumulative should be finite and positive"
-        );
-        assert!(
-            flux.is_finite() && flux > 0.0,
-            "Flux should be finite and positive"
-        );
-    }
-
-    #[test]
-    fn test_negative_sst_anomaly() {
-        let component = default_component();
-
-        // Cooling should increase uptake (higher solubility)
-        let mut state_cold = OceanCarbonState::default();
-        let (_, _cumulative_cold, flux_cold) = component.solve_ocean(
-            &mut state_cold,
-            400.0,
-            -2.0, // Cooling
-            component.parameters.pco2_pi,
-            0.0,
-            1.0,
-        );
-
-        let mut state_warm = OceanCarbonState::default();
-        let (_, _cumulative_warm, flux_warm) = component.solve_ocean(
-            &mut state_warm,
-            400.0,
-            0.0,
-            component.parameters.pco2_pi,
-            0.0,
-            1.0,
-        );
-
-        // Cooling should increase uptake
-        assert!(
-            flux_cold > flux_warm,
-            "Cooling should increase flux: cold={:.2} vs warm={:.2}",
-            flux_cold,
-            flux_warm
-        );
-    }
-
-    // ===== Component Trait Tests =====
-
-    #[test]
-    fn test_definitions() {
-        let component = default_component();
-        let defs = component.definitions();
-
-        // Should have: 2 inputs + 2 states + 1 output = 5 definitions
-        assert!(
-            defs.len() >= 5,
-            "Should have at least 5 definitions, got {}",
-            defs.len()
-        );
-
-        let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert!(names.contains(&"Atmospheric Concentration|CO2"));
-        assert!(names.contains(&"Sea Surface Temperature"));
-        assert!(names.contains(&"Ocean Surface pCO2"));
-        assert!(names.contains(&"Cumulative Ocean Uptake"));
-        assert!(names.contains(&"Carbon Flux|Ocean"));
-    }
-
-    #[test]
-    fn test_serialization() {
-        let component = default_component();
-        let json = serde_json::to_string(&component).expect("Serialization failed");
-        let parsed: OceanCarbon = serde_json::from_str(&json).expect("Deserialization failed");
-
-        assert!(
-            (component.parameters.co2_pi - parsed.parameters.co2_pi).abs() < 1e-10,
-            "Parameters should survive round-trip"
-        );
+    fn test_flux_history_bounded() {
+        let params = OceanCarbonParameters {
+            max_history_months: 24,
+            ..Default::default()
+        };
+        let component = OceanCarbon::from_parameters(params);
+        let mut state = fresh_state();
+        run_years(&component, &mut state, PI, 5.0, 0.0, 5);
+        assert_eq!(component.history_length(&state), 24);
     }
 
     #[test]
     fn test_history_reset() {
         let component = default_component();
-        let mut state = OceanCarbonState::default();
-
-        // Add some flux history
-        component.solve_ocean(&mut state, 400.0, 0.0, 278.0, 0.0, 1.0);
-        assert!(
-            component.history_length(&state) > 0,
-            "Should have history after solve"
-        );
-
-        // Reset
+        let mut state = fresh_state();
+        run_years(&component, &mut state, PI, 5.0, 0.0, 2);
         component.reset_history(&mut state);
-        assert_eq!(
-            component.history_length(&state),
-            0,
-            "History should be cleared"
-        );
+        assert_eq!(component.history_length(&state), 0);
+        assert!(state.co2_previous.is_none());
     }
 
-    // ===== Bounded History Tests =====
-
     #[test]
-    fn test_flux_history_bounded() {
-        // Create component with small history limit for testing
-        let params = OceanCarbonParameters {
-            max_history_months: 24, // 2 years
-            ..Default::default()
-        };
-        let component = OceanCarbon::from_parameters(params);
-        let mut state = OceanCarbonState::default();
-
-        // Run for 5 years (60 months)
-        for _ in 0..5 {
-            component.solve_ocean(&mut state, 400.0, 0.0, 278.0, 0.0, 1.0);
+    fn test_definitions() {
+        let component = default_component();
+        let names: Vec<_> = component
+            .definitions()
+            .iter()
+            .map(|d| d.name.clone())
+            .collect();
+        for name in [
+            "Atmospheric Concentration|CO2",
+            "Surface Temperature",
+            "Emissions|CO2|Fossil",
+            "Emissions|CO2|CH4 Oxidation",
+            "Carbon Flux|Terrestrial",
+            "Ocean Surface pCO2",
+            "Carbon Flux|Ocean",
+        ] {
+            assert!(names.contains(&name.to_string()), "Missing {name}");
         }
-
-        // History should be bounded at 24 months
-        assert_eq!(
-            component.history_length(&state),
-            24,
-            "History should be bounded at max_history_months"
-        );
     }
 
     #[test]
     fn test_component_state_serialization_roundtrip() {
         let component = default_component();
-        let mut state = OceanCarbonState::default();
-
-        // Run for 5 years to build up history
-        let mut pco2 = component.parameters.pco2_pi;
-        let mut cumulative = 0.0;
-
-        for _ in 0..5 {
-            let (new_pco2, new_cumulative, _) =
-                component.solve_ocean(&mut state, 400.0, 0.0, pco2, cumulative, 1.0);
-            pco2 = new_pco2;
-            cumulative = new_cumulative;
-        }
-
-        let history_len_before = component.history_length(&state);
-        assert!(
-            history_len_before > 0,
-            "Should have history before serialization"
-        );
-
-        // Serialize component state
-        let state_json = serde_json::to_string(&state).expect("State serialization failed");
-        let restored_state: OceanCarbonState =
-            serde_json::from_str(&state_json).expect("State deserialization failed");
-
-        assert_eq!(
-            component.history_length(&restored_state),
-            history_len_before,
-            "History length should survive serialization"
-        );
-
-        // The flux_history content should also match
-        assert_eq!(
-            state.flux_history.len(),
-            restored_state.flux_history.len(),
-            "Flux history length should match"
-        );
-    }
-
-    #[test]
-    fn test_longer_history_captures_more_response() {
-        // The 2D-BERN IRF has long timescales:
-        // - Late IRF components: 10.5, 11.7, 38.9, 107.6, 331.5 years
-        // - Permanent sequestration: 1e10 years (carbon never fully returns)
-        //
-        // This means longer history always captures more of the response.
-        // The 500-year default (6000 months) is a practical compromise between
-        // accuracy and memory usage (~48KB for flux history).
-        let params = OceanCarbonParameters::default();
-        let component = OceanCarbon::from_parameters(params);
-
-        // Compare histories of increasing length with same constant flux
-        let history_10yr: VecDeque<FloatValue> = vec![1.0; 120].into();
-        let history_100yr: VecDeque<FloatValue> = vec![1.0; 1200].into();
-        let history_500yr: VecDeque<FloatValue> = vec![1.0; 6000].into();
-
-        let dic_10yr = component.calculate_delta_dic(&history_10yr);
-        let dic_100yr = component.calculate_delta_dic(&history_100yr);
-        let dic_500yr = component.calculate_delta_dic(&history_500yr);
-
-        // Longer history should accumulate more DIC
-        assert!(
-            dic_100yr > dic_10yr,
-            "100yr history should have more DIC than 10yr: {:.4} vs {:.4}",
-            dic_100yr,
-            dic_10yr
-        );
-        assert!(
-            dic_500yr > dic_100yr,
-            "500yr history should have more DIC than 100yr: {:.4} vs {:.4}",
-            dic_500yr,
-            dic_100yr
-        );
-
-        // Growth rate should slow as we capture more of the response
-        let growth_10_to_100 = (dic_100yr - dic_10yr) / dic_10yr;
-        let growth_100_to_500 = (dic_500yr - dic_100yr) / dic_100yr;
-        assert!(
-            growth_100_to_500 < growth_10_to_100,
-            "Growth rate should slow: 10→100yr={:.1}%, 100→500yr={:.1}%",
-            growth_10_to_100 * 100.0,
-            growth_100_to_500 * 100.0
-        );
+        let mut state = fresh_state();
+        run_years(&component, &mut state, PI, 5.0, 0.0, 2);
+        let json = serde_json::to_string(&state).unwrap();
+        let parsed: OceanCarbonState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.flux_history.len(), state.flux_history.len());
+        assert_eq!(parsed.co2_previous, state.co2_previous);
     }
 }

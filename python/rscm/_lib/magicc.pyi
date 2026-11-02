@@ -27,7 +27,7 @@ Forcing:
 - AerosolIndirectBuilder: Indirect aerosol cloud effects
 """
 
-from typing import Literal, TypedDict, final
+from typing import Any, Literal, TypedDict, final
 
 from rscm._lib.core import Component, ComponentBuilder
 
@@ -167,9 +167,9 @@ class CH4ChemistryParams(TypedDict, total=False):
     All fields optional - defaults provided by Rust.
     """
 
-    ch4_pi: float
+    feedback_start_year: float
     natural_emissions: float
-    tau_oh: float
+    tau_total_init: float
     tau_soil: float
     tau_strat: float
     tau_trop_cl: float
@@ -182,25 +182,26 @@ class CH4ChemistryParams(TypedDict, total=False):
     include_temp_feedback: bool
     include_emissions_feedback: bool
     ppb_to_tg: float
-    nox_reference: float
-    co_reference: float
-    nmvoc_reference: float
+    mixbox_size: float
 
 @final
 class CH4ChemistryBuilder(ComponentBuilder):
     """Builder for the CH4 chemistry component.
 
     Implements atmospheric methane chemistry with the Prather iteration method,
-    including OH feedback and temperature sensitivity.
+    including OH feedback and temperature sensitivity. Defaults follow MAGICC7
+    v7.5.3. Concentration and temperature feedbacks are measured from the year
+    before ``feedback_start_year``; NOx, CO and NMVOC deltas are relative to
+    emissions in ``feedback_start_year``.
 
     # Parameters
     # ----------
-    # ch4_pi : float
-    #     Pre-industrial CH4 concentration (ppb). Default: 722.0
+    # feedback_start_year : float
+    #     Year from which feedbacks are measured. Default: 1927.0
     # natural_emissions : float
-    #     Natural CH4 emissions (Tg CH4/yr). Default: 209.0
-    # tau_oh : float
-    #     Base tropospheric OH sink lifetime (years). Default: 9.3
+    #     Natural CH4 emissions (Tg CH4/yr). Default: 182.1908
+    # tau_total_init : float
+    #     Total lifetime at the reference state (years). Default: 9.9474
     # tau_soil : float
     #     Soil uptake sink lifetime (years). Default: 150.0
     # tau_strat : float
@@ -208,29 +209,25 @@ class CH4ChemistryBuilder(ComponentBuilder):
     # tau_trop_cl : float
     #     Tropospheric Cl sink lifetime (years). Default: 200.0
     # ch4_self_feedback : float
-    #     CH4 self-feedback coefficient. Default: -0.32
+    #     CH4 self-feedback coefficient. Default: -0.53775
     # oh_sensitivity_scale : float
-    #     OH sensitivity scaling factor. Default: 0.72
+    #     OH sensitivity scaling factor. Default: 0.72448
     # oh_nox_sensitivity : float
-    #     NOx emissions effect on OH ((Tg N/yr)^-1). Default: 0.0042
+    #     NOx emissions effect on OH ((Tg N/yr)^-1). Default: 0.0093376
     # oh_co_sensitivity : float
-    #     CO emissions effect on OH ((Tg CO/yr)^-1). Default: -0.000105
+    #     CO emissions effect on OH ((Tg CO/yr)^-1). Default: -0.000113
     # oh_nmvoc_sensitivity : float
-    #     NMVOC emissions effect on OH ((Tg NMVOC/yr)^-1). Default: -0.000315
+    #     NMVOC emissions effect on OH ((Tg NMVOC/yr)^-1). Default: -0.0003142
     # temp_sensitivity : float
-    #     Temperature sensitivity of lifetime (K^-1). Default: 0.0316
+    #     Temperature sensitivity of lifetime (K^-1). Default: 0.07
     # include_temp_feedback : bool
     #     Enable temperature feedback. Default: True
     # include_emissions_feedback : bool
     #     Enable NOx/CO/NMVOC emissions feedback. Default: True
     # ppb_to_tg : float
-    #     Conversion factor ppb to Tg CH4. Default: 2.75
-    # nox_reference : float
-    #     Reference NOx emissions (Tg N/yr). Default: 0.0
-    # co_reference : float
-    #     Reference CO emissions (Tg CO/yr). Default: 0.0
-    # nmvoc_reference : float
-    #     Reference NMVOC emissions (Tg NMVOC/yr). Default: 0.0
+    #     Conversion factor ppb to Tg CH4. Default: 2.824
+    # mixbox_size : float
+    #     Fraction of the atmosphere mixed with surface CH4. Default: 0.973
 
     Inputs
     ------
@@ -259,9 +256,8 @@ class CH4ChemistryBuilder(ComponentBuilder):
     --------
     >>> builder = CH4ChemistryBuilder.from_parameters(
     ...     {
-    ...         "ch4_pi": 722.0,
-    ...         "tau_oh": 9.3,
-    ...         "ch4_self_feedback": -0.32,
+    ...         "tau_total_init": 9.9474,
+    ...         "ch4_self_feedback": -0.53775,
     ...     }
     ... )
     >>> component = builder.build()
@@ -273,32 +269,82 @@ class CH4ChemistryBuilder(ComponentBuilder):
     def build(self) -> Component:
         """Build the CH4 chemistry component."""
 
+class CH4OxidationParams(TypedDict, total=False):
+    """Parameters for the fossil CH4 oxidation component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    carbon_per_ch4: float
+
+@final
+class CH4OxidationBuilder(ComponentBuilder):
+    """Builder for the fossil CH4 oxidation component.
+
+    Tracks fossil CH4 in the atmosphere and the CO2 released as it is
+    oxidised, which MAGICC7 adds to fossil CO2 emissions. Register it after
+    the CH4 chemistry component so that it reads the same step's lifetime.
+
+    # Parameters
+    # ----------
+    # carbon_per_ch4 : float
+    #     Mass of carbon per mass of CH4 oxidised. Default: 0.75
+
+    Inputs
+    ------
+    Emissions|CH4|Fossil : float
+        Fossil and industrial CH4 emissions (Mt CH4/yr)
+    Lifetime|CH4 : float
+        Total CH4 lifetime (years)
+
+    States
+    ------
+    Atmospheric Burden|CH4|Fossil : float
+        Fossil CH4 in the atmosphere (Mt CH4)
+
+    Outputs
+    -------
+    Emissions|CO2|CH4 Oxidation : float
+        CO2 released by oxidation (GtC/yr)
+    """
+
+    @staticmethod
+    def from_parameters(parameters: CH4OxidationParams) -> CH4OxidationBuilder:  # type: ignore[override]
+        """Create a builder from a parameter dictionary."""
+    def build(self) -> Component:
+        """Build the CH4 oxidation component."""
+
 class N2OChemistryParams(TypedDict, total=False):
     """Parameters for N2O chemistry component.
 
     All fields optional - defaults provided by Rust.
     """
 
-    n2o_pi: float
+    feedback_start_year: float
     natural_emissions: float
     tau_n2o: float
     lifetime_feedback: float
     strat_delay: int
     ppb_to_tg: float
+    include_meridional_flux_feedback: bool
+    meridional_flux_change_per_degree: float
+    tau_sensitivity_to_meridional_flux: float
+    meridional_flux_reference_year: float
 
 @final
 class N2OChemistryBuilder(ComponentBuilder):
     """Builder for the N2O chemistry component.
 
     Implements atmospheric nitrous oxide chemistry with concentration-dependent
-    lifetime feedback and stratospheric transport delay.
+    lifetime feedback, stratospheric transport delay and the MAGICC7
+    meridional flux response to warming. Defaults follow MAGICC7 v7.5.3.
 
     # Parameters
     # ----------
-    # n2o_pi : float
-    #     Pre-industrial N2O concentration (ppb). Default: 270.0
+    # feedback_start_year : float
+    #     Year from which the concentration feedback is measured. Default: 1925.0
     # natural_emissions : float
-    #     Natural N2O emissions (Tg N/yr). Default: 11.0
+    #     Natural N2O emissions (Tg N/yr). Default: 8.0345017
     # tau_n2o : float
     #     Base atmospheric lifetime (years). Default: 139.275
     # lifetime_feedback : float
@@ -307,11 +353,21 @@ class N2OChemistryBuilder(ComponentBuilder):
     #     Stratospheric mixing delay (years). Default: 1
     # ppb_to_tg : float
     #     Conversion factor ppb to Tg N. Default: 4.79
+    # include_meridional_flux_feedback : bool
+    #     Shorten the lifetime with warming. Default: True
+    # meridional_flux_change_per_degree : float
+    #     Meridional flux change per degree of warming (K^-1). Default: 0.15
+    # tau_sensitivity_to_meridional_flux : float
+    #     Lifetime sensitivity to meridional flux changes. Default: 0.04
+    # meridional_flux_reference_year : float
+    #     Year from which warming changes the meridional flux. Default: 1980.0
 
     Inputs
     ------
     Emissions|N2O : float
         Anthropogenic N2O emissions (Tg N/yr)
+    Surface Temperature : float
+        Global mean surface temperature anomaly (K)
 
     States
     ------
@@ -327,7 +383,6 @@ class N2OChemistryBuilder(ComponentBuilder):
     --------
     >>> builder = N2OChemistryBuilder.from_parameters(
     ...     {
-    ...         "n2o_pi": 270.0,
     ...         "tau_n2o": 139.275,
     ...         "lifetime_feedback": -0.04,
     ...     }
@@ -468,7 +523,8 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
     Atmospheric Concentration|CO2 : float
         Atmospheric CO2 concentration (ppm)
     Surface Temperature : float
-        Global mean surface temperature anomaly (K)
+        Global mean surface temperature anomaly (K). The feedbacks use the
+        warming since ``tempfeedback_yrstart``, floored at zero.
     Emissions|CO2|Land Use : float
         Land use change CO2 emissions (GtC/yr)
 
@@ -484,7 +540,7 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
     Outputs
     -------
     Carbon Flux|Terrestrial : float
-        Net terrestrial carbon uptake (GtC/yr)
+        Net atmosphere-to-land flux, including land-use emissions (GtC/yr)
     Emissions|CO2|Gross Deforestation : float
         Gross deforestation emissions (GtC/yr)
     Carbon Flux|Regrowth : float
@@ -520,8 +576,9 @@ class OceanCarbonParams(TypedDict, total=False):
     All fields optional - defaults provided by Rust.
     """
 
+    model: Literal["3D-GFDL", "2D-BERN", "HILDA"]
     co2_pi: float
-    pco2_pi: float
+    pco2_pi: float | None
     gas_exchange_scale: float
     gas_exchange_tau: float
     temp_sensitivity: float
@@ -532,68 +589,68 @@ class OceanCarbonParams(TypedDict, total=False):
     steps_per_year: int
     max_history_months: int
     irf_switch_time: float
-    irf_early_coefficients: list[float]
-    irf_early_timescales: list[float]
-    irf_late_coefficients: list[float]
-    irf_late_timescales: list[float]
+    irf_early: dict[str, Any]
+    irf_late: dict[str, Any]
     delta_ospp_offsets: list[float]
     delta_ospp_coefficients: list[float]
     enable_temp_feedback: bool
+    tempfeedback_yrstart: float
+    flux_change_limit: float
+    gtc_per_ppm: float
 
 @final
 class OceanCarbonBuilder(ComponentBuilder):
     """Builder for the ocean carbon cycle component.
 
     Implements an IRF-based ocean carbon model with air-sea exchange and
-    temperature feedback using the 2D-BERN impulse response function.
+    temperature feedback, using the MAGICC7 default 3D-GFDL impulse response.
+    Atmospheric CO2 evolves monthly within each year from the other carbon
+    sources and the ocean uptake, as in MAGICC7.
 
     # Parameters
     # ----------
-    # co2_pi : float
-    #     Pre-industrial atmospheric CO2 (ppm). Default: 278.0
-    # pco2_pi : float
-    #     Pre-industrial ocean surface pCO2 (ppm). Default: 278.0
+    # pco2_pi : float | None
+    #     Unperturbed ocean surface pCO2 (ppm). Default: the initial pCO2
     # gas_exchange_scale : float
     #     Gas exchange rate scaling factor. Default: 1.833492
     # gas_exchange_tau : float
-    #     Gas exchange timescale (years). Default: 7.46
+    #     Gas exchange timescale (years). Default: 7.66
     # temp_sensitivity : float
-    #     Temperature sensitivity of pCO2 (K^-1). Default: 0.0423
+    #     Temperature sensitivity of pCO2 (K^-1). Default: 0.03717879
     # irf_scale : float
     #     IRF scaling factor. Default: 0.9492864
     # mixed_layer_depth : float
-    #     Mixed layer depth (m). Default: 50.0
+    #     Mixed layer depth (m). Default: 50.9
     # ocean_surface_area : float
-    #     Ocean surface area (m^2). Default: 3.5375e14
+    #     Ocean surface area (m^2). Default: 3.55e14
     # sst_pi : float
-    #     Pre-industrial sea surface temperature (C). Default: 18.2997
+    #     Pre-industrial sea surface temperature (C). Default: 17.7
     # steps_per_year : int
     #     Sub-steps per year. Default: 12
     # max_history_months : int
     #     Maximum flux history length (months). Default: 6000
-    # irf_switch_time : float
-    #     IRF switch time (years). Default: 9.9
-    # irf_early_coefficients : list[float]
-    #     Early IRF exponential coefficients
-    # irf_early_timescales : list[float]
-    #     Early IRF exponential timescales (years)
-    # irf_late_coefficients : list[float]
-    #     Late IRF exponential coefficients
-    # irf_late_timescales : list[float]
-    #     Late IRF exponential timescales (years)
-    # delta_ospp_offsets : list[float]
-    #     Joos A24 polynomial offsets (length 5)
-    # delta_ospp_coefficients : list[float]
-    #     Joos A24 polynomial coefficients (length 5)
     # enable_temp_feedback : bool
     #     Enable temperature feedback on pCO2. Default: True
+    # tempfeedback_yrstart : float
+    #     Year from which warming drives the pCO2 feedback. Default: 1900.0
+    # flux_change_limit : float
+    #     Largest flux change between sub-steps (ppm/yr), disabled if non-positive.
+    #     Default: 0.04
+    # gtc_per_ppm : float
+    #     Conversion factor GtC per ppm CO2. Default: 2.123
 
     Inputs
     ------
     Atmospheric Concentration|CO2 : float
-        Atmospheric CO2 concentration (ppm)
-    Sea Surface Temperature : float
-        Sea surface temperature anomaly (K)
+        Atmospheric CO2 concentration at the start of the year (ppm)
+    Surface Temperature : float
+        Global mean surface temperature anomaly (K)
+    Emissions|CO2|Fossil : float
+        Fossil and industrial CO2 emissions (GtC/yr)
+    Emissions|CO2|CH4 Oxidation : float
+        CO2 from oxidised fossil CH4 (GtC/yr)
+    Carbon Flux|Terrestrial : float
+        Net land uptake, including land-use emissions (GtC/yr)
 
     States
     ------
@@ -605,13 +662,12 @@ class OceanCarbonBuilder(ComponentBuilder):
     Outputs
     -------
     Carbon Flux|Ocean : float
-        Net ocean carbon uptake (GtC/yr)
+        Annual mean ocean carbon uptake (GtC/yr)
 
     Examples
     --------
     >>> builder = OceanCarbonBuilder.from_parameters(
     ...     {
-    ...         "co2_pi": 278.0,
     ...         "gas_exchange_scale": 1.833492,
     ...         "enable_temp_feedback": True,
     ...     }
@@ -651,10 +707,10 @@ class CO2BudgetBuilder(ComponentBuilder):
     ------
     Emissions|CO2|Fossil : float
         Fossil fuel CO2 emissions (GtC/yr)
-    Emissions|CO2|Land Use : float
-        Land use change CO2 emissions (GtC/yr)
+    Emissions|CO2|CH4 Oxidation : float
+        CO2 from oxidised fossil CH4 (GtC/yr)
     Carbon Flux|Terrestrial : float
-        Terrestrial carbon uptake (GtC/yr)
+        Net atmosphere-to-land flux, including land-use emissions (GtC/yr)
     Carbon Flux|Ocean : float
         Ocean carbon uptake (GtC/yr)
 
@@ -668,7 +724,7 @@ class CO2BudgetBuilder(ComponentBuilder):
     Emissions|CO2|Net : float
         Net CO2 emissions (GtC/yr)
     Airborne Fraction|CO2 : float
-        Airborne fraction of CO2 emissions (dimensionless)
+        Fraction of fossil sources remaining in the atmosphere (dimensionless)
 
     Examples
     --------
@@ -1055,4 +1111,10 @@ class GhgForcingBuilder(ComponentBuilder):
         """Evaluate boundary ERF in W/m², keyed by CO2, CH4 and N2O.
 
         Concentrations must be finite and positive, in ppm, ppb and ppb.
+        """
+    def co2_doubling_forcing(self) -> float:
+        """ERF in W/m² from doubling CO2 above ``co2_pi``.
+
+        CH4 and N2O are held at their preindustrial references. MAGICC7 derives
+        its climate feedback from this value.
         """

@@ -338,9 +338,9 @@ mod ocean_temperature_pco2 {
         let params = OceanCarbonParameters::default();
 
         // Zero DIC change, varying temperature
-        let pco2_0k = params.ocean_pco2(0.0, 0.0);
-        let pco2_1k = params.ocean_pco2(0.0, 1.0);
-        let pco2_2k = params.ocean_pco2(0.0, 2.0);
+        let pco2_0k = params.ocean_pco2(278.0, 0.0, 0.0);
+        let pco2_1k = params.ocean_pco2(278.0, 0.0, 1.0);
+        let pco2_2k = params.ocean_pco2(278.0, 0.0, 2.0);
 
         let pct_per_k = (pco2_1k / pco2_0k - 1.0) * 100.0;
         let expected_pct = ((params.temp_sensitivity * 1.0).exp() - 1.0) * 100.0;
@@ -375,9 +375,13 @@ mod ocean_temperature_pco2 {
     /// hence the flux into the ocean.
     #[test]
     fn test_warming_reduces_ocean_uptake() {
-        let params = OceanCarbonParameters::default();
+        // Starting far from equilibrium, the MAGICC7 flux limiter would pin the flux
+        let params = OceanCarbonParameters {
+            flux_change_limit: 0.0,
+            ..Default::default()
+        };
         let component = OceanCarbon::from_parameters(params.clone());
-        let pco2_pi = params.pco2_pi;
+        let pco2_pi = 278.0;
         let co2_atm = 400.0; // Elevated
 
         // Run 10 years with no warming
@@ -385,10 +389,10 @@ mod ocean_temperature_pco2 {
         let mut pco2_cold = pco2_pi;
         let mut cum_cold = 0.0;
         for _ in 0..10 {
-            let (p, c, _) =
-                component.solve_ocean(&mut state_cold, co2_atm, 0.0, pco2_cold, cum_cold, 1.0);
-            pco2_cold = p;
-            cum_cold = c;
+            let r =
+                component.solve_ocean(&mut state_cold, co2_atm, 0.0, 0.0, pco2_cold, cum_cold, 1.0);
+            pco2_cold = r.pco2;
+            cum_cold = r.cumulative_uptake;
         }
 
         // Run 10 years with +3K warming
@@ -396,10 +400,10 @@ mod ocean_temperature_pco2 {
         let mut pco2_warm = pco2_pi;
         let mut cum_warm = 0.0;
         for _ in 0..10 {
-            let (p, c, _) =
-                component.solve_ocean(&mut state_warm, co2_atm, 3.0, pco2_warm, cum_warm, 1.0);
-            pco2_warm = p;
-            cum_warm = c;
+            let r =
+                component.solve_ocean(&mut state_warm, co2_atm, 0.0, 3.0, pco2_warm, cum_warm, 1.0);
+            pco2_warm = r.pco2;
+            cum_warm = r.cumulative_uptake;
         }
 
         println!("10-year cumulative uptake (cold): {:.2} GtC", cum_cold);
@@ -468,11 +472,14 @@ mod co2_budget_mass_balance {
     #[test]
     fn test_budget_mass_balance_with_component_fluxes() {
         let terr = TerrestrialCarbon::from_parameters(TerrestrialCarbonParameters::default());
-        let ocean = OceanCarbon::from_parameters(OceanCarbonParameters::default());
+        // Starting far from equilibrium, the MAGICC7 flux limiter would pin the flux
+        let ocean = OceanCarbon::from_parameters(OceanCarbonParameters {
+            flux_change_limit: 0.0,
+            ..Default::default()
+        });
         let budget = CO2Budget::from_parameters(CO2BudgetParameters::default());
 
         let terr_params = TerrestrialCarbonParameters::default();
-        let ocean_params = OceanCarbonParameters::default();
         let budget_params = CO2BudgetParameters::default();
 
         let fossil_emissions = 10.0; // GtC/yr
@@ -484,7 +491,7 @@ mod co2_budget_mass_balance {
             terr_params.detritus_pool_pi,
             terr_params.soil_pool_pi,
         ];
-        let mut ocean_pco2 = ocean_params.pco2_pi;
+        let mut ocean_pco2 = 278.0;
         let mut ocean_cumulative = 0.0;
         let mut ocean_state = OceanCarbonState::default();
 
@@ -501,27 +508,28 @@ mod co2_budget_mass_balance {
                 terr.solve_pools(co2, 0.0, landuse_emissions, terr_pools, 1.0);
 
             // Ocean carbon cycle (no SST change)
-            let (new_pco2, new_cumulative, ocean_flux) = ocean.solve_ocean(
+            let ocean_result = ocean.solve_ocean(
                 &mut ocean_state,
                 co2,
+                fossil_emissions - land_flux,
                 0.0,
                 ocean_pco2,
                 ocean_cumulative,
                 1.0,
             );
-
-            // Budget integration
-            let (new_co2, net_emissions, _af) = budget.solve_budget(
-                fossil_emissions,
-                landuse_emissions,
-                land_flux,
-                ocean_flux,
-                co2,
-                1.0,
+            let (new_pco2, new_cumulative, ocean_flux) = (
+                ocean_result.pco2,
+                ocean_result.cumulative_uptake,
+                ocean_result.flux,
             );
 
-            // Mass balance check: net_emissions = fossil + landuse - land_flux - ocean_flux
-            let expected_net = fossil_emissions + landuse_emissions - land_flux - ocean_flux;
+            // Budget integration
+            // The land flux already includes land-use emissions
+            let (new_co2, net_emissions, _af) =
+                budget.solve_budget(fossil_emissions, 0.0, land_flux, ocean_flux, co2, 1.0);
+
+            // Mass balance check: net_emissions = fossil - land_flux - ocean_flux
+            let expected_net = fossil_emissions - land_flux - ocean_flux;
             let balance_error = (net_emissions - expected_net).abs();
 
             if year < 5 || year == 19 {
@@ -571,15 +579,18 @@ mod co2_budget_mass_balance {
         // Re-run last year to get the trend
         let (new_pools_check, land_flux_check) =
             terr.solve_pools(co2, 0.0, landuse_emissions, terr_pools, 1.0);
-        let (_, _, ocean_flux_check) = ocean.solve_ocean(
-            &mut ocean_state,
-            co2,
-            0.0,
-            ocean_pco2,
-            ocean_cumulative,
-            1.0,
-        );
-        let net_check = fossil_emissions + landuse_emissions - land_flux_check - ocean_flux_check;
+        let ocean_flux_check = ocean
+            .solve_ocean(
+                &mut ocean_state,
+                co2,
+                fossil_emissions - land_flux_check,
+                0.0,
+                ocean_pco2,
+                ocean_cumulative,
+                1.0,
+            )
+            .flux;
+        let net_check = fossil_emissions - land_flux_check - ocean_flux_check;
         assert!(
             net_check > 0.0,
             "Net emissions should be positive in final year: {:.4} GtC/yr \
@@ -834,7 +845,7 @@ mod ocean_gas_exchange {
     fn test_flux_linearity_with_gradient() {
         let params = OceanCarbonParameters::default();
         let component = OceanCarbon::from_parameters(params.clone());
-        let pco2_pi = params.pco2_pi;
+        let pco2_pi = 278.0;
 
         // Fresh state for each run (so no IRF history effects)
         let gradients = [50.0, 100.0, 200.0];
@@ -846,7 +857,9 @@ mod ocean_gas_exchange {
 
             // Just one month of integration to get initial flux
             // (before IRF feedback significantly alters pCO2)
-            let (_, _, flux) = component.solve_ocean(&mut state, co2_atm, 0.0, pco2_pi, 0.0, 1.0);
+            let flux = component
+                .solve_ocean(&mut state, co2_atm, 0.0, 0.0, pco2_pi, 0.0, 1.0)
+                .flux;
             fluxes.push(flux);
         }
 

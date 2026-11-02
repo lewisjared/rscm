@@ -61,6 +61,14 @@ $$B = C \cdot f_{ppb2TgN}$$
 
 Where $f_{ppb2TgN}$ = `N2O_PPB2TGN` = 4.79 TgN/ppb (conversion factor from ppb to TgN).
 
+### 2.6 Conventions Verified Against MAGICC7 Output
+
+Reproducing v7.5.3 SSP245 emissions-driven output to within 1e-5 ppb fixed these details:
+
+- $B_{00}$ tracks the current burden until the year before `N2O_FEED_YRSTART` and is then fixed.
+- $\Delta T_{merid}$ is $\max(0, T(t) - T(\text{GEN\_CHANGE\_MERIDIONALFLUX\_YR}))$, zero before that year.
+- Natural emissions are constant at the budget-closing value (8.0345 TgN/yr for the default inputs).
+
 ## 3. State Variables
 
 | Variable | Fortran Name | Symbol | Units | Description | Initial Value |

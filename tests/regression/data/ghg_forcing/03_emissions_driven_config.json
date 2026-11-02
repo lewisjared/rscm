@@ -1,13 +1,15 @@
 {
   "core_climatesensitivity": 3.0,
   "core_delq2xco2": 3.71,
-  "out_forcing": 1,
-  "out_temperature": 1,
-  "out_ascii_binary": "ASCII",
+  "core_amv_apply": 0,
+  "core_elnino_apply": 0,
+  "rf_solar_scale": 0.0,
+  "rf_volcanic_scale": 0.0,
   "startyear": 1750,
-  "endyear": 2100,
+  "endyear": 2105,
   "file_emisscen": "SSP245_EMMS.SCEN7",
-  "out_concentrations": 1,
-  "out_emissions": 1,
-  "out_carboncycle": 1
+  "co2_switchfromconc2emis_year": 1750,
+  "ch4_switchfromconc2emis_year": 1750,
+  "n2o_switchfromconc2emis_year": 1750,
+  "pf_apply": 0
 }

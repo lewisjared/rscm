@@ -85,14 +85,10 @@ def _series(
     return result
 
 
-def _prepare_inputs(
-    years: ArrayLike,
-    concentrations: Mapping[str, ArrayLike],
-    other_forcing: ArrayLike,
-    co2_emissions: CO2Emissions | None,
-    forcing_species: tuple[str, ...],
-) -> tuple[NDArray[np.float64], dict[str, NDArray[np.float64]]]:
-    """Validate boundary data and ownership before constructing components."""
+def _validate_axis(
+    years: ArrayLike, forcing_species: tuple[str, ...]
+) -> NDArray[np.float64]:
+    """Validate annual boundaries and the selected forcing gases."""
     time = np.array(years, dtype=np.float64, copy=True)
     if (
         time.ndim != 1
@@ -109,6 +105,18 @@ def _prepare_inputs(
     ):
         msg = "forcing_species must select CO2, CH4 and/or N2O without duplicates"
         raise ValueError(msg)
+    return time
+
+
+def _prepare_inputs(
+    years: ArrayLike,
+    concentrations: Mapping[str, ArrayLike],
+    other_forcing: ArrayLike,
+    co2_emissions: CO2Emissions | None,
+    forcing_species: tuple[str, ...],
+) -> tuple[NDArray[np.float64], dict[str, NDArray[np.float64]]]:
+    """Validate boundary data and ownership before constructing components."""
+    time = _validate_axis(years, forcing_species)
     required = set(SPECIES) - ({"CO2"} if co2_emissions is not None else set())
     if set(concentrations) != required:
         msg = (
@@ -150,7 +158,9 @@ def run_magicc(  # noqa: PLR0913
     ``forcing_species=("CO2",)``; all three concentrations are still required
     for absorption overlap calculations.
 
-    Component parameter dictionaries use their Rust names and defaults.
+    Component parameter dictionaries use their Rust names and defaults, except
+    that ``rf_2xco2`` defaults to the CO2-doubling ERF of the forcing
+    configuration, as in MAGICC7.
     Preindustrial reference concentrations are independent of the start year.
     Climate starts from an unperturbed ocean and zero temperature anomaly.
 
@@ -172,13 +182,23 @@ def run_magicc(  # noqa: PLR0913
                 "initial CO2", [co2_emissions.initial_concentration], 1, positive=True
             )[0]
         )
-        for name, rates in {
-            "Emissions|CO2|Fossil": co2_emissions.fossil,
-            "Emissions|CO2|Land Use": co2_emissions.land_use,
-            "Carbon Flux|Terrestrial": co2_emissions.land_uptake,
-            "Carbon Flux|Ocean": co2_emissions.ocean_uptake,
+        rates = {
+            name: _series(name, values, len(time) - 1)
+            for name, values in {
+                "Emissions|CO2|Fossil": co2_emissions.fossil,
+                "Emissions|CO2|Land Use": co2_emissions.land_use,
+                "land uptake": co2_emissions.land_uptake,
+                "ocean uptake": co2_emissions.ocean_uptake,
+            }.items()
+        }
+        # The budget takes the net land flux, which includes land-use emissions
+        for name, interval_values in {
+            "Emissions|CO2|Fossil": rates["Emissions|CO2|Fossil"],
+            "Emissions|CO2|CH4 Oxidation": np.zeros(len(time) - 1),
+            "Carbon Flux|Terrestrial": rates["land uptake"]
+            - rates["Emissions|CO2|Land Use"],
+            "Carbon Flux|Ocean": rates["ocean uptake"],
         }.items():
-            interval_values = _series(name, rates, len(time) - 1)
             # The core stores a value at every boundary. The last rate is never
             # integrated; repeat it only to populate that storage slot.
             data[name] = np.r_[interval_values, interval_values[-1]]
@@ -210,7 +230,10 @@ def run_magicc(  # noqa: PLR0913
         msg = "Component parameters produced nonfinite initial forcing"
         raise ValueError(msg)
 
-    climate_params: ClimateUDEBParams = climate_parameters or {}
+    climate_params: ClimateUDEBParams = {
+        "rf_2xco2": forcing.co2_doubling_forcing(),
+        **(climate_parameters or {}),
+    }
     climate_builder = ClimateUDEBBuilder.from_parameters(climate_params)
     climate = climate_builder.build()
     initial.update(climate_builder.initial_values(initial[ERF]))
@@ -246,7 +269,13 @@ def run_magicc(  # noqa: PLR0913
     contributors = (*(ERF + "|" + gas for gas in forcing_species), ERF + "|Other")
     schema.add_aggregate(ERF, "W/m^2", "Sum", list(contributors))
     axis = TimeAxis.from_values(time)
-    builder = ModelBuilder().with_time_axis(axis).with_schema(schema)
+    # Components reading global temperature must see the area-weighted mean
+    builder = (
+        ModelBuilder()
+        .with_time_axis(axis)
+        .with_schema(schema)
+        .with_grid_weights(GridType.FourBox, list(weights))
+    )
     # Register the budget before forcing: its current-step concentration must
     # be available before the forcing diagnostic is evaluated.
     if budget is not None:
@@ -269,8 +298,12 @@ def _collect_result(  # noqa: PLR0913
     sources: dict[str, str],
     contributors: tuple[str, ...],
     weights: NDArray[np.float64],
+    diagnostics: frozenset[str] = frozenset(),
 ) -> MAGICCResult:
-    """Validate every returned boundary and retain the four regional temperatures."""
+    """Validate every returned boundary and retain the four regional temperatures.
+
+    ``diagnostics`` are per-step outputs, which have no value at the first boundary.
+    """
     collection = model.timeseries()
     temperature = collection.get_fourbox_timeseries_by_name("Surface Temperature")
     if temperature is None:
@@ -287,8 +320,9 @@ def _collect_result(  # noqa: PLR0913
             values[name] = series.values().copy()
     values["Surface Temperature"] = regional @ weights
     for name, output in {**values, "Regional Surface Temperature": regional}.items():
-        if not np.isfinite(output).all():
-            index = int(np.argwhere(~np.isfinite(output))[0, 0])
+        start = 1 if name in diagnostics else 0
+        if not np.isfinite(output[start:]).all():
+            index = start + int(np.argwhere(~np.isfinite(output[start:]))[0, 0])
             msg = f"Nonfinite {name} at year {time[index]}"
             raise RuntimeError(msg)
     for gas in SPECIES:

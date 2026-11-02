@@ -157,6 +157,13 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         description="Year to switch from concentration to emissions driven for CO2",
         category="carbon_cycle",
     ),
+    "pf_apply": ParameterInfo(
+        name="pf_apply",
+        status=ParameterStatus.NOT_IMPLEMENTED,
+        unit=None,
+        description="Enable the permafrost CO2 and CH4 feedback",
+        category="carbon_cycle",
+    ),
     "ch4_switchfromconc2emis_year": ParameterInfo(
         name="ch4_switchfromconc2emis_year",
         status=ParameterStatus.NOT_IMPLEMENTED,
