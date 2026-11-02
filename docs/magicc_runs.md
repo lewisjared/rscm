@@ -5,8 +5,9 @@ For an offline SSP245 comparison and its interpretation limits, see the
 
 `rscm.magicc.run_magicc` runs concentrations through GHG forcing, forcing
 aggregation and ClimateUDEB. It also supports a partial CO2 emissions mode using
-CO2Budget with prescribed land and ocean uptake. These configurations let us test
-the model end to end while chemistry and carbon-cycle work continues.
+CO2Budget with prescribed land and ocean uptake.
+`rscm.magicc.run_magicc_emissions` calculates CO2, CH4 and N2O from emissions
+with the coupled carbon cycle and chemistry.
 
 ## Concentration-driven run
 
@@ -69,10 +70,88 @@ The four emissions and uptake arrays contain annual mean rates in GtC/yr.
 Positive uptake removes carbon from the atmosphere. Each entry applies over
 `[years[i], years[i + 1])`; the budget uses 2.123 GtC per ppm. CO2 must not also
 be supplied as a prescribed concentration. CH4 and N2O remain prescribed.
+The budget receives the net land flux, `land_uptake - land_use`, because land-use
+emissions leave the land pools.
 
 This mode exercises emissions → calculated CO2 → forcing → temperature.
 It does not calculate land or ocean uptake, couple temperature back into those
 sinks, or infer emissions from prescribed concentrations.
+
+## Emissions-driven run
+
+```python
+from rscm.magicc import Emissions, run_magicc_emissions
+
+intervals = len(years) - 1
+result = run_magicc_emissions(
+    years,
+    Emissions(
+        co2_fossil=np.full(intervals, 8.0),     # GtC/yr
+        co2_land_use=np.full(intervals, 1.0),   # GtC/yr
+        ch4=np.full(intervals, 300.0),          # Mt CH4/yr, anthropogenic
+        ch4_fossil=np.full(intervals, 120.0),   # Mt CH4/yr, part of ch4
+        n2o=np.full(intervals, 7.0),            # Mt N/yr
+        nox=np.full(intervals, 40.0),           # Mt N/yr
+        co=np.full(intervals, 900.0),           # Mt CO/yr
+        nmvoc=np.full(intervals, 200.0),        # Mt NMVOC/yr
+    ),
+    initial_concentrations={"CO2": 278.0, "CH4": 722.0, "N2O": 270.0},
+    other_forcing=np.zeros(len(years)),
+)
+co2 = result.values["Atmospheric Concentration|CO2"]
+```
+
+Emissions are annual mean rates, one per interval, as in the partial mode.
+The run couples these components, registered in this order:
+
+- `CH4Chemistry` and `N2OChemistry` calculate concentrations from emissions.
+  Natural emissions are parameters that default to the budget-closing values
+  MAGICC7 derives for its standard historical concentrations.
+- `CH4Oxidation` tracks fossil CH4 and the CO2 released as it is oxidised.
+- `TerrestrialCarbon` calculates the net land flux, including land-use emissions.
+- `OceanCarbon` calculates the uptake while CO2 evolves monthly within the year.
+- `CO2Budget` closes the atmospheric CO2 balance.
+- `GhgForcing` and `ClimateUDEB` calculate forcing and temperature.
+
+As in MAGICC7, chemistry and the carbon cycle use the temperature at the start of
+each year, and forcing uses the concentrations at its end. The carbon-cycle
+feedbacks use the warming since 1900.
+The CH4 lifetime feedbacks use the concentration and temperature in 1926 and the NOx, CO and NMVOC
+emissions in 1927.
+The N2O lifetime feedbacks use the concentration in 1924 and the warming since 1980.
+Runs ending before a reference year use their last year instead.
+Temperature reaching these components is the area-weighted global mean.
+
+The first year should be preindustrial. The ocean starts in equilibrium with the
+initial CO2, the land pools at their preindustrial sizes and the climate at zero
+anomaly. Forcing outside CO2, CH4 and N2O, including ozone, aerosols,
+halocarbons and natural forcing, is supplied through `other_forcing`.
+`parameters` maps component names to their Rust parameter dictionaries:
+
+```python
+parameters = {
+    "GhgForcing": {"co2_pi": 277.147, "ch4_pi": 731.406, "n2o_pi": 273.865},
+    "CH4Chemistry": {"natural_emissions": 182.19},
+    "ClimateUDEB": {"ecs": 3.0},
+}
+```
+
+### Agreement with MAGICC7
+
+The regression case `03_emissions_driven` runs MAGICC7 v7.5.3 SSP245 emissions-driven
+from 1750, with the RSCM-calculated forcing replaced by the reference residual.
+From 1750 to 2100, RSCM stays within 0.5 ppm CO2, 3 ppb CH4, 0.03 ppb N2O and
+0.02 K of MAGICC7. That case disables processes RSCM cannot represent:
+
+- Permafrost is not implemented. MAGICC7 enables it by default, adding about
+  0.8 GtC/yr of CO2 by 2100.
+- Volcanic and solar forcing are disabled. MAGICC7 applies volcanic forcing
+  within the year, which annual residual forcing cannot carry. With it enabled,
+  concentrations still agree within 0.6 ppm and 3 ppb, but temperature differs
+  by up to 0.3 K in eruption years.
+
+MAGICC7's default configuration also prescribes concentrations until 2015,
+calculating emissions-driven only afterwards. RSCM has no such mode switch.
 
 ## Time and initialization
 
@@ -93,8 +172,9 @@ sinks, or infer emissions from prescribed concentrations.
 
 `climate_parameters` accepts ClimateUDEB parameter names such as `ecs` and
 `rf_2xco2`. `forcing_parameters` accepts GhgForcing parameter names such as
-`method` and `delq2xco2`. For an IPCCTAR experiment with a custom CO2-doubling
-forcing, set both `delq2xco2` and `rf_2xco2` consistently.
+`method` and `delq2xco2`. As in MAGICC7, `rf_2xco2` defaults to the ERF of
+doubling CO2 under the forcing configuration, which is about 3.9 W/m² for
+OLBL. Set it explicitly only to decouple the climate feedback from the forcing.
 
 ## Results and verification
 
@@ -112,7 +192,7 @@ Inputs must be complete and finite. Required concentrations must be positive.
 The runner checks returned outputs for nonfinite values, and component errors
 raise exceptions rather than allowing a failed run to appear successful.
 
-Run the mandatory execution tests and the existing reference comparisons with:
+Run the execution tests and the reference comparisons with:
 
 ```sh
 make build-dev
@@ -122,11 +202,9 @@ uv run pytest tests/test_magicc_runner.py tests/regression/test_ghg_forcing.py
 The execution tests include equilibrium, forcing boundary alignment, comparison
 with prescribed-forcing climate runs, carbon mass balance and concentration
 replay. The reference concentration cases use this same runner and check GHG
-forcing parity. Their finite climate outputs establish successful composition;
-they do not establish full MAGICC7 temperature parity.
+forcing parity. The emissions-driven case checks concentrations, temperature,
+carbon fluxes and lifetimes against MAGICC7.
 
-The older fully coupled emissions parity test remains an expected failure.
 UDEB currently applies its CO2 regional forcing pattern to total ERF, including
 the prescribed residual; agent-specific spatial patterns are not represented.
-Explicit lagged feedback dependencies, chemistry integration, carbon-cycle
-initialization and complete reference input fixtures remain separate work.
+Ozone and aerosol forcing are not yet calculated in the coupled run.

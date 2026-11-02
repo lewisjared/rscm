@@ -91,23 +91,22 @@ mod carbon_cycle_conservation {
     fn test_ocean_carbon_cumulative_uptake() {
         let component = OceanCarbon::from_parameters(OceanCarbonParameters::default());
         let mut state = OceanCarbonState::default();
-        let params = OceanCarbonParameters::default();
 
         let co2_elevated = 400.0;
         let sst = 0.0;
-        let mut pco2 = params.pco2_pi;
+        let mut pco2 = 278.0;
         let mut cumulative = 0.0;
         let dt = 1.0;
 
         let mut total_flux = 0.0;
 
         for _ in 0..50 {
-            let (new_pco2, new_cumulative, flux) =
-                component.solve_ocean(&mut state, co2_elevated, sst, pco2, cumulative, dt);
+            let result =
+                component.solve_ocean(&mut state, co2_elevated, 0.0, sst, pco2, cumulative, dt);
 
-            total_flux += flux * dt;
-            pco2 = new_pco2;
-            cumulative = new_cumulative;
+            total_flux += result.flux * dt;
+            pco2 = result.pco2;
+            cumulative = result.cumulative_uptake;
         }
 
         assert_relative_eq!(cumulative, total_flux, epsilon = 1.0);
@@ -118,19 +117,18 @@ mod carbon_cycle_conservation {
     fn test_ocean_pco2_approaches_equilibrium() {
         let component = OceanCarbon::from_parameters(OceanCarbonParameters::default());
         let mut state = OceanCarbonState::default();
-        let params = OceanCarbonParameters::default();
 
         let co2_target = 400.0;
         let sst = 0.0;
-        let mut pco2 = params.pco2_pi;
+        let mut pco2 = 278.0;
         let mut cumulative = 0.0;
         let dt = 1.0;
 
         for _ in 0..500 {
-            let (new_pco2, new_cumulative, _) =
-                component.solve_ocean(&mut state, co2_target, sst, pco2, cumulative, dt);
-            pco2 = new_pco2;
-            cumulative = new_cumulative;
+            let result =
+                component.solve_ocean(&mut state, co2_target, 0.0, sst, pco2, cumulative, dt);
+            pco2 = result.pco2;
+            cumulative = result.cumulative_uptake;
         }
 
         assert!(

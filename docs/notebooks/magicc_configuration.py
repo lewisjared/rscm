@@ -108,24 +108,22 @@ print(f"  Outputs: {climate_component.output_names()}")
 
 # %%
 ch4_params = {
-    "ch4_pi": 722.0,  # ppb, pre-industrial concentration
-    "natural_emissions": 209.0,  # Tg CH4/yr
-    "tau_oh": 9.3,  # years, tropospheric OH sink lifetime
+    "feedback_start_year": 1927.0,  # feedbacks measured from this year
+    "natural_emissions": 182.1908,  # Tg CH4/yr
+    "tau_total_init": 9.9474,  # years, total lifetime at the reference state
     "tau_soil": 150.0,  # years, soil uptake lifetime
     "tau_strat": 120.0,  # years, stratospheric sink lifetime
     "tau_trop_cl": 200.0,  # years, tropospheric Cl sink lifetime
-    "ch4_self_feedback": -0.32,  # CH4 self-feedback coefficient
-    "oh_sensitivity_scale": 0.72,  # OH sensitivity scaling
-    "oh_nox_sensitivity": 0.0042,  # (Tg N/yr)^-1
-    "oh_co_sensitivity": -0.000105,  # (Tg CO/yr)^-1
-    "oh_nmvoc_sensitivity": -0.000315,  # (Tg NMVOC/yr)^-1
-    "temp_sensitivity": 0.0316,  # K^-1
+    "ch4_self_feedback": -0.53775,  # CH4 self-feedback coefficient
+    "oh_sensitivity_scale": 0.72448,  # OH sensitivity scaling
+    "oh_nox_sensitivity": 0.0093376,  # (Tg N/yr)^-1
+    "oh_co_sensitivity": -0.000113,  # (Tg CO/yr)^-1
+    "oh_nmvoc_sensitivity": -0.0003142,  # (Tg NMVOC/yr)^-1
+    "temp_sensitivity": 0.07,  # K^-1
     "include_temp_feedback": True,
     "include_emissions_feedback": True,
-    "ppb_to_tg": 2.75,  # conversion factor
-    "nox_reference": 0.0,  # Tg N/yr
-    "co_reference": 0.0,  # Tg CO/yr
-    "nmvoc_reference": 0.0,  # Tg NMVOC/yr
+    "ppb_to_tg": 2.824,  # conversion factor
+    "mixbox_size": 0.973,  # fraction of the atmosphere mixed with surface CH4
 }
 
 ch4_component = CH4ChemistryBuilder.from_parameters(ch4_params).build()
@@ -136,13 +134,13 @@ print(f"  Outputs: {ch4_component.output_names()}")
 # %% [markdown]
 # ### N2O Chemistry
 #
-# Nitrous oxide atmospheric chemistry with concentration-dependent lifetime feedback
-# and stratospheric transport delay.
+# Nitrous oxide atmospheric chemistry with concentration-dependent lifetime feedback,
+# stratospheric transport delay and a lifetime response to warming.
 
 # %%
 n2o_params = {
-    "n2o_pi": 270.0,  # ppb, pre-industrial concentration
-    "natural_emissions": 11.0,  # Tg N/yr
+    "feedback_start_year": 1925.0,  # feedback measured from this year
+    "natural_emissions": 8.0345017,  # Tg N/yr
     "tau_n2o": 139.275,  # years, base atmospheric lifetime
     "lifetime_feedback": -0.04,  # lifetime feedback exponent
     "strat_delay": 1,  # years, stratospheric mixing delay

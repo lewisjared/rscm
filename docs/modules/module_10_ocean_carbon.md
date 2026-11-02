@@ -104,6 +104,17 @@ $$R = \frac{\partial \ln(pCO2)}{\partial \ln(DIC)} \approx 10-15$$
 
 This means ocean pCO2 increases ~10-15 times faster than DIC, which is why ocean uptake efficiency decreases as the ocean absorbs more carbon.
 
+### 2.6 Conventions Verified Against MAGICC7 Output
+
+Reproducing v7.5.3 SSP245 emissions-driven CO2 to within 0.02 ppm fixed these details:
+
+- $pCO2_0$ is the first-year atmospheric CO2, so the ocean starts in equilibrium.
+- After the switch time the IRF is the late form multiplied by $IRF_{scaled}(t_s) / IRF(t_s)$,
+  evaluated with the late form at the switch time $t_s$.
+- $\Delta T_{SST}$ is the global surface warming since `CO2_TEMPFEEDBACK_YRSTART`, floored at zero.
+- Atmospheric CO2 is updated every month inside the loop, from fossil emissions,
+  CO2 from fossil CH4 oxidation and the annual land flux.
+
 ## 3. State Variables
 
 | Variable | Fortran Name | Symbol | Units | Description | Initial Value |

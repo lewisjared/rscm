@@ -22,6 +22,7 @@
 //!
 //! See `docs/modules/module_10_ocean_carbon.md` for full specification.
 
+use super::co2_budget::GTC_PER_PPM;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -29,7 +30,14 @@ use serde::{Deserialize, Serialize};
 ///
 /// Used to convert between flux (ppm/month) and DIC (micromol/kg).
 /// Calculated as: 1e6 / (5.65770e-15 ppm/mol) / (1026.5 kg/m^3)
-pub const OCEAN_MICROMOL_PER_PPM_M3_PER_KG: FloatValue = 1.72e17;
+pub const OCEAN_MICROMOL_PER_PPM_M3_PER_KG: FloatValue =
+    1.0e6 / OCEAN_PPM_PER_MOL / OCEAN_DENSITY_KG_PER_M3;
+
+/// Atmospheric CO2 mixing ratio change per mole of carbon (ppm/mol).
+pub const OCEAN_PPM_PER_MOL: FloatValue = 5.65770e-15;
+
+/// Seawater density used by MAGICC7 (kg/m^3).
+pub const OCEAN_DENSITY_KG_PER_M3: FloatValue = 1026.5;
 
 /// Joos A24 polynomial offsets for pCO2-DIC relationship.
 pub const DELTA_OSPP_OFFSETS: [FloatValue; 5] = [1.5568, 7.4706, 1.2748, 2.4491, 1.5468];
@@ -165,9 +173,10 @@ pub struct OceanCarbonParameters {
     pub co2_pi: FloatValue,
 
     /// Pre-industrial ocean surface pCO2 (ppm).
-    /// At equilibrium, equals atmospheric CO2.
-    /// default: 278.0
-    pub pco2_pi: FloatValue,
+    /// When unset, the initial `Ocean Surface pCO2` is used, matching MAGICC7,
+    /// which takes the first-year atmospheric concentration.
+    /// default: None
+    pub pco2_pi: Option<FloatValue>,
 
     /// Gas exchange rate scaling factor (dimensionless).
     /// Corresponds to MAGICC7 OCEANCC_SCALE_GASXCHANGE.
@@ -203,8 +212,8 @@ pub struct OceanCarbonParameters {
     /// default: 12
     pub steps_per_year: usize,
 
-    /// Maximum flux history length in months.
-    /// Limits memory usage for IRF convolution (6000 months = 500 years).
+    /// Maximum flux history length in sub-steps.
+    /// Limits memory usage for IRF convolution (6000 monthly sub-steps = 500 years).
     /// default: 6000
     pub max_history_months: usize,
 
@@ -227,6 +236,21 @@ pub struct OceanCarbonParameters {
     /// Enable temperature feedback on pCO2.
     /// default: true
     pub enable_temp_feedback: bool,
+
+    /// Year from which warming drives the pCO2 temperature feedback
+    /// (`CO2_TEMPFEEDBACK_YRSTART`). The feedback uses the warming since this
+    /// year, floored at zero.
+    /// default: 1900.0
+    pub tempfeedback_yrstart: FloatValue,
+
+    /// Largest change in air-sea flux per month of sub-stepping (ppm/yr).
+    /// MAGICC7 applies this limiter for stability. A non-positive value disables it.
+    /// default: 0.04
+    pub flux_change_limit: FloatValue,
+
+    /// Conversion factor: GtC per ppm CO2. Must match `CO2Budget`.
+    /// default: 2.123
+    pub gtc_per_ppm: FloatValue,
 }
 
 impl OceanCarbonParameters {
@@ -240,7 +264,7 @@ impl OceanCarbonParameters {
             model: OceanCarbonModel::GFDL3D,
 
             co2_pi: 278.0,
-            pco2_pi: 278.0,
+            pco2_pi: None,
 
             gas_exchange_scale: 1.833492,
             gas_exchange_tau: 7.66,
@@ -271,6 +295,9 @@ impl OceanCarbonParameters {
             steps_per_year: 12,
             max_history_months: 6000,
             enable_temp_feedback: true,
+            tempfeedback_yrstart: 1900.0,
+            flux_change_limit: 0.04,
+            gtc_per_ppm: GTC_PER_PPM,
         }
     }
 
@@ -284,7 +311,7 @@ impl OceanCarbonParameters {
             model: OceanCarbonModel::BERN2D,
 
             co2_pi: 278.0,
-            pco2_pi: 278.0,
+            pco2_pi: None,
 
             gas_exchange_scale: 1.833492,
             gas_exchange_tau: 7.46,
@@ -316,6 +343,9 @@ impl OceanCarbonParameters {
             steps_per_year: 12,
             max_history_months: 6000,
             enable_temp_feedback: true,
+            tempfeedback_yrstart: 1900.0,
+            flux_change_limit: 0.04,
+            gtc_per_ppm: GTC_PER_PPM,
         }
     }
 
@@ -329,7 +359,7 @@ impl OceanCarbonParameters {
             model: OceanCarbonModel::HILDA,
 
             co2_pi: 278.0,
-            pco2_pi: 278.0,
+            pco2_pi: None,
 
             gas_exchange_scale: 1.833492,
             gas_exchange_tau: 9.06,
@@ -361,6 +391,9 @@ impl OceanCarbonParameters {
             steps_per_year: 12,
             max_history_months: 6000,
             enable_temp_feedback: true,
+            tempfeedback_yrstart: 1900.0,
+            flux_change_limit: 0.04,
+            gtc_per_ppm: GTC_PER_PPM,
         }
     }
 
@@ -373,16 +406,25 @@ impl OceanCarbonParameters {
 
     /// Calculate the IRF value at a given time (years).
     ///
-    /// Selects early or late IRF form based on switch time, evaluates it,
-    /// then applies nonlinear scaling.
+    /// The early form is scaled nonlinearly. As in MAGICC7, the late form is
+    /// multiplied by a constant, chosen so that at the switch time it equals
+    /// the nonlinearly scaled late form.
     pub fn irf(&self, t: FloatValue) -> FloatValue {
-        let raw = if t < self.irf_switch_time {
-            self.irf_early.evaluate(t)
-        } else {
-            self.irf_late.evaluate(t)
-        };
+        self.irf_evaluator()(t)
+    }
 
-        self.scale_irf(raw)
+    /// The IRF as a function of time, with the late-form constant evaluated once.
+    pub(crate) fn irf_evaluator(&self) -> impl Fn(FloatValue) -> FloatValue + '_ {
+        // scale_irf(a) / a, written so that it stays finite when a is zero
+        let at_switch = self.irf_late.evaluate(self.irf_switch_time);
+        let late_factor = self.irf_scale / (at_switch * self.irf_scale + 1.0 - at_switch);
+        move |t| {
+            if t < self.irf_switch_time {
+                self.scale_irf(self.irf_early.evaluate(t))
+            } else {
+                self.irf_late.evaluate(t) * late_factor
+            }
+        }
     }
 
     /// Apply nonlinear IRF scaling.
@@ -419,14 +461,19 @@ impl OceanCarbonParameters {
     /// Calculate ocean pCO2 with temperature effect (Joos A25).
     ///
     /// $$pCO2_{ocn} = (pCO2_{pi} + \Delta pCO2_{DIC}) \times e^{\alpha_T \Delta T}$$
-    pub fn ocean_pco2(&self, delta_pco2_dic: FloatValue, delta_sst: FloatValue) -> FloatValue {
+    pub fn ocean_pco2(
+        &self,
+        pco2_reference: FloatValue,
+        delta_pco2_dic: FloatValue,
+        warming: FloatValue,
+    ) -> FloatValue {
         let temp_factor = if self.enable_temp_feedback {
-            (self.temp_sensitivity * delta_sst).exp()
+            (self.temp_sensitivity * warming).exp()
         } else {
             1.0
         };
 
-        (self.pco2_pi + delta_pco2_dic) * temp_factor
+        (pco2_reference + delta_pco2_dic) * temp_factor
     }
 
     /// Unit conversion factor for DIC calculation.
@@ -453,7 +500,7 @@ mod tests {
         let params = OceanCarbonParameters::default();
         assert_eq!(params.model, OceanCarbonModel::GFDL3D);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
-        assert!((params.pco2_pi - 278.0).abs() < 1e-10);
+        assert!(params.pco2_pi.is_none());
         assert!((params.temp_sensitivity - 0.03717879).abs() < 1e-10);
         assert!((params.mixed_layer_depth - 50.9).abs() < 1e-10);
         assert!((params.irf_switch_time - 1.0).abs() < 1e-10);
@@ -730,10 +777,10 @@ mod tests {
     #[test]
     fn test_ocean_pco2_no_change() {
         let params = OceanCarbonParameters::default();
-        let pco2 = params.ocean_pco2(0.0, 0.0);
+        let pco2 = params.ocean_pco2(278.0, 0.0, 0.0);
 
         assert!(
-            (pco2 - params.pco2_pi).abs() < 1e-10,
+            (pco2 - 278.0).abs() < 1e-10,
             "With no DIC or temp change, pCO2 should equal PI: {:.2}",
             pco2
         );
@@ -743,8 +790,8 @@ mod tests {
     fn test_ocean_pco2_warming() {
         let params = OceanCarbonParameters::default();
 
-        let pco2_cold = params.ocean_pco2(0.0, 0.0);
-        let pco2_warm = params.ocean_pco2(0.0, 1.0);
+        let pco2_cold = params.ocean_pco2(278.0, 0.0, 0.0);
+        let pco2_warm = params.ocean_pco2(278.0, 0.0, 1.0);
 
         assert!(
             pco2_warm > pco2_cold,
@@ -770,8 +817,8 @@ mod tests {
             ..Default::default()
         };
 
-        let pco2_cold = params.ocean_pco2(0.0, 0.0);
-        let pco2_warm = params.ocean_pco2(0.0, 5.0);
+        let pco2_cold = params.ocean_pco2(278.0, 0.0, 0.0);
+        let pco2_warm = params.ocean_pco2(278.0, 0.0, 5.0);
 
         assert!(
             (pco2_cold - pco2_warm).abs() < 1e-10,

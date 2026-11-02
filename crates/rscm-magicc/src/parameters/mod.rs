@@ -6,6 +6,7 @@
 
 mod aerosol;
 mod ch4_chemistry;
+mod ch4_oxidation;
 mod climate_udeb;
 mod co2_budget;
 mod ghg_forcing;
@@ -17,6 +18,7 @@ mod terrestrial_carbon;
 
 pub use aerosol::{AerosolDirectParameters, AerosolIndirectParameters};
 pub use ch4_chemistry::CH4ChemistryParameters;
+pub use ch4_oxidation::CH4OxidationParameters;
 pub use climate_udeb::{
     ClimateUDEBParameters, OceanTempProfile, CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER,
 };

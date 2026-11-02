@@ -200,4 +200,5 @@ def test_nonfinite_calculated_output_fails_run():
             conc,
             other_forcing=[0, 0],
             forcing_parameters={"method": "Ipcctar", "adjust_co2": 1e308},
+            climate_parameters={"rf_2xco2": 3.71},
         )

@@ -79,6 +79,16 @@ $$B_n = B + \Delta B_n$$
 
 Note: The correction factor $(1 - 0.5 X \frac{\Delta B_{n-1}}{B})$ is applied from iteration 2 onwards.
 
+### 2.8 Conventions Verified Against MAGICC7 Output
+
+Reproducing v7.5.3 SSP245 emissions-driven output to within 1e-4 ppb fixed these details:
+
+- The NOx, CO and VOC deltas are relative to emissions in `CH4_FEED_YRSTART`, not 1750.
+- $B_{00}$ tracks the current burden until the year before `CH4_FEED_YRSTART` and is then fixed.
+- The temperature feedback uses $\max(0, T(t) - T(\text{CH4\_FEED\_YRSTART} - 1))$.
+- $\tau_{00}$ in the temperature formula is the unadjusted `CH4_TAUOH_INIT`.
+- Natural emissions are constant at the budget-closing value (182.19 Tg/yr for the default inputs).
+
 ## 3. State Variables
 
 | Variable | Fortran Name | Symbol | Units | Description | Initial Value |

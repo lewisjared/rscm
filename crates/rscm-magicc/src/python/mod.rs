@@ -5,13 +5,13 @@ use rscm_core::create_component_builder;
 use rscm_core::python::PyRustComponent;
 
 use crate::carbon::{CO2Budget, OceanCarbon, TerrestrialCarbon};
-use crate::chemistry::{CH4Chemistry, HalocarbonChemistry, N2OChemistry};
+use crate::chemistry::{CH4Chemistry, CH4Oxidation, HalocarbonChemistry, N2OChemistry};
 use crate::climate::ClimateUDEB;
 use crate::forcing::{AerosolDirect, AerosolIndirect, GhgForcing, OzoneForcing};
 use crate::parameters::{
     AerosolDirectParameters, AerosolIndirectParameters, CH4ChemistryParameters,
-    CO2BudgetParameters, ClimateUDEBParameters, GhgForcingParameters, HalocarbonParameters,
-    N2OChemistryParameters, OceanCarbonParameters, OzoneForcingParameters,
+    CH4OxidationParameters, CO2BudgetParameters, ClimateUDEBParameters, GhgForcingParameters,
+    HalocarbonParameters, N2OChemistryParameters, OceanCarbonParameters, OzoneForcingParameters,
     TerrestrialCarbonParameters,
 };
 
@@ -62,6 +62,7 @@ impl ClimateUDEBBuilder {
 
 // Chemistry components
 create_component_builder!(CH4ChemistryBuilder, CH4Chemistry, CH4ChemistryParameters);
+create_component_builder!(CH4OxidationBuilder, CH4Oxidation, CH4OxidationParameters);
 create_component_builder!(N2OChemistryBuilder, N2OChemistry, N2OChemistryParameters);
 create_component_builder!(
     HalocarbonChemistryBuilder,
@@ -100,6 +101,15 @@ impl GhgForcingBuilder {
         )))
     }
 
+    /// ERF from doubling CO2 above its preindustrial reference, with CH4 and N2O
+    /// at theirs. MAGICC7 derives its climate feedback from this value.
+    pub fn co2_doubling_forcing(&self) -> f64 {
+        let p = &self.parameters;
+        GhgForcing::from_parameters(p.clone())
+            .calculate_forcings(2.0 * p.co2_pi, p.ch4_pi, p.n2o_pi)
+            .co2_erf
+    }
+
     /// Evaluate CO2/CH4/N2O ERF at a single boundary, using the same physics as solve.
     pub fn calculate_forcings(
         &self,
@@ -135,6 +145,7 @@ pub fn magicc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ClimateUDEBBuilder>()?;
     // Chemistry
     m.add_class::<CH4ChemistryBuilder>()?;
+    m.add_class::<CH4OxidationBuilder>()?;
     m.add_class::<N2OChemistryBuilder>()?;
     m.add_class::<HalocarbonChemistryBuilder>()?;
     // Carbon
