@@ -1,7 +1,19 @@
 //! Fixed calendar-year references used by MAGICC7 feedbacks
 
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::ScalarWindow;
 use rscm_core::timeseries::{FloatValue, Time};
+
+/// Reject non-annual steps, because references are resolved as whole years back along the axis.
+pub(crate) fn require_annual(component: &str, t_current: Time, t_next: Time) -> RSCMResult<()> {
+    let dt = t_next - t_current;
+    if !dt.is_finite() || (dt - 1.0).abs() >= 1e-6 {
+        return Err(RSCMError::Error(format!(
+            "{component} only supports annual timesteps (dt=1.0), got dt={dt}"
+        )));
+    }
+    Ok(())
+}
 
 /// Value of an annual series at `year`, clamped to the stored time axis.
 ///

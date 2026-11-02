@@ -134,6 +134,8 @@ def test_invalid_inputs_rejected():
         run(emissions(), initial_concentrations={"CO2": 278.0})
     with pytest.raises(ValueError, match="co2_fossil"):
         run(replace(emissions(), co2_fossil=np.zeros(INTERVALS + 1)))
+    with pytest.raises(ValueError, match="ch4_fossil"):
+        run(replace(emissions(), ch4_fossil=emissions().ch4 + 1.0))
     with pytest.raises(ValueError, match="other_forcing"):
         run(emissions(), other_forcing=np.zeros(INTERVALS))
     with pytest.raises(ValueError, match="years"):

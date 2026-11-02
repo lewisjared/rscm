@@ -46,7 +46,7 @@
 //!   and emissions-driven calculation by year. Here, always emissions-driven.
 
 use crate::parameters::CH4ChemistryParameters;
-use crate::reference::{feedback_warming, reference_value, value_at_year};
+use crate::reference::{feedback_warming, reference_value, require_annual, value_at_year};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
@@ -232,9 +232,10 @@ impl Component for CH4Chemistry {
     fn solve(
         &self,
         t_current: Time,
-        _t_next: Time,
+        t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
+        require_annual("CH4Chemistry", t_current, t_next)?;
         let inputs = CH4ChemistryInputs::from_input_state(input_state);
         let feedback_year = self.parameters.feedback_start_year;
 

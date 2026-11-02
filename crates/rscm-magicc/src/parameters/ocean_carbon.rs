@@ -243,7 +243,7 @@ pub struct OceanCarbonParameters {
     /// default: 1900.0
     pub tempfeedback_yrstart: FloatValue,
 
-    /// Largest change in air-sea flux between monthly sub-steps (ppm/yr).
+    /// Largest change in air-sea flux per month of sub-stepping (ppm/yr).
     /// MAGICC7 applies this limiter for stability. A non-positive value disables it.
     /// default: 0.04
     pub flux_change_limit: FloatValue,
@@ -415,13 +415,14 @@ impl OceanCarbonParameters {
 
     /// The IRF as a function of time, with the late-form constant evaluated once.
     pub(crate) fn irf_evaluator(&self) -> impl Fn(FloatValue) -> FloatValue + '_ {
+        // scale_irf(a) / a, written so that it stays finite when a is zero
         let at_switch = self.irf_late.evaluate(self.irf_switch_time);
-        let late_scale = self.scale_irf(at_switch);
+        let late_factor = self.irf_scale / (at_switch * self.irf_scale + 1.0 - at_switch);
         move |t| {
             if t < self.irf_switch_time {
                 self.scale_irf(self.irf_early.evaluate(t))
             } else {
-                self.irf_late.evaluate(t) * late_scale / at_switch
+                self.irf_late.evaluate(t) * late_factor
             }
         }
     }

@@ -115,9 +115,12 @@ The run couples these components, registered in this order:
 
 As in MAGICC7, chemistry and the carbon cycle use the temperature at the start of
 each year, and forcing uses the concentrations at its end. The carbon-cycle
-feedbacks use the warming since 1900 and the CH4 and N2O feedbacks are measured
-from fixed reference years (1926 and 1924), as in MAGICC7. Temperature reaching
-these components is the area-weighted global mean.
+feedbacks use the warming since 1900.
+The CH4 lifetime feedbacks use the concentration and temperature in 1926 and the NOx, CO and NMVOC
+emissions in 1927.
+The N2O lifetime feedbacks use the concentration in 1924 and the warming since 1980.
+Runs ending before a reference year use their last year instead.
+Temperature reaching these components is the area-weighted global mean.
 
 The first year should be preindustrial. The ocean starts in equilibrium with the
 initial CO2, the land pools at their preindustrial sizes and the climate at zero

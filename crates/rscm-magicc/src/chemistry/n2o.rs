@@ -42,7 +42,7 @@
 //!   and calculated concentrations by year. Here, always emissions-driven.
 
 use crate::parameters::N2OChemistryParameters;
-use crate::reference::{feedback_warming, reference_value, value_at_year};
+use crate::reference::{feedback_warming, reference_value, require_annual, value_at_year};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
@@ -167,6 +167,7 @@ impl Component for N2OChemistry {
         t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
+        require_annual("N2OChemistry", t_current, t_next)?;
         let inputs = N2OChemistryInputs::from_input_state(input_state);
         let p = &self.parameters;
         let concentration = &inputs.n2o_concentration;

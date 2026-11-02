@@ -203,6 +203,7 @@ def run_magicc(  # noqa: PLR0913
         # The budget takes the net land flux, which includes land-use emissions
         for name, values in {
             "Emissions|CO2|Fossil": fossil,
+            "Emissions|CO2|Land Use": land_use,
             "Emissions|CO2|CH4 Oxidation": np.zeros(len(time)),
             "Carbon Flux|Terrestrial": land_uptake - land_use,
             "Carbon Flux|Ocean": ocean_uptake,

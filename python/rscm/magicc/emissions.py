@@ -251,6 +251,9 @@ def run_magicc_emissions(  # noqa: PLR0913
         )
         for field in fields(Emissions)
     }
+    if np.any(data["Emissions|CH4|Fossil"] > data["Emissions|CH4"]):
+        msg = "ch4_fossil must not exceed total anthropogenic ch4"
+        raise ValueError(msg)
     data[ERF + "|Other"] = _series("other_forcing", other_forcing, len(time))
     units, sources = _variables(data)
 

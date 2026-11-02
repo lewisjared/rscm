@@ -50,7 +50,7 @@ use std::any::Any;
 use std::collections::VecDeque;
 
 use crate::parameters::OceanCarbonParameters;
-use crate::reference::feedback_warming;
+use crate::reference::{feedback_warming, require_annual};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
     RequirementType,
@@ -214,15 +214,16 @@ impl OceanCarbon {
         let mut pco2 = pco2_start;
         let mut pco2_previous = state.pco2_previous.unwrap_or(pco2_start);
         let sources_per_step = other_sources * dt / steps / p.gtc_per_ppm;
+        let flux_change_limit = p.flux_change_limit * 12.0 / steps;
         let mut total_flux = 0.0;
 
         for _ in 0..p.steps_per_year {
             // Flux in ppm/yr from the monthly exchange rate, using the means of the last two sub-steps
             let mut flux = 12.0
                 * self.calculate_flux((co2_previous + co2) / 2.0, (pco2_previous + pco2) / 2.0);
-            if let (Some(&last), true) = (state.flux_history.back(), p.flux_change_limit > 0.0) {
+            if let (Some(&last), true) = (state.flux_history.back(), flux_change_limit > 0.0) {
                 let last = last * steps;
-                flux = flux.clamp(last - p.flux_change_limit, last + p.flux_change_limit);
+                flux = flux.clamp(last - flux_change_limit, last + flux_change_limit);
             }
 
             state.flux_history.push_back(flux / steps);
@@ -271,6 +272,7 @@ impl OceanCarbon {
         input_state: &InputState,
         state: &mut OceanCarbonState,
     ) -> RSCMResult<OutputState> {
+        require_annual("OceanCarbon", t_current, t_next)?;
         let inputs = OceanCarbonInputs::from_input_state(input_state);
 
         let warming = feedback_warming(

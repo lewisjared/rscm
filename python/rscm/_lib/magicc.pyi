@@ -576,7 +576,6 @@ class OceanCarbonParams(TypedDict, total=False):
     All fields optional - defaults provided by Rust.
     """
 
-    model: Literal["3D-GFDL", "2D-BERN", "HILDA"]
     co2_pi: float
     pco2_pi: float | None
     gas_exchange_scale: float
