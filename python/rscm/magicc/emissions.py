@@ -158,6 +158,20 @@ def _validate_parameters(
             msg = f"Unknown component {name!r}, expected one of {sorted(COMPONENTS)}"
             raise ValueError(msg)
         resolved[name] = dict(values)
+    # The ocean evolves atmospheric CO2 within each year, so it must match the budget
+    carbon = ("CO2Budget", "OceanCarbon")
+    conversions = {
+        resolved[name]["gtc_per_ppm"]
+        for name in carbon
+        if "gtc_per_ppm" in resolved[name]
+    }
+    if len(conversions) > 1:
+        msg = "CO2Budget and OceanCarbon must use the same gtc_per_ppm"
+        raise ValueError(msg)
+    if conversions:
+        (conversion,) = conversions
+        for name in carbon:
+            resolved[name]["gtc_per_ppm"] = conversion
     return resolved
 
 
@@ -212,7 +226,8 @@ def run_magicc_emissions(  # noqa: PLR0913
     gases, one value per boundary. ``parameters`` maps component names from
     ``COMPONENTS`` to their Rust parameter dictionaries. ClimateUDEB's
     ``rf_2xco2`` defaults to the CO2-doubling ERF of the forcing configuration,
-    as in MAGICC7.
+    as in MAGICC7. A ``gtc_per_ppm`` given for CO2Budget or OceanCarbon applies
+    to both.
 
     As in MAGICC7, chemistry and the carbon cycle use the temperature at the
     start of each year, and forcing uses the concentrations at its end.

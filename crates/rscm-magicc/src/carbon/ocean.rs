@@ -173,15 +173,16 @@ impl OceanCarbon {
     ///
     /// $$\Delta DIC = \text{factor} \times \sum_{i=1}^{n} F_i \times IRF(t_n - t_i) \times \Delta t$$
     ///
-    /// Uses a left-hand Riemann sum over the monthly fluxes (ppm/month).
+    /// Uses a left-hand Riemann sum over the sub-step fluxes (ppm per sub-step).
     /// Returns the change in DIC (micromol/kg).
     fn calculate_delta_dic(&self, flux_history: &VecDeque<FloatValue>) -> FloatValue {
         let n = flux_history.len();
+        let steps = self.parameters.steps_per_year as FloatValue;
         let irf = self.parameters.irf_evaluator();
         let integral: FloatValue = flux_history
             .iter()
             .enumerate()
-            .map(|(i, &flux)| flux * irf((n - 1 - i) as FloatValue / 12.0))
+            .map(|(i, &flux)| flux * irf((n - 1 - i) as FloatValue / steps))
             .sum();
         integral * self.parameters.dic_conversion_factor()
     }
@@ -216,8 +217,8 @@ impl OceanCarbon {
         let mut total_flux = 0.0;
 
         for _ in 0..p.steps_per_year {
-            // Flux in ppm/yr, from the means of the last two sub-steps
-            let mut flux = steps
+            // Flux in ppm/yr from the monthly exchange rate, using the means of the last two sub-steps
+            let mut flux = 12.0
                 * self.calculate_flux((co2_previous + co2) / 2.0, (pco2_previous + pco2) / 2.0);
             if let (Some(&last), true) = (state.flux_history.back(), p.flux_change_limit > 0.0) {
                 let last = last * steps;
@@ -473,6 +474,18 @@ mod tests {
         for pair in months.windows(2) {
             assert!(pair[1] - pair[0] <= 0.04 + 1e-12);
         }
+    }
+
+    #[test]
+    fn test_substep_count_only_changes_resolution() {
+        let monthly = run_years(&default_component(), &mut fresh_state(), PI, 8.0, 0.0, 20);
+        let fine = OceanCarbon::from_parameters(OceanCarbonParameters {
+            steps_per_year: 24,
+            max_history_months: 12000,
+            ..Default::default()
+        });
+        let fine = run_years(&fine, &mut fresh_state(), PI, 8.0, 0.0, 20);
+        assert!((fine.flux / monthly.flux - 1.0).abs() < 0.02);
     }
 
     #[test]

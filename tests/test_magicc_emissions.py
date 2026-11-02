@@ -104,6 +104,29 @@ def test_land_use_reduces_land_carbon():
     )
 
 
+def test_carbon_conversion_shared_between_budget_and_ocean():
+    budget_only = run(emissions(), parameters={"CO2Budget": {"gtc_per_ppm": 2.0}})
+    both = run(
+        emissions(),
+        parameters={
+            "CO2Budget": {"gtc_per_ppm": 2.0},
+            "OceanCarbon": {"gtc_per_ppm": 2.0},
+        },
+    )
+    npt.assert_array_equal(
+        budget_only.values["Atmospheric Concentration|CO2"],
+        both.values["Atmospheric Concentration|CO2"],
+    )
+    with pytest.raises(ValueError, match="gtc_per_ppm"):
+        run(
+            emissions(),
+            parameters={
+                "CO2Budget": {"gtc_per_ppm": 2.0},
+                "OceanCarbon": {"gtc_per_ppm": 2.1},
+            },
+        )
+
+
 def test_invalid_inputs_rejected():
     with pytest.raises(ValueError, match="Unknown component"):
         run(emissions(), parameters={"Ozone": {}})

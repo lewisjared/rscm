@@ -212,8 +212,8 @@ pub struct OceanCarbonParameters {
     /// default: 12
     pub steps_per_year: usize,
 
-    /// Maximum flux history length in months.
-    /// Limits memory usage for IRF convolution (6000 months = 500 years).
+    /// Maximum flux history length in sub-steps.
+    /// Limits memory usage for IRF convolution (6000 monthly sub-steps = 500 years).
     /// default: 6000
     pub max_history_months: usize,
 
