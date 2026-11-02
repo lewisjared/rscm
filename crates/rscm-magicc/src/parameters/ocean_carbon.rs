@@ -22,6 +22,7 @@
 //!
 //! See `docs/modules/module_10_ocean_carbon.md` for full specification.
 
+use super::co2_budget::GTC_PER_PPM;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -296,7 +297,7 @@ impl OceanCarbonParameters {
             enable_temp_feedback: true,
             tempfeedback_yrstart: 1900.0,
             flux_change_limit: 0.04,
-            gtc_per_ppm: 2.123,
+            gtc_per_ppm: GTC_PER_PPM,
         }
     }
 
@@ -344,7 +345,7 @@ impl OceanCarbonParameters {
             enable_temp_feedback: true,
             tempfeedback_yrstart: 1900.0,
             flux_change_limit: 0.04,
-            gtc_per_ppm: 2.123,
+            gtc_per_ppm: GTC_PER_PPM,
         }
     }
 
@@ -392,7 +393,7 @@ impl OceanCarbonParameters {
             enable_temp_feedback: true,
             tempfeedback_yrstart: 1900.0,
             flux_change_limit: 0.04,
-            gtc_per_ppm: 2.123,
+            gtc_per_ppm: GTC_PER_PPM,
         }
     }
 
@@ -409,11 +410,19 @@ impl OceanCarbonParameters {
     /// multiplied by a constant, chosen so that at the switch time it equals
     /// the nonlinearly scaled late form.
     pub fn irf(&self, t: FloatValue) -> FloatValue {
-        if t < self.irf_switch_time {
-            self.scale_irf(self.irf_early.evaluate(t))
-        } else {
-            let at_switch = self.irf_late.evaluate(self.irf_switch_time);
-            self.irf_late.evaluate(t) * self.scale_irf(at_switch) / at_switch
+        self.irf_evaluator()(t)
+    }
+
+    /// The IRF as a function of time, with the late-form constant evaluated once.
+    pub(crate) fn irf_evaluator(&self) -> impl Fn(FloatValue) -> FloatValue + '_ {
+        let at_switch = self.irf_late.evaluate(self.irf_switch_time);
+        let late_scale = self.scale_irf(at_switch);
+        move |t| {
+            if t < self.irf_switch_time {
+                self.scale_irf(self.irf_early.evaluate(t))
+            } else {
+                self.irf_late.evaluate(t) * late_scale / at_switch
+            }
         }
     }
 

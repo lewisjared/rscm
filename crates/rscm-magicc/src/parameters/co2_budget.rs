@@ -4,6 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 
+/// MAGICC7 conversion from atmospheric carbon mass to CO2 concentration (GtC/ppm).
+pub const GTC_PER_PPM: f64 = 2.123;
+
 /// Parameters for CO2 budget calculation.
 ///
 /// The CO2 budget integrates emissions and uptakes to calculate the change
@@ -36,7 +39,7 @@ pub struct CO2BudgetParameters {
 impl Default for CO2BudgetParameters {
     fn default() -> Self {
         Self {
-            gtc_per_ppm: 2.123,
+            gtc_per_ppm: GTC_PER_PPM,
             co2_pi: 278.0,
         }
     }

@@ -42,7 +42,7 @@
 //!   and calculated concentrations by year. Here, always emissions-driven.
 
 use crate::parameters::N2OChemistryParameters;
-use crate::reference::value_at_year;
+use crate::reference::{feedback_warming, reference_value, value_at_year};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
@@ -172,33 +172,18 @@ impl Component for N2OChemistry {
         let concentration = &inputs.n2o_concentration;
 
         let n2o_start = concentration.at_start();
-        let n2o_reference = if t_current < p.feedback_start_year {
-            n2o_start
-        } else {
-            value_at_year(concentration, t_current, p.feedback_start_year - 1.0)
-        };
+        let n2o_reference = reference_value(concentration, t_current, p.feedback_start_year);
 
         // MAGICC7 clamps delayed indices to the first year of the run
-        let delay = p.strat_delay as isize;
-        let index = concentration.index() as isize;
-        let delayed = |offset: isize| {
-            concentration
-                .at_offset((-offset).max(-index))
-                .unwrap_or(n2o_start)
-        };
-        let n2o_lagged = (delayed(delay) + delayed(delay + 1)) / 2.0;
+        let delay = p.strat_delay as Time;
+        let delayed = |lag: Time| value_at_year(concentration, t_current, t_current - lag);
+        let n2o_lagged = (delayed(delay) + delayed(delay + 1.0)) / 2.0;
 
-        let temperature = inputs.temperature.at_start();
-        let temperature_change = if t_current > p.meridional_flux_reference_year {
-            temperature
-                - value_at_year(
-                    &inputs.temperature,
-                    t_current,
-                    p.meridional_flux_reference_year,
-                )
-        } else {
-            0.0
-        };
+        let temperature_change = feedback_warming(
+            &inputs.temperature,
+            t_current,
+            p.meridional_flux_reference_year,
+        );
 
         let (new_concentration, lifetime) = self.solve_concentration(
             n2o_start,

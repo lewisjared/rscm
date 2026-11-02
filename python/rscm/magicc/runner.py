@@ -85,6 +85,15 @@ def _series(
     return result
 
 
+def _interval_series(
+    name: str, values: ArrayLike, intervals: int
+) -> NDArray[np.float64]:
+    rates = _series(name, values, intervals)
+    # The core stores a value at every boundary. The last rate is never
+    # integrated and only fills that storage slot.
+    return np.r_[rates, rates[-1]]
+
+
 def _validate_axis(
     years: ArrayLike, forcing_species: tuple[str, ...]
 ) -> NDArray[np.float64]:
@@ -182,26 +191,23 @@ def run_magicc(  # noqa: PLR0913
                 "initial CO2", [co2_emissions.initial_concentration], 1, positive=True
             )[0]
         )
-        rates = {
-            name: _series(name, values, len(time) - 1)
-            for name, values in {
-                "Emissions|CO2|Fossil": co2_emissions.fossil,
-                "Emissions|CO2|Land Use": co2_emissions.land_use,
-                "land uptake": co2_emissions.land_uptake,
-                "ocean uptake": co2_emissions.ocean_uptake,
-            }.items()
-        }
+        fossil, land_use, land_uptake, ocean_uptake = (
+            _interval_series(name, values, len(time) - 1)
+            for name, values in (
+                ("Emissions|CO2|Fossil", co2_emissions.fossil),
+                ("Emissions|CO2|Land Use", co2_emissions.land_use),
+                ("land uptake", co2_emissions.land_uptake),
+                ("ocean uptake", co2_emissions.ocean_uptake),
+            )
+        )
         # The budget takes the net land flux, which includes land-use emissions
-        for name, interval_values in {
-            "Emissions|CO2|Fossil": rates["Emissions|CO2|Fossil"],
-            "Emissions|CO2|CH4 Oxidation": np.zeros(len(time) - 1),
-            "Carbon Flux|Terrestrial": rates["land uptake"]
-            - rates["Emissions|CO2|Land Use"],
-            "Carbon Flux|Ocean": rates["ocean uptake"],
+        for name, values in {
+            "Emissions|CO2|Fossil": fossil,
+            "Emissions|CO2|CH4 Oxidation": np.zeros(len(time)),
+            "Carbon Flux|Terrestrial": land_uptake - land_use,
+            "Carbon Flux|Ocean": ocean_uptake,
         }.items():
-            # The core stores a value at every boundary. The last rate is never
-            # integrated; repeat it only to populate that storage slot.
-            data[name] = np.r_[interval_values, interval_values[-1]]
+            data[name] = values
             units[name] = "GtC/yr"
             sources[name] = "prescribed"
         budget = CO2BudgetBuilder.from_parameters({}).build()

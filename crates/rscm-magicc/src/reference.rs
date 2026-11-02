@@ -16,6 +16,21 @@ pub(crate) fn value_at_year(window: &ScalarWindow, t_current: Time, year: Time) 
         .unwrap_or_else(|| window.at_start())
 }
 
+/// Reference for a feedback starting at `start_year`.
+///
+/// MAGICC7 follows the current value until then and fixes the reference at the year before.
+pub(crate) fn reference_value(
+    window: &ScalarWindow,
+    t_current: Time,
+    start_year: Time,
+) -> FloatValue {
+    if t_current < start_year {
+        window.at_start()
+    } else {
+        value_at_year(window, t_current, start_year - 1.0)
+    }
+}
+
 /// Warming since `start_year`, zero before it and never negative.
 ///
 /// This is MAGICC7's temperature feedback driver for the carbon cycle.

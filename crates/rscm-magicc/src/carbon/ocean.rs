@@ -177,10 +177,11 @@ impl OceanCarbon {
     /// Returns the change in DIC (micromol/kg).
     fn calculate_delta_dic(&self, flux_history: &VecDeque<FloatValue>) -> FloatValue {
         let n = flux_history.len();
+        let irf = self.parameters.irf_evaluator();
         let integral: FloatValue = flux_history
             .iter()
             .enumerate()
-            .map(|(i, &flux)| flux * self.parameters.irf((n - 1 - i) as FloatValue / 12.0))
+            .map(|(i, &flux)| flux * irf((n - 1 - i) as FloatValue / 12.0))
             .sum();
         integral * self.parameters.dic_conversion_factor()
     }

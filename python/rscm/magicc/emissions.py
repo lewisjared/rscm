@@ -37,6 +37,7 @@ from rscm.magicc.runner import (
     MAGICCResult,
     _climate_weights,
     _collect_result,
+    _interval_series,
     _series,
     _validate_axis,
 )
@@ -146,15 +147,6 @@ class Emissions:
     """CO (Mt CO/yr)"""
     nmvoc: ArrayLike
     """NMVOC (Mt NMVOC/yr)"""
-
-
-def _interval_series(
-    name: str, values: ArrayLike, intervals: int
-) -> NDArray[np.float64]:
-    rates = _series(name, values, intervals)
-    # The core stores a value at every boundary. The last rate is never
-    # integrated and only fills that storage slot.
-    return np.r_[rates, rates[-1]]
 
 
 def _validate_parameters(

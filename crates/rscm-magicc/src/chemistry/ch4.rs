@@ -46,7 +46,7 @@
 //!   and emissions-driven calculation by year. Here, always emissions-driven.
 
 use crate::parameters::CH4ChemistryParameters;
-use crate::reference::value_at_year;
+use crate::reference::{feedback_warming, reference_value, value_at_year};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
@@ -239,15 +239,8 @@ impl Component for CH4Chemistry {
         let feedback_year = self.parameters.feedback_start_year;
 
         let ch4_start = inputs.ch4_concentration.at_start();
-        let temperature = inputs.temperature.at_start();
-        let (ch4_reference, temperature_reference) = if t_current < feedback_year {
-            (ch4_start, temperature)
-        } else {
-            (
-                value_at_year(&inputs.ch4_concentration, t_current, feedback_year - 1.0),
-                value_at_year(&inputs.temperature, t_current, feedback_year - 1.0),
-            )
-        };
+        let ch4_reference = reference_value(&inputs.ch4_concentration, t_current, feedback_year);
+        let warming = feedback_warming(&inputs.temperature, t_current, feedback_year - 1.0);
         let delta =
             |window: &ScalarWindow| window.get() - value_at_year(window, t_current, feedback_year);
 
@@ -255,7 +248,7 @@ impl Component for CH4Chemistry {
             ch4_start,
             ch4_reference,
             inputs.ch4_emissions.get(),
-            temperature - temperature_reference,
+            warming,
             delta(&inputs.nox_emissions),
             delta(&inputs.co_emissions),
             delta(&inputs.nmvoc_emissions),
