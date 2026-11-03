@@ -163,9 +163,9 @@ print(f"  Outputs: {n2o_component.output_names()}")
 # and ozone depletion properties.
 #
 # For this demonstration, we show a simplified example with just a few key species.
-# Each species requires: name, lifetime, radiative efficiency, pre-industrial
-# concentration, molecular weight, chlorine atoms, bromine atoms, and fractional
-# release factor.
+# Each species requires: name, total, OH and stratospheric lifetimes, radiative
+# efficiency, pre-industrial concentration, molecular mass, chlorine atoms,
+# bromine atoms, and fractional release factor.
 
 # %%
 halocarbon_params = {
@@ -173,20 +173,24 @@ halocarbon_params = {
     "fgases": [
         {
             "name": "HFC-134a",
-            "lifetime": 14.0,  # years
+            "tau_total": 14.0,  # years
+            "tau_oh": 14.0,
+            "tau_strat": 0.0,
             "radiative_efficiency": 0.16,  # W/m^2/ppb
             "concentration_pi": 0.0,  # ppt
-            "molecular_weight": 102.0,  # g/mol
+            "molecular_mass": 102.0,  # g/mol
             "n_cl": 0,  # no chlorine
             "n_br": 0,  # no bromine
             "fractional_release": 0.0,  # no stratospheric release
         },
         {
             "name": "SF6",
-            "lifetime": 850.0,
+            "tau_total": 850.0,
+            "tau_oh": 0.0,
+            "tau_strat": 850.0,
             "radiative_efficiency": 0.57,
             "concentration_pi": 0.0,
-            "molecular_weight": 146.0,
+            "molecular_mass": 146.0,
             "n_cl": 0,
             "n_br": 0,
             "fractional_release": 0.0,
@@ -196,31 +200,33 @@ halocarbon_params = {
     "montreal_gases": [
         {
             "name": "CFC-11",
-            "lifetime": 52.0,
+            "tau_total": 52.0,
+            "tau_oh": 0.0,
+            "tau_strat": 52.0,
             "radiative_efficiency": 0.295,
             "concentration_pi": 0.0,
-            "molecular_weight": 137.4,
+            "molecular_mass": 137.4,
             "n_cl": 3,  # 3 chlorine atoms
             "n_br": 0,
             "fractional_release": 0.47,  # stratospheric release factor
         },
         {
             "name": "CFC-12",
-            "lifetime": 102.0,
+            "tau_total": 102.0,
+            "tau_oh": 0.0,
+            "tau_strat": 102.0,
             "radiative_efficiency": 0.364,
             "concentration_pi": 0.0,
-            "molecular_weight": 120.9,
+            "molecular_mass": 120.9,
             "n_cl": 2,
             "n_br": 0,
             "fractional_release": 0.23,
         },
     ],
-    "br_multiplier": 60.0,  # bromine efficiency for EESC
-    "cfc11_release_normalisation": 0.47,  # CFC-11 fractional release reference
-    "eesc_delay": 3.0,  # years, stratospheric mixing delay
+    "br_vs_cl_scale": 60.0,  # bromine efficiency for EESC
+    "cfc11_release_factor": 0.47,  # CFC-11 fractional release reference
+    "eesc_delay": 3,  # years, stratospheric mixing delay
     "air_molar_mass": 28.97,  # g/mol
-    "atmospheric_mass_tg": 5.133e9,  # Tg
-    "mixing_box_fraction": 0.949,  # effective mixing box fraction
 }
 
 halocarbon_component = HalocarbonChemistryBuilder.from_parameters(
@@ -306,9 +312,9 @@ ocean_params = {
         0.24845,
         0.12429,
     ],
-    "irf_early_timescales": [1.0e10, 9.6218, 9.2364, 0.7603, 0.16294, 0.0032825],
+    "irf_early_timescales": [1.0e10, 9.6218, 9.2364, 0.7603, 0.16294, 0.032825],
     "irf_late_coefficients": [
-        0.01369,
+        0.013691,
         0.012456,
         0.026933,
         0.026994,

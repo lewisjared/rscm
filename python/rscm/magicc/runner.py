@@ -262,7 +262,7 @@ def run_magicc(  # noqa: PLR0913
     ):
         sources[name] = "ClimateUDEB"
 
-    schema = VariableSchema()
+    schema = _base_schema()
     for name, unit in units.items():
         if name != ERF:
             schema.add_variable(
@@ -339,7 +339,37 @@ def _collect_result(  # noqa: PLR0913
     return MAGICCResult(time, values, units, regional, sources, contributors)
 
 
+def _base_schema() -> VariableSchema:
+    """Return a schema declaring the component outputs that no runner uses."""
+    schema = VariableSchema()
+    for name in ("2xCO2", "CH4 Oxidation Stratospheric H2O"):
+        schema.add_variable(f"{ERF}|{name}", "W/m^2")
+    schema.add_variable("Equilibrium Climate Sensitivity", "K")
+    return schema
+
+
 def _climate_weights(parameters: ClimateUDEBParams) -> NDArray[np.float64]:
     nh_land = parameters.get("nh_land_fraction", 0.42)
     sh_land = parameters.get("sh_land_fraction", 0.21)
     return np.array([1 - nh_land, nh_land, 1 - sh_land, sh_land]) * 0.5
+
+
+def _ch4_burdens(
+    concentration: float, ppb_to_tg: float, mixbox_size: float
+) -> dict[str, float]:
+    """Return initial CH4Oxidation pools, with all CH4 natural as in MAGICC7."""
+    burden = "Atmospheric Burden|CH4|"
+    return {
+        **{burden + source: 0.0 for source in ("Fossil", "AFOLU", "Permafrost")},
+        burden + "Natural": ppb_to_tg * concentration * mixbox_size,
+    }
+
+
+#: CH4Chemistry defaults of the lifetimes combined into ``tau_other``
+CH4_OTHER_LIFETIMES = {"tau_soil": 150.0, "tau_strat": 120.0, "tau_trop_cl": 200.0}
+
+
+def _ch4_tau_other(lifetimes: Mapping[str, float]) -> float:
+    """CH4 lifetime against soil, stratospheric and chlorine loss, as in MAGICC7."""
+    tau = {**CH4_OTHER_LIFETIMES, **lifetimes}
+    return 1.0 / sum(1.0 / tau[k] for k in CH4_OTHER_LIFETIMES)
