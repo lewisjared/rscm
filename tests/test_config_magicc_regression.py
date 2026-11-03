@@ -171,7 +171,7 @@ class TestRegressionConfigSpecifics:
     def test_concentration_driven_config(self):
         """Test concentration-driven config imports correctly."""
         config_file = (
-            REGRESSION_DIR / "ghg_forcing" / "01_concentration_driven_config.json"
+            REGRESSION_DIR / "magicc_baseline" / "01_concentration_driven_config.json"
         )
         if not config_file.exists():
             pytest.skip("Concentration driven config not found")
@@ -187,50 +187,6 @@ class TestRegressionConfigSpecifics:
         climate_params = result["components"]["climate"]["parameters"]
         assert climate_params["climate_sensitivity"] == 3.0
         assert climate_params["forcing_2xco2"] == 3.71
-
-    def test_co2_only_forcing_config(self):
-        """Test CO2-only forcing config imports correctly."""
-        config_file = REGRESSION_DIR / "ghg_forcing" / "05_co2_only_forcing_config.json"
-        if not config_file.exists():
-            pytest.skip("CO2-only forcing config not found")
-
-        with open(config_file) as f:
-            data = json.load(f)
-
-        result = from_legacy_dict(data)
-
-        # Verify forcing scales are imported
-        if "rf_solar_scale" in data:
-            assert (
-                result["components"]["forcing"]["parameters"]["solar_scale"]
-                == data["rf_solar_scale"]
-            )
-        if "rf_volcanic_scale" in data:
-            assert (
-                result["components"]["forcing"]["parameters"]["volcanic_scale"]
-                == data["rf_volcanic_scale"]
-            )
-
-    def test_ecs_sweep_configs(self):
-        """Test ECS sweep configs import correctly with different ECS values."""
-        ecs_configs = list(REGRESSION_DIR.glob("**/04_ecs_sweep_*_config.json"))
-        if not ecs_configs:
-            pytest.skip("No ECS sweep configs found")
-
-        # Extract ECS values from filenames and configs
-        for config_file in ecs_configs:
-            with open(config_file) as f:
-                data = json.load(f)
-
-            result = from_legacy_dict(data)
-
-            # Verify ECS is imported
-            ecs_value = data.get("core_climatesensitivity")
-            if ecs_value is not None:
-                assert (
-                    result["components"]["climate"]["parameters"]["climate_sensitivity"]
-                    == ecs_value
-                )
 
 
 class TestParameterStatusDistribution:

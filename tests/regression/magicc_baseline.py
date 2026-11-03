@@ -18,7 +18,7 @@ from rscm.core import ModelBuilder, TimeAxis
 from rscm.magicc import ClimateUDEBBuilder, GhgForcingBuilder, run_magicc
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = Path(__file__).parent / "data" / "ghg_forcing"
+DATA_DIR = Path(__file__).parent / "data" / "magicc_baseline"
 CASE = "01_concentration_driven"
 GASES = ("CO2", "CH4", "N2O")
 ERF = "Effective Radiative Forcing"

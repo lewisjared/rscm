@@ -62,7 +62,7 @@ and scientific review of regression expectations belong to later slices.
 
 ```sh
 uv run pytest tests/regression/test_magicc_baseline.py
-uv run pytest tests/test_magicc_runner.py tests/regression/test_ghg_forcing.py
+uv run pytest tests/test_magicc_runner.py
 ```
 
 The tests consume committed data and exercise invalid input, endpoint coverage,
