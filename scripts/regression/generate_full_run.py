@@ -27,14 +27,18 @@ Output:
     tests/regression/data/full_run/04_ssp245_emissions_sealevel*
     tests/regression/data/full_run/05_ssp245_default*
     tests/regression/data/full_run/06_ssp245_emissions_<variant>*
+    python/rscm/magicc/data/magicc7/*.gz (the run's forcing input files)
+    python/rscm/magicc/data/magicc7/defaults.json (the configuration the chain reads)
 """
 
+import gzip
 import json
+import shutil
 from fnmatch import fnmatchcase
 from pathlib import Path
 
 import pandas as pd
-from utils import make_config, output_dir, run_magicc_ctx
+from utils import MAGICC_ROOT, make_config, output_dir, run_magicc_ctx
 
 OUT = output_dir("full_run")
 
@@ -199,6 +203,115 @@ CASES = (
     ),
 )
 
+#: MAGICC7 input files behind the forcing that RSCM prescribes.
+INPUTS = (
+    *(f"HISTSSP_{name}_RF.IN" for name in ("SOXI", "SOXB", "BCI", "BCB", "OCI", "OCB")),
+    "HISTSSP_BCSNOW_RF.IN",
+    *(
+        f"HISTSSP_{name}_OT.IN"
+        for name in ("SOXI", "SOXNB", "OCI", "OCB", "OCN", "BCI", "BCB", "SS")
+    ),
+    "GISS_LANDUSE_RF.IN",
+    "SSP245_SOLAR_RF.IN",
+    "SSP245_VOLCANIC_RF.MON",
+    "NCYCLE_NFIX3.IN",
+)
+
+
+PACKAGE_DATA = Path(__file__).parents[2] / "python/rscm/magicc/data/magicc7"
+
+
+def default_config() -> dict:
+    """MAGICC7's default configuration, as recorded by the default run.
+
+    Keys MAGICC7 overwrites during a run come from its input configuration.
+    """
+    import f90nml  # noqa: PLC0415
+
+    from rscm.magicc import full  # noqa: PLC0415
+
+    with open(OUT / "05_ssp245_default_parameters.json") as f:
+        raw = json.load(f)
+    cfg = f90nml.read(MAGICC_ROOT / "run" / "MAGCFG_DEFAULTALL.CFG")["nml_allcfgs"]
+    inputs = {key: cfg[key] for key in full.REWRITTEN_PARAMETERS}
+    return {**raw["allcfgs"], **raw["outputcfgs"], **inputs}
+
+
+def concentration_inputs() -> list[str]:
+    """Concentration files the default run prescribes before switching to emissions."""
+    config = default_config()
+    names = [config[f"file_{gas}_conc"] for gas in ("co2", "ch4", "n2o")]
+    names += config["fgas_files_conc"] + config["mhalo_files_conc"]
+    return [name for name in names if name.strip()]
+
+
+def copy_inputs() -> None:
+    """Copy the forcing and concentration input files, compressed, into the package."""
+    for name in (*INPUTS, *concentration_inputs()):
+        with (
+            open(MAGICC_ROOT / "run" / name, "rb") as src,
+            open(PACKAGE_DATA / f"{name}.gz", "wb") as raw,
+            gzip.GzipFile(fileobj=raw, mode="wb", mtime=0, filename="") as dst,
+        ):
+            shutil.copyfileobj(src, dst)
+
+
+class _Recorder(dict):
+    """A configuration that records the keys read from it."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.used: set[str] = set()
+
+    def __getitem__(self, key: str):
+        self.used.add(key)
+        return super().__getitem__(key)
+
+
+def write_defaults() -> None:
+    """Write the configuration values and 1750 concentrations the full chain reads."""
+    from rscm.magicc import full  # noqa: PLC0415
+
+    config = default_config()
+    data = pd.read_csv(OUT / f"{CASES[0][0]}.csv.gz")
+    data = data[data.region == "World"].set_index("variable")
+    data = data[[c for c in data.columns if c[:4].isdigit()]]
+    species = ("CO2", "CH4", "N2O", *full.halocarbon_species())
+    concentrations = {
+        s: float(data.loc[f"Atmospheric Concentrations|{s}"].iloc[0]) for s in species
+    }
+    # MAGICC7 reports an F-gas's second-year concentration in its first year.
+    files = full.prescribed_concentrations([1750.0, 1751.0], config)
+    for s in full.halocarbon_species()[: config["fgas_n"]]:
+        concentrations[s] = float(files[s][0][0])
+    sectors = {"Fossil": "MAGICC Fossil and Industrial", "AFOLU": "MAGICC AFOLU"}
+    emissions = {
+        **{
+            f"{s}|{sector}": data.loc[f"Emissions|{s}|{theirs}"].to_numpy()
+            for s in full.SECTORAL_EMISSIONS
+            for sector, theirs in sectors.items()
+        },
+        **{s: data.loc[f"Emissions|{s}"].to_numpy() for s in full.halocarbon_species()},
+    }
+    years = [int(c[:4]) for c in data.columns]
+    defaults = {"parameters": {}, "initial_concentrations": concentrations}
+    full._defaults = lambda: defaults
+    recorder = _Recorder(config)
+    for pf_apply, ncycle_apply in ((0, 0), (1, 0), (0, 1)):
+        recorder["pf_apply"] = pf_apply
+        recorder["ncycle_apply"] = ncycle_apply
+        for flag in ("ndep_from_emis", "prognostic_nfix", "cn_initial_values"):
+            recorder[f"ncycle_apply_{flag}"] = ncycle_apply
+        full.run_magicc7(years, emissions, parameters=recorder)
+    parameters = {key: config[key] for key in sorted(recorder.used)}
+    with open(PACKAGE_DATA / "defaults.json", "w") as f:
+        json.dump(
+            {"parameters": parameters, "initial_concentrations": concentrations},
+            f,
+            indent=1,
+        )
+        f.write("\n")
+
 
 def read_carboncycle(path: Path, columns: tuple[str, ...]) -> pd.DataFrame:
     """Read columns of CARBONCYCLE.OUT in the layout of a pymagicc timeseries."""
@@ -266,9 +379,11 @@ def run_case(
 
 
 def main() -> None:
-    """Run MAGICC for every case."""
+    """Run MAGICC for every case and copy the inputs."""
     for case in CASES:
         run_case(*case)
+    copy_inputs()
+    write_defaults()
 
 
 if __name__ == "__main__":
