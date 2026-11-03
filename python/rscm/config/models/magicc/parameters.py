@@ -157,13 +157,6 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         description="Year to switch from concentration to emissions driven for CO2",
         category="carbon_cycle",
     ),
-    "pf_apply": ParameterInfo(
-        name="pf_apply",
-        status=ParameterStatus.NOT_IMPLEMENTED,
-        unit=None,
-        description="Enable the permafrost CO2 and CH4 feedback",
-        category="carbon_cycle",
-    ),
     "ch4_switchfromconc2emis_year": ParameterInfo(
         name="ch4_switchfromconc2emis_year",
         status=ParameterStatus.NOT_IMPLEMENTED,
@@ -176,6 +169,20 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         status=ParameterStatus.NOT_IMPLEMENTED,
         unit="year",
         description="Year to switch from concentration to emissions driven for N2O",
+        category="carbon_cycle",
+    ),
+    "mhalo_switchfromconc2emis_year": ParameterInfo(
+        name="mhalo_switchfromconc2emis_year",
+        status=ParameterStatus.NOT_IMPLEMENTED,
+        unit="year",
+        description="Year to switch Montreal Protocol gases to emissions driven",
+        category="carbon_cycle",
+    ),
+    "fgas_switchfromconc2emis_year": ParameterInfo(
+        name="fgas_switchfromconc2emis_year",
+        status=ParameterStatus.NOT_IMPLEMENTED,
+        unit="year",
+        description="Year to switch F-gases to emissions driven",
         category="carbon_cycle",
     ),
     # File paths (handled in inputs section)
@@ -208,6 +215,13 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         category="file",
     ),
     # Output control flags
+    "out_dynamic_vars": ParameterInfo(
+        name="out_dynamic_vars",
+        status=ParameterStatus.NOT_NEEDED,
+        unit=None,
+        description="Internal variables written to output",
+        category="output",
+    ),
     "out_forcing": ParameterInfo(
         name="out_forcing",
         status=ParameterStatus.NOT_NEEDED,
@@ -384,6 +398,174 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         category="carbon_cycle",
     ),
 }
+
+
+#: MAGICC permafrost parameters and their path below ``components``.
+_PERMAFROST = {
+    "pf_apply": (
+        "permafrost.enabled",
+        "Include the Permafrost component and its feedbacks",
+    ),
+    "pf_nbands": ("permafrost.parameters.n_bands", "Number of zonal bands"),
+    "pf_meltingtemp_min": (
+        "permafrost.parameters.melting_temp_min",
+        "Southern melting threshold",
+    ),
+    "pf_meltingtemp_max": (
+        "permafrost.parameters.melting_temp_max",
+        "Northern melting threshold",
+    ),
+    "pf_arctic_amplification": (
+        "permafrost.parameters.arctic_amplification",
+        "Arctic to global warming ratio",
+    ),
+    "pf_tsoilannualcycle_ampl": (
+        "permafrost.parameters.soil_annual_cycle_amplitude",
+        "Seasonal soil temperature amplitude",
+    ),
+    "pf_ms_aerob_decomp_turnovertime": (
+        "permafrost.parameters.aerobic_turnover_time",
+        "Mineral soil aerobic turnover time",
+    ),
+    "pf_decomprate_anaerob_over_aerob_ratio": (
+        "permafrost.parameters.anaerobic_decomposition_ratio",
+        "Anaerobic to aerobic decomposition ratio",
+    ),
+    "pf_decomprate_peat_over_ms_ratio": (
+        "permafrost.parameters.peat.decomposition_ratio",
+        "Peat to mineral soil decomposition ratio",
+    ),
+    "pf_q10_temp1": ("permafrost.parameters.q10_temp1", "Q10 reference temperature"),
+    "pf_q10_temp2": ("permafrost.parameters.q10_temp2", "Q10 offset temperature"),
+    "pf_soilwater_m": ("permafrost.parameters.soil_water_slope", "Soil moisture slope"),
+    "pf_soilwater_offset": (
+        "permafrost.parameters.soil_water_offset",
+        "Soil moisture offset",
+    ),
+    "pf_soilwater_minw": (
+        "permafrost.parameters.soil_water_min",
+        "Minimum soil moisture",
+    ),
+    "pf_tot_pool": ("permafrost.parameters.total_pool", "Total permafrost carbon"),
+    "pf_minsoil_southern_poolfraction": (
+        "permafrost.parameters.mineral_soil_fraction_south",
+        "Southern mineral soil carbon fraction",
+    ),
+    "pf_minsoil_northern_poolfraction": (
+        "permafrost.parameters.mineral_soil_fraction_north",
+        "Northern mineral soil carbon fraction",
+    ),
+    "pf_zonal_pooldistr": (
+        "permafrost.parameters.zonal_pool_distribution",
+        "Zonal carbon distribution shape",
+    ),
+    "pf_co2fromch4oxinatm_fraction": (
+        "ch4_oxidation.parameters.permafrost_fraction",
+        "Fraction of permafrost CH4 oxidised to fossil CO2",
+    ),
+    **{
+        f"pf_{magicc}_{key}": (
+            f"permafrost.parameters.{rscm}.{field}",
+            f"{rscm} {description}",
+        )
+        for magicc, rscm in (("ms", "mineral_soil"), ("peat", "peat"))
+        for key, field, description in (
+            ("thawfreeze_percperk_rate", "thaw_rate", "thaw rate"),
+            ("thawfreeze_exp_temp", "thaw_exponent", "thaw exponent"),
+            (
+                "anaerob_initial_areafraction",
+                "anaerobic_initial_fraction",
+                "anaerobic fraction",
+            ),
+            (
+                "anaerob_max_areafraction",
+                "anaerobic_max_fraction",
+                "maximum anaerobic fraction",
+            ),
+            (
+                "anaerob_moistsens",
+                "anaerobic_moisture_sensitivity",
+                "anaerobic moisture sensitivity",
+            ),
+            ("ch4oxidisation_fraction", "ch4_oxidation_fraction", "soil CH4 oxidation"),
+        )
+    },
+    **{
+        f"pf_q10_{magicc}_{kind}_alpha": (
+            f"permafrost.parameters.{rscm}.q10_{name}_alpha",
+            f"{rscm} {name} Q10 exponent",
+        )
+        for magicc, rscm in (("ms", "mineral_soil"), ("peat", "peat"))
+        for kind, name in (("aerob", "aerobic"), ("anaerob", "anaerobic"))
+    },
+}
+
+MAGICC_PARAMETERS.update(
+    {
+        name: ParameterInfo(
+            name=name,
+            status=ParameterStatus.SUPPORTED,
+            rscm_path=f"components.{path}",
+            description=description,
+            category="carbon_cycle",
+        )
+        for name, (path, description) in _PERMAFROST.items()
+    }
+)
+
+#: MAGICC nitrogen limitation switches and their path below ``nitrogen``.
+_NITROGEN_SWITCHES = {
+    "ncycle_apply": ("enabled", "Limit NPP by nitrogen"),
+    "ncycle_apply_ndep_from_emis": (
+        "deposition_from_emissions",
+        "Calculate nitrogen deposition from NOx and NH3 emissions",
+    ),
+    "ncycle_apply_prognostic_nfix": (
+        "prognostic_fixation",
+        "Calculate nitrogen fixation from NPP",
+    ),
+}
+
+#: MAGICC nitrogen limitation parameters and their path below ``nitrogen``.
+_NITROGEN = {
+    "ncycle_nfix_vmax": ("prognostic_fixation.vmax", "Maximum fixation rate"),
+    "ncycle_nfix_km": ("prognostic_fixation.km", "NPP at half the maximum fixation"),
+    "ncycle_ncratio_uptake": ("ncratio_uptake", "Plant uptake per unit NPP"),
+    "ncycle_ncratio_recyc": ("ncratio_recycling", "Recycling per unit respiration"),
+    "ncycle_recyc2cnratio_factor": (
+        "recycling_cn_factor",
+        "Damping of the recycled N:C ratio",
+    ),
+    "ncycle_ncratio_uptake_supply": ("uptake_supply", "Half saturation of supply"),
+    "ncycle_npp2navail_factor_a": ("availability_factor_a", "Availability factor A"),
+    "ncycle_npp2navail_factor_c": ("availability_factor_c", "Availability factor C"),
+    "ncycle_turnovertime_losses": ("loss_turnover_time", "Pool loss turnover time"),
+}
+
+MAGICC_PARAMETERS.update(
+    {
+        name: ParameterInfo(
+            name=name,
+            status=ParameterStatus.SUPPORTED,
+            rscm_path=f"components.terrestrial_carbon.{prefix}.{path}",
+            description=description,
+            category="carbon_cycle",
+        )
+        for prefix, table in (
+            ("nitrogen", _NITROGEN_SWITCHES),
+            ("parameters.nitrogen", _NITROGEN),
+        )
+        for name, (path, description) in table.items()
+    }
+)
+
+MAGICC_PARAMETERS["out_sealevel"] = ParameterInfo(
+    name="out_sealevel",
+    status=ParameterStatus.SUPPORTED,
+    rscm_path="components.sea_level_rise.enabled",
+    description="Include the SeaLevelRise component and thermal expansion",
+    category="climate",
+)
 
 
 def get_coverage_report() -> str:
