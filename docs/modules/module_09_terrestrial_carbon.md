@@ -146,6 +146,8 @@ Where $\tau_P(t)$ adjusts based on cumulative land-use emissions:
 
 $$\tau_P(t) = \frac{C_{P,0} - f_{no-regrow} \cdot f_{defo,P} \cdot \sum E_{CO2B}}{F_{net,P,0}}$$
 
+The cumulative land-use emissions include the current year's emissions.
+
 And $F_{net,P,0} = f_P \cdot NPP_0 - R_{h,0}$
 
 #### 2.4.2 Detritus Pool Dynamics

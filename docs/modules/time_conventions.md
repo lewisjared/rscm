@@ -41,15 +41,13 @@ The output from `solve_impl` is the temperature after the last substep (step 12)
 representing the state at `t_next` (January 1 of the next year). This is a
 **point-in-time** value, not an annual mean.
 
-## Known Differences from MAGICC7
+## Year boundaries
 
 ### First-year boundary handling
 
-MAGICC7 uses an overlapping year boundary scheme where the first year runs 13
-substeps (steps 0..12) instead of the normal 12 (steps 1..12). Step 0 covers
-the initial boundary at the start of the simulation. RSCM always runs exactly
-12 substeps. This affects the initial transient ("shock" phase) but has
-negligible impact on converged temperatures.
+MAGICC7 runs 13 substeps (steps 0..12) in the first year instead of the normal 12.
+Step 0 uses the forcing at the start of the simulation.
+RSCM does the same.
 
 Reference: MAGICC7.f90 lines 2702-2716
 

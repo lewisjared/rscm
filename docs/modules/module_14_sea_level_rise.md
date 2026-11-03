@@ -37,6 +37,45 @@ The code explicitly warns (MAGICC7.f90 lines 14-16):
 4. **SIGN() function usage**: Unusual usage pattern for handling negative temperature anomalies
 5. **No conservation checks**: No verification that total ice volume doesn't go negative (relies on MAX(0, ...) guards)
 
+### RSCM Implementation
+
+`SeaLevelRise` calculates glaciers, Greenland and Antarctic SMB and SID,
+and sums them with the thermal expansion that `ClimateUDEB` calculates when its `thermal_expansion` parameter is set.
+`rscm.magicc.full.run_magicc7` adds both with `out_sealevel=1`.
+Against MAGICC7 v7.5.3's default SSP245 run from emissions (`04_ssp245_emissions_sealevel`),
+the coupled chain matches every contribution and the total in MAGICC7's binary output.
+
+Checking against MAGICC7 output corrected this specification in several places:
+
+- **Timing**: a year's annual mean warming (`DAT_SURFACE_ANNUALMEANTEMP`, the mean of its 12 monthly steps)
+  sets the contributions at the start of the next year.
+  A contribution first changes in the year after its start year, so the condition is `year >= STARTYEAR`.
+- **Thermal expansion scaling** applies once, to the layer warming in both `DELTOC` and `DELTBAR`.
+  `EXPAN` is not scaled again.
+- **Thermal expansion weighting**: each layer's temperature is the mean of the hemispheres weighted by
+  their ocean area in that layer (`FGO(hemi) * OCN_AREAFACTOR_AVERAGE(hemi, L)`).
+  The layer expansion is weighted by the mean of the two hemispheres' layer areas, and the surface area is 1.
+- **Pressure profile**: `PPL` follows `p = 0.955506 z + 4.17274e-3 z^2 - 3.70851e-4 z^3 + 1.73615e-5 z^4`
+  at the layer centre (`z` in km).
+  This is fitted to MAGICC7 output, which documents no formula.
+- **Levermann AIS SID**: a region starts `DT` years after `SLR_AIS_SID_STARTYEAR`.
+  Its forcing is `TEMPSCALING * BASALMELT * (T(t) - T(region start))`,
+  and the contribution is the full convolution of that forcing with the response from the region's start.
+- **Response overflow**: MAGICC7 evaluates the response polynomial with the age raised to the fourth power
+  in 32-bit integers, which wraps from an age of 216 years.
+  In a run from 1750, Ross (no delay) reaches that age in 2067.
+- **Start release**: the year before a delayed region starts,
+  MAGICC7 adds `TEMPSCALING * BASALMELT * T * IRF(0)` for that year alone, against zero warming.
+- **Defaults**: the tables in section 5 list `MAGCFG_DEFAULTALL.CFG`, but the tuning files override most values.
+  The effective defaults are those of `SeaLevelRiseParameters` and `ThermalExpansionParameters`,
+  for example AIS SID starts in 1850 with delays of 60, 50, 0 and 65 years.
+
+Differences from MAGICC7:
+
+- **Not implemented**: land water (off by default), the semi-empirical method (driven by observations),
+  the FETTWEIS GIS SMB and DECONTO AIS SID alternatives, and the anomalies to 1986 to 2005 (`ZEROED_*`).
+- **Thermal expansion needs the CMIP5 initial ocean profile**, as MAGICC7 does.
+
 ## 3. Mathematical Formulation
 
 ### 3.1 Thermal Expansion
@@ -73,10 +112,10 @@ DLR = (SLR_EXPANSION_COEFE * DELTOC * ZLAYER) / 1000
 EXPAN = SUM(DLR * OCN_AREAFACTOR_AVERAGE) / OCN_LAYERBOUND_AREAS(1)
 ```
 
-**Cumulative contribution**:
+**Cumulative contribution** (`SLR_EXPANSION_SCALING` is already applied in `DELTOC`):
 
 ```
-SLR_EXPANSION(t+1) = SLR_EXPANSION(t) + EXPAN * SLR_EXPANSION_SCALING
+SLR_EXPANSION(t+1) = SLR_EXPANSION(t) + EXPAN
 ```
 
 ### 3.2 Glaciers and Ice Caps
@@ -176,11 +215,10 @@ ELSE:
 
 Uses impulse response functions (IRF) for 4 Antarctic regions with time-delayed convolution:
 
-**Ocean forcing**:
+**Ocean forcing**, from the region's start year `start(R) = SLR_AIS_SID_STARTYEAR + DT(R)`:
 
 ```
-OCNFORCE(R,t) = TEMPSCALING(R) * (T(t) - T(start)) * BASALMELT
-FORCING(R,t) = OCNFORCE(R,t) - OCNFORCE(R,start)
+FORCING(R,t) = TEMPSCALING(R) * (T(t) - T(start(R))) * BASALMELT
 ```
 
 **Impulse response** (4th order polynomial, clamped to 0):
@@ -189,12 +227,10 @@ FORCING(R,t) = OCNFORCE(R,t) - OCNFORCE(R,start)
 R(x) = MAX(0, IRF(1)*x^4 + IRF(2)*x^3 + IRF(3)*x^2 + IRF(4)*x + IRF(5))
 ```
 
-**Convolution**:
+**Convolution**, matching MAGICC7 output:
 
 ```
-CONV_TOTAL(R,t) = FORCING(R,t) * R(0) +
-    SUM(FORCING(R,t-i) * R(i) for i=1..t-2) +
-    FORCING(R,start) * R(t)
+CONV_TOTAL(R,t) = SUM(FORCING(R,t-i) * R(i) for i=0..t-start(R))
 ```
 
 **Total AIS SID**:

@@ -8,6 +8,36 @@ The source code itself contains the warning (line 3 of permafrost.f90):
 ! TODO: update this (all out of date/conflicting with MAGCFG_DEFAULTALL.CFG)
 ```
 
+## RSCM implementation
+
+`Permafrost` (`crates/rscm-magicc/src/carbon/permafrost.rs`) reproduces MAGICC7 v7.5.3's thawed area and emissions
+bit for bit when driven by MAGICC7's full-precision temperature.
+Comparison with MAGICC7 runs and its disassembly settled these points the pseudocode below leaves open:
+
+- The seasonal cycle uses `sin(pi/2 * (m-1)/11)`, because `PI` holds pi/2 (section 9.11).
+- New thaw is `R_thaw * FROZEN_AREA`, a fraction of the remaining frozen area.
+- Thaw and refreeze are split by the aerobic fraction of the previous step,
+  while the existing thawed area takes this step's fraction.
+  The two differ only when `PF_*_ANAEROB_MOISTSENS` is nonzero.
+- Refreezing is bounded by each soil type's thawed area before the step,
+  and moves carbon back at that type's carbon density before the step.
+- Pools and areas are clamped at zero after the thaw or refreeze move, but not after decomposition.
+  Decomposition uses the mean of the pools before and after the step,
+  so a band that refreezes completely ends the year with a negative pool and emits negative carbon the next year.
+  MAGICC7 does this in 1994, after the Pinatubo cooling.
+- A complete refreeze leaves thawed areas of rounding size, from `F - (A - A0) - (N - N0)`.
+  Moving carbon between them divides one rounding residue by another,
+  so emissions after such a refreeze depend on the last bits of the temperature.
+  A 1e-15 relative change in temperature moves the 1994 and 1995 CH4 emissions by up to 3e-5 Mt/yr
+  and later CO2 emissions by up to 3e-5 GtC/yr.
+  The regression fixture therefore stores MAGICC7's binary output rather than its 8-digit text output.
+- Band melting temperatures, pools, seasonal soil temperatures and decomposition rates
+  follow MAGICC7's order of operations, so that the residues start from the same values.
+  The anaerobic rate coefficient is `(ANAEROB_OVER_AEROB_RATIO * SOIL_RATIO) / TURNOVERTIME`.
+- Each pool's emissions are summed over bands before mineral soil and peat are combined.
+- Permafrost CH4 also enters the fossil CH4 burden whose oxidation adds CO2,
+  scaled by `PF_CO2FROMCH4OXINATM_FRACTION`.
+
 ## 1. Scientific Purpose
 
 The Permafrost Feedback module simulates the release of carbon (as CO2 and CH4) from thawing permafrost soils in response to Arctic warming. Permafrost contains an estimated 800-1600 GtC of frozen organic matter that can decompose and release greenhouse gases as temperatures rise, creating a positive climate feedback.
@@ -576,8 +606,8 @@ Vegetation changes in response to warming are not modeled:
 
 The use of MAX(0.0D0, ...) for all pool and area updates can cause mass conservation violations:
 
-- If a pool would go negative (due to excessive decomposition), it is clipped to zero
-- The "missing" carbon is not accounted for
+- A pool can go negative after decomposition, and is clipped to zero at the next thaw or refreeze
+- The clipped carbon is not accounted for
 - The diagnostic `PF_TOTPLUSEMIS_POOL` may drift from `PF_TOT_POOL`
 
 ### 9.10 Hardcoded Box Assignment

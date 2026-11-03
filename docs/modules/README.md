@@ -1,6 +1,6 @@
 # MAGICC Module Documentation
 
-This directory contains detailed documentation for each scientific module in MAGICC (Model for the Assessment of Greenhouse Gas Induced Climate Change). These documents are intended to guide the Rust reimplementation while maintaining exact numerical fidelity with the Fortran original.
+This directory contains detailed documentation for each scientific module in MAGICC (Model for the Assessment of Greenhouse Gas Induced Climate Change). These documents are intended to guide the Rust reimplementation while maintaining scientific parity with the Fortran original.
 
 For runnable concentration-driven and partial CO2 emissions-driven experiments,
 see [Partial MAGICC runs](../magicc_runs.md).
@@ -115,7 +115,7 @@ N2O CHEMISTRY            │         OZONE MODULE
 
 ## Iteration Analysis
 
-### Within-Module Iterations (Must Preserve for Exact Match)
+### Within-Module Iterations (Must Preserve for Parity)
 
 | Module        | Iteration Type         | Count  | Why Required                          |
 | ------------- | ---------------------- | ------ | ------------------------------------- |
@@ -191,7 +191,7 @@ See linked GitHub issues for detailed acceptance criteria.
 | Module               | RSCM Component           | Status                     | Issue |
 | -------------------- | ------------------------ | -------------------------- | ----- |
 | 00 - Initialization  | N/A (ModelBuilder)       | Framework handles          | -     |
-| 07b - RF Aggregation | VariableSchema (partial) | Efficacy framework missing | #114  |
+| 07b - RF Aggregation | `ForcingAggregation`     | Implemented                | #114  |
 | 08 - Climate UDEB    | `ClimateUDEB`            | Implemented                | #108  |
 | 15 - Main Timestep   | N/A (Model orchestrator) | Framework handles          | -     |
 
@@ -199,10 +199,10 @@ See linked GitHub issues for detailed acceptance criteria.
 
 | Module                    | RSCM Component        | Status                   | Issue |
 | ------------------------- | --------------------- | ------------------------ | ----- |
-| 01 - CH4 Chemistry        | `CH4Chemistry`        | Implemented (simplified) | #109  |
-| 02 - N2O Chemistry        | `N2OChemistry`        | Implemented (simplified) | #109  |
-| 03 - Halocarbon Chemistry | `HalocarbonChemistry` | Implemented (simplified) | #109  |
-| 04 - Ozone Forcing        | `OzoneForcing`        | Implemented (simplified) | #110  |
+| 01 - CH4 Chemistry        | `CH4Chemistry`        | Implemented (no wetland or clathrate feedback) | #109  |
+| 02 - N2O Chemistry        | `N2OChemistry`        | Implemented              | #109  |
+| 03 - Halocarbon Chemistry | `HalocarbonChemistry` | Implemented              | #109  |
+| 04 - Ozone Forcing        | `OzoneForcing`        | Implemented              | #110  |
 
 ### Forcing Modules
 
@@ -211,27 +211,48 @@ See linked GitHub issues for detailed acceptance criteria.
 | 05 - Aerosol Direct   | `AerosolDirect`   | Implemented (simplified) | #110  |
 | 06 - Aerosol Indirect | `AerosolIndirect` | Implemented (simplified) | #110  |
 | 07a - GHG Forcing     | `GhgForcing`      | Implemented              | -     |
-| Volcanic/Solar        | Not implemented   | Missing                  | #106  |
-| Land-use Albedo       | Not implemented   | Missing                  | #107  |
+| Prescribed aerosols   | `rscm.magicc.prescribed` | Implemented                         | #110 |
+| Volcanic/Solar        | `rscm.magicc.prescribed` | Implemented              | #106  |
+| Land-use Albedo       | `rscm.magicc.prescribed` | Implemented              | #107  |
 
 ### Carbon Cycle Modules
 
 | Module                  | RSCM Component      | Status                   | Issue |
 | ----------------------- | ------------------- | ------------------------ | ----- |
-| 09 - Terrestrial Carbon | `TerrestrialCarbon` | Implemented (simplified) | #109  |
-| 10 - Ocean Carbon       | `OceanCarbon`       | Implemented (simplified) | #109  |
-| 11 - CO2 Budget         | `CO2Budget`         | Implemented (simplified) | #109  |
+| 09 - Terrestrial Carbon | `TerrestrialCarbon` | Implemented              | #109  |
+| 10 - Ocean Carbon       | `OceanCarbon`       | Implemented              | #109  |
+| 11 - CO2 Budget         | `CO2Budget`         | Implemented              | #109  |
 
 ### Experimental Modules
 
 | Module                   | RSCM Component  | Status                 | Issue |
 | ------------------------ | --------------- | ---------------------- | ----- |
-| 12 - Permafrost          | Not implemented | Missing (experimental) | #115  |
-| 13 - Nitrogen Limitation | Not implemented | Missing (experimental) | #116  |
-| 14 - Sea Level Rise      | Not implemented | Missing (experimental) | #117  |
+| 12 - Permafrost          | `Permafrost`    | Implemented            | #115  |
+| 13 - Nitrogen Limitation | `TerrestrialCarbon` | Implemented          | #116  |
+| 14 - Sea Level Rise      | `SeaLevelRise`  | Implemented            | #117  |
 
 ### Validation
 
 | Item                      | Status                              | Issue |
 | ------------------------- | ----------------------------------- | ----- |
-| Regression test framework | Infrastructure ready, tests skipped | #105  |
+| Regression test framework | Full coupled run against MAGICC7    | #105  |
+
+MAGICC7 calculates the historical aerosol, land-use, solar and volcanic forcing before the run
+from its input files and emissions.
+`rscm.magicc.prescribed` reproduces those calculations in Python and `ForcingAggregation`
+combines them with the calculated agents.
+Nitrate is split between industrial and AFOLU sources by each source's NOx times NH3 emissions.
+
+`rscm.magicc.full.run_magicc7` runs the whole chain with MAGICC7's defaults.
+Like MAGICC7, it prescribes concentrations up to 2015 and calculates them from emissions afterwards.
+`tests/regression/test_full_run.py` checks it from SSP245 emissions against MAGICC7 v7.5.3,
+using MAGICC7's full-precision binary output.
+The aim is scientific parity, so the tests compare at a relative tolerance of 1e-9.
+MAGICC7's default run, and the emissions-driven runs with permafrost, nitrogen limitation
+or sea level rise, currently match to the last bit from 1750 to 2104.
+The variants each change one MAGICC7 switch on the emissions-driven run:
+climate sensitivity, ocean upwelling, diffusivity and geometry, feedbacks, efficacies,
+`core_co2ch4n2o_rfmethod`, CO2 fertilisation, respiration fertilisation scaling
+and the carbon cycle temperature feedback.
+They stay within 7.1e-15 K and a relative 1.4e-15 in CO2, CH4 and N2O.
+The remaining differences come from the order of floating-point operations in the detritus pool.

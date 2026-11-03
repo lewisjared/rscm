@@ -34,6 +34,7 @@ Where:
 - `STRATOZ_CLEXPON` = exponent (default: 1.7)
 
 **Important**: The forcing is zero for years before `STRATOZ_THRESHOLD_YEAR` (default: 1979).
+The power is libm `pow`, applied to the same year's EESC.
 
 **Source:** `deltaq_calculations.f90` lines 954-1002
 
@@ -73,11 +74,19 @@ Where:
 - `TROPOZ_OZCO` = CO sensitivity (default: 0.00396 DU per MtCO/yr)
 - `TROPOZ_OZVOC` = NMVOC sensitivity (default: 0.01008 DU per MtNMVOC/yr)
 
-The total tropospheric ozone forcing per hemisphere:
+The bitwise form, with the year-on-year emissions taken from the previous year:
 
 ```
-RF_tropoz_box = RF_box_fractions * (RF_tropoz_ch4 + RF_tropoz_other / hemisphere_area_fraction)
+C = (TROPOZ_RADEFF_WM2PERDU * TROPOZ_OZCH4) * ln(CH4[t] / CH4[0])
+d_X = (X_fossil[t-1] - X_fossil[0]) + (X_afolu[t-1] - X_afolu[0])    ! per precursor X
+S = (TROPOZ_OZNOX * d_NOx + TROPOZ_OZCO * d_CO) + TROPOZ_OZVOC * d_NMVOC
+RF_tropoz = C + S * TROPOZ_RADEFF_WM2PERDU
 ```
+
+The box forcing scales `RF_tropoz` by `RF_REGIONS_TROPOZ` normalised within each hemisphere,
+and MAGICC7 reports the global value as the area mean of the boxes.
+RSCM's `OzoneForcing` reads the sectoral emissions and writes four-box forcing
+when `trop_regions` is set.
 
 **Source:** `deltaq_calculations.f90` lines 1356-1427, `MAGICC7.f90` lines 5448-5553
 

@@ -167,6 +167,11 @@ SUBROUTINE CALC_INTERNAL_EFFICACY(Q, LAMCORE_CLIMATESENSITIVITY, BMAT, &
 END SUBROUTINE
 ```
 
+`BMAT` comes from `CALCULATE_FOUR_BY_FOUR_INVERSE`, which divides the adjugate by the determinant.
+Each cofactor and the determinant come from 3x3 determinants expanded along the first row.
+RSCM's `invert_by_cofactors` follows the same order of operations,
+because Gauss-Jordan elimination differs in the last bit and shifts some internal efficacies by one ulp.
+
 **Physical Interpretation:**
 
 - If forcing is concentrated in high-latitude land areas (high feedback), efficacy > 1
@@ -460,6 +465,29 @@ TOTAL_RF
 ├── VOLCANIC_RF (added monthly, not in annual total)
 └── EXTRA_RF (user-prescribed)
 ```
+
+### Summation Order
+
+Floating-point addition is not associative, so the order of the sums matters for bitwise parity.
+MAGICC7 builds every total (RF, ERF and EFFRF, globally and per box) from left to right as
+
+```
+TOTAL = CO2 + CH4 + N2O + FGASSUM + MHALOSUM + TOTAER_DIR + CLOUD_TOT
+        + OZTOTAL + CH4OXSTRATH2O + LANDUSE + BCSNOW + SOLAR
+TOTAER_DIR = BCI + OCI + SOXI + NO3I + BIOMASSAER + MINERALDUST
+BIOMASSAER = SOXB + NO3B + OCB + BCB
+CLOUD_TOT = CLOUD_ALBEDO + CLOUD_COVER
+OZTOTAL = STRATOZ + TROPOZ + OZDUETON2O + OZDUETOTEMPERATURE
+TOTAL_INCLVOLCANIC = TOTAL + VOLCANIC_ANNUAL
+```
+
+where each nested total is added first.
+`BIOMASSAER` is summed before the direct aerosol efficacy applies.
+`FGASSUM` boxes add the species in order, each with its own regional pattern.
+
+RSCM's `ForcingAggregation` takes this order as `summation`, a nested list of agent variables,
+and the biomass group as one agent whose `sum_of` lists its four variables.
+`rscm.magicc.full` sets both.
 
 ---
 
