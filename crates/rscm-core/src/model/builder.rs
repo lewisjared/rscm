@@ -4,6 +4,7 @@ use crate::component::{Component, GridType, RequirementDefinition, RequirementTy
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::schema::VariableSchema;
+use crate::spatial::FourBoxGrid;
 use crate::state::VariableSource;
 use crate::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
 use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData, VariableType};
@@ -30,6 +31,7 @@ pub struct ModelBuilder {
     components: Vec<C>,
     pub(crate) exogenous_variables: TimeseriesCollection,
     initial_values: HashMap<String, FloatValue>,
+    initial_grid_values: HashMap<String, Vec<FloatValue>>,
     /// The time axis for the model.
     pub time_axis: Arc<TimeAxis>,
     schema: Option<VariableSchema>,
@@ -46,6 +48,7 @@ impl ModelBuilder {
         Self {
             components: vec![],
             initial_values: HashMap::new(),
+            initial_grid_values: HashMap::new(),
             exogenous_variables: TimeseriesCollection::new(),
             time_axis: Arc::new(TimeAxis::from_values(Array::range(2000.0, 2100.0, 1.0))),
             schema: None,
@@ -192,6 +195,32 @@ impl ModelBuilder {
         for (name, value) in initial_values.into_iter() {
             self.initial_values.insert(name, value);
         }
+        self
+    }
+
+    /// Adds a four-box exogenous variable.
+    pub fn with_exogenous_four_box_variable(
+        &mut self,
+        name: &str,
+        timeseries: GridTimeseries<FloatValue, FourBoxGrid>,
+    ) -> &mut Self {
+        self.exogenous_variables.add_four_box_timeseries(
+            name.to_string(),
+            timeseries,
+            VariableType::Exogenous,
+        );
+        self
+    }
+
+    /// Adds initial values for grid variables, one per region in grid order.
+    ///
+    /// These take precedence over a uniform value given to [`Self::with_initial_values`].
+    /// Building fails if the number of values does not match the variable's grid.
+    pub fn with_initial_grid_values(
+        &mut self,
+        initial_values: HashMap<String, Vec<FloatValue>>,
+    ) -> &mut Self {
+        self.initial_grid_values.extend(initial_values);
         self
     }
 
@@ -704,6 +733,7 @@ impl ModelBuilder {
         for (name, def) in &definitions {
             if def.requirement_type == RequirementType::State
                 && !self.initial_values.contains_key(name)
+                && !self.initial_grid_values.contains_key(name)
             {
                 let component = variable_owners
                     .get(name)
@@ -759,6 +789,20 @@ impl ModelBuilder {
                 None
             };
             let initial_val = self.initial_values.get(&name).copied();
+            let initial_grid = self.initial_grid_values.get(&name);
+            let expected_len = match storage_grid {
+                GridType::Scalar => 1,
+                GridType::Hemispheric => 2,
+                GridType::FourBox => 4,
+            };
+            if let Some(values) = initial_grid {
+                if values.len() != expected_len {
+                    return Err(RSCMError::Error(format!(
+                        "Initial values for {name} must have {expected_len} entries, got {}",
+                        values.len()
+                    )));
+                }
+            }
 
             match storage_grid {
                 GridType::Scalar => {
@@ -774,7 +818,7 @@ impl ModelBuilder {
                             definition.unit,
                             interp.clone(),
                         );
-                        if let Some(val) = initial_val {
+                        if let Some(val) = initial_grid.map(|v| v[0]).or(initial_val) {
                             ts.set(0, ScalarRegion::Global, val);
                         }
                         collection.add_timeseries(name, ts, var_type);
@@ -794,12 +838,19 @@ impl ModelBuilder {
                             definition.unit,
                             interp.clone(),
                         );
-                        if let Some(val) = initial_val {
-                            use crate::spatial::FourBoxRegion;
-                            ts.set(0, FourBoxRegion::NorthernOcean, val);
-                            ts.set(0, FourBoxRegion::NorthernLand, val);
-                            ts.set(0, FourBoxRegion::SouthernOcean, val);
-                            ts.set(0, FourBoxRegion::SouthernLand, val);
+                        use crate::spatial::FourBoxRegion;
+                        let regions = [
+                            FourBoxRegion::NorthernOcean,
+                            FourBoxRegion::NorthernLand,
+                            FourBoxRegion::SouthernOcean,
+                            FourBoxRegion::SouthernLand,
+                        ];
+                        if let Some(values) = initial_grid {
+                            ts.set_all(0, values);
+                        } else if let Some(val) = initial_val {
+                            for region in regions {
+                                ts.set(0, region, val);
+                            }
                         }
                         collection.add_four_box_timeseries(name, ts, var_type);
                     }
@@ -818,10 +869,14 @@ impl ModelBuilder {
                             definition.unit,
                             interp.clone(),
                         );
-                        if let Some(val) = initial_val {
-                            use crate::spatial::HemisphericRegion;
-                            ts.set(0, HemisphericRegion::Northern, val);
-                            ts.set(0, HemisphericRegion::Southern, val);
+                        use crate::spatial::HemisphericRegion;
+                        let regions = [HemisphericRegion::Northern, HemisphericRegion::Southern];
+                        if let Some(values) = initial_grid {
+                            ts.set_all(0, values);
+                        } else if let Some(val) = initial_val {
+                            for region in regions {
+                                ts.set(0, region, val);
+                            }
                         }
                         collection.add_hemispheric_timeseries(name, ts, var_type);
                     }

@@ -96,6 +96,11 @@ pub struct N2OChemistryParameters {
     /// unit: year
     /// default: 1980.0
     pub meridional_flux_reference_year: FloatValue,
+
+    /// Last year of concentrations prescribed by `Atmospheric Concentration|N2O|Prescribed`,
+    /// or `None` to calculate them from emissions throughout.
+    /// MAGICC7: N2O_SWITCHFROMCONC2EMIS_YEAR
+    pub concentration_switch_year: Option<FloatValue>,
 }
 
 impl Default for N2OChemistryParameters {
@@ -111,6 +116,7 @@ impl Default for N2OChemistryParameters {
             meridional_flux_change_per_degree: 0.15,
             tau_sensitivity_to_meridional_flux: 0.04,
             meridional_flux_reference_year: 1980.0,
+            concentration_switch_year: None,
         }
     }
 }

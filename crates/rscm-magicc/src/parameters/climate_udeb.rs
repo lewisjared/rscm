@@ -3,6 +3,7 @@
 //! Parameters for the Upwelling-Diffusion Energy Balance (UDEB) climate model
 //! following MAGICC7 Module 08.
 
+use super::ThermalExpansionParameters;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,50 @@ pub enum OceanTempProfile {
     /// CMIP5 multi-model mean observational profile (default).
     #[serde(rename = "2")]
     CMIP5 = 2,
+}
+
+/// Box forcing given at every substep, such as monthly volcanic forcing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubannualForcing {
+    /// Time of the start of the first substep (decimal year).
+    pub start: FloatValue,
+    /// Values per box (NH ocean, NH land, SH ocean, SH land), one per substep
+    /// with `steps_per_year` substeps a year. Zero outside the given range.
+    pub values: Vec<[FloatValue; 4]>,
+    /// Regional pattern whose internal efficacy divides `efficacy` for the values of each year,
+    /// taken from the climate sensitivity of the year before.
+    /// A substep belongs to the year it ends in.
+    #[serde(default)]
+    pub rf_regions: Option<[FloatValue; 4]>,
+    /// Prescribed efficacy over the internal efficacy when `rf_regions` is set.
+    #[serde(default = "one")]
+    pub efficacy: FloatValue,
+    /// Internal efficacy dividing the values of the first two years when `rf_regions` is set.
+    #[serde(default = "one")]
+    pub internal_efficacy: FloatValue,
+}
+
+fn one() -> FloatValue {
+    1.0
+}
+
+impl SubannualForcing {
+    /// Forcing for substep `step` (1-based) of the year starting at `year_start`.
+    pub fn at(
+        &self,
+        year_start: FloatValue,
+        step: usize,
+        steps_per_year: usize,
+    ) -> [FloatValue; 4] {
+        let index = ((year_start - self.start) * steps_per_year as FloatValue).round() as i64
+            + step as i64
+            - 1;
+        usize::try_from(index)
+            .ok()
+            .and_then(|i| self.values.get(i))
+            .copied()
+            .unwrap_or([0.0; 4])
+    }
 }
 
 /// Parameters for the 4-box UDEB climate model.
@@ -198,19 +243,38 @@ pub struct ClimateUDEBParameters {
     /// Efficacy application mode (matches MAGICC7 `RF_EFFICACY_APPLY`).
     ///
     /// - `0` = disabled (default): all agents treated with uniform spatial efficacy.
-    /// - `1` = prescribed mode: effective forcing scaled by `prescribed_efficacy_co2`.
+    /// - `1` = unit efficacy: effective forcing divided by the internal efficacy.
     /// - `2` = AR6 mode: effective forcing adjusted by `prescribed_efficacy_co2 / internal_efficacy`.
     #[serde(default)]
     pub efficacy_apply: u8,
 
     /// Prescribed CO2 efficacy factor (matches MAGICC7 `RF_EFFICACY_CO2`).
     ///
-    /// In mode 1: $\text{EFFRF} = \text{ERF} \times \text{prescribed\_efficacy\_co2}$.
+    /// Unused in mode 1.
     /// In mode 2: $\text{EFFRF} = \text{ERF} \times \text{prescribed\_efficacy\_co2} / \text{internal\_efficacy}$.
     ///
     /// Default: 1.0 (no-op).
     #[serde(default = "default_prescribed_efficacy_co2")]
     pub prescribed_efficacy_co2: FloatValue,
+
+    /// Read efficacy-adjusted four-box forcing instead of global ERF.
+    ///
+    /// When set, the forcing is used as given and the efficacy settings above
+    /// are ignored. See `ForcingAggregation`.
+    pub regional_forcing: bool,
+
+    /// Efficacy-adjusted box forcing applied at each substep, on top of the
+    /// annual input. MAGICC7 applies volcanic forcing this way.
+    pub subannual_forcing: Option<SubannualForcing>,
+
+    /// Write the annual mean warming and the thermal expansion of the ocean.
+    pub thermal_expansion: Option<ThermalExpansionParameters>,
+
+    /// Read the CO2 doubling ERF each year instead of using `rf_2xco2`.
+    ///
+    /// MAGICC7 recalculates it from the current concentrations with OLBL,
+    /// which changes the feedback parameters as CO2 rises.
+    pub time_varying_q2x: bool,
 
     // Initial ocean temperature profile
     /// Initial ocean temperature profile mode (`CORE_SWITCH_OCN_TEMPPROFILE`).
@@ -287,6 +351,10 @@ impl Default for ClimateUDEBParameters {
             // Efficacy
             efficacy_apply: 0,
             prescribed_efficacy_co2: 1.0,
+            regional_forcing: false,
+            time_varying_q2x: false,
+            subannual_forcing: None,
+            thermal_expansion: None,
 
             // Initial ocean profile
             ocean_temp_profile: OceanTempProfile::CMIP5,
@@ -311,7 +379,9 @@ pub const DIFFUSIVITY_CM2S_TO_M2YR: FloatValue = 3155.76;
 pub const RHO_SEAWATER: FloatValue = 1026.0;
 
 /// Specific heat capacity of seawater ($\text{J/(kg K)}$).
-pub const CP_SEAWATER: FloatValue = 3985.0;
+///
+/// MAGICC7's `SPECHT` (0.9333 cal/g/K) times `HTCONS` (4.1856 J/cal).
+pub const CP_SEAWATER: FloatValue = 0.9333 * 4.1856 * 1000.0;
 
 /// Seconds per Julian year ($\text{s/yr}$).
 pub const SECONDS_PER_YEAR: FloatValue = 31557600.0;
@@ -376,44 +446,24 @@ impl ClimateUDEBParameters {
         0.5 * (self.nh_land_fraction + self.sh_land_fraction)
     }
 
-    /// Compute the ocean area fraction at a given depth using the hypsometric profile.
+    /// Relative ocean area of a hemisphere at depth `depth_m`.
     ///
-    /// Returns the fraction of ocean surface area that is still ocean at depth `z` metres.
-    /// The result is scaled by [`depth_dependent_area`](Self::depth_dependent_area):
-    /// when that parameter is 0 the ocean is cylindrical ($A = 1$), when 1 the full
-    /// hypsometric profile is used.
-    ///
-    /// Based on global ocean bathymetry (ETOPO/GEBCO).
-    pub fn ocean_area_at_depth(&self, depth_m: FloatValue) -> FloatValue {
-        /// Depth breakpoints (metres) for the hypsometric lookup table.
-        const DEPTH: [FloatValue; 12] = [
-            0.0, 200.0, 500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0,
-            5000.0,
-        ];
-        /// Fraction of ocean surface area remaining at each depth breakpoint.
-        const AREA: [FloatValue; 12] = [
-            1.0, 0.975, 0.95, 0.92, 0.91, 0.87, 0.81, 0.72, 0.55, 0.38, 0.18, 0.05,
-        ];
-
-        // Linearly interpolate the hypsometric profile
-        let hydro = if depth_m <= DEPTH[0] {
-            AREA[0]
-        } else if depth_m >= DEPTH[DEPTH.len() - 1] {
-            AREA[AREA.len() - 1]
+    /// Interpolates the CMIP5 mean profile of `OCN_REF_AREAFRAC_PROFILE_CMIP5MEAN.CFG`,
+    /// blended towards a cylindrical ocean by
+    /// [`depth_dependent_area`](Self::depth_dependent_area).
+    pub fn ocean_area_at_depth(&self, hemi: usize, depth_m: FloatValue) -> FloatValue {
+        let area = if hemi == 0 {
+            &OCEAN_AREA_NH
         } else {
-            let mut a = AREA[0];
-            for i in 1..DEPTH.len() {
-                if depth_m <= DEPTH[i] {
-                    let frac = (depth_m - DEPTH[i - 1]) / (DEPTH[i] - DEPTH[i - 1]);
-                    a = AREA[i - 1] + frac * (AREA[i] - AREA[i - 1]);
-                    break;
-                }
-            }
-            a
+            &OCEAN_AREA_SH
         };
-
-        // Blend between cylindrical (1.0) and full hypsometric profile
-        1.0 + self.depth_dependent_area * (hydro - 1.0)
+        let d = &OCEAN_AREA_DEPTHS;
+        let raw = match d.windows(2).position(|w| w[0] <= depth_m && depth_m < w[1]) {
+            Some(i) => (area[i + 1] - area[i]) * (depth_m - d[i]) / (d[i + 1] - d[i]) + area[i],
+            None if depth_m < d[0] => area[0],
+            None => area[area.len() - 1],
+        };
+        (1.0 - (1.0 - raw) * self.depth_dependent_area).clamp(0.0, 1.0)
     }
 
     /// Compute area factors for the tridiagonal ocean solver.
@@ -428,7 +478,10 @@ impl ClimateUDEBParameters {
     ///
     /// For a cylindrical ocean (`depth_dependent_area = 0`), all factors are 1.0
     /// (and `af_diff` is 0.0).
-    pub fn compute_area_factors(&self) -> (Vec<FloatValue>, Vec<FloatValue>, Vec<FloatValue>) {
+    pub fn compute_area_factors(
+        &self,
+        hemi: usize,
+    ) -> (Vec<FloatValue>, Vec<FloatValue>, Vec<FloatValue>) {
         let n = self.n_layers;
         let mut af_top = Vec::with_capacity(n);
         let mut af_bottom = Vec::with_capacity(n);
@@ -439,12 +492,11 @@ impl ClimateUDEBParameters {
                 (0.0, self.mixed_layer_depth)
             } else {
                 let top = self.mixed_layer_depth + (l as FloatValue - 1.0) * self.layer_thickness;
-                let bot = top + self.layer_thickness;
-                (top, bot)
+                (top, top + self.layer_thickness)
             };
 
-            let a_top = self.ocean_area_at_depth(z_top);
-            let a_bottom = self.ocean_area_at_depth(z_bottom);
+            let a_top = self.ocean_area_at_depth(hemi, z_top);
+            let a_bottom = self.ocean_area_at_depth(hemi, z_bottom);
             let a_avg = (a_top + a_bottom) / 2.0;
 
             af_top.push(a_top / a_avg);
@@ -639,6 +691,104 @@ const CMIP5_PROFILE_SH: [FloatValue; 50] = [
     7.25481987e-01,
 ];
 
+/// Depths (m) of the CMIP5 mean ocean area profiles.
+const OCEAN_AREA_DEPTHS: [FloatValue; 41] = [
+    0.0, 30.0, 110.0, 210.0, 310.0, 410.0, 510.0, 610.0, 710.0, 810.0, 910.0, 1010.0, 1110.0,
+    1210.0, 1310.0, 1410.0, 1510.0, 1610.0, 1710.0, 1810.0, 1910.0, 2010.0, 2110.0, 2210.0, 2310.0,
+    2410.0, 2510.0, 3010.0, 3510.0, 4010.0, 4510.0, 5010.0, 5510.0, 6010.0, 6510.0, 7010.0, 7510.0,
+    8010.0, 8510.0, 9010.0, 9510.0,
+];
+
+/// NH ocean area relative to the surface (`OCN_AREAS_RAW_RELATIVE_PRESCR_NH`).
+const OCEAN_AREA_NH: [FloatValue; 41] = [
+    1.00000000e+00,
+    9.92768049e-01,
+    9.33580875e-01,
+    9.05554295e-01,
+    8.88706923e-01,
+    8.77777398e-01,
+    8.69542181e-01,
+    8.62955093e-01,
+    8.57065380e-01,
+    8.51579487e-01,
+    8.46125364e-01,
+    8.40779603e-01,
+    8.35111797e-01,
+    8.29301596e-01,
+    8.23629618e-01,
+    8.17975044e-01,
+    8.12225044e-01,
+    8.06298792e-01,
+    8.00089359e-01,
+    7.93866634e-01,
+    7.87548840e-01,
+    7.81117976e-01,
+    7.74461150e-01,
+    7.67656147e-01,
+    7.60640740e-01,
+    7.53213227e-01,
+    7.45444179e-01,
+    6.98505878e-01,
+    6.27339005e-01,
+    5.30937970e-01,
+    4.15673941e-01,
+    2.88527399e-01,
+    1.59321889e-01,
+    5.03621809e-02,
+    2.64205802e-02,
+    2.63157897e-02,
+    2.63157897e-02,
+    2.63157897e-02,
+    2.63157897e-02,
+    2.63157897e-02,
+    2.63157897e-02,
+];
+
+/// SH ocean area relative to the surface (`OCN_AREAS_RAW_RELATIVE_PRESCR_SH`).
+const OCEAN_AREA_SH: [FloatValue; 41] = [
+    1.00000000e+00,
+    9.98092234e-01,
+    9.82268870e-01,
+    9.75749671e-01,
+    9.71684515e-01,
+    9.67262864e-01,
+    9.62361991e-01,
+    9.57554638e-01,
+    9.53565300e-01,
+    9.50394392e-01,
+    9.47427332e-01,
+    9.44458604e-01,
+    9.41365719e-01,
+    9.38220859e-01,
+    9.34938848e-01,
+    9.31435645e-01,
+    9.27700162e-01,
+    9.23839390e-01,
+    9.19681549e-01,
+    9.15324748e-01,
+    9.10636783e-01,
+    9.05802965e-01,
+    9.00624514e-01,
+    8.95213604e-01,
+    8.89417052e-01,
+    8.82735789e-01,
+    8.75507176e-01,
+    8.21786106e-01,
+    7.18526065e-01,
+    5.64145565e-01,
+    3.78261954e-01,
+    2.01682448e-01,
+    4.64582741e-02,
+    2.65591927e-02,
+    2.63590403e-02,
+    2.63157897e-02,
+    2.63157897e-02,
+    2.63157897e-02,
+    2.63157897e-02,
+    2.63157897e-02,
+    2.63157897e-02,
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -696,7 +846,7 @@ mod tests {
         let c_mix = params.mixed_layer_heat_capacity();
 
         // For 60m mixed layer, expect ~7.8 W yr / m^2 K
-        // (1026 * 3985 * 60) / 31557600 ~= 7.77
+        // (1026 * 3906 * 60) / 31557600 ~= 7.62
         assert!(c_mix > 7.0 && c_mix < 8.5, "C_mix = {}", c_mix);
     }
 
@@ -736,8 +886,8 @@ mod tests {
         let params = ClimateUDEBParameters::default();
         let c_ground = params.ground_heat_capacity();
 
-        // For 300m effective thickness, expect ~38.8 W yr / m^2 K
-        // (1026 * 3985 * 300) / 31557600 ~= 38.8
+        // For 300m effective thickness, expect ~38.1 W yr / m^2 K
+        // (1026 * 3906 * 300) / 31557600 ~= 38.1
         assert!(
             c_ground > 35.0 && c_ground < 42.0,
             "C_ground = {}",

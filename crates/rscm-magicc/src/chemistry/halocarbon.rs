@@ -1,250 +1,176 @@
 //! Halocarbon Chemistry Component
 //!
-//! Simulates atmospheric chemistry of halocarbons (F-gases and Montreal Protocol gases)
-//! with exponential decay lifetimes.
-//!
-//! # What This Component Does
-//!
-//! 1. Calculates atmospheric concentrations for each halocarbon species using
-//!    exponential decay with species-specific lifetimes
-//! 2. Computes total radiative forcing from all halocarbons
-//! 3. Calculates Equivalent Effective Stratospheric Chlorine (EESC) for ozone
-//!    depletion calculations
+//! Concentrations, forcing and EESC of F-gases and Montreal Protocol gases,
+//! following MAGICC7 Module 03.
 //!
 //! # Inputs
 //!
-//! For each species:
-//! - `Emissions|<species>` (kt/yr) - Emissions for each halocarbon species
+//! - `Emissions|<species>` (kt/yr) for each species
+//! - `Lifetime|CH4|OH` (yr), which scales OH lifetimes
+//! - `Surface Temperature` (K), which shortens stratospheric lifetimes
+//! - `Emissions|CO2|Fossil` (GtC/yr) with `fgas_regions`, which spreads short-lived F-gases
+//!
+//! # States
+//!
+//! - `Atmospheric Concentration|<species>` (ppt)
 //!
 //! # Outputs
 //!
-//! For each species:
-//! - `Concentration|<species>` (ppt) - Atmospheric concentration (state variable)
+//! - `Effective Radiative Forcing|F-Gases` (W/m²), four-box with `fgas_regions`
+//! - `Effective Radiative Forcing|Montreal Protocol Halogen Gases` (W/m²)
+//! - Each species' share of these, as `Effective Radiative Forcing|<group>|<species>`
+//! - `EESC` (ppt): equivalent effective stratospheric chlorine
 //!
-//! Aggregates:
-//! - `Forcing|Halocarbons` (W/m^2) - Total radiative forcing from all halocarbons
-//! - `Forcing|F-gases` (W/m^2) - Forcing from F-gases only
-//! - `Forcing|Montreal Gases` (W/m^2) - Forcing from Montreal gases only
-//! - `EESC` (ppt) - Equivalent Effective Stratospheric Chlorine
+//! # Lifetimes
 //!
-//! # Differences from MAGICC7 Module 03
+//! $$\frac{1}{\tau} = \frac{1}{s_{OH} \tau_{OH}} + \frac{1}{s_{strat} \tau_{strat}} + \frac{1}{\tau_{other}}$$
 //!
-//! This is a simplified implementation:
+//! where $s_{OH}$ is the CH4 OH lifetime relative to its unperturbed value and
+//! $s_{strat} = 1 / (1 + f \cdot k \cdot \max(0, T - T_{1980}))$ after 1980.
 //!
-//! - **Variable lifetimes**: MAGICC7 supports time-varying lifetimes based on OH
-//!   and stratospheric changes. Here, lifetimes are fixed constants.
-//! - **Regional forcing**: MAGICC7 distributes forcing across boxes based on
-//!   species lifetime. Here, forcing is scalar (global mean).
-//! - **EESC delay**: MAGICC7 uses concentration from 3 years prior for EESC.
-//!   Here, we use current concentration (delay should be handled externally).
-//! - **Inverse emissions**: MAGICC7 can derive emissions from concentration
-//!   trajectories. Not implemented here.
-//! - **Bank dynamics**: Equipment banks are not modelled; they must be included
-//!   in the emissions input.
+//! # Concentrations
+//!
+//! Crank-Nicolson for lifetimes of at least 5 years, otherwise the exact
+//! exponential solution, with the emissions and lifetime of the start of the year.
 
 use crate::parameters::{HalocarbonParameters, HalocarbonSpecies};
+use crate::reference::{
+    feedback_warming, prescribed_concentration, prescribed_definition, require_annual,
+};
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
-use rscm_core::state::StateValue;
+use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-/// Halocarbon atmospheric chemistry component
-///
-/// Implements exponential decay for all halocarbon species and calculates:
-/// - Species concentrations from emissions and decay
-/// - Total radiative forcing (linear in concentration)
-/// - EESC for stratospheric ozone calculations
-///
-/// # Exponential Decay
-///
-/// For each species, the concentration evolves according to:
-///
-/// $$\frac{dC}{dt} = E \cdot \text{conv} - \frac{C}{\tau}$$
-///
-/// Analytical solution for one timestep $\Delta t$:
-///
-/// $$C(t+\Delta t) = C(t) \cdot e^{-\Delta t/\tau} + E \cdot \text{conv} \cdot \tau \cdot (1 - e^{-\Delta t/\tau})$$
-///
-/// where conv is the emission-to-concentration conversion factor.
-///
-/// # Radiative Forcing
-///
-/// $$RF_i = (C_i - C_{i,PI}) \cdot \eta_i / 1000$$
-///
-/// where $\eta_i$ is the radiative efficiency in W/m² per ppb, divided by 1000
-/// to convert to per ppt.
-///
-/// # EESC Calculation
-///
-/// $$\text{EESC} = \sum_i C_i \cdot (n_{Cl,i} + \alpha_{Br} \cdot n_{Br,i}) \cdot f_{release,i}$$
+/// F-gas ERF output.
+pub const FGAS_FORCING: &str = "Effective Radiative Forcing|F-Gases";
+/// Montreal Protocol gas ERF output.
+pub const MHALO_FORCING: &str = "Effective Radiative Forcing|Montreal Protocol Halogen Gases";
+/// EESC output.
+pub const EESC: &str = "EESC";
+/// CH4 OH lifetime input.
+pub const CH4_OH_LIFETIME: &str = "Lifetime|CH4|OH";
+const FOSSIL_CO2: &str = "Emissions|CO2|Fossil";
+
+/// Halocarbon atmospheric chemistry component.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HalocarbonChemistry {
     parameters: HalocarbonParameters,
 }
 
 impl HalocarbonChemistry {
-    /// Create a new halocarbon chemistry component with default parameters
+    /// Create a component with MAGICC7 default parameters.
     pub fn new() -> Self {
         Self::from_parameters(HalocarbonParameters::default())
     }
 
-    /// Create a new halocarbon chemistry component from parameters
+    /// Create a component from parameters.
     pub fn from_parameters(parameters: HalocarbonParameters) -> Self {
         Self { parameters }
     }
 
-    /// Get the parameters
+    /// Parameters of this component.
     pub fn parameters(&self) -> &HalocarbonParameters {
         &self.parameters
     }
 
-    /// Get emissions variable name for a species
     fn emissions_name(species: &str) -> String {
-        format!("Emissions|{}", species)
+        format!("Emissions|{species}")
     }
 
-    /// Get concentration variable name for a species
     fn concentration_name(species: &str) -> String {
-        format!("Atmospheric Concentration|{}", species)
+        format!("Atmospheric Concentration|{species}")
     }
 
-    /// Calculate concentration after one timestep using analytical exponential decay
-    ///
-    /// Returns the new concentration in ppt.
-    pub fn decay_species(
+    /// ERF variable of a species in group 0 (F-gases) or 1 (Montreal gases).
+    pub fn forcing_name(group: usize, species: &str) -> String {
+        format!("{}|{species}", [FGAS_FORCING, MHALO_FORCING][group])
+    }
+
+    /// Lifetime (yr) given the OH and stratospheric lifetime scale factors.
+    pub fn lifetime(
+        &self,
+        species: &HalocarbonSpecies,
+        oh_scale: FloatValue,
+        strat_scale: FloatValue,
+    ) -> FloatValue {
+        let mut rate = 0.0;
+        if species.tau_oh > 0.0 {
+            rate += 1.0 / (species.tau_oh * oh_scale);
+        }
+        if species.tau_strat > 0.0 {
+            rate += 1.0 / (species.tau_strat * strat_scale);
+        }
+        if let Some(tau) = species.tau_other() {
+            rate += 1.0 / tau;
+        }
+        1.0 / rate
+    }
+
+    /// Concentration after one year (ppt).
+    pub fn step_concentration(
         &self,
         species: &HalocarbonSpecies,
         concentration: FloatValue,
         emissions: FloatValue,
-        dt: FloatValue,
+        tau: FloatValue,
     ) -> FloatValue {
-        // Exponential decay factor
-        let decay = (-dt / species.lifetime).exp();
-
-        // Convert emissions from kt/yr to ppt/yr
-        let conv = self
-            .parameters
-            .emission_to_concentration_factor(species.molecular_weight);
-        let emissions_ppt = emissions * conv;
-
-        // Analytical solution: C_new = C * exp(-dt/tau) + E * tau * (1 - exp(-dt/tau))
-        concentration * decay + emissions_ppt * species.lifetime * (1.0 - decay)
+        let factor = self.parameters.emission_to_concentration_factor(species);
+        if tau >= 5.0 {
+            let half = 1.0 / (2.0 * tau);
+            (concentration * (1.0 - half) + emissions * factor) / (1.0 + half)
+        } else {
+            let decay = (-1.0 / tau).exp();
+            tau * emissions * factor * (1.0 - decay) + concentration * decay
+        }
     }
 
-    /// Calculate radiative forcing for a single species (W/m²)
-    pub fn species_forcing(
+    /// ERF of a species at a concentration (W/m²).
+    pub fn species_forcing(species: &HalocarbonSpecies, concentration: FloatValue) -> FloatValue {
+        (concentration - species.concentration_pi) * (species.radiative_efficiency / 1000.0)
+    }
+
+    /// EESC contribution of a species at a concentration (ppt).
+    pub fn eesc_contribution(
         &self,
         species: &HalocarbonSpecies,
         concentration: FloatValue,
     ) -> FloatValue {
-        let delta_conc = concentration - species.concentration_pi;
-        // radiative_efficiency is in W/m² per ppb, divide by 1000 for ppt
-        delta_conc * species.radiative_efficiency / 1000.0
+        let p = &self.parameters;
+        let release = |atoms: u8| {
+            FloatValue::from(atoms) * species.fractional_release * p.cfc11_release_factor
+        };
+        concentration * (p.br_vs_cl_scale * release(species.n_br) + release(species.n_cl))
     }
 
-    /// Calculate total radiative forcing from all species
-    pub fn calculate_total_forcing(
-        &self,
-        concentrations: &HashMap<String, FloatValue>,
-    ) -> FloatValue {
-        self.parameters
-            .all_species()
-            .map(|species| {
-                let conc = *concentrations
-                    .get(&species.name)
-                    .unwrap_or(&species.concentration_pi);
-                self.species_forcing(species, conc)
-            })
-            .sum()
+    fn scale_factors(&self, t_current: Time, input_state: &InputState) -> (FloatValue, FloatValue) {
+        let p = &self.parameters;
+        let oh_scale = if p.variable_oh_lifetime {
+            let window = input_state.get_scalar_window(CH4_OH_LIFETIME);
+            window.at_end().unwrap_or_else(|| window.at_start()) / p.ch4_oh_lifetime_init
+        } else {
+            1.0
+        };
+        let strat_scale = if p.variable_strat_lifetime {
+            let temperature = input_state.get_scalar_window("Surface Temperature");
+            let warming = feedback_warming(&temperature, t_current, p.meridional_flux_year);
+            1.0 / (1.0 + warming * p.meridional_flux_per_degree * p.strat_lifetime_sensitivity)
+        } else {
+            1.0
+        };
+        (oh_scale, strat_scale)
     }
+}
 
-    /// Calculate forcing from F-gases only
-    pub fn calculate_fgas_forcing(
-        &self,
-        concentrations: &HashMap<String, FloatValue>,
-    ) -> FloatValue {
-        self.parameters
-            .fgases
-            .iter()
-            .map(|species| {
-                let conc = *concentrations
-                    .get(&species.name)
-                    .unwrap_or(&species.concentration_pi);
-                self.species_forcing(species, conc)
-            })
-            .sum()
-    }
-
-    /// Calculate forcing from Montreal gases only
-    pub fn calculate_montreal_forcing(
-        &self,
-        concentrations: &HashMap<String, FloatValue>,
-    ) -> FloatValue {
-        self.parameters
-            .montreal_gases
-            .iter()
-            .map(|species| {
-                let conc = *concentrations
-                    .get(&species.name)
-                    .unwrap_or(&species.concentration_pi);
-                self.species_forcing(species, conc)
-            })
-            .sum()
-    }
-
-    /// Calculate Equivalent Effective Stratospheric Chlorine (EESC)
-    ///
-    /// EESC combines chlorine and bromine loading weighted by their
-    /// ozone destruction efficiency and fractional release in the stratosphere.
-    ///
-    /// $$\text{EESC} = \sum_i C_i \cdot (n_{Cl,i} + \alpha_{Br} \cdot n_{Br,i}) \cdot f_{release,i} / f_{CFC11}$$
-    pub fn calculate_eesc(&self, concentrations: &HashMap<String, FloatValue>) -> FloatValue {
-        let mut eesc = 0.0;
-
-        for species in self.parameters.all_species() {
-            let conc = *concentrations
-                .get(&species.name)
-                .unwrap_or(&species.concentration_pi);
-
-            // Only species with non-zero release factor contribute to EESC
-            if species.fractional_release > 0.0 {
-                let halogen_loading =
-                    species.n_cl as f64 + self.parameters.br_multiplier * species.n_br as f64;
-
-                // Normalise by CFC-11 release factor
-                let normalised_release =
-                    species.fractional_release / self.parameters.cfc11_release_normalisation;
-
-                eesc += conc * halogen_loading * normalised_release;
-            }
-        }
-
-        eesc
-    }
-
-    /// Step all species forward in time and return new concentrations
-    pub fn step_concentrations(
-        &self,
-        current_concentrations: &HashMap<String, FloatValue>,
-        emissions: &HashMap<String, FloatValue>,
-        dt: FloatValue,
-    ) -> HashMap<String, FloatValue> {
-        let mut new_concentrations = HashMap::new();
-
-        for species in self.parameters.all_species() {
-            let current_conc = *current_concentrations
-                .get(&species.name)
-                .unwrap_or(&species.concentration_pi);
-
-            let emission = *emissions.get(&species.name).unwrap_or(&0.0);
-
-            let new_conc = self.decay_species(species, current_conc, emission, dt);
-            new_concentrations.insert(species.name.clone(), new_conc);
-        }
-
-        new_concentrations
+impl HalocarbonChemistry {
+    /// F-gases and Montreal gases with the last year of their prescribed concentrations.
+    fn switch_years(&self) -> [(&[HalocarbonSpecies], Option<Time>); 2] {
+        let p = &self.parameters;
+        [
+            (&p.fgases, p.fgas_switch_year),
+            (&p.montreal_gases, p.mhalo_switch_year),
+        ]
     }
 }
 
@@ -254,42 +180,70 @@ impl Default for HalocarbonChemistry {
     }
 }
 
+/// Value `lag` steps before the end of the step, clamped to the first.
+fn lagged(window: &ScalarWindow, end: FloatValue, lag: usize) -> FloatValue {
+    if lag == 0 {
+        return end;
+    }
+    let offset = (lag as isize - 1).min(window.index() as isize);
+    window
+        .at_offset(-offset)
+        .unwrap_or_else(|| window.at_start())
+}
+
 #[typetag::serde]
 impl Component for HalocarbonChemistry {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        let mut defs = Vec::new();
-
-        // Emissions inputs and concentration states for each species
+        let mut definitions = Vec::new();
         for species in self.parameters.all_species() {
-            // Emissions input
-            defs.push(RequirementDefinition::scalar_input(
+            definitions.push(RequirementDefinition::scalar_input(
                 &Self::emissions_name(&species.name),
                 "kt/yr",
             ));
-
-            // Concentration state (reads previous, writes new)
-            defs.push(RequirementDefinition::scalar_state(
+            definitions.push(RequirementDefinition::scalar_state(
                 &Self::concentration_name(&species.name),
                 "ppt",
             ));
         }
-
-        // Aggregate outputs
-        defs.push(RequirementDefinition::scalar_output(
-            "Forcing|Halocarbons",
-            "W/m^2",
-        ));
-        defs.push(RequirementDefinition::scalar_output(
-            "Forcing|F-gases",
-            "W/m^2",
-        ));
-        defs.push(RequirementDefinition::scalar_output(
-            "Forcing|Montreal Gases",
-            "W/m^2",
-        ));
-        defs.push(RequirementDefinition::scalar_output("EESC", "ppt"));
-
-        defs
+        for (list, switch_year) in self.switch_years() {
+            for species in list {
+                definitions.extend(prescribed_definition(
+                    &Self::concentration_name(&species.name),
+                    "ppt",
+                    switch_year,
+                ));
+            }
+        }
+        if self.parameters.variable_oh_lifetime {
+            definitions.push(RequirementDefinition::scalar_input(CH4_OH_LIFETIME, "yr"));
+        }
+        if self.parameters.variable_strat_lifetime {
+            definitions.push(RequirementDefinition::scalar_input(
+                "Surface Temperature",
+                "K",
+            ));
+        }
+        if self.parameters.fgas_regions.is_some() {
+            definitions.push(RequirementDefinition::scalar_input(FOSSIL_CO2, "GtC/yr"));
+        }
+        let regional = self.parameters.fgas_regions.is_some();
+        let forcing = |name: &str, four_box: bool| {
+            if four_box {
+                RequirementDefinition::four_box_output(name, "W/m^2")
+            } else {
+                RequirementDefinition::scalar_output(name, "W/m^2")
+            }
+        };
+        definitions.push(forcing(FGAS_FORCING, regional));
+        definitions.push(forcing(MHALO_FORCING, false));
+        for (group, (list, _)) in self.switch_years().into_iter().enumerate() {
+            for species in list {
+                let name = Self::forcing_name(group, &species.name);
+                definitions.push(forcing(&name, regional && group == 0));
+            }
+        }
+        definitions.push(RequirementDefinition::scalar_output(EESC, "ppt"));
+        definitions
     }
 
     fn solve(
@@ -298,61 +252,60 @@ impl Component for HalocarbonChemistry {
         t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let dt = t_next - t_current;
-
-        // Read current concentrations and emissions for each species
-        let mut current_concentrations = HashMap::new();
-        let mut emissions = HashMap::new();
-
-        for species in self.parameters.all_species() {
-            // Get current concentration (from state) or use pre-industrial
-            let conc_name = Self::concentration_name(&species.name);
-            let current_conc = input_state
-                .get_global(&conc_name)
-                .unwrap_or(species.concentration_pi);
-            current_concentrations.insert(species.name.clone(), current_conc);
-
-            // Get emissions
-            let emis_name = Self::emissions_name(&species.name);
-            let emission = input_state.get_global(&emis_name).unwrap_or(0.0);
-            emissions.insert(species.name.clone(), emission);
-        }
-
-        // Calculate new concentrations
-        let new_concentrations = self.step_concentrations(&current_concentrations, &emissions, dt);
-
-        // Calculate outputs
-        let total_forcing = self.calculate_total_forcing(&new_concentrations);
-        let fgas_forcing = self.calculate_fgas_forcing(&new_concentrations);
-        let montreal_forcing = self.calculate_montreal_forcing(&new_concentrations);
-        let eesc = self.calculate_eesc(&new_concentrations);
-
-        // Build output state
+        require_annual("HalocarbonChemistry", t_current, t_next)?;
+        let (oh_scale, strat_scale) = self.scale_factors(t_current, input_state);
         let mut output = OutputState::new();
+        let mut forcing = [0.0; 2];
+        let mut fgas_boxes = [0.0; 4];
+        let mut eesc = 0.0;
+        let fossil_co2 = self
+            .parameters
+            .fgas_regions
+            .as_ref()
+            .map(|_| input_state.get_scalar_window(FOSSIL_CO2).at_start());
 
-        // Add concentration outputs for each species
-        for species in self.parameters.all_species() {
-            let conc_name = Self::concentration_name(&species.name);
-            if let Some(&conc) = new_concentrations.get(&species.name) {
-                output.insert(conc_name, StateValue::Scalar(conc));
+        for (group, (list, switch_year)) in self.switch_years().into_iter().enumerate() {
+            for species in list {
+                let name = Self::concentration_name(&species.name);
+                let window = input_state.get_scalar_window(&name);
+                let emissions = input_state
+                    .get_scalar_window(&Self::emissions_name(&species.name))
+                    .at_start();
+                let tau = self.lifetime(species, oh_scale, strat_scale);
+                let next = prescribed_concentration(input_state, &name, switch_year, t_next)
+                    .unwrap_or_else(|| {
+                        self.step_concentration(species, window.at_start(), emissions, tau)
+                    });
+                let species_forcing = Self::species_forcing(species, next);
+                forcing[group] += species_forcing;
+                let value = if let (0, Some(regions), Some(fossil_co2)) =
+                    (group, &self.parameters.fgas_regions, fossil_co2)
+                {
+                    let boxes = regions
+                        .pattern(tau, fossil_co2)
+                        .map(|s| species_forcing * s);
+                    for (total, b) in fgas_boxes.iter_mut().zip(boxes) {
+                        *total += b;
+                    }
+                    StateValue::FourBox(FourBoxSlice::from_array(boxes))
+                } else {
+                    StateValue::Scalar(species_forcing)
+                };
+                output.insert(Self::forcing_name(group, &species.name), value);
+                let delayed = lagged(&window, next, self.parameters.eesc_delay);
+                eesc += self.eesc_contribution(species, delayed);
+                output.insert(name, StateValue::Scalar(next));
             }
         }
 
-        // Add aggregate outputs
-        output.insert(
-            "Forcing|Halocarbons".to_string(),
-            StateValue::Scalar(total_forcing),
-        );
-        output.insert(
-            "Forcing|F-gases".to_string(),
-            StateValue::Scalar(fgas_forcing),
-        );
-        output.insert(
-            "Forcing|Montreal Gases".to_string(),
-            StateValue::Scalar(montreal_forcing),
-        );
-        output.insert("EESC".to_string(), StateValue::Scalar(eesc));
-
+        let fgas = if self.parameters.fgas_regions.is_some() {
+            StateValue::FourBox(FourBoxSlice::from_array(fgas_boxes))
+        } else {
+            StateValue::Scalar(forcing[0])
+        };
+        output.insert(FGAS_FORCING.to_string(), fgas);
+        output.insert(MHALO_FORCING.to_string(), StateValue::Scalar(forcing[1]));
+        output.insert(EESC.to_string(), StateValue::Scalar(eesc));
         Ok(output)
     }
 }
@@ -361,381 +314,77 @@ impl Component for HalocarbonChemistry {
 mod tests {
     use super::*;
 
-    fn default_component() -> HalocarbonChemistry {
-        HalocarbonChemistry::from_parameters(HalocarbonParameters::default())
+    fn component() -> HalocarbonChemistry {
+        HalocarbonChemistry::new()
     }
 
-    // ===== Species Decay Tests =====
-
-    #[test]
-    fn test_exponential_decay_no_emissions() {
-        let component = default_component();
-        let cf4 = component
-            .parameters()
-            .get_species("CF4")
-            .expect("CF4 should exist");
-
-        let initial_conc = 100.0; // ppt
-        let dt = 1.0; // 1 year
-
-        let new_conc = component.decay_species(cf4, initial_conc, 0.0, dt);
-
-        // With 50000 year lifetime, decay should be minimal
-        let expected_decay = (-dt / cf4.lifetime).exp();
-        let expected = initial_conc * expected_decay;
-
-        assert!(
-            (new_conc - expected).abs() < 1e-10,
-            "CF4 decay without emissions: expected {}, got {}",
-            expected,
-            new_conc
-        );
-
-        // Should be very close to initial (long lifetime)
-        assert!(
-            (new_conc - initial_conc).abs() / initial_conc < 0.001,
-            "CF4 should barely decay in 1 year: {} -> {}",
-            initial_conc,
-            new_conc
-        );
+    fn species(name: &str) -> HalocarbonSpecies {
+        component().parameters().get_species(name).unwrap().clone()
     }
 
     #[test]
-    fn test_exponential_decay_short_lived() {
-        let component = default_component();
-        let hfc152a = component
-            .parameters()
-            .get_species("HFC-152a")
-            .expect("HFC-152a should exist");
-
-        let initial_conc = 100.0; // ppt
-        let dt = 1.0; // 1 year
-
-        let new_conc = component.decay_species(hfc152a, initial_conc, 0.0, dt);
-
-        // With 1.6 year lifetime, should decay significantly
-        let expected_decay = (-dt / hfc152a.lifetime).exp();
-        let expected = initial_conc * expected_decay;
-
-        assert!(
-            (new_conc - expected).abs() < 1e-8,
-            "HFC-152a decay: expected {:.4}, got {:.4}",
-            expected,
-            new_conc
-        );
-
-        // Should decay by ~47% in 1 year (exp(-1/1.6) ≈ 0.535)
-        assert!(
-            new_conc < initial_conc * 0.6,
-            "HFC-152a should decay significantly: {} -> {}",
-            initial_conc,
-            new_conc
-        );
-    }
-
-    #[test]
-    fn test_decay_with_emissions_equilibrium() {
-        let component = default_component();
-        let hfc134a = component
-            .parameters()
-            .get_species("HFC-134a")
-            .expect("HFC-134a should exist");
-
-        // At equilibrium: dC/dt = 0 => C_eq = E * tau * conv
-        let emissions = 100.0; // kt/yr
-        let conv = component
-            .parameters()
-            .emission_to_concentration_factor(hfc134a.molecular_weight);
-        let expected_equilibrium = emissions * conv * hfc134a.lifetime;
-
-        // Start from zero and run many timesteps to approach equilibrium
-        let dt = 1.0;
-        let mut conc = 0.0;
-        for _ in 0..500 {
-            conc = component.decay_species(hfc134a, conc, emissions, dt);
+    fn test_unscaled_lifetime_is_total() {
+        let c = component();
+        for s in c.parameters().all_species() {
+            assert!(
+                (c.lifetime(s, 1.0, 1.0) - s.tau_total).abs() < 1e-9,
+                "{}",
+                s.name
+            );
         }
-
-        // Should be close to equilibrium
-        let relative_error = ((conc - expected_equilibrium) / expected_equilibrium).abs();
-        assert!(
-            relative_error < 0.01,
-            "Should approach equilibrium: got {:.2}, expected {:.2} (error: {:.1}%)",
-            conc,
-            expected_equilibrium,
-            relative_error * 100.0
-        );
     }
 
     #[test]
-    fn test_zero_emissions_decays_to_zero() {
-        let component = default_component();
-        let cfc11 = component
-            .parameters()
-            .get_species("CFC-11")
-            .expect("CFC-11 should exist");
-
-        let mut conc = 250.0; // ppt (approximate current level)
-        let dt = 1.0;
-
-        // Run for 10 lifetimes
-        for _ in 0..(cfc11.lifetime as usize * 10) {
-            conc = component.decay_species(cfc11, conc, 0.0, dt);
-        }
-
-        // Should be negligible (< 0.1% of initial)
-        assert!(conc < 0.25, "CFC-11 should decay to near zero: {}", conc);
-    }
-
-    // ===== Radiative Forcing Tests =====
-
-    #[test]
-    fn test_species_forcing_zero_at_pi() {
-        let component = default_component();
-        let cfc11 = component
-            .parameters()
-            .get_species("CFC-11")
-            .expect("CFC-11 should exist");
-
-        // At pre-industrial concentration, forcing should be zero
-        let forcing = component.species_forcing(cfc11, cfc11.concentration_pi);
-        assert!(
-            forcing.abs() < 1e-10,
-            "Forcing at PI should be zero: {}",
-            forcing
-        );
+    fn test_oh_scaling_lengthens_lifetime() {
+        let c = component();
+        let hcfc22 = species("HCFC22");
+        assert!(c.lifetime(&hcfc22, 1.1, 1.0) > hcfc22.tau_total);
+        let cfc11 = species("CFC11");
+        assert!((c.lifetime(&cfc11, 1.1, 1.0) - cfc11.tau_total).abs() < 1e-9);
     }
 
     #[test]
-    fn test_species_forcing_linear() {
-        let component = default_component();
-        let cfc11 = component
-            .parameters()
-            .get_species("CFC-11")
-            .expect("CFC-11 should exist");
-
-        let conc1 = 100.0;
-        let conc2 = 200.0;
-
-        let forcing1 = component.species_forcing(cfc11, conc1);
-        let forcing2 = component.species_forcing(cfc11, conc2);
-
-        // Forcing should scale linearly with concentration
-        assert!(
-            (forcing2 - 2.0 * forcing1).abs() < 1e-10,
-            "Forcing should be linear: F(100)={}, F(200)={}",
-            forcing1,
-            forcing2
-        );
+    fn test_long_lived_decay_is_crank_nicolson() {
+        let c = component();
+        let cfc11 = species("CFC11");
+        let tau = 52.0;
+        let half = 1.0 / (2.0 * tau);
+        let expected = 100.0 * (1.0 - half) / (1.0 + half);
+        assert!((c.step_concentration(&cfc11, 100.0, 0.0, tau) - expected).abs() < 1e-12);
     }
 
     #[test]
-    fn test_total_forcing_calculation() {
-        let component = default_component();
-
-        // Set up concentrations with some non-zero values
-        let mut concentrations = HashMap::new();
-        concentrations.insert("CFC-11".to_string(), 250.0); // ~current level
-        concentrations.insert("CFC-12".to_string(), 520.0); // ~current level
-        concentrations.insert("HFC-134a".to_string(), 100.0);
-
-        let total = component.calculate_total_forcing(&concentrations);
-        let fgas = component.calculate_fgas_forcing(&concentrations);
-        let montreal = component.calculate_montreal_forcing(&concentrations);
-
-        // Total should equal sum of components
-        assert!(
-            (total - (fgas + montreal)).abs() < 1e-10,
-            "Total should equal F-gas + Montreal: {} vs {}",
-            total,
-            fgas + montreal
-        );
-
-        // Forcing should be positive (above pre-industrial)
-        assert!(total > 0.0, "Total forcing should be positive: {}", total);
-    }
-
-    // ===== EESC Tests =====
-
-    #[test]
-    fn test_eesc_calculation_basic() {
-        let component = default_component();
-
-        // Set up with just CFC-11, but also need to account for natural halocarbons
-        // (CH3Cl and CH3Br have non-zero pre-industrial concentrations)
-        let mut concentrations = HashMap::new();
-        concentrations.insert("CFC-11".to_string(), 200.0); // ppt
-
-        // Zero out natural halocarbons to isolate CFC-11 contribution
-        concentrations.insert("CH3Cl".to_string(), 0.0);
-        concentrations.insert("CH3Br".to_string(), 0.0);
-
-        let eesc = component.calculate_eesc(&concentrations);
-
-        // CFC-11: 3 Cl atoms, 0 Br, f_release = 0.47
-        // EESC = 200 * 3 * (0.47 / 0.47) = 600
-        let expected = 200.0 * 3.0 * 1.0; // normalised release = 1.0 for CFC-11
-        assert!(
-            (eesc - expected).abs() < 1e-6,
-            "CFC-11 EESC: expected {}, got {}",
-            expected,
-            eesc
-        );
+    fn test_short_lived_decay_is_exponential() {
+        let c = component();
+        let ch3cl = species("CH3Cl");
+        let next = c.step_concentration(&ch3cl, 100.0, 0.0, 0.9);
+        assert!((next - 100.0 * (-1.0 / 0.9_f64).exp()).abs() < 1e-12);
     }
 
     #[test]
-    fn test_eesc_bromine_contribution() {
-        let component = default_component();
-
-        // Halon-1301: 0 Cl, 1 Br, f_release = 0.28
-        let mut concentrations = HashMap::new();
-        concentrations.insert("Halon-1301".to_string(), 3.0); // ppt
-
-        // Zero out natural halocarbons to isolate Halon-1301 contribution
-        concentrations.insert("CH3Cl".to_string(), 0.0);
-        concentrations.insert("CH3Br".to_string(), 0.0);
-
-        let eesc = component.calculate_eesc(&concentrations);
-
-        // EESC = 3 * (60 * 1) * (0.28 / 0.47) = 3 * 60 * 0.596 ≈ 107
-        let br_eff = component.parameters().br_multiplier;
-        let normalised_release = 0.28 / 0.47;
-        let expected = 3.0 * br_eff * normalised_release;
-
-        assert!(
-            (eesc - expected).abs() < 1e-6,
-            "Halon-1301 EESC: expected {:.2}, got {:.2}",
-            expected,
-            eesc
-        );
+    fn test_steady_state_short_lived() {
+        let c = component();
+        let ch3cl = species("CH3Cl");
+        let conv = c.parameters().emission_to_concentration_factor(&ch3cl);
+        let steady = 1000.0 * conv * 0.9;
+        assert!((c.step_concentration(&ch3cl, steady, 1000.0, 0.9) - steady).abs() < 1e-9);
     }
 
     #[test]
-    fn test_fgases_no_eesc_contribution() {
-        let component = default_component();
-
-        // F-gases have zero fractional release, should not contribute to EESC
-        let mut concentrations = HashMap::new();
-        concentrations.insert("HFC-134a".to_string(), 1000.0);
-        concentrations.insert("SF6".to_string(), 100.0);
-
-        // Zero out natural halocarbons to isolate F-gas contribution
-        concentrations.insert("CH3Cl".to_string(), 0.0);
-        concentrations.insert("CH3Br".to_string(), 0.0);
-
-        // Also zero out other Montreal gases to ensure only F-gases
-        for species in component.parameters().montreal_gases.iter() {
-            concentrations.insert(species.name.clone(), 0.0);
-        }
-
-        let eesc = component.calculate_eesc(&concentrations);
-
-        assert!(
-            eesc.abs() < 1e-10,
-            "F-gases should not contribute to EESC: {}",
-            eesc
-        );
-    }
-
-    // ===== Component Trait Tests =====
-
-    #[test]
-    fn test_definitions_count() {
-        let component = default_component();
-        let defs = component.definitions();
-
-        // Should have: 41 species * 2 (emissions + concentration) + 4 aggregates
-        let expected_count = 41 * 2 + 4;
+    fn test_forcing_relative_to_initial() {
+        let cfc12 = species("CFC12");
         assert_eq!(
-            defs.len(),
-            expected_count,
-            "Should have {} definitions, got {}",
-            expected_count,
-            defs.len()
+            HalocarbonChemistry::species_forcing(&cfc12, cfc12.concentration_pi),
+            0.0
         );
+        assert!((HalocarbonChemistry::species_forcing(&cfc12, 500.0) - 0.182).abs() < 1e-12);
     }
 
     #[test]
-    fn test_definitions_contain_expected_names() {
-        let component = default_component();
-        let defs = component.definitions();
-
-        let names: Vec<_> = defs.iter().map(|d| d.name.as_str()).collect();
-
-        // Check some expected names
-        assert!(names.contains(&"Emissions|CFC-11"));
-        assert!(names.contains(&"Atmospheric Concentration|CFC-11"));
-        assert!(names.contains(&"Emissions|HFC-134a"));
-        assert!(names.contains(&"Atmospheric Concentration|HFC-134a"));
-        assert!(names.contains(&"Forcing|Halocarbons"));
-        assert!(names.contains(&"EESC"));
-    }
-
-    // ===== Integration Tests =====
-
-    #[test]
-    fn test_step_concentrations_all_species() {
-        let component = default_component();
-
-        // Start with zero concentrations
-        let mut current = HashMap::new();
-        let mut emissions = HashMap::new();
-
-        for species in component.parameters().all_species() {
-            current.insert(species.name.clone(), species.concentration_pi);
-            emissions.insert(species.name.clone(), 0.1); // Small emissions
-        }
-
-        let new_concs = component.step_concentrations(&current, &emissions, 1.0);
-
-        // All species should have new concentrations
-        assert_eq!(
-            new_concs.len(),
-            41,
-            "Should have concentrations for all 41 species"
-        );
-
-        // With positive emissions, concentrations should increase from PI
-        for species in component.parameters().all_species() {
-            if species.concentration_pi == 0.0 {
-                let conc = *new_concs.get(&species.name).unwrap();
-                assert!(
-                    conc > 0.0,
-                    "Species {} should have positive concentration with emissions",
-                    species.name
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_realistic_scenario() {
-        let component = default_component();
-
-        // Use rough current concentrations (circa 2020)
-        let mut concentrations = HashMap::new();
-        concentrations.insert("CFC-11".to_string(), 230.0);
-        concentrations.insert("CFC-12".to_string(), 510.0);
-        concentrations.insert("CFC-113".to_string(), 70.0);
-        concentrations.insert("HCFC-22".to_string(), 245.0);
-        concentrations.insert("HFC-134a".to_string(), 100.0);
-        concentrations.insert("SF6".to_string(), 10.0);
-        concentrations.insert("CH3Cl".to_string(), 540.0); // Natural background
-
-        let total_forcing = component.calculate_total_forcing(&concentrations);
-        let eesc = component.calculate_eesc(&concentrations);
-
-        // Total halocarbon forcing ~0.4 W/m² (rough estimate)
-        assert!(
-            total_forcing > 0.1 && total_forcing < 1.0,
-            "Total forcing should be reasonable: {} W/m²",
-            total_forcing
-        );
-
-        // EESC should be in the range of ~1500-2000 ppt equivalent Cl
-        assert!(
-            eesc > 500.0 && eesc < 5000.0,
-            "EESC should be in reasonable range: {} ppt",
-            eesc
-        );
+    fn test_eesc_contribution() {
+        let c = component();
+        let halon1301 = species("Halon1301");
+        let expected = 3.0 * 62.5 * 0.28 * 0.75;
+        assert!((c.eesc_contribution(&halon1301, 3.0) - expected).abs() < 1e-12);
     }
 }

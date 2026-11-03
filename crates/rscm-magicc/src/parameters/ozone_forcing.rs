@@ -1,167 +1,99 @@
 //! Ozone forcing parameters
-//!
-//! Parameters for stratospheric and tropospheric ozone radiative forcing
-//! calculations.
 
+use crate::climate::lamcalc::hemispheric_qfrac;
+use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
-/// Parameters for ozone radiative forcing
-///
-/// # Stratospheric Ozone
-///
-/// Stratospheric ozone forcing is derived from EESC (Equivalent Effective
-/// Stratospheric Chlorine) using a power-law relationship:
-///
-/// $$RF_{strat} = \alpha \cdot \max(0, EESC - EESC_{ref})^{\beta}$$
-///
-/// This produces negative (cooling) forcing because ozone-depleting substances
-/// destroy stratospheric ozone.
-///
-/// # Tropospheric Ozone
-///
-/// Tropospheric ozone forcing has two components:
-///
-/// 1. CH4 contribution (logarithmic in concentration)
-/// 2. Precursor contributions (linear in emissions: NOx, CO, NMVOC)
-///
-/// $$RF_{trop} = \eta \cdot OZCH4 \cdot \ln(CH4/CH4_{pi}) + \eta \cdot (\alpha_{NOx} \cdot \Delta NOx + ...)$$
-///
-/// # Temperature Feedback
-///
-/// Warming affects ozone photochemistry and transport, providing a
-/// (typically negative) feedback:
-///
-/// $$RF_{temp} = \gamma \cdot \Delta T$$
+/// Parameters for `OzoneForcing`, named after their MAGICC7 counterparts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OzoneForcingParameters {
-    // === Stratospheric Ozone Parameters ===
-    /// EESC reference value (ppt) at threshold year (1979).
-    ///
-    /// Stratospheric ozone forcing is relative to this baseline.
-    /// Default: 1420.0 ppt (approximate EESC at 1979)
-    pub eesc_reference: f64,
+    /// `STRATOZ_O3SCALE` (W/m²): negative because depletion cools.
+    pub strat_o3_scale: FloatValue,
 
-    /// Scaling factor for stratospheric ozone forcing (W/m² per (ppt/100)^exponent).
-    ///
-    /// Note: This is NEGATIVE because ozone depletion causes cooling.
-    /// Default: -0.0043 W/m²
-    pub strat_o3_scale: f64,
+    /// `STRATOZ_CLEXPON`: exponent of the EESC power law.
+    pub strat_cl_exponent: FloatValue,
 
-    /// Power-law exponent for EESC-RF relationship.
-    ///
-    /// Default: 1.7 (from MAGICC7 default)
-    pub strat_cl_exponent: f64,
+    /// `STRATOZ_THRESHOLD_YEAR`: stratospheric forcing is zero before this year
+    /// and relative to its EESC afterwards.
+    pub strat_threshold_year: FloatValue,
 
-    // === Tropospheric Ozone Parameters ===
-    /// Radiative efficiency (W/m² per DU).
-    ///
-    /// Default: 0.032 W/m²/DU
-    pub trop_radeff: f64,
+    /// `TROPOZ_RADEFF_WM2PERDU` (W/m² per DU).
+    pub trop_radeff: FloatValue,
 
-    /// Ozone change per ln(CH4/CH4_pi) in DU.
-    ///
-    /// Default: 5.7 DU
-    pub trop_oz_ch4: f64,
+    /// `TROPOZ_OZCH4` (DU per unit ln(CH4/CH4₀)).
+    pub trop_oz_ch4: FloatValue,
 
-    /// NOx sensitivity (DU per Mt N/yr).
-    ///
-    /// Default: 0.168 DU/(Mt N/yr)
-    pub trop_oz_nox: f64,
+    /// `TROPOZ_OZNOX` (DU per Mt N/yr).
+    pub trop_oz_nox: FloatValue,
 
-    /// CO sensitivity (DU per Mt CO/yr).
-    ///
-    /// Default: 0.00396 DU/(Mt CO/yr)
-    pub trop_oz_co: f64,
+    /// `TROPOZ_OZCO` (DU per Mt CO/yr).
+    pub trop_oz_co: FloatValue,
 
-    /// NMVOC sensitivity (DU per Mt NMVOC/yr).
-    ///
-    /// Default: 0.01008 DU/(Mt NMVOC/yr)
-    pub trop_oz_voc: f64,
+    /// `TROPOZ_OZVOC` (DU per Mt NMVOC/yr).
+    pub trop_oz_voc: FloatValue,
 
-    /// Pre-industrial CH4 concentration (ppb).
-    ///
-    /// Default: 700.0 ppb
-    pub ch4_pi: f64,
+    /// `OZDUETON2O_RADEFF` (W/m² per ppb N2O).
+    pub n2o_radeff: FloatValue,
 
-    /// Pre-industrial NOx emissions (Mt N/yr).
-    ///
-    /// Default: 0.0 Mt N/yr
-    pub nox_pi: f64,
+    /// `OZDUETOTEMPERATURE_SCALE` (W/m² per K).
+    pub temperature_scale: FloatValue,
 
-    /// Pre-industrial CO emissions (Mt CO/yr).
-    ///
-    /// Default: 0.0 Mt CO/yr
-    pub co_pi: f64,
+    /// Regional pattern of tropospheric ozone forcing, which makes
+    /// `Effective Radiative Forcing|Tropospheric Ozone` a four-box output.
+    pub trop_regions: Option<TropOzoneRegions>,
+}
 
-    /// Pre-industrial NMVOC emissions (Mt NMVOC/yr).
-    ///
-    /// Default: 0.0 Mt NMVOC/yr
-    pub nmvoc_pi: f64,
+/// Regional pattern of tropospheric ozone forcing, normalised within each hemisphere.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TropOzoneRegions {
+    /// Pattern (NH ocean, NH land, SH ocean, SH land).
+    /// MAGICC7: RF_REGIONS_TROPOZ
+    pub rf_regions: [FloatValue; 4],
+    /// Northern Hemisphere land fraction.
+    pub nh_land_fraction: FloatValue,
+    /// Southern Hemisphere land fraction.
+    pub sh_land_fraction: FloatValue,
+}
 
-    // === Temperature Feedback Parameters ===
-    /// Temperature feedback coefficient (W/m² per K).
-    ///
-    /// Note: This is NEGATIVE because warming destroys ozone (negative feedback).
-    /// Default: -0.037 W/m²/K
-    pub temp_feedback_scale: f64,
+impl Default for TropOzoneRegions {
+    fn default() -> Self {
+        Self {
+            rf_regions: [0.46565, 0.51646, 0.17687, 0.23793],
+            nh_land_fraction: 0.42,
+            sh_land_fraction: 0.21,
+        }
+    }
+}
+
+impl TropOzoneRegions {
+    /// Box forcing per unit global forcing.
+    pub fn pattern(&self) -> [FloatValue; 4] {
+        let area = [
+            (1.0 - self.nh_land_fraction) / 2.0,
+            self.nh_land_fraction / 2.0,
+            (1.0 - self.sh_land_fraction) / 2.0,
+            self.sh_land_fraction / 2.0,
+        ];
+        hemispheric_qfrac(&self.rf_regions, &area)
+    }
 }
 
 impl Default for OzoneForcingParameters {
     fn default() -> Self {
         Self {
-            // Stratospheric ozone
-            eesc_reference: 1420.0,  // ppt at 1979
-            strat_o3_scale: -0.0043, // W/m² (negative for cooling)
-            strat_cl_exponent: 1.7,  // power-law exponent
-
-            // Tropospheric ozone
-            trop_radeff: 0.032,   // W/m² per DU
-            trop_oz_ch4: 5.7,     // DU per ln ratio
-            trop_oz_nox: 0.168,   // DU per Mt N/yr
-            trop_oz_co: 0.00396,  // DU per Mt CO/yr
-            trop_oz_voc: 0.01008, // DU per Mt NMVOC/yr
-            ch4_pi: 700.0,        // ppb
-            nox_pi: 0.0,          // Mt N/yr
-            co_pi: 0.0,           // Mt CO/yr
-            nmvoc_pi: 0.0,        // Mt NMVOC/yr
-
-            // Temperature feedback
-            temp_feedback_scale: -0.037, // W/m² per K (negative for feedback)
+            strat_o3_scale: -0.0043,
+            strat_cl_exponent: 1.7,
+            strat_threshold_year: 1979.0,
+            trop_radeff: 0.032,
+            trop_oz_ch4: 5.7,
+            trop_oz_nox: 0.168,
+            trop_oz_co: 0.00396,
+            trop_oz_voc: 0.01008,
+            n2o_radeff: 0.0004827,
+            temperature_scale: -0.037,
+            trop_regions: None,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_parameters() {
-        let params = OzoneForcingParameters::default();
-
-        // Stratospheric parameters should be set
-        assert!(params.eesc_reference > 0.0);
-        assert!(params.strat_o3_scale < 0.0); // Negative for cooling
-        assert!(params.strat_cl_exponent > 0.0);
-
-        // Tropospheric parameters should be set
-        assert!(params.trop_radeff > 0.0);
-        assert!(params.trop_oz_ch4 > 0.0);
-        assert!(params.ch4_pi > 0.0);
-
-        // Temperature feedback should be negative
-        assert!(params.temp_feedback_scale < 0.0);
-    }
-
-    #[test]
-    fn test_serialization_roundtrip() {
-        let params = OzoneForcingParameters::default();
-        let json = serde_json::to_string(&params).unwrap();
-        let restored: OzoneForcingParameters = serde_json::from_str(&json).unwrap();
-
-        assert!((params.eesc_reference - restored.eesc_reference).abs() < 1e-10);
-        assert!((params.strat_o3_scale - restored.strat_o3_scale).abs() < 1e-10);
-        assert!((params.trop_radeff - restored.trop_radeff).abs() < 1e-10);
     }
 }

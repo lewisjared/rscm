@@ -90,11 +90,14 @@ pub enum IrfForm {
         coefficients: Vec<FloatValue>,
     },
 
-    /// Exponential sum: $IRF(t) = \sum_i a_i \cdot \exp(-t / \tau_i)$.
+    /// Exponential sum: $IRF(t) = a_0 + \sum_i a_i \cdot \exp(-t / \tau_i)$.
     ///
     /// Used by all models for the post-switch regime, and by 2D-BERN/HILDA/BOXDIFF
     /// for the pre-switch regime.
     ExponentialSum {
+        /// Constant term $a_0$, MAGICC7's infinite timescale.
+        #[serde(default)]
+        constant: FloatValue,
         /// Amplitude coefficients $a_i$.
         coefficients: Vec<FloatValue>,
         /// Characteristic timescales $\tau_i$ in years.
@@ -106,15 +109,13 @@ impl IrfForm {
     /// Evaluate the IRF at time `t` (years).
     pub fn evaluate(&self, t: FloatValue) -> FloatValue {
         match self {
-            IrfForm::Polynomial { coefficients } => {
-                // Horner's method for numerical stability
-                let mut result = 0.0;
-                for &c in coefficients.iter().rev() {
-                    result = result * t + c;
-                }
-                result
-            }
+            // Summed term by term in ascending powers, as MAGICC7 does
+            IrfForm::Polynomial { coefficients } => coefficients
+                .iter()
+                .enumerate()
+                .fold(0.0, |sum, (i, &c)| sum + c * t.powf(i as FloatValue)),
             IrfForm::ExponentialSum {
+                constant,
                 coefficients,
                 timescales,
             } => {
@@ -125,9 +126,9 @@ impl IrfForm {
                     coefficients.len(),
                     timescales.len()
                 );
-                let mut sum = 0.0;
+                let mut sum = *constant;
                 for (a, tau) in coefficients.iter().zip(timescales.iter()) {
-                    sum += a * (-t / tau).exp();
+                    sum += (-(t * tau.recip())).exp() * a;
                 }
                 sum
             }
@@ -243,7 +244,7 @@ pub struct OceanCarbonParameters {
     /// default: 1900.0
     pub tempfeedback_yrstart: FloatValue,
 
-    /// Largest change in air-sea flux per month of sub-stepping (ppm/yr).
+    /// Largest change in air-sea flux between sub-steps (ppm/yr).
     /// MAGICC7 applies this limiter for stability. A non-positive value disables it.
     /// default: 0.04
     pub flux_change_limit: FloatValue,
@@ -251,6 +252,15 @@ pub struct OceanCarbonParameters {
     /// Conversion factor: GtC per ppm CO2. Must match `CO2Budget`.
     /// default: 2.123
     pub gtc_per_ppm: FloatValue,
+
+    /// Add `Emissions|CO2|Permafrost` to the other sources. Must match `CO2Budget`.
+    /// default: false
+    pub permafrost: bool,
+
+    /// Last year of prescribed CO2, interpolated within the year's sub-steps.
+    /// Must match `CO2Budget`.
+    /// MAGICC7: CO2_SWITCHFROMCONC2EMIS_YEAR
+    pub concentration_switch_year: Option<FloatValue>,
 }
 
 impl OceanCarbonParameters {
@@ -274,15 +284,17 @@ impl OceanCarbonParameters {
             irf_scale: 0.9492864,
             irf_switch_time: 1.0,
 
-            // Polynomial IRF for first year (MAGICC7 lines 413-414)
+            // MAGICC7 carries more digits than the Joos et al. (2001) table.
             irf_early: IrfForm::Polynomial {
-                coefficients: vec![1.0, -2.2617, 14.002, -48.770, 82.986, -67.527, 21.037],
+                coefficients: vec![
+                    1.0, -2.261725, 14.00231, -48.77024, 82.98591, -67.52663, 21.0369,
+                ],
             },
-
-            // Exponential sum IRF after first year (MAGICC7 lines 441-446)
+            // In MAGICC7's order, which sets the rounding
             irf_late: IrfForm::ExponentialSum {
-                coefficients: vec![0.01481, 0.019439, 0.038344, 0.066485, 0.24966, 0.70367],
-                timescales: vec![1.0e10, 347.55, 65.359, 15.281, 2.3488, 0.70177],
+                constant: 0.01481883,
+                coefficients: vec![0.70367, 0.0664848, 0.0383437, 0.249664, 0.0194392],
+                timescales: vec![0.7017658, 15.28116, 65.35929, 2.348814, 347.547],
             },
 
             mixed_layer_depth: 50.9,
@@ -298,6 +310,8 @@ impl OceanCarbonParameters {
             tempfeedback_yrstart: 1900.0,
             flux_change_limit: 0.04,
             gtc_per_ppm: GTC_PER_PPM,
+            permafrost: false,
+            concentration_switch_year: None,
         }
     }
 
@@ -323,14 +337,16 @@ impl OceanCarbonParameters {
 
             // Early IRF: exponential sum (MAGICC7 lines 466-471)
             irf_early: IrfForm::ExponentialSum {
-                coefficients: vec![0.058648, 0.07515, 0.079338, 0.41413, 0.24845, 0.12429],
-                timescales: vec![1.0e10, 9.6218, 9.2364, 0.7603, 0.16294, 0.0032825],
+                constant: 0.058648,
+                coefficients: vec![0.07515, 0.079338, 0.41413, 0.24845, 0.12429],
+                timescales: vec![9.6218, 9.2364, 0.7603, 0.16294, 0.032825],
             },
 
             // Late IRF: exponential sum (MAGICC7 lines 491-496)
             irf_late: IrfForm::ExponentialSum {
-                coefficients: vec![0.01369, 0.012456, 0.026933, 0.026994, 0.036608, 0.06738],
-                timescales: vec![1.0e10, 331.54, 107.57, 38.946, 11.677, 10.515],
+                constant: 0.013691,
+                coefficients: vec![0.012456, 0.026933, 0.026994, 0.036608, 0.06738],
+                timescales: vec![331.54, 107.57, 38.946, 11.677, 10.515],
             },
 
             mixed_layer_depth: 50.0,
@@ -346,6 +362,8 @@ impl OceanCarbonParameters {
             tempfeedback_yrstart: 1900.0,
             flux_change_limit: 0.04,
             gtc_per_ppm: GTC_PER_PPM,
+            permafrost: false,
+            concentration_switch_year: None,
         }
     }
 
@@ -371,14 +389,16 @@ impl OceanCarbonParameters {
 
             // Early IRF: exponential sum (MAGICC7 lines 516-521)
             irf_early: IrfForm::ExponentialSum {
-                coefficients: vec![0.12935, 0.24093, 0.24071, 0.17003, 0.21898],
-                timescales: vec![1.0e10, 4.9792, 0.96083, 0.26936, 0.034569],
+                constant: 0.12935,
+                coefficients: vec![0.24093, 0.24071, 0.17003, 0.21898],
+                timescales: vec![4.9792, 0.96083, 0.26936, 0.034569],
             },
 
             // Late IRF: exponential sum (MAGICC7 lines 541-546)
             irf_late: IrfForm::ExponentialSum {
-                coefficients: vec![0.022936, 0.035549, 0.037820, 0.089318, 0.13963, 0.24278],
-                timescales: vec![1.0e10, 232.30, 68.736, 18.601, 5.2528, 1.2679],
+                constant: 0.022936,
+                coefficients: vec![0.035549, 0.037820, 0.089318, 0.13963, 0.24278],
+                timescales: vec![232.30, 68.736, 18.601, 5.2528, 1.2679],
             },
 
             mixed_layer_depth: 75.0,
@@ -394,30 +414,34 @@ impl OceanCarbonParameters {
             tempfeedback_yrstart: 1900.0,
             flux_change_limit: 0.04,
             gtc_per_ppm: GTC_PER_PPM,
+            permafrost: false,
+            concentration_switch_year: None,
         }
     }
 
-    /// Calculate the gas exchange rate (per month).
+    /// Calculate the gas exchange rate (per year).
     ///
-    /// $$k = \frac{\text{scale}}{\tau \times 12}$$
+    /// $$k = \frac{\text{scale}}{\tau}$$
     pub fn gas_exchange_rate(&self) -> FloatValue {
-        self.gas_exchange_scale / (self.gas_exchange_tau * 12.0)
+        self.gas_exchange_scale * self.gas_exchange_tau.recip()
     }
 
     /// Calculate the IRF value at a given time (years).
     ///
     /// The early form is scaled nonlinearly. As in MAGICC7, the late form is
-    /// multiplied by a constant, chosen so that at the switch time it equals
-    /// the nonlinearly scaled late form.
+    /// multiplied by the ratio of the scaled to unscaled early form at the switch time.
     pub fn irf(&self, t: FloatValue) -> FloatValue {
         self.irf_evaluator()(t)
     }
 
     /// The IRF as a function of time, with the late-form constant evaluated once.
     pub(crate) fn irf_evaluator(&self) -> impl Fn(FloatValue) -> FloatValue + '_ {
-        // scale_irf(a) / a, written so that it stays finite when a is zero
-        let at_switch = self.irf_late.evaluate(self.irf_switch_time);
-        let late_factor = self.irf_scale / (at_switch * self.irf_scale + 1.0 - at_switch);
+        let at_switch = self.irf_early.evaluate(self.irf_switch_time);
+        let late_factor = if at_switch == 0.0 {
+            self.irf_scale
+        } else {
+            self.scale_irf(at_switch) / at_switch
+        };
         move |t| {
             if t < self.irf_switch_time {
                 self.scale_irf(self.irf_early.evaluate(t))
@@ -434,28 +458,22 @@ impl OceanCarbonParameters {
     /// This ensures the scaled IRF stays bounded between 0 and 1.
     fn scale_irf(&self, irf: FloatValue) -> FloatValue {
         let f = self.irf_scale;
-        (irf * f) / (irf * f + 1.0 - irf)
+        (irf * f) / ((1.0 - irf) + irf * f)
     }
 
     /// Calculate delta pCO2 from DIC change using Joos A24 polynomial.
     ///
-    /// $$\Delta pCO2 = \sum_{i=1}^{5} (b_i + c_i T_0) \times g_i(\Delta DIC)$$
+    /// $$\Delta pCO2 = \Delta DIC \sum_{i=1}^{5} (b_i + c_i T_0) \times g_i(\Delta DIC)$$
+    ///
+    /// Evaluated as MAGICC7's `ANZETA` buffer factor times the DIC change.
     pub fn delta_pco2_from_dic(&self, delta_dic: FloatValue) -> FloatValue {
-        let dic_powers = [
-            delta_dic,                  // g_1
-            delta_dic.powi(2) * 1e-3,   // g_2
-            -delta_dic.powi(3) * 1e-5,  // g_3 (negative)
-            delta_dic.powi(4) * 1e-7,   // g_4
-            -delta_dic.powi(5) * 1e-10, // g_5 (negative)
-        ];
-
-        let mut delta_pco2 = 0.0;
-        for (i, &dic_power) in dic_powers.iter().enumerate() {
-            let coeff = self.delta_ospp_offsets[i] + self.delta_ospp_coefficients[i] * self.sst_pi;
-            delta_pco2 += coeff * dic_power;
-        }
-
-        delta_pco2
+        let [a1, a2, a3, a4, a5]: [FloatValue; 5] = std::array::from_fn(|i| {
+            self.delta_ospp_offsets[i] + self.delta_ospp_coefficients[i] * self.sst_pi
+        });
+        let zeta = (((a2 * 1e-3 * delta_dic + a1) - a3 * 1e-5 * (delta_dic * delta_dic))
+            + a4 * 1e-7 * delta_dic.powf(3.0))
+            - a5 * 1e-10 * delta_dic.powf(4.0);
+        zeta * delta_dic
     }
 
     /// Calculate ocean pCO2 with temperature effect (Joos A25).
@@ -476,12 +494,10 @@ impl OceanCarbonParameters {
         (pco2_reference + delta_pco2_dic) * temp_factor
     }
 
-    /// Unit conversion factor for DIC calculation.
-    ///
-    /// Converts from (ppm * months) to (micromol/kg) accounting for
-    /// mixed layer depth and ocean area.
-    pub fn dic_conversion_factor(&self) -> FloatValue {
-        OCEAN_MICROMOL_PER_PPM_M3_PER_KG / (self.mixed_layer_depth * self.ocean_surface_area)
+    /// Mixed-layer DIC change (micromol/kg) from the IRF-weighted sum of sub-step fluxes (ppm/yr).
+    pub fn delta_dic(&self, flux_integral: FloatValue) -> FloatValue {
+        let per_ppm = OCEAN_MICROMOL_PER_PPM_M3_PER_KG / self.ocean_surface_area;
+        (flux_integral / self.steps_per_year as FloatValue * per_ppm) / self.mixed_layer_depth
     }
 }
 
@@ -627,7 +643,7 @@ mod tests {
         let params = OceanCarbonParameters::default();
         let rate = params.gas_exchange_rate();
 
-        let expected = params.gas_exchange_scale / (params.gas_exchange_tau * 12.0);
+        let expected = params.gas_exchange_scale / params.gas_exchange_tau;
         assert!(
             (rate - expected).abs() < 1e-6,
             "Gas exchange rate: expected {:.6}, got {:.6}",
@@ -640,9 +656,7 @@ mod tests {
     #[test]
     fn test_polynomial_irf_at_zero() {
         // 3D-GFDL polynomial: at t=0, only the constant term survives = 1.0
-        let irf_form = IrfForm::Polynomial {
-            coefficients: vec![1.0, -2.2617, 14.002, -48.770, 82.986, -67.527, 21.037],
-        };
+        let irf_form = OceanCarbonParameters::gfdl_3d().irf_early;
         let val = irf_form.evaluate(0.0);
         assert!(
             (val - 1.0).abs() < 1e-10,
@@ -653,18 +667,12 @@ mod tests {
 
     #[test]
     fn test_polynomial_irf_at_half_year() {
-        // Evaluate 3D-GFDL polynomial at t=0.5 years
-        let irf_form = IrfForm::Polynomial {
-            coefficients: vec![1.0, -2.2617, 14.002, -48.770, 82.986, -67.527, 21.037],
-        };
+        let irf_form = OceanCarbonParameters::gfdl_3d().irf_early;
         let val = irf_form.evaluate(0.5);
-        // Manual: 1 + (-2.2617)(0.5) + 14.002(0.25) + (-48.77)(0.125)
-        //       + 82.986(0.0625) + (-67.527)(0.03125) + 21.037(0.015625)
-        // = 1.0 - 1.13085 + 3.5005 - 6.09625 + 5.186625 - 2.11021875 + 0.328703125
-        // ≈ 0.6788
+        // 1 - 2.261725/2 + 14.00231/4 - 48.77024/8 + 82.98591/16 - 67.52663/32 + 21.0369/64
         assert!(
-            val > 0.5 && val < 1.0,
-            "Polynomial IRF at t=0.5yr should be between 0.5 and 1.0, got {:.4}",
+            (val - 0.67854875).abs() < 1e-12,
+            "Polynomial IRF at t=0.5yr should be 0.67854875, got {:.10}",
             val
         );
     }
@@ -672,10 +680,7 @@ mod tests {
     #[test]
     fn test_exponential_sum_irf_at_zero() {
         // 2D-BERN early: coefficients sum to ~1.0 at t=0
-        let irf_form = IrfForm::ExponentialSum {
-            coefficients: vec![0.058648, 0.07515, 0.079338, 0.41413, 0.24845, 0.12429],
-            timescales: vec![1.0e10, 9.6218, 9.2364, 0.7603, 0.16294, 0.0032825],
-        };
+        let irf_form = OceanCarbonParameters::bern_2d().irf_early;
         let val = irf_form.evaluate(0.0);
         let expected_sum: FloatValue = [0.058648, 0.07515, 0.079338, 0.41413, 0.24845, 0.12429]
             .iter()
@@ -829,7 +834,7 @@ mod tests {
     #[test]
     fn test_dic_conversion_factor_reasonable() {
         let params = OceanCarbonParameters::default();
-        let factor = params.dic_conversion_factor();
+        let factor = params.delta_dic(params.steps_per_year as FloatValue);
 
         assert!(factor > 0.0, "DIC conversion factor should be positive");
         assert!(factor.is_finite(), "DIC conversion factor should be finite");
@@ -868,28 +873,53 @@ mod tests {
     }
 
     #[test]
-    fn test_horner_matches_naive_polynomial() {
-        // Verify Horner's method gives same result as naive evaluation
-        let coeffs = vec![1.0, -2.2617, 14.002, -48.770, 82.986, -67.527, 21.037];
-        let irf = IrfForm::Polynomial {
-            coefficients: coeffs.clone(),
+    fn test_polynomial_matches_horner() {
+        let irf = OceanCarbonParameters::gfdl_3d().irf_early;
+        let IrfForm::Polynomial {
+            coefficients: coeffs,
+        } = &irf
+        else {
+            panic!("3D-GFDL early IRF should be a polynomial");
         };
 
         let t = 0.75;
-        let horner = irf.evaluate(t);
+        let horner = coeffs.iter().rev().fold(0.0, |acc, &c| acc * t + c);
+        assert!((irf.evaluate(t) - horner).abs() < 1e-12);
+    }
 
-        // Naive evaluation
-        let naive: FloatValue = coeffs
-            .iter()
-            .enumerate()
-            .map(|(i, &c)| c * t.powi(i as i32))
-            .sum();
+    #[test]
+    fn test_gfdl_late_irf_scaled_by_early_form_at_switch() {
+        let params = OceanCarbonParameters::gfdl_3d();
+        // The polynomial at t=1 is the sum of its coefficients
+        let a = 1.0 - 2.261725 + 14.00231 - 48.77024 + 82.98591 - 67.52663 + 21.0369;
+        let f = params.irf_scale;
+        let factor = f / (a * f + 1.0 - a);
+        for t in [1.0, 10.0, 100.0] {
+            let expected = params.irf_late.evaluate(t) * factor;
+            assert!((params.irf(t) - expected).abs() < 1e-14, "t={t}");
+        }
+        assert!((params.irf(10.0) - 0.101_800_181_891_533_1).abs() < 1e-15);
+    }
 
-        assert!(
-            (horner - naive).abs() < 1e-10,
-            "Horner ({:.8}) should match naive ({:.8})",
-            horner,
-            naive
-        );
+    #[test]
+    fn test_bern_2d_irf_constants() {
+        // MAGICC7.f90 BERN timescale and a0 coefficient
+        let params = OceanCarbonParameters::bern_2d();
+        let IrfForm::ExponentialSum { timescales, .. } = &params.irf_early else {
+            panic!("2D-BERN early IRF should be an exponential sum");
+        };
+        assert_eq!(timescales[4], 0.032825);
+        let IrfForm::ExponentialSum { constant, .. } = &params.irf_late else {
+            panic!("2D-BERN late IRF should be an exponential sum");
+        };
+        assert_eq!(*constant, 0.013691);
+    }
+
+    #[test]
+    fn test_dic_conversion_factor_value() {
+        // 1e6 / (5.6577e-15 ppm/mol * 1026.5 kg/m^3 * 50.9 m * 3.55e14 m^2)
+        let params = OceanCarbonParameters::gfdl_3d();
+        let factor = params.delta_dic(params.steps_per_year as FloatValue);
+        assert!((factor - 9.529_168_263_473_53).abs() < 1e-12, "{factor}");
     }
 }

@@ -56,3 +56,55 @@ pub(crate) fn feedback_warming(
     }
     (temperature.at_start() - value_at_year(temperature, t_current, start_year)).max(0.0)
 }
+
+pub(crate) const PERMAFROST_CO2: &str = "Emissions|CO2|Permafrost";
+pub(crate) const PERMAFROST_CH4: &str = "Emissions|CH4|Permafrost";
+
+/// Permafrost emissions named `name` when `enabled`, otherwise zero.
+pub(crate) fn permafrost_emissions(
+    enabled: bool,
+    input_state: &rscm_core::component::InputState,
+    name: &str,
+) -> FloatValue {
+    if enabled {
+        input_state.get_scalar_window(name).get()
+    } else {
+        0.0
+    }
+}
+
+/// Name of the input holding prescribed values of `concentration`.
+pub(crate) fn prescribed_name(concentration: &str) -> String {
+    format!("{concentration}|Prescribed")
+}
+
+/// Input of prescribed `concentration` when a switch year is set.
+pub(crate) fn prescribed_definition(
+    concentration: &str,
+    unit: &str,
+    switch_year: Option<Time>,
+) -> Option<rscm_core::component::RequirementDefinition> {
+    switch_year.map(|_| {
+        rscm_core::component::RequirementDefinition::scalar_input(
+            &prescribed_name(concentration),
+            unit,
+        )
+    })
+}
+
+/// Prescribed `concentration` at the end of a step that ends by `switch_year`.
+///
+/// This is MAGICC7's `*_SWITCHFROMCONC2EMIS_YEAR`: concentrations follow the input
+/// up to and including that year and are calculated from emissions afterwards.
+pub(crate) fn prescribed_concentration(
+    input_state: &rscm_core::component::InputState,
+    concentration: &str,
+    switch_year: Option<Time>,
+    t_next: Time,
+) -> Option<FloatValue> {
+    if t_next > switch_year? {
+        return None;
+    }
+    let window = input_state.get_scalar_window(&prescribed_name(concentration));
+    Some(window.at_end().unwrap_or_else(|| window.at_start()))
+}

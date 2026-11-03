@@ -1,182 +1,214 @@
 //! Halocarbon Chemistry Parameters
 //!
-//! Parameters for atmospheric halocarbon chemistry calculations, implementing
-//! exponential decay for F-gases and Montreal Protocol gases.
-//!
-//! # Reference
-//!
-//! Based on MAGICC7 Module 03 (Halogenated Gas Chemistry). Species properties
-//! are derived from IPCC AR6 and WMO Ozone Assessment reports.
-//!
-//! # Species Categories
-//!
-//! - **F-gases**: HFCs, PFCs, SF6, NF3 - potent greenhouse gases, no ozone depletion
-//! - **Montreal gases**: CFCs, HCFCs, halons - both GHGs and ozone depleters
+//! Parameters for MAGICC7's F-gases and Montreal Protocol gases (Module 03).
+//! Species defaults are MAGICC7 v7.5.3's `FGAS_*` and `MHALO_*` configuration.
 
+use crate::climate::lamcalc::compute_qfrac;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
-/// Data for a single halocarbon species.
-///
-/// Contains all physical and chemical properties needed for:
-/// - Exponential decay calculation
-/// - Radiative forcing calculation
-/// - EESC calculation (for Montreal gases)
+/// Atomic masses (g/mol) of C, H, N, O, F, S, Cl and Br, as in MAGICC7.
+const ATOMIC_MASSES: [FloatValue; 8] = [
+    12.001, 1.0079, 14.007, 15.999, 18.9984, 32.06, 35.453, 79.904,
+];
+
+/// MAGICC7 sums atomic masses as C, Cl, F, Br, H, S, O, N.
+const MOLAR_MASS_ORDER: [usize; 8] = [0, 6, 4, 7, 1, 5, 3, 2];
+
+/// A halocarbon species.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HalocarbonSpecies {
-    /// Species identifier (e.g., "CFC-11", "HFC-134a")
+    /// Species name, as used in variable names.
     pub name: String,
 
-    /// Total atmospheric lifetime
-    /// unit: years
-    pub lifetime: FloatValue,
+    /// Unperturbed total lifetime (yr).
+    pub tau_total: FloatValue,
 
-    /// Radiative efficiency - forcing per unit concentration change
-    /// unit: W/m^2 per ppb
+    /// Unperturbed OH lifetime (yr), or 0 if not destroyed by OH.
+    pub tau_oh: FloatValue,
+
+    /// Unperturbed stratospheric lifetime (yr), or 0 if not destroyed there.
+    pub tau_strat: FloatValue,
+
+    /// Radiative efficiency (W/m² per ppb).
     pub radiative_efficiency: FloatValue,
 
-    /// Pre-industrial concentration (usually 0 for synthetic species)
-    /// unit: ppt
+    /// Initial and reference concentration (ppt), the 1750 value of MAGICC7's concentration file.
     pub concentration_pi: FloatValue,
 
-    /// Molecular weight (used for emissions to concentration conversion)
-    /// unit: g/mol
-    pub molecular_weight: FloatValue,
+    /// Molecular mass (g/mol).
+    pub molecular_mass: FloatValue,
 
-    /// Number of chlorine atoms (for EESC calculation)
+    /// Chlorine atoms per molecule.
     pub n_cl: u8,
 
-    /// Number of bromine atoms (for EESC calculation)
+    /// Bromine atoms per molecule.
     pub n_br: u8,
 
-    /// Fractional release factor for EESC calculation (0-1)
-    /// Represents fraction of species that releases halogens in the stratosphere
-    /// F-gases typically have 0, Montreal gases have species-specific values
+    /// Fractional release factor in the stratosphere.
     pub fractional_release: FloatValue,
+
+    /// Fraction of the atmosphere the species mixes into.
+    #[serde(default = "default_mix_box")]
+    pub mix_box_size: FloatValue,
 }
 
 impl HalocarbonSpecies {
-    /// Create a new halocarbon species with the given properties
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        name: impl Into<String>,
-        lifetime: FloatValue,
-        radiative_efficiency: FloatValue,
-        concentration_pi: FloatValue,
-        molecular_weight: FloatValue,
-        n_cl: u8,
-        n_br: u8,
-        fractional_release: FloatValue,
-    ) -> Self {
+    /// Lifetime not attributed to OH or the stratosphere (yr), or `None` if there is none.
+    pub fn tau_other(&self) -> Option<FloatValue> {
+        let mut rate = 1.0 / self.tau_total;
+        if self.tau_oh > 0.0 {
+            rate -= 1.0 / self.tau_oh;
+        }
+        if self.tau_strat > 0.0 {
+            rate -= 1.0 / self.tau_strat;
+        }
+        (rate.abs() > 1e-12).then(|| 1.0 / rate)
+    }
+}
+
+/// Parameters for halocarbon chemistry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HalocarbonParameters {
+    /// F-gases, which do not deplete ozone.
+    pub fgases: Vec<HalocarbonSpecies>,
+
+    /// Montreal Protocol gases.
+    pub montreal_gases: Vec<HalocarbonSpecies>,
+
+    /// Ozone depletion by bromine relative to chlorine (`STRATOZ_BR_VS_CL_SCALE`).
+    pub br_vs_cl_scale: FloatValue,
+
+    /// EESC scaling, the CFC-11 release factor (`MHALO_RELEASEFACTORC11`).
+    pub cfc11_release_factor: FloatValue,
+
+    /// Years from troposphere to stratosphere (`GEN_EESC_STRATMIXDELAY`).
+    pub eesc_delay: usize,
+
+    /// Molar mass of air (g/mol, `GEN_AIR_GRAMMPROMOL`).
+    pub air_molar_mass: FloatValue,
+
+    /// Mass of the atmosphere (1e21 g, `GEN_ATM_TOTMASS_1E21GRAMM`).
+    pub atmosphere_mass: FloatValue,
+
+    /// Scale OH lifetimes with the CH4 OH lifetime (`*_USE_TAUOH_VAR`).
+    pub variable_oh_lifetime: bool,
+
+    /// Unperturbed CH4 OH lifetime (yr), the reference for OH scaling.
+    pub ch4_oh_lifetime_init: FloatValue,
+
+    /// Scale stratospheric lifetimes with warming (`*_USE_TAUSTRAT_VAR`).
+    pub variable_strat_lifetime: bool,
+
+    /// Year from which warming speeds up the meridional circulation
+    /// (`GEN_CHANGE_MERIDIONALFLUX_YR`).
+    pub meridional_flux_year: FloatValue,
+
+    /// Change in meridional flux per degree of warming (`GEN_MERIDFLUX_CHNGPERDEG`).
+    pub meridional_flux_per_degree: FloatValue,
+
+    /// Sensitivity of stratospheric lifetimes to meridional flux
+    /// (`*_TAUSTRAT_SENS2MERIDFLUX`).
+    pub strat_lifetime_sensitivity: FloatValue,
+
+    /// Last year of F-gas concentrations prescribed by `Atmospheric Concentration|<species>|Prescribed`,
+    /// or `None` to calculate them from emissions throughout.
+    /// MAGICC7: FGAS_SWITCHFROMCONC2EMIS_YEAR
+    pub fgas_switch_year: Option<FloatValue>,
+
+    /// As `fgas_switch_year`, for the Montreal Protocol gases.
+    /// MAGICC7: MHALO_SWITCHFROMCONC2EMIS_YEAR
+    pub mhalo_switch_year: Option<FloatValue>,
+
+    /// Regional pattern of F-gas forcing, which makes `Effective Radiative Forcing|F-Gases`
+    /// a four-box output.
+    pub fgas_regions: Option<FgasRegions>,
+}
+
+/// Regional pattern of F-gas forcing.
+///
+/// Species with lifetimes of at least `upper_tau` follow `rf_regions` normalised globally.
+/// Those below `lower_tau` follow it normalised within each hemisphere,
+/// scaled by each hemisphere's share of fossil CO2 emissions, as MAGICC7 does.
+/// Lifetimes in between mix the two linearly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FgasRegions {
+    /// Pattern (NH ocean, NH land, SH ocean, SH land).
+    /// MAGICC7: RF_REGIONS_FGAS
+    pub rf_regions: [FloatValue; 4],
+    /// unit: yr
+    /// MAGICC7: FGAS_RF_REGIONSCALING_LOWERTAU
+    pub lower_tau: FloatValue,
+    /// unit: yr
+    /// MAGICC7: FGAS_RF_REGIONSCALING_UPPERTAU
+    pub upper_tau: FloatValue,
+    /// Northern Hemisphere land fraction.
+    pub nh_land_fraction: FloatValue,
+    /// Southern Hemisphere land fraction.
+    pub sh_land_fraction: FloatValue,
+}
+
+impl Default for FgasRegions {
+    fn default() -> Self {
         Self {
-            name: name.into(),
-            lifetime,
-            radiative_efficiency,
-            concentration_pi,
-            molecular_weight,
-            n_cl,
-            n_br,
-            fractional_release,
+            rf_regions: [0.16695, 0.16218, 0.15508, 0.1463],
+            lower_tau: 1.0,
+            upper_tau: 8.0,
+            nh_land_fraction: 0.42,
+            sh_land_fraction: 0.21,
         }
     }
 }
 
-/// Parameters for halocarbon chemistry calculations.
-///
-/// Contains species lists and global parameters for calculating:
-/// - Atmospheric concentrations via exponential decay
-/// - Radiative forcing from all halocarbons
-/// - Equivalent Effective Stratospheric Chlorine (EESC)
-///
-/// # Exponential Decay
-///
-/// Each species follows simple exponential decay with emissions:
-///
-/// $$\frac{dC}{dt} = E - \frac{C}{\tau}$$
-///
-/// Analytical solution for one timestep:
-///
-/// $$C(t+\Delta t) = C(t) \cdot e^{-\Delta t/\tau} + E \cdot \tau \cdot (1 - e^{-\Delta t/\tau})$$
-///
-/// # EESC Calculation
-///
-/// $$\text{EESC} = \sum_i C_i \cdot (n_{Cl,i} + \alpha_{Br} \cdot n_{Br,i}) \cdot f_{release,i}$$
-///
-/// where $\alpha_{Br}$ is the bromine vs chlorine efficiency multiplier.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct HalocarbonParameters {
-    /// F-gas species (HFCs, PFCs, SF6, etc.)
-    /// These are greenhouse gases but do not deplete stratospheric ozone.
-    pub fgases: Vec<HalocarbonSpecies>,
-
-    /// Montreal Protocol gases (CFCs, HCFCs, halons, etc.)
-    /// These both contribute to radiative forcing AND deplete stratospheric ozone.
-    pub montreal_gases: Vec<HalocarbonSpecies>,
-
-    /// Bromine efficiency multiplier for EESC calculation
-    /// Bromine is more effective at destroying ozone than chlorine.
-    /// unit: dimensionless
-    /// default: 60.0 (per WMO Scientific Assessment)
-    pub br_multiplier: FloatValue,
-
-    /// CFC-11 fractional release factor for EESC normalisation
-    /// Used to normalise other species' release factors.
-    /// unit: dimensionless
-    /// default: 0.47
-    pub cfc11_release_normalisation: FloatValue,
-
-    /// EESC stratospheric mixing delay
-    /// Time for tropospheric concentrations to affect stratospheric chemistry.
-    /// unit: years
-    /// default: 3.0
-    pub eesc_delay: FloatValue,
-
-    /// Molar mass of air
-    /// unit: g/mol
-    /// default: 28.97
-    pub air_molar_mass: FloatValue,
-
-    /// Total atmospheric mass
-    /// unit: Tg
-    /// default: 5.133e9
-    pub atmospheric_mass_tg: FloatValue,
-
-    /// Effective mixing box fraction
-    /// Fraction of atmosphere available for mixing.
-    /// unit: dimensionless
-    /// default: 0.949
-    pub mixing_box_fraction: FloatValue,
+impl FgasRegions {
+    /// Box forcing per unit global forcing of a species with lifetime `tau`.
+    ///
+    /// `fossil_co2` is the global fossil CO2 emission, split equally between the land boxes
+    /// as MAGICC7 splits global emissions. Without emissions the pattern is global.
+    pub fn pattern(&self, tau: FloatValue, fossil_co2: FloatValue) -> [FloatValue; 4] {
+        let area = [
+            (1.0 - self.nh_land_fraction) / 2.0,
+            self.nh_land_fraction / 2.0,
+            (1.0 - self.sh_land_fraction) / 2.0,
+            self.sh_land_fraction / 2.0,
+        ];
+        let global = compute_qfrac(&self.rf_regions, &area);
+        if tau > self.upper_tau || fossil_co2 == 0.0 {
+            return global;
+        }
+        let emissions = [0.0, fossil_co2 / 2.0, 0.0, fossil_co2 / 2.0];
+        let total = emissions.iter().fold(0.0, |sum, e| sum + e);
+        let mut short_lived = [0.0; 4];
+        for ocean in [0, 2] {
+            let land = ocean + 1;
+            let mean = area[ocean] * global[ocean] + area[land] * global[land];
+            let share = emissions[ocean] + emissions[land];
+            for i in [ocean, land] {
+                short_lived[i] = global[i] / mean * share / total;
+            }
+        }
+        if tau < self.lower_tau {
+            return short_lived;
+        }
+        let w = (tau - self.lower_tau) / (self.upper_tau - self.lower_tau);
+        std::array::from_fn(|i| (global[i] - short_lived[i]) * w + short_lived[i])
+    }
 }
 
 impl HalocarbonParameters {
-    /// Calculate conversion factor from kt/yr emissions to ppt/yr concentration change.
-    ///
-    /// $$\text{conv} = \frac{M_{air}}{M_{atm} \cdot M_{mol} \cdot f_{mix}}$$
-    ///
-    /// where:
-    /// - $M_{air}$ = molar mass of air (g/mol)
-    /// - $M_{atm}$ = atmospheric mass (Tg)
-    /// - $M_{mol}$ = molecular mass of species (g/mol)
-    /// - $f_{mix}$ = mixing box fraction
-    pub fn emission_to_concentration_factor(&self, molecular_weight: FloatValue) -> FloatValue {
-        // Convert atmospheric mass from Tg to g: 5.133e9 Tg * 1e12 g/Tg = 5.133e21 g
-        let atm_mass_g = self.atmospheric_mass_tg * 1e12;
-
-        // Calculate conversion: result is in ppt per (kt/yr)
-        // Emissions are in kt/yr = 1e9 g/yr
-        // We want ppt = 1e-12 molar ratio
-        // conv = (M_air / M_mol) * (1e9 g emissions / atm_mass_g) * 1e12 ppt_factor / f_mix
-        (self.air_molar_mass / molecular_weight) * (1e9 / atm_mass_g) * 1e12
-            / self.mixing_box_fraction
+    /// Concentration change (ppt) per kt of emissions.
+    pub fn emission_to_concentration_factor(&self, species: &HalocarbonSpecies) -> FloatValue {
+        self.air_molar_mass / (self.atmosphere_mass * species.molecular_mass * species.mix_box_size)
     }
 
-    /// Get all species (F-gases + Montreal gases) as a single iterator
+    /// All species, F-gases first.
     pub fn all_species(&self) -> impl Iterator<Item = &HalocarbonSpecies> {
         self.fgases.iter().chain(self.montreal_gases.iter())
     }
 
-    /// Get a species by name
+    /// A species by name.
     pub fn get_species(&self, name: &str) -> Option<&HalocarbonSpecies> {
         self.all_species().find(|s| s.name == name)
     }
@@ -187,79 +219,394 @@ impl Default for HalocarbonParameters {
         Self {
             fgases: default_fgases(),
             montreal_gases: default_montreal_gases(),
-            br_multiplier: 60.0,
-            cfc11_release_normalisation: 0.47,
-            eesc_delay: 3.0,
-            air_molar_mass: 28.97,
-            atmospheric_mass_tg: 5.133e9,
-            mixing_box_fraction: 0.949,
+            br_vs_cl_scale: 62.5,
+            cfc11_release_factor: 0.75,
+            eesc_delay: 3,
+            air_molar_mass: 28.984,
+            atmosphere_mass: 5.133,
+            variable_oh_lifetime: true,
+            // 1 / (1/CH4_TAUTOT_INIT - 1/CH4_TAUSOIL - 1/CH4_TAUSTRAT - 1/CH4_TAUTROPCL)
+            ch4_oh_lifetime_init: 1.0 / (1.0 / 9.9474 - 1.0 / 150.0 - 1.0 / 120.0 - 1.0 / 200.0),
+            variable_strat_lifetime: true,
+            meridional_flux_year: 1980.0,
+            meridional_flux_per_degree: 0.15,
+            strat_lifetime_sensitivity: 0.3,
+            fgas_switch_year: None,
+            mhalo_switch_year: None,
+            fgas_regions: None,
         }
     }
 }
 
-/// Create default F-gas species list.
-///
-/// Species data from IPCC AR6 and MAGICC7 defaults.
+fn default_mix_box() -> FloatValue {
+    0.949
+}
+
+/// Builds a species from lifetimes `[total, OH, stratospheric]` and atom counts
+/// `[C, H, N, O, F, S, Cl, Br]`.
+fn species(
+    name: &str,
+    [tau_total, tau_oh, tau_strat]: [FloatValue; 3],
+    radiative_efficiency: FloatValue,
+    concentration_pi: FloatValue,
+    atoms: [u8; 8],
+    fractional_release: FloatValue,
+) -> HalocarbonSpecies {
+    HalocarbonSpecies {
+        name: name.to_string(),
+        tau_total,
+        tau_oh,
+        tau_strat,
+        radiative_efficiency,
+        concentration_pi,
+        molecular_mass: MOLAR_MASS_ORDER
+            .iter()
+            .map(|&i| FloatValue::from(atoms[i]) * ATOMIC_MASSES[i])
+            .sum(),
+        n_cl: atoms[6],
+        n_br: atoms[7],
+        fractional_release,
+        mix_box_size: default_mix_box(),
+    }
+}
+
+/// MAGICC7 default F-gases (`FGAS_*`).
 fn default_fgases() -> Vec<HalocarbonSpecies> {
     vec![
-        // PFCs (perfluorocarbons)
-        HalocarbonSpecies::new("CF4", 50000.0, 0.09, 0.0, 88.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("C2F6", 10000.0, 0.25, 0.0, 138.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("C3F8", 2600.0, 0.28, 0.0, 188.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("C4F10", 2600.0, 0.36, 0.0, 238.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("C5F12", 4100.0, 0.41, 0.0, 288.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("C6F14", 3100.0, 0.44, 0.0, 338.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("C7F16", 3000.0, 0.50, 0.0, 388.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("C8F18", 3000.0, 0.55, 0.0, 438.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("c-C4F8", 3200.0, 0.32, 0.0, 200.0, 0, 0, 0.0),
-        // HFCs (hydrofluorocarbons)
-        HalocarbonSpecies::new("HFC-23", 228.0, 0.18, 0.0, 70.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("HFC-32", 5.4, 0.11, 0.0, 52.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("HFC-43-10mee", 17.0, 0.359, 0.0, 252.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("HFC-125", 31.0, 0.23, 0.0, 120.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("HFC-134a", 14.0, 0.16, 0.0, 102.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("HFC-143a", 51.0, 0.16, 0.0, 84.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("HFC-152a", 1.6, 0.10, 0.0, 66.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("HFC-227ea", 36.0, 0.26, 0.0, 170.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("HFC-236fa", 213.0, 0.24, 0.0, 152.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("HFC-245fa", 7.9, 0.24, 0.0, 134.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("HFC-365mfc", 8.9, 0.22, 0.0, 148.0, 0, 0, 0.0),
-        // Other F-gases
-        HalocarbonSpecies::new("NF3", 569.0, 0.20, 0.0, 71.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("SF6", 850.0, 0.57, 0.0, 146.0, 0, 0, 0.0),
-        HalocarbonSpecies::new("SO2F2", 36.0, 0.20, 0.0, 102.0, 0, 0, 0.0),
+        species(
+            "CF4",
+            [50000.0, 0.0, 0.0],
+            0.09,
+            34.05,
+            [1, 0, 0, 0, 4, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "C2F6",
+            [10000.0, 0.0, 0.0],
+            0.25,
+            0.0,
+            [2, 0, 0, 0, 6, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "C3F8",
+            [2600.0, 0.0, 0.0],
+            0.28,
+            0.0,
+            [3, 0, 0, 0, 8, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "C4F10",
+            [2600.0, 0.0, 0.0],
+            0.36,
+            0.0,
+            [4, 0, 0, 0, 10, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "C5F12",
+            [4100.0, 0.0, 0.0],
+            0.41,
+            0.0,
+            [5, 0, 0, 0, 12, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "C6F14",
+            [3100.0, 0.0, 0.0],
+            0.44,
+            0.0,
+            [6, 0, 0, 0, 14, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "C7F16",
+            [3000.0, 0.0, 0.0],
+            0.5,
+            0.0,
+            [7, 0, 0, 0, 16, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "C8F18",
+            [3000.0, 0.0, 0.0],
+            0.55,
+            0.0,
+            [8, 0, 0, 0, 18, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "cC4F8",
+            [3200.0, 0.0, 0.0],
+            0.32,
+            0.0,
+            [4, 0, 0, 0, 8, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC23",
+            [228.0, 243.0, 4420.0],
+            0.18,
+            0.0,
+            [1, 1, 0, 0, 3, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC32",
+            [5.4, 5.5, 124.0],
+            0.11,
+            0.0,
+            [1, 2, 0, 0, 2, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC4310",
+            [17.0, 17.9, 365.0],
+            0.359,
+            0.0,
+            [5, 2, 0, 0, 10, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC125",
+            [31.0, 32.0, 351.0],
+            0.23,
+            0.0,
+            [2, 1, 0, 0, 5, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC134a",
+            [14.0, 14.1, 267.0],
+            0.16,
+            0.0,
+            [2, 2, 0, 0, 4, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC143a",
+            [51.0, 57.0, 612.0],
+            0.16,
+            0.0,
+            [2, 3, 0, 0, 3, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC152a",
+            [1.6, 1.55, 39.0],
+            0.1,
+            0.0,
+            [2, 4, 0, 0, 2, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC227ea",
+            [36.0, 37.5, 673.0],
+            0.26,
+            0.0,
+            [3, 1, 0, 0, 7, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC236fa",
+            [213.0, 253.0, 1350.0],
+            0.24,
+            0.0,
+            [3, 2, 0, 0, 6, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC245fa",
+            [7.9, 8.2, 149.0],
+            0.24,
+            0.0,
+            [3, 3, 0, 0, 5, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "HFC365mfc",
+            [8.9, 9.3, 190.0],
+            0.22,
+            0.0,
+            [4, 5, 0, 0, 5, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "NF3",
+            [569.0, 0.0, 740.0],
+            0.2,
+            0.0,
+            [0, 0, 1, 0, 3, 0, 0, 0],
+            0.0,
+        ),
+        species(
+            "SF6",
+            [850.0, 0.0, 0.0],
+            0.57,
+            0.0,
+            [0, 0, 0, 0, 6, 1, 0, 0],
+            0.0,
+        ),
+        species(
+            "SO2F2",
+            [36.0, 300.0, 630.0],
+            0.2,
+            0.0,
+            [0, 0, 0, 2, 2, 1, 0, 0],
+            0.0,
+        ),
     ]
 }
 
-/// Create default Montreal Protocol gas species list.
-///
-/// Species data from WMO Scientific Assessment and MAGICC7 defaults.
-/// Fractional release factors are species-specific values representing
-/// the fraction released in the stratosphere.
+/// MAGICC7 default Montreal Protocol gases (`MHALO_*`).
 fn default_montreal_gases() -> Vec<HalocarbonSpecies> {
     vec![
-        // CFCs
-        HalocarbonSpecies::new("CFC-11", 52.0, 0.295, 0.0, 137.4, 3, 0, 0.47),
-        HalocarbonSpecies::new("CFC-12", 102.0, 0.364, 0.0, 120.9, 2, 0, 0.23),
-        HalocarbonSpecies::new("CFC-113", 93.0, 0.30, 0.0, 187.4, 3, 0, 0.29),
-        HalocarbonSpecies::new("CFC-114", 189.0, 0.31, 0.0, 170.9, 2, 0, 0.12),
-        HalocarbonSpecies::new("CFC-115", 540.0, 0.20, 0.0, 154.5, 1, 0, 0.04),
-        // HCFCs
-        HalocarbonSpecies::new("HCFC-22", 11.9, 0.21, 0.0, 86.5, 1, 0, 0.13),
-        HalocarbonSpecies::new("HCFC-141b", 9.4, 0.16, 0.0, 116.9, 2, 0, 0.34),
-        HalocarbonSpecies::new("HCFC-142b", 18.0, 0.19, 0.0, 100.5, 1, 0, 0.17),
-        // Other chlorinated
-        HalocarbonSpecies::new("CH3CCl3", 5.0, 0.07, 0.0, 133.4, 3, 0, 0.67),
-        HalocarbonSpecies::new("CCl4", 32.0, 0.174, 0.0, 153.8, 4, 0, 0.56),
-        HalocarbonSpecies::new("CH3Cl", 0.9, 0.004, 500.0, 50.5, 1, 0, 0.44),
-        HalocarbonSpecies::new("CH2Cl2", 0.5, 0.028, 0.0, 84.9, 2, 0, 0.0),
-        HalocarbonSpecies::new("CHCl3", 0.5, 0.07, 0.0, 119.4, 3, 0, 0.0),
-        // Brominated
-        HalocarbonSpecies::new("CH3Br", 0.8, 0.004, 5.0, 94.9, 0, 1, 0.60),
-        HalocarbonSpecies::new("Halon-1211", 16.0, 0.29, 0.0, 165.4, 1, 1, 0.62),
-        HalocarbonSpecies::new("Halon-1301", 72.0, 0.30, 0.0, 148.9, 0, 1, 0.28),
-        HalocarbonSpecies::new("Halon-2402", 28.0, 0.31, 0.0, 259.8, 0, 2, 0.65),
-        HalocarbonSpecies::new("Halon-1202", 2.5, 0.27, 0.0, 209.8, 0, 2, 0.62),
+        species(
+            "CFC11",
+            [52.0, 0.0, 55.0],
+            0.295,
+            0.0,
+            [1, 0, 0, 0, 1, 0, 3, 0],
+            0.47,
+        ),
+        species(
+            "CFC12",
+            [102.0, 0.0, 103.0],
+            0.364,
+            0.0,
+            [1, 0, 0, 0, 2, 0, 2, 0],
+            0.23,
+        ),
+        species(
+            "CFC113",
+            [93.0, 0.0, 94.5],
+            0.3,
+            0.0,
+            [2, 0, 0, 0, 3, 0, 3, 0],
+            0.29,
+        ),
+        species(
+            "CFC114",
+            [189.0, 0.0, 191.0],
+            0.31,
+            0.0,
+            [2, 0, 0, 0, 4, 0, 2, 0],
+            0.12,
+        ),
+        species(
+            "CFC115",
+            [540.0, 0.0, 664.0],
+            0.2,
+            0.0,
+            [2, 0, 0, 0, 5, 0, 1, 0],
+            0.04,
+        ),
+        species(
+            "HCFC22",
+            [11.9, 13.0, 161.0],
+            0.21,
+            0.0,
+            [1, 1, 0, 0, 2, 0, 1, 0],
+            0.13,
+        ),
+        species(
+            "HCFC141b",
+            [9.4, 10.7, 72.3],
+            0.16,
+            0.0,
+            [2, 3, 0, 0, 1, 0, 2, 0],
+            0.34,
+        ),
+        species(
+            "HCFC142b",
+            [18.0, 19.3, 212.0],
+            0.19,
+            0.0,
+            [2, 3, 0, 0, 2, 0, 1, 0],
+            0.17,
+        ),
+        species(
+            "CH3CCl3",
+            [5.0, 6.1, 38.0],
+            0.07,
+            0.0,
+            [2, 3, 0, 0, 0, 0, 3, 0],
+            0.67,
+        ),
+        species(
+            "CCl4",
+            [32.0, 0.0, 44.0],
+            0.174,
+            0.0250004,
+            [1, 0, 0, 0, 0, 0, 4, 0],
+            0.56,
+        ),
+        species(
+            "CH3Cl",
+            [0.9, 1.57, 30.4],
+            0.004,
+            457.0,
+            [1, 3, 0, 0, 0, 0, 1, 0],
+            0.44,
+        ),
+        species(
+            "CH2Cl2",
+            [0.5, 0.5, 0.0],
+            0.028,
+            6.91276,
+            [1, 2, 0, 0, 0, 0, 2, 0],
+            0.0,
+        ),
+        species(
+            "CHCl3",
+            [0.5, 0.5, 0.0],
+            0.07,
+            6.0,
+            [1, 1, 0, 0, 0, 0, 3, 0],
+            0.0,
+        ),
+        species(
+            "CH3Br",
+            [0.8, 1.8, 26.3],
+            0.004,
+            5.3,
+            [1, 3, 0, 0, 0, 0, 0, 1],
+            0.6,
+        ),
+        species(
+            "Halon1211",
+            [16.0, 0.0, 41.0],
+            0.29,
+            0.00444657,
+            [1, 0, 0, 0, 2, 0, 1, 1],
+            0.62,
+        ),
+        species(
+            "Halon1301",
+            [72.0, 0.0, 73.5],
+            0.3,
+            0.0,
+            [1, 0, 0, 0, 3, 0, 0, 1],
+            0.28,
+        ),
+        species(
+            "Halon2402",
+            [28.0, 0.0, 41.0],
+            0.31,
+            0.0,
+            [2, 0, 0, 0, 4, 0, 0, 2],
+            0.65,
+        ),
+        species(
+            "Halon1202",
+            [2.5, 0.0, 36.0],
+            0.27,
+            0.0,
+            [1, 0, 0, 0, 2, 0, 0, 2],
+            0.62,
+        ),
     ]
 }
 
@@ -268,124 +615,84 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_parameters() {
+    fn test_default_species_counts() {
         let params = HalocarbonParameters::default();
-
-        // Check species counts
-        assert_eq!(params.fgases.len(), 23, "Should have 23 F-gas species");
-        assert_eq!(
-            params.montreal_gases.len(),
-            18,
-            "Should have 18 Montreal gas species"
-        );
-
-        // Check global parameters
-        assert!((params.br_multiplier - 60.0).abs() < 1e-10);
-        assert!((params.eesc_delay - 3.0).abs() < 1e-10);
+        assert_eq!(params.fgases.len(), 23);
+        assert_eq!(params.montreal_gases.len(), 18);
     }
 
     #[test]
-    fn test_fgas_properties() {
+    fn test_molecular_mass_from_atoms() {
         let params = HalocarbonParameters::default();
-
-        // CF4 should have very long lifetime
-        let cf4 = params.get_species("CF4").expect("CF4 should exist");
-        assert!((cf4.lifetime - 50000.0).abs() < 1e-10);
-        assert_eq!(cf4.n_cl, 0);
-        assert_eq!(cf4.n_br, 0);
-        assert!((cf4.fractional_release - 0.0).abs() < 1e-10);
-
-        // HFC-134a commonly used species
-        let hfc134a = params
-            .get_species("HFC-134a")
-            .expect("HFC-134a should exist");
-        assert!((hfc134a.lifetime - 14.0).abs() < 1e-10);
-        assert!((hfc134a.radiative_efficiency - 0.16).abs() < 1e-10);
+        let cfc11 = params.get_species("CFC11").unwrap();
+        assert!((cfc11.molecular_mass - (12.001 + 3.0 * 35.453 + 18.9984)).abs() < 1e-10);
     }
 
     #[test]
-    fn test_montreal_gas_properties() {
+    fn test_tau_other_balances_total() {
         let params = HalocarbonParameters::default();
-
-        // CFC-11 - the reference species for EESC
-        let cfc11 = params.get_species("CFC-11").expect("CFC-11 should exist");
-        assert_eq!(cfc11.n_cl, 3);
-        assert_eq!(cfc11.n_br, 0);
-        assert!((cfc11.fractional_release - 0.47).abs() < 1e-10);
-
-        // Halon-1301 - contains bromine
-        let halon1301 = params
-            .get_species("Halon-1301")
-            .expect("Halon-1301 should exist");
-        assert_eq!(halon1301.n_cl, 0);
-        assert_eq!(halon1301.n_br, 1);
-        assert!(halon1301.fractional_release > 0.0);
+        let hcfc22 = params.get_species("HCFC22").unwrap();
+        let rate = 1.0 / hcfc22.tau_oh + 1.0 / hcfc22.tau_strat + 1.0 / hcfc22.tau_other().unwrap();
+        assert!((1.0 / rate - hcfc22.tau_total).abs() < 1e-10);
+        let cfc11 = params.get_species("CFC11").unwrap();
+        assert!(cfc11.tau_other().is_some());
+        let sf6 = params.get_species("SF6").unwrap();
+        assert!((sf6.tau_other().unwrap() - 850.0).abs() < 1e-9);
     }
 
-    #[test]
-    fn test_emission_conversion_factor() {
-        let params = HalocarbonParameters::default();
-
-        // Test for CFC-11 (molecular weight 137.4)
-        let conv = params.emission_to_concentration_factor(137.4);
-
-        // Should be positive and reasonable magnitude
-        assert!(conv > 0.0, "Conversion factor should be positive");
-
-        // Calculate expected value:
-        // 1 kt = 1e9 g emissions
-        // Atmospheric mass = 5.133e9 Tg * 1e12 g/Tg = 5.133e21 g
-        // Moles of CFC-11 = 1e9 g / 137.4 g/mol = 7.28e6 mol
-        // Moles of air = 5.133e21 g / 28.97 g/mol = 1.77e20 mol
-        // Mixing ratio = 7.28e6 / (1.77e20 * 0.949) = 4.3e-14 = 43 ppt
-        // So factor ~ 0.04 ppt per kt/yr
-        assert!(
-            conv > 0.01 && conv < 0.1,
-            "Conversion factor should be ~0.04 for CFC-11: {}",
-            conv
-        );
+    fn equal_area_regions() -> FgasRegions {
+        FgasRegions {
+            rf_regions: [1.0, 2.0, 3.0, 4.0],
+            lower_tau: 1.0,
+            upper_tau: 8.0,
+            nh_land_fraction: 0.5,
+            sh_land_fraction: 0.5,
+        }
     }
 
-    #[test]
-    fn test_all_species_iterator() {
-        let params = HalocarbonParameters::default();
-
-        let all_count = params.all_species().count();
-        assert_eq!(all_count, params.fgases.len() + params.montreal_gases.len());
-    }
-
-    #[test]
-    fn test_fgases_have_zero_release() {
-        let params = HalocarbonParameters::default();
-
-        for species in &params.fgases {
-            assert!(
-                species.fractional_release.abs() < 1e-10,
-                "F-gas {} should have zero fractional release",
-                species.name
-            );
+    fn assert_close(actual: [FloatValue; 4], expected: [FloatValue; 4]) {
+        for i in 0..4 {
+            assert!((actual[i] - expected[i]).abs() < 1e-12, "{actual:?}");
         }
     }
 
     #[test]
-    fn test_ch3cl_preindustrial() {
-        // CH3Cl has natural sources and a pre-industrial concentration
-        let params = HalocarbonParameters::default();
-        let ch3cl = params.get_species("CH3Cl").expect("CH3Cl should exist");
-        assert!(
-            ch3cl.concentration_pi > 0.0,
-            "CH3Cl should have non-zero pre-industrial concentration"
+    fn test_fgas_pattern_long_lived_is_global() {
+        // Equal box areas: the pattern over its global mean of 2.5
+        let regions = equal_area_regions();
+        let global = [0.4, 0.8, 1.2, 1.6];
+        assert_close(regions.pattern(8.0, 1.0), global);
+        assert_close(regions.pattern(100.0, 1.0), global);
+        assert_close(regions.pattern(1.0, 0.0), global);
+    }
+
+    #[test]
+    fn test_fgas_pattern_short_lived_is_hemispheric() {
+        // Each hemisphere over its own mean, 1.5 in the north and 3.5 in the south
+        let regions = equal_area_regions();
+        let hemispheric = [2.0 / 3.0, 4.0 / 3.0, 6.0 / 7.0, 8.0 / 7.0];
+        assert_close(regions.pattern(1.0, 1.0), hemispheric);
+        assert_close(regions.pattern(0.1, 5.0), hemispheric);
+    }
+
+    #[test]
+    fn test_fgas_pattern_mixes_linearly_between_lifetimes() {
+        let regions = equal_area_regions();
+        let mid = regions.pattern(4.5, 1.0);
+        let (global, hemispheric) = (regions.pattern(8.0, 1.0), regions.pattern(1.0, 1.0));
+        assert_close(
+            mid,
+            std::array::from_fn(|i| (global[i] + hemispheric[i]) / 2.0),
         );
     }
 
     #[test]
-    fn test_ch3br_preindustrial() {
-        // CH3Br also has natural sources
-        let params = HalocarbonParameters::default();
-        let ch3br = params.get_species("CH3Br").expect("CH3Br should exist");
-        assert!(
-            ch3br.concentration_pi > 0.0,
-            "CH3Br should have non-zero pre-industrial concentration"
-        );
+    fn test_fgas_pattern_keeps_global_mean() {
+        let regions = FgasRegions::default();
+        let area = [0.29, 0.21, 0.395, 0.105];
+        for tau in [0.5, 1.0, 3.0, 8.0, 50.0] {
+            let mean: FloatValue = (0..4).map(|i| regions.pattern(tau, 1.0)[i] * area[i]).sum();
+            assert!((mean - 1.0).abs() < 1e-12, "tau={tau}: {mean}");
+        }
     }
 }

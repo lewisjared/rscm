@@ -13,7 +13,6 @@
 //! Reference: MAGICC7.f90 lines 8070-8278.
 
 use rscm_core::timeseries::FloatValue;
-use rscm_core::utils::linear_algebra::invert_4x4;
 
 /// Maximum number of iterations for convergence.
 const MAX_ITERATIONS: usize = 40;
@@ -103,6 +102,28 @@ pub fn build_coupling_matrix(
     ]
 }
 
+/// Inverse of a 4x4 matrix from its cofactors, in MAGICC7's order of operations.
+///
+/// Returns None if the matrix is singular.
+pub fn invert_by_cofactors(a: &[[FloatValue; 4]; 4]) -> Option<[[FloatValue; 4]; 4]> {
+    let minor = |row: usize, col: usize| {
+        let rows: [usize; 3] = std::array::from_fn(|k| k + usize::from(k >= row));
+        let cols: [usize; 3] = std::array::from_fn(|l| l + usize::from(l >= col));
+        let b = |k: usize, l: usize| a[rows[k]][cols[l]];
+        ((b(1, 1) * b(2, 2) - b(1, 2) * b(2, 1)) * b(0, 0)
+            - (b(1, 0) * b(2, 2) - b(1, 2) * b(2, 0)) * b(0, 1))
+            + (b(1, 0) * b(2, 1) - b(1, 1) * b(2, 0)) * b(0, 2)
+    };
+    let sign = |n: usize| if n % 2 == 0 { 1.0 } else { -1.0 };
+    let det = (0..4).fold(0.0, |det, i| det + sign(i) * (minor(i, 0) * a[i][0]));
+    if det == 0.0 || !det.is_finite() {
+        return None;
+    }
+    Some(std::array::from_fn(|i| {
+        std::array::from_fn(|j| sign(i + j) * minor(j, i) / det)
+    }))
+}
+
 /// Compute per-box forcing fractions from a regional forcing pattern.
 ///
 /// Normalizes `rf_regions` by the area-weighted sum to produce `qfrac` values
@@ -125,6 +146,20 @@ pub fn compute_qfrac(rf_regions: &[FloatValue; 4], area: &[FloatValue; 4]) -> [F
             rf_regions[3] / rf_sum,
         ]
     }
+}
+
+/// Pattern scaled so each hemisphere's area-weighted mean is one.
+pub fn hemispheric_qfrac(pattern: &[FloatValue; 4], area: &[FloatValue; 4]) -> [FloatValue; 4] {
+    let mut qfrac = [0.0; 4];
+    for ocean in [0, 2] {
+        let land = ocean + 1;
+        let weight = area[ocean] + area[land];
+        // Land term first, as MAGICC7 sums the hemisphere's mean
+        let mean = area[land] * pattern[land] / weight + area[ocean] * pattern[ocean] / weight;
+        qfrac[ocean] = pattern[ocean] / mean;
+        qfrac[land] = pattern[land] / mean;
+    }
+    qfrac
 }
 
 /// Compute the internal efficacy of a forcing agent given its regional pattern.
@@ -200,6 +235,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
     let mut converged_lam_o = 0.0;
     let mut converged_lam_l = 0.0;
     let mut converged_inv: Option<[[FloatValue; 4]; 4]> = None;
+    let mut converged_temps = [0.0_f64; 4];
     let mut found = false;
 
     for i in 2..=MAX_ITERATIONS {
@@ -209,7 +245,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
 
         // Build and invert coupling matrix
         let matrix = build_coupling_matrix(params, lam_o, lam_l);
-        let inv = invert_4x4(&matrix)?;
+        let inv = invert_by_cofactors(&matrix)?;
 
         // Compute equilibrium temperatures for each box
         // T[row] = Q * sum_col(B[row][col] * area[col] * qfrac[col])
@@ -237,6 +273,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
             converged_lam_o = lam_o;
             converged_lam_l = lam_l;
             converged_inv = Some(inv);
+            converged_temps = temps;
             found = true;
             break;
         }
@@ -258,7 +295,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
             if denom.abs() < 1e-30 {
                 lamo[i + 1] = lamo[i] + dlamo;
             } else {
-                lamo[i + 1] = lamo[i] - diff[i] * (lamo[i] - lamo[i - 1]) / denom;
+                lamo[i + 1] = lamo[i] - diff[i] * ((lamo[i] - lamo[i - 1]) / denom);
             }
         } else {
             // Secant between i and i-2 (no sign change)
@@ -267,7 +304,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
             if denom.abs() < 1e-30 {
                 lamo[i + 1] = lamo[i] + dlamo;
             } else {
-                lamo[i + 1] = lamo[i] - diff[i] * (lamo[i] - lamo[i2]) / denom;
+                lamo[i + 1] = lamo[i] - diff[i] * ((lamo[i] - lamo[i2]) / denom);
             }
         }
     }
@@ -276,13 +313,11 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
         // Use the matrix inverse cached from the converged iteration.
         let final_inv = converged_inv.expect("inv is set when found=true");
 
-        let co2_internal_efficacy = calc_internal_efficacy(
-            params.q_2xco2,
-            &final_inv,
-            &area,
-            &params.rf_regions_co2,
-            params.ecs,
-        );
+        // MAGICC7 sums CO2's global response by hemisphere, unlike other agents.
+        let t = converged_temps;
+        let co2_internal_efficacy = ((params.fgno * t[0] + params.fgnl * t[1])
+            + (params.fgso * t[2] + params.fgsl * t[3]))
+            / params.ecs;
 
         Some(LamcalcResult {
             lambda_ocean: converged_lam_o,
@@ -356,7 +391,7 @@ mod tests {
 
         // Reconstruct the coupling matrix with converged lambdas and verify RLO
         let matrix = build_coupling_matrix(&params, result.lambda_ocean, result.lambda_land);
-        let inv = invert_4x4(&matrix).expect("Coupling matrix should be invertible");
+        let inv = invert_by_cofactors(&matrix).expect("Coupling matrix should be invertible");
 
         let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
         let q = params.q_2xco2;
@@ -431,7 +466,7 @@ mod tests {
 
             // Verify the converged result actually satisfies the RLO constraint
             let matrix = build_coupling_matrix(&params, result.lambda_ocean, result.lambda_land);
-            let inv = invert_4x4(&matrix).expect("Matrix should be invertible");
+            let inv = invert_by_cofactors(&matrix).expect("Matrix should be invertible");
             let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
             let q = params.q_2xco2;
             let mut temps = [0.0_f64; 4];
@@ -622,7 +657,7 @@ mod tests {
             ("non-uniform", &nonuniform_params, &nonuniform_result),
         ] {
             let matrix = build_coupling_matrix(params, result.lambda_ocean, result.lambda_land);
-            let inv = invert_4x4(&matrix).expect("Coupling matrix should be invertible");
+            let inv = invert_by_cofactors(&matrix).expect("Coupling matrix should be invertible");
             let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
 
             let qfrac = compute_qfrac(&params.rf_regions_co2, &area);
@@ -678,6 +713,28 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_invert_by_cofactors() {
+        let a = [
+            [4.0, 1.0, 0.0, 2.0],
+            [1.0, 3.0, 1.0, 0.0],
+            [0.0, 2.0, 5.0, 1.0],
+            [1.0, 0.0, 1.0, 6.0],
+        ];
+        let inv = invert_by_cofactors(&a).expect("matrix is invertible");
+        for i in 0..4 {
+            for j in 0..4 {
+                let dot: FloatValue = (0..4).map(|k| a[i][k] * inv[k][j]).sum();
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!((dot - expected).abs() < 1e-14, "[{i}][{j}] = {dot}");
+            }
+        }
+
+        let mut singular = a;
+        singular[3] = singular[0];
+        assert!(invert_by_cofactors(&singular).is_none());
     }
 
     #[test]

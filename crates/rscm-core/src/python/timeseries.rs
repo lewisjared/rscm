@@ -186,6 +186,31 @@ pub struct PyFourBoxTimeseries(pub GridTimeseries<FloatValue, FourBoxGrid>);
 
 #[pymethods]
 impl PyFourBoxTimeseries {
+    /// Create from values with shape (n_times, 4) in grid order
+    /// (NH ocean, NH land, SH ocean, SH land).
+    #[new]
+    fn new(
+        values: Bound<PyArray2<FloatValue>>,
+        time_axis: Bound<PyTimeAxis>,
+        units: String,
+        interpolation_strategy: PyInterpolationStrategy,
+    ) -> PyResult<Self> {
+        let values = values.to_owned_array();
+        let time_axis = time_axis.borrow().0.clone();
+        if values.nrows() != time_axis.len() || values.ncols() != 4 {
+            return Err(PyValueError::new_err(
+                "values must have shape (len(time_axis), 4)",
+            ));
+        }
+        Ok(Self(GridTimeseries::new(
+            values,
+            time_axis,
+            FourBoxGrid::magicc_standard(),
+            units,
+            interpolation_strategy.into(),
+        )))
+    }
+
     fn __repr__(&self) -> String {
         format!("<FourBoxTimeseries len={}>", self.0.len())
     }

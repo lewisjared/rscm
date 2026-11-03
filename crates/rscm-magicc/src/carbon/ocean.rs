@@ -18,6 +18,8 @@
 //! 4. Uses monthly sub-stepping (12 steps per year). As in MAGICC7, atmospheric
 //!    CO2 evolves within the year from the other carbon sources and the ocean
 //!    uptake, so the uptake responds to the rising concentration.
+//!    Up to `concentration_switch_year` it is instead interpolated linearly to
+//!    `Atmospheric Concentration|CO2|Prescribed`.
 //!
 //! # Inputs
 //!
@@ -27,6 +29,7 @@
 //! - `Emissions|CO2|Fossil` (GtC/yr) - Fossil and industrial emissions
 //! - `Emissions|CO2|CH4 Oxidation` (GtC/yr) - CO2 from oxidised fossil CH4
 //! - `Carbon Flux|Terrestrial` (GtC/yr) - Net land uptake, including land use
+//! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `permafrost` parameter
 //!
 //! # States (tracked between timesteps)
 //!
@@ -36,6 +39,8 @@
 //! # Outputs
 //!
 //! - `Carbon Flux|Ocean` (GtC/yr) - Annual mean air-sea flux (positive = ocean uptake)
+//! - `End-of-Year Atmospheric CO2` (ppm) - Concentration after the last sub-step,
+//!   which `CO2Budget` carries into the next year
 //!
 //! # Differences from MAGICC7 Module 10
 //!
@@ -50,7 +55,10 @@ use std::any::Any;
 use std::collections::VecDeque;
 
 use crate::parameters::OceanCarbonParameters;
-use crate::reference::{feedback_warming, require_annual};
+use crate::reference::{
+    feedback_warming, permafrost_emissions, prescribed_concentration, prescribed_definition,
+    require_annual, PERMAFROST_CO2,
+};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
     RequirementType,
@@ -68,9 +76,15 @@ use serde::{Deserialize, Serialize};
 /// (RequirementType::State), this is private to the component.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OceanCarbonState {
-    /// Flux history for IRF convolution (ppm/month).
-    /// Each element represents the flux in one month.
+    /// Air-sea flux of each sub-step for the IRF convolution (ppm/yr).
     pub flux_history: VecDeque<FloatValue>,
+
+    /// First year of the run, which times the IRF lags as MAGICC7 does.
+    pub start_year: Option<FloatValue>,
+
+    /// IRF at each lag in sub-steps, filled as the history grows.
+    #[serde(skip)]
+    pub irf: Vec<FloatValue>,
 
     /// Atmospheric CO2 one sub-step before the start of the year (ppm).
     pub co2_previous: Option<FloatValue>,
@@ -129,6 +143,8 @@ pub struct OceanStepResult {
 ///    $$pCO2_{ocn} = (pCO2_{pi} + \Delta pCO2) \times e^{\alpha_T \Delta T}$$
 ///
 /// 5. Update atmospheric CO2 with the other sources and the ocean uptake
+const CO2_CONCENTRATION: &str = "Atmospheric Concentration|CO2";
+
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "ocean", "magicc"], category = "Carbon Cycle")]
 #[inputs(
@@ -144,6 +160,7 @@ pub struct OceanStepResult {
 )]
 #[outputs(
     air_sea_flux { name = "Carbon Flux|Ocean", unit = "GtC/yr" },
+    co2_end_of_year { name = "End-of-Year Atmospheric CO2", unit = "ppm" },
 )]
 pub struct OceanCarbon {
     parameters: OceanCarbonParameters,
@@ -160,31 +177,46 @@ impl OceanCarbon {
         Self { parameters }
     }
 
-    /// Calculate air-sea carbon flux (ppm/month).
+    /// Calculate air-sea carbon flux (ppm/yr).
     ///
     /// $$F = k \times (pCO2_{atm} - pCO2_{ocn})$$
     ///
     /// Positive values are fluxes into the ocean.
     fn calculate_flux(&self, pco2_atm: FloatValue, pco2_ocn: FloatValue) -> FloatValue {
-        self.parameters.gas_exchange_rate() * (pco2_atm - pco2_ocn)
+        (pco2_atm - pco2_ocn) * self.parameters.gas_exchange_rate()
     }
 
     /// Calculate delta DIC via IRF convolution.
     ///
     /// $$\Delta DIC = \text{factor} \times \sum_{i=1}^{n} F_i \times IRF(t_n - t_i) \times \Delta t$$
     ///
-    /// Uses a left-hand Riemann sum over the sub-step fluxes (ppm per sub-step).
+    /// Uses a left-hand Riemann sum over the sub-step fluxes (ppm/yr).
     /// Returns the change in DIC (micromol/kg).
-    fn calculate_delta_dic(&self, flux_history: &VecDeque<FloatValue>) -> FloatValue {
-        let n = flux_history.len();
-        let steps = self.parameters.steps_per_year as FloatValue;
-        let irf = self.parameters.irf_evaluator();
-        let integral: FloatValue = flux_history
+    fn calculate_delta_dic(&self, state: &mut OceanCarbonState) -> FloatValue {
+        let n = state.flux_history.len();
+        self.extend_irf(state, n);
+        let integral: FloatValue = state
+            .flux_history
             .iter()
             .enumerate()
-            .map(|(i, &flux)| flux * irf((n - 1 - i) as FloatValue / steps))
+            .map(|(i, &flux)| flux * state.irf[n - 1 - i])
             .sum();
-        integral * self.parameters.dic_conversion_factor()
+        self.parameters.delta_dic(integral)
+    }
+
+    /// Tabulate the IRF up to `len` lags at MAGICC7's sub-step times, `year + i / steps`.
+    fn extend_irf(&self, state: &mut OceanCarbonState, len: usize) {
+        if state.irf.len() >= len {
+            return;
+        }
+        let steps = self.parameters.steps_per_year;
+        let start = state.start_year.unwrap_or(0.0);
+        let irf = self.parameters.irf_evaluator();
+        for lag in state.irf.len()..len {
+            let year = start + (lag / steps) as FloatValue;
+            let time = year + (lag % steps) as FloatValue / steps as FloatValue;
+            state.irf.push(irf(time - start));
+        }
     }
 
     /// Solve the ocean carbon cycle for one timestep with monthly sub-steps.
@@ -203,6 +235,32 @@ impl OceanCarbon {
         cumulative_start: FloatValue,
         dt: FloatValue,
     ) -> OceanStepResult {
+        self.solve_ocean_prescribed(
+            state,
+            co2_start,
+            None,
+            other_sources,
+            warming,
+            pco2_start,
+            cumulative_start,
+            dt,
+        )
+    }
+
+    /// As [`Self::solve_ocean`], but with `co2_end` set atmospheric CO2 is
+    /// interpolated linearly to it over the sub-steps instead of evolving.
+    #[allow(clippy::too_many_arguments)]
+    pub fn solve_ocean_prescribed(
+        &self,
+        state: &mut OceanCarbonState,
+        co2_start: FloatValue,
+        co2_end: Option<FloatValue>,
+        other_sources: FloatValue,
+        warming: FloatValue,
+        pco2_start: FloatValue,
+        cumulative_start: FloatValue,
+        dt: FloatValue,
+    ) -> OceanStepResult {
         let p = &self.parameters;
         let steps = p.steps_per_year as FloatValue;
         let pco2_reference = *state
@@ -214,27 +272,31 @@ impl OceanCarbon {
         let mut pco2 = pco2_start;
         let mut pco2_previous = state.pco2_previous.unwrap_or(pco2_start);
         let sources_per_step = other_sources * dt / steps / p.gtc_per_ppm;
-        let flux_change_limit = p.flux_change_limit * 12.0 / steps;
-        let mut total_flux = 0.0;
+        let limit = p.flux_change_limit;
 
-        for _ in 0..p.steps_per_year {
-            // Flux in ppm/yr from the monthly exchange rate, using the means of the last two sub-steps
-            let mut flux = 12.0
-                * self.calculate_flux((co2_previous + co2) / 2.0, (pco2_previous + pco2) / 2.0);
-            if let (Some(&last), true) = (state.flux_history.back(), flux_change_limit > 0.0) {
-                let last = last * steps;
-                flux = flux.clamp(last - flux_change_limit, last + flux_change_limit);
+        for step in 1..=p.steps_per_year {
+            let mut flux =
+                self.calculate_flux((co2_previous + co2) * 0.5, (pco2_previous + pco2) * 0.5);
+            if let (Some(&last), true) = (state.flux_history.back(), limit > 0.0) {
+                let change = flux - last;
+                if change > limit {
+                    flux = limit + last;
+                } else if change < -limit {
+                    flux = last - limit;
+                }
             }
 
-            state.flux_history.push_back(flux / steps);
+            state.flux_history.push_back(flux);
             if state.flux_history.len() > p.max_history_months {
                 state.flux_history.pop_front();
             }
-            total_flux += flux;
 
-            let delta_pco2 = p.delta_pco2_from_dic(self.calculate_delta_dic(&state.flux_history));
+            let delta_pco2 = p.delta_pco2_from_dic(self.calculate_delta_dic(state));
             let pco2_next = p.ocean_pco2(pco2_reference, delta_pco2, warming);
-            let co2_next = co2 + sources_per_step - flux * dt / steps;
+            let co2_next = match co2_end {
+                Some(end) => (end - co2_start) / steps * step as FloatValue + co2_start,
+                None => co2 + (sources_per_step - flux * dt / steps),
+            };
 
             co2_previous = co2;
             co2 = co2_next;
@@ -245,7 +307,9 @@ impl OceanCarbon {
         state.co2_previous = Some(co2_previous);
         state.pco2_previous = Some(pco2_previous);
 
-        let mean_flux = total_flux / steps * p.gtc_per_ppm;
+        let year = state.flux_history.len().saturating_sub(p.steps_per_year);
+        let total_flux = state.flux_history.range(year..).fold(0.0, |sum, f| sum + f);
+        let mean_flux = total_flux * p.gtc_per_ppm / steps;
         OceanStepResult {
             pco2,
             cumulative_uptake: cumulative_start + mean_flux * dt,
@@ -280,8 +344,10 @@ impl OceanCarbon {
             t_current,
             self.parameters.tempfeedback_yrstart,
         );
-        let other_sources = inputs.fossil_emissions.get() + inputs.ch4_oxidation.get()
-            - inputs.terrestrial_flux.get();
+        state.start_year.get_or_insert(t_current.floor());
+        let other_sources = (inputs.fossil_emissions.get() + inputs.ch4_oxidation.get()
+            - inputs.terrestrial_flux.get())
+            + permafrost_emissions(self.parameters.permafrost, input_state, PERMAFROST_CO2);
         if state.pco2_reference.is_none() {
             let first = -(inputs.ocean_pco2.index() as isize);
             state.pco2_reference = Some(
@@ -291,9 +357,16 @@ impl OceanCarbon {
             );
         }
 
-        let result = self.solve_ocean(
+        let co2_end = prescribed_concentration(
+            input_state,
+            CO2_CONCENTRATION,
+            self.parameters.concentration_switch_year,
+            t_next,
+        );
+        let result = self.solve_ocean_prescribed(
             state,
             inputs.co2_concentration.at_start(),
+            co2_end,
             other_sources,
             warming,
             inputs.ocean_pco2.at_start(),
@@ -305,6 +378,7 @@ impl OceanCarbon {
             ocean_pco2: result.pco2,
             cumulative_uptake: result.cumulative_uptake,
             air_sea_flux: result.flux,
+            co2_end_of_year: result.co2,
         };
 
         Ok(outputs.into())
@@ -320,7 +394,19 @@ impl Default for OceanCarbon {
 #[typetag::serde]
 impl Component for OceanCarbon {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        Self::generated_definitions()
+        let mut definitions = Self::generated_definitions();
+        if self.parameters.permafrost {
+            definitions.push(RequirementDefinition::scalar_input(
+                PERMAFROST_CO2,
+                "GtC/yr",
+            ));
+        }
+        definitions.extend(prescribed_definition(
+            CO2_CONCENTRATION,
+            "ppm",
+            self.parameters.concentration_switch_year,
+        ));
+        definitions
     }
 
     fn solve(
@@ -416,14 +502,17 @@ mod tests {
     #[test]
     fn test_delta_dic_zero_for_empty_history() {
         let component = default_component();
-        assert!(component.calculate_delta_dic(&VecDeque::new()).abs() < 1e-15);
+        assert!(component.calculate_delta_dic(&mut fresh_state()).abs() < 1e-15);
     }
 
     #[test]
     fn test_delta_dic_positive_for_positive_flux() {
         let component = default_component();
-        let history: VecDeque<_> = std::iter::repeat_n(0.1, 12).collect();
-        assert!(component.calculate_delta_dic(&history) > 0.0);
+        let mut state = OceanCarbonState {
+            flux_history: std::iter::repeat_n(1.2, 12).collect(),
+            ..fresh_state()
+        };
+        assert!(component.calculate_delta_dic(&mut state) > 0.0);
     }
 
     #[test]
@@ -445,6 +534,26 @@ mod tests {
         assert!(result.flux > 0.0);
         let expected = 400.0 - result.flux / component.parameters.gtc_per_ppm;
         assert!((result.co2 - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_prescribed_co2_ignores_sources() {
+        let component = default_component();
+        let solve = |sources| {
+            component.solve_ocean_prescribed(
+                &mut fresh_state(),
+                400.0,
+                Some(402.0),
+                sources,
+                0.0,
+                PI,
+                0.0,
+                1.0,
+            )
+        };
+        let (with_sources, without) = (solve(50.0), solve(0.0));
+        assert_eq!(with_sources.co2, 402.0);
+        assert_eq!(with_sources.flux, without.flux);
     }
 
     #[test]
@@ -472,8 +581,8 @@ mod tests {
         component.solve_ocean(&mut state, PI, 0.0, 0.0, PI, 0.0, 1.0);
         // A sudden jump in atmospheric CO2 can only raise the flux gradually
         component.solve_ocean(&mut state, 1000.0, 0.0, 0.0, PI, 0.0, 1.0);
-        let months: Vec<_> = state.flux_history.iter().map(|f| f * 12.0).collect();
-        for pair in months.windows(2) {
+        let fluxes: Vec<_> = state.flux_history.iter().copied().collect();
+        for pair in fluxes.windows(2) {
             assert!(pair[1] - pair[0] <= 0.04 + 1e-12);
         }
     }

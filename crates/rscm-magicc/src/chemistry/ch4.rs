@@ -21,11 +21,13 @@
 //! - `Emissions|NOx` (Tg N/yr) - NOx emissions for OH feedback
 //! - `Emissions|CO` (Tg CO/yr) - CO emissions for OH feedback
 //! - `Emissions|NMVOC` (Tg NMVOC/yr) - NMVOC emissions for OH feedback
+//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `permafrost` parameter
 //!
 //! # Outputs
 //!
 //! - `Atmospheric Concentration|CH4` (ppb) - Updated CH4 concentration
 //! - `Lifetime|CH4` (yr) - Effective total CH4 lifetime
+//! - `Lifetime|CH4|Effective` (yr): start-of-year burden over the CH4 removed during the step
 //!
 //! # Feedback references
 //!
@@ -37,16 +39,21 @@
 //!
 //! # Differences from MAGICC7 Module 01
 //!
-//! - **Budget initialisation**: MAGICC7 calculates natural emissions to close the
-//!   budget over a reference period. Here, natural emissions are a fixed parameter.
+//! - **Budget initialisation**: natural emissions are a fixed parameter.
+//!   `rscm.magicc.full.natural_emissions` calculates MAGICC7's budget-closing value for it.
 //! - **Wetland feedback**: MAGICC7 includes temperature-dependent wetland CH4
-//!   emissions. Not implemented here - would need separate natural emissions component.
+//!   emissions. These are not implemented, as they need a natural emissions component.
 //! - **Clathrate release**: MAGICC7 has optional methane clathrate feedback. Not implemented.
-//! - **Prescribed/calculated switch**: MAGICC7 can switch between prescribed concentrations
-//!   and emissions-driven calculation by year. Here, always emissions-driven.
+//!
+//! With `concentration_switch_year` the concentration follows
+//! `Atmospheric Concentration|CH4|Prescribed` until that year, and `Emissions|CH4|Inverse`
+//! holds the anthropogenic emissions that would reproduce it.
 
 use crate::parameters::CH4ChemistryParameters;
-use crate::reference::{feedback_warming, reference_value, require_annual, value_at_year};
+use crate::reference::{
+    feedback_warming, permafrost_emissions, prescribed_concentration, prescribed_definition,
+    reference_value, require_annual, value_at_year, PERMAFROST_CH4,
+};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
@@ -58,6 +65,30 @@ use serde::{Deserialize, Serialize};
 
 /// Number of Prather iterations (fixed per MAGICC7 implementation)
 const PRATHER_ITERATIONS: usize = 4;
+const CH4_CONCENTRATION: &str = "Atmospheric Concentration|CH4";
+/// Anthropogenic emissions that reproduce the prescribed concentrations.
+pub const CH4_INVERSE_EMISSIONS: &str = "Emissions|CH4|Inverse";
+
+/// Root of a near-linear `f` by the secant method from two starting guesses.
+fn secant(
+    f: impl Fn(FloatValue) -> FloatValue,
+    mut x0: FloatValue,
+    mut x1: FloatValue,
+) -> FloatValue {
+    let mut f0 = f(x0);
+    for _ in 0..50 {
+        let f1 = f(x1);
+        if f1 == 0.0 || f1 == f0 {
+            break;
+        }
+        let x2 = x1 - f1 * (x1 - x0) / (f1 - f0);
+        (x0, f0, x1) = (x1, f1, x2);
+        if (x1 - x0).abs() < 1e-12 * x1.abs().max(1.0) {
+            break;
+        }
+    }
+    x1
+}
 
 /// CH4 atmospheric chemistry component
 ///
@@ -92,6 +123,8 @@ const PRATHER_ITERATIONS: usize = 4;
 )]
 #[outputs(
     ch4_lifetime { name = "Lifetime|CH4", unit = "yr" },
+    ch4_oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr" },
+    ch4_effective_lifetime { name = "Lifetime|CH4|Effective", unit = "yr" },
 )]
 pub struct CH4Chemistry {
     parameters: CH4ChemistryParameters,
@@ -173,7 +206,7 @@ impl CH4Chemistry {
     ///
     /// `temperature_change` and the emission deltas are measured from the
     /// feedback references. Returns the concentration at the end of the year
-    /// and the total lifetime.
+    /// and the total and OH lifetimes.
     #[allow(clippy::too_many_arguments)]
     pub fn solve_concentration(
         &self,
@@ -184,8 +217,30 @@ impl CH4Chemistry {
         delta_nox: FloatValue,
         delta_co: FloatValue,
         delta_nmvoc: FloatValue,
-    ) -> (FloatValue, FloatValue) {
-        let total_emissions = anthropogenic_emissions + self.parameters.natural_emissions;
+    ) -> (FloatValue, FloatValue, FloatValue) {
+        self.solve_with_total_emissions(
+            ch4_start,
+            ch4_reference,
+            anthropogenic_emissions + self.parameters.natural_emissions,
+            temperature_change,
+            delta_nox,
+            delta_co,
+            delta_nmvoc,
+        )
+    }
+
+    /// As [`Self::solve_concentration`], with natural emissions included in `total_emissions`.
+    #[allow(clippy::too_many_arguments)]
+    fn solve_with_total_emissions(
+        &self,
+        ch4_start: FloatValue,
+        ch4_reference: FloatValue,
+        total_emissions: FloatValue,
+        temperature_change: FloatValue,
+        delta_nox: FloatValue,
+        delta_co: FloatValue,
+        delta_nmvoc: FloatValue,
+    ) -> (FloatValue, FloatValue, FloatValue) {
         let burden = self.concentration_to_burden(ch4_start);
         let burden_reference = self.concentration_to_burden(ch4_reference);
         let base_lifetime = self.calculate_base_lifetime_factor(delta_nox, delta_co, delta_nmvoc);
@@ -213,6 +268,7 @@ impl CH4Chemistry {
         (
             self.burden_to_concentration(burden_next),
             self.calculate_total_lifetime(tau_oh),
+            tau_oh,
         )
     }
 }
@@ -226,7 +282,25 @@ impl Default for CH4Chemistry {
 #[typetag::serde]
 impl Component for CH4Chemistry {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        Self::generated_definitions()
+        let mut definitions = Self::generated_definitions();
+        if self.parameters.permafrost {
+            definitions.push(RequirementDefinition::scalar_input(
+                PERMAFROST_CH4,
+                "Mt CH4/yr",
+            ));
+        }
+        definitions.extend(prescribed_definition(
+            CH4_CONCENTRATION,
+            "ppb",
+            self.parameters.concentration_switch_year,
+        ));
+        if self.parameters.concentration_switch_year.is_some() {
+            definitions.push(RequirementDefinition::scalar_output(
+                CH4_INVERSE_EMISSIONS,
+                "Mt CH4/yr",
+            ));
+        }
+        definitions
     }
 
     fn solve(
@@ -245,22 +319,60 @@ impl Component for CH4Chemistry {
         let delta =
             |window: &ScalarWindow| window.get() - value_at_year(window, t_current, feedback_year);
 
-        let (new_concentration, lifetime) = self.solve_concentration(
-            ch4_start,
-            ch4_reference,
-            inputs.ch4_emissions.get(),
-            warming,
+        let anthropogenic = inputs.ch4_emissions.get();
+        let permafrost =
+            permafrost_emissions(self.parameters.permafrost, input_state, PERMAFROST_CH4);
+        let (delta_nox, delta_co, delta_nmvoc) = (
             delta(&inputs.nox_emissions),
             delta(&inputs.co_emissions),
             delta(&inputs.nmvoc_emissions),
         );
+        // MAGICC7 adds permafrost emissions after natural ones
+        let solve = |emissions: FloatValue| {
+            self.solve_with_total_emissions(
+                ch4_start,
+                ch4_reference,
+                emissions + self.parameters.natural_emissions + permafrost,
+                warming,
+                delta_nox,
+                delta_co,
+                delta_nmvoc,
+            )
+        };
+        let (mut new_concentration, lifetime, oh_lifetime) = solve(anthropogenic);
 
-        let outputs = CH4ChemistryOutputs {
+        let mut inverse_emissions = anthropogenic;
+        if let Some(prescribed) = prescribed_concentration(
+            input_state,
+            CH4_CONCENTRATION,
+            self.parameters.concentration_switch_year,
+            t_next,
+        ) {
+            inverse_emissions = secant(
+                |e| solve(e).0 - prescribed,
+                anthropogenic,
+                anthropogenic + self.concentration_to_burden(prescribed - new_concentration),
+            );
+            new_concentration = prescribed;
+        }
+        let burden = self.concentration_to_burden(ch4_start);
+        let sink = burden + inverse_emissions + permafrost + self.parameters.natural_emissions
+            - self.concentration_to_burden(new_concentration);
+
+        let mut outputs: OutputState = CH4ChemistryOutputs {
             ch4_concentration: new_concentration,
             ch4_lifetime: lifetime,
-        };
-
-        Ok(outputs.into())
+            ch4_oh_lifetime: oh_lifetime,
+            ch4_effective_lifetime: burden / sink,
+        }
+        .into();
+        if self.parameters.concentration_switch_year.is_some() {
+            outputs.insert(
+                CH4_INVERSE_EMISSIONS.to_string(),
+                StateValue::Scalar(inverse_emissions),
+            );
+        }
+        Ok(outputs)
     }
 }
 
@@ -283,7 +395,7 @@ mod tests {
     fn test_steady_state_with_natural_emissions() {
         let component = default_component();
         let ch4 = natural_steady_state(&component);
-        let (new_conc, _) = component.solve_concentration(ch4, ch4, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let (new_conc, _, _) = component.solve_concentration(ch4, ch4, 0.0, 0.0, 0.0, 0.0, 0.0);
         assert!(
             (new_conc - ch4).abs() < 1e-9,
             "Expected steady state at {ch4}, got {new_conc}"
@@ -295,7 +407,7 @@ mod tests {
         // MAGICC7 v7.5.3 SSP245, emissions-driven from 1750: 731.406 -> 731.767 ppb.
         // Emission deltas are relative to 1927 emissions.
         let component = default_component();
-        let (new_conc, lifetime) = component.solve_concentration(
+        let (new_conc, lifetime, _) = component.solve_concentration(
             731.406,
             731.406,
             19.01975,
@@ -309,27 +421,42 @@ mod tests {
     }
 
     #[test]
+    fn test_secant_inverts_prather_iteration() {
+        let component = default_component();
+        let solve = |e| {
+            component
+                .solve_concentration(1800.0, 1800.0, e, 0.5, 0.0, 0.0, 0.0)
+                .0
+        };
+        let target = solve(350.0);
+        let emissions = secant(|e| solve(e) - target, 300.0, 310.0);
+        assert!((emissions - 350.0).abs() < 1e-8, "Got {emissions}");
+    }
+
+    #[test]
     fn test_emissions_increase_raises_concentration() {
         let component = default_component();
         let ch4 = natural_steady_state(&component);
-        let (new_conc, _) = component.solve_concentration(ch4, ch4, 300.0, 0.0, 0.0, 0.0, 0.0);
+        let (new_conc, _, _) = component.solve_concentration(ch4, ch4, 300.0, 0.0, 0.0, 0.0, 0.0);
         assert!(new_conc > ch4);
     }
 
     #[test]
     fn test_higher_emissions_higher_concentration() {
         let component = default_component();
-        let (conc_low, _) = component.solve_concentration(722.0, 722.0, 200.0, 0.0, 0.0, 0.0, 0.0);
-        let (conc_high, _) = component.solve_concentration(722.0, 722.0, 400.0, 0.0, 0.0, 0.0, 0.0);
+        let (conc_low, _, _) =
+            component.solve_concentration(722.0, 722.0, 200.0, 0.0, 0.0, 0.0, 0.0);
+        let (conc_high, _, _) =
+            component.solve_concentration(722.0, 722.0, 400.0, 0.0, 0.0, 0.0, 0.0);
         assert!(conc_high > conc_low);
     }
 
     #[test]
     fn test_warming_shortens_lifetime() {
         let component = default_component();
-        let (_, lifetime_cold) =
+        let (_, lifetime_cold, _) =
             component.solve_concentration(722.0, 722.0, 300.0, 0.0, 0.0, 0.0, 0.0);
-        let (_, lifetime_warm) =
+        let (_, lifetime_warm, _) =
             component.solve_concentration(722.0, 722.0, 300.0, 2.0, 0.0, 0.0, 0.0);
         assert!(lifetime_warm < lifetime_cold);
     }
@@ -337,9 +464,9 @@ mod tests {
     #[test]
     fn test_cooling_does_not_change_lifetime() {
         let component = default_component();
-        let (_, lifetime_ref) =
+        let (_, lifetime_ref, _) =
             component.solve_concentration(722.0, 722.0, 300.0, 0.0, 0.0, 0.0, 0.0);
-        let (_, lifetime_cool) =
+        let (_, lifetime_cool, _) =
             component.solve_concentration(722.0, 722.0, 300.0, -1.0, 0.0, 0.0, 0.0);
         assert!((lifetime_cool - lifetime_ref).abs() < 1e-12);
     }
@@ -351,9 +478,9 @@ mod tests {
             ..Default::default()
         };
         let component = CH4Chemistry::from_parameters(params);
-        let (_, lifetime_cold) =
+        let (_, lifetime_cold, _) =
             component.solve_concentration(722.0, 722.0, 300.0, 0.0, 0.0, 0.0, 0.0);
-        let (_, lifetime_warm) =
+        let (_, lifetime_warm, _) =
             component.solve_concentration(722.0, 722.0, 300.0, 2.0, 0.0, 0.0, 0.0);
         assert!((lifetime_warm - lifetime_cold).abs() < 1e-10);
     }
@@ -361,9 +488,9 @@ mod tests {
     #[test]
     fn test_higher_concentration_longer_lifetime() {
         let component = default_component();
-        let (_, lifetime_low) =
+        let (_, lifetime_low, _) =
             component.solve_concentration(722.0, 722.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-        let (_, lifetime_high) =
+        let (_, lifetime_high, _) =
             component.solve_concentration(1800.0, 722.0, 300.0, 0.0, 0.0, 0.0, 0.0);
         assert!(lifetime_high > lifetime_low);
     }
@@ -371,9 +498,9 @@ mod tests {
     #[test]
     fn test_nox_emissions_shorten_lifetime() {
         let component = default_component();
-        let (_, lifetime_no_nox) =
+        let (_, lifetime_no_nox, _) =
             component.solve_concentration(722.0, 722.0, 300.0, 0.0, 0.0, 0.0, 0.0);
-        let (_, lifetime_with_nox) =
+        let (_, lifetime_with_nox, _) =
             component.solve_concentration(722.0, 722.0, 300.0, 0.0, 50.0, 0.0, 0.0);
         assert!(lifetime_with_nox < lifetime_no_nox);
     }
@@ -381,9 +508,9 @@ mod tests {
     #[test]
     fn test_co_emissions_lengthen_lifetime() {
         let component = default_component();
-        let (_, lifetime_no_co) =
+        let (_, lifetime_no_co, _) =
             component.solve_concentration(722.0, 722.0, 300.0, 0.0, 0.0, 0.0, 0.0);
-        let (_, lifetime_with_co) =
+        let (_, lifetime_with_co, _) =
             component.solve_concentration(722.0, 722.0, 300.0, 0.0, 0.0, 1000.0, 0.0);
         assert!(lifetime_with_co > lifetime_no_co);
     }
@@ -406,14 +533,15 @@ mod tests {
             ..Default::default()
         };
         let component = CH4Chemistry::from_parameters(params);
-        let (new_conc, _) = component.solve_concentration(1800.0, 1800.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let (new_conc, _, _) =
+            component.solve_concentration(1800.0, 1800.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         assert!(new_conc < 1800.0);
     }
 
     #[test]
     fn test_very_high_concentration() {
         let component = default_component();
-        let (new_conc, lifetime) =
+        let (new_conc, lifetime, _) =
             component.solve_concentration(10000.0, 722.0, 300.0, 0.0, 0.0, 0.0, 0.0);
         assert!(new_conc > 0.0 && new_conc.is_finite());
         assert!(lifetime.is_finite());
@@ -424,8 +552,71 @@ mod tests {
         // Below the reference the concentration feedback is clamped, so the
         // reference value no longer matters
         let component = default_component();
-        let (_, lifetime_a) = component.solve_concentration(100.0, 722.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-        let (_, lifetime_b) = component.solve_concentration(100.0, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let (_, lifetime_a, _) =
+            component.solve_concentration(100.0, 722.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let (_, lifetime_b, _) =
+            component.solve_concentration(100.0, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         assert!((lifetime_a - lifetime_b).abs() < 1e-12);
+    }
+
+    fn constant_item(
+        name: &str,
+        value: FloatValue,
+    ) -> rscm_core::timeseries_collection::TimeseriesItem {
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        TimeseriesItem {
+            data: TimeseriesData::Scalar(rscm_core::timeseries::Timeseries::from_values(
+                ndarray::array![value, value],
+                ndarray::array![2000.0, 2001.0],
+            )),
+            name: name.to_string(),
+            variable_type: VariableType::Exogenous,
+        }
+    }
+
+    /// Outputs of one 2000 to 2001 step with constant inputs.
+    fn solve_constant(
+        component: &CH4Chemistry,
+        ch4: FloatValue,
+        emissions: FloatValue,
+    ) -> OutputState {
+        let items = [
+            constant_item(CH4_CONCENTRATION, ch4),
+            constant_item("Emissions|CH4", emissions),
+            constant_item("Surface Temperature", 0.0),
+            constant_item("Emissions|NOx", 0.0),
+            constant_item("Emissions|CO", 0.0),
+            constant_item("Emissions|NMVOC", 0.0),
+        ];
+        let input_state = InputState::build(items.iter().collect(), 2000.0);
+        component.solve(2000.0, 2001.0, &input_state).unwrap()
+    }
+
+    fn scalar(output: &OutputState, name: &str) -> FloatValue {
+        output[name].as_scalar().unwrap()
+    }
+
+    #[test]
+    fn test_effective_lifetime_in_steady_state_is_total_lifetime() {
+        let component = default_component();
+        let p = &component.parameters;
+        let tau = 1.0 / (1.0 / p.tau_oh_init() + 1.0 / p.tau_other());
+        let output = solve_constant(&component, natural_steady_state(&component), 0.0);
+        let effective = scalar(&output, "Lifetime|CH4|Effective");
+        assert!((effective / tau - 1.0).abs() < 1e-9, "{effective} vs {tau}");
+    }
+
+    #[test]
+    fn test_effective_lifetime_closes_burden_budget() {
+        // B_next = B + E - B / tau_eff, with E the anthropogenic and natural emissions
+        let component = default_component();
+        let output = solve_constant(&component, 1800.0, 300.0);
+        let effective = scalar(&output, "Lifetime|CH4|Effective");
+        let burden = component.concentration_to_burden(1800.0);
+        let burden_next = component.concentration_to_burden(scalar(&output, CH4_CONCENTRATION));
+        let emissions = 300.0 + component.parameters.natural_emissions;
+        assert!((burden + emissions - burden / effective - burden_next).abs() < 1e-9);
+        // It differs from the total lifetime `Lifetime|CH4`
+        assert!((effective - scalar(&output, "Lifetime|CH4")).abs() > 1e-3);
     }
 }
