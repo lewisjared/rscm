@@ -1,0 +1,12 @@
+{
+  "startyear": 1750,
+  "endyear": 2105,
+  "core_climatesensitivity": 3.0,
+  "pf_apply": 0,
+  "co2_switchfromconc2emis_year": 1750,
+  "ch4_switchfromconc2emis_year": 1750,
+  "n2o_switchfromconc2emis_year": 1750,
+  "mhalo_switchfromconc2emis_year": 1750,
+  "fgas_switchfromconc2emis_year": 1750,
+  "core_upwelling_variable_part": 0
+}

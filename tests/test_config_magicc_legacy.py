@@ -311,3 +311,28 @@ def test_global_temperature_switch_is_not_silently_ignored(key, value):
     """Unsupported feedback controls must not turn into Rust's enabled default."""
     with pytest.raises(ValueError, match="co2_tempfeedback_switch is not supported"):
         from_legacy_dict({key: value, "startyear": 1750, "endyear": 2100})
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_nitrogen_switches_keep_parameters(reverse):
+    """Nitrogen switches import beside its parameters, whatever the key order."""
+    items = [
+        ("ncycle_apply", 1),
+        ("ncycle_apply_ndep_from_emis", 1),
+        ("ncycle_apply_prognostic_nfix", 1),
+        ("ncycle_ncratio_uptake", 0.013),
+        ("ncycle_nfix_vmax", 0.2),
+    ]
+    terrestrial = from_legacy_dict(dict(items[::-1] if reverse else items))[
+        "components"
+    ]["terrestrial_carbon"]
+
+    assert terrestrial["nitrogen"] == {
+        "enabled": 1,
+        "deposition_from_emissions": 1,
+        "prognostic_fixation": 1,
+    }
+    assert terrestrial["parameters"]["nitrogen"] == {
+        "ncratio_uptake": 0.013,
+        "prognostic_fixation": {"vmax": 0.2},
+    }
