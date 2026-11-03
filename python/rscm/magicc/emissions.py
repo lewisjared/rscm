@@ -7,6 +7,7 @@ the three gases is prescribed.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING, Any, cast
 
@@ -176,28 +177,36 @@ def _validate_parameters(
             raise ValueError(msg)
         resolved[name] = dict(values)
     # The ocean evolves atmospheric CO2 within each year, so it must match the budget
-    carbon = ("CO2Budget", "OceanCarbon")
-    conversions = {
-        resolved[name]["gtc_per_ppm"]
-        for name in carbon
-        if "gtc_per_ppm" in resolved[name]
-    }
-    if len(conversions) > 1:
-        msg = "CO2Budget and OceanCarbon must use the same gtc_per_ppm"
-        raise ValueError(msg)
-    if conversions:
-        (conversion,) = conversions
-        for name in carbon:
-            resolved[name]["gtc_per_ppm"] = conversion
+    _share(resolved, ("CO2Budget", "OceanCarbon"), "gtc_per_ppm")
     resolved["CO2Budget"].setdefault("ocean_end_of_year", True)
     # CH4Oxidation repeats the CH4 budget, so it must use CH4Chemistry's parameters
-    chemistry = resolved["CH4Chemistry"]
-    shared = {k: chemistry[k] for k in CH4_BUDGET_PARAMETERS if k in chemistry}
+    for key in CH4_BUDGET_PARAMETERS:
+        _share(resolved, ("CH4Chemistry", "CH4Oxidation"), key)
+    chemistry, oxidation = resolved["CH4Chemistry"], resolved["CH4Oxidation"]
     lifetimes = {k: chemistry[k] for k in CH4_OTHER_LIFETIMES if k in chemistry}
+    tau_other = _ch4_tau_other(lifetimes)
+    if "tau_other" in oxidation and not math.isclose(oxidation["tau_other"], tau_other):
+        msg = (
+            "CH4Oxidation tau_other must match CH4Chemistry's soil, stratospheric "
+            f"and chlorine lifetimes ({tau_other})"
+        )
+        raise ValueError(msg)
     if lifetimes:
-        shared["tau_other"] = _ch4_tau_other(lifetimes)
-    resolved["CH4Oxidation"] = {**shared, **resolved["CH4Oxidation"]}
+        oxidation["tau_other"] = tau_other
     return resolved
+
+
+def _share(
+    resolved: dict[str, dict[str, Any]], components: tuple[str, str], key: str
+) -> None:
+    """Give both components the one value of ``key`` either of them sets."""
+    values = {resolved[name][key] for name in components if key in resolved[name]}
+    if len(values) > 1:
+        msg = f"{components[0]} and {components[1]} must use the same {key}"
+        raise ValueError(msg)
+    for value in values:
+        for name in components:
+            resolved[name][key] = value
 
 
 def _schema(units: Mapping[str, str], contributors: tuple[str, ...]) -> VariableSchema:

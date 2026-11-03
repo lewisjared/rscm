@@ -127,11 +127,11 @@ fn over_defaults<'de, D: Deserializer<'de>>(
     deserializer: D,
     defaults: PermafrostSoilParameters,
 ) -> Result<PermafrostSoilParameters, D::Error> {
+    let serde_json::Value::Object(given) = serde_json::Value::deserialize(deserializer)? else {
+        return Err(D::Error::custom("soil parameters must be an object"));
+    };
     let mut merged = serde_json::to_value(defaults).map_err(D::Error::custom)?;
-    if let (Some(base), serde_json::Value::Object(given)) = (
-        merged.as_object_mut(),
-        serde_json::Value::deserialize(deserializer)?,
-    ) {
+    if let Some(base) = merged.as_object_mut() {
         base.extend(given);
     }
     serde_json::from_value(merged).map_err(D::Error::custom)
@@ -185,5 +185,12 @@ mod tests {
         assert_eq!(p.peat.thaw_rate, 0.2);
         assert_eq!(p.peat.ch4_oxidation_fraction, 0.6);
         assert_eq!(p.mineral_soil.ch4_oxidation_fraction, 0.25);
+    }
+
+    #[test]
+    fn test_non_object_soil_rejected() {
+        for soil in [r#"{"peat": false}"#, r#"{"mineral_soil": []}"#] {
+            assert!(serde_json::from_str::<PermafrostParameters>(soil).is_err());
+        }
     }
 }
