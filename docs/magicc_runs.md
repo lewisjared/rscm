@@ -192,11 +192,11 @@ Inputs must be complete and finite. Required concentrations must be positive.
 The runner checks returned outputs for nonfinite values, and component errors
 raise exceptions rather than allowing a failed run to appear successful.
 
-Run the execution tests and the reference comparisons with:
+Run the execution tests with:
 
 ```sh
 make build-dev
-uv run pytest tests/test_magicc_runner.py tests/regression/test_ghg_forcing.py
+uv run pytest tests/test_magicc_runner.py
 ```
 
 The execution tests include equilibrium, forcing boundary alignment, comparison
