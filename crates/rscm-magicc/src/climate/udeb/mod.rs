@@ -82,6 +82,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// See [`ClimateUDEBParameters`] for configuration options.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
+#[serde(try_from = "SerializedClimateUDEB")]
 #[component(tags = ["climate", "udeb", "magicc"], category = "Climate")]
 #[inputs(
     total_erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
@@ -130,6 +131,20 @@ pub struct ClimateUDEB {
     /// Falls back to `[1.0; 4]` (uniform) if the weighted sum is near zero.
     #[serde(skip)]
     co2_qfrac: [FloatValue; 4],
+}
+
+/// The serialised form of [`ClimateUDEB`], from which every derived field is rebuilt.
+#[derive(Deserialize)]
+struct SerializedClimateUDEB {
+    parameters: ClimateUDEBParameters,
+}
+
+impl TryFrom<SerializedClimateUDEB> for ClimateUDEB {
+    type Error = RSCMError;
+
+    fn try_from(value: SerializedClimateUDEB) -> RSCMResult<Self> {
+        Self::from_parameters(value.parameters)
+    }
 }
 
 /// CO2 doubling ERF, read when `time_varying_q2x` is set.
@@ -1300,6 +1315,34 @@ mod tests {
         let parsed: ClimateUDEB = serde_json::from_str(&json).expect("Deserialization failed");
 
         assert_eq!(component.parameters.n_layers, parsed.parameters.n_layers);
+    }
+
+    #[test]
+    fn test_deserialized_component_steps_like_original() {
+        let component = default_component();
+        let json = serde_json::to_string(&component).unwrap();
+        let parsed: ClimateUDEB = serde_json::from_str(&json).unwrap();
+
+        let ocean_temps = |udeb: &ClimateUDEB| {
+            let mut state = default_state(udeb);
+            for _ in 0..24 {
+                udeb.step_hemisphere(
+                    &mut state,
+                    0,
+                    3.71,
+                    3.71,
+                    1.0 / 12.0,
+                    udeb.lambda_ocean,
+                    udeb.lambda_land,
+                    0.0,
+                    0.0,
+                    udeb.parameters.temp_adjust_alpha,
+                );
+            }
+            state.ocean_temps[0].clone()
+        };
+
+        assert_eq!(ocean_temps(&component), ocean_temps(&parsed));
     }
 
     /// Helper to build a ClimateUDEBState with year-weighted temperature history.
