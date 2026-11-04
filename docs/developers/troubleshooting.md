@@ -31,7 +31,7 @@ This guide covers common issues encountered when building, running, and developi
 
 3. **Wrong Python version**
 
-    RSCM requires Python 3.11+. Check your active version:
+    RSCM requires Python 3.13+. Check your active version:
 
     ```bash
     python --version

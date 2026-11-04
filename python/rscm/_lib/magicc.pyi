@@ -33,7 +33,7 @@ Forcing:
 - AerosolIndirectBuilder: Indirect aerosol cloud effects
 """
 
-from typing import Any, Literal, NotRequired, TypeAlias, TypedDict, final
+from typing import Any, Literal, NotRequired, TypedDict, final
 
 from rscm._lib.core import Component, ComponentBuilder
 
@@ -1100,7 +1100,7 @@ class ForcingAgent(TypedDict, total=False):
     Empty reads ``variable`` itself.
     """
 
-ForcingTerm: TypeAlias = str | list["ForcingTerm"]
+type ForcingTerm = str | list[ForcingTerm]
 """An agent ``variable``, or a list of terms summed before the enclosing sum."""
 
 class EfficacyClimate(TypedDict, total=False):

@@ -33,6 +33,6 @@ rscm-macros = { version = "0.6.1", path = "crates/rscm-macros" }
 rscm-two-layer = { version = "0.6.1", path = "crates/rscm-two-layer" }
 rscm-magicc = { version = "0.6.1", path = "crates/rscm-magicc" }
 rscm-calibrate = { version = "0.6.1", path = "crates/rscm-calibrate" }
-pyo3 = { version = "0.27.2", features = ["abi3-py311"] }
+pyo3 = { version = "0.27.2", features = ["abi3-py313"] }
 numpy = "0.27.1"
 tracing = "0.1"
