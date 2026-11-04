@@ -4,41 +4,51 @@ Decisions are in [investigation.md](investigation.md#decisions).
 
 ## Slice 0: setup
 
-- [ ] Fixture script `scripts/fair/generate_fixtures.py`, run with pinned `fair==2.2.5`.
-- [ ] `crates/rscm-fair` crate skeleton, wired into the workspace and the Python bindings.
+- [x] Fixture script `scripts/fair/generate_fixtures.py`, run with pinned `fair==2.2.5` and `numpy==2.4.2`.
+- [x] `crates/rscm-fair` crate skeleton, wired into the workspace and the Python bindings.
+
+Fixtures are `csv.gz` plus JSON, like the MAGICC ones, rather than netCDF.
+This keeps xarray out of the test dependencies.
+The script disables NumPy's AVX-512 `exp`.
+It differs from the C library's by an ulp, which CO2's 1e9-year box turns into a 5e-9 relative difference.
 
 ## Slice 1: energy balance
 
-- [ ] `FairEnergyBalance`: n-layer Cummins model with the matrix exponential from nalgebra.
-- [ ] Outputs: surface and layer temperatures, TOA imbalance, ocean heat content change.
-- [ ] Parity against forcing-driven FaIR for 2-layer and 3-layer configs, annual and 5-yearly.
+- [x] `FairEnergyBalance`: n-layer Cummins model with the matrix exponential from nalgebra.
+- [x] Outputs: surface and layer temperatures, TOA imbalance, ocean heat content change.
+- [x] Parity against forcing-driven FaIR for 2-layer and 3-layer configs, annual and 5-yearly.
 
 ## Slice 2: CO2
 
-- [ ] `FairGasCycle` with gas boxes in `ComponentState` and the iIRF100 lifetime scaling.
-- [ ] `FairGhgForcing` with Meinshausen 2020.
-- [ ] Parity for a CO2-only emissions-driven run.
+- [x] `FairGasCycle` with gas boxes in `ComponentState` and the iIRF100 lifetime scaling.
+- [x] `FairGhgForcing` with Meinshausen 2020.
+- [x] Parity for CO2, CH4 and N2O emissions-driven (`major_ghg_ssp245`).
+  Meinshausen 2020 needs all three, so there is no CO2-only case.
 
 ## Slice 3: all greenhouse gases
 
-- [ ] Every default GHG in `FairGasCycle`, including inverse (concentration-driven) mode.
-- [ ] `FairCH4Lifetime` (Thornhill 2021) and `FairEesc`.
-- [ ] Parity for every default GHG.
+- [x] Every default GHG in `FairGasCycle`, including inverse (concentration-driven) mode.
+- [x] `FairCH4Lifetime` (Thornhill 2021) and `FairEesc`.
+- [x] Parity for every default GHG.
 
 ## Slice 4: other forcing
 
-- [ ] `FairAerosolForcing` (ERFari and ERFaci).
-- [ ] `FairOzoneForcing` with temperature feedback.
-- [ ] `FairLinearForcing` for contrails, LAPSI, stratospheric H2O and land use.
-- [ ] Prescribed solar and volcanic forcing, and the efficacy-weighted total.
-- [ ] Parity for the full default species set, SSP2-4.5 and SSP1-1.9.
+- [x] `FairLinearForcing` for aerosol-radiation, ozone, contrails, LAPSI, stratospheric H2O and land use.
+- [x] `FairAerosolCloud` for aerosol-cloud interactions.
+- [x] Prescribed solar and volcanic forcing, and the efficacy-weighted total (`FairForcingAggregation`).
+- [x] Parity for the full default species set, SSP2-4.5 and SSP1-1.9, 5-yearly and concentration-driven.
+
+FaIR calculates EESC after the aerosol forcing, so EESC never reaches ERFari.
+`rscm.fair` leaves it out of the aerosol drivers to match.
 
 ## Slice 5: Python
 
+- [x] `rscm.fair.build_components`, `initial_values` and `run_fair()` from a FaIR config dict.
 - [ ] `rscm.fair` loaders for the species CSV and calibration CSV.
 - [ ] `from_fair()` converter.
-- [ ] `run_fair()` and the ensemble helper returning xarray.
-- [ ] `.pyi` stubs, docs page and changelog fragment.
+- [ ] Ensemble helper returning xarray.
+- [x] `.pyi` stubs.
+- [ ] Docs page and changelog fragment.
 - [ ] Parity for members of the fair-calibrate v1.6.1 posterior.
 - [ ] Smoke test with MAGICC's `ClimateUDEB`.
 
