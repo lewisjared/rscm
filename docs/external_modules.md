@@ -93,6 +93,11 @@ model = (
 )
 ```
 
+`model.to_toml()` saves the component's module and class name,
+so `Model.from_toml()` restores it wherever the package is installed.
+See [Saving Models](notebooks/component_python.py#saving-models) for what a component must do to be saved,
+and load only model files you trust, because restoring one imports the modules it names.
+
 ## Python components with a Rust kernel
 
 Move the physics into Rust when `solve()` itself is the slow part.
