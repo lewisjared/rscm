@@ -6,7 +6,7 @@
 //! scale $s$, plus a feedback on the surface temperature at the start of the step
 //! (Smith et al. 2021).
 
-use crate::constants::{end, forcing_unit, one, start, surface_temperature, temperature_unit};
+use crate::constants::{driver_definitions, end, one, start, surface_temperature};
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
@@ -111,18 +111,13 @@ impl FairAerosolCloud {
 impl Component for FairAerosolCloud {
     fn definitions(&self) -> Vec<RequirementDefinition> {
         let p = &self.parameters;
-        let mut definitions = vec![RequirementDefinition::scalar_input(
+        driver_definitions(
             &p.surface_temperature,
-            &temperature_unit(),
-        )];
-        for d in &p.drivers {
-            definitions.push(RequirementDefinition::scalar_input(&d.variable, &d.unit));
-        }
-        definitions.push(RequirementDefinition::scalar_output(
+            p.drivers
+                .iter()
+                .map(|d| (d.variable.as_str(), d.unit.as_str())),
             &p.forcing,
-            &forcing_unit(),
-        ));
-        definitions
+        )
     }
 
     fn solve(

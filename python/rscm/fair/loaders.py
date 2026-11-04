@@ -13,8 +13,6 @@ import math
 import re
 from typing import TYPE_CHECKING, Any
 
-import pandas as pd
-
 from rscm.fair.config import (
     CLIMATE_CONFIGS,
     GAMMA_AUTOCORRELATION,
@@ -83,6 +81,8 @@ def read_species(
 
     `species` selects and orders the rows, all of them by default.
     """
+    import pandas as pd  # noqa: PLC0415
+
     df = pd.read_csv(path, index_col=0)
     names = list(df.index) if species is None else list(species)
     n_gasboxes = sum(c.startswith("partition_fraction") for c in df.columns)
@@ -170,6 +170,8 @@ def read_calibration(
     FaIR ignores `forcing_scale` for prescribed forcing,
     so scale it in the inputs as fair-calibrate does, see `build_model`.
     """
+    import pandas as pd  # noqa: PLC0415
+
     entries, species_configs = read_species(species_path, species)
     parameters = pd.read_csv(parameters_path, index_col=0)
     if members is not None:

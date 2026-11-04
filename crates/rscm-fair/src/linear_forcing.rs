@@ -7,7 +7,7 @@
 //! One instance each gives FaIR's aerosol-radiation, ozone, contrail, light absorbing
 //! particle, stratospheric water vapour and land use forcing.
 
-use crate::constants::{end, forcing_unit, one, start, surface_temperature, temperature_unit};
+use crate::constants::{driver_definitions, end, one, start, surface_temperature};
 use rscm_core::component::{
     Component, ComponentState, InputState, OutputState, RequirementDefinition,
 };
@@ -138,18 +138,13 @@ impl FairLinearForcing {
 impl Component for FairLinearForcing {
     fn definitions(&self) -> Vec<RequirementDefinition> {
         let p = &self.parameters;
-        let mut definitions = vec![RequirementDefinition::scalar_input(
+        driver_definitions(
             &p.surface_temperature,
-            &temperature_unit(),
-        )];
-        for d in &p.drivers {
-            definitions.push(RequirementDefinition::scalar_input(&d.variable, &d.unit));
-        }
-        definitions.push(RequirementDefinition::scalar_output(
+            p.drivers
+                .iter()
+                .map(|d| (d.variable.as_str(), d.unit.as_str())),
             &p.forcing,
-            &forcing_unit(),
-        ));
-        definitions
+        )
     }
 
     /// Stateless solve with no emissions before this step, so only correct for the first step

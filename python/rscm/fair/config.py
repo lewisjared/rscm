@@ -105,18 +105,11 @@ def thornhill(config: FairConfig) -> bool:
 
 
 def _ch4_lifetime(config: FairConfig) -> Component:
-    species = config["species"]
     sensitivity = "ch4_lifetime_chemical_sensitivity"
-    emissions = [
-        _driver(s, "emissions", sensitivity, key="sensitivity")
-        for s in species
-        if s["aerosol_chemistry_from_emissions"]
-    ]
-    concentrations = [
-        _driver(s, "concentration", sensitivity, key="sensitivity")
-        for s in species
-        if s["aerosol_chemistry_from_concentration"]
-    ]
+    emissions = _chemistry_drivers(config, "emissions", sensitivity, key="sensitivity")
+    concentrations = _chemistry_drivers(
+        config, "concentration", sensitivity, key="sensitivity"
+    )
     return FairCH4LifetimeBuilder.from_parameters(
         {
             "emissions": emissions,
@@ -128,12 +121,6 @@ def _ch4_lifetime(config: FairConfig) -> Component:
             "output": naming.CH4_LIFETIME_SCALING,
         }
     ).build()
-
-
-def _concentration_variable(entry: Species) -> str:
-    return (
-        naming.EESC if entry["type"] == "eesc" else naming.concentration(entry["name"])
-    )
 
 
 def emission_drivers(config: FairConfig, entry: Species) -> list[str]:
@@ -281,7 +268,11 @@ def _driver(
     baselined: bool = True,
 ) -> dict[str, Any]:
     if kind == "concentration":
-        variable = _concentration_variable(entry)
+        variable = (
+            naming.EESC
+            if entry["type"] == "eesc"
+            else naming.concentration(entry["name"])
+        )
         unit = naming.concentration_unit(entry)
         baseline = entry["baseline_concentration"]
     else:
@@ -295,6 +286,21 @@ def _driver(
         "baseline": _value(baseline) if baselined else 0.0,
         key: _value(entry[coefficient]),
     }
+
+
+def _chemistry_drivers(
+    config: FairConfig,
+    kind: str,
+    coefficient: str,
+    *,
+    key: str = "radiative_efficiency",
+) -> list[dict[str, Any]]:
+    """Drivers of the species with aerosol chemistry from `kind`, in species order."""
+    return [
+        _driver(s, kind, coefficient, key=key)
+        for s in config["species"]
+        if s[f"aerosol_chemistry_from_{kind}"]
+    ]
 
 
 def _aerosol_drivers(
@@ -334,16 +340,10 @@ def _linear_drivers(config: FairConfig, kind: str) -> list[dict[str, Any]]:
     if kind == "ari":
         return _aerosol_drivers(config, "erfari_radiative_efficiency")
     if kind == "ozone":
-        key = "ozone_radiative_efficiency"
-        return [
-            _driver(s, "concentration", key)
-            for s in species
-            if s["aerosol_chemistry_from_concentration"]
-        ] + [
-            _driver(s, "emissions", key)
-            for s in species
-            if s["aerosol_chemistry_from_emissions"]
-        ]
+        coefficient = "ozone_radiative_efficiency"
+        return _chemistry_drivers(
+            config, "concentration", coefficient
+        ) + _chemistry_drivers(config, "emissions", coefficient)
     coefficient, driver_kind, baselined = _LINEAR_DRIVERS[kind]
     return [
         _driver(s, driver_kind, coefficient, baselined=baselined)
