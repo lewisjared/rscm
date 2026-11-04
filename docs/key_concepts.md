@@ -193,8 +193,9 @@ A component reads each input from one end of the timestep:
 | Exogenous input (external forcing) | Pre-populated          | `at_start()` |
 | Upstream component output          | They ran this timestep | `at_end()`   |
 
-`at_end()` returns `None` at the final timestep, because there is no index N+1.
-In Rust, `get()` applies this table and falls back to `at_start()` at the final timestep:
+`Model` never solves a step from the last time point, so `at_end()` always has a value during a run.
+It returns `None` only for a window placed on the last time point, for example when you call `solve` directly.
+In Rust, `get()` applies this table and falls back to `at_start()` in that case:
 
 ```rust
 let erf = inputs.erf.at_end().unwrap_or_else(|| inputs.erf.at_start());
