@@ -385,3 +385,23 @@ fn test_multiple_consumers_same_upstream() {
         "AlbedoCalculator should see Surface Temperature as UpstreamOutput"
     );
 }
+
+#[test]
+fn test_scalar_state_initialised_from_grid_values() {
+    let time_axis = TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0));
+    let initial = HashMap::from([("Surface Temperature".to_string(), vec![15.0])]);
+
+    let model = ModelBuilder::new()
+        .with_time_axis(time_axis)
+        .with_component(Arc::new(TemperatureProducer { warming_rate: 0.1 }))
+        .with_initial_grid_values(initial)
+        .build()
+        .unwrap();
+
+    let temperature = model
+        .timeseries()
+        .get_data("Surface Temperature")
+        .and_then(|data| data.as_scalar())
+        .expect("Surface Temperature should exist");
+    assert_eq!(temperature.at(0, ScalarRegion::Global).unwrap(), 15.0);
+}

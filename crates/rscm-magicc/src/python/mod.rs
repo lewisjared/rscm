@@ -4,15 +4,18 @@ use pyo3::{pymodule, Bound, PyResult};
 use rscm_core::create_component_builder;
 use rscm_core::python::PyRustComponent;
 
-use crate::carbon::{CO2Budget, OceanCarbon, TerrestrialCarbon};
+use crate::carbon::{CO2Budget, OceanCarbon, Permafrost, TerrestrialCarbon};
 use crate::chemistry::{CH4Chemistry, CH4Oxidation, HalocarbonChemistry, N2OChemistry};
-use crate::climate::ClimateUDEB;
-use crate::forcing::{AerosolDirect, AerosolIndirect, GhgForcing, OzoneForcing};
+use crate::climate::{ClimateUDEB, SeaLevelRise, ANNUAL_MEAN_TEMPERATURE, THERMAL_EXPANSION};
+use crate::forcing::{
+    AerosolDirect, AerosolIndirect, ForcingAggregation, GhgForcing, OzoneForcing,
+};
 use crate::parameters::{
     AerosolDirectParameters, AerosolIndirectParameters, CH4ChemistryParameters,
-    CH4OxidationParameters, CO2BudgetParameters, ClimateUDEBParameters, GhgForcingParameters,
-    HalocarbonParameters, N2OChemistryParameters, OceanCarbonParameters, OzoneForcingParameters,
-    TerrestrialCarbonParameters,
+    CH4OxidationParameters, CO2BudgetParameters, ClimateUDEBParameters,
+    ForcingAggregationParameters, GhgForcingParameters, HalocarbonParameters,
+    N2OChemistryParameters, OceanCarbonParameters, OzoneForcingParameters, PermafrostParameters,
+    SeaLevelRiseParameters, TerrestrialCarbonParameters,
 };
 
 // Climate components
@@ -33,12 +36,24 @@ impl ClimateUDEBBuilder {
                 "Initial forcing must be finite",
             ));
         }
-        Ok(std::collections::HashMap::from([
+        let mut values = std::collections::HashMap::from([
             ("Surface Temperature".into(), 0.0),
             ("Sea Surface Temperature".into(), 0.0),
             ("Ocean Heat Content".into(), 0.0),
             ("Heat Uptake".into(), component.initial_heat_uptake(erf)),
-        ]))
+        ]);
+        if self.parameters.thermal_expansion.is_some() {
+            values.insert(ANNUAL_MEAN_TEMPERATURE.into(), 0.0);
+            values.insert(THERMAL_EXPANSION.into(), 0.0);
+        }
+        Ok(values)
+    }
+
+    /// Internal efficacy of a forcing agent with the given regional pattern.
+    pub fn internal_efficacy(&self, rf_regions: [f64; 4]) -> PyResult<f64> {
+        let component = ClimateUDEB::from_parameters(self.parameters.clone())
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        Ok(component.internal_efficacy(&rf_regions))
     }
 
     #[staticmethod]
@@ -78,6 +93,8 @@ create_component_builder!(
 );
 create_component_builder!(OceanCarbonBuilder, OceanCarbon, OceanCarbonParameters);
 create_component_builder!(CO2BudgetBuilder, CO2Budget, CO2BudgetParameters);
+create_component_builder!(PermafrostBuilder, Permafrost, PermafrostParameters);
+create_component_builder!(SeaLevelRiseBuilder, SeaLevelRise, SeaLevelRiseParameters);
 
 // Forcing components
 /// Builder with a pointwise evaluator for initializing boundary forcing.
@@ -139,10 +156,59 @@ create_component_builder!(
     AerosolIndirectParameters
 );
 
+/// Builder for `ForcingAggregation`, whose parameters are validated on build.
+#[pyclass]
+pub struct ForcingAggregationBuilder {
+    parameters: ForcingAggregationParameters,
+}
+
+#[pymethods]
+impl ForcingAggregationBuilder {
+    #[staticmethod]
+    pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
+        pythonize::depythonize::<ForcingAggregationParameters>(&parameters)
+            .map(|parameters| Self { parameters })
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    }
+
+    /// Total ERF and four-box efficacy-adjusted forcing for one value per agent.
+    pub fn aggregate(&self, values: Vec<Vec<f64>>) -> PyResult<(f64, [f64; 4])> {
+        let component = ForcingAggregation::from_parameters(self.parameters.clone())
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        let agents = &component.parameters().agents;
+        let valid = values.len() == agents.len()
+            && agents
+                .iter()
+                .zip(&values)
+                .all(|(agent, v)| v.len() == if agent.regional { 4 } else { 1 });
+        if !valid {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "Supply one value per global agent and four per regional agent",
+            ));
+        }
+        Ok(component.aggregate(&values))
+    }
+
+    /// Internal efficacy of each agent at climate sensitivity `ecs` and CO2 doubling forcing `q_2xco2`.
+    pub fn internal_efficacies(&self, ecs: f64, q_2xco2: f64) -> PyResult<Vec<f64>> {
+        ForcingAggregation::from_parameters(self.parameters.clone())
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
+            .internal_efficacies(ecs, q_2xco2)
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("LAMCALC did not converge"))
+    }
+
+    pub fn build(&self) -> PyResult<PyRustComponent> {
+        ForcingAggregation::from_parameters(self.parameters.clone())
+            .map(|component| PyRustComponent(std::sync::Arc::new(component)))
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    }
+}
+
 #[pymodule]
 pub fn magicc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Climate
     m.add_class::<ClimateUDEBBuilder>()?;
+    m.add_class::<SeaLevelRiseBuilder>()?;
     // Chemistry
     m.add_class::<CH4ChemistryBuilder>()?;
     m.add_class::<CH4OxidationBuilder>()?;
@@ -152,10 +218,12 @@ pub fn magicc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<TerrestrialCarbonBuilder>()?;
     m.add_class::<OceanCarbonBuilder>()?;
     m.add_class::<CO2BudgetBuilder>()?;
+    m.add_class::<PermafrostBuilder>()?;
     // Forcing
     m.add_class::<GhgForcingBuilder>()?;
     m.add_class::<OzoneForcingBuilder>()?;
     m.add_class::<AerosolDirectBuilder>()?;
     m.add_class::<AerosolIndirectBuilder>()?;
+    m.add_class::<ForcingAggregationBuilder>()?;
     Ok(())
 }

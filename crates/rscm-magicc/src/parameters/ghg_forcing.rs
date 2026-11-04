@@ -148,6 +148,10 @@ pub struct GhgForcingParameters {
     ///
     /// Default: 1.0 (no adjustment in MAGICC7 v7.5.3)
     pub adjust_n2o: f64,
+
+    /// `CH4_ADDEDSTRATH2O_PERCENT`: stratospheric H2O ERF from CH4 oxidation
+    /// as a fraction of CH4 ERF at pre-industrial N2O.
+    pub ch4_strat_h2o_fraction: f64,
 }
 
 impl Default for GhgForcingParameters {
@@ -182,6 +186,8 @@ impl Default for GhgForcingParameters {
             adjust_co2: 1.05,
             adjust_ch4: 0.86,
             adjust_n2o: 1.0,
+
+            ch4_strat_h2o_fraction: 0.0923,
         }
     }
 }

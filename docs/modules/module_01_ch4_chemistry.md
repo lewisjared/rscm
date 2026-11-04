@@ -81,7 +81,7 @@ Note: The correction factor $(1 - 0.5 X \frac{\Delta B_{n-1}}{B})$ is applied fr
 
 ### 2.8 Conventions Verified Against MAGICC7 Output
 
-Reproducing v7.5.3 SSP245 emissions-driven output to within 1e-4 ppb fixed these details:
+Reproducing v7.5.3 SSP245 emissions-driven output fixed these details:
 
 - The NOx, CO and VOC deltas are relative to emissions in `CH4_FEED_YRSTART`, not 1750.
 - $B_{00}$ tracks the current burden until the year before `CH4_FEED_YRSTART` and is then fixed.
@@ -324,6 +324,16 @@ DAT_CH4_TAUTOT = 1 / (1/CH4_TAUOH_EFFECTIVE + 1/CH4_TAUOTHER)
 IF current_year >= CH4_SWITCHFROMCONC2EMIS_YEAR:
     DAT_CH4_CONC(NEXT_YEAR_IDX) = NEXTYEAR_CH4_CONC
 ```
+
+### 7.4 Prescribed concentrations
+
+Before `CH4_SWITCHFROMCONC2EMIS_YEAR`,
+`CH4_INVERSE_EMIS` holds the anthropogenic emissions for which `METHANE` reproduces
+the prescribed concentration of the following year.
+The fossil CH4 burden that feeds `CH4_2CO2_OXIDISATION_EMIS` then grows from
+fossil emissions scaled by `CH4_INVERSE_EMIS` over the anthropogenic total,
+fossil plus biomass burning.
+RSCM matches both, so its default run reproduces MAGICC7's CH4 concentration to print precision.
 
 ## 8. Numerical Considerations
 

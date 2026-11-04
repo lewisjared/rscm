@@ -7,6 +7,7 @@ the three gases is prescribed.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING, Any, cast
 
@@ -31,10 +32,14 @@ from rscm.core import (
     VariableSchema,
 )
 from rscm.magicc.runner import (
+    CH4_OTHER_LIFETIMES,
     CONCENTRATION,
     ERF,
     SPECIES,
     MAGICCResult,
+    _base_schema,
+    _ch4_burdens,
+    _ch4_tau_other,
     _climate_weights,
     _collect_result,
     _interval_series,
@@ -66,6 +71,10 @@ COMPONENTS = {
     "ClimateUDEB": ClimateUDEBBuilder,
 }
 
+CH4_PPB_TO_TG = 2.824
+CH4_MIXBOX_SIZE = 0.973
+CH4_BUDGET_PARAMETERS = ("ppb_to_tg", "mixbox_size", "natural_emissions")
+
 EMISSION_VARIABLES = {
     "co2_fossil": ("Emissions|CO2|Fossil", "GtC/yr"),
     "co2_land_use": ("Emissions|CO2|Land Use", "GtC/yr"),
@@ -80,7 +89,12 @@ EMISSION_VARIABLES = {
 #: Calculated variables with their units and sources.
 CALCULATED = {
     "Lifetime|CH4": ("yr", "CH4Chemistry"),
+    "Lifetime|CH4|OH": ("yr", "CH4Chemistry"),
+    "Lifetime|CH4|Effective": ("yr", "CH4Chemistry"),
     "Atmospheric Burden|CH4|Fossil": ("Mt CH4", "CH4Oxidation"),
+    "Atmospheric Burden|CH4|AFOLU": ("Mt CH4", "CH4Oxidation"),
+    "Atmospheric Burden|CH4|Natural": ("Mt CH4", "CH4Oxidation"),
+    "Atmospheric Burden|CH4|Permafrost": ("Mt CH4", "CH4Oxidation"),
     "Emissions|CO2|CH4 Oxidation": ("GtC/yr", "CH4Oxidation"),
     "Lifetime|N2O": ("yr", "N2OChemistry"),
     "Carbon Pool|Plant": ("GtC", "TerrestrialCarbon"),
@@ -94,6 +108,7 @@ CALCULATED = {
     "Ocean Surface pCO2": ("ppm", "OceanCarbon"),
     "Cumulative Ocean Uptake": ("GtC", "OceanCarbon"),
     "Carbon Flux|Ocean": ("GtC/yr", "OceanCarbon"),
+    "End-of-Year Atmospheric CO2": ("ppm", "OceanCarbon"),
     "Emissions|CO2|Net": ("GtC/yr", "CO2Budget"),
     "Airborne Fraction|CO2": ("1", "CO2Budget"),
     "Surface Temperature": ("K", "ClimateUDEB"),
@@ -107,6 +122,8 @@ CALCULATED = {
 DIAGNOSTICS = frozenset(
     {
         "Lifetime|CH4",
+        "Lifetime|CH4|OH",
+        "Lifetime|CH4|Effective",
         "Emissions|CO2|CH4 Oxidation",
         "Lifetime|N2O",
         "Carbon Flux|Terrestrial",
@@ -115,6 +132,7 @@ DIAGNOSTICS = frozenset(
         "Net Primary Production",
         "Respiration|Terrestrial",
         "Carbon Flux|Ocean",
+        "End-of-Year Atmospheric CO2",
         "Emissions|CO2|Net",
         "Airborne Fraction|CO2",
     }
@@ -159,24 +177,40 @@ def _validate_parameters(
             raise ValueError(msg)
         resolved[name] = dict(values)
     # The ocean evolves atmospheric CO2 within each year, so it must match the budget
-    carbon = ("CO2Budget", "OceanCarbon")
-    conversions = {
-        resolved[name]["gtc_per_ppm"]
-        for name in carbon
-        if "gtc_per_ppm" in resolved[name]
-    }
-    if len(conversions) > 1:
-        msg = "CO2Budget and OceanCarbon must use the same gtc_per_ppm"
+    _share(resolved, ("CO2Budget", "OceanCarbon"), "gtc_per_ppm")
+    resolved["CO2Budget"].setdefault("ocean_end_of_year", True)
+    # CH4Oxidation repeats the CH4 budget, so it must use CH4Chemistry's parameters
+    for key in CH4_BUDGET_PARAMETERS:
+        _share(resolved, ("CH4Chemistry", "CH4Oxidation"), key)
+    chemistry, oxidation = resolved["CH4Chemistry"], resolved["CH4Oxidation"]
+    lifetimes = {k: chemistry[k] for k in CH4_OTHER_LIFETIMES if k in chemistry}
+    tau_other = _ch4_tau_other(lifetimes)
+    if "tau_other" in oxidation and not math.isclose(oxidation["tau_other"], tau_other):
+        msg = (
+            "CH4Oxidation tau_other must match CH4Chemistry's soil, stratospheric "
+            f"and chlorine lifetimes ({tau_other})"
+        )
         raise ValueError(msg)
-    if conversions:
-        (conversion,) = conversions
-        for name in carbon:
-            resolved[name]["gtc_per_ppm"] = conversion
+    if lifetimes:
+        oxidation["tau_other"] = tau_other
     return resolved
 
 
+def _share(
+    resolved: dict[str, dict[str, Any]], components: tuple[str, str], key: str
+) -> None:
+    """Give both components the one value of ``key`` either of them sets."""
+    values = {resolved[name][key] for name in components if key in resolved[name]}
+    if len(values) > 1:
+        msg = f"{components[0]} and {components[1]} must use the same {key}"
+        raise ValueError(msg)
+    for value in values:
+        for name in components:
+            resolved[name][key] = value
+
+
 def _schema(units: Mapping[str, str], contributors: tuple[str, ...]) -> VariableSchema:
-    schema = VariableSchema()
+    schema = _base_schema()
     for name, unit in units.items():
         if name == "Surface Temperature":
             schema.add_variable(name, unit, GridType.FourBox)
@@ -191,6 +225,7 @@ def _variables(
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Units and sources of every variable, given the prescribed inputs."""
     units = {name: unit for name, unit in EMISSION_VARIABLES.values()}
+    units["Emissions|CH4|AFOLU"] = "Mt CH4/yr"
     units[ERF + "|Other"] = "W/m^2"
     sources = {**dict.fromkeys(data, "prescribed"), ERF: "Sum"}
     owners = {"CO2": "CO2Budget", "CH4": "CH4Chemistry", "N2O": "N2OChemistry"}
@@ -254,6 +289,7 @@ def run_magicc_emissions(  # noqa: PLR0913
     if np.any(data["Emissions|CH4|Fossil"] > data["Emissions|CH4"]):
         msg = "ch4_fossil must not exceed total anthropogenic ch4"
         raise ValueError(msg)
+    data["Emissions|CH4|AFOLU"] = data["Emissions|CH4"] - data["Emissions|CH4|Fossil"]
     data[ERF + "|Other"] = _series("other_forcing", other_forcing, len(time))
     units, sources = _variables(data)
 
@@ -275,7 +311,11 @@ def run_magicc_emissions(  # noqa: PLR0913
         **{ERF + "|" + gas: value for gas, value in initial_erf.items()},
         ERF: total_erf,
         **climate.initial_values(total_erf),
-        "Atmospheric Burden|CH4|Fossil": 0.0,
+        **_ch4_burdens(
+            initial_conc["CH4"],
+            float(params["CH4Chemistry"].get("ppb_to_tg", CH4_PPB_TO_TG)),
+            float(params["CH4Chemistry"].get("mixbox_size", CH4_MIXBOX_SIZE)),
+        ),
         "Ocean Surface pCO2": initial_conc["CO2"],
         "Cumulative Ocean Uptake": 0.0,
         **{

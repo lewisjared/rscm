@@ -34,6 +34,22 @@ pub struct CO2BudgetParameters {
     ///
     /// Default: 278.0 ppm
     pub co2_pi: f64,
+
+    /// Add `Emissions|CO2|Permafrost` from the `Permafrost` component to the sources.
+    ///
+    /// Default: false
+    pub permafrost: bool,
+
+    /// Last year of concentrations prescribed by `Atmospheric Concentration|CO2|Prescribed`,
+    /// or `None` to calculate them from emissions throughout.
+    /// MAGICC7: CO2_SWITCHFROMCONC2EMIS_YEAR
+    pub concentration_switch_year: Option<f64>,
+
+    /// Take next year's concentration from `End-of-Year Atmospheric CO2`, which
+    /// `OceanCarbon` integrates over its sub-steps as MAGICC7 does.
+    ///
+    /// Default: false
+    pub ocean_end_of_year: bool,
 }
 
 impl Default for CO2BudgetParameters {
@@ -41,6 +57,9 @@ impl Default for CO2BudgetParameters {
         Self {
             gtc_per_ppm: GTC_PER_PPM,
             co2_pi: 278.0,
+            permafrost: false,
+            concentration_switch_year: None,
+            ocean_end_of_year: false,
         }
     }
 }

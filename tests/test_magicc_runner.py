@@ -28,13 +28,19 @@ def test_preindustrial_equilibrium():
 
 
 def test_initial_heat_uptake_respects_efficacy():
-    result = run_magicc(
-        [1750, 1751],
-        concentrations(2),
-        other_forcing=[1.0, 1.0],
-        climate_parameters={"efficacy_apply": 1, "prescribed_efficacy_co2": 2.0},
-    )
-    npt.assert_allclose(result.values["Heat Uptake"][0], 2.0)
+    def heat_uptake(efficacy):
+        result = run_magicc(
+            [1750, 1751],
+            concentrations(2),
+            other_forcing=[1.0, 1.0],
+            climate_parameters={
+                "efficacy_apply": 2,
+                "prescribed_efficacy_co2": efficacy,
+            },
+        )
+        return result.values["Heat Uptake"][0]
+
+    npt.assert_allclose(heat_uptake(2.0), 2 * heat_uptake(1.0))
 
 
 @pytest.mark.parametrize("method", ["Ipcctar", "Olbl"])

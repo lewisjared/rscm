@@ -18,6 +18,9 @@
 //!   uptake). Land-use emissions are part of this flux, as in MAGICC7, because
 //!   deforestation removes carbon from the land pools.
 //! - `Carbon Flux|Ocean` (GtC/yr) - Net ocean uptake (positive = uptake)
+//! - `End-of-Year Atmospheric CO2` (ppm) - Concentration after the ocean's last sub-step,
+//!   only with the `ocean_end_of_year` parameter
+//! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `permafrost` parameter
 //!
 //! # States (tracked between timesteps)
 //!
@@ -30,18 +33,19 @@
 //!
 //! # Differences from MAGICC7 Module 11
 //!
-//! - **Annual integration**: MAGICC7 updates atmospheric CO2 monthly inside the
-//!   ocean loop. `OceanCarbon` reproduces that monthly trajectory, so the annual
-//!   sum here gives the same end-of-year concentration.
-//! - **No mode switching**: MAGICC7 can switch between concentration-driven and
-//!   emissions-driven modes mid-run. Here, only emissions-driven mode is supported.
-//! - **No permafrost emissions**: MAGICC7 can include permafrost CO2 release.
-//!   Not implemented.
+//! - **Monthly integration in the ocean**: in MAGICC7, atmospheric CO2 evolves over
+//!   the ocean's sub-steps, and the concentration it ends the year on becomes next year's.
+//!   `ocean_end_of_year` takes that value from `OceanCarbon`. Without it, the annual sum
+//!   in [`CO2Budget::solve_budget`] differs from it only by rounding.
 //! - **No concentration cap**: MAGICC7 can cap CO2 concentration. Not implemented.
-//! - **No inverse emissions calculation**: MAGICC7 calculates what emissions would
-//!   be needed to match prescribed concentrations. Not implemented.
+//! - **No inverse fossil emissions**: before `concentration_switch_year` the
+//!   concentration follows `Atmospheric Concentration|CO2|Prescribed` and
+//!   `Emissions|CO2|Net` is the implied net source, but fossil emissions are not inverted.
 
 use crate::parameters::CO2BudgetParameters;
+use crate::reference::{
+    permafrost_emissions, prescribed_concentration, prescribed_definition, PERMAFROST_CO2,
+};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
@@ -75,6 +79,9 @@ use serde::{Deserialize, Serialize};
 pub struct CO2Budget {
     parameters: CO2BudgetParameters,
 }
+
+const CO2_CONCENTRATION: &str = "Atmospheric Concentration|CO2";
+const CO2_END_OF_YEAR: &str = "End-of-Year Atmospheric CO2";
 
 impl CO2Budget {
     /// Create a new CO2 budget component with default parameters.
@@ -127,7 +134,22 @@ impl Default for CO2Budget {
 #[typetag::serde]
 impl Component for CO2Budget {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        Self::generated_definitions()
+        let mut definitions = Self::generated_definitions();
+        if self.parameters.permafrost {
+            definitions.push(RequirementDefinition::scalar_input(
+                PERMAFROST_CO2,
+                "GtC/yr",
+            ));
+        }
+        if self.parameters.ocean_end_of_year {
+            definitions.push(RequirementDefinition::scalar_input(CO2_END_OF_YEAR, "ppm"));
+        }
+        definitions.extend(prescribed_definition(
+            CO2_CONCENTRATION,
+            "ppm",
+            self.parameters.concentration_switch_year,
+        ));
+        definitions
     }
 
     fn solve(
@@ -138,14 +160,36 @@ impl Component for CO2Budget {
     ) -> RSCMResult<OutputState> {
         let inputs = CO2BudgetInputs::from_input_state(input_state);
 
-        let (co2_next, net_emissions, airborne_fraction) = self.solve_budget(
-            inputs.fossil_emissions.get(),
+        let co2_start = inputs.co2_concentration.at_start();
+        let fossil = inputs.fossil_emissions.get()
+            + permafrost_emissions(self.parameters.permafrost, input_state, PERMAFROST_CO2);
+        let sources = fossil + inputs.ch4_oxidation.get();
+        let (mut co2_next, mut net_emissions, mut airborne_fraction) = self.solve_budget(
+            fossil,
             inputs.ch4_oxidation.get(),
             inputs.terrestrial_flux.get(),
             inputs.ocean_flux.get(),
-            inputs.co2_concentration.at_start(),
+            co2_start,
             t_next - t_current,
         );
+        if self.parameters.ocean_end_of_year {
+            co2_next = input_state.get_scalar_window(CO2_END_OF_YEAR).get();
+        }
+        if let Some(prescribed) = prescribed_concentration(
+            input_state,
+            CO2_CONCENTRATION,
+            self.parameters.concentration_switch_year,
+            t_next,
+        ) {
+            co2_next = prescribed;
+            net_emissions =
+                (prescribed - co2_start) * self.parameters.gtc_per_ppm / (t_next - t_current);
+            airborne_fraction = if sources > 0.0 {
+                net_emissions / sources
+            } else {
+                0.0
+            };
+        }
 
         let outputs = CO2BudgetOutputs {
             co2_concentration: co2_next,

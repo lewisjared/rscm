@@ -36,13 +36,17 @@
 //!
 //! # Differences from MAGICC7 Module 02
 //!
-//! - **Budget initialisation**: MAGICC7 calculates natural emissions to close
-//!   the budget over a reference period. Here, natural emissions are fixed.
-//! - **Prescribed/calculated switch**: MAGICC7 can switch between prescribed
-//!   and calculated concentrations by year. Here, always emissions-driven.
+//! - **Budget initialisation**: natural emissions are a fixed parameter.
+//!   `rscm.magicc.full.natural_emissions` calculates MAGICC7's budget-closing value for it.
+//!
+//! With `concentration_switch_year` the concentration follows
+//! `Atmospheric Concentration|N2O|Prescribed` until that year.
 
 use crate::parameters::N2OChemistryParameters;
-use crate::reference::{feedback_warming, reference_value, require_annual, value_at_year};
+use crate::reference::{
+    feedback_warming, prescribed_concentration, prescribed_definition, reference_value,
+    require_annual, value_at_year,
+};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
@@ -54,6 +58,7 @@ use serde::{Deserialize, Serialize};
 
 /// Number of fixed-point iterations (fixed per MAGICC7 implementation)
 const PRATHER_ITERATIONS: usize = 4;
+const N2O_CONCENTRATION: &str = "Atmospheric Concentration|N2O";
 
 /// N2O atmospheric chemistry component
 ///
@@ -158,7 +163,13 @@ impl Default for N2OChemistry {
 #[typetag::serde]
 impl Component for N2OChemistry {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        Self::generated_definitions()
+        let mut definitions = Self::generated_definitions();
+        definitions.extend(prescribed_definition(
+            N2O_CONCENTRATION,
+            "ppb",
+            self.parameters.concentration_switch_year,
+        ));
+        definitions
     }
 
     fn solve(
@@ -194,6 +205,14 @@ impl Component for N2OChemistry {
             temperature_change,
             t_next - t_current,
         );
+
+        let new_concentration = prescribed_concentration(
+            input_state,
+            N2O_CONCENTRATION,
+            p.concentration_switch_year,
+            t_next,
+        )
+        .unwrap_or(new_concentration);
 
         let outputs = N2OChemistryOutputs {
             n2o_concentration: new_concentration,

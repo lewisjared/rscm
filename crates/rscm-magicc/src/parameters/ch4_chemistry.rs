@@ -45,6 +45,15 @@ pub struct CH4ChemistryParameters {
     /// default: 182.1908
     pub natural_emissions: FloatValue,
 
+    /// Add `Emissions|CH4|Permafrost` from the `Permafrost` component to the emissions.
+    /// default: false
+    pub permafrost: bool,
+
+    /// Last year of concentrations prescribed by `Atmospheric Concentration|CH4|Prescribed`,
+    /// or `None` to calculate them from emissions throughout.
+    /// MAGICC7: CH4_SWITCHFROMCONC2EMIS_YEAR
+    pub concentration_switch_year: Option<FloatValue>,
+
     /// Total atmospheric lifetime at the reference state (`CH4_TAUTOT_INIT`).
     /// The OH lifetime is derived by removing the non-OH sinks.
     /// unit: years
@@ -127,6 +136,8 @@ impl Default for CH4ChemistryParameters {
         Self {
             feedback_start_year: 1927.0,
             natural_emissions: 182.1908,
+            permafrost: false,
+            concentration_switch_year: None,
             tau_total_init: 9.9474,
             tau_soil: 150.0,
             tau_strat: 120.0,

@@ -73,8 +73,10 @@ MOLMASS = C_atoms*12.001 + Cl_atoms*35.453 + F_atoms*18.9984 + Br_atoms*79.904
 The total effective lifetime combines multiple decay pathways:
 
 ```
-1/tau_effective = 1/(tau_strat * scale_strat) + 1/(tau_OH * scale_OH) + 1/tau_other
+1/tau_effective = (1/(tau_OH * scale_OH) + 1/(tau_strat * scale_strat)) + 1/tau_other
 ```
+
+The terms are added in this order, OH first.
 
 Where `tau_other` is calculated at initialization to ensure the unscaled effective lifetime matches `tau_tot`:
 
@@ -107,10 +109,31 @@ Based on Butchart & Scaife (2001) - ~3% increase in meridional flux per decade.
 Simple linear relationship:
 
 ```
-RF = (C - C_preindustrial) * radeff / 1000
+RF = (C - C_preindustrial) * (radeff / 1000)
 ```
 
 Where `radeff` is in W/m^2 per ppb, divided by 1000 to convert to W/m^2 per ppt.
+The division comes first.
+
+#### Regional pattern of F-gas forcing
+
+`calculate_halo_rf_box_fractions` spreads each species' forcing over the four boxes.
+With `w = RF_REGIONS_FGAS` and box areas `a`:
+
+```
+g_i = w_i / sum_j(w_j * a_j)                       ! global normalisation, summed from 0
+l_i = ((g_i / h) * E_hemi) / E_tot                 ! within each hemisphere
+h   = a_ocean * g_ocean + a_land * g_land          ! of the box's hemisphere
+```
+
+`E` are the box CO2I emissions of the previous year
+(global fossil CO2 split half to each hemisphere's land box),
+`E_hemi` the box's hemisphere total and `E_tot` the sum over boxes from 0.
+The fraction is `g` for `tau > upper_tau` or when `E_tot` is 0,
+`l` for `tau < lower_tau`, and `(g - l) * ((tau - lower) / (upper - lower)) + l` in between.
+`tau` is the species' total lifetime of the previous year.
+`FGASSUM` boxes add the species in order, but the reported global `FGASSUM` is the sum of species
+forcing rather than the area mean of the boxes.
 
 **Source:** `deltaq_calculations.f90` lines 583-594
 
@@ -119,8 +142,10 @@ Where `radeff` is in W/m^2 per ppb, divided by 1000 to convert to W/m^2 per ppt.
 Equivalent Effective Stratospheric Chlorine combines Cl and Br contributions:
 
 ```
-EESC += C_delayed * (n_Cl * f_release * f_CFC11 + alpha_Br * n_Br * f_release * f_CFC11)
+EESC += C_delayed * (alpha_Br * ((n_Br * f_release) * f_CFC11) + ((n_Cl * f_release) * f_CFC11))
 ```
+
+The bracketing is MAGICC7's order of operations.
 
 Where:
 

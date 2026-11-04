@@ -143,15 +143,72 @@ from 1750, with the RSCM-calculated forcing replaced by the reference residual.
 From 1750 to 2100, RSCM stays within 0.5 ppm CO2, 3 ppb CH4, 0.03 ppb N2O and
 0.02 K of MAGICC7. That case disables processes RSCM cannot represent:
 
-- Permafrost is not implemented. MAGICC7 enables it by default, adding about
-  0.8 GtC/yr of CO2 by 2100.
+- Permafrost is disabled. This runner has no permafrost component,
+  and MAGICC7 enables it by default, adding about 0.8 GtC/yr of CO2 by 2100.
 - Volcanic and solar forcing are disabled. MAGICC7 applies volcanic forcing
   within the year, which annual residual forcing cannot carry. With it enabled,
   concentrations still agree within 0.6 ppm and 3 ppb, but temperature differs
   by up to 0.3 K in eruption years.
 
 MAGICC7's default configuration also prescribes concentrations until 2015,
-calculating emissions-driven only afterwards. RSCM has no such mode switch.
+calculating emissions-driven only afterwards.
+This runner has no such switch, but `run_magicc7` below does.
+
+## Full MAGICC7 chain
+
+`rscm.magicc.full.run_magicc7` couples every MAGICC7 component RSCM implements:
+chemistry, the carbon cycle, permafrost, GHG and ozone forcing, forcing aggregation
+with efficacies and regional patterns, and ClimateUDEB with monthly volcanic forcing.
+
+```python
+from rscm.magicc import full
+
+model = full.run_magicc7(years, emissions)
+```
+
+`years` start in 1750 and must reach 2015, the end of the historical input files.
+`emissions` holds one array per year for `"<species>|Fossil"` and `"<species>|AFOLU"`
+of each species in `full.SECTORAL_EMISSIONS` (Gt C, Mt or kt per year as in MAGICC7),
+and one per halocarbon in `full.halocarbon_species()` in kt per year.
+`parameters` takes MAGICC7 configuration names such as `core_climatesensitivity`,
+and `pf_apply=0` switches permafrost off.
+
+The forcing MAGICC7 prescribes before the run (aerosols, land use, solar and volcanic)
+comes from `rscm.magicc.prescribed` and MAGICC7's input files packaged in `rscm.magicc`.
+
+Like MAGICC7's default configuration, `run_magicc7` prescribes the concentrations of CO2,
+CH4, N2O and every halocarbon up to 2015 from the packaged input files,
+and calculates them from emissions afterwards.
+`co2_switchfromconc2emis_year` and its CH4, N2O, `fgas` and `mhalo` counterparts move the switch.
+While concentrations are prescribed, the ocean sees CO2 interpolated within the year
+and fossil CH4 oxidation scales with the inverse CH4 emissions, as in MAGICC7.
+Against MAGICC7's default SSP245 run from 1750 to 2104, it matches MAGICC7's binary output
+for temperature, CO2, CH4, N2O and every halocarbon.
+
+With every switch year at 1750 the chain runs from emissions throughout.
+Against MAGICC7 configured the same way it also matches, with or without permafrost.
+`run_magicc7` maps these MAGICC7 method switches:
+
+- `core_co2ch4n2o_rfmethod` selects OLBL or IPCCTAR GHG forcing.
+- `co2_fertilization_method` and `co2_plantboxresp_fertscale` set CO2 fertilisation.
+- `co2_feedbackfactor_*` and `co2_tempfeedback_switch` set the carbon cycle temperature feedbacks.
+- `co2_plantboxresp_method` must be 2, the only respiration method implemented.
+
+The regression tests compare at a relative tolerance of 1e-9, so they check scientific parity
+rather than bit-for-bit agreement.
+
+`ncycle_apply=1` limits NPP by nitrogen, reading fixation from MAGICC7's packaged
+`NCYCLE_NFIX3.IN`, and `ncycle_apply_ndep_from_emis=1` adds deposition from NOx and NH3.
+With both it matches MAGICC7.
+The bisection on the nitrogen pool makes this run chaotic in MAGICC7 too:
+a 1e-13 relative change in one year's emissions moves CO2 by 0.03 ppm.
+
+`out_sealevel=1` adds `SeaLevelRise` and thermal expansion in `ClimateUDEB`.
+Sea level rise then matches MAGICC7.
+
+To feed permafrost emissions back, add `PermafrostBuilder` and set `permafrost` on
+`CH4Chemistry`, `CH4Oxidation`, `OceanCarbon` and `CO2Budget`.
+They then read `Emissions|CH4|Permafrost` and `Emissions|CO2|Permafrost`.
 
 ## Time and initialization
 
@@ -192,18 +249,17 @@ Inputs must be complete and finite. Required concentrations must be positive.
 The runner checks returned outputs for nonfinite values, and component errors
 raise exceptions rather than allowing a failed run to appear successful.
 
-Run the execution tests with:
+Run the execution tests and the reference comparisons with:
 
 ```sh
 make build-dev
-uv run pytest tests/test_magicc_runner.py
+uv run pytest tests/test_magicc_runner.py tests/regression/test_full_run.py
 ```
 
 The execution tests include equilibrium, forcing boundary alignment, comparison
 with prescribed-forcing climate runs, carbon mass balance and concentration
-replay. The reference concentration cases use this same runner and check GHG
-forcing parity. The emissions-driven case checks concentrations, temperature,
-carbon fluxes and lifetimes against MAGICC7.
+replay. The full-run cases check concentrations, temperature, carbon fluxes and
+lifetimes against MAGICC7, for the default run and its method variants.
 
 UDEB currently applies its CO2 regional forcing pattern to total ERF, including
 the prescribed residual; agent-specific spatial patterns are not represented.

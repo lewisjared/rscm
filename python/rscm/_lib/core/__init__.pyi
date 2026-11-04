@@ -86,6 +86,18 @@ class Timeseries:
 class FourBoxTimeseries:
     """FourBox grid timeseries with 4 regional values per timestep."""
 
+    def __init__(
+        self,
+        values: NDArray[np.float64],
+        time_axis: TimeAxis,
+        units: str,
+        interpolation_strategy: InterpolationStrategy,
+    ) -> None:
+        """Create from values with shape (n_times, 4) in grid order.
+
+        The order is NH ocean, NH land, SH ocean, SH land.
+        """
+
     def __len__(self) -> int: ...
     def values(self) -> NDArray[np.float64]:
         """Get all values as a 2D array with shape (n_times, 4)."""
@@ -410,7 +422,12 @@ class ModelBuilder:
     def with_py_component(self, component: PythonComponent) -> Self: ...
     def with_rust_component(self, component: Component) -> Self: ...
     def with_initial_values(self, initial_values: dict[str, F]) -> Self: ...
+    def with_initial_grid_values(self, initial_values: dict[str, list[F]]) -> Self:
+        """Add initial values for grid variables, one per region in grid order."""
     def with_exogenous_variable(self, name: str, timeseries: Timeseries) -> Self: ...
+    def with_exogenous_four_box_variable(
+        self, name: str, timeseries: FourBoxTimeseries
+    ) -> Self: ...
     def with_exogenous_collection(self, timeseries: TimeseriesCollection) -> Self: ...
     def with_schema(self, schema: VariableSchema) -> Self:
         """

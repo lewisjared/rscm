@@ -8,6 +8,7 @@
 //! Based on MAGICC7 Module 09 (Terrestrial Carbon Cycle) which implements a
 //! 3-box model representing plant biomass, detritus, and soil pools.
 
+use super::NitrogenParameters;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -223,6 +224,10 @@ pub struct TerrestrialCarbonParameters {
     /// unit: dimensionless
     /// MAGICC7: CO2_NORGRWTH_FRAC_DEFO
     pub norgrwth_frac_defo: FloatValue,
+
+    /// Nitrogen limitation of NPP, off when `None`
+    /// MAGICC7: NCYCLE_APPLY
+    pub nitrogen: Option<NitrogenParameters>,
 }
 
 impl Default for TerrestrialCarbonParameters {
@@ -257,6 +262,7 @@ impl Default for TerrestrialCarbonParameters {
             frac_deforest_plant: 0.70,
             frac_deforest_detritus: 0.05,
             norgrwth_frac_defo: 0.5,
+            nitrogen: None,
         }
     }
 }
@@ -283,7 +289,7 @@ impl TerrestrialCarbonParameters {
             self.frac_deforest_detritus,
             total
         );
-        (1.0 - total).max(0.0)
+        (1.0 - self.frac_deforest_plant - self.frac_deforest_detritus).max(0.0)
     }
 
     /// Net flux to plant pool at pre-industrial (NPP to plant - respiration).
@@ -331,13 +337,7 @@ impl TerrestrialCarbonParameters {
     /// Derived from steady-state: uses the MAGICC7 formulation.
     /// MAGICC7: INITIAL_TURNOVERTIME_SOILPOOL
     pub fn tau_soil_pi(&self) -> FloatValue {
-        let net_flux_plant = self.net_flux_to_plant_pi();
-        let flux_detritus_out = self.detritus_pool_pi / self.tau_detritus_pi();
-
-        let flux_into_soil = self.frac_npp_to_soil() * self.npp_pi
-            + (1.0 - self.frac_plant_to_detritus) * net_flux_plant
-            + self.frac_detritus_to_soil * flux_detritus_out;
-
+        let flux_into_soil = self.flux_into_soil_pi();
         if flux_into_soil > 1e-10 {
             self.soil_pool_pi / flux_into_soil
         } else {
@@ -347,11 +347,19 @@ impl TerrestrialCarbonParameters {
 
     /// Flux into soil at pre-industrial steady state (GtC/yr).
     pub fn flux_into_soil_pi(&self) -> FloatValue {
-        let net_flux_plant = self.net_flux_to_plant_pi();
-        let flux_detritus_out = self.detritus_pool_pi / self.tau_detritus_pi();
-        self.frac_npp_to_soil() * self.npp_pi
-            + (1.0 - self.frac_plant_to_detritus) * net_flux_plant
-            + self.frac_detritus_to_soil * flux_detritus_out
+        self.flux_into_soil(self.detritus_pool_pi, self.tau_detritus_pi())
+    }
+
+    /// Steady-state flux into soil for a detritus pool and turnover time (GtC/yr).
+    ///
+    /// NPP less plant respiration and detritus respiration, in MAGICC7's order of operations.
+    pub fn flux_into_soil(
+        &self,
+        detritus_pool: FloatValue,
+        tau_detritus: FloatValue,
+    ) -> FloatValue {
+        (self.npp_pi - self.respiration_pi)
+            - (1.0 - self.frac_detritus_to_soil) * detritus_pool / tau_detritus
     }
 
     /// Total pre-industrial terrestrial carbon pool (GtC).

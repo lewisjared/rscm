@@ -38,9 +38,18 @@
 //! - `Carbon Flux|Regrowth` (GtC/yr)
 //! - `Net Primary Production` (GtC/yr)
 //! - `Respiration|Terrestrial` (GtC/yr)
+//!
+//! # Nitrogen limitation
+//!
+//! With the `nitrogen` parameter, NPP is limited by the nitrogen budget in
+//! [`super::nitrogen`]. This reads `Nitrogen Deposition` (Gt N/yr), and
+//! `Nitrogen Fixation` (Gt N/yr) unless fixation is prognostic,
+//! and writes `Nitrogen Limitation Factor`, `Nitrogen Pool` (Gt N) and the
+//! `Nitrogen Flux|*` budget terms (Gt N/yr).
 
 use std::any::Any;
 
+use super::nitrogen::{NitrogenBudget, NitrogenDrivers, NitrogenState};
 use crate::parameters::TerrestrialCarbonParameters;
 use crate::reference::feedback_warming;
 use rscm_core::component::{
@@ -84,6 +93,14 @@ pub struct TerrestrialCarbonState {
 
     /// Whether the state has been initialized (first timestep completed).
     pub initialized: bool,
+
+    /// Total respiration of the previous year (GtC/yr), which drives nitrogen recycling.
+    #[serde(default)]
+    pub prev_respiration: Option<FloatValue>,
+
+    /// Nitrogen limitation reference.
+    #[serde(default)]
+    pub nitrogen: NitrogenState,
 }
 
 impl Default for TerrestrialCarbonState {
@@ -96,6 +113,8 @@ impl Default for TerrestrialCarbonState {
             cumulative_landuse: 0.0,
             co2_history: [0.0; 2],
             initialized: false,
+            prev_respiration: None,
+            nitrogen: NitrogenState::default(),
         }
     }
 }
@@ -307,7 +326,7 @@ impl TerrestrialCarbon {
         temp_factor: FloatValue,
         dt: FloatValue,
     ) -> (FloatValue, FloatValue) {
-        let k_eff = temp_factor / tau;
+        let k_eff = (1.0 / tau) * temp_factor;
         let half_k = 0.5 * k_eff * dt;
 
         let new_pool = ((1.0 - half_k) * pool_current + flux_in * dt) / (1.0 + half_k);
@@ -423,11 +442,15 @@ impl TerrestrialCarbon {
             pools,
             dt,
             None,
+            (0.0, 0.0),
         );
         (result.new_pools, result.net_flux)
     }
 
     /// Full solve returning all diagnostics.
+    ///
+    /// `nitrogen_inputs` holds deposition and prescribed fixation (Gt N/yr).
+    #[allow(clippy::too_many_arguments)]
     fn solve_terrestrial(
         &self,
         state: &mut TerrestrialCarbonState,
@@ -437,6 +460,7 @@ impl TerrestrialCarbon {
         pools: [FloatValue; 3],
         dt: FloatValue,
         current_year: Option<FloatValue>,
+        nitrogen_inputs: (FloatValue, FloatValue),
     ) -> TerrestrialResult {
         assert!(
             (dt - 1.0).abs() < 1e-6,
@@ -480,13 +504,32 @@ impl TerrestrialCarbon {
         let beta_fert = self.fertilization_factor(co2_extrap, co2_ref);
 
         // Step 5: NPP with feedbacks
-        let npp = p.npp_pi * beta_fert * temp_npp;
+        let mut npp = p.npp_pi * beta_fert * temp_npp;
+        let nitrogen = p.nitrogen.as_ref().map(|n| {
+            let (deposition, fixation) = nitrogen_inputs;
+            let drivers = NitrogenDrivers {
+                npp,
+                respiration: state.prev_respiration.unwrap_or(npp),
+                fertilization: beta_fert,
+                temperature_factor: temp_npp,
+                deposition,
+                fixation,
+            };
+            n.solve(
+                &mut state.nitrogen,
+                &drivers,
+                year >= p.fertilization_yrstart,
+            )
+        });
+        if let Some(budget) = &nitrogen {
+            npp *= budget.limitation;
+        }
 
         // Step 6: Respiration (recomputes temp factor internally from `temp`)
         let respiration = self.calculate_respiration(beta_fert, temp, pools[0]);
 
         // Step 7: Time-varying turnover times
-        let cum_lu = state.cumulative_landuse;
+        let cum_lu = state.cumulative_landuse + landuse_emissions * dt;
         let tau_plant = Self::time_varying_tau(
             p.plant_pool_pi,
             p.norgrwth_frac_defo,
@@ -501,12 +544,14 @@ impl TerrestrialCarbon {
             cum_lu,
             p.flux_into_detritus_pi(),
         );
+        let detritus_left =
+            p.detritus_pool_pi - p.norgrwth_frac_defo * p.frac_deforest_detritus * cum_lu;
         let tau_soil = Self::time_varying_tau(
             p.soil_pool_pi,
             p.norgrwth_frac_defo,
             p.frac_deforest_soil(),
             cum_lu,
-            p.flux_into_soil_pi(),
+            p.flux_into_soil(detritus_left, tau_detritus),
         );
 
         // Steps 8-12: MAGICC7 regrowth calculation
@@ -626,13 +671,13 @@ impl TerrestrialCarbon {
             dt,
         );
 
-        // Step 14: Mass conservation correction (ensure non-negative pools)
-        let nf_delta: FloatValue = (0..3)
-            .map(|i| new_nf_pools[i] - state.nofeedback_pools[i])
-            .sum();
+        // Step 14: Mass conservation correction, unfloored as in MAGICC7
+        let [nf_plant, nf_detritus, nf_soil] = state.nofeedback_pools;
+        let nf_delta = (new_nf_pools[2] + new_nf_pools[1] - nf_detritus - nf_soil)
+            + (new_nf_pools[0] - nf_plant);
         let correction = landuse_emissions * dt + nf_delta;
-        new_pools[0] = (new_pools[0] - correction).max(0.0);
-        new_nf_pools[0] = (new_nf_pools[0] - correction).max(0.0);
+        new_pools[0] -= correction;
+        new_nf_pools[0] -= correction;
 
         // Step 15: Calculate net flux and diagnostics
         let total_gross_defo: FloatValue = gross_defo.iter().sum();
@@ -650,6 +695,7 @@ impl TerrestrialCarbon {
         state.cumulative_landuse += landuse_emissions * dt;
         state.co2_history[0] = state.co2_history[1];
         state.co2_history[1] = co2;
+        state.prev_respiration = Some(total_respiration);
 
         TerrestrialResult {
             new_pools,
@@ -658,6 +704,7 @@ impl TerrestrialCarbon {
             total_regrowth,
             npp,
             total_respiration,
+            nitrogen,
         }
     }
 
@@ -684,6 +731,17 @@ impl TerrestrialCarbon {
             self.parameters.tempfeedback_yrstart,
         );
         let landuse = inputs.landuse_emissions.get();
+        let nitrogen_inputs = match &self.parameters.nitrogen {
+            None => (0.0, 0.0),
+            Some(n) => (
+                input_state.get_scalar_window(NITROGEN_DEPOSITION).get(),
+                if n.prognostic_fixation.is_some() {
+                    0.0
+                } else {
+                    input_state.get_scalar_window(NITROGEN_FIXATION).get()
+                },
+            ),
+        };
 
         let plant = inputs.plant_pool.at_start();
         let detritus = inputs.detritus_pool.at_start();
@@ -697,6 +755,7 @@ impl TerrestrialCarbon {
             [plant, detritus, soil],
             dt,
             Some(t_current),
+            nitrogen_inputs,
         );
 
         let outputs = TerrestrialCarbonOutputs {
@@ -710,9 +769,37 @@ impl TerrestrialCarbon {
             total_respiration: result.total_respiration,
         };
 
-        Ok(outputs.into())
+        let mut output: OutputState = outputs.into();
+        if let Some(budget) = result.nitrogen {
+            let values = [
+                budget.limitation,
+                budget.pool,
+                budget.uptake,
+                budget.recycling,
+                budget.losses,
+                budget.fixation,
+                budget.deposition,
+            ];
+            for ((name, _), value) in NITROGEN_OUTPUTS.iter().zip(values) {
+                output.insert(name.to_string(), StateValue::Scalar(value));
+            }
+        }
+        Ok(output)
     }
 }
+
+const NITROGEN_DEPOSITION: &str = "Nitrogen Deposition";
+const NITROGEN_FIXATION: &str = "Nitrogen Fixation";
+
+const NITROGEN_OUTPUTS: [(&str, &str); 7] = [
+    ("Nitrogen Limitation Factor", "1"),
+    ("Nitrogen Pool", "Gt N"),
+    ("Nitrogen Flux|Uptake", "Gt N/yr"),
+    ("Nitrogen Flux|Recycling", "Gt N/yr"),
+    ("Nitrogen Flux|Losses", "Gt N/yr"),
+    ("Nitrogen Flux|Fixation", "Gt N/yr"),
+    ("Nitrogen Flux|Deposition", "Gt N/yr"),
+];
 
 /// Internal result struct for solve_terrestrial.
 struct TerrestrialResult {
@@ -722,6 +809,7 @@ struct TerrestrialResult {
     total_regrowth: FloatValue,
     npp: FloatValue,
     total_respiration: FloatValue,
+    nitrogen: Option<NitrogenBudget>,
 }
 
 impl Default for TerrestrialCarbon {
@@ -733,7 +821,23 @@ impl Default for TerrestrialCarbon {
 #[typetag::serde]
 impl Component for TerrestrialCarbon {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        Self::generated_definitions()
+        let mut definitions = Self::generated_definitions();
+        if let Some(n) = &self.parameters.nitrogen {
+            definitions.push(RequirementDefinition::scalar_input(
+                NITROGEN_DEPOSITION,
+                "Gt N/yr",
+            ));
+            if n.prognostic_fixation.is_none() {
+                definitions.push(RequirementDefinition::scalar_input(
+                    NITROGEN_FIXATION,
+                    "Gt N/yr",
+                ));
+            }
+            for (name, unit) in NITROGEN_OUTPUTS {
+                definitions.push(RequirementDefinition::scalar_output(name, unit));
+            }
+        }
+        definitions
     }
 
     /// Stateless single-timestep solve. Creates a fresh internal state each call,
@@ -808,8 +912,16 @@ mod tests {
         let mut state = TerrestrialCarbonState::default();
         let mut pools = [p.plant_pool_pi, p.detritus_pool_pi, p.soil_pool_pi];
         for _ in 0..10 {
-            let result =
-                component.solve_terrestrial(&mut state, p.co2_pi, 0.0, 2.0, pools, 1.0, None);
+            let result = component.solve_terrestrial(
+                &mut state,
+                p.co2_pi,
+                0.0,
+                2.0,
+                pools,
+                1.0,
+                None,
+                (0.0, 0.0),
+            );
             let balance = result.npp
                 - result.total_respiration
                 - result.gross_deforestation

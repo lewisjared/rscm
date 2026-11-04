@@ -10,6 +10,7 @@ Available Components
 --------------------
 Climate:
 - ClimateUDEBBuilder: 4-box UDEB climate model with ocean diffusion
+- SeaLevelRiseBuilder: Sea level rise from glaciers and ice sheets
 
 Chemistry:
 - CH4ChemistryBuilder: CH4 atmospheric chemistry with Prather iteration
@@ -20,6 +21,7 @@ Carbon Cycle:
 - TerrestrialCarbonBuilder: 3-pool terrestrial carbon cycle (MAGICC7)
 - OceanCarbonBuilder: IRF-based ocean carbon uptake
 - CO2BudgetBuilder: Carbon mass balance integrator
+- PermafrostBuilder: Permafrost thaw releasing CO2 and CH4
 
 Forcing:
 - OzoneForcingBuilder: Stratospheric and tropospheric ozone forcing
@@ -27,7 +29,7 @@ Forcing:
 - AerosolIndirectBuilder: Indirect aerosol cloud effects
 """
 
-from typing import Any, Literal, TypedDict, final
+from typing import Any, Literal, NotRequired, TypeAlias, TypedDict, final
 
 from rscm._lib.core import Component, ComponentBuilder
 
@@ -59,11 +61,14 @@ class ClimateUDEBParams(TypedDict, total=False):
     sh_land_fraction: float
     efficacy_apply: int
     prescribed_efficacy_co2: float
+    regional_forcing: bool
+    time_varying_q2x: bool
     temp_adjust_alpha: float
     temp_adjust_gamma: float
     polar_sinking_ratio: float
     steps_per_year: int
     max_temperature: float
+    thermal_expansion: ThermalExpansionParams | None
 
 @final
 class ClimateUDEBBuilder(ComponentBuilder):
@@ -153,11 +158,133 @@ class ClimateUDEBBuilder(ComponentBuilder):
 
     def initial_values(self, erf: float) -> dict[str, float]:
         """Return initial state and diagnostics at zero temperature anomaly."""
+    def internal_efficacy(self, rf_regions: tuple[float, float, float, float]) -> float:
+        """Return the internal efficacy of an agent with this regional pattern."""
     @staticmethod
     def from_parameters(parameters: ClimateUDEBParams) -> ClimateUDEBBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> Component:
         """Build the UDEB climate model component."""
+
+class ThermalExpansionParams(TypedDict, total=False):
+    """Thermal expansion of the ocean, calculated by ClimateUDEB.
+
+    Setting it makes ClimateUDEB write ``Surface Temperature|Annual Mean`` (K)
+    and ``Sea Level Rise|Thermal Expansion`` (mm).
+    """
+
+    coefficients: tuple[float, float, float, float, float, float]
+    scaling: float
+    start_year: float
+
+class GlacierParams(TypedDict, total=False):
+    """Mountain glaciers and small ice caps."""
+
+    sensitivity: float
+    exponent: float
+    start_year: float
+    equilibrium_temperature: list[float]
+    equilibrium_sea_level: list[float]
+
+class SurfaceMassBalanceParams(TypedDict, total=False):
+    """Surface mass balance of an ice sheet."""
+
+    sensitivity: float
+    linear_fraction: float
+    exponent: float
+    start_year: float
+    volume: float | None
+    volume_exponent: float
+
+class DischargeCaseParams(TypedDict, total=False):
+    """One discharge case of the Greenland ice sheet."""
+
+    volume: float
+    sensitivity: float
+    exponent: float
+
+class GreenlandDischargeParams(TypedDict, total=False):
+    """Greenland solid ice discharge, between a low and a high case."""
+
+    low: DischargeCaseParams
+    high: DischargeCaseParams
+    case: float
+    scaling: float
+    start_year: float
+
+class AntarcticRegionParams(TypedDict):
+    """One Antarctic drainage region."""
+
+    name: str
+    delay: int
+    temperature_scaling: float
+    response: tuple[float, float, float, float, float]
+
+class AntarcticDischargeParams(TypedDict, total=False):
+    """Antarctic solid ice discharge (Levermann et al. 2014)."""
+
+    basal_melt_sensitivity: float
+    response_span: int
+    scaling: float
+    start_year: float
+    regions: list[AntarcticRegionParams]
+
+class SeaLevelRiseParams(TypedDict, total=False):
+    """Parameters for the sea level rise component.
+
+    All fields optional - defaults are MAGICC7's effective defaults.
+    Fields missing from a nested group keep that group's defaults.
+    """
+
+    glaciers: GlacierParams
+    greenland_smb: SurfaceMassBalanceParams
+    greenland_discharge: GreenlandDischargeParams
+    antarctic_smb: SurfaceMassBalanceParams
+    antarctic_discharge: AntarcticDischargeParams
+
+@final
+class SeaLevelRiseBuilder(ComponentBuilder):
+    """Builder for the sea level rise component (MAGICC7 module 14).
+
+    Glaciers, Greenland and Antarctic surface mass balance and solid ice discharge
+    respond to the annual mean warming. Thermal expansion comes from ClimateUDEB
+    with ``thermal_expansion`` set. Steps must be one year long.
+
+    Inputs
+    ------
+    Surface Temperature|Annual Mean : float
+        Mean global surface warming over the step (K)
+    Sea Level Rise|Thermal Expansion : float
+        Thermal expansion of the ocean (mm)
+
+    Outputs
+    -------
+    Sea Level Rise : float
+        Sum of all contributions (mm)
+    Sea Level Rise|Glaciers : float
+        Glaciers and small ice caps (mm)
+    Sea Level Rise|Greenland|Surface Mass Balance : float
+        Greenland surface mass balance (mm)
+    Sea Level Rise|Greenland|Solid Ice Discharge : float
+        Greenland solid ice discharge (mm)
+    Sea Level Rise|Antarctica|Surface Mass Balance : float
+        Antarctic surface mass balance (mm)
+    Sea Level Rise|Antarctica|Solid Ice Discharge : float
+        Antarctic solid ice discharge (mm)
+
+    Examples
+    --------
+    >>> builder = SeaLevelRiseBuilder.from_parameters(
+    ...     {"glaciers": {"start_year": 1850}}
+    ... )
+    >>> component = builder.build()
+    """
+
+    @staticmethod
+    def from_parameters(parameters: SeaLevelRiseParams) -> SeaLevelRiseBuilder:  # type: ignore[override]
+        """Create a builder from a parameter dictionary."""
+    def build(self) -> Component:
+        """Build the sea level rise component."""
 
 # Chemistry Components
 
@@ -169,6 +296,7 @@ class CH4ChemistryParams(TypedDict, total=False):
 
     feedback_start_year: float
     natural_emissions: float
+    permafrost: bool
     tau_total_init: float
     tau_soil: float
     tau_strat: float
@@ -181,6 +309,7 @@ class CH4ChemistryParams(TypedDict, total=False):
     temp_sensitivity: float
     include_temp_feedback: bool
     include_emissions_feedback: bool
+    concentration_switch_year: float | None
     ppb_to_tg: float
     mixbox_size: float
 
@@ -251,6 +380,8 @@ class CH4ChemistryBuilder(ComponentBuilder):
     -------
     Lifetime|CH4 : float
         CH4 atmospheric lifetime (years)
+    Lifetime|CH4|Effective : float
+        Start-of-year burden over the CH4 removed during the step (years)
 
     Examples
     --------
@@ -276,14 +407,21 @@ class CH4OxidationParams(TypedDict, total=False):
     """
 
     carbon_per_ch4: float
+    permafrost: bool
+    permafrost_fraction: float
+    ppb_to_tg: float
+    mixbox_size: float
+    tau_other: float
+    natural_emissions: float
 
 @final
 class CH4OxidationBuilder(ComponentBuilder):
     """Builder for the fossil CH4 oxidation component.
 
-    Tracks fossil CH4 in the atmosphere and the CO2 released as it is
-    oxidised, which MAGICC7 adds to fossil CO2 emissions. Register it after
-    the CH4 chemistry component so that it reads the same step's lifetime.
+    Tracks atmospheric CH4 by source and the CO2 released as its fossil share
+    is oxidised, which MAGICC7 adds to fossil CO2 emissions. The CH4 budget
+    parameters must match the CH4 chemistry component, and it must be registered
+    after it so that it reads the same step's concentration and lifetime.
 
     # Parameters
     # ----------
@@ -292,15 +430,19 @@ class CH4OxidationBuilder(ComponentBuilder):
 
     Inputs
     ------
-    Emissions|CH4|Fossil : float
-        Fossil and industrial CH4 emissions (Mt CH4/yr)
-    Lifetime|CH4 : float
-        Total CH4 lifetime (years)
+    Atmospheric Concentration|CH4 : float
+        CH4 concentration at the start and end of the step (ppb)
+    Lifetime|CH4|OH : float
+        OH lifetime over the step (years)
+    Emissions|CH4|Fossil, Emissions|CH4|AFOLU : float
+        Anthropogenic CH4 emissions by sector (Mt CH4/yr)
 
     States
     ------
-    Atmospheric Burden|CH4|Fossil : float
-        Fossil CH4 in the atmosphere (Mt CH4)
+    Atmospheric Burden|CH4|Fossil, Atmospheric Burden|CH4|AFOLU : float
+        Anthropogenic CH4 in the atmosphere (Mt CH4)
+    Atmospheric Burden|CH4|Natural, Atmospheric Burden|CH4|Permafrost : float
+        Natural and permafrost CH4 in the atmosphere (Mt CH4)
 
     Outputs
     -------
@@ -330,6 +472,7 @@ class N2OChemistryParams(TypedDict, total=False):
     meridional_flux_change_per_degree: float
     tau_sensitivity_to_meridional_flux: float
     meridional_flux_reference_year: float
+    concentration_switch_year: float | None
 
 @final
 class N2OChemistryBuilder(ComponentBuilder):
@@ -396,51 +539,77 @@ class N2OChemistryBuilder(ComponentBuilder):
     def build(self) -> Component:
         """Build the N2O chemistry component."""
 
+class HalocarbonSpecies(TypedDict):
+    """A halocarbon species. Lifetimes in yr, radiative efficiency in W/m²/ppb."""
+
+    name: str
+    tau_total: float
+    tau_oh: float
+    tau_strat: float
+    radiative_efficiency: float
+    concentration_pi: float
+    molecular_mass: float
+    n_cl: int
+    n_br: int
+    fractional_release: float
+    mix_box_size: NotRequired[float]
+
+class FgasRegions(TypedDict, total=False):
+    """Regional pattern of F-gas forcing.
+
+    Species with lifetimes of at least ``upper_tau`` follow ``rf_regions``
+    normalised globally. Those below ``lower_tau`` follow it normalised within
+    each hemisphere, scaled by each hemisphere's share of fossil CO2 emissions.
+    Lifetimes in between mix the two linearly.
+    """
+
+    rf_regions: tuple[float, float, float, float]
+    lower_tau: float
+    upper_tau: float
+    nh_land_fraction: float
+    sh_land_fraction: float
+
 class HalocarbonChemistryParams(TypedDict, total=False):
     """Parameters for halocarbon chemistry component.
 
-    All fields optional - defaults provided by Rust.
+    All fields optional, defaults provided by Rust.
     """
 
-    br_multiplier: float
-    cfc11_release_normalisation: float
-    eesc_delay: float
+    fgases: list[HalocarbonSpecies]
+    montreal_gases: list[HalocarbonSpecies]
+    br_vs_cl_scale: float
+    cfc11_release_factor: float
+    eesc_delay: int
     air_molar_mass: float
-    atmospheric_mass_tg: float
-    mixing_box_fraction: float
+    atmosphere_mass: float
+    variable_oh_lifetime: bool
+    ch4_oh_lifetime_init: float
+    variable_strat_lifetime: bool
+    meridional_flux_year: float
+    meridional_flux_per_degree: float
+    strat_lifetime_sensitivity: float
+    fgas_switch_year: float | None
+    mhalo_switch_year: float | None
+    fgas_regions: FgasRegions | None
+    """Makes ``Effective Radiative Forcing|F-Gases`` a four-box output."""
 
 @final
 class HalocarbonChemistryBuilder(ComponentBuilder):
     """Builder for the halocarbon chemistry component.
 
-    Implements exponential decay for F-gases and Montreal Protocol gases,
-    calculating concentrations and EESC (Equivalent Effective Stratospheric Chlorine).
-
-    # Parameters
-    # ----------
-    # fgases : list[dict]
-    #     F-gas species data (HFCs, PFCs, SF6, etc.). Each dict contains:
-    #     name, lifetime, radiative_efficiency, concentration_pi, molecular_weight,
-    #     n_cl, n_br, fractional_release
-    # montreal_gases : list[dict]
-    #     Montreal Protocol gases (CFCs, HCFCs, halons). Same format as fgases
-    # br_multiplier : float
-    #     Bromine efficiency multiplier for EESC. Default: 60.0
-    # cfc11_release_normalisation : float
-    #     CFC-11 fractional release factor for EESC normalisation. Default: 0.47
-    # eesc_delay : float
-    #     EESC stratospheric mixing delay (years). Default: 3.0
-    # air_molar_mass : float
-    #     Molar mass of air (g/mol). Default: 28.97
-    # atmospheric_mass_tg : float
-    #     Total atmospheric mass (Tg). Default: 5.133e9
-    # mixing_box_fraction : float
-    #     Effective mixing box fraction. Default: 0.949
+    Concentrations, forcing and EESC of F-gases and Montreal Protocol gases,
+    following MAGICC7 Module 03.
 
     Inputs
     ------
     Emissions|{Species} : float
         Emissions for each halocarbon species (kt/yr)
+    Lifetime|CH4|OH : float
+        CH4 OH lifetime (yr), which scales OH lifetimes
+    Surface Temperature : float
+        Warming (K), which shortens stratospheric lifetimes
+    Emissions|CO2|Fossil : float
+        Fossil CO2 emissions (GtC/yr), read with ``fgas_regions``
 
     States
     ------
@@ -449,23 +618,16 @@ class HalocarbonChemistryBuilder(ComponentBuilder):
 
     Outputs
     -------
-    Forcing|Halocarbons : float
-        Total halocarbon forcing (W/m^2)
-    Forcing|F-gases : float
-        F-gas forcing (W/m^2)
-    Forcing|Montreal Gases : float
-        Montreal Protocol gas forcing (W/m^2)
+    Effective Radiative Forcing|F-Gases : float or FourBox
+        F-gas ERF (W/m²), four-box with ``fgas_regions``
+    Effective Radiative Forcing|Montreal Protocol Halogen Gases : float
+        Montreal Protocol gas ERF (W/m²)
     EESC : float
         Equivalent Effective Stratospheric Chlorine (ppt)
 
     Examples
     --------
-    >>> builder = HalocarbonChemistryBuilder.from_parameters(
-    ...     {
-    ...         "br_multiplier": 60.0,
-    ...         "eesc_delay": 3.0,
-    ...     }
-    ... )
+    >>> builder = HalocarbonChemistryBuilder.from_parameters({"eesc_delay": 3})
     >>> component = builder.build()
     """
 
@@ -509,6 +671,28 @@ class TerrestrialCarbonParams(TypedDict, total=False):
     frac_deforest_plant: float
     frac_deforest_detritus: float
     norgrwth_frac_defo: float
+    nitrogen: NitrogenParams | None
+
+class PrognosticFixationParams(TypedDict):
+    """Michaelis-Menten nitrogen fixation from NPP."""
+
+    vmax: float
+    km: float
+
+class NitrogenParams(TypedDict, total=False):
+    """Parameters for the nitrogen limitation of NPP (MAGICC7 module 13).
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    ncratio_uptake: float
+    ncratio_recycling: float
+    recycling_cn_factor: float
+    uptake_supply: float
+    availability_factor_a: float
+    availability_factor_c: float
+    loss_turnover_time: float
+    prognostic_fixation: PrognosticFixationParams | None
 
 @final
 class TerrestrialCarbonBuilder(ComponentBuilder):
@@ -527,6 +711,11 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
         warming since ``tempfeedback_yrstart``, floored at zero.
     Emissions|CO2|Land Use : float
         Land use change CO2 emissions (GtC/yr)
+    Nitrogen Deposition : float
+        Nitrogen deposition (Gt N/yr), only with ``nitrogen``
+    Nitrogen Fixation : float
+        Nitrogen fixation (Gt N/yr), only with ``nitrogen`` and no
+        ``prognostic_fixation``
 
     States
     ------
@@ -549,6 +738,12 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
         NPP with feedbacks (GtC/yr)
     Respiration|Terrestrial : float
         Total terrestrial respiration (GtC/yr)
+    Nitrogen Limitation Factor : float
+        Factor applied to NPP, only with ``nitrogen``
+    Nitrogen Pool : float
+        Plant-available nitrogen pool (Gt N), only with ``nitrogen``
+    Nitrogen Flux|Uptake, Recycling, Losses, Fixation, Deposition : float
+        Nitrogen budget (Gt N/yr), only with ``nitrogen``
 
     Examples
     --------
@@ -596,6 +791,8 @@ class OceanCarbonParams(TypedDict, total=False):
     tempfeedback_yrstart: float
     flux_change_limit: float
     gtc_per_ppm: float
+    permafrost: bool
+    concentration_switch_year: float | None
 
 @final
 class OceanCarbonBuilder(ComponentBuilder):
@@ -687,7 +884,10 @@ class CO2BudgetParams(TypedDict, total=False):
     """
 
     gtc_per_ppm: float
+    permafrost: bool
     co2_pi: float
+    concentration_switch_year: float | None
+    ocean_end_of_year: bool
 
 @final
 class CO2BudgetBuilder(ComponentBuilder):
@@ -712,6 +912,8 @@ class CO2BudgetBuilder(ComponentBuilder):
         Net atmosphere-to-land flux, including land-use emissions (GtC/yr)
     Carbon Flux|Ocean : float
         Ocean carbon uptake (GtC/yr)
+    Atmospheric Concentration|CO2|Prescribed : float
+        Concentration used up to ``concentration_switch_year`` (ppm)
 
     States
     ------
@@ -742,98 +944,137 @@ class CO2BudgetBuilder(ComponentBuilder):
     def build(self) -> Component:
         """Build the CO2 budget component."""
 
+class PermafrostSoilParams(TypedDict, total=False):
+    """Parameters of one permafrost soil type (mineral soil or peat)."""
+
+    thaw_rate: float
+    thaw_exponent: float
+    decomposition_ratio: float
+    q10_aerobic_alpha: float
+    q10_anaerobic_alpha: float
+    anaerobic_initial_fraction: float
+    anaerobic_max_fraction: float
+    anaerobic_moisture_sensitivity: float
+    ch4_oxidation_fraction: float
+
+class PermafrostParams(TypedDict, total=False):
+    """Parameters for the permafrost component.
+
+    All fields optional - defaults provided by Rust.
+    Fields missing from ``mineral_soil`` or ``peat`` keep that soil's defaults.
+    """
+
+    n_bands: int
+    melting_temp_min: float
+    melting_temp_max: float
+    arctic_amplification: float
+    soil_annual_cycle_amplitude: float
+    aerobic_turnover_time: float
+    anaerobic_decomposition_ratio: float
+    q10_temp1: float
+    q10_temp2: float
+    soil_water_slope: float
+    soil_water_offset: float
+    soil_water_min: float
+    total_pool: float
+    mineral_soil_fraction_south: float
+    mineral_soil_fraction_north: float
+    zonal_pool_distribution: float
+    mineral_soil: PermafrostSoilParams
+    peat: PermafrostSoilParams
+
+@final
+class PermafrostBuilder(ComponentBuilder):
+    """Builder for the permafrost carbon feedback component (MAGICC7 module 12).
+
+    Thaws zonal bands of mineral soil and peat carbon as Arctic warming exceeds
+    each band's melting threshold, then decomposes the thawed carbon to CO2 and CH4.
+    Set ``permafrost`` on CH4 chemistry, CH4 oxidation, ocean carbon and the CO2
+    budget to feed the emissions back.
+
+    Inputs
+    ------
+    Surface Temperature : float
+        Global mean surface temperature anomaly (K)
+
+    Outputs
+    -------
+    Emissions|CO2|Permafrost : float
+        CO2 released from permafrost (GtC/yr)
+    Emissions|CH4|Permafrost : float
+        CH4 released from permafrost (Mt CH4/yr)
+    Permafrost Thawed Area : float
+        Carbon weighted thawed fraction of the permafrost region
+
+    Examples
+    --------
+    >>> builder = PermafrostBuilder.from_parameters({"total_pool": 800.0})
+    >>> component = builder.build()
+    """
+
+    @staticmethod
+    def from_parameters(parameters: PermafrostParams) -> PermafrostBuilder:  # type: ignore[override]
+        """Create a builder from a parameter dictionary."""
+    def build(self) -> Component:
+        """Build the permafrost component."""
+
 # Forcing Components
 
 class OzoneForcingParams(TypedDict, total=False):
-    """Parameters for ozone forcing component.
+    """Parameters for the ozone forcing component.
 
     All fields optional - defaults provided by Rust.
     """
 
-    eesc_reference: float
     strat_o3_scale: float
     strat_cl_exponent: float
+    strat_threshold_year: float
     trop_radeff: float
     trop_oz_ch4: float
     trop_oz_nox: float
     trop_oz_co: float
     trop_oz_voc: float
-    ch4_pi: float
-    nox_pi: float
-    co_pi: float
-    nmvoc_pi: float
-    temp_feedback_scale: float
+    n2o_radeff: float
+    temperature_scale: float
+    trop_regions: TropOzoneRegions | None
+
+class TropOzoneRegions(TypedDict, total=False):
+    """Regional pattern of tropospheric ozone forcing, normalised per hemisphere."""
+
+    rf_regions: list[float]
+    nh_land_fraction: float
+    sh_land_fraction: float
 
 @final
 class OzoneForcingBuilder(ComponentBuilder):
-    """Builder for the ozone forcing component.
+    """Builder for the ozone forcing component (MAGICC7 Module 04).
 
-    Calculates stratospheric and tropospheric ozone radiative forcing with
-    temperature feedback.
-
-    # Parameters
-    # ----------
-    # eesc_reference : float
-    #     EESC reference value at threshold year (ppt). Default: 1420.0
-    # strat_o3_scale : float
-    #     Stratospheric ozone forcing scale (W/m^2). Default: -0.0043
-    # strat_cl_exponent : float
-    #     Power-law exponent for EESC-RF relationship. Default: 1.7
-    # trop_radeff : float
-    #     Tropospheric radiative efficiency (W/m^2/DU). Default: 0.032
-    # trop_oz_ch4 : float
-    #     Ozone change per ln(CH4/CH4_pi) (DU). Default: 5.7
-    # trop_oz_nox : float
-    #     NOx sensitivity (DU/(Mt N/yr)). Default: 0.168
-    # trop_oz_co : float
-    #     CO sensitivity (DU/(Mt CO/yr)). Default: 0.00396
-    # trop_oz_voc : float
-    #     NMVOC sensitivity (DU/(Mt NMVOC/yr)). Default: 0.01008
-    # ch4_pi : float
-    #     Pre-industrial CH4 concentration (ppb). Default: 700.0
-    # nox_pi : float
-    #     Pre-industrial NOx emissions (Mt N/yr). Default: 0.0
-    # co_pi : float
-    #     Pre-industrial CO emissions (Mt CO/yr). Default: 0.0
-    # nmvoc_pi : float
-    #     Pre-industrial NMVOC emissions (Mt NMVOC/yr). Default: 0.0
-    # temp_feedback_scale : float
-    #     Temperature feedback coefficient (W/m^2/K). Default: -0.037
+    Changes are relative to the first year of the run.
 
     Inputs
     ------
     EESC : float
-        Equivalent Effective Stratospheric Chlorine (ppt)
+        Equivalent effective stratospheric chlorine (ppt)
     Atmospheric Concentration|CH4 : float
         CH4 concentration (ppb)
-    Emissions|NOx : float
-        NOx emissions (Mt N/yr)
-    Emissions|CO : float
-        CO emissions (Mt CO/yr)
-    Emissions|NMVOC : float
-        NMVOC emissions (Mt NMVOC/yr)
-    Surface Temperature|Global : float
-        Global mean surface temperature anomaly (K)
+    Atmospheric Concentration|N2O : float
+        N2O concentration (ppb)
+    Emissions|{NOx,CO,NMVOC}|{Fossil,AFOLU} : float
+        Precursor emissions by sector (Mt N/yr, Mt CO/yr, Mt NMVOC/yr), lagged by a year
+    Surface Temperature : float
+        Global mean surface temperature anomaly (K), lagged by a year
 
     Outputs
     -------
-    Effective Radiative Forcing|O3|Stratospheric : float
-        Stratospheric ozone forcing (W/m^2)
-    Effective Radiative Forcing|O3|Tropospheric : float
-        Tropospheric ozone forcing (W/m^2)
-    Effective Radiative Forcing|O3|Temperature Feedback : float
-        Ozone temperature feedback forcing (W/m^2)
-
-    Examples
-    --------
-    >>> builder = OzoneForcingBuilder.from_parameters(
-    ...     {
-    ...         "eesc_reference": 1420.0,
-    ...         "strat_o3_scale": -0.0043,
-    ...         "trop_radeff": 0.032,
-    ...     }
-    ... )
-    >>> component = builder.build()
+    Effective Radiative Forcing|Stratospheric Ozone : float
+        Stratospheric ozone forcing from EESC above its threshold-year value (W/m^2)
+    Effective Radiative Forcing|Tropospheric Ozone : float or FourBox
+        Tropospheric ozone forcing from CH4 and precursors (W/m^2),
+        four-box with ``trop_regions``
+    Effective Radiative Forcing|Ozone due to N2O : float
+        Ozone forcing from N2O (W/m^2)
+    Effective Radiative Forcing|Ozone due to Temperature : float
+        Ozone response to warming (W/m^2)
     """
 
     @staticmethod
@@ -1041,6 +1282,7 @@ class GhgForcingParams(TypedDict, total=False):
     adjust_co2: float
     adjust_ch4: float
     adjust_n2o: float
+    ch4_strat_h2o_fraction: float
 
 @final
 class GhgForcingBuilder(ComponentBuilder):
@@ -1086,6 +1328,10 @@ class GhgForcingBuilder(ComponentBuilder):
         CH4 effective radiative forcing (W/m^2)
     Effective Radiative Forcing|N2O : float
         N2O effective radiative forcing (W/m^2)
+    Effective Radiative Forcing|2xCO2 : float
+        ERF of doubling CO2 at the current concentrations (W/m^2)
+    Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O : float
+        Stratospheric H2O forcing from CH4 oxidation (W/m^2)
 
     Examples
     --------
@@ -1117,3 +1363,79 @@ class GhgForcingBuilder(ComponentBuilder):
         CH4 and N2O are held at their preindustrial references. MAGICC7 derives
         its climate feedback from this value.
         """
+
+# Forcing aggregation
+
+class ForcingAgent(TypedDict, total=False):
+    """A forcing agent read by ForcingAggregation. Only ``variable`` is required."""
+
+    variable: str
+    regional: bool
+    rf_regions: tuple[float, float, float, float]
+    hemispheric: bool
+    efficacy: float
+    internal_efficacy: float
+    sum_of: list[str]
+    """Variables added in order into this agent before its efficacy applies.
+
+    Empty reads ``variable`` itself.
+    """
+
+ForcingTerm: TypeAlias = str | list["ForcingTerm"]
+"""An agent ``variable``, or a list of terms summed before the enclosing sum."""
+
+class EfficacyClimate(TypedDict, total=False):
+    """Climate settings for recalculating internal efficacies each year.
+
+    The efficacies come from LAMCALC at the previous year's
+    ``Equilibrium Climate Sensitivity`` and ``Effective Radiative Forcing|2xCO2``.
+    """
+
+    ecs: float
+    rf_2xco2: float
+    k_lo: float
+    k_ns: float
+    rlo: float
+    amplify_ocean_to_land: float
+    rf_regions_co2: tuple[float, float, float, float]
+
+class ForcingAggregationParams(TypedDict, total=False):
+    """Parameters for ForcingAggregation."""
+
+    agents: list[ForcingAgent]
+    summation: list[ForcingTerm]
+    """Order in which agents are added, by ``variable``.
+
+    Nested lists are added first. Empty adds the agents in order.
+    """
+    efficacy_apply: int
+    nh_land_fraction: float
+    sh_land_fraction: float
+    climate: EfficacyClimate
+
+@final
+class ForcingAggregationBuilder(ComponentBuilder):
+    """Builder for the component combining agent ERF into four-box climate forcing.
+
+    Reads each agent's ERF and writes the total ERF and the four-box
+    ``Effective Radiative Forcing|Efficacy Adjusted`` read by ClimateUDEB
+    when ``regional_forcing`` is set.
+    """
+
+    @staticmethod
+    def from_parameters(  # type: ignore[override]
+        parameters: ForcingAggregationParams,
+    ) -> ForcingAggregationBuilder:
+        """Create a builder from a parameter dictionary."""
+    def aggregate(
+        self, values: list[list[float]]
+    ) -> tuple[float, tuple[float, float, float, float]]:
+        """Return total ERF and box forcing from each agent's value or box values."""
+    def internal_efficacies(self, ecs: float, q_2xco2: float) -> list[float]:
+        """Return the internal efficacy of each agent at climate sensitivity ``ecs``.
+
+        ``q_2xco2`` is the CO2 doubling forcing in W/m².
+        Without ``climate`` these are the agents' own ``internal_efficacy``.
+        """
+    def build(self) -> Component:
+        """Build the forcing aggregation component."""

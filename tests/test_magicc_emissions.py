@@ -127,6 +127,31 @@ def test_carbon_conversion_shared_between_budget_and_ocean():
         )
 
 
+def test_ch4_budget_shared_between_chemistry_and_oxidation():
+    concentration = "Atmospheric Concentration|CH4"
+    chemistry_only = run(emissions(), parameters={"CH4Chemistry": {"ppb_to_tg": 3.0}})
+    oxidation_only = run(emissions(), parameters={"CH4Oxidation": {"ppb_to_tg": 3.0}})
+    npt.assert_array_equal(
+        chemistry_only.values[concentration], oxidation_only.values[concentration]
+    )
+    with pytest.raises(ValueError, match="natural_emissions"):
+        run(
+            emissions(),
+            parameters={
+                "CH4Chemistry": {"natural_emissions": 200.0},
+                "CH4Oxidation": {"natural_emissions": 210.0},
+            },
+        )
+    with pytest.raises(ValueError, match="tau_other"):
+        run(
+            emissions(),
+            parameters={
+                "CH4Chemistry": {"tau_soil": 100.0},
+                "CH4Oxidation": {"tau_other": 50.0},
+            },
+        )
+
+
 def test_invalid_inputs_rejected():
     with pytest.raises(ValueError, match="Unknown component"):
         run(emissions(), parameters={"Ozone": {}})

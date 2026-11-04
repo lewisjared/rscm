@@ -143,7 +143,9 @@ The third term represents entrainment from the narrowing ocean basin.
 
 The vertical diffusivity varies with the top-to-bottom temperature gradient:
 
-$$K(z, t) = \max\left(K_{min}, K_0 + \frac{dK}{dT} \cdot (1 - z/z_{max}) \cdot (T_1 - T_{bottom})\right)$$
+$$K_l(t) = \max\left(K_{min}, K_0 + \frac{dK}{dT} \cdot \left(1 - \frac{l}{n - 1}\right) \cdot (T_1 - T_{bottom})\right)$$
+
+$l$ counts layer boundaries from 0 at the base of the mixed layer, and $n$ is the number of layers.
 
 Where:
 
@@ -672,15 +674,25 @@ The following gaps exist between the current RSCM implementation and MAGICC7 beh
 
 **LAMCALC regional CO2 forcing** -- RSCM now uses the MAGICC7 default `RF_REGIONS_CO2 = [1.4089, 1.37045, 1.43333, 1.33257]` from `MAGCFG_DEFAULTALL.CFG`. The LAMCALC solver applies per-box `qfrac` forcing fractions when computing equilibrium temperatures, matching MAGICC7.f90 lines 8146-8275.
 
-**alpha_eff update frequency** -- RSCM now updates `alpha_eff` once per annual timestep from the prior year's end-of-year SST, matching MAGICC7 behaviour. All monthly substeps within a year use the same fixed `alpha_eff`.
+**alpha_eff update frequency** -- RSCM updates `alpha_eff` every monthly substep from the previous substep's SST, as MAGICC7 does.
+Holding it fixed for the year leaves a cold drift of about 1e-5 K by 2000.
 
-**CO2 internal efficacy computed** -- RSCM now computes the CO2 internal efficacy after LAMCALC converges by comparing the CO2 regional temperature response to the ECS-implied response. The `calc_internal_efficacy()` function is public and can compute efficacy for any agent's regional forcing pattern. When `efficacy_apply = 2` (AR6 mode), effective forcing is adjusted by `prescribed_efficacy / internal_efficacy`. Multi-agent efficacy application is a future phase.
+**CO2 internal efficacy computed** -- RSCM now computes the CO2 internal efficacy after LAMCALC converges by comparing the CO2 regional temperature response to the ECS-implied response. The `calc_internal_efficacy()` function is public and can compute efficacy for any agent's regional forcing pattern. When `efficacy_apply = 2` (AR6 mode), effective forcing is adjusted by `prescribed_efficacy / internal_efficacy`.
+
+**Non-CO2 internal efficacies** -- `ForcingAggregation` applies an internal efficacy to every forcing agent.
+As in MAGICC7, LAMCALC recalculates them each year from the previous year's climate sensitivity and CO2 doubling forcing,
+so they drift as the climate warms.
+
+**Volcanic forcing** -- MAGICC7 derives the volcanic regional pattern from the run itself:
+the mean monthly box forcing, scaled by `RF_VOLCANIC_SCALE`, from the first year to the end of `RF_VOLC_FORC_PATTERN_MAX_LAST_YEAR`, less its global mean and 1.
+`rscm.magicc.prescribed.volcanic_pattern` reproduces it.
+Monthly substeps take the volcanic internal efficacy of the year they end in.
+Substeps 1 to 11 therefore use the previous year's value and substep 12 the current one.
+The first year keeps the initial value.
 
 #### Open
 
-**Non-CO2 internal efficacies not applied**
-
-MAGICC7 computes internal efficacies for each non-CO2 forcing agent (~20 agents) by repeating the equilibrium temperature calculation with that agent's regional forcing pattern. RSCM currently only computes and applies the CO2 internal efficacy. Per-agent efficacy computation infrastructure (`calc_internal_efficacy`) is in place but not yet wired to the multi-agent forcing pipeline.
+None. The default run's temperature matches MAGICC7's binary output from 1750 to 2104.
 
 ## 10. Test Cases
 

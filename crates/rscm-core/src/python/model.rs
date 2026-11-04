@@ -1,6 +1,6 @@
 use crate::model::{Model, ModelBuilder};
 use crate::python::component::PyPythonComponent;
-use crate::python::timeseries::{PyTimeAxis, PyTimeseries};
+use crate::python::timeseries::{PyFourBoxTimeseries, PyTimeAxis, PyTimeseries};
 use crate::python::timeseries_collection::PyTimeseriesCollection;
 use crate::python::PyRustComponent;
 use crate::schema::VariableSchema;
@@ -57,6 +57,14 @@ impl PyModelBuilder {
         self_
     }
 
+    fn with_initial_grid_values(
+        mut self_: PyRefMut<Self>,
+        initial_values: HashMap<String, Vec<FloatValue>>,
+    ) -> PyRefMut<Self> {
+        self_.0.with_initial_grid_values(initial_values);
+        self_
+    }
+
     fn with_exogenous_variable<'py>(
         mut self_: PyRefMut<'py, Self>,
         name: &str,
@@ -65,6 +73,17 @@ impl PyModelBuilder {
         self_
             .0
             .with_exogenous_variable(name, timeseries.borrow().0.clone());
+        self_
+    }
+
+    fn with_exogenous_four_box_variable<'py>(
+        mut self_: PyRefMut<'py, Self>,
+        name: &str,
+        timeseries: Bound<'py, PyFourBoxTimeseries>,
+    ) -> PyRefMut<'py, Self> {
+        self_
+            .0
+            .with_exogenous_four_box_variable(name, timeseries.borrow().0.clone());
         self_
     }
 

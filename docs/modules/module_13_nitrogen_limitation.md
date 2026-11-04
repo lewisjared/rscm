@@ -1,5 +1,36 @@
 # Module 13: Nitrogen Limitation
 
+## RSCM implementation
+
+`TerrestrialCarbon` applies the limitation when its `nitrogen` parameters are set
+(`crates/rscm-magicc/src/carbon/nitrogen.rs`).
+It reproduces MAGICC7 v7.5.3 in the coupled SSP245 run with deposition from emissions.
+Temperature and concentrations match MAGICC7's binary output.
+The pool, limitation factor and NPP appear only in CARBONCYCLE.OUT, and match it to its print precision.
+Comparison with MAGICC7 runs settled these points the pseudocode below leaves open:
+
+- `NCYCLE_RECYC2CNRATIO_FACTOR` defaults to 0, so recycling is divided by
+  the CO2 fertilisation and NPP temperature factors.
+- Recycling uses the previous year's total respiration, and NPP in the first year.
+- The availability function takes the NPP before limitation.
+  Its reference is the pool and NPP of the last year before `CO2_FERTILIZATION_YRSTART`.
+- Deposition from emissions counts industrial NH3 twice, as section 10.1 describes.
+  RSCM keeps this.
+- `NCYCLE_NDEP.IN` is missing from v7.5.3, so file deposition is zero.
+- With `NCYCLE_APPLY_NDEP_FROM_EMIS` the diagnostic fluxes in CARBONCYCLE.OUT
+  miss the deposition term, so they do not close.
+  RSCM reports fluxes that close and matches the pool and limitation factor.
+
+`rscm.magicc.full.run_magicc7` reads `ncycle_apply` and the `ncycle_*` parameters.
+
+The bisection makes the coupled run chaotic, in MAGICC7 as in RSCM.
+Both use the same interval, tolerance, iteration count and update rule,
+so the pool lands on a grid of 1100/2^27 = 8.2e-6 Gt N.
+A rounding-level change in the inputs flips the pool by one grid step,
+which feeds back through NPP, CO2 and temperature.
+A 1e-13 relative change in one year's fossil CO2 emissions moves 2100 CO2 by 0.03 ppm and temperature by 3e-5 K.
+RSCM matches MAGICC7 only because it repeats MAGICC7's floating-point operations closely enough to land on the same steps.
+
 ## 1. Scientific Purpose
 
 The Nitrogen Limitation module represents the constraint that nitrogen availability places on terrestrial carbon uptake in the global carbon cycle. In natural ecosystems, plant growth is often limited not just by CO2 and temperature but by available nitrogen in soils. As atmospheric CO2 increases, the "CO2 fertilization effect" drives higher potential NPP (Net Primary Production), but this enhanced growth requires proportionally more nitrogen. If soil nitrogen cannot keep pace with carbon demand, the effective CO2 fertilization is reduced.
@@ -188,7 +219,7 @@ The module uses a **bisection root-finding method** to solve for N where dN/dt =
 | N Dep from Emissions | `NCYCLE_APPLY_NDEP_FROM_EMIS` | flag | 0 | 0, 1 | Calculate N deposition from NOx/NH3 emissions |
 | Sensitivity Factor A | `NCYCLE_NPP2NAVAIL_FACTOR_A` | dimensionless | 2.0 | >0 | Non-linear NPP-N sensitivity parameter |
 | Sensitivity Factor C | `NCYCLE_NPP2NAVAIL_FACTOR_C` | dimensionless | 2.0 | >0 | Non-linear NPP-N sensitivity exponent |
-| Recycling-to-CN Factor | `NCYCLE_RECYC2CNRATIO_FACTOR` | dimensionless | (unset) | >0 | Recycling adjustment factor |
+| Recycling-to-CN Factor | `NCYCLE_RECYC2CNRATIO_FACTOR` | dimensionless | 0 | >0 | Recycling adjustment factor |
 | Recycling N:C Ratio | `NCYCLE_NCRATIO_RECYC` | mol N/mol C | 0.013 | >0 | N:C ratio for recycling flux |
 | Uptake N:C Ratio | `NCYCLE_NCRATIO_UPTAKE` | mol N/mol C | 0.013 | >0 | N:C ratio for plant uptake |
 | Uptake Supply Parameter | `NCYCLE_NCRATIO_UPTAKE_SUPPLY` | Pg N | 0.05 | >0 | Michaelis-Menten half-saturation for N supply |

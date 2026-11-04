@@ -106,11 +106,12 @@ This means ocean pCO2 increases ~10-15 times faster than DIC, which is why ocean
 
 ### 2.6 Conventions Verified Against MAGICC7 Output
 
-Reproducing v7.5.3 SSP245 emissions-driven CO2 to within 0.02 ppm fixed these details:
+Reproducing v7.5.3 SSP245 emissions-driven CO2 to its print precision fixed these details:
 
 - $pCO2_0$ is the first-year atmospheric CO2, so the ocean starts in equilibrium.
 - After the switch time the IRF is the late form multiplied by $IRF_{scaled}(t_s) / IRF(t_s)$,
-  evaluated with the late form at the switch time $t_s$.
+  evaluated with the early form at the switch time $t_s$.
+- The IRF coefficients carry more digits than Joos et al. (2001), as listed in section 11.3.
 - $\Delta T_{SST}$ is the global surface warming since `CO2_TEMPFEEDBACK_YRSTART`, floored at zero.
 - Atmospheric CO2 is updated every month inside the loop, from fossil emissions,
   CO2 from fossil CH4 oxidation and the annual land flux.
@@ -311,6 +312,11 @@ FOR month = 1 to 12:
 END FOR  # monthly loop
 ```
 
+The interpolation is linear in the month,
+from the concentration at the start of the year to the prescribed value at its end.
+`CARBONCYCLE.OUT` labels `AIR2OCEAN_FLUX` with the end of the year in these years,
+one year later than in emissions-driven years.
+
 ### 7.4 IRF Convolution for Delta DIC
 
 ```
@@ -429,7 +435,8 @@ Where:
 - `OCEAN_PPM_PER_MOL` = 5.65770e-15 ppm/mol
 - `OCEANCC_DENSITY_KG_PER_M3` = 1026.5 kg/m^3
 
-This evaluates to approximately 1.72e17 micromol ppm^-1 m^3 kg^-1.
+This evaluates to 1.72187e17 micromol ppm^-1 m^3 kg^-1.
+The DIC change per unit of the convolution integral is this constant over the mixed layer depth times the ocean area.
 
 ## 9. Issues and Concerns
 
@@ -736,7 +743,7 @@ Run for 500 years
 
 ```fortran
 irf_polynomial_coefficients = (/ &
-    1.0, -2.2617, 14.002, -48.770, 82.986, -67.527, 21.037 &
+    1.0, -2.261725, 14.00231, -48.77024, 82.98591, -67.52663, 21.0369 &
 /)
 ```
 
@@ -744,10 +751,10 @@ irf_polynomial_coefficients = (/ &
 
 ```fortran
 irf_exponential_coefficients = (/ &
-    0.01481, 0.019439, 0.038344, 0.066485, 0.24966, 0.70367 &
+    0.01481883, 0.0194392, 0.0383437, 0.0664848, 0.249664, 0.70367 &
 /)
 irf_exponential_lifetimes = MONTHS_PER_YEAR * (/ &
-    1.0e10, 347.55, 65.359, 15.281, 2.3488, 0.70177 &
+    1.0e10, 347.547, 65.35929, 15.28116, 2.348814, 0.7017658 &
 /)
 ```
 
@@ -758,15 +765,17 @@ irf_exponential_coefficients = (/ &
     0.058648, 0.07515, 0.079338, 0.41413, 0.24845, 0.12429 &
 /)
 irf_exponential_lifetimes = MONTHS_PER_YEAR * (/ &
-    1.0e10, 9.62180, 9.23640, 0.7603, 0.16294, 0.0032825 &
+    1.0e10, 9.62180, 9.23640, 0.7603, 0.16294, 0.032825 &
 /)
 ```
+
+The last lifetime is 0.032825, as in the v7.5.3 binary.
 
 **2D-BERN (after 9.9 years):**
 
 ```fortran
 irf_exponential_coefficients = (/ &
-    0.01369, 0.012456, 0.026933, 0.026994, 0.036608, 0.06738 &
+    0.013691, 0.012456, 0.026933, 0.026994, 0.036608, 0.06738 &
 /)
 irf_exponential_lifetimes = MONTHS_PER_YEAR * (/ &
     1.0e10, 331.54, 107.57, 38.946, 11.677, 10.515 &

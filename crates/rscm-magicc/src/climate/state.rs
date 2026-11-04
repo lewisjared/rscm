@@ -24,6 +24,10 @@ pub struct ClimateUDEBState {
     /// Current upwelling rate for each hemisphere (m/yr).
     pub upwelling_rates: [FloatValue; 2],
 
+    /// Upwelling change from its initial rate (m/yr), used by the next substep's RHS correction.
+    #[serde(default)]
+    pub upwelling_delta: [FloatValue; 2],
+
     /// Whether the state has been initialized with parameters.
     pub initialized: bool,
 
@@ -50,11 +54,19 @@ pub struct ClimateUDEBState {
     pub ground_temps: [FloatValue; 2],
 
     /// Effective SST-to-air-temperature ratio for each hemisphere.
-    /// Computed once per annual timestep from the end-of-year SST, then held
-    /// fixed for all monthly substeps of the following year (MAGICC7 behaviour).
+    /// Computed from the SST of the previous substep.
     /// Index 0 = NH, 1 = SH.
     #[serde(default)]
     pub alpha_eff: [FloatValue; 2],
+
+    /// Internal efficacy of the subannual forcing pattern applied from the last substep of this year.
+    #[serde(default)]
+    pub subannual_internal_efficacy: Option<FloatValue>,
+
+    /// Internal efficacy of the subannual forcing pattern from this year's sensitivity,
+    /// applied from the last substep of next year.
+    #[serde(default)]
+    pub subannual_next_internal_efficacy: Option<FloatValue>,
 
     /// Inter-hemispheric heat exchange (W/m^2) from the previous substep.
     /// Persists across annual timesteps (MAGICC7 module-level variable,
@@ -85,6 +97,10 @@ pub struct ClimateUDEBState {
     /// MAGICC7 default: 17.2 K.
     #[serde(default = "default_mixed_layer_initial_temp")]
     pub mixed_layer_initial_temp: FloatValue,
+
+    /// Cumulative sea level rise from thermal expansion (mm).
+    #[serde(default)]
+    pub thermal_expansion: FloatValue,
 }
 
 fn default_polar_sinking_temp() -> FloatValue {
@@ -129,6 +145,7 @@ impl ClimateUDEBState {
         Self {
             ocean_temps: vec![vec![0.0; n_layers]; 2],
             upwelling_rates: [w_initial; 2],
+            upwelling_delta: [0.0; 2],
             initialized: true,
             temperature_history: Vec::new(),
             dt_history: Vec::new(),
@@ -136,9 +153,12 @@ impl ClimateUDEBState {
             ground_temps: [0.0; 2],
             alpha_eff: [alpha_initial; 2],
             hemi_heat_exchange: [0.0; 2],
+            subannual_internal_efficacy: None,
+            subannual_next_internal_efficacy: None,
             initial_ocean_profile: profiles,
             polar_sinking_temp: t_polar,
             mixed_layer_initial_temp: t_mix,
+            thermal_expansion: 0.0,
         }
     }
 }
@@ -160,11 +180,12 @@ impl ComponentState for ClimateUDEBState {
 /// For a cylindrical ocean, `af_top` and `af_bottom` are 1.0 and `af_diff` is 0.0.
 #[derive(Debug, Clone, Default)]
 pub struct OceanAreaFactors {
+    // Indexed by hemisphere (0 = NH, 1 = SH), then layer.
     /// Area factor for flux from above: `A(z_top) / A(z_avg)` per layer.
-    pub af_top: Vec<FloatValue>,
+    pub af_top: [Vec<FloatValue>; 2],
     /// Area factor for flux to below: `A(z_bottom) / A(z_avg)` per layer.
-    pub af_bottom: Vec<FloatValue>,
+    pub af_bottom: [Vec<FloatValue>; 2],
     /// Area factor for entrainment (polar sinking): `(A(z_top) - A(z_bottom)) / A(z_avg)`.
     /// Matches MAGICC7 `AREAFACTOR_DIFFFLOW`.
-    pub af_diff: Vec<FloatValue>,
+    pub af_diff: [Vec<FloatValue>; 2],
 }

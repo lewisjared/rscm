@@ -84,6 +84,7 @@ rscm.component : Base class for Python components
 """
 
 from rscm._lib.core import (
+    FourBoxTimeseries,
     GridType,
     InterpolationStrategy,
     Model,
@@ -120,6 +121,7 @@ __all__ = [
     "FourBoxGrid",
     "FourBoxRegion",
     "FourBoxSlice",
+    "FourBoxTimeseries",
     "FourBoxTimeseriesWindow",
     "GridType",
     "HemisphericGrid",
