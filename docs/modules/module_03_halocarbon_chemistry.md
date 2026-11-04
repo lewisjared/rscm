@@ -1,4 +1,4 @@
-# Module 03: Halocarbon Chemistry
+# Halocarbon Chemistry
 
 ## Overview
 
@@ -15,7 +15,7 @@ Each species decays with its own lifetime, which can vary with OH and with warmi
 Forcing is linear in concentration.
 The module also sums the chlorine and bromine of the Montreal Protocol gases into
 equivalent effective stratospheric chlorine (EESC),
-from which [module 04](module_04_ozone.md#stratospheric-ozone) calculates stratospheric ozone forcing.
+from which [ozone](module_04_ozone.md#stratospheric-ozone) calculates stratospheric ozone forcing.
 
 ## RSCM implementation
 
@@ -90,7 +90,7 @@ s_{strat} = \frac{1}{1 + \Delta T \cdot \text{GEN\_MERIDFLUX\_CHNGPERDEG}
   \cdot \text{*\_TAUSTRAT\_SENS2MERIDFLUX}}
 $$
 
-$s_{OH}$ uses the CH4 OH lifetime from [module 01](module_01_ch4_chemistry.md) as a proxy for OH.
+$s_{OH}$ uses the CH4 OH lifetime from [CH4 chemistry](module_01_ch4_chemistry.md) as a proxy for OH.
 $\Delta T$ is the warming since `GEN_CHANGE_MERIDIONALFLUX_YR` (1980), clamped at zero,
 because warming speeds up the stratospheric circulation.
 Butchart and Scaife (2001) find the meridional flux rises by about 3% per decade.
@@ -278,7 +278,7 @@ These follow from the defaults above and are quick checks of an implementation:
 5. Calculates the HFC-134a and CFC-12 equivalent concentrations of the group totals.
 
 Stratospheric ozone forcing follows from EESC,
-as [module 04](module_04_ozone.md#stratospheric-ozone) describes.
+as the [ozone](module_04_ozone.md#stratospheric-ozone) page describes.
 
 ## Numerical considerations
 

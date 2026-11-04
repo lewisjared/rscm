@@ -27,8 +27,8 @@ enabling climate scientists to leverage Rust's speed while maintaining Python's 
 
 ## Important Constraints
 
-- **Rust ABI Stability:** Using pyo3 abi3-py311 for stable Python ABI
-- **Minimum Python:** 3.11+
+- **Rust ABI Stability:** Using pyo3 abi3-py313 for stable Python ABI
+- **Minimum Python:** 3.13+
 - **Minimum Rust:** 1.75+
 - **License:** Apache-2.0
 - **Computational Efficiency:** Climate models run many timesteps; performance is critical

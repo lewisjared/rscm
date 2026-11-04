@@ -33,6 +33,7 @@
 # ## Related Resources
 #
 # - [Rust Components](../component_rust/): Creating components in Rust
+# - [External Modules](../../external_modules/): Packaging components outside the RSCM repository
 # - [Coupled Models](../coupled_model/): Combining multiple components
 # - [Key Concepts](../../key_concepts/): Core RSCM architecture
 
@@ -332,7 +333,7 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # | Method | Description |
 # |--------|-------------|
 # | `inputs.field.at_start()` | Value at start of timestep (index N) |
-# | `inputs.field.at_end()` | Value at end of timestep (index N+1). Currently `None`, see below |
+# | `inputs.field.at_end()` | Value at end of timestep (index N+1) |
 # | `inputs.field.previous` | Previous timestep value (index N-1) |
 # | `inputs.field.at_offset(n)` | Value at relative offset |
 # | `inputs.field.last_n(n)` | NumPy array of last n values |
@@ -340,10 +341,19 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # For grid inputs, use `at_start_all()` to get a `FourBoxSlice` or `HemisphericSlice`,
 # or `at_start(region)` for an individual region.
 #
-# Python components see input values only up to the start of the timestep,
-# so `at_end()` and `at_end_all()` return `None`
-# ([issue #162](https://github.com/lewisjared/rscm/issues/162)).
+# Read an upstream component's output for this timestep with `at_end()` or `at_end_all()`.
+# Inputs arrive in the declared unit and grid when the model has a schema.
 # See [Timestep Semantics](../../key_concepts/#timestep-semantics) for `at_start()` vs `at_end()` usage.
+
+# %% [markdown]
+# ## Saving Models
+#
+# `Model.to_toml()` saves a Python component with its class path and the output of `to_json()`.
+# By default `to_json()` writes the instance attributes as JSON,
+# and `from_json()` restores them without calling `__init__`.
+# Override both when an attribute is not JSON-serialisable, such as a NumPy array.
+# Define the class at module level so `Model.from_toml()` can import it.
+# Loading imports the module the file names, so only load model files you trust.
 
 # %% [markdown]
 # ## Summary

@@ -1,6 +1,6 @@
 //! Sea level rise parameters
 //!
-//! Parameters for the MAGICC7 sea level rise module (module 14).
+//! Parameters for the MAGICC7 sea level rise module.
 //! Defaults are the effective values of MAGICC7 v7.5.3's default configuration,
 //! after its CMIP5 mean and tuning files are applied.
 

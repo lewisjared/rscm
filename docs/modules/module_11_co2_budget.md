@@ -1,4 +1,4 @@
-# Module 11: CO2 Budget
+# CO2 Budget
 
 ## Overview
 
@@ -9,7 +9,7 @@ It also diagnoses the inverse emissions implied by a concentration path.
 
 MAGICC7 has no separate module for this.
 The budget is spread through `MAGICC7.f90`:
-the terrestrial carbon cycle (`TERRCARBON2`, [module 09](module_09_terrestrial_carbon.md))
+the terrestrial carbon cycle (`TERRCARBON2`, [terrestrial carbon](module_09_terrestrial_carbon.md))
 supplies the land flux,
 the [monthly ocean loop](module_10_ocean_carbon.md#monthly-loop) integrates atmospheric CO2,
 and the driver then derives the annual fluxes and the inverse emissions.
@@ -110,7 +110,7 @@ It also accumulates them in `CO2I_INVERSE_CUMEMIS`.
 
 ## Parameters
 
-The ocean parameters are on [module 10](module_10_ocean_carbon.md#parameters).
+The ocean parameters are on the [ocean carbon](module_10_ocean_carbon.md#parameters) page.
 
 | Parameter                 | Fortran name                    | Units | Default | Description                                           |
 | ------------------------- | ------------------------------- | ----- | ------- | ----------------------------------------------------- |
@@ -126,7 +126,7 @@ The ocean parameters are on [module 10](module_10_ocean_carbon.md#parameters).
 
 Each annual step runs:
 
-1. `TERRCARBON2` ([module 09](module_09_terrestrial_carbon.md)) updates the land pools and $E_{tf}$.
+1. `TERRCARBON2` ([terrestrial carbon](module_09_terrestrial_carbon.md)) updates the land pools and $E_{tf}$.
 2. The [monthly ocean loop](module_10_ocean_carbon.md#monthly-loop) integrates atmospheric CO2 and ocean pCO2.
    Before `CO2_SWITCHFROMCONC2EMIS_YEAR` it interpolates the prescribed concentration instead.
    With `CO2_CAPCONC_APPLY`, each month's concentration is capped at `CO2_CAPCONC_PPM`.
@@ -137,7 +137,7 @@ Each annual step runs:
 ## Numerical considerations
 
 - Atmospheric CO2 is integrated by forward Euler over the twelve monthly sub-steps of the ocean loop.
-- The land pools use the implicit trapezoidal scheme of [module 09](module_09_terrestrial_carbon.md)
+- The land pools use the implicit trapezoidal scheme of [terrestrial carbon](module_09_terrestrial_carbon.md)
   on the annual step, so the land source is constant within the year.
 - The ocean side carries a flux change limiter and two-month averages,
   described with the [monthly loop](module_10_ocean_carbon.md#monthly-loop).
@@ -168,8 +168,8 @@ Each annual step runs:
 
 ## References
 
-The land and ocean code is listed on [module 09](module_09_terrestrial_carbon.md#references)
-and [module 10](module_10_ocean_carbon.md#references).
+The land and ocean code is listed on the [terrestrial carbon](module_09_terrestrial_carbon.md#references)
+and [ocean carbon](module_10_ocean_carbon.md#references) pages.
 
 | File                       | Lines     | Contents                                          |
 | -------------------------- | --------- | ------------------------------------------------- |

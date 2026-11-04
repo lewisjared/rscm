@@ -51,7 +51,7 @@ from rscm.magicc import prescribed as pr
 from rscm.magicc.runner import CH4_OTHER_LIFETIMES, _ch4_burdens, _ch4_tau_other
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from numpy.typing import ArrayLike, NDArray
 
@@ -403,6 +403,14 @@ def prescribed_concentrations(
 
 def _natural(natural: Mapping[str, float], gas: str) -> dict[str, float]:
     return {"natural_emissions": natural[gas]} if gas in natural else {}
+
+
+def _sequential_sum(values: Iterable[float]) -> float:
+    # Python 3.12+ `sum` compensates rounding, unlike MAGICC7's plain loop.
+    total = 0.0
+    for value in values:
+        total += value
+    return total
 
 
 def _total(
@@ -894,15 +902,17 @@ def natural_emissions(
         c = pr.on_axis(_concentration_input(files, gas), window)[:, 0].tolist()
         n = len(c) - 1
         # MAGICC7 sums each series in turn, which sets the rounding
-        mean = sum((c[k] + c[k + 1]) * 0.5 for k in range(n))
-        removal = mean / lifetimes[0] + sum(c[k + 1] - c[k] for k in range(n))
+        mean = _sequential_sum((c[k] + c[k + 1]) * 0.5 for k in range(n))
+        removal = mean / lifetimes[0] + _sequential_sum(
+            c[k + 1] - c[k] for k in range(n)
+        )
         for lifetime in lifetimes[1:]:
             removal += mean / lifetime
         anthropogenic = 0.0
         for sector in ("Fossil", "AFOLU"):
             e = np.asarray(emissions[f"{gas}|{sector}"], dtype=np.float64)[index]
-            anthropogenic += sum(e[1:].tolist())
-            anthropogenic += sum(e[:-1].tolist())
+            anthropogenic += _sequential_sum(e[1:].tolist())
+            anthropogenic += _sequential_sum(e[:-1].tolist())
         out[gas] = removal * tg_per_ppb / n - anthropogenic * 0.5 / n
     return out
 

@@ -26,6 +26,12 @@ repos:
         entry: found Copier update rejection files; review them and remove them
         language: fail
         files: "\\.rej$"
+      - id: changelog-punctuation
+        name: changelog punctuation (no semicolons, em or en dashes, spaced hyphens)
+        language: pygrep
+        entry: "[;—–]|\\S - "
+        files: "^changelog/.*\\.md$"
+        exclude: "^changelog/README\\.md$"
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: 'v0.14.11'
     hooks:

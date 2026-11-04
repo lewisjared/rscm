@@ -4,7 +4,7 @@
 //!
 //! # Reference
 //!
-//! Based on MAGICC7 Module 02 (N2O Chemistry) which solves the N2O mass
+//! Based on MAGICC7's N2O chemistry, which solves the N2O mass
 //! balance with concentration-dependent lifetime feedback and stratospheric
 //! transport delay.
 

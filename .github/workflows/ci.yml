@@ -41,9 +41,8 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - '3.11'
-          - '3.12'
           - '3.13'
+          - '3.14'
 
     runs-on: ubuntu-latest
 
@@ -64,7 +63,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
-          python-version: '3.11'
+          python-version: '3.13'
       - name: Ruff check
         run: uv run ruff check
       - name: Ruff format check
@@ -87,7 +86,7 @@ jobs:
         uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
-          python-version: "3.11"
+          python-version: "3.13"
       - name: Setup Graphviz
         uses: ts-graphviz/setup-graphviz@v2
       - name: Python docs

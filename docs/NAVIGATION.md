@@ -31,6 +31,7 @@ See https://oprypin.github.io/mkdocs-literate-nav/
   * [Developer Guide](developers/index.md)
   * [Python Components](notebooks/component_python.py)
   * [Rust Components](notebooks/component_rust.md)
+  * [External Modules](external_modules.md)
   * [Development Practices](developers/development.md)
   * [Documenting Components](developers/documenting_components.md)
   * [Rust Tips](developers/rust_tips.md)

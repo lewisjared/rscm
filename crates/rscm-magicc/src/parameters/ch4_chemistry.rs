@@ -5,7 +5,7 @@
 //!
 //! # Reference
 //!
-//! Based on MAGICC7 Module 01 (CH4 Chemistry) which implements Prather's
+//! Based on MAGICC7's CH4 chemistry, which implements Prather's
 //! method from IPCC TAR Table 4.11 for solving the nonlinear methane mass
 //! balance equation.
 

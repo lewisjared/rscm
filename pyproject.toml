@@ -1,9 +1,9 @@
 [project]
 name = "rscm"
-version = "0.6.0"
+version = "0.6.1"
 description = "Simple Climate Model framework implemented in Rust"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 license = {text = "Apache-2.0"}
 authors = [
     {name = "Jared Lewis", email = "jared.lewis@climate-energy-college.org"}
@@ -14,15 +14,15 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: Atmospheric Science",
 ]
+# Minimum versions follow SPEC 0.
 dependencies = [
-    "numpy",
-    "pandas",
+    "numpy>=2.3",
+    "pandas>=2.3",
 ]
 
 [project.urls]
@@ -68,6 +68,17 @@ dev = [
     "xarray",
 ]
 
+# Regenerating MAGICC fixtures (scripts/regression) and ad hoc analysis.
+regression = [
+    "pymagicc>=2.1.5",
+    "scmdata>=0.19.0",
+    # scmdata 0.19 calls xarray internals removed in 2025.
+    "xarray<2025",
+    # pint-pandas 0.7 caps pandas below 3.
+    "pint-pandas>=0.8",
+    "scipy>=1.15",
+]
+
 docs = [
     "mkdocs>=1.6.0",
     "mkdocstrings[python]>=0.25.0",
@@ -80,7 +91,7 @@ docs = [
     "myst-nb>=1.1.1",
     "jupyterlab>=4.2.0",
     "jupytext>=1.16.4",
-    "matplotlib>=3.9.2",
+    "matplotlib>=3.11",
     "seaborn>=0.13.2",
     "mkdocs-minify-plugin>=0.8.0",
 ]
@@ -88,7 +99,7 @@ docs = [
 
 [tool.ruff]
 src = ["python"]
-target-version = "py311"
+target-version = "py313"
 # Provide some leeway for long docstring
 line-length = 88
 
@@ -163,7 +174,7 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 warn_return_any = false
 warn_unused_configs = true
 show_error_codes = true
@@ -232,7 +243,7 @@ type = [
 ]
 
 [tool.bumpversion]
-current_version = "0.6.0"
+current_version = "0.6.1"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 search = 'version = "{current_version}"'

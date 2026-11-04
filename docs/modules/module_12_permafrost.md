@@ -1,8 +1,8 @@
-# Module 12: Permafrost Feedback
+# Permafrost Feedback
 
 /// warning | Experimental in MAGICC7
 MAGICC7 lists the permafrost module among its experimental components
-(the comment is quoted on [module 14](module_14_sea_level_rise.md)).
+(the comment is quoted on the [sea level rise](module_14_sea_level_rise.md) page).
 Line 3 of `permafrost.f90` also warns that its header documentation is stale:
 `! TODO: update this (all out of date/conflicting with MAGCFG_DEFAULTALL.CFG)`.
 This page follows the code and `MAGCFG_DEFAULTALL.CFG`, not that header.

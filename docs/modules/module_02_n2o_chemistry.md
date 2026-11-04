@@ -1,4 +1,4 @@
-# Module 02: N2O Chemistry
+# N2O Chemistry
 
 ## Overview
 
@@ -149,7 +149,7 @@ E_{nat} = k \left( \Delta C + \frac{\bar{C}}{\tau_{init}} \right) - \bar{E}_{ant
 $$
 
 MAGICC7 adds $E_{nat}$ to `DAT_N2ON_EMIS` in every year.
-[Module 01](module_01_ch4_chemistry.md#budget-initialisation) closes the CH4 budget the same way,
+[CH4 chemistry](module_01_ch4_chemistry.md#budget-initialisation) closes the CH4 budget the same way,
 with its two lifetimes.
 
 ### Each year

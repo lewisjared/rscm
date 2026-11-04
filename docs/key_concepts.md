@@ -202,12 +202,6 @@ let erf = inputs.erf.at_end().unwrap_or_else(|| inputs.erf.at_start());
 let erf = inputs.erf.get(); // same value for an upstream output
 ```
 
-/// warning | Python components
-The windows passed to Python components currently only hold values up to index N.
-`at_end()` returns `None` at every timestep in a Python component.
-A Python component reads an upstream output with `at_start()`, so it sees the value from the previous step.
-///
-
 The component tutorials list every accessor, including `at_offset()` and `last_n()`.
 
 ### Running a Model
@@ -229,8 +223,8 @@ temp = results.get_timeseries_by_name("Surface Temperature")
 In Rust, `Model::try_step` and `Model::try_run` return the error, while `step` and `run` panic.
 A failed step does not advance the time index, but components that already ran may have updated their state.
 Rebuild the model before retrying.
-An exception raised inside a Python component's `solve()` currently surfaces as `pyo3_runtime.PanicException`,
-not `RuntimeError`.
+An exception raised inside a Python component's `solve()` also surfaces as `RuntimeError`,
+with the component name, timestep and Python traceback in the message.
 
 ### Exogenous vs Endogenous Variables
 

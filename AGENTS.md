@@ -20,9 +20,11 @@ make all                                      # format, build, lint, test
 make test                                     # All tests
 cargo test --workspace --exclude rscm         # Rust tests only (rscm is the PyO3 crate)
 uv run pytest -m "not slow"                   # Python tests, skipping slow ones
+make parity                                   # MAGICC7 parity check: use as the done condition for parity goals
 make format                                   # Run before committing
 make lint                                     # ruff, mypy, cargo fmt, clippy
 make validate-pyi                             # Check .pyi stubs match the compiled module
+uv run --group regression <script>            # Regenerate MAGICC fixtures (MAGICC in ~/.local/share/magicc)
 ```
 
 ## PRs and commits

@@ -34,7 +34,7 @@
 //!   upwelling, heat uptake/content diagnostics)
 //! - `lamcalc`: Iterative feedback parameter solver
 //!
-//! # Differences from MAGICC7 Module 08
+//! # Differences from MAGICC7
 //!
 //! - **LAMCALC iterations**: Implemented - see [`lamcalc`](super::lamcalc).
 //! - **Time-varying ECS**: Implemented - see `adjusted_ecs()`.

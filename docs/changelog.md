@@ -1,3 +1,39 @@
+## rscm 0.6.1 (2026-11-04)
+
+### ⚠️ Breaking Changes ⚠️
+
+- `prescribed_concentrations` and `natural_emissions` in `rscm.magicc.full` now take `inputs` from `load_inputs` in place of a directory.
+  `load_inputs` also reads the concentration files that exist, so `run_magicc7(..., inputs=load_inputs())` runs without reading any file.
+  An `inputs` mapping passed to `run_magicc7` must now hold these concentration histories too, so build it with `load_inputs` rather than by hand. ([#165](https://github.com/lewisjared/rscm/pull/165))
+
+### Features
+
+- Models with Python components can now be saved and restored with `to_toml()` and `from_toml()`.
+  A component is saved through `Component.to_json()` and restored with `from_json()`, so its class must be importable at module level.
+  Override both methods for components holding non-JSON attributes. ([#168](https://github.com/lewisjared/rscm/pull/168))
+
+### Improvements
+
+- Sped up emissions-driven `run_magicc7` runs from about 508 ms to 25 ms each with bit-for-bit identical results, so a 600-member ensemble takes about 1 s on a 32-worker process pool.
+  `Model.run` now releases the GIL, so models can also run in threads. ([#165](https://github.com/lewisjared/rscm/pull/165))
+
+### Bug Fixes
+
+- Deserialising `ClimateUDEB` now rebuilds its derived fields from the parameters, so a component restored from JSON or TOML runs instead of panicking. ([#165](https://github.com/lewisjared/rscm/pull/165))
+- Python components now read inputs through the same windows as Rust components.
+  `at_end()` returns the upstream output from the current step, and inputs get schema unit conversion and grid aggregation.
+  An exception in a Python `solve()` now raises `RuntimeError` with the component name, timestep and traceback instead of a `PanicException`. ([#168](https://github.com/lewisjared/rscm/pull/168))
+
+### Improved Documentation
+
+- Made the documentation easier to read.
+  The tutorials hide setup and plotting code, the MAGICC module specs share one structure,
+  and component pages render their equations and lists properly.
+  Also fixed broken links in the notebooks, the notebook download links and the changelog links. ([#166](https://github.com/lewisjared/rscm/pull/166))
+- Removed the module numbers from the MAGICC module specs, component docs and the coupled MAGICC tutorial.
+  MAGICC7 does not number its modules, so the docs now name each module instead. ([#167](https://github.com/lewisjared/rscm/pull/167))
+
+
 ## rscm 0.6.0 (2026-11-04)
 
 ### ⚠️ Breaking Changes ⚠️

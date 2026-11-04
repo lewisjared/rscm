@@ -1,4 +1,4 @@
-# Module 00: Initialisation and Data Loading
+# Initialisation and Data Loading
 
 ## Overview
 
@@ -27,9 +27,9 @@ The work is split between the model framework and the MAGICC7 runner:
   `load_inputs` reads the packaged input files, `prescribed_concentrations` the concentration files
   and `natural_emissions` closes the CH4 and N2O budgets.
   The forcing calculated from inputs comes from `rscm.magicc.prescribed`,
-  see [module 05](module_05_aerosol_direct.md) and [module 06](module_06_aerosol_indirect.md).
+  see [direct aerosol forcing](module_05_aerosol_direct.md) and [indirect aerosol forcing](module_06_aerosol_indirect.md).
 - **Climate feedback parameters**: LAMCALC runs inside `ClimateUDEB`
-  (`crates/rscm-magicc/src/climate/lamcalc.rs`), see [module 08](module_08_climate.md).
+  (`crates/rscm-magicc/src/climate/lamcalc.rs`), see [climate](module_08_climate.md).
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
 - **Tests**: every coupled run starts from this set-up, so `test_coupled_run` and `test_run_magicc7_defaults`
   in `tests/regression/test_full_run.py` cover it.
@@ -57,7 +57,7 @@ These are the fields that the module pages refer to:
 | `FIRSTYEAR`, `LASTYEAR`   | scalar              | Years the data covers                                               |
 
 The RF initialisation method that sets the first-year offsets is described in
-[module 07b](module_07b_rf_aggregation.md#pre-industrial-reference).
+[forcing aggregation](module_07b_rf_aggregation.md#pre-industrial-reference).
 
 Some of the main instances:
 
@@ -141,7 +141,7 @@ each file overriding the last:
 | `CORE_HEMISFRACTION_NH_LAND`  | 0.42      | Land fraction of the Northern Hemisphere                      |
 | `CORE_HEMISFRACTION_SH_LAND`  | 0.21      | Land fraction of the Southern Hemisphere                      |
 | `RF_PREIND_REFERENCEYR`       | 1750      | Year of the preindustrial reference values                    |
-| `RF_INITIALIZATION_METHOD`    | JUMPSTART | First-year forcing offset, see [module 07b](module_07b_rf_aggregation.md#pre-industrial-reference) |
+| `RF_INITIALIZATION_METHOD`    | JUMPSTART | First-year forcing offset, see [forcing aggregation](module_07b_rf_aggregation.md#pre-industrial-reference) |
 | `RF_REGIONS_NORMYEAR`         | 2000      | Year whose box forcing sets the efficacy patterns             |
 
 The defaults of each module's own parameters are on its page.
@@ -165,12 +165,12 @@ The defaults of each module's own parameters are on its page.
    sums their regions into the four boxes with `SUM_RAWDATA_TOBOX`
    and merges them into the historical emissions with `HANDLE_RAWSCEN_INTO_HISTEMIS`.
 7. Closes the CH4 and N2O budgets with natural emissions,
-   see [module 01](module_01_ch4_chemistry.md#budget-initialisation)
-   and [module 02](module_02_n2o_chemistry.md#budget-initialisation).
+   see [CH4 chemistry](module_01_ch4_chemistry.md#budget-initialisation)
+   and [N2O chemistry](module_02_n2o_chemistry.md#budget-initialisation).
 8. Scales and extends the aerosol forcing with emissions (`EXTRAP_RF_WITH_EMIS`)
-   and calculates nitrate forcing, see [module 05](module_05_aerosol_direct.md).
+   and calculates nitrate forcing, see [direct aerosol forcing](module_05_aerosol_direct.md).
 9. Calculates each halocarbon's molecular mass (`CALC_HALOS_MOLMASS`) and non-OH lifetime,
-   see [module 03](module_03_halocarbon_chemistry.md).
+   see [halocarbon chemistry](module_03_halocarbon_chemistry.md).
 10. Allocates and initialises permafrost and nitrogen limitation.
 
 `magicc_dealloc` frees every array afterwards, so one process can run MAGICC7 again.

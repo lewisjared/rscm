@@ -20,8 +20,8 @@ nalgebra = "0.34.2"
 
 [dependencies.pyo3]
 version = "0.27.2"
-# "abi3-py311" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.11
-features = ["abi3-py311"]
+# "abi3-py313" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.13
+features = ["abi3-py313"]
 
 [dev-dependencies]
 approx = "0.5"

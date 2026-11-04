@@ -1,6 +1,6 @@
 //! Permafrost Component
 //!
-//! Carbon released from thawing permafrost (MAGICC7 module 12).
+//! Carbon released from thawing permafrost.
 //!
 //! # What This Component Does
 //!

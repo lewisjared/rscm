@@ -34,7 +34,7 @@
 //! `meridional_flux_reference_year`. References outside the run are clamped to
 //! its first or last year.
 //!
-//! # Differences from MAGICC7 Module 02
+//! # Differences from MAGICC7
 //!
 //! - **Budget initialisation**: natural emissions are a fixed parameter.
 //!   `rscm.magicc.full.natural_emissions` calculates MAGICC7's budget-closing value for it.

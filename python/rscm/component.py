@@ -54,9 +54,9 @@ class CarbonCycle(Component):
         self, t_current: float, t_next: float, inputs: "CarbonCycle.Inputs"
     ) -> "CarbonCycle.Outputs":
         # Type-safe access to inputs
-        emissions = inputs.emissions.current
-        temp = inputs.temperature.current  # For grids, .current returns global average
-        conc_prev = inputs.concentration.current
+        emissions = inputs.emissions.at_start()
+        temp = inputs.temperature.at_start_all()  # FourBoxSlice of regional values
+        conc_prev = inputs.concentration.at_start()
 
         # Calculate outputs
         new_conc = conc_prev + emissions * self.sensitivity
@@ -88,6 +88,10 @@ rscm.core.PythonComponent : Wrapper for using Python components in models
 
 from __future__ import annotations
 
+import functools
+import importlib.metadata
+import json
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
@@ -110,6 +114,22 @@ if TYPE_CHECKING:
 
 #: Valid grid type literals for component I/O declarations
 GridLiteral = Literal["Scalar", "FourBox", "Hemispheric"]
+
+#: Entry point group that installed packages use to provide components
+ENTRY_POINT_GROUP = "rscm.components"
+
+
+@functools.cache
+def _load_entry_points() -> None:
+    for entry_point in importlib.metadata.entry_points(group=ENTRY_POINT_GROUP):
+        try:
+            entry_point.load()
+        except Exception as e:
+            warnings.warn(
+                f"Could not load rscm components from {entry_point.value!r} "
+                f"(entry point {entry_point.name!r}): {e!r}",
+                stacklevel=3,
+            )
 
 
 @dataclass(frozen=True)
@@ -417,6 +437,13 @@ def _create_outputs_class(
     return OutputsBase
 
 
+def _slot_names(cls: type) -> list[str]:
+    slots = cls.__dict__.get("__slots__", ())
+    if isinstance(slots, str):
+        slots = (slots,)
+    return [name for name in slots if name not in ("__dict__", "__weakref__")]
+
+
 class Component(metaclass=ComponentMeta):
     """Base class for typed Python components.
 
@@ -426,6 +453,10 @@ class Component(metaclass=ComponentMeta):
     Python components are automatically registered in a class-level registry when
     defined, which can be queried via `Component.get_registered_components()`.
     This registry is used for documentation generation.
+
+    Installed packages can add components to the registry
+    by declaring an entry point in the `rscm.components` group.
+    The registry imports each entry point the first time it is queried.
 
     Note
     ----
@@ -480,6 +511,14 @@ class Component(metaclass=ComponentMeta):
         """
         super().__init_subclass__(**kwargs)
         if register:
+            existing = Component._registry.get(cls.__name__)
+            if existing is not None and existing.__module__ != cls.__module__:
+                warnings.warn(
+                    f"Component {cls.__module__}.{cls.__qualname__} replaces "
+                    f"{existing.__module__}.{existing.__qualname__} in the registry, "
+                    "because components are registered by class name",
+                    stacklevel=3,
+                )
             Component._registry[cls.__name__] = cls
 
     @classmethod
@@ -493,6 +532,7 @@ class Component(metaclass=ComponentMeta):
         -------
         Dictionary mapping component names to their classes
         """
+        _load_entry_points()
         return dict(cls._registry)
 
     @classmethod
@@ -513,6 +553,7 @@ class Component(metaclass=ComponentMeta):
         KeyError
             If no component with the given name is registered
         """
+        _load_entry_points()
         if name not in cls._registry:
             raise KeyError(  # noqa: TRY003
                 f"No component registered with name '{name}'. "
@@ -561,3 +602,28 @@ class Component(metaclass=ComponentMeta):
         Typed outputs object
         """
         raise NotImplementedError("Subclasses must implement solve()")
+
+    def to_json(self) -> str:
+        """Serialise the instance attributes for saving a model.
+
+        Override this and `from_json` when an attribute is not JSON-serialisable.
+        """
+        if any(_slot_names(cls) for cls in type(self).__mro__):
+            reason = "attributes in __slots__ are not saved"
+        else:
+            try:
+                return json.dumps(vars(self))
+            except TypeError as e:
+                reason = str(e)
+        msg = (
+            f"Cannot serialise {type(self).__qualname__}: {reason}. "
+            "Override to_json() and from_json() to save this component."
+        )
+        raise TypeError(msg)
+
+    @classmethod
+    def from_json(cls, data: str) -> Component:
+        """Restore an instance from `to_json` output without calling `__init__`."""
+        component = cls.__new__(cls)
+        component.__dict__.update(json.loads(data))
+        return component

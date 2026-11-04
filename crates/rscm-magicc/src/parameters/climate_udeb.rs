@@ -1,7 +1,7 @@
 //! Climate UDEB Parameters
 //!
 //! Parameters for the Upwelling-Diffusion Energy Balance (UDEB) climate model
-//! following MAGICC7 Module 08.
+//! following MAGICC7.
 
 use super::ThermalExpansionParameters;
 use rscm_core::timeseries::FloatValue;
