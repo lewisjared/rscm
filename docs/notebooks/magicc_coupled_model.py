@@ -777,10 +777,13 @@ differences = {
     "Surface temperature": (global_temperature - magicc_series("Surface Temperature"))
     / np.abs(magicc_series("Surface Temperature")).max(),
 }
-pd.Series(
+largest = pd.Series(
     {k: np.abs(v).max() for k, v in differences.items()},
     name="Largest relative difference",
 )
+# The regression tests hold the full chain to this tolerance.
+assert (largest < 1e-9).all()
+largest
 
 # %% [markdown]
 # ### Concentrations
@@ -964,6 +967,7 @@ print(
     "Largest temperature difference: "
     f"{np.abs(convenience_temperature - regional_temperature).max():.1e} K"
 )
+np.testing.assert_array_equal(convenience_temperature, regional_temperature)
 
 # %% [markdown]
 # Without `parameters`, `run_magicc7` uses MAGICC7's default configuration.

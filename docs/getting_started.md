@@ -128,7 +128,9 @@ RSCM ships with pre-built components for common climate modelling tasks:
 - Forcing: `GhgForcing`, `OzoneForcing`, `AerosolDirect`, `AerosolIndirect` and `ForcingAggregation`.
 - Climate: the `ClimateUDEB` upwelling-diffusion energy balance model and `SeaLevelRise`.
 
-`rscm.magicc.full.run_magicc7` couples all of them into the full MAGICC7 chain.
+`rscm.magicc.full.run_magicc7` couples all of them except `AerosolDirect` and `AerosolIndirect`
+into the full MAGICC7 chain.
+Like MAGICC7, it takes aerosol forcing from `rscm.magicc.prescribed` instead.
 It uses MAGICC7 v7.5.3's packaged defaults and SSP245 input files,
 and matches MAGICC7's output on its default SSP245 run.
 `rscm.magicc.prescribed` reproduces the aerosol, land-use, solar and volcanic forcing
