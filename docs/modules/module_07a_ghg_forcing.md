@@ -23,6 +23,7 @@ The adjusted forcing is still the module's RF before efficacies
 - **Component**: `GhgForcing` (Python builder `rscm.magicc.GhgForcingBuilder`).
 - **Source**: `crates/rscm-magicc/src/forcing/ghg.rs`, with parameters in
   `crates/rscm-magicc/src/parameters/ghg_forcing.rs`.
+  The OLBL formulae live in `crates/rscm-components/src/meinshausen2020.rs`, shared with FaIR.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
 - **Tests**: `test_ch4_oxidation_strat_h2o` in `tests/regression/test_full_run.py`
   checks the stratospheric H2O forcing.

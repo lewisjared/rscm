@@ -7,24 +7,13 @@
 //! plus a feedback on the surface temperature at the start of the step.
 
 use crate::constants::{end, forcing_unit, one, start, surface_temperature, temperature_unit};
+use rscm_components::meinshausen2020::Meinshausen2020;
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
-
-const A1: FloatValue = -2.4785e-07;
-const B1: FloatValue = 0.00075906;
-const C1: FloatValue = -0.0021492;
-const D1: FloatValue = 5.2488;
-const A2: FloatValue = -0.00034197;
-const B2: FloatValue = 0.00025455;
-const C2: FloatValue = -0.00024357;
-const D2: FloatValue = 0.12173;
-const A3: FloatValue = -8.9603e-05;
-const B3: FloatValue = -0.00012462;
-const D3: FloatValue = 0.045194;
 
 /// One greenhouse gas.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -101,33 +90,13 @@ impl FairGhgForcing {
     /// Unoffset forcing of each gas, CO2, CH4, N2O then the minor gases.
     pub fn meinshausen2020(&self, concentrations: &[FloatValue]) -> Vec<FloatValue> {
         let p = &self.parameters;
+        let m = Meinshausen2020::default();
         let (co2, ch4, n2o) = (concentrations[0], concentrations[1], concentrations[2]);
-        let co2_base = p.co2.reference_concentration;
-        let ch4_base = p.ch4.reference_concentration;
-        let n2o_base = p.n2o.reference_concentration;
-
-        let ca_max = co2_base - B1 / (2.0 * A1);
-        let alpha_p = if co2 <= co2_base {
-            D1
-        } else if co2 <= ca_max {
-            D1 + A1 * (co2 - co2_base).powi(2) + B1 * (co2 - co2_base)
-        } else {
-            D1 - B1.powi(2) / (4.0 * A1)
-        };
-        let alpha_n2o = C1 * n2o.sqrt();
 
         let mut forcing = Vec::with_capacity(concentrations.len());
-        forcing.push((alpha_p + alpha_n2o) * (co2 / co2_base).ln() * p.co2.scale());
-        forcing.push(
-            (A3 * ch4.sqrt() + B3 * n2o.sqrt() + D3)
-                * (ch4.sqrt() - ch4_base.sqrt())
-                * p.ch4.scale(),
-        );
-        forcing.push(
-            (A2 * co2.sqrt() + B2 * n2o.sqrt() + C2 * ch4.sqrt() + D2)
-                * (n2o.sqrt() - n2o_base.sqrt())
-                * p.n2o.scale(),
-        );
+        forcing.push(m.co2(co2, n2o, p.co2.reference_concentration, p.co2.scale()));
+        forcing.push(m.ch4(ch4, n2o, p.ch4.reference_concentration, p.ch4.scale()));
+        forcing.push(m.n2o(co2, ch4, n2o, p.n2o.reference_concentration, p.n2o.scale()));
         for (gas, c) in p.minor.iter().zip(&concentrations[3..]) {
             forcing.push(
                 (c - gas.reference_concentration) * gas.radiative_efficiency * 0.001 * gas.scale(),

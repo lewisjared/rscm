@@ -77,10 +77,9 @@ What already maps cleanly:
   FaIR never switches a species from concentration to emissions mid-run,
   unlike MAGICC's 2015 switch.
   Each species' mode is a build-time choice, which suits the graph.
-- **Shared GHG formula.** FaIR's Meinshausen 2020 coefficients match MAGICC's OLBL coefficients
-  (`crates/rscm-magicc/src/parameters/ghg_forcing.rs`).
-  A shared pure function is worth considering once both sides have parity tests.
-  FaIR wraps it differently: `forcing_scale * (1 + tropospheric_adjustment)`, minus the baseline offset.
+- **Shared GHG formula.** FaIR's Meinshausen 2020 and MAGICC's OLBL are the same formulae.
+  Both use `rscm_components::meinshausen2020`, with their own coefficients.
+  FaIR scales by `forcing_scale * (1 + tropospheric_adjustment)` and subtracts the baseline offset.
 - **Variable names.** Use RSCM's existing names (`Emissions|CO2|Fossil`, `Atmospheric Concentration|CH4`,
   `Effective Radiative Forcing|CH4`, `Surface Temperature`) so FaIR components can mix with MAGICC ones.
   FaIR's `CO2 FFI` and `CO2 AFOLU` map to `Emissions|CO2|Fossil` and `Emissions|CO2|Land Use`.
@@ -162,7 +161,7 @@ Settled on 2026-11-04.
 - Components live in a new `crates/rscm-fair` crate, exposed as `rscm.fair`.
 - `FairGasCycle` is one component type configured with a list of species.
 - Each forcing component applies its own temperature feedback.
-- The Meinshausen formula is duplicated for now and merged with MAGICC's OLBL later.
+- The Meinshausen formula is shared with MAGICC's OLBL in `rscm_components::meinshausen2020`.
 - Variables use RSCM and MAGICC names (`Emissions|HFC134a`, `Emissions|SOx`). Components keep FaIR's units.
 - `rscm.fair` has native CSV loaders and `from_fair()`, which converts a configured `fair.FAIR`.
 - `run_fair()` returns a `Model`, and an ensemble helper returns xarray in FaIR's layout.
