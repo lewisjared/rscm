@@ -700,7 +700,7 @@ mod ground_heat_capacity {
 
             // During transient warming, ground heat should cool the response
             // (heat diverted into ground reservoir)
-            if yr >= 5 && yr <= 100 {
+            if (5..=100).contains(&yr) {
                 assert!(
                     global_with < global_without,
                     "Year {}: ground heat should damp transient response. \

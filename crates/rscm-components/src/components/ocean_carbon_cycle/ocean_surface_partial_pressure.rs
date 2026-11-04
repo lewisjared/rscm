@@ -188,7 +188,6 @@ mod tests {
     use rscm_core::timeseries::Timeseries;
     use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
     use rstest::rstest;
-    use std::f64;
 
     fn build_timeseries_collection(
         sea_surface_temperature: f64,

@@ -27,3 +27,6 @@ features = ["abi3-py313"]
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--html-in-header", "katex-header.html" ]
+
+[lints]
+workspace = true

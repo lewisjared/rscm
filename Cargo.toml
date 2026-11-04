@@ -17,6 +17,10 @@ members = [
 ]
 resolver = "2"
 
+[workspace.lints.clippy]
+# Index loops read closer to the reference maths in the numerical code.
+needless_range_loop = "allow"
+
 [workspace.package]
 version = "0.6.1"
 edition = "2021"

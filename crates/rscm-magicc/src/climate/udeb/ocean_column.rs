@@ -68,6 +68,7 @@ impl ClimateUDEB {
     /// # Returns
     ///
     /// Mixed layer temperature anomaly (K)
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn step_hemisphere(
         &self,
         state: &mut ClimateUDEBState,

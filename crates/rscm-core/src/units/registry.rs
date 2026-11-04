@@ -216,7 +216,7 @@ impl UnitRegistry {
     fn lookup_prefixed(&self, symbol: &str) -> Option<UnitInfo> {
         // Sort prefixes by length descending to match longer prefixes first
         let mut prefixes: Vec<_> = SI_PREFIXES.iter().collect();
-        prefixes.sort_by(|a, b| b.symbol.len().cmp(&a.symbol.len()));
+        prefixes.sort_by_key(|p| std::cmp::Reverse(p.symbol.len()));
 
         for prefix in prefixes {
             if let Some(base_symbol) = symbol.strip_prefix(prefix.symbol) {
