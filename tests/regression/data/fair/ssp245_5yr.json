@@ -168,6 +168,10 @@
   "deep_ocean_efficacy": 1.1,
   "gamma_autocorrelation": 2.0
  },
+ "species_configs": {
+  "aci_scale": -1.03057237,
+  "lifetime_temperature_sensitivity": -0.0408
+ },
  "species": [
   {
    "name": "CO2 FFI",

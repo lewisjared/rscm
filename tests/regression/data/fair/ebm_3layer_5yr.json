@@ -148,6 +148,10 @@
   "deep_ocean_efficacy": 1.1,
   "gamma_autocorrelation": 2.0
  },
+ "species_configs": {
+  "aci_scale": null,
+  "lifetime_temperature_sensitivity": null
+ },
  "species": [
   {
    "name": "Prescribed",

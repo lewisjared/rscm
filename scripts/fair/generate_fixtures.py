@@ -17,14 +17,22 @@ concentration-driven species their concentrations
 and forcing-driven species their forcing.
 
 Usage:
-    uv run --no-project --with fair==2.2.5 python -I scripts/fair/generate_fixtures.py
+    uv run --no-project --with fair==2.2.5 --with numpy==2.4.2 \
+        python -I scripts/fair/generate_fixtures.py
+
+NumPy's AVX-512 ``exp`` differs from the C library's by an ulp,
+which FaIR's longest CO2 lifetime box turns into a 1e-8 relative difference.
+The script disables it so the runs are the same on every x86 machine.
 
 The RCMIP scenarios are downloaded through pooch on first use.
 """
 
 import json
 import math
+import os
 from pathlib import Path
+
+os.environ["NPY_DISABLE_CPU_FEATURES"] = "X86_V4 AVX512_ICL"
 
 import numpy as np
 import pandas as pd
@@ -143,6 +151,11 @@ def _config(f, climate):
     climate_out["gamma_autocorrelation"] = _value(
         f.climate_configs["gamma_autocorrelation"].sel(config="config").values
     )
+    species_configs = {
+        var: _value(configs[var].values)
+        for var in configs.data_vars
+        if "specie" not in configs[var].dims
+    }
     return {
         "fair_version": __version__,
         "time": {
@@ -157,6 +170,7 @@ def _config(f, climate):
             "ch4_min": f._ch4_min,
         },
         "climate": climate_out,
+        "species_configs": species_configs,
         "species": species,
     }
 
@@ -169,7 +183,9 @@ def _write(name, f, climate):
         (TIMEPOINT_ATTRIBUTES, "timepoints", "timepoints"),
     ):
         _frame(f, attributes, dim).to_csv(
-            OUT / f"{name}_{suffix}.csv.gz", float_format="%.17g"
+            OUT / f"{name}_{suffix}.csv.gz",
+            float_format="%.17g",
+            compression={"method": "gzip", "mtime": 0},
         )
     print(f"wrote {name}")
 
