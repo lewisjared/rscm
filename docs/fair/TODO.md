@@ -49,7 +49,7 @@ FaIR calculates EESC after the aerosol forcing, so EESC never reaches ERFari.
 - [x] Ensemble helper returning xarray (`run_ensemble`).
 - [x] `.pyi` stubs.
 - [x] Docs page (`docs/fair_runs.md`).
-- [ ] Changelog fragment, once the PR has a number.
+- [x] Changelog fragment.
 - [x] Parity for members of the fair-calibrate v1.6.1 posterior.
 - [x] Smoke test with MAGICC's `ClimateUDEB` (`build_components(..., energy_balance=False)`).
 
