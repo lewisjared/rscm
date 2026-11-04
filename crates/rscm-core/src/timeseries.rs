@@ -47,6 +47,12 @@ impl TimeAxis {
         let is_monotonic = check_monotonic_increasing(&bounds);
         assert!(is_monotonic);
 
+        // Lookups binary-search the values as a slice.
+        let bounds = if bounds.is_standard_layout() {
+            bounds
+        } else {
+            bounds.as_standard_layout().into_owned()
+        };
         Self { bounds }
     }
 
@@ -904,6 +910,15 @@ mod tests {
 
         // Linear extrapolate isn't allowed by default
         assert!(result.at_time(2026.0, ScalarRegion::Global).is_err());
+    }
+
+    #[test]
+    fn index_of_strided_bounds() {
+        let bounds = array![2000.0, -1.0, 2001.0, -1.0, 2002.0];
+        let axis = TimeAxis::from_bounds(bounds.slice_move(s![..;2]));
+
+        assert_eq!(axis.index_of(2001.0), Some(1));
+        assert_eq!(axis.index_of(2001.5), None);
     }
 
     #[test]

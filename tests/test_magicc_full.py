@@ -54,3 +54,13 @@ def test_natural_emissions_skip_budget_outside_years(budget_inputs):
     out = full.natural_emissions(years, emissions, parameters, inputs)
 
     assert out == {}
+
+
+def test_load_inputs_skips_missing_concentration_files():
+    p = {**full.default_parameters(), "file_co2_conc": "missing_co2_conc.IN"}
+
+    inputs = full.load_inputs(p)
+
+    assert "file_co2_conc" not in inputs
+    with pytest.raises(KeyError, match="file_co2_conc"):
+        full.prescribed_concentrations(np.arange(1750.0, 1800.0), p, inputs)

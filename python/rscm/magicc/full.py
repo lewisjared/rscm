@@ -287,7 +287,7 @@ def load_inputs(
 ) -> dict[str, pr.AerosolHistory]:
     """Read every input file named in ``parameters``, for any number of runs.
 
-    Forcing files are keyed by `INPUT_FILES` and concentration files
+    Forcing files are keyed by `INPUT_FILES` and the concentration files that exist
     by ``file_<species>_conc`` in lower case, such as ``file_cfc11_conc``.
     With ``ncycle_apply`` this also reads the `NITROGEN_INPUT_FILES` that exist.
     ``directory`` defaults to the packaged files of MAGICC7's SSP245 run,
@@ -298,8 +298,8 @@ def load_inputs(
     out = {key: pr.read_input(_find(root, p[key])) for key in INPUT_FILES}
     for group in _concentration_files(p).values():
         for species, file in group:
-            if file.strip():
-                out[_concentration_key(species)] = pr.read_input(_find(root, file))
+            if file.strip() and (path := _find(root, file)).exists():
+                out[_concentration_key(species)] = pr.read_input(path)
     if p["ncycle_apply"]:
         for key in NITROGEN_INPUT_FILES:
             if (path := _find(root, p[key])).exists():
@@ -315,6 +315,16 @@ def _find(root: Path, name: str) -> Path:
 
 def _concentration_key(species: str) -> str:
     return f"file_{species.lower()}_conc"
+
+
+def _concentration_input(
+    inputs: Mapping[str, pr.AerosolHistory], species: str
+) -> pr.AerosolHistory:
+    key = _concentration_key(species)
+    if key not in inputs:
+        msg = f"inputs has no {key}: its file is missing or not from load_inputs"
+        raise KeyError(msg)
+    return inputs[key]
 
 
 def _concentration_files(
@@ -371,7 +381,7 @@ def prescribed_concentrations(
             continue
         for name, file in groups[group]:
             values = (
-                pr.on_axis(files[_concentration_key(name)], y)[:, 0]
+                pr.on_axis(_concentration_input(files, name), y)[:, 0]
                 if file.strip()
                 else np.zeros(len(y))
             )
@@ -869,7 +879,7 @@ def natural_emissions(
         index = np.searchsorted(y, window)
         if window[0] < y[0] or window[-1] > y[-1]:
             continue
-        c = pr.on_axis(files[_concentration_key(gas)], window)[:, 0].tolist()
+        c = pr.on_axis(_concentration_input(files, gas), window)[:, 0].tolist()
         n = len(c) - 1
         # MAGICC7 sums each series in turn, which sets the rounding
         mean = sum((c[k] + c[k + 1]) * 0.5 for k in range(n))
