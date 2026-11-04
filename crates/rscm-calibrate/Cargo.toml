@@ -16,7 +16,7 @@ serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 rand = "0.10"
 rand_distr = "0.6"
-rayon = "1.10"
+rayon.workspace = true
 ndarray = { version = "0.17", features = ["serde", "rayon"] }
 statrs = "0.18"
 indexmap = { version = "2.0", features = ["serde"] }

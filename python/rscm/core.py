@@ -9,6 +9,7 @@ climate models.
 
 - [ModelBuilder][] assembles a climate model from components.
 - [Model][] is a coupled set of components solved on a common time axis.
+- [build_models][] and [run_models][] build and run many models in parallel.
 
 **Time series**
 
@@ -82,6 +83,8 @@ from rscm._lib.core import (
     Unit,
     VariableSchema,
     VariableType,
+    build_models,
+    run_models,
 )
 from rscm._lib.core.spatial import (
     FourBoxGrid,
@@ -128,4 +131,6 @@ __all__ = [
     "Unit",
     "VariableSchema",
     "VariableType",
+    "build_models",
+    "run_models",
 ]

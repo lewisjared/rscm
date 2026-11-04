@@ -30,6 +30,7 @@ is_close = "0.1"
 thiserror = "2.0"
 pythonize = "0.27.0"
 toml = "0.9"
+rayon.workspace = true
 owo-colors = { version = "4", optional = true }
 rscm-macros.workspace = true
 tracing.workspace = true

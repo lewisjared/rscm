@@ -126,6 +126,8 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Model orchestration
     m.add_class::<model::PyModelBuilder>()?;
     m.add_class::<model::PyModel>()?;
+    m.add_function(wrap_pyfunction!(model::py_build_models, m)?)?;
+    m.add_function(wrap_pyfunction!(model::py_run_models, m)?)?;
 
     // Schema types (for variable definitions and aggregates)
     m.add_class::<VariableSchema>()?;

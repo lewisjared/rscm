@@ -81,7 +81,7 @@ fn test_aggregate_waits_for_unequal_length_branches() {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct FailingForcing;
+pub(super) struct FailingForcing;
 
 #[typetag::serde]
 impl Component for FailingForcing {

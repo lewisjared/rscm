@@ -14,6 +14,7 @@
 mod builder;
 mod debug;
 mod null_component;
+mod parallel;
 mod runtime;
 mod state_extraction;
 mod transformations;
@@ -26,6 +27,7 @@ mod tests;
 // Public re-exports
 pub use builder::ModelBuilder;
 pub use debug::{ComponentDebugInfo, ModelDebugInfo, VarInfo, VarSource};
+pub use parallel::{build_models, run_models};
 pub use runtime::Model;
 pub use state_extraction::{extract_state, extract_state_with_transforms};
 pub use types::{RequiredTransformation, TransformDirection, UnitConversionInfo};
