@@ -30,6 +30,7 @@ use crate::spatial::{FourBoxGrid, ScalarRegion, SpatialGrid};
 use crate::timeseries::{FloatValue, Time};
 use crate::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 // =============================================================================
@@ -191,7 +192,7 @@ pub struct InputState<'a> {
     current_time: Time,
     state: Vec<&'a TimeseriesItem>,
     /// Optional transform context for grid aggregation
-    transform_context: Option<TransformContext>,
+    transform_context: Option<Cow<'a, TransformContext>>,
 }
 
 impl<'a> InputState<'a> {
@@ -212,7 +213,20 @@ impl<'a> InputState<'a> {
         Self {
             current_time,
             state: values,
-            transform_context: Some(transform_context),
+            transform_context: Some(Cow::Owned(transform_context)),
+        }
+    }
+
+    /// Build an InputState that borrows an optional transform context.
+    pub fn build_with_transforms_ref(
+        values: Vec<&'a TimeseriesItem>,
+        current_time: Time,
+        transform_context: Option<&'a TransformContext>,
+    ) -> Self {
+        Self {
+            current_time,
+            state: values,
+            transform_context: transform_context.map(Cow::Borrowed),
         }
     }
 

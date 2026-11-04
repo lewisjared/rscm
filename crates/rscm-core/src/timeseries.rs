@@ -202,12 +202,14 @@ impl TimeAxis {
     /// assert_eq!(ta.index_of(27.0), None);
     /// ```
     pub fn index_of(&self, value: Time) -> Option<usize> {
-        for (i, v) in self.values().iter().enumerate() {
-            if (*v - value).abs() < 1e-10 {
-                return Some(i);
-            }
-        }
-        None
+        // Values strictly increase, so every value before the first match is below it
+        let values = self.values();
+        let values = values.as_slice().expect("time axis values are contiguous");
+        let index = values.partition_point(|v| *v - value <= -1e-10);
+        values
+            .get(index)
+            .filter(|v| (**v - value).abs() < 1e-10)
+            .map(|_| index)
     }
 }
 

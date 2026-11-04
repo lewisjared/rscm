@@ -478,14 +478,7 @@ impl ModelBuilder {
             let node = graph.add_node(component.clone());
             let mut has_dependencies = false;
 
-            // Get component name from Debug implementation
-            let component_name = format!("{:?}", component);
-            // Extract just the type name (before the first '{' or ' ')
-            let component_name = component_name
-                .split(['{', ' ', '('])
-                .next()
-                .unwrap_or("UnknownComponent")
-                .to_string();
+            let component_name = Model::extract_component_name(component);
 
             let requires = component.inputs();
             let provides = component.outputs();
@@ -601,12 +594,7 @@ impl ModelBuilder {
 
             // Validate each component against the schema and collect transformations
             for component in &self.components {
-                let component_name = format!("{:?}", component);
-                let component_name = component_name
-                    .split(['{', ' ', '('])
-                    .next()
-                    .unwrap_or("UnknownComponent")
-                    .to_string();
+                let component_name = Model::extract_component_name(component);
 
                 let (component_transforms, component_unit_conversions) = self
                     .validate_component_against_schema(
