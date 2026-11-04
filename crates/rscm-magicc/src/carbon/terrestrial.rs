@@ -360,6 +360,7 @@ impl TerrestrialCarbon {
     /// Advance a set of 3 pools by one timestep.
     ///
     /// Returns (new_pools, turnover_plant, turnover_detritus, turnover_soil).
+    #[allow(clippy::too_many_arguments)]
     fn advance_pools(
         &self,
         pools: &[FloatValue; 3],
@@ -493,7 +494,7 @@ impl TerrestrialCarbon {
         let co2_ref = state.co2_ref;
 
         // Step 3: Temperature feedback factors
-        let apply_temp = current_year.map_or(true, |y| y >= p.tempfeedback_yrstart);
+        let apply_temp = current_year.is_none_or(|y| y >= p.tempfeedback_yrstart);
         let temp = if apply_temp { temperature } else { 0.0 };
 
         let temp_npp = self.temperature_factor(temp, p.npp_temp_sensitivity);
@@ -1250,10 +1251,12 @@ mod tests {
 
     #[test]
     fn test_state_serialization() {
-        let mut state = TerrestrialCarbonState::default();
-        state.initialized = true;
-        state.cumulative_landuse = 42.0;
-        state.co2_ref = 300.0;
+        let state = TerrestrialCarbonState {
+            initialized: true,
+            cumulative_landuse: 42.0,
+            co2_ref: 300.0,
+            ..Default::default()
+        };
 
         let json = serde_json::to_string(&state).expect("State serialization failed");
         let parsed: TerrestrialCarbonState =

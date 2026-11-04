@@ -1,0 +1,2 @@
+# RSCMError carries several owned Strings, and its errors come from setup rather than the step loop.
+large-error-threshold = 256

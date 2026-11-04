@@ -43,7 +43,7 @@ lint-rust:
 	cargo fmt --version
 	cargo fmt --all -- --check
 	cargo clippy --version
-	cargo clippy --tests
+	cargo clippy --workspace --all-targets -- -D warnings
 
 .PHONY: lint
 lint: lint-python lint-rust

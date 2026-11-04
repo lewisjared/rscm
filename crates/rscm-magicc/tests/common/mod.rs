@@ -2,6 +2,7 @@
 //!
 //! Provides common parameter construction, equilibrium temperature computation,
 //! and ClimateUDEB input state builders used across multiple test files.
+#![allow(dead_code)] // Each test binary uses a different subset of these helpers.
 
 use ndarray::Array2;
 use rscm_core::component::{Component, InputState};

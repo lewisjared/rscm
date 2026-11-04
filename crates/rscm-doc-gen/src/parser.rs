@@ -209,51 +209,11 @@ fn parse_io_attr(attr: &Attribute) -> Result<Vec<VariableMetadata>, ()> {
         // Format: field_name { name = "...", unit = "...", grid = "..." }
         let tokens_str = tokens.to_string();
 
-        // Simple state machine parser for the attribute content
-        let mut current_rust_name = String::new();
-        let mut current_var_name = String::new();
-        let mut current_unit = String::new();
-        let mut current_grid = "Scalar".to_string();
-        let mut in_braces = false;
-        let chars = tokens_str.chars().peekable();
-
-        for c in chars {
-            match c {
-                '{' => {
-                    in_braces = true;
-                }
-                '}' => {
-                    if in_braces && !current_rust_name.is_empty() && !current_var_name.is_empty() {
-                        variables.push(VariableMetadata {
-                            rust_name: current_rust_name.trim().to_string(),
-                            variable_name: current_var_name.clone(),
-                            unit: current_unit.clone(),
-                            grid: current_grid.clone(),
-                            description: String::new(),
-                        });
-                    }
-                    current_rust_name.clear();
-                    current_var_name.clear();
-                    current_unit.clear();
-                    current_grid = "Scalar".to_string();
-                    in_braces = false;
-                }
-                _ if !in_braces => {
-                    if c != ',' && c != ' ' && c != '\n' {
-                        current_rust_name.push(c);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        // Re-parse more carefully using regex for the inner content
         let re = regex::Regex::new(
             r#"(\w+)\s*\{\s*name\s*=\s*"([^"]+)"(?:\s*,\s*unit\s*=\s*"([^"]*)")?(?:\s*,\s*grid\s*=\s*"([^"]*)")?\s*\}"#,
         )
         .expect("Invalid regex");
 
-        variables.clear();
         for cap in re.captures_iter(&tokens_str) {
             let rust_name = cap.get(1).map(|m| m.as_str()).unwrap_or("");
             let var_name = cap.get(2).map(|m| m.as_str()).unwrap_or("");

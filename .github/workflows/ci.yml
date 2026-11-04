@@ -75,7 +75,7 @@ jobs:
       - name: Rust format check
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --tests
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   docs-python:
     needs: changes

@@ -216,6 +216,7 @@ impl Model {
     /// * `unit_conversions` - Map from (variable_name, component_name) to conversion factor.
     ///   The factor is multiplied with the stored value to convert from schema units to
     ///   component units when reading.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_unit_conversions(
         components: CGraph,
         initial_node: NodeIndex,
@@ -251,6 +252,7 @@ impl Model {
     ///   component units when reading.
     /// * `variable_sources` - Map from (variable_name, component_name) to source type.
     ///   Used by TimeseriesWindow to determine correct timestep index (at_start vs at_end).
+    #[allow(clippy::too_many_arguments)]
     pub fn with_variable_sources(
         components: CGraph,
         initial_node: NodeIndex,

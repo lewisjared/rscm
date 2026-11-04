@@ -701,7 +701,7 @@ mod climate_tcr {
         for year in 0..n_years {
             // 1%/yr CO2 increase: CO2(t) = CO2_pi * 1.01^t
             // Forcing: Q(t) = rf_2xco2 * log2(1.01^t) = rf_2xco2 * t * log2(1.01)
-            let co2_ratio = 1.01_f64.powi(year as i32 + 1);
+            let co2_ratio = 1.01_f64.powi(year + 1);
             let erf = rf_2xco2 * co2_ratio.log2();
 
             let t_current = 2000.0 + year as FloatValue;
@@ -788,7 +788,7 @@ mod climate_tcr {
             let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
 
             for year in 0..n_years {
-                let co2_ratio = 1.01_f64.powi(year as i32 + 1);
+                let co2_ratio = 1.01_f64.powi(year + 1);
                 let erf = rf_2xco2 * co2_ratio.log2();
 
                 let t_current = 2000.0 + year as FloatValue;

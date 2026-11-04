@@ -1398,8 +1398,10 @@ mod tests {
 
     #[test]
     fn test_adjusted_ecs_with_large_sensitivity() {
-        let mut params = ClimateUDEBParameters::default();
-        params.feedback_cumt_sensitivity = 0.5; // exaggerated
+        let params = ClimateUDEBParameters {
+            feedback_cumt_sensitivity: 0.5, // exaggerated
+            ..Default::default()
+        };
         let component = ClimateUDEB::from_parameters(params).unwrap();
 
         // After 100 years of 1K warming: cumT = 100, cumT_2x = 3.0 * 300 = 900
@@ -1446,8 +1448,10 @@ mod tests {
 
         // Mode 0 (default) should produce identical results to a component
         // that has no efficacy fields at all.
-        let mut params = ClimateUDEBParameters::default();
-        params.efficacy_apply = 0;
+        let params = ClimateUDEBParameters {
+            efficacy_apply: 0,
+            ..Default::default()
+        };
         let component = ClimateUDEB::from_parameters(params).unwrap();
         let mut state = default_state(&component);
 
@@ -1542,8 +1546,10 @@ mod tests {
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
 
         // Mode 0: no efficacy adjustment
-        let mut params_0 = ClimateUDEBParameters::default();
-        params_0.efficacy_apply = 0;
+        let params_0 = ClimateUDEBParameters {
+            efficacy_apply: 0,
+            ..Default::default()
+        };
         let comp_0 = ClimateUDEB::from_parameters(params_0).unwrap();
         let mut state_0 = default_state(&comp_0);
         let out_0 = comp_0
@@ -1551,8 +1557,10 @@ mod tests {
             .expect("solve failed");
 
         // Mode 2: AR6 efficacy adjustment
-        let mut params_2 = ClimateUDEBParameters::default();
-        params_2.efficacy_apply = 2;
+        let params_2 = ClimateUDEBParameters {
+            efficacy_apply: 2,
+            ..Default::default()
+        };
         let comp_2 = ClimateUDEB::from_parameters(params_2).unwrap();
         let mut state_2 = default_state(&comp_2);
         let out_2 = comp_2
@@ -1621,8 +1629,10 @@ mod tests {
 
     #[test]
     fn test_uniform_rf_regions_gives_uniform_qfrac() {
-        let mut params = ClimateUDEBParameters::default();
-        params.rf_regions_co2 = [1.0; 4];
+        let params = ClimateUDEBParameters {
+            rf_regions_co2: [1.0; 4],
+            ..Default::default()
+        };
         let component = ClimateUDEB::from_parameters(params).unwrap();
         let qfrac = component.co2_qfrac();
 
@@ -1673,9 +1683,11 @@ mod tests {
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
 
         let solve = |efficacy_apply, prescribed_efficacy_co2| {
-            let mut params = ClimateUDEBParameters::default();
-            params.efficacy_apply = efficacy_apply;
-            params.prescribed_efficacy_co2 = prescribed_efficacy_co2;
+            let params = ClimateUDEBParameters {
+                efficacy_apply,
+                prescribed_efficacy_co2,
+                ..Default::default()
+            };
             let comp = ClimateUDEB::from_parameters(params).unwrap();
             let mut state = default_state(&comp);
             comp.solve_impl(2000.0, 2001.0, &input_state, &mut state)
@@ -1733,8 +1745,10 @@ mod tests {
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
 
         // Mode 2 with prescribed=1.0 (default)
-        let mut params_2a = ClimateUDEBParameters::default();
-        params_2a.efficacy_apply = 2;
+        let params_2a = ClimateUDEBParameters {
+            efficacy_apply: 2,
+            ..Default::default()
+        };
         let comp_2a = ClimateUDEB::from_parameters(params_2a).unwrap();
         let mut state_2a = default_state(&comp_2a);
         let out_2a = comp_2a
@@ -1742,9 +1756,11 @@ mod tests {
             .expect("solve failed");
 
         // Mode 2 with prescribed=1.1 (10% additional efficacy)
-        let mut params_2b = ClimateUDEBParameters::default();
-        params_2b.efficacy_apply = 2;
-        params_2b.prescribed_efficacy_co2 = 1.1;
+        let params_2b = ClimateUDEBParameters {
+            efficacy_apply: 2,
+            prescribed_efficacy_co2: 1.1,
+            ..Default::default()
+        };
         let comp_2b = ClimateUDEB::from_parameters(params_2b).unwrap();
         let mut state_2b = default_state(&comp_2b);
         let out_2b = comp_2b
@@ -1788,10 +1804,11 @@ mod tests {
 
     #[test]
     fn test_invalid_prescribed_efficacy_rejected() {
-        let mut params = ClimateUDEBParameters::default();
-
         // Zero should be rejected
-        params.prescribed_efficacy_co2 = 0.0;
+        let mut params = ClimateUDEBParameters {
+            prescribed_efficacy_co2: 0.0,
+            ..Default::default()
+        };
         assert!(
             ClimateUDEB::from_parameters(params.clone()).is_err(),
             "prescribed_efficacy_co2=0.0 should be rejected"

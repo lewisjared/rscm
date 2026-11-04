@@ -114,7 +114,7 @@ pub fn invert_by_cofactors(a: &[[FloatValue; 4]; 4]) -> Option<[[FloatValue; 4];
             - (b(1, 0) * b(2, 2) - b(1, 2) * b(2, 0)) * b(0, 1))
             + (b(1, 0) * b(2, 1) - b(1, 1) * b(2, 0)) * b(0, 2)
     };
-    let sign = |n: usize| if n % 2 == 0 { 1.0 } else { -1.0 };
+    let sign = |n: usize| if n.is_multiple_of(2) { 1.0 } else { -1.0 };
     let det = (0..4).fold(0.0, |det, i| det + sign(i) * (minor(i, 0) * a[i][0]));
     if det == 0.0 || !det.is_finite() {
         return None;
@@ -299,7 +299,7 @@ pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
             }
         } else {
             // Secant between i and i-2 (no sign change)
-            let i2 = if i >= 2 { i - 2 } else { 0 };
+            let i2 = i.saturating_sub(2);
             let denom = diff[i] - diff[i2];
             if denom.abs() < 1e-30 {
                 lamo[i + 1] = lamo[i] + dlamo;
