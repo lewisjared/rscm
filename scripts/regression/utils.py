@@ -6,8 +6,7 @@ Provides MAGICC setup and configuration helpers for the regression data generato
 Setup:
     export MAGICC_ROOT=/path/to/magicc-v7.5.3
 
-    uv run --with pymagicc --with scmdata --with "pandas<3" \
-        scripts/regression/generate_full_run.py
+    uv run --group regression scripts/regression/generate_full_run.py
 """
 
 import os
@@ -40,9 +39,11 @@ def _setup_magicc():
     else:
         exe_name = "magicc"
 
-    executable = magicc_root / "bin" / exe_name
-    if not executable.exists():
-        msg = f"MAGICC executable not found: {executable}"
+    # The MAGICC v7.5.3 distribution ships a bare `bin/magicc`.
+    candidates = [magicc_root / "bin" / n for n in dict.fromkeys((exe_name, "magicc"))]
+    executable = next((c for c in candidates if c.exists()), None)
+    if executable is None:
+        msg = f"MAGICC executable not found, tried: {', '.join(map(str, candidates))}"
         raise RuntimeError(msg)
 
     os.environ["MAGICC_EXECUTABLE_7"] = str(executable)

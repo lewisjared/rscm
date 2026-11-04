@@ -15,8 +15,7 @@ so only the variables compared against the coupled model are kept.
 Usage:
     export MAGICC_ROOT=/path/to/magicc-v7.5.3
 
-    uv run --with pymagicc --with scmdata --with "pandas<3" --with "xarray<2025" \
-        scripts/regression/generate_full_run.py
+    uv run --group regression scripts/regression/generate_full_run.py
 
 Output:
     tests/regression/data/full_run/01_ssp245_emissions.csv.gz
