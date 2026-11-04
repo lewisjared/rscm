@@ -152,13 +152,27 @@ emissions = Timeseries(
 )
 
 # %%
-
-# %%
 # Raw values
 plt.plot(emissions.time_axis.values(), emissions.values())
 
+# %% [markdown]
+# Components read exogenous data at the model's time points.
+# The interpolation strategy decides the value between the timeseries' own points:
+#
+# - `Linear` interpolates between neighbouring points.
+# - `Previous` holds the value of the preceding point, giving a step function.
+# - `Next` takes the value of the following point.
+#
+# `at_time()` returns the interpolated value at a given time.
+
 # %%
-# Interpolation onto the model time_axis happens automatically during solve()
+for strategy in [
+    InterpolationStrategy.Linear,
+    InterpolationStrategy.Previous,
+    InterpolationStrategy.Next,
+]:
+    ts = Timeseries(emissions.values(), emissions.time_axis, emissions.units, strategy)
+    print(f"{strategy}: {ts.at_time(1825.0):.2f}")
 
 # %%
 surface_temp = Timeseries(
@@ -194,10 +208,12 @@ model_builder.with_initial_values(initial_state)
 # ## Build the Model
 #
 # Building the model generates a directed graph of component relationships.
-# The model uses this graph to determine the solve order via breadth-first search.
-# If any required information is missing, the build step will fail with an
-# exception explaining what is needed.
-#
+# Each timestep, the model solves the components in topological order of this graph,
+# so every producer runs before the components that consume its outputs.
+# If required information such as an initial value is missing,
+# the build step raises an exception explaining what is needed.
+# A missing exogenous variable is not caught at build time yet.
+# Its values are NaN, so check `debug_info()` for inputs marked `(exo)` that you have not provided.
 
 # %%
 model = model_builder.build()
@@ -229,9 +245,9 @@ model = (
 
 
 # %% [markdown]
-# The graph can be visualised with each node representing a component and the edges
-# describe the flow of state through the model.
-# This graph is solved using a breadth first search starting from the "0" node.
+# The graph can be visualised with each node representing a component.
+# The edges describe the flow of state through the model.
+# Node "0" is an empty root that links components without upstream dependencies.
 
 
 # %%
@@ -256,7 +272,9 @@ view_pydot(graph)
 # ## Run the model
 #
 # Once we have a concrete model we can solve it.
-# You can either step through the model step by step or run for all timesteps at once
+# You can either step through the model step by step or run for all timesteps at once.
+# Both `step()` and `run()` raise a `RuntimeError` if a component fails.
+# See [Model Debugging and Inspection](debugging_inspection.py) for handling these errors.
 
 # %%
 model.current_time_bounds()
@@ -409,8 +427,6 @@ emissions_scenario = Timeseries(
 # %%
 # Plot the emissions scenario
 plt.figure(figsize=(10, 4))
-# Interpolate to yearly values for plotting
-plot_years = np.arange(1750, 2101)
 plt.plot(years, emission_values, "o", markersize=8, label="Scenario points")
 plt.fill_between(years, emission_values, alpha=0.3, label="Emissions pathway")
 plt.xlabel("Year")
@@ -457,6 +473,10 @@ erf_schema.add_aggregate(
 # Note that we don't need to provide `Surface Temperature` as an exogenous variable
 # because the Two-Layer model produces it. The model builder automatically resolves
 # the dependency graph.
+#
+# The carbon cycle runs before the Two-Layer model within each step.
+# It reads the temperature at the start of the step, which the Two-Layer model wrote in the previous step.
+# The feedback loop therefore closes across timesteps rather than within one.
 
 # %%
 feedback_model = (
@@ -487,6 +507,10 @@ feedback_model = (
 #
 # The debug info shows execution order, variable flow, and source classifications.
 # The dot graph shows the structural dependency graph between components.
+#
+# `debug_info()` tags `Surface Temperature` as `(exo)` for the carbon cycle.
+# This is because no earlier component produces it.
+# The value still comes from the Two-Layer model's previous step.
 
 # %%
 print(feedback_model.debug_info())
@@ -501,6 +525,7 @@ view_pydot(graph)
 # - **Node 0**: Root/entry point
 # - **CarbonCycle**: Takes emissions and temperature, outputs CO2 concentration
 # - **CO2ERF**: Takes CO2 concentration, outputs radiative forcing
+# - **AggregatorComponent**: Sums the forcing contributors declared in the schema
 # - **TwoLayer**: Takes radiative forcing, outputs surface temperature
 #
 # The edges show which variables flow between components.
@@ -639,7 +664,7 @@ plt.show()
 #
 # 1. Create a `ModelBuilder` with a time axis
 # 2. Add Rust components with parameters
-# 3. Provide exogenous variables as `Timeseries` objects
+# 3. Provide exogenous variables as `Timeseries` objects with an interpolation strategy
 # 4. Set initial values for state variables
 # 5. Build and run the model
 # 6. Inspect model structure with `debug_info()` (rich, plain, or json formats)

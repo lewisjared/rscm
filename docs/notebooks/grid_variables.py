@@ -45,16 +45,22 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+from rscm.component import Component, Input, Output
 from rscm.components import FourBoxOceanHeatUptakeBuilder
 from rscm.core import (
     FourBoxGrid,
     FourBoxRegion,
+    FourBoxSlice,
+    GridType,
     HemisphericGrid,
     HemisphericRegion,
+    HemisphericSlice,
     InterpolationStrategy,
     ModelBuilder,
+    PythonComponent,
     TimeAxis,
     Timeseries,
+    VariableSchema,
 )
 
 # %% [markdown]
@@ -310,12 +316,11 @@ for idx, (name, color) in enumerate(zip(region_names, colors)):
     region_values = values[valid_mask, idx]
     plt.plot(plot_times, region_values, label=name, color=color, linewidth=2)
 
-# Also plot the input forcing (scaled for comparison)
+# Also plot the input forcing for comparison
 erf_ts = collection.get_timeseries_by_name("Effective Radiative Forcing|Aggregated")
-erf_values_full = erf_ts.values()[valid_mask]
 plt.plot(
-    plot_times,
-    erf_values_full,
+    times,
+    erf_ts.values(),
     label="Input ERF",
     color="black",
     linestyle="--",
@@ -333,37 +338,31 @@ plt.show()
 # ### Aggregating Grid Output Back to Scalar
 #
 # To verify conservation, we can aggregate the regional values back to a
-# global mean. With the default ratios averaging to 1.0 and equal grid
+# global mean. With these ratios averaging to 1.0 and equal grid
 # weights, the aggregated value should match the input forcing.
+#
+# A component reads its inputs at the start of a step and its outputs belong to the end of the step.
+# The uptake stored at a time point therefore comes from the forcing one point earlier.
 
 # %%
 # Aggregate the regional heat uptake back to global
 grid = FourBoxGrid.magicc_standard()
 
-global_uptake = []
-for i in range(len(plot_times)):
-    timestep_values = values[valid_mask][i, :]
-    global_val = grid.aggregate_global(timestep_values.tolist())
-    global_uptake.append(global_val)
+global_uptake = np.array([grid.aggregate_global(row.tolist()) for row in values[1:]])
+erf_at_start = erf_ts.values()[:-1]
 
-global_uptake = np.array(global_uptake)
-
-# Compare with input forcing
-print("Conservation check (global uptake ≈ input ERF):")
-print(
-    f"  Year {plot_times[0]:.0f}: Input ERF = {erf_values_full[0]:.2f}, "
-    f"Aggregated uptake = {global_uptake[0]:.2f}"
-)
-print(
-    f"  Year {plot_times[-1]:.0f}: Input ERF = {erf_values_full[-1]:.2f}, "
-    f"Aggregated uptake = {global_uptake[-1]:.2f}"
-)
+print("Conservation check (aggregated uptake vs forcing at the start of each step):")
+for label, i in [("First step", 0), ("Last step", -1)]:
+    print(
+        f"  {label}: Input ERF = {erf_at_start[i]:.2f}, "
+        f"Aggregated uptake = {global_uptake[i]:.2f}"
+    )
 
 # Plot comparison
 plt.figure(figsize=(10, 5))
-plt.plot(plot_times, erf_values_full, label="Input ERF", linewidth=2)
+plt.plot(times[1:], erf_at_start, label="Input ERF (start of step)", linewidth=2)
 plt.plot(
-    plot_times,
+    times[1:],
     global_uptake,
     label="Aggregated Heat Uptake",
     linestyle="--",
@@ -409,6 +408,11 @@ print(f"Global mean (equal weights):     {equal_mean:.3f} K")
 print(f"Global mean (realistic weights): {realistic_mean:.3f} K")
 
 # %% [markdown]
+# These grid objects only affect standalone calculations.
+# To change the weights a model uses for its own aggregation,
+# pass them to `ModelBuilder.with_grid_weights()` as shown [below](#aggregating-inside-a-model).
+
+# %% [markdown]
 # ## Working with Hemispheric Grids
 #
 # Hemispheric grids are useful when the ocean-land distinction is less
@@ -449,22 +453,234 @@ print(
 )
 
 # %% [markdown]
+# ## Writing Gridded Python Components
+#
+# Declare a gridded variable by passing `grid="FourBox"` or `grid="Hemispheric"`
+# to `Input`, `Output` or `State`.
+# Return a `FourBoxSlice` or `HemisphericSlice` for gridded outputs.
+#
+# The component below scales a global forcing into regional temperatures.
+# A second component reads those regional values and computes the land-ocean contrast.
+
+
+# %%
+class RegionalWarming(Component):
+    """Scale global forcing into regional temperatures."""
+
+    forcing = Input("Effective Radiative Forcing", unit="W/m^2")
+    temperature = Output("Surface Temperature", unit="K", grid="FourBox")
+
+    def __init__(self, sensitivity: list[float]):
+        # Regional sensitivities in K per W/m^2, ordered [NO, NL, SO, SL]
+        self.sensitivity = sensitivity
+
+    def solve(self, t_current, t_next, inputs):
+        """Compute regional temperatures from the forcing at the start of the step."""
+        erf = inputs.forcing.at_start()
+        return self.Outputs(
+            temperature=FourBoxSlice.from_array([s * erf for s in self.sensitivity])
+        )
+
+
+class LandOceanContrast(Component):
+    """Difference between mean land and mean ocean temperature."""
+
+    temperature = Input("Surface Temperature", unit="K", grid="FourBox")
+    contrast = Output("Land-Ocean Contrast", unit="K")
+
+    def solve(self, t_current, t_next, inputs):
+        """Read regional values from the FourBox window."""
+        regional = inputs.temperature.at_start_all()
+        land = (regional.northern_land + regional.southern_land) / 2
+        ocean = (
+            inputs.temperature.at_start(FourBoxRegion.NORTHERN_OCEAN)
+            + inputs.temperature.at_start(FourBoxRegion.SOUTHERN_OCEAN)
+        ) / 2
+        return self.Outputs(contrast=land - ocean)
+
+
+# %% [markdown]
+# A grid window gives access to the regional values:
+#
+# - `at_start_all()` returns a `FourBoxSlice` (or `HemisphericSlice`) for the start of the step.
+# - `at_start(region)` returns a single regional value.
+# - `region(region)` returns a scalar `TimeseriesWindow` for one region's history.
+#
+# Python components only see values up to the start of the current step.
+# An upstream output therefore reaches `LandOceanContrast` one step after `RegionalWarming` writes it.
+
+# %%
+sensitivity = [0.7, 1.1, 0.5, 0.9]
+grid_time_axis = TimeAxis.from_values(np.arange(2000.0, 2011.0))
+grid_forcing = Timeseries(
+    np.array([1.0, 2.0]),
+    TimeAxis.from_values(np.array([2000.0, 2010.0])),
+    "W/m^2",
+    InterpolationStrategy.Linear,
+)
+
+
+def build_regional_model(
+    temperature_grid: GridType, weights: list[float] | None = None
+) -> ModelBuilder:
+    """Build a model whose schema stores Surface Temperature on the given grid."""
+    schema = VariableSchema()
+    schema.add_variable("Effective Radiative Forcing", "W/m^2")
+    schema.add_variable("Surface Temperature", "K", temperature_grid)
+
+    builder = (
+        ModelBuilder()
+        .with_time_axis(grid_time_axis)
+        .with_schema(schema)
+        .with_py_component(PythonComponent.build(RegionalWarming(sensitivity)))
+        .with_exogenous_variable("Effective Radiative Forcing", grid_forcing)
+    )
+    if weights is not None:
+        builder = builder.with_grid_weights(GridType.FourBox, weights)
+    return builder
+
+
+schema = VariableSchema()
+schema.add_variable("Effective Radiative Forcing", "W/m^2")
+schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+schema.add_variable("Land-Ocean Contrast", "K")
+
+regional_model = (
+    ModelBuilder()
+    .with_time_axis(grid_time_axis)
+    .with_schema(schema)
+    .with_py_component(PythonComponent.build(RegionalWarming(sensitivity)))
+    .with_py_component(PythonComponent.build(LandOceanContrast()))
+    .with_exogenous_variable("Effective Radiative Forcing", grid_forcing)
+).build()
+regional_model.run()
+
+regional_results = regional_model.timeseries()
+print(
+    regional_results.get_fourbox_timeseries_by_name("Surface Temperature").values()[:4]
+)
+print(regional_results.get_timeseries_by_name("Land-Ocean Contrast").values()[:4])
+
+# %% [markdown]
+# ## Aggregating Inside a Model
+#
+# The schema decides the grid a variable is stored on.
+# If a component writes a finer grid than the schema declares,
+# the model aggregates the output when writing it.
+# Here the schema stores `Surface Temperature` as a scalar,
+# so the FourBox output of `RegionalWarming` becomes a global mean.
+#
+# By default the model aggregates with equal weights.
+# `ModelBuilder.with_grid_weights()` sets area weights for a grid type.
+# The weights must sum to 1.0, ordered `[NO, NL, SO, SL]` for FourBox and `[N, S]` for Hemispheric.
+
+# %%
+area_weights = [0.29, 0.21, 0.395, 0.105]
+
+equal_model = build_regional_model(GridType.Scalar).build()
+weighted_model = build_regional_model(GridType.Scalar, area_weights).build()
+equal_model.run()
+weighted_model.run()
+
+for label, m in [("Equal weights", equal_model), ("Area weights", weighted_model)]:
+    temps = m.timeseries().get_timeseries_by_name("Surface Temperature").values()
+    print(f"{label}: {np.round(temps[1:4], 3)}")
+
+# %% [markdown]
+# `debug_info()` lists the grid transformations the model applies.
+
+# %%
+print(weighted_model.debug_info("plain"))
+
+# %% [markdown]
+# Declaring the schema variable as `Hemispheric` instead averages ocean and land within each hemisphere.
+
+# %%
+hemi_model = build_regional_model(GridType.Hemispheric).build()
+hemi_model.run()
+print(
+    hemi_model.timeseries()
+    .get_hemispheric_timeseries_by_name("Surface Temperature")
+    .values()[:4]
+)
+
+# %% [markdown]
+# Rust components also support read-side aggregation,
+# where a component reads a coarser grid than the schema stores.
+# Python components receive the window at the schema's resolution.
+# See [Schema-Driven Auto-Aggregation](../grids.md#schema-driven-auto-aggregation) for details.
+
+# %% [markdown]
 # ## Grid Coupling Rules
 #
-# RSCM validates grid compatibility when building models:
+# The model only aggregates from finer to coarser grids:
 #
-# | From → To     | Transformation                  | Automatic? |
-# |---------------|--------------------------------|------------|
-# | FourBox → Scalar | Weighted average              | Yes        |
-# | FourBox → Hemispheric | Average per hemisphere   | Yes        |
-# | Hemispheric → Scalar | Weighted average          | Yes        |
-# | Scalar → FourBox | Broadcast (same to all)       | Yes        |
-# | Scalar → Hemispheric | Broadcast                 | Yes        |
-# | Hemispheric → FourBox | **Not supported**        | No         |
+# | From → To             | Transformation         | Automatic? |
+# |-----------------------|------------------------|------------|
+# | FourBox → Scalar      | Weighted average       | Yes        |
+# | FourBox → Hemispheric | Average per hemisphere | Yes        |
+# | Hemispheric → Scalar  | Weighted average       | Yes        |
+# | Scalar → FourBox      | Broadcast              | No         |
+# | Scalar → Hemispheric  | Broadcast              | No         |
+# | Hemispheric → FourBox | Disaggregation         | No         |
 #
-# The last case (Hemispheric → FourBox) requires explicit disaggregation
-# because there's no physical basis to split hemisphere values into
-# ocean/land without additional assumptions.
+# Automatic aggregation needs a schema that declares the coarser grid.
+# The builder validates grids when the model is built.
+# Without a schema, a FourBox producer cannot feed a Scalar consumer:
+
+
+# %%
+class ScalarReader(Component):
+    """Reads Surface Temperature as a global value."""
+
+    temperature = Input("Surface Temperature", unit="K")
+    response = Output("Response", unit="K")
+
+    def solve(self, t_current, t_next, inputs):
+        """Pass the global temperature through."""
+        return self.Outputs(response=inputs.temperature.at_start())
+
+
+try:
+    (
+        ModelBuilder()
+        .with_time_axis(grid_time_axis)
+        .with_py_component(PythonComponent.build(RegionalWarming(sensitivity)))
+        .with_py_component(PythonComponent.build(ScalarReader()))
+        .with_exogenous_variable("Effective Radiative Forcing", grid_forcing)
+    ).build()
+except ValueError as e:
+    print(e)
+
+
+# %% [markdown]
+# Disaggregation is rejected even with a schema,
+# because there is no physical basis to split coarse values into finer regions without extra assumptions.
+
+
+# %%
+class HemisphericProducer(Component):
+    """Produces hemispheric temperatures."""
+
+    temperature = Output("Surface Temperature", unit="K", grid="Hemispheric")
+
+    def solve(self, t_current, t_next, inputs):
+        """Return fixed hemispheric values."""
+        return self.Outputs(temperature=HemisphericSlice(northern=1.2, southern=0.8))
+
+
+fourbox_schema = VariableSchema()
+fourbox_schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+
+try:
+    (
+        ModelBuilder()
+        .with_time_axis(grid_time_axis)
+        .with_schema(fourbox_schema)
+        .with_py_component(PythonComponent.build(HemisphericProducer()))
+    ).build()
+except ValueError as e:
+    print(e)
 
 # %% [markdown]
 # ### Disaggregation Best Practice
@@ -529,22 +745,22 @@ print(f"  Southern: input={hemi_input[1]}, aggregated={south_check:.3f}")
 #
 # This notebook demonstrated how to:
 #
-# 1. **Understand grid types** - Scalar, Hemispheric, and FourBox
-# 2. **Access regional values** - Using region constants
-# 3. **Aggregate grid values** - Area-weighted global means
-# 4. **Use gridded components** - FourBoxOceanHeatUptake example
-# 5. **Visualise regional outputs** - Plotting four-region timeseries
-# 6. **Work with custom weights** - Realistic area fractions
-# 7. **Handle grid coupling** - Understanding transformation rules
+# 1. **Understand grid types**: Scalar, Hemispheric, and FourBox
+# 2. **Access regional values**: Using region constants
+# 3. **Aggregate grid values**: Area-weighted global means
+# 4. **Use gridded components**: FourBoxOceanHeatUptake example
+# 5. **Visualise regional outputs**: Plotting four-region timeseries
+# 6. **Write gridded Python components**: `grid=` declarations and `FourBoxSlice` outputs
+# 7. **Aggregate inside a model**: Schema grids and `with_grid_weights()`
+# 8. **Handle grid coupling**: Transformation rules and validation errors
 #
 # ### Key Takeaways
 #
 # - Choose grid type based on physical requirements (well-mixed vs regional)
 # - Aggregation order matters for nonlinear processes
-# - Custom area weights give more realistic global means
-# - Disaggregation requires explicit physical assumptions
-# - FourBox → Hemispheric → Scalar transformations are automatic
-# - Hemispheric → FourBox requires custom components
+# - The schema sets the stored grid, and the model aggregates finer outputs on write
+# - `with_grid_weights()` sets the area weights the model uses for aggregation
+# - Disaggregation requires explicit physical assumptions in a custom component
 #
 # ### Next Steps
 #

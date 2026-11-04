@@ -1,0 +1,87 @@
+{
+  "$schema": "component_metadata_schema.json",
+  "name": "TerrestrialCarbon",
+  "module_path": "rscm_magicc::carbon::terrestrial",
+  "language": "rust",
+  "description": "Terrestrial Carbon Cycle Component\n\nImplements the MAGICC7 `TERRCARBON2` subroutine: a 3-pool terrestrial carbon\nmodel with three CO2 fertilization methods, two respiration methods,\ntime-varying turnover times, no-feedback reference pools for regrowth\nattribution, and mass conservation correction.\n\n# Pools\n\n- Plant biomass (living vegetation)\n- Detritus/litter (dead organic matter)\n- Soil carbon (long-lived organic carbon)\n\n# Feedbacks\n\n1. **CO2 Fertilization**: Three blendable methods (logarithmic, Gifford, sigmoid)\n2. **Temperature on NPP**: Exponential sensitivity\n3. **Temperature on decay**: Separate sensitivities for detritus and soil\n4. **Time-varying turnover**: Cumulative deforestation reduces turnover times\n\n# Inputs\n\n- `Atmospheric Concentration|CO2` (ppm)\n- `Surface Temperature` (K) - temperature anomaly. The feedbacks use the\n  warming since `tempfeedback_yrstart`, floored at zero\n- `Emissions|CO2|Land Use` (GtC/yr)\n\n# States (tracked between timesteps)\n\n- `Carbon Pool|Plant` (GtC)\n- `Carbon Pool|Detritus` (GtC)\n- `Carbon Pool|Soil` (GtC)\n\n# Outputs\n\n- `Carbon Flux|Terrestrial` (GtC/yr) - net flux (positive = land uptake)\n- `Emissions|CO2|Gross Deforestation` (GtC/yr)\n- `Carbon Flux|Regrowth` (GtC/yr)\n- `Net Primary Production` (GtC/yr)\n- `Respiration|Terrestrial` (GtC/yr)\n\n# Nitrogen limitation\n\nWith the `nitrogen` parameter, NPP is limited by the nitrogen budget in\n[`super::nitrogen`]. This reads `Nitrogen Deposition` (Gt N/yr), and\n`Nitrogen Fixation` (Gt N/yr) unless fixation is prognostic,\nand writes `Nitrogen Limitation Factor`, `Nitrogen Pool` (Gt N) and the\n`Nitrogen Flux|*` budget terms (Gt N/yr).\n\nTerrestrial carbon cycle component implementing MAGICC7 TERRCARBON2.\n\nUses implicit trapezoidal (Crank-Nicolson) integration for numerical stability.\n\n# Algorithm\n\nFor each timestep:\n\n1. Extrapolate CO2 to mid-year (quadratic)\n2. Calculate CO2 fertilization factor (3 methods with blending)\n3. Calculate temperature feedback factors\n4. Calculate NPP and respiration with feedbacks\n5. Compute time-varying turnover times\n6. Update pools using implicit trapezoidal scheme\n7. Advance no-feedback reference pools and compute regrowth\n8. Apply mass conservation correction",
+  "category": "Carbon Cycle",
+  "tags": [
+    "carbon-cycle",
+    "terrestrial",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "co2_concentration",
+      "variable_name": "Atmospheric Concentration|CO2",
+      "unit": "ppm",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "temperature",
+      "variable_name": "Surface Temperature",
+      "unit": "K",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "landuse_emissions",
+      "variable_name": "Emissions|CO2|Land Use",
+      "unit": "GtC/yr",
+      "grid": "Scalar"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "net_flux",
+      "variable_name": "Carbon Flux|Terrestrial",
+      "unit": "GtC/yr",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "gross_deforestation",
+      "variable_name": "Emissions|CO2|Gross Deforestation",
+      "unit": "GtC/yr",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "total_regrowth",
+      "variable_name": "Carbon Flux|Regrowth",
+      "unit": "GtC/yr",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "npp",
+      "variable_name": "Net Primary Production",
+      "unit": "GtC/yr",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "total_respiration",
+      "variable_name": "Respiration|Terrestrial",
+      "unit": "GtC/yr",
+      "grid": "Scalar"
+    }
+  ],
+  "states": [
+    {
+      "rust_name": "plant_pool",
+      "variable_name": "Carbon Pool|Plant",
+      "unit": "GtC",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "detritus_pool",
+      "variable_name": "Carbon Pool|Detritus",
+      "unit": "GtC",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "soil_pool",
+      "variable_name": "Carbon Pool|Soil",
+      "unit": "GtC",
+      "grid": "Scalar"
+    }
+  ],
+  "parameters": [],
+  "source_file": "crates/rscm-magicc/src/carbon/terrestrial.rs"
+}

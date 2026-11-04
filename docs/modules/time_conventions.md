@@ -70,5 +70,6 @@ MAGICC7 produces two temperature variables:
 RSCM outputs point-in-time values, matching `DAT_SURFACE_TEMP`.
 When `thermal_expansion` is set, `ClimateUDEB` also writes `Surface Temperature|Annual Mean`,
 matching `DAT_SURFACE_ANNUALMEANTEMP`.
+`SeaLevelRise` reads it.
 
 Reference: MAGICC7.f90 lines 3426-3464

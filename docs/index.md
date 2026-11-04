@@ -27,4 +27,7 @@
 
 - **[Tutorials](tutorials.md)**: Hands-on guides for common tasks
 - **[Key Concepts](key_concepts.md)**: Understand Components, Models, and Timeseries
+- **[MAGICC Runs](magicc_runs.md)**: Run the full MAGICC7 chain or smaller MAGICC runners
+- **[MAGICC Coupled Model](notebooks/magicc_coupled_model.py)**: Couple the MAGICC components yourself
+- **[MAGICC Modules](modules/README.md)**: Module specifications and implementation status
 - **[Python API](api/rscm/)**: Full API documentation

@@ -627,15 +627,18 @@ test_vals = results_nan.get_timeseries_by_name(
 ).values()
 total_vals = results_nan.get_timeseries_by_name("Total Forcing").values()
 
+years = time_axis.values()
 print("Year  | CO2 ERF | Test ERF | Total (Sum)")
 print("-" * 45)
-for i, year in enumerate(time_axis.values()[:8]):
+for i in np.flatnonzero((years >= 1980.0) & (years <= 2030.0)):
     print(
-        f"{year:.0f}  | {co2_vals[i]:7.3f} | {test_vals[i]:8.3f} | {total_vals[i]:7.3f}"
+        f"{years[i]:.0f}  | {co2_vals[i]:7.3f} | {test_vals[i]:8.3f} | {total_vals[i]:7.3f}"
     )
 
-print("\nNote: Before 2000, Test ERF is NaN and excluded from the sum.")
-print("After 2000, Test ERF = 1.0 and is included in the sum.")
+# %% [markdown]
+# The Test ERF is NaN up to 2000 and is excluded from the sum.
+# The step starting in 2000 writes 1.0 at 2010, from which point it is included.
+# A value at a time point is written by the step that ends there.
 
 # %% [markdown]
 # ## Schema Validation Errors
@@ -712,15 +715,40 @@ except ValueError as e:
     print(f"Error: {e}")
 
 # %% [markdown]
-# ## Loading Schemas from Configuration
+# ### Build-Time Validation
 #
-# Schemas can be serialised to JSON or TOML for configuration files.
-# This enables model configurations without code changes.
+# With a schema attached, the model builder also checks every component against it.
+# A component that reads or writes a variable missing from the schema fails to build,
+# as does one that declares a unit with a different dimension.
+
+# %%
+try:
+    (
+        ModelBuilder()
+        .with_schema(schema)
+        .with_time_axis(time_axis)
+        .with_py_component(PythonComponent.build(AerosolForcing()))
+        .with_exogenous_variable("Emissions|Aerosol", aerosol_emissions)
+    ).build()
+except ValueError as e:
+    print(f"Error: {e}")
+
+# %% [markdown]
+# Units only need the same dimension, not the same spelling.
+# When a Rust component declares a compatible unit that differs from the schema,
+# the model converts values as the component reads them.
+# See the [Units tutorial](units_tutorial.py) for details.
+
+# %% [markdown]
+# ## Inspecting a Schema
+#
+# The `variables` and `aggregates` attributes expose the schema's definitions.
+# `VariableSchema` has no serialisation method yet,
+# but you can export these definitions to a configuration format yourself.
 
 # %%
 import json
 
-# Serialise schema to JSON
 schema_json = json.dumps(
     {
         "variables": {
@@ -734,6 +762,7 @@ schema_json = json.dumps(
                 "grid_type": str(a.grid_type),
                 "operation": a.operation_type,
                 "contributors": a.contributors,
+                "weights": a.weights,
             }
             for name, a in schema.aggregates.items()
         },

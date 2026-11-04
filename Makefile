@@ -82,7 +82,7 @@ clean:
 .PHONY: docs-metadata
 docs-metadata: ## Generate component metadata JSON from Rust sources
 	cargo run -p rscm-doc-gen -- \
-		--crates crates/rscm-components,crates/rscm-two-layer \
+		--crates crates/rscm-components,crates/rscm-two-layer,crates/rscm-magicc \
 		--output docs/component_metadata/
 
 .PHONY: docs

@@ -15,13 +15,22 @@
 # %% [markdown]
 # # Model state serialisation
 #
-# It can be useful to be able to be able to capture the current state of a model
-# and serialise it for later use.
+# It can be useful to capture the current state of a model and serialise it for later use.
 #
-# We provide an TOML representation of a model's state that provides a human-readable
-# description of the model, including its components and state.
+# `Model.to_toml()` produces a human-readable TOML description of a model,
+# including its components, parameters, timeseries and internal state.
+# `Model.from_toml()` recreates the model from that string.
+#
+# ## Related Resources
+#
+# - [Coupled Models](coupled_model.py): Building multi-component models
+# - [Scenario Pipeline](scenario_pipeline.py): Branching scenarios from a historical run
+# - [Model Debugging and Inspection](debugging_inspection.py): Using checkpoints to debug
 
 # %%
+import tempfile
+from pathlib import Path
+
 import numpy as np
 
 from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
@@ -110,87 +119,86 @@ model.step()
 # We can log the state of a model using TOML.
 #
 # This format is human-readable and can be used to store the state of a model to disk.
-# A binary-format could be used to store the state of a model in a more compact way.
+# It contains these sections:
 #
+# - `time_index`: the current position on the time axis.
+# - `components`: the component graph, with each component's type and parameters.
+# - `collection`: every timeseries, with values solved so far and NaN for later time points.
+# - `time_axis`: the model's time bounds.
+# - `component_states`: internal state that components carry between steps.
 
 # %%
 serialised_model = model.to_toml()
-print(serialised_model)
+print("\n".join(serialised_model.splitlines()[:40]))
+print("...")
 
 # %% [markdown]
 # ## Recreating the model state
 #
 # A new model can be initialised using the TOML representation.
-# The new model will have the same state and components as the original model
+# The new model will have the same state and components as the original model.
 
 # %%
 new_model = Model.from_toml(serialised_model)
 print(new_model.as_dot())
 
 # %% [markdown]
-# It will also on the same timestep as the original model.
+# It will also be on the same timestep as the original model.
 
 # %%
 assert new_model.current_time() == model.current_time()
 
 # %% [markdown]
 # The newly created model can then be run as normal.
+# It produces the same results as the original model run to completion.
 
 # %%
 new_model.run()
+model.run()
+
+variable = "Atmospheric Concentration|CO2"
+np.testing.assert_allclose(
+    new_model.timeseries().get_timeseries_by_name(variable).values(),
+    model.timeseries().get_timeseries_by_name(variable).values(),
+)
+print("Restored and original runs match")
 
 # %% [markdown]
-# Currently we don't provide many hooks to modify the state of the model post-creation.
-# A `Model` configuration is effectively immutable after creation.
+# ## Checkpoints on disk
 #
-# A `ModelBuilder` could be created using the contents of the model state to enable
-# modification or to provide the initial conditions for a later run.
-# The common use case that we are aiming to support is to be able to spin a model up
-# over a historical period with a given set of parameters,
-# and then run multiple different future scenarios with the same parameters.
-#
-# The historical period does not need to be run for every scenario.
-# Instead a model can be created from the state of the historical model and run with
-# the new scenario data for the future period.
-
-# %% [markdown]
-# Some psuedo-code that illustrates the desired operation is shown below:
-#
-# ```py
-# historical_time_axis = TimeAxis.from_values(np.arange(1850, 2015 + 1))
-# scenario_time_axis = TimeAxis.from_values(np.arange(2015, 2100))
-# historical_exogenous_data: TimeseriesCollection = get_historical_data()
-#
-#
-# model_builder = get_builder_with_components()
-#
-# historical_model = (
-#     get_builder_with_components()
-#     .with_time_axis(historical_time_axis)
-#     .with_exogenous_collection(historical_exogenous_data)
-# ).build()
-#
-# historical_model.run()
-#
-# historical_model_state = historical_model.to_toml()
-#
-# # This state can be archived for later use
-#
-# for scenario in get_list_of_scenarios():
-#     model = (
-#         ModelBuilder
-#         .from_model_state(historical_model_state)
-#         # Some components may require more than one previous timestep
-#         # so we should merge time axes rather than dropping the historical data
-#         .with_time_axis(scenario_time_axis.merge(historical_time_axis))
-#         .with_current_time_step(2015.0)
-#         .with_exogenous_collection(scenario)
-#     ).build()
-#
-#     model.run()
-#
-#     # Save results
-# ```
-#
+# Write the TOML string to a file to keep a checkpoint between sessions or share it with collaborators.
 
 # %%
+checkpoint_model = (
+    ModelBuilder()
+    .with_rust_component(carbon_cycle_component)
+    .with_rust_component(co2_erf_component)
+    .with_time_axis(time_axis)
+    .with_exogenous_variable("Surface Temperature", surface_temp)
+    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
+    .with_initial_values(initial_state)
+).build()
+
+while checkpoint_model.current_time() < 1900.0:
+    checkpoint_model.step()
+
+with tempfile.TemporaryDirectory() as tmp:
+    checkpoint = Path(tmp) / "model_1900.toml"
+    checkpoint.write_text(checkpoint_model.to_toml())
+
+    resumed = Model.from_toml(checkpoint.read_text())
+
+print(f"Resumed at {resumed.current_time()}")
+resumed.run()
+print(f"Finished at {resumed.current_time()}")
+
+# %% [markdown]
+# ## Limitations
+#
+# - A restored model keeps its original time axis and exogenous data.
+#   There is no API yet to change these on a restored model.
+#   To run new scenarios from a branch point,
+#   see the [Scenario Pipeline](scenario_pipeline.py) tutorial.
+# - Models containing Python components cannot be serialised yet.
+# - The TOML records no format version.
+#   Treat checkpoints as tied to the RSCM version that wrote them.

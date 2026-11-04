@@ -40,7 +40,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from rscm.component import Component, Input, Output
+from rscm.component import Component, Input, Output, State
 from rscm.core import (
     FourBoxSlice,
     InterpolationStrategy,
@@ -243,6 +243,48 @@ plt.show()
 # %% [markdown]
 # Note the 1-timestep delay: the component reads input at t0 and writes
 # output at t1. After 2015, the output is 3x the input.
+
+# %% [markdown]
+# ## State Variables
+#
+# A `State` is read at the start of each timestep and written at the end.
+# It appears in both `Inputs` and `Outputs`.
+# The model needs an initial value for every state variable.
+
+
+# %%
+class Accumulator(Component):
+    """Accumulate emissions over time."""
+
+    emissions = Input("Emissions|CO2", unit="GtC / yr")
+    cumulative = State("Cumulative Emissions|CO2", unit="GtC")
+
+    def solve(self, t_current: float, t_next: float, inputs):
+        """Add this timestep's emissions to the running total."""
+        dt = t_next - t_current
+        total = inputs.cumulative.at_start() + inputs.emissions.at_start() * dt
+        return self.Outputs(cumulative=total)
+
+
+emissions_ts = Timeseries(
+    np.asarray([10.0, 10.0]),
+    TimeAxis.from_values(np.asarray([2000.0, 2010.0])),
+    "GtC / yr",
+    InterpolationStrategy.Previous,
+)
+
+state_model = (
+    ModelBuilder()
+    .with_py_component(PythonComponent.build(Accumulator()))
+    .with_time_axis(TimeAxis.from_bounds(np.arange(2000.0, 2006.0)))
+    .with_exogenous_variable("Emissions|CO2", emissions_ts)
+    .with_initial_values({"Cumulative Emissions|CO2": 0.0})
+).build()
+state_model.run()
+
+print(
+    state_model.timeseries().get_timeseries_by_name("Cumulative Emissions|CO2").values()
+)
 
 # %% [markdown]
 # ## Grid-Based Components

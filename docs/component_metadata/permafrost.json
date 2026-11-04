@@ -1,0 +1,44 @@
+{
+  "$schema": "component_metadata_schema.json",
+  "name": "Permafrost",
+  "module_path": "rscm_magicc::carbon::permafrost",
+  "language": "rust",
+  "description": "Permafrost Component\n\nCarbon released from thawing permafrost (MAGICC7 module 12).\n\n# What This Component Does\n\nThe permafrost region is divided into zonal bands, each holding mineral soil\nand peat carbon. For each band and soil type:\n\n1. Arctic warming above the band's melting threshold thaws frozen area\n   (or refreezes thawed area when below it), moving carbon with the area\n2. Thawed area splits into aerobic and anaerobic parts\n3. Thawed carbon decomposes at Q10 and moisture dependent rates averaged over\n   a seasonal soil temperature cycle\n4. Aerobic decomposition releases CO2. Anaerobic decomposition releases equal\n   parts CO2 and CH4, part of the CH4 being oxidised to CO2 in the soil\n\n# Inputs\n\n- `Surface Temperature` (K) - Global mean surface temperature anomaly\n\n# Outputs\n\n- `Emissions|CO2|Permafrost` (GtC/yr) - CO2 released from permafrost\n- `Emissions|CH4|Permafrost` (Mt CH4/yr) - CH4 released from permafrost\n- `Permafrost Thawed Area` (1) - Carbon weighted thawed fraction after the step\n\nEmissions use the temperature at the start of the step and the mean of the\nthawed pools before and after the step, as MAGICC7 does.\nThe emissions enter `CH4Chemistry`, `CH4Oxidation`, `OceanCarbon` and\n`CO2Budget` when their `permafrost` parameter is set.\n\n# Rounding sensitivity\n\nA band that refreezes completely keeps thawed areas of rounding size, as in MAGICC7.\nCarbon moved between them divides one rounding residue by another,\nso emissions after such a refreeze depend on the last bits of the temperature.\n\nPermafrost carbon feedback component.",
+  "category": "Carbon Cycle",
+  "tags": [
+    "carbon-cycle",
+    "permafrost",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "temperature",
+      "variable_name": "Surface Temperature",
+      "unit": "K",
+      "grid": "Scalar"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "co2_emissions",
+      "variable_name": "Emissions|CO2|Permafrost",
+      "unit": "GtC/yr",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "ch4_emissions",
+      "variable_name": "Emissions|CH4|Permafrost",
+      "unit": "Mt CH4/yr",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "thawed_area",
+      "variable_name": "Permafrost Thawed Area",
+      "unit": "1",
+      "grid": "Scalar"
+    }
+  ],
+  "states": [],
+  "parameters": [],
+  "source_file": "crates/rscm-magicc/src/carbon/permafrost.rs"
+}

@@ -24,9 +24,37 @@ model = build_model(config)
 model.run()
 ```
 
+`build_model` builds the time axis and components and sets zero initial values.
+It does not yet read the `[inputs]` or `[initial_values]` tables.
+A model built from `defaults.toml` therefore has no forcing, and its temperatures are NaN.
+To drive the model with data, take the parameters from the config and assemble the model with `ModelBuilder`:
+
+```python
+import numpy as np
+from rscm.config import load_config
+from rscm.core import InterpolationStrategy, ModelBuilder, TimeAxis, Timeseries
+from rscm.two_layer import TwoLayerBuilder
+
+config = load_config("configs/two-layer/defaults.toml")
+params = config["components"]["climate"]["parameters"]
+time_axis = TimeAxis.from_values(
+    np.arange(config["time"]["start"], config["time"]["end"] + 1, dtype=float)
+)
+erf = Timeseries(np.linspace(0.0, 4.0, len(time_axis)), time_axis, "W/m^2", InterpolationStrategy.Linear)
+
+model = (
+    ModelBuilder()
+    .with_time_axis(time_axis)
+    .with_rust_component(TwoLayerBuilder.from_parameters(params).build())
+    .with_exogenous_variable("Effective Radiative Forcing", erf)
+    .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
+).build()
+model.run()
+```
+
 ## Architecture
 
-```
+```text
 rscm.config
 ├── __init__.py          # Public API exports
 ├── base.py              # Base classes: ModelConfig, TimeConfig, InputSpec
@@ -94,7 +122,10 @@ heat_capacity_deep = 100.0    # Deep ocean (W yr/(m² K))
 | `inputs` | Input data file specifications |
 | `outputs` | Output specifications |
 
-Unknown top-level keys trigger a warning and are ignored.
+Unknown top-level keys are logged as a warning and ignored.
+`initial_values` is not yet a known key, so the `[initial_values]` table in `defaults.toml` logs a warning.
+`load_config` does not check the schema version.
+Call `check_schema_version` yourself (see [Schema Versioning](#schema-versioning)).
 
 ## Layered Configuration
 
@@ -141,7 +172,7 @@ from dataclasses import dataclass
 from rscm.config.parameters import parameter, validate_parameters
 
 @dataclass
-class TwoLayerParameters:
+class ExampleParameters:
     lambda0: float = parameter(
         default=1.0,
         unit="W/(m² K)",
@@ -179,10 +210,13 @@ class TwoLayerParameters:
 ```python
 from rscm.config.parameters import validate_parameters
 
-params = TwoLayerParameters(lambda0=10.0)  # Out of range!
+params = ExampleParameters(lambda0=10.0)  # Out of range!
 errors = validate_parameters(params)
 # errors = ["Parameter 'lambda0' value 10.0 is outside valid range [0.1, 5.0]"]
 ```
+
+`rscm.config.models.two_layer.TwoLayerParameters` runs this validation in `__post_init__`,
+so constructing it with an out-of-range value raises `ValueError`.
 
 Validation checks:
 
@@ -229,6 +263,7 @@ Components are registered by name, enabling config files to reference them:
 
 ```python
 from rscm.config.registry import component_registry, register_component
+from rscm.two_layer import TwoLayerBuilder
 
 # Register via decorator
 @register_component("MyComponent")
@@ -265,8 +300,20 @@ The builder:
 1. Extracts parameters from config
 2. Looks up component builder in registry
 3. Constructs components with parameters
-4. Creates time axis from config
-5. Assembles and returns the model
+4. Creates an annual time axis from `start` to `end` inclusive
+5. Sets zero initial values for the state variables
+6. Assembles and returns the model
+
+`build_model` only supports `type = "two-layer"` and raises `ValueError` for any other model type.
+`MAGICCConfig` in `rscm.config.models.magicc` describes MAGICC parameters,
+but cannot yet be built into a model.
+Use `rscm.magicc.full.run_magicc7` for full MAGICC7 runs.
+See [MAGICC Runs](magicc_runs.md#full-magicc7-chain).
+Its `parameters` argument takes MAGICC7's own configuration names in lower case,
+such as `core_climatesensitivity` or `pf_apply`, so legacy `.CFG` values can be passed straight through.
+`rscm.magicc.full.default_parameters()` lists every name the chain reads with MAGICC7 v7.5.3's defaults.
+Names the chain does not read are ignored.
+`run_magicc7` does not use the RSCM config layer or the nested paths from `from_legacy_dict`.
 
 ## Legacy Format Support (MAGICC)
 
@@ -291,6 +338,10 @@ rscm_config = from_legacy_dict(legacy)
 #     "components": {"climate": {"parameters": {"climate_sensitivity": 3.0}}}
 # }
 ```
+
+The mapping also covers the permafrost `pf_*` parameters.
+For example, `pf_apply` maps to `components.permafrost.enabled`.
+`MAGICCConfig` has no permafrost section yet, so these paths only exist in the dict form.
 
 ### Export to MAGICC
 
@@ -326,7 +377,7 @@ report = get_coverage_report()  # Markdown report
 
 # Get statistics
 stats = get_coverage_stats()
-# {"SUPPORTED": 6, "NOT_IMPLEMENTED": 8, "NOT_NEEDED": 10, "DEPRECATED": 0, "total": 24}
+# {"SUPPORTED": 68, "NOT_IMPLEMENTED": 14, "NOT_NEEDED": 12, "DEPRECATED": 0, "total": 94}
 ```
 
 **Parameter statuses:**
@@ -338,6 +389,9 @@ stats = get_coverage_stats()
 | `NOT_NEEDED` | Output/file control handled differently |
 | `DEPRECATED` | Superseded in MAGICC7 |
 
+These statuses describe the config-layer mapping, not what `run_magicc7` supports.
+For example, `ch4_switchfromconc2emis_year` is `NOT_IMPLEMENTED` here, but `run_magicc7` reads it.
+
 ## Schema Versioning
 
 Configs specify a schema version for forward/backward compatibility:
@@ -347,7 +401,7 @@ from rscm.config import check_schema_version
 
 # Compatible (same major, any minor/patch)
 check_schema_version("1.0.0", "1.0.0")  # OK
-check_schema_version("1.1.0", "1.0.0")  # Warning (forward-compatible)
+check_schema_version("1.1.0", "1.0.0")  # Logs a warning (forward-compatible)
 
 # Incompatible (different major version)
 check_schema_version("2.0.0", "1.0.0")  # Raises IncompatibleSchemaError
@@ -356,14 +410,14 @@ check_schema_version("2.0.0", "1.0.0")  # Raises IncompatibleSchemaError
 **Compatibility rules:**
 
 - Major version mismatch -> `IncompatibleSchemaError`
-- Minor version newer in config -> Warning (forward-compatible)
+- Minor version newer in config -> logged warning (forward-compatible)
 - Otherwise -> Silent (compatible)
 
 ## Exception Hierarchy
 
-```
+```text
 ConfigError (base)
-├── ValidationError          # Type mismatches, out-of-range values
+├── ValidationError          # Reserved for config validation, not yet raised
 ├── IncompatibleSchemaError  # Schema version mismatch
 └── ComponentNotFoundError   # Component not in registry
 ```
@@ -374,6 +428,7 @@ from rscm.config import (
     ValidationError,
     IncompatibleSchemaError,
     ComponentNotFoundError,
+    component_registry,
 )
 
 try:
@@ -427,6 +482,8 @@ except ComponentNotFoundError as e:
 
 ### Validation Functions
 
+`parse_semver` and `find_unknown_keys` live in `rscm.config.validation`.
+
 | Function | Description |
 |----------|-------------|
 | `check_schema_version(config, loader)` | Check version compatibility |
@@ -446,45 +503,10 @@ The two-layer energy balance model (Held et al., 2010) uses these parameters:
 | `heat_capacity_surface` | W yr/(m² K) | 8.0 | [1.0, 50.0] | Surface layer heat capacity |
 | `heat_capacity_deep` | W yr/(m² K) | 100.0 | [10.0, 500.0] | Deep ocean heat capacity |
 
-## Example Configurations
+## Programmatic Configuration
 
-### Default Two-Layer
-
-```toml
-[model]
-name = "two-layer-default"
-type = "two-layer"
-version = "1.0.0"
-
-[time]
-start = 1750
-end = 2100
-
-[components.climate]
-type = "TwoLayer"
-
-[components.climate.parameters]
-lambda0 = 1.0
-a = 0.0
-efficacy = 1.0
-eta = 0.7
-heat_capacity_surface = 8.0
-heat_capacity_deep = 100.0
-```
-
-### High Climate Sensitivity Tuning
-
-```toml
-# Override file - use with load_config_layers()
-[model]
-name = "two-layer-high-ecs"
-
-[components.climate.parameters]
-lambda0 = 0.7    # Lower feedback = higher sensitivity
-efficacy = 1.3
-```
-
-### Programmatic Configuration
+The TOML examples above live in `configs/two-layer/`.
+Configurations can also be built in Python and passed to `build_model`:
 
 ```python
 from rscm.config.base import TimeConfig

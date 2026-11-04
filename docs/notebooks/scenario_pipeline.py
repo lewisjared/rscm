@@ -151,9 +151,10 @@ def create_scenario_emissions(
 # ```
 #
 # Note: To add temperature response, you would include a climate component
-# (e.g., TwoLayer) that takes total radiative forcing as input. This requires
-# an aggregation component to sum forcings from multiple species (CO2, CH4, etc.)
-# into a single "Effective Radiative Forcing" input.
+# (e.g., TwoLayer) that takes total radiative forcing as input.
+# A `VariableSchema` aggregate sums the forcing from each species into that input.
+# See [Coupled Models](coupled_model.py) and
+# [Variable Schemas](variable_schema.py) for examples.
 
 
 # %%
@@ -271,8 +272,11 @@ historical_model.run()
 
 print(f"Historical run complete. Final time: {historical_model.current_time()}")
 
+# %% [markdown]
+# Save the historical end state with `to_toml()` so it can be archived or inspected later.
+# See [State Serialisation](state_serialisation.py) for restoring a model from this string.
+
 # %%
-# Save the historical end-state for branching
 historical_state = historical_model.to_toml()
 
 # Preview the state (truncated)
@@ -283,8 +287,7 @@ print(historical_state[:2000] + "\n...")
 # ## Step 2: Define Future Scenarios
 #
 # We create emissions pathways for each scenario that branch from the historical
-# end-state. The key insight is that we can restore the model from the saved
-# state and run with different future emissions.
+# end state.
 
 # %%
 # Define scenarios to run
@@ -325,14 +328,17 @@ plt.show()
 #
 # For each scenario, we:
 #
-# 1. Restore the model from the historical end-state
-# 2. Replace the emissions timeseries with the scenario data
-# 3. Run to 2100
+# 1. Read the state variables at the branch point from the historical results
+# 2. Build a new model on a future time axis, using those values as initial values
+# 3. Run to 2100 with the scenario emissions
 # 4. Collect results
 #
-# Note: The current RSCM API restores the full model including its time axis.
-# For scenario runs, we rebuild the model with a new time axis that continues
-# from the branch point.
+# A model restored with `Model.from_toml()` keeps its original time axis and exogenous data,
+# so it cannot be extended with new scenario data.
+# Rebuilding from the state variables works here because these components keep no
+# internal state between steps.
+# Components with internal state store it in the `component_states` section of the TOML,
+# which this approach does not carry over.
 
 
 # %%
@@ -355,7 +361,7 @@ def run_scenario(scenario_name: str, emissions: Timeseries) -> TimeseriesCollect
     # Include overlap with historical end for continuity
     future_time_axis = TimeAxis.from_values(np.arange(T_BRANCH, T_END + 1, 1.0))
 
-    # Rebuild components (they are stateless, just parameters)
+    # These components hold only parameters, so fresh instances are equivalent
     carbon_cycle, co2_erf = create_component_builders()
 
     # Get the final state values from historical run
@@ -599,7 +605,8 @@ print(summary_df.to_string(index=False))
 #
 # - **State extraction**: Get final values from `model.timeseries()` for initialising
 #   branch runs
-# - **Component reuse**: Components are stateless; rebuild for each scenario
+# - **Component reuse**: These components hold only parameters, so they can be rebuilt
+#   for each scenario
 # - **Time axis management**: Historical and future periods can have different
 #   temporal resolutions
 # - **Metadata handling**: Use pandas DataFrames with multi-indexes for scenario data

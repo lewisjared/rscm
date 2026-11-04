@@ -39,11 +39,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from rscm.calibrate import (
+    Bound,
     EnsembleSampler,
     # Likelihood computation
     GaussianLikelihood,
+    LogNormal,
     # Model runner interface
     ModelRunner,
+    Normal,
     Optimizer,
     # Parameter set specification
     ParameterSet,
@@ -58,7 +61,7 @@ from rscm.calibrate import (
     progress,
 )
 
-# Set random seed for reproducibility
+# Seeds the observation noise only: the Rust samplers use their own unseeded RNG.
 np.random.seed(42)
 
 # %% [markdown]
@@ -109,7 +112,7 @@ print(f"True parameters: a={true_a}, b={true_b}, c={true_c}")
 # ## Step 2: Define Parameter Priors
 #
 # We specify what we know about the parameters before seeing data (the prior distribution).
-# This might be an initial guess
+# This might be an initial guess or a physically plausible range.
 
 # %%
 # Create parameter set with uniform priors
@@ -120,6 +123,27 @@ params.add("c", Uniform(0.0, 5.0))
 
 print(f"Parameter names: {params.param_names}")
 print(f"Number of parameters: {len(params)}")
+
+# %% [markdown]
+# Uniform priors are the simplest choice.
+# `Normal`, `LogNormal` and `Bound` express more informative priors.
+# A `ParameterSet` can also be built from a dict.
+# This example is only for illustration and is not used below.
+
+# %%
+informative_params = ParameterSet(
+    {
+        "sensitivity": LogNormal(mean=3.0, std=1.0),
+        "offset": Normal(0.0, 0.5),
+        "efficacy": Bound(Normal(1.0, 0.3), 0.5, 2.0),
+    }
+)
+
+print(f"Bounds: {informative_params.bounds()}")
+print("Random samples:")
+print(informative_params.sample_random(4))
+print("Latin hypercube samples:")
+print(informative_params.sample_lhs(4))
 
 # %% [markdown]
 # ## Step 3: Create Observation Target
@@ -144,7 +168,7 @@ print(f"Target has {len(x_obs)} observations for variable 'y'")
 # %%
 def model_factory(param_dict):
     """
-    Run the linear model: y = a*x^2 + b*x + c
+    Run the quadratic model: y = a*x^2 + b*x + c
 
     Parameters
     ----------
@@ -635,9 +659,18 @@ print(
 print(f"Best log likelihood: {climate_result.best_log_likelihood:.3f}")
 
 # %% [markdown]
+# A single temperature observation cannot separate `lambda0` from `a`.
+# Many combinations give the same warming, so the best fit need not match the true values.
+# The posterior below stays close to the prior as a result.
+# More observations, such as a full temperature record or ocean heat content, would constrain both.
+
+# %% [markdown]
 # ## Step 5: MCMC Sampling for Climate Model
 #
 # Now we'll use MCMC to fully characterise the posterior distribution.
+# The walkers start near the point estimate rather than across the whole prior.
+# `WalkerInit.ball(center, radius)` spreads them uniformly over a box of width `radius` around `center`.
+# `WalkerInit.explicit(positions)` takes one row of parameter values per walker instead.
 
 # %%
 # Create ensemble sampler
@@ -649,7 +682,7 @@ climate_sampler = EnsembleSampler(
 print("Running MCMC for climate model (1000 iterations)...")
 climate_chain = climate_sampler.run_with_progress(
     n_iterations=1000,
-    init=WalkerInit.from_prior(),
+    init=WalkerInit.ball(best_climate_params_vec, 0.01),
     thin=1,
     progress_callback=progress.create_simple_callback(),
 )
@@ -875,6 +908,47 @@ print(df.head())
 print("\nSummary statistics:")
 print(df.describe())
 
+# %% [markdown]
+# Observations can also come from a DataFrame.
+# `Target.from_dataframe` needs a `variable` column, even for a single variable.
+
+# %%
+import pandas as pd
+
+obs_df = pd.DataFrame(
+    {
+        "variable": "y",
+        "time": x_obs,
+        "value": y_obs,
+        "uncertainty": uncertainty,
+    }
+)
+df_target = Target.from_dataframe(obs_df)
+
+print(f"Variables: {df_target.variable_names()}")
+print(f"Observations: {df_target.total_observations()}")
+
+# %% [markdown]
+# ## Relative Uncertainties and Reference Periods
+#
+# `add_observation_relative` sets each uncertainty as a fraction of the observed value.
+# `set_reference_period` records that a variable's observations are anomalies relative to a baseline.
+#
+# The likelihood does not apply the reference period yet.
+# It compares model outputs with the observations as given,
+# so the model factory must return anomalies over the same baseline.
+
+# %%
+anomaly_target = Target()
+for year, anomaly in [(1950.0, 0.3), (1980.0, 0.5), (2010.0, 1.0)]:
+    anomaly_target.add_observation_relative("Surface Temperature", year, anomaly, 0.1)
+anomaly_target.set_reference_period("Surface Temperature", 1850.0, 1900.0)
+
+surface = anomaly_target.get_variable("Surface Temperature")
+print(f"Reference period: {surface.reference_period}")
+for obs in surface.observations:
+    print(f"  {obs.time:.0f}: {obs.value:.2f} ± {obs.uncertainty:.3f} K")
+
 
 # %% [markdown]
 # ## Progress Tracking with ProgressTracker
@@ -935,7 +1009,7 @@ print("Temporary files cleaned up")
 # This tutorial covered:
 #
 # **Beginner:**
-# - Defining parameter priors with distributions (Uniform, Normal, Bound)
+# - Defining parameter priors with distributions (Uniform, Normal, LogNormal, Bound)
 # - Creating observation targets
 # - Setting up a model runner
 # - Point estimation to find best-fit parameters
@@ -944,6 +1018,7 @@ print("Temporary files cleaned up")
 #
 # **Intermediate:**
 # - Calibrating a real climate model (two-layer energy balance)
+# - Warm-starting MCMC walkers near the point estimate
 # - Interpreting posterior distributions
 # - Visualising results (trace plots, posteriors, joint distributions)
 #
@@ -951,15 +1026,15 @@ print("Temporary files cleaned up")
 # - Checkpoint/resume for long-running calibrations
 # - Thinning to reduce memory usage
 # - Chain persistence (save/load/merge)
-# - DataFrame integration for analysis
-# - Progress tracking with custom callbacks
+# - DataFrame integration for chains and observation targets
+# - Progress tracking with custom callbacks (`progress.create_tqdm_callback` gives a progress bar)
 #
 # ## Next Steps
 #
 # - Try calibrating with multiple observation variables
-# - Experiment with different prior distributions (Normal, Bound, LogNormal)
-# - Use warm-starting: initialise MCMC walkers near the point estimate
-# - Implement custom likelihood functions for specific applications
+# - Use `Target.add_observation_relative` for uncertainties given as a fraction of the value
+# - Tune the proposal with `EnsembleSampler.with_stretch_param`
+# - Use `GaussianLikelihood(normalize=True)` when comparing models by likelihood
 # - Explore posterior predictive checks to validate model fit
 #
 # ## Further Reading

@@ -76,8 +76,11 @@ class SimpleCarbonCycle(Component):
 ### Creating Components in Rust
 
 ```rust
-use rscm_core::{ComponentIO, component::{Component, InputState, OutputState}};
-use serde::{Serialize, Deserialize};
+use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::errors::RSCMResult;
+use rscm_core::timeseries::Time;
+use rscm_core::ComponentIO;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[inputs(
@@ -147,9 +150,16 @@ When you add components to a model, the builder constructs a **dependency graph*
 3. The graph must be acyclic (no circular dependencies between components)
 4. Self-referential state variables are allowed (a component reading its own previous output)
 
+Edges are only created to producers that were added to the builder before the consumer.
+If a consumer is added first, it has no edge to that producer and reads the value from the previous timestep.
+Add components in producer-to-consumer order to couple them within a timestep.
+Feedback loops, such as temperature feeding back on the carbon cycle,
+necessarily read one side from the previous timestep.
+
 ### Model Execution
 
-The model solves components in dependency order using a topological sort:
+Within each timestep the model solves every producer before its consumers,
+using a topological sort of the graph:
 
 ```mermaid
 sequenceDiagram
@@ -188,6 +198,13 @@ results = model.timeseries()
 temp = results.get_timeseries_by_name("Surface Temperature")
 ```
 
+`step()` and `run()` raise `RuntimeError` when a component fails.
+In Rust, `Model::try_step` and `Model::try_run` return the error, while `step` and `run` panic.
+A failed step does not advance the time index, but components that already ran may have updated their state.
+Rebuild the model before retrying.
+An exception raised inside a Python component's `solve()` currently surfaces as `pyo3_runtime.PanicException`,
+not `RuntimeError`.
+
 ### Exogenous vs Endogenous Variables
 
 | Variable Type  | Source                       | Example                                 |
@@ -207,7 +224,19 @@ For example, CO2 concentration might be:
 - **Endogenous** in a full carbon-cycle model where a component calculates concentration from emissions
 - **Exogenous** in a temperature-only model where concentration is prescribed directly
 
-The builder will raise an error if any required inputs cannot be satisfied by either component outputs or exogenous data.
+The builder does not check that exogenous inputs were supplied.
+A missing exogenous input is NaN, and the NaN propagates through every component that reads it.
+State variables are checked: `build()` raises `ValueError` if one has no initial value.
+
+Scalar exogenous data uses `with_exogenous_variable()` and scalar initial values use `with_initial_values()`.
+Grid variables have their own methods:
+
+- `with_exogenous_four_box_variable(name, FourBoxTimeseries(...))` supplies FourBox exogenous data.
+- `with_initial_grid_values({name: [...]})` sets the initial value of a grid state variable,
+  with one value per region in grid order.
+
+See [Gridded Exogenous Data and Initial Values](grids.md#gridded-exogenous-data-and-initial-values)
+for examples.
 
 ## Timeseries
 
@@ -253,17 +282,34 @@ When the model time axis differs from the timeseries time axis, values are inter
 | `Previous` | Step function using the previous value        |
 | `Next`     | Step function using the next value            |
 
-```mermaid
-graph LR
-    subgraph Linear
-        L1[t0: 0] --> L2[t1: 10]
-        L2 --> L3[t2: 20]
-    end
-    subgraph Previous
-        P1[t0: 0] --> P2[t1: 0]
-        P2 --> P3[t2: 10]
-    end
+The `Timeseries` constructor requires a strategy.
+`Timeseries.from_values` defaults to `Linear`.
+`with_interpolation_strategy()` changes the strategy in place and returns `None`, so it cannot be chained.
+`at_time()` interpolates a single value:
+
+```python
+ts = Timeseries(
+    np.array([0.0, 10.0, 20.0]),
+    TimeAxis.from_values(np.array([2000.0, 2010.0, 2020.0])),
+    "GtC / yr",
+    InterpolationStrategy.Linear,
+)
+ts.at_time(2005.0)  # 5.0
+ts.at_time(2040.0)  # 40.0, extrapolated from the last segment
+
+ts.with_interpolation_strategy(InterpolationStrategy.Previous)
+ts.at_time(2005.0)  # 0.0
+ts.at_time(2040.0)  # 20.0, the last value is held
 ```
+
+Strategies created from Python always allow extrapolation outside the time axis.
+`Linear` extends the first and last segments, which can produce negative values.
+`Previous` and `Next` hold the end values.
+
+Choose the strategy to match what the values represent:
+
+- Use `Previous` for fluxes such as emissions, where each value applies over the following interval.
+- Use `Linear` for state quantities such as concentrations or forcing sampled at points in time.
 
 ### TimeseriesCollection
 
@@ -295,7 +341,7 @@ def solve(self, t_current, t_next, inputs):
     upstream_value = inputs.forcing.at_end()
 
     # Previous timestep's value (index N-1)
-    previous = inputs.emissions.previous
+    previous = inputs.emissions.at_offset(-1)
 
     # Value at relative offset (-2 = two steps back)
     historical = inputs.emissions.at_offset(-2)
@@ -325,20 +371,22 @@ Without a schema, you'd need to write custom aggregation components. With Variab
 ```python
 from rscm.core import VariableSchema
 
-schema = (
-    VariableSchema()
-    # Declare individual variables
-    .add_variable("ERF|CO2", "W/m^2")
-    .add_variable("ERF|CH4", "W/m^2")
-    .add_variable("ERF|N2O", "W/m^2")
-    # Declare an aggregate
-    .add_aggregate("ERF|GHG", "W/m^2", "Sum")
-        .from_variable("ERF|CO2")
-        .from_variable("ERF|CH4")
-        .from_variable("ERF|N2O")
-        .build()
-)
+schema = VariableSchema()
+
+# Declare individual variables
+schema.add_variable("ERF|CO2", "W/m^2")
+schema.add_variable("ERF|CH4", "W/m^2")
+schema.add_variable("ERF|N2O", "W/m^2")
+
+# Declare an aggregate and its contributors
+schema.add_aggregate("ERF|GHG", "W/m^2", "Sum", ["ERF|CO2", "ERF|CH4", "ERF|N2O"])
+
+schema.validate()
 ```
+
+`Weighted` aggregates also take a `weights` list with one weight per contributor.
+In Rust, `VariableSchema::new()` offers a chained builder:
+`.variable(...)` and `.aggregate(...).from(...).build()`.
 
 ### Aggregation Operations
 
@@ -375,7 +423,7 @@ During build, RSCM:
 - **Hierarchical aggregates**: Aggregates can reference other aggregates as contributors
 - **Partial models**: Schema variables with no writer component remain NaN
 
-For a complete walkthrough, see [Tutorial 3: Variable Schemas](tutorials.md#tutorial-3-variable-schemas).
+For a complete walkthrough, see the [Variable Schemas tutorial](notebooks/variable_schema.py).
 
 ## Timestep Semantics
 
@@ -472,6 +520,13 @@ class ClimateResponse(Component):
 | Exogenous input (external forcing) | Pre-populated | `at_start()` |
 | Upstream component output | They ran this timestep | `at_end()` |
 
+/// warning | Python components
+The windows passed to Python components currently only hold values up to index N.
+`at_end()` therefore returns `None` at every timestep in a Python component,
+so the fallback below always reads `at_start()`.
+Rust components see index N+1 as described here.
+///
+
 ### Grid Variables
 
 For grid-based variables (`FourBox` or `Hemispheric`), the same semantics apply with region-specific access:
@@ -501,7 +556,7 @@ def solve(self, t_current, t_next, inputs):
     if erf is None:
         erf = inputs.forcing.at_start()
 
-    # Or using Python's or operator (if 0.0 is not a valid fallback)
+    # Or using Python's or operator. This also falls back when at_end() is 0.0.
     erf = inputs.forcing.at_end() or inputs.forcing.at_start()
 ```
 
@@ -518,10 +573,11 @@ graph TB
 
     subgraph Build
         MB[ModelBuilder]
-        MB --> |with_component| C1
-        MB --> |with_component| C2
-        MB --> |with_exogenous| E[Emissions TS]
-        MB --> |with_initial| I[Initial Values]
+        MB --> |with_rust_component / with_py_component| C1
+        MB --> |with_rust_component / with_py_component| C2
+        MB --> |with_exogenous_variable| E[Emissions TS]
+        MB --> |with_initial_values| I[Initial Values]
+        MB --> |with_schema| S[VariableSchema]
         MB --> |build| M[Model]
     end
 
@@ -532,6 +588,6 @@ graph TB
 ```
 
 1. **Define components** with their inputs, outputs, and physics
-2. **Build a model** using `ModelBuilder`, providing components, exogenous data, and initial values
+2. **Build a model** using `ModelBuilder`, providing components, exogenous data, initial values and a schema
 3. **Run the model** to generate results
 4. **Extract timeseries** for analysis and visualisation
