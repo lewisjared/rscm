@@ -7,13 +7,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from rscm.fair import naming
-from rscm.fair.config import (
-    emission_drivers,
-    forcing_agents,
-    is_ghg,
-    prescribed_temperature_feedback,
-    species_outputs,
-)
+from rscm.fair.config import emission_drivers, is_ghg, species_outputs
 from rscm.fair.run import run_fair
 
 if TYPE_CHECKING:
@@ -123,7 +117,6 @@ def run_ensemble(
     index = {specie: k for k, specie in enumerate(species)}
     species_series = {}
     emission_series = {}
-    feedbacks = {}
     accumulated = {}
     for name in config_names:
         config = configs[name]
@@ -136,11 +129,6 @@ def run_ensemble(
             (index[s["name"]], *found)
             for s in config["species"]
             if (found := _emissions(config, s)) is not None
-        ]
-        feedbacks[name] = [
-            (index[s["name"]], feedback)
-            for s in forcing_agents(config)
-            if (feedback := prescribed_temperature_feedback(s)) != 0
         ]
         # The gas cycle accumulates greenhouse gas emissions.
         accumulated[name] = [
@@ -167,10 +155,6 @@ def run_ensemble(
                 data["emissions"][:, i, j, k] = np.sum(
                     [_values(outputs, v)[timepoints] for v in variables], axis=0
                 )
-            surface = data["temperature"][:-1, i, j, 0]
-            for k, feedback in feedbacks[name]:
-                # The model's prescribed forcing is its input, without the feedback.
-                data["forcing"][1:, i, j, k] += surface * feedback
             for k in accumulated[name]:
                 cumulative = data["cumulative_emissions"][:, i, j, k]
                 cumulative[0] = 0.0

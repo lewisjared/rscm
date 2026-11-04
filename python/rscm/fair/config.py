@@ -388,22 +388,17 @@ def forcing_agents(config: FairConfig) -> list[Species]:
     ]
 
 
-def prescribed_temperature_feedback(entry: Species) -> float:
-    """Return the forcing per kelvin the aggregation adds to a prescribed forcing."""
-    if entry["input_mode"] == "forcing":
-        return _value(entry["forcing_temperature_feedback"])
-    return 0.0
-
-
 def _aggregation(config: FairConfig) -> Component:
-    agents = [
-        {
+    agents = []
+    for s in forcing_agents(config):
+        agent = {
             "forcing": naming.forcing(s),
             "efficacy": _value(s["forcing_efficacy"]),
-            "temperature_feedback": prescribed_temperature_feedback(s),
         }
-        for s in forcing_agents(config)
-    ]
+        if s["input_mode"] == "forcing":
+            agent["prescribed"] = naming.prescribed_forcing(s)
+            agent["temperature_feedback"] = _value(s["forcing_temperature_feedback"])
+        agents.append(agent)
     return FairForcingAggregationBuilder.from_parameters({"agents": agents}).build()
 
 
@@ -432,7 +427,7 @@ def build_components(
     gases = [s for s in config["species"] if is_ghg(s)]
     prescribed = [s["name"] for s in gases if s["input_mode"] == "forcing"]
     if prescribed:
-        msg = f"Prescribed greenhouse gas forcing is not supported: {prescribed}"
+        msg = f"FaIR overwrites prescribed greenhouse gas forcing: {prescribed}"
         raise ValueError(msg)
     components = []
     if thornhill(config):
@@ -488,6 +483,5 @@ def initial_values(
         if s["type"] == "eesc" and s["input_mode"] == "calculated":
             values[naming.EESC] = _value(s["baseline_concentration"])
     for s in forcing_agents(config):
-        if s["input_mode"] != "forcing":
-            values[naming.forcing(s)] = 0.0
+        values[naming.forcing(s)] = 0.0
     return values

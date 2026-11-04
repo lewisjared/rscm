@@ -183,10 +183,9 @@ def test_climate(case: str) -> None:
 def test_forcing(case: str) -> None:
     run = load(case)
     for s in forcing_agents(run.config):
-        if s["input_mode"] != "forcing":
-            assert_close(
-                run.rscm(naming.forcing(s)), run.fair(f"forcing|{s['name']}"), s["name"]
-            )
+        assert_close(
+            run.rscm(naming.forcing(s)), run.fair(f"forcing|{s['name']}"), s["name"]
+        )
 
 
 @pytest.mark.parametrize("case", [c for c in CASES if not c.startswith("ebm")])
@@ -314,7 +313,7 @@ def test_ensemble() -> None:
 
 
 def test_ensemble_prescribed() -> None:
-    """Prescribed forcing gets FaIR's temperature feedback, and EESC is prescribed."""
+    """EESC and forcing with a temperature feedback are prescribed."""
     pytest.importorskip("xarray")
     run = load("ssp245_prescribed")
     result = run_ensemble(

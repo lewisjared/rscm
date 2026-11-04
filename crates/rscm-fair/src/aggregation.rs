@@ -2,8 +2,9 @@
 //!
 //! Sums each forcing agent at the end of the step, skipping missing values,
 //! with and without its efficacy.
-//! Prescribed agents can carry a feedback on the surface temperature at the start of the step,
-//! which calculated agents apply themselves.
+//! Prescribed agents read a separate input and write it to their forcing,
+//! plus a feedback on the surface temperature at the start of the step.
+//! Calculated agents apply their own feedback.
 
 use crate::constants::{
     efficacy_adjusted_forcing, end, forcing_unit, one, start, surface_temperature,
@@ -18,12 +19,15 @@ use serde::{Deserialize, Serialize};
 /// One forcing agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ForcingAgent {
-    /// Forcing input.
+    /// Forcing, an output when `prescribed` is set and an input otherwise.
     pub forcing: String,
+    /// Prescribed forcing input.
+    #[serde(default)]
+    pub prescribed: Option<String>,
     /// Efficacy relative to CO2.
     #[serde(default = "one")]
     pub efficacy: FloatValue,
-    /// Forcing per kelvin of surface temperature, added to the input.
+    /// Forcing per kelvin of surface temperature, added to the prescribed input.
     #[serde(default)]
     pub temperature_feedback: FloatValue,
 }
@@ -68,11 +72,22 @@ impl FairForcingAggregation {
 impl Component for FairForcingAggregation {
     fn definitions(&self) -> Vec<RequirementDefinition> {
         let p = &self.parameters;
-        let mut definitions: Vec<_> = p
-            .agents
-            .iter()
-            .map(|a| RequirementDefinition::scalar_input(&a.forcing, &forcing_unit()))
-            .collect();
+        let mut definitions = Vec::with_capacity(p.agents.len() + 3);
+        for a in &p.agents {
+            match &a.prescribed {
+                Some(input) => {
+                    definitions.push(RequirementDefinition::scalar_input(input, &forcing_unit()));
+                    definitions.push(RequirementDefinition::scalar_output(
+                        &a.forcing,
+                        &forcing_unit(),
+                    ));
+                }
+                None => definitions.push(RequirementDefinition::scalar_input(
+                    &a.forcing,
+                    &forcing_unit(),
+                )),
+            }
+        }
         if self.has_feedback() {
             definitions.push(RequirementDefinition::scalar_input(
                 &p.surface_temperature,
@@ -102,17 +117,20 @@ impl Component for FairForcingAggregation {
         } else {
             0.0
         };
+        let mut output = OutputState::with_capacity(p.agents.len() + 2);
         let mut total = 0.0;
         let mut adjusted = 0.0;
         for agent in &p.agents {
-            let forcing =
-                end(input_state, &agent.forcing) + temperature * agent.temperature_feedback;
+            let input = agent.prescribed.as_ref().unwrap_or(&agent.forcing);
+            let forcing = end(input_state, input) + temperature * agent.temperature_feedback;
+            if agent.prescribed.is_some() {
+                output.insert(agent.forcing.clone(), StateValue::Scalar(forcing));
+            }
             if !forcing.is_nan() {
                 total += forcing;
                 adjusted += forcing * agent.efficacy;
             }
         }
-        let mut output = OutputState::with_capacity(2);
         output.insert(p.total.clone(), StateValue::Scalar(total));
         output.insert(p.efficacy_adjusted.clone(), StateValue::Scalar(adjusted));
         Ok(output)

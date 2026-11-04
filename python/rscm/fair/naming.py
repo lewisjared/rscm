@@ -70,6 +70,11 @@ def airborne_emissions(specie: str) -> str:
     return f"Airborne Emissions|{rscm_name(specie)}"
 
 
+def prescribed_forcing(entry: dict[str, Any]) -> str:
+    """Return the prescribed forcing input, before its temperature feedback."""
+    return f"Prescribed {forcing(entry)}"
+
+
 def cumulative_emissions(specie: str) -> str:
     """Cumulative emissions variable of a greenhouse gas."""
     return f"Cumulative Emissions|{rscm_name(specie)}"
@@ -122,7 +127,7 @@ def exogenous_variable(entry: dict[str, Any]) -> tuple[str, str] | None:
         variable = EESC if entry["type"] == "eesc" else concentration(entry["name"])
         return variable, concentration_unit(entry)
     if mode == "forcing":
-        return forcing(entry), "W/m^2"
+        return prescribed_forcing(entry), "W/m^2"
     return None
 
 

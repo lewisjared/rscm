@@ -28,6 +28,9 @@ Its concentrations, forcing and temperatures are on timebounds, one more than th
 
 A configuration is a plain dict with FaIR's options, climate configs and one entry per species.
 `rscm.fair.config` documents its keys.
+`naming.exogenous_variable` names the input of each species.
+Prescribed forcing is an input such as `Prescribed Effective Radiative Forcing|Solar`.
+`FairForcingAggregation` adds its temperature feedback and writes `Effective Radiative Forcing|Solar`.
 
 ## Running a calibrated member
 
@@ -98,11 +101,11 @@ The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateU
 - Stochastic runs are not supported. `read_calibration` ignores the stochastic parameters
   and `from_fair` rejects a stochastic config.
 - Only the Meinshausen 2020 greenhouse gas method is implemented.
-- Greenhouse gases with prescribed forcing are not supported.
+- `build_components` rejects greenhouse gases with prescribed forcing.
+  FaIR 2.2.5 overwrites it with the forcing of the unset concentration, which is NaN,
+  so it drops out of the total.
 - FaIR calculates EESC after the aerosol forcing, so calculated EESC never reaches ERFari or ERFaci.
   `rscm.fair` leaves it out of those drivers to match. Prescribed EESC does reach them.
-- The model's prescribed forcing variables stay the inputs.
-  The total forcing and `run_ensemble` include their temperature feedback, as FaIR does.
 - Restarts from a previous run are not supported.
 
 ## Parity tests

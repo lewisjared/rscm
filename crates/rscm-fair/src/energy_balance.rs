@@ -71,10 +71,24 @@ struct Discretised {
 
 /// FaIR's n-layer energy balance model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "Unchecked")]
 pub struct FairEnergyBalance {
     parameters: FairEnergyBalanceParameters,
     #[serde(skip)]
     discretised: OnceLock<Discretised>,
+}
+
+#[derive(Deserialize)]
+struct Unchecked {
+    parameters: FairEnergyBalanceParameters,
+}
+
+impl TryFrom<Unchecked> for FairEnergyBalance {
+    type Error = RSCMError;
+
+    fn try_from(unchecked: Unchecked) -> RSCMResult<Self> {
+        Self::from_parameters(unchecked.parameters)
+    }
 }
 
 impl FairEnergyBalance {
@@ -295,6 +309,19 @@ mod tests {
         p.ocean_heat_transfer[2] = 0.9;
         p.gamma_autocorrelation = 0.0;
         assert!(FairEnergyBalance::from_parameters(p).is_err());
+    }
+
+    #[test]
+    fn deserialising_checks_the_parameters() {
+        let mut p = component().parameters.clone();
+        p.ocean_heat_transfer[2] = 0.0;
+        let json = format!(
+            r#"{{"parameters": {}}}"#,
+            serde_json::to_string(&p).unwrap()
+        );
+        assert!(serde_json::from_str::<FairEnergyBalance>(&json).is_err());
+        let valid = serde_json::to_string(&component()).unwrap();
+        assert!(serde_json::from_str::<FairEnergyBalance>(&valid).is_ok());
     }
 
     #[test]

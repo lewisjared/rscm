@@ -64,5 +64,4 @@ so `scale_prescribed_forcing` applies it to the inputs as fair-calibrate does.
 - [ ] Ensemble benchmark against `fair`.
 - [ ] Stochastic mode.
 - [ ] Other GHG and CH4 methods.
-- [ ] Greenhouse gases with prescribed forcing.
 - [ ] Restarts.

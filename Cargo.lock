@@ -1259,6 +1259,7 @@ dependencies = [
  "rscm-components",
  "rscm-core",
  "serde",
+ "serde_json",
  "typetag",
 ]
 

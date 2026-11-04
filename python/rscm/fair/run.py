@@ -37,7 +37,7 @@ def _on_timebounds(
 def prescribed_forcing_scales(config: FairConfig) -> dict[str, float]:
     """Return the `forcing_scale` of each prescribed forcing variable."""
     return {
-        naming.forcing(s): float(s["forcing_scale"])
+        naming.prescribed_forcing(s): float(s["forcing_scale"])
         for s in config["species"]
         if s["input_mode"] == "forcing"
     }
