@@ -418,6 +418,13 @@ def _create_outputs_class(
     return OutputsBase
 
 
+def _slot_names(cls: type) -> list[str]:
+    slots = cls.__dict__.get("__slots__", ())
+    if isinstance(slots, str):
+        slots = (slots,)
+    return [name for name in slots if name not in ("__dict__", "__weakref__")]
+
+
 class Component(metaclass=ComponentMeta):
     """Base class for typed Python components.
 
@@ -568,14 +575,18 @@ class Component(metaclass=ComponentMeta):
 
         Override this and `from_json` when an attribute is not JSON-serialisable.
         """
-        try:
-            return json.dumps(vars(self))
-        except TypeError as e:
-            msg = (
-                f"Cannot serialise {type(self).__qualname__}: {e}. "
-                "Override to_json() and from_json() to save this component."
-            )
-            raise TypeError(msg) from e
+        if any(_slot_names(cls) for cls in type(self).__mro__):
+            reason = "attributes in __slots__ are not saved"
+        else:
+            try:
+                return json.dumps(vars(self))
+            except TypeError as e:
+                reason = str(e)
+        msg = (
+            f"Cannot serialise {type(self).__qualname__}: {reason}. "
+            "Override to_json() and from_json() to save this component."
+        )
+        raise TypeError(msg)
 
     @classmethod
     def from_json(cls, data: str) -> Component:

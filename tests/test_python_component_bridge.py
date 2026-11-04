@@ -82,6 +82,10 @@ class GlobalReader(Component):
         return self.Outputs(out=inputs.forcing.at_start())
 
 
+class Slotted(Accumulator):
+    __slots__ = ("cache",)
+
+
 class Unserialisable(Accumulator):
     def __init__(self, rate: float):
         super().__init__(rate)
@@ -207,4 +211,11 @@ def test_to_toml_reports_unserialisable_attributes():
     model = build(Unserialisable(rate=2.0))
 
     with pytest.raises(ValueError, match=r"Override to_json\(\) and from_json\(\)"):
+        model.to_toml()
+
+
+def test_to_toml_rejects_slotted_attributes():
+    model = build(Slotted(rate=2.0))
+
+    with pytest.raises(ValueError, match=r"__slots__.*Override to_json\(\)"):
         model.to_toml()
