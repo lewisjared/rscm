@@ -62,3 +62,18 @@ def test_broken_entry_point_warns_and_others_load(install_entry_points):
         registry = Component.get_registered_components()
 
     assert "PluginComponent" in registry
+
+
+def test_entry_point_warns_when_replacing_component_from_another_module(
+    install_entry_points,
+):
+    class PluginComponent(Component):
+        def solve(self, t_current, t_next, inputs):
+            return self.Outputs()
+
+    install_entry_points("rscm_test_plugin")
+
+    with pytest.warns(UserWarning, match=r"rscm_test_plugin\.PluginComponent replaces"):
+        replacement = Component.get_component("PluginComponent")
+
+    assert replacement.__module__ == "rscm_test_plugin"

@@ -511,6 +511,14 @@ class Component(metaclass=ComponentMeta):
         """
         super().__init_subclass__(**kwargs)
         if register:
+            existing = Component._registry.get(cls.__name__)
+            if existing is not None and existing.__module__ != cls.__module__:
+                warnings.warn(
+                    f"Component {cls.__module__}.{cls.__qualname__} replaces "
+                    f"{existing.__module__}.{existing.__qualname__} in the registry, "
+                    "because components are registered by class name",
+                    stacklevel=3,
+                )
             Component._registry[cls.__name__] = cls
 
     @classmethod

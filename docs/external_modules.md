@@ -71,8 +71,9 @@ DecayingPool = Component.get_component("DecayingPool")
 
 `Component.get_registered_components()` lists them too,
 and RSCM warns rather than fails when an entry point cannot be imported.
-Components are keyed by class name,
+Components are registered by class name,
 so give them names that will not clash with other packages.
+RSCM warns when a component replaces one with the same name from another module.
 
 ### Use the module
 
@@ -80,9 +81,21 @@ Install the package into the same environment as RSCM
 and add its components to a model like any other Python component:
 
 ```python
-from rscm.core import ModelBuilder, PythonComponent
+import numpy as np
+
+from rscm.core import (
+    InterpolationStrategy,
+    ModelBuilder,
+    PythonComponent,
+    TimeAxis,
+    Timeseries,
+)
 from rscm_decay import DecayingPool
 
+time_axis = TimeAxis.from_values(np.arange(2000.0, 2011.0))
+emissions = Timeseries(
+    np.full(11, 10.0), time_axis, "GtC/yr", InterpolationStrategy.Previous
+)
 model = (
     ModelBuilder()
     .with_time_axis(time_axis)
@@ -167,8 +180,10 @@ The extension does not need the same PyO3 version as RSCM for the same reason.
 
 ### When a kernel helps
 
-Every Python component pays a fixed cost per timestep
+Every Python component pays a cost each timestep
 to build its inputs and read its outputs.
+The bridge copies each input's history up to the current step,
+so this cost grows over a long run.
 The kernel speeds up only the work inside `solve()`,
 so it pays off when that work is large compared with the bridge,
 for example an implicit solver or a loop over many layers.
