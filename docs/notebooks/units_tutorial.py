@@ -279,17 +279,80 @@ except ValueError as e:
 # %% [markdown]
 # ## 9. Integration with Model Building
 #
-# In RSCM, units are validated at model build time. When a component declares that it expects inputs in a certain unit, the model builder automatically:
+# When a model has a `VariableSchema`, the builder compares each component's declared units with the schema:
 #
-# 1. **Validates compatibility** - Ensures the schema unit and component unit have the same dimension
-# 2. **Calculates conversion factors** - Computes the multiplier needed at runtime
-# 3. **Applies conversion at runtime** - Automatically converts values when components read inputs
+# 1. **Validates compatibility**: The schema unit and component unit must have the same dimension
+# 2. **Calculates conversion factors**: The builder computes the multiplier needed at runtime
+# 3. **Applies conversion at runtime**: Values are converted as Rust components read their inputs
 #
-# This means you can have:
-# - Schema storing data in `GtC/yr`
-# - Component requesting data in `MtCO2/yr`
+# Below, the schema stores CO₂ emissions in `MtCO2/yr`.
+# The carbon cycle component expects `GtC / yr`, so the model converts the values as it reads them.
+
+# %%
+import numpy as np
+
+from rscm.components import CarbonCycleBuilder
+from rscm.core import (
+    InterpolationStrategy,
+    ModelBuilder,
+    TimeAxis,
+    Timeseries,
+    VariableSchema,
+)
+
+schema = VariableSchema()
+schema.add_variable("Emissions|CO2|Anthropogenic", "MtCO2/yr")
+schema.add_variable("Surface Temperature", "K")
+schema.add_variable("Atmospheric Concentration|CO2", "ppm")
+schema.add_variable("Cumulative Land Uptake", "Gt C")
+schema.add_variable("Cumulative Emissions|CO2", "Gt C")
+
+bounds = TimeAxis.from_bounds(np.array([2000.0, 2011.0]))
+model = (
+    ModelBuilder()
+    .with_time_axis(TimeAxis.from_values(np.arange(2000.0, 2011.0)))
+    .with_schema(schema)
+    .with_rust_component(
+        CarbonCycleBuilder.from_parameters(
+            dict(tau=20.3, conc_pi=280.0, alpha_temperature=0.0)
+        ).build()
+    )
+    .with_exogenous_variable(
+        "Emissions|CO2|Anthropogenic",
+        Timeseries(
+            np.array([36_666.7]), bounds, "MtCO2/yr", InterpolationStrategy.Previous
+        ),
+    )
+    .with_exogenous_variable(
+        "Surface Temperature",
+        Timeseries(np.array([0.0]), bounds, "K", InterpolationStrategy.Previous),
+    )
+    .with_initial_values(
+        {
+            "Cumulative Land Uptake": 0.0,
+            "Cumulative Emissions|CO2": 0.0,
+            "Atmospheric Concentration|CO2": 280.0,
+        }
+    )
+).build()
+
+# The "Unit Conversions" section lists the factor applied for each component input
+print(model.debug_info("plain"))
+
+# %%
+# 36,666.7 MtCO2/yr is 10 GtC/yr, which the carbon cycle receives
+model.run()
+concentration = model.timeseries().get_timeseries_by_name(
+    "Atmospheric Concentration|CO2"
+)
+print(f"CO2 concentration in 2010: {concentration.values()[-1]:.1f} ppm")
+
+# %% [markdown]
+# Conversion has some limits:
 #
-# And the framework handles the conversion transparently.
+# - Without a schema, the builder does not convert units or check them against the exogenous data.
+#   Provide exogenous timeseries in the units the components declare.
+# - Python components receive values in the schema's units, without conversion.
 
 # %% [markdown]
 # ## 10. Summary

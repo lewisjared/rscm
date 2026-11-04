@@ -46,6 +46,9 @@ from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
 from rscm.core import (
     InterpolationStrategy,
     ModelBuilder,
+    PythonComponent,
+    RequirementDefinition,
+    RequirementType,
     TimeAxis,
     Timeseries,
 )
@@ -281,7 +284,10 @@ model = (
     )
 ).build()
 
-# Step through and record values
+# Advance to just before emissions start, then record values
+while model.current_time() < 1840.0:
+    model.step()
+
 debug_log = []
 
 print("Step-by-step execution:")
@@ -369,31 +375,56 @@ print(f"Final CO2 (restored): {rest_co2.latest_value():.2f}")
 # %% [markdown]
 # ## Diagnosing Common Issues
 #
-# ### Missing Variable Errors
+# ### Missing Exogenous Variables
 #
-# If a component requires a variable that isn't provided, the build step
-# will fail with a descriptive error message listing available variables.
+# The builder does not yet check that every exogenous input has data.
+# A model with a missing exogenous variable builds and runs,
+# but the variable is NaN and the NaN propagates into the outputs.
 
 # %%
-# Example: Missing exogenous variable
-try:
-    incomplete_model = (
-        ModelBuilder()
-        .with_rust_component(carbon_cycle)
-        .with_time_axis(time_axis)
-        # Missing: "Emissions|CO2|Anthropogenic"
-        # Missing: "Surface Temperature"
-        .with_initial_values(
-            {
-                "Cumulative Land Uptake": 0.0,
-                "Cumulative Emissions|CO2": 0.0,
-                "Atmospheric Concentration|CO2": 280.0,
-            }
-        )
-    ).build()
-except Exception as e:
-    print("Build error (expected):")
-    print(f"  {e}")
+incomplete_model = (
+    ModelBuilder()
+    .with_rust_component(carbon_cycle)
+    .with_time_axis(time_axis)
+    # Missing: "Emissions|CO2|Anthropogenic" and "Surface Temperature"
+    .with_initial_values(
+        {
+            "Cumulative Land Uptake": 0.0,
+            "Cumulative Emissions|CO2": 0.0,
+            "Atmospheric Concentration|CO2": 280.0,
+        }
+    )
+).build()
+incomplete_model.run()
+
+co2 = incomplete_model.timeseries().get_timeseries_by_name(
+    "Atmospheric Concentration|CO2"
+)
+print(f"CO2 concentration: {co2.values()[:4]}")
+
+# %% [markdown]
+# To catch this before running, compare the exogenous inputs listed by `debug_info()`
+# with the data in the model.
+
+
+# %%
+def unfilled_exogenous(model) -> list[str]:
+    """List exogenous scalar inputs that have no data in the model."""
+    info = json.loads(model.debug_info("json"))
+    collection = model.timeseries()
+    missing = set()
+    for component in info["components"]:
+        for requirement in component.get("inputs", []):
+            if requirement["source"] != "exogenous":
+                continue
+            ts = collection.get_timeseries_by_name(requirement["name"])
+            if ts is not None and np.isnan(ts.values()).all():
+                missing.add(requirement["name"])
+    return sorted(missing)
+
+
+print(f"Complete model:   {unfilled_exogenous(model)}")
+print(f"Incomplete model: {unfilled_exogenous(incomplete_model)}")
 
 # %% [markdown]
 # ### Missing Initial Values
@@ -417,29 +448,85 @@ except Exception as e:
     print(f"  {e}")
 
 # %% [markdown]
+# ### Runtime Errors
+#
+# If a component fails while solving, `step()` and `run()` raise a `RuntimeError`.
+# The message names the component and the time interval that failed.
+#
+# The component below returns an output it never declared, which the model rejects.
+
+
+# %%
+class MisnamedOutput:
+    """Declares one output but returns a misspelt name."""
+
+    def definitions(self):
+        """Declare the output."""
+        return [
+            RequirementDefinition("Ocean Heat Uptake", "W/m^2", RequirementType.Output)
+        ]
+
+    def solve(self, t_current, t_next, inputs):
+        """Return a value under the wrong name."""
+        return {"Ocean Heat Uptak": 0.5}
+
+
+failing_model = (
+    ModelBuilder()
+    .with_time_axis(time_axis)
+    .with_py_component(PythonComponent.build(MisnamedOutput()))
+).build()
+
+try:
+    failing_model.run()
+except RuntimeError as e:
+    print(f"Run failed: {e}")
+
+print(f"Model time after failure: {failing_model.current_time()}")
+
+# %% [markdown]
+# The time index does not advance past the failed step.
+# Components that already ran in that step may have updated their internal state,
+# so rebuild the model rather than retrying `step()` or `run()` on it.
+#
+# Stepping a finished model also raises a `RuntimeError`.
+
+# %%
+try:
+    model.step()
+except RuntimeError as e:
+    print(f"Step failed: {e}")
+
+# %% [markdown]
 # ### Debugging Tips Summary
 #
-# 1. **Inspect the execution graph** - Use `model.debug_info()` to see
+# 1. **Inspect the execution graph**: Use `model.debug_info()` to see
 #    execution order, variable sources (exo/upstream/own_state), grid types,
 #    and any runtime transformations
 #
-# 2. **Check the dependency graph** - Use `model.as_dot()` to visualise
+# 2. **Check the dependency graph**: Use `model.as_dot()` to visualise
 #    the structural component connections
 #
-# 3. **List all variables** - Use `collection.names()` to see what
+# 3. **List all variables**: Use `collection.names()` to see what
 #    variables exist in the model
 #
-# 4. **Inspect specific values** - Use `get_timeseries_by_name()` to
+# 4. **Inspect specific values**: Use `get_timeseries_by_name()` to
 #    access individual variable timeseries
 #
-# 5. **Step through execution** - Use `model.step()` for fine-grained
+# 5. **Step through execution**: Use `model.step()` for fine-grained
 #    control and inspect state after each timestep
 #
-# 6. **Use serialisation** - Save model state with `to_toml()` to create
+# 6. **Use serialisation**: Save model state with `to_toml()` to create
 #    checkpoints or share problematic states
 #
-# 7. **Read error messages** - Build errors include details about missing
-#    variables and available alternatives
+# 7. **Read error messages**: Build errors explain missing initial values
+#    and schema or grid mismatches
+#
+# 8. **Check exogenous inputs**: Missing exogenous data is not a build error,
+#    so check inputs marked `(exo)` in `debug_info()`
+#
+# 9. **Catch runtime errors**: `step()` and `run()` raise `RuntimeError`
+#    naming the failing component and time interval
 
 # %% [markdown]
 # ## Summary
@@ -453,6 +540,7 @@ except Exception as e:
 # 5. Step through execution for detailed debugging
 # 6. Use serialisation for checkpoints and state inspection
 # 7. Understand common error messages
+# 8. Detect missing exogenous data and handle runtime errors
 #
 # For more advanced debugging of Rust components, see the
 # [Rust Development Tips](../developers/rust_tips.md) guide.

@@ -229,14 +229,17 @@ FourBox -> Hemispheric -> Scalar
 **Python:**
 
 ```python
-from rscm.core import FourBoxGrid, StateValue
+from rscm.core import FourBoxSlice, StateValue
 
 # StateValue wraps grid or scalar values
-grid_val = StateValue.four_box(FourBoxSlice.uniform(10.0))
+grid_val = StateValue.four_box(FourBoxSlice.from_array([15.0, 14.0, 10.0, 9.0]))
 
 # Aggregate to scalar
-global_val = grid_val.to_scalar()  # Weighted average
+global_val = grid_val.to_scalar()  # 12.0, the unweighted mean of the regions
 ```
+
+`StateValue.to_scalar()` ignores grid weights.
+Aggregation inside a model uses the configured [grid weights](#configuring-aggregation-weights).
 
 **Rust:**
 
@@ -252,7 +255,7 @@ let global = grid.aggregate_global(&regional_values);  // 12.0 with equal weight
 
 ### Transformation Between Grids
 
-Some transformations are supported automatically:
+`SpatialGrid::transform_to` in Rust supports these transformations:
 
 | From        | To          | Method                                  |
 | ----------- | ----------- | --------------------------------------- |
@@ -263,6 +266,10 @@ Some transformations are supported automatically:
 | Scalar      | Hemispheric | Broadcast                               |
 
 **Not supported:** Hemispheric -> FourBox (requires physical assumptions about ocean-land split)
+
+The model only applies the aggregations automatically.
+It rejects broadcasts when coupling components,
+as described in [Schema-Driven Auto-Aggregation](#schema-driven-auto-aggregation).
 
 **Rust:**
 
@@ -286,6 +293,8 @@ When using a `VariableSchema`, RSCM can automatically aggregate grid data when c
 ### How It Works
 
 **Read-side aggregation:** When a component declares an input at a coarser resolution than the schema, the data is automatically aggregated when the component reads it.
+This currently only works for Rust components.
+Python components receive the window at the schema's resolution.
 
 **Write-side aggregation:** When a component produces output at a finer resolution than the schema declares, the data is automatically aggregated when writing to the collection.
 
@@ -301,15 +310,22 @@ Disaggregation (broadcasting from coarser to finer grids) is **not supported** b
 
 ### Example: FourBox to Scalar Auto-Aggregation
 
-A component producing FourBox output can feed directly into a component expecting Scalar input, as long as the schema declares the appropriate grid type:
+A component producing FourBox output can feed directly into a component expecting Scalar input.
+In Python, declare the variable as Scalar in the schema so the producer's output is aggregated on write:
 
 **Python:**
 
 ```python
-from rscm import ModelBuilder, PythonComponent, TimeAxis
-from rscm._lib.core import VariableSchema, GridType
-from rscm._lib.core.state import FourBoxSlice
+import numpy as np
 from rscm.component import Component, Input, Output
+from rscm.core import (
+    FourBoxSlice,
+    GridType,
+    ModelBuilder,
+    PythonComponent,
+    TimeAxis,
+    VariableSchema,
+)
 
 
 class RegionalProducer(Component):
@@ -331,31 +347,34 @@ class GlobalConsumer(Component):
     response = Output("Climate Response", unit="W/m^2")
 
     def solve(self, t_current, t_next, inputs):
-        # Automatically receives aggregated global average
+        # Receives the aggregated global average written in the previous step
         global_temp = inputs.temp.at_start()
         return self.Outputs(response=global_temp * 0.1)
 
 
-# Schema declares FourBox as the native grid type
+# Schema stores Surface Temperature as Scalar, so FourBox output is aggregated on write
 schema = VariableSchema()
-schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+schema.add_variable("Surface Temperature", "K", GridType.Scalar)
 schema.add_variable("Climate Response", "W/m^2", GridType.Scalar)
 
 model = (
     ModelBuilder()
-    .with_time_axis(TimeAxis.from_bounds(2020.0, 2025.0, 1.0))
+    .with_time_axis(TimeAxis.from_values(np.arange(2020.0, 2026.0)))
     .with_schema(schema)
     .with_py_component(PythonComponent.build(RegionalProducer()))
     .with_py_component(PythonComponent.build(GlobalConsumer()))
     .build()
 )
-
-# GlobalConsumer receives the weighted average of [288, 292, 285, 289]
-# With equal weights: (288 + 292 + 285 + 289) / 4 = 213.5 K
 model.run()
+
+# With the default equal weights: (288 + 292 + 285 + 289) / 4 = 288.5 K
+print(model.timeseries().get_timeseries_by_name("Surface Temperature").values())
 ```
 
 **Rust:**
+
+Rust components also support read-side aggregation.
+Here the schema stores the FourBox values and the Scalar consumer reads the aggregate:
 
 ```rust
 let schema = VariableSchema::new()
@@ -377,26 +396,30 @@ By default, aggregation uses equal weights. For physically meaningful results, c
 **Python:**
 
 ```python
-from rscm import ModelBuilder
-from rscm._lib.core import GridType
+from rscm.core import GridType, ModelBuilder
 
-# MAGICC-style area weights: ~36% ocean, ~14% land per hemisphere
+# Area weights from MAGICC's land fractions (42% of the NH, 21% of the SH)
 model = (
     ModelBuilder()
     .with_schema(schema)
-    .with_grid_weights(GridType.FourBox, [0.36, 0.14, 0.36, 0.14])
+    .with_grid_weights(GridType.FourBox, [0.29, 0.21, 0.395, 0.105])
     .with_grid_weights(GridType.Hemispheric, [0.5, 0.5])
     # ... add components
     .build()
 )
 ```
 
+The MAGICC runners in `rscm.magicc` derive the FourBox weights in the same way,
+from the ClimateUDEB `nh_land_fraction` and `sh_land_fraction` parameters.
+In emissions-driven runs the CH4, N2O and carbon-cycle feedbacks read the FourBox surface temperature as a Scalar.
+They therefore see the area-weighted mean.
+
 **Rust:**
 
 ```rust
 let model = ModelBuilder::new()
     .with_schema(schema)
-    .with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14])
+    .with_grid_weights(GridType::FourBox, vec![0.29, 0.21, 0.395, 0.105])
     .with_grid_weights(GridType::Hemispheric, vec![0.5, 0.5])
     .with_component(...)
     .build()?;
@@ -410,17 +433,121 @@ let model = ModelBuilder::new()
 | Hemispheric | [Northern, Southern]                                 |
 
 Weights must sum to 1.0.
+Python raises `ValueError` for invalid weights, while the Rust builder panics.
 
 ### Introspection
 
-To see which transformations the model will perform:
+To see which transformations the model will perform, print its debug information:
 
 ```python
-model = builder.build()
-transforms = model.required_transformations()
-for var_name, transform in transforms.items():
-    print(f"{var_name}: {transform}")
+print(model.debug_info("plain"))
 ```
+
+The `Grid Transforms` section lists each transformed variable,
+for example `Surface Temperature FourBox -> Scalar (write)`.
+In Rust, `Model::required_transformations()` returns the same information.
+
+## Gridded Exogenous Data and Initial Values
+
+`FourBoxTimeseries` holds exogenous FourBox data.
+Its values have shape `(n_times, 4)` in the order NO, NL, SO, SL.
+Pass it to `ModelBuilder.with_exogenous_four_box_variable()`.
+It is interpolated onto the model time axis like a scalar `Timeseries`.
+
+`ModelBuilder.with_initial_grid_values()` sets the initial value of a grid state variable,
+with one value per region in grid order.
+A FourBox state variable can also take a single value from `with_initial_values()`,
+which is used for every region.
+
+**Python:**
+
+```python
+import numpy as np
+from rscm.component import Component, Input, State
+from rscm.core import (
+    FourBoxSlice,
+    FourBoxTimeseries,
+    InterpolationStrategy,
+    ModelBuilder,
+    PythonComponent,
+    TimeAxis,
+)
+
+time_axis = TimeAxis.from_values(np.arange(2000.0, 2006.0))
+
+# Regional warming that ramps linearly from zero in 2000
+temperature = FourBoxTimeseries(
+    np.array([[0.0, 0.0, 0.0, 0.0], [1.2, 1.8, 0.8, 1.4]]),
+    TimeAxis.from_values(np.array([2000.0, 2005.0])),
+    "K",
+    InterpolationStrategy.Linear,
+)
+
+
+class OceanHeat(Component):
+    temperature = Input("Surface Temperature", unit="K", grid="FourBox")
+    heat = State("Ocean Heat", unit="J/m^2", grid="FourBox")
+
+    def solve(self, t_current, t_next, inputs):
+        t = inputs.temperature.at_start_all()
+        h = inputs.heat.at_start_all()
+        return self.Outputs(
+            heat=FourBoxSlice.from_array([h[i] + 1e8 * t[i] for i in range(4)])
+        )
+
+
+model = (
+    ModelBuilder()
+    .with_time_axis(time_axis)
+    .with_py_component(PythonComponent.build(OceanHeat()))
+    .with_exogenous_four_box_variable("Surface Temperature", temperature)
+    .with_initial_grid_values({"Ocean Heat": [0.0, 0.0, 0.0, 0.0]})
+).build()
+model.run()
+
+heat = model.timeseries().get_fourbox_timeseries_by_name("Ocean Heat")
+print(heat.values()[-1])  # [2.4e8, 3.6e8, 1.6e8, 2.8e8]
+```
+
+FourBox exogenous data also feeds Rust components that read a Scalar input.
+Declare the variable as FourBox in the schema, and the input is aggregated with the grid weights on read.
+Here `CarbonCycle` reads the area-weighted mean of the regional temperatures:
+
+```python
+from rscm.components import CarbonCycleBuilder
+from rscm.core import GridType, Timeseries, VariableSchema
+
+schema = VariableSchema()
+schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+schema.add_variable("Emissions|CO2|Anthropogenic", "GtC / yr")
+schema.add_variable("Atmospheric Concentration|CO2", "ppm")
+schema.add_variable("Cumulative Emissions|CO2", "Gt C")
+schema.add_variable("Cumulative Land Uptake", "Gt C")
+
+carbon_cycle = CarbonCycleBuilder.from_parameters(
+    {"tau": 30.0, "conc_pi": 278.0, "alpha_temperature": 0.1}
+).build()
+emissions = Timeseries(np.full(6, 10.0), time_axis, "GtC / yr", InterpolationStrategy.Previous)
+
+model = (
+    ModelBuilder()
+    .with_time_axis(time_axis)
+    .with_schema(schema)
+    .with_grid_weights(GridType.FourBox, [0.29, 0.21, 0.395, 0.105])
+    .with_rust_component(carbon_cycle)
+    .with_exogenous_four_box_variable("Surface Temperature", temperature)
+    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
+    .with_initial_values({
+        "Atmospheric Concentration|CO2": 278.0,
+        "Cumulative Emissions|CO2": 0.0,
+        "Cumulative Land Uptake": 0.0,
+    })
+).build()
+model.run()
+print(model.debug_info("plain"))  # Lists "Surface Temperature FourBox -> Scalar (read)"
+```
+
+There is no Hemispheric equivalent of `FourBoxTimeseries` in Python yet.
 
 ## Grid Coupling Validation
 
@@ -438,8 +565,8 @@ class Consumer(Component):
 Error message:
 
 ```text
-GridTypeMismatch: Variable 'Temperature' has grid type 'FourBox' from Producer
-but Consumer expects 'Scalar'
+ValueError: Grid type mismatch for variable 'Temperature': producer component 'PythonComponent'
+outputs FourBox but consumer component 'PythonComponent' expects Scalar.
 ```
 
 **Fixes:**
@@ -484,6 +611,10 @@ Use **Approach 2** when regional differences in the nonlinear response are impor
 If you need to disaggregate from a coarser to finer grid, create an explicit component:
 
 ```python
+from rscm.component import Component, Input, Output
+from rscm.core import FourBoxSlice
+
+
 class HemisphericToFourBox(Component):
     """Disaggregate hemispheric temperature to four-box."""
 

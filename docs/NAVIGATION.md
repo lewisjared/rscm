@@ -14,8 +14,10 @@ See https://oprypin.github.io/mkdocs-literate-nav/
   * [Debugging and Inspection](notebooks/debugging_inspection.py)
   * [Scenario Pipeline](notebooks/scenario_pipeline.py)
   * [Calibration](notebooks/calibration_tutorial.py)
+  * [MAGICC Coupled Model](notebooks/magicc_coupled_model.py)
 * Reference
-  * [Partial MAGICC Runs](magicc_runs.md)
+  * [MAGICC Runs](magicc_runs.md)
+  * [MAGICC Modules](modules/README.md)
   * [Configuration Layer](model_configuration.md)
   * [Spatial Grids](grids.md)
   * [Physical Units](notebooks/units_tutorial.py)
