@@ -404,6 +404,15 @@ impl ClimateUDEBParameters {
         self.kappa_min * DIFFUSIVITY_CM2S_TO_M2YR
     }
 
+    /// Diffusivity change per kelvin of top to bottom temperature difference at each layer boundary.
+    pub fn kappa_slopes(&self) -> Vec<FloatValue> {
+        let n = self.n_layers;
+        // MAGICC7 scales by boundary index, not depth, so the thicker mixed layer is ignored.
+        (0..n - 1)
+            .map(|l| (1.0 - l as FloatValue / (n as FloatValue - 1.0)) * self.kappa_dkdt)
+            .collect()
+    }
+
     /// Get the global climate feedback parameter ($\text{W/m}^2\text{/K}$).
     ///
     /// $$\lambda = \Delta Q_{2x} / \text{ECS}$$

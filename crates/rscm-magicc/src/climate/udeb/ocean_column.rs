@@ -31,18 +31,14 @@ impl ClimateUDEB {
 
         let kappa_min_m2yr = self.parameters.kappa_min_m2_per_yr();
 
-        let mut kappa = Vec::with_capacity(n - 1);
-        for l in 0..n - 1 {
-            // MAGICC7 scales by boundary index, not depth, so the thicker mixed layer is ignored.
-            let relative_depth = l as FloatValue / (n as FloatValue - 1.0);
-
-            let k = ((1.0 - relative_depth) * self.parameters.kappa_dkdt * (t_top - t_bottom)
-                + self.parameters.kappa)
-                * DIFFUSIVITY_CM2S_TO_M2YR;
-            kappa.push(k.max(kappa_min_m2yr));
-        }
-
-        kappa
+        self.kappa_slopes
+            .iter()
+            .map(|slope| {
+                let k =
+                    (slope * (t_top - t_bottom) + self.parameters.kappa) * DIFFUSIVITY_CM2S_TO_M2YR;
+                k.max(kappa_min_m2yr)
+            })
+            .collect()
     }
 
     /// Step forward by dt (in years) for a single hemisphere.
@@ -136,28 +132,28 @@ impl ClimateUDEB {
         let up = ((temps[0] * pi_ratio) * dtpdz) * w;
         let polar = t_polar * dw_dtpdz;
 
-        // With two layers the second is the bottom layer, set below
-        if n > 2 {
-            a[1] = -(((kappas[0] * dtpdz) / dz1) * aft[1]);
-            b[1] = ((((kappas[0] * dtpdz) / dz1) * aft[1] + 1.0)
-                + ((kappas[1] * dtpdz) / dz) * afb[1])
-                + (w * dtpdz) * aft[1];
-        }
+        // Diffusion and advection terms of a boundary, shared by the rows above and below it.
+        let boundary = |kappa: FloatValue| ((dtpdz * kappa) / dz, ((kappa / dz) + w) * dtpdz);
+        let (mut diffusion_above, mut advection_above) = boundary(kappas[0]);
         for i in 1..n - 1 {
-            if i > 1 {
-                a[i] = -(((dtpdz * kappas[i - 1]) / dz) * aft[i]);
-                b[i] = (((kappas[i - 1] / dz) + w) * dtpdz) * aft[i]
-                    + (((dtpdz * kappas[i]) / dz) * afb[i] + 1.0);
+            let (diffusion_below, advection_below) = boundary(kappas[i]);
+            if i == 1 {
+                a[1] = -(((kappas[0] * dtpdz) / dz1) * aft[1]);
+                b[1] = ((((kappas[0] * dtpdz) / dz1) * aft[1] + 1.0) + diffusion_below * afb[1])
+                    + (w * dtpdz) * aft[1];
+            } else {
+                a[i] = -(diffusion_above * aft[i]);
+                b[i] = advection_above * aft[i] + (diffusion_below * afb[i] + 1.0);
             }
-            cc[i] = -((((kappas[i] / dz) + w) * dtpdz) * afb[i]);
+            cc[i] = -(advection_below * afb[i]);
             d[i] = ((temps[i] + (init[i + 1] * afb[i] - init[i] * aft[i]) * dw_dtpdz)
                 + up * afd[i])
                 + afd[i] * polar;
+            (diffusion_above, advection_above) = (diffusion_below, advection_below);
         }
 
-        let k_bot = kappas[n - 2];
-        a[n - 1] = -(((dtpdz * k_bot) / dz) * aft[n - 1]);
-        b[n - 1] = (((k_bot / dz) + w) * dtpdz) * aft[n - 1] + 1.0;
+        a[n - 1] = -(diffusion_above * aft[n - 1]);
+        b[n - 1] = advection_above * aft[n - 1] + 1.0;
         d[n - 1] =
             aft[n - 1] * (dw_dtpdz * (t_polar - init[n - 1])) + (temps[n - 1] + up * aft[n - 1]);
 

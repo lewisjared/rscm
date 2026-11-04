@@ -110,6 +110,10 @@ pub struct ClimateUDEB {
     #[serde(skip)]
     area_factors: OceanAreaFactors,
 
+    /// Diffusivity change per kelvin of top to bottom temperature difference at each layer boundary.
+    #[serde(skip)]
+    kappa_slopes: Vec<FloatValue>,
+
     /// Inverse of the converged LAMCALC coupling matrix.
     /// Used for computing per-agent internal efficacies.
     #[serde(skip)]
@@ -259,11 +263,14 @@ impl ClimateUDEB {
             af_diff: [diff_nh, diff_sh],
         };
 
+        let kappa_slopes = parameters.kappa_slopes();
+
         Ok(Self {
             parameters: parameters.clone(),
             lambda_ocean,
             lambda_land,
             area_factors,
+            kappa_slopes,
             matrix_inverse,
             co2_internal_efficacy,
             co2_qfrac,

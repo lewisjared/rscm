@@ -12,7 +12,7 @@ use crate::units::Unit;
 use numpy::ndarray::Array;
 use petgraph::graph::NodeIndex;
 use petgraph::Graph;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use super::null_component::NullComponent;
@@ -450,7 +450,7 @@ impl ModelBuilder {
         // todo: refactor once this is more stable
         let mut graph: CGraph = Graph::new();
         let mut endogenous: HashMap<String, NodeIndex> = HashMap::new();
-        let mut exogenous: Vec<String> = vec![];
+        let mut exogenous: HashSet<String> = HashSet::new();
         let mut definitions: HashMap<String, VariableDefinition> = HashMap::new();
         // Track which component owns each variable for better error messages
         let mut variable_owners: HashMap<String, String> = HashMap::new();
@@ -468,23 +468,27 @@ impl ModelBuilder {
         let mut pending_aggregate_deps: Vec<(NodeIndex, String, RequirementDefinition)> = vec![];
 
         // Get aggregate names for forward reference (if schema exists)
-        let aggregate_names: std::collections::HashSet<String> = self
+        let aggregate_names: HashSet<String> = self
             .schema
             .as_ref()
             .map(|s| s.aggregates.keys().cloned().collect())
             .unwrap_or_default();
 
-        for component in &self.components {
+        // Each call builds the definitions afresh, so read them once.
+        let requirements: Vec<_> = self
+            .components
+            .iter()
+            .map(|component| (component.inputs(), component.outputs()))
+            .collect();
+
+        for (component, (requires, provides)) in self.components.iter().zip(&requirements) {
             let node = graph.add_node(component.clone());
             let mut has_dependencies = false;
 
             let component_name = Model::extract_component_name(component);
 
-            let requires = component.inputs();
-            let provides = component.outputs();
-
             // Classify variable sources for this component's inputs
-            for requirement in &requires {
+            for requirement in requires {
                 if requirement.requirement_type == RequirementType::EmptyLink {
                     continue;
                 }
@@ -510,7 +514,7 @@ impl ModelBuilder {
                 let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
                 if let Some(conversion) = verify_definition(
                     &mut definitions,
-                    &requirement,
+                    requirement,
                     &component_name,
                     existing_owner,
                     self.schema.is_some(),
@@ -533,9 +537,7 @@ impl ModelBuilder {
                     has_dependencies = true; // Mark as having dependencies to avoid NullComponent edge
                 } else {
                     // Add a new variable that must be defined outside of the model
-                    if !exogenous.contains(&requirement.name) {
-                        exogenous.push(requirement.name.clone());
-                    }
+                    exogenous.insert(requirement.name.clone());
                 }
             }
 
@@ -555,7 +557,7 @@ impl ModelBuilder {
                 let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
                 if let Some(conversion) = verify_definition(
                     &mut definitions,
-                    &requirement,
+                    requirement,
                     &component_name,
                     existing_owner,
                     self.schema.is_some(),
@@ -593,15 +595,15 @@ impl ModelBuilder {
             schema.validate()?;
 
             // Validate each component against the schema and collect transformations
-            for component in &self.components {
+            for (component, (requires, provides)) in self.components.iter().zip(&requirements) {
                 let component_name = Model::extract_component_name(component);
 
                 let (component_transforms, component_unit_conversions) = self
                     .validate_component_against_schema(
                         schema,
                         &component_name,
-                        &component.inputs(),
-                        &component.outputs(),
+                        requires,
+                        provides,
                         &endogenous,
                     )?;
                 all_transformations.extend(component_transforms);
@@ -628,7 +630,7 @@ impl ModelBuilder {
                         },
                     );
                     // Mark as exogenous since it's not produced by any component
-                    exogenous.push(name.clone());
+                    exogenous.insert(name.clone());
                 } else {
                     // Variable exists (from component input declaration) - update grid type to match schema
                     // This ensures storage uses schema's grid type, and read transforms will handle conversion
@@ -638,7 +640,7 @@ impl ModelBuilder {
                             // Read/write transforms handle conversion between component and schema grid types
                             def.grid_type = var_def.grid_type;
                             if !endogenous.contains_key(name) {
-                                exogenous.push(name.clone());
+                                exogenous.insert(name.clone());
                             }
                         }
                     }

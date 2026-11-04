@@ -198,10 +198,12 @@ impl PyModel {
             .try_step()
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))
     }
+
+    /// Run to the end, releasing the GIL so other threads can run models meanwhile.
     fn run(mut self_: PyRefMut<Self>) -> PyResult<()> {
-        self_
-            .0
-            .try_run()
+        let py = self_.py();
+        let model = &mut self_.0;
+        py.detach(|| model.try_run())
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))
     }
 
