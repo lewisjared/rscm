@@ -33,6 +33,7 @@
 # ## Related Resources
 #
 # - [Rust Components](../component_rust/): Creating components in Rust
+# - [External Modules](../../external_modules/): Packaging components outside the RSCM repository
 # - [Coupled Models](../coupled_model/): Combining multiple components
 # - [Key Concepts](../../key_concepts/): Core RSCM architecture
 

@@ -88,7 +88,10 @@ rscm.core.PythonComponent : Wrapper for using Python components in models
 
 from __future__ import annotations
 
+import functools
+import importlib.metadata
 import json
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
@@ -111,6 +114,22 @@ if TYPE_CHECKING:
 
 #: Valid grid type literals for component I/O declarations
 GridLiteral = Literal["Scalar", "FourBox", "Hemispheric"]
+
+#: Entry point group that installed packages use to provide components
+ENTRY_POINT_GROUP = "rscm.components"
+
+
+@functools.cache
+def _load_entry_points() -> None:
+    for entry_point in importlib.metadata.entry_points(group=ENTRY_POINT_GROUP):
+        try:
+            entry_point.load()
+        except Exception as e:
+            warnings.warn(
+                f"Could not load rscm components from {entry_point.value!r} "
+                f"(entry point {entry_point.name!r}): {e!r}",
+                stacklevel=3,
+            )
 
 
 @dataclass(frozen=True)
@@ -435,6 +454,10 @@ class Component(metaclass=ComponentMeta):
     defined, which can be queried via `Component.get_registered_components()`.
     This registry is used for documentation generation.
 
+    Installed packages can add components to the registry
+    by declaring an entry point in the `rscm.components` group.
+    The registry imports each entry point the first time it is queried.
+
     Note
     ----
     This registry only tracks **Python** components (subclasses of this class).
@@ -501,6 +524,7 @@ class Component(metaclass=ComponentMeta):
         -------
         Dictionary mapping component names to their classes
         """
+        _load_entry_points()
         return dict(cls._registry)
 
     @classmethod
@@ -521,6 +545,7 @@ class Component(metaclass=ComponentMeta):
         KeyError
             If no component with the given name is registered
         """
+        _load_entry_points()
         if name not in cls._registry:
             raise KeyError(  # noqa: TRY003
                 f"No component registered with name '{name}'. "
