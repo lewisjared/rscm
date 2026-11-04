@@ -315,6 +315,25 @@ def test_run_magicc7_defaults():
     _assert_total_erf(model, run)
 
 
+def test_run_magicc7_reads_no_files_given_inputs(monkeypatch):
+    """Loaded inputs reproduce the default run without reading a file."""
+    run = full_run.load_default()
+    inputs = full.load_inputs()
+    expected = full_run.default_model()
+
+    def no_reads(path):
+        pytest.fail(f"read {path}")
+
+    monkeypatch.setattr(full.pr, "read_input", no_reads)
+    model = full.run_magicc7(run.years, full_run.emissions(run), inputs=inputs)
+    for name in ("Atmospheric Concentration|CO2", "Effective Radiative Forcing"):
+        npt.assert_array_equal(
+            full_run.output(model, name),
+            full_run.output(expected, name),
+            err_msg=name,
+        )
+
+
 @pytest.mark.parametrize(
     ("change", "match"),
     [

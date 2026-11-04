@@ -103,11 +103,10 @@ def on_axis(
     hv = hv.reshape(len(hy), -1)
     y = np.asarray(years, dtype=np.float64)
     out = np.full((len(y), hv.shape[1]), np.nan)
-    for i, year in enumerate(y):
-        if year < hy[0]:
-            out[i] = hv[0] if before is None else before
-        elif year <= hy[-1]:
-            out[i] = hv[round(year - hy[0])]
+    early = y < hy[0]
+    within = ~early & (y <= hy[-1])
+    out[early] = hv[0] if before is None else before
+    out[within] = hv[np.rint(y[within] - hy[0]).astype(np.intp)]
     return out
 
 
