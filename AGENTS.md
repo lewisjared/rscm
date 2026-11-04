@@ -24,7 +24,7 @@ make parity                                   # MAGICC7 parity check: use as the
 make format                                   # Run before committing
 make lint                                     # ruff, mypy, cargo fmt, clippy
 make validate-pyi                             # Check .pyi stubs match the compiled module
-uv run --group regression <script>            # Regenerate MAGICC fixtures (needs MAGICC_ROOT)
+uv run --group regression <script>            # Regenerate MAGICC fixtures (MAGICC in ~/.local/share/magicc)
 ```
 
 ## PRs and commits
