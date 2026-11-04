@@ -75,7 +75,8 @@ Land boxes have no column of their own.
 
 ### Four-box coupling matrix
 
-At equilibrium the four boxes satisfy $\mathbf{A}\,\mathbf{T} = \mathbf{Q}$,
+At equilibrium the four boxes satisfy $\mathbf{A}\,\mathbf{T} = \mathbf{F}\,\mathbf{Q}$,
+where $\mathbf{Q}$ holds each box's forcing and $\mathbf{F} = \mathrm{diag}(f_{NO}, f_{NL}, f_{SO}, f_{SL})$,
 with the boxes ordered Northern Ocean, Northern Land, Southern Ocean, Southern Land:
 
 $$
@@ -215,7 +216,9 @@ $$
 
 With substep $\Delta t$, mixed-layer depth $h$,
 layer thickness $\Delta z = 100$ m, $\Delta z_1 = \Delta z / 2$,
-area factors $a^t_l$, $a^b_l$ and $a^d_l$ for the top, bottom and average of layer $l$,
+area factors $a^t_l = A^t_l / \bar{A}_l$, $a^b_l = A^b_l / \bar{A}_l$
+and $a^d_l = (A^t_l - A^b_l) / \bar{A}_l$ from the ocean area at the top and bottom of layer $l$
+and their mean $\bar{A}_l$,
 initial profile $T^0_l$, polar sinking temperature $T_p$ and upwelling change $\Delta w = w - w_0$,
 the coefficients are, for the mixed layer:
 

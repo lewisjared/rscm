@@ -87,7 +87,8 @@ Most come from the "Differences from MAGICC7" notes in each component's Rust doc
   and `run_magicc7` uses them.
 - **01 CH4 Chemistry**: no wetland or clathrate feedback.
 - **04 Ozone**: aviation NOx is not separated from other NOx.
-- **05 and 06**: the Rust `AerosolDirect` and `AerosolIndirect` components are simplified, global and unused.
+- **05 and 06**: the Rust `AerosolDirect` and `AerosolIndirect` components are simplified and unused.
+  `AerosolIndirect` outputs only a global forcing.
 - **08 Climate**: no El Niño or AMV modes.
   The last year runs 12 substeps where MAGICC7 runs 11.
   See [time conventions](time_conventions.md).

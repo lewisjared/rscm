@@ -28,7 +28,8 @@ from which [module 04](module_04_ozone.md#stratospheric-ozone) calculates strato
   `test_run_magicc7_defaults` checks every concentration in MAGICC7's default run.
   Both Rust files have unit tests.
 
-`HalocarbonChemistry` outputs each species' forcing as `Effective Radiative Forcing|<species>`,
+`HalocarbonChemistry` outputs each species' forcing as `Effective Radiative Forcing|F-Gases|<species>`
+or `Effective Radiative Forcing|Montreal Protocol Halogen Gases|<species>`,
 which is MAGICC7's RF before efficacies (see [forcing types](module_07b_rf_aggregation.md#forcing-types)).
 
 ## Equations
