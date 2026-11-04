@@ -19,7 +19,7 @@ The module also handles land-use change emissions (deforestation) with an associ
 
 ## 2. Mathematical Formulation
 
-### 2.1 Overview: 4-Pool Carbon Dynamics
+### 2.1 Overview: 3-Pool Carbon Dynamics
 
 The terrestrial carbon cycle tracks three explicit pools, with atmosphere implicitly represented through net fluxes:
 
@@ -941,7 +941,7 @@ Very high deforestation rate to deplete plant pool
 
 ## Summary
 
-The Terrestrial Carbon Cycle module implements a 4-pool box model with CO2 fertilization and temperature feedbacks. The mathematical formulation is based on standard carbon cycle modeling approaches, but the implementation has significant issues:
+The Terrestrial Carbon Cycle module implements a 3-pool box model with CO2 fertilization and temperature feedbacks. The mathematical formulation is based on standard carbon cycle modeling approaches, but the implementation has significant issues:
 
 **Strengths:**
 

@@ -861,33 +861,27 @@ The hierarchical forcing aggregation described in this module can be implemented
 ```python
 from rscm.core import VariableSchema
 
-schema = (
-    VariableSchema()
-    # Individual agents
-    .add_variable("ERF|CO2", "W/m^2")
-    .add_variable("ERF|CH4", "W/m^2")
-    .add_variable("ERF|N2O", "W/m^2")
-    .add_variable("ERF|Aerosol|Direct", "W/m^2")
-    .add_variable("ERF|Aerosol|Indirect", "W/m^2")
-    # Intermediate aggregates
-    .add_aggregate("ERF|GHG", "W/m^2", "Sum")
-        .from_variable("ERF|CO2")
-        .from_variable("ERF|CH4")
-        .from_variable("ERF|N2O")
-        .build()
-    .add_aggregate("ERF|Aerosol", "W/m^2", "Sum")
-        .from_variable("ERF|Aerosol|Direct")
-        .from_variable("ERF|Aerosol|Indirect")
-        .build()
-    # Top-level aggregate
-    .add_aggregate("ERF|Total|Anthropogenic", "W/m^2", "Sum")
-        .from_variable("ERF|GHG")
-        .from_variable("ERF|Aerosol")
-        .build()
+ERF = "Effective Radiative Forcing"
+
+schema = VariableSchema()
+# Individual agents, named as GhgForcing outputs them, plus a prescribed residual
+for agent in ("CO2", "CH4", "N2O", "Other"):
+    schema.add_variable(f"{ERF}|{agent}", "W/m^2")
+# Intermediate aggregate
+schema.add_aggregate(
+    f"{ERF}|GHG", "W/m^2", "Sum", [f"{ERF}|CO2", f"{ERF}|CH4", f"{ERF}|N2O"]
 )
+# Top-level aggregate, read by ClimateUDEB
+schema.add_aggregate(ERF, "W/m^2", "Sum", [f"{ERF}|GHG", f"{ERF}|Other"])
 ```
 
-This approach provides automatic validation, cycle detection, and NaN handling consistent with the MAGICC design. See [Tutorial 3: Variable Schemas](../tutorials.md#tutorial-3-variable-schemas) for a complete walkthrough.
+This approach provides automatic validation, cycle detection, and NaN handling consistent with the MAGICC design. See the [tutorials](../tutorials.md) for a complete walkthrough.
+`run_magicc` and `run_magicc_emissions` build total ERF this way, as a plain sum.
+`ClimateUDEB` then applies the CO2 efficacy and regional pattern to that total
+(see [module 08](module_08_climate.md)).
+The full chain, `rscm.magicc.full.run_magicc7`, uses `ForcingAggregation` instead.
+It applies each agent's efficacy and regional pattern in MAGICC7's summation order
+(see [Summation Order](#summation-order)).
 
 ---
 
