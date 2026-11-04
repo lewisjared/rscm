@@ -416,8 +416,14 @@ def _energy_balance(config: FairConfig) -> Component:
     ).build()
 
 
-def build_components(config: FairConfig) -> list[Component]:
-    """Components reproducing a FaIR run, in the order they must be added to a model."""
+def build_components(
+    config: FairConfig, *, energy_balance: bool = True
+) -> list[Component]:
+    """Components reproducing a FaIR run, in the order they must be added to a model.
+
+    Without `energy_balance`, another climate component must write the surface
+    temperature from the total effective radiative forcing.
+    """
     gases = [s for s in config["species"] if is_ghg(s)]
     components = []
     if thornhill(config):
@@ -436,24 +442,32 @@ def build_components(config: FairConfig) -> list[Component]:
     if entry is not None:
         components.append(_aerosol_cloud(config, entry))
     components.append(_aggregation(config))
-    components.append(_energy_balance(config))
+    if energy_balance:
+        components.append(_energy_balance(config))
     return components
 
 
-def initial_values(config: FairConfig) -> dict[str, float]:
-    """Return FaIR's values at the first time of every variable the components write."""
+def initial_values(
+    config: FairConfig, *, energy_balance: bool = True
+) -> dict[str, float]:
+    """Return FaIR's values at the first time of every variable the components write.
+
+    `energy_balance` matches `build_components`.
+    """
     values = dict.fromkeys(
-        (
-            naming.STOCHASTIC_FORCING,
-            naming.OCEAN_HEAT_CONTENT_CHANGE,
-            naming.ENERGY_IMBALANCE,
-            naming.TOTAL_FORCING,
-            naming.EFFICACY_ADJUSTED_FORCING,
-        ),
-        0.0,
+        (naming.TOTAL_FORCING, naming.EFFICACY_ADJUSTED_FORCING), 0.0
     )
-    for layer in range(len(config["climate"]["ocean_heat_capacity"])):
-        values[naming.layer_temperature(layer)] = 0.0
+    if energy_balance:
+        n_layers = len(config["climate"]["ocean_heat_capacity"])
+        values |= dict.fromkeys(
+            (
+                naming.STOCHASTIC_FORCING,
+                naming.OCEAN_HEAT_CONTENT_CHANGE,
+                naming.ENERGY_IMBALANCE,
+                *map(naming.layer_temperature, range(n_layers)),
+            ),
+            0.0,
+        )
     for s in config["species"]:
         if is_ghg(s):
             if s["input_mode"] != "concentration":

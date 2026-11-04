@@ -20,8 +20,19 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 
+from rscm.core import (
+    GridType,
+    InterpolationStrategy,
+    ModelBuilder,
+    RequirementType,
+    TimeAxis,
+    Timeseries,
+    VariableSchema,
+)
 from rscm.fair import (
+    build_components,
     from_fair,
+    initial_values,
     load_config,
     naming,
     prescribed_forcing_scales,
@@ -30,6 +41,8 @@ from rscm.fair import (
     run_fair,
 )
 from rscm.fair.config import forcing_agents, is_ghg
+from rscm.fair.run import _on_timebounds
+from rscm.magicc import ClimateUDEBBuilder
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -332,3 +345,67 @@ def test_from_fair() -> None:
         series = outputs.get_timeseries_by_name(variable)
         assert series is not None, variable
         assert_close(series.values(), run.fair(column), variable)
+
+
+def test_climate_udeb_smoke() -> None:
+    """FaIR's gas cycle and forcing drive MAGICC's ClimateUDEB in place of the EBM."""
+    member = CALIBRATION_MEMBERS[0]
+    run = load(f"calibrated_{member}")
+    nh, sh = 0.42, 0.21
+    climate = ClimateUDEBBuilder.from_parameters(
+        {"ecs": 3.0, "nh_land_fraction": nh, "sh_land_fraction": sh}
+    )
+    components = [*build_components(run.config, energy_balance=False), climate.build()]
+
+    schema = VariableSchema()
+    definitions = [d for c in components for d in c.definitions()]
+    # Writers first, so the schema keeps ClimateUDEB's four-box temperature.
+    for d in sorted(
+        definitions, key=lambda d: d.requirement_type == RequirementType.Input
+    ):
+        if d.requirement_type != RequirementType.EmptyLink and not schema.contains(
+            d.name
+        ):
+            schema.add_variable(d.name, d.unit, d.grid_type)
+
+    axis = TimeAxis.from_values(run.timebounds.index.to_numpy(dtype=np.float64))
+    builder = (
+        ModelBuilder()
+        .with_time_axis(axis)
+        .with_schema(schema)
+        .with_grid_weights(
+            GridType.FourBox, [(1 - nh) / 2, nh / 2, (1 - sh) / 2, sh / 2]
+        )
+    )
+    for component in components:
+        builder.with_rust_component(component)
+    inputs = _inputs(run.config, run.timebounds, run.timepoints)
+    n_bounds = len(axis.values())
+    for name, (values, unit) in inputs.items():
+        builder.with_exogenous_variable(
+            name,
+            Timeseries(
+                _on_timebounds(name, values, n_bounds),
+                axis,
+                unit,
+                InterpolationStrategy.Previous,
+            ),
+        )
+    builder.with_initial_values(
+        {
+            **initial_values(run.config, energy_balance=False),
+            **climate.initial_values(0.0),
+        }
+    )
+    model = builder.build()
+    model.run()
+
+    outputs = model.timeseries()
+    temperature = outputs.get_fourbox_timeseries_by_name(naming.SURFACE_TEMPERATURE)
+    assert temperature is not None
+    co2 = outputs.get_timeseries_by_name(naming.concentration("CO2"))
+    assert co2 is not None
+    warming = temperature.values()[-1] @ [(1 - nh) / 2, nh / 2, (1 - sh) / 2, sh / 2]
+    assert 0.5 < warming < 2.0
+    # The climate differs from FaIR's, so CO2 only roughly follows its feedback.
+    npt.assert_allclose(co2.values()[-1], run.fair("concentration|CO2")[-1], rtol=0.02)

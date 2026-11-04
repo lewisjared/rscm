@@ -51,7 +51,7 @@ FaIR calculates EESC after the aerosol forcing, so EESC never reaches ERFari.
 - [ ] Docs page.
 - [ ] Changelog fragment, once the PR has a number.
 - [x] Parity for members of the fair-calibrate v1.6.1 posterior.
-- [ ] Smoke test with MAGICC's `ClimateUDEB`.
+- [x] Smoke test with MAGICC's `ClimateUDEB` (`build_components(..., energy_balance=False)`).
 
 The posterior cases run three members over the CMIP7 history (1750 to 2024) deterministically.
 The posterior sets `stochastic_run`, which `read_calibration` ignores.
