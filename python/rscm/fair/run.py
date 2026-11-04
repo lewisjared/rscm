@@ -8,7 +8,12 @@ import numpy as np
 
 from rscm.core import InterpolationStrategy, ModelBuilder, TimeAxis, Timeseries
 from rscm.fair import naming
-from rscm.fair.config import FairConfig, build_components, initial_values
+from rscm.fair.config import (
+    FairConfig,
+    build_components,
+    forcing_agents,
+    initial_values,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -65,14 +70,25 @@ def build_model(
     builder = ModelBuilder().with_time_axis(axis)
     for component in build_components(config):
         builder.with_rust_component(component)
+    first = {}
     for name, (values, unit) in inputs.items():
         array = _on_timebounds(name, values, len(bounds))
         if name in scales:
             array = array * scales[name]
+        first[name] = float(array[0])
         builder.with_exogenous_variable(
             name, Timeseries(array, axis, unit, InterpolationStrategy.Previous)
         )
-    builder.with_initial_values(initial_values(config))
+    initial = initial_values(config)
+    agents = [naming.forcing(s) for s in forcing_agents(config)]
+    # FaIR's first forcing is the prescribed forcing, before any feedback.
+    for s in forcing_agents(config):
+        name = naming.prescribed_forcing(s)
+        if s["input_mode"] == "forcing" and name in first:
+            initial[naming.forcing(s)] = first[name]
+    total = float(np.nansum([initial[agent] for agent in agents]))
+    initial[naming.TOTAL_FORCING] = initial[naming.ENERGY_IMBALANCE] = total
+    builder.with_initial_values(initial)
     return builder.build()
 
 

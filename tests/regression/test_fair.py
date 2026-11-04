@@ -324,6 +324,26 @@ def test_ensemble_prescribed() -> None:
     _assert_ensemble_member(result.sel(scenario="ssp245", config="config"), run)
 
 
+def test_first_prescribed_forcing() -> None:
+    """The first forcing and imbalance are the prescribed forcing, as in FaIR."""
+    run = load("ssp245_prescribed")
+    inputs = _inputs(run.config, run.timebounds, run.timepoints)
+    solar = next(s for s in run.config["species"] if s["name"] == "Solar")
+    values, unit = inputs[naming.prescribed_forcing(solar)]
+    inputs[naming.prescribed_forcing(solar)] = (np.r_[0.3, values[1:]], unit)
+
+    outputs = run_fair(run.config, inputs, run.timebounds.index.to_numpy()).timeseries()
+
+    for variable in (
+        naming.forcing(solar),
+        naming.TOTAL_FORCING,
+        naming.ENERGY_IMBALANCE,
+    ):
+        series = outputs.get_timeseries_by_name(variable)
+        assert series is not None, variable
+        assert series.values()[0] == 0.3, variable
+
+
 def test_prescribed_ghg_forcing_is_rejected() -> None:
     config = load_config(DATA / "ssp245.json")
     for s in config["species"]:
