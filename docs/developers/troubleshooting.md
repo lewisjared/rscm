@@ -239,7 +239,8 @@ values[0] = 999.0
 collection.add_timeseries("Temperature", Timeseries(values, time_axis, "K", strategy))
 ```
 
-`add_timeseries` raises an error if the name already exists, so build a new collection to replace a timeseries.
+`add_timeseries` panics if the name already exists (`pyo3_runtime.PanicException` in Python).
+Build a new collection to replace a timeseries.
 
 ## PyO3 Binding Issues
 

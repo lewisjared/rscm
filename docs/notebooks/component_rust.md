@@ -441,7 +441,8 @@ Rebuild the model before retrying.
 
 ## Exposing to Python
 
-Python builders call `from_parameters(parameters)` on the component and deserialise the parameters from a dict.
+Python builders call `from_parameters(parameters)` on the component,
+which deserialises the parameters from a dict.
 Generate a builder with the `create_component_builder!` macro:
 
 ```rust

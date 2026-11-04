@@ -875,7 +875,9 @@ schema.add_aggregate(
 schema.add_aggregate(ERF, "W/m^2", "Sum", [f"{ERF}|GHG", f"{ERF}|Other"])
 ```
 
-This approach provides automatic validation, cycle detection, and NaN handling consistent with the MAGICC design. See the [tutorials](../tutorials.md) for a complete walkthrough.
+This approach provides automatic validation, cycle detection,
+and NaN handling consistent with the MAGICC design.
+See the [tutorials](../tutorials.md) for a complete walkthrough.
 `run_magicc` and `run_magicc_emissions` build total ERF this way, as a plain sum.
 `ClimateUDEB` then applies the CO2 efficacy and regional pattern to that total
 (see [module 08](module_08_climate.md)).

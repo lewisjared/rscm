@@ -409,9 +409,12 @@ model = (
 )
 ```
 
-The MAGICC runners in `rscm.magicc` derive the FourBox weights in the same way,
+`run_magicc` and `run_magicc_emissions` derive the FourBox weights in the same way,
 from the ClimateUDEB `nh_land_fraction` and `sh_land_fraction` parameters.
-In emissions-driven runs the CH4, N2O and carbon-cycle feedbacks read the FourBox surface temperature as a Scalar.
+`run_magicc7` always uses MAGICC7's default land fractions (42% and 21%) for the weights,
+whatever land fractions its parameters give.
+In emissions-driven runs the CH4, N2O and carbon-cycle feedbacks
+read the FourBox surface temperature as a Scalar.
 They therefore see the area-weighted mean.
 
 **Rust:**

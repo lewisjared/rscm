@@ -16,7 +16,8 @@ It is also a testbed for modularising MAGICC and reimplementing it in Rust.
 ## What ships
 
 * A two-layer energy balance model (`rscm.two_layer`).
-* Example components for a one-box carbon cycle, CO2 forcing and four-box ocean heat uptake (`rscm.components`).
+* Example components for a one-box carbon cycle, CO2 forcing and four-box ocean heat uptake
+  (`rscm.components`).
 * MAGICC7 components (`rscm.magicc`) for:
   * CH4, N2O and halocarbon chemistry.
   * The terrestrial carbon cycle with nitrogen limitation, ocean carbon, CO2 budget and permafrost.

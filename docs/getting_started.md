@@ -209,7 +209,8 @@ See [Key Concepts](key_concepts.md#dependency-graph) for details.
 - **[Tutorials](tutorials.md)**: Step-by-step guides for common tasks
 - **[Key Concepts](key_concepts.md)**: Understand Components, Models, and Timeseries
 - **[Coupled Models](notebooks/coupled_model.py)**: Build a feedback-coupled carbon cycle and climate model
-- **[Variable Schemas](notebooks/variable_schema.py)**: Aggregate outputs from multiple components (e.g. sum forcing agents into totals)
+- **[Variable Schemas](notebooks/variable_schema.py)**: Aggregate outputs from multiple components
+  (e.g. sum forcing agents into totals)
 - **[MAGICC Runs](magicc_runs.md)**: Run the full MAGICC7 chain or smaller MAGICC runners on SSP scenarios
 - **[MAGICC Coupled Model](notebooks/magicc_coupled_model.py)**: Couple the MAGICC components yourself
 - **[Spatial Grids](grids.md)**: Work with regional climate data

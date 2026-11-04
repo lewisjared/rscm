@@ -941,7 +941,10 @@ Very high deforestation rate to deplete plant pool
 
 ## Summary
 
-The Terrestrial Carbon Cycle module implements a 3-pool box model with CO2 fertilization and temperature feedbacks. The mathematical formulation is based on standard carbon cycle modeling approaches, but the implementation has significant issues:
+The Terrestrial Carbon Cycle module implements a 3-pool box model
+with CO2 fertilization and temperature feedbacks.
+The mathematical formulation is based on standard carbon cycle modeling approaches,
+but the implementation has significant issues:
 
 **Strengths:**
 

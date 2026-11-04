@@ -24,7 +24,8 @@ If you want to estimate model parameters from observations:
 If you want to run the MAGICC reimplementation from emissions or concentrations:
 
 1. [Coupled Models](#tutorial-1-coupled-models): Combine components
-2. [A Coupled MAGICC Model](#tutorial-8-a-coupled-magicc-model): Assemble MAGICC7's full chain and inspect the module graph
+2. [A Coupled MAGICC Model](#tutorial-8-a-coupled-magicc-model):
+   Assemble MAGICC7's full chain and inspect the module graph
 3. [MAGICC Runs](magicc_runs.md): `run_magicc7` and the smaller runners
 
 ### Creating New Components
