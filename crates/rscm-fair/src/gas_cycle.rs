@@ -136,8 +136,22 @@ impl ComponentState for FairGasCycleState {
 
 /// FaIR's greenhouse gas cycle for any set of gases.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "Unchecked")]
 pub struct FairGasCycle {
     parameters: FairGasCycleParameters,
+}
+
+#[derive(Deserialize)]
+struct Unchecked {
+    parameters: FairGasCycleParameters,
+}
+
+impl TryFrom<Unchecked> for FairGasCycle {
+    type Error = RSCMError;
+
+    fn try_from(unchecked: Unchecked) -> RSCMResult<Self> {
+        Self::from_parameters(unchecked.parameters)
+    }
 }
 
 impl FairGasCycle {
@@ -438,6 +452,25 @@ mod tests {
             let e = FairGasCycle::step_concentration(&species, &mut inverse, c, 1.2, 1.0);
             assert_relative_eq!(e, emissions, max_relative = 1e-10);
         }
+    }
+
+    #[test]
+    fn deserialising_checks_the_parameters() {
+        let mut parameters = FairGasCycleParameters {
+            species: vec![ch4()],
+            iirf_max: default_iirf_max(),
+            surface_temperature: surface_temperature(),
+        };
+        let valid =
+            serde_json::to_string(&FairGasCycle::from_parameters(parameters.clone()).unwrap())
+                .unwrap();
+        assert!(serde_json::from_str::<FairGasCycle>(&valid).is_ok());
+        parameters.species[0].unperturbed_lifetime.pop();
+        let json = format!(
+            r#"{{"parameters": {}}}"#,
+            serde_json::to_string(&parameters).unwrap()
+        );
+        assert!(serde_json::from_str::<FairGasCycle>(&json).is_err());
     }
 
     #[test]

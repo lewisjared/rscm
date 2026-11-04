@@ -344,6 +344,12 @@ def test_first_prescribed_forcing() -> None:
         assert series.values()[0] == 0.3, variable
 
 
+def test_only_emissions_are_on_timepoints() -> None:
+    assert len(_on_timebounds("Emissions|CO2", np.ones(3), 4)) == 4
+    with pytest.raises(ValueError, match="expected \\(4,\\) timebounds"):
+        _on_timebounds("Prescribed Effective Radiative Forcing|Solar", np.ones(3), 4)
+
+
 def test_prescribed_ghg_forcing_is_rejected() -> None:
     config = load_config(DATA / "ssp245.json")
     for s in config["species"]:

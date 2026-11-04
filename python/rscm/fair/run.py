@@ -27,13 +27,15 @@ def _on_timebounds(
     name: str, values: ArrayLike, n_timebounds: int
 ) -> NDArray[np.float64]:
     array = np.asarray(values, dtype=np.float64)
-    if array.shape == (n_timebounds - 1,):
+    timepoints = name.startswith("Emissions|")
+    if timepoints and array.shape == (n_timebounds - 1,):
         # No step starts at the last bound, so its value is never read.
         return np.append(array, array[-1])
     if array.shape != (n_timebounds,):
+        expected = f"({n_timebounds - 1},) timepoints or " if timepoints else ""
         msg = (
             f"{name} has shape {array.shape}, "
-            f"expected ({n_timebounds - 1},) timepoints or ({n_timebounds},) timebounds"
+            f"expected {expected}({n_timebounds},) timebounds"
         )
         raise ValueError(msg)
     return array
