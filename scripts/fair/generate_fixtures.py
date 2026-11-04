@@ -21,7 +21,7 @@ Usage:
         python -I scripts/fair/generate_fixtures.py
 
 NumPy's AVX-512 ``exp`` differs from the C library's by an ulp,
-which FaIR's longest CO2 lifetime box turns into a 1e-8 relative difference.
+which FaIR's longest CO2 lifetime box turns into a 5e-9 relative difference.
 The script disables it so the runs are the same on every x86 machine.
 
 The RCMIP scenarios and fair-calibrate files are downloaded through pooch on first use.
