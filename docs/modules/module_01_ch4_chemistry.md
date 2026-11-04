@@ -1,4 +1,4 @@
-# Module 01: CH4 Chemistry
+# CH4 Chemistry
 
 ## Overview
 

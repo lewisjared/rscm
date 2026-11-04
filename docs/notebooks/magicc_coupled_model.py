@@ -106,21 +106,21 @@ def reference_run(name):
 #
 # | Domain    | MAGICC module                                | RSCM                                         |
 # |-----------|----------------------------------------------|----------------------------------------------|
-# | Chemistry | 01 CH4 chemistry                             | `CH4ChemistryBuilder`                        |
-# | Chemistry | 01 CH4 oxidation to CO2                      | `CH4OxidationBuilder`                        |
-# | Chemistry | 02 N2O chemistry                             | `N2OChemistryBuilder`                        |
-# | Chemistry | 03 Halocarbon chemistry                      | `HalocarbonChemistryBuilder`                 |
-# | Carbon    | 09 Terrestrial carbon                        | `TerrestrialCarbonBuilder`                   |
-# | Carbon    | 10 Ocean carbon                              | `OceanCarbonBuilder`                         |
-# | Carbon    | 11 CO2 budget                                | `CO2BudgetBuilder`                           |
-# | Carbon    | 12 Permafrost                                | `PermafrostBuilder`                          |
-# | Carbon    | 13 Nitrogen limitation                       | `nitrogen` parameters of `TerrestrialCarbon` |
-# | Forcing   | 04 Ozone                                     | `OzoneForcingBuilder`                        |
-# | Forcing   | 05, 06 Aerosols and other prescribed forcing | `rscm.magicc.prescribed`                     |
-# | Forcing   | 07a GHG forcing                              | `GhgForcingBuilder`                          |
-# | Forcing   | 07b Forcing aggregation                      | `ForcingAggregationBuilder`                  |
-# | Climate   | 08 Climate (UDEB)                            | `ClimateUDEBBuilder`                         |
-# | Climate   | 14 Sea level rise                            | `SeaLevelRiseBuilder`                        |
+# | Chemistry | CH4 chemistry                                | `CH4ChemistryBuilder`                        |
+# | Chemistry | CH4 oxidation to CO2                         | `CH4OxidationBuilder`                        |
+# | Chemistry | N2O chemistry                                | `N2OChemistryBuilder`                        |
+# | Chemistry | Halocarbon chemistry                         | `HalocarbonChemistryBuilder`                 |
+# | Carbon    | Terrestrial carbon                           | `TerrestrialCarbonBuilder`                   |
+# | Carbon    | Ocean carbon                                 | `OceanCarbonBuilder`                         |
+# | Carbon    | CO2 budget                                   | `CO2BudgetBuilder`                           |
+# | Carbon    | Permafrost                                   | `PermafrostBuilder`                          |
+# | Carbon    | Nitrogen limitation                          | `nitrogen` parameters of `TerrestrialCarbon` |
+# | Forcing   | Ozone                                        | `OzoneForcingBuilder`                        |
+# | Forcing   | Aerosols and other prescribed forcing        | `rscm.magicc.prescribed`                     |
+# | Forcing   | GHG forcing                                  | `GhgForcingBuilder`                          |
+# | Forcing   | Forcing aggregation                          | `ForcingAggregationBuilder`                  |
+# | Climate   | Climate (UDEB)                               | `ClimateUDEBBuilder`                         |
+# | Climate   | Sea level rise                               | `SeaLevelRiseBuilder`                        |
 #
 # UDEB is MAGICC7's upwelling-diffusion ocean coupled to an energy balance.
 # It resolves four boxes: northern ocean, northern land, southern ocean and southern land.

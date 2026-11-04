@@ -1,4 +1,4 @@
-# Module 05: Aerosol Direct Forcing
+# Aerosol Direct Forcing
 
 ## Overview
 
@@ -17,8 +17,8 @@ extend it with emissions after the file ends,
 and harmonise the result to a target forcing in a reference year.
 Nitrate instead follows the Hauglustaine et al. (2014) parameterisation from emissions.
 
-The page uses RF, EffRF and ERF as [module 07b defines them](module_07b_rf_aggregation.md#forcing-types).
-Four-box arrays follow the box order in [module 00](module_00_initialization.md).
+The page uses RF, EffRF and ERF as the [forcing aggregation page defines them](module_07b_rf_aggregation.md#forcing-types).
+Four-box arrays follow the box order in [initialisation](module_00_initialization.md).
 
 ## RSCM implementation
 
@@ -29,7 +29,7 @@ Four-box arrays follow the box order in [module 00](module_00_initialization.md)
 - **Tests**: `test_prescribed_forcing` in `tests/regression/test_full_run.py`,
   parametrised over SOx, BC, OC and nitrate for each source, mineral dust and BC on snow.
 
-`ForcingAggregation` takes the results as four-box agents (see [module 07b](module_07b_rf_aggregation.md)).
+`ForcingAggregation` takes the results as four-box agents (see [forcing aggregation](module_07b_rf_aggregation.md)).
 
 ## Equations
 
@@ -116,7 +116,7 @@ RF_{TOTAER\_DIR} = RF_{BCI} + RF_{OCI} + RF_{SOXI} + RF_{NO3I} + RF_{BIOMASSAER}
 $$
 
 where `DAT_BIOMASSAER_RF` sums the biomass SOx, nitrate, OC and BC forcing.
-The order matters for parity, so [module 07b](module_07b_rf_aggregation.md) gives the exact summation order.
+The order matters for parity, so [forcing aggregation](module_07b_rf_aggregation.md) gives the exact summation order.
 
 ## Inputs and outputs
 
@@ -169,7 +169,7 @@ Other parameters:
 
 The regional patterns `RF_REGIONS_SOX`, `RF_REGIONS_BC`, `RF_REGIONS_OC`, `RF_REGIONS_NO3`,
 `RF_REGIONS_DUST` and `RF_REGIONS_AER_DIR`, and the efficacies `RF_EFFICACY_*`,
-are listed with the other agents in [module 07b](module_07b_rf_aggregation.md).
+are listed with the other agents in [forcing aggregation](module_07b_rf_aggregation.md).
 Biomass aerosols and mineral dust use the direct aerosol efficacy `RF_EFFICACY_AER_DIR`.
 
 ## Algorithm
@@ -184,7 +184,7 @@ For BC, OC and SOx it:
 4. Applies the harmonisation factor in `RF_APPLY_SCALING`, with biomass reusing the industrial factor.
 5. Subtracts the first-year offset set by `RF_INITIALIZATION_METHOD`,
    which is zero with the default `JUMPSTART`
-   (see [module 07b](module_07b_rf_aggregation.md#pre-industrial-reference)).
+   (see [forcing aggregation](module_07b_rf_aggregation.md#pre-industrial-reference)).
 
 Nitrate is then calculated from emissions, split by hemisphere and source,
 and its regional pattern `RF_REGIONS_NO3` replaced by the total box forcing over the hemispheric forcing

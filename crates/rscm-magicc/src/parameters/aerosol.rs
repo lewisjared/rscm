@@ -165,7 +165,7 @@ impl Default for AerosolDirectParameters {
 /// where $B$ is the aerosol burden (proxy: SOx + OC emissions) and $B_0$ is
 /// a reference burden scale.
 ///
-/// # Differences from MAGICC7 Module 06
+/// # Differences from MAGICC7
 ///
 /// This is a simplified implementation:
 ///

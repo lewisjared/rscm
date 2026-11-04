@@ -1,6 +1,6 @@
 //! Permafrost parameters
 //!
-//! Parameters for the MAGICC7 permafrost carbon feedback (module 12).
+//! Parameters for the MAGICC7 permafrost carbon feedback.
 
 use rscm_core::timeseries::FloatValue;
 use serde::de::Error as _;

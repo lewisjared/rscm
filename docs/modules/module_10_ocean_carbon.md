@@ -1,4 +1,4 @@
-# Module 10: Ocean Carbon Cycle
+# Ocean Carbon Cycle
 
 ## Overview
 
@@ -154,7 +154,7 @@ so the ocean takes up carbon less efficiently as it absorbs more.
 | Direction | Variable                     | Units  | Fortran variable                             |
 | --------- | ---------------------------- | ------ | -------------------------------------------- |
 | Input     | Atmospheric CO2              | ppm    | `DAT_CO2_CONC%DATGLOBE(current_year_idx)`    |
-| Input     | Other carbon sources         | GtC/yr | `CO2_TERRBIO_AND_FOSSIL_EMIS` (module 11)    |
+| Input     | Other carbon sources         | GtC/yr | `CO2_TERRBIO_AND_FOSSIL_EMIS` (CO2 budget)   |
 | Input     | Warming for feedback         | K      | `co2_feed_deltatemp`                         |
 | Output    | Monthly air-sea flux         | ppm/yr | `CO2_AIR2OCNFLX_ALLT_PPMPERYR(currentstep)`  |
 | Output    | Ocean surface pCO2           | ppm    | `pco2s_nextstep`, `DAT_PCO2S_CONC%DATGLOBE`  |
@@ -163,7 +163,7 @@ so the ocean takes up carbon less efficiently as it absorbs more.
 
 The other carbon sources are fossil emissions, CO2 from fossil CH4 oxidation and permafrost CO2,
 minus the net land uptake.
-[Module 11](module_11_co2_budget.md#budget-closure) assembles them.
+[CO2 budget](module_11_co2_budget.md#budget-closure) assembles them.
 
 ## Parameters
 
@@ -358,7 +358,7 @@ Beyond these:
   The Python builder defaults to 3D-GFDL, and another model needs its constants and IRF forms passed in.
 - There is no radiative-only mode (`OCEANCC_RAD_SETTING`).
 - The concentration cap is not implemented
-  (see [module 11](module_11_co2_budget.md#differences-from-magicc7)).
+  (see [CO2 budget](module_11_co2_budget.md#differences-from-magicc7)).
 - The flux history keeps the last `max_history_months` sub-steps (6000, or 500 years).
   Longer runs drop the oldest months from the convolution, where MAGICC7 keeps them all.
 

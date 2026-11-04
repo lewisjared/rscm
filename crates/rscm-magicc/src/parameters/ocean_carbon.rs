@@ -5,7 +5,7 @@
 //!
 //! # Reference
 //!
-//! Based on MAGICC7 Module 10 (Ocean Carbon Cycle) which implements an Impulse
+//! Based on MAGICC7's ocean carbon cycle, which implements an Impulse
 //! Response Function (IRF) approach to emulate the behaviour of complex 3D
 //! ocean models (GFDL, HILDA, BERN 2.5D, BOXDIFF).
 //!

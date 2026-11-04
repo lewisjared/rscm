@@ -31,7 +31,7 @@
 //! - `Emissions|CO2|Net` (GtC/yr) - Net emissions to atmosphere
 //! - `Airborne Fraction|CO2` (1) - Fraction of fossil sources remaining in the atmosphere
 //!
-//! # Differences from MAGICC7 Module 11
+//! # Differences from MAGICC7
 //!
 //! - **Monthly integration in the ocean**: in MAGICC7, atmospheric CO2 evolves over
 //!   the ocean's sub-steps, and the concentration it ends the year on becomes next year's.

@@ -1,4 +1,4 @@
-# Module 07b: Radiative Forcing Aggregation and Efficacy
+# Radiative Forcing Aggregation and Efficacy
 
 ## Overview
 
@@ -53,7 +53,7 @@ with `Reported` in `tests/regression/full_run.py`.
 ### Regional patterns
 
 The four boxes are in the order NH ocean, NH land, SH ocean, SH land,
-with area fractions $a_i$ from [module 00](module_00_initialization.md#four-box-geography).
+with area fractions $a_i$ from [initialisation](module_00_initialization.md#four-box-geography).
 A global forcing $Q$ is spread over the boxes with the agent's pattern $r_i$ (`RF_REGIONS_*`),
 normalised so the area-weighted mean is $Q$:
 
@@ -87,7 +87,7 @@ Mode 1 cancels each pattern's own efficacy, so every agent has unit efficacy.
 The internal efficacy $\varepsilon_{int}$ (`RF_INTEFFICACY_*`) is the warming of the climate model's
 four-box equilibrium for the agent's pattern, relative to its climate sensitivity.
 `CALC_INTERNAL_EFFICACY` evaluates it with $M^{-1}$, the inverse coupling matrix from LAMCALC
-(see [module 08](module_08_climate.md)):
+(see [climate](module_08_climate.md)):
 
 $$
 T_i = Q_{2\times} \sum_j \left(M^{-1}\right)_{ij} a_j q_j,
@@ -147,7 +147,7 @@ Internal efficacies are the defaults in `python/rscm/magicc/data/magicc7/default
 Notes on the table:
 
 - **Halocarbons**: the F-gas and Montreal Protocol agents apply the efficacy to each species before summing,
-  and each F-gas species has its own box pattern ([module 03](module_03_halocarbon_chemistry.md)).
+  and each F-gas species has its own box pattern ([halocarbon chemistry](module_03_halocarbon_chemistry.md)).
 - **Biomass burning**: `Biomass Burning Aerosols` sums the SOx, NO3, OC and BC `|AFOLU` forcing
   before its efficacy applies.
   Like mineral dust, it takes the direct aerosol efficacy and pattern (`AER_DIR`).
@@ -155,7 +155,7 @@ Notes on the table:
   `RF_REGIONS_NORMYEAR`, and nitrate from its total forcing in that year.
 - **Volcanic**: monthly volcanic forcing (`RF_EFFICACY_VOLC`, `SRF_FACTOR_VOLC` 0.7) goes straight to the
   climate model, through `ClimateUDEB`'s `subannual_forcing` in RSCM.
-- **Not in the default total**: cloud cover is zero by default ([module 06](module_06_aerosol_indirect.md)),
+- **Not in the default total**: cloud cover is zero by default ([indirect aerosol forcing](module_06_aerosol_indirect.md)),
   external forcing (`QXTRA`) needs `RF_EXTRA_READ`, and the aviation agents (H2O, contrails, cirrus)
   have no term in the summation order.
   RSCM has none of them.
@@ -266,7 +266,7 @@ schema.add_aggregate(ERF, "W/m^2", "Sum", [f"{ERF}|GHG", f"{ERF}|Other"])
 
 `run_magicc` and `run_magicc_emissions` build total ERF this way, as a plain sum.
 `ClimateUDEB` then applies the CO2 efficacy and regional pattern to that total
-(see [module 08](module_08_climate.md)).
+(see [climate](module_08_climate.md)).
 `rscm.magicc.full.run_magicc7` uses `ForcingAggregation` instead.
 See the [tutorials](../tutorials.md) for a walkthrough.
 

@@ -1,4 +1,4 @@
-# Module 13: Nitrogen Limitation
+# Nitrogen Limitation
 
 ## Overview
 
@@ -70,7 +70,7 @@ $$
 - $R_h$ is the previous year's total terrestrial respiration (`CO2_TOTALRESPIRATION`),
   or NPP in the first year.
 - $\beta$ and $f_T^{NPP}$ are the CO2 fertilisation and NPP temperature factors of
-  [module 09](module_09_terrestrial_carbon.md#net-primary-production).
+  [terrestrial carbon](module_09_terrestrial_carbon.md#net-primary-production).
 - $f$ is `NCYCLE_RECYC2CNRATIO_FACTOR`.
   At its default of 0, recycling is divided by both factors in full.
 

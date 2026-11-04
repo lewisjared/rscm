@@ -1,4 +1,4 @@
-# Module 07a: Well-Mixed GHG Forcing
+# Well-Mixed GHG Forcing
 
 ## Overview
 
@@ -6,7 +6,7 @@ This module calculates the forcing from the three main well-mixed greenhouse gas
 carbon dioxide (CO2), methane (CH4) and nitrous oxide (N2O).
 It also calculates the forcing from stratospheric water vapour produced by CH4 oxidation.
 It has no state and no chemistry.
-The concentrations come from modules 01 and 02, the carbon cycle or prescribed inputs.
+The concentrations come from CH4 and N2O chemistry, the carbon cycle or prescribed inputs.
 
 MAGICC7 offers two methods, selected by `CORE_CO2CH4N2O_RFMETHOD`:
 
@@ -30,7 +30,7 @@ The adjusted forcing is still the module's RF before efficacies
   and its `ipcctar` variant the same with IPCCTAR.
   `ghg.rs` has unit tests for both methods.
 
-The regional split happens in `ForcingAggregation` ([module 07b](module_07b_rf_aggregation.md)),
+The regional split happens in `ForcingAggregation` ([forcing aggregation](module_07b_rf_aggregation.md)),
 not in `GhgForcing`.
 
 ## Equations
@@ -173,7 +173,7 @@ Forcing is calculated for the end of the step, so it reads the next year's conce
 The rapid adjustment factors follow Smith et al. (2018) and the IPCC AR6 WG1 chapter 7 drafts.
 The regional patterns `RF_REGIONS_CO2`, `RF_REGIONS_CH4`, `RF_REGIONS_N2O`
 and `RF_REGIONS_CH4OXSTRATH2O` belong to the aggregation,
-see [module 07b](module_07b_rf_aggregation.md).
+see [forcing aggregation](module_07b_rf_aggregation.md).
 
 ## Algorithm
 

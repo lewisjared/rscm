@@ -1,4 +1,4 @@
-# Module 09: Terrestrial Carbon Cycle
+# Terrestrial Carbon Cycle
 
 ## Overview
 
@@ -29,7 +29,7 @@ It carries a second set of "no-feedback" pools to keep land-use emissions separa
   and `no_carbon_temperature_feedback` variants.
   Rust tests are in `crates/rscm-magicc/tests/carbon_cycle_physics.rs` and `conservation.rs`.
 
-Nitrogen limitation of NPP ([module 13](module_13_nitrogen_limitation.md)) is part of the same component,
+[Nitrogen limitation](module_13_nitrogen_limitation.md) of NPP is part of the same component,
 switched on by its `nitrogen` parameters.
 
 ## Equations
@@ -333,7 +333,7 @@ Steps that only evaluate an equation above are named, not repeated.
 4. Update the [turnover times](#turnover-times) with this year's cumulative land-use emissions.
 5. Evaluate [NPP](#net-primary-production) and [plant respiration](#plant-respiration).
 6. With `NCYCLE_APPLY`, call `N_CALC_LIMITATION_FACTOR` with the unlimited NPP
-   and multiply NPP by the factor ([module 13](module_13_nitrogen_limitation.md#algorithm)).
+   and multiply NPP by the factor ([nitrogen limitation](module_13_nitrogen_limitation.md#algorithm)).
 7. Update the pools in the order plant, detritus, soil,
    because detritus and soil use the turnover fluxes of the pools before them.
    For each pool:
@@ -345,7 +345,7 @@ Steps that only evaluate an equation above are named, not repeated.
 9. Write the aggregates:
     - $\Delta C$ = `CO2_DELTA_TERRPOOLS`, the change in the three pools.
     - `CO2_TERRBIO_AND_FOSSIL_EMIS` = fossil emissions $- \Delta C$, plus permafrost CO2 with `PF_APPLY`.
-      [Module 11](module_11_co2_budget.md) turns this into the atmospheric CO2 change.
+      [CO2 budget](module_11_co2_budget.md) turns this into the atmospheric CO2 change.
     - Total respiration = $NPP - \Delta C - \sum_X E_{gross,X}$, so it absorbs the correction.
     - Cumulative net emissions, gross deforestation and total regrowth.
 

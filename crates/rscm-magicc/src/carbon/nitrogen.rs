@@ -1,4 +1,4 @@
-//! Nitrogen limitation of NPP (MAGICC7 module 13)
+//! Nitrogen limitation of NPP
 //!
 //! Each year the plant-available nitrogen pool is the steady state of
 //!

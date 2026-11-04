@@ -1,4 +1,4 @@
-# Module 14: Sea Level Rise
+# Sea Level Rise
 
 /// warning | Experimental in MAGICC7
 MAGICC7 marks this module as experimental. Lines 14 to 16 of `MAGICC7.f90` say:

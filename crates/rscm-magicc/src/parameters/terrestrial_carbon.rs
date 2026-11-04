@@ -5,7 +5,7 @@
 //!
 //! # Reference
 //!
-//! Based on MAGICC7 Module 09 (Terrestrial Carbon Cycle) which implements a
+//! Based on MAGICC7's terrestrial carbon cycle, which implements a
 //! 3-box model representing plant biomass, detritus, and soil pools.
 
 use super::NitrogenParameters;

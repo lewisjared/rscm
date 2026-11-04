@@ -1,7 +1,7 @@
 //! Forcing Aggregation Component
 //!
 //! Combines the ERF of each forcing agent into the four-box efficacy-adjusted
-//! forcing that drives `ClimateUDEB`, following MAGICC7's DELTAQ (Module 07b).
+//! forcing that drives `ClimateUDEB`, following MAGICC7's DELTAQ.
 //!
 //! Each agent is either global, spread over the boxes with its regional
 //! pattern, or already regional. Its box forcing is then scaled by

@@ -1,4 +1,4 @@
-# Module 06: Aerosol Indirect Forcing
+# Aerosol Indirect Forcing
 
 ## Overview
 
@@ -17,10 +17,10 @@ whose change is spread over the four boxes with a prescribed pattern and harmoni
 The Fortran attributes the formula to "a simple formula by xxxxx as used as well in" Hansen et al. (2005),
 with the author missing.
 
-Like the direct aerosol forcing of [module 05](module_05_aerosol_direct.md),
+Like the [direct aerosol forcing](module_05_aerosol_direct.md),
 this depends only on exogenous inputs, so MAGICC7 calculates it once before the run.
-The page uses RF, EffRF and ERF as [module 07b defines them](module_07b_rf_aggregation.md#forcing-types).
-Four-box arrays follow the box order in [module 00](module_00_initialization.md).
+The page uses RF, EffRF and ERF as the [forcing aggregation page defines them](module_07b_rf_aggregation.md#forcing-types).
+Four-box arrays follow the box order in [initialisation](module_00_initialization.md).
 
 ## RSCM implementation
 
@@ -98,7 +98,7 @@ The total cloud forcing is the sum of the two.
 | Input                                                  | Use                                       |
 | ------------------------------------------------------ | ----------------------------------------- |
 | `FILE_{SOXI,SOXNB,OCI,OCB,OCN,BCI,BCB,SS}_OT`          | Historical four-box optical thickness     |
-| Total nitrate forcing from [module 05](module_05_aerosol_direct.md) | Nitrate proxy                |
+| Total nitrate forcing from [direct aerosol forcing](module_05_aerosol_direct.md) | Nitrate proxy                |
 | SOx, OC and BC emissions by source, industrial NOx     | Extension after the data end              |
 
 | Output                                                 | Description                               |
@@ -143,7 +143,7 @@ The patterns come from Hansen et al. (2005).
 3. Calculates the total aerosol number, its preindustrial value and the change in cloud droplet number.
 4. Scales the change to the albedo and cover patterns.
 5. Harmonises each effect in `CLOUD_APPLY_SCALING`, takes the global value as the area-weighted mean,
-   applies the first-year offset (see [module 07b](module_07b_rf_aggregation.md#pre-industrial-reference))
+   applies the first-year offset (see [forcing aggregation](module_07b_rf_aggregation.md#pre-industrial-reference))
    and sets the first year to zero.
 6. Caps the box forcing at `CLOUD_LIMIT_MAX` when `CLOUD_APPLY_LIMIT_MAX` is 1.
 7. Holds the forcing after `RF_AER_CONSTANTAFTERYR`.

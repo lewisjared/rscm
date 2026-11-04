@@ -22,7 +22,7 @@
 //!
 //! - `Effective Radiative Forcing|Aerosol|Direct` (W/m², FourBox) - Regional direct aerosol forcing
 //!
-//! # Differences from MAGICC7 Module 05
+//! # Differences from MAGICC7
 //!
 //! This is a simplified implementation:
 //!
