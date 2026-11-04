@@ -1,875 +1,535 @@
 # Module 14: Sea Level Rise
 
-## 1. Scientific Purpose
-
-The Sea Level Rise (SLR) module calculates global mean sea level rise from multiple contributing components that respond to climate change. Sea level rise is a critical impact metric for climate projections, affecting coastal communities, infrastructure, and ecosystems worldwide. The module aggregates contributions from:
-
-1. **Thermal expansion** - Warming of ocean water causes volumetric expansion
-2. **Glaciers and ice caps** - Mountain glaciers and small ice caps melt in response to warming
-3. **Greenland Ice Sheet (GIS)** - Both surface mass balance (SMB) changes and solid ice discharge (SID)
-4. **Antarctic Ice Sheet (AIS)** - Both SMB changes and SID with regional basin differentiation
-5. **Land water storage** - Human extraction of groundwater contributing to sea level
-
-The module provides a semi-empirical framework combining process-based parameterizations with empirical calibrations from CMIP5 models and ice sheet model ensembles. Each component can be activated independently with separate start years, allowing flexible configuration for different assessment purposes.
+/// warning | Experimental in MAGICC7
+MAGICC7 marks this module as experimental. Lines 14 to 16 of `MAGICC7.f90` say:
+"There are several components in this program that are of experimental nature and not fit-for-use.
+This includes sea level rise projections, the permafrost module, ..."
+///
+
+## Overview
+
+The sea level rise module calculates global mean sea level rise from the components that respond to warming:
+
+- **Thermal expansion**: warming ocean water expands.
+- **Glaciers and ice caps**: mountain glaciers and small ice caps melt.
+- **Greenland ice sheet (GIS)**: surface mass balance (SMB) and solid ice discharge (SID).
+- **Antarctic ice sheet (AIS)**: surface mass balance and solid ice discharge from four drainage regions.
+- **Land water storage**: groundwater extraction and reservoirs.
+
+Each contribution is a simple parameterisation calibrated to CMIP5 models and ice sheet model ensembles.
+Each has its own start year and can be switched independently.
+
+## RSCM implementation
+
+- **Component**: `SeaLevelRise`, built from Python with `rscm.magicc.SeaLevelRiseBuilder`,
+  calculates glaciers and the Greenland and Antarctic SMB and SID, and sums them with thermal expansion.
+  `ClimateUDEB` calculates thermal expansion when its `thermal_expansion` parameter is set,
+  because it needs the ocean layer temperatures.
+- **Source**: `crates/rscm-magicc/src/climate/sea_level.rs` and `climate/udeb/mod.rs`,
+  parameters in `parameters/sea_level.rs`.
+- **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
+  `rscm.magicc.full.run_magicc7` adds both with `out_sealevel=1`. MAGICC7's default is 0.
+- **Tests**: `tests/regression/test_sea_level.py::test_contribution` runs the coupled chain
+  on MAGICC7 v7.5.3's SSP245 emissions run with sea level (`04_ssp245_emissions_sealevel`)
+  and matches every contribution and the total in MAGICC7's binary output.
+  `test_sea_level_off_by_default` checks that the default chain has no sea level.
+  Unit tests in `sea_level.rs` cover expansion, interpolation, zero warming and the Greenland volume limit.
+
+The equations below are the formulation RSCM reproduces.
+Comparison with MAGICC7 output corrected the earlier reading of the Fortran in several places:
+the start-year gates, the thermal expansion weighting, and the Levermann forcing and convolution.
+
+## Equations
+
+### Timing
+
+A year's annual mean warming $T(y)$ (`DAT_SURFACE_ANNUALMEANTEMP`, the mean of its 12 monthly steps)
+sets the contributions at the start of year $y + 1$.
+A contribution runs for $y \ge$ its start year,
+so it first changes in the value for the year after its start year.
+All temperatures are global mean surface warming in K, and all contributions are in mm.
+
+### Thermal expansion
+
+Ocean layer $l$ has thickness $z_l$: the mixed layer depth (`CORE_MIXEDLAYER_DEPTH`) for the top layer
+and `DZ` (100 m) below it.
+Its area in hemisphere $h$, $a_{h,l}$, is the mean of the ocean area at its upper and lower bounds
+(`OCN_AREAFACTOR_AVERAGE`).
+The layer temperature is the mean of the hemispheres weighted by their ocean area in that layer:
+
+$$
+\bar T_l = \frac{\sum_h a_{h,l}\, f_h\, T_{h,l}}{\sum_h a_{h,l}\, f_h}
+$$
 
-## 2. Experimental Status Assessment
+where $f_h$ is the hemisphere's ocean fraction of the globe (`FGO`) and $T_{h,l}$ the layer warming.
+With the scaling $s$ = `SLR_EXPANSION_SCALING`, applied once,
+the layer warming over the year and the mean layer temperature are
 
-**STATUS: EXPERIMENTAL - NOT FIT FOR PRODUCTION USE**
+$$
+\Delta_l = s \left( \bar T_l(y+1) - \bar T_l(y) \right), \qquad
+T_{L1} = s\, \frac{\bar T_l(y+1) + \bar T_l(y)}{2} + \frac{T^0_{N,l} + T^0_{S,l}}{2}
+$$
+
+where $T^0_{h,l}$ is the initial ocean temperature profile (`CORE_SWITCH_OCN_TEMPPROFILE`, CMIP5 by default).
+The expansion coefficient is an empirical polynomial in $T_{L1}$ and the pressure $P$
+with coefficients $p_1 \dots p_6$ = `SLR_EXPANSION_PARAMS`:
+
+$$
+\begin{aligned}
+c_l = {} & p_1 + p_2\, T_{L1} (12.9635 - 1.0833 P) - p_3\, T_{L1}^2 (0.1713 - 0.019263 P) \\
+& + p_4\, \frac{T_{L1}^3}{6000} (10.41 - 1.1338 P) + p_5 P - p_6 P^2
+\end{aligned}
+$$
 
-The code explicitly warns (MAGICC7.f90 lines 14-16):
-> "There are several components in this program that are of experimental nature and not fit-for-use. This includes sea level rise projections..."
+$P$ (`OCN_PRESSURE_PROFILE`) is evaluated at the layer centre depth $z$ in m:
 
-### Known Limitations
+$$
+P = 0.0098 \left( 10.5 \left( e^{-z/3500} - 1 \right) + 0.1005\, z \right)
+$$
 
-1. **Semi-empirical approach**: The module uses simplified parameterizations rather than full physics-based ice sheet models
-2. **Limited validation**: Ice sheet dynamics, particularly for Antarctica, are highly uncertain
-3. **No marine ice cliff instability**: The DeConto parameterization includes a "fast rate" threshold but does not capture full ice cliff dynamics
-4. **Regional homogeneity assumption**: Results are globally uniform (same SLR applied to all ocean boxes)
-5. **Levermann AIS method uses convolution**: Complex impulse response function approach that may accumulate numerical errors over long simulations
-6. **Equilibrium glacier tables**: Glaciers use static lookup tables (104 points) that cap at 10.3 degrees warming
-7. **Land water uses prescribed time series**: Limited to 1900-present historical data extrapolated forward
+The year's expansion weights each layer by the mean of its two hemisphere areas $\bar a_l$,
+divided by the mean surface area $\bar a_0$, which is 1:
 
-### Code Quality Issues
+$$
+\Delta S_{exp} = \frac{1}{\bar a_0} \sum_l \bar a_l\, \frac{c_l\, \Delta_l\, z_l}{1000}
+$$
+
+$S_{exp}$ accumulates $\Delta S_{exp}$ from `SLR_EXPANSION_STARTYEAR`.
 
-1. **Hardcoded magic numbers**: `-361.0` divisor for Fettweis GIS SMB (line 401), `1000.0` conversion (line 657)
-2. **Mixed parameterization options**: Two different GIS SMB methods ("DEFAULT" vs "FETTWEIS"), two AIS SID methods ("DECONTO" vs "LEVERMANN")
-3. **Complex index arithmetic**: Multiple year indexing schemes (CURRENT_YEAR_IDX, NEXT_YEAR_IDX, AIS_SID_IDX) that are error-prone
-4. **SIGN() function usage**: Unusual usage pattern for handling negative temperature anomalies
-5. **No conservation checks**: No verification that total ice volume doesn't go negative (relies on MAX(0, ...) guards)
+### Glaciers and ice caps
 
-### RSCM Implementation
+Glaciers follow a modified equation 5 of Wigley and Raper (2005), with equilibrium tables from Marzeion.
+Two lookups in the tables `SLR_GL_EQUITEMP` and `SLR_GL_EQUISLR`, linear and clamped at the ends, give
+the equilibrium sea level at the current warming, $S_{eq}(T)$ (`SLR_GL_EQUISLRCURRENTTEMP`),
+and the equilibrium warming at the current contribution, $T_{eq}(S_{GL})$ (`SLR_GL_EQUITEMPCURRENTSLR`).
+Then
 
-`SeaLevelRise` calculates glaciers, Greenland and Antarctic SMB and SID,
-and sums them with the thermal expansion that `ClimateUDEB` calculates when its `thermal_expansion` parameter is set.
-`rscm.magicc.full.run_magicc7` adds both with `out_sealevel=1`.
-Against MAGICC7 v7.5.3's default SSP245 run from emissions (`04_ssp245_emissions_sealevel`),
-the coupled chain matches every contribution and the total in MAGICC7's binary output.
+$$
+S_{GL}(y+1) = S_{GL}(y)
++ k\, \frac{S_{eq} - S_{GL}(y)}{n_V}\, \frac{\operatorname{sign}(T_{eq})\, |T - T_{eq}|^{e}}{n_T}
+$$
 
-Checking against MAGICC7 output corrected this specification in several places:
+with $k$ = `SLR_GL_SENS_MMPYRDEG`, $e$ = `SLR_GL_TEMP_EXPONENT`,
+and normalisations $n_V$ = `SLR_GL_NORMPARA_VOL` and $n_T$ = `SLR_GL_NORMPARA_TEMP`.
+The exponent applies to the absolute difference, and the sign is that of $T_{eq}$,
+as Fortran's `SIGN(ABS(T - T_EQ)**E, T_EQ)` gives.
 
-- **Timing**: a year's annual mean warming (`DAT_SURFACE_ANNUALMEANTEMP`, the mean of its 12 monthly steps)
-  sets the contributions at the start of the next year.
-  A contribution first changes in the year after its start year, so the condition is `year >= STARTYEAR`.
-- **Thermal expansion scaling** applies once, to the layer warming in both `DELTOC` and `DELTBAR`.
-  `EXPAN` is not scaled again.
-- **Thermal expansion weighting**: each layer's temperature is the mean of the hemispheres weighted by
-  their ocean area in that layer (`FGO(hemi) * OCN_AREAFACTOR_AVERAGE(hemi, L)`).
-  The layer expansion is weighted by the mean of the two hemispheres' layer areas, and the surface area is 1.
-- **Pressure profile**: `PPL` at the layer centre depth `z` (m) is
-  `0.0098 * (10.5 * (exp(-z / 3500) - 1) + 0.1005 z)`.
-- **Levermann AIS SID**: a region starts `DT` years after `SLR_AIS_SID_STARTYEAR`.
-  Its forcing is `TEMPSCALING * BASALMELT * (T(t) - T(region start))`,
-  and the contribution is the full convolution of that forcing with the response from the region's start.
-- **Response overflow**: MAGICC7 evaluates the response polynomial with the age raised to the fourth power
-  in 32-bit integers, which wraps from an age of 216 years.
-  In a run from 1750, Ross (no delay) reaches that age in 2067.
-- **Start release**: the year before a delayed region starts,
-  MAGICC7 adds `TEMPSCALING * BASALMELT * T * IRF(0)` for that year alone, against zero warming.
-- **Defaults**: the tables in section 5 list `MAGCFG_DEFAULTALL.CFG`, but the tuning files override most values.
-  The effective defaults are those of `SeaLevelRiseParameters` and `ThermalExpansionParameters`,
-  for example AIS SID starts in 1850 with delays of 60, 50, 0 and 65 years.
+### Greenland surface mass balance
 
-Differences from MAGICC7:
+The `DEFAULT` parameterisation,
+with $c_1$, $c_2$ and $e$ = `SLR_GIS_SMB_COEF1`, `_COEF2` and `_SENS_EXPONENT`,
+shrinks as the ice sheet's volume $V$ (`SLR_GIS_SMB_INITIAL_VOLUME_MM`) is used up:
 
-- **Not implemented**: land water (off by default), the semi-empirical method (driven by observations),
-  the FETTWEIS GIS SMB and DECONTO AIS SID alternatives, and the anomalies to 1986 to 2005 (`ZEROED_*`).
-- **Thermal expansion needs the CMIP5 initial ocean profile**, as MAGICC7 does.
+$$
+S_{GIS,SMB}(y+1) = S_{GIS,SMB}(y)
++ c_1 \left( c_2 T + (1 - c_2) \max(0, T)^{e} \right)
+\max\left(0, 1 - \frac{S_{GIS,SMB}(y)}{V}\right)^{e_V}
+$$
 
-## 3. Mathematical Formulation
+with $e_V$ = `SLR_GIS_SMB_VOLUME_EXPONENT`.
+The `FETTWEIS` alternative adds $(a_1 T - a_2 T^2 - a_3 T^3) / (-361)$ each year,
+with $a_1 \dots a_3$ = `SLR_GIS_SMB_COEF_FW1` to `_FW3`.
 
-### 3.1 Thermal Expansion
+### Greenland solid ice discharge
 
-Thermal expansion calculates the volumetric change of ocean water due to temperature changes at each ocean layer.
+Discharge follows Nick et al. (2013), with a low and a high case $k$.
+Each year with $T \ne 0$ from `SLR_GIS_SID_STARTYEAR`, each case discharges from its remaining volume $V_k$:
 
-**Expansion coefficient calculation** (empirical polynomial):
+$$
+q_k = \max\left(-V_k,\ \min\left(0,\ -d_k\, V_k\, e^{x_k T}\right)\right), \qquad
+V_k \leftarrow \max(0, V_k + q_k)
+$$
 
-```
-SLR_EXPANSION_COEFE = SLR_EXPANSION_PARAMS(1) +
-    SLR_EXPANSION_PARAMS(2) * TL1 * (12.9635 - 1.0833 * PPL) -
-    SLR_EXPANSION_PARAMS(3) * TL2 * (0.1713 - 0.019263 * PPL) +
-    SLR_EXPANSION_PARAMS(4) * TL3 * (10.41 - 1.1338 * PPL) +
-    SLR_EXPANSION_PARAMS(5) * PPL -
-    SLR_EXPANSION_PARAMS(6) * PPL^2
-```
+with $d_k$ = `SLR_GIS_SID_DSCHRG_SENS_k` and $x_k$ = `SLR_GIS_SID_TEMPSENS_EXPONENT_k`.
+$V_k$ starts at `SLR_GIS_SID_TOTALVOL_k`, $V^0_k$.
+The contribution interpolates between the cases with $c$ = `SLR_GIS_SID_CASE`
+and scales with $\sigma$ = `SLR_GIS_SID_SCALING`:
 
-Where:
+$$
+S_{GIS,SID} = \sigma \left( (S_{high} - S_{low})\, c + S_{low} \right), \qquad S_k = V^0_k - V_k
+$$
 
-- `TL1` = mean layer temperature (initial profile + delta)
-- `TL2` = TL1^2
-- `TL3` = TL1^3 / 6000
-- `PPL` = pressure at layer from `OCN_PRESSURE_PROFILE`
+### Antarctic surface mass balance
 
-**Layer expansion**:
+Antarctic SMB has the same form as Greenland's without the volume term:
 
-```
-DLR = (SLR_EXPANSION_COEFE * DELTOC * ZLAYER) / 1000
-```
-
-**Total expansion** (area-weighted sum across layers):
-
-```
-EXPAN = SUM(DLR * OCN_AREAFACTOR_AVERAGE) / OCN_LAYERBOUND_AREAS(1)
-```
-
-**Cumulative contribution** (`SLR_EXPANSION_SCALING` is already applied in `DELTOC`):
-
-```
-SLR_EXPANSION(t+1) = SLR_EXPANSION(t) + EXPAN
-```
-
-### 3.2 Glaciers and Ice Caps
-
-Based on Wigley & Raper (2005) modified equation 5, using equilibrium relationships from Marzeion data.
-
-**Equilibrium interpolation**:
-
-1. Look up `SLR_GL_EQUISLRCURRENTTEMP` from temperature using `SLR_GL_EQUITEMP[]` / `SLR_GL_EQUISLR[]` tables
-2. Look up `SLR_GL_EQUITEMPCURRENTSLR` from current SLR contribution using same tables
-
-**Rate equation**:
-
-```
-SLR_GL(t+1) = SLR_GL(t) + SLR_GL_SENS_MMPYRDEG *
-    ((SLR_GL_EQUISLRCURRENTTEMP - SLR_GL(t)) / SLR_GL_NORMPARA_VOL) *
-    (SIGN(T_current - SLR_GL_EQUITEMPCURRENTSLR, SLR_GL_EQUITEMPCURRENTSLR) / SLR_GL_NORMPARA_TEMP)^SLR_GL_TEMP_EXPONENT
-```
-
-Note: The SIGN function is applied first, then divided by NORMPARA_TEMP, then the exponent is applied to the entire result. The Fortran SIGN(A,B) returns |A| with the sign of B.
-
-### 3.3 Greenland Ice Sheet - Surface Mass Balance (GIS SMB)
-
-Two parameterizations available:
-
-**DEFAULT parameterization**:
-
-```
-SLR_GIS_SMB(t+1) = SLR_GIS_SMB(t) +
-    SLR_GIS_SMB_COEF1 * (
-        SLR_GIS_SMB_COEF2 * T_global +
-        (1 - SLR_GIS_SMB_COEF2) * MAX(0, T_global)^SLR_GIS_SMB_SENS_EXPONENT
-    ) * MAX(0, 1 - SLR_GIS_SMB(t) / SLR_GIS_SMB_INITIAL_VOLUME_MM)^SLR_GIS_SMB_VOLUME_EXPONENT
-```
-
-**FETTWEIS parameterization**:
-
-```
-SLR_GIS_SMB(t+1) = SLR_GIS_SMB(t) +
-    (SLR_GIS_SMB_COEF_FW1 * T - SLR_GIS_SMB_COEF_FW2 * T^2 - SLR_GIS_SMB_COEF_FW3 * T^3) / (-361)
-```
-
-### 3.4 Greenland Ice Sheet - Solid Ice Discharge (GIS SID)
-
-Based on Nick et al. (2013), with LOW/HIGH bounding cases.
-
-**Annual discharge rate**:
-
-```
-GIS_SID_DISCHARGE = MIN(0, -DSCHRG_SENS * DSCHRGVOL * EXP(TEMPSENS_EXPONENT * T_global))
-GIS_SID_DISCHARGE = MAX(GIS_SID_DISCHARGE, -DSCHRGVOL)  // Cannot exceed remaining volume
-```
-
-**Volume depletion**:
-
-```
-DSCHRGVOL(t+1) = MAX(DSCHRGVOL(t) + GIS_SID_DISCHARGE, 0)
-```
-
-**SLR contribution** (interpolated between LOW/HIGH):
-
-```
-SLR_GIS_SID = ((HIGH - LOW) * SLR_GIS_SID_CASE + LOW) * SLR_GIS_SID_SCALING
-```
-
-### 3.5 Antarctic Ice Sheet - Surface Mass Balance (AIS SMB)
-
-Simpler than GIS, representing snowfall increase with warming:
-
-```
-SLR_AIS_SMB(t+1) = SLR_AIS_SMB(t) +
-    SLR_AIS_SMB_COEF1 * (
-        SLR_AIS_SMB_COEF2 * T_global +
-        (1 - SLR_AIS_SMB_COEF2) * MAX(0, T_global)^SLR_AIS_SMB_SENS_EXPONENT
-    )
-```
-
-Note: AIS SMB is typically **negative** (mass gain from increased precipitation), offsetting other contributions.
-
-### 3.6 Antarctic Ice Sheet - Solid Ice Discharge (AIS SID)
-
-Two methods available:
-
-#### DECONTO Method
-
-Includes threshold-based "fast rate" for ice cliff instability:
-
-```
-IF T_global < SLR_AIS_SID_THRESHOLDTEMP:
-    DISCHARGE = DSCHRG_SENS * DSCHRGVOL * SIGN(|T - ZEROTEMP|^TEMPSENS_EXPONENT, T - ZEROTEMP)
-ELSE:
-    DISCHARGE = DSCHRG_SENS * DSCHRGVOL * SIGN(|T - ZEROTEMP|^TEMPSENS_EXPONENT, T - ZEROTEMP)
-             + SLR_AIS_SID_FASTRATE
-```
-
-#### LEVERMANN Method (Default)
-
-Uses impulse response functions (IRF) for 4 Antarctic regions with time-delayed convolution:
-
-**Ocean forcing**, from the region's start year `start(R) = SLR_AIS_SID_STARTYEAR + DT(R)`:
-
-```
-FORCING(R,t) = TEMPSCALING(R) * (T(t) - T(start(R))) * BASALMELT
-```
-
-**Impulse response** (4th order polynomial, clamped to 0):
-
-```
-R(x) = MAX(0, IRF(1)*x^4 + IRF(2)*x^3 + IRF(3)*x^2 + IRF(4)*x + IRF(5))
-```
-
-**Convolution**, matching MAGICC7 output:
-
-```
-CONV_TOTAL(R,t) = SUM(FORCING(R,t-i) * R(i) for i=0..t-start(R))
-```
-
-**Total AIS SID**:
-
-```
-SLR_AIS_SID(t+1) = SUM(CONV_TOTAL(R,t) * 1000) for R in [Amundsen, EastAntarctica, Ross, Weddell]
-```
-
-### 3.7 Land Water Storage
-
-Uses prescribed time series with volume depletion after switch year:
-
-```
-IF year > SWITCHYEAR:
-    SLR_LANDWATER(t+1) = SLR_LANDWATER(t) + MMPYEAR(t) *
-        MAX(0, 1 - (SLR_LANDWATER(t) - SWITCHVOL) / (MAXVOLUME - SWITCHVOL))^VOLUME_EXPONENT
-ELSE:
-    SLR_LANDWATER(t+1) = SLR_LANDWATER(t) + MMPYEAR(t)
-```
-
-### 3.8 Semi-Empirical Method (Rahmstorf)
-
-Alternative simple approach:
-
-```
-BASETEMP = MEAN(T over TEMPBASEPERIOD)
-RATE = RATE_SENS * (T - BASETEMP - ZERORATETEMP)
-SLR_SEMIEMPI(t) = SLR_SEMIEMPI(t-1) + RATE(t)
-```
-
-### 3.9 Total Sea Level Rise
-
-```
-SLR_TOTAL = SLR_EXPANSION + SLR_GL + SLR_GIS_SMB + SLR_GIS_SID + SLR_AIS_SMB + SLR_AIS_SID + SLR_LANDWATER
-```
-
-## 4. State Variables
-
-| Variable | Fortran Name | Symbol | Units | Description | Initial Value |
-|----------|-------------|--------|-------|-------------|---------------|
-| Total SLR contribution | `SLR_TOTAL_CONTRIBUTION` | - | mm | Cumulative total sea level rise | 0.0 |
-| Thermal expansion | `SLR_EXPANSION_CONTRIBUTION` | - | mm | Cumulative thermal expansion | 0.0 |
-| Glacier contribution | `SLR_GL_CONTRIBUTION` | - | mm | Cumulative glacier/ice cap melt | 0.0 |
-| GIS SMB contribution | `SLR_GIS_SMB_CONTRIBUTION` | - | mm | Cumulative Greenland surface mass balance | 0.0 |
-| GIS SID contribution | `SLR_GIS_SID_CONTRIBUTION` | - | mm | Cumulative Greenland ice discharge | 0.0 |
-| GIS SID contribution LOW | `SLR_GIS_SID_CONTRIBUTION_LOW` | - | mm | Low estimate bound | 0.0 |
-| GIS SID contribution HIGH | `SLR_GIS_SID_CONTRIBUTION_HIGH` | - | mm | High estimate bound | 0.0 |
-| GIS discharge volume LOW | `SLR_GIS_SID_DSCHRGVOL_LOW` | - | mm | Remaining discharge volume (low) | `SLR_GIS_SID_TOTALVOL_LOW` |
-| GIS discharge volume HIGH | `SLR_GIS_SID_DSCHRGVOL_HIGH` | - | mm | Remaining discharge volume (high) | `SLR_GIS_SID_TOTALVOL_HIGH` |
-| AIS SMB contribution | `SLR_AIS_SMB_CONTRIBUTION` | - | mm | Cumulative Antarctic surface mass balance | 0.0 |
-| AIS SID contribution | `SLR_AIS_SID_CONTRIBUTION` | - | mm | Cumulative Antarctic ice discharge | 0.0 |
-| AIS discharge volume | `SLR_AIS_SID_DSCHRGVOL` | - | mm | Remaining AIS discharge volume | `SLR_AIS_SID_TOTALVOL` |
-| Land water contribution | `SLR_LANDWATER_CONTRIBUTION` | - | mm | Cumulative land water storage change | 0.0 |
-| AIS region response (Amundsen) | `SLR_AIS_SID_R_AMUNDSEN` | - | m/K | IRF response array | Computed from polynomial |
-| AIS region response (East Antarctica) | `SLR_AIS_SID_R_EASTANTARCTICA` | - | m/K | IRF response array | Computed from polynomial |
-| AIS region response (Ross) | `SLR_AIS_SID_R_ROSS` | - | m/K | IRF response array | Computed from polynomial |
-| AIS region response (Weddell) | `SLR_AIS_SID_R_WEDDELL` | - | m/K | IRF response array | Computed from polynomial |
-| AIS ocean forcing | `SLR_AIS_SID_OCNFORCE` | - | - | 2D array [4, NYEARS] | 0.0 |
-| AIS forcing | `SLR_AIS_SID_FORCING` | - | - | 2D array [4, NYEARS] | 0.0 |
-| AIS convolution arrays | `SLR_AIS_SID_CONV_*` | - | - | Multiple 2D arrays for convolution | 0.0 |
-| Equilibrium SLR at current temp | `SLR_GL_EQUISLRCURRENTTEMP` | - | mm | Interpolated equilibrium glacier SLR | Computed |
-| Equilibrium temp at current SLR | `SLR_GL_EQUITEMPCURRENTSLR` | - | deg C | Interpolated equilibrium temperature | Computed |
-
-## 5. Parameters
-
-### 5.1 Thermal Expansion Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Expansion coefficients | `SLR_EXPANSION_PARAMS` | various | [52.24, 0.99, 1.03, 0.61, 24.26, 0.74] | - | 6-element polynomial coefficients |
-| Expansion scaling | `SLR_EXPANSION_SCALING` | - | 0.8824 | 0-2 | Overall scaling factor |
-| Expansion start year | `SLR_EXPANSION_STARTYEAR` | year | 1850 | - | Year to begin calculation |
-| Expansion params file | `FILE_SLR_THEXP_PARAMS` | - | SLR_THEXP_PARAMS_CMIP5MEAN.CFG | - | Parameter file name |
-
-### 5.2 Glacier Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Sensitivity | `SLR_GL_SENS_MMPYRDEG` | mm/yr/K | 0.625 | 0-5 | Rate sensitivity |
-| Temperature exponent | `SLR_GL_TEMP_EXPONENT` | - | 0.82 | 0-2 | Power law exponent |
-| Normalization volume | `SLR_GL_NORMPARA_VOL` | - | 1.0 | - | Volume normalization |
-| Normalization temp | `SLR_GL_NORMPARA_TEMP` | - | 1.0 | - | Temperature normalization |
-| Start year | `SLR_GL_STARTYEAR` | year | 1850 | - | Year to begin calculation |
-| Equilibrium temperature table | `SLR_GL_EQUITEMP` | deg C | [0.0, 0.1, ..., 10.3] | - | 104-element lookup (0-10.3 C) |
-| Equilibrium SLR table | `SLR_GL_EQUISLR` | mm | [81.2, 96.6, ..., 410.2] | - | 104-element lookup |
-| Glacier params file | `FILE_SLR_GL_PARAMS` | - | MAGTUNE_GLACIERTUNE_CMIP5MEAN.CFG | - | Tuning file |
-| Glacier extra params file | `FILE_SLR_GL_XTRAPARAMS` | - | SLR_GL_PARAMS_CMIP5MEAN.CFG | - | Equilibrium tables file |
-
-### 5.3 Greenland SMB Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Parameterization | `SLR_GIS_SMB_PARAMETERISATION` | - | "DEFAULT" | DEFAULT/FETTWEIS | Method selection |
-| Coefficient 1 | `SLR_GIS_SMB_COEF1` | mm/yr | 0.015 | - | Primary sensitivity |
-| Coefficient 2 | `SLR_GIS_SMB_COEF2` | - | 0.9 | 0-1 | Linear/nonlinear weighting |
-| Sensitivity exponent | `SLR_GIS_SMB_SENS_EXPONENT` | - | 2.3 | 1-4 | Temperature power |
-| Initial volume | `SLR_GIS_SMB_INITIAL_VOLUME_MM` | mm | 7360.0 | - | Total ice equivalent |
-| Volume exponent | `SLR_GIS_SMB_VOLUME_EXPONENT` | - | 0.5 | 0-1 | Depletion scaling |
-| Fettweis coef 1 | `SLR_GIS_SMB_COEF_FW1` | - | -10.0 | - | Linear term |
-| Fettweis coef 2 | `SLR_GIS_SMB_COEF_FW2` | - | 2.0 | - | Quadratic term |
-| Fettweis coef 3 | `SLR_GIS_SMB_COEF_FW3` | - | 1.0 | - | Cubic term |
-| Start year | `SLR_GIS_SMB_STARTYEAR` | year | 1965 | - | Year to begin calculation |
-| SMB params file | `FILE_SLR_GISSMB_PARAMS` | - | MAGTUNE_GISSMBTUNE_CMIP5MEAN.CFG | - | Parameter file |
-
-### 5.4 Greenland SID Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Case selector | `SLR_GIS_SID_CASE` | - | 0.5 | 0-1 | LOW(0) to HIGH(1) interpolation |
-| Scaling factor | `SLR_GIS_SID_SCALING` | - | 5.0 | 1-10 | IPCC AR5 upscaling factor |
-| Total volume LOW | `SLR_GIS_SID_TOTALVOL_LOW` | mm | 35.98 | - | Low estimate reservoir |
-| Total volume HIGH | `SLR_GIS_SID_TOTALVOL_HIGH` | mm | 53.63 | - | High estimate reservoir |
-| Discharge sens LOW | `SLR_GIS_SID_DSCHRG_SENS_LOW` | 1/yr | 0.000906 | - | Low discharge rate |
-| Discharge sens HIGH | `SLR_GIS_SID_DSCHRG_SENS_HIGH` | 1/yr | 0.000793 | - | High discharge rate |
-| Temp sens exp LOW | `SLR_GIS_SID_TEMPSENS_EXPONENT_LOW` | 1/K | 0.389 | - | Temperature sensitivity |
-| Temp sens exp HIGH | `SLR_GIS_SID_TEMPSENS_EXPONENT_HIGH` | 1/K | 0.472 | - | Temperature sensitivity |
-| Start year | `SLR_GIS_SID_STARTYEAR` | year | 2000 | - | Year to begin calculation |
-
-### 5.5 Antarctic SMB Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Coefficient 1 | `SLR_AIS_SMB_COEF1` | mm/yr | 0.128 | - | Primary sensitivity |
-| Coefficient 2 | `SLR_AIS_SMB_COEF2` | - | -0.424 | - | Linear/nonlinear weighting |
-| Sensitivity exponent | `SLR_AIS_SMB_SENS_EXPONENT` | - | 0.782 | 0-2 | Temperature power |
-| Start year | `SLR_AIS_SMB_STARTYEAR` | year | 1980 | - | Year to begin calculation |
-| SMB params file | `FILE_SLR_AISSMB_PARAMS` | - | MAGTUNE_AISSMBTUNE_MEAN.CFG | - | Parameter file |
-
-### 5.6 Antarctic SID Parameters (Common)
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Parameterization | `SLR_AIS_SID_PARAMETERISATION` | - | "LEVERMANN" | DECONTO/LEVERMANN | Method selection |
-| Scaling factor | `SLR_AIS_SID_SCALING` | - | 1.0 | 0-2 | Overall scaling |
-| Start year | `SLR_AIS_SID_STARTYEAR` | year | 1850 | - | Year to begin calculation |
-| Discharge start year | `SLR_AIS_DISCHARGE_STARTYEAR` | year | 1950 | - | Volume depletion start |
-| SID params file | `FILE_SLR_AISSID_PARAMS` | - | MAGTUNE_AISSIDTUNE_MIROCESM.CFG | - | Tuning file |
-
-### 5.7 Antarctic SID Parameters (DeConto Method)
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Total volume | `SLR_AIS_SID_TOTALVOL` | mm | 17560.0 | - | Ice reservoir |
-| Discharge sensitivity | `SLR_AIS_SID_DSCHRG_SENS` | 1/yr | 5.28e-5 | - | Rate sensitivity |
-| Temp sens exponent | `SLR_AIS_SID_TEMPSENS_EXPONENT` | - | 2.0 | 1-3 | Temperature power |
-| Threshold temp | `SLR_AIS_SID_THRESHOLDTEMP` | deg C | 1.023 | - | Fast process trigger |
-| Zero temp | `SLR_AIS_SID_ZEROTEMP` | deg C | 0.0 | - | Reference temperature |
-| Fast rate | `SLR_AIS_SID_FASTRATE` | mm/yr | 13.83 | - | Ice cliff instability rate |
-
-### 5.8 Antarctic SID Parameters (Levermann Method)
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Basal melt | `SLR_AIS_SID_BASALMELT` | m/yr/K | 11.5 | 7-16 | Melt sensitivity |
-| IRF year span | `SLR_AIS_SID_IRF_YRSPAN` | years | 500 | 100-1000 | Response function duration |
-| Time delay - Amundsen | `SLR_AIS_SID_DT_AMUNDSEN` | years | 0 | 0-100 | Regional delay |
-| Time delay - East Ant. | `SLR_AIS_SID_DT_EASTANTARCTICA` | years | 30 | 0-100 | Regional delay |
-| Time delay - Ross | `SLR_AIS_SID_DT_ROSS` | years | 20 | 0-100 | Regional delay |
-| Time delay - Weddell | `SLR_AIS_SID_DT_WEDDELL` | years | 35 | 0-100 | Regional delay |
-| Temp scaling - Amundsen | `SLR_AIS_SID_TEMPSCALING_AMUNDSEN` | - | 0.17 | 0-1 | Regional sensitivity |
-| Temp scaling - East Ant. | `SLR_AIS_SID_TEMPSCALING_EASTANTARCTICA` | - | 0.35 | 0-1 | Regional sensitivity |
-| Temp scaling - Ross | `SLR_AIS_SID_TEMPSCALING_ROSS` | - | 0.26 | 0-1 | Regional sensitivity |
-| Temp scaling - Weddell | `SLR_AIS_SID_TEMPSCALING_WEDDELL` | - | 0.14 | 0-1 | Regional sensitivity |
-| IRF polynomial - Amundsen | `SLR_AIS_SID_IRF_AMUNDSEN` | - | [3.8e-15, -1.2e-11, 5.3e-9, -1.1e-7, 2.7e-5] | - | 5 coefficients |
-| IRF polynomial - East Ant. | `SLR_AIS_SID_IRF_EASTANTARCTICA` | - | [-4.8e-15, 4.7e-12, -1.3e-9, 1.6e-7, 1.1e-5] | - | 5 coefficients |
-| IRF polynomial - Ross | `SLR_AIS_SID_IRF_ROSS` | - | [-6.1e-14, 5.2e-11, -1.4e-8, 1.8e-6, -2.2e-5] | - | 5 coefficients |
-| IRF polynomial - Weddell | `SLR_AIS_SID_IRF_WEDDELL` | - | [1.5e-14, -1.5e-11, 5.2e-9, -5.1e-7, 3.5e-5] | - | 5 coefficients |
-
-### 5.9 Land Water Storage Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Switch on/off | `SLR_LANDWATER_SWITCH` | - | 0 | 0/1 | Enable land water component |
-| Case selector | `SLR_LANDWATER_CASE` | - | 1.0 | 0-1 | LOW(0) to HIGH(1) interpolation |
-| Start year | `SLR_LANDWATER_STARTYEAR` | year | 1900 | - | Year to begin |
-| Switch year | `SLR_LANDWATER_SWITCHYEAR` | year | 2100 | - | Transition to depletion mode |
-| Max volume | `SLR_LANDWATER_MAXVOLUME_MM` | mm | 1000.0 | - | Total groundwater reservoir |
-| Volume exponent | `SLR_LANDWATER_VOLUME_EXPONENT` | - | 0.5 | 0-1 | Depletion scaling |
-| High scenario file | `FILE_SLR_LANDWATER_HIGH` | - | SLR_LANDWATER_HIGH.IN | - | High time series |
-| Low scenario file | `FILE_SLR_LANDWATER_LOW` | - | SLR_LANDWATER_LOW.IN | - | Low time series |
-
-### 5.10 Semi-Empirical Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Zero rate temp | `SLR_SEMIEMPI_ZERORATETEMP` | deg C | -0.5 | - | Temperature offset |
-| Rate sensitivity | `SLR_SEMIEMPI_RATE_SENS` | mm/yr/K | 0.3353 | - | Rahmstorf coefficient |
-| Base period | `SLR_SEMIEMPI_TEMPBASEPERIOD` | years | [1980, 1999] | - | Reference period |
-| Switch year | `SLR_SEMIEMPI_SWITCHFROMOBS2CALC` | year | 2000 | - | Obs to calc transition |
-
-### 5.11 Output/Control Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|-------------|-------|---------|-------------|-------------|
-| Switch year obs/calc | `SLR_SWITCH_CALC2HIST` | year | -10000 | - | When to use calculated vs historic |
-| Historic file | `FILE_SLR_HISTORIC` | - | HIST_SEALEVEL_CHURCHWHITE2006_RF.IN | - | Observed SLR data |
-| Zero reference period | `OUT_ZERO_SLR_PERIOD` | years | [1986, 2005] | - | Anomaly reference period |
-
-## 6. Inputs (per timestep)
-
-| Variable | Units | Source Module | Required? | Fortran Variable |
-|----------|-------|---------------|-----------|------------------|
-| Global mean surface temperature | deg C | Climate (datastore) | Yes | `DAT_SURFACE_ANNUALMEANTEMP % DATGLOBE` |
-| Ocean layer temperatures | deg C | Climate | Yes (thermal expansion) | `TEMP_OCEANLAYERS(I, CURRENT_YEAR_IDX)` |
-| Ocean layer temperatures (next year) | deg C | Climate | Yes (thermal expansion) | `TEMP_OCEANLAYERS(I, NEXT_YEAR_IDX)` |
-| Ocean pressure profile | dbar | Climate (init) | Yes (thermal expansion) | `OCN_PRESSURE_PROFILE(I)` |
-| Ocean area factors | - | Climate (init) | Yes (thermal expansion) | `OCN_AREAFACTOR_AVERAGE(1:2, I)` |
-| Ocean layer bound areas | - | Climate (init) | Yes (thermal expansion) | `OCN_LAYERBOUND_AREAS(1:2, 1)` |
-| Initial ocean temperature profile | deg C | Climate (init) | Yes (thermal expansion) | `TEMP_INITIAL_OCEAN_*_PROFILE` |
-| Mixed layer depth | m | Climate (param) | Yes (thermal expansion) | `CORE_MIXEDLAYER_DEPTH` |
-| Ocean number of levels | - | Climate (param) | Yes (thermal expansion) | `CORE_OCN_NLEVELS` |
-| Land water time series | mm/yr | File input | If enabled | `SLR_LANDWATER_MMPYEAR` |
-| Current year index | - | Time module | Yes | `CURRENT_YEAR_IDX` |
-| Next year index | - | Time module | Yes | `NEXT_YEAR_IDX` |
-| Start year | year | Time module | Yes | `STARTYEAR` |
-| All years array | year | Time module | Yes | `ALLYEARS` |
-
-## 7. Outputs (per timestep)
-
-| Variable | Units | Destination Module(s) | Fortran Variable |
-|----------|-------|----------------------|------------------|
-| Total SLR | mm | Output/datastore | `SLR_TOTAL_CONTRIBUTION` |
-| Thermal expansion SLR | mm | Output/datastore | `SLR_EXPANSION_CONTRIBUTION` |
-| Glacier SLR | mm | Output/datastore | `SLR_GL_CONTRIBUTION` |
-| GIS SMB SLR | mm | Output/datastore | `SLR_GIS_SMB_CONTRIBUTION` |
-| GIS SID SLR | mm | Output/datastore | `SLR_GIS_SID_CONTRIBUTION` |
-| AIS SMB SLR | mm | Output/datastore | `SLR_AIS_SMB_CONTRIBUTION` |
-| AIS SID SLR | mm | Output/datastore | `SLR_AIS_SID_CONTRIBUTION` |
-| Land water SLR | mm | Output/datastore | `SLR_LANDWATER_CONTRIBUTION` |
-| Total SLR (datastore) | mm | Output file | `DAT_SLR_TOT % DATGLOBE` |
-| Expansion (datastore) | mm | Output file | `DAT_SLR_EXPANSION % DATGLOBE` |
-| Glacier (datastore) | mm | Output file | `DAT_SLR_GL % DATGLOBE` |
-| GIS SMB (datastore) | mm | Output file | `DAT_SLR_GIS_SMB % DATGLOBE` |
-| GIS SID (datastore) | mm | Output file | `DAT_SLR_GIS_SID % DATGLOBE` |
-| AIS SMB (datastore) | mm | Output file | `DAT_SLR_AIS_SMB % DATGLOBE` |
-| AIS SID (datastore) | mm | Output file | `DAT_SLR_AIS_SID % DATGLOBE` |
-| Land water (datastore) | mm | Output file | `DAT_SLR_LANDWATER % DATGLOBE` |
-| Semi-empirical SLR | mm | Output file | `DAT_SLR_SEMIEMPI_TOT % DATGLOBE` |
-| Semi-empirical rate | mm/yr | Output file | `DAT_SLR_SEMIEMPI_RATE % DATGLOBE` |
-
-## 8. Algorithm (Pseudocode)
-
-### 8.1 Initialization (`sealevel_init`)
-
-```
-SUBROUTINE sealevel_init:
-    # Initialize all contribution arrays to zero
-    FOR each contribution array:
-        SET array = 0.0
-
-    # Build impulse response functions for AIS regions
-    FOR i = 1 to NYEARS:
-        x = i - 1
-        IF i <= SLR_AIS_SID_IRF_YRSPAN:
-            SLR_AIS_SID_R_AMUNDSEN(i) = MAX(0, polynomial(IRF_AMUNDSEN, x))
-            SLR_AIS_SID_R_EASTANTARCTICA(i) = MAX(0, polynomial(IRF_EASTANTARCTICA, x))
-            SLR_AIS_SID_R_ROSS(i) = MAX(0, polynomial(IRF_ROSS, x))
-            SLR_AIS_SID_R_WEDDELL(i) = MAX(0, polynomial(IRF_WEDDELL, x))
-        ELSE:
-            SET all regional R arrays to 0.0
-
-    # Read historic sea level data
-    READ FILE_SLR_HISTORIC into DAT_SLR_TOT, DAT_SLR_SEMIEMPI_TOT
-
-    # Initialize empty datastore structures
-    FOR each SLR component:
-        CALL datastore_read('', DAT_SLR_*, 0)
-
-    # Setup land water time series
-    READ FILE_SLR_LANDWATER_HIGH, FILE_SLR_LANDWATER_LOW
-
-    # Interpolate land water based on CASE parameter
-    IF SLR_LANDWATER_CASE == 0:
-        SLR_LANDWATER_MMPYEAR = DAT_LANDWATER_LOW
-    ELSE IF SLR_LANDWATER_CASE == 1:
-        SLR_LANDWATER_MMPYEAR = DAT_LANDWATER_HIGH
-    ELSE:
-        SLR_LANDWATER_MMPYEAR = LINEAR_INTERP(LOW, HIGH, CASE)
-```
-
-### 8.2 Main Calculation (`sealevel_calc`)
-
-```
-SUBROUTINE sealevel_calc:
-
-    # ========== THERMAL EXPANSION ==========
-    IF year > SLR_EXPANSION_STARTYEAR:
-        EXPAN = 0.0
-        ZLAYER = CORE_MIXEDLAYER_DEPTH
-
-        FOR L = 1 to CORE_OCN_NLEVELS:
-            # Temperature change in layer
-            DELTOC = SLR_EXPANSION_SCALING * (T_ocean(L, next) - T_ocean(L, current))
-            DELTBAR = SLR_EXPANSION_SCALING * (T_ocean(L, next) + T_ocean(L, current)) / 2
-
-            # Get initial temperature for layer
-            IF CORE_SWITCH_OCN_TEMPPROFILE == 1:
-                TL1 = AVG(TEMP_INITIAL_OCEAN_EXP_PROFILE(:, L)) + DELTBAR
-            ELSE IF CORE_SWITCH_OCN_TEMPPROFILE == 2:
-                TL1 = AVG(TEMP_INITIAL_OCEAN_CMIP5_PROFILE(:, L)) + DELTBAR
-            ELSE:
-                TL1 = TEMP_OCEAN_INI_PROFILE_ONE(L) + DELTBAR
-
-            # Calculate expansion coefficient (empirical polynomial)
-            TL2 = TL1^2
-            TL3 = TL1^3 / 6000
-            PPL = OCN_PRESSURE_PROFILE(L)
-
-            COEFE = PARAMS(1) + PARAMS(2)*TL1*(12.9635 - 1.0833*PPL)
-                  - PARAMS(3)*TL2*(0.1713 - 0.019263*PPL)
-                  + PARAMS(4)*TL3*(10.41 - 1.1338*PPL)
-                  + PARAMS(5)*PPL - PARAMS(6)*PPL^2
-
-            # Layer expansion
-            DLR = (COEFE * DELTOC * ZLAYER) / 1000
-            ZLAYER = DZ  # Update for layers 2+
-
-            # Weight by layer area
-            EXPAN = EXPAN + DLR * AVG(OCN_AREAFACTOR_AVERAGE(:, L))
-
-        # Normalize by surface area
-        EXPAN = EXPAN / AVG(OCN_LAYERBOUND_AREAS(:, 1))
-
-        SLR_EXPANSION(next) = EXPAN + SLR_EXPANSION(current)
-
-    # ========== GLACIERS ==========
-    IF year > SLR_GL_STARTYEAR:
-        # Find equilibrium SLR for current temperature
-        SLR_GL_EQUISLRCURRENTTEMP = INTERP(T_global, SLR_GL_EQUITEMP, SLR_GL_EQUISLR)
-
-        # Find equilibrium temperature for current SLR
-        SLR_GL_EQUITEMPCURRENTSLR = INTERP(SLR_GL(current), SLR_GL_EQUISLR, SLR_GL_EQUITEMP)
-
-        # Apply modified Wigley-Raper equation
-        volume_factor = (SLR_GL_EQUISLRCURRENTTEMP - SLR_GL(current)) / SLR_GL_NORMPARA_VOL
-        temp_factor = SIGN(|T_global - SLR_GL_EQUITEMPCURRENTSLR|^SLR_GL_TEMP_EXPONENT,
-                          SLR_GL_EQUITEMPCURRENTSLR)
-        temp_factor = temp_factor / SLR_GL_NORMPARA_TEMP
-
-        SLR_GL(next) = SLR_GL(current) + SLR_GL_SENS_MMPYRDEG * volume_factor * temp_factor
-
-    # ========== GREENLAND SMB ==========
-    IF year > SLR_GIS_SMB_STARTYEAR:
-        IF SLR_GIS_SMB_PARAMETERISATION == 'DEFAULT':
-            T_term = COEF2 * T_global + (1 - COEF2) * MAX(0, T_global)^SENS_EXPONENT
-            volume_term = MAX(0, 1 - SLR_GIS_SMB(current) / INITIAL_VOLUME)^VOLUME_EXPONENT
-            SLR_GIS_SMB(next) = SLR_GIS_SMB(current) + COEF1 * T_term * volume_term
-        ELSE:  # FETTWEIS
-            SLR_GIS_SMB(next) = SLR_GIS_SMB(current) +
-                (FW1*T - FW2*T^2 - FW3*T^3) / (-361)
-
-    # ========== GREENLAND SID ==========
-    IF year > SLR_GIS_SID_STARTYEAR AND T_global != 0:
-        # Initialize discharge volumes at start year
-        IF year == SLR_GIS_SID_STARTYEAR:
-            DSCHRGVOL_LOW(start) = TOTALVOL_LOW
-            DSCHRGVOL_HIGH(start) = TOTALVOL_HIGH
-
-        # Calculate discharge for LOW and HIGH cases
-        FOR case IN [LOW, HIGH]:
-            DISCHARGE = MIN(0, -DSCHRG_SENS * DSCHRGVOL(current) * EXP(TEMPSENS_EXP * T_global))
-            DISCHARGE = MAX(DISCHARGE, -DSCHRGVOL(current))  # Cannot exceed volume
-
-            IF year < SLR_GIS_SID_STARTYEAR:
-                # Before start year: accumulate but don't deplete
-                DSCHRGVOL(next) = TOTALVOL
-                CONTRIBUTION(next) = CONTRIBUTION(current) - DISCHARGE
-            ELSE:
-                # After start year: deplete volume
-                DSCHRGVOL(next) = MAX(DISCHARGE + DSCHRGVOL(current), 0)
-                CONTRIBUTION(next) = TOTALVOL - DSCHRGVOL(next) + CONTRIBUTION(startyear)
-
-        # Interpolate between LOW and HIGH based on CASE
-        SLR_GIS_SID(next) = INTERP(CASE, LOW, HIGH) * SLR_GIS_SID_SCALING
-
-    # ========== ANTARCTIC SMB ==========
-    IF year > SLR_AIS_SMB_STARTYEAR:
-        T_term = COEF2 * T_global + (1 - COEF2) * MAX(0, T_global)^SENS_EXPONENT
-        SLR_AIS_SMB(next) = SLR_AIS_SMB(current) + COEF1 * T_term
-        # Note: typically negative (mass gain from increased precipitation)
-
-    # ========== ANTARCTIC SID ==========
-    IF SLR_AIS_SID_PARAMETERISATION == 'DECONTO':
-        IF year > SLR_AIS_SID_STARTYEAR AND T_global != 0:
-            # Initialize at start
-            IF year == SLR_AIS_SID_STARTYEAR:
-                DSCHRGVOL(start) = TOTALVOL
-
-            # Calculate discharge with optional fast rate
-            temp_term = SIGN(|T_global - ZEROTEMP|^TEMPSENS_EXPONENT, T_global - ZEROTEMP)
-            DISCHARGE = DSCHRG_SENS * DSCHRGVOL(current) * temp_term
-
-            IF T_global >= THRESHOLDTEMP:
-                DISCHARGE = DISCHARGE + FASTRATE  # Ice cliff instability
-
-            DISCHARGE = MIN(DISCHARGE, DSCHRGVOL(current))
-
-            # Update volume and contribution
-            IF year < SLR_AIS_DISCHARGE_STARTYEAR:
-                DSCHRGVOL(next) = TOTALVOL
-            ELSE:
-                DSCHRGVOL(next) = DSCHRGVOL(current) - DISCHARGE
-
-            SLR_AIS_SID(next) = (TOTALVOL - DSCHRGVOL(next) + ...) * SCALING
-
-            # Subtract SMB to get pure SID
-            SLR_AIS_SID(next) = SLR_AIS_SID(next) - SLR_AIS_SMB(next)
-
-    ELSE:  # LEVERMANN method
-        IF year > SLR_AIS_SID_STARTYEAR:
-            AIS_SID_IDX = current_year_idx - (SLR_AIS_SID_STARTYEAR - STARTYEAR)
-
-            FOR R = 1 to 4:  # Each Antarctic region
-                # Get region-specific parameters
-                SELECT region parameters based on R
-
-                IF AIS_SID_IDX >= DT_CURRENTREGION:
-                    # Calculate melt forcing
-                    OCNFORCE(R, current) = TEMPSCALING * (T(current) - T(start)) * BASALMELT
-                    FORCING(R, current) = OCNFORCE(R, current) - OCNFORCE(R, start)
-
-                    # Convolution with impulse response
-                    CONV_CORNER_F = FORCING(current) * R(0)
-                    IF idx > 1: CONV_CORNER_R = FORCING(start) * R(idx)
-                    IF idx > 2:
-                        FOR i = 1 to idx-2:
-                            CONV_MIDDLE(i) = FORCING(current - i) * R(i)
-                        CONV_MIDDLE_CUM = SUM(CONV_MIDDLE)
-
-                    CONV_STEPTOTAL = CONV_CORNER_F + CONV_MIDDLE_CUM + CONV_CORNER_R
-                    CONV_TOTAL(R, next) = CONV_STEPTOTAL * 1000  # m to mm
-
-            # Sum all regions
-            SLR_AIS_SID(next) = SUM(CONV_TOTAL(:, next))
-
-    # ========== LAND WATER STORAGE ==========
-    IF SLR_LANDWATER_SWITCH == 0:
-        SLR_LANDWATER(next) = 0
-    ELSE IF year > SLR_LANDWATER_STARTYEAR:
-        IF year > SLR_LANDWATER_SWITCHYEAR:
-            SWITCHVOL = SLR_LANDWATER(switchyear)
-            depletion_factor = MAX(0, 1 - (SLR_LANDWATER(current) - SWITCHVOL) /
-                                       (MAXVOLUME - SWITCHVOL))^VOLUME_EXPONENT
-            SLR_LANDWATER(next) = SLR_LANDWATER(current) + MMPYEAR(current) * depletion_factor
-        ELSE:
-            SLR_LANDWATER(next) = SLR_LANDWATER(current) + MMPYEAR(current)
-
-    # ========== TOTAL ==========
-    SLR_TOTAL(next) = SLR_EXPANSION(next) + SLR_GL(next) + SLR_GIS_SMB(next) +
-                      SLR_GIS_SID(next) + SLR_AIS_SMB(next) + SLR_AIS_SID(next) +
-                      SLR_LANDWATER(next)
-
-    # Update datastore structures after switch year
-    IF year > SLR_SWITCH_CALC2HIST:
-        FOR each component:
-            DAT_SLR_*(next) = DAT_SLR_*(current) + (SLR_*(next) - SLR_*(current))
-```
-
-### 8.3 Semi-Empirical Calculation (`sealevel_calc_semiempi`)
-
-```
-SUBROUTINE sealevel_calc_semiempi:
-    # Ensure base period is valid
-    IF TEMPBASEPERIOD(1) > TEMPBASEPERIOD(2):
-        SWAP(TEMPBASEPERIOD(1), TEMPBASEPERIOD(2))
-
-    CHECK_WITHIN_RUNYEARS(TEMPBASEPERIOD(1))
-    CHECK_WITHIN_RUNYEARS(TEMPBASEPERIOD(2))
-
-    # Calculate base period mean temperature
-    BASETEMP = MEAN(T_surface over TEMPBASEPERIOD)
-
-    # Calculate rate of sea level rise (Rahmstorf regression)
-    SLR_RATE = RATE_SENS * (T_surface - BASETEMP - ZERORATETEMP)
-
-    # Handle switch from observations to calculated
-    IF DAT_SLR_SEMIEMPI_TOT.LASTYEAR < SWITCHFROMOBS2CALC:
-        SWITCHFROMOBS2CALC = DAT_SLR_SEMIEMPI_TOT.LASTYEAR
-
-    IDX_SWITCH = SWITCHFROMOBS2CALC - STARTYEAR + 1
-
-    # Integrate rate to get total SLR
-    FOR i = 2 to NYEARS:
-        IF i >= IDX_SWITCH:
-            DAT_SLR_SEMIEMPI_TOT(i) = DAT_SLR_SEMIEMPI_TOT(i-1) + SLR_RATE(i)
-
-    # Copy to ocean boxes (NH and SH ocean only)
-    DAT_SLR_SEMIEMPI_TOT.DATBOX(:, OCEAN_NH) = DAT_SLR_SEMIEMPI_TOT.DATGLOBE
-    DAT_SLR_SEMIEMPI_TOT.DATBOX(:, OCEAN_SH) = DAT_SLR_SEMIEMPI_TOT.DATGLOBE
-    DAT_SLR_SEMIEMPI_TOT.DATBOX(:, LAND_NH) = 0
-    DAT_SLR_SEMIEMPI_TOT.DATBOX(:, LAND_SH) = 0
-```
-
-## 9. Integration with Climate Module
-
-### 9.1 Call Sequence
-
-The sea level rise module is called at the end of each timestep after all climate calculations:
-
-```fortran
-! In magicc_step_year (MAGICC7.f90 line 3726):
-CALL sealevel_calc
-```
-
-### 9.2 Temperature Input
-
-The module receives temperature from the climate module via the datastore:
-
-```fortran
-DAT_SURFACE_ANNUALMEANTEMP % DATGLOBE(CURRENT_YEAR_IDX)
-```
-
-This is the global mean surface temperature anomaly used by all ice sheet and glacier components.
-
-### 9.3 Ocean Temperature Input
-
-For thermal expansion, the module accesses ocean layer temperatures directly from the climate module's state:
-
-```fortran
-TEMP_OCEANLAYERS(I, CURRENT_YEAR_IDX)  ! Temperature at current timestep
-TEMP_OCEANLAYERS(I, NEXT_YEAR_IDX)     ! Temperature at next timestep
-```
-
-### 9.4 Ocean Structure
-
-The module uses ocean structure parameters set during climate initialization:
-
-- `CORE_OCN_NLEVELS` - Number of ocean layers
-- `CORE_MIXEDLAYER_DEPTH` - Depth of mixed layer (m)
-- `DZ` - Layer thickness (100 m)
-- `OCN_PRESSURE_PROFILE(I)` - Pressure at each layer
-- `OCN_AREAFACTOR_AVERAGE(1:2, I)` - Hemisphere area fractions
-- `OCN_LAYERBOUND_AREAS(1:2, I)` - Layer boundary areas
-
-### 9.5 Initial Ocean Temperature Profile
-
-Three options for initial ocean temperature profile (controlled by `CORE_SWITCH_OCN_TEMPPROFILE`):
-
-1. Exponential profile: `TEMP_INITIAL_OCEAN_EXP_PROFILE`
-2. CMIP5 profile: `TEMP_INITIAL_OCEAN_CMIP5_PROFILE`
-3. Simple profile: `TEMP_OCEAN_INI_PROFILE_ONE`
-
-## 10. Honest Assessment / Red Flags
-
-### 10.1 Hardcoded Values That Should Be Parameters
-
-| Value | Location | Issue |
-|-------|----------|-------|
-| `-361.0` | Line 401 | Magic number in Fettweis GIS SMB conversion |
-| `1000.0` | Line 657 | m to mm conversion |
-| `6000.0` | Line 289 | Divisor in TL3 calculation |
-| `12.9635`, `1.0833`, etc. | Lines 292-297 | Thermal expansion polynomial constants |
-| `104` | Line 42 | Fixed size of equilibrium lookup tables |
-| `4` | Throughout | Number of Antarctic regions |
-
-### 10.2 Missing or Incomplete Implementations
-
-1. **No ice sheet feedback on SMB**: Surface mass balance doesn't account for elevation feedback as ice sheets thin
-2. **No marine ice sheet instability physics**: DeConto "fast rate" is a crude threshold approximation
-3. **Glacier hypsometry ignored**: Glacier response doesn't account for elevation distribution
-4. **No regional sea level**: All outputs are global mean (no fingerprinting, GIA, or regional patterns)
-5. **Land water stops at switchyear**: Limited to historical extrapolation
-
-### 10.3 Code Quality Issues
-
-1. **Complex index management**: Multiple index variables (`CURRENT_YEAR_IDX`, `NEXT_YEAR_IDX`, `AIS_SID_IDX`, `AIS_SID_DT_STARTIDX`, `AIS_SID_DT_IDX`) make the code error-prone
-2. **Mixed parameterization switching**: Runtime selection between DECONTO/LEVERMANN and DEFAULT/FETTWEIS adds complexity
-3. **SAVE attribute on local**: `AIS_SID_DISCHARGE` has `SAVE` attribute (line 258) which persists between calls
-4. **Large lookup tables**: 104-element arrays declared as fixed size
-5. **No input validation**: No bounds checking on interpolation lookups
-
-### 10.4 Numerical Concerns
-
-1. **Convolution accumulation**: Levermann method accumulates convolution sums that could lose precision
-2. **Temperature == 0 guard**: Explicit check for zero temperature (line 412, 510) suggests numerical edge cases
-3. **SIGN function usage**: Non-standard use of `SIGN()` to handle negative temperature anomalies
-4. **MAX(0, ...)** guards: Used extensively to prevent negative volumes, suggesting potential sign errors
-
-### 10.5 Scientific Limitations
-
-1. **Outdated ice sheet models**: Based on Nick (2013), Levermann (2014), DeConto (2016)
-2. **No MICI (Marine Ice Cliff Instability)**: Key process for large Antarctic contributions
-3. **Equilibrium glacier assumption**: Uses static temperature-SLR relationship
-4. **Semi-empirical alternative**: Rahmstorf method is simple regression, not process-based
-5. **No uncertainty propagation**: Only LOW/HIGH bounds for GIS SID, not proper ensemble
-
-### 10.6 Configuration Complexity
-
-- ~80+ configurable parameters across all components
-- Multiple tuning files required
-- Interdependencies between parameters not documented
-- Many parameters have no documented valid ranges
-
-## 11. Fortran Code References
-
-### Key Subroutines
-
-| Subroutine | Lines | Description |
-|------------|-------|-------------|
-| `sealevel_alloc` | 73-95 | Array allocation |
-| `sealevel_dealloc` | 97-114 | Array deallocation |
-| `sealevel_init` | 116-237 | Initialization and IRF setup |
-| `sealevel_calc` | 239-753 | Main calculation routine |
-| `sealevel_calc_semiempi` | 755-830 | Semi-empirical method |
-
-### Component Calculations
-
-| Component | Start Line | End Line | Key Equation(s) |
-|-----------|------------|----------|-----------------|
-| Thermal Expansion | 266 | 312 | 292-297 (coefficient), 299 (DLR), 303-308 (summation) |
-| Glaciers | 319 | 373 | 364-371 (Wigley-Raper) |
-| GIS SMB (Default) | 383 | 391 | 386-391 |
-| GIS SMB (Fettweis) | 396 | 401 | 396-401 |
-| GIS SID | 409 | 483 | 424-436 (discharge), 462-474 (interpolation) |
-| AIS SMB | 492 | 499 | 493-498 |
-| AIS SID (DeConto) | 507 | 570 | 522-536 (discharge + fast), 556-561 (contribution) |
-| AIS SID (Levermann) | 574 | 666 | 618-626 (forcing), 629-657 (convolution) |
-| Land Water | 673 | 696 | 683-689 (depletion), 691-693 (simple) |
-| Total | 702 | 709 | 702-709 (summation) |
-| Datastore Update | 712 | 752 | Copies to datastore structures |
-
-### State Variable Declarations
-
-| Variable Type | Lines |
-|---------------|-------|
-| Module arrays | 5-20 |
-| Module scalars | 21-38 |
-| File names | 39-41 |
-| Lookup tables | 42-49 |
-| IRF arrays | 67-69 |
-
-### Parameter Files Referenced
-
-| Parameter | Configuration File(s) |
-|-----------|----------------------|
-| Thermal expansion | `SLR_THEXP_PARAMS_*.CFG` |
-| Glaciers | `MAGTUNE_GLACIERTUNE_*.CFG`, `SLR_GL_PARAMS_*.CFG` |
-| GIS SMB | `MAGTUNE_GISSMBTUNE_*.CFG` |
-| AIS SMB | `MAGTUNE_AISSMBTUNE_*.CFG` |
-| AIS SID | `MAGTUNE_AISSIDTUNE_*.CFG` |
-| AIS IRF | `SLR_AIS_SID_IRF_*_*.CFG` |
-| Land water | `SLR_LANDWATER_HIGH.IN`, `SLR_LANDWATER_LOW.IN` |
-| Historic | `HIST_SEALEVEL_CHURCHWHITE2006_RF.IN` |
+$$
+S_{AIS,SMB}(y+1) = S_{AIS,SMB}(y) + c_1 \left( c_2 T + (1 - c_2) \max(0, T)^{e} \right)
+$$
+
+Its effective $c_1$ is negative: more snowfall with warming gains mass and lowers sea level.
+
+### Antarctic solid ice discharge: LEVERMANN (default)
+
+Four drainage regions $r$ (Amundsen, East Antarctica, Ross, Weddell) respond to basal melt
+through impulse response functions (Levermann et al. 2014).
+Region $r$ starts in year $y_r$ = `SLR_AIS_SID_STARTYEAR` + `SLR_AIS_SID_DT_r`.
+From then its basal melt forcing is relative to the warming in its first year:
+
+$$
+m_r(y) = b\, \theta_r \left( T(y) - T(y_r) \right)
+$$
+
+with $b$ = `SLR_AIS_SID_BASALMELT` and $\theta_r$ = `SLR_AIS_SID_TEMPSCALING_r`.
+The response to a melt pulse of age $a$ is a quartic, clamped at zero and cut off after
+`SLR_AIS_SID_IRF_YRSPAN` years, with coefficients $c_{r,1} \dots c_{r,5}$ = `SLR_AIS_SID_IRF_r`:
+
+$$
+R_r(a) = \max\left(0,\ c_{r,1} a^4 + c_{r,2} a^3 + c_{r,3} a^2 + c_{r,4} a + c_{r,5}\right)
+$$
+
+Each region's contribution is the full convolution of its forcing with the response,
+converted from m to mm, and the regions sum to
+
+$$
+S_{AIS,SID}(y+1) = \sigma_{AIS} \sum_r 1000 \sum_{a=0}^{y - y_r} m_r(y - a)\, R_r(a)
+$$
+
+with $\sigma_{AIS}$ = `SLR_AIS_SID_SCALING`.
+Two MAGICC7 quirks are part of the formulation:
+
+- **Response overflow**: MAGICC7 raises the age to its powers in 32-bit integers,
+  so $a^4$ wraps from $a = 216$.
+  Ross, with no delay in the default configuration, reaches that age in 2067.
+- **Start release**: in the year $y_r - 1$,
+  MAGICC7 adds $1000\, b\, \theta_r\, T(y)\, R_r(0)$ for that year alone,
+  against zero warming.
+
+### Antarctic solid ice discharge: DECONTO
+
+The alternative adds a fast rate above a threshold, for ice cliff instability (DeConto and Pollard 2016):
+
+$$
+q = d\, V \operatorname{sign}(T - T_0)\, |T - T_0|^{e}
++ \begin{cases} r_{fast} & T \ge T_{thr} \\ 0 & T < T_{thr} \end{cases}
+$$
+
+bounded by the remaining volume $V$, which depletes from `SLR_AIS_DISCHARGE_STARTYEAR`.
+The contribution is the depleted volume times the scaling, minus the Antarctic SMB contribution.
+
+### Land water storage
+
+Off by default (`SLR_LANDWATER_SWITCH = 0`).
+The contribution adds a prescribed rate $w(y)$ (mm yr⁻¹, interpolated between the low and high files by
+`SLR_LANDWATER_CASE`).
+After `SLR_LANDWATER_SWITCHYEAR` the rate shrinks as the reservoir $V_{max}$ is used up:
+
+$$
+S_{LW}(y+1) = S_{LW}(y)
++ w(y) \max\left(0,\ 1 - \frac{S_{LW}(y) - S_{switch}}{V_{max} - S_{switch}}\right)^{e_V}
+$$
+
+### Total
+
+$$
+S_{total} = S_{exp} + S_{GL} + S_{GIS,SMB} + S_{GIS,SID} + S_{AIS,SMB} + S_{AIS,SID} + S_{LW}
+$$
+
+## State variables
+
+| Variable                  | Fortran name                          | Units | Description                       | Initial value               |
+| ------------------------- | ------------------------------------- | ----- | --------------------------------- | --------------------------- |
+| Total                     | `SLR_TOTAL_CONTRIBUTION`              | mm    | Cumulative total sea level rise   | 0                           |
+| Thermal expansion         | `SLR_EXPANSION_CONTRIBUTION`          | mm    | $S_{exp}$                         | 0                           |
+| Glaciers                  | `SLR_GL_CONTRIBUTION`                 | mm    | $S_{GL}$                          | 0                           |
+| GIS SMB                   | `SLR_GIS_SMB_CONTRIBUTION`            | mm    | $S_{GIS,SMB}$                     | 0                           |
+| GIS SID                   | `SLR_GIS_SID_CONTRIBUTION`            | mm    | $S_{GIS,SID}$                     | 0                           |
+| GIS SID low and high      | `SLR_GIS_SID_CONTRIBUTION_LOW`/`_HIGH` | mm   | $S_{low}$, $S_{high}$             | 0                           |
+| GIS discharge volumes     | `SLR_GIS_SID_DSCHRGVOL_LOW`/`_HIGH`   | mm    | $V_{low}$, $V_{high}$             | `SLR_GIS_SID_TOTALVOL_*`    |
+| AIS SMB                   | `SLR_AIS_SMB_CONTRIBUTION`            | mm    | $S_{AIS,SMB}$                     | 0                           |
+| AIS SID                   | `SLR_AIS_SID_CONTRIBUTION`            | mm    | $S_{AIS,SID}$                     | 0                           |
+| AIS discharge volume      | `SLR_AIS_SID_DSCHRGVOL`               | mm    | DECONTO $V$                       | `SLR_AIS_SID_TOTALVOL`      |
+| Land water                | `SLR_LANDWATER_CONTRIBUTION`          | mm    | $S_{LW}$                          | 0                           |
+| AIS region responses      | `SLR_AIS_SID_R_*`                     | m per m yr⁻¹ | $R_r(a)$ for each region    | From the polynomials        |
+| AIS forcing               | `SLR_AIS_SID_OCNFORCE`, `_FORCING`    | m yr⁻¹ | $m_r(y)$, [4, NYEARS]           | 0                           |
+| AIS convolution terms     | `SLR_AIS_SID_CONV_*`                  | m     | Convolution partial sums          | 0                           |
+
+RSCM's `SeaLevelRiseState` keeps the glacier and SMB contributions, the two Greenland volumes,
+and each Antarctic region's baseline warming and melt history.
+`ClimateUDEB` keeps the cumulative thermal expansion.
+
+## Inputs and outputs
+
+| Direction | Variable                  | Units | Fortran variable                       | RSCM variable                                     |
+| --------- | ------------------------- | ----- | -------------------------------------- | ------------------------------------------------- |
+| Input     | Annual mean warming       | K     | `DAT_SURFACE_ANNUALMEANTEMP%DATGLOBE`  | `Surface Temperature|Annual Mean`                |
+| Input     | Ocean layer temperatures  | K     | `TEMP_OCEANLAYERS(I, CURRENT/NEXT_YEAR_IDX)` | `ClimateUDEB` state                         |
+| Input     | Land water rate           | mm yr⁻¹ | `SLR_LANDWATER_MMPYEAR`              | Not implemented                                   |
+| Output    | Total                     | mm    | `DAT_SLR_TOT`                          | `Sea Level Rise`                                  |
+| Output    | Thermal expansion         | mm    | `DAT_SLR_EXPANSION`                    | `Sea Level Rise|Thermal Expansion`               |
+| Output    | Glaciers                  | mm    | `DAT_SLR_GL`                           | `Sea Level Rise|Glaciers`                        |
+| Output    | GIS SMB                   | mm    | `DAT_SLR_GIS_SMB`                      | `Sea Level Rise|Greenland|Surface Mass Balance` |
+| Output    | GIS SID                   | mm    | `DAT_SLR_GIS_SID`                      | `Sea Level Rise|Greenland|Solid Ice Discharge`  |
+| Output    | AIS SMB                   | mm    | `DAT_SLR_AIS_SMB`                      | `Sea Level Rise|Antarctica|Surface Mass Balance` |
+| Output    | AIS SID                   | mm    | `DAT_SLR_AIS_SID`                      | `Sea Level Rise|Antarctica|Solid Ice Discharge` |
+| Output    | Land water                | mm    | `DAT_SLR_LANDWATER`                    | Not implemented                                   |
+| Output    | Semi-empirical total and rate | mm, mm yr⁻¹ | `DAT_SLR_SEMIEMPI_TOT`, `_RATE` | Not implemented                                |
+
+Thermal expansion also uses the ocean geometry that the climate module sets up:
+`CORE_OCN_NLEVELS`, `CORE_MIXEDLAYER_DEPTH`, `DZ`,
+the hemisphere layer areas and the initial temperature profile.
+
+## Parameters
+
+The "CFG default" column lists `MAGCFG_DEFAULTALL.CFG`.
+MAGICC7's CMIP5 mean and tuning files override most of these values.
+The "Effective default" column lists the values after those files are applied,
+which `SeaLevelRiseParameters` and `ThermalExpansionParameters` hold.
+A dash marks a parameter RSCM does not have.
+
+### Thermal expansion
+
+| Parameter              | Fortran name              | Units   | CFG default                          | Effective default                                    | Description               |
+| ---------------------- | ------------------------- | ------- | ------------------------------------ | ---------------------------------------------------- | ------------------------- |
+| Expansion coefficients | `SLR_EXPANSION_PARAMS`    | various | [52.24, 0.99, 1.03, 0.61, 24.26, 0.74] | [52.2368, 0.9938, 1.0333, 0.6065, 24.2643, 0.7408] | $p_1 \dots p_6$           |
+| Expansion scaling      | `SLR_EXPANSION_SCALING`   | 1       | 0.8824                               | 0.8823828                                            | $s$                       |
+| Start year             | `SLR_EXPANSION_STARTYEAR` | year    | 1850                                 | 1850                                                 | First year of expansion   |
+| Parameter file         | `FILE_SLR_THEXP_PARAMS`   |         | `SLR_THEXP_PARAMS_CMIP5MEAN.CFG`     |                                                      | Source of the effective values |
+
+### Glaciers
+
+| Parameter             | Fortran name             | Units | CFG default                          | Effective default    | Description                    |
+| --------------------- | ------------------------ | ----- | ------------------------------------ | -------------------- | ------------------------------ |
+| Sensitivity           | `SLR_GL_SENS_MMPYRDEG`   | yr⁻¹  | 0.625                                | 1.067337 × 10⁻²      | $k$                            |
+| Temperature exponent  | `SLR_GL_TEMP_EXPONENT`   | 1     | 0.82                                 | 7.881273 × 10⁻²      | $e$                            |
+| Volume normalisation  | `SLR_GL_NORMPARA_VOL`    | 1     | 1.0                                  |                     | $n_V$                          |
+| Temperature normalisation | `SLR_GL_NORMPARA_TEMP` | 1   | 1.0                                  |                     | $n_T$                          |
+| Start year            | `SLR_GL_STARTYEAR`       | year  | 1850                                 | 1850                 | First year of melt             |
+| Equilibrium warming   | `SLR_GL_EQUITEMP`        | K     | 0.0, 0.1, ..., 10.3 (104 values)     | Same                 | Lookup table                   |
+| Equilibrium sea level | `SLR_GL_EQUISLR`         | mm    | 81.2, 96.6, ..., 410.2 (104 values)  | Same                 | Lookup table                   |
+| Tuning file           | `FILE_SLR_GL_PARAMS`     |       | `MAGTUNE_GLACIERTUNE_CMIP5MEAN.CFG`  |                      | Source of $k$ and $e$          |
+| Table file            | `FILE_SLR_GL_XTRAPARAMS` |       | `SLR_GL_PARAMS_CMIP5MEAN.CFG`        |                      | Source of the tables           |
+
+### Greenland SMB
+
+| Parameter            | Fortran name                    | Units | CFG default | Effective default   | Description              |
+| -------------------- | ------------------------------- | ----- | ----------- | ------------------- | ------------------------ |
+| Parameterisation     | `SLR_GIS_SMB_PARAMETERISATION`  |       | `DEFAULT`   | `DEFAULT` only      | `DEFAULT` or `FETTWEIS`  |
+| Coefficient 1        | `SLR_GIS_SMB_COEF1`             | mm yr⁻¹ | 0.015     | 0.1148748           | $c_1$                    |
+| Coefficient 2        | `SLR_GIS_SMB_COEF2`             | 1     | 0.9         | 1.161776 × 10⁻⁷     | $c_2$, linear weight     |
+| Sensitivity exponent | `SLR_GIS_SMB_SENS_EXPONENT`     | 1     | 2.3         | 2.016917            | $e$                      |
+| Initial volume       | `SLR_GIS_SMB_INITIAL_VOLUME_MM` | mm    | 7360.0      | 7360.0              | $V$                      |
+| Volume exponent      | `SLR_GIS_SMB_VOLUME_EXPONENT`   | 1     | 0.5         | 0.5                 | $e_V$                    |
+| Fettweis coefficients | `SLR_GIS_SMB_COEF_FW1` to `_FW3` | 1  | -10.0, 2.0, 1.0 |                 | $a_1 \dots a_3$          |
+| Start year           | `SLR_GIS_SMB_STARTYEAR`         | year  | 1965        | 1965                | First year of SMB change |
+| Tuning file          | `FILE_SLR_GISSMB_PARAMS`        |       | `MAGTUNE_GISSMBTUNE_CMIP5MEAN.CFG` |  | Source of the effective values |
+
+### Greenland SID
+
+| Parameter          | Fortran name                         | Units | CFG default | Effective default | Description                  |
+| ------------------ | ------------------------------------ | ----- | ----------- | ----------------- | ---------------------------- |
+| Case selector      | `SLR_GIS_SID_CASE`                   | 1     | 0.5         | 0.5               | $c$, low (0) to high (1)     |
+| Scaling            | `SLR_GIS_SID_SCALING`                | 1     | 5.0         | 5.0               | $\sigma$, AR5 upscaling      |
+| Total volume low   | `SLR_GIS_SID_TOTALVOL_LOW`           | mm    | 35.98       | 35.9803           | $V^0_{low}$                  |
+| Total volume high  | `SLR_GIS_SID_TOTALVOL_HIGH`          | mm    | 53.63       | 53.6289           | $V^0_{high}$                 |
+| Discharge sens low | `SLR_GIS_SID_DSCHRG_SENS_LOW`        | yr⁻¹  | 0.000906    | 9.0617 × 10⁻⁴     | $d_{low}$                    |
+| Discharge sens high | `SLR_GIS_SID_DSCHRG_SENS_HIGH`      | yr⁻¹  | 0.000793    | 7.933 × 10⁻⁴      | $d_{high}$                   |
+| Temp exponent low  | `SLR_GIS_SID_TEMPSENS_EXPONENT_LOW`  | K⁻¹   | 0.389       | 0.38919           | $x_{low}$                    |
+| Temp exponent high | `SLR_GIS_SID_TEMPSENS_EXPONENT_HIGH` | K⁻¹   | 0.472       | 0.47216           | $x_{high}$                   |
+| Start year         | `SLR_GIS_SID_STARTYEAR`              | year  | 2000        | 2000              | First year of discharge      |
+
+### Antarctic SMB
+
+| Parameter            | Fortran name                | Units   | CFG default | Effective default    | Description              |
+| -------------------- | --------------------------- | ------- | ----------- | -------------------- | ------------------------ |
+| Coefficient 1        | `SLR_AIS_SMB_COEF1`         | mm yr⁻¹ | 0.128       | -0.1208204           | $c_1$                    |
+| Coefficient 2        | `SLR_AIS_SMB_COEF2`         | 1       | -0.424      | -7.702955 × 10⁻¹⁵    | $c_2$, linear weight     |
+| Sensitivity exponent | `SLR_AIS_SMB_SENS_EXPONENT` | 1       | 0.782       | 1.523378             | $e$                      |
+| Start year           | `SLR_AIS_SMB_STARTYEAR`     | year    | 1980        | 1980                 | First year of SMB change |
+| Tuning file          | `FILE_SLR_AISSMB_PARAMS`    |         | `MAGTUNE_AISSMBTUNE_MEAN.CFG` |      | Source of the effective values |
+
+### Antarctic SID, common
+
+| Parameter            | Fortran name                   | Units | CFG default   | Effective default | Description                  |
+| -------------------- | ------------------------------ | ----- | ------------- | ----------------- | ---------------------------- |
+| Parameterisation     | `SLR_AIS_SID_PARAMETERISATION` |       | `LEVERMANN`   | `LEVERMANN` only  | `LEVERMANN` or `DECONTO`     |
+| Scaling              | `SLR_AIS_SID_SCALING`          | 1     | 1.0           | 1.0               | $\sigma_{AIS}$               |
+| Start year           | `SLR_AIS_SID_STARTYEAR`        | year  | 1850          | 1850              | First year of discharge      |
+| Discharge start year | `SLR_AIS_DISCHARGE_STARTYEAR`  | year  | 1950          |                   | DECONTO volume depletion     |
+| Tuning file          | `FILE_SLR_AISSID_PARAMS`       |       | `MAGTUNE_AISSIDTUNE_MIROCESM.CFG` |  | Source of the effective values |
+
+### Antarctic SID, DECONTO
+
+| Parameter             | Fortran name                    | Units   | CFG default | Description          |
+| --------------------- | ------------------------------- | ------- | ----------- | -------------------- |
+| Total volume          | `SLR_AIS_SID_TOTALVOL`          | mm      | 17560.0     | Initial $V$          |
+| Discharge sensitivity | `SLR_AIS_SID_DSCHRG_SENS`       | yr⁻¹    | 5.28 × 10⁻⁵ | $d$                  |
+| Temp exponent         | `SLR_AIS_SID_TEMPSENS_EXPONENT` | 1       | 2.0         | $e$                  |
+| Threshold warming     | `SLR_AIS_SID_THRESHOLDTEMP`     | K       | 1.023       | $T_{thr}$            |
+| Zero warming          | `SLR_AIS_SID_ZEROTEMP`          | K       | 0.0         | $T_0$                |
+| Fast rate             | `SLR_AIS_SID_FASTRATE`          | mm yr⁻¹ | 13.83       | $r_{fast}$           |
+
+RSCM does not implement DECONTO, so these have no effective default.
+
+### Antarctic SID, LEVERMANN
+
+| Parameter                 | Fortran name                             | Units     | CFG default | Effective default | Description          |
+| ------------------------- | ---------------------------------------- | --------- | ----------- | ----------------- | -------------------- |
+| Basal melt                | `SLR_AIS_SID_BASALMELT`                  | m yr⁻¹ K⁻¹ | 11.5       | 11.5              | $b$                  |
+| Response span             | `SLR_AIS_SID_IRF_YRSPAN`                 | yr        | 500         | 500               | Response cut-off     |
+| Delay, Amundsen           | `SLR_AIS_SID_DT_AMUNDSEN`                | yr        | 0           | 60                | Years after start    |
+| Delay, East Antarctica    | `SLR_AIS_SID_DT_EASTANTARCTICA`          | yr        | 30          | 50                | Years after start    |
+| Delay, Ross               | `SLR_AIS_SID_DT_ROSS`                    | yr        | 20          | 0                 | Years after start    |
+| Delay, Weddell            | `SLR_AIS_SID_DT_WEDDELL`                 | yr        | 35          | 65                | Years after start    |
+| Temp scaling, Amundsen    | `SLR_AIS_SID_TEMPSCALING_AMUNDSEN`       | 1         | 0.17        | 0.35              | $\theta_r$           |
+| Temp scaling, East Antarctica | `SLR_AIS_SID_TEMPSCALING_EASTANTARCTICA` | 1     | 0.35        | 0.24              | $\theta_r$           |
+| Temp scaling, Ross        | `SLR_AIS_SID_TEMPSCALING_ROSS`           | 1         | 0.26        | 0.23              | $\theta_r$           |
+| Temp scaling, Weddell     | `SLR_AIS_SID_TEMPSCALING_WEDDELL`        | 1         | 0.14        | 0.18              | $\theta_r$           |
+
+The response coefficients `SLR_AIS_SID_IRF_r` are the same in both, highest power first:
+
+| Region          | $c_{r,1}$         | $c_{r,2}$         | $c_{r,3}$        | $c_{r,4}$        | $c_{r,5}$        |
+| --------------- | ----------------- | ----------------- | ---------------- | ---------------- | ---------------- |
+| Amundsen        | 3.80221625e-15    | -1.20779839e-11   | 5.34616000e-09   | -1.12359405e-07  | 2.69854318e-05   |
+| East Antarctica | -4.80672912e-15   | 4.68446533e-12    | -1.32757538e-09  | 1.64696643e-07   | 1.14405405e-05   |
+| Ross            | -6.09433726e-14   | 5.15605867e-11    | -1.36480364e-08  | 1.75347964e-06   | -2.21886314e-05  |
+| Weddell         | 1.54097171e-14    | -1.53064596e-11   | 5.22078742e-09   | -5.09486184e-07  | 3.54817378e-05   |
+
+### Land water storage
+
+| Parameter       | Fortran name                    | Units | CFG default             | Description                      |
+| --------------- | ------------------------------- | ----- | ----------------------- | -------------------------------- |
+| Switch          | `SLR_LANDWATER_SWITCH`          | flag  | 0                       | Enable land water                |
+| Case selector   | `SLR_LANDWATER_CASE`            | 1     | 1.0                     | Low (0) to high (1)              |
+| Start year      | `SLR_LANDWATER_STARTYEAR`       | year  | 1900                    | First year                       |
+| Switch year     | `SLR_LANDWATER_SWITCHYEAR`      | year  | 2100                    | Start of volume depletion        |
+| Maximum volume  | `SLR_LANDWATER_MAXVOLUME_MM`    | mm    | 1000.0                  | $V_{max}$                        |
+| Volume exponent | `SLR_LANDWATER_VOLUME_EXPONENT` | 1     | 0.5                     | $e_V$                            |
+| Rate files      | `FILE_SLR_LANDWATER_HIGH`/`_LOW` |      | `SLR_LANDWATER_HIGH.IN`, `SLR_LANDWATER_LOW.IN` | High and low rates |
+
+### Semi-empirical method and output control
+
+| Parameter            | Fortran name                      | Units      | CFG default    | Description                       |
+| -------------------- | --------------------------------- | ---------- | -------------- | --------------------------------- |
+| Zero rate warming    | `SLR_SEMIEMPI_ZERORATETEMP`       | K          | -0.5           | Warming offset                    |
+| Rate sensitivity     | `SLR_SEMIEMPI_RATE_SENS`          | mm yr⁻¹ K⁻¹ | 0.3353        | Rahmstorf coefficient             |
+| Base period          | `SLR_SEMIEMPI_TEMPBASEPERIOD`     | years      | [1980, 1999]   | Reference period                  |
+| Switch year          | `SLR_SEMIEMPI_SWITCHFROMOBS2CALC` | year       | 2000           | Observed to calculated            |
+| Calculated from year | `SLR_SWITCH_CALC2HIST`            | year       | -10000         | Calculated rather than historic   |
+| Historic file        | `FILE_SLR_HISTORIC`               |            | `HIST_SEALEVEL_CHURCHWHITE2006_RF.IN` | Observed sea level  |
+| Zero period          | `OUT_ZERO_SLR_PERIOD`             | years      | [1986, 2005]   | Anomaly reference period          |
+
+## Algorithm
+
+`sealevel_init` zeroes the contributions and:
+
+- builds each region's response $R_r(a)$ from its polynomial,
+- reads the historic sea level file into the total and semi-empirical series,
+- reads the land water files and interpolates them by `SLR_LANDWATER_CASE`.
+
+`sealevel_calc` runs at the end of each year's step (`MAGICC7.f90` line 3726), after the climate calculation.
+The contributions are independent of each other except at the end, in this order and with these gates:
+
+1. Thermal expansion, from `SLR_EXPANSION_STARTYEAR`.
+2. Glaciers, from `SLR_GL_STARTYEAR`.
+3. Greenland SMB, from `SLR_GIS_SMB_STARTYEAR`, by `SLR_GIS_SMB_PARAMETERISATION`.
+4. Greenland SID, from `SLR_GIS_SID_STARTYEAR` and only while $T \ne 0$.
+5. Antarctic SMB, from `SLR_AIS_SMB_STARTYEAR`.
+6. Antarctic SID, by `SLR_AIS_SID_PARAMETERISATION`, each Levermann region from $y_r$
+   (and the start release in $y_r - 1$).
+7. Land water, only with `SLR_LANDWATER_SWITCH`, from `SLR_LANDWATER_STARTYEAR`.
+8. Total, then copied to the output series after `SLR_SWITCH_CALC2HIST`.
+
+`sealevel_calc_semiempi` is a separate, observation-driven method after Rahmstorf:
+
+- The rate is `SLR_SEMIEMPI_RATE_SENS` times the warming
+  above the base period mean and `SLR_SEMIEMPI_ZERORATETEMP`.
+- It integrates the rate from the end of the historic record, or `SLR_SEMIEMPI_SWITCHFROMOBS2CALC` if earlier.
+- It reports the result in the two ocean boxes only.
+
+## Issues in MAGICC7
+
+### Hardcoded values
+
+| Value                     | Line           | Use                                       |
+| ------------------------- | -------------- | ----------------------------------------- |
+| `-361.0`                  | 401            | Fettweis GIS SMB divisor                  |
+| `1000.0`                  | 657            | m to mm in the Levermann convolution      |
+| `6000.0`                  | 289            | Divisor of the cubic expansion term       |
+| `12.9635`, `1.0833`, ...  | 292-297        | Expansion polynomial constants            |
+| `104`                     | 42             | Size of the glacier lookup tables         |
+| `4`                       | Throughout     | Number of Antarctic regions               |
+
+### Code and numerics
+
+- **Index arithmetic**: `CURRENT_YEAR_IDX`, `NEXT_YEAR_IDX`, `AIS_SID_IDX`, `AIS_SID_DT_STARTIDX`
+  and `AIS_SID_DT_IDX` make the timing hard to follow.
+  The Levermann convolution sums its first and last terms apart from the rest.
+- **Integer overflow** in the response polynomial from an age of 216 years, as above.
+- **`SAVE` local**: `AIS_SID_DISCHARGE` keeps its value between calls (line 258).
+- **Zero-warming guards**: Greenland SID and DECONTO skip years with $T = 0$ exactly (lines 412, 510).
+- **No bounds checks** on the table lookups, and `MAX(0, ...)` guards in place of volume conservation checks.
+- **Stale defaults**: the tuning files override most of `MAGCFG_DEFAULTALL.CFG`,
+  so the configuration file does not show the values a run uses.
+
+### Scientific limitations
+
+- **Simple parameterisations** in place of ice sheet models.
+  SMB has no elevation feedback, and glaciers have no hypsometry.
+- **Antarctic instability**: DECONTO's fast rate is a threshold approximation of marine ice cliff instability,
+  and LEVERMANN has none.
+- **Glacier tables** stop at 10.3 K of warming.
+- **Global mean only**: no regional patterns, fingerprints or glacial isostatic adjustment.
+- **Uncertainty**: only Greenland SID has low and high cases.
+- **Land water** extrapolates a prescribed historical series.
+
+## Differences from MAGICC7
+
+- **Not implemented**: land water (off by default), the semi-empirical method,
+  the `FETTWEIS` and `DECONTO` alternatives, and the anomalies to 1986 to 2005 (`ZEROED_*`).
+- **Glacier normalisations**: RSCM has no `SLR_GL_NORMPARA_VOL` or `SLR_GL_NORMPARA_TEMP`, so it assumes 1.
+- **Initial ocean profile**: `ocean_temp_profile` offers the exponential (1) and CMIP5 (2) profiles.
+  MAGICC7's third option, `TEMP_OCEAN_INI_PROFILE_ONE`, is not available.
+- **Steps must be one year long.**
+
+## References
+
+### Fortran code (`sealevel.f90`)
+
+| Subroutine               | Lines   | Description                 |
+| ------------------------ | ------- | --------------------------- |
+| `sealevel_alloc`         | 73-95   | Array allocation            |
+| `sealevel_dealloc`       | 97-114  | Array deallocation          |
+| `sealevel_init`          | 116-237 | Initialisation and IRF setup |
+| `sealevel_calc`          | 239-753 | Main calculation            |
+| `sealevel_calc_semiempi` | 755-830 | Semi-empirical method       |
+
+| Component           | Lines   | Key equations                                       |
+| ------------------- | ------- | --------------------------------------------------- |
+| Thermal expansion   | 266-312 | 292-297 coefficient, 299 layer, 303-308 sum         |
+| Glaciers            | 319-373 | 364-371 Wigley and Raper                            |
+| GIS SMB (default)   | 383-391 | 386-391                                             |
+| GIS SMB (Fettweis)  | 396-401 | 396-401                                             |
+| GIS SID             | 409-483 | 424-436 discharge, 462-474 interpolation            |
+| AIS SMB             | 492-499 | 493-498                                             |
+| AIS SID (DeConto)   | 507-570 | 522-536 discharge and fast rate, 556-561 contribution |
+| AIS SID (Levermann) | 574-666 | 618-626 forcing, 629-657 convolution                |
+| Land water          | 673-696 | 683-689 depletion, 691-693 simple                   |
+| Total               | 702-709 | Sum                                                 |
+| Datastore update    | 712-752 | Copies to the output series                         |
+
+| Declarations    | Lines |
+| --------------- | ----- |
+| Module arrays   | 5-20  |
+| Module scalars  | 21-38 |
+| File names      | 39-41 |
+| Lookup tables   | 42-49 |
+| IRF arrays      | 67-69 |
+
+| Contribution      | Configuration files                                      |
+| ----------------- | -------------------------------------------------------- |
+| Thermal expansion | `SLR_THEXP_PARAMS_*.CFG`                                 |
+| Glaciers          | `MAGTUNE_GLACIERTUNE_*.CFG`, `SLR_GL_PARAMS_*.CFG`       |
+| GIS SMB           | `MAGTUNE_GISSMBTUNE_*.CFG`                               |
+| AIS SMB           | `MAGTUNE_AISSMBTUNE_*.CFG`                               |
+| AIS SID           | `MAGTUNE_AISSIDTUNE_*.CFG`                               |
+| AIS IRF           | `SLR_AIS_SID_IRF_*_*.CFG`                                |
+| Land water        | `SLR_LANDWATER_HIGH.IN`, `SLR_LANDWATER_LOW.IN`          |
+| Historic          | `HIST_SEALEVEL_CHURCHWHITE2006_RF.IN`                    |
+
+### Literature
+
+- DeConto and Pollard (2016), for the DECONTO AIS discharge.
+- Levermann et al. (2014), for the LEVERMANN AIS discharge response functions.
+- Nick et al. (2013), for the GIS solid ice discharge.
+- Wigley and Raper (2005), for the glacier equation.
