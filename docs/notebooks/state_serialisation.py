@@ -181,6 +181,7 @@ print(f"Finished at {resumed.current_time()}")
 #   There is no API yet to change these on a restored model.
 #   To run new scenarios from a branch point,
 #   see the [Scenario Pipeline](../scenario_pipeline/) tutorial.
-# - Models containing Python components cannot be serialised yet.
+# - A Python component is saved through its `to_json()` and `from_json()` methods,
+#   so its class must be importable when the model is restored.
 # - The TOML records no format version.
 #   Treat checkpoints as tied to the RSCM version that wrote them.

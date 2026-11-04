@@ -54,9 +54,9 @@ class CarbonCycle(Component):
         self, t_current: float, t_next: float, inputs: "CarbonCycle.Inputs"
     ) -> "CarbonCycle.Outputs":
         # Type-safe access to inputs
-        emissions = inputs.emissions.current
-        temp = inputs.temperature.current  # For grids, .current returns global average
-        conc_prev = inputs.concentration.current
+        emissions = inputs.emissions.at_start()
+        temp = inputs.temperature.at_start_all()  # FourBoxSlice of regional values
+        conc_prev = inputs.concentration.at_start()
 
         # Calculate outputs
         new_conc = conc_prev + emissions * self.sensitivity
@@ -88,6 +88,7 @@ rscm.core.PythonComponent : Wrapper for using Python components in models
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
@@ -561,3 +562,24 @@ class Component(metaclass=ComponentMeta):
         Typed outputs object
         """
         raise NotImplementedError("Subclasses must implement solve()")
+
+    def to_json(self) -> str:
+        """Serialise the instance attributes for saving a model.
+
+        Override this and `from_json` when an attribute is not JSON-serialisable.
+        """
+        try:
+            return json.dumps(vars(self))
+        except TypeError as e:
+            msg = (
+                f"Cannot serialise {type(self).__qualname__}: {e}. "
+                "Override to_json() and from_json() to save this component."
+            )
+            raise TypeError(msg) from e
+
+    @classmethod
+    def from_json(cls, data: str) -> Component:
+        """Restore an instance from `to_json` output without calling `__init__`."""
+        component = cls.__new__(cls)
+        component.__dict__.update(json.loads(data))
+        return component

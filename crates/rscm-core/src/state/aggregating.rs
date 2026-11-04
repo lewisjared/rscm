@@ -640,6 +640,16 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
         }
     }
 
+    /// Get all regional values at a relative offset from the current timestep.
+    ///
+    /// Returns `None` if the resulting index is out of bounds.
+    pub fn at_offset_all(&self, offset: isize) -> Option<Vec<FloatValue>> {
+        let index = self.current_index.checked_add_signed(offset)?;
+        self.timeseries
+            .at_time_index(index)
+            .map(|values| self.aggregate_to_hemispheric(&values).to_vec())
+    }
+
     /// Get a single region's value at the start of the timestep.
     pub fn at_start(&self, region: HemisphericRegion) -> FloatValue {
         let values = self.at_start_all();
@@ -715,6 +725,16 @@ impl<'a> HemisphericWindow<'a> {
         match self {
             HemisphericWindow::Direct(w) => w.at_end_all(),
             HemisphericWindow::FromFourBox(w) => w.at_end_all(),
+        }
+    }
+
+    /// Get all regional values at a relative offset from the current timestep.
+    ///
+    /// Returns `None` if the resulting index is out of bounds.
+    pub fn at_offset_all(&self, offset: isize) -> Option<Vec<FloatValue>> {
+        match self {
+            HemisphericWindow::Direct(w) => w.at_offset_all(offset),
+            HemisphericWindow::FromFourBox(w) => w.at_offset_all(offset),
         }
     }
 
@@ -1026,6 +1046,18 @@ mod aggregating_window_tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0], 16.0); // Northern
         assert_eq!(result[1], 36.0); // Southern
+    }
+
+    #[test]
+    fn test_aggregating_four_box_to_hemispheric_at_offset_all() {
+        let ts = create_four_box_timeseries();
+        let window =
+            AggregatingFourBoxToHemisphericWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+
+        assert_eq!(window.at_offset_all(-1), Some(vec![30.0, 70.0]));
+        assert_eq!(window.at_offset_all(1), Some(vec![34.0, 74.0]));
+        assert_eq!(window.at_offset_all(-2), None);
+        assert_eq!(window.at_offset_all(2), None);
     }
 
     #[test]
