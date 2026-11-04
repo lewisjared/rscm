@@ -30,4 +30,4 @@
 - **[MAGICC Runs](magicc_runs.md)**: Run the full MAGICC7 chain or smaller MAGICC runners
 - **[MAGICC Coupled Model](notebooks/magicc_coupled_model.py)**: Couple the MAGICC components yourself
 - **[MAGICC Modules](modules/README.md)**: Module specifications and implementation status
-- **[Python API](api/rscm/)**: Full API documentation
+- **[Python API](api/rscm/index.md)**: Full API documentation

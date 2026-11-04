@@ -1,34 +1,43 @@
 # MAGICC runs
 
-`rscm.magicc` provides three runners that chain the MAGICC components on annual steps:
+`rscm.magicc` provides three runners that chain the MAGICC components on annual steps.
 
-- `run_magicc7` runs the full MAGICC7 chain from emissions with MAGICC7's packaged defaults and input files.
-  Use it to reproduce MAGICC7.
-- `run_magicc_emissions` calculates CO2, CH4 and N2O from emissions
-  with the coupled carbon cycle and chemistry.
-  All other forcing enters as a prescribed residual.
-  Use it for a small coupled chain that needs no input files and can start in any preindustrial year.
-- `run_magicc` runs prescribed concentrations through GHG forcing, a forcing sum and ClimateUDEB.
-  An optional partial emissions mode calculates CO2 with CO2Budget from prescribed land and ocean uptake.
-  Use it for forcing and climate experiments.
+| Runner                 | Couples                                                | Emissions per       | Returns        | Tested against MAGICC7 |
+| ---------------------- | ------------------------------------------------------ | ------------------- | -------------- | ---------------------- |
+| `run_magicc7`          | The full MAGICC7 chain, with its input files           | year                | `Model`        | Yes                    |
+| `run_magicc_emissions` | Chemistry, carbon cycle, GHG forcing and climate       | interval            | `MAGICCResult` | No                     |
+| `run_magicc`           | GHG forcing and climate from prescribed concentrations | interval (CO2 only) | `MAGICCResult` | No                     |
+
+- Use `run_magicc7` to reproduce MAGICC7.
+- Use `run_magicc_emissions` for a small coupled chain that needs no input files
+  and can start in any preindustrial year.
+  All forcing outside CO2, CH4 and N2O enters as a prescribed residual.
+- Use `run_magicc` for forcing and climate experiments.
+  An optional partial emissions mode calculates CO2 with `CO2Budget` from prescribed land and ocean uptake.
+
+/// note | Emissions per year or per interval
+`run_magicc7` takes one emission value per year label.
+The two smaller runners take one annual mean rate per interval between labels,
+so their emissions arrays are one shorter than `years`.
+///
 
 The [coupled MAGICC model](notebooks/magicc_coupled_model.py) tutorial wires the components in by hand.
 The [module specifications](modules/README.md) describe each MAGICC7 module and its implementation status.
-For an offline SSP245 concentration-driven comparison of `run_magicc` and its interpretation limits,
+For an offline SSP2-4.5 concentration-driven comparison of `run_magicc` and its interpretation limits,
 see the [concentration baseline](magicc_baseline.md).
 
 ## Full MAGICC7 chain
 
-`rscm.magicc.full.run_magicc7` couples every MAGICC7 component RSCM implements:
+`rscm.magicc.run_magicc7` couples every MAGICC7 component RSCM implements:
 chemistry, the carbon cycle, permafrost, GHG and ozone forcing, forcing aggregation
 with efficacies and regional patterns, and ClimateUDEB with monthly volcanic forcing.
 
 ```python
 import numpy as np
-from rscm.magicc import full, prescribed
+from rscm.magicc import full, prescribed, run_magicc7
 
 years = np.arange(1750.0, 2101.0)
-# A linear ramp stands in for a scenario such as MAGICC7's SSP245 emissions.
+# A linear ramp stands in for a scenario such as MAGICC7's SSP2-4.5 emissions.
 ramp = np.linspace(0.1, 1.0, len(years))
 emissions = {
     f"{species}|{sector}": ramp
@@ -37,7 +46,7 @@ emissions = {
 }
 emissions |= {species: np.zeros(len(years)) for species in full.halocarbon_species()}
 
-model = full.run_magicc7(years, emissions, parameters={"core_climatesensitivity": 3.0})
+model = run_magicc7(years, emissions, parameters={"core_climatesensitivity": 3.0})
 timeseries = model.timeseries()
 co2 = timeseries.get_timeseries_by_name("Atmospheric Concentration|CO2").values()
 boxes = timeseries.get_fourbox_timeseries_by_name("Surface Temperature").values()
@@ -56,11 +65,16 @@ The run returns the `Model` after its last step.
 Read outputs from `model.timeseries()`.
 Surface temperature and other regional variables are four-box timeseries
 in northern ocean, northern land, southern ocean, southern land order.
+Their area weights are always MAGICC7's default land fractions, 42% of the northern hemisphere
+and 21% of the southern, as `prescribed.area_fractions()` gives.
+Overriding the `ClimateUDEB` land fractions through `component_parameters` does not change them.
 
 The keyword arguments override MAGICC7's setup:
 
 - `parameters` takes MAGICC7 configuration names in lower case, such as `core_climatesensitivity`.
   `full.default_parameters()` gives MAGICC7 v7.5.3's defaults for every name the chain reads.
+  Names the chain does not read are ignored without a warning, so a misspelt name changes nothing
+  ([#162](https://github.com/lewisjared/rscm/issues/162)).
 - `initial_concentrations` overrides MAGICC7's 1750 concentrations,
   which `full.default_initial_concentrations()` gives.
 - `component_parameters` overrides the Rust parameters of single components, keyed by component name
@@ -88,7 +102,8 @@ With every switch year at or before the first year, the chain runs from emission
 
 `run_magicc7` maps these MAGICC7 switches:
 
-- `core_co2ch4n2o_rfmethod` selects OLBL or IPCCTAR GHG forcing.
+- `core_co2ch4n2o_rfmethod` selects the GHG forcing formulas:
+  OLBL (after Etminan et al., 2016, the default) or IPCCTAR (from the IPCC Third Assessment Report).
   With IPCCTAR it applies no rapid adjustment, because MAGICC7 ignores `core_rfrapidadjust_*` there.
 - `co2_fertilization_method` and `co2_plantboxresp_fertscale` set CO2 fertilisation.
 - `co2_feedbackfactor_*` and `co2_tempfeedback_switch` set the carbon cycle temperature feedbacks.
@@ -109,21 +124,29 @@ They then read `Emissions|CH4|Permafrost` and `Emissions|CO2|Permafrost`.
 
 ### Agreement with MAGICC7
 
-`tests/regression/test_full_run.py` compares `run_magicc7` with MAGICC7 v7.5.3 SSP245 runs
-from 1750 to 2105.
-It checks four-box temperature, CO2, CH4 and N2O concentrations and total ERF
-at a relative tolerance of 1e-9 and an absolute tolerance of 1e-12.
-This checks scientific parity rather than bit-for-bit agreement.
+`tests/regression/test_full_run.py` compares `run_magicc7` with MAGICC7 v7.5.3 runs of SSP2-4.5 emissions
+in every year from 1750 to 2105.
+It checks four-box surface temperature, the CO2, CH4 and N2O concentrations and total ERF
+at a relative tolerance of 1e-9 and an absolute tolerance of 1e-12, set in `tests/regression/full_run.py`.
+The tolerance asks for scientific parity rather than bit-for-bit agreement,
+but most cases currently agree to the last bit.
 The coupled cases are:
 
 - MAGICC7's default run, which prescribes concentrations until 2015 and includes permafrost.
   This case also checks every halocarbon concentration.
 - The emissions-driven run with every switch year at 1750, with and without permafrost.
-- 15 variants of the run without permafrost, each changing one climate, efficacy or method switch.
-  `VARIANTS` in `tests/regression/full_run.py` lists them.
 - The emissions-driven run with nitrogen limitation and deposition from emissions.
   Its nitrogen pool, limitation factor and NPP agree within a relative 1e-4,
   because MAGICC7 writes them only at ASCII precision.
+- 15 variants of the emissions-driven run without permafrost,
+  each changing one climate, efficacy or method switch.
+  `VARIANTS` in `tests/regression/full_run.py` lists them.
+
+In the default, emissions-driven and permafrost runs, temperature, concentrations and total ERF
+match MAGICC7 to the last bit in every year.
+So do temperature and concentrations in the nitrogen-limited run.
+Seven of the 15 variants also match to the last bit.
+The others stay within 7.1e-15 K in temperature and a relative 1.4e-15 in concentrations.
 
 The bisection on the nitrogen pool makes the nitrogen-limited run chaotic in MAGICC7 too:
 a 1e-13 relative change in one year's emissions moves CO2 by 0.03 ppm.
@@ -131,6 +154,8 @@ a 1e-13 relative change in one year's emissions moves CO2 by 0.03 ppm.
 The same file also drives single components with MAGICC7's own inputs,
 so a difference points at that component alone.
 `tests/regression/test_sea_level.py` checks each sea level contribution of the `out_sealevel=1` run.
+Only SSP2-4.5 and these configurations have a reference run.
+Other scenarios and parameter sets use the same code without a MAGICC7 comparison.
 
 ## Emissions-driven run
 

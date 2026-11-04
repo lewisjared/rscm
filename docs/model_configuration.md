@@ -1,7 +1,7 @@
-# RSCM Configuration
+# Configuration Layer
 
-This document describes the TOML-based configuration layer for RSCM models.
-The API is still a WIP as we figure out how best to serialise and build models
+The configuration layer describes RSCM models in TOML files.
+The API is still a work in progress as we figure out how best to serialise and build models
 and their configuration.
 
 ## Overview
@@ -15,19 +15,15 @@ The configuration layer provides:
 
 ## Quick Start
 
-```python
-from rscm.config import load_config, build_model
+/// warning | Work in progress
+`build_model(config)` builds the time axis and components and sets zero initial values,
+but it does not yet read the `[inputs]` or `[initial_values]` tables.
+A model built from `configs/two-layer/defaults.toml` therefore has no forcing, and its temperatures are NaN.
+///
 
-# Load and build a model from TOML
-config = load_config("configs/two-layer/defaults.toml")
-model = build_model(config)
-model.run()
-```
-
-`build_model` builds the time axis and components and sets zero initial values.
-It does not yet read the `[inputs]` or `[initial_values]` tables.
-A model built from `defaults.toml` therefore has no forcing, and its temperatures are NaN.
-To drive the model with data, take the parameters from the config and assemble the model with `ModelBuilder`:
+Until `build_model` reads inputs, take the parameters and time axis from the config
+and assemble the model with `ModelBuilder`.
+Run this from the repository root, where the example configs live:
 
 ```python
 import numpy as np
@@ -50,29 +46,6 @@ model = (
     .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
 ).build()
 model.run()
-```
-
-## Architecture
-
-```text
-rscm.config
-├── __init__.py          # Public API exports
-├── base.py              # Base classes: ModelConfig, TimeConfig, InputSpec
-├── builder.py           # Model construction from config
-├── docs.py              # Documentation generation
-├── exceptions.py        # Custom exception hierarchy
-├── loader.py            # TOML loading and merging
-├── parameters.py        # Parameter metadata system
-├── registry.py          # Component builder registry
-├── validation.py        # Schema version and validation
-└── models/
-    ├── __init__.py
-    ├── two_layer.py     # Two-layer model config
-    └── magicc/
-        ├── __init__.py
-        ├── config.py    # MAGICC config classes
-        ├── legacy.py    # Legacy format conversion
-        └── parameters.py # MAGICC parameter registry
 ```
 
 ## Configuration File Format
@@ -115,13 +88,15 @@ heat_capacity_deep = 100.0    # Deep ocean (W yr/(m² K))
 
 | Key | Description |
 |-----|-------------|
-| `schema` | Configuration schema version |
+| `schema` | Accepted, but nothing reads it |
 | `model` | Model metadata (name, type, version) |
 | `time` | Time axis configuration |
 | `components` | Component definitions and parameters |
 | `inputs` | Input data file specifications |
 | `outputs` | Output specifications |
 
+The shipped configs record their schema version as `config_schema` under `[model]`,
+and `ModelConfig` has a matching `config_schema` field.
 Unknown top-level keys are logged as a warning and ignored.
 `initial_values` is not yet a known key, so the `[initial_values]` table in `defaults.toml` logs a warning.
 `load_config` does not check the schema version.
@@ -160,6 +135,26 @@ efficacy = 1.3   # Higher efficacy
 - Nested dicts merge recursively
 - Lists and scalar values are replaced (not concatenated)
 - Override values take precedence
+
+## Programmatic Configuration
+
+The TOML examples above live in `configs/two-layer/`.
+Configurations can also be built in Python and passed to `build_model`,
+with the limitation described in the [Quick Start](#quick-start):
+
+```python
+from rscm.config.base import TimeConfig
+from rscm.config.models.two_layer import TwoLayerConfig, TwoLayerParameters
+
+config = TwoLayerConfig(
+    name="my-experiment",
+    time=TimeConfig(start=1850, end=2100),
+    climate=TwoLayerParameters(
+        lambda0=0.8,
+        efficacy=1.2,
+    ),
+)
+```
 
 ## Parameter Metadata System
 
@@ -304,16 +299,13 @@ The builder:
 5. Sets zero initial values for the state variables
 6. Assembles and returns the model
 
+It adds no exogenous inputs yet, as the [Quick Start](#quick-start) warns.
+
 `build_model` only supports `type = "two-layer"` and raises `ValueError` for any other model type.
 `MAGICCConfig` in `rscm.config.models.magicc` describes MAGICC parameters,
 but cannot yet be built into a model.
-Use `rscm.magicc.full.run_magicc7` for full MAGICC7 runs.
+`rscm.magicc.full.run_magicc7` runs the full MAGICC7 chain without the config layer.
 See [MAGICC Runs](magicc_runs.md#full-magicc7-chain).
-Its `parameters` argument takes MAGICC7's own configuration names in lower case,
-such as `core_climatesensitivity` or `pf_apply`, so legacy `.CFG` values can be passed straight through.
-`rscm.magicc.full.default_parameters()` lists every name the chain reads with MAGICC7 v7.5.3's defaults.
-Names the chain does not read are ignored.
-`run_magicc7` does not use the RSCM config layer or the nested paths from `from_legacy_dict`.
 
 ## Legacy Format Support (MAGICC)
 
@@ -423,13 +415,7 @@ ConfigError (base)
 ```
 
 ```python
-from rscm.config import (
-    ConfigError,
-    ValidationError,
-    IncompatibleSchemaError,
-    ComponentNotFoundError,
-    component_registry,
-)
+from rscm.config import ComponentNotFoundError, component_registry
 
 try:
     builder = component_registry.get("UnknownComponent")
@@ -440,84 +426,7 @@ except ComponentNotFoundError as e:
 
 ## API Reference
 
-### Loading Functions
-
-| Function | Description |
-|----------|-------------|
-| `load_config(path)` | Load single TOML file |
-| `load_config_layers(*paths)` | Load and merge multiple TOML files |
-| `deep_merge(base, override)` | Deep merge two dicts |
-
-### Building Functions
-
-| Function | Description |
-|----------|-------------|
-| `build_model(config)` | Build model from config (dispatches by type) |
-| `build_two_layer_model(config)` | Build two-layer model specifically |
-
-### Parameter Functions
-
-| Function | Description |
-|----------|-------------|
-| `parameter(...)` | Create dataclass field with metadata |
-| `get_parameter_metadata(cls)` | Extract metadata from dataclass |
-| `validate_parameters(instance)` | Validate instance against metadata |
-
-### Documentation Functions
-
-| Function | Description |
-|----------|-------------|
-| `generate_parameter_docs(cls)` | Generate markdown documentation |
-| `export_parameter_json(cls)` | Export metadata as JSON |
-
-### Registry Functions
-
-| Function | Description |
-|----------|-------------|
-| `register_component(name)` | Decorator to register component |
-| `component_registry.register(name, cls)` | Direct registration |
-| `component_registry.get(name)` | Look up builder by name |
-| `component_registry.list()` | List all registered names |
-| `component_registry.is_registered(name)` | Check if registered |
-
-### Validation Functions
-
-`parse_semver` and `find_unknown_keys` live in `rscm.config.validation`.
-
-| Function | Description |
-|----------|-------------|
-| `check_schema_version(config, loader)` | Check version compatibility |
-| `parse_semver(version)` | Parse "MAJOR.MINOR.PATCH" string |
-| `find_unknown_keys(data, known)` | Find keys not in known set |
-
-## Two-Layer Model Parameters
-
-The two-layer energy balance model (Held et al., 2010) uses these parameters:
-
-| Parameter | Unit | Default | Range | Description |
-|-----------|------|---------|-------|-------------|
-| `lambda0` | W/(m² K) | 1.0 | [0.1, 5.0] | Climate feedback at zero warming |
-| `a` | W/(m² K²) | 0.0 | [0.0, 1.0] | Nonlinear feedback coefficient |
-| `efficacy` | - | 1.0 | [0.5, 3.0] | Ocean heat uptake efficacy |
-| `eta` | W/(m² K) | 0.7 | [0.1, 2.0] | Heat exchange coefficient |
-| `heat_capacity_surface` | W yr/(m² K) | 8.0 | [1.0, 50.0] | Surface layer heat capacity |
-| `heat_capacity_deep` | W yr/(m² K) | 100.0 | [10.0, 500.0] | Deep ocean heat capacity |
-
-## Programmatic Configuration
-
-The TOML examples above live in `configs/two-layer/`.
-Configurations can also be built in Python and passed to `build_model`:
-
-```python
-from rscm.config.base import TimeConfig
-from rscm.config.models.two_layer import TwoLayerConfig, TwoLayerParameters
-
-config = TwoLayerConfig(
-    name="my-experiment",
-    time=TimeConfig(start=1850, end=2100),
-    climate=TwoLayerParameters(
-        lambda0=0.8,
-        efficacy=1.2,
-    ),
-)
-```
+The [`rscm.config` API](api/rscm/config/index.md) documents every function and class on this page.
+`TwoLayerParameters` in [`rscm.config.models.two_layer`](api/rscm/config/models/two_layer/index.md)
+holds the two-layer defaults and valid ranges,
+and the [TwoLayer component page](components/twolayer.md) describes its physics.
