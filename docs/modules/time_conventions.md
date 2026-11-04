@@ -12,10 +12,11 @@ receives forcing at both boundaries and returns temperature at `t_next`.
 ## Sub-Annual Stepping
 
 ClimateUDEB divides each annual timestep into 12 monthly substeps (matching
-MAGICC7's `STEPSPERYEAR = 12`). The substep loop runs from step 1 to step 12:
+MAGICC7's `STEPSPERYEAR = 12`).
+The substep loop runs from step 1 to step 12, or from step 0 in the first year:
 
 ```rust
-for step_idx in 1..=self.parameters.steps_per_year {
+for step_idx in first_step..=self.parameters.steps_per_year {
     let frac = step_idx as FloatValue / steps;
     let erf = erf_start + frac * (erf_end - erf_start);
     // ... solve ocean diffusion-advection ...
@@ -66,7 +67,8 @@ MAGICC7 produces two temperature variables:
 - `DAT_SURFACE_ANNUALMEANTEMP`: Arithmetic mean of the 12 substep temperatures
   within the year.
 
-RSCM outputs point-in-time values, matching `DAT_SURFACE_TEMP`. Annual means
-are not currently computed.
+RSCM outputs point-in-time values, matching `DAT_SURFACE_TEMP`.
+When `thermal_expansion` is set, `ClimateUDEB` also writes `Surface Temperature|Annual Mean`,
+matching `DAT_SURFACE_ANNUALMEANTEMP`.
 
 Reference: MAGICC7.f90 lines 3426-3464

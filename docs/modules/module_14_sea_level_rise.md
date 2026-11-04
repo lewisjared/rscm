@@ -55,9 +55,8 @@ Checking against MAGICC7 output corrected this specification in several places:
 - **Thermal expansion weighting**: each layer's temperature is the mean of the hemispheres weighted by
   their ocean area in that layer (`FGO(hemi) * OCN_AREAFACTOR_AVERAGE(hemi, L)`).
   The layer expansion is weighted by the mean of the two hemispheres' layer areas, and the surface area is 1.
-- **Pressure profile**: `PPL` follows `p = 0.955506 z + 4.17274e-3 z^2 - 3.70851e-4 z^3 + 1.73615e-5 z^4`
-  at the layer centre (`z` in km).
-  This is fitted to MAGICC7 output, which documents no formula.
+- **Pressure profile**: `PPL` at the layer centre depth `z` (m) is
+  `0.0098 * (10.5 * (exp(-z / 3500) - 1) + 0.1005 z)`.
 - **Levermann AIS SID**: a region starts `DT` years after `SLR_AIS_SID_STARTYEAR`.
   Its forcing is `TEMPSCALING * BASALMELT * (T(t) - T(region start))`,
   and the contribution is the full convolution of that forcing with the response from the region's start.

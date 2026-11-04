@@ -107,7 +107,8 @@ MAGICC supports two efficacy frameworks:
 
 #### 3.1 Prescribed Efficacies (RF_EFFICACY_*)
 
-User-specified efficacy factors for each agent. Applied when `RF_EFFICACY_APPLY = 1`.
+User-specified efficacy factors for each agent.
+Applied when `RF_EFFICACY_APPLY = 2`, divided by the agent's internal efficacy.
 
 **Configuration Parameters:**
 
@@ -211,7 +212,8 @@ because Gauss-Jordan elimination differs in the last bit and shifts some interna
 ```fortran
 RF_EFFICACY_APPLY  ! Integer flag
 ! 0 = No efficacies applied (EFFRF = RF)
-! 1 = Apply prescribed efficacies
+! 1 = Divide by the internal efficacy, so every agent has unit efficacy
+! 2 = Apply the prescribed efficacy over the internal efficacy (default)
 ```
 
 ---

@@ -203,6 +203,12 @@ impl ClimateUDEB {
             )));
         }
 
+        if parameters.steps_per_year == 0 {
+            return Err(RSCMError::Error(
+                "invalid steps_per_year: must be >= 1, got 0".to_string(),
+            ));
+        }
+
         if !parameters.prescribed_efficacy_co2.is_finite()
             || parameters.prescribed_efficacy_co2 <= 0.0
         {
@@ -1719,6 +1725,15 @@ mod tests {
             "Higher prescribed efficacy should produce more warming: \
              presc=1.0: {sst_2a}, presc=1.1: {sst_2b}"
         );
+    }
+
+    #[test]
+    fn test_zero_steps_per_year_rejected() {
+        let params = ClimateUDEBParameters {
+            steps_per_year: 0,
+            ..Default::default()
+        };
+        assert!(ClimateUDEB::from_parameters(params).is_err());
     }
 
     #[test]

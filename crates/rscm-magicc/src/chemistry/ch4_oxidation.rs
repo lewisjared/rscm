@@ -26,7 +26,7 @@
 //! The fossil share counts the fossil pool and `permafrost_fraction` of the permafrost pool.
 
 use crate::parameters::CH4OxidationParameters;
-use crate::reference::{permafrost_emissions, PERMAFROST_CH4};
+use crate::reference::{permafrost_emissions, require_annual, PERMAFROST_CH4};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
@@ -151,10 +151,11 @@ impl Component for CH4Oxidation {
 
     fn solve(
         &self,
-        _t_current: Time,
-        _t_next: Time,
+        t_current: Time,
+        t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
+        require_annual("CH4Oxidation", t_current, t_next)?;
         let inputs = CH4OxidationInputs::from_input_state(input_state);
         let start = inputs.concentration.at_start();
         let pools = CH4Pools {

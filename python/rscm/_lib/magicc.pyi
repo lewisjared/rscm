@@ -29,7 +29,7 @@ Forcing:
 - AerosolIndirectBuilder: Indirect aerosol cloud effects
 """
 
-from typing import Any, Literal, TypeAlias, TypedDict, final
+from typing import Any, Literal, NotRequired, TypeAlias, TypedDict, final
 
 from rscm._lib.core import Component, ComponentBuilder
 
@@ -539,7 +539,7 @@ class N2OChemistryBuilder(ComponentBuilder):
     def build(self) -> Component:
         """Build the N2O chemistry component."""
 
-class HalocarbonSpecies(TypedDict, total=False):
+class HalocarbonSpecies(TypedDict):
     """A halocarbon species. Lifetimes in yr, radiative efficiency in W/m²/ppb."""
 
     name: str
@@ -552,7 +552,7 @@ class HalocarbonSpecies(TypedDict, total=False):
     n_cl: int
     n_br: int
     fractional_release: float
-    mix_box_size: float
+    mix_box_size: NotRequired[float]
 
 class FgasRegions(TypedDict, total=False):
     """Regional pattern of F-gas forcing.
