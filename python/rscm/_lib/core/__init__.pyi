@@ -695,3 +695,44 @@ class Model:
         -------
         New model object with the state as defined in the TOML string.
         """
+
+def build_models(
+    builders: list[ModelBuilder], *, threads: int | None = None
+) -> list[Model]:
+    """
+    Build every builder in parallel, in input order.
+
+    Parameters
+    ----------
+    builders
+        Builders to build. Each is left unchanged and can be built again.
+    threads
+        Number of threads, or None for one per core.
+
+    Raises
+    ------
+    ValueError
+        If a builder fails, naming the first that did.
+    """
+
+def run_models(models: list[Model], *, threads: int | None = None) -> None:
+    """
+    Run every model to completion in parallel.
+
+    Each model runs independently, so the results are the same as running them in turn.
+    Python components hold the GIL while they solve, so they run one at a time.
+
+    Parameters
+    ----------
+    models
+        Models to run. A model may appear only once.
+    threads
+        Number of threads, or None for one per core.
+
+    Raises
+    ------
+    RuntimeError
+        If a model fails, naming the first that did.
+        The other models still run to completion.
+        Rebuild the failed ones before retrying.
+    """

@@ -226,6 +226,25 @@ Rebuild the model before retrying.
 An exception raised inside a Python component's `solve()` also surfaces as `RuntimeError`,
 with the component name, timestep and Python traceback in the message.
 
+### Running Many Models
+
+`build_models` and `run_models` build and run a list of models in parallel on a rayon thread pool,
+for ensembles of parameter sets or scenarios:
+
+```python
+from rscm.core import build_models, run_models
+
+models = build_models([make_builder(p) for p in parameter_sets])
+run_models(models)
+```
+
+Each model owns its state, so the results are the same as running the models in turn.
+`threads` limits the thread count, and the default is one thread per core.
+Python components hold the GIL while they solve, so models with Python components gain less.
+`run_models` runs every model even when one fails,
+then raises `RuntimeError` naming the first that failed.
+In Rust, `rscm_core::model::build_models` and `run_models` return one result per model.
+
 ### Exogenous vs Endogenous Variables
 
 | Variable Type  | Source                       | Example                                 |

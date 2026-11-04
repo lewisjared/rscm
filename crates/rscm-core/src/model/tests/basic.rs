@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::iter::zip;
 use std::sync::Arc;
 
-fn get_emissions() -> Timeseries<FloatValue> {
+pub(super) fn get_emissions() -> Timeseries<FloatValue> {
     let values = array![0.0, 10.0].insert_axis(Axis(1));
     Timeseries::new(
         values,

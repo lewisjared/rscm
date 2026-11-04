@@ -1224,6 +1224,7 @@ dependencies = [
  "petgraph",
  "pyo3",
  "pythonize",
+ "rayon",
  "rscm-macros",
  "serde",
  "serde_json",

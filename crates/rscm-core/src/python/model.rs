@@ -1,4 +1,5 @@
-use crate::model::{Model, ModelBuilder};
+use crate::errors::RSCMResult;
+use crate::model::{self, Model, ModelBuilder};
 use crate::python::component::PyPythonComponent;
 use crate::python::timeseries::{PyFourBoxTimeseries, PyTimeAxis, PyTimeseries};
 use crate::python::timeseries_collection::PyTimeseriesCollection;
@@ -265,4 +266,65 @@ impl PyModel {
             Err(e) => Err(PyValueError::new_err(format!("{}", e))),
         }
     }
+}
+
+/// Run `work` on a pool of `threads` threads, or on rayon's global pool.
+fn on_pool<R: Send>(threads: Option<usize>, work: impl FnOnce() -> R + Send) -> PyResult<R> {
+    match threads {
+        None => Ok(work()),
+        Some(0) => Err(PyValueError::new_err("threads must be at least 1")),
+        Some(n) => rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build()
+            .map(|pool| pool.install(work))
+            .map_err(|e| PyRuntimeError::new_err(e.to_string())),
+    }
+}
+
+/// Unwrap per-model results, or raise `error` with the failure count and the first failure.
+fn all_ok<T>(
+    results: Vec<RSCMResult<T>>,
+    action: &str,
+    error: fn(String) -> PyErr,
+) -> PyResult<Vec<T>> {
+    let failed = results.iter().filter(|r| r.is_err()).count();
+    let total = results.len();
+    results
+        .into_iter()
+        .enumerate()
+        .map(|(i, result)| {
+            result.map_err(|e| {
+                error(format!(
+                    "{failed} of {total} models failed to {action}. Model {i}: {e}"
+                ))
+            })
+        })
+        .collect()
+}
+
+/// Build every builder in parallel, raising ValueError for the first that fails.
+#[pyfunction]
+#[pyo3(name = "build_models", signature = (builders, *, threads = None))]
+pub fn py_build_models(
+    py: Python<'_>,
+    builders: Vec<PyRef<'_, PyModelBuilder>>,
+    threads: Option<usize>,
+) -> PyResult<Vec<PyModel>> {
+    let builders: Vec<&ModelBuilder> = builders.iter().map(|b| &b.0).collect();
+    let results = py.detach(|| on_pool(threads, || model::build_models(&builders)))?;
+    let models = all_ok(results, "build", PyValueError::new_err::<String>)?;
+    Ok(models.into_iter().map(PyModel).collect())
+}
+
+/// Run every model in parallel, raising RuntimeError for the first that fails.
+#[pyfunction]
+#[pyo3(name = "run_models", signature = (models, *, threads = None))]
+pub fn py_run_models(
+    py: Python<'_>,
+    mut models: Vec<PyRefMut<'_, PyModel>>,
+    threads: Option<usize>,
+) -> PyResult<()> {
+    let mut refs: Vec<&mut Model> = models.iter_mut().map(|m| &mut m.0).collect();
+    let results = py.detach(|| on_pool(threads, || model::run_models(&mut refs)))?;
+    all_ok(results, "run", PyRuntimeError::new_err::<String>).map(|_| ())
 }
