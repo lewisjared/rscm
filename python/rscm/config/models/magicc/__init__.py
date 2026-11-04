@@ -2,6 +2,7 @@
 MAGICC model configuration and legacy format support.
 
 This package provides:
+
 - MAGICCConfig: Configuration class for MAGICC models
 - Legacy .CFG format import/export
 - Parameter registry with support status tracking

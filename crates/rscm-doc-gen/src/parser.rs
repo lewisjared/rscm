@@ -82,14 +82,22 @@ fn parse_component_struct(
     let struct_name = item.ident.to_string();
     let struct_docs = extract_doc_comments(&item.attrs);
 
-    // Combine module docs and struct docs for description
-    let combined_docs = if module_docs.is_empty() {
-        struct_docs.clone()
-    } else if struct_docs.is_empty() {
-        module_docs.to_string()
+    // The page heading names the component, so the summary lines that title each doc block repeat it.
+    let module_body = drop_summary_line(module_docs);
+    let struct_body = if module_docs.is_empty() {
+        struct_docs.as_str()
     } else {
-        format!("{}\n\n{}", module_docs, struct_docs)
+        drop_summary_line(&struct_docs)
     };
+    // Both introductions come before any section, so the struct's does not read as part of the last one.
+    let (module_intro, module_sections) = split_intro(module_body);
+    let (struct_intro, struct_sections) = split_intro(struct_body);
+    let combined_docs = [module_intro, struct_intro, module_sections, struct_sections]
+        .iter()
+        .map(|docs| docs.trim())
+        .filter(|docs| !docs.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
 
     let mut metadata = ComponentDocMetadata {
         name: struct_name.clone(),
@@ -138,6 +146,29 @@ fn parse_component_struct(
     }
 
     Some(metadata)
+}
+
+/// Drop a doc block's summary line when it is a one-line paragraph followed by more text
+fn drop_summary_line(docs: &str) -> &str {
+    match docs.split_once("\n\n") {
+        Some((summary, rest)) if !summary.contains('\n') => rest.trim_start(),
+        _ => docs,
+    }
+}
+
+/// Split docs into the text before the first heading and the sections from it on
+fn split_intro(docs: &str) -> (&str, &str) {
+    let mut in_fence = false;
+    let mut offset = 0;
+    for line in docs.split_inclusive('\n') {
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+        } else if !in_fence && line.starts_with('#') {
+            return docs.split_at(offset);
+        }
+        offset += line.len();
+    }
+    (docs, "")
 }
 
 /// Parse #[component(tags = [...], category = "...")] attribute
@@ -302,6 +333,29 @@ mod tests {
             infer_module_path(path),
             "rscm_components::components::carbon_cycle"
         );
+    }
+
+    #[test]
+    fn test_drop_summary_line() {
+        assert_eq!(
+            drop_summary_line("CH4 Chemistry Component\n\nSimulates methane."),
+            "Simulates methane."
+        );
+        assert_eq!(
+            drop_summary_line("Two lines\nof summary\n\nBody"),
+            "Two lines\nof summary\n\nBody"
+        );
+        assert_eq!(drop_summary_line("Only a summary"), "Only a summary");
+    }
+
+    #[test]
+    fn test_split_intro() {
+        let docs = "Intro\n\n```rust\n# hidden\n```\n\n# Section\n\nBody";
+        assert_eq!(
+            split_intro(docs),
+            ("Intro\n\n```rust\n# hidden\n```\n\n", "# Section\n\nBody")
+        );
+        assert_eq!(split_intro("No sections"), ("No sections", ""));
     }
 
     #[test]

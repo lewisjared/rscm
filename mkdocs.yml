@@ -1,7 +1,8 @@
 site_name: RSCM
 site_description: Simple Climate Model built in Rust
-site_url: https://lewisjared.github.io/rscm
-edit_uri: blob/master/docs/
+# Read the Docs sets this per version, so notebook download links resolve there.
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://rscm.readthedocs.io/en/latest/"]
+edit_uri: blob/main/docs/
 
 repo_name: lewisjared/rscm
 repo_url: https://github.com/lewisjared/rscm
@@ -27,12 +28,6 @@ theme:
       toggle:
         icon: material/brightness-7
         name: Switch to light mode
-
-# Enable versioned doc builds
-# Using {major}.{minor}, latest and dev releases
-extra:
-  version:
-    provider: mike
 
 extra_css:
   - stylesheets/style.css
@@ -69,9 +64,8 @@ plugins:
       # Use filenames for titles
       ignore_h1_titles: True
       include: ["*.py"]
-      execute: true
-      # Toggle off for faster builds
-      # execute: false
+      # DOCS_EXECUTE=false skips notebook execution for faster builds
+      execute: !ENV [DOCS_EXECUTE, true]
       allow_errors: false
       # theme: dark
       include_source: True
@@ -100,7 +94,12 @@ plugins:
           options:
             docstring_style: numpy
             show_root_heading: true
-            show_source: true
+            heading_level: 1
+            show_source: false
+            show_if_no_docstring: true
+            merge_init_into_class: true
+            summary: true
+            scoped_crossrefs: true
   # https://squidfunk.github.io/mkdocs-material/plugins/search/
   - search
   # https://oprypin.github.io/mkdocs-section-index/
@@ -110,9 +109,6 @@ plugins:
       minify_html: true
       minify_js: true
       minify_css: true
-  # https://github.com/jimporter/mike
-  - mike:
-      alias_type: copy
 
 markdown_extensions:
   # https://squidfunk.github.io/mkdocs-material/setup/extensions/python-markdown/#attribute-lists

@@ -1,3 +1,7 @@
+# Rust Tips
+
+These tips cover IDE setup for working on the Rust and Python code together.
+
 ## RustRover setup
 
 [RustRover](https://www.jetbrains.com/rust/) is the Pycharm equivalent for Rust
@@ -38,7 +42,7 @@ To ensure the `.py` files and the `.pyi` files are formatted and linted on save,
 a new file watcher can be added with the following settings to run `ruff` via `uv`
 on a changed file:
 
-![Recommended RustRover Linter settings](images/rr_ruff_filewatcher.png)
+![Ruff file watcher settings in RustRover](images/rr_ruff_filewatcher.png)
 
 A new "Scope" should be created with the following filter:
 

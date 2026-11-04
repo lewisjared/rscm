@@ -48,6 +48,7 @@ def create_tqdm_callback(total: int, desc: str = "Sampling", **tqdm_kwargs):
     Notes
     -----
     The callback displays:
+
     - Current iteration / total iterations
     - Percentage complete
     - Estimated time remaining

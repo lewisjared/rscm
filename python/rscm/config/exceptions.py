@@ -2,6 +2,7 @@
 Custom exceptions for RSCM configuration.
 
 This module defines the exception hierarchy for configuration errors:
+
 - ConfigError: Base exception for all config errors
 - ValidationError: Type mismatches, missing required fields
 - IncompatibleSchemaError: Schema version mismatch

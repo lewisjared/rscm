@@ -3,16 +3,17 @@
 This module provides component builders for MAGICC-derived climate processes,
 organised by domain:
 
-- Climate: ClimateUDEBBuilder (upwelling-diffusion energy balance),
-  SeaLevelRiseBuilder
-- Chemistry: CH4ChemistryBuilder, CH4OxidationBuilder, N2OChemistryBuilder,
-  HalocarbonChemistryBuilder
-- Carbon: TerrestrialCarbonBuilder, OceanCarbonBuilder, CO2BudgetBuilder,
-  PermafrostBuilder
-- Forcing: GhgForcingBuilder, OzoneForcingBuilder, AerosolDirectBuilder,
-  AerosolIndirectBuilder, ForcingAggregationBuilder
+- Climate: [ClimateUDEBBuilder][] (upwelling-diffusion energy balance),
+  [SeaLevelRiseBuilder][]
+- Chemistry: [CH4ChemistryBuilder][], [CH4OxidationBuilder][],
+  [N2OChemistryBuilder][], [HalocarbonChemistryBuilder][]
+- Carbon: [TerrestrialCarbonBuilder][], [OceanCarbonBuilder][],
+  [CO2BudgetBuilder][], [PermafrostBuilder][]
+- Forcing: [GhgForcingBuilder][], [OzoneForcingBuilder][], [AerosolDirectBuilder][],
+  [AerosolIndirectBuilder][], [ForcingAggregationBuilder][]
 
-`run_magicc7` runs the full MAGICC7 chain from emissions, see `rscm.magicc.full`.
+[run_magicc7][rscm.magicc.full.run_magicc7] runs the full MAGICC7 chain from
+emissions, see [rscm.magicc.full][].
 """
 
 from rscm._lib.magicc import (

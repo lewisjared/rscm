@@ -2,6 +2,7 @@
 Documentation generation from parameter metadata.
 
 This module provides:
+
 - generate_parameter_docs: Generate markdown documentation
 - export_parameter_json: Export to JSON (compatible with Rust schema)
 """

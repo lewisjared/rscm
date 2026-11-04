@@ -1,5 +1,4 @@
 {
-  "$schema": "component_metadata_schema.json",
   "name": "OceanSurfacePartialPressure",
   "module_path": "rscm_components::components::ocean_carbon_cycle::ocean_surface_partial_pressure",
   "language": "rust",

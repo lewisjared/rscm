@@ -17,7 +17,7 @@ pub enum ForcingMethod {
     /// Used for backward compatibility and simpler validation.
     Ipcctar,
 
-    /// OLBL method (Optimised Line-By-Line)
+    /// OLBL method (Oslo line-by-line)
     ///
     /// Concentration-dependent forcing coefficients calibrated against
     /// line-by-line radiative transfer calculations. This is the method

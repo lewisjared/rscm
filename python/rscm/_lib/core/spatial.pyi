@@ -55,6 +55,7 @@ class FourBoxGrid:
     MAGICC standard four-box grid structure.
 
     Divides the world into:
+
     - Northern Ocean
     - Northern Land
     - Southern Ocean
@@ -94,6 +95,7 @@ class HemisphericGrid:
     Simple north-south hemispheric split.
 
     Divides the world into:
+
     - Northern Hemisphere
     - Southern Hemisphere
     """

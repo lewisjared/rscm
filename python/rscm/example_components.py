@@ -20,7 +20,7 @@ class LinearConcentration(Component):
     - Input variables
     - State variables (read previous, write new)
     - Output variables
-    - Parameters passed to __init__
+    - Parameters passed to `__init__`
 
     $$
     C_{t+1} = C_t + E \cdot \Delta t \cdot \alpha - (C_t - C_0) \cdot \beta

@@ -42,9 +42,6 @@ pub struct ParameterMetadata {
 /// Complete metadata for a component
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentDocMetadata {
-    /// JSON schema reference
-    #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
-    pub schema: Option<String>,
     /// Component struct name (e.g., "CarbonCycle")
     pub name: String,
     /// Full module path (e.g., "rscm_components::components::carbon_cycle")
@@ -80,7 +77,6 @@ pub struct ComponentDocMetadata {
 impl Default for ComponentDocMetadata {
     fn default() -> Self {
         Self {
-            schema: Some("component_metadata_schema.json".to_string()),
             name: String::new(),
             module_path: String::new(),
             language: "rust".to_string(),

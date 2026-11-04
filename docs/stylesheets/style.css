@@ -3,6 +3,12 @@
   user-select: none;
 }
 
+/* Wide tables scroll sideways rather than split identifiers mid-word. */
+.md-typeset table:not([class]) code {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
 [data-md-color-scheme="cr-light"] {
   color-scheme: light;
 
@@ -78,4 +84,9 @@
   --md-shadow-z3:
     0 #{px2rem(4px)} #{px2rem(10px)} hsla(0, 0%, 0%, 0.4),
     0 0              #{px2rem(1px)}  hsla(0, 0%, 0%, 0.35);
+}
+
+/* Hidden setup cells with no output leave an empty box */
+.jp-Cell.celltag_remove_input.jp-mod-noOutputs {
+  display: none;
 }

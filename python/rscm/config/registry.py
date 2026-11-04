@@ -4,15 +4,16 @@ Component registry for RSCM configuration.
 This module provides a registry for component builders, enabling
 config files to reference components by name.
 
-Example:
-    >>> from rscm.config.registry import component_registry, register_component
-    >>>
-    >>> @register_component("MyComponent")
-    >>> class MyComponentBuilder:
-    ...     pass
-    >>>
-    >>> component_registry.get("MyComponent")
-    <class 'MyComponentBuilder'>
+Examples
+--------
+>>> from rscm.config.registry import component_registry, register_component
+>>>
+>>> @register_component("MyComponent")
+>>> class MyComponentBuilder:
+...     pass
+>>>
+>>> component_registry.get("MyComponent")
+<class 'MyComponentBuilder'>
 """
 
 from __future__ import annotations
@@ -35,11 +36,12 @@ class ComponentRegistry:
     Maps component names to their builder classes, enabling configuration
     files to reference components by name.
 
-    Example:
-        >>> registry = ComponentRegistry()
-        >>> registry.register("TwoLayer", TwoLayerBuilder)
-        >>> registry.get("TwoLayer")
-        <class 'TwoLayerBuilder'>
+    Examples
+    --------
+    >>> registry = ComponentRegistry()
+    >>> registry.register("TwoLayer", TwoLayerBuilder)
+    >>> registry.get("TwoLayer")
+    <class 'TwoLayerBuilder'>
     """
 
     def __init__(self) -> None:
@@ -138,10 +140,11 @@ def register_component(
     Callable[[type[ComponentBuilder]], type[ComponentBuilder]]
         Decorator that registers the class and returns it unchanged.
 
-    Example:
-        >>> @register_component("TwoLayer")
-        >>> class TwoLayerBuilder:
-        ...     pass
+    Examples
+    --------
+    >>> @register_component("TwoLayer")
+    >>> class TwoLayerBuilder:
+    ...     pass
     """
 
     def decorator(cls: type[ComponentBuilder]) -> type[ComponentBuilder]:

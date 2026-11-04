@@ -29,30 +29,15 @@ class CarbonCycleBuilder(ComponentBuilder):
     - Land uptake removes CO2 at a rate that depends on the concentration anomaly
     - The uptake rate is temperature-dependent
 
-    # Parameters
-    # ----------
-    # tau : float
-    #     Timescale of the box's response (years).
-    # conc_pi : float
-    #     Pre-industrial atmospheric CO2 concentration (ppm).
-    # alpha_temperature : float
-    #     Sensitivity of lifetime to changes in global-mean temperature (1/K).
+    **Parameter keys**
 
-    Inputs
-    ------
-    Emissions|CO2|Anthropogenic : float
-        Anthropogenic CO2 emissions (GtC/yr)
-    Surface Temperature : float
-        Global mean surface temperature anomaly (K)
+    - `tau` (`float`): Timescale of the box's response (years).
+    - `conc_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm).
+    - `alpha_temperature` (`float`): Sensitivity of lifetime to changes in global-mean
+      temperature (1/K).
 
-    Outputs
-    -------
-    Atmospheric Concentration|CO2 : float
-        Atmospheric CO2 concentration (ppm)
-    Cumulative Emissions|CO2 : float
-        Cumulative CO2 emissions (GtC)
-    Cumulative Land Uptake : float
-        Cumulative land carbon uptake (GtC)
+    Inputs, outputs and states are listed on the
+    [CarbonCycle component page][component-carboncycle].
 
     Examples
     --------
@@ -84,24 +69,15 @@ class CO2ERFBuilder(ComponentBuilder):
     where ERF_2xCO2 is the forcing for a CO2 doubling, C is the current
     concentration, and C0 is the pre-industrial concentration.
 
-    # Parameters
-    # ----------
-    # erf_2xco2 : float
-    #     ERF due to a doubling of atmospheric CO2 concentrations (W/m^2).
-    #     Typical value: 3.7 W/m^2.
-    # conc_pi : float
-    #     Pre-industrial atmospheric CO2 concentration (ppm).
-    #     Typical value: 278 ppm.
+    **Parameter keys**
 
-    Inputs
-    ------
-    Atmospheric Concentration|CO2 : float
-        Atmospheric CO2 concentration (ppm)
+    - `erf_2xco2` (`float`): ERF due to a doubling of atmospheric CO2 concentrations
+      (W/m^2). Typical value: 3.7 W/m^2.
+    - `conc_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm). Typical
+      value: 278 ppm.
 
-    Outputs
-    -------
-    Effective Radiative Forcing|CO2 : float
-        CO2 effective radiative forcing (W/m^2)
+    Inputs, outputs and states are listed on the
+    [CO2ERF component page][component-co2erf].
 
     Examples
     --------
@@ -131,28 +107,21 @@ class FourBoxOceanHeatUptakeBuilder(ComponentBuilder):
     The component demonstrates disaggregation from scalar to grid resolution.
     Regional uptake is calculated as: regional = global_ERF * ratio
 
-    # Parameters
-    # ----------
-    # northern_ocean_ratio : float
-    #     Ratio of Northern Ocean uptake to global ERF. Default: 1.2
-    # northern_land_ratio : float
-    #     Ratio of Northern Land uptake to global ERF. Default: 0.6
-    # southern_ocean_ratio : float
-    #     Ratio of Southern Ocean uptake to global ERF. Default: 1.6
-    # southern_land_ratio : float
-    #     Ratio of Southern Land uptake to global ERF. Default: 0.6
+    **Parameter keys**
+
+    - `northern_ocean_ratio` (`float`, default `1.2`): Ratio of Northern Ocean uptake to
+      global ERF.
+    - `northern_land_ratio` (`float`, default `0.6`): Ratio of Northern Land uptake to
+      global ERF.
+    - `southern_ocean_ratio` (`float`, default `1.6`): Ratio of Southern Ocean uptake to
+      global ERF.
+    - `southern_land_ratio` (`float`, default `0.6`): Ratio of Southern Land uptake to
+      global ERF.
 
     Note: Ratios must average to 1.0 for conservation.
 
-    Inputs
-    ------
-    Effective Radiative Forcing|Aggregated : float
-        Global mean effective radiative forcing (W/m^2)
-
-    Outputs
-    -------
-    Heat Uptake|Ocean : FourBoxSlice
-        Regional ocean heat uptake (W/m^2) for each of the four boxes
+    Inputs, outputs and states are listed on the
+    [FourBoxOceanHeatUptake component page][component-fourboxoceanheatuptake].
 
     Examples
     --------

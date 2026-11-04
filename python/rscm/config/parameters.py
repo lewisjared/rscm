@@ -2,23 +2,25 @@
 Parameter metadata system for RSCM configuration.
 
 This module provides structured parameter metadata that can be:
+
 - Validated at import/build time
 - Aggregated into documentation automatically
 - Used for config validation (ranges, units)
 - Exported to JSON for tooling
 
-Example:
-    >>> from dataclasses import dataclass
-    >>> from rscm.config.parameters import parameter, validate_parameters
-    >>>
-    >>> @dataclass
-    >>> class MyParams:
-    ...     value: float = parameter(default=5.0, range=(0, 10), unit="K")
-    >>>
-    >>> params = MyParams(value=15.0)
-    >>> errors = validate_parameters(params)
-    >>> len(errors)
-    1
+Examples
+--------
+>>> from dataclasses import dataclass
+>>> from rscm.config.parameters import parameter, validate_parameters
+>>>
+>>> @dataclass
+>>> class MyParams:
+...     value: float = parameter(default=5.0, range=(0, 10), unit="K")
+>>>
+>>> params = MyParams(value=15.0)
+>>> errors = validate_parameters(params)
+>>> len(errors)
+1
 """
 
 from __future__ import annotations

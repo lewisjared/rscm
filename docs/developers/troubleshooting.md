@@ -195,16 +195,17 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
             self.land_ratio = land_ratio
 
         def solve(self, t_current, t_next, inputs):
-            global_temp = inputs.scalar_temp.at_start()
+            ocean = inputs.scalar_temp.at_start() * self.ocean_ratio
+            land = inputs.scalar_temp.at_start() * self.land_ratio
             return self.Outputs(
                 regional_temp=FourBoxSlice(
-                    northern_ocean=global_temp * self.ocean_ratio,
-                    northern_land=global_temp * self.land_ratio,
-                    southern_ocean=global_temp * self.ocean_ratio,
-                    southern_land=global_temp * self.land_ratio,
+                    northern_ocean=ocean, northern_land=land,
+                    southern_ocean=ocean, southern_land=land,
                 )
             )
     ```
+
+    The [Spatial Grids tutorial](../notebooks/grid_variables.py) builds and runs a disaggregation component.
 
 #### CircularDependency
 

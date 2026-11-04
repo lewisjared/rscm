@@ -22,7 +22,11 @@ The `docs/gen_doc_stubs.py` script combines both sources and generates markdown 
 
 ### Docstrings
 
-Write documentation in the Rust docstring (`///` comments) above the component struct. The full docstring appears in the "Description" section of the generated page.
+Write documentation in the module docs (`//!`) of the component's file and the struct docs (`///`).
+The page shows the module's introduction, then the struct's, then the sections of each.
+A one-line first paragraph is a title.
+The page drops the module's title, and the struct's too when the module has docs,
+because the page heading names the component.
 
 ```rust
 /// CO2 effective radiative forcing component
@@ -60,46 +64,34 @@ Use KaTeX syntax for mathematical equations:
 
 The documentation site renders KaTeX automatically.
 
-### Component Metadata Schema
+### Markdown
 
-The `rscm-doc-gen` crate generates JSON files with this structure:
+`gen_doc_stubs.py` normalises the doc comments before Python-Markdown renders them,
+so rustdoc conventions work:
 
-```json
-{
-  "$schema": "component_metadata_schema.json",
-  "name": "TwoLayer",
-  "module_path": "rscm_two_layer::component",
-  "language": "rust",
-  "description": "Docstring content here...",
-  "category": "Temperature",
-  "tags": ["temperature", "ocean", "two-layer", "stable"],
-  "inputs": [
-    {
-      "rust_name": "erf",
-      "variable_name": "Effective Radiative Forcing",
-      "unit": "W/m^2",
-      "grid": "Scalar"
-    }
-  ],
-  "outputs": [
-    {
-      "rust_name": "surface_temperature",
-      "variable_name": "Surface Temperature",
-      "unit": "K",
-      "grid": "Scalar"
-    }
-  ],
-  "states": [],
-  "parameters": [
-    {
-      "name": "lambda0",
-      "type": "FloatValue",
-      "description": "Parameter description from doc comment"
-    }
-  ],
-  "source_file": "crates/rscm-two-layer/src/component.rs"
-}
-```
+- `#` headings become sections one level below the page title.
+- `# Inputs`, `# Outputs` and `# States` sections are removed.
+  A bullet that names a declared variable in backticks becomes its description in the table.
+  The other bullets are listed under the table.
+- Lists get the blank line before them and the four-space nesting that Python-Markdown needs.
+- `$$` blocks and tables get blank lines around them.
+- Intra-doc links such as ``[`TwoLayerParameters`]`` become code,
+  and `[text](crate::path)` becomes plain text.
+
+A `Units:` line in a parameter's doc comment fills the Unit column of the parameters table.
+
+### Component Metadata
+
+`rscm-doc-gen` writes one JSON file per component.
+`ComponentDocMetadata` in `crates/rscm-doc-gen/src/schema.rs` defines the fields:
+
+| Field                                | Content                                          |
+| ------------------------------------ | ------------------------------------------------ |
+| `name`, `module_path`, `source_file` | Where the component struct is defined            |
+| `description`                        | The combined doc comments                        |
+| `category`, `tags`                   | From the `#[component(...)]` attribute           |
+| `inputs`, `outputs`, `states`        | Variable name, unit and grid for each IO field   |
+| `parameters`                         | Name, type and doc comment for each parameter    |
 
 ### Parameters
 
@@ -143,35 +135,38 @@ Common tags: `stable`, `experimental`, `simple`, `magicc`, `carbon-cycle`, `forc
 
 ### Docstrings
 
-For Python components, documentation is extracted from the class docstring. Place equations and descriptions directly in the docstring:
+For Python components, the description comes from the class docstring,
+and the parameters from the `__init__` docstring.
+As for Rust, the page drops a one-line title paragraph.
 
 ```python
 class SimpleEmissionsToConcentration(Component):
-    """
+    r"""
     Simple emissions to concentration component.
 
     Converts CO2 emissions to atmospheric concentration changes using
     a linear airborne fraction model:
 
     $$
-    C(t) = C(t-1) + \\alpha \\cdot E(t) \\cdot \\frac{M_{CO2}}{M_C}
+    C(t) = C(t-1) + \alpha \cdot E(t) \cdot \frac{M_{CO2}}{M_C}
     $$
 
-    where $\\alpha$ is the airborne fraction (fraction of emissions
+    where $\alpha$ is the airborne fraction (fraction of emissions
     remaining in the atmosphere).
-
-    Parameters
-    ----------
-    airborne_fraction
-        Fraction of emissions remaining in atmosphere (typically ~0.45)
-    gtc_to_ppm
-        Conversion factor from GtC to ppm (~0.47 ppm/GtC)
     """
 
     emissions = Input("Emissions|CO2", unit="GtCO2")
     concentration = State("Atmospheric Concentration|CO2", unit="ppm")
 
     def __init__(self, airborne_fraction: float, gtc_to_ppm: float):
+        """
+        Parameters
+        ----------
+        airborne_fraction
+            Fraction of emissions remaining in atmosphere (typically ~0.45)
+        gtc_to_ppm
+            Conversion factor from GtC to ppm (~0.47 ppm/GtC)
+        """
         self.airborne_fraction = airborne_fraction
         self.gtc_to_ppm = gtc_to_ppm
 ```
@@ -210,11 +205,11 @@ def __init__(self, tau: float, sensitivity: float):
 Each component page includes:
 
 1. **Header**: Name, category, tags, language
-2. **Description**: Full docstring with rendered equations
-3. **Inputs table**: Variable name, unit, grid type
-4. **Outputs table**: Variable name, unit, grid type
-5. **States table**: (if applicable) State variables
-6. **Parameters table**: Configuration parameters with types
+2. **Description**: The doc comments, with rendered equations
+3. **Inputs table**: Variable name, unit, grid type and any description from `# Inputs`
+4. **Outputs table**: The same for outputs
+5. **States table**: (if applicable) The same for state variables
+6. **Parameters table**: Name, type, unit and description of each parameter
 7. **Usage examples**: Python and Rust code snippets.
    The Python snippet needs a `<Name>Builder` in `rscm.components`, `rscm.two_layer` or `rscm.magicc`.
 8. **Source reference**: Path to the source file
@@ -240,7 +235,8 @@ The generated component pages appear under `site/components/`.
 
 ### Writing Effective Descriptions
 
-- Start with a one-line summary of what the component does
+- Start with a one-line title, then a sentence saying what the component does.
+  The index page uses that sentence as the component's summary.
 - Explain the physical/mathematical basis
 - Include the governing equations with variable definitions
 - Note any assumptions or limitations

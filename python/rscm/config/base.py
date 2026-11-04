@@ -2,6 +2,7 @@
 Base classes for RSCM configuration.
 
 This module defines the foundational dataclasses used by all model configurations:
+
 - TimeConfig: Time axis specification
 - InputSpec: Input data file specification
 - ModelConfig: Base configuration for all model types
