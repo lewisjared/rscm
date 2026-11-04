@@ -5,7 +5,7 @@ This guide is for developers who want to extend RSCM with new components or cont
 ## Prerequisites
 
 - **Rust 1.87+**: install from [rustup.rs](https://rustup.rs)
-- **Python 3.11+**: uv can install it with `uv python install`
+- **Python 3.13+**: uv can install it with `uv python install`
 - **uv**: install with `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - **pre-commit**: install with `uv tool install pre-commit` (`make virtual-environment` calls it)
 
