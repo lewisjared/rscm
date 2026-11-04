@@ -12,6 +12,9 @@ defaults:
 env:
   RUST_BACKTRACE: 1
 
+permissions:
+  contents: read
+
 jobs:
   # Build wheels for all platforms
   build-wheels:
