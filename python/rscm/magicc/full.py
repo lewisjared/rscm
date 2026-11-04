@@ -285,8 +285,10 @@ def halocarbon_species() -> list[str]:
 def load_inputs(
     parameters: Mapping[str, Any] | None = None, directory: Path | None = None
 ) -> dict[str, pr.AerosolHistory]:
-    """Read the input files named in ``parameters``, keyed by `INPUT_FILES`.
+    """Read every input file named in ``parameters``, for any number of runs.
 
+    Forcing files are keyed by `INPUT_FILES` and the concentration files that exist
+    by ``file_<species>_conc`` in lower case, such as ``file_cfc11_conc``.
     With ``ncycle_apply`` this also reads the `NITROGEN_INPUT_FILES` that exist.
     ``directory`` defaults to the packaged files of MAGICC7's SSP245 run,
     which are also read gzipped.
@@ -294,6 +296,10 @@ def load_inputs(
     p = parameters or default_parameters()
     root = directory or DATA
     out = {key: pr.read_input(_find(root, p[key])) for key in INPUT_FILES}
+    for group in _concentration_files(p).values():
+        for species, file in group:
+            if file.strip() and (path := _find(root, file)).exists():
+                out[_concentration_key(species)] = pr.read_input(path)
     if p["ncycle_apply"]:
         for key in NITROGEN_INPUT_FILES:
             if (path := _find(root, p[key])).exists():
@@ -305,6 +311,37 @@ def _find(root: Path, name: str) -> Path:
     path = root / name
     gzipped = path.with_name(path.name + ".gz")
     return gzipped if not path.exists() and gzipped.exists() else path
+
+
+def _concentration_key(species: str) -> str:
+    return f"file_{species.lower()}_conc"
+
+
+def _concentration_input(
+    inputs: Mapping[str, pr.AerosolHistory], species: str
+) -> pr.AerosolHistory:
+    key = _concentration_key(species)
+    if key not in inputs:
+        msg = f"inputs has no {key}: its file is missing or not from load_inputs"
+        raise KeyError(msg)
+    return inputs[key]
+
+
+def _concentration_files(
+    parameters: Mapping[str, Any],
+) -> dict[str, list[tuple[str, str]]]:
+    """Species and concentration file of each gas group."""
+    p = parameters
+    species = halocarbon_species()
+    n_fgas = p["fgas_n"]
+    return {
+        "co2": [("CO2", p["file_co2_conc"])],
+        "ch4": [("CH4", p["file_ch4_conc"])],
+        "n2o": [("N2O", p["file_n2o_conc"])],
+        # MAGICC7 pads the file lists beyond its species
+        "fgas": list(zip(species[:n_fgas], p["fgas_files_conc"], strict=False)),
+        "mhalo": list(zip(species[n_fgas:], p["mhalo_files_conc"], strict=False)),
+    }
 
 
 def concentration_switch_years(
@@ -326,34 +363,25 @@ def concentration_switch_years(
 def prescribed_concentrations(
     years: ArrayLike,
     parameters: Mapping[str, Any] | None = None,
-    directory: Path | None = None,
+    inputs: Mapping[str, pr.AerosolHistory] | None = None,
 ) -> dict[str, tuple[NDArray[np.float64], str]]:
     """Concentrations and units of each species prescribed before its switch year.
 
     Only species whose switch year is after the first year are included.
     A species without a concentration file (Halon1202 in MAGICC7) stays at zero.
-    ``directory`` defaults to the packaged files of MAGICC7's SSP245 run.
+    ``inputs`` defaults to `load_inputs` of ``parameters``.
     """
     p = parameters or default_parameters()
-    root = directory or DATA
+    files = inputs if inputs is not None else load_inputs(p)
     y = np.asarray(years, dtype=np.float64)
-    species = halocarbon_species()
-    n_fgas = p["fgas_n"]
-    files = {
-        "co2": [("CO2", p["file_co2_conc"])],
-        "ch4": [("CH4", p["file_ch4_conc"])],
-        "n2o": [("N2O", p["file_n2o_conc"])],
-        # MAGICC7 pads the file lists beyond its species
-        "fgas": list(zip(species[:n_fgas], p["fgas_files_conc"], strict=False)),
-        "mhalo": list(zip(species[n_fgas:], p["mhalo_files_conc"], strict=False)),
-    }
+    groups = _concentration_files(p)
     out = {}
     for group, year in concentration_switch_years(y, p).items():
         if year is None:
             continue
-        for name, file in files[group]:
+        for name, file in groups[group]:
             values = (
-                pr.on_axis(pr.read_input(_find(root, file)), y)[:, 0]
+                pr.on_axis(_concentration_input(files, name), y)[:, 0]
                 if file.strip()
                 else np.zeros(len(y))
             )
@@ -478,8 +506,12 @@ def climate_parameters(
     parameters: Mapping[str, Any],
     inputs: Mapping[str, pr.AerosolHistory],
     start_year: float,
+    end_year: float | None = None,
 ) -> dict[str, Any]:
-    """ClimateUDEB parameters, with regional and monthly volcanic forcing."""
+    """ClimateUDEB parameters, with regional and monthly volcanic forcing.
+
+    With ``end_year``, months after the run ends are left out.
+    """
     p = parameters
     volcanic = inputs["file_volcanic_rf"]
     values = np.asarray(volcanic.values)
@@ -510,6 +542,7 @@ def climate_parameters(
             efficacy=p["rf_efficacy_volc"] if apply == 2 else 1.0,  # noqa: PLR2004
             internal_efficacy=initial if apply else 1.0,
             rf_regions=pattern if apply else None,
+            until=end_year,
         ),
     }
 
@@ -818,7 +851,7 @@ def natural_emissions(
     years: ArrayLike,
     emissions: Mapping[str, ArrayLike],
     parameters: Mapping[str, Any] | None = None,
-    directory: Path | None = None,
+    inputs: Mapping[str, pr.AerosolHistory] | None = None,
 ) -> dict[str, float]:
     """Natural CH4 and N2O emissions that close the prescribed concentrations' budget.
 
@@ -827,9 +860,10 @@ def natural_emissions(
     and the initial lifetime.
     ``emissions`` is as for `run_magicc7`, on ``years``.
     Gases whose budget years are not all in ``years`` are left out.
+    ``inputs`` defaults to `load_inputs` of ``parameters``.
     """
     p = parameters or default_parameters()
-    root = directory or DATA
+    files = inputs if inputs is not None else load_inputs(p)
     y = np.asarray(years, dtype=np.float64)
     tau_other = _ch4_tau_other(CH4_OTHER_LIFETIMES)
     tau_oh = 1.0 / (1.0 / p["ch4_tautot_init"] - 1.0 / tau_other)
@@ -845,8 +879,7 @@ def natural_emissions(
         index = np.searchsorted(y, window)
         if window[0] < y[0] or window[-1] > y[-1]:
             continue
-        file = pr.read_input(_find(root, p[f"file_{key}_conc"]))
-        c = pr.on_axis(file, window)[:, 0].tolist()
+        c = pr.on_axis(_concentration_input(files, gas), window)[:, 0].tolist()
         n = len(c) - 1
         # MAGICC7 sums each series in turn, which sets the rounding
         mean = sum((c[k] + c[k + 1]) * 0.5 for k in range(n))
@@ -884,6 +917,7 @@ def run_magicc7(  # noqa: PLR0913
     see `prescribed_concentrations`.
     ``out_sealevel`` adds sea level rise with MAGICC7's default sea level parameters.
     ``inputs`` replaces the files from `load_inputs`.
+    Load them once and pass them to every run of an ensemble that shares its files.
     ``initial_concentrations`` overrides `default_initial_concentrations`.
     ``component_parameters`` overrides the parameters of single components,
     keyed by component name such as ``"TerrestrialCarbon"``.
@@ -903,7 +937,7 @@ def run_magicc7(  # noqa: PLR0913
         return {**base, **overrides.get(name, {})}
 
     sealevel = bool(p["out_sealevel"])
-    climate_base = climate_parameters(p, files, time[0])
+    climate_base = climate_parameters(p, files, time[0], time[-1])
     if sealevel:
         climate_base["thermal_expansion"] = {}
     climate = ClimateUDEBBuilder.from_parameters(params("ClimateUDEB", climate_base))
@@ -955,7 +989,7 @@ def run_magicc7(  # noqa: PLR0913
             "nitrogen": nitrogen,
         },
     )
-    natural = natural_emissions(time, data, p)
+    natural = natural_emissions(time, data, p, files)
     components = [
         CH4ChemistryBuilder.from_parameters(
             params(
@@ -1089,7 +1123,7 @@ def run_magicc7(  # noqa: PLR0913
         **{f"Emissions|{s}": (data[s], "kt/yr") for s in species},
         **{
             f"Atmospheric Concentration|{s}|Prescribed": values
-            for s, values in prescribed_concentrations(time, p).items()
+            for s, values in prescribed_concentrations(time, p, files).items()
         },
     }
     if nitrogen:

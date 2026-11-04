@@ -5,6 +5,7 @@ use crate::units::Unit;
 use petgraph::Graph;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tracing::warn;
 
 /// Type alias for a component wrapped in an Arc for shared ownership.
 pub type C = Arc<dyn Component>;
@@ -28,9 +29,17 @@ pub(crate) struct VariableDefinition {
 
 impl VariableDefinition {
     pub fn from_requirement_definition(definition: &RequirementDefinition) -> Self {
-        // Attempt to parse the unit; store None if parsing fails
-        // (the error will be reported separately during validation)
-        let parsed_unit = Unit::parse(&definition.unit).ok();
+        let parsed = Unit::parse(&definition.unit);
+        if let Err(e) = &parsed {
+            // A unit we cannot parse still works for string comparison, without conversion.
+            warn!(
+                variable = %definition.name,
+                unit = %definition.unit,
+                error = %e,
+                "Could not parse unit string; unit conversion will not be available"
+            );
+        }
+        let parsed_unit = parsed.ok();
 
         Self {
             name: definition.name.clone(),

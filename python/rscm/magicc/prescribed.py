@@ -103,11 +103,10 @@ def on_axis(
     hv = hv.reshape(len(hy), -1)
     y = np.asarray(years, dtype=np.float64)
     out = np.full((len(y), hv.shape[1]), np.nan)
-    for i, year in enumerate(y):
-        if year < hy[0]:
-            out[i] = hv[0] if before is None else before
-        elif year <= hy[-1]:
-            out[i] = hv[round(year - hy[0])]
+    early = y < hy[0]
+    within = ~early & (y <= hy[-1])
+    out[early] = hv[0] if before is None else before
+    out[within] = hv[np.rint(y[within] - hy[0]).astype(np.intp)]
     return out
 
 
@@ -502,6 +501,7 @@ def volcanic_substeps(  # noqa: PLR0913
     efficacy: float = 1.0,
     internal_efficacy: float = 1.0078325986062864,
     rf_regions: Sequence[float] | None = None,
+    until: float | None = None,
 ) -> dict[str, object]:
     """Monthly volcanic forcing as ClimateUDEB's ``subannual_forcing``.
 
@@ -510,11 +510,14 @@ def volcanic_substeps(  # noqa: PLR0913
     With ``rf_regions``, ClimateUDEB divides ``efficacy`` by the internal efficacy,
     which it recalculates each year, and ``internal_efficacy`` applies only in the
     first year.
+    Months more than a year after ``until`` are left out, as no run to then reads them.
     """
     t = np.asarray(times, dtype=np.float64)
     nh = np.asarray(northern, dtype=np.float64)
     sh = np.asarray(southern, dtype=np.float64)
     ok = ~(np.isnan(nh) | np.isnan(sh))
+    if until is not None:
+        ok &= t <= until + 1
     t, nh, sh = t[ok], nh[ok], sh[ok]
     factor = scale
     if rf_regions is None:

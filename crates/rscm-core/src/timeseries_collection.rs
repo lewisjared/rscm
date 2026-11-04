@@ -317,7 +317,16 @@ pub struct TimeseriesItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeseriesCollection {
     /// Internal storage for timeseries items, kept sorted by name for stable serialisation
+    #[serde(deserialize_with = "sorted_items")]
     timeseries: Vec<TimeseriesItem>,
+}
+
+fn sorted_items<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<TimeseriesItem>, D::Error> {
+    let mut items = Vec::<TimeseriesItem>::deserialize(deserializer)?;
+    items.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+    Ok(items)
 }
 
 impl Default for TimeseriesCollection {
@@ -344,16 +353,11 @@ impl TimeseriesCollection {
         timeseries: Timeseries<FloatValue>,
         variable_type: VariableType,
     ) {
-        if self.timeseries.iter().any(|x| x.name == name) {
-            panic!("timeseries {} already exists", name)
-        }
-        self.timeseries.push(TimeseriesItem {
+        self.insert(TimeseriesItem {
             data: TimeseriesData::Scalar(timeseries),
             name,
             variable_type,
         });
-        // Ensure the order of the serialised timeseries is stable
-        self.timeseries.sort_unstable_by_key(|x| x.name.clone());
     }
 
     /// Add a new four-box grid timeseries to the collection
@@ -366,15 +370,11 @@ impl TimeseriesCollection {
         timeseries: GridTimeseries<FloatValue, FourBoxGrid>,
         variable_type: VariableType,
     ) {
-        if self.timeseries.iter().any(|x| x.name == name) {
-            panic!("timeseries {} already exists", name)
-        }
-        self.timeseries.push(TimeseriesItem {
+        self.insert(TimeseriesItem {
             data: TimeseriesData::FourBox(timeseries),
             name,
             variable_type,
         });
-        self.timeseries.sort_unstable_by_key(|x| x.name.clone());
     }
 
     /// Add a new hemispheric grid timeseries to the collection
@@ -387,15 +387,11 @@ impl TimeseriesCollection {
         timeseries: GridTimeseries<FloatValue, HemisphericGrid>,
         variable_type: VariableType,
     ) {
-        if self.timeseries.iter().any(|x| x.name == name) {
-            panic!("timeseries {} already exists", name)
-        }
-        self.timeseries.push(TimeseriesItem {
+        self.insert(TimeseriesItem {
             data: TimeseriesData::Hemispheric(timeseries),
             name,
             variable_type,
         });
-        self.timeseries.sort_unstable_by_key(|x| x.name.clone());
     }
 
     /// Get a timeseries item by variable name.
@@ -403,12 +399,29 @@ impl TimeseriesCollection {
     /// Returns the full [`TimeseriesItem`] including metadata. Use [`get_data`](Self::get_data)
     /// if you only need the timeseries data.
     pub fn get_by_name(&self, name: &str) -> Option<&TimeseriesItem> {
-        self.timeseries.iter().find(|x| x.name == name)
+        self.position(name).map(|index| &self.timeseries[index])
     }
 
     /// Get a mutable reference to a timeseries item by variable name.
     pub fn get_by_name_mut(&mut self, name: &str) -> Option<&mut TimeseriesItem> {
-        self.timeseries.iter_mut().find(|x| x.name == name)
+        self.position(name).map(|index| &mut self.timeseries[index])
+    }
+
+    /// The item at an index from `position`, valid until the next insertion.
+    pub(crate) fn item(&self, index: usize) -> &TimeseriesItem {
+        &self.timeseries[index]
+    }
+
+    pub(crate) fn data_mut(&mut self, index: usize) -> &mut TimeseriesData {
+        &mut self.timeseries[index].data
+    }
+
+    /// Index of a name, scanning on a miss in case an item was renamed out of order.
+    pub(crate) fn position(&self, name: &str) -> Option<usize> {
+        self.timeseries
+            .binary_search_by(|x| x.name.as_str().cmp(name))
+            .ok()
+            .or_else(|| self.timeseries.iter().position(|x| x.name == name))
     }
 
     /// Get the timeseries data for a variable by name.
@@ -452,12 +465,19 @@ impl TimeseriesCollection {
     /// Panics if any item name already exists in this collection
     pub fn extend(&mut self, other: TimeseriesCollection) {
         for item in other.timeseries {
-            if self.timeseries.iter().any(|x| x.name == item.name) {
-                panic!("timeseries {} already exists", item.name)
-            }
-            self.timeseries.push(item);
+            self.insert(item);
         }
-        self.timeseries.sort_unstable_by_key(|x| x.name.clone());
+    }
+
+    /// Insert at the item's sorted position, panicking on a duplicate name.
+    fn insert(&mut self, item: TimeseriesItem) {
+        match self
+            .timeseries
+            .binary_search_by(|x| x.name.as_str().cmp(&item.name))
+        {
+            Ok(_) => panic!("timeseries {} already exists", item.name),
+            Err(index) => self.timeseries.insert(index, item),
+        }
     }
 }
 

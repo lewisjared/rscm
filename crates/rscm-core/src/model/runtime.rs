@@ -2,7 +2,9 @@
 
 use crate::component::{ComponentState, GridType};
 use crate::errors::{RSCMError, RSCMResult};
-use crate::state::{ReadTransformInfo, StateValue, TransformContext, VariableSource};
+use crate::state::{
+    lookup_order, InputState, ReadTransformInfo, StateValue, TransformContext, VariableSource,
+};
 use crate::timeseries::{Time, TimeAxis};
 use crate::timeseries_collection::TimeseriesCollection;
 use petgraph::dot::{Config, Dot};
@@ -10,10 +12,8 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeFiltered, EdgeRef};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
-use std::ops::Index;
 use std::sync::Arc;
 
-use super::state_extraction::{extract_state, extract_state_with_transforms};
 use super::transformations::aggregate_state_value;
 use super::types::{CGraph, RequiredTransformation, C};
 
@@ -118,6 +118,29 @@ pub struct Model {
     /// Uses Box<dyn ComponentState> with typetag for serialization.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) component_states: BTreeMap<NodeIndex, Box<dyn ComponentState>>,
+    /// Execution order and read context of each component, built on the first step.
+    #[serde(skip)]
+    plan: Option<Vec<ComponentPlan>>,
+}
+
+/// What stepping a component needs that is fixed once the model is built.
+#[derive(Debug)]
+struct ComponentPlan {
+    node: NodeIndex,
+    name: String,
+    /// Collection index of each input in `lookup_order`, which no step changes.
+    inputs: Vec<usize>,
+    transforms: Option<TransformContext>,
+    /// Declared outputs in `lookup_order`.
+    outputs: Vec<OutputPlan>,
+}
+
+#[derive(Debug)]
+struct OutputPlan {
+    name: String,
+    index: usize,
+    /// Source and target grid of a write transform.
+    transform: Option<(GridType, GridType)>,
 }
 
 impl Model {
@@ -251,6 +274,7 @@ impl Model {
             unit_conversions,
             variable_sources,
             component_states: BTreeMap::new(),
+            plan: None,
         }
     }
 
@@ -341,12 +365,26 @@ impl Model {
     ///
     /// Extracts the type name (before the first '{', ' ', or '(') from the Debug output.
     pub(crate) fn extract_component_name(component: &C) -> String {
-        let debug_str = format!("{:?}", component);
-        debug_str
-            .split(['{', ' ', '('])
-            .next()
-            .unwrap_or("UnknownComponent")
-            .to_string()
+        /// Keeps output up to the first delimiter, then stops the formatting.
+        struct TypeName(String);
+        impl std::fmt::Write for TypeName {
+            fn write_str(&mut self, s: &str) -> std::fmt::Result {
+                match s.find(['{', ' ', '(']) {
+                    Some(end) => {
+                        self.0.push_str(&s[..end]);
+                        Err(std::fmt::Error)
+                    }
+                    None => {
+                        self.0.push_str(s);
+                        Ok(())
+                    }
+                }
+            }
+        }
+        let mut name = TypeName(String::new());
+        // The error only signals that the name is complete
+        let _ = std::fmt::Write::write_fmt(&mut name, format_args!("{component:?}"));
+        name.0
     }
 
     /// Gets the time value at the current step.
@@ -359,91 +397,107 @@ impl Model {
         self.time_axis.at_bounds(self.time_index).unwrap()
     }
 
+    /// Read context of a component, from the model's transforms, conversions and sources.
+    fn component_plan(&self, node: NodeIndex) -> ComponentPlan {
+        let component = &self.components[node];
+        let name = Self::extract_component_name(component);
+        let input_names = component.input_names();
+        let mut read_transform_info = HashMap::new();
+        for input in &input_names {
+            let key = (input.clone(), name.clone());
+            let unit_factor = self.unit_conversions.get(&key).copied().unwrap_or(1.0);
+            let variable_source = self.variable_sources.get(&key).copied().unwrap_or_default();
+            if let Some(transform) = self.read_transforms.get(input) {
+                let weights = self.grid_weights.get(&transform.source_grid).cloned();
+                read_transform_info.insert(
+                    input.clone(),
+                    ReadTransformInfo::new(transform.source_grid, weights)
+                        .with_conversion_factor(unit_factor)
+                        .with_source(variable_source),
+                );
+            } else if (unit_factor - 1.0).abs() > f64::EPSILON
+                || variable_source != VariableSource::Exogenous
+            {
+                read_transform_info.insert(
+                    input.clone(),
+                    ReadTransformInfo::with_unit_conversion(unit_factor)
+                        .with_source(variable_source),
+                );
+            }
+        }
+        let transforms = (!read_transform_info.is_empty()).then_some(TransformContext {
+            read_transforms: read_transform_info,
+        });
+        let mut inputs: Vec<usize> = input_names
+            .iter()
+            .map(|input| {
+                self.collection
+                    .position(input)
+                    .unwrap_or_else(|| panic!("No timeseries with variable='{}'", input))
+            })
+            .collect();
+        inputs.sort_by(|&a, &b| {
+            lookup_order(&self.collection.item(a).name, &self.collection.item(b).name)
+        });
+        let mut outputs: Vec<OutputPlan> = component
+            .output_names()
+            .into_iter()
+            .filter_map(|output| {
+                let (index, transform) = self.output_target(&output)?;
+                Some(OutputPlan {
+                    name: output,
+                    index,
+                    transform,
+                })
+            })
+            .collect();
+        outputs.sort_by(|a, b| lookup_order(&a.name, &b.name));
+        ComponentPlan {
+            node,
+            name,
+            inputs,
+            transforms,
+            outputs,
+        }
+    }
+
+    /// Collection index of an output and the source and target grid of its write transform.
+    fn output_target(&self, name: &str) -> Option<(usize, Option<(GridType, GridType)>)> {
+        let index = self.collection.position(name)?;
+        let transform = self
+            .write_transforms
+            .get(name)
+            .map(|t| (t.source_grid, t.target_grid));
+        Some((index, transform))
+    }
+
     /// Solve a single component for the current timestep.
     ///
     /// The updated state from the component is then pushed into the model's timeseries collection
     /// to be later used by other components.
     /// The output state defines the values at the next time index as it represents the state
     /// at the start of the next timestep.
-    fn step_model_component(&mut self, component: C, node_index: NodeIndex) -> RSCMResult<()> {
-        // Get component name for unit conversion lookup
-        let component_name = Self::extract_component_name(&component);
-
-        // Build transform context for read-side aggregation and unit conversion
-        let input_names = component.input_names();
-        let has_transforms = !self.read_transforms.is_empty()
-            || !self.unit_conversions.is_empty()
-            || !self.variable_sources.is_empty();
-
-        let input_state = if !has_transforms {
-            extract_state(&self.collection, input_names, self.current_time())
-        } else {
-            // Build transform context with grid transforms and unit conversions
-            let mut read_transform_info = HashMap::new();
-            for name in &input_names {
-                // Look up unit conversion factor for this (variable, component) pair
-                let unit_factor = self
-                    .unit_conversions
-                    .get(&(name.clone(), component_name.clone()))
-                    .copied()
-                    .unwrap_or(1.0);
-
-                // Look up variable source for this (variable, component) pair
-                let variable_source = self
-                    .variable_sources
-                    .get(&(name.clone(), component_name.clone()))
-                    .copied()
-                    .unwrap_or_default();
-
-                // Check if we also need grid transformation
-                if let Some(transform) = self.read_transforms.get(name) {
-                    read_transform_info.insert(
-                        name.clone(),
-                        ReadTransformInfo {
-                            source_grid: transform.source_grid,
-                            weights: self.grid_weights.get(&transform.source_grid).cloned(),
-                            unit_conversion_factor: unit_factor,
-                            variable_source,
-                        },
-                    );
-                } else if (unit_factor - 1.0).abs() > f64::EPSILON
-                    || variable_source != VariableSource::Exogenous
-                {
-                    // No grid transform but needs unit conversion or non-default variable source
-                    // Use Scalar as placeholder since there's no actual grid transform
-                    read_transform_info.insert(
-                        name.clone(),
-                        ReadTransformInfo {
-                            source_grid: crate::component::GridType::Scalar,
-                            weights: None,
-                            unit_conversion_factor: unit_factor,
-                            variable_source,
-                        },
-                    );
-                }
-            }
-
-            if read_transform_info.is_empty() {
-                extract_state(&self.collection, input_names, self.current_time())
-            } else {
-                let context = TransformContext {
-                    read_transforms: read_transform_info,
-                };
-                extract_state_with_transforms(
-                    &self.collection,
-                    input_names,
-                    self.current_time(),
-                    context,
-                )
-            }
-        };
+    fn step_model_component(&mut self, plan: &ComponentPlan) -> RSCMResult<()> {
+        let component = &self.components[plan.node];
+        let component_name = &plan.name;
+        let items = plan
+            .inputs
+            .iter()
+            .map(|&index| self.collection.item(index))
+            .collect();
+        let input_state = InputState::build_with_transforms_ref(
+            items,
+            self.current_time(),
+            plan.transforms.as_ref(),
+        )
+        .with_time_index(self.time_index);
 
         let (start, end) = self.current_time_bounds();
 
         // Get component state - must exist since we initialize all states in build()
         let internal_state = self
             .component_states
-            .get_mut(&node_index)
+            .get_mut(&plan.node)
             .expect("Component state not initialized - this is a bug in Model::build()");
 
         let output_state = component
@@ -455,17 +509,25 @@ impl Model {
             })?;
 
         for (key, state_value) in &output_state {
-            let data = self.collection.get_data_mut(key).ok_or_else(|| {
+            let target = match plan
+                .outputs
+                .binary_search_by(|o| lookup_order(&o.name, key))
+            {
+                Ok(i) => Some((plan.outputs[i].index, plan.outputs[i].transform)),
+                Err(_) => self.output_target(key),
+            };
+            let (index, transform) = target.ok_or_else(|| {
                 RSCMError::Error(format!(
                     "{component_name} returned undeclared output {key} during {start}..{end}"
                 ))
             })?;
-            let final_value = if let Some(transform) = self.write_transforms.get(key) {
+            let data = self.collection.data_mut(index);
+            let final_value = if let Some((source_grid, target_grid)) = transform {
                 aggregate_state_value(
                     state_value,
-                    transform.source_grid,
-                    transform.target_grid,
-                    self.grid_weights.get(&transform.source_grid),
+                    source_grid,
+                    target_grid,
+                    self.grid_weights.get(&source_grid),
                 )
                 .map_err(|err| {
                     RSCMError::Error(format!(
@@ -498,17 +560,27 @@ impl Model {
     /// of different lengths feed an aggregate. Self-edges describe a component's
     /// own state and do not constrain the order within a timestep.
     fn step_model(&mut self) -> RSCMResult<()> {
-        let graph = EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
-        let order = petgraph::algo::toposort(&graph, None).map_err(|cycle| {
-            RSCMError::CircularDependency {
-                cycle: format!("component {:?}", cycle.node_id()),
+        let plan = match self.plan.take() {
+            Some(plan) => plan,
+            None => {
+                let graph =
+                    EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
+                let order = petgraph::algo::toposort(&graph, None).map_err(|cycle| {
+                    RSCMError::CircularDependency {
+                        cycle: format!("component {:?}", cycle.node_id()),
+                    }
+                })?;
+                order
+                    .into_iter()
+                    .map(|nx| self.component_plan(nx))
+                    .collect()
             }
-        })?;
-        for nx in order {
-            let c = self.components.index(nx);
-            self.step_model_component(c.clone(), nx)?;
-        }
-        Ok(())
+        };
+        let result = plan
+            .iter()
+            .try_for_each(|component| self.step_model_component(component));
+        self.plan = Some(plan);
+        result
     }
 
     /// Steps the model forward one time step.

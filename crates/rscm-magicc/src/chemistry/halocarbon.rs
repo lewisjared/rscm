@@ -35,13 +35,14 @@
 
 use crate::parameters::{HalocarbonParameters, HalocarbonSpecies};
 use crate::reference::{
-    feedback_warming, prescribed_concentration, prescribed_definition, require_annual,
+    feedback_warming, prescribed_definition, prescribed_input, prescribed_name, require_annual,
 };
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 
 /// F-gas ERF output.
 pub const FGAS_FORCING: &str = "Effective Radiative Forcing|F-Gases";
@@ -57,6 +58,17 @@ const FOSSIL_CO2: &str = "Emissions|CO2|Fossil";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HalocarbonChemistry {
     parameters: HalocarbonParameters,
+    #[serde(skip)]
+    names: OnceLock<[Vec<SpeciesNames>; 2]>,
+}
+
+/// Variables of one species, built once as every step reads or writes them.
+#[derive(Debug, Clone)]
+struct SpeciesNames {
+    emissions: String,
+    concentration: String,
+    prescribed: String,
+    forcing: String,
 }
 
 impl HalocarbonChemistry {
@@ -67,7 +79,10 @@ impl HalocarbonChemistry {
 
     /// Create a component from parameters.
     pub fn from_parameters(parameters: HalocarbonParameters) -> Self {
-        Self { parameters }
+        Self {
+            parameters,
+            names: OnceLock::new(),
+        }
     }
 
     /// Parameters of this component.
@@ -164,6 +179,27 @@ impl HalocarbonChemistry {
 }
 
 impl HalocarbonChemistry {
+    /// Names of each species in each group of [`Self::switch_years`].
+    fn names(&self) -> &[Vec<SpeciesNames>; 2] {
+        self.names.get_or_init(|| {
+            let mut groups = self.switch_years().into_iter().enumerate();
+            std::array::from_fn(|_| {
+                let (group, (list, _)) = groups.next().expect("two species groups");
+                list.iter()
+                    .map(|species| {
+                        let concentration = Self::concentration_name(&species.name);
+                        SpeciesNames {
+                            emissions: Self::emissions_name(&species.name),
+                            prescribed: prescribed_name(&concentration),
+                            forcing: Self::forcing_name(group, &species.name),
+                            concentration,
+                        }
+                    })
+                    .collect()
+            })
+        })
+    }
+
     /// F-gases and Montreal gases with the last year of their prescribed concentrations.
     fn switch_years(&self) -> [(&[HalocarbonSpecies], Option<Time>); 2] {
         let p = &self.parameters;
@@ -254,7 +290,8 @@ impl Component for HalocarbonChemistry {
     ) -> RSCMResult<OutputState> {
         require_annual("HalocarbonChemistry", t_current, t_next)?;
         let (oh_scale, strat_scale) = self.scale_factors(t_current, input_state);
-        let mut output = OutputState::new();
+        let names = self.names();
+        let mut output = OutputState::with_capacity(2 * (names[0].len() + names[1].len()) + 3);
         let mut forcing = [0.0; 2];
         let mut fgas_boxes = [0.0; 4];
         let mut eesc = 0.0;
@@ -265,14 +302,11 @@ impl Component for HalocarbonChemistry {
             .map(|_| input_state.get_scalar_window(FOSSIL_CO2).at_start());
 
         for (group, (list, switch_year)) in self.switch_years().into_iter().enumerate() {
-            for species in list {
-                let name = Self::concentration_name(&species.name);
-                let window = input_state.get_scalar_window(&name);
-                let emissions = input_state
-                    .get_scalar_window(&Self::emissions_name(&species.name))
-                    .at_start();
+            for (species, names) in list.iter().zip(&names[group]) {
+                let window = input_state.get_scalar_window(&names.concentration);
+                let emissions = input_state.get_scalar_window(&names.emissions).at_start();
                 let tau = self.lifetime(species, oh_scale, strat_scale);
-                let next = prescribed_concentration(input_state, &name, switch_year, t_next)
+                let next = prescribed_input(input_state, &names.prescribed, switch_year, t_next)
                     .unwrap_or_else(|| {
                         self.step_concentration(species, window.at_start(), emissions, tau)
                     });
@@ -291,10 +325,10 @@ impl Component for HalocarbonChemistry {
                 } else {
                     StateValue::Scalar(species_forcing)
                 };
-                output.insert(Self::forcing_name(group, &species.name), value);
+                output.insert(names.forcing.clone(), value);
                 let delayed = lagged(&window, next, self.parameters.eesc_delay);
                 eesc += self.eesc_contribution(species, delayed);
-                output.insert(name, StateValue::Scalar(next));
+                output.insert(names.concentration.clone(), StateValue::Scalar(next));
             }
         }
 

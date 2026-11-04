@@ -47,6 +47,12 @@ impl TimeAxis {
         let is_monotonic = check_monotonic_increasing(&bounds);
         assert!(is_monotonic);
 
+        // Lookups binary-search the values as a slice.
+        let bounds = if bounds.is_standard_layout() {
+            bounds
+        } else {
+            bounds.as_standard_layout().into_owned()
+        };
         Self { bounds }
     }
 
@@ -202,12 +208,14 @@ impl TimeAxis {
     /// assert_eq!(ta.index_of(27.0), None);
     /// ```
     pub fn index_of(&self, value: Time) -> Option<usize> {
-        for (i, v) in self.values().iter().enumerate() {
-            if (*v - value).abs() < 1e-10 {
-                return Some(i);
-            }
-        }
-        None
+        // Values strictly increase, so every value before the first match is below it
+        let values = self.values();
+        let values = values.as_slice().expect("time axis values are contiguous");
+        let index = values.partition_point(|v| *v - value <= -1e-10);
+        values
+            .get(index)
+            .filter(|v| (**v - value).abs() < 1e-10)
+            .map(|_| index)
     }
 }
 
@@ -360,6 +368,10 @@ where
     /// Get the time axis
     pub fn time_axis(&self) -> Arc<TimeAxis> {
         self.time_axis.clone()
+    }
+
+    pub(crate) fn time_axis_ref(&self) -> &TimeAxis {
+        &self.time_axis
     }
 
     /// Get the units
@@ -585,6 +597,12 @@ where
     /// All regions are interpolated independently using the current interpolation strategy.
     pub fn interpolate_into(self, new_time_axis: Arc<TimeAxis>) -> Self {
         let mut new_values = Array2::zeros((new_time_axis.len(), self.grid.size()));
+        // Every strategy returns the value at a knot, except linear at the last one.
+        let knots = if self.time_axis.values() == new_time_axis.values() {
+            new_time_axis.len().saturating_sub(1)
+        } else {
+            0
+        };
 
         for region_idx in 0..self.grid.size() {
             let region_values = self.values.column(region_idx);
@@ -595,7 +613,11 @@ where
             );
 
             for (t, &time) in new_time_axis.values().iter().enumerate() {
-                new_values[(t, region_idx)] = interp.interpolate(time).unwrap();
+                new_values[(t, region_idx)] = if t < knots {
+                    region_values[t]
+                } else {
+                    interp.interpolate(time).unwrap()
+                };
             }
         }
 
@@ -862,7 +884,7 @@ pub type Timeseries<T> = GridTimeseries<T, crate::spatial::ScalarGrid>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
+    use crate::interpolate::strategies::{InterpolationStrategy, NextStrategy, PreviousStrategy};
     use crate::spatial::{FourBoxRegion, HemisphericRegion, ScalarRegion};
     use is_close::is_close;
 
@@ -888,6 +910,41 @@ mod tests {
 
         // Linear extrapolate isn't allowed by default
         assert!(result.at_time(2026.0, ScalarRegion::Global).is_err());
+    }
+
+    #[test]
+    fn index_of_strided_bounds() {
+        let bounds = array![2000.0, -1.0, 2001.0, -1.0, 2002.0];
+        let axis = TimeAxis::from_bounds(bounds.slice_move(s![..;2]));
+
+        assert_eq!(axis.index_of(2001.0), Some(1));
+        assert_eq!(axis.index_of(2001.5), None);
+    }
+
+    #[test]
+    fn interpolate_onto_same_axis_matches_interpolation() {
+        let strategies = [
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+            InterpolationStrategy::from(PreviousStrategy::new(true)),
+            InterpolationStrategy::from(NextStrategy::new(true)),
+        ];
+        for strategy in strategies {
+            let mut timeseries = Timeseries::from_values(
+                array![1.0, 4.0, 2.5, 7.0],
+                array![2000.0, 2001.0, 2003.0, 2010.0],
+            );
+            timeseries.with_interpolation_strategy(strategy);
+            let expected: Vec<_> = timeseries
+                .time_axis()
+                .values()
+                .iter()
+                .map(|&time| timeseries.at_time(time, ScalarRegion::Global).unwrap())
+                .collect();
+
+            let result = timeseries.clone().interpolate_into(timeseries.time_axis());
+
+            assert_eq!(result.values().column(0).to_vec(), expected);
+        }
     }
 
     #[test]
