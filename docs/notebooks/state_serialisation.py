@@ -183,5 +183,6 @@ print(f"Finished at {resumed.current_time()}")
 #   see the [Scenario Pipeline](../scenario_pipeline/) tutorial.
 # - A Python component is saved through its `to_json()` and `from_json()` methods,
 #   so its class must be importable when the model is restored.
+#   Restoring imports the module the file names, so only load checkpoints you trust.
 # - The TOML records no format version.
 #   Treat checkpoints as tied to the RSCM version that wrote them.

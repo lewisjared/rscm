@@ -352,6 +352,7 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # and `from_json()` restores them without calling `__init__`.
 # Override both when an attribute is not JSON-serialisable, such as a NumPy array.
 # Define the class at module level so `Model.from_toml()` can import it.
+# Loading imports the module the file names, so only load model files you trust.
 
 # %% [markdown]
 # ## Summary
