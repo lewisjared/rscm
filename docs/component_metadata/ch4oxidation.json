@@ -1,0 +1,76 @@
+{
+  "$schema": "component_metadata_schema.json",
+  "name": "CH4Oxidation",
+  "module_path": "rscm_magicc::chemistry::ch4_oxidation",
+  "language": "rust",
+  "description": "CH4 Oxidation Component\n\nTracks atmospheric methane by source and the CO2 released as its fossil share\nis oxidised, which MAGICC7 adds to fossil CO2 emissions.\n\n# Inputs\n\n- `Atmospheric Concentration|CH4` (ppb), at the start and end of the step\n- `Lifetime|CH4|OH` (yr): OH lifetime over the step\n- `Emissions|CH4|Fossil` (Mt CH4/yr) - Fossil and industrial CH4 emissions\n- `Emissions|CH4|AFOLU` (Mt CH4/yr) - Agriculture and land use CH4 emissions\n- `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `permafrost` parameter\n\n# States (tracked between timesteps)\n\n- `Atmospheric Burden|CH4|{Fossil,AFOLU,Natural,Permafrost}` (Mt CH4): CH4 in the atmosphere by source\n\n# Outputs\n\n- `Emissions|CO2|CH4 Oxidation` (GtC/yr) - CO2 released by oxidation\n\nAs in MAGICC7, the sink is the mid-step concentration over the total lifetime,\nshared between the pools in proportion to their size.\nAnthropogenic pools receive the emissions that close the CH4 budget,\nsplit between fossil and AFOLU in proportion to their emissions.\nThe fossil share counts the fossil pool and `permafrost_fraction` of the permafrost pool.",
+  "category": "Atmospheric Chemistry",
+  "tags": [
+    "chemistry",
+    "ch4",
+    "carbon-cycle",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "concentration",
+      "variable_name": "Atmospheric Concentration|CH4",
+      "unit": "ppb",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "oh_lifetime",
+      "variable_name": "Lifetime|CH4|OH",
+      "unit": "yr",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "fossil_emissions",
+      "variable_name": "Emissions|CH4|Fossil",
+      "unit": "Mt CH4/yr",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "afolu_emissions",
+      "variable_name": "Emissions|CH4|AFOLU",
+      "unit": "Mt CH4/yr",
+      "grid": "Scalar"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "co2_emissions",
+      "variable_name": "Emissions|CO2|CH4 Oxidation",
+      "unit": "GtC/yr",
+      "grid": "Scalar"
+    }
+  ],
+  "states": [
+    {
+      "rust_name": "fossil_burden",
+      "variable_name": "Atmospheric Burden|CH4|Fossil",
+      "unit": "Mt CH4",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "afolu_burden",
+      "variable_name": "Atmospheric Burden|CH4|AFOLU",
+      "unit": "Mt CH4",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "natural_burden",
+      "variable_name": "Atmospheric Burden|CH4|Natural",
+      "unit": "Mt CH4",
+      "grid": "Scalar"
+    },
+    {
+      "rust_name": "permafrost_burden",
+      "variable_name": "Atmospheric Burden|CH4|Permafrost",
+      "unit": "Mt CH4",
+      "grid": "Scalar"
+    }
+  ],
+  "parameters": [],
+  "source_file": "crates/rscm-magicc/src/chemistry/ch4_oxidation.rs"
+}

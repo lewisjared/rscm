@@ -310,6 +310,38 @@ def extract_python_component_metadata(
     }
 
 
+PYTHON_BUILDER_MODULES = ("rscm.components", "rscm.two_layer", "rscm.magicc")
+
+
+def find_python_builder_module(component_name: str) -> str | None:
+    """Return the Python module exposing ``<component_name>Builder``, if any."""
+    for module_name in PYTHON_BUILDER_MODULES:
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        if hasattr(module, f"{component_name}Builder"):
+            return module_name
+    return None
+
+
+def rust_import_path(meta: dict[str, Any]) -> str:
+    """Return the public Rust path a component is re-exported from."""
+    # Components live in private modules that their parent module re-exports.
+    segments = meta["module_path"].split("::")[:-1]
+    return "::".join(s for s in segments if s != "components")
+
+
+def returns_result(meta: dict[str, Any]) -> bool:
+    """Check whether the component's ``from_parameters`` is fallible."""
+    source = Path(meta.get("source_file", ""))
+    if not source.is_file():
+        return False
+    return bool(
+        re.search(r"fn from_parameters\([^)]*\)\s*->\s*RSCMResult", source.read_text())
+    )
+
+
 def generate_component_page(meta: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
     """Generate markdown for a component documentation page."""
     lines = [
@@ -407,52 +439,35 @@ def generate_component_page(meta: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0
 
     component_name = meta["name"]
     if meta.get("language") == "rust":
-        # Python usage (via builder)
-        if meta.get("python_builder"):
-            builder_name = meta["python_builder"].split(".")[-1]
-            lines.extend(
-                [
-                    "### Python",
-                    "",
-                    "```python",
-                    f"from rscm.components import {builder_name}",
-                    "",
-                    f"component = {builder_name}.from_parameters({{",
-                    "    # parameters here",
-                    "}}).build()",
-                    "```",
-                    "",
-                ]
-            )
-        else:
-            # Infer builder name
+        builder_module = find_python_builder_module(component_name)
+        if builder_module:
             builder_name = f"{component_name}Builder"
             lines.extend(
                 [
                     "### Python",
                     "",
                     "```python",
-                    f"from rscm.components import {builder_name}",
+                    f"from {builder_module} import {builder_name}",
                     "",
                     f"component = {builder_name}.from_parameters({{",
                     "    # parameters here",
-                    "}}).build()",
+                    "}).build()",
                     "```",
                     "",
                 ]
             )
 
-        # Rust usage
+        construct = f"{component_name}::from_parameters(parameters)"
+        if returns_result(meta):
+            construct += "?"
         lines.extend(
             [
                 "### Rust",
                 "",
                 "```rust",
-                f"use rscm_components::{component_name};",
+                f"use {rust_import_path(meta)}::{component_name};",
                 "",
-                f"let component = {component_name}::from_parameters({component_name}Parameters {{",  # noqa: E501
-                "    // parameters here",
-                "}});",
+                f"let component = {construct};",
                 "```",
                 "",
             ]
