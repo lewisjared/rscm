@@ -17,7 +17,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-DEFAULT_MAGICC_ROOT = Path.home() / ".local/share/magicc/magicc-v7.5.3"
+MAGICC_DATA = Path.home() / ".local/share/magicc"
+DEFAULT_MAGICC_ROOT = MAGICC_DATA / "magicc-v7.5.3"
 
 
 def _setup_magicc():
@@ -57,8 +58,13 @@ def _setup_magicc():
 
 MAGICC_ROOT = _setup_magicc()
 
-#: AR6 probabilistic distribution (600 members), shipped with the MAGICC distribution.
-AR6_CONFIG = MAGICC_ROOT / "configs" / "600-member.json"
+#: AR6 probabilistic distribution (600 members), published separately from MAGICC.
+AR6_CONFIG = Path(
+    os.environ.get("MAGICC_AR6_CONFIG")
+    or MAGICC_DATA
+    / "magicc-ar6-0fd0f62-f023edb-drawnset"
+    / "0fd0f62-derived-metrics-id-f023edb-drawnset.json"
+)
 
 from pymagicc import MAGICC7  # noqa: E402
 
