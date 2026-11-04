@@ -12,9 +12,10 @@ class StateValue:
     """Represents a value that can be scalar or spatially-resolved.
 
     In the Rust core, this is an enum with three variants:
-      - Scalar(float): A single global value
-      - FourBox(FourBoxSlice): Four-box regional values
-      - Hemispheric(HemisphericSlice): Hemispheric values
+
+    - `Scalar(float)`: a single global value
+    - `FourBox(FourBoxSlice)`: four-box regional values
+    - `Hemispheric(HemisphericSlice)`: hemispheric values
     """
 
     @staticmethod

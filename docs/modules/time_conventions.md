@@ -25,15 +25,8 @@ for step_idx in first_step..=self.parameters.steps_per_year {
 
 ### Forcing interpolation
 
-Forcing is linearly interpolated between the annual boundaries at each substep:
-
-| Step | Fraction | Forcing time | Value |
-|------|----------|-------------|-------|
-| 1 | 1/12 | t_current + 1/12 | erf_start + 1/12 * (erf_end - erf_start) |
-| 2 | 2/12 | t_current + 2/12 | erf_start + 2/12 * (erf_end - erf_start) |
-| ... | ... | ... | ... |
-| 12 | 12/12 | t_next | erf_end |
-
+Forcing is linearly interpolated between the annual boundaries.
+Substep `k` uses the forcing at `t_current + k/12`, which is `erf_start + k/12 * (erf_end - erf_start)`.
 The last substep uses forcing at exactly `t_next`.
 
 ### Temperature output
@@ -54,9 +47,10 @@ Reference: MAGICC7.f90 lines 2702-2716
 
 ### Last-year boundary handling
 
-MAGICC7 runs only 11 substeps in the final year (steps 1..11). RSCM always
-runs 12. This has minimal impact since the final year is typically well past
-the transient phase.
+MAGICC7 runs only 11 substeps in the final year (steps 1..11).
+RSCM always runs 12.
+The full-chain regression runs still agree with MAGICC7 in every year they report, up to 2105,
+so the difference does not reach their output.
 
 ### Temperature output semantics
 

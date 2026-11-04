@@ -23,12 +23,13 @@
 #
 # ## Related Resources
 #
-# - [Coupled Models](coupled_model.py): Building multi-component models
-# - [Scenario Pipeline](scenario_pipeline.py): Branching scenarios from a historical run
-# - [Model Debugging and Inspection](debugging_inspection.py): Using checkpoints to debug
+# - [Coupled Models](../coupled_model/): Building multi-component models
+# - [Scenario Pipeline](../scenario_pipeline/): Branching scenarios from a historical run
+# - [Model Debugging and Inspection](../debugging_inspection/): Using checkpoints to debug
 
 # %%
 import tempfile
+import tomllib
 from pathlib import Path
 
 import numpy as np
@@ -45,80 +46,65 @@ from rscm.core import (
 # %% [markdown]
 # ## Create a simple coupled model
 #
-# We first create a simple coupled model with a carbon cycle and CO2 ERF component.
+# We reuse the carbon cycle and CO2 ERF model from [Coupled Models](../coupled_model/),
+# with a step in CO2 emissions in 1850.
+# Its `ModelBuilder` is in `builder`.
 
-# %%
-t_initial = 1750
-t_final = 2100
+# %% tags=["remove_input"]
+t_initial = 1750.0
+t_final = 2100.0
 
 time_axis = TimeAxis.from_values(
-    np.concatenate(
-        [
-            np.arange(t_initial, 2015.0, 5),
-            np.arange(2015.0, t_final + 1, 1.0),
-        ]
-    )
+    np.concat([np.arange(t_initial, 2015.0, 5), np.arange(2015.0, t_final + 1, 1.0)])
 )
 
-# Carbon cycle parameters
-tau = 20.3
-conc_pi = 280.0
-erf_2xco2 = 4.0
-alpha_temperature = 0.0  # No temperature feedback
-
-co2_erf_component = CO2ERFBuilder.from_parameters(
-    dict(erf_2xco2=erf_2xco2, conc_pi=conc_pi)
-).build()
-carbon_cycle_component = CarbonCycleBuilder.from_parameters(
-    dict(tau=tau, conc_pi=conc_pi, alpha_temperature=alpha_temperature)
-).build()
-
-initial_state = {
-    "Cumulative Land Uptake": 0.0,
-    "Cumulative Emissions|CO2": 0.0,
-    "Atmospheric Concentration|CO2": 300.0,
-}
-
-# Create step emissions scenario
-step_year = 1850.0
-step_size = 10.0
-
-emissions_bounds = np.asarray(
-    [t_initial, (t_initial + step_year) / 2.0, step_year, step_year + 50.0, t_final]
-)
 emissions = Timeseries(
-    np.asarray([0.0, 0.0, step_size, step_size]),
-    TimeAxis.from_bounds(emissions_bounds),
+    np.asarray([0.0, 0.0, 10.0, 10.0]),
+    TimeAxis.from_bounds(np.asarray([t_initial, 1800.0, 1850.0, 1900.0, t_final])),
     "GtC / yr",
     InterpolationStrategy.Previous,
 )
-
 surface_temp = Timeseries(
     np.asarray([0.42]),
-    TimeAxis.from_bounds(np.asarray([float(t_initial), float(t_final)])),
+    TimeAxis.from_bounds(np.asarray([t_initial, t_final])),
     "K",
     InterpolationStrategy.Previous,
 )
 
-model = (
+builder = (
     ModelBuilder()
-    .with_rust_component(carbon_cycle_component)
-    .with_rust_component(co2_erf_component)
+    .with_rust_component(
+        CarbonCycleBuilder.from_parameters(
+            dict(tau=20.3, conc_pi=280.0, alpha_temperature=0.0)
+        ).build()
+    )
+    .with_rust_component(
+        CO2ERFBuilder.from_parameters(dict(erf_2xco2=4.0, conc_pi=280.0)).build()
+    )
     .with_time_axis(time_axis)
     .with_exogenous_variable("Surface Temperature", surface_temp)
     .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
-    .with_initial_values(initial_state)
-).build()
+    .with_initial_values(
+        {
+            "Cumulative Land Uptake": 0.0,
+            "Cumulative Emissions|CO2": 0.0,
+            "Atmospheric Concentration|CO2": 300.0,
+        }
+    )
+)
+
+# %% [markdown]
+# We build the model and step it forward twice.
 
 # %%
-# We can then step the model forward in time
+model = builder.build()
 model.step()
 model.step()
 
 # %% [markdown]
-# We can log the state of a model using TOML.
+# ## Serialising to TOML
 #
-# This format is human-readable and can be used to store the state of a model to disk.
+# The TOML is human-readable and can be stored on disk.
 # It contains these sections:
 #
 # - `time_index`: the current position on the time axis.
@@ -126,26 +112,30 @@ model.step()
 # - `collection`: every timeseries, with values solved so far and NaN for later time points.
 # - `time_axis`: the model's time bounds.
 # - `component_states`: internal state that components carry between steps.
+#
+# Most of the string is timeseries values.
+# Parsing it with `tomllib` picks out the parts above.
 
 # %%
 serialised_model = model.to_toml()
-print("\n".join(serialised_model.splitlines()[:40]))
-print("...")
+state = tomllib.loads(serialised_model)
+print(f"{len(serialised_model.splitlines())} lines of TOML")
+
+co2 = state["collection"]["timeseries"][0]
+print("time_index:", state["time_index"])
+print("components:", [node["type"] for node in state["components"]["nodes"]])
+print("CarbonCycle parameters:", state["components"]["nodes"][1]["parameters"])
+print(f"{co2['name']}:", co2["data"]["Scalar"]["values"]["data"][:4], "...")
 
 # %% [markdown]
 # ## Recreating the model state
 #
-# A new model can be initialised using the TOML representation.
-# The new model will have the same state and components as the original model.
+# A new model can be initialised from the TOML representation.
+# It has the same components and state as the original model,
+# and is on the same timestep.
 
 # %%
 new_model = Model.from_toml(serialised_model)
-print(new_model.as_dot())
-
-# %% [markdown]
-# It will also be on the same timestep as the original model.
-
-# %%
 assert new_model.current_time() == model.current_time()
 
 # %% [markdown]
@@ -167,18 +157,10 @@ print("Restored and original runs match")
 # ## Checkpoints on disk
 #
 # Write the TOML string to a file to keep a checkpoint between sessions or share it with collaborators.
+# `builder.build()` can be called again to get a fresh model from the same configuration.
 
 # %%
-checkpoint_model = (
-    ModelBuilder()
-    .with_rust_component(carbon_cycle_component)
-    .with_rust_component(co2_erf_component)
-    .with_time_axis(time_axis)
-    .with_exogenous_variable("Surface Temperature", surface_temp)
-    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
-    .with_initial_values(initial_state)
-).build()
-
+checkpoint_model = builder.build()
 while checkpoint_model.current_time() < 1900.0:
     checkpoint_model.step()
 
@@ -198,7 +180,7 @@ print(f"Finished at {resumed.current_time()}")
 # - A restored model keeps its original time axis and exogenous data.
 #   There is no API yet to change these on a restored model.
 #   To run new scenarios from a branch point,
-#   see the [Scenario Pipeline](scenario_pipeline.py) tutorial.
+#   see the [Scenario Pipeline](../scenario_pipeline/) tutorial.
 # - Models containing Python components cannot be serialised yet.
 # - The TOML records no format version.
 #   Treat checkpoints as tied to the RSCM version that wrote them.

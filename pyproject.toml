@@ -74,7 +74,6 @@ docs = [
     "jupytext>=1.16.4",
     "matplotlib>=3.9.2",
     "seaborn>=0.13.2",
-    "mike>=2.1.3",
     "mkdocs-minify-plugin>=0.8.0",
 ]
 
@@ -209,7 +208,7 @@ underlines = [
     "",
     "",
 ]
-issue_format = "[#{issue}](https://github.com/lewisjared/rscm/pulls/{issue})"
+issue_format = "[#{issue}](https://github.com/lewisjared/rscm/pull/{issue})"
 type = [
     { directory = "breaking", name = "⚠️ Breaking Changes ⚠️", showcontent = true },
     { directory = "deprecation", name = "Deprecations", showcontent = true },

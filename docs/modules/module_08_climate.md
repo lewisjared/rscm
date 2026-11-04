@@ -1,207 +1,277 @@
-# Module 08: Climate / Energy Balance Model
+# Module 08: Climate
+
+## Overview
+
+The climate module turns radiative forcing into temperature.
+It couples an upwelling-diffusion-entrainment ocean to a four-box atmosphere:
+Northern Ocean, Northern Land, Southern Ocean and Southern Land.
+It accounts for:
+
+- Ocean heat uptake, which delays the response,
+  so the transient response is smaller than the equilibrium one.
+- Faster warming over land than over ocean.
+- Different responses in the two hemispheres.
+- Upwelling that weakens as the climate warms.
+- Deep-ocean heat uptake by vertical diffusion and advection through a multi-layer column.
+
+The model resolves both the fast response of the atmosphere and mixed layer
+and the slow response of the deep ocean.
+
+## RSCM implementation
+
+- **Component**: `ClimateUDEB`, built from Python with `rscm.magicc.ClimateUDEBBuilder`.
+- **Source**: `crates/rscm-magicc/src/climate/udeb/` holds the substep loop (`mod.rs`)
+  and the ocean column (`ocean_column.rs`).
+  LAMCALC is in `climate/lamcalc.rs`.
+  The tridiagonal solve is `thomas_solve` in `crates/rscm-core/src/utils/linear_algebra.rs`.
+- **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
+- **Tests**:
+  - `tests/regression/test_full_run.py::test_climate` drives `ClimateUDEB` with MAGICC7's own box forcing.
+  - `tests/regression/test_full_run.py::test_coupled_run` runs the coupled chain,
+    with variants on climate sensitivity, upwelling, diffusivity, ocean geometry, ground heat,
+    inter-hemispheric exchange, feedback and efficacy.
+  - Rust tests in `crates/rscm-magicc/tests/` (`lamcalc_integration.rs`, `lamcalc_reference_values.rs`,
+    `ecs_diagnostics.rs`, `conservation.rs`) check LAMCALC and energy conservation.
+
+`ClimateUDEB` follows MAGICC7 in these details, which are easy to get wrong:
+
+- LAMCALC uses the regional CO₂ forcing pattern `RF_REGIONS_CO2 = [1.4089, 1.37045, 1.43333, 1.33257]`
+  from `MAGCFG_DEFAULTALL.CFG`.
+- $\alpha_{eff}$ is updated every monthly substep from the previous substep's SST.
+  Holding it fixed for the year leaves a cold drift of about $10^{-5}$ K by 2000.
+- The CO₂ internal efficacy comes from LAMCALC.
+  With `efficacy_apply = 2`, effective forcing is scaled by `prescribed_efficacy / internal_efficacy`.
+  `ForcingAggregation` applies an internal efficacy to every other agent.
+  As in MAGICC7, they are recalculated each year from the previous year's climate sensitivity,
+  so they drift as the climate warms.
+- Monthly volcanic forcing enters through the `subannual_forcing` parameter.
+  `rscm.magicc.prescribed.volcanic_pattern` reproduces MAGICC7's regional pattern,
+  which is derived from the run itself:
+  the mean monthly box forcing, scaled by `RF_VOLCANIC_SCALE`,
+  from the first year to `RF_VOLC_FORC_PATTERN_MAX_LAST_YEAR`, less its global mean and 1.
+  Substeps 1 to 11 take the previous year's volcanic internal efficacy and substep 12 the current one.
+  The first year keeps the initial value.
+
+## Equations
+
+### Energy balance
+
+Each box satisfies
+
+$$
+C \frac{dT}{dt} = Q - \lambda T + H_{exchange}
+$$
+
+where:
+
+- $C$ is the effective heat capacity (J m⁻² K⁻¹).
+- $T$ is the temperature anomaly (K).
+- $Q$ is the radiative forcing (W m⁻²).
+- $\lambda$ is the feedback parameter (W m⁻² K⁻¹).
+- $H_{exchange}$ is the heat exchange with other boxes.
+
+Each ocean box sits on a multi-layer ocean column (50 layers by default).
+Land boxes have no column of their own.
+
+### Four-box coupling matrix
+
+At equilibrium the four boxes satisfy $\mathbf{A}\,\mathbf{T} = \mathbf{F}\,\mathbf{Q}$,
+where $\mathbf{Q}$ holds each box's forcing and $\mathbf{F} = \mathrm{diag}(f_{NO}, f_{NL}, f_{SO}, f_{SL})$,
+with the boxes ordered Northern Ocean, Northern Land, Southern Ocean, Southern Land:
+
+$$
+\mathbf{A} =
+\begin{pmatrix}
+f_{NO}\lambda_o + \alpha K_{lo} + K_{ns} & -K_{lo} & -K_{ns} & 0 \\
+-\alpha K_{lo} & f_{NL}\lambda_l + K_{lo} & 0 & 0 \\
+-K_{ns} & 0 & f_{SO}\lambda_o + \alpha K_{lo} + K_{ns} & -K_{lo} \\
+0 & 0 & -\alpha K_{lo} & f_{SL}\lambda_l + K_{lo}
+\end{pmatrix}
+$$
+
+Land exchanges heat only with the ocean in its hemisphere,
+and the hemispheres exchange heat only through their oceans.
+
+- $K_{lo}$ is `CORE_HEATXCHANGE_LANDOCEAN`, the land-ocean heat exchange coefficient (W m⁻² K⁻¹).
+- $K_{ns}$ is `CORE_HEATXCHANGE_NORTHSOUTH`, the inter-hemispheric exchange coefficient (W m⁻² K⁻¹).
+- $\alpha$ is `CORE_AMPLIFY_OCN2LAND_HEATXCHNG`, the amplification of ocean-to-land heat flux.
+- $\lambda_o$ and $\lambda_l$ are the ocean and land feedback parameters.
+- $f_{NO}$, $f_{NL}$, $f_{SO}$ and $f_{SL}$ are the global area fractions of each box
+  (`FGNO`, `FGNL`, `FGSO`, `FGSL`).
+  Module 00 gives the [box order and area fractions](module_00_initialization.md#four-box-geography).
 
-## 1. Scientific Purpose
+### Climate sensitivity decomposition
 
-The Climate Module is MAGICC's core temperature response component, implementing an Upwelling-Diffusion-Entrainment Balance (UDEB) ocean model coupled to a 4-box hemispheric atmosphere structure. This module converts radiative forcing into temperature response, accounting for:
+LAMCALC splits the equilibrium climate sensitivity (`CORE_CLIMATESENSITIVITY`)
+into $\lambda_o$ and $\lambda_l$, so that the land-ocean warming ratio `CORE_RLO` holds:
 
-1. **Ocean heat uptake** - The primary source of delayed climate response (transient climate response < equilibrium climate sensitivity)
-2. **Land-ocean temperature differential** - Land warms faster than ocean due to lower effective heat capacity
-3. **Hemispheric asymmetry** - Different responses in Northern and Southern hemispheres
-4. **Variable ocean circulation** - Temperature-dependent upwelling rate (thermohaline circulation weakening)
-5. **Multi-layer ocean diffusion** - Deep ocean heat sequestration via vertical diffusion and advection
+$$
+\lambda = \frac{Q_{2x}}{\Delta T_{2x}},
+\qquad
+\lambda_l = \lambda + \frac{f_o}{f_l} \frac{\lambda - \lambda_o}{RLO},
+\qquad
+RLO = \frac{\Delta T_l}{\Delta T_o}
+$$
 
-The model captures both fast (atmospheric/mixed layer) and slow (deep ocean) response timescales, essential for projecting transient climate change and ocean heat content.
+Here $f_o$ and $f_l$ are the total ocean and land fractions.
+The second relation is the global energy balance with land warming $RLO$ times as much as ocean.
+LAMCALC iterates on $\lambda_o$ until the equilibrium of the coupling matrix
+gives the target $RLO$ to within 0.001.
 
-## 2. Mathematical Formulation
+The equilibrium forcing in each box follows the regional CO₂ pattern (MAGICC7.f90 lines 8146 to 8275):
 
-### 2.1 Overview: Energy Balance with 4-Box Atmosphere
+$$
+q_i = \frac{r_i}{\sum_j r_j f_j}, \qquad Q_i = Q_{2x}\, q_i
+$$
 
-The atmosphere is divided into 4 boxes:
+where $r_i$ is `RF_REGIONS_CO2` for box $i$.
+After LAMCALC converges, MAGICC7 repeats the equilibrium calculation with each agent's regional pattern.
+The ratio of the global response to the CO₂ response at the same global-mean forcing
+is that agent's internal efficacy.
 
-- **Box 1**: Northern Hemisphere Ocean (NHO)
-- **Box 2**: Northern Hemisphere Land (NHL)
-- **Box 3**: Southern Hemisphere Ocean (SHO)
-- **Box 4**: Southern Hemisphere Land (SHL)
+### Time-varying climate sensitivity
 
-Each ocean box is coupled to a multi-layer ocean column (by default 50 layers), while land boxes have simpler heat capacity representation.
+Climate sensitivity varies with forcing and with cumulative temperature:
 
-The fundamental energy balance for each box is:
+$$
+ECS_{eff} = ECS \left(1 + \alpha_T \frac{\sum T - ECS \cdot P}{ECS \cdot P}\right)
+\left(1 + \alpha_Q \left(\max(0, Q) - Q_{2x}\right)\right)
+$$
 
-$$C \frac{dT}{dt} = Q - \lambda T + H_{exchange}$$
+- $\alpha_Q$ is `CORE_FEEDBACK_QSENSITIVITY` (per W m⁻²).
+- $\alpha_T$ is `CORE_FEEDBACK_CUMTSENSITIVITY` (dimensionless).
+- $P$ is `CORE_FEEDBACK_CUMTPERIOD` (yr), the period over which $\sum T$ (K yr) is summed.
 
-Where:
+### Mixed layer
 
-- $C$ = effective heat capacity (J m^-2 K^-1)
-- $T$ = temperature anomaly (K)
-- $Q$ = radiative forcing (W m^-2)
-- $\lambda$ = feedback parameter (W m^-2 K^-1)
-- $H_{exchange}$ = heat exchange with other boxes
+The mixed layer (layer 1) of each hemisphere satisfies
 
-### 2.2 4-Box Coupled System for Land-Ocean-Hemisphere Exchange
-
-At equilibrium (dT/dt = 0), the 4-box system satisfies:
-
-$$\mathbf{A} \cdot \mathbf{T} = \mathbf{Q}$$
-
-Where the coefficient matrix **A** (solved in `LAMCALC`) is:
-
-```
-A(1,1) = FGNO*lambda_o + K_lo*alpha + K_ns    ! NHO self-coupling
-A(1,2) = -K_lo                                 ! NHO-NHL coupling
-A(1,3) = -K_ns                                 ! NHO-SHO coupling
-A(1,4) = 0                                     ! No direct NHO-SHL coupling
-
-A(2,1) = -K_lo*alpha                          ! NHL-NHO coupling
-A(2,2) = FGNL*lambda_l + K_lo                 ! NHL self-coupling
-A(2,3) = 0                                     ! No direct NHL-SHO coupling
-A(2,4) = 0                                     ! No direct NHL-SHL coupling
-
-A(3,1) = -K_ns                                ! SHO-NHO coupling
-A(3,2) = 0                                     ! No direct SHO-NHL coupling
-A(3,3) = FGSO*lambda_o + K_lo*alpha + K_ns    ! SHO self-coupling
-A(3,4) = -K_lo                                 ! SHO-SHL coupling
-
-A(4,1) = 0                                     ! No direct SHL-NHO coupling
-A(4,2) = 0                                     ! No direct SHL-NHL coupling
-A(4,3) = -K_lo*alpha                          ! SHL-SHO coupling
-A(4,4) = FGSL*lambda_l + K_lo                 ! SHL self-coupling
-```
-
-Where:
-
-- `K_lo` = `CORE_HEATXCHANGE_LANDOCEAN` (W m^-2 K^-1) - land-ocean heat exchange coefficient
-- `K_ns` = `CORE_HEATXCHANGE_NORTHSOUTH` (W m^-2 K^-1) - inter-hemispheric heat exchange
-- `alpha` = `CORE_AMPLIFY_OCN2LAND_HEATXCHNG` - amplification factor for ocean-to-land heat flux
-- `lambda_o`, `lambda_l` = ocean and land feedback parameters (derived from climate sensitivity and RLO)
-- `FGNO`, `FGNL`, `FGSO`, `FGSL` = area fractions of each box
-
-### 2.3 Climate Sensitivity Decomposition
-
-The equilibrium climate sensitivity (`CORE_CLIMATESENSITIVITY`) is decomposed into land and ocean components via the land-ocean warming ratio `CORE_RLO`:
-
-$$\Delta T_{2x} = \frac{Q_{2x}}{\lambda_{global}}$$
-
-$$\lambda_{global} = f_o \cdot \lambda_o + f_l \cdot \lambda_l$$
-
-$$RLO = \frac{\Delta T_l}{\Delta T_o}$$
-
-The feedback parameters are iteratively solved in `LAMCALC` to satisfy both the global sensitivity and the land-ocean warming ratio constraint.
-
-### 2.4 Time-Varying Climate Sensitivity
-
-Climate sensitivity can vary with forcing and cumulative temperature:
-
-$$ECS_{eff}(t) = ECS_0 \cdot \left(1 + \alpha_T \cdot \frac{\sum T(t) - \sum T_{2x}}{\sum T_{2x}}\right) \cdot \left(1 + \alpha_Q \cdot (\max(0, Q(t)) - Q_{2x})\right)$$
-
-Where:
-
-- `CORE_FEEDBACK_QSENSITIVITY` = $\alpha_Q$ (forcing sensitivity, units: $1/(\text{W/m}^2)$; default $7.84 \times 10^{-9}$)
-- `CORE_FEEDBACK_CUMTSENSITIVITY` = $\alpha_T$ (cumulative temperature sensitivity, dimensionless)
-- `CORE_FEEDBACK_CUMTPERIOD` = period for cumulative temperature calculation
-
-### 2.5 Ocean Mixed Layer Energy Balance
-
-For each ocean hemisphere, the mixed layer (layer 1) satisfies:
-
-$$C_{mix} \frac{dT_1}{dt} = Q_{effective} - TERM_{feedback} \cdot T_1 + F_{diffusion} + F_{upwelling} + F_{exchange}$$
-
-Where the feedback term includes coupled land-ocean effects:
-
-$$TERM_{feedback} = \frac{\alpha_{eff}}{C} \cdot \left( \lambda_o + \frac{\lambda_l \cdot K_{lo} \cdot \alpha \cdot f_l}{f_o \cdot (K_{lo} + f_l \cdot \lambda_l)} \right)$$
-
-This couples ocean temperature feedback with land feedback through heat exchange. Variables:
-
-- $C_{mix}$ = `HEAT_CAPACITY_PERM * CORE_MIXEDLAYER_DEPTH` (W yr m^-2 K^-1)
-- $\alpha_{eff}$ = `CORE_TEMPADJUST_OCN2ATM_ALPHAEFF` - ocean-to-atmosphere temperature amplification
-- $\lambda_o$, $\lambda_l$ = ocean and land feedback parameters
-- $K_{lo}$ = `CORE_HEATXCHANGE_LANDOCEAN` - land-ocean heat exchange
-- $\alpha$ = `CORE_AMPLIFY_OCN2LAND_HEATXCHNG` - ocean-to-land amplification
-- $f_o$, $f_l$ = ocean and land area fractions
-- $F_{diffusion}$ = diffusive heat flux from layer below
-- $F_{upwelling}$ = advective heat flux from upwelling
-- $F_{exchange}$ = land-ocean and inter-hemispheric heat exchange
-
-> **Note**: The inter-hemispheric heat exchange uses ocean **air** temperatures (i.e., SST after the alpha_eff ocean-to-atmosphere adjustment), not raw SST values. The exchange flux is also normalized by each hemisphere's ocean area fraction $f_o$ (`FGO(hemisphere)`).
-
-### 2.6 Ocean Vertical Diffusion-Advection Equation
-
-Below the mixed layer, temperature evolves according to:
-
-$$\frac{\partial T}{\partial t} = \frac{1}{A(z)} \frac{\partial}{\partial z} \left[ A(z) K \frac{\partial T}{\partial z} \right] - w \frac{\partial T}{\partial z} + \frac{w \cdot \pi \cdot (T_1 - T_{cold})}{A(z)} \cdot \frac{dA}{dz}$$
-
-Where:
-
-- $K$ = vertical diffusivity (m^2/yr) - can vary with depth and temperature gradient
-- $w$ = upwelling rate (m/yr)
-- $A(z)$ = ocean area at depth z (accounting for bathymetry)
-- $\pi$ = `CORE_POLARSINKWATER_TEMPRATIO` - fraction of surface temperature entrained in polar sinking
-- $T_{cold}$ = temperature of polar sinking water
-
-The third term represents entrainment from the narrowing ocean basin.
-
-### 2.7 Temperature-Dependent Vertical Diffusivity
-
-The vertical diffusivity varies with the top-to-bottom temperature gradient:
-
-$$K_l(t) = \max\left(K_{min}, K_0 + \frac{dK}{dT} \cdot \left(1 - \frac{l}{n - 1}\right) \cdot (T_1 - T_{bottom})\right)$$
-
-$l$ counts layer boundaries from 0 at the base of the mixed layer, and $n$ is the number of layers.
-
-Where:
-
-- $K_0$ = `CORE_VERTICALDIFFUSIVITY` (cm^2/s, converted to m^2/yr by factor 3155.76)
-- $K_{min}$ = `CORE_VERTICALDIFFUSIVITY_MIN`
-- $\frac{dK}{dT}$ = `CORE_VERTICALDIFF_TOP_DKDT`
-
-### 2.8 Tridiagonal Matrix System
-
-The implicit discretization yields a tridiagonal system for each hemisphere:
-
-$$A_l \cdot T_{l-1}^{n+1} + B_l \cdot T_l^{n+1} + C_l \cdot T_{l+1}^{n+1} = D_l$$
-
-**Mixed Layer (l=1):**
-
-```
-A(1) = 1 + dt/dz_mix * (K/dz1 * AF_bottom + w*pi*AF_bottom + TERM_OCN_LAND_FEEDBACK*AF_top)
-B(1) = -dt/dz_mix * (K/dz1 + w) * AF_bottom
-D(1) = T(1) + Q_terms + delta_w_terms + El_Nino_terms + ground_heat_terms
-```
-
-**Layer 2 (just below mixed layer):**
-
-```
-A(2) = -dt/dz * K(1)/dz1 * AF_top
-B(2) = 1 + dt/dz * (K(1)/dz1*AF_top + K(2)/dz*AF_bottom + w*AF_top)
-C(2) = -dt/dz * (K(2)/dz + w) * AF_bottom
-D(2) = T(2) + entrainment_term + delta_w_terms
-```
-
-**Middle Layers (l=3 to N-1):**
-
-```
-A(l) = -dt/dz * K(l-1)/dz * AF_top
-B(l) = 1 + dt/dz * (K(l-1)/dz*AF_top + K(l)/dz*AF_bottom + w*AF_top)
-C(l) = -dt/dz * (K(l)/dz + w) * AF_bottom
-D(l) = T(l) + entrainment_term + delta_w_terms
-```
-
-**Bottom Layer (l=N):**
-
-```
-A(N) = -dt/dz * K(N-1)/dz * AF_top
-B(N) = 1 + dt/dz * (K(N-1)/dz + w) * AF_top
-D(N) = T(N) + entrainment_term + delta_w_terms
-```
-
-Where `AF_top`, `AF_bottom` are area factors accounting for basin narrowing with depth.
-
-> **Note on layer 1 coefficient naming**: For the mixed layer (l=1), the Fortran overloads `A(1)` as the diagonal element (there is no sub-diagonal for the first row of the tridiagonal system), and `B(1)` is the single off-diagonal (super-diagonal) element. This differs from the general convention used for layers 2..N, where `A` is the sub-diagonal, `B` is the diagonal, and `C` is the super-diagonal.
-
-### 2.9 Thomas Algorithm for Tridiagonal Solve
-
-The tridiagonal system is solved using the Thomas algorithm (forward elimination, back substitution):
-
-**Forward sweep:**
+$$
+C_{mix} \frac{dT_1}{dt} = Q_{eff} - \Lambda\, T_1 + F_{diffusion} + F_{upwelling} + F_{exchange}
+$$
+
+with the coupled land-ocean feedback
+
+$$
+\Lambda = \frac{\alpha_{eff}}{C}
+\left(\lambda_o + \frac{\alpha \lambda_l K_{lo} f_l}{f_o (K_{lo} + f_l \lambda_l)}\right)
+$$
+
+- $C_{mix}$ is `HEAT_CAPACITY_PERM * CORE_MIXEDLAYER_DEPTH` (W yr m⁻² K⁻¹).
+- $\alpha_{eff}$ is the ratio of ocean air temperature to SST
+  (see [ocean-to-atmosphere amplification](#ocean-to-atmosphere-amplification)).
+- $f_o$ and $f_l$ are the ocean and land fractions of the hemisphere's boxes.
+- $F_{diffusion}$, $F_{upwelling}$ and $F_{exchange}$ are the diffusive, advective
+  and land-ocean plus inter-hemispheric fluxes.
+
+The inter-hemispheric exchange uses ocean air temperatures, not SST,
+and is divided by the hemisphere's ocean fraction:
+
+$$
+H_{NS,N} = \frac{K_{ns}}{f_{NO}}\left(T^{air}_{SO} - T^{air}_{NO}\right),
+\qquad
+H_{NS,S} = \frac{K_{ns}}{f_{SO}}\left(T^{air}_{NO} - T^{air}_{SO}\right)
+$$
+
+### Ocean diffusion and advection
+
+Below the mixed layer:
+
+$$
+\frac{\partial T}{\partial t}
+= \frac{1}{A(z)} \frac{\partial}{\partial z}\left[A(z) K \frac{\partial T}{\partial z}\right]
+- w \frac{\partial T}{\partial z}
++ \frac{w \pi (T_1 - T_{cold})}{A(z)} \frac{dA}{dz}
+$$
+
+- $K$ is the vertical diffusivity (m² yr⁻¹).
+- $w$ is the upwelling rate (m yr⁻¹).
+- $A(z)$ is the ocean area at depth $z$.
+- $\pi$ is `CORE_POLARSINKWATER_TEMPRATIO`,
+  the fraction of surface temperature carried by polar sinking water.
+- $T_{cold}$ is the temperature of polar sinking water.
+
+The last term is entrainment as the basin narrows with depth.
+
+### Temperature-dependent diffusivity
+
+The diffusivity at the base of layer $l$ ($l = 1, \dots, n-1$) depends on the top-to-bottom gradient:
+
+$$
+K_l = \max\left(K_{min},\ K_0 + \frac{dK}{dT}\left(1 - \frac{l-1}{n-1}\right)(T_1 - T_n)\right)
+$$
+
+- $K_0$ is `CORE_VERTICALDIFFUSIVITY`, $K_{min}$ is `CORE_VERTICALDIFFUSIVITY_MIN`
+  and $dK/dT$ is `CORE_VERTICALDIFF_TOP_DKDT`.
+  All are given in cm² s⁻¹ and converted to m² yr⁻¹ by the factor 3155.76.
+- The scaling uses the boundary index, not depth, so the thicker mixed layer is ignored.
+
+### Tridiagonal system
+
+The implicit discretisation gives a tridiagonal system for each hemisphere:
+
+$$
+A_l T_{l-1}^{n+1} + B_l T_l^{n+1} + C_l T_{l+1}^{n+1} = D_l
+$$
+
+With substep $\Delta t$, mixed-layer depth $h$,
+layer thickness $\Delta z = 100$ m, $\Delta z_1 = \Delta z / 2$,
+area factors $a^t_l = A^t_l / \bar{A}_l$, $a^b_l = A^b_l / \bar{A}_l$
+and $a^d_l = (A^t_l - A^b_l) / \bar{A}_l$ from the ocean area at the top and bottom of layer $l$
+and their mean $\bar{A}_l$,
+initial profile $T^0_l$, polar sinking temperature $T_p$ and upwelling change $\Delta w = w - w_0$,
+the coefficients are, for the mixed layer:
+
+$$
+\begin{aligned}
+B_1 &= 1 + \frac{\Delta t}{h}
+  \left[\left(\frac{K_1}{\Delta z_1} + \pi w\right) a^b_1 + \Lambda\, a^t_1\right] \\
+C_1 &= -\frac{\Delta t}{h}\left(\frac{K_1}{\Delta z_1} + w\right) a^b_1 \\
+D_1 &= T_1 + \frac{\Delta t}{h c} F\, a^t_1 + \frac{\Delta t}{h} \Delta w \left(T^0_2 - T_p\right) a^b_1
+\end{aligned}
+$$
+
+where $c$ is the heat capacity per metre and $F$ is the forcing reaching the mixed layer,
+
+$$
+F = \frac{K_{lo} f_l Q_l}{f_o (K_{lo} + f_l \lambda_l)} + Q_o + H_{NS}
+$$
+
+For the interior layers $l = 2, \dots, n-1$,
+with $\Delta z' = \Delta z_1$ for $l = 2$ and $\Delta z$ otherwise:
+
+$$
+\begin{aligned}
+A_l &= -\frac{\Delta t}{\Delta z} \frac{K_{l-1}}{\Delta z'} a^t_l \\
+B_l &= 1 + \frac{\Delta t}{\Delta z}
+  \left[\left(\frac{K_{l-1}}{\Delta z'} + w\right) a^t_l + \frac{K_l}{\Delta z} a^b_l\right] \\
+C_l &= -\frac{\Delta t}{\Delta z}\left(\frac{K_l}{\Delta z} + w\right) a^b_l \\
+D_l &= T_l + \frac{\Delta t}{\Delta z}\left[\Delta w \left(T^0_{l+1} a^b_l - T^0_l a^t_l\right)
+      + a^d_l \left(\pi w T_1 + \Delta w\, T_p\right)\right]
+\end{aligned}
+$$
+
+and for the bottom layer:
+
+$$
+\begin{aligned}
+A_n &= -\frac{\Delta t}{\Delta z} \frac{K_{n-1}}{\Delta z} a^t_n \\
+B_n &= 1 + \frac{\Delta t}{\Delta z}\left(\frac{K_{n-1}}{\Delta z} + w\right) a^t_n \\
+D_n &= T_n + \frac{\Delta t}{\Delta z} a^t_n \left[\pi w T_1 + \Delta w \left(T_p - T^0_n\right)\right]
+\end{aligned}
+$$
+
+With the ground reservoir on, $D_1$ also loses
+$\frac{\Delta t\, a^t_1}{h f_o c} K_{lg} (T_{land} - T_{ground})$.
+
+The Fortran names the mixed-layer diagonal `A(1)` and its super-diagonal `B(1)`,
+because the first row has no sub-diagonal.
+Layers 2 to $n$ use `A`, `B` and `C` for the sub-diagonal, diagonal and super-diagonal.
+
+### Thomas algorithm
+
+The system is solved by forward elimination and back substitution
+(MAGICC7.f90 lines 3080 to 3094), written here in the Fortran's naming:
 
 ```fortran
 AA(1) = -B(1) / A(1)
@@ -211,11 +281,6 @@ DO L = 2, N-1
     AA(L) = -C(L) / VV
     BB(L) = (D(L) - A(L) * BB(L-1)) / VV
 END DO
-```
-
-**Back substitution:**
-
-```fortran
 T(N) = (D(N) - A(N)*BB(N-1)) / (A(N)*AA(N-1) + B(N))
 DO I = 1, N-1
     L = N - I
@@ -223,641 +288,287 @@ DO I = 1, N-1
 END DO
 ```
 
-### 2.10 Temperature-Dependent Upwelling
-
-The upwelling rate decreases with warming (simulating thermohaline circulation weakening):
-
-$$w(t) = w_0 \cdot \left(1 - f_{var} \cdot \frac{T_{key}}{T_{thresh}}\right)$$
-
-With a floor at:
-
-$$w_{min} = w_0 \cdot (1 - f_{var})$$
-
-Where:
-
-- $w_0$ = `CORE_INITIAL_UPWELLING_RATE` (m/yr)
-- $f_{var}$ = `CORE_UPWELLING_VARIABLE_PART` (fraction that can vary, default 0.7)
-- $T_{thresh}$ = `CORE_UPWELL_THRESH_TEMP_NH` or `_SH` (threshold temperature)
-- $T_{key}$ depends on `CORE_UPWELLING_SCALING_METHOD`:
-  - "GLOBE": Global mean temperature
-  - "OCEAN": Ocean mean temperature
-  - "HEMISPHERIC": Respective hemisphere ocean temperature
-  - "NOSCALING": Constant upwelling
-  - "PRESCRIBED": Read from file
-
-> **AR6 Configuration**: Only the `GLOBE` upwelling scaling method is used. The `NOSCALING`, `PRESCRIBED`, `OCEAN`, and `HEMISPHERIC` methods are dead code and do not need to be implemented.
-
-### 2.11 Ocean-to-Atmosphere Temperature Amplification
-
-Surface air temperature over ocean differs from sea surface temperature:
-
-$$T_{air,ocean} = \alpha \cdot T_{SST} + \gamma \cdot T_{SST}^2$$
-
-For $T_{SST} < T^*$ (threshold), otherwise linear with offset $\delta_{max}$:
-
-$$T_{air,ocean} = T_{SST} + \delta_{max}$$
-
-Where:
-
-- $\alpha$ = `CORE_TEMPADJUST_OCN2ATM_ALPHA` (default 1.04)
-- $\gamma$ = `CORE_TEMPADJUST_OCN2ATM_GAMMA` (default -0.002)
-- $T^* = -(\alpha - 1)/(2\gamma)$
-- $\delta_{max} = \alpha T^* + \gamma (T^*)^2 - T^*$
-
-This parameterization ensures $T_{air} \geq T_{SST}$ (air warms more than SST).
-
-### 2.12 Land Temperature (Equilibrium with Ocean)
-
-Land temperature is calculated assuming equilibrium with the adjacent ocean box:
-
-$$T_{land} = \frac{f_l \cdot Q_l + K_{lo} \cdot \alpha \cdot T_{ocean}}{f_l \cdot \lambda_l + K_{lo}}$$
-
-### 2.13 Ground Heat Capacity (Optional)
-
-When `CORE_LANDHEATCAPACITY_APPLY = 1`, a ground heat reservoir damps land temperature response:
-
-$$\frac{dT_{ground}}{dt} = \frac{K_{lg} \cdot (T_{land} - T_{ground})}{f_l \cdot C \cdot d_{eff}}$$
-
-Where:
-
-- $K_{lg}$ = `CORE_HEATXCHANGE_LANDGROUND`
-- $d_{eff}$ = `CORE_LANDHC_EFFTHICKNESS` (effective depth in meters)
-
-## 3. State Variables
-
-| Variable | Fortran Name | Symbol | Units | Description | Initial Value |
-|----------|--------------|--------|-------|-------------|---------------|
-| Ocean layer temperatures (NH) | `OCN_HEMISPHERIC_LAYERTEMPS(1,:)` | $T_{NH,l}$ | K | NH ocean temperature anomaly in each layer | 0.0 |
-| Ocean layer temperatures (SH) | `OCN_HEMISPHERIC_LAYERTEMPS(2,:)` | $T_{SH,l}$ | K | SH ocean temperature anomaly in each layer | 0.0 |
-| 4-box air temperatures | `CURRENT_TIME_TEMPERATURE(1:4)` | $T_{NHO}, T_{NHL}, T_{SHO}, T_{SHL}$ | K | Air temperature anomalies for 4 boxes | 0.0 |
-| Mixed layer temperatures | `CURRENT_TIME_MIXEDLAYERTEMP(1:4)` | $T_{mix}$ | K | Sea surface temperature anomalies | 0.0 |
-| Ground temperatures | `GROUND_HEMISPHERIC_TEMPS(1:2)` | $T_{ground}$ | K | Ground heat reservoir temperature | 0.0 |
-| Current upwelling rate (NH) | `CURRENT_UPWELLING_RATE(1)` | $w_{NH}$ | m/yr | Current NH upwelling rate | `CORE_INITIAL_UPWELLING_RATE` |
-| Current upwelling rate (SH) | `CURRENT_UPWELLING_RATE(2)` | $w_{SH}$ | m/yr | Current SH upwelling rate | `CORE_INITIAL_UPWELLING_RATE` |
-| Delta upwelling rate | `DELTA_CURRENT_UPWELLING_RATE(1:2)` | $\Delta w$ | m/yr | Change from initial upwelling | 0.0 |
-| El Nino heat box | `ELNINO_N34_DOUBLEDELTABOX` | - | K | Heat anomaly in El Nino "parallel box" | 0.0 |
-| Inter-hemispheric heat exchange | `HEMISPHERIC_HEATXCHANGE(1:2)` | $H_{NS}$ | W/m^2 | Heat flux between hemispheres | 0.0 |
-
-## 4. Parameters
-
-### 4.1 Climate Sensitivity Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|--------------|-------|---------|-------------|-------------|
-| Equilibrium climate sensitivity | `CORE_CLIMATESENSITIVITY` | K | 3.0 | 1.5-6.0 | Equilibrium warming for CO2 doubling |
-| Forcing for 2xCO2 | `CORE_DELQ2XCO2` | W/m^2 | 3.71 | 3.5-4.0 | Radiative forcing for doubled CO2 |
-| Land-ocean warming ratio | `CORE_RLO` | - | 1.317 | 1.0-2.0 | Ratio of land to ocean equilibrium warming |
-| Forcing sensitivity | `CORE_FEEDBACK_QSENSITIVITY` | - | 7.84e-9 | - | Sensitivity of ECS to forcing level |
-| Cumulative T sensitivity | `CORE_FEEDBACK_CUMTSENSITIVITY` | - | 0.08 | - | Sensitivity of ECS to cumulative temperature |
-| Cumulative T period | `CORE_FEEDBACK_CUMTPERIOD` | years | 300 | - | Period for cumulative temperature integration |
-
-### 4.2 Ocean Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|--------------|-------|---------|-------------|-------------|
-| Mixed layer depth | `CORE_MIXEDLAYER_DEPTH` | m | 60 | 40-100 | Depth of ocean mixed layer |
-| Number of ocean levels | `CORE_OCN_NLEVELS` | - | 50 | 20-60 | Total ocean layers (including mixed layer) |
-| Vertical diffusivity | `CORE_VERTICALDIFFUSIVITY` | cm^2/s | 0.75 | 0.3-2.0 | Base vertical diffusivity |
-| Min vertical diffusivity | `CORE_VERTICALDIFFUSIVITY_MIN` | cm^2/s | 0.1 | 0.0-0.5 | Floor for variable diffusivity |
-| Diffusivity temperature gradient | `CORE_VERTICALDIFF_TOP_DKDT` | cm^2/s/K | -0.191 | -0.5-0 | dK/dT coefficient |
-| Depth-dependent area | `CORE_OCN_DEPTHDEPENDENT` | - | 1.0 | 0-1 | Scale factor for basin narrowing |
-| Polar sinking water temp ratio | `CORE_POLARSINKWATER_TEMPRATIO` | - | 0.2 | 0-0.5 | Fraction of surface T in sinking water |
-
-### 4.3 Upwelling Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|--------------|-------|---------|-------------|-------------|
-| Initial upwelling rate | `CORE_INITIAL_UPWELLING_RATE` | m/yr | 3.5 | 2-6 | Base upwelling velocity |
-| Variable upwelling fraction | `CORE_UPWELLING_VARIABLE_PART` | - | 0.7 | 0-1 | Fraction of upwelling that can vary |
-| Upwelling threshold temp (NH) | `CORE_UPWELL_THRESH_TEMP_NH` | K | 8.0 | 4-12 | Temp at which upwelling reaches minimum (NH) |
-| Upwelling threshold temp (SH) | `CORE_UPWELL_THRESH_TEMP_SH` | K | 8.0 | 4-12 | Temp at which upwelling reaches minimum (SH) |
-| One global threshold | `CORE_UPWELL_THRESH_ONEGLOBAL` | - | 1 | 0,1 | Use same threshold for both hemispheres |
-| Upwelling scaling method | `CORE_UPWELLING_SCALING_METHOD` | string | "GLOBE" | see 2.10 | Method for temperature-dependent upwelling |
-
-### 4.4 Heat Exchange Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|--------------|-------|---------|-------------|-------------|
-| Land-ocean heat exchange | `CORE_HEATXCHANGE_LANDOCEAN` | W/m^2/K | 1.44 | 0.5-3.0 | Heat exchange coefficient |
-| Inter-hemispheric exchange | `CORE_HEATXCHANGE_NORTHSOUTH` | W/m^2/K | 0.31 | 0.1-1.0 | N-S heat exchange coefficient |
-| Ocean-to-land amplification | `CORE_AMPLIFY_OCN2LAND_HEATXCHNG` | - | 1.02 | 1.0-1.2 | Amplification of ocean-to-land flux |
-| Land-ground exchange | `CORE_HEATXCHANGE_LANDGROUND` | W/m^2/K | 0.1 | 0-1 | Heat exchange with ground reservoir |
-| Apply land heat capacity | `CORE_LANDHEATCAPACITY_APPLY` | - | 1 | 0,1 | Enable ground heat reservoir |
-| Land heat capacity thickness | `CORE_LANDHC_EFFTHICKNESS` | m | 300 | 50-500 | Effective depth of ground heat pool |
-
-### 4.5 Temperature Adjustment Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|--------------|-------|---------|-------------|-------------|
-| Apply temp adjustment | `CORE_SWITCH_TEMPADJUST_OCN2ATM` | - | 1 | 0,1 | Enable ocean-to-atmosphere temp adjustment |
-| Temp adjustment alpha | `CORE_TEMPADJUST_OCN2ATM_ALPHA` | - | 1.04 | 1.0-1.5 | Linear coefficient for T_air/T_SST |
-| Temp adjustment gamma | `CORE_TEMPADJUST_OCN2ATM_GAMMA` | - | -0.002 | -0.01-0 | Quadratic coefficient for T_air/T_SST |
-| Maximum temperature | `CORE_MAXIMAL_TEMPERATURE` | K | 25.0 | 15-50 | Safety cap on temperature anomalies |
-
-### 4.6 Area Fraction Parameters
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|--------------|-------|---------|-------------|-------------|
-| NH land fraction | `CORE_HEMISFRACTION_NH_LAND` | - | 0.42 | - | Fraction of NH that is land |
-| SH land fraction | `CORE_HEMISFRACTION_SH_LAND` | - | 0.21 | - | Fraction of SH that is land |
-
-### 4.7 El Nino Parameters
-
-> **Dead code**: El Nino forcing is disabled in AR6 configurations (`CORE_ELNINO_APPLY=0`). This feature does not need to be implemented.
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|--------------|-------|---------|-------------|-------------|
-| Apply El Nino | `CORE_ELNINO_APPLY` | - | 0 | 0,1 | Enable El Nino variability |
-| El Nino scale | `CORE_ELNINO_SCALE` | K | 0.0108 | 0-0.05 | Scaling of Nino3.4 index effect |
-| El Nino relax factor | `CORE_ELNINO_RELAXFACTOR` | - | 0.0265 | 0-0.1 | Relaxation rate for heat anomaly |
-
-### 4.8 AMV (Atlantic Multidecadal Variability) Parameters
-
-> **Dead code**: Atlantic Multidecadal Variability is disabled in AR6 configurations (`CORE_AMV_APPLY=0`). This feature does not need to be implemented.
-
-| Parameter | Fortran Name | Units | Default | Valid Range | Description |
-|-----------|--------------|-------|---------|-------------|-------------|
-| Apply AMV | `CORE_AMV_APPLY` | - | 0 | 0,1 | Enable AMV effect on upwelling |
-| AMV scale | `CORE_AMV_SCALE` | K | -4.27 | - | Scaling of AMV index effect |
-| AMV SH fraction | `CORE_AMV_SHFRACTION` | - | 0.0 | 0-1 | Fraction of AMV effect in SH |
-
-## 5. Inputs (per timestep)
-
-| Variable | Units | Source Module | Required? | Fortran Variable |
-|----------|-------|---------------|-----------|------------------|
-| Total effective radiative forcing (4 boxes) | W/m^2 | Radiative Forcing | Yes | `Q(1:4)` via `dat_total_effrf` |
-| Volcanic forcing (4 boxes) | W/m^2 | Radiative Forcing | Optional | `dat_volcanic_effrf` |
-| El Nino 3.4 index | - | External file | If ELNINO_APPLY=1 | `DAT_ELNINO_N34` |
-| AMV index | - | External file | If AMV_APPLY=1 | `DAT_AMV_INDEX` |
-| Prescribed upwelling rate | m/yr | External file | If method="PRESCRIBED" | `DAT_UPWELLING_RATE` |
-| Prescribed surface temperature | K | External file | If PRESCRTEMP_APPLY=1 | `DAT_RAW_SURFACE_TEMP` |
-
-> **Dead code**: Prescribed temperature mode is disabled in AR6 configurations (`CORE_PRESCRTEMP_APPLY=0`). This feature does not need to be implemented.
-
-## 6. Outputs (per timestep)
-
-| Variable | Units | Destination Module(s) | Fortran Variable |
-|----------|-------|----------------------|------------------|
-| Surface temperature (4 boxes) | K | Carbon cycle, Sea level, Methane | `DAT_SURFACE_TEMP` |
-| Annual mean temperature (4 boxes) | K | Output | `DAT_SURFACE_ANNUALMEANTEMP` |
-| Mixed layer temperature (4 boxes) | K | Output | `DAT_SURFACE_MIXEDLAYERTEMP` |
-| Global temperature | K | Many modules | `DAT_SURFACE_TEMP%DATGLOBE` |
-| Ocean layer temperatures | K | Sea level (thermal expansion) | `TEMP_OCEANLAYERS` |
-| Heat uptake (energy balance) | W/m^2 | Output | `DAT_HEATUPTAKE_EBALANCE_TOTAL` |
-| Heat content (energy balance) | 10^22 J | Output | `DAT_HEATCONTENT_EBALANCE_TOTAL` |
-| Heat content by depth | 10^22 J | Output | `DAT_HEATCONTENT_AGGREG(1:4)` |
-| Upwelling rate | m/yr | Output | `DAT_UPWELLING_RATE` |
-| Equilibrium climate sensitivity | K | Output | `DAT_CLIMSENS_EQ` |
-| Effective climate sensitivity | K | Output | `DAT_CLIMSENS_EFF` |
-| Ground temperature | K | Output | `DAT_GROUND_TEMP` |
-| Sub-annual temperatures | K | Output | `DAT_SURFACE_TEMP_SUBANNUAL` |
-
-## 7. Algorithm (Pseudocode)
-
-### 7.1 Initialization (ocean_init)
-
-```
-1. Calculate timestep: DT = 1 / STEPSPERYEAR
-2. Set layer spacing: DZ = 100m, DZ1 = DZ/2
-3. Initialize all temperatures to 0
-4. Calculate depth-dependent ocean areas (interpolate from raw data)
-5. Calculate area factors (top flow, bottom flow, diff flow, average)
-6. Set initial upwelling rate
-7. Calculate initial temperature profiles (exponential decay with depth)
-```
-
-### 7.2 Annual Timestep (magicc_step_year)
-
-```
-FOR each year:
-    1. Calculate radiative forcing from DELTAQ
-
-    FOR each sub-annual step (1 to STEPSPERYEAR):
-        2. Calculate cumulative-T adjusted climate sensitivity
-
-        3. Call LAMCALC to get ocean/land feedback parameters
-
-        4. Get interpolated forcing Q for this timestep
-
-        5. Add volcanic forcing if applicable
-
-        FOR each hemisphere (1=NH, 2=SH):
-            6. Calculate depth-dependent vertical diffusivity
-
-            7. Calculate land feedback denominator
-
-            8. Build tridiagonal matrix:
-               a. Mixed layer (layer 1): A(1), B(1), D(1)
-               b. Layer 2 (below mixed layer): A(2), B(2), C(2), D(2)
-               c. Middle layers: A(l), B(l), C(l), D(l) for l=3 to N-1
-               d. Bottom layer: A(N), B(N), D(N)
-
-            9. Add El Nino terms to D(1) if enabled
-
-            10. Add ground heat capacity terms to D(1) if enabled
-
-            11. Solve tridiagonal system (Thomas algorithm)
-
-        END FOR hemisphere
-
-        12. Apply temperature safety cap (25 K max)
-
-        13. Convert ocean SST to air temperature (alpha + gamma*T^2)
-
-        14. Calculate land temperatures (equilibrium with ocean)
-
-        15. Apply temperature safety caps for land
-
-        16. Store sub-annual temperatures
-
-        17. Calculate heat uptake from energy balance: Q - lambda*T
-
-        18. Update hemispheric heat exchange terms
-
-        19. Update upwelling rate based on temperature
-
-    END FOR step
-
-    20. Calculate annual mean temperatures
-
-    21. Store ocean layer profiles
-
-    22. Calculate heat content by depth
-
-    23. Call sea level calculation
-
-END FOR year
-```
-
-### 7.3 LAMCALC Algorithm
-
-```
-INPUTS: Q_2x, K_lo, K_ns, ECS, RLO
-
-1. Initialize: lambda_global = Q_2x / ECS
-2. Set initial guess: lambda_o(1) = lambda_global
-3. Set step size: DLAMO = 0.7
-
-ITERATE (max 40 iterations):
-    4. Calculate lambda_l from constraint:
-       lambda_l = lambda_global + f_o/f_l * (lambda_global - lambda_o) / RLO
-
-    5. Build 4x4 matrix A (land-ocean-hemisphere coupling)
-
-    6. Invert matrix: B = A^(-1)
-
-    7. Calculate equilibrium temperatures for each box:
-       T_box = B * Q (with regional forcing patterns)
-
-    8. Calculate estimated RLO from temperatures:
-       RLO_est = T_land_mean / T_ocean_mean
-
-    9. Check convergence: |RLO - RLO_est| < 0.001
-       If converged: EXIT
-
-    10. Update lambda_o using secant method:
-        - If sign change: interpolate
-        - Otherwise: step in direction of improvement
-
-END ITERATE
-
-11. Output: lambda_o_best, lambda_l_best
-
-12. Calculate internal efficacies for all forcing agents
-```
-
-#### Note: Regionally-Varying CO2 Forcing in LAMCALC
-
-MAGICC7 does not apply uniform CO2 forcing across all four boxes when computing equilibrium temperatures in step 7 above. Instead it uses **regionally-varying CO2 forcing patterns** (`RF_REGIONS_CO2`) to determine the per-box forcing fraction (MAGICC7.f90 lines 8146-8275):
-
-$$QFRAC_{box} = \frac{RF\_REGIONS\_CO2(box)}{\sum_{box} RF\_REGIONS\_CO2(box) \times GLOBALAREAFRACTIONS(box)}$$
-
-Each box's effective forcing is then $Q_{box} = Q_{2x} \times QFRAC_{box}$, so the equilibrium temperature calculation and the derived $\lambda$ values reflect the spatial pattern of CO2 forcing rather than a uniform distribution.
-
-After LAMCALC converges, MAGICC7 also computes **internal efficacies** for each non-CO2 forcing agent by repeating the equilibrium temperature calculation with that agent's regional forcing pattern and taking the ratio of the resulting global temperature response to the CO2 response at the same global-mean forcing. These efficacies scale how each agent's forcing is weighted in the feedback term during the transient integration.
-
-## 8. Numerical Considerations
-
-### 8.1 Implicit Scheme Stability
-
-The fully implicit (backward Euler) discretization of the ocean diffusion-advection equation is unconditionally stable. The CFL condition for the explicit scheme would be:
-
-$$\Delta t < \frac{(\Delta z)^2}{2K}$$
-
-With K = 0.75 cm^2/s = 2367 m^2/yr and DZ = 100m, explicit stability would require dt < 2.1 years - violated by annual timesteps. The implicit scheme avoids this constraint.
-
-### 8.2 Tridiagonal Solver Stability
-
-The Thomas algorithm is stable when the matrix is diagonally dominant:
-
-$$|B_l| > |A_l| + |C_l|$$
-
-This is guaranteed by the positive diffusivity and upwelling terms on the diagonal.
-
-### 8.3 Iteration Convergence in LAMCALC
-
-The LAMCALC iteration uses a hybrid secant/bisection method:
-
-- Initial step size DLAMO = 0.7 is empirically chosen
-- Too large (>0.9): oscillates around solution
-- Too small (<0.4): exceeds 40 iteration limit
-- Convergence tolerance: |RLO - RLO_est| < 0.001
-
-### 8.4 Sub-Annual Stepping
-
-Monthly sub-stepping (STEPSPERYEAR = 12) provides:
-
-1. Stable integration of ocean-atmosphere coupling
-2. Capture of El Nino variability on sub-annual timescales
-3. Proper averaging for annual mean temperatures
-
-### 8.5 Temperature Safety Caps
-
-Hard limits prevent runaway:
-
-- `CORE_MAXIMAL_TEMPERATURE = 25 K` for all temperatures
-- Warning logged if caps are hit
-- Indicates physically unreasonable parameter combinations
-
-## 9. Issues and Concerns
-
-### 9.1 Code Organization
-
-**CRITICAL ISSUE**: The vast majority of climate physics is implemented directly in `MAGICC7.f90` (lines ~2700-3700), NOT in the dedicated `climate_and_ocean.f90` module. The module file primarily contains:
-
-- Variable declarations
-- Parameter storage
-- The `ocean_init` subroutine
-
-The actual integration loop, tridiagonal solve, temperature calculations, and upwelling updates are all in the main file. This violates modularity and makes the code difficult to maintain or swap out.
-
-### 9.2 Hardcoded Values
-
-Several values are hardcoded rather than parameterized:
-
-- `DZ = 100.0` m (layer thickness) - not configurable
-- `IMAX = 40` (max LAMCALC iterations) - hardcoded
-- `DLAMO = 0.7` (iteration step size) - hardcoded
-- `DIFFLIM = 0.001` (convergence tolerance) - hardcoded
-- `CORE_MAXIMAL_TEMPERATURE = 25.0` - set in code, overriding config
-- Ocean area profiles - embedded in code, though option to read from file exists
-
-### 9.3 4-Box Structure
-
-The 4-box atmospheric structure is deeply embedded throughout:
-
-- Array dimensions (4) are hardcoded
-- Box indices (1=NHO, 2=NHL, 3=SHO, 4=SHL) assumed in multiple places
-- Coupling matrix is explicitly 4x4
-- Cannot easily extend to higher resolution
-
-### 9.4 Numerical Scheme Lock-In
-
-The fully implicit scheme cannot be easily swapped:
-
-- Tridiagonal structure assumed throughout
-- No option for explicit or Crank-Nicolson schemes
-- Area factors pre-computed for implicit scheme only
-
-### 9.5 Mixed Units
-
-The code uses mixed unit systems requiring careful conversion:
-
-- Diffusivity: input in cm^2/s, converted to m^2/yr (factor 3155.76)
-- Heat capacity: calculated in W*yr/m^3/K
-- Heat content: converted to 10^22 J using `WATTYEARPERM2_2_JOULEE22`
-- Temperatures: anomalies in K (not absolute)
-
-### 9.6 Complex Coupling
-
-The land temperature calculation assumes instantaneous equilibrium with ocean, which is inconsistent with the sub-annual ocean evolution. The land heat capacity option partially addresses this but adds complexity.
-
-### 9.7 El Nino "Parallel Box" Model
-
-The El Nino implementation uses a conceptually unclear "double delta box" that:
-
-- Is not physically a separate ocean region
-- Has same area and temperature as mixed layer
-- Uses relaxation rather than explicit heat exchange
-- Implementation is difficult to validate against observations
-
-### 9.8 Variable Upwelling Complications
-
-Variable upwelling requires tracking:
-
-- `DELTA_CURRENT_UPWELLING_RATE` - change from initial
-- Initial temperature profiles for each profile type (3 options)
-- Separate handling for mixed layer vs. deeper layers
-
-### 9.9 LAMCALC Complexity
-
-The LAMCALC routine:
-
-- Uses iterative matrix inversion (not direct solution)
-- Calculates internal efficacies for ~20 forcing agents
-- Is called once per annual timestep (only re-solved when ECS is time-varying)
-- Could be simplified if land-ocean warming ratio was derived post-hoc
-
-### 9.10 Dead Code and Comments
-
-Several commented-out code blocks remain:
-
-- Lines 119-135 in `climate_and_ocean.f90` (old initialization)
-- Lines 3420-3422 in `MAGICC7.f90` (wrong annual mean calculation)
-- Multiple "PROCEED HERE" comments indicating incomplete work
-
-### 9.11 Known Differences from MAGICC7 in Current RSCM Implementation
-
-The following gaps exist between the current RSCM implementation and MAGICC7 behaviour identified through Fortran source review.
-
-#### Resolved
-
-**LAMCALC regional CO2 forcing** -- RSCM now uses the MAGICC7 default `RF_REGIONS_CO2 = [1.4089, 1.37045, 1.43333, 1.33257]` from `MAGCFG_DEFAULTALL.CFG`. The LAMCALC solver applies per-box `qfrac` forcing fractions when computing equilibrium temperatures, matching MAGICC7.f90 lines 8146-8275.
-
-**alpha_eff update frequency** -- RSCM updates `alpha_eff` every monthly substep from the previous substep's SST, as MAGICC7 does.
-Holding it fixed for the year leaves a cold drift of about 1e-5 K by 2000.
-
-**CO2 internal efficacy computed** -- RSCM now computes the CO2 internal efficacy after LAMCALC converges by comparing the CO2 regional temperature response to the ECS-implied response. The `calc_internal_efficacy()` function is public and can compute efficacy for any agent's regional forcing pattern. When `efficacy_apply = 2` (AR6 mode), effective forcing is adjusted by `prescribed_efficacy / internal_efficacy`.
-
-**Non-CO2 internal efficacies** -- `ForcingAggregation` applies an internal efficacy to every forcing agent.
-As in MAGICC7, LAMCALC recalculates them each year from the previous year's climate sensitivity and CO2 doubling forcing,
-so they drift as the climate warms.
-
-**Volcanic forcing** -- MAGICC7 derives the volcanic regional pattern from the run itself:
-the mean monthly box forcing, scaled by `RF_VOLCANIC_SCALE`, from the first year to the end of `RF_VOLC_FORC_PATTERN_MAX_LAST_YEAR`, less its global mean and 1.
-`rscm.magicc.prescribed.volcanic_pattern` reproduces it.
-Monthly substeps take the volcanic internal efficacy of the year they end in.
-Substeps 1 to 11 therefore use the previous year's value and substep 12 the current one.
-The first year keeps the initial value.
-
-#### Open
-
-None. The default run's temperature matches MAGICC7's binary output from 1750 to 2104.
-
-## 10. Test Cases
-
-### 10.1 Equilibrium Climate Sensitivity Test
-
-**Purpose**: Verify that the model achieves the prescribed ECS under 2xCO2.
-
-**Setup**:
-
-- Step forcing: Q = 3.71 W/m^2 at t=0
-- Run for 5000 years
-- `CORE_CLIMATESENSITIVITY = 3.0`
-
-**Expected**:
-
-- Global temperature approaches 3.0 K
-- Land/ocean ratio approaches `CORE_RLO`
-- Heat uptake approaches 0
-
-### 10.2 TCR Test (1% CO2/yr)
-
-**Purpose**: Verify Transient Climate Response.
-
-**Setup**:
-
-- Forcing increases as: Q(t) = 3.71 * log2(1.01^t)
-- Year 70: Q = 3.71 W/m^2
-
-**Expected**:
-
-- T(year 70) should match published TCR values for given parameters
-- TCR/ECS ratio typically 0.4-0.7
-
-### 10.3 Ocean Heat Content Test
-
-**Purpose**: Verify heat uptake and content calculations.
-
-**Setup**:
-
-- Constant forcing Q = 3.71 W/m^2
-- Run 100 years
-
-**Expected**:
-
-- Heat content increase = integral of (Q - lambda*T)
-- Energy conservation: dH/dt + lambda*T = Q
-
-### 10.4 Upwelling Shutdown Test
-
-**Purpose**: Test variable upwelling behavior.
-
-**Setup**:
-
-- Very high forcing (10 W/m^2)
-- `CORE_UPWELL_THRESH_TEMP_NH = 4.0`
-
-**Expected**:
-
-- Upwelling decreases to (1-CORE_UPWELLING_VARIABLE_PART) * initial
-- Deep ocean warming accelerates
-- Eventually stabilizes at floor
-
-### 10.5 Land-Ocean Warming Ratio Test
-
-**Purpose**: Verify RLO is achieved.
-
-**Setup**:
-
-- Step forcing
-- Run to equilibrium
-
-**Expected**:
-
-- T_land / T_ocean = CORE_RLO at equilibrium
-- Transient ratio may differ
-
-### 10.6 Hemispheric Heat Exchange Test
-
-**Purpose**: Verify inter-hemispheric coupling.
-
-**Setup**:
-
-- NH-only forcing (set Q(3:4) = 0)
-
-**Expected**:
-
-- SH warms due to heat transport
-- Eventually both hemispheres equilibrate
-
-### 10.7 Conservation Test
-
-**Purpose**: Verify energy conservation.
-
-**Setup**:
-
-- Any forcing scenario
-
-**Expected**:
-
-- Sum of (heat uptake + outgoing IR) = total forcing
-- No spurious heat sources/sinks
-
-### 10.8 Temperature Profile Initialization Test
-
-**Purpose**: Verify initial ocean profile options.
-
-**Setup**:
-
-- Test CORE_SWITCH_OCN_TEMPPROFILE = 0, 1, 2
-
-**Expected**:
-
-- Profile 0: Analytical exponential profile
-- Profile 1: Prescribed exponential profile
-- Profile 2: CMIP5-based profile
-- All should give similar long-term behavior
-
-## 11. Fortran Code References
-
-### 11.1 Primary Files
-
-| File | Lines | Content |
-|------|-------|---------|
-| `src/libmagicc/physics/climate_and_ocean.f90` | 1-295 | Module variables, ocean_init |
-| `src/libmagicc/physics/core_calculations.f90` | 1-110 | Ocean-atmosphere T conversion |
-| `src/libmagicc/MAGICC7.f90` | 2646-3727 | Main integration loop (magicc_step_year) |
-| `src/libmagicc/MAGICC7.f90` | 8070-8278 | LAMCALC subroutine |
-| `src/libmagicc/MAGICC7.f90` | 8291-8338 | CALC_INTERNAL_EFFICACY |
-| `src/libmagicc/allcfgs.f90` | 1-431 | Parameter namelist definitions |
-| `src/libmagicc/utils/areas.f90` | 1-8 | Area fraction variables |
-
-### 11.2 Key Code Sections
-
-| Section | File | Lines | Description |
-|---------|------|-------|-------------|
-| Ocean initialization | climate_and_ocean.f90 | 102-292 | Initialize ocean model |
-| Heat capacity calculation | MAGICC7.f90 | 237-246 | HEAT_CAPACITY_PERM setup |
-| Area fraction setup | MAGICC7.f90 | 249-269 | FGNO, FGNL, etc. |
-| Forcing interpolation | MAGICC7.f90 | 2724 | Get forcing for timestep |
-| Climate sensitivity adjustment | MAGICC7.f90 | 2747-2768 | Cumulative-T feedback |
-| Vertical diffusivity | MAGICC7.f90 | 2783-2799 | Depth/T-dependent K |
-| Tridiagonal matrix setup | MAGICC7.f90 | 2826-3074 | A, B, C, D coefficients |
-| Thomas algorithm | MAGICC7.f90 | 3080-3094 | Tridiagonal solve |
-| Temperature caps | MAGICC7.f90 | 3102-3112 | Safety limits |
-| Ocean-to-air conversion | MAGICC7.f90 | 3159-3187 | Alpha-gamma adjustment |
-| Land temperature | MAGICC7.f90 | 3214-3223 | Equilibrium calculation |
-| Heat uptake | MAGICC7.f90 | 3258-3281 | Energy balance calculation |
-| Upwelling scaling | MAGICC7.f90 | 3300-3388 | Variable upwelling |
-| Heat content calculation | MAGICC7.f90 | 3627-3721 | Depth-integrated heat |
-| LAMCALC iteration | MAGICC7.f90 | 8116-8207 | Lambda iteration loop |
-| Matrix inversion | MAGICC7.f90 | 8142 | 4x4 inverse call |
-
-### 11.3 Physical Constants
-
-| Constant | Value | Location | Description |
-|----------|-------|----------|-------------|
-| RHO | 1.026D0 | climate_and_ocean.f90:67 | Water density (10^6 g/m^3) |
-| SPECHT | 0.9333D0 | climate_and_ocean.f90:67 | Specific heat (cal/g/K) |
-| HTCONS | 4.1856D0 | climate_and_ocean.f90:67 | Cal to Joule conversion |
-| 3155.76D0 | - | MAGICC7.f90:2789 | cm^2/s to m^2/yr |
-| 31.5576D0 | - | MAGICC7.f90:241 | Seconds per year / 10^6 |
-| 5.101D0 | - | MAGICC7.f90:244 | Earth surface area (10^14 m^2) |
-
-### 11.4 Configuration File
-
-| File | Description |
-|------|-------------|
-| `run/MAGCFG_DEFAULTALL.CFG` | Default parameter values (lines 81-139 for CORE_* parameters) |
+### Temperature-dependent upwelling
+
+Upwelling weakens with warming:
+
+$$
+w = \max\left(w_0 (1 - f_{var}),\ w_0\left(1 - f_{var} \frac{T_{key}}{T_{thresh}}\right)\right)
+$$
+
+- $w_0$ is `CORE_INITIAL_UPWELLING_RATE` (m yr⁻¹).
+- $f_{var}$ is `CORE_UPWELLING_VARIABLE_PART`, the fraction that can vary.
+- $T_{thresh}$ is `CORE_UPWELL_THRESH_TEMP_NH` or `CORE_UPWELL_THRESH_TEMP_SH`.
+- $T_{key}$ depends on `CORE_UPWELLING_SCALING_METHOD`.
+  `GLOBE`, the default, uses the area-weighted global air temperature.
+  `OCEAN` and `HEMISPHERIC` use ocean temperatures, `NOSCALING` keeps $w_0$
+  and `PRESCRIBED` reads the rate from a file.
+
+### Ocean-to-atmosphere amplification
+
+Air temperature over the ocean differs from SST:
+
+$$
+T^{air} =
+\begin{cases}
+\alpha_T T_{SST} + \gamma T_{SST}^2 & T_{SST} < T^* \\
+T_{SST} + \delta_{max} & T_{SST} \ge T^*
+\end{cases}
+$$
+
+with $T^* = -(\alpha_T - 1)/(2\gamma)$ and $\delta_{max} = \alpha_T T^* + \gamma (T^*)^2 - T^*$.
+$\alpha_T$ is `CORE_TEMPADJUST_OCN2ATM_ALPHA` and $\gamma$ is `CORE_TEMPADJUST_OCN2ATM_GAMMA`.
+Air over the ocean warms more than the SST.
+The ratio $\alpha_{eff} = T^{air}/T_{SST}$ enters the next substep's mixed-layer feedback.
+
+### Land temperature
+
+Land is in equilibrium with the ocean of its hemisphere:
+
+$$
+T_{land} = \frac{f_l Q_l + K_{lo} \alpha T^{air}_{ocean}}{f_l \lambda_l + K_{lo}}
+$$
+
+### Ground heat reservoir
+
+With `CORE_LANDHEATCAPACITY_APPLY = 1`, a ground reservoir damps the land response:
+
+$$
+\frac{dT_{ground}}{dt} = \frac{K_{lg} (T_{land} - T_{ground})}{f_l\, c\, d_{eff}}
+$$
+
+$K_{lg}$ is `CORE_HEATXCHANGE_LANDGROUND` and $d_{eff}$ is `CORE_LANDHC_EFFTHICKNESS` (m).
+It is stepped by forward Euler from the previous substep's land temperature.
+
+## State variables
+
+| Variable                        | Fortran name                        | Units  | Initial value                 |
+| ------------------------------- | ----------------------------------- | ------ | ----------------------------- |
+| Ocean layer temperatures (NH)   | `OCN_HEMISPHERIC_LAYERTEMPS(1,:)`   | K      | 0                             |
+| Ocean layer temperatures (SH)   | `OCN_HEMISPHERIC_LAYERTEMPS(2,:)`   | K      | 0                             |
+| Four-box air temperatures       | `CURRENT_TIME_TEMPERATURE(1:4)`     | K      | 0                             |
+| Mixed-layer temperatures        | `CURRENT_TIME_MIXEDLAYERTEMP(1:4)`  | K      | 0                             |
+| Ground temperatures             | `GROUND_HEMISPHERIC_TEMPS(1:2)`     | K      | 0                             |
+| Upwelling rate (NH, SH)         | `CURRENT_UPWELLING_RATE(1:2)`       | m yr⁻¹ | `CORE_INITIAL_UPWELLING_RATE` |
+| Change in upwelling             | `DELTA_CURRENT_UPWELLING_RATE(1:2)` | m yr⁻¹ | 0                             |
+| El Niño heat box                | `ELNINO_N34_DOUBLEDELTABOX`         | K      | 0                             |
+| Inter-hemispheric heat exchange | `HEMISPHERIC_HEATXCHANGE(1:2)`      | W m⁻²  | 0                             |
+
+## Inputs and outputs
+
+| Input                       | Units | Source             | Fortran variable                    |
+| --------------------------- | ----- | ------------------ | ----------------------------------- |
+| Total effective forcing     | W m⁻² | Forcing (07b)      | `dat_total_effrf`, 4 boxes          |
+| Volcanic forcing            | W m⁻² | Forcing            | `dat_volcanic_effrf`, 4 boxes       |
+| El Niño 3.4 index           | -     | File               | `DAT_ELNINO_N34`, if enabled        |
+| AMV index                   | -     | File               | `DAT_AMV_INDEX`, if enabled         |
+| Prescribed upwelling rate   | m yr⁻¹ | File              | `DAT_UPWELLING_RATE`, if prescribed |
+| Prescribed temperature      | K     | File               | `DAT_RAW_SURFACE_TEMP`, if enabled  |
+
+| Output                          | Units  | Used by                         | Fortran variable                 |
+| ------------------------------- | ------ | ------------------------------- | -------------------------------- |
+| Surface temperature, 4 boxes    | K      | Carbon cycle, sea level, CH4    | `DAT_SURFACE_TEMP`               |
+| Annual mean temperature         | K      | Sea level                       | `DAT_SURFACE_ANNUALMEANTEMP`     |
+| Mixed-layer temperature         | K      | Output                          | `DAT_SURFACE_MIXEDLAYERTEMP`     |
+| Ocean layer temperatures        | K      | Sea level (thermal expansion)   | `TEMP_OCEANLAYERS`               |
+| Heat uptake                     | W m⁻²  | Output                          | `DAT_HEATUPTAKE_EBALANCE_TOTAL`  |
+| Heat content                    | 10²² J | Output                          | `DAT_HEATCONTENT_EBALANCE_TOTAL` |
+| Heat content by depth           | 10²² J | Output                          | `DAT_HEATCONTENT_AGGREG(1:4)`    |
+| Upwelling rate                  | m yr⁻¹ | Output                          | `DAT_UPWELLING_RATE`             |
+| Equilibrium climate sensitivity | K      | Output                          | `DAT_CLIMSENS_EQ`                |
+| Effective climate sensitivity   | K      | Output                          | `DAT_CLIMSENS_EFF`               |
+| Ground temperature              | K      | Output                          | `DAT_GROUND_TEMP`                |
+| Monthly temperatures            | K      | Output                          | `DAT_SURFACE_TEMP_SUBANNUAL`     |
+
+`ClimateUDEB` reads `Effective Radiative Forcing` and writes `Surface Temperature` (four-box),
+`Heat Uptake`, `Ocean Heat Content`, `Sea Surface Temperature` and `Equilibrium Climate Sensitivity`.
+With `thermal_expansion` set it also writes `Surface Temperature|Annual Mean` for `SeaLevelRise`.
+
+## Parameters
+
+Defaults are MAGICC7 v7.5.3's, from `run/MAGCFG_DEFAULTALL.CFG`.
+`run_magicc7` takes them from `python/rscm/magicc/data/magicc7/defaults.json`.
+`ClimateUDEBParameters::default()` rounds some of them (for example `CORE_RLO` to 1.317).
+
+### Climate sensitivity
+
+| Parameter                          | Fortran name                    | Units    | Default      |
+| ---------------------------------- | ------------------------------- | -------- | ------------ |
+| Equilibrium climate sensitivity    | `CORE_CLIMATESENSITIVITY`       | K        | 3.0          |
+| Forcing for doubled CO₂            | `CORE_DELQ2XCO2`                | W m⁻²    | 3.71         |
+| Land-ocean warming ratio           | `CORE_RLO`                      | -        | 1.317229     |
+| Forcing sensitivity                | `CORE_FEEDBACK_QSENSITIVITY`    | per W m⁻² | 7.842035e-9 |
+| Cumulative temperature sensitivity | `CORE_FEEDBACK_CUMTSENSITIVITY` | -        | 0.08         |
+| Cumulative temperature period      | `CORE_FEEDBACK_CUMTPERIOD`      | yr       | 300          |
+
+### Ocean
+
+| Parameter                    | Fortran name                    | Units       | Default    |
+| ---------------------------- | ------------------------------- | ----------- | ---------- |
+| Mixed-layer depth            | `CORE_MIXEDLAYER_DEPTH`         | m           | 60         |
+| Number of ocean layers       | `CORE_OCN_NLEVELS`              | -           | 50         |
+| Vertical diffusivity         | `CORE_VERTICALDIFFUSIVITY`      | cm² s⁻¹     | 0.75       |
+| Minimum vertical diffusivity | `CORE_VERTICALDIFFUSIVITY_MIN`  | cm² s⁻¹     | 0.1        |
+| Diffusivity gradient         | `CORE_VERTICALDIFF_TOP_DKDT`    | cm² s⁻¹ K⁻¹ | -0.1910108 |
+| Depth-dependent area         | `CORE_OCN_DEPTHDEPENDENT`       | -           | 1.0        |
+| Polar sinking water ratio    | `CORE_POLARSINKWATER_TEMPRATIO` | -           | 0.2        |
+
+### Upwelling
+
+| Parameter                   | Fortran name                    | Units  | Default |
+| --------------------------- | ------------------------------- | ------ | ------- |
+| Initial upwelling rate      | `CORE_INITIAL_UPWELLING_RATE`   | m yr⁻¹ | 3.5     |
+| Variable upwelling fraction | `CORE_UPWELLING_VARIABLE_PART`  | -      | 0.7     |
+| Threshold temperature (NH)  | `CORE_UPWELL_THRESH_TEMP_NH`    | K      | 8.0     |
+| Threshold temperature (SH)  | `CORE_UPWELL_THRESH_TEMP_SH`    | K      | 8.0     |
+| One global threshold        | `CORE_UPWELL_THRESH_ONEGLOBAL`  | -      | 1       |
+| Scaling method              | `CORE_UPWELLING_SCALING_METHOD` | -      | `GLOBE` |
+
+### Heat exchange
+
+| Parameter                    | Fortran name                      | Units     | Default   |
+| ---------------------------- | --------------------------------- | --------- | --------- |
+| Land-ocean heat exchange     | `CORE_HEATXCHANGE_LANDOCEAN`      | W m⁻² K⁻¹ | 1.442816  |
+| Inter-hemispheric exchange   | `CORE_HEATXCHANGE_NORTHSOUTH`     | W m⁻² K⁻¹ | 0.3115475 |
+| Ocean-to-land amplification  | `CORE_AMPLIFY_OCN2LAND_HEATXCHNG` | -         | 1.02      |
+| Land-ground exchange         | `CORE_HEATXCHANGE_LANDGROUND`     | W m⁻² K⁻¹ | 0.1       |
+| Apply ground heat reservoir  | `CORE_LANDHEATCAPACITY_APPLY`     | -         | 1         |
+| Ground reservoir thickness   | `CORE_LANDHC_EFFTHICKNESS`        | m         | 300       |
+
+### Temperature adjustment and area
+
+| Parameter                     | Fortran name                     | Units | Default |
+| ----------------------------- | -------------------------------- | ----- | ------- |
+| Apply ocean-to-air adjustment | `CORE_SWITCH_TEMPADJUST_OCN2ATM` | -     | 1       |
+| Linear coefficient            | `CORE_TEMPADJUST_OCN2ATM_ALPHA`  | -     | 1.04    |
+| Quadratic coefficient         | `CORE_TEMPADJUST_OCN2ATM_GAMMA`  | K⁻¹   | -0.002  |
+| Temperature cap               | `CORE_MAXIMAL_TEMPERATURE`       | K     | 25.0    |
+| NH land fraction              | `CORE_HEMISFRACTION_NH_LAND`     | -     | 0.42    |
+| SH land fraction              | `CORE_HEMISFRACTION_SH_LAND`     | -     | 0.21    |
+
+### El Niño and AMV
+
+MAGICC7's defaults switch both modes off (`CORE_ELNINO_APPLY = 0`, `CORE_AMV_APPLY = 0`),
+and RSCM does not implement them.
+
+| Parameter            | Fortran name              | Units | Default |
+| -------------------- | ------------------------- | ----- | ------- |
+| Apply El Niño        | `CORE_ELNINO_APPLY`       | -     | 0       |
+| El Niño scale        | `CORE_ELNINO_SCALE`       | K     | 0.010825 |
+| El Niño relaxation   | `CORE_ELNINO_RELAXFACTOR` | -     | 0.026548 |
+| Apply AMV            | `CORE_AMV_APPLY`          | -     | 0       |
+| AMV scale            | `CORE_AMV_SCALE`          | K     | -4.26727572 |
+| AMV SH fraction      | `CORE_AMV_SHFRACTION`     | -     | 0.0     |
+
+## Algorithm
+
+`ocean_init` sets the substep `DT = 1 / STEPSPERYEAR`, the layer spacing (`DZ = 100` m, `DZ1 = DZ/2`),
+the depth-dependent areas and area factors, the initial upwelling rate
+and the initial temperature profile (`CORE_SWITCH_OCN_TEMPPROFILE`, CMIP5-based by default).
+
+Each year `magicc_step_year` (MAGICC7.f90 lines 2646 to 3727) runs:
+
+1. `DELTAQ` for concentrations and forcing, except in the last year
+   (see [module 15](module_15_main_timestep.md)).
+2. For each substep, from step 1 to `STEPSPERYEAR` (from step 0 in the first year, to 11 in the last):
+    1. Interpolate the box forcing to the substep and add monthly volcanic forcing.
+    2. Adjust the climate sensitivity from the substep's global forcing and the cumulative temperature,
+       then call LAMCALC for $\lambda_o$, $\lambda_l$ and the CO₂ internal efficacy.
+    3. Step the ground reservoir from the previous substep's land temperature.
+       The ocean solve below still uses the ground temperature from before this update.
+    4. For each hemisphere: compute the diffusivities, build the tridiagonal system,
+       add the El Niño and ground heat terms to $D_1$, solve it and cap at `CORE_MAXIMAL_TEMPERATURE`.
+    5. Convert SST to ocean air temperature, and keep $\alpha_{eff}$ for the next substep.
+    6. Compute the land temperatures and cap them.
+    7. Store the substep temperatures and the energy-balance heat uptake $Q - \sum_i f_i \lambda_i T_i$.
+    8. Update the inter-hemispheric exchange for the next substep from this substep's air temperatures.
+    9. Update upwelling from the global mean air temperature.
+3. Average substeps 1 to 12 into the annual mean temperatures.
+4. Store the ocean layer profiles and the heat content by depth.
+5. Call `sealevel_calc` (see [module 14](module_14_sea_level_rise.md)).
+
+LAMCALC (MAGICC7.f90 lines 8070 to 8278) starts from $\lambda_o = \lambda + 0.7$ and steps $\lambda_o$ by 0.7,
+reversing when the error in $RLO$ grows.
+After the first sign change it switches to the secant method.
+It gives up after 40 iterations.
+Each iteration derives $\lambda_l$, builds and inverts $\mathbf{A}$,
+and compares the area-weighted land and ocean equilibrium temperatures with $RLO$.
+
+## Numerical considerations
+
+- The fully implicit (backward Euler) ocean scheme is unconditionally stable.
+  An explicit scheme would need $\Delta t < \Delta z^2 / 2K$.
+  With $K = 0.75$ cm² s⁻¹ $\approx 2367$ m² yr⁻¹ and $\Delta z = 100$ m, that is about 2.1 years.
+- The Thomas algorithm is stable for a diagonally dominant matrix, $|B_l| > |A_l| + |C_l|$,
+  which the positive diffusivity and upwelling terms guarantee.
+- LAMCALC's step of 0.7 is empirical.
+  Larger steps (above 0.9) oscillate, and smaller ones (below 0.4) can exceed 40 iterations.
+- Monthly substeps (`STEPSPERYEAR = 12`) also give the annual means and resolve El Niño variability.
+- `CORE_MAXIMAL_TEMPERATURE = 25` K caps every temperature.
+  MAGICC7 logs a warning when the cap binds, which signals an unreasonable parameter set.
+
+## Issues in MAGICC7
+
+- **Code organisation**: the climate physics lives in `MAGICC7.f90` (lines about 2700 to 3700),
+  not in `climate_and_ocean.f90`, which holds only declarations, parameters and `ocean_init`.
+- **Hardcoded values**: `DZ = 100` m, the LAMCALC limits (`IMAX = 40`, `DLAMO = 0.7`, `DIFFLIM = 0.001`)
+  and `CORE_MAXIMAL_TEMPERATURE = 25`, which is set in code and overrides the configuration.
+  The ocean area profiles are embedded, though they can be read from a file.
+- **Fixed structure**: the four boxes (1 = NHO, 2 = NHL, 3 = SHO, 4 = SHL), the 4 × 4 matrix
+  and the implicit tridiagonal scheme are assumed throughout.
+- **Mixed units**: diffusivity in cm² s⁻¹ (converted with 3155.76), heat capacity in W yr m⁻³ K⁻¹
+  and heat content in 10²² J (`WATTYEARPERM2_2_JOULEE22`).
+- **Land equilibrium**: land is in instantaneous equilibrium with the ocean.
+  The ground reservoir only partly addresses this.
+- **El Niño box**: the "double delta box" is not a separate ocean region.
+  It has the mixed layer's area and temperature and relaxes rather than exchanging heat,
+  which makes it hard to validate.
+- **Variable upwelling**: it needs the change from the initial rate and the initial profile
+  for each of the three profile types.
+- **LAMCALC cost**: it inverts the matrix iteratively and runs every substep,
+  because the climate sensitivity changes with each substep's forcing.
+- **Dead code**: commented-out blocks remain (`climate_and_ocean.f90` lines 119 to 135,
+  `MAGICC7.f90` lines 3420 to 3422), with several "PROCEED HERE" comments.
+
+## Differences from MAGICC7
+
+- No El Niño or AMV modes.
+- Upwelling scales with the `GLOBE` method only.
+  Prescribed temperatures and prescribed upwelling are not supported.
+- The last year runs 12 substeps where MAGICC7 runs 11.
+  See [time conventions](time_conventions.md).
+
+## References
+
+| File                                          | Lines     | Content                                   |
+| --------------------------------------------- | --------- | ----------------------------------------- |
+| `src/libmagicc/physics/climate_and_ocean.f90` | 1-295     | Module variables, `ocean_init` (102-292)  |
+| `src/libmagicc/physics/core_calculations.f90` | 1-110     | Ocean-to-air temperature conversion       |
+| `src/libmagicc/MAGICC7.f90`                   | 237-246   | `HEAT_CAPACITY_PERM`                      |
+| `src/libmagicc/MAGICC7.f90`                   | 249-269   | Area fractions                            |
+| `src/libmagicc/MAGICC7.f90`                   | 2646-3727 | `magicc_step_year`                        |
+| `src/libmagicc/MAGICC7.f90`                   | 2724      | Forcing interpolation                     |
+| `src/libmagicc/MAGICC7.f90`                   | 2747-2768 | Climate sensitivity adjustment            |
+| `src/libmagicc/MAGICC7.f90`                   | 2783-2799 | Vertical diffusivity                      |
+| `src/libmagicc/MAGICC7.f90`                   | 2826-3074 | Tridiagonal coefficients                  |
+| `src/libmagicc/MAGICC7.f90`                   | 3080-3094 | Thomas algorithm                          |
+| `src/libmagicc/MAGICC7.f90`                   | 3102-3112 | Temperature caps                          |
+| `src/libmagicc/MAGICC7.f90`                   | 3159-3187 | Ocean-to-air conversion                   |
+| `src/libmagicc/MAGICC7.f90`                   | 3214-3223 | Land temperature                          |
+| `src/libmagicc/MAGICC7.f90`                   | 3258-3281 | Heat uptake                               |
+| `src/libmagicc/MAGICC7.f90`                   | 3300-3388 | Upwelling                                 |
+| `src/libmagicc/MAGICC7.f90`                   | 3627-3721 | Heat content                              |
+| `src/libmagicc/MAGICC7.f90`                   | 8070-8278 | `LAMCALC` (iteration 8116-8207)           |
+| `src/libmagicc/MAGICC7.f90`                   | 8291-8338 | `CALC_INTERNAL_EFFICACY`                  |
+| `src/libmagicc/allcfgs.f90`                   | 1-431     | Parameter namelist                        |
+| `src/libmagicc/utils/areas.f90`               | 1-8       | Area fraction variables                   |
+| `run/MAGCFG_DEFAULTALL.CFG`                   | 81-139    | `CORE_*` defaults                         |
+
+| Constant    | Value  | Location                   | Meaning                         |
+| ----------- | ------ | -------------------------- | ------------------------------- |
+| `RHO`       | 1.026  | `climate_and_ocean.f90:67` | Water density (10⁶ g m⁻³)       |
+| `SPECHT`    | 0.9333 | `climate_and_ocean.f90:67` | Specific heat (cal g⁻¹ K⁻¹)     |
+| `HTCONS`    | 4.1856 | `climate_and_ocean.f90:67` | Calories to joules              |
+| -           | 3155.76 | `MAGICC7.f90:2789`        | cm² s⁻¹ to m² yr⁻¹              |
+| -           | 31.5576 | `MAGICC7.f90:241`         | Seconds per year / 10⁶          |
+| -           | 5.101  | `MAGICC7.f90:244`          | Earth surface area (10¹⁴ m²)    |

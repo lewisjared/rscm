@@ -72,66 +72,56 @@ rscm/
 
 ## Creating Components
 
-### Python Components
+Write a component in Python for rapid prototyping or integration with Python libraries.
+Write it in Rust, with the `ComponentIO` derive macro, for performance or complex ODE systems.
 
-For rapid prototyping or integration with Python libraries:
+=== "Python"
 
-```python
-from rscm.component import Component, Input, Output
+    ```python
+    from rscm.component import Component, Input, Output
 
-class MyComponent(Component):
-    x = Input("Input Variable", unit="unit")
-    y = Output("Output Variable", unit="unit")
+    class MyComponent(Component):
+        x = Input("Input Variable", unit="unit")
+        y = Output("Output Variable", unit="unit")
 
-    def solve(self, t_current, t_next, inputs):
-        return self.Outputs(y=inputs.x.at_start() * 2)
-```
+        def solve(self, t_current, t_next, inputs):
+            return self.Outputs(y=inputs.x.at_start() * 2)
+    ```
 
-See the [Python Components Tutorial](../notebooks/component_python.py) for details.
+    See the [Python Components Tutorial](../notebooks/component_python.py) for details.
 
-### Rust Components
+=== "Rust"
 
-For production performance or complex ODE systems, use the `ComponentIO` derive macro:
-
-```rust
-use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
-};
-use rscm_core::errors::RSCMResult;
-use rscm_core::state::StateValue;
-use rscm_core::timeseries::{FloatValue, Time};
-use rscm_core::ComponentIO;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize, ComponentIO)]
-#[inputs(
-    forcing { name = "Effective Radiative Forcing", unit = "W/m^2" },
-)]
-#[outputs(
-    temperature { name = "Surface Temperature", unit = "K" },
-)]
-pub struct MyComponent {
-    pub sensitivity: FloatValue,
-}
-
-#[typetag::serde]
-impl Component for MyComponent {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        Self::generated_definitions()
+    ```rust
+    // Imports are listed in the Rust Components Tutorial.
+    #[derive(Debug, Serialize, Deserialize, ComponentIO)]
+    #[inputs(
+        forcing { name = "Effective Radiative Forcing", unit = "W/m^2" },
+    )]
+    #[outputs(
+        temperature { name = "Surface Temperature", unit = "K" },
+    )]
+    pub struct MyComponent {
+        pub sensitivity: FloatValue,
     }
 
-    fn solve(&self, _t_current: Time, _t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
-        let inputs = MyComponentInputs::from_input_state(input_state);
-        let outputs = MyComponentOutputs {
-            temperature: inputs.forcing.get() * self.sensitivity,
-        };
-        Ok(outputs.into())
-    }
-}
-```
+    #[typetag::serde]
+    impl Component for MyComponent {
+        fn definitions(&self) -> Vec<RequirementDefinition> {
+            Self::generated_definitions()
+        }
 
-See the [Rust Components Tutorial](../notebooks/component_rust.md) for details.
+        fn solve(&self, _t_current: Time, _t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
+            let inputs = MyComponentInputs::from_input_state(input_state);
+            let outputs = MyComponentOutputs {
+                temperature: inputs.forcing.get() * self.sensitivity,
+            };
+            Ok(outputs.into())
+        }
+    }
+    ```
+
+    See the [Rust Components Tutorial](../notebooks/component_rust.md) for details.
 
 ## Common Commands
 

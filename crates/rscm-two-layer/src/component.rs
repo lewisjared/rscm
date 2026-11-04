@@ -1,10 +1,10 @@
-//! Two-layer energy balance model component implementation.
+//! Two-layer energy balance model, following Held et al. (2010).
 //!
-//! This module contains the core [`TwoLayer`] component and its associated
-//! [`TwoLayerParameters`] configuration. The component integrates with the
-//! RSCM framework via the [`Component`] trait.
-//!
-//! See the [crate-level documentation](crate) for scientific background and usage examples.
+//! A surface layer (the mixed-layer ocean and the atmosphere) exchanges heat with a deep ocean layer.
+//! The surface layer warms in response to effective radiative forcing,
+//! with a climate feedback that can depend on the warming.
+//! [`TwoLayerParameters`] sets the feedback, the ocean heat uptake efficacy,
+//! the heat exchange between the layers and their heat capacities.
 
 use ode_solvers::*;
 use std::sync::Arc;

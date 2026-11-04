@@ -28,6 +28,7 @@ def chain_to_dataframe(chain, discard=0):
     -------
     pandas.DataFrame
         DataFrame with:
+
         - Index: MultiIndex with levels (walker, iteration)
         - Columns: One column per parameter plus 'log_prob'
 
@@ -183,10 +184,10 @@ def target_from_dataframe(
     1. Check if 'variable' column exists for multi-variable data
     2. Group by variable if present
     3. For each group/variable:
-       - Extract time, value arrays
-       - Compute or extract uncertainties
-       - Create Observation objects
-       - Add to VariableTarget
+        - Extract time, value arrays
+        - Compute or extract uncertainties
+        - Create Observation objects
+        - Add to VariableTarget
     4. Construct and return Target
 
     Raises

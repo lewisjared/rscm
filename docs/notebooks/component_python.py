@@ -32,12 +32,11 @@
 #
 # ## Related Resources
 #
-# - [Rust Components](component_rust.md): Creating components in Rust
-# - [Coupled Models](coupled_model.py): Combining multiple components
-# - [Key Concepts](../key_concepts.md): Core RSCM architecture
+# - [Rust Components](../component_rust/): Creating components in Rust
+# - [Coupled Models](../coupled_model/): Combining multiple components
+# - [Key Concepts](../../key_concepts/): Core RSCM architecture
 
 # %%
-import matplotlib.pyplot as plt
 import numpy as np
 
 from rscm.component import Component, Input, Output, State
@@ -62,60 +61,27 @@ from rscm.core import (
 # - Inner `Inputs` class with typed fields for each input
 # - Inner `Outputs` class for constructing return values
 #
+# `solve()` reads exogenous inputs and state variables with `at_start()`,
+# the value at the start of the timestep.
+# See [Timestep Semantics](../../key_concepts/#timestep-semantics) for when other accessors apply.
+#
 # ### Basic Example: Scalar Component
 
 
 # %%
 class ScaleComponent(Component):
-    """
-    Scale the input by a factor after a given year.
+    """Scale the input by a factor after a given year."""
 
-    This example demonstrates a simple scalar component that:
-    - Reads a single input value
-    - Applies conditional logic based on time
-    - Returns a single output value
-    """
-
-    # Declare inputs and outputs using descriptors
     # The first argument is the variable name used in the model
     input_value = Input("input", unit="K")
     output_value = Output("output", unit="K")
 
     def __init__(self, scale_factor: float, scale_year: int):
-        """
-        Initialise the component.
-
-        Parameters
-        ----------
-        scale_factor
-            Multiplier applied after scale_year
-        scale_year
-            Year after which scaling is applied
-        """
         self.scale_factor = scale_factor
         self.scale_year = scale_year
 
     def solve(self, t_current: float, t_next: float, inputs: "ScaleComponent.Inputs"):
-        """
-        Solve the component for a single timestep.
-
-        Parameters
-        ----------
-        t_current
-            Start time of the timestep
-        t_next
-            End time of the timestep
-        inputs
-            Typed inputs providing access to current and historical values.
-            Access values via `inputs.<field_name>.at_start()` for exogenous inputs
-            and state variables (see Timestep Semantics in key_concepts.md).
-
-        Returns
-        -------
-        ScaleComponent.Outputs
-            Typed outputs for this timestep
-        """
-        # Access the current value at start of timestep using the typed interface
+        """Scale the input once `t_current` passes `scale_year`."""
         current_input = inputs.input_value.at_start()
 
         if t_current > self.scale_year:
@@ -123,7 +89,6 @@ class ScaleComponent(Component):
         else:
             result = current_input
 
-        # Return using the auto-generated Outputs class
         return self.Outputs(output_value=result)
 
 
@@ -159,14 +124,13 @@ for defn in scale_component.definitions():
 # This enables seamless coupling between Rust and Python components.
 
 # %%
-component_in_rust = PythonComponent.build(scale_component)
+wrapped = PythonComponent.build(scale_component)
 
 # %% [markdown]
 # ### Direct Component Invocation
 #
 # You can call `solve()` directly on the wrapped component for testing.
-# Note that `solve()` returns `dict[str, StateValue]` - use `.to_scalar()`
-# to extract the float value:
+# `solve()` returns `dict[str, StateValue]`, and `.to_scalar()` extracts the float value:
 
 # %%
 collection = TimeseriesCollection()
@@ -180,7 +144,7 @@ collection.add_timeseries(
     ),
 )
 
-result = component_in_rust.solve(2000, 2001, collection)
+result = wrapped.solve(2000, 2001, collection)
 
 # The result is a dict of StateValue objects
 print(f"Result: {result}")
@@ -190,12 +154,12 @@ print(f"Output value: {result['output'].to_scalar()}")
 # ## Using Components in a Model
 #
 # Components are typically used within a `Model` that handles:
+#
 # - Time stepping
 # - Dependency resolution between components
 # - State management across timesteps
 
 # %%
-# Create exogenous input data
 input_ts = Timeseries(
     np.asarray([1.0, 2.0, 3.0]),
     TimeAxis.from_values(np.asarray([1850.0, 2000.0, 2100.0])),
@@ -203,46 +167,38 @@ input_ts = Timeseries(
     InterpolationStrategy.Previous,
 )
 
-# Define the model time axis
 time_axis = TimeAxis.from_bounds(np.arange(1750.0, 2100, 10.0))
 
-# Build the model
 model = (
     ModelBuilder()
-    .with_py_component(component_in_rust)
+    .with_py_component(wrapped)
     .with_time_axis(time_axis)
     .with_exogenous_variable("input", input_ts)
 ).build()
-
-# %%
-# Run the simulation
 model.run()
 
-# %%
-# Access results
 timeseries = model.timeseries()
 
+# %% tags=["remove_input"]
+import matplotlib.pyplot as plt
+
 plt.figure(figsize=(10, 5))
-plt.plot(
-    time_axis.values(),
-    timeseries.get_timeseries_by_name("input").values(),
-    label="input",
-)
-plt.plot(
-    time_axis.values(),
-    timeseries.get_timeseries_by_name("output").values(),
-    label="output",
-)
+for name in ["input", "output"]:
+    plt.plot(
+        time_axis.values(), timeseries.get_timeseries_by_name(name).values(), label=name
+    )
+plt.axvline(x=2015, color="gray", linestyle="--", alpha=0.5, label="scale_year")
 plt.xlabel("Year")
 plt.ylabel("Temperature (K)")
 plt.legend()
 plt.title("ScaleComponent: Input vs Output")
-plt.axvline(x=2015, color="gray", linestyle="--", alpha=0.5, label="scale_year")
 plt.show()
 
 # %% [markdown]
-# Note the 1-timestep delay: the component reads input at t0 and writes
-# output at t1. After 2015, the output is 3x the input.
+# The output lags the input by one timestep, because the component reads its input at the start
+# of a step and writes its output at the end.
+# The model steps every 10 years, so the first step that starts after 2015 runs from 2020 to 2030.
+# The tripled output therefore first appears in 2030.
 
 # %% [markdown]
 # ## State Variables
@@ -299,11 +255,7 @@ print(
 
 # %%
 class RegionalComponent(Component):
-    """
-    Example component with FourBox grid output.
-
-    Demonstrates how to work with spatially-resolved variables.
-    """
+    """Regional temperature response to a global forcing."""
 
     forcing = Input("Effective Radiative Forcing", unit="W/m^2")
     regional_temp = Output("Regional Temperature", unit="K", grid="FourBox")
@@ -312,10 +264,8 @@ class RegionalComponent(Component):
         self.sensitivity = sensitivity
 
     def solve(self, t_current: float, t_next: float, inputs):
-        """Compute regional temperature response from forcing."""
+        """Scale the forcing by a fixed factor per region."""
         erf = inputs.forcing.at_start()
-
-        # Return FourBox output with different values per region
         return self.Outputs(
             regional_temp=FourBoxSlice(
                 northern_ocean=erf * self.sensitivity * 0.8,
@@ -329,10 +279,25 @@ class RegionalComponent(Component):
 # %%
 regional = RegionalComponent(sensitivity=0.5)
 
-# Check the auto-generated definitions
 for defn in regional.definitions():
     grid = defn.grid_type
     print(f"  {defn.requirement_type.name}: {defn.name} [{defn.unit}] ({grid})")
+
+# %% [markdown]
+# Solving it once returns a FourBox `StateValue` for the regional output:
+
+# %%
+forcing = TimeseriesCollection()
+forcing.add_timeseries(
+    "Effective Radiative Forcing",
+    Timeseries(
+        np.asarray([2.0, 2.0]),
+        TimeAxis.from_bounds(np.asarray([2000.0, 2001.0, 2002.0])),
+        "W/m^2",
+        InterpolationStrategy.Previous,
+    ),
+)
+PythonComponent.build(regional).solve(2000, 2001, forcing)["Regional Temperature"]
 
 # %% [markdown]
 # ## StateValue: Understanding Component Outputs
@@ -340,9 +305,9 @@ for defn in regional.definitions():
 # Component `solve()` methods return `dict[str, StateValue]`. The `StateValue`
 # class wraps scalar or grid values:
 #
-# - `StateValue.scalar(float)` - single global value
-# - `StateValue.four_box(FourBoxSlice)` - four regional values
-# - `StateValue.hemispheric(HemisphericSlice)` - two hemispheric values
+# - `StateValue.scalar(float)`: single global value
+# - `StateValue.four_box(FourBoxSlice)`: four regional values
+# - `StateValue.hemispheric(HemisphericSlice)`: two hemispheric values
 #
 # Use accessor methods to extract values:
 
@@ -367,16 +332,18 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # | Method | Description |
 # |--------|-------------|
 # | `inputs.field.at_start()` | Value at start of timestep (index N) |
-# | `inputs.field.at_end()` | Value at end of timestep (index N+1), or None |
+# | `inputs.field.at_end()` | Value at end of timestep (index N+1). Currently `None`, see below |
 # | `inputs.field.previous` | Previous timestep value (index N-1) |
 # | `inputs.field.at_offset(n)` | Value at relative offset |
 # | `inputs.field.last_n(n)` | NumPy array of last n values |
 #
-# For grid inputs, use `at_start_all()` / `at_end_all()` to get
-# a `FourBoxSlice` or `HemisphericSlice`, or `at_start(region)` / `at_end(region)`
-# for individual regions.
+# For grid inputs, use `at_start_all()` to get a `FourBoxSlice` or `HemisphericSlice`,
+# or `at_start(region)` for an individual region.
 #
-# See "Timestep Semantics" in key_concepts.md for `at_start()` vs `at_end()` usage.
+# Python components see input values only up to the start of the timestep,
+# so `at_end()` and `at_end_all()` return `None`
+# ([issue #162](https://github.com/lewisjared/rscm/issues/162)).
+# See [Timestep Semantics](../../key_concepts/#timestep-semantics) for `at_start()` vs `at_end()` usage.
 
 # %% [markdown]
 # ## Summary
@@ -388,6 +355,4 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # 3. Implement `solve(t_current, t_next, inputs)` returning `self.Outputs(...)`
 # 4. Wrap with `PythonComponent.build()` for model integration
 # 5. Use `grid="FourBox"` or `grid="Hemispheric"` for spatial variables
-# 6. Component outputs are `StateValue` objects - use `.to_scalar()` for floats
-
-# %%
+# 6. Component outputs are `StateValue` objects, so use `.to_scalar()` for floats

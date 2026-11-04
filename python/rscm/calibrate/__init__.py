@@ -2,6 +2,7 @@
 Calibration and parameter estimation for RSCM models.
 
 This package provides tools for:
+
 - Defining parameter priors and sampling parameter spaces
 - Specifying observation targets and computing likelihoods
 - MCMC sampling via affine-invariant ensemble sampling

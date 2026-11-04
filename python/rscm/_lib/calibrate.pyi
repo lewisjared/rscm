@@ -102,6 +102,7 @@ class LogNormal:
     Notes
     -----
     Must provide exactly one of:
+
     - (mu, sigma): log-space parameters
     - (mean, std): real-space parameters
 
@@ -317,7 +318,7 @@ class VariableTarget:
     name : str
         Variable name (e.g., "Temperature|Global")
 
-    Properties
+    Attributes
     ----------
     name : str
         Variable name
@@ -625,7 +626,7 @@ class ProgressInfo:
     """
     Progress information for MCMC sampling.
 
-    Properties
+    Attributes
     ----------
     iteration : int
         Current iteration number
@@ -701,7 +702,7 @@ class Chain:
     """
     MCMC chain storage with diagnostics.
 
-    Properties
+    Attributes
     ----------
     param_names : list[str]
         Parameter names
@@ -1085,7 +1086,7 @@ class OptimizationResult:
     """
     Result from point estimation optimization.
 
-    Properties
+    Attributes
     ----------
     best_params : list[float]
         Best parameter values found

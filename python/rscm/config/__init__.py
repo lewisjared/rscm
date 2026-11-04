@@ -2,16 +2,18 @@
 RSCM Configuration Layer.
 
 This module provides file-based configuration for RSCM models, supporting:
+
 - TOML-based config files for model setup
 - Layered configuration (defaults -> tuning -> experiment overrides)
 - Bidirectional mapping with legacy formats (e.g., MAGICC .CFG files)
 - Structured parameter metadata with validation
 
-Example:
-    >>> from rscm.config import load_config, build_model
-    >>> config = load_config("configs/two-layer/defaults.toml")
-    >>> model = build_model(config)
-    >>> model.run()
+Examples
+--------
+>>> from rscm.config import load_config, build_model
+>>> config = load_config("configs/two-layer/defaults.toml")
+>>> model = build_model(config)
+>>> model.run()
 """
 
 from __future__ import annotations

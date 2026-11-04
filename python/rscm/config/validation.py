@@ -2,6 +2,7 @@
 Validation infrastructure for RSCM configuration.
 
 This module provides:
+
 - Schema version checking with semver compatibility
 - Unknown key detection
 - Type and constraint validation
@@ -68,6 +69,7 @@ def check_schema_version(config_version: str, loader_version: str) -> None:
     Check schema version compatibility between config and loader.
 
     Compatibility rules:
+
     - Major version mismatch: incompatible (raise error)
     - Minor version newer in config: forward-compatible (warn)
     - Otherwise: compatible (silent)

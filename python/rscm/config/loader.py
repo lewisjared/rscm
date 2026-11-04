@@ -2,6 +2,7 @@
 Configuration loading and merging for RSCM.
 
 This module provides:
+
 - load_config: Load a single TOML configuration file
 - load_config_layers: Merge multiple config files (layered configuration)
 """

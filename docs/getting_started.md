@@ -1,7 +1,7 @@
 # Getting Started
 
 This guide walks you through installing RSCM and running your first climate model simulation.
-See the [Python API](api/rscm/) for full class documentation.
+See the [Python API](api/rscm/index.md) for full class documentation.
 
 ## Installation
 
@@ -12,10 +12,7 @@ pip install rscm
 ```
 
 The wheels include the compiled Rust extension, so no Rust toolchain is required.
-
-Some features described in these docs are newer than the latest PyPI release.
-These include the MAGICC components and runners, such as `run_magicc7`, and the configuration layer.
-To use them, build from source as described in the [Developer Guide](developers/index.md).
+To work on RSCM itself, build from source as described in the [Developer Guide](developers/index.md).
 
 ## Quickstart: Running a Climate Model
 
@@ -92,21 +89,26 @@ Rebuild the model before retrying a failed run, because component state may alre
 
 ### Step 5: Analyse Results
 
+`model.timeseries()` returns every variable in the model as a `TimeseriesCollection`:
+
 ```python
-# Extract results
 results = model.timeseries()
 temperature = results.get_timeseries_by_name("Surface Temperature")
+print(f"{temperature.values()[-1]:.2f} K in 2100")
+```
 
-# Plot the results
+```text
+3.44 K in 2100
+```
+
+Plot it against the model years with matplotlib:
+
+```python
 import matplotlib.pyplot as plt
 
-plt.figure(figsize=(10, 5))
 plt.plot(time_axis.values(), temperature.values())
 plt.xlabel("Year")
 plt.ylabel("Temperature Anomaly (K)")
-plt.title("Surface Temperature Response to Forcing")
-plt.grid(True)
-plt.show()
 ```
 
 ## Available Models and Components
@@ -120,35 +122,16 @@ RSCM ships with pre-built components for common climate modelling tasks:
 | `CO2ERFBuilder`                 | `rscm.components` | CO2 concentration to effective radiative forcing |
 | `FourBoxOceanHeatUptakeBuilder` | `rscm.components` | Example four-box disaggregation of scalar forcing |
 
-`rscm.magicc` provides builders for the MAGICC7 components:
-
-- Chemistry: `CH4Chemistry`, `CH4Oxidation`, `N2OChemistry` and `HalocarbonChemistry`.
-- Carbon cycle: `TerrestrialCarbon` (with optional nitrogen limitation), `OceanCarbon`, `CO2Budget`
-  and `Permafrost`.
-- Forcing: `GhgForcing`, `OzoneForcing`, `AerosolDirect`, `AerosolIndirect` and `ForcingAggregation`.
-- Climate: the `ClimateUDEB` upwelling-diffusion energy balance model and `SeaLevelRise`.
-
-`rscm.magicc.full.run_magicc7` couples all of them except `AerosolDirect` and `AerosolIndirect`
-into the full MAGICC7 chain.
-Like MAGICC7, it takes aerosol forcing from `rscm.magicc.prescribed` instead.
-It uses MAGICC7 v7.5.3's packaged defaults and SSP245 input files,
-and matches MAGICC7's output on its default SSP245 run.
-`rscm.magicc.prescribed` reproduces the aerosol, land-use, solar and volcanic forcing
-that MAGICC7 derives from its input files.
-`rscm.magicc.run_magicc` and `rscm.magicc.run_magicc_emissions` are smaller runners
-for concentration-driven and emissions-driven experiments.
-
-See [MAGICC Runs](magicc_runs.md#full-magicc7-chain) for usage and agreement with MAGICC7.
-The [MAGICC Coupled Model](notebooks/magicc_coupled_model.py) tutorial wires the components together by hand.
-See the [MAGICC module specs](modules/README.md) for the implementation status of each module.
+`rscm.magicc` reimplements MAGICC7's modules, and `rscm.magicc.full.run_magicc7` runs the full chain.
+See [MAGICC Runs](magicc_runs.md) to run it, and the [MAGICC module specs](modules/README.md) for each module.
 
 The [Components](components/index.md) reference lists the inputs, outputs and parameters of every component.
 
 ### Coupling Components
 
-Components can be coupled together. Here's an emissions-to-temperature pipeline.
-`CO2ERF` writes `Effective Radiative Forcing|CO2`, but `TwoLayer` reads `Effective Radiative Forcing`.
-A [`VariableSchema`][rscm.core.VariableSchema] aggregate connects the two:
+Components can be coupled together.
+This pipeline runs from CO2 emissions to temperature,
+and reuses `time_axis` and the `two_layer` component from the Quickstart:
 
 ```python
 from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
@@ -165,7 +148,14 @@ carbon_cycle = CarbonCycleBuilder.from_parameters(
     {"tau": 30.0, "conc_pi": 278.0, "alpha_temperature": 0.0}
 ).build()
 co2_erf = CO2ERFBuilder.from_parameters({"erf_2xco2": 3.7, "conc_pi": 278.0}).build()
+```
 
+The `CO2ERFBuilder` component writes `Effective Radiative Forcing|CO2`,
+but the `TwoLayerBuilder` component reads `Effective Radiative Forcing`.
+A [`VariableSchema`][rscm.core.VariableSchema] declares every variable the components use,
+plus an aggregate that connects the two:
+
+```python
 schema = VariableSchema()
 schema.add_variable("Emissions|CO2|Anthropogenic", "GtC / yr")
 schema.add_variable("Atmospheric Concentration|CO2", "ppm")
@@ -177,8 +167,12 @@ schema.add_variable("Deep Ocean Temperature", "K")
 schema.add_aggregate(
     "Effective Radiative Forcing", "W/m^2", "Sum", ["Effective Radiative Forcing|CO2"]
 )
+```
 
-# Build the coupled model, adding producers before their consumers
+The builder chain takes the schema, the components in producer-to-consumer order,
+the emissions and an initial value for every state variable:
+
+```python
 model = (
     ModelBuilder()
     .with_time_axis(time_axis)
@@ -215,8 +209,9 @@ See [Key Concepts](key_concepts.md#dependency-graph) for details.
 - **[MAGICC Coupled Model](notebooks/magicc_coupled_model.py)**: Couple the MAGICC components yourself
 - **[Spatial Grids](grids.md)**: Work with regional climate data
 - **[Configuration Layer](model_configuration.md)**: Define models in TOML files
-- **[Python API](api/rscm/)**: Full API documentation
+- **[Python API](api/rscm/index.md)**: Full API documentation
 
 ### Want to Extend RSCM?
 
-If you want to create custom components in Python or contribute Rust components, see the [Developer Guide](developers/index.md).
+If you want to create custom components in Python or contribute Rust components,
+see the [Developer Guide](developers/index.md).

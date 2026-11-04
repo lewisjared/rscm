@@ -1,7 +1,12 @@
 # Offline MAGICC concentration baseline
 
-Compare the checked-in SSP245/IPCCTAR concentration reference with `rscm.magicc.run_magicc`.
-This command runs locally without an external MAGICC executable or network access
+The baseline report compares `rscm.magicc.run_magicc` with a checked-in MAGICC7 SSP2-4.5 run
+that is driven by concentrations and uses IPCCTAR GHG forcing.
+It reports the differences without a pass or fail threshold.
+The full chain's parity test is separate,
+and [Agreement with MAGICC7](magicc_runs.md#agreement-with-magicc7) describes it.
+
+The command runs locally without an external MAGICC executable or network access
 once the RSCM environment is installed.
 
 ```sh
@@ -34,11 +39,11 @@ Small nonzero references are not masked.
 
 ## Interpretation
 
-A successful command means the data and execution contracts passed.
-It does not mean scientific parity.
-Numerical disagreement is report data and does not change the exit status.
-Missing or ambiguous series, incomplete years, unexpected units, nonfinite values, invalid parameters
-and execution or write failures exit nonzero.
+- A successful command means the inputs were complete and valid, and the run and its files succeeded.
+- It does not mean scientific parity.
+  Numerical disagreement is report data and does not change the exit status.
+- Missing or ambiguous series, incomplete years, unexpected units, nonfinite values, invalid parameters
+  and execution or write failures exit nonzero.
 
 The residual is reference total ERF minus reference CO2, CH4 and N2O ERF.
 It is added to the runner's calculated gas ERFs,
@@ -61,12 +66,10 @@ This is provisional, especially for temperature:
 [time conventions](modules/time_conventions.md) describe the reference output timing
 and the final year's substeps, where RSCM still differs from MAGICC7.
 The command never searches for a shift that reduces error.
-All comparability fields remain provisional and there is no temperature tolerance or parity verdict.
+The comparison settings are provisional, and there is no temperature tolerance or parity verdict.
 
 The baseline covers only this concentration-driven case.
 It has no ocean diagnostics, verified reference regeneration or prescribed-forcing control.
-The full chain's comparison with MAGICC7 is `tests/regression/test_full_run.py`,
-described in [MAGICC runs](magicc_runs.md#agreement-with-magicc7).
 
 ## Verification
 

@@ -21,6 +21,8 @@ build:
       - uv sync --group docs --frozen
       - command -v dot
       - dot -V
+      # Builds matplotlib's font cache here, so its notice does not land in a notebook cell
+      - uv run python -c "import matplotlib.pyplot"
     build:
       html:
         - NO_COLOR=1 uv run mkdocs build --strict --site-dir $READTHEDOCS_OUTPUT/html

@@ -5,63 +5,47 @@ This module re-exports the core types from the Rust extension module,
 providing the fundamental building blocks for constructing and running
 climate models.
 
-Model Building
---------------
-ModelBuilder
-    Builder pattern for assembling climate models from components.
-Model
-    A coupled set of components solved on a common time axis.
+**Model building**
 
-Time Series
------------
-TimeAxis
-    Defines the temporal grid for model execution and data.
-Timeseries
-    Time-indexed data with interpolation support.
-TimeseriesCollection
-    Container for multiple named timeseries.
-InterpolationStrategy
-    Controls how values are interpolated between time points.
+- [ModelBuilder][] assembles a climate model from components.
+- [Model][] is a coupled set of components solved on a common time axis.
 
-Components
-----------
-PythonComponent
-    Wrapper to use Python components in Rust models.
-RequirementDefinition
-    Specifies a component's input/output requirements.
-RequirementType
-    Enum: Input, Output, State, or EmptyLink.
-GridType
-    Enum: Scalar, FourBox, or Hemispheric.
+**Time series**
 
-Spatial Grids
--------------
-FourBoxGrid, FourBoxRegion, FourBoxSlice
-    Four-box grid (MAGICC standard): NO, NL, SO, SL regions.
-HemisphericGrid, HemisphericRegion, HemisphericSlice
-    Two-region hemispheric grid: Northern, Southern.
-ScalarGrid, ScalarRegion
-    Single global value (default).
+- [TimeAxis][] defines the temporal grid for model execution and data.
+- [Timeseries][] holds time-indexed data with interpolation support.
+- [TimeseriesCollection][] holds multiple named timeseries.
+- [InterpolationStrategy][] controls how values are interpolated between time points.
 
-State Values
-------------
-StateValue
-    Wrapper for scalar or grid values returned from components.
-TimeseriesWindow
-    Provides access to current and historical values within solve().
-FourBoxTimeseriesWindow, HemisphericTimeseriesWindow
-    Grid-typed variants of TimeseriesWindow.
+**Components**
 
-Variable Schema
----------------
-VariableSchema
-    Declares model variables and aggregation relationships.
-    Enables automatic computation of derived values (sums, means, weighted sums).
+- [PythonComponent][] wraps a Python component for use in Rust models.
+- [RequirementDefinition][] specifies one of a component's inputs or outputs.
+- [RequirementType][] is Input, Output, State or EmptyLink.
+- [GridType][] is Scalar, FourBox or Hemispheric.
 
-Units
------
-Unit
-    Physical unit with parsing, normalisation, and conversion support.
+**Spatial grids**
+
+- [FourBoxGrid][], [FourBoxRegion][] and [FourBoxSlice][] describe the MAGICC
+  four-box grid: Northern Ocean, Northern Land, Southern Ocean, Southern Land.
+- [HemisphericGrid][], [HemisphericRegion][] and [HemisphericSlice][] describe the
+  Northern and Southern hemispheres.
+- [ScalarGrid][] and [ScalarRegion][] describe a single global value (the default).
+
+**State values**
+
+- [StateValue][] wraps the scalar or grid values a component returns.
+- [TimeseriesWindow][] gives current and historical values within `solve()`.
+- [FourBoxTimeseriesWindow][] and [HemisphericTimeseriesWindow][] are its grid variants.
+
+**Variable schema**
+
+- [VariableSchema][] declares model variables and aggregation relationships,
+  so derived values (sums, means, weighted sums) are computed automatically.
+
+**Units**
+
+- [Unit][] is a physical unit with parsing, normalisation and conversion.
 
 Examples
 --------

@@ -25,7 +25,7 @@ which allows contributions to be accepted at a faster rate.
 
 ## Installation
 
----8<--- "README.md:getting-started-dev"
+Follow [Development Setup](index.md#development-setup) in the Developer Guide.
 
 ## Language
 

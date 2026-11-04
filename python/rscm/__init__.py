@@ -1,7 +1,9 @@
 """
 Rust Simple Climate Model (RSCM)
 
-A framework for simple climate models built it Rust.
+A framework for simple climate models built in Rust.
+Models are assembled with [ModelBuilder][rscm.core.ModelBuilder] in [rscm.core][],
+and the MAGICC component builders are in [rscm.magicc][].
 """
 
 import importlib.metadata

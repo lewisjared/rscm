@@ -9,21 +9,25 @@ analysis. The components in this module implement MAGICC's key physical processe
 Available Components
 --------------------
 Climate:
+
 - ClimateUDEBBuilder: 4-box UDEB climate model with ocean diffusion
 - SeaLevelRiseBuilder: Sea level rise from glaciers and ice sheets
 
 Chemistry:
+
 - CH4ChemistryBuilder: CH4 atmospheric chemistry with Prather iteration
 - N2OChemistryBuilder: N2O atmospheric chemistry with stratospheric delay
 - HalocarbonChemistryBuilder: F-gases and Montreal Protocol gases
 
 Carbon Cycle:
+
 - TerrestrialCarbonBuilder: 3-pool terrestrial carbon cycle (MAGICC7)
 - OceanCarbonBuilder: IRF-based ocean carbon uptake
 - CO2BudgetBuilder: Carbon mass balance integrator
 - PermafrostBuilder: Permafrost thaw releasing CO2 and CH4
 
 Forcing:
+
 - OzoneForcingBuilder: Stratospheric and tropospheric ozone forcing
 - AerosolDirectBuilder: Direct aerosol radiative effects
 - AerosolIndirectBuilder: Indirect aerosol cloud effects
@@ -78,71 +82,43 @@ class ClimateUDEBBuilder(ComponentBuilder):
     (Northern Ocean, Northern Land, Southern Ocean, Southern Land) to a multi-layer
     ocean with vertical diffusion and upwelling.
 
-    # Parameters
-    # ----------
-    # n_layers : int
-    #     Number of ocean layers (including mixed layer). Default: 50
-    # mixed_layer_depth : float
-    #     Mixed layer depth (m). Default: 60.0
-    # layer_thickness : float
-    #     Layer thickness for deeper ocean layers (m). Default: 100.0
-    # kappa : float
-    #     Base vertical diffusivity (cm^2/s). Default: 0.75
-    # kappa_min : float
-    #     Minimum vertical diffusivity (cm^2/s). Default: 0.1
-    # kappa_dkdt : float
-    #     Temperature gradient coefficient for diffusivity (cm^2/s/K). Default: -0.191
-    # w_initial : float
-    #     Initial upwelling rate (m/yr). Default: 3.5
-    # w_variable_fraction : float
-    #     Variable fraction of upwelling. Default: 0.7
-    # w_threshold_temp_nh : float
-    #     Temperature threshold for NH upwelling shutdown (K). Default: 8.0
-    # w_threshold_temp_sh : float
-    #     Temperature threshold for SH upwelling shutdown (K). Default: 8.0
-    # ecs : float
-    #     Equilibrium climate sensitivity (K). Default: 3.0
-    # rf_2xco2 : float
-    #     Radiative forcing for 2xCO2 (W/m^2). Default: 3.71
-    # rlo : float
-    #     Land-ocean warming ratio. Default: 1.317
-    # k_lo : float
-    #     Land-ocean heat exchange coefficient (W/m^2/K). Default: 1.44
-    # k_ns : float
-    #     Inter-hemispheric heat exchange coefficient (W/m^2/K). Default: 0.31
-    # amplify_ocean_to_land : float
-    #     Ocean-to-land heat exchange amplification factor. Default: 1.02
-    # nh_land_fraction : float
-    #     Northern Hemisphere land fraction. Default: 0.42
-    # sh_land_fraction : float
-    #     Southern Hemisphere land fraction. Default: 0.21
-    # temp_adjust_alpha : float
-    #     Ocean-to-atmosphere temperature adjustment alpha. Default: 1.04
-    # temp_adjust_gamma : float
-    #     Ocean-to-atmosphere temperature adjustment gamma (1/K). Default: -0.002
-    # polar_sinking_ratio : float
-    #     Polar sinking water temperature ratio. Default: 0.2
-    # steps_per_year : int
-    #     Steps per year for sub-annual integration. Default: 12
-    # max_temperature : float
-    #     Maximum temperature anomaly cap (K). Default: 25.0
+    **Parameter keys**
 
-    Inputs
-    ------
-    Effective Radiative Forcing|Total : float
-        Total effective radiative forcing (W/m^2, FourBox grid)
+    - `n_layers` (`int`, default `50`): Number of ocean layers (including mixed layer).
+    - `mixed_layer_depth` (`float`, default `60.0`): Mixed layer depth (m).
+    - `layer_thickness` (`float`, default `100.0`): Layer thickness for deeper ocean
+      layers (m).
+    - `kappa` (`float`, default `0.75`): Base vertical diffusivity (cm^2/s).
+    - `kappa_min` (`float`, default `0.1`): Minimum vertical diffusivity (cm^2/s).
+    - `kappa_dkdt` (`float`, default `-0.191`): Temperature gradient coefficient for
+      diffusivity (cm^2/s/K).
+    - `w_initial` (`float`, default `3.5`): Initial upwelling rate (m/yr).
+    - `w_variable_fraction` (`float`, default `0.7`): Variable fraction of upwelling.
+    - `w_threshold_temp_nh` (`float`, default `8.0`): Temperature threshold for NH
+      upwelling shutdown (K).
+    - `w_threshold_temp_sh` (`float`, default `8.0`): Temperature threshold for SH
+      upwelling shutdown (K).
+    - `ecs` (`float`, default `3.0`): Equilibrium climate sensitivity (K).
+    - `rf_2xco2` (`float`, default `3.71`): Radiative forcing for 2xCO2 (W/m^2).
+    - `rlo` (`float`, default `1.317`): Land-ocean warming ratio.
+    - `k_lo` (`float`, default `1.44`): Land-ocean heat exchange coefficient (W/m^2/K).
+    - `k_ns` (`float`, default `0.31`): Inter-hemispheric heat exchange coefficient
+      (W/m^2/K).
+    - `amplify_ocean_to_land` (`float`, default `1.02`): Ocean-to-land heat exchange
+      amplification factor.
+    - `nh_land_fraction` (`float`, default `0.42`): Northern Hemisphere land fraction.
+    - `sh_land_fraction` (`float`, default `0.21`): Southern Hemisphere land fraction.
+    - `temp_adjust_alpha` (`float`, default `1.04`): Ocean-to-atmosphere temperature
+      adjustment alpha.
+    - `temp_adjust_gamma` (`float`, default `-0.002`): Ocean-to-atmosphere temperature
+      adjustment gamma (1/K).
+    - `polar_sinking_ratio` (`float`, default `0.2`): Polar sinking water temperature
+      ratio.
+    - `steps_per_year` (`int`, default `12`): Steps per year for sub-annual integration.
+    - `max_temperature` (`float`, default `25.0`): Maximum temperature anomaly cap (K).
 
-    States
-    ------
-    Surface Temperature : float
-        Regional surface temperature anomaly (K, FourBox grid)
-
-    Outputs
-    -------
-    Heat Uptake : float
-        Heat uptake (W/m^2)
-    Ocean Heat Content : float
-        Total ocean heat uptake (J)
+    Inputs, outputs and states are listed on the
+    [ClimateUDEB component page][component-climateudeb].
 
     Examples
     --------
@@ -250,27 +226,8 @@ class SeaLevelRiseBuilder(ComponentBuilder):
     respond to the annual mean warming. Thermal expansion comes from ClimateUDEB
     with ``thermal_expansion`` set. Steps must be one year long.
 
-    Inputs
-    ------
-    Surface Temperature|Annual Mean : float
-        Mean global surface warming over the step (K)
-    Sea Level Rise|Thermal Expansion : float
-        Thermal expansion of the ocean (mm)
-
-    Outputs
-    -------
-    Sea Level Rise : float
-        Sum of all contributions (mm)
-    Sea Level Rise|Glaciers : float
-        Glaciers and small ice caps (mm)
-    Sea Level Rise|Greenland|Surface Mass Balance : float
-        Greenland surface mass balance (mm)
-    Sea Level Rise|Greenland|Solid Ice Discharge : float
-        Greenland solid ice discharge (mm)
-    Sea Level Rise|Antarctica|Surface Mass Balance : float
-        Antarctic surface mass balance (mm)
-    Sea Level Rise|Antarctica|Solid Ice Discharge : float
-        Antarctic solid ice discharge (mm)
+    Inputs, outputs and states are listed on the
+    [SeaLevelRise component page][component-sealevelrise].
 
     Examples
     --------
@@ -323,65 +280,37 @@ class CH4ChemistryBuilder(ComponentBuilder):
     before ``feedback_start_year``; NOx, CO and NMVOC deltas are relative to
     emissions in ``feedback_start_year``.
 
-    # Parameters
-    # ----------
-    # feedback_start_year : float
-    #     Year from which feedbacks are measured. Default: 1927.0
-    # natural_emissions : float
-    #     Natural CH4 emissions (Tg CH4/yr). Default: 182.1908
-    # tau_total_init : float
-    #     Total lifetime at the reference state (years). Default: 9.9474
-    # tau_soil : float
-    #     Soil uptake sink lifetime (years). Default: 150.0
-    # tau_strat : float
-    #     Stratospheric sink lifetime (years). Default: 120.0
-    # tau_trop_cl : float
-    #     Tropospheric Cl sink lifetime (years). Default: 200.0
-    # ch4_self_feedback : float
-    #     CH4 self-feedback coefficient. Default: -0.53775
-    # oh_sensitivity_scale : float
-    #     OH sensitivity scaling factor. Default: 0.72448
-    # oh_nox_sensitivity : float
-    #     NOx emissions effect on OH ((Tg N/yr)^-1). Default: 0.0093376
-    # oh_co_sensitivity : float
-    #     CO emissions effect on OH ((Tg CO/yr)^-1). Default: -0.000113
-    # oh_nmvoc_sensitivity : float
-    #     NMVOC emissions effect on OH ((Tg NMVOC/yr)^-1). Default: -0.0003142
-    # temp_sensitivity : float
-    #     Temperature sensitivity of lifetime (K^-1). Default: 0.07
-    # include_temp_feedback : bool
-    #     Enable temperature feedback. Default: True
-    # include_emissions_feedback : bool
-    #     Enable NOx/CO/NMVOC emissions feedback. Default: True
-    # ppb_to_tg : float
-    #     Conversion factor ppb to Tg CH4. Default: 2.824
-    # mixbox_size : float
-    #     Fraction of the atmosphere mixed with surface CH4. Default: 0.973
+    **Parameter keys**
 
-    Inputs
-    ------
-    Emissions|CH4 : float
-        Anthropogenic CH4 emissions (Tg CH4/yr)
-    Surface Temperature|Global : float
-        Global mean surface temperature anomaly (K)
-    Emissions|NOx : float
-        NOx emissions (Tg N/yr)
-    Emissions|CO : float
-        CO emissions (Tg CO/yr)
-    Emissions|NMVOC : float
-        NMVOC emissions (Tg NMVOC/yr)
+    - `feedback_start_year` (`float`, default `1927.0`): Year from which feedbacks are
+      measured.
+    - `natural_emissions` (`float`, default `182.1908`): Natural CH4 emissions (Tg
+      CH4/yr).
+    - `tau_total_init` (`float`, default `9.9474`): Total lifetime at the reference
+      state (years).
+    - `tau_soil` (`float`, default `150.0`): Soil uptake sink lifetime (years).
+    - `tau_strat` (`float`, default `120.0`): Stratospheric sink lifetime (years).
+    - `tau_trop_cl` (`float`, default `200.0`): Tropospheric Cl sink lifetime (years).
+    - `ch4_self_feedback` (`float`, default `-0.53775`): CH4 self-feedback coefficient.
+    - `oh_sensitivity_scale` (`float`, default `0.72448`): OH sensitivity scaling
+      factor.
+    - `oh_nox_sensitivity` (`float`, default `0.0093376`): NOx emissions effect on OH
+      ((Tg N/yr)^-1).
+    - `oh_co_sensitivity` (`float`, default `-0.000113`): CO emissions effect on OH ((Tg
+      CO/yr)^-1).
+    - `oh_nmvoc_sensitivity` (`float`, default `-0.0003142`): NMVOC emissions effect on
+      OH ((Tg NMVOC/yr)^-1).
+    - `temp_sensitivity` (`float`, default `0.07`): Temperature sensitivity of lifetime
+      (K^-1).
+    - `include_temp_feedback` (`bool`, default `True`): Enable temperature feedback.
+    - `include_emissions_feedback` (`bool`, default `True`): Enable NOx/CO/NMVOC
+      emissions feedback.
+    - `ppb_to_tg` (`float`, default `2.824`): Conversion factor ppb to Tg CH4.
+    - `mixbox_size` (`float`, default `0.973`): Fraction of the atmosphere mixed with
+      surface CH4.
 
-    States
-    ------
-    Atmospheric Concentration|CH4 : float
-        Atmospheric CH4 concentration (ppb)
-
-    Outputs
-    -------
-    Lifetime|CH4 : float
-        CH4 atmospheric lifetime (years)
-    Lifetime|CH4|Effective : float
-        Start-of-year burden over the CH4 removed during the step (years)
+    Inputs, outputs and states are listed on the
+    [CH4Chemistry component page][component-ch4chemistry].
 
     Examples
     --------
@@ -423,31 +352,13 @@ class CH4OxidationBuilder(ComponentBuilder):
     parameters must match the CH4 chemistry component, and it must be registered
     after it so that it reads the same step's concentration and lifetime.
 
-    # Parameters
-    # ----------
-    # carbon_per_ch4 : float
-    #     Mass of carbon per mass of CH4 oxidised. Default: 0.75
+    **Parameter keys**
 
-    Inputs
-    ------
-    Atmospheric Concentration|CH4 : float
-        CH4 concentration at the start and end of the step (ppb)
-    Lifetime|CH4|OH : float
-        OH lifetime over the step (years)
-    Emissions|CH4|Fossil, Emissions|CH4|AFOLU : float
-        Anthropogenic CH4 emissions by sector (Mt CH4/yr)
+    - `carbon_per_ch4` (`float`, default `0.75`): Mass of carbon per mass of CH4
+      oxidised.
 
-    States
-    ------
-    Atmospheric Burden|CH4|Fossil, Atmospheric Burden|CH4|AFOLU : float
-        Anthropogenic CH4 in the atmosphere (Mt CH4)
-    Atmospheric Burden|CH4|Natural, Atmospheric Burden|CH4|Permafrost : float
-        Natural and permafrost CH4 in the atmosphere (Mt CH4)
-
-    Outputs
-    -------
-    Emissions|CO2|CH4 Oxidation : float
-        CO2 released by oxidation (GtC/yr)
+    Inputs, outputs and states are listed on the
+    [CH4Oxidation component page][component-ch4oxidation].
     """
 
     @staticmethod
@@ -482,45 +393,27 @@ class N2OChemistryBuilder(ComponentBuilder):
     lifetime feedback, stratospheric transport delay and the MAGICC7
     meridional flux response to warming. Defaults follow MAGICC7 v7.5.3.
 
-    # Parameters
-    # ----------
-    # feedback_start_year : float
-    #     Year from which the concentration feedback is measured. Default: 1925.0
-    # natural_emissions : float
-    #     Natural N2O emissions (Tg N/yr). Default: 8.0345017
-    # tau_n2o : float
-    #     Base atmospheric lifetime (years). Default: 139.275
-    # lifetime_feedback : float
-    #     Lifetime feedback exponent. Default: -0.04
-    # strat_delay : int
-    #     Stratospheric mixing delay (years). Default: 1
-    # ppb_to_tg : float
-    #     Conversion factor ppb to Tg N. Default: 4.79
-    # include_meridional_flux_feedback : bool
-    #     Shorten the lifetime with warming. Default: True
-    # meridional_flux_change_per_degree : float
-    #     Meridional flux change per degree of warming (K^-1). Default: 0.15
-    # tau_sensitivity_to_meridional_flux : float
-    #     Lifetime sensitivity to meridional flux changes. Default: 0.04
-    # meridional_flux_reference_year : float
-    #     Year from which warming changes the meridional flux. Default: 1980.0
+    **Parameter keys**
 
-    Inputs
-    ------
-    Emissions|N2O : float
-        Anthropogenic N2O emissions (Tg N/yr)
-    Surface Temperature : float
-        Global mean surface temperature anomaly (K)
+    - `feedback_start_year` (`float`, default `1925.0`): Year from which the
+      concentration feedback is measured.
+    - `natural_emissions` (`float`, default `8.0345017`): Natural N2O emissions (Tg
+      N/yr).
+    - `tau_n2o` (`float`, default `139.275`): Base atmospheric lifetime (years).
+    - `lifetime_feedback` (`float`, default `-0.04`): Lifetime feedback exponent.
+    - `strat_delay` (`int`, default `1`): Stratospheric mixing delay (years).
+    - `ppb_to_tg` (`float`, default `4.79`): Conversion factor ppb to Tg N.
+    - `include_meridional_flux_feedback` (`bool`, default `True`): Shorten the lifetime
+      with warming.
+    - `meridional_flux_change_per_degree` (`float`, default `0.15`): Meridional flux
+      change per degree of warming (K^-1).
+    - `tau_sensitivity_to_meridional_flux` (`float`, default `0.04`): Lifetime
+      sensitivity to meridional flux changes.
+    - `meridional_flux_reference_year` (`float`, default `1980.0`): Year from which
+      warming changes the meridional flux.
 
-    States
-    ------
-    Atmospheric Concentration|N2O : float
-        Atmospheric N2O concentration (ppb)
-
-    Outputs
-    -------
-    Lifetime|N2O : float
-        N2O atmospheric lifetime (years)
+    Inputs, outputs and states are listed on the
+    [N2OChemistry component page][component-n2ochemistry].
 
     Examples
     --------
@@ -600,30 +493,27 @@ class HalocarbonChemistryBuilder(ComponentBuilder):
     Concentrations, forcing and EESC of F-gases and Montreal Protocol gases,
     following MAGICC7 Module 03.
 
-    Inputs
-    ------
-    Emissions|{Species} : float
-        Emissions for each halocarbon species (kt/yr)
-    Lifetime|CH4|OH : float
-        CH4 OH lifetime (yr), which scales OH lifetimes
-    Surface Temperature : float
-        Warming (K), which shortens stratospheric lifetimes
-    Emissions|CO2|Fossil : float
-        Fossil CO2 emissions (GtC/yr), read with ``fgas_regions``
+    **Inputs**
 
-    States
-    ------
-    Atmospheric Concentration|{Species} : float
-        Concentration for each halocarbon species (ppt)
+    - `Emissions|{Species}`: Emissions for each halocarbon species (kt/yr).
+    - `Lifetime|CH4|OH`: CH4 OH lifetime (yr), which scales OH lifetimes.
+    - `Surface Temperature`: Warming (K), which shortens stratospheric
+      lifetimes.
+    - `Emissions|CO2|Fossil`: Fossil CO2 emissions (GtC/yr), read with
+      ``fgas_regions``.
 
-    Outputs
-    -------
-    Effective Radiative Forcing|F-Gases : float or FourBox
-        F-gas ERF (W/m²), four-box with ``fgas_regions``
-    Effective Radiative Forcing|Montreal Protocol Halogen Gases : float
-        Montreal Protocol gas ERF (W/m²)
-    EESC : float
-        Equivalent Effective Stratospheric Chlorine (ppt)
+    **States**
+
+    - `Atmospheric Concentration|{Species}`: Concentration for each halocarbon
+      species (ppt).
+
+    **Outputs**
+
+    - `Effective Radiative Forcing|F-Gases` (float or FourBox): F-gas ERF (W/m²),
+      four-box with ``fgas_regions``.
+    - `Effective Radiative Forcing|Montreal Protocol Halogen Gases`: Montreal
+      Protocol gas ERF (W/m²).
+    - `EESC`: Equivalent Effective Stratospheric Chlorine (ppt).
 
     Examples
     --------
@@ -702,48 +592,8 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
     fertilization methods, two respiration methods, time-varying turnover
     times, no-feedback reference pools, and mass conservation correction.
 
-    Inputs
-    ------
-    Atmospheric Concentration|CO2 : float
-        Atmospheric CO2 concentration (ppm)
-    Surface Temperature : float
-        Global mean surface temperature anomaly (K). The feedbacks use the
-        warming since ``tempfeedback_yrstart``, floored at zero.
-    Emissions|CO2|Land Use : float
-        Land use change CO2 emissions (GtC/yr)
-    Nitrogen Deposition : float
-        Nitrogen deposition (Gt N/yr), only with ``nitrogen``
-    Nitrogen Fixation : float
-        Nitrogen fixation (Gt N/yr), only with ``nitrogen`` and no
-        ``prognostic_fixation``
-
-    States
-    ------
-    Carbon Pool|Plant : float
-        Plant carbon pool (GtC)
-    Carbon Pool|Detritus : float
-        Detritus carbon pool (GtC)
-    Carbon Pool|Soil : float
-        Soil carbon pool (GtC)
-
-    Outputs
-    -------
-    Carbon Flux|Terrestrial : float
-        Net atmosphere-to-land flux, including land-use emissions (GtC/yr)
-    Emissions|CO2|Gross Deforestation : float
-        Gross deforestation emissions (GtC/yr)
-    Carbon Flux|Regrowth : float
-        Regrowth carbon flux (GtC/yr)
-    Net Primary Production : float
-        NPP with feedbacks (GtC/yr)
-    Respiration|Terrestrial : float
-        Total terrestrial respiration (GtC/yr)
-    Nitrogen Limitation Factor : float
-        Factor applied to NPP, only with ``nitrogen``
-    Nitrogen Pool : float
-        Plant-available nitrogen pool (Gt N), only with ``nitrogen``
-    Nitrogen Flux|Uptake, Recycling, Losses, Fixation, Deposition : float
-        Nitrogen budget (Gt N/yr), only with ``nitrogen``
+    Inputs, outputs and states are listed on the
+    [TerrestrialCarbon component page][component-terrestrialcarbon].
 
     Examples
     --------
@@ -803,62 +653,32 @@ class OceanCarbonBuilder(ComponentBuilder):
     Atmospheric CO2 evolves monthly within each year from the other carbon
     sources and the ocean uptake, as in MAGICC7.
 
-    # Parameters
-    # ----------
-    # pco2_pi : float | None
-    #     Unperturbed ocean surface pCO2 (ppm). Default: the initial pCO2
-    # gas_exchange_scale : float
-    #     Gas exchange rate scaling factor. Default: 1.833492
-    # gas_exchange_tau : float
-    #     Gas exchange timescale (years). Default: 7.66
-    # temp_sensitivity : float
-    #     Temperature sensitivity of pCO2 (K^-1). Default: 0.03717879
-    # irf_scale : float
-    #     IRF scaling factor. Default: 0.9492864
-    # mixed_layer_depth : float
-    #     Mixed layer depth (m). Default: 50.9
-    # ocean_surface_area : float
-    #     Ocean surface area (m^2). Default: 3.55e14
-    # sst_pi : float
-    #     Pre-industrial sea surface temperature (C). Default: 17.7
-    # steps_per_year : int
-    #     Sub-steps per year. Default: 12
-    # max_history_months : int
-    #     Maximum flux history length (months). Default: 6000
-    # enable_temp_feedback : bool
-    #     Enable temperature feedback on pCO2. Default: True
-    # tempfeedback_yrstart : float
-    #     Year from which warming drives the pCO2 feedback. Default: 1900.0
-    # flux_change_limit : float
-    #     Largest flux change between sub-steps (ppm/yr), disabled if non-positive.
-    #     Default: 0.04
-    # gtc_per_ppm : float
-    #     Conversion factor GtC per ppm CO2. Default: 2.123
+    **Parameter keys**
 
-    Inputs
-    ------
-    Atmospheric Concentration|CO2 : float
-        Atmospheric CO2 concentration at the start of the year (ppm)
-    Surface Temperature : float
-        Global mean surface temperature anomaly (K)
-    Emissions|CO2|Fossil : float
-        Fossil and industrial CO2 emissions (GtC/yr)
-    Emissions|CO2|CH4 Oxidation : float
-        CO2 from oxidised fossil CH4 (GtC/yr)
-    Carbon Flux|Terrestrial : float
-        Net land uptake, including land-use emissions (GtC/yr)
+    - `pco2_pi` (`float | None`, default `the initial pCO2`): Unperturbed ocean surface
+      pCO2 (ppm).
+    - `gas_exchange_scale` (`float`, default `1.833492`): Gas exchange rate scaling
+      factor.
+    - `gas_exchange_tau` (`float`, default `7.66`): Gas exchange timescale (years).
+    - `temp_sensitivity` (`float`, default `0.03717879`): Temperature sensitivity of
+      pCO2 (K^-1).
+    - `irf_scale` (`float`, default `0.9492864`): IRF scaling factor.
+    - `mixed_layer_depth` (`float`, default `50.9`): Mixed layer depth (m).
+    - `ocean_surface_area` (`float`, default `3.55e14`): Ocean surface area (m^2).
+    - `sst_pi` (`float`, default `17.7`): Pre-industrial sea surface temperature (C).
+    - `steps_per_year` (`int`, default `12`): Sub-steps per year.
+    - `max_history_months` (`int`, default `6000`): Maximum flux history length
+      (months).
+    - `enable_temp_feedback` (`bool`, default `True`): Enable temperature feedback on
+      pCO2.
+    - `tempfeedback_yrstart` (`float`, default `1900.0`): Year from which warming drives
+      the pCO2 feedback.
+    - `flux_change_limit` (`float`, default `0.04`): Largest flux change between
+      sub-steps (ppm/yr), disabled if non-positive.
+    - `gtc_per_ppm` (`float`, default `2.123`): Conversion factor GtC per ppm CO2.
 
-    States
-    ------
-    Ocean Surface pCO2 : float
-        Ocean surface pCO2 (ppm)
-    Cumulative Ocean Uptake : float
-        Cumulative ocean carbon uptake (GtC)
-
-    Outputs
-    -------
-    Carbon Flux|Ocean : float
-        Annual mean ocean carbon uptake (GtC/yr)
+    Inputs, outputs and states are listed on the
+    [OceanCarbon component page][component-oceancarbon].
 
     Examples
     --------
@@ -895,37 +715,13 @@ class CO2BudgetBuilder(ComponentBuilder):
 
     Integrates emissions and uptakes to calculate atmospheric CO2 concentration change.
 
-    # Parameters
-    # ----------
-    # gtc_per_ppm : float
-    #     Conversion factor GtC per ppm CO2. Default: 2.123
-    # co2_pi : float
-    #     Pre-industrial CO2 concentration (ppm). Default: 278.0
+    **Parameter keys**
 
-    Inputs
-    ------
-    Emissions|CO2|Fossil : float
-        Fossil fuel CO2 emissions (GtC/yr)
-    Emissions|CO2|CH4 Oxidation : float
-        CO2 from oxidised fossil CH4 (GtC/yr)
-    Carbon Flux|Terrestrial : float
-        Net atmosphere-to-land flux, including land-use emissions (GtC/yr)
-    Carbon Flux|Ocean : float
-        Ocean carbon uptake (GtC/yr)
-    Atmospheric Concentration|CO2|Prescribed : float
-        Concentration used up to ``concentration_switch_year`` (ppm)
+    - `gtc_per_ppm` (`float`, default `2.123`): Conversion factor GtC per ppm CO2.
+    - `co2_pi` (`float`, default `278.0`): Pre-industrial CO2 concentration (ppm).
 
-    States
-    ------
-    Atmospheric Concentration|CO2 : float
-        Atmospheric CO2 concentration (ppm)
-
-    Outputs
-    -------
-    Emissions|CO2|Net : float
-        Net CO2 emissions (GtC/yr)
-    Airborne Fraction|CO2 : float
-        Fraction of fossil sources remaining in the atmosphere (dimensionless)
+    Inputs, outputs and states are listed on the
+    [CO2Budget component page][component-co2budget].
 
     Examples
     --------
@@ -992,19 +788,8 @@ class PermafrostBuilder(ComponentBuilder):
     Set ``permafrost`` on CH4 chemistry, CH4 oxidation, ocean carbon and the CO2
     budget to feed the emissions back.
 
-    Inputs
-    ------
-    Surface Temperature : float
-        Global mean surface temperature anomaly (K)
-
-    Outputs
-    -------
-    Emissions|CO2|Permafrost : float
-        CO2 released from permafrost (GtC/yr)
-    Emissions|CH4|Permafrost : float
-        CH4 released from permafrost (Mt CH4/yr)
-    Permafrost Thawed Area : float
-        Carbon weighted thawed fraction of the permafrost region
+    Inputs, outputs and states are listed on the
+    [Permafrost component page][component-permafrost].
 
     Examples
     --------
@@ -1051,30 +836,26 @@ class OzoneForcingBuilder(ComponentBuilder):
 
     Changes are relative to the first year of the run.
 
-    Inputs
-    ------
-    EESC : float
-        Equivalent effective stratospheric chlorine (ppt)
-    Atmospheric Concentration|CH4 : float
-        CH4 concentration (ppb)
-    Atmospheric Concentration|N2O : float
-        N2O concentration (ppb)
-    Emissions|{NOx,CO,NMVOC}|{Fossil,AFOLU} : float
-        Precursor emissions by sector (Mt N/yr, Mt CO/yr, Mt NMVOC/yr), lagged by a year
-    Surface Temperature : float
-        Global mean surface temperature anomaly (K), lagged by a year
+    **Inputs**
 
-    Outputs
-    -------
-    Effective Radiative Forcing|Stratospheric Ozone : float
-        Stratospheric ozone forcing from EESC above its threshold-year value (W/m^2)
-    Effective Radiative Forcing|Tropospheric Ozone : float or FourBox
-        Tropospheric ozone forcing from CH4 and precursors (W/m^2),
-        four-box with ``trop_regions``
-    Effective Radiative Forcing|Ozone due to N2O : float
-        Ozone forcing from N2O (W/m^2)
-    Effective Radiative Forcing|Ozone due to Temperature : float
-        Ozone response to warming (W/m^2)
+    - `EESC`: Equivalent effective stratospheric chlorine (ppt).
+    - `Atmospheric Concentration|CH4`: CH4 concentration (ppb).
+    - `Atmospheric Concentration|N2O`: N2O concentration (ppb).
+    - `Emissions|{NOx,CO,NMVOC}|{Fossil,AFOLU}`: Precursor emissions by sector
+      (Mt N/yr, Mt CO/yr, Mt NMVOC/yr), lagged by a year.
+    - `Surface Temperature`: Global mean surface temperature anomaly (K), lagged
+      by a year.
+
+    **Outputs**
+
+    - `Effective Radiative Forcing|Stratospheric Ozone`: Stratospheric ozone
+      forcing from EESC above its threshold-year value (W/m^2).
+    - `Effective Radiative Forcing|Tropospheric Ozone` (float or FourBox): Tropospheric
+      ozone forcing from CH4 and precursors (W/m^2), four-box with ``trop_regions``.
+    - `Effective Radiative Forcing|Ozone due to N2O`: Ozone forcing from N2O
+      (W/m^2).
+    - `Effective Radiative Forcing|Ozone due to Temperature`: Ozone response to
+      warming (W/m^2).
     """
 
     @staticmethod
@@ -1112,54 +893,35 @@ class AerosolDirectBuilder(ComponentBuilder):
     Calculates direct aerosol radiative forcing as a linear combination of emissions
     from SOx, BC, OC, and nitrate, with optional regional distribution.
 
-    # Parameters
-    # ----------
-    # sox_coefficient : float
-    #     SOx forcing coefficient (W/m^2/(Tg S/yr)). Default: -0.0035
-    # bc_coefficient : float
-    #     BC forcing coefficient (W/m^2/(Tg BC/yr)). Default: 0.0077
-    # oc_coefficient : float
-    #     OC forcing coefficient (W/m^2/(Tg OC/yr)). Default: -0.002
-    # nitrate_coefficient : float
-    #     Nitrate forcing coefficient (W/m^2/(Tg N/yr)). Default: -0.001
-    # sox_regional : list[float]
-    #     SOx regional distribution (length 4). Default: [0.15, 0.55, 0.10, 0.20]
-    # bc_regional : list[float]
-    #     BC regional distribution weights (length 4). Default: [0.15, 0.50, 0.15, 0.20]
-    # oc_regional : list[float]
-    #     OC regional distribution weights (length 4). Default: [0.15, 0.45, 0.15, 0.25]
-    # nitrate_regional : list[float]
-    #     Nitrate regional distribution (length 4). Default: [0.15, 0.50, 0.15, 0.20]
-    # sox_pi : float
-    #     Pre-industrial SOx emissions (Tg S/yr). Default: 1.0
-    # bc_pi : float
-    #     Pre-industrial BC emissions (Tg BC/yr). Default: 2.5
-    # oc_pi : float
-    #     Pre-industrial OC emissions (Tg OC/yr). Default: 10.0
-    # nox_pi : float
-    #     Pre-industrial NOx emissions (Tg N/yr). Default: 10.0
-    # harmonize : bool
-    #     Enable harmonisation to reference year. Default: False
-    # harmonize_year : float
-    #     Reference year for harmonisation. Default: 2019.0
-    # harmonize_target : float
-    #     Target forcing at reference year (W/m^2). Default: -0.22
+    **Parameter keys**
 
-    Inputs
-    ------
-    Emissions|SOx : float
-        SOx emissions (Tg S/yr)
-    Emissions|BC : float
-        BC emissions (Tg BC/yr)
-    Emissions|OC : float
-        OC emissions (Tg OC/yr)
-    Emissions|NOx : float
-        NOx emissions (Tg N/yr)
+    - `sox_coefficient` (`float`, default `-0.0035`): SOx forcing coefficient (W/m^2/(Tg
+      S/yr)).
+    - `bc_coefficient` (`float`, default `0.0077`): BC forcing coefficient (W/m^2/(Tg
+      BC/yr)).
+    - `oc_coefficient` (`float`, default `-0.002`): OC forcing coefficient (W/m^2/(Tg
+      OC/yr)).
+    - `nitrate_coefficient` (`float`, default `-0.001`): Nitrate forcing coefficient
+      (W/m^2/(Tg N/yr)).
+    - `sox_regional` (`list[float]`, default `[0.15, 0.55, 0.10, 0.20]`): SOx regional
+      distribution (length 4).
+    - `bc_regional` (`list[float]`, default `[0.15, 0.50, 0.15, 0.20]`): BC regional
+      distribution weights (length 4).
+    - `oc_regional` (`list[float]`, default `[0.15, 0.45, 0.15, 0.25]`): OC regional
+      distribution weights (length 4).
+    - `nitrate_regional` (`list[float]`, default `[0.15, 0.50, 0.15, 0.20]`): Nitrate
+      regional distribution (length 4).
+    - `sox_pi` (`float`, default `1.0`): Pre-industrial SOx emissions (Tg S/yr).
+    - `bc_pi` (`float`, default `2.5`): Pre-industrial BC emissions (Tg BC/yr).
+    - `oc_pi` (`float`, default `10.0`): Pre-industrial OC emissions (Tg OC/yr).
+    - `nox_pi` (`float`, default `10.0`): Pre-industrial NOx emissions (Tg N/yr).
+    - `harmonize` (`bool`, default `False`): Enable harmonisation to reference year.
+    - `harmonize_year` (`float`, default `2019.0`): Reference year for harmonisation.
+    - `harmonize_target` (`float`, default `-0.22`): Target forcing at reference year
+      (W/m^2).
 
-    Outputs
-    -------
-    Effective Radiative Forcing|Aerosol|Direct : float
-        Direct aerosol forcing (W/m^2, FourBox grid)
+    Inputs, outputs and states are listed on the
+    [AerosolDirect component page][component-aerosoldirect].
 
     Examples
     --------
@@ -1202,38 +964,22 @@ class AerosolIndirectBuilder(ComponentBuilder):
     Calculates indirect aerosol forcing (cloud albedo effect) using a logarithmic
     relationship with aerosol burden.
 
-    # Parameters
-    # ----------
-    # cloud_albedo_coefficient : float
-    #     Cloud albedo effect coefficient (W/m^2/ln-unit). Default: -1.0
-    # reference_burden : float
-    #     Reference aerosol burden (Tg/yr). Default: 50.0
-    # sox_weight : float
-    #     SOx weight in aerosol burden. Default: 1.0
-    # oc_weight : float
-    #     OC weight in aerosol burden. Default: 0.3
-    # sox_pi : float
-    #     Pre-industrial SOx emissions (Tg S/yr). Default: 1.0
-    # oc_pi : float
-    #     Pre-industrial OC emissions (Tg OC/yr). Default: 10.0
-    # harmonize : bool
-    #     Enable harmonisation to reference year. Default: False
-    # harmonize_year : float
-    #     Reference year for harmonisation. Default: 2019.0
-    # harmonize_target : float
-    #     Target forcing at reference year (W/m^2). Default: -0.89
+    **Parameter keys**
 
-    Inputs
-    ------
-    Emissions|SOx : float
-        SOx emissions (Tg S/yr)
-    Emissions|OC : float
-        OC emissions (Tg OC/yr)
+    - `cloud_albedo_coefficient` (`float`, default `-1.0`): Cloud albedo effect
+      coefficient (W/m^2/ln-unit).
+    - `reference_burden` (`float`, default `50.0`): Reference aerosol burden (Tg/yr).
+    - `sox_weight` (`float`, default `1.0`): SOx weight in aerosol burden.
+    - `oc_weight` (`float`, default `0.3`): OC weight in aerosol burden.
+    - `sox_pi` (`float`, default `1.0`): Pre-industrial SOx emissions (Tg S/yr).
+    - `oc_pi` (`float`, default `10.0`): Pre-industrial OC emissions (Tg OC/yr).
+    - `harmonize` (`bool`, default `False`): Enable harmonisation to reference year.
+    - `harmonize_year` (`float`, default `2019.0`): Reference year for harmonisation.
+    - `harmonize_target` (`float`, default `-0.89`): Target forcing at reference year
+      (W/m^2).
 
-    Outputs
-    -------
-    Effective Radiative Forcing|Aerosol|Indirect : float
-        Indirect aerosol forcing (W/m^2)
+    Inputs, outputs and states are listed on the
+    [AerosolIndirect component page][component-aerosolindirect].
 
     Examples
     --------
@@ -1292,46 +1038,19 @@ class GhgForcingBuilder(ComponentBuilder):
     concentrations using IPCCTAR or OLBL methods with optional
     rapid adjustment factors.
 
-    # Parameters
-    # ----------
-    # method : str
-    #     Forcing method: "Ipcctar" or "Olbl". Default: "Olbl"
-    # co2_pi : float
-    #     Pre-industrial CO2 (ppm). Default: 278.0
-    # ch4_pi : float
-    #     Pre-industrial CH4 (ppb). Default: 722.0
-    # n2o_pi : float
-    #     Pre-industrial N2O (ppb). Default: 270.0
-    # delq2xco2 : float
-    #     Forcing for CO2 doubling (W/m2). Default: 3.71
-    # adjust_co2 : float
-    #     Rapid adjustment factor for CO2. Default: 1.05
-    # adjust_ch4 : float
-    #     Rapid adjustment factor for CH4. Default: 0.86
-    # adjust_n2o : float
-    #     Rapid adjustment factor for N2O. Default: 1.0
+    **Parameter keys**
 
-    Inputs
-    ------
-    Atmospheric Concentration|CO2 : float
-        CO2 concentration (ppm)
-    Atmospheric Concentration|CH4 : float
-        CH4 concentration (ppb)
-    Atmospheric Concentration|N2O : float
-        N2O concentration (ppb)
+    - `method` (`str`, default `"Olbl"`): Forcing method: "Ipcctar" or "Olbl".
+    - `co2_pi` (`float`, default `278.0`): Pre-industrial CO2 (ppm).
+    - `ch4_pi` (`float`, default `722.0`): Pre-industrial CH4 (ppb).
+    - `n2o_pi` (`float`, default `270.0`): Pre-industrial N2O (ppb).
+    - `delq2xco2` (`float`, default `3.71`): Forcing for CO2 doubling (W/m2).
+    - `adjust_co2` (`float`, default `1.05`): Rapid adjustment factor for CO2.
+    - `adjust_ch4` (`float`, default `0.86`): Rapid adjustment factor for CH4.
+    - `adjust_n2o` (`float`, default `1.0`): Rapid adjustment factor for N2O.
 
-    Outputs
-    -------
-    Effective Radiative Forcing|CO2 : float
-        CO2 effective radiative forcing (W/m^2)
-    Effective Radiative Forcing|CH4 : float
-        CH4 effective radiative forcing (W/m^2)
-    Effective Radiative Forcing|N2O : float
-        N2O effective radiative forcing (W/m^2)
-    Effective Radiative Forcing|2xCO2 : float
-        ERF of doubling CO2 at the current concentrations (W/m^2)
-    Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O : float
-        Stratospheric H2O forcing from CH4 oxidation (W/m^2)
+    Inputs, outputs and states are listed on the
+    [GhgForcing component page][component-ghgforcing].
 
     Examples
     --------

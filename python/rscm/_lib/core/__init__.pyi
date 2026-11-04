@@ -17,18 +17,33 @@ F = np.float64 | float
 
 @final
 class TimeAxis:
+    """
+    Time steps a model is solved on, in decimal years.
+
+    Each value is the start of a step, and each step covers the half-open
+    interval up to the next bound.
+    """
+
     @staticmethod
-    def from_values(values: Arr) -> TimeAxis: ...
+    def from_values(values: Arr) -> TimeAxis:
+        """Create from step start times. The last step is as long as the one before."""
     @staticmethod
-    def from_bounds(bounds: Arr) -> TimeAxis: ...
-    def values(self) -> Arr: ...
-    def bounds(self) -> Arr: ...
+    def from_bounds(bounds: Arr) -> TimeAxis:
+        """Create from step bounds, one more than the number of steps."""
+    def values(self) -> Arr:
+        """Return the start time of each step."""
+    def bounds(self) -> Arr:
+        """Return the bounds of the steps."""
     def __len__(self) -> int: ...
-    def at(self, index: int) -> F: ...
-    def at_bounds(self, index: int) -> tuple[F, F]: ...
+    def at(self, index: int) -> F:
+        """Return the start time of the step at `index`."""
+    def at_bounds(self, index: int) -> tuple[F, F]:
+        """Return the start and end of the step at `index`."""
 
 @final
 class InterpolationStrategy(Enum):
+    """How a timeseries is interpolated between its time points."""
+
     Linear = auto()
     Next = auto()
     Previous = auto()
@@ -202,6 +217,8 @@ class TimeseriesCollection:
 
 @final
 class RequirementType(Enum):
+    """How a component uses a variable."""
+
     Input = auto()
     Output = auto()
     State = auto()
@@ -209,12 +226,16 @@ class RequirementType(Enum):
 
 @final
 class GridType(Enum):
+    """Spatial resolution of a variable."""
+
     Scalar = auto()
     FourBox = auto()
     Hemispheric = auto()
 
 @final
 class RequirementDefinition:
+    """A variable a component reads or writes, with its unit and grid."""
+
     name: str
     # TODO: fix naming inconsistency between 'unit' and 'units'
     unit: str
@@ -242,9 +263,10 @@ class CustomComponent(Protocol):
     Interface required for registering Python-based component.
 
     Components can use either:
-    - dict-based interface:
-        solve(..., input_state: dict[str, float]) -> dict[str, float]
-    - Typed interface: solve(..., inputs: TypedInputs) -> TypedOutputs
+
+    - a dict-based interface:
+      `solve(..., input_state: dict[str, float]) -> dict[str, float]`
+    - a typed interface: `solve(..., inputs: TypedInputs) -> TypedOutputs`
 
     The typed interface is provided by inheriting from rscm.component.Component.
 
@@ -339,8 +361,8 @@ class VariableSchema:
     Components declare which variables they read/write, and the
     ModelBuilder validates consistency.
 
-    Example
-    -------
+    Examples
+    --------
     >>> schema = VariableSchema()
     >>> schema.add_variable("Emissions|CO2", "GtCO2/yr")
     >>> schema.add_variable("Emissions|CH4", "GtCH4/yr")
@@ -401,6 +423,7 @@ class VariableSchema:
         Validate the schema for consistency.
 
         Performs the following checks:
+
         - All aggregate contributors exist in the schema
         - Unit consistency between contributors and their aggregates
         - Grid type consistency between contributors and their aggregates
@@ -418,17 +441,24 @@ class ModelBuilder:
     """Builder for a model"""
 
     def __init__(self) -> None: ...
-    def with_time_axis(self, time_axis: TimeAxis) -> Self: ...
-    def with_py_component(self, component: PythonComponent) -> Self: ...
-    def with_rust_component(self, component: Component) -> Self: ...
-    def with_initial_values(self, initial_values: dict[str, F]) -> Self: ...
+    def with_time_axis(self, time_axis: TimeAxis) -> Self:
+        """Set the time axis the model is solved on."""
+    def with_py_component(self, component: PythonComponent) -> Self:
+        """Add a component defined in Python."""
+    def with_rust_component(self, component: Component) -> Self:
+        """Add a component built by a Rust component builder."""
+    def with_initial_values(self, initial_values: dict[str, F]) -> Self:
+        """Set initial values for state variables, which are required at build time."""
     def with_initial_grid_values(self, initial_values: dict[str, list[F]]) -> Self:
         """Add initial values for grid variables, one per region in grid order."""
-    def with_exogenous_variable(self, name: str, timeseries: Timeseries) -> Self: ...
+    def with_exogenous_variable(self, name: str, timeseries: Timeseries) -> Self:
+        """Supply exogenous data for a variable. Unneeded timeseries are ignored."""
     def with_exogenous_four_box_variable(
         self, name: str, timeseries: FourBoxTimeseries
-    ) -> Self: ...
-    def with_exogenous_collection(self, timeseries: TimeseriesCollection) -> Self: ...
+    ) -> Self:
+        """Supply exogenous four-box data for a variable."""
+    def with_exogenous_collection(self, timeseries: TimeseriesCollection) -> Self:
+        """Supply exogenous data from a collection. Unneeded timeseries are ignored."""
     def with_schema(self, schema: VariableSchema) -> Self:
         """
         Add a variable schema to the model for validation and aggregation.
@@ -451,6 +481,7 @@ class ModelBuilder:
         Set custom weights for a grid type.
 
         These weights override the default grid weights used when:
+
         - Creating timeseries for grid-based variables
         - Performing automatic grid transformations (aggregation)
 
@@ -459,9 +490,9 @@ class ModelBuilder:
         grid_type
             The grid type to set weights for (FourBox or Hemispheric)
         weights
-            The weights for each region. Must sum to 1.0.
-            - FourBox: [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand]
-            - Hemispheric: [Northern, Southern]
+            The weights for each region, which must sum to 1.0.
+            FourBox order is NorthernOcean, NorthernLand, SouthernOcean, SouthernLand.
+            Hemispheric order is Northern, Southern.
 
         Returns
         -------
@@ -472,8 +503,8 @@ class ModelBuilder:
         ValueError
             If grid_type is Scalar, weights have wrong length, or don't sum to 1.0
 
-        Example
-        -------
+        Examples
+        --------
         >>> builder = ModelBuilder()
         >>> builder.with_grid_weights(GridType.FourBox, [0.36, 0.14, 0.36, 0.14])
         """

@@ -4,12 +4,12 @@ Two-layer energy balance model parameters.
 This module provides TwoLayerParameters dataclass with full metadata
 for the two-layer energy balance model described in Held et al. (2010).
 
-Example
--------
-    >>> from rscm.config.models.two_layer import TwoLayerParameters
-    >>> params = TwoLayerParameters(lambda0=1.0, a=0.0)
-    >>> params.lambda0
-    1.0
+Examples
+--------
+>>> from rscm.config.models.two_layer import TwoLayerParameters
+>>> params = TwoLayerParameters(lambda0=1.0, a=0.0)
+>>> params.lambda0
+1.0
 """
 
 from __future__ import annotations
@@ -135,16 +135,16 @@ class TwoLayerConfig(ModelConfig):
     initial_values : dict[str, float]
         Initial values for state variables (inherited from ModelConfig)
 
-    Example
-    -------
-        >>> from rscm.config.models.two_layer import TwoLayerConfig
-        >>> from rscm.config.base import TimeConfig
-        >>> config = TwoLayerConfig(
-        ...     name="test-run",
-        ...     time=TimeConfig(start=1750, end=2100),
-        ... )
-        >>> config.model_type
-        'two-layer'
+    Examples
+    --------
+    >>> from rscm.config.models.two_layer import TwoLayerConfig
+    >>> from rscm.config.base import TimeConfig
+    >>> config = TwoLayerConfig(
+    ...     name="test-run",
+    ...     time=TimeConfig(start=1750, end=2100),
+    ... )
+    >>> config.model_type
+    'two-layer'
     """
 
     model_type: str = "two-layer"

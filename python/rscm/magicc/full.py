@@ -86,7 +86,6 @@ DATA = Path(__file__).parent / "data" / "magicc7"
 ERF = "Effective Radiative Forcing"
 REGIONAL_FORCING = f"{ERF}|Efficacy Adjusted"
 
-#: Emissions given by sector (``"CO2|Fossil"`` and ``"CO2|AFOLU"``) and their units.
 SECTORAL_EMISSIONS = {
     "CO2": "GtC/yr",
     "CH4": "Mt CH4/yr",
@@ -99,9 +98,9 @@ SECTORAL_EMISSIONS = {
     "CO": "Mt CO/yr",
     "NMVOC": "Mt NMVOC/yr",
 }
+"""Emissions given by sector (``"CO2|Fossil"`` and ``"CO2|AFOLU"``) and their units."""
 SECTORS = ("Fossil", "AFOLU")
 
-#: Configuration keys of the MAGICC7 input files the chain reads.
 INPUT_FILES = (
     *(f"file_{name}_rf" for name in ("soxi", "soxb", "bci", "bcb", "oci", "ocb")),
     "file_bcsnow_rf",
@@ -113,9 +112,8 @@ INPUT_FILES = (
     "file_solar_rf",
     "file_volcanic_rf",
 )
+"""Configuration keys of the MAGICC7 input files the chain reads."""
 
-#: Gas groups that MAGICC7 switches from prescribed concentrations to emissions,
-#: and their concentration units.
 CONCENTRATION_UNITS = {
     "co2": "ppm",
     "ch4": "ppb",
@@ -123,9 +121,11 @@ CONCENTRATION_UNITS = {
     "fgas": "ppt",
     "mhalo": "ppt",
 }
+"""
+Gas groups that MAGICC7 switches from prescribed concentrations to emissions,
+and their concentration units.
+"""
 
-#: Configuration keys MAGICC7 overwrites during a run,
-#: so its parameter dump does not hold their input values.
 REWRITTEN_PARAMETERS = (
     "cloud_weight_bc",
     "cloud_weight_no3",
@@ -138,12 +138,14 @@ REWRITTEN_PARAMETERS = (
     "rf_mineraldust_dir_wm2",
     "rf_regions_no3",
 )
+"""
+Configuration keys MAGICC7 overwrites during a run,
+so its parameter dump does not hold their input values.
+"""
 
-#: Configuration keys of the nitrogen input files, read when they exist.
 NITROGEN_INPUT_FILES = ("file_nfix_in", "file_ndep_in")
+"""Configuration keys of the nitrogen input files, read when they exist."""
 
-#: Agents calculated before the run, and the MAGICC7 efficacy key of each.
-#: MAGICC7's total uses the direct aerosol efficacy for biomass aerosols and dust.
 PRESCRIBED_AGENTS = {
     "SOx|Fossil": "sox",
     "BC|Fossil": "bc",
@@ -155,22 +157,27 @@ PRESCRIBED_AGENTS = {
     "Land Use": "landuse",
     "Solar": "solar",
 }
+"""
+Agents calculated before the run, and the MAGICC7 efficacy key of each.
+MAGICC7's total uses the direct aerosol efficacy for biomass aerosols and dust.
+"""
 
-#: Prescribed agents whose regional pattern MAGICC7 takes from their forcing
-#: in ``rf_regions_normyear``.
 NORMYEAR_PATTERNS = {
     "bcsnow": "BC on Snow",
     "landuse": "Land Use",
 }
+"""
+Prescribed agents whose regional pattern MAGICC7 takes from their forcing
+in ``rf_regions_normyear``.
+"""
 
-#: Halocarbon agents whose efficacy MAGICC7 applies to each species.
 HALOCARBON_GROUPS = ("F-Gases", "Montreal Protocol Halogen Gases")
+"""Halocarbon agents whose efficacy MAGICC7 applies to each species."""
 
-#: Prescribed agents MAGICC7 adds into one biomass burning aerosol agent.
 BIOMASS_AGENTS = ("SOx|AFOLU", "NO3|AFOLU", "OC|AFOLU", "BC|AFOLU")
+"""Prescribed agents MAGICC7 adds into one biomass burning aerosol agent."""
 BIOMASS = "Biomass Burning Aerosols"
 
-#: Order in which MAGICC7 adds the agents into its total, nesting its subtotals.
 SUMMATION: list[Any] = [
     "CO2",
     "CH4",
@@ -190,12 +197,14 @@ SUMMATION: list[Any] = [
     "BC on Snow",
     "Solar",
 ]
+"""Order in which MAGICC7 adds the agents into its total, nesting its subtotals."""
 
-#: CO2 doubling forcing behind MAGICC7's internal efficacies
-#: until the run calculates one.
 EFFICACY_Q2XCO2 = 3.71
+"""
+CO2 doubling forcing behind MAGICC7's internal efficacies
+until the run calculates one.
+"""
 
-#: Agents calculated during the run, and the MAGICC7 efficacy key of each.
 CALCULATED_AGENTS = {
     "CO2": "co2",
     "CH4": "ch4",
@@ -207,19 +216,21 @@ CALCULATED_AGENTS = {
     "Ozone due to N2O": "ozdueton2o",
     "Ozone due to Temperature": "ozduetotemperature",
 }
+"""Agents calculated during the run, and the MAGICC7 efficacy key of each."""
 
-#: GhgForcing methods by MAGICC7's ``core_co2ch4n2o_rfmethod``.
 GHG_METHODS = {"OLBL": "Olbl", "IPCCTAR": "Ipcctar"}
+"""GhgForcing methods by MAGICC7's ``core_co2ch4n2o_rfmethod``."""
 
-#: TerrestrialCarbon temperature sensitivities and their ``co2_feedbackfactor_*`` names.
 TERRESTRIAL_FEEDBACKS = {
     "npp": "npp",
     "resp": "respiration",
     "detritus": "detritus",
     "soil": "soil",
 }
+"""
+TerrestrialCarbon temperature sensitivities and their ``co2_feedbackfactor_*`` names.
+"""
 
-#: ClimateUDEB parameters and their MAGICC7 names.
 CLIMATE_PARAMETERS = {
     "ecs": "core_climatesensitivity",
     "rf_2xco2": "core_delq2xco2",
@@ -243,6 +254,7 @@ CLIMATE_PARAMETERS = {
     "rf_regions_co2": "rf_regions_co2",
     "land_hc_eff_thickness": "core_landhc_effthickness",
 }
+"""ClimateUDEB parameters and their MAGICC7 names."""
 
 
 @cache
