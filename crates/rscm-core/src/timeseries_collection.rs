@@ -412,6 +412,10 @@ impl TimeseriesCollection {
         &self.timeseries[index]
     }
 
+    pub(crate) fn data_mut(&mut self, index: usize) -> &mut TimeseriesData {
+        &mut self.timeseries[index].data
+    }
+
     /// Index of a name, scanning on a miss in case an item was renamed out of order.
     pub(crate) fn position(&self, name: &str) -> Option<usize> {
         self.timeseries

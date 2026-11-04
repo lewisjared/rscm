@@ -2,7 +2,9 @@
 
 use crate::component::{ComponentState, GridType};
 use crate::errors::{RSCMError, RSCMResult};
-use crate::state::{InputState, ReadTransformInfo, StateValue, TransformContext, VariableSource};
+use crate::state::{
+    lookup_order, InputState, ReadTransformInfo, StateValue, TransformContext, VariableSource,
+};
 use crate::timeseries::{Time, TimeAxis};
 use crate::timeseries_collection::TimeseriesCollection;
 use petgraph::dot::{Config, Dot};
@@ -126,9 +128,19 @@ pub struct Model {
 struct ComponentPlan {
     node: NodeIndex,
     name: String,
-    /// Collection index of each input, which no step changes.
+    /// Collection index of each input in `lookup_order`, which no step changes.
     inputs: Vec<usize>,
     transforms: Option<TransformContext>,
+    /// Declared outputs in `lookup_order`.
+    outputs: Vec<OutputPlan>,
+}
+
+#[derive(Debug)]
+struct OutputPlan {
+    name: String,
+    index: usize,
+    /// Source and target grid of a write transform.
+    transform: Option<(GridType, GridType)>,
 }
 
 impl Model {
@@ -416,7 +428,7 @@ impl Model {
         let transforms = (!read_transform_info.is_empty()).then_some(TransformContext {
             read_transforms: read_transform_info,
         });
-        let inputs = input_names
+        let mut inputs: Vec<usize> = input_names
             .iter()
             .map(|input| {
                 self.collection
@@ -424,12 +436,39 @@ impl Model {
                     .unwrap_or_else(|| panic!("No timeseries with variable='{}'", input))
             })
             .collect();
+        inputs.sort_by(|&a, &b| {
+            lookup_order(&self.collection.item(a).name, &self.collection.item(b).name)
+        });
+        let mut outputs: Vec<OutputPlan> = component
+            .output_names()
+            .into_iter()
+            .filter_map(|output| {
+                let (index, transform) = self.output_target(&output)?;
+                Some(OutputPlan {
+                    name: output,
+                    index,
+                    transform,
+                })
+            })
+            .collect();
+        outputs.sort_by(|a, b| lookup_order(&a.name, &b.name));
         ComponentPlan {
             node,
             name,
             inputs,
             transforms,
+            outputs,
         }
+    }
+
+    /// Collection index of an output and the source and target grid of its write transform.
+    fn output_target(&self, name: &str) -> Option<(usize, Option<(GridType, GridType)>)> {
+        let index = self.collection.position(name)?;
+        let transform = self
+            .write_transforms
+            .get(name)
+            .map(|t| (t.source_grid, t.target_grid));
+        Some((index, transform))
     }
 
     /// Solve a single component for the current timestep.
@@ -450,7 +489,8 @@ impl Model {
             items,
             self.current_time(),
             plan.transforms.as_ref(),
-        );
+        )
+        .with_time_index(self.time_index);
 
         let (start, end) = self.current_time_bounds();
 
@@ -469,17 +509,25 @@ impl Model {
             })?;
 
         for (key, state_value) in &output_state {
-            let data = self.collection.get_data_mut(key).ok_or_else(|| {
+            let target = match plan
+                .outputs
+                .binary_search_by(|o| lookup_order(&o.name, key))
+            {
+                Ok(i) => Some((plan.outputs[i].index, plan.outputs[i].transform)),
+                Err(_) => self.output_target(key),
+            };
+            let (index, transform) = target.ok_or_else(|| {
                 RSCMError::Error(format!(
                     "{component_name} returned undeclared output {key} during {start}..{end}"
                 ))
             })?;
-            let final_value = if let Some(transform) = self.write_transforms.get(key) {
+            let data = self.collection.data_mut(index);
+            let final_value = if let Some((source_grid, target_grid)) = transform {
                 aggregate_state_value(
                     state_value,
-                    transform.source_grid,
-                    transform.target_grid,
-                    self.grid_weights.get(&transform.source_grid),
+                    source_grid,
+                    target_grid,
+                    self.grid_weights.get(&source_grid),
                 )
                 .map_err(|err| {
                     RSCMError::Error(format!(

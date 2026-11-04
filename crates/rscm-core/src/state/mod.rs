@@ -27,7 +27,7 @@ pub use aggregating::{
 
 use crate::component::GridType;
 use crate::spatial::{FourBoxGrid, ScalarRegion, SpatialGrid};
-use crate::timeseries::{FloatValue, Time};
+use crate::timeseries::{FloatValue, Time, TimeAxis};
 use crate::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -190,15 +190,23 @@ pub struct TransformContext {
 #[derive(Debug, Clone)]
 pub struct InputState<'a> {
     current_time: Time,
+    /// Index of `current_time` in the time axis that most items share.
+    time_index: Option<usize>,
     state: Vec<&'a TimeseriesItem>,
     /// Optional transform context for grid aggregation
     transform_context: Option<Cow<'a, TransformContext>>,
+}
+
+/// Order names by length and then by name, which settles most comparisons by length alone.
+pub(crate) fn lookup_order(a: &str, b: &str) -> std::cmp::Ordering {
+    a.len().cmp(&b.len()).then_with(|| a.cmp(b))
 }
 
 impl<'a> InputState<'a> {
     pub fn build(values: Vec<&'a TimeseriesItem>, current_time: Time) -> Self {
         Self {
             current_time,
+            time_index: None,
             state: values,
             transform_context: None,
         }
@@ -212,6 +220,7 @@ impl<'a> InputState<'a> {
     ) -> Self {
         Self {
             current_time,
+            time_index: None,
             state: values,
             transform_context: Some(Cow::Owned(transform_context)),
         }
@@ -225,6 +234,7 @@ impl<'a> InputState<'a> {
     ) -> Self {
         Self {
             current_time,
+            time_index: None,
             state: values,
             transform_context: transform_context.map(Cow::Borrowed),
         }
@@ -233,6 +243,7 @@ impl<'a> InputState<'a> {
     pub fn empty() -> Self {
         Self {
             current_time: f64::NAN,
+            time_index: None,
             state: vec![],
             transform_context: None,
         }
@@ -243,7 +254,7 @@ impl<'a> InputState<'a> {
     /// For scalar variables, returns the scalar value.
     /// For grid variables, aggregates all regions to a single global value using the grid's weights.
     pub fn get_global(&self, name: &str) -> Option<FloatValue> {
-        let item = self.iter().find(|item| item.name == name)?;
+        let item = self.find(name)?;
 
         match &item.data {
             TimeseriesData::Scalar(ts) => match item.variable_type {
@@ -269,7 +280,36 @@ impl<'a> InputState<'a> {
 
     /// Test if the state contains a value with the given name
     pub fn has(&self, name: &str) -> bool {
-        self.state.iter().any(|x| x.name == name)
+        self.find(name).is_some()
+    }
+
+    /// Set the index of the current time in the time axis that most items share.
+    pub fn with_time_index(mut self, time_index: usize) -> Self {
+        self.time_index = Some(time_index);
+        self
+    }
+
+    /// Index of the current time in `axis`.
+    fn time_index(&self, axis: &TimeAxis, name: &str) -> usize {
+        self.time_index
+            .filter(|&index| axis.at(index) == Some(self.current_time))
+            .or_else(|| axis.index_of(self.current_time))
+            .unwrap_or_else(|| {
+                panic!(
+                    "Time {} not found in timeseries '{}' time axis",
+                    self.current_time, name
+                )
+            })
+    }
+
+    /// Item named `name`, by binary search when the items are in [`lookup_order`].
+    fn find(&self, name: &str) -> Option<&'a TimeseriesItem> {
+        let index = self
+            .state
+            .binary_search_by(|item| lookup_order(&item.name, name))
+            .ok()
+            .or_else(|| self.state.iter().position(|item| item.name == name))?;
+        Some(self.state[index])
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &&TimeseriesItem> {
@@ -293,8 +333,7 @@ impl<'a> InputState<'a> {
     /// Panics if the variable is not found or cannot be accessed as scalar.
     pub fn get_scalar_window(&self, name: &str) -> ScalarWindow<'_> {
         let item = self
-            .iter()
-            .find(|item| item.name == name)
+            .find(name)
             .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
 
         // Check if there's a read transform for this variable
@@ -316,15 +355,7 @@ impl<'a> InputState<'a> {
                         )
                     });
 
-                    let current_index =
-                        ts.time_axis()
-                            .index_of(self.current_time)
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "Time {} not found in timeseries '{}' time axis",
-                                    self.current_time, name
-                                )
-                            });
+                    let current_index = self.time_index(ts.time_axis_ref(), name);
 
                     return ScalarWindow::FromFourBox(AggregatingFourBoxWindow::with_source(
                         ts,
@@ -346,15 +377,7 @@ impl<'a> InputState<'a> {
                             )
                         });
 
-                    let current_index =
-                        ts.time_axis()
-                            .index_of(self.current_time)
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "Time {} not found in timeseries '{}' time axis",
-                                    self.current_time, name
-                                )
-                            });
+                    let current_index = self.time_index(ts.time_axis_ref(), name);
 
                     return ScalarWindow::FromHemispheric(
                         AggregatingHemisphericWindow::with_source(
@@ -373,15 +396,7 @@ impl<'a> InputState<'a> {
                         panic!("Variable '{}' is not a scalar timeseries", name)
                     });
 
-                    let current_index =
-                        ts.time_axis()
-                            .index_of(self.current_time)
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "Time {} not found in timeseries '{}' time axis",
-                                    self.current_time, name
-                                )
-                            });
+                    let current_index = self.time_index(ts.time_axis_ref(), name);
 
                     return ScalarWindow::Direct(TimeseriesWindow::with_source(
                         ts,
@@ -400,15 +415,7 @@ impl<'a> InputState<'a> {
             .as_scalar()
             .unwrap_or_else(|| panic!("Variable '{}' is not a scalar timeseries", name));
 
-        let current_index = ts
-            .time_axis()
-            .index_of(self.current_time)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Time {} not found in timeseries '{}' time axis",
-                    self.current_time, name
-                )
-            });
+        let current_index = self.time_index(ts.time_axis_ref(), name);
 
         // Get variable source from transform context if available
         let source = self
@@ -437,8 +444,7 @@ impl<'a> InputState<'a> {
     /// Panics if the variable is not found or is not a FourBox timeseries.
     pub fn get_four_box_window(&self, name: &str) -> GridTimeseriesWindow<'_, FourBoxGrid> {
         let item = self
-            .iter()
-            .find(|item| item.name == name)
+            .find(name)
             .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
 
         let ts = item
@@ -447,15 +453,7 @@ impl<'a> InputState<'a> {
             .unwrap_or_else(|| panic!("Variable '{}' is not a FourBox timeseries", name));
 
         // Find the index corresponding to current_time in the timeseries
-        let current_index = ts
-            .time_axis()
-            .index_of(self.current_time)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Time {} not found in timeseries '{}' time axis",
-                    self.current_time, name
-                )
-            });
+        let current_index = self.time_index(ts.time_axis_ref(), name);
 
         // Check if there's a unit conversion factor and variable source
         let (unit_factor, source) = self
@@ -482,8 +480,7 @@ impl<'a> InputState<'a> {
     /// Panics if the variable is not found or cannot be accessed as Hemispheric.
     pub fn get_hemispheric_window(&self, name: &str) -> HemisphericWindow<'_> {
         let item = self
-            .iter()
-            .find(|item| item.name == name)
+            .find(name)
             .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
 
         // Check if there's a read transform for this variable
@@ -504,15 +501,7 @@ impl<'a> InputState<'a> {
                     )
                 });
 
-                let current_index =
-                    ts.time_axis()
-                        .index_of(self.current_time)
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "Time {} not found in timeseries '{}' time axis",
-                                self.current_time, name
-                            )
-                        });
+                let current_index = self.time_index(ts.time_axis_ref(), name);
 
                 return HemisphericWindow::FromFourBox(
                     AggregatingFourBoxToHemisphericWindow::with_source(
@@ -531,15 +520,7 @@ impl<'a> InputState<'a> {
                     panic!("Variable '{}' is not a Hemispheric timeseries", name)
                 });
 
-                let current_index =
-                    ts.time_axis()
-                        .index_of(self.current_time)
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "Time {} not found in timeseries '{}' time axis",
-                                self.current_time, name
-                            )
-                        });
+                let current_index = self.time_index(ts.time_axis_ref(), name);
 
                 return HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
                     ts,
@@ -557,15 +538,7 @@ impl<'a> InputState<'a> {
             .as_hemispheric()
             .unwrap_or_else(|| panic!("Variable '{}' is not a Hemispheric timeseries", name));
 
-        let current_index = ts
-            .time_axis()
-            .index_of(self.current_time)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Time {} not found in timeseries '{}' time axis",
-                    self.current_time, name
-                )
-            });
+        let current_index = self.time_index(ts.time_axis_ref(), name);
 
         // Get variable source from transform context if available
         let source = self
