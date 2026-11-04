@@ -24,7 +24,9 @@ NumPy's AVX-512 ``exp`` differs from the C library's by an ulp,
 which FaIR's longest CO2 lifetime box turns into a 1e-8 relative difference.
 The script disables it so the runs are the same on every x86 machine.
 
-The RCMIP scenarios are downloaded through pooch on first use.
+The RCMIP scenarios and fair-calibrate files are downloaded through pooch on first use.
+The calibrated cases also copy the species configs and their posterior members
+to ``tests/regression/data/fair/calibration``, for the loader tests.
 """
 
 import json
@@ -36,11 +38,26 @@ os.environ["NPY_DISABLE_CPU_FEATURES"] = "X86_V4 AVX512_ICL"
 
 import numpy as np
 import pandas as pd
+import pooch
 from fair import FAIR, __version__
 from fair.interface import fill, initialise
 from fair.io import read_properties
 
 OUT = Path(__file__).parents[2] / "tests" / "regression" / "data" / "fair"
+
+#: fair-calibrate v1.6.1 (RCMIP constraint set) files and their MD5 checksums.
+CALIBRATION_URL = "https://zenodo.org/api/records/23208444/files/{}/content"
+CALIBRATION_FILES = {
+    "species_configs_properties.csv": "7174759997d890824f6ec498dbb6b64b",
+    "calibrated_constrained_parameters.csv": "e0b6d80a3ff1496dd0e2b1705818803b",
+    "historical_emissions_1750-2023_cmip7.csv": "ae0fecc9f7cd8335682e980a27a6a3b8",
+    "solar_forcing_timebounds_cmip7.csv": "a1052f5e8323b20707558c8211d16cb5",
+    "volcanic_forcing_timebounds_cmip7.csv": "46144fb7d00c6191d7c3ac3a0cdd2379",
+    "land_use_forcing_timebounds_cmip7.csv": "cb8dd7d69c6f232f85a2afde538cfd3e",
+    "irrigation_forcing_timebounds_cmip7.csv": "e8abb5e5dfaefdec803c2bd96ba592c7",
+}
+#: Posterior members with a parity case, the first three in the file.
+CALIBRATION_MEMBERS = (1939, 2939, 3503)
 
 #: Three-layer climate configuration close to the AR6 ensemble median.
 CLIMATE_3 = {
@@ -104,10 +121,10 @@ def _initialise(f):
     initialise(f.ocean_heat_content_change, 0)
 
 
-def _frame(f, attributes, time_dim):
+def _frame(f, attributes, time_dim, config):
     columns = {}
     for attribute in attributes:
-        data = getattr(f, attribute).sel(scenario="scenario", config="config")
+        data = getattr(f, attribute).sel(scenario="scenario", config=config)
         other = [d for d in data.dims if d != time_dim]
         if not other:
             columns[attribute] = data.values
@@ -122,8 +139,8 @@ def _frame(f, attributes, time_dim):
     return pd.DataFrame(columns, index=pd.Index(f.__dict__[time_dim], name=time_dim))
 
 
-def _config(f, climate):
-    configs = f.species_configs.sel(config="config")
+def _config(f, climate, config):
+    configs = f.species_configs.sel(config=config)
     species = []
     for name in f.species:
         entry = {
@@ -140,17 +157,15 @@ def _config(f, climate):
             values = data.sel(specie=name).values
             entry[var] = [_value(v) for v in values] if values.ndim else _value(values)
         species.append(entry)
+    climate_configs = f.climate_configs.sel(config=config)
     climate_out = {
         name: (
-            [_value(v) for v in f.climate_configs[name].sel(config="config").values]
-            if f.climate_configs[name].ndim > 1
-            else _value(f.climate_configs[name].sel(config="config").values)
+            [_value(v) for v in climate_configs[name].values]
+            if climate_configs[name].ndim
+            else _value(climate_configs[name].values)
         )
-        for name in climate
+        for name in (*climate, "gamma_autocorrelation")
     }
-    climate_out["gamma_autocorrelation"] = _value(
-        f.climate_configs["gamma_autocorrelation"].sel(config="config").values
-    )
     species_configs = {
         var: _value(configs[var].values)
         for var in configs.data_vars
@@ -175,14 +190,16 @@ def _config(f, climate):
     }
 
 
-def _write(name, f, climate):
+def _write(name, f, climate, config="config"):
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / f"{name}.json").write_text(json.dumps(_config(f, climate), indent=1) + "\n")
+    (OUT / f"{name}.json").write_text(
+        json.dumps(_config(f, climate, config), indent=1) + "\n"
+    )
     for attributes, dim, suffix in (
         (TIMEBOUND_ATTRIBUTES, "timebounds", "timebounds"),
         (TIMEPOINT_ATTRIBUTES, "timepoints", "timepoints"),
     ):
-        _frame(f, attributes, dim).to_csv(
+        _frame(f, attributes, dim, config).to_csv(
             OUT / f"{name}_{suffix}.csv.gz",
             float_format="%.17g",
             compression={"method": "gzip", "mtime": 0},
@@ -249,6 +266,79 @@ def scenario(  # noqa: PLR0913
     _write(name, f, CLIMATE_3)
 
 
+def _calibration_file(name):
+    return pooch.retrieve(
+        CALIBRATION_URL.format(name), known_hash=f"md5:{CALIBRATION_FILES[name]}"
+    )
+
+
+def _forcing_file(name, column):
+    df = pd.read_csv(_calibration_file(name), index_col=0)
+    return df[column] if column else df.iloc[:, 0]
+
+
+def calibrated():
+    """Write deterministic CMIP7 historical runs of fair-calibrate v1.6.1 members.
+
+    fair-calibrate scales the prescribed forcing by its `forcing_scale` outside FaIR,
+    so this does the same.
+    """
+    species_file = _calibration_file("species_configs_properties.csv")
+    parameters_file = _calibration_file("calibrated_constrained_parameters.csv")
+    emissions = pd.read_csv(
+        _calibration_file("historical_emissions_1750-2023_cmip7.csv"),
+        index_col="variable",
+    )
+    years = [str(y) for y in range(1750, 2024)]
+    prescribed = {
+        "Solar": _forcing_file("solar_forcing_timebounds_cmip7.csv", None),
+        "Volcanic": _forcing_file("volcanic_forcing_timebounds_cmip7.csv", None),
+        "Land use": _forcing_file("land_use_forcing_timebounds_cmip7.csv", "M"),
+        "Irrigation": _forcing_file("irrigation_forcing_timebounds_cmip7.csv", "M"),
+    }
+    species, properties = read_properties(species_file)
+    parameters = pd.read_csv(parameters_file, index_col=0)
+    emissions_by_specie = {
+        s: emissions.loc[s, years].to_numpy(dtype=float)[:, None, None]
+        for s in species
+        if properties[s]["input_mode"] == "emissions"
+    }
+    forcing_by_specie = {
+        s: forcing.loc[1750:2024].to_numpy()[:, None, None]
+        for s, forcing in prescribed.items()
+    }
+
+    out = OUT / "calibration"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "species_configs_properties.csv").write_bytes(
+        Path(species_file).read_bytes()
+    )
+    lines = Path(parameters_file).read_text().splitlines(keepends=True)
+    members = {str(m) for m in CALIBRATION_MEMBERS}
+    (out / "calibrated_constrained_parameters.csv").write_text(
+        lines[0] + "".join(line for line in lines[1:] if line.split(",")[0] in members)
+    )
+
+    for member in CALIBRATION_MEMBERS:
+        f = FAIR(ch4_method="thornhill2021")
+        f.define_time(1750, 2024, 1)
+        f.define_scenarios(["scenario"])
+        f.define_configs([member])
+        f.define_species(species, properties)
+        f.allocate()
+        f.fill_species_configs(species_file)
+        f.override_defaults(parameters_file)
+        fill(f.climate_configs["stochastic_run"], False)
+        for specie, values in emissions_by_specie.items():
+            fill(f.emissions, values, specie=specie)
+        for specie, values in forcing_by_specie.items():
+            scale = parameters.loc[member, f"forcing_scale[{specie}]"]
+            fill(f.forcing, values * scale, specie=specie)
+        _initialise(f)
+        f.run(progress=False)
+        _write(f"calibrated_{member}", f, CLIMATE_3, member)
+
+
 def main():
     """Write every case."""
     energy_balance("ebm_3layer", CLIMATE_3, 1)
@@ -270,6 +360,7 @@ def main():
         if p["type"] in ("f-gas", "other halogen", "cfc-11") and s != "Halon-1202"
     ]
     scenario("ssp245_concentration", "ssp245", concentration=("CH4", *halogens))
+    calibrated()
 
 
 if __name__ == "__main__":
