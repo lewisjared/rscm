@@ -52,6 +52,10 @@ lint: lint-python lint-rust
 test-python: build-dev
 	uv run pytest
 
+.PHONY: parity
+parity: build-dev  ## MAGICC7 parity at RTOL/ATOL in tests/regression/full_run.py
+	uv run pytest tests/regression -q
+
 .PHONY: test-rust
 test-rust:
 	cargo test --workspace --exclude rscm

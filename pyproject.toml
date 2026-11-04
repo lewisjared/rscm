@@ -60,6 +60,17 @@ dev = [
     "pyarrow>=23.0.0",
 ]
 
+# Regenerating MAGICC fixtures (scripts/regression) and ad hoc analysis.
+regression = [
+    "pymagicc>=2.1.5",
+    "scmdata>=0.19.0",
+    # scmdata 0.19 calls xarray internals removed in 2025.
+    "xarray<2025",
+    # pint-pandas 0.7 caps pandas below 3.
+    "pint-pandas>=0.8",
+    "scipy>=1.13",
+]
+
 docs = [
     "mkdocs>=1.6.0",
     "mkdocstrings[python]>=0.25.0",
