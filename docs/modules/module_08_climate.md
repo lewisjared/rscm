@@ -1,4 +1,4 @@
-# Module 08: Climate
+# Climate
 
 ## Overview
 
@@ -98,7 +98,7 @@ and the hemispheres exchange heat only through their oceans.
 - $\lambda_o$ and $\lambda_l$ are the ocean and land feedback parameters.
 - $f_{NO}$, $f_{NL}$, $f_{SO}$ and $f_{SL}$ are the global area fractions of each box
   (`FGNO`, `FGNL`, `FGSO`, `FGSL`).
-  Module 00 gives the [box order and area fractions](module_00_initialization.md#four-box-geography).
+  The initialisation page gives the [box order and area fractions](module_00_initialization.md#four-box-geography).
 
 ### Climate sensitivity decomposition
 
@@ -358,7 +358,7 @@ It is stepped by forward Euler from the previous substep's land temperature.
 
 | Input                       | Units | Source             | Fortran variable                    |
 | --------------------------- | ----- | ------------------ | ----------------------------------- |
-| Total effective forcing     | W m⁻² | Forcing (07b)      | `dat_total_effrf`, 4 boxes          |
+| Total effective forcing     | W m⁻² | Forcing aggregation | `dat_total_effrf`, 4 boxes         |
 | Volcanic forcing            | W m⁻² | Forcing            | `dat_volcanic_effrf`, 4 boxes       |
 | El Niño 3.4 index           | -     | File               | `DAT_ELNINO_N34`, if enabled        |
 | AMV index                   | -     | File               | `DAT_AMV_INDEX`, if enabled         |
@@ -469,7 +469,7 @@ and the initial temperature profile (`CORE_SWITCH_OCN_TEMPPROFILE`, CMIP5-based 
 Each year `magicc_step_year` (MAGICC7.f90 lines 2646 to 3727) runs:
 
 1. `DELTAQ` for concentrations and forcing, except in the last year
-   (see [module 15](module_15_main_timestep.md)).
+   (see [main timestep](module_15_main_timestep.md)).
 2. For each substep, from step 1 to `STEPSPERYEAR` (from step 0 in the first year, to 11 in the last):
     1. Interpolate the box forcing to the substep and add monthly volcanic forcing.
     2. Adjust the climate sensitivity from the substep's global forcing and the cumulative temperature,
@@ -485,7 +485,7 @@ Each year `magicc_step_year` (MAGICC7.f90 lines 2646 to 3727) runs:
     9. Update upwelling from the global mean air temperature.
 3. Average substeps 1 to 12 into the annual mean temperatures.
 4. Store the ocean layer profiles and the heat content by depth.
-5. Call `sealevel_calc` (see [module 14](module_14_sea_level_rise.md)).
+5. Call `sealevel_calc` (see [sea level rise](module_14_sea_level_rise.md)).
 
 LAMCALC (MAGICC7.f90 lines 8070 to 8278) starts from $\lambda_o = \lambda + 0.7$ and steps $\lambda_o$ by 0.7,
 reversing when the error in $RLO$ grows.

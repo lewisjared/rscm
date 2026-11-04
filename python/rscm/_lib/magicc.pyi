@@ -220,7 +220,7 @@ class SeaLevelRiseParams(TypedDict, total=False):
 
 @final
 class SeaLevelRiseBuilder(ComponentBuilder):
-    """Builder for the sea level rise component (MAGICC7 module 14).
+    """Builder for the sea level rise component.
 
     Glaciers, Greenland and Antarctic surface mass balance and solid ice discharge
     respond to the annual mean warming. Thermal expansion comes from ClimateUDEB
@@ -491,7 +491,7 @@ class HalocarbonChemistryBuilder(ComponentBuilder):
     """Builder for the halocarbon chemistry component.
 
     Concentrations, forcing and EESC of F-gases and Montreal Protocol gases,
-    following MAGICC7 Module 03.
+    following MAGICC7.
 
     **Inputs**
 
@@ -570,7 +570,7 @@ class PrognosticFixationParams(TypedDict):
     km: float
 
 class NitrogenParams(TypedDict, total=False):
-    """Parameters for the nitrogen limitation of NPP (MAGICC7 module 13).
+    """Parameters for the nitrogen limitation of NPP.
 
     All fields optional - defaults provided by Rust.
     """
@@ -781,7 +781,7 @@ class PermafrostParams(TypedDict, total=False):
 
 @final
 class PermafrostBuilder(ComponentBuilder):
-    """Builder for the permafrost carbon feedback component (MAGICC7 module 12).
+    """Builder for the permafrost carbon feedback component.
 
     Thaws zonal bands of mineral soil and peat carbon as Arctic warming exceeds
     each band's melting threshold, then decomposes the thawed carbon to CO2 and CH4.
@@ -832,7 +832,7 @@ class TropOzoneRegions(TypedDict, total=False):
 
 @final
 class OzoneForcingBuilder(ComponentBuilder):
-    """Builder for the ozone forcing component (MAGICC7 Module 04).
+    """Builder for the ozone forcing component.
 
     Changes are relative to the first year of the run.
 

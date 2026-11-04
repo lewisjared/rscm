@@ -1,6 +1,6 @@
 //! Halocarbon Chemistry Parameters
 //!
-//! Parameters for MAGICC7's F-gases and Montreal Protocol gases (Module 03).
+//! Parameters for MAGICC7's F-gases and Montreal Protocol gases.
 //! Species defaults are MAGICC7 v7.5.3's `FGAS_*` and `MHALO_*` configuration.
 
 use crate::climate::lamcalc::compute_qfrac;

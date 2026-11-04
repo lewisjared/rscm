@@ -1,7 +1,7 @@
 //! Halocarbon Chemistry Component
 //!
 //! Concentrations, forcing and EESC of F-gases and Montreal Protocol gases,
-//! following MAGICC7 Module 03.
+//! following MAGICC7.
 //!
 //! # Inputs
 //!

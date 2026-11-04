@@ -1,4 +1,4 @@
-# Module 04: Ozone Radiative Forcing
+# Ozone Radiative Forcing
 
 ## Overview
 
@@ -41,7 +41,7 @@ $$
 RF_{strat} = s \left( \max\left(0, \frac{EESC_Y - EESC_{Y_0}}{100}\right) \right)^{\beta}
 $$
 
-- $EESC_Y$ is the year's EESC from [module 03](module_03_halocarbon_chemistry.md#eesc) (ppt).
+- $EESC_Y$ is the year's EESC from [halocarbon chemistry](module_03_halocarbon_chemistry.md#eesc) (ppt).
 - $Y_0$ = `STRATOZ_THRESHOLD_YEAR`.
   The forcing is zero up to $Y_0$.
 - $s$ = `STRATOZ_O3SCALE` is negative, because depletion cools.
@@ -153,7 +153,7 @@ Each component writes RF, EffRF and ERF datastores:
 
 The aviation parameters apply only when `SECTOR_INCLUDE` is not `NOSECTOR`.
 `STRATOZ_BR_VS_CL_SCALE` belongs to the EESC calculation
-in [module 03](module_03_halocarbon_chemistry.md#eesc).
+in [halocarbon chemistry](module_03_halocarbon_chemistry.md#eesc).
 
 Each term also has a regional pattern, an efficacy and a surface forcing factor:
 
@@ -165,7 +165,7 @@ Each term also has a regional pattern, an efficacy and a surface forcing factor:
 | Temperature   | 1.0, 1.0, 1.0, 1.0                     | 1.0             |                |
 
 The stratospheric pattern is weighted to the Southern Hemisphere and the tropospheric one to the Northern.
-[Module 07b](module_07b_rf_aggregation.md) describes how the patterns and efficacies are applied.
+[Forcing aggregation](module_07b_rf_aggregation.md) describes how the patterns and efficacies are applied.
 
 ### Reference values
 

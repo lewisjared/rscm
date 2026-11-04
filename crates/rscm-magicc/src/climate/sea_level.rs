@@ -1,6 +1,6 @@
 //! Sea Level Rise Component
 //!
-//! Global mean sea level rise from land ice and thermal expansion (MAGICC7 module 14).
+//! Global mean sea level rise from land ice and thermal expansion.
 //!
 //! # What This Component Does
 //!
@@ -31,7 +31,7 @@
 //! A step's warming sets the sea level at its end, as in MAGICC7.
 //! Steps must be one year long.
 //!
-//! # Differences from MAGICC7 Module 14
+//! # Differences from MAGICC7
 //!
 //! - **Land water** is not implemented. MAGICC7's default run leaves it off.
 //! - **Antarctic discharge** keeps two MAGICC7 quirks: the response functions overflow

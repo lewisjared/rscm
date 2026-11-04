@@ -1,6 +1,6 @@
 //! Ozone Forcing Component
 //!
-//! Ozone ERF terms of MAGICC7 Module 04.
+//! Ozone ERF terms of MAGICC7.
 //!
 //! # Inputs
 //!

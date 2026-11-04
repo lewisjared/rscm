@@ -1,7 +1,7 @@
 //! Aerosol Indirect Radiative Forcing Component
 //!
 //! Calculates radiative forcing from aerosol effects on cloud properties,
-//! following a simplified version of MAGICC7 Module 06.
+//! following a simplified version of MAGICC7.
 //!
 //! # What This Component Does
 //!
@@ -18,7 +18,7 @@
 //!
 //! - `Effective Radiative Forcing|Aerosol|Indirect` (W/m²) - Cloud indirect forcing
 //!
-//! # Differences from MAGICC7 Module 06
+//! # Differences from MAGICC7
 //!
 //! This is a simplified implementation:
 //!

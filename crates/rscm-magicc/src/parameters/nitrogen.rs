@@ -1,6 +1,6 @@
 //! Nitrogen limitation parameters
 //!
-//! Parameters for the MAGICC7 nitrogen limitation of NPP (module 13).
+//! Parameters for the MAGICC7 nitrogen limitation of NPP.
 
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};

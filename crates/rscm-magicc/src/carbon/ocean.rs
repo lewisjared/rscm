@@ -42,7 +42,7 @@
 //! - `End-of-Year Atmospheric CO2` (ppm) - Concentration after the last sub-step,
 //!   which `CO2Budget` carries into the next year
 //!
-//! # Differences from MAGICC7 Module 10
+//! # Differences from MAGICC7
 //!
 //! - **Three IRF models**: 3D-GFDL (default), 2D-BERN, and HILDA are
 //!   implemented. MAGICC7 also supports BOXDIFF.
