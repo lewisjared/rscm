@@ -4,7 +4,8 @@ Shared utilities for MAGICC regression data generation scripts.
 Provides MAGICC setup and configuration helpers for the regression data generators.
 
 Setup:
-    export MAGICC_ROOT=/path/to/magicc-v7.5.3
+    The MAGICC v7.5.3 distribution is read from `DEFAULT_MAGICC_ROOT`
+    unless `MAGICC_ROOT` points elsewhere.
 
     uv run --group regression scripts/regression/generate_full_run.py
 """
@@ -16,19 +17,18 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+DEFAULT_MAGICC_ROOT = Path.home() / ".local/share/magicc/magicc-v7.5.3"
+
 
 def _setup_magicc():
     """Locate MAGICC executable and configure pymagicc."""
-    magicc_root_str = os.environ.get("MAGICC_ROOT")
-    if not magicc_root_str:
+    magicc_root = Path(os.environ.get("MAGICC_ROOT") or DEFAULT_MAGICC_ROOT)
+    if not magicc_root.is_dir():
         msg = (
-            "MAGICC_ROOT environment variable not set. "
-            "Set it to your MAGICC installation directory, e.g.:\n"
-            "  export MAGICC_ROOT=/path/to/magicc-v7.5.3"
+            f"MAGICC distribution not found at {magicc_root}. "
+            "Install MAGICC v7.5.3 there or set MAGICC_ROOT to its directory."
         )
         raise RuntimeError(msg)
-
-    magicc_root = Path(magicc_root_str)
 
     system = platform.system()
     machine = platform.machine()
@@ -56,6 +56,9 @@ def _setup_magicc():
 
 
 MAGICC_ROOT = _setup_magicc()
+
+#: AR6 probabilistic distribution (600 members), shipped with the MAGICC distribution.
+AR6_CONFIG = MAGICC_ROOT / "configs" / "600-member.json"
 
 from pymagicc import MAGICC7  # noqa: E402
 
