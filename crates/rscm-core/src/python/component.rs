@@ -1,15 +1,16 @@
 /// Macros for exposing a component to Python and using python-defined modules in rust
 use crate::component::{Component, InputState, OutputState};
 use crate::errors::RSCMResult;
+use crate::python::rscm_error_from_py;
 use crate::python::state::{
     PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyStateValue, PyTimeseriesWindow,
 };
 use crate::timeseries::{FloatValue, Time};
-use crate::timeseries_collection::TimeseriesData;
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::ffi::CString;
 use std::sync::Arc;
 // Reexport the Requirement Definition and GridType
 pub use crate::component::{GridType, RequirementDefinition, RequirementType};
@@ -117,23 +118,147 @@ pub struct PyRustComponent(pub Arc<dyn Component + Send + Sync>);
 impl_component!(PyRustComponent);
 
 /// Wrapper to convert a Py<PyAny> (Python Class) into a Component
-#[derive(Debug)]
 pub struct PythonComponent {
     pub component: Py<PyAny>,
+    name: String,
+    definitions: Vec<RequirementDefinition>,
+}
+
+impl std::fmt::Debug for PythonComponent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(&self.name).finish_non_exhaustive()
+    }
+}
+
+impl PythonComponent {
+    /// Wrap a Python component, reading its definitions once.
+    pub fn new(py: Python<'_>, component: Py<PyAny>) -> PyResult<Self> {
+        let bound = component.bind(py);
+        let name = bound.get_type().qualname()?.to_string();
+        let definitions = bound.call_method0("definitions")?.extract()?;
+        Ok(Self {
+            component,
+            name,
+            definitions,
+        })
+    }
+
+    fn solve_py(
+        &self,
+        py: Python<'_>,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+    ) -> PyResult<OutputState> {
+        let component = self.component.bind(py);
+
+        let py_result = if component.hasattr("_component_inputs")? {
+            let windows = self.input_windows(py, input_state)?;
+            let typed_inputs = component
+                .getattr("Inputs")?
+                .call_method1("from_input_state", (windows,))?;
+            let outputs = component.call_method1("solve", (t_current, t_next, typed_inputs))?;
+            if !outputs.hasattr("to_dict")? {
+                return Err(PyTypeError::new_err(format!(
+                    "{}.solve() must return self.Outputs(...), got {}",
+                    self.name,
+                    outputs.get_type().qualname()?
+                )));
+            }
+            outputs.call_method0("to_dict")?
+        } else {
+            // Untyped component: raw input mapping in, dict out
+            component.call_method1(
+                "solve",
+                (t_current, t_next, input_state.clone().to_hashmap()),
+            )?
+        };
+
+        let py_dict = py_result.cast::<PyDict>().map_err(|_| {
+            PyTypeError::new_err(format!("{}.solve() must return a dict", self.name))
+        })?;
+
+        let mut output_state = OutputState::new();
+        for (key, value) in py_dict.iter() {
+            let key: String = key.extract()?;
+            let state_value = if let Ok(py_state_value) = value.extract::<PyStateValue>() {
+                py_state_value.0
+            } else if let Ok(float_value) = value.extract::<FloatValue>() {
+                crate::state::StateValue::Scalar(float_value)
+            } else {
+                return Err(PyTypeError::new_err(format!(
+                    "{} output '{}' must be a StateValue or float, got {}",
+                    self.name,
+                    key,
+                    value.get_type().qualname()?
+                )));
+            };
+            output_state.insert(key, state_value);
+        }
+        Ok(output_state)
+    }
+
+    /// Python windows over the inputs, built from the same Rust windows Rust components read.
+    ///
+    /// Values run from the first timestep to the end of the current one (index N+1),
+    /// with unit conversion and grid aggregation applied.
+    fn input_windows<'py>(
+        &self,
+        py: Python<'py>,
+        input_state: &InputState,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        for definition in &self.definitions {
+            if !matches!(
+                definition.requirement_type,
+                RequirementType::Input | RequirementType::State
+            ) {
+                continue;
+            }
+            let name = definition.name.as_str();
+            let window = match definition.grid_type {
+                GridType::Scalar => {
+                    let w = input_state.get_scalar_window(name);
+                    let values = through_next(w.index(), w.len(), |o| w.at_offset(o));
+                    PyTimeseriesWindow::new(values, w.index())?
+                        .into_pyobject(py)?
+                        .into_any()
+                }
+                GridType::FourBox => {
+                    let w = input_state.get_four_box_window(name);
+                    let values =
+                        through_next(w.index(), w.len(), |o| w.at_offset_all(o)?.try_into().ok());
+                    PyFourBoxTimeseriesWindow::new(values, w.index())?
+                        .into_pyobject(py)?
+                        .into_any()
+                }
+                GridType::Hemispheric => {
+                    let w = input_state.get_hemispheric_window(name);
+                    let values =
+                        through_next(w.index(), w.len(), |o| w.at_offset_all(o)?.try_into().ok());
+                    PyHemisphericTimeseriesWindow::new(values, w.index())?
+                        .into_pyobject(py)?
+                        .into_any()
+                }
+            };
+            dict.set_item(name, window)?;
+        }
+        Ok(dict)
+    }
+}
+
+/// Values from index 0 through `index + 1`, clipped to the series length.
+fn through_next<T>(index: usize, len: usize, at_offset: impl Fn(isize) -> Option<T>) -> Vec<T> {
+    let end = (index + 2).min(len);
+    let mut values = Vec::with_capacity(end);
+    values.extend((0..end).filter_map(|i| at_offset(i as isize - index as isize)));
+    values
 }
 
 #[typetag::serde]
 impl Component for PythonComponent {
     fn definitions(&self) -> Vec<RequirementDefinition> {
-        Python::attach(|py| {
-            let py_result = self
-                .component
-                .bind(py)
-                .call_method("definitions", (), None)
-                .unwrap();
-            let py_result: Vec<RequirementDefinition> = py_result.extract().unwrap();
-            py_result
-        })
+        self.definitions.clone()
     }
 
     fn solve(
@@ -143,65 +268,42 @@ impl Component for PythonComponent {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         Python::attach(|py| {
-            let component = self.component.bind(py);
-
-            // Check if this is a typed component (has _component_inputs attribute)
-            let is_typed = component.hasattr("_component_inputs").unwrap_or(false);
-
-            let py_result = if is_typed {
-                // New typed component - pass TimeseriesWindow dict
-                let windows = input_state_to_py_windows(py, input_state)
-                    .expect("Failed to create Python window objects");
-
-                // Get the Inputs class and construct typed inputs
-                let inputs_class = component.getattr("Inputs").unwrap();
-                let typed_inputs = inputs_class
-                    .call_method("from_input_state", (windows,), None)
-                    .unwrap();
-
-                let result = component
-                    .call_method("solve", (t_current, t_next, typed_inputs), None)
-                    .unwrap();
-
-                // Convert typed outputs to dict
-                result.call_method("to_dict", (), None).unwrap()
-            } else {
-                // Legacy component - pass raw hashmap
-                component
-                    .call_method(
-                        "solve",
-                        (t_current, t_next, input_state.clone().to_hashmap()),
-                        None,
-                    )
-                    .unwrap()
-            };
-
-            // Extract the result dict
-            let py_dict = py_result
-                .cast::<pyo3::types::PyDict>()
-                .expect("solve() must return a dict");
-
-            let mut output_state = OutputState::new();
-            for (key, value) in py_dict.iter() {
-                let key: String = key.extract().expect("dict key must be a string");
-
-                // Try to extract as PyStateValue first
-                let state_value = if let Ok(py_state_value) = value.extract::<PyStateValue>() {
-                    py_state_value.0
-                } else if let Ok(float_value) = value.extract::<FloatValue>() {
-                    // Legacy component returning raw floats
-                    crate::state::StateValue::Scalar(float_value)
-                } else {
-                    panic!(
-                        "Component output value for '{}' must be StateValue or float, got: {:?}",
-                        key, value
-                    );
-                };
-
-                output_state.insert(key, state_value);
-            }
-            Ok(output_state)
+            self.solve_py(py, t_current, t_next, input_state)
+                .map_err(|err| rscm_error_from_py(py, err))
         })
+    }
+}
+
+/// Serialised form of a Python component: its class path and the state from `to_json()`.
+#[derive(Serialize, Deserialize)]
+struct PythonComponentRecord {
+    module: String,
+    class: String,
+    state: String,
+}
+
+impl PythonComponentRecord {
+    fn from_component(component: &PythonComponent, py: Python<'_>) -> PyResult<Self> {
+        let name = &component.name;
+        if name.contains("<locals>") {
+            return Err(PyTypeError::new_err(format!(
+                "{name} is defined inside a function and cannot be restored, define it at module level"
+            )));
+        }
+        let bound = component.component.bind(py);
+        Ok(Self {
+            module: bound.get_type().module()?.to_string(),
+            class: name.clone(),
+            state: bound.call_method0("to_json")?.extract()?,
+        })
+    }
+
+    fn restore<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let mut class = py.import(self.module.as_str())?.into_any();
+        for part in self.class.split('.') {
+            class = class.getattr(part)?;
+        }
+        class.call_method1("from_json", (self.state.as_str(),))
     }
 }
 
@@ -210,15 +312,11 @@ impl Serialize for PythonComponent {
     where
         S: serde::Serializer,
     {
-        Python::attach(|py| {
-            let py_result = self
-                .component
-                .bind(py)
-                .call_method("to_json", (), None)
-                .unwrap();
-            let py_result: String = py_result.extract().unwrap();
-            serializer.serialize_str(&py_result)
-        })
+        let record = Python::attach(|py| {
+            PythonComponentRecord::from_component(self, py)
+                .map_err(|err| serde::ser::Error::custom(rscm_error_from_py(py, err)))
+        })?;
+        record.serialize(serializer)
     }
 }
 
@@ -227,11 +325,12 @@ impl<'de> Deserialize<'de> for PythonComponent {
     where
         D: serde::Deserializer<'de>,
     {
-        let s: String = Deserialize::deserialize(deserializer)?;
+        let record = PythonComponentRecord::deserialize(deserializer)?;
         Python::attach(|py| {
-            let code = CString::new(format!("Component.from_json('{}')", s)).unwrap();
-            let component = py.eval(code.as_c_str(), None, None).unwrap().unbind();
-            Ok(PythonComponent { component })
+            record
+                .restore(py)
+                .and_then(|component| PythonComponent::new(py, component.unbind()))
+                .map_err(|err| serde::de::Error::custom(rscm_error_from_py(py, err)))
         })
     }
 }
@@ -244,61 +343,9 @@ pub struct PyPythonComponent(pub Arc<PythonComponent>);
 #[pymethods]
 impl PyPythonComponent {
     #[staticmethod]
-    pub fn build(component: Py<PyAny>) -> Self {
-        Self(Arc::new(PythonComponent { component }))
+    pub fn build(py: Python<'_>, component: Py<PyAny>) -> PyResult<Self> {
+        Ok(Self(Arc::new(PythonComponent::new(py, component)?)))
     }
 }
 
 impl_component!(PyPythonComponent);
-
-/// Convert an InputState to a Python dict of TimeseriesWindow objects
-///
-/// This creates a dictionary mapping variable names to typed TimeseriesWindow
-/// objects that provide access to current, previous, and historical values.
-fn input_state_to_py_windows(py: Python<'_>, input_state: &InputState) -> PyResult<Py<PyAny>> {
-    let dict = pyo3::types::PyDict::new(py);
-    let current_time = input_state.current_time();
-
-    for item in input_state.clone().into_iter() {
-        let name = &item.name;
-        // Use the actual current time to determine the index, not the latest populated index
-        let current_index = item
-            .data
-            .index_of_time(current_time)
-            .unwrap_or_else(|| item.data.latest());
-
-        let window: Py<PyAny> = match &item.data {
-            TimeseriesData::Scalar(ts) => {
-                // Extract scalar values up to and including current_index
-                let values: Vec<FloatValue> = (0..=current_index)
-                    .filter_map(|i| ts.at_scalar(i))
-                    .collect();
-                PyTimeseriesWindow::new(values, current_index)
-                    .map(|w| w.into_pyobject(py).unwrap().into_any().unbind())?
-            }
-            TimeseriesData::FourBox(ts) => {
-                // Extract all regional values for each timestep
-                let values: Vec<[FloatValue; 4]> = (0..=current_index)
-                    .filter_map(|i| {
-                        ts.at_time_index(i)
-                            .map(|vals| [vals[0], vals[1], vals[2], vals[3]])
-                    })
-                    .collect();
-                PyFourBoxTimeseriesWindow::new(values, current_index)
-                    .map(|w| w.into_pyobject(py).unwrap().into_any().unbind())?
-            }
-            TimeseriesData::Hemispheric(ts) => {
-                // Extract all regional values for each timestep
-                let values: Vec<[FloatValue; 2]> = (0..=current_index)
-                    .filter_map(|i| ts.at_time_index(i).map(|vals| [vals[0], vals[1]]))
-                    .collect();
-                PyHemisphericTimeseriesWindow::new(values, current_index)
-                    .map(|w| w.into_pyobject(py).unwrap().into_any().unbind())?
-            }
-        };
-
-        dict.set_item(name, window)?;
-    }
-
-    Ok(dict.into_any().unbind())
-}

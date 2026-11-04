@@ -150,3 +150,12 @@ impl From<RSCMError> for PyErr {
         PyRuntimeError::new_err(e.to_string())
     }
 }
+
+/// Convert a Python exception into an error that keeps its traceback.
+pub(crate) fn rscm_error_from_py(py: Python<'_>, err: PyErr) -> RSCMError {
+    let traceback = err
+        .traceback(py)
+        .and_then(|tb| tb.format().ok())
+        .unwrap_or_default();
+    RSCMError::Error(format!("{err}\n{traceback}"))
+}
