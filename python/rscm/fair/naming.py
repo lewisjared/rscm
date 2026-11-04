@@ -113,6 +113,18 @@ def concentration_unit(entry: dict[str, Any]) -> str:
     return {"co2": "ppm", "ch4": "ppb", "n2o": "ppb"}.get(entry["type"], "ppt")
 
 
+def exogenous_variable(entry: dict[str, Any]) -> tuple[str, str] | None:
+    """Return the input variable and unit of a species entry, None if calculated."""
+    mode = entry["input_mode"]
+    if mode == "emissions":
+        return emissions(entry["name"]), emissions_unit(entry)
+    if mode == "concentration":
+        return concentration(entry["name"]), concentration_unit(entry)
+    if mode == "forcing":
+        return forcing(entry), "W/m^2"
+    return None
+
+
 def layer_temperature(layer: int) -> str:
     """Temperature variable of an energy balance layer, counting the surface as 0."""
     return SURFACE_TEMPERATURE if layer == 0 else f"Ocean Temperature|Layer {layer + 1}"

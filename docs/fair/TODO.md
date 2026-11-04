@@ -44,13 +44,19 @@ FaIR calculates EESC after the aerosol forcing, so EESC never reaches ERFari.
 ## Slice 5: Python
 
 - [x] `rscm.fair.build_components`, `initial_values` and `run_fair()` from a FaIR config dict.
-- [ ] `rscm.fair` loaders for the species CSV and calibration CSV.
-- [ ] `from_fair()` converter.
-- [ ] Ensemble helper returning xarray.
+- [x] `rscm.fair` loaders for the species CSV and calibration CSV.
+- [x] `from_fair()` converter, with fair and xarray in a `fair` extra.
+- [x] Ensemble helper returning xarray (`run_ensemble`).
 - [x] `.pyi` stubs.
-- [ ] Docs page and changelog fragment.
-- [ ] Parity for members of the fair-calibrate v1.6.1 posterior.
+- [ ] Docs page.
+- [ ] Changelog fragment, once the PR has a number.
+- [x] Parity for members of the fair-calibrate v1.6.1 posterior.
 - [ ] Smoke test with MAGICC's `ClimateUDEB`.
+
+The posterior cases run three members over the CMIP7 history (1750 to 2024) deterministically.
+The posterior sets `stochastic_run`, which `read_calibration` ignores.
+FaIR ignores `forcing_scale` for prescribed forcing,
+so `scale_prescribed_forcing` applies it to the inputs as fair-calibrate does.
 
 ## Later
 

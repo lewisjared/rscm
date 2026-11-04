@@ -39,6 +39,14 @@ if TYPE_CHECKING:
 FairConfig = dict[str, Any]
 Species = dict[str, Any]
 
+CLIMATE_CONFIGS = (
+    "ocean_heat_capacity",
+    "ocean_heat_transfer",
+    "deep_ocean_efficacy",
+    "gamma_autocorrelation",
+)
+GAMMA_AUTOCORRELATION = 2.0
+
 #: Calculated forcing types that sum their drivers linearly.
 LINEAR_TYPES = ("ari", "ozone", "contrails", "lapsi", "h2o stratospheric", "land use")
 
@@ -69,6 +77,11 @@ def _of_type(config: FairConfig, *types: str) -> list[Species]:
 def _one(config: FairConfig, kind: str) -> Species | None:
     found = _of_type(config, kind)
     return found[0] if found else None
+
+
+def _calculated(config: FairConfig, kind: str) -> Species | None:
+    entry = _one(config, kind)
+    return entry if entry is not None and entry["input_mode"] == "calculated" else None
 
 
 def _scale(entry: Species) -> dict[str, float]:
@@ -123,20 +136,48 @@ def _concentration_variable(entry: Species) -> str:
     )
 
 
+def emission_drivers(config: FairConfig, entry: Species) -> list[str]:
+    """Emissions variables that drive a species, none if it is not emissions-driven."""
+    if entry["input_mode"] == "emissions":
+        return [naming.emissions(entry["name"])]
+    if entry["type"] == "co2" and entry["input_mode"] == "calculated":
+        return [
+            naming.emissions(s["name"])
+            for s in _of_type(config, "co2 ffi", "co2 afolu")
+        ]
+    return []
+
+
+def species_outputs(config: FairConfig) -> dict[str, dict[str, str]]:
+    """Variable of each species with a value of FaIR's species attributes."""
+    agents = {s["name"] for s in forcing_agents(config)}
+    outputs: dict[str, dict[str, str]] = {
+        "concentration": {},
+        "forcing": {},
+        "airborne_emissions": {},
+        "cumulative_emissions": {},
+    }
+    for s in config["species"]:
+        name = s["name"]
+        if name in agents:
+            outputs["forcing"][name] = naming.forcing(s)
+        if is_ghg(s):
+            outputs["concentration"][name] = naming.concentration(name)
+            outputs["airborne_emissions"][name] = naming.airborne_emissions(name)
+            outputs["cumulative_emissions"][name] = naming.cumulative_emissions(name)
+        elif s["type"] == "eesc" and s["input_mode"] == "calculated":
+            outputs["concentration"][name] = naming.EESC
+    return outputs
+
+
 def _gas(config: FairConfig, entry: Species) -> dict[str, Any]:
     name = entry["name"]
     if entry["input_mode"] == "concentration":
         mode = "concentration"
         emissions: list[str] = []
-    elif entry["type"] == "co2" and entry["input_mode"] == "calculated":
-        mode = "emissions"
-        emissions = [
-            naming.emissions(s["name"])
-            for s in _of_type(config, "co2 ffi", "co2 afolu")
-        ]
     else:
         mode = "emissions"
-        emissions = [naming.emissions(name)]
+        emissions = emission_drivers(config, entry)
     gas: dict[str, Any] = {
         "mode": mode,
         "emissions": emissions,
@@ -368,7 +409,9 @@ def _energy_balance(config: FairConfig) -> Component:
             "ocean_heat_capacity": climate["ocean_heat_capacity"],
             "ocean_heat_transfer": climate["ocean_heat_transfer"],
             "deep_ocean_efficacy": climate["deep_ocean_efficacy"],
-            "gamma_autocorrelation": climate.get("gamma_autocorrelation", 2.0),
+            "gamma_autocorrelation": climate.get(
+                "gamma_autocorrelation", GAMMA_AUTOCORRELATION
+            ),
         }
     ).build()
 
@@ -381,15 +424,15 @@ def build_components(config: FairConfig) -> list[Component]:
         components.append(_ch4_lifetime(config))
     if gases:
         components.append(_gas_cycle(config, gases))
-    if _one(config, "eesc") is not None:
+    if _calculated(config, "eesc") is not None:
         components.append(_eesc(config))
     if gases:
         components.append(_ghg_forcing(config, gases))
     for kind in LINEAR_TYPES:
-        entry = _one(config, kind)
+        entry = _calculated(config, kind)
         if entry is not None:
             components.append(_linear_forcing(config, entry))
-    entry = _one(config, "aci")
+    entry = _calculated(config, "aci")
     if entry is not None:
         components.append(_aerosol_cloud(config, entry))
     components.append(_aggregation(config))

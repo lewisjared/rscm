@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from rscm.core import InterpolationStrategy, ModelBuilder, TimeAxis, Timeseries
+from rscm.fair import naming
 from rscm.fair.config import FairConfig, build_components, initial_values
 
 if TYPE_CHECKING:
@@ -33,31 +34,43 @@ def _on_timebounds(
     return array
 
 
+def prescribed_forcing_scales(config: FairConfig) -> dict[str, float]:
+    """Return the `forcing_scale` of each prescribed forcing variable."""
+    return {
+        naming.forcing(s): float(s["forcing_scale"])
+        for s in config["species"]
+        if s["input_mode"] == "forcing"
+    }
+
+
 def build_model(
     config: FairConfig,
     inputs: Mapping[str, tuple[ArrayLike, str]],
     timebounds: ArrayLike,
+    *,
+    scale_prescribed_forcing: bool = False,
 ) -> Model:
     """Build an unrun model of a FaIR configuration.
 
     `inputs` maps each exogenous variable to its values and unit.
     Emissions are FaIR timepoint values, one per step.
     Prescribed concentrations and forcing are FaIR timebound values.
+
+    FaIR ignores `forcing_scale` for prescribed forcing.
+    `scale_prescribed_forcing` applies it to the inputs, as fair-calibrate does.
     """
     bounds = np.asarray(timebounds, dtype=np.float64)
     axis = TimeAxis.from_values(bounds)
+    scales = prescribed_forcing_scales(config) if scale_prescribed_forcing else {}
     builder = ModelBuilder().with_time_axis(axis)
     for component in build_components(config):
         builder.with_rust_component(component)
     for name, (values, unit) in inputs.items():
+        array = _on_timebounds(name, values, len(bounds))
+        if name in scales:
+            array = array * scales[name]
         builder.with_exogenous_variable(
-            name,
-            Timeseries(
-                _on_timebounds(name, values, len(bounds)),
-                axis,
-                unit,
-                InterpolationStrategy.Previous,
-            ),
+            name, Timeseries(array, axis, unit, InterpolationStrategy.Previous)
         )
     builder.with_initial_values(initial_values(config))
     return builder.build()
@@ -67,8 +80,12 @@ def run_fair(
     config: FairConfig,
     inputs: Mapping[str, tuple[ArrayLike, str]],
     timebounds: ArrayLike,
+    *,
+    scale_prescribed_forcing: bool = False,
 ) -> Model:
     """Run a FaIR configuration and return the model, see `build_model`."""
-    model = build_model(config, inputs, timebounds)
+    model = build_model(
+        config, inputs, timebounds, scale_prescribed_forcing=scale_prescribed_forcing
+    )
     model.run()
     return model
