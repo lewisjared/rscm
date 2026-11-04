@@ -69,7 +69,7 @@ RSCM uses specific error types to help diagnose issues. Here's what each means a
 #### ExtrapolationNotAllowed
 
 ```
-ExtrapolationNotAllowed: target=1750.0, left of interpolation range=1850.0
+Extrapolation is not allowed. Target=1750, start of interpolation range=1850
 ```
 
 **Cause:** Requesting data at a time outside the timeseries bounds.
@@ -77,19 +77,19 @@ ExtrapolationNotAllowed: target=1750.0, left of interpolation range=1850.0
 **Fixes:**
 
 - Extend your input data to cover the required time range
-- Enable extrapolation on the interpolation strategy:
+- Timeseries created from Python always allow extrapolation, so this comes from a Rust-built timeseries.
+  Enable extrapolation on its strategy:
 
-    ```python
-    from rscm import LinearSplineStrategy
-    strategy = LinearSplineStrategy(extrapolate=True)
+    ```rust
+    let strategy = InterpolationStrategy::from(LinearSplineStrategy::new(true));
     ```
 
-- Use `PreviousStrategy` or `NextStrategy` for data that should hold constant outside bounds
+- Use `InterpolationStrategy.Previous` or `.Next` for data that should hold constant outside bounds
 
 #### MissingInitialValue
 
 ```
-MissingInitialValue: variable='Temperature', component='TwoLayerModel'
+Missing initial value for state variable 'Surface Temperature' in component 'TwoLayer'.
 ```
 
 **Cause:** State variables require initial values before the model can run.
@@ -99,30 +99,35 @@ MissingInitialValue: variable='Temperature', component='TwoLayerModel'
 ```python
 model = (
     ModelBuilder()
-    .with_component(component)
-    .with_initial_values({"Temperature": 0.0, "Heat Content|Deep Ocean": 0.0})
+    .with_rust_component(component)
+    .with_time_axis(time_axis)
+    .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
     .build()
 )
 ```
 
-#### VariableNotFound
+#### Missing input when calling `solve` directly
 
 ```
-VariableNotFound: name='Emissions|CO2', available=['Emissions|CH4', 'Forcing']
+pyo3_runtime.PanicException: No timeseries with variable='Emissions|CO2'
 ```
 
-**Cause:** A component is trying to read an input variable that doesn't exist in the state.
+**Cause:** A component's `solve` was called directly without one of its declared inputs.
+Inside a model this does not happen.
+A declared input with no producer and no exogenous data reads as NaN instead.
 
 **Fixes:**
 
 - Check the exact variable name matches what the producing component outputs
-- Verify all required components are added to the model
+- Verify all required components and exogenous variables are added to the model
 - Check for typos in variable names (names are case-sensitive)
+- If outputs are unexpectedly NaN, check `model.debug_info()`.
+  Inputs marked `(exo)` have no producing component and must be supplied as exogenous data.
 
 #### GridTypeMismatch
 
 ```
-GridTypeMismatch: variable='Temperature', producer_grid='FourBox', consumer_grid='Scalar'
+Grid type mismatch for variable 'Temperature': producer component 'A' outputs FourBox but consumer component 'B' expects Scalar.
 ```
 
 **Cause:** Two connected components use different spatial grids.
@@ -137,7 +142,7 @@ GridTypeMismatch: variable='Temperature', producer_grid='FourBox', consumer_grid
 #### UnsupportedGridTransformation
 
 ```
-UnsupportedGridTransformation: from='Hemispheric', to='FourBox'
+Unsupported grid transformation from Hemispheric to FourBox.
 ```
 
 **Cause:** RSCM cannot automatically transform between these grid types without additional physics assumptions.
@@ -147,7 +152,7 @@ UnsupportedGridTransformation: from='Hemispheric', to='FourBox'
 #### GridTransformationNotSupported
 
 ```
-GridTransformationNotSupported: variable='Temperature', source_grid='Scalar', target_grid='FourBox'
+Grid transformation not supported for variable 'Temperature': cannot transform from Scalar to FourBox.
 ```
 
 **Cause:** A component requires a finer grid resolution than the schema or producer provides. This occurs with [schema-driven auto-aggregation](../grids.md#schema-driven-auto-aggregation) when:
@@ -204,7 +209,7 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
 #### CircularDependency
 
 ```
-CircularDependency: cycle=['ComponentA', 'ComponentB', 'ComponentA']
+Circular dependency detected in component graph: component NodeIndex(1).
 ```
 
 **Cause:** Components form a dependency loop where A depends on B and B depends on A.
@@ -221,16 +226,20 @@ CircularDependency: cycle=['ComponentA', 'ComponentB', 'ComponentA']
 
 **Cause:** PyO3 clones Rust objects when passing them to Python. Python operates on copies, not references.
 
-**Fix:** Use setter methods to update values:
+**Fix:** Build the data you need before handing it over, rather than editing it afterwards:
 
 ```python
-# Wrong - modifies a copy
-data = collection.get_data("Temperature")
-data[0] = 999.0  # This won't affect the collection
+# Wrong: both calls return copies, so the collection is unchanged
+ts = collection.get_timeseries_by_name("Temperature")
+ts.set(0, 999.0)
+ts.values()[0] = 999.0
 
-# Correct - uses setter method
-collection.set_value("Temperature", 0, 999.0)
+# Correct: create the timeseries with the right values, then add it
+values[0] = 999.0
+collection.add_timeseries("Temperature", Timeseries(values, time_axis, "K", strategy))
 ```
+
+`add_timeseries` raises an error if the name already exists, so build a new collection to replace a timeseries.
 
 ## PyO3 Binding Issues
 
@@ -247,7 +256,7 @@ ImportError: cannot import name '_lib' from 'rscm'
 
 1. Ensure you've built the extension: `make build-dev`
 2. Check you're using the correct virtual environment
-3. Verify the `.so` file exists in `python/rscm/_lib/`
+3. Verify `python/rscm/_lib.abi3.so` (or `.pyd` on Windows) exists
 
 ### AttributeError for PyO3 Classes
 
@@ -257,15 +266,16 @@ ImportError: cannot import name '_lib' from 'rscm'
 
 **Fixes:**
 
-- Check the actual available methods: `dir(rscm.Component)`
+- Check the actual available methods, for example `dir(rscm.core.ModelBuilder)`
 - Update `.pyi` files to match Rust bindings after API changes
+- Run `make validate-pyi` to find mismatches between the stubs and the compiled module
 
 ### Serialisation Errors
 
 **Symptom:**
 
 ```
-PyValueError: Failed to deserialize component: missing field 'parameter_name'
+ValueError: missing field `conc_pi`
 ```
 
 **Cause:** The Python dict doesn't match the Rust struct fields.
@@ -274,7 +284,7 @@ PyValueError: Failed to deserialize component: missing field 'parameter_name'
 
 - Check all required fields are present in the dict
 - Verify field names match exactly (Rust uses snake_case)
-- Check field types match (e.g., `float` not `int` for `f64`)
+- Check field types match (an `int` is accepted for an `f64` field, but a string is not)
 
 ## Debugging Tips
 
@@ -284,24 +294,27 @@ To see how components connect:
 
 ```python
 model = builder.build()
-print(model.dependency_graph())
+print(model.as_dot())  # Graphviz DOT format
 ```
 
 ### Tracing Data Flow
 
-Enable verbose output to trace values through components:
+Rust components do not log through Python's `logging`.
+Step the model and inspect the state instead:
 
 ```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
+model.step()
+print(model.debug_info(format="plain"))
 ```
+
+See the [Debugging and Inspection](../notebooks/debugging_inspection.py) tutorial for more.
 
 ### Checking Available Variables
 
 List all variables in a timeseries collection:
 
 ```python
-print(collection.variable_names())
+print(collection.names())
 ```
 
 ### Validating Component Definitions
@@ -311,19 +324,19 @@ Verify a component's inputs and outputs:
 ```python
 component = MyComponent(param=1.0)
 for defn in component.definitions():
-    print(f"{defn.direction}: {defn.name} [{defn.unit}]")
+    print(f"{defn.requirement_type}: {defn.name} [{defn.unit}]")
 ```
 
 ## Common Mistakes
 
 ### Unit Mismatches
 
-Components define expected units. Ensure your data uses matching units:
-
-```python
-# Component expects "GtCO2", not "MtCO2"
-# Conversion may be needed before passing to the model
-```
+Components define expected units.
+Without a schema, exogenous data must already be in the unit the component expects.
+With a `VariableSchema`, the model converts compatible units when components read inputs,
+for example `MtCO2/yr` to `GtC/yr`.
+Incompatible units, such as `K` and `W/m^2`, fail when the model is built.
+See [Physical Units](../notebooks/units_tutorial.py).
 
 ### Time Grid Alignment
 
