@@ -496,8 +496,12 @@ def climate_parameters(
     parameters: Mapping[str, Any],
     inputs: Mapping[str, pr.AerosolHistory],
     start_year: float,
+    end_year: float | None = None,
 ) -> dict[str, Any]:
-    """ClimateUDEB parameters, with regional and monthly volcanic forcing."""
+    """ClimateUDEB parameters, with regional and monthly volcanic forcing.
+
+    With ``end_year``, months after the run ends are left out.
+    """
     p = parameters
     volcanic = inputs["file_volcanic_rf"]
     values = np.asarray(volcanic.values)
@@ -528,6 +532,7 @@ def climate_parameters(
             efficacy=p["rf_efficacy_volc"] if apply == 2 else 1.0,  # noqa: PLR2004
             internal_efficacy=initial if apply else 1.0,
             rf_regions=pattern if apply else None,
+            until=end_year,
         ),
     }
 
@@ -922,7 +927,7 @@ def run_magicc7(  # noqa: PLR0913
         return {**base, **overrides.get(name, {})}
 
     sealevel = bool(p["out_sealevel"])
-    climate_base = climate_parameters(p, files, time[0])
+    climate_base = climate_parameters(p, files, time[0], time[-1])
     if sealevel:
         climate_base["thermal_expansion"] = {}
     climate = ClimateUDEBBuilder.from_parameters(params("ClimateUDEB", climate_base))

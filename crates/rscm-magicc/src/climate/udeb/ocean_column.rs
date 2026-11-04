@@ -9,7 +9,7 @@ use crate::climate::state::ClimateUDEBState;
 use crate::parameters::{CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER};
 use rscm_core::state::FourBoxSlice;
 use rscm_core::timeseries::FloatValue;
-use rscm_core::utils::linear_algebra::thomas_solve;
+use rscm_core::utils::linear_algebra::thomas_solve_inplace;
 
 impl ClimateUDEB {
     /// Calculate depth-dependent vertical diffusivity for each layer boundary.
@@ -109,10 +109,10 @@ impl ClimateUDEB {
         };
         let denom = (lambda_land * f_l + p.k_lo) * f_o;
 
-        let mut a = vec![0.0; n];
-        let mut b = vec![0.0; n];
-        let mut cc = vec![0.0; n];
-        let mut d = vec![0.0; n];
+        let mut coefficients = vec![0.0; 4 * n];
+        let (a, rest) = coefficients.split_at_mut(n);
+        let (b, rest) = rest.split_at_mut(n);
+        let (cc, d) = rest.split_at_mut(n);
 
         let dtpdm = dt / p.mixed_layer_depth;
         let feedback =
@@ -161,11 +161,11 @@ impl ClimateUDEB {
         d[n - 1] =
             aft[n - 1] * (dw_dtpdz * (t_polar - init[n - 1])) + (temps[n - 1] + up * aft[n - 1]);
 
-        let new_temps = thomas_solve(&a, &b, &cc, &d);
+        thomas_solve_inplace(a, b, cc, d);
 
         let max_temp = p.max_temperature;
-        for (i, &temp) in new_temps.iter().enumerate() {
-            state.ocean_temps[hemi][i] = temp.min(max_temp);
+        for (old, &temp) in state.ocean_temps[hemi].iter_mut().zip(d.iter()) {
+            *old = temp.min(max_temp);
         }
 
         state.ocean_temps[hemi][0]

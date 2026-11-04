@@ -105,6 +105,24 @@ pub(crate) fn prescribed_concentration(
     if t_next > switch_year? {
         return None;
     }
-    let window = input_state.get_scalar_window(&prescribed_name(concentration));
+    prescribed_input(
+        input_state,
+        &prescribed_name(concentration),
+        switch_year,
+        t_next,
+    )
+}
+
+/// [`prescribed_concentration`] given the name of its `prescribed` input.
+pub(crate) fn prescribed_input(
+    input_state: &rscm_core::component::InputState,
+    prescribed: &str,
+    switch_year: Option<Time>,
+    t_next: Time,
+) -> Option<FloatValue> {
+    if t_next > switch_year? {
+        return None;
+    }
+    let window = input_state.get_scalar_window(prescribed);
     Some(window.at_end().unwrap_or_else(|| window.at_start()))
 }

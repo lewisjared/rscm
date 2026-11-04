@@ -84,6 +84,14 @@ impl ComponentState for PermafrostState {
     }
 }
 
+/// Monthly Q10 temperature term and moisture of one band, which both soil types share.
+#[derive(Debug)]
+struct Season {
+    summer_max: FloatValue,
+    q10_temperature: [FloatValue; 12],
+    moisture: [FloatValue; 12],
+}
+
 /// Aerobic and anaerobic decomposition (GtC/yr) from one soil type.
 #[derive(Debug, Clone, Copy, Default)]
 struct Decomposition {
@@ -190,43 +198,67 @@ impl Permafrost {
         1.0 - frozen / self.parameters.total_pool
     }
 
-    /// Annual mean (aerobic rate, anaerobic rate, aerobic area fraction) of a soil type.
-    fn seasonal_rates(
+    /// Soil temperature below the summer maximum in each month of the seasonal cycle.
+    fn seasonal_offsets(&self) -> [FloatValue; 12] {
+        let half_amplitude = 0.5 * self.parameters.soil_annual_cycle_amplitude;
+        std::array::from_fn(|month| {
+            // MAGICC7's seasonal cycle spans a quarter period, from sin(0) to sin(pi/2).
+            let phase = month as FloatValue * std::f64::consts::PI / 22.0;
+            phase.sin() * half_amplitude - half_amplitude
+        })
+    }
+
+    fn season(&self, offsets: &[FloatValue; 12], summer_max: FloatValue) -> Season {
+        let p = &self.parameters;
+        let soil_temp = offsets.map(|offset| summer_max + offset);
+        let moisture = soil_temp.map(|soil_temp| {
+            let water = (p.soil_water_slope * soil_temp + p.soil_water_offset)
+                .max(p.soil_water_min)
+                .min(1.0);
+            (1.0 - (-water).exp()) / (1.0 - (-1.0 as FloatValue).exp())
+        });
+        Season {
+            summer_max,
+            q10_temperature: soil_temp
+                .map(|soil_temp| 1.0 / p.q10_temp1 - 1.0 / (soil_temp + p.q10_temp2)),
+            moisture,
+        }
+    }
+
+    /// Annual mean aerobic fraction of the thawed area of a soil type.
+    fn aerobic_fraction(&self, soil: &PermafrostSoilParameters, season: &Season) -> FloatValue {
+        let anaerobic_fraction: FloatValue = season
+            .moisture
+            .iter()
+            .map(|moisture| {
+                (soil.anaerobic_initial_fraction
+                    + (soil.anaerobic_max_fraction - soil.anaerobic_initial_fraction)
+                        * moisture
+                        * soil.anaerobic_moisture_sensitivity)
+                    .min(soil.anaerobic_max_fraction)
+                    .max(0.0)
+            })
+            .sum::<FloatValue>();
+        1.0 - anaerobic_fraction / 12.0
+    }
+
+    /// Annual mean (aerobic, anaerobic) decomposition rate of a soil type.
+    fn decomposition_rates(
         &self,
         soil: &PermafrostSoilParameters,
-        summer_max: FloatValue,
-    ) -> (FloatValue, FloatValue, FloatValue) {
+        season: &Season,
+    ) -> (FloatValue, FloatValue) {
         let p = &self.parameters;
         let base = soil.decomposition_ratio / p.aerobic_turnover_time;
         let anaerobic_base =
             p.anaerobic_decomposition_ratio * soil.decomposition_ratio / p.aerobic_turnover_time;
-        let (mut aerobic, mut anaerobic, mut anaerobic_fraction) = (0.0, 0.0, 0.0);
-        for month in 0..12 {
-            // MAGICC7's seasonal cycle spans a quarter period, from sin(0) to sin(pi/2).
-            let phase = month as FloatValue * std::f64::consts::PI / 22.0;
-            let half_amplitude = 0.5 * p.soil_annual_cycle_amplitude;
-            let soil_temp = summer_max + (phase.sin() * half_amplitude - half_amplitude);
-            let water = (p.soil_water_slope * soil_temp + p.soil_water_offset)
-                .max(p.soil_water_min)
-                .min(1.0);
-            let moisture = (1.0 - (-water).exp()) / (1.0 - (-1.0 as FloatValue).exp());
-            let q10 = |alpha: FloatValue| {
-                (alpha * (1.0 / p.q10_temp1 - 1.0 / (soil_temp + p.q10_temp2))).exp()
-            };
+        let (mut aerobic, mut anaerobic) = (0.0, 0.0);
+        for (temperature, moisture) in season.q10_temperature.iter().zip(&season.moisture) {
+            let q10 = |alpha: FloatValue| (alpha * temperature).exp();
             aerobic += base * q10(soil.q10_aerobic_alpha) * moisture;
             anaerobic += q10(soil.q10_anaerobic_alpha) * anaerobic_base;
-            anaerobic_fraction += (soil.anaerobic_initial_fraction
-                + (soil.anaerobic_max_fraction - soil.anaerobic_initial_fraction)
-                    * moisture
-                    * soil.anaerobic_moisture_sensitivity)
-                .min(soil.anaerobic_max_fraction)
-                .max(0.0);
         }
-        (
-            aerobic / 12.0,
-            anaerobic / 12.0,
-            1.0 - anaerobic_fraction / 12.0,
-        )
+        (aerobic / 12.0, anaerobic / 12.0)
     }
 
     /// Advance one soil type in one band by `dt` years.
@@ -234,11 +266,11 @@ impl Permafrost {
         &self,
         soil: &PermafrostSoilParameters,
         band: &mut SoilBand,
-        summer_max: FloatValue,
+        season: &Season,
         dt: FloatValue,
     ) -> Decomposition {
-        let (aerobic_rate, anaerobic_rate, aerobic_fraction) =
-            self.seasonal_rates(soil, summer_max);
+        let summer_max = season.summer_max;
+        let aerobic_fraction = self.aerobic_fraction(soil, season);
         let thaw_rate =
             summer_max.signum() * summer_max.abs().powf(soil.thaw_exponent) * soil.thaw_rate;
 
@@ -277,9 +309,19 @@ impl Permafrost {
             (frozen - (aerobic_area - old_aerobic_area) - (anaerobic_area - old_anaerobic_area))
                 .max(0.0);
 
-        let decomposition = Decomposition {
-            aerobic: aerobic_rate * (new_aerobic_pool + aerobic_pool) / 2.0,
-            anaerobic: anaerobic_rate * (new_anaerobic_pool + anaerobic_pool) / 2.0,
+        let (aerobic_sum, anaerobic_sum) = (
+            new_aerobic_pool + aerobic_pool,
+            new_anaerobic_pool + anaerobic_pool,
+        );
+        // Frozen bands have no thawed carbon, so their rates are not needed.
+        let decomposition = if aerobic_sum == 0.0 && anaerobic_sum == 0.0 {
+            Decomposition::default()
+        } else {
+            let (aerobic_rate, anaerobic_rate) = self.decomposition_rates(soil, season);
+            Decomposition {
+                aerobic: aerobic_rate * aerobic_sum / 2.0,
+                anaerobic: anaerobic_rate * anaerobic_sum / 2.0,
+            }
         };
         band.aerobic_area = aerobic_area;
         band.anaerobic_area = anaerobic_area;
@@ -302,13 +344,14 @@ impl Permafrost {
         let arctic = p.arctic_amplification * temperature;
         // Each pool is summed over bands before the soil types are combined, as in MAGICC7.
         let (mut ms, mut peat) = (Decomposition::default(), Decomposition::default());
+        let offsets = self.seasonal_offsets();
         for i in 0..p.n_bands {
-            let summer_max = arctic - self.melting_temp(i);
+            let season = self.season(&offsets, arctic - self.melting_temp(i));
             for (soil, band, total) in [
                 (&p.mineral_soil, &mut state.mineral_soil[i], &mut ms),
                 (&p.peat, &mut state.peat[i], &mut peat),
             ] {
-                let d = self.step_band(soil, band, summer_max, dt);
+                let d = self.step_band(soil, band, &season, dt);
                 total.aerobic += d.aerobic;
                 total.anaerobic += d.anaerobic;
             }
@@ -496,6 +539,10 @@ mod tests {
         assert!(component.thawed_area(&state) < thawed);
     }
 
+    fn season(component: &Permafrost, summer_max: FloatValue) -> Season {
+        component.season(&component.seasonal_offsets(), summer_max)
+    }
+
     /// Mineral soil band, half thawed, with thawed carbon densities 20 (aerobic) and 10 (anaerobic).
     fn half_thawed(aerobic_fraction: FloatValue) -> SoilBand {
         let aerobic_area = 0.5 * aerobic_fraction;
@@ -515,13 +562,14 @@ mod tests {
     fn test_refreeze_bounded_by_area_before_step() {
         let component = Permafrost::new();
         let soil = &component.parameters.mineral_soil;
-        let (aerobic_rate, anaerobic_rate, aerobic_fraction) =
-            component.seasonal_rates(soil, -20.0);
+        let season = season(&component, -20.0);
+        let (aerobic_rate, anaerobic_rate) = component.decomposition_rates(soil, &season);
+        let aerobic_fraction = component.aerobic_fraction(soil, &season);
         assert!((aerobic_fraction - 0.95).abs() < 1e-12);
         let mut band = half_thawed(0.5);
 
         // Ten years at -2/yr would refreeze 9.5 and 0.5 of area, more than the 0.25 of each type.
-        let d = component.step_band(soil, &mut band, -20.0, 10.0);
+        let d = component.step_band(soil, &mut band, &season, 10.0);
 
         // The split moves 0.225 of area and 2.25 GtC to aerobic before the refreeze.
         assert!((band.aerobic_area - 0.225).abs() < 1e-12);
@@ -545,8 +593,9 @@ mod tests {
             aerobic_fraction: 0.25,
             ..Default::default()
         };
-        let (_, _, aerobic_fraction) = component.seasonal_rates(soil, 1.0);
-        component.step_band(soil, &mut band, 1.0, 1.0);
+        let season = season(&component, 1.0);
+        let aerobic_fraction = component.aerobic_fraction(soil, &season);
+        component.step_band(soil, &mut band, &season, 1.0);
         let thaw = soil.thaw_rate;
         assert!((band.aerobic_area - 0.25 * thaw).abs() < 1e-15);
         assert!((band.anaerobic_area - 0.75 * thaw).abs() < 1e-15);
@@ -557,10 +606,10 @@ mod tests {
     fn test_complete_refreeze_emits_negative_carbon_next_year() {
         let component = Permafrost::new();
         let soil = &component.parameters.mineral_soil;
-        let (_, _, aerobic_fraction) = component.seasonal_rates(soil, -20.0);
-        let mut band = half_thawed(aerobic_fraction);
+        let season = season(&component, -20.0);
+        let mut band = half_thawed(component.aerobic_fraction(soil, &season));
 
-        let first = component.step_band(soil, &mut band, -20.0, 1.0);
+        let first = component.step_band(soil, &mut band, &season, 1.0);
         assert!(first.aerobic > 0.0 && first.anaerobic > 0.0);
         assert!(band.aerobic_area.abs() < 1e-12 && band.anaerobic_area.abs() < 1e-12);
         assert!((band.frozen_area - 1.0).abs() < 1e-12);
@@ -570,9 +619,9 @@ mod tests {
         assert!((aerobic_pool + first.aerobic).abs() < 1e-12);
         assert!(aerobic_pool < 0.0 && anaerobic_pool < 0.0);
 
-        let second = component.step_band(soil, &mut band, -20.0, 1.0);
+        let second = component.step_band(soil, &mut band, &season, 1.0);
         assert!(second.aerobic < 0.0 && second.anaerobic < 0.0);
-        let (aerobic_rate, _, _) = component.seasonal_rates(soil, -20.0);
+        let (aerobic_rate, _) = component.decomposition_rates(soil, &season);
         assert!((second.aerobic - aerobic_rate * aerobic_pool / 2.0).abs() < 1e-12);
     }
 }

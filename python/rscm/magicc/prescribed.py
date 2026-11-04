@@ -501,6 +501,7 @@ def volcanic_substeps(  # noqa: PLR0913
     efficacy: float = 1.0,
     internal_efficacy: float = 1.0078325986062864,
     rf_regions: Sequence[float] | None = None,
+    until: float | None = None,
 ) -> dict[str, object]:
     """Monthly volcanic forcing as ClimateUDEB's ``subannual_forcing``.
 
@@ -509,11 +510,14 @@ def volcanic_substeps(  # noqa: PLR0913
     With ``rf_regions``, ClimateUDEB divides ``efficacy`` by the internal efficacy,
     which it recalculates each year, and ``internal_efficacy`` applies only in the
     first year.
+    Months more than a year after ``until`` are left out, as no run to then reads them.
     """
     t = np.asarray(times, dtype=np.float64)
     nh = np.asarray(northern, dtype=np.float64)
     sh = np.asarray(southern, dtype=np.float64)
     ok = ~(np.isnan(nh) | np.isnan(sh))
+    if until is not None:
+        ok &= t <= until + 1
     t, nh, sh = t[ok], nh[ok], sh[ok]
     factor = scale
     if rf_regions is None:
