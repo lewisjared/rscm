@@ -81,7 +81,7 @@ def write_subpackage_pages(package: object) -> tuple[PackageInfo, ...]:
     Write pages for the sub-packages of a package
     """
     sub_packages = []
-    for _, name, is_pkg in pkgutil.walk_packages(package.__path__):
+    for _, name, is_pkg in pkgutil.iter_modules(package.__path__):
         # Skip "private" packages
         if name.startswith("_"):
             continue
