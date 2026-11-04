@@ -41,6 +41,7 @@ from rscm.fair import (
     run_fair,
 )
 from rscm.fair.config import forcing_agents, is_ghg
+from rscm.fair.ensemble import SPECIES_ATTRIBUTES
 from rscm.fair.run import _on_timebounds
 from rscm.magicc import ClimateUDEBBuilder
 
@@ -74,6 +75,7 @@ CASES = (
     "ssp245_leach",
     "ssp245_5yr",
     "ssp245_concentration",
+    "ssp245_prescribed",
     *(f"calibrated_{member}" for member in CALIBRATION_MEMBERS),
 )
 CHEMISTRY_CASES = (
@@ -81,6 +83,7 @@ CHEMISTRY_CASES = (
     "ssp119",
     "ssp245_5yr",
     "ssp245_concentration",
+    "ssp245_prescribed",
     *(f"calibrated_{member}" for member in CALIBRATION_MEMBERS),
 )
 
@@ -119,7 +122,10 @@ def _inputs(
             variable, unit = exogenous
             mode = s["input_mode"]
             frame = timepoints if mode == "emissions" else timebounds
-            inputs[variable] = (frame[f"{mode}|{s['name']}"].to_numpy(), unit)
+            column = f"{mode}|{s['name']}"
+            # FaIR adds the temperature feedback to its prescribed forcing in place.
+            column = frame.get(f"prescribed_{column}", frame[column])
+            inputs[variable] = (column.to_numpy(), unit)
     return inputs
 
 
@@ -252,6 +258,38 @@ def test_calibration_matches_fair(member: int) -> None:
             assert _same(value, fair_entry[key]), (entry["name"], key)
 
 
+def _assert_ensemble_member(result: Any, run: Run) -> None:
+    """Assert an ensemble member matches its FaIR run, with NaN where FaIR has NaN."""
+    for layer in range(len(run.config["climate"]["ocean_heat_capacity"])):
+        assert_close(
+            result.temperature.sel(layer=layer), run.fair(f"temperature|{layer}")
+        )
+    assert_close(result.forcing_sum, run.fair("forcing_sum"))
+    for attribute in SPECIES_ATTRIBUTES:
+        expected = {
+            column.removeprefix(f"{attribute}|")
+            for column, values in run.timebounds.items()
+            if str(column).startswith(f"{attribute}|") and np.isfinite(values).all()
+        }
+        actual = {
+            specie
+            for specie in result.specie.values
+            if not np.isnan(result[attribute].sel(specie=specie).to_numpy()).all()
+        }
+        assert actual == expected, attribute
+        for specie in expected:
+            assert_close(
+                result[attribute].sel(specie=specie),
+                run.fair(f"{attribute}|{specie}"),
+                f"{attribute}|{specie}",
+            )
+    for column in run.timepoints.columns:
+        specie = column.removeprefix("emissions|")
+        assert_close(
+            result.emissions.sel(specie=specie), run.timepoints[column], column
+        )
+
+
 def test_ensemble() -> None:
     xr = pytest.importorskip("xarray")
     configs = calibration()
@@ -272,36 +310,28 @@ def test_ensemble() -> None:
 
     assert isinstance(result, xr.Dataset)
     for member, run in runs.items():
-        member_result = result.sel(scenario="historical", config=member)
-        for layer in range(3):
-            assert_close(
-                member_result.temperature.sel(layer=layer),
-                run.fair(f"temperature|{layer}"),
-            )
-        assert_close(member_result.forcing_sum, run.fair("forcing_sum"))
-        for attribute in ("concentration", "forcing", "airborne_emissions"):
-            compared = 0
-            for specie in result.specie.values:
-                actual = member_result[attribute].sel(specie=specie)
-                if not np.isnan(actual.to_numpy()).all():
-                    assert_close(actual, run.fair(f"{attribute}|{specie}"), specie)
-                    compared += 1
-            ghgs = sum(map(is_ghg, run.config["species"]))
-            assert (
-                compared
-                == {
-                    "concentration": ghgs + 1,
-                    "forcing": len(forcing_agents(run.config)),
-                    "airborne_emissions": ghgs,
-                }[attribute]
-            )
-        for column in run.timepoints.columns:
-            specie = column.removeprefix("emissions|")
-            assert_close(
-                member_result.emissions.sel(specie=specie),
-                run.timepoints[column],
-                column,
-            )
+        _assert_ensemble_member(result.sel(scenario="historical", config=member), run)
+
+
+def test_ensemble_prescribed() -> None:
+    """Prescribed forcing gets FaIR's temperature feedback, and EESC is prescribed."""
+    pytest.importorskip("xarray")
+    run = load("ssp245_prescribed")
+    result = run_ensemble(
+        {"config": run.config},
+        {"ssp245": _inputs(run.config, run.timebounds, run.timepoints)},
+        run.timebounds.index.to_numpy(),
+    )
+    _assert_ensemble_member(result.sel(scenario="ssp245", config="config"), run)
+
+
+def test_prescribed_ghg_forcing_is_rejected() -> None:
+    config = load_config(DATA / "ssp245.json")
+    for s in config["species"]:
+        if s["name"] == "CH4":
+            s["input_mode"] = "forcing"
+    with pytest.raises(ValueError, match="CH4"):
+        build_components(config)
 
 
 def test_from_fair() -> None:

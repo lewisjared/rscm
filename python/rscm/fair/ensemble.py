@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from rscm.fair import naming
-from rscm.fair.config import emission_drivers, is_ghg, species_outputs
+from rscm.fair.config import (
+    emission_drivers,
+    forcing_agents,
+    is_ghg,
+    prescribed_temperature_feedback,
+    species_outputs,
+)
 from rscm.fair.run import run_fair
 
 if TYPE_CHECKING:
@@ -111,9 +117,14 @@ def run_ensemble(
         name: np.full([sizes[d] for d in names], np.nan) for name, names in dims.items()
     }
 
+    # FaIR has zero airborne emissions of the species without a gas cycle.
+    data["airborne_emissions"][..., [not is_ghg(s) for s in first["species"]]] = 0.0
+    timestep = bounds[1] - bounds[0]
     index = {specie: k for k, specie in enumerate(species)}
     species_series = {}
     emission_series = {}
+    feedbacks = {}
+    accumulated = {}
     for name in config_names:
         config = configs[name]
         species_series[name] = [
@@ -125,6 +136,15 @@ def run_ensemble(
             (index[s["name"]], *found)
             for s in config["species"]
             if (found := _emissions(config, s)) is not None
+        ]
+        feedbacks[name] = [
+            (index[s["name"]], feedback)
+            for s in forcing_agents(config)
+            if (feedback := prescribed_temperature_feedback(s)) != 0
+        ]
+        # The gas cycle accumulates greenhouse gas emissions.
+        accumulated[name] = [
+            k for k, *_ in emission_series[name] if not is_ghg(config["species"][k])
         ]
 
     for i, inputs in enumerate(scenarios.values()):
@@ -146,6 +166,16 @@ def run_ensemble(
             for k, variables, timepoints in emission_series[name]:
                 data["emissions"][:, i, j, k] = np.sum(
                     [_values(outputs, v)[timepoints] for v in variables], axis=0
+                )
+            surface = data["temperature"][:-1, i, j, 0]
+            for k, feedback in feedbacks[name]:
+                # The model's prescribed forcing is its input, without the feedback.
+                data["forcing"][1:, i, j, k] += surface * feedback
+            for k in accumulated[name]:
+                cumulative = data["cumulative_emissions"][:, i, j, k]
+                cumulative[0] = 0.0
+                cumulative[1:] = (
+                    np.cumsum(data["emissions"][:, i, j, k]) * timestep + cumulative[0]
                 )
 
     return xr.Dataset(

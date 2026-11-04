@@ -91,10 +91,17 @@ impl FairEnergyBalance {
                 "ocean_heat_capacity and ocean_heat_transfer must have the same length".into(),
             ));
         }
-        Ok(Self {
+        let component = Self {
             parameters,
             discretised: OnceLock::new(),
-        })
+        };
+        // The timestep scales whole rows, so it cannot make the matrix singular.
+        if !component.eb_matrix(1.0).lu().is_invertible() {
+            return Err(RSCMError::Error(
+                "The energy balance matrix is singular: check the heat transfers and gamma".into(),
+            ));
+        }
+        Ok(component)
     }
 
     /// Parameters of this component.
@@ -150,7 +157,7 @@ impl FairEnergyBalance {
         let forcing_vector_d = eb_matrix
             .lu()
             .solve(&rhs)
-            .expect("The energy balance matrix is invertible for positive heat capacities");
+            .expect("from_parameters rejects a singular energy balance matrix");
         Discretised {
             dt,
             eb_matrix_d,
@@ -277,6 +284,16 @@ mod tests {
         let mut p = component().parameters.clone();
         p.ocean_heat_capacity = vec![8.0];
         p.ocean_heat_transfer = vec![1.1];
+        assert!(FairEnergyBalance::from_parameters(p).is_err());
+    }
+
+    #[test]
+    fn rejects_a_singular_matrix() {
+        let mut p = component().parameters.clone();
+        p.ocean_heat_transfer[2] = 0.0;
+        assert!(FairEnergyBalance::from_parameters(p.clone()).is_err());
+        p.ocean_heat_transfer[2] = 0.9;
+        p.gamma_autocorrelation = 0.0;
         assert!(FairEnergyBalance::from_parameters(p).is_err());
     }
 

@@ -38,8 +38,9 @@ It differs from the C library's by an ulp, which CO2's 1e9-year box turns into a
 - [x] Prescribed solar and volcanic forcing, and the efficacy-weighted total (`FairForcingAggregation`).
 - [x] Parity for the full default species set, SSP2-4.5 and SSP1-1.9, 5-yearly and concentration-driven.
 
-FaIR calculates EESC after the aerosol forcing, so EESC never reaches ERFari.
+FaIR calculates EESC after the aerosol forcing, so calculated EESC never reaches ERFari.
 `rscm.fair` leaves it out of the aerosol drivers to match.
+`ssp245_prescribed` covers prescribed EESC, which does reach ERFari.
 
 ## Slice 5: Python
 
@@ -63,4 +64,5 @@ so `scale_prescribed_forcing` applies it to the inputs as fair-calibrate does.
 - [ ] Ensemble benchmark against `fair`.
 - [ ] Stochastic mode.
 - [ ] Other GHG and CH4 methods.
+- [ ] Greenhouse gases with prescribed forcing.
 - [ ] Restarts.

@@ -98,14 +98,18 @@ The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateU
 - Stochastic runs are not supported. `read_calibration` ignores the stochastic parameters
   and `from_fair` rejects a stochastic config.
 - Only the Meinshausen 2020 greenhouse gas method is implemented.
-- FaIR calculates EESC after the aerosol forcing, so EESC never reaches ERFari or ERFaci.
-  `rscm.fair` leaves it out of those drivers to match.
+- Greenhouse gases with prescribed forcing are not supported.
+- FaIR calculates EESC after the aerosol forcing, so calculated EESC never reaches ERFari or ERFaci.
+  `rscm.fair` leaves it out of those drivers to match. Prescribed EESC does reach them.
+- The model's prescribed forcing variables stay the inputs.
+  The total forcing and `run_ensemble` include their temperature feedback, as FaIR does.
 - Restarts from a previous run are not supported.
 
 ## Parity tests
 
 `tests/regression/test_fair.py` compares every output with FaIR reference runs:
 the energy balance alone, emissions-driven, concentration-driven and 5-yearly SSP runs,
+an SSP run with prescribed EESC and temperature feedback on the prescribed forcing,
 and three fair-calibrate v1.6.1 posterior members over the CMIP7 history.
 `scripts/fair/generate_fixtures.py` writes the reference runs:
 

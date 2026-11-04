@@ -119,7 +119,8 @@ def exogenous_variable(entry: dict[str, Any]) -> tuple[str, str] | None:
     if mode == "emissions":
         return emissions(entry["name"]), emissions_unit(entry)
     if mode == "concentration":
-        return concentration(entry["name"]), concentration_unit(entry)
+        variable = EESC if entry["type"] == "eesc" else concentration(entry["name"])
+        return variable, concentration_unit(entry)
     if mode == "forcing":
         return forcing(entry), "W/m^2"
     return None

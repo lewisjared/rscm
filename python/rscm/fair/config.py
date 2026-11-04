@@ -152,7 +152,7 @@ def species_outputs(config: FairConfig) -> dict[str, dict[str, str]]:
             outputs["concentration"][name] = naming.concentration(name)
             outputs["airborne_emissions"][name] = naming.airborne_emissions(name)
             outputs["cumulative_emissions"][name] = naming.cumulative_emissions(name)
-        elif s["type"] == "eesc" and s["input_mode"] == "calculated":
+        elif s["type"] == "eesc":
             outputs["concentration"][name] = naming.EESC
     return outputs
 
@@ -308,7 +308,7 @@ def _aerosol_drivers(
 ) -> list[dict[str, Any]]:
     """Drivers in species order.
 
-    EESC is left out because FaIR calculates it after the aerosol forcing,
+    Calculated EESC is left out because FaIR calculates it after the aerosol forcing,
     so it is missing when the aerosol forcing reads it.
     """
     drivers = []
@@ -317,7 +317,9 @@ def _aerosol_drivers(
             continue
         if s["aerosol_chemistry_from_emissions"]:
             drivers.append(_driver(s, "emissions", coefficient, key=key))
-        elif s["aerosol_chemistry_from_concentration"] and s["type"] != "eesc":
+        elif s["aerosol_chemistry_from_concentration"] and not (
+            s["type"] == "eesc" and s["input_mode"] == "calculated"
+        ):
             drivers.append(_driver(s, "concentration", coefficient, key=key))
     return drivers
 
@@ -386,16 +388,19 @@ def forcing_agents(config: FairConfig) -> list[Species]:
     ]
 
 
+def prescribed_temperature_feedback(entry: Species) -> float:
+    """Return the forcing per kelvin the aggregation adds to a prescribed forcing."""
+    if entry["input_mode"] == "forcing":
+        return _value(entry["forcing_temperature_feedback"])
+    return 0.0
+
+
 def _aggregation(config: FairConfig) -> Component:
     agents = [
         {
             "forcing": naming.forcing(s),
             "efficacy": _value(s["forcing_efficacy"]),
-            "temperature_feedback": (
-                _value(s["forcing_temperature_feedback"])
-                if s["input_mode"] == "forcing"
-                else 0.0
-            ),
+            "temperature_feedback": prescribed_temperature_feedback(s),
         }
         for s in forcing_agents(config)
     ]
@@ -425,6 +430,10 @@ def build_components(
     temperature from the total effective radiative forcing.
     """
     gases = [s for s in config["species"] if is_ghg(s)]
+    prescribed = [s["name"] for s in gases if s["input_mode"] == "forcing"]
+    if prescribed:
+        msg = f"Prescribed greenhouse gas forcing is not supported: {prescribed}"
+        raise ValueError(msg)
     components = []
     if thornhill(config):
         components.append(_ch4_lifetime(config))
@@ -476,7 +485,7 @@ def initial_values(
                 )
             values[naming.airborne_emissions(s["name"])] = 0.0
             values[naming.cumulative_emissions(s["name"])] = 0.0
-        if s["type"] == "eesc":
+        if s["type"] == "eesc" and s["input_mode"] == "calculated":
             values[naming.EESC] = _value(s["baseline_concentration"])
     for s in forcing_agents(config):
         if s["input_mode"] != "forcing":

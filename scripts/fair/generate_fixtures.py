@@ -15,6 +15,8 @@ Inputs are part of the output.
 Emissions-driven species keep their emissions,
 concentration-driven species their concentrations
 and forcing-driven species their forcing.
+FaIR adds the temperature feedback to prescribed forcing in place,
+so a case with that feedback also writes the input as ``prescribed_forcing|<specie>``.
 
 Usage:
     uv run --no-project --with fair==2.2.5 --with numpy==2.4.2 \
@@ -70,6 +72,8 @@ CLIMATE_2 = {
     "ocean_heat_capacity": [8.0, 120.0],
     "deep_ocean_efficacy": 1.3,
 }
+
+EESC = "Equivalent effective stratospheric chlorine"
 
 #: Eruptions in the energy balance cases: first and end year after 1850, size (W/m2).
 ERUPTIONS = ((40, 42, 3.0), (120, 121, 2.0))
@@ -190,7 +194,7 @@ def _config(f, climate, config):
     }
 
 
-def _write(name, f, climate, config="config"):
+def _write(name, f, climate, config="config", extra=None):
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / f"{name}.json").write_text(
         json.dumps(_config(f, climate, config), indent=1) + "\n"
@@ -199,7 +203,10 @@ def _write(name, f, climate, config="config"):
         (TIMEBOUND_ATTRIBUTES, "timebounds", "timebounds"),
         (TIMEPOINT_ATTRIBUTES, "timepoints", "timepoints"),
     ):
-        _frame(f, attributes, dim, config).to_csv(
+        frame = _frame(f, attributes, dim, config)
+        if dim == "timebounds" and extra:
+            frame = frame.assign(**extra)
+        frame.to_csv(
             OUT / f"{name}_{suffix}.csv.gz",
             float_format="%.17g",
             compression={"method": "gzip", "mtime": 0},
@@ -232,16 +239,21 @@ def energy_balance(name, climate, step):
     _write(name, f, climate)
 
 
-def scenario(  # noqa: PLR0913
-    name,
+def _scenario(  # noqa: PLR0913
     scenario_name,
     *,
     step=1,
     ch4_method="thornhill2021",
     only=None,
     concentration=(),
+    eesc=None,
+    feedback=None,
 ):
-    """Write a run of the default AR6 species driven by an RCMIP scenario."""
+    """Run the default AR6 species on an RCMIP scenario.
+
+    `eesc` prescribes the EESC.
+    `feedback` sets `forcing_temperature_feedback` by specie.
+    """
     species, properties = read_properties()
     if only is not None:
         species = [s for s in species if s in only]
@@ -255,15 +267,48 @@ def scenario(  # noqa: PLR0913
     f.define_species(species, properties)
     f.allocate()
     f.fill_species_configs()
-    f.fill_from_rcmip()
+    if eesc is None:
+        f.fill_from_rcmip()
+    else:
+        # RCMIP has no EESC concentrations, so fill_from_rcmip must skip it.
+        f.properties_df.loc[EESC, "input_mode"] = "calculated"
+        f.fill_from_rcmip()
+        f.properties_df.loc[EESC, "input_mode"] = "concentration"
+    for specie, value in (feedback or {}).items():
+        fill(f.species_configs["forcing_temperature_feedback"], value, specie=specie)
     _climate(f, CLIMATE_3)
     _initialise(f)
+    if eesc is not None:
+        fill(f.concentration, eesc, specie=EESC)
     f.run(progress=False)
     # Rename the scenario so the frames select it like the other cases
     for attribute in (*TIMEBOUND_ATTRIBUTES, *TIMEPOINT_ATTRIBUTES):
         data = getattr(f, attribute)
         setattr(f, attribute, data.assign_coords(scenario=["scenario"]))
-    _write(name, f, CLIMATE_3)
+    return f
+
+
+def scenario(name, scenario_name, **kwargs):
+    """Write a run of the default AR6 species driven by an RCMIP scenario."""
+    _write(name, _scenario(scenario_name, **kwargs), CLIMATE_3)
+
+
+def prescribed():
+    """Write SSP2-4.5 with prescribed EESC and feedback on the prescribed forcing.
+
+    The EESC is that of the calculated run. Prescribed, it also reaches ERFari.
+    """
+    feedback = {"Solar": -0.2, "Volcanic": 0.1}
+    calculated = _scenario("ssp245")
+    eesc = calculated.concentration.sel(specie=EESC).values
+    inputs = {
+        f"prescribed_forcing|{specie}": calculated.forcing.sel(
+            specie=specie, scenario="scenario", config="config"
+        ).values
+        for specie in feedback
+    }
+    f = _scenario("ssp245", concentration=(EESC,), eesc=eesc, feedback=feedback)
+    _write("ssp245_prescribed", f, CLIMATE_3, extra=inputs)
 
 
 def _calibration_file(name):
@@ -360,6 +405,7 @@ def main():
         if p["type"] in ("f-gas", "other halogen", "cfc-11") and s != "Halon-1202"
     ]
     scenario("ssp245_concentration", "ssp245", concentration=("CH4", *halogens))
+    prescribed()
     calibrated()
 
 
