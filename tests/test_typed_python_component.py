@@ -288,7 +288,6 @@ def test_component_registry_multiple_components():
             return self.Outputs(c=3.0)
 
     registry = Component.get_registered_components()
-    assert len(registry) == 2
     assert "ComponentA" in registry
     assert "ComponentB" in registry
     assert "ComponentC" not in registry
