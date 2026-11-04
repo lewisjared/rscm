@@ -15,36 +15,34 @@
 # %% [markdown]
 # # Model Debugging and Inspection
 #
-# This notebook demonstrates how to debug and inspect RSCM models.
-# You will learn to inspect dependency graphs, trace data flow between
-# components, and diagnose common integration issues.
+# This notebook shows how to debug and inspect RSCM models.
+# You will learn to inspect dependency graphs, trace data flow between components,
+# and diagnose common integration issues.
 #
 # ## Overview
 #
 # When developing climate models, you often need to:
 #
-# - Understand how components are connected
-# - Trace how data flows through the model
-# - Identify why a model produces unexpected results
-# - Validate that components are correctly coupled
-#
-# RSCM provides several inspection tools to help with these tasks.
+# - Understand how components are connected.
+# - Trace how data flows through the model.
+# - Identify why a model produces unexpected results.
+# - Validate that components are correctly coupled.
 #
 # ## Related Resources
 #
-# - [Coupled Models](coupled_model.py): Building multi-component models
-# - [State Serialisation](state_serialisation.py): Saving model snapshots
-# - [Key Concepts](../key_concepts.md): Core RSCM architecture
+# - [Coupled Models](../coupled_model/): Building multi-component models
+# - [State Serialisation](../state_serialisation/): Saving model snapshots
+# - [Key Concepts](../../key_concepts/): Core RSCM architecture
 
 # %%
-import matplotlib.pyplot as plt
+import json
+
 import numpy as np
-import pydot
-from IPython.display import Image, display
 
 from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
 from rscm.core import (
     InterpolationStrategy,
+    Model,
     ModelBuilder,
     PythonComponent,
     RequirementDefinition,
@@ -56,30 +54,27 @@ from rscm.core import (
 # %% [markdown]
 # ## Setting Up a Test Model
 #
-# First, we'll create a simple model to demonstrate inspection techniques.
-# This model couples a carbon cycle component with a CO2 ERF (Effective
-# Radiative Forcing) component.
+# We reuse the carbon cycle and CO2 ERF model from [Coupled Models](../coupled_model/),
+# with 10-year steps from 1750 to 2100 and CO2 emissions that change in 1850, 1950 and 2050.
+# The setup defines the components `carbon_cycle` and `co2_erf`, the `time_axis`,
+# the exogenous `emissions` and `surface_temp`, and a `builder` holding all of them.
 
-# %%
-# Time axis from 1750 to 2100
+# %% tags=["remove_input"]
 t_initial = 1750.0
 t_final = 2100.0
 time_axis = TimeAxis.from_values(np.arange(t_initial, t_final + 1, 10.0))
 
-# Component parameters
 co2_erf = CO2ERFBuilder.from_parameters(dict(erf_2xco2=4.0, conc_pi=280.0)).build()
 carbon_cycle = CarbonCycleBuilder.from_parameters(
     dict(tau=20.3, conc_pi=280.0, alpha_temperature=0.0)
 ).build()
 
-# Exogenous data
 emissions = Timeseries(
     np.asarray([0.0, 5.0, 10.0, 8.0]),
     TimeAxis.from_bounds(np.asarray([t_initial, 1850.0, 1950.0, 2050.0, t_final])),
     "GtC / yr",
     InterpolationStrategy.Previous,
 )
-
 surface_temp = Timeseries(
     np.asarray([0.0]),
     TimeAxis.from_bounds(np.asarray([t_initial, t_final])),
@@ -87,8 +82,7 @@ surface_temp = Timeseries(
     InterpolationStrategy.Previous,
 )
 
-# Build the model
-model = (
+builder = (
     ModelBuilder()
     .with_rust_component(carbon_cycle)
     .with_rust_component(co2_erf)
@@ -102,127 +96,112 @@ model = (
             "Atmospheric Concentration|CO2": 280.0,
         }
     )
-).build()
+)
+
+# %%
+model = builder.build()
+
+# %% tags=["remove_input"]
+import matplotlib.pyplot as plt
+import pydot
+from IPython.display import SVG, display
+
+
+def show_graph(model):
+    """Render the component graph, labelling each node with its component name."""
+    graph = pydot.graph_from_dot_data(model.as_dot())[0]
+    for node in graph.get_nodes():
+        label = node.get_label()
+        if label:
+            node.set_label(label.strip('"').split(" {")[0])
+    display(SVG(graph.create_svg()))
+
 
 # %% [markdown]
 # ## Inspecting the Execution Graph
 #
-# The most useful debugging tool is `debug_info()`, which shows
-# the model's execution order, variable flow, and source classifications.
+# The most useful debugging tool is `debug_info()`,
+# which shows the model's execution order, variable flow and where each input comes from.
 #
 # For each component, you can see:
 #
-# - **`<-` (green)**: Input variables, tagged with their source:
-#   - `(exo)` = exogenous (externally provided)
-#   - `(upstream)` = produced by a component earlier in the execution order
-#   - `(own_state)` = this component's own state from the previous timestep
-# - **`<>` (magenta)**: State variables (read previous value, write new value)
-# - **`->` (blue)**: Output variables produced by this component
-# - **Grid tags** (yellow): Non-scalar grid types (e.g. `[FourBox]`)
+# - **`<-` (green)**: input variables, tagged with their source:
+#   - `(exo)`: exogenous (externally provided).
+#   - `(upstream)`: produced by a component earlier in the execution order.
+#   - `(own_state)`: this component's own state from the previous timestep.
+# - **`<>` (magenta)**: state variables (read the previous value, write a new value).
+# - **`->` (blue)**: output variables produced by this component.
+# - **Grid tags** (yellow): non-scalar grid types (for example `[FourBox]`).
 #
 # The `format` parameter controls the output style:
 #
-# - `"rich"` (default) - coloured terminal output
-# - `"plain"` - plain text (no ANSI codes)
-# - `"json"` - structured JSON for programmatic use
+# - `"rich"` (default): coloured terminal output.
+# - `"plain"`: plain text with no ANSI codes.
+# - `"json"`: structured JSON for programmatic use.
 
 # %%
 print(model.debug_info())
 
-# %%
-# The JSON format is useful for programmatic analysis
-import json
+# %% [markdown]
+# The JSON format suits programmatic checks:
 
+# %%
 debug_data = json.loads(model.debug_info("json"))
-print(f"Components: {len(debug_data['components'])}")
 for comp in debug_data["components"]:
     n_in = len(comp.get("inputs", []))
     n_out = len(comp.get("outputs", []))
     n_state = len(comp.get("states", []))
     print(
-        f"  [{comp['order']}] {comp['name']}: {n_in} inputs, {n_out} outputs, {n_state} states"
+        f"[{comp['order']}] {comp['name']}: {n_in} inputs, {n_out} outputs, {n_state} states"
     )
 
 # %% [markdown]
 # ### Structural Dependency Graph
 #
-# The DOT graph provides a complementary view showing how components are
-# connected. Each node represents a component, and edges show data
-# dependencies (which variable flows from one component to another).
-#
-# Use `model.as_dot()` to get the graph in DOT format, which can be
-# visualised using Graphviz.
+# `model.as_dot()` returns the component graph in Graphviz DOT format.
+# Each node is a component, and each edge is a variable that flows from one component to another.
+# Rendered with Graphviz, it looks like this:
 
-
-# %%
-def view_graph(model):
-    """Display the model's dependency graph."""
-    graph = pydot.graph_from_dot_data(model.as_dot())[0]
-    display(Image(graph.create_png()))
-
-
-view_graph(model)
-
-# %%
-# You can also print the raw DOT format for programmatic analysis
-print(model.as_dot())
+# %% tags=["remove_input"]
+show_graph(model)
 
 # %% [markdown]
 # ## Inspecting Model State
 #
-# The `TimeseriesCollection` contains all variables in the model.
-# You can inspect what variables exist and their current values.
+# The `TimeseriesCollection` returned by `model.timeseries()` holds every variable in the model.
+# After three steps, we list the variables and read one of them.
 
 # %%
-# Run the model partway through
 model.step()
 model.step()
 model.step()
 
-# Get the timeseries collection
 collection = model.timeseries()
-
-# List all variable names
-print("Variables in model:")
-for name in collection.names():
-    print(f"  - {name}")
+print(collection.names())
 
 # %% [markdown]
-# ### Accessing Variable Data
-#
-# Use `get_timeseries_by_name()` to access a specific variable's data.
+# `get_timeseries_by_name()` returns one variable's `Timeseries`.
+# Time points the model has not reached yet are NaN.
 
 # %%
-# Get a specific variable
 co2_conc = collection.get_timeseries_by_name("Atmospheric Concentration|CO2")
 
 print(f"Units: {co2_conc.units}")
 print(f"Latest value: {co2_conc.latest_value():.2f}")
-print(f"Values shape: {co2_conc.values().shape}")
-
-# %%
-# Plot the variable
-plt.figure(figsize=(10, 4))
-values = co2_conc.values()
-# The timeseries may have NaN for future timesteps
-valid_indices = ~np.isnan(values)
-times = time_axis.values()[valid_indices.flatten()]
-valid_values = values[valid_indices]
-plt.plot(times, valid_values)
-plt.xlabel("Year")
-plt.ylabel(f"CO2 Concentration ({co2_conc.units})")
-plt.title("Atmospheric CO2 Concentration")
-plt.grid(True)
-plt.show()
+print(f"First values: {co2_conc.values()[:5]}")
 
 # %% [markdown]
 # ## Tracing Data Flow
 #
-# To understand how values propagate through the model, you can inspect
-# multiple related variables together.
+# To see how values propagate through the model, run it to completion
+# and plot related variables together.
+# Here emissions accumulate, raise the CO2 concentration, and the concentration drives the forcing.
 
 # %%
-# Compare related variables
+model.run()
+collection = model.timeseries()
+
+# %% tags=["remove_input"]
 variables_to_trace = [
     "Emissions|CO2|Anthropogenic",
     "Cumulative Emissions|CO2",
@@ -230,147 +209,65 @@ variables_to_trace = [
     "Effective Radiative Forcing|CO2",
 ]
 
-# Run model to completion first
-model.run()
-collection = model.timeseries()
-
-fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-axes = axes.flatten()
-
-for ax, var_name in zip(axes, variables_to_trace):
+fig, axes = plt.subplots(2, 2, figsize=(12, 7), sharex=True)
+for ax, var_name in zip(axes.flat, variables_to_trace):
     ts = collection.get_timeseries_by_name(var_name)
-    if ts is not None:
-        values = ts.values()
-        valid = ~np.isnan(values)
-        ax.plot(time_axis.values()[valid.flatten()], values[valid])
-        ax.set_title(var_name)
-        ax.set_xlabel("Year")
-        ax.set_ylabel(ts.units)
-        ax.grid(True)
-    else:
-        ax.text(
-            0.5,
-            0.5,
-            f"Variable not found:\n{var_name}",
-            ha="center",
-            va="center",
-            transform=ax.transAxes,
-        )
-
-plt.tight_layout()
+    drawstyle = "steps-post" if var_name.startswith("Emissions") else "default"
+    ax.plot(time_axis.values(), ts.values(), drawstyle=drawstyle)
+    ax.set_title(var_name)
+    ax.set_ylabel(ts.units)
+    ax.grid(True, alpha=0.3)
+for ax in axes[-1]:
+    ax.set_xlabel("Year")
+fig.tight_layout()
 plt.show()
 
 # %% [markdown]
 # ## Step-by-Step Debugging
 #
-# For detailed debugging, step through the model one timestep at a time
+# For detailed debugging, step through a fresh model one timestep at a time
 # and inspect state after each step.
+# Here we advance to just before the emissions start in 1850 and print five steps.
 
 # %%
-# Rebuild model for step-by-step debugging
-model = (
-    ModelBuilder()
-    .with_rust_component(carbon_cycle)
-    .with_rust_component(co2_erf)
-    .with_time_axis(time_axis)
-    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
-    .with_exogenous_variable("Surface Temperature", surface_temp)
-    .with_initial_values(
-        {
-            "Cumulative Land Uptake": 0.0,
-            "Cumulative Emissions|CO2": 0.0,
-            "Atmospheric Concentration|CO2": 280.0,
-        }
-    )
-).build()
-
-# Advance to just before emissions start, then record values
+model = builder.build()
 while model.current_time() < 1840.0:
     model.step()
 
-debug_log = []
-
-print("Step-by-step execution:")
-print("-" * 60)
-
-for i in range(5):  # First 5 steps
-    # Get current time bounds
+for _ in range(5):
     t_start, t_end = model.current_time_bounds()
-    print(f"\nStep {i + 1}: {t_start:.0f} -> {t_end:.0f}")
-
-    # Execute one step
     model.step()
-
-    # Inspect key variables after step
     collection = model.timeseries()
     co2 = collection.get_timeseries_by_name("Atmospheric Concentration|CO2")
     erf = collection.get_timeseries_by_name("Effective Radiative Forcing|CO2")
-
-    co2_val = co2.latest_value() if co2 else float("nan")
-    erf_val = erf.latest_value() if erf else float("nan")
-
-    print(f"  CO2 concentration: {co2_val:.2f} ppm")
-    print(f"  CO2 ERF: {erf_val:.4f} W/m^2")
-
-    debug_log.append(
-        {
-            "step": i + 1,
-            "time": t_end,
-            "co2": co2_val,
-            "erf": erf_val,
-        }
+    print(
+        f"{t_start:.0f} -> {t_end:.0f}  CO2 {co2.latest_value():.2f} ppm"
+        f"  ERF {erf.latest_value():.3f} W/m^2"
     )
 
 # %% [markdown]
 # ## Using Serialisation for Debugging
 #
-# Model state can be serialised to TOML format for inspection or to
-# create checkpoints. This is useful for:
+# `to_toml()` captures the full model state as a checkpoint.
+# This is useful for sharing a problematic state with collaborators,
+# creating reproducible test cases, or inspecting the exact state at one point.
+# [State Serialisation](../state_serialisation/) describes the format.
 #
-# - Sharing problematic model states with collaborators
-# - Creating reproducible test cases
-# - Inspecting the exact state at a specific point
+# A model restored with `Model.from_toml()` continues from the same point
+# and gives the same results as the original.
 
 # %%
-# Serialise current state
-toml_str = model.to_toml()
+restored_model = Model.from_toml(model.to_toml())
+assert restored_model.current_time() == model.current_time()
 
-# Show first 2000 characters of the serialised state
-print("Model state (TOML format, truncated):")
-print("-" * 60)
-print(toml_str[:2000])
-print("...")
-
-# %% [markdown]
-# ### Restoring from Checkpoint
-#
-# You can restore a model from its serialised state and continue execution
-# from that point.
-
-# %%
-from rscm.core import Model
-
-# Restore model from TOML
-restored_model = Model.from_toml(toml_str)
-
-# Verify state matches
-print(f"Original model time: {model.current_time()}")
-print(f"Restored model time: {restored_model.current_time()}")
-
-# Continue execution from checkpoint
 restored_model.run()
-
-# Compare final values
-var_name = "Atmospheric Concentration|CO2"
-orig_co2 = model.timeseries().get_timeseries_by_name(var_name)
-rest_co2 = restored_model.timeseries().get_timeseries_by_name(var_name)
-
-# The original model didn't run to completion, so run it now
 model.run()
-orig_co2 = model.timeseries().get_timeseries_by_name(var_name)
 
-print(f"\nFinal CO2 (original): {orig_co2.latest_value():.2f}")
-print(f"Final CO2 (restored): {rest_co2.latest_value():.2f}")
+var_name = "Atmospheric Concentration|CO2"
+np.testing.assert_allclose(
+    restored_model.timeseries().get_timeseries_by_name(var_name).values(),
+    model.timeseries().get_timeseries_by_name(var_name).values(),
+)
 
 # %% [markdown]
 # ## Diagnosing Common Issues
@@ -380,13 +277,13 @@ print(f"Final CO2 (restored): {rest_co2.latest_value():.2f}")
 # The builder does not yet check that every exogenous input has data.
 # A model with a missing exogenous variable builds and runs,
 # but the variable is NaN and the NaN propagates into the outputs.
+# This model leaves out both `Emissions|CO2|Anthropogenic` and `Surface Temperature`.
 
 # %%
 incomplete_model = (
     ModelBuilder()
     .with_rust_component(carbon_cycle)
     .with_time_axis(time_axis)
-    # Missing: "Emissions|CO2|Anthropogenic" and "Surface Temperature"
     .with_initial_values(
         {
             "Cumulative Land Uptake": 0.0,
@@ -429,23 +326,20 @@ print(f"Incomplete model: {unfilled_exogenous(incomplete_model)}")
 # %% [markdown]
 # ### Missing Initial Values
 #
-# State variables require initial values. The error message will indicate
-# which variable is missing.
+# State variables need initial values.
+# Without them the build fails, and the error names the missing variable.
 
 # %%
-# Example: Missing initial value
 try:
-    incomplete_model = (
+    (
         ModelBuilder()
         .with_rust_component(carbon_cycle)
         .with_time_axis(time_axis)
         .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
         .with_exogenous_variable("Surface Temperature", surface_temp)
-        # Missing initial values
     ).build()
 except Exception as e:
-    print("Build error (expected):")
-    print(f"  {e}")
+    print(f"Build failed: {e}")
 
 # %% [markdown]
 # ### Runtime Errors
@@ -498,49 +392,13 @@ except RuntimeError as e:
     print(f"Step failed: {e}")
 
 # %% [markdown]
-# ### Debugging Tips Summary
+# ## Debugging Tips
 #
-# 1. **Inspect the execution graph**: Use `model.debug_info()` to see
-#    execution order, variable sources (exo/upstream/own_state), grid types,
-#    and any runtime transformations
+# - Use `debug_info()` to see execution order, where each input comes from, and grid types.
+# - Check inputs marked `(exo)`, because missing exogenous data is not a build error.
+# - Use `step()` to stop at a point of interest and read values with `get_timeseries_by_name()`.
+# - Save a problem state with `to_toml()` to reproduce or share it.
+# - Read the errors: build errors explain missing initial values and schema or grid mismatches,
+#   and runtime errors name the failing component and time interval.
 #
-# 2. **Check the dependency graph**: Use `model.as_dot()` to visualise
-#    the structural component connections
-#
-# 3. **List all variables**: Use `collection.names()` to see what
-#    variables exist in the model
-#
-# 4. **Inspect specific values**: Use `get_timeseries_by_name()` to
-#    access individual variable timeseries
-#
-# 5. **Step through execution**: Use `model.step()` for fine-grained
-#    control and inspect state after each timestep
-#
-# 6. **Use serialisation**: Save model state with `to_toml()` to create
-#    checkpoints or share problematic states
-#
-# 7. **Read error messages**: Build errors explain missing initial values
-#    and schema or grid mismatches
-#
-# 8. **Check exogenous inputs**: Missing exogenous data is not a build error,
-#    so check inputs marked `(exo)` in `debug_info()`
-#
-# 9. **Catch runtime errors**: `step()` and `run()` raise `RuntimeError`
-#    naming the failing component and time interval
-
-# %% [markdown]
-# ## Summary
-#
-# This notebook demonstrated how to:
-#
-# 1. Inspect execution order and variable flow with `debug_info()`
-# 2. Visualise the dependency graph with `as_dot()`
-# 3. Access variables via `TimeseriesCollection`
-# 4. Trace data flow between components
-# 5. Step through execution for detailed debugging
-# 6. Use serialisation for checkpoints and state inspection
-# 7. Understand common error messages
-# 8. Detect missing exogenous data and handle runtime errors
-#
-# For more advanced debugging of Rust components, see the
-# [Rust Development Tips](../developers/rust_tips.md) guide.
+# For debugging Rust components, see the [Rust Development Tips](../../developers/rust_tips/) guide.

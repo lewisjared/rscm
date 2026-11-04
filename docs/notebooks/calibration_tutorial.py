@@ -21,43 +21,35 @@
 #
 # The calibration framework provides two main workflows:
 #
-# 1. **Point Estimation**: Find the single best-fit parameter set that maximizes likelihood
-# 2. **MCMC Sampling**: Explore the full posterior distribution to quantify uncertainty
+# 1. **Point Estimation**: Find the single best-fit parameter set that maximises the likelihood.
+# 2. **MCMC Sampling**: Explore the full posterior distribution to quantify uncertainty.
 #
 # This tutorial covers:
-# - **Beginner**: Basic calibration workflow with a simple model
-# - **Intermediate**: Two-layer climate model calibration with diagnostics
-# - **Advanced**: Checkpoint/resume, thinning, and DataFrame integration
+#
+# - **Part 1**: The basic calibration workflow with a simple quadratic model.
+# - **Part 2**: Calibrating a two-layer climate model.
+# - **Part 3**: Checkpoint and resume, thinning, persistence and DataFrame integration.
 
 # %% [markdown]
 # ## Setup
-#
-# First, import the required libraries:
 
 # %%
-import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 from rscm.calibrate import (
     Bound,
     EnsembleSampler,
-    # Likelihood computation
     GaussianLikelihood,
     LogNormal,
-    # Model runner interface
     ModelRunner,
     Normal,
     Optimizer,
-    # Parameter set specification
     ParameterSet,
-    # Point estimation
     PointEstimator,
-    # Observations and targets
     Target,
-    # Distributions for parameter priors
     Uniform,
     WalkerInit,
-    # Progress tracking
     progress,
 )
 
@@ -65,64 +57,101 @@ from rscm.calibrate import (
 np.random.seed(42)
 
 # %% [markdown]
-# ---
-#
-# # Part 1: Beginner - Quadratic Model Calibration
-#
-# We'll start with a simple quadratic model: `y = a*x² + b*x + c`
-#
-# This demonstrates the complete workflow without climate model complexity.
+# Two helpers defined in a hidden cell, `posterior_table` and `plot_posteriors`,
+# summarise and plot posterior samples in both parts.
+
+# %% tags=["remove_input"]
+import matplotlib.pyplot as plt
+
+
+def posterior_table(
+    samples: dict[str, np.ndarray], truth: dict[str, float]
+) -> pd.DataFrame:
+    """Tabulate the mean, spread and 95% credible interval of each parameter."""
+    return pd.DataFrame(
+        {
+            name: {
+                "mean": np.mean(values),
+                "std": np.std(values),
+                "2.5%": np.percentile(values, 2.5),
+                "97.5%": np.percentile(values, 97.5),
+                "true": truth[name],
+            }
+            for name, values in samples.items()
+        }
+    ).T.round(4)
+
+
+def plot_posteriors(
+    samples: dict[str, np.ndarray], truth: dict[str, float], trace: bool = False
+) -> None:
+    """Plot a histogram per parameter, with an optional sample trace beside it."""
+    n_cols = 2 if trace else 1
+    _, axes = plt.subplots(
+        len(samples), n_cols, figsize=(7 * n_cols, 3 * len(samples)), squeeze=False
+    )
+    for row, (name, values) in zip(axes, samples.items()):
+        if trace:
+            row[0].plot(values, alpha=0.5)
+            row[0].axhline(truth[name], color="red", linestyle="--", label="True value")
+            row[0].set_xlabel("Sample")
+            row[0].set_ylabel(name)
+            row[0].set_title(f"Trace: {name}")
+            row[0].legend()
+            row[0].grid(True, alpha=0.3)
+        ax = row[-1]
+        ax.hist(values, bins=30, density=True, alpha=0.7, edgecolor="black")
+        ax.axvline(
+            truth[name], color="red", linestyle="--", linewidth=2, label="True value"
+        )
+        ax.axvline(np.mean(values), color="blue", linewidth=2, label="Posterior mean")
+        ax.set_xlabel(name)
+        ax.set_ylabel("Density")
+        ax.set_title(f"Posterior: {name}")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
 
 # %% [markdown]
-# ## Step 1: Generate Synthetic Observations
+# ## Part 1: Quadratic Model Calibration
 #
-# First, we create synthetic observations from a "true" model with known parameters.
+# We start with a simple quadratic model, `y = a*x² + b*x + c`.
+# This demonstrates the complete workflow without climate model complexity.
+#
+# ### Synthetic Observations
+#
+# We create synthetic observations from a "true" model with known parameters.
 
 # %%
-# True parameters (what we're trying to recover)
-true_a = -0.3
-true_b = 3.0
-true_c = 1.5
+true_params = {"a": -0.3, "b": 3.0, "c": 1.5}
 
 
-def _model(x: np.ndarray, a: float, b: float, c: float):
+def quadratic(x: np.ndarray, a: float, b: float, c: float) -> np.ndarray:
+    """Evaluate a*x² + b*x + c."""
     return a * x**2 + b * x + c
 
 
-# Generate observations: y = a*x^2 + b*x + c + noise
 x_obs = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-y_true = _model(x_obs, true_a, true_b, true_c)
-y_obs = y_true + np.random.normal(0, 0.1, size=len(x_obs))
-uncertainty = 0.1  # Standard deviation of noise
-
-# Plot observations
-plt.figure(figsize=(8, 5))
-plt.errorbar(x_obs, y_obs, yerr=uncertainty, fmt="o", label="Observations", capsize=5)
-plt.plot(x_obs, y_true, "--", label="True model", alpha=0.7)
-plt.xlabel("x")
-plt.ylabel("y")
-plt.legend()
-plt.title("Synthetic Observations")
-plt.grid(True, alpha=0.3)
-plt.show()
-
-print(f"True parameters: a={true_a}, b={true_b}, c={true_c}")
+uncertainty = 0.1
+y_obs = quadratic(x_obs, **true_params) + np.random.normal(
+    0, uncertainty, size=len(x_obs)
+)
 
 # %% [markdown]
-# ## Step 2: Define Parameter Priors
+# ### Parameter Priors
 #
-# We specify what we know about the parameters before seeing data (the prior distribution).
+# The prior distribution says what we know about the parameters before seeing data.
 # This might be an initial guess or a physically plausible range.
 
 # %%
-# Create parameter set with uniform priors
 params = ParameterSet()
 params.add("a", Uniform(-2.0, 2.0))
 params.add("b", Uniform(0.0, 5.0))
 params.add("c", Uniform(0.0, 5.0))
 
-print(f"Parameter names: {params.param_names}")
-print(f"Number of parameters: {len(params)}")
+params.param_names
 
 # %% [markdown]
 # Uniform priors are the simplest choice.
@@ -146,106 +175,58 @@ print("Latin hypercube samples:")
 print(informative_params.sample_lhs(4))
 
 # %% [markdown]
-# ## Step 3: Create Observation Target
+# ### Observation Target
 #
-# The target specifies what observations we want to match.
+# The target holds the observations the model should match, each with its uncertainty.
 
 # %%
-# Create target with observations
 target = Target()
 for x, y in zip(x_obs, y_obs):
     target.add_observation("y", float(x), float(y), uncertainty)
 
-print(f"Target has {len(x_obs)} observations for variable 'y'")
-
 
 # %% [markdown]
-# ## Step 4: Define the Model Runner
+# ### Model Runner
 #
-# The model runner takes parameters and produces model outputs.
+# The model factory takes a dict of parameter values and returns the model outputs
+# as `{variable: {time: value}}`, with one entry per observation.
+# `ModelRunner` wraps it for the estimators.
 
 
 # %%
 def model_factory(param_dict):
-    """
-    Run the quadratic model: y = a*x^2 + b*x + c
-
-    Parameters
-    ----------
-    param_dict : dict
-        Dictionary with keys 'a', 'b' and 'c'
-
-    Returns
-    -------
-    dict
-        Model outputs as {variable_name: {time: value}}
-    """
-    a = param_dict["a"]
-    b = param_dict["b"]
-    c = param_dict["c"]
-
-    # Compute model outputs for each observation time
-    return {"y": {float(x): float(a * x**2 + b * x + c) for x in x_obs}}
+    """Run the quadratic model at the observation points."""
+    a, b, c = param_dict["a"], param_dict["b"], param_dict["c"]
+    return {"y": {float(x): float(quadratic(x, a, b, c)) for x in x_obs}}
 
 
-# Create model runner
 runner = ModelRunner(
     model_factory=model_factory,
     param_names=["a", "b", "c"],
     output_variables=["y"],
 )
 
-print("Model runner created")
-
 # %% [markdown]
-# ## Step 5: Point Estimation - Find Best Fit
+# ### Point Estimation
 #
-# Use random search to find the parameter set that best fits the observations.
+# Random search over the prior finds the parameter set that best fits the observations.
+# 1000 samples are enough for three parameters.
 
 # %%
-# Create likelihood function
 likelihood = GaussianLikelihood()
-
-# Create point estimator
 estimator = PointEstimator(params, runner, likelihood, target)
-
-# Run random search with 1000 samples (sufficient for 3 parameters)
 result = estimator.optimize(Optimizer.random_search(), n_samples=1000)
 
-# Extract best parameters
-best_params_vec = result.best_params
-param_names = estimator.param_names
-best_params = dict(zip(param_names, best_params_vec))
-
-print("\n=== Point Estimation Results ===")
-print(
-    f"Best parameters: a={best_params['a']:.3f}, b={best_params['b']:.3f}, c={best_params['c']:.3f}"
-)
-print(f"True parameters: a={true_a:.3f}, b={true_b:.3f}, c={true_c:.3f}")
+best_params = dict(zip(estimator.param_names, result.best_params))
 print(f"Best log likelihood: {result.best_log_likelihood:.3f}")
-print(f"Total evaluations: {estimator.n_evaluations}")
+pd.DataFrame({"best": best_params, "true": true_params}).round(3)
 
-# %% [markdown]
-# ## Step 6: Visualise Point Estimation Results
-
-# %%
-# Plot best fit vs observations
+# %% tags=["remove_input"]
 x_plot = np.linspace(0, 6, 100)
-y_best = _model(x_plot, **best_params)
-y_true_plot = _model(x_plot, true_a, true_b, true_c)
-
-plt.figure(figsize=(10, 6))
-plt.errorbar(
-    x_obs,
-    y_obs,
-    yerr=uncertainty,
-    fmt="o",
-    label="Observations",
-    capsize=5,
-    markersize=8,
-)
-plt.plot(x_plot, y_true_plot, "--", label="True model", alpha=0.7, linewidth=2)
-plt.plot(x_plot, y_best, "-", label="Best fit", linewidth=2)
+plt.figure(figsize=(8, 5))
+plt.errorbar(x_obs, y_obs, yerr=uncertainty, fmt="o", label="Observations", capsize=5)
+plt.plot(x_plot, quadratic(x_plot, **true_params), "--", label="True model", alpha=0.7)
+plt.plot(x_plot, quadratic(x_plot, **best_params), "-", label="Best fit")
 plt.xlabel("x")
 plt.ylabel("y")
 plt.legend()
@@ -254,564 +235,251 @@ plt.grid(True, alpha=0.3)
 plt.show()
 
 # %% [markdown]
-# ## Step 7: MCMC Sampling - Quantify Uncertainty
+# ### MCMC Sampling
 #
-# Point estimation gives us the best fit, but doesn't tell us how certain we are.
+# Point estimation gives the best fit, but not how certain it is.
 # MCMC sampling explores the full posterior distribution.
+# The progress callback prints a line every 500 iterations.
 
 # %%
-# Create ensemble sampler
 sampler = EnsembleSampler(params, runner, likelihood, target)
-
-# Run MCMC with progress bar
-print("Running MCMC sampling...")
 chain = sampler.run_with_progress(
     n_iterations=1000,
     init=WalkerInit.from_prior(),
     thin=1,
-    progress_callback=progress.create_simple_callback(),
+    progress_callback=progress.create_simple_callback(print_every=500),
 )
 
-print("\nMCMC complete!")
-print(f"Total iterations: {chain.total_iterations}")
-print(f"Number of walkers: {sampler.default_n_walkers()}")
-print(f"Parameter names: {chain.param_names}")
+print(f"{sampler.default_n_walkers()} walkers, {chain.total_iterations} iterations")
 
 # %% [markdown]
-# ## Step 8: Check Convergence Diagnostics
+# ### Convergence Diagnostics
 #
-# Before trusting the results, we need to verify the MCMC chain has converged.
+# Before trusting the results, check that the chain has converged.
+# The first 200 iterations are discarded as burn-in.
+# R-hat should be close to 1, and `is_converged` checks it against a threshold (1.1 by default).
+# The effective sample size (ESS) and autocorrelation time show how many independent samples the chain holds.
 
 # %%
-# Discard first 200 iterations as burn-in
 discard = 200
 
-# Compute diagnostics
-r_hat = chain.r_hat(discard)
-ess = chain.ess(discard)
-autocorr_time = chain.autocorr_time(discard)
-is_converged = chain.is_converged(discard, threshold=1.2)
-
-print("\n=== Convergence Diagnostics ===")
-print("\nR-hat (should be < 1.1 for convergence):")
-for param, value in r_hat.items():
-    print(f"  {param}: {value:.4f}")
-
-print("\nEffective Sample Size:")
-for param, value in ess.items():
-    print(f"  {param}: {value:.0f}")
-
-print("\nAutocorrelation Time:")
-for param, value in autocorr_time.items():
-    print(f"  {param}: {value:.1f} steps")
-
-print(f"\nConverged: {is_converged}")
+print(f"Converged: {chain.is_converged(discard)}")
+pd.DataFrame(
+    {
+        "r_hat": chain.r_hat(discard),
+        "ess": chain.ess(discard),
+        "autocorr_time": chain.autocorr_time(discard),
+    }
+).round(2)
 
 # %% [markdown]
-# ## Step 9: Analyse Posterior Distribution
+# ### Posterior Distribution
+#
+# `to_param_dict` returns the samples after burn-in as one array per parameter.
+# The hidden `posterior_table` helper summarises each one.
 
 # %%
-# Get samples as dictionary
-samples_dict = chain.to_param_dict(discard)
+samples = chain.to_param_dict(discard)
+posterior_table(samples, true_params)
 
-# Compute posterior statistics
-a_samples = samples_dict["a"]
-b_samples = samples_dict["b"]
-c_samples = samples_dict["c"]
-
-print("\n=== Posterior Statistics ===")
-print("\nParameter 'a' (quadratic coefficient):")
-print(f"  Mean: {np.mean(a_samples):.3f}")
-print(f"  Std:  {np.std(a_samples):.3f}")
-print(
-    f"  95% credible interval: [{np.percentile(a_samples, 2.5):.3f}, {np.percentile(a_samples, 97.5):.3f}]"
-)
-print(f"  True value: {true_a:.3f}")
-
-print("\nParameter 'b' (linear coefficient):")
-print(f"  Mean: {np.mean(b_samples):.3f}")
-print(f"  Std:  {np.std(b_samples):.3f}")
-print(
-    f"  95% credible interval: [{np.percentile(b_samples, 2.5):.3f}, {np.percentile(b_samples, 97.5):.3f}]"
-)
-print(f"  True value: {true_b:.3f}")
-
-print("\nParameter 'c' (constant):")
-print(f"  Mean: {np.mean(c_samples):.3f}")
-print(f"  Std:  {np.std(c_samples):.3f}")
-print(
-    f"  95% credible interval: [{np.percentile(c_samples, 2.5):.3f}, {np.percentile(c_samples, 97.5):.3f}]"
-)
-print(f"  True value: {true_c:.3f}")
+# %% tags=["remove_input"]
+plot_posteriors(samples, true_params, trace=True)
 
 # %% [markdown]
-# ## Step 10: Visualise MCMC Results
+# The joint posteriors show how the parameters trade off against each other.
 
-# %%
-# Create trace plots and posteriors for all 3 parameters
-fig, axes = plt.subplots(3, 2, figsize=(14, 10))
-
-# Parameter a
-axes[0, 0].plot(a_samples, alpha=0.5)
-axes[0, 0].axhline(true_a, color="red", linestyle="--", label="True value")
-axes[0, 0].set_ylabel("a")
-axes[0, 0].set_title("Trace: Parameter a (quadratic)")
-axes[0, 0].legend()
-axes[0, 0].grid(True, alpha=0.3)
-
-axes[0, 1].hist(a_samples, bins=30, density=True, alpha=0.7, edgecolor="black")
-axes[0, 1].axvline(true_a, color="red", linestyle="--", linewidth=2, label="True value")
-axes[0, 1].axvline(
-    np.mean(a_samples), color="blue", linestyle="-", linewidth=2, label="Posterior mean"
-)
-axes[0, 1].set_xlabel("a")
-axes[0, 1].set_ylabel("Density")
-axes[0, 1].set_title("Posterior: Parameter a")
-axes[0, 1].legend()
-axes[0, 1].grid(True, alpha=0.3)
-
-# Parameter b
-axes[1, 0].plot(b_samples, alpha=0.5)
-axes[1, 0].axhline(true_b, color="red", linestyle="--", label="True value")
-axes[1, 0].set_ylabel("b")
-axes[1, 0].set_title("Trace: Parameter b (linear)")
-axes[1, 0].legend()
-axes[1, 0].grid(True, alpha=0.3)
-
-axes[1, 1].hist(b_samples, bins=30, density=True, alpha=0.7, edgecolor="black")
-axes[1, 1].axvline(true_b, color="red", linestyle="--", linewidth=2, label="True value")
-axes[1, 1].axvline(
-    np.mean(b_samples), color="blue", linestyle="-", linewidth=2, label="Posterior mean"
-)
-axes[1, 1].set_xlabel("b")
-axes[1, 1].set_ylabel("Density")
-axes[1, 1].set_title("Posterior: Parameter b")
-axes[1, 1].legend()
-axes[1, 1].grid(True, alpha=0.3)
-
-# Parameter c
-axes[2, 0].plot(c_samples, alpha=0.5)
-axes[2, 0].axhline(true_c, color="red", linestyle="--", label="True value")
-axes[2, 0].set_xlabel("Sample")
-axes[2, 0].set_ylabel("c")
-axes[2, 0].set_title("Trace: Parameter c (constant)")
-axes[2, 0].legend()
-axes[2, 0].grid(True, alpha=0.3)
-
-axes[2, 1].hist(c_samples, bins=30, density=True, alpha=0.7, edgecolor="black")
-axes[2, 1].axvline(true_c, color="red", linestyle="--", linewidth=2, label="True value")
-axes[2, 1].axvline(
-    np.mean(c_samples), color="blue", linestyle="-", linewidth=2, label="Posterior mean"
-)
-axes[2, 1].set_xlabel("c")
-axes[2, 1].set_ylabel("Density")
-axes[2, 1].set_title("Posterior: Parameter c")
-axes[2, 1].legend()
-axes[2, 1].grid(True, alpha=0.3)
-
-plt.tight_layout()
-plt.show()
-
-# %%
-# Joint posteriors (pairwise 2D histograms for 3 parameters)
-fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-
-# a vs b
-axes[0].hist2d(a_samples, b_samples, bins=30, cmap="Blues")
-axes[0].plot(
-    true_a,
-    true_b,
-    "r*",
-    markersize=20,
-    label="True values",
-    markeredgecolor="white",
-    markeredgewidth=1.5,
-)
-axes[0].set_xlabel("a")
-axes[0].set_ylabel("b")
-axes[0].set_title("Joint Posterior: a vs b")
-axes[0].legend()
-axes[0].grid(True, alpha=0.3)
-
-# a vs c
-axes[1].hist2d(a_samples, c_samples, bins=30, cmap="Blues")
-axes[1].plot(
-    true_a,
-    true_c,
-    "r*",
-    markersize=20,
-    label="True values",
-    markeredgecolor="white",
-    markeredgewidth=1.5,
-)
-axes[1].set_xlabel("a")
-axes[1].set_ylabel("c")
-axes[1].set_title("Joint Posterior: a vs c")
-axes[1].legend()
-axes[1].grid(True, alpha=0.3)
-
-# b vs c
-h = axes[2].hist2d(b_samples, c_samples, bins=30, cmap="Blues")
-axes[2].plot(
-    true_b,
-    true_c,
-    "r*",
-    markersize=20,
-    label="True values",
-    markeredgecolor="white",
-    markeredgewidth=1.5,
-)
-axes[2].set_xlabel("b")
-axes[2].set_ylabel("c")
-axes[2].set_title("Joint Posterior: b vs c")
-axes[2].legend()
-axes[2].grid(True, alpha=0.3)
-
-plt.colorbar(h[3], ax=axes[2], label="Sample density")
+# %% tags=["remove_input"]
+pairs = [("a", "b"), ("a", "c"), ("b", "c")]
+fig, axes = plt.subplots(1, len(pairs), figsize=(16, 5))
+for ax, (x_name, y_name) in zip(axes, pairs):
+    h = ax.hist2d(samples[x_name], samples[y_name], bins=30, cmap="Blues")
+    ax.plot(
+        true_params[x_name],
+        true_params[y_name],
+        "r*",
+        markersize=20,
+        markeredgecolor="white",
+        label="True values",
+    )
+    ax.set_xlabel(x_name)
+    ax.set_ylabel(y_name)
+    ax.set_title(f"Joint Posterior: {x_name} vs {y_name}")
+    ax.legend()
+plt.colorbar(h[3], ax=axes[-1], label="Sample density")
 plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ---
+# ## Part 2: Two-Layer Climate Model
 #
-# # Part 2: Intermediate - Two-Layer Climate Model
+# Now we calibrate a climate model: the two-layer energy balance model.
+# It simulates surface and deep ocean temperatures in response to radiative forcing.
 #
-# Now let's calibrate a real climate model - the two-layer energy balance model.
+# ### Running the Model
 #
-# This model simulates surface and deep ocean temperatures in response to radiative forcing.
+# `run_two_layer` builds the component from a full parameter dict, applies a constant 3 W/m² forcing
+# from 2000 to 2010 and returns the surface temperature in 2010.
+# The forcing collection also holds the starting temperatures, so it is built once and reused.
 
 # %%
-# Import RSCM components
-from rscm.core import (
-    InterpolationStrategy,
-    TimeAxis,
-    Timeseries,
-    TimeseriesCollection,
-)
+from rscm.core import InterpolationStrategy, TimeAxis, Timeseries, TimeseriesCollection
 from rscm.two_layer import TwoLayerBuilder
 
+time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0]))
+forcing = TimeseriesCollection()
+for name, value, unit in [
+    ("Effective Radiative Forcing", 3.0, "W/m^2"),
+    ("Surface Temperature", 0.0, "K"),
+    ("Deep Ocean Temperature", 0.0, "K"),
+]:
+    forcing.add_timeseries(
+        name,
+        Timeseries(np.array([value]), time_axis, unit, InterpolationStrategy.Previous),
+    )
+
+
+def run_two_layer(parameters: dict) -> float:
+    """Return the 2010 surface temperature for a full parameter set."""
+    component = TwoLayerBuilder.from_parameters(parameters).build()
+    result = component.solve(2000, 2010, forcing)
+    return float(result.get("Surface Temperature").as_scalar())
+
+
 # %% [markdown]
-# ## Step 1: Generate Synthetic Observations
+# ### Synthetic Temperature Observation
 #
-# We'll create synthetic temperature observations from a "true" model.
+# The "true" model gives one observation of the 2010 temperature, with added noise.
 
 # %%
-# True parameter values (physically realistic)
 true_climate_params = {
-    "lambda0": 1.1,  # W/(m² K) - climate feedback parameter
-    "efficacy": 1.3,  # dimensionless - ocean heat uptake efficacy
-    "a": 0.05,  # W/(m² K²) - nonlinear feedback
-    "eta": 0.7,  # W/(m² K) - heat exchange coefficient
-    "heat_capacity_deep": 100.0,  # W yr/(m² K) - deep ocean
-    "heat_capacity_surface": 8.0,  # W yr/(m² K) - surface layer
+    "lambda0": 1.1,  # W/(m² K)
+    "efficacy": 1.3,
+    "a": 0.05,  # W/(m² K²)
+    "eta": 0.7,  # W/(m² K)
+    "heat_capacity_deep": 100.0,  # W yr/(m² K)
+    "heat_capacity_surface": 8.0,  # W yr/(m² K)
 }
 
-# Create true model and run it
-true_component = TwoLayerBuilder.from_parameters(true_climate_params).build()
-
-# Simple forcing scenario: constant 3 W/m² forcing
-forcing_collection = TimeseriesCollection()
-forcing_collection.add_timeseries(
-    "Effective Radiative Forcing",
-    Timeseries(
-        np.array([3.0]),
-        TimeAxis.from_bounds(np.array([2000.0, 2010.0])),
-        "W/m^2",
-        InterpolationStrategy.Previous,
-    ),
-)
-# Initial state for temperature variables (starting from equilibrium)
-time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0]))
-forcing_collection.add_timeseries(
-    "Surface Temperature",
-    Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
-)
-forcing_collection.add_timeseries(
-    "Deep Ocean Temperature",
-    Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
-)
-
-# Run model
-result = true_component.solve(2000, 2010, forcing_collection)
-true_temp = result.get("Surface Temperature").as_scalar()
-
-# Add observational noise
-obs_temp = true_temp + np.random.normal(0, 0.05)  # Small noise
+true_temp = run_two_layer(true_climate_params)
+obs_temp = true_temp + np.random.normal(0, 0.05)
 obs_uncertainty = 0.1  # K
 
-print(f"True temperature: {true_temp:.3f} K")
-print(f"Observed temperature: {obs_temp:.3f} K")
-print(f"Uncertainty: ±{obs_uncertainty} K")
+print(f"True: {true_temp:.3f} K, observed: {obs_temp:.3f} ± {obs_uncertainty} K")
 
 # %% [markdown]
-# ## Step 2: Set Up Calibration
+# ### Calibration Setup
 #
-# We'll calibrate two key parameters: `lambda0` (climate feedback) and `a` (nonlinear feedback).
-# Other parameters will be fixed at their true values.
+# We calibrate two parameters: `lambda0` (climate feedback) and `a` (nonlinear feedback).
+# The others stay fixed at their true values,
+# so the model factory merges the sampled values into `fixed_climate_params`.
 
 # %%
-# Define parameter priors (wide enough to include true values)
 climate_params = ParameterSet()
-climate_params.add("lambda0", Uniform(0.8, 1.5))  # Typical range for climate feedback
-climate_params.add("a", Uniform(0.0, 0.1))  # Typical range for nonlinear feedback
+climate_params.add("lambda0", Uniform(0.8, 1.5))
+climate_params.add("a", Uniform(0.0, 0.1))
 
-# Create target from observations
 climate_target = Target()
 climate_target.add_observation("Surface Temperature", 2010.0, obs_temp, obs_uncertainty)
 
-print(f"Calibrating {len(climate_params)} parameters: {climate_params.param_names}")
-
-# %% [markdown]
-# ## Step 3: Create Climate Model Runner
-
-# %%
-# Fixed parameters (not being calibrated)
 fixed_climate_params = {
-    "efficacy": true_climate_params["efficacy"],
-    "eta": true_climate_params["eta"],
-    "heat_capacity_deep": true_climate_params["heat_capacity_deep"],
-    "heat_capacity_surface": true_climate_params["heat_capacity_surface"],
+    name: value
+    for name, value in true_climate_params.items()
+    if name not in climate_params.param_names
 }
 
 
 def climate_model_factory(param_values):
-    """
-    Create and run the two-layer climate model.
-
-    Parameters
-    ----------
-    param_values : dict
-        Dictionary with keys 'lambda0' and 'a'
-
-    Returns
-    -------
-    dict
-        Model outputs as {variable_name: {time: value}}
-    """
-    # Combine calibrated and fixed parameters
-    all_params = fixed_climate_params.copy()
-    all_params.update(param_values)
-
-    # Create and run model
-    component = TwoLayerBuilder.from_parameters(all_params).build()
-
-    time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0]))
-    forcing = TimeseriesCollection()
-    forcing.add_timeseries(
-        "Effective Radiative Forcing",
-        Timeseries(
-            np.array([3.0]),
-            time_axis,
-            "W/m^2",
-            InterpolationStrategy.Previous,
-        ),
-    )
-    # Initial state for temperature variables (starting from equilibrium)
-    forcing.add_timeseries(
-        "Surface Temperature",
-        Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
-    )
-    forcing.add_timeseries(
-        "Deep Ocean Temperature",
-        Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
-    )
-
-    result = component.solve(2000, 2010, forcing)
-    temp = result.get("Surface Temperature").as_scalar()
-
-    return {"Surface Temperature": {2010.0: float(temp)}}
+    """Run the two-layer model with the sampled parameters."""
+    temperature = run_two_layer({**fixed_climate_params, **param_values})
+    return {"Surface Temperature": {2010.0: temperature}}
 
 
-# Create runner
 climate_runner = ModelRunner(
     model_factory=climate_model_factory,
-    param_names=["lambda0", "a"],
+    param_names=climate_params.param_names,
     output_variables=["Surface Temperature"],
 )
 
-print("Climate model runner created")
-
 # %% [markdown]
-# ## Step 4: Point Estimation with Climate Model
+# ### Climate Point Estimate
 
 # %%
-# Create estimator
 climate_estimator = PointEstimator(
     climate_params, climate_runner, GaussianLikelihood(), climate_target
 )
-
-# Run random search
-print("Running point estimation (1000 samples)...")
 climate_result = climate_estimator.optimize(Optimizer.random_search(), n_samples=1000)
 
-# Extract results
-best_climate_params_vec = climate_result.best_params
-best_climate_params = dict(zip(climate_estimator.param_names, best_climate_params_vec))
-
-print("\n=== Climate Model Point Estimation ===")
-print("Best parameters:")
-print(
-    f"  lambda0 = {best_climate_params['lambda0']:.4f} (true: {true_climate_params['lambda0']:.4f})"
-)
-print(
-    f"  a       = {best_climate_params['a']:.4f} (true: {true_climate_params['a']:.4f})"
+best_climate_params = dict(
+    zip(climate_estimator.param_names, climate_result.best_params)
 )
 print(f"Best log likelihood: {climate_result.best_log_likelihood:.3f}")
+pd.DataFrame(
+    {
+        "best": best_climate_params,
+        "true": {name: true_climate_params[name] for name in best_climate_params},
+    }
+).round(4)
 
 # %% [markdown]
 # A single temperature observation cannot separate `lambda0` from `a`.
 # Many combinations give the same warming, so the best fit need not match the true values.
 # The posterior below stays close to the prior as a result.
 # More observations, such as a full temperature record or ocean heat content, would constrain both.
-
-# %% [markdown]
-# ## Step 5: MCMC Sampling for Climate Model
 #
-# Now we'll use MCMC to fully characterise the posterior distribution.
+# ### Climate MCMC Sampling
+#
 # The walkers start near the point estimate rather than across the whole prior.
 # `WalkerInit.ball(center, radius)` spreads them uniformly over a box of width `radius` around `center`.
 # `WalkerInit.explicit(positions)` takes one row of parameter values per walker instead.
 
 # %%
-# Create ensemble sampler
 climate_sampler = EnsembleSampler(
     climate_params, climate_runner, GaussianLikelihood(), climate_target
 )
-
-# Run MCMC with progress tracking
-print("Running MCMC for climate model (1000 iterations)...")
 climate_chain = climate_sampler.run_with_progress(
     n_iterations=1000,
-    init=WalkerInit.ball(best_climate_params_vec, 0.01),
+    init=WalkerInit.ball(climate_result.best_params, 0.01),
     thin=1,
-    progress_callback=progress.create_simple_callback(),
+    progress_callback=progress.create_simple_callback(print_every=500),
 )
 
-print(f"\nMCMC complete! Total iterations: {climate_chain.total_iterations}")
+print(f"Converged: {climate_chain.is_converged(discard)}")
+pd.DataFrame(
+    {"r_hat": climate_chain.r_hat(discard), "ess": climate_chain.ess(discard)}
+).round(2)
 
 # %% [markdown]
-# ## Step 6: Analyse Climate Model Results
+# ### Climate Posterior
 
 # %%
-# Check convergence
-discard_climate = 200
+climate_samples = climate_chain.to_param_dict(discard)
+posterior_table(climate_samples, true_climate_params)
 
-r_hat_climate = climate_chain.r_hat(discard_climate)
-ess_climate = climate_chain.ess(discard_climate)
-is_converged_climate = climate_chain.is_converged(discard_climate, threshold=1.2)
-
-print("=== Climate Model Diagnostics ===")
-print("\nR-hat:")
-for param, value in r_hat_climate.items():
-    status = "✓" if value < 1.2 else "✗"
-    print(f"  {param}: {value:.4f} {status}")
-
-print("\nEffective Sample Size:")
-for param, value in ess_climate.items():
-    print(f"  {param}: {value:.0f}")
-
-print(f"\nConverged: {is_converged_climate}")
-
-# %%
-# Get posterior samples
-climate_samples_dict = climate_chain.to_param_dict(discard_climate)
-lambda0_samples = climate_samples_dict["lambda0"]
-a_samples_climate = climate_samples_dict["a"]
-
-print("\n=== Climate Posterior Statistics ===")
-print("\nlambda0 (climate feedback):")
-print(f"  Posterior mean: {np.mean(lambda0_samples):.4f}")
-print(f"  Posterior std:  {np.std(lambda0_samples):.4f}")
-print(f"  True value:     {true_climate_params['lambda0']:.4f}")
-print(
-    f"  95% CI: [{np.percentile(lambda0_samples, 2.5):.4f}, {np.percentile(lambda0_samples, 97.5):.4f}]"
-)
-
-print("\na (nonlinear feedback):")
-print(f"  Posterior mean: {np.mean(a_samples_climate):.4f}")
-print(f"  Posterior std:  {np.std(a_samples_climate):.4f}")
-print(f"  True value:     {true_climate_params['a']:.4f}")
-print(
-    f"  95% CI: [{np.percentile(a_samples_climate, 2.5):.4f}, {np.percentile(a_samples_climate, 97.5):.4f}]"
-)
-
-# %%
-# Visualise climate model posteriors
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-# lambda0 posterior
-axes[0].hist(lambda0_samples, bins=40, density=True, alpha=0.7, edgecolor="black")
-axes[0].axvline(
-    true_climate_params["lambda0"],
-    color="red",
-    linestyle="--",
-    linewidth=2,
-    label="True value",
-)
-axes[0].axvline(
-    np.mean(lambda0_samples),
-    color="blue",
-    linestyle="-",
-    linewidth=2,
-    label="Posterior mean",
-)
-axes[0].set_xlabel("lambda0 [W/(m² K)]")
-axes[0].set_ylabel("Density")
-axes[0].set_title("Posterior: Climate Feedback Parameter")
-axes[0].legend()
-axes[0].grid(True, alpha=0.3)
-
-# a posterior
-axes[1].hist(a_samples_climate, bins=40, density=True, alpha=0.7, edgecolor="black")
-axes[1].axvline(
-    true_climate_params["a"],
-    color="red",
-    linestyle="--",
-    linewidth=2,
-    label="True value",
-)
-axes[1].axvline(
-    np.mean(a_samples_climate),
-    color="blue",
-    linestyle="-",
-    linewidth=2,
-    label="Posterior mean",
-)
-axes[1].set_xlabel("a [W/(m² K²)]")
-axes[1].set_ylabel("Density")
-axes[1].set_title("Posterior: Nonlinear Feedback")
-axes[1].legend()
-axes[1].grid(True, alpha=0.3)
-
-plt.tight_layout()
-plt.show()
+# %% tags=["remove_input"]
+plot_posteriors(climate_samples, true_climate_params)
 
 # %% [markdown]
-# ---
+# ## Part 3: Long Runs and DataFrames
 #
-# # Part 3: Advanced - Checkpointing and DataFrame Integration
+# Long-running calibrations need:
 #
-# For long-running calibrations, we need:
-# - **Checkpointing**: Save progress and resume if interrupted
-# - **Thinning**: Reduce memory usage for long chains
-# - **DataFrame integration**: Export to pandas for analysis
-
-# %% [markdown]
-# ## Checkpoint/Resume Workflow
+# - **Checkpointing**: Save progress and resume if interrupted.
+# - **Thinning**: Reduce memory usage for long chains.
+# - **DataFrame integration**: Export to pandas for analysis.
+#
+# These examples reuse the quadratic `sampler` from Part 1.
+#
+# ### Checkpoint and Resume
+#
+# `run_with_checkpoint` writes `<path>.chain` and `<path>.state` every `checkpoint_every` iterations.
 
 # %%
 import os
 import tempfile
 
-# Create temporary directory for checkpoints
 temp_dir = tempfile.mkdtemp()
 checkpoint_path = os.path.join(temp_dir, "chain_checkpoint")
 
-print(f"Checkpoint path: {checkpoint_path}")
-
-# %%
-# First run: 500 iterations with checkpointing every 100 steps
-print("Running first batch (500 iterations)...")
 chain_1 = sampler.run_with_checkpoint(
     n_iterations=500,
     init=WalkerInit.from_prior(),
@@ -819,102 +487,70 @@ chain_1 = sampler.run_with_checkpoint(
     checkpoint_every=100,
     checkpoint_path=checkpoint_path,
 )
+print(f"First run: {chain_1.total_iterations} iterations")
 
-print(f"First batch complete: {chain_1.total_iterations} iterations")
-print(f"Checkpoint files created: {checkpoint_path}.chain, {checkpoint_path}.state")
+# %% [markdown]
+# `resume_from_checkpoint` continues an interrupted run.
+# Its `n_iterations` is the total, not the number of extra iterations,
+# and the returned chain holds both the original and the new samples.
 
 # %%
-# Simulate interruption and resume
-print("\nResuming from checkpoint (500 -> 1000 total iterations)...")
 chain_2 = sampler.resume_from_checkpoint(
-    n_iterations=1000,  # Total iterations, not additional!
+    n_iterations=1000,
     checkpoint_path=checkpoint_path,
     checkpoint_every=100,
     thin=1,
 )
-
-print(f"Resumed chain complete: {chain_2.total_iterations} iterations")
-print("Chain contains both original and new samples")
+print(f"Resumed run: {chain_2.total_iterations} iterations")
 
 # %% [markdown]
-# ## Thinning for Memory Efficiency
+# ### Thinning
+#
+# `thin=10` stores only every tenth sample.
 
 # %%
-# Run with heavy thinning
-print("Running with thinning (thin=10)...")
 chain_thinned = sampler.run(
     n_iterations=1000,
     init=WalkerInit.from_prior(),
-    thin=10,  # Store only every 10th sample
+    thin=10,
 )
 
-# Compare memory usage
-samples_no_thin = chain.flat_samples(discard=0)
-samples_thinned = chain_thinned.flat_samples(discard=0)
-
-print("\n=== Thinning Comparison ===")
-print(f"No thinning (thin=1):  {samples_no_thin.shape[0]:,} samples")
-print(f"With thinning (thin=10): {samples_thinned.shape[0]:,} samples")
-print(f"Memory reduction: {samples_no_thin.shape[0] / samples_thinned.shape[0]:.1f}x")
+print(f"thin=1:  {chain.flat_samples(discard=0).shape[0]:,} samples")
+print(f"thin=10: {chain_thinned.flat_samples(discard=0).shape[0]:,} samples")
 
 # %% [markdown]
-# ## Chain Persistence - Save and Load
+# ### Saving, Loading and Merging Chains
+#
+# `merge` appends another chain's samples in place, for example from parallel runs.
 
 # %%
-# Save chain to file
-chain_file = os.path.join(temp_dir, "saved_chain.bin")
-chain.save(chain_file)
-
-print(f"Chain saved to: {chain_file}")
-print(f"File size: {os.path.getsize(chain_file) / 1024:.1f} KB")
-
-# Load chain from file
 from rscm.calibrate import Chain
 
+chain_file = os.path.join(temp_dir, "saved_chain.bin")
+chain.save(chain_file)
 loaded_chain = Chain.load(chain_file)
+print(
+    f"Loaded: {loaded_chain.total_iterations} iterations of {loaded_chain.param_names}"
+)
 
-print("\nChain loaded successfully")
-print(f"Total iterations: {loaded_chain.total_iterations}")
-print(f"Parameter names: {loaded_chain.param_names}")
-
-# %% [markdown]
-# ## Chain Merging
-
-# %%
-# Merge two chains (e.g., from parallel runs)
-chain_copy = Chain.load(chain_file)  # Make a copy
-original_iterations = chain_copy.total_iterations
-
-# Merge in place
-chain_copy.merge(loaded_chain)
-
-print("=== Chain Merging ===")
-print(f"Original chain: {original_iterations} iterations")
-print(f"Merged chain:   {chain_copy.total_iterations} iterations")
-print("Samples are concatenated in order")
+merged_chain = Chain.load(chain_file)
+merged_chain.merge(loaded_chain)
+print(f"Merged: {merged_chain.total_iterations} iterations")
 
 # %% [markdown]
-# ## DataFrame Integration (requires pandas)
+# ### DataFrame Integration
+#
+# `to_dataframe` returns one row per stored sample, with a column per parameter and `log_prob`.
+# It needs pandas.
 
 # %%
-# Convert chain to DataFrame
-df = chain.to_dataframe(discard=200)
-
-print("=== Chain as DataFrame ===")
-print(f"\nShape: {df.shape}")
-print("\nFirst few rows:")
-print(df.head())
-
-print("\nSummary statistics:")
-print(df.describe())
+chain.to_dataframe(discard=200).head()
 
 # %% [markdown]
 # Observations can also come from a DataFrame.
 # `Target.from_dataframe` needs a `variable` column, even for a single variable.
 
 # %%
-import pandas as pd
-
 obs_df = pd.DataFrame(
     {
         "variable": "y",
@@ -929,7 +565,7 @@ print(f"Variables: {df_target.variable_names()}")
 print(f"Observations: {df_target.total_observations()}")
 
 # %% [markdown]
-# ## Relative Uncertainties and Reference Periods
+# ### Relative Uncertainties and Reference Periods
 #
 # `add_observation_relative` sets each uncertainty as a fraction of the observed value.
 # `set_reference_period` records that a variable's observations are anomalies relative to a baseline.
@@ -949,16 +585,14 @@ print(f"Reference period: {surface.reference_period}")
 for obs in surface.observations:
     print(f"  {obs.time:.0f}: {obs.value:.2f} ± {obs.uncertainty:.3f} K")
 
-
 # %% [markdown]
-# ## Progress Tracking with ProgressTracker
+# ### Progress Tracking
+#
+# A `ProgressTracker` passed as the progress callback records the acceptance rate
+# and mean log probability at each iteration.
 
 # %%
-# Create progress tracker to record metrics history
 tracker = progress.ProgressTracker()
-
-# Run with tracker
-print("Running with progress tracker...")
 tracked_chain = sampler.run_with_progress(
     n_iterations=500,
     init=WalkerInit.from_prior(),
@@ -966,81 +600,70 @@ tracked_chain = sampler.run_with_progress(
     progress_callback=tracker,
 )
 
-# Plot convergence metrics
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-# Acceptance rate over time
-axes[0].plot(tracker.iterations, tracker.acceptance_rates)
-axes[0].axhline(0.25, color="red", linestyle="--", alpha=0.5, label="Target (25%)")
-axes[0].set_xlabel("Iteration")
-axes[0].set_ylabel("Acceptance Rate")
-axes[0].set_title("Acceptance Rate vs Iteration")
-axes[0].legend()
-axes[0].grid(True, alpha=0.3)
-
-# Mean log probability over time
-axes[1].plot(tracker.iterations, tracker.mean_log_probs)
-axes[1].set_xlabel("Iteration")
-axes[1].set_ylabel("Mean Log Probability")
-axes[1].set_title("Mean Log Probability vs Iteration")
-axes[1].grid(True, alpha=0.3)
-
-plt.tight_layout()
-plt.show()
-
-print(f"\nTracked {len(tracker.iterations)} iterations")
 print(f"Final acceptance rate: {tracker.acceptance_rates[-1]:.2%}")
 
 # %% [markdown]
-# ## Clean Up
+# The first iterations start from the prior and have very low log probabilities,
+# so the plot starts at iteration 50.
 
-# %%
-# Clean up temporary files
+# %% tags=["remove_input"]
+start = 50
+fig, axes = plt.subplots(1, 2, figsize=(14, 4))
+axes[0].plot(tracker.iterations[start:], tracker.acceptance_rates[start:])
+axes[0].set_ylabel("Acceptance Rate")
+axes[0].set_title("Acceptance Rate vs Iteration")
+axes[1].plot(tracker.iterations[start:], tracker.mean_log_probs[start:])
+axes[1].set_ylabel("Mean Log Probability")
+axes[1].set_title("Mean Log Probability vs Iteration")
+for ax in axes:
+    ax.set_xlabel("Iteration")
+    ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# %% tags=["remove_input"]
 import shutil
 
 shutil.rmtree(temp_dir)
-print("Temporary files cleaned up")
 
 # %% [markdown]
-# ---
-#
-# # Summary
+# ## Summary
 #
 # This tutorial covered:
 #
-# **Beginner:**
-# - Defining parameter priors with distributions (Uniform, Normal, LogNormal, Bound)
-# - Creating observation targets
-# - Setting up a model runner
-# - Point estimation to find best-fit parameters
-# - MCMC sampling to quantify uncertainty
-# - Convergence diagnostics (R-hat, ESS, acceptance rate)
+# **Part 1:**
 #
-# **Intermediate:**
-# - Calibrating a real climate model (two-layer energy balance)
-# - Warm-starting MCMC walkers near the point estimate
-# - Interpreting posterior distributions
-# - Visualising results (trace plots, posteriors, joint distributions)
+# - Defining parameter priors with distributions (`Uniform`, `Normal`, `LogNormal`, `Bound`).
+# - Creating observation targets.
+# - Setting up a model runner.
+# - Point estimation to find best-fit parameters.
+# - MCMC sampling to quantify uncertainty.
+# - Convergence diagnostics (R-hat, ESS, autocorrelation time).
 #
-# **Advanced:**
-# - Checkpoint/resume for long-running calibrations
-# - Thinning to reduce memory usage
-# - Chain persistence (save/load/merge)
-# - DataFrame integration for chains and observation targets
-# - Progress tracking with custom callbacks (`progress.create_tqdm_callback` gives a progress bar)
+# **Part 2:**
+#
+# - Calibrating a climate model (two-layer energy balance).
+# - Warm-starting MCMC walkers near the point estimate.
+# - Interpreting posterior distributions.
+#
+# **Part 3:**
+#
+# - Checkpoint and resume for long-running calibrations.
+# - Thinning to reduce memory usage.
+# - Chain persistence (save, load and merge).
+# - DataFrame integration for chains and observation targets.
+# - Progress tracking with callbacks (`progress.create_tqdm_callback` gives a progress bar).
 #
 # ## Next Steps
 #
-# - Try calibrating with multiple observation variables
-# - Use `Target.add_observation_relative` for uncertainties given as a fraction of the value
-# - Tune the proposal with `EnsembleSampler.with_stretch_param`
-# - Use `GaussianLikelihood(normalize=True)` when comparing models by likelihood
-# - Explore posterior predictive checks to validate model fit
+# - Try calibrating with multiple observation variables.
+# - Tune the proposal with `EnsembleSampler.with_stretch_param`.
+# - Use `GaussianLikelihood(normalize=True)` when comparing models by likelihood.
+# - Explore posterior predictive checks to validate model fit.
 #
 # ## Further Reading
 #
-# - **Algorithm reference**: Goodman & Weare (2010), "Ensemble samplers with affine invariance" - https://doi.org/10.2140/camcos.2010.5.65
-# - **RSCM documentation**: See rustdoc for detailed API reference
-# - **Convergence diagnostics**: Gelman et al. (2013), "Bayesian Data Analysis", Chapter 11
-
-# %%
+# - **Algorithm**: Goodman and Weare (2010),
+#   [Ensemble samplers with affine invariance](https://doi.org/10.2140/camcos.2010.5.65).
+# - **API reference**: [`rscm.calibrate`](../../api/rscm/calibrate/).
+# - **Convergence diagnostics**: Gelman et al. (2013), "Bayesian Data Analysis", Chapter 11.

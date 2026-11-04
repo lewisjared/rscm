@@ -15,27 +15,24 @@
 # %% [markdown]
 # # Building a Complete Scenario Pipeline
 #
-# This tutorial demonstrates how to build a complete climate modelling pipeline that:
+# This tutorial runs several future scenarios from one shared historical run.
+# The pattern has three steps:
 #
-# 1. Runs a historical spin-up period
-# 2. Saves the model state at a branch point (e.g., 2015)
-# 3. Runs multiple future scenarios from that common starting point
-# 4. Compares and visualises results across scenarios
+# 1. Run the model over the historical period.
+# 2. Read the state variables at the branch point (2015) from the historical results.
+# 3. Build a new model for each scenario, starting from those values.
 #
-# This pattern is essential for climate scenario analysis where you want to compare
-# different emissions pathways (e.g., SSP scenarios) while ensuring they all start
-# from the same historical state.
+# Every scenario then starts from the same historical state,
+# so differences between them come only from their emissions pathways.
 #
 # ## Related Resources
 #
-# - [Coupled Models](coupled_model.py): Building multi-component models
-# - [State Serialisation](state_serialisation.py): Saving and loading model state
-# - [Key Concepts](../key_concepts.md): Core RSCM architecture
+# - [Coupled Models](../coupled_model/): Building multi-component models
+# - [State Serialisation](../state_serialisation/): Saving and loading model state
+# - [Key Concepts](../../key_concepts/): Core RSCM architecture
 
 # %%
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
 from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
 from rscm.core import (
@@ -43,295 +40,186 @@ from rscm.core import (
     ModelBuilder,
     TimeAxis,
     Timeseries,
-    TimeseriesCollection,
 )
 
 # %% [markdown]
 # ## Define Scenario Data
 #
-# In a real workflow, you would load scenario data from files (e.g., SSP or RCP
-# emissions from a database). Here we define simplified scenarios programmatically
-# to illustrate the pattern.
+# A real workflow would load SSP emissions from a database.
+# Here each pathway is a CO2 emissions `Timeseries` that interpolates linearly between a few breakpoints:
 #
-# Our scenarios represent different emissions pathways:
-#
-# - **Historical**: Observed emissions from 1750-2015
-# - **SSP1-1.9**: Rapid decarbonisation (net-zero by 2050)
-# - **SSP2-4.5**: Middle-of-the-road pathway
-# - **SSP5-8.5**: Fossil-fuelled development (high emissions)
-
+# - **Historical**: Approximate emissions from 1750 to 2015.
+# - **ssp119**: Rapid decarbonisation, net-zero by 2050.
+# - **ssp245**: Middle-of-the-road pathway.
+# - **ssp585**: Fossil-fuelled development.
 
 # %%
-def create_historical_emissions(t_start: float, t_branch: float) -> Timeseries:
-    """
-    Create historical CO2 emissions timeseries.
+T_START = 1750.0
+T_BRANCH = 2015.0
+T_END = 2100.0
 
-    This is a simplified representation of historical emissions growth.
-    Real applications would load from observational datasets.
+# %% tags=["remove_input"]
+EMISSIONS_BREAKPOINTS = {
+    "historical": (
+        [T_START, 1850.0, 1950.0, 2000.0, T_BRANCH],
+        [0.0, 0.1, 1.5, 6.5, 10.0],
+    ),
+    "ssp119": ([T_BRANCH, 2030.0, 2050.0, 2075.0, T_END], [10.0, 7.0, 0.0, -2.0, -3.0]),
+    "ssp245": ([T_BRANCH, 2030.0, 2050.0, 2075.0, T_END], [10.0, 11.0, 10.0, 8.0, 5.0]),
+    "ssp585": (
+        [T_BRANCH, 2030.0, 2050.0, 2075.0, T_END],
+        [10.0, 14.0, 18.0, 20.0, 22.0],
+    ),
+}
 
-    Parameters
-    ----------
-    t_start
-        Start year of the timeseries
-    t_branch
-        End year (typically 2015 for SSP scenarios)
-
-    Returns
-    -------
-        Timeseries of emissions in GtC/yr
-    """
-    # Simplified historical: exponential growth from pre-industrial
-    times = np.array([t_start, 1850.0, 1950.0, 2000.0, t_branch])
-    # Emissions in GtC/yr (approximate historical values)
-    values = np.array([0.0, 0.1, 1.5, 6.5, 10.0])
-
-    return Timeseries(
-        values,
-        TimeAxis.from_values(times),
+emissions = {
+    name: Timeseries(
+        np.array(values),
+        TimeAxis.from_values(np.array(times)),
         "GtC / yr",
         InterpolationStrategy.Linear,
     )
+    for name, (times, values) in EMISSIONS_BREAKPOINTS.items()
+}
+historical_emissions = emissions.pop("historical")
+scenario_emissions = emissions
 
+# %% tags=["remove_input"]
+import matplotlib.pyplot as plt
 
-# %%
-def create_scenario_emissions(
-    t_branch: float, t_end: float, scenario: str
-) -> Timeseries:
-    """
-    Create future emissions timeseries for a given scenario.
+SCENARIO_COLOURS = {
+    "historical": "black",
+    "ssp119": "green",
+    "ssp245": "orange",
+    "ssp585": "red",
+}
 
-    Parameters
-    ----------
-    t_branch
-        Branch year from historical (scenario start)
-    t_end
-        End year of projections
-    scenario
-        Scenario identifier (ssp119, ssp245, ssp585)
-
-    Returns
-    -------
-        Timeseries of emissions in GtC/yr
-    """
-    times = np.array([t_branch, 2030.0, 2050.0, 2075.0, t_end])
-
-    scenarios = {
-        # SSP1-1.9: Rapid decarbonisation
-        "ssp119": np.array([10.0, 7.0, 0.0, -2.0, -3.0]),
-        # SSP2-4.5: Middle of the road
-        "ssp245": np.array([10.0, 11.0, 10.0, 8.0, 5.0]),
-        # SSP5-8.5: High emissions
-        "ssp585": np.array([10.0, 14.0, 18.0, 20.0, 22.0]),
-    }
-
-    if scenario not in scenarios:
-        msg = f"Unknown scenario: {scenario}. Choose from {list(scenarios)}"
-        raise ValueError(msg)
-
-    return Timeseries(
-        scenarios[scenario],
-        TimeAxis.from_values(times),
-        "GtC / yr",
-        InterpolationStrategy.Linear,
+fig, ax = plt.subplots(figsize=(10, 4))
+hist_times = np.arange(T_START, T_BRANCH + 1, 5)
+ax.plot(
+    hist_times,
+    [historical_emissions.at_time(t) for t in hist_times],
+    color=SCENARIO_COLOURS["historical"],
+    label="historical",
+)
+future_times = np.arange(T_BRANCH, T_END + 1, 5)
+for scenario, ts in scenario_emissions.items():
+    ax.plot(
+        future_times,
+        [ts.at_time(t) for t in future_times],
+        color=SCENARIO_COLOURS[scenario],
+        label=scenario,
     )
-
+ax.axvline(T_BRANCH, color="gray", linestyle="--", alpha=0.5, label="Branch point")
+ax.set_xlabel("Year")
+ax.set_ylabel("Emissions (GtC/yr)")
+ax.set_title("CO2 Emissions Scenarios")
+ax.legend()
+ax.grid(True, alpha=0.3)
+plt.show()
 
 # %% [markdown]
-# ## Configure Model Components
+# ## Configure the Model
 #
-# We build a coupled model with:
-#
-# 1. **Carbon Cycle**: Converts emissions to atmospheric CO2 concentration
-# 2. **CO2 ERF**: Calculates effective radiative forcing from CO2
-#
-# The components are connected through their inputs and outputs:
+# The model couples two components:
 #
 # ```
 # Emissions -> [Carbon Cycle] -> CO2 Concentration -> [CO2 ERF] -> Forcing
 # ```
 #
-# Note: To add temperature response, you would include a climate component
-# (e.g., TwoLayer) that takes total radiative forcing as input.
-# A `VariableSchema` aggregate sums the forcing from each species into that input.
-# See [Coupled Models](coupled_model.py) and
-# [Variable Schemas](variable_schema.py) for examples.
-
-
-# %%
-def create_component_builders():
-    """
-    Create builders for the model components.
-
-    Returns
-    -------
-        Tuple of (carbon_cycle, co2_erf) component builders
-    """
-    # Carbon cycle parameters
-    carbon_cycle = CarbonCycleBuilder.from_parameters(
-        dict(
-            tau=30.0,  # Atmospheric residence time (years)
-            conc_pi=280.0,  # Pre-industrial CO2 (ppm)
-            alpha_temperature=0.0,  # Temperature feedback (disabled for simplicity)
-        )
-    ).build()
-
-    # CO2 forcing parameters
-    co2_erf = CO2ERFBuilder.from_parameters(
-        dict(
-            erf_2xco2=3.7,  # Forcing for CO2 doubling (W/m2)
-            conc_pi=280.0,  # Pre-industrial CO2 (ppm)
-        )
-    ).build()
-
-    return carbon_cycle, co2_erf
-
-
-# %%
-def get_initial_values() -> dict:
-    """
-    Get initial values for state variables.
-
-    These represent pre-industrial equilibrium conditions.
-    """
-    return {
-        "Cumulative Land Uptake": 0.0,
-        "Cumulative Emissions|CO2": 0.0,
-        "Atmospheric Concentration|CO2": 280.0,  # Pre-industrial
-    }
-
-
-# %% [markdown]
-# ## Step 1: Run Historical Period
+# `build_model` wraps the builder chain, because the historical run and every scenario use it.
+# The carbon cycle reads surface temperature, but `alpha_temperature=0` turns that feedback off,
+# so a constant zero series stands in for it.
 #
-# First, we run the model over the historical period (1750-2015).
-# This establishes the climate state from which all future scenarios branch.
+# To add a temperature response, you would add a climate component such as TwoLayer,
+# with a `VariableSchema` aggregate that sums the forcing from each species.
+# See [Coupled Models](../coupled_model/) and [Variable Schemas](../variable_schema/).
 
 # %%
-# Time configuration
-T_START = 1750.0
-T_BRANCH = 2015.0  # Historical/future branch point
-T_END = 2100.0
+PRE_INDUSTRIAL = {
+    "Cumulative Land Uptake": 0.0,
+    "Cumulative Emissions|CO2": 0.0,
+    "Atmospheric Concentration|CO2": 280.0,
+}
 
-# %%
-# Create historical time axis with coarser steps early, finer steps later
-historical_time_axis = TimeAxis.from_values(
-    np.concatenate(
-        [
-            np.arange(T_START, 1900.0, 10.0),  # Decadal 1750-1900
-            np.arange(1900.0, 2000.0, 5.0),  # 5-yearly 1900-2000
-            np.arange(2000.0, T_BRANCH + 1, 1.0),  # Annual 2000-2015
-        ]
-    )
-)
-
-print(f"Historical period: {T_START} to {T_BRANCH}")
-print(f"Number of timesteps: {len(historical_time_axis.values())}")
-
-# %%
-# Create historical emissions
-historical_emissions = create_historical_emissions(T_START, T_BRANCH)
-
-# Plot the historical emissions
-plt.figure(figsize=(8, 4))
-# Interpolate to model time axis for plotting
-times = historical_time_axis.values()
-emissions_interp = [historical_emissions.at_time(t) for t in times]
-plt.plot(times, emissions_interp)
-plt.xlabel("Year")
-plt.ylabel("Emissions (GtC/yr)")
-plt.title("Historical CO2 Emissions")
-plt.grid(True, alpha=0.3)
-plt.show()
-
-# %%
-# Build and run historical model
-carbon_cycle, co2_erf = create_component_builders()
-
-# Surface temperature is needed as an exogenous input for carbon cycle feedback
-# Since we have feedback disabled (alpha_temperature=0), we just need a placeholder
-surface_temp_exog = Timeseries(
+surface_temperature = Timeseries(
     np.array([0.0]),
     TimeAxis.from_bounds(np.array([T_START, T_END])),
     "K",
     InterpolationStrategy.Previous,
 )
 
-historical_model = (
-    ModelBuilder()
-    .with_time_axis(historical_time_axis)
-    .with_rust_component(carbon_cycle)
-    .with_rust_component(co2_erf)
-    .with_exogenous_variable("Emissions|CO2|Anthropogenic", historical_emissions)
-    .with_exogenous_variable("Surface Temperature", surface_temp_exog)
-    .with_initial_values(get_initial_values())
-).build()
 
-# %%
-# Run the historical period
-historical_model.run()
+def build_model(time_axis: TimeAxis, co2_emissions: Timeseries, initial_values: dict):
+    """Build the carbon cycle and CO2 ERF model on `time_axis`."""
+    carbon_cycle = CarbonCycleBuilder.from_parameters(
+        dict(tau=30.0, conc_pi=280.0, alpha_temperature=0.0)
+    ).build()
+    co2_erf = CO2ERFBuilder.from_parameters(dict(erf_2xco2=3.7, conc_pi=280.0)).build()
 
-print(f"Historical run complete. Final time: {historical_model.current_time()}")
+    return (
+        ModelBuilder()
+        .with_time_axis(time_axis)
+        .with_rust_component(carbon_cycle)
+        .with_rust_component(co2_erf)
+        .with_exogenous_variable("Emissions|CO2|Anthropogenic", co2_emissions)
+        .with_exogenous_variable("Surface Temperature", surface_temperature)
+        .with_initial_values(initial_values)
+    ).build()
+
 
 # %% [markdown]
-# Save the historical end state with `to_toml()` so it can be archived or inspected later.
-# See [State Serialisation](state_serialisation.py) for restoring a model from this string.
+# ## Step 1: Run the Historical Period
+#
+# The historical time axis uses decadal steps before 1900, 5-yearly steps to 2000 and annual steps to 2015.
+# The future runs use their own annual axis, so the two periods can have different resolutions.
+
+# %%
+historical_time_axis = TimeAxis.from_values(
+    np.concatenate(
+        [
+            np.arange(T_START, 1900.0, 10.0),
+            np.arange(1900.0, 2000.0, 5.0),
+            np.arange(2000.0, T_BRANCH + 1, 1.0),
+        ]
+    )
+)
+
+historical_model = build_model(
+    historical_time_axis, historical_emissions, PRE_INDUSTRIAL
+)
+historical_model.run()
+
+# %% [markdown]
+# `to_toml()` serialises the whole model, so the historical end state can be archived or inspected later.
+# Its top-level tables show what it holds.
+# See [State Serialisation](../state_serialisation/) for restoring a model from this string.
 
 # %%
 historical_state = historical_model.to_toml()
-
-# Preview the state (truncated)
-print("Model state preview:")
-print(historical_state[:2000] + "\n...")
-
-# %% [markdown]
-# ## Step 2: Define Future Scenarios
-#
-# We create emissions pathways for each scenario that branch from the historical
-# end state.
-
-# %%
-# Define scenarios to run
-SCENARIOS = ["ssp119", "ssp245", "ssp585"]
-
-# Create scenario emissions
-scenario_emissions = {}
-for scenario in SCENARIOS:
-    scenario_emissions[scenario] = create_scenario_emissions(T_BRANCH, T_END, scenario)
-
-# %%
-# Plot all scenario emissions
-plt.figure(figsize=(10, 5))
-
-# Historical
-hist_times = np.arange(T_START, T_BRANCH + 1, 5)
-hist_values = [historical_emissions.at_time(t) for t in hist_times]
-plt.plot(hist_times, hist_values, "k-", linewidth=2, label="Historical")
-
-# Scenarios
-colors = {"ssp119": "green", "ssp245": "orange", "ssp585": "red"}
-future_times = np.arange(T_BRANCH, T_END + 1, 5)
-
-for scenario, emissions in scenario_emissions.items():
-    values = [emissions.at_time(t) for t in future_times]
-    plt.plot(future_times, values, color=colors[scenario], linewidth=2, label=scenario)
-
-plt.axvline(T_BRANCH, color="gray", linestyle="--", alpha=0.5, label="Branch point")
-plt.xlabel("Year")
-plt.ylabel("Emissions (GtC/yr)")
-plt.title("CO2 Emissions Scenarios")
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.show()
+tables = [
+    line.strip("[]") for line in historical_state.splitlines() if line.startswith("[")
+]
+list(dict.fromkeys(table.split(".")[0] for table in tables))
 
 # %% [markdown]
-# ## Step 3: Run Future Scenarios
+# ## Step 2: Read the Branch-Point State
 #
-# For each scenario, we:
+# The state variables at 2015 come from the historical results.
+# They are the same variables that `PRE_INDUSTRIAL` set for 1750.
+
+# %%
+historical_results = historical_model.timeseries()
+branch_state = {
+    name: historical_results.get_timeseries_by_name(name).at_time(T_BRANCH)
+    for name in PRE_INDUSTRIAL
+}
+branch_state
+
+# %% [markdown]
+# ## Step 3: Run the Scenarios
 #
-# 1. Read the state variables at the branch point from the historical results
-# 2. Build a new model on a future time axis, using those values as initial values
-# 3. Run to 2100 with the scenario emissions
-# 4. Collect results
+# Each scenario gets a fresh model on the future time axis, starting from `branch_state`.
 #
 # A model restored with `Model.from_toml()` keeps its original time axis and exogenous data,
 # so it cannot be extended with new scenario data.
@@ -340,280 +228,109 @@ plt.show()
 # Components with internal state store it in the `component_states` section of the TOML,
 # which this approach does not carry over.
 
-
 # %%
-def run_scenario(scenario_name: str, emissions: Timeseries) -> TimeseriesCollection:
-    """
-    Run a single scenario from the historical branch point.
-
-    Parameters
-    ----------
-    scenario_name
-        Name of the scenario (for logging)
-    emissions
-        Emissions timeseries for this scenario
-
-    Returns
-    -------
-        TimeseriesCollection with all model outputs
-    """
-    # Create time axis for future period
-    # Include overlap with historical end for continuity
-    future_time_axis = TimeAxis.from_values(np.arange(T_BRANCH, T_END + 1, 1.0))
-
-    # These components hold only parameters, so fresh instances are equivalent
-    carbon_cycle, co2_erf = create_component_builders()
-
-    # Get the final state values from historical run
-    historical_results = historical_model.timeseries()
-
-    # Extract final values for state variables
-    initial_values = {
-        "Cumulative Land Uptake": historical_results.get_timeseries_by_name(
-            "Cumulative Land Uptake"
-        ).at_time(T_BRANCH),
-        "Cumulative Emissions|CO2": historical_results.get_timeseries_by_name(
-            "Cumulative Emissions|CO2"
-        ).at_time(T_BRANCH),
-        "Atmospheric Concentration|CO2": historical_results.get_timeseries_by_name(
-            "Atmospheric Concentration|CO2"
-        ).at_time(T_BRANCH),
-    }
-
-    # Build model for scenario run
-    model = (
-        ModelBuilder()
-        .with_time_axis(future_time_axis)
-        .with_rust_component(carbon_cycle)
-        .with_rust_component(co2_erf)
-        .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
-        .with_exogenous_variable("Surface Temperature", surface_temp_exog)
-        .with_initial_values(initial_values)
-    ).build()
-
-    # Run
-    model.run()
-    print(f"Scenario {scenario_name} complete")
-
-    return model.timeseries()
-
-
-# %%
-# Run all scenarios
-scenario_results = {}
-
-for scenario in SCENARIOS:
-    scenario_results[scenario] = run_scenario(scenario, scenario_emissions[scenario])
-
-# %% [markdown]
-# ## Step 4: Post-Processing and Comparison
-#
-# Now we combine results from all scenarios for comparison. We use pandas DataFrames
-# with multi-indexes for convenient handling of multi-scenario timeseries data.
-
-
-# %%
-def timeseries_to_dataframe(
-    ts_collection: TimeseriesCollection,
-    time_axis: TimeAxis,
-    scenario: str,
-) -> pd.DataFrame:
-    """
-    Convert RSCM TimeseriesCollection to pandas DataFrame.
-
-    Parameters
-    ----------
-    ts_collection
-        RSCM timeseries collection
-    time_axis
-        Time axis for the data
-    scenario
-        Scenario name for metadata
-
-    Returns
-    -------
-        DataFrame with (variable, unit, scenario) multi-index
-    """
-    data = []
-    index_tuples = []
-
-    for name in ts_collection.names():
-        ts = ts_collection.get_timeseries_by_name(name)
-        index_tuples.append((name, ts.units, scenario))
-        data.append(ts.values())
-
-    return pd.DataFrame(
-        data,
-        columns=time_axis.values(),
-        index=pd.MultiIndex.from_tuples(
-            index_tuples, names=["variable", "unit", "scenario"]
-        ),
-    )
-
-
-# %%
-# Convert historical results
-historical_df = timeseries_to_dataframe(
-    historical_model.timeseries(), historical_time_axis, "historical"
-)
-
-# Convert scenario results
-scenario_dfs = []
 future_time_axis = TimeAxis.from_values(np.arange(T_BRANCH, T_END + 1, 1.0))
 
-for scenario, results in scenario_results.items():
-    df = timeseries_to_dataframe(results, future_time_axis, scenario)
-    scenario_dfs.append(df)
-
-# Combine all runs - use concat with outer join to handle different time columns
-all_runs = pd.concat([historical_df, *scenario_dfs], axis=0)
-print(f"Combined dataset shape: {all_runs.shape}")
-all_runs
+scenario_results = {}
+for scenario, co2_emissions in scenario_emissions.items():
+    model = build_model(future_time_axis, co2_emissions, branch_state)
+    model.run()
+    scenario_results[scenario] = model.timeseries()
 
 # %% [markdown]
-# ### Plot Key Variables
+# ## Step 4: Compare the Scenarios
 #
-# Compare scenarios across key climate variables:
-#
-# - CO2 concentration
-# - Effective radiative forcing
-
-# %%
-fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-scenario_colors = {
-    "historical": "black",
-    "ssp119": "green",
-    "ssp245": "orange",
-    "ssp585": "red",
-}
+# A hidden helper converts each `TimeseriesCollection` into a pandas DataFrame
+# with a (variable, unit, scenario) index, and stacks the four runs into `all_runs`.
 
 
-def plot_variable(
-    ax: plt.Axes, df: pd.DataFrame, variable: str, ylabel: str, title: str
-):
-    """Plot a variable across all scenarios."""
-    # Filter for the specific variable
-    var_data = df.loc[df.index.get_level_values("variable") == variable]
+# %% tags=["remove_input"]
+import pandas as pd
 
-    for idx in var_data.index:
-        scenario = idx[2]  # (variable, unit, scenario)
-        values = var_data.loc[idx].dropna()
+from rscm.core import TimeseriesCollection
+
+
+def timeseries_to_dataframe(
+    collection: TimeseriesCollection, scenario: str
+) -> pd.DataFrame:
+    """Convert a TimeseriesCollection to a DataFrame indexed by (variable, unit, scenario)."""
+    rows = {}
+    for name in collection.names():
+        ts = collection.get_timeseries_by_name(name)
+        rows[(name, ts.units, scenario)] = pd.Series(
+            ts.values(), index=ts.time_axis.values()
+        )
+    df = pd.DataFrame(rows).T
+    df.index.names = ["variable", "unit", "scenario"]
+    return df
+
+
+all_runs = pd.concat(
+    [
+        timeseries_to_dataframe(historical_results, "historical"),
+        *(timeseries_to_dataframe(r, s) for s, r in scenario_results.items()),
+    ]
+)
+
+# %% tags=["remove_input"]
+fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+panels = [
+    ("Atmospheric Concentration|CO2", "CO2 (ppm)", "Atmospheric CO2 Concentration"),
+    (
+        "Effective Radiative Forcing|CO2",
+        "ERF (W/m2)",
+        "CO2 Effective Radiative Forcing",
+    ),
+]
+for ax, (variable, ylabel, title) in zip(axes, panels):
+    for (_, scenario), row in all_runs.xs(variable, level="variable").iterrows():
+        values = row.dropna()
         ax.plot(
             values.index,
             values.values,
             label=scenario,
-            color=scenario_colors.get(scenario, "gray"),
-            linewidth=2 if scenario != "historical" else 1.5,
+            color=SCENARIO_COLOURS[scenario],
         )
-
+    ax.axvline(T_BRANCH, color="gray", linestyle="--", alpha=0.5)
+    ax.set_xlabel("Year")
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.legend()
     ax.grid(True, alpha=0.3)
-
-
-# CO2 Concentration
-plot_variable(
-    axes[0],
-    all_runs,
-    "Atmospheric Concentration|CO2",
-    "CO2 (ppm)",
-    "Atmospheric CO2 Concentration",
-)
-axes[0].axvline(T_BRANCH, color="gray", linestyle="--", alpha=0.5)
-
-# Effective Radiative Forcing
-plot_variable(
-    axes[1],
-    all_runs,
-    "Effective Radiative Forcing|CO2",
-    "ERF (W/m2)",
-    "CO2 Effective Radiative Forcing",
-)
-axes[1].axvline(T_BRANCH, color="gray", linestyle="--", alpha=0.5)
-
 plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ### End-of-Century Summary
+# The carbon cycle relaxes concentrations towards its 280 ppm pre-industrial value.
+# Net-negative emissions in ssp119 push concentrations below that value by 2100,
+# which this simple carbon cycle allows.
 #
-# Extract key metrics at 2100 for comparison.
+# Selecting two variables and two years from `all_runs` gives a compact comparison:
 
 # %%
-# Get 2100 values for each scenario
-summary_data = []
-
-for scenario in SCENARIOS:
-    # Filter by scenario using multi-index
-    scenario_mask = all_runs.index.get_level_values("scenario") == scenario
-    scenario_data = all_runs.loc[scenario_mask]
-
-    # Get CO2 concentration at 2100
-    co2_var = "Atmospheric Concentration|CO2"
-    co2_row = scenario_data.loc[
-        scenario_data.index.get_level_values("variable") == co2_var
+(
+    all_runs.droplevel("unit")
+    .loc[
+        ["Atmospheric Concentration|CO2", "Effective Radiative Forcing|CO2"],
+        [2050.0, 2100.0],
     ]
-    co2 = co2_row[2100.0].values[0]
-
-    # Get ERF at 2100
-    erf_var = "Effective Radiative Forcing|CO2"
-    erf_row = scenario_data.loc[
-        scenario_data.index.get_level_values("variable") == erf_var
-    ]
-    erf = erf_row[2100.0].values[0]
-
-    summary_data.append(
-        {
-            "Scenario": scenario,
-            "CO2 (ppm)": f"{co2:.0f}",
-            "ERF (W/m2)": f"{erf:.2f}",
-        }
-    )
-
-summary_df = pd.DataFrame(summary_data)
-print("\nEnd-of-Century (2100) Summary:")
-print(summary_df.to_string(index=False))
+    .dropna()
+    .round(2)
+)
 
 # %% [markdown]
-# ## Exporting Results
+# `all_runs.to_csv(...)` exports the combined results, with the index preserving the metadata.
 #
-# For further analysis or archival, results can be exported in various formats.
-# The pandas DataFrame with multi-index preserves all metadata.
-
-# %%
-# Export to CSV (uncomment to use)
-# all_runs.to_csv("scenario_results.csv")
-
-# Export scenario comparison table
-# summary_df.to_csv("scenario_summary.csv", index=False)
-
-# %% [markdown]
-# ## Summary
+# ## Key Patterns
 #
-# This tutorial demonstrated a complete scenario pipeline workflow:
+# - **State extraction**: Read the branch-point values from `model.timeseries()`
+#   to initialise the scenario runs.
+# - **Component reuse**: These components hold only parameters, so they can be rebuilt for each scenario.
+# - **Time axis management**: Historical and future periods can have different temporal resolutions.
 #
-# 1. **Historical spin-up**: Run the model from pre-industrial to a branch point
-# 2. **State capture**: Save model state using `to_toml()` for reproducibility
-# 3. **Scenario branching**: Create multiple futures from the same starting point
-# 4. **Results collection**: Gather outputs using `TimeseriesCollection`
-# 5. **Post-processing**: Convert to pandas DataFrames for analysis and visualisation
-# 6. **Comparison**: Plot and tabulate scenario differences
+# ## Next Steps
 #
-# ### Key Patterns
-#
-# - **State extraction**: Get final values from `model.timeseries()` for initialising
-#   branch runs
-# - **Component reuse**: These components hold only parameters, so they can be rebuilt
-#   for each scenario
-# - **Time axis management**: Historical and future periods can have different
-#   temporal resolutions
-# - **Metadata handling**: Use pandas DataFrames with multi-indexes for scenario data
-#
-# ### Next Steps
-#
-# - Add more greenhouse gases (CH4, N2O) using additional components
-# - Include aerosol forcing for more realistic scenarios
-# - Load real SSP/RCP data from scenario databases
-# - Add uncertainty analysis by running parameter ensembles
+# - Add more greenhouse gases (CH4, N2O) using additional components.
+# - Include aerosol forcing for more realistic scenarios.
+# - Load real SSP data from scenario databases.
+# - Add uncertainty analysis by running parameter ensembles.

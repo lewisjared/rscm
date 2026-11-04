@@ -16,30 +16,23 @@
 # %% [markdown]
 # # Coupled Models
 #
-# This notebook demonstrates how to build coupled climate models by combining
-# multiple components that exchange state information.
+# This notebook builds coupled climate models by combining components that exchange state.
 #
 # ## Overview
 #
-# When modelling a complex system, you typically need multiple components
-# coupled together. Each component models a particular aspect of the Earth System
-# using a set of equations with known inputs and outputs. These inputs can come
-# from other components or be prescribed as exogenous variables.
+# Modelling a complex system usually needs several components coupled together.
+# Each component models one aspect of the Earth system with a set of equations and known inputs and outputs.
+# Those inputs come from other components or are prescribed as exogenous variables.
 #
 # ## Related Resources
 #
-# - [Components in Python](component_python.py): Creating Python components
-# - [Components in Rust](component_rust.md): Creating Rust components
-# - [Key Concepts](../key_concepts.md): Core RSCM architecture
-# - [State Serialisation](state_serialisation.py): Saving and loading model state
-#
+# - [Components in Python](../component_python/): Creating Python components
+# - [Components in Rust](../component_rust/): Creating Rust components
+# - [Key Concepts](../../key_concepts/): Core RSCM architecture
+# - [State Serialisation](../state_serialisation/): Saving and loading model state
 
 # %%
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import pydot
-from IPython.display import Image, display
 
 from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
 from rscm.core import (
@@ -57,58 +50,105 @@ from rscm.two_layer import TwoLayerBuilder
 #
 # The `ModelBuilder` class constructs coupled models from components.
 # It captures the model's requirements (components, time axis, exogenous variables)
-# before creating a concrete model. This pattern makes it easy to share and
-# extend model configurations.
+# before creating a concrete model.
+# This makes model configurations easy to share and extend.
 
 # %%
 model_builder = ModelBuilder()
 
+# %% tags=["remove_input"]
+import matplotlib.pyplot as plt
+import pandas as pd
+import pydot
+from IPython.display import SVG, display
+
+
+def show_graph(model):
+    """Render the component graph, labelling each node with its component name."""
+    graph = pydot.graph_from_dot_data(model.as_dot())[0]
+    for node in graph.get_nodes():
+        label = node.get_label()
+        if label:
+            node.set_label(label.strip('"').split(" {")[0])
+    display(SVG(graph.create_svg()))
+
+
+def as_dataframe(collection: TimeseriesCollection, time_axis: TimeAxis) -> pd.DataFrame:
+    """Convert a timeseries collection to a DataFrame indexed by (variable, unit)."""
+    series = [collection.get_timeseries_by_name(name) for name in collection.names()]
+    index = pd.MultiIndex.from_tuples(
+        [(name, ts.units) for name, ts in zip(collection.names(), series)],
+        names=["variable", "unit"],
+    )
+    return pd.DataFrame(
+        [ts.values() for ts in series], columns=time_axis.values(), index=index
+    )
+
+
+def plot_variables(
+    results: pd.DataFrame, variables: list[str], steps: tuple[str, ...] = ()
+):
+    """Plot each variable on its own axis, drawing the variables in `steps` as step functions."""
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7), sharex=True)
+    for ax, var in zip(axes.flat, variables):
+        data = results.xs(var, level="variable")
+        drawstyle = "steps-post" if var in steps else "default"
+        ax.plot(data.columns, data.iloc[0], drawstyle=drawstyle)
+        ax.set_title(var)
+        ax.set_ylabel(data.index[0])
+        ax.grid(True, alpha=0.3)
+    for ax in axes[-1]:
+        ax.set_xlabel("Year")
+    fig.tight_layout()
+    plt.show()
+
+
 # %% [markdown]
 # ### Time axis
 #
-# The time axis is a critical aspect of a model as it defines the timesteps
-# on which the model is solved.
+# The time axis defines the timesteps on which the model is solved.
 # Components only exchange information at the end of a time step.
 #
-# The size of the timesteps don't need to be the same across the time axis.
-# This enables the use of longer timesteps during preindustrial spinup
-# and then decreasing as the level of anthropogenic emissions increases.
+# The timesteps do not need to be the same size across the axis.
+# Longer steps suit a preindustrial spin-up, and shorter steps suit the period of rising emissions.
+# Here we use 5-year steps until 2015 and annual steps after.
 
 # %%
 t_initial = 1750.0
 t_final = 2100.0
 
-# %%
 time_axis = TimeAxis.from_values(
     np.concat([np.arange(t_initial, 2015.0, 5), np.arange(2015.0, t_final + 1, 1.0)])
 )
-time_axis
+print(
+    f"{len(time_axis)} time points from {time_axis.values()[0]} to {time_axis.values()[-1]}"
+)
+
+# %% [markdown]
+# Each `with_*` method updates the builder and returns it, so calls can be chained.
 
 # %%
-model_builder.with_time_axis(time_axis)
+model_builder = model_builder.with_time_axis(time_axis)
 
 # %% [markdown]
 # ### Components
 #
 # A model consists of one or more components.
 #
-# Components can be implemented in either Rust (for performance)
-# or Python (for rapid prototyping).
-# See [Components in Rust](component_rust.md) and
-# [Components in Python](component_python.py) for implementation details.
+# Components can be implemented in either Rust (for performance) or Python (for rapid prototyping).
+# See [Components in Rust](../component_rust/) and [Components in Python](../component_python/)
+# for implementation details.
 #
-# Below we create a model with a basic carbon cycle and CO2 ERF calculation.
-# The CO2 ERF component calculates the radiative forcing based on CO2
-# concentrations from the Carbon Cycle component.
+# Below we create a model with a basic carbon cycle and a CO2 ERF calculation.
+# The CO2 ERF component calculates the radiative forcing from the CO2 concentration
+# that the carbon cycle component produces.
 
 # %%
-# Component parameters
 tau = 20.3
 conc_pi = 280.0
 erf_2xco2 = 4.0
 alpha_temperature = 0.0  # No temperature feedback
 
-# %%
 co2_erf_component = CO2ERFBuilder.from_parameters(
     dict(erf_2xco2=erf_2xco2, conc_pi=conc_pi)
 ).build()
@@ -117,20 +157,19 @@ carbon_cycle_component = CarbonCycleBuilder.from_parameters(
 ).build()
 
 # %%
-model_builder.with_rust_component(carbon_cycle_component).with_rust_component(
-    co2_erf_component
-)
+model_builder = model_builder.with_rust_component(
+    carbon_cycle_component
+).with_rust_component(co2_erf_component)
 
 # %% [markdown]
 # ## Exogenous Variables
 #
-# Variables that are not produced by any component must be provided as
-# exogenous (external) data.
-# Each exogenous variable is a `Timeseries` with values, time axis, units,
-# and interpolation strategy.
+# Variables that no component produces must be provided as exogenous (external) data.
+# Each exogenous variable is a `Timeseries` with values, a time axis, units and an interpolation strategy.
+#
+# Here CO2 emissions step from 0 to 10 GtC/yr in 1850.
 
 # %%
-# model the CO2 emissions as a heaviside function at step_year
 step_year = 1850.0
 step_size = 10.0
 
@@ -151,9 +190,15 @@ emissions = Timeseries(
     InterpolationStrategy.Previous,
 )
 
-# %%
-# Raw values
-plt.plot(emissions.time_axis.values(), emissions.values())
+# %% [markdown]
+# With the `Previous` strategy each value holds until the next point, so the emissions form a step.
+
+# %% tags=["remove_input"]
+fig, ax = plt.subplots(figsize=(8, 3))
+ax.stairs(emissions.values(), emissions.time_axis.bounds())
+ax.set_xlabel("Year")
+ax.set_ylabel("Emissions (GtC / yr)")
+plt.show()
 
 # %% [markdown]
 # Components read exogenous data at the model's time points.
@@ -174,6 +219,9 @@ for strategy in [
     ts = Timeseries(emissions.values(), emissions.time_axis, emissions.units, strategy)
     print(f"{strategy}: {ts.at_time(1825.0):.2f}")
 
+# %% [markdown]
+# The surface temperature is held at a constant 0.42 K.
+
 # %%
 surface_temp = Timeseries(
     np.asarray([0.42]),
@@ -182,18 +230,16 @@ surface_temp = Timeseries(
     InterpolationStrategy.Previous,
 )
 
-# %%
-model_builder.with_exogenous_variable(
+model_builder = model_builder.with_exogenous_variable(
     "Surface Temperature", surface_temp
 ).with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
 
 # %% [markdown]
 # ## Initial Values
 #
-# Components that track state (using `#[states(...)]` in Rust or `State()`
-# in Python) require initial values.
-# These values are used at the first timestep;
-# subsequent timesteps use the state from the previous step.
+# Components that track state (using `#[states(...)]` in Rust or `State()` in Python) need initial values.
+# These values are used at the first timestep.
+# Later timesteps use the state from the previous step.
 
 # %%
 initial_state = {
@@ -202,7 +248,7 @@ initial_state = {
     "Atmospheric Concentration|CO2": 300.0,
 }
 
-model_builder.with_initial_values(initial_state)
+model_builder = model_builder.with_initial_values(initial_state)
 
 # %% [markdown]
 # ## Build the Model
@@ -218,19 +264,18 @@ model_builder.with_initial_values(initial_state)
 # %%
 model = model_builder.build()
 
-
 # %% [markdown]
 # ### Inspecting the Execution Graph
 #
-# After building a model, you can inspect its execution order, variable flow,
-# and source classifications using `debug_info()`. Output formats include
-# `"rich"` (coloured terminal, default), `"plain"` (no colours), or `"json"`.
+# After building a model, `debug_info()` shows its execution order, variable flow
+# and where each input comes from.
+# Output formats are `"rich"` (coloured terminal, default), `"plain"` (no colours) and `"json"`.
 
 # %%
 print(model.debug_info())
 
 # %% [markdown]
-# These steps can also be chained together as shown below:
+# The same model can be built in one chain:
 
 # %%
 model = (
@@ -243,120 +288,64 @@ model = (
     .with_initial_values(initial_state)
 ).build()
 
-
 # %% [markdown]
-# The graph can be visualised with each node representing a component.
-# The edges describe the flow of state through the model.
-# Node "0" is an empty root that links components without upstream dependencies.
+# `model.as_dot()` returns the component graph in Graphviz DOT format.
+# Each node is a component and each edge is a variable passed between them.
+# `NullComponent` is an empty root that links the components without upstream dependencies.
 
-
-# %%
-# This requires graphviz to be installed
-def view_pydot(pdot):
-    """
-    Show a dot graph inside a notebook.
-
-    Parameters
-    ----------
-    pdot
-        Pydot graph object to display.
-    """
-    plt = Image(pdot.create_png())
-    display(plt)
-
-
-graph = pydot.graph_from_dot_data(model.as_dot())[0]
-view_pydot(graph)
+# %% tags=["remove_input"]
+show_graph(model)
 
 # %% [markdown]
 # ## Run the model
 #
 # Once we have a concrete model we can solve it.
-# You can either step through the model step by step or run for all timesteps at once.
+# You can either step through the model one step at a time or run all timesteps at once.
 # Both `step()` and `run()` raise a `RuntimeError` if a component fails.
-# See [Model Debugging and Inspection](debugging_inspection.py) for handling these errors.
+# See [Model Debugging and Inspection](../debugging_inspection/) for handling these errors.
 
 # %%
-model.current_time_bounds()
-
-# %%
+print(model.current_time_bounds())
 model.step()
-model.current_time_bounds()
+print(model.current_time_bounds())
 
 # %% [markdown]
-# The results from the run can be extracted using `timeseries` and then converted to a
-# pandas DataFrame for easier manipulation and plotting.
-
+# `model.timeseries()` returns the results as a `TimeseriesCollection`.
+# A short `as_dataframe` helper (in the downloadable notebook) converts it to a pandas DataFrame.
+# After one step only the first time point is filled.
 
 # %%
-def as_dataframe(
-    timeseries_collection: TimeseriesCollection, time_axis: TimeAxis
-) -> pd.DataFrame:
-    """
-    Convert a collection of timeseries to a pandas DataFrame with multi-index.
-
-    Parameters
-    ----------
-    timeseries_collection
-        RSCM timeseries collection
-    time_axis
-        Time axis for column labels
-
-    Returns
-    -------
-        DataFrame with (variable, unit) multi-index and time columns
-    """
-    data = []
-    index_tuples = []
-    for name in timeseries_collection.names():
-        ts = timeseries_collection.get_timeseries_by_name(name)
-
-        index_tuples.append((name, ts.units))
-        data.append(ts.values())
-
-    return pd.DataFrame(
-        data,
-        columns=time_axis.values(),
-        index=pd.MultiIndex.from_tuples(index_tuples, names=["variable", "unit"]),
-    )
-
-
 results = as_dataframe(model.timeseries(), time_axis)
-results
+results.iloc[:, :3]
 
-# %%
-# Filter out cumulative variables and plot
-filtered = results.loc[
-    ~results.index.get_level_values("variable").str.startswith("Cumulative")
-]
-filtered.T.plot(figsize=(10, 5))
-plt.xlabel("Year")
-plt.ylabel("Value")
-plt.legend(filtered.index.get_level_values("variable"))
-plt.show()
+# %% [markdown]
+# `run()` solves the remaining timesteps.
 
 # %%
 model.run()
-
-# %%
 results = as_dataframe(model.timeseries(), time_axis)
-filtered = results.loc[
-    ~results.index.get_level_values("variable").str.startswith("Cumulative")
-]
-filtered.T.plot(figsize=(10, 5))
-plt.xlabel("Year")
-plt.ylabel("Value")
-plt.legend(filtered.index.get_level_values("variable"))
-plt.show()
+
+# %% tags=["remove_input"]
+plot_variables(
+    results,
+    [
+        "Emissions|CO2|Anthropogenic",
+        "Atmospheric Concentration|CO2",
+        "Effective Radiative Forcing|CO2",
+        "Surface Temperature",
+    ],
+    steps=("Emissions|CO2|Anthropogenic",),
+)
 
 # %% [markdown]
 # ## Complex Coupled Model with Feedback
 #
 # The example above uses a prescribed surface temperature.
-# In reality, temperature responds to radiative forcing, and temperature changes
-# can affect carbon cycle processes (e.g., soil respiration, ocean solubility).
+# In reality, temperature responds to radiative forcing,
+# and temperature changes can affect carbon cycle processes
+# (for example soil respiration and ocean solubility).
 #
-# Below we build a more complex coupled model that demonstrates these feedbacks:
+# Below we build a coupled model with this feedback:
 #
 # ```
 # Emissions → Carbon Cycle → CO2 Concentration → CO2 ERF → Two-Layer → Temperature
@@ -364,25 +353,13 @@ plt.show()
 #                  └──────────────────── feedback ────────────────────────────┘
 # ```
 #
-# This creates a feedback loop where:
-#
-# 1. **Carbon Cycle**: Converts emissions to atmospheric CO2 concentration
-# 2. **CO2 ERF**: Calculates radiative forcing from CO2 concentration
-# 3. **Two-Layer Model**: Computes surface temperature from radiative forcing
-# 4. **Temperature Feedback**: Surface temperature affects carbon cycle lifetime
-#    (warmer temperatures reduce CO2 uptake efficiency)
+# 1. **Carbon Cycle**: converts emissions to atmospheric CO2 concentration.
+# 2. **CO2 ERF**: calculates radiative forcing from the CO2 concentration.
+# 3. **Two-Layer Model**: computes surface temperature from the radiative forcing.
+# 4. **Temperature Feedback**: warming lengthens the carbon cycle's CO2 lifetime,
+#    so more CO2 stays in the atmosphere.
 
 # %%
-# Create components for the feedback-coupled model
-# Enable temperature feedback in the carbon cycle
-carbon_cycle_feedback = CarbonCycleBuilder.from_parameters(
-    dict(
-        tau=25.0,  # Baseline atmospheric lifetime (years)
-        conc_pi=278.0,  # Pre-industrial CO2 (ppm)
-        alpha_temperature=0.1,  # Temperature sensitivity (1/K) - stronger feedback
-    )
-).build()
-
 co2_erf = CO2ERFBuilder.from_parameters(
     dict(
         erf_2xco2=3.7,  # Forcing from CO2 doubling (W/m²)
@@ -404,53 +381,36 @@ two_layer = TwoLayerBuilder.from_parameters(
 # %% [markdown]
 # ### Emissions Scenario
 #
-# We create a more realistic emissions scenario with:
+# The emissions scenario has three phases, interpolated linearly between points:
 #
-# - Pre-industrial period (1750-1850): near-zero emissions
-# - Historical growth (1850-2020): exponential increase
-# - Future scenario (2020-2100): peak and decline (SSP1-like pathway)
+# - Pre-industrial period (1750 to 1850): near-zero emissions.
+# - Historical growth (1850 to 2020): increasing to 10 GtC/yr.
+# - Future scenario (2020 to 2100): peak and decline.
 
 # %%
-# Create emissions scenario
 years = np.array([1750.0, 1850.0, 1950.0, 2000.0, 2020.0, 2050.0, 2100.0])
 emission_values = np.array([0.0, 0.5, 3.0, 7.0, 10.0, 5.0, 1.0])  # GtC/yr
 
 emissions_scenario = Timeseries(
     emission_values,
-    TimeAxis.from_bounds(
-        np.concatenate([years, [2101.0]])  # bounds need n+1 values
-    ),
+    TimeAxis.from_bounds(np.concatenate([years, [2101.0]])),  # bounds need n+1 values
     "GtC / yr",
     InterpolationStrategy.Linear,
 )
 
-# %%
-# Plot the emissions scenario
-plt.figure(figsize=(10, 4))
-plt.plot(years, emission_values, "o", markersize=8, label="Scenario points")
-plt.fill_between(years, emission_values, alpha=0.3, label="Emissions pathway")
-plt.xlabel("Year")
-plt.ylabel("Emissions (GtC/yr)")
-plt.title("CO2 Emissions Scenario")
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.show()
-
 # %% [markdown]
 # ### Variable Schema for ERF Aggregation
 #
-# The CO2ERF component outputs `Effective Radiative Forcing|CO2`, but the Two-Layer
-# model expects `Effective Radiative Forcing` as input. We use a `VariableSchema` to
-# aggregate the CO2 forcing into total ERF.
+# The CO2 ERF component outputs `Effective Radiative Forcing|CO2`,
+# but the Two-Layer model expects `Effective Radiative Forcing` as input.
+# A `VariableSchema` aggregates the CO2 forcing into the total ERF.
 #
-# This pattern enables adding other forcing components (CH4, N2O, aerosols) later -
-# they would each contribute to the total ERF through the schema.
+# Other forcing components (CH4, N2O, aerosols) can later contribute to the total through the same schema.
+# See [Variable Schemas](../variable_schema/) for more.
 
 # %%
-# Create schema declaring all model variables and the ERF aggregation
 erf_schema = VariableSchema()
 
-# Declare all variables used in the model
 erf_schema.add_variable("Emissions|CO2|Anthropogenic", "GtC / yr")
 erf_schema.add_variable("Surface Temperature", "K")
 erf_schema.add_variable("Atmospheric Concentration|CO2", "ppm")
@@ -459,7 +419,6 @@ erf_schema.add_variable("Cumulative Emissions|CO2", "Gt C")
 erf_schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
 erf_schema.add_variable("Deep Ocean Temperature", "K")
 
-# Aggregate CO2 forcing into total ERF (add more contributors here for multi-gas models)
 erf_schema.add_aggregate(
     "Effective Radiative Forcing",
     "W/m^2",
@@ -470,43 +429,54 @@ erf_schema.add_aggregate(
 # %% [markdown]
 # ### Build the Feedback-Coupled Model
 #
-# Note that we don't need to provide `Surface Temperature` as an exogenous variable
-# because the Two-Layer model produces it. The model builder automatically resolves
-# the dependency graph.
+# `Surface Temperature` is not an exogenous variable here, because the Two-Layer model produces it.
+# The model builder resolves the dependency graph.
 #
 # The carbon cycle runs before the Two-Layer model within each step.
 # It reads the temperature at the start of the step, which the Two-Layer model wrote in the previous step.
 # The feedback loop therefore closes across timesteps rather than within one.
+#
+# The build is wrapped in a function of the carbon cycle's temperature sensitivity,
+# so we can compare against a run without feedback later.
+
 
 # %%
-feedback_model = (
-    ModelBuilder()
-    .with_time_axis(time_axis)
-    # Variable schema for ERF aggregation
-    .with_schema(erf_schema)
-    # Components
-    .with_rust_component(carbon_cycle_feedback)
-    .with_rust_component(co2_erf)
-    .with_rust_component(two_layer)
-    # Exogenous input - only emissions needed
-    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions_scenario)
-    # Initial state
-    .with_initial_values(
-        {
-            "Cumulative Land Uptake": 0.0,
-            "Cumulative Emissions|CO2": 0.0,
-            "Atmospheric Concentration|CO2": 278.0,
-            "Surface Temperature": 0.0,  # Anomaly from pre-industrial
-            "Deep Ocean Temperature": 0.0,  # Deep ocean starts at equilibrium
-        }
-    )
-).build()
+def build_feedback_model(alpha_temperature: float):
+    """Build the feedback-coupled model with the given temperature sensitivity."""
+    carbon_cycle = CarbonCycleBuilder.from_parameters(
+        dict(
+            tau=25.0,  # Baseline atmospheric lifetime (years)
+            conc_pi=278.0,  # Pre-industrial CO2 (ppm)
+            alpha_temperature=alpha_temperature,  # Temperature sensitivity (1/K)
+        )
+    ).build()
+
+    return (
+        ModelBuilder()
+        .with_time_axis(time_axis)
+        .with_schema(erf_schema)
+        .with_rust_component(carbon_cycle)
+        .with_rust_component(co2_erf)
+        .with_rust_component(two_layer)
+        .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions_scenario)
+        .with_initial_values(
+            {
+                "Cumulative Land Uptake": 0.0,
+                "Cumulative Emissions|CO2": 0.0,
+                "Atmospheric Concentration|CO2": 278.0,
+                "Surface Temperature": 0.0,  # Anomaly from pre-industrial
+                "Deep Ocean Temperature": 0.0,
+            }
+        )
+    ).build()
+
+
+feedback_model = build_feedback_model(alpha_temperature=0.1)
 
 # %% [markdown]
 # ### Visualise the Dependency Graph
 #
-# The debug info shows execution order, variable flow, and source classifications.
-# The dot graph shows the structural dependency graph between components.
+# The debug info shows execution order, variable flow and where each input comes from.
 #
 # `debug_info()` tags `Surface Temperature` as `(exo)` for the carbon cycle.
 # This is because no earlier component produces it.
@@ -515,164 +485,74 @@ feedback_model = (
 # %%
 print(feedback_model.debug_info())
 
-# %%
-graph = pydot.graph_from_dot_data(feedback_model.as_dot())[0]
-view_pydot(graph)
-
 # %% [markdown]
-# The dependency graph shows:
+# The component graph shows:
 #
-# - **Node 0**: Root/entry point
-# - **CarbonCycle**: Takes emissions and temperature, outputs CO2 concentration
-# - **CO2ERF**: Takes CO2 concentration, outputs radiative forcing
-# - **AggregatorComponent**: Sums the forcing contributors declared in the schema
-# - **TwoLayer**: Takes radiative forcing, outputs surface temperature
-#
-# The edges show which variables flow between components.
+# - **NullComponent**: the root.
+# - **CarbonCycle**: takes emissions and temperature, outputs CO2 concentration.
+# - **CO2ERF**: takes CO2 concentration, outputs radiative forcing.
+# - **AggregatorComponent**: sums the forcing contributors declared in the schema.
+# - **TwoLayer**: takes radiative forcing, outputs surface temperature.
+
+# %% tags=["remove_input"]
+show_graph(feedback_model)
 
 # %%
-# Run the feedback-coupled model
 feedback_model.run()
-
-# %%
-# Extract and plot results
 feedback_results = as_dataframe(feedback_model.timeseries(), time_axis)
 
-# Select key variables for plotting
-key_vars = [
-    "Emissions|CO2|Anthropogenic",
-    "Atmospheric Concentration|CO2",
-    "Effective Radiative Forcing|CO2",
-    "Surface Temperature",
-]
-
-fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-axes = axes.flatten()
-
-for ax, var in zip(axes, key_vars):
-    if var in feedback_results.index.get_level_values("variable"):
-        data = feedback_results.loc[var]
-        unit = data.index.get_level_values("unit")[0]
-        ax.plot(data.columns, data.values.flatten())
-        ax.set_xlabel("Year")
-        ax.set_ylabel(f"{var}\n({unit})")
-        ax.set_title(var)
-        ax.grid(True, alpha=0.3)
-
-plt.tight_layout()
-plt.show()
+# %% tags=["remove_input"]
+plot_variables(
+    feedback_results,
+    [
+        "Emissions|CO2|Anthropogenic",
+        "Atmospheric Concentration|CO2",
+        "Effective Radiative Forcing",
+        "Surface Temperature",
+    ],
+)
 
 # %% [markdown]
 # ### Comparing With and Without Temperature Feedback
 #
-# To see the effect of temperature feedback on the carbon cycle, let's run
-# the model with feedback disabled and compare.
+# To see the effect of the temperature feedback,
+# we build the same model with `alpha_temperature=0` and compare.
 
 # %%
-# Model without temperature feedback
-carbon_cycle_no_feedback = CarbonCycleBuilder.from_parameters(
-    dict(
-        tau=25.0,
-        conc_pi=278.0,
-        alpha_temperature=0.0,  # No feedback
-    )
-).build()
-
-no_feedback_model = (
-    ModelBuilder()
-    .with_time_axis(time_axis)
-    .with_schema(erf_schema)  # Same schema for ERF aggregation
-    .with_rust_component(carbon_cycle_no_feedback)
-    .with_rust_component(co2_erf)
-    .with_rust_component(two_layer)
-    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions_scenario)
-    .with_initial_values(
-        {
-            "Cumulative Land Uptake": 0.0,
-            "Cumulative Emissions|CO2": 0.0,
-            "Atmospheric Concentration|CO2": 278.0,
-            "Surface Temperature": 0.0,
-            "Deep Ocean Temperature": 0.0,
-        }
-    )
-).build()
-
+no_feedback_model = build_feedback_model(alpha_temperature=0.0)
 no_feedback_model.run()
 no_feedback_results = as_dataframe(no_feedback_model.timeseries(), time_axis)
 
-# %%
-# Compare temperature response
+# %% tags=["remove_input"]
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-
-# CO2 concentration comparison
-ax = axes[0]
-ax.plot(
-    feedback_results.columns,
-    feedback_results.loc["Atmospheric Concentration|CO2"].values.flatten(),
-    label="With feedback",
-)
-ax.plot(
-    no_feedback_results.columns,
-    no_feedback_results.loc["Atmospheric Concentration|CO2"].values.flatten(),
-    "--",
-    label="Without feedback",
-)
-ax.set_xlabel("Year")
-ax.set_ylabel("CO2 Concentration (ppm)")
-ax.set_title("CO2 Concentration")
-ax.legend()
-ax.grid(True, alpha=0.3)
-
-# Temperature comparison
-ax = axes[1]
-ax.plot(
-    feedback_results.columns,
-    feedback_results.loc["Surface Temperature"].values.flatten(),
-    label="With feedback",
-)
-ax.plot(
-    no_feedback_results.columns,
-    no_feedback_results.loc["Surface Temperature"].values.flatten(),
-    "--",
-    label="Without feedback",
-)
-ax.set_xlabel("Year")
-ax.set_ylabel("Temperature Anomaly (K)")
-ax.set_title("Surface Temperature")
-ax.legend()
-ax.grid(True, alpha=0.3)
-
-plt.tight_layout()
+for ax, var in zip(axes, ["Atmospheric Concentration|CO2", "Surface Temperature"]):
+    for results_df, label, style in [
+        (feedback_results, "With feedback", "-"),
+        (no_feedback_results, "Without feedback", "--"),
+    ]:
+        data = results_df.xs(var, level="variable")
+        ax.plot(data.columns, data.iloc[0], style, label=label)
+    ax.set_title(var)
+    ax.set_xlabel("Year")
+    ax.set_ylabel(data.index[0])
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+fig.tight_layout()
 plt.show()
 
 # %% [markdown]
-# The temperature feedback amplifies warming by reducing the efficiency of
-# natural carbon sinks at higher temperatures. This positive feedback loop
-# results in:
+# The temperature feedback amplifies warming by reducing the efficiency of natural carbon sinks
+# at higher temperatures.
+# With the feedback, the model gives higher CO2 concentrations, more radiative forcing
+# and higher surface temperatures.
 #
-# - Higher CO2 concentrations
-# - Greater radiative forcing
-# - Higher surface temperatures
-#
-# This demonstrates why coupled climate-carbon models are important for
-# projecting future climate change.
-
-# %% [markdown]
 # ## Summary
 #
-# This notebook demonstrated how to:
+# - `ModelBuilder` collects the time axis, components, exogenous data and initial values,
+#   and `build()` turns them into a model.
+# - The interpolation strategy sets how exogenous data is read between its points.
+# - `debug_info()` and `as_dot()` show what the builder resolved.
+# - A component that reads another's output from the previous step closes a feedback loop across timesteps.
 #
-# 1. Create a `ModelBuilder` with a time axis
-# 2. Add Rust components with parameters
-# 3. Provide exogenous variables as `Timeseries` objects with an interpolation strategy
-# 4. Set initial values for state variables
-# 5. Build and run the model
-# 6. Inspect model structure with `debug_info()` (rich, plain, or json formats)
-# 7. Extract results as `TimeseriesCollection`
-# 8. Build complex feedback-coupled models with multiple components
-# 9. Visualise dependency graphs showing component relationships
-# 10. Compare model behaviour with and without feedback processes
-#
-# For more details on creating custom components, see the
-# [Components in Python](component_python.py) and
-# [Components in Rust](component_rust.md) guides.
+# For more on writing components, see [Components in Python](../component_python/)
+# and [Components in Rust](../component_rust/).

@@ -1,10 +1,12 @@
 # Components in Rust
 
-This guide demonstrates how to implement climate model components in Rust using the `ComponentIO` derive macro.
+This guide demonstrates how to implement climate model components in Rust
+using the `ComponentIO` derive macro.
 
 ## Overview
 
-Components are the building blocks of RSCM models. Each component:
+Components are the building blocks of RSCM models.
+Each component:
 
 - Declares its inputs, outputs, and state variables via the `ComponentIO` derive macro
 - Implements the `Component` trait with `definitions()` and `solve()` methods
@@ -16,11 +18,14 @@ Components are the building blocks of RSCM models. Each component:
 - [Coupled Models](coupled_model.py): Combining multiple components
 - [Key Concepts](../key_concepts.md): Core RSCM architecture
 - [Documenting Components](../developers/documenting_components.md): How component pages are generated
-- [Python API](../api/rscm/): Complete API documentation
+- [Python API](../api/rscm/index.md): Complete API documentation
 
 ## Creating a Component
 
-Use the `ComponentIO` derive macro with struct-level attributes to declare inputs and outputs:
+This section walks through `CO2ERF`, which computes CO2 forcing from concentration.
+The full source is `crates/rscm-components/src/components/co2_erf.rs`.
+
+A component module starts with these imports:
 
 ```rust
 use rscm_core::component::{
@@ -32,8 +37,16 @@ use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
+```
 
-/// Parameters for the CO2 ERF component
+The code `ComponentIO` generates refers to `GridType`, `RequirementType`, `ScalarWindow`, `StateValue`
+and the other types above by their short names.
+Import them in the module that derives `ComponentIO`, even where your own code does not use them.
+
+The parameters are a plain serialisable struct.
+The component struct derives `ComponentIO` and declares its inputs and outputs with struct-level attributes:
+
+```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CO2ERFParameters {
     /// ERF due to a doubling of atmospheric CO2 concentrations (W/m^2)
@@ -69,7 +82,12 @@ impl CO2ERF {
             * (1.0 + (concentration - self.parameters.conc_pi) / self.parameters.conc_pi).ln()
     }
 }
+```
 
+The `Component` impl returns the generated definitions and implements `solve`,
+which reads the typed inputs and returns the typed outputs:
+
+```rust
 #[typetag::serde]
 impl Component for CO2ERF {
     fn definitions(&self) -> Vec<RequirementDefinition> {
@@ -92,9 +110,8 @@ impl Component for CO2ERF {
 }
 ```
 
-The generated code refers to `GridType`, `RequirementType`, `ScalarWindow`, `StateValue`
-and the other types above by their short names.
-Import them in the module that derives `ComponentIO`, even where your own code does not use them.
+Every component needs these imports and the same `definitions()` body.
+The later listings on this page leave them out.
 
 ### Attributes
 
@@ -160,7 +177,7 @@ It reads scalar data directly and aggregates FourBox or Hemispheric data to a gl
 | `at_offset(n)` | Value at a relative offset, or `None` if out of bounds                       |
 
 Prefer `get()` unless the physics needs a specific end of the timestep.
-See "Timestep Semantics" in [Key Concepts](../key_concepts.md) for the details.
+See [Timestep Semantics](../key_concepts.md#timestep-semantics) for the details.
 
 ## State Variables
 
@@ -191,8 +208,7 @@ State variables need an initial value, set with `ModelBuilder::with_initial_valu
 ### Internal State
 
 Some components carry history that is not a model variable, such as ocean layer temperatures.
-Define a state type that implements `ComponentState`,
-then override `create_initial_state` and `solve_with_state` on the `Component` trait:
+Define a state type that implements `ComponentState`:
 
 ```rust
 use rscm_core::component::ComponentState;
@@ -212,7 +228,12 @@ impl ComponentState for LaggedState {
         self
     }
 }
+```
 
+Then override `create_initial_state` and `solve_with_state` on the `Component` trait.
+`solve_with_state` downcasts the state to the concrete type:
+
+```rust
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[inputs(
     forcing { name = "Effective Radiative Forcing", unit = "W/m^2" },
@@ -225,7 +246,11 @@ pub struct Lagged {
 }
 
 impl Lagged {
-    fn solve_impl(&self, input_state: &InputState, state: &mut LaggedState) -> RSCMResult<OutputState> {
+    fn solve_impl(
+        &self,
+        input_state: &InputState,
+        state: &mut LaggedState,
+    ) -> RSCMResult<OutputState> {
         let inputs = LaggedInputs::from_input_state(input_state);
         state.history.push(inputs.forcing.get());
         let start = state.history.len().saturating_sub(self.window);
@@ -237,11 +262,14 @@ impl Lagged {
 
 #[typetag::serde]
 impl Component for Lagged {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        Self::generated_definitions()
-    }
+    // definitions() as in CO2ERF
 
-    fn solve(&self, _t_current: Time, _t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
+    fn solve(
+        &self,
+        _t_current: Time,
+        _t_next: Time,
+        input_state: &InputState,
+    ) -> RSCMResult<OutputState> {
         self.solve_impl(input_state, &mut LaggedState::default())
     }
 
@@ -272,7 +300,8 @@ See `OceanCarbon` in `crates/rscm-magicc/src/carbon/ocean.rs` for a full example
 
 ## ODE-Based Components
 
-Components defined by differential equations implement the `IVP` trait and solve with `IVPBuilder`.
+Components defined by differential equations implement the `IVP` (initial value problem) trait
+and solve with `IVPBuilder`.
 `calculate_dy_dt` reads inputs from the input state and the current solution from `y`:
 
 ```rust
@@ -308,11 +337,14 @@ impl IVP<Time, Vector1<FloatValue>> for OneBox {
 
 #[typetag::serde]
 impl Component for OneBox {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        Self::generated_definitions()
-    }
+    // definitions() as in CO2ERF
 
-    fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
+    fn solve(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+    ) -> RSCMResult<OutputState> {
         let inputs = OneBoxInputs::from_input_state(input_state);
         let y0 = Vector1::new(inputs.temperature.at_start());
 
@@ -339,58 +371,36 @@ RSCM supports spatially-resolved variables:
 - **FourBox**: Northern Ocean, Northern Land, Southern Ocean, Southern Land
 - **Hemispheric**: Northern, Southern
 
-Specify the grid type in your declaration:
+Set `grid` in the declaration, and return the matching slice type from `solve`.
+`FourBoxSlice::from_array` takes the regions in the order
+Northern Ocean, Northern Land, Southern Ocean, Southern Land:
 
 ```rust
-use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
-};
-use rscm_core::errors::RSCMResult;
-use rscm_core::state::{FourBoxSlice, StateValue};
-use rscm_core::timeseries::{FloatValue, Time};
-use rscm_core::ComponentIO;
-use serde::{Deserialize, Serialize};
+use rscm_core::state::FourBoxSlice;
 
-#[derive(Debug, Serialize, Deserialize, ComponentIO)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[inputs(
-    forcing { name = "Effective Radiative Forcing", unit = "W/m^2" },
+    erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
 )]
 #[outputs(
-    regional_temp { name = "Regional Temperature", unit = "K", grid = "FourBox" },
+    heat_uptake { name = "Heat Uptake|Ocean", unit = "W/m^2", grid = "FourBox" },
 )]
-pub struct RegionalClimate {
-    pub sensitivity: FloatValue,
+pub struct FourBoxOceanHeatUptake {
+    pub parameters: FourBoxOceanHeatUptakeParameters,
 }
 
-#[typetag::serde]
-impl Component for RegionalClimate {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        Self::generated_definitions()
-    }
-
-    fn solve(
-        &self,
-        _t_current: Time,
-        _t_next: Time,
-        input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
-        let inputs = RegionalClimateInputs::from_input_state(input_state);
-        let forcing = inputs.forcing.get();
-
-        // Order: Northern Ocean, Northern Land, Southern Ocean, Southern Land
-        let outputs = RegionalClimateOutputs {
-            regional_temp: FourBoxSlice::from_array([
-                forcing * self.sensitivity * 0.8,
-                forcing * self.sensitivity * 1.2,
-                forcing * self.sensitivity * 0.7,
-                forcing * self.sensitivity * 1.1,
-            ]),
-        };
-        Ok(outputs.into())
-    }
-}
+// In solve():
+let outputs = FourBoxOceanHeatUptakeOutputs {
+    heat_uptake: FourBoxSlice::from_array([
+        erf * self.parameters.northern_ocean_ratio,
+        erf * self.parameters.northern_land_ratio,
+        erf * self.parameters.southern_ocean_ratio,
+        erf * self.parameters.southern_land_ratio,
+    ]),
+};
 ```
+
+The full component is `crates/rscm-components/src/components/four_box_ocean_heat_uptake.rs`.
 
 ### Grid Type Mapping
 
@@ -486,16 +496,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_calculate_erf_at_preindustrial() {
-        let component = CO2ERF::from_parameters(CO2ERFParameters {
-            erf_2xco2: 3.7,
-            conc_pi: 278.0,
-        });
-        let erf = component.calculate_erf(278.0);
-        assert!((erf - 0.0).abs() < 1e-10);
-    }
-
-    #[test]
     fn test_calculate_erf_at_2x_co2() {
         let params = CO2ERFParameters {
             erf_2xco2: 3.7,
@@ -508,5 +508,6 @@ mod tests {
 }
 ```
 
+`co2_erf.rs` has more tests, including one for the generated definitions.
 Integration tests can use `ModelBuilder` to check component behaviour in context.
 See `crates/rscm-core/src/example_components.rs` for patterns.
