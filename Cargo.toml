@@ -23,7 +23,7 @@ resolver = "2"
 needless_range_loop = "allow"
 
 [workspace.package]
-version = "0.6.1"
+version = "0.7.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/lewisjared/rscm"
@@ -32,13 +32,13 @@ keywords = ["physics", "scm", "climate"]
 categories = ["science"]
 
 [workspace.dependencies]
-rscm-core = { version = "0.6.1", path = "crates/rscm-core" }
-rscm-components = { version = "0.6.1", path = "crates/rscm-components" }
-rscm-macros = { version = "0.6.1", path = "crates/rscm-macros" }
-rscm-two-layer = { version = "0.6.1", path = "crates/rscm-two-layer" }
-rscm-magicc = { version = "0.6.1", path = "crates/rscm-magicc" }
-rscm-fair = { version = "0.6.1", path = "crates/rscm-fair" }
-rscm-calibrate = { version = "0.6.1", path = "crates/rscm-calibrate" }
+rscm-core = { version = "0.7.0", path = "crates/rscm-core" }
+rscm-components = { version = "0.7.0", path = "crates/rscm-components" }
+rscm-macros = { version = "0.7.0", path = "crates/rscm-macros" }
+rscm-two-layer = { version = "0.7.0", path = "crates/rscm-two-layer" }
+rscm-magicc = { version = "0.7.0", path = "crates/rscm-magicc" }
+rscm-fair = { version = "0.7.0", path = "crates/rscm-fair" }
+rscm-calibrate = { version = "0.7.0", path = "crates/rscm-calibrate" }
 pyo3 = { version = "0.27.2", features = ["abi3-py313"] }
 numpy = "0.27.1"
 rayon = "1.10"
