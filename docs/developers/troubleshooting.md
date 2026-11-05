@@ -106,6 +106,30 @@ model = (
 )
 ```
 
+#### MissingExogenousInput
+
+```
+Inputs with no producer, exogenous data or initial value: 'Effective Radiative Forcing' (read by TwoLayer).
+```
+
+**Cause:** No component produces an input, and no exogenous data or initial value supplies it.
+
+**Fix:** Supply the input as exogenous data:
+
+```python
+model = (
+    ModelBuilder()
+    .with_rust_component(component)
+    .with_time_axis(time_axis)
+    .with_exogenous_variable("Effective Radiative Forcing", erf)
+    .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
+    .build()
+)
+```
+
+If the input is meant to be empty, call `with_missing_exogenous_allowed()` before `build()`.
+The input is then NaN.
+
 #### Missing input when calling `solve` directly
 
 ```
@@ -114,7 +138,7 @@ pyo3_runtime.PanicException: No timeseries with variable='Emissions|CO2'
 
 **Cause:** A component's `solve` was called directly without one of its declared inputs.
 Inside a model this does not happen.
-A declared input with no producer and no exogenous data reads as NaN instead.
+A declared input with no producer and no exogenous data fails the build with `MissingExogenousInput` instead.
 
 **Fixes:**
 
@@ -122,7 +146,7 @@ A declared input with no producer and no exogenous data reads as NaN instead.
 - Verify all required components and exogenous variables are added to the model
 - Check for typos in variable names (names are case-sensitive)
 - If outputs are unexpectedly NaN, check `model.debug_info()`.
-  Inputs marked `(exo)` have no producing component and must be supplied as exogenous data.
+  Inputs marked `(exo)` have no producing component.
 
 #### GridTypeMismatch
 
@@ -336,10 +360,12 @@ for defn in component.definitions():
 ### Unit Mismatches
 
 Components define expected units.
-Without a schema, exogenous data must already be in the unit the component expects.
-With a `VariableSchema`, the model converts compatible units when components read inputs,
+The builder converts exogenous data into the unit the model stores it in,
 for example `MtCO2/yr` to `GtC/yr`.
-Incompatible units, such as `K` and `W/m^2`, fail when the model is built.
+That is the schema's unit, or without a schema the unit the components declare.
+With a `VariableSchema`, the model also converts compatible units when components read inputs.
+Incompatible units, such as `K` and `W/m^2`, fail when the model is built,
+as do unit strings the parser cannot read.
 See [Physical Units](../notebooks/units_tutorial.py).
 
 ### Time Grid Alignment

@@ -64,6 +64,15 @@ pub enum RSCMError {
     #[error("Invalid lag {lag}: {reason}")]
     InvalidLag { lag: String, reason: String },
 
+    /// Inputs that no component produces and no exogenous data or initial value supplies.
+    ///
+    /// `inputs` holds each `(variable, consumers)` pair, sorted by variable.
+    #[error(
+        "Inputs with no producer, exogenous data or initial value: {}. Supply them as exogenous data, or call with_missing_exogenous_allowed() to fill them with NaN.",
+        format_missing_inputs(inputs)
+    )]
+    MissingExogenousInput { inputs: Vec<(String, Vec<String>)> },
+
     /// Two components produce the same variable.
     #[error("Variable '{variable}' has more than one producer: {}", components.join(", "))]
     MultipleProducers {
@@ -209,6 +218,14 @@ fn format_lag_suggestions(suggestions: &[(String, String)]) -> String {
     suggestions
         .iter()
         .map(|(variable, consumer)| format!("with_lag_for({variable:?}, {consumer:?})"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_missing_inputs(inputs: &[(String, Vec<String>)]) -> String {
+    inputs
+        .iter()
+        .map(|(variable, consumers)| format!("'{variable}' (read by {})", consumers.join(", ")))
         .collect::<Vec<_>>()
         .join(", ")
 }

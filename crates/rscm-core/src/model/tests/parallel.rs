@@ -79,7 +79,7 @@ fn build_errors_keep_their_position() {
     let mut wrong_units = builder(0.5);
     wrong_units.with_schema(
         VariableSchema::new()
-            .variable("Emissions|CO2", "GtCO2")
+            .variable("Emissions|CO2", "GtC / yr")
             .variable("Concentrations|CO2", "GtC"),
     );
     let builders = [builder(0.5), wrong_units];

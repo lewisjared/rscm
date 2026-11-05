@@ -220,6 +220,10 @@ except ValueError as e:
 # 2. **Calculates conversion factors**: the builder computes the multiplier needed at runtime.
 # 3. **Applies conversion at runtime**: values are converted as Rust components read their inputs.
 #
+# The builder also converts exogenous data into the unit the model stores it in:
+# the schema's unit, or without a schema the unit the components declare.
+# Data in a unit with a different dimension, or a unit the parser cannot read, fails `build()`.
+#
 # Below, the schema stores CO₂ emissions in `MtCO2/yr`.
 # The carbon cycle component expects `GtC / yr`, so the model converts the values as it reads them.
 # 36,666.7 MtCO2/yr is 10 GtC/yr.
@@ -272,11 +276,7 @@ concentration = model.timeseries().get_timeseries_by_name(
 print(f"CO2 concentration in 2010: {concentration.values()[-1]:.1f} ppm")
 
 # %% [markdown]
-# Conversion has some limits:
-#
-# - Without a schema, the builder does not convert units or check them against the exogenous data.
-#   Provide exogenous timeseries in the units the components declare.
-# - Python components receive values in the schema's units, without conversion.
+# Python components receive values in the schema's units, without conversion.
 
 # %% [markdown]
 # ## Summary

@@ -134,6 +134,12 @@ impl PyModelBuilder {
         self_
     }
 
+    /// Allow inputs with no producer, exogenous data or initial value, filling them with NaN.
+    fn with_missing_exogenous_allowed(mut self_: PyRefMut<Self>) -> PyRefMut<Self> {
+        self_.0.with_missing_exogenous_allowed();
+        self_
+    }
+
     /// Add a variable schema to the model for validation and aggregation.
     ///
     /// The schema defines the variables the model expects and any aggregates

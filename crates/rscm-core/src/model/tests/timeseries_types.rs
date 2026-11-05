@@ -2,8 +2,9 @@
 
 use crate::component::{Component, InputState, OutputState, RequirementDefinition, TimeseriesType};
 use crate::errors::{RSCMError, RSCMResult};
+use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::model::{Model, ModelBuilder};
-use crate::spatial::ScalarRegion;
+use crate::spatial::{ScalarGrid, ScalarRegion};
 use crate::state::StateValue;
 use crate::timeseries::{Time, TimeAxis, Timeseries};
 use numpy::ndarray::{array, Array};
@@ -52,6 +53,7 @@ fn output(name: &str, unit: &str) -> RequirementDefinition {
 
 fn builder(components: Vec<Arc<dyn Component + Send + Sync>>) -> ModelBuilder {
     let mut builder = ModelBuilder::new();
+    builder.with_missing_exogenous_allowed();
     builder.with_time_axis(TimeAxis::from_values(Array::range(2000.0, 2006.0, 1.0)));
     for component in components {
         builder.with_component(component);
@@ -249,7 +251,13 @@ fn builder_series_interpolate_by_type() {
 
 #[test]
 fn exogenous_series_keep_their_interpolation() {
-    let data = Timeseries::from_values(array![0.0, 10.0], array![2000.0, 2010.0]);
+    let data = Timeseries::new(
+        array![[0.0], [10.0]],
+        Arc::new(TimeAxis::from_values(array![2000.0, 2010.0])),
+        ScalarGrid,
+        "GtC / yr".to_string(),
+        InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+    );
     let model = builder(vec![Arc::new(Consumer(vec![input(
         "Emissions",
         "GtC / yr",

@@ -41,7 +41,7 @@ class FluxState(Component):
 
 
 def builder(*components: Component) -> ModelBuilder:
-    builder = ModelBuilder().with_time_axis(AXIS)
+    builder = ModelBuilder().with_time_axis(AXIS).with_missing_exogenous_allowed()
     for component in components:
         builder.with_py_component(PythonComponent.build(component))
     return builder

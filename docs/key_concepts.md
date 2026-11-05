@@ -288,9 +288,10 @@ For example, CO2 concentration might be:
 - **Endogenous** in a full carbon-cycle model where a component calculates concentration from emissions
 - **Exogenous** in a temperature-only model where concentration is prescribed directly
 
-The builder does not check that exogenous inputs were supplied.
-A missing exogenous input is NaN, and the NaN propagates through every component that reads it.
-State variables are checked: `build()` raises `ValueError` if one has no initial value.
+`build()` raises `ValueError` if an exogenous input has no data and no initial value,
+naming each missing variable and the components that read it.
+`with_missing_exogenous_allowed()` builds the model anyway, with the missing inputs filled with NaN.
+State variables are also checked: `build()` raises `ValueError` if one has no initial value.
 
 Scalar exogenous data uses `with_exogenous_variable()` and scalar initial values use `with_initial_values()`.
 Grid variables have their own methods:
