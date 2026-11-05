@@ -3,6 +3,7 @@
 //! Parameters for well-mixed greenhouse gas (CO2, CH4, N2O) radiative
 //! forcing calculations using IPCCTAR or OLBL methods.
 
+use rscm_components::meinshausen2020::Meinshausen2020;
 use serde::{Deserialize, Serialize};
 
 /// Forcing calculation method
@@ -188,6 +189,25 @@ impl Default for GhgForcingParameters {
             adjust_n2o: 1.0,
 
             ch4_strat_h2o_fraction: 0.0923,
+        }
+    }
+}
+
+impl GhgForcingParameters {
+    /// OLBL coefficients.
+    pub fn olbl(&self) -> Meinshausen2020 {
+        Meinshausen2020 {
+            a1: self.olbl_co2_a1,
+            b1: self.olbl_co2_b1,
+            c1: self.olbl_co2_c1,
+            d1: self.olbl_co2_d1,
+            a2: self.olbl_n2o_a2,
+            b2: self.olbl_n2o_b2,
+            c2: self.olbl_n2o_c2,
+            d2: self.olbl_n2o_d2,
+            a3: self.olbl_ch4_a3,
+            b3: self.olbl_ch4_b3,
+            d3: self.olbl_ch4_d3,
         }
     }
 }

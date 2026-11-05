@@ -46,6 +46,34 @@ macro_rules! create_component_builder {
     };
 }
 
+/// Like [`create_component_builder`], for a component whose `from_parameters` returns a
+/// `Result`, so `build` raises `ValueError` for invalid parameters.
+#[macro_export]
+macro_rules! create_fallible_component_builder {
+    ($builder_name:ident, $rust_component:ty, $component_parameters:ty) => {
+        #[pyclass]
+        pub struct $builder_name {
+            parameters: $component_parameters,
+        }
+
+        #[pymethods]
+        impl $builder_name {
+            #[staticmethod]
+            pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
+                pythonize::depythonize::<$component_parameters>(&parameters)
+                    .map(|parameters| Self { parameters })
+                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+            }
+
+            pub fn build(&self) -> PyResult<PyRustComponent> {
+                let component = <$rust_component>::from_parameters(self.parameters.clone())
+                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+                Ok(PyRustComponent(std::sync::Arc::new(component)))
+            }
+        }
+    };
+}
+
 /// Expose component-related functionality to python
 #[macro_export]
 macro_rules! impl_component {

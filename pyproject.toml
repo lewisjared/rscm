@@ -30,6 +30,12 @@ Homepage = "https://github.com/lewisjared/rscm"
 Repository = "https://github.com/lewisjared/rscm"
 Documentation = "https://lewisjared.github.io/rscm/"
 
+[project.optional-dependencies]
+fair = [
+    "fair>=2.2.5,<2.3",
+    "xarray",
+]
+
 [build-system]
 requires = [
     'maturin>=1.7,<2'
@@ -58,6 +64,8 @@ dev = [
     "pandas-stubs>=2.0.0",
     "types-tqdm>=4.0.0",
     "pyarrow>=23.0.0",
+    "fair>=2.2.5,<2.3",
+    "xarray",
 ]
 
 # Regenerating MAGICC fixtures (scripts/regression) and ad hoc analysis.
@@ -191,6 +199,10 @@ disallow_incomplete_defs = false
 disable_error_code = ["method-assign", "var-annotated", "attr-defined", "call-overload", "assignment"]
 
 # Ignore dynamic metaclass patterns in component module
+[[tool.mypy.overrides]]
+module = ["fair", "fair.*"]
+ignore_missing_imports = true
+
 [[tool.mypy.overrides]]
 module = "rscm.component"
 disable_error_code = ["attr-defined"]

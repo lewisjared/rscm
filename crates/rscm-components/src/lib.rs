@@ -55,6 +55,10 @@
 //!     .build();
 //! ```
 //!
+//! # Shared formulae
+//!
+//! [`meinshausen2020`] holds the CO2, CH4 and N2O forcing formulae shared by MAGICC (OLBL) and FaIR.
+//!
 //! # Constants
 //!
 //! The [`constants`] module provides physical constants used across components, such as
@@ -62,6 +66,7 @@
 
 mod components;
 pub mod constants;
+pub mod meinshausen2020;
 pub mod python;
 
 pub use components::*;

@@ -31,9 +31,8 @@
 //!
 //! ## Oslo line-by-line (OLBL)
 //!
-//! Concentration-dependent coefficients calibrated against line-by-line
-//! radiative transfer calculations. Uses square-root overlap terms for
-//! CH4/N2O and a quadratic alpha with saturation for CO2.
+//! Meinshausen et al. (2020), shared with FaIR in [`rscm_components::meinshausen2020`],
+//! with MAGICC7's coefficients and the pre-industrial concentrations as reference.
 
 use crate::parameters::{ForcingMethod, GhgForcingParameters};
 use rscm_core::component::{
@@ -134,7 +133,10 @@ impl GhgForcing {
     pub fn calculate_co2_forcing(&self, co2: FloatValue, n2o: FloatValue) -> FloatValue {
         match self.parameters.method {
             ForcingMethod::Ipcctar => self.co2_forcing_ipcctar(co2),
-            ForcingMethod::Olbl => self.co2_forcing_olbl(co2, n2o, 1.0),
+            ForcingMethod::Olbl => {
+                let p = &self.parameters;
+                p.olbl().co2(co2, n2o, p.co2_pi, 1.0)
+            }
         }
     }
 
@@ -142,7 +144,10 @@ impl GhgForcing {
     pub fn calculate_ch4_forcing(&self, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
         match self.parameters.method {
             ForcingMethod::Ipcctar => self.ch4_forcing_ipcctar(ch4, n2o),
-            ForcingMethod::Olbl => self.ch4_forcing_olbl(ch4, n2o, 1.0),
+            ForcingMethod::Olbl => {
+                let p = &self.parameters;
+                p.olbl().ch4(ch4, n2o, p.ch4_pi, 1.0)
+            }
         }
     }
 
@@ -158,7 +163,10 @@ impl GhgForcing {
     ) -> FloatValue {
         match self.parameters.method {
             ForcingMethod::Ipcctar => self.n2o_forcing_ipcctar(ch4, n2o),
-            ForcingMethod::Olbl => self.n2o_forcing_olbl(co2, ch4, n2o, 1.0),
+            ForcingMethod::Olbl => {
+                let p = &self.parameters;
+                p.olbl().n2o(co2, ch4, n2o, p.n2o_pi, 1.0)
+            }
         }
     }
 
@@ -186,44 +194,6 @@ impl GhgForcing {
 
     // === OLBL implementations (MAGICC7 v7.5.3) ===
 
-    /// CO2 forcing using OLBL method
-    ///
-    /// $$\alpha = a_1 (\Delta C)^2 + b_1 \Delta C + d_1 + c_1 \sqrt{N_2O}$$
-    /// $$F_{CO2} = \alpha \cdot \ln(C / C_0)$$
-    ///
-    /// With saturation: if $C > C_{max}$, alpha is capped at its maximum.
-    /// The OLBL forcings take the rapid adjustment `adjust` before the concentration term, as MAGICC7 does.
-    fn co2_forcing_olbl(&self, co2: FloatValue, n2o: FloatValue, adjust: FloatValue) -> FloatValue {
-        self.olbl_co2_alpha(co2, n2o) * adjust * (co2 / self.parameters.co2_pi).ln()
-    }
-
-    /// OLBL CO2 forcing per unit $\ln(C / C_0)$ at the given concentrations.
-    fn olbl_co2_alpha(&self, co2: FloatValue, n2o: FloatValue) -> FloatValue {
-        let p = &self.parameters;
-        let co2_pi = p.co2_pi;
-        let delta_co2 = co2 - co2_pi;
-
-        // N2O overlap term uses sqrt of current N2O concentration
-        let n2o_overlap = p.olbl_co2_c1 * n2o.sqrt();
-
-        // Saturation concentration: vertex of the quadratic, rounded as in MAGICC7
-        let c_max = (2.0 * p.olbl_co2_a1 * co2_pi - p.olbl_co2_b1) / (2.0 * p.olbl_co2_a1);
-
-        if co2 >= c_max {
-            // Saturated regime: alpha at maximum (vertex of parabola)
-            -p.olbl_co2_b1 * p.olbl_co2_b1 / (4.0 * p.olbl_co2_a1) + p.olbl_co2_d1 + n2o_overlap
-        } else if co2 <= co2_pi {
-            // Below PI: no quadratic/linear contribution
-            p.olbl_co2_d1 + n2o_overlap
-        } else {
-            // Normal regime: full quadratic
-            p.olbl_co2_b1 * delta_co2
-                + p.olbl_co2_a1 * (delta_co2 * delta_co2)
-                + p.olbl_co2_d1
-                + n2o_overlap
-        }
-    }
-
     /// ERF of a CO2 doubling at the current concentrations (`CORE_DELQ2XCO2`).
     ///
     /// MAGICC7 recalculates this every year for OLBL, which changes the climate
@@ -232,7 +202,9 @@ impl GhgForcing {
         let p = &self.parameters;
         match p.method {
             ForcingMethod::Ipcctar => p.delq2xco2 * p.adjust_co2,
-            ForcingMethod::Olbl => self.olbl_co2_alpha(co2, n2o) * p.adjust_co2 * 2.0_f64.ln(),
+            ForcingMethod::Olbl => {
+                p.olbl().co2_alpha(co2, n2o, p.co2_pi) * p.adjust_co2 * 2.0_f64.ln()
+            }
         }
     }
 
@@ -242,44 +214,9 @@ impl GhgForcing {
         let ch4_alone = match p.method {
             // MAGICC7 leaves out the N2O overlap for IPCCTAR
             ForcingMethod::Ipcctar => p.adjust_ch4 * p.ch4_radeff * (ch4.sqrt() - p.ch4_pi.sqrt()),
-            ForcingMethod::Olbl => self.ch4_forcing_olbl(ch4, p.n2o_pi, p.adjust_ch4),
+            ForcingMethod::Olbl => p.olbl().ch4(ch4, p.n2o_pi, p.ch4_pi, p.adjust_ch4),
         };
         ch4_alone * p.ch4_strat_h2o_fraction
-    }
-
-    /// CH4 forcing using OLBL method
-    ///
-    /// $$F_{CH4} = (a_3 \sqrt{CH_4} + b_3 \sqrt{N_2O} + d_3) \cdot (\sqrt{CH_4} - \sqrt{CH_{4,pi}})$$
-    ///
-    /// Note: Stratospheric H2O from CH4 oxidation is reported as a separate
-    /// forcing agent in MAGICC7 and is not included in the CH4 ERF output.
-    fn ch4_forcing_olbl(&self, ch4: FloatValue, n2o: FloatValue, adjust: FloatValue) -> FloatValue {
-        let p = &self.parameters;
-
-        let coeff = p.olbl_ch4_a3 * ch4.sqrt() + p.olbl_ch4_b3 * n2o.sqrt() + p.olbl_ch4_d3;
-
-        coeff * adjust * (ch4.sqrt() - p.ch4_pi.sqrt())
-    }
-
-    /// N2O forcing using OLBL method
-    ///
-    /// $$F_{N_2O} = (a_2 \sqrt{CO_2} + b_2 \sqrt{N_2O} + c_2 \sqrt{CH_4} + d_2)
-    ///     \cdot (\sqrt{N_2O} - \sqrt{N_{2}O_{pi}})$$
-    fn n2o_forcing_olbl(
-        &self,
-        co2: FloatValue,
-        ch4: FloatValue,
-        n2o: FloatValue,
-        adjust: FloatValue,
-    ) -> FloatValue {
-        let p = &self.parameters;
-
-        let coeff = p.olbl_n2o_a2 * co2.sqrt()
-            + p.olbl_n2o_b2 * n2o.sqrt()
-            + p.olbl_n2o_c2 * ch4.sqrt()
-            + p.olbl_n2o_d2;
-
-        coeff * adjust * (n2o.sqrt() - p.n2o_pi.sqrt())
     }
 
     /// Calculate all three forcings with rapid adjustment applied
@@ -297,11 +234,14 @@ impl GhgForcing {
                 ch4_erf: self.ch4_forcing_ipcctar(ch4, n2o) * p.adjust_ch4,
                 n2o_erf: self.n2o_forcing_ipcctar(ch4, n2o) * p.adjust_n2o,
             },
-            ForcingMethod::Olbl => GhgForcingResult {
-                co2_erf: self.co2_forcing_olbl(co2, n2o, p.adjust_co2),
-                ch4_erf: self.ch4_forcing_olbl(ch4, n2o, p.adjust_ch4),
-                n2o_erf: self.n2o_forcing_olbl(co2, ch4, n2o, p.adjust_n2o),
-            },
+            ForcingMethod::Olbl => {
+                let m = p.olbl();
+                GhgForcingResult {
+                    co2_erf: m.co2(co2, n2o, p.co2_pi, p.adjust_co2),
+                    ch4_erf: m.ch4(ch4, n2o, p.ch4_pi, p.adjust_ch4),
+                    n2o_erf: m.n2o(co2, ch4, n2o, p.n2o_pi, p.adjust_n2o),
+                }
+            }
         }
     }
 }

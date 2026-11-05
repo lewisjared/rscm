@@ -15,7 +15,8 @@
 //! │   └── state                # State value types
 //! ├── components               # Generic components from rscm-components
 //! ├── two_layer                # Two-layer model from rscm-two-layer
-//! └── magicc                   # MAGICC components from rscm-magicc
+//! ├── magicc                   # MAGICC components from rscm-magicc
+//! └── fair                     # FaIR components from rscm-fair
 //! ```
 //!
 //! # Implementation Details
@@ -30,12 +31,14 @@
 //! - `components` module: [`rscm_components::python::components`]
 //! - `two_layer` module: [`rscm_two_layer::python::two_layer`]
 //! - `magicc` module: [`rscm_magicc::python::magicc`]
+//! - `fair` module: [`rscm_fair::python::fair`]
 
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;
 use rscm_calibrate::python::calibrate;
 use rscm_components::python::components;
 use rscm_core::python::core;
+use rscm_fair::python::fair;
 use rscm_magicc::python::magicc;
 use rscm_two_layer::python::two_layer;
 use std::ffi::CString;
@@ -53,12 +56,14 @@ fn rscm(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(two_layer))?;
     m.add_wrapped(wrap_pymodule!(magicc))?;
     m.add_wrapped(wrap_pymodule!(calibrate))?;
+    m.add_wrapped(wrap_pymodule!(fair))?;
 
     set_path(m, "rscm._lib.core", "core")?;
     set_path(m, "rscm._lib.components", "components")?;
     set_path(m, "rscm._lib.two_layer", "two_layer")?;
     set_path(m, "rscm._lib.magicc", "magicc")?;
     set_path(m, "rscm._lib.calibrate", "calibrate")?;
+    set_path(m, "rscm._lib.fair", "fair")?;
     set_submodule_path(m, "rscm._lib.core.spatial", "core", "spatial")?;
     set_submodule_path(m, "rscm._lib.core.state", "core", "state")?;
 

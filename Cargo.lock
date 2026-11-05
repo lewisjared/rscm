@@ -1165,6 +1165,7 @@ dependencies = [
  "rscm-calibrate",
  "rscm-components",
  "rscm-core",
+ "rscm-fair",
  "rscm-magicc",
  "rscm-two-layer",
  "serde",
@@ -1249,6 +1250,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rscm-fair"
+version = "0.6.1"
+dependencies = [
+ "approx",
+ "nalgebra 0.34.2",
+ "pyo3",
+ "pythonize",
+ "rscm-components",
+ "rscm-core",
+ "serde",
+ "serde_json",
+ "typetag",
+]
+
+[[package]]
 name = "rscm-macros"
 version = "0.6.1"
 dependencies = [
@@ -1265,6 +1281,7 @@ dependencies = [
  "ndarray",
  "pyo3",
  "pythonize",
+ "rscm-components",
  "rscm-core",
  "serde",
  "serde_json",
