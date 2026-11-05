@@ -27,7 +27,7 @@ fn get_emissions() -> Timeseries<FloatValue> {
 fn test_model_with_valid_schema() {
     // Schema that matches component requirements
     let schema = VariableSchema::new()
-        .variable("Emissions|CO2", "GtCO2")
+        .variable("Emissions|CO2", "GtC / yr")
         .variable("Concentrations|CO2", "ppm");
 
     let _model = ModelBuilder::new()
@@ -46,7 +46,7 @@ fn test_model_with_valid_schema() {
 #[test]
 fn test_schema_rejects_undefined_output() {
     // Schema missing the output variable
-    let schema = VariableSchema::new().variable("Emissions|CO2", "GtCO2");
+    let schema = VariableSchema::new().variable("Emissions|CO2", "GtC / yr");
     // Missing "Concentrations|CO2"
 
     let result = ModelBuilder::new()
@@ -106,7 +106,7 @@ fn test_schema_rejects_incompatible_units() {
     // Schema with dimensionally incompatible unit for output variable
     // The component outputs "ppm" (dimensionless) but schema expects "GtC" (mass)
     let schema = VariableSchema::new()
-        .variable("Emissions|CO2", "GtCO2")
+        .variable("Emissions|CO2", "GtC / yr")
         .variable("Concentrations|CO2", "GtC"); // Wrong dimension - should be "ppm"
 
     let result = ModelBuilder::new()
@@ -176,7 +176,7 @@ fn test_schema_rejects_disaggregation_on_read() {
 fn test_schema_with_aggregate_validates() {
     // Schema with an aggregate definition
     let schema = VariableSchema::new()
-        .variable("Emissions|CO2", "GtCO2")
+        .variable("Emissions|CO2", "GtC / yr")
         .variable("Concentrations|CO2", "ppm")
         .aggregate("Total Concentrations", "ppm", AggregateOp::Sum)
         .from("Concentrations|CO2")
@@ -199,7 +199,7 @@ fn test_schema_with_aggregate_validates() {
 fn test_schema_creates_nan_for_unwritten_variables() {
     // Schema has a variable that no component writes to
     let schema = VariableSchema::new()
-        .variable("Emissions|CO2", "GtCO2")
+        .variable("Emissions|CO2", "GtC / yr")
         .variable("Concentrations|CO2", "ppm")
         .variable("Concentrations|CH4", "ppb"); // No component writes this
 
