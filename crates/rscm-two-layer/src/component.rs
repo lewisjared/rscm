@@ -300,7 +300,7 @@ mod tests {
     fn test_positive_erf_causes_warming() {
         let component = create_component();
         let ts_collection = create_input_state_with_erf(4.0, 2000.0, 2001.0);
-        let input_state = extract_state(&ts_collection, component.input_names(), 2000.0);
+        let input_state = extract_state(&ts_collection, component.inputs(), 2000.0);
 
         let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
         let temperature = match output_state.get("Surface Temperature").unwrap() {
@@ -328,7 +328,7 @@ mod tests {
     fn test_zero_erf_no_warming() {
         let component = create_component();
         let ts_collection = create_input_state_with_erf(0.0, 2000.0, 2001.0);
-        let input_state = extract_state(&ts_collection, component.input_names(), 2000.0);
+        let input_state = extract_state(&ts_collection, component.inputs(), 2000.0);
 
         let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
         let temperature = match output_state.get("Surface Temperature").unwrap() {
@@ -348,7 +348,7 @@ mod tests {
     fn test_negative_erf_causes_cooling() {
         let component = create_component();
         let ts_collection = create_input_state_with_erf(-2.0, 2000.0, 2001.0);
-        let input_state = extract_state(&ts_collection, component.input_names(), 2000.0);
+        let input_state = extract_state(&ts_collection, component.inputs(), 2000.0);
 
         let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
         let temperature = match output_state.get("Surface Temperature").unwrap() {
@@ -370,8 +370,7 @@ mod tests {
 
         // Integrate with ERF = 2.0
         let ts_collection_small = create_input_state_with_erf(2.0, 2000.0, 2001.0);
-        let input_state_small =
-            extract_state(&ts_collection_small, component.input_names(), 2000.0);
+        let input_state_small = extract_state(&ts_collection_small, component.inputs(), 2000.0);
         let output_small = component.solve(2000.0, 2001.0, &input_state_small).unwrap();
         let temp_small = match output_small.get("Surface Temperature").unwrap() {
             StateValue::Scalar(t) => *t,
@@ -380,8 +379,7 @@ mod tests {
 
         // Integrate with ERF = 4.0
         let ts_collection_large = create_input_state_with_erf(4.0, 2000.0, 2001.0);
-        let input_state_large =
-            extract_state(&ts_collection_large, component.input_names(), 2000.0);
+        let input_state_large = extract_state(&ts_collection_large, component.inputs(), 2000.0);
         let output_large = component.solve(2000.0, 2001.0, &input_state_large).unwrap();
         let temp_large = match output_large.get("Surface Temperature").unwrap() {
             StateValue::Scalar(t) => *t,

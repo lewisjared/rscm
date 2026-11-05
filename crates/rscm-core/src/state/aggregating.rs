@@ -972,7 +972,7 @@ mod aggregating_window_tests {
     fn test_aggregating_four_box_window_get_default_weights() {
         let ts = create_four_box_timeseries();
         // Index 1 = year 2001, values [11, 21, 31, 41]
-        let window = AggregatingFourBoxWindow::new(&ts, 1, "test", None);
+        let window = AggregatingFourBoxWindow::new(&ts, 0, "test", None);
 
         // With equal weights: (11 + 21 + 31 + 41) / 4 = 26.0
         assert_eq!(window.get(), 26.0);
@@ -983,7 +983,7 @@ mod aggregating_window_tests {
         let ts = create_four_box_timeseries();
         // Custom weights that sum to 1.0
         let weights = vec![0.5, 0.2, 0.2, 0.1];
-        let window = AggregatingFourBoxWindow::new(&ts, 1, "test", Some(weights));
+        let window = AggregatingFourBoxWindow::new(&ts, 0, "test", Some(weights));
 
         // With custom weights: 11*0.5 + 21*0.2 + 31*0.2 + 41*0.1 = 5.5 + 4.2 + 6.2 + 4.1 = 20.0
         assert_eq!(window.get(), 20.0);
@@ -1023,19 +1023,17 @@ mod aggregating_window_tests {
     #[test]
     fn test_aggregating_four_box_window_history() {
         let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxWindow::new(&ts, 1, "test", None);
+        let window = AggregatingFourBoxWindow::new(&ts, 0, "test", None);
 
         // Index 0 values [10, 20, 30, 40], mean = 25.0
         assert_eq!(window.history(1), Some(25.0));
-
-        let first = AggregatingFourBoxWindow::new(&ts, 0, "test", None);
-        assert_eq!(first.history(1), None);
+        assert_eq!(window.history(2), None);
     }
 
     #[test]
     fn test_aggregating_four_box_window_metadata() {
         let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxWindow::new(&ts, 1, "test", None);
+        let window = AggregatingFourBoxWindow::new(&ts, 0, "test", None);
 
         assert_eq!(window.len(), 3);
         assert!(!window.is_empty());
@@ -1049,14 +1047,14 @@ mod aggregating_window_tests {
         let values = Array2::from_shape_vec(
             (2, 4),
             vec![
+                20.0,
+                20.0,
+                20.0,
+                20.0, // 2000: all valid
                 10.0,
                 f64::NAN,
                 30.0,
-                40.0, // 2000: has NaN
-                20.0,
-                20.0,
-                20.0,
-                20.0, // 2001: all valid
+                40.0, // 2001: has NaN
             ],
         )
         .unwrap();
@@ -1082,7 +1080,7 @@ mod aggregating_window_tests {
     #[test]
     fn test_aggregating_hemispheric_window_get_default_weights() {
         let ts = create_hemispheric_timeseries();
-        let window = AggregatingHemisphericWindow::new(&ts, 1, "test", None);
+        let window = AggregatingHemisphericWindow::new(&ts, 0, "test", None);
 
         // Equal weights: (110 + 220) / 2 = 165.0
         assert_eq!(window.get(), 165.0);
@@ -1092,7 +1090,7 @@ mod aggregating_window_tests {
     fn test_aggregating_hemispheric_window_get_custom_weights() {
         let ts = create_hemispheric_timeseries();
         let weights = vec![0.7, 0.3];
-        let window = AggregatingHemisphericWindow::new(&ts, 1, "test", Some(weights));
+        let window = AggregatingHemisphericWindow::new(&ts, 0, "test", Some(weights));
 
         // 110*0.7 + 220*0.3 = 77.0 + 66.0 = 143.0
         assert_eq!(window.get(), 143.0);
@@ -1117,7 +1115,7 @@ mod aggregating_window_tests {
     #[test]
     fn test_aggregating_hemispheric_window_history() {
         let ts = create_hemispheric_timeseries();
-        let window = AggregatingHemisphericWindow::new(&ts, 1, "test", None);
+        let window = AggregatingHemisphericWindow::new(&ts, 0, "test", None);
 
         // Index 0 values [100, 200], mean = 150.0
         assert_eq!(window.history(1), Some(150.0));
@@ -1126,7 +1124,7 @@ mod aggregating_window_tests {
     #[test]
     fn test_aggregating_hemispheric_window_metadata() {
         let ts = create_hemispheric_timeseries();
-        let window = AggregatingHemisphericWindow::new(&ts, 1, "test", None);
+        let window = AggregatingHemisphericWindow::new(&ts, 0, "test", None);
 
         assert_eq!(window.len(), 3);
         assert!(!window.is_empty());
@@ -1139,7 +1137,7 @@ mod aggregating_window_tests {
     #[test]
     fn test_aggregating_four_box_to_hemispheric_get_all() {
         let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, "test");
+        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 0, "test");
 
         // Index 1 values [11, 21, 31, 41]
         // Northern = (11 + 21) / 2 = 16.0
@@ -1170,7 +1168,7 @@ mod aggregating_window_tests {
     #[test]
     fn test_aggregating_four_box_to_hemispheric_metadata() {
         let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, "test");
+        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 0, "test");
 
         assert_eq!(window.len(), 3);
         assert!(!window.is_empty());
@@ -1193,7 +1191,7 @@ mod aggregating_window_tests {
             "test".to_string(),
             InterpolationStrategy::from(LinearSplineStrategy::new(true)),
         );
-        let inner = super::super::windows::TimeseriesWindow::new(&ts, 1, "test");
+        let inner = super::super::windows::TimeseriesWindow::new(&ts, 0, "test");
         let window = ScalarWindow::Direct(inner);
 
         assert_eq!(window.get(), 200.0);
@@ -1206,7 +1204,7 @@ mod aggregating_window_tests {
     #[test]
     fn test_scalar_window_from_four_box_variant() {
         let ts = create_four_box_timeseries();
-        let inner = AggregatingFourBoxWindow::new(&ts, 1, "test", None);
+        let inner = AggregatingFourBoxWindow::new(&ts, 0, "test", None);
         let window = ScalarWindow::FromFourBox(inner);
 
         // Same behavior as AggregatingFourBoxWindow
@@ -1219,7 +1217,7 @@ mod aggregating_window_tests {
     #[test]
     fn test_scalar_window_from_hemispheric_variant() {
         let ts = create_hemispheric_timeseries();
-        let inner = AggregatingHemisphericWindow::new(&ts, 1, "test", None);
+        let inner = AggregatingHemisphericWindow::new(&ts, 0, "test", None);
         let window = ScalarWindow::FromHemispheric(inner);
 
         // Same behavior as AggregatingHemisphericWindow
@@ -1235,7 +1233,7 @@ mod aggregating_window_tests {
     #[test]
     fn test_hemispheric_window_direct_variant() {
         let ts = create_hemispheric_timeseries();
-        let inner = GridTimeseriesWindow::new(&ts, 1, "test");
+        let inner = GridTimeseriesWindow::new(&ts, 0, "test");
         let window = HemisphericWindow::Direct(inner);
 
         assert_eq!(window.get(HemisphericRegion::Northern), 110.0);
@@ -1249,7 +1247,7 @@ mod aggregating_window_tests {
     #[test]
     fn test_hemispheric_window_from_four_box_variant() {
         let ts = create_four_box_timeseries();
-        let inner = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, "test");
+        let inner = AggregatingFourBoxToHemisphericWindow::new(&ts, 0, "test");
         let window = HemisphericWindow::FromFourBox(inner);
 
         // Aggregated values: Northern=(11+21)/2=16, Southern=(31+41)/2=36
@@ -1270,7 +1268,7 @@ mod aggregating_window_tests {
         let ts = create_four_box_timeseries();
         // Index 1 values [11, 21, 31, 41], mean = 26.0
         // With 2.0 conversion factor: 52.0
-        let window = AggregatingFourBoxWindow::with_unit_conversion(&ts, 1, "test", None, 2.0);
+        let window = AggregatingFourBoxWindow::with_unit_conversion(&ts, 0, "test", None, 2.0);
 
         assert_eq!(window.get(), 52.0);
         assert_eq!(window.history(1), Some(50.0)); // 25.0 * 2.0
@@ -1284,7 +1282,7 @@ mod aggregating_window_tests {
         // Index 1: 11*0.5 + 21*0.2 + 31*0.2 + 41*0.1 = 5.5 + 4.2 + 6.2 + 4.1 = 20.0
         // With 3.0 conversion factor: 60.0
         let window =
-            AggregatingFourBoxWindow::with_unit_conversion(&ts, 1, "test", Some(weights), 3.0);
+            AggregatingFourBoxWindow::with_unit_conversion(&ts, 0, "test", Some(weights), 3.0);
 
         assert_eq!(window.get(), 60.0);
     }
@@ -1294,7 +1292,7 @@ mod aggregating_window_tests {
         let ts = create_hemispheric_timeseries();
         // Index 1: [110, 220], mean = 165.0
         // With 0.5 conversion factor: 82.5
-        let window = AggregatingHemisphericWindow::with_unit_conversion(&ts, 1, "test", None, 0.5);
+        let window = AggregatingHemisphericWindow::with_unit_conversion(&ts, 0, "test", None, 0.5);
 
         assert_eq!(window.get(), 82.5);
         assert_eq!(window.history(1), Some(75.0)); // 150.0 * 0.5
@@ -1308,7 +1306,7 @@ mod aggregating_window_tests {
         // Southern = (31 + 41) / 2 = 36.0
         // With 2.0 conversion factor: [32.0, 72.0]
         let window =
-            AggregatingFourBoxToHemisphericWindow::with_unit_conversion(&ts, 1, "test", 2.0);
+            AggregatingFourBoxToHemisphericWindow::with_unit_conversion(&ts, 0, "test", 2.0);
 
         assert_eq!(window.get(HemisphericRegion::Northern), 32.0);
         assert_eq!(window.get(HemisphericRegion::Southern), 72.0);
@@ -1326,11 +1324,11 @@ mod aggregating_window_tests {
             |source| AggregatingFourBoxWindow::with_source(&ts, 1, "test", None, 2.0, source);
 
         let exogenous = window(VariableSource::Exogenous);
-        assert_eq!(exogenous.get_time(), 2001.0);
-        assert_eq!(exogenous.history(0), Some(52.0));
-        assert_eq!(exogenous.history(1), Some(50.0));
-        assert_eq!(exogenous.history(2), None);
-        assert_eq!(exogenous.history_len(), 2);
+        assert_eq!(exogenous.get_time(), 2002.0);
+        assert_eq!(exogenous.history(0), Some(54.0));
+        assert_eq!(exogenous.history(1), Some(52.0));
+        assert_eq!(exogenous.history(3), None);
+        assert_eq!(exogenous.history_len(), 3);
         assert_eq!(exogenous.interval().unwrap(), (52.0, 54.0));
         assert_eq!(exogenous.interpolate(2002.0).unwrap(), 54.0);
 
@@ -1358,9 +1356,9 @@ mod aggregating_window_tests {
             |source| AggregatingHemisphericWindow::with_source(&ts, 1, "test", None, 1.0, source);
 
         let exogenous = window(VariableSource::Exogenous);
-        assert_eq!(exogenous.get_time(), 2001.0);
-        assert_eq!(exogenous.history(1), Some(150.0));
-        assert_eq!(exogenous.history_len(), 2);
+        assert_eq!(exogenous.get_time(), 2002.0);
+        assert_eq!(exogenous.history(1), Some(165.0));
+        assert_eq!(exogenous.history_len(), 3);
         assert_eq!(exogenous.interval().unwrap(), (165.0, 180.0));
 
         let upstream = window(VariableSource::UpstreamOutput);
@@ -1386,10 +1384,10 @@ mod aggregating_window_tests {
         };
 
         let exogenous = window(VariableSource::Exogenous);
-        assert_eq!(exogenous.get_time(), 2001.0);
+        assert_eq!(exogenous.get_time(), 2002.0);
         assert_eq!(exogenous.history(0), Some(exogenous.get_all()));
-        assert_eq!(exogenous.history(1), Some(vec![30.0, 70.0]));
-        assert_eq!(exogenous.history_len(), 2);
+        assert_eq!(exogenous.history(1), Some(vec![32.0, 72.0]));
+        assert_eq!(exogenous.history_len(), 3);
         assert_eq!(
             exogenous.interval().unwrap(),
             (vec![32.0, 72.0], vec![34.0, 74.0])

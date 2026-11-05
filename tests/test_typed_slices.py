@@ -281,13 +281,13 @@ class TestTimeseriesWindow:
 
     def test_constructor(self):
         """Test basic construction."""
-        w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 0)
         assert w.get() == 2.0
         assert len(w) == 3
 
     def test_history(self):
         """Test history counts back from the value get() returns."""
-        w = TimeseriesWindow([1.0, 2.0, 3.0, 4.0, 5.0], 3)
+        w = TimeseriesWindow([1.0, 2.0, 3.0, 4.0, 5.0], 2)
         assert w.history(0) == 4.0
         assert w.history(1) == 3.0
         assert w.history(3) == 1.0
@@ -295,9 +295,9 @@ class TestTimeseriesWindow:
 
     def test_history_before_first_step(self):
         """Test history returns None before the first value."""
-        w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 0)
+        assert w.history(1) == 1.0
         assert w.history(2) is None
-        assert TimeseriesWindow([1.0, 2.0, 3.0], 0).history(1) is None
 
     def test_to_array(self):
         """Test to_array method."""
@@ -319,8 +319,8 @@ class TestTimeseriesWindow:
             TimeseriesWindow([1.0, 2.0], 5)
 
     def test_get(self):
-        """Test get returns the value at the current index for exogenous data."""
-        w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
+        """Test get returns the value at the step's end for an exogenous point."""
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 0)
         assert w.get() == 2.0
 
     def test_interval(self):
@@ -341,21 +341,21 @@ class TestFourBoxTimeseriesWindow:
     def test_constructor(self):
         """Test basic construction."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8]]
-        w = FourBoxTimeseriesWindow(values, 1)
+        w = FourBoxTimeseriesWindow(values, 0)
         assert w.get().to_list() == [5, 6, 7, 8]
         assert len(w) == 2
 
     def test_history(self):
         """Test history returns a FourBoxSlice."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8]]
-        w = FourBoxTimeseriesWindow(values, 1)
+        w = FourBoxTimeseriesWindow(values, 0)
         prev = w.history(1)
         assert prev.northern_ocean == 1.0
 
     def test_region(self):
         """Test region returns scalar TimeseriesWindow."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]
-        w = FourBoxTimeseriesWindow(values, 2)
+        w = FourBoxTimeseriesWindow(values, 1)
         region_0 = w.region(0)  # northern_ocean
         assert region_0.get() == 9.0
         assert region_0.history(1) == 5.0
@@ -375,9 +375,9 @@ class TestFourBoxTimeseriesWindow:
         assert "FourBoxTimeseriesWindow" in r
 
     def test_get(self):
-        """Test get returns a FourBoxSlice at the current index."""
+        """Test get returns a FourBoxSlice at the step's end."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8]]
-        w = FourBoxTimeseriesWindow(values, 1)
+        w = FourBoxTimeseriesWindow(values, 0)
         current = w.get()
         assert current.northern_ocean == 5.0
         assert current.northern_land == 6.0
@@ -408,14 +408,14 @@ class TestHemisphericTimeseriesWindow:
     def test_constructor(self):
         """Test basic construction."""
         values = [[1, 2], [3, 4]]
-        w = HemisphericTimeseriesWindow(values, 1)
+        w = HemisphericTimeseriesWindow(values, 0)
         assert w.get().to_list() == [3, 4]
         assert len(w) == 2
 
     def test_region(self):
         """Test region returns scalar TimeseriesWindow."""
         values = [[1, 2], [3, 4], [5, 6]]
-        w = HemisphericTimeseriesWindow(values, 2)
+        w = HemisphericTimeseriesWindow(values, 1)
         region_0 = w.region(0)  # northern
         assert region_0.get() == 5.0
         assert region_0.history(1) == 3.0
@@ -428,9 +428,9 @@ class TestHemisphericTimeseriesWindow:
             w.region(2)
 
     def test_get(self):
-        """Test get returns a HemisphericSlice at the current index."""
+        """Test get returns a HemisphericSlice at the step's end."""
         values = [[1, 2], [3, 4]]
-        w = HemisphericTimeseriesWindow(values, 1)
+        w = HemisphericTimeseriesWindow(values, 0)
         current = w.get()
         assert current.northern == 3.0
         assert current.southern == 4.0

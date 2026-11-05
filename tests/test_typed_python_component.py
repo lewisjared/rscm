@@ -325,7 +325,7 @@ def test_typed_component_inheritance():
 
 
 def test_exogenous_input_returns_correct_timestep_value():
-    """Test that TimeseriesWindow.current returns the value at current timestep.
+    """Test that an exogenous point's get() returns the value at the step's end.
 
     Regression test for GitHub issue #65: Python component TimeseriesWindow.current
     always returns last value instead of the value at the current timestep.
@@ -380,10 +380,10 @@ def test_exogenous_input_returns_correct_timestep_value():
     assert len(observed_values) == 4
 
     expected_values = [
-        (2020.0, 400.0),
-        (2021.0, 410.0),
-        (2022.0, 420.0),
-        (2023.0, 430.0),
+        (2020.0, 410.0),
+        (2021.0, 420.0),
+        (2022.0, 430.0),
+        (2023.0, 440.0),
     ]
 
     for (t_observed, val_observed), (t_expected, val_expected) in zip(
@@ -477,8 +477,8 @@ def test_window_reads_follow_source_and_timeseries_type():
     first, second = reader.reads
     assert first["emissions"] == (1.0, VariableSource.Exogenous)
     assert first["emissions_type"] == TimeseriesType.Average
-    assert first["temperature"] == (10.0, 2000.0, None, 1, (10.0, 11.0), 10.5)
-    assert second["temperature"] == (11.0, 2001.0, 10.0, 2, (11.0, 12.0), 11.5)
+    assert first["temperature"] == (11.0, 2001.0, 10.0, 2, (10.0, 11.0), 10.5)
+    assert second["temperature"] == (12.0, 2002.0, 11.0, 3, (11.0, 12.0), 11.5)
     assert first["forcing"] == (2001.0, 2001.0, VariableSource.UpstreamOutput, 2001.0)
     assert second["forcing"] == (2002.0, 2002.0, VariableSource.UpstreamOutput, 2002.0)
 
@@ -493,9 +493,9 @@ def test_window_reads_by_source():
 
     exogenous = window(VariableSource.Exogenous)
     assert (exogenous.get(), exogenous.get_time(), exogenous.history_len()) == (
-        3.0,
-        2002.0,
-        3,
+        4.0,
+        2003.0,
+        4,
     )
     assert exogenous.interval() == (3.0, 4.0)
 

@@ -15,7 +15,9 @@ use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis, Timeseries};
 /// Indices a window reads during the step from index `current` (N) to N+1.
 ///
 /// A point is stored at its time and an average at its step's start bound,
-/// so `get()` reads index g: N+1 for an upstream point, N-1 for a lagged or own average, else N.
+/// so `get()` reads index g: N for an own or lagged point, N+1 for any other point,
+/// N-1 for an own average and N for any other average.
+/// Exogenous and upstream inputs read the same index, so prescribing a variable never shifts it.
 /// A lagged input reads one step behind an unlagged one, so its interval is (N-1, N).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ReadIndex {
@@ -28,13 +30,15 @@ pub(crate) struct ReadIndex {
 impl ReadIndex {
     /// Index g that `get()` reads.
     pub fn get(self) -> usize {
-        match (self.timeseries_type, self.source) {
-            (TimeseriesType::Point, VariableSource::UpstreamOutput) => self.current + 1,
+        let behind = matches!(
+            self.source,
+            VariableSource::Lagged | VariableSource::OwnState
+        );
+        match (self.timeseries_type, behind) {
+            (TimeseriesType::Point, false) => self.current + 1,
             // At the first step a component's own average reads its initial value.
             // The builder rejects a lagged average.
-            (TimeseriesType::Average, VariableSource::Lagged | VariableSource::OwnState) => {
-                self.current.saturating_sub(1)
-            }
+            (TimeseriesType::Average, true) => self.current.saturating_sub(1),
             _ => self.current,
         }
     }
@@ -224,8 +228,8 @@ impl<'a> TimeseriesWindow<'a> {
 
     /// Value the model wired this input to read during the step.
     ///
-    /// For a point, this is this step's end value from an upstream component,
-    /// and the step's start value for exogenous data, a component's own state and a lagged edge.
+    /// For a point, this is the step's end value, whether prescribed or from an upstream component,
+    /// and the step's start value for a component's own state and a lagged edge.
     /// For an average, it is this step's value, or the previous step's for a component's own output.
     ///
     /// # Panics
@@ -617,13 +621,14 @@ mod timeseries_window_tests {
         let ts = create_scalar_timeseries();
         let window = |index, source| TimeseriesWindow::with_source(&ts, index, "test", 1.0, source);
 
-        assert_eq!(window(2, VariableSource::Exogenous).get(), 3.0);
+        assert_eq!(window(2, VariableSource::Exogenous).get(), 4.0);
         assert_eq!(window(2, VariableSource::OwnState).get(), 3.0);
         assert_eq!(window(2, VariableSource::Lagged).get(), 3.0);
         assert_eq!(window(2, VariableSource::UpstreamOutput).get(), 4.0);
 
-        assert_eq!(window(0, VariableSource::Exogenous).get(), 1.0);
-        assert_eq!(window(4, VariableSource::Exogenous).get(), 5.0);
+        assert_eq!(window(0, VariableSource::Exogenous).get(), 2.0);
+        assert_eq!(window(4, VariableSource::OwnState).get(), 5.0);
+        assert_eq!(window(3, VariableSource::Exogenous).get(), 5.0);
         assert_eq!(window(3, VariableSource::UpstreamOutput).get(), 5.0);
     }
 
@@ -666,7 +671,7 @@ mod timeseries_window_tests {
     #[test]
     fn test_timeseries_window_unit_conversion_get() {
         let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, "test", 2.0);
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 1, "test", 2.0);
 
         // Raw value is 3.0, converted should be 6.0
         assert_eq!(window.get(), 6.0);
@@ -680,7 +685,7 @@ mod timeseries_window_tests {
     #[test]
     fn test_timeseries_window_unit_conversion_history() {
         let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, "test", 0.5);
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 1, "test", 0.5);
 
         assert_eq!(window.history(0), Some(1.5)); // 3.0 * 0.5
         assert_eq!(window.history(1), Some(1.0)); // 2.0 * 0.5
@@ -699,7 +704,7 @@ mod timeseries_window_tests {
     #[test]
     fn test_timeseries_window_default_conversion_factor_is_one() {
         let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::new(&ts, 2, "test");
+        let window = TimeseriesWindow::new(&ts, 1, "test");
 
         // Should return raw value (factor = 1.0)
         assert_eq!(window.get(), 3.0);
@@ -718,16 +723,27 @@ mod timeseries_window_tests {
     }
 
     #[test]
-    fn test_window_exogenous_reads_step_start() {
+    fn test_window_exogenous_point_reads_step_end() {
         let ts = create_scalar_timeseries();
         let window = window_from(&ts, 2, VariableSource::Exogenous);
 
-        assert_eq!(window.get_time(), 2002.0);
-        assert_eq!(window.history(0), Some(window.get()));
-        assert_eq!(window.history(2), Some(1.0));
-        assert_eq!(window.history(3), None);
-        assert_eq!(window.history_len(), 3);
+        assert_eq!(window.get_time(), 2003.0);
+        assert_eq!(window.history(0), Some(4.0));
+        assert_eq!(window.history(3), Some(1.0));
+        assert_eq!(window.history(4), None);
+        assert_eq!(window.history_len(), 4);
         assert_eq!(window.interval().unwrap(), (3.0, 4.0));
+    }
+
+    #[test]
+    fn test_window_point_reads_same_index_prescribed_or_upstream() {
+        let ts = create_scalar_timeseries();
+        let exogenous = window_from(&ts, 2, VariableSource::Exogenous);
+        let upstream = window_from(&ts, 2, VariableSource::UpstreamOutput);
+
+        assert_eq!(exogenous.get(), upstream.get());
+        assert_eq!(exogenous.interval().unwrap(), upstream.interval().unwrap());
+        assert_eq!(exogenous.history(1), upstream.history(1));
     }
 
     #[test]
@@ -773,20 +789,18 @@ mod timeseries_window_tests {
     #[test]
     fn test_window_history_at_first_step() {
         let ts = create_scalar_timeseries();
-        for source in [
-            VariableSource::Exogenous,
-            VariableSource::OwnState,
-            VariableSource::Lagged,
-        ] {
+        for source in [VariableSource::OwnState, VariableSource::Lagged] {
             let window = window_from(&ts, 0, source);
             assert_eq!(window.history(0), Some(1.0));
             assert_eq!(window.history(1), None);
             assert_eq!(window.history_len(), 1);
         }
-        let upstream = window_from(&ts, 0, VariableSource::UpstreamOutput);
-        assert_eq!(upstream.history(1), Some(1.0));
-        assert_eq!(upstream.history(2), None);
-        assert_eq!(upstream.history_len(), 2);
+        for source in [VariableSource::Exogenous, VariableSource::UpstreamOutput] {
+            let window = window_from(&ts, 0, source);
+            assert_eq!(window.history(1), Some(1.0));
+            assert_eq!(window.history(2), None);
+            assert_eq!(window.history_len(), 2);
+        }
     }
 
     #[test]
@@ -831,7 +845,7 @@ mod timeseries_window_tests {
         let ts = create_scalar_timeseries();
         let window = TimeseriesWindow::with_source(&ts, 2, "test", 2.0, VariableSource::Exogenous);
 
-        assert_eq!(window.history(1), Some(4.0));
+        assert_eq!(window.history(1), Some(6.0));
         assert_eq!(window.interval().unwrap(), (6.0, 8.0));
         assert_eq!(window.interpolate(2004.0).unwrap(), 10.0);
     }
@@ -886,7 +900,7 @@ mod grid_timeseries_window_tests {
     #[test]
     fn test_grid_window_get() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, "test");
+        let window = GridTimeseriesWindow::new(&ts, 0, "test");
 
         assert_eq!(window.get(FourBoxRegion::NorthernOcean), 16.0);
         assert_eq!(window.get(FourBoxRegion::NorthernLand), 15.0);
@@ -894,10 +908,7 @@ mod grid_timeseries_window_tests {
         assert_eq!(window.get(FourBoxRegion::SouthernLand), 10.0);
         assert_eq!(window.get_all(), vec![16.0, 15.0, 11.0, 10.0]);
 
-        let window_start = GridTimeseriesWindow::new(&ts, 0, "test");
-        assert_eq!(window_start.get(FourBoxRegion::NorthernOcean), 15.0);
-
-        let window_end = GridTimeseriesWindow::new(&ts, 2, "test");
+        let window_end = GridTimeseriesWindow::new(&ts, 1, "test");
         assert_eq!(window_end.get(FourBoxRegion::NorthernOcean), 17.0);
     }
 
@@ -974,7 +985,7 @@ mod grid_timeseries_window_tests {
     #[test]
     fn test_grid_window_unit_conversion_get() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, "test", 2.0);
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 0, "test", 2.0);
 
         // Raw values at index 1: [16.0, 15.0, 11.0, 10.0]
         // Converted: [32.0, 30.0, 22.0, 20.0]
@@ -987,7 +998,7 @@ mod grid_timeseries_window_tests {
     #[test]
     fn test_grid_window_unit_conversion_get_all() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, "test", 0.5);
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 0, "test", 0.5);
 
         // Raw: [16.0, 15.0, 11.0, 10.0], Converted: [8.0, 7.5, 5.5, 5.0]
         assert_eq!(window.get_all(), vec![8.0, 7.5, 5.5, 5.0]);
@@ -1041,10 +1052,10 @@ mod grid_timeseries_window_tests {
         let window = |source| GridTimeseriesWindow::with_source(&ts, 1, "test", 1.0, source);
 
         let exogenous = window(VariableSource::Exogenous);
-        assert_eq!(exogenous.get_time(), 2001.0);
+        assert_eq!(exogenous.get_time(), 2002.0);
         assert_eq!(exogenous.history(0), Some(exogenous.get_all()));
-        assert_eq!(exogenous.history(1), Some(at_2000.clone()));
-        assert_eq!(exogenous.history_len(), 2);
+        assert_eq!(exogenous.history(1), Some(at_2001.clone()));
+        assert_eq!(exogenous.history_len(), 3);
         assert_eq!(
             exogenous.interval().unwrap(),
             (at_2001.clone(), at_2002.clone())
@@ -1069,8 +1080,8 @@ mod grid_timeseries_window_tests {
 
         let first =
             GridTimeseriesWindow::with_source(&ts, 0, "test", 1.0, VariableSource::Exogenous);
-        assert_eq!(first.history(0), Some(at_2000));
-        assert_eq!(first.history(1), None);
+        assert_eq!(first.history(1), Some(at_2000));
+        assert_eq!(first.history(2), None);
     }
 
     #[test]
@@ -1079,7 +1090,7 @@ mod grid_timeseries_window_tests {
         let window =
             GridTimeseriesWindow::with_source(&ts, 1, "test", 2.0, VariableSource::Exogenous);
 
-        assert_eq!(window.history(1), Some(vec![30.0, 28.0, 20.0, 18.0]));
+        assert_eq!(window.history(1), Some(vec![32.0, 30.0, 22.0, 20.0]));
         assert_eq!(
             window.interval().unwrap(),
             (vec![32.0, 30.0, 22.0, 20.0], vec![34.0, 32.0, 24.0, 22.0])

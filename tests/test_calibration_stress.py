@@ -45,12 +45,12 @@ def simple_calibration_setup():
 
     # Generate synthetic observation
     component = TwoLayerBuilder.from_parameters(true_params).build()
-    time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0]))
+    time_axis = TimeAxis.from_values(np.array([2000.0, 2010.0]))
     collection = TimeseriesCollection()
     collection.add_timeseries(
         "Effective Radiative Forcing",
         Timeseries(
-            np.array([3.0]),
+            np.array([3.0, 3.0]),
             time_axis,
             "W/m^2",
             InterpolationStrategy.Previous,
@@ -59,11 +59,15 @@ def simple_calibration_setup():
     # Add state variables required by TwoLayer
     collection.add_timeseries(
         "Surface Temperature",
-        Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
+        Timeseries(
+            np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
+        ),
     )
     collection.add_timeseries(
         "Deep Ocean Temperature",
-        Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
+        Timeseries(
+            np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
+        ),
     )
     result = component.solve(2000, 2010, collection)
     temp = result.get("Surface Temperature").as_scalar()
@@ -89,22 +93,26 @@ def simple_calibration_setup():
         all_params = fixed_params.copy()
         all_params.update(param_values)
         component = TwoLayerBuilder.from_parameters(all_params).build()
-        time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0]))
+        time_axis = TimeAxis.from_values(np.array([2000.0, 2010.0]))
         collection = TimeseriesCollection()
         collection.add_timeseries(
             "Effective Radiative Forcing",
             Timeseries(
-                np.array([3.0]), time_axis, "W/m^2", InterpolationStrategy.Previous
+                np.array([3.0, 3.0]), time_axis, "W/m^2", InterpolationStrategy.Previous
             ),
         )
         # Add state variables required by TwoLayer
         collection.add_timeseries(
             "Surface Temperature",
-            Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
+            Timeseries(
+                np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
+            ),
         )
         collection.add_timeseries(
             "Deep Ocean Temperature",
-            Timeseries(np.array([0.0]), time_axis, "K", InterpolationStrategy.Previous),
+            Timeseries(
+                np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
+            ),
         )
         result = component.solve(2000, 2010, collection)
         temp = result.get("Surface Temperature").as_scalar()

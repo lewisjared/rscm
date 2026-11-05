@@ -584,7 +584,8 @@ impl PyTimeseriesWindow {
 
     /// Value at the index the model reads for this input.
     ///
-    /// This is index N+1 for an upstream output and index N otherwise.
+    /// A point reads index N+1, or N for own state and a lagged edge.
+    /// An average reads index N, or N-1 for own state.
     fn get(&self) -> PyResult<FloatValue> {
         self.history(0)
             .ok_or_else(|| PyValueError::new_err("No value available at current index"))
@@ -714,7 +715,8 @@ impl PyFourBoxTimeseriesWindow {
 
     /// All regional values at the index the model reads for this input.
     ///
-    /// This is index N+1 for an upstream output and index N otherwise.
+    /// A point reads index N+1, or N for own state and a lagged edge.
+    /// An average reads index N, or N-1 for own state.
     fn get(&self) -> PyResult<PyFourBoxSlice> {
         self.history(0)
             .ok_or_else(|| PyValueError::new_err("No value available at current index"))
@@ -848,7 +850,8 @@ impl PyHemisphericTimeseriesWindow {
 
     /// All regional values at the index the model reads for this input.
     ///
-    /// This is index N+1 for an upstream output and index N otherwise.
+    /// A point reads index N+1, or N for own state and a lagged edge.
+    /// An average reads index N, or N-1 for own state.
     fn get(&self) -> PyResult<PyHemisphericSlice> {
         self.history(0)
             .ok_or_else(|| PyValueError::new_err("No value available at current index"))

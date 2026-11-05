@@ -806,7 +806,7 @@ pub fn compute_aggregate(contributors: &[f64], op: &AggregateOp) -> f64 {
 // =============================================================================
 
 use crate::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType, TimeseriesType,
+    Component, InputState, OutputState, RequirementDefinition, RequirementType,
 };
 use crate::state::StateValue;
 use crate::timeseries::Time;
@@ -879,21 +879,13 @@ impl Component for AggregatorComponent {
     ) -> RSCMResult<OutputState> {
         let mut output = OutputState::new();
 
-        // Points are read at the step end and averages with get(), so both see upstream outputs.
         match self.grid_type {
             GridType::Scalar => {
-                // Collect scalar values from all contributors at end of timestep
-                let values = self
+                let values: Vec<f64> = self
                     .contributors
                     .iter()
-                    .map(|name| {
-                        let window = input_state.get_scalar_window(name);
-                        match window.timeseries_type() {
-                            TimeseriesType::Point => Ok(window.interval()?.1),
-                            TimeseriesType::Average => Ok(window.get()),
-                        }
-                    })
-                    .collect::<RSCMResult<Vec<f64>>>()?;
+                    .map(|name| input_state.get_scalar_window(name).get())
+                    .collect();
 
                 let result = compute_aggregate(&values, &self.operation);
                 output.insert(self.aggregate_name.clone(), StateValue::Scalar(result));
@@ -905,11 +897,7 @@ impl Component for AggregatorComponent {
                 let mut region_values: [Vec<f64>; 4] = Default::default();
 
                 for name in &self.contributors {
-                    let window = input_state.get_four_box_window(name);
-                    let values = match window.timeseries_type() {
-                        TimeseriesType::Point => window.interval()?.1,
-                        TimeseriesType::Average => window.get_all(),
-                    };
+                    let values = input_state.get_four_box_window(name).get_all();
                     for (i, val) in values.into_iter().enumerate() {
                         region_values[i].push(val);
                     }
@@ -930,11 +918,7 @@ impl Component for AggregatorComponent {
                 let mut region_values: [Vec<f64>; 2] = Default::default();
 
                 for name in &self.contributors {
-                    let window = input_state.get_hemispheric_window(name);
-                    let values = match window.timeseries_type() {
-                        TimeseriesType::Point => window.interval()?.1,
-                        TimeseriesType::Average => window.get_all(),
-                    };
+                    let values = input_state.get_hemispheric_window(name).get_all();
                     for (i, val) in values.into_iter().enumerate() {
                         region_values[i].push(val);
                     }

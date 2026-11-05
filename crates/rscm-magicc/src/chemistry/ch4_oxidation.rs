@@ -281,27 +281,28 @@ mod tests {
 
     #[test]
     fn test_solve_reads_concentration_change() {
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
-        let item = |name: &str, start: FloatValue, end: FloatValue| TimeseriesItem {
-            data: TimeseriesData::Scalar(rscm_core::timeseries::Timeseries::from_values(
-                ndarray::array![start, end],
-                ndarray::array![2000.0, 2001.0],
-            )),
-            name: name.to_string(),
-            variable_type: VariableType::Exogenous,
+        use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
+        let mut collection = TimeseriesCollection::new();
+        let mut item = |name: &str, start: FloatValue, end: FloatValue| {
+            collection.add_timeseries(
+                name.to_string(),
+                rscm_core::timeseries::Timeseries::from_values(
+                    ndarray::array![start, end],
+                    ndarray::array![2000.0, 2001.0],
+                ),
+                VariableType::Exogenous,
+            )
         };
-        let items = [
-            item("Atmospheric Concentration|CH4", 700.0, 720.0),
-            item("Lifetime|CH4|OH", 9.0, 9.0),
-            item("Emissions|CH4|Fossil", 80.0, 80.0),
-            item("Emissions|CH4|AFOLU", 160.0, 160.0),
-            item("Atmospheric Burden|CH4|Fossil", 100.0, 100.0),
-            item("Atmospheric Burden|CH4|AFOLU", 300.0, 300.0),
-            item("Atmospheric Burden|CH4|Natural", 700.0 * CONV - 400.0, 0.0),
-            item("Atmospheric Burden|CH4|Permafrost", 0.0, 0.0),
-        ];
-        let input_state = InputState::build(items.iter().collect(), 2000.0);
+        item("Atmospheric Concentration|CH4", 700.0, 720.0);
+        item("Lifetime|CH4|OH", 9.0, 9.0);
+        item("Emissions|CH4|Fossil", 80.0, 80.0);
+        item("Emissions|CH4|AFOLU", 160.0, 160.0);
+        item("Atmospheric Burden|CH4|Fossil", 100.0, 100.0);
+        item("Atmospheric Burden|CH4|AFOLU", 300.0, 300.0);
+        item("Atmospheric Burden|CH4|Natural", 700.0 * CONV - 400.0, 0.0);
+        item("Atmospheric Burden|CH4|Permafrost", 0.0, 0.0);
         let component = CH4Oxidation::new();
+        let input_state = rscm_core::model::extract_state(&collection, component.inputs(), 2000.0);
         let output = component.solve(2000.0, 2001.0, &input_state).unwrap();
         let (next, co2) = component.solve_oxidation(
             pools(100.0, 300.0, 700.0 * CONV - 400.0),

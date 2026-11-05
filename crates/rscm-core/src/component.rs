@@ -521,10 +521,16 @@ mod tests {
             variable_type: VariableType::Exogenous,
         };
 
-        // current_time=2020.0 corresponds to index 0 in the timeseries
-        let input_state = InputState::build(vec![&emissions_co2], 2020.0);
-
-        // An exogenous input reads the index of current_time (index 0)
+        // Emissions are an average, which an exogenous input reads at the step's start (index 0)
+        let transforms = crate::state::TransformContext {
+            read_transforms: std::collections::HashMap::from([(
+                "Emissions|CO2".to_string(),
+                crate::state::ReadTransformInfo::default()
+                    .with_timeseries_type(TimeseriesType::Average),
+            )]),
+        };
+        let input_state =
+            InputState::build_with_transforms(vec![&emissions_co2], 2020.0, transforms);
         assert_eq!(input_state.get_scalar_window("Emissions|CO2").get(), 1.1);
 
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();

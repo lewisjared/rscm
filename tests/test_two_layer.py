@@ -21,12 +21,12 @@ def test_create_component():
         )
     ).build()
 
-    time_axis = TimeAxis.from_bounds(np.asarray([2000.0, 2010.0]))
+    time_axis = TimeAxis.from_values(np.asarray([2000.0, 2010.0]))
     collection = TimeseriesCollection()
     collection.add_timeseries(
         "Effective Radiative Forcing",
         Timeseries(
-            np.asarray([12.0]),
+            np.asarray([12.0, 12.0]),
             time_axis,
             "W/m^2",
             InterpolationStrategy.Previous,
@@ -36,7 +36,7 @@ def test_create_component():
     collection.add_timeseries(
         "Surface Temperature",
         Timeseries(
-            np.asarray([0.0]),
+            np.asarray([0.0, 0.0]),
             time_axis,
             "K",
             InterpolationStrategy.Previous,
@@ -45,7 +45,7 @@ def test_create_component():
     collection.add_timeseries(
         "Deep Ocean Temperature",
         Timeseries(
-            np.asarray([0.0]),
+            np.asarray([0.0, 0.0]),
             time_axis,
             "K",
             InterpolationStrategy.Previous,

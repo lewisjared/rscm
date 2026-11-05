@@ -27,7 +27,7 @@ use crate::parameters::OzoneForcingParameters;
 use crate::reference::{first_value, require_annual, value_at_year};
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
-use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
+use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 
@@ -101,10 +101,6 @@ impl Default for OzoneForcing {
     }
 }
 
-fn end(window: &ScalarWindow) -> RSCMResult<FloatValue> {
-    Ok(window.interval()?.1)
-}
-
 #[typetag::serde]
 impl Component for OzoneForcing {
     fn definitions(&self) -> Vec<RequirementDefinition> {
@@ -148,7 +144,7 @@ impl Component for OzoneForcing {
             0.0
         } else {
             let threshold = value_at_year(&eesc, t_current, p.strat_threshold_year);
-            self.strat_forcing(end(&eesc)?, threshold)
+            self.strat_forcing(eesc.get(), threshold)
         };
 
         let ch4 = window(CH4);
@@ -158,14 +154,14 @@ impl Component for OzoneForcing {
             (fossil.get() - first_value(&fossil)) + (afolu.get() - first_value(&afolu))
         };
         let trop = self.trop_forcing(
-            end(&ch4)? / first_value(&ch4),
+            ch4.get() / first_value(&ch4),
             change("NOx"),
             change("CO"),
             change("NMVOC"),
         );
 
         let n2o = window(N2O);
-        let n2o_ozone = p.n2o_radeff * (end(&n2o)? - first_value(&n2o));
+        let n2o_ozone = p.n2o_radeff * (n2o.get() - first_value(&n2o));
         let temperature = p.temperature_scale * window(TEMPERATURE).get();
 
         let trop = match &p.trop_regions {

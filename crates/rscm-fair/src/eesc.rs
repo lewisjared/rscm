@@ -6,7 +6,7 @@
 //! over halogens $h$ with concentration $C_h$, chlorine and bromine atoms $n$,
 //! fractional release $f$ (CFC-11's is $f_{11}$) and bromine potency $\beta$.
 
-use crate::constants::end;
+use crate::constants::get;
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
@@ -113,8 +113,8 @@ impl Component for FairEesc {
             .parameters
             .halogens
             .iter()
-            .map(|h| end(input_state, &h.concentration))
-            .collect::<RSCMResult<Vec<_>>>()?;
+            .map(|h| get(input_state, &h.concentration))
+            .collect::<Vec<_>>();
         let mut output = OutputState::with_capacity(1);
         output.insert(
             self.parameters.output.clone(),
