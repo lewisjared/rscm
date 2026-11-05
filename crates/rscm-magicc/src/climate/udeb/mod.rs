@@ -57,7 +57,7 @@ use crate::parameters::{
 };
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType,
+    RequirementType, TimeseriesType,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::spatial::{FourBoxGrid, FourBoxRegion};
@@ -883,10 +883,10 @@ impl Component for ClimateUDEB {
             ));
         }
         if self.parameters.thermal_expansion.is_some() {
-            definitions.push(RequirementDefinition::scalar_output(
-                ANNUAL_MEAN_TEMPERATURE,
-                "K",
-            ));
+            definitions.push(
+                RequirementDefinition::scalar_output(ANNUAL_MEAN_TEMPERATURE, "K")
+                    .with_timeseries_type(TimeseriesType::Average),
+            );
             definitions.push(RequirementDefinition::scalar_output(
                 THERMAL_EXPANSION,
                 "mm",

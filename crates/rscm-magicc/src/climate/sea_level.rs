@@ -159,7 +159,7 @@ impl ComponentState for SeaLevelRiseState {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["climate", "sea-level", "magicc"], category = "Climate")]
 #[inputs(
-    temperature { name = "Surface Temperature|Annual Mean", unit = "K" },
+    temperature { name = "Surface Temperature|Annual Mean", unit = "K", timeseries_type = "average" },
     thermal_expansion { name = "Sea Level Rise|Thermal Expansion", unit = "mm" },
 )]
 #[outputs(
@@ -303,7 +303,7 @@ impl SeaLevelRise {
             *state = self.initial_state();
         }
         let inputs = SeaLevelRiseInputs::from_input_state(input_state);
-        let (_, temperature) = inputs.temperature.interval()?;
+        let temperature = inputs.temperature.get();
         let (_, thermal_expansion) = inputs.thermal_expansion.interval()?;
         let p = &self.parameters;
         let year = t_current;

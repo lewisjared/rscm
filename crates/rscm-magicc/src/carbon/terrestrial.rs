@@ -54,7 +54,7 @@ use crate::parameters::TerrestrialCarbonParameters;
 use crate::reference::feedback_warming;
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType,
+    RequirementType, TimeseriesType,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -781,7 +781,7 @@ impl TerrestrialCarbon {
                 budget.fixation,
                 budget.deposition,
             ];
-            for ((name, _), value) in NITROGEN_OUTPUTS.iter().zip(values) {
+            for ((name, _, _), value) in NITROGEN_OUTPUTS.iter().zip(values) {
                 output.insert(name.to_string(), StateValue::Scalar(value));
             }
         }
@@ -792,14 +792,23 @@ impl TerrestrialCarbon {
 const NITROGEN_DEPOSITION: &str = "Nitrogen Deposition";
 const NITROGEN_FIXATION: &str = "Nitrogen Fixation";
 
-const NITROGEN_OUTPUTS: [(&str, &str); 7] = [
-    ("Nitrogen Limitation Factor", "1"),
-    ("Nitrogen Pool", "Gt N"),
-    ("Nitrogen Flux|Uptake", "Gt N/yr"),
-    ("Nitrogen Flux|Recycling", "Gt N/yr"),
-    ("Nitrogen Flux|Losses", "Gt N/yr"),
-    ("Nitrogen Flux|Fixation", "Gt N/yr"),
-    ("Nitrogen Flux|Deposition", "Gt N/yr"),
+const NITROGEN_OUTPUTS: [(&str, &str, TimeseriesType); 7] = [
+    // The factor applied over a step, which MAGICC7 labels by the step's start
+    ("Nitrogen Limitation Factor", "1", TimeseriesType::Average),
+    ("Nitrogen Pool", "Gt N", TimeseriesType::Point),
+    ("Nitrogen Flux|Uptake", "Gt N/yr", TimeseriesType::Average),
+    (
+        "Nitrogen Flux|Recycling",
+        "Gt N/yr",
+        TimeseriesType::Average,
+    ),
+    ("Nitrogen Flux|Losses", "Gt N/yr", TimeseriesType::Average),
+    ("Nitrogen Flux|Fixation", "Gt N/yr", TimeseriesType::Average),
+    (
+        "Nitrogen Flux|Deposition",
+        "Gt N/yr",
+        TimeseriesType::Average,
+    ),
 ];
 
 /// Internal result struct for solve_terrestrial.
@@ -834,8 +843,11 @@ impl Component for TerrestrialCarbon {
                     "Gt N/yr",
                 ));
             }
-            for (name, unit) in NITROGEN_OUTPUTS {
-                definitions.push(RequirementDefinition::scalar_output(name, unit));
+            for (name, unit, timeseries_type) in NITROGEN_OUTPUTS {
+                definitions.push(
+                    RequirementDefinition::scalar_output(name, unit)
+                        .with_timeseries_type(timeseries_type),
+                );
             }
         }
         definitions

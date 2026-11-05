@@ -6,7 +6,7 @@ use rscm_core::python::PyRustComponent;
 
 use crate::carbon::{CO2Budget, OceanCarbon, Permafrost, TerrestrialCarbon};
 use crate::chemistry::{CH4Chemistry, CH4Oxidation, HalocarbonChemistry, N2OChemistry};
-use crate::climate::{ClimateUDEB, SeaLevelRise, ANNUAL_MEAN_TEMPERATURE, THERMAL_EXPANSION};
+use crate::climate::{ClimateUDEB, SeaLevelRise, THERMAL_EXPANSION};
 use crate::forcing::{
     AerosolDirect, AerosolIndirect, ForcingAggregation, GhgForcing, OzoneForcing,
 };
@@ -43,7 +43,6 @@ impl ClimateUDEBBuilder {
             ("Heat Uptake".into(), component.initial_heat_uptake(erf)),
         ]);
         if self.parameters.thermal_expansion.is_some() {
-            values.insert(ANNUAL_MEAN_TEMPERATURE.into(), 0.0);
             values.insert(THERMAL_EXPANSION.into(), 0.0);
         }
         Ok(values)

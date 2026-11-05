@@ -2,11 +2,11 @@
 
 `rscm.magicc` provides three runners that chain the MAGICC components on annual steps.
 
-| Runner                 | Couples                                                | Emissions per       | Returns        | Tested against MAGICC7 |
-| ---------------------- | ------------------------------------------------------ | ------------------- | -------------- | ---------------------- |
-| `run_magicc7`          | The full MAGICC7 chain, with its input files           | year                | `Model`        | Yes                    |
-| `run_magicc_emissions` | Chemistry, carbon cycle, GHG forcing and climate       | interval            | `MAGICCResult` | No                     |
-| `run_magicc`           | GHG forcing and climate from prescribed concentrations | interval (CO2 only) | `MAGICCResult` | No                     |
+| Runner                 | Couples                                                | Returns        | Tested against MAGICC7 |
+| ---------------------- | ------------------------------------------------------ | -------------- | ---------------------- |
+| `run_magicc7`          | The full MAGICC7 chain, with its input files           | `Model`        | Yes                    |
+| `run_magicc_emissions` | Chemistry, carbon cycle, GHG forcing and climate       | `MAGICCResult` | No                     |
+| `run_magicc`           | GHG forcing and climate from prescribed concentrations | `MAGICCResult` | No                     |
 
 - Use `run_magicc7` to reproduce MAGICC7.
 - Use `run_magicc_emissions` for a small coupled chain that needs no input files
@@ -15,11 +15,8 @@
 - Use `run_magicc` for forcing and climate experiments.
   An optional partial emissions mode calculates CO2 with `CO2Budget` from prescribed land and ocean uptake.
 
-/// note | Emissions per year or per interval
-`run_magicc7` takes one emission value per year label.
-The two smaller runners take one annual mean rate per interval between labels,
-so their emissions arrays are one shorter than `years`.
-///
+All three runners take one annual mean emission rate per year,
+labelled by the year it starts, as MAGICC7 input files are.
 
 The [coupled MAGICC model](notebooks/magicc_coupled_model.py) tutorial wires the components in by hand.
 The [module specifications](modules/README.md) describe each MAGICC7 module and its implementation status.
@@ -56,7 +53,7 @@ temperature = boxes @ prescribed.area_fractions()
 `years` are consecutive annual labels and should start in 1750, the year of MAGICC7's initial state.
 With the default parameters they must reach 2019,
 the year to which MAGICC7 scales its prescribed aerosol and land-use forcing.
-`emissions` holds one value per year, not per interval, for `"<species>|Fossil"` and `"<species>|AFOLU"`
+`emissions` holds one value per year for `"<species>|Fossil"` and `"<species>|AFOLU"`
 of each species in `full.SECTORAL_EMISSIONS`, in the units that mapping gives.
 It also holds one array per halocarbon in `full.halocarbon_species()`, in kt/yr.
 Missing, unknown or misshapen emissions raise `ValueError`.
@@ -164,18 +161,18 @@ import numpy as np
 from rscm.magicc import Emissions, run_magicc_emissions
 
 years = np.arange(1750.0, 1851.0)
-intervals = len(years) - 1
+n = len(years)
 result = run_magicc_emissions(
     years,
     Emissions(
-        co2_fossil=np.full(intervals, 8.0),     # GtC/yr
-        co2_land_use=np.full(intervals, 1.0),   # GtC/yr
-        ch4=np.full(intervals, 300.0),          # Mt CH4/yr, anthropogenic
-        ch4_fossil=np.full(intervals, 120.0),   # Mt CH4/yr, part of ch4
-        n2o=np.full(intervals, 7.0),            # Mt N/yr
-        nox=np.full(intervals, 40.0),           # Mt N/yr
-        co=np.full(intervals, 900.0),           # Mt CO/yr
-        nmvoc=np.full(intervals, 200.0),        # Mt NMVOC/yr
+        co2_fossil=np.full(n, 8.0),     # GtC/yr
+        co2_land_use=np.full(n, 1.0),   # GtC/yr
+        ch4=np.full(n, 300.0),          # Mt CH4/yr, anthropogenic
+        ch4_fossil=np.full(n, 120.0),   # Mt CH4/yr, part of ch4
+        n2o=np.full(n, 7.0),            # Mt N/yr
+        nox=np.full(n, 40.0),           # Mt N/yr
+        co=np.full(n, 900.0),           # Mt CO/yr
+        nmvoc=np.full(n, 200.0),        # Mt NMVOC/yr
     ),
     initial_concentrations={"CO2": 278.0, "CH4": 722.0, "N2O": 270.0},
     other_forcing=np.zeros(len(years)),
@@ -183,7 +180,8 @@ result = run_magicc_emissions(
 co2 = result.values["Atmospheric Concentration|CO2"]
 ```
 
-Emissions are annual mean rates, one per interval between the supplied years.
+Emissions are annual mean rates, one per supplied year.
+The value for each year applies from that year to the next.
 The run couples these components:
 
 - `CH4Chemistry` calculates the CH4 concentration from emissions.
@@ -284,17 +282,17 @@ Do not supply reference total ERF as the residual, since that would count the se
 ```python
 from rscm.magicc import CO2Emissions
 
-intervals = len(years) - 1
+n = len(years)
 emissions_result = run_magicc(
     years,
     {"CH4": concentrations["CH4"], "N2O": concentrations["N2O"]},
-    other_forcing=np.zeros(len(years)),
+    other_forcing=np.zeros(n),
     co2_emissions=CO2Emissions(
         initial_concentration=278.0,
-        fossil=np.full(intervals, 8.0),
-        land_use=np.full(intervals, 1.0),
-        land_uptake=np.full(intervals, 2.0),
-        ocean_uptake=np.full(intervals, 2.0),
+        fossil=np.full(n, 8.0),
+        land_use=np.full(n, 1.0),
+        land_uptake=np.full(n, 2.0),
+        ocean_uptake=np.full(n, 2.0),
     ),
 )
 co2 = emissions_result.values["Atmospheric Concentration|CO2"]
@@ -302,7 +300,8 @@ co2 = emissions_result.values["Atmospheric Concentration|CO2"]
 
 The four emissions and uptake arrays contain annual mean rates in GtC/yr.
 Positive uptake removes carbon from the atmosphere.
-Each entry applies over `[years[i], years[i + 1])`, and the budget uses 2.123 GtC per ppm.
+Each entry applies over `[years[i], years[i + 1])`, so the last entry is never integrated.
+The budget uses 2.123 GtC per ppm.
 CO2 must not also be supplied as a prescribed concentration.
 CH4 and N2O remain prescribed.
 The budget receives the net land flux, `land_uptake - land_use`,
@@ -344,12 +343,13 @@ Set it explicitly only to decouple the climate feedback from the forcing.
 surface temperature, SST, heat uptake and ocean heat content.
 Emissions-driven results also contain the carbon pools and fluxes, the CH4 and N2O lifetimes
 and the CO2 from CH4 oxidation.
-These per-step diagnostics are `NaN` at the first boundary.
+The end-of-year CO2 and the airborne fraction are `NaN` at the first year.
 Global surface temperature uses the configured hemispheric land fractions.
 `result.regional_temperature` retains the four boxes in northern ocean, northern land, southern ocean,
 southern land order.
-Prescribed interval rates are also retained at their starting boundary.
-Their final storage entry repeats the last rate and is never integrated.
+Points, such as concentrations and temperature, are labelled by the time they hold at.
+Averages, such as emissions, fluxes and lifetimes, are labelled by the year they start.
+A calculated average is `NaN` at the last year, because no step starts there.
 
 `result.sources` identifies prescribed inputs and calculated outputs.
 `result.forcing_contributors` records which forcing terms were included.

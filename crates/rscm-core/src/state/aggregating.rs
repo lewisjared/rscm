@@ -1421,9 +1421,9 @@ mod aggregating_window_tests {
         .with_timeseries_type(TimeseriesType::Average);
         assert_eq!(scalar.variable_source(), VariableSource::UpstreamOutput);
         assert_eq!(scalar.timeseries_type(), TimeseriesType::Average);
-        assert_eq!(scalar.get_time(), 2002.0);
-        assert_eq!(scalar.history(0), Some(27.0));
-        assert_eq!(scalar.history_len(), 3);
+        assert_eq!(scalar.get_time(), 2001.0);
+        assert_eq!(scalar.history(0), Some(26.0));
+        assert_eq!(scalar.history_len(), 2);
         assert!(scalar.interval().is_err());
         assert_eq!(scalar.interpolate(2000.0).unwrap(), 25.0);
 

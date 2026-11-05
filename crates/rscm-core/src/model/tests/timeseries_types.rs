@@ -245,7 +245,8 @@ fn builder_series_interpolate_by_type() {
             .at_time(2002.5, ScalarRegion::Global)
             .unwrap()
     };
-    assert_eq!(at("Emissions"), 2002.0);
+    // The step from 2002 to 2003 writes 2003, stored at 2002 for an average
+    assert_eq!(at("Emissions"), 2003.0);
     assert_eq!(at("Concentration"), 2002.5);
 }
 

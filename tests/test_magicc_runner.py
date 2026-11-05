@@ -113,6 +113,7 @@ def test_partial_emissions_budget_and_concentration_replay():
     conc = concentrations(len(years))
     del conc["CO2"]
     rates = np.linspace(0.0, 12.0, len(years) - 1)
+    rates = np.r_[rates, rates[-1]]
     emissions = CO2Emissions(
         initial_concentration=278.0,
         fossil=rates,
@@ -123,7 +124,7 @@ def test_partial_emissions_budget_and_concentration_replay():
     result = run_magicc(
         years, conc, other_forcing=np.zeros(len(years)), co2_emissions=emissions
     )
-    expected = 278.0 + np.r_[0.0, np.cumsum(rates + 1.0 - 0.5 - 0.25) / 2.123]
+    expected = 278.0 + np.r_[0.0, np.cumsum(rates[:-1] + 1.0 - 0.5 - 0.25) / 2.123]
     npt.assert_allclose(result.values["Atmospheric Concentration|CO2"], expected)
     assert result.sources["Atmospheric Concentration|CO2"] == "CO2Budget"
     assert result.sources["Carbon Flux|Ocean"] == "prescribed"
@@ -162,7 +163,7 @@ def test_invalid_years_rejected(years):
 
 
 def test_conflicting_co2_ownership_rejected():
-    emissions = CO2Emissions(278.0, [0], [0], [0], [0])
+    emissions = CO2Emissions(278.0, [0, 0], [0, 0], [0, 0], [0, 0])
     with pytest.raises(ValueError, match="CO2"):
         run_magicc(
             [1750, 1751],
@@ -173,10 +174,10 @@ def test_conflicting_co2_ownership_rejected():
 
 
 def test_interval_driver_length_rejected():
-    emissions = CO2Emissions(278.0, [0, 0], [0], [0], [0])
+    emissions = CO2Emissions(278.0, [0], [0], [0], [0])
     conc = concentrations(2)
     del conc["CO2"]
-    with pytest.raises(ValueError, match="Fossil"):
+    with pytest.raises(ValueError, match="Fossil has 1 values, one per interval"):
         run_magicc([1750, 1751], conc, other_forcing=[0, 0], co2_emissions=emissions)
 
 

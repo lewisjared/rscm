@@ -138,12 +138,18 @@ struct ComponentPlan {
     outputs: Vec<OutputPlan>,
 }
 
-#[derive(Debug)]
-struct OutputPlan {
-    name: String,
+#[derive(Debug, Clone, Copy)]
+struct OutputTarget {
     index: usize,
     /// Source and target grid of a write transform.
     transform: Option<(GridType, GridType)>,
+    timeseries_type: TimeseriesType,
+}
+
+#[derive(Debug)]
+struct OutputPlan {
+    name: String,
+    target: OutputTarget,
 }
 
 impl Model {
@@ -458,11 +464,10 @@ impl Model {
             .output_names()
             .into_iter()
             .filter_map(|output| {
-                let (index, transform) = self.output_target(&output)?;
+                let target = self.output_target(&output)?;
                 Some(OutputPlan {
                     name: output,
-                    index,
-                    transform,
+                    target,
                 })
             })
             .collect();
@@ -476,22 +481,26 @@ impl Model {
         }
     }
 
-    /// Collection index of an output and the source and target grid of its write transform.
-    fn output_target(&self, name: &str) -> Option<(usize, Option<(GridType, GridType)>)> {
+    /// Where an output is stored and how it is transformed on the way.
+    fn output_target(&self, name: &str) -> Option<OutputTarget> {
         let index = self.collection.position(name)?;
         let transform = self
             .write_transforms
             .get(name)
             .map(|t| (t.source_grid, t.target_grid));
-        Some((index, transform))
+        let timeseries_type = self.timeseries_type(name).unwrap_or(TimeseriesType::Point);
+        Some(OutputTarget {
+            index,
+            transform,
+            timeseries_type,
+        })
     }
 
     /// Solve a single component for the current timestep.
     ///
     /// The updated state from the component is then pushed into the model's timeseries collection
     /// to be later used by other components.
-    /// The output state defines the values at the next time index as it represents the state
-    /// at the start of the next timestep.
+    /// A point output is stored at the step's end and an average at its start.
     fn step_model_component(&mut self, plan: &ComponentPlan) -> RSCMResult<()> {
         let component = &self.components[plan.node];
         let component_name = &plan.name;
@@ -528,16 +537,16 @@ impl Model {
                 .outputs
                 .binary_search_by(|o| lookup_order(&o.name, key))
             {
-                Ok(i) => Some((plan.outputs[i].index, plan.outputs[i].transform)),
+                Ok(i) => Some(plan.outputs[i].target),
                 Err(_) => self.output_target(key),
             };
-            let (index, transform) = target.ok_or_else(|| {
+            let target = target.ok_or_else(|| {
                 RSCMError::Error(format!(
                     "{component_name} returned undeclared output {key} during {start}..{end}"
                 ))
             })?;
-            let data = self.collection.data_mut(index);
-            let final_value = if let Some((source_grid, target_grid)) = transform {
+            let data = self.collection.data_mut(target.index);
+            let final_value = if let Some((source_grid, target_grid)) = target.transform {
                 aggregate_state_value(
                     state_value,
                     source_grid,
@@ -552,13 +561,14 @@ impl Model {
             } else {
                 state_value.clone()
             };
-            // Integrated states and boundary diagnostics belong to t_next.
+            let at = match target.timeseries_type {
+                TimeseriesType::Point => self.time_index + 1,
+                TimeseriesType::Average => self.time_index,
+            };
             let result = match &final_value {
-                StateValue::Scalar(v) => data.set_scalar(key, self.time_index + 1, *v),
-                StateValue::FourBox(slice) => data.set_four_box(key, self.time_index + 1, slice),
-                StateValue::Hemispheric(slice) => {
-                    data.set_hemispheric(key, self.time_index + 1, slice)
-                }
+                StateValue::Scalar(v) => data.set_scalar(key, at, *v),
+                StateValue::FourBox(slice) => data.set_four_box(key, at, slice),
+                StateValue::Hemispheric(slice) => data.set_hemispheric(key, at, slice),
             };
             result.map_err(|err| {
                 RSCMError::Error(format!(

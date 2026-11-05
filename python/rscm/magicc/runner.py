@@ -18,6 +18,7 @@ from rscm.core import (
     ModelBuilder,
     TimeAxis,
     Timeseries,
+    TimeseriesType,
     VariableSchema,
 )
 
@@ -41,8 +42,8 @@ class CO2Emissions:
     """CO2 budget inputs with prescribed carbon uptake.
 
     ``initial_concentration`` is in ppm. All four arrays contain annual mean
-    rates in GtC/yr, one for each interval between the supplied years. Positive
-    uptake removes carbon from the atmosphere. Provide explicit zeros to
+    rates in GtC/yr, one for each supplied year, labelled by the year they start.
+    Positive uptake removes carbon from the atmosphere. Provide explicit zeros to
     disable land-use emissions or either sink.
     """
 
@@ -57,8 +58,11 @@ class CO2Emissions:
 class MAGICCResult:
     """Run output and the processes used to produce it.
 
-    ``values`` contains boundary concentrations, forcing and climate outputs,
+    ``values`` contains every variable at the year labels,
     with global surface temperature computed using the configured box areas.
+    A point, such as a concentration, holds at its label.
+    An average, such as a flux, holds over the year its label starts,
+    so a modelled average has no value at the last label.
     ``regional_temperature`` retains the four individual surface temperatures.
     ``sources`` identifies calculated and prescribed variables;
     ``forcing_contributors`` identifies the terms included in total ERF.
@@ -85,13 +89,15 @@ def _series(
     return result
 
 
-def _interval_series(
-    name: str, values: ArrayLike, intervals: int
-) -> NDArray[np.float64]:
-    rates = _series(name, values, intervals)
-    # The core stores a value at every boundary. The last rate is never
-    # integrated and only fills that storage slot.
-    return np.r_[rates, rates[-1]]
+def _average_series(name: str, values: ArrayLike, size: int) -> NDArray[np.float64]:
+    """Annual means, one per year label."""
+    if np.shape(values) == (size - 1,):
+        msg = (
+            f"{name} has {size - 1} values, one per interval. "
+            f"Give one value per year, {size} in all."
+        )
+        raise ValueError(msg)
+    return _series(name, values, size)
 
 
 def _validate_axis(
@@ -192,7 +198,7 @@ def run_magicc(  # noqa: PLR0913
             )[0]
         )
         fossil, land_use, land_uptake, ocean_uptake = (
-            _interval_series(name, values, len(time) - 1)
+            _average_series(name, values, len(time))
             for name, values in (
                 ("Emissions|CO2|Fossil", co2_emissions.fossil),
                 ("Emissions|CO2|Land Use", co2_emissions.land_use),
@@ -307,9 +313,10 @@ def _collect_result(  # noqa: PLR0913
     weights: NDArray[np.float64],
     diagnostics: frozenset[str] = frozenset(),
 ) -> MAGICCResult:
-    """Validate every returned boundary and retain the four regional temperatures.
+    """Validate every returned value and retain the four regional temperatures.
 
-    ``diagnostics`` are per-step outputs, which have no value at the first boundary.
+    An average has no value at the last label.
+    ``diagnostics`` are per-step points, which have no value at the first label.
     """
     collection = model.timeseries()
     temperature = collection.get_fourbox_timeseries_by_name("Surface Temperature")
@@ -328,8 +335,10 @@ def _collect_result(  # noqa: PLR0913
     values["Surface Temperature"] = regional @ weights
     for name, output in {**values, "Regional Surface Temperature": regional}.items():
         start = 1 if name in diagnostics else 0
-        if not np.isfinite(output[start:]).all():
-            index = start + int(np.argwhere(~np.isfinite(output[start:]))[0, 0])
+        average = model.timeseries_type(name) == TimeseriesType.Average
+        end = len(time) - 1 if average else len(time)
+        if not np.isfinite(output[start:end]).all():
+            index = start + int(np.argwhere(~np.isfinite(output[start:end]))[0, 0])
             msg = f"Nonfinite {name} at year {time[index]}"
             raise RuntimeError(msg)
     for gas in SPECIES:

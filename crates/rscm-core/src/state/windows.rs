@@ -14,7 +14,8 @@ use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis, Timeseries};
 
 /// Indices a window reads during the step from index `current` (N) to N+1.
 ///
-/// `get()` reads index g: N+1 for an upstream output, else N.
+/// A point is stored at its time and an average at its step's start bound,
+/// so `get()` reads index g: N+1 for an upstream point, N-1 for a lagged or own average, else N.
 /// A lagged input reads one step behind an unlagged one, so its interval is (N-1, N).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ReadIndex {
@@ -27,10 +28,14 @@ pub(crate) struct ReadIndex {
 impl ReadIndex {
     /// Index g that `get()` reads.
     pub fn get(self) -> usize {
-        if self.source == VariableSource::UpstreamOutput {
-            self.current + 1
-        } else {
-            self.current
+        match (self.timeseries_type, self.source) {
+            (TimeseriesType::Point, VariableSource::UpstreamOutput) => self.current + 1,
+            // At the first step a component's own average reads its initial value.
+            // The builder rejects a lagged average.
+            (TimeseriesType::Average, VariableSource::Lagged | VariableSource::OwnState) => {
+                self.current.saturating_sub(1)
+            }
+            _ => self.current,
         }
     }
 
@@ -219,8 +224,9 @@ impl<'a> TimeseriesWindow<'a> {
 
     /// Value the model wired this input to read during the step.
     ///
-    /// This is this step's value from an upstream component,
+    /// For a point, this is this step's end value from an upstream component,
     /// and the step's start value for exogenous data, a component's own state and a lagged edge.
+    /// For an average, it is this step's value, or the previous step's for a component's own output.
     ///
     /// # Panics
     ///
@@ -792,6 +798,25 @@ mod timeseries_window_tests {
             assert!(err.contains("average"), "{err}");
             assert_eq!(window.get(), window.history(0).unwrap());
         }
+    }
+
+    #[test]
+    fn test_window_average_reads_step_start_bound() {
+        let ts = create_scalar_timeseries();
+        let average = |index, source| {
+            window_from(&ts, index, source).with_timeseries_type(TimeseriesType::Average)
+        };
+
+        assert_eq!(average(2, VariableSource::Exogenous).get(), 3.0);
+        assert_eq!(average(2, VariableSource::UpstreamOutput).get(), 3.0);
+        assert_eq!(average(2, VariableSource::Lagged).get(), 2.0);
+        assert_eq!(average(2, VariableSource::OwnState).get(), 2.0);
+        assert_eq!(average(0, VariableSource::OwnState).get(), 1.0);
+
+        let upstream = average(2, VariableSource::UpstreamOutput);
+        assert_eq!(upstream.get_time(), 2002.0);
+        assert_eq!(upstream.history(1), Some(2.0));
+        assert_eq!(upstream.history_len(), 3);
     }
 
     #[test]

@@ -165,7 +165,7 @@ def test_inputs_are_converted_to_declared_units():
     model.run()
 
     out = model.timeseries().get_timeseries_by_name("Out").values()
-    np.testing.assert_allclose(out[1:], [1000.0, 2000.0, 3000.0, 4000.0])
+    np.testing.assert_allclose(out, [1000.0, 2000.0, 3000.0, 4000.0, np.nan])
 
 
 def test_scalar_input_aggregates_four_box_variable():
