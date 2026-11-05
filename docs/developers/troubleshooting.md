@@ -336,10 +336,12 @@ for defn in component.definitions():
 ### Unit Mismatches
 
 Components define expected units.
-Without a schema, exogenous data must already be in the unit the component expects.
-With a `VariableSchema`, the model converts compatible units when components read inputs,
+The builder converts exogenous data into the unit the model stores it in,
 for example `MtCO2/yr` to `GtC/yr`.
-Incompatible units, such as `K` and `W/m^2`, fail when the model is built.
+That is the schema's unit, or without a schema the unit the components declare.
+With a `VariableSchema`, the model also converts compatible units when components read inputs.
+Incompatible units, such as `K` and `W/m^2`, fail when the model is built,
+as do unit strings the parser cannot read.
 See [Physical Units](../notebooks/units_tutorial.py).
 
 ### Time Grid Alignment

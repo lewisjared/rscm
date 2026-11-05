@@ -7,14 +7,14 @@
 //! - Unit conversion factors are correctly calculated
 
 use crate::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
 };
-use crate::errors::RSCMResult;
+use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
-use crate::model::ModelBuilder;
+use crate::model::{Model, ModelBuilder};
 use crate::schema::VariableSchema;
-use crate::spatial::ScalarGrid;
-use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
+use crate::spatial::{FourBoxGrid, ScalarGrid};
+use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis, Timeseries};
 use numpy::array;
 use numpy::ndarray::{Array, Axis};
 use serde::{Deserialize, Serialize};
@@ -290,8 +290,7 @@ fn test_unparseable_units_warn_but_allow_string_comparison() {
         .with_exogenous_variable("Emissions|CO2", get_emissions("strange_unit"))
         .build();
 
-    // This should succeed - the component definition registers the unit,
-    // and we don't validate exogenous variable units against component units
+    // Identical strings match without parsing.
     assert!(result.is_ok());
 }
 
@@ -654,5 +653,151 @@ fn test_no_conversion_when_units_match() {
         (output_value - 100.0).abs() < 0.001,
         "Output should be 100 (unchanged), got {}",
         output_value
+    );
+}
+
+fn emissions_model(component_unit: &str, data: Timeseries<FloatValue>) -> RSCMResult<Model> {
+    ModelBuilder::new()
+        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+        .with_component(Arc::new(EmissionsToConcentration {
+            input_unit: component_unit.to_string(),
+            output_unit: "ppm".to_string(),
+        }))
+        .with_exogenous_variable("Emissions|CO2", data)
+        .build()
+}
+
+fn stored_emissions(model: &Model) -> &Timeseries<FloatValue> {
+    model
+        .timeseries()
+        .get_data("Emissions|CO2")
+        .and_then(|data| data.as_scalar())
+        .unwrap()
+}
+
+#[test]
+fn test_exogenous_data_converted_into_declared_unit() {
+    let model = emissions_model("GtC / yr", get_emissions("MtCO2 / yr")).unwrap();
+
+    let stored = stored_emissions(&model);
+    assert_eq!(stored.units(), "GtC / yr");
+    let expected = 10.0 * 12.0 / 44.0 / 1000.0;
+    let value = stored.at_scalar(0).unwrap();
+    assert!(
+        (value - expected).abs() < 1e-6 * expected,
+        "10 MtCO2/yr should be stored as {expected} GtC/yr, got {value}"
+    );
+}
+
+#[test]
+fn test_exogenous_data_in_equivalent_unit_unchanged() {
+    let model = emissions_model("GtC/yr", get_emissions("GtC / yr")).unwrap();
+
+    assert_eq!(stored_emissions(&model).at_scalar(0).unwrap(), 10.0);
+}
+
+#[test]
+fn test_exogenous_data_with_incompatible_unit_rejected() {
+    let err = emissions_model("GtC / yr", get_emissions("W / m^2")).unwrap_err();
+
+    match err {
+        RSCMError::IncompatibleUnits { variable, .. } => assert_eq!(variable, "Emissions|CO2"),
+        other => panic!("expected IncompatibleUnits, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_exogenous_data_with_unparseable_unit_rejected() {
+    let err = emissions_model("GtC / yr", get_emissions("")).unwrap_err();
+
+    match err {
+        RSCMError::UnitParseError { variable, .. } => assert_eq!(variable, "Emissions|CO2"),
+        other => panic!("expected UnitParseError, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_exogenous_data_converted_into_schema_unit() {
+    let schema = VariableSchema::new()
+        .variable("Emissions|CO2", "GtCO2 / yr")
+        .variable("Concentration|CO2", "ppm");
+
+    let model = ModelBuilder::new()
+        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+        .with_schema(schema)
+        .with_component(Arc::new(EmissionsToConcentration {
+            input_unit: "GtC / yr".to_string(),
+            output_unit: "ppm".to_string(),
+        }))
+        .with_exogenous_variable("Emissions|CO2", get_emissions("MtCO2 / yr"))
+        .build()
+        .unwrap();
+
+    let stored = stored_emissions(&model);
+    assert_eq!(stored.units(), "GtCO2 / yr");
+    assert!((stored.at_scalar(0).unwrap() - 0.01).abs() < 1e-12);
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FourBoxReader;
+
+#[typetag::serde]
+impl Component for FourBoxReader {
+    fn definitions(&self) -> Vec<RequirementDefinition> {
+        vec![RequirementDefinition::with_grid(
+            "Surface Temperature",
+            "K",
+            RequirementType::Input,
+            GridType::FourBox,
+        )]
+    }
+
+    fn solve(
+        &self,
+        _t_current: Time,
+        _t_next: Time,
+        _input_state: &InputState,
+    ) -> RSCMResult<OutputState> {
+        Ok(OutputState::new())
+    }
+}
+
+fn four_box_model(unit: &str) -> RSCMResult<Model> {
+    let time_axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)));
+    let values = Array::from_elem((time_axis.len(), 4), 1.0);
+    let data = GridTimeseries::new(
+        values,
+        time_axis.clone(),
+        FourBoxGrid::magicc_standard(),
+        unit.to_string(),
+        InterpolationStrategy::from(PreviousStrategy::new(true)),
+    );
+    ModelBuilder::new()
+        .with_time_axis((*time_axis).clone())
+        .with_component(Arc::new(FourBoxReader))
+        .with_exogenous_four_box_variable("Surface Temperature", data)
+        .build()
+}
+
+#[test]
+fn test_four_box_exogenous_data_converted() {
+    let model = four_box_model("mK").unwrap();
+
+    let stored = model
+        .timeseries()
+        .get_data("Surface Temperature")
+        .and_then(|data| data.as_four_box())
+        .unwrap();
+    assert_eq!(stored.units(), "K");
+    assert_eq!(stored.at_time_index(0).unwrap(), vec![0.001; 4]);
+}
+
+#[test]
+fn test_four_box_exogenous_data_with_incompatible_unit_rejected() {
+    let err = four_box_model("W / m^2").unwrap_err();
+
+    assert!(
+        matches!(err, RSCMError::IncompatibleUnits { ref variable, .. } if variable == "Surface Temperature"),
+        "expected IncompatibleUnits, got {err:?}"
     );
 }

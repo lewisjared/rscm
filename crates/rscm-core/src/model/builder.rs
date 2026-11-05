@@ -4,7 +4,7 @@ use crate::component::{Component, GridType, RequirementDefinition, RequirementTy
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::schema::VariableSchema;
-use crate::spatial::FourBoxGrid;
+use crate::spatial::{FourBoxGrid, SpatialGrid};
 use crate::state::VariableSource;
 use crate::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
 use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData, VariableType};
@@ -237,6 +237,7 @@ impl ModelBuilder {
     /// Supply exogenous data to be used by the model.
     ///
     /// Any unneeded timeseries will be ignored.
+    /// [`Self::build`] converts the data into the variable's unit, or fails if the units are incompatible.
     pub fn with_exogenous_variable(
         &mut self,
         name: &str,
@@ -253,6 +254,7 @@ impl ModelBuilder {
     /// Supply exogenous data to be used by the model.
     ///
     /// Any unneeded timeseries will be ignored.
+    /// [`Self::build`] converts the data into the variable's unit, or fails if the units are incompatible.
     pub fn with_exogenous_collection(&mut self, collection: TimeseriesCollection) -> &mut Self {
         self.exogenous_variables.extend(collection);
         self
@@ -517,6 +519,23 @@ impl ModelBuilder {
             source_unit: schema_unit.to_string(),
             target_unit: component_unit.to_string(),
         }))
+    }
+
+    /// Interpolate exogenous data onto the model's time axis in the unit the model stores it in.
+    ///
+    /// Returns an error if the data's unit cannot be converted into `unit`.
+    fn exogenous_in_unit<G: SpatialGrid>(
+        &self,
+        name: &str,
+        ts: &GridTimeseries<FloatValue, G>,
+        unit: &str,
+    ) -> RSCMResult<GridTimeseries<FloatValue, G>> {
+        let conversion = Self::check_unit_compatibility(name, "exogenous data", ts.units(), unit)?;
+        let ts = ts.to_owned().interpolate_into(self.time_axis.clone());
+        Ok(match conversion {
+            Some(conversion) => ts.convert_units(conversion.factor, unit.to_string()),
+            None => ts,
+        })
     }
 
     /// Builds the component graph for the registered components and creates a concrete model.
@@ -854,6 +873,9 @@ impl ModelBuilder {
             } else {
                 None
             };
+            // With a schema, the store holds each variable in the schema's unit.
+            let schema_unit = self.schema.as_ref().and_then(|s| s.get_unit(&name));
+            let storage_unit = schema_unit.unwrap_or(&definition.unit);
             let initial_val = self.initial_values.get(&name).copied();
             let initial_grid = self.initial_grid_values.get(&name);
             let expected_len = match storage_grid {
@@ -873,11 +895,8 @@ impl ModelBuilder {
             match storage_grid {
                 GridType::Scalar => {
                     if let Some(TimeseriesData::Scalar(ts)) = exogenous_data {
-                        collection.add_timeseries(
-                            name,
-                            ts.to_owned().interpolate_into(self.time_axis.clone()),
-                            var_type,
-                        );
+                        let ts = self.exogenous_in_unit(&name, ts, storage_unit)?;
+                        collection.add_timeseries(name, ts, var_type);
                     } else {
                         let mut ts = Timeseries::new_empty_scalar(
                             self.time_axis.clone(),
@@ -892,11 +911,8 @@ impl ModelBuilder {
                 }
                 GridType::FourBox => {
                     if let Some(TimeseriesData::FourBox(ts)) = exogenous_data {
-                        collection.add_four_box_timeseries(
-                            name,
-                            ts.to_owned().interpolate_into(self.time_axis.clone()),
-                            var_type,
-                        );
+                        let ts = self.exogenous_in_unit(&name, ts, storage_unit)?;
+                        collection.add_four_box_timeseries(name, ts, var_type);
                     } else {
                         let mut ts = GridTimeseries::new_empty(
                             self.time_axis.clone(),
@@ -923,11 +939,8 @@ impl ModelBuilder {
                 }
                 GridType::Hemispheric => {
                     if let Some(TimeseriesData::Hemispheric(ts)) = exogenous_data {
-                        collection.add_hemispheric_timeseries(
-                            name,
-                            ts.to_owned().interpolate_into(self.time_axis.clone()),
-                            var_type,
-                        );
+                        let ts = self.exogenous_in_unit(&name, ts, storage_unit)?;
+                        collection.add_hemispheric_timeseries(name, ts, var_type);
                     } else {
                         let mut ts = GridTimeseries::new_empty(
                             self.time_axis.clone(),
