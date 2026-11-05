@@ -694,12 +694,13 @@ class Model:
     def finished(self) -> bool: ...
     def timeseries_type(self, variable: str) -> TimeseriesType | None:
         """Whether a variable is a point or an average, or None if it is absent."""
-    def debug_info(self, format: Literal["rich", "plain", "json"] = "rich") -> str:
+    def coupling(self, format: Literal["rich", "plain", "json"] = "rich") -> str:
         """
-        Generate debug information about the model's execution graph.
+        Report the model's coupling.
 
-        Shows execution order, inputs (with exo/upstream/own_state source),
-        outputs, states, grid types, grid transforms, and unit conversions.
+        Lists components in the order the runtime steps them,
+        every edge between them with whether it lags,
+        and each variable's unit, grid, source and timeseries type.
 
         Parameters
         ----------

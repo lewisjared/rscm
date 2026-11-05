@@ -565,31 +565,39 @@ impl Model {
         Ok(())
     }
 
-    /// Step the model forward a step by solving each component for the current time step.
+    /// The order components run in within a step, including the graph's root node.
     ///
-    /// Execute every producer before its consumers, including when branches
+    /// Every producer runs before its consumers, including when branches
     /// of different lengths feed an aggregate. Self-edges describe a component's
     /// own state and do not constrain the order within a timestep.
+    pub(crate) fn execution_order(&self) -> RSCMResult<Vec<NodeIndex>> {
+        let graph = EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
+        petgraph::algo::toposort(&graph, None).map_err(|cycle| RSCMError::CircularDependency {
+            components: vec![Self::extract_component_name(
+                &self.components[cycle.node_id()],
+            )],
+            variables: vec![],
+            suggestions: vec![],
+        })
+    }
+
+    /// Nodes of the plan the runtime built on its first step.
+    #[cfg(test)]
+    pub(crate) fn planned_order(&self) -> Option<Vec<NodeIndex>> {
+        self.plan
+            .as_ref()
+            .map(|plan| plan.iter().map(|component| component.node).collect())
+    }
+
+    /// Step the model forward a step by solving each component for the current time step.
     fn step_model(&mut self) -> RSCMResult<()> {
         let plan = match self.plan.take() {
             Some(plan) => plan,
-            None => {
-                let graph =
-                    EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
-                let order = petgraph::algo::toposort(&graph, None).map_err(|cycle| {
-                    RSCMError::CircularDependency {
-                        components: vec![Self::extract_component_name(
-                            &self.components[cycle.node_id()],
-                        )],
-                        variables: vec![],
-                        suggestions: vec![],
-                    }
-                })?;
-                order
-                    .into_iter()
-                    .map(|nx| self.component_plan(nx))
-                    .collect()
-            }
+            None => self
+                .execution_order()?
+                .into_iter()
+                .map(|nx| self.component_plan(nx))
+                .collect(),
         };
         let result = plan
             .iter()

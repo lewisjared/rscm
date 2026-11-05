@@ -448,10 +448,10 @@ for label, m in [("Equal weights", equal_model), ("Area weights", weighted_model
     print(f"{label}: {np.round(temps[1:4], 3)}")
 
 # %% [markdown]
-# `debug_info()` lists the grid transformations the model applies.
+# `coupling()` lists the grid transformations the model applies.
 
 # %%
-print(weighted_model.debug_info("plain"))
+print(weighted_model.coupling("plain"))
 
 # %% [markdown]
 # Declaring the schema variable as `Hemispheric` instead averages ocean and land within each hemisphere.

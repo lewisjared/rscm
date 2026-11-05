@@ -369,10 +369,10 @@ See [MAGICC Runs](magicc_runs.md).
 
 ### Introspection
 
-To see which transformations the model will perform, print its debug information:
+To see which transformations the model will perform, print its coupling:
 
 ```python
-print(model.debug_info("plain"))
+print(model.coupling("plain"))
 ```
 
 The `Grid Transforms` section lists each transformed variable,
@@ -455,7 +455,7 @@ model = (
 ).build()
 ```
 
-`model.debug_info("plain")` then lists `Surface Temperature FourBox -> Scalar (read)`.
+`model.coupling("plain")` then lists `Surface Temperature FourBox -> Scalar (read)`.
 
 There is no Hemispheric equivalent of `FourBoxTimeseries` in Python yet.
 

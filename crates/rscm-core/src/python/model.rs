@@ -268,10 +268,10 @@ impl PyModel {
         PyTimeseriesCollection(self.0.timeseries().clone())
     }
 
-    /// Generate debug information about the model's execution graph.
+    /// Report the model's coupling.
     ///
-    /// Returns a string describing the execution order, inputs, outputs,
-    /// states, grid types, variable sources, grid transforms, and unit conversions.
+    /// Lists components in the order the runtime steps them, every edge between them
+    /// with whether it lags, and each variable's unit, grid, source and timeseries type.
     ///
     /// Parameters
     /// ----------
@@ -279,17 +279,22 @@ impl PyModel {
     ///     Output format: "rich" (coloured terminal, default), "plain" (no colours),
     ///     or "json" (structured JSON).
     #[pyo3(signature = (format = "rich"))]
-    fn debug_info(&self, format: &str) -> PyResult<String> {
-        let info = self.0.debug_info();
-        match format {
-            "rich" => Ok(info.to_rich()),
-            "plain" => Ok(format!("{}", info)),
-            "json" => Ok(info.to_json()),
-            _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "Unknown format '{}'. Expected 'rich', 'plain', or 'json'.",
-                format
-            ))),
-        }
+    fn coupling(&self, format: &str) -> PyResult<String> {
+        let render = match format {
+            "rich" => model::Coupling::to_rich,
+            "plain" => |c: &model::Coupling| c.to_string(),
+            "json" => model::Coupling::to_json,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "Unknown format '{format}'. Expected 'rich', 'plain', or 'json'."
+                )))
+            }
+        };
+        let coupling = self
+            .0
+            .coupling()
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+        Ok(render(&coupling))
     }
 
     /// Generate a JSON representation of the model

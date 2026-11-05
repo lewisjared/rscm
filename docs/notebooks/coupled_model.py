@@ -265,12 +265,12 @@ model = model_builder.build()
 # %% [markdown]
 # ### Inspecting the Execution Graph
 #
-# After building a model, `debug_info()` shows its execution order, variable flow
-# and where each input comes from.
+# After building a model, `coupling()` shows the order the runtime steps components in,
+# variable flow, where each input comes from and whether each variable is a point or an average.
 # Output formats are `"rich"` (coloured terminal, default), `"plain"` (no colours) and `"json"`.
 
 # %%
-print(model.debug_info())
+print(model.coupling())
 
 # %% [markdown]
 # The same model can be built in one chain:
@@ -477,13 +477,12 @@ feedback_model = build_feedback_model(alpha_temperature=0.1)
 # %% [markdown]
 # ### Visualise the Dependency Graph
 #
-# The debug info shows execution order, variable flow and where each input comes from.
-#
-# `debug_info()` tags `Surface Temperature` as `(lagged)` for the carbon cycle,
+# `coupling()` tags `Surface Temperature` as `(lagged from TwoLayer)` for the carbon cycle,
 # because it reads the Two-Layer model's value from the previous step.
+# Its "Lagged Edges" section lists the same edge.
 
 # %%
-print(feedback_model.debug_info())
+print(feedback_model.coupling())
 
 # %% [markdown]
 # The component graph shows:
@@ -551,7 +550,7 @@ plt.show()
 # - `ModelBuilder` collects the time axis, components, exogenous data and initial values,
 #   and `build()` turns them into a model.
 # - The interpolation strategy sets how exogenous data is read between its points.
-# - `debug_info()` and `as_dot()` show what the builder resolved.
+# - `coupling()` and `as_dot()` show what the builder resolved.
 # - A component that reads another's output from the previous step closes a feedback loop across timesteps.
 #
 # For more on writing components, see [Components in Python](../component_python/)

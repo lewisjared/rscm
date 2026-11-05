@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import numpy.testing as npt
 import pytest
@@ -118,3 +120,37 @@ def test_model_serialisation(time_axis):
         new_model.timeseries().get_timeseries_by_name("Surface Temperature").values(),
         model.timeseries().get_timeseries_by_name("Surface Temperature").values(),
     )
+
+
+def test_coupling_formats(time_axis):
+    component = TwoLayerBuilder.from_parameters(
+        dict(
+            lambda0=0.0,
+            a=0.0,
+            efficacy=0.0,
+            eta=0.0,
+            heat_capacity_deep=0.0,
+            heat_capacity_surface=0.0,
+        )
+    ).build()
+    model = (
+        ModelBuilder()
+        .with_time_axis(time_axis)
+        .with_rust_component(component)
+        .with_initial_values(
+            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+        )
+        .with_missing_exogenous_allowed()
+        .build()
+    )
+
+    coupling = json.loads(model.coupling("json"))
+    (two_layer,) = coupling["components"]
+    inputs = {v["name"]: v for v in two_layer["inputs"]}
+    erf = inputs["Effective Radiative Forcing"]
+    assert erf["source"] == "exogenous"
+    assert erf["timeseries_type"] == "Point"
+    assert "[0] TwoLayer" in model.coupling("plain")
+    assert "TwoLayer" in model.coupling()
+    with pytest.raises(ValueError, match="Unknown format"):
+        model.coupling("yaml")

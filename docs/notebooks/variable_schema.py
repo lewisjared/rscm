@@ -231,10 +231,10 @@ plt.show()
 # ## Inspecting the Aggregator
 #
 # The schema adds a virtual `AggregatorComponent` to the model.
-# `debug_info()` lists it after the two forcing components, with both forcings as inputs.
+# `coupling()` lists it after the two forcing components, with both forcings as inputs.
 
 # %%
-print(model_with_schema.debug_info(format="plain"))
+print(model_with_schema.coupling(format="plain"))
 
 # %% [markdown]
 # ## Aggregate Operations
@@ -614,7 +614,7 @@ for name, aggregate in hierarchical_schema.aggregates.items():
 # - Use a `VariableSchema` to combine several component outputs into one variable.
 # - Contributors must share the aggregate's unit and grid type.
 # - Aggregates appear as regular variables in the model output,
-#   and their virtual aggregator components appear in `debug_info()`.
+#   and their virtual aggregator components appear in `coupling()`.
 # - Aggregates exclude NaN contributors.
 # - Errors surface early, when you call `validate()` or build the model.
 #

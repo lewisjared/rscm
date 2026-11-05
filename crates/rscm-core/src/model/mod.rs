@@ -12,7 +12,7 @@
 //! If a required exogenous variable isn't provided, then the build step will fail.
 
 mod builder;
-mod debug;
+mod coupling;
 mod null_component;
 mod parallel;
 mod runtime;
@@ -26,7 +26,9 @@ mod tests;
 
 // Public re-exports
 pub use builder::ModelBuilder;
-pub use debug::{ComponentDebugInfo, ModelDebugInfo, VarInfo, VarSource};
+pub use coupling::{
+    ComponentCoupling, ConversionInfo, Coupling, CouplingEdge, TransformInfo, VarInfo, VarSource,
+};
 pub use parallel::{build_models, run_models};
 pub use runtime::Model;
 pub use state_extraction::{extract_state, extract_state_with_transforms};

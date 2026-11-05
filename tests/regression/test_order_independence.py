@@ -32,13 +32,9 @@ def _assert_identical(actual, expected):
         np.testing.assert_array_equal(actual[name], values, err_msg=name)
 
 
-def _sources(model):
-    info = json.loads(model.debug_info("json"))
-    return {
-        (component["name"], variable["name"]): variable.get("source")
-        for component in info["components"]
-        for variable in component.get("inputs", [])
-    }
+def _lags(model):
+    coupling = json.loads(model.coupling("json"))
+    return {(e["variable"], e["consumer"]): e["lagged"] for e in coupling["edges"]}
 
 
 def _shuffle(components, seed):
@@ -101,11 +97,11 @@ def test_fair_shuffled(monkeypatch, case):
         )
 
 
-def test_magicc7_same_step_reads():
+def test_magicc7_coupling_lags():
     """Forcing sees this year's CO2 and sea level this year's temperature."""
-    sources = _sources(_run_magicc7(out_sealevel=True))
-    assert sources["GhgForcing", "Atmospheric Concentration|CO2"] == "upstream"
-    assert sources["SeaLevelRise", "Surface Temperature|Annual Mean"] == "upstream"
+    lags = _lags(_run_magicc7(out_sealevel=True))
+    assert not lags["Atmospheric Concentration|CO2", "GhgForcing"]
+    assert not lags["Surface Temperature|Annual Mean", "SeaLevelRise"]
     for consumer in ("TerrestrialCarbon", "OceanCarbon"):
-        assert sources[consumer, "Atmospheric Concentration|CO2"] == "lagged"
-        assert sources[consumer, "Surface Temperature"] == "lagged"
+        assert lags["Atmospheric Concentration|CO2", consumer]
+        assert lags["Surface Temperature", consumer]
