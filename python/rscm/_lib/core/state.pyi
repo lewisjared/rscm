@@ -1,7 +1,10 @@
+from enum import Enum, auto
 from typing import final
 
 import numpy as np
 from numpy.typing import NDArray
+
+from . import TimeseriesType
 
 # RSCM uses 64bit floats throughout
 Arr = NDArray[np.float64]
@@ -122,12 +125,62 @@ class HemisphericSlice:
     def __repr__(self) -> str: ...
 
 @final
+class VariableSource(Enum):
+    """Where an input's values come from, which decides the index `get()` reads."""
+
+    Exogenous = auto()
+    UpstreamOutput = auto()
+    OwnState = auto()
+    Lagged = auto()
+
+@final
 class TimeseriesWindow:
     """Zero-cost view into scalar timeseries data."""
 
     current_index: int
+    source: VariableSource
+    timeseries_type: TimeseriesType
 
-    def __init__(self, values: list[float], current_index: int) -> None: ...
+    def __init__(
+        self,
+        values: list[float],
+        current_index: int,
+        *,
+        times: list[float] | None = None,
+        source: VariableSource = ...,
+        timeseries_type: TimeseriesType = ...,
+    ) -> None: ...
+    def get(self) -> float:
+        """Value at the index the model reads for this input.
+
+        This is index N+1 for an upstream output and index N otherwise.
+        """
+        ...
+    def get_time(self) -> float:
+        """Time of the value `get()` returns."""
+        ...
+    def history(self, n: int) -> float | None:
+        """Value `n` steps before the one `get()` returns.
+
+        Returns None before the first step.
+        """
+        ...
+    def history_len(self) -> int:
+        """Count the values `history` can read."""
+        ...
+    def interval(self) -> tuple[float, float]:
+        """Values at the start and end of the step.
+
+        A lagged input gives the previous step's interval.
+        Raises ValueError on an average and on a component's own state.
+        """
+        ...
+    def interpolate(self, t: float) -> float:
+        """Value at time `t`, held at the first or last value beyond the window.
+
+        The window holds values up to the end of the current step.
+        """
+        ...
     def at_start(self) -> float:
         """Get value at start of timestep (index N).
 
@@ -155,8 +208,49 @@ class FourBoxTimeseriesWindow:
     """View into FourBox grid timeseries data."""
 
     current_index: int
+    source: VariableSource
+    timeseries_type: TimeseriesType
 
-    def __init__(self, values: list[list[float]], current_index: int) -> None: ...
+    def __init__(
+        self,
+        values: list[list[float]],
+        current_index: int,
+        *,
+        times: list[float] | None = None,
+        source: VariableSource = ...,
+        timeseries_type: TimeseriesType = ...,
+    ) -> None: ...
+    def get(self) -> FourBoxSlice:
+        """Regional values at the index the model reads for this input.
+
+        This is index N+1 for an upstream output and index N otherwise.
+        """
+        ...
+    def get_time(self) -> float:
+        """Time of the values `get()` returns."""
+        ...
+    def history(self, n: int) -> FourBoxSlice | None:
+        """Regional values `n` steps before those `get()` returns.
+
+        Returns None before the first step.
+        """
+        ...
+    def history_len(self) -> int:
+        """Count the values `history` can read."""
+        ...
+    def interval(self) -> tuple[FourBoxSlice, FourBoxSlice]:
+        """Regional values at the start and end of the step.
+
+        A lagged input gives the previous step's interval.
+        Raises ValueError on an average and on a component's own state.
+        """
+        ...
+    def interpolate(self, t: float) -> FourBoxSlice:
+        """Regional values at time `t`, held at the first or last beyond the window.
+
+        The window holds values up to the end of the current step.
+        """
+        ...
     def at_start(self, region: int) -> float:
         """Get region value at start of timestep (index N).
 
@@ -191,8 +285,49 @@ class HemisphericTimeseriesWindow:
     """View into Hemispheric grid timeseries data."""
 
     current_index: int
+    source: VariableSource
+    timeseries_type: TimeseriesType
 
-    def __init__(self, values: list[list[float]], current_index: int) -> None: ...
+    def __init__(
+        self,
+        values: list[list[float]],
+        current_index: int,
+        *,
+        times: list[float] | None = None,
+        source: VariableSource = ...,
+        timeseries_type: TimeseriesType = ...,
+    ) -> None: ...
+    def get(self) -> HemisphericSlice:
+        """Regional values at the index the model reads for this input.
+
+        This is index N+1 for an upstream output and index N otherwise.
+        """
+        ...
+    def get_time(self) -> float:
+        """Time of the values `get()` returns."""
+        ...
+    def history(self, n: int) -> HemisphericSlice | None:
+        """Regional values `n` steps before those `get()` returns.
+
+        Returns None before the first step.
+        """
+        ...
+    def history_len(self) -> int:
+        """Count the values `history` can read."""
+        ...
+    def interval(self) -> tuple[HemisphericSlice, HemisphericSlice]:
+        """Regional values at the start and end of the step.
+
+        A lagged input gives the previous step's interval.
+        Raises ValueError on an average and on a component's own state.
+        """
+        ...
+    def interpolate(self, t: float) -> HemisphericSlice:
+        """Regional values at time `t`, held at the first or last beyond the window.
+
+        The window holds values up to the end of the current step.
+        """
+        ...
     def at_start(self, region: int) -> float:
         """Get region value at start of timestep (index N).
 

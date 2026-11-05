@@ -20,12 +20,9 @@ pub(crate) fn require_annual(component: &str, t_current: Time, t_next: Time) -> 
 /// Feedback references in MAGICC7 are fixed calendar years, which may lie
 /// before the run starts or after the current timestep.
 pub(crate) fn value_at_year(window: &ScalarWindow, t_current: Time, year: Time) -> FloatValue {
-    let index = window.index() as isize;
-    let last = window.len() as isize - 1;
-    let offset = ((year - t_current).round() as isize).clamp(-index, last - index);
     window
-        .at_offset(offset)
-        .unwrap_or_else(|| window.at_start())
+        .interpolate(t_current + (year - t_current).round())
+        .expect("whole years from an annual step are nodes of the axis")
 }
 
 /// Reference for a feedback starting at `start_year`.
@@ -37,7 +34,7 @@ pub(crate) fn reference_value(
     start_year: Time,
 ) -> FloatValue {
     if t_current < start_year {
-        window.at_start()
+        window.get()
     } else {
         value_at_year(window, t_current, start_year - 1.0)
     }
@@ -54,7 +51,7 @@ pub(crate) fn feedback_warming(
     if t_current < start_year {
         return 0.0;
     }
-    (temperature.at_start() - value_at_year(temperature, t_current, start_year)).max(0.0)
+    (temperature.get() - value_at_year(temperature, t_current, start_year)).max(0.0)
 }
 
 pub(crate) const PERMAFROST_CO2: &str = "Emissions|CO2|Permafrost";
@@ -123,6 +120,9 @@ pub(crate) fn prescribed_input(
     if t_next > switch_year? {
         return None;
     }
-    let window = input_state.get_scalar_window(prescribed);
-    Some(window.at_end().unwrap_or_else(|| window.at_start()))
+    let (_, end) = input_state
+        .get_scalar_window(prescribed)
+        .interval()
+        .unwrap_or_else(|err| panic!("{prescribed} must be a point read within the run: {err}"));
+    Some(end)
 }

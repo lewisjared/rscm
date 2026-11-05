@@ -17,6 +17,7 @@ mod windows;
 pub use slices::{FourBoxSlice, HemisphericSlice};
 
 // Re-export window types
+pub(crate) use windows::ReadIndex;
 pub use windows::{GridTimeseriesWindow, TimeseriesWindow};
 
 // Re-export aggregating window types
@@ -25,10 +26,11 @@ pub use aggregating::{
     HemisphericWindow, ReadTransformInfo, ScalarWindow,
 };
 
-use crate::component::GridType;
+use crate::component::{GridType, TimeseriesType};
 use crate::spatial::{FourBoxGrid, ScalarRegion, SpatialGrid};
 use crate::timeseries::{FloatValue, Time, TimeAxis};
 use crate::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -154,6 +156,7 @@ impl From<HemisphericSlice> for StateValue {
 ///
 /// This is used by `get()` to determine the correct timestep index to read from.
 /// The source is computed at model build time based on the dependency graph.
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum VariableSource {
     /// Variable is provided externally (exogenous input).
@@ -336,6 +339,19 @@ impl<'a> InputState<'a> {
     ///
     /// Panics if the variable is not found or cannot be accessed as scalar.
     pub fn get_scalar_window(&self, name: &str) -> ScalarWindow<'_> {
+        self.scalar_window(name)
+            .with_timeseries_type(self.timeseries_type(name))
+    }
+
+    /// Point or average type of `name`, from its read transform.
+    fn timeseries_type(&self, name: &str) -> TimeseriesType {
+        self.transform_context
+            .as_ref()
+            .and_then(|ctx| ctx.read_transforms.get(name))
+            .map_or(TimeseriesType::Point, |t| t.timeseries_type)
+    }
+
+    fn scalar_window(&self, name: &str) -> ScalarWindow<'_> {
         let item = self
             .find(name)
             .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
@@ -468,6 +484,7 @@ impl<'a> InputState<'a> {
             .unwrap_or((1.0, VariableSource::Exogenous));
 
         GridTimeseriesWindow::with_source(ts, current_index, self.current_time, unit_factor, source)
+            .with_timeseries_type(self.timeseries_type(name))
     }
 
     /// Get a Hemispheric GridTimeseriesWindow for the named variable
@@ -483,6 +500,11 @@ impl<'a> InputState<'a> {
     ///
     /// Panics if the variable is not found or cannot be accessed as Hemispheric.
     pub fn get_hemispheric_window(&self, name: &str) -> HemisphericWindow<'_> {
+        self.hemispheric_window(name)
+            .with_timeseries_type(self.timeseries_type(name))
+    }
+
+    fn hemispheric_window(&self, name: &str) -> HemisphericWindow<'_> {
         let item = self
             .find(name)
             .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
@@ -1020,6 +1042,7 @@ mod input_state_window_tests {
                 weights: None,
                 unit_conversion_factor: 0.001, // Convert mm/yr to m/yr
                 variable_source: VariableSource::Exogenous,
+                timeseries_type: TimeseriesType::Point,
             },
         );
         let transform_ctx = TransformContext { read_transforms };
@@ -1058,5 +1081,50 @@ mod input_state_window_tests {
         // With 2.0 conversion: [31.0, 21.0]
         assert_eq!(window.at_start(HemisphericRegion::Northern), 31.0);
         assert_eq!(window.at_start(HemisphericRegion::Southern), 21.0);
+    }
+
+    #[test]
+    fn test_input_state_windows_carry_timeseries_type() {
+        use crate::component::GridType;
+        use std::collections::HashMap;
+
+        let emissions = create_scalar_item("Emissions", vec![1.0, 2.0, 3.0]);
+        let temperature = create_four_box_item("Temperature");
+        let read_transforms = HashMap::from([
+            (
+                "Emissions".to_string(),
+                ReadTransformInfo::default().with_timeseries_type(TimeseriesType::Average),
+            ),
+            (
+                "Temperature".to_string(),
+                ReadTransformInfo::new(GridType::FourBox, None)
+                    .with_source(VariableSource::UpstreamOutput),
+            ),
+        ]);
+        let state = InputState::build_with_transforms(
+            vec![&emissions, &temperature],
+            2001.0,
+            TransformContext { read_transforms },
+        );
+
+        let emissions = state.get_scalar_window("Emissions");
+        assert_eq!(emissions.timeseries_type(), TimeseriesType::Average);
+        assert!(emissions.interval().is_err());
+
+        let temperature = state.get_hemispheric_window("Temperature");
+        assert_eq!(temperature.timeseries_type(), TimeseriesType::Point);
+        assert_eq!(temperature.get_time(), 2002.0);
+        assert_eq!(
+            temperature.interval().unwrap(),
+            (vec![15.5, 10.5], vec![16.5, 11.5])
+        );
+        assert_eq!(
+            state
+                .get_four_box_window("Temperature")
+                .interval()
+                .unwrap()
+                .1,
+            vec![17.0, 16.0, 12.0, 11.0]
+        );
     }
 }

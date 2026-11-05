@@ -39,6 +39,8 @@ climate models.
 - [StateValue][] wraps the scalar or grid values a component returns.
 - [TimeseriesWindow][] gives current and historical values within `solve()`.
 - [FourBoxTimeseriesWindow][] and [HemisphericTimeseriesWindow][] are its grid variants.
+- [VariableSource][] is where a window's values come from,
+  which decides what `get()` reads.
 
 **Variable schema**
 
@@ -103,6 +105,7 @@ from rscm._lib.core.state import (
     HemisphericTimeseriesWindow,
     StateValue,
     TimeseriesWindow,
+    VariableSource,
 )
 
 __all__ = [
@@ -133,6 +136,7 @@ __all__ = [
     "TimeseriesWindow",
     "Unit",
     "VariableSchema",
+    "VariableSource",
     "VariableType",
     "build_models",
     "run_models",
