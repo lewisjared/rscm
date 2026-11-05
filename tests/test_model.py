@@ -1,5 +1,6 @@
 import numpy as np
 import numpy.testing as npt
+import pytest
 
 from rscm._lib.core import InterpolationStrategy, Model, Timeseries
 from rscm._lib.two_layer import TwoLayerBuilder
@@ -21,11 +22,6 @@ def test_model(time_axis):
     builder = ModelBuilder()
     builder.with_time_axis(time_axis).with_rust_component(component)
 
-    # Doesn't have any ERF data
-    # Need pyo3_runtime.PanicException
-    # with pytest.raises(Exception):
-    #     builder.build()
-
     erf = Timeseries(
         np.asarray([1.0] * len(time_axis)),
         time_axis,
@@ -44,6 +40,36 @@ def test_model(time_axis):
     print(model.as_dot())
 
     model.run()
+
+
+def test_missing_exogenous_input(time_axis):
+    component = TwoLayerBuilder.from_parameters(
+        dict(
+            lambda0=0.0,
+            a=0.0,
+            efficacy=0.0,
+            eta=0.0,
+            heat_capacity_deep=0.0,
+            heat_capacity_surface=0.0,
+        )
+    ).build()
+    builder = (
+        ModelBuilder()
+        .with_time_axis(time_axis)
+        .with_rust_component(component)
+        .with_initial_values(
+            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+        )
+    )
+
+    with pytest.raises(
+        ValueError, match=r"'Effective Radiative Forcing' \(read by TwoLayer\)"
+    ):
+        builder.build()
+
+    model = builder.with_missing_exogenous_allowed().build()
+    erf = model.timeseries().get_timeseries_by_name("Effective Radiative Forcing")
+    assert np.isnan(erf.values()).all()
 
 
 def test_model_serialisation(time_axis):

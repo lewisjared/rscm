@@ -140,6 +140,8 @@ def effective_parameters(forcing: dict, climate: dict) -> dict:
         .with_rust_component(GhgForcingBuilder.from_parameters(forcing).build())
         .with_rust_component(ClimateUDEBBuilder.from_parameters(climate).build())
         .with_initial_values({"Surface Temperature": 0.0})
+        # Built only to serialise parameters, never run.
+        .with_missing_exogenous_allowed()
         .build()
     )
     nodes = tomllib.loads(model.to_toml())["components"]["nodes"]
