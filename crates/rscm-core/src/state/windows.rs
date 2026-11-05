@@ -1,6 +1,6 @@
 //! Core window types for accessing timeseries values.
 //!
-//! This module provides zero-cost views into timeseries data at specific time indices,
+//! This module provides zero-cost views into timeseries data during one step,
 //! supporting both scalar and grid-based timeseries.
 
 use super::VariableSource;
@@ -11,7 +11,6 @@ use crate::spatial::{
     SpatialGrid,
 };
 use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis, Timeseries};
-use ndarray::ArrayView1;
 
 /// Indices a window reads during the step from index `current` (N) to N+1.
 ///
@@ -28,7 +27,7 @@ pub(crate) struct ReadIndex {
 impl ReadIndex {
     /// Index g that `get()` reads.
     pub fn get(self) -> usize {
-        if self.source == VariableSource::UpstreamOutput && self.current + 1 < self.len {
+        if self.source == VariableSource::UpstreamOutput {
             self.current + 1
         } else {
             self.current
@@ -72,6 +71,11 @@ impl ReadIndex {
     }
 }
 
+/// Panics because the series of variable `name` has no value at `index`.
+pub(crate) fn out_of_range(name: &str, index: usize, len: usize) -> ! {
+    panic!("Variable '{name}' has {len} values, so index {index} is out of range")
+}
+
 /// Index of the stored value at `t`: a node of `axis`, or its first or last node beyond its ends.
 ///
 /// `None` when `t` lies between two nodes.
@@ -87,43 +91,29 @@ pub(crate) fn stored_index(axis: &TimeAxis, t: Time) -> Option<usize> {
     }
 }
 
-/// A zero-cost view into a scalar timeseries at a specific time index.
+/// A zero-cost view into a scalar timeseries during one step.
 ///
-/// `TimeseriesWindow` provides efficient access to current, historical, and interpolated
-/// values without copying data. This is the primary way components access their input
-/// variables.
+/// This is the primary way components read their input variables.
+/// A component reads its input with [`get()`](Self::get) and never chooses a time index.
+/// The model decides which value `get()` returns:
+/// this step's value from an upstream component, or the previous step's value on a lagged edge.
 ///
-/// # Timestep Access Semantics
-///
-/// Components must explicitly choose which timestep index to read from:
-/// - [`at_start()`](Self::at_start) - Value at index N (start of timestep). Use for:
-///   - State variables (your own previous state)
-///   - Exogenous inputs (external forcing data)
-/// - [`at_end()`](Self::at_end) - Value at index N+1 (written this timestep). Use for:
-///   - Upstream component outputs (values written before your component ran)
-///   - Aggregation (combining outputs from multiple components)
+/// - [`get()`](Self::get) reads the value the model wired this input to.
+/// - [`interval()`](Self::interval) gives a point's values at the start and end of the step.
+/// - [`history(n)`](Self::history) reads `n` steps before `get()`, and never the future.
 ///
 /// # Examples
 ///
 /// ```ignore
-/// fn solve(&self, inputs: MyComponentInputs) -> MyComponentOutputs {
-///     // Read exogenous input at start of timestep
-///     let emissions = inputs.emissions_co2.at_start();
-///
-///     // Read previous value for derivative calculation
-///     let previous = inputs.emissions_co2.previous();
-///     let derivative = (emissions - previous.unwrap_or(emissions)) / dt;
-///
-///     // Access historical values
-///     let last_5 = inputs.emissions_co2.last_n(5);
-///     // ...
-/// }
+/// let emissions = inputs.emissions_co2.get();
+/// let previous = inputs.emissions_co2.history(1).unwrap_or(emissions);
+/// let (erf_start, erf_end) = inputs.erf.interval()?;
 /// ```
 #[derive(Debug)]
 pub struct TimeseriesWindow<'a> {
     timeseries: &'a Timeseries<FloatValue>,
     current_index: usize,
-    current_time: Time,
+    name: &'a str,
     /// Unit conversion factor applied to all returned values.
     /// Default is 1.0 (no conversion).
     unit_conversion_factor: f64,
@@ -138,21 +128,20 @@ impl<'a> TimeseriesWindow<'a> {
     /// # Arguments
     ///
     /// * `timeseries` - The underlying scalar timeseries
-    /// * `current_index` - Index of the current timestep
-    /// * `current_time` - Time value at the current timestep
+    /// * `current_index` - Index of the step's start
+    /// * `name` - Name of the variable, used in error messages
     pub fn new(
         timeseries: &'a Timeseries<FloatValue>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
     ) -> Self {
-        Self {
+        Self::with_source(
             timeseries,
             current_index,
-            current_time,
-            unit_conversion_factor: 1.0,
-            variable_source: VariableSource::Exogenous,
-            timeseries_type: TimeseriesType::Point,
-        }
+            name,
+            1.0,
+            VariableSource::Exogenous,
+        )
     }
 
     /// Create a new TimeseriesWindow with unit conversion.
@@ -162,31 +151,30 @@ impl<'a> TimeseriesWindow<'a> {
     pub fn with_unit_conversion(
         timeseries: &'a Timeseries<FloatValue>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         unit_conversion_factor: f64,
     ) -> Self {
-        Self {
+        Self::with_source(
             timeseries,
             current_index,
-            current_time,
+            name,
             unit_conversion_factor,
-            variable_source: VariableSource::Exogenous,
-            timeseries_type: TimeseriesType::Point,
-        }
+            VariableSource::Exogenous,
+        )
     }
 
     /// Create a TimeseriesWindow with all options including variable source.
     pub fn with_source(
         timeseries: &'a Timeseries<FloatValue>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         unit_conversion_factor: f64,
         variable_source: VariableSource,
     ) -> Self {
         Self {
             timeseries,
             current_index,
-            current_time,
+            name,
             unit_conversion_factor,
             variable_source,
             timeseries_type: TimeseriesType::Point,
@@ -225,15 +213,28 @@ impl<'a> TimeseriesWindow<'a> {
     fn value_at(&self, index: usize) -> FloatValue {
         self.timeseries
             .at(index, ScalarRegion::Global)
-            .expect("Index out of bounds")
+            .unwrap_or_else(|| out_of_range(self.name, index, self.timeseries.len()))
             * self.unit_conversion_factor
+    }
+
+    /// Value the model wired this input to read during the step.
+    ///
+    /// This is this step's value from an upstream component,
+    /// and the step's start value for exogenous data, a component's own state and a lagged edge.
+    ///
+    /// # Panics
+    ///
+    /// Panics with the variable name if that value lies past the end of the series.
+    pub fn get(&self) -> FloatValue {
+        self.value_at(self.read_index().get())
     }
 
     /// Time of the value `get()` returns.
     pub fn get_time(&self) -> Time {
+        let index = self.read_index().get();
         self.time_axis()
-            .at(self.read_index().get())
-            .expect("Index out of bounds")
+            .at(index)
+            .unwrap_or_else(|| out_of_range(self.name, index, self.timeseries.len()))
     }
 
     /// Value `n` steps before the one `get()` returns, so `history(0) == get()`.
@@ -257,211 +258,6 @@ impl<'a> TimeseriesWindow<'a> {
         Ok((self.value_at(start), self.value_at(end)))
     }
 
-    /// Get the value at the start of the timestep (index N).
-    ///
-    /// This is the primary accessor for reading input values. The "start of timestep"
-    /// refers to the state before any components have executed during this timestep.
-    ///
-    /// # When to use `at_start()`
-    ///
-    /// - **State variables**: Reading your own component's state from the previous solve
-    ///   (e.g., temperature at the beginning of the timestep before you update it)
-    /// - **Exogenous inputs**: External forcing data that was pre-populated before the
-    ///   model run (e.g., emissions scenarios, solar irradiance)
-    /// - **Any input where you need the value at index N**
-    ///
-    /// # Execution order context
-    ///
-    /// Components execute in dependency order. When your component runs:
-    /// - Index N contains values from before this timestep started
-    /// - Index N+1 may contain values written by upstream components (use [`at_end()`])
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
-    ///     let inputs = MyComponentInputs::from_input_state(input_state);
-    ///
-    ///     // Read state variable (your own previous output)
-    ///     let prev_temperature = inputs.temperature.at_start();
-    ///
-    ///     // Read exogenous forcing
-    ///     let emissions = inputs.emissions.at_start();
-    ///
-    ///     // Compute new state
-    ///     let new_temperature = prev_temperature + emissions * self.sensitivity;
-    ///     // ...
-    /// }
-    /// ```
-    ///
-    /// [`at_end()`]: TimeseriesWindow::at_end
-    pub fn at_start(&self) -> FloatValue {
-        self.timeseries
-            .at(self.current_index, ScalarRegion::Global)
-            .expect("Current index out of bounds")
-            * self.unit_conversion_factor
-    }
-
-    /// Get the value at the end of the timestep (index N+1), if available.
-    ///
-    /// This accessor reads values that were written during the current timestep by
-    /// components that executed before you in the dependency order.
-    ///
-    /// # When to use `at_end()`
-    ///
-    /// - **Upstream component outputs**: When you depend on another component's output
-    ///   from this timestep (they ran before you and wrote to index N+1)
-    /// - **Aggregation**: Combining outputs from multiple components that all wrote
-    ///   during the current timestep
-    ///
-    /// # Returns
-    ///
-    /// - `Some(value)` if index N+1 exists in the timeseries
-    /// - `None` if at the last timestep (index N+1 is out of bounds)
-    /// - `None` if the model lags this input, so a lagged read never sees this step's value
-    ///
-    /// # Execution order context
-    ///
-    /// The model solves components in dependency order. Upstream components write their
-    /// outputs to index N+1 before downstream components run. This method lets you read
-    /// those freshly-written values.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
-    ///     let inputs = MyComponentInputs::from_input_state(input_state);
-    ///
-    ///     // Read upstream component output (written this timestep)
-    ///     // Fall back to start value if at final timestep
-    ///     let erf = inputs.effective_radiative_forcing
-    ///         .at_end()
-    ///         .unwrap_or_else(|| inputs.effective_radiative_forcing.at_start());
-    ///
-    ///     // Use the forcing to compute temperature response
-    ///     let temp_change = erf * self.climate_sensitivity;
-    ///     // ...
-    /// }
-    /// ```
-    ///
-    /// [`at_start()`]: TimeseriesWindow::at_start
-    pub fn at_end(&self) -> Option<FloatValue> {
-        let next_index = self.current_index + 1;
-        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
-            None
-        } else {
-            self.timeseries
-                .at(next_index, ScalarRegion::Global)
-                .map(|v| v * self.unit_conversion_factor)
-        }
-    }
-
-    /// Get the value using automatic timestep resolution based on variable source.
-    ///
-    /// - `Exogenous`: Returns `at_start()` (external data at index N)
-    /// - `UpstreamOutput`: Returns `at_end()` if available, else `at_start()` (upstream wrote to N+1)
-    /// - `OwnState`: Returns `at_start()` (your own previous state at index N)
-    /// - `Lagged`: Returns `at_start()` (the previous step's value at index N)
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Instead of:
-    /// let erf = inputs.erf.at_end().unwrap_or_else(|| inputs.erf.at_start());
-    /// // Use:
-    /// let erf = inputs.erf.get();
-    /// ```
-    pub fn get(&self) -> FloatValue {
-        match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
-                self.at_start()
-            }
-            VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
-        }
-    }
-
-    /// Get the value at the previous timestep, if available.
-    ///
-    /// Returns `None` if at the first timestep (no previous value exists).
-    pub fn previous(&self) -> Option<FloatValue> {
-        if self.current_index == 0 {
-            None
-        } else {
-            self.timeseries
-                .at(self.current_index - 1, ScalarRegion::Global)
-                .map(|v| v * self.unit_conversion_factor)
-        }
-    }
-
-    /// Get the value at a relative offset from the current timestep.
-    ///
-    /// Positive offsets look forward in time, negative offsets look backward.
-    /// Returns `None` if the resulting index is out of bounds.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// let prev = window.at_offset(-1);  // Same as previous()
-    /// let two_back = window.at_offset(-2);
-    /// let next = window.at_offset(1);   // Future value (if available)
-    /// ```
-    pub fn at_offset(&self, offset: isize) -> Option<FloatValue> {
-        let index = self.current_index as isize + offset;
-        if index < 0 || index as usize >= self.timeseries.len() {
-            None
-        } else {
-            self.timeseries
-                .at(index as usize, ScalarRegion::Global)
-                .map(|v| v * self.unit_conversion_factor)
-        }
-    }
-
-    /// Get the last N values as an array view, ending at the current timestep.
-    ///
-    /// This is useful for computing moving averages, derivatives, or any operation
-    /// that needs historical context.
-    ///
-    /// **Note:** This method returns raw values without unit conversion applied.
-    /// Use [`last_n_converted()`](Self::last_n_converted) if you need converted values.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `n` is greater than `current_index + 1` (not enough history).
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// let last_5 = window.last_n(5);
-    /// let avg = last_5.mean().unwrap();
-    /// ```
-    pub fn last_n(&self, n: usize) -> ArrayView1<'_, FloatValue> {
-        assert!(
-            n <= self.current_index + 1,
-            "Cannot get {} values when only {} available",
-            n,
-            self.current_index + 1
-        );
-        let start = self.current_index + 1 - n;
-        let end = self.current_index + 1;
-        // Get the values column (shape: [time, 1]) and slice the time dimension
-        self.timeseries.values().slice(ndarray::s![start..end, 0])
-    }
-
-    /// Get the last N values with unit conversion applied.
-    ///
-    /// Unlike [`last_n()`](Self::last_n), this returns owned data with the
-    /// unit conversion factor applied to each value.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `n` is greater than `current_index + 1` (not enough history).
-    pub fn last_n_converted(&self, n: usize) -> Vec<FloatValue> {
-        self.last_n(n)
-            .iter()
-            .map(|v| v * self.unit_conversion_factor)
-            .collect()
-    }
-
     /// Value of the stored series at time `t`, past or future.
     ///
     /// Returns the stored value at a node and holds the first or last value beyond the axis.
@@ -478,16 +274,6 @@ impl<'a> TimeseriesWindow<'a> {
         }
     }
 
-    /// Get the current time value.
-    pub fn time(&self) -> Time {
-        self.current_time
-    }
-
-    /// Get the current time index.
-    pub fn index(&self) -> usize {
-        self.current_index
-    }
-
     /// Get the total length of the underlying timeseries.
     pub fn len(&self) -> usize {
         self.timeseries.len()
@@ -499,32 +285,25 @@ impl<'a> TimeseriesWindow<'a> {
     }
 }
 
-/// A zero-cost view into a grid timeseries at a specific time index.
+/// A zero-cost view into a grid timeseries during one step.
 ///
-/// `GridTimeseriesWindow` provides efficient access to regional values for spatially-resolved
-/// data. It supports both individual region access and full-grid operations.
+/// `GridTimeseriesWindow` reads regional values for spatially-resolved data,
+/// one region at a time or the whole grid at once.
 ///
 /// # Type Parameters
 ///
 /// * `G` - The spatial grid type (e.g., `FourBoxGrid`, `HemisphericGrid`)
 ///
-/// # Timestep Access Semantics
+/// # Reading values
 ///
-/// See [`TimeseriesWindow`] for detailed guidance on when to use `at_start()` vs `at_end()`.
+/// See [`TimeseriesWindow`] for how the model decides which value `get()` returns.
 ///
 /// # Examples
 ///
 /// ```ignore
-/// fn solve(&self, inputs: MyComponentInputs) -> MyComponentOutputs {
-///     // Access individual regions at start of timestep
-///     let northern_ocean = inputs.temperature.at_start(FourBoxRegion::NorthernOcean);
-///
-///     // Get all regions at once
-///     let all_temps = inputs.temperature.at_start_all();
-///
-///     // Compute global aggregate
-///     let global_temp = inputs.temperature.current_global();
-/// }
+/// let northern_ocean = inputs.temperature.get(FourBoxRegion::NorthernOcean);
+/// let all_temps = inputs.temperature.get_all();
+/// let previous = inputs.temperature.history(1);
 /// ```
 #[derive(Debug)]
 pub struct GridTimeseriesWindow<'a, G>
@@ -533,7 +312,7 @@ where
 {
     timeseries: &'a GridTimeseries<FloatValue, G>,
     current_index: usize,
-    current_time: Time,
+    name: &'a str,
     /// Unit conversion factor applied to all returned values.
     /// Default is 1.0 (no conversion).
     unit_conversion_factor: f64,
@@ -547,19 +326,20 @@ where
     G: SpatialGrid,
 {
     /// Create a new GridTimeseriesWindow from a grid timeseries.
+    ///
+    /// `name` is the variable's name, used in error messages.
     pub fn new(
         timeseries: &'a GridTimeseries<FloatValue, G>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
     ) -> Self {
-        Self {
+        Self::with_source(
             timeseries,
             current_index,
-            current_time,
-            unit_conversion_factor: 1.0,
-            variable_source: VariableSource::Exogenous,
-            timeseries_type: TimeseriesType::Point,
-        }
+            name,
+            1.0,
+            VariableSource::Exogenous,
+        )
     }
 
     /// Create a new GridTimeseriesWindow with unit conversion.
@@ -568,31 +348,30 @@ where
     pub fn with_unit_conversion(
         timeseries: &'a GridTimeseries<FloatValue, G>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         unit_conversion_factor: f64,
     ) -> Self {
-        Self {
+        Self::with_source(
             timeseries,
             current_index,
-            current_time,
+            name,
             unit_conversion_factor,
-            variable_source: VariableSource::Exogenous,
-            timeseries_type: TimeseriesType::Point,
-        }
+            VariableSource::Exogenous,
+        )
     }
 
     /// Create a GridTimeseriesWindow with all options including variable source.
     pub fn with_source(
         timeseries: &'a GridTimeseries<FloatValue, G>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         unit_conversion_factor: f64,
         variable_source: VariableSource,
     ) -> Self {
         Self {
             timeseries,
             current_index,
-            current_time,
+            name,
             unit_conversion_factor,
             variable_source,
             timeseries_type: TimeseriesType::Point,
@@ -640,19 +419,31 @@ where
         }
     }
 
+    fn out_of_range(&self, index: usize) -> ! {
+        out_of_range(self.name, index, self.timeseries.len())
+    }
+
     fn values_at(&self, index: usize) -> Vec<FloatValue> {
         let values = self
             .timeseries
             .at_time_index(index)
-            .expect("Index out of bounds");
+            .unwrap_or_else(|| self.out_of_range(index));
         self.apply_conversion(values)
+    }
+
+    /// All regional values the model wired this input to read during the step.
+    ///
+    /// See [`TimeseriesWindow::get()`] for which step's values these are.
+    pub fn get_all(&self) -> Vec<FloatValue> {
+        self.values_at(self.read_index().get())
     }
 
     /// Time of the values `get_all()` returns.
     pub fn get_time(&self) -> Time {
+        let index = self.read_index().get();
         self.time_axis()
-            .at(self.read_index().get())
-            .expect("Index out of bounds")
+            .at(index)
+            .unwrap_or_else(|| self.out_of_range(index))
     }
 
     /// Regional values `n` steps before those `get_all()` returns, so `history(0) == get_all()`.
@@ -673,109 +464,6 @@ where
     pub fn interval(&self) -> RSCMResult<(Vec<FloatValue>, Vec<FloatValue>)> {
         let (start, end) = self.read_index().interval()?;
         Ok((self.values_at(start), self.values_at(end)))
-    }
-
-    /// Get all regional values at the start of the timestep (index N).
-    ///
-    /// Returns values for all regions in the grid at the beginning of the timestep,
-    /// before any components have executed during this timestep.
-    ///
-    /// # When to use
-    ///
-    /// - **State variables**: Reading your component's previous regional state
-    /// - **Exogenous inputs**: External forcing data pre-populated before the run
-    ///
-    /// See [`TimeseriesWindow::at_start()`] for detailed execution order semantics.
-    pub fn at_start_all(&self) -> Vec<FloatValue> {
-        let values = self
-            .timeseries
-            .at_time_index(self.current_index)
-            .expect("Current index out of bounds");
-        self.apply_conversion(values)
-    }
-
-    /// Get all regional values at the end of the timestep (index N+1), if available.
-    ///
-    /// Returns values for all regions written during the current timestep by upstream
-    /// components that executed before you.
-    ///
-    /// # When to use
-    ///
-    /// - **Upstream component outputs**: Regional values written by components that ran before you
-    /// - **Aggregation**: Combining regional outputs from multiple components in the same timestep
-    ///
-    /// # Returns
-    ///
-    /// - `Some(Vec<FloatValue>)` with values for all regions if index N+1 exists
-    /// - `None` if at the last timestep
-    ///
-    /// See [`TimeseriesWindow::at_end()`] for detailed execution order semantics.
-    pub fn at_end_all(&self) -> Option<Vec<FloatValue>> {
-        let next_index = self.current_index + 1;
-        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
-            None
-        } else {
-            self.timeseries
-                .at_time_index(next_index)
-                .map(|v| self.apply_conversion(v))
-        }
-    }
-
-    /// Get all regional values using automatic timestep resolution based on variable source.
-    pub fn get_all(&self) -> Vec<FloatValue> {
-        match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
-                self.at_start_all()
-            }
-            VariableSource::UpstreamOutput => {
-                self.at_end_all().unwrap_or_else(|| self.at_start_all())
-            }
-        }
-    }
-
-    /// Get all regional values at the current timestep.
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use `at_start_all()` or `at_end_all()` based on variable semantics."
-    )]
-    pub fn all(&self) -> Vec<FloatValue> {
-        self.at_start_all()
-    }
-
-    /// Get all regional values at the previous timestep.
-    pub fn previous_all(&self) -> Option<Vec<FloatValue>> {
-        if self.current_index == 0 {
-            None
-        } else {
-            self.timeseries
-                .at_time_index(self.current_index - 1)
-                .map(|v| self.apply_conversion(v))
-        }
-    }
-
-    /// Get all regional values at a relative offset from the current timestep.
-    ///
-    /// Positive offsets look forward in time, negative offsets look backward.
-    /// Returns `None` if the resulting index is out of bounds.
-    pub fn at_offset_all(&self, offset: isize) -> Option<Vec<FloatValue>> {
-        let index = self.current_index as isize + offset;
-        if index < 0 || index as usize >= self.timeseries.len() {
-            None
-        } else {
-            self.timeseries
-                .at_time_index(index as usize)
-                .map(|v| self.apply_conversion(v))
-        }
-    }
-
-    /// Get the current time value.
-    pub fn time(&self) -> Time {
-        self.current_time
-    }
-
-    /// Get the current time index.
-    pub fn index(&self) -> usize {
-        self.current_index
     }
 
     /// Get a reference to the underlying spatial grid.
@@ -809,81 +497,18 @@ where
 
 /// Type-safe accessors for FourBoxGrid windows
 impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
-    /// Get a single region's value at the start of the timestep (index N).
-    ///
-    /// See [`TimeseriesWindow::at_start()`] for detailed semantics on when to use this method.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let inputs = MyComponentInputs::from_input_state(input_state);
-    /// let northern_ocean_temp = inputs.temperature.at_start(FourBoxRegion::NorthernOcean);
-    /// ```
-    pub fn at_start(&self, region: FourBoxRegion) -> FloatValue {
+    fn region_at(&self, index: usize, region: FourBoxRegion) -> FloatValue {
         self.timeseries
-            .at(self.current_index, region)
-            .expect("Current index out of bounds")
+            .at(index, region)
+            .unwrap_or_else(|| self.out_of_range(index))
             * self.unit_conversion_factor
     }
 
-    /// Get a single region's value at the end of the timestep (index N+1), if available.
+    /// A single region's value that the model wired this input to read during the step.
     ///
-    /// See [`TimeseriesWindow::at_end()`] for detailed semantics on when to use this method.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Read upstream forcing written this timestep
-    /// let erf = inputs.erf.at_end(FourBoxRegion::NorthernOcean)
-    ///     .unwrap_or_else(|| inputs.erf.at_start(FourBoxRegion::NorthernOcean));
-    /// ```
-    pub fn at_end(&self, region: FourBoxRegion) -> Option<FloatValue> {
-        let next_index = self.current_index + 1;
-        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
-            None
-        } else {
-            self.timeseries
-                .at(next_index, region)
-                .map(|v| v * self.unit_conversion_factor)
-        }
-    }
-
-    /// Get a single region's value using automatic timestep resolution.
+    /// See [`TimeseriesWindow::get()`] for which step's value this is.
     pub fn get(&self, region: FourBoxRegion) -> FloatValue {
-        match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
-                self.at_start(region)
-            }
-            VariableSource::UpstreamOutput => {
-                self.at_end(region).unwrap_or_else(|| self.at_start(region))
-            }
-        }
-    }
-
-    /// Get a single region's value at the previous timestep.
-    pub fn previous(&self, region: FourBoxRegion) -> Option<FloatValue> {
-        if self.current_index == 0 {
-            None
-        } else {
-            self.timeseries
-                .at(self.current_index - 1, region)
-                .map(|v| v * self.unit_conversion_factor)
-        }
-    }
-
-    /// Get the global aggregate at the start of the timestep (index N).
-    ///
-    /// Uses the grid's weights to compute a weighted average of all regions.
-    /// Note: Unit conversion is already applied in at_start_all().
-    pub fn current_global(&self) -> FloatValue {
-        let values = self.at_start_all();
-        self.timeseries.grid().aggregate_global(&values)
-    }
-
-    /// Get the global aggregate at the previous timestep.
-    pub fn previous_global(&self) -> Option<FloatValue> {
-        self.previous_all()
-            .map(|values| self.timeseries.grid().aggregate_global(&values))
+        self.region_at(self.read_index().get(), region)
     }
 
     /// A single region's value of the stored series at time `t`, past or future.
@@ -891,11 +516,7 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
     /// See [`TimeseriesWindow::interpolate()`] for nodes, the axis ends and upstream outputs.
     pub fn interpolate(&self, t: Time, region: FourBoxRegion) -> RSCMResult<FloatValue> {
         match stored_index(self.time_axis(), t) {
-            Some(index) => Ok(self
-                .timeseries
-                .at(index, region)
-                .expect("Index out of bounds")
-                * self.unit_conversion_factor),
+            Some(index) => Ok(self.region_at(index, region)),
             None => self
                 .timeseries
                 .at_time(t, region)
@@ -906,64 +527,18 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
 
 /// Type-safe accessors for HemisphericGrid windows
 impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
-    /// Get a single region's value at the start of the timestep (index N).
-    ///
-    /// See [`TimeseriesWindow::at_start()`] for detailed semantics on when to use this method.
-    pub fn at_start(&self, region: HemisphericRegion) -> FloatValue {
+    fn region_at(&self, index: usize, region: HemisphericRegion) -> FloatValue {
         self.timeseries
-            .at(self.current_index, region)
-            .expect("Current index out of bounds")
+            .at(index, region)
+            .unwrap_or_else(|| self.out_of_range(index))
             * self.unit_conversion_factor
     }
 
-    /// Get a single region's value at the end of the timestep (index N+1), if available.
+    /// A single region's value that the model wired this input to read during the step.
     ///
-    /// See [`TimeseriesWindow::at_end()`] for detailed semantics on when to use this method.
-    pub fn at_end(&self, region: HemisphericRegion) -> Option<FloatValue> {
-        let next_index = self.current_index + 1;
-        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
-            None
-        } else {
-            self.timeseries
-                .at(next_index, region)
-                .map(|v| v * self.unit_conversion_factor)
-        }
-    }
-
-    /// Get a single region's value using automatic timestep resolution.
+    /// See [`TimeseriesWindow::get()`] for which step's value this is.
     pub fn get(&self, region: HemisphericRegion) -> FloatValue {
-        match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
-                self.at_start(region)
-            }
-            VariableSource::UpstreamOutput => {
-                self.at_end(region).unwrap_or_else(|| self.at_start(region))
-            }
-        }
-    }
-
-    /// Get a single region's value at the previous timestep.
-    pub fn previous(&self, region: HemisphericRegion) -> Option<FloatValue> {
-        if self.current_index == 0 {
-            None
-        } else {
-            self.timeseries
-                .at(self.current_index - 1, region)
-                .map(|v| v * self.unit_conversion_factor)
-        }
-    }
-
-    /// Get the global aggregate at the start of the timestep (index N).
-    /// Note: Unit conversion is already applied in at_start_all().
-    pub fn current_global(&self) -> FloatValue {
-        let values = self.at_start_all();
-        self.timeseries.grid().aggregate_global(&values)
-    }
-
-    /// Get the global aggregate at the previous timestep.
-    pub fn previous_global(&self) -> Option<FloatValue> {
-        self.previous_all()
-            .map(|values| self.timeseries.grid().aggregate_global(&values))
+        self.region_at(self.read_index().get(), region)
     }
 
     /// A single region's value of the stored series at time `t`, past or future.
@@ -971,11 +546,7 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
     /// See [`TimeseriesWindow::interpolate()`] for nodes, the axis ends and upstream outputs.
     pub fn interpolate(&self, t: Time, region: HemisphericRegion) -> RSCMResult<FloatValue> {
         match stored_index(self.time_axis(), t) {
-            Some(index) => Ok(self
-                .timeseries
-                .at(index, region)
-                .expect("Index out of bounds")
-                * self.unit_conversion_factor),
+            Some(index) => Ok(self.region_at(index, region)),
             None => self
                 .timeseries
                 .at_time(t, region)
@@ -986,49 +557,18 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
 
 /// Type-safe accessors for ScalarGrid windows (convenience wrapper)
 impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
-    /// Get the scalar value at the start of the timestep (index N).
-    ///
-    /// See [`TimeseriesWindow::at_start()`] for detailed semantics on when to use this method.
-    pub fn at_start(&self) -> FloatValue {
+    fn scalar_at(&self, index: usize) -> FloatValue {
         self.timeseries
-            .at(self.current_index, ScalarRegion::Global)
-            .expect("Current index out of bounds")
+            .at(index, ScalarRegion::Global)
+            .unwrap_or_else(|| self.out_of_range(index))
             * self.unit_conversion_factor
     }
 
-    /// Get the scalar value at the end of the timestep (index N+1), if available.
+    /// Value the model wired this input to read during the step.
     ///
-    /// See [`TimeseriesWindow::at_end()`] for detailed semantics on when to use this method.
-    pub fn at_end(&self) -> Option<FloatValue> {
-        let next_index = self.current_index + 1;
-        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
-            None
-        } else {
-            self.timeseries
-                .at(next_index, ScalarRegion::Global)
-                .map(|v| v * self.unit_conversion_factor)
-        }
-    }
-
-    /// Get the scalar value using automatic timestep resolution.
+    /// See [`TimeseriesWindow::get()`] for which step's value this is.
     pub fn get(&self) -> FloatValue {
-        match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
-                self.at_start()
-            }
-            VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
-        }
-    }
-
-    /// Get the previous scalar value.
-    pub fn previous(&self) -> Option<FloatValue> {
-        if self.current_index == 0 {
-            None
-        } else {
-            self.timeseries
-                .at(self.current_index - 1, ScalarRegion::Global)
-                .map(|v| v * self.unit_conversion_factor)
-        }
+        self.scalar_at(self.read_index().get())
     }
 
     /// Value of the stored series at time `t`, past or future.
@@ -1036,11 +576,7 @@ impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
     /// See [`TimeseriesWindow::interpolate()`] for nodes, the axis ends and upstream outputs.
     pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
         match stored_index(self.time_axis(), t) {
-            Some(index) => Ok(self
-                .timeseries
-                .at(index, ScalarRegion::Global)
-                .expect("Index out of bounds")
-                * self.unit_conversion_factor),
+            Some(index) => Ok(self.scalar_at(index)),
             None => self
                 .timeseries
                 .at_time(t, ScalarRegion::Global)
@@ -1071,98 +607,38 @@ mod timeseries_window_tests {
     }
 
     #[test]
-    fn test_timeseries_window_at_start() {
+    fn test_timeseries_window_get_by_source() {
         let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::new(&ts, 2, 2002.0);
+        let window = |index, source| TimeseriesWindow::with_source(&ts, index, "test", 1.0, source);
 
-        // at_start() returns value at index N (the current index)
-        assert_eq!(window.at_start(), 3.0);
-        assert_eq!(window.time(), 2002.0);
-        assert_eq!(window.index(), 2);
+        assert_eq!(window(2, VariableSource::Exogenous).get(), 3.0);
+        assert_eq!(window(2, VariableSource::OwnState).get(), 3.0);
+        assert_eq!(window(2, VariableSource::Lagged).get(), 3.0);
+        assert_eq!(window(2, VariableSource::UpstreamOutput).get(), 4.0);
 
-        // At index 0
-        let window_start = TimeseriesWindow::new(&ts, 0, 2000.0);
-        assert_eq!(window_start.at_start(), 1.0);
-
-        // At last index
-        let window_end = TimeseriesWindow::new(&ts, 4, 2004.0);
-        assert_eq!(window_end.at_start(), 5.0);
+        assert_eq!(window(0, VariableSource::Exogenous).get(), 1.0);
+        assert_eq!(window(4, VariableSource::Exogenous).get(), 5.0);
+        assert_eq!(window(3, VariableSource::UpstreamOutput).get(), 5.0);
     }
 
     #[test]
-    fn test_timeseries_window_at_end() {
+    #[should_panic(expected = "Variable 'Emissions|CO2' has 5 values, so index 5 is out of range")]
+    fn test_timeseries_window_get_upstream_at_last_index_panics() {
         let ts = create_scalar_timeseries();
-
-        // At index 2, at_end() should return value at index 3
-        let window = TimeseriesWindow::new(&ts, 2, 2002.0);
-        assert_eq!(window.at_end(), Some(4.0));
-
-        // At index 0, at_end() should return value at index 1
-        let window_start = TimeseriesWindow::new(&ts, 0, 2000.0);
-        assert_eq!(window_start.at_end(), Some(2.0));
-
-        // At last index, at_end() should return None (out of bounds)
-        let window_end = TimeseriesWindow::new(&ts, 4, 2004.0);
-        assert_eq!(window_end.at_end(), None);
-    }
-
-    #[test]
-    fn test_timeseries_window_previous() {
-        let ts = create_scalar_timeseries();
-
-        // At index 2, previous should be index 1
-        let window = TimeseriesWindow::new(&ts, 2, 2002.0);
-        assert_eq!(window.previous(), Some(2.0));
-
-        // At index 0, previous should be None
-        let window_start = TimeseriesWindow::new(&ts, 0, 2000.0);
-        assert_eq!(window_start.previous(), None);
-    }
-
-    #[test]
-    fn test_timeseries_window_at_offset() {
-        let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::new(&ts, 2, 2002.0);
-
-        assert_eq!(window.at_offset(0), Some(3.0)); // Current
-        assert_eq!(window.at_offset(-1), Some(2.0)); // Previous
-        assert_eq!(window.at_offset(-2), Some(1.0)); // Two back
-        assert_eq!(window.at_offset(1), Some(4.0)); // Next
-        assert_eq!(window.at_offset(2), Some(5.0)); // Two forward
-        assert_eq!(window.at_offset(-3), None); // Out of bounds
-        assert_eq!(window.at_offset(3), None); // Out of bounds
-    }
-
-    #[test]
-    fn test_timeseries_window_last_n() {
-        let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::new(&ts, 4, 2004.0);
-
-        let last_3 = window.last_n(3);
-        assert_eq!(last_3.len(), 3);
-        assert_eq!(last_3[0], 3.0);
-        assert_eq!(last_3[1], 4.0);
-        assert_eq!(last_3[2], 5.0);
-
-        let last_1 = window.last_n(1);
-        assert_eq!(last_1[0], 5.0);
-
-        let all = window.last_n(5);
-        assert_eq!(all.len(), 5);
-    }
-
-    #[test]
-    #[should_panic(expected = "Cannot get 6 values when only 5 available")]
-    fn test_timeseries_window_last_n_panic() {
-        let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::new(&ts, 4, 2004.0);
-        let _ = window.last_n(6); // Only 5 values available
+        let window = TimeseriesWindow::with_source(
+            &ts,
+            4,
+            "Emissions|CO2",
+            1.0,
+            VariableSource::UpstreamOutput,
+        );
+        let _ = window.get();
     }
 
     #[test]
     fn test_timeseries_window_interpolate() {
         let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::new(&ts, 2, 2002.0);
+        let window = TimeseriesWindow::new(&ts, 2, "test");
 
         let mid = window.interpolate(2001.5).unwrap();
         assert_eq!(mid, 2.5); // Linear interpolation between 2.0 and 3.0
@@ -1171,7 +647,7 @@ mod timeseries_window_tests {
     #[test]
     fn test_timeseries_window_len() {
         let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::new(&ts, 2, 2002.0);
+        let window = TimeseriesWindow::new(&ts, 2, "test");
 
         assert_eq!(window.len(), 5);
         assert!(!window.is_empty());
@@ -1182,47 +658,32 @@ mod timeseries_window_tests {
     // =========================================================================
 
     #[test]
-    fn test_timeseries_window_unit_conversion_at_start() {
+    fn test_timeseries_window_unit_conversion_get() {
         let ts = create_scalar_timeseries();
-        // Apply a 2x conversion factor
-        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, 2002.0, 2.0);
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, "test", 2.0);
 
         // Raw value is 3.0, converted should be 6.0
-        assert_eq!(window.at_start(), 6.0);
-    }
+        assert_eq!(window.get(), 6.0);
 
-    #[test]
-    fn test_timeseries_window_unit_conversion_at_end() {
-        let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, 2002.0, 2.0);
-
+        let upstream =
+            TimeseriesWindow::with_source(&ts, 2, "test", 2.0, VariableSource::UpstreamOutput);
         // Raw value at index 3 is 4.0, converted should be 8.0
-        assert_eq!(window.at_end(), Some(8.0));
+        assert_eq!(upstream.get(), 8.0);
     }
 
     #[test]
-    fn test_timeseries_window_unit_conversion_previous() {
+    fn test_timeseries_window_unit_conversion_history() {
         let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, 2002.0, 2.0);
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, "test", 0.5);
 
-        // Raw value at index 1 is 2.0, converted should be 4.0
-        assert_eq!(window.previous(), Some(4.0));
-    }
-
-    #[test]
-    fn test_timeseries_window_unit_conversion_at_offset() {
-        let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, 2002.0, 0.5);
-
-        assert_eq!(window.at_offset(0), Some(1.5)); // 3.0 * 0.5
-        assert_eq!(window.at_offset(-1), Some(1.0)); // 2.0 * 0.5
-        assert_eq!(window.at_offset(1), Some(2.0)); // 4.0 * 0.5
+        assert_eq!(window.history(0), Some(1.5)); // 3.0 * 0.5
+        assert_eq!(window.history(1), Some(1.0)); // 2.0 * 0.5
     }
 
     #[test]
     fn test_timeseries_window_unit_conversion_interpolate() {
         let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, 2002.0, 3.0);
+        let window = TimeseriesWindow::with_unit_conversion(&ts, 2, "test", 3.0);
 
         // Interpolated raw value at 2001.5 is 2.5, converted should be 7.5
         let mid = window.interpolate(2001.5).unwrap();
@@ -1230,103 +691,12 @@ mod timeseries_window_tests {
     }
 
     #[test]
-    fn test_timeseries_window_unit_conversion_last_n_converted() {
-        let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::with_unit_conversion(&ts, 4, 2004.0, 2.0);
-
-        let converted = window.last_n_converted(3);
-        assert_eq!(converted, vec![6.0, 8.0, 10.0]); // [3, 4, 5] * 2
-    }
-
-    #[test]
-    fn test_timeseries_window_unit_conversion_last_n_raw() {
-        let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::with_unit_conversion(&ts, 4, 2004.0, 2.0);
-
-        // last_n returns raw values without conversion
-        let raw = window.last_n(3);
-        assert_eq!(raw[0], 3.0);
-        assert_eq!(raw[1], 4.0);
-        assert_eq!(raw[2], 5.0);
-    }
-
-    #[test]
     fn test_timeseries_window_default_conversion_factor_is_one() {
         let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::new(&ts, 2, 2002.0);
+        let window = TimeseriesWindow::new(&ts, 2, "test");
 
         // Should return raw value (factor = 1.0)
-        assert_eq!(window.at_start(), 3.0);
-    }
-
-    // =========================================================================
-    // Tests for get() method with VariableSource
-    // =========================================================================
-
-    #[test]
-    fn test_timeseries_window_get_exogenous() {
-        let ts = create_scalar_timeseries();
-        // Exogenous source should use at_start()
-        let window = TimeseriesWindow::with_source(&ts, 2, 2002.0, 1.0, VariableSource::Exogenous);
-
-        assert_eq!(window.get(), 3.0); // Same as at_start()
-        assert_eq!(window.get(), window.at_start());
-    }
-
-    #[test]
-    fn test_timeseries_window_get_own_state() {
-        let ts = create_scalar_timeseries();
-        // OwnState source should use at_start()
-        let window = TimeseriesWindow::with_source(&ts, 2, 2002.0, 1.0, VariableSource::OwnState);
-
-        assert_eq!(window.get(), 3.0); // Same as at_start()
-        assert_eq!(window.get(), window.at_start());
-    }
-
-    #[test]
-    fn test_timeseries_window_get_upstream_output() {
-        let ts = create_scalar_timeseries();
-        // UpstreamOutput source should use at_end() with fallback to at_start()
-        let window =
-            TimeseriesWindow::with_source(&ts, 2, 2002.0, 1.0, VariableSource::UpstreamOutput);
-
-        // at_end() exists, should use it
-        assert_eq!(window.get(), 4.0); // Value at index 3 (at_end())
-        assert_eq!(window.get(), window.at_end().unwrap());
-    }
-
-    #[test]
-    fn test_timeseries_window_get_upstream_output_at_end() {
-        let ts = create_scalar_timeseries();
-        // At last timestep, at_end() returns None, should fallback to at_start()
-        let window =
-            TimeseriesWindow::with_source(&ts, 4, 2004.0, 1.0, VariableSource::UpstreamOutput);
-
-        assert_eq!(window.get(), 5.0); // Fallback to at_start() when at_end() is None
-        assert_eq!(window.at_end(), None);
-        assert_eq!(window.get(), window.at_start());
-    }
-
-    #[test]
-    fn test_timeseries_window_get_with_unit_conversion() {
-        let ts = create_scalar_timeseries();
-        // Test that get() respects unit conversion
-        let window =
-            TimeseriesWindow::with_source(&ts, 2, 2002.0, 2.0, VariableSource::UpstreamOutput);
-
-        // at_end() = 4.0, with 2x conversion = 8.0
-        assert_eq!(window.get(), 8.0);
-        assert_eq!(window.get(), window.at_end().unwrap());
-    }
-
-    #[test]
-    fn test_timeseries_window_get_lagged() {
-        let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::with_source(&ts, 2, 2002.0, 1.0, VariableSource::Lagged);
-
         assert_eq!(window.get(), 3.0);
-        assert_eq!(window.at_end(), None);
-        assert_eq!(window.at_end().unwrap_or_else(|| window.at_start()), 3.0);
     }
 
     // =========================================================================
@@ -1338,7 +708,7 @@ mod timeseries_window_tests {
         index: usize,
         source: VariableSource,
     ) -> TimeseriesWindow<'_> {
-        TimeseriesWindow::with_source(ts, index, 2000.0 + index as f64, 1.0, source)
+        TimeseriesWindow::with_source(ts, index, "test", 1.0, source)
     }
 
     #[test]
@@ -1434,7 +804,7 @@ mod timeseries_window_tests {
     #[test]
     fn test_window_new_accessors_convert_units() {
         let ts = create_scalar_timeseries();
-        let window = TimeseriesWindow::with_source(&ts, 2, 2002.0, 2.0, VariableSource::Exogenous);
+        let window = TimeseriesWindow::with_source(&ts, 2, "test", 2.0, VariableSource::Exogenous);
 
         assert_eq!(window.history(1), Some(4.0));
         assert_eq!(window.interval().unwrap(), (6.0, 8.0));
@@ -1489,131 +859,62 @@ mod grid_timeseries_window_tests {
     }
 
     #[test]
-    fn test_grid_window_at_start() {
+    fn test_grid_window_get() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
+        let window = GridTimeseriesWindow::new(&ts, 1, "test");
 
-        // at_start() returns value at index N (the current index)
-        assert_eq!(window.at_start(FourBoxRegion::NorthernOcean), 16.0);
-        assert_eq!(window.at_start(FourBoxRegion::NorthernLand), 15.0);
-        assert_eq!(window.at_start(FourBoxRegion::SouthernOcean), 11.0);
-        assert_eq!(window.at_start(FourBoxRegion::SouthernLand), 10.0);
+        assert_eq!(window.get(FourBoxRegion::NorthernOcean), 16.0);
+        assert_eq!(window.get(FourBoxRegion::NorthernLand), 15.0);
+        assert_eq!(window.get(FourBoxRegion::SouthernOcean), 11.0);
+        assert_eq!(window.get(FourBoxRegion::SouthernLand), 10.0);
+        assert_eq!(window.get_all(), vec![16.0, 15.0, 11.0, 10.0]);
 
-        // At first index
-        let window_start = GridTimeseriesWindow::new(&ts, 0, 2000.0);
-        assert_eq!(window_start.at_start(FourBoxRegion::NorthernOcean), 15.0);
+        let window_start = GridTimeseriesWindow::new(&ts, 0, "test");
+        assert_eq!(window_start.get(FourBoxRegion::NorthernOcean), 15.0);
 
-        // At last index
-        let window_end = GridTimeseriesWindow::new(&ts, 2, 2002.0);
-        assert_eq!(window_end.at_start(FourBoxRegion::NorthernOcean), 17.0);
+        let window_end = GridTimeseriesWindow::new(&ts, 2, "test");
+        assert_eq!(window_end.get(FourBoxRegion::NorthernOcean), 17.0);
     }
 
     #[test]
-    fn test_grid_window_at_end() {
+    fn test_grid_window_get_upstream() {
         let ts = create_four_box_timeseries();
+        let window =
+            GridTimeseriesWindow::with_source(&ts, 1, "test", 1.0, VariableSource::UpstreamOutput);
 
-        // At index 1, at_end() should return value at index 2
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
-        assert_eq!(
-            window.at_end(FourBoxRegion::NorthernOcean),
-            Some(17.0) // 2002 value
+        assert_eq!(window.get(FourBoxRegion::NorthernOcean), 17.0);
+        assert_eq!(window.get_all(), vec![17.0, 16.0, 12.0, 11.0]);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Variable 'Surface Temperature' has 3 values, so index 3 is out of range"
+    )]
+    fn test_grid_window_get_upstream_at_last_index_panics() {
+        let ts = create_four_box_timeseries();
+        let window = GridTimeseriesWindow::with_source(
+            &ts,
+            2,
+            "Surface Temperature",
+            1.0,
+            VariableSource::UpstreamOutput,
         );
-
-        // At index 0, at_end() should return value at index 1
-        let window_start = GridTimeseriesWindow::new(&ts, 0, 2000.0);
-        assert_eq!(
-            window_start.at_end(FourBoxRegion::NorthernOcean),
-            Some(16.0)
-        );
-
-        // At last index, at_end() should return None (out of bounds)
-        let window_end = GridTimeseriesWindow::new(&ts, 2, 2002.0);
-        assert_eq!(window_end.at_end(FourBoxRegion::NorthernOcean), None);
-    }
-
-    #[test]
-    fn test_grid_window_at_start_all() {
-        let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
-
-        let all = window.at_start_all();
-        assert_eq!(all, vec![16.0, 15.0, 11.0, 10.0]);
-    }
-
-    #[test]
-    fn test_grid_window_at_end_all() {
-        let ts = create_four_box_timeseries();
-
-        // At index 1, at_end returns values at index 2
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
-        assert_eq!(window.at_end_all(), Some(vec![17.0, 16.0, 12.0, 11.0]));
-
-        // At last index, returns None
-        let window_end = GridTimeseriesWindow::new(&ts, 2, 2002.0);
-        assert_eq!(window_end.at_end_all(), None);
+        let _ = window.get(FourBoxRegion::NorthernOcean);
     }
 
     #[test]
     fn test_grid_window_lagged() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::with_source(&ts, 1, 2001.0, 1.0, VariableSource::Lagged);
+        let window = GridTimeseriesWindow::with_source(&ts, 1, "test", 1.0, VariableSource::Lagged);
 
-        assert_eq!(window.at_end_all(), None);
-        assert_eq!(window.at_end(FourBoxRegion::NorthernOcean), None);
         assert_eq!(window.get_all(), vec![16.0, 15.0, 11.0, 10.0]);
         assert_eq!(window.get(FourBoxRegion::NorthernOcean), 16.0);
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn test_grid_window_all() {
-        let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
-
-        // all() is deprecated alias for at_start_all()
-        let all = window.all();
-        assert_eq!(all, vec![16.0, 15.0, 11.0, 10.0]);
-        assert_eq!(all, window.at_start_all());
-    }
-
-    #[test]
-    fn test_grid_window_previous() {
-        let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
-
-        assert_eq!(window.previous(FourBoxRegion::NorthernOcean), Some(15.0));
-        assert_eq!(window.previous_all(), Some(vec![15.0, 14.0, 10.0, 9.0]));
-
-        let window_start = GridTimeseriesWindow::new(&ts, 0, 2000.0);
-        assert_eq!(window_start.previous(FourBoxRegion::NorthernOcean), None);
-        assert_eq!(window_start.previous_all(), None);
-    }
-
-    #[test]
-    fn test_grid_window_current_global() {
-        let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
-
-        // Equal weights: (16 + 15 + 11 + 10) / 4 = 13.0
-        assert_eq!(window.current_global(), 13.0);
-    }
-
-    #[test]
-    fn test_grid_window_previous_global() {
-        let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
-
-        // (15 + 14 + 10 + 9) / 4 = 12.0
-        assert_eq!(window.previous_global(), Some(12.0));
-
-        let window_start = GridTimeseriesWindow::new(&ts, 0, 2000.0);
-        assert_eq!(window_start.previous_global(), None);
-    }
-
-    #[test]
     fn test_grid_window_interpolate() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
+        let window = GridTimeseriesWindow::new(&ts, 1, "test");
 
         // Interpolate at midpoint between 2000 and 2001
         let mid = window
@@ -1625,7 +926,7 @@ mod grid_timeseries_window_tests {
     #[test]
     fn test_grid_window_interpolate_all() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
+        let window = GridTimeseriesWindow::new(&ts, 1, "test");
 
         let mid = window.interpolate_all(2000.5).unwrap();
         assert_eq!(mid, vec![15.5, 14.5, 10.5, 9.5]);
@@ -1634,10 +935,8 @@ mod grid_timeseries_window_tests {
     #[test]
     fn test_grid_window_metadata() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::new(&ts, 1, 2001.0);
+        let window = GridTimeseriesWindow::new(&ts, 1, "test");
 
-        assert_eq!(window.time(), 2001.0);
-        assert_eq!(window.index(), 1);
         assert_eq!(window.len(), 3);
         assert!(!window.is_empty());
         assert_eq!(window.grid().size(), 4);
@@ -1648,64 +947,43 @@ mod grid_timeseries_window_tests {
     // =========================================================================
 
     #[test]
-    fn test_grid_window_unit_conversion_at_start() {
+    fn test_grid_window_unit_conversion_get() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, "test", 2.0);
 
         // Raw values at index 1: [16.0, 15.0, 11.0, 10.0]
         // Converted: [32.0, 30.0, 22.0, 20.0]
-        assert_eq!(window.at_start(FourBoxRegion::NorthernOcean), 32.0);
-        assert_eq!(window.at_start(FourBoxRegion::NorthernLand), 30.0);
-        assert_eq!(window.at_start(FourBoxRegion::SouthernOcean), 22.0);
-        assert_eq!(window.at_start(FourBoxRegion::SouthernLand), 20.0);
+        assert_eq!(window.get(FourBoxRegion::NorthernOcean), 32.0);
+        assert_eq!(window.get(FourBoxRegion::NorthernLand), 30.0);
+        assert_eq!(window.get(FourBoxRegion::SouthernOcean), 22.0);
+        assert_eq!(window.get(FourBoxRegion::SouthernLand), 20.0);
     }
 
     #[test]
-    fn test_grid_window_unit_conversion_at_start_all() {
+    fn test_grid_window_unit_conversion_get_all() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 0.5);
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, "test", 0.5);
 
         // Raw: [16.0, 15.0, 11.0, 10.0], Converted: [8.0, 7.5, 5.5, 5.0]
-        assert_eq!(window.at_start_all(), vec![8.0, 7.5, 5.5, 5.0]);
+        assert_eq!(window.get_all(), vec![8.0, 7.5, 5.5, 5.0]);
     }
 
     #[test]
-    fn test_grid_window_unit_conversion_at_end() {
+    fn test_grid_window_unit_conversion_get_upstream() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+        let window =
+            GridTimeseriesWindow::with_source(&ts, 1, "test", 2.0, VariableSource::UpstreamOutput);
 
         // Raw at index 2: [17.0, 16.0, 12.0, 11.0]
         // Converted: [34.0, 32.0, 24.0, 22.0]
-        assert_eq!(window.at_end(FourBoxRegion::NorthernOcean), Some(34.0));
-        assert_eq!(window.at_end_all(), Some(vec![34.0, 32.0, 24.0, 22.0]));
-    }
-
-    #[test]
-    fn test_grid_window_unit_conversion_previous() {
-        let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
-
-        // Raw at index 0: [15.0, 14.0, 10.0, 9.0]
-        // Converted: [30.0, 28.0, 20.0, 18.0]
-        assert_eq!(window.previous(FourBoxRegion::NorthernOcean), Some(30.0));
-        assert_eq!(window.previous_all(), Some(vec![30.0, 28.0, 20.0, 18.0]));
-    }
-
-    #[test]
-    fn test_grid_window_unit_conversion_current_global() {
-        let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
-
-        // Raw: [16.0, 15.0, 11.0, 10.0] -> (sum = 52.0) / 4 = 13.0
-        // After conversion: 13.0 * 2.0 = 26.0 (conversion applied to values first)
-        // Actually: [32.0, 30.0, 22.0, 20.0] -> sum = 104.0 -> mean = 26.0
-        assert_eq!(window.current_global(), 26.0);
+        assert_eq!(window.get(FourBoxRegion::NorthernOcean), 34.0);
+        assert_eq!(window.get_all(), vec![34.0, 32.0, 24.0, 22.0]);
     }
 
     #[test]
     fn test_grid_window_unit_conversion_interpolate() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, "test", 2.0);
 
         // Raw interpolated at 2000.5: 15.5
         // Converted: 31.0
@@ -1718,7 +996,7 @@ mod grid_timeseries_window_tests {
     #[test]
     fn test_grid_window_unit_conversion_interpolate_all() {
         let ts = create_four_box_timeseries();
-        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+        let window = GridTimeseriesWindow::with_unit_conversion(&ts, 1, "test", 2.0);
 
         // Raw: [15.5, 14.5, 10.5, 9.5], Converted: [31.0, 29.0, 21.0, 19.0]
         let mid = window.interpolate_all(2000.5).unwrap();
@@ -1735,7 +1013,7 @@ mod grid_timeseries_window_tests {
         let at_2000 = vec![15.0, 14.0, 10.0, 9.0];
         let at_2001 = vec![16.0, 15.0, 11.0, 10.0];
         let at_2002 = vec![17.0, 16.0, 12.0, 11.0];
-        let window = |source| GridTimeseriesWindow::with_source(&ts, 1, 2001.0, 1.0, source);
+        let window = |source| GridTimeseriesWindow::with_source(&ts, 1, "test", 1.0, source);
 
         let exogenous = window(VariableSource::Exogenous);
         assert_eq!(exogenous.get_time(), 2001.0);
@@ -1765,7 +1043,7 @@ mod grid_timeseries_window_tests {
         assert!(average.interval().is_err());
 
         let first =
-            GridTimeseriesWindow::with_source(&ts, 0, 2000.0, 1.0, VariableSource::Exogenous);
+            GridTimeseriesWindow::with_source(&ts, 0, "test", 1.0, VariableSource::Exogenous);
         assert_eq!(first.history(0), Some(at_2000));
         assert_eq!(first.history(1), None);
     }
@@ -1774,7 +1052,7 @@ mod grid_timeseries_window_tests {
     fn test_grid_window_new_accessors_convert_units() {
         let ts = create_four_box_timeseries();
         let window =
-            GridTimeseriesWindow::with_source(&ts, 1, 2001.0, 2.0, VariableSource::Exogenous);
+            GridTimeseriesWindow::with_source(&ts, 1, "test", 2.0, VariableSource::Exogenous);
 
         assert_eq!(window.history(1), Some(vec![30.0, 28.0, 20.0, 18.0]));
         assert_eq!(

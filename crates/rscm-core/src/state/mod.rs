@@ -165,7 +165,7 @@ pub enum VariableSource {
     Exogenous,
 
     /// Variable is written by an upstream component in the dependency graph.
-    /// `get()` reads index N+1, falling back to index N at the last timestep.
+    /// `get()` reads index N+1, which the upstream component wrote earlier in this step.
     UpstreamOutput,
 
     /// Variable is this component's own state from the previous timestep.
@@ -297,7 +297,7 @@ impl<'a> InputState<'a> {
     }
 
     /// Index of the current time in `axis`.
-    fn time_index(&self, axis: &TimeAxis, name: &str) -> usize {
+    pub(crate) fn time_index(&self, axis: &TimeAxis, name: &str) -> usize {
         self.time_index
             .filter(|&index| axis.at(index) == Some(self.current_time))
             .or_else(|| axis.index_of(self.current_time))
@@ -380,7 +380,7 @@ impl<'a> InputState<'a> {
                     return ScalarWindow::FromFourBox(AggregatingFourBoxWindow::with_source(
                         ts,
                         current_index,
-                        self.current_time,
+                        &item.name,
                         transform.weights.clone(),
                         unit_factor,
                         transform.variable_source,
@@ -403,7 +403,7 @@ impl<'a> InputState<'a> {
                         AggregatingHemisphericWindow::with_source(
                             ts,
                             current_index,
-                            self.current_time,
+                            &item.name,
                             transform.weights.clone(),
                             unit_factor,
                             transform.variable_source,
@@ -421,7 +421,7 @@ impl<'a> InputState<'a> {
                     return ScalarWindow::Direct(TimeseriesWindow::with_source(
                         ts,
                         current_index,
-                        self.current_time,
+                        &item.name,
                         unit_factor,
                         transform.variable_source,
                     ));
@@ -448,7 +448,7 @@ impl<'a> InputState<'a> {
         ScalarWindow::Direct(TimeseriesWindow::with_source(
             ts,
             current_index,
-            self.current_time,
+            &item.name,
             1.0, // no unit conversion for direct access
             source,
         ))
@@ -483,7 +483,7 @@ impl<'a> InputState<'a> {
             .map(|t| (t.unit_conversion_factor, t.variable_source))
             .unwrap_or((1.0, VariableSource::Exogenous));
 
-        GridTimeseriesWindow::with_source(ts, current_index, self.current_time, unit_factor, source)
+        GridTimeseriesWindow::with_source(ts, current_index, &item.name, unit_factor, source)
             .with_timeseries_type(self.timeseries_type(name))
     }
 
@@ -533,7 +533,7 @@ impl<'a> InputState<'a> {
                     AggregatingFourBoxToHemisphericWindow::with_source(
                         ts,
                         current_index,
-                        self.current_time,
+                        &item.name,
                         unit_factor,
                         transform.variable_source,
                     ),
@@ -551,7 +551,7 @@ impl<'a> InputState<'a> {
                 return HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
                     ts,
                     current_index,
-                    self.current_time,
+                    &item.name,
                     unit_factor,
                     transform.variable_source,
                 ));
@@ -577,7 +577,7 @@ impl<'a> InputState<'a> {
         HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
             ts,
             current_index,
-            self.current_time,
+            &item.name,
             1.0,
             source,
         ))

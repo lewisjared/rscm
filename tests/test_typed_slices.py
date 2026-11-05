@@ -282,7 +282,7 @@ class TestTimeseriesWindow:
     def test_constructor(self):
         """Test basic construction."""
         w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
-        assert w.current_index == 1
+        assert w.get() == 2.0
         assert len(w) == 3
 
     def test_history(self):
@@ -342,7 +342,7 @@ class TestFourBoxTimeseriesWindow:
         """Test basic construction."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8]]
         w = FourBoxTimeseriesWindow(values, 1)
-        assert w.current_index == 1
+        assert w.get().to_list() == [5, 6, 7, 8]
         assert len(w) == 2
 
     def test_history(self):
@@ -409,7 +409,7 @@ class TestHemisphericTimeseriesWindow:
         """Test basic construction."""
         values = [[1, 2], [3, 4]]
         w = HemisphericTimeseriesWindow(values, 1)
-        assert w.current_index == 1
+        assert w.get().to_list() == [3, 4]
         assert len(w) == 2
 
     def test_region(self):
