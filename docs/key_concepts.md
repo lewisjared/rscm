@@ -319,6 +319,28 @@ For example, CO2 concentration might be:
 - **Endogenous** in a full carbon-cycle model where a component calculates concentration from emissions
 - **Exogenous** in a temperature-only model where concentration is prescribed directly
 
+The builder collects every component's outputs and states first,
+so the order components are added does not matter.
+It then decides each input's source in this order, stopping at the first match:
+
+```mermaid
+flowchart TD
+  A["Input declared by a component"] --> B{"Is it a State, or does the same component produce it?"}
+  B -->|yes| OS["OwnState: reads its own previous value"]
+  B -->|no| C{"Is this edge lagged by with_lag or with_lag_for?"}
+  C -->|yes| L["Lagged: reads the previous step, adds no ordering edge"]
+  C -->|no| D{"Does another component or a schema aggregate produce it?"}
+  D -->|yes| U["UpstreamOutput: the producer runs first in the same step"]
+  D -->|no| X["Exogenous: values supplied with the model"]
+  X --> E{"Was data supplied?"}
+  E -->|no| M["Build error: MissingExogenousInput, unless with_missing_exogenous_allowed()"]
+  E -->|yes| F{"Is its unit compatible with the stored unit?"}
+  F -->|yes| V["Converted to the stored unit"]
+  F -->|no| W["Build error: IncompatibleUnits or UnitParseError"]
+```
+
+`model.coupling()` shows the source the builder chose for every input.
+
 `build()` raises `ValueError` if an exogenous input has no data and no initial value,
 naming each missing variable and the components that read it.
 `with_missing_exogenous_allowed()` builds the model anyway, with the missing inputs filled with NaN.
