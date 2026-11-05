@@ -1,9 +1,9 @@
 //! Aggregate execution tests.
 
-use crate::component::{Component, InputState, OutputState, RequirementDefinition};
+use crate::component::{Component, InputState, OutputState, RequirementDefinition, TimeseriesType};
 use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
-use crate::model::ModelBuilder;
+use crate::model::{ModelBuilder, VarSource};
 use crate::schema::{AggregateOp, VariableSchema};
 use crate::spatial::{ScalarGrid, ScalarRegion};
 use crate::state::StateValue;
@@ -11,6 +11,7 @@ use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
 use numpy::array;
 use numpy::ndarray::{Array, Axis};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -462,4 +463,84 @@ fn test_aggregate_appears_in_dot_graph() {
         "Graph should contain AggregatorComponent: {}",
         dot
     );
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StepEmissions;
+
+#[typetag::serde]
+impl Component for StepEmissions {
+    fn definitions(&self) -> Vec<RequirementDefinition> {
+        vec![RequirementDefinition::scalar_output(
+            "Emissions|Upstream",
+            "GtC/yr",
+        )]
+    }
+
+    fn solve(&self, t: Time, _next: Time, _inputs: &InputState) -> RSCMResult<OutputState> {
+        Ok(OutputState::from([(
+            "Emissions|Upstream".to_string(),
+            StateValue::Scalar(100.0 + (t - 2020.0)),
+        )]))
+    }
+}
+
+#[test]
+fn test_flux_aggregate_reads_exogenous_at_step_start_and_upstream_at_step_end() {
+    let schema = VariableSchema::new()
+        .variable("Emissions|Exogenous", "GtC/yr")
+        .variable("Emissions|Upstream", "GtC/yr")
+        .aggregate("Emissions|Total", "GtC/yr", AggregateOp::Sum)
+        .from("Emissions|Exogenous")
+        .from("Emissions|Upstream")
+        .build();
+    let axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)));
+    let exogenous = Timeseries::new(
+        array![1.0, 2.0, 3.0, 4.0, 5.0].insert_axis(Axis(1)),
+        axis.clone(),
+        ScalarGrid,
+        "GtC/yr".to_string(),
+        InterpolationStrategy::from(PreviousStrategy::new(true)),
+    );
+
+    let mut model = ModelBuilder::new()
+        .with_time_axis((*axis).clone())
+        .with_schema(schema)
+        .with_component(Arc::new(StepEmissions))
+        .with_exogenous_variable("Emissions|Exogenous", exogenous)
+        .build()
+        .unwrap();
+
+    let coupling = model.coupling().unwrap();
+    let aggregator = coupling
+        .components
+        .iter()
+        .find(|c| c.name == "AggregatorComponent")
+        .unwrap();
+    let sources: HashMap<_, _> = aggregator
+        .inputs
+        .iter()
+        .map(|v| (v.name.as_str(), (v.source, v.timeseries_type)))
+        .collect();
+    assert_eq!(
+        sources["Emissions|Exogenous"],
+        (Some(VarSource::Exogenous), TimeseriesType::Average)
+    );
+    assert_eq!(
+        sources["Emissions|Upstream"],
+        (Some(VarSource::Upstream), TimeseriesType::Average)
+    );
+
+    model.run();
+
+    // Step N sums the exogenous value at N and the upstream output written at N+1.
+    let total = model
+        .timeseries()
+        .get_data("Emissions|Total")
+        .and_then(|d| d.as_scalar())
+        .unwrap();
+    let values: Vec<_> = (1..5)
+        .map(|i| total.at(i, ScalarRegion::Global).unwrap())
+        .collect();
+    assert_eq!(values, vec![101.0, 103.0, 105.0, 107.0]);
 }

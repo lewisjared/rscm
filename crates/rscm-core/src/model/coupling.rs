@@ -342,17 +342,12 @@ impl Model {
                 };
                 match def.requirement_type {
                     RequirementType::Input => {
-                        let source = match self
+                        let source: VarSource = self
                             .variable_sources()
                             .get(&(info.name.clone(), name.clone()))
-                        {
-                            Some(&source) => source.into(),
-                            // Aggregators have no recorded sources.
-                            None if component_edges.iter().any(|e| e.variable == info.name) => {
-                                VarSource::Upstream
-                            }
-                            None => VarSource::Exogenous,
-                        };
+                            .copied()
+                            .unwrap_or_default()
+                            .into();
                         if source == VarSource::Lagged {
                             if let Some(producer) = producers.get(&info.name) {
                                 component_edges.push(CouplingEdge {
