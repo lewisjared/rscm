@@ -122,9 +122,9 @@ fn secant(
     ch4_concentration { name = "Atmospheric Concentration|CH4", unit = "ppb" },
 )]
 #[outputs(
-    ch4_lifetime { name = "Lifetime|CH4", unit = "yr" },
-    ch4_oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr" },
-    ch4_effective_lifetime { name = "Lifetime|CH4|Effective", unit = "yr" },
+    ch4_lifetime { name = "Lifetime|CH4", unit = "yr", timeseries_type = "average" },
+    ch4_oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average" },
+    ch4_effective_lifetime { name = "Lifetime|CH4|Effective", unit = "yr", timeseries_type = "average" },
 )]
 pub struct CH4Chemistry {
     parameters: CH4ChemistryParameters,

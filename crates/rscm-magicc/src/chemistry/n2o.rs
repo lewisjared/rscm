@@ -76,7 +76,7 @@ const N2O_CONCENTRATION: &str = "Atmospheric Concentration|N2O";
     n2o_concentration { name = "Atmospheric Concentration|N2O", unit = "ppb" },
 )]
 #[outputs(
-    n2o_lifetime { name = "Lifetime|N2O", unit = "yr" },
+    n2o_lifetime { name = "Lifetime|N2O", unit = "yr", timeseries_type = "average" },
 )]
 pub struct N2OChemistry {
     parameters: N2OChemistryParameters,

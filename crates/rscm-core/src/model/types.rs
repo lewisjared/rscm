@@ -1,6 +1,8 @@
 //! Type definitions for the model module.
 
-use crate::component::{Component, GridType, RequirementDefinition, RequirementType};
+use crate::component::{
+    Component, GridType, RequirementDefinition, RequirementType, TimeseriesType,
+};
 use crate::units::Unit;
 use petgraph::Graph;
 use serde::{Deserialize, Serialize};
@@ -25,6 +27,7 @@ pub(crate) struct VariableDefinition {
     pub grid_type: GridType,
     /// The requirement type (Input, Output, State, or EmptyLink).
     pub requirement_type: RequirementType,
+    pub timeseries_type: TimeseriesType,
 }
 
 impl VariableDefinition {
@@ -47,6 +50,7 @@ impl VariableDefinition {
             parsed_unit,
             grid_type: definition.grid_type,
             requirement_type: definition.requirement_type.clone(),
+            timeseries_type: definition.resolved_timeseries_type(),
         }
     }
 }

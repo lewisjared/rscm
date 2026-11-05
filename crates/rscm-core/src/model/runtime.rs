@@ -1,6 +1,6 @@
 //! Model struct and runtime execution.
 
-use crate::component::{ComponentState, GridType};
+use crate::component::{ComponentState, GridType, TimeseriesType};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::state::{
     lookup_order, InputState, ReadTransformInfo, StateValue, TransformContext, VariableSource,
@@ -114,6 +114,9 @@ pub struct Model {
         with = "tuple_map_serde"
     )]
     variable_sources: HashMap<(String, String), VariableSource>,
+    /// Whether each variable is a point or an average.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) timeseries_types: BTreeMap<String, TimeseriesType>,
     /// Internal state for each component, keyed by node index.
     /// Uses Box<dyn ComponentState> with typetag for serialization.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -275,6 +278,7 @@ impl Model {
             write_transforms,
             unit_conversions,
             variable_sources,
+            timeseries_types: BTreeMap::new(),
             component_states: BTreeMap::new(),
             plan: None,
         }
@@ -361,6 +365,11 @@ impl Model {
     /// For example, a state variable is `OwnState` for the producer component but `UpstreamOutput` for consumers.
     pub fn variable_sources(&self) -> &HashMap<(String, String), VariableSource> {
         &self.variable_sources
+    }
+
+    /// Whether `variable` is a point or an average, or `None` if the model has no such variable.
+    pub fn timeseries_type(&self, variable: &str) -> Option<TimeseriesType> {
+        self.timeseries_types.get(variable).copied()
     }
 
     /// Extract component name from a Component for unit conversion lookup.

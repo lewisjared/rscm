@@ -22,6 +22,8 @@ mod relaxed_grid_validation;
 #[cfg(test)]
 mod schema_validation;
 #[cfg(test)]
+mod timeseries_types;
+#[cfg(test)]
 mod unit_validation;
 #[cfg(test)]
 mod variable_source_disambiguation;

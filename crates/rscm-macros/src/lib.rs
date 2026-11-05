@@ -97,6 +97,7 @@ struct IoFieldDecl {
     variable_name: String,
     unit: String,
     grid_type: String,
+    timeseries_type: Option<String>,
 }
 
 impl Parse for IoFieldDecl {
@@ -109,6 +110,7 @@ impl Parse for IoFieldDecl {
         let mut variable_name = None;
         let mut unit = None;
         let mut grid_type = String::from("Scalar");
+        let mut timeseries_type = None;
 
         while !content.is_empty() {
             let key: Ident = content.parse()?;
@@ -119,6 +121,17 @@ impl Parse for IoFieldDecl {
                 "name" => variable_name = Some(value.value()),
                 "unit" => unit = Some(value.value()),
                 "grid" => grid_type = value.value(),
+                "timeseries_type" => match value.value().as_str() {
+                    "point" | "average" => timeseries_type = Some(value.value()),
+                    other => {
+                        return Err(syn::Error::new(
+                            value.span(),
+                            format!(
+                                "timeseries_type must be \"point\" or \"average\", got {other:?}"
+                            ),
+                        ))
+                    }
+                },
                 other => {
                     return Err(syn::Error::new(
                         key.span(),
@@ -142,6 +155,7 @@ impl Parse for IoFieldDecl {
             variable_name,
             unit,
             grid_type,
+            timeseries_type,
         })
     }
 }
@@ -165,6 +179,7 @@ struct InputField {
     variable_name: String,
     unit: String,
     grid_type: String,
+    timeseries_type: Option<String>,
 }
 
 /// Metadata for an output field
@@ -173,6 +188,7 @@ struct OutputField {
     variable_name: String,
     unit: String,
     grid_type: String,
+    timeseries_type: Option<String>,
 }
 
 /// Metadata for a state field (appears in both inputs and outputs)
@@ -181,6 +197,7 @@ struct StateField {
     variable_name: String,
     unit: String,
     grid_type: String,
+    timeseries_type: Option<String>,
 }
 
 /// Component-level attributes (tags and category)
@@ -280,6 +297,7 @@ fn extract_io_from_attrs(
                     variable_name: decl.variable_name,
                     unit: decl.unit,
                     grid_type: decl.grid_type,
+                    timeseries_type: decl.timeseries_type,
                 });
             }
         } else if attr.path().is_ident("outputs") {
@@ -289,6 +307,7 @@ fn extract_io_from_attrs(
                     variable_name: decl.variable_name,
                     unit: decl.unit,
                     grid_type: decl.grid_type,
+                    timeseries_type: decl.timeseries_type,
                 });
             }
         } else if attr.path().is_ident("states") {
@@ -298,6 +317,7 @@ fn extract_io_from_attrs(
                     variable_name: decl.variable_name,
                     unit: decl.unit,
                     grid_type: decl.grid_type,
+                    timeseries_type: decl.timeseries_type,
                 });
             }
         }
@@ -312,6 +332,17 @@ fn grid_type_token(grid: &str) -> TokenStream2 {
         "FourBox" => quote! { GridType::FourBox },
         "Hemispheric" => quote! { GridType::Hemispheric },
         _ => quote! { GridType::Scalar },
+    }
+}
+
+/// Generate the `.with_timeseries_type(...)` call for an explicit declaration
+fn timeseries_type_call(timeseries_type: &Option<String>) -> TokenStream2 {
+    match timeseries_type.as_deref() {
+        Some("average") => {
+            quote! { .with_timeseries_type(::rscm_core::component::TimeseriesType::Average) }
+        }
+        Some(_) => quote! { .with_timeseries_type(::rscm_core::component::TimeseriesType::Point) },
+        None => quote! {},
     }
 }
 
@@ -344,7 +375,8 @@ fn output_type(grid: &str) -> TokenStream2 {
 ///   (states appear in both Inputs and Outputs structs)
 /// - `#[component(tags = ["tag1", "tag2"], category = "Category Name")]` - Metadata for documentation
 ///
-/// Where `grid` can be: "Scalar" (default), "FourBox", or "Hemispheric"
+/// Where `grid` can be: "Scalar" (default), "FourBox", or "Hemispheric",
+/// and the optional `timeseries_type` can be "point" or "average" to override the unit default.
 ///
 /// # Generated Types
 ///
@@ -423,8 +455,10 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
             let name = &f.variable_name;
             let unit = &f.unit;
             let grid = grid_type_token(&f.grid_type);
+            let timeseries_type = timeseries_type_call(&f.timeseries_type);
             quote! {
                 RequirementDefinition::with_grid(#name, #unit, RequirementType::Input, #grid)
+                    #timeseries_type
             }
         })
         .collect();
@@ -435,8 +469,10 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
             let name = &f.variable_name;
             let unit = &f.unit;
             let grid = grid_type_token(&f.grid_type);
+            let timeseries_type = timeseries_type_call(&f.timeseries_type);
             quote! {
                 RequirementDefinition::with_grid(#name, #unit, RequirementType::Output, #grid)
+                    #timeseries_type
             }
         })
         .collect();
@@ -447,8 +483,10 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
             let name = &f.variable_name;
             let unit = &f.unit;
             let grid = grid_type_token(&f.grid_type);
+            let timeseries_type = timeseries_type_call(&f.timeseries_type);
             quote! {
                 RequirementDefinition::with_grid(#name, #unit, RequirementType::State, #grid)
+                    #timeseries_type
             }
         })
         .collect();

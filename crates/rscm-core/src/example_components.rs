@@ -152,7 +152,7 @@ pub(crate) struct TestComponentParameters {
 /// - `TestComponent::generated_definitions()` for the Component trait
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[inputs(
-    emissions_co2 { name = "Emissions|CO2", unit = "GtCO2" },
+    emissions_co2 { name = "Emissions|CO2", unit = "GtCO2", timeseries_type = "average" },
 )]
 #[outputs(
     concentration_co2 { name = "Concentrations|CO2", unit = "ppm" },

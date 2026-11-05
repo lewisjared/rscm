@@ -1,6 +1,6 @@
 //! Validation functions for model building.
 
-use crate::component::RequirementDefinition;
+use crate::component::{RequirementDefinition, RequirementType, TimeseriesType};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::units::Unit;
 use std::collections::HashMap;
@@ -90,6 +90,91 @@ pub(crate) fn verify_definition(
         }
     }
     Ok(None)
+}
+
+/// Resolve each variable's timeseries type and check that every declaration agrees with it.
+///
+/// A produced variable takes its producer's type.
+/// Otherwise the builder's declaration, then a consumer's, then the unit default decides.
+pub(crate) fn resolve_timeseries_types(
+    definitions: &mut HashMap<String, VariableDefinition>,
+    names: &[String],
+    requirements: &[(Vec<RequirementDefinition>, Vec<RequirementDefinition>)],
+    declared_types: &HashMap<String, TimeseriesType>,
+    state_type_check: bool,
+) -> RSCMResult<()> {
+    let mut sources: HashMap<&str, (TimeseriesType, String)> = HashMap::new();
+    for (name, (_, provides)) in names.iter().zip(requirements) {
+        for r in provides {
+            sources.insert(&r.name, (r.resolved_timeseries_type(), name.clone()));
+        }
+    }
+    for (variable, &declared) in declared_types {
+        match sources.get(variable.as_str()) {
+            Some((resolved, producer)) if *resolved != declared => {
+                return Err(RSCMError::TimeseriesTypeMismatch {
+                    variable: variable.clone(),
+                    producer: producer.clone(),
+                    producer_type: resolved.to_string(),
+                    consumer: "ModelBuilder::with_timeseries_type".to_string(),
+                    consumer_type: declared.to_string(),
+                });
+            }
+            Some(_) => {}
+            None => {
+                sources.insert(
+                    variable,
+                    (declared, "ModelBuilder::with_timeseries_type".to_string()),
+                );
+            }
+        }
+    }
+    let declarations = names
+        .iter()
+        .zip(requirements)
+        .flat_map(|(name, (requires, _))| {
+            requires
+                .iter()
+                .filter_map(move |r| r.timeseries_type.map(|t| (name, r, t)))
+        });
+    for (consumer, requirement, declared) in declarations {
+        let (resolved, producer) = sources.entry(requirement.name.as_str()).or_insert_with(|| {
+            (
+                declared,
+                format!("exogenous data as declared by {consumer}"),
+            )
+        });
+        if *resolved != declared {
+            return Err(RSCMError::TimeseriesTypeMismatch {
+                variable: requirement.name.clone(),
+                producer: producer.clone(),
+                producer_type: resolved.to_string(),
+                consumer: consumer.clone(),
+                consumer_type: declared.to_string(),
+            });
+        }
+    }
+    for (name, definition) in definitions.iter_mut() {
+        if let Some((resolved, _)) = sources.get(name.as_str()) {
+            definition.timeseries_type = *resolved;
+        }
+    }
+
+    if state_type_check {
+        for (component, (requires, _)) in names.iter().zip(requirements) {
+            for r in requires {
+                if r.requirement_type == RequirementType::State
+                    && definitions[&r.name].timeseries_type == TimeseriesType::Average
+                {
+                    return Err(RSCMError::AverageState {
+                        variable: r.name.clone(),
+                        component: component.clone(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Validates that two unit strings are dimensionally compatible.

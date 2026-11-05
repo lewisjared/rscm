@@ -37,7 +37,9 @@ use crate::parameters::{HalocarbonParameters, HalocarbonSpecies};
 use crate::reference::{
     feedback_warming, prescribed_definition, prescribed_input, prescribed_name, require_annual,
 };
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{
+    Component, InputState, OutputState, RequirementDefinition, TimeseriesType,
+};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -251,7 +253,10 @@ impl Component for HalocarbonChemistry {
             }
         }
         if self.parameters.variable_oh_lifetime {
-            definitions.push(RequirementDefinition::scalar_input(CH4_OH_LIFETIME, "yr"));
+            definitions.push(
+                RequirementDefinition::scalar_input(CH4_OH_LIFETIME, "yr")
+                    .with_timeseries_type(TimeseriesType::Average),
+            );
         }
         if self.parameters.variable_strat_lifetime {
             definitions.push(RequirementDefinition::scalar_input(

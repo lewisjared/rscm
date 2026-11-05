@@ -302,6 +302,38 @@ Grid variables have their own methods:
 See [Gridded Exogenous Data and Initial Values](grids.md#gridded-exogenous-data-and-initial-values)
 for examples.
 
+### Points and Averages
+
+Every variable is a point or an average.
+A point holds at an instant, such as a concentration, a carbon pool or temperature.
+An average holds over a whole step, such as emissions, a flux or a lifetime.
+
+The unit sets the default.
+A unit per time, such as `GtC / yr`, makes an average,
+and anything else makes a point, including `W / m^2` and `yr`.
+Declare the type where the default is wrong, as for a lifetime:
+
+```python
+class Chemistry(Component):
+    lifetime = Output("Lifetime|CH4", unit="yr", timeseries_type="average")
+```
+
+In Rust, `ComponentIO` declarations take `timeseries_type = "average"`,
+and `RequirementDefinition::with_timeseries_type` sets it on a hand-written definition.
+
+The producer decides the type and its consumers inherit it.
+An input that declares a different type makes `build()` fail.
+`ModelBuilder.with_timeseries_type(variable, TimeseriesType.Average)` declares the type of an exogenous variable.
+Without it, a consumer's declaration or the unit decides.
+`Model.timeseries_type(variable)` returns the resolved type.
+
+State variables must be points, so `build()` fails for a state that resolves to an average.
+`with_state_type_check(False)` turns the check off.
+
+The type sets the interpolation of each series the builder creates:
+`Previous` for an average and `Linear` for a point.
+Exogenous series keep the strategy they were given.
+
 ## Timeseries
 
 RSCM uses [`Timeseries`][rscm.core.Timeseries] objects to represent time-varying data,

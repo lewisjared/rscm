@@ -122,6 +122,7 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<component::RequirementDefinition>()?;
     m.add_class::<component::RequirementType>()?;
     m.add_class::<component::GridType>()?;
+    m.add_class::<component::TimeseriesType>()?;
 
     // Model orchestration
     m.add_class::<model::PyModelBuilder>()?;

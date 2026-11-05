@@ -22,6 +22,7 @@
 
 use super::dimension::Dimension;
 use super::parser::{ParseError, ParsedUnit};
+use super::registry::UNIT_REGISTRY;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -174,6 +175,18 @@ impl Unit {
         }
     }
 
+    /// Returns true if this unit divides by a time unit, such as `GtC / yr`.
+    ///
+    /// `W / m^2` is not per time, although its dimension includes time.
+    pub fn is_per_time(&self) -> bool {
+        self.parsed.components().iter().any(|(symbol, &exp)| {
+            exp < 0
+                && UNIT_REGISTRY
+                    .lookup(symbol)
+                    .is_some_and(|info| info.dimension == Dimension::TIME)
+        })
+    }
+
     /// Calculates the conversion factor from this unit to the target unit.
     ///
     /// The factor is the multiplier to convert a value in `self` to a value
@@ -292,6 +305,23 @@ pub fn conversion_factor(from: &str, to: &str) -> Result<f64, ConversionError> {
 mod tests {
     use super::*;
     use crate::units::registry::CO2_TO_C_RATIO;
+
+    #[test]
+    fn test_is_per_time() {
+        for unit in [
+            "GtC / yr",
+            "kt / yr",
+            "Gt N / yr",
+            "Mt CO2 / yr",
+            "GtC/yr",
+            "kg / s",
+        ] {
+            assert!(Unit::parse(unit).unwrap().is_per_time(), "{unit}");
+        }
+        for unit in ["W / m^2", "K", "ppm", "yr", "1", "GtC", "W yr / m^2"] {
+            assert!(!Unit::parse(unit).unwrap().is_per_time(), "{unit}");
+        }
+    }
 
     #[test]
     fn test_unit_parse() {

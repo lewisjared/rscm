@@ -24,6 +24,7 @@ climate models.
 - [RequirementDefinition][] specifies one of a component's inputs or outputs.
 - [RequirementType][] is Input, Output, State or EmptyLink.
 - [GridType][] is Scalar, FourBox or Hemispheric.
+- [TimeseriesType][] is Point or Average.
 
 **Spatial grids**
 
@@ -80,6 +81,7 @@ from rscm._lib.core import (
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
+    TimeseriesType,
     Unit,
     VariableSchema,
     VariableType,
@@ -127,6 +129,7 @@ __all__ = [
     "TimeAxis",
     "Timeseries",
     "TimeseriesCollection",
+    "TimeseriesType",
     "TimeseriesWindow",
     "Unit",
     "VariableSchema",

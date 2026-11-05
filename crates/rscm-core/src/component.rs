@@ -4,6 +4,7 @@ pub use crate::state::{
     OutputState, ScalarWindow, TimeseriesWindow,
 };
 use crate::timeseries::Time;
+use crate::units::Unit;
 use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -157,6 +158,49 @@ impl std::fmt::Display for GridType {
     }
 }
 
+/// Whether a variable's value holds at an instant or over a step.
+///
+/// The producer declares it, and consumers inherit it.
+/// When nobody declares it, the unit decides: see [`TimeseriesType::from_unit`].
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Serialize, Deserialize)]
+pub enum TimeseriesType {
+    /// Holds at an instant, such as a concentration or temperature.
+    Point,
+    /// Holds over a whole step, such as emissions, a flux or a lifetime.
+    Average,
+}
+
+#[pymethods]
+impl TimeseriesType {
+    /// Get the name of this timeseries type variant
+    #[getter]
+    fn name(&self) -> &'static str {
+        match self {
+            TimeseriesType::Point => "Point",
+            TimeseriesType::Average => "Average",
+        }
+    }
+}
+
+impl TimeseriesType {
+    /// The type a unit implies: `Average` for a unit per time, such as `GtC / yr`, else `Point`.
+    ///
+    /// `W / m^2`, `yr` and units that do not parse give `Point`.
+    pub fn from_unit(unit: &str) -> Self {
+        match Unit::parse(unit) {
+            Ok(parsed) if parsed.is_per_time() => TimeseriesType::Average,
+            _ => TimeseriesType::Point,
+        }
+    }
+}
+
+impl std::fmt::Display for TimeseriesType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// Definition of a component's input or output requirement
 ///
 /// Each requirement specifies:
@@ -164,6 +208,7 @@ impl std::fmt::Display for GridType {
 /// - `unit`: Physical units (e.g., "ppm", "W / m^2")
 /// - `requirement_type`: Whether this is an input, output, or both
 /// - `grid_type`: Spatial resolution (Scalar, FourBox, Hemispheric)
+/// - `timeseries_type`: Point or average, `None` to infer it
 #[pyclass]
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct RequirementDefinition {
@@ -175,6 +220,9 @@ pub struct RequirementDefinition {
     pub requirement_type: RequirementType,
     #[pyo3(get, set)]
     pub grid_type: GridType,
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeseries_type: Option<TimeseriesType>,
 }
 
 impl RequirementDefinition {
@@ -185,6 +233,7 @@ impl RequirementDefinition {
             unit: unit.to_string(),
             requirement_type,
             grid_type: GridType::Scalar,
+            timeseries_type: None,
         }
     }
 
@@ -200,7 +249,20 @@ impl RequirementDefinition {
             unit: unit.to_string(),
             requirement_type,
             grid_type,
+            timeseries_type: None,
         }
+    }
+
+    /// Declare whether the variable is a point or an average, overriding the unit default.
+    pub fn with_timeseries_type(mut self, timeseries_type: TimeseriesType) -> Self {
+        self.timeseries_type = Some(timeseries_type);
+        self
+    }
+
+    /// The declared timeseries type, else the default from the unit.
+    pub fn resolved_timeseries_type(&self) -> TimeseriesType {
+        self.timeseries_type
+            .unwrap_or_else(|| TimeseriesType::from_unit(&self.unit))
     }
 
     /// Create a scalar input requirement
@@ -480,6 +542,41 @@ mod tests {
         let req = RequirementDefinition::new("Emissions|CO2", "GtC / yr", RequirementType::Input);
         assert_eq!(req.grid_type, GridType::Scalar);
         assert!(!req.is_spatial());
+    }
+
+    #[test]
+    fn timeseries_type_from_unit() {
+        for unit in ["GtC / yr", "kt / yr", "Gt N / yr", "Mt CO2 / yr"] {
+            assert_eq!(
+                TimeseriesType::from_unit(unit),
+                TimeseriesType::Average,
+                "{unit}"
+            );
+        }
+        for unit in [
+            "W / m^2",
+            "K",
+            "ppm",
+            "yr",
+            "dimensionless",
+            "1",
+            "not a unit !",
+        ] {
+            assert_eq!(
+                TimeseriesType::from_unit(unit),
+                TimeseriesType::Point,
+                "{unit}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_timeseries_type_prefers_declaration() {
+        let lifetime = RequirementDefinition::scalar_output("Lifetime|CH4", "yr");
+        assert_eq!(lifetime.timeseries_type, None);
+        assert_eq!(lifetime.resolved_timeseries_type(), TimeseriesType::Point);
+        let lifetime = lifetime.with_timeseries_type(TimeseriesType::Average);
+        assert_eq!(lifetime.resolved_timeseries_type(), TimeseriesType::Average);
     }
 
     #[test]

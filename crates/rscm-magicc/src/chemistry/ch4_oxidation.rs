@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 #[component(tags = ["chemistry", "ch4", "carbon-cycle", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
     concentration { name = "Atmospheric Concentration|CH4", unit = "ppb" },
-    oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr" },
+    oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average" },
     fossil_emissions { name = "Emissions|CH4|Fossil", unit = "Mt CH4/yr" },
     afolu_emissions { name = "Emissions|CH4|AFOLU", unit = "Mt CH4/yr" },
 )]

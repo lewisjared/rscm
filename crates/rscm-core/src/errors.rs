@@ -71,6 +71,20 @@ pub enum RSCMError {
         components: Vec<String>,
     },
 
+    /// A declared timeseries type that disagrees with the variable's resolved type.
+    #[error("Timeseries type mismatch for variable '{variable}': {producer} gives {producer_type} but {consumer} declares {consumer_type}. Consumers inherit the producer's type, so drop the declaration or make them agree.")]
+    TimeseriesTypeMismatch {
+        variable: String,
+        producer: String,
+        producer_type: String,
+        consumer: String,
+        consumer_type: String,
+    },
+
+    /// A state variable that resolves to an average.
+    #[error("State variable '{variable}' of component '{component}' is an average, but states must be points. Declare it a point, or turn the check off with ModelBuilder::with_state_type_check(false).")]
+    AverageState { variable: String, component: String },
+
     /// Grid output type mismatch between component output and variable definition
     #[error("Grid output mismatch for variable '{variable}': component tried to output {component_grid} but variable expects {expected_grid}. Ensure the component's StateValue variant matches the RequirementDefinition's grid_type.")]
     GridOutputMismatch {
