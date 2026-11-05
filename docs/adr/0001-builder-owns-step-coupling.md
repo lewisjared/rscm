@@ -44,7 +44,8 @@ and each author had to pick between `at_start`, `at_end`, `get` and `previous` t
 - A lagged edge shifts the whole window by one step, so nothing can read a value its producer has not written.
 - The window API shrinks to `get()`, `interval()` and `history(offset)` in Rust and Python.
   `history` reads only the past.
-  A fixed calendar year, such as MAGICC's 1927 reference for precursor emissions, is read by time with `interpolate(year)`.
+  A fixed calendar year, such as MAGICC's 1927 reference for precursor emissions,
+  is read by time with `interpolate(year)`.
   It may read ahead of the step, so it suits exogenous data, and a future upstream value is not yet written.
 - `model.coupling()` replaces `debug_info()` ordering and shows the order, each lagged edge and each variable's
   [time type](0002-point-and-average-variables.md).
