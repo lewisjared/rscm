@@ -303,14 +303,8 @@ impl SeaLevelRise {
             *state = self.initial_state();
         }
         let inputs = SeaLevelRiseInputs::from_input_state(input_state);
-        let temperature = inputs
-            .temperature
-            .at_end()
-            .unwrap_or_else(|| inputs.temperature.at_start());
-        let thermal_expansion = inputs
-            .thermal_expansion
-            .at_end()
-            .unwrap_or_else(|| inputs.thermal_expansion.at_start());
+        let (_, temperature) = inputs.temperature.interval()?;
+        let (_, thermal_expansion) = inputs.thermal_expansion.interval()?;
         let p = &self.parameters;
         let year = t_current;
         if year >= p.glaciers.start_year {

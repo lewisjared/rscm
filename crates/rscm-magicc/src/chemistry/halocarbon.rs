@@ -165,7 +165,7 @@ impl HalocarbonChemistry {
         let p = &self.parameters;
         let oh_scale = if p.variable_oh_lifetime {
             let window = input_state.get_scalar_window(CH4_OH_LIFETIME);
-            window.at_end().unwrap_or_else(|| window.at_start()) / p.ch4_oh_lifetime_init
+            window.get() / p.ch4_oh_lifetime_init
         } else {
             1.0
         };
@@ -223,10 +223,10 @@ fn lagged(window: &ScalarWindow, end: FloatValue, lag: usize) -> FloatValue {
     if lag == 0 {
         return end;
     }
-    let offset = (lag as isize - 1).min(window.index() as isize);
+    let offset = (lag - 1).min(window.history_len() - 1);
     window
-        .at_offset(-offset)
-        .unwrap_or_else(|| window.at_start())
+        .history(offset)
+        .expect("offsets below history_len are stored")
 }
 
 #[typetag::serde]
@@ -304,16 +304,16 @@ impl Component for HalocarbonChemistry {
             .parameters
             .fgas_regions
             .as_ref()
-            .map(|_| input_state.get_scalar_window(FOSSIL_CO2).at_start());
+            .map(|_| input_state.get_scalar_window(FOSSIL_CO2).get());
 
         for (group, (list, switch_year)) in self.switch_years().into_iter().enumerate() {
             for (species, names) in list.iter().zip(&names[group]) {
                 let window = input_state.get_scalar_window(&names.concentration);
-                let emissions = input_state.get_scalar_window(&names.emissions).at_start();
+                let emissions = input_state.get_scalar_window(&names.emissions).get();
                 let tau = self.lifetime(species, oh_scale, strat_scale);
                 let next = prescribed_input(input_state, &names.prescribed, switch_year, t_next)
                     .unwrap_or_else(|| {
-                        self.step_concentration(species, window.at_start(), emissions, tau)
+                        self.step_concentration(species, window.get(), emissions, tau)
                     });
                 let species_forcing = Self::species_forcing(species, next);
                 forcing[group] += species_forcing;

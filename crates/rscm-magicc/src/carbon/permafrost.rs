@@ -381,7 +381,7 @@ impl Permafrost {
         }
         let inputs = PermafrostInputs::from_input_state(input_state);
         let (co2_emissions, ch4_emissions) =
-            self.step(state, inputs.temperature.at_start(), t_next - t_current);
+            self.step(state, inputs.temperature.get(), t_next - t_current);
         Ok(PermafrostOutputs {
             co2_emissions,
             ch4_emissions,

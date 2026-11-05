@@ -183,7 +183,7 @@ impl Component for N2OChemistry {
         let p = &self.parameters;
         let concentration = &inputs.n2o_concentration;
 
-        let n2o_start = concentration.at_start();
+        let n2o_start = concentration.get();
         let n2o_reference = reference_value(concentration, t_current, p.feedback_start_year);
 
         // MAGICC7 clamps delayed indices to the first year of the run

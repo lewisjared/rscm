@@ -56,8 +56,8 @@ use std::collections::VecDeque;
 
 use crate::parameters::OceanCarbonParameters;
 use crate::reference::{
-    feedback_warming, permafrost_emissions, prescribed_concentration, prescribed_definition,
-    require_annual, PERMAFROST_CO2,
+    feedback_warming, first_value, permafrost_emissions, prescribed_concentration,
+    prescribed_definition, require_annual, PERMAFROST_CO2,
 };
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
@@ -349,11 +349,10 @@ impl OceanCarbon {
             - inputs.terrestrial_flux.get())
             + permafrost_emissions(self.parameters.permafrost, input_state, PERMAFROST_CO2);
         if state.pco2_reference.is_none() {
-            let first = -(inputs.ocean_pco2.index() as isize);
             state.pco2_reference = Some(
                 self.parameters
                     .pco2_pi
-                    .unwrap_or_else(|| inputs.ocean_pco2.at_offset(first).unwrap_or(0.0)),
+                    .unwrap_or_else(|| first_value(&inputs.ocean_pco2)),
             );
         }
 
@@ -365,12 +364,12 @@ impl OceanCarbon {
         );
         let result = self.solve_ocean_prescribed(
             state,
-            inputs.co2_concentration.at_start(),
+            inputs.co2_concentration.get(),
             co2_end,
             other_sources,
             warming,
-            inputs.ocean_pco2.at_start(),
-            inputs.cumulative_uptake.at_start(),
+            inputs.ocean_pco2.get(),
+            inputs.cumulative_uptake.get(),
             t_next - t_current,
         );
 

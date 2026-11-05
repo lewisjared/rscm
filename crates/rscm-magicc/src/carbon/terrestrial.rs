@@ -744,9 +744,9 @@ impl TerrestrialCarbon {
             ),
         };
 
-        let plant = inputs.plant_pool.at_start();
-        let detritus = inputs.detritus_pool.at_start();
-        let soil = inputs.soil_pool.at_start();
+        let plant = inputs.plant_pool.get();
+        let detritus = inputs.detritus_pool.get();
+        let soil = inputs.soil_pool.get();
 
         let result = self.solve_terrestrial(
             state,
