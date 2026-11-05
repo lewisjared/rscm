@@ -325,7 +325,7 @@ plt.show()
 from rscm.core import InterpolationStrategy, TimeAxis, Timeseries, TimeseriesCollection
 from rscm.two_layer import TwoLayerBuilder
 
-time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0]))
+time_axis = TimeAxis.from_values(np.array([2000.0, 2010.0]))
 forcing = TimeseriesCollection()
 for name, value, unit in [
     ("Effective Radiative Forcing", 3.0, "W/m^2"),
@@ -334,7 +334,9 @@ for name, value, unit in [
 ]:
     forcing.add_timeseries(
         name,
-        Timeseries(np.array([value]), time_axis, unit, InterpolationStrategy.Previous),
+        Timeseries(
+            np.array([value, value]), time_axis, unit, InterpolationStrategy.Previous
+        ),
     )
 
 

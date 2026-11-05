@@ -177,8 +177,8 @@ It reads scalar data directly and aggregates FourBox or Hemispheric data to a gl
 | `get_time()`     | Time of the value `get()` returns                                          |
 | `interpolate(t)` | Value at time `t`, such as a fixed reference year, as an `RSCMResult`      |
 
-`get()` reads index N for exogenous data, lagged inputs and own state,
-and index N+1 for an output written upstream in the same step.
+For a point, `get()` reads index N+1, the step's end, whether the input is prescribed or upstream,
+and index N for lagged inputs and own state.
 Prefer `get()` unless the physics needs both ends of the step.
 See [Timestep Semantics](../key_concepts.md#timestep-semantics) for the details.
 

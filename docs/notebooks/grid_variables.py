@@ -284,17 +284,17 @@ plt.show()
 # global mean. With these ratios averaging to 1.0 and equal grid
 # weights, the aggregated value should match the input forcing.
 #
-# A component reads its inputs at the start of a step and its outputs belong to the end of the step.
-# The uptake stored at a time point therefore comes from the forcing one point earlier.
+# A component reads a prescribed point at the end of the step, where it also writes its outputs.
+# The uptake stored at a time point therefore comes from the forcing at the same point.
 
 # %%
 global_uptake = np.array([fb_grid.aggregate_global(row.tolist()) for row in values[1:]])
-erf_at_start = erf_ts.values()[:-1]
-np.testing.assert_allclose(global_uptake, erf_at_start)
+erf_at_end = erf_ts.values()[1:]
+np.testing.assert_allclose(global_uptake, erf_at_end)
 
-print("Aggregated uptake vs forcing at the start of each step:")
+print("Aggregated uptake vs forcing at the end of each step:")
 for label, i in [("First step", 0), ("Last step", -1)]:
-    print(f"  {label}: ERF = {erf_at_start[i]:.2f}, uptake = {global_uptake[i]:.2f}")
+    print(f"  {label}: ERF = {erf_at_end[i]:.2f}, uptake = {global_uptake[i]:.2f}")
 
 # %% [markdown]
 # ## Working with Hemispheric Grids
@@ -334,7 +334,7 @@ class RegionalWarming(Component):
         self.sensitivity = sensitivity
 
     def solve(self, t_current, t_next, inputs):
-        """Compute regional temperatures from the forcing at the start of the step."""
+        """Compute regional temperatures from the forcing at the end of the step."""
         erf = inputs.forcing.get()
         return self.Outputs(
             temperature=FourBoxSlice.from_array([s * erf for s in self.sensitivity])
