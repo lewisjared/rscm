@@ -13,7 +13,7 @@ use numpy::ndarray::Array;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Graph;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use super::null_component::NullComponent;
@@ -43,6 +43,7 @@ pub struct ModelBuilder {
     grid_weights: HashMap<GridType, Vec<f64>>,
     lagged_variables: BTreeSet<String>,
     lagged_edges: BTreeSet<(String, String)>,
+    missing_exogenous_allowed: bool,
 }
 
 impl ModelBuilder {
@@ -58,7 +59,16 @@ impl ModelBuilder {
             grid_weights: HashMap::new(),
             lagged_variables: BTreeSet::new(),
             lagged_edges: BTreeSet::new(),
+            missing_exogenous_allowed: false,
         }
+    }
+
+    /// Allow inputs that no component produces and no exogenous data or initial value supplies.
+    ///
+    /// Such an input is filled with NaN instead of failing the build.
+    pub fn with_missing_exogenous_allowed(&mut self) -> &mut Self {
+        self.missing_exogenous_allowed = true;
+        self
     }
 
     /// Lag every edge from `variable`, so each of its consumers reads the previous step's value.
@@ -132,6 +142,41 @@ impl ModelBuilder {
             }
         }
         Ok(())
+    }
+
+    /// Check that every input without a producer has exogenous data or an initial value.
+    fn check_exogenous_supplied(
+        &self,
+        names: &[String],
+        requirements: &[(Vec<RequirementDefinition>, Vec<RequirementDefinition>)],
+        endogenous: &HashMap<String, NodeIndex>,
+    ) -> RSCMResult<()> {
+        let mut missing: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (consumer, (requires, _)) in names.iter().zip(requirements) {
+            for requirement in requires {
+                let name = &requirement.name;
+                if requirement.requirement_type == RequirementType::Input
+                    && !endogenous.contains_key(name)
+                    && self.exogenous_variables.get_data(name).is_none()
+                    && !self.initial_values.contains_key(name)
+                    && !self.initial_grid_values.contains_key(name)
+                {
+                    missing
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(consumer.clone());
+                }
+            }
+        }
+        if missing.is_empty() {
+            return Ok(());
+        }
+        Err(RSCMError::MissingExogenousInput {
+            inputs: missing
+                .into_iter()
+                .map(|(variable, consumers)| (variable, consumers.into_iter().collect()))
+                .collect(),
+        })
     }
 
     /// Set custom weights for a grid type.
@@ -829,6 +874,10 @@ impl ModelBuilder {
                     component,
                 });
             }
+        }
+
+        if !self.missing_exogenous_allowed {
+            self.check_exogenous_supplied(&names, &requirements, &endogenous)?;
         }
 
         // Store transformations for runtime grid auto-aggregation

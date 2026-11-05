@@ -104,5 +104,5 @@ def build_two_layer_model(config: Any) -> Model:
         {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
     )
 
-    # Build and return model
-    return model_builder.build()
+    # Inputs are not read from the config yet, so forcing stays NaN.
+    return model_builder.with_missing_exogenous_allowed().build()

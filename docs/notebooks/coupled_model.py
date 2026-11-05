@@ -256,10 +256,8 @@ model_builder = model_builder.with_initial_values(initial_state)
 # Building the model generates a directed graph of component relationships.
 # Each timestep, the model solves the components in topological order of this graph,
 # so every producer runs before the components that consume its outputs.
-# If required information such as an initial value is missing,
+# If required information such as an initial value or exogenous data is missing,
 # the build step raises an exception explaining what is needed.
-# A missing exogenous variable is not caught at build time yet.
-# Its values are NaN, so check `debug_info()` for inputs marked `(exo)` that you have not provided.
 
 # %%
 model = model_builder.build()
