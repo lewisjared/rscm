@@ -1,6 +1,7 @@
 //! Physical constants from FaIR's `constants.py` and `earth_params.py`.
 
 use rscm_core::component::{InputState, RequirementDefinition};
+use rscm_core::errors::RSCMResult;
 use rscm_core::timeseries::FloatValue;
 
 /// Radius of the Earth (m).
@@ -60,13 +61,12 @@ pub(crate) fn driver_definitions<'a>(
     definitions
 }
 
-/// Value at the start of the step.
-pub(crate) fn start(input_state: &InputState, name: &str) -> FloatValue {
-    input_state.get_scalar_window(name).at_start()
+/// Value the model hands this component for the step.
+pub(crate) fn get(input_state: &InputState, name: &str) -> FloatValue {
+    input_state.get_scalar_window(name).get()
 }
 
-/// Value at the end of the step, falling back to the start on the last step.
-pub(crate) fn end(input_state: &InputState, name: &str) -> FloatValue {
-    let window = input_state.get_scalar_window(name);
-    window.at_end().unwrap_or_else(|| window.at_start())
+/// Value of a point at the end of the step.
+pub(crate) fn end(input_state: &InputState, name: &str) -> RSCMResult<FloatValue> {
+    Ok(input_state.get_scalar_window(name).interval()?.1)
 }

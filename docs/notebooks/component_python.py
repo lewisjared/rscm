@@ -62,8 +62,8 @@ from rscm.core import (
 # - Inner `Inputs` class with typed fields for each input
 # - Inner `Outputs` class for constructing return values
 #
-# `solve()` reads exogenous inputs and state variables with `at_start()`,
-# the value at the start of the timestep.
+# `solve()` reads each input with `get()`,
+# the value the model hands the component for the step.
 # See [Timestep Semantics](../../key_concepts/#timestep-semantics) for when other accessors apply.
 #
 # ### Basic Example: Scalar Component
@@ -83,7 +83,7 @@ class ScaleComponent(Component):
 
     def solve(self, t_current: float, t_next: float, inputs: "ScaleComponent.Inputs"):
         """Scale the input once `t_current` passes `scale_year`."""
-        current_input = inputs.input_value.at_start()
+        current_input = inputs.input_value.get()
 
         if t_current > self.scale_year:
             result = current_input * self.scale_factor
@@ -219,7 +219,7 @@ class Accumulator(Component):
     def solve(self, t_current: float, t_next: float, inputs):
         """Add this timestep's emissions to the running total."""
         dt = t_next - t_current
-        total = inputs.cumulative.at_start() + inputs.emissions.at_start() * dt
+        total = inputs.cumulative.get() + inputs.emissions.get() * dt
         return self.Outputs(cumulative=total)
 
 
@@ -266,7 +266,7 @@ class RegionalComponent(Component):
 
     def solve(self, t_current: float, t_next: float, inputs):
         """Scale the forcing by a fixed factor per region."""
-        erf = inputs.forcing.at_start()
+        erf = inputs.forcing.get()
         return self.Outputs(
             regional_temp=FourBoxSlice(
                 northern_ocean=erf * self.sensitivity * 0.8,
@@ -332,18 +332,20 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 #
 # | Method | Description |
 # |--------|-------------|
-# | `inputs.field.at_start()` | Value at start of timestep (index N) |
-# | `inputs.field.at_end()` | Value at end of timestep (index N+1) |
-# | `inputs.field.previous` | Previous timestep value (index N-1) |
-# | `inputs.field.at_offset(n)` | Value at relative offset |
-# | `inputs.field.last_n(n)` | NumPy array of last n values |
+# | `inputs.field.get()` | The value this component should use for the step |
+# | `inputs.field.interval()` | A point's values at the start and end of the step |
+# | `inputs.field.history(n)` | The value `n` steps before `get()`, or `None` |
+# | `inputs.field.history_len()` | Number of values `history()` can read |
+# | `inputs.field.get_time()` | Time of the value `get()` returns |
+# | `inputs.field.interpolate(t)` | Value at time `t`, such as a fixed reference year |
 #
-# For grid inputs, use `at_start_all()` to get a `FourBoxSlice` or `HemisphericSlice`,
-# or `at_start(region)` for an individual region.
+# `get()` reads the start of the step for exogenous data and state,
+# and this step's value for an upstream component's output.
+# For grid inputs, `get()` and `interval()` return a `FourBoxSlice` or `HemisphericSlice`,
+# and `region(i)` returns a scalar window for one region.
 #
-# Read an upstream component's output for this timestep with `at_end()` or `at_end_all()`.
 # Inputs arrive in the declared unit and grid when the model has a schema.
-# See [Timestep Semantics](../../key_concepts/#timestep-semantics) for `at_start()` vs `at_end()` usage.
+# See [Timestep Semantics](../../key_concepts/#timestep-semantics) for how the model picks the step.
 
 # %% [markdown]
 # ## Saving Models

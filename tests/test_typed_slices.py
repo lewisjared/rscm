@@ -285,44 +285,19 @@ class TestTimeseriesWindow:
         assert w.current_index == 1
         assert len(w) == 3
 
-    def test_previous(self):
-        """Test previous property."""
-        w = TimeseriesWindow([1.0, 2.0, 3.0], 2)
-        assert w.previous == 2.0
-
-    def test_previous_at_start_raises(self):
-        """Test previous at index 0 raises."""
-        w = TimeseriesWindow([1.0, 2.0, 3.0], 0)
-        with pytest.raises(ValueError, match="No previous value"):
-            _ = w.previous
-
-    def test_at_offset(self):
-        """Test at_offset method."""
+    def test_history(self):
+        """Test history counts back from the value get() returns."""
         w = TimeseriesWindow([1.0, 2.0, 3.0, 4.0, 5.0], 3)
-        assert w.at_offset(0) == 4.0
-        assert w.at_offset(-1) == 3.0
-        assert w.at_offset(-2) == 2.0
-        assert w.at_offset(1) == 5.0
+        assert w.history(0) == 4.0
+        assert w.history(1) == 3.0
+        assert w.history(3) == 1.0
+        assert w.history_len() == 4
 
-    def test_at_offset_out_of_bounds(self):
-        """Test at_offset out of bounds raises."""
+    def test_history_before_first_step(self):
+        """Test history returns None before the first value."""
         w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
-        with pytest.raises(ValueError, match="out of bounds"):
-            w.at_offset(-5)
-        with pytest.raises(ValueError, match="out of bounds"):
-            w.at_offset(5)
-
-    def test_last_n(self):
-        """Test last_n method."""
-        w = TimeseriesWindow([1.0, 2.0, 3.0, 4.0, 5.0], 3)
-        arr = w.last_n(3)
-        np.testing.assert_array_equal(arr, [2.0, 3.0, 4.0])
-
-    def test_last_n_more_than_available(self):
-        """Test last_n when asking for more than available."""
-        w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
-        arr = w.last_n(5)  # Only 2 values available (indices 0,1)
-        np.testing.assert_array_equal(arr, [1.0, 2.0])
+        assert w.history(2) is None
+        assert TimeseriesWindow([1.0, 2.0, 3.0], 0).history(1) is None
 
     def test_to_array(self):
         """Test to_array method."""
@@ -343,20 +318,21 @@ class TestTimeseriesWindow:
         with pytest.raises(ValueError, match="out of bounds"):
             TimeseriesWindow([1.0, 2.0], 5)
 
-    def test_at_start(self):
-        """Test at_start returns value at current index."""
+    def test_get(self):
+        """Test get returns the value at the current index for exogenous data."""
         w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
-        assert w.at_start() == 2.0
+        assert w.get() == 2.0
 
-    def test_at_end(self):
-        """Test at_end returns value at next index."""
+    def test_interval(self):
+        """Test interval returns the values at the start and end of the step."""
         w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
-        assert w.at_end() == 3.0
+        assert w.interval() == (2.0, 3.0)
 
-    def test_at_end_returns_none_at_last_timestep(self):
-        """Test at_end returns None when at last timestep."""
+    def test_interval_raises_at_last_timestep(self):
+        """Test interval raises when the step has no end."""
         w = TimeseriesWindow([1.0, 2.0, 3.0], 2)
-        assert w.at_end() is None
+        with pytest.raises(ValueError, match="last"):
+            w.interval()
 
 
 class TestFourBoxTimeseriesWindow:
@@ -369,11 +345,11 @@ class TestFourBoxTimeseriesWindow:
         assert w.current_index == 1
         assert len(w) == 2
 
-    def test_previous(self):
-        """Test previous returns FourBoxSlice."""
+    def test_history(self):
+        """Test history returns a FourBoxSlice."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8]]
         w = FourBoxTimeseriesWindow(values, 1)
-        prev = w.previous
+        prev = w.history(1)
         assert prev.northern_ocean == 1.0
 
     def test_region(self):
@@ -381,8 +357,8 @@ class TestFourBoxTimeseriesWindow:
         values = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]
         w = FourBoxTimeseriesWindow(values, 2)
         region_0 = w.region(0)  # northern_ocean
-        assert region_0.at_start() == 9.0
-        assert region_0.previous == 5.0
+        assert region_0.get() == 9.0
+        assert region_0.history(1) == 5.0
 
     def test_region_invalid_index(self):
         """Test region with invalid index raises."""
@@ -398,66 +374,32 @@ class TestFourBoxTimeseriesWindow:
         r = repr(w)
         assert "FourBoxTimeseriesWindow" in r
 
-    def test_at_start(self):
-        """Test at_start returns value at current index for a region."""
+    def test_get(self):
+        """Test get returns a FourBoxSlice at the current index."""
+        values = [[1, 2, 3, 4], [5, 6, 7, 8]]
+        w = FourBoxTimeseriesWindow(values, 1)
+        current = w.get()
+        assert current.northern_ocean == 5.0
+        assert current.northern_land == 6.0
+        assert current.southern_ocean == 7.0
+        assert current.southern_land == 8.0
+        assert current.get(3) == 8.0
+
+    def test_interval(self):
+        """Test interval returns FourBoxSlices at the start and end of the step."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]
         w = FourBoxTimeseriesWindow(values, 1)
-        assert w.at_start(0) == 5.0  # northern_ocean
-        assert w.at_start(1) == 6.0  # northern_land
-        assert w.at_start(2) == 7.0  # southern_ocean
-        assert w.at_start(3) == 8.0  # southern_land
+        start, end = w.interval()
+        assert start.northern_ocean == 5.0
+        assert end.northern_ocean == 9.0
+        assert end.southern_land == 12.0
 
-    def test_at_end(self):
-        """Test at_end returns value at next index for a region."""
-        values = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]
-        w = FourBoxTimeseriesWindow(values, 1)
-        assert w.at_end(0) == 9.0  # northern_ocean
-        assert w.at_end(1) == 10.0  # northern_land
-
-    def test_at_end_returns_none_at_last_timestep(self):
-        """Test at_end returns None when at last timestep."""
+    def test_interval_raises_at_last_timestep(self):
+        """Test interval raises when the step has no end."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8]]
         w = FourBoxTimeseriesWindow(values, 1)
-        assert w.at_end(0) is None
-
-    def test_at_start_invalid_region(self):
-        """Test at_start with invalid region raises."""
-        values = [[1, 2, 3, 4]]
-        w = FourBoxTimeseriesWindow(values, 0)
-        with pytest.raises(ValueError, match="Invalid region index"):
-            w.at_start(4)
-
-    def test_at_end_invalid_region(self):
-        """Test at_end with invalid region raises."""
-        values = [[1, 2, 3, 4], [5, 6, 7, 8]]
-        w = FourBoxTimeseriesWindow(values, 0)
-        with pytest.raises(ValueError, match="Invalid region index"):
-            w.at_end(4)
-
-    def test_at_start_all(self):
-        """Test at_start_all returns FourBoxSlice at current index."""
-        values = [[1, 2, 3, 4], [5, 6, 7, 8]]
-        w = FourBoxTimeseriesWindow(values, 1)
-        slice_at_start = w.at_start_all()
-        assert slice_at_start.northern_ocean == 5.0
-        assert slice_at_start.northern_land == 6.0
-        assert slice_at_start.southern_ocean == 7.0
-        assert slice_at_start.southern_land == 8.0
-
-    def test_at_end_all(self):
-        """Test at_end_all returns FourBoxSlice at next index."""
-        values = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]
-        w = FourBoxTimeseriesWindow(values, 1)
-        slice_at_end = w.at_end_all()
-        assert slice_at_end is not None
-        assert slice_at_end.northern_ocean == 9.0
-        assert slice_at_end.southern_land == 12.0
-
-    def test_at_end_all_returns_none_at_last_timestep(self):
-        """Test at_end_all returns None when at last timestep."""
-        values = [[1, 2, 3, 4], [5, 6, 7, 8]]
-        w = FourBoxTimeseriesWindow(values, 1)
-        assert w.at_end_all() is None
+        with pytest.raises(ValueError, match="last"):
+            w.interval()
 
 
 class TestHemisphericTimeseriesWindow:
@@ -475,8 +417,8 @@ class TestHemisphericTimeseriesWindow:
         values = [[1, 2], [3, 4], [5, 6]]
         w = HemisphericTimeseriesWindow(values, 2)
         region_0 = w.region(0)  # northern
-        assert region_0.at_start() == 5.0
-        assert region_0.previous == 3.0
+        assert region_0.get() == 5.0
+        assert region_0.history(1) == 3.0
 
     def test_region_invalid_index(self):
         """Test region with invalid index raises."""
@@ -485,62 +427,28 @@ class TestHemisphericTimeseriesWindow:
         with pytest.raises(ValueError, match="Invalid region index"):
             w.region(2)
 
-    def test_at_start(self):
-        """Test at_start returns value at current index for a region."""
+    def test_get(self):
+        """Test get returns a HemisphericSlice at the current index."""
+        values = [[1, 2], [3, 4]]
+        w = HemisphericTimeseriesWindow(values, 1)
+        current = w.get()
+        assert current.northern == 3.0
+        assert current.southern == 4.0
+
+    def test_interval(self):
+        """Test interval returns HemisphericSlices at the start and end of the step."""
         values = [[1, 2], [3, 4], [5, 6]]
         w = HemisphericTimeseriesWindow(values, 1)
-        assert w.at_start(0) == 3.0  # northern
-        assert w.at_start(1) == 4.0  # southern
+        start, end = w.interval()
+        assert (start.northern, start.southern) == (3.0, 4.0)
+        assert (end.northern, end.southern) == (5.0, 6.0)
 
-    def test_at_end(self):
-        """Test at_end returns value at next index for a region."""
-        values = [[1, 2], [3, 4], [5, 6]]
-        w = HemisphericTimeseriesWindow(values, 1)
-        assert w.at_end(0) == 5.0  # northern
-        assert w.at_end(1) == 6.0  # southern
-
-    def test_at_end_returns_none_at_last_timestep(self):
-        """Test at_end returns None when at last timestep."""
+    def test_interval_raises_at_last_timestep(self):
+        """Test interval raises when the step has no end."""
         values = [[1, 2], [3, 4]]
         w = HemisphericTimeseriesWindow(values, 1)
-        assert w.at_end(0) is None
-
-    def test_at_start_invalid_region(self):
-        """Test at_start with invalid region raises."""
-        values = [[1, 2]]
-        w = HemisphericTimeseriesWindow(values, 0)
-        with pytest.raises(ValueError, match="Invalid region index"):
-            w.at_start(2)
-
-    def test_at_end_invalid_region(self):
-        """Test at_end with invalid region raises."""
-        values = [[1, 2], [3, 4]]
-        w = HemisphericTimeseriesWindow(values, 0)
-        with pytest.raises(ValueError, match="Invalid region index"):
-            w.at_end(2)
-
-    def test_at_start_all(self):
-        """Test at_start_all returns HemisphericSlice at current index."""
-        values = [[1, 2], [3, 4]]
-        w = HemisphericTimeseriesWindow(values, 1)
-        slice_at_start = w.at_start_all()
-        assert slice_at_start.northern == 3.0
-        assert slice_at_start.southern == 4.0
-
-    def test_at_end_all(self):
-        """Test at_end_all returns HemisphericSlice at next index."""
-        values = [[1, 2], [3, 4], [5, 6]]
-        w = HemisphericTimeseriesWindow(values, 1)
-        slice_at_end = w.at_end_all()
-        assert slice_at_end is not None
-        assert slice_at_end.northern == 5.0
-        assert slice_at_end.southern == 6.0
-
-    def test_at_end_all_returns_none_at_last_timestep(self):
-        """Test at_end_all returns None when at last timestep."""
-        values = [[1, 2], [3, 4]]
-        w = HemisphericTimeseriesWindow(values, 1)
-        assert w.at_end_all() is None
+        with pytest.raises(ValueError, match="last"):
+            w.interval()
 
 
 class TestRequirementDefinitionWithGridType:

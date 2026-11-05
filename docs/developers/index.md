@@ -85,7 +85,7 @@ Write it in Rust, with the `ComponentIO` derive macro, for performance or comple
         y = Output("Output Variable", unit="unit")
 
         def solve(self, t_current, t_next, inputs):
-            return self.Outputs(y=inputs.x.at_start() * 2)
+            return self.Outputs(y=inputs.x.get() * 2)
     ```
 
     See the [Python Components Tutorial](../notebooks/component_python.py) for details.

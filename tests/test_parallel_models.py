@@ -56,7 +56,7 @@ class Scaled(Component):
     def solve(self, t_current, t_next, inputs):
         if self.factor < 0:
             raise ValueError("negative factor")  # noqa: TRY003
-        return self.Outputs(out=self.factor * inputs.forcing.at_start())
+        return self.Outputs(out=self.factor * inputs.forcing.get())
 
 
 def scaled(factor: float):

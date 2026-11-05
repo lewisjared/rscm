@@ -77,7 +77,7 @@ Two-region grid splitting the globe into Northern and Southern hemispheres.
         response = Output("Response|Hemispheric", unit="W/m^2", grid="Hemispheric")
 
         def solve(self, t_current, t_next, inputs):
-            temp = inputs.temp.at_start_all()  # HemisphericSlice
+            temp = inputs.temp.get()  # HemisphericSlice
             return self.Outputs(
                 response=HemisphericSlice(northern=temp.northern * 0.5, southern=temp.southern * 0.4)
             )
@@ -123,7 +123,7 @@ Four-region grid used by MAGICC and similar reduced-complexity models.
         heat_uptake = Output("Heat Uptake", unit="W/m^2", grid="FourBox")
 
         def solve(self, t_current, t_next, inputs):
-            erf = inputs.erf.at_start()
+            erf = inputs.erf.get()
             return self.Outputs(
                 heat_uptake=FourBoxSlice(
                     northern_ocean=erf * 1.2,
@@ -161,17 +161,17 @@ A grid input returns every region at once, or one region by index:
 === "Python"
 
     ```python
-    temp = inputs.regional_temp.at_start_all()  # FourBoxSlice
+    temp = inputs.regional_temp.get()  # FourBoxSlice
     no = temp.northern_ocean
-    no = inputs.regional_temp.at_start(region=0)  # the same value, by index
+    no = temp.get(0)  # the same value, by index
     ```
 
 === "Rust"
 
     ```rust
-    let no = inputs.regional_temp.at_start(FourBoxRegion::NorthernOcean);
-    let all_regions = inputs.regional_temp.at_start_all();  // Vec<f64> in region order
-    let global_mean = inputs.regional_temp.current_global();  // weighted by the grid weights
+    let no = inputs.regional_temp.get(FourBoxRegion::NorthernOcean);
+    let all_regions = inputs.regional_temp.get_all();  // Vec<f64> in region order
+    let global_mean = inputs.regional_temp.grid().aggregate_global(&all_regions);  // weighted by the grid weights
     ```
 
 Hemispheric inputs work the same way, with `HemisphericSlice` and `HemisphericRegion`.
@@ -280,7 +280,7 @@ A component producing FourBox output can feed directly into a component expectin
         response = Output("Climate Response", unit="W/m^2")
 
         def solve(self, t_current, t_next, inputs):
-            return self.Outputs(response=inputs.temp.at_start() * 0.1)
+            return self.Outputs(response=inputs.temp.get() * 0.1)
     ```
 
     Declare the variable as Scalar in the schema, so the FourBox output is aggregated on write:
@@ -413,8 +413,8 @@ class OceanHeat(Component):
     heat = State("Ocean Heat", unit="J/m^2", grid="FourBox")
 
     def solve(self, t_current, t_next, inputs):
-        t = inputs.temperature.at_start_all()
-        h = inputs.heat.at_start_all()
+        t = inputs.temperature.get()
+        h = inputs.heat.get()
         return self.Outputs(heat=FourBoxSlice.from_array([h[i] + 1e8 * t[i] for i in range(4)]))
 
 
@@ -536,7 +536,7 @@ class HemisphericToFourBox(Component):
         self.ocean_land_ratio = ocean_land_ratio
 
     def solve(self, t_current, t_next, inputs):
-        hemi = inputs.hemi_temp.at_start_all()
+        hemi = inputs.hemi_temp.get()
         return self.Outputs(
             fb_temp=FourBoxSlice(
                 northern_ocean=hemi.northern * self.ocean_land_ratio,

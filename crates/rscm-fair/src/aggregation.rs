@@ -7,8 +7,8 @@
 //! Calculated agents apply their own feedback.
 
 use crate::constants::{
-    efficacy_adjusted_forcing, end, forcing_unit, one, start, surface_temperature,
-    temperature_unit, total_forcing,
+    efficacy_adjusted_forcing, end, forcing_unit, get, one, surface_temperature, temperature_unit,
+    total_forcing,
 };
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
@@ -113,7 +113,7 @@ impl Component for FairForcingAggregation {
     ) -> RSCMResult<OutputState> {
         let p = &self.parameters;
         let temperature = if self.has_feedback() {
-            start(input_state, &p.surface_temperature)
+            get(input_state, &p.surface_temperature)
         } else {
             0.0
         };
@@ -122,7 +122,7 @@ impl Component for FairForcingAggregation {
         let mut adjusted = 0.0;
         for agent in &p.agents {
             let input = agent.prescribed.as_ref().unwrap_or(&agent.forcing);
-            let forcing = end(input_state, input) + temperature * agent.temperature_feedback;
+            let forcing = end(input_state, input)? + temperature * agent.temperature_feedback;
             if agent.prescribed.is_some() {
                 output.insert(agent.forcing.clone(), StateValue::Scalar(forcing));
             }

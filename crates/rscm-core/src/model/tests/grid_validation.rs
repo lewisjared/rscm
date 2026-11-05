@@ -3,6 +3,7 @@
 use crate::component::{Component, InputState, OutputState, RequirementDefinition};
 use crate::errors::RSCMResult;
 use crate::model::ModelBuilder;
+use crate::spatial::SpatialGrid;
 use crate::state::{FourBoxSlice, StateValue};
 use crate::timeseries::{Time, TimeAxis};
 use numpy::ndarray::Array;
@@ -53,7 +54,7 @@ impl Component for ScalarConsumer {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let temp = input_state.get_scalar_window("Temperature").at_start();
+        let temp = input_state.get_scalar_window("Temperature").get();
         let mut output = OutputState::new();
         output.insert("Result".to_string(), StateValue::Scalar(temp * 2.0));
         Ok(output)
@@ -79,9 +80,8 @@ impl Component for FourBoxConsumer {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let temp = input_state
-            .get_four_box_window("Temperature")
-            .current_global();
+        let window = input_state.get_four_box_window("Temperature");
+        let temp = window.grid().aggregate_global(&window.get_all());
         let mut output = OutputState::new();
         output.insert("GlobalTemperature".to_string(), StateValue::Scalar(temp));
         Ok(output)

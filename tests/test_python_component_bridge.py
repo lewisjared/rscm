@@ -27,7 +27,7 @@ class Accumulator(Component):
         self.rate = rate
 
     def solve(self, t_current, t_next, inputs):
-        stock = inputs.stock.at_start() + self.rate * inputs.emissions.at_start()
+        stock = inputs.stock.get() + self.rate * inputs.emissions.get()
         return self.Outputs(stock=stock)
 
 
@@ -59,10 +59,10 @@ class Recorder(Component):
     seen = Output("Seen", unit="W/m^2")
 
     def __init__(self):
-        self.at_end = []
+        self.ends = []
 
     def solve(self, t_current, t_next, inputs):
-        self.at_end.append(inputs.forcing.at_end())
+        self.ends.append(inputs.forcing.interval()[1])
         return self.Outputs(seen=0.0)
 
 
@@ -71,7 +71,7 @@ class MegatonneReader(Component):
     out = Output("Out", unit="MtC/yr")
 
     def solve(self, t_current, t_next, inputs):
-        return self.Outputs(out=inputs.emissions.at_start())
+        return self.Outputs(out=inputs.emissions.get())
 
 
 class GlobalReader(Component):
@@ -79,7 +79,7 @@ class GlobalReader(Component):
     out = Output("Global Forcing", unit="W/m^2")
 
     def solve(self, t_current, t_next, inputs):
-        return self.Outputs(out=inputs.forcing.at_start())
+        return self.Outputs(out=inputs.forcing.get())
 
 
 class Slotted(Accumulator):
@@ -136,7 +136,7 @@ def test_build_raises_when_definitions_fail():
         PythonComponent.build(Broken(1.0))
 
 
-def test_at_end_reads_upstream_output_from_this_step():
+def test_interval_end_reads_upstream_output_from_this_step():
     recorder = Recorder()
     model = (
         ModelBuilder()
@@ -147,7 +147,7 @@ def test_at_end_reads_upstream_output_from_this_step():
     )
     model.run()
 
-    assert recorder.at_end == [0.0, 1.0, 2.0, 3.0]
+    assert recorder.ends == [0.0, 1.0, 2.0, 3.0]
 
 
 def test_inputs_are_converted_to_declared_units():

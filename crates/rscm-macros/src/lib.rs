@@ -45,7 +45,7 @@
 //!
 //! ```ignore
 //! // ERROR: no field `temperature` on type `TestComponentInputs`
-//! let temp = inputs.temperature.at_start();
+//! let temp = inputs.temperature.get();
 //! ```
 //!
 //! ## Invalid Output Field

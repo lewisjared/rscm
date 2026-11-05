@@ -53,10 +53,10 @@ class CarbonCycle(Component):
     def solve(
         self, t_current: float, t_next: float, inputs: "CarbonCycle.Inputs"
     ) -> "CarbonCycle.Outputs":
-        # Type-safe access to inputs
-        emissions = inputs.emissions.at_start()
-        temp = inputs.temperature.at_start_all()  # FourBoxSlice of regional values
-        conc_prev = inputs.concentration.at_start()
+        # get() returns the value the model hands this component for the step
+        emissions = inputs.emissions.get()
+        temp = inputs.temperature.get()  # FourBoxSlice of regional values
+        conc_prev = inputs.concentration.get()
 
         # Calculate outputs
         new_conc = conc_prev + emissions * self.sensitivity
@@ -514,7 +514,7 @@ class Component(metaclass=ComponentMeta):
             self.factor = factor
 
         def solve(self, t_current, t_next, inputs):
-            return self.Outputs(concentration=inputs.emissions.at_start() * self.factor)
+            return self.Outputs(concentration=inputs.emissions.get() * self.factor)
     ```
 
     To exclude a component from the registry (e.g., for abstract base classes):

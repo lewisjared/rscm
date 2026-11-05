@@ -26,7 +26,7 @@
 //! impl TestComponent {
 //!     fn solve_impl(&self, inputs: TestComponentInputs) -> TestComponentOutputs {
 //!         // ERROR: no field `temperature` on type `TestComponentInputs`
-//!         let temp = inputs.temperature.at_start();
+//!         let temp = inputs.temperature.get();
 //!         TestComponentOutputs { concentration: temp }
 //!     }
 //! }

@@ -108,9 +108,9 @@ impl Component for CarbonCycle {
         let inputs = CarbonCycleInputs::from_input_state(input_state);
 
         let y0 = ModelState::new(
-            inputs.concentration.at_start(),
-            inputs.cumulative_uptake.at_start(),
-            inputs.cumulative_emissions.at_start(),
+            inputs.concentration.get(),
+            inputs.cumulative_uptake.get(),
+            inputs.cumulative_emissions.get(),
         );
 
         let solver = IVPBuilder::new(Arc::new(self.to_owned()), input_state, y0);

@@ -879,22 +879,15 @@ impl Component for AggregatorComponent {
     ) -> RSCMResult<OutputState> {
         let mut output = OutputState::new();
 
-        // Aggregators read values that upstream components just wrote in this timestep.
-        // Use at_end() to read from timestep N+1 where outputs were written, falling
-        // back to at_start() (index N) if at_end() returns None (e.g., last timestep).
-
+        // Aggregators read their contributors at the end of the step, where upstream outputs land.
         match self.grid_type {
             GridType::Scalar => {
                 // Collect scalar values from all contributors at end of timestep
-                let values: Vec<f64> = self
+                let values = self
                     .contributors
                     .iter()
-                    .map(|name| {
-                        let window = input_state.get_scalar_window(name);
-                        // Read from at_end() where upstream values were just written
-                        window.at_end().unwrap_or_else(|| window.at_start())
-                    })
-                    .collect();
+                    .map(|name| Ok(input_state.get_scalar_window(name).interval()?.1))
+                    .collect::<RSCMResult<Vec<f64>>>()?;
 
                 let result = compute_aggregate(&values, &self.operation);
                 output.insert(self.aggregate_name.clone(), StateValue::Scalar(result));
@@ -906,9 +899,7 @@ impl Component for AggregatorComponent {
                 let mut region_values: [Vec<f64>; 4] = Default::default();
 
                 for name in &self.contributors {
-                    let window = input_state.get_four_box_window(name);
-                    // Read from at_end() where upstream values were just written
-                    let values = window.at_end_all().unwrap_or_else(|| window.at_start_all());
+                    let (_, values) = input_state.get_four_box_window(name).interval()?;
                     for (i, val) in values.into_iter().enumerate() {
                         region_values[i].push(val);
                     }
@@ -929,9 +920,7 @@ impl Component for AggregatorComponent {
                 let mut region_values: [Vec<f64>; 2] = Default::default();
 
                 for name in &self.contributors {
-                    let window = input_state.get_hemispheric_window(name);
-                    // Read from at_end() where upstream values were just written
-                    let values = window.at_end_all().unwrap_or_else(|| window.at_start_all());
+                    let (_, values) = input_state.get_hemispheric_window(name).interval()?;
                     for (i, val) in values.into_iter().enumerate() {
                         region_values[i].push(val);
                     }

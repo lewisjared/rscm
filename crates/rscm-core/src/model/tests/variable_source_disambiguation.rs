@@ -49,7 +49,7 @@ impl Component for TemperatureProducer {
         let inputs = TemperatureProducerInputs::from_input_state(input_state);
 
         // Read previous temperature (own state)
-        let prev_temp = inputs.temperature.at_start();
+        let prev_temp = inputs.temperature.get();
 
         // Calculate new temperature
         let new_temp = prev_temp + self.warming_rate;
@@ -94,7 +94,7 @@ impl Component for TemperatureConsumer {
         let inputs = TemperatureConsumerInputs::from_input_state(input_state);
 
         // Read temperature from upstream producer using get()
-        // The framework knows this is UpstreamOutput and will use at_end() with fallback
+        // The framework knows this is UpstreamOutput, so get() reads this step's value
         let temperature = inputs.temperature.get();
 
         // Calculate heat content
@@ -260,7 +260,7 @@ fn test_variable_sources_with_exogenous_input() {
             let inputs = ForcingConsumerInputs::from_input_state(input_state);
 
             // Read exogenous forcing
-            let forcing = inputs.forcing.at_start();
+            let forcing = inputs.forcing.get();
 
             let outputs = ForcingConsumerOutputs {
                 response: forcing * self.sensitivity,

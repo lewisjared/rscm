@@ -8,6 +8,7 @@ use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::model::ModelBuilder;
 use crate::schema::VariableSchema;
+use crate::spatial::SpatialGrid;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, HemisphericRegion};
 use crate::state::{FourBoxSlice, StateValue};
 use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis};
@@ -41,7 +42,7 @@ impl Component for ScalarReader {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         // Read scalar value (model should auto-aggregate if source is grid)
-        let value = input_state.get_scalar_window(&self.input_var).at_start();
+        let (value, _) = input_state.get_scalar_window(&self.input_var).interval()?;
         let mut output = OutputState::new();
         output.insert(self.output_var.clone(), StateValue::Scalar(value));
         Ok(output)
@@ -71,8 +72,8 @@ impl Component for HemisphericReader {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let window = input_state.get_hemispheric_window(&self.input_var);
-        let northern = window.at_start(HemisphericRegion::Northern);
-        let southern = window.at_start(HemisphericRegion::Southern);
+        let northern = window.get(HemisphericRegion::Northern);
+        let southern = window.get(HemisphericRegion::Southern);
         // Return mean as output
         let mean = (northern + southern) / 2.0;
         let mut output = OutputState::new();
@@ -104,7 +105,7 @@ impl Component for FourBoxReader {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let window = input_state.get_four_box_window(&self.input_var);
-        let global = window.current_global();
+        let global = window.grid().aggregate_global(&window.get_all());
         let mut output = OutputState::new();
         output.insert(self.output_var.clone(), StateValue::Scalar(global));
         Ok(output)
@@ -433,9 +434,9 @@ fn test_read_disaggregation_scalar_to_fourbox_rejected() {
 #[test]
 fn test_read_aggregation_chain_write_then_read() {
     // Test: FourBoxWriter writes FourBox -> schema is FourBox
-    //       -> ScalarReader reads at_start (from previous timestep) as Scalar (read aggregation)
+    //       -> ScalarReader reads the start of the step as Scalar (read aggregation)
     //
-    // ScalarReader uses at_start() which reads from the previous timestep.
+    // ScalarReader uses interval().0, the value from the previous timestep.
     // We need to run at least 2 steps: first step populates, second step reads.
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::FourBox)

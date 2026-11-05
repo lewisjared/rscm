@@ -42,7 +42,7 @@ class DecayingPool(Component):
 
     def solve(self, t_current, t_next, inputs):
         retained = math.exp(-(t_next - t_current) / self.timescale)
-        stock = inputs.stock.at_start() * retained + inputs.inflow.at_start() * (
+        stock = inputs.stock.get() * retained + inputs.inflow.get() * (
             self.timescale * (1 - retained)
         )
         return self.Outputs(stock=stock)
@@ -161,8 +161,8 @@ class DecayingPool(Component):
 
     def solve(self, t_current, t_next, inputs):
         stock = decay_step(
-            inputs.stock.at_start(),
-            inputs.inflow.at_start(),
+            inputs.stock.get(),
+            inputs.inflow.get(),
             self.timescale,
             t_next - t_current,
         )

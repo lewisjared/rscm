@@ -51,7 +51,7 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 **Learn to** use spatially-resolved variables in components.
 
 - Declare `FourBox` and `Hemispheric` inputs and outputs
-- Read regional values with `at_start_all()` and return `FourBoxSlice` or `HemisphericSlice`
+- Read regional values with `get()` and return `FourBoxSlice` or `HemisphericSlice`
 - Aggregate gridded outputs with a schema and `ModelBuilder.with_grid_weights()`
 - Understand grid coupling rules and validation errors
 

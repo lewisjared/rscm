@@ -254,7 +254,7 @@ impl Model {
     ///   The factor is multiplied with the stored value to convert from schema units to
     ///   component units when reading.
     /// * `variable_sources` - Map from (variable_name, component_name) to source type.
-    ///   Used by TimeseriesWindow to determine correct timestep index (at_start vs at_end).
+    ///   Used by TimeseriesWindow to pick the index `get()` reads.
     #[allow(clippy::too_many_arguments)]
     pub fn with_variable_sources(
         components: CGraph,

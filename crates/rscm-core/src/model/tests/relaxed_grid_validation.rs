@@ -4,6 +4,7 @@ use crate::component::{Component, GridType, InputState, OutputState, Requirement
 use crate::errors::RSCMResult;
 use crate::model::ModelBuilder;
 use crate::schema::VariableSchema;
+use crate::spatial::SpatialGrid;
 use crate::state::{FourBoxSlice, HemisphericSlice, StateValue};
 use crate::timeseries::{Time, TimeAxis};
 use numpy::ndarray::Array;
@@ -113,7 +114,7 @@ impl Component for ScalarConsumer {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let value = input_state.get_scalar_window(&self.input_var).at_start();
+        let value = input_state.get_scalar_window(&self.input_var).get();
         let mut output = OutputState::new();
         output.insert(self.output_var.clone(), StateValue::Scalar(value * 2.0));
         Ok(output)
@@ -142,9 +143,8 @@ impl Component for FourBoxConsumer {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let value = input_state
-            .get_four_box_window(&self.input_var)
-            .current_global();
+        let window = input_state.get_four_box_window(&self.input_var);
+        let value = window.grid().aggregate_global(&window.get_all());
         let mut output = OutputState::new();
         output.insert(self.output_var.clone(), StateValue::Scalar(value));
         Ok(output)

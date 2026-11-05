@@ -37,8 +37,8 @@ class SimpleCarbonCycle(Component):
     ) -> "SimpleCarbonCycle.Outputs":
         """Calculate carbon cycle dynamics."""
         # Type-safe access to inputs via TimeseriesWindow
-        emissions = inputs.emissions.at_start()
-        conc_prev = inputs.concentration.at_start()
+        emissions = inputs.emissions.get()
+        conc_prev = inputs.concentration.get()
 
         # Calculate outputs
         new_conc = conc_prev + emissions * self.sensitivity
@@ -137,14 +137,10 @@ def test_typed_component_timeseries_window_access():
         def solve(
             self, t_current: float, t_next: float, inputs: "HistoryTestComponent.Inputs"
         ) -> "HistoryTestComponent.Outputs":
-            # Access current and previous values using at_start() for exogenous input
-            current = inputs.temperature.at_start()
-            try:
-                previous = inputs.temperature.previous
-                delta = current - previous
-            except ValueError:
-                # No previous value available at first timestep
-                delta = 0.0
+            current = inputs.temperature.get()
+            previous = inputs.temperature.history(1)
+            # No previous value at the first timestep
+            delta = 0.0 if previous is None else current - previous
 
             return self.Outputs(output=delta)
 
@@ -185,8 +181,8 @@ def test_typed_component_timeseries_window_access():
     second_delta = output_ts.at(2)
     assert second_delta is not None
 
-    # The key thing is that the component successfully accessed .current and .previous
-    # properties on the TimeseriesWindow object without errors
+    # The key thing is that the component read get() and history(1)
+    # on the TimeseriesWindow object without errors
 
 
 def test_typed_component_output_validation():
@@ -312,8 +308,8 @@ def test_typed_component_inheritance():
             self, t_current: float, t_next: float, inputs: "DerivedComponent.Inputs"
         ) -> "DerivedComponent.Outputs":
             return self.Outputs(
-                base_output=inputs.base_input.at_start(),
-                derived_output=inputs.derived_input.at_start(),
+                base_output=inputs.base_input.get(),
+                derived_output=inputs.derived_input.get(),
             )
 
     comp = DerivedComponent()
@@ -350,7 +346,7 @@ def test_exogenous_input_returns_correct_timestep_value():
         def solve(
             self, t_current: float, t_next: float, inputs: "DebugComponent.Inputs"
         ) -> "DebugComponent.Outputs":
-            conc_value = inputs.concentration.at_start()
+            conc_value = inputs.concentration.get()
             observed_values.append((t_current, conc_value))
             return self.Outputs(erf=conc_value * 0.01)
 
@@ -532,7 +528,7 @@ def test_window_reads_by_source():
 
 
 def test_grid_window_reads():
-    """Grid windows return slices in the shape of at_start_all."""
+    """Grid windows return slices like FourBoxSlice."""
     window = FourBoxTimeseriesWindow(
         [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
         1,

@@ -1,6 +1,6 @@
 /// Macros for exposing a component to Python and using python-defined modules in rust
 use crate::component::{Component, InputState, OutputState};
-use crate::errors::RSCMResult;
+use crate::errors::{RSCMError, RSCMResult};
 use crate::python::rscm_error_from_py;
 use crate::python::state::{
     PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyStateValue, PyTimeseriesWindow,
@@ -249,12 +249,15 @@ impl PythonComponent {
             let window = match definition.grid_type {
                 GridType::Scalar => {
                     let w = input_state.get_scalar_window(name);
-                    let values = through_next(w.index(), w.len(), |o| w.at_offset(o));
-                    let times = Some(times_of(w.time_axis(), values.len()));
+                    let times = through_next(w.time_axis(), w.index());
+                    let values = times
+                        .iter()
+                        .map(|&t| w.interpolate(t))
+                        .collect::<RSCMResult<Vec<_>>>()?;
                     PyTimeseriesWindow::new(
                         values,
                         w.index(),
-                        times,
+                        Some(times),
                         w.variable_source(),
                         w.timeseries_type(),
                     )?
@@ -263,13 +266,15 @@ impl PythonComponent {
                 }
                 GridType::FourBox => {
                     let w = input_state.get_four_box_window(name);
-                    let values =
-                        through_next(w.index(), w.len(), |o| w.at_offset_all(o)?.try_into().ok());
-                    let times = Some(times_of(w.time_axis(), values.len()));
+                    let times = through_next(w.time_axis(), w.index());
+                    let values = times
+                        .iter()
+                        .map(|&t| regions(w.interpolate_all(t)?))
+                        .collect::<RSCMResult<Vec<_>>>()?;
                     PyFourBoxTimeseriesWindow::new(
                         values,
                         w.index(),
-                        times,
+                        Some(times),
                         w.variable_source(),
                         w.timeseries_type(),
                     )?
@@ -278,13 +283,15 @@ impl PythonComponent {
                 }
                 GridType::Hemispheric => {
                     let w = input_state.get_hemispheric_window(name);
-                    let values =
-                        through_next(w.index(), w.len(), |o| w.at_offset_all(o)?.try_into().ok());
-                    let times = Some(times_of(w.time_axis(), values.len()));
+                    let times = through_next(w.time_axis(), w.index());
+                    let values = times
+                        .iter()
+                        .map(|&t| regions(w.interpolate_all(t)?))
+                        .collect::<RSCMResult<Vec<_>>>()?;
                     PyHemisphericTimeseriesWindow::new(
                         values,
                         w.index(),
-                        times,
+                        Some(times),
                         w.variable_source(),
                         w.timeseries_type(),
                     )?
@@ -298,17 +305,16 @@ impl PythonComponent {
     }
 }
 
-/// The first `len` times of `axis`.
-fn times_of(axis: &TimeAxis, len: usize) -> Vec<Time> {
-    axis.values().iter().take(len).copied().collect()
+/// Times of `axis` from index 0 through `index + 1`, clipped to its length.
+fn through_next(axis: &TimeAxis, index: usize) -> Vec<Time> {
+    axis.values().iter().take(index + 2).copied().collect()
 }
 
-/// Values from index 0 through `index + 1`, clipped to the series length.
-fn through_next<T>(index: usize, len: usize, at_offset: impl Fn(isize) -> Option<T>) -> Vec<T> {
-    let end = (index + 2).min(len);
-    let mut values = Vec::with_capacity(end);
-    values.extend((0..end).filter_map(|i| at_offset(i as isize - index as isize)));
-    values
+/// Regional values as a fixed-size array.
+fn regions<const N: usize>(values: Vec<FloatValue>) -> RSCMResult<[FloatValue; N]> {
+    values.try_into().map_err(|v: Vec<FloatValue>| {
+        RSCMError::Error(format!("expected {N} regions, got {}", v.len()))
+    })
 }
 
 #[typetag::serde]

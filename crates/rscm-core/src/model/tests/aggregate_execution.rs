@@ -131,9 +131,7 @@ impl Component for CO2ERFComponent {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let conc = input_state
-            .get_scalar_window("Concentrations|CO2")
-            .at_start();
+        let conc = input_state.get_scalar_window("Concentrations|CO2").get();
         let mut output = OutputState::new();
         output.insert(
             "ERF|CO2".to_string(),
@@ -164,9 +162,7 @@ impl Component for CH4ERFComponent {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let conc = input_state
-            .get_scalar_window("Concentrations|CH4")
-            .at_start();
+        let conc = input_state.get_scalar_window("Concentrations|CH4").get();
         let mut output = OutputState::new();
         output.insert(
             "ERF|CH4".to_string(),

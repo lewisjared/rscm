@@ -42,19 +42,19 @@ The loop, with the RSCM read for each input:
 
 | FaIR step | Calculation | Reads | Proposed component |
 | --- | --- | --- | --- |
-| 1 | Lifetime scaling `alpha` from iIRF100 (cumulative uptake, airborne, temperature) | temperature `at_start`, own state | `FairGasCycle` |
-| 2 | CH4 lifetime scaling, Thornhill 2021 (aerosol precursors, N2O, EESC, temperature) | everything `at_start` | `FairCH4Lifetime` (added before the gas cycle) |
-| 3 | Emissions to concentration over up to 4 gas boxes | emissions `at_start` | `FairGasCycle` |
-| 4 | Concentration to emissions (inverse mode) | concentration `at_end` (exogenous) | `FairGasCycle` |
-| 5 | GHG forcing: Meinshausen 2020, Etminan 2016, Myhre 1998 or Leach 2021 | concentrations `at_end` | `FairGhgForcing` |
-| 6 | ERFari, linear in emissions and concentrations | emissions `at_start`, concentrations `at_end` | `FairAerosolForcing` |
+| 1 | Lifetime scaling `alpha` from iIRF100 (cumulative uptake, airborne, temperature) | temperature `get()`, own state | `FairGasCycle` |
+| 2 | CH4 lifetime scaling, Thornhill 2021 (aerosol precursors, N2O, EESC, temperature) | everything `get()` | `FairCH4Lifetime` (added before the gas cycle) |
+| 3 | Emissions to concentration over up to 4 gas boxes | emissions `get()` | `FairGasCycle` |
+| 4 | Concentration to emissions (inverse mode) | concentration `interval()` end (exogenous) | `FairGasCycle` |
+| 5 | GHG forcing: Meinshausen 2020, Etminan 2016, Myhre 1998 or Leach 2021 | concentrations `interval()` end | `FairGhgForcing` |
+| 6 | ERFari, linear in emissions and concentrations | emissions `get()`, concentrations `interval()` end | `FairAerosolForcing` |
 | 7 | ERFaci, log of a weighted sum | as step 6 | `FairAerosolForcing` |
-| 8 | EESC from halogen concentrations | concentrations `at_end` | `FairEesc` |
+| 8 | EESC from halogen concentrations | concentrations `interval()` end | `FairEesc` |
 | 9 | Ozone, Thornhill 2021, linear | as step 6, plus EESC | `FairOzoneForcing` |
 | 10 to 13 | Contrails, LAPSI, stratospheric H2O, land use: all linear | emissions, CH4 concentration, cumulative AFOLU CO2 | `FairLinearForcing`, one instance per agent |
-| 14 | Temperature feedback on each forcing agent | temperature `at_start` | `FairForcingAggregation` |
-| 15 | Total forcing and efficacy-weighted total | forcings `at_end` | `FairForcingAggregation` |
-| 16 | n-layer energy balance step `x' = A_d x + b_d F + noise` | total forcing `at_end`, own state | `FairEnergyBalance` |
+| 14 | Temperature feedback on each forcing agent | temperature `get()` | `FairForcingAggregation` |
+| 15 | Total forcing and efficacy-weighted total | forcings `interval()` end | `FairForcingAggregation` |
+| 16 | n-layer energy balance step `x' = A_d x + b_d F + noise` | total forcing `interval()` end, own state | `FairEnergyBalance` |
 | 17 and 18 | TOA imbalance and ocean heat content, after the run | forcing, layer temperatures | `FairEnergyBalance`, per step |
 
 Steps 2 and 8 form a loop across timesteps: CH4 lifetime reads last step's EESC and concentrations.

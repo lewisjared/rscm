@@ -173,7 +173,7 @@ mod tests {
         let component =
             FourBoxOceanHeatUptake::from_parameters(FourBoxOceanHeatUptakeParameters::default());
 
-        // Create ERF input - use consistent values since get_scalar_window().at_start()
+        // Create ERF input - use consistent values since get_scalar_window().get()
         // returns the value at the current timestep index
         let erf_timeseries = TimeseriesItem {
             data: TimeseriesData::Scalar(Timeseries::from_values(
@@ -189,7 +189,7 @@ mod tests {
         // Verify input value using the new API
         let erf_value = input_state
             .get_scalar_window("Effective Radiative Forcing|Aggregated")
-            .at_start();
+            .get();
         println!("ERF input value: {}", erf_value);
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
@@ -236,7 +236,7 @@ mod tests {
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
         let erf_value = input_state
             .get_scalar_window("Effective Radiative Forcing|Aggregated")
-            .at_start();
+            .get();
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
