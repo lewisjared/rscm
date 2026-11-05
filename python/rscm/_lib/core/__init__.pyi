@@ -476,6 +476,14 @@ class ModelBuilder:
         Other consumers of the variable still read this step's value.
         Building fails if no component of that name reads the variable as an input.
         """
+    def with_missing_exogenous_allowed(self) -> Self:
+        """
+        Allow inputs that nothing supplies.
+
+        By default, building fails if an input has no producer,
+        exogenous data or initial value.
+        With this flag, such an input is filled with NaN instead.
+        """
     def with_schema(self, schema: VariableSchema) -> Self:
         """
         Add a variable schema to the model for validation and aggregation.
