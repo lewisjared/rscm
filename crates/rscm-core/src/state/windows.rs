@@ -175,6 +175,7 @@ impl<'a> TimeseriesWindow<'a> {
     ///
     /// - `Some(value)` if index N+1 exists in the timeseries
     /// - `None` if at the last timestep (index N+1 is out of bounds)
+    /// - `None` if the model lags this input, so a lagged read never sees this step's value
     ///
     /// # Execution order context
     ///
@@ -203,7 +204,7 @@ impl<'a> TimeseriesWindow<'a> {
     /// [`at_start()`]: TimeseriesWindow::at_start
     pub fn at_end(&self) -> Option<FloatValue> {
         let next_index = self.current_index + 1;
-        if next_index >= self.timeseries.len() {
+        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
             None
         } else {
             self.timeseries
@@ -217,6 +218,7 @@ impl<'a> TimeseriesWindow<'a> {
     /// - `Exogenous`: Returns `at_start()` (external data at index N)
     /// - `UpstreamOutput`: Returns `at_end()` if available, else `at_start()` (upstream wrote to N+1)
     /// - `OwnState`: Returns `at_start()` (your own previous state at index N)
+    /// - `Lagged`: Returns `at_start()` (the previous step's value at index N)
     ///
     /// # Example
     ///
@@ -228,7 +230,9 @@ impl<'a> TimeseriesWindow<'a> {
     /// ```
     pub fn get(&self) -> FloatValue {
         match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(),
+            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
+                self.at_start()
+            }
             VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
         }
     }
@@ -494,7 +498,7 @@ where
     /// See [`TimeseriesWindow::at_end()`] for detailed execution order semantics.
     pub fn at_end_all(&self) -> Option<Vec<FloatValue>> {
         let next_index = self.current_index + 1;
-        if next_index >= self.timeseries.len() {
+        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
             None
         } else {
             self.timeseries
@@ -506,7 +510,9 @@ where
     /// Get all regional values using automatic timestep resolution based on variable source.
     pub fn get_all(&self) -> Vec<FloatValue> {
         match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState => self.at_start_all(),
+            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
+                self.at_start_all()
+            }
             VariableSource::UpstreamOutput => {
                 self.at_end_all().unwrap_or_else(|| self.at_start_all())
             }
@@ -613,7 +619,7 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
     /// ```
     pub fn at_end(&self, region: FourBoxRegion) -> Option<FloatValue> {
         let next_index = self.current_index + 1;
-        if next_index >= self.timeseries.len() {
+        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
             None
         } else {
             self.timeseries
@@ -625,7 +631,9 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
     /// Get a single region's value using automatic timestep resolution.
     pub fn get(&self, region: FourBoxRegion) -> FloatValue {
         match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(region),
+            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
+                self.at_start(region)
+            }
             VariableSource::UpstreamOutput => {
                 self.at_end(region).unwrap_or_else(|| self.at_start(region))
             }
@@ -683,7 +691,7 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
     /// See [`TimeseriesWindow::at_end()`] for detailed semantics on when to use this method.
     pub fn at_end(&self, region: HemisphericRegion) -> Option<FloatValue> {
         let next_index = self.current_index + 1;
-        if next_index >= self.timeseries.len() {
+        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
             None
         } else {
             self.timeseries
@@ -695,7 +703,9 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
     /// Get a single region's value using automatic timestep resolution.
     pub fn get(&self, region: HemisphericRegion) -> FloatValue {
         match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(region),
+            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
+                self.at_start(region)
+            }
             VariableSource::UpstreamOutput => {
                 self.at_end(region).unwrap_or_else(|| self.at_start(region))
             }
@@ -751,7 +761,7 @@ impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
     /// See [`TimeseriesWindow::at_end()`] for detailed semantics on when to use this method.
     pub fn at_end(&self) -> Option<FloatValue> {
         let next_index = self.current_index + 1;
-        if next_index >= self.timeseries.len() {
+        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
             None
         } else {
             self.timeseries
@@ -763,7 +773,9 @@ impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
     /// Get the scalar value using automatic timestep resolution.
     pub fn get(&self) -> FloatValue {
         match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(),
+            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
+                self.at_start()
+            }
             VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
         }
     }
@@ -1056,6 +1068,16 @@ mod timeseries_window_tests {
         assert_eq!(window.get(), 8.0);
         assert_eq!(window.get(), window.at_end().unwrap());
     }
+
+    #[test]
+    fn test_timeseries_window_get_lagged() {
+        let ts = create_scalar_timeseries();
+        let window = TimeseriesWindow::with_source(&ts, 2, 2002.0, 1.0, VariableSource::Lagged);
+
+        assert_eq!(window.get(), 3.0);
+        assert_eq!(window.at_end(), None);
+        assert_eq!(window.at_end().unwrap_or_else(|| window.at_start()), 3.0);
+    }
 }
 
 #[cfg(test)]
@@ -1153,6 +1175,17 @@ mod grid_timeseries_window_tests {
         // At last index, returns None
         let window_end = GridTimeseriesWindow::new(&ts, 2, 2002.0);
         assert_eq!(window_end.at_end_all(), None);
+    }
+
+    #[test]
+    fn test_grid_window_lagged() {
+        let ts = create_four_box_timeseries();
+        let window = GridTimeseriesWindow::with_source(&ts, 1, 2001.0, 1.0, VariableSource::Lagged);
+
+        assert_eq!(window.at_end_all(), None);
+        assert_eq!(window.at_end(FourBoxRegion::NorthernOcean), None);
+        assert_eq!(window.get_all(), vec![16.0, 15.0, 11.0, 10.0]);
+        assert_eq!(window.get(FourBoxRegion::NorthernOcean), 16.0);
     }
 
     #[test]

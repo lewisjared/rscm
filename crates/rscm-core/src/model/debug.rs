@@ -20,6 +20,7 @@ pub enum VarSource {
     Exogenous,
     Upstream,
     OwnState,
+    Lagged,
 }
 
 impl fmt::Display for VarSource {
@@ -28,6 +29,7 @@ impl fmt::Display for VarSource {
             VarSource::Exogenous => write!(f, "exo"),
             VarSource::Upstream => write!(f, "upstream"),
             VarSource::OwnState => write!(f, "own_state"),
+            VarSource::Lagged => write!(f, "lagged"),
         }
     }
 }
@@ -38,6 +40,7 @@ impl From<VariableSource> for VarSource {
             VariableSource::Exogenous => VarSource::Exogenous,
             VariableSource::UpstreamOutput => VarSource::Upstream,
             VariableSource::OwnState => VarSource::OwnState,
+            VariableSource::Lagged => VarSource::Lagged,
         }
     }
 }

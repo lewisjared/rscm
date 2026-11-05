@@ -459,6 +459,23 @@ class ModelBuilder:
         """Supply exogenous four-box data for a variable."""
     def with_exogenous_collection(self, timeseries: TimeseriesCollection) -> Self:
         """Supply exogenous data from a collection. Unneeded timeseries are ignored."""
+    def with_lag(self, variable: str) -> Self:
+        """
+        Lag every edge from a variable.
+
+        Each consumer then reads the previous step's value.
+
+        The lag holds whether the variable is produced by a component or exogenous.
+        Building fails if no component reads or produces the variable.
+        """
+    def with_lag_for(self, variable: str, consumer: str) -> Self:
+        """
+        Lag the edge from a variable into one component.
+
+        ``consumer`` is the component's name, such as ``"OceanCarbon"``.
+        Other consumers of the variable still read this step's value.
+        Building fails if no component of that name reads the variable as an input.
+        """
     def with_schema(self, schema: VariableSchema) -> Self:
         """
         Add a variable schema to the model for validation and aggregation.

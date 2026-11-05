@@ -1,0 +1,111 @@
+"""Registration order does not change a model's results."""
+
+from __future__ import annotations
+
+import json
+
+import numpy as np
+import pytest
+
+from regression import full_run, test_fair
+from rscm.fair import run as fair_run
+from rscm.magicc import full
+
+
+def _outputs(model):
+    ts = model.timeseries()
+    out = {}
+    getters = (
+        ts.get_timeseries_by_name,
+        ts.get_fourbox_timeseries_by_name,
+        ts.get_hemispheric_timeseries_by_name,
+    )
+    for name in ts.names():
+        series = next(s for s in (get(name) for get in getters) if s is not None)
+        out[name] = np.asarray(series.values())
+    return out
+
+
+def _assert_identical(actual, expected):
+    assert actual.keys() == expected.keys()
+    for name, values in expected.items():
+        np.testing.assert_array_equal(actual[name], values, err_msg=name)
+
+
+def _sources(model):
+    info = json.loads(model.debug_info("json"))
+    return {
+        (component["name"], variable["name"]): variable.get("source")
+        for component in info["components"]
+        for variable in component.get("inputs", [])
+    }
+
+
+def _shuffle(components, seed):
+    components = list(components)
+    return [
+        components[i] for i in np.random.default_rng(seed).permutation(len(components))
+    ]
+
+
+def _shuffled(function, seed):
+    def wrapper(*args, **kwargs):
+        return _shuffle(function(*args, **kwargs), seed)
+
+    return wrapper
+
+
+def _run_magicc7(**parameters):
+    run = full_run.load()
+    return full.run_magicc7(
+        run.years,
+        full_run.emissions(run),
+        parameters={**run.parameters, **parameters},
+    )
+
+
+MAGICC7_CASES = {
+    "reference": {},
+    "permafrost": {"pf_apply": True},
+    "sea level": {"out_sealevel": True},
+    "permafrost and sea level": {"pf_apply": True, "out_sealevel": True},
+}
+
+
+@pytest.mark.parametrize("parameters", MAGICC7_CASES.values(), ids=MAGICC7_CASES)
+def test_magicc7_shuffled(monkeypatch, parameters):
+    expected = _outputs(_run_magicc7(**parameters))
+    run_components = full.run_components
+    for seed in range(3):
+
+        def shuffled(years, components, _seed=seed, **kwargs):
+            return run_components(years, _shuffle(components, _seed), **kwargs)
+
+        monkeypatch.setattr(full, "run_components", shuffled)
+        _assert_identical(_outputs(_run_magicc7(**parameters)), expected)
+
+
+@pytest.mark.parametrize("case", ["ssp245", "ssp245_prescribed", "calibrated_1939"])
+def test_fair_shuffled(monkeypatch, case):
+    run = test_fair.load(case)
+    inputs = test_fair._inputs(run.config, run.timebounds, run.timepoints)
+    bounds = run.timebounds.index.to_numpy()
+    expected = _outputs(fair_run.run_fair(run.config, inputs, bounds))
+    build_components = fair_run.build_components
+    for seed in range(3):
+        monkeypatch.setattr(
+            fair_run, "build_components", _shuffled(build_components, seed)
+        )
+        _assert_identical(
+            _outputs(fair_run.run_fair(run.config, inputs, bounds)), expected
+        )
+
+
+def test_magicc7_same_step_reads():
+    """Forcing sees this year's CO2 and sea level this year's temperature."""
+    sources = _sources(_run_magicc7(out_sealevel=True))
+    assert sources["GhgForcing", "Atmospheric Concentration|CO2"] == "upstream"
+    assert sources["SeaLevelRise", "Surface Temperature|Annual Mean"] == "upstream"
+    for consumer in ("TerrestrialCarbon", "OceanCarbon"):
+        assert sources[consumer, "Atmospheric Concentration|CO2"] == "lagged"
+        assert sources[consumer, "Surface Temperature"] == "lagged"

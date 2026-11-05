@@ -3,7 +3,6 @@
 use crate::component::RequirementDefinition;
 use crate::errors::{RSCMError, RSCMResult};
 use crate::units::Unit;
-use petgraph::visit::{IntoNeighbors, IntoNodeIdentifiers, Visitable};
 use std::collections::HashMap;
 
 use super::types::{UnitConversionInfo, VariableDefinition};
@@ -152,29 +151,4 @@ fn validate_unit_compatibility(
             dim2,
         })
     }
-}
-
-/// Check that a component graph is valid.
-///
-/// We require a directed acyclic graph which doesn't contain any cycles
-/// (other than a self-referential node).
-/// This avoids the case where component `A` depends on a component `B`,
-/// but component `B` also depends on component `A`.
-pub(crate) fn is_valid_graph<G>(g: G) -> bool
-where
-    G: IntoNodeIdentifiers + IntoNeighbors + Visitable,
-{
-    use petgraph::visit::{depth_first_search, DfsEvent};
-
-    depth_first_search(g, g.node_identifiers(), |event| match event {
-        DfsEvent::BackEdge(a, b) => {
-            // If the cycle is self-referential then that is fine
-            match a == b {
-                true => Ok(()),
-                false => Err(()),
-            }
-        }
-        _ => Ok(()),
-    })
-    .is_err()
 }

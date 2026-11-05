@@ -6,7 +6,9 @@ methods: Meinshausen et al. (2020) greenhouse gas forcing and either the generic
 Thornhill et al. (2021) CH4 lifetime.
 
 [build_components][rscm.fair.config.build_components] turns a FaIR configuration into
-components and [run_fair][rscm.fair.run.run_fair] runs one.
+components,
+[with_lags][rscm.fair.config.with_lags] adds FaIR's feedback lags to a builder,
+and [run_fair][rscm.fair.run.run_fair] runs one.
 [rscm.fair.loaders][] reads configurations from FaIR's species CSV
 and fair-calibrate's posterior CSV.
 [run_ensemble][rscm.fair.ensemble.run_ensemble] runs many and collects the results
@@ -25,7 +27,13 @@ from rscm._lib.fair import (
     FairGhgForcingBuilder,
     FairLinearForcingBuilder,
 )
-from rscm.fair.config import FairConfig, build_components, initial_values, load_config
+from rscm.fair.config import (
+    FairConfig,
+    build_components,
+    initial_values,
+    load_config,
+    with_lags,
+)
 from rscm.fair.convert import from_fair
 from rscm.fair.ensemble import run_ensemble
 from rscm.fair.loaders import make_config, read_calibration, read_config, read_species
@@ -53,4 +61,5 @@ __all__ = [
     "read_species",
     "run_ensemble",
     "run_fair",
+    "with_lags",
 ]

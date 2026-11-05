@@ -146,18 +146,35 @@ model = (
 
 ### Dependency Graph
 
-When you add components to a model, the builder constructs a **dependency graph**:
+When you build a model, the builder constructs a **dependency graph**:
 
 1. Each component becomes a node in the graph
-2. Edges connect components that share variables (producer -> consumer)
-3. The graph must be acyclic (no circular dependencies between components)
-4. Self-referential state variables are allowed (a component reading its own previous output)
+2. Edges connect each producer of a variable to its consumers
+3. Self-referential state variables are allowed (a component reading its own previous output)
 
-Edges are only created to producers that were added to the builder before the consumer.
-If a consumer is added first, it has no edge to that producer and reads the value from the previous timestep.
-Add components in producer-to-consumer order to couple them within a timestep.
-Feedback loops, such as temperature feeding back on the carbon cycle,
-necessarily read one side from the previous timestep.
+The builder links producers once every component is registered,
+so the order you add components in does not change the model.
+Each variable has at most one producer.
+
+A **feedback loop**, such as temperature feeding back on the carbon cycle,
+needs one of its edges to read the previous step's value.
+This is a **lag**, and the model wiring names it:
+
+```python
+builder.with_lag("Surface Temperature")  # every consumer reads last step's temperature
+builder.with_lag_for("Atmospheric Concentration|CO2", "OceanCarbon")  # only OceanCarbon lags
+```
+
+`with_lag(variable)` lags every edge from the variable.
+`with_lag_for(variable, consumer)` lags one edge, so other consumers still see this step's value.
+`consumer` is the component's type name, such as `"OceanCarbon"`.
+A lag holds whether the variable is produced by a component or exogenous.
+
+A loop that no lag breaks fails `build()` with an error that lists the components and variables in the loop,
+and the `with_lag_for` calls that would break it.
+Edges into a component that holds its own state come first.
+The builder never chooses a lag itself.
+Runners such as `run_magicc7` and `run_fair` carry their models' lags.
 
 ### Model Execution
 
@@ -192,10 +209,12 @@ A component reads each input from one end of the timestep:
 | Your own previous state            | You, last timestep     | `at_start()` |
 | Exogenous input (external forcing) | Pre-populated          | `at_start()` |
 | Upstream component output          | They ran this timestep | `at_end()`   |
+| Lagged input                       | Written last timestep  | `at_start()` |
 
 `Model` never solves a step from the last time point, so `at_end()` always has a value during a run.
 It returns `None` only for a window placed on the last time point, for example when you call `solve` directly.
-In Rust, `get()` applies this table and falls back to `at_start()` in that case:
+For a lagged input `at_end()` also returns `None`, so it never sees this step's value.
+In Rust, `get()` applies this table and falls back to `at_start()` in both cases:
 
 ```rust
 let erf = inputs.erf.at_end().unwrap_or_else(|| inputs.erf.at_start());

@@ -430,11 +430,13 @@ erf_schema.add_aggregate(
 # ### Build the Feedback-Coupled Model
 #
 # `Surface Temperature` is not an exogenous variable here, because the Two-Layer model produces it.
-# The model builder resolves the dependency graph.
+# The model builder resolves the dependency graph, whatever order the components are added in.
 #
-# The carbon cycle runs before the Two-Layer model within each step.
-# It reads the temperature at the start of the step, which the Two-Layer model wrote in the previous step.
+# Temperature feeds back on the carbon cycle, so the components form a feedback loop.
+# `with_lag_for("Surface Temperature", "CarbonCycle")` breaks it:
+# the carbon cycle reads the temperature the Two-Layer model wrote in the previous step.
 # The feedback loop therefore closes across timesteps rather than within one.
+# Without the lag, `build()` fails and suggests this call.
 #
 # The build is wrapped in a function of the carbon cycle's temperature sensitivity,
 # so we can compare against a run without feedback later.
@@ -458,6 +460,7 @@ def build_feedback_model(alpha_temperature: float):
         .with_rust_component(carbon_cycle)
         .with_rust_component(co2_erf)
         .with_rust_component(two_layer)
+        .with_lag_for("Surface Temperature", "CarbonCycle")
         .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions_scenario)
         .with_initial_values(
             {
@@ -478,9 +481,8 @@ feedback_model = build_feedback_model(alpha_temperature=0.1)
 #
 # The debug info shows execution order, variable flow and where each input comes from.
 #
-# `debug_info()` tags `Surface Temperature` as `(exo)` for the carbon cycle.
-# This is because no earlier component produces it.
-# The value still comes from the Two-Layer model's previous step.
+# `debug_info()` tags `Surface Temperature` as `(lagged)` for the carbon cycle,
+# because it reads the Two-Layer model's value from the previous step.
 
 # %%
 print(feedback_model.debug_info())

@@ -11,8 +11,9 @@ use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData, Variabl
 use crate::units::Unit;
 use numpy::ndarray::Array;
 use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
 use petgraph::Graph;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use super::null_component::NullComponent;
@@ -40,6 +41,8 @@ pub struct ModelBuilder {
     /// When provided, these override the default weights used when creating
     /// timeseries and performing grid transformations. Weights must sum to 1.0.
     grid_weights: HashMap<GridType, Vec<f64>>,
+    lagged_variables: BTreeSet<String>,
+    lagged_edges: BTreeSet<(String, String)>,
 }
 
 impl ModelBuilder {
@@ -53,7 +56,82 @@ impl ModelBuilder {
             time_axis: Arc::new(TimeAxis::from_values(Array::range(2000.0, 2100.0, 1.0))),
             schema: None,
             grid_weights: HashMap::new(),
+            lagged_variables: BTreeSet::new(),
+            lagged_edges: BTreeSet::new(),
         }
+    }
+
+    /// Lag every edge from `variable`, so each of its consumers reads the previous step's value.
+    ///
+    /// The lag holds whether the variable is produced by a component or exogenous.
+    pub fn with_lag(&mut self, variable: &str) -> &mut Self {
+        self.lagged_variables.insert(variable.to_string());
+        self
+    }
+
+    /// Lag the edge from `variable` into `consumer` alone.
+    ///
+    /// `consumer` is the component's name, such as `"OceanCarbon"`.
+    /// Other consumers of `variable` still read this step's value.
+    pub fn with_lag_for(&mut self, variable: &str, consumer: &str) -> &mut Self {
+        self.lagged_edges
+            .insert((variable.to_string(), consumer.to_string()));
+        self
+    }
+
+    fn is_lagged(&self, variable: &str, consumer: &str) -> bool {
+        self.lagged_variables.contains(variable)
+            || self
+                .lagged_edges
+                .contains(&(variable.to_string(), consumer.to_string()))
+    }
+
+    /// Check that every lag names a variable and an edge of the model.
+    fn validate_lags(
+        &self,
+        names: &[String],
+        requirements: &[(Vec<RequirementDefinition>, Vec<RequirementDefinition>)],
+    ) -> RSCMResult<()> {
+        let aggregates = self.schema.as_ref().map(|s| &s.aggregates);
+        for variable in &self.lagged_variables {
+            let known = requirements
+                .iter()
+                .flat_map(|(requires, provides)| requires.iter().chain(provides))
+                .any(|r| &r.name == variable)
+                || aggregates.is_some_and(|a| a.contains_key(variable));
+            if !known {
+                return Err(RSCMError::InvalidLag {
+                    lag: format!("with_lag({variable:?})"),
+                    reason: "no component reads or produces this variable".to_string(),
+                });
+            }
+        }
+        for (variable, consumer) in &self.lagged_edges {
+            let lag = format!("with_lag_for({variable:?}, {consumer:?})");
+            if !names.contains(consumer) {
+                let known: BTreeSet<&str> = names.iter().map(String::as_str).collect();
+                return Err(RSCMError::InvalidLag {
+                    lag,
+                    reason: format!("no component named {consumer:?}, components are {known:?}"),
+                });
+            }
+            let reads = names
+                .iter()
+                .zip(requirements)
+                .filter(|(n, _)| *n == consumer)
+                .any(|(_, (requires, _))| {
+                    requires.iter().any(|r| {
+                        &r.name == variable && r.requirement_type == RequirementType::Input
+                    })
+                });
+            if !reads {
+                return Err(RSCMError::InvalidLag {
+                    lag,
+                    reason: format!("{consumer} does not read {variable:?} as an input"),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Set custom weights for a grid type.
@@ -462,6 +540,7 @@ impl ModelBuilder {
         // for the same variable (e.g., State for owner, UpstreamOutput for consumers)
         let mut variable_sources: HashMap<(String, String), VariableSource> = HashMap::new();
         let initial_node = graph.add_node(Arc::new(NullComponent {}));
+        let mut aggregator_nodes: HashSet<NodeIndex> = HashSet::new();
 
         // Track pending aggregate dependencies: (component_node, variable_name, requirement)
         // These will be resolved after aggregators are added to the graph
@@ -481,110 +560,104 @@ impl ModelBuilder {
             .map(|component| (component.inputs(), component.outputs()))
             .collect();
 
-        for (component, (requires, provides)) in self.components.iter().zip(&requirements) {
-            let node = graph.add_node(component.clone());
+        let names: Vec<String> = self
+            .components
+            .iter()
+            .map(Model::extract_component_name)
+            .collect();
+        self.validate_lags(&names, &requirements)?;
+
+        let nodes: Vec<NodeIndex> = self
+            .components
+            .iter()
+            .map(|component| graph.add_node(component.clone()))
+            .collect();
+
+        // Every producer is known before any input is classified, so registration order is irrelevant.
+        for (index, (_, provides)) in requirements.iter().enumerate() {
+            for requirement in provides {
+                if let Some(other) = variable_owners.get(&requirement.name) {
+                    return Err(RSCMError::MultipleProducers {
+                        variable: requirement.name.clone(),
+                        components: vec![other.clone(), names[index].clone()],
+                    });
+                }
+                endogenous.insert(requirement.name.clone(), nodes[index]);
+                variable_owners.insert(requirement.name.clone(), names[index].clone());
+            }
+        }
+
+        // Producers define each variable first, so consumers get the unit conversions.
+        for (index, (_, provides)) in requirements.iter().enumerate() {
+            for requirement in provides {
+                if let Some(conversion) = verify_definition(
+                    &mut definitions,
+                    requirement,
+                    &names[index],
+                    Some(&names[index]),
+                    self.schema.is_some(),
+                )? {
+                    unit_conversions.push(conversion);
+                }
+            }
+        }
+
+        for (index, (requires, _)) in requirements.iter().enumerate() {
+            let node = nodes[index];
+            let component_name = &names[index];
             let mut has_dependencies = false;
 
-            let component_name = Model::extract_component_name(component);
-
-            // Classify variable sources for this component's inputs
             for requirement in requires {
                 if requirement.requirement_type == RequirementType::EmptyLink {
                     continue;
                 }
-
-                let source = if requirement.requirement_type == RequirementType::State {
-                    // State variables: component reads its own previous state
-                    VariableSource::OwnState
-                } else if endogenous.contains_key(&requirement.name) {
-                    // Another component produces this - read upstream output
-                    VariableSource::UpstreamOutput
-                } else if aggregate_names.contains(&requirement.name) {
-                    // Will be produced by an aggregator - read upstream output
-                    VariableSource::UpstreamOutput
-                } else {
-                    // Exogenous (external input)
-                    VariableSource::Exogenous
-                };
-
-                variable_sources.insert((requirement.name.clone(), component_name.clone()), source);
-            }
-
-            for requirement in requires {
                 let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
                 if let Some(conversion) = verify_definition(
                     &mut definitions,
                     requirement,
-                    &component_name,
+                    component_name,
                     existing_owner,
                     self.schema.is_some(),
                 )? {
-                    // Store the conversion info for runtime use
                     unit_conversions.push(conversion);
                 }
 
-                if let Some(&producer_node) = endogenous.get(&requirement.name) {
-                    // Link to the node that provides the requirement
-                    graph.add_edge(producer_node, node, requirement.clone());
+                let name = &requirement.name;
+                let lagged = self.is_lagged(name, component_name);
+                let producer = endogenous.get(name).copied();
+                let source = if requirement.requirement_type == RequirementType::State
+                    || producer == Some(node)
+                {
+                    exogenous.insert(name.clone());
+                    VariableSource::OwnState
+                } else if lagged {
+                    // A lagged read sees index N, which exogenous data may fill.
+                    exogenous.insert(name.clone());
+                    VariableSource::Lagged
+                } else if let Some(producer) = producer {
+                    graph.add_edge(producer, node, requirement.clone());
                     has_dependencies = true;
-                } else if aggregate_names.contains(&requirement.name) {
-                    // This requirement will be provided by an aggregate - defer edge creation
-                    pending_aggregate_deps.push((
-                        node,
-                        requirement.name.clone(),
-                        requirement.clone(),
-                    ));
-                    has_dependencies = true; // Mark as having dependencies to avoid NullComponent edge
+                    VariableSource::UpstreamOutput
+                } else if aggregate_names.contains(name) {
+                    pending_aggregate_deps.push((node, name.clone(), requirement.clone()));
+                    has_dependencies = true;
+                    VariableSource::UpstreamOutput
                 } else {
-                    // Add a new variable that must be defined outside of the model
-                    exogenous.insert(requirement.name.clone());
-                }
+                    exogenous.insert(name.clone());
+                    VariableSource::Exogenous
+                };
+                variable_sources.insert((name.clone(), component_name.clone()), source);
             }
 
             if !has_dependencies {
-                // If the node has no dependencies on other components,
-                // create a link to the initial node.
-                // This ensures that we have a single connected graph
-                // There might be smarter ways to iterate over the nodes, but this is fine for now
+                // Link to the initial node so the graph stays connected.
                 graph.add_edge(
                     initial_node,
                     node,
                     RequirementDefinition::new("", "", RequirementType::EmptyLink),
                 );
             }
-
-            for requirement in provides {
-                let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
-                if let Some(conversion) = verify_definition(
-                    &mut definitions,
-                    requirement,
-                    &component_name,
-                    existing_owner,
-                    self.schema.is_some(),
-                )? {
-                    // Store the conversion info for runtime use
-                    unit_conversions.push(conversion);
-                }
-
-                // Track this component as the owner of this variable
-                variable_owners.insert(requirement.name.clone(), component_name.clone());
-
-                let val = endogenous.get(&requirement.name);
-
-                match val {
-                    None => {
-                        endogenous.insert(requirement.name.clone(), node);
-                    }
-                    Some(node_index) => {
-                        graph.add_edge(*node_index, node, requirement.clone());
-                        endogenous.insert(requirement.name.clone(), node);
-                    }
-                }
-            }
         }
-
-        // Check that the component graph doesn't contain any loops
-        assert!(!super::validation::is_valid_graph(&graph));
 
         // Collect all required grid transformations
         let mut all_transformations: Vec<RequiredTransformation> = Vec::new();
@@ -658,6 +731,7 @@ impl ModelBuilder {
 
                 // Add to graph (5.2)
                 let agg_node = graph.add_node(Arc::new(aggregator.clone()));
+                aggregator_nodes.insert(agg_node);
 
                 // Track the component name for variable ownership
                 let agg_component_name = format!("Aggregator:{}", agg_name);
@@ -718,6 +792,8 @@ impl ModelBuilder {
                 }
             }
         }
+
+        check_acyclic(&graph, &requirements, &names, &aggregator_nodes)?;
 
         // Validate that all state variables have initial values
         for (name, def) in &definitions {
@@ -903,6 +979,65 @@ impl ModelBuilder {
 
         Ok(model)
     }
+}
+
+/// Check that no feedback loop is left unlagged.
+///
+/// A cycle is a feedback loop no lag breaks. The error lists the components and variables in each loop,
+/// and the `with_lag_for` calls that would break it, edges into a component with its own state first.
+fn check_acyclic(
+    graph: &CGraph,
+    requirements: &[(Vec<RequirementDefinition>, Vec<RequirementDefinition>)],
+    names: &[String],
+    aggregator_nodes: &HashSet<NodeIndex>,
+) -> RSCMResult<()> {
+    if !petgraph::algo::is_cyclic_directed(graph) {
+        return Ok(());
+    }
+    let stateful: HashSet<&str> = names
+        .iter()
+        .zip(requirements)
+        .filter(|(_, (requires, _))| {
+            requires
+                .iter()
+                .any(|r| r.requirement_type == RequirementType::State)
+        })
+        .map(|(name, _)| name.as_str())
+        .collect();
+    let mut components = BTreeSet::new();
+    let mut variables = BTreeSet::new();
+    let mut suggestions = BTreeSet::new();
+    for scc in petgraph::algo::tarjan_scc(graph) {
+        if scc.len() < 2 {
+            continue;
+        }
+        let members: HashSet<NodeIndex> = scc.iter().copied().collect();
+        components.extend(
+            scc.iter()
+                .map(|&n| Model::extract_component_name(&graph[n])),
+        );
+        for edge in graph.edge_references() {
+            if !(members.contains(&edge.source()) && members.contains(&edge.target())) {
+                continue;
+            }
+            let variable = edge.weight().name.clone();
+            variables.insert(variable.clone());
+            // Aggregators always read this step's contributions, so their inputs cannot lag.
+            if !aggregator_nodes.contains(&edge.target()) {
+                let consumer = Model::extract_component_name(&graph[edge.target()]);
+                let rank = !stateful.contains(consumer.as_str());
+                suggestions.insert((rank, variable, consumer));
+            }
+        }
+    }
+    Err(RSCMError::CircularDependency {
+        components: components.into_iter().collect(),
+        variables: variables.into_iter().collect(),
+        suggestions: suggestions
+            .into_iter()
+            .map(|(_, variable, consumer)| (variable, consumer))
+            .collect(),
+    })
 }
 
 impl Default for ModelBuilder {

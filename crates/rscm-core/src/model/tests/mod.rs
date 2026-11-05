@@ -12,6 +12,8 @@ mod grid_validation;
 #[cfg(test)]
 mod grid_weights;
 #[cfg(test)]
+mod lags;
+#[cfg(test)]
 mod parallel;
 #[cfg(test)]
 mod read_side_integration;

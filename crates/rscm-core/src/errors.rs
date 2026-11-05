@@ -44,9 +44,32 @@ pub enum RSCMError {
         max_index: usize,
     },
 
-    /// Component cycle detected in dependency graph
-    #[error("Circular dependency detected in component graph: {cycle}. Components cannot form cycles. Consider splitting the cycle by introducing intermediate state variables or restructuring the component dependencies.")]
-    CircularDependency { cycle: String },
+    /// A feedback loop that no lag breaks.
+    ///
+    /// `suggestions` holds the `(variable, consumer)` pairs whose `with_lag_for` call would break it,
+    /// edges into a component with its own state first.
+    #[error(
+        "Feedback loop among components [{}] through variables [{}]. Break it with one of: {}",
+        components.join(", "),
+        variables.join(", "),
+        format_lag_suggestions(suggestions)
+    )]
+    CircularDependency {
+        components: Vec<String>,
+        variables: Vec<String>,
+        suggestions: Vec<(String, String)>,
+    },
+
+    /// A `with_lag` or `with_lag_for` call that names no edge of the model.
+    #[error("Invalid lag {lag}: {reason}")]
+    InvalidLag { lag: String, reason: String },
+
+    /// Two components produce the same variable.
+    #[error("Variable '{variable}' has more than one producer: {}", components.join(", "))]
+    MultipleProducers {
+        variable: String,
+        components: Vec<String>,
+    },
 
     /// Grid output type mismatch between component output and variable definition
     #[error("Grid output mismatch for variable '{variable}': component tried to output {component_grid} but variable expects {expected_grid}. Ensure the component's StateValue variant matches the RequirementDefinition's grid_type.")]
@@ -167,3 +190,11 @@ pub enum RSCMError {
 
 /// Convenience type for `Result<T, RSCMError>`.
 pub type RSCMResult<T> = Result<T, RSCMError>;
+
+fn format_lag_suggestions(suggestions: &[(String, String)]) -> String {
+    suggestions
+        .iter()
+        .map(|(variable, consumer)| format!("with_lag_for({variable:?}, {consumer:?})"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
