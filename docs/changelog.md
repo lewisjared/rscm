@@ -1,3 +1,35 @@
+## rscm 0.7.0 (2026-11-05)
+
+### ⚠️ Breaking Changes ⚠️
+
+- Dropped support for Python 3.11 and 3.12, following [SPEC 0](https://scientific-python.org/specs/spec-0000/).
+  RSCM now requires Python 3.13 or later, numpy 2.3 or later and pandas 2.3 or later. ([#179](https://github.com/lewisjared/rscm/pull/179))
+
+### Features
+
+- Added the `rscm.components` entry point group.
+  Installed packages that declare it have their components found by `Component.get_component()` without an import.
+  See [External Modules](external_modules.md) for how to package a module outside the RSCM repository. ([#170](https://github.com/lewisjared/rscm/pull/170))
+- Added `rscm.core.build_models` and `rscm.core.run_models`, which build and run many independent models in parallel on a rayon thread pool.
+  Results are the same as running the models in turn, and `threads` limits the thread count.
+  See [Running Many Models](key_concepts.md#running-many-models). ([#180](https://github.com/lewisjared/rscm/pull/180))
+- Added `rscm.fair`, a port of FaIR v2.2.5 as RSCM components that matches FaIR to a relative tolerance of 1e-9.
+  `run_fair()` runs a FaIR configuration, `run_ensemble()` runs many configurations and scenarios and returns xarray in FaIR's layout,
+  and `from_fair()` converts a configured `fair.FAIR`.
+  Loaders read FaIR's species and fair-calibrate calibration CSVs.
+  The components use RSCM variable names, so they can be combined with MAGICC components.
+  Install the `fair` extra for `from_fair()` and `run_ensemble()`.
+  See [FaIR runs](fair_runs.md). ([#181](https://github.com/lewisjared/rscm/pull/181))
+
+### Bug Fixes
+
+- Fixed MAGICC7 parity of the derived CH4 and N2O natural emission budgets on Python 3.12 and later, where the built-in `sum` rounds differently from MAGICC7. ([#179](https://github.com/lewisjared/rscm/pull/179))
+
+### Trivial/Internal Changes
+
+- [#177](https://github.com/lewisjared/rscm/pull/177), [#178](https://github.com/lewisjared/rscm/pull/178), [#182](https://github.com/lewisjared/rscm/pull/182)
+
+
 ## rscm 0.6.1 (2026-11-04)
 
 ### ⚠️ Breaking Changes ⚠️
