@@ -91,7 +91,7 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 
 **Learn to** debug models and trace data flow through components.
 
-- Inspect execution order and variable sources with `debug_info()`
+- Inspect execution order, lags and variable sources with `coupling()`
 - Visualise the dependency graph with `as_dot()`
 - Step through a run with `model.step()`
 - Diagnose build errors, missing exogenous data and runtime errors

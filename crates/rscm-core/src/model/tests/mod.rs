@@ -8,6 +8,8 @@ mod aggregate_execution;
 #[cfg(test)]
 mod basic;
 #[cfg(test)]
+mod coupling;
+#[cfg(test)]
 mod grid_validation;
 #[cfg(test)]
 mod grid_weights;

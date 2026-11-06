@@ -145,8 +145,8 @@ A declared input with no producer and no exogenous data fails the build with `Mi
 - Check the exact variable name matches what the producing component outputs
 - Verify all required components and exogenous variables are added to the model
 - Check for typos in variable names (names are case-sensitive)
-- If outputs are unexpectedly NaN, check `model.debug_info()`.
-  Inputs marked `(exo)` have no producing component.
+- If outputs are unexpectedly NaN, check `model.coupling()`.
+  Inputs marked `(exogenous)` have no producing component.
 
 #### GridTypeMismatch
 
@@ -332,7 +332,7 @@ Step the model and inspect the state instead:
 
 ```python
 model.step()
-print(model.debug_info(format="plain"))
+print(model.coupling(format="plain"))
 ```
 
 See the [Debugging and Inspection](../notebooks/debugging_inspection.py) tutorial for more.

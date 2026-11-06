@@ -120,18 +120,23 @@ def show_graph(model):
 # %% [markdown]
 # ## Inspecting the Execution Graph
 #
-# The most useful debugging tool is `debug_info()`,
-# which shows the model's execution order, variable flow and where each input comes from.
+# The most useful debugging tool is `coupling()`,
+# which shows what the builder decided about the model's coupling.
+# It lists components in the order the runtime steps them.
 #
 # For each component, you can see:
 #
 # - **`<-` (green)**: input variables, tagged with their source:
-#   - `(exo)`: exogenous (externally provided).
-#   - `(upstream)`: produced by a component earlier in the execution order.
+#   - `(exogenous)`: supplied to the model rather than produced by a component.
+#   - `(upstream from X)`: produced by component `X` earlier in the same step.
+#   - `(lagged from X)`: component `X`'s value from the previous step.
 #   - `(own_state)`: this component's own state from the previous timestep.
 # - **`<>` (magenta)**: state variables (read the previous value, write a new value).
 # - **`->` (blue)**: output variables produced by this component.
 # - **Grid tags** (yellow): non-scalar grid types (for example `[FourBox]`).
+# - **`point` or `average`**: whether the value holds at an instant or over a step.
+#
+# A "Lagged Edges" section then lists every edge that reads the previous step.
 #
 # The `format` parameter controls the output style:
 #
@@ -140,14 +145,14 @@ def show_graph(model):
 # - `"json"`: structured JSON for programmatic use.
 
 # %%
-print(model.debug_info())
+print(model.coupling())
 
 # %% [markdown]
 # The JSON format suits programmatic checks:
 
 # %%
-debug_data = json.loads(model.debug_info("json"))
-for comp in debug_data["components"]:
+coupling = json.loads(model.coupling("json"))
+for comp in coupling["components"]:
     n_in = len(comp.get("inputs", []))
     n_out = len(comp.get("outputs", []))
     n_state = len(comp.get("states", []))
@@ -381,8 +386,9 @@ except RuntimeError as e:
 # %% [markdown]
 # ## Debugging Tips
 #
-# - Use `debug_info()` to see execution order, where each input comes from, and grid types.
-# - Check inputs marked `(exo)`, because missing exogenous data is not a build error.
+# - Use `coupling()` to see execution order, where each input comes from, lags and grid types.
+# - Check inputs marked `(exogenous)` if a model built with `with_missing_exogenous_allowed()`
+#   gives NaN.
 # - Use `step()` to stop at a point of interest and read values with `get_timeseries_by_name()`.
 # - Save a problem state with `to_toml()` to reproduce or share it.
 # - Read the errors: build errors explain missing initial values and schema or grid mismatches,

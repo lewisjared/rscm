@@ -263,10 +263,10 @@ model = (
 ).build()
 
 # %% [markdown]
-# The "Unit Conversions" section of `debug_info()` lists the factor applied to each component input.
+# The "Unit Conversions" section of `coupling()` lists the factor applied to each component input.
 
 # %%
-print(model.debug_info("plain"))
+print(model.coupling("plain"))
 
 # %%
 model.run()
