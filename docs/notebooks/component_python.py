@@ -64,7 +64,7 @@ from rscm.core import (
 #
 # `solve()` reads each input with `get()`,
 # the value the model hands the component for the step.
-# See [Timestep Semantics](../../key_concepts/#timestep-semantics) for when other accessors apply.
+# See [Timestep Semantics](../../key_concepts/#timestep-semantics) for how the model wiring sets it.
 #
 # ### Basic Example: Scalar Component
 

@@ -8,7 +8,7 @@ use crate::errors::RSCMResult;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, HemisphericRegion, SpatialGrid};
 use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis};
 
-use super::windows::{stored_index, GridTimeseriesWindow, ReadIndex};
+use super::windows::{out_of_range, stored_index, GridTimeseriesWindow, ReadIndex};
 use super::VariableSource;
 
 /// A transformation context for grid aggregation and unit conversion.
@@ -102,7 +102,7 @@ impl ReadTransformInfo {
 pub struct AggregatingFourBoxWindow<'a> {
     timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
     current_index: usize,
-    current_time: Time,
+    name: &'a str,
     weights: Option<[f64; 4]>,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
@@ -115,13 +115,13 @@ impl<'a> AggregatingFourBoxWindow<'a> {
     pub fn new(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         weights: Option<Vec<f64>>,
     ) -> Self {
         Self::with_source(
             timeseries,
             current_index,
-            current_time,
+            name,
             weights,
             1.0,
             VariableSource::Exogenous,
@@ -132,14 +132,14 @@ impl<'a> AggregatingFourBoxWindow<'a> {
     pub fn with_unit_conversion(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         weights: Option<Vec<f64>>,
         unit_conversion_factor: f64,
     ) -> Self {
         Self::with_source(
             timeseries,
             current_index,
-            current_time,
+            name,
             weights,
             unit_conversion_factor,
             VariableSource::Exogenous,
@@ -150,7 +150,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
     pub fn with_source(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         weights: Option<Vec<f64>>,
         unit_conversion_factor: f64,
         variable_source: VariableSource,
@@ -165,7 +165,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
         Self {
             timeseries,
             current_index,
-            current_time,
+            name,
             weights,
             unit_conversion_factor,
             variable_source,
@@ -218,11 +218,19 @@ impl<'a> AggregatingFourBoxWindow<'a> {
         }
     }
 
+    /// Aggregated value the model wired this input to read during the step.
+    ///
+    /// See [`TimeseriesWindow::get()`](super::TimeseriesWindow::get) for which step's value this is.
+    pub fn get(&self) -> FloatValue {
+        self.value_at(self.read_index().get())
+    }
+
     /// Time of the value `get()` returns.
     pub fn get_time(&self) -> Time {
+        let index = self.read_index().get();
         self.time_axis()
-            .at(self.read_index().get())
-            .expect("Index out of bounds")
+            .at(index)
+            .unwrap_or_else(|| out_of_range(self.name, index, self.timeseries.len()))
     }
 
     /// Number of values `history` can read.
@@ -234,7 +242,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
         let values = self
             .timeseries
             .at_time_index(index)
-            .expect("Index out of bounds");
+            .unwrap_or_else(|| out_of_range(self.name, index, self.timeseries.len()));
         self.aggregate(&values)
     }
 
@@ -262,81 +270,6 @@ impl<'a> AggregatingFourBoxWindow<'a> {
             Some(index) => Ok(self.value_at(index)),
             None => Ok(self.aggregate(&self.timeseries.at_time_all(t)?)),
         }
-    }
-
-    /// Get the aggregated scalar value at the start of the timestep (index N).
-    pub fn at_start(&self) -> FloatValue {
-        let values = self
-            .timeseries
-            .at_time_index(self.current_index)
-            .expect("Current index out of bounds");
-        self.aggregate(&values)
-    }
-
-    /// Get the aggregated scalar value at the end of the timestep (index N+1), if available.
-    pub fn at_end(&self) -> Option<FloatValue> {
-        let next_index = self.current_index + 1;
-        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
-            None
-        } else {
-            let values = self
-                .timeseries
-                .at_time_index(next_index)
-                .expect("Next index out of bounds");
-            Some(self.aggregate(&values))
-        }
-    }
-
-    /// Get the value using automatic timestep resolution based on variable source.
-    pub fn get(&self) -> FloatValue {
-        match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
-                self.at_start()
-            }
-            VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
-        }
-    }
-
-    /// Get the aggregated value at the previous timestep.
-    pub fn previous(&self) -> Option<FloatValue> {
-        if self.current_index == 0 {
-            None
-        } else {
-            let values = self
-                .timeseries
-                .at_time_index(self.current_index - 1)
-                .expect("Previous index out of bounds");
-            Some(self.aggregate(&values))
-        }
-    }
-
-    /// Get a value at an offset from the current index.
-    ///
-    /// Negative offsets access past values, positive offsets access future values.
-    /// Returns None if the resulting index would be out of bounds.
-    pub fn at_offset(&self, offset: isize) -> Option<FloatValue> {
-        let target_index = if offset >= 0 {
-            self.current_index.checked_add(offset as usize)?
-        } else {
-            self.current_index.checked_sub((-offset) as usize)?
-        };
-
-        if target_index >= self.timeseries.len() {
-            return None;
-        }
-
-        let values = self.timeseries.at_time_index(target_index)?;
-        Some(self.aggregate(&values))
-    }
-
-    /// Get the current time value.
-    pub fn time(&self) -> Time {
-        self.current_time
-    }
-
-    /// Get the current time index.
-    pub fn index(&self) -> usize {
-        self.current_index
     }
 
     /// Get the total length of the underlying timeseries.
@@ -357,7 +290,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
 pub struct AggregatingHemisphericWindow<'a> {
     timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
     current_index: usize,
-    current_time: Time,
+    name: &'a str,
     weights: Option<[f64; 2]>,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
@@ -370,13 +303,13 @@ impl<'a> AggregatingHemisphericWindow<'a> {
     pub fn new(
         timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         weights: Option<Vec<f64>>,
     ) -> Self {
         Self::with_source(
             timeseries,
             current_index,
-            current_time,
+            name,
             weights,
             1.0,
             VariableSource::Exogenous,
@@ -387,14 +320,14 @@ impl<'a> AggregatingHemisphericWindow<'a> {
     pub fn with_unit_conversion(
         timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         weights: Option<Vec<f64>>,
         unit_conversion_factor: f64,
     ) -> Self {
         Self::with_source(
             timeseries,
             current_index,
-            current_time,
+            name,
             weights,
             unit_conversion_factor,
             VariableSource::Exogenous,
@@ -405,7 +338,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
     pub fn with_source(
         timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         weights: Option<Vec<f64>>,
         unit_conversion_factor: f64,
         variable_source: VariableSource,
@@ -420,7 +353,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
         Self {
             timeseries,
             current_index,
-            current_time,
+            name,
             weights,
             unit_conversion_factor,
             variable_source,
@@ -473,11 +406,19 @@ impl<'a> AggregatingHemisphericWindow<'a> {
         }
     }
 
+    /// Aggregated value the model wired this input to read during the step.
+    ///
+    /// See [`TimeseriesWindow::get()`](super::TimeseriesWindow::get) for which step's value this is.
+    pub fn get(&self) -> FloatValue {
+        self.value_at(self.read_index().get())
+    }
+
     /// Time of the value `get()` returns.
     pub fn get_time(&self) -> Time {
+        let index = self.read_index().get();
         self.time_axis()
-            .at(self.read_index().get())
-            .expect("Index out of bounds")
+            .at(index)
+            .unwrap_or_else(|| out_of_range(self.name, index, self.timeseries.len()))
     }
 
     /// Number of values `history` can read.
@@ -489,7 +430,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
         let values = self
             .timeseries
             .at_time_index(index)
-            .expect("Index out of bounds");
+            .unwrap_or_else(|| out_of_range(self.name, index, self.timeseries.len()));
         self.aggregate(&values)
     }
 
@@ -517,81 +458,6 @@ impl<'a> AggregatingHemisphericWindow<'a> {
             Some(index) => Ok(self.value_at(index)),
             None => Ok(self.aggregate(&self.timeseries.at_time_all(t)?)),
         }
-    }
-
-    /// Get the aggregated scalar value at the start of the timestep (index N).
-    pub fn at_start(&self) -> FloatValue {
-        let values = self
-            .timeseries
-            .at_time_index(self.current_index)
-            .expect("Current index out of bounds");
-        self.aggregate(&values)
-    }
-
-    /// Get the aggregated scalar value at the end of the timestep (index N+1), if available.
-    pub fn at_end(&self) -> Option<FloatValue> {
-        let next_index = self.current_index + 1;
-        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
-            None
-        } else {
-            let values = self
-                .timeseries
-                .at_time_index(next_index)
-                .expect("Next index out of bounds");
-            Some(self.aggregate(&values))
-        }
-    }
-
-    /// Get the value using automatic timestep resolution based on variable source.
-    pub fn get(&self) -> FloatValue {
-        match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
-                self.at_start()
-            }
-            VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
-        }
-    }
-
-    /// Get the aggregated value at the previous timestep.
-    pub fn previous(&self) -> Option<FloatValue> {
-        if self.current_index == 0 {
-            None
-        } else {
-            let values = self
-                .timeseries
-                .at_time_index(self.current_index - 1)
-                .expect("Previous index out of bounds");
-            Some(self.aggregate(&values))
-        }
-    }
-
-    /// Get a value at an offset from the current index.
-    ///
-    /// Negative offsets access past values, positive offsets access future values.
-    /// Returns None if the resulting index would be out of bounds.
-    pub fn at_offset(&self, offset: isize) -> Option<FloatValue> {
-        let target_index = if offset >= 0 {
-            self.current_index.checked_add(offset as usize)?
-        } else {
-            self.current_index.checked_sub((-offset) as usize)?
-        };
-
-        if target_index >= self.timeseries.len() {
-            return None;
-        }
-
-        let values = self.timeseries.at_time_index(target_index)?;
-        Some(self.aggregate(&values))
-    }
-
-    /// Get the current time value.
-    pub fn time(&self) -> Time {
-        self.current_time
-    }
-
-    /// Get the current time index.
-    pub fn index(&self) -> usize {
-        self.current_index
     }
 
     /// Get the total length of the underlying timeseries.
@@ -661,6 +527,17 @@ impl<'a> ScalarWindow<'a> {
         }
     }
 
+    /// Value the model wired this input to read during the step.
+    ///
+    /// See [`TimeseriesWindow::get()`](super::TimeseriesWindow::get) for which step's value this is.
+    pub fn get(&self) -> FloatValue {
+        match self {
+            ScalarWindow::Direct(w) => w.get(),
+            ScalarWindow::FromFourBox(w) => w.get(),
+            ScalarWindow::FromHemispheric(w) => w.get(),
+        }
+    }
+
     /// Time of the value `get()` returns.
     pub fn get_time(&self) -> Time {
         match self {
@@ -713,82 +590,6 @@ impl<'a> ScalarWindow<'a> {
         }
     }
 
-    /// Get the scalar value at the start of the timestep (index N).
-    pub fn at_start(&self) -> FloatValue {
-        match self {
-            ScalarWindow::Direct(w) => w.at_start(),
-            ScalarWindow::FromFourBox(w) => w.at_start(),
-            ScalarWindow::FromHemispheric(w) => w.at_start(),
-        }
-    }
-
-    /// Get the scalar value at the end of the timestep (index N+1), if available.
-    pub fn at_end(&self) -> Option<FloatValue> {
-        match self {
-            ScalarWindow::Direct(w) => w.at_end(),
-            ScalarWindow::FromFourBox(w) => w.at_end(),
-            ScalarWindow::FromHemispheric(w) => w.at_end(),
-        }
-    }
-
-    /// Get the value using automatic timestep resolution based on variable source.
-    ///
-    /// See [`TimeseriesWindow::get()`] for detailed semantics.
-    pub fn get(&self) -> FloatValue {
-        match self {
-            ScalarWindow::Direct(w) => w.get(),
-            ScalarWindow::FromFourBox(w) => w.get(),
-            ScalarWindow::FromHemispheric(w) => w.get(),
-        }
-    }
-
-    /// Get the value at the previous timestep, if available.
-    pub fn previous(&self) -> Option<FloatValue> {
-        match self {
-            ScalarWindow::Direct(w) => w.previous(),
-            ScalarWindow::FromFourBox(w) => w.previous(),
-            ScalarWindow::FromHemispheric(w) => w.previous(),
-        }
-    }
-
-    /// Get a value at an offset from the current index.
-    ///
-    /// Negative offsets access past values, positive offsets access future values.
-    /// Returns None if the resulting index would be out of bounds.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// let prev = window.at_offset(-1);  // Same as previous()
-    /// let two_back = window.at_offset(-2);
-    /// let next = window.at_offset(1);   // Future value (if available)
-    /// ```
-    pub fn at_offset(&self, offset: isize) -> Option<FloatValue> {
-        match self {
-            ScalarWindow::Direct(w) => w.at_offset(offset),
-            ScalarWindow::FromFourBox(w) => w.at_offset(offset),
-            ScalarWindow::FromHemispheric(w) => w.at_offset(offset),
-        }
-    }
-
-    /// Get the current time value.
-    pub fn time(&self) -> Time {
-        match self {
-            ScalarWindow::Direct(w) => w.time(),
-            ScalarWindow::FromFourBox(w) => w.time(),
-            ScalarWindow::FromHemispheric(w) => w.time(),
-        }
-    }
-
-    /// Get the current time index.
-    pub fn index(&self) -> usize {
-        match self {
-            ScalarWindow::Direct(w) => w.index(),
-            ScalarWindow::FromFourBox(w) => w.index(),
-            ScalarWindow::FromHemispheric(w) => w.index(),
-        }
-    }
-
     /// Get the total length of the underlying timeseries.
     pub fn len(&self) -> usize {
         match self {
@@ -816,7 +617,7 @@ impl<'a> ScalarWindow<'a> {
 pub struct AggregatingFourBoxToHemisphericWindow<'a> {
     timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
     current_index: usize,
-    current_time: Time,
+    name: &'a str,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
     /// Source type determining get() behavior
@@ -828,12 +629,12 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     pub fn new(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
     ) -> Self {
         Self::with_source(
             timeseries,
             current_index,
-            current_time,
+            name,
             1.0,
             VariableSource::Exogenous,
         )
@@ -843,13 +644,13 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     pub fn with_unit_conversion(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         unit_conversion_factor: f64,
     ) -> Self {
         Self::with_source(
             timeseries,
             current_index,
-            current_time,
+            name,
             unit_conversion_factor,
             VariableSource::Exogenous,
         )
@@ -859,14 +660,14 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     pub fn with_source(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
         current_index: usize,
-        current_time: Time,
+        name: &'a str,
         unit_conversion_factor: f64,
         variable_source: VariableSource,
     ) -> Self {
         Self {
             timeseries,
             current_index,
-            current_time,
+            name,
             unit_conversion_factor,
             variable_source,
             timeseries_type: TimeseriesType::Point,
@@ -911,11 +712,12 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
         }
     }
 
-    /// Time of the value `get()` returns.
+    /// Time of the values `get_all()` returns.
     pub fn get_time(&self) -> Time {
+        let index = self.read_index().get();
         self.time_axis()
-            .at(self.read_index().get())
-            .expect("Index out of bounds")
+            .at(index)
+            .unwrap_or_else(|| out_of_range(self.name, index, self.timeseries.len()))
     }
 
     /// Number of values `history` can read.
@@ -927,7 +729,7 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
         let values = self
             .timeseries
             .at_time_index(index)
-            .expect("Index out of bounds");
+            .unwrap_or_else(|| out_of_range(self.name, index, self.timeseries.len()));
         self.aggregate_to_hemispheric(&values).to_vec()
     }
 
@@ -959,82 +761,16 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
         }
     }
 
-    /// Get all regional values at the start of the timestep.
-    pub fn at_start_all(&self) -> Vec<FloatValue> {
-        let values = self
-            .timeseries
-            .at_time_index(self.current_index)
-            .expect("Current index out of bounds");
-        self.aggregate_to_hemispheric(&values).to_vec()
-    }
-
-    /// Get all regional values at the end of the timestep.
-    pub fn at_end_all(&self) -> Option<Vec<FloatValue>> {
-        let next_index = self.current_index + 1;
-        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
-            None
-        } else {
-            let values = self
-                .timeseries
-                .at_time_index(next_index)
-                .expect("Next index out of bounds");
-            Some(self.aggregate_to_hemispheric(&values).to_vec())
-        }
-    }
-
-    /// Get all regional values at a relative offset from the current timestep.
+    /// A single region's value that the model wired this input to read during the step.
     ///
-    /// Returns `None` if the resulting index is out of bounds.
-    pub fn at_offset_all(&self, offset: isize) -> Option<Vec<FloatValue>> {
-        let index = self.current_index.checked_add_signed(offset)?;
-        self.timeseries
-            .at_time_index(index)
-            .map(|values| self.aggregate_to_hemispheric(&values).to_vec())
-    }
-
-    /// Get a single region's value at the start of the timestep.
-    pub fn at_start(&self, region: HemisphericRegion) -> FloatValue {
-        let values = self.at_start_all();
-        values[region as usize]
-    }
-
-    /// Get a single region's value at the end of the timestep.
-    pub fn at_end(&self, region: HemisphericRegion) -> Option<FloatValue> {
-        self.at_end_all().map(|v| v[region as usize])
-    }
-
-    /// Get a single region's value using automatic timestep resolution.
+    /// See [`TimeseriesWindow::get()`](super::TimeseriesWindow::get) for which step's value this is.
     pub fn get(&self, region: HemisphericRegion) -> FloatValue {
-        match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
-                self.at_start(region)
-            }
-            VariableSource::UpstreamOutput => {
-                self.at_end(region).unwrap_or_else(|| self.at_start(region))
-            }
-        }
+        self.get_all()[region as usize]
     }
 
-    /// Get all regional values using automatic timestep resolution.
+    /// All regional values that the model wired this input to read during the step.
     pub fn get_all(&self) -> Vec<FloatValue> {
-        match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
-                self.at_start_all()
-            }
-            VariableSource::UpstreamOutput => {
-                self.at_end_all().unwrap_or_else(|| self.at_start_all())
-            }
-        }
-    }
-
-    /// Get the current time value.
-    pub fn time(&self) -> Time {
-        self.current_time
-    }
-
-    /// Get the current time index.
-    pub fn index(&self) -> usize {
-        self.current_index
+        self.values_at(self.read_index().get())
     }
 
     /// Get the total length of the underlying timeseries.
@@ -1093,6 +829,22 @@ impl<'a> HemisphericWindow<'a> {
         }
     }
 
+    /// A single region's value that the model wired this input to read during the step.
+    pub fn get(&self, region: HemisphericRegion) -> FloatValue {
+        match self {
+            HemisphericWindow::Direct(w) => w.get(region),
+            HemisphericWindow::FromFourBox(w) => w.get(region),
+        }
+    }
+
+    /// All regional values that the model wired this input to read during the step.
+    pub fn get_all(&self) -> Vec<FloatValue> {
+        match self {
+            HemisphericWindow::Direct(w) => w.get_all(),
+            HemisphericWindow::FromFourBox(w) => w.get_all(),
+        }
+    }
+
     /// Time of the values `get_all()` returns.
     pub fn get_time(&self) -> Time {
         match self {
@@ -1140,80 +892,6 @@ impl<'a> HemisphericWindow<'a> {
         }
     }
 
-    /// Get all regional values at the start of the timestep.
-    pub fn at_start_all(&self) -> Vec<FloatValue> {
-        match self {
-            HemisphericWindow::Direct(w) => w.at_start_all(),
-            HemisphericWindow::FromFourBox(w) => w.at_start_all(),
-        }
-    }
-
-    /// Get all regional values at the end of the timestep.
-    pub fn at_end_all(&self) -> Option<Vec<FloatValue>> {
-        match self {
-            HemisphericWindow::Direct(w) => w.at_end_all(),
-            HemisphericWindow::FromFourBox(w) => w.at_end_all(),
-        }
-    }
-
-    /// Get all regional values at a relative offset from the current timestep.
-    ///
-    /// Returns `None` if the resulting index is out of bounds.
-    pub fn at_offset_all(&self, offset: isize) -> Option<Vec<FloatValue>> {
-        match self {
-            HemisphericWindow::Direct(w) => w.at_offset_all(offset),
-            HemisphericWindow::FromFourBox(w) => w.at_offset_all(offset),
-        }
-    }
-
-    /// Get a single region's value at the start of the timestep.
-    pub fn at_start(&self, region: HemisphericRegion) -> FloatValue {
-        match self {
-            HemisphericWindow::Direct(w) => w.at_start(region),
-            HemisphericWindow::FromFourBox(w) => w.at_start(region),
-        }
-    }
-
-    /// Get a single region's value at the end of the timestep.
-    pub fn at_end(&self, region: HemisphericRegion) -> Option<FloatValue> {
-        match self {
-            HemisphericWindow::Direct(w) => w.at_end(region),
-            HemisphericWindow::FromFourBox(w) => w.at_end(region),
-        }
-    }
-
-    /// Get a single region's value using automatic timestep resolution.
-    pub fn get(&self, region: HemisphericRegion) -> FloatValue {
-        match self {
-            HemisphericWindow::Direct(w) => w.get(region),
-            HemisphericWindow::FromFourBox(w) => w.get(region),
-        }
-    }
-
-    /// Get all regional values using automatic timestep resolution.
-    pub fn get_all(&self) -> Vec<FloatValue> {
-        match self {
-            HemisphericWindow::Direct(w) => w.get_all(),
-            HemisphericWindow::FromFourBox(w) => w.get_all(),
-        }
-    }
-
-    /// Get the current time value.
-    pub fn time(&self) -> Time {
-        match self {
-            HemisphericWindow::Direct(w) => w.time(),
-            HemisphericWindow::FromFourBox(w) => w.time(),
-        }
-    }
-
-    /// Get the current time index.
-    pub fn index(&self) -> usize {
-        match self {
-            HemisphericWindow::Direct(w) => w.index(),
-            HemisphericWindow::FromFourBox(w) => w.index(),
-        }
-    }
-
     /// Get the total length of the underlying timeseries.
     pub fn len(&self) -> usize {
         match self {
@@ -1228,12 +906,6 @@ impl<'a> HemisphericWindow<'a> {
             HemisphericWindow::Direct(w) => w.is_empty(),
             HemisphericWindow::FromFourBox(w) => w.is_empty(),
         }
-    }
-
-    /// Get the global aggregate at the start of the timestep.
-    pub fn current_global(&self) -> FloatValue {
-        let values = self.at_start_all();
-        (values[0] + values[1]) / 2.0 // Simple average for now
     }
 }
 
@@ -1297,69 +969,74 @@ mod aggregating_window_tests {
     // =========================================================================
 
     #[test]
-    fn test_aggregating_four_box_window_at_start_default_weights() {
+    fn test_aggregating_four_box_window_get_default_weights() {
         let ts = create_four_box_timeseries();
         // Index 1 = year 2001, values [11, 21, 31, 41]
-        let window = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, None);
+        let window = AggregatingFourBoxWindow::new(&ts, 1, "test", None);
 
         // With equal weights: (11 + 21 + 31 + 41) / 4 = 26.0
-        assert_eq!(window.at_start(), 26.0);
+        assert_eq!(window.get(), 26.0);
     }
 
     #[test]
-    fn test_aggregating_four_box_window_at_start_custom_weights() {
+    fn test_aggregating_four_box_window_get_custom_weights() {
         let ts = create_four_box_timeseries();
         // Custom weights that sum to 1.0
         let weights = vec![0.5, 0.2, 0.2, 0.1];
-        let window = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, Some(weights));
+        let window = AggregatingFourBoxWindow::new(&ts, 1, "test", Some(weights));
 
         // With custom weights: 11*0.5 + 21*0.2 + 31*0.2 + 41*0.1 = 5.5 + 4.2 + 6.2 + 4.1 = 20.0
-        assert_eq!(window.at_start(), 20.0);
+        assert_eq!(window.get(), 20.0);
     }
 
     #[test]
-    fn test_aggregating_four_box_window_at_end() {
+    fn test_aggregating_four_box_window_get_upstream() {
         let ts = create_four_box_timeseries();
-        // Index 1, at_end should return value at index 2
-        let window = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, None);
+        let window = AggregatingFourBoxWindow::with_source(
+            &ts,
+            1,
+            "test",
+            None,
+            1.0,
+            VariableSource::UpstreamOutput,
+        );
 
         // Index 2 values [12, 22, 32, 42], mean = 27.0
-        assert_eq!(window.at_end(), Some(27.0));
+        assert_eq!(window.get(), 27.0);
     }
 
     #[test]
-    fn test_aggregating_four_box_window_at_end_last_index() {
+    #[should_panic(expected = "Variable 'Effective Radiative Forcing' has 3 values, so index 3")]
+    fn test_aggregating_four_box_window_get_upstream_at_last_index_panics() {
         let ts = create_four_box_timeseries();
-        // At last index, at_end should return None
-        let window = AggregatingFourBoxWindow::new(&ts, 2, 2002.0, None);
-
-        assert_eq!(window.at_end(), None);
+        let window = AggregatingFourBoxWindow::with_source(
+            &ts,
+            2,
+            "Effective Radiative Forcing",
+            None,
+            1.0,
+            VariableSource::UpstreamOutput,
+        );
+        let _ = window.get();
     }
 
     #[test]
-    fn test_aggregating_four_box_window_previous() {
+    fn test_aggregating_four_box_window_history() {
         let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, None);
+        let window = AggregatingFourBoxWindow::new(&ts, 1, "test", None);
 
         // Index 0 values [10, 20, 30, 40], mean = 25.0
-        assert_eq!(window.previous(), Some(25.0));
-    }
+        assert_eq!(window.history(1), Some(25.0));
 
-    #[test]
-    fn test_aggregating_four_box_window_previous_at_first() {
-        let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxWindow::new(&ts, 0, 2000.0, None);
-
-        assert_eq!(window.previous(), None);
+        let first = AggregatingFourBoxWindow::new(&ts, 0, "test", None);
+        assert_eq!(first.history(1), None);
     }
 
     #[test]
     fn test_aggregating_four_box_window_metadata() {
         let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, None);
+        let window = AggregatingFourBoxWindow::new(&ts, 1, "test", None);
 
-        assert_eq!(window.time(), 2001.0);
-        assert_eq!(window.index(), 1);
         assert_eq!(window.len(), 3);
         assert!(!window.is_empty());
     }
@@ -1392,10 +1069,10 @@ mod aggregating_window_tests {
         );
 
         let weights = vec![0.25, 0.25, 0.25, 0.25];
-        let window = AggregatingFourBoxWindow::new(&ts, 0, 2000.0, Some(weights));
+        let window = AggregatingFourBoxWindow::new(&ts, 0, "test", Some(weights));
 
         // NaN is skipped: 10*0.25 + 30*0.25 + 40*0.25 = 2.5 + 7.5 + 10.0 = 20.0
-        assert_eq!(window.at_start(), 20.0);
+        assert_eq!(window.get(), 20.0);
     }
 
     // =========================================================================
@@ -1403,57 +1080,54 @@ mod aggregating_window_tests {
     // =========================================================================
 
     #[test]
-    fn test_aggregating_hemispheric_window_at_start_default_weights() {
+    fn test_aggregating_hemispheric_window_get_default_weights() {
         let ts = create_hemispheric_timeseries();
-        let window = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, None);
+        let window = AggregatingHemisphericWindow::new(&ts, 1, "test", None);
 
         // Equal weights: (110 + 220) / 2 = 165.0
-        assert_eq!(window.at_start(), 165.0);
+        assert_eq!(window.get(), 165.0);
     }
 
     #[test]
-    fn test_aggregating_hemispheric_window_at_start_custom_weights() {
+    fn test_aggregating_hemispheric_window_get_custom_weights() {
         let ts = create_hemispheric_timeseries();
         let weights = vec![0.7, 0.3];
-        let window = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, Some(weights));
+        let window = AggregatingHemisphericWindow::new(&ts, 1, "test", Some(weights));
 
         // 110*0.7 + 220*0.3 = 77.0 + 66.0 = 143.0
-        assert_eq!(window.at_start(), 143.0);
+        assert_eq!(window.get(), 143.0);
     }
 
     #[test]
-    fn test_aggregating_hemispheric_window_at_end() {
+    fn test_aggregating_hemispheric_window_get_upstream() {
         let ts = create_hemispheric_timeseries();
-        let window = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, None);
+        let window = AggregatingHemisphericWindow::with_source(
+            &ts,
+            1,
+            "test",
+            None,
+            1.0,
+            VariableSource::UpstreamOutput,
+        );
 
         // Index 2 values [120, 240], mean = 180.0
-        assert_eq!(window.at_end(), Some(180.0));
+        assert_eq!(window.get(), 180.0);
     }
 
     #[test]
-    fn test_aggregating_hemispheric_window_at_end_last_index() {
+    fn test_aggregating_hemispheric_window_history() {
         let ts = create_hemispheric_timeseries();
-        let window = AggregatingHemisphericWindow::new(&ts, 2, 2002.0, None);
-
-        assert_eq!(window.at_end(), None);
-    }
-
-    #[test]
-    fn test_aggregating_hemispheric_window_previous() {
-        let ts = create_hemispheric_timeseries();
-        let window = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, None);
+        let window = AggregatingHemisphericWindow::new(&ts, 1, "test", None);
 
         // Index 0 values [100, 200], mean = 150.0
-        assert_eq!(window.previous(), Some(150.0));
+        assert_eq!(window.history(1), Some(150.0));
     }
 
     #[test]
     fn test_aggregating_hemispheric_window_metadata() {
         let ts = create_hemispheric_timeseries();
-        let window = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, None);
+        let window = AggregatingHemisphericWindow::new(&ts, 1, "test", None);
 
-        assert_eq!(window.time(), 2001.0);
-        assert_eq!(window.index(), 1);
         assert_eq!(window.len(), 3);
         assert!(!window.is_empty());
     }
@@ -1463,70 +1137,41 @@ mod aggregating_window_tests {
     // =========================================================================
 
     #[test]
-    fn test_aggregating_four_box_to_hemispheric_at_start_all() {
+    fn test_aggregating_four_box_to_hemispheric_get_all() {
         let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, 2001.0);
+        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, "test");
 
         // Index 1 values [11, 21, 31, 41]
         // Northern = (11 + 21) / 2 = 16.0
         // Southern = (31 + 41) / 2 = 36.0
-        let result = window.at_start_all();
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0], 16.0); // Northern
-        assert_eq!(result[1], 36.0); // Southern
+        assert_eq!(window.get_all(), vec![16.0, 36.0]);
+        assert_eq!(window.get(HemisphericRegion::Northern), 16.0);
+        assert_eq!(window.get(HemisphericRegion::Southern), 36.0);
     }
 
     #[test]
-    fn test_aggregating_four_box_to_hemispheric_at_offset_all() {
+    fn test_aggregating_four_box_to_hemispheric_get_upstream() {
         let ts = create_four_box_timeseries();
-        let window =
-            AggregatingFourBoxToHemisphericWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
-
-        assert_eq!(window.at_offset_all(-1), Some(vec![30.0, 70.0]));
-        assert_eq!(window.at_offset_all(1), Some(vec![34.0, 74.0]));
-        assert_eq!(window.at_offset_all(-2), None);
-        assert_eq!(window.at_offset_all(2), None);
-    }
-
-    #[test]
-    fn test_aggregating_four_box_to_hemispheric_at_start_single_region() {
-        let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, 2001.0);
-
-        assert_eq!(window.at_start(HemisphericRegion::Northern), 16.0);
-        assert_eq!(window.at_start(HemisphericRegion::Southern), 36.0);
-    }
-
-    #[test]
-    fn test_aggregating_four_box_to_hemispheric_at_end_all() {
-        let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, 2001.0);
+        let window = AggregatingFourBoxToHemisphericWindow::with_source(
+            &ts,
+            1,
+            "test",
+            1.0,
+            VariableSource::UpstreamOutput,
+        );
 
         // Index 2 values [12, 22, 32, 42]
         // Northern = (12 + 22) / 2 = 17.0
         // Southern = (32 + 42) / 2 = 37.0
-        let result = window.at_end_all().unwrap();
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0], 17.0);
-        assert_eq!(result[1], 37.0);
-    }
-
-    #[test]
-    fn test_aggregating_four_box_to_hemispheric_at_end_last_index() {
-        let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 2, 2002.0);
-
-        assert_eq!(window.at_end_all(), None);
-        assert_eq!(window.at_end(HemisphericRegion::Northern), None);
+        assert_eq!(window.get_all(), vec![17.0, 37.0]);
+        assert_eq!(window.get(HemisphericRegion::Southern), 37.0);
     }
 
     #[test]
     fn test_aggregating_four_box_to_hemispheric_metadata() {
         let ts = create_four_box_timeseries();
-        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, 2001.0);
+        let window = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, "test");
 
-        assert_eq!(window.time(), 2001.0);
-        assert_eq!(window.index(), 1);
         assert_eq!(window.len(), 3);
         assert!(!window.is_empty());
     }
@@ -1548,14 +1193,12 @@ mod aggregating_window_tests {
             "test".to_string(),
             InterpolationStrategy::from(LinearSplineStrategy::new(true)),
         );
-        let inner = super::super::windows::TimeseriesWindow::new(&ts, 1, 2001.0);
+        let inner = super::super::windows::TimeseriesWindow::new(&ts, 1, "test");
         let window = ScalarWindow::Direct(inner);
 
-        assert_eq!(window.at_start(), 200.0);
-        assert_eq!(window.at_end(), Some(300.0));
-        assert_eq!(window.previous(), Some(100.0));
-        assert_eq!(window.time(), 2001.0);
-        assert_eq!(window.index(), 1);
+        assert_eq!(window.get(), 200.0);
+        assert_eq!(window.history(1), Some(100.0));
+        assert_eq!(window.get_time(), 2001.0);
         assert_eq!(window.len(), 3);
         assert!(!window.is_empty());
     }
@@ -1563,29 +1206,26 @@ mod aggregating_window_tests {
     #[test]
     fn test_scalar_window_from_four_box_variant() {
         let ts = create_four_box_timeseries();
-        let inner = AggregatingFourBoxWindow::new(&ts, 1, 2001.0, None);
+        let inner = AggregatingFourBoxWindow::new(&ts, 1, "test", None);
         let window = ScalarWindow::FromFourBox(inner);
 
         // Same behavior as AggregatingFourBoxWindow
-        assert_eq!(window.at_start(), 26.0);
-        assert_eq!(window.at_end(), Some(27.0));
-        assert_eq!(window.previous(), Some(25.0));
-        assert_eq!(window.time(), 2001.0);
-        assert_eq!(window.index(), 1);
+        assert_eq!(window.get(), 26.0);
+        assert_eq!(window.history(1), Some(25.0));
+        assert_eq!(window.get_time(), 2001.0);
         assert_eq!(window.len(), 3);
     }
 
     #[test]
     fn test_scalar_window_from_hemispheric_variant() {
         let ts = create_hemispheric_timeseries();
-        let inner = AggregatingHemisphericWindow::new(&ts, 1, 2001.0, None);
+        let inner = AggregatingHemisphericWindow::new(&ts, 1, "test", None);
         let window = ScalarWindow::FromHemispheric(inner);
 
         // Same behavior as AggregatingHemisphericWindow
-        assert_eq!(window.at_start(), 165.0);
-        assert_eq!(window.at_end(), Some(180.0));
-        assert_eq!(window.previous(), Some(150.0));
-        assert_eq!(window.time(), 2001.0);
+        assert_eq!(window.get(), 165.0);
+        assert_eq!(window.history(1), Some(150.0));
+        assert_eq!(window.get_time(), 2001.0);
     }
 
     // =========================================================================
@@ -1595,15 +1235,13 @@ mod aggregating_window_tests {
     #[test]
     fn test_hemispheric_window_direct_variant() {
         let ts = create_hemispheric_timeseries();
-        let inner = GridTimeseriesWindow::new(&ts, 1, 2001.0);
+        let inner = GridTimeseriesWindow::new(&ts, 1, "test");
         let window = HemisphericWindow::Direct(inner);
 
-        assert_eq!(window.at_start(HemisphericRegion::Northern), 110.0);
-        assert_eq!(window.at_start(HemisphericRegion::Southern), 220.0);
-        assert_eq!(window.at_start_all(), vec![110.0, 220.0]);
-        assert_eq!(window.at_end_all(), Some(vec![120.0, 240.0]));
-        assert_eq!(window.time(), 2001.0);
-        assert_eq!(window.index(), 1);
+        assert_eq!(window.get(HemisphericRegion::Northern), 110.0);
+        assert_eq!(window.get(HemisphericRegion::Southern), 220.0);
+        assert_eq!(window.get_all(), vec![110.0, 220.0]);
+        assert_eq!(window.get_time(), 2001.0);
         assert_eq!(window.len(), 3);
         assert!(!window.is_empty());
     }
@@ -1611,17 +1249,16 @@ mod aggregating_window_tests {
     #[test]
     fn test_hemispheric_window_from_four_box_variant() {
         let ts = create_four_box_timeseries();
-        let inner = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, 2001.0);
+        let inner = AggregatingFourBoxToHemisphericWindow::new(&ts, 1, "test");
         let window = HemisphericWindow::FromFourBox(inner);
 
         // Aggregated values: Northern=(11+21)/2=16, Southern=(31+41)/2=36
-        assert_eq!(window.at_start(HemisphericRegion::Northern), 16.0);
-        assert_eq!(window.at_start(HemisphericRegion::Southern), 36.0);
-        assert_eq!(window.at_start_all(), vec![16.0, 36.0]);
-        // Index 2: Northern=(12+22)/2=17, Southern=(32+42)/2=37
-        assert_eq!(window.at_end_all(), Some(vec![17.0, 37.0]));
-        assert_eq!(window.time(), 2001.0);
-        assert_eq!(window.index(), 1);
+        assert_eq!(window.get(HemisphericRegion::Northern), 16.0);
+        assert_eq!(window.get(HemisphericRegion::Southern), 36.0);
+        assert_eq!(window.get_all(), vec![16.0, 36.0]);
+        // Index 0: Northern=(10+20)/2=15, Southern=(30+40)/2=35
+        assert_eq!(window.history(1), Some(vec![15.0, 35.0]));
+        assert_eq!(window.get_time(), 2001.0);
     }
 
     // =========================================================================
@@ -1633,11 +1270,10 @@ mod aggregating_window_tests {
         let ts = create_four_box_timeseries();
         // Index 1 values [11, 21, 31, 41], mean = 26.0
         // With 2.0 conversion factor: 52.0
-        let window = AggregatingFourBoxWindow::with_unit_conversion(&ts, 1, 2001.0, None, 2.0);
+        let window = AggregatingFourBoxWindow::with_unit_conversion(&ts, 1, "test", None, 2.0);
 
-        assert_eq!(window.at_start(), 52.0);
-        assert_eq!(window.at_end(), Some(54.0)); // 27.0 * 2.0
-        assert_eq!(window.previous(), Some(50.0)); // 25.0 * 2.0
+        assert_eq!(window.get(), 52.0);
+        assert_eq!(window.history(1), Some(50.0)); // 25.0 * 2.0
     }
 
     #[test]
@@ -1648,9 +1284,9 @@ mod aggregating_window_tests {
         // Index 1: 11*0.5 + 21*0.2 + 31*0.2 + 41*0.1 = 5.5 + 4.2 + 6.2 + 4.1 = 20.0
         // With 3.0 conversion factor: 60.0
         let window =
-            AggregatingFourBoxWindow::with_unit_conversion(&ts, 1, 2001.0, Some(weights), 3.0);
+            AggregatingFourBoxWindow::with_unit_conversion(&ts, 1, "test", Some(weights), 3.0);
 
-        assert_eq!(window.at_start(), 60.0);
+        assert_eq!(window.get(), 60.0);
     }
 
     #[test]
@@ -1658,11 +1294,10 @@ mod aggregating_window_tests {
         let ts = create_hemispheric_timeseries();
         // Index 1: [110, 220], mean = 165.0
         // With 0.5 conversion factor: 82.5
-        let window = AggregatingHemisphericWindow::with_unit_conversion(&ts, 1, 2001.0, None, 0.5);
+        let window = AggregatingHemisphericWindow::with_unit_conversion(&ts, 1, "test", None, 0.5);
 
-        assert_eq!(window.at_start(), 82.5);
-        assert_eq!(window.at_end(), Some(90.0)); // 180.0 * 0.5
-        assert_eq!(window.previous(), Some(75.0)); // 150.0 * 0.5
+        assert_eq!(window.get(), 82.5);
+        assert_eq!(window.history(1), Some(75.0)); // 150.0 * 0.5
     }
 
     #[test]
@@ -1673,26 +1308,11 @@ mod aggregating_window_tests {
         // Southern = (31 + 41) / 2 = 36.0
         // With 2.0 conversion factor: [32.0, 72.0]
         let window =
-            AggregatingFourBoxToHemisphericWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
+            AggregatingFourBoxToHemisphericWindow::with_unit_conversion(&ts, 1, "test", 2.0);
 
-        assert_eq!(window.at_start(HemisphericRegion::Northern), 32.0);
-        assert_eq!(window.at_start(HemisphericRegion::Southern), 72.0);
-        assert_eq!(window.at_start_all(), vec![32.0, 72.0]);
-    }
-
-    #[test]
-    fn test_aggregating_four_box_to_hemispheric_unit_conversion_at_end() {
-        let ts = create_four_box_timeseries();
-        // Index 2 values [12, 22, 32, 42]
-        // Northern = (12 + 22) / 2 = 17.0
-        // Southern = (32 + 42) / 2 = 37.0
-        // With 2.0 conversion factor: [34.0, 74.0]
-        let window =
-            AggregatingFourBoxToHemisphericWindow::with_unit_conversion(&ts, 1, 2001.0, 2.0);
-
-        assert_eq!(window.at_end(HemisphericRegion::Northern), Some(34.0));
-        assert_eq!(window.at_end(HemisphericRegion::Southern), Some(74.0));
-        assert_eq!(window.at_end_all(), Some(vec![34.0, 74.0]));
+        assert_eq!(window.get(HemisphericRegion::Northern), 32.0);
+        assert_eq!(window.get(HemisphericRegion::Southern), 72.0);
+        assert_eq!(window.get_all(), vec![32.0, 72.0]);
     }
 
     // =========================================================================
@@ -1703,7 +1323,7 @@ mod aggregating_window_tests {
     fn test_aggregating_four_box_window_new_accessors() {
         let ts = create_four_box_timeseries();
         let window =
-            |source| AggregatingFourBoxWindow::with_source(&ts, 1, 2001.0, None, 2.0, source);
+            |source| AggregatingFourBoxWindow::with_source(&ts, 1, "test", None, 2.0, source);
 
         let exogenous = window(VariableSource::Exogenous);
         assert_eq!(exogenous.get_time(), 2001.0);
@@ -1735,7 +1355,7 @@ mod aggregating_window_tests {
     fn test_aggregating_hemispheric_window_new_accessors() {
         let ts = create_hemispheric_timeseries();
         let window =
-            |source| AggregatingHemisphericWindow::with_source(&ts, 1, 2001.0, None, 1.0, source);
+            |source| AggregatingHemisphericWindow::with_source(&ts, 1, "test", None, 1.0, source);
 
         let exogenous = window(VariableSource::Exogenous);
         assert_eq!(exogenous.get_time(), 2001.0);
@@ -1762,7 +1382,7 @@ mod aggregating_window_tests {
     fn test_aggregating_four_box_to_hemispheric_new_accessors() {
         let ts = create_four_box_timeseries();
         let window = |source| {
-            AggregatingFourBoxToHemisphericWindow::with_source(&ts, 1, 2001.0, 2.0, source)
+            AggregatingFourBoxToHemisphericWindow::with_source(&ts, 1, "test", 2.0, source)
         };
 
         let exogenous = window(VariableSource::Exogenous);
@@ -1793,7 +1413,7 @@ mod aggregating_window_tests {
         let scalar = ScalarWindow::FromFourBox(AggregatingFourBoxWindow::with_source(
             &four_box,
             1,
-            2001.0,
+            "test",
             None,
             1.0,
             VariableSource::UpstreamOutput,
@@ -1811,7 +1431,7 @@ mod aggregating_window_tests {
         let window = HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
             &hemispheric,
             1,
-            2001.0,
+            "test",
             1.0,
             VariableSource::Lagged,
         ));

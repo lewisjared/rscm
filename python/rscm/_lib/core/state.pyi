@@ -137,7 +137,6 @@ class VariableSource(Enum):
 class TimeseriesWindow:
     """Zero-cost view into scalar timeseries data."""
 
-    current_index: int
     source: VariableSource
     timeseries_type: TimeseriesType
 
@@ -181,24 +180,6 @@ class TimeseriesWindow:
         The window holds values up to the end of the current step.
         """
         ...
-    def at_start(self) -> float:
-        """Get value at start of timestep (index N).
-
-        Use for state variables and exogenous inputs.
-        """
-        ...
-    def at_end(self) -> float | None:
-        """Get value at end of timestep (index N+1), if available.
-
-        Use for upstream component outputs. Returns None at last timestep.
-        """
-        ...
-    @property
-    def previous(self) -> float:
-        """Deprecated: Use at_offset(-1) for consistent timestep-relative access."""
-        ...
-    def at_offset(self, offset: int) -> float: ...
-    def last_n(self, n: int) -> Arr: ...
     def to_array(self) -> Arr: ...
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
@@ -207,7 +188,6 @@ class TimeseriesWindow:
 class FourBoxTimeseriesWindow:
     """View into FourBox grid timeseries data."""
 
-    current_index: int
     source: VariableSource
     timeseries_type: TimeseriesType
 
@@ -251,31 +231,6 @@ class FourBoxTimeseriesWindow:
         The window holds values up to the end of the current step.
         """
         ...
-    def at_start(self, region: int) -> float:
-        """Get region value at start of timestep (index N).
-
-        Use for state variables and exogenous inputs.
-        """
-        ...
-    def at_end(self, region: int) -> float | None:
-        """Get region value at end of timestep (index N+1), if available.
-
-        Use for upstream component outputs. Returns None at last timestep.
-        """
-        ...
-    def at_start_all(self) -> FourBoxSlice:
-        """Get all regional values at start of timestep (index N)."""
-        ...
-    def at_end_all(self) -> FourBoxSlice | None:
-        """Get all regional values at end of timestep (index N+1), if available.
-
-        Returns None at last timestep.
-        """
-        ...
-    @property
-    def previous(self) -> FourBoxSlice:
-        """Deprecated: Use region(i).at_offset(-1) for consistent access."""
-        ...
     def region(self, region: int) -> TimeseriesWindow: ...
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
@@ -284,7 +239,6 @@ class FourBoxTimeseriesWindow:
 class HemisphericTimeseriesWindow:
     """View into Hemispheric grid timeseries data."""
 
-    current_index: int
     source: VariableSource
     timeseries_type: TimeseriesType
 
@@ -327,31 +281,6 @@ class HemisphericTimeseriesWindow:
 
         The window holds values up to the end of the current step.
         """
-        ...
-    def at_start(self, region: int) -> float:
-        """Get region value at start of timestep (index N).
-
-        Use for state variables and exogenous inputs.
-        """
-        ...
-    def at_end(self, region: int) -> float | None:
-        """Get region value at end of timestep (index N+1), if available.
-
-        Use for upstream component outputs. Returns None at last timestep.
-        """
-        ...
-    def at_start_all(self) -> HemisphericSlice:
-        """Get all regional values at start of timestep (index N)."""
-        ...
-    def at_end_all(self) -> HemisphericSlice | None:
-        """Get all regional values at end of timestep (index N+1), if available.
-
-        Returns None at last timestep.
-        """
-        ...
-    @property
-    def previous(self) -> HemisphericSlice:
-        """Deprecated: Use region(i).at_offset(-1) for consistent access."""
         ...
     def region(self, region: int) -> TimeseriesWindow: ...
     def __len__(self) -> int: ...

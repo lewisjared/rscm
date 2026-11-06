@@ -249,14 +249,15 @@ impl PythonComponent {
             let window = match definition.grid_type {
                 GridType::Scalar => {
                     let w = input_state.get_scalar_window(name);
-                    let times = through_next(w.time_axis(), w.index());
+                    let index = input_state.time_index(w.time_axis(), name);
+                    let times = through_next(w.time_axis(), index);
                     let values = times
                         .iter()
                         .map(|&t| w.interpolate(t))
                         .collect::<RSCMResult<Vec<_>>>()?;
                     PyTimeseriesWindow::new(
                         values,
-                        w.index(),
+                        index,
                         Some(times),
                         w.variable_source(),
                         w.timeseries_type(),
@@ -266,14 +267,15 @@ impl PythonComponent {
                 }
                 GridType::FourBox => {
                     let w = input_state.get_four_box_window(name);
-                    let times = through_next(w.time_axis(), w.index());
+                    let index = input_state.time_index(w.time_axis(), name);
+                    let times = through_next(w.time_axis(), index);
                     let values = times
                         .iter()
                         .map(|&t| regions(w.interpolate_all(t)?))
                         .collect::<RSCMResult<Vec<_>>>()?;
                     PyFourBoxTimeseriesWindow::new(
                         values,
-                        w.index(),
+                        index,
                         Some(times),
                         w.variable_source(),
                         w.timeseries_type(),
@@ -283,14 +285,15 @@ impl PythonComponent {
                 }
                 GridType::Hemispheric => {
                     let w = input_state.get_hemispheric_window(name);
-                    let times = through_next(w.time_axis(), w.index());
+                    let index = input_state.time_index(w.time_axis(), name);
+                    let times = through_next(w.time_axis(), index);
                     let values = times
                         .iter()
                         .map(|&t| regions(w.interpolate_all(t)?))
                         .collect::<RSCMResult<Vec<_>>>()?;
                     PyHemisphericTimeseriesWindow::new(
                         values,
-                        w.index(),
+                        index,
                         Some(times),
                         w.variable_source(),
                         w.timeseries_type(),

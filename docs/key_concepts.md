@@ -68,9 +68,9 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
             self.sensitivity = sensitivity
 
         def solve(self, t_current, t_next, inputs):
-            # Access values at start of timestep (index N)
-            emis = inputs.emissions.at_start()
-            conc_prev = inputs.concentration.at_start()
+            # get() returns the value the model wired each input to
+            emis = inputs.emissions.get()
+            conc_prev = inputs.concentration.get()
 
             # Return typed outputs
             return self.Outputs(
@@ -106,8 +106,8 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
             -> RSCMResult<OutputState>
         {
             let inputs = SimpleCarbonCycleInputs::from_input_state(input_state);
-            let emis = inputs.emissions.at_start();
-            let conc_prev = inputs.concentration.at_start();
+            let emis = inputs.emissions.get();
+            let conc_prev = inputs.concentration.get();
 
             let outputs = SimpleCarbonCycleOutputs {
                 concentration: conc_prev + emis * self.sensitivity,
@@ -181,7 +181,7 @@ Runners such as `run_magicc7` and `run_fair` carry their models' lags.
 Each timestep runs from `t_current` (index N) to `t_next` (index N+1).
 Within a timestep the model solves every producer before its consumers,
 using a topological sort of the graph.
-Each component reads the values at index N and writes its outputs to index N+1:
+Each component reads its inputs with `get()` and writes its outputs to index N+1:
 
 ```mermaid
 sequenceDiagram
@@ -192,36 +192,61 @@ sequenceDiagram
 
     Note over State: Index N has values from previous timestep
     Model->>C1: solve(t_current, t_next)
-    C1->>State: Read at_start() [index N]
+    C1->>State: get() reads exogenous data and own state [index N]
     C1->>State: Write outputs [index N+1]
     Model->>C2: solve(t_current, t_next)
-    C2->>State: Read at_start() [index N] or at_end() [index N+1]
+    C2->>State: get() reads C1's output [index N+1], or [index N] on a lagged edge
     C2->>State: Write outputs [index N+1]
     Note over State: Index N+1 now has new values
 ```
 
 ### Timestep Semantics
 
-A component reads each input from one end of the timestep:
+A component never chooses a time index.
+It reads each input through three calls on the input's window:
 
-| What you're reading                | Who wrote it           | Method       |
-| ---------------------------------- | ---------------------- | ------------ |
-| Your own previous state            | You, last timestep     | `at_start()` |
-| Exogenous input (external forcing) | Pre-populated          | `at_start()` |
-| Upstream component output          | They ran this timestep | `at_end()`   |
-| Lagged input                       | Written last timestep  | `at_start()` |
+- `get()` returns the value the model wired the input to.
+- `interval()` returns a point's values at the start and end of the step, as a `(start, end)` pair.
+- `history(n)` returns the value `n` steps before `get()`, so `history(0)` equals `get()`.
+  It reads only the past, and returns `None` before the first step.
 
-`Model` never solves a step from the last time point, so `at_end()` always has a value during a run.
-It returns `None` only for a window placed on the last time point, for example when you call `solve` directly.
-For a lagged input `at_end()` also returns `None`, so it never sees this step's value.
-In Rust, `get()` applies this table and falls back to `at_start()` in both cases:
+The builder decides which value `get()` returns, from how the model is wired:
 
-```rust
-let erf = inputs.erf.at_end().unwrap_or_else(|| inputs.erf.at_start());
-let erf = inputs.erf.get(); // same value for an upstream output
-```
+| What you're reading                | Who wrote it           | `get()` reads |
+| ---------------------------------- | ---------------------- | ------------- |
+| Your own previous state            | You, last timestep     | index N       |
+| Exogenous input (external forcing) | Pre-populated          | index N       |
+| Upstream component output          | They ran this timestep | index N+1     |
+| Lagged input                       | Written last timestep  | index N       |
 
-The component tutorials list every accessor, including `at_offset()` and `last_n()`.
+`with_lag(variable)` and `with_lag_for(variable, consumer)` make an edge read the previous step.
+A lagged input's `get()` gives last step's value, and its `interval()` gives last step's start and end.
+Adding a lag changes the model wiring, not the component.
+
+`interval()` is an error on an average, which has one value per step,
+and on a component's own state, whose end of step the component writes.
+`get_time()` gives the time of the value `get()` returns,
+and `history_len()` counts the values `history` can read.
+A fixed calendar year, such as a reference year of exogenous data, is read with `interpolate(year)`.
+
+=== "Python"
+
+    ```python
+    emis = inputs.emissions.get()
+    erf_start, erf_end = inputs.erf.interval()
+    emis_last_step = inputs.emissions.history(1)  # None in the first step
+    ```
+
+=== "Rust"
+
+    ```rust
+    let emis = inputs.emissions.get();
+    let (erf_start, erf_end) = inputs.erf.interval()?;
+    let emis_last_step = inputs.emissions.history(1); // None in the first step
+    ```
+
+Rust grid windows read one region with `get(region)` and every region with `get_all()`.
+The component tutorials cover each call in more detail.
 
 ### Running a Model
 

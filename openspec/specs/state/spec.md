@@ -35,42 +35,40 @@ The system SHALL provide a `StateValue` enum that represents values which can be
 
 ### Requirement: InputState Container
 
-The system SHALL provide an `InputState` type that allows components to access their input variables during the solve phase via window accessors with explicit timestep semantics.
+The system SHALL provide an `InputState` type that allows components to access their input variables
+during the solve phase via windows.
+A window's `get()` returns the value the model wired the input to, so components never choose a time index.
 
 ### Requirement: TimeseriesWindow for Scalar Access
 
-The system SHALL provide a `TimeseriesWindow` type that provides zero-cost access to scalar timeseries data with temporal navigation, including explicit timestep-semantic methods.
+The system SHALL provide a `TimeseriesWindow` type that provides zero-cost access to scalar timeseries data
+through `get()`, `interval()` and `history(n)`.
 
 ### Requirement: GridTimeseriesWindow for Grid Access
 
-The system SHALL provide a `GridTimeseriesWindow<G>` type that provides zero-cost access to grid timeseries data with both temporal and spatial navigation, including explicit timestep-semantic methods.
+The system SHALL provide a `GridTimeseriesWindow<G>` type with zero-cost access to grid timeseries data,
+across time and regions, through `get_all()`, `interval()` and `history(n)`.
 
-#### Scenario: Get all regional values at start of timestep
+#### Scenario: Get all regional values
 
-- **WHEN** calling `window.at_start_all()`
-- **THEN** it MUST return a Vec containing values for all regions at index N
+- **WHEN** calling `window.get_all()`
+- **THEN** it MUST return a Vec containing values for all regions at the index `get()` reads
 
-#### Scenario: Get all regional values at end of timestep
+#### Scenario: Get earlier regional values
 
-- **WHEN** calling `window.at_end_all()`
-- **THEN** it MUST return `Some(Vec)` containing values for all regions at index N+1
-- **AND** return `None` if at the final timestep
+- **WHEN** calling `window.history(n)`
+- **THEN** it MUST return `Some(Vec)` containing values for all regions `n` steps before `get_all()`
+- **AND** return `None` before the first timestep
 
 ### Requirement: Type-Safe FourBox Window Access
 
 The system SHALL provide type-safe region access for FourBox grid windows.
 
-#### Scenario: Get single region at current time
+#### Scenario: Get single region
 
-- **WHEN** calling `window.current(FourBoxRegion::NorthernOcean)`
-- **THEN** it MUST return the value for that specific region
+- **WHEN** calling `window.get(FourBoxRegion::NorthernOcean)`
+- **THEN** it MUST return the value for that specific region at the index `get()` reads
 - **AND** accept only valid FourBoxRegion variants (compile-time safety)
-
-#### Scenario: Get single region at previous time
-
-- **WHEN** calling `window.previous(FourBoxRegion::SouthernLand)`
-- **THEN** it MUST return `Some(value)` for that region at previous timestep
-- **AND** return `None` if at the first timestep
 
 #### Scenario: Interpolate single region
 
@@ -81,9 +79,9 @@ The system SHALL provide type-safe region access for FourBox grid windows.
 
 The system SHALL provide type-safe region access for Hemispheric grid windows.
 
-#### Scenario: Get hemispheric region at current time
+#### Scenario: Get hemispheric region
 
-- **WHEN** calling `window.current(HemisphericRegion::Northern)`
+- **WHEN** calling `window.get(HemisphericRegion::Northern)`
 - **THEN** it MUST return the value for the Northern Hemisphere
 - **AND** accept only valid HemisphericRegion variants
 
@@ -196,33 +194,40 @@ The system SHALL handle exogenous (external input) and endogenous (model-compute
 
 ### Requirement: Timestep Access Semantics
 
-The system SHALL provide explicit methods for accessing values at different points within a timestep, reflecting the forward-Euler time-stepping scheme where values at index N represent state at the start of timestep N, and components write outputs to index N+1.
+The system SHALL let components read inputs without choosing a time index,
+reflecting the forward-Euler time-stepping scheme,
+where values at index N represent state at the start of timestep N,
+and components write outputs to index N+1.
+The model builder decides which value `get()` returns from the model wiring.
 
-#### Scenario: Access value at start of timestep
+#### Scenario: Read an input
 
-- **WHEN** calling `window.at_start()`
-- **THEN** it MUST return the value at the current timestep index (N)
+- **WHEN** calling `window.get()`
+- **THEN** it MUST return the value at index N+1 for an output written upstream in the same step
+- **AND** return the value at index N for exogenous data, a component's own state and a lagged edge
 - **AND** NOT allocate memory
+- **AND** panic with the variable name if that index lies past the end of the timeseries
 
-#### Scenario: Access value at end of timestep
+#### Scenario: Read a lagged input
 
-- **WHEN** calling `window.at_end()`
-- **THEN** it MUST return the value at the next timestep index (N+1)
-- **AND** return the same value as `at_offset(1)`
-- **AND** return `None` if at the final timestep (no N+1 exists)
+- **WHEN** the model wiring lags an edge with `with_lag(variable)` or `with_lag_for(variable, consumer)`
+- **THEN** `get()` MUST return the previous step's value for that edge
+- **AND** `interval()` MUST return the previous step's start and end values
 
-#### Scenario: Guidance for state variable initial conditions
+#### Scenario: Read the start and end of the step
 
-- **WHEN** a component reads its own state variable (appears in both inputs and outputs)
-- **THEN** it SHOULD use `at_start()` because the N+1 slot has not been written yet
+- **WHEN** calling `window.interval()` on a point variable
+- **THEN** it MUST return the values at the start and end of the step
+- **AND** return an error for an average variable or a component's own state
 
-#### Scenario: Guidance for upstream component outputs
+#### Scenario: Read the past
 
-- **WHEN** a component reads an output from an upstream component in the dependency graph
-- **THEN** it SHOULD use `at_end()` to get the value just computed by the upstream component
+- **WHEN** calling `window.history(n)`
+- **THEN** it MUST return the value `n` steps before the one `get()` returns
+- **AND** return `None` before the first timestep
+- **AND** never return a value after the one `get()` returns
 
-#### Scenario: Guidance for exogenous inputs
+#### Scenario: Read a fixed calendar year
 
-- **WHEN** a component reads exogenous (externally provided) input data
-- **THEN** it SHOULD use `at_start()` for the value at the start of the timestep
-- **OR** use `interpolate(t)` for values at intermediate times during ODE integration
+- **WHEN** a component reads exogenous data at a fixed time, such as a reference year
+- **THEN** it SHOULD use `interpolate(t)`, which may read ahead of the step

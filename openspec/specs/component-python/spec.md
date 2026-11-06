@@ -118,24 +118,25 @@ The system SHALL provide Python window types for typed component input access.
 
 - **WHEN** a typed Python component receives inputs
 - **THEN** scalar variables MUST be accessible via `TimeseriesWindow`
-- **AND** `window.current` returns the current value
-- **AND** `window.previous` returns the previous value (raises if at first timestep)
-- **AND** `window.at_offset(n)` returns value at relative offset
-- **AND** `window.last_n(n)` returns numpy array of last n values
+- **AND** `window.get()` returns the value the model wired the input to
+- **AND** `window.interval()` returns the values at the start and end of the step
+  (raises `ValueError` on an average or a component's own state)
+- **AND** `window.history(n)` returns the value `n` steps before `get()`, or `None` before the first timestep
+- **AND** `window.interpolate(t)` returns the value at time `t`, such as a fixed reference year
 
 #### Scenario: FourBoxTimeseriesWindow for grid access
 
 - **WHEN** a typed Python component receives FourBox inputs
 - **THEN** the variable MUST be accessible via `FourBoxTimeseriesWindow`
-- **AND** `window.current` returns a `FourBoxSlice`
-- **AND** `window.previous` returns a `FourBoxSlice`
+- **AND** `window.get()` returns a `FourBoxSlice`
+- **AND** `window.history(n)` returns a `FourBoxSlice`, or `None` before the first timestep
 - **AND** `window.region(index)` returns a `TimeseriesWindow` for that region
 
 #### Scenario: HemisphericTimeseriesWindow for hemispheric access
 
 - **WHEN** a typed Python component receives Hemispheric inputs
 - **THEN** the variable MUST be accessible via `HemisphericTimeseriesWindow`
-- **AND** `window.current` returns a `HemisphericSlice`
+- **AND** `window.get()` returns a `HemisphericSlice`
 - **AND** `window.region(index)` returns a `TimeseriesWindow` for that region
 
 ### Requirement: Python Component Base Class
