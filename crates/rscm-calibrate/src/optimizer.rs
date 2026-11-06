@@ -90,9 +90,13 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
         let mut best_log_posterior = f64::NEG_INFINITY;
         let mut best_log_likelihood = f64::NEG_INFINITY;
 
-        // Evaluate all samples
+        let mut first_error = None;
+
         for params in samples.iter() {
-            let log_posterior = self.evaluate(params);
+            let log_posterior = self.try_evaluate(params).unwrap_or_else(|e| {
+                first_error.get_or_insert(e);
+                f64::NEG_INFINITY
+            });
 
             if log_posterior > best_log_posterior {
                 best_log_posterior = log_posterior;
@@ -110,7 +114,11 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
         }
 
         let best = best_params.ok_or_else(|| {
-            crate::Error::SamplingError("Random search found no valid samples".to_string())
+            let reason = first_error.map_or_else(
+                || "every sample is outside the prior support or has zero likelihood".to_string(),
+                |e| format!("first error: {e}"),
+            );
+            crate::Error::SamplingError(format!("Random search found no valid samples ({reason})"))
         })?;
 
         Ok(OptimizationResult {
@@ -293,5 +301,37 @@ mod tests {
             result.best_log_posterior.is_finite(),
             "Should find finite log posterior"
         );
+    }
+
+    #[test]
+    fn test_random_search_reports_underlying_error_when_every_evaluation_fails() {
+        struct FailingModel {
+            param_names: Vec<String>,
+        }
+
+        impl ModelRunner for FailingModel {
+            fn param_names(&self) -> &[String] {
+                &self.param_names
+            }
+
+            fn run(&self, _params: &[f64]) -> crate::Result<ModelOutput> {
+                Err(crate::Error::ModelError("solver diverged".to_string()))
+            }
+        }
+
+        let mut params = ParameterSet::new();
+        params.add("x", Box::new(Uniform::new(0.0, 4.0).unwrap()));
+        let runner = FailingModel {
+            param_names: vec!["x".to_string()],
+        };
+        let mut estimator =
+            PointEstimator::new(params, runner, GaussianLikelihood::default(), Target::new());
+
+        let err = estimator
+            .optimize(Optimizer::RandomSearch, 10)
+            .expect_err("no evaluation succeeded");
+
+        assert!(err.to_string().contains("no valid samples"), "got: {err}");
+        assert!(err.to_string().contains("solver diverged"), "got: {err}");
     }
 }

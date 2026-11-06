@@ -744,5 +744,78 @@ class TestEnsembleSampler:
             assert chain2.total_iterations == 30
 
 
+def _sampler_with_factory(model_factory):
+    params = ParameterSet()
+    params.add("x", Uniform(0.0, 1.0))
+
+    target = Target()
+    target.add_observation("y", 1.0, 0.5, 0.1)
+
+    runner = ModelRunner(
+        model_factory=model_factory, param_names=["x"], output_variables=["y"]
+    )
+    return EnsembleSampler(params, runner, GaussianLikelihood(), target)
+
+
+class TestSamplerErrors:
+    """Failures that must reach the caller rather than produce a useless chain."""
+
+    def test_every_initial_walker_failing_raises(self):
+        def model_factory(param_dict):
+            msg = "solver diverged"
+            raise RuntimeError(msg)
+
+        sampler = _sampler_with_factory(model_factory)
+
+        with pytest.raises(ValueError, match="solver diverged"):
+            sampler.run(10, WalkerInit.from_prior())
+
+    @pytest.mark.parametrize("exception", [RuntimeError, KeyboardInterrupt])
+    def test_progress_callback_exception_stops_run(self, exception):
+        sampler = _sampler_with_factory(lambda p: {"y": {1.0: p["x"]}})
+        calls = []
+
+        def callback(info):
+            calls.append(info.iteration)
+            msg = "stop here"
+            raise exception(msg)
+
+        with pytest.raises(exception, match="stop here"):
+            sampler.run_with_progress(10, WalkerInit.from_prior(), 1, callback)
+        assert calls == [0]
+
+    def test_checkpoint_progress_callback_exception_stops_run(self, tmp_path):
+        sampler = _sampler_with_factory(lambda p: {"y": {1.0: p["x"]}})
+
+        def callback(info):
+            msg = "stop here"
+            raise RuntimeError(msg)
+
+        with pytest.raises(RuntimeError, match="stop here"):
+            sampler.run_with_checkpoint(
+                10,
+                WalkerInit.from_prior(),
+                1,
+                5,
+                str(tmp_path / "checkpoint"),
+                progress_callback=callback,
+            )
+
+    def test_random_search_reports_underlying_error(self):
+        def model_factory(param_dict):
+            msg = "solver diverged"
+            raise RuntimeError(msg)
+
+        params = ParameterSet()
+        params.add("x", Uniform(0.0, 1.0))
+        runner = ModelRunner(
+            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+        )
+        estimator = PointEstimator(params, runner, GaussianLikelihood(), Target())
+
+        with pytest.raises(ValueError, match=r"no valid samples.*solver diverged"):
+            estimator.optimize(Optimizer.random_search(), n_samples=5)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

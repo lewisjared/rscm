@@ -939,6 +939,12 @@ class EnsembleSampler:
         -------
         Chain
             MCMC chain with samples
+
+        Raises
+        ------
+        ValueError
+            If no initial walker has a finite log posterior.
+            The message includes the first prior, model or likelihood error.
         """
     def run_with_progress(
         self,
@@ -959,7 +965,8 @@ class EnsembleSampler:
         thin : int
             Thinning interval (store every thin-th sample)
         progress_callback : callable
-            Function called with ProgressInfo after each iteration
+            Function called with ProgressInfo after each iteration.
+            An exception it raises stops sampling and propagates unchanged.
 
         Returns
         -------
@@ -991,7 +998,8 @@ class EnsembleSampler:
         checkpoint_path : str
             Base path for checkpoint files (will append .state and .chain)
         progress_callback : callable, optional
-            Progress callback function
+            Progress callback function.
+            An exception it raises stops sampling and propagates unchanged.
 
         Returns
         -------
@@ -1020,7 +1028,8 @@ class EnsembleSampler:
         checkpoint_path : str
             Base path for checkpoint files
         progress_callback : callable, optional
-            Progress callback function
+            Progress callback function.
+            An exception it raises stops sampling and propagates unchanged.
 
         Returns
         -------

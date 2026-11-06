@@ -5,7 +5,7 @@
 
 use crate::{
     likelihood::LikelihoodFn, model_runner::ModelRunner, parameter_set::ParameterSet,
-    target::Target,
+    target::Target, Result,
 };
 
 /// Point estimator for finding optimal parameter sets.
@@ -69,7 +69,7 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
         self.params.bounds()
     }
 
-    /// Evaluate the log likelihood for a parameter vector.
+    /// Evaluate the log posterior for a parameter vector.
     ///
     /// This method runs the model, computes the likelihood, and tracks
     /// the evaluation in the internal history.
@@ -80,59 +80,39 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
     ///
     /// # Returns
     ///
-    /// The log likelihood value. Returns negative infinity if:
+    /// The log posterior value. Returns negative infinity if:
     /// - Parameter is outside prior support
     /// - Model execution fails
     /// - Likelihood computation fails
     pub fn evaluate(&mut self, params: &[f64]) -> f64 {
-        // Compute log prior
-        let log_prior = match self.params.log_prior(params) {
-            Ok(lp) => lp,
-            Err(_) => {
-                // Outside prior support or dimension mismatch
-                self.evaluated_params.push(params.to_vec());
-                self.evaluated_log_likelihoods.push(f64::NEG_INFINITY);
-                return f64::NEG_INFINITY;
-            }
-        };
+        self.try_evaluate(params).unwrap_or(f64::NEG_INFINITY)
+    }
 
-        if !log_prior.is_finite() || log_prior == f64::NEG_INFINITY {
-            // Outside prior support
-            self.evaluated_params.push(params.to_vec());
-            self.evaluated_log_likelihoods.push(f64::NEG_INFINITY);
-            return f64::NEG_INFINITY;
-        }
+    /// Evaluate the log posterior, returning why a prior, model or likelihood evaluation failed.
+    ///
+    /// A point outside the prior support is `Ok(-inf)`.
+    /// The evaluation is recorded in the history either way.
+    pub(crate) fn try_evaluate(&mut self, params: &[f64]) -> Result<f64> {
+        let result = self.log_posterior_and_likelihood(params);
+        let log_likelihood = result.as_ref().map_or(f64::NEG_INFINITY, |&(_, ll)| ll);
 
-        // Run model
-        let model_output = match self.runner.run(params) {
-            Ok(output) => output,
-            Err(_) => {
-                // Model failure
-                self.evaluated_params.push(params.to_vec());
-                self.evaluated_log_likelihoods.push(f64::NEG_INFINITY);
-                return f64::NEG_INFINITY;
-            }
-        };
-
-        // Compute log likelihood
-        let log_likelihood = match self.likelihood.ln_likelihood(&model_output, &self.target) {
-            Ok(ll) => ll,
-            Err(_) => {
-                // Likelihood computation failure
-                self.evaluated_params.push(params.to_vec());
-                self.evaluated_log_likelihoods.push(f64::NEG_INFINITY);
-                return f64::NEG_INFINITY;
-            }
-        };
-
-        // Log posterior (prior + likelihood, no normalization constant)
-        let log_posterior = log_prior + log_likelihood;
-
-        // Track evaluation
         self.evaluated_params.push(params.to_vec());
         self.evaluated_log_likelihoods.push(log_likelihood);
 
-        log_posterior
+        result.map(|(log_posterior, _)| log_posterior)
+    }
+
+    fn log_posterior_and_likelihood(&self, params: &[f64]) -> Result<(f64, f64)> {
+        let log_prior = self.params.log_prior(params)?;
+        if !log_prior.is_finite() {
+            return Ok((f64::NEG_INFINITY, f64::NEG_INFINITY));
+        }
+
+        let model_output = self.runner.run(params)?;
+        let log_likelihood = self.likelihood.ln_likelihood(&model_output, &self.target)?;
+
+        // Log posterior (prior + likelihood, no normalization constant)
+        Ok((log_prior + log_likelihood, log_likelihood))
     }
 
     /// Get all evaluated parameter vectors.
