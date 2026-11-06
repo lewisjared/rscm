@@ -591,6 +591,13 @@ where
         self
     }
 
+    /// Multiply every value by `factor` and relabel the series with `units`.
+    pub(crate) fn convert_units(mut self, factor: T, units: String) -> Self {
+        self.values.mapv_inplace(|v| v * factor);
+        self.units = units;
+        self
+    }
+
     /// Interpolate onto a new time axis
     ///
     /// Creates a new grid timeseries with the same spatial grid but different time axis.

@@ -445,7 +445,9 @@ mod tests {
     use super::*;
     use crate::component::{Component, InputState, OutputState, RequirementDefinition};
     use crate::errors::RSCMResult;
+    use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
     use crate::model::ModelBuilder;
+    use crate::spatial::ScalarGrid;
     use crate::timeseries::{Time, TimeAxis, Timeseries};
     use ndarray::array;
     use serde::{Deserialize, Serialize};
@@ -501,8 +503,13 @@ mod tests {
 
     fn build_test_model() -> Model {
         let time_axis = TimeAxis::from_values(array![2020.0, 2021.0, 2022.0]);
-        let emissions_ts =
-            Timeseries::from_values(array![10.0, 11.0, 12.0], array![2020.0, 2021.0, 2022.0]);
+        let emissions_ts = Timeseries::new(
+            array![[10.0], [11.0], [12.0]],
+            Arc::new(time_axis.clone()),
+            ScalarGrid,
+            "GtCO2 / yr".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        );
 
         let mut builder = ModelBuilder::new();
         builder.with_time_axis(time_axis);

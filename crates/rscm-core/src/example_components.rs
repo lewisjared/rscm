@@ -152,7 +152,7 @@ pub(crate) struct TestComponentParameters {
 /// - `TestComponent::generated_definitions()` for the Component trait
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[inputs(
-    emissions_co2 { name = "Emissions|CO2", unit = "GtCO2" },
+    emissions_co2 { name = "Emissions|CO2", unit = "GtC / yr" },
 )]
 #[outputs(
     concentration_co2 { name = "Concentrations|CO2", unit = "ppm" },
@@ -237,7 +237,7 @@ mod tests {
             values,
             Arc::new(TimeAxis::from_bounds(array![1800.0, 1850.0, 2100.0])),
             ScalarGrid,
-            "GtCO2".to_string(),
+            "GtC / yr".to_string(),
             InterpolationStrategy::from(PreviousStrategy::new(true)),
         )
     }
@@ -254,7 +254,7 @@ mod tests {
         // Check input definition
         let input_def = &defs[0];
         assert_eq!(input_def.name, "Emissions|CO2");
-        assert_eq!(input_def.unit, "GtCO2");
+        assert_eq!(input_def.unit, "GtC / yr");
         assert_eq!(input_def.requirement_type, RequirementType::Input);
         assert_eq!(input_def.grid_type, GridType::Scalar);
 
@@ -340,7 +340,7 @@ mod tests {
         let input = &metadata.inputs[0];
         assert_eq!(input.rust_name, "emissions_co2");
         assert_eq!(input.variable_name, "Emissions|CO2");
-        assert_eq!(input.unit, "GtCO2");
+        assert_eq!(input.unit, "GtC / yr");
         assert_eq!(input.grid, GridType::Scalar);
 
         // Check output metadata
