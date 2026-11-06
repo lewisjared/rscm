@@ -361,6 +361,43 @@ class TestChain:
             loaded_samples = loaded_chain.flat_samples(discard=0)
             np.testing.assert_array_almost_equal(orig_samples, loaded_samples)
 
+    def test_to_dataframe_labels_walkers_and_iterations(self):
+        """Each walker's rows hold its own samples, indexed by sampler iteration."""
+        pytest.importorskip("pandas")
+        params = ParameterSet()
+        params.add("x", Uniform(-1.0, 40.0))
+
+        target = Target()
+        target.add_observation("y", 1.0, 0.0, 1.0)
+
+        # Rejects every proposal, so each walker stays at its own start.
+        def model_factory(param_dict):
+            if param_dict["x"] not in starts:
+                msg = "proposal rejected"
+                raise ValueError(msg)
+            return {"y": {1.0: param_dict["x"]}}
+
+        runner = ModelRunner(
+            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+        )
+        sampler = EnsembleSampler(params, runner, GaussianLikelihood(), target)
+        starts = [float(w) for w in range(sampler.default_n_walkers())]
+        chain = sampler.run(6, WalkerInit.explicit([[s] for s in starts]), thin=2)
+
+        df = chain.to_dataframe(discard=1)
+
+        assert df.index.names == ["walker", "iteration"]
+        walker_0_log_prob = df.xs(0, level="walker")["log_prob"].iloc[0]
+        for walker, start in enumerate(starts):
+            walker_df = df.xs(walker, level="walker")
+            # Stored samples are iterations 1, 3 and 5 (0-based) with thin=2.
+            assert list(walker_df.index) == [3, 5]
+            np.testing.assert_array_equal(walker_df["x"], start)
+            # The Gaussian log likelihood falls by x**2 / 2 relative to walker 0.
+            np.testing.assert_allclose(
+                walker_df["log_prob"] - walker_0_log_prob, -0.5 * start**2
+            )
+
     def test_merge_chains(self):
         """Test merging multiple chain segments."""
         # Create two short chains
