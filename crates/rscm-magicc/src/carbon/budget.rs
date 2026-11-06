@@ -160,7 +160,7 @@ impl Component for CO2Budget {
     ) -> RSCMResult<OutputState> {
         let inputs = CO2BudgetInputs::from_input_state(input_state);
 
-        let co2_start = inputs.co2_concentration.at_start();
+        let co2_start = inputs.co2_concentration.get();
         let fossil = inputs.fossil_emissions.get()
             + permafrost_emissions(self.parameters.permafrost, input_state, PERMAFROST_CO2);
         let sources = fossil + inputs.ch4_oxidation.get();

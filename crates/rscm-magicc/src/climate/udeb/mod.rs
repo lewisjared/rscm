@@ -561,27 +561,28 @@ impl ClimateUDEB {
         let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
         let area = [fgno, fgnl, fgso, fgsl];
         let forcing_input = if self.parameters.regional_forcing {
-            let window = input_state.get_four_box_window(REGIONAL_FORCING);
-            let start = window.at_start_all();
-            let end = window.at_end_all().unwrap_or_else(|| start.clone());
+            let (start, end) = input_state
+                .get_four_box_window(REGIONAL_FORCING)
+                .interval()?;
             ForcingInput::Regional(
                 [start[0], start[1], start[2], start[3]],
                 [end[0], end[1], end[2], end[3]],
             )
         } else {
-            let window = input_state.get_scalar_window("Effective Radiative Forcing");
-            let start = window.at_start();
-            ForcingInput::Global(start, window.at_end().unwrap_or(start))
+            let (start, end) = input_state
+                .get_scalar_window("Effective Radiative Forcing")
+                .interval()?;
+            ForcingInput::Global(start, end)
         };
         let steps = self.parameters.steps_per_year as FloatValue;
 
         // Get previous surface temperature state
         let temperature = input_state.get_four_box_window("Surface Temperature");
         let prev_temp = FourBoxSlice::from_array([
-            temperature.at_start(FourBoxRegion::NorthernOcean),
-            temperature.at_start(FourBoxRegion::NorthernLand),
-            temperature.at_start(FourBoxRegion::SouthernOcean),
-            temperature.at_start(FourBoxRegion::SouthernLand),
+            temperature.get(FourBoxRegion::NorthernOcean),
+            temperature.get(FourBoxRegion::NorthernLand),
+            temperature.get(FourBoxRegion::SouthernOcean),
+            temperature.get(FourBoxRegion::SouthernLand),
         ]);
 
         // Initialize internal state from previous surface temperatures if this
@@ -600,8 +601,8 @@ impl ClimateUDEB {
         let dt_sub = dt_year / self.parameters.steps_per_year as FloatValue;
 
         let q_2xco2 = if self.parameters.time_varying_q2x {
-            let window = input_state.get_scalar_window(CO2_DOUBLING_ERF);
-            window.at_end().unwrap_or_else(|| window.at_start())
+            let (_, q) = input_state.get_scalar_window(CO2_DOUBLING_ERF).interval()?;
+            q
         } else {
             self.parameters.rf_2xco2
         };

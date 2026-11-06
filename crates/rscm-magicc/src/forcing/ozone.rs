@@ -24,7 +24,7 @@
 //! Aviation NOx is not separated from other NOx.
 
 use crate::parameters::OzoneForcingParameters;
-use crate::reference::{require_annual, value_at_year};
+use crate::reference::{first_value, require_annual, value_at_year};
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
@@ -101,14 +101,8 @@ impl Default for OzoneForcing {
     }
 }
 
-fn first(window: &ScalarWindow) -> FloatValue {
-    window
-        .at_offset(-(window.index() as isize))
-        .unwrap_or_else(|| window.at_start())
-}
-
-fn end(window: &ScalarWindow) -> FloatValue {
-    window.at_end().unwrap_or_else(|| window.at_start())
+fn end(window: &ScalarWindow) -> RSCMResult<FloatValue> {
+    Ok(window.interval()?.1)
 }
 
 #[typetag::serde]
@@ -154,25 +148,25 @@ impl Component for OzoneForcing {
             0.0
         } else {
             let threshold = value_at_year(&eesc, t_current, p.strat_threshold_year);
-            self.strat_forcing(end(&eesc), threshold)
+            self.strat_forcing(end(&eesc)?, threshold)
         };
 
         let ch4 = window(CH4);
         let change = |gas: &str| {
             let [fossil, afolu] = SECTORS
                 .map(|sector| input_state.get_scalar_window(&format!("Emissions|{gas}|{sector}")));
-            (fossil.at_start() - first(&fossil)) + (afolu.at_start() - first(&afolu))
+            (fossil.get() - first_value(&fossil)) + (afolu.get() - first_value(&afolu))
         };
         let trop = self.trop_forcing(
-            end(&ch4) / first(&ch4),
+            end(&ch4)? / first_value(&ch4),
             change("NOx"),
             change("CO"),
             change("NMVOC"),
         );
 
         let n2o = window(N2O);
-        let n2o_ozone = p.n2o_radeff * (end(&n2o) - first(&n2o));
-        let temperature = p.temperature_scale * window(TEMPERATURE).at_start();
+        let n2o_ozone = p.n2o_radeff * (end(&n2o)? - first_value(&n2o));
+        let temperature = p.temperature_scale * window(TEMPERATURE).get();
 
         let trop = match &p.trop_regions {
             Some(regions) => StateValue::FourBox(FourBoxSlice::from_array(

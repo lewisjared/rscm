@@ -310,28 +310,24 @@ impl Component for ForcingAggregation {
             .agents
             .iter()
             .map(|agent| {
-                let values: Vec<Vec<FloatValue>> = agent_inputs(agent)
+                let values = agent_inputs(agent)
                     .into_iter()
                     .map(|name| {
-                        if agent.regional {
-                            let window = input_state.get_four_box_window(name);
-                            window.at_end_all().unwrap_or_else(|| window.at_start_all())
+                        Ok(if agent.regional {
+                            input_state.get_four_box_window(name).interval()?.1
                         } else {
-                            let window = input_state.get_scalar_window(name);
-                            vec![window.at_end().unwrap_or_else(|| window.at_start())]
-                        }
+                            vec![input_state.get_scalar_window(name).interval()?.1]
+                        })
                     })
-                    .collect();
-                self.agent_forcing(agent, &values)
+                    .collect::<RSCMResult<Vec<Vec<FloatValue>>>>()?;
+                Ok(self.agent_forcing(agent, &values))
             })
-            .collect();
+            .collect::<RSCMResult<_>>()?;
         let internal = match &self.parameters.climate {
             None => self.initial_internal_efficacies(),
             Some(climate) => {
-                let ecs = input_state
-                    .get_scalar_window(CLIMATE_SENSITIVITY)
-                    .at_start();
-                let q = input_state.get_scalar_window(CO2_DOUBLING_ERF).at_start();
+                let ecs = input_state.get_scalar_window(CLIMATE_SENSITIVITY).get();
+                let (q, _) = input_state.get_scalar_window(CO2_DOUBLING_ERF).interval()?;
                 let (ecs, q) = if ecs.is_finite() && q.is_finite() {
                     (ecs, q)
                 } else {

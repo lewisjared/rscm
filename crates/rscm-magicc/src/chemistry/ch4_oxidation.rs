@@ -157,12 +157,11 @@ impl Component for CH4Oxidation {
     ) -> RSCMResult<OutputState> {
         require_annual("CH4Oxidation", t_current, t_next)?;
         let inputs = CH4OxidationInputs::from_input_state(input_state);
-        let start = inputs.concentration.at_start();
         let pools = CH4Pools {
-            fossil: inputs.fossil_burden.at_start(),
-            afolu: inputs.afolu_burden.at_start(),
-            natural: inputs.natural_burden.at_start(),
-            permafrost: inputs.permafrost_burden.at_start(),
+            fossil: inputs.fossil_burden.get(),
+            afolu: inputs.afolu_burden.get(),
+            natural: inputs.natural_burden.get(),
+            permafrost: inputs.permafrost_burden.get(),
         };
         let sources = CH4Sources {
             fossil: inputs.fossil_emissions.get(),
@@ -176,7 +175,7 @@ impl Component for CH4Oxidation {
         let (next, co2_emissions) = self.solve_oxidation(
             pools,
             sources,
-            (start, inputs.concentration.at_end().unwrap_or(start)),
+            inputs.concentration.interval()?,
             inputs.oh_lifetime.get(),
         );
         Ok(CH4OxidationOutputs {

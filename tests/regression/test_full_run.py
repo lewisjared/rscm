@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from functools import partial
 
-import numpy as np
 import numpy.testing as npt
 import pytest
 
@@ -23,13 +22,6 @@ from rscm._lib.magicc import (
 )
 from rscm.magicc import full
 from rscm.magicc import prescribed as pr
-
-#: MAGICC lifetimes are labelled with the year they apply to; RSCM stores
-#: per-step diagnostics at the end of the step.
-
-
-def _end_of_step(values):
-    return np.r_[values[0], values[:-1]]
 
 
 def test_halocarbons():
@@ -45,7 +37,7 @@ def test_halocarbons():
     exogenous = {
         f"Emissions|{s}": (run.series(f"Emissions|{s}"), "kt/yr") for s in species
     }
-    exogenous["Lifetime|CH4|OH"] = (_end_of_step(run.series("CH4_TAUOH")), "yr")
+    exogenous["Lifetime|CH4|OH"] = (run.series("CH4_TAUOH"), "yr")
     exogenous["Surface Temperature"] = (run.series("Surface Temperature"), "K")
     # MAGICC7 reports an F-gas's second-year concentration in its first year
     fgases = set(full.halocarbon_species()[: run.parameters["fgas_n"]])

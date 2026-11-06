@@ -25,6 +25,13 @@ pub(crate) fn value_at_year(window: &ScalarWindow, t_current: Time, year: Time) 
         .expect("whole years from an annual step are nodes of the axis")
 }
 
+/// Value at the first step of the run.
+pub(crate) fn first_value(window: &ScalarWindow) -> FloatValue {
+    window
+        .history(window.history_len() - 1)
+        .expect("history_len values are stored")
+}
+
 /// Reference for a feedback starting at `start_year`.
 ///
 /// MAGICC7 follows the current value until then and fixes the reference at the year before.

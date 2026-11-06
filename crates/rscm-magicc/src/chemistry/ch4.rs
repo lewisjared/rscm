@@ -313,7 +313,7 @@ impl Component for CH4Chemistry {
         let inputs = CH4ChemistryInputs::from_input_state(input_state);
         let feedback_year = self.parameters.feedback_start_year;
 
-        let ch4_start = inputs.ch4_concentration.at_start();
+        let ch4_start = inputs.ch4_concentration.get();
         let ch4_reference = reference_value(&inputs.ch4_concentration, t_current, feedback_year);
         let warming = feedback_warming(&inputs.temperature, t_current, feedback_year - 1.0);
         let delta =
