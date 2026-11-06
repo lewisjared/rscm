@@ -5,11 +5,15 @@ import pytest
 
 from rscm.component import Component, Input, Output, State
 from rscm.core import (
+    FourBoxTimeseriesWindow,
     InterpolationStrategy,
     ModelBuilder,
     PythonComponent,
     TimeAxis,
     Timeseries,
+    TimeseriesType,
+    TimeseriesWindow,
+    VariableSource,
 )
 
 
@@ -394,3 +398,154 @@ def test_exogenous_input_returns_correct_timestep_value():
             f"At t={t_expected}, expected concentration={val_expected}, "
             f"got {val_observed}"
         )
+
+
+def test_window_reads_follow_source_and_timeseries_type():
+    """get, get_time, history, history_len, interval and interpolate inside a model."""
+
+    class ForcingProducer(Component):
+        forcing = Output("Forcing", unit="W / m^2")
+
+        def solve(self, t_current, t_next, inputs):
+            return self.Outputs(forcing=t_next)
+
+    class Reader(Component):
+        emissions = Input("Emissions", unit="GtC / yr")
+        temperature = Input("Temperature", unit="K")
+        forcing = Input("Forcing", unit="W / m^2")
+        out = Output("Out", unit="1")
+
+        def __init__(self):
+            self.reads = []
+
+        def solve(self, t_current, t_next, inputs):
+            emissions, temperature, forcing = (
+                inputs.emissions,
+                inputs.temperature,
+                inputs.forcing,
+            )
+            with pytest.raises(ValueError, match="average"):
+                emissions.interval()
+            self.reads.append(
+                {
+                    "emissions": (emissions.get(), emissions.source),
+                    "emissions_type": emissions.timeseries_type,
+                    "temperature": (
+                        temperature.get(),
+                        temperature.get_time(),
+                        temperature.history(1),
+                        temperature.history_len(),
+                        temperature.interval(),
+                        temperature.interpolate(t_current + 0.5),
+                    ),
+                    "forcing": (
+                        forcing.get(),
+                        forcing.get_time(),
+                        forcing.source,
+                        forcing.interval()[1],
+                    ),
+                }
+            )
+            return self.Outputs(out=0.0)
+
+    reader = Reader()
+    axis = TimeAxis.from_values(np.array([2000.0, 2001.0, 2002.0, 2003.0]))
+    model = (
+        ModelBuilder()
+        .with_py_component(PythonComponent.build(ForcingProducer()))
+        .with_py_component(PythonComponent.build(reader))
+        .with_time_axis(axis)
+        .with_exogenous_variable(
+            "Emissions",
+            Timeseries(
+                np.array([1.0, 2.0, 3.0, 4.0]),
+                axis,
+                "GtC / yr",
+                InterpolationStrategy.Previous,
+            ),
+        )
+        .with_exogenous_variable(
+            "Temperature",
+            Timeseries(
+                np.array([10.0, 11.0, 12.0, 13.0]),
+                axis,
+                "K",
+                InterpolationStrategy.Linear,
+            ),
+        )
+        .build()
+    )
+    model.step()
+    model.step()
+
+    first, second = reader.reads
+    assert first["emissions"] == (1.0, VariableSource.Exogenous)
+    assert first["emissions_type"] == TimeseriesType.Average
+    assert first["temperature"] == (10.0, 2000.0, None, 1, (10.0, 11.0), 10.5)
+    assert second["temperature"] == (11.0, 2001.0, 10.0, 2, (11.0, 12.0), 11.5)
+    assert first["forcing"] == (2001.0, 2001.0, VariableSource.UpstreamOutput, 2001.0)
+    assert second["forcing"] == (2002.0, 2002.0, VariableSource.UpstreamOutput, 2002.0)
+
+
+def test_window_reads_by_source():
+    """Each source reads its own index, and interval refuses own state and averages."""
+    values = [1.0, 2.0, 3.0, 4.0]
+    times = [2000.0, 2001.0, 2002.0, 2003.0]
+
+    def window(source, **kwargs):
+        return TimeseriesWindow(values, 2, times=times, source=source, **kwargs)
+
+    exogenous = window(VariableSource.Exogenous)
+    assert (exogenous.get(), exogenous.get_time(), exogenous.history_len()) == (
+        3.0,
+        2002.0,
+        3,
+    )
+    assert exogenous.interval() == (3.0, 4.0)
+
+    upstream = window(VariableSource.UpstreamOutput)
+    assert (upstream.get(), upstream.get_time(), upstream.history(3)) == (
+        4.0,
+        2003.0,
+        1.0,
+    )
+    assert upstream.history(4) is None
+
+    lagged = window(VariableSource.Lagged)
+    assert lagged.get() == 3.0
+    assert lagged.interval() == (2.0, 3.0)
+    first = TimeseriesWindow(values, 0, times=times, source=VariableSource.Lagged)
+    assert first.interval() == (1.0, 1.0)
+    assert first.history(1) is None
+
+    with pytest.raises(ValueError, match="own state"):
+        window(VariableSource.OwnState).interval()
+    with pytest.raises(ValueError, match="average"):
+        average = TimeseriesType.Average
+        window(VariableSource.Exogenous, timeseries_type=average).interval()
+
+    assert exogenous.interpolate(2010.0) == 4.0
+    with pytest.raises(ValueError, match="without times"):
+        TimeseriesWindow(values, 2).get_time()
+    with pytest.raises(ValueError, match="length"):
+        TimeseriesWindow(values, 2, times=times[:2])
+
+
+def test_grid_window_reads():
+    """Grid windows return slices in the shape of at_start_all."""
+    window = FourBoxTimeseriesWindow(
+        [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+        1,
+        times=[2000.0, 2001.0],
+        source=VariableSource.Lagged,
+    )
+    start, end = window.interval()
+    assert start.to_list() == [1.0, 2.0, 3.0, 4.0]
+    assert end.to_list() == [5.0, 6.0, 7.0, 8.0]
+    assert window.get().to_list() == [5.0, 6.0, 7.0, 8.0]
+    assert window.history(1).to_list() == [1.0, 2.0, 3.0, 4.0]
+    assert window.history(2) is None
+    assert window.history_len() == 2
+    assert window.get_time() == 2001.0
+    assert window.interpolate(2000.5).to_list() == [3.0, 4.0, 5.0, 6.0]
+    assert window.region(2).interval() == (3.0, 7.0)

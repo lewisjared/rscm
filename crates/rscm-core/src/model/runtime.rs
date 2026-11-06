@@ -418,21 +418,25 @@ impl Model {
             let key = (input.clone(), name.clone());
             let unit_factor = self.unit_conversions.get(&key).copied().unwrap_or(1.0);
             let variable_source = self.variable_sources.get(&key).copied().unwrap_or_default();
+            let timeseries_type = self.timeseries_type(input).unwrap_or(TimeseriesType::Point);
             if let Some(transform) = self.read_transforms.get(input) {
                 let weights = self.grid_weights.get(&transform.source_grid).cloned();
                 read_transform_info.insert(
                     input.clone(),
                     ReadTransformInfo::new(transform.source_grid, weights)
                         .with_conversion_factor(unit_factor)
-                        .with_source(variable_source),
+                        .with_source(variable_source)
+                        .with_timeseries_type(timeseries_type),
                 );
             } else if (unit_factor - 1.0).abs() > f64::EPSILON
                 || variable_source != VariableSource::Exogenous
+                || timeseries_type != TimeseriesType::Point
             {
                 read_transform_info.insert(
                     input.clone(),
                     ReadTransformInfo::with_unit_conversion(unit_factor)
-                        .with_source(variable_source),
+                        .with_source(variable_source)
+                        .with_timeseries_type(timeseries_type),
                 );
             }
         }

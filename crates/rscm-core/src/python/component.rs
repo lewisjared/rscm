@@ -5,7 +5,7 @@ use crate::python::rscm_error_from_py;
 use crate::python::state::{
     PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyStateValue, PyTimeseriesWindow,
 };
-use crate::timeseries::{FloatValue, Time};
+use crate::timeseries::{FloatValue, Time, TimeAxis};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -250,31 +250,57 @@ impl PythonComponent {
                 GridType::Scalar => {
                     let w = input_state.get_scalar_window(name);
                     let values = through_next(w.index(), w.len(), |o| w.at_offset(o));
-                    PyTimeseriesWindow::new(values, w.index())?
-                        .into_pyobject(py)?
-                        .into_any()
+                    let times = Some(times_of(w.time_axis(), values.len()));
+                    PyTimeseriesWindow::new(
+                        values,
+                        w.index(),
+                        times,
+                        w.variable_source(),
+                        w.timeseries_type(),
+                    )?
+                    .into_pyobject(py)?
+                    .into_any()
                 }
                 GridType::FourBox => {
                     let w = input_state.get_four_box_window(name);
                     let values =
                         through_next(w.index(), w.len(), |o| w.at_offset_all(o)?.try_into().ok());
-                    PyFourBoxTimeseriesWindow::new(values, w.index())?
-                        .into_pyobject(py)?
-                        .into_any()
+                    let times = Some(times_of(w.time_axis(), values.len()));
+                    PyFourBoxTimeseriesWindow::new(
+                        values,
+                        w.index(),
+                        times,
+                        w.variable_source(),
+                        w.timeseries_type(),
+                    )?
+                    .into_pyobject(py)?
+                    .into_any()
                 }
                 GridType::Hemispheric => {
                     let w = input_state.get_hemispheric_window(name);
                     let values =
                         through_next(w.index(), w.len(), |o| w.at_offset_all(o)?.try_into().ok());
-                    PyHemisphericTimeseriesWindow::new(values, w.index())?
-                        .into_pyobject(py)?
-                        .into_any()
+                    let times = Some(times_of(w.time_axis(), values.len()));
+                    PyHemisphericTimeseriesWindow::new(
+                        values,
+                        w.index(),
+                        times,
+                        w.variable_source(),
+                        w.timeseries_type(),
+                    )?
+                    .into_pyobject(py)?
+                    .into_any()
                 }
             };
             dict.set_item(name, window)?;
         }
         Ok(dict)
     }
+}
+
+/// The first `len` times of `axis`.
+fn times_of(axis: &TimeAxis, len: usize) -> Vec<Time> {
+    axis.values().iter().take(len).copied().collect()
 }
 
 /// Values from index 0 through `index + 1`, clipped to the series length.

@@ -3,11 +3,12 @@
 //! This module provides window types that aggregate data from finer grids (e.g., FourBox)
 //! to coarser representations (e.g., Scalar or Hemispheric).
 
-use crate::component::GridType;
+use crate::component::{GridType, TimeseriesType};
+use crate::errors::RSCMResult;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, HemisphericRegion, SpatialGrid};
-use crate::timeseries::{FloatValue, GridTimeseries, Time};
+use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis};
 
-use super::windows::GridTimeseriesWindow;
+use super::windows::{stored_index, GridTimeseriesWindow, ReadIndex};
 use super::VariableSource;
 
 /// A transformation context for grid aggregation and unit conversion.
@@ -33,6 +34,8 @@ pub struct ReadTransformInfo {
     pub unit_conversion_factor: f64,
     /// The source type of this variable, determining how `get()` reads values.
     pub variable_source: VariableSource,
+    /// Whether the variable is a point or an average, determining whether `interval()` exists.
+    pub timeseries_type: TimeseriesType,
 }
 
 impl Default for ReadTransformInfo {
@@ -42,6 +45,7 @@ impl Default for ReadTransformInfo {
             weights: None,
             unit_conversion_factor: 1.0,
             variable_source: VariableSource::Exogenous,
+            timeseries_type: TimeseriesType::Point,
         }
     }
 }
@@ -54,6 +58,7 @@ impl ReadTransformInfo {
             weights,
             unit_conversion_factor: 1.0,
             variable_source: VariableSource::Exogenous,
+            timeseries_type: TimeseriesType::Point,
         }
     }
 
@@ -64,6 +69,7 @@ impl ReadTransformInfo {
             weights: None,
             unit_conversion_factor: factor,
             variable_source: VariableSource::Exogenous,
+            timeseries_type: TimeseriesType::Point,
         }
     }
 
@@ -76,6 +82,12 @@ impl ReadTransformInfo {
     /// Set the variable source type for `get()` behavior.
     pub fn with_source(mut self, source: VariableSource) -> Self {
         self.variable_source = source;
+        self
+    }
+
+    /// Set whether the variable is a point or an average.
+    pub fn with_timeseries_type(mut self, timeseries_type: TimeseriesType) -> Self {
+        self.timeseries_type = timeseries_type;
         self
     }
 }
@@ -96,6 +108,7 @@ pub struct AggregatingFourBoxWindow<'a> {
     unit_conversion_factor: f64,
     /// Source type determining get() behavior
     variable_source: VariableSource,
+    timeseries_type: TimeseriesType,
 }
 
 impl<'a> AggregatingFourBoxWindow<'a> {
@@ -156,6 +169,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
             weights,
             unit_conversion_factor,
             variable_source,
+            timeseries_type: TimeseriesType::Point,
         }
     }
 
@@ -173,6 +187,81 @@ impl<'a> AggregatingFourBoxWindow<'a> {
             None => self.timeseries.grid().aggregate_global(values),
         };
         aggregated * self.unit_conversion_factor
+    }
+
+    /// Set whether the variable is a point or an average, which decides whether `interval()` exists.
+    pub fn with_timeseries_type(mut self, timeseries_type: TimeseriesType) -> Self {
+        self.timeseries_type = timeseries_type;
+        self
+    }
+
+    /// Source of the variable, which decides the index `get()` reads.
+    pub fn variable_source(&self) -> VariableSource {
+        self.variable_source
+    }
+
+    /// Whether the variable is a point or an average.
+    pub fn timeseries_type(&self) -> TimeseriesType {
+        self.timeseries_type
+    }
+
+    pub(crate) fn time_axis(&self) -> &TimeAxis {
+        self.timeseries.time_axis_ref()
+    }
+
+    fn read_index(&self) -> ReadIndex {
+        ReadIndex {
+            current: self.current_index,
+            len: self.timeseries.len(),
+            source: self.variable_source,
+            timeseries_type: self.timeseries_type,
+        }
+    }
+
+    /// Time of the value `get()` returns.
+    pub fn get_time(&self) -> Time {
+        self.time_axis()
+            .at(self.read_index().get())
+            .expect("Index out of bounds")
+    }
+
+    /// Number of values `history` can read.
+    pub fn history_len(&self) -> usize {
+        self.read_index().history_len()
+    }
+
+    fn value_at(&self, index: usize) -> FloatValue {
+        let values = self
+            .timeseries
+            .at_time_index(index)
+            .expect("Index out of bounds");
+        self.aggregate(&values)
+    }
+
+    /// Value `n` steps before the one `get()` returns, so `history(0) == get()`.
+    ///
+    /// Returns `None` before the first step.
+    pub fn history(&self, n: usize) -> Option<FloatValue> {
+        self.read_index().history(n).map(|i| self.value_at(i))
+    }
+
+    /// Values at the start and end of the step.
+    ///
+    /// See [`TimeseriesWindow::interval()`](super::TimeseriesWindow::interval) for lagged inputs and errors.
+    pub fn interval(&self) -> RSCMResult<(FloatValue, FloatValue)> {
+        let (start, end) = self.read_index().interval()?;
+        Ok((self.value_at(start), self.value_at(end)))
+    }
+
+    /// Aggregated value of the stored series at time `t`, past or future.
+    ///
+    /// See [`TimeseriesWindow::interpolate()`](super::TimeseriesWindow::interpolate)
+    /// for nodes, the axis ends and upstream outputs.
+    pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
+        match stored_index(self.time_axis(), t) {
+            Some(index) => Ok(self.value_at(index)),
+            None => Ok(self.aggregate(&self.timeseries.at_time_all(t)?)),
+        }
     }
 
     /// Get the aggregated scalar value at the start of the timestep (index N).
@@ -274,6 +363,7 @@ pub struct AggregatingHemisphericWindow<'a> {
     unit_conversion_factor: f64,
     /// Source type determining get() behavior
     variable_source: VariableSource,
+    timeseries_type: TimeseriesType,
 }
 
 impl<'a> AggregatingHemisphericWindow<'a> {
@@ -334,6 +424,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
             weights,
             unit_conversion_factor,
             variable_source,
+            timeseries_type: TimeseriesType::Point,
         }
     }
 
@@ -351,6 +442,81 @@ impl<'a> AggregatingHemisphericWindow<'a> {
             None => self.timeseries.grid().aggregate_global(values),
         };
         aggregated * self.unit_conversion_factor
+    }
+
+    /// Set whether the variable is a point or an average, which decides whether `interval()` exists.
+    pub fn with_timeseries_type(mut self, timeseries_type: TimeseriesType) -> Self {
+        self.timeseries_type = timeseries_type;
+        self
+    }
+
+    /// Source of the variable, which decides the index `get()` reads.
+    pub fn variable_source(&self) -> VariableSource {
+        self.variable_source
+    }
+
+    /// Whether the variable is a point or an average.
+    pub fn timeseries_type(&self) -> TimeseriesType {
+        self.timeseries_type
+    }
+
+    pub(crate) fn time_axis(&self) -> &TimeAxis {
+        self.timeseries.time_axis_ref()
+    }
+
+    fn read_index(&self) -> ReadIndex {
+        ReadIndex {
+            current: self.current_index,
+            len: self.timeseries.len(),
+            source: self.variable_source,
+            timeseries_type: self.timeseries_type,
+        }
+    }
+
+    /// Time of the value `get()` returns.
+    pub fn get_time(&self) -> Time {
+        self.time_axis()
+            .at(self.read_index().get())
+            .expect("Index out of bounds")
+    }
+
+    /// Number of values `history` can read.
+    pub fn history_len(&self) -> usize {
+        self.read_index().history_len()
+    }
+
+    fn value_at(&self, index: usize) -> FloatValue {
+        let values = self
+            .timeseries
+            .at_time_index(index)
+            .expect("Index out of bounds");
+        self.aggregate(&values)
+    }
+
+    /// Value `n` steps before the one `get()` returns, so `history(0) == get()`.
+    ///
+    /// Returns `None` before the first step.
+    pub fn history(&self, n: usize) -> Option<FloatValue> {
+        self.read_index().history(n).map(|i| self.value_at(i))
+    }
+
+    /// Values at the start and end of the step.
+    ///
+    /// See [`TimeseriesWindow::interval()`](super::TimeseriesWindow::interval) for lagged inputs and errors.
+    pub fn interval(&self) -> RSCMResult<(FloatValue, FloatValue)> {
+        let (start, end) = self.read_index().interval()?;
+        Ok((self.value_at(start), self.value_at(end)))
+    }
+
+    /// Aggregated value of the stored series at time `t`, past or future.
+    ///
+    /// See [`TimeseriesWindow::interpolate()`](super::TimeseriesWindow::interpolate)
+    /// for nodes, the axis ends and upstream outputs.
+    pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
+        match stored_index(self.time_axis(), t) {
+            Some(index) => Ok(self.value_at(index)),
+            None => Ok(self.aggregate(&self.timeseries.at_time_all(t)?)),
+        }
     }
 
     /// Get the aggregated scalar value at the start of the timestep (index N).
@@ -454,6 +620,99 @@ pub enum ScalarWindow<'a> {
 }
 
 impl<'a> ScalarWindow<'a> {
+    /// Set whether the variable is a point or an average, which decides whether `interval()` exists.
+    pub fn with_timeseries_type(self, timeseries_type: TimeseriesType) -> Self {
+        match self {
+            ScalarWindow::Direct(w) => {
+                ScalarWindow::Direct(w.with_timeseries_type(timeseries_type))
+            }
+            ScalarWindow::FromFourBox(w) => {
+                ScalarWindow::FromFourBox(w.with_timeseries_type(timeseries_type))
+            }
+            ScalarWindow::FromHemispheric(w) => {
+                ScalarWindow::FromHemispheric(w.with_timeseries_type(timeseries_type))
+            }
+        }
+    }
+
+    /// Source of the variable, which decides the index `get()` reads.
+    pub fn variable_source(&self) -> VariableSource {
+        match self {
+            ScalarWindow::Direct(w) => w.variable_source(),
+            ScalarWindow::FromFourBox(w) => w.variable_source(),
+            ScalarWindow::FromHemispheric(w) => w.variable_source(),
+        }
+    }
+
+    /// Whether the variable is a point or an average.
+    pub fn timeseries_type(&self) -> TimeseriesType {
+        match self {
+            ScalarWindow::Direct(w) => w.timeseries_type(),
+            ScalarWindow::FromFourBox(w) => w.timeseries_type(),
+            ScalarWindow::FromHemispheric(w) => w.timeseries_type(),
+        }
+    }
+
+    pub(crate) fn time_axis(&self) -> &TimeAxis {
+        match self {
+            ScalarWindow::Direct(w) => w.time_axis(),
+            ScalarWindow::FromFourBox(w) => w.time_axis(),
+            ScalarWindow::FromHemispheric(w) => w.time_axis(),
+        }
+    }
+
+    /// Time of the value `get()` returns.
+    pub fn get_time(&self) -> Time {
+        match self {
+            ScalarWindow::Direct(w) => w.get_time(),
+            ScalarWindow::FromFourBox(w) => w.get_time(),
+            ScalarWindow::FromHemispheric(w) => w.get_time(),
+        }
+    }
+
+    /// Value `n` steps before the one `get()` returns, so `history(0) == get()`.
+    ///
+    /// Returns `None` before the first step.
+    pub fn history(&self, n: usize) -> Option<FloatValue> {
+        match self {
+            ScalarWindow::Direct(w) => w.history(n),
+            ScalarWindow::FromFourBox(w) => w.history(n),
+            ScalarWindow::FromHemispheric(w) => w.history(n),
+        }
+    }
+
+    /// Number of values `history` can read.
+    pub fn history_len(&self) -> usize {
+        match self {
+            ScalarWindow::Direct(w) => w.history_len(),
+            ScalarWindow::FromFourBox(w) => w.history_len(),
+            ScalarWindow::FromHemispheric(w) => w.history_len(),
+        }
+    }
+
+    /// Values at the start and end of the step.
+    ///
+    /// See [`TimeseriesWindow::interval()`](super::TimeseriesWindow::interval) for lagged inputs and errors.
+    pub fn interval(&self) -> RSCMResult<(FloatValue, FloatValue)> {
+        match self {
+            ScalarWindow::Direct(w) => w.interval(),
+            ScalarWindow::FromFourBox(w) => w.interval(),
+            ScalarWindow::FromHemispheric(w) => w.interval(),
+        }
+    }
+
+    /// Value of the stored series at time `t`, past or future.
+    ///
+    /// See [`TimeseriesWindow::interpolate()`](super::TimeseriesWindow::interpolate)
+    /// for nodes, the axis ends and upstream outputs.
+    pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
+        match self {
+            ScalarWindow::Direct(w) => w.interpolate(t),
+            ScalarWindow::FromFourBox(w) => w.interpolate(t),
+            ScalarWindow::FromHemispheric(w) => w.interpolate(t),
+        }
+    }
+
     /// Get the scalar value at the start of the timestep (index N).
     pub fn at_start(&self) -> FloatValue {
         match self {
@@ -562,6 +821,7 @@ pub struct AggregatingFourBoxToHemisphericWindow<'a> {
     unit_conversion_factor: f64,
     /// Source type determining get() behavior
     variable_source: VariableSource,
+    timeseries_type: TimeseriesType,
 }
 
 impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
@@ -609,6 +869,7 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
             current_time,
             unit_conversion_factor,
             variable_source,
+            timeseries_type: TimeseriesType::Point,
         }
     }
 
@@ -619,6 +880,83 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
         let northern = (values[0] + values[1]) / 2.0 * self.unit_conversion_factor;
         let southern = (values[2] + values[3]) / 2.0 * self.unit_conversion_factor;
         [northern, southern]
+    }
+
+    /// Set whether the variable is a point or an average, which decides whether `interval()` exists.
+    pub fn with_timeseries_type(mut self, timeseries_type: TimeseriesType) -> Self {
+        self.timeseries_type = timeseries_type;
+        self
+    }
+
+    /// Source of the variable, which decides the index `get()` reads.
+    pub fn variable_source(&self) -> VariableSource {
+        self.variable_source
+    }
+
+    /// Whether the variable is a point or an average.
+    pub fn timeseries_type(&self) -> TimeseriesType {
+        self.timeseries_type
+    }
+
+    pub(crate) fn time_axis(&self) -> &TimeAxis {
+        self.timeseries.time_axis_ref()
+    }
+
+    fn read_index(&self) -> ReadIndex {
+        ReadIndex {
+            current: self.current_index,
+            len: self.timeseries.len(),
+            source: self.variable_source,
+            timeseries_type: self.timeseries_type,
+        }
+    }
+
+    /// Time of the value `get()` returns.
+    pub fn get_time(&self) -> Time {
+        self.time_axis()
+            .at(self.read_index().get())
+            .expect("Index out of bounds")
+    }
+
+    /// Number of values `history` can read.
+    pub fn history_len(&self) -> usize {
+        self.read_index().history_len()
+    }
+
+    fn values_at(&self, index: usize) -> Vec<FloatValue> {
+        let values = self
+            .timeseries
+            .at_time_index(index)
+            .expect("Index out of bounds");
+        self.aggregate_to_hemispheric(&values).to_vec()
+    }
+
+    /// Regional values `n` steps before those `get_all()` returns, so `history(0) == get_all()`.
+    ///
+    /// Returns `None` before the first step.
+    pub fn history(&self, n: usize) -> Option<Vec<FloatValue>> {
+        self.read_index().history(n).map(|i| self.values_at(i))
+    }
+
+    /// Regional values at the start and end of the step.
+    ///
+    /// See [`TimeseriesWindow::interval()`](super::TimeseriesWindow::interval) for lagged inputs and errors.
+    pub fn interval(&self) -> RSCMResult<(Vec<FloatValue>, Vec<FloatValue>)> {
+        let (start, end) = self.read_index().interval()?;
+        Ok((self.values_at(start), self.values_at(end)))
+    }
+
+    /// Regional values of the stored series at time `t`, past or future.
+    ///
+    /// See [`TimeseriesWindow::interpolate()`](super::TimeseriesWindow::interpolate)
+    /// for nodes, the axis ends and upstream outputs.
+    pub fn interpolate_all(&self, t: Time) -> RSCMResult<Vec<FloatValue>> {
+        match stored_index(self.time_axis(), t) {
+            Some(index) => Ok(self.values_at(index)),
+            None => Ok(self
+                .aggregate_to_hemispheric(&self.timeseries.at_time_all(t)?)
+                .to_vec()),
+        }
     }
 
     /// Get all regional values at the start of the timestep.
@@ -720,6 +1058,88 @@ pub enum HemisphericWindow<'a> {
 }
 
 impl<'a> HemisphericWindow<'a> {
+    /// Set whether the variable is a point or an average, which decides whether `interval()` exists.
+    pub fn with_timeseries_type(self, timeseries_type: TimeseriesType) -> Self {
+        match self {
+            HemisphericWindow::Direct(w) => {
+                HemisphericWindow::Direct(w.with_timeseries_type(timeseries_type))
+            }
+            HemisphericWindow::FromFourBox(w) => {
+                HemisphericWindow::FromFourBox(w.with_timeseries_type(timeseries_type))
+            }
+        }
+    }
+
+    /// Source of the variable, which decides the index `get()` reads.
+    pub fn variable_source(&self) -> VariableSource {
+        match self {
+            HemisphericWindow::Direct(w) => w.variable_source(),
+            HemisphericWindow::FromFourBox(w) => w.variable_source(),
+        }
+    }
+
+    /// Whether the variable is a point or an average.
+    pub fn timeseries_type(&self) -> TimeseriesType {
+        match self {
+            HemisphericWindow::Direct(w) => w.timeseries_type(),
+            HemisphericWindow::FromFourBox(w) => w.timeseries_type(),
+        }
+    }
+
+    pub(crate) fn time_axis(&self) -> &TimeAxis {
+        match self {
+            HemisphericWindow::Direct(w) => w.time_axis(),
+            HemisphericWindow::FromFourBox(w) => w.time_axis(),
+        }
+    }
+
+    /// Time of the values `get_all()` returns.
+    pub fn get_time(&self) -> Time {
+        match self {
+            HemisphericWindow::Direct(w) => w.get_time(),
+            HemisphericWindow::FromFourBox(w) => w.get_time(),
+        }
+    }
+
+    /// Regional values `n` steps before those `get_all()` returns, so `history(0) == get_all()`.
+    ///
+    /// Returns `None` before the first step.
+    pub fn history(&self, n: usize) -> Option<Vec<FloatValue>> {
+        match self {
+            HemisphericWindow::Direct(w) => w.history(n),
+            HemisphericWindow::FromFourBox(w) => w.history(n),
+        }
+    }
+
+    /// Number of values `history` can read.
+    pub fn history_len(&self) -> usize {
+        match self {
+            HemisphericWindow::Direct(w) => w.history_len(),
+            HemisphericWindow::FromFourBox(w) => w.history_len(),
+        }
+    }
+
+    /// Regional values at the start and end of the step.
+    ///
+    /// See [`TimeseriesWindow::interval()`](super::TimeseriesWindow::interval) for lagged inputs and errors.
+    pub fn interval(&self) -> RSCMResult<(Vec<FloatValue>, Vec<FloatValue>)> {
+        match self {
+            HemisphericWindow::Direct(w) => w.interval(),
+            HemisphericWindow::FromFourBox(w) => w.interval(),
+        }
+    }
+
+    /// Regional values of the stored series at time `t`, past or future.
+    ///
+    /// See [`TimeseriesWindow::interpolate()`](super::TimeseriesWindow::interpolate)
+    /// for nodes, the axis ends and upstream outputs.
+    pub fn interpolate_all(&self, t: Time) -> RSCMResult<Vec<FloatValue>> {
+        match self {
+            HemisphericWindow::Direct(w) => w.interpolate_all(t),
+            HemisphericWindow::FromFourBox(w) => w.interpolate_all(t),
+        }
+    }
+
     /// Get all regional values at the start of the timestep.
     pub fn at_start_all(&self) -> Vec<FloatValue> {
         match self {
@@ -1275,6 +1695,136 @@ mod aggregating_window_tests {
         assert_eq!(window.at_end_all(), Some(vec![34.0, 74.0]));
     }
 
+    // =========================================================================
+    // get_time(), history(), history_len() and interval() on aggregating windows
+    // =========================================================================
+
+    #[test]
+    fn test_aggregating_four_box_window_new_accessors() {
+        let ts = create_four_box_timeseries();
+        let window =
+            |source| AggregatingFourBoxWindow::with_source(&ts, 1, 2001.0, None, 2.0, source);
+
+        let exogenous = window(VariableSource::Exogenous);
+        assert_eq!(exogenous.get_time(), 2001.0);
+        assert_eq!(exogenous.history(0), Some(52.0));
+        assert_eq!(exogenous.history(1), Some(50.0));
+        assert_eq!(exogenous.history(2), None);
+        assert_eq!(exogenous.history_len(), 2);
+        assert_eq!(exogenous.interval().unwrap(), (52.0, 54.0));
+        assert_eq!(exogenous.interpolate(2002.0).unwrap(), 54.0);
+
+        let upstream = window(VariableSource::UpstreamOutput);
+        assert_eq!(upstream.get_time(), 2002.0);
+        assert_eq!(upstream.history(0), Some(54.0));
+        assert_eq!(upstream.history_len(), 3);
+        assert_eq!(upstream.interval().unwrap(), (52.0, 54.0));
+
+        assert_eq!(
+            window(VariableSource::Lagged).interval().unwrap(),
+            (50.0, 52.0)
+        );
+        assert!(window(VariableSource::OwnState).interval().is_err());
+        assert!(window(VariableSource::Exogenous)
+            .with_timeseries_type(TimeseriesType::Average)
+            .interval()
+            .is_err());
+    }
+
+    #[test]
+    fn test_aggregating_hemispheric_window_new_accessors() {
+        let ts = create_hemispheric_timeseries();
+        let window =
+            |source| AggregatingHemisphericWindow::with_source(&ts, 1, 2001.0, None, 1.0, source);
+
+        let exogenous = window(VariableSource::Exogenous);
+        assert_eq!(exogenous.get_time(), 2001.0);
+        assert_eq!(exogenous.history(1), Some(150.0));
+        assert_eq!(exogenous.history_len(), 2);
+        assert_eq!(exogenous.interval().unwrap(), (165.0, 180.0));
+
+        let upstream = window(VariableSource::UpstreamOutput);
+        assert_eq!(upstream.get_time(), 2002.0);
+        assert_eq!(upstream.history(0), Some(180.0));
+
+        assert_eq!(
+            window(VariableSource::Lagged).interval().unwrap(),
+            (150.0, 165.0)
+        );
+        assert!(window(VariableSource::OwnState).interval().is_err());
+        assert_eq!(
+            window(VariableSource::Lagged).interpolate(1999.0).unwrap(),
+            150.0
+        );
+    }
+
+    #[test]
+    fn test_aggregating_four_box_to_hemispheric_new_accessors() {
+        let ts = create_four_box_timeseries();
+        let window = |source| {
+            AggregatingFourBoxToHemisphericWindow::with_source(&ts, 1, 2001.0, 2.0, source)
+        };
+
+        let exogenous = window(VariableSource::Exogenous);
+        assert_eq!(exogenous.get_time(), 2001.0);
+        assert_eq!(exogenous.history(0), Some(exogenous.get_all()));
+        assert_eq!(exogenous.history(1), Some(vec![30.0, 70.0]));
+        assert_eq!(exogenous.history_len(), 2);
+        assert_eq!(
+            exogenous.interval().unwrap(),
+            (vec![32.0, 72.0], vec![34.0, 74.0])
+        );
+        assert_eq!(exogenous.interpolate_all(2010.0).unwrap(), vec![34.0, 74.0]);
+
+        let upstream = window(VariableSource::UpstreamOutput);
+        assert_eq!(upstream.get_time(), 2002.0);
+        assert_eq!(upstream.history(0), Some(vec![34.0, 74.0]));
+
+        assert_eq!(
+            window(VariableSource::Lagged).interval().unwrap(),
+            (vec![30.0, 70.0], vec![32.0, 72.0])
+        );
+        assert!(window(VariableSource::OwnState).interval().is_err());
+    }
+
+    #[test]
+    fn test_window_enums_delegate_new_accessors() {
+        let four_box = create_four_box_timeseries();
+        let scalar = ScalarWindow::FromFourBox(AggregatingFourBoxWindow::with_source(
+            &four_box,
+            1,
+            2001.0,
+            None,
+            1.0,
+            VariableSource::UpstreamOutput,
+        ))
+        .with_timeseries_type(TimeseriesType::Average);
+        assert_eq!(scalar.variable_source(), VariableSource::UpstreamOutput);
+        assert_eq!(scalar.timeseries_type(), TimeseriesType::Average);
+        assert_eq!(scalar.get_time(), 2002.0);
+        assert_eq!(scalar.history(0), Some(27.0));
+        assert_eq!(scalar.history_len(), 3);
+        assert!(scalar.interval().is_err());
+        assert_eq!(scalar.interpolate(2000.0).unwrap(), 25.0);
+
+        let hemispheric = create_hemispheric_timeseries();
+        let window = HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
+            &hemispheric,
+            1,
+            2001.0,
+            1.0,
+            VariableSource::Lagged,
+        ));
+        assert_eq!(window.get_time(), 2001.0);
+        assert_eq!(window.history(1), Some(vec![100.0, 200.0]));
+        assert_eq!(window.history_len(), 2);
+        assert_eq!(
+            window.interval().unwrap(),
+            (vec![100.0, 200.0], vec![110.0, 220.0])
+        );
+        assert_eq!(window.interpolate_all(2002.0).unwrap(), vec![120.0, 240.0]);
+    }
+
     #[test]
     fn test_read_transform_info_default() {
         let info = ReadTransformInfo::default();
@@ -1282,6 +1832,7 @@ mod aggregating_window_tests {
         assert!(info.weights.is_none());
         assert_eq!(info.unit_conversion_factor, 1.0);
         assert_eq!(info.variable_source, VariableSource::Exogenous);
+        assert_eq!(info.timeseries_type, TimeseriesType::Point);
     }
 
     #[test]

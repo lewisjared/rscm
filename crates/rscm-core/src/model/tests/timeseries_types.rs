@@ -274,3 +274,60 @@ fn exogenous_series_keep_their_interpolation() {
         .unwrap();
     assert_eq!(value, 2.5);
 }
+
+/// Reads `Emissions` and `Temperature` through `interval()`.
+#[derive(Debug, Serialize, Deserialize)]
+struct IntervalReader;
+
+#[typetag::serde]
+impl Component for IntervalReader {
+    fn definitions(&self) -> Vec<RequirementDefinition> {
+        vec![
+            input("Emissions", "GtC / yr"),
+            input("Temperature", "K"),
+            output("Average Interval", "1"),
+            output("Point Interval End", "K"),
+        ]
+    }
+
+    fn solve(
+        &self,
+        _t_current: Time,
+        _t_next: Time,
+        input_state: &InputState,
+    ) -> RSCMResult<OutputState> {
+        let average = input_state.get_scalar_window("Emissions").interval();
+        let (_, end) = input_state.get_scalar_window("Temperature").interval()?;
+        Ok(HashMap::from([
+            (
+                "Average Interval".to_string(),
+                StateValue::Scalar(if average.is_err() { 0.0 } else { 1.0 }),
+            ),
+            ("Point Interval End".to_string(), StateValue::Scalar(end)),
+        ]))
+    }
+}
+
+#[test]
+fn windows_carry_the_resolved_type() {
+    let mut model = build(vec![
+        Arc::new(Producer(vec![
+            output("Emissions", "GtC / yr"),
+            output("Temperature", "K"),
+        ])),
+        Arc::new(IntervalReader),
+    ])
+    .unwrap();
+    model.run();
+    let read = |name: &str| {
+        model
+            .timeseries()
+            .get_data(name)
+            .and_then(|data| data.as_scalar())
+            .unwrap()
+            .at(1, ScalarRegion::Global)
+            .unwrap()
+    };
+    assert_eq!(read("Average Interval"), 0.0);
+    assert_eq!(read("Point Interval End"), 2001.0);
+}
