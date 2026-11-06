@@ -27,7 +27,7 @@ pub enum RSCMError {
     },
 
     /// Missing initial value for a state variable
-    #[error("Missing initial value for state variable '{variable}' in component '{component}'. State variables require an initial value. Provide one with ModelBuilder.with_initial_values({{\"{variable}\": value}}), or with_initial_grid_values for a grid variable.")]
+    #[error("Missing initial value for state variable '{variable}' in component '{component}'. State variables require an initial value. Provide one with builder.with_initial_values({{\"{variable}\": value}}), or with_initial_grid_values for a grid variable.")]
     MissingInitialValue { variable: String, component: String },
 
     /// Variable not found in state
