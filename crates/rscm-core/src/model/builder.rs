@@ -1,8 +1,12 @@
 //! Model builder for constructing models from components.
 
-use crate::component::{Component, GridType, RequirementDefinition, RequirementType};
+use crate::component::{
+    Component, GridType, RequirementDefinition, RequirementType, TimeseriesType,
+};
 use crate::errors::{RSCMError, RSCMResult};
-use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+use crate::interpolate::strategies::{
+    InterpolationStrategy, LinearSplineStrategy, PreviousStrategy,
+};
 use crate::schema::VariableSchema;
 use crate::spatial::{FourBoxGrid, SpatialGrid};
 use crate::state::VariableSource;
@@ -21,7 +25,7 @@ use super::runtime::Model;
 use super::types::{
     CGraph, RequiredTransformation, TransformDirection, UnitConversionInfo, VariableDefinition, C,
 };
-use super::validation::verify_definition;
+use super::validation::{resolve_timeseries_types, verify_definition};
 
 /// Build a new model from a set of components.
 ///
@@ -43,6 +47,8 @@ pub struct ModelBuilder {
     grid_weights: HashMap<GridType, Vec<f64>>,
     lagged_variables: BTreeSet<String>,
     lagged_edges: BTreeSet<(String, String)>,
+    timeseries_types: HashMap<String, TimeseriesType>,
+    state_type_check: bool,
     missing_exogenous_allowed: bool,
 }
 
@@ -59,6 +65,8 @@ impl ModelBuilder {
             grid_weights: HashMap::new(),
             lagged_variables: BTreeSet::new(),
             lagged_edges: BTreeSet::new(),
+            timeseries_types: HashMap::new(),
+            state_type_check: true,
             missing_exogenous_allowed: false,
         }
     }
@@ -354,6 +362,25 @@ impl ModelBuilder {
     /// This time axis defines the time steps (including bounds) on which the model will be iterated.
     pub fn with_time_axis(&mut self, time_axis: TimeAxis) -> &mut Self {
         self.time_axis = Arc::new(time_axis);
+        self
+    }
+
+    /// Declare whether an exogenous variable is a point or an average.
+    ///
+    /// Use it when the unit default is wrong. A component that produces the variable must agree.
+    pub fn with_timeseries_type(
+        &mut self,
+        variable: &str,
+        timeseries_type: TimeseriesType,
+    ) -> &mut Self {
+        self.timeseries_types
+            .insert(variable.to_string(), timeseries_type);
+        self
+    }
+
+    /// Turn the check that every state variable is a point on or off.
+    pub fn with_state_type_check(&mut self, enabled: bool) -> &mut Self {
+        self.state_type_check = enabled;
         self
     }
 
@@ -764,6 +791,7 @@ impl ModelBuilder {
                             parsed_unit,
                             grid_type: var_def.grid_type,
                             requirement_type: RequirementType::Input, // Schema-only variables are inputs
+                            timeseries_type: TimeseriesType::from_unit(&var_def.unit),
                         },
                     );
                     // Mark as exogenous since it's not produced by any component
@@ -845,6 +873,7 @@ impl ModelBuilder {
                         parsed_unit,
                         grid_type: agg_def.grid_type,
                         requirement_type: RequirementType::Output, // Aggregates are outputs
+                        timeseries_type: TimeseriesType::from_unit(&agg_def.unit),
                     },
                 );
             }
@@ -858,6 +887,17 @@ impl ModelBuilder {
         }
 
         check_acyclic(&graph, &requirements, &names, &aggregator_nodes)?;
+        resolve_timeseries_types(
+            &mut definitions,
+            &names,
+            &requirements,
+            &self.timeseries_types,
+            self.state_type_check,
+        )?;
+        let timeseries_types: BTreeMap<String, TimeseriesType> = definitions
+            .iter()
+            .map(|(name, definition)| (name.clone(), definition.timeseries_type))
+            .collect();
 
         // Validate that all state variables have initial values
         for (name, def) in &definitions {
@@ -898,10 +938,15 @@ impl ModelBuilder {
 
         // Create the timeseries collection using the information from the components
         let mut collection = TimeseriesCollection::new();
-        let interp = InterpolationStrategy::from(LinearSplineStrategy::new(true));
 
         for (name, definition) in definitions {
             assert_eq!(definition.name, name);
+            let interp = match definition.timeseries_type {
+                TimeseriesType::Point => {
+                    InterpolationStrategy::from(LinearSplineStrategy::new(true))
+                }
+                TimeseriesType::Average => InterpolationStrategy::from(PreviousStrategy::new(true)),
+            };
 
             let is_endogenous = endogenous.contains_key(&name);
             let var_type = if is_endogenous {
@@ -1031,6 +1076,7 @@ impl ModelBuilder {
             unit_conversion_map,
             variable_sources,
         );
+        model.timeseries_types = timeseries_types;
 
         // Initialize component states for each node
         for node_idx in model.components.node_indices() {

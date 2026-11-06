@@ -16,7 +16,7 @@
 
 use crate::constants::{end, start, surface_temperature, temperature_unit};
 use rscm_core::component::{
-    Component, ComponentState, InputState, OutputState, RequirementDefinition,
+    Component, ComponentState, InputState, OutputState, RequirementDefinition, TimeseriesType,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
@@ -371,7 +371,10 @@ impl Component for FairGasCycle {
                 definitions.push(RequirementDefinition::scalar_output(name, &s.amount_unit));
             }
             if let Some(name) = &s.lifetime_scaling {
-                definitions.push(RequirementDefinition::scalar_input(name, "1"));
+                definitions.push(
+                    RequirementDefinition::scalar_input(name, "1")
+                        .with_timeseries_type(TimeseriesType::Average),
+                );
             }
         }
         definitions

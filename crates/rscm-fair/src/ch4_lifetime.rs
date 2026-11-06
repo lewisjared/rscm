@@ -9,7 +9,9 @@
 //! where $f$ is the floor `ch4_min`.
 
 use crate::constants::{start, surface_temperature, temperature_unit};
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{
+    Component, InputState, OutputState, RequirementDefinition, TimeseriesType,
+};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -107,7 +109,10 @@ impl Component for FairCH4Lifetime {
         for x in p.emissions.iter().chain(&p.concentrations) {
             definitions.push(RequirementDefinition::scalar_input(&x.variable, &x.unit));
         }
-        definitions.push(RequirementDefinition::scalar_output(&p.output, "1"));
+        definitions.push(
+            RequirementDefinition::scalar_output(&p.output, "1")
+                .with_timeseries_type(TimeseriesType::Average),
+        );
         definitions
     }
 

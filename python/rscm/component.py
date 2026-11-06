@@ -99,6 +99,7 @@ from rscm._lib.core import (
     GridType,
     RequirementDefinition,
     RequirementType,
+    TimeseriesType,
 )
 from rscm._lib.core.state import (
     FourBoxSlice,
@@ -114,6 +115,9 @@ if TYPE_CHECKING:
 
 #: Valid grid type literals for component I/O declarations
 GridLiteral = Literal["Scalar", "FourBox", "Hemispheric"]
+
+#: Valid timeseries type literals for component I/O declarations
+TimeseriesTypeLiteral = Literal["point", "average"]
 
 #: Entry point group that installed packages use to provide components
 ENTRY_POINT_GROUP = "rscm.components"
@@ -144,17 +148,23 @@ class Input:
         The unit string (e.g., "GtCO2")
     grid
         The spatial grid type: "Scalar" (default), "FourBox", or "Hemispheric"
+    timeseries_type
+        "point" or "average", or None (default) to take it from the unit
     """
 
     name: str
     unit: str = ""
     grid: GridLiteral = "Scalar"
+    timeseries_type: TimeseriesTypeLiteral | None = None
 
     def to_requirement(self) -> RequirementDefinition:
         """Convert to a RequirementDefinition."""
-        grid_type = _parse_grid_type(self.grid)
         return RequirementDefinition(
-            self.name, self.unit, RequirementType.Input, grid_type
+            self.name,
+            self.unit,
+            RequirementType.Input,
+            _parse_grid_type(self.grid),
+            _parse_timeseries_type(self.timeseries_type),
         )
 
 
@@ -170,17 +180,23 @@ class Output:
         The unit string (e.g., "ppm")
     grid
         The spatial grid type: "Scalar" (default), "FourBox", or "Hemispheric"
+    timeseries_type
+        "point" or "average", or None (default) to take it from the unit
     """
 
     name: str
     unit: str = ""
     grid: GridLiteral = "Scalar"
+    timeseries_type: TimeseriesTypeLiteral | None = None
 
     def to_requirement(self) -> RequirementDefinition:
         """Convert to a RequirementDefinition."""
-        grid_type = _parse_grid_type(self.grid)
         return RequirementDefinition(
-            self.name, self.unit, RequirementType.Output, grid_type
+            self.name,
+            self.unit,
+            RequirementType.Output,
+            _parse_grid_type(self.grid),
+            _parse_timeseries_type(self.timeseries_type),
         )
 
 
@@ -199,17 +215,23 @@ class State:
         The unit string (e.g., "ppm")
     grid
         The spatial grid type: "Scalar" (default), "FourBox", or "Hemispheric"
+    timeseries_type
+        "point" or "average", or None (default) to take it from the unit
     """
 
     name: str
     unit: str = ""
     grid: GridLiteral = "Scalar"
+    timeseries_type: TimeseriesTypeLiteral | None = None
 
     def to_requirement(self) -> RequirementDefinition:
         """Convert to a RequirementDefinition."""
-        grid_type = _parse_grid_type(self.grid)
         return RequirementDefinition(
-            self.name, self.unit, RequirementType.State, grid_type
+            self.name,
+            self.unit,
+            RequirementType.State,
+            _parse_grid_type(self.grid),
+            _parse_timeseries_type(self.timeseries_type),
         )
 
 
@@ -224,6 +246,22 @@ def _parse_grid_type(grid: GridLiteral) -> GridType:
     else:
         raise ValueError(  # noqa: TRY003
             f"Unknown grid type: {grid}. Must be Scalar, FourBox, or Hemispheric"
+        )
+
+
+def _parse_timeseries_type(
+    timeseries_type: TimeseriesTypeLiteral | None,
+) -> TimeseriesType | None:
+    """Parse a timeseries type literal to TimeseriesType enum."""
+    if timeseries_type is None:
+        return None
+    elif timeseries_type == "point":
+        return TimeseriesType.Point
+    elif timeseries_type == "average":
+        return TimeseriesType.Average
+    else:
+        raise ValueError(  # noqa: TRY003
+            f"Unknown timeseries type: {timeseries_type}. Must be point or average"
         )
 
 

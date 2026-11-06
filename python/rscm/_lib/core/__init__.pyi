@@ -233,14 +233,22 @@ class GridType(Enum):
     Hemispheric = auto()
 
 @final
+class TimeseriesType(Enum):
+    """Whether a variable holds at an instant (point) or over a step (average)."""
+
+    Point = auto()
+    Average = auto()
+
+@final
 class RequirementDefinition:
-    """A variable a component reads or writes, with its unit and grid."""
+    """A variable a component reads or writes, with its unit, grid and time type."""
 
     name: str
     # TODO: fix naming inconsistency between 'unit' and 'units'
     unit: str
     requirement_type: RequirementType
     grid_type: GridType
+    timeseries_type: TimeseriesType | None
 
     def __init__(
         self,
@@ -248,6 +256,7 @@ class RequirementDefinition:
         unit: str,
         requirement_type: RequirementType,
         grid_type: GridType = GridType.Scalar,
+        timeseries_type: TimeseriesType | None = None,
     ): ...
 
 class Component(Protocol):
@@ -476,6 +485,21 @@ class ModelBuilder:
         Other consumers of the variable still read this step's value.
         Building fails if no component of that name reads the variable as an input.
         """
+    def with_timeseries_type(
+        self, variable: str, timeseries_type: TimeseriesType
+    ) -> Self:
+        """
+        Declare whether an exogenous variable is a point or an average.
+
+        Use it when the unit default is wrong.
+        Building fails if a component produces the variable with another type.
+        """
+    def with_state_type_check(self, enabled: bool) -> Self:
+        """
+        Turn the check that every state variable is a point on or off.
+
+        The check is on by default.
+        """
     def with_missing_exogenous_allowed(self) -> Self:
         """
         Allow inputs that nothing supplies.
@@ -668,6 +692,8 @@ class Model:
         """
     def as_dot(self) -> str: ...
     def finished(self) -> bool: ...
+    def timeseries_type(self, variable: str) -> TimeseriesType | None:
+        """Whether a variable is a point or an average, or None if it is absent."""
     def debug_info(self, format: Literal["rich", "plain", "json"] = "rich") -> str:
         """
         Generate debug information about the model's execution graph.

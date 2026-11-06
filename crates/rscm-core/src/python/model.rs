@@ -1,3 +1,4 @@
+use crate::component::TimeseriesType;
 use crate::errors::RSCMResult;
 use crate::model::{self, Model, ModelBuilder};
 use crate::python::component::PyPythonComponent;
@@ -111,6 +112,25 @@ impl PyModelBuilder {
         consumer: &str,
     ) -> PyRefMut<'py, Self> {
         self_.0.with_lag_for(variable, consumer);
+        self_
+    }
+
+    /// Declare whether an exogenous variable is a point or an average, when its unit default is wrong.
+    fn with_timeseries_type<'py>(
+        mut self_: PyRefMut<'py, Self>,
+        variable: &str,
+        timeseries_type: TimeseriesType,
+    ) -> PyRefMut<'py, Self> {
+        self_.0.with_timeseries_type(variable, timeseries_type);
+        self_
+    }
+
+    /// Turn the check that every state variable is a point on or off.
+    fn with_state_type_check<'py>(
+        mut self_: PyRefMut<'py, Self>,
+        enabled: bool,
+    ) -> PyRefMut<'py, Self> {
+        self_.0.with_state_type_check(enabled);
         self_
     }
 
@@ -237,6 +257,11 @@ impl PyModel {
 
     fn finished(&self) -> bool {
         self.0.finished()
+    }
+
+    /// Whether `variable` is a point or an average, or `None` if the model has no such variable.
+    fn timeseries_type(&self, variable: &str) -> Option<TimeseriesType> {
+        self.0.timeseries_type(variable)
     }
 
     fn timeseries(&self) -> PyTimeseriesCollection {

@@ -172,6 +172,10 @@ v = 1
 dim = [6]
 data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 
+[timeseries_types]
+"Concentrations|CO2" = "Point"
+"Emissions|CO2" = "Average"
+
 [component_states.0]
 state_type = "unit"
 
