@@ -374,7 +374,7 @@ def _ch4_burdens(
     }
 
 
-#: CH4Chemistry defaults of the lifetimes combined into ``tau_other``
+# CH4Chemistry defaults of the lifetimes combined into ``tau_other``
 CH4_OTHER_LIFETIMES = {"tau_soil": 150.0, "tau_strat": 120.0, "tau_trop_cl": 200.0}
 
 

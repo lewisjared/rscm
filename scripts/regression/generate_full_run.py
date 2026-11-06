@@ -39,7 +39,7 @@ from utils import MAGICC_ROOT, make_config, output_dir, run_magicc_ctx
 
 OUT = output_dir("full_run")
 
-#: Variables kept for every box, rather than only for the World.
+# Variables kept for every box, rather than only for the World.
 BOX_VARIABLES = (
     "Surface Temperature",
     "TOTAL_EFFRF",
@@ -52,7 +52,7 @@ BOX_VARIABLES = (
     "Effective Radiative Forcing|Tropospheric Ozone",
 )
 
-#: Variables kept from the reference run, which drives the component tests.
+# Variables kept from the reference run, which drives the component tests.
 REFERENCE_VARIABLES = (
     *BOX_VARIABLES,
     "Atmospheric Concentrations|*",
@@ -92,7 +92,7 @@ PERMAFROST = make_config(
     out_dynamic_vars=["DAT_CO2PF_EMIS", "DAT_CH4PF_EMIS", "DAT_PFTHAWED_AREA"],
 )
 
-#: Variables kept from the permafrost run.
+# Variables kept from the permafrost run.
 PERMAFROST_VARIABLES = (
     "Surface Temperature",
     "Atmospheric Concentrations|CO2",
@@ -107,7 +107,7 @@ PERMAFROST_VARIABLES = (
 
 NITROGEN = make_config(CONFIG, ncycle_apply=1, ncycle_apply_ndep_from_emis=1)
 
-#: Variables kept from the nitrogen run.
+# Variables kept from the nitrogen run.
 NITROGEN_VARIABLES = (
     "Surface Temperature",
     "Atmospheric Concentrations|CO2",
@@ -115,12 +115,12 @@ NITROGEN_VARIABLES = (
     "Atmospheric Concentrations|N2O",
 )
 
-#: CARBONCYCLE.OUT columns kept from the nitrogen run, which pymagicc does not read.
+# CARBONCYCLE.OUT columns kept from the nitrogen run, which pymagicc does not read.
 NITROGEN_CARBONCYCLE = ("NCYCLE_LIMIT_FACTOR", "NCYCLE_NPOOL", "CURRENT_NPP")
 
 SEALEVEL = make_config(CONFIG, out_sealevel=1)
 
-#: Variables kept from the sea level run.
+# Variables kept from the sea level run.
 SEALEVEL_VARIABLES = (
     "Surface Temperature",
     "Sea Level Rise",
@@ -130,10 +130,10 @@ SEALEVEL_VARIABLES = (
     ),
 )
 
-#: MAGICC7's own default: concentrations prescribed until 2015, and permafrost on.
+# MAGICC7's own default: concentrations prescribed until 2015, and permafrost on.
 DEFAULT = make_config(startyear=1750, endyear=2105, core_climatesensitivity=3.0)
 
-#: Variables kept from the default run.
+# Variables kept from the default run.
 DEFAULT_VARIABLES = (
     "Surface Temperature",
     "Atmospheric Concentrations|*",
@@ -141,7 +141,7 @@ DEFAULT_VARIABLES = (
     "Effective Radiative Forcing|Volcanic",
 )
 
-#: Climate, efficacy and method switches of the emissions run, each changed alone.
+# Climate, efficacy and method switches of the emissions run, each changed alone.
 VARIANTS = {
     "ecs_1p5": {"core_climatesensitivity": 1.5},
     "ecs_4p5": {"core_climatesensitivity": 4.5},
@@ -163,7 +163,7 @@ VARIANTS = {
     "no_carbon_temperature_feedback": {"co2_tempfeedback_switch": 0},
 }
 
-#: Variables kept from each variant.
+# Variables kept from each variant.
 VARIANT_VARIABLES = (
     "Surface Temperature",
     "Atmospheric Concentrations|CO2",
@@ -173,9 +173,9 @@ VARIANT_VARIABLES = (
     "Effective Radiative Forcing|Volcanic",
 )
 
-#: Name, configuration, kept variables, CARBONCYCLE.OUT columns
-#: and whether to write the run's parameters.
-#: A variant's parameters are the reference run's with its switches.
+# Name, configuration, kept variables, CARBONCYCLE.OUT columns
+# and whether to write the run's parameters.
+# A variant's parameters are the reference run's with its switches.
 CASES = (
     ("01_ssp245_emissions", CONFIG, REFERENCE_VARIABLES, (), True),
     ("02_ssp245_emissions_permafrost", PERMAFROST, PERMAFROST_VARIABLES, (), True),
@@ -200,7 +200,7 @@ CASES = (
     ),
 )
 
-#: MAGICC7 input files behind the forcing that RSCM prescribes.
+# MAGICC7 input files behind the forcing that RSCM prescribes.
 INPUTS = (
     *(f"HISTSSP_{name}_RF.IN" for name in ("SOXI", "SOXB", "BCI", "BCB", "OCI", "OCB")),
     "HISTSSP_BCSNOW_RF.IN",

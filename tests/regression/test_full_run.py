@@ -349,7 +349,7 @@ def test_coupled_run(load):
     _assert_total_erf(model, run)
 
 
-#: RSCM nitrogen averages and their CARBONCYCLE.OUT columns.
+# RSCM nitrogen averages and their CARBONCYCLE.OUT columns.
 NITROGEN_OUTPUTS = {
     "Nitrogen Limitation Factor": ("NCYCLE_LIMIT_FACTOR", 1e-4),
     "Net Primary Production": ("CURRENT_NPP", 1e-4),

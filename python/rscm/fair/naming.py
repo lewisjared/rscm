@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-#: RSCM names of FaIR species that do not just drop their hyphens.
+# RSCM names of FaIR species that do not just drop their hyphens.
 SPECIES_NAMES = {
     "CO2 FFI": "CO2|Fossil",
     "CO2 AFOLU": "CO2|Land Use",
@@ -14,7 +14,7 @@ SPECIES_NAMES = {
     "HFC-4310mee": "HFC4310",
 }
 
-#: Forcing variables of calculated and prescribed agents, by FaIR species type.
+# Forcing variables of calculated and prescribed agents, by FaIR species type.
 FORCING_NAMES = {
     "ari": "Effective Radiative Forcing|Aerosol|Direct",
     "aci": "Effective Radiative Forcing|Aerosol|Indirect",
@@ -30,7 +30,7 @@ FORCING_NAMES = {
 HALOGEN_TYPES = ("cfc-11", "other halogen")
 GHG_TYPES = ("co2", "ch4", "n2o", "f-gas", *HALOGEN_TYPES)
 
-#: Molecule in the emissions unit, where it differs from the RSCM name.
+# Molecule in the emissions unit, where it differs from the RSCM name.
 _EMISSIONS_MOLECULE = {
     "CO2 FFI": "CO2",
     "CO2 AFOLU": "CO2",

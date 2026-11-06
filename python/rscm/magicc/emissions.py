@@ -59,7 +59,7 @@ __all__ = ["Emissions", "run_magicc_emissions"]
 # MAGICC7 preindustrial land pools (CO2_*POOL_INITIAL), the TerrestrialCarbon defaults
 DEFAULT_POOLS = {"plant": 884.8584, "detritus": 92.7738, "soil": 1681.525}
 
-#: Components in registration order, which sets the lags between them.
+# Components in registration order, which sets the lags between them.
 COMPONENTS = {
     "CH4Chemistry": CH4ChemistryBuilder,
     "CH4Oxidation": CH4OxidationBuilder,
@@ -70,8 +70,8 @@ COMPONENTS = {
     "GhgForcing": GhgForcingBuilder,
     "ClimateUDEB": ClimateUDEBBuilder,
 }
-#: Chemistry and the carbon cycle read last year's temperature,
-#: and the carbon sinks last year's CO2.
+# Chemistry and the carbon cycle read last year's temperature,
+# and the carbon sinks last year's CO2.
 LAG = ("Surface Temperature",)
 LAG_FOR = (
     (CONCENTRATION + "CO2", "TerrestrialCarbon"),
@@ -93,7 +93,7 @@ EMISSION_VARIABLES = {
     "nmvoc": ("Emissions|NMVOC", "Mt NMVOC/yr"),
 }
 
-#: Calculated variables with their units and sources.
+# Calculated variables with their units and sources.
 CALCULATED = {
     "Lifetime|CH4": ("yr", "CH4Chemistry"),
     "Lifetime|CH4|OH": ("yr", "CH4Chemistry"),
@@ -125,7 +125,7 @@ CALCULATED = {
 }
 
 
-#: Per-step points, undefined at the first label.
+# Per-step points, undefined at the first label.
 DIAGNOSTICS = frozenset({"End-of-Year Atmospheric CO2", "Airborne Fraction|CO2"})
 
 

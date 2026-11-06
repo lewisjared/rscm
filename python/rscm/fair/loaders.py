@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable, Mapping
     from pathlib import Path
 
-#: Species configs FaIR copies from the species CSV, apart from the gas boxes.
+# Species configs FaIR copies from the species CSV, apart from the gas boxes.
 SPECIES_CONFIGS = (
     "tropospheric_adjustment",
     "forcing_efficacy",
@@ -58,7 +58,7 @@ PROPERTY_FLAGS = (
     "aerosol_chemistry_from_emissions",
     "aerosol_chemistry_from_concentration",
 )
-#: Calibration columns for stochastic runs and diagnostics, which RSCM does not use.
+# Calibration columns for stochastic runs and diagnostics, which RSCM does not use.
 IGNORED_CALIBRATION = (
     "sigma_eta",
     "sigma_xi",

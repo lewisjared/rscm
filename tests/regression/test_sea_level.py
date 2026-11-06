@@ -4,7 +4,7 @@ import pytest
 
 from regression import full_run
 
-#: RSCM outputs and their MAGICC7 names.
+# RSCM outputs and their MAGICC7 names.
 CONTRIBUTIONS = {
     "Sea Level Rise|Thermal Expansion": "SLR_EXPANSION",
     "Sea Level Rise|Glaciers": "SLR_GL",

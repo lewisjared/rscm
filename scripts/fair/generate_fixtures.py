@@ -47,7 +47,7 @@ from fair.io import read_properties
 
 OUT = Path(__file__).parents[2] / "tests" / "regression" / "data" / "fair"
 
-#: fair-calibrate v1.6.1 (RCMIP constraint set) files and their MD5 checksums.
+# fair-calibrate v1.6.1 (RCMIP constraint set) files and their MD5 checksums.
 CALIBRATION_URL = "https://zenodo.org/api/records/23208444/files/{}/content"
 CALIBRATION_FILES = {
     "species_configs_properties.csv": "7174759997d890824f6ec498dbb6b64b",
@@ -58,10 +58,10 @@ CALIBRATION_FILES = {
     "land_use_forcing_timebounds_cmip7.csv": "cb8dd7d69c6f232f85a2afde538cfd3e",
     "irrigation_forcing_timebounds_cmip7.csv": "e8abb5e5dfaefdec803c2bd96ba592c7",
 }
-#: Posterior members with a parity case, the first three in the file.
+# Posterior members with a parity case, the first three in the file.
 CALIBRATION_MEMBERS = (1939, 2939, 3503)
 
-#: Three-layer climate configuration close to the AR6 ensemble median.
+# Three-layer climate configuration close to the AR6 ensemble median.
 CLIMATE_3 = {
     "ocean_heat_transfer": [1.1, 1.6, 0.9],
     "ocean_heat_capacity": [8.0, 14.0, 100.0],
@@ -75,7 +75,7 @@ CLIMATE_2 = {
 
 EESC = "Equivalent effective stratospheric chlorine"
 
-#: Eruptions in the energy balance cases: first and end year after 1850, size (W/m2).
+# Eruptions in the energy balance cases: first and end year after 1850, size (W/m2).
 ERUPTIONS = ((40, 42, 3.0), (120, 121, 2.0))
 
 TIMEBOUND_ATTRIBUTES = (
