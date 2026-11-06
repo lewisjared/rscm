@@ -24,6 +24,7 @@ from rscm.calibrate import (
     PointEstimator,
     Target,
     Uniform,
+    VariableTarget,
     WalkerInit,
 )
 
@@ -226,6 +227,23 @@ class TestTarget:
 
         # Set reference period for variable
         target.set_reference_period("temp", 1850.0, 1900.0)
+
+    def test_get_variable_is_read_only_snapshot(self):
+        """A fetched variable exposes data but no mutators whose edits would be lost."""
+        target = Target()
+        target.add_observation("temp", 2000.0, 15.0, 0.5)
+        target.set_reference_period("temp", 1850.0, 1900.0)
+
+        variable = target.get_variable("temp")
+
+        assert variable.name == "temp"
+        assert [obs.value for obs in variable.observations] == [15.0]
+        assert variable.reference_period == (1850.0, 1900.0)
+        assert variable.time_range() == (2000.0, 2000.0)
+        for method in ("add", "add_relative", "with_reference_period"):
+            assert not hasattr(variable, method)
+        with pytest.raises(TypeError):
+            VariableTarget("temp")
 
     @pytest.mark.skipif(
         not hasattr(Target, "from_dataframe"),

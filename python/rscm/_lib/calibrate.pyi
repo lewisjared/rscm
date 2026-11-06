@@ -311,12 +311,11 @@ class Observation:
 @final
 class VariableTarget:
     """
-    Collection of observations for a single variable.
+    Read-only snapshot of one variable's target observations.
 
-    Parameters
-    ----------
-    name : str
-        Variable name (e.g., "Temperature|Global")
+    Returned by `Target.get_variable`.
+    Later changes to the Target do not show up in it.
+    Edit observations through the `Target` methods instead.
 
     Attributes
     ----------
@@ -328,7 +327,6 @@ class VariableTarget:
         Reference period for anomaly calculation, if set
     """
 
-    def __init__(self, name: str) -> None: ...
     @property
     def name(self) -> str:
         """Variable name."""
@@ -338,68 +336,6 @@ class VariableTarget:
     @property
     def reference_period(self) -> tuple[F, F] | None:
         """Reference period (start, end) for anomaly calculation, or None."""
-    def add(self, time: F, value: F, uncertainty: F) -> Self:
-        """
-        Add an observation.
-
-        Parameters
-        ----------
-        time : float
-            Time coordinate
-        value : float
-            Observed value
-        uncertainty : float
-            1-sigma uncertainty (must be positive)
-
-        Returns
-        -------
-        Self
-            Returns self for method chaining
-
-        Raises
-        ------
-        ValueError
-            If uncertainty is not positive
-        """
-    def add_relative(self, time: F, value: F, relative_uncertainty: F) -> Self:
-        """
-        Add an observation with relative uncertainty.
-
-        Parameters
-        ----------
-        time : float
-            Time coordinate
-        value : float
-            Observed value
-        relative_uncertainty : float
-            Relative uncertainty as a fraction (e.g., 0.05 for 5%)
-
-        Returns
-        -------
-        Self
-            Returns self for method chaining
-
-        Raises
-        ------
-        ValueError
-            If computed uncertainty is not positive
-        """
-    def with_reference_period(self, start: F, end: F) -> Self:
-        """
-        Set the reference period for anomaly calculation.
-
-        Parameters
-        ----------
-        start : float
-            Start of reference period
-        end : float
-            End of reference period
-
-        Returns
-        -------
-        Self
-            Returns self for method chaining
-        """
     def time_range(self) -> tuple[F, F] | None:
         """
         Get the time range covered by observations.
@@ -506,7 +442,7 @@ class Target:
         """
     def get_variable(self, name: str) -> VariableTarget | None:
         """
-        Get observations for a specific variable.
+        Get a read-only snapshot of a variable.
 
         Parameters
         ----------
@@ -516,7 +452,9 @@ class Target:
         Returns
         -------
         VariableTarget | None
-            Clone of the variable target, or None if not found
+            Copy of the variable target, or None if not found.
+            Edit the variable through `add_observation`, `add_observation_relative`
+            and `set_reference_period`.
         """
     def variable_names(self) -> list[str]:
         """Get names of all variables with observations."""
