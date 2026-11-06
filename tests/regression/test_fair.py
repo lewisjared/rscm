@@ -9,6 +9,7 @@ rather than from FaIR's.
 
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass
 from functools import cache
@@ -228,6 +229,34 @@ def test_chemistry(case: str) -> None:
     assert_close(
         run.rscm(naming.CH4_LIFETIME_SCALING)[:-1], run.fair("alpha_lifetime|CH4")[:-1]
     )
+
+
+@pytest.mark.parametrize("gas", ["CH4", "N2O"])
+def test_prescribed_concentration_matches_modelled(gas: str) -> None:
+    run = load("ssp245")
+    config = copy.deepcopy(run.config)
+    entry = next(s for s in config["species"] if s["name"] == gas)
+    inputs = _inputs(run.config, run.timebounds, run.timepoints)
+    del inputs[naming.emissions(gas)]
+    entry["input_mode"] = "concentration"
+    variable, unit = naming.exogenous_variable(entry)
+    inputs[variable] = (run.rscm(variable), unit)
+
+    outputs = run_fair(config, inputs, run.timebounds.index.to_numpy()).timeseries()
+
+    assert set(outputs.names()) == set(run.outputs.names())
+    # Inverting the gas cycle rounds the gas's own emissions.
+    emissions = naming.emissions(gas)
+    inverted = {naming.airborne_emissions(gas), naming.cumulative_emissions(gas)}
+    for name in outputs.names():
+        values = np.asarray(outputs.get_timeseries_by_name(name).values())
+        if name == emissions:
+            # Inverted emissions have no value at the final timebound.
+            assert_close(values[:-1], run.rscm(name)[:-1], name)
+        elif name in inverted:
+            assert_close(values, run.rscm(name), name)
+        else:
+            npt.assert_array_equal(values, run.rscm(name), err_msg=name)
 
 
 def _same(actual: Any, expected: Any) -> bool:

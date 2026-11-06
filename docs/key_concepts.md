@@ -196,7 +196,7 @@ sequenceDiagram
 
     Note over State: Index N has values from previous timestep
     Model->>C1: solve(t_current, t_next)
-    C1->>State: get() reads exogenous data and own state [index N]
+    C1->>State: get() reads own state [index N] and exogenous points [index N+1]
     C1->>State: Write point outputs [index N+1]
     Model->>C2: solve(t_current, t_next)
     C2->>State: get() reads C1's point [index N+1], or [index N] on a lagged edge
@@ -219,10 +219,12 @@ The builder decides which value `get()` returns, from how the model is wired:
 | What you're reading                | Who wrote it           | `get()` reads a point | `get()` reads an average |
 | ---------------------------------- | ---------------------- | --------------------- | ------------------------ |
 | Your own previous state            | You, last timestep     | index N               | index N-1                |
-| Exogenous input (external forcing) | Pre-populated          | index N               | index N                  |
+| Exogenous input (external forcing) | Pre-populated          | index N+1             | index N                  |
 | Upstream component output          | They ran this timestep | index N+1             | index N                  |
 | Lagged input                       | Written last timestep  | index N               | not supported            |
 
+An exogenous input reads the same index as an upstream output,
+so a component reads the same value whether the variable is prescribed or modelled.
 `with_lag(variable)` and `with_lag_for(variable, consumer)` make an edge read the previous step.
 A lagged input's `get()` gives last step's value, and its `interval()` gives last step's start and end.
 Adding a lag changes the model wiring, not the component.
@@ -317,6 +319,28 @@ For example, CO2 concentration might be:
 - **Endogenous** in a full carbon-cycle model where a component calculates concentration from emissions
 - **Exogenous** in a temperature-only model where concentration is prescribed directly
 
+The builder collects every component's outputs and states first,
+so the order components are added does not matter.
+It then decides each input's source in this order, stopping at the first match:
+
+```mermaid
+flowchart TD
+  A["Input declared by a component"] --> B{"Is it a State, or does the same component produce it?"}
+  B -->|yes| OS["OwnState: reads its own previous value"]
+  B -->|no| C{"Is this edge lagged by with_lag or with_lag_for?"}
+  C -->|yes| L["Lagged: reads the previous step, adds no ordering edge"]
+  C -->|no| D{"Does another component or a schema aggregate produce it?"}
+  D -->|yes| U["UpstreamOutput: the producer runs first in the same step"]
+  D -->|no| X["Exogenous: values supplied with the model"]
+  X --> E{"Was data supplied?"}
+  E -->|no| M["Build error: MissingExogenousInput, unless with_missing_exogenous_allowed()"]
+  E -->|yes| F{"Is its unit compatible with the stored unit?"}
+  F -->|yes| V["Converted to the stored unit"]
+  F -->|no| W["Build error: IncompatibleUnits or UnitParseError"]
+```
+
+`model.coupling()` shows the source the builder chose for every input.
+
 `build()` raises `ValueError` if an exogenous input has no data and no initial value,
 naming each missing variable and the components that read it.
 `with_missing_exogenous_allowed()` builds the model anyway, with the missing inputs filled with NaN.
@@ -366,6 +390,15 @@ Input files, IAMC data and MAGICC7 label annual emissions the same way,
 so prescribing an average with values a model wrote for it gives the same results as modelling it.
 An average a component writes has no value at the last time,
 because no step starts there.
+
+`get()` reads a point at the step's end, index N+1, whether it is prescribed or produced upstream.
+A component's own state and a lagged edge read the step's start, index N.
+`get()` reads an average at its own step, index N, and a component's own average at the step before.
+A lag holds when the variable is prescribed,
+so a prescribed run must declare the lags the coupled run declares.
+`rscm.magicc.full.LAG` and `LAG_FOR` hold MAGICC7's lags, and `rscm.fair.with_lags` adds FaIR's.
+With those lags, prescribing a point or an average with values a model wrote for it
+gives the same results as modelling it.
 
 A lag on an average fails `build()` for now,
 because the first step has no previous value to read.

@@ -41,7 +41,6 @@
 
 use crate::component::{
     Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    TimeseriesType,
 };
 use crate::errors::RSCMResult;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, SpatialGrid};
@@ -126,11 +125,9 @@ impl Component for FourBoxToScalarTransform {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let window = input_state.get_four_box_window(&self.input_name());
-        let values = match window.timeseries_type() {
-            TimeseriesType::Point => window.interval()?.1,
-            TimeseriesType::Average => window.get_all(),
-        };
+        let values = input_state
+            .get_four_box_window(&self.input_name())
+            .get_all();
         let global = self.grid.aggregate_global(&values);
 
         let mut output = HashMap::new();
@@ -212,11 +209,9 @@ impl Component for FourBoxToHemisphericTransform {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let window = input_state.get_four_box_window(&self.input_name());
-        let values = match window.timeseries_type() {
-            TimeseriesType::Point => window.interval()?.1,
-            TimeseriesType::Average => window.get_all(),
-        };
+        let values = input_state
+            .get_four_box_window(&self.input_name())
+            .get_all();
         let target = HemisphericGrid::equal_weights();
         let hemispheric = self.grid.transform_to(&values, &target)?;
 
@@ -300,11 +295,9 @@ impl Component for HemisphericToScalarTransform {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let window = input_state.get_hemispheric_window(&self.input_name());
-        let values = match window.timeseries_type() {
-            TimeseriesType::Point => window.interval()?.1,
-            TimeseriesType::Average => window.get_all(),
-        };
+        let values = input_state
+            .get_hemispheric_window(&self.input_name())
+            .get_all();
         let global = self.grid.aggregate_global(&values);
 
         let mut output = HashMap::new();

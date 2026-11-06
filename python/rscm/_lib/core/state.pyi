@@ -152,7 +152,8 @@ class TimeseriesWindow:
     def get(self) -> float:
         """Value at the index the model reads for this input.
 
-        This is index N+1 for an upstream output and index N otherwise.
+        A point reads index N+1, or N for own state and a lagged edge.
+        An average reads index N, or N-1 for own state.
         """
         ...
     def get_time(self) -> float:
@@ -203,7 +204,8 @@ class FourBoxTimeseriesWindow:
     def get(self) -> FourBoxSlice:
         """Regional values at the index the model reads for this input.
 
-        This is index N+1 for an upstream output and index N otherwise.
+        A point reads index N+1, or N for own state and a lagged edge.
+        An average reads index N, or N-1 for own state.
         """
         ...
     def get_time(self) -> float:
@@ -254,7 +256,8 @@ class HemisphericTimeseriesWindow:
     def get(self) -> HemisphericSlice:
         """Regional values at the index the model reads for this input.
 
-        This is index N+1 for an upstream output and index N otherwise.
+        A point reads index N+1, or N for own state and a lagged edge.
+        An average reads index N, or N-1 for own state.
         """
         ...
     def get_time(self) -> float:

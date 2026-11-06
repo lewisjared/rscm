@@ -339,8 +339,8 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # | `inputs.field.get_time()` | Time of the value `get()` returns |
 # | `inputs.field.interpolate(t)` | Value at time `t`, such as a fixed reference year |
 #
-# `get()` reads the start of the step for exogenous data and state,
-# and this step's value for an upstream component's output.
+# For a point, `get()` reads the end of the step, whether the input is prescribed or upstream,
+# and the start of the step for own state and a lagged input.
 # For grid inputs, `get()` and `interval()` return a `FourBoxSlice` or `HemisphericSlice`,
 # and `region(i)` returns a scalar window for one region.
 #

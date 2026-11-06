@@ -20,6 +20,7 @@ from rscm._lib.magicc import (
     OzoneForcingBuilder,
     PermafrostBuilder,
 )
+from rscm.core import RequirementType
 from rscm.magicc import full
 from rscm.magicc import prescribed as pr
 
@@ -49,7 +50,7 @@ def test_halocarbons():
         for s in species
     }
     model = full_run.run_components(
-        run.years, [component], exogenous=exogenous, initial=initial
+        run.years, [component], exogenous=exogenous, initial=initial, lag=full.LAG
     )
 
     for s in species:
@@ -105,7 +106,9 @@ def test_ozone():
         },
         "Surface Temperature": (run.series("Surface Temperature"), "K"),
     }
-    model = full_run.run_components(run.years, [component], exogenous=exogenous)
+    model = full_run.run_components(
+        run.years, [component], exogenous=exogenous, lag=full.LAG
+    )
 
     erf = "Effective Radiative Forcing|"
     for ours, magicc in (
@@ -211,6 +214,7 @@ def test_permafrost():
         run.years,
         [component],
         exogenous={"Surface Temperature": (run.series("Surface Temperature"), "K")},
+        lag=full.LAG,
     )
     full_run.assert_close(
         full_run.output(model, "Permafrost Thawed Area")[1:],
@@ -224,13 +228,6 @@ def test_permafrost():
         )
 
 
-#: Permafrost emissions and their units.
-PERMAFROST_EMISSIONS = {
-    "Emissions|CO2|Permafrost": "GtC/yr",
-    "Emissions|CH4|Permafrost": "Mt CH4/yr",
-}
-
-
 def _all_outputs(model):
     ts = model.timeseries()
     getters = (ts.get_timeseries_by_name, ts.get_fourbox_timeseries_by_name)
@@ -242,33 +239,70 @@ def _all_outputs(model):
     }
 
 
-def test_prescribed_permafrost_emissions_match_modelled(monkeypatch):
-    """Prescribing permafrost emissions from a run reproduces that run bit for bit."""
-    run = full_run.load_permafrost()
-    modelled = full_run.run_coupled(run)
-    emissions = {name: full_run.output(modelled, name) for name in PERMAFROST_EMISSIONS}
+WRITES = (RequirementType.Output, RequirementType.State)
+
+
+def _prescribing(modelled, variable):
+    """`full.run_components` with `variable`'s producer replaced by `modelled` outputs.
+
+    Every output of the producer that another component reads is prescribed.
+    The runner's lags stay as they are.
+    """
+    outputs = _all_outputs(modelled)
     run_components = full.run_components
 
-    def without_permafrost(years, components, *, exogenous, **kwargs):
-        n = len(years)
-        prescribed = {
-            name: (values[:n], PERMAFROST_EMISSIONS[name])
-            for name, values in emissions.items()
+    def run(years, components, *, exogenous, four_box, initial, **kwargs):
+        def writes(c):
+            return {d.name: d for d in c.definitions() if d.requirement_type in WRITES}
+
+        (producer,) = [c for c in components if variable in writes(c)]
+        kept = [c for c in components if c is not producer]
+        read = {
+            d.name
+            for c in kept
+            for d in c.definitions()
+            if d.requirement_type == RequirementType.Input
         }
-        kept = [
-            c
-            for c in components
-            if "Permafrost Thawed Area" not in {d.name for d in c.definitions()}
-        ]
-        assert len(kept) == len(components) - 1
+        prescribed = {
+            name: (outputs[name][: len(years)], d.unit)
+            for name, d in writes(producer).items()
+            if name in read
+        }
+        assert variable in prescribed
         return run_components(
-            years, kept, exogenous={**exogenous, **prescribed}, **kwargs
+            years,
+            kept,
+            exogenous={
+                **exogenous,
+                **{k: v for k, v in prescribed.items() if v[0].ndim == 1},
+            },
+            four_box={
+                **four_box,
+                **{k: v for k, v in prescribed.items() if v[0].ndim == 2},
+            },
+            initial={k: v for k, v in initial.items() if k not in writes(producer)},
+            **kwargs,
         )
 
-    monkeypatch.setattr(full, "run_components", without_permafrost)
+    return run
+
+
+@pytest.mark.parametrize(
+    ("load", "variable"),
+    [
+        (full_run.load_permafrost, "Emissions|CO2|Permafrost"),
+        (full_run.load, "Atmospheric Concentration|CO2"),
+        (full_run.load, "Surface Temperature"),
+    ],
+)
+def test_prescribed_output_matches_modelled(monkeypatch, load, variable):
+    """Prescribing a variable with its modelled values reproduces the run exactly."""
+    run = load()
+    modelled = full_run.run_coupled(run)
+    monkeypatch.setattr(full, "run_components", _prescribing(modelled, variable))
     prescribed = _all_outputs(full_run.run_coupled(run))
     expected = _all_outputs(modelled)
-    assert set(expected) - set(prescribed) == {"Permafrost Thawed Area"}
+    assert variable in prescribed
     for name, values in prescribed.items():
         npt.assert_array_equal(values, expected[name], err_msg=name)
         assert values.tobytes() == expected[name].tobytes(), name

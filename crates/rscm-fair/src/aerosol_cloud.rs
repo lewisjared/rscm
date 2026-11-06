@@ -6,7 +6,7 @@
 //! scale $s$, plus a feedback on the surface temperature at the start of the step
 //! (Smith et al. 2021).
 
-use crate::constants::{driver_definitions, end, get, one, surface_temperature};
+use crate::constants::{driver_definitions, get, one, surface_temperature};
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
@@ -127,14 +127,11 @@ impl Component for FairAerosolCloud {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let p = &self.parameters;
-        let values = p
+        let values: Vec<_> = p
             .drivers
             .iter()
-            .map(|d| match d.kind {
-                CloudDriverKind::Emissions => Ok(get(input_state, &d.variable)),
-                CloudDriverKind::Concentration => end(input_state, &d.variable),
-            })
-            .collect::<RSCMResult<Vec<_>>>()?;
+            .map(|d| get(input_state, &d.variable))
+            .collect();
         let temperature = get(input_state, &p.surface_temperature);
         let mut output = OutputState::with_capacity(1);
         output.insert(

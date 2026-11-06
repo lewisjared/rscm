@@ -313,16 +313,16 @@ impl Component for ForcingAggregation {
                 let values = agent_inputs(agent)
                     .into_iter()
                     .map(|name| {
-                        Ok(if agent.regional {
-                            input_state.get_four_box_window(name).interval()?.1
+                        if agent.regional {
+                            input_state.get_four_box_window(name).get_all()
                         } else {
-                            vec![input_state.get_scalar_window(name).interval()?.1]
-                        })
+                            vec![input_state.get_scalar_window(name).get()]
+                        }
                     })
-                    .collect::<RSCMResult<Vec<Vec<FloatValue>>>>()?;
-                Ok(self.agent_forcing(agent, &values))
+                    .collect::<Vec<Vec<FloatValue>>>();
+                self.agent_forcing(agent, &values)
             })
-            .collect::<RSCMResult<_>>()?;
+            .collect();
         let internal = match &self.parameters.climate {
             None => self.initial_internal_efficacies(),
             Some(climate) => {
@@ -353,7 +353,9 @@ impl Component for ForcingAggregation {
 mod tests {
     use super::*;
     use crate::parameters::{EfficacyClimate, ForcingAgent};
+    use rscm_core::state::{ReadTransformInfo, TransformContext, VariableSource};
     use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+    use std::collections::HashMap;
 
     fn agent(regional: bool, efficacy: FloatValue, internal: FloatValue) -> ForcingAgent {
         ForcingAgent {
@@ -471,7 +473,14 @@ mod tests {
             scalar_item(CLIMATE_SENSITIVITY, ecs),
             scalar_item(CO2_DOUBLING_ERF, [3.9, 4.2]),
         ];
-        let input_state = InputState::build(items.iter().collect(), 2000.0);
+        // MAGICC7 lags the sensitivity into the aggregation
+        let lagged = TransformContext {
+            read_transforms: HashMap::from([(
+                CLIMATE_SENSITIVITY.to_string(),
+                ReadTransformInfo::default().with_source(VariableSource::Lagged),
+            )]),
+        };
+        let input_state = InputState::build_with_transforms(items.iter().collect(), 2000.0, lagged);
         let output = c.solve(2000.0, 2001.0, &input_state).unwrap();
         match &output[REGIONAL_FORCING] {
             StateValue::FourBox(slice) => slice.0,

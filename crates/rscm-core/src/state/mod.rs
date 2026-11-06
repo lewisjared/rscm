@@ -154,22 +154,24 @@ impl From<HemisphericSlice> for StateValue {
 
 /// Describes the source/origin of a variable in the model.
 ///
-/// This is used by `get()` to determine the correct timestep index to read from.
+/// With the variable's point or average type, this decides the timestep index `get()` reads.
+/// Exogenous and upstream inputs read the same index, so the distinction only describes the coupling.
 /// The source is computed at model build time based on the dependency graph.
 #[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum VariableSource {
     /// Variable is provided externally (exogenous input).
-    /// `get()` reads index N.
+    /// `get()` reads a point at index N+1 and an average at index N.
     #[default]
     Exogenous,
 
     /// Variable is written by an upstream component in the dependency graph.
-    /// `get()` reads index N+1, which the upstream component wrote earlier in this step.
+    /// `get()` reads a point at index N+1, which the upstream component wrote earlier in this step,
+    /// and an average at index N.
     UpstreamOutput,
 
     /// Variable is this component's own state from the previous timestep.
-    /// `get()` reads index N.
+    /// `get()` reads a point at index N and an average at index N-1.
     OwnState,
 
     /// Variable is read from the previous step because the model wiring lags this edge.
@@ -703,10 +705,10 @@ mod tests {
             variable_type: VariableType::Endogenous,
         };
 
-        // Use a time that exists in the time axis
-        let state = InputState::build(vec![&item], 2001.0);
+        // The step from 2000.0 ends at index 1
+        let state = InputState::build(vec![&item], 2000.0);
 
-        // get() returns the value at the index of current_time (index 1)
+        // An exogenous point's get() returns the value at the step's end (index 1)
         assert_eq!(state.get_global("CO2"), Some(285.0));
         assert_eq!(state.get_scalar_window("CO2").get(), 285.0);
     }
@@ -740,8 +742,8 @@ mod tests {
             variable_type: VariableType::Endogenous,
         };
 
-        // Use a time that exists in the time axis
-        let state = InputState::build(vec![&item], 2001.0);
+        // The step from 2000.0 ends at index 1
+        let state = InputState::build(vec![&item], 2000.0);
 
         // Test get_four_box_window returns values at index 1 using get_all()
         let window = state.get_four_box_window("Temperature");
@@ -876,14 +878,14 @@ mod input_state_window_tests {
     #[test]
     fn test_get_scalar_window() {
         let item = create_scalar_item("CO2", vec![280.0, 285.0, 290.0, 295.0, 300.0]);
-        // Time 2002.0 corresponds to index 2 in the timeseries [2000, 2001, 2002, 2003, 2004]
-        let state = InputState::build(vec![&item], 2002.0);
+        // Time 2001.0 corresponds to index 1 in the timeseries [2000, 2001, 2002, 2003, 2004]
+        let state = InputState::build(vec![&item], 2001.0);
 
         let window = state.get_scalar_window("CO2");
 
-        // get() returns the value at the index of current_time
+        // An exogenous point's get() returns the value at the step's end
         assert_eq!(window.get(), 290.0);
-        assert_eq!(window.interval().unwrap(), (290.0, 295.0));
+        assert_eq!(window.interval().unwrap(), (285.0, 290.0));
         assert_eq!(window.history(1), Some(285.0));
         assert_eq!(window.len(), 5);
     }
@@ -891,8 +893,8 @@ mod input_state_window_tests {
     #[test]
     fn test_get_four_box_window() {
         let item = create_four_box_item("Temperature");
-        // Time 2001.0 corresponds to index 1 in the timeseries [2000, 2001, 2002]
-        let state = InputState::build(vec![&item], 2001.0);
+        // Time 2000.0 is index 0, so the step ends at index 1 in the timeseries [2000, 2001, 2002]
+        let state = InputState::build(vec![&item], 2000.0);
 
         let window = state.get_four_box_window("Temperature");
 
@@ -907,8 +909,8 @@ mod input_state_window_tests {
     #[test]
     fn test_get_hemispheric_window() {
         let item = create_hemispheric_item("Precipitation");
-        // Time 2001.0 corresponds to index 1 in the timeseries [2000, 2001]
-        let state = InputState::build(vec![&item], 2001.0);
+        // Time 2000.0 is index 0, so the step ends at index 1 in the timeseries [2000, 2001]
+        let state = InputState::build(vec![&item], 2000.0);
 
         let window = state.get_hemispheric_window("Precipitation");
 
@@ -968,13 +970,13 @@ mod input_state_window_tests {
         );
         let transform_ctx = TransformContext { read_transforms };
 
-        let state = InputState::build_with_transforms(vec![&item], 2001.0, transform_ctx);
+        let state = InputState::build_with_transforms(vec![&item], 2000.0, transform_ctx);
 
         let window = state.get_scalar_window("Emissions");
 
         // Raw value at index 1 is 2.0, converted should be 2000.0
         assert_eq!(window.get(), 2000.0);
-        assert_eq!(window.interval().unwrap(), (2000.0, 3000.0));
+        assert_eq!(window.interval().unwrap(), (1000.0, 2000.0));
         assert_eq!(window.history(1), Some(1000.0));
     }
 
@@ -992,7 +994,7 @@ mod input_state_window_tests {
         );
         let transform_ctx = TransformContext { read_transforms };
 
-        let state = InputState::build_with_transforms(vec![&item], 2001.0, transform_ctx);
+        let state = InputState::build_with_transforms(vec![&item], 2000.0, transform_ctx);
 
         let window = state.get_four_box_window("Temperature");
 
@@ -1017,7 +1019,7 @@ mod input_state_window_tests {
         );
         let transform_ctx = TransformContext { read_transforms };
 
-        let state = InputState::build_with_transforms(vec![&item], 2001.0, transform_ctx);
+        let state = InputState::build_with_transforms(vec![&item], 2000.0, transform_ctx);
 
         let window = state.get_scalar_window("Forcing");
 
@@ -1047,7 +1049,7 @@ mod input_state_window_tests {
         );
         let transform_ctx = TransformContext { read_transforms };
 
-        let state = InputState::build_with_transforms(vec![&item], 2001.0, transform_ctx);
+        let state = InputState::build_with_transforms(vec![&item], 2000.0, transform_ctx);
 
         let window = state.get_hemispheric_window("Precipitation");
 
@@ -1072,7 +1074,7 @@ mod input_state_window_tests {
         );
         let transform_ctx = TransformContext { read_transforms };
 
-        let state = InputState::build_with_transforms(vec![&item], 2001.0, transform_ctx);
+        let state = InputState::build_with_transforms(vec![&item], 2000.0, transform_ctx);
 
         let window = state.get_hemispheric_window("Temperature");
 

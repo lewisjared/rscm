@@ -127,9 +127,5 @@ pub(crate) fn prescribed_input(
     if t_next > switch_year? {
         return None;
     }
-    let (_, end) = input_state
-        .get_scalar_window(prescribed)
-        .interval()
-        .unwrap_or_else(|err| panic!("{prescribed} must be a point read within the run: {err}"));
-    Some(end)
+    Some(input_state.get_scalar_window(prescribed).get())
 }

@@ -198,7 +198,7 @@ mod tests {
         collection.add_timeseries(
             "Sea Surface Temperature".to_string(),
             Timeseries::from_values(
-                array![sea_surface_temperature, f64::NAN],
+                array![f64::NAN, sea_surface_temperature],
                 array![2020.0, 2021.0],
             ),
             VariableType::Exogenous,
@@ -207,7 +207,7 @@ mod tests {
         collection.add_timeseries(
             "Dissolved Inorganic Carbon".to_string(),
             Timeseries::from_values(
-                array![dissolved_inorganic_carbon, f64::NAN],
+                array![f64::NAN, dissolved_inorganic_carbon],
                 array![2020.0, 2021.0],
             ),
             VariableType::Exogenous,
@@ -243,7 +243,7 @@ mod tests {
         let component = OceanSurfacePartialPressure::from_parameters(parameters);
 
         let collection = build_timeseries_collection(4.0, 5.0);
-        let input_state = extract_state(&collection, component.input_names(), 2020.0);
+        let input_state = extract_state(&collection, component.inputs(), 2020.0);
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
         let ospp_value = match output_state

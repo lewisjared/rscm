@@ -14,7 +14,7 @@
 //! Emissions-driven gases update the boxes with the exact solution for constant emissions over
 //! the step. Concentration-driven gases invert that solution to give the emissions.
 
-use crate::constants::{end, get, surface_temperature, temperature_unit};
+use crate::constants::{get, surface_temperature, temperature_unit};
 use rscm_core::component::{
     Component, ComponentState, InputState, OutputState, RequirementDefinition, TimeseriesType,
 };
@@ -313,7 +313,7 @@ impl FairGasCycle {
                     );
                 }
                 GasMode::Concentration => {
-                    let concentration = end(input_state, &species.concentration)?;
+                    let concentration = get(input_state, &species.concentration);
                     let emissions =
                         Self::step_concentration(species, gas, concentration, alpha, dt);
                     if let Some(name) = &species.inverse_emissions {

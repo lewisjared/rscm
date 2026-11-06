@@ -85,6 +85,13 @@ __all__ = [
 DATA = Path(__file__).parent / "data" / "magicc7"
 ERF = "Effective Radiative Forcing"
 REGIONAL_FORCING = f"{ERF}|Efficacy Adjusted"
+#: MAGICC7 feeds back last year's temperature, CO2 and climate sensitivity.
+LAG = ("Surface Temperature",)
+LAG_FOR = (
+    ("Atmospheric Concentration|CO2", "TerrestrialCarbon"),
+    ("Atmospheric Concentration|CO2", "OceanCarbon"),
+    ("Equilibrium Climate Sensitivity", "ForcingAggregation"),
+)
 
 SECTORAL_EMISSIONS = {
     "CO2": "GtC/yr",
@@ -1117,13 +1124,6 @@ def run_magicc7(  # noqa: PLR0913
                 params("Permafrost", permafrost_parameters(p))
             ).build(),
         )
-    # MAGICC7 feeds back last year's temperature, CO2 and climate sensitivity.
-    lag = ["Surface Temperature"]
-    lag_for = [
-        ("Atmospheric Concentration|CO2", "TerrestrialCarbon"),
-        ("Atmospheric Concentration|CO2", "OceanCarbon"),
-        ("Equilibrium Climate Sensitivity", "ForcingAggregation"),
-    ]
     initial = {
         **{f"Atmospheric Concentration|{gas}": c for gas, c in conc.items()},
         **_ch4_burdens(conc["CH4"], p["ch4_ppb2tgch4"], p["ch4_mixboxsize"]),
@@ -1179,8 +1179,8 @@ def run_magicc7(  # noqa: PLR0913
             four_box={k: (v[:n], unit) for k, (v, unit) in four_box.items()},
             initial={**initial, **climate.initial_values(total)},
             initial_grid={REGIONAL_FORCING: boxes},
-            lag=lag,
-            lag_for=lag_for,
+            lag=LAG,
+            lag_for=LAG_FOR,
         )
 
     # MAGICC7 starts from its second year's F-gas forcing.

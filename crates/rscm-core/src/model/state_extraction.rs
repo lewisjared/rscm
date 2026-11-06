@@ -1,34 +1,42 @@
 //! State extraction functions for model components.
 
-use crate::component::InputState;
-use crate::state::TransformContext;
+use std::collections::HashMap;
+
+use crate::component::{InputState, RequirementDefinition, RequirementType};
+use crate::state::{ReadTransformInfo, TransformContext, VariableSource};
 use crate::timeseries::Time;
 use crate::timeseries_collection::TimeseriesCollection;
 
-/// Extract the input state for the current time step.
+/// Extract the input state for solving one component on its own at `t_current`.
 ///
-/// By default, for endogenous variables which are calculated as part of the model
-/// the most recent value is used, whereas, for exogenous variables the values are linearly
-/// interpolated.
-/// This ensures that state calculated from previous components within the same timestep
-/// is used.
-///
-/// The result should contain values for the current time step for all input variables.
+/// `inputs` are the component's input definitions, as `Component::inputs` returns them.
+/// A state input reads as the component's own state and every other input as exogenous,
+/// each with the point or average type its definition resolves to.
 pub fn extract_state(
     collection: &TimeseriesCollection,
-    input_names: Vec<String>,
+    inputs: Vec<RequirementDefinition>,
     t_current: Time,
 ) -> InputState<'_> {
     let mut state = Vec::new();
+    let mut read_transforms = HashMap::new();
 
-    input_names.into_iter().for_each(|name| {
+    for input in inputs {
         let ts = collection
-            .get_by_name(name.as_str())
-            .unwrap_or_else(|| panic!("No timeseries with variable='{}'", name));
+            .get_by_name(input.name.as_str())
+            .unwrap_or_else(|| panic!("No timeseries with variable='{}'", input.name));
         state.push(ts);
-    });
+        let source = if input.requirement_type == RequirementType::State {
+            VariableSource::OwnState
+        } else {
+            VariableSource::Exogenous
+        };
+        let transform = ReadTransformInfo::new(input.grid_type, None)
+            .with_source(source)
+            .with_timeseries_type(input.resolved_timeseries_type());
+        read_transforms.insert(input.name, transform);
+    }
 
-    InputState::build(state, t_current)
+    InputState::build_with_transforms(state, t_current, TransformContext { read_transforms })
 }
 
 /// Extract the input state with transform context for grid aggregation.

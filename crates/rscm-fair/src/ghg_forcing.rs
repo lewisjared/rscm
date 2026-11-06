@@ -6,7 +6,7 @@
 //! scaled by `forcing_scale * (1 + tropospheric_adjustment)`,
 //! plus a feedback on the surface temperature at the start of the step.
 
-use crate::constants::{end, forcing_unit, get, one, surface_temperature, temperature_unit};
+use crate::constants::{forcing_unit, get, one, surface_temperature, temperature_unit};
 use rscm_components::meinshausen2020::Meinshausen2020;
 use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
 use rscm_core::errors::RSCMResult;
@@ -145,10 +145,10 @@ impl Component for FairGhgForcing {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let concentrations = self
+        let concentrations: Vec<_> = self
             .species()
-            .map(|s| end(input_state, &s.concentration))
-            .collect::<RSCMResult<Vec<_>>>()?;
+            .map(|s| get(input_state, &s.concentration))
+            .collect();
         let temperature = get(input_state, &self.parameters.surface_temperature);
         let mut output = OutputState::with_capacity(concentrations.len());
         for (s, f) in self.species().zip(self.forcing(&concentrations)) {
