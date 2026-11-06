@@ -1088,7 +1088,7 @@ class Optimizer:
 
     @staticmethod
     def random_search() -> Optimizer:
-        """Random search optimizer (samples n points, returns best)."""
+        """Random search optimizer (samples n points from the prior, returns best)."""
 
 @final
 class OptimizationResult:

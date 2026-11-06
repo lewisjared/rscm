@@ -19,14 +19,13 @@
 //! ```
 
 use crate::{point_estimator::PointEstimator, Result};
-use rand::RngExt;
 
 /// Optimization algorithm to use for point estimation.
 #[derive(Debug, Clone, Copy)]
 pub enum Optimizer {
     /// Random search baseline
     ///
-    /// Samples random parameter sets from within the parameter bounds
+    /// Samples random parameter sets from the prior
     /// and returns the best. Useful as a baseline or for initialization.
     ///
     /// Note: Number of samples controlled by n_samples parameter.
@@ -130,26 +129,13 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
         })
     }
 
-    /// Helper method to sample initial parameter vectors.
+    /// Draw `n` parameter vectors from the prior.
     fn sample_initial_params(&self, n: usize) -> Vec<Vec<f64>> {
-        // We need access to the parameter set, but it's private
-        // For now, use the bounds to sample uniformly
-        let (lower, upper) = self.bounds();
-        let n_params = lower.len();
-
-        let mut rng = rand::rng();
-        let mut samples = Vec::with_capacity(n);
-
-        for _ in 0..n {
-            let mut sample = Vec::with_capacity(n_params);
-            for i in 0..n_params {
-                let value = rng.random::<f64>() * (upper[i] - lower[i]) + lower[i];
-                sample.push(value);
-            }
-            samples.push(sample);
-        }
-
-        samples
+        self.params
+            .sample_random(n)
+            .outer_iter()
+            .map(|row| row.to_vec())
+            .collect()
     }
 }
 
@@ -333,5 +319,31 @@ mod tests {
 
         assert!(err.to_string().contains("no valid samples"), "got: {err}");
         assert!(err.to_string().contains("solver diverged"), "got: {err}");
+    }
+
+    #[test]
+    fn test_random_search_samples_unbounded_prior() {
+        let mut params = ParameterSet::new();
+        params.add("x", Box::new(crate::Normal::new(2.0, 0.5).unwrap()));
+
+        let mut target = Target::new();
+        target.add_variable("y").add(0.0, 0.0, 0.1).unwrap();
+
+        let mut estimator = PointEstimator::new(
+            params,
+            QuadraticModel::new(),
+            GaussianLikelihood::default(),
+            target,
+        );
+
+        let result = estimator
+            .optimize(Optimizer::RandomSearch, 50)
+            .expect("samples drawn from a Normal prior are valid");
+
+        assert!(result.best_log_posterior.is_finite());
+        assert!(estimator
+            .evaluated_params()
+            .iter()
+            .all(|p| p[0].is_finite()));
     }
 }

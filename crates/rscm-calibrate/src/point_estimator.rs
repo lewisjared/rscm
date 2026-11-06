@@ -14,7 +14,7 @@ use crate::{
 /// and tracks all evaluated points and their likelihoods during optimisation.
 pub struct PointEstimator<R: ModelRunner, L: LikelihoodFn> {
     /// Parameter set defining the prior distributions and bounds
-    params: ParameterSet,
+    pub(crate) params: ParameterSet,
 
     /// Model runner for evaluating parameter sets
     runner: R,
