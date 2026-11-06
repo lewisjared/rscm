@@ -60,7 +60,7 @@ pub enum RSCMError {
         suggestions: Vec<(String, String)>,
     },
 
-    /// A `with_lag` or `with_lag_for` call that names no edge of the model.
+    /// A `with_lag` or `with_lag_for` call that names no edge of the model, or lags an average.
     #[error("Invalid lag {lag}: {reason}")]
     InvalidLag { lag: String, reason: String },
 

@@ -181,7 +181,11 @@ Runners such as `run_magicc7` and `run_fair` carry their models' lags.
 Each timestep runs from `t_current` (index N) to `t_next` (index N+1).
 Within a timestep the model solves every producer before its consumers,
 using a topological sort of the graph.
-Each component reads its inputs with `get()` and writes its outputs to index N+1:
+Each component reads its inputs with `get()`.
+It writes a point output to index N+1, the step's end,
+and an average output to index N, the step's start
+(see [Points and Averages](#points-and-averages)).
+For points:
 
 ```mermaid
 sequenceDiagram
@@ -193,10 +197,10 @@ sequenceDiagram
     Note over State: Index N has values from previous timestep
     Model->>C1: solve(t_current, t_next)
     C1->>State: get() reads exogenous data and own state [index N]
-    C1->>State: Write outputs [index N+1]
+    C1->>State: Write point outputs [index N+1]
     Model->>C2: solve(t_current, t_next)
-    C2->>State: get() reads C1's output [index N+1], or [index N] on a lagged edge
-    C2->>State: Write outputs [index N+1]
+    C2->>State: get() reads C1's point [index N+1], or [index N] on a lagged edge
+    C2->>State: Write point outputs [index N+1]
     Note over State: Index N+1 now has new values
 ```
 
@@ -212,12 +216,12 @@ It reads each input through three calls on the input's window:
 
 The builder decides which value `get()` returns, from how the model is wired:
 
-| What you're reading                | Who wrote it           | `get()` reads |
-| ---------------------------------- | ---------------------- | ------------- |
-| Your own previous state            | You, last timestep     | index N       |
-| Exogenous input (external forcing) | Pre-populated          | index N       |
-| Upstream component output          | They ran this timestep | index N+1     |
-| Lagged input                       | Written last timestep  | index N       |
+| What you're reading                | Who wrote it           | `get()` reads a point | `get()` reads an average |
+| ---------------------------------- | ---------------------- | --------------------- | ------------------------ |
+| Your own previous state            | You, last timestep     | index N               | index N-1                |
+| Exogenous input (external forcing) | Pre-populated          | index N               | index N                  |
+| Upstream component output          | They ran this timestep | index N+1             | index N                  |
+| Lagged input                       | Written last timestep  | index N               | not supported            |
 
 `with_lag(variable)` and `with_lag_for(variable, consumer)` make an edge read the previous step.
 A lagged input's `get()` gives last step's value, and its `interval()` gives last step's start and end.
@@ -355,6 +359,16 @@ Without it, a consumer's declaration or the unit decides.
 
 State variables must be points, so `build()` fails for a state that resolves to an average.
 `with_state_type_check(False)` turns the check off.
+
+A point is stored at its time and an average at the start bound of its step,
+whoever produced it.
+Input files, IAMC data and MAGICC7 label annual emissions the same way,
+so prescribing an average with values a model wrote for it gives the same results as modelling it.
+An average a component writes has no value at the last time,
+because no step starts there.
+
+A lag on an average fails `build()` for now,
+because the first step has no previous value to read.
 
 The type sets the interpolation of each series the builder creates:
 `Previous` for an average and `Linear` for a point.

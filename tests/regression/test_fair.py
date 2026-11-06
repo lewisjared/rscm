@@ -195,9 +195,8 @@ def test_gas_cycle(case: str) -> None:
     for s in filter(is_ghg, run.config["species"]):
         name = s["name"]
         if s["input_mode"] == "concentration":
-            # RSCM writes the emissions of a step at its end, FaIR at its start.
             assert_close(
-                run.rscm(naming.emissions(name))[1:],
+                run.rscm(naming.emissions(name))[:-1],
                 run.timepoints[f"emissions|{name}"].to_numpy(),
                 name,
             )
@@ -226,9 +225,8 @@ def test_chemistry(case: str) -> None:
         run.rscm(naming.EESC),
         run.fair("concentration|Equivalent effective stratospheric chlorine"),
     )
-    # FaIR stores the scaling used in a step at its start.
     assert_close(
-        run.rscm(naming.CH4_LIFETIME_SCALING)[1:], run.fair("alpha_lifetime|CH4")[:-1]
+        run.rscm(naming.CH4_LIFETIME_SCALING)[:-1], run.fair("alpha_lifetime|CH4")[:-1]
     )
 
 

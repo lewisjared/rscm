@@ -9,7 +9,6 @@ import pytest
 from rscm.magicc import Emissions, run_magicc_emissions
 
 YEARS = np.arange(1750.0, 1851.0)
-INTERVALS = len(YEARS) - 1
 
 # Concentrations at which the default natural emissions alone are in balance
 CH4_NATURAL = 182.1908 / (1 / 12.417920434628465 + 1 / 50) / (2.824 * 0.973)
@@ -17,7 +16,8 @@ N2O_NATURAL = 8.0345017 * 139.275 / 4.79
 
 
 def emissions(scale: float = 1.0) -> Emissions:
-    ramp = np.linspace(0.0, scale, INTERVALS)
+    ramp = np.linspace(0.0, scale, len(YEARS) - 1)
+    ramp = np.r_[ramp, ramp[-1]]
     return Emissions(
         co2_fossil=8.0 * ramp,
         co2_land_use=1.0 * ramp,
@@ -65,20 +65,21 @@ def test_natural_steady_state_is_preserved():
             result.values[f"Atmospheric Concentration|{gas}"], value, rtol=1e-9
         )
     npt.assert_allclose(result.values["Surface Temperature"], 0.0, atol=1e-12)
-    npt.assert_allclose(result.values["Carbon Flux|Ocean"][1:], 0.0, atol=1e-12)
+    npt.assert_allclose(result.values["Carbon Flux|Ocean"][:-1], 0.0, atol=1e-12)
 
 
 def test_co2_mass_balance():
     result = run(emissions())
     v = result.values
-    sources = v["Emissions|CO2|Fossil"][:-1] + v["Emissions|CO2|CH4 Oxidation"][1:]
-    sinks = v["Carbon Flux|Terrestrial"][1:] + v["Carbon Flux|Ocean"][1:]
+    sources = v["Emissions|CO2|Fossil"] + v["Emissions|CO2|CH4 Oxidation"]
+    sinks = v["Carbon Flux|Terrestrial"] + v["Carbon Flux|Ocean"]
     npt.assert_allclose(
         np.diff(v["Atmospheric Concentration|CO2"]),
-        (sources - sinks) / 2.123,
+        (sources - sinks)[:-1] / 2.123,
         atol=1e-12,
     )
-    assert v["Emissions|CO2|CH4 Oxidation"][-1] > 0.0
+    assert v["Emissions|CO2|CH4 Oxidation"][-2] > 0.0
+    assert np.isnan(v["Emissions|CO2|CH4 Oxidation"][-1])
 
 
 def test_climate_feedback_follows_forcing_configuration():
@@ -93,7 +94,7 @@ def test_climate_feedback_follows_forcing_configuration():
 
 def test_land_use_reduces_land_carbon():
     base = run(emissions())
-    deforested = run(replace(emissions(), co2_land_use=np.full(INTERVALS, 3.0)))
+    deforested = run(replace(emissions(), co2_land_use=np.full(len(YEARS), 3.0)))
     assert (
         deforested.values["Carbon Pool|Plant"][-1]
         < base.values["Carbon Pool|Plant"][-1]
@@ -157,12 +158,12 @@ def test_invalid_inputs_rejected():
         run(emissions(), parameters={"Ozone": {}})
     with pytest.raises(ValueError, match="initial_concentrations"):
         run(emissions(), initial_concentrations={"CO2": 278.0})
-    with pytest.raises(ValueError, match="co2_fossil"):
-        run(replace(emissions(), co2_fossil=np.zeros(INTERVALS + 1)))
+    with pytest.raises(ValueError, match="co2_fossil has 100 values, one per interval"):
+        run(replace(emissions(), co2_fossil=np.zeros(len(YEARS) - 1)))
     with pytest.raises(ValueError, match="ch4_fossil"):
         run(replace(emissions(), ch4_fossil=emissions().ch4 + 1.0))
     with pytest.raises(ValueError, match="other_forcing"):
-        run(emissions(), other_forcing=np.zeros(INTERVALS))
+        run(emissions(), other_forcing=np.zeros(len(YEARS) - 1))
     with pytest.raises(ValueError, match="years"):
         run_magicc_emissions(
             [1750.0],

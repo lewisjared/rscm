@@ -6,6 +6,8 @@
 #[cfg(test)]
 mod aggregate_execution;
 #[cfg(test)]
+mod average_storage;
+#[cfg(test)]
 mod basic;
 #[cfg(test)]
 mod coupling;

@@ -152,6 +152,36 @@ impl ModelBuilder {
         Ok(())
     }
 
+    /// Check that no lag is on an average, which has no previous-step value at the first step.
+    fn check_no_lagged_average(
+        &self,
+        variable_sources: &HashMap<(String, String), VariableSource>,
+        timeseries_types: &BTreeMap<String, TimeseriesType>,
+    ) -> RSCMResult<()> {
+        let lagged_average = variable_sources
+            .iter()
+            .filter(|((variable, _), &source)| {
+                source == VariableSource::Lagged
+                    && timeseries_types.get(variable) == Some(&TimeseriesType::Average)
+            })
+            .map(|(edge, _)| edge)
+            .min();
+        let Some((variable, consumer)) = lagged_average else {
+            return Ok(());
+        };
+        let lag = if self.lagged_variables.contains(variable) {
+            format!("with_lag({variable:?})")
+        } else {
+            format!("with_lag_for({variable:?}, {consumer:?})")
+        };
+        Err(RSCMError::InvalidLag {
+            lag,
+            reason: format!(
+                "{variable:?} is an average read by {consumer}, and lagged averages are not supported yet"
+            ),
+        })
+    }
+
     /// Check that every input without a producer has exogenous data or an initial value.
     fn check_exogenous_supplied(
         &self,
@@ -901,6 +931,7 @@ impl ModelBuilder {
             .iter()
             .map(|(name, definition)| (name.clone(), definition.timeseries_type))
             .collect();
+        self.check_no_lagged_average(&variable_sources, &timeseries_types)?;
 
         // Validate that all state variables have initial values
         for (name, def) in &definitions {

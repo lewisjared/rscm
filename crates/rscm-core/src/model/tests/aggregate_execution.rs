@@ -486,7 +486,7 @@ impl Component for StepEmissions {
 }
 
 #[test]
-fn test_flux_aggregate_reads_exogenous_at_step_start_and_upstream_at_step_end() {
+fn test_flux_aggregate_reads_exogenous_and_upstream_at_step_start() {
     let schema = VariableSchema::new()
         .variable("Emissions|Exogenous", "GtC/yr")
         .variable("Emissions|Upstream", "GtC/yr")
@@ -533,14 +533,15 @@ fn test_flux_aggregate_reads_exogenous_at_step_start_and_upstream_at_step_end() 
 
     model.run();
 
-    // Step N sums the exogenous value at N and the upstream output written at N+1.
+    // Step N sums the exogenous value and the upstream output at N, and writes the total at N.
     let total = model
         .timeseries()
         .get_data("Emissions|Total")
         .and_then(|d| d.as_scalar())
         .unwrap();
-    let values: Vec<_> = (1..5)
+    let values: Vec<_> = (0..4)
         .map(|i| total.at(i, ScalarRegion::Global).unwrap())
         .collect();
     assert_eq!(values, vec![101.0, 103.0, 105.0, 107.0]);
+    assert!(total.at(4, ScalarRegion::Global).unwrap().is_nan());
 }

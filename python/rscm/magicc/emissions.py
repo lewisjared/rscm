@@ -37,12 +37,12 @@ from rscm.magicc.runner import (
     ERF,
     SPECIES,
     MAGICCResult,
+    _average_series,
     _base_schema,
     _ch4_burdens,
     _ch4_tau_other,
     _climate_weights,
     _collect_result,
-    _interval_series,
     _series,
     _validate_axis,
 )
@@ -125,35 +125,20 @@ CALCULATED = {
 }
 
 
-#: Per-step outputs, undefined at the first boundary.
-DIAGNOSTICS = frozenset(
-    {
-        "Lifetime|CH4",
-        "Lifetime|CH4|OH",
-        "Lifetime|CH4|Effective",
-        "Emissions|CO2|CH4 Oxidation",
-        "Lifetime|N2O",
-        "Carbon Flux|Terrestrial",
-        "Emissions|CO2|Gross Deforestation",
-        "Carbon Flux|Regrowth",
-        "Net Primary Production",
-        "Respiration|Terrestrial",
-        "Carbon Flux|Ocean",
-        "End-of-Year Atmospheric CO2",
-        "Emissions|CO2|Net",
-        "Airborne Fraction|CO2",
-    }
-)
+#: Per-step points, undefined at the first label.
+DIAGNOSTICS = frozenset({"End-of-Year Atmospheric CO2", "Airborne Fraction|CO2"})
 
 
 @dataclass(frozen=True)
 class Emissions:
     """Anthropogenic emissions driving an emissions-driven run.
 
-    Each array contains annual mean rates, one for each interval between the
-    supplied years. ``ch4`` is total anthropogenic CH4 and ``ch4_fossil`` its
-    fossil and industrial part, whose oxidation adds CO2. Natural CH4 and N2O
-    emissions are chemistry parameters.
+    Each array contains annual mean rates, one for each supplied year,
+    labelled by the year they start.
+    ``ch4`` is total anthropogenic CH4
+    and ``ch4_fossil`` its fossil and industrial part,
+    whose oxidation adds CO2.
+    Natural CH4 and N2O emissions are chemistry parameters.
     """
 
     co2_fossil: ArrayLike
@@ -288,8 +273,8 @@ def run_magicc_emissions(  # noqa: PLR0913
     params = _validate_parameters(parameters)
 
     data = {
-        EMISSION_VARIABLES[field.name][0]: _interval_series(
-            field.name, getattr(emissions, field.name), len(time) - 1
+        EMISSION_VARIABLES[field.name][0]: _average_series(
+            field.name, getattr(emissions, field.name), len(time)
         )
         for field in fields(Emissions)
     }

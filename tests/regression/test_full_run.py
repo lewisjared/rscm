@@ -216,13 +216,62 @@ def test_permafrost():
         full_run.output(model, "Permafrost Thawed Area")[1:],
         run.series("PFTHAWED_AREA")[1:],
     )
-    # Emissions are stored at the end of the step they are released in.
     for gas in ("CO2", "CH4"):
         full_run.assert_close(
-            full_run.output(model, f"Emissions|{gas}|Permafrost")[1:],
+            full_run.output(model, f"Emissions|{gas}|Permafrost")[:-1],
             run.series(PERMAFROST_FLUX.format(gas))[:-1],
             err_msg=gas,
         )
+
+
+#: Permafrost emissions and their units.
+PERMAFROST_EMISSIONS = {
+    "Emissions|CO2|Permafrost": "GtC/yr",
+    "Emissions|CH4|Permafrost": "Mt CH4/yr",
+}
+
+
+def _all_outputs(model):
+    ts = model.timeseries()
+    getters = (ts.get_timeseries_by_name, ts.get_fourbox_timeseries_by_name)
+    return {
+        name: next(s for s in (get(name) for get in getters) if s is not None)
+        .values()
+        .copy()
+        for name in ts.names()
+    }
+
+
+def test_prescribed_permafrost_emissions_match_modelled(monkeypatch):
+    """Prescribing permafrost emissions from a run reproduces that run bit for bit."""
+    run = full_run.load_permafrost()
+    modelled = full_run.run_coupled(run)
+    emissions = {name: full_run.output(modelled, name) for name in PERMAFROST_EMISSIONS}
+    run_components = full.run_components
+
+    def without_permafrost(years, components, *, exogenous, **kwargs):
+        n = len(years)
+        prescribed = {
+            name: (values[:n], PERMAFROST_EMISSIONS[name])
+            for name, values in emissions.items()
+        }
+        kept = [
+            c
+            for c in components
+            if "Permafrost Thawed Area" not in {d.name for d in c.definitions()}
+        ]
+        assert len(kept) == len(components) - 1
+        return run_components(
+            years, kept, exogenous={**exogenous, **prescribed}, **kwargs
+        )
+
+    monkeypatch.setattr(full, "run_components", without_permafrost)
+    prescribed = _all_outputs(full_run.run_coupled(run))
+    expected = _all_outputs(modelled)
+    assert set(expected) - set(prescribed) == {"Permafrost Thawed Area"}
+    for name, values in prescribed.items():
+        npt.assert_array_equal(values, expected[name], err_msg=name)
+        assert values.tobytes() == expected[name].tobytes(), name
 
 
 def _assert_temperature(model, run):
@@ -266,10 +315,9 @@ def test_coupled_run(load):
     _assert_total_erf(model, run)
 
 
-#: RSCM nitrogen outputs and their CARBONCYCLE.OUT columns.
+#: RSCM nitrogen averages and their CARBONCYCLE.OUT columns.
 NITROGEN_OUTPUTS = {
     "Nitrogen Limitation Factor": ("NCYCLE_LIMIT_FACTOR", 1e-4),
-    "Nitrogen Pool": ("NCYCLE_NPOOL", 1e-4),
     "Net Primary Production": ("CURRENT_NPP", 1e-4),
 }
 
@@ -281,14 +329,19 @@ def test_nitrogen_coupled_run():
     """
     run = full_run.load_nitrogen()
     model = full_run.run_coupled(run)
-    # MAGICC labels terrestrial fluxes with the start of the step
     for name, (theirs, rtol) in NITROGEN_OUTPUTS.items():
         npt.assert_allclose(
-            full_run.output(model, name)[1:],
+            full_run.output(model, name)[:-1],
             run.series(theirs)[:-1],
             rtol=rtol,
             err_msg=name,
         )
+    # MAGICC7 labels the pool at the end of a year by the year's start
+    npt.assert_allclose(
+        full_run.output(model, "Nitrogen Pool")[1:],
+        run.series("NCYCLE_NPOOL")[:-1],
+        rtol=1e-4,
+    )
     _assert_temperature(model, run)
     _assert_concentrations(model, run, ("CO2", "CH4", "N2O"))
 
