@@ -113,10 +113,7 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
         }
 
         let best = best_params.ok_or_else(|| {
-            let reason = first_error.map_or_else(
-                || "every sample is outside the prior support or has zero likelihood".to_string(),
-                |e| format!("first error: {e}"),
-            );
+            let reason = crate::no_valid_reason(first_error.as_ref(), "sample");
             crate::Error::SamplingError(format!("Random search found no valid samples ({reason})"))
         })?;
 
@@ -291,25 +288,9 @@ mod tests {
 
     #[test]
     fn test_random_search_reports_underlying_error_when_every_evaluation_fails() {
-        struct FailingModel {
-            param_names: Vec<String>,
-        }
-
-        impl ModelRunner for FailingModel {
-            fn param_names(&self) -> &[String] {
-                &self.param_names
-            }
-
-            fn run(&self, _params: &[f64]) -> crate::Result<ModelOutput> {
-                Err(crate::Error::ModelError("solver diverged".to_string()))
-            }
-        }
-
         let mut params = ParameterSet::new();
         params.add("x", Box::new(Uniform::new(0.0, 4.0).unwrap()));
-        let runner = FailingModel {
-            param_names: vec!["x".to_string()],
-        };
+        let runner = crate::test_support::FailingModel::new(None);
         let mut estimator =
             PointEstimator::new(params, runner, GaussianLikelihood::default(), Target::new());
 

@@ -4,8 +4,11 @@
 //! of model parameters by maximising the likelihood function.
 
 use crate::{
-    likelihood::LikelihoodFn, model_runner::ModelRunner, parameter_set::ParameterSet,
-    target::Target, Result,
+    likelihood::{log_posterior, LikelihoodFn},
+    model_runner::ModelRunner,
+    parameter_set::ParameterSet,
+    target::Target,
+    Result,
 };
 
 /// Point estimator for finding optimal parameter sets.
@@ -103,16 +106,13 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
     }
 
     fn log_posterior_and_likelihood(&self, params: &[f64]) -> Result<(f64, f64)> {
-        let log_prior = self.params.log_prior(params)?;
-        if !log_prior.is_finite() {
-            return Ok((f64::NEG_INFINITY, f64::NEG_INFINITY));
-        }
-
-        let model_output = self.runner.run(params)?;
-        let log_likelihood = self.likelihood.ln_likelihood(&model_output, &self.target)?;
-
-        // Log posterior (prior + likelihood, no normalization constant)
-        Ok((log_prior + log_likelihood, log_likelihood))
+        log_posterior(
+            &self.params,
+            params,
+            || self.runner.run(params),
+            &self.likelihood,
+            &self.target,
+        )
     }
 
     /// Get all evaluated parameter vectors.
@@ -334,32 +334,10 @@ mod tests {
 
     #[test]
     fn test_point_estimator_model_failure() {
-        struct FailingModel {
-            param_names: Vec<String>,
-        }
-
-        impl FailingModel {
-            fn new() -> Self {
-                Self {
-                    param_names: vec!["x".to_string()],
-                }
-            }
-        }
-
-        impl ModelRunner for FailingModel {
-            fn param_names(&self) -> &[String] {
-                &self.param_names
-            }
-
-            fn run(&self, _params: &[f64]) -> crate::Result<crate::likelihood::ModelOutput> {
-                Err(crate::Error::ModelError("Model failed".to_string()))
-            }
-        }
-
         let mut params = ParameterSet::new();
         params.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
 
-        let runner = FailingModel::new();
+        let runner = crate::test_support::FailingModel::new(None);
         let likelihood = GaussianLikelihood::default();
         let target = Target::new();
 

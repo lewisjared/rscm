@@ -5,8 +5,12 @@
 
 use super::{Chain, ProgressInfo, SamplerState, StretchMove, WalkerInit};
 use crate::{
-    likelihood::LikelihoodFn, model_runner::ModelRunner, parameter_set::ParameterSet,
-    target::Target, Error, Result,
+    likelihood::{log_posterior, LikelihoodFn},
+    model_runner::ModelRunner,
+    no_valid_reason,
+    parameter_set::ParameterSet,
+    target::Target,
+    Error, Result,
 };
 use ndarray::Array1;
 use rayon::prelude::*;
@@ -143,30 +147,34 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// A point outside the prior support is `Ok(-inf)`.
     /// A failed prior, model or likelihood evaluation is `Err`.
     fn try_log_posterior_batch(&self, param_sets: &[Vec<f64>]) -> Vec<Result<f64>> {
-        let outputs = self.runner.run_batch(param_sets);
-
-        param_sets
-            .par_iter()
-            .zip(outputs.into_par_iter())
-            .map(|(params, output_result)| {
-                let log_prior = self.params.log_prior(params)?;
-                if !log_prior.is_finite() {
-                    return Ok(f64::NEG_INFINITY);
-                }
-                let log_likelihood = self
-                    .likelihood
-                    .ln_likelihood(&output_result?, &self.target)?;
-                Ok(log_prior + log_likelihood)
-            })
-            .collect()
+        self.log_posteriors(param_sets).collect()
     }
 
     /// Log posteriors for proposals, where a failed evaluation rejects the proposal.
     fn log_posterior_batch(&self, param_sets: &[Vec<f64>]) -> Vec<f64> {
-        self.try_log_posterior_batch(param_sets)
-            .into_iter()
+        self.log_posteriors(param_sets)
             .map(|lp| lp.unwrap_or(f64::NEG_INFINITY))
             .collect()
+    }
+
+    fn log_posteriors<'a>(
+        &'a self,
+        param_sets: &'a [Vec<f64>],
+    ) -> impl IndexedParallelIterator<Item = Result<f64>> + 'a {
+        let outputs = self.runner.run_batch(param_sets);
+        param_sets
+            .par_iter()
+            .zip(outputs.into_par_iter())
+            .map(|(params, output)| {
+                log_posterior(
+                    &self.params,
+                    params,
+                    || output,
+                    &self.likelihood,
+                    &self.target,
+                )
+                .map(|(log_posterior, _)| log_posterior)
+            })
     }
 
     /// Log posteriors for the initial walkers.
@@ -180,10 +188,8 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
             .iter()
             .any(|lp| lp.as_ref().is_ok_and(|v| v.is_finite()))
         {
-            let reason = results.iter().find_map(|lp| lp.as_ref().err()).map_or_else(
-                || "every position is outside the prior support or has zero likelihood".to_string(),
-                |e| format!("first error: {e}"),
-            );
+            let reason =
+                no_valid_reason(results.iter().find_map(|lp| lp.as_ref().err()), "position");
             return Err(Error::SamplingError(format!(
                 "All {} initial walker positions have zero posterior probability ({reason})",
                 results.len()
@@ -631,6 +637,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
 mod tests {
     use super::*;
     use crate::model_runner::ModelRunner;
+    use crate::test_support::FailingModel;
     use crate::{GaussianLikelihood, ParameterSet, Uniform};
     use ndarray::Array2;
     use std::cell::RefCell;
@@ -1414,38 +1421,6 @@ mod tests {
             "Mean should move towards observation y=2.0, got {:.3}",
             mean_y
         );
-    }
-
-    /// Fails every run with a fixed message, or only above `threshold` when one is set.
-    struct FailingModel {
-        param_names: Vec<String>,
-        threshold: Option<f64>,
-    }
-
-    impl FailingModel {
-        fn new(threshold: Option<f64>) -> Self {
-            Self {
-                param_names: vec!["x".to_string()],
-                threshold,
-            }
-        }
-    }
-
-    impl ModelRunner for FailingModel {
-        fn param_names(&self) -> &[String] {
-            &self.param_names
-        }
-
-        fn run(&self, params: &[f64]) -> crate::Result<crate::likelihood::ModelOutput> {
-            if self.threshold.is_none_or(|t| params[0] > t) {
-                return Err(Error::ModelError("solver diverged".to_string()));
-            }
-            let mut output = crate::likelihood::ModelOutput::new();
-            let mut var = crate::likelihood::VariableOutput::new("value");
-            var.add(0.0, params[0]);
-            output.add_variable(var);
-            Ok(output)
-        }
     }
 
     fn failing_sampler(

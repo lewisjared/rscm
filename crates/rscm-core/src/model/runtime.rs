@@ -6,7 +6,7 @@ use crate::state::{
     lookup_order, InputState, ReadTransformInfo, StateValue, TransformContext, VariableSource,
 };
 use crate::timeseries::{Time, TimeAxis};
-use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData};
+use crate::timeseries_collection::TimeseriesCollection;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeFiltered, EdgeRef};
@@ -483,14 +483,8 @@ impl Model {
     /// Grid of the stored series `name`, or `Scalar` if there is none.
     fn stored_grid(&self, name: &str) -> GridType {
         self.collection
-            .position(name)
-            .map_or(GridType::Scalar, |index| {
-                match self.collection.item(index).data {
-                    TimeseriesData::Scalar(_) => GridType::Scalar,
-                    TimeseriesData::FourBox(_) => GridType::FourBox,
-                    TimeseriesData::Hemispheric(_) => GridType::Hemispheric,
-                }
-            })
+            .get_by_name(name)
+            .map_or(GridType::Scalar, |item| item.data.grid_type())
     }
 
     /// Where an output is stored and how it is transformed on the way.

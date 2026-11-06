@@ -198,7 +198,10 @@ impl PythonComponent {
             outputs.call_method0("to_dict")?
         } else {
             // Untyped component: input mapping in, dict out
-            component.call_method1("solve", (t_current, t_next, self.input_values(input_state)))?
+            component.call_method1(
+                "solve",
+                (t_current, t_next, self.input_values(py, input_state)?),
+            )?
         };
 
         let py_dict = py_result.cast::<PyDict>().map_err(|_| {
@@ -235,13 +238,17 @@ impl PythonComponent {
     }
 
     /// Each input's `get()` value, read as a global scalar as a typed scalar input would be.
-    fn input_values(&self, input_state: &InputState) -> HashMap<String, FloatValue> {
-        self.input_definitions()
-            .map(|definition| {
-                let value = input_state.get_scalar_window(&definition.name).get();
-                (definition.name.clone(), value)
-            })
-            .collect()
+    fn input_values<'py>(
+        &self,
+        py: Python<'py>,
+        input_state: &InputState,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        for definition in self.input_definitions() {
+            let name = definition.name.as_str();
+            dict.set_item(name, input_state.get_scalar_window(name).get())?;
+        }
+        Ok(dict)
     }
 
     /// Python windows over the inputs, built from the same Rust windows Rust components read.
