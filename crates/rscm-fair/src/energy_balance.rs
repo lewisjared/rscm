@@ -15,7 +15,7 @@
 //! Stochastic internal variability is not implemented.
 
 use crate::constants::{
-    efficacy_adjusted_forcing, end, forcing_unit, start, surface_temperature, temperature_unit,
+    efficacy_adjusted_forcing, end, forcing_unit, get, surface_temperature, temperature_unit,
     total_forcing, EARTH_RADIUS, SECONDS_PER_YEAR,
 };
 use nalgebra::{DMatrix, DVector};
@@ -242,17 +242,17 @@ impl Component for FairEnergyBalance {
         let n = self.n_layers();
         let p = &self.parameters;
         let end = |name: &str| end(input_state, name);
-        let start = |name: &str| start(input_state, name);
+        let get = |name: &str| get(input_state, name);
 
         let mut state = DVector::zeros(n + 1);
-        state[0] = start(STOCHASTIC_FORCING);
+        state[0] = get(STOCHASTIC_FORCING);
         for layer in 0..n {
-            state[layer + 1] = start(&self.layer_temperature(layer));
+            state[layer + 1] = get(&self.layer_temperature(layer));
         }
-        let state = self.step(&state, end(&p.efficacy_adjusted_forcing), dt);
+        let state = self.step(&state, end(&p.efficacy_adjusted_forcing)?, dt);
         let temperatures: Vec<FloatValue> = state.iter().skip(1).copied().collect();
-        let imbalance = self.energy_imbalance(end(&p.forcing), &temperatures);
-        let heat = start(OCEAN_HEAT_CONTENT_CHANGE)
+        let imbalance = self.energy_imbalance(end(&p.forcing)?, &temperatures);
+        let heat = get(OCEAN_HEAT_CONTENT_CHANGE)
             + imbalance
                 * dt
                 * EARTH_RADIUS

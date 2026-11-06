@@ -109,12 +109,12 @@ impl Component for FairEesc {
         _t_next: Time,
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
-        let concentrations: Vec<_> = self
+        let concentrations = self
             .parameters
             .halogens
             .iter()
             .map(|h| end(input_state, &h.concentration))
-            .collect();
+            .collect::<RSCMResult<Vec<_>>>()?;
         let mut output = OutputState::with_capacity(1);
         output.insert(
             self.parameters.output.clone(),

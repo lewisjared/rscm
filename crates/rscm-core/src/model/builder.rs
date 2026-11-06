@@ -828,13 +828,14 @@ impl ModelBuilder {
                 // Track the component name for variable ownership
                 let agg_component_name = format!("Aggregator:{}", agg_name);
                 variable_owners.insert(agg_name.clone(), agg_component_name.clone());
+                let runtime_name = Model::extract_component_name(&graph[agg_node]);
 
                 // Add dependency edges from contributor sources to aggregator (5.3)
                 let mut has_dependencies = false;
                 for contributor in &agg_def.contributors {
-                    // Find the node that produces this contributor
-                    if let Some(&producer_node) = endogenous.get(contributor) {
-                        // Add edge from producer to aggregator
+                    let source = if self.is_lagged(contributor, &runtime_name) {
+                        VariableSource::Lagged
+                    } else if let Some(&producer_node) = endogenous.get(contributor) {
                         graph.add_edge(
                             producer_node,
                             agg_node,
@@ -846,9 +847,11 @@ impl ModelBuilder {
                             ),
                         );
                         has_dependencies = true;
-                    }
-                    // If contributor is exogenous, the aggregator will read from the
-                    // timeseries collection which will have been populated
+                        VariableSource::UpstreamOutput
+                    } else {
+                        VariableSource::Exogenous
+                    };
+                    variable_sources.insert((contributor.clone(), runtime_name.clone()), source);
                 }
 
                 // If aggregator has no component dependencies, link to initial node

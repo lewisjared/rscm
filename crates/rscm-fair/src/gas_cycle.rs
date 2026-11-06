@@ -14,7 +14,7 @@
 //! Emissions-driven gases update the boxes with the exact solution for constant emissions over
 //! the step. Concentration-driven gases invert that solution to give the emissions.
 
-use crate::constants::{end, start, surface_temperature, temperature_unit};
+use crate::constants::{end, get, surface_temperature, temperature_unit};
 use rscm_core::component::{
     Component, ComponentState, InputState, OutputState, RequirementDefinition, TimeseriesType,
 };
@@ -291,11 +291,11 @@ impl FairGasCycle {
         state: &mut FairGasCycleState,
     ) -> RSCMResult<OutputState> {
         let dt = t_next - t_current;
-        let temperature = start(input_state, &self.parameters.surface_temperature);
+        let temperature = get(input_state, &self.parameters.surface_temperature);
         let mut output = OutputState::with_capacity(3 * self.parameters.species.len());
         for (species, gas) in self.parameters.species.iter().zip(state.gases.iter_mut()) {
             let alpha = match &species.lifetime_scaling {
-                Some(name) => end(input_state, name),
+                Some(name) => get(input_state, name),
                 None => self.alpha(species, gas, temperature),
             };
             match species.mode {
@@ -303,7 +303,7 @@ impl FairGasCycle {
                     let emissions = species
                         .emissions
                         .iter()
-                        .map(|name| start(input_state, name))
+                        .map(|name| get(input_state, name))
                         .reduce(|a, b| a + b)
                         .unwrap_or(0.0);
                     let concentration = Self::step_emissions(species, gas, emissions, alpha, dt);
@@ -313,7 +313,7 @@ impl FairGasCycle {
                     );
                 }
                 GasMode::Concentration => {
-                    let concentration = end(input_state, &species.concentration);
+                    let concentration = end(input_state, &species.concentration)?;
                     let emissions =
                         Self::step_concentration(species, gas, concentration, alpha, dt);
                     if let Some(name) = &species.inverse_emissions {

@@ -219,8 +219,8 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
             self.land_ratio = land_ratio
 
         def solve(self, t_current, t_next, inputs):
-            ocean = inputs.scalar_temp.at_start() * self.ocean_ratio
-            land = inputs.scalar_temp.at_start() * self.land_ratio
+            ocean = inputs.scalar_temp.get() * self.ocean_ratio
+            land = inputs.scalar_temp.get() * self.land_ratio
             return self.Outputs(
                 regional_temp=FourBoxSlice(
                     northern_ocean=ocean, northern_land=land,

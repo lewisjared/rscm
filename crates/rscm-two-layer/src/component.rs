@@ -228,8 +228,8 @@ impl Component for TwoLayer {
     ) -> RSCMResult<OutputState> {
         // Read previous state from input (state variables appear in both inputs and outputs)
         let inputs = TwoLayerInputs::from_input_state(input_state);
-        let prev_surface_temp = inputs.surface_temperature.at_start();
-        let prev_deep_temp = inputs.deep_temperature.at_start();
+        let prev_surface_temp = inputs.surface_temperature.get();
+        let prev_deep_temp = inputs.deep_temperature.get();
 
         // Initialize ODE with previous state
         // y[0] = surface temperature, y[1] = deep temperature, y[2] = cumulative heat

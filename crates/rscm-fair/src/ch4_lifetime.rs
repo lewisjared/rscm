@@ -8,7 +8,7 @@
 //! over precursor emissions and concentrations $x_i$ at the start of the step,
 //! where $f$ is the floor `ch4_min`.
 
-use crate::constants::{start, surface_temperature, temperature_unit};
+use crate::constants::{get, surface_temperature, temperature_unit};
 use rscm_core::component::{
     Component, InputState, OutputState, RequirementDefinition, TimeseriesType,
 };
@@ -123,10 +123,10 @@ impl Component for FairCH4Lifetime {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let p = &self.parameters;
-        let start_of = |x: &Precursor| start(input_state, &x.variable);
-        let emissions: Vec<_> = p.emissions.iter().map(start_of).collect();
-        let concentrations: Vec<_> = p.concentrations.iter().map(start_of).collect();
-        let temperature = start(input_state, &p.surface_temperature);
+        let get_of = |x: &Precursor| get(input_state, &x.variable);
+        let emissions: Vec<_> = p.emissions.iter().map(get_of).collect();
+        let concentrations: Vec<_> = p.concentrations.iter().map(get_of).collect();
+        let temperature = get(input_state, &p.surface_temperature);
         let mut output = OutputState::with_capacity(1);
         output.insert(
             p.output.clone(),

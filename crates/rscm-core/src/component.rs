@@ -524,11 +524,8 @@ mod tests {
         // current_time=2020.0 corresponds to index 0 in the timeseries
         let input_state = InputState::build(vec![&emissions_co2], 2020.0);
 
-        // current() returns the value at the index corresponding to current_time (index 0)
-        assert_eq!(
-            input_state.get_scalar_window("Emissions|CO2").at_start(),
-            1.1
-        );
+        // An exogenous input reads the index of current_time (index 0)
+        assert_eq!(input_state.get_scalar_window("Emissions|CO2").get(), 1.1);
 
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();
         assert_eq!(

@@ -406,7 +406,7 @@ impl Component for ScaleAndOutput {
     ) -> RSCMResult<OutputState> {
         // Get the input value (after any unit conversion has been applied)
         let input_window = input_state.get_scalar_window("Input");
-        let input_value = input_window.at_start();
+        let input_value = input_window.get();
 
         // Apply our internal scale and output
         let mut output = OutputState::new();

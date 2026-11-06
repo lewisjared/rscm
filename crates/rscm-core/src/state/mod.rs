@@ -160,20 +160,20 @@ impl From<HemisphericSlice> for StateValue {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum VariableSource {
     /// Variable is provided externally (exogenous input).
-    /// Read from `at_start()` (index N).
+    /// `get()` reads index N.
     #[default]
     Exogenous,
 
     /// Variable is written by an upstream component in the dependency graph.
-    /// Read from `at_end()` (index N+1), falling back to `at_start()` if at last timestep.
+    /// `get()` reads index N+1, falling back to index N at the last timestep.
     UpstreamOutput,
 
     /// Variable is this component's own state from the previous timestep.
-    /// Read from `at_start()` (index N).
+    /// `get()` reads index N.
     OwnState,
 
     /// Variable is read from the previous step because the model wiring lags this edge.
-    /// Read from `at_start()` (index N), and `at_end()` returns `None`.
+    /// `get()` reads index N, and `interval()` gives the previous step's (N-1, N).
     Lagged,
 }
 
@@ -706,9 +706,9 @@ mod tests {
         // Use a time that exists in the time axis
         let state = InputState::build(vec![&item], 2001.0);
 
-        // at_start() returns value at index corresponding to current_time (index 1)
+        // get() returns the value at the index of current_time (index 1)
         assert_eq!(state.get_global("CO2"), Some(285.0));
-        assert_eq!(state.get_scalar_window("CO2").at_start(), 285.0);
+        assert_eq!(state.get_scalar_window("CO2").get(), 285.0);
     }
 
     #[test]
@@ -743,9 +743,9 @@ mod tests {
         // Use a time that exists in the time axis
         let state = InputState::build(vec![&item], 2001.0);
 
-        // Test get_four_box_window returns values at index 1 using at_start()
+        // Test get_four_box_window returns values at index 1 using get_all()
         let window = state.get_four_box_window("Temperature");
-        let values = window.at_start_all();
+        let values = window.get_all();
         assert_eq!(values, [16.0, 15.0, 11.0, 10.0]);
 
         // Test get_global aggregates using weights (equal weights = mean)
@@ -881,10 +881,10 @@ mod input_state_window_tests {
 
         let window = state.get_scalar_window("CO2");
 
-        // at_start() returns the value at the index corresponding to current_time
-        assert_eq!(window.at_start(), 290.0);
-        assert_eq!(window.at_end().unwrap(), 295.0);
-        assert_eq!(window.previous(), Some(285.0));
+        // get() returns the value at the index of current_time
+        assert_eq!(window.get(), 290.0);
+        assert_eq!(window.interval().unwrap(), (290.0, 295.0));
+        assert_eq!(window.history(1), Some(285.0));
         assert_eq!(window.len(), 5);
     }
 
@@ -896,12 +896,12 @@ mod input_state_window_tests {
 
         let window = state.get_four_box_window("Temperature");
 
-        // at_start() returns values at index 1 (2001 values: [16.0, 15.0, 11.0, 10.0])
-        assert_eq!(window.at_start(FourBoxRegion::NorthernOcean), 16.0);
-        assert_eq!(window.at_start(FourBoxRegion::SouthernLand), 10.0);
-        assert_eq!(window.at_start_all(), vec![16.0, 15.0, 11.0, 10.0]);
-        // previous is index 0 (2000 values: [15.0, 14.0, 10.0, 9.0])
-        assert_eq!(window.previous_all(), Some(vec![15.0, 14.0, 10.0, 9.0]));
+        // get() returns values at index 1 (2001 values: [16.0, 15.0, 11.0, 10.0])
+        assert_eq!(window.get(FourBoxRegion::NorthernOcean), 16.0);
+        assert_eq!(window.get(FourBoxRegion::SouthernLand), 10.0);
+        assert_eq!(window.get_all(), vec![16.0, 15.0, 11.0, 10.0]);
+        // history(1) is index 0 (2000 values: [15.0, 14.0, 10.0, 9.0])
+        assert_eq!(window.history(1), Some(vec![15.0, 14.0, 10.0, 9.0]));
     }
 
     #[test]
@@ -912,10 +912,10 @@ mod input_state_window_tests {
 
         let window = state.get_hemispheric_window("Precipitation");
 
-        // at_start() returns values at index 1 (2001 values: [1100.0, 550.0])
-        assert_eq!(window.at_start(HemisphericRegion::Northern), 1100.0);
-        assert_eq!(window.at_start(HemisphericRegion::Southern), 550.0);
-        assert_eq!(window.current_global(), 825.0); // Equal weights mean
+        // get() returns values at index 1 (2001 values: [1100.0, 550.0])
+        assert_eq!(window.get(HemisphericRegion::Northern), 1100.0);
+        assert_eq!(window.get(HemisphericRegion::Southern), 550.0);
+        assert_eq!(state.get_global("Precipitation"), Some(825.0)); // Equal weights mean
     }
 
     #[test]
@@ -973,9 +973,9 @@ mod input_state_window_tests {
         let window = state.get_scalar_window("Emissions");
 
         // Raw value at index 1 is 2.0, converted should be 2000.0
-        assert_eq!(window.at_start(), 2000.0);
-        assert_eq!(window.at_end(), Some(3000.0));
-        assert_eq!(window.previous(), Some(1000.0));
+        assert_eq!(window.get(), 2000.0);
+        assert_eq!(window.interval().unwrap(), (2000.0, 3000.0));
+        assert_eq!(window.history(1), Some(1000.0));
     }
 
     #[test]
@@ -998,8 +998,8 @@ mod input_state_window_tests {
 
         // Raw values at index 1: [16.0, 15.0, 11.0, 10.0]
         // Converted: [1.6, 1.5, 1.1, 1.0]
-        assert_eq!(window.at_start(FourBoxRegion::NorthernOcean), 1.6);
-        assert_eq!(window.at_start_all(), vec![1.6, 1.5, 1.1, 1.0]);
+        assert_eq!(window.get(FourBoxRegion::NorthernOcean), 1.6);
+        assert_eq!(window.get_all(), vec![1.6, 1.5, 1.1, 1.0]);
     }
 
     #[test]
@@ -1023,7 +1023,7 @@ mod input_state_window_tests {
 
         // Raw values at index 1: [16.0, 15.0, 11.0, 10.0], mean = 13.0
         // Converted: 13.0 * 2.0 = 26.0
-        assert_eq!(window.at_start(), 26.0);
+        assert_eq!(window.get(), 26.0);
     }
 
     #[test]
@@ -1053,8 +1053,8 @@ mod input_state_window_tests {
 
         // Raw values at index 1: [1100.0, 550.0]
         // Converted: [1.1, 0.55]
-        assert_eq!(window.at_start(HemisphericRegion::Northern), 1.1);
-        assert_eq!(window.at_start(HemisphericRegion::Southern), 0.55);
+        assert_eq!(window.get(HemisphericRegion::Northern), 1.1);
+        assert_eq!(window.get(HemisphericRegion::Southern), 0.55);
     }
 
     #[test]
@@ -1079,8 +1079,8 @@ mod input_state_window_tests {
         // Raw values at index 1: [16.0, 15.0, 11.0, 10.0]
         // Hemispheric aggregation: Northern = (16+15)/2 = 15.5, Southern = (11+10)/2 = 10.5
         // With 2.0 conversion: [31.0, 21.0]
-        assert_eq!(window.at_start(HemisphericRegion::Northern), 31.0);
-        assert_eq!(window.at_start(HemisphericRegion::Southern), 21.0);
+        assert_eq!(window.get(HemisphericRegion::Northern), 31.0);
+        assert_eq!(window.get(HemisphericRegion::Southern), 21.0);
     }
 
     #[test]

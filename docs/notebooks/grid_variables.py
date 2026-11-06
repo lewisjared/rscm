@@ -335,7 +335,7 @@ class RegionalWarming(Component):
 
     def solve(self, t_current, t_next, inputs):
         """Compute regional temperatures from the forcing at the start of the step."""
-        erf = inputs.forcing.at_start()
+        erf = inputs.forcing.get()
         return self.Outputs(
             temperature=FourBoxSlice.from_array([s * erf for s in self.sensitivity])
         )
@@ -349,11 +349,11 @@ class LandOceanContrast(Component):
 
     def solve(self, t_current, t_next, inputs):
         """Read regional values from the FourBox window."""
-        regional = inputs.temperature.at_start_all()
+        regional, _ = inputs.temperature.interval()
         land = (regional.northern_land + regional.southern_land) / 2
         ocean = (
-            inputs.temperature.at_start(FourBoxRegion.NORTHERN_OCEAN)
-            + inputs.temperature.at_start(FourBoxRegion.SOUTHERN_OCEAN)
+            regional.get(FourBoxRegion.NORTHERN_OCEAN)
+            + regional.get(FourBoxRegion.SOUTHERN_OCEAN)
         ) / 2
         return self.Outputs(contrast=land - ocean)
 
@@ -361,12 +361,14 @@ class LandOceanContrast(Component):
 # %% [markdown]
 # A grid window gives access to the regional values:
 #
-# - `at_start_all()` returns a `FourBoxSlice` (or `HemisphericSlice`) for the start of the step.
-# - `at_start(region)` returns a single regional value.
+# - `get()` returns a `FourBoxSlice` (or `HemisphericSlice`) of the values for the step.
+# - `interval()` returns the slices at the start and end of the step.
+# - A slice's `get(region)` returns a single regional value.
 # - `region(region)` returns a scalar `TimeseriesWindow` for one region's history.
 #
-# Python components only see values up to the start of the current step.
-# An upstream output therefore reaches `LandOceanContrast` one step after `RegionalWarming` writes it.
+# `LandOceanContrast` reads the start of the step,
+# so it sees `RegionalWarming`'s output one step after it is written.
+# `get()` would read this step's output instead.
 
 # %%
 sensitivity = [0.7, 1.1, 0.5, 0.9]
@@ -500,7 +502,7 @@ class ScalarReader(Component):
 
     def solve(self, t_current, t_next, inputs):
         """Pass the global temperature through."""
-        return self.Outputs(response=inputs.temperature.at_start())
+        return self.Outputs(response=inputs.temperature.get())
 
 
 try:
@@ -565,7 +567,7 @@ class HemisphericToFourBox(Component):
 
     def solve(self, t_current, t_next, inputs):
         """Scale each hemisphere so that its ocean and land values average to it."""
-        hemi = inputs.hemispheric.at_start_all()
+        hemi, _ = inputs.hemispheric.interval()
         return self.Outputs(
             fourbox=FourBoxSlice(
                 northern_ocean=hemi.northern * self.ocean_factor,

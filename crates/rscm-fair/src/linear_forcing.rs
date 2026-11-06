@@ -7,7 +7,7 @@
 //! One instance each gives FaIR's aerosol-radiation, ozone, contrail, light absorbing
 //! particle, stratospheric water vapour and land use forcing.
 
-use crate::constants::{driver_definitions, end, one, start, surface_temperature};
+use crate::constants::{driver_definitions, end, get, one, surface_temperature};
 use rscm_core::component::{
     Component, ComponentState, InputState, OutputState, RequirementDefinition,
 };
@@ -115,16 +115,16 @@ impl FairLinearForcing {
         let mut forcing = 0.0;
         for (driver, sum) in p.drivers.iter().zip(state.emissions_sum.iter_mut()) {
             let value = match driver.kind {
-                DriverKind::Emissions => start(input_state, &driver.variable),
-                DriverKind::Concentration => end(input_state, &driver.variable),
+                DriverKind::Emissions => get(input_state, &driver.variable),
+                DriverKind::Concentration => end(input_state, &driver.variable)?,
                 DriverKind::CumulativeEmissions => {
-                    *sum += start(input_state, &driver.variable);
+                    *sum += get(input_state, &driver.variable);
                     *sum * dt
                 }
             };
             forcing += (value - driver.baseline) * driver.radiative_efficiency * scale;
         }
-        let temperature = start(input_state, &p.surface_temperature);
+        let temperature = get(input_state, &p.surface_temperature);
         let mut output = OutputState::with_capacity(1);
         output.insert(
             p.forcing.clone(),

@@ -806,7 +806,7 @@ pub fn compute_aggregate(contributors: &[f64], op: &AggregateOp) -> f64 {
 // =============================================================================
 
 use crate::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, InputState, OutputState, RequirementDefinition, RequirementType, TimeseriesType,
 };
 use crate::state::StateValue;
 use crate::timeseries::Time;
@@ -879,22 +879,21 @@ impl Component for AggregatorComponent {
     ) -> RSCMResult<OutputState> {
         let mut output = OutputState::new();
 
-        // Aggregators read values that upstream components just wrote in this timestep.
-        // Use at_end() to read from timestep N+1 where outputs were written, falling
-        // back to at_start() (index N) if at_end() returns None (e.g., last timestep).
-
+        // Points are read at the step end and averages with get(), so both see upstream outputs.
         match self.grid_type {
             GridType::Scalar => {
                 // Collect scalar values from all contributors at end of timestep
-                let values: Vec<f64> = self
+                let values = self
                     .contributors
                     .iter()
                     .map(|name| {
                         let window = input_state.get_scalar_window(name);
-                        // Read from at_end() where upstream values were just written
-                        window.at_end().unwrap_or_else(|| window.at_start())
+                        match window.timeseries_type() {
+                            TimeseriesType::Point => Ok(window.interval()?.1),
+                            TimeseriesType::Average => Ok(window.get()),
+                        }
                     })
-                    .collect();
+                    .collect::<RSCMResult<Vec<f64>>>()?;
 
                 let result = compute_aggregate(&values, &self.operation);
                 output.insert(self.aggregate_name.clone(), StateValue::Scalar(result));
@@ -907,8 +906,10 @@ impl Component for AggregatorComponent {
 
                 for name in &self.contributors {
                     let window = input_state.get_four_box_window(name);
-                    // Read from at_end() where upstream values were just written
-                    let values = window.at_end_all().unwrap_or_else(|| window.at_start_all());
+                    let values = match window.timeseries_type() {
+                        TimeseriesType::Point => window.interval()?.1,
+                        TimeseriesType::Average => window.get_all(),
+                    };
                     for (i, val) in values.into_iter().enumerate() {
                         region_values[i].push(val);
                     }
@@ -930,8 +931,10 @@ impl Component for AggregatorComponent {
 
                 for name in &self.contributors {
                     let window = input_state.get_hemispheric_window(name);
-                    // Read from at_end() where upstream values were just written
-                    let values = window.at_end_all().unwrap_or_else(|| window.at_start_all());
+                    let values = match window.timeseries_type() {
+                        TimeseriesType::Point => window.interval()?.1,
+                        TimeseriesType::Average => window.get_all(),
+                    };
                     for (i, val) in values.into_iter().enumerate() {
                         region_values[i].push(val);
                     }

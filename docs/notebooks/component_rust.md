@@ -168,15 +168,18 @@ impl CO2ERF {
 A scalar input is a `ScalarWindow`.
 It reads scalar data directly and aggregates FourBox or Hemispheric data to a global value.
 
-| Method         | Description                                                                  |
-| -------------- | ---------------------------------------------------------------------------- |
-| `at_start()`   | Value at the start of the timestep (index N)                                 |
-| `at_end()`     | Value at the end of the timestep (index N+1), or `None`                      |
-| `get()`        | `at_start()` for exogenous and own state, `at_end()` for upstream outputs   |
-| `previous()`   | Value at the previous timestep (index N-1), or `None`                        |
-| `at_offset(n)` | Value at a relative offset, or `None` if out of bounds                       |
+| Method           | Description                                                                |
+| ---------------- | -------------------------------------------------------------------------- |
+| `get()`          | The value this component should use for the step                           |
+| `interval()`     | A point's values at the start and end of the step, as an `RSCMResult`      |
+| `history(n)`     | The value `n` steps before `get()`, or `None`                              |
+| `history_len()`  | Number of values `history` can read                                        |
+| `get_time()`     | Time of the value `get()` returns                                          |
+| `interpolate(t)` | Value at time `t`, such as a fixed reference year, as an `RSCMResult`      |
 
-Prefer `get()` unless the physics needs a specific end of the timestep.
+`get()` reads index N for exogenous data, lagged inputs and own state,
+and index N+1 for an output written upstream in the same step.
+Prefer `get()` unless the physics needs both ends of the step.
 See [Timestep Semantics](../key_concepts.md#timestep-semantics) for the details.
 
 ## State Variables
@@ -346,7 +349,7 @@ impl Component for OneBox {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let inputs = OneBoxInputs::from_input_state(input_state);
-        let y0 = Vector1::new(inputs.temperature.at_start());
+        let y0 = Vector1::new(inputs.temperature.get());
 
         let mut solver = IVPBuilder::new(Arc::new(self.clone()), input_state, y0)
             .to_rk4(t_current, t_next, 0.1);
@@ -412,8 +415,8 @@ The full component is `crates/rscm-components/src/components/four_box_ocean_heat
 
 A FourBox input also needs `FourBoxGrid` (from `rscm_core::spatial`) and `GridTimeseriesWindow` in scope.
 A Hemispheric input needs `HemisphericWindow`.
-Grid windows take a region, for example `at_start(FourBoxRegion::NorthernOcean)`.
-They also provide `at_start_all()`, `get_all()` and `current_global()`.
+Grid windows take a region, for example `get(FourBoxRegion::NorthernOcean)`.
+They also provide `get_all()`, and `history(n)` and `interval()` return every region.
 
 ## Error Handling
 
