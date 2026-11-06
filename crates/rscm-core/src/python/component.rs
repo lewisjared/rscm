@@ -5,6 +5,8 @@ use crate::python::rscm_error_from_py;
 use crate::python::state::{
     PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyStateValue, PyTimeseriesWindow,
 };
+use crate::spatial::{HemisphericGrid, SpatialGrid};
+use crate::state::HemisphericWindow;
 use crate::timeseries::{FloatValue, Time, TimeAxis};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -197,11 +199,8 @@ impl PythonComponent {
             }
             outputs.call_method0("to_dict")?
         } else {
-            // Untyped component: raw input mapping in, dict out
-            component.call_method1(
-                "solve",
-                (t_current, t_next, input_state.clone().to_hashmap()),
-            )?
+            // Untyped component: input mapping in, dict out
+            component.call_method1("solve", (t_current, t_next, self.input_values(input_state)))?
         };
 
         let py_dict = py_result.cast::<PyDict>().map_err(|_| {
@@ -228,6 +227,38 @@ impl PythonComponent {
         Ok(output_state)
     }
 
+    fn input_definitions(&self) -> impl Iterator<Item = &RequirementDefinition> {
+        self.definitions.iter().filter(|definition| {
+            matches!(
+                definition.requirement_type,
+                RequirementType::Input | RequirementType::State
+            )
+        })
+    }
+
+    /// Each input's `get()` value, with grid values aggregated to global by the stored grid's weights.
+    fn input_values(&self, input_state: &InputState) -> HashMap<String, FloatValue> {
+        self.input_definitions()
+            .map(|definition| {
+                let name = definition.name.as_str();
+                let value = match definition.grid_type {
+                    GridType::Scalar => input_state.get_scalar_window(name).get(),
+                    GridType::FourBox => {
+                        let w = input_state.get_four_box_window(name);
+                        w.grid().aggregate_global(&w.get_all())
+                    }
+                    GridType::Hemispheric => match input_state.get_hemispheric_window(name) {
+                        HemisphericWindow::Direct(w) => w.grid().aggregate_global(&w.get_all()),
+                        w @ HemisphericWindow::FromFourBox(_) => {
+                            HemisphericGrid::default().aggregate_global(&w.get_all())
+                        }
+                    },
+                };
+                (definition.name.clone(), value)
+            })
+            .collect()
+    }
+
     /// Python windows over the inputs, built from the same Rust windows Rust components read.
     ///
     /// Values run from the first timestep to the end of the current one (index N+1),
@@ -238,13 +269,7 @@ impl PythonComponent {
         input_state: &InputState,
     ) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
-        for definition in &self.definitions {
-            if !matches!(
-                definition.requirement_type,
-                RequirementType::Input | RequirementType::State
-            ) {
-                continue;
-            }
+        for definition in self.input_definitions() {
             let name = definition.name.as_str();
             let window = match definition.grid_type {
                 GridType::Scalar => {

@@ -10,6 +10,8 @@ from rscm.core import (
     InterpolationStrategy,
     ModelBuilder,
     PythonComponent,
+    RequirementDefinition,
+    RequirementType,
     TimeAxis,
     Timeseries,
     VariableSchema,
@@ -80,6 +82,43 @@ class GlobalReader(Component):
 
     def solve(self, t_current, t_next, inputs):
         return self.Outputs(out=inputs.forcing.get())
+
+
+class NextForcingProducer(Component):
+    out = Output("Forcing", unit="W/m^2")
+
+    def solve(self, t_current, t_next, inputs):
+        return self.Outputs(out=t_next - 2000.0)
+
+
+class TypedForcingReader(Component):
+    forcing = Input("Forcing", unit="mW/m^2")
+    seen = Output("Seen", unit="mW/m^2")
+
+    def __init__(self):
+        self.seen_values = []
+
+    def solve(self, t_current, t_next, inputs):
+        self.seen_values.append(inputs.forcing.get())
+        return self.Outputs(seen=0.0)
+
+
+class DictForcingReader:
+    def __init__(self, grid_type=GridType.Scalar):
+        self.grid_type = grid_type
+        self.seen_values = []
+
+    def definitions(self):
+        return [
+            RequirementDefinition(
+                "Forcing", "mW/m^2", RequirementType.Input, self.grid_type
+            ),
+            RequirementDefinition("Seen", "mW/m^2", RequirementType.Output),
+        ]
+
+    def solve(self, t_current, t_next, inputs):
+        self.seen_values.append(inputs["Forcing"])
+        return {"Seen": 0.0}
 
 
 class Slotted(Accumulator):
@@ -219,3 +258,61 @@ def test_to_toml_rejects_slotted_attributes():
 
     with pytest.raises(ValueError, match=r"__slots__.*Override to_json\(\)"):
         model.to_toml()
+
+
+def run_forcing_reader(reader, forcing: Timeseries | None = None):
+    schema = VariableSchema()
+    schema.add_variable("Forcing", "W/m^2")
+    schema.add_variable("Seen", "mW/m^2")
+    builder = (
+        ModelBuilder()
+        .with_time_axis(AXIS)
+        .with_schema(schema)
+        .with_py_component(PythonComponent.build(reader))
+    )
+    if forcing is None:
+        builder = builder.with_py_component(
+            PythonComponent.build(NextForcingProducer())
+        )
+    else:
+        builder = builder.with_exogenous_variable("Forcing", forcing)
+    builder.build().run()
+    return reader.seen_values
+
+
+@pytest.mark.parametrize("prescribed", [True, False], ids=["prescribed", "upstream"])
+def test_dict_component_reads_inputs_as_typed_component_does(prescribed):
+    forcing = (
+        Timeseries(np.arange(5.0), AXIS, "W/m^2", InterpolationStrategy.Linear)
+        if prescribed
+        else None
+    )
+
+    typed = run_forcing_reader(TypedForcingReader(), forcing)
+    untyped = run_forcing_reader(DictForcingReader(), forcing)
+
+    # Points are read at the step's end and converted to the declared unit.
+    np.testing.assert_allclose(typed, [1000.0, 2000.0, 3000.0, 4000.0])
+    np.testing.assert_allclose(untyped, typed)
+
+
+def test_dict_component_aggregates_grid_input_to_global():
+    schema = VariableSchema()
+    schema.add_variable("Forcing", "W/m^2", GridType.FourBox)
+    schema.add_variable("Seen", "mW/m^2")
+    regional = np.outer(np.arange(1.0, 6.0), [1.0, 2.0, 3.0, 4.0])
+    reader = DictForcingReader(GridType.FourBox)
+    (
+        ModelBuilder()
+        .with_time_axis(AXIS)
+        .with_schema(schema)
+        .with_py_component(PythonComponent.build(reader))
+        .with_exogenous_four_box_variable(
+            "Forcing",
+            FourBoxTimeseries(regional, AXIS, "W/m^2", InterpolationStrategy.Linear),
+        )
+        .build()
+        .run()
+    )
+
+    np.testing.assert_allclose(reader.seen_values, 2500.0 * np.arange(2.0, 6.0))
