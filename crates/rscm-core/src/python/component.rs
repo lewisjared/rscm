@@ -5,8 +5,6 @@ use crate::python::rscm_error_from_py;
 use crate::python::state::{
     PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyStateValue, PyTimeseriesWindow,
 };
-use crate::spatial::{HemisphericGrid, SpatialGrid};
-use crate::state::HemisphericWindow;
 use crate::timeseries::{FloatValue, Time, TimeAxis};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -236,24 +234,11 @@ impl PythonComponent {
         })
     }
 
-    /// Each input's `get()` value, with grid values aggregated to global by the stored grid's weights.
+    /// Each input's `get()` value, read as a global scalar as a typed scalar input would be.
     fn input_values(&self, input_state: &InputState) -> HashMap<String, FloatValue> {
         self.input_definitions()
             .map(|definition| {
-                let name = definition.name.as_str();
-                let value = match definition.grid_type {
-                    GridType::Scalar => input_state.get_scalar_window(name).get(),
-                    GridType::FourBox => {
-                        let w = input_state.get_four_box_window(name);
-                        w.grid().aggregate_global(&w.get_all())
-                    }
-                    GridType::Hemispheric => match input_state.get_hemispheric_window(name) {
-                        HemisphericWindow::Direct(w) => w.grid().aggregate_global(&w.get_all()),
-                        w @ HemisphericWindow::FromFourBox(_) => {
-                            HemisphericGrid::default().aggregate_global(&w.get_all())
-                        }
-                    },
-                };
+                let value = input_state.get_scalar_window(&definition.name).get();
                 (definition.name.clone(), value)
             })
             .collect()

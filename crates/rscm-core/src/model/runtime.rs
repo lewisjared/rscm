@@ -6,7 +6,7 @@ use crate::state::{
     lookup_order, InputState, ReadTransformInfo, StateValue, TransformContext, VariableSource,
 };
 use crate::timeseries::{Time, TimeAxis};
-use crate::timeseries_collection::TimeseriesCollection;
+use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData};
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeFiltered, EdgeRef};
@@ -425,22 +425,21 @@ impl Model {
             let unit_factor = self.unit_conversions.get(&key).copied().unwrap_or(1.0);
             let variable_source = self.variable_sources.get(&key).copied().unwrap_or_default();
             let timeseries_type = self.timeseries_type(input).unwrap_or(TimeseriesType::Point);
-            if let Some(transform) = self.read_transforms.get(input) {
-                let weights = self.grid_weights.get(&transform.source_grid).cloned();
-                read_transform_info.insert(
-                    input.clone(),
-                    ReadTransformInfo::new(transform.source_grid, weights)
-                        .with_conversion_factor(unit_factor)
-                        .with_source(variable_source)
-                        .with_timeseries_type(timeseries_type),
-                );
-            } else if (unit_factor - 1.0).abs() > f64::EPSILON
+            let source_grid = self
+                .read_transforms
+                .get(input)
+                .map_or_else(|| self.stored_grid(input), |t| t.source_grid);
+            // A grid input always carries the model's weights, so a global read of it uses them.
+            if source_grid != GridType::Scalar
+                || (unit_factor - 1.0).abs() > f64::EPSILON
                 || variable_source != VariableSource::Exogenous
                 || timeseries_type != TimeseriesType::Point
             {
+                let weights = self.grid_weights.get(&source_grid).cloned();
                 read_transform_info.insert(
                     input.clone(),
-                    ReadTransformInfo::with_unit_conversion(unit_factor)
+                    ReadTransformInfo::new(source_grid, weights)
+                        .with_conversion_factor(unit_factor)
                         .with_source(variable_source)
                         .with_timeseries_type(timeseries_type),
                 );
@@ -479,6 +478,19 @@ impl Model {
             transforms,
             outputs,
         }
+    }
+
+    /// Grid of the stored series `name`, or `Scalar` if there is none.
+    fn stored_grid(&self, name: &str) -> GridType {
+        self.collection
+            .position(name)
+            .map_or(GridType::Scalar, |index| {
+                match self.collection.item(index).data {
+                    TimeseriesData::Scalar(_) => GridType::Scalar,
+                    TimeseriesData::FourBox(_) => GridType::FourBox,
+                    TimeseriesData::Hemispheric(_) => GridType::Hemispheric,
+                }
+            })
     }
 
     /// Where an output is stored and how it is transformed on the way.

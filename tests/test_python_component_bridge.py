@@ -296,17 +296,16 @@ def test_dict_component_reads_inputs_as_typed_component_does(prescribed):
     np.testing.assert_allclose(untyped, typed)
 
 
-def test_dict_component_aggregates_grid_input_to_global():
+def run_four_box_forcing_reader(reader, weights=None):
     schema = VariableSchema()
     schema.add_variable("Forcing", "W/m^2", GridType.FourBox)
     schema.add_variable("Seen", "mW/m^2")
     regional = np.outer(np.arange(1.0, 6.0), [1.0, 2.0, 3.0, 4.0])
-    reader = DictForcingReader(GridType.FourBox)
+    builder = ModelBuilder().with_time_axis(AXIS).with_schema(schema)
+    if weights is not None:
+        builder = builder.with_grid_weights(GridType.FourBox, weights)
     (
-        ModelBuilder()
-        .with_time_axis(AXIS)
-        .with_schema(schema)
-        .with_py_component(PythonComponent.build(reader))
+        builder.with_py_component(PythonComponent.build(reader))
         .with_exogenous_four_box_variable(
             "Forcing",
             FourBoxTimeseries(regional, AXIS, "W/m^2", InterpolationStrategy.Linear),
@@ -314,5 +313,21 @@ def test_dict_component_aggregates_grid_input_to_global():
         .build()
         .run()
     )
+    return reader.seen_values
 
-    np.testing.assert_allclose(reader.seen_values, 2500.0 * np.arange(2.0, 6.0))
+
+@pytest.mark.parametrize("grid_type", [GridType.Scalar, GridType.FourBox])
+def test_dict_component_aggregates_grid_input_with_model_weights(grid_type):
+    weights = [0.4, 0.1, 0.4, 0.1]
+
+    typed = run_four_box_forcing_reader(TypedForcingReader(), weights)
+    untyped = run_four_box_forcing_reader(DictForcingReader(grid_type), weights)
+
+    np.testing.assert_allclose(typed, 2200.0 * np.arange(2.0, 6.0))
+    np.testing.assert_allclose(untyped, typed)
+
+
+def test_dict_component_aggregates_grid_input_with_stored_weights():
+    untyped = run_four_box_forcing_reader(DictForcingReader(GridType.FourBox))
+
+    np.testing.assert_allclose(untyped, 2500.0 * np.arange(2.0, 6.0))
