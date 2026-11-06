@@ -234,8 +234,9 @@ where
         let mut model = (self.factory)(params)
             .map_err(|e| Error::ModelError(format!("Model construction failed: {}", e)))?;
 
-        // Run model
-        model.run();
+        model
+            .try_run()
+            .map_err(|e| Error::ModelError(format!("Model run failed: {}", e)))?;
 
         // Check if model finished successfully
         if !model.finished() {
@@ -659,5 +660,51 @@ mod tests {
                 .get(2001.0),
             Some(50.0)
         );
+    }
+
+    #[test]
+    fn test_default_runner_failing_component_returns_err() {
+        #[derive(Debug, Serialize, Deserialize)]
+        struct FailingComponent;
+
+        #[typetag::serde]
+        impl Component for FailingComponent {
+            fn definitions(&self) -> Vec<RequirementDefinition> {
+                vec![RequirementDefinition::scalar_output("TestOutput", "units")]
+            }
+
+            fn solve(
+                &self,
+                _t_current: Time,
+                _t_next: Time,
+                _input_state: &InputState,
+            ) -> RSCMResult<OutputState> {
+                Err(rscm_core::errors::RSCMError::Error(
+                    "solver diverged".to_string(),
+                ))
+            }
+        }
+
+        let runner = DefaultModelRunner::new(
+            vec!["value".to_string()],
+            vec!["TestOutput".to_string()],
+            |_params| {
+                let time_axis = TimeAxis::from_values(ndarray::Array::range(2000.0, 2005.0, 1.0));
+                ModelBuilder::new()
+                    .with_time_axis(time_axis)
+                    .with_component(Arc::new(FailingComponent))
+                    .build()
+                    .map_err(|e| Error::ModelError(format!("Build failed: {}", e)))
+            },
+        );
+
+        let err = runner
+            .run(&[1.0])
+            .expect_err("a failing component is an Err");
+        assert!(matches!(err, Error::ModelError(_)));
+        assert!(err.to_string().contains("solver diverged"), "got: {err}");
+
+        let results = runner.run_batch(&[vec![1.0], vec![2.0]]);
+        assert!(results.iter().all(|r| r.is_err()));
     }
 }

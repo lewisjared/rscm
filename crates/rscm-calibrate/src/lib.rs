@@ -94,6 +94,8 @@ pub mod point_estimator;
 pub mod python;
 pub mod sampler;
 pub mod target;
+#[cfg(test)]
+mod test_support;
 
 pub use distribution::{Bound, Distribution, LogNormal, Normal, Uniform};
 pub use likelihood::{GaussianLikelihood, LikelihoodFn, ModelOutput, VariableOutput};
@@ -118,4 +120,12 @@ pub enum Error {
 
     #[error("Model execution failed: {0}")]
     ModelError(String),
+}
+
+/// Why no point had a finite log posterior, for an error naming the `what` that was evaluated.
+pub(crate) fn no_valid_reason(first_error: Option<&Error>, what: &str) -> String {
+    first_error.map_or_else(
+        || format!("every {what} is outside the prior support or has zero likelihood"),
+        |e| format!("first error: {e}"),
+    )
 }

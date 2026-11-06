@@ -197,10 +197,10 @@ impl PythonComponent {
             }
             outputs.call_method0("to_dict")?
         } else {
-            // Untyped component: raw input mapping in, dict out
+            // Untyped component: input mapping in, dict out
             component.call_method1(
                 "solve",
-                (t_current, t_next, input_state.clone().to_hashmap()),
+                (t_current, t_next, self.input_values(py, input_state)?),
             )?
         };
 
@@ -228,6 +228,29 @@ impl PythonComponent {
         Ok(output_state)
     }
 
+    fn input_definitions(&self) -> impl Iterator<Item = &RequirementDefinition> {
+        self.definitions.iter().filter(|definition| {
+            matches!(
+                definition.requirement_type,
+                RequirementType::Input | RequirementType::State
+            )
+        })
+    }
+
+    /// Each input's `get()` value, read as a global scalar as a typed scalar input would be.
+    fn input_values<'py>(
+        &self,
+        py: Python<'py>,
+        input_state: &InputState,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        for definition in self.input_definitions() {
+            let name = definition.name.as_str();
+            dict.set_item(name, input_state.get_scalar_window(name).get())?;
+        }
+        Ok(dict)
+    }
+
     /// Python windows over the inputs, built from the same Rust windows Rust components read.
     ///
     /// Values run from the first timestep to the end of the current one (index N+1),
@@ -238,13 +261,7 @@ impl PythonComponent {
         input_state: &InputState,
     ) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
-        for definition in &self.definitions {
-            if !matches!(
-                definition.requirement_type,
-                RequirementType::Input | RequirementType::State
-            ) {
-                continue;
-            }
+        for definition in self.input_definitions() {
             let name = definition.name.as_str();
             let window = match definition.grid_type {
                 GridType::Scalar => {

@@ -1,5 +1,6 @@
 //! Likelihood functions for comparing model output to observations.
 
+use crate::parameter_set::ParameterSet;
 use crate::target::{Observation, Target, VariableTarget};
 use crate::{Error, Result};
 use std::collections::HashMap;
@@ -247,6 +248,25 @@ impl LikelihoodFn for GaussianLikelihood {
 
         Ok(total_ln_l)
     }
+}
+
+/// `(log_posterior, log_likelihood)` of `params`, running the model only inside the prior support.
+///
+/// A point outside the prior support is `Ok(-inf)`.
+/// A failed prior, model or likelihood evaluation is `Err`.
+pub(crate) fn log_posterior<L: LikelihoodFn>(
+    parameters: &ParameterSet,
+    params: &[f64],
+    run: impl FnOnce() -> Result<ModelOutput>,
+    likelihood: &L,
+    target: &Target,
+) -> Result<(f64, f64)> {
+    let log_prior = parameters.log_prior(params)?;
+    if !log_prior.is_finite() {
+        return Ok((f64::NEG_INFINITY, f64::NEG_INFINITY));
+    }
+    let log_likelihood = likelihood.ln_likelihood(&run()?, target)?;
+    Ok((log_prior + log_likelihood, log_likelihood))
 }
 
 #[cfg(test)]

@@ -74,6 +74,31 @@ def test_missing_exogenous_input(time_axis):
     assert np.isnan(erf.values()).all()
 
 
+def test_missing_initial_value_names_the_builder_method(time_axis):
+    component = TwoLayerBuilder.from_parameters(
+        dict(
+            lambda0=0.0,
+            a=0.0,
+            efficacy=0.0,
+            eta=0.0,
+            heat_capacity_deep=0.0,
+            heat_capacity_surface=0.0,
+        )
+    ).build()
+    builder = (
+        ModelBuilder()
+        .with_time_axis(time_axis)
+        .with_rust_component(component)
+        .with_initial_values({"Deep Ocean Temperature": 0.0})
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r'with_initial_values\(\{"Surface Temperature": value\}\)',
+    ):
+        builder.build()
+
+
 def test_model_serialisation(time_axis):
     component = TwoLayerBuilder.from_parameters(
         dict(

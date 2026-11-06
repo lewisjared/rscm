@@ -1,7 +1,9 @@
 //! Python bindings for the ensemble sampler.
 
-use crate::sampler::{EnsembleSampler, ProgressInfo, WalkerInit};
+use crate::sampler::{Chain, EnsembleSampler, ProgressInfo, WalkerInit};
+use crate::Error;
 use ndarray::Array2;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use super::chain::PyChain;
@@ -145,6 +147,37 @@ impl PyProgressInfo {
     }
 }
 
+/// Wrap a Python progress callback so that an exception it raises stops the run.
+///
+/// The exception is stored in `raised` so it reaches the caller unchanged.
+fn python_progress_callback(
+    callback: Py<PyAny>,
+    raised: &mut Option<PyErr>,
+) -> impl FnMut(&ProgressInfo) -> crate::Result<()> + Send + '_ {
+    move |info: &ProgressInfo| {
+        Python::attach(|py| {
+            py.check_signals()
+                .and_then(|()| callback.call1(py, (PyProgressInfo::from(info),)))
+                .map(drop)
+                .map_err(|e| {
+                    let message = format!("Progress callback raised: {e}");
+                    *raised = Some(e);
+                    Error::SamplingError(message)
+                })
+        })
+    }
+}
+
+/// Convert a sampling result, re-raising any exception from the progress callback.
+fn into_py_chain(chain: crate::Result<Chain>, raised: Option<PyErr>) -> PyResult<PyChain> {
+    if let Some(err) = raised {
+        return Err(err);
+    }
+    chain
+        .map(PyChain)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Affine-invariant ensemble sampler for Bayesian parameter estimation.
 ///
 /// Implements the Goodman & Weare (2010) stretch move algorithm for MCMC sampling.
@@ -191,7 +224,8 @@ impl PyProgressInfo {
 ///
 /// # Define observations
 /// target = Target()
-/// target.add_variable("Temperature").add(2020.0, 1.2, 0.1).add(2021.0, 1.3, 0.1)
+/// target.add_observation("Temperature", 2020.0, 1.2, 0.1)
+/// target.add_observation("Temperature", 2021.0, 1.3, 0.1)
 ///
 /// # Create model runner (user-defined callable)
 /// def model_factory(params):
@@ -268,6 +302,12 @@ impl PyEnsembleSampler {
     /// Chain
     ///     Chain containing the samples and diagnostics
     ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If no initial walker has a finite log posterior.
+    ///     The message includes the first prior, model or likelihood error.
+    ///
     /// Examples
     /// --------
     /// >>> chain = sampler.run(1000, WalkerInit.from_prior(), thin=1)
@@ -292,7 +332,8 @@ impl PyEnsembleSampler {
     /// thin : int
     ///     Thinning interval (store every thin-th sample)
     /// progress_callback : callable
-    ///     Callback function that receives ProgressInfo objects
+    ///     Callback function that receives ProgressInfo objects.
+    ///     An exception it raises stops sampling and propagates unchanged.
     ///
     /// Returns
     /// -------
@@ -315,15 +356,8 @@ impl PyEnsembleSampler {
     ) -> PyResult<PyChain> {
         let rust_init = init.to_rust();
 
-        // Create a Rust closure that calls the Python callback
-        let callback = move |info: &ProgressInfo| {
-            Python::attach(|py| {
-                let py_info = PyProgressInfo::from(info);
-                if let Err(e) = progress_callback.call1(py, (py_info,)) {
-                    eprintln!("Error in progress callback: {}", e);
-                }
-            });
-        };
+        let mut raised = None;
+        let callback = python_progress_callback(progress_callback, &mut raised);
 
         // Release GIL during sampling (except for callback invocations)
         let chain = py.detach(|| {
@@ -331,9 +365,7 @@ impl PyEnsembleSampler {
                 .run_with_progress(n_iterations, rust_init, thin, callback)
         });
 
-        let chain =
-            chain.map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-        Ok(PyChain(chain))
+        into_py_chain(chain, raised)
     }
 
     /// Run the ensemble sampler with checkpointing.
@@ -354,7 +386,8 @@ impl PyEnsembleSampler {
     /// checkpoint_path : str
     ///     Base path for checkpoint files (will append .state and .chain)
     /// progress_callback : callable, optional
-    ///     Optional callback function that receives ProgressInfo objects
+    ///     Optional callback function that receives ProgressInfo objects.
+    ///     An exception it raises stops sampling and propagates unchanged.
     ///
     /// Returns
     /// -------
@@ -381,16 +414,8 @@ impl PyEnsembleSampler {
         let rust_init = init.to_rust();
 
         // Create optional callback closure
-        let callback = progress_callback.map(|cb| {
-            move |info: &ProgressInfo| {
-                Python::attach(|py| {
-                    let py_info = PyProgressInfo::from(info);
-                    if let Err(e) = cb.call1(py, (py_info,)) {
-                        eprintln!("Error in progress callback: {}", e);
-                    }
-                });
-            }
-        });
+        let mut raised = None;
+        let callback = progress_callback.map(|cb| python_progress_callback(cb, &mut raised));
 
         // Release GIL during sampling
         let chain = py.detach(|| {
@@ -404,9 +429,7 @@ impl PyEnsembleSampler {
             )
         });
 
-        let chain =
-            chain.map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-        Ok(PyChain(chain))
+        into_py_chain(chain, raised)
     }
 
     /// Resume a checkpointed run.
@@ -424,7 +447,8 @@ impl PyEnsembleSampler {
     /// checkpoint_path : str
     ///     Base path for checkpoint files
     /// progress_callback : callable, optional
-    ///     Optional callback function that receives ProgressInfo objects
+    ///     Optional callback function that receives ProgressInfo objects.
+    ///     An exception it raises stops sampling and propagates unchanged.
     ///
     /// Returns
     /// -------
@@ -446,16 +470,8 @@ impl PyEnsembleSampler {
         progress_callback: Option<Py<PyAny>>,
     ) -> PyResult<PyChain> {
         // Create optional callback closure
-        let callback = progress_callback.map(|cb| {
-            move |info: &ProgressInfo| {
-                Python::attach(|py| {
-                    let py_info = PyProgressInfo::from(info);
-                    if let Err(e) = cb.call1(py, (py_info,)) {
-                        eprintln!("Error in progress callback: {}", e);
-                    }
-                });
-            }
-        });
+        let mut raised = None;
+        let callback = progress_callback.map(|cb| python_progress_callback(cb, &mut raised));
 
         // Release GIL during sampling
         let chain = py.detach(|| {
@@ -468,9 +484,7 @@ impl PyEnsembleSampler {
             )
         });
 
-        let chain =
-            chain.map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-        Ok(PyChain(chain))
+        into_py_chain(chain, raised)
     }
 
     /// Create a sampler with custom stretch move parameter.

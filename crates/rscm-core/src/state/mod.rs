@@ -584,20 +584,6 @@ impl<'a> InputState<'a> {
             source,
         ))
     }
-
-    /// Converts the state into an equivalent hashmap
-    ///
-    /// For grid variables, aggregates to global values using grid weights.
-    pub fn to_hashmap(self) -> HashMap<String, FloatValue> {
-        HashMap::from_iter(self.state.into_iter().map(|item| {
-            let value = match &item.data {
-                TimeseriesData::Scalar(ts) => ts.latest_value().unwrap(),
-                TimeseriesData::FourBox(ts) => ts.grid().aggregate_global(&ts.latest_values()),
-                TimeseriesData::Hemispheric(ts) => ts.grid().aggregate_global(&ts.latest_values()),
-            };
-            (item.name.clone(), value)
-        }))
-    }
 }
 
 impl<'a> IntoIterator for InputState<'a> {
@@ -753,42 +739,6 @@ mod tests {
         // Test get_global aggregates using weights (equal weights = mean)
         let global = state.get_global("Temperature").unwrap();
         assert_eq!(global, 13.0); // (16 + 15 + 11 + 10) / 4
-    }
-
-    #[test]
-    fn test_input_state_to_hashmap_with_grid() {
-        use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
-        use crate::spatial::FourBoxGrid;
-        use crate::timeseries::{GridTimeseries, TimeAxis};
-        use numpy::array;
-        use numpy::ndarray::Array2;
-        use std::sync::Arc;
-
-        let grid = FourBoxGrid::magicc_standard();
-        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
-        let values =
-            Array2::from_shape_vec((2, 4), vec![15.0, 14.0, 10.0, 9.0, 16.0, 15.0, 11.0, 10.0])
-                .unwrap();
-
-        let ts = GridTimeseries::new(
-            values,
-            time_axis,
-            grid,
-            "degC".to_string(),
-            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-        );
-
-        let item = TimeseriesItem {
-            data: TimeseriesData::FourBox(ts),
-            name: "Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
-        };
-
-        let state = InputState::build(vec![&item], 2000.5);
-        let hashmap = state.to_hashmap();
-
-        // Should contain aggregated global value
-        assert_eq!(hashmap.get("Temperature"), Some(&13.0));
     }
 }
 

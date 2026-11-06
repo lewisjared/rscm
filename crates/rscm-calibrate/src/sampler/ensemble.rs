@@ -5,8 +5,12 @@
 
 use super::{Chain, ProgressInfo, SamplerState, StretchMove, WalkerInit};
 use crate::{
-    likelihood::LikelihoodFn, model_runner::ModelRunner, parameter_set::ParameterSet,
-    target::Target, Error, Result,
+    likelihood::{log_posterior, LikelihoodFn},
+    model_runner::ModelRunner,
+    no_valid_reason,
+    parameter_set::ParameterSet,
+    target::Target,
+    Error, Result,
 };
 use ndarray::Array1;
 use rayon::prelude::*;
@@ -139,41 +143,63 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
 
     /// Compute log posterior for multiple parameter vectors in parallel.
     ///
-    /// log_posterior = log_prior + log_likelihood
-    fn log_posterior_batch(&self, param_sets: &[Vec<f64>]) -> Vec<f64> {
-        // Run models in parallel
-        let outputs = self.runner.run_batch(param_sets);
+    /// log_posterior = log_prior + log_likelihood.
+    /// A point outside the prior support is `Ok(-inf)`.
+    /// A failed prior, model or likelihood evaluation is `Err`.
+    fn try_log_posterior_batch(&self, param_sets: &[Vec<f64>]) -> Vec<Result<f64>> {
+        self.log_posteriors(param_sets).collect()
+    }
 
-        // Compute log posteriors
+    /// Log posteriors for proposals, where a failed evaluation rejects the proposal.
+    fn log_posterior_batch(&self, param_sets: &[Vec<f64>]) -> Vec<f64> {
+        self.log_posteriors(param_sets)
+            .map(|lp| lp.unwrap_or(f64::NEG_INFINITY))
+            .collect()
+    }
+
+    fn log_posteriors<'a>(
+        &'a self,
+        param_sets: &'a [Vec<f64>],
+    ) -> impl IndexedParallelIterator<Item = Result<f64>> + 'a {
+        let outputs = self.runner.run_batch(param_sets);
         param_sets
             .par_iter()
-            .zip(outputs.par_iter())
-            .map(|(params, output_result)| {
-                // Compute log prior
-                let log_prior = match self.params.log_prior(params) {
-                    Ok(lp) => lp,
-                    Err(_) => return f64::NEG_INFINITY,
-                };
-
-                if !log_prior.is_finite() {
-                    return f64::NEG_INFINITY;
-                }
-
-                // Check model output
-                let output = match output_result {
-                    Ok(out) => out,
-                    Err(_) => return f64::NEG_INFINITY,
-                };
-
-                // Compute likelihood
-                let log_likelihood = match self.likelihood.ln_likelihood(output, &self.target) {
-                    Ok(ll) => ll,
-                    Err(_) => return f64::NEG_INFINITY,
-                };
-
-                log_prior + log_likelihood
+            .zip(outputs.into_par_iter())
+            .map(|(params, output)| {
+                log_posterior(
+                    &self.params,
+                    params,
+                    || output,
+                    &self.likelihood,
+                    &self.target,
+                )
+                .map(|(log_posterior, _)| log_posterior)
             })
-            .collect()
+    }
+
+    /// Log posteriors for the initial walkers.
+    ///
+    /// Fails if no walker has a finite log posterior, because no proposal could then be accepted.
+    fn initial_log_probs(&self, positions: &ndarray::Array2<f64>) -> Result<Array1<f64>> {
+        let params: Vec<Vec<f64>> = positions.outer_iter().map(|row| row.to_vec()).collect();
+        let results = self.try_log_posterior_batch(&params);
+
+        if !results
+            .iter()
+            .any(|lp| lp.as_ref().is_ok_and(|v| v.is_finite()))
+        {
+            let reason =
+                no_valid_reason(results.iter().find_map(|lp| lp.as_ref().err()), "position");
+            return Err(Error::SamplingError(format!(
+                "All {} initial walker positions have zero posterior probability ({reason})",
+                results.len()
+            )));
+        }
+
+        Ok(results
+            .into_iter()
+            .map(|lp| lp.unwrap_or(f64::NEG_INFINITY))
+            .collect())
     }
 
     /// Run the ensemble sampler for Bayesian parameter estimation.
@@ -225,7 +251,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
             init,
             self.default_n_walkers,
             thin,
-            None::<fn(&ProgressInfo)>,
+            None::<fn(&ProgressInfo) -> Result<()>>,
         )
     }
 
@@ -236,7 +262,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// * `n_iterations` - Number of MCMC iterations to run
     /// * `init` - Walker initialization strategy
     /// * `thin` - Thinning interval (store every thin-th sample)
-    /// * `progress_callback` - Callback for progress reporting
+    /// * `progress_callback` - Callback for progress reporting. An `Err` from it stops the run.
     pub fn run_with_progress<F>(
         &self,
         n_iterations: usize,
@@ -245,7 +271,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
         progress_callback: F,
     ) -> Result<Chain>
     where
-        F: FnMut(&ProgressInfo),
+        F: FnMut(&ProgressInfo) -> Result<()>,
     {
         self.run_with_walkers(
             n_iterations,
@@ -268,7 +294,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// * `thin` - Thinning interval (store every thin-th sample)
     /// * `checkpoint_every` - Save checkpoint every N iterations
     /// * `checkpoint_path` - Base path for checkpoint files (will append .state and .chain)
-    /// * `progress_callback` - Optional callback for progress reporting
+    /// * `progress_callback` - Optional callback for progress reporting. An `Err` from it stops the run.
     pub fn run_with_checkpoint<F, P>(
         &self,
         n_iterations: usize,
@@ -279,7 +305,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
         progress_callback: Option<F>,
     ) -> Result<Chain>
     where
-        F: FnMut(&ProgressInfo),
+        F: FnMut(&ProgressInfo) -> Result<()>,
         P: AsRef<Path>,
     {
         self.run_with_checkpoint_and_walkers(
@@ -303,7 +329,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// * `thin` - Thinning interval (must match original run)
     /// * `checkpoint_every` - Save checkpoint every N iterations
     /// * `checkpoint_path` - Base path for checkpoint files
-    /// * `progress_callback` - Optional callback for progress reporting
+    /// * `progress_callback` - Optional callback for progress reporting. An `Err` from it stops the run.
     ///
     /// # Returns
     ///
@@ -317,7 +343,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
         progress_callback: Option<F>,
     ) -> Result<Chain>
     where
-        F: FnMut(&ProgressInfo),
+        F: FnMut(&ProgressInfo) -> Result<()>,
         P: AsRef<Path>,
     {
         let state_path = format!("{}.state", checkpoint_path.as_ref().display());
@@ -348,7 +374,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// * `thin` - Thinning interval (store every thin-th sample)
     /// * `checkpoint_every` - Save checkpoint every N iterations (0 = no checkpointing)
     /// * `checkpoint_path` - Base path for checkpoint files
-    /// * `progress_callback` - Optional callback for progress reporting
+    /// * `progress_callback` - Optional callback for progress reporting. An `Err` from it stops the run.
     #[allow(clippy::too_many_arguments)]
     pub fn run_with_checkpoint_and_walkers<F, P>(
         &self,
@@ -361,7 +387,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
         progress_callback: Option<F>,
     ) -> Result<Chain>
     where
-        F: FnMut(&ProgressInfo),
+        F: FnMut(&ProgressInfo) -> Result<()>,
         P: AsRef<Path>,
     {
         // Validate n_walkers
@@ -408,81 +434,27 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// * `init` - Walker initialization strategy
     /// * `n_walkers` - Number of walkers (must be even and >= 2)
     /// * `thin` - Thinning interval (store every thin-th sample)
-    /// * `progress_callback` - Optional callback for progress reporting
+    /// * `progress_callback` - Optional callback for progress reporting. An `Err` from it stops the run.
     pub fn run_with_walkers<F>(
         &self,
         n_iterations: usize,
         init: WalkerInit,
         n_walkers: usize,
         thin: usize,
-        mut progress_callback: Option<F>,
+        progress_callback: Option<F>,
     ) -> Result<Chain>
     where
-        F: FnMut(&ProgressInfo),
+        F: FnMut(&ProgressInfo) -> Result<()>,
     {
-        // Validate n_walkers
-        if n_walkers < 2 {
-            return Err(Error::SamplingError(
-                "Must have at least 2 walkers".to_string(),
-            ));
-        }
-        if !n_walkers.is_multiple_of(2) {
-            return Err(Error::SamplingError(
-                "Number of walkers must be even".to_string(),
-            ));
-        }
-
-        // Initialize walkers
-        let mut rng = rand::rng();
-        let positions = init.initialize(n_walkers, &self.params, &mut rng)?;
-
-        // Create initial state
-        let param_names: Vec<String> = self
-            .params
-            .param_names()
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let mut state = SamplerState::new(positions, param_names.clone())?;
-
-        // Compute initial log probabilities
-        let initial_params: Vec<Vec<f64>> = state
-            .positions
-            .outer_iter()
-            .map(|row| row.to_vec())
-            .collect();
-        state.log_probs = Array1::from_vec(self.log_posterior_batch(&initial_params));
-
-        // Create chain
-        let mut chain = Chain::new(param_names, thin);
-
-        // Run MCMC iterations
-        for iteration in 0..n_iterations {
-            // Split walkers into two groups
-            let half = n_walkers / 2;
-
-            // Update first half using second half as complementary ensemble
-            self.update_group(&mut state, 0..half, half..n_walkers, &mut rng)?;
-
-            // Update second half using first half as complementary ensemble
-            self.update_group(&mut state, half..n_walkers, 0..half, &mut rng)?;
-
-            // Store sample in chain
-            chain.push(state.positions.clone(), state.log_probs.clone());
-
-            // Call progress callback if provided
-            if let Some(ref mut callback) = progress_callback {
-                let info = ProgressInfo {
-                    iteration,
-                    total: n_iterations,
-                    acceptance_rate: state.mean_acceptance_rate(),
-                    mean_log_prob: state.log_probs.mean().unwrap_or(f64::NEG_INFINITY),
-                };
-                callback(&info);
-            }
-        }
-
-        Ok(chain)
+        self.run_with_checkpoint_and_walkers(
+            n_iterations,
+            init,
+            n_walkers,
+            thin,
+            0,
+            "",
+            progress_callback,
+        )
     }
 
     /// Update a group of walkers using stretch moves.
@@ -556,7 +528,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// * `thin` - Thinning interval
     /// * `checkpoint_every` - Save checkpoint every N iterations
     /// * `checkpoint_path` - Base path for checkpoint files
-    /// * `progress_callback` - Optional callback for progress reporting
+    /// * `progress_callback` - Optional callback for progress reporting. An `Err` from it stops the run.
     #[allow(clippy::too_many_arguments)]
     fn resume_with_state<F, P>(
         &self,
@@ -569,7 +541,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
         progress_callback: Option<F>,
     ) -> Result<Chain>
     where
-        F: FnMut(&ProgressInfo),
+        F: FnMut(&ProgressInfo) -> Result<()>,
         P: AsRef<Path>,
     {
         let iterations_completed = chain.total_iterations();
@@ -598,7 +570,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// * `n_iterations` - Number of iterations to run
     /// * `checkpoint_every` - Save checkpoint every N iterations (0 = disabled)
     /// * `checkpoint_path` - Base path for checkpoint files
-    /// * `progress_callback` - Optional callback for progress reporting
+    /// * `progress_callback` - Optional callback for progress reporting. An `Err` from it stops the run.
     fn run_from_state<F, P>(
         &self,
         mut state: SamplerState,
@@ -609,19 +581,14 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
         mut progress_callback: Option<F>,
     ) -> Result<Chain>
     where
-        F: FnMut(&ProgressInfo),
+        F: FnMut(&ProgressInfo) -> Result<()>,
         P: AsRef<Path>,
     {
         let n_walkers = state.n_walkers();
 
         // Compute initial log probabilities if not already computed
         if state.log_probs.iter().all(|&lp| !lp.is_finite()) {
-            let initial_params: Vec<Vec<f64>> = state
-                .positions
-                .outer_iter()
-                .map(|row| row.to_vec())
-                .collect();
-            state.log_probs = Array1::from_vec(self.log_posterior_batch(&initial_params));
+            state.log_probs = self.initial_log_probs(&state.positions)?;
         }
 
         // Setup checkpoint paths
@@ -658,7 +625,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
                     acceptance_rate: state.mean_acceptance_rate(),
                     mean_log_prob: state.log_probs.mean().unwrap_or(f64::NEG_INFINITY),
                 };
-                callback(&info);
+                callback(&info)?;
             }
         }
 
@@ -670,10 +637,13 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
 mod tests {
     use super::*;
     use crate::model_runner::ModelRunner;
+    use crate::test_support::FailingModel;
     use crate::{GaussianLikelihood, ParameterSet, Uniform};
     use ndarray::Array2;
     use std::cell::RefCell;
     use std::rc::Rc;
+
+    type NoProgress = fn(&ProgressInfo) -> Result<()>;
 
     // Simple model for testing: y = a * x + b
     struct LinearModel {
@@ -834,7 +804,7 @@ mod tests {
         };
 
         let chain = sampler
-            .run_with_walkers(5, init, 10, 1, None::<fn(&ProgressInfo)>)
+            .run_with_walkers(5, init, 10, 1, None::<NoProgress>)
             .expect("Sampler should run successfully");
 
         assert_eq!(chain.len(), 5);
@@ -858,8 +828,7 @@ mod tests {
         let sampler = EnsembleSampler::new(params, runner, likelihood, target);
 
         // Try with odd number of walkers (should fail)
-        let result =
-            sampler.run_with_walkers(5, WalkerInit::FromPrior, 3, 1, None::<fn(&ProgressInfo)>);
+        let result = sampler.run_with_walkers(5, WalkerInit::FromPrior, 3, 1, None::<NoProgress>);
         assert!(result.is_err());
     }
 
@@ -884,6 +853,7 @@ mod tests {
                 info.acceptance_rate,
                 info.mean_log_prob,
             ));
+            Ok(())
         };
 
         // Run with progress callback
@@ -1005,7 +975,7 @@ mod tests {
                 WalkerInit::FromPrior,
                 n_walkers,
                 1,
-                None::<fn(&ProgressInfo)>,
+                None::<NoProgress>,
             )
             .unwrap();
 
@@ -1159,11 +1129,11 @@ mod tests {
         // deterministic across runs. This is a design limitation.
 
         let chain1 = sampler
-            .run_with_walkers(100, init.clone(), n_walkers, 1, None::<fn(&ProgressInfo)>)
+            .run_with_walkers(100, init.clone(), n_walkers, 1, None::<NoProgress>)
             .unwrap();
 
         let chain2 = sampler
-            .run_with_walkers(100, init, n_walkers, 1, None::<fn(&ProgressInfo)>)
+            .run_with_walkers(100, init, n_walkers, 1, None::<NoProgress>)
             .unwrap();
 
         // Both chains should have same shape
@@ -1242,7 +1212,7 @@ mod tests {
             EnsembleSampler::new(params, SingleParamRunner, GaussianLikelihood::new(), target);
 
         let chain = sampler
-            .run_with_walkers(50, WalkerInit::FromPrior, 10, 1, None::<fn(&ProgressInfo)>)
+            .run_with_walkers(50, WalkerInit::FromPrior, 10, 1, None::<NoProgress>)
             .unwrap();
 
         let samples = chain.flat_samples(20);
@@ -1316,13 +1286,7 @@ mod tests {
         let n_walkers = 100;
 
         let chain = sampler
-            .run_with_walkers(
-                100,
-                WalkerInit::FromPrior,
-                n_walkers,
-                1,
-                None::<fn(&ProgressInfo)>,
-            )
+            .run_with_walkers(100, WalkerInit::FromPrior, n_walkers, 1, None::<NoProgress>)
             .unwrap();
 
         let samples = chain.flat_samples(50);
@@ -1422,7 +1386,7 @@ mod tests {
         let init = WalkerInit::Explicit(positions);
 
         let chain = sampler
-            .run_with_walkers(200, init, n_walkers, 1, None::<fn(&ProgressInfo)>)
+            .run_with_walkers(200, init, n_walkers, 1, None::<NoProgress>)
             .unwrap();
 
         // Walkers should have spread out after sufficient iterations
@@ -1457,5 +1421,84 @@ mod tests {
             "Mean should move towards observation y=2.0, got {:.3}",
             mean_y
         );
+    }
+
+    fn failing_sampler(
+        threshold: Option<f64>,
+    ) -> EnsembleSampler<FailingModel, GaussianLikelihood> {
+        let mut params = ParameterSet::new();
+        params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+        let mut target = Target::new();
+        target.add_variable("value").add(0.0, 0.2, 0.1).unwrap();
+        EnsembleSampler::new(
+            params,
+            FailingModel::new(threshold),
+            GaussianLikelihood::default(),
+            target,
+        )
+    }
+
+    #[test]
+    fn test_run_fails_fast_when_every_initial_position_fails() {
+        let sampler = failing_sampler(None);
+
+        let err = sampler
+            .run(10, WalkerInit::FromPrior, 1)
+            .expect_err("a run with no valid initial walker should fail");
+
+        assert!(
+            err.to_string().contains("solver diverged"),
+            "error should include the underlying model error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_checkpointed_run_fails_fast_when_every_initial_position_fails() {
+        let sampler = failing_sampler(None);
+        let dir = tempfile::tempdir().unwrap();
+
+        let err = sampler
+            .run_with_checkpoint(
+                10,
+                WalkerInit::FromPrior,
+                1,
+                5,
+                dir.path().join("checkpoint"),
+                None::<NoProgress>,
+            )
+            .expect_err("a run with no valid initial walker should fail");
+
+        assert!(err.to_string().contains("solver diverged"), "got: {err}");
+    }
+
+    #[test]
+    fn test_failed_proposals_are_rejected_not_fatal() {
+        let sampler = failing_sampler(Some(0.5));
+        let init = WalkerInit::Ball {
+            center: vec![0.2],
+            radius: 0.01,
+        };
+
+        let chain = sampler
+            .run(20, init, 1)
+            .expect("failed proposals are rejected");
+
+        assert!(chain.flat_samples(0).iter().all(|&x| x <= 0.5));
+    }
+
+    #[test]
+    fn test_progress_callback_error_stops_the_run() {
+        let sampler = failing_sampler(Some(10.0));
+        let mut calls = 0;
+
+        let err = sampler
+            .run_with_progress(10, WalkerInit::FromPrior, 1, |_: &ProgressInfo| {
+                calls += 1;
+                Err(Error::SamplingError("interrupted".to_string()))
+            })
+            .expect_err("a failing callback should stop the run");
+
+        assert_eq!(calls, 1);
+        assert!(err.to_string().contains("interrupted"), "got: {err}");
     }
 }

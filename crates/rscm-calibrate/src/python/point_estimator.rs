@@ -26,7 +26,7 @@ pub struct PyOptimizer {
 impl PyOptimizer {
     /// Random search baseline.
     ///
-    /// Samples random parameter sets from within the parameter bounds
+    /// Samples random parameter sets from the prior
     /// and returns the best. Useful as a baseline or for initialization.
     #[staticmethod]
     fn random_search() -> Self {

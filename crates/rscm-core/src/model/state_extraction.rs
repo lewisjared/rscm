@@ -30,7 +30,7 @@ pub fn extract_state(
         } else {
             VariableSource::Exogenous
         };
-        let transform = ReadTransformInfo::new(input.grid_type, None)
+        let transform = ReadTransformInfo::new(ts.data.grid_type(), None)
             .with_source(source)
             .with_timeseries_type(input.resolved_timeseries_type());
         read_transforms.insert(input.name, transform);
@@ -59,4 +59,40 @@ pub fn extract_state_with_transforms(
     });
 
     InputState::build_with_transforms(state, t_current, transform_context)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
+    use crate::spatial::FourBoxGrid;
+    use crate::timeseries::{GridTimeseries, TimeAxis};
+    use crate::timeseries_collection::VariableType;
+    use numpy::array;
+    use numpy::ndarray::Array2;
+    use std::sync::Arc;
+
+    #[test]
+    fn scalar_input_aggregates_a_four_box_series() {
+        let values =
+            Array2::from_shape_vec((2, 4), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).unwrap();
+        let mut collection = TimeseriesCollection::new();
+        collection.add_four_box_timeseries(
+            "Forcing".to_string(),
+            GridTimeseries::new(
+                values,
+                Arc::new(TimeAxis::from_values(array![2000.0, 2001.0])),
+                FourBoxGrid::magicc_standard(),
+                "W/m^2".to_string(),
+                InterpolationStrategy::from(PreviousStrategy::new(true)),
+            ),
+            VariableType::Exogenous,
+        );
+
+        let inputs = vec![RequirementDefinition::scalar_input("Forcing", "W/m^2")];
+        let state = extract_state(&collection, inputs, 2000.0);
+
+        // An exogenous point reads the step's end, averaged with equal weights.
+        assert_eq!(state.get_scalar_window("Forcing").get(), 6.5);
+    }
 }

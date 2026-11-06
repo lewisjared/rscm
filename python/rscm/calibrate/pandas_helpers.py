@@ -29,7 +29,8 @@ def chain_to_dataframe(chain, discard=0):
     pandas.DataFrame
         DataFrame with:
 
-        - Index: MultiIndex with levels (walker, iteration)
+        - Index: MultiIndex with levels (walker, iteration).
+          `iteration` is the 0-based sampler iteration, stepping by `thin`.
         - Columns: One column per parameter plus 'log_prob'
 
     Examples
@@ -50,42 +51,26 @@ def chain_to_dataframe(chain, discard=0):
     are kept separate. For a flattened view of all samples, use
     `chain.flat_samples(discard)` directly.
     """
-    # Get parameter names
     param_names = chain.param_names
-
-    # Get raw chain data (before flattening)
-    # We need to access the underlying data structure to preserve walker separation
-    # Since PyChain doesn't expose raw samples, we'll work with flat_samples
-    # and reconstruct the structure
     flat_samples = chain.flat_samples(discard)
     flat_log_probs = chain.flat_log_probs(discard)
 
-    # Infer number of walkers from chain structure
-    # total_iterations tells us how many iterations were run
-    # len() tells us stored samples after thinning
-    # flat_samples gives us (n_stored * n_walkers, n_params)
-    n_stored = chain.__len__() - discard  # Stored samples per walker after discard
+    n_stored = len(chain) - discard
     n_params = len(param_names)
-    n_total_flat = flat_samples.shape[0]
-    n_walkers = n_total_flat // n_stored if n_stored > 0 else 0
+    n_walkers = flat_samples.shape[0] // n_stored if n_stored > 0 else 0
 
     if n_walkers == 0 or n_stored == 0:
-        # Empty chain
         return pd.DataFrame(columns=[*param_names, "log_prob"])
 
-    # Reshape flat arrays back to (n_walkers, n_stored, n_params)
-    # flat_samples is (n_walkers * n_stored, n_params) in walker-major order
-    samples = flat_samples.reshape(n_walkers, n_stored, n_params)
-    log_probs = flat_log_probs.reshape(n_walkers, n_stored)
+    # Flat arrays are iteration-major: row i * n_walkers + j is walker j at sample i.
+    samples = flat_samples.reshape(n_stored, n_walkers, n_params).transpose(1, 0, 2)
+    log_probs = flat_log_probs.reshape(n_stored, n_walkers).T
 
-    # Build multi-index DataFrame
-    # Create index arrays
     walker_idx = np.repeat(np.arange(n_walkers), n_stored)
-    # Iteration indices start from discard and account for thinning
-    thin = chain.thin
-    iter_idx = np.tile(np.arange(discard, discard + n_stored * thin, thin), n_walkers)
+    # The chain keeps every thin-th iteration: stored sample k is (k + 1) * thin - 1.
+    stored_idx = np.arange(discard, discard + n_stored)
+    iter_idx = np.tile((stored_idx + 1) * chain.thin - 1, n_walkers)
 
-    # Flatten samples to match index
     samples_flat = samples.reshape(-1, n_params)
     log_probs_flat = log_probs.reshape(-1)
 

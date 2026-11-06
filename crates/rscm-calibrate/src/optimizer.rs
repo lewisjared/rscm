@@ -19,14 +19,13 @@
 //! ```
 
 use crate::{point_estimator::PointEstimator, Result};
-use rand::RngExt;
 
 /// Optimization algorithm to use for point estimation.
 #[derive(Debug, Clone, Copy)]
 pub enum Optimizer {
     /// Random search baseline
     ///
-    /// Samples random parameter sets from within the parameter bounds
+    /// Samples random parameter sets from the prior
     /// and returns the best. Useful as a baseline or for initialization.
     ///
     /// Note: Number of samples controlled by n_samples parameter.
@@ -90,9 +89,13 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
         let mut best_log_posterior = f64::NEG_INFINITY;
         let mut best_log_likelihood = f64::NEG_INFINITY;
 
-        // Evaluate all samples
+        let mut first_error = None;
+
         for params in samples.iter() {
-            let log_posterior = self.evaluate(params);
+            let log_posterior = self.try_evaluate(params).unwrap_or_else(|e| {
+                first_error.get_or_insert(e);
+                f64::NEG_INFINITY
+            });
 
             if log_posterior > best_log_posterior {
                 best_log_posterior = log_posterior;
@@ -110,7 +113,8 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
         }
 
         let best = best_params.ok_or_else(|| {
-            crate::Error::SamplingError("Random search found no valid samples".to_string())
+            let reason = crate::no_valid_reason(first_error.as_ref(), "sample");
+            crate::Error::SamplingError(format!("Random search found no valid samples ({reason})"))
         })?;
 
         Ok(OptimizationResult {
@@ -122,26 +126,13 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
         })
     }
 
-    /// Helper method to sample initial parameter vectors.
+    /// Draw `n` parameter vectors from the prior.
     fn sample_initial_params(&self, n: usize) -> Vec<Vec<f64>> {
-        // We need access to the parameter set, but it's private
-        // For now, use the bounds to sample uniformly
-        let (lower, upper) = self.bounds();
-        let n_params = lower.len();
-
-        let mut rng = rand::rng();
-        let mut samples = Vec::with_capacity(n);
-
-        for _ in 0..n {
-            let mut sample = Vec::with_capacity(n_params);
-            for i in 0..n_params {
-                let value = rng.random::<f64>() * (upper[i] - lower[i]) + lower[i];
-                sample.push(value);
-            }
-            samples.push(sample);
-        }
-
-        samples
+        self.params
+            .sample_random(n)
+            .outer_iter()
+            .map(|row| row.to_vec())
+            .collect()
     }
 }
 
@@ -293,5 +284,47 @@ mod tests {
             result.best_log_posterior.is_finite(),
             "Should find finite log posterior"
         );
+    }
+
+    #[test]
+    fn test_random_search_reports_underlying_error_when_every_evaluation_fails() {
+        let mut params = ParameterSet::new();
+        params.add("x", Box::new(Uniform::new(0.0, 4.0).unwrap()));
+        let runner = crate::test_support::FailingModel::new(None);
+        let mut estimator =
+            PointEstimator::new(params, runner, GaussianLikelihood::default(), Target::new());
+
+        let err = estimator
+            .optimize(Optimizer::RandomSearch, 10)
+            .expect_err("no evaluation succeeded");
+
+        assert!(err.to_string().contains("no valid samples"), "got: {err}");
+        assert!(err.to_string().contains("solver diverged"), "got: {err}");
+    }
+
+    #[test]
+    fn test_random_search_samples_unbounded_prior() {
+        let mut params = ParameterSet::new();
+        params.add("x", Box::new(crate::Normal::new(2.0, 0.5).unwrap()));
+
+        let mut target = Target::new();
+        target.add_variable("y").add(0.0, 0.0, 0.1).unwrap();
+
+        let mut estimator = PointEstimator::new(
+            params,
+            QuadraticModel::new(),
+            GaussianLikelihood::default(),
+            target,
+        );
+
+        let result = estimator
+            .optimize(Optimizer::RandomSearch, 50)
+            .expect("samples drawn from a Normal prior are valid");
+
+        assert!(result.best_log_posterior.is_finite());
+        assert!(estimator
+            .evaluated_params()
+            .iter()
+            .all(|p| p[0].is_finite()));
     }
 }

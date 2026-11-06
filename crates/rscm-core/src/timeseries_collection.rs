@@ -19,6 +19,7 @@
 //! - **FourBox**: Regional values (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
 //! - **Hemispheric**: Hemispheric values (Northern, Southern)
 
+use crate::component::GridType;
 use crate::errors::RSCMResult;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, SpatialGrid};
 use crate::state::{FourBoxSlice, HemisphericSlice};
@@ -91,6 +92,15 @@ impl TimeseriesData {
             TimeseriesData::Scalar(_) => 1,
             TimeseriesData::FourBox(ts) => ts.grid().size(),
             TimeseriesData::Hemispheric(ts) => ts.grid().size(),
+        }
+    }
+
+    /// The grid the series is stored on.
+    pub fn grid_type(&self) -> GridType {
+        match self {
+            TimeseriesData::Scalar(_) => GridType::Scalar,
+            TimeseriesData::FourBox(_) => GridType::FourBox,
+            TimeseriesData::Hemispheric(_) => GridType::Hemispheric,
         }
     }
 

@@ -58,24 +58,16 @@ impl PyObservation {
     }
 }
 
-/// Python wrapper for VariableTarget.
+/// Read-only snapshot of one variable's target observations.
 ///
-/// Target observations for a single variable.
-///
-/// Parameters
-/// ----------
-/// name : str
-///     Variable name (e.g., "Temperature|Global")
-#[pyclass(name = "VariableTarget")]
+/// Returned by `Target.get_variable`.
+/// Later changes to the Target do not show up in it.
+/// Edit observations through the `Target` methods instead.
+#[pyclass(name = "VariableTarget", frozen)]
 pub struct PyVariableTarget(pub VariableTarget);
 
 #[pymethods]
 impl PyVariableTarget {
-    #[new]
-    fn new(name: String) -> Self {
-        Self(VariableTarget::new(name))
-    }
-
     #[getter]
     fn name(&self) -> String {
         self.0.name.clone()
@@ -96,95 +88,6 @@ impl PyVariableTarget {
             .reference_period
             .as_ref()
             .map(|r| (*r.start(), *r.end()))
-    }
-
-    /// Add an observation.
-    ///
-    /// Parameters
-    /// ----------
-    /// time : float
-    ///     Time coordinate
-    /// value : float
-    ///     Observed value
-    /// uncertainty : float
-    ///     1-sigma uncertainty (must be positive)
-    ///
-    /// Returns
-    /// -------
-    /// VariableTarget
-    ///     Self for method chaining
-    ///
-    /// Raises
-    /// ------
-    /// ValueError
-    ///     If uncertainty is not positive
-    fn add(
-        mut slf: PyRefMut<'_, Self>,
-        time: f64,
-        value: f64,
-        uncertainty: f64,
-    ) -> PyResult<PyRefMut<'_, Self>> {
-        slf.0
-            .add(time, value, uncertainty)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(slf)
-    }
-
-    /// Add an observation with relative uncertainty.
-    ///
-    /// Parameters
-    /// ----------
-    /// time : float
-    ///     Time coordinate
-    /// value : float
-    ///     Observed value
-    /// relative_uncertainty : float
-    ///     Relative uncertainty as a fraction (e.g., 0.05 for 5%)
-    ///
-    /// Returns
-    /// -------
-    /// VariableTarget
-    ///     Self for method chaining
-    ///
-    /// Raises
-    /// ------
-    /// ValueError
-    ///     If computed uncertainty is not positive
-    fn add_relative(
-        mut slf: PyRefMut<'_, Self>,
-        time: f64,
-        value: f64,
-        relative_uncertainty: f64,
-    ) -> PyResult<PyRefMut<'_, Self>> {
-        slf.0
-            .add_relative(time, value, relative_uncertainty)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(slf)
-    }
-
-    /// Set the reference period for anomaly calculation.
-    ///
-    /// When set, observations will be interpreted as anomalies relative to the
-    /// mean over this period.
-    ///
-    /// Parameters
-    /// ----------
-    /// start : float
-    ///     Start of reference period
-    /// end : float
-    ///     End of reference period
-    ///
-    /// Returns
-    /// -------
-    /// VariableTarget
-    ///     Self for method chaining
-    fn with_reference_period(
-        mut slf: PyRefMut<'_, Self>,
-        start: f64,
-        end: f64,
-    ) -> PyRefMut<'_, Self> {
-        slf.0.with_reference_period(start, end);
-        slf
     }
 
     /// Get the time range covered by observations.
@@ -340,7 +243,7 @@ impl PyTarget {
         Ok(slf)
     }
 
-    /// Get a variable by name.
+    /// Get a read-only snapshot of a variable by name.
     ///
     /// Parameters
     /// ----------
@@ -350,7 +253,9 @@ impl PyTarget {
     /// Returns
     /// -------
     /// VariableTarget or None
-    ///     The variable if it exists, None otherwise
+    ///     A copy of the variable if it exists, None otherwise.
+    ///     Edit the variable through `add_observation`, `add_observation_relative`
+    ///     and `set_reference_period`.
     fn get_variable(&self, name: &str) -> Option<PyVariableTarget> {
         self.0
             .get_variable(name)

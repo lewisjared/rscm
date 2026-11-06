@@ -274,7 +274,9 @@ class CustomComponent(Protocol):
     Components can use either:
 
     - a dict-based interface:
-      `solve(..., input_state: dict[str, float]) -> dict[str, float]`
+      `solve(..., input_state: dict[str, float]) -> dict[str, float]`.
+      Each input maps to the value its window's `get()` returns,
+      aggregated to a global value for a grid input.
     - a typed interface: `solve(..., inputs: TypedInputs) -> TypedOutputs`
 
     The typed interface is provided by inheriting from rscm.component.Component.
