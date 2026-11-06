@@ -274,13 +274,12 @@ np.testing.assert_allclose(
 #
 # ### Missing Exogenous Variables
 #
-# The builder does not yet check that every exogenous input has data.
-# A model with a missing exogenous variable builds and runs,
-# but the variable is NaN and the NaN propagates into the outputs.
+# An input that no component produces needs exogenous data or an initial value.
+# Without it the build fails, and the error names each missing variable and the components that read it.
 # This model leaves out both `Emissions|CO2|Anthropogenic` and `Surface Temperature`.
 
 # %%
-incomplete_model = (
+incomplete_builder = (
     ModelBuilder()
     .with_rust_component(carbon_cycle)
     .with_time_axis(time_axis)
@@ -291,37 +290,25 @@ incomplete_model = (
             "Atmospheric Concentration|CO2": 280.0,
         }
     )
-).build()
+)
+
+try:
+    incomplete_builder.build()
+except ValueError as e:
+    print(f"Build failed: {e}")
+
+# %% [markdown]
+# `with_missing_exogenous_allowed()` builds the model anyway.
+# The missing inputs are NaN, and the NaN propagates into the outputs.
+
+# %%
+incomplete_model = incomplete_builder.with_missing_exogenous_allowed().build()
 incomplete_model.run()
 
 co2 = incomplete_model.timeseries().get_timeseries_by_name(
     "Atmospheric Concentration|CO2"
 )
 print(f"CO2 concentration: {co2.values()[:4]}")
-
-# %% [markdown]
-# To catch this before running, compare the exogenous inputs listed by `debug_info()`
-# with the data in the model.
-
-
-# %%
-def unfilled_exogenous(model) -> list[str]:
-    """List exogenous scalar inputs that have no data in the model."""
-    info = json.loads(model.debug_info("json"))
-    collection = model.timeseries()
-    missing = set()
-    for component in info["components"]:
-        for requirement in component.get("inputs", []):
-            if requirement["source"] != "exogenous":
-                continue
-            ts = collection.get_timeseries_by_name(requirement["name"])
-            if ts is not None and np.isnan(ts.values()).all():
-                missing.add(requirement["name"])
-    return sorted(missing)
-
-
-print(f"Complete model:   {unfilled_exogenous(model)}")
-print(f"Incomplete model: {unfilled_exogenous(incomplete_model)}")
 
 # %% [markdown]
 # ### Missing Initial Values
