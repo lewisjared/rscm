@@ -400,7 +400,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
 }
 
 
-#: MAGICC permafrost parameters and their path below ``components``.
+# MAGICC permafrost parameters and their path below ``components``.
 _PERMAFROST = {
     "pf_apply": (
         "permafrost.enabled",
@@ -513,7 +513,7 @@ MAGICC_PARAMETERS.update(
     }
 )
 
-#: MAGICC nitrogen limitation switches and their path below ``nitrogen``.
+# MAGICC nitrogen limitation switches and their path below ``nitrogen``.
 _NITROGEN_SWITCHES = {
     "ncycle_apply": ("enabled", "Limit NPP by nitrogen"),
     "ncycle_apply_ndep_from_emis": (
@@ -526,7 +526,7 @@ _NITROGEN_SWITCHES = {
     ),
 }
 
-#: MAGICC nitrogen limitation parameters and their path below ``nitrogen``.
+# MAGICC nitrogen limitation parameters and their path below ``nitrogen``.
 _NITROGEN = {
     "ncycle_nfix_vmax": ("prognostic_fixation.vmax", "Maximum fixation rate"),
     "ncycle_nfix_km": ("prognostic_fixation.km", "NPP at half the maximum fixation"),

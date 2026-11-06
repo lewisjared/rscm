@@ -58,7 +58,7 @@ def _setup_magicc():
 
 MAGICC_ROOT = _setup_magicc()
 
-#: AR6 probabilistic distribution (600 members), published separately from MAGICC.
+# AR6 probabilistic distribution (600 members), published separately from MAGICC.
 AR6_CONFIG = Path(
     os.environ.get("MAGICC_AR6_CONFIG")
     or MAGICC_DATA
@@ -68,7 +68,7 @@ AR6_CONFIG = Path(
 
 from pymagicc import MAGICC7  # noqa: E402
 
-#: Root for regression data: ``tests/regression/data/`` relative to repo root.
+# Root for regression data: ``tests/regression/data/`` relative to repo root.
 REGRESSION_DATA_ROOT = (
     Path(__file__).parent.parent.parent / "tests" / "regression" / "data"
 )

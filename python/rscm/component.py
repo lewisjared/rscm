@@ -113,13 +113,13 @@ from rscm._lib.core.state import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-#: Valid grid type literals for component I/O declarations
+# Valid grid type literals for component I/O declarations
 GridLiteral = Literal["Scalar", "FourBox", "Hemispheric"]
 
-#: Valid timeseries type literals for component I/O declarations
+# Valid timeseries type literals for component I/O declarations
 TimeseriesTypeLiteral = Literal["point", "average"]
 
-#: Entry point group that installed packages use to provide components
+# Entry point group that installed packages use to provide components
 ENTRY_POINT_GROUP = "rscm.components"
 
 

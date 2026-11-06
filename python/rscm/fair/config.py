@@ -47,7 +47,7 @@ CLIMATE_CONFIGS = (
 )
 GAMMA_AUTOCORRELATION = 2.0
 
-#: Calculated forcing types that sum their drivers linearly.
+# Calculated forcing types that sum their drivers linearly.
 LINEAR_TYPES = ("ari", "ozone", "contrails", "lapsi", "h2o stratospheric", "land use")
 
 
@@ -327,7 +327,7 @@ def _aerosol_drivers(
     return drivers
 
 
-#: Coefficient, driver kind and whether it is baselined, of the single-driver forcings.
+# Coefficient, driver kind and whether it is baselined, of the single-driver forcings.
 _LINEAR_DRIVERS = {
     "contrails": ("contrails_radiative_efficiency", "emissions", False),
     "lapsi": ("lapsi_radiative_efficiency", "emissions", True),

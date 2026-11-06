@@ -360,7 +360,7 @@ def nitrate_pattern(
     return (total[index] / hemisphere[index]).tolist()
 
 
-#: Cloud-active species and their components, in MAGICC7's summation order.
+# Cloud-active species and their components, in MAGICC7's summation order.
 CLOUD_GROUPS = {
     "bc": ("BCI", "BCB"),
     "oc": ("OCI", "OCB", "OCN"),

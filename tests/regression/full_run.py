@@ -38,7 +38,7 @@ NITROGEN = DATA.with_name("03_ssp245_emissions_nitrogen")
 DEFAULT = DATA.with_name("05_ssp245_default")
 SEALEVEL = DATA.with_name("04_ssp245_emissions_sealevel")
 
-#: MAGICC region names in RSCM four-box order.
+# MAGICC region names in RSCM four-box order.
 BOXES = (
     "World|Northern Hemisphere|Ocean",
     "World|Northern Hemisphere|Land",
@@ -46,12 +46,12 @@ BOXES = (
     "World|Southern Hemisphere|Land",
 )
 
-#: Relative and absolute tolerances against MAGICC7.
-#: Rounding stays orders of magnitude below them and any modelling change far above.
+# Relative and absolute tolerances against MAGICC7.
+# Rounding stays orders of magnitude below them and any modelling change far above.
 RTOL = 1e-9
 ATOL = 1e-12
 
-#: Global area fractions of the boxes with MAGICC7's default land fractions.
+# Global area fractions of the boxes with MAGICC7's default land fractions.
 AREA = pr.area_fractions()
 
 
@@ -142,7 +142,7 @@ def load_sealevel() -> FullRun:
     return _with_inputs(_read(SEALEVEL))
 
 
-#: Variants of the reference run that change one climate, efficacy or method switch.
+# Variants of the reference run that change one climate, efficacy or method switch.
 VARIANTS = (
     "ecs_1p5",
     "ecs_4p5",
@@ -195,7 +195,7 @@ def emissions(run: FullRun) -> dict[str, NDArray[np.float64]]:
     }
 
 
-#: MAGICC7 names of the prescribed agents, without the ERF prefix.
+# MAGICC7 names of the prescribed agents, without the ERF prefix.
 PRESCRIBED = {
     "SOx|Fossil": "Aerosols|Direct Effect|SOx|MAGICC Fossil and Industrial",
     "SOx|AFOLU": "Aerosols|Direct Effect|SOx|MAGICC AFOLU",

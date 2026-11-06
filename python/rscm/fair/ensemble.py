@@ -21,14 +21,14 @@ if TYPE_CHECKING:
 
     Inputs = Mapping[str, tuple[ArrayLike, str]]
 
-#: FaIR attributes on timebounds with a species dimension.
+# FaIR attributes on timebounds with a species dimension.
 SPECIES_ATTRIBUTES = (
     "concentration",
     "forcing",
     "airborne_emissions",
     "cumulative_emissions",
 )
-#: FaIR attributes on timebounds without a species or layer dimension.
+# FaIR attributes on timebounds without a species or layer dimension.
 SCALAR_ATTRIBUTES = {
     "forcing_sum": naming.TOTAL_FORCING,
     "ocean_heat_content_change": naming.OCEAN_HEAT_CONTENT_CHANGE,

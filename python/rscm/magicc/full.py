@@ -85,7 +85,7 @@ __all__ = [
 DATA = Path(__file__).parent / "data" / "magicc7"
 ERF = "Effective Radiative Forcing"
 REGIONAL_FORCING = f"{ERF}|Efficacy Adjusted"
-#: MAGICC7 feeds back last year's temperature, CO2 and climate sensitivity.
+# MAGICC7 feeds back last year's temperature, CO2 and climate sensitivity.
 LAG = ("Surface Temperature",)
 LAG_FOR = (
     ("Atmospheric Concentration|CO2", "TerrestrialCarbon"),

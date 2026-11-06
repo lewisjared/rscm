@@ -55,11 +55,11 @@ if TYPE_CHECKING:
 DATA = Path(__file__).parent / "data" / "fair"
 CALIBRATION = DATA / "calibration"
 
-#: Tolerances against FaIR. Rounding stays orders of magnitude below them.
+# Tolerances against FaIR. Rounding stays orders of magnitude below them.
 RTOL = 1e-9
 ATOL = 1e-12
 
-#: fair-calibrate v1.6.1 posterior members with a reference run.
+# fair-calibrate v1.6.1 posterior members with a reference run.
 CALIBRATION_MEMBERS = tuple(
     int(m)
     for m in pd.read_csv(
