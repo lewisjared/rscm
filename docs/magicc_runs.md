@@ -184,7 +184,7 @@ co2 = result.values["Atmospheric Concentration|CO2"]
 ```
 
 Emissions are annual mean rates, one per interval between the supplied years.
-The run couples these components, registered in this order:
+The run couples these components:
 
 - `CH4Chemistry` calculates the CH4 concentration from emissions.
 - `CH4Oxidation` tracks fossil CH4 and the CO2 released as it is oxidised.
@@ -197,9 +197,7 @@ The run couples these components, registered in this order:
 Natural CH4 and N2O emissions are chemistry parameters.
 They default to the budget-closing values MAGICC7 derives for its standard historical concentrations.
 
-Registration order sets the lags.
-A component registered before the producer of one of its inputs reads that input's value
-at the start of the step.
+The runner lags the feedback loops with `with_lag` and `with_lag_for`.
 So, as in MAGICC7, chemistry and the carbon cycle use the temperature and CO2 at the start of each year,
 and forcing uses the concentrations at its end.
 The carbon-cycle feedbacks use the warming since 1900.

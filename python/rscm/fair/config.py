@@ -34,7 +34,7 @@ from rscm._lib.fair import (
 from rscm.fair import naming
 
 if TYPE_CHECKING:
-    from rscm._lib.core import Component
+    from rscm._lib.core import Component, ModelBuilder
 
 FairConfig = dict[str, Any]
 Species = dict[str, Any]
@@ -104,8 +104,11 @@ def thornhill(config: FairConfig) -> bool:
     )
 
 
+CH4_LIFETIME_SENSITIVITY = "ch4_lifetime_chemical_sensitivity"
+
+
 def _ch4_lifetime(config: FairConfig) -> Component:
-    sensitivity = "ch4_lifetime_chemical_sensitivity"
+    sensitivity = CH4_LIFETIME_SENSITIVITY
     emissions = _chemistry_drivers(config, "emissions", sensitivity, key="sensitivity")
     concentrations = _chemistry_drivers(
         config, "concentration", sensitivity, key="sensitivity"
@@ -449,6 +452,21 @@ def build_components(
     if energy_balance:
         components.append(_energy_balance(config))
     return components
+
+
+def with_lags(builder: ModelBuilder, config: FairConfig) -> ModelBuilder:
+    """Add FaIR's feedback lags to a builder of `build_components`.
+
+    Every component reads the previous step's surface temperature,
+    and the methane lifetime the previous step's concentrations.
+    """
+    builder.with_lag(naming.SURFACE_TEMPERATURE)
+    if thornhill(config):
+        for driver in _chemistry_drivers(
+            config, "concentration", CH4_LIFETIME_SENSITIVITY, key="sensitivity"
+        ):
+            builder.with_lag_for(driver["variable"], "FairCH4Lifetime")
+    return builder
 
 
 def initial_values(

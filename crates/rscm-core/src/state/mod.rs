@@ -168,6 +168,10 @@ pub enum VariableSource {
     /// Variable is this component's own state from the previous timestep.
     /// Read from `at_start()` (index N).
     OwnState,
+
+    /// Variable is read from the previous step because the model wiring lags this edge.
+    /// Read from `at_start()` (index N), and `at_end()` returns `None`.
+    Lagged,
 }
 
 /// Transform context for automatic grid aggregation.

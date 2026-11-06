@@ -39,6 +39,7 @@ from rscm.fair import (
     read_calibration,
     run_ensemble,
     run_fair,
+    with_lags,
 )
 from rscm.fair.config import forcing_agents, is_ghg
 from rscm.fair.ensemble import SPECIES_ATTRIBUTES
@@ -434,6 +435,7 @@ def test_climate_udeb_smoke() -> None:
     )
     for component in components:
         builder.with_rust_component(component)
+    with_lags(builder, run.config)
     inputs = _inputs(run.config, run.timebounds, run.timepoints)
     n_bounds = len(axis.values())
     for name, (values, unit) in inputs.items():

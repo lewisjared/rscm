@@ -187,7 +187,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
     /// Get the aggregated scalar value at the end of the timestep (index N+1), if available.
     pub fn at_end(&self) -> Option<FloatValue> {
         let next_index = self.current_index + 1;
-        if next_index >= self.timeseries.len() {
+        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
             None
         } else {
             let values = self
@@ -201,7 +201,9 @@ impl<'a> AggregatingFourBoxWindow<'a> {
     /// Get the value using automatic timestep resolution based on variable source.
     pub fn get(&self) -> FloatValue {
         match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(),
+            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
+                self.at_start()
+            }
             VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
         }
     }
@@ -363,7 +365,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
     /// Get the aggregated scalar value at the end of the timestep (index N+1), if available.
     pub fn at_end(&self) -> Option<FloatValue> {
         let next_index = self.current_index + 1;
-        if next_index >= self.timeseries.len() {
+        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
             None
         } else {
             let values = self
@@ -377,7 +379,9 @@ impl<'a> AggregatingHemisphericWindow<'a> {
     /// Get the value using automatic timestep resolution based on variable source.
     pub fn get(&self) -> FloatValue {
         match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(),
+            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
+                self.at_start()
+            }
             VariableSource::UpstreamOutput => self.at_end().unwrap_or_else(|| self.at_start()),
         }
     }
@@ -629,7 +633,7 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     /// Get all regional values at the end of the timestep.
     pub fn at_end_all(&self) -> Option<Vec<FloatValue>> {
         let next_index = self.current_index + 1;
-        if next_index >= self.timeseries.len() {
+        if self.variable_source == VariableSource::Lagged || next_index >= self.timeseries.len() {
             None
         } else {
             let values = self
@@ -664,7 +668,9 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     /// Get a single region's value using automatic timestep resolution.
     pub fn get(&self, region: HemisphericRegion) -> FloatValue {
         match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState => self.at_start(region),
+            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
+                self.at_start(region)
+            }
             VariableSource::UpstreamOutput => {
                 self.at_end(region).unwrap_or_else(|| self.at_start(region))
             }
@@ -674,7 +680,9 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     /// Get all regional values using automatic timestep resolution.
     pub fn get_all(&self) -> Vec<FloatValue> {
         match self.variable_source {
-            VariableSource::Exogenous | VariableSource::OwnState => self.at_start_all(),
+            VariableSource::Exogenous | VariableSource::OwnState | VariableSource::Lagged => {
+                self.at_start_all()
+            }
             VariableSource::UpstreamOutput => {
                 self.at_end_all().unwrap_or_else(|| self.at_start_all())
             }

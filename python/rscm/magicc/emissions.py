@@ -70,6 +70,13 @@ COMPONENTS = {
     "GhgForcing": GhgForcingBuilder,
     "ClimateUDEB": ClimateUDEBBuilder,
 }
+#: Chemistry and the carbon cycle read last year's temperature,
+#: and the carbon sinks last year's CO2.
+LAG = ("Surface Temperature",)
+LAG_FOR = (
+    (CONCENTRATION + "CO2", "TerrestrialCarbon"),
+    (CONCENTRATION + "CO2", "OceanCarbon"),
+)
 
 CH4_PPB_TO_TG = 2.824
 CH4_MIXBOX_SIZE = 0.973
@@ -344,6 +351,10 @@ def run_magicc_emissions(  # noqa: PLR0913
         else:
             component = component_builder.from_parameters(params[name]).build()
         builder.with_rust_component(component)
+    for variable in LAG:
+        builder.with_lag(variable)
+    for variable, consumer in LAG_FOR:
+        builder.with_lag_for(variable, consumer)
     for name, values in data.items():
         builder.with_exogenous_variable(
             name, Timeseries(values, axis, units[name], InterpolationStrategy.Linear)

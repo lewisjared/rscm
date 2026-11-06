@@ -804,10 +804,14 @@ def run_components(  # noqa: PLR0913
     four_box: Mapping[str, tuple[NDArray[np.float64], str]] = {},
     initial: Mapping[str, float] = {},
     initial_grid: Mapping[str, Sequence[float]] = {},
+    lag: Sequence[str] = (),
+    lag_for: Sequence[tuple[str, str]] = (),
 ) -> Model:
     """Run components on an annual axis with exogenous inputs and return the model.
 
     Scalar readers of a four-box variable see its area-weighted mean.
+    ``lag`` and ``lag_for`` pass feedback lags to `ModelBuilder.with_lag`
+    and `ModelBuilder.with_lag_for`.
     """
     axis = TimeAxis.from_values(np.asarray(years, dtype=np.float64))
     builder = ModelBuilder().with_time_axis(axis)
@@ -818,6 +822,10 @@ def run_components(  # noqa: PLR0913
         builder.with_grid_weights(GridType.FourBox, list(pr.area_fractions()))
     for component in components:
         builder.with_rust_component(component)
+    for variable in lag:
+        builder.with_lag(variable)
+    for variable, consumer in lag_for:
+        builder.with_lag_for(variable, consumer)
     for name, (values, unit) in exogenous.items():
         builder.with_exogenous_variable(
             name,
@@ -1109,6 +1117,13 @@ def run_magicc7(  # noqa: PLR0913
                 params("Permafrost", permafrost_parameters(p))
             ).build(),
         )
+    # MAGICC7 feeds back last year's temperature, CO2 and climate sensitivity.
+    lag = ["Surface Temperature"]
+    lag_for = [
+        ("Atmospheric Concentration|CO2", "TerrestrialCarbon"),
+        ("Atmospheric Concentration|CO2", "OceanCarbon"),
+        ("Equilibrium Climate Sensitivity", "ForcingAggregation"),
+    ]
     initial = {
         **{f"Atmospheric Concentration|{gas}": c for gas, c in conc.items()},
         **_ch4_burdens(conc["CH4"], p["ch4_ppb2tgch4"], p["ch4_mixboxsize"]),
@@ -1164,6 +1179,8 @@ def run_magicc7(  # noqa: PLR0913
             four_box={k: (v[:n], unit) for k, (v, unit) in four_box.items()},
             initial={**initial, **climate.initial_values(total)},
             initial_grid={REGIONAL_FORCING: boxes},
+            lag=lag,
+            lag_for=lag_for,
         )
 
     # MAGICC7 starts from its second year's F-gas forcing.

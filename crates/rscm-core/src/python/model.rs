@@ -98,6 +98,22 @@ impl PyModelBuilder {
         self_
     }
 
+    /// Lag every edge from `variable`, so each consumer reads the previous step's value.
+    fn with_lag<'py>(mut self_: PyRefMut<'py, Self>, variable: &str) -> PyRefMut<'py, Self> {
+        self_.0.with_lag(variable);
+        self_
+    }
+
+    /// Lag the edge from `variable` into the component named `consumer` alone.
+    fn with_lag_for<'py>(
+        mut self_: PyRefMut<'py, Self>,
+        variable: &str,
+        consumer: &str,
+    ) -> PyRefMut<'py, Self> {
+        self_.0.with_lag_for(variable, consumer);
+        self_
+    }
+
     /// Add a variable schema to the model for validation and aggregation.
     ///
     /// The schema defines the variables the model expects and any aggregates

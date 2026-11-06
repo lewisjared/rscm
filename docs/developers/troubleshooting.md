@@ -210,14 +210,16 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
 #### CircularDependency
 
 ```
-Circular dependency detected in component graph: component NodeIndex(1).
+Feedback loop among components [CarbonCycle, TwoLayer] through variables [...].
+Break it with one of: with_lag_for("Surface Temperature", "CarbonCycle"), ...
 ```
 
-**Cause:** Components form a dependency loop where A depends on B and B depends on A.
+**Cause:** Components form a feedback loop that no lag breaks, where A depends on B and B depends on A.
 
 **Fixes:**
 
-- Use state variables to break the cycle (state variables read from the previous timestep)
+- Lag one edge of the loop with one of the suggested `with_lag_for` calls,
+  or with `with_lag(variable)` to lag every reader of a variable
 - Restructure component boundaries so dependencies flow in one direction
 - Combine tightly coupled components into a single component
 

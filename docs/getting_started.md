@@ -169,8 +169,8 @@ schema.add_aggregate(
 )
 ```
 
-The builder chain takes the schema, the components in producer-to-consumer order,
-the emissions and an initial value for every state variable:
+The builder chain takes the schema, the components, the emissions and an initial value for every state variable.
+Temperature feeds back on the carbon cycle, so the carbon cycle reads the previous step's temperature:
 
 ```python
 model = (
@@ -180,6 +180,7 @@ model = (
     .with_rust_component(carbon_cycle)
     .with_rust_component(co2_erf)
     .with_rust_component(two_layer)
+    .with_lag_for("Surface Temperature", "CarbonCycle")
     .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
     .with_initial_values({
         "Atmospheric Concentration|CO2": 278.0,
@@ -194,8 +195,8 @@ model.run()
 
 RSCM builds a dependency graph from the components,
 and solves producers before their consumers within each timestep.
-A component only depends on producers that were added before it.
-Add components in producer-to-consumer order so that each one reads values from the same timestep.
+The order you add components in does not matter.
+A feedback loop must lag one of its edges with `with_lag` or `with_lag_for`, or `build()` fails.
 See [Key Concepts](key_concepts.md#dependency-graph) for details.
 
 ## Next Steps

@@ -13,6 +13,7 @@ from rscm.fair.config import (
     build_components,
     forcing_agents,
     initial_values,
+    with_lags,
 )
 
 if TYPE_CHECKING:
@@ -72,6 +73,7 @@ def build_model(
     builder = ModelBuilder().with_time_axis(axis)
     for component in build_components(config):
         builder.with_rust_component(component)
+    with_lags(builder, config)
     first = {}
     for name, (values, unit) in inputs.items():
         array = _on_timebounds(name, values, len(bounds))

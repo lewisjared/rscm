@@ -28,7 +28,7 @@
 #
 # - See how MAGICC modules map onto RSCM components.
 # - Configure the components from MAGICC7's own parameter names.
-# - Use registration order to set the lags in the feedback loops.
+# - Break the feedback loops with lags, as MAGICC7 does.
 # - Feed prescribed forcing in on the four-box grid.
 # - Render the component graph and run the model from 1750 to 2105.
 # - Check the result against MAGICC7 v7.5.3 and against `run_magicc7`.
@@ -357,7 +357,6 @@ builders = {
 # The carbon cycle, forcing and climate complete the chain.
 # `TerrestrialCarbon` takes its preindustrial pools and temperature feedbacks from MAGICC7's `co2_*` names.
 # `GhgForcing` uses the OLBL formulas (after Etminan et al., 2016), MAGICC7's default for CO2, CH4 and N2O.
-# The dictionary keeps insertion order, which becomes the registration order below.
 
 # %%
 initial_concentrations = full.default_initial_concentrations()
@@ -439,9 +438,9 @@ pd.DataFrame(
 )
 
 # %% [markdown]
-# ## Registration order and feedback loops
+# ## Feedback loops and lags
 #
-# The component graph must be acyclic, yet MAGICC has feedback loops:
+# MAGICC has feedback loops:
 #
 # - Temperature from `ClimateUDEB` changes permafrost thaw, the CH4, N2O and halocarbon lifetimes,
 #   land and ocean carbon uptake and ozone forcing, which all change the forcing that drives temperature.
@@ -449,26 +448,33 @@ pd.DataFrame(
 #   which set the fluxes that `CO2Budget` integrates.
 # - The CO2-doubling forcing and climate sensitivity set the internal efficacies in `ForcingAggregation`.
 #
-# RSCM resolves these through registration order.
-# When a component reads a variable produced by a component registered **earlier**,
-# it waits for that producer and sees the value at the end of the current step.
-# When the producer is registered **later**, there is no graph edge.
-# The reader sees the value at the start of the step, which the producer wrote one step earlier.
+# The builder links every component to the producers of its inputs, whatever order they are added in.
+# A loop must lag one of its edges, so the reader sees the value from the previous step.
+# `with_lag(variable)` lags every reader of a variable,
+# and `with_lag_for(variable, consumer)` lags one.
+# Building a model with a loop that no lag breaks fails, and the error suggests the lags that would break it.
 #
-# This reproduces MAGICC7's staggered scheme.
-# Permafrost, chemistry and the carbon cycle use the temperature and CO2 at the start of each year,
+# MAGICC7 uses a staggered scheme.
+# Permafrost, chemistry, the carbon cycle and ozone use the temperature at the start of each year,
+# and the land and ocean the CO2 at the start of the year,
 # while forcing uses the concentrations at its end.
-# So the order above registers them before `CO2Budget` and `ClimateUDEB`,
-# and all the forcing components before `ClimateUDEB`.
-# `SeaLevelRise` comes last because it only reads the climate.
-#
-# Listing every input whose producer is registered later gives the lagged couplings:
+# `SeaLevelRise` reads the annual mean warming of the same year.
+
+# %%
+lag = ["Surface Temperature"]
+lag_for = [
+    ("Atmospheric Concentration|CO2", "TerrestrialCarbon"),
+    ("Atmospheric Concentration|CO2", "OceanCarbon"),
+    ("Equilibrium Climate Sensitivity", "ForcingAggregation"),
+]
+
+# %% [markdown]
+# Listing every input these lags apply to gives the lagged couplings:
 
 
 # %% tags=["remove_input"]
 def lagged_couplings(components):
-    """List inputs produced by a later component, which see the previous step."""
-    order = list(components)
+    """List the inputs that read the previous step's value from another component."""
     producers = {
         d.name: name
         for name, component in components.items()
@@ -480,7 +486,8 @@ def lagged_couplings(components):
         for reader, component in components.items()
         for d in component.definitions()
         if d.requirement_type == RequirementType.Input
-        and order.index(producers.get(d.name, reader)) > order.index(reader)
+        and d.name in producers
+        and (d.name in lag or (d.name, reader) in lag_for)
     ]
 
 
@@ -617,6 +624,10 @@ def build_model(n_years, initial_agents):
     )
     for component in components.values():
         builder.with_rust_component(component)
+    for variable in lag:
+        builder.with_lag(variable)
+    for variable, consumer in lag_for:
+        builder.with_lag_for(variable, consumer)
     for name, (values, unit) in exogenous.items():
         builder.with_exogenous_variable(
             name, Timeseries(values[:n_years], axis, unit, InterpolationStrategy.Linear)
@@ -656,7 +667,7 @@ model = build_model(len(years), initial_agents)
 # orange for forcing and pink for the climate.
 # Solid arrows are couplings within a step.
 # Red dashed arrows are the lagged couplings from the table above.
-# They are not part of the solved graph, which is why the graph stays acyclic.
+# They are not part of the solved graph, which is why the graph has no loops.
 # Rendering requires Graphviz to be installed.
 
 # %% tags=["remove_input"]
@@ -960,7 +971,7 @@ plt.show()
 # %% [markdown]
 # ## The convenience path: `run_magicc7`
 #
-# `rscm.magicc.run_magicc7` builds this whole chain for you, in the same registration order.
+# `rscm.magicc.run_magicc7` builds this whole chain for you, with the same lags.
 # It takes the emissions and MAGICC7 parameter names, and returns the run model.
 # With the same parameters it gives the same result as the hand-built model.
 

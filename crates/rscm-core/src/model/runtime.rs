@@ -569,7 +569,11 @@ impl Model {
                     EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
                 let order = petgraph::algo::toposort(&graph, None).map_err(|cycle| {
                     RSCMError::CircularDependency {
-                        cycle: format!("component {:?}", cycle.node_id()),
+                        components: vec![Self::extract_component_name(
+                            &self.components[cycle.node_id()],
+                        )],
+                        variables: vec![],
+                        suggestions: vec![],
                     }
                 })?;
                 order
