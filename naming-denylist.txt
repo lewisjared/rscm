@@ -26,10 +26,17 @@ n_params
 total_iterations
 
 # Type names
-ClimateUDEB\w*
-MAGICCResult
-RSCMError
-CO2ERF
+# Acronyms stay upper case, so these one-word forms are retired.
+ClimateUdeb\w*
+Magicc[A-Z]\w*
+Rscm(Error|Result)
+CO2Erf\w*
+Ghg[A-Z]\w*
+Eesc\w*
+Ivp\w*
+Lamcalc\w*
+IrfForm
+FgasRegions
 GasMode
 DriverKind
 CloudDriverKind

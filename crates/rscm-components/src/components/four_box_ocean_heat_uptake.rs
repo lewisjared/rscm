@@ -16,7 +16,7 @@
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::Time;
 use rscm_core::ComponentIO;
@@ -114,7 +114,7 @@ impl Component for FourBoxOceanHeatUptake {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         // Get scalar ERF input using typed inputs
         let inputs = FourBoxOceanHeatUptakeInputs::from_input_state(input_state);
         let erf = inputs.erf.get();

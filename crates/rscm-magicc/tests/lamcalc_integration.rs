@@ -1,5 +1,5 @@
 //! Integration tests for the LAMCALC feedback parameter solver and its
-//! integration with ClimateUdeb.
+//! integration with ClimateUDEB.
 //!
 //! These tests verify:
 //! 1. ECS-Lambda consistency across a range of climate sensitivities
@@ -7,7 +7,7 @@
 //! 3. Sensitivity to coupling parameters (k_lo, k_ns, amplify_ocean_to_land)
 //! 4. Edge cases with extreme but physically plausible parameters
 //! 5. Coupling matrix mathematical properties
-//! 6. ClimateUdeb long-run equilibrium approaching ECS under constant forcing
+//! 6. ClimateUDEB long-run equilibrium approaching ECS under constant forcing
 
 mod common;
 
@@ -17,10 +17,10 @@ use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::FloatValue;
 use rscm_core::utils::linear_algebra::invert_4x4;
 use rscm_magicc::climate::lamcalc::{
-    build_coupling_matrix, lamcalc, LamcalcParameters, LamcalcResult,
+    build_coupling_matrix, lamcalc, LAMCALCParameters, LAMCALCResult,
 };
-use rscm_magicc::climate::ClimateUdeb;
-use rscm_magicc::parameters::ClimateUdebParameters;
+use rscm_magicc::climate::ClimateUDEB;
+use rscm_magicc::parameters::ClimateUDEBParameters;
 
 // ---------------------------------------------------------------------------
 // Helper functions
@@ -30,11 +30,11 @@ use rscm_magicc::parameters::ClimateUdebParameters;
 /// temperatures and return (ocean_mean, land_mean, global_mean, rlo_actual).
 ///
 /// This wraps [`common::compute_equilibrium_temperatures`] to accept a
-/// [`LamcalcResult`] directly, which is convenient for tests that already
+/// [`LAMCALCResult`] directly, which is convenient for tests that already
 /// hold a solved result.
 fn compute_equilibrium_temperatures(
-    params: &LamcalcParameters,
-    result: &LamcalcResult,
+    params: &LAMCALCParameters,
+    result: &LAMCALCResult,
 ) -> (FloatValue, FloatValue, FloatValue, FloatValue) {
     let eq =
         common::compute_equilibrium_temperatures(params, result.lambda_ocean, result.lambda_land);
@@ -630,7 +630,7 @@ mod matrix_properties {
 }
 
 // ---------------------------------------------------------------------------
-// 6. ClimateUdeb long-run equilibrium
+// 6. ClimateUDEB long-run equilibrium
 // ---------------------------------------------------------------------------
 
 mod climate_udeb_equilibrium {
@@ -638,7 +638,7 @@ mod climate_udeb_equilibrium {
 
     #[test]
     fn test_equilibrium_temperature_warming_and_stabilisation() {
-        // ClimateUdeb outputs surface air temperature (SAT), which includes
+        // ClimateUDEB outputs surface air temperature (SAT), which includes
         // SST-to-SAT amplification (temperature_adjustment_alpha, temperature_adjustment_gamma) and
         // land temperature amplification. Therefore the equilibrium global mean
         // SAT does NOT equal ECS directly -- it exceeds ECS because of these
@@ -648,9 +648,9 @@ mod climate_udeb_equilibrium {
         // 1. Temperature increases monotonically under constant forcing
         // 2. The rate of warming decreases over time (approaching equilibrium)
         // 3. SST (the raw ocean quantity) converges towards ECS
-        let params = common::params_with_fixed_ecs(ClimateUdebParameters::default().ecs);
+        let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
 
-        let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
+        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
         let erf = params.erf_2xco2;
@@ -760,9 +760,9 @@ mod climate_udeb_equilibrium {
 
     #[test]
     fn test_zero_forcing_produces_zero_temperature() {
-        let params = common::params_with_fixed_ecs(ClimateUdebParameters::default().ecs);
+        let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
 
-        let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
+        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
         let erf = 0.0;
@@ -839,7 +839,7 @@ mod climate_udeb_equilibrium {
 
     #[test]
     fn test_land_warms_more_than_ocean_during_transient() {
-        let params = common::params_with_fixed_ecs(ClimateUdebParameters::default().ecs);
+        let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
         let records = common::run_udeb_simulation(&params, params.erf_2xco2, 100);
 
         let last = records.last().unwrap();
@@ -878,7 +878,7 @@ mod climate_udeb_equilibrium {
 
     #[test]
     fn test_heat_uptake_positive_during_warming() {
-        let params = common::params_with_fixed_ecs(ClimateUdebParameters::default().ecs);
+        let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
         let records = common::run_udeb_simulation(&params, params.erf_2xco2, 50);
 
         for (year, record) in records.iter().enumerate() {
@@ -894,15 +894,15 @@ mod climate_udeb_equilibrium {
 
     #[test]
     fn test_lamcalc_consistency_with_climate_udeb_construction() {
-        // Verify that LAMCALC parameters solved during ClimateUdeb construction
+        // Verify that LAMCALC parameters solved during ClimateUDEB construction
         // match what we get from calling lamcalc directly.
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
         let lamcalc_params = common::lamcalc_params_from_udeb(&params);
 
         let direct_result = lamcalc(&lamcalc_params).expect("Direct LAMCALC call should converge");
 
-        // ClimateUdeb internally calls lamcalc during from_parameters
-        let component = ClimateUdeb::from_parameters(params).unwrap();
+        // ClimateUDEB internally calls lamcalc during from_parameters
+        let component = ClimateUDEB::from_parameters(params).unwrap();
 
         // We cannot access lambda_ocean/lambda_land directly since they are private
         // and #[serde(skip)] (they deserialise as 0.0, not recalculated).
@@ -934,7 +934,7 @@ mod climate_udeb_equilibrium {
         let defs = component.definitions();
         assert!(
             !defs.is_empty(),
-            "ClimateUdeb should have definitions after successful construction"
+            "ClimateUDEB should have definitions after successful construction"
         );
     }
 }

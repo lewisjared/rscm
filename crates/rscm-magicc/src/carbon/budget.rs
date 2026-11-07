@@ -47,7 +47,7 @@ use crate::reference::{permafrost_emissions, prescribed_concentration, prescribe
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::names::{
     ATMOSPHERIC_CONCENTRATIONS_CO2, EMISSIONS_CO2_PERMAFROST,
     OCEAN_CARBON_ATMOSPHERIC_CONCENTRATIONS_CO2,
@@ -159,7 +159,7 @@ impl Component for CO2Budget {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let inputs = CO2BudgetInputs::from_input_state(input_state);
 
         let co2_start = inputs.co2_concentration.get();

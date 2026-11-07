@@ -102,7 +102,7 @@ def test_fair_shuffled(monkeypatch, case):
 def test_magicc7_coupling_lags():
     """Forcing sees this year's CO2 and sea level this year's temperature."""
     lags = _lags(_run_magicc7(out_sealevel=True))
-    assert not lags[ATMOSPHERIC_CONCENTRATIONS_CO2, "GhgForcing"]
+    assert not lags[ATMOSPHERIC_CONCENTRATIONS_CO2, "GHGForcing"]
     assert not lags[ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE, "SeaLevelRise"]
     for consumer in ("TerrestrialCarbon", "OceanCarbon"):
         assert lags[ATMOSPHERIC_CONCENTRATIONS_CO2, consumer]

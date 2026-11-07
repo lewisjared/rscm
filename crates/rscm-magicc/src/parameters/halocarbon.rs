@@ -132,7 +132,7 @@ pub struct HalocarbonChemistryParameters {
 
     /// Regional pattern of F-gas forcing, which makes `Effective Radiative Forcing|F-Gases`
     /// a four-box output.
-    pub fgas_regions: Option<FgasRegions>,
+    pub fgas_regions: Option<FGasRegions>,
 }
 
 /// Regional pattern of F-gas forcing.
@@ -144,7 +144,7 @@ pub struct HalocarbonChemistryParameters {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
-pub struct FgasRegions {
+pub struct FGasRegions {
     /// Pattern (NH ocean, NH land, SH ocean, SH land).
     /// MAGICC7: RF_REGIONS_FGAS
     pub regional_pattern: [FloatValue; 4],
@@ -160,7 +160,7 @@ pub struct FgasRegions {
     pub sh_land_fraction: FloatValue,
 }
 
-impl Default for FgasRegions {
+impl Default for FGasRegions {
     fn default() -> Self {
         Self {
             regional_pattern: [0.16695, 0.16218, 0.15508, 0.1463],
@@ -172,7 +172,7 @@ impl Default for FgasRegions {
     }
 }
 
-impl FgasRegions {
+impl FGasRegions {
     /// Box forcing per unit global forcing of a species with lifetime `tau`.
     ///
     /// `fossil_co2` is the global fossil CO2 emission, split equally between the land boxes
@@ -653,8 +653,8 @@ mod tests {
         assert!((sf6.other_lifetime().unwrap() - 850.0).abs() < 1e-9);
     }
 
-    fn equal_area_regions() -> FgasRegions {
-        FgasRegions {
+    fn equal_area_regions() -> FGasRegions {
+        FGasRegions {
             regional_pattern: [1.0, 2.0, 3.0, 4.0],
             lower_lifetime: 1.0,
             upper_lifetime: 8.0,
@@ -701,7 +701,7 @@ mod tests {
 
     #[test]
     fn test_fgas_pattern_keeps_global_mean() {
-        let regions = FgasRegions::default();
+        let regions = FGasRegions::default();
         let area = [0.29, 0.21, 0.395, 0.105];
         for tau in [0.5, 1.0, 3.0, 8.0, 50.0] {
             let mean: FloatValue = (0..4).map(|i| regions.pattern(tau, 1.0)[i] * area[i]).sum();

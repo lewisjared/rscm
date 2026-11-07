@@ -1,4 +1,4 @@
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{find_segment, Interp1DStrategy, SegmentOptions};
 use num::Float;
 use numpy::ndarray::{ArrayBase, Data};
@@ -58,7 +58,7 @@ where
         time: &ArrayBase<At, Ix1>,
         y: &ArrayBase<Ay, Ix1>,
         time_target: At::Elem,
-    ) -> RscmResult<Ay::Elem> {
+    ) -> RSCMResult<Ay::Elem> {
         let segment_info = find_segment(time_target, time, self.extrapolate);
 
         let (segment_options, end_segment_idx) = segment_info?;

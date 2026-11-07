@@ -1,4 +1,4 @@
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, NextStrategy, PreviousStrategy,
 };
@@ -174,7 +174,7 @@ impl PyTimeseries {
         self.0.at(time_index, ScalarRegion::Global)
     }
 
-    fn at_time(&self, time: Time) -> RscmResult<FloatValue> {
+    fn at_time(&self, time: Time) -> RSCMResult<FloatValue> {
         self.0.at_time(time, ScalarRegion::Global)
     }
 }

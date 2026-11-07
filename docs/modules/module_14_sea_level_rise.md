@@ -23,7 +23,7 @@ Each has its own start year and can be switched independently.
 
 - **Component**: `SeaLevelRise`, built from Python with `rscm.magicc.SeaLevelRiseBuilder`,
   calculates glaciers and the Greenland and Antarctic SMB and SID, and sums them with thermal expansion.
-  `ClimateUdeb` calculates thermal expansion when its `thermal_expansion` parameter is set,
+  `ClimateUDEB` calculates thermal expansion when its `thermal_expansion` parameter is set,
   because it needs the ocean layer temperatures.
 - **Source**: `crates/rscm-magicc/src/climate/sea_level.rs` and `climate/udeb/mod.rs`,
   parameters in `parameters/sea_level.rs`.
@@ -246,14 +246,14 @@ $$
 
 RSCM's `SeaLevelRiseState` keeps the glacier and SMB contributions, the two Greenland volumes,
 and each Antarctic region's baseline warming and melt history.
-`ClimateUdeb` keeps the cumulative thermal expansion.
+`ClimateUDEB` keeps the cumulative thermal expansion.
 
 ## Inputs and outputs
 
 | Direction | Variable                  | Units | Fortran variable                       | RSCM variable                                     |
 | --------- | ------------------------- | ----- | -------------------------------------- | ------------------------------------------------- |
 | Input     | Annual mean warming       | K     | `DAT_SURFACE_ANNUALMEANTEMP%DATGLOBE`  | `Annual Mean Surface Air Temperature Change`                |
-| Input     | Ocean layer temperatures  | K     | `TEMP_OCEANLAYERS(I, CURRENT/NEXT_YEAR_IDX)` | `ClimateUdeb` state                         |
+| Input     | Ocean layer temperatures  | K     | `TEMP_OCEANLAYERS(I, CURRENT/NEXT_YEAR_IDX)` | `ClimateUDEB` state                         |
 | Input     | Land water rate           | mm yr⁻¹ | `SLR_LANDWATER_MMPYEAR`              | Not implemented                                   |
 | Output    | Total                     | mm    | `DAT_SLR_TOT`                          | `Sea Level Rise`                                  |
 | Output    | Thermal expansion         | mm    | `DAT_SLR_EXPANSION`                    | `Sea Level Rise|Thermal Expansion`               |

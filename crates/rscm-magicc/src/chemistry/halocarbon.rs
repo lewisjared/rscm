@@ -38,7 +38,7 @@ use crate::reference::{feedback_warming, prescribed_definition, prescribed_input
 use rscm_core::component::{
     Component, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::names::{
     child, prescribed, ATMOSPHERIC_CONCENTRATIONS, EMISSIONS, EMISSIONS_CO2_FOSSIL,
     EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE, ERF_F_GASES, ERF_MONTREAL_PROTOCOL_HALOGEN_GASES,
@@ -298,7 +298,7 @@ impl Component for HalocarbonChemistry {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         require_annual("HalocarbonChemistry", t_current, t_next)?;
         let (oh_scale, strat_scale) = self.scale_factors(t_current, input_state);
         let names = self.names();

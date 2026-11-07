@@ -26,7 +26,7 @@
 use crate::parameters::OzoneForcingParameters;
 use crate::reference::{first_value, require_annual, value_at_year};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::names::{
     child, ATMOSPHERIC_CONCENTRATIONS_CH4, ATMOSPHERIC_CONCENTRATIONS_N2O, EMISSIONS,
     EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE, ERF_OZONE_N2O_FEEDBACK, ERF_OZONE_STRATOSPHERIC,
@@ -137,7 +137,7 @@ impl Component for OzoneForcing {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         require_annual("OzoneForcing", t_current, t_next)?;
         let p = &self.parameters;
         let window = |name| input_state.get_scalar_window(name);

@@ -57,7 +57,7 @@ use crate::reference::{
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::names::{
     ATMOSPHERIC_CONCENTRATIONS_CH4, EMISSIONS_CH4_PERMAFROST, INVERSE_EMISSIONS_CH4,
 };
@@ -310,7 +310,7 @@ impl Component for CH4Chemistry {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         require_annual("CH4Chemistry", t_current, t_next)?;
         let inputs = CH4ChemistryInputs::from_input_state(input_state);
         let feedback_year = self.parameters.feedback_start_year;

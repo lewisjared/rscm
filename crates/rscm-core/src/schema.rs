@@ -44,7 +44,7 @@
 //! variable after all contributors have been solved.
 
 use crate::component::GridType;
-use crate::errors::{RscmError, RscmResult};
+use crate::errors::{RSCMError, RSCMResult};
 use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -415,13 +415,13 @@ impl VariableSchema {
     ///
     /// assert!(schema.validate().is_ok());
     /// ```
-    pub fn validate(&self) -> RscmResult<()> {
+    pub fn validate(&self) -> RSCMResult<()> {
         // Check each aggregate
         for (agg_name, agg_def) in &self.aggregates {
             // 3.2: Validate contributor references exist
             for contributor in &agg_def.contributors {
                 if !self.contains(contributor) {
-                    return Err(RscmError::UndefinedContributor {
+                    return Err(RSCMError::UndefinedContributor {
                         contributor: contributor.clone(),
                         aggregate: agg_name.clone(),
                     });
@@ -430,7 +430,7 @@ impl VariableSchema {
                 // 3.3: Validate unit consistency
                 if let Some(contributor_unit) = self.get_unit(contributor) {
                     if contributor_unit != agg_def.unit {
-                        return Err(RscmError::SchemaUnitMismatch {
+                        return Err(RSCMError::SchemaUnitMismatch {
                             aggregate: agg_name.clone(),
                             contributor: contributor.clone(),
                             contributor_unit: contributor_unit.to_string(),
@@ -442,7 +442,7 @@ impl VariableSchema {
                 // 3.4: Validate grid consistency
                 if let Some(contributor_grid) = self.get_grid(contributor) {
                     if contributor_grid != agg_def.grid {
-                        return Err(RscmError::SchemaGridTypeMismatch {
+                        return Err(RSCMError::SchemaGridTypeMismatch {
                             aggregate: agg_name.clone(),
                             contributor: contributor.clone(),
                             contributor_grid: contributor_grid.to_string(),
@@ -455,7 +455,7 @@ impl VariableSchema {
             // 3.5: Validate weighted aggregate weight count
             if let AggregateOp::WeightedSum(weights) = &agg_def.operation {
                 if weights.len() != agg_def.contributors.len() {
-                    return Err(RscmError::WeightCountMismatch {
+                    return Err(RSCMError::WeightCountMismatch {
                         aggregate: agg_name.clone(),
                         n_weights: weights.len(),
                         n_contributors: agg_def.contributors.len(),
@@ -533,7 +533,7 @@ impl VariableSchema {
     /// Check for circular dependencies in aggregate definitions.
     ///
     /// Uses depth-first search to detect cycles in the aggregate dependency graph.
-    fn check_circular_dependencies(&self) -> RscmResult<()> {
+    fn check_circular_dependencies(&self) -> RSCMResult<()> {
         // Track visited nodes and current path for cycle detection
         let mut visited = HashSet::new();
         let mut path = Vec::new();
@@ -556,7 +556,7 @@ impl VariableSchema {
         visited: &mut HashSet<String>,
         path: &mut Vec<String>,
         path_set: &mut HashSet<String>,
-    ) -> RscmResult<()> {
+    ) -> RSCMResult<()> {
         // If we've seen this node in the current path, we have a cycle
         if path_set.contains(current) {
             // Build cycle description
@@ -564,7 +564,7 @@ impl VariableSchema {
             let mut cycle_nodes: Vec<_> = path[cycle_start..].to_vec();
             cycle_nodes.push(current.to_string());
             let cycle = cycle_nodes.join(" -> ");
-            return Err(RscmError::AggregateCircularDependency { cycle });
+            return Err(RSCMError::AggregateCircularDependency { cycle });
         }
 
         // Skip if already fully processed
@@ -873,7 +873,7 @@ impl Component for AggregateComponent {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let mut output = OutputState::new();
 
         match self.grid {

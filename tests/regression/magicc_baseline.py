@@ -15,7 +15,7 @@ import pandas as pd
 
 import rscm._lib as rust_lib
 from rscm.core import ModelBuilder, TimeAxis
-from rscm.magicc import ClimateUdebBuilder, GhgForcingBuilder, run_magicc
+from rscm.magicc import ClimateUDEBBuilder, GHGForcingBuilder, run_magicc
 from rscm.names import ERF, SURFACE_AIR_TEMPERATURE_CHANGE, convert_variable_name
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -141,8 +141,8 @@ def effective_parameters(forcing: dict, climate: dict) -> dict:
     model = (
         ModelBuilder()
         .with_time_axis(TimeAxis.from_values(np.array([1750.0, 1751.0])))
-        .with_component(GhgForcingBuilder.from_parameters(forcing).build())
-        .with_component(ClimateUdebBuilder.from_parameters(climate).build())
+        .with_component(GHGForcingBuilder.from_parameters(forcing).build())
+        .with_component(ClimateUDEBBuilder.from_parameters(climate).build())
         .with_initial_values({SURFACE_AIR_TEMPERATURE_CHANGE: 0.0})
         # Built only to serialise parameters, never run.
         .with_missing_prescribed_allowed()

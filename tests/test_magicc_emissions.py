@@ -60,7 +60,7 @@ def test_natural_steady_state_is_preserved():
         emissions(0.0),
         initial_concentrations=initial,
         parameters={
-            "GhgForcing": {f"{gas.lower()}_pi": c for gas, c in initial.items()}
+            "GHGForcing": {f"{gas.lower()}_pi": c for gas, c in initial.items()}
         },
     )
     for gas, value in initial.items():
@@ -92,7 +92,7 @@ def test_co2_mass_balance():
 
 def test_climate_feedback_follows_forcing_configuration():
     default = run(emissions())
-    explicit = run(emissions(), parameters={"ClimateUdeb": {"erf_2xco2": 3.71}})
+    explicit = run(emissions(), parameters={"ClimateUDEB": {"erf_2xco2": 3.71}})
     # A smaller 2xCO2 effective radiative forcing weakens the feedback,
     # so the climate warms more
     assert (

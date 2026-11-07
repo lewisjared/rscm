@@ -17,7 +17,7 @@ pub enum ForcingMethod {
     /// Simple logarithmic/square-root formulae with CH4-N2O overlap.
     /// Used for backward compatibility and simpler validation.
     #[serde(rename = "IPCCTAR")]
-    Ipcctar,
+    IPCCTAR,
 
     /// OLBL method (Oslo line-by-line)
     ///
@@ -25,7 +25,7 @@ pub enum ForcingMethod {
     /// line-by-line radiative transfer calculations. This is the method
     /// used in MAGICC7 v7.5.3 for AR6 assessments.
     #[serde(rename = "OLBL")]
-    Olbl,
+    OLBL,
 }
 
 /// Parameters for GHG radiative forcing
@@ -53,7 +53,7 @@ pub enum ForcingMethod {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
-pub struct GhgForcingParameters {
+pub struct GHGForcingParameters {
     /// Forcing calculation method
     pub method: ForcingMethod,
 
@@ -162,10 +162,10 @@ pub struct GhgForcingParameters {
     pub ch4_stratospheric_h2o_fraction: f64,
 }
 
-impl Default for GhgForcingParameters {
+impl Default for GHGForcingParameters {
     fn default() -> Self {
         Self {
-            method: ForcingMethod::Olbl,
+            method: ForcingMethod::OLBL,
 
             // Pre-industrial concentrations
             co2_pi: 278.0, // ppm
@@ -200,7 +200,7 @@ impl Default for GhgForcingParameters {
     }
 }
 
-impl GhgForcingParameters {
+impl GHGForcingParameters {
     /// OLBL coefficients.
     pub fn olbl(&self) -> Meinshausen2020 {
         Meinshausen2020 {
@@ -225,9 +225,9 @@ mod tests {
 
     #[test]
     fn test_default_parameters() {
-        let params = GhgForcingParameters::default();
+        let params = GHGForcingParameters::default();
 
-        assert_eq!(params.method, ForcingMethod::Olbl);
+        assert_eq!(params.method, ForcingMethod::OLBL);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
         assert!((params.ch4_pi - 722.0).abs() < 1e-10);
         assert!((params.n2o_pi - 270.0).abs() < 1e-10);
@@ -241,9 +241,9 @@ mod tests {
 
     #[test]
     fn test_serialisation_roundtrip() {
-        let params = GhgForcingParameters::default();
+        let params = GHGForcingParameters::default();
         let json = serde_json::to_string(&params).unwrap();
-        let restored: GhgForcingParameters = serde_json::from_str(&json).unwrap();
+        let restored: GHGForcingParameters = serde_json::from_str(&json).unwrap();
 
         assert_eq!(params.method, restored.method);
         assert!((params.co2_pi - restored.co2_pi).abs() < 1e-10);
@@ -253,9 +253,9 @@ mod tests {
     #[test]
     fn test_partial_deserialisation() {
         let json = r#"{"method": "IPCCTAR", "erf_2xco2": 3.80}"#;
-        let params: GhgForcingParameters = serde_json::from_str(json).unwrap();
+        let params: GHGForcingParameters = serde_json::from_str(json).unwrap();
 
-        assert_eq!(params.method, ForcingMethod::Ipcctar);
+        assert_eq!(params.method, ForcingMethod::IPCCTAR);
         assert!((params.erf_2xco2 - 3.80).abs() < 1e-10);
         // Defaults for unspecified fields
         assert!((params.co2_pi - 278.0).abs() < 1e-10);

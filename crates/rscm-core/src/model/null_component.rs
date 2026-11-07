@@ -1,7 +1,7 @@
 //! Null component for graph initialisation.
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition};
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::timeseries::Time;
 use serde::{Deserialize, Serialize};
 
@@ -22,7 +22,7 @@ impl Component for NullComponent {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         Ok(OutputState::new())
     }
 }

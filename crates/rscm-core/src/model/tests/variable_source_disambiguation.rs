@@ -7,7 +7,7 @@
 use crate::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
 use crate::model::ModelBuilder;
 use crate::spatial::{ScalarGrid, ScalarRegion};
@@ -45,7 +45,7 @@ impl Component for TemperatureProducer {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let inputs = TemperatureProducerInputs::from_input_state(input_state);
 
         // Read previous temperature (own state)
@@ -90,7 +90,7 @@ impl Component for TemperatureConsumer {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let inputs = TemperatureConsumerInputs::from_input_state(input_state);
 
         // Read temperature from upstream producer using get()
@@ -256,7 +256,7 @@ fn test_variable_sources_with_prescribed_input() {
             _t_current: Time,
             _t_next: Time,
             input_state: &InputState,
-        ) -> RscmResult<OutputState> {
+        ) -> RSCMResult<OutputState> {
             let inputs = ForcingConsumerInputs::from_input_state(input_state);
 
             // Read prescribed forcing
@@ -322,7 +322,7 @@ fn test_multiple_consumers_same_upstream() {
             _t_current: Time,
             _t_next: Time,
             input_state: &InputState,
-        ) -> RscmResult<OutputState> {
+        ) -> RSCMResult<OutputState> {
             let inputs = AlbedoCalculatorInputs::from_input_state(input_state);
 
             // Use get() to automatically resolve upstream temperature

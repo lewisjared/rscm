@@ -8,7 +8,7 @@
 
 use crate::constants::get;
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::names::EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -30,10 +30,10 @@ pub struct Halogen {
     pub fractional_release: FloatValue,
 }
 
-/// Parameters of [`Eesc`].
+/// Parameters of [`EESC`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct EescParameters {
+pub struct EESCParameters {
     /// The halogens.
     pub halogens: Vec<Halogen>,
     /// Fractional release of CFC-11.
@@ -64,13 +64,13 @@ fn default_unit() -> String {
 
 /// FaIR's EESC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Eesc {
-    parameters: EescParameters,
+pub struct EESC {
+    parameters: EESCParameters,
 }
 
-impl Eesc {
+impl EESC {
     /// Create the component.
-    pub fn from_parameters(parameters: EescParameters) -> Self {
+    pub fn from_parameters(parameters: EESCParameters) -> Self {
         Self { parameters }
     }
 
@@ -91,8 +91,8 @@ impl Eesc {
     }
 }
 
-#[typetag::serde(name = "fair.Eesc")]
-impl Component for Eesc {
+#[typetag::serde(name = "fair.EESC")]
+impl Component for EESC {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         let mut definitions: Vec<_> = p
@@ -109,7 +109,7 @@ impl Component for Eesc {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let concentrations = self
             .parameters
             .halogens
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn cfc11_counts_its_chlorine() {
-        let c = Eesc::from_parameters(EescParameters {
+        let c = EESC::from_parameters(EESCParameters {
             halogens: vec![Halogen {
                 concentration: "CFC11".into(),
                 unit: "ppt".into(),

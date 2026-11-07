@@ -4,7 +4,7 @@
 //! than the schema declares, the model automatically aggregates the data on read.
 
 use crate::component::{Component, GridType, InputState, OutputState, VariableDefinition};
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::model::ModelBuilder;
 use crate::schema::VariableSchema;
@@ -39,7 +39,7 @@ impl Component for ScalarReader {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         // Read scalar value (model should auto-aggregate if source is grid)
         let (value, _) = input_state.get_scalar_window(&self.input_var).interval()?;
         let mut output = OutputState::new();
@@ -69,7 +69,7 @@ impl Component for HemisphericReader {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let window = input_state.get_hemispheric_window(&self.input_var);
         let northern = window.get(HemisphericRegion::Northern);
         let southern = window.get(HemisphericRegion::Southern);
@@ -102,7 +102,7 @@ impl Component for FourBoxReader {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let window = input_state.get_four_box_window(&self.input_var);
         let global = window.grid().aggregate_global(&window.get_all());
         let mut output = OutputState::new();
@@ -129,7 +129,7 @@ impl Component for FourBoxWriter {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let mut output = OutputState::new();
         output.insert(
             self.var_name.clone(),

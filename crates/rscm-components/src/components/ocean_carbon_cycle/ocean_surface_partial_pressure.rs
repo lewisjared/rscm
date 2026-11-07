@@ -4,7 +4,7 @@ use numpy::ndarray::Array1;
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -156,7 +156,7 @@ impl Component for OceanSurfacePartialPressure {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let inputs = OceanSurfacePartialPressureInputs::from_input_state(input_state);
         let delta_sea_surface_temperature = inputs.sea_surface_temperature.get();
         let delta_dissolved_inorganic_carbon = inputs.dissolved_inorganic_carbon.get();

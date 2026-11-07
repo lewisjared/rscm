@@ -7,8 +7,8 @@
 //! # Overview
 //!
 //! The IVP module wraps the `ode_solvers` crate, providing:
-//! - The [`Ivp`] trait for components that define ODE systems
-//! - The [`IvpBuilder`] struct for constructing and solving IVPs
+//! - The [`IVP`] trait for components that define ODE systems
+//! - The [`IVPBuilder`] struct for constructing and solving IVPs
 //! - Integration with the component state system via [`InputState`]
 //!
 //! # Example
@@ -16,17 +16,17 @@
 //! ```ignore
 //! use std::sync::Arc;
 //! use nalgebra::Vector2;
-//! use rscm_core::ivp::{Ivp, IvpBuilder, get_last_step};
+//! use rscm_core::ivp::{IVP, IVPBuilder, get_last_step};
 //! use rscm_core::component::InputState;
 //!
-//! // Define a component that implements `Ivp`
+//! // Define a component that implements `IVP`
 //! struct TwoBoxModel {
 //!     heat_capacity_1: f64,  // J / (m^2 K)
 //!     heat_capacity_2: f64,
 //!     heat_exchange: f64,    // W / (m^2 K)
 //! }
 //!
-//! impl Ivp<f64, Vector2<f64>> for TwoBoxModel {
+//! impl IVP<f64, Vector2<f64>> for TwoBoxModel {
 //!     fn calculate_dy_dt(
 //!         &self,
 //!         t: f64,
@@ -52,7 +52,7 @@
 //!     t_start: f64,
 //!     t_end: f64,
 //! ) -> Vector2<f64> {
-//!     let builder = IvpBuilder::new(component, input_state, y0);
+//!     let builder = IVPBuilder::new(component, input_state, y0);
 //!     let mut solver = builder.to_rk4(t_start, t_end, 0.1);
 //!     let result = solver.integrate();
 //!     get_last_step(&result, t_end).clone()
@@ -116,14 +116,14 @@ pub fn get_last_step<V>(results: &SolverResult<Time, V>, t_expected: Time) -> &V
 ///
 /// ```ignore
 /// use nalgebra::Vector1;
-/// use rscm_core::ivp::Ivp;
+/// use rscm_core::ivp::IVP;
 /// use rscm_core::component::InputState;
 ///
 /// struct SimpleDecay {
 ///     decay_rate: f64,  // per year
 /// }
 ///
-/// impl Ivp<f64, Vector1<f64>> for SimpleDecay {
+/// impl IVP<f64, Vector1<f64>> for SimpleDecay {
 ///     fn calculate_dy_dt(
 ///         &self,
 ///         _t: f64,
@@ -136,7 +136,7 @@ pub fn get_last_step<V>(results: &SolverResult<Time, V>, t_expected: Time) -> &V
 ///     }
 /// }
 /// ```
-pub trait Ivp<T, S> {
+pub trait IVP<T, S> {
     /// Calculate the time derivative of the state vector.
     ///
     /// This method defines the ODE system: dy/dt = f(t, y).
@@ -152,14 +152,14 @@ pub trait Ivp<T, S> {
 
 /// Builder for constructing and solving initial value problems.
 ///
-/// `IvpBuilder` wraps a component that implements [`Ivp`] and provides methods
+/// `IVPBuilder` wraps a component that implements [`IVP`] and provides methods
 /// to construct ODE solvers. It connects the component's differential equations
 /// to the numerical integration routines from the `ode_solvers` crate.
 ///
 /// # Type Parameters
 ///
 /// * `'a` - Lifetime of the input state reference
-/// * `C` - The component type (must implement [`Ivp`])
+/// * `C` - The component type (must implement [`IVP`])
 /// * `S` - The state vector type
 ///
 /// # Example
@@ -167,10 +167,10 @@ pub trait Ivp<T, S> {
 /// ```ignore
 /// use std::sync::Arc;
 /// use nalgebra::Vector2;
-/// use rscm_core::ivp::{IvpBuilder, get_last_step};
+/// use rscm_core::ivp::{IVPBuilder, get_last_step};
 ///
 /// // Create the builder
-/// let builder = IvpBuilder::new(
+/// let builder = IVPBuilder::new(
 ///     Arc::new(my_component),
 ///     &input_state,
 ///     Vector2::new(initial_temp_1, initial_temp_2),
@@ -182,7 +182,7 @@ pub trait Ivp<T, S> {
 /// let final_state = get_last_step(&result, t_end);
 /// ```
 #[derive(Clone)]
-pub struct IvpBuilder<'a, C, S> {
+pub struct IVPBuilder<'a, C, S> {
     /// The model component containing the ODE system definition
     // This needs to be a box/arc-like data type as the size of C is not known at compile time.
     component: Arc<C>,
@@ -192,10 +192,10 @@ pub struct IvpBuilder<'a, C, S> {
     input_state: &'a InputState<'a>,
 }
 
-impl<T, D: Dim, C> System<T, OVector<T, D>> for IvpBuilder<'_, C, OVector<T, D>>
+impl<T, D: Dim, C> System<T, OVector<T, D>> for IVPBuilder<'_, C, OVector<T, D>>
 where
     T: FloatNumber,
-    C: Ivp<T, OVector<T, D>>,
+    C: IVP<T, OVector<T, D>>,
     OVector<T, D>: std::ops::Mul<T, Output = OVector<T, D>>,
     DefaultAllocator: Allocator<D>,
 {
@@ -204,10 +204,10 @@ where
     }
 }
 
-impl<'a, T, D: Dim, C> IvpBuilder<'a, C, OVector<T, D>>
+impl<'a, T, D: Dim, C> IVPBuilder<'a, C, OVector<T, D>>
 where
     T: FloatNumber,
-    C: Ivp<T, OVector<T, D>>,
+    C: IVP<T, OVector<T, D>>,
     OVector<T, D>: std::ops::Mul<T, Output = OVector<T, D>>,
     DefaultAllocator: Allocator<D>,
 {
@@ -247,7 +247,7 @@ where
         t0: T,
         t1: T,
         step: T,
-    ) -> Rk4<T, OVector<T, D>, IvpBuilder<'a, C, OVector<T, D>>> {
+    ) -> Rk4<T, OVector<T, D>, IVPBuilder<'a, C, OVector<T, D>>> {
         let y0 = self.y0.clone();
         Rk4::new(self, t0, y0, t1, step)
     }

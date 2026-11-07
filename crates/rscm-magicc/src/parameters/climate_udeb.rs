@@ -15,7 +15,8 @@ pub enum OceanTemperatureProfile {
     /// Analytical exponential decay from uniform diffusivity and upwelling (MAGICC7 1).
     Analytical,
     /// CMIP5 multi-model mean observational profile (MAGICC7 2, the default).
-    Cmip5,
+    #[serde(rename = "cmip5")]
+    CMIP5,
 }
 
 /// How efficacies and internal efficacies scale an agent's forcing (MAGICC7 `RF_EFFICACY_APPLY`).
@@ -28,7 +29,8 @@ pub enum EfficacyMethod {
     /// Forcing is divided by the internal efficacy, so every agent has unit efficacy (MAGICC7 1).
     Unit,
     /// Forcing is scaled by the efficacy over the internal efficacy, as in AR6 (MAGICC7 2).
-    Ar6,
+    #[serde(rename = "ar6")]
+    AR6,
 }
 
 /// Box forcing given at every substep, such as monthly volcanic forcing.
@@ -94,7 +96,7 @@ impl SubannualForcing {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
-pub struct ClimateUdebParameters {
+pub struct ClimateUDEBParameters {
     // Ocean structure parameters
     /// Number of ocean layers (including mixed layer).
     /// Default: 50
@@ -322,7 +324,7 @@ pub struct ClimateUdebParameters {
     pub maximum_temperature: FloatValue,
 }
 
-impl Default for ClimateUdebParameters {
+impl Default for ClimateUDEBParameters {
     fn default() -> Self {
         Self {
             // Ocean structure
@@ -383,7 +385,7 @@ impl Default for ClimateUdebParameters {
             thermal_expansion: None,
 
             // Initial ocean profile
-            ocean_temperature_profile: OceanTemperatureProfile::Cmip5,
+            ocean_temperature_profile: OceanTemperatureProfile::CMIP5,
 
             // Integration
             steps_per_year: 12,
@@ -422,7 +424,7 @@ pub fn heat_capacity_per_unit_area(depth_m: FloatValue) -> FloatValue {
     RHO_SEAWATER * CP_SEAWATER * depth_m / SECONDS_PER_YEAR
 }
 
-impl ClimateUdebParameters {
+impl ClimateUDEBParameters {
     /// Convert vertical diffusivity from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
     pub fn kappa_m2_per_yr(&self) -> FloatValue {
         self.vertical_diffusivity * DIFFUSIVITY_CM2S_TO_M2YR
@@ -565,7 +567,7 @@ impl ClimateUdebParameters {
     /// Returns a Vec of length `n_layers` with the initial temperature (K)
     /// for each ocean layer. Layer 0 is the mixed layer.
     ///
-    /// When `ocean_temperature_profile` is [`OceanTemperatureProfile::Cmip5`] (default),
+    /// When `ocean_temperature_profile` is [`OceanTemperatureProfile::CMIP5`] (default),
     /// returns the CMIP5 multi-model mean profile. When
     /// [`OceanTemperatureProfile::Analytical`], returns the analytical exponential
     /// decay profile.
@@ -577,7 +579,7 @@ impl ClimateUdebParameters {
         );
 
         match self.ocean_temperature_profile {
-            OceanTemperatureProfile::Cmip5 => {
+            OceanTemperatureProfile::CMIP5 => {
                 let cmip5 = if hemi == 0 {
                     &CMIP5_PROFILE_NH
                 } else {
@@ -833,7 +835,7 @@ mod tests {
 
     #[test]
     fn test_default_parameters() {
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
 
         // Check key defaults
         assert_eq!(params.n_layers, 50);
@@ -844,7 +846,7 @@ mod tests {
 
     #[test]
     fn test_kappa_conversion() {
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
         let kappa_m2_yr = params.kappa_m2_per_yr();
 
         // 0.75 cm^2/s * 3155.76 ~= 2366.82 m^2/yr
@@ -853,7 +855,7 @@ mod tests {
 
     #[test]
     fn test_lambda_global() {
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
         let lambda = params.lambda_global();
 
         // 3.71 / 3.0 ~= 1.237 W/m^2/K
@@ -862,7 +864,7 @@ mod tests {
 
     #[test]
     fn test_area_fractions() {
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
 
         // NH: 42% land, 58% ocean
         assert!((params.nh_ocean_fraction() - 0.58).abs() < 1e-10);
@@ -880,7 +882,7 @@ mod tests {
 
     #[test]
     fn test_mixed_layer_heat_capacity() {
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
         let c_mix = params.mixed_layer_heat_capacity();
 
         // For 60m mixed layer, expect ~7.8 W yr / m^2 K
@@ -890,9 +892,9 @@ mod tests {
 
     #[test]
     fn test_serialisation() {
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
         let json = serde_json::to_string(&params).expect("Serialisation failed");
-        let parsed: ClimateUdebParameters =
+        let parsed: ClimateUDEBParameters =
             serde_json::from_str(&json).expect("Deserialisation failed");
 
         assert_eq!(params.n_layers, parsed.n_layers);
@@ -901,7 +903,7 @@ mod tests {
 
     #[test]
     fn test_per_box_global_fractions() {
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
         let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
         assert!((nh_land - 0.21).abs() < 1e-10);
@@ -913,7 +915,7 @@ mod tests {
 
     #[test]
     fn test_time_varying_ecs_defaults() {
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
         assert!((params.feedback_forcing_sensitivity - 7.84e-9).abs() < 1e-12);
         assert!((params.feedback_cumulative_temperature_sensitivity - 0.08).abs() < 1e-10);
         assert!((params.feedback_cumulative_temperature_period - 300.0).abs() < 1e-10);
@@ -921,7 +923,7 @@ mod tests {
 
     #[test]
     fn test_ground_heat_capacity() {
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
         let c_ground = params.ground_heat_capacity();
 
         // For 300m effective thickness, expect ~38.1 W yr / m^2 K
@@ -946,7 +948,7 @@ mod tests {
 
     #[test]
     fn test_ground_heat_defaults() {
-        let params = ClimateUdebParameters::default();
+        let params = ClimateUDEBParameters::default();
         assert!(params.include_land_heat_capacity);
         assert!((params.land_ground_heat_exchange - 0.1).abs() < 1e-10);
         assert!((params.land_heat_capacity_effective_thickness - 300.0).abs() < 1e-10);
@@ -956,7 +958,7 @@ mod tests {
     fn test_partial_deserialisation() {
         // Test that #[serde(default)] allows partial deserialisation
         let json = r#"{"ecs": 4.5}"#;
-        let params: ClimateUdebParameters =
+        let params: ClimateUDEBParameters =
             serde_json::from_str(json).expect("Partial deserialisation failed");
 
         // ecs should be from JSON

@@ -44,7 +44,7 @@ rscm._lib.magicc.AntarcticDischarge
 rscm._lib.magicc.AntarcticRegion
 rscm._lib.magicc.DischargeCase
 rscm._lib.magicc.EfficacyClimate
-rscm._lib.magicc.FgasRegions
+rscm._lib.magicc.FGasRegions
 rscm._lib.magicc.ForcingAgent
 rscm._lib.magicc.ForcingCategory
 rscm._lib.magicc.ForcingTerm

@@ -4,12 +4,12 @@ RSCM Components defined in Rust
 
 from rscm._lib.components import (
     CarbonCycleBuilder,
-    CO2ErfBuilder,
+    CO2ERFBuilder,
     FourBoxOceanHeatUptakeBuilder,
 )
 
 __all__ = [
-    "CO2ErfBuilder",
+    "CO2ERFBuilder",
     "CarbonCycleBuilder",
     "FourBoxOceanHeatUptakeBuilder",
 ]

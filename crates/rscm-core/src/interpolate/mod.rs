@@ -14,7 +14,7 @@
 /// interpolation routines so that is a satisfactory tradeoff.
 ///
 ///
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use num::Float;
 use numpy::ndarray::{ArrayBase, Data};
 use numpy::Ix1;
@@ -53,7 +53,7 @@ where
         self
     }
 
-    pub fn interpolate(&self, time_target: At::Elem) -> RscmResult<Ay::Elem> {
+    pub fn interpolate(&self, time_target: At::Elem) -> RSCMResult<Ay::Elem> {
         self.strategy.interpolate(&self.time, &self.y, time_target)
     }
 }

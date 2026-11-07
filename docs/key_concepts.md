@@ -104,7 +104,7 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
         }
 
         fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState)
-            -> RscmResult<OutputState>
+            -> RSCMResult<OutputState>
         {
             let inputs = SimpleCarbonCycleInputs::from_input_state(input_state);
             let emis = inputs.emissions.get();

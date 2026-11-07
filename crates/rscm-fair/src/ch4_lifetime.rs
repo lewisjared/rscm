@@ -12,7 +12,7 @@ use crate::constants::{get, surface_temperature, temperature_unit};
 use rscm_core::component::{
     Component, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::names::LIFETIME_SCALING_CH4;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -123,7 +123,7 @@ impl Component for CH4Lifetime {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let p = &self.parameters;
         let get_of = |x: &Precursor| get(input_state, &x.variable);
         let emissions: Vec<_> = p.emissions.iter().map(get_of).collect();

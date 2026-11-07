@@ -34,7 +34,7 @@ Feedbacks such as temperature on the carbon cycle read the value from the start 
 through a lag, as in MAGICC7.
 [Key concepts](../key_concepts.md#dependency-graph) describes the dependency graph and step semantics.
 The monthly loops stay inside their components:
-`ClimateUdeb` runs the climate substeps and `OceanCarbon` the ocean carbon months.
+`ClimateUDEB` runs the climate substeps and `OceanCarbon` the ocean carbon months.
 
 ## Inputs and outputs
 
@@ -51,8 +51,8 @@ Inputs and outputs use MAGICC7's Fortran names.
 | 5     | [Ocean Carbon](module_10_ocean_carbon.md)                 | `c_atm_for_oceancc`, `co2_feed_deltatemp`                        | `co2_air2ocean_flux`, `dat_pco2s_conc`               | `OceanCarbon`                                      |
 | 6     | [CO2 Budget](module_11_co2_budget.md)                     | Land and ocean fluxes, emissions                                 | `DAT_CO2_CONC`                                       | `CO2Budget`                                        |
 | 7     | [Halocarbon Chemistry](module_03_halocarbon_chemistry.md) | Halocarbon emissions                                             | Halocarbon concentrations                            | `HalocarbonChemistry`                              |
-| 8     | [RF Aggregation](module_07b_rf_aggregation.md)            | All concentrations and prescribed forcing                        | `dat_total_effrf`, `dat_volcanic_effrf` (four boxes) | `GhgForcing`, `OzoneForcing`, `ForcingAggregation` |
-| 9     | [Climate](module_08_climate.md)                           | `dat_total_effrf`, `dat_volcanic_effrf`                          | `DAT_SURFACE_TEMP`, `TEMP_OCEANLAYERS`, heat uptake  | `ClimateUdeb`                                      |
+| 8     | [RF Aggregation](module_07b_rf_aggregation.md)            | All concentrations and prescribed forcing                        | `dat_total_effrf`, `dat_volcanic_effrf` (four boxes) | `GHGForcing`, `OzoneForcing`, `ForcingAggregation` |
+| 9     | [Climate](module_08_climate.md)                           | `dat_total_effrf`, `dat_volcanic_effrf`                          | `DAT_SURFACE_TEMP`, `TEMP_OCEANLAYERS`, heat uptake  | `ClimateUDEB`                                      |
 | 10    | [Sea Level Rise](module_14_sea_level_rise.md)             | `TEMP_OCEANLAYERS`, `DAT_SURFACE_TEMP`, `DAT_HEATCONTENT_AGGREG` | Sea level components and total                       | `SeaLevelRise`                                     |
 
 Steps 1 to 8 run inside `DELTAQ`.

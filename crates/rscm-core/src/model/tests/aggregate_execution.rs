@@ -1,7 +1,7 @@
 //! Aggregate execution tests.
 
 use crate::component::{Component, InputState, OutputState, TimeseriesType, VariableDefinition};
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
 use crate::model::ModelBuilder;
 use crate::schema::{AggregateOp, VariableSchema};
@@ -31,7 +31,7 @@ impl Component for ChainForcing {
         defs
     }
 
-    fn solve(&self, _t: Time, _next: Time, inputs: &InputState) -> RscmResult<OutputState> {
+    fn solve(&self, _t: Time, _next: Time, inputs: &InputState) -> RSCMResult<OutputState> {
         let upstream = self
             .input
             .as_ref()
@@ -91,8 +91,8 @@ impl Component for FailingForcing {
         vec![VariableDefinition::scalar_output("failed", "W/m^2")]
     }
 
-    fn solve(&self, _t: Time, _next: Time, _inputs: &InputState) -> RscmResult<OutputState> {
-        Err(crate::errors::RscmError::Error(
+    fn solve(&self, _t: Time, _next: Time, _inputs: &InputState) -> RSCMResult<OutputState> {
+        Err(crate::errors::RSCMError::Error(
             "forcing unavailable".into(),
         ))
     }
@@ -114,12 +114,12 @@ fn test_run_reports_component_error_without_advancing_time() {
 
 /// A simple component that produces Effective Radiative Forcing|CO2
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct CO2ErfComponent {
+struct CO2ERFComponent {
     forcing_per_ppm: f64,
 }
 
 #[typetag::serde]
-impl Component for CO2ErfComponent {
+impl Component for CO2ERFComponent {
     fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
             VariableDefinition::scalar_input("Atmospheric Concentrations|CO2", "ppm"),
@@ -132,7 +132,7 @@ impl Component for CO2ErfComponent {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let conc = input_state
             .get_scalar_window("Atmospheric Concentrations|CO2")
             .get();
@@ -147,12 +147,12 @@ impl Component for CO2ErfComponent {
 
 /// A simple component that produces Effective Radiative Forcing|CH4
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct CH4ErfComponent {
+struct CH4ERFComponent {
     forcing_per_ppb: f64,
 }
 
 #[typetag::serde]
-impl Component for CH4ErfComponent {
+impl Component for CH4ERFComponent {
     fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
             VariableDefinition::scalar_input("Atmospheric Concentrations|CH4", "ppb"),
@@ -165,7 +165,7 @@ impl Component for CH4ErfComponent {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let conc = input_state
             .get_scalar_window("Atmospheric Concentrations|CH4")
             .get();
@@ -216,10 +216,10 @@ fn test_aggregate_sum_execution() {
     let mut model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_schema(schema)
-        .with_component(Arc::new(CO2ErfComponent {
+        .with_component(Arc::new(CO2ERFComponent {
             forcing_per_ppm: 0.01, // 1 W/m^2 per 100 ppm
         }))
-        .with_component(Arc::new(CH4ErfComponent {
+        .with_component(Arc::new(CH4ERFComponent {
             forcing_per_ppb: 0.001, // 1 W/m^2 per 1000 ppb
         }))
         .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
@@ -269,10 +269,10 @@ fn test_aggregate_mean_execution() {
     let mut model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_schema(schema)
-        .with_component(Arc::new(CO2ErfComponent {
+        .with_component(Arc::new(CO2ERFComponent {
             forcing_per_ppm: 0.01,
         }))
-        .with_component(Arc::new(CH4ErfComponent {
+        .with_component(Arc::new(CH4ERFComponent {
             forcing_per_ppb: 0.001,
         }))
         .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
@@ -317,10 +317,10 @@ fn test_aggregate_weighted_execution() {
     let mut model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_schema(schema)
-        .with_component(Arc::new(CO2ErfComponent {
+        .with_component(Arc::new(CO2ERFComponent {
             forcing_per_ppm: 0.01,
         }))
-        .with_component(Arc::new(CH4ErfComponent {
+        .with_component(Arc::new(CH4ERFComponent {
             forcing_per_ppb: 0.001,
         }))
         .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
@@ -360,7 +360,7 @@ fn test_aggregate_with_nan_contributor() {
     let mut model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_schema(schema)
-        .with_component(Arc::new(CO2ErfComponent {
+        .with_component(Arc::new(CO2ERFComponent {
             forcing_per_ppm: 0.01,
         }))
         .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
@@ -409,10 +409,10 @@ fn test_chained_aggregates_execution() {
     let mut model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_schema(schema)
-        .with_component(Arc::new(CO2ErfComponent {
+        .with_component(Arc::new(CO2ERFComponent {
             forcing_per_ppm: 0.01,
         }))
-        .with_component(Arc::new(CH4ErfComponent {
+        .with_component(Arc::new(CH4ERFComponent {
             forcing_per_ppb: 0.001,
         }))
         .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
@@ -461,7 +461,7 @@ fn test_aggregate_appears_in_dot_graph() {
     let model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_schema(schema)
-        .with_component(Arc::new(CO2ErfComponent {
+        .with_component(Arc::new(CO2ERFComponent {
             forcing_per_ppm: 0.01,
         }))
         .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
@@ -490,7 +490,7 @@ impl Component for StepEmissions {
         )]
     }
 
-    fn solve(&self, t: Time, _next: Time, _inputs: &InputState) -> RscmResult<OutputState> {
+    fn solve(&self, t: Time, _next: Time, _inputs: &InputState) -> RSCMResult<OutputState> {
         Ok(OutputState::from([(
             "Upstream Emissions".to_string(),
             StateValue::Scalar(100.0 + (t - 2020.0)),

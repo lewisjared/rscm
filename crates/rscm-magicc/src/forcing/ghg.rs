@@ -34,11 +34,11 @@
 //! Meinshausen et al. (2020), shared with FaIR in [`rscm_components::meinshausen2020`],
 //! with MAGICC7's coefficients and the pre-industrial concentrations as reference.
 
-use crate::parameters::{ForcingMethod, GhgForcingParameters};
+use crate::parameters::{ForcingMethod, GHGForcingParameters};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -76,13 +76,13 @@ use serde::{Deserialize, Serialize};
     erf_2xco2 { name = "2xCO2 Effective Radiative Forcing", unit = "W/m^2" },
     ch4_strat_h2o_erf { name = "Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O", unit = "W/m^2" },
 )]
-pub struct GhgForcing {
-    parameters: GhgForcingParameters,
+pub struct GHGForcing {
+    parameters: GHGForcingParameters,
 }
 
 /// Result of GHG forcing calculations
 #[derive(Debug, Clone, Copy)]
-pub struct GhgForcingResult {
+pub struct GHGForcingResult {
     /// CO2 effective radiative forcing (W/m2)
     pub co2_erf: FloatValue,
     /// CH4 effective radiative forcing (W/m2)
@@ -91,26 +91,26 @@ pub struct GhgForcingResult {
     pub n2o_erf: FloatValue,
 }
 
-impl GhgForcingResult {
+impl GHGForcingResult {
     /// Total GHG forcing
     pub fn total(&self) -> FloatValue {
         self.co2_erf + self.ch4_erf + self.n2o_erf
     }
 }
 
-impl GhgForcing {
+impl GHGForcing {
     /// Create a new GHG forcing component with default parameters
     pub fn new() -> Self {
-        Self::from_parameters(GhgForcingParameters::default())
+        Self::from_parameters(GHGForcingParameters::default())
     }
 
     /// Create from parameters
-    pub fn from_parameters(parameters: GhgForcingParameters) -> Self {
+    pub fn from_parameters(parameters: GHGForcingParameters) -> Self {
         Self { parameters }
     }
 
     /// Get the parameters
-    pub fn parameters(&self) -> &GhgForcingParameters {
+    pub fn parameters(&self) -> &GHGForcingParameters {
         &self.parameters
     }
 
@@ -132,8 +132,8 @@ impl GhgForcing {
     /// forcing coefficients via overlap). For IPCCTAR it is unused.
     pub fn calculate_co2_forcing(&self, co2: FloatValue, n2o: FloatValue) -> FloatValue {
         match self.parameters.method {
-            ForcingMethod::Ipcctar => self.co2_forcing_ipcctar(co2),
-            ForcingMethod::Olbl => {
+            ForcingMethod::IPCCTAR => self.co2_forcing_ipcctar(co2),
+            ForcingMethod::OLBL => {
                 let p = &self.parameters;
                 p.olbl().co2(co2, n2o, p.co2_pi, 1.0)
             }
@@ -143,8 +143,8 @@ impl GhgForcing {
     /// Calculate CH4 forcing (dispatches to method)
     pub fn calculate_ch4_forcing(&self, ch4: FloatValue, n2o: FloatValue) -> FloatValue {
         match self.parameters.method {
-            ForcingMethod::Ipcctar => self.ch4_forcing_ipcctar(ch4, n2o),
-            ForcingMethod::Olbl => {
+            ForcingMethod::IPCCTAR => self.ch4_forcing_ipcctar(ch4, n2o),
+            ForcingMethod::OLBL => {
                 let p = &self.parameters;
                 p.olbl().ch4(ch4, n2o, p.ch4_pi, 1.0)
             }
@@ -162,8 +162,8 @@ impl GhgForcing {
         n2o: FloatValue,
     ) -> FloatValue {
         match self.parameters.method {
-            ForcingMethod::Ipcctar => self.n2o_forcing_ipcctar(ch4, n2o),
-            ForcingMethod::Olbl => {
+            ForcingMethod::IPCCTAR => self.n2o_forcing_ipcctar(ch4, n2o),
+            ForcingMethod::OLBL => {
                 let p = &self.parameters;
                 p.olbl().n2o(co2, ch4, n2o, p.n2o_pi, 1.0)
             }
@@ -201,8 +201,8 @@ impl GhgForcing {
     pub fn erf_2xco2(&self, co2: FloatValue, n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
         match p.method {
-            ForcingMethod::Ipcctar => p.erf_2xco2 * p.adjust_co2,
-            ForcingMethod::Olbl => {
+            ForcingMethod::IPCCTAR => p.erf_2xco2 * p.adjust_co2,
+            ForcingMethod::OLBL => {
                 p.olbl().co2_alpha(co2, n2o, p.co2_pi) * p.adjust_co2 * 2.0_f64.ln()
             }
         }
@@ -213,10 +213,10 @@ impl GhgForcing {
         let p = &self.parameters;
         let ch4_alone = match p.method {
             // MAGICC7 leaves out the N2O overlap for IPCCTAR
-            ForcingMethod::Ipcctar => {
+            ForcingMethod::IPCCTAR => {
                 p.adjust_ch4 * p.ch4_radiative_efficiency * (ch4.sqrt() - p.ch4_pi.sqrt())
             }
-            ForcingMethod::Olbl => p.olbl().ch4(ch4, p.n2o_pi, p.ch4_pi, p.adjust_ch4),
+            ForcingMethod::OLBL => p.olbl().ch4(ch4, p.n2o_pi, p.ch4_pi, p.adjust_ch4),
         };
         ch4_alone * p.ch4_stratospheric_h2o_fraction
     }
@@ -227,18 +227,18 @@ impl GhgForcing {
         co2: FloatValue,
         ch4: FloatValue,
         n2o: FloatValue,
-    ) -> GhgForcingResult {
+    ) -> GHGForcingResult {
         let p = &self.parameters;
 
         match p.method {
-            ForcingMethod::Ipcctar => GhgForcingResult {
+            ForcingMethod::IPCCTAR => GHGForcingResult {
                 co2_erf: self.co2_forcing_ipcctar(co2) * p.adjust_co2,
                 ch4_erf: self.ch4_forcing_ipcctar(ch4, n2o) * p.adjust_ch4,
                 n2o_erf: self.n2o_forcing_ipcctar(ch4, n2o) * p.adjust_n2o,
             },
-            ForcingMethod::Olbl => {
+            ForcingMethod::OLBL => {
                 let m = p.olbl();
-                GhgForcingResult {
+                GHGForcingResult {
                     co2_erf: m.co2(co2, n2o, p.co2_pi, p.adjust_co2),
                     ch4_erf: m.ch4(ch4, n2o, p.ch4_pi, p.adjust_ch4),
                     n2o_erf: m.n2o(co2, ch4, n2o, p.n2o_pi, p.adjust_n2o),
@@ -248,14 +248,14 @@ impl GhgForcing {
     }
 }
 
-impl Default for GhgForcing {
+impl Default for GHGForcing {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[typetag::serde(name = "magicc.GhgForcing")]
-impl Component for GhgForcing {
+#[typetag::serde(name = "magicc.GHGForcing")]
+impl Component for GHGForcing {
     fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
@@ -265,8 +265,8 @@ impl Component for GhgForcing {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
-        let inputs = GhgForcingInputs::from_input_state(input_state);
+    ) -> RSCMResult<OutputState> {
+        let inputs = GHGForcingInputs::from_input_state(input_state);
 
         let co2 = inputs.co2_concentration.get();
         let ch4 = inputs.ch4_concentration.get();
@@ -274,7 +274,7 @@ impl Component for GhgForcing {
 
         let result = self.calculate_forcings(co2, ch4, n2o);
 
-        let outputs = GhgForcingOutputs {
+        let outputs = GHGForcingOutputs {
             co2_erf: result.co2_erf,
             ch4_erf: result.ch4_erf,
             n2o_erf: result.n2o_erf,
@@ -292,23 +292,23 @@ mod tests {
     use crate::parameters::ForcingMethod;
     use rscm_core::component::VariableRole;
 
-    fn ipcctar_component() -> GhgForcing {
-        GhgForcing::from_parameters(GhgForcingParameters {
-            method: ForcingMethod::Ipcctar,
+    fn ipcctar_component() -> GHGForcing {
+        GHGForcing::from_parameters(GHGForcingParameters {
+            method: ForcingMethod::IPCCTAR,
             adjust_co2: 1.0, // No adjustment for pure forcing tests
             adjust_ch4: 1.0,
             adjust_n2o: 1.0,
-            ..GhgForcingParameters::default()
+            ..GHGForcingParameters::default()
         })
     }
 
-    fn olbl_component() -> GhgForcing {
-        GhgForcing::from_parameters(GhgForcingParameters {
-            method: ForcingMethod::Olbl,
+    fn olbl_component() -> GHGForcing {
+        GHGForcing::from_parameters(GHGForcingParameters {
+            method: ForcingMethod::OLBL,
             adjust_co2: 1.0,
             adjust_ch4: 1.0,
             adjust_n2o: 1.0,
-            ..GhgForcingParameters::default()
+            ..GHGForcingParameters::default()
         })
     }
 
@@ -556,23 +556,23 @@ mod tests {
 
     #[test]
     fn test_rapid_adjustment_applied() {
-        let c = GhgForcing::from_parameters(GhgForcingParameters {
-            method: ForcingMethod::Ipcctar,
+        let c = GHGForcing::from_parameters(GHGForcingParameters {
+            method: ForcingMethod::IPCCTAR,
             adjust_co2: 1.05,
             adjust_ch4: 0.86,
             adjust_n2o: 0.93,
-            ..GhgForcingParameters::default()
+            ..GHGForcingParameters::default()
         });
 
         let result = c.calculate_forcings(400.0, 1900.0, 332.0);
 
         // Build a no-adjustment version for comparison
-        let c_raw = GhgForcing::from_parameters(GhgForcingParameters {
-            method: ForcingMethod::Ipcctar,
+        let c_raw = GHGForcing::from_parameters(GHGForcingParameters {
+            method: ForcingMethod::IPCCTAR,
             adjust_co2: 1.0,
             adjust_ch4: 1.0,
             adjust_n2o: 1.0,
-            ..GhgForcingParameters::default()
+            ..GHGForcingParameters::default()
         });
 
         let raw = c_raw.calculate_forcings(400.0, 1900.0, 332.0);
@@ -630,14 +630,14 @@ mod tests {
 
     #[test]
     fn test_serialisation_roundtrip() {
-        let component = GhgForcing::from_parameters(GhgForcingParameters {
-            method: ForcingMethod::Ipcctar,
+        let component = GHGForcing::from_parameters(GHGForcingParameters {
+            method: ForcingMethod::IPCCTAR,
             erf_2xco2: 3.80,
-            ..GhgForcingParameters::default()
+            ..GHGForcingParameters::default()
         });
 
         let json = serde_json::to_string(&component).unwrap();
-        let restored: GhgForcing = serde_json::from_str(&json).unwrap();
+        let restored: GHGForcing = serde_json::from_str(&json).unwrap();
 
         assert_eq!(component.parameters().method, restored.parameters().method);
         assert!((component.parameters().erf_2xco2 - restored.parameters().erf_2xco2).abs() < 1e-10);

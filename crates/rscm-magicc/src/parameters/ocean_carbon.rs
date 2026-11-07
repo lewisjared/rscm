@@ -81,7 +81,7 @@ pub enum OceanCarbonMethod {
 /// different functional forms for different time regimes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum IrfForm {
+pub enum IRFForm {
     /// Polynomial: $IRF(t) = \sum_i c_i \cdot t^i$ where $t$ is in years.
     ///
     /// Used by 3D-GFDL for the pre-switch regime (first year).
@@ -105,16 +105,16 @@ pub enum IrfForm {
     },
 }
 
-impl IrfForm {
+impl IRFForm {
     /// Evaluate the IRF at time `t` (years).
     pub fn evaluate(&self, t: FloatValue) -> FloatValue {
         match self {
             // Summed term by term in ascending powers, as MAGICC7 does
-            IrfForm::Polynomial { coefficients } => coefficients
+            IRFForm::Polynomial { coefficients } => coefficients
                 .iter()
                 .enumerate()
                 .fold(0.0, |sum, (i, &c)| sum + c * t.powf(i as FloatValue)),
-            IrfForm::ExponentialSum {
+            IRFForm::ExponentialSum {
                 constant,
                 coefficients,
                 timescales,
@@ -225,10 +225,10 @@ pub struct OceanCarbonParameters {
     pub irf_switch_time: FloatValue,
 
     /// IRF form for the early regime (before switch time).
-    pub irf_early: IrfForm,
+    pub irf_early: IRFForm,
 
     /// IRF form for the late regime (after switch time).
-    pub irf_late: IrfForm,
+    pub irf_late: IRFForm,
 
     /// Joos A24 polynomial offsets.
     pub delta_ospp_offsets: [FloatValue; 5],
@@ -289,13 +289,13 @@ impl OceanCarbonParameters {
             irf_switch_time: 1.0,
 
             // MAGICC7 carries more digits than the Joos et al. (2001) table.
-            irf_early: IrfForm::Polynomial {
+            irf_early: IRFForm::Polynomial {
                 coefficients: vec![
                     1.0, -2.261725, 14.00231, -48.77024, 82.98591, -67.52663, 21.0369,
                 ],
             },
             // In MAGICC7's order, which sets the rounding
-            irf_late: IrfForm::ExponentialSum {
+            irf_late: IRFForm::ExponentialSum {
                 constant: 0.01481883,
                 coefficients: vec![0.70367, 0.0664848, 0.0383437, 0.249664, 0.0194392],
                 timescales: vec![0.7017658, 15.28116, 65.35929, 2.348814, 347.547],
@@ -340,14 +340,14 @@ impl OceanCarbonParameters {
             irf_switch_time: 9.9,
 
             // Early IRF: exponential sum (MAGICC7 lines 466-471)
-            irf_early: IrfForm::ExponentialSum {
+            irf_early: IRFForm::ExponentialSum {
                 constant: 0.058648,
                 coefficients: vec![0.07515, 0.079338, 0.41413, 0.24845, 0.12429],
                 timescales: vec![9.6218, 9.2364, 0.7603, 0.16294, 0.032825],
             },
 
             // Late IRF: exponential sum (MAGICC7 lines 491-496)
-            irf_late: IrfForm::ExponentialSum {
+            irf_late: IRFForm::ExponentialSum {
                 constant: 0.013691,
                 coefficients: vec![0.012456, 0.026933, 0.026994, 0.036608, 0.06738],
                 timescales: vec![331.54, 107.57, 38.946, 11.677, 10.515],
@@ -392,14 +392,14 @@ impl OceanCarbonParameters {
             irf_switch_time: 2.0,
 
             // Early IRF: exponential sum (MAGICC7 lines 516-521)
-            irf_early: IrfForm::ExponentialSum {
+            irf_early: IRFForm::ExponentialSum {
                 constant: 0.12935,
                 coefficients: vec![0.24093, 0.24071, 0.17003, 0.21898],
                 timescales: vec![4.9792, 0.96083, 0.26936, 0.034569],
             },
 
             // Late IRF: exponential sum (MAGICC7 lines 541-546)
-            irf_late: IrfForm::ExponentialSum {
+            irf_late: IRFForm::ExponentialSum {
                 constant: 0.022936,
                 coefficients: vec![0.035549, 0.037820, 0.089318, 0.13963, 0.24278],
                 timescales: vec![232.30, 68.736, 18.601, 5.2528, 1.2679],
@@ -888,7 +888,7 @@ mod tests {
     #[test]
     fn test_polynomial_matches_horner() {
         let irf = OceanCarbonParameters::gfdl_3d().irf_early;
-        let IrfForm::Polynomial {
+        let IRFForm::Polynomial {
             coefficients: coeffs,
         } = &irf
         else {
@@ -918,11 +918,11 @@ mod tests {
     fn test_bern_2d_irf_constants() {
         // MAGICC7.f90 BERN timescale and a0 coefficient
         let params = OceanCarbonParameters::bern_2d();
-        let IrfForm::ExponentialSum { timescales, .. } = &params.irf_early else {
+        let IRFForm::ExponentialSum { timescales, .. } = &params.irf_early else {
             panic!("2D-BERN early IRF should be an exponential sum");
         };
         assert_eq!(timescales[4], 0.032825);
-        let IrfForm::ExponentialSum { constant, .. } = &params.irf_late else {
+        let IRFForm::ExponentialSum { constant, .. } = &params.irf_late else {
             panic!("2D-BERN late IRF should be an exponential sum");
         };
         assert_eq!(*constant, 0.013691);

@@ -6,8 +6,8 @@
 //!
 //! 1. [`CH4Lifetime`]: CH4 lifetime from precursors and temperature (Thornhill et al. 2021)
 //! 2. [`GasCycle`]: greenhouse gas emissions to concentrations, or back
-//! 3. [`Eesc`]: equivalent effective stratospheric chlorine
-//! 4. [`GhgForcing`]: greenhouse gas forcing (Meinshausen et al. 2020)
+//! 3. [`EESC`]: equivalent effective stratospheric chlorine
+//! 4. [`GHGForcing`]: greenhouse gas forcing (Meinshausen et al. 2020)
 //! 5. [`LinearForcing`]: forcing linear in its drivers (aerosol-radiation, ozone, contrails,
 //!    light-absorbing particles, stratospheric water vapour and land use)
 //! 6. [`AerosolCloud`]: aerosol-cloud interactions
@@ -33,8 +33,8 @@ pub use aerosol_cloud::{AerosolCloud, AerosolCloudParameters};
 pub use aggregation::{ForcingAggregation, ForcingAggregationParameters};
 pub use ch4_lifetime::{CH4Lifetime, CH4LifetimeParameters};
 pub use driver::Driver;
-pub use eesc::{Eesc, EescParameters};
+pub use eesc::{EESCParameters, EESC};
 pub use energy_balance::{EnergyBalance, EnergyBalanceParameters};
 pub use gas_cycle::{GasCycle, GasCycleParameters};
-pub use ghg_forcing::{GhgForcing, GhgForcingParameters};
+pub use ghg_forcing::{GHGForcing, GHGForcingParameters};
 pub use linear_forcing::{LinearForcing, LinearForcingParameters};

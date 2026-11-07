@@ -23,7 +23,7 @@ fn over_defaults<'de, D: Deserializer<'de>, T: Serialize + DeserializeOwned>(
     serde_json::from_value(merged).map_err(D::Error::custom)
 }
 
-/// Thermal expansion of the ocean, calculated by `ClimateUdeb`.
+/// Thermal expansion of the ocean, calculated by `ClimateUDEB`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

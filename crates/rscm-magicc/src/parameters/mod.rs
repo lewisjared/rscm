@@ -24,18 +24,18 @@ pub use aerosol::{AerosolDirectParameters, AerosolIndirectParameters};
 pub use ch4_chemistry::CH4ChemistryParameters;
 pub use ch4_oxidation::CH4OxidationParameters;
 pub use climate_udeb::{
-    ClimateUdebParameters, EfficacyMethod, OceanTemperatureProfile, SubannualForcing, CP_SEAWATER,
+    ClimateUDEBParameters, EfficacyMethod, OceanTemperatureProfile, SubannualForcing, CP_SEAWATER,
     DIFFUSIVITY_CM2S_TO_M2YR, EARTH_SURFACE_AREA, RHO_SEAWATER, SECONDS_PER_YEAR,
 };
 pub use co2_budget::CO2BudgetParameters;
 pub use forcing_aggregation::{
     EfficacyClimate, ForcingAgent, ForcingAggregationParameters, ForcingTerm,
 };
-pub use ghg_forcing::{ForcingMethod, GhgForcingParameters};
-pub use halocarbon::{FgasRegions, HalocarbonChemistryParameters, HalocarbonSpecies};
+pub use ghg_forcing::{ForcingMethod, GHGForcingParameters};
+pub use halocarbon::{FGasRegions, HalocarbonChemistryParameters, HalocarbonSpecies};
 pub use n2o_chemistry::N2OChemistryParameters;
 pub use nitrogen::{NitrogenParameters, PrognosticFixation};
-pub use ocean_carbon::{IrfForm, OceanCarbonMethod, OceanCarbonParameters};
+pub use ocean_carbon::{IRFForm, OceanCarbonMethod, OceanCarbonParameters};
 pub use ozone_forcing::{OzoneForcingParameters, TroposphericOzoneRegions};
 pub use permafrost::{PermafrostParameters, PermafrostSoil};
 pub use sea_level::{

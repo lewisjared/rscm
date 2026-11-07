@@ -3,7 +3,7 @@ MAGICC model configuration and legacy format support.
 
 This package provides:
 
-- MagiccConfig: Configuration class for MAGICC models
+- MAGICCConfig: Configuration class for MAGICC models
 - Legacy .CFG format import/export
 - Parameter registry with support status tracking
 """
@@ -14,7 +14,7 @@ from rscm.config.models.magicc.config import (
     AggregationConfig,
     ClimateConfig,
     ForcingConfig,
-    MagiccConfig,
+    MAGICCConfig,
 )
 from rscm.config.models.magicc.legacy import (
     LEGACY_MAPPING,
@@ -35,7 +35,7 @@ __all__ = [
     "AggregationConfig",
     "ClimateConfig",
     "ForcingConfig",
-    "MagiccConfig",
+    "MAGICCConfig",
     "ParameterInfo",
     "ParameterStatus",
     "from_legacy_dict",

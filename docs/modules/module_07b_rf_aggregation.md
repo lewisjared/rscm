@@ -27,7 +27,7 @@ because floating-point addition is not associative.
   `test_forcing_subtotals` checks the [reported subtotals](#reported-subtotals).
   `aggregation.rs` has Rust unit tests for the patterns and efficacy methods.
 
-Volcanic forcing enters `ClimateUdeb` directly, as in MAGICC7.
+Volcanic forcing enters `ClimateUDEB` directly, as in MAGICC7.
 
 ## Forcing types
 
@@ -44,7 +44,7 @@ Every efficacy defaults to 1, so ERF and RF then differ only by rounding.
 
 In RSCM each component's `Effective Radiative Forcing|<agent>` output is MAGICC7's RF.
 `ForcingAggregation` writes the box EffRF as `Efficacy Adjusted Effective Radiative Forcing`,
-which `ClimateUdeb` reads,
+which `ClimateUDEB` reads,
 and the area-weighted sum of the agents' RF as `Effective Radiative Forcing`.
 The parity tests rebuild MAGICC7's reported ERF from these outputs
 with `Reported` in `tests/regression/full_run.py`.
@@ -156,7 +156,7 @@ Notes on the table:
 - **Patterns from forcing**: land use and BC on snow take their pattern from their box forcing in
   `RF_REGIONS_NORMYEAR`, and nitrate from its total forcing in that year.
 - **Volcanic**: monthly volcanic forcing (`RF_EFFICACY_VOLC`, `SRF_FACTOR_VOLC` 0.7) goes straight to the
-  climate model, through `ClimateUdeb`'s `subannual_forcing` in RSCM.
+  climate model, through `ClimateUDEB`'s `subannual_forcing` in RSCM.
 - **Not in the default total**: cloud cover is zero by default ([indirect aerosol forcing](module_06_aerosol_indirect.md)),
   external forcing (`QXTRA`) needs `RF_EXTRA_READ`, and the aviation agents (H2O, contrails, cirrus)
   have no term in the summation order.
@@ -273,16 +273,16 @@ from rscm.names import ERF
 
 agents = [f"{ERF}|{agent}" for agent in ("CO2", "CH4", "N2O", "Other")]
 schema = VariableSchema()
-# Individual agents, named as GhgForcing outputs them, plus a prescribed residual
+# Individual agents, named as GHGForcing outputs them, plus a prescribed residual
 for agent in agents:
     schema.add_variable(agent, "W/m^2")
-# Total, read by ClimateUdeb
+# Total, read by ClimateUDEB
 schema.add_aggregate(ERF, "W/m^2", "sum", agents)
 ```
 
 `run_magicc` and `run_magicc_emissions` build total ERF this way, as a plain sum,
 so they write none of the subtotals in [Reported subtotals](#reported-subtotals).
-`ClimateUdeb` then applies the CO2 efficacy and regional pattern to that total
+`ClimateUDEB` then applies the CO2 efficacy and regional pattern to that total
 (see [climate](module_08_climate.md)).
 `rscm.magicc.full.run_magicc7` uses `ForcingAggregation` instead.
 See the [tutorials](../tutorials.md) for a walkthrough.

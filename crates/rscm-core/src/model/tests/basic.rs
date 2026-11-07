@@ -1,7 +1,7 @@
 //! Basic model tests: step, dot, serialisation.
 
 use crate::component::{Component, ComponentState, InputState, OutputState, VariableDefinition};
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::example_components::{TestComponent, TestComponentParameters};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
 use crate::model::{Model, ModelBuilder};
@@ -235,7 +235,7 @@ impl Component for StatefulTestComponent {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         Ok(OutputState::new())
     }
 
@@ -249,7 +249,7 @@ impl Component for StatefulTestComponent {
         t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<StatefulTestComponentState>()

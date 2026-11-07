@@ -63,7 +63,7 @@ use crate::reference::{
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -310,7 +310,7 @@ impl OceanCarbon {
         t_next: Time,
         input_state: &InputState,
         state: &mut OceanCarbonState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         require_annual("OceanCarbon", t_current, t_next)?;
         let inputs = OceanCarbonInputs::from_input_state(input_state);
 
@@ -392,7 +392,7 @@ impl Component for OceanCarbon {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         // For standalone use, create a temporary state
         let mut state = OceanCarbonState::default();
         self.solve_impl(t_current, t_next, input_state, &mut state)
@@ -408,7 +408,7 @@ impl Component for OceanCarbon {
         t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<OceanCarbonState>()

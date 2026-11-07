@@ -10,7 +10,7 @@ __all__ = [
     "AggregationConfig",
     "ClimateConfig",
     "ForcingConfig",
-    "MagiccConfig",
+    "MAGICCConfig",
     "TerrestrialCarbonConfig",
 ]
 
@@ -57,7 +57,7 @@ class TerrestrialCarbonConfig:
 
 
 @dataclass
-class MagiccConfig(ModelConfig):
+class MAGICCConfig(ModelConfig):
     """Configuration for MAGICC model.
 
     This is a skeleton configuration that will be expanded as MAGICC

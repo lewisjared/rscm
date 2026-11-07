@@ -664,7 +664,7 @@ mod climate_tcr {
     use rscm_core::component::{Component, InputState};
     use rscm_core::state::{FourBoxSlice, StateValue};
     use rscm_core::timeseries::FloatValue;
-    use rscm_magicc::climate::ClimateUdeb;
+    use rscm_magicc::climate::ClimateUDEB;
 
     use super::common::{build_udeb_input_state, params_with_fixed_ecs};
 
@@ -684,7 +684,7 @@ mod climate_tcr {
         let ecs = 3.0;
         let params = params_with_fixed_ecs(ecs);
         let erf_2xco2 = params.erf_2xco2;
-        let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
+        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
         let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
@@ -781,7 +781,7 @@ mod climate_tcr {
         for &ecs in &ecs_values {
             let params = params_with_fixed_ecs(ecs);
             let erf_2xco2 = params.erf_2xco2;
-            let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
+            let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
             let mut state = component.initial_state();
             let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 

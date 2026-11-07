@@ -29,7 +29,7 @@ fn carbon_cycle_names() {
 #[test]
 fn co2_erf_names() {
     declares(
-        crate::components::CO2Erf::generated_definitions(),
+        crate::components::CO2ERF::generated_definitions(),
         &[ATMOSPHERIC_CONCENTRATIONS_CO2, ERF_CO2],
     );
 }

@@ -85,7 +85,7 @@ def test_load_inputs_skips_missing_concentration_files():
 @pytest.mark.parametrize(
     ("argument", "value"),
     [
-        ("component_parameters", {"ClimateUDEB": {}}),  # naming: allow
+        ("component_parameters", {"NotAComponent": {}}),
         ("initial_concentrations", {"HFC4310": 0.0}),  # naming: allow
     ],
 )

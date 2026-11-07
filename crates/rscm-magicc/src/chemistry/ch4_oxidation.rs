@@ -30,7 +30,7 @@ use crate::reference::{permafrost_emissions, require_annual};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::names::EMISSIONS_CH4_PERMAFROST;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -155,7 +155,7 @@ impl Component for CH4Oxidation {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         require_annual("CH4Oxidation", t_current, t_next)?;
         let inputs = CH4OxidationInputs::from_input_state(input_state);
         let pools = CH4Pools {

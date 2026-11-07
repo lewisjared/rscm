@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from rscm._lib.magicc import ClimateUdebBuilder, CO2BudgetBuilder, GhgForcingBuilder
+from rscm._lib.magicc import ClimateUDEBBuilder, CO2BudgetBuilder, GHGForcingBuilder
 from rscm.core import (
     GridType,
     InterpolationStrategy,
@@ -55,10 +55,10 @@ if TYPE_CHECKING:
 
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm._lib.magicc import ClimateUdebParameters, GhgForcingParameters
+    from rscm._lib.magicc import ClimateUDEBParameters, GHGForcingParameters
     from rscm.core import Model
 
-__all__ = ["CO2Emissions", "MagiccResult", "run_magicc"]
+__all__ = ["CO2Emissions", "MAGICCResult", "run_magicc"]
 
 SPECIES = ("CO2", "CH4", "N2O")
 
@@ -82,7 +82,7 @@ class CO2Emissions:
 
 
 @dataclass(frozen=True)
-class MagiccResult:
+class MAGICCResult:
     """Run output and the processes used to produce it.
 
     ``values`` contains every variable at the year labels,
@@ -209,9 +209,9 @@ def run_magicc(  # noqa: PLR0913
     other_forcing: ArrayLike,
     co2_emissions: CO2Emissions | None = None,
     forcing_species: tuple[str, ...] = SPECIES,
-    forcing_parameters: GhgForcingParameters | None = None,
-    climate_parameters: ClimateUdebParameters | None = None,
-) -> MagiccResult:
+    forcing_parameters: GHGForcingParameters | None = None,
+    climate_parameters: ClimateUDEBParameters | None = None,
+) -> MAGICCResult:
     """Run GHG forcing, aggregation and UDEB on annual boundaries.
 
     ``time_axis`` must have at least two annual steps. Supply
@@ -262,7 +262,7 @@ def run_magicc(  # noqa: PLR0913
         budget = CO2BudgetBuilder.from_parameters({}).build()
         sources[ATMOSPHERIC_CONCENTRATIONS_CO2] = "CO2Budget"
 
-    forcing = GhgForcingBuilder.from_parameters(forcing_parameters or {})
+    forcing = GHGForcingBuilder.from_parameters(forcing_parameters or {})
     start_co2 = (
         initial[ATMOSPHERIC_CONCENTRATIONS_CO2]
         if co2_emissions is not None
@@ -277,7 +277,7 @@ def run_magicc(  # noqa: PLR0913
         name = child(ERF, gas)
         initial[name] = value
         units[name] = "W/m^2"
-        sources[name] = "GhgForcing"
+        sources[name] = "GHGForcing"
     initial[ERF] = sum(initial_erf[gas] for gas in forcing_species) + float(
         data[child(ERF, "Other")][0]
     )
@@ -285,11 +285,11 @@ def run_magicc(  # noqa: PLR0913
         msg = "Component parameters produced nonfinite initial forcing"
         raise ValueError(msg)
 
-    climate_params: ClimateUdebParameters = {
+    climate_params: ClimateUDEBParameters = {
         "erf_2xco2": forcing.erf_2xco2(),
         **(climate_parameters or {}),
     }
-    climate_builder = ClimateUdebBuilder.from_parameters(climate_params)
+    climate_builder = ClimateUDEBBuilder.from_parameters(climate_params)
     climate = climate_builder.build()
     initial.update(climate_builder.initial_values(initial[ERF]))
     weights = _climate_weights(climate_params)
@@ -308,7 +308,7 @@ def run_magicc(  # noqa: PLR0913
         HEAT_UPTAKE,
         OCEAN_HEAT_CONTENT,
     ):
-        sources[name] = "ClimateUdeb"
+        sources[name] = "ClimateUDEB"
 
     schema = _base_schema()
     for name, unit in units.items():
@@ -356,7 +356,7 @@ def _collect_result(  # noqa: PLR0913
     contributors: tuple[str, ...],
     weights: NDArray[np.float64],
     diagnostics: frozenset[str] = frozenset(),
-) -> MagiccResult:
+) -> MAGICCResult:
     """Validate every returned value and retain the four regional temperatures.
 
     An average has no value at the last label.
@@ -392,7 +392,7 @@ def _collect_result(  # noqa: PLR0913
         if np.any(values[child(ATMOSPHERIC_CONCENTRATIONS, gas)] <= 0):
             msg = f"Nonpositive {gas} concentration calculated during run"
             raise RuntimeError(msg)
-    return MagiccResult(time, values, units, regional, sources, contributors)
+    return MAGICCResult(time, values, units, regional, sources, contributors)
 
 
 def _base_schema() -> VariableSchema:
@@ -404,7 +404,7 @@ def _base_schema() -> VariableSchema:
     return schema
 
 
-def _climate_weights(parameters: ClimateUdebParameters) -> NDArray[np.float64]:
+def _climate_weights(parameters: ClimateUDEBParameters) -> NDArray[np.float64]:
     nh_land = parameters.get("nh_land_fraction", 0.42)
     sh_land = parameters.get("sh_land_fraction", 0.21)
     return np.array([1 - nh_land, nh_land, 1 - sh_land, sh_land]) * 0.5

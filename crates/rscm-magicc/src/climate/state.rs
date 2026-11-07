@@ -1,4 +1,4 @@
-//! Internal state for the ClimateUdeb component.
+//! Internal state for the ClimateUDEB component.
 //!
 //! This module contains the private state structures that persist across
 //! solve() calls, including ocean layer temperatures, upwelling rates,
@@ -10,13 +10,13 @@ use rscm_core::component::ComponentState;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
-/// Internal state for ClimateUdeb component.
+/// Internal state for ClimateUDEB component.
 ///
 /// This holds the ocean layer temperatures and upwelling rates that persist
 /// across solve() calls. Unlike coupled state (VariableRole::State), this
 /// is private to the component and not shared between components.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ClimateUdebState {
+pub struct ClimateUDEBState {
     /// Ocean layer temperatures for each hemisphere (NH=0, SH=1).
     /// Shape: [hemisphere][layer], layer 0 is mixed layer.
     pub ocean_temperatures: Vec<Vec<FloatValue>>,
@@ -111,13 +111,13 @@ fn default_initial_mixed_layer_temperature() -> FloatValue {
     17.2
 }
 
-impl ClimateUdebState {
+impl ClimateUDEBState {
     /// Create a new state for a given number of layers and initial conditions.
     ///
     /// `initial_alpha` is the SST-to-air-temperature ratio used before any
     /// ocean temperature has developed (i.e. `temperature_adjustment_alpha` from parameters).
     /// `profiles` is the per-hemisphere initial ocean temperature profiles,
-    /// computed by [`ClimateUdebParameters::initial_ocean_profile()`].
+    /// computed by [`ClimateUDEBParameters::initial_ocean_profile()`].
     pub fn new(
         n_layers: usize,
         initial_upwelling_rate: FloatValue,
@@ -126,13 +126,13 @@ impl ClimateUdebState {
     ) -> Self {
         assert!(
             n_layers >= 2,
-            "ClimateUdebState::new requires n_layers >= 2, got {}",
+            "ClimateUDEBState::new requires n_layers >= 2, got {}",
             n_layers
         );
         for (i, hemi_profile) in profiles.iter().enumerate() {
             assert!(
                 hemi_profile.len() == n_layers,
-                "ClimateUdebState::new requires hemisphere {} profile to have {} layers, got {}",
+                "ClimateUDEBState::new requires hemisphere {} profile to have {} layers, got {}",
                 i,
                 n_layers,
                 hemi_profile.len()
@@ -163,8 +163,8 @@ impl ClimateUdebState {
     }
 }
 
-#[typetag::serde(name = "magicc.ClimateUdebState")]
-impl ComponentState for ClimateUdebState {
+#[typetag::serde(name = "magicc.ClimateUDEBState")]
+impl ComponentState for ClimateUDEBState {
     fn as_any(&self) -> &dyn Any {
         self
     }

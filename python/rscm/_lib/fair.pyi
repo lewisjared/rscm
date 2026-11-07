@@ -43,7 +43,7 @@ class GasCycleBuilder(ComponentBuilder):
         """Build the component, checking the parameters."""
 
 @final
-class EescBuilder(ComponentBuilder):
+class EESCBuilder(ComponentBuilder):
     """Equivalent effective stratospheric chlorine.
 
     **Parameter keys**
@@ -54,13 +54,13 @@ class EescBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: Mapping[str, Any]) -> EescBuilder:  # type: ignore[override]
+    def from_parameters(parameters: Mapping[str, Any]) -> EESCBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the component, checking the parameters."""
 
 @final
-class GhgForcingBuilder(ComponentBuilder):
+class GHGForcingBuilder(ComponentBuilder):
     """Meinshausen et al. (2020) greenhouse gas forcing.
 
     **Parameter keys**
@@ -73,7 +73,7 @@ class GhgForcingBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: Mapping[str, Any]) -> GhgForcingBuilder:  # type: ignore[override]
+    def from_parameters(parameters: Mapping[str, Any]) -> GHGForcingBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the component, checking the parameters."""

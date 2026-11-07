@@ -1,7 +1,7 @@
 //! Relaxed grid validation tests with schema-based aggregation.
 
 use crate::component::{Component, GridType, InputState, OutputState, VariableDefinition};
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::model::ModelBuilder;
 use crate::schema::VariableSchema;
 use crate::spatial::SpatialGrid;
@@ -28,7 +28,7 @@ impl Component for FourBoxProducer {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let mut output = OutputState::new();
         output.insert(
             self.var_name.clone(),
@@ -55,7 +55,7 @@ impl Component for HemisphericProducer {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let mut output = OutputState::new();
         output.insert(
             self.var_name.clone(),
@@ -82,7 +82,7 @@ impl Component for ScalarProducer {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let mut output = OutputState::new();
         output.insert(self.var_name.clone(), StateValue::Scalar(1.5));
         Ok(output)
@@ -110,7 +110,7 @@ impl Component for ScalarConsumer {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let value = input_state.get_scalar_window(&self.input_var).get();
         let mut output = OutputState::new();
         output.insert(self.output_var.clone(), StateValue::Scalar(value * 2.0));
@@ -139,7 +139,7 @@ impl Component for FourBoxConsumer {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let window = input_state.get_four_box_window(&self.input_var);
         let value = window.grid().aggregate_global(&window.get_all());
         let mut output = OutputState::new();

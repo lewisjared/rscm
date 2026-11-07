@@ -23,7 +23,7 @@ const RLO_TOLERANCE: FloatValue = 0.001;
 
 /// Parameters for the LAMCALC iteration.
 #[derive(Debug, Clone)]
-pub struct LamcalcParameters {
+pub struct LAMCALCParameters {
     /// 2xCO2 effective radiative forcing (W/m$^2$), typically 3.71.
     pub erf_2xco2: FloatValue,
     /// Land-ocean heat exchange coefficient (W/m$^2$/K), typically 1.44.
@@ -53,7 +53,7 @@ pub struct LamcalcParameters {
 
 /// Result of the LAMCALC iteration.
 #[derive(Debug, Clone, Copy)]
-pub struct LamcalcResult {
+pub struct LAMCALCResult {
     /// Converged ocean feedback parameter (W/m$^2$/K).
     pub lambda_ocean: FloatValue,
     /// Converged land feedback parameter (W/m$^2$/K).
@@ -78,7 +78,7 @@ pub struct LamcalcResult {
 /// * `lam_o` - Ocean feedback parameter
 /// * `lam_l` - Land feedback parameter
 pub fn build_coupling_matrix(
-    params: &LamcalcParameters,
+    params: &LAMCALCParameters,
     lam_o: FloatValue,
     lam_l: FloatValue,
 ) -> [[FloatValue; 4]; 4] {
@@ -218,7 +218,7 @@ pub fn calc_internal_efficacy(
 ///
 /// Returns `None` if the iteration fails to converge within [`MAX_ITERATIONS`] steps
 /// or if a singular coupling matrix is encountered.
-pub fn lamcalc(params: &LamcalcParameters) -> Option<LamcalcResult> {
+pub fn lamcalc(params: &LAMCALCParameters) -> Option<LAMCALCResult> {
     let lam = params.erf_2xco2 / params.ecs;
     let area = *params.grid.weights();
     let [nh_ocean, nh_land, sh_ocean, sh_land] = area;
@@ -322,7 +322,7 @@ pub fn lamcalc(params: &LamcalcParameters) -> Option<LamcalcResult> {
         let co2_internal_efficacy =
             ((nh_ocean * t[0] + nh_land * t[1]) + (sh_ocean * t[2] + sh_land * t[3])) / params.ecs;
 
-        Some(LamcalcResult {
+        Some(LAMCALCResult {
             lambda_ocean: converged_lam_o,
             lambda_land: converged_lam_l,
             matrix_inverse: final_inv,
@@ -338,10 +338,10 @@ mod tests {
     use super::*;
 
     /// Create default LAMCALC parameters matching MAGICC defaults.
-    fn default_params() -> LamcalcParameters {
+    fn default_params() -> LAMCALCParameters {
         let nh_land = 0.42;
         let sh_land = 0.21;
-        LamcalcParameters {
+        LAMCALCParameters {
             erf_2xco2: 3.71,
             land_ocean_heat_exchange: 1.44,
             north_south_heat_exchange: 0.31,

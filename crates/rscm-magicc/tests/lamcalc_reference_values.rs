@@ -15,7 +15,7 @@ use approx::assert_relative_eq;
 use common::{compute_equilibrium_temperatures, default_lamcalc_params, RLO_TOLERANCE};
 use rscm_core::timeseries::FloatValue;
 use rscm_core::utils::linear_algebra::invert_4x4;
-use rscm_magicc::climate::lamcalc::{build_coupling_matrix, lamcalc, LamcalcResult};
+use rscm_magicc::climate::lamcalc::{build_coupling_matrix, lamcalc, LAMCALCResult};
 
 // ===========================================================================
 // 1. Energy conservation at equilibrium
@@ -459,7 +459,7 @@ mod rlo_sweep {
         let params_default = default_lamcalc_params();
         let lam_global = params_default.erf_2xco2 / params_default.ecs;
 
-        let mut results: Vec<(FloatValue, LamcalcResult)> = Vec::new();
+        let mut results: Vec<(FloatValue, LAMCALCResult)> = Vec::new();
 
         for &rlo in &rlo_values {
             let mut params = default_lamcalc_params();

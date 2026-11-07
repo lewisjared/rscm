@@ -19,21 +19,21 @@ and the slow response of the deep ocean.
 
 ## RSCM implementation
 
-- **Component**: `ClimateUdeb`, built from Python with `rscm.magicc.ClimateUdebBuilder`.
+- **Component**: `ClimateUDEB`, built from Python with `rscm.magicc.ClimateUDEBBuilder`.
 - **Source**: `crates/rscm-magicc/src/climate/udeb/` holds the substep loop (`mod.rs`)
   and the ocean column (`ocean_column.rs`).
   LAMCALC is in `climate/lamcalc.rs`.
   The tridiagonal solve is `thomas_solve` in `crates/rscm-core/src/utils/linear_algebra.rs`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
 - **Tests**:
-  - `tests/regression/test_full_run.py::test_climate` drives `ClimateUdeb` with MAGICC7's own box forcing.
+  - `tests/regression/test_full_run.py::test_climate` drives `ClimateUDEB` with MAGICC7's own box forcing.
   - `tests/regression/test_full_run.py::test_coupled_run` runs the coupled chain,
     with variants on climate sensitivity, upwelling, diffusivity, ocean geometry, ground heat,
     inter-hemispheric exchange, feedback and efficacy.
   - Rust tests in `crates/rscm-magicc/tests/` (`lamcalc_integration.rs`, `lamcalc_reference_values.rs`,
     `ecs_diagnostics.rs`, `conservation.rs`) check LAMCALC and energy conservation.
 
-`ClimateUdeb` follows MAGICC7 in these details, which are easy to get wrong:
+`ClimateUDEB` follows MAGICC7 in these details, which are easy to get wrong:
 
 - LAMCALC uses the regional CO₂ forcing pattern `RF_REGIONS_CO2 = [1.4089, 1.37045, 1.43333, 1.33257]`
   from `MAGCFG_DEFAULTALL.CFG`.
@@ -380,7 +380,7 @@ It is stepped by forward Euler from the previous substep's land temperature.
 | Ground temperature              | K      | Output                          | `DAT_GROUND_TEMP`                |
 | Monthly temperatures            | K      | Output                          | `DAT_SURFACE_TEMP_SUBANNUAL`     |
 
-`ClimateUdeb` reads `Effective Radiative Forcing` and writes `Surface Air Temperature Change` (four-box),
+`ClimateUDEB` reads `Effective Radiative Forcing` and writes `Surface Air Temperature Change` (four-box),
 `Heat Uptake`, `Ocean Heat Content`, `Sea Surface Temperature` and `Equilibrium Climate Sensitivity`.
 `Ocean Heat Content` is the global integral in J,
 over both hemispheres' ocean area (Earth surface area 5.101 × 10¹⁴ m²).
@@ -390,7 +390,7 @@ With `thermal_expansion` set it also writes `Annual Mean Surface Air Temperature
 
 Defaults are MAGICC7 v7.5.3's, from `run/MAGCFG_DEFAULTALL.CFG`.
 `run_magicc7` takes them from `python/rscm/magicc/data/magicc7/defaults.json`.
-`ClimateUdebParameters::default()` rounds some of them (for example `CORE_RLO` to 1.317).
+`ClimateUDEBParameters::default()` rounds some of them (for example `CORE_RLO` to 1.317).
 
 ### Climate sensitivity
 

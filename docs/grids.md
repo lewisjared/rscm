@@ -363,7 +363,7 @@ These weights come from MAGICC's land fractions (42% of the NH, 21% of the SH):
 Weights must sum to 1.0.
 Python raises `ValueError` for invalid weights, while the Rust builder panics.
 
-`run_magicc` and `run_magicc_emissions` derive their four-box weights from the ClimateUdeb land fractions,
+`run_magicc` and `run_magicc_emissions` derive their four-box weights from the ClimateUDEB land fractions,
 while `run_magicc7` always uses the 42% and 21% defaults.
 See [MAGICC Runs](magicc_runs.md).
 

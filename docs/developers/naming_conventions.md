@@ -35,9 +35,11 @@ When a rule and the code disagree, fix one of them in the same PR.
 
 ### Type names
 
-- Chemical formulae stay upper case and other acronyms are one word: `CO2Erf`, `ClimateUdeb`, `RscmError`.
-- Component types carry no model prefix, so `rscm_fair::GhgForcing` and `rscm_magicc::GhgForcing` both exist.
-- A model crate namespaces its typetag names: `#[typetag::serde(name = "fair.GhgForcing")]`.
+- Acronyms and chemical formulae stay upper case in type and enum member names, as PEP 8 asks:
+  `CO2ERF`, `ClimateUDEB`, `RSCMError`, `EfficacyMethod::AR6`.
+- A name with its own mixed case keeps it at the start of a type: `FairConfig` for FaIR.
+- Component types carry no model prefix, so `rscm_fair::GHGForcing` and `rscm_magicc::GHGForcing` both exist.
+- A model crate namespaces its typetag names: `#[typetag::serde(name = "fair.GHGForcing")]`.
 - A component's top-level parameters type is `<Component>Parameters`: `HalocarbonChemistryParameters`.
 - Nested parameter structs are bare: `PrognosticFixation`, `AntarcticRegion`, `ForcingAgent`.
 - The component `ModelBuilder` inserts for a schema aggregate is `AggregateComponent`.
@@ -83,7 +85,7 @@ When a rule and the code disagree, fix one of them in the same PR.
 - `radiative_efficiency` is written in full: `ch4_radiative_efficiency`.
 - A share ends in `_fraction`: `npp_to_plant_fraction`.
 - A conversion factor is `<to>_per_<from>`: `tg_per_ppb`, `gtc_per_ppm`.
-- A component takes a grid rather than per-box fractions: `LamcalcParameters.grid: FourBoxGrid`.
+- A component takes a grid rather than per-box fractions: `LAMCALCParameters.grid: FourBoxGrid`.
 - The forcing of doubled CO2 is `erf_2xco2` in every component: `time_varying_erf_2xco2`.
 - Halogen atom counts are `cl_atoms`, `br_atoms` and `br_cl_ratio` in every crate.
 - One quantity has one field name across models: `deep_ocean_efficacy`, `ocean_heat_transfer`.

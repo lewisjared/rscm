@@ -118,12 +118,12 @@
 //! ```rust,ignore
 //! # use rscm_core::component::{Component, VariableDefinition, VariableRole, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
-//! # use rscm_core::errors::RscmResult;
+//! # use rscm_core::errors::RSCMResult;
 //! # use std::collections::HashMap;
 //! # #[derive(Debug)]
-//! # struct CO2ErfComponent;
+//! # struct CO2ERFComponent;
 //! #[typetag::serde]
-//! impl Component for CO2ErfComponent {
+//! impl Component for CO2ERFComponent {
 //!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         vec![
 //!             VariableDefinition::new("Atmospheric Concentrations|CO2", "ppm", VariableRole::Input),
@@ -131,7 +131,7 @@
 //!         ]
 //!     }
 //!
-//!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RscmResult<OutputState> {
+//!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
 //!         // Works with scalar values - InputState handles grid aggregation automatically
 //!         let co2 = input_state.get_scalar_window("Atmospheric Concentrations|CO2").get();
 //!         // ... compute ERF ...
@@ -150,11 +150,11 @@
 //! ```rust,ignore
 //! # use rscm_core::component::{Component, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
-//! # use rscm_core::errors::RscmResult;
+//! # use rscm_core::errors::RSCMResult;
 //! # use rscm_core::state::{StateValue, FourBoxSlice};
 //! # use std::collections::HashMap;
 //! # use rscm_core::spatial::FourBoxGrid;
-//! fn solve_grid_component(input_state: &InputState, t_current: Time) -> RscmResult<OutputState> {
+//! fn solve_grid_component(input_state: &InputState, t_current: Time) -> RSCMResult<OutputState> {
 //!     // Get grid values using the typed window API
 //!     let window = input_state.get_four_box_window("Effective Radiative Forcing");
 //!     let erf_regions = window.get_all();
@@ -220,7 +220,7 @@
 //! ```rust,ignore
 //! # use rscm_core::component::{Component, VariableDefinition, VariableRole, InputState, OutputState, GridType};
 //! # use rscm_core::timeseries::Time;
-//! # use rscm_core::errors::RscmResult;
+//! # use rscm_core::errors::RSCMResult;
 //! # use rscm_core::state::{StateValue, FourBoxSlice};
 //! # use std::collections::HashMap;
 //! # #[derive(Debug)]
@@ -234,7 +234,7 @@
 //!         ]
 //!     }
 //!
-//!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RscmResult<OutputState> {
+//!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
 //!         // Get hemispheric input using typed window API
 //!         let window = input_state.get_hemispheric_window("Surface Air Temperature Change");
 //!         let values = window.get_all();
@@ -293,7 +293,7 @@
 //! assert_eq!(hemispheric_temps[1], 9.5);  // (10.0 + 9.0) / 2
 //! ```
 
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::timeseries::FloatValue;
 
 pub mod four_box;
@@ -359,7 +359,7 @@ pub trait SpatialGrid: Clone + std::fmt::Debug + Send + Sync {
     /// # Returns
     ///
     /// * `Ok(Vec<FloatValue>)` - Transformed values in target grid's coordinate system
-    /// * `Err(RscmError::UnsupportedGridTransformation)` - If transformation is not defined
+    /// * `Err(RSCMError::UnsupportedGridTransformation)` - If transformation is not defined
     ///
     /// # Examples
     ///
@@ -378,5 +378,5 @@ pub trait SpatialGrid: Clone + std::fmt::Debug + Send + Sync {
         &self,
         values: &[FloatValue],
         target: &G,
-    ) -> RscmResult<Vec<FloatValue>>;
+    ) -> RSCMResult<Vec<FloatValue>>;
 }

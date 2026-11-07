@@ -34,7 +34,7 @@ from pathlib import Path
 
 import numpy as np
 
-from rscm.components import CarbonCycleBuilder, CO2ErfBuilder
+from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
 from rscm.core import (
     InterpolationStrategy,
     Model,
@@ -79,7 +79,7 @@ builder = (
         ).build()
     )
     .with_component(
-        CO2ErfBuilder.from_parameters(dict(erf_2xco2=4.0, co2_pi=280.0)).build()
+        CO2ERFBuilder.from_parameters(dict(erf_2xco2=4.0, co2_pi=280.0)).build()
     )
     .with_time_axis(time_axis)
     .with_prescribed_variable("Surface Air Temperature Change", surface_temp)

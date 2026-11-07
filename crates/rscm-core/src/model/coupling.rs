@@ -4,7 +4,7 @@
 //! with whether it lags, and each variable's source and timeseries type.
 
 use crate::component::{DeclaredVariable, GridType, VariableRole};
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::state::VariableSource;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
@@ -234,7 +234,7 @@ impl Model {
     /// every edge with whether it lags, and each variable's source and timeseries type.
     ///
     /// Fails only if the component graph has a cycle, which a built model never has.
-    pub fn coupling(&self) -> RscmResult<Coupling> {
+    pub fn coupling(&self) -> RSCMResult<Coupling> {
         let order: Vec<_> = self
             .execution_order()?
             .into_iter()
@@ -371,7 +371,7 @@ mod tests {
     use crate::component::{
         Component, InputState, OutputState, TimeseriesType, VariableDefinition,
     };
-    use crate::errors::RscmResult;
+    use crate::errors::RSCMResult;
     use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
     use crate::model::ModelBuilder;
     use crate::spatial::ScalarGrid;
@@ -399,7 +399,7 @@ mod tests {
             _t_current: Time,
             _t_next: Time,
             _input_state: &InputState,
-        ) -> RscmResult<OutputState> {
+        ) -> RSCMResult<OutputState> {
             Ok(OutputState::new())
         }
     }
@@ -423,7 +423,7 @@ mod tests {
             _t_current: Time,
             _t_next: Time,
             _input_state: &InputState,
-        ) -> RscmResult<OutputState> {
+        ) -> RSCMResult<OutputState> {
             Ok(OutputState::new())
         }
     }

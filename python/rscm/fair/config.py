@@ -27,11 +27,11 @@ from rscm import names
 from rscm._lib.fair import (
     AerosolCloudBuilder,
     CH4LifetimeBuilder,
-    EescBuilder,
+    EESCBuilder,
     EnergyBalanceBuilder,
     ForcingAggregationBuilder,
     GasCycleBuilder,
-    GhgForcingBuilder,
+    GHGForcingBuilder,
     LinearForcingBuilder,
 )
 from rscm.fair import naming
@@ -225,7 +225,7 @@ def _gas_cycle(config: FairConfig, gases: list[Species]) -> RustComponent:
 def _eesc(config: FairConfig) -> RustComponent:
     halogens = _of_type(config, *naming.HALOGEN_TYPES)
     (cfc11,) = _of_type(config, "cfc-11")
-    return EescBuilder.from_parameters(
+    return EESCBuilder.from_parameters(
         {
             "halogens": [
                 {
@@ -271,7 +271,7 @@ def _ghg_forcing(config: FairConfig, gases: list[Species]) -> RustComponent:
             raise ValueError(msg)
         major[kind] = gas(found[0])
     minor = [gas(s) for s in gases if s["type"] not in major]
-    return GhgForcingBuilder.from_parameters({**major, "minor": minor}).build()
+    return GHGForcingBuilder.from_parameters({**major, "minor": minor}).build()
 
 
 def _driver(

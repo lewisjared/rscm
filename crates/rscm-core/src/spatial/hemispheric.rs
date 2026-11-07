@@ -1,5 +1,5 @@
 use super::SpatialGrid;
-use crate::errors::{RscmError, RscmResult};
+use crate::errors::{RSCMError, RSCMResult};
 use crate::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -117,7 +117,7 @@ impl SpatialGrid for HemisphericGrid {
         &self,
         values: &[FloatValue],
         target: &G,
-    ) -> RscmResult<Vec<FloatValue>> {
+    ) -> RSCMResult<Vec<FloatValue>> {
         assert_eq!(
             values.len(),
             self.size(),
@@ -135,12 +135,12 @@ impl SpatialGrid for HemisphericGrid {
             }
             4 => {
                 // Hemispheric to FourBox: not supported (cannot infer ocean/land split)
-                Err(RscmError::UnsupportedGridTransformation {
+                Err(RSCMError::UnsupportedGridTransformation {
                     from: self.grid_name().to_string(),
                     to: target.grid_name().to_string(),
                 })
             }
-            _ => Err(RscmError::UnsupportedGridTransformation {
+            _ => Err(RSCMError::UnsupportedGridTransformation {
                 from: self.grid_name().to_string(),
                 to: target.grid_name().to_string(),
             }),

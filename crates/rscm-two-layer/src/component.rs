@@ -12,8 +12,8 @@ use std::sync::Arc;
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
-use rscm_core::ivp::{get_last_step, Ivp, IvpBuilder};
+use rscm_core::errors::RSCMResult;
+use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -156,7 +156,7 @@ pub struct TwoLayer {
 }
 
 // Create the set of ODEs to represent the two layer model
-impl Ivp<Time, ModelState> for TwoLayer {
+impl IVP<Time, ModelState> for TwoLayer {
     fn calculate_dy_dt(
         &self,
         _t: Time,
@@ -226,7 +226,7 @@ impl Component for TwoLayer {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         // Read previous state from input (state variables appear in both inputs and outputs)
         let inputs = TwoLayerInputs::from_input_state(input_state);
         let prev_surface_temp = inputs.surface_temperature.get();
@@ -236,7 +236,7 @@ impl Component for TwoLayer {
         // y[0] = surface temperature, y[1] = deep temperature, y[2] = cumulative heat
         let y0 = ModelState::new(prev_surface_temp, prev_deep_temp, 0.0);
 
-        let solver = IvpBuilder::new(Arc::new(self.to_owned()), input_state, y0);
+        let solver = IVPBuilder::new(Arc::new(self.to_owned()), input_state, y0);
 
         let mut solver = solver.to_rk4(t_current, t_next, 0.1);
         solver.integrate().expect("Failed solving");

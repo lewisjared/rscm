@@ -1,7 +1,7 @@
 //! `Model::coupling` reports the runtime's execution plan.
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition, VariableRole};
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::model::{CouplingEdge, Model, ModelBuilder};
 use crate::state::StateValue;
 use crate::timeseries::{Time, TimeAxis};
@@ -31,7 +31,7 @@ macro_rules! link {
                 _t_current: Time,
                 _t_next: Time,
                 _input_state: &InputState,
-            ) -> RscmResult<OutputState> {
+            ) -> RSCMResult<OutputState> {
                 Ok(HashMap::from([($output.to_string(), StateValue::Scalar(1.0))]))
             }
         }

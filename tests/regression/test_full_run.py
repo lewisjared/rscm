@@ -14,8 +14,8 @@ import pytest
 
 from regression import full_run
 from rscm._lib.magicc import (
-    ClimateUdebBuilder,
-    GhgForcingBuilder,
+    ClimateUDEBBuilder,
+    GHGForcingBuilder,
     HalocarbonChemistryBuilder,
     OzoneForcingBuilder,
     PermafrostBuilder,
@@ -156,7 +156,7 @@ def test_ch4_oxidation_strat_h2o():
     run = full_run.load()
     ch4 = run.series("Atmospheric Concentrations|CH4")
     n2o = run.series("Atmospheric Concentrations|N2O")
-    builder = GhgForcingBuilder.from_parameters(
+    builder = GHGForcingBuilder.from_parameters(
         {
             "ch4_pi": ch4[0],
             "n2o_pi": n2o[0],
@@ -191,10 +191,10 @@ def test_climate():
         gas: run.series(f"Atmospheric Concentrations|{gas}")
         for gas in ("CO2", "CH4", "N2O")
     }
-    ghg = GhgForcingBuilder.from_parameters(
+    ghg = GHGForcingBuilder.from_parameters(
         {f"{gas.lower()}_pi": values[0] for gas, values in conc.items()}
     )
-    climate = ClimateUdebBuilder.from_parameters(full_run.climate_parameters(run))
+    climate = ClimateUDEBBuilder.from_parameters(full_run.climate_parameters(run))
     boxes = run.boxes("TOTAL_EFFRF")
     units = {"CO2": "ppm", "CH4": "ppb", "N2O": "ppb"}
     model = full_run.run_components(

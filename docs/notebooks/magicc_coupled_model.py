@@ -67,10 +67,10 @@ from rscm.core import (
 from rscm.magicc import (
     CH4ChemistryBuilder,
     CH4OxidationBuilder,
-    ClimateUdebBuilder,
+    ClimateUDEBBuilder,
     CO2BudgetBuilder,
     ForcingAggregationBuilder,
-    GhgForcingBuilder,
+    GHGForcingBuilder,
     HalocarbonChemistryBuilder,
     N2OChemistryBuilder,
     OceanCarbonBuilder,
@@ -127,9 +127,9 @@ def reference_run(name):
 # | Carbon    | Nitrogen limitation                          | `nitrogen` parameters of `TerrestrialCarbon` |
 # | Forcing   | Ozone                                        | `OzoneForcingBuilder`                        |
 # | Forcing   | Aerosols and other prescribed forcing        | `rscm.magicc.prescribed`                     |
-# | Forcing   | GHG forcing                                  | `GhgForcingBuilder`                          |
+# | Forcing   | GHG forcing                                  | `GHGForcingBuilder`                          |
 # | Forcing   | Forcing aggregation                          | `ForcingAggregationBuilder`                  |
-# | Climate   | Climate (UDEB)                               | `ClimateUdebBuilder`                         |
+# | Climate   | Climate (UDEB)                               | `ClimateUDEBBuilder`                         |
 # | Climate   | Sea level rise                               | `SeaLevelRiseBuilder`                        |
 #
 # UDEB is MAGICC7's upwelling-diffusion ocean coupled to an energy balance.
@@ -268,7 +268,7 @@ plt.show()
 
 # %% [markdown]
 # Volcanic forcing is different.
-# MAGICC7 applies it monthly inside the climate model, so it is a parameter of `ClimateUdeb`
+# MAGICC7 applies it monthly inside the climate model, so it is a parameter of `ClimateUDEB`
 # rather than an input variable.
 #
 # ## Configuring the components
@@ -292,12 +292,12 @@ print(
 # %% [markdown]
 # `full.climate_parameters` carries the climate configuration over,
 # including the monthly volcanic forcing from the input files.
-# Setting `thermal_expansion` makes `ClimateUdeb` write the thermal expansion that `SeaLevelRise` reads.
+# Setting `thermal_expansion` makes `ClimateUDEB` write the thermal expansion that `SeaLevelRise` reads.
 
 # %%
 climate_parameters = full.climate_parameters(p, inputs, years[0])
 climate_parameters["thermal_expansion"] = {}
-climate = ClimateUdebBuilder.from_parameters(climate_parameters)
+climate = ClimateUDEBBuilder.from_parameters(climate_parameters)
 
 # %% [markdown]
 # `ForcingAggregation` takes one entry per forcing agent.
@@ -369,7 +369,7 @@ builders = {
 # %% [markdown]
 # The carbon cycle, forcing and climate complete the chain.
 # `TerrestrialCarbon` takes its preindustrial pools and temperature feedbacks from MAGICC7's `co2_*` names.
-# `GhgForcing` uses the OLBL formulas (after Etminan et al., 2016), MAGICC7's default for CO2, CH4 and N2O.
+# `GHGForcing` uses the OLBL formulas (after Etminan et al., 2016), MAGICC7's default for CO2, CH4 and N2O.
 
 # %%
 initial_concentrations = full.default_initial_concentrations()
@@ -392,7 +392,7 @@ builders |= {
     "CO2Budget": CO2BudgetBuilder.from_parameters(
         {"include_permafrost": True, "ocean_end_of_year": True}
     ),
-    "GhgForcing": GhgForcingBuilder.from_parameters(
+    "GHGForcing": GHGForcingBuilder.from_parameters(
         {
             **{
                 f"{gas.lower()}_pi": initial_concentrations[gas]
@@ -404,7 +404,7 @@ builders |= {
     ),
     "OzoneForcing": OzoneForcingBuilder.from_parameters(full.ozone_parameters(p)),
     "ForcingAggregation": aggregation,
-    "ClimateUdeb": climate,
+    "ClimateUDEB": climate,
     "SeaLevelRise": SeaLevelRiseBuilder.from_parameters({}),
 }
 components = {name: builder.build() for name, builder in builders.items()}
@@ -419,7 +419,7 @@ components = {name: builder.build() for name, builder in builders.items()}
 # - **State**: read at the start of the step and written at its end, so it needs an initial value.
 #
 # The names are what couple components.
-# For example `CO2Budget` writes `Atmospheric Concentrations|CO2`, which `GhgForcing` reads:
+# For example `CO2Budget` writes `Atmospheric Concentrations|CO2`, which `GHGForcing` reads:
 
 # %%
 pd.DataFrame(
@@ -432,7 +432,7 @@ pd.DataFrame(
 # `HalocarbonChemistry` tracks 41 species, each with its own emissions input, concentration state
 # and forcing output.
 # `ForcingAggregation` reads every forcing agent and writes the total ERF
-# and the four-box `Efficacy Adjusted Effective Radiative Forcing` that drives `ClimateUdeb`.
+# and the four-box `Efficacy Adjusted Effective Radiative Forcing` that drives `ClimateUDEB`.
 
 # %% tags=["remove_input"]
 kinds = (VariableRole.Input, VariableRole.Output, VariableRole.State)
@@ -451,7 +451,7 @@ pd.DataFrame(
 #
 # MAGICC has feedback loops:
 #
-# - Temperature from `ClimateUdeb` changes permafrost thaw, the CH4, N2O and halocarbon lifetimes,
+# - Temperature from `ClimateUDEB` changes permafrost thaw, the CH4, N2O and halocarbon lifetimes,
 #   land and ocean carbon uptake and ozone forcing, which all change the forcing that drives temperature.
 # - CO2 from `CO2Budget` drives fertilisation on land and air-sea exchange,
 #   which set the fluxes that `CO2Budget` integrates.
@@ -607,7 +607,7 @@ initial_values = {
 # The climate needs the forcing at the first boundary.
 # `ForcingAggregation.aggregate` turns one value per agent, `initial_agents`,
 # into the total and four-box forcing,
-# and `ClimateUdeb.initial_values` gives the matching climate state.
+# and `ClimateUDEB.initial_values` gives the matching climate state.
 # The prescribed agents take their first-year forcing and the calculated agents start at zero,
 # apart from F-gases, which the next section fills in.
 
@@ -692,8 +692,8 @@ model = build_model(len(years), initial_agents)
 DOMAINS = {
     "#c8e6c9": ["CH4Chemistry", "CH4Oxidation", "N2OChemistry", "HalocarbonChemistry"],
     "#bbdefb": ["Permafrost", "TerrestrialCarbon", "OceanCarbon", "CO2Budget"],
-    "#ffe0b2": ["GhgForcing", "OzoneForcing", "ForcingAggregation"],
-    "#f8bbd0": ["ClimateUdeb", "SeaLevelRise"],
+    "#ffe0b2": ["GHGForcing", "OzoneForcing", "ForcingAggregation"],
+    "#f8bbd0": ["ClimateUDEB", "SeaLevelRise"],
 }
 COLOURS = {name: colour for colour, names in DOMAINS.items() for name in names}
 
@@ -755,11 +755,11 @@ show_svg(graph)
 #   and lagged values, apart from the permafrost CH4 that `CH4Chemistry` takes from `Permafrost`.
 # - The carbon chain runs from `TerrestrialCarbon` through `OceanCarbon` to `CO2Budget`.
 #   The ocean needs every CO2 source because it evolves atmospheric CO2 monthly within the year.
-# - `GhgForcing` waits for all three concentrations, and `OzoneForcing` waits for CH4, N2O and EESC.
+# - `GHGForcing` waits for all three concentrations, and `OzoneForcing` waits for CH4, N2O and EESC.
 # - `ForcingAggregation` collects every agent, including the prescribed ones,
-#   into the forcing that drives `ClimateUdeb`.
+#   into the forcing that drives `ClimateUDEB`.
 #   The prescribed emissions and forcing, and the monthly volcanic forcing, are not drawn.
-# - `SeaLevelRise` reads the annual mean warming and thermal expansion from `ClimateUdeb`.
+# - `SeaLevelRise` reads the annual mean warming and thermal expansion from `ClimateUDEB`.
 # - The red arrows close the loops one step later.
 #   Temperature reaches seven components this way, CO2 reaches the land and ocean,
 #   and equilibrium climate sensitivity reaches `ForcingAggregation`.
@@ -860,7 +860,7 @@ plt.show()
 # The stacked areas are each agent's forcing before efficacies,
 # positive agents above zero and negative agents below it.
 # The black line is the total ERF from `ForcingAggregation`, after efficacies.
-# Volcanic forcing is not in either, because it enters `ClimateUdeb` monthly.
+# Volcanic forcing is not in either, because it enters `ClimateUDEB` monthly.
 
 # %% tags=["remove_input"]
 ozone = ("Stratospheric", "Tropospheric", "N2O Feedback", "Temperature Feedback")
@@ -901,7 +901,7 @@ plt.show()
 # %% [markdown]
 # ### Surface air temperature change
 #
-# `ClimateUdeb` resolves four boxes.
+# `ClimateUDEB` resolves four boxes.
 # Northern land warms fastest and the southern ocean slowest.
 # The dips are volcanic eruptions.
 
@@ -962,7 +962,7 @@ plt.show()
 # %% [markdown]
 # ### Sea level rise
 #
-# `ClimateUdeb` calculates thermal expansion from the ocean temperature profile.
+# `ClimateUDEB` calculates thermal expansion from the ocean temperature profile.
 # `SeaLevelRise` adds glaciers and the Greenland and Antarctic ice sheets.
 # MAGICC7 counts sea level rise from 1850, so every term is zero before then.
 

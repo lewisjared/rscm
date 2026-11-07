@@ -20,7 +20,7 @@ use crate::constants::{
 };
 use nalgebra::{DMatrix, DVector};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::names::{
     ocean_layer_temperature, NET_ENERGY_IMBALANCE, OCEAN_HEAT_CONTENT, STOCHASTIC_FORCING,
 };
@@ -81,24 +81,24 @@ struct Unchecked {
 }
 
 impl TryFrom<Unchecked> for EnergyBalance {
-    type Error = RscmError;
+    type Error = RSCMError;
 
-    fn try_from(unchecked: Unchecked) -> RscmResult<Self> {
+    fn try_from(unchecked: Unchecked) -> RSCMResult<Self> {
         Self::from_parameters(unchecked.parameters)
     }
 }
 
 impl EnergyBalance {
     /// Create the component, checking the layer parameters.
-    pub fn from_parameters(parameters: EnergyBalanceParameters) -> RscmResult<Self> {
+    pub fn from_parameters(parameters: EnergyBalanceParameters) -> RSCMResult<Self> {
         let n = parameters.ocean_heat_capacity.len();
         if n < 2 {
-            return Err(RscmError::Error(
+            return Err(RSCMError::Error(
                 "EnergyBalance needs at least two layers".into(),
             ));
         }
         if parameters.ocean_heat_transfer.len() != n {
-            return Err(RscmError::Error(
+            return Err(RSCMError::Error(
                 "ocean_heat_capacity and ocean_heat_transfer must have the same length".into(),
             ));
         }
@@ -108,7 +108,7 @@ impl EnergyBalance {
         };
         // The step scales whole rows, so it cannot make the matrix singular.
         if !component.eb_matrix(1.0).lu().is_invertible() {
-            return Err(RscmError::Error(
+            return Err(RSCMError::Error(
                 "The energy balance matrix is singular: check the heat transfers and gamma".into(),
             ));
         }
@@ -231,7 +231,7 @@ impl Component for EnergyBalance {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let dt = t_next - t_current;
         let n = self.n_layers();
         let p = &self.parameters;

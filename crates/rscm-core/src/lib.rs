@@ -72,23 +72,23 @@
 //! #[outputs(
 //!     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
 //! )]
-//! pub struct CO2Erf {
+//! pub struct CO2ERF {
 //!     pub erf_2xco2: f64,
 //!     pub co2_pi: f64,
 //! }
 //!
 //! #[typetag::serde]
-//! impl Component for CO2Erf {
+//! impl Component for CO2ERF {
 //!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         Self::generated_definitions()
 //!     }
 //!
-//!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RscmResult<OutputState> {
-//!         let inputs = CO2ErfInputs::from_input_state(input_state);
+//!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
+//!         let inputs = CO2ERFInputs::from_input_state(input_state);
 //!         let concentration = inputs.concentration.get();
 //!         let erf = self.erf_2xco2 / 2.0_f64.ln()
 //!             * (1.0 + (concentration - self.co2_pi) / self.co2_pi).ln();
-//!         Ok(CO2ErfOutputs { erf }.into())
+//!         Ok(CO2ERFOutputs { erf }.into())
 //!     }
 //! }
 //! ```

@@ -3,7 +3,7 @@
 `run_magicc7` couples every MAGICC7 process RSCM implements:
 chemistry, the carbon cycle, permafrost, GHG and ozone forcing,
 the forcing MAGICC7 prescribes from its input files, forcing aggregation
-with efficacies and regional patterns, and ClimateUdeb with monthly volcanic forcing.
+with efficacies and regional patterns, and ClimateUDEB with monthly volcanic forcing.
 
 Parameters use MAGICC7's configuration names in lower case,
 such as ``core_climatesensitivity``.
@@ -25,10 +25,10 @@ import numpy as np
 from rscm._lib.magicc import (
     CH4ChemistryBuilder,
     CH4OxidationBuilder,
-    ClimateUdebBuilder,
+    ClimateUDEBBuilder,
     CO2BudgetBuilder,
     ForcingAggregationBuilder,
-    GhgForcingBuilder,
+    GHGForcingBuilder,
     HalocarbonChemistryBuilder,
     N2OChemistryBuilder,
     OceanCarbonBuilder,
@@ -247,9 +247,9 @@ COMPONENTS = (
     "CH4Chemistry",
     "CH4Oxidation",
     "CO2Budget",
-    "ClimateUdeb",
+    "ClimateUDEB",
     "ForcingAggregation",
-    "GhgForcing",
+    "GHGForcing",
     "HalocarbonChemistry",
     "N2OChemistry",
     "OceanCarbon",
@@ -315,7 +315,7 @@ CLIMATE_PARAMETERS = {
     "co2_regional_pattern": "rf_regions_co2",
     "land_heat_capacity_effective_thickness": "core_landhc_effthickness",
 }
-"""ClimateUdeb parameters and their MAGICC7 names."""
+"""ClimateUDEB parameters and their MAGICC7 names."""
 
 
 @cache
@@ -599,7 +599,7 @@ def climate_parameters(
     start_year: float,
     end_year: float | None = None,
 ) -> dict[str, Any]:
-    """ClimateUdeb parameters, with regional and monthly volcanic forcing.
+    """ClimateUDEB parameters, with regional and monthly volcanic forcing.
 
     With ``end_year``, months after the run ends are left out.
     """
@@ -615,7 +615,7 @@ def climate_parameters(
         scale=p["rf_volcanic_scale"],
     )
     base = {ours: p[theirs] for ours, theirs in CLIMATE_PARAMETERS.items()}
-    initial = ClimateUdebBuilder.from_parameters(
+    initial = ClimateUDEBBuilder.from_parameters(
         cast("Any", {**base, "erf_2xco2": EFFICACY_ERF_2XCO2})
     ).internal_efficacy(pattern)
     method = EFFICACY_METHODS[p["rf_efficacy_apply"]]
@@ -733,7 +733,7 @@ def _pattern(patterns: Mapping[str, list[float]], key: str) -> dict[str, Any]:
 
 
 def efficacy_climate(climate: Mapping[str, Any]) -> dict[str, Any]:
-    """ForcingAggregation ``climate`` from ClimateUdeb parameters."""
+    """ForcingAggregation ``climate`` from ClimateUDEB parameters."""
     keys = (
         "ecs",
         "land_ocean_heat_exchange",
@@ -1134,7 +1134,7 @@ def run_magicc7(  # noqa: PLR0913
     climate_base = climate_parameters(p, files, time[0], time[-1])
     if sealevel:
         climate_base["thermal_expansion"] = {}
-    climate = ClimateUdebBuilder.from_parameters(params("ClimateUdeb", climate_base))
+    climate = ClimateUDEBBuilder.from_parameters(params("ClimateUDEB", climate_base))
     prescribed = prescribed_forcing(time, native, p, files)
     agents = forcing_agents(p, time, prescribed, native)
     aggregation = ForcingAggregationBuilder.from_parameters(
@@ -1253,9 +1253,9 @@ def run_magicc7(  # noqa: PLR0913
                 },
             )
         ).build(),
-        GhgForcingBuilder.from_parameters(
+        GHGForcingBuilder.from_parameters(
             params(
-                "GhgForcing",
+                "GHGForcing",
                 {
                     **{f"{gas.lower()}_pi": conc[gas] for gas in ("CO2", "CH4", "N2O")},
                     **_ghg_method(p),

@@ -41,7 +41,7 @@ use crate::parameters::AerosolIndirectParameters;
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -171,7 +171,7 @@ impl Component for AerosolIndirect {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let inputs = AerosolIndirectInputs::from_input_state(input_state);
 
         let sox = inputs.sox_emissions.get();

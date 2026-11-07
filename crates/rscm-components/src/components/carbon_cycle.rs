@@ -8,8 +8,8 @@ use ode_solvers::Vector3;
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
-use rscm_core::ivp::{get_last_step, Ivp, IvpBuilder};
+use rscm_core::errors::RSCMResult;
+use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -105,7 +105,7 @@ impl Component for CarbonCycle {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let inputs = CarbonCycleInputs::from_input_state(input_state);
 
         let y0 = ModelState::new(
@@ -114,7 +114,7 @@ impl Component for CarbonCycle {
             inputs.cumulative_emissions.get(),
         );
 
-        let solver = IvpBuilder::new(Arc::new(self.to_owned()), input_state, y0);
+        let solver = IVPBuilder::new(Arc::new(self.to_owned()), input_state, y0);
 
         let mut solver = solver.to_rk4(t_current, t_next, self.solver_options.step_size);
         solver.integrate().expect("Failed solving");
@@ -131,7 +131,7 @@ impl Component for CarbonCycle {
     }
 }
 
-impl Ivp<Time, ModelState> for CarbonCycle {
+impl IVP<Time, ModelState> for CarbonCycle {
     fn calculate_dy_dt(
         &self,
         _t: Time,

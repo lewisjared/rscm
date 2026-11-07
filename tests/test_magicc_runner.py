@@ -5,7 +5,7 @@ import numpy.testing as npt
 import pytest
 
 from rscm.core import InterpolationStrategy, ModelBuilder, TimeAxis, Timeseries
-from rscm.magicc import ClimateUdebBuilder, CO2Emissions, GhgForcingBuilder, run_magicc
+from rscm.magicc import ClimateUDEBBuilder, CO2Emissions, GHGForcingBuilder, run_magicc
 from rscm.names import emissions_conversion_factor
 
 
@@ -63,7 +63,7 @@ def test_forcing_has_same_boundary_as_concentrations(method):
         forcing_species=("CO2",),
     )
     # Includes nonzero initial forcing and the final input boundary.
-    forcing = GhgForcingBuilder.from_parameters({"method": method, "adjust_co2": 1.0})
+    forcing = GHGForcingBuilder.from_parameters({"method": method, "adjust_co2": 1.0})
     expected = [forcing.calculate_forcings(c, 722.0, 270.0)["CO2"] for c in conc["CO2"]]
     npt.assert_allclose(result.values["Effective Radiative Forcing"], expected)
     npt.assert_allclose(result.values["Heat Uptake"][0], expected[0])
@@ -93,7 +93,7 @@ def test_calculated_forcing_matches_prescribed_climate_run(land_fractions):
     model = (
         ModelBuilder()
         .with_time_axis(axis)
-        .with_component(ClimateUdebBuilder.from_parameters(climate_parameters).build())
+        .with_component(ClimateUDEBBuilder.from_parameters(climate_parameters).build())
         .with_prescribed_variable(
             "Effective Radiative Forcing",
             Timeseries(expected_erf, axis, "W/m^2", InterpolationStrategy.Linear),

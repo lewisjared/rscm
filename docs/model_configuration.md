@@ -299,7 +299,7 @@ The builder:
 It adds no prescribed inputs yet, as the [Quick Start](#quick-start) warns.
 
 `build_model` only supports `type = "two-layer"` and raises `ValueError` for any other model type.
-`MagiccConfig` in `rscm.config.models.magicc` describes MAGICC parameters,
+`MAGICCConfig` in `rscm.config.models.magicc` describes MAGICC parameters,
 but cannot yet be built into a model.
 `rscm.magicc.full.run_magicc7` runs the full MAGICC7 chain without the config layer.
 See [MAGICC Runs](magicc_runs.md#full-magicc7-chain).
@@ -330,7 +330,7 @@ rscm_config = from_legacy_dict(legacy)
 
 The mapping also covers the permafrost `pf_*` parameters.
 For example, `pf_apply` maps to `components.permafrost.enabled`.
-`MagiccConfig` has no permafrost section yet, so these paths only exist in the dict form.
+`MAGICCConfig` has no permafrost section yet, so these paths only exist in the dict form.
 
 ### Export to MAGICC
 

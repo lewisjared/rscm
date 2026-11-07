@@ -62,7 +62,7 @@ uv lock
 
 ## Runtime Errors
 
-### RscmError Types
+### RSCMError Types
 
 RSCM uses specific error types to help diagnose issues. Here's what each means and how to fix it:
 

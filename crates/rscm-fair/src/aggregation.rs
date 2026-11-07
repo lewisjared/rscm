@@ -12,7 +12,7 @@ use crate::constants::{
     total_forcing,
 };
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::forcing::{ForcingCategory, ForcingSubtotals};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -114,7 +114,7 @@ impl Component for ForcingAggregation {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let p = &self.parameters;
         let temperature = if self.has_feedback() {
             get(input_state, &p.surface_temperature)

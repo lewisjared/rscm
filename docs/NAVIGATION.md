@@ -20,7 +20,7 @@ See https://oprypin.github.io/mkdocs-literate-nav/
   * [MAGICC Concentration Baseline](magicc_baseline.md)
   * [FaIR Runs](fair_runs.md)
   * [MAGICC Modules](modules/README.md)
-  * [ClimateUdeb Time Conventions](modules/time_conventions.md)
+  * [ClimateUDEB Time Conventions](modules/time_conventions.md)
   * [Configuration Layer](model_configuration.md)
   * [Spatial Grids](grids.md)
   * [Physical Units](notebooks/units_tutorial.py)

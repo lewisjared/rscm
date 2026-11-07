@@ -16,9 +16,9 @@ import numpy as np
 from rscm._lib.magicc import (
     CH4ChemistryBuilder,
     CH4OxidationBuilder,
-    ClimateUdebBuilder,
+    ClimateUDEBBuilder,
     CO2BudgetBuilder,
-    GhgForcingBuilder,
+    GHGForcingBuilder,
     N2OChemistryBuilder,
     OceanCarbonBuilder,
     TerrestrialCarbonBuilder,
@@ -34,7 +34,7 @@ from rscm.core import (
 from rscm.magicc.runner import (
     CH4_OTHER_LIFETIMES,
     SPECIES,
-    MagiccResult,
+    MAGICCResult,
     _average_series,
     _base_schema,
     _ch4_burdens,
@@ -93,7 +93,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm._lib.magicc import ClimateUdebParameters, GhgForcingParameters
+    from rscm._lib.magicc import ClimateUDEBParameters, GHGForcingParameters
 
 __all__ = ["Emissions", "run_magicc_emissions"]
 
@@ -112,8 +112,8 @@ COMPONENTS = {
     "TerrestrialCarbon": TerrestrialCarbonBuilder,
     "OceanCarbon": OceanCarbonBuilder,
     "CO2Budget": CO2BudgetBuilder,
-    "GhgForcing": GhgForcingBuilder,
-    "ClimateUdeb": ClimateUdebBuilder,
+    "GHGForcing": GHGForcingBuilder,
+    "ClimateUDEB": ClimateUDEBBuilder,
 }
 # Chemistry and the carbon cycle read last year's temperature,
 # and the carbon sinks last year's CO2.
@@ -163,10 +163,10 @@ CALCULATED = {
     OCEAN_CARBON_ATMOSPHERIC_CONCENTRATIONS_CO2: ("ppm", "OceanCarbon"),
     NET_EMISSIONS_CO2: ("GtC/yr", "CO2Budget"),
     AIRBORNE_FRACTION_CO2: ("1", "CO2Budget"),
-    SURFACE_AIR_TEMPERATURE_CHANGE: ("K", "ClimateUdeb"),
-    SEA_SURFACE_TEMPERATURE: ("K", "ClimateUdeb"),
-    HEAT_UPTAKE: ("W/m^2", "ClimateUdeb"),
-    OCEAN_HEAT_CONTENT: ("J", "ClimateUdeb"),
+    SURFACE_AIR_TEMPERATURE_CHANGE: ("K", "ClimateUDEB"),
+    SEA_SURFACE_TEMPERATURE: ("K", "ClimateUDEB"),
+    HEAT_UPTAKE: ("W/m^2", "ClimateUDEB"),
+    OCEAN_HEAT_CONTENT: ("J", "ClimateUDEB"),
 }
 
 
@@ -274,7 +274,7 @@ def _variables(
         units[child(ATMOSPHERIC_CONCENTRATIONS, gas)] = "ppm" if gas == "CO2" else "ppb"
         sources[child(ATMOSPHERIC_CONCENTRATIONS, gas)] = owner
         units[child(ERF, gas)] = "W/m^2"
-        sources[child(ERF, gas)] = "GhgForcing"
+        sources[child(ERF, gas)] = "GHGForcing"
     for name, (unit, source) in CALCULATED.items():
         units[name] = unit
         sources[name] = source
@@ -290,7 +290,7 @@ def run_magicc_emissions(  # noqa: PLR0913
     other_forcing: ArrayLike,
     forcing_species: tuple[str, ...] = SPECIES,
     parameters: Mapping[str, Mapping[str, Any]] | None = None,
-) -> MagiccResult:
+) -> MAGICCResult:
     """Run the coupled MAGICC chain from emissions on annual boundaries.
 
     ``time_axis`` must have at least two annual steps.
@@ -300,7 +300,7 @@ def run_magicc_emissions(  # noqa: PLR0913
 
     ``other_forcing`` is the ERF in W/m² from everything except the selected
     gases, one value per boundary. ``parameters`` maps component names from
-    ``COMPONENTS`` to their Rust parameter dictionaries. ClimateUdeb's
+    ``COMPONENTS`` to their Rust parameter dictionaries. ClimateUDEB's
     ``erf_2xco2`` defaults to the 2xCO2 effective radiative forcing of the
     forcing configuration, as in MAGICC7. A ``gtc_per_ppm`` given for CO2Budget
     or OceanCarbon applies to both.
@@ -334,18 +334,18 @@ def run_magicc_emissions(  # noqa: PLR0913
     data[child(ERF, "Other")] = _series("other_forcing", other_forcing, len(time))
     units, sources = _variables(data)
 
-    forcing = GhgForcingBuilder.from_parameters(
-        cast("GhgForcingParameters", params["GhgForcing"])
+    forcing = GHGForcingBuilder.from_parameters(
+        cast("GHGForcingParameters", params["GHGForcing"])
     )
     initial_erf = forcing.calculate_forcings(*(initial_conc[gas] for gas in SPECIES))
     total_erf = sum(initial_erf[gas] for gas in forcing_species) + float(
         data[child(ERF, "Other")][0]
     )
     climate_params = cast(
-        "ClimateUdebParameters",
-        {"erf_2xco2": forcing.erf_2xco2(), **params["ClimateUdeb"]},
+        "ClimateUDEBParameters",
+        {"erf_2xco2": forcing.erf_2xco2(), **params["ClimateUDEB"]},
     )
-    climate = ClimateUdebBuilder.from_parameters(climate_params)
+    climate = ClimateUDEBBuilder.from_parameters(climate_params)
     terrestrial = params["TerrestrialCarbon"]
     initial = {
         **{
@@ -378,9 +378,9 @@ def run_magicc_emissions(  # noqa: PLR0913
         .with_grid_weights(GridType.FourBox, list(weights))
     )
     for name, component_builder in COMPONENTS.items():
-        if name == "GhgForcing":
+        if name == "GHGForcing":
             component = forcing.build()
-        elif name == "ClimateUdeb":
+        elif name == "ClimateUDEB":
             component = climate.build()
         else:
             component = component_builder.from_parameters(params[name]).build()

@@ -1,4 +1,4 @@
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::interpolate::Interp1d;
 use crate::spatial::SpatialGrid;
@@ -457,7 +457,7 @@ where
     ///
     /// Uses the interpolation strategy to compute values for all regions
     /// at the given time point.
-    pub fn at_time_all(&self, time: Time) -> RscmResult<Vec<T>> {
+    pub fn at_time_all(&self, time: Time) -> RSCMResult<Vec<T>> {
         let mut result = Vec::with_capacity(self.grid.size());
 
         for region_idx in 0..self.grid.size() {
@@ -514,7 +514,7 @@ where
     pub fn transform_to<G2: SpatialGrid>(
         &self,
         target_grid: G2,
-    ) -> RscmResult<GridTimeseries<T, G2>> {
+    ) -> RSCMResult<GridTimeseries<T, G2>> {
         let target_size = target_grid.size();
         let mut transformed_values = Array2::zeros((self.len(), target_size));
 
@@ -763,7 +763,7 @@ where
     ///
     /// This method interpolates using the current interpolation strategy to determine
     /// the value at `time`.
-    pub fn at_time(&self, time: Time, region: crate::spatial::ScalarRegion) -> RscmResult<T> {
+    pub fn at_time(&self, time: Time, region: crate::spatial::ScalarRegion) -> RSCMResult<T> {
         let result = self.at_time_all(time)?;
         Ok(result[region as usize])
     }
@@ -825,7 +825,7 @@ where
     }
 
     /// Get the value at a given time with interpolation (type-safe for FourBoxGrid)
-    pub fn at_time(&self, time: Time, region: crate::spatial::FourBoxRegion) -> RscmResult<T> {
+    pub fn at_time(&self, time: Time, region: crate::spatial::FourBoxRegion) -> RSCMResult<T> {
         let result = self.at_time_all(time)?;
         Ok(result[region as usize])
     }
@@ -861,7 +861,7 @@ where
     }
 
     /// Get the value at a given time with interpolation (type-safe for HemisphericGrid)
-    pub fn at_time(&self, time: Time, region: crate::spatial::HemisphericRegion) -> RscmResult<T> {
+    pub fn at_time(&self, time: Time, region: crate::spatial::HemisphericRegion) -> RSCMResult<T> {
         let result = self.at_time_all(time)?;
         Ok(result[region as usize])
     }

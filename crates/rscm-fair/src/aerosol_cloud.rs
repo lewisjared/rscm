@@ -9,7 +9,7 @@
 use crate::constants::{driver_definitions, get, one, surface_temperature};
 use crate::driver::Driver;
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -71,22 +71,22 @@ struct Unchecked {
 }
 
 impl TryFrom<Unchecked> for AerosolCloud {
-    type Error = RscmError;
+    type Error = RSCMError;
 
-    fn try_from(unchecked: Unchecked) -> RscmResult<Self> {
+    fn try_from(unchecked: Unchecked) -> RSCMResult<Self> {
         Self::from_parameters(unchecked.parameters)
     }
 }
 
 impl AerosolCloud {
     /// Create the component, checking each driver is emissions or a concentration.
-    pub fn from_parameters(parameters: AerosolCloudParameters) -> RscmResult<Self> {
+    pub fn from_parameters(parameters: AerosolCloudParameters) -> RSCMResult<Self> {
         if let Some(d) = parameters
             .drivers
             .iter()
             .find(|d| d.driver == Driver::CumulativeEmissions)
         {
-            return Err(RscmError::Error(format!(
+            return Err(RSCMError::Error(format!(
                 "aerosol-cloud driver {} cannot be cumulative emissions",
                 d.variable
             )));
@@ -142,7 +142,7 @@ impl Component for AerosolCloud {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let p = &self.parameters;
         let values: Vec<_> = p
             .drivers

@@ -40,7 +40,7 @@ use crate::parameters::{PermafrostParameters, PermafrostSoil};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -375,7 +375,7 @@ impl Permafrost {
         t_next: Time,
         input_state: &InputState,
         state: &mut PermafrostState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         if state.mineral_soil.len() != self.parameters.n_bands {
             *state = self.initial_state();
         }
@@ -430,7 +430,7 @@ impl Component for Permafrost {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let mut state = self.initial_state();
         self.solve_impl(t_current, t_next, input_state, &mut state)
     }
@@ -445,11 +445,11 @@ impl Component for Permafrost {
         t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<PermafrostState>()
-            .ok_or_else(|| RscmError::Error("Internal state should be PermafrostState".into()))?;
+            .ok_or_else(|| RSCMError::Error("Internal state should be PermafrostState".into()))?;
         self.solve_impl(t_current, t_next, input_state, state)
     }
 }

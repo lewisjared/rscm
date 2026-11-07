@@ -50,7 +50,7 @@ use crate::reference::{
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::names::ATMOSPHERIC_CONCENTRATIONS_N2O;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -178,7 +178,7 @@ impl Component for N2OChemistry {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         require_annual("N2OChemistry", t_current, t_next)?;
         let inputs = N2OChemistryInputs::from_input_state(input_state);
         let p = &self.parameters;

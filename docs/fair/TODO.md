@@ -21,14 +21,14 @@ It differs from the C library's by an ulp, which CO2's 1e9-year box turns into a
 ## Slice 2: CO2
 
 - [x] `GasCycle` with gas boxes in `ComponentState` and the iIRF100 lifetime scaling.
-- [x] `GhgForcing` with Meinshausen 2020.
+- [x] `GHGForcing` with Meinshausen 2020.
 - [x] Parity for CO2, CH4 and N2O emissions-driven (`major_ghg_ssp245`).
   Meinshausen 2020 needs all three, so there is no CO2-only case.
 
 ## Slice 3: all greenhouse gases
 
 - [x] Every default GHG in `GasCycle`, including concentration-driven species and their inverse emissions.
-- [x] `CH4Lifetime` (Thornhill 2021) and `Eesc`.
+- [x] `CH4Lifetime` (Thornhill 2021) and `EESC`.
 - [x] Parity for every default GHG.
 
 ## Slice 4: other forcing
@@ -52,7 +52,7 @@ FaIR calculates EESC after the aerosol forcing, so calculated EESC never reaches
 - [x] Docs page (`docs/fair_runs.md`).
 - [x] Changelog fragment.
 - [x] Parity for members of the fair-calibrate v1.6.1 posterior.
-- [x] Smoke test with MAGICC's `ClimateUdeb` (`components(..., energy_balance=False)`).
+- [x] Smoke test with MAGICC's `ClimateUDEB` (`components(..., energy_balance=False)`).
 
 The posterior cases run three members over the CMIP7 history (1750 to 2024) deterministically.
 The posterior sets `stochastic_run`, which `read_calibration` ignores.

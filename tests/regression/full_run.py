@@ -240,7 +240,7 @@ def prescribed_forcing() -> dict[str, NDArray[np.float64]]:
 
 
 def climate_parameters(run: FullRun) -> dict[str, Any]:
-    """ClimateUdeb parameters of the reference run."""
+    """ClimateUDEB parameters of the reference run."""
     return full.climate_parameters(
         run.parameters, full.load_inputs(run.parameters), run.years[0]
     )

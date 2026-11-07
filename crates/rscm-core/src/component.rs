@@ -1,4 +1,4 @@
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 pub use crate::state::{
     FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, HemisphericWindow, InputState,
     OutputState, ScalarWindow, TimeseriesWindow, VariableSource,
@@ -457,7 +457,7 @@ pub trait Component: Debug + Send + Sync {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState>;
+    ) -> RSCMResult<OutputState>;
 
     /// Solve with internal state support.
     ///
@@ -476,7 +476,7 @@ pub trait Component: Debug + Send + Sync {
         t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         // Default: ignore state, call existing solve()
         let _ = internal_state;
         self.solve(t_current, t_next, input_state)

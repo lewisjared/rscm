@@ -49,7 +49,7 @@ rscm/
 ├── crates/                   # Rust source code
 │   ├── rscm/                 # PyO3 Python bindings (root extension module)
 │   ├── rscm-core/            # Core traits (Component, Model, Timeseries)
-│   ├── rscm-components/      # Pre-built components (CarbonCycle, CO2Erf)
+│   ├── rscm-components/      # Pre-built components (CarbonCycle, CO2ERF)
 │   ├── rscm-macros/          # Procedural macros (ComponentIO)
 │   ├── rscm-two-layer/       # Two-layer climate model component
 │   ├── rscm-magicc/          # MAGICC components
@@ -111,7 +111,7 @@ Write it in Rust, with the `ComponentIO` derive macro, for performance or comple
             Self::generated_definitions()
         }
 
-        fn solve(&self, _t_current: Time, _t_next: Time, input_state: &InputState) -> RscmResult<OutputState> {
+        fn solve(&self, _t_current: Time, _t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
             let inputs = MyComponentInputs::from_input_state(input_state);
             let outputs = MyComponentOutputs {
                 temperature: inputs.forcing.get() * self.sensitivity,

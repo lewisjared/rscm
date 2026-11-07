@@ -51,7 +51,7 @@ from rscm.fair.config import (
 )
 from rscm.fair.ensemble import SPECIES_ATTRIBUTES
 from rscm.fair.run import _on_timebounds
-from rscm.magicc import ClimateUdebBuilder
+from rscm.magicc import ClimateUDEBBuilder
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -460,18 +460,18 @@ def test_from_fair() -> None:
 
 
 def test_climate_udeb_smoke() -> None:
-    """FaIR's gas cycle and forcing drive MAGICC's ClimateUdeb in place of the EBM."""
+    """FaIR's gas cycle and forcing drive MAGICC's ClimateUDEB in place of the EBM."""
     member = CALIBRATION_MEMBERS[0]
     run = load(f"calibrated_{member}")
     nh, sh = 0.42, 0.21
-    climate = ClimateUdebBuilder.from_parameters(
+    climate = ClimateUDEBBuilder.from_parameters(
         {"ecs": 3.0, "nh_land_fraction": nh, "sh_land_fraction": sh}
     )
     chain = [*components(run.config, energy_balance=False), climate.build()]
 
     schema = VariableSchema()
     definitions = [d for c in chain for d in c.definitions()]
-    # Producers first, so the schema keeps ClimateUdeb's four-box temperature.
+    # Producers first, so the schema keeps ClimateUDEB's four-box temperature.
     for d in sorted(definitions, key=lambda d: d.role == VariableRole.Input):
         if not schema.contains(d.name):
             schema.add_variable(d.name, d.unit, d.grid)

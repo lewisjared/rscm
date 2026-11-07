@@ -5,8 +5,8 @@
 | Runner                 | Couples                                                | Returns        | Tested against MAGICC7 |
 | ---------------------- | ------------------------------------------------------ | -------------- | ---------------------- |
 | `run_magicc7`          | The full MAGICC7 chain, with its input files           | `Model`        | Yes                    |
-| `run_magicc_emissions` | Chemistry, carbon cycle, GHG forcing and climate       | `MagiccResult` | No                     |
-| `run_magicc`           | GHG forcing and climate from prescribed concentrations | `MagiccResult` | No                     |
+| `run_magicc_emissions` | Chemistry, carbon cycle, GHG forcing and climate       | `MAGICCResult` | No                     |
+| `run_magicc`           | GHG forcing and climate from prescribed concentrations | `MAGICCResult` | No                     |
 
 - Use `run_magicc7` to reproduce MAGICC7.
 - Use `run_magicc_emissions` for a small coupled chain that needs no input files
@@ -27,7 +27,7 @@ see the [concentration baseline](magicc_baseline.md).
 
 `rscm.magicc.run_magicc7` couples every MAGICC7 component RSCM implements:
 chemistry, the carbon cycle, permafrost, GHG and ozone forcing, forcing aggregation
-with efficacies and regional patterns, and ClimateUdeb with monthly volcanic forcing.
+with efficacies and regional patterns, and ClimateUDEB with monthly volcanic forcing.
 
 ```python
 import numpy as np
@@ -70,7 +70,7 @@ Surface air temperature change and other regional variables are four-box timeser
 in northern ocean, northern land, southern ocean, southern land order.
 Their grid weights are always MAGICC7's default land fractions, 42% of the northern hemisphere
 and 21% of the southern, as `prescribed.area_fractions()` gives.
-Overriding the `ClimateUdeb` land fractions through `component_parameters` does not change them.
+Overriding the `ClimateUDEB` land fractions through `component_parameters` does not change them.
 
 The keyword arguments override MAGICC7's setup:
 
@@ -122,7 +122,7 @@ With every switch year at or before the first year, the chain runs from emission
   MAGICC7 enables it by default.
 - `ncycle_apply=1` limits NPP by nitrogen, reading fixation from MAGICC7's packaged `NCYCLE_NFIX3.IN`.
   `ncycle_apply_ndep_from_emis=1` adds deposition from NOx and NH3.
-- `out_sealevel=1` adds `SeaLevelRise` and thermal expansion in `ClimateUdeb`.
+- `out_sealevel=1` adds `SeaLevelRise` and thermal expansion in `ClimateUDEB`.
 
 In a model built by hand, add `PermafrostBuilder` and set `include_permafrost` on
 `CH4Chemistry`, `CH4Oxidation`, `OceanCarbon` and `CO2Budget` to feed permafrost emissions back.
@@ -200,7 +200,7 @@ The run couples these components:
 - `TerrestrialCarbon` calculates the net land flux, including land-use emissions.
 - `OceanCarbon` calculates the uptake while CO2 evolves monthly within the year.
 - `CO2Budget` closes the atmospheric CO2 balance.
-- `GhgForcing` and `ClimateUdeb` calculate forcing and temperature.
+- `GHGForcing` and `ClimateUDEB` calculate forcing and temperature.
 
 Natural CH4 and N2O emissions are chemistry parameters.
 They default to the budget-closing values MAGICC7 derives for its standard historical concentrations.
@@ -225,9 +225,9 @@ is supplied through `other_forcing`.
 
 ```python
 parameters = {
-    "GhgForcing": {"co2_pi": 277.147, "ch4_pi": 731.406, "n2o_pi": 273.865},
+    "GHGForcing": {"co2_pi": 277.147, "ch4_pi": 731.406, "n2o_pi": 273.865},
     "CH4Chemistry": {"natural_emissions": 182.19},
-    "ClimateUdeb": {"ecs": 3.0},
+    "ClimateUDEB": {"ecs": 3.0},
 }
 ```
 
@@ -340,16 +340,16 @@ These conventions apply to `run_magicc` and `run_magicc_emissions`.
 - Preindustrial reference concentrations are component parameters, independent of the first supplied year.
   Set `co2_pi`, `ch4_pi` and `n2o_pi` explicitly when the experiment uses different references.
 
-For `run_magicc`, `climate_parameters` accepts ClimateUdeb parameter names such as `ecs` and `erf_2xco2`,
-and `forcing_parameters` accepts GhgForcing parameter names such as `method` and `erf_2xco2`.
-`run_magicc_emissions` takes both through `parameters["ClimateUdeb"]` and `parameters["GhgForcing"]`.
+For `run_magicc`, `climate_parameters` accepts ClimateUDEB parameter names such as `ecs` and `erf_2xco2`,
+and `forcing_parameters` accepts GHGForcing parameter names such as `method` and `erf_2xco2`.
+`run_magicc_emissions` takes both through `parameters["ClimateUDEB"]` and `parameters["GHGForcing"]`.
 As in MAGICC7, `erf_2xco2` defaults to the ERF of doubling CO2 under the forcing configuration,
 which is about 3.9 W/m² for OLBL.
 Set it explicitly only to decouple the climate feedback from the forcing.
 
 ## Results and verification
 
-`run_magicc` and `run_magicc_emissions` return a `MagiccResult`.
+`run_magicc` and `run_magicc_emissions` return a `MAGICCResult`.
 `result.years` labels the returned arrays.
 `result.values` and `result.units` contain concentrations, individual and total forcing,
 surface air temperature change, SST, heat uptake and ocean heat content.

@@ -57,7 +57,7 @@ use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, TimeseriesType,
     VariableDefinition, VariableRole,
 };
-use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -719,10 +719,10 @@ impl TerrestrialCarbon {
         t_next: Time,
         input_state: &InputState,
         state: &mut TerrestrialCarbonState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let dt = t_next - t_current;
         if !dt.is_finite() || (dt - 1.0).abs() >= 1e-6 {
-            return Err(RscmError::Error(format!(
+            return Err(RSCMError::Error(format!(
                 "TerrestrialCarbon only supports annual steps (dt=1.0), got dt={dt}"
             )));
         }
@@ -869,7 +869,7 @@ impl Component for TerrestrialCarbon {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let mut state = TerrestrialCarbonState::default();
         self.solve_impl(t_current, t_next, input_state, &mut state)
     }
@@ -884,7 +884,7 @@ impl Component for TerrestrialCarbon {
         t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<TerrestrialCarbonState>()

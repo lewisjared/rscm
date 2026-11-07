@@ -6,7 +6,7 @@
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RscmResult;
+use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 /// Parameters for the CO2 ERF component
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CO2ErfParameters {
+pub struct CO2ERFParameters {
     /// ERF due to a doubling of atmospheric CO2 concentrations
     /// unit: W/m^2
     pub erf_2xco2: FloatValue,
@@ -41,13 +41,13 @@ pub struct CO2ErfParameters {
 #[outputs(
     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
 )]
-pub struct CO2Erf {
-    parameters: CO2ErfParameters,
+pub struct CO2ERF {
+    parameters: CO2ERFParameters,
 }
 
-impl CO2Erf {
-    /// Create a new CO2Erf component from parameters
-    pub fn from_parameters(parameters: CO2ErfParameters) -> Self {
+impl CO2ERF {
+    /// Create a new CO2ERF component from parameters
+    pub fn from_parameters(parameters: CO2ERFParameters) -> Self {
         Self { parameters }
     }
 
@@ -61,7 +61,7 @@ impl CO2Erf {
 }
 
 #[typetag::serde]
-impl Component for CO2Erf {
+impl Component for CO2ERF {
     fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
@@ -71,12 +71,12 @@ impl Component for CO2Erf {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
-        let inputs = CO2ErfInputs::from_input_state(input_state);
+    ) -> RSCMResult<OutputState> {
+        let inputs = CO2ERFInputs::from_input_state(input_state);
         let concentration = inputs.concentration.get();
         let erf = self.calculate_erf(concentration);
 
-        Ok(CO2ErfOutputs { erf }.into())
+        Ok(CO2ERFOutputs { erf }.into())
     }
 }
 
@@ -84,8 +84,8 @@ impl Component for CO2Erf {
 mod tests {
     use super::*;
 
-    fn default_parameters() -> CO2ErfParameters {
-        CO2ErfParameters {
+    fn default_parameters() -> CO2ERFParameters {
+        CO2ERFParameters {
             erf_2xco2: 3.7,
             co2_pi: 278.0,
         }
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_calculate_erf_at_preindustrial() {
-        let component = CO2Erf::from_parameters(default_parameters());
+        let component = CO2ERF::from_parameters(default_parameters());
         let erf = component.calculate_erf(278.0);
         assert!(
             (erf - 0.0).abs() < 1e-10,
@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn test_calculate_erf_at_2x_co2() {
         let params = default_parameters();
-        let component = CO2Erf::from_parameters(params.clone());
+        let component = CO2ERF::from_parameters(params.clone());
         let erf = component.calculate_erf(params.co2_pi * 2.0);
         assert!(
             (erf - params.erf_2xco2).abs() < 1e-10,
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_definitions() {
-        let component = CO2Erf::from_parameters(default_parameters());
+        let component = CO2ERF::from_parameters(default_parameters());
         let defs = component.definitions();
 
         assert_eq!(defs.len(), 2);

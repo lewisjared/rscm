@@ -22,7 +22,7 @@
 //! - **Hemispheric**: Hemispheric values (Northern, Southern)
 
 use crate::component::GridType;
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, SpatialGrid};
 use crate::state::{FourBoxSlice, HemisphericSlice};
 use crate::timeseries::{FloatValue, GridTimeseries, Timeseries};
@@ -212,18 +212,18 @@ impl TimeseriesData {
         name: &str,
         time_index: usize,
         value: FloatValue,
-    ) -> RscmResult<()> {
+    ) -> RSCMResult<()> {
         match self {
             TimeseriesData::Scalar(ts) => {
                 ts.set(time_index, crate::spatial::ScalarRegion::Global, value);
                 Ok(())
             }
-            TimeseriesData::FourBox(_) => Err(crate::errors::RscmError::GridOutputMismatch {
+            TimeseriesData::FourBox(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
                 expected_grid: "scalar".to_string(),
                 component_grid: "four_box".to_string(),
             }),
-            TimeseriesData::Hemispheric(_) => Err(crate::errors::RscmError::GridOutputMismatch {
+            TimeseriesData::Hemispheric(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
                 expected_grid: "scalar".to_string(),
                 component_grid: "hemispheric".to_string(),
@@ -241,18 +241,18 @@ impl TimeseriesData {
         name: &str,
         time_index: usize,
         slice: &FourBoxSlice,
-    ) -> RscmResult<()> {
+    ) -> RSCMResult<()> {
         match self {
             TimeseriesData::FourBox(ts) => {
                 ts.set_from_slice(time_index, slice);
                 Ok(())
             }
-            TimeseriesData::Scalar(_) => Err(crate::errors::RscmError::GridOutputMismatch {
+            TimeseriesData::Scalar(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
                 expected_grid: "four_box".to_string(),
                 component_grid: "scalar".to_string(),
             }),
-            TimeseriesData::Hemispheric(_) => Err(crate::errors::RscmError::GridOutputMismatch {
+            TimeseriesData::Hemispheric(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
                 expected_grid: "four_box".to_string(),
                 component_grid: "hemispheric".to_string(),
@@ -270,18 +270,18 @@ impl TimeseriesData {
         name: &str,
         time_index: usize,
         slice: &HemisphericSlice,
-    ) -> RscmResult<()> {
+    ) -> RSCMResult<()> {
         match self {
             TimeseriesData::Hemispheric(ts) => {
                 ts.set_from_slice(time_index, slice);
                 Ok(())
             }
-            TimeseriesData::Scalar(_) => Err(crate::errors::RscmError::GridOutputMismatch {
+            TimeseriesData::Scalar(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
                 expected_grid: "hemispheric".to_string(),
                 component_grid: "scalar".to_string(),
             }),
-            TimeseriesData::FourBox(_) => Err(crate::errors::RscmError::GridOutputMismatch {
+            TimeseriesData::FourBox(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
                 expected_grid: "hemispheric".to_string(),
                 component_grid: "four_box".to_string(),

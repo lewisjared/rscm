@@ -12,7 +12,7 @@ use crate::driver::Driver;
 use rscm_core::component::{
     Component, ComponentState, InputState, OutputState, VariableDefinition,
 };
-use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -99,7 +99,7 @@ impl LinearForcing {
         t_next: Time,
         input_state: &InputState,
         state: &mut LinearForcingState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let p = &self.parameters;
         let dt = t_next - t_current;
         let scale = p.forcing_scale * (1.0 + p.tropospheric_adjustment);
@@ -144,7 +144,7 @@ impl Component for LinearForcing {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         self.solve_impl(t_current, t_next, input_state, &mut self.initial_state())
     }
 
@@ -158,11 +158,11 @@ impl Component for LinearForcing {
         t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<LinearForcingState>()
-            .ok_or_else(|| RscmError::Error("Internal state is not LinearForcingState".into()))?;
+            .ok_or_else(|| RSCMError::Error("Internal state is not LinearForcingState".into()))?;
         self.solve_impl(t_current, t_next, input_state, state)
     }
 }

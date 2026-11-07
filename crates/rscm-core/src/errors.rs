@@ -3,7 +3,7 @@ use thiserror::Error;
 
 /// Error type for invalid operations.
 #[derive(Error, Debug)]
-pub enum RscmError {
+pub enum RSCMError {
     #[error("{0}")]
     Error(String),
 
@@ -212,7 +212,7 @@ pub enum RscmError {
     },
 }
 
-impl RscmError {
+impl RSCMError {
     /// Error for two units of `variable` that cannot be converted into each other.
     pub fn incompatible_units(variable: &str, unit1: &Unit, unit2: &Unit) -> Self {
         let dimension = |unit: &Unit| {
@@ -220,7 +220,7 @@ impl RscmError {
                 .map(|d| d.to_string())
                 .unwrap_or_else(|_| "unknown".to_string())
         };
-        RscmError::IncompatibleUnits {
+        RSCMError::IncompatibleUnits {
             variable: variable.to_string(),
             unit1: unit1.original().to_string(),
             unit2: unit2.original().to_string(),
@@ -232,8 +232,8 @@ impl RscmError {
     }
 }
 
-/// Convenience type for `Result<T, RscmError>`.
-pub type RscmResult<T> = Result<T, RscmError>;
+/// Convenience type for `Result<T, RSCMError>`.
+pub type RSCMResult<T> = Result<T, RSCMError>;
 
 fn format_lag_suggestions(suggestions: &[(String, String)]) -> String {
     suggestions

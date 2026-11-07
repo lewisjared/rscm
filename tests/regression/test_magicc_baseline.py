@@ -113,7 +113,7 @@ def test_real_report_and_residual_wiring(monkeypatch):
     assert table.comparison_year.min() == 1750
     assert table.comparison_year.max() == 2100
     assert metadata["scientific_parity"] == "not_evaluated"
-    assert metadata["effective_parameters"]["magicc.ClimateUdeb"]["n_layers"] == 50
+    assert metadata["effective_parameters"]["magicc.ClimateUDEB"]["n_layers"] == 50
     assert metadata["reference_provenance_unknown"]
     assert SURFACE_AIR_TEMPERATURE_CHANGE in summary
 

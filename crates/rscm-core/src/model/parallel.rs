@@ -5,13 +5,13 @@
 //! The work runs on the current rayon pool, so callers choose the thread count with
 //! `rayon::ThreadPool::install` or `RAYON_NUM_THREADS`.
 
-use crate::errors::RscmResult;
+use crate::errors::RSCMResult;
 use crate::model::{Model, ModelBuilder};
 use rayon::prelude::*;
 use std::borrow::{Borrow, BorrowMut};
 
 /// Build every builder, returning each model or its build error in input order.
-pub fn build_models<B>(builders: &[B]) -> Vec<RscmResult<Model>>
+pub fn build_models<B>(builders: &[B]) -> Vec<RSCMResult<Model>>
 where
     B: Borrow<ModelBuilder> + Sync,
 {
@@ -22,7 +22,7 @@ where
 ///
 /// A failed model does not stop the others.
 /// As with `Model::try_run`, discard a model whose run failed.
-pub fn run_models<M>(models: &mut [M]) -> Vec<RscmResult<()>>
+pub fn run_models<M>(models: &mut [M]) -> Vec<RSCMResult<()>>
 where
     M: BorrowMut<Model> + Send,
 {

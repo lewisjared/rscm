@@ -10,7 +10,7 @@ Available Components
 --------------------
 Climate:
 
-- ClimateUdebBuilder: four-box UDEB climate model with ocean diffusion
+- ClimateUDEBBuilder: four-box UDEB climate model with ocean diffusion
 - SeaLevelRiseBuilder: Sea level rise from glaciers and ice sheets
 
 Chemistry:
@@ -39,8 +39,8 @@ from rscm._lib.core import ComponentBuilder, RustComponent
 
 # Climate Components
 
-class ClimateUdebParameters(TypedDict, total=False):
-    """Parameters for ClimateUdeb component.
+class ClimateUDEBParameters(TypedDict, total=False):
+    """Parameters for ClimateUDEB component.
 
     All fields optional - defaults provided by Rust.
     """
@@ -75,7 +75,7 @@ class ClimateUdebParameters(TypedDict, total=False):
     thermal_expansion: ThermalExpansion | None
 
 @final
-class ClimateUdebBuilder(ComponentBuilder):
+class ClimateUDEBBuilder(ComponentBuilder):
     """Builder for the four-box UDEB climate model component.
 
     The UDEB (Upwelling-Diffusion Energy Balance) model couples a four-box atmosphere
@@ -123,11 +123,11 @@ class ClimateUdebBuilder(ComponentBuilder):
       (K).
 
     Inputs, outputs and states are listed on the
-    [ClimateUdeb component page][component-climateudeb].
+    [ClimateUDEB component page][component-climateudeb].
 
     Examples
     --------
-    >>> builder = ClimateUdebBuilder.from_parameters(
+    >>> builder = ClimateUDEBBuilder.from_parameters(
     ...     {
     ...         "ecs": 3.0,
     ...         "erf_2xco2": 3.71,
@@ -148,15 +148,15 @@ class ClimateUdebBuilder(ComponentBuilder):
     ) -> float:
         """Return the internal efficacy of an agent with this regional pattern."""
     @staticmethod
-    def from_parameters(parameters: ClimateUdebParameters) -> ClimateUdebBuilder:  # type: ignore[override]
+    def from_parameters(parameters: ClimateUDEBParameters) -> ClimateUDEBBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the UDEB climate model component."""
 
 class ThermalExpansion(TypedDict, total=False):
-    """Thermal expansion of the ocean, calculated by ClimateUdeb.
+    """Thermal expansion of the ocean, calculated by ClimateUDEB.
 
-    Setting it makes ClimateUdeb write
+    Setting it makes ClimateUDEB write
     ``Annual Mean Surface Air Temperature Change`` (K)
     and ``Sea Level Rise|Thermal Expansion`` (mm).
     """
@@ -235,7 +235,7 @@ class SeaLevelRiseBuilder(ComponentBuilder):
     """Builder for the sea level rise component.
 
     Glaciers, Greenland and Antarctic surface mass balance and solid ice discharge
-    respond to the annual mean warming. Thermal expansion comes from ClimateUdeb
+    respond to the annual mean warming. Thermal expansion comes from ClimateUDEB
     with ``thermal_expansion`` set. Steps must be one year long.
 
     Inputs, outputs and states are listed on the
@@ -463,7 +463,7 @@ class HalocarbonSpecies(TypedDict):
     fractional_release: float
     mixing_box_size: NotRequired[float]
 
-class FgasRegions(TypedDict, total=False):
+class FGasRegions(TypedDict, total=False):
     """Regional pattern of F-gas forcing.
 
     Species with lifetimes of at least ``upper_lifetime`` follow ``regional_pattern``
@@ -499,7 +499,7 @@ class HalocarbonChemistryParameters(TypedDict, total=False):
     stratospheric_lifetime_sensitivity: float
     fgas_switch_year: float | None
     montreal_gases_switch_year: float | None
-    fgas_regions: FgasRegions | None
+    fgas_regions: FGasRegions | None
     """Makes ``Effective Radiative Forcing|F-Gases`` a four-box output."""
 
 @final
@@ -1024,8 +1024,8 @@ class AerosolIndirectBuilder(ComponentBuilder):
 
 # GHG Forcing
 
-class GhgForcingParameters(TypedDict, total=False):
-    """Parameters for GhgForcing component.
+class GHGForcingParameters(TypedDict, total=False):
+    """Parameters for GHGForcing component.
 
     All fields optional - defaults provided by Rust.
     """
@@ -1054,7 +1054,7 @@ class GhgForcingParameters(TypedDict, total=False):
     ch4_stratospheric_h2o_fraction: float
 
 @final
-class GhgForcingBuilder(ComponentBuilder):
+class GHGForcingBuilder(ComponentBuilder):
     """Builder for the GHG radiative forcing component.
 
     Calculates effective radiative forcing from CO2, CH4, and N2O
@@ -1073,11 +1073,11 @@ class GhgForcingBuilder(ComponentBuilder):
     - `adjust_n2o` (`float`, default `1.0`): Rapid adjustment factor for N2O.
 
     Inputs, outputs and states are listed on the
-    [GhgForcing component page][component-ghgforcing].
+    [GHGForcing component page][component-ghgforcing].
 
     Examples
     --------
-    >>> builder = GhgForcingBuilder.from_parameters(
+    >>> builder = GHGForcingBuilder.from_parameters(
     ...     {
     ...         "method": "IPCCTAR",
     ...         "erf_2xco2": 3.71,
@@ -1088,7 +1088,7 @@ class GhgForcingBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: GhgForcingParameters) -> GhgForcingBuilder:  # type: ignore[override]
+    def from_parameters(parameters: GHGForcingParameters) -> GHGForcingBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the GHG radiative forcing component."""
@@ -1174,7 +1174,7 @@ class ForcingAggregationBuilder(ComponentBuilder):
 
     Reads each agent's ERF and writes the total effective radiative forcing and
     the four-box ``Efficacy Adjusted Effective Radiative Forcing`` read by
-    ClimateUdeb when ``include_regional_forcing`` is set.
+    ClimateUDEB when ``include_regional_forcing`` is set.
     """
 
     @staticmethod

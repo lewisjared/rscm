@@ -1,7 +1,7 @@
 //! Grid transformation functions for model execution.
 
 use crate::component::GridType;
-use crate::errors::{RscmError, RscmResult};
+use crate::errors::{RSCMError, RSCMResult};
 use crate::spatial::{FourBoxGrid, FourBoxRegion, HemisphericGrid};
 use crate::state::{HemisphericSlice, StateValue};
 
@@ -33,7 +33,7 @@ pub(crate) fn aggregate_state_value(
     source_grid: GridType,
     target_grid: GridType,
     weights: Option<&Vec<f64>>,
-) -> RscmResult<StateValue> {
+) -> RSCMResult<StateValue> {
     match (source_grid, target_grid) {
         // FourBox -> Scalar: aggregate all 4 regions to global
         (GridType::FourBox, GridType::Scalar) => {
@@ -123,7 +123,7 @@ pub(crate) fn aggregate_state_value(
         (s, t) if s == t => Ok(value.clone()),
 
         // Any other combination is not supported (disaggregation)
-        _ => Err(RscmError::GridTransformationNotSupported {
+        _ => Err(RSCMError::GridTransformationNotSupported {
             source_grid: source_grid.to_string(),
             target_grid: target_grid.to_string(),
             variable: "unknown".to_string(),

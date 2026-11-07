@@ -20,8 +20,8 @@ The runners take a time axis with a step starting at each timebound, `TimeAxis.f
 | -------------------- | ------------------------------------------------------------ |
 | `CH4Lifetime`        | CH4 lifetime scaling (Thornhill 2021 only)                   |
 | `GasCycle`           | Gas boxes, concentrations, airborne and cumulative emissions |
-| `Eesc`               | Equivalent effective stratospheric chlorine                  |
-| `GhgForcing`         | Meinshausen 2020 greenhouse gas forcing                      |
+| `EESC`               | Equivalent effective stratospheric chlorine                  |
+| `GHGForcing`         | Meinshausen 2020 greenhouse gas forcing                      |
 | `LinearForcing`      | Aerosol-radiation, ozone, contrails, LAPSI, H2O and land use |
 | `AerosolCloud`       | Aerosol-cloud interactions                                   |
 | `ForcingAggregation` | Total and efficacy-adjusted forcing                          |
@@ -105,7 +105,7 @@ model = run_fair(config, inputs, time_axis)
 
 `components(config, energy_balance=False)` leaves out `EnergyBalance`,
 so another component can write `Surface Air Temperature Change` from `Effective Radiative Forcing`.
-The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateUdeb` this way.
+The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateUDEB` this way.
 `initial_values` takes the same flag.
 
 ## Differences from FaIR

@@ -10,30 +10,30 @@ use rscm_core::python::PyRustComponent;
 
 use crate::carbon::{CO2Budget, OceanCarbon, Permafrost, TerrestrialCarbon};
 use crate::chemistry::{CH4Chemistry, CH4Oxidation, HalocarbonChemistry, N2OChemistry};
-use crate::climate::{ClimateUdeb, SeaLevelRise};
+use crate::climate::{ClimateUDEB, SeaLevelRise};
 use crate::forcing::{
-    AerosolDirect, AerosolIndirect, ForcingAggregation, GhgForcing, OzoneForcing,
+    AerosolDirect, AerosolIndirect, ForcingAggregation, GHGForcing, OzoneForcing,
 };
 use crate::parameters::{
     AerosolDirectParameters, AerosolIndirectParameters, CH4ChemistryParameters,
-    CH4OxidationParameters, CO2BudgetParameters, ClimateUdebParameters,
-    ForcingAggregationParameters, GhgForcingParameters, HalocarbonChemistryParameters,
+    CH4OxidationParameters, CO2BudgetParameters, ClimateUDEBParameters,
+    ForcingAggregationParameters, GHGForcingParameters, HalocarbonChemistryParameters,
     N2OChemistryParameters, OceanCarbonParameters, OzoneForcingParameters, PermafrostParameters,
     SeaLevelRiseParameters, TerrestrialCarbonParameters,
 };
 
 // Climate components
-// ClimateUdeb uses a manual builder because from_parameters returns Result
+// ClimateUDEB uses a manual builder because from_parameters returns Result
 #[pyclass]
-pub struct ClimateUdebBuilder {
-    parameters: ClimateUdebParameters,
+pub struct ClimateUDEBBuilder {
+    parameters: ClimateUDEBParameters,
 }
 
 #[pymethods]
-impl ClimateUdebBuilder {
+impl ClimateUDEBBuilder {
     /// Initial values and diagnostics for an unperturbed climate at the supplied ERF.
     pub fn initial_values(&self, erf: f64) -> PyResult<std::collections::HashMap<String, f64>> {
-        let component = ClimateUdeb::from_parameters(self.parameters.clone())
+        let component = ClimateUDEB::from_parameters(self.parameters.clone())
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         if !erf.is_finite() {
             return Err(pyo3::exceptions::PyValueError::new_err(
@@ -54,7 +54,7 @@ impl ClimateUdebBuilder {
 
     /// Internal efficacy of a forcing agent with the given regional pattern.
     pub fn internal_efficacy(&self, regional_pattern: [f64; 4]) -> PyResult<f64> {
-        let component = ClimateUdeb::from_parameters(self.parameters.clone())
+        let component = ClimateUDEB::from_parameters(self.parameters.clone())
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         Ok(component.internal_efficacy(&regional_pattern))
     }
@@ -63,7 +63,7 @@ impl ClimateUdebBuilder {
     pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
         use pyo3::exceptions::PyValueError;
 
-        let parameters = pythonize::depythonize::<ClimateUdebParameters>(&parameters);
+        let parameters = pythonize::depythonize::<ClimateUDEBParameters>(&parameters);
         match parameters {
             Ok(parameters) => Ok(Self { parameters }),
             Err(e) => Err(PyValueError::new_err(format!("{}", e))),
@@ -72,7 +72,7 @@ impl ClimateUdebBuilder {
     pub fn build(&self) -> PyResult<PyRustComponent> {
         use pyo3::exceptions::PyValueError;
 
-        let component = ClimateUdeb::from_parameters(self.parameters.clone())
+        let component = ClimateUDEB::from_parameters(self.parameters.clone())
             .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
         Ok(PyRustComponent(std::sync::Arc::new(component)))
     }
@@ -102,21 +102,21 @@ create_component_builder!(SeaLevelRiseBuilder, SeaLevelRise, SeaLevelRiseParamet
 // Forcing components
 /// Builder with a pointwise evaluator for initialising boundary forcing.
 #[pyclass]
-pub struct GhgForcingBuilder {
-    parameters: GhgForcingParameters,
+pub struct GHGForcingBuilder {
+    parameters: GHGForcingParameters,
 }
 
 #[pymethods]
-impl GhgForcingBuilder {
+impl GHGForcingBuilder {
     #[staticmethod]
     pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
-        let parameters = pythonize::depythonize::<GhgForcingParameters>(&parameters)
+        let parameters = pythonize::depythonize::<GHGForcingParameters>(&parameters)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         Ok(Self { parameters })
     }
 
     pub fn build(&self) -> PyRustComponent {
-        PyRustComponent(std::sync::Arc::new(GhgForcing::from_parameters(
+        PyRustComponent(std::sync::Arc::new(GHGForcing::from_parameters(
             self.parameters.clone(),
         )))
     }
@@ -125,7 +125,7 @@ impl GhgForcingBuilder {
     /// at theirs. MAGICC7 derives its climate feedback from this value.
     pub fn erf_2xco2(&self) -> f64 {
         let p = &self.parameters;
-        GhgForcing::from_parameters(p.clone())
+        GHGForcing::from_parameters(p.clone())
             .calculate_forcings(2.0 * p.co2_pi, p.ch4_pi, p.n2o_pi)
             .co2_erf
     }
@@ -143,7 +143,7 @@ impl GhgForcingBuilder {
             ));
         }
         let result =
-            GhgForcing::from_parameters(self.parameters.clone()).calculate_forcings(co2, ch4, n2o);
+            GHGForcing::from_parameters(self.parameters.clone()).calculate_forcings(co2, ch4, n2o);
         Ok(std::collections::HashMap::from([
             ("CO2".to_string(), result.co2_erf),
             ("CH4".to_string(), result.ch4_erf),
@@ -213,7 +213,7 @@ impl ForcingAggregationBuilder {
 #[pymodule]
 pub fn magicc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Climate
-    m.add_class::<ClimateUdebBuilder>()?;
+    m.add_class::<ClimateUDEBBuilder>()?;
     m.add_class::<SeaLevelRiseBuilder>()?;
     // Chemistry
     m.add_class::<CH4ChemistryBuilder>()?;
@@ -226,7 +226,7 @@ pub fn magicc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CO2BudgetBuilder>()?;
     m.add_class::<PermafrostBuilder>()?;
     // Forcing
-    m.add_class::<GhgForcingBuilder>()?;
+    m.add_class::<GHGForcingBuilder>()?;
     m.add_class::<OzoneForcingBuilder>()?;
     m.add_class::<AerosolDirectBuilder>()?;
     m.add_class::<AerosolIndirectBuilder>()?;

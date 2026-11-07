@@ -118,7 +118,7 @@ pub struct EfficacyClimate {
 
 impl Default for EfficacyClimate {
     fn default() -> Self {
-        let p = crate::parameters::ClimateUdebParameters::default();
+        let p = crate::parameters::ClimateUDEBParameters::default();
         Self {
             ecs: p.ecs,
             erf_2xco2: p.erf_2xco2,
@@ -136,7 +136,7 @@ impl Default for ForcingAggregationParameters {
         Self {
             agents: Vec::new(),
             summation: Vec::new(),
-            efficacy_method: EfficacyMethod::Ar6,
+            efficacy_method: EfficacyMethod::AR6,
             nh_land_fraction: 0.42,
             sh_land_fraction: 0.21,
             climate: None,

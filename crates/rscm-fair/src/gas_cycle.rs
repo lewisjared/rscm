@@ -19,7 +19,7 @@ use crate::driver::Driver;
 use rscm_core::component::{
     Component, ComponentState, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
-use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -141,39 +141,39 @@ struct Unchecked {
 }
 
 impl TryFrom<Unchecked> for GasCycle {
-    type Error = RscmError;
+    type Error = RSCMError;
 
-    fn try_from(unchecked: Unchecked) -> RscmResult<Self> {
+    fn try_from(unchecked: Unchecked) -> RSCMResult<Self> {
         Self::from_parameters(unchecked.parameters)
     }
 }
 
 impl GasCycle {
     /// Create the component, checking each gas.
-    pub fn from_parameters(parameters: GasCycleParameters) -> RscmResult<Self> {
+    pub fn from_parameters(parameters: GasCycleParameters) -> RSCMResult<Self> {
         for species in &parameters.species {
             let n = species.partition_fraction.len();
             if n == 0 || species.unperturbed_lifetime.len() != n {
-                return Err(RscmError::Error(format!(
+                return Err(RSCMError::Error(format!(
                     "{}: partition_fraction and unperturbed_lifetime need one value per box",
                     species.concentration
                 )));
             }
             match species.driver {
                 Driver::Emissions if species.emissions.is_empty() => {
-                    return Err(RscmError::Error(format!(
+                    return Err(RSCMError::Error(format!(
                         "{}: an emissions-driven gas needs an emissions input",
                         species.concentration
                     )))
                 }
                 Driver::Concentration if species.inverse_emissions.is_none() => {
-                    return Err(RscmError::Error(format!(
+                    return Err(RSCMError::Error(format!(
                         "{}: a concentration-driven gas needs inverse_emissions",
                         species.concentration
                     )))
                 }
                 Driver::CumulativeEmissions => {
-                    return Err(RscmError::Error(format!(
+                    return Err(RSCMError::Error(format!(
                     "{}: a gas is driven by emissions or concentration, not cumulative emissions",
                     species.concentration
                 )))
@@ -289,7 +289,7 @@ impl GasCycle {
         t_next: Time,
         input_state: &InputState,
         state: &mut GasCycleState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let dt = t_next - t_current;
         let temperature = get(input_state, &self.parameters.surface_temperature);
         let mut output = OutputState::with_capacity(3 * self.parameters.species.len());
@@ -386,7 +386,7 @@ impl Component for GasCycle {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let mut state = self.initial_state();
         self.solve_impl(t_current, t_next, input_state, &mut state)
     }
@@ -401,11 +401,11 @@ impl Component for GasCycle {
         t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RscmResult<OutputState> {
+    ) -> RSCMResult<OutputState> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<GasCycleState>()
-            .ok_or_else(|| RscmError::Error("Internal state is not GasCycleState".into()))?;
+            .ok_or_else(|| RSCMError::Error("Internal state is not GasCycleState".into()))?;
         self.solve_impl(t_current, t_next, input_state, state)
     }
 }

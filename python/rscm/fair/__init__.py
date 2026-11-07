@@ -19,11 +19,11 @@ Variables use RSCM names (see [rscm.fair.naming][]) and FaIR's units.
 from rscm._lib.fair import (
     AerosolCloudBuilder,
     CH4LifetimeBuilder,
-    EescBuilder,
+    EESCBuilder,
     EnergyBalanceBuilder,
     ForcingAggregationBuilder,
     GasCycleBuilder,
-    GhgForcingBuilder,
+    GHGForcingBuilder,
     LinearForcingBuilder,
 )
 from rscm.fair.config import (
@@ -41,12 +41,12 @@ from rscm.fair.run import build_model, prescribed_forcing_scales, run_fair
 __all__ = [
     "AerosolCloudBuilder",
     "CH4LifetimeBuilder",
-    "EescBuilder",
+    "EESCBuilder",
     "EnergyBalanceBuilder",
     "FairConfig",
     "ForcingAggregationBuilder",
+    "GHGForcingBuilder",
     "GasCycleBuilder",
-    "GhgForcingBuilder",
     "LinearForcingBuilder",
     "build_model",
     "components",

@@ -142,7 +142,7 @@ fn sea_level_rise_names() {
 #[test]
 fn climate_udeb_names() {
     declares(
-        crate::climate::ClimateUdeb::generated_definitions(),
+        crate::climate::ClimateUDEB::generated_definitions(),
         &[
             EQUILIBRIUM_CLIMATE_SENSITIVITY,
             ERF,
@@ -179,7 +179,7 @@ fn aerosol_indirect_names() {
 #[test]
 fn ghg_forcing_names() {
     declares(
-        crate::forcing::GhgForcing::generated_definitions(),
+        crate::forcing::GHGForcing::generated_definitions(),
         &[
             ATMOSPHERIC_CONCENTRATIONS_CH4,
             ATMOSPHERIC_CONCENTRATIONS_CO2,
