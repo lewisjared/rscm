@@ -116,9 +116,9 @@ impl PyVariableTarget {
 /// Examples
 /// --------
 /// >>> target = Target()
-/// >>> target.add_observation("Temperature|Global", 2020.0, 1.2, 0.1)
-/// >>> target.add_observation("Temperature|Global", 2021.0, 1.3, 0.1)
-/// >>> target.set_reference_period("Temperature|Global", 1850.0, 1900.0)
+/// >>> target.add_observation("Surface Air Temperature Change", 2020.0, 1.2, 0.1)
+/// >>> target.add_observation("Surface Air Temperature Change", 2021.0, 1.3, 0.1)
+/// >>> target.set_reference_period("Surface Air Temperature Change", 1850.0, 1900.0)
 /// >>> target.add_observation_relative("OHC", 2020.0, 200.0, 0.05)
 #[pyclass(name = "Target")]
 #[derive(Clone)]
@@ -138,7 +138,7 @@ impl PyTarget {
     /// Parameters
     /// ----------
     /// variable : str
-    ///     Variable name (e.g., "Temperature|Global")
+    ///     Variable name (e.g., "Surface Air Temperature Change")
     /// time : float
     ///     Time coordinate
     /// value : float

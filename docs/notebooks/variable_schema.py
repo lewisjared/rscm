@@ -63,7 +63,7 @@ from rscm.core import (
 class CO2Forcing(Component):
     """CO2 forcing from concentration: ERF = alpha * ln(C / C_pi)."""
 
-    concentration = Input("Atmospheric Concentration|CO2", unit="ppm")
+    concentration = Input("Atmospheric Concentrations|CO2", unit="ppm")
     forcing = Output("Effective Radiative Forcing|CO2", unit="W/m^2")
 
     def __init__(self, alpha: float = 5.35, c_pi: float = 280.0):
@@ -78,7 +78,7 @@ class CO2Forcing(Component):
 
 # %% [markdown]
 # `CH4Forcing` has the same shape.
-# It reads `Atmospheric Concentration|CH4` in ppb and writes `Effective Radiative Forcing|CH4`
+# It reads `Atmospheric Concentrations|CH4` in ppb and writes `Effective Radiative Forcing|CH4`
 # using a square-root relationship, `ERF = alpha * (sqrt(C) - sqrt(C_pi))`.
 
 
@@ -86,7 +86,7 @@ class CO2Forcing(Component):
 class CH4Forcing(Component):
     """CH4 forcing from concentration: ERF = alpha * (sqrt(C) - sqrt(C_pi))."""
 
-    concentration = Input("Atmospheric Concentration|CH4", unit="ppb")
+    concentration = Input("Atmospheric Concentrations|CH4", unit="ppb")
     forcing = Output("Effective Radiative Forcing|CH4", unit="W/m^2")
 
     def __init__(self, alpha: float = 0.036, c_pi: float = 700.0):
@@ -131,8 +131,8 @@ model_no_schema = (
     .with_time_axis(time_axis)
     .with_component(CO2Forcing())
     .with_component(CH4Forcing())
-    .with_prescribed_variable("Atmospheric Concentration|CO2", co2_conc)
-    .with_prescribed_variable("Atmospheric Concentration|CH4", ch4_conc)
+    .with_prescribed_variable("Atmospheric Concentrations|CO2", co2_conc)
+    .with_prescribed_variable("Atmospheric Concentrations|CH4", ch4_conc)
 ).build()
 model_no_schema.run()
 
@@ -158,8 +158,8 @@ print("\n".join(sorted(model_no_schema.timeseries().names())))
 def ghg_variables() -> VariableSchema:
     """Declare the CO2 and CH4 concentrations and forcings."""
     schema = VariableSchema()
-    schema.add_variable("Atmospheric Concentration|CO2", "ppm")
-    schema.add_variable("Atmospheric Concentration|CH4", "ppb")
+    schema.add_variable("Atmospheric Concentrations|CO2", "ppm")
+    schema.add_variable("Atmospheric Concentrations|CH4", "ppb")
     schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
     schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
     return schema
@@ -196,8 +196,8 @@ model_with_schema = (
     .with_time_axis(time_axis)
     .with_component(CO2Forcing())
     .with_component(CH4Forcing())
-    .with_prescribed_variable("Atmospheric Concentration|CO2", co2_conc)
-    .with_prescribed_variable("Atmospheric Concentration|CH4", ch4_conc)
+    .with_prescribed_variable("Atmospheric Concentrations|CO2", co2_conc)
+    .with_prescribed_variable("Atmospheric Concentrations|CH4", ch4_conc)
 ).build()
 model_with_schema.run()
 
@@ -265,8 +265,8 @@ def forcing_model(schema, components, prescribed):
 
 ghg_components = [CO2Forcing(), CH4Forcing()]
 ghg_concentrations = {
-    "Atmospheric Concentration|CO2": co2_conc,
-    "Atmospheric Concentration|CH4": ch4_conc,
+    "Atmospheric Concentrations|CO2": co2_conc,
+    "Atmospheric Concentrations|CH4": ch4_conc,
 }
 
 # %% [markdown]
@@ -325,10 +325,10 @@ np.testing.assert_allclose(weighted_forcing, 0.7 * co2_erf + 0.3 * ch4_erf)
 #
 # ```
 # Effective Radiative Forcing
-# ├── Effective Radiative Forcing|GHG (Sum)
+# ├── Effective Radiative Forcing|Greenhouse Gases (Sum)
 # │   ├── Effective Radiative Forcing|CO2
 # │   └── Effective Radiative Forcing|CH4
-# └── Effective Radiative Forcing|Aerosol
+# └── Effective Radiative Forcing|Aerosols
 # ```
 #
 # An aerosol component adds a negative forcing, proportional to emissions.
@@ -339,7 +339,7 @@ class AerosolForcing(Component):
     """Aerosol forcing proportional to emissions (negative forcing)."""
 
     emissions = Input("Emissions|Aerosol", unit="Tg/yr")
-    forcing = Output("Effective Radiative Forcing|Aerosol", unit="W/m^2")
+    forcing = Output("Effective Radiative Forcing|Aerosols", unit="W/m^2")
 
     def __init__(self, efficiency: float = -0.01):
         self.efficiency = efficiency
@@ -367,10 +367,10 @@ aerosol_emissions = Timeseries(
 # %%
 hierarchical_schema = ghg_variables()
 hierarchical_schema.add_variable("Emissions|Aerosol", "Tg/yr")
-hierarchical_schema.add_variable("Effective Radiative Forcing|Aerosol", "W/m^2")
+hierarchical_schema.add_variable("Effective Radiative Forcing|Aerosols", "W/m^2")
 
 hierarchical_schema.add_aggregate(
-    name="Effective Radiative Forcing|GHG",
+    name="Effective Radiative Forcing|Greenhouse Gases",
     unit="W/m^2",
     operation="sum",
     contributors=[
@@ -383,8 +383,8 @@ hierarchical_schema.add_aggregate(
     unit="W/m^2",
     operation="sum",
     contributors=[
-        "Effective Radiative Forcing|GHG",
-        "Effective Radiative Forcing|Aerosol",
+        "Effective Radiative Forcing|Greenhouse Gases",
+        "Effective Radiative Forcing|Aerosols",
     ],
 )
 hierarchical_schema.validate()
@@ -403,8 +403,8 @@ fig, ax = plt.subplots(figsize=(10, 5))
 for name, label, style in [
     ("Effective Radiative Forcing|CO2", "CO2", ":"),
     ("Effective Radiative Forcing|CH4", "CH4", ":"),
-    ("Effective Radiative Forcing|Aerosol", "Aerosol", ":"),
-    ("Effective Radiative Forcing|GHG", "GHG (CO2 + CH4)", "--"),
+    ("Effective Radiative Forcing|Aerosols", "Aerosol", ":"),
+    ("Effective Radiative Forcing|Greenhouse Gases", "GHG (CO2 + CH4)", "--"),
     ("Effective Radiative Forcing", "Total (GHG + Aerosol)", "-"),
 ]:
     ax.plot(
@@ -429,7 +429,7 @@ plt.show()
 class SometimesNaNForcing(Component):
     """Return NaN before `start_year` and 1 W/m² after."""
 
-    concentration = Input("Atmospheric Concentration|Test", unit="ppm")
+    concentration = Input("Atmospheric Concentrations|Test", unit="ppm")
     forcing = Output("Effective Radiative Forcing|Test", unit="W/m^2")
 
     def __init__(self, start_year: float = 2000.0):
@@ -446,8 +446,8 @@ class SometimesNaNForcing(Component):
 
 # %%
 nan_schema = VariableSchema()
-nan_schema.add_variable("Atmospheric Concentration|CO2", "ppm")
-nan_schema.add_variable("Atmospheric Concentration|Test", "ppm")
+nan_schema.add_variable("Atmospheric Concentrations|CO2", "ppm")
+nan_schema.add_variable("Atmospheric Concentrations|Test", "ppm")
 nan_schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
 nan_schema.add_variable("Effective Radiative Forcing|Test", "W/m^2")
 nan_schema.add_aggregate(
@@ -475,8 +475,8 @@ results_nan = forcing_model(
     nan_schema,
     [CO2Forcing(), SometimesNaNForcing(start_year=2000.0)],
     {
-        "Atmospheric Concentration|CO2": co2_conc,
-        "Atmospheric Concentration|Test": test_conc,
+        "Atmospheric Concentrations|CO2": co2_conc,
+        "Atmospheric Concentrations|Test": test_conc,
     },
 )
 

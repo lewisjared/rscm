@@ -106,7 +106,7 @@ impl AggregateOp {
 #[pyclass]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SchemaVariableDefinition {
-    /// Variable identifier (e.g., "Atmospheric Concentration|CO2")
+    /// Variable identifier (e.g., "Atmospheric Concentrations|CO2")
     #[pyo3(get)]
     pub name: String,
 
@@ -251,10 +251,12 @@ impl AggregateDefinition {
 /// use rscm_core::schema::{AggregateOp, VariableSchema};
 ///
 /// let schema = VariableSchema::new()
-///     .variable("Emissions|CO2", "GtCO2/yr")
-///     .variable("Concentration|CO2", "ppm")
-///     .aggregate("Total Emissions", "GtCO2/yr", AggregateOp::Sum)
-///         .from("Emissions|CO2")
+///     .variable("Emissions|CO2|Fossil", "Mt CO2/yr")
+///     .variable("Emissions|CO2|Biosphere", "Mt CO2/yr")
+///     .variable("Atmospheric Concentrations|CO2", "ppm")
+///     .aggregate("Emissions|CO2", "Mt CO2/yr", AggregateOp::Sum)
+///         .from("Emissions|CO2|Fossil")
+///         .from("Emissions|CO2|Biosphere")
 ///         .build();
 /// ```
 #[pyclass]
@@ -406,9 +408,9 @@ impl VariableSchema {
     /// use rscm_core::schema::{AggregateOp, VariableSchema};
     ///
     /// let schema = VariableSchema::new()
-    ///     .variable("ERF|CO2", "W/m^2")
+    ///     .variable("Effective Radiative Forcing|CO2", "W/m^2")
     ///     .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
-    ///         .from("ERF|CO2")
+    ///         .from("Effective Radiative Forcing|CO2")
     ///         .build();
     ///
     /// assert!(schema.validate().is_ok());
@@ -991,12 +993,12 @@ mod tests {
     fn test_variable_schema_builder() {
         let schema = VariableSchema::new()
             .variable("Emissions|CO2", "GtCO2/yr")
-            .variable("Concentration|CO2", "ppm")
+            .variable("Atmospheric Concentrations|CO2", "ppm")
             .variable_with_grid("Regional Temperature", "K", GridType::FourBox);
 
         assert_eq!(schema.variables.len(), 3);
         assert!(schema.contains("Emissions|CO2"));
-        assert!(schema.contains("Concentration|CO2"));
+        assert!(schema.contains("Atmospheric Concentrations|CO2"));
         assert!(schema.contains("Regional Temperature"));
         assert!(!schema.contains("Nonexistent"));
 
@@ -1011,22 +1013,28 @@ mod tests {
     #[test]
     fn test_variable_schema_with_aggregate() {
         let schema = VariableSchema::new()
-            .variable("ERF|CO2", "W/m^2")
-            .variable("ERF|CH4", "W/m^2")
+            .variable("Effective Radiative Forcing|CO2", "W/m^2")
+            .variable("Effective Radiative Forcing|CH4", "W/m^2")
             .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
-            .from("ERF|CO2")
-            .from("ERF|CH4")
+            .from("Effective Radiative Forcing|CO2")
+            .from("Effective Radiative Forcing|CH4")
             .build();
 
         assert_eq!(schema.variables.len(), 2);
         assert_eq!(schema.aggregates.len(), 1);
-        assert!(schema.contains("ERF|CO2"));
+        assert!(schema.contains("Effective Radiative Forcing|CO2"));
         assert!(schema.contains("Total ERF"));
 
         let agg = schema.get_aggregate("Total ERF").unwrap();
         assert_eq!(agg.unit, "W/m^2");
         assert_eq!(agg.operation, AggregateOp::Sum);
-        assert_eq!(agg.contributors, vec!["ERF|CO2", "ERF|CH4"]);
+        assert_eq!(
+            agg.contributors,
+            vec![
+                "Effective Radiative Forcing|CO2",
+                "Effective Radiative Forcing|CH4"
+            ]
+        );
     }
 
     #[test]
@@ -1051,25 +1059,43 @@ mod tests {
     fn test_variable_schema_chained_aggregates() {
         // Test that aggregates can reference other aggregates
         let schema = VariableSchema::new()
-            .variable("ERF|CO2", "W/m^2")
-            .variable("ERF|CH4", "W/m^2")
-            .variable("ERF|Other", "W/m^2")
-            .aggregate("ERF|GHG", "W/m^2", AggregateOp::Sum)
-            .from("ERF|CO2")
-            .from("ERF|CH4")
+            .variable("Effective Radiative Forcing|CO2", "W/m^2")
+            .variable("Effective Radiative Forcing|CH4", "W/m^2")
+            .variable("Effective Radiative Forcing|Other", "W/m^2")
+            .aggregate(
+                "Effective Radiative Forcing|Greenhouse Gases",
+                "W/m^2",
+                AggregateOp::Sum,
+            )
+            .from("Effective Radiative Forcing|CO2")
+            .from("Effective Radiative Forcing|CH4")
             .build()
             .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
-            .from("ERF|GHG")
-            .from("ERF|Other")
+            .from("Effective Radiative Forcing|Greenhouse Gases")
+            .from("Effective Radiative Forcing|Other")
             .build();
 
         assert_eq!(schema.aggregates.len(), 2);
 
-        let ghg = schema.get_aggregate("ERF|GHG").unwrap();
-        assert_eq!(ghg.contributors, vec!["ERF|CO2", "ERF|CH4"]);
+        let ghg = schema
+            .get_aggregate("Effective Radiative Forcing|Greenhouse Gases")
+            .unwrap();
+        assert_eq!(
+            ghg.contributors,
+            vec![
+                "Effective Radiative Forcing|CO2",
+                "Effective Radiative Forcing|CH4"
+            ]
+        );
 
         let total = schema.get_aggregate("Total ERF").unwrap();
-        assert_eq!(total.contributors, vec!["ERF|GHG", "ERF|Other"]);
+        assert_eq!(
+            total.contributors,
+            vec![
+                "Effective Radiative Forcing|Greenhouse Gases",
+                "Effective Radiative Forcing|Other"
+            ]
+        );
     }
 
     #[test]
@@ -1103,11 +1129,11 @@ mod tests {
     #[test]
     fn test_variable_schema_serialisation_roundtrip() {
         let schema = VariableSchema::new()
-            .variable("ERF|CO2", "W/m^2")
-            .variable("ERF|CH4", "W/m^2")
+            .variable("Effective Radiative Forcing|CO2", "W/m^2")
+            .variable("Effective Radiative Forcing|CH4", "W/m^2")
             .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
-            .from("ERF|CO2")
-            .from("ERF|CH4")
+            .from("Effective Radiative Forcing|CO2")
+            .from("Effective Radiative Forcing|CH4")
             .build();
 
         let json = serde_json::to_string(&schema).unwrap();
@@ -1124,9 +1150,9 @@ mod tests {
     #[test]
     fn test_variable_schema_toml_serialisation() {
         let schema = VariableSchema::new()
-            .variable("ERF|CO2", "W/m^2")
+            .variable("Effective Radiative Forcing|CO2", "W/m^2")
             .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
-            .from("ERF|CO2")
+            .from("Effective Radiative Forcing|CO2")
             .build();
 
         let toml = toml::to_string(&schema).unwrap();
@@ -1148,11 +1174,11 @@ mod tests {
     #[test]
     fn test_validate_valid_schema() {
         let schema = VariableSchema::new()
-            .variable("ERF|CO2", "W/m^2")
-            .variable("ERF|CH4", "W/m^2")
+            .variable("Effective Radiative Forcing|CO2", "W/m^2")
+            .variable("Effective Radiative Forcing|CH4", "W/m^2")
             .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
-            .from("ERF|CO2")
-            .from("ERF|CH4")
+            .from("Effective Radiative Forcing|CO2")
+            .from("Effective Radiative Forcing|CH4")
             .build();
 
         assert!(schema.validate().is_ok());
@@ -1167,16 +1193,20 @@ mod tests {
     #[test]
     fn test_validate_chained_aggregates() {
         let schema = VariableSchema::new()
-            .variable("ERF|CO2", "W/m^2")
-            .variable("ERF|CH4", "W/m^2")
-            .variable("ERF|Other", "W/m^2")
-            .aggregate("ERF|GHG", "W/m^2", AggregateOp::Sum)
-            .from("ERF|CO2")
-            .from("ERF|CH4")
+            .variable("Effective Radiative Forcing|CO2", "W/m^2")
+            .variable("Effective Radiative Forcing|CH4", "W/m^2")
+            .variable("Effective Radiative Forcing|Other", "W/m^2")
+            .aggregate(
+                "Effective Radiative Forcing|Greenhouse Gases",
+                "W/m^2",
+                AggregateOp::Sum,
+            )
+            .from("Effective Radiative Forcing|CO2")
+            .from("Effective Radiative Forcing|CH4")
             .build()
             .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
-            .from("ERF|GHG")
-            .from("ERF|Other")
+            .from("Effective Radiative Forcing|Greenhouse Gases")
+            .from("Effective Radiative Forcing|Other")
             .build();
 
         assert!(schema.validate().is_ok());
@@ -1200,10 +1230,10 @@ mod tests {
     #[test]
     fn test_validate_undefined_contributor() {
         let schema = VariableSchema::new()
-            .variable("ERF|CO2", "W/m^2")
+            .variable("Effective Radiative Forcing|CO2", "W/m^2")
             .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
-            .from("ERF|CO2")
-            .from("ERF|CH4") // Not defined
+            .from("Effective Radiative Forcing|CO2")
+            .from("Effective Radiative Forcing|CH4") // Not defined
             .build();
 
         let err = schema.validate().unwrap_err();
@@ -1214,7 +1244,7 @@ mod tests {
             msg
         );
         assert!(
-            msg.contains("ERF|CH4"),
+            msg.contains("Effective Radiative Forcing|CH4"),
             "Error should mention the missing contributor: {}",
             msg
         );
@@ -1223,10 +1253,10 @@ mod tests {
     #[test]
     fn test_validate_unit_mismatch() {
         let schema = VariableSchema::new()
-            .variable("ERF|CO2", "W/m^2")
+            .variable("Effective Radiative Forcing|CO2", "W/m^2")
             .variable("Emissions|CO2", "GtCO2/yr") // Different unit
             .aggregate("Total", "W/m^2", AggregateOp::Sum)
-            .from("ERF|CO2")
+            .from("Effective Radiative Forcing|CO2")
             .from("Emissions|CO2") // Unit mismatch
             .build();
 
@@ -1523,7 +1553,10 @@ mod tests {
             unit: "W/m^2".to_string(),
             grid: GridType::Scalar,
             operation: AggregateOp::Sum,
-            contributors: vec!["ERF|CO2".to_string(), "ERF|CH4".to_string()],
+            contributors: vec![
+                "Effective Radiative Forcing|CO2".to_string(),
+                "Effective Radiative Forcing|CH4".to_string(),
+            ],
         };
 
         let agg = AggregatorComponent::from_definition(&def);
@@ -1532,7 +1565,13 @@ mod tests {
         assert_eq!(agg.unit, "W/m^2");
         assert_eq!(agg.grid, GridType::Scalar);
         assert_eq!(agg.operation, AggregateOp::Sum);
-        assert_eq!(agg.contributors, vec!["ERF|CO2", "ERF|CH4"]);
+        assert_eq!(
+            agg.contributors,
+            vec![
+                "Effective Radiative Forcing|CO2",
+                "Effective Radiative Forcing|CH4"
+            ]
+        );
     }
 
     #[test]
@@ -1542,7 +1581,10 @@ mod tests {
             unit: "W/m^2".to_string(),
             grid: GridType::Scalar,
             operation: AggregateOp::Sum,
-            contributors: vec!["ERF|CO2".to_string(), "ERF|CH4".to_string()],
+            contributors: vec![
+                "Effective Radiative Forcing|CO2".to_string(),
+                "Effective Radiative Forcing|CH4".to_string(),
+            ],
         };
 
         let agg = AggregatorComponent::from_definition(&def);
@@ -1552,9 +1594,9 @@ mod tests {
         assert_eq!(defs.len(), 3);
 
         // First two are inputs
-        assert_eq!(defs[0].name, "ERF|CO2");
+        assert_eq!(defs[0].name, "Effective Radiative Forcing|CO2");
         assert_eq!(defs[0].role, VariableRole::Input);
-        assert_eq!(defs[1].name, "ERF|CH4");
+        assert_eq!(defs[1].name, "Effective Radiative Forcing|CH4");
         assert_eq!(defs[1].role, VariableRole::Input);
 
         // Last one is output
@@ -1587,8 +1629,8 @@ mod tests {
     fn test_deserialise_valid_schema_json() {
         let json = r#"{
             "variables": {
-                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid": "scalar"},
-                "ERF|CH4": {"name": "ERF|CH4", "unit": "W/m^2", "grid": "scalar"}
+                "Effective Radiative Forcing|CO2": {"name": "Effective Radiative Forcing|CO2", "unit": "W/m^2", "grid": "scalar"},
+                "Effective Radiative Forcing|CH4": {"name": "Effective Radiative Forcing|CH4", "unit": "W/m^2", "grid": "scalar"}
             },
             "aggregates": {
                 "Total ERF": {
@@ -1596,7 +1638,7 @@ mod tests {
                     "unit": "W/m^2",
                     "grid": "scalar",
                     "operation": "sum",
-                    "contributors": ["ERF|CO2", "ERF|CH4"]
+                    "contributors": ["Effective Radiative Forcing|CO2", "Effective Radiative Forcing|CH4"]
                 }
             }
         }"#;
@@ -1610,7 +1652,7 @@ mod tests {
     fn test_deserialise_invalid_schema_undefined_contributor() {
         let json = r#"{
             "variables": {
-                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid": "scalar"}
+                "Effective Radiative Forcing|CO2": {"name": "Effective Radiative Forcing|CO2", "unit": "W/m^2", "grid": "scalar"}
             },
             "aggregates": {
                 "Total ERF": {
@@ -1618,7 +1660,7 @@ mod tests {
                     "unit": "W/m^2",
                     "grid": "scalar",
                     "operation": "sum",
-                    "contributors": ["ERF|CO2", "ERF|CH4"]
+                    "contributors": ["Effective Radiative Forcing|CO2", "Effective Radiative Forcing|CH4"]
                 }
             }
         }"#;
@@ -1632,7 +1674,7 @@ mod tests {
             err
         );
         assert!(
-            err.contains("ERF|CH4"),
+            err.contains("Effective Radiative Forcing|CH4"),
             "Error should mention missing contributor: {}",
             err
         );
@@ -1642,7 +1684,7 @@ mod tests {
     fn test_deserialise_invalid_schema_unit_mismatch() {
         let json = r#"{
             "variables": {
-                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid": "scalar"},
+                "Effective Radiative Forcing|CO2": {"name": "Effective Radiative Forcing|CO2", "unit": "W/m^2", "grid": "scalar"},
                 "Emissions|CO2": {"name": "Emissions|CO2", "unit": "GtCO2/yr", "grid": "scalar"}
             },
             "aggregates": {
@@ -1651,7 +1693,7 @@ mod tests {
                     "unit": "W/m^2",
                     "grid": "scalar",
                     "operation": "sum",
-                    "contributors": ["ERF|CO2", "Emissions|CO2"]
+                    "contributors": ["Effective Radiative Forcing|CO2", "Emissions|CO2"]
                 }
             }
         }"#;
@@ -1732,8 +1774,8 @@ mod tests {
         // TOML keys must match the name in the contributor list
         // The HashMap key is used for lookup, so keys must match contributor references
         let toml = r#"
-            [variables."ERF|CO2"]
-            name = "ERF|CO2"
+            [variables."Effective Radiative Forcing|CO2"]
+            name = "Effective Radiative Forcing|CO2"
             unit = "W/m^2"
             grid = "scalar"
 
@@ -1742,7 +1784,7 @@ mod tests {
             unit = "W/m^2"
             grid = "scalar"
             operation = "sum"
-            contributors = ["ERF|CO2"]
+            contributors = ["Effective Radiative Forcing|CO2"]
         "#;
 
         let schema: VariableSchema = toml::from_str(toml).unwrap();

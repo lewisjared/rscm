@@ -175,7 +175,7 @@ pub struct OceanCarbonParameters {
     pub co2_pi: FloatValue,
 
     /// Pre-industrial ocean surface pCO2 (ppm).
-    /// When unset, the initial `Ocean Surface pCO2` is used, matching MAGICC7,
+    /// When unset, the initial `Ocean Surface Partial Pressure|CO2` is used, matching MAGICC7,
     /// which takes the first-year atmospheric concentration.
     /// default: None
     pub pco2_pi: Option<FloatValue>,

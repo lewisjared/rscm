@@ -71,14 +71,14 @@ impl Observation {
 /// ```
 /// use rscm_calibrate::target::VariableTarget;
 ///
-/// let mut temp = VariableTarget::new("Temperature|Global");
+/// let mut temp = VariableTarget::new("Surface Air Temperature Change");
 /// temp.add(2020.0, 1.2, 0.1).unwrap()
 ///     .add(2021.0, 1.3, 0.1).unwrap()
 ///     .with_reference_period(1850.0, 1900.0);  // Anomaly relative to 1850-1900
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VariableTarget {
-    /// Variable name (e.g., "Temperature|Global")
+    /// Variable name (e.g., "Surface Air Temperature Change")
     pub name: String,
     /// Observations sorted by time
     pub observations: Vec<Observation>,
@@ -120,7 +120,7 @@ impl VariableTarget {
     /// # Example
     /// ```
     /// # use rscm_calibrate::target::VariableTarget;
-    /// let mut target = VariableTarget::new("Temperature");
+    /// let mut target = VariableTarget::new("Surface Air Temperature Change");
     /// // 5% relative uncertainty
     /// target.add_relative(2020.0, 1.0, 0.05).unwrap();
     /// assert_eq!(target.observations[0].uncertainty, 0.05);
@@ -190,7 +190,7 @@ impl VariableTarget {
 ///
 /// // Add temperature observations (anomalies relative to 1850-1900)
 /// target
-///     .add_variable("Temperature|Global")
+///     .add_variable("Surface Air Temperature Change")
 ///     .add(2020.0, 1.2, 0.1).unwrap()
 ///     .add(2021.0, 1.3, 0.1).unwrap()
 ///     .with_reference_period(1850.0, 1900.0);
@@ -354,7 +354,7 @@ mod tests {
     fn target_fluent_api() {
         let mut target = Target::new();
         target
-            .add_variable("Temperature|Global")
+            .add_variable("Surface Air Temperature Change")
             .add(2020.0, 1.2, 0.1)
             .unwrap()
             .add(2021.0, 1.3, 0.1)
@@ -369,7 +369,7 @@ mod tests {
         assert_eq!(target.variables().len(), 2);
         assert_eq!(
             target
-                .get_variable("Temperature|Global")
+                .get_variable("Surface Air Temperature Change")
                 .unwrap()
                 .observations
                 .len(),

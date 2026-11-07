@@ -58,19 +58,19 @@ def simple_calibration_setup():
     )
     # Add state variables required by TwoLayer
     collection.add_timeseries(
-        "Surface Temperature",
+        "Surface Air Temperature Change",
         Timeseries(
             np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
         ),
     )
     collection.add_timeseries(
-        "Deep Ocean Temperature",
+        "Ocean Temperature|Layer 2",
         Timeseries(
             np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
         ),
     )
     result = component.solve(2000, 2010, collection)
-    temp = result.get("Surface Temperature").as_scalar()
+    temp = result.get("Surface Air Temperature Change").as_scalar()
 
     # Define parameters (2 parameters for simplicity)
     parameters = ParameterSet()
@@ -79,7 +79,7 @@ def simple_calibration_setup():
 
     # Create target
     target = Target()
-    target.add_observation("Surface Temperature", 2010.0, temp, 0.1)
+    target.add_observation("Surface Air Temperature Change", 2010.0, temp, 0.1)
 
     # Create model runner
     fixed_params = {
@@ -103,25 +103,25 @@ def simple_calibration_setup():
         )
         # Add state variables required by TwoLayer
         collection.add_timeseries(
-            "Surface Temperature",
+            "Surface Air Temperature Change",
             Timeseries(
                 np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
             ),
         )
         collection.add_timeseries(
-            "Deep Ocean Temperature",
+            "Ocean Temperature|Layer 2",
             Timeseries(
                 np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
             ),
         )
         result = component.solve(2000, 2010, collection)
-        temp = result.get("Surface Temperature").as_scalar()
-        return {"Surface Temperature": {2010.0: float(temp)}}
+        temp = result.get("Surface Air Temperature Change").as_scalar()
+        return {"Surface Air Temperature Change": {2010.0: float(temp)}}
 
     runner = ModelRunner(
         model_factory=model_factory,
         parameter_names=["lambda0", "a"],
-        output_variables=["Surface Temperature"],
+        output_variables=["Surface Air Temperature Change"],
     )
 
     likelihood = GaussianLikelihood()

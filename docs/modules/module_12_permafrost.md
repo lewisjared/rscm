@@ -254,7 +254,7 @@ All per-band variables have dimensions (NYEARS, NBANDS).
 
 | Direction | Variable                   | Units        | Fortran variable                             | RSCM variable               |
 | --------- | -------------------------- | ------------ | -------------------------------------------- | --------------------------- |
-| Input     | Global surface temperature | K            | `DAT_SURFACE_TEMP%DATGLOBE(CURRENT_YEAR_IDX)` | `Surface Temperature`       |
+| Input     | Global surface temperature | K            | `DAT_SURFACE_TEMP%DATGLOBE(CURRENT_YEAR_IDX)` | `Surface Air Temperature Change`       |
 | Output    | CO2 emissions              | GtC yr⁻¹     | `DAT_CO2PF_EMIS%DATBOX(CURRENT_YEAR_IDX,2)`  | `Emissions|CO2|Permafrost` |
 | Output    | CH4 emissions              | Mt CH₄ yr⁻¹  | `DAT_CH4PF_EMIS%DATBOX(CURRENT_YEAR_IDX,2)`  | `Emissions|CH4|Permafrost` |
 | Output    | Thawed area                | fraction     | `DAT_PFTHAWED_AREA%DATBOX(NEXT_YEAR_IDX,2)`  | `Permafrost Thawed Area`    |

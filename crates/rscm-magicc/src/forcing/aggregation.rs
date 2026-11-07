@@ -13,27 +13,24 @@
 //!
 //! With `climate` set, the internal efficacies follow MAGICC7 in coming from
 //! LAMCALC at the previous year's `Equilibrium Climate Sensitivity` and
-//! `Effective Radiative Forcing|2xCO2`, so they drift as the climate warms.
+//! `2xCO2 Effective Radiative Forcing`, so they drift as the climate warms.
 //!
 //! # Outputs
 //!
 //! - `Effective Radiative Forcing` (W/m²): area-weighted sum of agent ERF.
-//! - `Effective Radiative Forcing|Efficacy Adjusted` (W/m², FourBox): the
+//! - `Efficacy Adjusted Effective Radiative Forcing` (W/m², FourBox): the
 //!   climate driver.
 
 use crate::climate::lamcalc::{
     calc_internal_efficacy, compute_qfrac, hemispheric_qfrac, lamcalc, LamcalcParameters,
 };
-use crate::climate::{CLIMATE_SENSITIVITY, CO2_DOUBLING_ERF, REGIONAL_FORCING};
 use crate::parameters::{EfficacyMethod, ForcingAgent, ForcingAggregationParameters, ForcingTerm};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::names::{EFFICACY_ADJUSTED_ERF, EQUILIBRIUM_CLIMATE_SENSITIVITY, ERF, ERF_2XCO2};
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
-
-/// Total ERF output name.
-pub const TOTAL_FORCING: &str = "Effective Radiative Forcing";
 
 /// Aggregates agent ERF into four-box efficacy-adjusted forcing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -276,12 +273,15 @@ impl Component for ForcingAggregation {
             })
             .collect();
         if self.parameters.climate.is_some() {
-            definitions.push(VariableDefinition::scalar_input(CLIMATE_SENSITIVITY, "K"));
-            definitions.push(VariableDefinition::scalar_input(CO2_DOUBLING_ERF, "W/m^2"));
+            definitions.push(VariableDefinition::scalar_input(
+                EQUILIBRIUM_CLIMATE_SENSITIVITY,
+                "K",
+            ));
+            definitions.push(VariableDefinition::scalar_input(ERF_2XCO2, "W/m^2"));
         }
-        definitions.push(VariableDefinition::scalar_output(TOTAL_FORCING, "W/m^2"));
+        definitions.push(VariableDefinition::scalar_output(ERF, "W/m^2"));
         definitions.push(VariableDefinition::four_box_output(
-            REGIONAL_FORCING,
+            EFFICACY_ADJUSTED_ERF,
             "W/m^2",
         ));
         definitions
@@ -314,8 +314,10 @@ impl Component for ForcingAggregation {
         let internal = match &self.parameters.climate {
             None => self.initial_internal_efficacies(),
             Some(climate) => {
-                let ecs = input_state.get_scalar_window(CLIMATE_SENSITIVITY).get();
-                let (q, _) = input_state.get_scalar_window(CO2_DOUBLING_ERF).interval()?;
+                let ecs = input_state
+                    .get_scalar_window(EQUILIBRIUM_CLIMATE_SENSITIVITY)
+                    .get();
+                let (q, _) = input_state.get_scalar_window(ERF_2XCO2).interval()?;
                 let (ecs, q) = if ecs.is_finite() && q.is_finite() {
                     (ecs, q)
                 } else {
@@ -328,9 +330,9 @@ impl Component for ForcingAggregation {
         };
         let (total, adjusted) = self.aggregate_with(&forcing, &internal);
         let mut output = OutputState::new();
-        output.insert(TOTAL_FORCING.to_string(), StateValue::Scalar(total));
+        output.insert(ERF.to_string(), StateValue::Scalar(total));
         output.insert(
-            REGIONAL_FORCING.to_string(),
+            EFFICACY_ADJUSTED_ERF.to_string(),
             StateValue::FourBox(FourBoxSlice::from_array(adjusted)),
         );
         Ok(output)
@@ -457,19 +459,19 @@ mod tests {
     fn solve_adjusted(c: &ForcingAggregation, ecs: [FloatValue; 2]) -> [FloatValue; 4] {
         let items = [
             scalar_item("x", [1.0, 1.0]),
-            scalar_item(CLIMATE_SENSITIVITY, ecs),
-            scalar_item(CO2_DOUBLING_ERF, [3.9, 4.2]),
+            scalar_item(EQUILIBRIUM_CLIMATE_SENSITIVITY, ecs),
+            scalar_item(ERF_2XCO2, [3.9, 4.2]),
         ];
         // MAGICC7 lags the sensitivity into the aggregation
         let lagged = TransformContext {
             read_transforms: HashMap::from([(
-                CLIMATE_SENSITIVITY.to_string(),
+                EQUILIBRIUM_CLIMATE_SENSITIVITY.to_string(),
                 ReadTransformInfo::default().with_source(VariableSource::Lagged),
             )]),
         };
         let input_state = InputState::build_with_transforms(items.iter().collect(), 2000.0, lagged);
         let output = c.solve(2000.0, 2001.0, &input_state).unwrap();
-        match &output[REGIONAL_FORCING] {
+        match &output[EFFICACY_ADJUSTED_ERF] {
             StateValue::FourBox(slice) => slice.0,
             other => panic!("expected four-box forcing, got {other:?}"),
         }
@@ -543,7 +545,7 @@ mod tests {
         let items = [four_box_item("p", 1.0), four_box_item("q", 2.0)];
         let input_state = InputState::build(items.iter().collect(), 2000.0);
         let output = c.solve(2000.0, 2001.0, &input_state).unwrap();
-        match &output[REGIONAL_FORCING] {
+        match &output[EFFICACY_ADJUSTED_ERF] {
             StateValue::FourBox(slice) => assert_eq!(slice.0, [6.0; 4]),
             other => panic!("expected four-box forcing, got {other:?}"),
         }

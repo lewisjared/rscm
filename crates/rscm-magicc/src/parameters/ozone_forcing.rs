@@ -40,7 +40,7 @@ pub struct OzoneForcingParameters {
     pub temperature_scale: FloatValue,
 
     /// Regional pattern of tropospheric ozone forcing, which makes
-    /// `Effective Radiative Forcing|Tropospheric Ozone` a four-box output.
+    /// `Effective Radiative Forcing|Ozone|Tropospheric` a four-box output.
     /// MAGICC7: RF_REGIONS_TROPOZ
     pub tropospheric_ozone_regions: Option<TroposphericOzoneRegions>,
 }

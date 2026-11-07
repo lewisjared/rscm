@@ -55,7 +55,7 @@
 //! ## Integration with RSCM Models
 //!
 //! The component requires "Effective Radiative Forcing" as input and produces
-//! "Surface Temperature" as output:
+//! "Surface Air Temperature Change" as output:
 //!
 //! ```rust,ignore
 //! use rscm_core::model::ModelBuilder;
@@ -85,3 +85,6 @@ pub mod component;
 pub mod python;
 
 pub use component::{TwoLayer, TwoLayerParameters};
+
+#[cfg(test)]
+mod component_names;

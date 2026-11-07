@@ -21,17 +21,11 @@ use crate::constants::{
 use nalgebra::{DMatrix, DVector};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::names::{NET_ENERGY_IMBALANCE, OCEAN_HEAT_CONTENT, STOCHASTIC_FORCING};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
-
-/// Forcing seen by the climate, the first element of the state.
-pub const STOCHASTIC_FORCING: &str = "Stochastic Forcing";
-/// Top of atmosphere energy imbalance.
-pub const ENERGY_IMBALANCE: &str = "Net Energy Imbalance";
-/// Ocean heat content change since the start of the run.
-pub const OCEAN_HEAT_CONTENT_CHANGE: &str = "Ocean Heat Content Change";
 
 /// Parameters of [`EnergyBalance`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -221,12 +215,9 @@ impl Component for EnergyBalance {
                 &temperature_unit(),
             ));
         }
-        definitions.push(VariableDefinition::scalar_state(
-            OCEAN_HEAT_CONTENT_CHANGE,
-            "J",
-        ));
+        definitions.push(VariableDefinition::scalar_state(OCEAN_HEAT_CONTENT, "J"));
         definitions.push(VariableDefinition::scalar_output(
-            ENERGY_IMBALANCE,
+            NET_ENERGY_IMBALANCE,
             &forcing_unit(),
         ));
         definitions
@@ -251,7 +242,7 @@ impl Component for EnergyBalance {
         let state = self.step(&state, get(&p.efficacy_adjusted_forcing), dt);
         let temperatures: Vec<FloatValue> = state.iter().skip(1).copied().collect();
         let imbalance = self.energy_imbalance(get(&p.forcing), &temperatures);
-        let heat = get(OCEAN_HEAT_CONTENT_CHANGE)
+        let heat = get(OCEAN_HEAT_CONTENT)
             + imbalance
                 * dt
                 * EARTH_RADIUS
@@ -265,11 +256,11 @@ impl Component for EnergyBalance {
         for (layer, t) in temperatures.iter().enumerate() {
             output.insert(self.layer_temperature(layer), StateValue::Scalar(*t));
         }
-        output.insert(ENERGY_IMBALANCE.to_string(), StateValue::Scalar(imbalance));
         output.insert(
-            OCEAN_HEAT_CONTENT_CHANGE.to_string(),
-            StateValue::Scalar(heat),
+            NET_ENERGY_IMBALANCE.to_string(),
+            StateValue::Scalar(imbalance),
         );
+        output.insert(OCEAN_HEAT_CONTENT.to_string(), StateValue::Scalar(heat));
         Ok(output)
     }
 }

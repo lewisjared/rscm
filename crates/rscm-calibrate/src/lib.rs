@@ -27,7 +27,7 @@
 //!
 //! // 2. Specify observation targets
 //! let mut target = Target::new();
-//! target.add_variable("Temperature|Global")
+//! target.add_variable("Surface Air Temperature Change")
 //!     .add(2020.0, 1.2, 0.1).unwrap()
 //!     .add(2021.0, 1.3, 0.1).unwrap();
 //!

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from rscm import names
 from rscm.core import InterpolationStrategy, ModelBuilder, Timeseries
 from rscm.fair import naming
 from rscm.fair.config import (
@@ -92,7 +93,7 @@ def build_model(
         if s["input_mode"] == "forcing" and name in first:
             initial[naming.forcing(s)] = first[name]
     total = float(np.nansum([initial[agent] for agent in agents]))
-    initial[naming.TOTAL_FORCING] = initial[naming.ENERGY_IMBALANCE] = total
+    initial[names.ERF] = initial[names.NET_ENERGY_IMBALANCE] = total
     builder.with_initial_values(initial)
     return builder.build()
 

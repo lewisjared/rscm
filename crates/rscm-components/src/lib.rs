@@ -70,3 +70,6 @@ pub mod meinshausen2020;
 pub mod python;
 
 pub use components::*;
+
+#[cfg(test)]
+mod component_names;

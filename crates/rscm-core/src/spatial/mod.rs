@@ -126,17 +126,17 @@
 //! impl Component for CO2ErfComponent {
 //!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         vec![
-//!             VariableDefinition::new("Atmospheric Concentration|CO2", "ppm", VariableRole::Input),
-//!             VariableDefinition::new("ERF|CO2", "W/m^2", VariableRole::Output),
+//!             VariableDefinition::new("Atmospheric Concentrations|CO2", "ppm", VariableRole::Input),
+//!             VariableDefinition::new("Effective Radiative Forcing|CO2", "W/m^2", VariableRole::Output),
 //!         ]
 //!     }
 //!
 //!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RscmResult<OutputState> {
 //!         // Works with scalar values - InputState handles grid aggregation automatically
-//!         let co2 = input_state.get_scalar_window("Atmospheric Concentration|CO2").get();
+//!         let co2 = input_state.get_scalar_window("Atmospheric Concentrations|CO2").get();
 //!         // ... compute ERF ...
 //!         let mut output = HashMap::new();
-//!         output.insert("ERF|CO2".to_string(), StateValue::Scalar(co2 * 5.35_f64.ln()));
+//!         output.insert("Effective Radiative Forcing|CO2".to_string(), StateValue::Scalar(co2 * 5.35_f64.ln()));
 //!         Ok(output)
 //!     }
 //! }
@@ -167,7 +167,7 @@
 //!     // Return four-box output with regional values
 //!     let mut output = HashMap::new();
 //!     output.insert(
-//!         "Heat Uptake|Ocean".to_string(),
+//!         "Heat Uptake".to_string(),
 //!         StateValue::FourBox(FourBoxSlice::from_array([
 //!             heat_uptake[0], heat_uptake[1], heat_uptake[2], heat_uptake[3]
 //!         ])),
@@ -186,7 +186,7 @@
 //! # use rscm_core::component::InputState;
 //! # fn example(input_state: &InputState, t_current: f64) {
 //! // Get aggregated global value automatically
-//! let global_temp = input_state.get_global("Surface Temperature").unwrap();
+//! let global_temp = input_state.get_global("Surface Air Temperature Change").unwrap();
 //! let response = global_temp * 0.5; // Compute from global mean
 //! # }
 //! ```
@@ -198,7 +198,7 @@
 //! # use rscm_core::spatial::{FourBoxGrid, SpatialGrid};
 //! # fn example(input_state: &InputState) {
 //! // Get grid values, compute regionally, then aggregate
-//! let window = input_state.get_four_box_window("Surface Temperature");
+//! let window = input_state.get_four_box_window("Surface Air Temperature Change");
 //! let temps = window.get_all();
 //! let regional_responses: Vec<f64> = temps.iter()
 //!     .map(|t| t * 0.5) // Different response per region
@@ -229,14 +229,14 @@
 //! impl Component for HemisphericToFourBoxDisaggregator {
 //!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         vec![
-//!             VariableDefinition::with_grid("Surface Temperature", "degC", VariableRole::Input, GridType::Hemispheric),
+//!             VariableDefinition::with_grid("Surface Air Temperature Change", "degC", VariableRole::Input, GridType::Hemispheric),
 //!             VariableDefinition::with_grid("Regional Surface Temperature", "degC", VariableRole::Output, GridType::FourBox),
 //!         ]
 //!     }
 //!
 //!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RscmResult<OutputState> {
 //!         // Get hemispheric input using typed window API
-//!         let window = input_state.get_hemispheric_window("Surface Temperature");
+//!         let window = input_state.get_hemispheric_window("Surface Air Temperature Change");
 //!         let values = window.get_all();
 //!         let (northern, southern) = (values[0], values[1]);
 //!

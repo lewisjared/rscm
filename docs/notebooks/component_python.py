@@ -214,7 +214,7 @@ plt.show()
 class Accumulator(Component):
     """Accumulate emissions over time."""
 
-    emissions = Input("Emissions|CO2", unit="GtC / yr")
+    emissions = Input("Emissions|CO2", unit="GtC/yr")
     cumulative = State("Cumulative Emissions|CO2", unit="GtC")
 
     def solve(self, t_current: float, t_next: float, inputs):
@@ -227,7 +227,7 @@ class Accumulator(Component):
 emissions_ts = Timeseries(
     np.asarray([10.0, 10.0]),
     TimeAxis.from_values(np.asarray([2000.0, 2010.0])),
-    "GtC / yr",
+    "GtC/yr",
     InterpolationStrategy.Previous,
 )
 

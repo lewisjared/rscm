@@ -10,8 +10,8 @@
 //! A variable name reads from general to specific: the quantity, then the species,
 //! then the sector, then any further breakdown, such as `"Emissions|CO2|Fossil"`.
 //! For example:
-//! - `"Emissions|CO2"` - CO2 emissions in GtC/yr
-//! - `"Atmospheric Concentration|CO2"` - CO2 concentration in ppm
+//! - `"Emissions|CO2"` - CO2 emissions in Mt CO2/yr
+//! - `"Atmospheric Concentrations|CO2"` - CO2 concentration in ppm
 //! - `"Effective Radiative Forcing|CO2"` - CO2 forcing in W/m^2
 //!
 //! # Spatial Resolution
@@ -291,7 +291,7 @@ pub struct TimeseriesItem {
     /// The timeseries data (scalar, four-box, or hemispheric)
     #[serde(alias = "timeseries")]
     pub data: TimeseriesData,
-    /// Variable name (e.g., "Emissions|CO2", "Surface Temperature")
+    /// Variable name (e.g., "Emissions|CO2", "Surface Air Temperature Change")
     pub name: String,
 }
 
@@ -431,7 +431,7 @@ impl TimeseriesCollection {
     /// # Example
     ///
     /// ```ignore
-    /// if let Some(data) = collection.get_data("Surface Temperature") {
+    /// if let Some(data) = collection.get_data("Surface Air Temperature Change") {
     ///     match data {
     ///         TimeseriesData::Scalar(ts) => println!("Global: {:?}", ts.latest_value()),
     ///         TimeseriesData::FourBox(ts) => println!("Regional: {:?}", ts.latest_values()),
@@ -503,18 +503,21 @@ mod tests {
 
         let timeseries =
             Timeseries::from_values(array![1.0, 2.0, 3.0], Array::range(2020.0, 2023.0, 1.0));
-        collection.add_timeseries("Surface Temperature".to_string(), timeseries.clone());
+        collection.add_timeseries(
+            "Surface Air Temperature Change".to_string(),
+            timeseries.clone(),
+        );
         collection.add_timeseries("Emissions|CO2".to_string(), timeseries.clone());
 
         assert_eq!(
             collection
-                .get_data("Surface Temperature")
+                .get_data("Surface Air Temperature Change")
                 .unwrap()
                 .grid_size(),
             1
         );
         assert!(collection
-            .get_data("Surface Temperature")
+            .get_data("Surface Air Temperature Change")
             .unwrap()
             .as_scalar()
             .is_some());

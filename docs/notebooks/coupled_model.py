@@ -186,7 +186,7 @@ emissions = Timeseries(
             ]
         )
     ),
-    "GtC / yr",
+    "GtC/yr",
     InterpolationStrategy.Previous,
 )
 
@@ -197,7 +197,7 @@ emissions = Timeseries(
 fig, ax = plt.subplots(figsize=(8, 3))
 ax.stairs(emissions.values(), emissions.time_axis.bounds())
 ax.set_xlabel("Year")
-ax.set_ylabel("Emissions (GtC / yr)")
+ax.set_ylabel("Emissions (GtC/yr)")
 plt.show()
 
 # %% [markdown]
@@ -231,8 +231,8 @@ surface_temp = Timeseries(
 )
 
 model_builder = model_builder.with_prescribed_variable(
-    "Surface Temperature", surface_temp
-).with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
+    "Surface Air Temperature Change", surface_temp
+).with_prescribed_variable("Emissions|CO2", emissions)
 
 # %% [markdown]
 # ## Initial Values
@@ -243,9 +243,9 @@ model_builder = model_builder.with_prescribed_variable(
 
 # %%
 initial_state = {
-    "Cumulative Land Uptake": 0.0,
+    "Cumulative Carbon Uptake|Land": 0.0,
     "Cumulative Emissions|CO2": 0.0,
-    "Atmospheric Concentration|CO2": 300.0,
+    "Atmospheric Concentrations|CO2": 300.0,
 }
 
 model_builder = model_builder.with_initial_values(initial_state)
@@ -281,8 +281,8 @@ model = (
     .with_component(carbon_cycle_component)
     .with_component(co2_erf_component)
     .with_time_axis(time_axis)
-    .with_prescribed_variable("Surface Temperature", surface_temp)
-    .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
+    .with_prescribed_variable("Surface Air Temperature Change", surface_temp)
+    .with_prescribed_variable("Emissions|CO2", emissions)
     .with_initial_values(initial_state)
 ).build()
 
@@ -327,12 +327,12 @@ results = as_dataframe(model.timeseries(), time_axis)
 plot_variables(
     results,
     [
-        "Emissions|CO2|Anthropogenic",
-        "Atmospheric Concentration|CO2",
+        "Emissions|CO2",
+        "Atmospheric Concentrations|CO2",
         "Effective Radiative Forcing|CO2",
-        "Surface Temperature",
+        "Surface Air Temperature Change",
     ],
-    steps=("Emissions|CO2|Anthropogenic",),
+    steps=("Emissions|CO2",),
 )
 
 # %% [markdown]
@@ -392,7 +392,7 @@ emission_values = np.array([0.0, 0.5, 3.0, 7.0, 10.0, 5.0, 1.0])  # GtC/yr
 emissions_scenario = Timeseries(
     emission_values,
     TimeAxis.from_bounds(np.concatenate([years, [2101.0]])),  # bounds need n+1 values
-    "GtC / yr",
+    "GtC/yr",
     InterpolationStrategy.Linear,
 )
 
@@ -409,13 +409,13 @@ emissions_scenario = Timeseries(
 # %%
 erf_schema = VariableSchema()
 
-erf_schema.add_variable("Emissions|CO2|Anthropogenic", "GtC / yr")
-erf_schema.add_variable("Surface Temperature", "K")
-erf_schema.add_variable("Atmospheric Concentration|CO2", "ppm")
-erf_schema.add_variable("Cumulative Land Uptake", "Gt C")
+erf_schema.add_variable("Emissions|CO2", "GtC/yr")
+erf_schema.add_variable("Surface Air Temperature Change", "K")
+erf_schema.add_variable("Atmospheric Concentrations|CO2", "ppm")
+erf_schema.add_variable("Cumulative Carbon Uptake|Land", "Gt C")
 erf_schema.add_variable("Cumulative Emissions|CO2", "Gt C")
 erf_schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
-erf_schema.add_variable("Deep Ocean Temperature", "K")
+erf_schema.add_variable("Ocean Temperature|Layer 2", "K")
 
 erf_schema.add_aggregate(
     "Effective Radiative Forcing",
@@ -427,11 +427,11 @@ erf_schema.add_aggregate(
 # %% [markdown]
 # ### Build the Feedback-Coupled Model
 #
-# `Surface Temperature` is not a prescribed variable here, because the Two-Layer model produces it.
+# `Surface Air Temperature Change` is not a prescribed variable here, because the Two-Layer model produces it.
 # The model builder resolves the dependency graph, whatever order the components are added in.
 #
 # Temperature feeds back on the carbon cycle, so the components form a feedback loop.
-# `with_lag_for("Surface Temperature", "CarbonCycle")` breaks it:
+# `with_lag_for("Surface Air Temperature Change", "CarbonCycle")` breaks it:
 # the carbon cycle reads the temperature the Two-Layer model wrote in the previous step.
 # The feedback loop therefore closes across steps rather than within one.
 # Without the lag, `build()` fails and suggests this call.
@@ -458,15 +458,15 @@ def build_feedback_model(alpha_temperature: float):
         .with_component(carbon_cycle)
         .with_component(co2_erf)
         .with_component(two_layer)
-        .with_lag_for("Surface Temperature", "CarbonCycle")
-        .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions_scenario)
+        .with_lag_for("Surface Air Temperature Change", "CarbonCycle")
+        .with_prescribed_variable("Emissions|CO2", emissions_scenario)
         .with_initial_values(
             {
-                "Cumulative Land Uptake": 0.0,
+                "Cumulative Carbon Uptake|Land": 0.0,
                 "Cumulative Emissions|CO2": 0.0,
-                "Atmospheric Concentration|CO2": 278.0,
-                "Surface Temperature": 0.0,  # Anomaly from pre-industrial
-                "Deep Ocean Temperature": 0.0,
+                "Atmospheric Concentrations|CO2": 278.0,
+                "Surface Air Temperature Change": 0.0,  # Anomaly from pre-industrial
+                "Ocean Temperature|Layer 2": 0.0,
             }
         )
     ).build()
@@ -477,7 +477,7 @@ feedback_model = build_feedback_model(alpha_temperature=0.1)
 # %% [markdown]
 # ### Visualise the Dependency Graph
 #
-# `coupling()` tags `Surface Temperature` as `(lagged from TwoLayer)` for the carbon cycle,
+# `coupling()` tags `Surface Air Temperature Change` as `(lagged from TwoLayer)` for the carbon cycle,
 # because it reads the Two-Layer model's value from the previous step.
 # Its "Lagged Edges" section lists the same edge.
 
@@ -504,10 +504,10 @@ feedback_results = as_dataframe(feedback_model.timeseries(), time_axis)
 plot_variables(
     feedback_results,
     [
-        "Emissions|CO2|Anthropogenic",
-        "Atmospheric Concentration|CO2",
+        "Emissions|CO2",
+        "Atmospheric Concentrations|CO2",
         "Effective Radiative Forcing",
-        "Surface Temperature",
+        "Surface Air Temperature Change",
     ],
 )
 
@@ -524,7 +524,9 @@ no_feedback_results = as_dataframe(no_feedback_model.timeseries(), time_axis)
 
 # %% tags=["remove_input"]
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-for ax, var in zip(axes, ["Atmospheric Concentration|CO2", "Surface Temperature"]):
+for ax, var in zip(
+    axes, ["Atmospheric Concentrations|CO2", "Surface Air Temperature Change"]
+):
     for results_df, label, style in [
         (feedback_results, "With feedback", "-"),
         (no_feedback_results, "Without feedback", "--"),

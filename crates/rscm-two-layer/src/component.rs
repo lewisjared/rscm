@@ -147,8 +147,8 @@ pub struct TwoLayerParameters {
     erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[states(
-    surface_temperature { name = "Surface Temperature", unit = "K" },
-    deep_temperature { name = "Deep Ocean Temperature", unit = "K" },
+    surface_temperature { name = "Surface Air Temperature Change", unit = "K" },
+    deep_temperature { name = "Ocean Temperature|Layer 2", unit = "K" },
 )]
 pub struct TwoLayer {
     parameters: TwoLayerParameters,
@@ -283,11 +283,11 @@ mod tests {
         );
         // Add state variables with zero initial values
         ts_collection.add_timeseries(
-            "Surface Temperature".to_string(),
+            "Surface Air Temperature Change".to_string(),
             Timeseries::from_values(array![0.0, 0.0], array![t_start, t_end]),
         );
         ts_collection.add_timeseries(
-            "Deep Ocean Temperature".to_string(),
+            "Ocean Temperature|Layer 2".to_string(),
             Timeseries::from_values(array![0.0, 0.0], array![t_start, t_end]),
         );
         ts_collection
@@ -300,7 +300,7 @@ mod tests {
         let input_state = extract_state(&ts_collection, component.inputs(), 2000.0);
 
         let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
-        let temperature = match output_state.get("Surface Temperature").unwrap() {
+        let temperature = match output_state.get("Surface Air Temperature Change").unwrap() {
             StateValue::Scalar(t) => *t,
             _ => panic!("Expected scalar output"),
         };
@@ -328,7 +328,7 @@ mod tests {
         let input_state = extract_state(&ts_collection, component.inputs(), 2000.0);
 
         let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
-        let temperature = match output_state.get("Surface Temperature").unwrap() {
+        let temperature = match output_state.get("Surface Air Temperature Change").unwrap() {
             StateValue::Scalar(t) => *t,
             _ => panic!("Expected scalar output"),
         };
@@ -348,7 +348,7 @@ mod tests {
         let input_state = extract_state(&ts_collection, component.inputs(), 2000.0);
 
         let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
-        let temperature = match output_state.get("Surface Temperature").unwrap() {
+        let temperature = match output_state.get("Surface Air Temperature Change").unwrap() {
             StateValue::Scalar(t) => *t,
             _ => panic!("Expected scalar output"),
         };
@@ -369,7 +369,7 @@ mod tests {
         let ts_collection_small = create_input_state_with_erf(2.0, 2000.0, 2001.0);
         let input_state_small = extract_state(&ts_collection_small, component.inputs(), 2000.0);
         let output_small = component.solve(2000.0, 2001.0, &input_state_small).unwrap();
-        let temp_small = match output_small.get("Surface Temperature").unwrap() {
+        let temp_small = match output_small.get("Surface Air Temperature Change").unwrap() {
             StateValue::Scalar(t) => *t,
             _ => panic!("Expected scalar output"),
         };
@@ -378,7 +378,7 @@ mod tests {
         let ts_collection_large = create_input_state_with_erf(4.0, 2000.0, 2001.0);
         let input_state_large = extract_state(&ts_collection_large, component.inputs(), 2000.0);
         let output_large = component.solve(2000.0, 2001.0, &input_state_large).unwrap();
-        let temp_large = match output_large.get("Surface Temperature").unwrap() {
+        let temp_large = match output_large.get("Surface Air Temperature Change").unwrap() {
             StateValue::Scalar(t) => *t,
             _ => panic!("Expected scalar output"),
         };

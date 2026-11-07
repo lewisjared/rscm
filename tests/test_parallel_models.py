@@ -30,19 +30,23 @@ def two_layer(lambda0: float) -> ModelBuilder:
         }
     ).build()
     erf = Timeseries(
-        np.linspace(0.0, 3.0, len(AXIS)), AXIS, "W / m^2", InterpolationStrategy.Next
+        np.linspace(0.0, 3.0, len(AXIS)), AXIS, "W/m^2", InterpolationStrategy.Next
     )
     builder = ModelBuilder()
     builder.with_time_axis(AXIS).with_component(component)
     builder.with_prescribed_variable("Effective Radiative Forcing", erf)
     builder.with_initial_values(
-        {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+        {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
     )
     return builder
 
 
 def temperature(model) -> np.ndarray:
-    return model.timeseries().get_timeseries_by_name("Surface Temperature").values()
+    return (
+        model.timeseries()
+        .get_timeseries_by_name("Surface Air Temperature Change")
+        .values()
+    )
 
 
 class Scaled(Component):

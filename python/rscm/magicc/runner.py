@@ -19,7 +19,20 @@ from rscm.core import (
     TimeAxis,
     Timeseries,
     TimeseriesType,
+    Unit,
     VariableSchema,
+)
+from rscm.names import (
+    ATMOSPHERIC_CONCENTRATIONS,
+    EMISSIONS_UNITS,
+    EQUILIBRIUM_CLIMATE_SENSITIVITY,
+    ERF,
+    ERF_2XCO2,
+    ERF_CH4_OXIDATION_STRATOSPHERIC_H2O,
+    HEAT_UPTAKE,
+    OCEAN_HEAT_CONTENT,
+    SEA_SURFACE_TEMPERATURE,
+    SURFACE_AIR_TEMPERATURE_CHANGE,
 )
 
 if TYPE_CHECKING:
@@ -32,8 +45,7 @@ if TYPE_CHECKING:
 
 __all__ = ["CO2Emissions", "MagiccResult", "run_magicc"]
 
-CONCENTRATION = "Atmospheric Concentration|"
-ERF = "Effective Radiative Forcing"
+CONCENTRATION = ATMOSPHERIC_CONCENTRATIONS + "|"
 SPECIES = ("CO2", "CH4", "N2O")
 
 
@@ -42,14 +54,15 @@ class CO2Emissions:
     """CO2 budget inputs with prescribed carbon uptake.
 
     ``initial_concentration`` is in ppm. All four arrays contain annual mean
-    rates in GtC/yr, one for each supplied year, labelled by the year they start.
+    rates, one for each supplied year, labelled by the year they start:
+    emissions in Mt CO2/yr and uptake in GtC/yr.
     Positive uptake removes carbon from the atmosphere. Provide explicit zeros to
-    disable land-use emissions or either sink.
+    disable biosphere emissions or either sink.
     """
 
     initial_concentration: float
     fossil: ArrayLike
-    land_use: ArrayLike
+    biosphere: ArrayLike
     land_uptake: ArrayLike
     ocean_uptake: ArrayLike
 
@@ -149,6 +162,30 @@ def _prepare_inputs(
     return time, data
 
 
+def _co2_budget_inputs(
+    co2_emissions: CO2Emissions, n: int
+) -> dict[str, tuple[NDArray[np.float64], str]]:
+    fossil, biosphere, land_uptake, ocean_uptake = (
+        _average_series(name, values, n)
+        for name, values in (
+            ("Emissions|CO2|Fossil", co2_emissions.fossil),
+            ("Emissions|CO2|Biosphere", co2_emissions.biosphere),
+            ("land uptake", co2_emissions.land_uptake),
+            ("ocean uptake", co2_emissions.ocean_uptake),
+        )
+    )
+    unit = EMISSIONS_UNITS["CO2"]
+    gtc = Unit(unit).conversion_factor(Unit("GtC/yr"))
+    # The budget takes the net land flux, which includes biosphere emissions
+    return {
+        "Emissions|CO2|Fossil": (fossil, unit),
+        "Emissions|CO2|Biosphere": (biosphere, unit),
+        "Emissions|CO2|CH4 Oxidation": (np.zeros(n), unit),
+        "Net Atmosphere to Land Flux|CO2": (land_uptake - gtc * biosphere, "GtC/yr"),
+        "Net Atmosphere to Ocean Flux|CO2": (ocean_uptake, "GtC/yr"),
+    }
+
+
 def run_magicc(  # noqa: PLR0913
     time_axis: TimeAxis,
     concentrations: Mapping[str, ArrayLike],
@@ -197,25 +234,11 @@ def run_magicc(  # noqa: PLR0913
                 "initial CO2", [co2_emissions.initial_concentration], 1, positive=True
             )[0]
         )
-        fossil, land_use, land_uptake, ocean_uptake = (
-            _average_series(name, values, len(time))
-            for name, values in (
-                ("Emissions|CO2|Fossil", co2_emissions.fossil),
-                ("Emissions|CO2|Land Use", co2_emissions.land_use),
-                ("land uptake", co2_emissions.land_uptake),
-                ("ocean uptake", co2_emissions.ocean_uptake),
-            )
-        )
-        # The budget takes the net land flux, which includes land-use emissions
-        for name, values in {
-            "Emissions|CO2|Fossil": fossil,
-            "Emissions|CO2|Land Use": land_use,
-            "Emissions|CO2|CH4 Oxidation": np.zeros(len(time)),
-            "Carbon Flux|Terrestrial": land_uptake - land_use,
-            "Carbon Flux|Ocean": ocean_uptake,
-        }.items():
+        for name, (values, unit) in _co2_budget_inputs(
+            co2_emissions, len(time)
+        ).items():
             data[name] = values
-            units[name] = "GtC/yr"
+            units[name] = unit
             sources[name] = "prescribed"
         budget = CO2BudgetBuilder.from_parameters({}).build()
         sources[CONCENTRATION + "CO2"] = "CO2Budget"
@@ -254,17 +277,17 @@ def run_magicc(  # noqa: PLR0913
     units.update(
         {
             ERF: "W/m^2",
-            "Surface Temperature": "K",
-            "Sea Surface Temperature": "K",
-            "Heat Uptake": "W/m^2",
-            "Ocean Heat Content": "J/m^2",
+            SURFACE_AIR_TEMPERATURE_CHANGE: "K",
+            SEA_SURFACE_TEMPERATURE: "K",
+            HEAT_UPTAKE: "W/m^2",
+            OCEAN_HEAT_CONTENT: "J",
         }
     )
     for name in (
-        "Surface Temperature",
-        "Sea Surface Temperature",
-        "Heat Uptake",
-        "Ocean Heat Content",
+        SURFACE_AIR_TEMPERATURE_CHANGE,
+        SEA_SURFACE_TEMPERATURE,
+        HEAT_UPTAKE,
+        OCEAN_HEAT_CONTENT,
     ):
         sources[name] = "ClimateUdeb"
 
@@ -274,10 +297,12 @@ def run_magicc(  # noqa: PLR0913
             schema.add_variable(
                 name,
                 unit,
-                GridType.FourBox if name == "Surface Temperature" else GridType.Scalar,
+                GridType.FourBox
+                if name == SURFACE_AIR_TEMPERATURE_CHANGE
+                else GridType.Scalar,
             )
     if budget is not None:
-        schema.add_variable("Emissions|CO2|Net", "GtC/yr")
+        schema.add_variable("Net Emissions|CO2", "GtC/yr")
         schema.add_variable("Airborne Fraction|CO2", "1")
     contributors = (*(ERF + "|" + gas for gas in forcing_species), ERF + "|Other")
     schema.add_aggregate(ERF, "W/m^2", "sum", list(contributors))
@@ -319,21 +344,24 @@ def _collect_result(  # noqa: PLR0913
     ``diagnostics`` are per-step points, which have no value at the first label.
     """
     collection = model.timeseries()
-    temperature = collection.get_four_box_timeseries_by_name("Surface Temperature")
+    temperature = collection.get_four_box_timeseries_by_name(
+        SURFACE_AIR_TEMPERATURE_CHANGE
+    )
     if temperature is None:
-        msg = "Missing Surface Temperature output"
+        msg = f"Missing {SURFACE_AIR_TEMPERATURE_CHANGE} output"
         raise RuntimeError(msg)
     regional = temperature.values().copy()
     values = {}
     for name in units:
-        if name != "Surface Temperature":
+        if name != SURFACE_AIR_TEMPERATURE_CHANGE:
             series = collection.get_timeseries_by_name(name)
             if series is None:
                 msg = f"Missing {name} output"
                 raise RuntimeError(msg)
             values[name] = series.values().copy()
-    values["Surface Temperature"] = regional @ weights
-    for name, output in {**values, "Regional Surface Temperature": regional}.items():
+    values[SURFACE_AIR_TEMPERATURE_CHANGE] = regional @ weights
+    # The four boxes stand in for their global mean.
+    for name, output in {**values, SURFACE_AIR_TEMPERATURE_CHANGE: regional}.items():
         start = 1 if name in diagnostics else 0
         average = model.timeseries_type(name) == TimeseriesType.Average
         end = len(time) - 1 if average else len(time)
@@ -351,9 +379,9 @@ def _collect_result(  # noqa: PLR0913
 def _base_schema() -> VariableSchema:
     """Return a schema declaring the component outputs that no runner uses."""
     schema = VariableSchema()
-    for name in ("2xCO2", "CH4 Oxidation Stratospheric H2O"):
-        schema.add_variable(f"{ERF}|{name}", "W/m^2")
-    schema.add_variable("Equilibrium Climate Sensitivity", "K")
+    for name in (ERF_2XCO2, ERF_CH4_OXIDATION_STRATOSPHERIC_H2O):
+        schema.add_variable(name, "W/m^2")
+    schema.add_variable(EQUILIBRIUM_CLIMATE_SENSITIVITY, "K")
     return schema
 
 
@@ -369,7 +397,7 @@ def _ch4_burdens(
     """Return initial CH4Oxidation pools, with all CH4 natural as in MAGICC7."""
     burden = "Atmospheric Burden|CH4|"
     return {
-        **{burden + source: 0.0 for source in ("Fossil", "AFOLU", "Permafrost")},
+        **{burden + source: 0.0 for source in ("Fossil", "Biosphere", "Permafrost")},
         burden + "Natural": tg_per_ppb * concentration * mixing_box_size,
     }
 

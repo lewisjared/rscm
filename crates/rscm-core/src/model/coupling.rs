@@ -389,8 +389,8 @@ mod tests {
     impl Component for EmissionsComponent {
         fn definitions(&self) -> Vec<VariableDefinition> {
             vec![
-                VariableDefinition::scalar_input("Emissions|CO2", "GtCO2 / yr"),
-                VariableDefinition::scalar_output("Concentration|CO2", "ppm"),
+                VariableDefinition::scalar_input("Emissions|CO2", "GtCO2/yr"),
+                VariableDefinition::scalar_output("Atmospheric Concentrations|CO2", "ppm"),
             ]
         }
 
@@ -413,8 +413,8 @@ mod tests {
     impl Component for ForcingComponent {
         fn definitions(&self) -> Vec<VariableDefinition> {
             vec![
-                VariableDefinition::scalar_input("Concentration|CO2", "ppm"),
-                VariableDefinition::scalar_output("ERF|CO2", "W / m^2"),
+                VariableDefinition::scalar_input("Atmospheric Concentrations|CO2", "ppm"),
+                VariableDefinition::scalar_output("Effective Radiative Forcing|CO2", "W/m^2"),
             ]
         }
 
@@ -434,7 +434,7 @@ mod tests {
             array![[10.0], [11.0], [12.0]],
             Arc::new(time_axis.clone()),
             ScalarGrid,
-            "GtCO2 / yr".to_string(),
+            "GtCO2/yr".to_string(),
             InterpolationStrategy::from(LinearSplineStrategy::new(true)),
         );
 
@@ -465,13 +465,13 @@ mod tests {
         assert_eq!(emissions.inputs.len(), 1);
         assert_eq!(emissions.inputs[0].name, "Emissions|CO2");
         assert_eq!(emissions.outputs.len(), 1);
-        assert_eq!(emissions.outputs[0].name, "Concentration|CO2");
+        assert_eq!(emissions.outputs[0].name, "Atmospheric Concentrations|CO2");
 
         let forcing = &coupling.components[1];
         assert_eq!(forcing.inputs.len(), 1);
-        assert_eq!(forcing.inputs[0].name, "Concentration|CO2");
+        assert_eq!(forcing.inputs[0].name, "Atmospheric Concentrations|CO2");
         assert_eq!(forcing.outputs.len(), 1);
-        assert_eq!(forcing.outputs[0].name, "ERF|CO2");
+        assert_eq!(forcing.outputs[0].name, "Effective Radiative Forcing|CO2");
     }
 
     #[test]
@@ -496,7 +496,7 @@ mod tests {
             vec![CouplingEdge {
                 producer: "EmissionsComponent".into(),
                 consumer: "ForcingComponent".into(),
-                variable: "Concentration|CO2".into(),
+                variable: "Atmospheric Concentrations|CO2".into(),
                 lagged: false,
             }]
         );
@@ -518,11 +518,11 @@ mod tests {
 
         assert!(plain.contains("[0] EmissionsComponent"));
         assert!(plain.contains("[1] ForcingComponent"));
-        assert!(plain.contains("<- Emissions|CO2 [GtCO2 / yr] average (prescribed)"));
-        assert!(
-            plain.contains("<- Concentration|CO2 [ppm] point (upstream from EmissionsComponent)")
-        );
-        assert!(plain.contains("-> ERF|CO2 [W / m^2] point"));
+        assert!(plain.contains("<- Emissions|CO2 [GtCO2/yr] average (prescribed)"));
+        assert!(plain.contains(
+            "<- Atmospheric Concentrations|CO2 [ppm] point (upstream from EmissionsComponent)"
+        ));
+        assert!(plain.contains("-> Effective Radiative Forcing|CO2 [W/m^2] point"));
         assert!(!plain.contains("\x1b["));
     }
 

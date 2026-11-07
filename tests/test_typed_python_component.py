@@ -24,7 +24,7 @@ class SimpleCarbonCycle(Component):
     emissions = Input("Emissions|CO2", unit="GtCO2")
 
     # Declare state variables (read previous, write new)
-    concentration = State("Atmospheric Concentration|CO2", unit="ppm")
+    concentration = State("Atmospheric Concentrations|CO2", unit="ppm")
 
     # Declare outputs
     uptake = Output("Carbon Uptake", unit="GtC")
@@ -76,7 +76,7 @@ def test_typed_component_definitions():
     # Check each definition
     def_names = {d.name for d in defs}
     assert "Emissions|CO2" in def_names
-    assert "Atmospheric Concentration|CO2" in def_names
+    assert "Atmospheric Concentrations|CO2" in def_names
     assert "Carbon Uptake" in def_names
 
 
@@ -102,7 +102,7 @@ def test_typed_component_in_model():
         .with_component(carbon_comp)
         .with_time_axis(time_axis)
         .with_prescribed_variable("Emissions|CO2", emissions)
-        .with_initial_values({"Atmospheric Concentration|CO2": 280.0})
+        .with_initial_values({"Atmospheric Concentrations|CO2": 280.0})
         .build()
     )
 
@@ -113,7 +113,7 @@ def test_typed_component_in_model():
     collection = model.timeseries()
 
     # Check results
-    conc_ts = collection.get_timeseries_by_name("Atmospheric Concentration|CO2")
+    conc_ts = collection.get_timeseries_by_name("Atmospheric Concentrations|CO2")
     assert conc_ts is not None
 
     # At t=2021.0, concentration should be: 280.0 + 10.0 * 0.5 = 285.0
@@ -340,8 +340,8 @@ def test_prescribed_input_returns_correct_step_value():
     class DebugComponent(Component, register=False):
         """Component that records the concentration value seen at each step."""
 
-        concentration = Input("Concentration|CO2", unit="ppm")
-        erf = Output("ERF|Test", unit="W/m^2")
+        concentration = Input("Atmospheric Concentrations|CO2", unit="ppm")
+        erf = Output("Effective Radiative Forcing|Test", unit="W/m^2")
 
         def solve(
             self, t_current: float, t_next: float, inputs: "DebugComponent.Inputs"
@@ -366,7 +366,7 @@ def test_prescribed_input_returns_correct_step_value():
         ModelBuilder()
         .with_time_axis(time_axis)
         .with_component(comp)
-        .with_prescribed_variable("Concentration|CO2", concentration_ts)
+        .with_prescribed_variable("Atmospheric Concentrations|CO2", concentration_ts)
         .build()
     )
 

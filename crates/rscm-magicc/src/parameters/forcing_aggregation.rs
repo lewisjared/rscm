@@ -84,7 +84,7 @@ pub enum ForcingTerm {
 /// Climate settings for recalculating internal efficacies.
 ///
 /// Each year the efficacies come from LAMCALC at the previous year's
-/// `Equilibrium Climate Sensitivity` and `Effective Radiative Forcing|2xCO2`.
+/// `Equilibrium Climate Sensitivity` and `2xCO2 Effective Radiative Forcing`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EfficacyClimate {

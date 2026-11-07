@@ -45,7 +45,7 @@ because the page heading names the component.
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["radiative-forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
 #[inputs(
-    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 )]
 #[outputs(
     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
@@ -156,7 +156,7 @@ class SimpleEmissionsToConcentration(Component):
     """
 
     emissions = Input("Emissions|CO2", unit="GtCO2")
-    concentration = State("Atmospheric Concentration|CO2", unit="ppm")
+    concentration = State("Atmospheric Concentrations|CO2", unit="ppm")
 
     def __init__(self, airborne_fraction: float, gtc_to_ppm: float):
         """
@@ -246,9 +246,9 @@ The generated component pages appear under `site/components/`.
 Follow the hierarchical naming convention:
 
 - `Emissions|CO2` - CO2 emissions
-- `Atmospheric Concentration|CO2` - Atmospheric CO2 concentration
+- `Atmospheric Concentrations|CO2` - Atmospheric CO2 concentration
 - `Effective Radiative Forcing|CO2` - ERF from CO2
-- `Surface Temperature` - Global mean surface temperature
+- `Surface Air Temperature Change` - Global mean surface temperature
 
 ### Units
 

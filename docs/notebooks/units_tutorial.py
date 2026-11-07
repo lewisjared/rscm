@@ -271,15 +271,15 @@ for target in [flux, Unit("Mt CH4/yr")]:
 # Data in a unit with a different dimension or species, or a unit the parser cannot read, fails `build()`.
 #
 # Below, the schema stores CO₂ emissions in `MtCO2/yr`.
-# The carbon cycle component expects `GtC / yr`, so the model converts the values as it reads them.
+# The carbon cycle component expects `GtC/yr`, so the model converts the values as it reads them.
 # 36,666.7 MtCO2/yr is 10 GtC/yr.
 
 # %%
 schema = VariableSchema()
-schema.add_variable("Emissions|CO2|Anthropogenic", "MtCO2/yr")
-schema.add_variable("Surface Temperature", "K")
-schema.add_variable("Atmospheric Concentration|CO2", "ppm")
-schema.add_variable("Cumulative Land Uptake", "Gt C")
+schema.add_variable("Emissions|CO2", "MtCO2/yr")
+schema.add_variable("Surface Air Temperature Change", "K")
+schema.add_variable("Atmospheric Concentrations|CO2", "ppm")
+schema.add_variable("Cumulative Carbon Uptake|Land", "Gt C")
 schema.add_variable("Cumulative Emissions|CO2", "Gt C")
 
 constant = TimeAxis.from_bounds(np.array([2000.0, 2011.0]))
@@ -297,13 +297,13 @@ model = (
             dict(tau=20.3, co2_pi=280.0, alpha_temperature=0.0)
         ).build()
     )
-    .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
-    .with_prescribed_variable("Surface Temperature", temperature)
+    .with_prescribed_variable("Emissions|CO2", emissions)
+    .with_prescribed_variable("Surface Air Temperature Change", temperature)
     .with_initial_values(
         {
-            "Cumulative Land Uptake": 0.0,
+            "Cumulative Carbon Uptake|Land": 0.0,
             "Cumulative Emissions|CO2": 0.0,
-            "Atmospheric Concentration|CO2": 280.0,
+            "Atmospheric Concentrations|CO2": 280.0,
         }
     )
 ).build()
@@ -317,7 +317,7 @@ print(model.coupling("plain"))
 # %%
 model.run()
 concentration = model.timeseries().get_timeseries_by_name(
-    "Atmospheric Concentration|CO2"
+    "Atmospheric Concentrations|CO2"
 )
 print(f"CO2 concentration in 2010: {concentration.values()[-1]:.1f} ppm")
 

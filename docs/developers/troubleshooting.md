@@ -89,7 +89,7 @@ Extrapolation is not allowed. Target=1750, start of interpolation range=1850
 #### MissingInitialValue
 
 ```
-Missing initial value for state variable 'Surface Temperature' in component 'TwoLayer'.
+Missing initial value for state variable 'Surface Air Temperature Change' in component 'TwoLayer'.
 ```
 
 **Cause:** State variables require initial values before the model can run.
@@ -101,7 +101,7 @@ model = (
     ModelBuilder()
     .with_component(component)
     .with_time_axis(time_axis)
-    .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
+    .with_initial_values({"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0})
     .build()
 )
 ```
@@ -122,7 +122,7 @@ model = (
     .with_component(component)
     .with_time_axis(time_axis)
     .with_prescribed_variable("Effective Radiative Forcing", erf)
-    .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
+    .with_initial_values({"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0})
     .build()
 )
 ```
@@ -193,16 +193,16 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
 
     ```python
     # Instead of:
-    temp = Input("Temperature", unit="K", grid="four_box")
+    temp = Input("Surface Air Temperature Change", unit="K", grid="four_box")
 
     # Use:
-    temp = Input("Temperature", unit="K")  # Scalar
+    temp = Input("Surface Air Temperature Change", unit="K")  # Scalar
     ```
 
 2. **Change the schema** to provide finer resolution (if a component produces it):
 
     ```python
-    schema.add_variable("Temperature", "K", GridType.FourBox)
+    schema.add_variable("Surface Air Temperature Change", "K", GridType.FourBox)
     ```
 
 3. **Create an explicit disaggregation component** with domain-specific assumptions:
@@ -211,7 +211,7 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
     class ScalarToFourBox(Component):
         """Disaggregate a scalar temperature to four-box with configurable ratios."""
 
-        scalar_temp = Input("Temperature", unit="K")
+        scalar_temp = Input("Surface Air Temperature Change", unit="K")
         regional_temp = Output("Regional Temperature", unit="K", grid="four_box")
 
         def __init__(self, ocean_ratio=1.05, land_ratio=0.95):
@@ -235,7 +235,7 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
 
 ```
 Feedback loop among components [CarbonCycle, TwoLayer] through variables [...].
-Break it with one of: with_lag_for("Surface Temperature", "CarbonCycle"), ...
+Break it with one of: with_lag_for("Surface Air Temperature Change", "CarbonCycle"), ...
 ```
 
 **Cause:** Components form a feedback loop that no lag breaks, where A depends on B and B depends on A.
@@ -257,13 +257,13 @@ Break it with one of: with_lag_for("Surface Temperature", "CarbonCycle"), ...
 
 ```python
 # Wrong: both calls return copies, so the collection is unchanged
-ts = collection.get_timeseries_by_name("Temperature")
+ts = collection.get_timeseries_by_name("Surface Air Temperature Change")
 ts.set(0, 999.0)
 ts.values()[0] = 999.0
 
 # Correct: create the timeseries with the right values, then add it
 values[0] = 999.0
-collection.add_timeseries("Temperature", Timeseries(values, time_axis, "K", strategy))
+collection.add_timeseries("Surface Air Temperature Change", Timeseries(values, time_axis, "K", strategy))
 ```
 
 `add_timeseries` panics if the name already exists (`pyo3_runtime.PanicException` in Python).

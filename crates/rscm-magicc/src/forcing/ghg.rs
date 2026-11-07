@@ -12,9 +12,9 @@
 //!
 //! # Inputs
 //!
-//! - `Atmospheric Concentration|CO2` (ppm) - CO2 concentration
-//! - `Atmospheric Concentration|CH4` (ppb) - CH4 concentration
-//! - `Atmospheric Concentration|N2O` (ppb) - N2O concentration
+//! - `Atmospheric Concentrations|CO2` (ppm) - CO2 concentration
+//! - `Atmospheric Concentrations|CH4` (ppb) - CH4 concentration
+//! - `Atmospheric Concentrations|N2O` (ppb) - N2O concentration
 //!
 //! # Outputs
 //!
@@ -65,15 +65,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["forcing", "ghg", "co2", "ch4", "n2o", "magicc"], category = "Radiative Forcing")]
 #[inputs(
-    co2_concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
-    ch4_concentration { name = "Atmospheric Concentration|CH4", unit = "ppb" },
-    n2o_concentration { name = "Atmospheric Concentration|N2O", unit = "ppb" },
+    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
+    ch4_concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb" },
+    n2o_concentration { name = "Atmospheric Concentrations|N2O", unit = "ppb" },
 )]
 #[outputs(
     co2_erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
     ch4_erf { name = "Effective Radiative Forcing|CH4", unit = "W/m^2" },
     n2o_erf { name = "Effective Radiative Forcing|N2O", unit = "W/m^2" },
-    co2_doubling_erf { name = "Effective Radiative Forcing|2xCO2", unit = "W/m^2" },
+    co2_doubling_erf { name = "2xCO2 Effective Radiative Forcing", unit = "W/m^2" },
     ch4_strat_h2o_erf { name = "Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O", unit = "W/m^2" },
 )]
 pub struct GhgForcing {
@@ -612,9 +612,9 @@ mod tests {
             .map(|d| d.name.as_str())
             .collect();
 
-        assert!(input_names.contains(&"Atmospheric Concentration|CO2"));
-        assert!(input_names.contains(&"Atmospheric Concentration|CH4"));
-        assert!(input_names.contains(&"Atmospheric Concentration|N2O"));
+        assert!(input_names.contains(&"Atmospheric Concentrations|CO2"));
+        assert!(input_names.contains(&"Atmospheric Concentrations|CH4"));
+        assert!(input_names.contains(&"Atmospheric Concentrations|N2O"));
 
         let output_names: Vec<_> = defs
             .iter()
@@ -625,7 +625,7 @@ mod tests {
         assert!(output_names.contains(&"Effective Radiative Forcing|CO2"));
         assert!(output_names.contains(&"Effective Radiative Forcing|CH4"));
         assert!(output_names.contains(&"Effective Radiative Forcing|N2O"));
-        assert!(output_names.contains(&"Effective Radiative Forcing|2xCO2"));
+        assert!(output_names.contains(&"2xCO2 Effective Radiative Forcing"));
     }
 
     #[test]

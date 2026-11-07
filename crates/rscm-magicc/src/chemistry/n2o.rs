@@ -19,12 +19,12 @@
 //!
 //! # Inputs
 //!
-//! - `Emissions|N2O` (Mt N/yr) - Anthropogenic N2O emissions
-//! - `Surface Temperature` (K) - Global mean surface temperature anomaly
+//! - `Emissions|N2O` (Mt N2ON/yr) - Anthropogenic N2O emissions
+//! - `Surface Air Temperature Change` (K) - Global mean surface temperature anomaly
 //!
 //! # Outputs
 //!
-//! - `Atmospheric Concentration|N2O` (ppb) - Updated N2O concentration
+//! - `Atmospheric Concentrations|N2O` (ppb) - Updated N2O concentration
 //! - `Lifetime|N2O` (yr) - Effective N2O lifetime
 //!
 //! # Feedback references
@@ -40,7 +40,7 @@
 //!   `rscm.magicc.full.natural_emissions` calculates MAGICC7's budget-closing value for it.
 //!
 //! With `concentration_switch_year` the concentration follows
-//! `Atmospheric Concentration|N2O|Prescribed` until that year.
+//! `Prescribed Atmospheric Concentrations|N2O` until that year.
 
 use crate::parameters::N2OChemistryParameters;
 use crate::reference::{
@@ -51,6 +51,7 @@ use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RscmResult;
+use rscm_core::names::ATMOSPHERIC_CONCENTRATIONS_N2O;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -58,7 +59,6 @@ use serde::{Deserialize, Serialize};
 
 /// Number of fixed-point iterations (fixed per MAGICC7 implementation)
 const PRATHER_ITERATIONS: usize = 4;
-const N2O_CONCENTRATION: &str = "Atmospheric Concentration|N2O";
 
 /// N2O atmospheric chemistry component
 ///
@@ -69,11 +69,11 @@ const N2O_CONCENTRATION: &str = "Atmospheric Concentration|N2O";
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["chemistry", "n2o", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
-    n2o_emissions { name = "Emissions|N2O", unit = "Mt N/yr" },
-    temperature { name = "Surface Temperature", unit = "K" },
+    n2o_emissions { name = "Emissions|N2O", unit = "Mt N2ON/yr" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
 )]
 #[states(
-    n2o_concentration { name = "Atmospheric Concentration|N2O", unit = "ppb" },
+    n2o_concentration { name = "Atmospheric Concentrations|N2O", unit = "ppb" },
 )]
 #[outputs(
     n2o_lifetime { name = "Lifetime|N2O", unit = "yr", timeseries_type = "average" },
@@ -166,7 +166,7 @@ impl Component for N2OChemistry {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         definitions.extend(prescribed_definition(
-            N2O_CONCENTRATION,
+            ATMOSPHERIC_CONCENTRATIONS_N2O,
             "ppb",
             self.parameters.concentration_switch_year,
         ));
@@ -209,7 +209,7 @@ impl Component for N2OChemistry {
 
         let new_concentration = prescribed_concentration(
             input_state,
-            N2O_CONCENTRATION,
+            ATMOSPHERIC_CONCENTRATIONS_N2O,
             p.concentration_switch_year,
             t_next,
         )
@@ -327,8 +327,8 @@ mod tests {
             .map(|d| d.name.clone())
             .collect();
         assert!(names.contains(&"Emissions|N2O".to_string()));
-        assert!(names.contains(&"Surface Temperature".to_string()));
-        assert!(names.contains(&"Atmospheric Concentration|N2O".to_string()));
+        assert!(names.contains(&"Surface Air Temperature Change".to_string()));
+        assert!(names.contains(&"Atmospheric Concentrations|N2O".to_string()));
         assert!(names.contains(&"Lifetime|N2O".to_string()));
     }
 }

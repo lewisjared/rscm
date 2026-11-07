@@ -50,7 +50,7 @@ pub struct CH4ChemistryParameters {
     /// default: false
     pub include_permafrost: bool,
 
-    /// Last year of concentrations prescribed by `Atmospheric Concentration|CH4|Prescribed`,
+    /// Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|CH4`,
     /// or `None` to calculate them from emissions throughout.
     /// MAGICC7: CH4_SWITCHFROMCONC2EMIS_YEAR
     pub concentration_switch_year: Option<FloatValue>,

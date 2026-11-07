@@ -43,7 +43,7 @@ model = (
     .with_time_axis(time_axis)
     .with_component(TwoLayerBuilder.from_parameters(params).build())
     .with_prescribed_variable("Effective Radiative Forcing", erf)
-    .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
+    .with_initial_values({"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0})
 ).build()
 model.run()
 ```
@@ -81,7 +81,7 @@ heat_capacity_deep = 100.0    # Deep ocean (W yr/(m² K))
 # "Effective Radiative Forcing" = { file = "data/erf.csv", unit = "W/m^2" }
 
 [initial_values]
-# "Surface Temperature" = 0.0
+# "Surface Air Temperature Change" = 0.0
 ```
 
 ### Known Top-Level Keys

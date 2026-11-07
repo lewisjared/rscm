@@ -236,7 +236,7 @@ model = (
     ModelBuilder()
     .with_component(heat_uptake_component)
     .with_time_axis(time_axis)
-    .with_prescribed_variable("Effective Radiative Forcing|Aggregated", forcing)
+    .with_prescribed_variable("Effective Radiative Forcing", forcing)
 ).build()
 
 # %% [markdown]
@@ -249,7 +249,7 @@ model = (
 model.run()
 collection = model.timeseries()
 
-heat_uptake_ts = collection.get_four_box_timeseries_by_name("Heat Uptake|Ocean")
+heat_uptake_ts = collection.get_four_box_timeseries_by_name("Heat Uptake")
 values = heat_uptake_ts.values()
 print(f"Units: {heat_uptake_ts.unit}, shape: {values.shape}")
 
@@ -262,7 +262,7 @@ print(f"Units: {heat_uptake_ts.unit}, shape: {values.shape}")
 import matplotlib.pyplot as plt
 
 times = time_axis.values()
-erf_ts = collection.get_timeseries_by_name("Effective Radiative Forcing|Aggregated")
+erf_ts = collection.get_timeseries_by_name("Effective Radiative Forcing")
 region_names = ["Northern Ocean", "Northern Land", "Southern Ocean", "Southern Land"]
 
 fig, ax = plt.subplots(figsize=(10, 5))
@@ -326,7 +326,7 @@ class RegionalWarming(Component):
     """Scale global forcing into regional temperatures."""
 
     forcing = Input("Effective Radiative Forcing", unit="W/m^2")
-    temperature = Output("Surface Temperature", unit="K", grid="four_box")
+    temperature = Output("Surface Air Temperature Change", unit="K", grid="four_box")
 
     def __init__(self, sensitivity: list[float]):
         # Regional sensitivities in K per W/m^2, ordered [NO, NL, SO, SL]
@@ -343,7 +343,7 @@ class RegionalWarming(Component):
 class LandOceanContrast(Component):
     """Difference between mean land and mean ocean temperature."""
 
-    temperature = Input("Surface Temperature", unit="K", grid="four_box")
+    temperature = Input("Surface Air Temperature Change", unit="K", grid="four_box")
     contrast = Output("Land-Ocean Contrast", unit="K")
 
     def solve(self, t_current, t_next, inputs):
@@ -381,7 +381,7 @@ grid_forcing = Timeseries(
 
 schema = VariableSchema()
 schema.add_variable("Effective Radiative Forcing", "W/m^2")
-schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+schema.add_variable("Surface Air Temperature Change", "K", GridType.FourBox)
 schema.add_variable("Land-Ocean Contrast", "K")
 
 regional_model = (
@@ -395,7 +395,9 @@ regional_model = (
 regional_model.run()
 
 regional_results = regional_model.timeseries()
-temps = regional_results.get_four_box_timeseries_by_name("Surface Temperature").values()
+temps = regional_results.get_four_box_timeseries_by_name(
+    "Surface Air Temperature Change"
+).values()
 contrast = regional_results.get_timeseries_by_name("Land-Ocean Contrast").values()
 for year, t, c in zip(grid_time_axis.values()[1:4], temps[1:4], contrast[1:4]):
     print(
@@ -408,24 +410,24 @@ for year, t, c in zip(grid_time_axis.values()[1:4], temps[1:4], contrast[1:4]):
 # The schema decides the grid a variable is stored on.
 # If a component writes a finer grid than the schema declares,
 # the model aggregates the output when writing it.
-# Here the schema stores `Surface Temperature` as a scalar,
+# Here the schema stores `Surface Air Temperature Change` as a scalar,
 # so the four-box output of `RegionalWarming` becomes a global mean.
 #
 # By default the model aggregates with equal weights.
 # `ModelBuilder.with_grid_weights()` sets area weights for a grid type.
 # The weights must sum to 1.0, ordered `[NO, NL, SO, SL]` for FourBox and `[N, S]` for Hemispheric.
 #
-# The helper below builds the `RegionalWarming` model with `Surface Temperature` stored on a chosen grid.
+# The helper below builds the `RegionalWarming` model with `Surface Air Temperature Change` stored on a chosen grid.
 
 
 # %%
 def build_regional_model(
     temperature_grid: GridType, weights: list[float] | None = None
 ) -> ModelBuilder:
-    """Build a model whose schema stores Surface Temperature on the given grid."""
+    """Build a model whose schema stores Surface Air Temperature Change on the given grid."""
     schema = VariableSchema()
     schema.add_variable("Effective Radiative Forcing", "W/m^2")
-    schema.add_variable("Surface Temperature", "K", temperature_grid)
+    schema.add_variable("Surface Air Temperature Change", "K", temperature_grid)
 
     builder = (
         ModelBuilder()
@@ -445,7 +447,9 @@ equal_model.run()
 weighted_model.run()
 
 for label, m in [("Equal weights", equal_model), ("Area weights", weighted_model)]:
-    temps = m.timeseries().get_timeseries_by_name("Surface Temperature").values()
+    temps = (
+        m.timeseries().get_timeseries_by_name("Surface Air Temperature Change").values()
+    )
     print(f"{label}: {np.round(temps[1:4], 3)}")
 
 # %% [markdown]
@@ -462,7 +466,7 @@ hemi_model = build_regional_model(GridType.Hemispheric).build()
 hemi_model.run()
 hemi_values = (
     hemi_model.timeseries()
-    .get_hemispheric_timeseries_by_name("Surface Temperature")
+    .get_hemispheric_timeseries_by_name("Surface Air Temperature Change")
     .values()
 )
 print(f"[N, S] for 2001 to 2003:\n{np.round(hemi_values[1:4], 3)}")
@@ -494,9 +498,9 @@ print(f"[N, S] for 2001 to 2003:\n{np.round(hemi_values[1:4], 3)}")
 
 # %%
 class ScalarReader(Component):
-    """Reads Surface Temperature as a global value."""
+    """Reads Surface Air Temperature Change as a global value."""
 
-    temperature = Input("Surface Temperature", unit="K")
+    temperature = Input("Surface Air Temperature Change", unit="K")
     response = Output("Response", unit="K")
 
     def solve(self, t_current, t_next, inputs):
@@ -525,7 +529,7 @@ except ValueError as e:
 class HemisphericProducer(Component):
     """Produces hemispheric temperatures."""
 
-    temperature = Output("Surface Temperature", unit="K", grid="hemispheric")
+    temperature = Output("Surface Air Temperature Change", unit="K", grid="hemispheric")
 
     def solve(self, t_current, t_next, inputs):
         """Return fixed hemispheric values."""
@@ -533,7 +537,7 @@ class HemisphericProducer(Component):
 
 
 four_box_schema = VariableSchema()
-four_box_schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+four_box_schema.add_variable("Surface Air Temperature Change", "K", GridType.FourBox)
 
 try:
     (
@@ -557,7 +561,7 @@ except ValueError as e:
 class HemisphericToFourBox(Component):
     """Split hemispheric temperatures into ocean and land with a fixed ocean/land ratio."""
 
-    hemispheric = Input("Surface Temperature", unit="K", grid="hemispheric")
+    hemispheric = Input("Surface Air Temperature Change", unit="K", grid="hemispheric")
     four_box = Output("Regional Surface Temperature", unit="K", grid="four_box")
 
     def __init__(self, ocean_land_ratio: float):

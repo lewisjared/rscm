@@ -13,9 +13,6 @@ mod sea_level;
 pub(crate) mod state;
 mod udeb;
 
-pub use sea_level::{
-    thermal_expansion_increment, SeaLevelRise, SeaLevelRiseState, ANNUAL_MEAN_TEMPERATURE,
-    THERMAL_EXPANSION,
-};
+pub use sea_level::{thermal_expansion_increment, SeaLevelRise, SeaLevelRiseState};
 pub use state::ClimateUdebState;
-pub use udeb::{ClimateUdeb, CLIMATE_SENSITIVITY, CO2_DOUBLING_ERF, REGIONAL_FORCING};
+pub use udeb::ClimateUdeb;

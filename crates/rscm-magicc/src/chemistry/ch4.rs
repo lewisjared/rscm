@@ -17,7 +17,7 @@
 //! # Inputs
 //!
 //! - `Emissions|CH4` (Tg CH4/yr) - Anthropogenic methane emissions
-//! - `Surface Temperature` (K) - Global mean surface temperature anomaly
+//! - `Surface Air Temperature Change` (K) - Global mean surface temperature anomaly
 //! - `Emissions|NOx` (Tg N/yr) - NOx emissions for OH feedback
 //! - `Emissions|CO` (Tg CO/yr) - CO emissions for OH feedback
 //! - `Emissions|NMVOC` (Tg NMVOC/yr) - NMVOC emissions for OH feedback
@@ -25,9 +25,9 @@
 //!
 //! # Outputs
 //!
-//! - `Atmospheric Concentration|CH4` (ppb) - Updated CH4 concentration
+//! - `Atmospheric Concentrations|CH4` (ppb) - Updated CH4 concentration
 //! - `Lifetime|CH4` (yr) - Effective total CH4 lifetime
-//! - `Lifetime|CH4|Effective` (yr): start-of-year burden over the CH4 removed during the step
+//! - `Effective Lifetime|CH4` (yr): start-of-year burden over the CH4 removed during the step
 //!
 //! # Feedback references
 //!
@@ -46,18 +46,21 @@
 //! - **Clathrate release**: MAGICC7 has optional methane clathrate feedback. Not implemented.
 //!
 //! With `concentration_switch_year` the concentration follows
-//! `Atmospheric Concentration|CH4|Prescribed` until that year, and `Emissions|CH4|Inverse`
+//! `Prescribed Atmospheric Concentrations|CH4` until that year, and `Inverse Emissions|CH4`
 //! holds the anthropogenic emissions that would reproduce it.
 
 use crate::parameters::CH4ChemistryParameters;
 use crate::reference::{
     feedback_warming, permafrost_emissions, prescribed_concentration, prescribed_definition,
-    reference_value, require_annual, value_at_year, PERMAFROST_CH4,
+    reference_value, require_annual, value_at_year,
 };
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RscmResult;
+use rscm_core::names::{
+    ATMOSPHERIC_CONCENTRATIONS_CH4, EMISSIONS_CH4_PERMAFROST, INVERSE_EMISSIONS_CH4,
+};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -65,9 +68,6 @@ use serde::{Deserialize, Serialize};
 
 /// Number of Prather iterations (fixed per MAGICC7 implementation)
 const PRATHER_ITERATIONS: usize = 4;
-const CH4_CONCENTRATION: &str = "Atmospheric Concentration|CH4";
-/// Anthropogenic emissions that reproduce the prescribed concentrations.
-pub const CH4_INVERSE_EMISSIONS: &str = "Emissions|CH4|Inverse";
 
 /// Root of a near-linear `f` by the secant method from two starting guesses.
 fn secant(
@@ -113,18 +113,18 @@ fn secant(
 #[component(tags = ["chemistry", "ch4", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
     ch4_emissions { name = "Emissions|CH4", unit = "Mt CH4/yr" },
-    temperature { name = "Surface Temperature", unit = "K" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
     nox_emissions { name = "Emissions|NOx", unit = "Mt N/yr" },
     co_emissions { name = "Emissions|CO", unit = "Mt CO/yr" },
     nmvoc_emissions { name = "Emissions|NMVOC", unit = "Mt NMVOC/yr" },
 )]
 #[states(
-    ch4_concentration { name = "Atmospheric Concentration|CH4", unit = "ppb" },
+    ch4_concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb" },
 )]
 #[outputs(
     ch4_lifetime { name = "Lifetime|CH4", unit = "yr", timeseries_type = "average" },
     ch4_oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average" },
-    ch4_effective_lifetime { name = "Lifetime|CH4|Effective", unit = "yr", timeseries_type = "average" },
+    ch4_effective_lifetime { name = "Effective Lifetime|CH4", unit = "yr", timeseries_type = "average" },
 )]
 pub struct CH4Chemistry {
     parameters: CH4ChemistryParameters,
@@ -285,18 +285,18 @@ impl Component for CH4Chemistry {
         let mut definitions = Self::generated_definitions();
         if self.parameters.include_permafrost {
             definitions.push(VariableDefinition::scalar_input(
-                PERMAFROST_CH4,
+                EMISSIONS_CH4_PERMAFROST,
                 "Mt CH4/yr",
             ));
         }
         definitions.extend(prescribed_definition(
-            CH4_CONCENTRATION,
+            ATMOSPHERIC_CONCENTRATIONS_CH4,
             "ppb",
             self.parameters.concentration_switch_year,
         ));
         if self.parameters.concentration_switch_year.is_some() {
             definitions.push(VariableDefinition::scalar_output(
-                CH4_INVERSE_EMISSIONS,
+                INVERSE_EMISSIONS_CH4,
                 "Mt CH4/yr",
             ));
         }
@@ -323,7 +323,7 @@ impl Component for CH4Chemistry {
         let permafrost = permafrost_emissions(
             self.parameters.include_permafrost,
             input_state,
-            PERMAFROST_CH4,
+            EMISSIONS_CH4_PERMAFROST,
         );
         let (delta_nox, delta_co, delta_nmvoc) = (
             delta(&inputs.nox_emissions),
@@ -347,7 +347,7 @@ impl Component for CH4Chemistry {
         let mut inverse_emissions = anthropogenic;
         if let Some(prescribed) = prescribed_concentration(
             input_state,
-            CH4_CONCENTRATION,
+            ATMOSPHERIC_CONCENTRATIONS_CH4,
             self.parameters.concentration_switch_year,
             t_next,
         ) {
@@ -371,7 +371,7 @@ impl Component for CH4Chemistry {
         .into();
         if self.parameters.concentration_switch_year.is_some() {
             outputs.insert(
-                CH4_INVERSE_EMISSIONS.to_string(),
+                INVERSE_EMISSIONS_CH4.to_string(),
                 StateValue::Scalar(inverse_emissions),
             );
         }
@@ -524,8 +524,8 @@ mod tests {
         let defs = component.definitions();
         let names: Vec<_> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"Emissions|CH4"));
-        assert!(names.contains(&"Surface Temperature"));
-        assert!(names.contains(&"Atmospheric Concentration|CH4"));
+        assert!(names.contains(&"Surface Air Temperature Change"));
+        assert!(names.contains(&"Atmospheric Concentrations|CH4"));
         assert!(names.contains(&"Lifetime|CH4"));
     }
 
@@ -583,9 +583,9 @@ mod tests {
         emissions: FloatValue,
     ) -> OutputState {
         let items = [
-            constant_item(CH4_CONCENTRATION, ch4),
+            constant_item(ATMOSPHERIC_CONCENTRATIONS_CH4, ch4),
             constant_item("Emissions|CH4", emissions),
-            constant_item("Surface Temperature", 0.0),
+            constant_item("Surface Air Temperature Change", 0.0),
             constant_item("Emissions|NOx", 0.0),
             constant_item("Emissions|CO", 0.0),
             constant_item("Emissions|NMVOC", 0.0),
@@ -604,7 +604,7 @@ mod tests {
         let p = &component.parameters;
         let tau = 1.0 / (1.0 / p.initial_oh_lifetime() + 1.0 / p.non_oh_lifetime());
         let output = solve_constant(&component, natural_steady_state(&component), 0.0);
-        let effective = scalar(&output, "Lifetime|CH4|Effective");
+        let effective = scalar(&output, "Effective Lifetime|CH4");
         assert!((effective / tau - 1.0).abs() < 1e-9, "{effective} vs {tau}");
     }
 
@@ -613,9 +613,10 @@ mod tests {
         // B_next = B + E - B / tau_eff, with E the anthropogenic and natural emissions
         let component = default_component();
         let output = solve_constant(&component, 1800.0, 300.0);
-        let effective = scalar(&output, "Lifetime|CH4|Effective");
+        let effective = scalar(&output, "Effective Lifetime|CH4");
         let burden = component.concentration_to_burden(1800.0);
-        let burden_next = component.concentration_to_burden(scalar(&output, CH4_CONCENTRATION));
+        let burden_next =
+            component.concentration_to_burden(scalar(&output, ATMOSPHERIC_CONCENTRATIONS_CH4));
         let emissions = 300.0 + component.parameters.natural_emissions;
         assert!((burden + emissions - burden / effective - burden_next).abs() < 1e-9);
         // It differs from the total lifetime `Lifetime|CH4`

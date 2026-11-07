@@ -380,9 +380,11 @@ It is stepped by forward Euler from the previous substep's land temperature.
 | Ground temperature              | K      | Output                          | `DAT_GROUND_TEMP`                |
 | Monthly temperatures            | K      | Output                          | `DAT_SURFACE_TEMP_SUBANNUAL`     |
 
-`ClimateUdeb` reads `Effective Radiative Forcing` and writes `Surface Temperature` (four-box),
+`ClimateUdeb` reads `Effective Radiative Forcing` and writes `Surface Air Temperature Change` (four-box),
 `Heat Uptake`, `Ocean Heat Content`, `Sea Surface Temperature` and `Equilibrium Climate Sensitivity`.
-With `thermal_expansion` set it also writes `Surface Temperature|Annual Mean` for `SeaLevelRise`.
+`Ocean Heat Content` is the global integral in J,
+over both hemispheres' ocean area (Earth surface area 5.101 × 10¹⁴ m²).
+With `thermal_expansion` set it also writes `Annual Mean Surface Air Temperature Change` for `SeaLevelRise`.
 
 ## Parameters
 

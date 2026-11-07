@@ -17,7 +17,7 @@
 //!
 //! # Inputs
 //!
-//! - `Surface Temperature` (K) - Global mean surface temperature anomaly
+//! - `Surface Air Temperature Change` (K) - Global mean surface temperature anomaly
 //!
 //! # Outputs
 //!
@@ -102,7 +102,7 @@ struct Decomposition {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "permafrost", "magicc"], category = "Carbon Cycle")]
 #[inputs(
-    temperature { name = "Surface Temperature", unit = "K" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
 )]
 #[outputs(
     co2_emissions { name = "Emissions|CO2|Permafrost", unit = "GtC/yr" },

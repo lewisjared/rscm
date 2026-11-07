@@ -48,9 +48,7 @@
 mod ocean_column;
 
 use crate::climate::lamcalc::{self, LamcalcParameters, LamcalcResult};
-use crate::climate::sea_level::{
-    thermal_expansion_increment, ANNUAL_MEAN_TEMPERATURE, THERMAL_EXPANSION,
-};
+use crate::climate::sea_level::thermal_expansion_increment;
 use crate::climate::state::{ClimateUdebState, OceanAreaFactors};
 use crate::parameters::{
     ClimateUdebParameters, EfficacyMethod, SubannualForcing, CP_SEAWATER, RHO_SEAWATER,
@@ -61,6 +59,10 @@ use rscm_core::component::{
     VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::names::{
+    ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE, EFFICACY_ADJUSTED_ERF, ERF_2XCO2,
+    SEA_LEVEL_RISE_THERMAL_EXPANSION,
+};
 use rscm_core::spatial::{FourBoxGrid, FourBoxRegion};
 use rscm_core::state::{FourBoxSlice, GridTimeseriesWindow, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -89,11 +91,11 @@ use serde::{Deserialize, Serialize};
     total_erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[states(
-    surface_temperature { name = "Surface Temperature", unit = "K", grid = "four_box" },
+    surface_temperature { name = "Surface Air Temperature Change", unit = "K", grid = "four_box" },
 )]
 #[outputs(
     heat_uptake { name = "Heat Uptake", unit = "W/m^2" },
-    ocean_heat_content { name = "Ocean Heat Content", unit = "J/m^2" },
+    ocean_heat_content { name = "Ocean Heat Content", unit = "J" },
     sst { name = "Sea Surface Temperature", unit = "K" },
     climate_sensitivity { name = "Equilibrium Climate Sensitivity", unit = "K" },
 )]
@@ -147,15 +149,6 @@ impl TryFrom<SerialisedClimateUdeb> for ClimateUdeb {
         Self::from_parameters(value.parameters)
     }
 }
-
-/// CO2 doubling ERF, read when `time_varying_erf_2xco2` is set.
-pub const CO2_DOUBLING_ERF: &str = "Effective Radiative Forcing|2xCO2";
-
-/// Climate sensitivity of the step, after the time-varying feedback adjustments.
-pub const CLIMATE_SENSITIVITY: &str = "Equilibrium Climate Sensitivity";
-
-/// Efficacy-adjusted forcing on the four boxes, read in regional mode.
-pub const REGIONAL_FORCING: &str = "Effective Radiative Forcing|Efficacy Adjusted";
 
 /// Forcing at the start and end of a step.
 enum ForcingInput {
@@ -563,7 +556,7 @@ impl ClimateUdeb {
         let area = [fgno, fgnl, fgso, fgsl];
         let forcing_input = if self.parameters.include_regional_forcing {
             let (start, end) = input_state
-                .get_four_box_window(REGIONAL_FORCING)
+                .get_four_box_window(EFFICACY_ADJUSTED_ERF)
                 .interval()?;
             ForcingInput::Regional(
                 [start[0], start[1], start[2], start[3]],
@@ -578,7 +571,7 @@ impl ClimateUdeb {
         let steps = self.parameters.steps_per_year as FloatValue;
 
         // Get previous surface temperature state
-        let temperature = input_state.get_four_box_window("Surface Temperature");
+        let temperature = input_state.get_four_box_window("Surface Air Temperature Change");
         let prev_temp = FourBoxSlice::from_array([
             temperature.get(FourBoxRegion::NorthernOcean),
             temperature.get(FourBoxRegion::NorthernLand),
@@ -602,7 +595,7 @@ impl ClimateUdeb {
         let dt_sub = dt_year / self.parameters.steps_per_year as FloatValue;
 
         let erf_2xco2 = if self.parameters.time_varying_erf_2xco2 {
-            let (_, q) = input_state.get_scalar_window(CO2_DOUBLING_ERF).interval()?;
+            let (_, q) = input_state.get_scalar_window(ERF_2XCO2).interval()?;
             q
         } else {
             self.parameters.erf_2xco2
@@ -854,11 +847,11 @@ impl ClimateUdeb {
                 );
             }
             outputs.insert(
-                ANNUAL_MEAN_TEMPERATURE.to_string(),
+                ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE.to_string(),
                 StateValue::Scalar(annual_mean_temp),
             );
             outputs.insert(
-                THERMAL_EXPANSION.to_string(),
+                SEA_LEVEL_RISE_THERMAL_EXPANSION.to_string(),
                 StateValue::Scalar(state.thermal_expansion),
             );
         }
@@ -878,19 +871,23 @@ impl Component for ClimateUdeb {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         if self.parameters.time_varying_erf_2xco2 {
-            definitions.push(VariableDefinition::scalar_input(CO2_DOUBLING_ERF, "W/m^2"));
+            definitions.push(VariableDefinition::scalar_input(ERF_2XCO2, "W/m^2"));
         }
         if self.parameters.thermal_expansion.is_some() {
             definitions.push(
-                VariableDefinition::scalar_output(ANNUAL_MEAN_TEMPERATURE, "K")
+                VariableDefinition::scalar_output(ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE, "K")
                     .with_timeseries_type(TimeseriesType::Average),
             );
-            definitions.push(VariableDefinition::scalar_output(THERMAL_EXPANSION, "mm"));
+            definitions.push(VariableDefinition::scalar_output(
+                SEA_LEVEL_RISE_THERMAL_EXPANSION,
+                "mm",
+            ));
         }
         if self.parameters.include_regional_forcing {
             for definition in &mut definitions {
                 if definition.name == "Effective Radiative Forcing" {
-                    *definition = VariableDefinition::four_box_input(REGIONAL_FORCING, "W/m^2");
+                    *definition =
+                        VariableDefinition::four_box_input(EFFICACY_ADJUSTED_ERF, "W/m^2");
                 }
             }
         }
@@ -931,6 +928,7 @@ impl Component for ClimateUdeb {
 mod tests {
     use super::*;
     use ndarray::Array2;
+    use rscm_core::names::EQUILIBRIUM_CLIMATE_SENSITIVITY;
     use rscm_core::timeseries::GridTimeseries;
 
     fn default_component() -> ClimateUdeb {
@@ -1183,11 +1181,11 @@ mod tests {
 
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"Effective Radiative Forcing"));
-        assert!(names.contains(&"Surface Temperature"));
+        assert!(names.contains(&"Surface Air Temperature Change"));
         assert!(names.contains(&"Heat Uptake"));
         assert!(names.contains(&"Ocean Heat Content"));
         assert!(names.contains(&"Sea Surface Temperature"));
-        assert!(names.contains(&CLIMATE_SENSITIVITY));
+        assert!(names.contains(&EQUILIBRIUM_CLIMATE_SENSITIVITY));
     }
 
     #[test]
@@ -1227,7 +1225,7 @@ mod tests {
         );
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
-            name: "Surface Temperature".to_string(),
+            name: "Surface Air Temperature Change".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1477,7 +1475,7 @@ mod tests {
         );
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
-            name: "Surface Temperature".to_string(),
+            name: "Surface Air Temperature Change".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1537,7 +1535,7 @@ mod tests {
         );
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
-            name: "Surface Temperature".to_string(),
+            name: "Surface Air Temperature Change".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1672,7 +1670,7 @@ mod tests {
         );
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
-            name: "Surface Temperature".to_string(),
+            name: "Surface Air Temperature Change".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1732,7 +1730,7 @@ mod tests {
         );
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
-            name: "Surface Temperature".to_string(),
+            name: "Surface Air Temperature Change".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1855,7 +1853,7 @@ mod tests {
             },
             TimeseriesItem {
                 data: TimeseriesData::FourBox(temperature),
-                name: "Surface Temperature".to_string(),
+                name: "Surface Air Temperature Change".to_string(),
             },
         ]
     }

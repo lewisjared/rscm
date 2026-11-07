@@ -61,7 +61,7 @@ for entry in config["species"]:
 model = run_fair(
     config, inputs, TimeAxis.from_values(timebounds), scale_prescribed_forcing=True
 )
-temperature = model.timeseries().get_timeseries_by_name("Surface Temperature")
+temperature = model.timeseries().get_timeseries_by_name("Surface Air Temperature Change")
 ```
 
 `read_config` reads a species CSV without a posterior, with the climate configs given directly.
@@ -101,7 +101,7 @@ model = run_fair(config, inputs, time_axis)
 ## Other climate components
 
 `components(config, energy_balance=False)` leaves out `EnergyBalance`,
-so another component can write `Surface Temperature` from `Effective Radiative Forcing`.
+so another component can write `Surface Air Temperature Change` from `Effective Radiative Forcing`.
 The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateUdeb` this way.
 `initial_values` takes the same flag.
 

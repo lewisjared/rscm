@@ -409,6 +409,9 @@ pub const CP_SEAWATER: FloatValue = 0.9333 * 4.1856 * 1000.0;
 /// Seconds per Julian year ($\text{s/yr}$).
 pub const SECONDS_PER_YEAR: FloatValue = 31557600.0;
 
+/// Earth surface area ($\text{m}^2$), MAGICC7's value.
+pub const EARTH_SURFACE_AREA: FloatValue = 5.101e14;
+
 /// Volumetric heat capacity of seawater per unit depth ($\text{W yr / m}^2\text{ K}$).
 ///
 /// $$\frac{\rho \, c_p \, d}{\text{seconds per year}}$$

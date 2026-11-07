@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct DeclaredVariable {
     /// Rust field name (e.g., "emissions_co2")
     pub rust_name: String,
-    /// Variable name in the model (e.g., "Atmospheric Concentration|CO2")
+    /// Variable name in the model (e.g., "Atmospheric Concentrations|CO2")
     pub name: String,
     /// Physical unit (e.g., "ppm")
     pub unit: String,

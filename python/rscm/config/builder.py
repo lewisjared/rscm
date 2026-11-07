@@ -89,7 +89,7 @@ def _two_layer_model(config: Any) -> Model:
 
     # Add initial values for state variables
     model_builder = model_builder.with_initial_values(
-        {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+        {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
     )
 
     # Inputs are not read from the config yet, so forcing stays NaN.

@@ -35,14 +35,14 @@
 /// let mut collection = TimeseriesCollection::new();
 /// let timeseries = Timeseries::from_values(array![1.0, 2.0, 3.0], array![1.0, 2.0, 3.0]);
 ///
-/// collection.add_timeseries("Surface Temperature".to_string(), timeseries);
+/// collection.add_timeseries("Surface Air Temperature Change".to_string(), timeseries);
 /// // We can't access timeseries anymore because the collection has taken ownership
 /// // The line below generates a compiler error if uncommented
 /// // timeseries.at(0, ScalarRegion::Global)
 ///
 /// {
 ///     // Get mutable data which enables modifying the timeseries
-///     if let Some(data) = collection.get_data_mut("Surface Temperature") {
+///     if let Some(data) = collection.get_data_mut("Surface Air Temperature Change") {
 ///         if let Some(ts) = data.as_scalar_mut() {
 ///             ts.set(0, ScalarRegion::Global, 2.0);
 ///         }
@@ -50,7 +50,7 @@
 /// }
 /// {
 ///     // Get an immutable reference to the timeseries data
-///     let timeseries = collection.get_data("Surface Temperature")
+///     let timeseries = collection.get_data("Surface Air Temperature Change")
 ///         .and_then(|data| data.as_scalar())
 ///         .unwrap();
 ///     assert_eq!(timeseries.at(0, ScalarRegion::Global).unwrap(), 2.0);
@@ -67,15 +67,15 @@
 ///
 /// collection = TimeseriesCollection()
 /// timeseries = Timeseries(np.arange(2000.0, 2010.0), np.arange(2000.0, 2010.0), "units", InterpolationStrategy.Linear)
-/// collection.add_timeseries("Surface Temperature", timeseries) # A clone is performed so that Rust can control ownership
+/// collection.add_timeseries("Surface Air Temperature Change", timeseries) # A clone is performed so that Rust can control ownership
 ///
 /// # timeseries can still be used as it doesn't follow Rust's ownership model
 /// # Modifications to timeseries aren't reflected in the collection so we don't expose any methods to modify it
 ///
 /// # Setting values in the collection requires a method call instead of being able to modify a timeseries
-/// collection.set_value("Surface Temperature", 0, 2.0)
+/// collection.set_value("Surface Air Temperature Change", 0, 2.0)
 /// assert timeseries.at(0) != 2
-/// timeseries_2 = collection.get_timeseries_by_name("Surface Temperature")
+/// timeseries_2 = collection.get_timeseries_by_name("Surface Air Temperature Change")
 /// assert timeseries_2.at(0) == 2
 /// ```
 ///
@@ -93,6 +93,7 @@ use pyo3::{pymodule, wrap_pymodule, Bound, PyResult};
 mod component;
 mod example_component;
 mod model;
+pub mod names;
 pub mod spatial;
 pub mod state;
 pub mod timeseries;
@@ -141,6 +142,7 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyUnit>()?;
 
     // Register submodules
+    m.add_wrapped(wrap_pymodule!(names::names))?;
     m.add_wrapped(wrap_pymodule!(spatial::spatial))?;
     m.add_wrapped(wrap_pymodule!(state::state))?;
 

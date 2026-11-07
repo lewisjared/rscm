@@ -252,7 +252,7 @@ and each Antarctic region's baseline warming and melt history.
 
 | Direction | Variable                  | Units | Fortran variable                       | RSCM variable                                     |
 | --------- | ------------------------- | ----- | -------------------------------------- | ------------------------------------------------- |
-| Input     | Annual mean warming       | K     | `DAT_SURFACE_ANNUALMEANTEMP%DATGLOBE`  | `Surface Temperature|Annual Mean`                |
+| Input     | Annual mean warming       | K     | `DAT_SURFACE_ANNUALMEANTEMP%DATGLOBE`  | `Annual Mean Surface Air Temperature Change`                |
 | Input     | Ocean layer temperatures  | K     | `TEMP_OCEANLAYERS(I, CURRENT/NEXT_YEAR_IDX)` | `ClimateUdeb` state                         |
 | Input     | Land water rate           | mm yr⁻¹ | `SLR_LANDWATER_MMPYEAR`              | Not implemented                                   |
 | Output    | Total                     | mm    | `DAT_SLR_TOT`                          | `Sea Level Rise`                                  |

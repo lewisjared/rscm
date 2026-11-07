@@ -73,10 +73,10 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["temperature", "ocean", "regional", "four-box", "experimental"], category = "Ocean")]
 #[inputs(
-    erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
+    erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[outputs(
-    heat_uptake { name = "Heat Uptake|Ocean", unit = "W/m^2", grid = "four_box" },
+    heat_uptake { name = "Heat Uptake", unit = "W/m^2", grid = "four_box" },
 )]
 pub struct FourBoxOceanHeatUptake {
     pub parameters: FourBoxOceanHeatUptakeParameters,
@@ -179,22 +179,22 @@ mod tests {
                 array![2.5, 2.5],
                 array![2020.0, 2021.0],
             )),
-            name: "Effective Radiative Forcing|Aggregated".to_string(),
+            name: "Effective Radiative Forcing".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
 
         // Verify input value using the new API
         let erf_value = input_state
-            .get_scalar_window("Effective Radiative Forcing|Aggregated")
+            .get_scalar_window("Effective Radiative Forcing")
             .get();
         println!("ERF input value: {}", erf_value);
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
         // Output should be four-box heat uptake
-        assert!(output.contains_key("Heat Uptake|Ocean"));
-        let uptake_state = output.get("Heat Uptake|Ocean").unwrap();
+        assert!(output.contains_key("Heat Uptake"));
+        let uptake_state = output.get("Heat Uptake").unwrap();
 
         // Extract the four-box grid from the StateValue
         let uptake_slice = match uptake_state {
@@ -227,17 +227,17 @@ mod tests {
                 array![10.0, 10.0],
                 array![2020.0, 2021.0],
             )),
-            name: "Effective Radiative Forcing|Aggregated".to_string(),
+            name: "Effective Radiative Forcing".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
         let erf_value = input_state
-            .get_scalar_window("Effective Radiative Forcing|Aggregated")
+            .get_scalar_window("Effective Radiative Forcing")
             .get();
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
-        let uptake_state = output.get("Heat Uptake|Ocean").unwrap();
+        let uptake_state = output.get("Heat Uptake").unwrap();
 
         // Extract the four-box grid from the StateValue
         let uptake_slice = match uptake_state {
@@ -261,10 +261,10 @@ mod tests {
 
         let inputs = component.input_names();
         assert_eq!(inputs.len(), 1);
-        assert!(inputs.contains(&"Effective Radiative Forcing|Aggregated".to_string()));
+        assert!(inputs.contains(&"Effective Radiative Forcing".to_string()));
 
         let outputs = component.output_names();
         assert_eq!(outputs.len(), 1);
-        assert!(outputs.contains(&"Heat Uptake|Ocean".to_string()));
+        assert!(outputs.contains(&"Heat Uptake".to_string()));
     }
 }

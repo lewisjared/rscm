@@ -71,7 +71,7 @@ carbon_cycle = CarbonCycleBuilder.from_parameters(
 emissions = Timeseries(
     np.asarray([0.0, 5.0, 10.0, 8.0]),
     TimeAxis.from_bounds(np.asarray([t_initial, 1850.0, 1950.0, 2050.0, t_final])),
-    "GtC / yr",
+    "GtC/yr",
     InterpolationStrategy.Previous,
 )
 surface_temp = Timeseries(
@@ -86,13 +86,13 @@ builder = (
     .with_component(carbon_cycle)
     .with_component(co2_erf)
     .with_time_axis(time_axis)
-    .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
-    .with_prescribed_variable("Surface Temperature", surface_temp)
+    .with_prescribed_variable("Emissions|CO2", emissions)
+    .with_prescribed_variable("Surface Air Temperature Change", surface_temp)
     .with_initial_values(
         {
-            "Cumulative Land Uptake": 0.0,
+            "Cumulative Carbon Uptake|Land": 0.0,
             "Cumulative Emissions|CO2": 0.0,
-            "Atmospheric Concentration|CO2": 280.0,
+            "Atmospheric Concentrations|CO2": 280.0,
         }
     )
 )
@@ -188,7 +188,7 @@ print(collection.names())
 # Time points the model has not reached yet are NaN.
 
 # %%
-co2_conc = collection.get_timeseries_by_name("Atmospheric Concentration|CO2")
+co2_conc = collection.get_timeseries_by_name("Atmospheric Concentrations|CO2")
 
 print(f"Units: {co2_conc.unit}")
 print(f"Latest value: {co2_conc.latest_value():.2f}")
@@ -207,9 +207,9 @@ collection = model.timeseries()
 
 # %% tags=["remove_input"]
 variables_to_trace = [
-    "Emissions|CO2|Anthropogenic",
+    "Emissions|CO2",
     "Cumulative Emissions|CO2",
-    "Atmospheric Concentration|CO2",
+    "Atmospheric Concentrations|CO2",
     "Effective Radiative Forcing|CO2",
 ]
 
@@ -242,7 +242,7 @@ for _ in range(5):
     t_start, t_end = model.current_time_bounds()
     model.step()
     collection = model.timeseries()
-    co2 = collection.get_timeseries_by_name("Atmospheric Concentration|CO2")
+    co2 = collection.get_timeseries_by_name("Atmospheric Concentrations|CO2")
     erf = collection.get_timeseries_by_name("Effective Radiative Forcing|CO2")
     print(
         f"{t_start:.0f} -> {t_end:.0f}  CO2 {co2.latest_value():.2f} ppm"
@@ -267,7 +267,7 @@ assert restored_model.current_time() == model.current_time()
 restored_model.run()
 model.run()
 
-var_name = "Atmospheric Concentration|CO2"
+var_name = "Atmospheric Concentrations|CO2"
 np.testing.assert_allclose(
     restored_model.timeseries().get_timeseries_by_name(var_name).values(),
     model.timeseries().get_timeseries_by_name(var_name).values(),
@@ -280,7 +280,7 @@ np.testing.assert_allclose(
 #
 # An input that no component produces needs prescribed data or an initial value.
 # Without it the build fails, and the error names each missing variable and the components that read it.
-# This model leaves out both `Emissions|CO2|Anthropogenic` and `Surface Temperature`.
+# This model leaves out both `Emissions|CO2` and `Surface Air Temperature Change`.
 
 # %%
 incomplete_builder = (
@@ -289,9 +289,9 @@ incomplete_builder = (
     .with_time_axis(time_axis)
     .with_initial_values(
         {
-            "Cumulative Land Uptake": 0.0,
+            "Cumulative Carbon Uptake|Land": 0.0,
             "Cumulative Emissions|CO2": 0.0,
-            "Atmospheric Concentration|CO2": 280.0,
+            "Atmospheric Concentrations|CO2": 280.0,
         }
     )
 )
@@ -310,7 +310,7 @@ incomplete_model = incomplete_builder.with_missing_prescribed_allowed().build()
 incomplete_model.run()
 
 co2 = incomplete_model.timeseries().get_timeseries_by_name(
-    "Atmospheric Concentration|CO2"
+    "Atmospheric Concentrations|CO2"
 )
 print(f"CO2 concentration: {co2.values()[:4]}")
 
@@ -326,8 +326,8 @@ try:
         ModelBuilder()
         .with_component(carbon_cycle)
         .with_time_axis(time_axis)
-        .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
-        .with_prescribed_variable("Surface Temperature", surface_temp)
+        .with_prescribed_variable("Emissions|CO2", emissions)
+        .with_prescribed_variable("Surface Air Temperature Change", surface_temp)
     ).build()
 except Exception as e:
     print(f"Build failed: {e}")

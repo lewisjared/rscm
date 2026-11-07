@@ -18,7 +18,7 @@ AXIS = TimeAxis.from_values(np.arange(2000.0, 2005.0))
 class Chemistry(Component):
     emissions = Input("Emissions|CH4", unit="Mt CH4 / yr")
     lifetime = Output("Lifetime|CH4", unit="yr", timeseries_type="average")
-    concentration = Output("Atmospheric Concentration|CH4", unit="ppb")
+    concentration = Output("Atmospheric Concentrations|CH4", unit="ppb")
 
     def solve(self, t_current, t_next, inputs):
         return self.Outputs(lifetime=9.0, concentration=1800.0)
@@ -62,7 +62,7 @@ def test_model_resolves_declared_and_default_types():
 
     assert model.timeseries_type("Lifetime|CH4") == TimeseriesType.Average
     assert model.timeseries_type("Emissions|CH4") == TimeseriesType.Average
-    assert model.timeseries_type("Atmospheric Concentration|CH4") == (
+    assert model.timeseries_type("Atmospheric Concentrations|CH4") == (
         TimeseriesType.Point
     )
     assert model.timeseries_type("Missing") is None

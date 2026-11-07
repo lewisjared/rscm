@@ -42,16 +42,24 @@ class TestVariableSchemaBuilder:
 
     def test_add_aggregate_sum(self):
         schema = VariableSchema()
-        schema.add_variable("ERF|CO2", "W/m^2")
-        schema.add_variable("ERF|CH4", "W/m^2")
-        schema.add_aggregate("Total ERF", "W/m^2", "sum", ["ERF|CO2", "ERF|CH4"])
+        schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
+        schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
+        schema.add_aggregate(
+            "Total ERF",
+            "W/m^2",
+            "sum",
+            ["Effective Radiative Forcing|CO2", "Effective Radiative Forcing|CH4"],
+        )
 
         assert "Total ERF" in schema.aggregates
         agg = schema.aggregates["Total ERF"]
         assert agg.name == "Total ERF"
         assert agg.unit == "W/m^2"
         assert agg.operation_type == "sum"
-        assert agg.contributors == ["ERF|CO2", "ERF|CH4"]
+        assert agg.contributors == [
+            "Effective Radiative Forcing|CO2",
+            "Effective Radiative Forcing|CH4",
+        ]
         assert agg.weights is None
 
     def test_add_aggregate_mean(self):
@@ -108,9 +116,14 @@ class TestVariableSchemaValidation:
 
     def test_valid_schema(self):
         schema = VariableSchema()
-        schema.add_variable("ERF|CO2", "W/m^2")
-        schema.add_variable("ERF|CH4", "W/m^2")
-        schema.add_aggregate("Total ERF", "W/m^2", "sum", ["ERF|CO2", "ERF|CH4"])
+        schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
+        schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
+        schema.add_aggregate(
+            "Total ERF",
+            "W/m^2",
+            "sum",
+            ["Effective Radiative Forcing|CO2", "Effective Radiative Forcing|CH4"],
+        )
 
         # Should not raise
         schema.validate()
@@ -121,12 +134,15 @@ class TestVariableSchemaValidation:
 
     def test_undefined_contributor_fails(self):
         schema = VariableSchema()
-        schema.add_variable("ERF|CO2", "W/m^2")
+        schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
         schema.add_aggregate(
             "Total ERF",
             "W/m^2",
             "sum",
-            ["ERF|CO2", "ERF|CH4"],  # ERF|CH4 not defined
+            [
+                "Effective Radiative Forcing|CO2",
+                "Effective Radiative Forcing|CH4",
+            ],  # Effective Radiative Forcing|CH4 not defined
         )
 
         with pytest.raises(ValueError, match="Undefined contributor"):
@@ -134,13 +150,13 @@ class TestVariableSchemaValidation:
 
     def test_unit_mismatch_fails(self):
         schema = VariableSchema()
-        schema.add_variable("ERF|CO2", "W/m^2")
+        schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
         schema.add_variable("Emissions|CO2", "GtCO2/yr")  # Different unit
         schema.add_aggregate(
             "Total",
             "W/m^2",
             "sum",
-            ["ERF|CO2", "Emissions|CO2"],
+            ["Effective Radiative Forcing|CO2", "Emissions|CO2"],
         )
 
         with pytest.raises(ValueError, match="Unit mismatch"):
@@ -185,8 +201,8 @@ class TestVariableSchemaValidation:
 class ErfComponent(Component):
     """Simple component that outputs ERF from concentration."""
 
-    concentration = Input("Concentration|CO2", unit="ppm")
-    erf = Output("ERF|Test", unit="W/m^2")
+    concentration = Input("Atmospheric Concentrations|CO2", unit="ppm")
+    erf = Output("Effective Radiative Forcing|Test", unit="W/m^2")
 
     def __init__(self, forcing_per_ppm: float = 0.01):
         self.forcing_per_ppm = forcing_per_ppm
@@ -217,8 +233,8 @@ class TestSchemaModelIntegration:
     def test_model_with_schema_validates(self, time_axis, concentration_ts):
         """Test that ModelBuilder validates components against schema."""
         schema = VariableSchema()
-        schema.add_variable("Concentration|CO2", "ppm")
-        schema.add_variable("ERF|Test", "W/m^2")
+        schema.add_variable("Atmospheric Concentrations|CO2", "ppm")
+        schema.add_variable("Effective Radiative Forcing|Test", "W/m^2")
         schema.validate()
 
         component = PythonComponent(ErfComponent())
@@ -228,14 +244,16 @@ class TestSchemaModelIntegration:
             .with_time_axis(time_axis)
             .with_schema(schema)
             .with_component(component)
-            .with_prescribed_variable("Concentration|CO2", concentration_ts)
+            .with_prescribed_variable(
+                "Atmospheric Concentrations|CO2", concentration_ts
+            )
             .build()
         )
 
         model.run()
 
         ts = model.timeseries()
-        erf_ts = ts.get_timeseries_by_name("ERF|Test")
+        erf_ts = ts.get_timeseries_by_name("Effective Radiative Forcing|Test")
         assert erf_ts is not None
         # Verify that the model ran and produced output (values calculated correctly)
         # The exact step-by-step values depend on component execution timing,
@@ -245,8 +263,8 @@ class TestSchemaModelIntegration:
     def test_schema_undefined_output_fails(self, time_axis, concentration_ts):
         """Test that building fails if component output is not in schema."""
         schema = VariableSchema()
-        schema.add_variable("Concentration|CO2", "ppm")
-        # Note: ERF|Test is NOT in the schema
+        schema.add_variable("Atmospheric Concentrations|CO2", "ppm")
+        # Note: Effective Radiative Forcing|Test is NOT in the schema
         schema.validate()
 
         component = PythonComponent(ErfComponent())
@@ -257,7 +275,9 @@ class TestSchemaModelIntegration:
                 .with_time_axis(time_axis)
                 .with_schema(schema)
                 .with_component(component)
-                .with_prescribed_variable("Concentration|CO2", concentration_ts)
+                .with_prescribed_variable(
+                    "Atmospheric Concentrations|CO2", concentration_ts
+                )
                 .build()
             )
 
@@ -266,8 +286,8 @@ class TestSchemaModelIntegration:
 
         # Two components producing different ERF values
         class CO2Erf(Component):
-            concentration = Input("Concentration|CO2", unit="ppm")
-            erf = Output("ERF|CO2", unit="W/m^2")
+            concentration = Input("Atmospheric Concentrations|CO2", unit="ppm")
+            erf = Output("Effective Radiative Forcing|CO2", unit="W/m^2")
 
             def solve(
                 self, t_current, t_next, inputs: "CO2Erf.Inputs"
@@ -275,8 +295,8 @@ class TestSchemaModelIntegration:
                 return self.Outputs(erf=inputs.concentration.get() * 0.01)
 
         class CH4Erf(Component):
-            concentration = Input("Concentration|CH4", unit="ppb")
-            erf = Output("ERF|CH4", unit="W/m^2")
+            concentration = Input("Atmospheric Concentrations|CH4", unit="ppb")
+            erf = Output("Effective Radiative Forcing|CH4", unit="W/m^2")
 
             def solve(
                 self, t_current, t_next, inputs: "CH4Erf.Inputs"
@@ -285,11 +305,16 @@ class TestSchemaModelIntegration:
 
         # Create schema with aggregate
         schema = VariableSchema()
-        schema.add_variable("Concentration|CO2", "ppm")
-        schema.add_variable("Concentration|CH4", "ppb")
-        schema.add_variable("ERF|CO2", "W/m^2")
-        schema.add_variable("ERF|CH4", "W/m^2")
-        schema.add_aggregate("Total ERF", "W/m^2", "sum", ["ERF|CO2", "ERF|CH4"])
+        schema.add_variable("Atmospheric Concentrations|CO2", "ppm")
+        schema.add_variable("Atmospheric Concentrations|CH4", "ppb")
+        schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
+        schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
+        schema.add_aggregate(
+            "Total ERF",
+            "W/m^2",
+            "sum",
+            ["Effective Radiative Forcing|CO2", "Effective Radiative Forcing|CH4"],
+        )
         schema.validate()
 
         # Create prescribed data
@@ -312,8 +337,8 @@ class TestSchemaModelIntegration:
             .with_schema(schema)
             .with_component(CO2Erf())
             .with_component(CH4Erf())
-            .with_prescribed_variable("Concentration|CO2", co2_ts)
-            .with_prescribed_variable("Concentration|CH4", ch4_ts)
+            .with_prescribed_variable("Atmospheric Concentrations|CO2", co2_ts)
+            .with_prescribed_variable("Atmospheric Concentrations|CH4", ch4_ts)
             .build()
         )
 
@@ -322,8 +347,8 @@ class TestSchemaModelIntegration:
         ts = model.timeseries()
 
         # Check individual ERFs were computed
-        co2_erf = ts.get_timeseries_by_name("ERF|CO2")
-        ch4_erf = ts.get_timeseries_by_name("ERF|CH4")
+        co2_erf = ts.get_timeseries_by_name("Effective Radiative Forcing|CO2")
+        ch4_erf = ts.get_timeseries_by_name("Effective Radiative Forcing|CH4")
         assert co2_erf is not None
         assert ch4_erf is not None
         assert not np.isnan(co2_erf.values()[-1])
@@ -352,7 +377,9 @@ class TestGridAutoAggregation:
         class FourBoxProducer(Component):
             """Component that produces four-box output."""
 
-            regional_temp = Output("Temperature|Regional", unit="K", grid="four_box")
+            regional_temp = Output(
+                "Surface Air Temperature Change", unit="K", grid="four_box"
+            )
 
             def solve(
                 self, t_current, t_next, inputs: "FourBoxProducer.Inputs"
@@ -364,7 +391,7 @@ class TestGridAutoAggregation:
 
         # Schema declares the variable as Scalar - model should auto-aggregate
         schema = VariableSchema()
-        schema.add_variable("Temperature|Regional", "K", GridType.Scalar)
+        schema.add_variable("Surface Air Temperature Change", "K", GridType.Scalar)
 
         # Custom weights: ocean-heavy
         custom_weights = [0.36, 0.14, 0.36, 0.14]
@@ -382,7 +409,7 @@ class TestGridAutoAggregation:
 
         # The result should be stored as Scalar (aggregated)
         ts = model.timeseries()
-        temp_ts = ts.get_timeseries_by_name("Temperature|Regional")
+        temp_ts = ts.get_timeseries_by_name("Surface Air Temperature Change")
         assert temp_ts is not None
 
         # With custom weights: 10*0.36 + 20*0.14 + 30*0.36 + 40*0.14 = 22.0

@@ -10,6 +10,11 @@ import pytest
 from regression import full_run, test_fair
 from rscm.fair import run as fair_run
 from rscm.magicc import full
+from rscm.names import (
+    ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE,
+    ATMOSPHERIC_CONCENTRATIONS_CO2,
+    SURFACE_AIR_TEMPERATURE_CHANGE,
+)
 
 
 def _outputs(model):
@@ -97,8 +102,8 @@ def test_fair_shuffled(monkeypatch, case):
 def test_magicc7_coupling_lags():
     """Forcing sees this year's CO2 and sea level this year's temperature."""
     lags = _lags(_run_magicc7(out_sealevel=True))
-    assert not lags["Atmospheric Concentration|CO2", "GhgForcing"]
-    assert not lags["Surface Temperature|Annual Mean", "SeaLevelRise"]
+    assert not lags[ATMOSPHERIC_CONCENTRATIONS_CO2, "GhgForcing"]
+    assert not lags[ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE, "SeaLevelRise"]
     for consumer in ("TerrestrialCarbon", "OceanCarbon"):
-        assert lags["Atmospheric Concentration|CO2", consumer]
-        assert lags["Surface Temperature", consumer]
+        assert lags[ATMOSPHERIC_CONCENTRATIONS_CO2, consumer]
+        assert lags[SURFACE_AIR_TEMPERATURE_CHANGE, consumer]

@@ -52,7 +52,7 @@ pub struct NitrogenParameters {
     /// unit: yr
     /// MAGICC7: NCYCLE_TURNOVERTIME_LOSSES
     pub loss_turnover_time: FloatValue,
-    /// Fixation from NPP, or `None` to read `Nitrogen Fixation`
+    /// Fixation from NPP, or `None` to read `Nitrogen Flux|Fixation`
     /// MAGICC7: NCYCLE_APPLY_PROGNOSTIC_NFIX
     pub prognostic_fixation: Option<PrognosticFixation>,
 }

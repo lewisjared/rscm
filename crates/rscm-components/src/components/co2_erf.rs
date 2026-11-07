@@ -35,7 +35,7 @@ pub struct CO2ErfParameters {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["radiative-forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
 #[inputs(
-    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 )]
 #[outputs(
     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
@@ -117,7 +117,7 @@ mod tests {
         let defs = component.definitions();
 
         assert_eq!(defs.len(), 2);
-        assert_eq!(defs[0].name, "Atmospheric Concentration|CO2");
+        assert_eq!(defs[0].name, "Atmospheric Concentrations|CO2");
         assert_eq!(defs[1].name, "Effective Radiative Forcing|CO2");
     }
 }

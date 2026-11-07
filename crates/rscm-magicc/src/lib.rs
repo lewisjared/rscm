@@ -23,3 +23,6 @@ pub mod forcing;
 pub mod parameters;
 pub mod python;
 mod reference;
+
+#[cfg(test)]
+mod component_names;

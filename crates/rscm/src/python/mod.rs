@@ -11,6 +11,7 @@
 //! ```text
 //! rscm._lib                    # Root module (this file)
 //! ├── core                     # Core abstractions from rscm-core
+//! │   ├── names                # Shared variable names
 //! │   ├── spatial              # Spatial grid types
 //! │   └── state                # State value types
 //! ├── components               # Generic components from rscm-components
@@ -64,6 +65,7 @@ fn rscm(m: &Bound<'_, PyModule>) -> PyResult<()> {
     set_path(m, "rscm._lib.magicc", "magicc")?;
     set_path(m, "rscm._lib.calibrate", "calibrate")?;
     set_path(m, "rscm._lib.fair", "fair")?;
+    set_submodule_path(m, "rscm._lib.core.names", "core", "names")?;
     set_submodule_path(m, "rscm._lib.core.spatial", "core", "spatial")?;
     set_submodule_path(m, "rscm._lib.core.state", "core", "state")?;
 

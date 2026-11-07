@@ -329,8 +329,8 @@ time_axis = TimeAxis.from_values(np.array([2000.0, 2010.0]))
 forcing = TimeseriesCollection()
 for name, value, unit in [
     ("Effective Radiative Forcing", 3.0, "W/m^2"),
-    ("Surface Temperature", 0.0, "K"),
-    ("Deep Ocean Temperature", 0.0, "K"),
+    ("Surface Air Temperature Change", 0.0, "K"),
+    ("Ocean Temperature|Layer 2", 0.0, "K"),
 ]:
     forcing.add_timeseries(
         name,
@@ -344,7 +344,7 @@ def run_two_layer(parameters: dict) -> float:
     """Return the 2010 surface temperature for a full parameter set."""
     component = TwoLayerBuilder.from_parameters(parameters).build()
     result = component.solve(2000, 2010, forcing)
-    return float(result.get("Surface Temperature").as_scalar())
+    return float(result.get("Surface Air Temperature Change").as_scalar())
 
 
 # %% [markdown]
@@ -381,7 +381,9 @@ climate_params.add("lambda0", Uniform(0.8, 1.5))
 climate_params.add("a", Uniform(0.0, 0.1))
 
 climate_target = Target()
-climate_target.add_observation("Surface Temperature", 2010.0, obs_temp, obs_uncertainty)
+climate_target.add_observation(
+    "Surface Air Temperature Change", 2010.0, obs_temp, obs_uncertainty
+)
 
 fixed_climate_params = {
     name: value
@@ -393,13 +395,13 @@ fixed_climate_params = {
 def climate_model_factory(param_values):
     """Run the two-layer model with the sampled parameters."""
     temperature = run_two_layer({**fixed_climate_params, **param_values})
-    return {"Surface Temperature": {2010.0: temperature}}
+    return {"Surface Air Temperature Change": {2010.0: temperature}}
 
 
 climate_runner = ModelRunner(
     model_factory=climate_model_factory,
     parameter_names=climate_params.parameter_names,
-    output_variables=["Surface Temperature"],
+    output_variables=["Surface Air Temperature Change"],
 )
 
 # %% [markdown]
@@ -579,10 +581,12 @@ print(f"Observations: {df_target.n_observations()}")
 # %%
 anomaly_target = Target()
 for year, anomaly in [(1950.0, 0.3), (1980.0, 0.5), (2010.0, 1.0)]:
-    anomaly_target.add_observation_relative("Surface Temperature", year, anomaly, 0.1)
-anomaly_target.set_reference_period("Surface Temperature", 1850.0, 1900.0)
+    anomaly_target.add_observation_relative(
+        "Surface Air Temperature Change", year, anomaly, 0.1
+    )
+anomaly_target.set_reference_period("Surface Air Temperature Change", 1850.0, 1900.0)
 
-surface = anomaly_target.get_variable("Surface Temperature")
+surface = anomaly_target.get_variable("Surface Air Temperature Change")
 print(f"Reference period: {surface.reference_period}")
 for obs in surface.observations:
     print(f"  {obs.time:.0f}: {obs.value:.2f} ± {obs.uncertainty:.3f} K")

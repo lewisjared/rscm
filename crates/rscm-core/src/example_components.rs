@@ -16,10 +16,10 @@
 //!
 //! #[derive(ComponentIO, Serialize, Deserialize)]
 //! #[inputs(
-//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2/yr" },
 //! )]
 //! #[outputs(
-//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//!     concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 //! )]
 //! struct TestComponent { conversion: f64 }
 //!
@@ -43,10 +43,10 @@
 //!
 //! #[derive(ComponentIO, Serialize, Deserialize)]
 //! #[inputs(
-//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2/yr" },
 //! )]
 //! #[outputs(
-//!     concentration { name = "Concentration|CO2", unit = "ppm" },
+//!     concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 //! )]
 //! struct TestComponent { conversion: f64 }
 //!
@@ -72,11 +72,11 @@
 //!
 //! #[derive(ComponentIO, Serialize, Deserialize)]
 //! #[inputs(
-//!     emissions { name = "Emissions|CO2", unit = "GtCO2" },
+//!     emissions { name = "Emissions|CO2", unit = "GtCO2/yr" },
 //! )]
 //! #[outputs(
-//!     concentration { name = "Concentration|CO2", unit = "ppm" },
-//!     uptake { name = "Carbon Uptake", unit = "GtC" },
+//!     concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
+//!     uptake { name = "Cumulative Carbon Uptake|Land", unit = "GtC" },
 //! )]
 //! struct TestComponent { conversion: f64 }
 //!
@@ -101,10 +101,10 @@
 //!
 //! #[derive(ComponentIO, Serialize, Deserialize)]
 //! #[inputs(
-//!     temperature { name = "Temperature", unit = "K", grid = "four_box" },
+//!     temperature { name = "Surface Air Temperature Change", unit = "K", grid = "four_box" },
 //! )]
 //! #[outputs(
-//!     heat_flux { name = "Heat Flux", unit = "W/m^2", grid = "four_box" },
+//!     heat_flux { name = "Heat Uptake", unit = "W/m^2", grid = "four_box" },
 //! )]
 //! struct TestComponent;
 //!
@@ -151,10 +151,10 @@ pub(crate) struct TestComponentParameters {
 /// - `TestComponent::generated_definitions()` for the Component trait
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[inputs(
-    emissions_co2 { name = "Emissions|CO2", unit = "GtC / yr" },
+    emissions_co2 { name = "Emissions|CO2", unit = "GtC/yr" },
 )]
 #[outputs(
-    concentration_co2 { name = "Concentrations|CO2", unit = "ppm" },
+    concentration_co2 { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 )]
 pub(crate) struct TestComponent {
     /// Component parameters (not marked as input/output)
@@ -236,7 +236,7 @@ mod tests {
             values,
             Arc::new(TimeAxis::from_bounds(array![1800.0, 1850.0, 2100.0])),
             ScalarGrid,
-            "GtC / yr".to_string(),
+            "GtC/yr".to_string(),
             InterpolationStrategy::from(PreviousStrategy::new(true)),
         )
     }
@@ -253,13 +253,13 @@ mod tests {
         // Check input definition
         let input_def = &defs[0];
         assert_eq!(input_def.name, "Emissions|CO2");
-        assert_eq!(input_def.unit, "GtC / yr");
+        assert_eq!(input_def.unit, "GtC/yr");
         assert_eq!(input_def.role, VariableRole::Input);
         assert_eq!(input_def.grid, GridType::Scalar);
 
         // Check output definition
         let output_def = &defs[1];
-        assert_eq!(output_def.name, "Concentrations|CO2");
+        assert_eq!(output_def.name, "Atmospheric Concentrations|CO2");
         assert_eq!(output_def.unit, "ppm");
         assert_eq!(output_def.role, VariableRole::Output);
     }
@@ -294,7 +294,7 @@ mod tests {
 
         let state: OutputState = outputs.into();
         assert_eq!(
-            state.get("Concentrations|CO2"),
+            state.get("Atmospheric Concentrations|CO2"),
             Some(&StateValue::Scalar(42.5))
         );
     }
@@ -321,7 +321,9 @@ mod tests {
 
         // Verify the output timeseries was produced
         let ts_collection = model.timeseries();
-        assert!(ts_collection.get_by_name("Concentrations|CO2").is_some());
+        assert!(ts_collection
+            .get_by_name("Atmospheric Concentrations|CO2")
+            .is_some());
     }
 
     #[test]
@@ -339,13 +341,13 @@ mod tests {
         let input = &metadata.inputs[0];
         assert_eq!(input.rust_name, "emissions_co2");
         assert_eq!(input.name, "Emissions|CO2");
-        assert_eq!(input.unit, "GtC / yr");
+        assert_eq!(input.unit, "GtC/yr");
         assert_eq!(input.grid, GridType::Scalar);
 
         // Check output metadata
         let output = &metadata.outputs[0];
         assert_eq!(output.rust_name, "concentration_co2");
-        assert_eq!(output.name, "Concentrations|CO2");
+        assert_eq!(output.name, "Atmospheric Concentrations|CO2");
         assert_eq!(output.unit, "ppm");
         assert_eq!(output.grid, GridType::Scalar);
     }

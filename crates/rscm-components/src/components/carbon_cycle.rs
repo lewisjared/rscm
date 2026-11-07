@@ -61,13 +61,13 @@ pub struct SolverOptions {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "simple", "stable"], category = "Carbon Cycle")]
 #[inputs(
-    emissions { name = "Emissions|CO2|Anthropogenic", unit = "GtC / yr" },
-    temperature { name = "Surface Temperature", unit = "K" },
+    emissions { name = "Emissions|CO2", unit = "GtC/yr" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
 )]
 #[states(
-    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
     cumulative_emissions { name = "Cumulative Emissions|CO2", unit = "Gt C" },
-    cumulative_uptake { name = "Cumulative Land Uptake", unit = "Gt C" },
+    cumulative_uptake { name = "Cumulative Carbon Uptake|Land", unit = "Gt C" },
 )]
 pub struct CarbonCycle {
     parameters: CarbonCycleParameters,
@@ -149,10 +149,10 @@ impl Ivp<Time, ModelState> for CarbonCycle {
         // dC / dt = E - (C - C_0) / (tau * exp(alpha_temperature * temperature))
         let lifetime =
             self.parameters.tau * (self.parameters.alpha_temperature * temperature).exp();
-        let uptake = (conc - self.parameters.co2_pi) / lifetime; // ppm / yr
+        let uptake = (conc - self.parameters.co2_pi) / lifetime; // ppm/yr
 
-        dy_dt[0] = emissions / GTC_PER_PPM - uptake; // ppm / yr
-        dy_dt[1] = uptake * GTC_PER_PPM; // GtC / yr
-        dy_dt[2] = emissions // GtC / yr
+        dy_dt[0] = emissions / GTC_PER_PPM - uptake; // ppm/yr
+        dy_dt[1] = uptake * GTC_PER_PPM; // GtC/yr
+        dy_dt[2] = emissions // GtC/yr
     }
 }

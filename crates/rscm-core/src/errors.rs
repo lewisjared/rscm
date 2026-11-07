@@ -1,3 +1,4 @@
+use crate::units::Unit;
 use thiserror::Error;
 
 /// Error type for invalid operations.
@@ -201,14 +202,36 @@ pub enum RscmError {
     /// This error occurs when two components use units with different physical dimensions
     /// for the same variable. For example, one component using "W/m^2" (radiative flux)
     /// and another using "GtC/yr" (mass rate) - these cannot be converted between.
-    #[error("Incompatible units for variable '{variable}': '{unit1}' has dimension {dim1} but '{unit2}' has dimension {dim2}. These units measure different physical quantities and cannot be converted.")]
+    #[error("Incompatible units for variable '{variable}': '{unit1}' (normalised '{normalised1}', dimension {dim1}) cannot be converted to '{unit2}' (normalised '{normalised2}', dimension {dim2}).")]
     IncompatibleUnits {
         variable: String,
         unit1: String,
         unit2: String,
+        normalised1: String,
+        normalised2: String,
         dim1: String,
         dim2: String,
     },
+}
+
+impl RscmError {
+    /// Error for two units of `variable` that cannot be converted into each other.
+    pub fn incompatible_units(variable: &str, unit1: &Unit, unit2: &Unit) -> Self {
+        let dimension = |unit: &Unit| {
+            unit.dimension()
+                .map(|d| d.to_string())
+                .unwrap_or_else(|_| "unknown".to_string())
+        };
+        RscmError::IncompatibleUnits {
+            variable: variable.to_string(),
+            unit1: unit1.original().to_string(),
+            unit2: unit2.original().to_string(),
+            normalised1: unit1.normalised(),
+            normalised2: unit2.normalised(),
+            dim1: dimension(unit1),
+            dim2: dimension(unit2),
+        }
+    }
 }
 
 /// Convenience type for `Result<T, RscmError>`.

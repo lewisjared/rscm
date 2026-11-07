@@ -13,12 +13,10 @@ use rscm_core::component::{
     Component, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
 use rscm_core::errors::RscmResult;
+use rscm_core::names::LIFETIME_SCALING_CH4;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
-
-/// Default name of the CH4 lifetime scaling output.
-pub const CH4_LIFETIME_SCALING: &str = "Lifetime Scaling|CH4";
 
 /// A precursor of the CH4 lifetime.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -60,7 +58,7 @@ fn default_minimum_scaling() -> FloatValue {
 }
 
 fn default_output() -> String {
-    CH4_LIFETIME_SCALING.to_string()
+    LIFETIME_SCALING_CH4.to_string()
 }
 
 /// Thornhill et al. (2021) CH4 lifetime scaling.

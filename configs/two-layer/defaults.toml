@@ -47,5 +47,5 @@ heat_capacity_deep = 100.0
 
 [initial_values]
 # Initial state variable values (defaults to 0 if not specified)
-# "Surface Temperature" = 0.0
-# "Deep Ocean Temperature" = 0.0
+# "Surface Air Temperature Change" = 0.0
+# "Ocean Temperature|Layer 2" = 0.0

@@ -24,7 +24,7 @@ fn builder(conversion_factor: FloatValue) -> ModelBuilder {
 fn concentration_bits(model: &Model) -> Vec<u64> {
     model
         .timeseries()
-        .get_data("Concentrations|CO2")
+        .get_data("Atmospheric Concentrations|CO2")
         .and_then(|data| data.as_scalar())
         .unwrap()
         .values()
@@ -80,7 +80,7 @@ fn build_errors_keep_their_position() {
     wrong_units.with_schema(
         VariableSchema::new()
             .variable("Emissions|CO2", "GtC / yr")
-            .variable("Concentrations|CO2", "GtC"),
+            .variable("Atmospheric Concentrations|CO2", "GtC"),
     );
     let builders = [builder(0.5), wrong_units];
 

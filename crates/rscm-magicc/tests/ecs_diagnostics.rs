@@ -185,7 +185,7 @@ mod time_varying_ecs {
                     panic!("solve_with_state failed at year {}: {:?}", year, e);
                 });
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             }
 
@@ -409,7 +409,7 @@ mod heat_uptake_consistency {
                     panic!("solve_with_state failed at year {}: {:?}", year, e);
                 });
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             }
 
@@ -764,7 +764,7 @@ mod ground_heat_capacity {
                     panic!("solve_with_state failed at year {}: {:?}", year, e);
                 });
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             }
 
@@ -840,7 +840,7 @@ mod ground_heat_capacity {
                     panic!("solve_with_state failed at year {}: {:?}", year, e);
                 });
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             }
         }

@@ -25,7 +25,7 @@ pub use ch4_chemistry::CH4ChemistryParameters;
 pub use ch4_oxidation::CH4OxidationParameters;
 pub use climate_udeb::{
     ClimateUdebParameters, EfficacyMethod, OceanTemperatureProfile, SubannualForcing, CP_SEAWATER,
-    DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER, SECONDS_PER_YEAR,
+    DIFFUSIVITY_CM2S_TO_M2YR, EARTH_SURFACE_AREA, RHO_SEAWATER, SECONDS_PER_YEAR,
 };
 pub use co2_budget::CO2BudgetParameters;
 pub use forcing_aggregation::{

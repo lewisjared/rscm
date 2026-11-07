@@ -62,7 +62,7 @@ pub struct CO2ErfParameters {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["radiative-forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
 #[inputs(
-    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 )]
 #[outputs(
     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
@@ -189,13 +189,13 @@ For variables that are both read and written each step, use `#[states(...)]`:
 ```rust
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[inputs(
-    emissions { name = "Emissions|CO2", unit = "GtC / yr" },
+    emissions { name = "Emissions|CO2", unit = "GtC/yr" },
 )]
 #[outputs(
-    uptake { name = "Land Uptake", unit = "GtC / yr" },
+    uptake { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr" },
 )]
 #[states(
-    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
     cumulative { name = "Cumulative Emissions|CO2", unit = "Gt C" },
 )]
 pub struct CarbonCycle {
@@ -318,7 +318,7 @@ use std::sync::Arc;
     forcing { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[states(
-    temperature { name = "Surface Temperature", unit = "K" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
 )]
 pub struct OneBox {
     pub heat_capacity: FloatValue,
@@ -383,10 +383,10 @@ use rscm_core::state::FourBoxSlice;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[inputs(
-    erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
+    erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[outputs(
-    heat_uptake { name = "Heat Uptake|Ocean", unit = "W/m^2", grid = "four_box" },
+    heat_uptake { name = "Heat Uptake", unit = "W/m^2", grid = "four_box" },
 )]
 pub struct FourBoxOceanHeatUptake {
     pub parameters: FourBoxOceanHeatUptakeParameters,

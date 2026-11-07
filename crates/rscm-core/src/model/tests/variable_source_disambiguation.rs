@@ -27,7 +27,7 @@ use std::sync::Arc;
 /// Component that produces a state variable (reads own previous state, writes new state)
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[states(
-    temperature { name = "Surface Temperature", unit = "degC" },
+    temperature { name = "Surface Air Temperature Change", unit = "degC" },
 )]
 struct TemperatureProducer {
     /// Rate of temperature increase per step
@@ -69,7 +69,7 @@ impl Component for TemperatureProducer {
 /// Component that consumes the temperature produced by TemperatureProducer
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[inputs(
-    temperature { name = "Surface Temperature", unit = "degC" },
+    temperature { name = "Surface Air Temperature Change", unit = "degC" },
 )]
 #[outputs(
     heat_content { name = "Ocean Heat Content", unit = "ZJ" },
@@ -117,7 +117,7 @@ fn test_variable_sources_disambiguation() {
 
     // Initial temperature
     let mut initial_values = HashMap::new();
-    initial_values.insert("Surface Temperature".to_string(), 15.0);
+    initial_values.insert("Surface Air Temperature Change".to_string(), 15.0);
 
     let model = ModelBuilder::new()
         .with_time_axis(time_axis)
@@ -132,26 +132,26 @@ fn test_variable_sources_disambiguation() {
     // Verify variable sources
     let sources = model.variable_sources();
 
-    // Producer component sees "Surface Temperature" as OwnState (reads its own previous state)
+    // Producer component sees "Surface Air Temperature Change" as OwnState (reads its own previous state)
     let producer_source = sources.get(&(
-        "Surface Temperature".to_string(),
+        "Surface Air Temperature Change".to_string(),
         "TemperatureProducer".to_string(),
     ));
     assert_eq!(
         producer_source,
         Some(&VariableSource::OwnState),
-        "Producer should see Surface Temperature as OwnState"
+        "Producer should see Surface Air Temperature Change as OwnState"
     );
 
-    // Consumer component sees "Surface Temperature" as Upstream (reads producer's output)
+    // Consumer component sees "Surface Air Temperature Change" as Upstream (reads producer's output)
     let consumer_source = sources.get(&(
-        "Surface Temperature".to_string(),
+        "Surface Air Temperature Change".to_string(),
         "TemperatureConsumer".to_string(),
     ));
     assert_eq!(
         consumer_source,
         Some(&VariableSource::Upstream),
-        "Consumer should see Surface Temperature as Upstream"
+        "Consumer should see Surface Air Temperature Change as Upstream"
     );
 }
 
@@ -162,7 +162,7 @@ fn test_variable_sources_with_get_method() {
 
     // Initial temperature
     let mut initial_values = HashMap::new();
-    initial_values.insert("Surface Temperature".to_string(), 15.0);
+    initial_values.insert("Surface Air Temperature Change".to_string(), 15.0);
 
     let mut model = ModelBuilder::new()
         .with_time_axis(time_axis)
@@ -183,9 +183,9 @@ fn test_variable_sources_with_get_method() {
 
     // Check producer output (state variable)
     let temp_data = timeseries
-        .get_data("Surface Temperature")
+        .get_data("Surface Air Temperature Change")
         .and_then(|data| data.as_scalar())
-        .expect("Surface Temperature should exist");
+        .expect("Surface Air Temperature Change should exist");
 
     // Initial value at index 0
     let temp_0 = temp_data.at(0, ScalarRegion::Global).unwrap();
@@ -297,12 +297,12 @@ fn test_multiple_consumers_same_upstream() {
     let time_axis = TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0));
 
     let mut initial_values = HashMap::new();
-    initial_values.insert("Surface Temperature".to_string(), 15.0);
+    initial_values.insert("Surface Air Temperature Change".to_string(), 15.0);
 
     /// Another consumer component
     #[derive(Debug, Serialize, Deserialize, ComponentIO)]
     #[inputs(
-        temperature { name = "Surface Temperature", unit = "degC" },
+        temperature { name = "Surface Air Temperature Change", unit = "degC" },
     )]
     #[outputs(
         albedo { name = "Surface Albedo", unit = "1" },
@@ -354,42 +354,42 @@ fn test_multiple_consumers_same_upstream() {
 
     // Producer sees it as OwnState
     let producer_source = sources.get(&(
-        "Surface Temperature".to_string(),
+        "Surface Air Temperature Change".to_string(),
         "TemperatureProducer".to_string(),
     ));
     assert_eq!(
         producer_source,
         Some(&VariableSource::OwnState),
-        "Producer should see Surface Temperature as OwnState"
+        "Producer should see Surface Air Temperature Change as OwnState"
     );
 
     // First consumer sees it as Upstream
     let consumer1_source = sources.get(&(
-        "Surface Temperature".to_string(),
+        "Surface Air Temperature Change".to_string(),
         "TemperatureConsumer".to_string(),
     ));
     assert_eq!(
         consumer1_source,
         Some(&VariableSource::Upstream),
-        "TemperatureConsumer should see Surface Temperature as Upstream"
+        "TemperatureConsumer should see Surface Air Temperature Change as Upstream"
     );
 
     // Second consumer also sees it as Upstream
     let consumer2_source = sources.get(&(
-        "Surface Temperature".to_string(),
+        "Surface Air Temperature Change".to_string(),
         "AlbedoCalculator".to_string(),
     ));
     assert_eq!(
         consumer2_source,
         Some(&VariableSource::Upstream),
-        "AlbedoCalculator should see Surface Temperature as Upstream"
+        "AlbedoCalculator should see Surface Air Temperature Change as Upstream"
     );
 }
 
 #[test]
 fn test_scalar_state_initialised_from_grid_values() {
     let time_axis = TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0));
-    let initial = HashMap::from([("Surface Temperature".to_string(), vec![15.0])]);
+    let initial = HashMap::from([("Surface Air Temperature Change".to_string(), vec![15.0])]);
 
     let model = ModelBuilder::new()
         .with_time_axis(time_axis)
@@ -400,8 +400,8 @@ fn test_scalar_state_initialised_from_grid_values() {
 
     let temperature = model
         .timeseries()
-        .get_data("Surface Temperature")
+        .get_data("Surface Air Temperature Change")
         .and_then(|data| data.as_scalar())
-        .expect("Surface Temperature should exist");
+        .expect("Surface Air Temperature Change should exist");
     assert_eq!(temperature.at(0, ScalarRegion::Global).unwrap(), 15.0);
 }

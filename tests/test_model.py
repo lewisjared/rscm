@@ -27,14 +27,14 @@ def test_model(time_axis):
     erf = Timeseries(
         np.asarray([1.0] * len(time_axis)),
         time_axis,
-        "W / m^2",
+        "W/m^2",
         InterpolationStrategy.Next,
     )
 
     model = (
         builder.with_prescribed_variable("Effective Radiative Forcing", erf)
         .with_initial_values(
-            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+            {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
         )
         .build()
     )
@@ -60,7 +60,7 @@ def test_missing_prescribed_input(time_axis):
         .with_time_axis(time_axis)
         .with_component(component)
         .with_initial_values(
-            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+            {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
         )
     )
 
@@ -89,12 +89,12 @@ def test_missing_initial_value_names_the_builder_method(time_axis):
         ModelBuilder()
         .with_time_axis(time_axis)
         .with_component(component)
-        .with_initial_values({"Deep Ocean Temperature": 0.0})
+        .with_initial_values({"Ocean Temperature|Layer 2": 0.0})
     )
 
     with pytest.raises(
         ValueError,
-        match=r'with_initial_values\(\{"Surface Temperature": value\}\)',
+        match=r'with_initial_values\(\{"Surface Air Temperature Change": value\}\)',
     ):
         builder.build()
 
@@ -116,14 +116,14 @@ def test_model_serialisation(time_axis):
     erf = Timeseries(
         np.asarray([1.0] * len(time_axis)),
         time_axis,
-        "W / m^2",
+        "W/m^2",
         InterpolationStrategy.Next,
     )
 
     model = (
         builder.with_prescribed_variable("Effective Radiative Forcing", erf)
         .with_initial_values(
-            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+            {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
         )
         .build()
     )
@@ -142,8 +142,12 @@ def test_model_serialisation(time_axis):
     new_model.run()
 
     npt.assert_allclose(
-        new_model.timeseries().get_timeseries_by_name("Surface Temperature").values(),
-        model.timeseries().get_timeseries_by_name("Surface Temperature").values(),
+        new_model.timeseries()
+        .get_timeseries_by_name("Surface Air Temperature Change")
+        .values(),
+        model.timeseries()
+        .get_timeseries_by_name("Surface Air Temperature Change")
+        .values(),
     )
 
 
@@ -163,7 +167,7 @@ def test_coupling_formats(time_axis):
         .with_time_axis(time_axis)
         .with_component(component)
         .with_initial_values(
-            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+            {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
         )
         .with_missing_prescribed_allowed()
         .build()

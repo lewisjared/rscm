@@ -5,14 +5,14 @@
 //!
 //! # Inputs
 //!
-//! - `Emissions|<species>` (kt/yr) for each species
+//! - `Emissions|<species>` (kt <species>/yr) for each species
 //! - `Lifetime|CH4|OH` (yr), which scales OH lifetimes
-//! - `Surface Temperature` (K), which shortens stratospheric lifetimes
+//! - `Surface Air Temperature Change` (K), which shortens stratospheric lifetimes
 //! - `Emissions|CO2|Fossil` (GtC/yr) with `fgas_regions`, which spreads short-lived F-gases
 //!
 //! # States
 //!
-//! - `Atmospheric Concentration|<species>` (ppt)
+//! - `Atmospheric Concentrations|<species>` (ppt)
 //!
 //! # Outputs
 //!
@@ -34,27 +34,19 @@
 //! exponential solution, with the emissions and lifetime of the start of the year.
 
 use crate::parameters::{HalocarbonChemistryParameters, HalocarbonSpecies};
-use crate::reference::{
-    feedback_warming, prescribed_definition, prescribed_input, prescribed_name, require_annual,
-};
+use crate::reference::{feedback_warming, prescribed_definition, prescribed_input, require_annual};
 use rscm_core::component::{
     Component, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
 use rscm_core::errors::RscmResult;
+use rscm_core::names::{
+    prescribed, EMISSIONS_CO2_FOSSIL, EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE, ERF_F_GASES,
+    ERF_MONTREAL_PROTOCOL_HALOGEN_GASES, LIFETIME_CH4_OH,
+};
 use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
-
-/// F-gas ERF output.
-pub const FGAS_FORCING: &str = "Effective Radiative Forcing|F-Gases";
-/// Montreal Protocol gas ERF output.
-pub const MHALO_FORCING: &str = "Effective Radiative Forcing|Montreal Protocol Halogen Gases";
-/// EESC output.
-pub const EESC: &str = "EESC";
-/// CH4 OH lifetime input.
-pub const CH4_OH_LIFETIME: &str = "Lifetime|CH4|OH";
-const FOSSIL_CO2: &str = "Emissions|CO2|Fossil";
 
 /// Halocarbon atmospheric chemistry component.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,12 +89,15 @@ impl HalocarbonChemistry {
     }
 
     fn concentration_name(species: &str) -> String {
-        format!("Atmospheric Concentration|{species}")
+        format!("Atmospheric Concentrations|{species}")
     }
 
     /// ERF variable of a species in group 0 (F-gases) or 1 (Montreal gases).
     pub fn forcing_name(group: usize, species: &str) -> String {
-        format!("{}|{species}", [FGAS_FORCING, MHALO_FORCING][group])
+        format!(
+            "{}|{species}",
+            [ERF_F_GASES, ERF_MONTREAL_PROTOCOL_HALOGEN_GASES][group]
+        )
     }
 
     /// Lifetime (yr) given the OH and stratospheric lifetime scale factors.
@@ -164,13 +159,13 @@ impl HalocarbonChemistry {
     fn scale_factors(&self, t_current: Time, input_state: &InputState) -> (FloatValue, FloatValue) {
         let p = &self.parameters;
         let oh_scale = if p.include_variable_oh_lifetime {
-            let window = input_state.get_scalar_window(CH4_OH_LIFETIME);
+            let window = input_state.get_scalar_window(LIFETIME_CH4_OH);
             window.get() / p.initial_ch4_oh_lifetime
         } else {
             1.0
         };
         let strat_scale = if p.include_variable_stratospheric_lifetime {
-            let temperature = input_state.get_scalar_window("Surface Temperature");
+            let temperature = input_state.get_scalar_window("Surface Air Temperature Change");
             let warming =
                 feedback_warming(&temperature, t_current, p.meridional_flux_reference_year);
             1.0 / (1.0
@@ -196,7 +191,7 @@ impl HalocarbonChemistry {
                         let concentration = Self::concentration_name(&species.name);
                         SpeciesNames {
                             emissions: Self::emissions_name(&species.name),
-                            prescribed: prescribed_name(&concentration),
+                            prescribed: prescribed(&concentration),
                             forcing: Self::forcing_name(group, &species.name),
                             concentration,
                         }
@@ -240,7 +235,7 @@ impl Component for HalocarbonChemistry {
         for species in self.parameters.all_species() {
             definitions.push(VariableDefinition::scalar_input(
                 &Self::emissions_name(&species.name),
-                "kt/yr",
+                &format!("kt {}/yr", species.name),
             ));
             definitions.push(VariableDefinition::scalar_state(
                 &Self::concentration_name(&species.name),
@@ -258,15 +253,21 @@ impl Component for HalocarbonChemistry {
         }
         if self.parameters.include_variable_oh_lifetime {
             definitions.push(
-                VariableDefinition::scalar_input(CH4_OH_LIFETIME, "yr")
+                VariableDefinition::scalar_input(LIFETIME_CH4_OH, "yr")
                     .with_timeseries_type(TimeseriesType::Average),
             );
         }
         if self.parameters.include_variable_stratospheric_lifetime {
-            definitions.push(VariableDefinition::scalar_input("Surface Temperature", "K"));
+            definitions.push(VariableDefinition::scalar_input(
+                "Surface Air Temperature Change",
+                "K",
+            ));
         }
         if self.parameters.fgas_regions.is_some() {
-            definitions.push(VariableDefinition::scalar_input(FOSSIL_CO2, "GtC/yr"));
+            definitions.push(VariableDefinition::scalar_input(
+                EMISSIONS_CO2_FOSSIL,
+                "GtC/yr",
+            ));
         }
         let regional = self.parameters.fgas_regions.is_some();
         let forcing = |name: &str, four_box: bool| {
@@ -276,15 +277,18 @@ impl Component for HalocarbonChemistry {
                 VariableDefinition::scalar_output(name, "W/m^2")
             }
         };
-        definitions.push(forcing(FGAS_FORCING, regional));
-        definitions.push(forcing(MHALO_FORCING, false));
+        definitions.push(forcing(ERF_F_GASES, regional));
+        definitions.push(forcing(ERF_MONTREAL_PROTOCOL_HALOGEN_GASES, false));
         for (group, (list, _)) in self.switch_years().into_iter().enumerate() {
             for species in list {
                 let name = Self::forcing_name(group, &species.name);
                 definitions.push(forcing(&name, regional && group == 0));
             }
         }
-        definitions.push(VariableDefinition::scalar_output(EESC, "ppt"));
+        definitions.push(VariableDefinition::scalar_output(
+            EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE,
+            "ppt",
+        ));
         definitions
     }
 
@@ -305,7 +309,7 @@ impl Component for HalocarbonChemistry {
             .parameters
             .fgas_regions
             .as_ref()
-            .map(|_| input_state.get_scalar_window(FOSSIL_CO2).get());
+            .map(|_| input_state.get_scalar_window(EMISSIONS_CO2_FOSSIL).get());
 
         for (group, (list, switch_year)) in self.switch_years().into_iter().enumerate() {
             for (species, names) in list.iter().zip(&names[group]) {
@@ -343,9 +347,15 @@ impl Component for HalocarbonChemistry {
         } else {
             StateValue::Scalar(forcing[0])
         };
-        output.insert(FGAS_FORCING.to_string(), fgas);
-        output.insert(MHALO_FORCING.to_string(), StateValue::Scalar(forcing[1]));
-        output.insert(EESC.to_string(), StateValue::Scalar(eesc));
+        output.insert(ERF_F_GASES.to_string(), fgas);
+        output.insert(
+            ERF_MONTREAL_PROTOCOL_HALOGEN_GASES.to_string(),
+            StateValue::Scalar(forcing[1]),
+        );
+        output.insert(
+            EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE.to_string(),
+            StateValue::Scalar(eesc),
+        );
         Ok(output)
     }
 }

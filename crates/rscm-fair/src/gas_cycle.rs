@@ -420,7 +420,7 @@ mod tests {
             inverse_emissions: Some("Emissions|CH4".into()),
             emissions_unit: "Mt CH4/yr".into(),
             amount_unit: "Mt CH4".into(),
-            concentration: "Atmospheric Concentration|CH4".into(),
+            concentration: "Atmospheric Concentrations|CH4".into(),
             concentration_unit: "ppb".into(),
             airborne_emissions: None,
             cumulative_emissions: None,

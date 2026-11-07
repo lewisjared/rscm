@@ -119,7 +119,7 @@ pub struct HalocarbonChemistryParameters {
     /// (`*_TAUSTRAT_SENS2MERIDFLUX`).
     pub stratospheric_lifetime_sensitivity: FloatValue,
 
-    /// Last year of F-gas concentrations prescribed by `Atmospheric Concentration|<species>|Prescribed`,
+    /// Last year of F-gas concentrations prescribed by `Prescribed Atmospheric Concentrations|<species>`,
     /// or `None` to calculate them from emissions throughout.
     /// MAGICC7: FGAS_SWITCHFROMCONC2EMIS_YEAR
     pub fgas_switch_year: Option<FloatValue>,
@@ -370,7 +370,7 @@ fn default_fgases() -> Vec<HalocarbonSpecies> {
             0.0,
         ),
         species(
-            "HFC4310",
+            "HFC4310mee",
             [17.0, 17.9, 365.0],
             0.359,
             0.0,

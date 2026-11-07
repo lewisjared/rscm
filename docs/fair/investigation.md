@@ -80,9 +80,9 @@ What already maps cleanly:
 - **Shared GHG formula.** FaIR's Meinshausen 2020 and MAGICC's OLBL are the same formulae.
   Both use `rscm_components::meinshausen2020`, with their own coefficients.
   FaIR scales by `forcing_scale * (1 + tropospheric_adjustment)` and subtracts the baseline offset.
-- **Variable names.** Use RSCM's existing names (`Emissions|CO2|Fossil`, `Atmospheric Concentration|CH4`,
-  `Effective Radiative Forcing|CH4`, `Surface Temperature`) so FaIR components can mix with MAGICC ones.
-  FaIR's `CO2 FFI` and `CO2 AFOLU` map to `Emissions|CO2|Fossil` and `Emissions|CO2|Land Use`.
+- **Variable names.** Use RSCM's existing names (`Emissions|CO2|Fossil`, `Atmospheric Concentrations|CH4`,
+  `Effective Radiative Forcing|CH4`, `Surface Air Temperature Change`) so FaIR components can mix with MAGICC ones.
+  FaIR's `CO2 FFI` and `CO2 AFOLU` map to `Emissions|CO2|Fossil` and `Emissions|CO2|Biosphere`.
 
 ## Gaps and risks
 

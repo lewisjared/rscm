@@ -38,14 +38,14 @@ from rscm.component import Component, Input, Output, State
 
 class CarbonCycle(Component):
     # Declare inputs
-    emissions = Input("Emissions|CO2", unit="GtCO2")
-    temperature = Input("Surface Temperature", unit="K", grid="four_box")
+    emissions = Input("Emissions|CO2", unit="Mt CO2/yr")
+    temperature = Input("Surface Air Temperature Change", unit="K", grid="four_box")
 
     # Declare state variables (read previous, write new)
-    concentration = State("Atmospheric Concentration|CO2", unit="ppm")
+    concentration = State("Atmospheric Concentrations|CO2", unit="ppm")
 
     # Declare outputs
-    uptake = Output("Carbon Uptake", unit="GtC")
+    uptake = Output("Net Atmosphere to Land Flux|CO2", unit="Mt CO2/yr")
 
     def __init__(self, sensitivity: float):
         self.sensitivity = sensitivity
@@ -175,7 +175,7 @@ class Output:
     Parameters
     ----------
     name
-        The variable name (e.g., "Concentration|CO2")
+        The variable name (e.g., "Atmospheric Concentrations|CO2")
     unit
         The unit string (e.g., "ppm")
     grid
@@ -210,7 +210,7 @@ class State:
     Parameters
     ----------
     name
-        The variable name (e.g., "Atmospheric Concentration|CO2")
+        The variable name (e.g., "Atmospheric Concentrations|CO2")
     unit
         The unit string (e.g., "ppm")
     grid
@@ -507,8 +507,8 @@ class Component(metaclass=ComponentMeta):
     --------
     ```python
     class MyComponent(Component):
-        emissions = Input("Emissions|CO2", unit="GtCO2")
-        concentration = Output("Concentration|CO2", unit="ppm")
+        emissions = Input("Emissions|CO2", unit="Mt CO2/yr")
+        concentration = Output("Atmospheric Concentrations|CO2", unit="ppm")
 
         def __init__(self, factor: float):
             self.factor = factor

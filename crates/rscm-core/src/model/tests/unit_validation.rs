@@ -33,7 +33,11 @@ impl Component for EmissionsToConcentration {
     fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
             VariableDefinition::new("Emissions|CO2", &self.input_unit, VariableRole::Input),
-            VariableDefinition::new("Concentration|CO2", &self.output_unit, VariableRole::Output),
+            VariableDefinition::new(
+                "Atmospheric Concentrations|CO2",
+                &self.output_unit,
+                VariableRole::Output,
+            ),
         ]
     }
 
@@ -58,8 +62,16 @@ struct ConcentrationToForcing {
 impl Component for ConcentrationToForcing {
     fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            VariableDefinition::new("Concentration|CO2", &self.input_unit, VariableRole::Input),
-            VariableDefinition::new("ERF|CO2", &self.output_unit, VariableRole::Output),
+            VariableDefinition::new(
+                "Atmospheric Concentrations|CO2",
+                &self.input_unit,
+                VariableRole::Input,
+            ),
+            VariableDefinition::new(
+                "Effective Radiative Forcing|CO2",
+                &self.output_unit,
+                VariableRole::Output,
+            ),
         ]
     }
 
@@ -124,8 +136,8 @@ fn test_whitespace_normalised_units_accepted() {
     // Using a schema with different whitespace
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC / yr") // Different whitespace
-        .variable("Concentration|CO2", "ppm")
-        .variable("ERF|CO2", "W / m ^ 2"); // Different whitespace
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Effective Radiative Forcing|CO2", "W / m ^ 2"); // Different whitespace
 
     let result = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -171,8 +183,8 @@ fn test_schema_accepts_compatible_units() {
     // e.g., schema: GtC/yr, component: MtC/yr (both are mass/time)
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC/yr")
-        .variable("Concentration|CO2", "ppm")
-        .variable("ERF|CO2", "W/m^2");
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Effective Radiative Forcing|CO2", "W/m^2");
 
     let comp1 = EmissionsToConcentration {
         input_unit: "MtC/yr".to_string(), // Different magnitude but compatible
@@ -204,7 +216,7 @@ fn test_schema_rejects_dimensionally_incompatible_units() {
     // Schema expects W/m^2 but component outputs GtC/yr (different dimensions)
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC/yr")
-        .variable("Concentration|CO2", "W/m^2"); // Wrong dimension! Should be "ppm"
+        .variable("Atmospheric Concentrations|CO2", "W/m^2"); // Wrong dimension! Should be "ppm"
 
     let comp = EmissionsToConcentration {
         input_unit: "GtC/yr".to_string(),
@@ -226,7 +238,7 @@ fn test_schema_rejects_dimensionally_incompatible_units() {
         err
     );
     assert!(
-        err.contains("Concentration|CO2"),
+        err.contains("Atmospheric Concentrations|CO2"),
         "Should mention the variable: {}",
         err
     );
@@ -237,8 +249,8 @@ fn test_carbon_co2_conversion_accepted() {
     // GtC and GtCO2 are compatible (both mass) with molecular weight conversion
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtCO2/yr") // Schema uses CO2
-        .variable("Concentration|CO2", "ppm")
-        .variable("ERF|CO2", "W/m^2");
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Effective Radiative Forcing|CO2", "W/m^2");
 
     let comp1 = EmissionsToConcentration {
         input_unit: "GtC/yr".to_string(), // Component uses C (compatible)
@@ -332,7 +344,7 @@ fn test_between_component_units_compatible_but_different() {
     impl Component for MassReader {
         fn definitions(&self) -> Vec<VariableDefinition> {
             vec![VariableDefinition::new(
-                "Concentration|CO2",
+                "Atmospheric Concentrations|CO2",
                 &self.input_unit,
                 VariableRole::Input,
             )]
@@ -699,6 +711,17 @@ fn test_prescribed_data_with_incompatible_unit_rejected() {
 }
 
 #[test]
+fn test_incompatible_species_error_shows_normalised_units() {
+    let err = emissions_model("Mt N/yr", get_emissions("kt N2O/yr")).unwrap_err();
+
+    let message = err.to_string();
+    for unit in ["Mt N/yr", "kt N2O/yr"] {
+        let normalised = crate::units::Unit::parse(unit).unwrap().normalised();
+        assert!(message.contains(&format!("'{normalised}'")), "{message}");
+    }
+}
+
+#[test]
 fn test_prescribed_data_with_unparseable_unit_rejected() {
     let err = emissions_model("GtC / yr", get_emissions("")).unwrap_err();
 
@@ -712,7 +735,7 @@ fn test_prescribed_data_with_unparseable_unit_rejected() {
 fn test_prescribed_data_converted_into_schema_unit() {
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtCO2 / yr")
-        .variable("Concentration|CO2", "ppm");
+        .variable("Atmospheric Concentrations|CO2", "ppm");
 
     let model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -737,7 +760,7 @@ struct FourBoxReader;
 impl Component for FourBoxReader {
     fn definitions(&self) -> Vec<VariableDefinition> {
         vec![VariableDefinition::with_grid(
-            "Surface Temperature",
+            "Surface Air Temperature Change",
             "K",
             VariableRole::Input,
             GridType::FourBox,
@@ -767,7 +790,7 @@ fn four_box_model(unit: &str) -> RscmResult<Model> {
     ModelBuilder::new()
         .with_time_axis((*time_axis).clone())
         .with_component(Arc::new(FourBoxReader))
-        .with_prescribed_variable("Surface Temperature", data)
+        .with_prescribed_variable("Surface Air Temperature Change", data)
         .build()
 }
 
@@ -777,7 +800,7 @@ fn test_four_box_prescribed_data_converted() {
 
     let stored = model
         .timeseries()
-        .get_data("Surface Temperature")
+        .get_data("Surface Air Temperature Change")
         .and_then(|data| data.as_four_box())
         .unwrap();
     assert_eq!(stored.unit(), "K");
@@ -789,7 +812,7 @@ fn test_four_box_prescribed_data_with_incompatible_unit_rejected() {
     let err = four_box_model("W / m^2").unwrap_err();
 
     assert!(
-        matches!(err, RscmError::IncompatibleUnits { ref variable, .. } if variable == "Surface Temperature"),
+        matches!(err, RscmError::IncompatibleUnits { ref variable, .. } if variable == "Surface Air Temperature Change"),
         "expected IncompatibleUnits, got {err:?}"
     );
 }

@@ -13,7 +13,7 @@
   "inputs": [
     {
       "rust_name": "concentration",
-      "name": "Atmospheric Concentration|CO2",
+      "name": "Atmospheric Concentrations|CO2",
       "unit": "ppm",
       "grid": "scalar"
     }

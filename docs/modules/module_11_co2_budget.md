@@ -163,7 +163,7 @@ Each annual step runs:
 - There is no concentration cap (`CO2_CAPCONC_APPLY`).
 - There is no zero-emissions switch (`CO2_ZEROEMIS_AFTERXPGC_APPLY`).
 - No inverse fossil emissions are calculated while CO2 is prescribed.
-  `Emissions|CO2|Net` is then the net source implied by the prescribed concentrations.
+  `Net Emissions|CO2` is then the net source implied by the prescribed concentrations.
 - `CO2Budget` also reports the airborne fraction, the net source over the sum of the sources.
 
 ## References

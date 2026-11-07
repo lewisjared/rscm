@@ -23,7 +23,7 @@
 # Submodule exports (PyO3 submodules exist but aren't exported from parent)
 # =============================================================================
 (?s:rscm\._lib\.(calibrate|components|core|fair|magicc|two_layer)$)
-(?s:rscm\._lib\.core\.(spatial|state)$)
+(?s:rscm\._lib\.core\.(names|spatial|state)$)
 
 # =============================================================================
 # Type aliases (stub-only for readability, not present at runtime)

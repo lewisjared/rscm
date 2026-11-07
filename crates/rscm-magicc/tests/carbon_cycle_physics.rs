@@ -714,7 +714,7 @@ mod climate_tcr {
                 .solve_with_state(t_current, t_next, &input_state, &mut state)
                 .expect("solve_with_state failed");
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             }
 
@@ -802,7 +802,9 @@ mod climate_tcr {
                     .solve_with_state(t_current, t_next, &input_state, &mut state)
                     .expect("solve_with_state failed");
 
-                if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+                if let Some(StateValue::FourBox(temps)) =
+                    output.get("Surface Air Temperature Change")
+                {
                     prev_temps = *temps;
                 }
             }

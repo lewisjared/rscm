@@ -54,7 +54,7 @@
 //! model.run();
 //!
 //! // Access results
-//! let concentrations = model.timeseries().get_data("Atmospheric Concentration|CO2");
+//! let concentrations = model.timeseries().get_data("Atmospheric Concentrations|CO2");
 //! ```
 //!
 //! # Creating Components
@@ -67,10 +67,10 @@
 //!
 //! #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 //! #[inputs(
-//!     concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+//!     concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 //! )]
 //! #[outputs(
-//!     erf { name = "Effective Radiative Forcing|CO2", unit = "W / m^2" },
+//!     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
 //! )]
 //! pub struct CO2Erf {
 //!     pub erf_2xco2: f64,
@@ -114,6 +114,7 @@ pub mod grid_transform;
 pub mod interpolate;
 pub mod ivp;
 pub mod model;
+pub mod names;
 pub mod python;
 pub mod schema;
 pub mod spatial;

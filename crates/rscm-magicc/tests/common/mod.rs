@@ -196,7 +196,7 @@ pub fn build_udeb_input_state(
     );
     let surf_item = TimeseriesItem {
         data: TimeseriesData::FourBox(surf_ts),
-        name: "Surface Temperature".to_string(),
+        name: "Surface Air Temperature Change".to_string(),
     };
 
     (erf_item, surf_item)
@@ -248,10 +248,13 @@ pub fn run_udeb_simulation(
                 panic!("solve_with_state failed at year {}: {:?}", year, e);
             });
 
-        if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+        if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
             prev_temps = *temps;
         } else {
-            panic!("Year {}: Surface Temperature not found in output", year);
+            panic!(
+                "Year {}: Surface Air Temperature Change not found in output",
+                year
+            );
         }
 
         let global_sat = prev_temps.0[0] * fgno

@@ -51,7 +51,7 @@ fn test_carbon_cycle() {
             2100.0
         ])),
         ScalarGrid,
-        "GtC / yr".to_string(),
+        "GtC/yr".to_string(),
         InterpolationStrategy::from(PreviousStrategy::new(true)),
     );
     let temperature = Timeseries::new(
@@ -73,13 +73,13 @@ fn test_carbon_cycle() {
             .with_solver_options(SolverOptions { step_size }),
         ))
         .with_initial_values(HashMap::from([
-            ("Cumulative Land Uptake".to_string(), 0.0),
+            ("Cumulative Carbon Uptake|Land".to_string(), 0.0),
             ("Cumulative Emissions|CO2".to_string(), 0.0),
-            ("Atmospheric Concentration|CO2".to_string(), conc_initial),
+            ("Atmospheric Concentrations|CO2".to_string(), conc_initial),
         ]))
         .with_time_axis(time_axis.clone())
-        .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
-        .with_prescribed_variable("Surface Temperature", temperature)
+        .with_prescribed_variable("Emissions|CO2", emissions)
+        .with_prescribed_variable("Surface Air Temperature Change", temperature)
         .build()
         .unwrap();
 
@@ -87,13 +87,13 @@ fn test_carbon_cycle() {
 
     let co2_conc = model
         .timeseries()
-        .get_data("Atmospheric Concentration|CO2")
+        .get_data("Atmospheric Concentrations|CO2")
         .and_then(|data| data.as_scalar())
         .unwrap();
 
     let co2_emissions = model
         .timeseries()
-        .get_data("Emissions|CO2|Anthropogenic")
+        .get_data("Emissions|CO2")
         .and_then(|data| data.as_scalar())
         .unwrap();
     let expected_concentrations: Vec<FloatValue> = time_axis
@@ -163,7 +163,7 @@ fn test_coupled_model() {
             2100.0
         ])),
         ScalarGrid,
-        "GtC / yr".to_string(),
+        "GtC/yr".to_string(),
         InterpolationStrategy::from(PreviousStrategy::new(true)),
     );
     let surface_temp = Timeseries::new(
@@ -190,12 +190,12 @@ fn test_coupled_model() {
             co2_pi,
         })))
         .with_time_axis(time_axis)
-        .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
-        .with_prescribed_variable("Surface Temperature", surface_temp)
+        .with_prescribed_variable("Emissions|CO2", emissions)
+        .with_prescribed_variable("Surface Air Temperature Change", surface_temp)
         .with_initial_values(HashMap::from([
-            ("Cumulative Land Uptake".to_string(), 0.0),
+            ("Cumulative Carbon Uptake|Land".to_string(), 0.0),
             ("Cumulative Emissions|CO2".to_string(), 0.0),
-            ("Atmospheric Concentration|CO2".to_string(), 300.0),
+            ("Atmospheric Concentrations|CO2".to_string(), 300.0),
         ]))
         .build()
         .unwrap();
@@ -208,12 +208,12 @@ fn test_coupled_model() {
     assert_eq!(
         variable_names,
         vec![
-            "Atmospheric Concentration|CO2",
+            "Atmospheric Concentrations|CO2",
+            "Cumulative Carbon Uptake|Land",
             "Cumulative Emissions|CO2",
-            "Cumulative Land Uptake",
             "Effective Radiative Forcing|CO2",
-            "Emissions|CO2|Anthropogenic",
-            "Surface Temperature"
+            "Emissions|CO2",
+            "Surface Air Temperature Change"
         ]
     );
 

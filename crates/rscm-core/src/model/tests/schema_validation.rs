@@ -28,7 +28,7 @@ fn test_model_with_valid_schema() {
     // Schema that matches the component definitions
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC / yr")
-        .variable("Concentrations|CO2", "ppm");
+        .variable("Atmospheric Concentrations|CO2", "ppm");
 
     let _model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -47,7 +47,7 @@ fn test_model_with_valid_schema() {
 fn test_schema_rejects_undefined_output() {
     // Schema missing the output variable
     let schema = VariableSchema::new().variable("Emissions|CO2", "GtC / yr");
-    // Missing "Concentrations|CO2"
+    // Missing "Atmospheric Concentrations|CO2"
 
     let result = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -64,7 +64,7 @@ fn test_schema_rejects_undefined_output() {
     let err = result.unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("Concentrations|CO2"),
+        msg.contains("Atmospheric Concentrations|CO2"),
         "Error should mention missing variable: {}",
         msg
     );
@@ -78,7 +78,7 @@ fn test_schema_rejects_undefined_output() {
 #[test]
 fn test_schema_rejects_undefined_input() {
     // Schema missing the input variable (and no component produces it)
-    let schema = VariableSchema::new().variable("Concentrations|CO2", "ppm");
+    let schema = VariableSchema::new().variable("Atmospheric Concentrations|CO2", "ppm");
     // Missing "Emissions|CO2"
 
     let result = ModelBuilder::new()
@@ -107,7 +107,7 @@ fn test_schema_rejects_incompatible_units() {
     // The component outputs "ppm" (dimensionless) but schema expects "GtC" (mass)
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC / yr")
-        .variable("Concentrations|CO2", "GtC"); // Wrong dimension - should be "ppm"
+        .variable("Atmospheric Concentrations|CO2", "GtC"); // Wrong dimension - should be "ppm"
 
     let result = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -130,7 +130,7 @@ fn test_schema_rejects_incompatible_units() {
         msg
     );
     assert!(
-        msg.contains("Concentrations|CO2"),
+        msg.contains("Atmospheric Concentrations|CO2"),
         "Error should mention the variable: {}",
         msg
     );
@@ -177,9 +177,9 @@ fn test_schema_with_aggregate_validates() {
     // Schema with an aggregate definition
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC / yr")
-        .variable("Concentrations|CO2", "ppm")
+        .variable("Atmospheric Concentrations|CO2", "ppm")
         .aggregate("Total Concentrations", "ppm", AggregateOp::Sum)
-        .from("Concentrations|CO2")
+        .from("Atmospheric Concentrations|CO2")
         .build();
 
     let _model = ModelBuilder::new()
@@ -200,8 +200,8 @@ fn test_schema_creates_nan_for_unwritten_variables() {
     // Schema has a variable that no component writes to
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC / yr")
-        .variable("Concentrations|CO2", "ppm")
-        .variable("Concentrations|CH4", "ppb"); // No component writes this
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Atmospheric Concentrations|CH4", "ppb"); // No component writes this
 
     let model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -218,7 +218,7 @@ fn test_schema_creates_nan_for_unwritten_variables() {
     // The CH4 variable should exist but be all NaN
     let ch4 = model
         .timeseries()
-        .get_data("Concentrations|CH4")
+        .get_data("Atmospheric Concentrations|CH4")
         .and_then(|d| d.as_scalar());
     assert!(
         ch4.is_some(),

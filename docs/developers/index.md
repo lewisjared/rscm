@@ -99,7 +99,7 @@ Write it in Rust, with the `ComponentIO` derive macro, for performance or comple
         forcing { name = "Effective Radiative Forcing", unit = "W/m^2" },
     )]
     #[outputs(
-        temperature { name = "Surface Temperature", unit = "K" },
+        temperature { name = "Surface Air Temperature Change", unit = "K" },
     )]
     pub struct MyComponent {
         pub sensitivity: FloatValue,

@@ -75,8 +75,8 @@ model = (
     .with_component(two_layer)
     .with_prescribed_variable("Effective Radiative Forcing", forcing)
     .with_initial_values({
-        "Surface Temperature": 0.0,
-        "Deep Ocean Temperature": 0.0,
+        "Surface Air Temperature Change": 0.0,
+        "Ocean Temperature|Layer 2": 0.0,
     })
 ).build()
 
@@ -93,7 +93,7 @@ Rebuild the model before retrying a failed run, because component state may alre
 
 ```python
 results = model.timeseries()
-temperature = results.get_timeseries_by_name("Surface Temperature")
+temperature = results.get_timeseries_by_name("Surface Air Temperature Change")
 print(f"{temperature.values()[-1]:.2f} K in 2100")
 ```
 
@@ -140,7 +140,7 @@ from rscm.core import VariableSchema
 emissions = Timeseries(
     values=np.array([0.5, 10.0, 2.0]),
     time_axis=TimeAxis.from_bounds(np.array([1850.0, 2020.0, 2100.0, 2101.0])),
-    unit="GtC / yr",
+    unit="GtC/yr",
     interpolation_strategy=InterpolationStrategy.Linear,
 )
 
@@ -157,13 +157,13 @@ plus an aggregate that connects the two:
 
 ```python
 schema = VariableSchema()
-schema.add_variable("Emissions|CO2|Anthropogenic", "GtC / yr")
-schema.add_variable("Atmospheric Concentration|CO2", "ppm")
+schema.add_variable("Emissions|CO2", "GtC/yr")
+schema.add_variable("Atmospheric Concentrations|CO2", "ppm")
 schema.add_variable("Cumulative Emissions|CO2", "Gt C")
-schema.add_variable("Cumulative Land Uptake", "Gt C")
+schema.add_variable("Cumulative Carbon Uptake|Land", "Gt C")
 schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
-schema.add_variable("Surface Temperature", "K")
-schema.add_variable("Deep Ocean Temperature", "K")
+schema.add_variable("Surface Air Temperature Change", "K")
+schema.add_variable("Ocean Temperature|Layer 2", "K")
 schema.add_aggregate(
     "Effective Radiative Forcing", "W/m^2", "sum", ["Effective Radiative Forcing|CO2"]
 )
@@ -180,14 +180,14 @@ model = (
     .with_component(carbon_cycle)
     .with_component(co2_erf)
     .with_component(two_layer)
-    .with_lag_for("Surface Temperature", "CarbonCycle")
-    .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
+    .with_lag_for("Surface Air Temperature Change", "CarbonCycle")
+    .with_prescribed_variable("Emissions|CO2", emissions)
     .with_initial_values({
-        "Atmospheric Concentration|CO2": 278.0,
+        "Atmospheric Concentrations|CO2": 278.0,
         "Cumulative Emissions|CO2": 0.0,
-        "Cumulative Land Uptake": 0.0,
-        "Surface Temperature": 0.0,
-        "Deep Ocean Temperature": 0.0,
+        "Cumulative Carbon Uptake|Land": 0.0,
+        "Surface Air Temperature Change": 0.0,
+        "Ocean Temperature|Layer 2": 0.0,
     })
 ).build()
 model.run()

@@ -16,7 +16,7 @@
 //!
 //! # Outputs
 //!
-//! - `Effective Radiative Forcing|Aerosol|Indirect` (W/m²) - Cloud indirect forcing
+//! - `Effective Radiative Forcing|Aerosols|Indirect Effect` (W/m²) - Cloud indirect forcing
 //!
 //! # Differences from MAGICC7
 //!
@@ -82,7 +82,7 @@ use serde::{Deserialize, Serialize};
     oc_emissions { name = "Emissions|OC", unit = "Mt OC/yr" },
 )]
 #[outputs(
-    indirect_erf { name = "Effective Radiative Forcing|Aerosol|Indirect", unit = "W/m^2" },
+    indirect_erf { name = "Effective Radiative Forcing|Aerosols|Indirect Effect", unit = "W/m^2" },
 )]
 pub struct AerosolIndirect {
     parameters: AerosolIndirectParameters,
@@ -368,7 +368,7 @@ mod tests {
             .map(|d| d.name.as_str())
             .collect();
 
-        assert!(output_names.contains(&"Effective Radiative Forcing|Aerosol|Indirect"));
+        assert!(output_names.contains(&"Effective Radiative Forcing|Aerosols|Indirect Effect"));
     }
 
     #[test]

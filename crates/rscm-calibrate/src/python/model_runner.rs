@@ -23,14 +23,14 @@ use std::sync::{Arc, Mutex};
 ///     # parameters is a dict like {"climate_sensitivity": 3.0, "ocean_diff": 1200.0}
 ///     # Build and run model...
 ///     return {
-///         "Temperature|Global": {2020.0: 1.2, 2021.0: 1.3, ...},
+///         "Surface Air Temperature Change": {2020.0: 1.2, 2021.0: 1.3, ...},
 ///         "OHC": {2020.0: 100.0, 2021.0: 105.0, ...}
 ///     }
 ///
 /// runner = ModelRunner(
 ///     model_factory=model_factory,
 ///     parameter_names=["climate_sensitivity", "ocean_diff"],
-///     output_variables=["Temperature|Global", "OHC"]
+///     output_variables=["Surface Air Temperature Change", "OHC"]
 /// )
 /// ```
 #[pyclass(name = "ModelRunner")]
@@ -74,12 +74,12 @@ impl PyModelRunner {
     /// ```python
     /// def my_model(parameters):
     ///     temp = parameters["sensitivity"] * parameters["forcing"]
-    ///     return {"Temperature": {2020.0: temp}}
+    ///     return {"Surface Air Temperature Change": {2020.0: temp}}
     ///
     /// runner = ModelRunner(
     ///     model_factory=my_model,
     ///     parameter_names=["sensitivity", "forcing"],
-    ///     output_variables=["Temperature"]
+    ///     output_variables=["Surface Air Temperature Change"]
     /// )
     /// ```
     #[new]

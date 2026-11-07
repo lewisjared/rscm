@@ -218,22 +218,10 @@ fn validate_unit_compatibility(
 
         Ok(UnitValidationResult::Compatible { factor })
     } else {
-        // Get dimensions for error message
-        let dim1 = parsed_existing
-            .dimension()
-            .map(|d| d.to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
-        let dim2 = parsed_new
-            .dimension()
-            .map(|d| d.to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
-
-        Err(RscmError::IncompatibleUnits {
-            variable: variable_name.to_string(),
-            unit1: existing_unit.to_string(),
-            unit2: new_unit.to_string(),
-            dim1,
-            dim2,
-        })
+        Err(RscmError::incompatible_units(
+            variable_name,
+            &parsed_existing,
+            &parsed_new,
+        ))
     }
 }

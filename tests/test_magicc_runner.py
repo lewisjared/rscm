@@ -6,6 +6,7 @@ import pytest
 
 from rscm.core import InterpolationStrategy, ModelBuilder, TimeAxis, Timeseries
 from rscm.magicc import ClimateUdebBuilder, CO2Emissions, GhgForcingBuilder, run_magicc
+from rscm.names import emissions_conversion_factor
 
 
 def _axis(years):
@@ -27,8 +28,10 @@ def test_preindustrial_equilibrium():
     )
     npt.assert_array_equal(result.years, years)
     npt.assert_allclose(result.values["Effective Radiative Forcing"], 0.0, atol=1e-12)
-    npt.assert_allclose(result.values["Surface Temperature"], 0.0, atol=1e-12)
-    assert result.sources["Atmospheric Concentration|CO2"] == "prescribed"
+    npt.assert_allclose(
+        result.values["Surface Air Temperature Change"], 0.0, atol=1e-12
+    )
+    assert result.sources["Atmospheric Concentrations|CO2"] == "prescribed"
 
 
 def test_initial_heat_uptake_respects_efficacy():
@@ -64,7 +67,7 @@ def test_forcing_has_same_boundary_as_concentrations(method):
     expected = [forcing.calculate_forcings(c, 722.0, 270.0)["CO2"] for c in conc["CO2"]]
     npt.assert_allclose(result.values["Effective Radiative Forcing"], expected)
     npt.assert_allclose(result.values["Heat Uptake"][0], expected[0])
-    assert result.values["Surface Temperature"][-1] > 0.0
+    assert result.values["Surface Air Temperature Change"][-1] > 0.0
 
 
 @pytest.mark.parametrize("land_fractions", [(0.42, 0.21), (0.3, 0.25)])
@@ -95,17 +98,17 @@ def test_calculated_forcing_matches_prescribed_climate_run(land_fractions):
             "Effective Radiative Forcing",
             Timeseries(expected_erf, axis, "W/m^2", InterpolationStrategy.Linear),
         )
-        .with_initial_values({"Surface Temperature": 0.0})
+        .with_initial_values({"Surface Air Temperature Change": 0.0})
         .build()
     )
     model.run()
     regional = (
         model.timeseries()
-        .get_four_box_timeseries_by_name("Surface Temperature")
+        .get_four_box_timeseries_by_name("Surface Air Temperature Change")
         .values()
     )
     npt.assert_allclose(
-        result.values["Surface Temperature"],
+        result.values["Surface Air Temperature Change"],
         regional @ (np.array([1 - nh_land, nh_land, 1 - sh_land, sh_land]) / 2),
     )
 
@@ -116,10 +119,11 @@ def test_partial_emissions_budget_and_concentration_replay():
     del conc["CO2"]
     rates = np.linspace(0.0, 12.0, len(years) - 1)
     rates = np.r_[rates, rates[-1]]
+    mt_co2_per_gtc = emissions_conversion_factor("Emissions|CO2")
     emissions = CO2Emissions(
         initial_concentration=278.0,
-        fossil=rates,
-        land_use=np.ones_like(rates),
+        fossil=rates * mt_co2_per_gtc,
+        biosphere=np.full_like(rates, mt_co2_per_gtc),
         land_uptake=np.full_like(rates, 0.5),
         ocean_uptake=np.full_like(rates, 0.25),
     )
@@ -127,13 +131,13 @@ def test_partial_emissions_budget_and_concentration_replay():
         _axis(years), conc, other_forcing=np.zeros(len(years)), co2_emissions=emissions
     )
     expected = 278.0 + np.r_[0.0, np.cumsum(rates[:-1] + 1.0 - 0.5 - 0.25) / 2.123]
-    npt.assert_allclose(result.values["Atmospheric Concentration|CO2"], expected)
-    assert result.sources["Atmospheric Concentration|CO2"] == "CO2Budget"
-    assert result.sources["Carbon Flux|Ocean"] == "prescribed"
+    npt.assert_allclose(result.values["Atmospheric Concentrations|CO2"], expected)
+    assert result.sources["Atmospheric Concentrations|CO2"] == "CO2Budget"
+    assert result.sources["Net Atmosphere to Ocean Flux|CO2"] == "prescribed"
 
-    conc["CO2"] = result.values["Atmospheric Concentration|CO2"]
+    conc["CO2"] = result.values["Atmospheric Concentrations|CO2"]
     replay = run_magicc(_axis(years), conc, other_forcing=np.zeros(len(years)))
-    for variable in ("Effective Radiative Forcing", "Surface Temperature"):
+    for variable in ("Effective Radiative Forcing", "Surface Air Temperature Change"):
         npt.assert_allclose(
             result.values[variable], replay.values[variable], atol=1e-12
         )

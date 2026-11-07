@@ -123,7 +123,7 @@ With OLBL, MAGICC7 recalculates `CORE_DELQ2XCO2` every year as
 $f_{CO2} \, \alpha_{CO2} \ln 2$ at the current concentrations,
 so the climate feedback parameter changes as CO2 rises.
 With IPCCTAR it keeps the configured value.
-`GhgForcing` reports this as `Effective Radiative Forcing|2xCO2`, which `ClimateUdeb` reads.
+`GhgForcing` reports this as `2xCO2 Effective Radiative Forcing`, which `ClimateUdeb` reads.
 
 ## Inputs and outputs
 

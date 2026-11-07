@@ -153,11 +153,11 @@ pub trait LikelihoodFn {
 /// let likelihood = GaussianLikelihood::new();
 ///
 /// let mut target = Target::new();
-/// target.add_variable("Temperature")
+/// target.add_variable("Surface Air Temperature Change")
 ///     .add(2020.0, 1.2, 0.1).unwrap();
 ///
 /// let mut output = ModelOutput::new();
-/// let mut var = VariableOutput::new("Temperature");
+/// let mut var = VariableOutput::new("Surface Air Temperature Change");
 /// var.add(2020.0, 1.15);
 /// output.add_variable(var);
 ///

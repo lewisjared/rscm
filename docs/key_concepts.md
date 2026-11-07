@@ -62,8 +62,8 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
     class SimpleCarbonCycle(Component):
         # Declare variables using descriptors
         emissions = Input("Emissions|CO2", unit="GtCO2")
-        concentration = State("Atmospheric Concentration|CO2", unit="ppm")
-        uptake = Output("Land Uptake|CO2", unit="GtC")
+        concentration = State("Atmospheric Concentrations|CO2", unit="ppm")
+        uptake = Output("Net Atmosphere to Land Flux|CO2", unit="GtC")
 
         def __init__(self, sensitivity: float):
             self.sensitivity = sensitivity
@@ -88,10 +88,10 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
         emissions { name = "Emissions|CO2", unit = "GtCO2" },
     )]
     #[states(
-        concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+        concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
     )]
     #[outputs(
-        uptake { name = "Land Uptake|CO2", unit = "GtC" },
+        uptake { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC" },
     )]
     pub struct SimpleCarbonCycle {
         pub sensitivity: f64,
@@ -141,7 +141,7 @@ model = (
     .with_component(carbon_cycle)
     .with_component(temperature_response)
     .with_prescribed_variable("Emissions|CO2", emissions_ts)
-    .with_initial_values({"Atmospheric Concentration|CO2": 280.0})
+    .with_initial_values({"Atmospheric Concentrations|CO2": 280.0})
 ).build()
 ```
 
@@ -162,8 +162,8 @@ needs one of its edges to read the previous step's value.
 This is a **lag**, and the model wiring names it:
 
 ```python
-builder.with_lag("Surface Temperature")  # every consumer reads last step's temperature
-builder.with_lag_for("Atmospheric Concentration|CO2", "OceanCarbon")  # only OceanCarbon lags
+builder.with_lag("Surface Air Temperature Change")  # every consumer reads last step's temperature
+builder.with_lag_for("Atmospheric Concentrations|CO2", "OceanCarbon")  # only OceanCarbon lags
 ```
 
 `with_lag(variable)` lags every edge from the variable.
@@ -267,7 +267,7 @@ model.run()
 
 # Access results
 results = model.timeseries()
-temp = results.get_timeseries_by_name("Surface Temperature")
+temp = results.get_timeseries_by_name("Surface Air Temperature Change")
 ```
 
 `step()` and `run()` raise `RuntimeError` when a component fails.
@@ -364,8 +364,8 @@ A point holds at an instant, such as a concentration, a carbon pool or temperatu
 An average holds over a whole step, such as emissions, a flux or a lifetime.
 
 The unit sets the default.
-A unit per time, such as `GtC / yr`, makes an average,
-and anything else makes a point, including `W / m^2` and `yr`.
+A unit per time, such as `GtC/yr`, makes an average,
+and anything else makes a point, including `W/m^2` and `yr`.
 Declare the type where the default is wrong, as for a lifetime:
 
 ```python
@@ -438,7 +438,7 @@ from rscm.core import Timeseries, InterpolationStrategy
 emissions = Timeseries(
     values=np.array([0.0, 10.0, 15.0]),
     time_axis=TimeAxis.from_values(np.array([1850.0, 2000.0, 2100.0])),
-    unit="GtC / yr",
+    unit="GtC/yr",
     interpolation_strategy=InterpolationStrategy.Linear,
 )
 ```
@@ -463,7 +463,7 @@ The `Timeseries` constructor requires a strategy.
 ts = Timeseries(
     np.array([0.0, 10.0, 20.0]),
     TimeAxis.from_values(np.array([2000.0, 2010.0, 2020.0])),
-    "GtC / yr",
+    "GtC/yr",
     InterpolationStrategy.Linear,
 )
 ts.at_time(2005.0)  # 5.0
@@ -492,7 +492,7 @@ from rscm.core import TimeseriesCollection
 
 collection = TimeseriesCollection()
 collection.add_timeseries("Emissions|CO2", emissions_ts)
-collection.add_timeseries("Surface Temperature", temp_ts)
+collection.add_timeseries("Surface Air Temperature Change", temp_ts)
 
 # Access by name
 ts = collection.get_timeseries_by_name("Emissions|CO2")
@@ -506,8 +506,21 @@ the quantity, then the species, then the sector, then any further breakdown.
 For example `Emissions|CO2|Fossil` is the fossil sector of the CO2 emissions.
 
 - A child segment is always a part or breakdown of its parent.
-- Other qualifiers lead the first segment, as in `Atmospheric Concentration|CO2`.
+- Other qualifiers lead the first segment, as in `Prescribed Atmospheric Concentrations|CO2` or `Net Emissions|CO2`.
 - The grid is metadata on the variable, not part of its name.
+- Quantities are spelt out in full. Chemical formulae such as `CO2` and `NOx` stay as formulae.
+- Emissions use the gcages mass basis: `Mt CO2/yr`, `Mt SO2/yr`, `Mt NO2/yr`, `kt N2O/yr`, `Mt VOC/yr`,
+  `Mt CH4/yr` and `kt <halocarbon>/yr`.
+
+Two names for gas in the atmosphere mean different things.
+`Airborne Emissions|<species>` (FaIR) is the part of the cumulative emissions still in the atmosphere,
+so it excludes the pre-industrial background.
+`Atmospheric Burden|CH4|<source>` (MAGICC) is the CH4 mass in the atmosphere attributed to a source,
+including the natural background under `Natural`.
+
+`rscm.names` (`rscm_core::names` in Rust) holds the names that more than one component or module uses.
+`rscm.names.convert_variable_name` maps MAGICC7 and RCMIP names, such as `Emissions|CO2|MAGICC AFOLU`,
+to RSCM names.
 
 ## Variable Schema
 
@@ -533,12 +546,12 @@ from rscm.core import VariableSchema
 schema = VariableSchema()
 
 # Declare individual variables
-schema.add_variable("ERF|CO2", "W/m^2")
-schema.add_variable("ERF|CH4", "W/m^2")
-schema.add_variable("ERF|N2O", "W/m^2")
+schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
+schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
+schema.add_variable("Effective Radiative Forcing|N2O", "W/m^2")
 
 # Declare an aggregate and its contributors
-schema.add_aggregate("ERF|GHG", "W/m^2", "sum", ["ERF|CO2", "ERF|CH4", "ERF|N2O"])
+schema.add_aggregate("Effective Radiative Forcing|Greenhouse Gases", "W/m^2", "sum", ["Effective Radiative Forcing|CO2", "Effective Radiative Forcing|CH4", "Effective Radiative Forcing|N2O"])
 
 schema.validate()
 ```

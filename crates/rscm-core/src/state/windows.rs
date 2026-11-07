@@ -914,14 +914,14 @@ mod grid_timeseries_window_tests {
 
     #[test]
     #[should_panic(
-        expected = "Variable 'Surface Temperature' has 3 values, so index 3 is out of range"
+        expected = "Variable 'Surface Air Temperature Change' has 3 values, so index 3 is out of range"
     )]
     fn test_grid_window_get_upstream_at_last_index_panics() {
         let ts = create_four_box_timeseries();
         let window = GridTimeseriesWindow::with_source(
             &ts,
             2,
-            "Surface Temperature",
+            "Surface Air Temperature Change",
             1.0,
             VariableSource::Upstream,
         );

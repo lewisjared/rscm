@@ -34,7 +34,6 @@ from rscm.core import (
 from rscm.magicc.runner import (
     CH4_OTHER_LIFETIMES,
     CONCENTRATION,
-    ERF,
     SPECIES,
     MagiccResult,
     _average_series,
@@ -46,6 +45,7 @@ from rscm.magicc.runner import (
     _series,
     _validate_axis,
 )
+from rscm.names import EMISSIONS_UNITS, ERF, SURFACE_AIR_TEMPERATURE_CHANGE
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -72,7 +72,7 @@ COMPONENTS = {
 }
 # Chemistry and the carbon cycle read last year's temperature,
 # and the carbon sinks last year's CO2.
-_LAG = ("Surface Temperature",)
+_LAG = (SURFACE_AIR_TEMPERATURE_CHANGE,)
 _LAG_FOR = (
     (CONCENTRATION + "CO2", "TerrestrialCarbon"),
     (CONCENTRATION + "CO2", "OceanCarbon"),
@@ -83,23 +83,23 @@ CH4_MIXBOX_SIZE = 0.973
 CH4_BUDGET_PARAMETERS = ("tg_per_ppb", "mixing_box_size", "natural_emissions")
 
 EMISSION_VARIABLES = {
-    "co2_fossil": ("Emissions|CO2|Fossil", "GtC/yr"),
-    "co2_land_use": ("Emissions|CO2|Land Use", "GtC/yr"),
-    "ch4": ("Emissions|CH4", "Mt CH4/yr"),
-    "ch4_fossil": ("Emissions|CH4|Fossil", "Mt CH4/yr"),
-    "n2o": ("Emissions|N2O", "Mt N/yr"),
-    "nox": ("Emissions|NOx", "Mt N/yr"),
-    "co": ("Emissions|CO", "Mt CO/yr"),
-    "nmvoc": ("Emissions|NMVOC", "Mt NMVOC/yr"),
+    "co2_fossil": ("Emissions|CO2|Fossil", EMISSIONS_UNITS["CO2"]),
+    "co2_biosphere": ("Emissions|CO2|Biosphere", EMISSIONS_UNITS["CO2"]),
+    "ch4": ("Emissions|CH4", EMISSIONS_UNITS["CH4"]),
+    "ch4_fossil": ("Emissions|CH4|Fossil", EMISSIONS_UNITS["CH4"]),
+    "n2o": ("Emissions|N2O", EMISSIONS_UNITS["N2O"]),
+    "nox": ("Emissions|NOx", EMISSIONS_UNITS["NOx"]),
+    "co": ("Emissions|CO", EMISSIONS_UNITS["CO"]),
+    "nmvoc": ("Emissions|NMVOC", EMISSIONS_UNITS["NMVOC"]),
 }
 
 # Calculated variables with their units and sources.
 CALCULATED = {
     "Lifetime|CH4": ("yr", "CH4Chemistry"),
     "Lifetime|CH4|OH": ("yr", "CH4Chemistry"),
-    "Lifetime|CH4|Effective": ("yr", "CH4Chemistry"),
+    "Effective Lifetime|CH4": ("yr", "CH4Chemistry"),
     "Atmospheric Burden|CH4|Fossil": ("Mt CH4", "CH4Oxidation"),
-    "Atmospheric Burden|CH4|AFOLU": ("Mt CH4", "CH4Oxidation"),
+    "Atmospheric Burden|CH4|Biosphere": ("Mt CH4", "CH4Oxidation"),
     "Atmospheric Burden|CH4|Natural": ("Mt CH4", "CH4Oxidation"),
     "Atmospheric Burden|CH4|Permafrost": ("Mt CH4", "CH4Oxidation"),
     "Emissions|CO2|CH4 Oxidation": ("GtC/yr", "CH4Oxidation"),
@@ -107,26 +107,28 @@ CALCULATED = {
     "Carbon Pool|Plant": ("GtC", "TerrestrialCarbon"),
     "Carbon Pool|Detritus": ("GtC", "TerrestrialCarbon"),
     "Carbon Pool|Soil": ("GtC", "TerrestrialCarbon"),
-    "Carbon Flux|Terrestrial": ("GtC/yr", "TerrestrialCarbon"),
+    "Net Atmosphere to Land Flux|CO2": ("GtC/yr", "TerrestrialCarbon"),
     "Emissions|CO2|Gross Deforestation": ("GtC/yr", "TerrestrialCarbon"),
     "Carbon Flux|Regrowth": ("GtC/yr", "TerrestrialCarbon"),
     "Net Primary Production": ("GtC/yr", "TerrestrialCarbon"),
-    "Respiration|Terrestrial": ("GtC/yr", "TerrestrialCarbon"),
-    "Ocean Surface pCO2": ("ppm", "OceanCarbon"),
-    "Cumulative Ocean Uptake": ("GtC", "OceanCarbon"),
-    "Carbon Flux|Ocean": ("GtC/yr", "OceanCarbon"),
-    "End-of-Year Atmospheric CO2": ("ppm", "OceanCarbon"),
-    "Emissions|CO2|Net": ("GtC/yr", "CO2Budget"),
+    "Respiration|Land": ("GtC/yr", "TerrestrialCarbon"),
+    "Ocean Surface Partial Pressure|CO2": ("ppm", "OceanCarbon"),
+    "Cumulative Carbon Uptake|Ocean": ("GtC", "OceanCarbon"),
+    "Net Atmosphere to Ocean Flux|CO2": ("GtC/yr", "OceanCarbon"),
+    "Ocean Carbon Atmospheric Concentrations|CO2": ("ppm", "OceanCarbon"),
+    "Net Emissions|CO2": ("GtC/yr", "CO2Budget"),
     "Airborne Fraction|CO2": ("1", "CO2Budget"),
-    "Surface Temperature": ("K", "ClimateUdeb"),
+    SURFACE_AIR_TEMPERATURE_CHANGE: ("K", "ClimateUdeb"),
     "Sea Surface Temperature": ("K", "ClimateUdeb"),
     "Heat Uptake": ("W/m^2", "ClimateUdeb"),
-    "Ocean Heat Content": ("J/m^2", "ClimateUdeb"),
+    "Ocean Heat Content": ("J", "ClimateUdeb"),
 }
 
 
 # Per-step points, undefined at the first label.
-DIAGNOSTICS = frozenset({"End-of-Year Atmospheric CO2", "Airborne Fraction|CO2"})
+DIAGNOSTICS = frozenset(
+    {"Ocean Carbon Atmospheric Concentrations|CO2", "Airborne Fraction|CO2"}
+)
 
 
 @dataclass(frozen=True)
@@ -142,21 +144,21 @@ class Emissions:
     """
 
     co2_fossil: ArrayLike
-    """Fossil and industrial CO2 (GtC/yr)"""
-    co2_land_use: ArrayLike
-    """Land-use change CO2 (GtC/yr)"""
+    """Fossil and industrial CO2 (Mt CO2/yr)"""
+    co2_biosphere: ArrayLike
+    """Biosphere CO2, mostly from land-use change (Mt CO2/yr)"""
     ch4: ArrayLike
     """Anthropogenic CH4 (Mt CH4/yr)"""
     ch4_fossil: ArrayLike
     """Fossil and industrial CH4 (Mt CH4/yr)"""
     n2o: ArrayLike
-    """Anthropogenic N2O (Mt N/yr)"""
+    """Anthropogenic N2O (kt N2O/yr)"""
     nox: ArrayLike
-    """NOx (Mt N/yr)"""
+    """NOx (Mt NO2/yr)"""
     co: ArrayLike
     """CO (Mt CO/yr)"""
     nmvoc: ArrayLike
-    """NMVOC (Mt NMVOC/yr)"""
+    """NMVOC (Mt VOC/yr)"""
 
 
 def _validate_parameters(
@@ -206,7 +208,7 @@ def _share(
 def _schema(units: Mapping[str, str], contributors: tuple[str, ...]) -> VariableSchema:
     schema = _base_schema()
     for name, unit in units.items():
-        if name == "Surface Temperature":
+        if name == SURFACE_AIR_TEMPERATURE_CHANGE:
             schema.add_variable(name, unit, GridType.FourBox)
         elif name != ERF:
             schema.add_variable(name, unit)
@@ -219,7 +221,7 @@ def _variables(
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Units and sources of every variable, given the prescribed inputs."""
     units = {name: unit for name, unit in EMISSION_VARIABLES.values()}
-    units["Emissions|CH4|AFOLU"] = "Mt CH4/yr"
+    units["Emissions|CH4|Biosphere"] = EMISSIONS_UNITS["CH4"]
     units[ERF + "|Other"] = "W/m^2"
     sources = {**dict.fromkeys(data, "prescribed"), ERF: "sum"}
     owners = {"CO2": "CO2Budget", "CH4": "CH4Chemistry", "N2O": "N2OChemistry"}
@@ -283,7 +285,9 @@ def run_magicc_emissions(  # noqa: PLR0913
     if np.any(data["Emissions|CH4|Fossil"] > data["Emissions|CH4"]):
         msg = "ch4_fossil must not exceed total anthropogenic ch4"
         raise ValueError(msg)
-    data["Emissions|CH4|AFOLU"] = data["Emissions|CH4"] - data["Emissions|CH4|Fossil"]
+    data["Emissions|CH4|Biosphere"] = (
+        data["Emissions|CH4"] - data["Emissions|CH4|Fossil"]
+    )
     data[ERF + "|Other"] = _series("other_forcing", other_forcing, len(time))
     units, sources = _variables(data)
 
@@ -310,8 +314,8 @@ def run_magicc_emissions(  # noqa: PLR0913
             float(params["CH4Chemistry"].get("tg_per_ppb", CH4_PPB_TO_TG)),
             float(params["CH4Chemistry"].get("mixing_box_size", CH4_MIXBOX_SIZE)),
         ),
-        "Ocean Surface pCO2": initial_conc["CO2"],
-        "Cumulative Ocean Uptake": 0.0,
+        "Ocean Surface Partial Pressure|CO2": initial_conc["CO2"],
+        "Cumulative Carbon Uptake|Ocean": 0.0,
         **{
             f"Carbon Pool|{pool.title()}": float(
                 terrestrial.get(f"{pool}_pool_pi", default)

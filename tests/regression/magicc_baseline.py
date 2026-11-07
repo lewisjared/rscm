@@ -16,13 +16,17 @@ import pandas as pd
 import rscm._lib as rust_lib
 from rscm.core import ModelBuilder, TimeAxis
 from rscm.magicc import ClimateUdebBuilder, GhgForcingBuilder, run_magicc
+from rscm.names import ERF, SURFACE_AIR_TEMPERATURE_CHANGE, convert_variable_name
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(__file__).parent / "data" / "magicc_baseline"
 CASE = "01_concentration_driven"
 GASES = ("CO2", "CH4", "N2O")
-ERF = "Effective Radiative Forcing"
-OBSERVABLES = (*(f"{ERF}|{gas}" for gas in GASES), ERF, "Surface Temperature")
+OBSERVABLES = (
+    *(f"{ERF}|{gas}" for gas in GASES),
+    ERF,
+    SURFACE_AIR_TEMPERATURE_CHANGE,
+)
 META = ("climate_model", "model", "region", "scenario", "todo", "unit", "variable")
 UNITS = {
     **{
@@ -30,7 +34,7 @@ UNITS = {
         for g in GASES
     },
     **{v: {"W / m^2", "W/m^2"} for v in OBSERVABLES[:-1]},
-    "Surface Temperature": {"K"},
+    SURFACE_AIR_TEMPERATURE_CHANGE: {"K"},
 }
 
 
@@ -65,7 +69,7 @@ def load_case(data_dir: Path) -> tuple[list[str], dict, dict, dict]:
                 msg = "Row width does not match header"
                 raise ValueError(msg)
             row = dict(zip(header, cells, strict=True))
-            variable = row["variable"]
+            variable = convert_variable_name(row["variable"])
             if variable not in UNITS:
                 continue
             if variable in series or row["region"] != "World":
@@ -139,7 +143,7 @@ def effective_parameters(forcing: dict, climate: dict) -> dict:
         .with_time_axis(TimeAxis.from_values(np.array([1750.0, 1751.0])))
         .with_component(GhgForcingBuilder.from_parameters(forcing).build())
         .with_component(ClimateUdebBuilder.from_parameters(climate).build())
-        .with_initial_values({"Surface Temperature": 0.0})
+        .with_initial_values({SURFACE_AIR_TEMPERATURE_CHANGE: 0.0})
         # Built only to serialise parameters, never run.
         .with_missing_prescribed_allowed()
         .build()

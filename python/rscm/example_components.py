@@ -36,13 +36,13 @@ class LinearConcentration(Component):
     """
 
     # Declare inputs
-    emissions = Input("Emissions|CO2", unit="GtCO2 / yr")
+    emissions = Input("Emissions|CO2", unit="GtCO2/yr")
 
     # Declare state variables (read previous value, write new value)
-    concentration = State("Atmospheric Concentration|CO2", unit="ppm")
+    concentration = State("Atmospheric Concentrations|CO2", unit="ppm")
 
     # Declare outputs
-    airborne_emissions = Output("Airborne Emissions|CO2", unit="GtCO2 / yr")
+    airborne_emissions = Output("Airborne Emissions|CO2", unit="GtCO2/yr")
 
     def __init__(
         self,

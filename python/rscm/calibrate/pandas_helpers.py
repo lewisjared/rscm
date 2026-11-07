@@ -136,16 +136,16 @@ def target_from_dataframe(
     ...     }
     ... )
     >>> target = Target.from_dataframe(df)
-    >>> target.add_variable("Temperature|Global", df)
+    >>> target.add_variable("Surface Air Temperature Change", df)
 
     >>> # Multiple variables
     >>> df = pd.DataFrame(
     ...     {
     ...         "variable": [
-    ...             "Temperature|Global",
-    ...             "Temperature|Global",
-    ...             "OHC|Total",
-    ...             "OHC|Total",
+    ...             "Surface Air Temperature Change",
+    ...             "Surface Air Temperature Change",
+    ...             "Ocean Heat Content",
+    ...             "Ocean Heat Content",
     ...         ],
     ...         "time": [1950, 2000, 1950, 2000],
     ...         "value": [0.5, 1.0, 100, 200],

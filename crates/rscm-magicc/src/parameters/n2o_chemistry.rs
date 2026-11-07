@@ -99,7 +99,7 @@ pub struct N2OChemistryParameters {
     /// default: 1980.0
     pub meridional_flux_reference_year: FloatValue,
 
-    /// Last year of concentrations prescribed by `Atmospheric Concentration|N2O|Prescribed`,
+    /// Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|N2O`,
     /// or `None` to calculate them from emissions throughout.
     /// MAGICC7: N2O_SWITCHFROMCONC2EMIS_YEAR
     pub concentration_switch_year: Option<FloatValue>,

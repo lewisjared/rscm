@@ -17,10 +17,10 @@
 //!
 //! #[derive(ComponentIO)]
 //! #[inputs(
-//!     concentration_co2 { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+//!     concentration_co2 { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 //! )]
 //! #[outputs(
-//!     erf_co2 { name = "Effective Radiative Forcing|CO2", unit = "W / m^2" },
+//!     erf_co2 { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
 //! )]
 //! pub struct CO2ErfComponent {
 //!     // Only actual parameters - no phantom fields needed

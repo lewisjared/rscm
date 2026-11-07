@@ -20,7 +20,7 @@
 //!
 //! # Outputs
 //!
-//! - `Effective Radiative Forcing|Aerosol|Direct` (W/m², FourBox) - Regional direct aerosol forcing
+//! - `Effective Radiative Forcing|Aerosols|Direct Effect` (W/m², FourBox) - Regional direct aerosol forcing
 //!
 //! # Differences from MAGICC7
 //!
@@ -82,7 +82,7 @@ use serde::{Deserialize, Serialize};
     nox_emissions { name = "Emissions|NOx", unit = "Mt N/yr" },
 )]
 #[outputs(
-    direct_erf { name = "Effective Radiative Forcing|Aerosol|Direct", unit = "W/m^2", grid = "four_box" },
+    direct_erf { name = "Effective Radiative Forcing|Aerosols|Direct Effect", unit = "W/m^2", grid = "four_box" },
 )]
 pub struct AerosolDirect {
     parameters: AerosolDirectParameters,
@@ -497,7 +497,7 @@ mod tests {
             .map(|d| d.name.as_str())
             .collect();
 
-        assert!(output_names.contains(&"Effective Radiative Forcing|Aerosol|Direct"));
+        assert!(output_names.contains(&"Effective Radiative Forcing|Aerosols|Direct Effect"));
     }
 
     #[test]

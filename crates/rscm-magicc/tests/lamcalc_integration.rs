@@ -671,10 +671,13 @@ mod climate_udeb_equilibrium {
                     panic!("solve_with_state failed at year {}: {:?}", year, e);
                 });
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             } else {
-                panic!("Year {}: Surface Temperature not found in output", year);
+                panic!(
+                    "Year {}: Surface Air Temperature Change not found in output",
+                    year
+                );
             }
 
             let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
@@ -774,7 +777,7 @@ mod climate_udeb_equilibrium {
                 .solve_with_state(t_current, t_next, &input_state, &mut state)
                 .expect("solve_with_state should succeed with zero forcing");
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             }
         }

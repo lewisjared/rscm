@@ -27,7 +27,7 @@
     {
       "rust_name": "ocean_heat_content",
       "name": "Ocean Heat Content",
-      "unit": "J/m^2",
+      "unit": "J",
       "grid": "scalar"
     },
     {
@@ -46,7 +46,7 @@
   "states": [
     {
       "rust_name": "surface_temperature",
-      "name": "Surface Temperature",
+      "name": "Surface Air Temperature Change",
       "unit": "K",
       "grid": "four_box"
     }

@@ -9,12 +9,10 @@
 use crate::constants::get;
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::RscmResult;
+use rscm_core::names::EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
-
-/// Default name of the EESC output.
-pub const EESC: &str = "Equivalent Effective Stratospheric Chlorine";
 
 /// One ozone-depleting halogen.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -54,7 +52,7 @@ fn default_br_cl_ratio() -> FloatValue {
 }
 
 fn default_output() -> String {
-    EESC.to_string()
+    EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE.to_string()
 }
 
 fn default_unit() -> String {

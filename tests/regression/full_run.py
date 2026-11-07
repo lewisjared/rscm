@@ -24,14 +24,26 @@ import pytest
 from rscm.core import TimeAxis
 from rscm.magicc import ForcingAggregationBuilder, HalocarbonChemistryBuilder, full
 from rscm.magicc import prescribed as pr
-from rscm.magicc.full import ERF, REGIONAL_FORCING, run_components
+from rscm.magicc.full import DIRECT, run_components
+from rscm.names import (
+    EFFICACY_ADJUSTED_ERF,
+    ERF,
+    ERF_2XCO2,
+    LIFETIME_CH4_OH,
+    SECTORS,
+    SURFACE_AIR_TEMPERATURE_CHANGE,
+    Convention,
+    convert_variable_name,
+    emissions_conversion_factor,
+    prescribed,
+)
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from rscm.core import Model
 
-__all__ = ["ERF", "REGIONAL_FORCING", "run_components"]
+__all__ = ["EFFICACY_ADJUSTED_ERF", "ERF", "run_components"]
 
 DATA = Path(__file__).parent / "data" / "full_run" / "01_ssp245_emissions"
 PERMAFROST = DATA.with_name("02_ssp245_emissions_permafrost")
@@ -63,7 +75,10 @@ def assert_close(actual: Any, expected: Any, err_msg: str = "") -> None:
 
 @dataclass(frozen=True)
 class FullRun:
-    """The reference run, indexed by variable and region."""
+    """The reference run, indexed by RSCM variable name and region.
+
+    Values keep MAGICC7's units.
+    """
 
     data: pd.DataFrame
     parameters: dict[str, Any]
@@ -96,9 +111,9 @@ def _read_data(stem: Path) -> pd.DataFrame:
     path = stem.with_name(stem.name + ".csv.gz")
     if not path.exists():
         pytest.skip(f"Reference data not found: {path}")
-    wide = pd.read_csv(path, float_precision="round_trip").set_index(
-        ["variable", "region"]
-    )
+    raw = pd.read_csv(path, float_precision="round_trip")
+    raw["variable"] = raw["variable"].map(convert_variable_name)
+    wide = raw.set_index(["variable", "region"])
     years = [c for c in wide.columns if c[:4].isdigit()]
     wide = wide[years]
     wide.columns = [int(c[:4]) for c in years]
@@ -188,35 +203,28 @@ def output(model: Model, name: str) -> NDArray[np.float64]:
     return series.values().copy()
 
 
-def emissions(run: FullRun) -> dict[str, NDArray[np.float64]]:
-    """The run's emissions, keyed as `rscm.magicc.full.run_magicc7` reads them."""
-    sectors = {"Fossil": "MAGICC Fossil and Industrial", "AFOLU": "MAGICC AFOLU"}
+def magicc7_emissions(run: FullRun) -> dict[str, NDArray[np.float64]]:
+    """The run's emissions in MAGICC7's units, keyed as for `full.run_magicc7`."""
     return {
         **{
-            f"{s}|{sector}": run.series(f"Emissions|{s}|{theirs}")
+            f"{s}|{sector}": run.series(f"Emissions|{s}|{sector}")
             for s in full.SECTORAL_EMISSIONS
-            for sector, theirs in sectors.items()
+            for sector in SECTORS
         },
         **{s: run.series(f"Emissions|{s}") for s in full.halocarbon_species()},
     }
 
 
-# MAGICC7 names of the prescribed agents, without the ERF prefix.
-PRESCRIBED = {
-    "SOx|Fossil": "Aerosols|Direct Effect|SOx|MAGICC Fossil and Industrial",
-    "SOx|AFOLU": "Aerosols|Direct Effect|SOx|MAGICC AFOLU",
-    "BC|Fossil": "Aerosols|Direct Effect|BC|MAGICC Fossil and Industrial",
-    "BC|AFOLU": "Aerosols|Direct Effect|BC|MAGICC AFOLU",
-    "OC|Fossil": "Aerosols|Direct Effect|OC|MAGICC Fossil and Industrial",
-    "OC|AFOLU": "Aerosols|Direct Effect|OC|MAGICC AFOLU",
-    "NO3|Fossil": "Aerosols|Direct Effect|NO3|MAGICC Fossil and Industrial",
-    "NO3|AFOLU": "Aerosols|Direct Effect|NO3|MAGICC AFOLU",
-    "Mineral Dust": "Aerosols|Direct Effect|Mineral Dust",
-    "Cloud Albedo": "Aerosols|Indirect Effect",
-    "BC on Snow": "Black Carbon on Snow",
-    "Land Use": "Land-use Change",
-    "Solar": "Solar",
-}
+def emissions(run: FullRun) -> dict[str, NDArray[np.float64]]:
+    """The run's emissions as `rscm.magicc.full.run_magicc7` reads them."""
+    return {
+        name: values * emissions_conversion_factor(f"Emissions|{name}")
+        for name, values in magicc7_emissions(run).items()
+    }
+
+
+# Agents MAGICC7 calculates before the run, without the ERF prefix.
+PRESCRIBED = (*full.PRESCRIBED_AGENTS, *full.BIOMASS_AGENTS)
 
 
 @cache
@@ -224,7 +232,10 @@ def prescribed_forcing() -> dict[str, NDArray[np.float64]]:
     """Four-box ERF of every agent MAGICC7 calculates before the run."""
     run = load()
     return full.prescribed_forcing(
-        run.years, emissions(run), run.parameters, full.load_inputs(run.parameters)
+        run.years,
+        magicc7_emissions(run),
+        run.parameters,
+        full.load_inputs(run.parameters),
     )
 
 
@@ -250,10 +261,14 @@ def prescribed_global_forcing(run: FullRun) -> dict[str, NDArray[np.float64]]:
     """
     p, y = run.parameters, run.years
     files = full.load_inputs(p)
-    em = emissions(run)
+    em = magicc7_emissions(run)
     boxes = full.prescribed_forcing(y, em, p, files)
-    out = {name: pr.area_mean(boxes[name]) for name in ("NO3|Fossil", "NO3|AFOLU")}
-    out["Cloud Albedo"] = pr.area_mean(boxes["Cloud Albedo"])
+    out = {
+        name: pr.area_mean(boxes[name])
+        for name in (f"{DIRECT}|NO3|{sector}" for sector in SECTORS)
+    }
+    indirect = "Aerosols|Indirect Effect"
+    out[indirect] = pr.area_mean(boxes[indirect])
     out["Solar"] = boxes["Solar"][:, 0]
     for species in ("SOx", "BC", "OC"):
         code = species.lower()
@@ -268,28 +283,30 @@ def prescribed_global_forcing(run: FullRun) -> dict[str, NDArray[np.float64]]:
             industrial,
             files[f"file_{code}b_rf"],
             fossil,
-            em[f"{species}|AFOLU"],
+            em[f"{species}|Biosphere"],
             target=float(pr.area_mean(raw[i]) - pr.area_mean(raw[0])),
             target_year=year,
         )
         factor = pr._harmonise(raw, y, year, target)
-        for sector, values in zip(("Fossil", "AFOLU"), unscaled):
-            out[f"{species}|{sector}"] = pr.area_mean(values) * factor
-    raw = pr._extend(files["file_bcsnow_rf"], y, em["BC|Fossil"] + em["BC|AFOLU"])
+        for sector, values in zip(SECTORS, unscaled, strict=True):
+            out[f"{DIRECT}|{species}|{sector}"] = pr.area_mean(values) * factor
+    raw = pr._extend(files["file_bcsnow_rf"], y, em["BC|Fossil"] + em["BC|Biosphere"])
     factor = pr._harmonise(raw, y, p["rf_bcsnow_albedo_yr"], p["rf_bcsnow_albedo_wm2"])
     snow = pr.area_mean(raw)
-    out["BC on Snow"] = snow * factor - snow[0] * factor
+    out["Black Carbon on Snow"] = snow * factor - snow[0] * factor
     land_use = files["file_landuse_rf"]
-    raw = pr._extend(land_use, y, np.cumsum(em["CO2|AFOLU"]), before=0.0)
+    raw = pr._extend(land_use, y, np.cumsum(em["CO2|Biosphere"]), before=0.0)
     factor = pr._harmonise(
         raw, y, p["rf_landuse_albedo_yr"], p["rf_landuse_albedo_wm2"]
     )
     hold = pr._hold_after(pr.area_mean(raw), y, p["rf_landuse_constantafteryr"])
-    out["Land Use"] = hold * factor
+    out["Land-use Change"] = hold * factor
     dust = pr.area_mean(raw)
     i = pr._switch_index(y, p["rf_mineraldust_dir_yr"])
     scaled = dust * (p["rf_mineraldust_dir_wm2"] / (dust[i] - dust[0]))
-    out["Mineral Dust"] = pr._hold_after(scaled, y, p["rf_mineraldust_constantafteryr"])
+    out[f"{DIRECT}|Mineral Dust"] = pr._hold_after(
+        scaled, y, p["rf_mineraldust_constantafteryr"]
+    )
     return out
 
 
@@ -306,10 +323,9 @@ class Reported:
         self.model = model
         p = run.parameters
         climate = climate_parameters(run)
-        prescribed = full.prescribed_forcing(
-            run.years, emissions(run), p, full.load_inputs(p)
-        )
-        agents = full.forcing_agents(p, run.years, prescribed, emissions(run))
+        em = magicc7_emissions(run)
+        prescribed = full.prescribed_forcing(run.years, em, p, full.load_inputs(p))
+        agents = full.forcing_agents(p, run.years, prescribed, em)
         aggregation = ForcingAggregationBuilder.from_parameters(
             {
                 "agents": agents,
@@ -321,7 +337,7 @@ class Reported:
             climate["ecs"], full.EFFICACY_ERF_2XCO2
         )
         ecs = output(model, "Equilibrium Climate Sensitivity")
-        erf_2xco2 = output(model, f"{ERF}|2xCO2")
+        erf_2xco2 = output(model, ERF_2XCO2)
         # Each year applies the internal efficacies of the previous year's climate.
         internal = [initial] + [
             aggregation.internal_efficacies(e, q) if np.isfinite(e) else initial
@@ -335,9 +351,9 @@ class Reported:
     def erf(self, agent: str, forcing: NDArray[np.float64]) -> NDArray[np.float64]:
         """Reported ERF of `agent` from the forcing before efficacies.
 
-        An AFOLU aerosol takes the internal efficacy of its fossil counterpart.
+        A biosphere aerosol takes the internal efficacy of its fossil counterpart.
         """
-        i = self._names.index(agent.replace("|AFOLU", "|Fossil"))
+        i = self._names.index(agent.replace("|Biosphere", "|Fossil"))
         inteff = self._internal[:, i]
         if forcing.ndim == 2:
             inteff = inteff[:, None]
@@ -351,7 +367,7 @@ class Reported:
         """Global species forcing from the run's concentrations, before box split."""
         species = full.halocarbon_species()
         concentrations = {
-            s: output(self.model, f"Atmospheric Concentration|{s}") for s in species
+            s: output(self.model, f"Atmospheric Concentrations|{s}") for s in species
         }
         n = len(self.run.years)
         component = HalocarbonChemistryBuilder.from_parameters(
@@ -362,15 +378,15 @@ class Reported:
             [component],
             prescribed={
                 **{
-                    f"Atmospheric Concentration|{s}|Prescribed": (c, "ppt")
+                    prescribed(f"Atmospheric Concentrations|{s}"): (c, "ppt")
                     for s, c in concentrations.items()
                 },
-                **{f"Emissions|{s}": (np.zeros(n), "kt/yr") for s in species},
-                "Lifetime|CH4|OH": (np.ones(n), "yr"),
-                "Surface Temperature": (np.zeros(n), "K"),
+                **{f"Emissions|{s}": (np.zeros(n), f"kt {s}/yr") for s in species},
+                LIFETIME_CH4_OH: (np.ones(n), "yr"),
+                SURFACE_AIR_TEMPERATURE_CHANGE: (np.zeros(n), "K"),
             },
             initial_values={
-                f"Atmospheric Concentration|{s}": c[0]
+                f"Atmospheric Concentrations|{s}": c[0]
                 for s, c in concentrations.items()
             },
         )
@@ -392,15 +408,15 @@ class Reported:
                 "CO2",
                 "CH4",
                 "N2O",
-                "Stratospheric Ozone",
-                "Ozone due to N2O",
-                "Ozone due to Temperature",
+                "Ozone|Stratospheric",
+                "Ozone|N2O Feedback",
+                "Ozone|Temperature Feedback",
                 "CH4 Oxidation Stratospheric H2O",
             )
         }
         for group in ("F-Gases", "Montreal Protocol Halogen Gases"):
             leaves[group] = self.halocarbons(group)
-        trop = "Tropospheric Ozone"
+        trop = "Ozone|Tropospheric"
         boxes = self.model.timeseries().get_four_box_timeseries_by_name(f"{ERF}|{trop}")
         leaves[trop] = self.erf(trop, pr.area_mean(boxes.values()))
         prescribed = prescribed_global_forcing(self.run)
@@ -423,7 +439,9 @@ class Reported:
 def default_model() -> Model:
     """`full.run_magicc7` with its packaged defaults on the reference emissions."""
     run = load_default()
-    return full.run_magicc7(run.time_axis, emissions(run))
+    return full.run_magicc7(
+        run.time_axis, magicc7_emissions(run), convention=Convention.MAGICC7
+    )
 
 
 @cache
@@ -440,9 +458,10 @@ def run_coupled(run: FullRun) -> Model:
     species = ("CO2", "CH4", "N2O", *full.halocarbon_species()[n_fgas:])
     return full.run_magicc7(
         run.time_axis,
-        emissions(run),
+        magicc7_emissions(run),
         parameters=run.parameters,
         initial_concentrations={
             s: run.series(f"Atmospheric Concentrations|{s}")[0] for s in species
         },
+        convention=Convention.MAGICC7,
     )

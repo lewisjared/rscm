@@ -16,6 +16,6 @@ mod ozone;
 
 pub use aerosol_direct::AerosolDirect;
 pub use aerosol_indirect::AerosolIndirect;
-pub use aggregation::{ForcingAggregation, TOTAL_FORCING};
+pub use aggregation::ForcingAggregation;
 pub use ghg::GhgForcing;
 pub use ozone::OzoneForcing;

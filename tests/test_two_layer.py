@@ -34,7 +34,7 @@ def test_create_component():
     )
     # Add state variables required by TwoLayer
     collection.add_timeseries(
-        "Surface Temperature",
+        "Surface Air Temperature Change",
         Timeseries(
             np.asarray([0.0, 0.0]),
             time_axis,
@@ -43,7 +43,7 @@ def test_create_component():
         ),
     )
     collection.add_timeseries(
-        "Deep Ocean Temperature",
+        "Ocean Temperature|Layer 2",
         Timeseries(
             np.asarray([0.0, 0.0]),
             time_axis,

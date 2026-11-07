@@ -5,52 +5,44 @@
 //! # Inputs
 //!
 //! - `EESC` (ppt)
-//! - `Atmospheric Concentration|CH4` (ppb) and `Atmospheric Concentration|N2O` (ppb)
-//! - `Emissions|{NOx,CO,NMVOC}|{Fossil,AFOLU}` (Mt N/yr, Mt CO/yr and Mt NMVOC/yr)
-//! - `Surface Temperature` (K)
+//! - `Atmospheric Concentrations|CH4` (ppb) and `Atmospheric Concentrations|N2O` (ppb)
+//! - `Emissions|{NOx,CO,NMVOC}|{Fossil,Biosphere}` (Mt N/yr, Mt CO/yr and Mt NMVOC/yr)
+//! - `Surface Air Temperature Change` (K)
 //!
 //! # Outputs (W/m²) at the end of each year $Y$
 //!
-//! - `Effective Radiative Forcing|Stratospheric Ozone`:
+//! - `Effective Radiative Forcing|Ozone|Stratospheric`:
 //!   $s \max(0, (E_Y - E_{Y_0}) / 100)^{\beta}$ from the threshold year $Y_0$, zero before.
-//! - `Effective Radiative Forcing|Tropospheric Ozone`:
+//! - `Effective Radiative Forcing|Ozone|Tropospheric`:
 //!   $r o_{CH4} \ln(M_Y / M_0) + r [o_{NOx} \Delta NOx_{Y-1} + o_{CO} \Delta CO_{Y-1} + o_{VOC} \Delta VOC_{Y-1}]$,
 //!   four-box with `tropospheric_ozone_regions` as MAGICC7 spreads it within each hemisphere.
-//! - `Effective Radiative Forcing|Ozone due to N2O`: $k (N_Y - N_0)$
-//! - `Effective Radiative Forcing|Ozone due to Temperature`: $\gamma T_{Y-1}$
+//! - `Effective Radiative Forcing|Ozone|N2O Feedback`: $k (N_Y - N_0)$
+//! - `Effective Radiative Forcing|Ozone|Temperature Feedback`: $\gamma T_{Y-1}$
 //!
 //! Changes ($\Delta$) and the subscript 0 are relative to the first year of the run.
-//! Each change is the sum of the fossil and AFOLU changes, in MAGICC7's order.
+//! Each change is the sum of the fossil and biosphere changes, in MAGICC7's order.
 //! Aviation NOx is not separated from other NOx.
 
 use crate::parameters::OzoneForcingParameters;
 use crate::reference::{first_value, require_annual, value_at_year};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::RscmResult;
+use rscm_core::names::{
+    ATMOSPHERIC_CONCENTRATIONS_CH4, ATMOSPHERIC_CONCENTRATIONS_N2O,
+    EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE, ERF_OZONE_N2O_FEEDBACK, ERF_OZONE_STRATOSPHERIC,
+    ERF_OZONE_TEMPERATURE_FEEDBACK, ERF_OZONE_TROPOSPHERIC, SURFACE_AIR_TEMPERATURE_CHANGE,
+};
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 
-/// Stratospheric ozone ERF output.
-pub const STRAT_OZONE_FORCING: &str = "Effective Radiative Forcing|Stratospheric Ozone";
-/// Tropospheric ozone ERF output.
-pub const TROP_OZONE_FORCING: &str = "Effective Radiative Forcing|Tropospheric Ozone";
-/// ERF of ozone produced by N2O.
-pub const N2O_OZONE_FORCING: &str = "Effective Radiative Forcing|Ozone due to N2O";
-/// ERF of the ozone response to warming.
-pub const TEMPERATURE_OZONE_FORCING: &str = "Effective Radiative Forcing|Ozone due to Temperature";
-
-const EESC: &str = "EESC";
-const CH4: &str = "Atmospheric Concentration|CH4";
-const N2O: &str = "Atmospheric Concentration|N2O";
-/// Precursors with their emission units, each given as fossil and AFOLU sectors.
+/// Precursors with their emission units, each given as fossil and biosphere sectors.
 const PRECURSORS: [(&str, &str); 3] = [
     ("NOx", "Mt N/yr"),
     ("CO", "Mt CO/yr"),
     ("NMVOC", "Mt NMVOC/yr"),
 ];
-const SECTORS: [&str; 2] = ["Fossil", "AFOLU"];
-const TEMPERATURE: &str = "Surface Temperature";
+const SECTORS: [&str; 2] = ["Fossil", "Biosphere"];
 
 /// Ozone forcing component.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,9 +102,9 @@ impl Default for OzoneForcing {
 impl Component for OzoneForcing {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = vec![
-            VariableDefinition::scalar_input(EESC, "ppt"),
-            VariableDefinition::scalar_input(CH4, "ppb"),
-            VariableDefinition::scalar_input(N2O, "ppb"),
+            VariableDefinition::scalar_input(EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE, "ppt"),
+            VariableDefinition::scalar_input(ATMOSPHERIC_CONCENTRATIONS_CH4, "ppb"),
+            VariableDefinition::scalar_input(ATMOSPHERIC_CONCENTRATIONS_N2O, "ppb"),
         ];
         for (gas, unit) in PRECURSORS {
             for sector in SECTORS {
@@ -121,15 +113,15 @@ impl Component for OzoneForcing {
             }
         }
         definitions.extend([
-            VariableDefinition::scalar_input(TEMPERATURE, "K"),
-            VariableDefinition::scalar_output(STRAT_OZONE_FORCING, "W/m^2"),
+            VariableDefinition::scalar_input(SURFACE_AIR_TEMPERATURE_CHANGE, "K"),
+            VariableDefinition::scalar_output(ERF_OZONE_STRATOSPHERIC, "W/m^2"),
             if self.parameters.tropospheric_ozone_regions.is_some() {
-                VariableDefinition::four_box_output(TROP_OZONE_FORCING, "W/m^2")
+                VariableDefinition::four_box_output(ERF_OZONE_TROPOSPHERIC, "W/m^2")
             } else {
-                VariableDefinition::scalar_output(TROP_OZONE_FORCING, "W/m^2")
+                VariableDefinition::scalar_output(ERF_OZONE_TROPOSPHERIC, "W/m^2")
             },
-            VariableDefinition::scalar_output(N2O_OZONE_FORCING, "W/m^2"),
-            VariableDefinition::scalar_output(TEMPERATURE_OZONE_FORCING, "W/m^2"),
+            VariableDefinition::scalar_output(ERF_OZONE_N2O_FEEDBACK, "W/m^2"),
+            VariableDefinition::scalar_output(ERF_OZONE_TEMPERATURE_FEEDBACK, "W/m^2"),
         ]);
         definitions
     }
@@ -144,7 +136,7 @@ impl Component for OzoneForcing {
         let p = &self.parameters;
         let window = |name| input_state.get_scalar_window(name);
 
-        let eesc = window(EESC);
+        let eesc = window(EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE);
         let strat = if t_next < p.stratospheric_reference_year {
             0.0
         } else {
@@ -152,7 +144,7 @@ impl Component for OzoneForcing {
             self.strat_forcing(eesc.get(), threshold)
         };
 
-        let ch4 = window(CH4);
+        let ch4 = window(ATMOSPHERIC_CONCENTRATIONS_CH4);
         let change = |gas: &str| {
             let [fossil, afolu] = SECTORS
                 .map(|sector| input_state.get_scalar_window(&format!("Emissions|{gas}|{sector}")));
@@ -165,9 +157,9 @@ impl Component for OzoneForcing {
             change("NMVOC"),
         );
 
-        let n2o = window(N2O);
+        let n2o = window(ATMOSPHERIC_CONCENTRATIONS_N2O);
         let n2o_ozone = p.n2o_ozone_radiative_efficiency * (n2o.get() - first_value(&n2o));
-        let temperature = p.temperature_scale * window(TEMPERATURE).get();
+        let temperature = p.temperature_scale * window(SURFACE_AIR_TEMPERATURE_CHANGE).get();
 
         let trop = match &p.tropospheric_ozone_regions {
             Some(regions) => StateValue::FourBox(FourBoxSlice::from_array(
@@ -176,11 +168,11 @@ impl Component for OzoneForcing {
             None => StateValue::Scalar(trop),
         };
         let mut output = OutputState::new();
-        output.insert(TROP_OZONE_FORCING.to_string(), trop);
+        output.insert(ERF_OZONE_TROPOSPHERIC.to_string(), trop);
         for (name, value) in [
-            (STRAT_OZONE_FORCING, strat),
-            (N2O_OZONE_FORCING, n2o_ozone),
-            (TEMPERATURE_OZONE_FORCING, temperature),
+            (ERF_OZONE_STRATOSPHERIC, strat),
+            (ERF_OZONE_N2O_FEEDBACK, n2o_ozone),
+            (ERF_OZONE_TEMPERATURE_FEEDBACK, temperature),
         ] {
             output.insert(name.to_string(), StateValue::Scalar(value));
         }

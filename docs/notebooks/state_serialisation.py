@@ -61,7 +61,7 @@ time_axis = TimeAxis.from_values(
 emissions = Timeseries(
     np.asarray([0.0, 0.0, 10.0, 10.0]),
     TimeAxis.from_bounds(np.asarray([t_initial, 1800.0, 1850.0, 1900.0, t_final])),
-    "GtC / yr",
+    "GtC/yr",
     InterpolationStrategy.Previous,
 )
 surface_temp = Timeseries(
@@ -82,13 +82,13 @@ builder = (
         CO2ErfBuilder.from_parameters(dict(erf_2xco2=4.0, co2_pi=280.0)).build()
     )
     .with_time_axis(time_axis)
-    .with_prescribed_variable("Surface Temperature", surface_temp)
-    .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
+    .with_prescribed_variable("Surface Air Temperature Change", surface_temp)
+    .with_prescribed_variable("Emissions|CO2", emissions)
     .with_initial_values(
         {
-            "Cumulative Land Uptake": 0.0,
+            "Cumulative Carbon Uptake|Land": 0.0,
             "Cumulative Emissions|CO2": 0.0,
-            "Atmospheric Concentration|CO2": 300.0,
+            "Atmospheric Concentrations|CO2": 300.0,
         }
     )
 )
@@ -146,7 +146,7 @@ assert new_model.current_time() == model.current_time()
 new_model.run()
 model.run()
 
-variable = "Atmospheric Concentration|CO2"
+variable = "Atmospheric Concentrations|CO2"
 np.testing.assert_allclose(
     new_model.timeseries().get_timeseries_by_name(variable).values(),
     model.timeseries().get_timeseries_by_name(variable).values(),

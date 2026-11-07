@@ -321,7 +321,7 @@ mod tests {
     #[test]
     fn test_parse_io_attr_tokens() {
         // This tests the regex-based parsing
-        let tokens_str = r#"emissions { name = "Emissions|CO2", unit = "GtC / yr" }"#;
+        let tokens_str = r#"emissions { name = "Emissions|CO2", unit = "GtC/yr" }"#;
         let re = regex::Regex::new(
             r#"(\w+)\s*\{\s*name\s*=\s*"([^"]+)"(?:\s*,\s*unit\s*=\s*"([^"]*)")?(?:\s*,\s*grid\s*=\s*"([^"]*)")?(?:\s*,\s*timeseries_type\s*=\s*"[^"]*")?\s*\}"#,
         )
@@ -330,7 +330,7 @@ mod tests {
         let cap = re.captures(tokens_str).expect("Should match");
         assert_eq!(cap.get(1).unwrap().as_str(), "emissions");
         assert_eq!(cap.get(2).unwrap().as_str(), "Emissions|CO2");
-        assert_eq!(cap.get(3).unwrap().as_str(), "GtC / yr");
+        assert_eq!(cap.get(3).unwrap().as_str(), "GtC/yr");
 
         let tokens_str =
             r#"lifetime { name = "Lifetime|CH4", unit = "yr", timeseries_type = "average" }"#;

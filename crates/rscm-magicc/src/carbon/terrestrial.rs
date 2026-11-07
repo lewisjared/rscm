@@ -20,10 +20,10 @@
 //!
 //! # Inputs
 //!
-//! - `Atmospheric Concentration|CO2` (ppm)
-//! - `Surface Temperature` (K) - temperature anomaly. The feedbacks use the
+//! - `Atmospheric Concentrations|CO2` (ppm)
+//! - `Surface Air Temperature Change` (K) - temperature anomaly. The feedbacks use the
 //!   warming since `temperature_feedback_start_year`, floored at zero
-//! - `Emissions|CO2|Land Use` (GtC/yr)
+//! - `Emissions|CO2|Biosphere` (GtC/yr)
 //!
 //! # States (tracked between steps)
 //!
@@ -33,20 +33,21 @@
 //!
 //! # Outputs
 //!
-//! - `Carbon Flux|Terrestrial` (GtC/yr) - net flux (positive = land uptake)
+//! - `Net Atmosphere to Land Flux|CO2` (GtC/yr) - net flux (positive = land uptake)
 //! - `Emissions|CO2|Gross Deforestation` (GtC/yr)
 //! - `Carbon Flux|Regrowth` (GtC/yr)
 //! - `Net Primary Production` (GtC/yr)
-//! - `Respiration|Terrestrial` (GtC/yr)
+//! - `Respiration|Land` (GtC/yr)
 //!
 //! # Nitrogen limitation
 //!
 //! With the `nitrogen` parameter, NPP is limited by the nitrogen budget in
-//! [`super::nitrogen`]. This reads `Nitrogen Deposition` (Gt N/yr), and
-//! `Nitrogen Fixation` (Gt N/yr) unless fixation is prognostic,
+//! [`super::nitrogen`]. This reads `Nitrogen Flux|Deposition` (Gt N/yr), and
+//! `Nitrogen Flux|Fixation` (Gt N/yr) unless fixation is prognostic,
 //! and writes `Nitrogen Limitation Factor`, `Nitrogen Pool` (Gt N) and the
 //! `Nitrogen Flux|*` budget terms (Gt N/yr).
 
+use rscm_core::names::{NITROGEN_FLUX_DEPOSITION, NITROGEN_FLUX_FIXATION};
 use std::any::Any;
 
 use super::nitrogen::{NitrogenBudget, NitrogenDrivers, NitrogenState};
@@ -149,9 +150,9 @@ impl ComponentState for TerrestrialCarbonState {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "terrestrial", "magicc"], category = "Carbon Cycle")]
 #[inputs(
-    co2_concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
-    temperature { name = "Surface Temperature", unit = "K" },
-    landuse_emissions { name = "Emissions|CO2|Land Use", unit = "GtC/yr" },
+    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
+    landuse_emissions { name = "Emissions|CO2|Biosphere", unit = "GtC/yr" },
 )]
 #[states(
     plant_pool { name = "Carbon Pool|Plant", unit = "GtC" },
@@ -159,11 +160,11 @@ impl ComponentState for TerrestrialCarbonState {
     soil_pool { name = "Carbon Pool|Soil", unit = "GtC" },
 )]
 #[outputs(
-    net_flux { name = "Carbon Flux|Terrestrial", unit = "GtC/yr" },
+    net_flux { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr" },
     gross_deforestation { name = "Emissions|CO2|Gross Deforestation", unit = "GtC/yr" },
     total_regrowth { name = "Carbon Flux|Regrowth", unit = "GtC/yr" },
     npp { name = "Net Primary Production", unit = "GtC/yr" },
-    total_respiration { name = "Respiration|Terrestrial", unit = "GtC/yr" },
+    total_respiration { name = "Respiration|Land", unit = "GtC/yr" },
 )]
 pub struct TerrestrialCarbon {
     parameters: TerrestrialCarbonParameters,
@@ -737,11 +738,13 @@ impl TerrestrialCarbon {
         let nitrogen_inputs = match &self.parameters.nitrogen {
             None => (0.0, 0.0),
             Some(n) => (
-                input_state.get_scalar_window(NITROGEN_DEPOSITION).get(),
+                input_state
+                    .get_scalar_window(NITROGEN_FLUX_DEPOSITION)
+                    .get(),
                 if n.prognostic_fixation.is_some() {
                     0.0
                 } else {
-                    input_state.get_scalar_window(NITROGEN_FIXATION).get()
+                    input_state.get_scalar_window(NITROGEN_FLUX_FIXATION).get()
                 },
             ),
         };
@@ -780,21 +783,29 @@ impl TerrestrialCarbon {
                 budget.uptake,
                 budget.recycling,
                 budget.losses,
-                budget.fixation,
-                budget.deposition,
             ];
             for ((name, _, _), value) in NITROGEN_OUTPUTS.iter().zip(values) {
                 output.insert(name.to_string(), StateValue::Scalar(value));
             }
+            if self.prognostic_fixation() {
+                output.insert(
+                    NITROGEN_FLUX_FIXATION.to_string(),
+                    StateValue::Scalar(budget.fixation),
+                );
+            }
         }
         Ok(output)
     }
+
+    fn prognostic_fixation(&self) -> bool {
+        self.parameters
+            .nitrogen
+            .as_ref()
+            .is_some_and(|n| n.prognostic_fixation.is_some())
+    }
 }
 
-const NITROGEN_DEPOSITION: &str = "Nitrogen Deposition";
-const NITROGEN_FIXATION: &str = "Nitrogen Fixation";
-
-const NITROGEN_OUTPUTS: [(&str, &str, TimeseriesType); 7] = [
+const NITROGEN_OUTPUTS: [(&str, &str, TimeseriesType); 5] = [
     // The factor applied over a step, which MAGICC7 labels by the step's start
     ("Nitrogen Limitation Factor", "1", TimeseriesType::Average),
     ("Nitrogen Pool", "Gt N", TimeseriesType::Point),
@@ -805,12 +816,6 @@ const NITROGEN_OUTPUTS: [(&str, &str, TimeseriesType); 7] = [
         TimeseriesType::Average,
     ),
     ("Nitrogen Flux|Losses", "Gt N/yr", TimeseriesType::Average),
-    ("Nitrogen Flux|Fixation", "Gt N/yr", TimeseriesType::Average),
-    (
-        "Nitrogen Flux|Deposition",
-        "Gt N/yr",
-        TimeseriesType::Average,
-    ),
 ];
 
 /// Internal result struct for solve_terrestrial.
@@ -836,15 +841,15 @@ impl Component for TerrestrialCarbon {
         let mut definitions = Self::generated_definitions();
         if let Some(n) = &self.parameters.nitrogen {
             definitions.push(VariableDefinition::scalar_input(
-                NITROGEN_DEPOSITION,
+                NITROGEN_FLUX_DEPOSITION,
                 "Gt N/yr",
             ));
-            if n.prognostic_fixation.is_none() {
-                definitions.push(VariableDefinition::scalar_input(
-                    NITROGEN_FIXATION,
-                    "Gt N/yr",
-                ));
-            }
+            definitions.push(if n.prognostic_fixation.is_some() {
+                VariableDefinition::scalar_output(NITROGEN_FLUX_FIXATION, "Gt N/yr")
+                    .with_timeseries_type(TimeseriesType::Average)
+            } else {
+                VariableDefinition::scalar_input(NITROGEN_FLUX_FIXATION, "Gt N/yr")
+            });
             for (name, unit, timeseries_type) in NITROGEN_OUTPUTS {
                 definitions.push(
                     VariableDefinition::scalar_output(name, unit)
@@ -1239,15 +1244,15 @@ mod tests {
         );
 
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert!(names.contains(&"Atmospheric Concentration|CO2"));
-        assert!(names.contains(&"Surface Temperature"));
-        assert!(names.contains(&"Emissions|CO2|Land Use"));
+        assert!(names.contains(&"Atmospheric Concentrations|CO2"));
+        assert!(names.contains(&"Surface Air Temperature Change"));
+        assert!(names.contains(&"Emissions|CO2|Biosphere"));
         assert!(names.contains(&"Carbon Pool|Plant"));
         assert!(names.contains(&"Carbon Pool|Detritus"));
         assert!(names.contains(&"Carbon Pool|Soil"));
-        assert!(names.contains(&"Carbon Flux|Terrestrial"));
+        assert!(names.contains(&"Net Atmosphere to Land Flux|CO2"));
         assert!(names.contains(&"Net Primary Production"));
-        assert!(names.contains(&"Respiration|Terrestrial"));
+        assert!(names.contains(&"Respiration|Land"));
     }
 
     #[test]

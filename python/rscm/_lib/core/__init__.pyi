@@ -354,10 +354,13 @@ class VariableSchema:
     Examples
     --------
     >>> schema = VariableSchema()
-    >>> schema.add_variable("Emissions|CO2", "GtCO2/yr")
-    >>> schema.add_variable("Emissions|CH4", "GtCH4/yr")
+    >>> schema.add_variable("Emissions|CO2|Fossil", "Mt CO2/yr")
+    >>> schema.add_variable("Emissions|CO2|Biosphere", "Mt CO2/yr")
     >>> schema.add_aggregate(
-    ...     "Total Emissions", "GtCO2/yr", "sum", ["Emissions|CO2", "Emissions|CH4"]
+    ...     "Emissions|CO2",
+    ...     "Mt CO2/yr",
+    ...     "sum",
+    ...     ["Emissions|CO2|Fossil", "Emissions|CO2|Biosphere"],
     ... )
     >>> schema.validate()
     """

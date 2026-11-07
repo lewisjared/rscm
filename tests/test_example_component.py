@@ -31,7 +31,7 @@ def test_component_definitions():
     definitions = component.definitions()
     assert len(definitions) == 2
     assert definitions[0].name == "Emissions|CO2"
-    assert definitions[1].name == "Concentrations|CO2"
+    assert definitions[1].name == "Atmospheric Concentrations|CO2"
 
 
 def test_component_invalid():

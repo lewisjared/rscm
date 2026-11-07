@@ -354,12 +354,14 @@ class Target:
     Examples
     --------
     >>> target = Target()
-    >>> target.add_observation("Temperature|Global", 2020, 1.2, 0.1)
-    >>> target.add_observation("Temperature|Global", 2021, 1.3, 0.1)
-    >>> target.set_reference_period("Temperature|Global", 1850, 1900)
+    >>> target.add_observation("Surface Air Temperature Change", 2020, 1.2, 0.1)
+    >>> target.add_observation("Surface Air Temperature Change", 2021, 1.3, 0.1)
+    >>> target.set_reference_period("Surface Air Temperature Change", 1850, 1900)
     >>>
     >>> # Using relative uncertainty
-    >>> target.add_observation_relative("OHC|Total", 2020, 200, 0.1)  # 10% error
+    >>> target.add_observation_relative(
+    ...     "Ocean Heat Content", 2020, 200, 0.1
+    ... )  # 10% error
     """
 
     def __init__(self) -> None: ...
@@ -517,9 +519,11 @@ class ModelRunner:
     --------
     >>> def run_model(parameters):
     ...     # Run model with parameters
-    ...     return {"Temperature|Global": {2020: 1.2, 2021: 1.3}}
+    ...     return {"Surface Air Temperature Change": {2020: 1.2, 2021: 1.3}}
     >>>
-    >>> runner = ModelRunner(run_model, ["param1", "param2"], ["Temperature|Global"])
+    >>> runner = ModelRunner(
+    ...     run_model, ["param1", "param2"], ["Surface Air Temperature Change"]
+    ... )
     >>> result = runner.run([0.5, 1.0])
     """
 

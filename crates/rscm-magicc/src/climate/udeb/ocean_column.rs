@@ -6,7 +6,7 @@
 
 use super::{heat_capacity_per_metre, ClimateUdeb};
 use crate::climate::state::ClimateUdebState;
-use crate::parameters::{CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER};
+use crate::parameters::{CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, EARTH_SURFACE_AREA, RHO_SEAWATER};
 use rscm_core::state::FourBoxSlice;
 use rscm_core::timeseries::FloatValue;
 use rscm_core::utils::linear_algebra::thomas_solve_inplace;
@@ -221,28 +221,30 @@ impl ClimateUdeb {
         q_global - feedback_global
     }
 
-    /// Calculate total ocean heat content ($\text{J/m}^2$).
+    /// Calculate the global ocean heat content ($\text{J}$).
     ///
-    /// Integrates temperature anomaly over all ocean layers weighted by depth.
+    /// Integrates the temperature anomaly over the ocean layers and the ocean area of each hemisphere.
     pub(super) fn calculate_ocean_heat_content(&self, state: &ClimateUdebState) -> FloatValue {
         let dz = self.parameters.layer_thickness;
         let dz_mix = self.parameters.mixed_layer_depth;
 
         let rho_c = RHO_SEAWATER * CP_SEAWATER;
+        let ocean_area = [
+            self.parameters.nh_ocean_fraction(),
+            self.parameters.sh_ocean_fraction(),
+        ]
+        .map(|fraction| 0.5 * EARTH_SURFACE_AREA * fraction);
 
         let mut total_heat = 0.0;
 
-        for hemi in 0..2 {
-            // Mixed layer contribution
-            total_heat += rho_c * dz_mix * state.ocean_temps[hemi][0];
-
-            // Deep layer contributions
+        for (hemi, area) in ocean_area.iter().enumerate() {
+            let mut column = dz_mix * state.ocean_temps[hemi][0];
             for layer in 1..self.parameters.n_layers {
-                total_heat += rho_c * dz * state.ocean_temps[hemi][layer];
+                column += dz * state.ocean_temps[hemi][layer];
             }
+            total_heat += rho_c * column * area;
         }
 
-        // Average over both hemispheres
-        total_heat / 2.0
+        total_heat
     }
 }

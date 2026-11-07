@@ -40,7 +40,7 @@ ramp = np.linspace(0.1, 1.0, len(years))
 emissions = {
     f"{species}|{sector}": ramp
     for species in full.SECTORAL_EMISSIONS
-    for sector in ("Fossil", "AFOLU")
+    for sector in ("Fossil", "Biosphere")
 }
 emissions |= {species: np.zeros(len(years)) for species in full.halocarbon_species()}
 
@@ -48,17 +48,20 @@ model = run_magicc7(
     TimeAxis.from_values(years), emissions, parameters={"core_climatesensitivity": 3.0}
 )
 timeseries = model.timeseries()
-co2 = timeseries.get_timeseries_by_name("Atmospheric Concentration|CO2").values()
-boxes = timeseries.get_four_box_timeseries_by_name("Surface Temperature").values()
+co2 = timeseries.get_timeseries_by_name("Atmospheric Concentrations|CO2").values()
+boxes = timeseries.get_four_box_timeseries_by_name("Surface Air Temperature Change").values()
 temperature = boxes @ prescribed.area_fractions()
 ```
 
 The time axis has annual steps and should start in 1750, the year of MAGICC7's initial state.
 With the default parameters they must reach 2019,
 the year to which MAGICC7 scales its prescribed aerosol and land-use forcing.
-`emissions` holds one value per year for `"<species>|Fossil"` and `"<species>|AFOLU"`
+`emissions` holds one value per year for `"<species>|Fossil"` and `"<species>|Biosphere"`
 of each species in `full.SECTORAL_EMISSIONS`, in the units that mapping gives.
-It also holds one array per halocarbon in `full.halocarbon_species()`, in kt/yr.
+These are the gcages units, such as `Mt CO2/yr` and `Mt SO2/yr`.
+It also holds one array per halocarbon in `full.halocarbon_species()`, in kt of the gas per year.
+`convention=Convention.MAGICC7`, with `Convention` from `rscm.names`,
+takes the emissions in the units MAGICC7 reads instead, such as `GtC/yr` and `Mt S/yr`.
 Missing, unknown or misshapen emissions raise `ValueError`.
 
 The run returns the `Model` after its last step.
@@ -170,19 +173,19 @@ n = len(years)
 result = run_magicc_emissions(
     TimeAxis.from_values(years),
     Emissions(
-        co2_fossil=np.full(n, 8.0),     # GtC/yr
-        co2_land_use=np.full(n, 1.0),   # GtC/yr
-        ch4=np.full(n, 300.0),          # Mt CH4/yr, anthropogenic
-        ch4_fossil=np.full(n, 120.0),   # Mt CH4/yr, part of ch4
-        n2o=np.full(n, 7.0),            # Mt N/yr
-        nox=np.full(n, 40.0),           # Mt N/yr
-        co=np.full(n, 900.0),           # Mt CO/yr
-        nmvoc=np.full(n, 200.0),        # Mt NMVOC/yr
+        co2_fossil=np.full(n, 29000.0),   # Mt CO2/yr
+        co2_biosphere=np.full(n, 3700.0), # Mt CO2/yr
+        ch4=np.full(n, 300.0),            # Mt CH4/yr, anthropogenic
+        ch4_fossil=np.full(n, 120.0),     # Mt CH4/yr, part of ch4
+        n2o=np.full(n, 11000.0),          # kt N2O/yr
+        nox=np.full(n, 130.0),            # Mt NO2/yr
+        co=np.full(n, 900.0),             # Mt CO/yr
+        nmvoc=np.full(n, 200.0),          # Mt VOC/yr
     ),
     initial_concentrations={"CO2": 278.0, "CH4": 722.0, "N2O": 270.0},
     other_forcing=np.zeros(len(years)),
 )
-co2 = result.values["Atmospheric Concentration|CO2"]
+co2 = result.values["Atmospheric Concentrations|CO2"]
 ```
 
 Emissions are annual mean rates, one per supplied year.
@@ -266,7 +269,7 @@ result = run_magicc(
     forcing_species=("CO2",),
     forcing_parameters={"method": "IPCCTAR", "adjust_co2": 1.0},
 )
-temperature = result.values["Surface Temperature"]
+temperature = result.values["Surface Air Temperature Change"]
 forcing = result.values["Effective Radiative Forcing"]
 ```
 
@@ -295,23 +298,24 @@ emissions_result = run_magicc(
     other_forcing=np.zeros(n),
     co2_emissions=CO2Emissions(
         initial_concentration=278.0,
-        fossil=np.full(n, 8.0),
-        land_use=np.full(n, 1.0),
+        fossil=np.full(n, 29000.0),
+        biosphere=np.full(n, 3700.0),
         land_uptake=np.full(n, 2.0),
         ocean_uptake=np.full(n, 2.0),
     ),
 )
-co2 = emissions_result.values["Atmospheric Concentration|CO2"]
+co2 = emissions_result.values["Atmospheric Concentrations|CO2"]
 ```
 
-The four emissions and uptake arrays contain annual mean rates in GtC/yr.
+The arrays contain annual mean rates.
+The emissions are in Mt CO2/yr and the uptakes in GtC/yr.
 Positive uptake removes carbon from the atmosphere.
 Each entry applies over `[years[i], years[i + 1])`, so the last entry is never integrated.
 The budget uses 2.123 GtC per ppm.
 CO2 must not also be supplied as a prescribed concentration.
 CH4 and N2O remain prescribed.
-The budget receives the net land flux, `land_uptake - land_use`,
-because land-use emissions leave the land pools.
+The budget receives the net land flux, `land_uptake` less `biosphere` in GtC/yr,
+because biosphere emissions leave the land pools.
 
 This mode exercises emissions → calculated CO2 → forcing → temperature.
 It does not calculate land or ocean uptake, couple temperature back into those sinks,

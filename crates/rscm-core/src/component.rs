@@ -182,9 +182,9 @@ impl TimeseriesType {
 }
 
 impl TimeseriesType {
-    /// The type a unit implies: `Average` for a unit per time, such as `GtC / yr`, else `Point`.
+    /// The type a unit implies: `Average` for a unit per time, such as `GtC/yr`, else `Point`.
     ///
-    /// `W / m^2`, `yr` and units that do not parse give `Point`.
+    /// `W/m^2`, `yr` and units that do not parse give `Point`.
     pub fn from_unit(unit: &str) -> Self {
         match Unit::parse(unit) {
             Ok(parsed) if parsed.is_per_time() => TimeseriesType::Average,
@@ -204,8 +204,8 @@ impl std::fmt::Display for TimeseriesType {
 
 /// A component's declaration of one variable it uses.
 ///
-/// - `name`: the variable name, such as "Atmospheric Concentration|CO2"
-/// - `unit`: the variable's unit, such as "ppm" or "W / m^2"
+/// - `name`: the variable name, such as "Atmospheric Concentrations|CO2"
+/// - `unit`: the variable's unit, such as "ppm" or "W/m^2"
 /// - `role`: whether the component reads it, writes it or carries it as state
 /// - `grid`: the grid the component reads or writes it on
 /// - `timeseries_type`: point or average, `None` to infer it from the unit
@@ -308,7 +308,7 @@ impl VariableDefinition {
 /// A variable as one component declares it, for the coupling report and the generated docs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeclaredVariable {
-    /// The variable name, such as "Atmospheric Concentration|CO2".
+    /// The variable name, such as "Atmospheric Concentrations|CO2".
     pub name: String,
     pub unit: String,
     #[serde(default, skip_serializing_if = "GridType::is_scalar")]
@@ -527,14 +527,14 @@ mod tests {
 
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();
         assert_eq!(
-            output_state.get("Concentrations|CO2").unwrap(),
+            output_state.get("Atmospheric Concentrations|CO2").unwrap(),
             &crate::state::StateValue::Scalar(1.1 * 2.0)
         );
     }
 
     #[test]
     fn test_variable_definition_new_is_scalar() {
-        let req = VariableDefinition::new("Emissions|CO2", "GtC / yr", VariableRole::Input);
+        let req = VariableDefinition::new("Emissions|CO2", "GtC/yr", VariableRole::Input);
         assert_eq!(req.grid, GridType::Scalar);
         assert!(!req.is_spatial());
     }
@@ -588,11 +588,11 @@ mod tests {
 
     #[test]
     fn test_variable_definition_convenience_constructors() {
-        let scalar_in = VariableDefinition::scalar_input("Emissions|CO2", "GtC / yr");
+        let scalar_in = VariableDefinition::scalar_input("Emissions|CO2", "GtC/yr");
         assert_eq!(scalar_in.grid, GridType::Scalar);
         assert_eq!(scalar_in.role, VariableRole::Input);
 
-        let scalar_out = VariableDefinition::scalar_output("Concentrations|CO2", "ppm");
+        let scalar_out = VariableDefinition::scalar_output("Atmospheric Concentrations|CO2", "ppm");
         assert_eq!(scalar_out.grid, GridType::Scalar);
         assert_eq!(scalar_out.role, VariableRole::Output);
 
@@ -600,11 +600,12 @@ mod tests {
         assert_eq!(four_box_in.grid, GridType::FourBox);
         assert_eq!(four_box_in.role, VariableRole::Input);
 
-        let four_box_out = VariableDefinition::four_box_output("Surface Temperature", "K");
+        let four_box_out =
+            VariableDefinition::four_box_output("Surface Air Temperature Change", "K");
         assert_eq!(four_box_out.grid, GridType::FourBox);
         assert_eq!(four_box_out.role, VariableRole::Output);
 
-        let hemi_in = VariableDefinition::hemispheric_input("Precipitation", "mm / yr");
+        let hemi_in = VariableDefinition::hemispheric_input("Precipitation", "mm/yr");
         assert_eq!(hemi_in.grid, GridType::Hemispheric);
         assert_eq!(hemi_in.role, VariableRole::Input);
     }

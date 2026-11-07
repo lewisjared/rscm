@@ -1,6 +1,7 @@
 //! Fixed calendar-year references used by MAGICC7 feedbacks
 
 use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::names::prescribed;
 use rscm_core::state::ScalarWindow;
 use rscm_core::timeseries::{FloatValue, Time};
 
@@ -61,9 +62,6 @@ pub(crate) fn feedback_warming(
     (temperature.get() - value_at_year(temperature, t_current, start_year)).max(0.0)
 }
 
-pub(crate) const PERMAFROST_CO2: &str = "Emissions|CO2|Permafrost";
-pub(crate) const PERMAFROST_CH4: &str = "Emissions|CH4|Permafrost";
-
 /// Permafrost emissions named `name` when `enabled`, otherwise zero.
 pub(crate) fn permafrost_emissions(
     enabled: bool,
@@ -77,11 +75,6 @@ pub(crate) fn permafrost_emissions(
     }
 }
 
-/// Name of the input holding prescribed values of `concentration`.
-pub(crate) fn prescribed_name(concentration: &str) -> String {
-    format!("{concentration}|Prescribed")
-}
-
 /// Input of prescribed `concentration` when a switch year is set.
 pub(crate) fn prescribed_definition(
     concentration: &str,
@@ -89,10 +82,7 @@ pub(crate) fn prescribed_definition(
     switch_year: Option<Time>,
 ) -> Option<rscm_core::component::VariableDefinition> {
     switch_year.map(|_| {
-        rscm_core::component::VariableDefinition::scalar_input(
-            &prescribed_name(concentration),
-            unit,
-        )
+        rscm_core::component::VariableDefinition::scalar_input(&prescribed(concentration), unit)
     })
 }
 
@@ -109,12 +99,7 @@ pub(crate) fn prescribed_concentration(
     if t_next > switch_year? {
         return None;
     }
-    prescribed_input(
-        input_state,
-        &prescribed_name(concentration),
-        switch_year,
-        t_next,
-    )
+    prescribed_input(input_state, &prescribed(concentration), switch_year, t_next)
 }
 
 /// [`prescribed_concentration`] given the name of its `prescribed` input.

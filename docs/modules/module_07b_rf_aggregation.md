@@ -42,7 +42,7 @@ With the default `RF_EFFICACY_APPLY = 2`, ERF is RF times the prescribed efficac
 Every prescribed efficacy defaults to 1, so ERF and RF then differ only by rounding.
 
 In RSCM each component's `Effective Radiative Forcing|<agent>` output is MAGICC7's RF.
-`ForcingAggregation` writes the box EffRF as `Effective Radiative Forcing|Efficacy Adjusted`,
+`ForcingAggregation` writes the box EffRF as `Efficacy Adjusted Effective Radiative Forcing`,
 which `ClimateUdeb` reads,
 and the area-weighted sum of the agents' RF as `Effective Radiative Forcing`.
 The parity tests rebuild MAGICC7's reported ERF from these outputs
@@ -149,7 +149,7 @@ Notes on the table:
 
 - **Halocarbons**: the F-gas and Montreal Protocol agents apply the efficacy to each species before summing,
   and each F-gas species has its own box pattern ([halocarbon chemistry](module_03_halocarbon_chemistry.md)).
-- **Biomass burning**: `Biomass Burning Aerosols` sums the SOx, NO3, OC and BC `|AFOLU` forcing
+- **Biomass burning**: `Biomass Burning Aerosols` sums the SOx, NO3, OC and BC `|Biosphere` forcing
   before its efficacy applies.
   Like mineral dust, it takes the direct aerosol efficacy and pattern (`AER_DIR`).
 - **Patterns from forcing**: land use and BC on snow take their pattern from their box forcing in

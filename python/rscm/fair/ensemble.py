@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from rscm import names
 from rscm.fair import naming
 from rscm.fair.config import emission_drivers, is_ghg, species_outputs
 from rscm.fair.run import run_fair
@@ -30,9 +31,9 @@ SPECIES_ATTRIBUTES = (
 )
 # FaIR attributes on timebounds without a species or layer dimension.
 SCALAR_ATTRIBUTES = {
-    "forcing_sum": naming.TOTAL_FORCING,
-    "ocean_heat_content_change": naming.OCEAN_HEAT_CONTENT_CHANGE,
-    "toa_imbalance": naming.ENERGY_IMBALANCE,
+    "forcing_sum": names.ERF,
+    "ocean_heat_content_change": names.OCEAN_HEAT_CONTENT,
+    "toa_imbalance": names.NET_ENERGY_IMBALANCE,
 }
 
 
@@ -48,7 +49,7 @@ def _emissions(config: FairConfig, s: Species) -> tuple[list[str], slice] | None
     """Variables summing to a species' emissions and the slice onto timepoints."""
     if s["input_mode"] == "concentration" and is_ghg(s):
         # The inverse emissions of a step are written at its end.
-        return [naming.emissions(s["name"])], slice(1, None)
+        return [naming.inverse_emissions(s["name"])], slice(1, None)
     drivers = emission_drivers(config, s)
     return (drivers, slice(None, -1)) if drivers else None
 

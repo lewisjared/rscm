@@ -21,6 +21,7 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 
+from rscm import names
 from rscm.core import (
     GridType,
     InterpolationStrategy,
@@ -181,13 +182,13 @@ def test_climate(case: str) -> None:
             run.fair(f"temperature|{layer}"),
             f"layer {layer}",
         )
-    assert_close(run.rscm(naming.ENERGY_IMBALANCE), run.fair("toa_imbalance"))
+    assert_close(run.rscm(names.NET_ENERGY_IMBALANCE), run.fair("toa_imbalance"))
     assert_close(
-        run.rscm(naming.OCEAN_HEAT_CONTENT_CHANGE),
+        run.rscm(names.OCEAN_HEAT_CONTENT),
         run.fair("ocean_heat_content_change"),
     )
-    assert_close(run.rscm(naming.STOCHASTIC_FORCING), run.fair("stochastic_forcing"))
-    assert_close(run.rscm(naming.TOTAL_FORCING), run.fair("forcing_sum"))
+    assert_close(run.rscm(names.STOCHASTIC_FORCING), run.fair("stochastic_forcing"))
+    assert_close(run.rscm(names.ERF), run.fair("forcing_sum"))
 
 
 @pytest.mark.parametrize("case", CASES)
@@ -206,7 +207,7 @@ def test_gas_cycle(case: str) -> None:
         name = s["name"]
         if s["input_mode"] == "concentration":
             assert_close(
-                run.rscm(naming.emissions(name))[:-1],
+                run.rscm(naming.inverse_emissions(name))[:-1],
                 run.timepoints[f"emissions|{name}"].to_numpy(),
                 name,
             )
@@ -232,11 +233,11 @@ def test_gas_cycle(case: str) -> None:
 def test_chemistry(case: str) -> None:
     run = load(case)
     assert_close(
-        run.rscm(naming.EESC),
+        run.rscm(names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE),
         run.fair("concentration|Equivalent effective stratospheric chlorine"),
     )
     assert_close(
-        run.rscm(naming.CH4_LIFETIME_SCALING)[:-1], run.fair("alpha_lifetime|CH4")[:-1]
+        run.rscm(names.LIFETIME_SCALING_CH4)[:-1], run.fair("alpha_lifetime|CH4")[:-1]
     )
 
 
@@ -253,15 +254,16 @@ def test_prescribed_concentration_matches_modelled(gas: str) -> None:
 
     outputs = run_fair(config, inputs, run.time_axis).timeseries()
 
-    assert set(outputs.names()) == set(run.outputs.names())
-    # Inverting the gas cycle rounds the gas's own emissions.
     emissions = naming.emissions(gas)
+    inverse = naming.inverse_emissions(gas)
+    assert set(outputs.names()) - {inverse} == set(run.outputs.names()) - {emissions}
+    # Inverting the gas cycle rounds the gas's own emissions.
     inverted = {naming.airborne_emissions(gas), naming.cumulative_emissions(gas)}
     for name in outputs.names():
         values = np.asarray(outputs.get_timeseries_by_name(name).values())
-        if name == emissions:
+        if name == inverse:
             # Inverted emissions have no value at the final timebound.
-            assert_close(values[:-1], run.rscm(name)[:-1], name)
+            assert_close(values[:-1], run.rscm(emissions)[:-1], name)
         elif name in inverted:
             assert_close(values, run.rscm(name), name)
         else:
@@ -371,8 +373,8 @@ def test_first_prescribed_forcing() -> None:
 
     for variable in (
         naming.forcing(solar),
-        naming.TOTAL_FORCING,
-        naming.ENERGY_IMBALANCE,
+        names.ERF,
+        names.NET_ENERGY_IMBALANCE,
     ):
         series = outputs.get_timeseries_by_name(variable)
         assert series is not None, variable
@@ -428,8 +430,8 @@ def test_from_fair() -> None:
     assert config["options"] == run.config["options"]
     outputs = run_fair(config, inputs, time_axis).timeseries()
     for variable, column in (
-        (naming.SURFACE_TEMPERATURE, "temperature|0"),
-        (naming.TOTAL_FORCING, "forcing_sum"),
+        (names.SURFACE_AIR_TEMPERATURE_CHANGE, "temperature|0"),
+        (names.ERF, "forcing_sum"),
         (naming.concentration("CO2"), "concentration|CO2"),
     ):
         series = outputs.get_timeseries_by_name(variable)
@@ -488,7 +490,9 @@ def test_climate_udeb_smoke() -> None:
     model.run()
 
     outputs = model.timeseries()
-    temperature = outputs.get_four_box_timeseries_by_name(naming.SURFACE_TEMPERATURE)
+    temperature = outputs.get_four_box_timeseries_by_name(
+        names.SURFACE_AIR_TEMPERATURE_CHANGE
+    )
     assert temperature is not None
     co2 = outputs.get_timeseries_by_name(naming.concentration("CO2"))
     assert co2 is not None

@@ -5,15 +5,15 @@
 //!
 //! # Inputs
 //!
-//! - `Atmospheric Concentration|CH4` (ppb), at the start and end of the step
+//! - `Atmospheric Concentrations|CH4` (ppb), at the start and end of the step
 //! - `Lifetime|CH4|OH` (yr): OH lifetime over the step
 //! - `Emissions|CH4|Fossil` (Mt CH4/yr) - Fossil and industrial CH4 emissions
-//! - `Emissions|CH4|AFOLU` (Mt CH4/yr) - Agriculture and land use CH4 emissions
+//! - `Emissions|CH4|Biosphere` (Mt CH4/yr) - Agriculture and land use CH4 emissions
 //! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `include_permafrost` parameter
 //!
 //! # States (tracked between steps)
 //!
-//! - `Atmospheric Burden|CH4|{Fossil,AFOLU,Natural,Permafrost}` (Mt CH4): CH4 in the atmosphere by source
+//! - `Atmospheric Burden|CH4|{Fossil,Biosphere,Natural,Permafrost}` (Mt CH4): CH4 in the atmosphere by source
 //!
 //! # Outputs
 //!
@@ -22,15 +22,16 @@
 //! As in MAGICC7, the sink is the mid-step concentration over the total lifetime,
 //! shared between the pools in proportion to their size.
 //! Anthropogenic pools receive the emissions that close the CH4 budget,
-//! split between fossil and AFOLU in proportion to their emissions.
+//! split between fossil and biosphere in proportion to their emissions.
 //! The fossil share counts the fossil pool and `permafrost_fraction` of the permafrost pool.
 
 use crate::parameters::CH4OxidationParameters;
-use crate::reference::{permafrost_emissions, require_annual, PERMAFROST_CH4};
+use crate::reference::{permafrost_emissions, require_annual};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RscmResult;
+use rscm_core::names::EMISSIONS_CH4_PERMAFROST;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -39,14 +40,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["chemistry", "ch4", "carbon-cycle", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
-    concentration { name = "Atmospheric Concentration|CH4", unit = "ppb" },
+    concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb" },
     oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average" },
     fossil_emissions { name = "Emissions|CH4|Fossil", unit = "Mt CH4/yr" },
-    afolu_emissions { name = "Emissions|CH4|AFOLU", unit = "Mt CH4/yr" },
+    afolu_emissions { name = "Emissions|CH4|Biosphere", unit = "Mt CH4/yr" },
 )]
 #[states(
     fossil_burden { name = "Atmospheric Burden|CH4|Fossil", unit = "Mt CH4" },
-    afolu_burden { name = "Atmospheric Burden|CH4|AFOLU", unit = "Mt CH4" },
+    afolu_burden { name = "Atmospheric Burden|CH4|Biosphere", unit = "Mt CH4" },
     natural_burden { name = "Atmospheric Burden|CH4|Natural", unit = "Mt CH4" },
     permafrost_burden { name = "Atmospheric Burden|CH4|Permafrost", unit = "Mt CH4" },
 )]
@@ -142,7 +143,7 @@ impl Component for CH4Oxidation {
         let mut definitions = Self::generated_definitions();
         if self.parameters.include_permafrost {
             definitions.push(VariableDefinition::scalar_input(
-                PERMAFROST_CH4,
+                EMISSIONS_CH4_PERMAFROST,
                 "Mt CH4/yr",
             ));
         }
@@ -169,7 +170,7 @@ impl Component for CH4Oxidation {
             permafrost: permafrost_emissions(
                 self.parameters.include_permafrost,
                 input_state,
-                PERMAFROST_CH4,
+                EMISSIONS_CH4_PERMAFROST,
             ),
         };
         let (next, co2_emissions) = self.solve_oxidation(
@@ -270,9 +271,9 @@ mod tests {
         for name in [
             "Emissions|CO2|CH4 Oxidation",
             "Atmospheric Burden|CH4|Natural",
-            "Atmospheric Concentration|CH4",
+            "Atmospheric Concentrations|CH4",
             "Lifetime|CH4|OH",
-            "Emissions|CH4|AFOLU",
+            "Emissions|CH4|Biosphere",
         ] {
             assert!(names.contains(&name.to_string()), "{name}");
         }
@@ -292,12 +293,12 @@ mod tests {
                 ),
             )
         };
-        item("Atmospheric Concentration|CH4", 700.0, 720.0);
+        item("Atmospheric Concentrations|CH4", 700.0, 720.0);
         item("Lifetime|CH4|OH", 9.0, 9.0);
         item("Emissions|CH4|Fossil", 80.0, 80.0);
-        item("Emissions|CH4|AFOLU", 160.0, 160.0);
+        item("Emissions|CH4|Biosphere", 160.0, 160.0);
         item("Atmospheric Burden|CH4|Fossil", 100.0, 100.0);
-        item("Atmospheric Burden|CH4|AFOLU", 300.0, 300.0);
+        item("Atmospheric Burden|CH4|Biosphere", 300.0, 300.0);
         item("Atmospheric Burden|CH4|Natural", 700.0 * CONV - 400.0, 0.0);
         item("Atmospheric Burden|CH4|Permafrost", 0.0, 0.0);
         let component = CH4Oxidation::new();

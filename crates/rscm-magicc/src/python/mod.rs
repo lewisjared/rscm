@@ -1,12 +1,13 @@
 use pyo3::prelude::*;
 use pyo3::{pymodule, Bound, PyResult};
+use rscm_core::names::SEA_LEVEL_RISE_THERMAL_EXPANSION;
 
 use rscm_core::create_component_builder;
 use rscm_core::python::PyRustComponent;
 
 use crate::carbon::{CO2Budget, OceanCarbon, Permafrost, TerrestrialCarbon};
 use crate::chemistry::{CH4Chemistry, CH4Oxidation, HalocarbonChemistry, N2OChemistry};
-use crate::climate::{ClimateUdeb, SeaLevelRise, THERMAL_EXPANSION};
+use crate::climate::{ClimateUdeb, SeaLevelRise};
 use crate::forcing::{
     AerosolDirect, AerosolIndirect, ForcingAggregation, GhgForcing, OzoneForcing,
 };
@@ -37,13 +38,13 @@ impl ClimateUdebBuilder {
             ));
         }
         let mut values = std::collections::HashMap::from([
-            ("Surface Temperature".into(), 0.0),
+            ("Surface Air Temperature Change".into(), 0.0),
             ("Sea Surface Temperature".into(), 0.0),
             ("Ocean Heat Content".into(), 0.0),
             ("Heat Uptake".into(), component.initial_heat_uptake(erf)),
         ]);
         if self.parameters.thermal_expansion.is_some() {
-            values.insert(THERMAL_EXPANSION.into(), 0.0);
+            values.insert(SEA_LEVEL_RISE_THERMAL_EXPANSION.into(), 0.0);
         }
         Ok(values)
     }

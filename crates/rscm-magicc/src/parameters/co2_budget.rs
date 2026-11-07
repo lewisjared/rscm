@@ -42,12 +42,12 @@ pub struct CO2BudgetParameters {
     /// Default: false
     pub include_permafrost: bool,
 
-    /// Last year of concentrations prescribed by `Atmospheric Concentration|CO2|Prescribed`,
+    /// Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|CO2`,
     /// or `None` to calculate them from emissions throughout.
     /// MAGICC7: CO2_SWITCHFROMCONC2EMIS_YEAR
     pub concentration_switch_year: Option<f64>,
 
-    /// Take next year's concentration from `End-of-Year Atmospheric CO2`, which
+    /// Take next year's concentration from `Ocean Carbon Atmospheric Concentrations|CO2`, which
     /// `OceanCarbon` integrates over its substeps as MAGICC7 does.
     ///
     /// Default: false

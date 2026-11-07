@@ -22,13 +22,13 @@
   "states": [
     {
       "rust_name": "surface_temperature",
-      "name": "Surface Temperature",
+      "name": "Surface Air Temperature Change",
       "unit": "K",
       "grid": "scalar"
     },
     {
       "rust_name": "deep_temperature",
-      "name": "Deep Ocean Temperature",
+      "name": "Ocean Temperature|Layer 2",
       "unit": "K",
       "grid": "scalar"
     }

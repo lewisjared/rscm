@@ -224,14 +224,14 @@ fn into_py_chain(chain: crate::Result<Chain>, raised: Option<PyErr>) -> PyResult
 ///
 /// # Define observations
 /// target = Target()
-/// target.add_observation("Temperature", 2020.0, 1.2, 0.1)
-/// target.add_observation("Temperature", 2021.0, 1.3, 0.1)
+/// target.add_observation("Surface Air Temperature Change", 2020.0, 1.2, 0.1)
+/// target.add_observation("Surface Air Temperature Change", 2021.0, 1.3, 0.1)
 ///
 /// # Create model runner (user-defined callable)
 /// def model_factory(parameters):
 ///     # Build and run model with parameters
 ///     return model  # Returns model instance
-/// runner = ModelRunner(model_factory, ["sensitivity", "offset"], ["Temperature"])
+/// runner = ModelRunner(model_factory, ["sensitivity", "offset"], ["Surface Air Temperature Change"])
 ///
 /// # Create sampler
 /// likelihood = GaussianLikelihood()

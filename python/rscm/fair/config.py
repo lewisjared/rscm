@@ -21,6 +21,7 @@ import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from rscm import names
 from rscm._lib.fair import (
     AerosolCloudBuilder,
     CH4LifetimeBuilder,
@@ -107,21 +108,26 @@ def thornhill(config: FairConfig) -> bool:
 CH4_LIFETIME_SENSITIVITY = "ch4_lifetime_chemical_sensitivity"
 
 
+def _precursors(config: FairConfig, driver: str) -> list[dict[str, Any]]:
+    # CH4Lifetime lists emissions and concentrations apart, so has no driver key.
+    return [
+        {k: v for k, v in precursor.items() if k != "driver"}
+        for precursor in _chemistry_drivers(
+            config, driver, CH4_LIFETIME_SENSITIVITY, key="sensitivity"
+        )
+    ]
+
+
 def _ch4_lifetime(config: FairConfig) -> RustComponent:
-    sensitivity = CH4_LIFETIME_SENSITIVITY
-    emissions = _chemistry_drivers(config, "emissions", sensitivity, key="sensitivity")
-    concentrations = _chemistry_drivers(
-        config, "concentration", sensitivity, key="sensitivity"
-    )
     return CH4LifetimeBuilder.from_parameters(
         {
-            "emissions": emissions,
-            "concentrations": concentrations,
+            "emissions": _precursors(config, "emissions"),
+            "concentrations": _precursors(config, "concentration"),
             "temperature_sensitivity": config["species_configs"][
                 "lifetime_temperature_sensitivity"
             ],
             "minimum_scaling": config["options"]["ch4_min"],
-            "output": naming.CH4_LIFETIME_SCALING,
+            "output": names.LIFETIME_SCALING_CH4,
         }
     ).build()
 
@@ -156,7 +162,9 @@ def species_outputs(config: FairConfig) -> dict[str, dict[str, str]]:
             outputs["airborne_emissions"][name] = naming.airborne_emissions(name)
             outputs["cumulative_emissions"][name] = naming.cumulative_emissions(name)
         elif s["type"] == "eesc":
-            outputs["concentration"][name] = naming.EESC
+            outputs["concentration"][name] = (
+                names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE
+            )
     return outputs
 
 
@@ -171,7 +179,7 @@ def _gas(config: FairConfig, entry: Species) -> dict[str, Any]:
     gas: dict[str, Any] = {
         "driver": driver,
         "emissions": emissions,
-        "inverse_emissions": naming.emissions(name),
+        "inverse_emissions": naming.inverse_emissions(name),
         "emissions_unit": naming.emissions_unit(entry),
         "amount_unit": naming.amount_unit(entry),
         "concentration": naming.concentration(name),
@@ -179,7 +187,7 @@ def _gas(config: FairConfig, entry: Species) -> dict[str, Any]:
         "airborne_emissions": naming.airborne_emissions(name),
         "cumulative_emissions": naming.cumulative_emissions(name),
         "lifetime_scaling": (
-            naming.CH4_LIFETIME_SCALING
+            names.LIFETIME_SCALING_CH4
             if entry["type"] == "ch4" and thornhill(config)
             else None
         ),
@@ -227,7 +235,7 @@ def _eesc(config: FairConfig) -> RustComponent:
             ],
             "cfc11_fractional_release": _value(cfc11["fractional_release"]),
             "br_cl_ratio": config["options"]["br_cl_ods_potential"],
-            "output": naming.EESC,
+            "output": names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE,
         }
     ).build()
 
@@ -272,7 +280,7 @@ def _driver(
 ) -> dict[str, Any]:
     if driver == "concentration":
         variable = (
-            naming.EESC
+            names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE
             if entry["type"] == "eesc"
             else naming.concentration(entry["name"])
         )
@@ -460,7 +468,7 @@ def with_lags(builder: ModelBuilder, config: FairConfig) -> ModelBuilder:
     Every component reads the previous step's surface temperature,
     and the methane lifetime the previous step's concentrations.
     """
-    builder.with_lag(naming.SURFACE_TEMPERATURE)
+    builder.with_lag(names.SURFACE_AIR_TEMPERATURE_CHANGE)
     if thornhill(config):
         for driver in _chemistry_drivers(
             config, "concentration", CH4_LIFETIME_SENSITIVITY, key="sensitivity"
@@ -476,16 +484,14 @@ def initial_values(
 
     `energy_balance` matches `components`.
     """
-    values = dict.fromkeys(
-        (naming.TOTAL_FORCING, naming.EFFICACY_ADJUSTED_FORCING), 0.0
-    )
+    values = dict.fromkeys((names.ERF, names.EFFICACY_ADJUSTED_ERF), 0.0)
     if energy_balance:
         n_layers = len(config["climate"]["ocean_heat_capacity"])
         values |= dict.fromkeys(
             (
-                naming.STOCHASTIC_FORCING,
-                naming.OCEAN_HEAT_CONTENT_CHANGE,
-                naming.ENERGY_IMBALANCE,
+                names.STOCHASTIC_FORCING,
+                names.OCEAN_HEAT_CONTENT,
+                names.NET_ENERGY_IMBALANCE,
                 *map(naming.layer_temperature, range(n_layers)),
             ),
             0.0,
@@ -499,7 +505,9 @@ def initial_values(
             values[naming.airborne_emissions(s["name"])] = 0.0
             values[naming.cumulative_emissions(s["name"])] = 0.0
         if s["type"] == "eesc" and s["input_mode"] == "calculated":
-            values[naming.EESC] = _value(s["baseline_concentration"])
+            values[names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE] = _value(
+                s["baseline_concentration"]
+            )
     for s in forcing_agents(config):
         values[naming.forcing(s)] = 0.0
     return values

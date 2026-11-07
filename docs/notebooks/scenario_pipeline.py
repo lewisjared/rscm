@@ -76,7 +76,7 @@ emissions = {
     name: Timeseries(
         np.array(values),
         TimeAxis.from_values(np.array(times)),
-        "GtC / yr",
+        "GtC/yr",
         InterpolationStrategy.Linear,
     )
     for name, (times, values) in EMISSIONS_BREAKPOINTS.items()
@@ -137,9 +137,9 @@ plt.show()
 
 # %%
 PRE_INDUSTRIAL = {
-    "Cumulative Land Uptake": 0.0,
+    "Cumulative Carbon Uptake|Land": 0.0,
     "Cumulative Emissions|CO2": 0.0,
-    "Atmospheric Concentration|CO2": 280.0,
+    "Atmospheric Concentrations|CO2": 280.0,
 }
 
 surface_temperature = Timeseries(
@@ -162,8 +162,8 @@ def build_model(time_axis: TimeAxis, co2_emissions: Timeseries, initial_values: 
         .with_time_axis(time_axis)
         .with_component(carbon_cycle)
         .with_component(co2_erf)
-        .with_prescribed_variable("Emissions|CO2|Anthropogenic", co2_emissions)
-        .with_prescribed_variable("Surface Temperature", surface_temperature)
+        .with_prescribed_variable("Emissions|CO2", co2_emissions)
+        .with_prescribed_variable("Surface Air Temperature Change", surface_temperature)
         .with_initial_values(initial_values)
     ).build()
 
@@ -275,7 +275,7 @@ all_runs = pd.concat(
 # %% tags=["remove_input"]
 fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
 panels = [
-    ("Atmospheric Concentration|CO2", "CO2 (ppm)", "Atmospheric CO2 Concentration"),
+    ("Atmospheric Concentrations|CO2", "CO2 (ppm)", "Atmospheric CO2 Concentration"),
     (
         "Effective Radiative Forcing|CO2",
         "ERF (W/m2)",
@@ -311,7 +311,7 @@ plt.show()
 (
     all_runs.droplevel("unit")
     .loc[
-        ["Atmospheric Concentration|CO2", "Effective Radiative Forcing|CO2"],
+        ["Atmospheric Concentrations|CO2", "Effective Radiative Forcing|CO2"],
         [2050.0, 2100.0],
     ]
     .dropna()

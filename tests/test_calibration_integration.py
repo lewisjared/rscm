@@ -58,20 +58,20 @@ def synthetic_observations():
     )
     # Add state variables required by TwoLayer
     collection.add_timeseries(
-        "Surface Temperature",
+        "Surface Air Temperature Change",
         Timeseries(
             np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
         ),
     )
     collection.add_timeseries(
-        "Deep Ocean Temperature",
+        "Ocean Temperature|Layer 2",
         Timeseries(
             np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
         ),
     )
 
     result = component.solve(2000, 2010, collection)
-    temp = result.get("Surface Temperature").as_scalar()
+    temp = result.get("Surface Air Temperature Change").as_scalar()
 
     # Return a single observation with uncertainty
     return {
@@ -102,7 +102,10 @@ def calibration_setup(synthetic_observations):
         synthetic_observations["temperatures"],
     ):
         target.add_observation(
-            "Surface Temperature", t, temp, synthetic_observations["uncertainty"]
+            "Surface Air Temperature Change",
+            t,
+            temp,
+            synthetic_observations["uncertainty"],
         )
 
     return {
@@ -147,29 +150,29 @@ def create_model_runner(fixed_params):
         )
         # Add state variables required by TwoLayer
         collection.add_timeseries(
-            "Surface Temperature",
+            "Surface Air Temperature Change",
             Timeseries(
                 np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
             ),
         )
         collection.add_timeseries(
-            "Deep Ocean Temperature",
+            "Ocean Temperature|Layer 2",
             Timeseries(
                 np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
             ),
         )
 
         result = component.solve(2000, 2010, collection)
-        temp = result.get("Surface Temperature").as_scalar()
+        temp = result.get("Surface Air Temperature Change").as_scalar()
 
         # Return output
-        return {"Surface Temperature": {2010.0: float(temp)}}
+        return {"Surface Air Temperature Change": {2010.0: float(temp)}}
 
     # Get parameter names from the factory
     return ModelRunner(
         model_factory=model_factory,
         parameter_names=["lambda0", "a"],
-        output_variables=["Surface Temperature"],
+        output_variables=["Surface Air Temperature Change"],
     )
 
 

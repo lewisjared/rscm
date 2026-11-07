@@ -112,7 +112,7 @@ fn test_run_reports_component_error_without_advancing_time() {
     assert_eq!(model.time_index(), 0);
 }
 
-/// A simple component that produces ERF|CO2
+/// A simple component that produces Effective Radiative Forcing|CO2
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CO2ErfComponent {
     forcing_per_ppm: f64,
@@ -122,8 +122,8 @@ struct CO2ErfComponent {
 impl Component for CO2ErfComponent {
     fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            VariableDefinition::scalar_input("Concentrations|CO2", "ppm"),
-            VariableDefinition::scalar_output("ERF|CO2", "W/m^2"),
+            VariableDefinition::scalar_input("Atmospheric Concentrations|CO2", "ppm"),
+            VariableDefinition::scalar_output("Effective Radiative Forcing|CO2", "W/m^2"),
         ]
     }
 
@@ -133,17 +133,19 @@ impl Component for CO2ErfComponent {
         _t_next: Time,
         input_state: &InputState,
     ) -> RscmResult<OutputState> {
-        let conc = input_state.get_scalar_window("Concentrations|CO2").get();
+        let conc = input_state
+            .get_scalar_window("Atmospheric Concentrations|CO2")
+            .get();
         let mut output = OutputState::new();
         output.insert(
-            "ERF|CO2".to_string(),
+            "Effective Radiative Forcing|CO2".to_string(),
             StateValue::Scalar(conc * self.forcing_per_ppm),
         );
         Ok(output)
     }
 }
 
-/// A simple component that produces ERF|CH4
+/// A simple component that produces Effective Radiative Forcing|CH4
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CH4ErfComponent {
     forcing_per_ppb: f64,
@@ -153,8 +155,8 @@ struct CH4ErfComponent {
 impl Component for CH4ErfComponent {
     fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            VariableDefinition::scalar_input("Concentrations|CH4", "ppb"),
-            VariableDefinition::scalar_output("ERF|CH4", "W/m^2"),
+            VariableDefinition::scalar_input("Atmospheric Concentrations|CH4", "ppb"),
+            VariableDefinition::scalar_output("Effective Radiative Forcing|CH4", "W/m^2"),
         ]
     }
 
@@ -164,10 +166,12 @@ impl Component for CH4ErfComponent {
         _t_next: Time,
         input_state: &InputState,
     ) -> RscmResult<OutputState> {
-        let conc = input_state.get_scalar_window("Concentrations|CH4").get();
+        let conc = input_state
+            .get_scalar_window("Atmospheric Concentrations|CH4")
+            .get();
         let mut output = OutputState::new();
         output.insert(
-            "ERF|CH4".to_string(),
+            "Effective Radiative Forcing|CH4".to_string(),
             StateValue::Scalar(conc * self.forcing_per_ppb),
         );
         Ok(output)
@@ -200,13 +204,17 @@ fn get_ch4_concentrations() -> Timeseries<FloatValue> {
 fn test_aggregate_sum_execution() {
     // Schema with aggregate summing two ERF components
     let schema = VariableSchema::new()
-        .variable("Concentrations|CO2", "ppm")
-        .variable("Concentrations|CH4", "ppb")
-        .variable("ERF|CO2", "W/m^2")
-        .variable("ERF|CH4", "W/m^2")
-        .aggregate("ERF|Total", "W/m^2", AggregateOp::Sum)
-        .from("ERF|CO2")
-        .from("ERF|CH4")
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Atmospheric Concentrations|CH4", "ppb")
+        .variable("Effective Radiative Forcing|CO2", "W/m^2")
+        .variable("Effective Radiative Forcing|CH4", "W/m^2")
+        .aggregate(
+            "Effective Radiative Forcing|Total",
+            "W/m^2",
+            AggregateOp::Sum,
+        )
+        .from("Effective Radiative Forcing|CO2")
+        .from("Effective Radiative Forcing|CH4")
         .build();
 
     let mut model = ModelBuilder::new()
@@ -218,8 +226,8 @@ fn test_aggregate_sum_execution() {
         .with_component(Arc::new(CH4ErfComponent {
             forcing_per_ppb: 0.001, // 1 W/m^2 per 1000 ppb
         }))
-        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
-        .with_prescribed_variable("Concentrations|CH4", get_ch4_concentrations())
+        .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Atmospheric Concentrations|CH4", get_ch4_concentrations())
         .build()
         .unwrap();
 
@@ -229,9 +237,9 @@ fn test_aggregate_sum_execution() {
     // Check that the aggregate was computed
     let total_erf = model
         .timeseries()
-        .get_data("ERF|Total")
+        .get_data("Effective Radiative Forcing|Total")
         .and_then(|d| d.as_scalar())
-        .expect("ERF|Total should exist");
+        .expect("Effective Radiative Forcing|Total should exist");
 
     // At 2021+ (after first step):
     // CO2: 400 ppm * 0.01 = 4.0 W/m^2
@@ -240,7 +248,7 @@ fn test_aggregate_sum_execution() {
     let value = total_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (value - 5.8).abs() < 1e-10,
-        "ERF|Total should be 5.8, got {}",
+        "Effective Radiative Forcing|Total should be 5.8, got {}",
         value
     );
 }
@@ -249,13 +257,17 @@ fn test_aggregate_sum_execution() {
 fn test_aggregate_mean_execution() {
     // Schema with mean aggregate
     let schema = VariableSchema::new()
-        .variable("Concentrations|CO2", "ppm")
-        .variable("Concentrations|CH4", "ppb")
-        .variable("ERF|CO2", "W/m^2")
-        .variable("ERF|CH4", "W/m^2")
-        .aggregate("ERF|Mean", "W/m^2", AggregateOp::Mean)
-        .from("ERF|CO2")
-        .from("ERF|CH4")
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Atmospheric Concentrations|CH4", "ppb")
+        .variable("Effective Radiative Forcing|CO2", "W/m^2")
+        .variable("Effective Radiative Forcing|CH4", "W/m^2")
+        .aggregate(
+            "Effective Radiative Forcing|Mean",
+            "W/m^2",
+            AggregateOp::Mean,
+        )
+        .from("Effective Radiative Forcing|CO2")
+        .from("Effective Radiative Forcing|CH4")
         .build();
 
     let mut model = ModelBuilder::new()
@@ -267,8 +279,8 @@ fn test_aggregate_mean_execution() {
         .with_component(Arc::new(CH4ErfComponent {
             forcing_per_ppb: 0.001,
         }))
-        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
-        .with_prescribed_variable("Concentrations|CH4", get_ch4_concentrations())
+        .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Atmospheric Concentrations|CH4", get_ch4_concentrations())
         .build()
         .unwrap();
 
@@ -276,15 +288,15 @@ fn test_aggregate_mean_execution() {
 
     let mean_erf = model
         .timeseries()
-        .get_data("ERF|Mean")
+        .get_data("Effective Radiative Forcing|Mean")
         .and_then(|d| d.as_scalar())
-        .expect("ERF|Mean should exist");
+        .expect("Effective Radiative Forcing|Mean should exist");
 
     // Mean of 4.0 and 1.8 = 2.9 W/m^2
     let value = mean_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (value - 2.9).abs() < 1e-10,
-        "ERF|Mean should be 2.9, got {}",
+        "Effective Radiative Forcing|Mean should be 2.9, got {}",
         value
     );
 }
@@ -293,17 +305,17 @@ fn test_aggregate_mean_execution() {
 fn test_aggregate_weighted_execution() {
     // Schema with weighted aggregate (80% CO2, 20% CH4)
     let schema = VariableSchema::new()
-        .variable("Concentrations|CO2", "ppm")
-        .variable("Concentrations|CH4", "ppb")
-        .variable("ERF|CO2", "W/m^2")
-        .variable("ERF|CH4", "W/m^2")
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Atmospheric Concentrations|CH4", "ppb")
+        .variable("Effective Radiative Forcing|CO2", "W/m^2")
+        .variable("Effective Radiative Forcing|CH4", "W/m^2")
         .aggregate(
-            "ERF|Weighted",
+            "Effective Radiative Forcing|Weighted",
             "W/m^2",
             AggregateOp::WeightedSum(vec![0.8, 0.2]),
         )
-        .from("ERF|CO2")
-        .from("ERF|CH4")
+        .from("Effective Radiative Forcing|CO2")
+        .from("Effective Radiative Forcing|CH4")
         .build();
 
     let mut model = ModelBuilder::new()
@@ -315,8 +327,8 @@ fn test_aggregate_weighted_execution() {
         .with_component(Arc::new(CH4ErfComponent {
             forcing_per_ppb: 0.001,
         }))
-        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
-        .with_prescribed_variable("Concentrations|CH4", get_ch4_concentrations())
+        .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Atmospheric Concentrations|CH4", get_ch4_concentrations())
         .build()
         .unwrap();
 
@@ -324,15 +336,15 @@ fn test_aggregate_weighted_execution() {
 
     let weighted_erf = model
         .timeseries()
-        .get_data("ERF|Weighted")
+        .get_data("Effective Radiative Forcing|Weighted")
         .and_then(|d| d.as_scalar())
-        .expect("ERF|Weighted should exist");
+        .expect("Effective Radiative Forcing|Weighted should exist");
 
     // Weighted: 4.0 * 0.8 + 1.8 * 0.2 = 3.2 + 0.36 = 3.56 W/m^2
     let value = weighted_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (value - 3.56).abs() < 1e-10,
-        "ERF|Weighted should be 3.56, got {}",
+        "Effective Radiative Forcing|Weighted should be 3.56, got {}",
         value
     );
 }
@@ -341,12 +353,16 @@ fn test_aggregate_weighted_execution() {
 fn test_aggregate_with_nan_contributor() {
     // Schema where one contributor has no writer (all NaN)
     let schema = VariableSchema::new()
-        .variable("Concentrations|CO2", "ppm")
-        .variable("ERF|CO2", "W/m^2")
-        .variable("ERF|N2O", "W/m^2") // No component writes this
-        .aggregate("ERF|Total", "W/m^2", AggregateOp::Sum)
-        .from("ERF|CO2")
-        .from("ERF|N2O")
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Effective Radiative Forcing|CO2", "W/m^2")
+        .variable("Effective Radiative Forcing|N2O", "W/m^2") // No component writes this
+        .aggregate(
+            "Effective Radiative Forcing|Total",
+            "W/m^2",
+            AggregateOp::Sum,
+        )
+        .from("Effective Radiative Forcing|CO2")
+        .from("Effective Radiative Forcing|N2O")
         .build();
 
     let mut model = ModelBuilder::new()
@@ -355,7 +371,7 @@ fn test_aggregate_with_nan_contributor() {
         .with_component(Arc::new(CO2ErfComponent {
             forcing_per_ppm: 0.01,
         }))
-        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
         .build()
         .unwrap();
 
@@ -363,15 +379,15 @@ fn test_aggregate_with_nan_contributor() {
 
     let total_erf = model
         .timeseries()
-        .get_data("ERF|Total")
+        .get_data("Effective Radiative Forcing|Total")
         .and_then(|d| d.as_scalar())
-        .expect("ERF|Total should exist");
+        .expect("Effective Radiative Forcing|Total should exist");
 
-    // ERF|N2O is NaN, so Sum should just be ERF|CO2 = 4.0 W/m^2
+    // Effective Radiative Forcing|N2O is NaN, so Sum should just be Effective Radiative Forcing|CO2 = 4.0 W/m^2
     let value = total_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (value - 4.0).abs() < 1e-10,
-        "ERF|Total should be 4.0 (NaN excluded), got {}",
+        "Effective Radiative Forcing|Total should be 4.0 (NaN excluded), got {}",
         value
     );
 }
@@ -380,18 +396,26 @@ fn test_aggregate_with_nan_contributor() {
 fn test_chained_aggregates_execution() {
     // Schema with chained aggregates: Total depends on GHG, GHG depends on CO2+CH4
     let schema = VariableSchema::new()
-        .variable("Concentrations|CO2", "ppm")
-        .variable("Concentrations|CH4", "ppb")
-        .variable("ERF|CO2", "W/m^2")
-        .variable("ERF|CH4", "W/m^2")
-        .variable("ERF|Other", "W/m^2") // Will be NaN
-        .aggregate("ERF|GHG", "W/m^2", AggregateOp::Sum)
-        .from("ERF|CO2")
-        .from("ERF|CH4")
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Atmospheric Concentrations|CH4", "ppb")
+        .variable("Effective Radiative Forcing|CO2", "W/m^2")
+        .variable("Effective Radiative Forcing|CH4", "W/m^2")
+        .variable("Effective Radiative Forcing|Other", "W/m^2") // Will be NaN
+        .aggregate(
+            "Effective Radiative Forcing|Greenhouse Gases",
+            "W/m^2",
+            AggregateOp::Sum,
+        )
+        .from("Effective Radiative Forcing|CO2")
+        .from("Effective Radiative Forcing|CH4")
         .build()
-        .aggregate("ERF|Total", "W/m^2", AggregateOp::Sum)
-        .from("ERF|GHG")
-        .from("ERF|Other")
+        .aggregate(
+            "Effective Radiative Forcing|Total",
+            "W/m^2",
+            AggregateOp::Sum,
+        )
+        .from("Effective Radiative Forcing|Greenhouse Gases")
+        .from("Effective Radiative Forcing|Other")
         .build();
 
     let mut model = ModelBuilder::new()
@@ -403,36 +427,36 @@ fn test_chained_aggregates_execution() {
         .with_component(Arc::new(CH4ErfComponent {
             forcing_per_ppb: 0.001,
         }))
-        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
-        .with_prescribed_variable("Concentrations|CH4", get_ch4_concentrations())
+        .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Atmospheric Concentrations|CH4", get_ch4_concentrations())
         .build()
         .unwrap();
 
     model.run();
 
-    // Check ERF|GHG = CO2 + CH4 = 4.0 + 1.8 = 5.8
+    // Check Effective Radiative Forcing|Greenhouse Gases = CO2 + CH4 = 4.0 + 1.8 = 5.8
     let ghg_erf = model
         .timeseries()
-        .get_data("ERF|GHG")
+        .get_data("Effective Radiative Forcing|Greenhouse Gases")
         .and_then(|d| d.as_scalar())
-        .expect("ERF|GHG should exist");
+        .expect("Effective Radiative Forcing|Greenhouse Gases should exist");
     let ghg_value = ghg_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (ghg_value - 5.8).abs() < 1e-10,
-        "ERF|GHG should be 5.8, got {}",
+        "Effective Radiative Forcing|Greenhouse Gases should be 5.8, got {}",
         ghg_value
     );
 
-    // Check ERF|Total = GHG + Other(NaN) = 5.8
+    // Check Effective Radiative Forcing|Total = GHG + Other(NaN) = 5.8
     let total_erf = model
         .timeseries()
-        .get_data("ERF|Total")
+        .get_data("Effective Radiative Forcing|Total")
         .and_then(|d| d.as_scalar())
-        .expect("ERF|Total should exist");
+        .expect("Effective Radiative Forcing|Total should exist");
     let total_value = total_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (total_value - 5.8).abs() < 1e-10,
-        "ERF|Total should be 5.8, got {}",
+        "Effective Radiative Forcing|Total should be 5.8, got {}",
         total_value
     );
 }
@@ -440,10 +464,14 @@ fn test_chained_aggregates_execution() {
 #[test]
 fn test_aggregate_appears_in_dot_graph() {
     let schema = VariableSchema::new()
-        .variable("Concentrations|CO2", "ppm")
-        .variable("ERF|CO2", "W/m^2")
-        .aggregate("ERF|Total", "W/m^2", AggregateOp::Sum)
-        .from("ERF|CO2")
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Effective Radiative Forcing|CO2", "W/m^2")
+        .aggregate(
+            "Effective Radiative Forcing|Total",
+            "W/m^2",
+            AggregateOp::Sum,
+        )
+        .from("Effective Radiative Forcing|CO2")
         .build();
 
     let model = ModelBuilder::new()
@@ -452,7 +480,7 @@ fn test_aggregate_appears_in_dot_graph() {
         .with_component(Arc::new(CO2ErfComponent {
             forcing_per_ppm: 0.01,
         }))
-        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Atmospheric Concentrations|CO2", get_co2_concentrations())
         .build()
         .unwrap();
 

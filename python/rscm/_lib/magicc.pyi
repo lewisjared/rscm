@@ -152,7 +152,8 @@ class ClimateUdebBuilder(ComponentBuilder):
 class ThermalExpansionParameters(TypedDict, total=False):
     """Thermal expansion of the ocean, calculated by ClimateUdeb.
 
-    Setting it makes ClimateUdeb write ``Surface Temperature|Annual Mean`` (K)
+    Setting it makes ClimateUdeb write
+    ``Annual Mean Surface Air Temperature Change`` (K)
     and ``Sea Level Rise|Thermal Expansion`` (mm).
     """
 
@@ -506,16 +507,16 @@ class HalocarbonChemistryBuilder(ComponentBuilder):
 
     **Inputs**
 
-    - `Emissions|{Species}`: Emissions for each halocarbon species (kt/yr).
+    - `Emissions|{Species}`: Emissions for each halocarbon species (`kt <species>/yr`).
     - `Lifetime|CH4|OH`: CH4 OH lifetime (yr), which scales OH lifetimes.
-    - `Surface Temperature`: Warming (K), which shortens stratospheric
+    - `Surface Air Temperature Change`: Warming (K), which shortens stratospheric
       lifetimes.
     - `Emissions|CO2|Fossil`: Fossil CO2 emissions (GtC/yr), read with
       ``fgas_regions``.
 
     **States**
 
-    - `Atmospheric Concentration|{Species}`: Concentration for each halocarbon
+    - `Atmospheric Concentrations|{Species}`: Concentration for each halocarbon
       species (ppt).
 
     **Outputs**
@@ -850,23 +851,23 @@ class OzoneForcingBuilder(ComponentBuilder):
     **Inputs**
 
     - `EESC`: Equivalent effective stratospheric chlorine (ppt).
-    - `Atmospheric Concentration|CH4`: CH4 concentration (ppb).
-    - `Atmospheric Concentration|N2O`: N2O concentration (ppb).
-    - `Emissions|{NOx,CO,NMVOC}|{Fossil,AFOLU}`: Precursor emissions by sector
+    - `Atmospheric Concentrations|CH4`: CH4 concentration (ppb).
+    - `Atmospheric Concentrations|N2O`: N2O concentration (ppb).
+    - `Emissions|{NOx,CO,NMVOC}|{Fossil,Biosphere}`: Precursor emissions by sector
       (Mt N/yr, Mt CO/yr, Mt NMVOC/yr), lagged by a year.
-    - `Surface Temperature`: Global mean surface temperature anomaly (K), lagged
-      by a year.
+    - `Surface Air Temperature Change`: Global mean surface temperature anomaly (K),
+      lagged by a year.
 
     **Outputs**
 
-    - `Effective Radiative Forcing|Stratospheric Ozone`: Stratospheric ozone
+    - `Effective Radiative Forcing|Ozone|Stratospheric`: Stratospheric ozone
       forcing from EESC above its threshold-year value (W/m^2).
-    - `Effective Radiative Forcing|Tropospheric Ozone` (float or FourBox): Tropospheric
+    - `Effective Radiative Forcing|Ozone|Tropospheric` (float or FourBox): Tropospheric
       ozone forcing from CH4 and precursors (W/m^2), four-box with
       ``tropospheric_ozone_regions``.
-    - `Effective Radiative Forcing|Ozone due to N2O`: Ozone forcing from N2O
+    - `Effective Radiative Forcing|Ozone|N2O Feedback`: Ozone forcing from N2O
       (W/m^2).
-    - `Effective Radiative Forcing|Ozone due to Temperature`: Ozone response to
+    - `Effective Radiative Forcing|Ozone|Temperature Feedback`: Ozone response to
       warming (W/m^2).
     """
 
@@ -1125,7 +1126,7 @@ class EfficacyClimate(TypedDict, total=False):
     """Climate settings for recalculating internal efficacies each year.
 
     The efficacies come from LAMCALC at the previous year's
-    ``Equilibrium Climate Sensitivity`` and ``Effective Radiative Forcing|2xCO2``.
+    ``Equilibrium Climate Sensitivity`` and ``2xCO2 Effective Radiative Forcing``.
     """
 
     ecs: float
@@ -1155,7 +1156,7 @@ class ForcingAggregationBuilder(ComponentBuilder):
     """Builder for the component combining agent ERF into four-box climate forcing.
 
     Reads each agent's ERF and writes the total ERF and the four-box
-    ``Effective Radiative Forcing|Efficacy Adjusted`` read by ClimateUdeb
+    ``Efficacy Adjusted Effective Radiative Forcing`` read by ClimateUdeb
     when ``include_regional_forcing`` is set.
     """
 

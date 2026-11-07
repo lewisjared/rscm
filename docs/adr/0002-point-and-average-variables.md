@@ -30,8 +30,8 @@ and into the runners, which disagreed on whether emissions have one value per ye
   or the declaration of an exogenous variable.
   Consumers inherit it, and an input that claims a different type is a build error.
 - The type defaults from the unit, as openscm's `guess_parameter_type` does.
-  A unit per time, such as `GtC / yr`, means average, and anything else means point,
-  including `W / m^2` and `yr`.
+  A unit per time, such as `GtC/yr`, means average, and anything else means point,
+  including `W/m^2` and `yr`.
   Lifetimes and annual means override it to average.
 - The type sets the default interpolation, `Previous` for averages and `Linear` for points.
   `with_interpolation_strategy` can still override it.

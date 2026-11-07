@@ -48,7 +48,7 @@ fn step() {
 
     let concentrations = model
         .timeseries()
-        .get_data("Concentrations|CO2")
+        .get_data("Atmospheric Concentrations|CO2")
         .and_then(|data| data.as_scalar())
         .unwrap();
 
@@ -130,7 +130,7 @@ type = "TestComponent"
 conversion_factor = 0.5
 
 [[collection.timeseries]]
-name = "Concentrations|CO2"
+name = "Atmospheric Concentrations|CO2"
 
 [collection.timeseries.data.scalar]
 unit = "ppm"
@@ -171,7 +171,7 @@ dim = [6]
 data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 
 [timeseries_types]
-"Concentrations|CO2" = "point"
+"Atmospheric Concentrations|CO2" = "point"
 "Emissions|CO2" = "average"
 
 [component_states.0]

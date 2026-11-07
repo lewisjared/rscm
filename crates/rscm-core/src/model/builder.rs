@@ -564,22 +564,11 @@ impl ModelBuilder {
 
         // Check dimensional compatibility
         if !parsed_schema.is_compatible(&parsed_component) {
-            let dim_schema = parsed_schema
-                .dimension()
-                .map(|d| d.to_string())
-                .unwrap_or_else(|_| "unknown".to_string());
-            let dim_component = parsed_component
-                .dimension()
-                .map(|d| d.to_string())
-                .unwrap_or_else(|_| "unknown".to_string());
-
-            return Err(RscmError::IncompatibleUnits {
-                variable: variable.to_string(),
-                unit1: schema_unit.to_string(),
-                unit2: component_unit.to_string(),
-                dim1: dim_schema,
-                dim2: dim_component,
-            });
+            return Err(RscmError::incompatible_units(
+                variable,
+                &parsed_schema,
+                &parsed_component,
+            ));
         }
 
         // Calculate conversion factor from schema unit to component unit

@@ -18,7 +18,7 @@
 //!
 //! # Inputs
 //!
-//! - `Surface Temperature|Annual Mean` (K) - Mean warming over the step, from `ClimateUdeb`
+//! - `Annual Mean Surface Air Temperature Change` (K) - Mean warming over the step, from `ClimateUdeb`
 //! - `Sea Level Rise|Thermal Expansion` (mm) - From `ClimateUdeb`
 //!
 //! # Outputs
@@ -50,12 +50,6 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
-
-/// Annual mean global surface warming, written by `ClimateUdeb` at the end of each step.
-pub const ANNUAL_MEAN_TEMPERATURE: &str = "Surface Temperature|Annual Mean";
-
-/// Cumulative thermal expansion, written by `ClimateUdeb`.
-pub const THERMAL_EXPANSION: &str = "Sea Level Rise|Thermal Expansion";
 
 /// Sea level rise from thermal expansion over one step, in mm.
 ///
@@ -158,7 +152,7 @@ impl ComponentState for SeaLevelRiseState {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["climate", "sea-level", "magicc"], category = "Climate")]
 #[inputs(
-    temperature { name = "Surface Temperature|Annual Mean", unit = "K", timeseries_type = "average" },
+    temperature { name = "Annual Mean Surface Air Temperature Change", unit = "K", timeseries_type = "average" },
     thermal_expansion { name = "Sea Level Rise|Thermal Expansion", unit = "mm" },
 )]
 #[outputs(

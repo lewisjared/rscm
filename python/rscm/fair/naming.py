@@ -4,27 +4,28 @@ from __future__ import annotations
 
 from typing import Any
 
+from rscm import names
+
 # RSCM names of FaIR species that do not just drop their hyphens.
 SPECIES_NAMES = {
     "CO2 FFI": "CO2|Fossil",
-    "CO2 AFOLU": "CO2|Land Use",
+    "CO2 AFOLU": "CO2|Biosphere",
     "Sulfur": "SOx",
     "VOC": "NMVOC",
     "NOx aviation": "NOx|Aviation",
-    "HFC-4310mee": "HFC4310",
 }
 
 # Forcing variables of calculated and prescribed agents, by FaIR species type.
 FORCING_NAMES = {
-    "ari": "Effective Radiative Forcing|Aerosol|Direct",
-    "aci": "Effective Radiative Forcing|Aerosol|Indirect",
-    "ozone": "Effective Radiative Forcing|Ozone",
-    "contrails": "Effective Radiative Forcing|Contrails",
-    "lapsi": "Effective Radiative Forcing|Black Carbon on Snow",
-    "h2o stratospheric": "Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O",
-    "land use": "Effective Radiative Forcing|Land Use",
-    "solar": "Effective Radiative Forcing|Solar",
-    "volcanic": "Effective Radiative Forcing|Volcanic",
+    "ari": names.ERF_AEROSOLS_DIRECT_EFFECT,
+    "aci": names.ERF_AEROSOLS_INDIRECT_EFFECT,
+    "ozone": names.ERF_OZONE,
+    "contrails": names.ERF_AVIATION_CONTRAIL,
+    "lapsi": names.ERF_BLACK_CARBON_ON_SNOW,
+    "h2o stratospheric": names.ERF_CH4_OXIDATION_STRATOSPHERIC_H2O,
+    "land use": names.ERF_LAND_USE_CHANGE,
+    "solar": names.ERF_SOLAR,
+    "volcanic": names.ERF_VOLCANIC,
 }
 
 HALOGEN_TYPES = ("cfc-11", "other halogen")
@@ -37,17 +38,7 @@ _EMISSIONS_MOLECULE = {
     "Sulfur": "SO2",
     "NOx": "NO2",
     "NOx aviation": "NO2",
-    "HFC-4310mee": "HFC4310mee",
 }
-
-EESC = "Equivalent Effective Stratospheric Chlorine"
-CH4_LIFETIME_SCALING = "Lifetime Scaling|CH4"
-SURFACE_TEMPERATURE = "Surface Temperature"
-TOTAL_FORCING = "Effective Radiative Forcing"
-EFFICACY_ADJUSTED_FORCING = "Effective Radiative Forcing|Efficacy Adjusted"
-STOCHASTIC_FORCING = "Stochastic Forcing"
-OCEAN_HEAT_CONTENT_CHANGE = "Ocean Heat Content Change"
-ENERGY_IMBALANCE = "Net Energy Imbalance"
 
 
 def rscm_name(species: str) -> str:
@@ -60,9 +51,14 @@ def emissions(species: str) -> str:
     return f"Emissions|{rscm_name(species)}"
 
 
+def inverse_emissions(species: str) -> str:
+    """Emissions of a species inferred from its prescribed concentration."""
+    return f"Inverse Emissions|{rscm_name(species)}"
+
+
 def concentration(species: str) -> str:
     """Concentration variable of a species."""
-    return f"Atmospheric Concentration|{rscm_name(species)}"
+    return names.child(names.ATMOSPHERIC_CONCENTRATIONS, rscm_name(species))
 
 
 def airborne_emissions(species: str) -> str:
@@ -72,7 +68,7 @@ def airborne_emissions(species: str) -> str:
 
 def prescribed_forcing(entry: dict[str, Any]) -> str:
     """Return the prescribed forcing input, before its temperature feedback."""
-    return f"Prescribed {forcing(entry)}"
+    return names.prescribed(forcing(entry))
 
 
 def cumulative_emissions(species: str) -> str:
@@ -84,13 +80,11 @@ def forcing(entry: dict[str, Any]) -> str:
     """Return the forcing variable of a species entry of a FaIR config."""
     kind = entry["type"]
     name = rscm_name(entry["name"])
-    if kind in ("co2", "ch4", "n2o"):
-        return f"Effective Radiative Forcing|{name}"
     if kind == "f-gas":
-        return f"Effective Radiative Forcing|F-Gases|{name}"
+        return names.child(names.ERF_F_GASES, name)
     if kind in HALOGEN_TYPES:
-        return f"Effective Radiative Forcing|Montreal Protocol Halogen Gases|{name}"
-    return FORCING_NAMES.get(kind, f"Effective Radiative Forcing|{name}")
+        return names.child(names.ERF_MONTREAL_PROTOCOL_HALOGEN_GASES, name)
+    return FORCING_NAMES.get(kind, names.child(names.ERF, name))
 
 
 def emissions_unit(entry: dict[str, Any]) -> str:
@@ -124,7 +118,11 @@ def prescribed_variable(entry: dict[str, Any]) -> tuple[str, str] | None:
     if mode == "emissions":
         return emissions(entry["name"]), emissions_unit(entry)
     if mode == "concentration":
-        variable = EESC if entry["type"] == "eesc" else concentration(entry["name"])
+        variable = (
+            names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE
+            if entry["type"] == "eesc"
+            else concentration(entry["name"])
+        )
         return variable, concentration_unit(entry)
     if mode == "forcing":
         return prescribed_forcing(entry), "W/m^2"
@@ -133,4 +131,6 @@ def prescribed_variable(entry: dict[str, Any]) -> tuple[str, str] | None:
 
 def layer_temperature(layer: int) -> str:
     """Temperature variable of an energy balance layer, counting the surface as 0."""
-    return SURFACE_TEMPERATURE if layer == 0 else f"Ocean Temperature|Layer {layer + 1}"
+    if layer == 0:
+        return names.SURFACE_AIR_TEMPERATURE_CHANGE
+    return names.ocean_layer_temperature(layer + 1)

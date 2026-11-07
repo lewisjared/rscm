@@ -62,7 +62,7 @@ MAGICC7 produces two temperature variables:
   within the year.
 
 RSCM outputs point-in-time values, matching `DAT_SURFACE_TEMP`.
-When `thermal_expansion` is set, `ClimateUdeb` also writes `Surface Temperature|Annual Mean`,
+When `thermal_expansion` is set, `ClimateUdeb` also writes `Annual Mean Surface Air Temperature Change`,
 matching `DAT_SURFACE_ANNUALMEANTEMP`.
 It is an average, so it is stored at the start of the year it covers, as MAGICC7 labels it.
 `SeaLevelRise` reads it.
