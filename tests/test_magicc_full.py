@@ -83,8 +83,8 @@ def test_load_inputs_skips_missing_concentration_files():
 @pytest.mark.parametrize(
     ("argument", "value"),
     [
-        ("component_parameters", {"ClimateUDEB": {}}),
-        ("initial_concentrations", {"HFC4310": 0.0}),
+        ("component_parameters", {"ClimateUDEB": {}}),  # naming: allow
+        ("initial_concentrations", {"HFC4310": 0.0}),  # naming: allow
     ],
 )
 def test_run_magicc7_rejects_unknown_keys(argument, value):

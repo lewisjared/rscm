@@ -32,6 +32,11 @@ repos:
         entry: "[;—–]|\\S - "
         files: "^changelog/.*\\.md$"
         exclude: "^changelog/README\\.md$"
+      - id: naming-denylist
+        name: retired identifiers (naming-denylist.txt)
+        language: python
+        entry: python scripts/check_naming.py
+        types: [text]
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: 'v0.14.11'
     hooks:

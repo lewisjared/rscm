@@ -1,0 +1,57 @@
+# Retired identifiers that scripts/check_naming.py reports.
+# One regular expression per line, matched as a whole word and case sensitive.
+# Mark a line that must keep one with a `naming: allow` comment.
+
+# Variable declarations and sources
+RequirementDefinition
+RequirementType
+VariableType
+VarInfo
+VariableMetadata
+grid_type
+with_exogenous_variable
+Exogenous
+get_fourbox_timeseries_by_name
+
+# Components and builders
+CustomComponent
+build_components
+build_two_layer_model
+
+# Calibration
+ln_pdf
+ln_likelihood
+ln_prior
+n_params
+total_iterations
+
+# Type names
+ClimateUDEB\w*
+MAGICCResult
+RSCMError
+CO2ERF
+GasMode
+DriverKind
+CloudDriverKind
+OceanCarbonModel
+# The Python FairConfig is outside the Rust type decision.
+Fair(?!Config\b)[A-Z]\w*
+
+# Parameters
+time_varying_q2x
+co2_doubling_forcing
+conc_pi
+# Test names such as `zero_at_preindustrial` describe a state, not a parameter.
+\w+(?<!_at)(?<!_above)(?<!_below)_preindustrial
+tau_oh
+tau_total_init
+frac_\w+
+ppb_to_tg
+tempfeedback_yrstart
+enable_temp_feedback
+land_heat_capacity_enabled
+temp_sensitivity
+w_threshold_temp_\w+
+LAG_FOR
+GHG_METHODS
+HFC4310\b

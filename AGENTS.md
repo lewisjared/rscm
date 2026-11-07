@@ -9,6 +9,9 @@ It is a testbed for modularising MAGICC and reimplementing it in Rust.
 - [docs/key_concepts.md](docs/key_concepts.md): Components, Models, Timeseries, and how they fit together.
 - [docs/modules/README.md](docs/modules/README.md): MAGICC module specs, dependency graph and status.
   Consult it before changing physics.
+- [GLOSSARY.md](GLOSSARY.md): what each domain term means and which words to avoid.
+- [docs/developers/naming_conventions.md](docs/developers/naming_conventions.md): naming rules.
+  Follow it when adding or renaming identifiers, parameters, variables or units.
 - `tests/regression/`: parity tests against reference implementations.
 
 ## Commands

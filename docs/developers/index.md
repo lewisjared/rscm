@@ -145,5 +145,6 @@ Write it in Rust, with the `ComponentIO` derive macro, for performance or comple
 
 - [Development Practices](development.md): Workflows, versioning, releasing
 - [Rust Tips](rust_tips.md): Rust-specific guidance
+- [Naming Conventions](naming_conventions.md): How to name identifiers, parameters, variables and units
 - [Key Concepts](../key_concepts.md): Core abstractions (Component, Model, Timeseries)
 - [ComponentIO Macro](../notebooks/component_rust.md): Detailed macro documentation
