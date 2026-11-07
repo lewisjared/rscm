@@ -13,9 +13,9 @@ def test_create_component():
     component = TwoLayerBuilder.from_parameters(
         dict(
             lambda0=0.3,
-            efficacy=31,
+            deep_ocean_efficacy=31,
             a=12,
-            eta=12,
+            ocean_heat_transfer=12,
             heat_capacity_deep=12,
             heat_capacity_surface=1,
         )

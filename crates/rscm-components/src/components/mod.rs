@@ -35,7 +35,7 @@
 //!
 //! let component = CO2Erf::from_parameters(CO2ErfParameters {
 //!     erf_2xco2: 3.7,    // W/m^2
-//!     conc_pi: 278.0,    // ppm
+//!     co2_pi: 278.0,    // ppm
 //! });
 //!
 //! // Add to model via ModelBuilder

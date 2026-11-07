@@ -169,15 +169,15 @@ minus the net land uptake.
 
 ### Configurable parameters
 
-| Parameter          | Fortran name                    | RSCM field              | Units | Default    | Description                              |
-| ------------------ | ------------------------------- | ----------------------- | ----- | ---------- | ---------------------------------------- |
-| Ocean model        | `OCEANCC_MODEL`                 | constructor             | -     | "3D-GFDL"  | "3D-GFDL", "2D-BERN", "HILDA", "BOXDIFF" |
-| Gas exchange scale | `OCEANCC_SCALE_GASXCHANGE`      | `gas_exchange_scale`    | 1     | 1.833492   | Scales the gas exchange rate $k$         |
-| IRF scale          | `OCEANCC_SCALE_IMPULSERESPONSE` | `irf_scale`             | 1     | 0.9492864  | Scales the early IRF ($f$)               |
-| Temperature effect | `OCEANCC_TEMPFEEDBACK`          | `temp_sensitivity`      | K⁻¹   | 0.03717879 | $\alpha_T$ in A25                        |
-| Feedback start     | `CO2_TEMPFEEDBACK_YRSTART`      | `tempfeedback_yrstart`  | year  | 1900       | Start of the warming that drives A25     |
-| Radiative setting  | `OCEANCC_RAD_SETTING`           | not implemented         | flag  | 0          | If 1, the ocean sees preindustrial CO2   |
-| Flux change limit  | `OCEANCC_STABILITY_LIMIT_DIFFLUX` | `flux_change_limit`   | ppm/yr | 0.04      | Largest flux change between months       |
+| Parameter          | Fortran name                      | RSCM field                        | Units  | Default    | Description                              |
+| ------------------ | --------------------------------- | --------------------------------- | ------ | ---------- | ---------------------------------------- |
+| Ocean model        | `OCEANCC_MODEL`                   | constructor                       | -      | "3D-GFDL"  | "3D-GFDL", "2D-BERN", "HILDA", "BOXDIFF" |
+| Gas exchange scale | `OCEANCC_SCALE_GASXCHANGE`        | `gas_exchange_scale`              | 1      | 1.833492   | Scales the gas exchange rate $k$         |
+| IRF scale          | `OCEANCC_SCALE_IMPULSERESPONSE`   | `irf_scale`                       | 1      | 0.9492864  | Scales the early IRF ($f$)               |
+| Temperature effect | `OCEANCC_TEMPFEEDBACK`            | `temperature_sensitivity`         | K⁻¹    | 0.03717879 | $\alpha_T$ in A25                        |
+| Feedback start     | `CO2_TEMPFEEDBACK_YRSTART`        | `temperature_feedback_start_year` | year   | 1900       | Start of the warming that drives A25     |
+| Radiative setting  | `OCEANCC_RAD_SETTING`             | not implemented                   | flag   | 0          | If 1, the ocean sees preindustrial CO2   |
+| Flux change limit  | `OCEANCC_STABILITY_LIMIT_DIFFLUX` | `flux_change_limit`               | ppm/yr | 0.04       | Largest flux change between months       |
 
 The Takahashi et al. value for the temperature effect is about 0.0423 K⁻¹.
 MAGICC7's default of 0.03717879 K⁻¹ is a calibrated value.
@@ -359,7 +359,7 @@ Beyond these:
 - There is no radiative-only mode (`OCEANCC_RAD_SETTING`).
 - The concentration cap is not implemented
   (see [CO2 budget](module_11_co2_budget.md#differences-from-magicc7)).
-- The flux history keeps the last `max_history_months` substeps (6000, or 500 years).
+- The flux history keeps the last `maximum_history_months` substeps (6000, or 500 years).
   Longer runs drop the oldest months from the convolution, where MAGICC7 keeps them all.
 
 ## References

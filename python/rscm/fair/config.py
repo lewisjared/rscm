@@ -120,7 +120,7 @@ def _ch4_lifetime(config: FairConfig) -> RustComponent:
             "temperature_sensitivity": config["species_configs"][
                 "lifetime_temperature_sensitivity"
             ],
-            "ch4_min": config["options"]["ch4_min"],
+            "minimum_scaling": config["options"]["ch4_min"],
             "output": naming.CH4_LIFETIME_SCALING,
         }
     ).build()
@@ -205,7 +205,7 @@ def _gas_cycle(config: FairConfig, gases: list[Species]) -> RustComponent:
     return GasCycleBuilder.from_parameters(
         {
             "species": [_gas(config, s) for s in gases],
-            "iirf_max": config["options"]["iirf_max"],
+            "maximum_iirf": config["options"]["iirf_max"],
         }
     ).build()
 

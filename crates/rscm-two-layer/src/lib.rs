@@ -45,8 +45,8 @@
 //! let component = TwoLayer::from_parameters(TwoLayerParameters {
 //!     lambda0: 1.0,               // W/(m² K) - climate feedback parameter
 //!     a: 0.0,                     // W/(m² K²) - nonlinear feedback (0 = linear)
-//!     efficacy: 1.2,              // dimensionless - ocean heat uptake efficacy
-//!     eta: 0.7,                   // W/(m² K) - heat exchange coefficient
+//!     deep_ocean_efficacy: 1.2,   // dimensionless - ocean heat uptake efficacy
+//!     ocean_heat_transfer: 0.7,   // W/(m² K) - heat exchange coefficient
 //!     heat_capacity_surface: 8.0, // W yr/(m² K) - surface layer (~80m mixed layer)
 //!     heat_capacity_deep: 100.0,  // W yr/(m² K) - deep ocean
 //! });
@@ -66,8 +66,8 @@
 //!     .with_component(Box::new(TwoLayer::from_parameters(TwoLayerParameters {
 //!         lambda0: 1.0,
 //!         a: 0.0,
-//!         efficacy: 1.2,
-//!         eta: 0.7,
+//!         deep_ocean_efficacy: 1.2,
+//!         ocean_heat_transfer: 0.7,
 //!         heat_capacity_surface: 8.0,
 //!         heat_capacity_deep: 100.0,
 //!     })))

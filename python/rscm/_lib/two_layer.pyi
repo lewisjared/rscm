@@ -40,13 +40,14 @@ class TwoLayerBuilder(ComponentBuilder):
       state-dependence of climate feedbacks. Positive values indicate that feedback
       weakens (sensitivity increases) as temperature rises. Set to 0 for a linear model.
       Typical values: 0-0.1.
-    - `efficacy` (`float`): Ocean heat uptake efficacy (dimensionless). Ratio of the
-      feedback parameter for ocean heat uptake to the equilibrium feedback parameter.
+    - `deep_ocean_efficacy` (`float`): Ocean heat uptake efficacy, epsilon
+      (dimensionless). Ratio of the feedback parameter for ocean heat uptake to the
+      equilibrium feedback parameter.
       Values > 1 indicate that ocean heat uptake is more effective at reducing surface
       warming. Typical values: 1.0-1.8.
-    - `eta` (`float`): Heat exchange coefficient between surface and deep layers (W/(m^2
-      K)). Controls the rate of heat transfer from surface to deep ocean. Higher values
-      mean faster equilibration. Typical values: 0.5-1.0.
+    - `ocean_heat_transfer` (`float`): Heat exchange coefficient between surface and
+      deep layers, eta (W/(m^2 K)). Controls the rate of heat transfer from surface to
+      deep ocean. Higher values mean faster equilibration. Typical values: 0.5-1.0.
     - `heat_capacity_surface` (`float`): Heat capacity of the surface layer (W yr/(m^2
       K)). Determines thermal inertia of the fast-responding layer. Typical values: 5-15
       (corresponding to ~50-150m mixed layer depth).
@@ -63,8 +64,8 @@ class TwoLayerBuilder(ComponentBuilder):
     ...     {
     ...         "lambda0": 1.0,
     ...         "a": 0.0,
-    ...         "efficacy": 1.0,
-    ...         "eta": 0.7,
+    ...         "deep_ocean_efficacy": 1.0,
+    ...         "ocean_heat_transfer": 0.7,
     ...         "heat_capacity_surface": 8.0,
     ...         "heat_capacity_deep": 100.0,
     ...     }
@@ -77,8 +78,8 @@ class TwoLayerBuilder(ComponentBuilder):
     ...     {
     ...         "lambda0": 1.2,
     ...         "a": 0.05,  # Sensitivity increases with warming
-    ...         "efficacy": 1.3,
-    ...         "eta": 0.65,
+    ...         "deep_ocean_efficacy": 1.3,
+    ...         "ocean_heat_transfer": 0.65,
     ...         "heat_capacity_surface": 10.0,
     ...         "heat_capacity_deep": 150.0,
     ...     }

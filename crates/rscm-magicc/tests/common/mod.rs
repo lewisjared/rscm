@@ -29,17 +29,17 @@ pub fn default_lamcalc_params() -> LamcalcParameters {
     let nh_land = 0.42;
     let sh_land = 0.21;
     LamcalcParameters {
-        q_2xco2: 3.71,
-        k_lo: 1.44,
-        k_ns: 0.31,
+        erf_2xco2: 3.71,
+        land_ocean_heat_exchange: 1.44,
+        north_south_heat_exchange: 0.31,
         ecs: 3.0,
-        rlo: 1.317,
+        land_ocean_warming_ratio: 1.317,
         amplify_ocean_to_land: 1.02,
         fgno: 0.5 - nh_land / 2.0,
         fgnl: nh_land / 2.0,
         fgso: 0.5 - sh_land / 2.0,
         fgsl: sh_land / 2.0,
-        rf_regions_co2: [1.0; 4],
+        co2_regional_pattern: [1.0; 4],
     }
 }
 
@@ -47,17 +47,17 @@ pub fn default_lamcalc_params() -> LamcalcParameters {
 pub fn lamcalc_params_from_udeb(params: &ClimateUdebParameters) -> LamcalcParameters {
     let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
     LamcalcParameters {
-        q_2xco2: params.rf_2xco2,
-        k_lo: params.k_lo,
-        k_ns: params.k_ns,
+        erf_2xco2: params.erf_2xco2,
+        land_ocean_heat_exchange: params.land_ocean_heat_exchange,
+        north_south_heat_exchange: params.north_south_heat_exchange,
         ecs: params.ecs,
-        rlo: params.rlo,
+        land_ocean_warming_ratio: params.land_ocean_warming_ratio,
         amplify_ocean_to_land: params.amplify_ocean_to_land,
         fgno,
         fgnl,
         fgso,
         fgsl,
-        rf_regions_co2: params.rf_regions_co2,
+        co2_regional_pattern: params.co2_regional_pattern,
     }
 }
 
@@ -72,8 +72,8 @@ pub fn lamcalc_params_from_udeb(params: &ClimateUdebParameters) -> LamcalcParame
 pub fn params_with_fixed_ecs(ecs: FloatValue) -> ClimateUdebParameters {
     ClimateUdebParameters {
         ecs,
-        feedback_cumt_sensitivity: 0.0,
-        feedback_q_sensitivity: 0.0,
+        feedback_cumulative_temperature_sensitivity: 0.0,
+        feedback_forcing_sensitivity: 0.0,
         ..Default::default()
     }
 }
@@ -121,9 +121,9 @@ pub fn compute_equilibrium_temperatures(
     });
 
     let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
-    let q = params.q_2xco2;
+    let q = params.erf_2xco2;
 
-    let qfrac = compute_qfrac(&params.rf_regions_co2, &area);
+    let qfrac = compute_qfrac(&params.co2_regional_pattern, &area);
 
     let mut box_temps = [0.0_f64; 4];
     for row in 0..4 {

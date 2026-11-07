@@ -164,7 +164,7 @@ informative_params = ParameterSet(
     {
         "sensitivity": LogNormal(mean=3.0, std_dev=1.0),
         "offset": Normal(0.0, 0.5),
-        "efficacy": Bound(Normal(1.0, 0.3), 0.5, 2.0),
+        "deep_ocean_efficacy": Bound(Normal(1.0, 0.3), 0.5, 2.0),
     }
 )
 
@@ -355,9 +355,9 @@ def run_two_layer(parameters: dict) -> float:
 # %%
 true_climate_params = {
     "lambda0": 1.1,  # W/(m² K)
-    "efficacy": 1.3,
+    "deep_ocean_efficacy": 1.3,
     "a": 0.05,  # W/(m² K²)
-    "eta": 0.7,  # W/(m² K)
+    "ocean_heat_transfer": 0.7,  # W/(m² K)
     "heat_capacity_deep": 100.0,  # W yr/(m² K)
     "heat_capacity_surface": 8.0,  # W yr/(m² K)
 }

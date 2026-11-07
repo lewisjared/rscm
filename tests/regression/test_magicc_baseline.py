@@ -99,8 +99,8 @@ def test_real_report_and_residual_wiring(monkeypatch):
         np.testing.assert_array_equal(kwargs["other_forcing"], expected)
         assert set(concentrations) == set(baseline.GASES)
         assert (
-            kwargs["forcing_parameters"]["delq2xco2"]
-            == kwargs["climate_parameters"]["rf_2xco2"]
+            kwargs["forcing_parameters"]["erf_2xco2"]
+            == kwargs["climate_parameters"]["erf_2xco2"]
         )
         return original(years, concentrations, **kwargs)
 

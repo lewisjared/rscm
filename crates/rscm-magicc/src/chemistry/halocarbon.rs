@@ -113,13 +113,13 @@ impl HalocarbonChemistry {
         strat_scale: FloatValue,
     ) -> FloatValue {
         let mut rate = 0.0;
-        if species.tau_oh > 0.0 {
-            rate += 1.0 / (species.tau_oh * oh_scale);
+        if species.oh_lifetime > 0.0 {
+            rate += 1.0 / (species.oh_lifetime * oh_scale);
         }
-        if species.tau_strat > 0.0 {
-            rate += 1.0 / (species.tau_strat * strat_scale);
+        if species.stratospheric_lifetime > 0.0 {
+            rate += 1.0 / (species.stratospheric_lifetime * strat_scale);
         }
-        if let Some(tau) = species.tau_other() {
+        if let Some(tau) = species.other_lifetime() {
             rate += 1.0 / tau;
         }
         1.0 / rate
@@ -158,21 +158,25 @@ impl HalocarbonChemistry {
         let release = |atoms: u8| {
             FloatValue::from(atoms) * species.fractional_release * p.cfc11_release_factor
         };
-        concentration * (p.br_vs_cl_scale * release(species.n_br) + release(species.n_cl))
+        concentration * (p.br_cl_ratio * release(species.br_atoms) + release(species.cl_atoms))
     }
 
     fn scale_factors(&self, t_current: Time, input_state: &InputState) -> (FloatValue, FloatValue) {
         let p = &self.parameters;
-        let oh_scale = if p.variable_oh_lifetime {
+        let oh_scale = if p.include_variable_oh_lifetime {
             let window = input_state.get_scalar_window(CH4_OH_LIFETIME);
-            window.get() / p.ch4_oh_lifetime_init
+            window.get() / p.initial_ch4_oh_lifetime
         } else {
             1.0
         };
-        let strat_scale = if p.variable_strat_lifetime {
+        let strat_scale = if p.include_variable_stratospheric_lifetime {
             let temperature = input_state.get_scalar_window("Surface Temperature");
-            let warming = feedback_warming(&temperature, t_current, p.meridional_flux_year);
-            1.0 / (1.0 + warming * p.meridional_flux_per_degree * p.strat_lifetime_sensitivity)
+            let warming =
+                feedback_warming(&temperature, t_current, p.meridional_flux_reference_year);
+            1.0 / (1.0
+                + warming
+                    * p.meridional_flux_change_per_degree
+                    * p.stratospheric_lifetime_sensitivity)
         } else {
             1.0
         };
@@ -207,7 +211,7 @@ impl HalocarbonChemistry {
         let p = &self.parameters;
         [
             (&p.fgases, p.fgas_switch_year),
-            (&p.montreal_gases, p.mhalo_switch_year),
+            (&p.montreal_gases, p.montreal_gases_switch_year),
         ]
     }
 }
@@ -252,13 +256,13 @@ impl Component for HalocarbonChemistry {
                 ));
             }
         }
-        if self.parameters.variable_oh_lifetime {
+        if self.parameters.include_variable_oh_lifetime {
             definitions.push(
                 VariableDefinition::scalar_input(CH4_OH_LIFETIME, "yr")
                     .with_timeseries_type(TimeseriesType::Average),
             );
         }
-        if self.parameters.variable_strat_lifetime {
+        if self.parameters.include_variable_stratospheric_lifetime {
             definitions.push(VariableDefinition::scalar_input("Surface Temperature", "K"));
         }
         if self.parameters.fgas_regions.is_some() {
@@ -363,7 +367,7 @@ mod tests {
         let c = component();
         for s in c.parameters().all_species() {
             assert!(
-                (c.lifetime(s, 1.0, 1.0) - s.tau_total).abs() < 1e-9,
+                (c.lifetime(s, 1.0, 1.0) - s.total_lifetime).abs() < 1e-9,
                 "{}",
                 s.name
             );
@@ -374,9 +378,9 @@ mod tests {
     fn test_oh_scaling_lengthens_lifetime() {
         let c = component();
         let hcfc22 = species("HCFC22");
-        assert!(c.lifetime(&hcfc22, 1.1, 1.0) > hcfc22.tau_total);
+        assert!(c.lifetime(&hcfc22, 1.1, 1.0) > hcfc22.total_lifetime);
         let cfc11 = species("CFC11");
-        assert!((c.lifetime(&cfc11, 1.1, 1.0) - cfc11.tau_total).abs() < 1e-9);
+        assert!((c.lifetime(&cfc11, 1.1, 1.0) - cfc11.total_lifetime).abs() < 1e-9);
     }
 
     #[test]

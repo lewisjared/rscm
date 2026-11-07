@@ -39,7 +39,7 @@ def test_initial_heat_uptake_respects_efficacy():
             other_forcing=[1.0, 1.0],
             climate_parameters={
                 "efficacy_method": "ar6",
-                "prescribed_efficacy_co2": efficacy,
+                "co2_efficacy": efficacy,
             },
         )
         return result.values["Heat Uptake"][0]
@@ -218,5 +218,5 @@ def test_nonfinite_calculated_output_fails_run():
             conc,
             other_forcing=[0, 0],
             forcing_parameters={"method": "IPCCTAR", "adjust_co2": 1e308},
-            climate_parameters={"rf_2xco2": 3.71},
+            climate_parameters={"erf_2xco2": 3.71},
         )

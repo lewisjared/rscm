@@ -75,11 +75,11 @@ builder = (
     ModelBuilder()
     .with_component(
         CarbonCycleBuilder.from_parameters(
-            dict(tau=20.3, conc_pi=280.0, alpha_temperature=0.0)
+            dict(tau=20.3, co2_pi=280.0, alpha_temperature=0.0)
         ).build()
     )
     .with_component(
-        CO2ErfBuilder.from_parameters(dict(erf_2xco2=4.0, conc_pi=280.0)).build()
+        CO2ErfBuilder.from_parameters(dict(erf_2xco2=4.0, co2_pi=280.0)).build()
     )
     .with_time_axis(time_axis)
     .with_prescribed_variable("Surface Temperature", surface_temp)

@@ -85,7 +85,7 @@ def test_co2_mass_balance():
 
 def test_climate_feedback_follows_forcing_configuration():
     default = run(emissions())
-    explicit = run(emissions(), parameters={"ClimateUdeb": {"rf_2xco2": 3.71}})
+    explicit = run(emissions(), parameters={"ClimateUdeb": {"erf_2xco2": 3.71}})
     # A smaller doubling forcing weakens the feedback, so the climate warms more
     assert (
         explicit.values["Surface Temperature"][-1]
@@ -131,8 +131,8 @@ def test_carbon_conversion_shared_between_budget_and_ocean():
 
 def test_ch4_budget_shared_between_chemistry_and_oxidation():
     concentration = "Atmospheric Concentration|CH4"
-    chemistry_only = run(emissions(), parameters={"CH4Chemistry": {"ppb_to_tg": 3.0}})
-    oxidation_only = run(emissions(), parameters={"CH4Oxidation": {"ppb_to_tg": 3.0}})
+    chemistry_only = run(emissions(), parameters={"CH4Chemistry": {"tg_per_ppb": 3.0}})
+    oxidation_only = run(emissions(), parameters={"CH4Oxidation": {"tg_per_ppb": 3.0}})
     npt.assert_array_equal(
         chemistry_only.values[concentration], oxidation_only.values[concentration]
     )
@@ -144,12 +144,12 @@ def test_ch4_budget_shared_between_chemistry_and_oxidation():
                 "CH4Oxidation": {"natural_emissions": 210.0},
             },
         )
-    with pytest.raises(ValueError, match="tau_other"):
+    with pytest.raises(ValueError, match="non_oh_lifetime"):
         run(
             emissions(),
             parameters={
-                "CH4Chemistry": {"tau_soil": 100.0},
-                "CH4Oxidation": {"tau_other": 50.0},
+                "CH4Chemistry": {"soil_lifetime": 100.0},
+                "CH4Oxidation": {"non_oh_lifetime": 50.0},
             },
         )
 

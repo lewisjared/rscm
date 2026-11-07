@@ -14,8 +14,8 @@ def test_model(time_axis):
         dict(
             lambda0=0.0,
             a=0.0,
-            efficacy=0.0,
-            eta=0.0,
+            deep_ocean_efficacy=0.0,
+            ocean_heat_transfer=0.0,
             heat_capacity_deep=0.0,
             heat_capacity_surface=0.0,
         )
@@ -49,8 +49,8 @@ def test_missing_prescribed_input(time_axis):
         dict(
             lambda0=0.0,
             a=0.0,
-            efficacy=0.0,
-            eta=0.0,
+            deep_ocean_efficacy=0.0,
+            ocean_heat_transfer=0.0,
             heat_capacity_deep=0.0,
             heat_capacity_surface=0.0,
         )
@@ -79,8 +79,8 @@ def test_missing_initial_value_names_the_builder_method(time_axis):
         dict(
             lambda0=0.0,
             a=0.0,
-            efficacy=0.0,
-            eta=0.0,
+            deep_ocean_efficacy=0.0,
+            ocean_heat_transfer=0.0,
             heat_capacity_deep=0.0,
             heat_capacity_surface=0.0,
         )
@@ -104,8 +104,8 @@ def test_model_serialisation(time_axis):
         dict(
             lambda0=0.0,
             a=0.0,
-            efficacy=0.0,
-            eta=0.0,
+            deep_ocean_efficacy=0.0,
+            ocean_heat_transfer=0.0,
             heat_capacity_deep=0.0,
             heat_capacity_surface=0.0,
         )
@@ -152,8 +152,8 @@ def test_coupling_formats(time_axis):
         dict(
             lambda0=0.0,
             a=0.0,
-            efficacy=0.0,
-            eta=0.0,
+            deep_ocean_efficacy=0.0,
+            ocean_heat_transfer=0.0,
             heat_capacity_deep=0.0,
             heat_capacity_surface=0.0,
         )

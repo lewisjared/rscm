@@ -317,13 +317,15 @@ class Reported:
                 "climate": full.efficacy_climate(climate),
             }
         )
-        initial = aggregation.internal_efficacies(climate["ecs"], full.EFFICACY_Q2XCO2)
+        initial = aggregation.internal_efficacies(
+            climate["ecs"], full.EFFICACY_ERF_2XCO2
+        )
         ecs = output(model, "Equilibrium Climate Sensitivity")
-        q_2xco2 = output(model, f"{ERF}|2xCO2")
+        erf_2xco2 = output(model, f"{ERF}|2xCO2")
         # Each year applies the internal efficacies of the previous year's climate.
         internal = [initial] + [
             aggregation.internal_efficacies(e, q) if np.isfinite(e) else initial
-            for e, q in zip(ecs[:-1], q_2xco2[:-1])
+            for e, q in zip(ecs[:-1], erf_2xco2[:-1])
         ]
         self._names = [a["variable"].removeprefix(f"{ERF}|") for a in agents]
         self._efficacies = [a["efficacy"] for a in agents]
@@ -353,7 +355,7 @@ class Reported:
         }
         n = len(self.run.years)
         component = HalocarbonChemistryBuilder.from_parameters(
-            {"fgas_switch_year": np.inf, "mhalo_switch_year": np.inf}
+            {"fgas_switch_year": np.inf, "montreal_gases_switch_year": np.inf}
         ).build()
         return run_components(
             self.run.time_axis,

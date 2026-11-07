@@ -17,7 +17,7 @@ class CH4LifetimeBuilder(ComponentBuilder):
 
     - `emissions` and `concentrations`: precursors with `variable`, `unit`,
       `baseline` and `sensitivity`
-    - `temperature_sensitivity`, `ch4_min`, `surface_temperature`, `output`
+    - `temperature_sensitivity`, `minimum_scaling`, `surface_temperature`, `output`
     """
 
     @staticmethod
@@ -33,7 +33,7 @@ class GasCycleBuilder(ComponentBuilder):
     **Parameter keys**
 
     - `species`: one dict per gas, see `rscm.fair.config`
-    - `iirf_max`, `surface_temperature`
+    - `maximum_iirf`, `surface_temperature`
     """
 
     @staticmethod

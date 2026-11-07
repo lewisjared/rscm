@@ -59,6 +59,7 @@ pub struct GhgForcingParameters {
     // === Pre-industrial concentrations ===
     /// Pre-industrial CO2 concentration (ppm).
     /// Default: 278.0 ppm
+    /// MAGICC7: CO2_PREINDCO2CONC
     pub co2_pi: f64,
 
     /// Pre-industrial CH4 concentration (ppb).
@@ -72,21 +73,24 @@ pub struct GhgForcingParameters {
     // === IPCCTAR-specific parameters ===
     /// Forcing for CO2 doubling (W/m2).
     ///
-    /// Used by IPCCTAR method: `alpha = delq2xco2 / ln(2)`.
+    /// Used by IPCCTAR method: `alpha = erf_2xco2 / ln(2)`.
     /// Default: 3.71 W/m2
-    pub delq2xco2: f64,
+    /// MAGICC7: CORE_DELQ2XCO2
+    pub erf_2xco2: f64,
 
     /// CH4 radiative efficiency (W/m2 per sqrt(ppb)).
     ///
     /// IPCCTAR coefficient for CH4 forcing.
+    /// MAGICC7: CH4_RADEFF_WM2PERPPB
     /// Default: 0.036
-    pub ch4_radeff: f64,
+    pub ch4_radiative_efficiency: f64,
 
     /// N2O radiative efficiency (W/m2 per sqrt(ppb)).
     ///
     /// IPCCTAR coefficient for N2O forcing.
+    /// MAGICC7: N2O_RADEFF_WM2PERPPB
     /// Default: 0.12
-    pub n2o_radeff: f64,
+    pub n2o_radiative_efficiency: f64,
 
     // === OLBL coefficients (MAGICC7 v7.5.3) ===
     // CO2: alpha = a1*(C-C0)^2 + b1*(C-C0) + d1 + c1*sqrt(N2O)
@@ -154,7 +158,7 @@ pub struct GhgForcingParameters {
 
     /// `CH4_ADDEDSTRATH2O_PERCENT`: stratospheric H2O ERF from CH4 oxidation
     /// as a fraction of CH4 ERF at pre-industrial N2O.
-    pub ch4_strat_h2o_fraction: f64,
+    pub ch4_stratospheric_h2o_fraction: f64,
 }
 
 impl Default for GhgForcingParameters {
@@ -168,9 +172,9 @@ impl Default for GhgForcingParameters {
             n2o_pi: 270.0, // ppb
 
             // IPCCTAR parameters
-            delq2xco2: 3.71,
-            ch4_radeff: 0.036,
-            n2o_radeff: 0.12,
+            erf_2xco2: 3.71,
+            ch4_radiative_efficiency: 0.036,
+            n2o_radiative_efficiency: 0.12,
 
             // OLBL coefficients (MAGICC7 v7.5.3 MAGCFG_DEFAULTALL.CFG)
             olbl_co2_a1: -2.4785e-7,
@@ -190,7 +194,7 @@ impl Default for GhgForcingParameters {
             adjust_ch4: 0.86,
             adjust_n2o: 1.0,
 
-            ch4_strat_h2o_fraction: 0.0923,
+            ch4_stratospheric_h2o_fraction: 0.0923,
         }
     }
 }
@@ -226,7 +230,7 @@ mod tests {
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
         assert!((params.ch4_pi - 722.0).abs() < 1e-10);
         assert!((params.n2o_pi - 270.0).abs() < 1e-10);
-        assert!((params.delq2xco2 - 3.71).abs() < 1e-10);
+        assert!((params.erf_2xco2 - 3.71).abs() < 1e-10);
 
         // Adjustment factors should be close to 1
         assert!(params.adjust_co2 > 0.5 && params.adjust_co2 < 2.0);
@@ -247,11 +251,11 @@ mod tests {
 
     #[test]
     fn test_partial_deserialisation() {
-        let json = r#"{"method": "IPCCTAR", "delq2xco2": 3.80}"#;
+        let json = r#"{"method": "IPCCTAR", "erf_2xco2": 3.80}"#;
         let params: GhgForcingParameters = serde_json::from_str(json).unwrap();
 
         assert_eq!(params.method, ForcingMethod::Ipcctar);
-        assert!((params.delq2xco2 - 3.80).abs() < 1e-10);
+        assert!((params.erf_2xco2 - 3.80).abs() < 1e-10);
         // Defaults for unspecified fields
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
     }

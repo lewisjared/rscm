@@ -309,13 +309,19 @@ impl SeaLevelRise {
         if year >= p.glaciers.start_year {
             state.glaciers = self.glacier_step(state.glaciers, temperature);
         }
-        if year >= p.greenland_smb.start_year {
-            state.greenland_smb =
-                Self::smb_step(&p.greenland_smb, state.greenland_smb, temperature);
+        if year >= p.greenland_surface_mass_balance.start_year {
+            state.greenland_smb = Self::smb_step(
+                &p.greenland_surface_mass_balance,
+                state.greenland_smb,
+                temperature,
+            );
         }
-        if year >= p.antarctic_smb.start_year {
-            state.antarctic_smb =
-                Self::smb_step(&p.antarctic_smb, state.antarctic_smb, temperature);
+        if year >= p.antarctic_surface_mass_balance.start_year {
+            state.antarctic_smb = Self::smb_step(
+                &p.antarctic_surface_mass_balance,
+                state.antarctic_smb,
+                temperature,
+            );
         }
         let greenland_discharge = self.greenland_discharge(state, year, temperature);
         let antarctic_discharge = self.antarctic_discharge(state, year, temperature);
@@ -418,7 +424,7 @@ mod tests {
                 0.0
             );
             state.greenland_smb = SeaLevelRise::smb_step(
-                &component.parameters.greenland_smb,
+                &component.parameters.greenland_surface_mass_balance,
                 state.greenland_smb,
                 0.0,
             );

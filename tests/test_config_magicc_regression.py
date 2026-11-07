@@ -186,7 +186,7 @@ class TestRegressionConfigSpecifics:
         assert result["time"]["end"] == 2100
         climate_params = result["components"]["climate"]["parameters"]
         assert climate_params["climate_sensitivity"] == 3.0
-        assert climate_params["forcing_2xco2"] == 3.71
+        assert climate_params["erf_2xco2"] == 3.71
 
 
 class TestParameterStatusDistribution:

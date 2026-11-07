@@ -35,7 +35,7 @@
   "states": [],
   "parameters": [
     {
-      "name": "ospp_preindustrial",
+      "name": "ospp_pi",
       "type": "f64",
       "description": "Pre-industrial ocean surface partial pressure\nUnits: `ppm`"
     },
@@ -45,7 +45,7 @@
       "description": "Sensitivity of the ocean surface's partial pressure to changes in sea\nsurface temperature relative to pre-industrial\nUnits: `1 / delta_degC`"
     },
     {
-      "name": "sea_surface_temperature_preindustrial",
+      "name": "sst_pi",
       "type": "f64",
       "description": "Pre-industrial sea surface temperature\nUnits: `degC`"
     },

@@ -37,9 +37,9 @@ def synthetic_observations():
     # True parameter values (physically realistic)
     true_params = {
         "lambda0": 1.1,
-        "efficacy": 1.3,
+        "deep_ocean_efficacy": 1.3,
         "a": 0.05,
-        "eta": 0.7,
+        "ocean_heat_transfer": 0.7,
         "heat_capacity_deep": 100.0,
         "heat_capacity_surface": 8.0,
     }
@@ -181,8 +181,8 @@ def test_point_estimation(calibration_setup):
 
     # Create fixed parameters
     fixed_params = {
-        "efficacy": true_params["efficacy"],
-        "eta": true_params["eta"],
+        "deep_ocean_efficacy": true_params["deep_ocean_efficacy"],
+        "ocean_heat_transfer": true_params["ocean_heat_transfer"],
         "heat_capacity_deep": true_params["heat_capacity_deep"],
         "heat_capacity_surface": true_params["heat_capacity_surface"],
     }
@@ -234,8 +234,8 @@ def test_mcmc_sampling(calibration_setup):
 
     # Create fixed parameters
     fixed_params = {
-        "efficacy": true_params["efficacy"],
-        "eta": true_params["eta"],
+        "deep_ocean_efficacy": true_params["deep_ocean_efficacy"],
+        "ocean_heat_transfer": true_params["ocean_heat_transfer"],
         "heat_capacity_deep": true_params["heat_capacity_deep"],
         "heat_capacity_surface": true_params["heat_capacity_surface"],
     }
@@ -293,8 +293,8 @@ def test_chain_diagnostics(calibration_setup):
 
     # Create fixed parameters
     fixed_params = {
-        "efficacy": true_params["efficacy"],
-        "eta": true_params["eta"],
+        "deep_ocean_efficacy": true_params["deep_ocean_efficacy"],
+        "ocean_heat_transfer": true_params["ocean_heat_transfer"],
         "heat_capacity_deep": true_params["heat_capacity_deep"],
         "heat_capacity_surface": true_params["heat_capacity_surface"],
     }

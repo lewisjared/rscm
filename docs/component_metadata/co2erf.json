@@ -34,7 +34,7 @@
       "description": "ERF due to a doubling of atmospheric CO2 concentrations\nunit: W/m^2"
     },
     {
-      "name": "conc_pi",
+      "name": "co2_pi",
       "type": "FloatValue",
       "description": "Pre-industrial atmospheric CO2 concentration\nunit: ppm"
     }

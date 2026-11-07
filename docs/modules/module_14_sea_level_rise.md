@@ -478,7 +478,7 @@ The contributions are independent of each other except at the end, in this order
 - **Not implemented**: land water (off by default), the semi-empirical method,
   the `FETTWEIS` and `DECONTO` alternatives, and the anomalies to 1986 to 2005 (`ZEROED_*`).
 - **Glacier normalisations**: RSCM has no `SLR_GL_NORMPARA_VOL` or `SLR_GL_NORMPARA_TEMP`, so it assumes 1.
-- **Initial ocean profile**: `ocean_temp_profile` offers the `analytical` exponential (MAGICC7 1) and `cmip5` (2) profiles.
+- **Initial ocean profile**: `ocean_temperature_profile` offers the `analytical` exponential (MAGICC7 1) and `cmip5` (2) profiles.
   MAGICC7's third option, `TEMP_OCEAN_INI_PROFILE_ONE`, is not available.
 - **Steps must be one year long.**
 

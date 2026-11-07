@@ -38,7 +38,7 @@ pub struct ClimateUdebState {
     pub temperature_history: Vec<FloatValue>,
 
     /// History of step sizes (years) corresponding to each temperature_history entry.
-    /// Used to determine how many entries span the `feedback_cumt_period` window.
+    /// Used to determine how many entries span the `feedback_cumulative_temperature_period` window.
     #[serde(default)]
     pub dt_history: Vec<FloatValue>,
 
@@ -115,12 +115,12 @@ impl ClimateUdebState {
     /// Create a new state for a given number of layers and initial conditions.
     ///
     /// `alpha_initial` is the SST-to-air-temperature ratio used before any
-    /// ocean temperature has developed (i.e. `temp_adjust_alpha` from parameters).
+    /// ocean temperature has developed (i.e. `temperature_adjustment_alpha` from parameters).
     /// `profiles` is the per-hemisphere initial ocean temperature profiles,
     /// computed by [`ClimateUdebParameters::initial_ocean_profile()`].
     pub fn new(
         n_layers: usize,
-        w_initial: FloatValue,
+        initial_upwelling_rate: FloatValue,
         alpha_initial: FloatValue,
         profiles: [Vec<FloatValue>; 2],
     ) -> Self {
@@ -144,7 +144,7 @@ impl ClimateUdebState {
 
         Self {
             ocean_temps: vec![vec![0.0; n_layers]; 2],
-            upwelling_rates: [w_initial; 2],
+            upwelling_rates: [initial_upwelling_rate; 2],
             upwelling_delta: [0.0; 2],
             initialised: true,
             temperature_history: Vec::new(),

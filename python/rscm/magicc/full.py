@@ -49,7 +49,7 @@ from rscm.core import (
     VariableSchema,
 )
 from rscm.magicc import prescribed as pr
-from rscm.magicc.runner import CH4_OTHER_LIFETIMES, _ch4_burdens, _ch4_tau_other
+from rscm.magicc.runner import CH4_OTHER_LIFETIMES, _ch4_burdens, _ch4_non_oh_lifetime
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -209,7 +209,7 @@ SUMMATION: list[Any] = [
 ]
 """Order in which MAGICC7 adds the agents into its total, nesting its subtotals."""
 
-EFFICACY_Q2XCO2 = 3.71
+EFFICACY_ERF_2XCO2 = 3.71
 """
 CO2 doubling forcing behind MAGICC7's internal efficacies
 until the run calculates one.
@@ -233,7 +233,7 @@ EFFICACY_METHODS = {0: "none", 1: "unit", 2: "ar6"}
 
 TERRESTRIAL_FEEDBACKS = {
     "npp": "npp",
-    "resp": "respiration",
+    "respiration": "respiration",
     "detritus": "detritus",
     "soil": "soil",
 }
@@ -243,26 +243,26 @@ TerrestrialCarbon temperature sensitivities and their ``co2_feedbackfactor_*`` n
 
 CLIMATE_PARAMETERS = {
     "ecs": "core_climatesensitivity",
-    "rf_2xco2": "core_delq2xco2",
-    "rlo": "core_rlo",
-    "k_lo": "core_heatxchange_landocean",
-    "k_ns": "core_heatxchange_northsouth",
+    "erf_2xco2": "core_delq2xco2",
+    "land_ocean_warming_ratio": "core_rlo",
+    "land_ocean_heat_exchange": "core_heatxchange_landocean",
+    "north_south_heat_exchange": "core_heatxchange_northsouth",
     "amplify_ocean_to_land": "core_amplify_ocn2land_heatxchng",
-    "kappa": "core_verticaldiffusivity",
-    "kappa_min": "core_verticaldiffusivity_min",
-    "kappa_dkdt": "core_verticaldiff_top_dkdt",
-    "w_initial": "core_initial_upwelling_rate",
-    "w_variable_fraction": "core_upwelling_variable_part",
-    "feedback_q_sensitivity": "core_feedback_qsensitivity",
-    "feedback_cumt_sensitivity": "core_feedback_cumtsensitivity",
-    "feedback_cumt_period": "core_feedback_cumtperiod",
-    "temp_adjust_alpha": "core_tempadjust_ocn2atm_alpha",
-    "temp_adjust_gamma": "core_tempadjust_ocn2atm_gamma",
+    "vertical_diffusivity": "core_verticaldiffusivity",
+    "minimum_vertical_diffusivity": "core_verticaldiffusivity_min",
+    "vertical_diffusivity_gradient_sensitivity": "core_verticaldiff_top_dkdt",
+    "initial_upwelling_rate": "core_initial_upwelling_rate",
+    "upwelling_variable_fraction": "core_upwelling_variable_part",
+    "feedback_forcing_sensitivity": "core_feedback_qsensitivity",
+    "feedback_cumulative_temperature_sensitivity": "core_feedback_cumtsensitivity",
+    "feedback_cumulative_temperature_period": "core_feedback_cumtperiod",
+    "temperature_adjustment_alpha": "core_tempadjust_ocn2atm_alpha",
+    "temperature_adjustment_gamma": "core_tempadjust_ocn2atm_gamma",
     "polar_sinking_ratio": "core_polarsinkwater_tempratio",
-    "k_lg": "core_heatxchange_landground",
+    "land_ground_heat_exchange": "core_heatxchange_landground",
     "mixed_layer_depth": "core_mixedlayer_depth",
-    "rf_regions_co2": "rf_regions_co2",
-    "land_hc_eff_thickness": "core_landhc_effthickness",
+    "co2_regional_pattern": "rf_regions_co2",
+    "land_heat_capacity_effective_thickness": "core_landhc_effthickness",
 }
 """ClimateUdeb parameters and their MAGICC7 names."""
 
@@ -555,15 +555,15 @@ def climate_parameters(
     )
     base = {ours: p[theirs] for ours, theirs in CLIMATE_PARAMETERS.items()}
     initial = ClimateUdebBuilder.from_parameters(
-        cast("Any", {**base, "rf_2xco2": EFFICACY_Q2XCO2})
+        cast("Any", {**base, "erf_2xco2": EFFICACY_ERF_2XCO2})
     ).internal_efficacy(pattern)
     method = EFFICACY_METHODS[p["rf_efficacy_apply"]]
     return {
         **base,
-        "land_heat_capacity_enabled": bool(p["core_landheatcapacity_apply"]),
+        "include_land_heat_capacity": bool(p["core_landheatcapacity_apply"]),
         "depth_dependent_area": float(p["core_ocn_depthdependent"]),
-        "regional_forcing": True,
-        "time_varying_q2x": True,
+        "include_regional_forcing": True,
+        "time_varying_erf_2xco2": True,
         "subannual_forcing": pr.volcanic_substeps(
             volcanic.years,
             values[:, 0],
@@ -571,7 +571,7 @@ def climate_parameters(
             scale=p["rf_volcanic_scale"],
             efficacy=p["rf_efficacy_volc"] if method == "ar6" else 1.0,
             internal_efficacy=initial if method != "none" else 1.0,
-            rf_regions=pattern if method != "none" else None,
+            regional_pattern=pattern if method != "none" else None,
             until=end_year,
         ),
     }
@@ -591,7 +591,7 @@ def _agent(
         "regional": regional,
         "efficacy": p.get(f"rf_efficacy_{key}", 1.0),
         "internal_efficacy": p[f"rf_intefficacy_{key}"],
-        "rf_regions": p.get(f"rf_regions_{key}", [1.0] * 4),
+        "regional_pattern": p.get(f"rf_regions_{key}", [1.0] * 4),
         **extra,
     }
 
@@ -650,13 +650,20 @@ def _summation(terms: list[Any]) -> list[Any]:
 
 
 def _pattern(patterns: Mapping[str, list[float]], key: str) -> dict[str, Any]:
-    return {"rf_regions": patterns[key]} if key in patterns else {}
+    return {"regional_pattern": patterns[key]} if key in patterns else {}
 
 
 def efficacy_climate(climate: Mapping[str, Any]) -> dict[str, Any]:
     """ForcingAggregation ``climate`` from ClimateUdeb parameters."""
-    keys = ("ecs", "k_lo", "k_ns", "rlo", "amplify_ocean_to_land", "rf_regions_co2")
-    return {**{k: climate[k] for k in keys}, "rf_2xco2": EFFICACY_Q2XCO2}
+    keys = (
+        "ecs",
+        "land_ocean_heat_exchange",
+        "north_south_heat_exchange",
+        "land_ocean_warming_ratio",
+        "amplify_ocean_to_land",
+        "co2_regional_pattern",
+    )
+    return {**{k: climate[k] for k in keys}, "erf_2xco2": EFFICACY_ERF_2XCO2}
 
 
 def _ghg_method(parameters: Mapping[str, Any]) -> dict[str, Any]:
@@ -666,7 +673,7 @@ def _ghg_method(parameters: Mapping[str, Any]) -> dict[str, Any]:
     # MAGICC7 applies no rapid adjustment with IPCCTAR
     return {
         "method": method,
-        "delq2xco2": parameters["core_delq2xco2"],
+        "erf_2xco2": parameters["core_delq2xco2"],
         **{f"adjust_{gas}": 1.0 for gas in ("co2", "ch4", "n2o")},
     }
 
@@ -675,17 +682,17 @@ def ozone_parameters(parameters: Mapping[str, Any]) -> dict[str, Any]:
     """OzoneForcing parameters."""
     p = parameters
     return {
-        "strat_o3_scale": p["stratoz_o3scale"],
-        "strat_cl_exponent": p["stratoz_clexpon"],
-        "strat_threshold_year": p["stratoz_threshold_year"],
-        "trop_radeff": p["tropoz_radeff_wm2perdu"],
-        "trop_oz_ch4": p["tropoz_ozch4"],
-        "trop_oz_nox": p["tropoz_oznox"],
-        "trop_oz_co": p["tropoz_ozco"],
-        "trop_oz_voc": p["tropoz_ozvoc"],
-        "n2o_radeff": p["ozdueton2o_radeff"],
+        "stratospheric_o3_scale": p["stratoz_o3scale"],
+        "stratospheric_cl_exponent": p["stratoz_clexpon"],
+        "stratospheric_reference_year": p["stratoz_threshold_year"],
+        "tropospheric_ozone_radiative_efficiency": p["tropoz_radeff_wm2perdu"],
+        "tropospheric_ozone_ch4_sensitivity": p["tropoz_ozch4"],
+        "tropospheric_ozone_nox_sensitivity": p["tropoz_oznox"],
+        "tropospheric_ozone_co_sensitivity": p["tropoz_ozco"],
+        "tropospheric_ozone_nmvoc_sensitivity": p["tropoz_ozvoc"],
+        "n2o_ozone_radiative_efficiency": p["ozdueton2o_radeff"],
         "temperature_scale": p["ozduetotemperature_scale"],
-        "trop_regions": {"rf_regions": p["rf_regions_tropoz"]},
+        "tropospheric_ozone_regions": {"regional_pattern": p["rf_regions_tropoz"]},
     }
 
 
@@ -700,25 +707,25 @@ def permafrost_parameters(parameters: Mapping[str, Any]) -> dict[str, Any]:
             "decomposition_ratio": decomposition_ratio,
             "q10_aerobic_alpha": p[f"pf_q10_{name}_aerob_alpha"],
             "q10_anaerobic_alpha": p[f"pf_q10_{name}_anaerob_alpha"],
-            "anaerobic_initial_fraction": p[f"pf_{name}_anaerob_initial_areafraction"],
-            "anaerobic_max_fraction": p[f"pf_{name}_anaerob_max_areafraction"],
+            "initial_anaerobic_fraction": p[f"pf_{name}_anaerob_initial_areafraction"],
+            "maximum_anaerobic_fraction": p[f"pf_{name}_anaerob_max_areafraction"],
             "anaerobic_moisture_sensitivity": p[f"pf_{name}_anaerob_moistsens"],
             "ch4_oxidation_fraction": p[f"pf_{name}_ch4oxidisation_fraction"],
         }
 
     return {
         "n_bands": p["pf_nbands"],
-        "melting_temp_min": p["pf_meltingtemp_min"],
-        "melting_temp_max": p["pf_meltingtemp_max"],
+        "minimum_melting_temperature": p["pf_meltingtemp_min"],
+        "maximum_melting_temperature": p["pf_meltingtemp_max"],
         "arctic_amplification": p["pf_arctic_amplification"],
         "soil_annual_cycle_amplitude": p["pf_tsoilannualcycle_ampl"],
         "aerobic_turnover_time": p["pf_ms_aerob_decomp_turnovertime"],
         "anaerobic_decomposition_ratio": p["pf_decomprate_anaerob_over_aerob_ratio"],
-        "q10_temp1": p["pf_q10_temp1"],
-        "q10_temp2": p["pf_q10_temp2"],
+        "q10_temperature1": p["pf_q10_temp1"],
+        "q10_temperature2": p["pf_q10_temp2"],
         "soil_water_slope": p["pf_soilwater_m"],
         "soil_water_offset": p["pf_soilwater_offset"],
-        "soil_water_min": p["pf_soilwater_minw"],
+        "minimum_soil_water": p["pf_soilwater_minw"],
         "total_pool": p["pf_tot_pool"],
         "mineral_soil_fraction_south": p["pf_minsoil_southern_poolfraction"],
         "mineral_soil_fraction_north": p["pf_minsoil_northern_poolfraction"],
@@ -736,10 +743,13 @@ def nitrogen_parameters(parameters: Mapping[str, Any]) -> dict[str, Any] | None:
     p = parameters
     if not p["ncycle_apply"]:
         return None
-    fixation = {"vmax": p["ncycle_nfix_vmax"], "km": p["ncycle_nfix_km"]}
+    fixation = {
+        "maximum_fixation_rate": p["ncycle_nfix_vmax"],
+        "half_saturation_npp": p["ncycle_nfix_km"],
+    }
     return {
-        "ncratio_uptake": p["ncycle_ncratio_uptake"],
-        "ncratio_recycling": p["ncycle_ncratio_recyc"],
+        "uptake_nc_ratio": p["ncycle_ncratio_uptake"],
+        "recycling_nc_ratio": p["ncycle_ncratio_recyc"],
         "recycling_cn_factor": p["ncycle_recyc2cnratio_factor"],
         "uptake_supply": p["ncycle_ncratio_uptake_supply"],
         "availability_factor_a": p["ncycle_npp2navail_factor_a"],
@@ -909,10 +919,13 @@ def natural_emissions(
     p = parameters or default_parameters()
     files = inputs if inputs is not None else load_inputs(p)
     y = np.asarray(years, dtype=np.float64)
-    tau_other = _ch4_tau_other(CH4_OTHER_LIFETIMES)
-    tau_oh = 1.0 / (1.0 / p["ch4_tautot_init"] - 1.0 / tau_other)
+    non_oh_lifetime = _ch4_non_oh_lifetime(CH4_OTHER_LIFETIMES)
+    oh_lifetime = 1.0 / (1.0 / p["ch4_tautot_init"] - 1.0 / non_oh_lifetime)
     budget = {
-        "CH4": ((tau_oh, tau_other), p["ch4_ppb2tgch4"] * p["ch4_mixboxsize"]),
+        "CH4": (
+            (oh_lifetime, non_oh_lifetime),
+            p["ch4_ppb2tgch4"] * p["ch4_mixboxsize"],
+        ),
         "N2O": ((p["n2o_tauinit"],), p["n2o_ppb2tgn"]),
     }
     out = {}
@@ -1010,7 +1023,7 @@ def run_magicc7(  # noqa: PLR0913
         else [0.0]
         for a in agents
     ]
-    permafrost = {"permafrost": bool(p["pf_apply"])}
+    permafrost = {"include_permafrost": bool(p["pf_apply"])}
     switch = concentration_switch_years(time, p)
     nitrogen = nitrogen_parameters(p)
     source = "ncycle" if nitrogen and p["ncycle_apply_cn_initial_values"] else "co2"
@@ -1026,12 +1039,13 @@ def run_magicc7(  # noqa: PLR0913
                 for pool in ("plant", "detritus", "soil")
             },
             **{
-                f"{ours}_temp_sensitivity": p[f"co2_feedbackfactor_{theirs}"] * feedback
+                f"{ours}_temperature_sensitivity": p[f"co2_feedbackfactor_{theirs}"]
+                * feedback
                 for ours, theirs in TERRESTRIAL_FEEDBACKS.items()
             },
             "npp_pi": p[f"{source}_npp_initial"],
             "fertilisation_method": p["co2_fertilization_method"],
-            "plantbox_resp_fertscale": p["co2_plantboxresp_fertscale"],
+            "plant_respiration_fertilisation_scale": p["co2_plantboxresp_fertscale"],
             "nitrogen": nitrogen,
         },
     )
@@ -1043,9 +1057,9 @@ def run_magicc7(  # noqa: PLR0913
                 {
                     **permafrost,
                     "concentration_switch_year": switch["ch4"],
-                    "tau_total_init": p["ch4_tautot_init"],
-                    "ppb_to_tg": p["ch4_ppb2tgch4"],
-                    "mixbox_size": p["ch4_mixboxsize"],
+                    "initial_ch4_lifetime": p["ch4_tautot_init"],
+                    "tg_per_ppb": p["ch4_ppb2tgch4"],
+                    "mixing_box_size": p["ch4_mixboxsize"],
                     **_natural(natural, "CH4"),
                 },
             )
@@ -1056,8 +1070,8 @@ def run_magicc7(  # noqa: PLR0913
                 {
                     **permafrost,
                     "permafrost_fraction": p["pf_co2fromch4oxinatm_fraction"],
-                    "ppb_to_tg": p["ch4_ppb2tgch4"],
-                    "mixbox_size": p["ch4_mixboxsize"],
+                    "tg_per_ppb": p["ch4_ppb2tgch4"],
+                    "mixing_box_size": p["ch4_mixboxsize"],
                     **_natural(natural, "CH4"),
                 },
             )
@@ -1067,8 +1081,8 @@ def run_magicc7(  # noqa: PLR0913
                 "N2OChemistry",
                 {
                     "concentration_switch_year": switch["n2o"],
-                    "tau_n2o": p["n2o_tauinit"],
-                    "ppb_to_tg": p["n2o_ppb2tgn"],
+                    "initial_n2o_lifetime": p["n2o_tauinit"],
+                    "tg_per_ppb": p["n2o_ppb2tgn"],
                     **_natural(natural, "N2O"),
                 },
             )
@@ -1078,11 +1092,11 @@ def run_magicc7(  # noqa: PLR0913
                 "HalocarbonChemistry",
                 {
                     "fgas_switch_year": switch["fgas"],
-                    "mhalo_switch_year": switch["mhalo"],
+                    "montreal_gases_switch_year": switch["mhalo"],
                     "fgas_regions": {
-                        "rf_regions": p["rf_regions_fgas"],
-                        "lower_tau": p["fgas_rf_regionscaling_lowertau"],
-                        "upper_tau": p["fgas_rf_regionscaling_uppertau"],
+                        "regional_pattern": p["rf_regions_fgas"],
+                        "lower_lifetime": p["fgas_rf_regionscaling_lowertau"],
+                        "upper_lifetime": p["fgas_rf_regionscaling_uppertau"],
                     },
                 },
             )
@@ -1110,7 +1124,7 @@ def run_magicc7(  # noqa: PLR0913
                 {
                     **{f"{gas.lower()}_pi": conc[gas] for gas in ("CO2", "CH4", "N2O")},
                     **_ghg_method(p),
-                    "ch4_strat_h2o_fraction": p["ch4_addedstrath2o_percent"],
+                    "ch4_stratospheric_h2o_fraction": p["ch4_addedstrath2o_percent"],
                 },
             )
         ).build(),
@@ -1126,7 +1140,7 @@ def run_magicc7(  # noqa: PLR0913
         else []
     )
     components.extend(sea_level)
-    if permafrost["permafrost"]:
+    if permafrost["include_permafrost"]:
         components.insert(
             0,
             PermafrostBuilder.from_parameters(

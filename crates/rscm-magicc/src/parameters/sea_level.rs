@@ -341,11 +341,13 @@ fn antarctica_over_defaults<'de, D: Deserializer<'de>>(
 #[serde(default)]
 pub struct SeaLevelRiseParameters {
     pub glaciers: GlacierParameters,
+    /// Greenland surface mass balance, MAGICC7: SLR_GIS_SMB_*
     #[serde(deserialize_with = "greenland_over_defaults")]
-    pub greenland_smb: SurfaceMassBalanceParameters,
+    pub greenland_surface_mass_balance: SurfaceMassBalanceParameters,
     pub greenland_discharge: GreenlandDischargeParameters,
+    /// Antarctic surface mass balance, MAGICC7: SLR_AIS_SMB_*
     #[serde(deserialize_with = "antarctica_over_defaults")]
-    pub antarctic_smb: SurfaceMassBalanceParameters,
+    pub antarctic_surface_mass_balance: SurfaceMassBalanceParameters,
     pub antarctic_discharge: AntarcticDischargeParameters,
 }
 
@@ -353,9 +355,9 @@ impl Default for SeaLevelRiseParameters {
     fn default() -> Self {
         Self {
             glaciers: GlacierParameters::default(),
-            greenland_smb: SurfaceMassBalanceParameters::greenland(),
+            greenland_surface_mass_balance: SurfaceMassBalanceParameters::greenland(),
             greenland_discharge: GreenlandDischargeParameters::default(),
-            antarctic_smb: SurfaceMassBalanceParameters::antarctica(),
+            antarctic_surface_mass_balance: SurfaceMassBalanceParameters::antarctica(),
             antarctic_discharge: AntarcticDischargeParameters::default(),
         }
     }
@@ -368,12 +370,12 @@ mod tests {
     #[test]
     fn test_partial_overrides_keep_their_own_defaults() {
         let p: SeaLevelRiseParameters = serde_json::from_str(
-            r#"{"antarctic_smb": {"start_year": 1990}, "greenland_discharge": {"high": {"volume": 50}}}"#,
+            r#"{"antarctic_surface_mass_balance": {"start_year": 1990}, "greenland_discharge": {"high": {"volume": 50}}}"#,
         )
         .unwrap();
-        assert_eq!(p.antarctic_smb.start_year, 1990.0);
-        assert_eq!(p.antarctic_smb.sensitivity, -0.1208204);
-        assert_eq!(p.antarctic_smb.volume, None);
+        assert_eq!(p.antarctic_surface_mass_balance.start_year, 1990.0);
+        assert_eq!(p.antarctic_surface_mass_balance.sensitivity, -0.1208204);
+        assert_eq!(p.antarctic_surface_mass_balance.volume, None);
         assert_eq!(p.greenland_discharge.high.volume, 50.0);
         assert_eq!(p.greenland_discharge.high.exponent, 0.47216);
         assert_eq!(p.greenland_discharge.low.volume, 35.9803);

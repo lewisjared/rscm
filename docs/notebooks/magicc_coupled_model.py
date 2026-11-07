@@ -316,20 +316,20 @@ aggregation = ForcingAggregationBuilder.from_parameters(
 # Both CH4 components repeat the CH4 budget, so they share its mass conversion and natural emissions.
 
 # %%
-ch4_mass = {"ppb_to_tg": p["ch4_ppb2tgch4"], "mixbox_size": p["ch4_mixboxsize"]}
+ch4_mass = {"tg_per_ppb": p["ch4_ppb2tgch4"], "mixing_box_size": p["ch4_mixboxsize"]}
 builders = {
     "Permafrost": PermafrostBuilder.from_parameters(full.permafrost_parameters(p)),
     "CH4Chemistry": CH4ChemistryBuilder.from_parameters(
         {
-            "permafrost": True,
-            "tau_total_init": p["ch4_tautot_init"],
+            "include_permafrost": True,
+            "initial_ch4_lifetime": p["ch4_tautot_init"],
             "natural_emissions": natural["CH4"],
             **ch4_mass,
         }
     ),
     "CH4Oxidation": CH4OxidationBuilder.from_parameters(
         {
-            "permafrost": True,
+            "include_permafrost": True,
             "permafrost_fraction": p["pf_co2fromch4oxinatm_fraction"],
             "natural_emissions": natural["CH4"],
             **ch4_mass,
@@ -337,17 +337,17 @@ builders = {
     ),
     "N2OChemistry": N2OChemistryBuilder.from_parameters(
         {
-            "tau_n2o": p["n2o_tauinit"],
-            "ppb_to_tg": p["n2o_ppb2tgn"],
+            "initial_n2o_lifetime": p["n2o_tauinit"],
+            "tg_per_ppb": p["n2o_ppb2tgn"],
             "natural_emissions": natural["N2O"],
         }
     ),
     "HalocarbonChemistry": HalocarbonChemistryBuilder.from_parameters(
         {
             "fgas_regions": {
-                "rf_regions": p["rf_regions_fgas"],
-                "lower_tau": p["fgas_rf_regionscaling_lowertau"],
-                "upper_tau": p["fgas_rf_regionscaling_uppertau"],
+                "regional_pattern": p["rf_regions_fgas"],
+                "lower_lifetime": p["fgas_rf_regionscaling_lowertau"],
+                "upper_lifetime": p["fgas_rf_regionscaling_uppertau"],
             }
         }
     ),
@@ -366,18 +366,18 @@ terrestrial = {
         for pool in ("plant", "detritus", "soil")
     },
     **{
-        f"{ours}_temp_sensitivity": p[f"co2_feedbackfactor_{theirs}"]
+        f"{ours}_temperature_sensitivity": p[f"co2_feedbackfactor_{theirs}"]
         for ours, theirs in full.TERRESTRIAL_FEEDBACKS.items()
     },
     "npp_pi": p["co2_npp_initial"],
     "fertilisation_method": p["co2_fertilization_method"],
-    "plantbox_resp_fertscale": p["co2_plantboxresp_fertscale"],
+    "plant_respiration_fertilisation_scale": p["co2_plantboxresp_fertscale"],
 }
 builders |= {
     "TerrestrialCarbon": TerrestrialCarbonBuilder.from_parameters(terrestrial),
-    "OceanCarbon": OceanCarbonBuilder.from_parameters({"permafrost": True}),
+    "OceanCarbon": OceanCarbonBuilder.from_parameters({"include_permafrost": True}),
     "CO2Budget": CO2BudgetBuilder.from_parameters(
-        {"permafrost": True, "ocean_end_of_year": True}
+        {"include_permafrost": True, "ocean_end_of_year": True}
     ),
     "GhgForcing": GhgForcingBuilder.from_parameters(
         {
@@ -386,7 +386,7 @@ builders |= {
                 for gas in ("CO2", "CH4", "N2O")
             },
             "method": "OLBL",
-            "ch4_strat_h2o_fraction": p["ch4_addedstrath2o_percent"],
+            "ch4_stratospheric_h2o_fraction": p["ch4_addedstrath2o_percent"],
         }
     ),
     "OzoneForcing": OzoneForcingBuilder.from_parameters(full.ozone_parameters(p)),

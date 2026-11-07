@@ -153,9 +153,9 @@ surface_temperature = Timeseries(
 def build_model(time_axis: TimeAxis, co2_emissions: Timeseries, initial_values: dict):
     """Build the carbon cycle and CO2 ERF model on `time_axis`."""
     carbon_cycle = CarbonCycleBuilder.from_parameters(
-        dict(tau=30.0, conc_pi=280.0, alpha_temperature=0.0)
+        dict(tau=30.0, co2_pi=280.0, alpha_temperature=0.0)
     ).build()
-    co2_erf = CO2ErfBuilder.from_parameters(dict(erf_2xco2=3.7, conc_pi=280.0)).build()
+    co2_erf = CO2ErfBuilder.from_parameters(dict(erf_2xco2=3.7, co2_pi=280.0)).build()
 
     return (
         ModelBuilder()

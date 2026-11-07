@@ -174,20 +174,20 @@ impl GhgForcing {
 
     fn co2_forcing_ipcctar(&self, co2: FloatValue) -> FloatValue {
         let p = &self.parameters;
-        let alpha = p.delq2xco2 / 2.0_f64.ln();
+        let alpha = p.erf_2xco2 / 2.0_f64.ln();
         alpha * (co2 / p.co2_pi).ln()
     }
 
     fn ch4_forcing_ipcctar(&self, ch4: FloatValue, _n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
-        let direct = (ch4.sqrt() - p.ch4_pi.sqrt()) * p.ch4_radeff;
+        let direct = (ch4.sqrt() - p.ch4_pi.sqrt()) * p.ch4_radiative_efficiency;
         let overlap = Self::overlap_g(p.ch4_pi, p.n2o_pi) / Self::overlap_g(ch4, p.n2o_pi);
         0.47 * overlap.ln() + direct
     }
 
     fn n2o_forcing_ipcctar(&self, _ch4: FloatValue, n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
-        let direct = (n2o.sqrt() - p.n2o_pi.sqrt()) * p.n2o_radeff;
+        let direct = (n2o.sqrt() - p.n2o_pi.sqrt()) * p.n2o_radiative_efficiency;
         let overlap = Self::overlap_g(p.ch4_pi, p.n2o_pi) / Self::overlap_g(p.ch4_pi, n2o);
         direct + 0.47 * overlap.ln()
     }
@@ -201,7 +201,7 @@ impl GhgForcing {
     pub fn co2_doubling_erf(&self, co2: FloatValue, n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
         match p.method {
-            ForcingMethod::Ipcctar => p.delq2xco2 * p.adjust_co2,
+            ForcingMethod::Ipcctar => p.erf_2xco2 * p.adjust_co2,
             ForcingMethod::Olbl => {
                 p.olbl().co2_alpha(co2, n2o, p.co2_pi) * p.adjust_co2 * 2.0_f64.ln()
             }
@@ -213,10 +213,12 @@ impl GhgForcing {
         let p = &self.parameters;
         let ch4_alone = match p.method {
             // MAGICC7 leaves out the N2O overlap for IPCCTAR
-            ForcingMethod::Ipcctar => p.adjust_ch4 * p.ch4_radeff * (ch4.sqrt() - p.ch4_pi.sqrt()),
+            ForcingMethod::Ipcctar => {
+                p.adjust_ch4 * p.ch4_radiative_efficiency * (ch4.sqrt() - p.ch4_pi.sqrt())
+            }
             ForcingMethod::Olbl => p.olbl().ch4(ch4, p.n2o_pi, p.ch4_pi, p.adjust_ch4),
         };
-        ch4_alone * p.ch4_strat_h2o_fraction
+        ch4_alone * p.ch4_stratospheric_h2o_fraction
     }
 
     /// Calculate all three forcings with rapid adjustment applied
@@ -327,7 +329,7 @@ mod tests {
     fn test_ipcctar_co2_at_2x() {
         let c = ipcctar_component();
         let f = c.calculate_co2_forcing(556.0, 270.0);
-        // Should equal delq2xco2 = 3.71
+        // Should equal erf_2xco2 = 3.71
         assert!(
             (f - 3.71).abs() < 0.01,
             "CO2 forcing at 2xCO2 should be ~3.71, got {}",
@@ -432,7 +434,7 @@ mod tests {
         // At elevated CH4 (above PI), the overlap should make the CH4
         // forcing smaller than the pure direct term alone.
         let ch4: f64 = 1900.0;
-        let direct_ch4 = p.ch4_radeff * (ch4.sqrt() - p.ch4_pi.sqrt());
+        let direct_ch4 = p.ch4_radiative_efficiency * (ch4.sqrt() - p.ch4_pi.sqrt());
         let actual_ch4 = c.calculate_ch4_forcing(ch4, p.n2o_pi);
 
         assert!(
@@ -444,7 +446,7 @@ mod tests {
 
         // Same for N2O
         let n2o: f64 = 332.0;
-        let direct_n2o = p.n2o_radeff * (n2o.sqrt() - p.n2o_pi.sqrt());
+        let direct_n2o = p.n2o_radiative_efficiency * (n2o.sqrt() - p.n2o_pi.sqrt());
         let actual_n2o = c.calculate_n2o_forcing(p.co2_pi, p.ch4_pi, n2o);
 
         assert!(
@@ -630,7 +632,7 @@ mod tests {
     fn test_serialisation_roundtrip() {
         let component = GhgForcing::from_parameters(GhgForcingParameters {
             method: ForcingMethod::Ipcctar,
-            delq2xco2: 3.80,
+            erf_2xco2: 3.80,
             ..GhgForcingParameters::default()
         });
 
@@ -638,7 +640,7 @@ mod tests {
         let restored: GhgForcing = serde_json::from_str(&json).unwrap();
 
         assert_eq!(component.parameters().method, restored.parameters().method);
-        assert!((component.parameters().delq2xco2 - restored.parameters().delq2xco2).abs() < 1e-10);
+        assert!((component.parameters().erf_2xco2 - restored.parameters().erf_2xco2).abs() < 1e-10);
     }
 
     // ===== Total Forcing Tests =====

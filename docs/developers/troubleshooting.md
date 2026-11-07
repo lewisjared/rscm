@@ -303,7 +303,7 @@ ImportError: cannot import name '_lib' from 'rscm'
 **Symptom:**
 
 ```
-ValueError: missing field `conc_pi`
+ValueError: missing field `co2_pi`
 ```
 
 **Cause:** The Python dict doesn't match the Rust struct fields.

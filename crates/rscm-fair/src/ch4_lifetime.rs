@@ -6,7 +6,7 @@
 //!   + \ln \max(1 + s_T T, \ln f)\Big)$$
 //!
 //! over precursor emissions and concentrations $x_i$ at the start of the step,
-//! where $f$ is the floor `ch4_min`.
+//! where $f$ is the floor `minimum_scaling`.
 
 use crate::constants::{get, surface_temperature, temperature_unit};
 use rscm_core::component::{
@@ -41,10 +41,12 @@ pub struct CH4LifetimeParameters {
     /// Precursor concentrations.
     pub concentrations: Vec<Precursor>,
     /// Fractional lifetime change per kelvin.
+    /// FaIR: `lifetime_temperature_sensitivity`
     pub temperature_sensitivity: FloatValue,
     /// Floor on each scaling term.
-    #[serde(default = "default_ch4_min")]
-    pub ch4_min: FloatValue,
+    /// FaIR: `_ch4_min`
+    #[serde(default = "default_minimum_scaling")]
+    pub minimum_scaling: FloatValue,
     /// Surface temperature input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
@@ -53,7 +55,7 @@ pub struct CH4LifetimeParameters {
     pub output: String,
 }
 
-fn default_ch4_min() -> FloatValue {
+fn default_minimum_scaling() -> FloatValue {
     0.01
 }
 
@@ -81,7 +83,7 @@ impl CH4Lifetime {
         temperature: FloatValue,
     ) -> FloatValue {
         let p = &self.parameters;
-        let log_floor = p.ch4_min.ln();
+        let log_floor = p.minimum_scaling.ln();
         let term = |precursors: &[Precursor], values: &[FloatValue]| -> FloatValue {
             precursors
                 .iter()
@@ -156,7 +158,7 @@ mod tests {
             emissions: vec![precursor(2.0, 0.1)],
             concentrations: vec![precursor(700.0, 0.0003)],
             temperature_sensitivity: -0.0408,
-            ch4_min: 0.01,
+            minimum_scaling: 0.01,
             surface_temperature: surface_temperature(),
             output: default_output(),
         });
@@ -174,7 +176,7 @@ mod tests {
             emissions: vec![precursor(0.0, -1.0)],
             concentrations: vec![],
             temperature_sensitivity: 0.0,
-            ch4_min: 0.01,
+            minimum_scaling: 0.01,
             surface_temperature: surface_temperature(),
             output: default_output(),
         });

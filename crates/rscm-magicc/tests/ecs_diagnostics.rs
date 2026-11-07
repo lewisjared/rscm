@@ -100,7 +100,7 @@ mod lambda_monotonicity {
                 panic!("LAMCALC should converge for ECS = {:.1}", ecs);
             });
 
-            let lambda_global = params.q_2xco2 / ecs;
+            let lambda_global = params.erf_2xco2 / ecs;
 
             let delta = match prev_lambda_ocean {
                 Some(prev) => {
@@ -146,16 +146,16 @@ mod time_varying_ecs {
         // adjusted ECS evolves as cumulative temperature accumulates.
         let params = ClimateUdebParameters {
             ecs: 3.0,
-            feedback_cumt_sensitivity: 0.15,
-            feedback_q_sensitivity: 0.01,
-            feedback_cumt_period: 300.0,
+            feedback_cumulative_temperature_sensitivity: 0.15,
+            feedback_forcing_sensitivity: 0.01,
+            feedback_cumulative_temperature_period: 300.0,
             ..Default::default()
         };
 
         let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
         let n_years = 500;
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
         let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
@@ -200,8 +200,8 @@ mod time_varying_ecs {
 
             // Reconstruct adjusted ECS using the same year-weighted walk-back
             // as ClimateUdeb::adjusted_ecs()
-            let cumt_2x = params.ecs * params.feedback_cumt_period;
-            let period = params.feedback_cumt_period;
+            let cumt_2x = params.ecs * params.feedback_cumulative_temperature_period;
+            let period = params.feedback_cumulative_temperature_period;
             let mut years_remaining = period;
             let mut cum_t: FloatValue = 0.0;
             for i in (0..temp_history.len()).rev() {
@@ -218,11 +218,13 @@ mod time_varying_ecs {
             }
 
             let cumt_factor = if cumt_2x.abs() > 1e-15 {
-                1.0 + params.feedback_cumt_sensitivity * (cum_t - cumt_2x) / cumt_2x
+                1.0 + params.feedback_cumulative_temperature_sensitivity * (cum_t - cumt_2x)
+                    / cumt_2x
             } else {
                 1.0
             };
-            let q_factor = 1.0 + params.feedback_q_sensitivity * (erf.max(0.0) - params.rf_2xco2);
+            let q_factor =
+                1.0 + params.feedback_forcing_sensitivity * (erf.max(0.0) - params.erf_2xco2);
             let ecs_adj = params.ecs * cumt_factor * q_factor;
             ecs_trajectory.push(ecs_adj);
 
@@ -322,7 +324,7 @@ mod transient_ecs_convergence {
     #[test]
     fn test_transient_model_approaches_ecs() {
         let params = params_with_fixed_ecs(3.0);
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
 
         // Run for 3000 years to approach equilibrium
         let n_years = 3000;
@@ -372,7 +374,7 @@ mod heat_uptake_consistency {
         let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
         let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
 
         // Get the lambda values by running LAMCALC with matching parameters
@@ -495,7 +497,7 @@ mod land_ocean_ratio_equilibrium {
         // prescribed RLO. Test for multiple ECS values.
         let ecs_values = [2.0, 3.0, 4.5];
         let n_years = 1500;
-        let target_rlo = ClimateUdebParameters::default().rlo;
+        let target_rlo = ClimateUdebParameters::default().land_ocean_warming_ratio;
 
         println!();
         println!(
@@ -506,7 +508,7 @@ mod land_ocean_ratio_equilibrium {
 
         for &ecs in &ecs_values {
             let params = params_with_fixed_ecs(ecs);
-            let erf = params.rf_2xco2;
+            let erf = params.erf_2xco2;
 
             let records = run_udeb_simulation(&params, erf, n_years);
 
@@ -533,8 +535,8 @@ mod land_ocean_ratio_equilibrium {
 
             // The LAMCALC RLO constraint is defined in terms of raw energy
             // balance temperatures, not the SST-to-SAT adjusted temperatures
-            // that ClimateUdeb outputs. The temp_adjust_alpha (1.04) and
-            // temp_adjust_gamma (-0.002) parameters amplify ocean SAT
+            // that ClimateUdeb outputs. The temperature_adjustment_alpha (1.04) and
+            // temperature_adjustment_gamma (-0.002) parameters amplify ocean SAT
             // relative to SST, which inflates the apparent SAT-based
             // land/ocean ratio. This effect grows with temperature (and
             // hence with ECS) because the quadratic gamma term increases
@@ -582,7 +584,7 @@ mod land_ocean_ratio_equilibrium {
         // Also verify the RLO is converging over time by comparing early
         // and late values for the default ECS case.
         let params = params_with_fixed_ecs(3.0);
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
         let records = run_udeb_simulation(&params, erf, n_years);
         let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
 
@@ -659,14 +661,14 @@ mod ground_heat_capacity {
         // Run WITH ground heat capacity (default)
         let params_with = params_with_fixed_ecs(3.0);
         assert!(
-            params_with.land_heat_capacity_enabled,
+            params_with.include_land_heat_capacity,
             "Default should have ground heat enabled"
         );
         let records_with = run_udeb_simulation(&params_with, erf, n_years);
 
         // Run WITHOUT ground heat capacity
         let params_without = ClimateUdebParameters {
-            land_heat_capacity_enabled: false,
+            include_land_heat_capacity: false,
             ..params_with.clone()
         };
         let records_without = run_udeb_simulation(&params_without, erf, n_years);
@@ -738,7 +740,7 @@ mod ground_heat_capacity {
         let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
 
         let n_years = 500;
@@ -815,14 +817,14 @@ mod ground_heat_capacity {
     #[test]
     fn test_disabled_ground_heat_has_no_effect() {
         let params = ClimateUdebParameters {
-            land_heat_capacity_enabled: false,
+            include_land_heat_capacity: false,
             ..params_with_fixed_ecs(3.0)
         };
 
         let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
 
         for year in 0..100 {

@@ -51,7 +51,7 @@
       "description": "Timescale of the box's response\nunit: yr"
     },
     {
-      "name": "conc_pi",
+      "name": "co2_pi",
       "type": "FloatValue",
       "description": "Pre-industrial atmospheric CO2 concentration\nunit: ppm"
     },

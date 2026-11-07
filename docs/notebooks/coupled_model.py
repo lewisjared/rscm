@@ -150,10 +150,10 @@ erf_2xco2 = 4.0
 alpha_temperature = 0.0  # No temperature feedback
 
 co2_erf_component = CO2ErfBuilder.from_parameters(
-    dict(erf_2xco2=erf_2xco2, conc_pi=conc_pi)
+    dict(erf_2xco2=erf_2xco2, co2_pi=conc_pi)
 ).build()
 carbon_cycle_component = CarbonCycleBuilder.from_parameters(
-    dict(tau=tau, conc_pi=conc_pi, alpha_temperature=alpha_temperature)
+    dict(tau=tau, co2_pi=conc_pi, alpha_temperature=alpha_temperature)
 ).build()
 
 # %%
@@ -361,7 +361,7 @@ plot_variables(
 co2_erf = CO2ErfBuilder.from_parameters(
     dict(
         erf_2xco2=3.7,  # Forcing from CO2 doubling (W/m²)
-        conc_pi=278.0,  # Pre-industrial CO2 (ppm)
+        co2_pi=278.0,  # Pre-industrial CO2 (ppm)
     )
 ).build()
 
@@ -369,8 +369,8 @@ two_layer = TwoLayerBuilder.from_parameters(
     dict(
         lambda0=1.1,  # Climate feedback parameter (W/m²/K)
         a=0.0,  # Nonlinear feedback coefficient
-        efficacy=1.3,  # Ocean heat uptake efficacy
-        eta=0.7,  # Heat exchange coefficient (W/m²/K)
+        deep_ocean_efficacy=1.3,  # Ocean heat uptake efficacy
+        ocean_heat_transfer=0.7,  # Heat exchange coefficient (W/m²/K)
         heat_capacity_surface=8.0,  # Surface heat capacity (W yr/m²/K)
         heat_capacity_deep=100.0,  # Deep ocean heat capacity (W yr/m²/K)
     )
@@ -446,7 +446,7 @@ def build_feedback_model(alpha_temperature: float):
     carbon_cycle = CarbonCycleBuilder.from_parameters(
         dict(
             tau=25.0,  # Baseline atmospheric lifetime (years)
-            conc_pi=278.0,  # Pre-industrial CO2 (ppm)
+            co2_pi=278.0,  # Pre-industrial CO2 (ppm)
             alpha_temperature=alpha_temperature,  # Temperature sensitivity (1/K)
         )
     ).build()

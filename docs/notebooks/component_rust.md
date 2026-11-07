@@ -52,7 +52,7 @@ pub struct CO2ErfParameters {
     /// ERF due to a doubling of atmospheric CO2 concentrations (W/m^2)
     pub erf_2xco2: FloatValue,
     /// Pre-industrial atmospheric CO2 concentration (ppm)
-    pub conc_pi: FloatValue,
+    pub co2_pi: FloatValue,
 }
 
 /// CO2 effective radiative forcing component
@@ -79,7 +79,7 @@ impl CO2Erf {
     /// Core physics calculation, extracted for testability
     pub fn calculate_erf(&self, concentration: FloatValue) -> FloatValue {
         self.parameters.erf_2xco2 / 2.0_f64.ln()
-            * (1.0 + (concentration - self.parameters.conc_pi) / self.parameters.conc_pi).ln()
+            * (1.0 + (concentration - self.parameters.co2_pi) / self.parameters.co2_pi).ln()
     }
 }
 ```
@@ -200,7 +200,7 @@ For variables that are both read and written each step, use `#[states(...)]`:
 )]
 pub struct CarbonCycle {
     pub tau: FloatValue,
-    pub conc_pi: FloatValue,
+    pub co2_pi: FloatValue,
 }
 ```
 
@@ -502,10 +502,10 @@ mod tests {
     fn test_calculate_erf_at_2x_co2() {
         let params = CO2ErfParameters {
             erf_2xco2: 3.7,
-            conc_pi: 278.0,
+            co2_pi: 278.0,
         };
         let component = CO2Erf::from_parameters(params.clone());
-        let erf = component.calculate_erf(params.conc_pi * 2.0);
+        let erf = component.calculate_erf(params.co2_pi * 2.0);
         assert!((erf - params.erf_2xco2).abs() < 1e-10);
     }
 }

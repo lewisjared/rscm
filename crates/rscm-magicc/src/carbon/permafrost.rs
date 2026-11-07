@@ -28,7 +28,7 @@
 //! Emissions use the temperature at the start of the step and the mean of the
 //! thawed pools before and after the step, as MAGICC7 does.
 //! The emissions enter `CH4Chemistry`, `CH4Oxidation`, `OceanCarbon` and
-//! `CO2Budget` when their `permafrost` parameter is set.
+//! `CO2Budget` when their `include_permafrost` parameter is set.
 //!
 //! # Rounding sensitivity
 //!
@@ -139,8 +139,9 @@ impl Permafrost {
     fn melting_temp(&self, i: usize) -> FloatValue {
         let p = &self.parameters;
         let n = p.n_bands.max(2) - 1;
-        i as FloatValue * (p.melting_temp_max - p.melting_temp_min) / n as FloatValue
-            + p.melting_temp_min
+        i as FloatValue * (p.maximum_melting_temperature - p.minimum_melting_temperature)
+            / n as FloatValue
+            + p.minimum_melting_temperature
     }
 
     /// Fraction of the total pool in band `i`, a triangle shaped by `zonal_pool_distribution`.
@@ -173,7 +174,7 @@ impl Permafrost {
         let frozen = |pool, soil: &PermafrostSoilParameters| SoilBand {
             frozen_area: 1.0,
             frozen_pool: pool,
-            aerobic_fraction: 1.0 - soil.anaerobic_initial_fraction,
+            aerobic_fraction: 1.0 - soil.initial_anaerobic_fraction,
             ..Default::default()
         };
         let p = &self.parameters;
@@ -212,14 +213,14 @@ impl Permafrost {
         let soil_temp = offsets.map(|offset| summer_max + offset);
         let moisture = soil_temp.map(|soil_temp| {
             let water = (p.soil_water_slope * soil_temp + p.soil_water_offset)
-                .max(p.soil_water_min)
+                .max(p.minimum_soil_water)
                 .min(1.0);
             (1.0 - (-water).exp()) / (1.0 - (-1.0 as FloatValue).exp())
         });
         Season {
             summer_max,
             q10_temperature: soil_temp
-                .map(|soil_temp| 1.0 / p.q10_temp1 - 1.0 / (soil_temp + p.q10_temp2)),
+                .map(|soil_temp| 1.0 / p.q10_temperature1 - 1.0 / (soil_temp + p.q10_temperature2)),
             moisture,
         }
     }
@@ -230,11 +231,11 @@ impl Permafrost {
             .moisture
             .iter()
             .map(|moisture| {
-                (soil.anaerobic_initial_fraction
-                    + (soil.anaerobic_max_fraction - soil.anaerobic_initial_fraction)
+                (soil.initial_anaerobic_fraction
+                    + (soil.maximum_anaerobic_fraction - soil.initial_anaerobic_fraction)
                         * moisture
                         * soil.anaerobic_moisture_sensitivity)
-                    .min(soil.anaerobic_max_fraction)
+                    .min(soil.maximum_anaerobic_fraction)
                     .max(0.0)
             })
             .sum::<FloatValue>();

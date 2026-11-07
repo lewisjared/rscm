@@ -49,7 +49,7 @@ mod terrestrial_fertilisation {
         let (_, flux_2x) = component.solve_pools(co2_2x, 0.0, 0.0, pools, 1.0);
 
         // Expected fertilisation factor
-        let expected_beta = 1.0 + params.beta * (2.0_f64).ln();
+        let expected_beta = 1.0 + params.fertilisation_factor * (2.0_f64).ln();
 
         println!("Expected beta at 2xCO2: {:.4}", expected_beta);
         println!("Flux at PI CO2:  {:.4} GtC/yr", flux_pi);
@@ -160,8 +160,8 @@ mod terrestrial_temperature_feedback {
         let final_total: f64 = current_pools.iter().sum();
 
         // Verify expected temperature factors
-        let resp_factor = (params.resp_temp_sensitivity * delta_t).exp();
-        let npp_factor = (params.npp_temp_sensitivity * delta_t).exp();
+        let resp_factor = (params.respiration_temperature_sensitivity * delta_t).exp();
+        let npp_factor = (params.npp_temperature_sensitivity * delta_t).exp();
 
         println!(
             "Respiration temp factor at +{}K: {:.4} (expected ~1.147)",
@@ -188,7 +188,7 @@ mod terrestrial_temperature_feedback {
         // Check the respiration factor matches the expected value
         assert_relative_eq!(resp_factor, 1.147, epsilon = 0.001);
 
-        // With MAGICC7 defaults (negative detritus_temp_sensitivity), warming
+        // With MAGICC7 defaults (negative detritus_temperature_sensitivity), warming
         // has competing effects. Verify pools change rather than assuming direction.
         let change = (final_total - initial_total).abs();
         assert!(
@@ -229,7 +229,7 @@ mod terrestrial_temperature_feedback {
             flux_cold - flux_warm
         );
 
-        // With MAGICC7 default parameters (negative detritus_temp_sensitivity),
+        // With MAGICC7 default parameters (negative detritus_temperature_sensitivity),
         // warming has competing effects on the net flux. Verify the flux changes.
         assert!(
             (flux_warm - flux_cold).abs() > 0.1,
@@ -343,7 +343,7 @@ mod ocean_temperature_pco2 {
         let pco2_2k = params.ocean_pco2(278.0, 0.0, 2.0);
 
         let pct_per_k = (pco2_1k / pco2_0k - 1.0) * 100.0;
-        let expected_pct = ((params.temp_sensitivity * 1.0).exp() - 1.0) * 100.0;
+        let expected_pct = ((params.temperature_sensitivity * 1.0).exp() - 1.0) * 100.0;
 
         println!("pCO2 at 0K: {:.2} ppm", pco2_0k);
         println!("pCO2 at 1K: {:.2} ppm", pco2_1k);
@@ -683,7 +683,7 @@ mod climate_tcr {
     fn test_tcr_in_expected_range() {
         let ecs = 3.0;
         let params = params_with_fixed_ecs(ecs);
-        let rf_2xco2 = params.rf_2xco2;
+        let erf_2xco2 = params.erf_2xco2;
         let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
         let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
@@ -700,9 +700,9 @@ mod climate_tcr {
 
         for year in 0..n_years {
             // 1%/yr CO2 increase: CO2(t) = CO2_pi * 1.01^t
-            // Forcing: Q(t) = rf_2xco2 * log2(1.01^t) = rf_2xco2 * t * log2(1.01)
+            // Forcing: Q(t) = erf_2xco2 * log2(1.01^t) = erf_2xco2 * t * log2(1.01)
             let co2_ratio = 1.01_f64.powi(year + 1);
-            let erf = rf_2xco2 * co2_ratio.log2();
+            let erf = erf_2xco2 * co2_ratio.log2();
 
             let t_current = 2000.0 + year as FloatValue;
             let t_next = t_current + 1.0;
@@ -780,7 +780,7 @@ mod climate_tcr {
 
         for &ecs in &ecs_values {
             let params = params_with_fixed_ecs(ecs);
-            let rf_2xco2 = params.rf_2xco2;
+            let erf_2xco2 = params.erf_2xco2;
             let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
             let mut state = component.initial_state();
             let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
@@ -789,7 +789,7 @@ mod climate_tcr {
 
             for year in 0..n_years {
                 let co2_ratio = 1.01_f64.powi(year + 1);
-                let erf = rf_2xco2 * co2_ratio.log2();
+                let erf = erf_2xco2 * co2_ratio.log2();
 
                 let t_current = 2000.0 + year as FloatValue;
                 let t_next = t_current + 1.0;

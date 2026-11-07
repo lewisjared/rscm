@@ -21,7 +21,7 @@
 //! - `Emissions|NOx` (Tg N/yr) - NOx emissions for OH feedback
 //! - `Emissions|CO` (Tg CO/yr) - CO emissions for OH feedback
 //! - `Emissions|NMVOC` (Tg NMVOC/yr) - NMVOC emissions for OH feedback
-//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `permafrost` parameter
+//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `include_permafrost` parameter
 //!
 //! # Outputs
 //!
@@ -143,12 +143,12 @@ impl CH4Chemistry {
 
     /// Convert concentration (ppb) to burden (Tg CH4)
     fn concentration_to_burden(&self, concentration: FloatValue) -> FloatValue {
-        concentration * self.parameters.ppb_to_tg * self.parameters.mixbox_size
+        concentration * self.parameters.tg_per_ppb * self.parameters.mixing_box_size
     }
 
     /// Convert burden (Tg CH4) to concentration (ppb)
     fn burden_to_concentration(&self, burden: FloatValue) -> FloatValue {
-        burden / (self.parameters.ppb_to_tg * self.parameters.mixbox_size)
+        burden / (self.parameters.tg_per_ppb * self.parameters.mixing_box_size)
     }
 
     /// Feedback exponent $X = -\gamma S$
@@ -165,7 +165,7 @@ impl CH4Chemistry {
         delta_co: FloatValue,
         delta_nmvoc: FloatValue,
     ) -> FloatValue {
-        let tau_oh = self.parameters.tau_oh_init();
+        let tau_oh = self.parameters.initial_oh_lifetime();
         if !self.parameters.include_emissions_feedback {
             return tau_oh;
         }
@@ -187,19 +187,19 @@ impl CH4Chemistry {
         tau_oh: FloatValue,
         temperature_change: FloatValue,
     ) -> FloatValue {
-        if !self.parameters.include_temp_feedback {
+        if !self.parameters.include_temperature_feedback {
             return tau_oh;
         }
 
-        let alpha = self.parameters.temp_sensitivity;
-        let tau_0 = self.parameters.tau_oh_init();
+        let alpha = self.parameters.temperature_sensitivity;
+        let tau_0 = self.parameters.initial_oh_lifetime();
         tau_0 / (tau_0 / tau_oh + alpha * temperature_change.max(0.0))
     }
 
     /// Calculate total lifetime from OH lifetime and non-OH sinks
     fn calculate_total_lifetime(&self, tau_oh: FloatValue) -> FloatValue {
-        let tau_other = self.parameters.tau_other();
-        1.0 / (1.0 / tau_oh + 1.0 / tau_other)
+        let non_oh_lifetime = self.parameters.non_oh_lifetime();
+        1.0 / (1.0 / tau_oh + 1.0 / non_oh_lifetime)
     }
 
     /// Run the full Prather iteration scheme (4 iterations)
@@ -245,7 +245,7 @@ impl CH4Chemistry {
         let burden_reference = self.concentration_to_burden(ch4_reference);
         let base_lifetime = self.calculate_base_lifetime_factor(delta_nox, delta_co, delta_nmvoc);
         let x = self.feedback_exponent();
-        let tau_other = self.parameters.tau_other();
+        let non_oh_lifetime = self.parameters.non_oh_lifetime();
 
         let mut burden_next = burden;
         let mut delta_burden = 0.0;
@@ -261,7 +261,7 @@ impl CH4Chemistry {
                 tau_oh *= 1.0 - 0.5 * x * delta_burden / burden;
             }
             tau_oh = self.apply_temperature_feedback(tau_oh, temperature_change);
-            delta_burden = total_emissions - burden_mean / tau_oh - burden_mean / tau_other;
+            delta_burden = total_emissions - burden_mean / tau_oh - burden_mean / non_oh_lifetime;
             burden_next = burden + delta_burden;
         }
 
@@ -283,7 +283,7 @@ impl Default for CH4Chemistry {
 impl Component for CH4Chemistry {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
-        if self.parameters.permafrost {
+        if self.parameters.include_permafrost {
             definitions.push(VariableDefinition::scalar_input(
                 PERMAFROST_CH4,
                 "Mt CH4/yr",
@@ -320,8 +320,11 @@ impl Component for CH4Chemistry {
             |window: &ScalarWindow| window.get() - value_at_year(window, t_current, feedback_year);
 
         let anthropogenic = inputs.ch4_emissions.get();
-        let permafrost =
-            permafrost_emissions(self.parameters.permafrost, input_state, PERMAFROST_CH4);
+        let permafrost = permafrost_emissions(
+            self.parameters.include_permafrost,
+            input_state,
+            PERMAFROST_CH4,
+        );
         let (delta_nox, delta_co, delta_nmvoc) = (
             delta(&inputs.nox_emissions),
             delta(&inputs.co_emissions),
@@ -387,7 +390,7 @@ mod tests {
     /// Concentration from which the default natural emissions alone are in balance
     fn natural_steady_state(component: &CH4Chemistry) -> FloatValue {
         let p = &component.parameters;
-        let tau = 1.0 / (1.0 / p.tau_oh_init() + 1.0 / p.tau_other());
+        let tau = 1.0 / (1.0 / p.initial_oh_lifetime() + 1.0 / p.non_oh_lifetime());
         component.burden_to_concentration(p.natural_emissions * tau)
     }
 
@@ -474,7 +477,7 @@ mod tests {
     #[test]
     fn test_temperature_feedback_disabled() {
         let params = CH4ChemistryParameters {
-            include_temp_feedback: false,
+            include_temperature_feedback: false,
             ..Default::default()
         };
         let component = CH4Chemistry::from_parameters(params);
@@ -599,7 +602,7 @@ mod tests {
     fn test_effective_lifetime_in_steady_state_is_total_lifetime() {
         let component = default_component();
         let p = &component.parameters;
-        let tau = 1.0 / (1.0 / p.tau_oh_init() + 1.0 / p.tau_other());
+        let tau = 1.0 / (1.0 / p.initial_oh_lifetime() + 1.0 / p.non_oh_lifetime());
         let output = solve_constant(&component, natural_steady_state(&component), 0.0);
         let effective = scalar(&output, "Lifetime|CH4|Effective");
         assert!((effective / tau - 1.0).abs() < 1e-9, "{effective} vs {tau}");

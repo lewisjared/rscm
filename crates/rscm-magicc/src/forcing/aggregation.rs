@@ -58,25 +58,25 @@ impl ForcingAggregation {
         let component = Self { parameters };
         if let Some(climate) = &component.parameters.climate {
             component
-                .internal_efficacies(climate.ecs, climate.rf_2xco2)
+                .internal_efficacies(climate.ecs, climate.erf_2xco2)
                 .ok_or_else(|| {
                     RscmError::Error(format!(
                         "LAMCALC failed to converge for ECS={}, RLO={}",
-                        climate.ecs, climate.rlo
+                        climate.ecs, climate.land_ocean_warming_ratio
                     ))
                 })?;
         }
         Ok(component)
     }
 
-    /// Internal efficacy of each agent at climate sensitivity `ecs` and CO2 doubling forcing `q_2xco2`.
+    /// Internal efficacy of each agent at climate sensitivity `ecs` and CO2 doubling forcing `erf_2xco2`.
     ///
     /// Without `climate` these are the agents' own `internal_efficacy`.
     /// Returns None if LAMCALC does not converge.
     pub fn internal_efficacies(
         &self,
         ecs: FloatValue,
-        q_2xco2: FloatValue,
+        erf_2xco2: FloatValue,
     ) -> Option<Vec<FloatValue>> {
         let agents = &self.parameters.agents;
         let Some(climate) = &self.parameters.climate else {
@@ -84,17 +84,17 @@ impl ForcingAggregation {
         };
         let area = self.parameters.area_fractions();
         let result = lamcalc(&LamcalcParameters {
-            q_2xco2,
-            k_lo: climate.k_lo,
-            k_ns: climate.k_ns,
+            erf_2xco2,
+            land_ocean_heat_exchange: climate.land_ocean_heat_exchange,
+            north_south_heat_exchange: climate.north_south_heat_exchange,
             ecs,
-            rlo: climate.rlo,
+            land_ocean_warming_ratio: climate.land_ocean_warming_ratio,
             amplify_ocean_to_land: climate.amplify_ocean_to_land,
             fgno: area[0],
             fgnl: area[1],
             fgso: area[2],
             fgsl: area[3],
-            rf_regions_co2: climate.rf_regions_co2,
+            co2_regional_pattern: climate.co2_regional_pattern,
         })?;
         Some(
             agents
@@ -104,10 +104,10 @@ impl ForcingAggregation {
                         return result.co2_internal_efficacy;
                     }
                     calc_internal_efficacy(
-                        q_2xco2,
+                        erf_2xco2,
                         &result.matrix_inverse,
                         &area,
-                        &a.rf_regions,
+                        &a.regional_pattern,
                         ecs,
                     )
                 })
@@ -120,7 +120,7 @@ impl ForcingAggregation {
             .parameters
             .climate
             .as_ref()
-            .map_or((FloatValue::NAN, FloatValue::NAN), |c| (c.ecs, c.rf_2xco2));
+            .map_or((FloatValue::NAN, FloatValue::NAN), |c| (c.ecs, c.erf_2xco2));
         self.internal_efficacies(ecs, q).unwrap_or_else(|| {
             self.parameters
                 .agents
@@ -154,9 +154,9 @@ impl ForcingAggregation {
     fn agent_forcing(&self, agent: &ForcingAgent, values: &[Vec<FloatValue>]) -> Vec<Forcing> {
         let area = self.parameters.area_fractions();
         let qfrac = if agent.hemispheric {
-            hemispheric_qfrac(&agent.rf_regions, &area)
+            hemispheric_qfrac(&agent.regional_pattern, &area)
         } else {
-            compute_qfrac(&agent.rf_regions, &area)
+            compute_qfrac(&agent.regional_pattern, &area)
         };
         values
             .iter()
@@ -319,7 +319,7 @@ impl Component for ForcingAggregation {
                 let (ecs, q) = if ecs.is_finite() && q.is_finite() {
                     (ecs, q)
                 } else {
-                    (climate.ecs, climate.rf_2xco2)
+                    (climate.ecs, climate.erf_2xco2)
                 };
                 self.internal_efficacies(ecs, q).ok_or_else(|| {
                     RscmError::Error(format!("LAMCALC failed to converge for ECS={ecs}"))
@@ -351,7 +351,7 @@ mod tests {
             regional,
             sum_of: Vec::new(),
             efficacy_per_variable: false,
-            rf_regions: [1.0, 2.0, 1.0, 2.0],
+            regional_pattern: [1.0, 2.0, 1.0, 2.0],
             hemispheric: false,
             co2_efficacy: false,
             efficacy,
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn hemispheric_agent_keeps_hemispheric_means() {
         let mut tropoz = agent(false, 1.0, 1.0);
-        tropoz.rf_regions = [0.46565, 0.51646, 0.17687, 0.23793];
+        tropoz.regional_pattern = [0.46565, 0.51646, 0.17687, 0.23793];
         tropoz.hemispheric = true;
         let c = component(vec![tropoz], EfficacyMethod::None);
         let (total, boxes) = c.aggregate(&[vec![1.0]]);
@@ -416,16 +416,16 @@ mod tests {
     #[test]
     fn climate_internal_efficacies_match_udeb() {
         let udeb = crate::climate::ClimateUdeb::new();
-        let co2 = EfficacyClimate::default().rf_regions_co2;
+        let co2 = EfficacyClimate::default().co2_regional_pattern;
         let mut co2_agent = agent(false, 1.0, 1.0);
-        co2_agent.rf_regions = co2;
+        co2_agent.regional_pattern = co2;
         co2_agent.co2_efficacy = true;
-        let pattern = agent(false, 1.0, 1.0).rf_regions;
+        let pattern = agent(false, 1.0, 1.0).regional_pattern;
         let c = with_climate(vec![agent(false, 1.0, 1.0), co2_agent]);
         let climate = c.parameters().climate.clone().unwrap();
 
         let internal = c
-            .internal_efficacies(climate.ecs, climate.rf_2xco2)
+            .internal_efficacies(climate.ecs, climate.erf_2xco2)
             .unwrap();
         assert!((internal[0] - udeb.internal_efficacy(&pattern)).abs() < 1e-12);
         assert_eq!(internal[1], udeb.co2_internal_efficacy());
@@ -491,7 +491,7 @@ mod tests {
         // Before the climate model reports a sensitivity the initial climate is used
         let climate = c.parameters().climate.clone().unwrap();
         let adjusted = solve_adjusted(&c, [FloatValue::NAN, 4.5]);
-        assert_eq!(adjusted, expected(climate.ecs, climate.rf_2xco2));
+        assert_eq!(adjusted, expected(climate.ecs, climate.erf_2xco2));
     }
 
     fn named(variable: &str, regional: bool) -> ForcingAgent {

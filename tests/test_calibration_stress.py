@@ -36,9 +36,9 @@ def simple_calibration_setup():
     # True parameters
     true_params = {
         "lambda0": 1.1,
-        "efficacy": 1.3,
+        "deep_ocean_efficacy": 1.3,
         "a": 0.05,
-        "eta": 0.7,
+        "ocean_heat_transfer": 0.7,
         "heat_capacity_deep": 100.0,
         "heat_capacity_surface": 8.0,
     }
@@ -83,8 +83,8 @@ def simple_calibration_setup():
 
     # Create model runner
     fixed_params = {
-        "efficacy": true_params["efficacy"],
-        "eta": true_params["eta"],
+        "deep_ocean_efficacy": true_params["deep_ocean_efficacy"],
+        "ocean_heat_transfer": true_params["ocean_heat_transfer"],
         "heat_capacity_deep": true_params["heat_capacity_deep"],
         "heat_capacity_surface": true_params["heat_capacity_surface"],
     }

@@ -9,7 +9,7 @@
 //! - `Lifetime|CH4|OH` (yr): OH lifetime over the step
 //! - `Emissions|CH4|Fossil` (Mt CH4/yr) - Fossil and industrial CH4 emissions
 //! - `Emissions|CH4|AFOLU` (Mt CH4/yr) - Agriculture and land use CH4 emissions
-//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `permafrost` parameter
+//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `include_permafrost` parameter
 //!
 //! # States (tracked between steps)
 //!
@@ -99,8 +99,8 @@ impl CH4Oxidation {
     ) -> (CH4Pools, FloatValue) {
         let p = &self.parameters;
         let (start, end) = concentration;
-        let sink_ppb = (1.0 / oh_lifetime + 1.0 / p.tau_other) * ((start + end) * 0.5);
-        let budget = (end - start + sink_ppb) * p.ppb_to_tg * p.mixbox_size
+        let sink_ppb = (1.0 / oh_lifetime + 1.0 / p.non_oh_lifetime) * ((start + end) * 0.5);
+        let budget = (end - start + sink_ppb) * p.tg_per_ppb * p.mixing_box_size
             - p.natural_emissions
             - sources.permafrost;
         let anthropogenic = sources.fossil + sources.afolu;
@@ -115,7 +115,7 @@ impl CH4Oxidation {
         let split = fossil_share + afolu_share;
 
         let total = pools.total();
-        let sink = sink_ppb * p.ppb_to_tg * p.mixbox_size;
+        let sink = sink_ppb * p.tg_per_ppb * p.mixing_box_size;
         let decay = |pool: FloatValue| pool * sink / total;
         let next = CH4Pools {
             fossil: fossil_share * budget / split + pools.fossil - decay(pools.fossil),
@@ -124,8 +124,8 @@ impl CH4Oxidation {
             permafrost: sources.permafrost + pools.permafrost - decay(pools.permafrost),
         };
         let fossil_fraction = (p.permafrost_fraction * pools.permafrost + pools.fossil) / total;
-        let co2 =
-            p.ppb_to_tg * fossil_fraction * p.mixbox_size * sink_ppb / 1000.0 * p.carbon_per_ch4;
+        let co2 = p.tg_per_ppb * fossil_fraction * p.mixing_box_size * sink_ppb / 1000.0
+            * p.carbon_per_ch4;
         (next, co2)
     }
 }
@@ -140,7 +140,7 @@ impl Default for CH4Oxidation {
 impl Component for CH4Oxidation {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
-        if self.parameters.permafrost {
+        if self.parameters.include_permafrost {
             definitions.push(VariableDefinition::scalar_input(
                 PERMAFROST_CH4,
                 "Mt CH4/yr",
@@ -167,7 +167,7 @@ impl Component for CH4Oxidation {
             fossil: inputs.fossil_emissions.get(),
             afolu: inputs.afolu_emissions.get(),
             permafrost: permafrost_emissions(
-                self.parameters.permafrost,
+                self.parameters.include_permafrost,
                 input_state,
                 PERMAFROST_CH4,
             ),
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn test_only_fossil_share_is_oxidised() {
         let component = CH4Oxidation::new();
-        let total_lifetime = 1.0 / (1.0 / 9.0 + 1.0 / component.parameters.tau_other);
+        let total_lifetime = 1.0 / (1.0 / 9.0 + 1.0 / component.parameters.non_oh_lifetime);
         let sink = 700.0 * CONV / total_lifetime;
         let (_, all_fossil) = component.solve_oxidation(
             pools(700.0 * CONV, 0.0, 0.0),

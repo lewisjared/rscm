@@ -174,7 +174,7 @@ def run_magicc(  # noqa: PLR0913
     for absorption overlap calculations.
 
     Component parameter dictionaries use their Rust names and defaults, except
-    that ``rf_2xco2`` defaults to the CO2-doubling ERF of the forcing
+    that ``erf_2xco2`` defaults to the CO2-doubling ERF of the forcing
     configuration, as in MAGICC7.
     Preindustrial reference concentrations are independent of the start year.
     Climate starts from an unperturbed ocean and zero temperature anomaly.
@@ -244,7 +244,7 @@ def run_magicc(  # noqa: PLR0913
         raise ValueError(msg)
 
     climate_params: ClimateUdebParameters = {
-        "rf_2xco2": forcing.co2_doubling_forcing(),
+        "erf_2xco2": forcing.erf_2xco2(),
         **(climate_parameters or {}),
     }
     climate_builder = ClimateUdebBuilder.from_parameters(climate_params)
@@ -364,21 +364,25 @@ def _climate_weights(parameters: ClimateUdebParameters) -> NDArray[np.float64]:
 
 
 def _ch4_burdens(
-    concentration: float, ppb_to_tg: float, mixbox_size: float
+    concentration: float, tg_per_ppb: float, mixing_box_size: float
 ) -> dict[str, float]:
     """Return initial CH4Oxidation pools, with all CH4 natural as in MAGICC7."""
     burden = "Atmospheric Burden|CH4|"
     return {
         **{burden + source: 0.0 for source in ("Fossil", "AFOLU", "Permafrost")},
-        burden + "Natural": ppb_to_tg * concentration * mixbox_size,
+        burden + "Natural": tg_per_ppb * concentration * mixing_box_size,
     }
 
 
-# CH4Chemistry defaults of the lifetimes combined into ``tau_other``
-CH4_OTHER_LIFETIMES = {"tau_soil": 150.0, "tau_strat": 120.0, "tau_trop_cl": 200.0}
+# CH4Chemistry defaults of the lifetimes combined into ``non_oh_lifetime``
+CH4_OTHER_LIFETIMES = {
+    "soil_lifetime": 150.0,
+    "stratospheric_lifetime": 120.0,
+    "tropospheric_cl_lifetime": 200.0,
+}
 
 
-def _ch4_tau_other(lifetimes: Mapping[str, float]) -> float:
+def _ch4_non_oh_lifetime(lifetimes: Mapping[str, float]) -> float:
     """CH4 lifetime against soil, stratospheric and chlorine loss, as in MAGICC7."""
     tau = {**CH4_OTHER_LIFETIMES, **lifetimes}
     return 1.0 / sum(1.0 / tau[k] for k in CH4_OTHER_LIFETIMES)

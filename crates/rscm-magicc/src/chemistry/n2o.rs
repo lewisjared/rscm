@@ -95,12 +95,12 @@ impl N2OChemistry {
 
     /// Convert concentration (ppb) to burden (Tg N)
     fn concentration_to_burden(&self, concentration: FloatValue) -> FloatValue {
-        concentration * self.parameters.ppb_to_tg
+        concentration * self.parameters.tg_per_ppb
     }
 
     /// Convert burden (Tg N) to concentration (ppb)
     fn burden_to_concentration(&self, burden: FloatValue) -> FloatValue {
-        burden / self.parameters.ppb_to_tg
+        burden / self.parameters.tg_per_ppb
     }
 
     /// Lifetime scaling from faster stratospheric overturning with warming
@@ -112,7 +112,7 @@ impl N2OChemistry {
         1.0 / (1.0
             + temperature_change.max(0.0)
                 * p.meridional_flux_change_per_degree
-                * p.tau_sensitivity_to_meridional_flux)
+                * p.lifetime_sensitivity_to_meridional_flux)
     }
 
     /// Solve one step with 4 fixed-point iterations
@@ -133,7 +133,8 @@ impl N2OChemistry {
         let burden = self.concentration_to_burden(n2o_start);
         let burden_reference = self.concentration_to_burden(n2o_reference);
         let burden_lagged = self.concentration_to_burden(n2o_lagged);
-        let tau_base = self.meridional_flux_scale(temperature_change) * self.parameters.tau_n2o;
+        let tau_base =
+            self.meridional_flux_scale(temperature_change) * self.parameters.initial_n2o_lifetime;
 
         let mut burden_next = burden;
         let mut tau = tau_base;
@@ -187,7 +188,7 @@ impl Component for N2OChemistry {
         let n2o_reference = reference_value(concentration, t_current, p.feedback_start_year);
 
         // MAGICC7 clamps delayed indices to the first year of the run
-        let delay = p.strat_delay as Time;
+        let delay = p.stratospheric_delay as Time;
         let delayed = |lag: Time| value_at_year(concentration, t_current, t_current - lag);
         let n2o_lagged = (delayed(delay) + delayed(delay + 1.0)) / 2.0;
 
@@ -234,7 +235,7 @@ mod tests {
     /// Concentration at which natural emissions balance the base lifetime
     fn natural_steady_state(component: &N2OChemistry) -> FloatValue {
         let p = &component.parameters;
-        component.burden_to_concentration(p.natural_emissions * p.tau_n2o)
+        component.burden_to_concentration(p.natural_emissions * p.initial_n2o_lifetime)
     }
 
     #[test]
@@ -243,7 +244,7 @@ mod tests {
         let c = natural_steady_state(&component);
         let (new_conc, lifetime) = component.solve_concentration(c, c, c, 0.0, 0.0, 1.0);
         assert!((new_conc - c).abs() < 1e-9, "Expected {c}, got {new_conc}");
-        assert!((lifetime - component.parameters.tau_n2o).abs() < 1e-9);
+        assert!((lifetime - component.parameters.initial_n2o_lifetime).abs() < 1e-9);
     }
 
     #[test]
@@ -276,7 +277,7 @@ mod tests {
     fn test_lifetime_floor_at_low_concentration() {
         let component = default_component();
         let (_, tau) = component.solve_concentration(200.0, 270.0, 200.0, 0.0, 0.0, 1.0);
-        assert!((tau - component.parameters.tau_n2o).abs() < 1e-9);
+        assert!((tau - component.parameters.initial_n2o_lifetime).abs() < 1e-9);
     }
 
     #[test]

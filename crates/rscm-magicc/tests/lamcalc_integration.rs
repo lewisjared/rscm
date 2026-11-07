@@ -96,15 +96,15 @@ mod rlo_constraint {
                 compute_equilibrium_temperatures(&params, &result);
 
             assert!(
-                (params.rlo - rlo_actual).abs() < common::RLO_TOLERANCE,
+                (params.land_ocean_warming_ratio - rlo_actual).abs() < common::RLO_TOLERANCE,
                 "ECS = {:.1}: RLO constraint violated. \
                  target RLO = {:.4}, actual RLO = {:.6}, difference = {:.6}. \
                  ocean_mean = {:.4} K, land_mean = {:.4} K, \
                  lambda_ocean = {:.6}, lambda_land = {:.6}",
                 ecs,
-                params.rlo,
+                params.land_ocean_warming_ratio,
                 rlo_actual,
-                (params.rlo - rlo_actual).abs(),
+                (params.land_ocean_warming_ratio - rlo_actual).abs(),
                 ocean_mean,
                 land_mean,
                 result.lambda_ocean,
@@ -114,7 +114,7 @@ mod rlo_constraint {
             println!(
                 "ECS = {:.1}: RLO target = {:.4}, actual = {:.6}, \
                  ocean = {:.4} K, land = {:.4} K",
-                ecs, params.rlo, rlo_actual, ocean_mean, land_mean
+                ecs, params.land_ocean_warming_ratio, rlo_actual, ocean_mean, land_mean
             );
         }
     }
@@ -133,7 +133,7 @@ mod coupling_parameter_sensitivity {
 
         for &k_ns in &k_ns_values {
             let mut params = common::default_lamcalc_params();
-            params.k_ns = k_ns;
+            params.north_south_heat_exchange = k_ns;
 
             let result = lamcalc(&params).unwrap_or_else(|| {
                 panic!(
@@ -147,10 +147,10 @@ mod coupling_parameter_sensitivity {
                 compute_equilibrium_temperatures(&params, &result);
 
             assert!(
-                (params.rlo - rlo_actual).abs() < common::RLO_TOLERANCE,
+                (params.land_ocean_warming_ratio - rlo_actual).abs() < common::RLO_TOLERANCE,
                 "k_ns = {:.2}: RLO mismatch, target = {:.4}, actual = {:.6}",
                 k_ns,
-                params.rlo,
+                params.land_ocean_warming_ratio,
                 rlo_actual,
             );
             assert!(
@@ -188,10 +188,10 @@ mod coupling_parameter_sensitivity {
                 compute_equilibrium_temperatures(&params, &result);
 
             assert!(
-                (params.rlo - rlo_actual).abs() < common::RLO_TOLERANCE,
+                (params.land_ocean_warming_ratio - rlo_actual).abs() < common::RLO_TOLERANCE,
                 "alpha = {:.2}: RLO mismatch, target = {:.4}, actual = {:.6}",
                 alpha,
-                params.rlo,
+                params.land_ocean_warming_ratio,
                 rlo_actual,
             );
             assert!(
@@ -222,7 +222,7 @@ mod coupling_parameter_sensitivity {
 
         for (idx, &k_lo) in k_lo_values.iter().enumerate() {
             let mut params = common::default_lamcalc_params();
-            params.k_lo = k_lo;
+            params.land_ocean_heat_exchange = k_lo;
 
             let result = lamcalc(&params).unwrap_or_else(|| {
                 panic!("Should converge for k_lo = {:.1}", k_lo);
@@ -233,10 +233,10 @@ mod coupling_parameter_sensitivity {
 
             // Physical constraints must hold regardless of k_lo
             assert!(
-                (params.rlo - rlo_actual).abs() < common::RLO_TOLERANCE,
+                (params.land_ocean_warming_ratio - rlo_actual).abs() < common::RLO_TOLERANCE,
                 "k_lo = {:.1}: RLO violated, target = {:.4}, actual = {:.6}",
                 k_lo,
-                params.rlo,
+                params.land_ocean_warming_ratio,
                 rlo_actual,
             );
             assert!(
@@ -287,15 +287,15 @@ mod edge_cases {
             result.is_some(),
             "LAMCALC should converge even for high ECS = 10.0 K. \
              This corresponds to lambda_global = {:.4} W/m^2/K (weak negative feedback).",
-            params.q_2xco2 / 10.0
+            params.erf_2xco2 / 10.0
         );
         let result = result.unwrap();
 
         let (_, _, global_mean, rlo_actual) = compute_equilibrium_temperatures(&params, &result);
         assert!(
-            (params.rlo - rlo_actual).abs() < common::RLO_TOLERANCE,
+            (params.land_ocean_warming_ratio - rlo_actual).abs() < common::RLO_TOLERANCE,
             "High ECS: RLO mismatch, target = {:.4}, actual = {:.6}",
-            params.rlo,
+            params.land_ocean_warming_ratio,
             rlo_actual,
         );
         assert!(
@@ -325,15 +325,15 @@ mod edge_cases {
             result.is_some(),
             "LAMCALC should converge for very low ECS = 0.5 K. \
              This corresponds to lambda_global = {:.4} W/m^2/K (strong negative feedback).",
-            params.q_2xco2 / 0.5
+            params.erf_2xco2 / 0.5
         );
         let result = result.unwrap();
 
         let (_, _, global_mean, rlo_actual) = compute_equilibrium_temperatures(&params, &result);
         assert!(
-            (params.rlo - rlo_actual).abs() < common::RLO_TOLERANCE,
+            (params.land_ocean_warming_ratio - rlo_actual).abs() < common::RLO_TOLERANCE,
             "Low ECS: RLO mismatch, target = {:.4}, actual = {:.6}",
-            params.rlo,
+            params.land_ocean_warming_ratio,
             rlo_actual,
         );
         assert!(
@@ -344,11 +344,11 @@ mod edge_cases {
 
         // With low ECS, both feedbacks should be relatively large (strong stabilising)
         assert!(
-            result.lambda_ocean > params.q_2xco2 / params.ecs,
+            result.lambda_ocean > params.erf_2xco2 / params.ecs,
             "Low ECS: lambda_ocean ({:.4}) should exceed lambda_global ({:.4}) \
              because land is less efficient at radiating",
             result.lambda_ocean,
-            params.q_2xco2 / params.ecs,
+            params.erf_2xco2 / params.ecs,
         );
 
         println!(
@@ -360,7 +360,7 @@ mod edge_cases {
     #[test]
     fn test_rlo_close_to_one() {
         let mut params = common::default_lamcalc_params();
-        params.rlo = 1.01;
+        params.land_ocean_warming_ratio = 1.01;
 
         let result = lamcalc(&params);
         assert!(
@@ -396,7 +396,7 @@ mod edge_cases {
     #[test]
     fn test_rlo_equal_to_two() {
         let mut params = common::default_lamcalc_params();
-        params.rlo = 2.0;
+        params.land_ocean_warming_ratio = 2.0;
 
         let result = lamcalc(&params);
         assert!(
@@ -448,7 +448,7 @@ mod edge_cases {
         let inv = invert_4x4(&matrix).expect("Matrix should be invertible");
 
         let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
-        let q = params.q_2xco2;
+        let q = params.erf_2xco2;
 
         let mut temps = [0.0_f64; 4];
         for row in 0..4 {
@@ -582,10 +582,10 @@ mod matrix_properties {
 
         // Both should equal -k_ns
         assert!(
-            (matrix[0][2] - (-params.k_ns)).abs() < 1e-15,
+            (matrix[0][2] - (-params.north_south_heat_exchange)).abs() < 1e-15,
             "[0][2] = {:.6} should equal -k_ns = {:.6}",
             matrix[0][2],
-            -params.k_ns,
+            -params.north_south_heat_exchange,
         );
     }
 
@@ -598,16 +598,18 @@ mod matrix_properties {
         // Ocean row sees -k_lo, land row sees -k_lo * alpha
         // NH: matrix[0][1] = -k_lo, matrix[1][0] = -k_lo * alpha
         assert!(
-            (matrix[0][1] - (-params.k_lo)).abs() < 1e-15,
+            (matrix[0][1] - (-params.land_ocean_heat_exchange)).abs() < 1e-15,
             "[0][1] = {:.6} should be -k_lo = {:.6}",
             matrix[0][1],
-            -params.k_lo,
+            -params.land_ocean_heat_exchange,
         );
         assert!(
-            (matrix[1][0] - (-params.k_lo * params.amplify_ocean_to_land)).abs() < 1e-15,
+            (matrix[1][0] - (-params.land_ocean_heat_exchange * params.amplify_ocean_to_land))
+                .abs()
+                < 1e-15,
             "[1][0] = {:.6} should be -k_lo*alpha = {:.6}",
             matrix[1][0],
-            -params.k_lo * params.amplify_ocean_to_land,
+            -params.land_ocean_heat_exchange * params.amplify_ocean_to_land,
         );
 
         // When alpha != 1, the coupling is asymmetric
@@ -634,7 +636,7 @@ mod climate_udeb_equilibrium {
     #[test]
     fn test_equilibrium_temperature_warming_and_stabilisation() {
         // ClimateUdeb outputs surface air temperature (SAT), which includes
-        // SST-to-SAT amplification (temp_adjust_alpha, temp_adjust_gamma) and
+        // SST-to-SAT amplification (temperature_adjustment_alpha, temperature_adjustment_gamma) and
         // land temperature amplification. Therefore the equilibrium global mean
         // SAT does NOT equal ECS directly -- it exceeds ECS because of these
         // amplification factors.
@@ -648,7 +650,7 @@ mod climate_udeb_equilibrium {
         let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
         let n_years = 500;
 
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
@@ -743,10 +745,10 @@ mod climate_udeb_equilibrium {
 
         // 4. Temperature should be finite and physically reasonable
         assert!(
-            final_global_sat < params.max_temperature,
+            final_global_sat < params.maximum_temperature,
             "Global SAT ({:.4} K) should not exceed max_temperature ({:.1} K)",
             final_global_sat,
-            params.max_temperature,
+            params.maximum_temperature,
         );
     }
 
@@ -795,7 +797,7 @@ mod climate_udeb_equilibrium {
 
         let run_simulation = |ecs: FloatValue| -> FloatValue {
             let params = common::params_with_fixed_ecs(ecs);
-            let records = common::run_udeb_simulation(&params, params.rf_2xco2, n_years);
+            let records = common::run_udeb_simulation(&params, params.erf_2xco2, n_years);
             records.last().unwrap().global_sat
         };
 
@@ -832,7 +834,7 @@ mod climate_udeb_equilibrium {
     #[test]
     fn test_land_warms_more_than_ocean_during_transient() {
         let params = common::params_with_fixed_ecs(ClimateUdebParameters::default().ecs);
-        let records = common::run_udeb_simulation(&params, params.rf_2xco2, 100);
+        let records = common::run_udeb_simulation(&params, params.erf_2xco2, 100);
 
         let last = records.last().unwrap();
         let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
@@ -856,7 +858,7 @@ mod climate_udeb_equilibrium {
              given RLO = {:.3} > 1",
             land_mean,
             ocean_mean,
-            params.rlo,
+            params.land_ocean_warming_ratio,
         );
 
         // Transient RLO is typically larger than equilibrium RLO because the
@@ -871,7 +873,7 @@ mod climate_udeb_equilibrium {
     #[test]
     fn test_heat_uptake_positive_during_warming() {
         let params = common::params_with_fixed_ecs(ClimateUdebParameters::default().ecs);
-        let records = common::run_udeb_simulation(&params, params.rf_2xco2, 50);
+        let records = common::run_udeb_simulation(&params, params.erf_2xco2, 50);
 
         for (year, record) in records.iter().enumerate() {
             // During warming, heat uptake should be positive (energy going into ocean)
@@ -915,10 +917,10 @@ mod climate_udeb_equilibrium {
             lamcalc_params.ecs,
         );
         assert!(
-            (rlo_actual - lamcalc_params.rlo).abs() < common::RLO_TOLERANCE,
+            (rlo_actual - lamcalc_params.land_ocean_warming_ratio).abs() < common::RLO_TOLERANCE,
             "RLO ({:.6}) should match target ({:.4})",
             rlo_actual,
-            lamcalc_params.rlo,
+            lamcalc_params.land_ocean_warming_ratio,
         );
 
         // Verify the component can be constructed without panic (implicitly

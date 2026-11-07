@@ -22,7 +22,7 @@
 //!
 //! - `Atmospheric Concentration|CO2` (ppm)
 //! - `Surface Temperature` (K) - temperature anomaly. The feedbacks use the
-//!   warming since `tempfeedback_yrstart`, floored at zero
+//!   warming since `temperature_feedback_start_year`, floored at zero
 //! - `Emissions|CO2|Land Use` (GtC/yr)
 //!
 //! # States (tracked between steps)
@@ -197,7 +197,7 @@ impl TerrestrialCarbon {
         if co2 <= 0.0 || co2_ref <= 0.0 {
             return 1.0;
         }
-        1.0 + self.parameters.beta * (co2 / co2_ref).ln()
+        1.0 + self.parameters.fertilisation_factor * (co2 / co2_ref).ln()
     }
 
     /// Gifford rectangular hyperbolic / Michaelis-Menten fertilisation.
@@ -208,11 +208,11 @@ impl TerrestrialCarbon {
             return 1.0;
         }
 
-        let zero = self.parameters.gifford_conc_for_zero_npp;
+        let zero = self.parameters.gifford_concentration_for_zero_npp;
 
         // Gifford R: ratio of NPP at 680 to NPP at 340, using logarithmic formula
-        let r = (1.0 + self.parameters.beta * (680.0 / co2_ref).ln())
-            / (1.0 + self.parameters.beta * (340.0 / co2_ref).ln());
+        let r = (1.0 + self.parameters.fertilisation_factor * (680.0 / co2_ref).ln())
+            / (1.0 + self.parameters.fertilisation_factor * (340.0 / co2_ref).ln());
 
         let ar = 680.0 - zero;
         let br = 340.0 - zero;
@@ -243,7 +243,7 @@ impl TerrestrialCarbon {
     /// the asymptote is clamped to just above 1.0 and the sigmoid provides no
     /// fertilisation enhancement.
     fn fert_sigmoid(&self, co2: FloatValue, co2_ref: FloatValue) -> FloatValue {
-        let a = self.parameters.beta.max(1.0 + 1e-10);
+        let a = self.parameters.fertilisation_factor.max(1.0 + 1e-10);
         let b = self.parameters.fertilisation_factor2;
 
         if b.abs() < 1e-15 {
@@ -297,7 +297,7 @@ impl TerrestrialCarbon {
     ///
     /// Pool-ratio scaling ensures respiration decreases when the plant pool
     /// shrinks below PI (e.g., from deforestation). The `alpha` parameter
-    /// (`plantbox_resp_fertscale`) controls how much CO2 fertilisation
+    /// (`plant_respiration_fertilisation_scale`) controls how much CO2 fertilisation
     /// amplifies respiration.
     fn calculate_respiration(
         &self,
@@ -305,10 +305,12 @@ impl TerrestrialCarbon {
         temperature: FloatValue,
         plant_pool: FloatValue,
     ) -> FloatValue {
-        let alpha = self.parameters.plantbox_resp_fertscale;
+        let alpha = self.parameters.plant_respiration_fertilisation_scale;
         let pool_ratio = (plant_pool / self.parameters.plant_pool_pi).clamp(0.0, 1.0);
-        let temp_effect =
-            self.temperature_factor(temperature, self.parameters.resp_temp_sensitivity);
+        let temp_effect = self.temperature_factor(
+            temperature,
+            self.parameters.respiration_temperature_sensitivity,
+        );
 
         self.parameters.respiration_pi
             * (1.0 + alpha * (beta_fert - 1.0))
@@ -376,14 +378,14 @@ impl TerrestrialCarbon {
     ) -> ([FloatValue; 3], FloatValue, FloatValue, FloatValue) {
         let [plant, detritus, soil] = *pools;
 
-        let npp_to_plant = npp * self.parameters.frac_npp_to_plant;
+        let npp_to_plant = npp * self.parameters.npp_to_plant_fraction;
         let flux_in_plant = npp_to_plant - respiration - gross_defo[0];
         let (new_plant, turnover_plant) =
             Self::implicit_pool_step(plant, tau_plant, flux_in_plant, 1.0, dt);
 
-        let npp_to_detritus = npp * self.parameters.frac_npp_to_detritus;
+        let npp_to_detritus = npp * self.parameters.npp_to_detritus_fraction;
         let flux_in_detritus = npp_to_detritus
-            + self.parameters.frac_plant_to_detritus * turnover_plant
+            + self.parameters.plant_to_detritus_fraction * turnover_plant
             - gross_defo[1];
         let (new_detritus, turnover_detritus) = Self::implicit_pool_step(
             detritus,
@@ -394,8 +396,8 @@ impl TerrestrialCarbon {
         );
 
         let npp_to_soil = npp * self.parameters.frac_npp_to_soil();
-        let plant_to_soil = (1.0 - self.parameters.frac_plant_to_detritus) * turnover_plant;
-        let detritus_to_soil = self.parameters.frac_detritus_to_soil * turnover_detritus;
+        let plant_to_soil = (1.0 - self.parameters.plant_to_detritus_fraction) * turnover_plant;
+        let detritus_to_soil = self.parameters.detritus_to_soil_fraction * turnover_detritus;
         let flux_in_soil = npp_to_soil + plant_to_soil + detritus_to_soil - gross_defo[2];
         let (new_soil, turnover_soil) =
             Self::implicit_pool_step(soil, tau_soil, flux_in_soil, temp_factor_soil, dt);
@@ -484,8 +486,8 @@ impl TerrestrialCarbon {
         let co2_extrap = self.extrapolate_co2(state, co2);
 
         // Step 2: Update reference CO2 for fertilisation
-        let year = current_year.unwrap_or(p.fertilisation_yrstart + 1.0);
-        if year < p.fertilisation_yrstart {
+        let year = current_year.unwrap_or(p.fertilisation_start_year + 1.0);
+        if year < p.fertilisation_start_year {
             state.co2_ref = co2_extrap;
             state.co2_ref_max = co2_extrap;
         } else {
@@ -494,12 +496,12 @@ impl TerrestrialCarbon {
         let co2_ref = state.co2_ref;
 
         // Step 3: Temperature feedback factors
-        let apply_temp = current_year.is_none_or(|y| y >= p.tempfeedback_yrstart);
+        let apply_temp = current_year.is_none_or(|y| y >= p.temperature_feedback_start_year);
         let temp = if apply_temp { temperature } else { 0.0 };
 
-        let temp_npp = self.temperature_factor(temp, p.npp_temp_sensitivity);
-        let temp_detritus = self.temperature_factor(temp, p.detritus_temp_sensitivity);
-        let temp_soil = self.temperature_factor(temp, p.soil_temp_sensitivity);
+        let temp_npp = self.temperature_factor(temp, p.npp_temperature_sensitivity);
+        let temp_detritus = self.temperature_factor(temp, p.detritus_temperature_sensitivity);
+        let temp_soil = self.temperature_factor(temp, p.soil_temperature_sensitivity);
 
         // Step 4: CO2 fertilisation
         let beta_fert = self.fertilisation_factor(co2_extrap, co2_ref);
@@ -519,7 +521,7 @@ impl TerrestrialCarbon {
             n.solve(
                 &mut state.nitrogen,
                 &drivers,
-                year >= p.fertilisation_yrstart,
+                year >= p.fertilisation_start_year,
             )
         });
         if let Some(budget) = &nitrogen {
@@ -533,23 +535,23 @@ impl TerrestrialCarbon {
         let cum_lu = state.cumulative_landuse + landuse_emissions * dt;
         let tau_plant = Self::time_varying_tau(
             p.plant_pool_pi,
-            p.norgrwth_frac_defo,
-            p.frac_deforest_plant,
+            p.deforestation_no_regrowth_fraction,
+            p.deforestation_plant_fraction,
             cum_lu,
             p.net_flux_to_plant_pi(),
         );
         let tau_detritus = Self::time_varying_tau(
             p.detritus_pool_pi,
-            p.norgrwth_frac_defo,
-            p.frac_deforest_detritus,
+            p.deforestation_no_regrowth_fraction,
+            p.deforestation_detritus_fraction,
             cum_lu,
             p.flux_into_detritus_pi(),
         );
-        let detritus_left =
-            p.detritus_pool_pi - p.norgrwth_frac_defo * p.frac_deforest_detritus * cum_lu;
+        let detritus_left = p.detritus_pool_pi
+            - p.deforestation_no_regrowth_fraction * p.deforestation_detritus_fraction * cum_lu;
         let tau_soil = Self::time_varying_tau(
             p.soil_pool_pi,
-            p.norgrwth_frac_defo,
+            p.deforestation_no_regrowth_fraction,
             p.frac_deforest_soil(),
             cum_lu,
             p.flux_into_soil(detritus_left, tau_detritus),
@@ -563,10 +565,10 @@ impl TerrestrialCarbon {
         // 3. Compute gross deforestation = net deforestation + regrowth
         // 4. Re-advance the no-feedback pool with gross deforestation
 
-        let nf_net_flux_plant = p.npp_pi * p.frac_npp_to_plant - p.respiration_pi;
+        let nf_net_flux_plant = p.npp_pi * p.npp_to_plant_fraction - p.respiration_pi;
         let net_defo = [
-            p.frac_deforest_plant * landuse_emissions,
-            p.frac_deforest_detritus * landuse_emissions,
+            p.deforestation_plant_fraction * landuse_emissions,
+            p.deforestation_detritus_fraction * landuse_emissions,
             p.frac_deforest_soil() * landuse_emissions,
         ];
 
@@ -611,8 +613,8 @@ impl TerrestrialCarbon {
         {
             let half_k = 0.5 / tau_detritus;
             let nf_pool = state.nofeedback_pools[1];
-            let nf_net_flux =
-                p.npp_pi * p.frac_npp_to_detritus + p.frac_plant_to_detritus * nf_turnover_plant;
+            let nf_net_flux = p.npp_pi * p.npp_to_detritus_fraction
+                + p.plant_to_detritus_fraction * nf_turnover_plant;
 
             let nf_new_no_regrwth =
                 (nf_pool * (1.0 - half_k) + nf_net_flux - net_defo[1] - state.prev_regrowth[1])
@@ -640,8 +642,8 @@ impl TerrestrialCarbon {
             let half_k = 0.5 / tau_soil;
             let nf_pool = state.nofeedback_pools[2];
             let nf_net_flux = p.npp_pi * p.frac_npp_to_soil()
-                + (1.0 - p.frac_plant_to_detritus) * nf_turnover_plant
-                + p.frac_detritus_to_soil * nf_turnover_detritus;
+                + (1.0 - p.plant_to_detritus_fraction) * nf_turnover_plant
+                + p.detritus_to_soil_fraction * nf_turnover_detritus;
 
             let nf_new_no_regrwth =
                 (nf_pool * (1.0 - half_k) + nf_net_flux - net_defo[2] - state.prev_regrowth[2])
@@ -729,7 +731,7 @@ impl TerrestrialCarbon {
         let temperature = feedback_warming(
             &inputs.temperature,
             t_current,
-            self.parameters.tempfeedback_yrstart,
+            self.parameters.temperature_feedback_start_year,
         );
         let landuse = inputs.landuse_emissions.get();
         let nitrogen_inputs = match &self.parameters.nitrogen {
@@ -987,7 +989,7 @@ mod tests {
         let component = default_component();
         let co2_pi = component.parameters.co2_pi;
         let factor = component.fert_logarithmic(co2_pi * 2.0, co2_pi);
-        let expected = 1.0 + component.parameters.beta * 2.0_f64.ln();
+        let expected = 1.0 + component.parameters.fertilisation_factor * 2.0_f64.ln();
         assert!(
             (factor - expected).abs() < 0.01,
             "Log fertilisation at 2xCO2 should be {:.3}, got {:.3}",
@@ -1090,7 +1092,7 @@ mod tests {
     #[test]
     fn test_respiration_method2_at_pi() {
         let params = TerrestrialCarbonParameters {
-            plantbox_resp_fertscale: 0.5,
+            plant_respiration_fertilisation_scale: 0.5,
             ..Default::default()
         };
         let component = TerrestrialCarbon::from_parameters(params.clone());
@@ -1124,7 +1126,7 @@ mod tests {
 
     #[test]
     fn test_warming_changes_net_uptake() {
-        // With MAGICC7 default parameters (negative detritus_temp_sensitivity),
+        // With MAGICC7 default parameters (negative detritus_temperature_sensitivity),
         // warming has competing effects: increases respiration but slows detritus
         // decay. The net direction depends on the balance of feedbacks.
         let component = default_component();
@@ -1344,15 +1346,15 @@ mod tests {
 
         let tau_0 = TerrestrialCarbon::time_varying_tau(
             p.plant_pool_pi,
-            p.norgrwth_frac_defo,
-            p.frac_deforest_plant,
+            p.deforestation_no_regrowth_fraction,
+            p.deforestation_plant_fraction,
             0.0,
             p.net_flux_to_plant_pi(),
         );
         let tau_100 = TerrestrialCarbon::time_varying_tau(
             p.plant_pool_pi,
-            p.norgrwth_frac_defo,
-            p.frac_deforest_plant,
+            p.deforestation_no_regrowth_fraction,
+            p.deforestation_plant_fraction,
             100.0,
             p.net_flux_to_plant_pi(),
         );

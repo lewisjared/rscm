@@ -40,7 +40,7 @@ from rscm.magicc.runner import (
     _average_series,
     _base_schema,
     _ch4_burdens,
-    _ch4_tau_other,
+    _ch4_non_oh_lifetime,
     _climate_weights,
     _collect_result,
     _series,
@@ -80,7 +80,7 @@ _LAG_FOR = (
 
 CH4_PPB_TO_TG = 2.824
 CH4_MIXBOX_SIZE = 0.973
-CH4_BUDGET_PARAMETERS = ("ppb_to_tg", "mixbox_size", "natural_emissions")
+CH4_BUDGET_PARAMETERS = ("tg_per_ppb", "mixing_box_size", "natural_emissions")
 
 EMISSION_VARIABLES = {
     "co2_fossil": ("Emissions|CO2|Fossil", "GtC/yr"),
@@ -176,15 +176,17 @@ def _validate_parameters(
         _share(resolved, ("CH4Chemistry", "CH4Oxidation"), key)
     chemistry, oxidation = resolved["CH4Chemistry"], resolved["CH4Oxidation"]
     lifetimes = {k: chemistry[k] for k in CH4_OTHER_LIFETIMES if k in chemistry}
-    tau_other = _ch4_tau_other(lifetimes)
-    if "tau_other" in oxidation and not math.isclose(oxidation["tau_other"], tau_other):
+    non_oh_lifetime = _ch4_non_oh_lifetime(lifetimes)
+    if "non_oh_lifetime" in oxidation and not math.isclose(
+        oxidation["non_oh_lifetime"], non_oh_lifetime
+    ):
         msg = (
-            "CH4Oxidation tau_other must match CH4Chemistry's soil, stratospheric "
-            f"and chlorine lifetimes ({tau_other})"
+            "CH4Oxidation non_oh_lifetime must match CH4Chemistry's soil, "
+            f"stratospheric and chlorine lifetimes ({non_oh_lifetime})"
         )
         raise ValueError(msg)
     if lifetimes:
-        oxidation["tau_other"] = tau_other
+        oxidation["non_oh_lifetime"] = non_oh_lifetime
     return resolved
 
 
@@ -252,7 +254,7 @@ def run_magicc_emissions(  # noqa: PLR0913
     ``other_forcing`` is the ERF in W/m² from everything except the selected
     gases, one value per boundary. ``parameters`` maps component names from
     ``COMPONENTS`` to their Rust parameter dictionaries. ClimateUdeb's
-    ``rf_2xco2`` defaults to the CO2-doubling ERF of the forcing configuration,
+    ``erf_2xco2`` defaults to the CO2-doubling ERF of the forcing configuration,
     as in MAGICC7. A ``gtc_per_ppm`` given for CO2Budget or OceanCarbon applies
     to both.
 
@@ -294,7 +296,7 @@ def run_magicc_emissions(  # noqa: PLR0913
     )
     climate_params = cast(
         "ClimateUdebParameters",
-        {"rf_2xco2": forcing.co2_doubling_forcing(), **params["ClimateUdeb"]},
+        {"erf_2xco2": forcing.erf_2xco2(), **params["ClimateUdeb"]},
     )
     climate = ClimateUdebBuilder.from_parameters(climate_params)
     terrestrial = params["TerrestrialCarbon"]
@@ -305,8 +307,8 @@ def run_magicc_emissions(  # noqa: PLR0913
         **climate.initial_values(total_erf),
         **_ch4_burdens(
             initial_conc["CH4"],
-            float(params["CH4Chemistry"].get("ppb_to_tg", CH4_PPB_TO_TG)),
-            float(params["CH4Chemistry"].get("mixbox_size", CH4_MIXBOX_SIZE)),
+            float(params["CH4Chemistry"].get("tg_per_ppb", CH4_PPB_TO_TG)),
+            float(params["CH4Chemistry"].get("mixing_box_size", CH4_MIXBOX_SIZE)),
         ),
         "Ocean Surface pCO2": initial_conc["CO2"],
         "Cumulative Ocean Uptake": 0.0,

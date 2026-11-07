@@ -51,7 +51,7 @@ so total forcing does not independently validate the processes represented by th
 
 This case uses first-year concentrations as preindustrial references,
 and unit rapid-adjustment factors for IPCCTAR when the configuration does not set them.
-It sets the climate `rf_2xco2` to the configured `core_delq2xco2`
+It sets the climate `erf_2xco2` to the configured `core_delq2xco2`
 rather than the runner's default CO2-doubling ERF.
 Climate begins with zero temperature and ocean anomalies, without spin-up.
 The effective Rust defaults are recorded through model serialisation.

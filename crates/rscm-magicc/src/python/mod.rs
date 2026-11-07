@@ -49,10 +49,10 @@ impl ClimateUdebBuilder {
     }
 
     /// Internal efficacy of a forcing agent with the given regional pattern.
-    pub fn internal_efficacy(&self, rf_regions: [f64; 4]) -> PyResult<f64> {
+    pub fn internal_efficacy(&self, regional_pattern: [f64; 4]) -> PyResult<f64> {
         let component = ClimateUdeb::from_parameters(self.parameters.clone())
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-        Ok(component.internal_efficacy(&rf_regions))
+        Ok(component.internal_efficacy(&regional_pattern))
     }
 
     #[staticmethod]
@@ -119,7 +119,7 @@ impl GhgForcingBuilder {
 
     /// ERF from doubling CO2 above its preindustrial reference, with CH4 and N2O
     /// at theirs. MAGICC7 derives its climate feedback from this value.
-    pub fn co2_doubling_forcing(&self) -> f64 {
+    pub fn erf_2xco2(&self) -> f64 {
         let p = &self.parameters;
         GhgForcing::from_parameters(p.clone())
             .calculate_forcings(2.0 * p.co2_pi, p.ch4_pi, p.n2o_pi)
@@ -188,11 +188,11 @@ impl ForcingAggregationBuilder {
         Ok(component.aggregate(&values))
     }
 
-    /// Internal efficacy of each agent at climate sensitivity `ecs` and CO2 doubling forcing `q_2xco2`.
-    pub fn internal_efficacies(&self, ecs: f64, q_2xco2: f64) -> PyResult<Vec<f64>> {
+    /// Internal efficacy of each agent at climate sensitivity `ecs` and CO2 doubling forcing `erf_2xco2`.
+    pub fn internal_efficacies(&self, ecs: f64, erf_2xco2: f64) -> PyResult<Vec<f64>> {
         ForcingAggregation::from_parameters(self.parameters.clone())
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
-            .internal_efficacies(ecs, q_2xco2)
+            .internal_efficacies(ecs, erf_2xco2)
             .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("LAMCALC did not converge"))
     }
 

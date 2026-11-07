@@ -62,8 +62,8 @@ forcing = Timeseries(
 two_layer = TwoLayerBuilder.from_parameters({
     "lambda0": 1.2,                # Climate feedback parameter (W/m^2/K)
     "a": 0.0,                      # Nonlinear feedback coefficient (W/m^2/K^2)
-    "efficacy": 1.0,               # Ocean heat uptake efficacy
-    "eta": 0.8,                    # Heat exchange coefficient (W/m^2/K)
+    "deep_ocean_efficacy": 1.0,    # Ocean heat uptake efficacy
+    "ocean_heat_transfer": 0.8,    # Heat exchange coefficient (W/m^2/K)
     "heat_capacity_surface": 7.0,  # Surface layer heat capacity (W yr/m^2/K)
     "heat_capacity_deep": 100.0,   # Deep ocean heat capacity (W yr/m^2/K)
 }).build()
@@ -145,9 +145,9 @@ emissions = Timeseries(
 )
 
 carbon_cycle = CarbonCycleBuilder.from_parameters(
-    {"tau": 30.0, "conc_pi": 278.0, "alpha_temperature": 0.0}
+    {"tau": 30.0, "co2_pi": 278.0, "alpha_temperature": 0.0}
 ).build()
-co2_erf = CO2ErfBuilder.from_parameters({"erf_2xco2": 3.7, "conc_pi": 278.0}).build()
+co2_erf = CO2ErfBuilder.from_parameters({"erf_2xco2": 3.7, "co2_pi": 278.0}).build()
 ```
 
 The `CO2ErfBuilder` component writes `Effective Radiative Forcing|CO2`,

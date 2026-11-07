@@ -70,10 +70,10 @@ end = 2100
 type = "TwoLayer"
 
 [components.climate.parameters]
-lambda0 = 1.0        # Climate feedback (W/(m² K))
-a = 0.0              # Nonlinear coefficient (W/(m² K²))
-efficacy = 1.0       # Ocean heat uptake efficacy
-eta = 0.7            # Heat exchange coefficient (W/(m² K))
+lambda0 = 1.0                 # Climate feedback (W/(m² K))
+a = 0.0                       # Nonlinear coefficient (W/(m² K²))
+deep_ocean_efficacy = 1.0     # Ocean heat uptake efficacy
+ocean_heat_transfer = 0.7     # Heat exchange coefficient (W/(m² K))
 heat_capacity_surface = 8.0   # Surface layer (W yr/(m² K))
 heat_capacity_deep = 100.0    # Deep ocean (W yr/(m² K))
 
@@ -126,8 +126,8 @@ name = "two-layer-high-ecs"
 description = "Two-layer model tuned for high climate sensitivity"
 
 [components.climate.parameters]
-lambda0 = 0.7    # Lower feedback = higher sensitivity
-efficacy = 1.3   # Higher efficacy
+lambda0 = 0.7             # Lower feedback = higher sensitivity
+deep_ocean_efficacy = 1.3 # Higher efficacy
 ```
 
 **Merge behaviour:**
@@ -151,7 +151,7 @@ config = TwoLayerConfig(
     time=TimeConfig(start=1850, end=2100),
     climate=TwoLayerParameters(
         lambda0=0.8,
-        efficacy=1.2,
+        deep_ocean_efficacy=1.2,
     ),
 )
 ```

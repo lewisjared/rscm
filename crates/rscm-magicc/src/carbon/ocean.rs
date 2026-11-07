@@ -25,11 +25,11 @@
 //!
 //! - `Atmospheric Concentration|CO2` (ppm) - Concentration at the start of the year
 //! - `Surface Temperature` (K) - Drives the pCO2 feedback through the warming
-//!   since `tempfeedback_yrstart`, floored at zero
+//!   since `temperature_feedback_start_year`, floored at zero
 //! - `Emissions|CO2|Fossil` (GtC/yr) - Fossil and industrial emissions
 //! - `Emissions|CO2|CH4 Oxidation` (GtC/yr) - CO2 from oxidised fossil CH4
 //! - `Carbon Flux|Terrestrial` (GtC/yr) - Net land uptake, including land use
-//! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `permafrost` parameter
+//! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `include_permafrost` parameter
 //!
 //! # States (tracked between steps)
 //!
@@ -286,7 +286,7 @@ impl OceanCarbon {
             }
 
             state.flux_history.push_back(flux);
-            if state.flux_history.len() > p.max_history_months {
+            if state.flux_history.len() > p.maximum_history_months {
                 state.flux_history.pop_front();
             }
 
@@ -341,12 +341,16 @@ impl OceanCarbon {
         let warming = feedback_warming(
             &inputs.temperature,
             t_current,
-            self.parameters.tempfeedback_yrstart,
+            self.parameters.temperature_feedback_start_year,
         );
         state.start_year.get_or_insert(t_current.floor());
         let other_sources = (inputs.fossil_emissions.get() + inputs.ch4_oxidation.get()
             - inputs.terrestrial_flux.get())
-            + permafrost_emissions(self.parameters.permafrost, input_state, PERMAFROST_CO2);
+            + permafrost_emissions(
+                self.parameters.include_permafrost,
+                input_state,
+                PERMAFROST_CO2,
+            );
         if state.pco2_reference.is_none() {
             state.pco2_reference = Some(
                 self.parameters
@@ -393,7 +397,7 @@ impl Default for OceanCarbon {
 impl Component for OceanCarbon {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
-        if self.parameters.permafrost {
+        if self.parameters.include_permafrost {
             definitions.push(VariableDefinition::scalar_input(PERMAFROST_CO2, "GtC/yr"));
         }
         definitions.extend(prescribed_definition(
@@ -587,7 +591,7 @@ mod tests {
         let monthly = run_years(&default_component(), &mut fresh_state(), PI, 8.0, 0.0, 20);
         let fine = OceanCarbon::from_parameters(OceanCarbonParameters {
             steps_per_year: 24,
-            max_history_months: 12000,
+            maximum_history_months: 12000,
             ..Default::default()
         });
         let fine = run_years(&fine, &mut fresh_state(), PI, 8.0, 0.0, 20);
@@ -609,7 +613,7 @@ mod tests {
     #[test]
     fn test_flux_history_bounded() {
         let params = OceanCarbonParameters {
-            max_history_months: 24,
+            maximum_history_months: 24,
             ..Default::default()
         };
         let component = OceanCarbon::from_parameters(params);

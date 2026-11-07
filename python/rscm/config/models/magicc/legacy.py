@@ -78,7 +78,8 @@ def from_legacy_dict(legacy: dict[str, Any]) -> dict[str, Any]:
             msg = (
                 "co2_tempfeedback_switch is not supported. Configure temperature "
                 "feedbacks explicitly on each component, including terrestrial "
-                "tempfeedback_yrstart, instead of importing the global switch."
+                "temperature_feedback_start_year, instead of importing the global "
+                "switch."
             )
             raise ValueError(msg)
 

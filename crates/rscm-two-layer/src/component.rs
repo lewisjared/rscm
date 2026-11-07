@@ -52,7 +52,7 @@ pub struct TwoLayerParameters {
     /// Set to 0 for a linear model. Typical values: 0-0.1
     pub a: FloatValue,
 
-    /// Ocean heat uptake efficacy
+    /// Ocean heat uptake efficacy ($\varepsilon$)
     ///
     /// Units: dimensionless
     ///
@@ -60,16 +60,16 @@ pub struct TwoLayerParameters {
     /// feedback parameter. Values > 1 indicate that ocean heat uptake is more
     /// effective at reducing surface warming than the equilibrium response suggests.
     /// Typical values: 1.0-1.8
-    pub efficacy: FloatValue,
+    pub deep_ocean_efficacy: FloatValue,
 
-    /// Heat exchange coefficient between surface and deep layers
+    /// Heat exchange coefficient between surface and deep layers ($\eta$)
     ///
     /// Units: W/(m² K)
     ///
     /// Controls the rate of heat transfer from the surface to the deep ocean.
     /// Higher values mean faster equilibration between layers.
     /// Typical values: 0.5-1.0
-    pub eta: FloatValue,
+    pub ocean_heat_transfer: FloatValue,
 
     /// Heat capacity of the surface layer (mixed layer ocean + atmosphere)
     ///
@@ -127,10 +127,10 @@ pub struct TwoLayerParameters {
 /// use rscm_two_layer::{TwoLayer, TwoLayerParameters};
 ///
 /// let component = TwoLayer::from_parameters(TwoLayerParameters {
-///     lambda0: 1.0,              // Climate feedback parameter
-///     a: 0.0,                    // Linear model (no state-dependence)
-///     efficacy: 1.0,             // Standard efficacy
-///     eta: 0.7,                  // Heat exchange coefficient
+///     lambda0: 1.0,               // Climate feedback parameter
+///     a: 0.0,                     // Linear model (no state-dependence)
+///     deep_ocean_efficacy: 1.0,   // Standard efficacy
+///     ocean_heat_transfer: 0.7,   // Heat exchange coefficient
 ///     heat_capacity_surface: 8.0, // ~80m mixed layer
 ///     heat_capacity_deep: 100.0,  // Deep ocean
 /// });
@@ -171,13 +171,14 @@ impl Ivp<Time, ModelState> for TwoLayer {
         let temperature_difference = temperature_surface - temperature_deep;
 
         let lambda_eff = self.parameters.lambda0 - self.parameters.a * temperature_surface;
-        let heat_exchange_surface =
-            self.parameters.efficacy * self.parameters.eta * temperature_difference;
+        let heat_exchange_surface = self.parameters.deep_ocean_efficacy
+            * self.parameters.ocean_heat_transfer
+            * temperature_difference;
         let dtemperature_surface_dt =
             (erf - lambda_eff * temperature_surface - heat_exchange_surface)
                 / self.parameters.heat_capacity_surface;
 
-        let heat_exchange_deep = self.parameters.eta * temperature_difference;
+        let heat_exchange_deep = self.parameters.ocean_heat_transfer * temperature_difference;
         let dtemperature_deep_dt = heat_exchange_deep / self.parameters.heat_capacity_deep;
 
         dy_dt[0] = dtemperature_surface_dt;
@@ -202,8 +203,8 @@ impl TwoLayer {
     /// let component = TwoLayer::from_parameters(TwoLayerParameters {
     ///     lambda0: 1.0,
     ///     a: 0.0,
-    ///     efficacy: 1.2,
-    ///     eta: 0.7,
+    ///     deep_ocean_efficacy: 1.2,
+    ///     ocean_heat_transfer: 0.7,
     ///     heat_capacity_surface: 8.0,
     ///     heat_capacity_deep: 100.0,
     /// });
@@ -263,8 +264,8 @@ mod tests {
         TwoLayer::from_parameters(TwoLayerParameters {
             lambda0: 1.0,               // W/(m^2 K) - climate feedback parameter
             a: 0.0,                     // No nonlinear feedback for simpler testing
-            efficacy: 1.0,              // Ocean heat uptake efficacy
-            eta: 0.7,                   // W/(m^2 K) - heat exchange coefficient
+            deep_ocean_efficacy: 1.0,   // Ocean heat uptake efficacy
+            ocean_heat_transfer: 0.7,   // W/(m^2 K) - heat exchange coefficient
             heat_capacity_surface: 8.0, // W yr / (m^2 K) - realistic ocean mixed layer
             heat_capacity_deep: 100.0,  // W yr / (m^2 K) - deep ocean
         })

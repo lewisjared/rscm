@@ -11,18 +11,18 @@ pub struct PrognosticFixation {
     /// Maximum fixation rate
     /// unit: Tg N/yr
     /// MAGICC7: NCYCLE_NFIX_VMAX
-    pub vmax: FloatValue,
+    pub maximum_fixation_rate: FloatValue,
     /// NPP at half the maximum fixation rate
     /// unit: GtC/yr
     /// MAGICC7: NCYCLE_NFIX_KM
-    pub km: FloatValue,
+    pub half_saturation_npp: FloatValue,
 }
 
 /// Parameters for the nitrogen limitation of NPP.
 ///
 /// Each year the plant-available nitrogen pool is solved for the steady state of
 /// deposition, recycling and fixation against plant uptake and losses.
-/// From `fertilisation_yrstart` NPP is scaled by the nitrogen availability
+/// From `fertilisation_start_year` NPP is scaled by the nitrogen availability
 /// relative to the last year before it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -30,11 +30,11 @@ pub struct NitrogenParameters {
     /// Plant nitrogen uptake per unit NPP
     /// unit: Gt N/GtC
     /// MAGICC7: NCYCLE_NCRATIO_UPTAKE
-    pub ncratio_uptake: FloatValue,
+    pub uptake_nc_ratio: FloatValue,
     /// Nitrogen recycled per unit heterotrophic respiration
     /// unit: Gt N/GtC
     /// MAGICC7: NCYCLE_NCRATIO_RECYC
-    pub ncratio_recycling: FloatValue,
+    pub recycling_nc_ratio: FloatValue,
     /// Damping of the CO2 and temperature effects on the recycled N:C ratio
     /// MAGICC7: NCYCLE_RECYC2CNRATIO_FACTOR
     pub recycling_cn_factor: FloatValue,
@@ -60,8 +60,8 @@ pub struct NitrogenParameters {
 impl Default for NitrogenParameters {
     fn default() -> Self {
         Self {
-            ncratio_uptake: 0.013,
-            ncratio_recycling: 0.013,
+            uptake_nc_ratio: 0.013,
+            recycling_nc_ratio: 0.013,
             recycling_cn_factor: 0.0,
             uptake_supply: 0.05,
             availability_factor_a: 2.0,

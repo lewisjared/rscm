@@ -119,7 +119,7 @@ With every switch year at or before the first year, the chain runs from emission
   `ncycle_apply_ndep_from_emis=1` adds deposition from NOx and NH3.
 - `out_sealevel=1` adds `SeaLevelRise` and thermal expansion in `ClimateUdeb`.
 
-In a model built by hand, add `PermafrostBuilder` and set `permafrost` on
+In a model built by hand, add `PermafrostBuilder` and set `include_permafrost` on
 `CH4Chemistry`, `CH4Oxidation`, `OceanCarbon` and `CO2Budget` to feed permafrost emissions back.
 They then read `Emissions|CH4|Permafrost` and `Emissions|CO2|Permafrost`.
 
@@ -228,7 +228,7 @@ parameters = {
 
 A `gtc_per_ppm` given for `CO2Budget` or `OceanCarbon` applies to both,
 because the ocean evolves atmospheric CO2 within the year and must match the budget.
-`ppb_to_tg`, `mixbox_size` and `natural_emissions` are shared the same way
+`tg_per_ppb`, `mixing_box_size` and `natural_emissions` are shared the same way
 between `CH4Chemistry` and `CH4Oxidation`, because the oxidation repeats the CH4 budget.
 Conflicting values raise `ValueError`.
 
@@ -334,10 +334,10 @@ These conventions apply to `run_magicc` and `run_magicc_emissions`.
 - Preindustrial reference concentrations are component parameters, independent of the first supplied year.
   Set `co2_pi`, `ch4_pi` and `n2o_pi` explicitly when the experiment uses different references.
 
-For `run_magicc`, `climate_parameters` accepts ClimateUdeb parameter names such as `ecs` and `rf_2xco2`,
-and `forcing_parameters` accepts GhgForcing parameter names such as `method` and `delq2xco2`.
+For `run_magicc`, `climate_parameters` accepts ClimateUdeb parameter names such as `ecs` and `erf_2xco2`,
+and `forcing_parameters` accepts GhgForcing parameter names such as `method` and `erf_2xco2`.
 `run_magicc_emissions` takes both through `parameters["ClimateUdeb"]` and `parameters["GhgForcing"]`.
-As in MAGICC7, `rf_2xco2` defaults to the ERF of doubling CO2 under the forcing configuration,
+As in MAGICC7, `erf_2xco2` defaults to the ERF of doubling CO2 under the forcing configuration,
 which is about 3.9 W/m² for OLBL.
 Set it explicitly only to decouple the climate feedback from the forcing.
 

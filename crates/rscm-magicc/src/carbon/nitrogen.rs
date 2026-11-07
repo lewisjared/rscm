@@ -5,10 +5,10 @@
 //! $$F_{dep} + F_{recyc} + F_{fix} = F_{up} + N / \tau$$
 //!
 //! found by bisection as MAGICC7 does.
-//! Before `fertilisation_yrstart` plant uptake is a fixed fraction of NPP and NPP
+//! Before `fertilisation_start_year` plant uptake is a fixed fraction of NPP and NPP
 //! is not limited. From then on uptake and NPP scale with the nitrogen availability
 //! $\phi(N, NPP) = (1 + A) / (A + e^{-C (N^2 / (N + S) - k \, NPP)})$
-//! relative to its value in the last year before `fertilisation_yrstart`.
+//! relative to its value in the last year before `fertilisation_start_year`.
 
 use crate::parameters::NitrogenParameters;
 use rscm_core::timeseries::FloatValue;
@@ -63,7 +63,8 @@ impl NitrogenParameters {
     fn availability(&self, pool: FloatValue, npp: FloatValue) -> FloatValue {
         let a = self.availability_factor_a;
         let supply = pool * pool / (pool + self.uptake_supply);
-        (1.0 + a) / (a + (-self.availability_factor_c * (supply - self.ncratio_uptake * npp)).exp())
+        (1.0 + a)
+            / (a + (-self.availability_factor_c * (supply - self.uptake_nc_ratio * npp)).exp())
     }
 
     fn fixation(&self, drivers: &NitrogenDrivers, ratio: FloatValue) -> FloatValue {
@@ -71,14 +72,14 @@ impl NitrogenParameters {
             None => drivers.fixation,
             Some(f) => {
                 let npp = drivers.npp * ratio;
-                1e-3 * f.vmax * npp / (f.km + npp)
+                1e-3 * f.maximum_fixation_rate * npp / (f.half_saturation_npp + npp)
             }
         }
     }
 
     /// Solve the nitrogen pool for one year.
     ///
-    /// `limited` is false before `fertilisation_yrstart`, when the year also becomes
+    /// `limited` is false before `fertilisation_start_year`, when the year also becomes
     /// the reference for limitation.
     pub fn solve(
         &self,
@@ -87,7 +88,7 @@ impl NitrogenParameters {
         limited: bool,
     ) -> NitrogenBudget {
         let f = self.recycling_cn_factor;
-        let recycling = self.ncratio_recycling * drivers.respiration * (1.0 + f)
+        let recycling = self.recycling_nc_ratio * drivers.respiration * (1.0 + f)
             / (f + drivers.fertilisation)
             * (1.0 + f)
             / (f + drivers.temperature_factor);
@@ -102,7 +103,7 @@ impl NitrogenParameters {
         let balance = |pool: FloatValue| {
             let r = ratio(pool);
             drivers.deposition + recycling + self.fixation(drivers, r)
-                - self.ncratio_uptake * drivers.npp * r
+                - self.uptake_nc_ratio * drivers.npp * r
                 - pool / self.loss_turnover_time
         };
         let pool = bisect(balance);
@@ -114,7 +115,7 @@ impl NitrogenParameters {
         NitrogenBudget {
             limitation,
             pool,
-            uptake: self.ncratio_uptake * drivers.npp * limitation,
+            uptake: self.uptake_nc_ratio * drivers.npp * limitation,
             recycling,
             losses: pool / self.loss_turnover_time,
             fixation: self.fixation(drivers, limitation),

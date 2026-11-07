@@ -15,7 +15,7 @@
 //!   $s \max(0, (E_Y - E_{Y_0}) / 100)^{\beta}$ from the threshold year $Y_0$, zero before.
 //! - `Effective Radiative Forcing|Tropospheric Ozone`:
 //!   $r o_{CH4} \ln(M_Y / M_0) + r [o_{NOx} \Delta NOx_{Y-1} + o_{CO} \Delta CO_{Y-1} + o_{VOC} \Delta VOC_{Y-1}]$,
-//!   four-box with `trop_regions` as MAGICC7 spreads it within each hemisphere.
+//!   four-box with `tropospheric_ozone_regions` as MAGICC7 spreads it within each hemisphere.
 //! - `Effective Radiative Forcing|Ozone due to N2O`: $k (N_Y - N_0)$
 //! - `Effective Radiative Forcing|Ozone due to Temperature`: $\gamma T_{Y-1}$
 //!
@@ -78,7 +78,7 @@ impl OzoneForcing {
     pub fn strat_forcing(&self, eesc: FloatValue, eesc_threshold: FloatValue) -> FloatValue {
         let p = &self.parameters;
         let excess = ((eesc - eesc_threshold) / 100.0).max(0.0);
-        p.strat_o3_scale * excess.powf(p.strat_cl_exponent)
+        p.stratospheric_o3_scale * excess.powf(p.stratospheric_cl_exponent)
     }
 
     /// Tropospheric ozone ERF from the CH4 ratio and precursor emission changes.
@@ -90,8 +90,13 @@ impl OzoneForcing {
         d_nmvoc: FloatValue,
     ) -> FloatValue {
         let p = &self.parameters;
-        let precursors = (p.trop_oz_nox * d_nox + p.trop_oz_co * d_co) + p.trop_oz_voc * d_nmvoc;
-        p.trop_radeff * p.trop_oz_ch4 * ch4_ratio.ln() + precursors * p.trop_radeff
+        let precursors = (p.tropospheric_ozone_nox_sensitivity * d_nox
+            + p.tropospheric_ozone_co_sensitivity * d_co)
+            + p.tropospheric_ozone_nmvoc_sensitivity * d_nmvoc;
+        p.tropospheric_ozone_radiative_efficiency
+            * p.tropospheric_ozone_ch4_sensitivity
+            * ch4_ratio.ln()
+            + precursors * p.tropospheric_ozone_radiative_efficiency
     }
 }
 
@@ -118,7 +123,7 @@ impl Component for OzoneForcing {
         definitions.extend([
             VariableDefinition::scalar_input(TEMPERATURE, "K"),
             VariableDefinition::scalar_output(STRAT_OZONE_FORCING, "W/m^2"),
-            if self.parameters.trop_regions.is_some() {
+            if self.parameters.tropospheric_ozone_regions.is_some() {
                 VariableDefinition::four_box_output(TROP_OZONE_FORCING, "W/m^2")
             } else {
                 VariableDefinition::scalar_output(TROP_OZONE_FORCING, "W/m^2")
@@ -140,10 +145,10 @@ impl Component for OzoneForcing {
         let window = |name| input_state.get_scalar_window(name);
 
         let eesc = window(EESC);
-        let strat = if t_next < p.strat_threshold_year {
+        let strat = if t_next < p.stratospheric_reference_year {
             0.0
         } else {
-            let threshold = value_at_year(&eesc, t_current, p.strat_threshold_year);
+            let threshold = value_at_year(&eesc, t_current, p.stratospheric_reference_year);
             self.strat_forcing(eesc.get(), threshold)
         };
 
@@ -161,10 +166,10 @@ impl Component for OzoneForcing {
         );
 
         let n2o = window(N2O);
-        let n2o_ozone = p.n2o_radeff * (n2o.get() - first_value(&n2o));
+        let n2o_ozone = p.n2o_ozone_radiative_efficiency * (n2o.get() - first_value(&n2o));
         let temperature = p.temperature_scale * window(TEMPERATURE).get();
 
-        let trop = match &p.trop_regions {
+        let trop = match &p.tropospheric_ozone_regions {
             Some(regions) => StateValue::FourBox(FourBoxSlice::from_array(
                 regions.pattern().map(|q| q * trop),
             )),

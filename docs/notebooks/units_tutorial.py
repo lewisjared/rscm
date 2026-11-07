@@ -294,7 +294,7 @@ model = (
     .with_schema(schema)
     .with_component(
         CarbonCycleBuilder.from_parameters(
-            dict(tau=20.3, conc_pi=280.0, alpha_temperature=0.0)
+            dict(tau=20.3, co2_pi=280.0, alpha_temperature=0.0)
         ).build()
     )
     .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)

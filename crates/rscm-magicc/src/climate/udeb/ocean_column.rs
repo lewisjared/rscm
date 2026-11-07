@@ -34,8 +34,8 @@ impl ClimateUdeb {
         self.kappa_slopes
             .iter()
             .map(|slope| {
-                let k =
-                    (slope * (t_top - t_bottom) + self.parameters.kappa) * DIFFUSIVITY_CM2S_TO_M2YR;
+                let k = (slope * (t_top - t_bottom) + self.parameters.vertical_diffusivity)
+                    * DIFFUSIVITY_CM2S_TO_M2YR;
                 k.max(kappa_min_m2yr)
             })
             .collect()
@@ -104,7 +104,7 @@ impl ClimateUdeb {
         } else {
             (fgso, fgsl)
         };
-        let denom = (lambda_land * f_l + p.k_lo) * f_o;
+        let denom = (lambda_land * f_l + p.land_ocean_heat_exchange) * f_o;
 
         let mut coefficients = vec![0.0; 4 * n];
         let (a, rest) = coefficients.split_at_mut(n);
@@ -113,19 +113,21 @@ impl ClimateUdeb {
 
         let dtpdm = dt / p.mixed_layer_depth;
         let feedback =
-            ((p.amplify_ocean_to_land * (lambda_land * p.k_lo)) * f_l) / denom + lambda_ocean;
+            ((p.amplify_ocean_to_land * (lambda_land * p.land_ocean_heat_exchange)) * f_l) / denom
+                + lambda_ocean;
         b[0] = ((kappas[0] / dz1) * afb[0]
             + (pi_ratio * w) * afb[0]
             + (feedback * ((1.0 / c) * alpha_eff)) * aft[0])
             * dtpdm
             + 1.0;
         cc[0] = -((((kappas[0] / dz1) + w) * dtpdm) * afb[0]);
-        let flux = ((p.k_lo * land_forcing) * f_l) / denom + (hemi_heat_exchange + ocean_forcing);
+        let flux = ((p.land_ocean_heat_exchange * land_forcing) * f_l) / denom
+            + (hemi_heat_exchange + ocean_forcing);
         d[0] = (((flux * dtpdm) / c) * aft[0] + temps[0])
             + ((init[1] - t_polar) * (dtpdm * dw)) * afb[0];
-        if p.land_heat_capacity_enabled {
-            d[0] -=
-                (((aft[0] * dtpdm) / (f_o * c)) * p.k_lg) * (state.land_temps[hemi] - ground_temp);
+        if p.include_land_heat_capacity {
+            d[0] -= (((aft[0] * dtpdm) / (f_o * c)) * p.land_ground_heat_exchange)
+                * (state.land_temps[hemi] - ground_temp);
         }
 
         let dtpdz = dt / dz;
@@ -160,7 +162,7 @@ impl ClimateUdeb {
 
         thomas_solve_inplace(a, b, cc, d);
 
-        let max_temp = p.max_temperature;
+        let max_temp = p.maximum_temperature;
         for (old, &temp) in state.ocean_temps[hemi].iter_mut().zip(d.iter()) {
             *old = temp.min(max_temp);
         }
@@ -176,12 +178,12 @@ impl ClimateUdeb {
     ///
     /// The change from $w_0$ is kept for the next substep's RHS correction.
     pub(super) fn update_upwelling(&self, state: &mut ClimateUdebState, global_temp: FloatValue) {
-        let w_0 = self.parameters.w_initial;
-        let fw = self.parameters.w_variable_fraction * w_0;
-        let w_min = (1.0 - self.parameters.w_variable_fraction) * w_0;
+        let w_0 = self.parameters.initial_upwelling_rate;
+        let fw = self.parameters.upwelling_variable_fraction * w_0;
+        let w_min = (1.0 - self.parameters.upwelling_variable_fraction) * w_0;
         let thresholds = [
-            self.parameters.w_threshold_temp_nh,
-            self.parameters.w_threshold_temp_sh,
+            self.parameters.upwelling_threshold_temperature_nh,
+            self.parameters.upwelling_threshold_temperature_sh,
         ];
         for (hemi, thr) in thresholds.into_iter().enumerate() {
             let x = (fw * global_temp) / thr;

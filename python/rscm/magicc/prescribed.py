@@ -500,16 +500,16 @@ def volcanic_substeps(  # noqa: PLR0913
     scale: float = 0.74,
     efficacy: float = 1.0,
     internal_efficacy: float = 1.0078325986062864,
-    rf_regions: Sequence[float] | None = None,
+    regional_pattern: Sequence[float] | None = None,
     until: float | None = None,
 ) -> dict[str, object]:
     """Monthly volcanic forcing as ClimateUdeb's ``subannual_forcing``.
 
     Each valid month in ``times`` (decimal years) drives the substep ending
     at that time, matching MAGICC7's reading of ``.MON`` files.
-    With ``rf_regions``, ClimateUdeb divides ``efficacy`` by the internal efficacy,
-    which it recalculates each year, and ``internal_efficacy`` applies only in the
-    first year.
+    With ``regional_pattern``, ClimateUdeb divides ``efficacy`` by the internal
+    efficacy, which it recalculates each year,
+    and ``internal_efficacy`` applies only in the first year.
     Months more than a year after ``until`` are left out, as no run to then reads them.
     """
     t = np.asarray(times, dtype=np.float64)
@@ -520,13 +520,13 @@ def volcanic_substeps(  # noqa: PLR0913
         ok &= t <= until + 1
     t, nh, sh = t[ok], nh[ok], sh[ok]
     factor = scale
-    if rf_regions is None:
+    if regional_pattern is None:
         factor *= efficacy / internal_efficacy
     values = np.stack([nh, nh, sh, sh], axis=1) * factor
     out: dict[str, object] = {"start": float(t[0]) - 1 / 12, "values": values.tolist()}
-    if rf_regions is not None:
+    if regional_pattern is not None:
         out |= {
-            "rf_regions": list(rf_regions),
+            "regional_pattern": list(regional_pattern),
             "internal_efficacy": internal_efficacy,
             "efficacy": efficacy,
         }

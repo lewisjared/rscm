@@ -20,7 +20,7 @@
 //! - `Carbon Flux|Ocean` (GtC/yr) - Net ocean uptake (positive = uptake)
 //! - `End-of-Year Atmospheric CO2` (ppm) - Concentration after the ocean's last substep,
 //!   only with the `ocean_end_of_year` parameter
-//! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `permafrost` parameter
+//! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `include_permafrost` parameter
 //!
 //! # States (tracked between steps)
 //!
@@ -135,7 +135,7 @@ impl Default for CO2Budget {
 impl Component for CO2Budget {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
-        if self.parameters.permafrost {
+        if self.parameters.include_permafrost {
             definitions.push(VariableDefinition::scalar_input(PERMAFROST_CO2, "GtC/yr"));
         }
         if self.parameters.ocean_end_of_year {
@@ -159,7 +159,11 @@ impl Component for CO2Budget {
 
         let co2_start = inputs.co2_concentration.get();
         let fossil = inputs.fossil_emissions.get()
-            + permafrost_emissions(self.parameters.permafrost, input_state, PERMAFROST_CO2);
+            + permafrost_emissions(
+                self.parameters.include_permafrost,
+                input_state,
+                PERMAFROST_CO2,
+            );
         let sources = fossil + inputs.ch4_oxidation.get();
         let (mut co2_next, mut net_emissions, mut airborne_fraction) = self.solve_budget(
             fossil,

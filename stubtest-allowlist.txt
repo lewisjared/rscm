@@ -45,7 +45,7 @@ rscm._lib.magicc.FgasRegions
 rscm._lib.magicc.ForcingAgent
 rscm._lib.magicc.ForcingTerm
 rscm._lib.magicc.HalocarbonSpecies
-rscm._lib.magicc.TropOzoneRegions
+rscm._lib.magicc.TroposphericOzoneRegions
 
 # =============================================================================
 # PyO3 class constructors (__init__ and __new__ mismatch between runtime/stubs)

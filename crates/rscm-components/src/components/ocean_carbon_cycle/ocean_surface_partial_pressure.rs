@@ -16,7 +16,7 @@ use std::iter::zip;
 pub struct OceanSurfacePartialPressureParameters {
     /// Pre-industrial ocean surface partial pressure
     /// Units: `ppm`
-    pub ospp_preindustrial: f64,
+    pub ospp_pi: f64,
     /// Sensitivity of the ocean surface's partial pressure to changes in sea
     /// surface temperature relative to pre-industrial
     /// Units: `1 / delta_degC`
@@ -24,7 +24,7 @@ pub struct OceanSurfacePartialPressureParameters {
 
     /// Pre-industrial sea surface temperature
     /// Units: `degC`
-    pub sea_surface_temperature_preindustrial: f64,
+    pub sst_pi: f64,
 
     /// Vector of length 5 of offsets to be used when calculating the change in
     /// ocean surface partial pressure
@@ -138,9 +138,7 @@ impl OceanSurfacePartialPressure {
                 self.parameters.delta_ospp_offsets,
                 self.parameters.delta_ospp_coefficients,
             )
-            .map(|(offset, coeff)| {
-                offset + coeff * self.parameters.sea_surface_temperature_preindustrial
-            }),
+            .map(|(offset, coeff)| offset + coeff * self.parameters.sst_pi),
         )
         .dot(&delta_dissolved_inorganic_carbon_bits)
     }
@@ -166,7 +164,7 @@ impl Component for OceanSurfacePartialPressure {
             self.calculate_ospp(delta_dissolved_inorganic_carbon);
 
         // this exponential is basically just 1 given the scale of the constant
-        let ocean_surface_partial_pressure = (self.parameters.ospp_preindustrial
+        let ocean_surface_partial_pressure = (self.parameters.ospp_pi
             + delta_ocean_surface_partial_pressure)
             * (self.parameters.sensitivity_ospp_to_temperature * delta_sea_surface_temperature)
                 .exp();
@@ -215,21 +213,21 @@ mod tests {
     #[rstest]
     #[case(
         OceanSurfacePartialPressureParameters {
-            ospp_preindustrial: 278.0,
+            ospp_pi: 278.0,
             sensitivity_ospp_to_temperature: 0.043,
             delta_ospp_offsets: [1.5568, 7.4706, 1.2748, 2.4491, 1.5468],
             delta_ospp_coefficients: [-0.013993, -0.20207, -0.12015, -0.12639, -0.15326],
-            sea_surface_temperature_preindustrial: 17.9,
+            sst_pi: 17.9,
         },
         339.089
     )]
     #[case(
         OceanSurfacePartialPressureParameters {
-            ospp_preindustrial: 315.0,
+            ospp_pi: 315.0,
             sensitivity_ospp_to_temperature: 0.0423,
             delta_ospp_offsets: [1.5, 7.5, 1.3, 2.5, 1.6],
             delta_ospp_coefficients: [-0.02, -0.2, -0.1, -0.14, -0.2],
-            sea_surface_temperature_preindustrial: 17.9,
+            sst_pi: 17.9,
         },
         381.003
     )]

@@ -108,7 +108,7 @@ def parameters(config: dict, concentrations: dict) -> tuple[dict, dict]:
     if missing:
         msg = f"Configuration is missing mapped parameters: {sorted(missing)}"
         raise ValueError(msg)
-    forcing = {"method": "IPCCTAR", "delq2xco2": config["core_delq2xco2"]}
+    forcing = {"method": "IPCCTAR", "erf_2xco2": config["core_delq2xco2"]}
     for gas in GASES:
         forcing[f"{gas.lower()}_pi"] = float(concentrations[gas][0])
         forcing[f"adjust_{gas.lower()}"] = config.get(
@@ -116,7 +116,7 @@ def parameters(config: dict, concentrations: dict) -> tuple[dict, dict]:
         )
     climate = {
         "ecs": config["core_climatesensitivity"],
-        "rf_2xco2": config["core_delq2xco2"],
+        "erf_2xco2": config["core_delq2xco2"],
     }
     numbers = [v for k, v in forcing.items() if k != "method"]
     numbers.extend(climate.values())

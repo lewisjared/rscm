@@ -25,7 +25,7 @@
 //! pub struct CO2ErfComponent {
 //!     // Only actual parameters - no phantom fields needed
 //!     pub erf_2xco2: f64,
-//!     pub conc_pi: f64,
+//!     pub co2_pi: f64,
 //! }
 //! ```
 //!

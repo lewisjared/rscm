@@ -10,7 +10,7 @@ pub struct ForcingAgent {
     /// Name of the agent's ERF variable (W/m²).
     pub variable: String,
 
-    /// Whether the ERF is a four-box variable. Global ERF is spread with `rf_regions`.
+    /// Whether the ERF is a four-box variable. Global ERF is spread with `regional_pattern`.
     #[serde(default)]
     pub regional: bool,
 
@@ -26,9 +26,9 @@ pub struct ForcingAgent {
     /// Regional forcing pattern (NH ocean, NH land, SH ocean, SH land), as `RF_REGIONS_*`.
     /// It spreads global ERF over the boxes and, with `climate`, sets the internal efficacy.
     #[serde(default = "uniform")]
-    pub rf_regions: [FloatValue; 4],
+    pub regional_pattern: [FloatValue; 4],
 
-    /// Normalise `rf_regions` within each hemisphere instead of globally,
+    /// Normalise `regional_pattern` within each hemisphere instead of globally,
     /// so both hemispheres carry the global mean (MAGICC7 tropospheric ozone).
     #[serde(default)]
     pub hemispheric: bool,
@@ -91,17 +91,21 @@ pub struct EfficacyClimate {
     /// Climate sensitivity used before the climate model reports one (K).
     pub ecs: FloatValue,
     /// CO2 doubling forcing used before it is first calculated (W/m²).
-    pub rf_2xco2: FloatValue,
+    pub erf_2xco2: FloatValue,
     /// Land-ocean heat exchange coefficient (W/m²/K).
-    pub k_lo: FloatValue,
+    /// MAGICC7: CORE_HEATXCHANGE_LANDOCEAN
+    pub land_ocean_heat_exchange: FloatValue,
     /// Inter-hemispheric heat exchange coefficient (W/m²/K).
-    pub k_ns: FloatValue,
+    /// MAGICC7: CORE_HEATXCHANGE_NORTHSOUTH
+    pub north_south_heat_exchange: FloatValue,
     /// Land-ocean warming ratio.
-    pub rlo: FloatValue,
+    /// MAGICC7: CORE_RLO
+    pub land_ocean_warming_ratio: FloatValue,
     /// Ocean-to-land heat exchange amplification.
     pub amplify_ocean_to_land: FloatValue,
     /// Regional CO2 forcing pattern.
-    pub rf_regions_co2: [FloatValue; 4],
+    /// MAGICC7: RF_REGIONS_CO2
+    pub co2_regional_pattern: [FloatValue; 4],
 }
 
 impl Default for EfficacyClimate {
@@ -109,12 +113,12 @@ impl Default for EfficacyClimate {
         let p = crate::parameters::ClimateUdebParameters::default();
         Self {
             ecs: p.ecs,
-            rf_2xco2: p.rf_2xco2,
-            k_lo: p.k_lo,
-            k_ns: p.k_ns,
-            rlo: p.rlo,
+            erf_2xco2: p.erf_2xco2,
+            land_ocean_heat_exchange: p.land_ocean_heat_exchange,
+            north_south_heat_exchange: p.north_south_heat_exchange,
+            land_ocean_warming_ratio: p.land_ocean_warming_ratio,
             amplify_ocean_to_land: p.amplify_ocean_to_land,
-            rf_regions_co2: p.rf_regions_co2,
+            co2_regional_pattern: p.co2_regional_pattern,
         }
     }
 }

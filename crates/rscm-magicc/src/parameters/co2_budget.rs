@@ -33,12 +33,14 @@ pub struct CO2BudgetParameters {
     /// Used for calculating airborne fraction relative to pre-industrial.
     ///
     /// Default: 278.0 ppm
+    /// MAGICC7: CO2_PREINDCO2CONC
     pub co2_pi: f64,
 
     /// Add `Emissions|CO2|Permafrost` from the `Permafrost` component to the sources.
+    /// MAGICC7: PF_APPLY
     ///
     /// Default: false
-    pub permafrost: bool,
+    pub include_permafrost: bool,
 
     /// Last year of concentrations prescribed by `Atmospheric Concentration|CO2|Prescribed`,
     /// or `None` to calculate them from emissions throughout.
@@ -57,7 +59,7 @@ impl Default for CO2BudgetParameters {
         Self {
             gtc_per_ppm: GTC_PER_PPM,
             co2_pi: 278.0,
-            permafrost: false,
+            include_permafrost: false,
             concentration_switch_year: None,
             ocean_end_of_year: false,
         }

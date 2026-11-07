@@ -6,7 +6,7 @@
 //!
 //! $$r = r_0 + r_u (C_{cum} - C_{air}) + r_T T + r_a C_{air}$$
 //!
-//! capped at `iirf_max`, from the cumulative and airborne emissions at the start of the step
+//! capped at `maximum_iirf`, from the cumulative and airborne emissions at the start of the step
 //! and the surface temperature (Leach et al. 2021).
 //! A gas can instead read its lifetime scaling from another component, as CH4 does with
 //! [`crate::CH4Lifetime`].
@@ -82,14 +82,15 @@ pub struct GasCycleParameters {
     /// The gases.
     pub species: Vec<GasSpecies>,
     /// Upper limit on the integrated impulse response (yr).
-    #[serde(default = "default_iirf_max")]
-    pub iirf_max: FloatValue,
+    /// FaIR: `iirf_max`
+    #[serde(default = "default_maximum_iirf")]
+    pub maximum_iirf: FloatValue,
     /// Surface temperature input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
 }
 
-fn default_iirf_max() -> FloatValue {
+fn default_maximum_iirf() -> FloatValue {
     100.0
 }
 
@@ -211,7 +212,7 @@ impl GasCycle {
             + species.iirf_uptake * (state.cumulative - state.airborne)
             + species.iirf_temperature * temperature
             + species.iirf_airborne * state.airborne;
-        let max = self.parameters.iirf_max;
+        let max = self.parameters.maximum_iirf;
         // FaIR's cap, which gives 0 at exactly the maximum.
         let iirf = if iirf > max { max } else { 0.0 } + iirf * if iirf < max { 1.0 } else { 0.0 };
         let alpha = species.g0 * (iirf / species.g1).exp();
@@ -457,7 +458,7 @@ mod tests {
     fn deserialising_checks_the_parameters() {
         let mut parameters = GasCycleParameters {
             species: vec![ch4()],
-            iirf_max: default_iirf_max(),
+            maximum_iirf: default_maximum_iirf(),
             surface_temperature: surface_temperature(),
         };
         let valid =
@@ -477,7 +478,7 @@ mod tests {
         species.driver = Driver::CumulativeEmissions;
         let parameters = GasCycleParameters {
             species: vec![species],
-            iirf_max: default_iirf_max(),
+            maximum_iirf: default_maximum_iirf(),
             surface_temperature: surface_temperature(),
         };
         assert!(GasCycle::from_parameters(parameters).is_err());

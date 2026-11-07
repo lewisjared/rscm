@@ -74,7 +74,7 @@
 //! )]
 //! pub struct CO2Erf {
 //!     pub erf_2xco2: f64,
-//!     pub conc_pi: f64,
+//!     pub co2_pi: f64,
 //! }
 //!
 //! #[typetag::serde]
@@ -87,7 +87,7 @@
 //!         let inputs = CO2ErfInputs::from_input_state(input_state);
 //!         let concentration = inputs.concentration.get();
 //!         let erf = self.erf_2xco2 / 2.0_f64.ln()
-//!             * (1.0 + (concentration - self.conc_pi) / self.conc_pi).ln();
+//!             * (1.0 + (concentration - self.co2_pi) / self.co2_pi).ln();
 //!         Ok(CO2ErfOutputs { erf }.into())
 //!     }
 //! }

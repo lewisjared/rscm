@@ -23,8 +23,8 @@ def two_layer(lambda0: float) -> ModelBuilder:
         {
             "lambda0": lambda0,
             "a": 0.0,
-            "efficacy": 1.0,
-            "eta": 0.7,
+            "deep_ocean_efficacy": 1.0,
+            "ocean_heat_transfer": 0.7,
             "heat_capacity_deep": 100.0,
             "heat_capacity_surface": 8.0,
         }

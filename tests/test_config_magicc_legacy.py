@@ -302,7 +302,7 @@ class TestEdgeCases:
         legacy = {"core_delq2xco2": 3.71}
         config = from_legacy_dict(legacy)
 
-        assert config["components"]["climate"]["parameters"]["forcing_2xco2"] == 3.71
+        assert config["components"]["climate"]["parameters"]["erf_2xco2"] == 3.71
 
 
 @pytest.mark.parametrize("key", ["co2_tempfeedback_switch", "CO2_TEMPFEEDBACK_SWITCH"])
@@ -333,6 +333,6 @@ def test_nitrogen_switches_keep_parameters(reverse):
         "prognostic_fixation": 1,
     }
     assert terrestrial["parameters"]["nitrogen"] == {
-        "ncratio_uptake": 0.013,
-        "prognostic_fixation": {"vmax": 0.2},
+        "uptake_nc_ratio": 0.013,
+        "prognostic_fixation": {"maximum_fixation_rate": 0.2},
     }

@@ -24,7 +24,7 @@ pub use aerosol::{AerosolDirectParameters, AerosolIndirectParameters};
 pub use ch4_chemistry::CH4ChemistryParameters;
 pub use ch4_oxidation::CH4OxidationParameters;
 pub use climate_udeb::{
-    ClimateUdebParameters, EfficacyMethod, OceanTempProfile, SubannualForcing, CP_SEAWATER,
+    ClimateUdebParameters, EfficacyMethod, OceanTemperatureProfile, SubannualForcing, CP_SEAWATER,
     DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER, SECONDS_PER_YEAR,
 };
 pub use co2_budget::CO2BudgetParameters;
@@ -36,7 +36,7 @@ pub use halocarbon::{FgasRegions, HalocarbonChemistryParameters, HalocarbonSpeci
 pub use n2o_chemistry::N2OChemistryParameters;
 pub use nitrogen::{NitrogenParameters, PrognosticFixation};
 pub use ocean_carbon::{IrfForm, OceanCarbonMethod, OceanCarbonParameters};
-pub use ozone_forcing::{OzoneForcingParameters, TropOzoneRegions};
+pub use ozone_forcing::{OzoneForcingParameters, TroposphericOzoneRegions};
 pub use permafrost::{PermafrostParameters, PermafrostSoilParameters};
 pub use sea_level::{
     AntarcticDischargeParameters, AntarcticRegionParameters, DischargeCaseParameters,

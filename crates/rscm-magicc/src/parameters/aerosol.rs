@@ -99,18 +99,18 @@ pub struct AerosolDirectParameters {
     /// Enable harmonisation to reference year.
     ///
     /// When true, forcing is scaled so that the calculated forcing at
-    /// `harmonise_year` matches `harmonise_target`.
-    pub harmonise: bool,
+    /// `harmonisation_reference_year` matches `harmonisation_target`.
+    pub include_harmonisation: bool,
 
     /// Reference year for harmonisation.
     ///
     /// Default: 2019.0
-    pub harmonise_year: f64,
+    pub harmonisation_reference_year: f64,
 
     /// Target forcing at reference year (W/m²).
     ///
     /// Default: -0.22 W/m² (AR6 central estimate for direct aerosol)
-    pub harmonise_target: f64,
+    pub harmonisation_target: f64,
 }
 
 impl Default for AerosolDirectParameters {
@@ -136,9 +136,9 @@ impl Default for AerosolDirectParameters {
             nox_pi: 10.0, // Mt N/yr
 
             // Harmonisation disabled by default
-            harmonise: false,
-            harmonise_year: 2019.0,
-            harmonise_target: -0.22, // W/m²
+            include_harmonisation: false,
+            harmonisation_reference_year: 2019.0,
+            harmonisation_target: -0.22, // W/m²
         }
     }
 }
@@ -220,17 +220,17 @@ pub struct AerosolIndirectParameters {
 
     // === Harmonisation ===
     /// Enable harmonisation to reference year.
-    pub harmonise: bool,
+    pub include_harmonisation: bool,
 
     /// Reference year for harmonisation.
     ///
     /// Default: 2019.0
-    pub harmonise_year: f64,
+    pub harmonisation_reference_year: f64,
 
     /// Target forcing at reference year (W/m²).
     ///
     /// Default: -0.89 W/m² (AR6 central estimate for cloud albedo effect)
-    pub harmonise_target: f64,
+    pub harmonisation_target: f64,
 }
 
 impl Default for AerosolIndirectParameters {
@@ -249,9 +249,9 @@ impl Default for AerosolIndirectParameters {
             oc_pi: 10.0, // Mt OC/yr
 
             // Harmonisation disabled by default
-            harmonise: false,
-            harmonise_year: 2019.0,
-            harmonise_target: -0.89, // W/m² (AR6 central estimate)
+            include_harmonisation: false,
+            harmonisation_reference_year: 2019.0,
+            harmonisation_target: -0.89, // W/m² (AR6 central estimate)
         }
     }
 }
@@ -327,7 +327,7 @@ mod tests {
 
         assert!((params.sox_coefficient - restored.sox_coefficient).abs() < 1e-10);
         assert!((params.bc_coefficient - restored.bc_coefficient).abs() < 1e-10);
-        assert_eq!(params.harmonise, restored.harmonise);
+        assert_eq!(params.include_harmonisation, restored.include_harmonisation);
     }
 
     #[test]
@@ -347,15 +347,15 @@ mod tests {
         // Test that #[serde(default)] allows partial deserialisation for both structs
 
         // Direct parameters
-        let json_direct = r#"{"sox_coefficient": -0.005, "harmonise": true}"#;
+        let json_direct = r#"{"sox_coefficient": -0.005, "include_harmonisation": true}"#;
         let params: AerosolDirectParameters =
             serde_json::from_str(json_direct).expect("Partial deserialisation failed");
 
         assert!((params.sox_coefficient + 0.005).abs() < 1e-10);
-        assert!(params.harmonise);
+        assert!(params.include_harmonisation);
         // Defaults for unspecified fields
         assert!((params.bc_coefficient - 0.0077).abs() < 1e-10);
-        assert!((params.harmonise_year - 2019.0).abs() < 1e-10);
+        assert!((params.harmonisation_reference_year - 2019.0).abs() < 1e-10);
 
         // Indirect parameters
         let json_indirect = r#"{"cloud_albedo_coefficient": -1.5}"#;

@@ -40,13 +40,13 @@
 //!
 //! let carbon_cycle = CarbonCycle::from_parameters(CarbonCycleParameters {
 //!     tau: 30.0,
-//!     conc_pi: 278.0,
+//!     co2_pi: 278.0,
 //!     alpha_temperature: 0.0,
 //! });
 //!
 //! let co2_erf = CO2Erf::from_parameters(CO2ErfParameters {
 //!     erf_2xco2: 3.7,
-//!     conc_pi: 278.0,
+//!     co2_pi: 278.0,
 //! });
 //!
 //! let model = ModelBuilder::new()

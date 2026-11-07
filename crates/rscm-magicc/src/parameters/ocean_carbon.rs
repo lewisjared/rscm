@@ -171,6 +171,7 @@ pub struct OceanCarbonParameters {
 
     /// Pre-industrial atmospheric CO2 (ppm).
     /// default: 278.0
+    /// MAGICC7: CO2_PREINDCO2CONC
     pub co2_pi: FloatValue,
 
     /// Pre-industrial ocean surface pCO2 (ppm).
@@ -191,7 +192,7 @@ pub struct OceanCarbonParameters {
     /// Temperature sensitivity of pCO2 (K^-1).
     /// Joos A25 exponent. Corresponds to MAGICC7 OCEANCC_TEMPFEEDBACK.
     /// default: 0.03717879
-    pub temp_sensitivity: FloatValue,
+    pub temperature_sensitivity: FloatValue,
 
     /// IRF scaling factor (dimensionless).
     /// Corresponds to MAGICC7 OCEANCC_SCALE_IMPULSERESPONSE.
@@ -216,7 +217,7 @@ pub struct OceanCarbonParameters {
     /// Maximum flux history length in substeps.
     /// Limits memory usage for IRF convolution (6000 monthly substeps = 500 years).
     /// default: 6000
-    pub max_history_months: usize,
+    pub maximum_history_months: usize,
 
     /// IRF switch time (years).
     /// Time at which to switch from early to late IRF form.
@@ -236,13 +237,14 @@ pub struct OceanCarbonParameters {
 
     /// Enable temperature feedback on pCO2.
     /// default: true
-    pub enable_temp_feedback: bool,
+    /// MAGICC7: CO2_TEMPFEEDBACK_SWITCH
+    pub include_temperature_feedback: bool,
 
     /// Year from which warming drives the pCO2 temperature feedback
     /// (`CO2_TEMPFEEDBACK_YRSTART`). The feedback uses the warming since this
     /// year, floored at zero.
     /// default: 1900.0
-    pub tempfeedback_yrstart: FloatValue,
+    pub temperature_feedback_start_year: FloatValue,
 
     /// Largest change in air-sea flux between substeps (ppm/yr).
     /// MAGICC7 applies this limiter for stability. A non-positive value disables it.
@@ -254,8 +256,9 @@ pub struct OceanCarbonParameters {
     pub gtc_per_ppm: FloatValue,
 
     /// Add `Emissions|CO2|Permafrost` to the other sources. Must match `CO2Budget`.
+    /// MAGICC7: PF_APPLY
     /// default: false
-    pub permafrost: bool,
+    pub include_permafrost: bool,
 
     /// Last year of prescribed CO2, interpolated within the year's substeps.
     /// Must match `CO2Budget`.
@@ -279,7 +282,7 @@ impl OceanCarbonParameters {
             gas_exchange_scale: 1.833492,
             gas_exchange_tau: 7.66,
 
-            temp_sensitivity: 0.03717879,
+            temperature_sensitivity: 0.03717879,
 
             irf_scale: 0.9492864,
             irf_switch_time: 1.0,
@@ -305,12 +308,12 @@ impl OceanCarbonParameters {
             delta_ospp_coefficients: DELTA_OSPP_COEFFICIENTS,
 
             steps_per_year: 12,
-            max_history_months: 6000,
-            enable_temp_feedback: true,
-            tempfeedback_yrstart: 1900.0,
+            maximum_history_months: 6000,
+            include_temperature_feedback: true,
+            temperature_feedback_start_year: 1900.0,
             flux_change_limit: 0.04,
             gtc_per_ppm: GTC_PER_PPM,
-            permafrost: false,
+            include_permafrost: false,
             concentration_switch_year: None,
         }
     }
@@ -330,7 +333,7 @@ impl OceanCarbonParameters {
             gas_exchange_scale: 1.833492,
             gas_exchange_tau: 7.46,
 
-            temp_sensitivity: 0.03717879,
+            temperature_sensitivity: 0.03717879,
 
             irf_scale: 0.9492864,
             irf_switch_time: 9.9,
@@ -357,12 +360,12 @@ impl OceanCarbonParameters {
             delta_ospp_coefficients: DELTA_OSPP_COEFFICIENTS,
 
             steps_per_year: 12,
-            max_history_months: 6000,
-            enable_temp_feedback: true,
-            tempfeedback_yrstart: 1900.0,
+            maximum_history_months: 6000,
+            include_temperature_feedback: true,
+            temperature_feedback_start_year: 1900.0,
             flux_change_limit: 0.04,
             gtc_per_ppm: GTC_PER_PPM,
-            permafrost: false,
+            include_permafrost: false,
             concentration_switch_year: None,
         }
     }
@@ -382,7 +385,7 @@ impl OceanCarbonParameters {
             gas_exchange_scale: 1.833492,
             gas_exchange_tau: 9.06,
 
-            temp_sensitivity: 0.03717879,
+            temperature_sensitivity: 0.03717879,
 
             irf_scale: 0.9492864,
             irf_switch_time: 2.0,
@@ -409,12 +412,12 @@ impl OceanCarbonParameters {
             delta_ospp_coefficients: DELTA_OSPP_COEFFICIENTS,
 
             steps_per_year: 12,
-            max_history_months: 6000,
-            enable_temp_feedback: true,
-            tempfeedback_yrstart: 1900.0,
+            maximum_history_months: 6000,
+            include_temperature_feedback: true,
+            temperature_feedback_start_year: 1900.0,
             flux_change_limit: 0.04,
             gtc_per_ppm: GTC_PER_PPM,
-            permafrost: false,
+            include_permafrost: false,
             concentration_switch_year: None,
         }
     }
@@ -485,8 +488,8 @@ impl OceanCarbonParameters {
         delta_pco2_dic: FloatValue,
         warming: FloatValue,
     ) -> FloatValue {
-        let temp_factor = if self.enable_temp_feedback {
-            (self.temp_sensitivity * warming).exp()
+        let temp_factor = if self.include_temperature_feedback {
+            (self.temperature_sensitivity * warming).exp()
         } else {
             1.0
         };
@@ -517,10 +520,10 @@ mod tests {
         assert_eq!(params.method, OceanCarbonMethod::Gfdl3d);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
         assert!(params.pco2_pi.is_none());
-        assert!((params.temp_sensitivity - 0.03717879).abs() < 1e-10);
+        assert!((params.temperature_sensitivity - 0.03717879).abs() < 1e-10);
         assert!((params.mixed_layer_depth - 50.9).abs() < 1e-10);
         assert!((params.irf_switch_time - 1.0).abs() < 1e-10);
-        assert!(params.enable_temp_feedback);
+        assert!(params.include_temperature_feedback);
         assert_eq!(params.steps_per_year, 12);
     }
 
@@ -805,7 +808,7 @@ mod tests {
             pco2_warm
         );
 
-        let expected_factor = (params.temp_sensitivity * 1.0).exp();
+        let expected_factor = (params.temperature_sensitivity * 1.0).exp();
         let actual_factor = pco2_warm / pco2_cold;
         assert!(
             (actual_factor - expected_factor).abs() < 0.01,
@@ -818,7 +821,7 @@ mod tests {
     #[test]
     fn test_ocean_pco2_temp_feedback_disabled() {
         let params = OceanCarbonParameters {
-            enable_temp_feedback: false,
+            include_temperature_feedback: false,
             ..Default::default()
         };
 

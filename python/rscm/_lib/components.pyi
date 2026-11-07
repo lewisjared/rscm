@@ -8,7 +8,7 @@ Components are instantiated using the builder pattern:
 
     builder = CO2ErfBuilder.from_parameters({
         "erf_2xco2": 3.7,
-        "conc_pi": 278.0,
+        "co2_pi": 278.0,
     })
     component = builder.build()
 
@@ -32,7 +32,7 @@ class CarbonCycleBuilder(ComponentBuilder):
     **Parameter keys**
 
     - `tau` (`float`): Timescale of the box's response (years).
-    - `conc_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm).
+    - `co2_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm).
     - `alpha_temperature` (`float`): Sensitivity of lifetime to changes in global-mean
       temperature (1/K).
 
@@ -44,7 +44,7 @@ class CarbonCycleBuilder(ComponentBuilder):
     >>> builder = CarbonCycleBuilder.from_parameters(
     ...     {
     ...         "tau": 30.0,
-    ...         "conc_pi": 278.0,
+    ...         "co2_pi": 278.0,
     ...         "alpha_temperature": 0.0,
     ...     }
     ... )
@@ -73,7 +73,7 @@ class CO2ErfBuilder(ComponentBuilder):
 
     - `erf_2xco2` (`float`): ERF due to a doubling of atmospheric CO2 concentrations
       (W/m^2). Typical value: 3.7 W/m^2.
-    - `conc_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm). Typical
+    - `co2_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm). Typical
       value: 278 ppm.
 
     Inputs, outputs and states are listed on the
@@ -84,7 +84,7 @@ class CO2ErfBuilder(ComponentBuilder):
     >>> builder = CO2ErfBuilder.from_parameters(
     ...     {
     ...         "erf_2xco2": 3.7,
-    ...         "conc_pi": 278.0,
+    ...         "co2_pi": 278.0,
     ...     }
     ... )
     >>> component = builder.build()

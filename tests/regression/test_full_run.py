@@ -150,7 +150,9 @@ def test_ch4_oxidation_strat_h2o():
         {
             "ch4_pi": ch4[0],
             "n2o_pi": n2o[0],
-            "ch4_strat_h2o_fraction": run.parameters["ch4_addedstrath2o_percent"],
+            "ch4_stratospheric_h2o_fraction": run.parameters[
+                "ch4_addedstrath2o_percent"
+            ],
         }
     )
     prescribed = {

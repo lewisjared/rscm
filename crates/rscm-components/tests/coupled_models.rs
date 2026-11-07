@@ -13,7 +13,7 @@ use std::sync::Arc;
 #[test]
 fn test_carbon_cycle() {
     let tau = 20.3;
-    let conc_pi = 280.0;
+    let co2_pi = 280.0;
     let conc_initial = 280.0;
     let t_initial = 1800.0;
     let emissions_level = 10.0;
@@ -33,7 +33,7 @@ fn test_carbon_cycle() {
     let mut builder = ModelBuilder::new();
 
     let get_exp_values_before_step = |time: Time| -> FloatValue {
-        (conc_initial - conc_pi) * (-(time - t_initial) / tau).exp() + conc_pi
+        (conc_initial - co2_pi) * (-(time - t_initial) / tau).exp() + co2_pi
     };
 
     let get_exp_values_after_step = |time: Time| -> FloatValue {
@@ -67,7 +67,7 @@ fn test_carbon_cycle() {
         .with_component(Arc::new(
             CarbonCycle::from_parameters(CarbonCycleParameters {
                 tau,
-                conc_pi,
+                co2_pi,
                 alpha_temperature,
             })
             .with_solver_options(SolverOptions { step_size }),
@@ -143,7 +143,7 @@ fn test_carbon_cycle() {
 #[test]
 fn test_coupled_model() {
     let tau = 20.3;
-    let conc_pi = 280.0;
+    let co2_pi = 280.0;
     let t_initial = 1750.0;
     let erf_2xco2 = 4.0;
     let step_year = 1850.0;
@@ -181,13 +181,13 @@ fn test_coupled_model() {
         .with_component(Arc::new(CarbonCycle::from_parameters(
             CarbonCycleParameters {
                 tau,
-                conc_pi,
+                co2_pi,
                 alpha_temperature,
             },
         )))
         .with_component(Arc::new(CO2Erf::from_parameters(CO2ErfParameters {
             erf_2xco2,
-            conc_pi,
+            co2_pi,
         })))
         .with_time_axis(time_axis)
         .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
