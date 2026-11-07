@@ -1,22 +1,38 @@
-//! Aerosol Indirect Radiative Forcing Component
+//! Aerosol indirect effective radiative forcing component
 //!
-//! Calculates radiative forcing from aerosol effects on cloud properties,
+//! Calculates the effective radiative forcing (ERF) of the cloud albedo effect from aerosol emissions,
 //! following a simplified version of MAGICC7.
+//! A logarithmic relationship between aerosol burden and ERF reflects the saturation of CCN effects
+//! at high aerosol loadings.
 //!
 //! # What This Component Does
 //!
-//! 1. Calculates aerosol burden from SOx and OC emissions (primary CCN sources)
-//! 2. Applies logarithmic relationship to cloud droplet number concentration
-//! 3. Computes cloud albedo effect forcing (first indirect effect)
+//! 1. Calculates an aerosol burden from SOx and OC emissions (primary CCN sources)
+//! 2. Applies a logarithmic relationship to the cloud droplet number concentration
+//! 3. Computes the cloud albedo effect ERF (first indirect effect)
 //!
-//! # Inputs
+//! # Formulation
 //!
-//! - `Emissions|SOx` (Mt S/yr) - Sulfur dioxide emissions (primary CCN source)
-//! - `Emissions|OC` (Mt OC/yr) - Organic carbon emissions (secondary CCN source)
+//! The ERF is calculated as:
 //!
-//! # Outputs
+//! $$ERF = \alpha \cdot \ln\left(1 + \frac{B - B_{pi}}{B_0}\right)$$
 //!
-//! - `Effective Radiative Forcing|Aerosols|Indirect Effect` (W/m²) - Cloud indirect forcing
+//! where:
+//! - $\alpha$ is the cloud albedo coefficient (negative, cooling)
+//! - $B = w_{SOx} \cdot E_{SOx} + w_{OC} \cdot E_{OC}$ is the aerosol burden proxy
+//! - $B_{pi}$ is the pre-industrial burden
+//! - $B_0$ is a reference burden scale
+//!
+//! The logarithmic form captures the saturation of the CCN effect: doubling
+//! aerosol from low levels has a larger effect than doubling from high levels.
+//!
+//! # Physical Interpretation
+//!
+//! More aerosols provide more cloud condensation nuclei (CCN), which leads to:
+//! 1. More cloud droplets per unit water content
+//! 2. Smaller droplet sizes
+//! 3. Higher cloud reflectivity (albedo)
+//! 4. Negative (cooling) ERF
 //!
 //! # Differences from MAGICC7
 //!
@@ -26,16 +42,17 @@
 //!   (SOx, OC, BC, nitrate, sea salt with different industrial/biomass/natural splits).
 //!   Here, only SOx and OC are considered as the dominant CCN sources.
 //! - **Regional patterns**: MAGICC7 applies detailed regional forcing patterns from
-//!   Hansen et al. (2005). Here, forcing is scalar (global mean).
+//!   Hansen et al. (2005). Here, the ERF is scalar (global mean).
 //! - **Cloud lifetime effect**: MAGICC7 has separate cloud albedo and lifetime
-//!   effect parameters. Here, only cloud albedo effect is implemented
-//!   (lifetime effect is often set to zero in default configs anyway).
+//!   effect parameters. Here, only the cloud albedo effect is implemented
+//!   (the lifetime effect is often set to zero in default configurations anyway).
 //! - **Optical thickness proxy**: MAGICC7 uses aerosol optical thickness as a proxy
 //!   for particle number. Here, emissions are used directly.
 //! - **CDNC parameterisation**: MAGICC7 uses log10(aerosol number index).
 //!   Here, a simpler ln(1 + B/B0) relationship is used.
 //! - **Normalisation**: MAGICC7 normalises to a specific year with complex
-//!   sector handling. Here, forcing is relative to pre-industrial emissions.
+//!   sector handling. Here, the ERF is relative to pre-industrial emissions.
+//!   The harmonisation parameters exist but are not applied yet.
 
 use crate::parameters::AerosolIndirectParameters;
 use rscm_core::component::{
@@ -47,42 +64,15 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// Aerosol indirect radiative forcing component
-///
-/// Calculates cloud albedo effect forcing from aerosol emissions.
-/// Uses a logarithmic relationship between aerosol burden and forcing,
-/// reflecting the saturation of CCN effects at high aerosol loadings.
-///
-/// # Formulation
-///
-/// The forcing is calculated as:
-///
-/// $$RF = \alpha \cdot \ln\left(1 + \frac{B - B_{pi}}{B_0}\right)$$
-///
-/// where:
-/// - $\alpha$ is the cloud albedo coefficient (negative, cooling)
-/// - $B = w_{SOx} \cdot E_{SOx} + w_{OC} \cdot E_{OC}$ is the aerosol burden proxy
-/// - $B_{pi}$ is the pre-industrial burden
-/// - $B_0$ is a reference burden scale
-///
-/// The logarithmic form captures the saturation of the CCN effect: doubling
-/// aerosol from low levels has a larger effect than doubling from high levels.
-///
-/// # Physical Interpretation
-///
-/// More aerosols provide more cloud condensation nuclei (CCN), which leads to:
-/// 1. More cloud droplets per unit water content
-/// 2. Smaller droplet sizes
-/// 3. Higher cloud reflectivity (albedo)
-/// 4. Negative (cooling) radiative forcing
+/// Aerosol indirect effective radiative forcing component.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["forcing", "aerosol", "indirect", "cloud", "magicc"], category = "Radiative Forcing")]
 #[inputs(
-    sox_emissions { name = "Emissions|SOx", unit = "Mt S/yr" },
-    oc_emissions { name = "Emissions|OC", unit = "Mt OC/yr" },
+    sox_emissions { name = "Emissions|SOx", unit = "Mt S/yr", description = "Sulfur dioxide emissions over the step, the primary CCN source" },
+    oc_emissions { name = "Emissions|OC", unit = "Mt OC/yr", description = "Organic carbon emissions over the step, a secondary CCN source" },
 )]
 #[outputs(
-    indirect_erf { name = "Effective Radiative Forcing|Aerosols|Indirect Effect", unit = "W/m^2" },
+    indirect_erf { name = "Effective Radiative Forcing|Aerosols|Indirect Effect", unit = "W/m^2", description = "Global mean ERF of the cloud albedo effect" },
 )]
 pub struct AerosolIndirect {
     parameters: AerosolIndirectParameters,
@@ -119,12 +109,12 @@ impl AerosolIndirect {
         self.calculate_burden(p.sox_pi, p.oc_pi)
     }
 
-    /// Calculate cloud albedo effect forcing
+    /// Calculate cloud albedo effect ERF
     ///
     /// Uses logarithmic relationship:
-    /// RF = alpha * ln(1 + (B - B_pi) / B0)
+    /// ERF = alpha * ln(1 + (B - B_pi) / B0)
     ///
-    /// The forcing is relative to pre-industrial to ensure RF=0 at PI.
+    /// The forcing is relative to pre-industrial so ERF is zero at pre-industrial.
     /// When burden is at or below pre-industrial (delta_burden <= 0), returns 0
     /// to avoid undefined/positive forcing from the logarithmic term.
     pub fn calculate_cloud_albedo(&self, sox: FloatValue, oc: FloatValue) -> FloatValue {

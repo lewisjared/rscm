@@ -1,35 +1,27 @@
 //! CO2 Budget Component
 //!
 //! Closes the global carbon cycle by integrating emissions and uptakes to
-//! update atmospheric CO2 concentration.
+//! update the atmospheric CO2 concentration.
+//! The concentration changes as
+//!
+//! $$\frac{dC}{dt} = \frac{E_{fossil} + E_{CH_4\,ox} - F_{land} - F_{ocean}}{\text{GtC\_per\_ppm}}$$
 //!
 //! # What This Component Does
 //!
-//! 1. Sums fossil and industrial emissions with CO2 from fossil CH4 oxidation
+//! 1. Sums fossil emissions with CO2 from fossil CH4 oxidation
 //! 2. Subtracts the net land and ocean uptake
 //! 3. Updates atmospheric CO2 concentration for the next step
 //! 4. Calculates the airborne fraction of the fossil sources
 //!
+//! Biosphere CO2 emissions are part of the net atmosphere to land flux, as in MAGICC7,
+//! because deforestation removes carbon from the land pools.
+//!
 //! # Inputs
 //!
-//! - `Emissions|CO2|Fossil` (GtC/yr) - Fossil fuel and industrial emissions
-//! - `Emissions|CO2|CH4 Oxidation` (GtC/yr) - CO2 from oxidised fossil CH4
-//! - `Net Atmosphere to Land Flux|CO2` (GtC/yr) - Net atmosphere-to-land flux (positive =
-//!   uptake). Land-use emissions are part of this flux, as in MAGICC7, because
-//!   deforestation removes carbon from the land pools.
-//! - `Net Atmosphere to Ocean Flux|CO2` (GtC/yr) - Net ocean uptake (positive = uptake)
-//! - `Ocean Carbon Atmospheric Concentrations|CO2` (ppm) - Concentration after the ocean's last substep,
-//!   only with the `ocean_end_of_year` parameter
+//! - `Ocean Carbon Atmospheric Concentrations|CO2` (ppm), only with the `ocean_end_of_year` parameter:
+//!   concentration after the ocean's last substep
 //! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `include_permafrost` parameter
-//!
-//! # States (tracked between steps)
-//!
-//! - `Atmospheric Concentrations|CO2` (ppm) - Atmospheric CO2 concentration
-//!
-//! # Outputs
-//!
-//! - `Net Emissions|CO2` (GtC/yr) - Net emissions to atmosphere
-//! - `Airborne Fraction|CO2` (1) - Fraction of fossil sources remaining in the atmosphere
+//! - `Prescribed Atmospheric Concentrations|CO2` (ppm), only with the `concentration_switch_year` parameter
 //!
 //! # Differences from MAGICC7
 //!
@@ -57,26 +49,21 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// CO2 budget integrator component
-///
-/// Closes the global carbon cycle mass balance by integrating the fossil
-/// sources and the net land and ocean exchange:
-///
-/// $$\frac{dC}{dt} = \frac{E_{fossil} + E_{CH_4\,ox} - F_{land} - F_{ocean}}{\text{GtC\_per\_ppm}}$$
+/// CO2 budget integrator component.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "budget", "magicc"], category = "Carbon Cycle")]
 #[inputs(
-    fossil_emissions { name = "Emissions|CO2|Fossil", unit = "GtC/yr" },
-    ch4_oxidation { name = "Emissions|CO2|CH4 Oxidation", unit = "GtC/yr" },
-    terrestrial_flux { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr" },
-    ocean_flux { name = "Net Atmosphere to Ocean Flux|CO2", unit = "GtC/yr" },
+    fossil_emissions { name = "Emissions|CO2|Fossil", unit = "GtC/yr", description = "Fossil CO2 emissions over the step" },
+    ch4_oxidation { name = "Emissions|CO2|CH4 Oxidation", unit = "GtC/yr", description = "CO2 from oxidised fossil CH4 over the step" },
+    terrestrial_flux { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr", description = "Net atmosphere to land flux over the step, positive for uptake and including Biosphere CO2 emissions" },
+    ocean_flux { name = "Net Atmosphere to Ocean Flux|CO2", unit = "GtC/yr", description = "Net atmosphere to ocean flux over the step, positive for uptake" },
 )]
 #[states(
-    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
+    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm", description = "Atmospheric CO2 concentration at the end of the step" },
 )]
 #[outputs(
-    net_emissions { name = "Net Emissions|CO2", unit = "GtC/yr" },
-    airborne_fraction { name = "Airborne Fraction|CO2", unit = "1" },
+    net_emissions { name = "Net Emissions|CO2", unit = "GtC/yr", description = "Net CO2 emissions to the atmosphere over the step" },
+    airborne_fraction { name = "Airborne Fraction|CO2", unit = "1", description = "Fraction of the step's fossil sources that stays in the atmosphere" },
 )]
 pub struct CO2Budget {
     parameters: CO2BudgetParameters,

@@ -1,7 +1,7 @@
-//! GHG radiative forcing parameters
+//! GHG effective radiative forcing parameters
 //!
-//! Parameters for well-mixed greenhouse gas (CO2, CH4, N2O) radiative
-//! forcing calculations using IPCCTAR or OLBL methods.
+//! Parameters for well-mixed greenhouse gas (CO2, CH4, N2O) effective radiative
+//! forcing calculations using the IPCCTAR or OLBL methods.
 
 use rscm_components::meinshausen2020::Meinshausen2020;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ pub enum ForcingMethod {
     OLBL,
 }
 
-/// Parameters for GHG radiative forcing
+/// Parameters for GHG effective radiative forcing
 ///
 /// # Forcing Methods
 ///
@@ -54,111 +54,166 @@ pub enum ForcingMethod {
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct GHGForcingParameters {
-    /// Forcing calculation method
+    /// Forcing method (MAGICC7 `CORE_CO2CH4N2O_RFMETHOD`)
     pub method: ForcingMethod,
 
     // === Pre-industrial concentrations ===
-    /// Pre-industrial CO2 concentration (ppm).
+    /// Pre-industrial CO2 concentration (MAGICC7 `CO2_PREINDCO2CONC`)
+    ///
+    /// unit: ppm
+    ///
     /// Default: 278.0 ppm
     /// MAGICC7: CO2_PREINDCO2CONC
     pub co2_pi: f64,
 
-    /// Pre-industrial CH4 concentration (ppb).
+    /// Pre-industrial CH4 concentration
+    ///
+    /// unit: ppb
+    ///
     /// Default: 722.0 ppb
     pub ch4_pi: f64,
 
-    /// Pre-industrial N2O concentration (ppb).
+    /// Pre-industrial N2O concentration
+    ///
+    /// unit: ppb
+    ///
     /// Default: 270.0 ppb
     pub n2o_pi: f64,
 
     // === IPCCTAR-specific parameters ===
-    /// 2xCO2 effective radiative forcing (W/m^2).
+    /// 2xCO2 effective radiative forcing (MAGICC7 `CORE_DELQ2XCO2`).
     ///
-    /// Used by IPCCTAR method: `alpha = erf_2xco2 / ln(2)`.
+    /// unit: W/m^2
+    ///
+    /// The IPCCTAR method uses `alpha = erf_2xco2 / ln(2)`.
+    ///
     /// Default: 3.71 W/m2
     /// MAGICC7: CORE_DELQ2XCO2
     pub erf_2xco2: f64,
 
-    /// CH4 radiative efficiency (W/m2 per sqrt(ppb)).
+    /// CH4 radiative efficiency, the IPCCTAR coefficient for CH4 (MAGICC7 `CH4_RADEFF_WM2PERPPB`)
     ///
-    /// IPCCTAR coefficient for CH4 forcing.
-    /// MAGICC7: CH4_RADEFF_WM2PERPPB
+    /// unit: W/m^2 per sqrt(ppb)
+    ///
     /// Default: 0.036
     pub ch4_radiative_efficiency: f64,
 
-    /// N2O radiative efficiency (W/m2 per sqrt(ppb)).
+    /// N2O radiative efficiency, the IPCCTAR coefficient for N2O (MAGICC7 `N2O_RADEFF_WM2PERPPB`)
     ///
-    /// IPCCTAR coefficient for N2O forcing.
-    /// MAGICC7: N2O_RADEFF_WM2PERPPB
+    /// unit: W/m^2 per sqrt(ppb)
+    ///
     /// Default: 0.12
     pub n2o_radiative_efficiency: f64,
 
     // === OLBL coefficients (MAGICC7 v7.5.3) ===
     // CO2: alpha = a1*(C-C0)^2 + b1*(C-C0) + d1 + c1*sqrt(N2O)
-    /// OLBL CO2 quadratic coefficient a1 (W/m2/ppm^2).
+    /// OLBL CO2 quadratic coefficient $a_1$
+    ///
+    /// unit: W/m^2/ppm^2
+    ///
     /// Default: -2.4785e-7
     pub olbl_co2_a1: f64,
 
-    /// OLBL CO2 linear coefficient b1 (W/m2/ppm).
+    /// OLBL CO2 linear coefficient $b_1$
+    ///
+    /// unit: W/m^2/ppm
+    ///
     /// Default: 7.5906e-4
     pub olbl_co2_b1: f64,
 
-    /// OLBL CO2 N2O overlap coefficient c1 (W/m2/sqrt(ppb)).
+    /// OLBL CO2 N2O overlap coefficient $c_1$
+    ///
+    /// unit: W/m^2/sqrt(ppb)
+    ///
     /// Default: -2.1492e-3
     pub olbl_co2_c1: f64,
 
-    /// OLBL CO2 constant d1 (W/m2).
+    /// OLBL CO2 constant $d_1$
+    ///
+    /// unit: W/m^2
+    ///
     /// Default: 5.2
     pub olbl_co2_d1: f64,
 
     // CH4: RF = (a3*sqrt(CH4) + b3*sqrt(N2O) + d3) * (sqrt(CH4) - sqrt(CH4_pi))
-    /// OLBL CH4 self-overlap coefficient a3 (W/m2/sqrt(ppb)).
+    /// OLBL CH4 self-overlap coefficient $a_3$
+    ///
+    /// unit: W/m^2/sqrt(ppb)
+    ///
     /// Default: -8.9603e-5
     pub olbl_ch4_a3: f64,
 
-    /// OLBL CH4 N2O overlap coefficient b3 (W/m2/sqrt(ppb)).
+    /// OLBL CH4 N2O overlap coefficient $b_3$
+    ///
+    /// unit: W/m^2/sqrt(ppb)
+    ///
     /// Default: -1.2462e-4
     pub olbl_ch4_b3: f64,
 
-    /// OLBL CH4 constant d3 (W/m2).
+    /// OLBL CH4 constant $d_3$
+    ///
+    /// unit: W/m^2
+    ///
     /// Default: 0.045
     pub olbl_ch4_d3: f64,
 
     // N2O: RF = (a2*sqrt(CO2) + b2*sqrt(N2O) + c2*sqrt(CH4) + d2) * (sqrt(N2O) - sqrt(N2O_pi))
-    /// OLBL N2O CO2 overlap coefficient a2 (W/m2/sqrt(ppm)).
+    /// OLBL N2O CO2 overlap coefficient $a_2$
+    ///
+    /// unit: W/m^2/sqrt(ppm)
+    ///
     /// Default: -3.4197e-4
     pub olbl_n2o_a2: f64,
 
-    /// OLBL N2O self-overlap coefficient b2 (W/m2/sqrt(ppb)).
+    /// OLBL N2O self-overlap coefficient $b_2$
+    ///
+    /// unit: W/m^2/sqrt(ppb)
+    ///
     /// Default: 2.5455e-4
     pub olbl_n2o_b2: f64,
 
-    /// OLBL N2O CH4 overlap coefficient c2 (W/m2/sqrt(ppb)).
+    /// OLBL N2O CH4 overlap coefficient $c_2$
+    ///
+    /// unit: W/m^2/sqrt(ppb)
+    ///
     /// Default: -2.4357e-4
     pub olbl_n2o_c2: f64,
 
-    /// OLBL N2O constant d2 (W/m2).
+    /// OLBL N2O constant $d_2$
+    ///
+    /// unit: W/m^2
+    ///
     /// Default: 0.14
     pub olbl_n2o_d2: f64,
 
     // === Rapid adjustment factors ===
-    /// Rapid adjustment factor for CO2 forcing.
+    /// Rapid adjustment factor that converts instantaneous CO2 forcing to ERF
     ///
-    /// Converts instantaneous forcing to ERF. Default: 1.05
+    /// unit: dimensionless
     pub adjust_co2: f64,
 
-    /// Rapid adjustment factor for CH4 forcing.
+    /// Rapid adjustment factor that converts instantaneous CH4 forcing to ERF.
+    ///
+    /// unit: dimensionless
+    ///
+    /// Below 1 because CH4 has a negative tropospheric adjustment.
     ///
     /// Default: 0.86 (CH4 has negative tropospheric adjustment)
     pub adjust_ch4: f64,
 
-    /// Rapid adjustment factor for N2O forcing.
+    /// Rapid adjustment factor that converts instantaneous N2O forcing to ERF.
+    ///
+    /// unit: dimensionless
+    ///
+    /// MAGICC7 v7.5.3 applies no adjustment.
     ///
     /// Default: 1.0 (no adjustment in MAGICC7 v7.5.3)
     pub adjust_n2o: f64,
 
-    /// `CH4_ADDEDSTRATH2O_PERCENT`: stratospheric H2O ERF from CH4 oxidation
-    /// as a fraction of CH4 ERF at pre-industrial N2O.
+    /// Stratospheric H2O ERF from CH4 oxidation as a fraction of CH4 ERF at pre-industrial N2O
+    /// (MAGICC7 `CH4_ADDEDSTRATH2O_PERCENT`)
+    ///
+    /// unit: dimensionless
     pub ch4_stratospheric_h2o_fraction: f64,
 }
 

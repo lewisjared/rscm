@@ -1,11 +1,34 @@
-//! Total and efficacy-adjusted forcing (FaIR steps 14 and 15)
+//! Total and efficacy-adjusted effective radiative forcing (FaIR steps 14 and 15)
 //!
-//! Sums each forcing agent at the end of the step, skipping missing values,
-//! with and without its efficacy.
-//! Prescribed agents read a separate input and write it to their forcing,
-//! plus a feedback on the surface temperature at the start of the step.
-//! Calculated agents apply their own feedback.
-//! The greenhouse gas, aerosol and anthropogenic subtotals sum each agent's forcing by its category.
+//! Sums the effective radiative forcing of every forcing agent into a total,
+//! an efficacy-adjusted total and the greenhouse gas, aerosol and anthropogenic subtotals.
+//!
+//! It reads each agent at the end of the step and skips missing values.
+//! A prescribed agent reads its effective radiative forcing from a separate input,
+//! adds a feedback on the surface air temperature change at the start of the step
+//! and writes the result as its forcing.
+//! A calculated agent applies its own feedback in the component that produces it.
+//! Each subtotal sums the agents whose `category` counts towards it.
+//!
+//! # Inputs
+//!
+//! - The `forcing` of each calculated agent (W/m^2).
+//! - The `prescribed` input of each prescribed agent (W/m^2).
+//!   rscm.fair names it with the `Prescribed` qualifier,
+//!   such as `Prescribed Effective Radiative Forcing|Solar`.
+//! - The surface air temperature change named by `surface_temperature` (K),
+//!   only when an agent has a nonzero `temperature_feedback`.
+//!   Its default is `Surface Air Temperature Change`.
+//!
+//! # Outputs
+//!
+//! - The `forcing` of each prescribed agent (W/m^2), its prescribed input plus the feedback.
+//! - The total named by `total` (W/m^2), by default `Effective Radiative Forcing`.
+//! - The efficacy-adjusted total named by `efficacy_adjusted` (W/m^2),
+//!   by default `Efficacy Adjusted Effective Radiative Forcing`.
+//! - The subtotals `Effective Radiative Forcing|Greenhouse Gases`,
+//!   `Effective Radiative Forcing|Aerosols`
+//!   and `Effective Radiative Forcing|Anthropogenic` (W/m^2).
 
 use crate::constants::{
     efficacy_adjusted_forcing, forcing_unit, get, one, surface_temperature, temperature_unit,
@@ -16,23 +39,28 @@ use rscm_core::errors::RSCMResult;
 use rscm_core::forcing::{ForcingCategory, ForcingSubtotals};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 
 /// One forcing agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ForcingAgent {
-    /// Forcing, an output when `prescribed` is set and an input otherwise.
+    /// Name of the agent's effective radiative forcing,
+    /// an output when `prescribed` is set and an input otherwise.
     pub forcing: String,
-    /// Subtotals the agent's forcing counts towards.
+    /// Subtotals the agent's effective radiative forcing counts towards.
     pub category: ForcingCategory,
-    /// Prescribed forcing input.
+    /// Name of the prescribed effective radiative forcing input,
+    /// for an agent no component calculates.
     #[serde(default)]
     pub prescribed: Option<String>,
-    /// Efficacy relative to CO2.
+    /// Efficacy relative to CO2 (FaIR `forcing_efficacy`).
     #[serde(default = "one")]
     pub efficacy: FloatValue,
-    /// Forcing per kelvin of surface temperature, added to the prescribed input.
+    /// Effective radiative forcing per kelvin of surface air temperature change,
+    /// added to the prescribed input (FaIR `forcing_temperature_feedback`).
+    /// unit: W/m^2/K
     #[serde(default)]
     pub temperature_feedback: FloatValue,
 }
@@ -41,21 +69,22 @@ pub struct ForcingAgent {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ForcingAggregationParameters {
-    /// The agents.
+    /// Forcing agents, in the order they are summed.
     pub agents: Vec<ForcingAgent>,
-    /// Total forcing output.
+    /// Name of the total effective radiative forcing output.
     #[serde(default = "total_forcing")]
     pub total: String,
-    /// Efficacy-adjusted total forcing output.
+    /// Name of the efficacy-adjusted total effective radiative forcing output.
     #[serde(default = "efficacy_adjusted_forcing")]
     pub efficacy_adjusted: String,
-    /// Surface temperature input, read when an agent has a feedback.
+    /// Name of the surface air temperature change input, read only when an agent has a feedback.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
 }
 
-/// FaIR's forcing sums.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// FaIR's effective radiative forcing sums.
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["forcing", "aggregation", "fair"], category = "Radiative Forcing")]
 pub struct ForcingAggregation {
     parameters: ForcingAggregationParameters,
 }

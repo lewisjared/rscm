@@ -1,0 +1,76 @@
+{
+  "name": "OzoneForcing",
+  "slug": "magicc-ozoneforcing",
+  "reference_model": "MAGICC7",
+  "variables_from_parameters": true,
+  "module_path": "rscm_magicc::forcing::ozone",
+  "language": "rust",
+  "description": "Calculates the effective radiative forcing (ERF) of stratospheric and tropospheric ozone,\nand of the N2O and temperature feedbacks on ozone, following MAGICC7.\n\n# Inputs\n\n- `Equivalent Effective Stratospheric Chlorine` (ppt): drives the stratospheric ozone ERF\n- `Atmospheric Concentrations|CH4` (ppb): drives the CH4 term of the tropospheric ozone ERF\n- `Atmospheric Concentrations|N2O` (ppb): drives the N2O feedback\n- `Emissions|{NOx,CO,NMVOC}|{Fossil,Biosphere}` (Mt N/yr, Mt CO/yr and Mt NMVOC/yr):\n  ozone precursor emissions by sector over the step\n- `Surface Air Temperature Change` (K): drives the temperature feedback\n\n# Outputs\n\n- `Effective Radiative Forcing|Ozone|Stratospheric` (W/m^2): ERF of stratospheric ozone depletion\n- `Effective Radiative Forcing|Ozone|Tropospheric` (W/m^2): ERF of tropospheric ozone,\n  on the four-box grid with the `tropospheric_ozone_regions` parameter\n- `Effective Radiative Forcing|Ozone|N2O Feedback` (W/m^2): ozone ERF from the N2O concentration\n- `Effective Radiative Forcing|Ozone|Temperature Feedback` (W/m^2): ozone ERF from warming\n\n# ERF terms\n\nAt the end of each year $Y$:\n\n- Stratospheric: $s \\max(0, (E_Y - E_{Y_0}) / 100)^{\\beta}$ from the threshold year $Y_0$, zero before.\n- Tropospheric:\n  $r o_{CH4} \\ln(M_Y / M_0) + r [o_{NOx} \\Delta NOx_{Y-1} + o_{CO} \\Delta CO_{Y-1} + o_{VOC} \\Delta VOC_{Y-1}]$.\n  With `tropospheric_ozone_regions` it is spread within each hemisphere, as MAGICC7 does.\n- N2O feedback: $k (N_Y - N_0)$\n- Temperature feedback: $\\gamma T_{Y-1}$\n\nChanges ($\\Delta$) and the subscript 0 are relative to the first year of the run.\nEach change is the sum of the fossil and biosphere changes, in MAGICC7's order.\nAviation NOx is not separated from other NOx.",
+  "category": "Radiative Forcing",
+  "tags": [
+    "forcing",
+    "ozone",
+    "magicc"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "stratospheric_o3_scale",
+      "type": "FloatValue",
+      "description": "Stratospheric ozone scale, $s$ (MAGICC7 `STRATOZ_O3SCALE`).\n\nunit: W/m^2\n\nNegative because depletion cools."
+    },
+    {
+      "name": "stratospheric_cl_exponent",
+      "type": "FloatValue",
+      "description": "Exponent of the EESC power law, $\\beta$ (MAGICC7 `STRATOZ_CLEXPON`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "stratospheric_reference_year",
+      "type": "FloatValue",
+      "description": "Threshold year $Y_0$ of the stratospheric ozone ERF (MAGICC7 `STRATOZ_THRESHOLD_YEAR`).\n\nunit: yr\n\nThe ERF is zero before this year and relative to its EESC afterwards."
+    },
+    {
+      "name": "tropospheric_ozone_radiative_efficiency",
+      "type": "FloatValue",
+      "description": "Radiative efficiency of tropospheric ozone, $r$ (MAGICC7 `TROPOZ_RADEFF_WM2PERDU`)\n\nunit: W/m^2 per DU"
+    },
+    {
+      "name": "tropospheric_ozone_ch4_sensitivity",
+      "type": "FloatValue",
+      "description": "Tropospheric ozone sensitivity to CH4, $o_{CH4}$ (MAGICC7 `TROPOZ_OZCH4`)\n\nunit: DU per unit ln(CH4/CH4_0)"
+    },
+    {
+      "name": "tropospheric_ozone_nox_sensitivity",
+      "type": "FloatValue",
+      "description": "Tropospheric ozone sensitivity to NOx emissions, $o_{NOx}$ (MAGICC7 `TROPOZ_OZNOX`)\n\nunit: DU per Mt N/yr"
+    },
+    {
+      "name": "tropospheric_ozone_co_sensitivity",
+      "type": "FloatValue",
+      "description": "Tropospheric ozone sensitivity to CO emissions, $o_{CO}$ (MAGICC7 `TROPOZ_OZCO`)\n\nunit: DU per Mt CO/yr"
+    },
+    {
+      "name": "tropospheric_ozone_nmvoc_sensitivity",
+      "type": "FloatValue",
+      "description": "Tropospheric ozone sensitivity to NMVOC emissions, $o_{VOC}$ (MAGICC7 `TROPOZ_OZVOC`)\n\nunit: DU per Mt NMVOC/yr"
+    },
+    {
+      "name": "n2o_ozone_radiative_efficiency",
+      "type": "FloatValue",
+      "description": "Ozone ERF per unit N2O concentration, $k$ (MAGICC7 `OZDUETON2O_RADEFF`)\n\nunit: W/m^2 per ppb"
+    },
+    {
+      "name": "temperature_scale",
+      "type": "FloatValue",
+      "description": "Ozone ERF per unit warming, $\\gamma$ (MAGICC7 `OZDUETOTEMPERATURE_SCALE`)\n\nunit: W/m^2 per K"
+    },
+    {
+      "name": "tropospheric_ozone_regions",
+      "type": "Option<TroposphericOzoneRegions>",
+      "description": "Regional pattern of tropospheric ozone ERF (MAGICC7 `RF_REGIONS_TROPOZ`).\n\nSetting it makes `Effective Radiative Forcing|Ozone|Tropospheric` a four-box output."
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/forcing/ozone.rs"
+}

@@ -1,4 +1,4 @@
-//! Two-layer energy balance model, following Held et al. (2010).
+//! Two-layer energy balance component, following Held et al. (2010).
 //!
 //! A surface layer (the mixed-layer ocean and the atmosphere) exchanges heat with a deep ocean layer.
 //! The surface layer warms in response to effective radiative forcing,
@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 // Define some types that are used by OdeSolvers
 type ModelState = Vector3<FloatValue>;
 
-/// Parameters for the two-layer energy balance model
+/// Parameters for the two-layer energy balance component
 ///
 /// This parameterisation follows Held et al. (2010) and represents the climate
 /// system as two coupled thermal reservoirs: a surface layer (mixed layer ocean
@@ -36,70 +36,64 @@ type ModelState = Vector3<FloatValue>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TwoLayerParameters {
-    /// Climate feedback parameter at zero warming
+    /// Climate feedback parameter at zero warming.
     ///
     /// unit: W/(m² K)
     ///
-    /// Controls the strength of radiative feedback. Higher values mean stronger
-    /// negative feedback and lower climate sensitivity. Typical values: 0.8-1.5
+    /// Higher values mean a stronger negative feedback and a lower equilibrium climate sensitivity.
+    /// Typical values are 0.8 to 1.5.
     pub lambda0: FloatValue,
 
-    /// Nonlinear feedback coefficient
+    /// Nonlinear feedback coefficient.
     ///
     /// unit: W/(m² K²)
     ///
-    /// Represents state-dependence of climate feedbacks. Positive values indicate
-    /// that feedback weakens (sensitivity increases) as temperature rises.
-    /// Set to 0 for a linear model. Typical values: 0-0.1
+    /// Positive values weaken the feedback as the surface warms,
+    /// so the equilibrium climate sensitivity increases with warming.
+    /// Set it to 0 for a linear response.
+    /// Typical values are 0 to 0.1.
     pub a: FloatValue,
 
-    /// Ocean heat uptake efficacy ($\varepsilon$)
+    /// Ocean heat uptake efficacy ($\varepsilon$).
     ///
     /// unit: dimensionless
     ///
-    /// Ratio of the feedback parameter for ocean heat uptake to the equilibrium
-    /// feedback parameter. Values > 1 indicate that ocean heat uptake is more
-    /// effective at reducing surface warming than the equilibrium response suggests.
-    /// Typical values: 1.0-1.8
+    /// Ratio of the feedback parameter for ocean heat uptake to the equilibrium feedback parameter.
+    /// Values above 1 mean ocean heat uptake reduces surface warming
+    /// more than the equilibrium response suggests.
+    /// Typical values are 1.0 to 1.8.
     pub deep_ocean_efficacy: FloatValue,
 
-    /// Heat exchange coefficient between surface and deep layers ($\eta$)
+    /// Heat exchange coefficient between the surface and deep layers ($\eta$).
     ///
     /// unit: W/(m² K)
     ///
-    /// Controls the rate of heat transfer from the surface to the deep ocean.
-    /// Higher values mean faster equilibration between layers.
-    /// Typical values: 0.5-1.0
+    /// Higher values move heat from the surface to the deep ocean faster.
+    /// Typical values are 0.5 to 1.0.
     pub ocean_heat_transfer: FloatValue,
 
-    /// Heat capacity of the surface layer (mixed layer ocean + atmosphere)
+    /// Heat capacity of the surface layer (mixed-layer ocean and atmosphere).
     ///
     /// unit: W yr/(m² K)
     ///
-    /// Determines the thermal inertia of the fast-responding surface layer.
-    /// Typical values: 5-15 (corresponding to ~50-150m mixed layer depth)
+    /// Sets the thermal inertia of the fast-responding surface layer.
+    /// Typical values are 5 to 15, for a mixed layer about 50 to 150 m deep.
     pub heat_capacity_surface: FloatValue,
 
-    /// Heat capacity of the deep ocean layer
+    /// Heat capacity of the deep ocean layer.
     ///
     /// unit: W yr/(m² K)
     ///
-    /// Determines the thermal inertia of the slow-responding deep ocean.
-    /// Typical values: 50-200 (much larger than surface layer)
+    /// Sets the thermal inertia of the slow-responding deep ocean.
+    /// Typical values are 50 to 200, much larger than the surface layer.
     pub heat_capacity_deep: FloatValue,
 }
 
-/// Two-layer energy balance climate model component
+/// Two-layer energy balance component
 ///
-/// Implements a two-layer energy balance model following Held et al. (2010).
-/// The model represents the climate system as two coupled thermal reservoirs:
+/// # Governing equations
 ///
-/// - **Surface layer**: Fast-responding mixed layer ocean + atmosphere
-/// - **Deep layer**: Slow-responding deep ocean
-///
-/// # Governing Equations
-///
-/// The model solves the following coupled ODEs:
+/// The component solves these coupled ODEs:
 ///
 /// $$
 /// C_s \frac{dT_s}{dt} = F - \lambda(T_s) T_s - \varepsilon \eta (T_s - T_d)
@@ -111,10 +105,10 @@ pub struct TwoLayerParameters {
 ///
 /// where:
 ///
-/// | Symbol | Description | Units |
-/// |--------|-------------|-------|
-/// | $T_s$ | Surface temperature anomaly | K |
-/// | $T_d$ | Deep ocean temperature anomaly | K |
+/// | Symbol | Description | Unit |
+/// |--------|-------------|------|
+/// | $T_s$ | Surface air temperature change | K |
+/// | $T_d$ | Deep ocean temperature change | K |
 /// | $F$ | Effective radiative forcing | W/m² |
 /// | $\lambda(T_s) = \lambda_0 - a T_s$ | State-dependent feedback | W/(m² K) |
 /// | $\varepsilon$ | Ocean heat uptake efficacy | dimensionless |
@@ -129,7 +123,7 @@ pub struct TwoLayerParameters {
 ///
 /// let component = TwoLayer::from_parameters(TwoLayerParameters {
 ///     lambda0: 1.0,               // Climate feedback parameter
-///     a: 0.0,                     // Linear model (no state-dependence)
+///     a: 0.0,                     // Linear response (no state dependence)
 ///     deep_ocean_efficacy: 1.0,   // Ocean heat uptake efficacy
 ///     ocean_heat_transfer: 0.7,   // Heat exchange coefficient
 ///     heat_capacity_surface: 8.0, // ~80m mixed layer
@@ -143,13 +137,13 @@ pub struct TwoLayerParameters {
 /// Probing the fast and slow components of global warming by returning abruptly to
 /// preindustrial forcing. Journal of Climate, 23(9), 2418-2427.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
-#[component(tags = ["temperature", "ocean", "two-layer", "stable"], category = "Temperature")]
+#[component(tags = ["temperature", "ocean", "two-layer", "stable"], category = "Climate")]
 #[inputs(
-    erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
+    erf { name = "Effective Radiative Forcing", unit = "W/m^2", description = "Total effective radiative forcing" },
 )]
 #[states(
-    surface_temperature { name = "Surface Air Temperature Change", unit = "K" },
-    deep_temperature { name = "Ocean Temperature|Layer 2", unit = "K" },
+    surface_temperature { name = "Surface Air Temperature Change", unit = "K", description = "Surface layer temperature change at the end of the step" },
+    deep_temperature { name = "Ocean Temperature|Layer 2", unit = "K", description = "Deep ocean layer temperature change at the end of the step" },
 )]
 pub struct TwoLayer {
     parameters: TwoLayerParameters,

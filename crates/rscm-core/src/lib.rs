@@ -128,7 +128,7 @@ pub mod errors;
 pub mod forcing;
 
 // Re-export derive macro for convenience
-pub use rscm_macros::ComponentIO;
+pub use rscm_macros::{ComponentIO, ComponentMetadata};
 
 // Re-export component types
 pub use component::{

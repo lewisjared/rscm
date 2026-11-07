@@ -1,6 +1,6 @@
 //! Permafrost Component
 //!
-//! Carbon released from thawing permafrost.
+//! Calculates the CO2 and CH4 released as permafrost thaws with Arctic warming, following MAGICC7.
 //!
 //! # What This Component Does
 //!
@@ -14,16 +14,6 @@
 //!    a seasonal soil temperature cycle
 //! 4. Aerobic decomposition releases CO2. Anaerobic decomposition releases equal
 //!    parts CO2 and CH4, part of the CH4 being oxidised to CO2 in the soil
-//!
-//! # Inputs
-//!
-//! - `Surface Air Temperature Change` (K) - Global mean surface air temperature change
-//!
-//! # Outputs
-//!
-//! - `Emissions|CO2|Permafrost` (GtC/yr) - CO2 released from permafrost
-//! - `Emissions|CH4|Permafrost` (Mt CH4/yr) - CH4 released from permafrost
-//! - `Permafrost Thawed Area` (1) - Carbon weighted thawed fraction after the step
 //!
 //! Emissions use the temperature at the start of the step and the mean of the
 //! thawed pools before and after the step, as MAGICC7 does.
@@ -102,12 +92,12 @@ struct Decomposition {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "permafrost", "magicc"], category = "Carbon Cycle")]
 #[inputs(
-    temperature { name = "Surface Air Temperature Change", unit = "K" },
+    temperature { name = "Surface Air Temperature Change", unit = "K", description = "Surface air temperature change at the start of the step, scaled to Arctic warming" },
 )]
 #[outputs(
-    co2_emissions { name = "Emissions|CO2|Permafrost", unit = "GtC/yr" },
-    ch4_emissions { name = "Emissions|CH4|Permafrost", unit = "Mt CH4/yr" },
-    thawed_area { name = "Permafrost Thawed Area", unit = "1" },
+    co2_emissions { name = "Emissions|CO2|Permafrost", unit = "GtC/yr", description = "CO2 released from permafrost over the step" },
+    ch4_emissions { name = "Emissions|CH4|Permafrost", unit = "Mt CH4/yr", description = "CH4 released from permafrost over the step" },
+    thawed_area { name = "Permafrost Thawed Area", unit = "1", description = "Carbon-weighted thawed fraction at the end of the step" },
 )]
 pub struct Permafrost {
     parameters: PermafrostParameters,

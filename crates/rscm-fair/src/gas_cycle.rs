@@ -1,5 +1,9 @@
 //! Greenhouse gas cycle (FaIR steps 1, 3 and 4)
 //!
+//! Calculates the atmospheric concentration of each emissions-driven greenhouse gas,
+//! and the inverse emissions of each concentration-driven one.
+//! It also tracks the airborne and cumulative emissions of every gas.
+//!
 //! Each gas is held in up to four boxes that decay with lifetimes $\alpha \tau_i$.
 //! The lifetime scaling $\alpha = g_0 \exp(r / g_1)$ follows the 100-year integrated impulse
 //! response
@@ -7,12 +11,36 @@
 //! $$r = r_0 + r_u (C_{cum} - C_{air}) + r_T T + r_a C_{air}$$
 //!
 //! capped at `maximum_iirf`, from the cumulative and airborne emissions at the start of the step
-//! and the surface temperature (Leach et al. 2021).
+//! and the surface air temperature change (Leach et al. 2021).
 //! A gas can instead read its lifetime scaling from another component, as CH4 does with
 //! [`crate::CH4Lifetime`].
 //!
 //! Emissions-driven gases update the boxes with the exact solution for constant emissions over
-//! the step. Concentration-driven gases invert that solution to give the emissions.
+//! the step.
+//! Concentration-driven gases invert that solution to give the inverse emissions.
+//!
+//! # Inputs
+//!
+//! - The surface air temperature change named by `surface_temperature` (K).
+//!   Its default is `Surface Air Temperature Change`.
+//! - Each of a gas's `emissions`, in its `emissions_unit`, when the gas is emissions driven.
+//!   rscm.fair passes `Emissions|<species>`,
+//!   or `Emissions|CO2|Fossil` and `Emissions|CO2|Biosphere` when FaIR calculates CO2 from them.
+//! - A gas's `concentration`, in its `concentration_unit`, when the gas is concentration driven.
+//!   rscm.fair names it `Atmospheric Concentrations|<species>`.
+//! - The lifetime scaling named by a gas's `lifetime_scaling` (1), an average over the step,
+//!   when it is set.
+//!   rscm.fair sets `Lifetime Scaling|CH4` for CH4 with the `thornhill2021` CH4 method.
+//!
+//! # Outputs
+//!
+//! - A gas's `concentration`, in its `concentration_unit`, when the gas is emissions driven.
+//!   rscm.fair names it `Atmospheric Concentrations|<species>`.
+//! - A gas's `inverse_emissions`, in its `emissions_unit`, when the gas is concentration driven.
+//!   rscm.fair names it `Inverse Emissions|<species>`.
+//! - A gas's `airborne_emissions` and `cumulative_emissions`, in its `amount_unit`,
+//!   when they are set.
+//!   rscm.fair names them `Airborne Emissions|<species>` and `Cumulative Emissions|<species>`.
 
 use crate::constants::{get, surface_temperature, temperature_unit};
 use crate::driver::Driver;
@@ -22,6 +50,7 @@ use rscm_core::component::{
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
@@ -29,50 +58,61 @@ use std::any::Any;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GasSpecies {
-    /// How the gas is driven: emissions in and concentration out, or concentration in and emissions out.
+    /// How the gas is driven: emissions in and concentration out,
+    /// or concentration in and inverse emissions out.
     pub driver: Driver,
-    /// Emissions variables, summed. Inputs when emissions-driven.
+    /// Names of the emissions inputs, summed, read when the gas is emissions driven.
     pub emissions: Vec<String>,
-    /// Inverse emissions output when concentration-driven.
+    /// Name of the inverse emissions output, written when the gas is concentration driven.
     #[serde(default)]
     pub inverse_emissions: Option<String>,
-    /// Emissions unit.
+    /// Unit of the emissions and inverse emissions.
     pub emissions_unit: String,
-    /// Unit of airborne and cumulative emissions.
+    /// Unit of the airborne and cumulative emissions.
     pub amount_unit: String,
-    /// Concentration variable: an output when emissions-driven and an input when concentration-driven.
+    /// Name of the concentration,
+    /// an output when the gas is emissions driven and an input when it is concentration driven.
     pub concentration: String,
-    /// Concentration unit.
+    /// Unit of the concentration.
     pub concentration_unit: String,
-    /// Airborne emissions output, if wanted.
+    /// Name of the airborne emissions output, if wanted.
     #[serde(default)]
     pub airborne_emissions: Option<String>,
-    /// Cumulative emissions output, if wanted.
+    /// Name of the cumulative emissions output, if wanted.
     #[serde(default)]
     pub cumulative_emissions: Option<String>,
-    /// Fraction of emissions entering each box.
+    /// Fraction of emissions entering each box (FaIR `partition_fraction`).
     pub partition_fraction: Vec<FloatValue>,
-    /// Lifetime of each box (yr).
+    /// Lifetime of each box before scaling (FaIR `unperturbed_lifetime`).
+    /// unit: yr
     pub unperturbed_lifetime: Vec<FloatValue>,
-    /// Concentration with no airborne emissions.
+    /// Concentration with no airborne emissions, in `concentration_unit`
+    /// (FaIR `baseline_concentration`).
     pub baseline_concentration: FloatValue,
-    /// Emissions that leave the concentration unchanged.
+    /// Emissions that leave the concentration unchanged, in `emissions_unit`
+    /// (FaIR `baseline_emissions`).
     pub baseline_emissions: FloatValue,
-    /// Concentration change per unit emission.
+    /// Concentration change per unit of airborne emissions (FaIR `concentration_per_emission`).
     pub concentration_per_emission: FloatValue,
-    /// Pre-industrial 100-year integrated impulse response (yr).
+    /// Pre-industrial 100-year integrated impulse response (FaIR `iirf_0`).
+    /// unit: yr
     pub iirf_0: FloatValue,
-    /// Sensitivity of `iirf` to airborne emissions.
+    /// Change in the integrated impulse response per unit of airborne emissions
+    /// (FaIR `iirf_airborne`).
     pub iirf_airborne: FloatValue,
-    /// Sensitivity of `iirf` to emissions taken up by the Earth system.
+    /// Change in the integrated impulse response per unit of emissions taken up by the Earth
+    /// system (FaIR `iirf_uptake`).
     pub iirf_uptake: FloatValue,
-    /// Sensitivity of `iirf` to surface temperature (yr/K).
+    /// Change in the integrated impulse response per kelvin of surface air temperature change
+    /// (FaIR `iirf_temperature`).
+    /// unit: yr/K
     pub iirf_temperature: FloatValue,
-    /// Lifetime scaling parameter `g0`.
+    /// Lifetime scaling parameter $g_0$ (FaIR `g0`).
     pub g0: FloatValue,
-    /// Lifetime scaling parameter `g1`.
+    /// Lifetime scaling parameter $g_1$ (FaIR `g1`).
+    /// unit: yr
     pub g1: FloatValue,
-    /// Lifetime scaling input that replaces the impulse response scaling.
+    /// Name of a lifetime scaling input that replaces the impulse response scaling, if set.
     #[serde(default)]
     pub lifetime_scaling: Option<String>,
 }
@@ -81,13 +121,13 @@ pub struct GasSpecies {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GasCycleParameters {
-    /// The gases.
+    /// Greenhouse gases the component tracks.
     pub species: Vec<GasSpecies>,
-    /// Upper limit on the integrated impulse response (yr).
-    /// FaIR: `iirf_max`
+    /// Upper limit on the 100-year integrated impulse response (FaIR `iirf_max`).
+    /// unit: yr
     #[serde(default = "default_maximum_iirf")]
     pub maximum_iirf: FloatValue,
-    /// Surface temperature input.
+    /// Name of the surface air temperature change input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
 }
@@ -129,7 +169,8 @@ impl ComponentState for GasCycleState {
 }
 
 /// FaIR's greenhouse gas cycle for any set of gases.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["chemistry", "carbon-cycle", "gas-cycle", "fair"], category = "Atmospheric Chemistry")]
 #[serde(try_from = "Unchecked")]
 pub struct GasCycle {
     parameters: GasCycleParameters,

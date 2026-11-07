@@ -1,0 +1,41 @@
+{
+  "name": "ForcingAggregation",
+  "slug": "fair-forcingaggregation",
+  "reference_model": "FaIR",
+  "variables_from_parameters": true,
+  "module_path": "rscm_fair::aggregation",
+  "language": "rust",
+  "description": "Sums the effective radiative forcing of every forcing agent into a total,\nan efficacy-adjusted total and the greenhouse gas, aerosol and anthropogenic subtotals.\n\nIt reads each agent at the end of the step and skips missing values.\nA prescribed agent reads its effective radiative forcing from a separate input,\nadds a feedback on the surface air temperature change at the start of the step\nand writes the result as its forcing.\nA calculated agent applies its own feedback in the component that produces it.\nEach subtotal sums the agents whose `category` counts towards it.\n\n# Inputs\n\n- The `forcing` of each calculated agent (W/m^2).\n- The `prescribed` input of each prescribed agent (W/m^2).\n  rscm.fair names it with the `Prescribed` qualifier,\n  such as `Prescribed Effective Radiative Forcing|Solar`.\n- The surface air temperature change named by `surface_temperature` (K),\n  only when an agent has a nonzero `temperature_feedback`.\n  Its default is `Surface Air Temperature Change`.\n\n# Outputs\n\n- The `forcing` of each prescribed agent (W/m^2), its prescribed input plus the feedback.\n- The total named by `total` (W/m^2), by default `Effective Radiative Forcing`.\n- The efficacy-adjusted total named by `efficacy_adjusted` (W/m^2),\n  by default `Efficacy Adjusted Effective Radiative Forcing`.\n- The subtotals `Effective Radiative Forcing|Greenhouse Gases`,\n  `Effective Radiative Forcing|Aerosols`\n  and `Effective Radiative Forcing|Anthropogenic` (W/m^2).",
+  "category": "Radiative Forcing",
+  "tags": [
+    "forcing",
+    "aggregation",
+    "fair"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "agents",
+      "type": "Vec<ForcingAgent>",
+      "description": "Forcing agents, in the order they are summed."
+    },
+    {
+      "name": "total",
+      "type": "String",
+      "description": "Name of the total effective radiative forcing output."
+    },
+    {
+      "name": "efficacy_adjusted",
+      "type": "String",
+      "description": "Name of the efficacy-adjusted total effective radiative forcing output."
+    },
+    {
+      "name": "surface_temperature",
+      "type": "String",
+      "description": "Name of the surface air temperature change input, read only when an agent has a feedback."
+    }
+  ],
+  "source_file": "crates/rscm-fair/src/aggregation.rs"
+}

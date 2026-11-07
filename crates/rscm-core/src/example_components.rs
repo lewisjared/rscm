@@ -213,7 +213,7 @@ mod tests {
     #[derive(Debug, Serialize, Deserialize, ComponentIO)]
     #[component(tags = ["test", "example", "simple"], category = "Testing")]
     #[inputs(
-        input_var { name = "Test Input", unit = "units" },
+        input_var { name = "Test Input", unit = "units", description = "What it reads" },
     )]
     #[outputs(
         output_var { name = "Test Output", unit = "units" },
@@ -368,11 +368,30 @@ mod tests {
         assert_eq!(input.rust_name, "input_var");
         assert_eq!(input.name, "Test Input");
         assert_eq!(input.unit, "units");
+        assert_eq!(input.description, "What it reads");
 
         // Check output metadata
         let output = &metadata.outputs[0];
         assert_eq!(output.rust_name, "output_var");
         assert_eq!(output.name, "Test Output");
         assert_eq!(output.unit, "units");
+        assert_eq!(output.description, "");
+    }
+
+    #[derive(crate::ComponentMetadata)]
+    #[component(tags = ["dynamic"], category = "Testing")]
+    #[allow(dead_code)]
+    struct HandWrittenComponent {
+        species: Vec<String>,
+    }
+
+    #[test]
+    fn test_component_metadata_derive() {
+        let metadata = HandWrittenComponent::component_metadata();
+
+        assert_eq!(metadata.name, "HandWrittenComponent");
+        assert_eq!(metadata.tags, vec!["dynamic"]);
+        assert_eq!(metadata.category, Some("Testing".to_string()));
+        assert!(metadata.inputs.is_empty() && metadata.outputs.is_empty());
     }
 }

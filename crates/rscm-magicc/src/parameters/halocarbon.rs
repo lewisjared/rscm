@@ -19,43 +19,55 @@ const MOLAR_MASS_ORDER: [usize; 8] = [0, 6, 4, 7, 1, 5, 3, 2];
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HalocarbonSpecies {
-    /// Species name, as used in variable names.
+    /// Species name, as used in variable names
     pub name: String,
 
-    /// Unperturbed total lifetime (yr).
-    /// MAGICC7: FGAS_TAU_TOT, MHALO_TAU_TOT
+    /// Unperturbed total lifetime (MAGICC7 `FGAS_TAU_TOT`, `MHALO_TAU_TOT`)
+    ///
+    /// unit: yr
     pub total_lifetime: FloatValue,
 
-    /// Unperturbed OH lifetime (yr), or 0 if not destroyed by OH.
-    /// MAGICC7: FGAS_TAU_OH, MHALO_TAU_OH
+    /// Unperturbed OH lifetime, or 0 if OH does not destroy it (MAGICC7 `FGAS_TAU_OH`, `MHALO_TAU_OH`)
+    ///
+    /// unit: yr
     pub oh_lifetime: FloatValue,
 
-    /// Unperturbed stratospheric lifetime (yr), or 0 if not destroyed there.
-    /// MAGICC7: FGAS_TAU_STRAT, MHALO_TAU_STRAT
+    /// Unperturbed stratospheric lifetime, or 0 if it is not destroyed there
+    /// (MAGICC7 `FGAS_TAU_STRAT`, `MHALO_TAU_STRAT`)
+    ///
+    /// unit: yr
     pub stratospheric_lifetime: FloatValue,
 
-    /// Radiative efficiency (W/m² per ppb).
+    /// Radiative efficiency
+    ///
+    /// unit: W/m^2 per ppb
     pub radiative_efficiency: FloatValue,
 
-    /// Initial and reference concentration (ppt), the 1750 value of MAGICC7's concentration file.
+    /// Initial and reference concentration, the 1750 value of MAGICC7's concentration file
+    ///
+    /// unit: ppt
     pub concentration_pi: FloatValue,
 
-    /// Molecular mass (g/mol).
+    /// Molecular mass
+    ///
+    /// unit: g/mol
     pub molecular_mass: FloatValue,
 
-    /// Chlorine atoms per molecule.
-    /// MAGICC7: FGAS_CL_ATOMS, MHALO_CL_ATOMS
+    /// Chlorine atoms per molecule (MAGICC7 `FGAS_CL_ATOMS`, `MHALO_CL_ATOMS`)
     pub cl_atoms: u8,
 
-    /// Bromine atoms per molecule.
-    /// MAGICC7: FGAS_BR_ATOMS, MHALO_BR_ATOMS
+    /// Bromine atoms per molecule (MAGICC7 `FGAS_BR_ATOMS`, `MHALO_BR_ATOMS`)
     pub br_atoms: u8,
 
-    /// Fractional release factor in the stratosphere.
+    /// Fractional release factor in the stratosphere
+    ///
+    /// unit: dimensionless
     pub fractional_release: FloatValue,
 
-    /// Fraction of the atmosphere the species mixes into.
-    /// MAGICC7: FGAS_EFF_MIXBOXSIZE, MHALO_EFF_MIXBOXSIZE
+    /// Fraction of the atmosphere the species mixes into
+    /// (MAGICC7 `FGAS_EFF_MIXBOXSIZE`, `MHALO_EFF_MIXBOXSIZE`)
+    ///
+    /// unit: dimensionless
     #[serde(default = "default_mixing_box_size")]
     pub mixing_box_size: FloatValue,
 }
@@ -80,62 +92,88 @@ impl HalocarbonSpecies {
 #[serde(deny_unknown_fields)]
 pub struct HalocarbonChemistryParameters {
     /// F-gases, which do not deplete ozone.
+    ///
+    /// The default is MAGICC7's 23 `FGAS_*` species.
     pub fgases: Vec<HalocarbonSpecies>,
 
     /// Montreal Protocol gases.
+    ///
+    /// The default is MAGICC7's 18 `MHALO_*` species.
     pub montreal_gases: Vec<HalocarbonSpecies>,
 
-    /// Ozone depletion by bromine relative to chlorine (`STRATOZ_BR_VS_CL_SCALE`).
+    /// Ozone depletion by bromine relative to chlorine (MAGICC7 `STRATOZ_BR_VS_CL_SCALE`)
+    ///
+    /// unit: dimensionless
     pub br_cl_ratio: FloatValue,
 
-    /// EESC scaling, the CFC-11 release factor (`MHALO_RELEASEFACTORC11`).
+    /// EESC scaling, the CFC-11 release factor (MAGICC7 `MHALO_RELEASEFACTORC11`)
+    ///
+    /// unit: dimensionless
     pub cfc11_release_factor: FloatValue,
 
-    /// Years from troposphere to stratosphere (`GEN_EESC_STRATMIXDELAY`).
+    /// Time from the troposphere to the stratosphere (MAGICC7 `GEN_EESC_STRATMIXDELAY`)
+    ///
+    /// unit: yr
     pub stratospheric_delay: usize,
 
-    /// Molar mass of air (g/mol, `GEN_AIR_GRAMMPROMOL`).
+    /// Molar mass of air (MAGICC7 `GEN_AIR_GRAMMPROMOL`)
+    ///
+    /// unit: g/mol
     pub air_molar_mass: FloatValue,
 
-    /// Mass of the atmosphere (1e21 g, `GEN_ATM_TOTMASS_1E21GRAMM`).
+    /// Mass of the atmosphere (MAGICC7 `GEN_ATM_TOTMASS_1E21GRAMM`)
+    ///
+    /// unit: 1e21 g
     pub atmosphere_mass: FloatValue,
 
-    /// Scale OH lifetimes with the CH4 OH lifetime (`*_USE_TAUOH_VAR`).
+    /// Scale OH lifetimes with the CH4 OH lifetime (MAGICC7 `*_USE_TAUOH_VAR`)
     pub include_variable_oh_lifetime: bool,
 
-    /// Unperturbed CH4 OH lifetime (yr), the reference for OH scaling.
-    /// MAGICC7: from CH4_TAUTOT_INIT and the other CH4 lifetimes
+    /// Unperturbed CH4 OH lifetime, the reference for the OH scaling.
+    ///
+    /// unit: yr
+    ///
+    /// MAGICC7 derives it from `CH4_TAUTOT_INIT` and the other CH4 lifetimes.
     pub initial_ch4_oh_lifetime: FloatValue,
 
-    /// Scale stratospheric lifetimes with warming (`*_USE_TAUSTRAT_VAR`).
+    /// Scale stratospheric lifetimes with warming (MAGICC7 `*_USE_TAUSTRAT_VAR`)
     pub include_variable_stratospheric_lifetime: bool,
 
-    /// Year from which warming speeds up the meridional circulation
-    /// (`GEN_CHANGE_MERIDIONALFLUX_YR`).
+    /// Year from which warming speeds up the meridional circulation (MAGICC7 `GEN_CHANGE_MERIDIONALFLUX_YR`)
+    ///
+    /// unit: yr
     pub meridional_flux_reference_year: FloatValue,
 
-    /// Change in meridional flux per degree of warming (`GEN_MERIDFLUX_CHNGPERDEG`).
+    /// Change in meridional flux per degree of warming (MAGICC7 `GEN_MERIDFLUX_CHNGPERDEG`)
+    ///
+    /// unit: K^-1
     pub meridional_flux_change_per_degree: FloatValue,
 
-    /// Sensitivity of stratospheric lifetimes to meridional flux
-    /// (`*_TAUSTRAT_SENS2MERIDFLUX`).
+    /// Sensitivity of stratospheric lifetimes to the meridional flux (MAGICC7 `*_TAUSTRAT_SENS2MERIDFLUX`)
+    ///
+    /// unit: dimensionless
     pub stratospheric_lifetime_sensitivity: FloatValue,
 
-    /// Last year of F-gas concentrations prescribed by `Prescribed Atmospheric Concentrations|<species>`,
-    /// or `None` to calculate them from emissions throughout.
-    /// MAGICC7: FGAS_SWITCHFROMCONC2EMIS_YEAR
+    /// Last year of F-gas concentrations prescribed by `Prescribed Atmospheric Concentrations|{species}`
+    /// (MAGICC7 `FGAS_SWITCHFROMCONC2EMIS_YEAR`).
+    ///
+    /// unit: yr
+    ///
+    /// `None` calculates them from emissions throughout.
     pub fgas_switch_year: Option<FloatValue>,
 
-    /// As `fgas_switch_year`, for the Montreal Protocol gases.
-    /// MAGICC7: MHALO_SWITCHFROMCONC2EMIS_YEAR
+    /// As `fgas_switch_year`, for the Montreal Protocol gases (MAGICC7 `MHALO_SWITCHFROMCONC2EMIS_YEAR`)
+    ///
+    /// unit: yr
     pub montreal_gases_switch_year: Option<FloatValue>,
 
-    /// Regional pattern of F-gas forcing, which makes `Effective Radiative Forcing|F-Gases`
-    /// a four-box output.
+    /// Regional pattern of F-gas ERF.
+    ///
+    /// Setting it makes `Effective Radiative Forcing|F-Gases` and each F-gas ERF four-box outputs.
     pub fgas_regions: Option<FGasRegions>,
 }
 
-/// Regional pattern of F-gas forcing.
+/// Regional pattern of F-gas ERF.
 ///
 /// Species with lifetimes of at least `upper_lifetime` follow `regional_pattern` normalised globally.
 /// Those below `lower_lifetime` follow it normalised within each hemisphere,
@@ -145,18 +183,26 @@ pub struct HalocarbonChemistryParameters {
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct FGasRegions {
-    /// Pattern (NH ocean, NH land, SH ocean, SH land).
-    /// MAGICC7: RF_REGIONS_FGAS
+    /// Pattern in each region of the four-box grid (MAGICC7 `RF_REGIONS_FGAS`)
+    ///
+    /// unit: dimensionless
     pub regional_pattern: [FloatValue; 4],
+    /// Lifetime below which a species follows the hemispheric pattern
+    /// (MAGICC7 `FGAS_RF_REGIONSCALING_LOWERTAU`)
+    ///
     /// unit: yr
-    /// MAGICC7: FGAS_RF_REGIONSCALING_LOWERTAU
     pub lower_lifetime: FloatValue,
+    /// Lifetime above which a species follows the global pattern (MAGICC7 `FGAS_RF_REGIONSCALING_UPPERTAU`)
+    ///
     /// unit: yr
-    /// MAGICC7: FGAS_RF_REGIONSCALING_UPPERTAU
     pub upper_lifetime: FloatValue,
-    /// Northern Hemisphere land fraction.
+    /// Northern Hemisphere land fraction
+    ///
+    /// unit: dimensionless
     pub nh_land_fraction: FloatValue,
-    /// Southern Hemisphere land fraction.
+    /// Southern Hemisphere land fraction
+    ///
+    /// unit: dimensionless
     pub sh_land_fraction: FloatValue,
 }
 

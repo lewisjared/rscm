@@ -1,0 +1,106 @@
+{
+  "name": "N2OChemistry",
+  "slug": "magicc-n2ochemistry",
+  "reference_model": "MAGICC7",
+  "module_path": "rscm_magicc::chemistry::n2o",
+  "language": "rust",
+  "description": "Simulates atmospheric nitrous oxide chemistry with a concentration-dependent\nlifetime and a stratospheric transport delay, using Prather-style fixed-point\niterations.\n\n# What This Component Does\n\n1. Calculates the effective N2O atmospheric lifetime including:\n   - Stratospheric photolysis/destruction (primary sink)\n   - Concentration-dependent feedback (with default parameters, higher N2O → shorter lifetime)\n   - Faster stratospheric overturning with warming (meridional flux feedback)\n\n2. Solves the mass balance equation using 4 fixed-point iterations:\n   $$\\frac{dB}{dt} = E - \\frac{\\bar{B}_{delayed}}{\\tau}$$\n\n   where the sink term uses delayed concentrations to account for the\n   stratospheric transport delay.\n\nThis follows the MAGICC7 `NITROUS` subroutine. Starting from the burden $B$ at the\nstart of the year, each iteration estimates the mid-year burden, evaluates\nthe lifetime from it and integrates the sink using the burden averaged over\nthe delayed years.\n\n# Inputs\n\n- `Prescribed Atmospheric Concentrations|N2O` (ppb), only with the `concentration_switch_year` parameter\n\n# Feedback references\n\nAs in MAGICC7, the concentration feedback is measured from the year before\n`feedback_start_year`, and warming changes the meridional flux relative to\n`meridional_flux_reference_year`. References outside the run are clamped to\nits first or last year.\n\n# Differences from MAGICC7\n\n- **Budget initialisation**: natural emissions are a fixed parameter.\n  `rscm.magicc.full.natural_emissions` calculates MAGICC7's budget-closing value for it.\n\nWith `concentration_switch_year` the concentration follows\n`Prescribed Atmospheric Concentrations|N2O` until that year.",
+  "category": "Atmospheric Chemistry",
+  "tags": [
+    "chemistry",
+    "n2o",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "n2o_emissions",
+      "name": "Emissions|N2O",
+      "unit": "Mt N2ON/yr",
+      "grid": "scalar",
+      "description": "Anthropogenic N2O emissions over the step"
+    },
+    {
+      "rust_name": "temperature",
+      "name": "Surface Air Temperature Change",
+      "unit": "K",
+      "grid": "scalar",
+      "description": "Surface air temperature change that drives the meridional flux feedback"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "n2o_lifetime",
+      "name": "Lifetime|N2O",
+      "unit": "yr",
+      "grid": "scalar",
+      "description": "Effective N2O lifetime over the step"
+    }
+  ],
+  "states": [
+    {
+      "rust_name": "n2o_concentration",
+      "name": "Atmospheric Concentrations|N2O",
+      "unit": "ppb",
+      "grid": "scalar",
+      "description": "N2O concentration at the end of the step"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "feedback_start_year",
+      "type": "FloatValue",
+      "description": "Year from which the concentration feedback is measured (MAGICC7 `N2O_FEED_YRSTART`).\n\nunit: yr\n\nThe reference concentration is taken from the year before."
+    },
+    {
+      "name": "natural_emissions",
+      "type": "FloatValue",
+      "description": "Natural N2O emissions from soils, oceans and other sources.\n\nunit: Mt N2ON/yr\n\nMAGICC7 closes the 1982-1991 budget against observed concentrations.\nThe default is the value it derives for its standard historical inputs."
+    },
+    {
+      "name": "initial_n2o_lifetime",
+      "type": "FloatValue",
+      "description": "Base atmospheric lifetime before the concentration feedback, $\\tau_{init}$\n\nunit: yr"
+    },
+    {
+      "name": "lifetime_feedback",
+      "type": "FloatValue",
+      "description": "Lifetime feedback exponent, $S$.\n\nunit: dimensionless\n\nWith $S < 0$, higher concentrations give a slightly shorter lifetime,\nbecause $\\tau = \\tau_{init} \\max(1, B/B_0)^S$."
+    },
+    {
+      "name": "stratospheric_delay",
+      "type": "usize",
+      "description": "Delay for tropospheric N2O to reach the stratosphere and be destroyed (MAGICC7 `N2O_STRATMIXDELAY`)\n\nunit: yr"
+    },
+    {
+      "name": "tg_per_ppb",
+      "type": "FloatValue",
+      "description": "Conversion factor from ppb to Tg N (MAGICC7 `N2O_PPB2TGN`)\n\nunit: Tg N/ppb"
+    },
+    {
+      "name": "include_meridional_flux_feedback",
+      "type": "bool",
+      "description": "Apply the stratospheric lifetime response to meridional flux changes (MAGICC7 `N2O_USE_TAUSTRAT_VAR`)"
+    },
+    {
+      "name": "meridional_flux_change_per_degree",
+      "type": "FloatValue",
+      "description": "Fractional change in meridional flux per degree of warming (MAGICC7 `GEN_MERIDFLUX_CHNGPERDEG`)\n\nunit: K^-1"
+    },
+    {
+      "name": "lifetime_sensitivity_to_meridional_flux",
+      "type": "FloatValue",
+      "description": "Lifetime sensitivity to meridional flux changes (MAGICC7 `N2O_TAUSTRAT_SENS2MERIDFLUX`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "meridional_flux_reference_year",
+      "type": "FloatValue",
+      "description": "Year from which warming changes the meridional flux (MAGICC7 `GEN_CHANGE_MERIDIONALFLUX_YR`)\n\nunit: yr"
+    },
+    {
+      "name": "concentration_switch_year",
+      "type": "Option<FloatValue>",
+      "description": "Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|N2O`\n(MAGICC7 `N2O_SWITCHFROMCONC2EMIS_YEAR`).\n\nunit: yr\n\n`None` calculates concentrations from emissions throughout."
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/chemistry/n2o.rs"
+}

@@ -1,0 +1,51 @@
+{
+  "name": "CH4Lifetime",
+  "slug": "fair-ch4lifetime",
+  "reference_model": "FaIR",
+  "variables_from_parameters": true,
+  "module_path": "rscm_fair::ch4_lifetime",
+  "language": "rust",
+  "description": "Calculates a scaling of the CH4 atmospheric lifetime from the emissions and concentrations\nof its chemical precursors and from the surface air temperature change.\nThe method follows Thornhill et al. (2021).\n[`crate::GasCycle`] reads the scaling when a gas sets `lifetime_scaling`,\nas rscm.fair does for CH4 with the `thornhill2021` CH4 method.\n\n$$\\alpha = \\exp\\Big(\\sum_i \\max(\\ln(1 + s_i (x_i - x_{i,0})), \\ln f)\n  + \\ln \\max(1 + s_T T, \\ln f)\\Big)$$\n\nover precursor emissions and concentrations $x_i$ at the start of the step,\nwith sensitivities $s_i$ and baselines $x_{i,0}$.\n$s_T$ is `temperature_sensitivity`, $T$ the surface air temperature change\nand $f$ the floor `minimum_scaling`.\n\n# Inputs\n\n- The surface air temperature change named by `surface_temperature` (K).\n  Its default is `Surface Air Temperature Change`.\n- Each precursor's `variable`, in its `unit`, from `emissions` then `concentrations`.\n  rscm.fair passes each species FaIR marks for aerosol chemistry,\n  such as `Emissions|NOx` and `Atmospheric Concentrations|CH4`.\n\n# Outputs\n\n- The lifetime scaling named by `output` (1), an average over the step.\n  Its default is `Lifetime Scaling|CH4`.",
+  "category": "Atmospheric Chemistry",
+  "tags": [
+    "chemistry",
+    "ch4",
+    "fair"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "emissions",
+      "type": "Vec<Precursor>",
+      "description": "Precursor emissions, summed before the concentrations."
+    },
+    {
+      "name": "concentrations",
+      "type": "Vec<Precursor>",
+      "description": "Precursor concentrations."
+    },
+    {
+      "name": "temperature_sensitivity",
+      "type": "FloatValue",
+      "description": "Fractional lifetime change per kelvin of surface air temperature change\n(FaIR `lifetime_temperature_sensitivity`).\nunit: 1/K"
+    },
+    {
+      "name": "minimum_scaling",
+      "type": "FloatValue",
+      "description": "Floor on each scaling term (FaIR `_ch4_min`)."
+    },
+    {
+      "name": "surface_temperature",
+      "type": "String",
+      "description": "Name of the surface air temperature change input."
+    },
+    {
+      "name": "output",
+      "type": "String",
+      "description": "Name of the lifetime scaling output."
+    }
+  ],
+  "source_file": "crates/rscm-fair/src/ch4_lifetime.rs"
+}

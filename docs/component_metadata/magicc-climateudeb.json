@@ -1,0 +1,255 @@
+{
+  "name": "ClimateUDEB",
+  "slug": "magicc-climateudeb",
+  "reference_model": "MAGICC7",
+  "module_path": "rscm_magicc::climate::udeb",
+  "language": "rust",
+  "description": "Calculates the surface air temperature response to effective radiative forcing (ERF)\nwith a four-box Upwelling-Diffusion Energy Balance (UDEB) method and multi-layer ocean diffusion.\nIt has 50 ocean layers per hemisphere and integrates over monthly substeps\nwith an implicit Thomas algorithm for numerical stability.\n\n# What This Component Does\n\n1. Takes the global ERF as input, or the four-box efficacy-adjusted ERF\n   with the `include_regional_forcing` parameter\n2. Solves the ocean diffusion-advection equation using the implicit Thomas algorithm\n3. Calculates the surface air temperature response on the four-box grid\n4. Outputs heat uptake and ocean heat content\n\n# Physics Overview\n\n`ClimateUDEB` couples a four-box atmosphere to a 50-layer ocean in each hemisphere.\nThe energy balance for the mixed layer is:\n\n$$C_{mix} \\frac{dT}{dt} = Q - \\lambda T + F_{diffusion} + F_{upwelling}$$\n\nwhere:\n- $C_{mix}$ = mixed layer heat capacity\n- $Q$ = effective radiative forcing\n- $\\lambda$ = climate feedback parameter\n- $F_{diffusion}$ = diffusive heat flux from deeper ocean\n- $F_{upwelling}$ = advective heat flux from upwelling\n\nLand temperatures are calculated assuming equilibrium with the adjacent ocean box,\nwith optional ground heat reservoir damping.\n\n# Inputs\n\n- `Efficacy Adjusted Effective Radiative Forcing` (W/m^2, four-box), only with the\n  `include_regional_forcing` parameter, in place of `Effective Radiative Forcing`\n- `2xCO2 Effective Radiative Forcing` (W/m^2), only with the `time_varying_erf_2xco2` parameter\n\n# Outputs\n\n- `Annual Mean Surface Air Temperature Change` (K), only with the `thermal_expansion` parameter\n- `Sea Level Rise|Thermal Expansion` (mm), only with the `thermal_expansion` parameter\n\n# Internal state\n\n- Ocean layer temperatures for each hemisphere: `[2][n_layers]`\n- Current upwelling rates for each hemisphere: `[2]`\n\n# Module Structure\n\n- `state`: Internal state (`ClimateUDEBState`, `OceanAreaFactors`)\n- `ocean_column`: Ocean column solver (tridiagonal diffusion,\n  upwelling, heat uptake/content diagnostics)\n- `lamcalc`: Iterative feedback parameter solver\n\n# Differences from MAGICC7\n\n- **LAMCALC iterations**: Implemented, see [`lamcalc`](super::lamcalc).\n- **Time-varying ECS**: Implemented, see `adjusted_ecs()`.\n- **Temperature-dependent diffusivity**: Implemented, see\n  `ocean_column::layer_diffusivities()`.\n- **Depth-dependent ocean area**: Implemented, see `OceanAreaFactors`.\n- **El Niño/AMV modes**: Internal variability modes. Not implemented.\n- **Ground heat reservoir**: Implemented, see\n  [`include_land_heat_capacity`](crate::parameters::ClimateUDEBParameters::include_land_heat_capacity).",
+  "category": "Climate",
+  "tags": [
+    "climate",
+    "udeb",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "total_erf",
+      "name": "Effective Radiative Forcing",
+      "unit": "W/m^2",
+      "grid": "scalar",
+      "description": "Global ERF over the step, interpolated to each substep"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "heat_uptake",
+      "name": "Heat Uptake",
+      "unit": "W/m^2",
+      "grid": "scalar",
+      "description": "Global heat uptake at the end of the step, the ERF less the climate feedback"
+    },
+    {
+      "rust_name": "ocean_heat_content",
+      "name": "Ocean Heat Content",
+      "unit": "J",
+      "grid": "scalar",
+      "description": "Global ocean heat content anomaly at the end of the step"
+    },
+    {
+      "rust_name": "sst",
+      "name": "Sea Surface Temperature",
+      "unit": "K",
+      "grid": "scalar",
+      "description": "Mean of the two hemispheres' mixed-layer temperature change at the end of the step"
+    },
+    {
+      "rust_name": "ecs",
+      "name": "Equilibrium Climate Sensitivity",
+      "unit": "K",
+      "grid": "scalar",
+      "description": "Equilibrium climate sensitivity used in the step, which can vary with cumulative warming and ERF"
+    }
+  ],
+  "states": [
+    {
+      "rust_name": "surface_temperature",
+      "name": "Surface Air Temperature Change",
+      "unit": "K",
+      "grid": "four_box",
+      "description": "Surface air temperature change in each region at the end of the step"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "n_layers",
+      "type": "usize",
+      "description": "Number of ocean layers, including the mixed layer\n\nDefault: 50"
+    },
+    {
+      "name": "mixed_layer_depth",
+      "type": "FloatValue",
+      "description": "Mixed layer depth\n\nunit: m\n\nDefault: 60.0"
+    },
+    {
+      "name": "layer_thickness",
+      "type": "FloatValue",
+      "description": "Thickness of each deeper ocean layer\n\nunit: m\n\nDefault: 100.0"
+    },
+    {
+      "name": "vertical_diffusivity",
+      "type": "FloatValue",
+      "description": "Base vertical diffusivity.\n\nunit: cm^2/s\n\nConverted to m^2/yr internally with the factor 3155.76.\n\nDefault: 0.75"
+    },
+    {
+      "name": "minimum_vertical_diffusivity",
+      "type": "FloatValue",
+      "description": "Minimum vertical diffusivity, the floor for the temperature-dependent diffusivity\n\nunit: cm^2/s\n\nDefault: 0.1"
+    },
+    {
+      "name": "vertical_diffusivity_gradient_sensitivity",
+      "type": "FloatValue",
+      "description": "Change in diffusivity with the vertical temperature gradient\n\nunit: cm^2/s/K\n\nDefault: -0.191"
+    },
+    {
+      "name": "initial_upwelling_rate",
+      "type": "FloatValue",
+      "description": "Initial upwelling rate, before the temperature-dependent adjustment\n(MAGICC7 `CORE_INITIAL_UPWELLING_RATE`)\n\nunit: m/yr\n\nDefault: 3.5\nMAGICC7: CORE_INITIAL_UPWELLING_RATE"
+    },
+    {
+      "name": "upwelling_variable_fraction",
+      "type": "FloatValue",
+      "description": "Fraction of upwelling that varies with temperature (MAGICC7 `CORE_UPWELLING_VARIABLE_PART`)\n\nunit: dimensionless\n\nDefault: 0.7\nMAGICC7: CORE_UPWELLING_VARIABLE_PART"
+    },
+    {
+      "name": "upwelling_threshold_temperature_nh",
+      "type": "FloatValue",
+      "description": "Temperature change at which NH upwelling reaches its minimum (MAGICC7 `CORE_UPWELL_THRESH_TEMP_NH`)\n\nunit: K\n\nDefault: 8.0\nMAGICC7: CORE_UPWELL_THRESH_TEMP_NH"
+    },
+    {
+      "name": "upwelling_threshold_temperature_sh",
+      "type": "FloatValue",
+      "description": "Temperature change at which SH upwelling reaches its minimum (MAGICC7 `CORE_UPWELL_THRESH_TEMP_SH`)\n\nunit: K\n\nDefault: 8.0\nMAGICC7: CORE_UPWELL_THRESH_TEMP_SH"
+    },
+    {
+      "name": "ecs",
+      "type": "FloatValue",
+      "description": "Equilibrium climate sensitivity, the equilibrium warming after CO2 doubles\n\nunit: K\n\nDefault: 3.0"
+    },
+    {
+      "name": "erf_2xco2",
+      "type": "FloatValue",
+      "description": "2xCO2 effective radiative forcing\n\nunit: W/m^2\n\nDefault: 3.71"
+    },
+    {
+      "name": "land_ocean_warming_ratio",
+      "type": "FloatValue",
+      "description": "Ratio of land to ocean equilibrium warming (MAGICC7 `CORE_RLO`)\n\nunit: dimensionless\n\nDefault: 1.317\nMAGICC7: CORE_RLO"
+    },
+    {
+      "name": "feedback_forcing_sensitivity",
+      "type": "FloatValue",
+      "description": "Change in equilibrium climate sensitivity with the ERF level (MAGICC7 `CORE_FEEDBACK_QSENSITIVITY`)\n\nunit: dimensionless\n\nDefault: 7.84e-9\nMAGICC7: CORE_FEEDBACK_QSENSITIVITY"
+    },
+    {
+      "name": "feedback_cumulative_temperature_sensitivity",
+      "type": "FloatValue",
+      "description": "Change in equilibrium climate sensitivity with cumulative warming\n(MAGICC7 `CORE_FEEDBACK_CUMTSENSITIVITY`)\n\nunit: dimensionless\n\nDefault: 0.08\nMAGICC7: CORE_FEEDBACK_CUMTSENSITIVITY"
+    },
+    {
+      "name": "feedback_cumulative_temperature_period",
+      "type": "FloatValue",
+      "description": "Period over which warming is accumulated (MAGICC7 `CORE_FEEDBACK_CUMTPERIOD`)\n\nunit: yr\n\nDefault: 300.0\nMAGICC7: CORE_FEEDBACK_CUMTPERIOD"
+    },
+    {
+      "name": "land_ocean_heat_exchange",
+      "type": "FloatValue",
+      "description": "Land-ocean heat exchange coefficient\n\nunit: W/m^2/K\n\nDefault: 1.44"
+    },
+    {
+      "name": "north_south_heat_exchange",
+      "type": "FloatValue",
+      "description": "Inter-hemispheric (north-south) heat exchange coefficient\n\nunit: W/m^2/K\n\nDefault: 0.31"
+    },
+    {
+      "name": "amplify_ocean_to_land",
+      "type": "FloatValue",
+      "description": "Ocean-to-land heat exchange amplification factor\n\nunit: dimensionless\n\nDefault: 1.02"
+    },
+    {
+      "name": "nh_land_fraction",
+      "type": "FloatValue",
+      "description": "Northern Hemisphere land fraction\n\nunit: dimensionless\n\nDefault: 0.42"
+    },
+    {
+      "name": "sh_land_fraction",
+      "type": "FloatValue",
+      "description": "Southern Hemisphere land fraction\n\nunit: dimensionless\n\nDefault: 0.21"
+    },
+    {
+      "name": "depth_dependent_area",
+      "type": "FloatValue",
+      "description": "Strength of the ocean basin narrowing with depth, from 0 to 1.\n\nunit: dimensionless\n\n0 is a cylindrical ocean with no narrowing and 1 is the full hypsometric profile.\n\nDefault: 1.0"
+    },
+    {
+      "name": "temperature_adjustment_alpha",
+      "type": "FloatValue",
+      "description": "Linear coefficient of the air temperature to SST relationship\n(MAGICC7 `CORE_TEMPADJUST_OCN2ATM_ALPHA`)\n\nunit: dimensionless\n\nDefault: 1.04\nMAGICC7: CORE_TEMPADJUST_OCN2ATM_ALPHA"
+    },
+    {
+      "name": "temperature_adjustment_gamma",
+      "type": "FloatValue",
+      "description": "Quadratic coefficient of the air temperature to SST relationship\n(MAGICC7 `CORE_TEMPADJUST_OCN2ATM_GAMMA`)\n\nunit: K^-1\n\nDefault: -0.002\nMAGICC7: CORE_TEMPADJUST_OCN2ATM_GAMMA"
+    },
+    {
+      "name": "polar_sinking_ratio",
+      "type": "FloatValue",
+      "description": "Fraction of the surface temperature change carried by polar sinking water\n\nunit: dimensionless\n\nDefault: 0.2"
+    },
+    {
+      "name": "include_land_heat_capacity",
+      "type": "bool",
+      "description": "Apply the ground heat reservoir (MAGICC7 `CORE_LANDHEATCAPACITY_APPLY`).\n\nThe reservoir damps the land temperature response by absorbing and releasing heat\nfrom the land surface.\n\nDefault: true"
+    },
+    {
+      "name": "land_ground_heat_exchange",
+      "type": "FloatValue",
+      "description": "Land-ground heat exchange coefficient, per unit globe area (MAGICC7 `CORE_HEATXCHANGE_LANDGROUND`).\n\nunit: W/m^2/K\n\nSets the rate of heat exchange between the land surface and the ground heat reservoir.\n\nDefault: 0.1"
+    },
+    {
+      "name": "land_heat_capacity_effective_thickness",
+      "type": "FloatValue",
+      "description": "Effective thickness of the ground heat reservoir (MAGICC7 `CORE_LANDHC_EFFTHICKNESS`).\n\nunit: m\n\nThe ocean-water-equivalent depth that sets the thermal inertia of the land heat reservoir.\n\nDefault: 300.0"
+    },
+    {
+      "name": "co2_regional_pattern",
+      "type": "[FloatValue;4]",
+      "description": "Regional CO2 ERF pattern in each region of the four-box grid (MAGICC7 `RF_REGIONS_CO2`).\n\nunit: dimensionless\n\nRelative weights for the CO2 ERF fraction of each region in the LAMCALC solver,\nnormalised by their global area-weighted sum as in MAGICC7.\n\nDefault values from `MAGCFG_DEFAULTALL.CFG` (AR6 calibration):\n`[1.4089, 1.37045, 1.43333, 1.33257]`."
+    },
+    {
+      "name": "efficacy_method",
+      "type": "EfficacyMethod",
+      "description": "How efficacies scale the ERF (MAGICC7 `RF_EFFICACY_APPLY`).\n\n`none` leaves the ERF unchanged, `unit` divides it by the internal efficacy,\nand `ar6` scales it by `co2_efficacy / internal_efficacy`."
+    },
+    {
+      "name": "co2_efficacy",
+      "type": "FloatValue",
+      "description": "CO2 efficacy (MAGICC7 `RF_EFFICACY_CO2`).\n\nunit: dimensionless\n\nUsed only by the `ar6` method:\n$\\text{EFFRF} = \\text{ERF} \\times \\text{co2\\_efficacy} / \\text{internal\\_efficacy}$.\n\nDefault: 1.0 (no-op)."
+    },
+    {
+      "name": "include_regional_forcing",
+      "type": "bool",
+      "description": "Read the four-box efficacy-adjusted ERF from `ForcingAggregation` instead of the global ERF.\n\nThe ERF is then used as given and the efficacy parameters above are ignored."
+    },
+    {
+      "name": "subannual_forcing",
+      "type": "Option<SubannualForcing>",
+      "description": "Efficacy-adjusted regional ERF applied at each substep, on top of the annual input.\n\nMAGICC7 applies volcanic forcing this way."
+    },
+    {
+      "name": "thermal_expansion",
+      "type": "Option<ThermalExpansion>",
+      "description": "Write the annual mean warming and the thermal expansion of the ocean"
+    },
+    {
+      "name": "time_varying_erf_2xco2",
+      "type": "bool",
+      "description": "Read `2xCO2 Effective Radiative Forcing` each year instead of using `erf_2xco2`.\n\nMAGICC7 recalculates it from the current concentrations with OLBL,\nwhich changes the feedback parameters as CO2 rises."
+    },
+    {
+      "name": "ocean_temperature_profile",
+      "type": "OceanTemperatureProfile",
+      "description": "Initial ocean temperature profile (MAGICC7 `CORE_SWITCH_OCN_TEMPPROFILE`).\n\nThe profile is the reference for the variable upwelling correction terms.\nWhen upwelling changes from its initial value, these corrections compensate\nfor the shift in the equilibrium profile.\nMAGICC7 uses the CMIP5 profile by default."
+    },
+    {
+      "name": "steps_per_year",
+      "type": "usize",
+      "description": "Substeps per year, 12 (monthly) by default\n\nDefault: 12 (monthly)"
+    },
+    {
+      "name": "maximum_temperature",
+      "type": "FloatValue",
+      "description": "Cap on the temperature change, to prevent runaway temperatures (MAGICC7 `CORE_MAXIMAL_TEMPERATURE`)\n\nunit: K\n\nDefault: 25.0\nMAGICC7: CORE_MAXIMAL_TEMPERATURE"
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/climate/udeb/mod.rs"
+}

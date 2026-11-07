@@ -44,6 +44,14 @@ pub struct ParameterMetadata {
 pub struct ComponentDocMetadata {
     /// Component struct name (e.g., "CarbonCycle")
     pub name: String,
+    /// Page and file name, unique across crates (e.g., "fair-ghgforcing")
+    pub slug: String,
+    /// Model the component ports, if any (e.g., "MAGICC7")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_model: Option<String>,
+    /// Whether the parameters decide the variables, so the IO lists are empty
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub variables_from_parameters: bool,
     /// Full module path (e.g., "rscm_components::components::carbon_cycle")
     pub module_path: String,
     /// Implementation language
@@ -78,6 +86,9 @@ impl Default for ComponentDocMetadata {
     fn default() -> Self {
         Self {
             name: String::new(),
+            slug: String::new(),
+            reference_model: None,
+            variables_from_parameters: false,
             module_path: String::new(),
             language: "rust".to_string(),
             description: String::new(),

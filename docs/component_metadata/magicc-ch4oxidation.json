@@ -1,0 +1,122 @@
+{
+  "name": "CH4Oxidation",
+  "slug": "magicc-ch4oxidation",
+  "reference_model": "MAGICC7",
+  "module_path": "rscm_magicc::chemistry::ch4_oxidation",
+  "language": "rust",
+  "description": "Tracks atmospheric methane by source and the CO2 released as its fossil share\nis oxidised, which MAGICC7 adds to fossil CO2 emissions.\n\nAs in MAGICC7, the sink is the mid-step concentration over the total lifetime,\nshared between the pools in proportion to their size.\nAnthropogenic pools receive the emissions that close the CH4 budget,\nsplit between fossil and biosphere in proportion to their emissions.\nThe fossil share counts the fossil pool and `permafrost_fraction` of the permafrost pool.\n\n# Inputs\n\n- `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `include_permafrost` parameter",
+  "category": "Atmospheric Chemistry",
+  "tags": [
+    "chemistry",
+    "ch4",
+    "carbon-cycle",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "concentration",
+      "name": "Atmospheric Concentrations|CH4",
+      "unit": "ppb",
+      "grid": "scalar",
+      "description": "CH4 concentration, read at the start and end of the step"
+    },
+    {
+      "rust_name": "oh_lifetime",
+      "name": "Lifetime|CH4|OH",
+      "unit": "yr",
+      "grid": "scalar",
+      "description": "CH4 lifetime against the tropospheric OH sink over the step"
+    },
+    {
+      "rust_name": "fossil_emissions",
+      "name": "Emissions|CH4|Fossil",
+      "unit": "Mt CH4/yr",
+      "grid": "scalar",
+      "description": "Fossil CH4 emissions over the step"
+    },
+    {
+      "rust_name": "biosphere_emissions",
+      "name": "Emissions|CH4|Biosphere",
+      "unit": "Mt CH4/yr",
+      "grid": "scalar",
+      "description": "Biosphere CH4 emissions over the step"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "co2_emissions",
+      "name": "Emissions|CO2|CH4 Oxidation",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "CO2 released by oxidising fossil CH4 over the step"
+    }
+  ],
+  "states": [
+    {
+      "rust_name": "fossil_burden",
+      "name": "Atmospheric Burden|CH4|Fossil",
+      "unit": "Mt CH4",
+      "grid": "scalar",
+      "description": "Atmospheric CH4 from fossil emissions"
+    },
+    {
+      "rust_name": "biosphere_burden",
+      "name": "Atmospheric Burden|CH4|Biosphere",
+      "unit": "Mt CH4",
+      "grid": "scalar",
+      "description": "Atmospheric CH4 from biosphere emissions"
+    },
+    {
+      "rust_name": "natural_burden",
+      "name": "Atmospheric Burden|CH4|Natural",
+      "unit": "Mt CH4",
+      "grid": "scalar",
+      "description": "Atmospheric CH4 from natural emissions"
+    },
+    {
+      "rust_name": "permafrost_burden",
+      "name": "Atmospheric Burden|CH4|Permafrost",
+      "unit": "Mt CH4",
+      "grid": "scalar",
+      "description": "Atmospheric CH4 from permafrost emissions"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "carbon_per_ch4",
+      "type": "FloatValue",
+      "description": "Mass of carbon per mass of CH4 oxidised, 12/16 by default\n\nunit: dimensionless"
+    },
+    {
+      "name": "include_permafrost",
+      "type": "bool",
+      "description": "Add `Emissions|CH4|Permafrost` to the CH4 budget (MAGICC7 `PF_APPLY`)"
+    },
+    {
+      "name": "permafrost_fraction",
+      "type": "FloatValue",
+      "description": "Fraction of permafrost CH4 counted as fossil (MAGICC7 `PF_CO2FROMCH4OXINATM_FRACTION`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "tg_per_ppb",
+      "type": "FloatValue",
+      "description": "Conversion factor from ppb to Tg CH4 (MAGICC7 `CH4_PPB2TGCH4`)\n\nunit: Tg CH4/ppb"
+    },
+    {
+      "name": "mixing_box_size",
+      "type": "FloatValue",
+      "description": "Fraction of the atmosphere mixed with surface CH4 (MAGICC7 `CH4_MIXBOXSIZE`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "non_oh_lifetime",
+      "type": "FloatValue",
+      "description": "Combined soil, stratospheric and tropospheric chlorine lifetime.\n\nunit: yr\n\nThe default combines the `CH4ChemistryParameters` sink lifetimes\n(MAGICC7 `CH4_TAUSOIL`, `CH4_TAUSTRAT` and `CH4_TAUTROPCL`)."
+    },
+    {
+      "name": "natural_emissions",
+      "type": "FloatValue",
+      "description": "Natural CH4 emissions\n\nunit: Mt CH4/yr"
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/chemistry/ch4_oxidation.rs"
+}

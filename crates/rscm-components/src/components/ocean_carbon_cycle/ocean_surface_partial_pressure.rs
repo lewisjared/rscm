@@ -1,4 +1,10 @@
-/// Ocean Surface Partial Pressure(OSPP) calculations
+//! Ocean surface partial pressure component
+//!
+//! The partial pressure of CO2 at the ocean surface rises with dissolved inorganic carbon
+//! and with sea surface temperature.
+//! The component follows equations A24 and A25 of
+//! [Joos et al. (2001)](https://doi.org/10.1029/2000GB001375).
+
 use numpy::array;
 use numpy::ndarray::Array1;
 use rscm_core::component::{
@@ -11,52 +17,32 @@ use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 use std::iter::zip;
 
-/// Parameters for the Ocean Surface Partial Pressure component
+/// Parameters for the ocean surface partial pressure component
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OceanSurfacePartialPressureParameters {
-    /// Pre-industrial ocean surface partial pressure
-    /// unit: `ppm`
+    /// Pre-industrial ocean surface partial pressure of CO2
+    /// unit: ppm
     pub ospp_pi: f64,
-    /// Sensitivity of the ocean surface's partial pressure to changes in sea
-    /// surface temperature relative to pre-industrial
-    /// unit: `1/delta_degC`
+    /// Sensitivity of the ocean surface partial pressure to sea surface temperature change
+    /// unit: 1/K
     pub sensitivity_ospp_to_temperature: f64,
 
     /// Pre-industrial sea surface temperature
-    /// unit: `degC`
+    /// unit: degC
     pub sst_pi: f64,
 
-    /// Vector of length 5 of offsets to be used when calculating the change in
-    /// ocean surface partial pressure
-    /// unit: `ppm`
+    /// Offsets of the five polynomial coefficients for the partial pressure change
+    /// unit: ppm
     pub delta_ospp_offsets: [f64; 5],
-    /// Vector of length 5 of coefficients (applied to pre-industrial sea surface temperatures)
-    /// to be used when calculating the change in
-    /// ocean surface partial pressure
-    ///
-    /// unit: `ppm/delta_degC`
+    /// Slopes of the five polynomial coefficients with pre-industrial sea surface temperature
+    /// unit: ppm/K
     pub delta_ospp_coefficients: [f64; 5],
 }
 
-/// Calculate partial pressure of |CO2| at the ocean's surface
+/// Ocean surface partial pressure of CO2
 ///
-/// # Inputs
-/// delta_sea_surface_temperature
-///    Change in sea surface temperature relative to pre-industrial
-///    Unit: `delta_degC`
-///
-/// delta_dissolved_inorganic_carbon
-///    Change in dissolved inorganic carbon relative to pre-industrial
-///    Unit: `micromol/kg`
-///
-/// Returns
-/// -------
-/// Partial pressure of |CO2| at the ocean's surface \[ppm\]
-///
-/// Notes
-/// -----
-/// Eq. A24 and A25 of [`joos_et_al_2001_feedbacks`]
+/// The partial pressure is
 ///
 /// $$
 /// \text{CO}_{2_s} = \left[
@@ -81,7 +67,16 @@ pub struct OceanSurfacePartialPressureParameters {
 /// \end{pmatrix}
 /// $$
 ///
-/// and e.g.
+/// where:
+///
+/// - $p\text{CO}_{2_{s_0}}$ is the pre-industrial partial pressure
+/// - $\alpha$ is the sensitivity to sea surface temperature change
+/// - $\Delta T$ is the sea surface temperature change since pre-industrial
+/// - $T_0$ is the pre-industrial sea surface temperature
+/// - $\Delta \Sigma \text{CO}_2$ is the dissolved inorganic carbon change since pre-industrial
+/// - $\vec{\beta}$ and $\vec{\gamma}$ are the polynomial offsets and slopes
+///
+/// Joos et al. (2001) give, for example,
 ///
 /// $$
 /// \vec{\beta} = \begin{pmatrix}
@@ -95,19 +90,18 @@ pub struct OceanSurfacePartialPressureParameters {
 /// \end{pmatrix}
 /// $$
 ///
-/// Is there a typo in Joos et al., 2001? Should it be
-/// (1.5568 - 1.3993 T_0) * 10 ** -2 rather than (1.5568 - 1.3993 T_0 * 10 ** -2) ?
-/// The former would make more sense given the brackets in the lines below in the paper. (#208)
-///
-/// [`joos_et_al_2001_feedbacks`]: https://doi.org/10.1029/2000GB001375
+/// The paper may have a typo in the first coefficient.
+/// It may mean $(1.5568 - 1.3993 T_0) \times 10^{-2}$
+/// rather than $1.5568 - 1.3993 T_0 \times 10^{-2}$,
+/// which the brackets in the lines that follow suggest.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
-#[component(tags = ["ocean", "carbon-cycle", "magicc", "experimental"], category = "Ocean Carbon Cycle")]
+#[component(tags = ["ocean", "carbon-cycle", "magicc", "experimental"], category = "Carbon Cycle")]
 #[inputs(
-    sea_surface_temperature { name = "Sea Surface Temperature", unit = "K" },
-    dissolved_inorganic_carbon { name = "Dissolved Inorganic Carbon", unit = "micromol/kg" },
+    sea_surface_temperature { name = "Sea Surface Temperature", unit = "K", description = "Sea surface temperature change since pre-industrial" },
+    dissolved_inorganic_carbon { name = "Dissolved Inorganic Carbon", unit = "micromol/kg", description = "Dissolved inorganic carbon change since pre-industrial" },
 )]
 #[outputs(
-    ospp_co2 { name = "Ocean Surface Partial Pressure|CO2", unit = "ppm" },
+    ospp_co2 { name = "Ocean Surface Partial Pressure|CO2", unit = "ppm", description = "Partial pressure of CO2 at the ocean surface" },
 )]
 pub struct OceanSurfacePartialPressure {
     parameters: OceanSurfacePartialPressureParameters,

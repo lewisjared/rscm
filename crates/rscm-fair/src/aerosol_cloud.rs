@@ -1,10 +1,30 @@
 //! Aerosol-cloud interactions (FaIR step 7)
 //!
+//! Calculates the effective radiative forcing from aerosol-cloud interactions,
+//! which grows with the logarithm of a weighted sum of aerosol emissions and concentrations.
+//! The method follows Smith et al. (2021).
+//!
 //! $$F = \big(\beta \ln(1 + \textstyle\sum_i s_i x_i) - \beta \ln(1 + \sum_i s_i x_{i,0})\big)\, s$$
 //!
-//! over emissions and concentrations $x_i$ with shapes $s_i$, scale $\beta$ and forcing
-//! scale $s$, plus a feedback on the surface temperature at the start of the step
-//! (Smith et al. 2021).
+//! over emissions and concentrations $x_i$ with shapes $s_i$, pre-industrial values $x_{i,0}$,
+//! scale $\beta$ and forcing scale $s$.
+//! The forcing scale is `forcing_scale * (1 + tropospheric_adjustment)`.
+//! It adds a feedback of `temperature_feedback` times the surface air temperature change
+//! at the start of the step.
+//! Each driver is an emissions rate or a concentration, never cumulative emissions.
+//!
+//! # Inputs
+//!
+//! - The surface air temperature change named by `surface_temperature` (K).
+//!   Its default is `Surface Air Temperature Change`.
+//! - Each driver's `variable`, in the driver's `unit`.
+//!   rscm.fair passes the emissions or concentration of each species with an `aci_shape`,
+//!   such as `Emissions|SOx`.
+//!
+//! # Outputs
+//!
+//! - The effective radiative forcing named by `forcing` (W/m^2).
+//!   rscm.fair names it `Effective Radiative Forcing|Aerosols|Indirect Effect`.
 
 use crate::constants::{driver_definitions, get, one, surface_temperature};
 use crate::driver::Driver;
@@ -12,6 +32,7 @@ use rscm_core::component::{Component, InputState, OutputState, VariableDefinitio
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
@@ -19,16 +40,17 @@ use std::sync::OnceLock;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CloudDriver {
-    /// Input variable.
+    /// Name of the emissions or concentration input.
     pub variable: String,
-    /// Its unit.
+    /// Unit of the input.
     pub unit: String,
-    /// Emissions or concentration.
+    /// Whether the input is emissions or a concentration.
     pub driver: Driver,
-    /// Pre-industrial value.
+    /// Pre-industrial value of the input, in its unit
+    /// (FaIR `baseline_emissions` or `baseline_concentration`).
     #[serde(default)]
     pub baseline: FloatValue,
-    /// Sensitivity of the cloud response.
+    /// Weight of the input in the logarithmic response, per unit of the input (FaIR `aci_shape`).
     pub shape: FloatValue,
 }
 
@@ -36,28 +58,34 @@ pub struct CloudDriver {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AerosolCloudParameters {
-    /// Forcing output.
+    /// Name of the effective radiative forcing output.
     pub forcing: String,
-    /// Drivers. Emissions are summed before concentrations.
+    /// Emissions and concentrations that drive the response.
+    /// Emissions are summed before concentrations.
     pub drivers: Vec<CloudDriver>,
-    /// Scale of the logarithmic response (W m-2).
+    /// Scale of the logarithmic response (FaIR `aci_scale`).
+    /// unit: W/m^2
     pub scale: FloatValue,
-    /// Forcing scaling.
+    /// Multiplier on the effective radiative forcing (FaIR `forcing_scale`).
     #[serde(default = "one")]
     pub forcing_scale: FloatValue,
-    /// Tropospheric adjustment.
+    /// Fractional tropospheric adjustment, applied as `1 + tropospheric_adjustment`
+    /// (FaIR `tropospheric_adjustment`).
     #[serde(default)]
     pub tropospheric_adjustment: FloatValue,
-    /// Forcing per kelvin of surface temperature.
+    /// Effective radiative forcing per kelvin of surface air temperature change
+    /// (FaIR `forcing_temperature_feedback`).
+    /// unit: W/m^2/K
     #[serde(default)]
     pub temperature_feedback: FloatValue,
-    /// Surface temperature input.
+    /// Name of the surface air temperature change input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
 }
 
-/// FaIR's logarithmic aerosol-cloud forcing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// FaIR's logarithmic aerosol-cloud effective radiative forcing.
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["forcing", "aerosol", "cloud", "fair"], category = "Radiative Forcing")]
 #[serde(try_from = "Unchecked")]
 pub struct AerosolCloud {
     parameters: AerosolCloudParameters,

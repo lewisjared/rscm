@@ -49,9 +49,8 @@ fn main() {
         std::process::exit(1);
     }
 
-    let mut all_components: Vec<ComponentDocMetadata> = Vec::new();
-
-    // Process each crate
+    // Parse every file first, so a component can find its parameters struct in another file
+    let mut files = Vec::new();
     for crate_path in &args.crates {
         if !crate_path.exists() {
             eprintln!(
@@ -70,8 +69,11 @@ fn main() {
         if args.verbose {
             println!("Scanning {}", crate_path.display());
         }
+        let crate_name = crate_path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
 
-        // Walk through all .rs files
         for entry in WalkDir::new(&src_path)
             .follow_links(true)
             .into_iter()
@@ -79,37 +81,42 @@ fn main() {
         {
             let path = entry.path();
             if path.extension().map(|e| e == "rs").unwrap_or(false) {
-                let components = parser::parse_file(path);
-
-                for mut component in components {
-                    // Make the source file path relative to workspace root
-                    component.source_file = make_relative_path(path);
-
-                    if args.verbose {
-                        println!(
-                            "  Found component: {} ({} inputs, {} outputs, {} states)",
-                            component.name,
-                            component.inputs.len(),
-                            component.outputs.len(),
-                            component.states.len()
-                        );
-                        if !component.tags.is_empty() {
-                            println!("    Tags: {:?}", component.tags);
-                        }
-                        if let Some(ref cat) = component.category {
-                            println!("    Category: {}", cat);
-                        }
-                    }
-
-                    all_components.push(component);
+                if let Some(syntax) = parser::read_file(path) {
+                    files.push((crate_name.clone(), path.to_path_buf(), syntax));
                 }
             }
         }
     }
 
+    let mut index = parser::StructIndex::new();
+    for (crate_name, _, syntax) in &files {
+        parser::index_structs(crate_name, syntax, &mut index);
+    }
+
+    let mut all_components: Vec<ComponentDocMetadata> = Vec::new();
+    for (crate_name, path, syntax) in &files {
+        for mut component in parser::parse_file(crate_name, path, syntax, &index) {
+            // Make the source file path relative to workspace root
+            component.source_file = make_relative_path(path);
+
+            if args.verbose {
+                println!(
+                    "  Found component: {} ({} inputs, {} outputs, {} states, {} parameters)",
+                    component.name,
+                    component.inputs.len(),
+                    component.outputs.len(),
+                    component.states.len(),
+                    component.parameters.len()
+                );
+            }
+
+            all_components.push(component);
+        }
+    }
+
     // Write JSON files
     for component in &all_components {
-        let filename = format!("{}.json", component.name.to_lowercase());
+        let filename = format!("{}.json", component.slug);
         let output_path = args.output.join(&filename);
 
         let json = serde_json::to_string_pretty(component).expect("Failed to serialize JSON");

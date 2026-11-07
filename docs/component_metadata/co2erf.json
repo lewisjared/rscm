@@ -1,11 +1,12 @@
 {
   "name": "CO2ERF",
+  "slug": "co2erf",
   "module_path": "rscm_components::components::co2_erf",
   "language": "rust",
-  "description": "This component calculates the effective radiative forcing (ERF) from CO2 concentrations\nusing the standard logarithmic relationship.\n\nComputes ERF using the standard logarithmic relationship:\n$$ ERF = \\frac{ERF_{2xCO2}}{\\log(2)} \\cdot \\log\\left(1 + \\frac{C - C_0}{C_0}\\right) $$\n\nWhere:\n- $ERF_{2xCO2}$ is the ERF for a doubling of CO2\n- $C$ is the current CO2 concentration\n- $C_0$ is the pre-industrial CO2 concentration",
+  "description": "The effective radiative forcing of CO2 grows with the logarithm of its atmospheric concentration.\nIt is zero at the pre-industrial concentration and equals the 2xCO2 effective radiative forcing\nwhen the concentration doubles.\n\nThe forcing is\n\n$$ ERF = \\frac{ERF_{2xCO2}}{\\log(2)} \\cdot \\log\\left(1 + \\frac{C - C_0}{C_0}\\right) $$\n\nwhere:\n\n- $ERF_{2xCO2}$ is the 2xCO2 effective radiative forcing\n- $C$ is the CO2 concentration\n- $C_0$ is the pre-industrial CO2 concentration",
   "category": "Radiative Forcing",
   "tags": [
-    "radiative-forcing",
+    "forcing",
     "co2",
     "simple",
     "stable"
@@ -15,7 +16,8 @@
       "rust_name": "concentration",
       "name": "Atmospheric Concentrations|CO2",
       "unit": "ppm",
-      "grid": "scalar"
+      "grid": "scalar",
+      "description": "Atmospheric CO2 concentration"
     }
   ],
   "outputs": [
@@ -23,7 +25,8 @@
       "rust_name": "erf",
       "name": "Effective Radiative Forcing|CO2",
       "unit": "W/m^2",
-      "grid": "scalar"
+      "grid": "scalar",
+      "description": "Effective radiative forcing of CO2"
     }
   ],
   "states": [],
@@ -31,7 +34,7 @@
     {
       "name": "erf_2xco2",
       "type": "FloatValue",
-      "description": "ERF due to a doubling of atmospheric CO2 concentrations\nunit: W/m^2"
+      "description": "2xCO2 effective radiative forcing, from doubling the pre-industrial CO2 concentration\nunit: W/m^2"
     },
     {
       "name": "co2_pi",

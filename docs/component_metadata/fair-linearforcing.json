@@ -1,0 +1,52 @@
+{
+  "name": "LinearForcing",
+  "slug": "fair-linearforcing",
+  "reference_model": "FaIR",
+  "variables_from_parameters": true,
+  "module_path": "rscm_fair::linear_forcing",
+  "language": "rust",
+  "description": "Calculates an effective radiative forcing that is linear in a set of emissions,\nconcentrations or cumulative emissions.\nOne instance each gives FaIR's aerosol-radiation interactions, ozone, contrail,\nlight absorbing particles on snow, stratospheric water vapour and land-use change forcing.\n\n$$F = \\sum_i (x_i - x_{i,0})\\, \\eta_i\\, s + \\lambda T$$\n\nwith drivers $x_i$, baselines $x_{i,0}$, radiative efficiencies $\\eta_i$, forcing scale $s$\nand a feedback $\\lambda$ on the surface air temperature change $T$ at the start of the step.\nThe forcing scale is `forcing_scale * (1 + tropospheric_adjustment)`.\nA cumulative emissions driver reads an emissions rate and accumulates it over the run.\n\n# Inputs\n\n- The surface air temperature change named by `surface_temperature` (K).\n  Its default is `Surface Air Temperature Change`.\n- Each driver's `variable`, in the driver's `unit`.\n  rscm.fair passes, for example, `Emissions|SOx` for aerosol-radiation interactions\n  and `Emissions|CO2|Biosphere` for land-use change.\n\n# Outputs\n\n- The effective radiative forcing named by `forcing` (W/m^2).\n  rscm.fair names it after the forcing agent,\n  such as `Effective Radiative Forcing|Aerosols|Direct Effect`\n  or `Effective Radiative Forcing|Ozone`.",
+  "category": "Radiative Forcing",
+  "tags": [
+    "forcing",
+    "aerosol",
+    "ozone",
+    "fair"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "forcing",
+      "type": "String",
+      "description": "Name of the effective radiative forcing output."
+    },
+    {
+      "name": "drivers",
+      "type": "Vec<LinearDriver>",
+      "description": "Emissions, concentrations or cumulative emissions the forcing is linear in, summed in order."
+    },
+    {
+      "name": "forcing_scale",
+      "type": "FloatValue",
+      "description": "Multiplier on the effective radiative forcing (FaIR `forcing_scale`)."
+    },
+    {
+      "name": "tropospheric_adjustment",
+      "type": "FloatValue",
+      "description": "Fractional tropospheric adjustment, applied as `1 + tropospheric_adjustment`\n(FaIR `tropospheric_adjustment`)."
+    },
+    {
+      "name": "temperature_feedback",
+      "type": "FloatValue",
+      "description": "Effective radiative forcing per kelvin of surface air temperature change\n(FaIR `forcing_temperature_feedback`).\nunit: W/m^2/K"
+    },
+    {
+      "name": "surface_temperature",
+      "type": "String",
+      "description": "Name of the surface air temperature change input."
+    }
+  ],
+  "source_file": "crates/rscm-fair/src/linear_forcing.rs"
+}

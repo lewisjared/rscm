@@ -15,41 +15,27 @@
 //!    - DIC accumulation (Joos A24 polynomial)
 //!    - Temperature effect on solubility (Joos A25)
 //!
-//! 4. Uses monthly substepping (12 steps per year). As in MAGICC7, atmospheric
+//! 4. Integrates over monthly substeps (12 substeps per year). As in MAGICC7, atmospheric
 //!    CO2 evolves within the year from the other carbon sources and the ocean
 //!    uptake, so the uptake responds to the rising concentration.
 //!    Up to `concentration_switch_year` it is instead interpolated linearly to
 //!    `Prescribed Atmospheric Concentrations|CO2`.
 //!
+//! Biosphere CO2 emissions are part of the net atmosphere to land flux, as in `CO2Budget`.
+//!
 //! # Inputs
 //!
-//! - `Atmospheric Concentrations|CO2` (ppm) - Concentration at the start of the year
-//! - `Surface Air Temperature Change` (K) - Drives the pCO2 feedback through the warming
-//!   since `temperature_feedback_start_year`, floored at zero
-//! - `Emissions|CO2|Fossil` (GtC/yr) - Fossil and industrial emissions
-//! - `Emissions|CO2|CH4 Oxidation` (GtC/yr) - CO2 from oxidised fossil CH4
-//! - `Net Atmosphere to Land Flux|CO2` (GtC/yr) - Net land uptake, including land use
 //! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `include_permafrost` parameter
-//!
-//! # States (tracked between steps)
-//!
-//! - `Ocean Surface Partial Pressure|CO2` (ppm) - Ocean surface CO2 partial pressure
-//! - `Cumulative Carbon Uptake|Ocean` (GtC) - Total carbon absorbed by ocean
-//!
-//! # Outputs
-//!
-//! - `Net Atmosphere to Ocean Flux|CO2` (GtC/yr) - Annual mean air-sea flux (positive = ocean uptake)
-//! - `Ocean Carbon Atmospheric Concentrations|CO2` (ppm) - Concentration after the last substep,
-//!   which `CO2Budget` carries into the next year
+//! - `Prescribed Atmospheric Concentrations|CO2` (ppm), only with the `concentration_switch_year` parameter
 //!
 //! # Differences from MAGICC7
 //!
-//! - **Three IRF models**: 3D-GFDL (default), 2D-BERN, and HILDA are
+//! - **Three IRF methods**: 3D-GFDL (default), 2D-BERN, and HILDA are
 //!   implemented. MAGICC7 also supports BOXDIFF.
-//! - **No radiative-only mode**: MAGICC7 can make ocean "see" only PI CO2.
+//! - **No radiative-only mode**: MAGICC7 can make the ocean "see" only pre-industrial CO2.
 //!   Not implemented.
 //! - **No biological pump**: Only abiotic chemistry is represented.
-//! - **No circulation changes**: IRF is static, doesn't respond to warming.
+//! - **No circulation changes**: the IRF is static and does not respond to warming.
 
 use rscm_core::names::{ATMOSPHERIC_CONCENTRATIONS_CO2, EMISSIONS_CO2_PERMAFROST};
 use std::any::Any;
@@ -120,22 +106,23 @@ pub struct OceanStepResult {
     pub co2: FloatValue,
 }
 
+/// Ocean carbon cycle component.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "ocean", "magicc"], category = "Carbon Cycle")]
 #[inputs(
-    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
-    temperature { name = "Surface Air Temperature Change", unit = "K" },
-    fossil_emissions { name = "Emissions|CO2|Fossil", unit = "GtC/yr" },
-    ch4_oxidation { name = "Emissions|CO2|CH4 Oxidation", unit = "GtC/yr" },
-    terrestrial_flux { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr" },
+    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm", description = "Atmospheric CO2 concentration at the start of the year" },
+    temperature { name = "Surface Air Temperature Change", unit = "K", description = "Drives the pCO2 feedback through the warming since `temperature_feedback_start_year`, floored at zero" },
+    fossil_emissions { name = "Emissions|CO2|Fossil", unit = "GtC/yr", description = "Fossil CO2 emissions over the step, which raise CO2 within the year" },
+    ch4_oxidation { name = "Emissions|CO2|CH4 Oxidation", unit = "GtC/yr", description = "CO2 from oxidised fossil CH4 over the step" },
+    terrestrial_flux { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr", description = "Net atmosphere to land flux over the step, positive for uptake" },
 )]
 #[states(
-    ocean_pco2 { name = "Ocean Surface Partial Pressure|CO2", unit = "ppm" },
-    cumulative_uptake { name = "Cumulative Carbon Uptake|Ocean", unit = "GtC" },
+    ocean_pco2 { name = "Ocean Surface Partial Pressure|CO2", unit = "ppm", description = "Ocean surface CO2 partial pressure at the end of the step" },
+    cumulative_uptake { name = "Cumulative Carbon Uptake|Ocean", unit = "GtC", description = "Total carbon absorbed by the ocean by the end of the step" },
 )]
 #[outputs(
-    air_sea_flux { name = "Net Atmosphere to Ocean Flux|CO2", unit = "GtC/yr" },
-    co2_end_of_year { name = "Ocean Carbon Atmospheric Concentrations|CO2", unit = "ppm" },
+    air_sea_flux { name = "Net Atmosphere to Ocean Flux|CO2", unit = "GtC/yr", description = "Mean air-sea flux over the step, positive for ocean uptake" },
+    co2_end_of_year { name = "Ocean Carbon Atmospheric Concentrations|CO2", unit = "ppm", description = "Atmospheric CO2 after the last substep, which `CO2Budget` carries into the next year" },
 )]
 pub struct OceanCarbon {
     parameters: OceanCarbonParameters,

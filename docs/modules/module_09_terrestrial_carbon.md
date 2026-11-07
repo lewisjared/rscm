@@ -229,14 +229,14 @@ is subtracted from both the plant pool and the no-feedback plant pool.
 
 ## Inputs and outputs
 
-| Input                       | RSCM variable                   | Units  | Fortran variable                       |
+| Input                       | RSCM variable                   | Unit   | Fortran variable                       |
 | --------------------------- | ------------------------------- | ------ | -------------------------------------- |
 | CO2 concentration           | `Atmospheric Concentrations|CO2` | ppm    | `DAT_CO2_CONC`                         |
 | Feedback temperature        | `Surface Air Temperature Change`           | K      | `FEEDBACK_TEMPERATURE` (argument)      |
 | Land-use CO2 emissions      | `Emissions|CO2|Biosphere`       | GtC/yr | `DAT_CO2B_EMIS`, `DAT_CO2B_CUMEMIS`    |
 | Nitrogen limitation factor  | (internal, with `nitrogen`)     | 1      | `NCYCLE_LIMIT_FACTOR`                  |
 
-| Output or state             | RSCM variable                          | Units  | Fortran variable                  |
+| Output or state             | RSCM variable                          | Unit   | Fortran variable                  |
 | --------------------------- | -------------------------------------- | ------ | --------------------------------- |
 | Plant, detritus, soil pools | `Carbon Pool|Plant`, `Carbon Pool|Detritus`, `Carbon Pool|Soil` | GtC    | `CO2_PLANT_POOL`, `CO2_DETRITUS_POOL`, `CO2_SOIL_POOL` |
 | Net land uptake             | `Net Atmosphere to Land Flux|CO2`              | GtC/yr | `CO2_DELTA_TERRPOOLS`             |
@@ -257,7 +257,7 @@ Defaults are MAGICC7 v7.5.3's `MAGCFG_DEFAULTALL.CFG`, which the RSCM defaults m
 
 ### Initial pools and fluxes
 
-| Parameter                  | Units  | Default  | Description                                  |
+| Parameter                  | Unit   | Default  | Description                                  |
 | -------------------------- | ------ | -------- | -------------------------------------------- |
 | `CO2_PLANTPOOL_INITIAL`    | GtC    | 884.8584 | Pre-industrial plant pool $C_{P,0}$          |
 | `CO2_DETRITUSPOOL_INITIAL` | GtC    | 92.7738  | Pre-industrial detritus pool $C_{D,0}$       |
@@ -267,7 +267,7 @@ Defaults are MAGICC7 v7.5.3's `MAGCFG_DEFAULTALL.CFG`, which the RSCM defaults m
 
 ### CO2 fertilisation parameters
 
-| Parameter                      | Units | Default   | Description                                            |
+| Parameter                      | Unit  | Default   | Description                                            |
 | ------------------------------ | ----- | --------- | ------------------------------------------------------ |
 | `CO2_FERTILIZATION_FACTOR`     | 1     | 0.6485981 | $\beta_0$                                              |
 | `CO2_FERTILIZATION_FACTOR2`    | ppm   | 100.0     | Sigmoid curvature $B$                                  |
@@ -278,7 +278,7 @@ Defaults are MAGICC7 v7.5.3's `MAGCFG_DEFAULTALL.CFG`, which the RSCM defaults m
 
 ### Temperature feedback parameters
 
-| Parameter                        | Units | Default    | Rate it scales                  |
+| Parameter                        | Unit  | Default    | Rate it scales                  |
 | -------------------------------- | ----- | ---------- | ------------------------------- |
 | `CO2_TEMPFEEDBACK_SWITCH`        | flag  | 1          | 0 turns all four factors off    |
 | `CO2_TEMPFEEDBACK_YRSTART`       | year  | 1900       | Reference year for $\Delta T$   |
@@ -321,7 +321,7 @@ The soil share of NPP, $f_S = 1 - f_P - f_D$, is derived.
 `TERRCARBON2` runs once per year, called from `MAGICC7.f90`.
 Steps that only evaluate an equation above are named, not repeated.
 
-1. Extrapolate CO2 to mid-year from the last three annual values:
+1. Extrapolate CO2 to mid-year from its values at the last three time bounds:
    $CO_2 = \left(3\,CO_2(t-2) - 10\,CO_2(t-1) + 15\,CO_2(t)\right)/8$.
    The indices are floored at the first year.
 2. Set the fertilisation reference.
@@ -391,7 +391,7 @@ Steps that only evaluate an equation above are named, not repeated.
 - `run_magicc7` maps `CO2_TEMPFEEDBACK_SWITCH = 0` to zero sensitivities.
 - RSCM adds guards: the fertilisation factor is floored at 0.1, turnover times at one year,
   and all three pools at zero.
-  The parity tests match MAGICC7 to 1e-9, so the guards do not bind in those runs.
+  The parity tests agree with MAGICC7 to 1e-9, so the guards do not bind in those runs.
 
 ## References
 

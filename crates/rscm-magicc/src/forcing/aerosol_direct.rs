@@ -1,26 +1,35 @@
-//! Aerosol Direct Radiative Forcing Component
+//! Aerosol direct effective radiative forcing component
 //!
-//! Calculates radiative forcing from aerosol particles that directly interact
-//! with solar radiation through scattering (cooling) and absorption (warming).
+//! Calculates the effective radiative forcing (ERF) from aerosol particles that interact directly
+//! with solar radiation, by scattering (cooling) or absorption (warming).
+//! Each species contributes in proportion to its emissions above pre-industrial levels,
+//! with a species-specific radiative efficiency.
 //!
 //! # What This Component Does
 //!
-//! 1. Calculates forcing from sulfate aerosols (SOx) - cooling via scattering
-//! 2. Calculates forcing from black carbon (BC) - warming via absorption
-//! 3. Calculates forcing from organic carbon (OC) - cooling via scattering
-//! 4. Calculates forcing from nitrate aerosols (from NOx) - cooling via scattering
-//! 5. Distributes total forcing across four regional boxes
+//! 1. Calculates ERF from sulfate aerosols (SOx), which cool by scattering
+//! 2. Calculates ERF from black carbon (BC), which warms by absorption
+//! 3. Calculates ERF from organic carbon (OC), which cools by scattering
+//! 4. Calculates ERF from nitrate aerosols (from NOx), which cool by scattering
+//! 5. Distributes the total ERF across the four-box grid
 //!
-//! # Inputs
+//! # ERF Calculation
 //!
-//! - `Emissions|SOx` (Mt S/yr) - Sulfur dioxide emissions
-//! - `Emissions|BC` (Mt BC/yr) - Black carbon emissions
-//! - `Emissions|OC` (Mt OC/yr) - Organic carbon emissions
-//! - `Emissions|NOx` (Mt N/yr) - NOx emissions (for nitrate formation)
+//! For each species $i$:
 //!
-//! # Outputs
+//! $$\Delta E_i = E_i - E_{i,pi}$$
+//! $$ERF_i = \alpha_i \cdot \Delta E_i$$
 //!
-//! - `Effective Radiative Forcing|Aerosols|Direct Effect` (W/m², FourBox) - Regional direct aerosol forcing
+//! The global ERF is the sum of the species contributions.
+//!
+//! # Regional Distribution
+//!
+//! The global ERF is distributed across the four regions using emission-weighted
+//! regional patterns:
+//!
+//! $$ERF_{region} = ERF_{global} \cdot \sum_i w_{i,region} \cdot |ERF_i| / \sum_i |ERF_i|$$
+//!
+//! This weights the regional pattern by each species' share of the total ERF magnitude.
 //!
 //! # Differences from MAGICC7
 //!
@@ -29,13 +38,13 @@
 //! - **Source separation**: MAGICC7 separates industrial and biomass sources for
 //!   each species with different treatment. Here, all sources are combined.
 //! - **Optical thickness**: MAGICC7 can use historical optical thickness data
-//!   and extrapolate with emissions. Here, forcing scales linearly with emissions.
+//!   and extrapolate with emissions. Here, ERF scales linearly with emissions.
 //! - **Dust and BC on snow**: MAGICC7 includes mineral dust and BC-on-snow forcing.
 //!   Not implemented here.
-//! - **Harmonisation modes**: MAGICC7 has multiple harmonisation modes (APPLY=0,1,2,3).
-//!   Here, only simple scaling to target is implemented.
-//! - **Nitrate chemistry**: MAGICC7 uses Hauglustaine parameterisation with
-//!   SOx-ammonia competition. Here, nitrate forcing scales linearly with NOx.
+//! - **Harmonisation**: MAGICC7 has several harmonisation methods (APPLY=0,1,2,3).
+//!   The harmonisation parameters exist here but are not applied yet.
+//! - **Nitrate chemistry**: MAGICC7 uses the Hauglustaine parameterisation with
+//!   SOx-ammonia competition. Here, nitrate ERF scales linearly with NOx.
 //! - **Efficacy**: MAGICC7 applies species-specific efficacy factors.
 //!   Not implemented here.
 
@@ -49,40 +58,17 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// Aerosol direct radiative forcing component
-///
-/// Calculates direct aerosol forcing from emissions of SOx, BC, OC, and NOx.
-/// Each species contributes to forcing proportional to its emissions above
-/// pre-industrial levels, with species-specific radiative efficiencies.
-///
-/// # Forcing Calculation
-///
-/// For each species $i$:
-///
-/// $$\Delta E_i = E_i - E_{i,pi}$$
-/// $$RF_i = \alpha_i \cdot \Delta E_i$$
-///
-/// Total global forcing is the sum of species contributions.
-///
-/// # Regional Distribution
-///
-/// The global forcing is distributed across four boxes using emission-weighted
-/// regional patterns:
-///
-/// $$RF_{region} = RF_{global} \cdot \sum_i w_{i,region} \cdot |RF_i| / \sum_i |RF_i|$$
-///
-/// This weights the regional pattern by each species' contribution to total
-/// forcing magnitude.
+/// Aerosol direct effective radiative forcing component.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["forcing", "aerosol", "direct", "magicc"], category = "Radiative Forcing")]
 #[inputs(
-    sox_emissions { name = "Emissions|SOx", unit = "Mt S/yr" },
-    bc_emissions { name = "Emissions|BC", unit = "Mt BC/yr" },
-    oc_emissions { name = "Emissions|OC", unit = "Mt OC/yr" },
-    nox_emissions { name = "Emissions|NOx", unit = "Mt N/yr" },
+    sox_emissions { name = "Emissions|SOx", unit = "Mt S/yr", description = "Sulfur dioxide emissions over the step" },
+    bc_emissions { name = "Emissions|BC", unit = "Mt BC/yr", description = "Black carbon emissions over the step" },
+    oc_emissions { name = "Emissions|OC", unit = "Mt OC/yr", description = "Organic carbon emissions over the step" },
+    nox_emissions { name = "Emissions|NOx", unit = "Mt N/yr", description = "NOx emissions over the step, the precursor of nitrate aerosol" },
 )]
 #[outputs(
-    direct_erf { name = "Effective Radiative Forcing|Aerosols|Direct Effect", unit = "W/m^2", grid = "four_box" },
+    direct_erf { name = "Effective Radiative Forcing|Aerosols|Direct Effect", unit = "W/m^2", grid = "four_box", description = "Direct aerosol ERF in each region" },
 )]
 pub struct AerosolDirect {
     parameters: AerosolDirectParameters,

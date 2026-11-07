@@ -82,7 +82,7 @@ It also accumulates them in `CO2I_INVERSE_CUMEMIS`.
 
 ## State variables
 
-| Variable                     | Fortran name            | Units  | Initial value            |
+| Variable                     | Fortran name            | Unit   | Initial value            |
 | ---------------------------- | ----------------------- | ------ | ------------------------ |
 | Atmospheric CO2              | `DAT_CO2_CONC%DATGLOBE` | ppm    | From the input file      |
 | Atmospheric CO2 pool         | `CO2_ATMOS_POOL`        | GtC    | $\gamma C$               |
@@ -94,7 +94,7 @@ It also accumulates them in `CO2I_INVERSE_CUMEMIS`.
 
 ## Inputs and outputs
 
-| Direction | Variable                          | Units  | Source or destination      | Fortran variable                                   |
+| Direction | Variable                          | Unit   | Source or destination      | Fortran variable                                   |
 | --------- | --------------------------------- | ------ | -------------------------- | -------------------------------------------------- |
 | Input     | Fossil CO2 emissions              | GtC/yr | Emissions                  | `DAT_CO2I_EMIS%DATGLOBE`                           |
 | Input     | Fossil CO2 including CH4 oxidation | GtC/yr | CH4 module                | `DAT_CO2I_INCLCH4OX_EMIS%DATGLOBE`                 |
@@ -112,7 +112,7 @@ It also accumulates them in `CO2I_INVERSE_CUMEMIS`.
 
 The ocean parameters are on the [ocean carbon](module_10_ocean_carbon.md#parameters) page.
 
-| Parameter                 | Fortran name                    | Units | Default | Description                                           |
+| Parameter                 | Fortran name                    | Unit  | Default | Description                                           |
 | ------------------------- | ------------------------------- | ----- | ------- | ----------------------------------------------------- |
 | Switch year               | `CO2_SWITCHFROMCONC2EMIS_YEAR`  | year  | 2015    | Last year of prescribed concentrations                |
 | Preindustrial CO2         | `CO2_PREINDCO2CONC`             | ppm   | 278.0   | Preindustrial reference concentration                 |

@@ -1,0 +1,90 @@
+{
+  "name": "AerosolIndirect",
+  "slug": "magicc-aerosolindirect",
+  "reference_model": "MAGICC7",
+  "module_path": "rscm_magicc::forcing::aerosol_indirect",
+  "language": "rust",
+  "description": "Calculates the effective radiative forcing (ERF) of the cloud albedo effect from aerosol emissions,\nfollowing a simplified version of MAGICC7.\nA logarithmic relationship between aerosol burden and ERF reflects the saturation of CCN effects\nat high aerosol loadings.\n\n# What This Component Does\n\n1. Calculates an aerosol burden from SOx and OC emissions (primary CCN sources)\n2. Applies a logarithmic relationship to the cloud droplet number concentration\n3. Computes the cloud albedo effect ERF (first indirect effect)\n\n# Formulation\n\nThe ERF is calculated as:\n\n$$ERF = \\alpha \\cdot \\ln\\left(1 + \\frac{B - B_{pi}}{B_0}\\right)$$\n\nwhere:\n- $\\alpha$ is the cloud albedo coefficient (negative, cooling)\n- $B = w_{SOx} \\cdot E_{SOx} + w_{OC} \\cdot E_{OC}$ is the aerosol burden proxy\n- $B_{pi}$ is the pre-industrial burden\n- $B_0$ is a reference burden scale\n\nThe logarithmic form captures the saturation of the CCN effect: doubling\naerosol from low levels has a larger effect than doubling from high levels.\n\n# Physical Interpretation\n\nMore aerosols provide more cloud condensation nuclei (CCN), which leads to:\n1. More cloud droplets per unit water content\n2. Smaller droplet sizes\n3. Higher cloud reflectivity (albedo)\n4. Negative (cooling) ERF\n\n# Differences from MAGICC7\n\nThis is a simplified implementation:\n\n- **Species weights**: MAGICC7 uses detailed species weights for CCN contribution\n  (SOx, OC, BC, nitrate, sea salt with different industrial/biomass/natural splits).\n  Here, only SOx and OC are considered as the dominant CCN sources.\n- **Regional patterns**: MAGICC7 applies detailed regional forcing patterns from\n  Hansen et al. (2005). Here, the ERF is scalar (global mean).\n- **Cloud lifetime effect**: MAGICC7 has separate cloud albedo and lifetime\n  effect parameters. Here, only the cloud albedo effect is implemented\n  (the lifetime effect is often set to zero in default configurations anyway).\n- **Optical thickness proxy**: MAGICC7 uses aerosol optical thickness as a proxy\n  for particle number. Here, emissions are used directly.\n- **CDNC parameterisation**: MAGICC7 uses log10(aerosol number index).\n  Here, a simpler ln(1 + B/B0) relationship is used.\n- **Normalisation**: MAGICC7 normalises to a specific year with complex\n  sector handling. Here, the ERF is relative to pre-industrial emissions.\n  The harmonisation parameters exist but are not applied yet.",
+  "category": "Radiative Forcing",
+  "tags": [
+    "forcing",
+    "aerosol",
+    "indirect",
+    "cloud",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "sox_emissions",
+      "name": "Emissions|SOx",
+      "unit": "Mt S/yr",
+      "grid": "scalar",
+      "description": "Sulfur dioxide emissions over the step, the primary CCN source"
+    },
+    {
+      "rust_name": "oc_emissions",
+      "name": "Emissions|OC",
+      "unit": "Mt OC/yr",
+      "grid": "scalar",
+      "description": "Organic carbon emissions over the step, a secondary CCN source"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "indirect_erf",
+      "name": "Effective Radiative Forcing|Aerosols|Indirect Effect",
+      "unit": "W/m^2",
+      "grid": "scalar",
+      "description": "Global mean ERF of the cloud albedo effect"
+    }
+  ],
+  "states": [],
+  "parameters": [
+    {
+      "name": "cloud_albedo_coefficient",
+      "type": "f64",
+      "description": "Cloud albedo effect coefficient.\n\nunit: W/m^2\n\nSets the strength of the first indirect effect.\nNegative (cooling) because more aerosol increases cloud albedo.\n\nDefault: -1.0 W/m² (calibrated to AR6 central estimate)"
+    },
+    {
+      "name": "reference_burden",
+      "type": "f64",
+      "description": "Reference aerosol burden for the logarithmic scaling.\n\nunit: Tg/yr\n\nAt this burden $\\ln(1 + B/B_0) = \\ln(2)$, so the ERF equals the coefficient.\n\nDefault: 50.0 Tg/yr"
+    },
+    {
+      "name": "sox_weight",
+      "type": "f64",
+      "description": "SOx weight in the aerosol burden.\n\nunit: dimensionless\n\nSOx is a primary CCN source and contributes strongly to indirect effects.\n\nDefault: 1.0 (emissions used directly)"
+    },
+    {
+      "name": "oc_weight",
+      "type": "f64",
+      "description": "OC weight in the aerosol burden.\n\nunit: dimensionless\n\nOC contributes to CCN, but less effectively than sulfate per unit mass.\n\nDefault: 0.3 (30% as effective as SOx per mass)"
+    },
+    {
+      "name": "sox_pi",
+      "type": "f64",
+      "description": "Pre-industrial SOx emissions\n\nunit: Mt S/yr\n\nDefault: 1.0 Mt S/yr"
+    },
+    {
+      "name": "oc_pi",
+      "type": "f64",
+      "description": "Pre-industrial OC emissions\n\nunit: Mt OC/yr\n\nDefault: 10.0 Mt OC/yr"
+    },
+    {
+      "name": "include_harmonisation",
+      "type": "bool",
+      "description": "Scale the ERF to a target value in a reference year.\n\nThe component does not apply it yet."
+    },
+    {
+      "name": "harmonisation_reference_year",
+      "type": "f64",
+      "description": "Reference year for harmonisation\n\nunit: yr\n\nDefault: 2019.0"
+    },
+    {
+      "name": "harmonisation_target",
+      "type": "f64",
+      "description": "Target ERF in the reference year.\n\nunit: W/m^2\n\n\nDefault: -0.89 W/m² (AR6 central estimate for cloud albedo effect)"
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/forcing/aerosol_indirect.rs"
+}

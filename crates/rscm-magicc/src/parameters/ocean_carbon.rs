@@ -9,13 +9,13 @@
 //! Response Function (IRF) approach to emulate the behaviour of complex 3D
 //! ocean models (GFDL, HILDA, BERN 2.5D, BOXDIFF).
 //!
-//! # Ocean Model Selection
+//! # Method Selection
 //!
-//! MAGICC7 supports four ocean carbon IRF models with runtime selection via
-//! `OCEANCC_MODEL`. Each model has different IRF functional forms, physical
+//! MAGICC7 supports four ocean carbon IRF methods with runtime selection via
+//! `OCEANCC_MODEL`. Each method has different IRF functional forms, physical
 //! parameters, and characteristic timescales. The default is 3D-GFDL.
 //!
-//! The IRF form varies by model and time regime:
+//! The IRF form varies by method and time regime:
 //! - **3D-GFDL**: Polynomial (pre-switch, first year) + exponential sum (post-switch)
 //! - **2D-BERN**: Exponential sum for both regimes (switch at 9.9 years)
 //! - **HILDA**: Exponential sum for both regimes (switch at 2.0 years)
@@ -161,109 +161,122 @@ pub struct OceanCarbonParameters {
     /// Ocean carbon method (MAGICC7 `OCEANCC_MODEL`).
     ///
     /// This field is informational only: it does not select the
-    /// corresponding IRF coefficients or physical parameters. Use the named
-    /// constructors (`gfdl_3d()`, `bern_2d()`, `hilda()`) to get a
-    /// self-consistent parameter set for a given method. Setting only this
-    /// field via serde partial deserialisation leaves the IRF parameters
-    /// at their 3D-GFDL defaults regardless of the variant chosen.
-    ///
-    /// default: "3D-GFDL"
+    /// corresponding IRF coefficients or physical parameters.
+    /// Use the named constructors (`gfdl_3d()`, `bern_2d()`, `hilda()`) to get a
+    /// self-consistent parameter set for a given method.
+    /// Setting only this field leaves the IRF parameters at their 3D-GFDL defaults.
     pub method: OceanCarbonMethod,
 
-    /// Pre-industrial atmospheric CO2 (ppm).
-    /// default: 278.0
-    /// MAGICC7: CO2_PREINDCO2CONC
+    /// Pre-industrial atmospheric CO2 concentration (MAGICC7 `CO2_PREINDCO2CONC`)
+    ///
+    /// unit: ppm
     pub co2_pi: FloatValue,
 
-    /// Pre-industrial ocean surface pCO2 (ppm).
-    /// When unset, the initial `Ocean Surface Partial Pressure|CO2` is used, matching MAGICC7,
-    /// which takes the first-year atmospheric concentration.
-    /// default: None
+    /// Pre-industrial ocean surface pCO2.
+    ///
+    /// unit: ppm
+    ///
+    /// When unset, the initial `Ocean Surface Partial Pressure|CO2` is used.
+    /// MAGICC7 takes the first-year atmospheric concentration.
     pub pco2_pi: Option<FloatValue>,
 
-    /// Gas exchange rate scaling factor (dimensionless).
-    /// Corresponds to MAGICC7 OCEANCC_SCALE_GASXCHANGE.
-    /// default: 1.833492
+    /// Gas exchange rate scaling factor (MAGICC7 `OCEANCC_SCALE_GASXCHANGE`)
+    ///
+    /// unit: dimensionless
     pub gas_exchange_scale: FloatValue,
 
-    /// Gas exchange timescale (years).
-    /// Model-dependent characteristic time for air-sea equilibration.
+    /// Characteristic time for air-sea equilibration, which depends on the method
+    ///
+    /// unit: yr
     pub gas_exchange_tau: FloatValue,
 
-    /// Temperature sensitivity of pCO2 (K^-1).
-    /// Joos A25 exponent. Corresponds to MAGICC7 OCEANCC_TEMPFEEDBACK.
-    /// default: 0.03717879
+    /// Temperature sensitivity of pCO2, the Joos A25 exponent (MAGICC7 `OCEANCC_TEMPFEEDBACK`)
+    ///
+    /// unit: K^-1
     pub temperature_sensitivity: FloatValue,
 
-    /// IRF scaling factor (dimensionless).
-    /// Corresponds to MAGICC7 OCEANCC_SCALE_IMPULSERESPONSE.
-    /// default: 0.9492864
+    /// IRF scaling factor (MAGICC7 `OCEANCC_SCALE_IMPULSERESPONSE`)
+    ///
+    /// unit: dimensionless
     pub irf_scale: FloatValue,
 
-    /// Mixed layer depth (m). Model-dependent.
+    /// Mixed layer depth, which depends on the method
+    ///
+    /// unit: m
     pub mixed_layer_depth: FloatValue,
 
-    /// Ocean surface area (m^2). Model-dependent.
+    /// Ocean surface area, which depends on the method
+    ///
+    /// unit: m^2
     pub ocean_surface_area: FloatValue,
 
-    /// Pre-industrial sea surface temperature (Celsius). Model-dependent.
-    /// Used in pCO2-DIC polynomial calculation (Joos A24).
+    /// Pre-industrial sea surface temperature for the Joos A24 pCO2-DIC polynomial.
+    ///
+    /// unit: degC
+    ///
+    /// It depends on the method.
     pub sst_pi: FloatValue,
 
-    /// Number of substeps per year.
-    /// MAGICC7 uses monthly stepping (12) for stability.
-    /// default: 12
+    /// Substeps per year, 12 (monthly) by default as in MAGICC7
     pub steps_per_year: usize,
 
     /// Maximum flux history length in substeps.
-    /// Limits memory usage for IRF convolution (6000 monthly substeps = 500 years).
-    /// default: 6000
+    ///
+    /// Limits memory for the IRF convolution.
+    /// 6000 monthly substeps are 500 years.
     pub maximum_history_months: usize,
 
-    /// IRF switch time (years).
-    /// Time at which to switch from early to late IRF form.
+    /// Time at which the IRF switches from its early to its late form
+    ///
+    /// unit: yr
     pub irf_switch_time: FloatValue,
 
-    /// IRF form for the early regime (before switch time).
+    /// IRF form for the early regime, before the switch time
     pub irf_early: IRFForm,
 
-    /// IRF form for the late regime (after switch time).
+    /// IRF form for the late regime, after the switch time
     pub irf_late: IRFForm,
 
-    /// Joos A24 polynomial offsets.
+    /// Joos A24 polynomial offsets
     pub delta_ospp_offsets: [FloatValue; 5],
 
-    /// Joos A24 polynomial coefficients (temperature-dependent).
+    /// Joos A24 polynomial temperature coefficients
     pub delta_ospp_coefficients: [FloatValue; 5],
 
-    /// Enable temperature feedback on pCO2.
-    /// default: true
-    /// MAGICC7: CO2_TEMPFEEDBACK_SWITCH
+    /// Apply the temperature feedback on pCO2 (MAGICC7 `CO2_TEMPFEEDBACK_SWITCH`)
     pub include_temperature_feedback: bool,
 
-    /// Year from which warming drives the pCO2 temperature feedback
-    /// (`CO2_TEMPFEEDBACK_YRSTART`). The feedback uses the warming since this
-    /// year, floored at zero.
-    /// default: 1900.0
+    /// Year from which warming drives the pCO2 temperature feedback (MAGICC7 `CO2_TEMPFEEDBACK_YRSTART`).
+    ///
+    /// unit: yr
+    ///
+    /// The feedback uses the warming since this year, floored at zero.
     pub temperature_feedback_start_year: FloatValue,
 
-    /// Largest change in air-sea flux between substeps (ppm/yr).
-    /// MAGICC7 applies this limiter for stability. A non-positive value disables it.
-    /// default: 0.04
+    /// Largest change in air-sea flux between substeps.
+    ///
+    /// unit: ppm/yr
+    ///
+    /// MAGICC7 applies this limiter for stability.
+    /// A non-positive value disables it.
     pub flux_change_limit: FloatValue,
 
-    /// Conversion factor: GtC per ppm CO2. Must match `CO2Budget`.
-    /// default: 2.123
+    /// Conversion factor from atmospheric carbon mass to CO2 concentration, which must agree with `CO2Budget`
+    ///
+    /// unit: GtC/ppm
     pub gtc_per_ppm: FloatValue,
 
-    /// Add `Emissions|CO2|Permafrost` to the other sources. Must match `CO2Budget`.
-    /// MAGICC7: PF_APPLY
-    /// default: false
+    /// Add `Emissions|CO2|Permafrost` to the other sources (MAGICC7 `PF_APPLY`).
+    ///
+    /// Must agree with `CO2Budget`.
     pub include_permafrost: bool,
 
-    /// Last year of prescribed CO2, interpolated within the year's substeps.
-    /// Must match `CO2Budget`.
-    /// MAGICC7: CO2_SWITCHFROMCONC2EMIS_YEAR
+    /// Last year of prescribed CO2, interpolated within the year's substeps
+    /// (MAGICC7 `CO2_SWITCHFROMCONC2EMIS_YEAR`).
+    ///
+    /// unit: yr
+    ///
+    /// Must agree with `CO2Budget`.
     pub concentration_switch_year: Option<FloatValue>,
 }
 

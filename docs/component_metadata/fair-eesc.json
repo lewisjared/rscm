@@ -1,0 +1,46 @@
+{
+  "name": "EESC",
+  "slug": "fair-eesc",
+  "reference_model": "FaIR",
+  "variables_from_parameters": true,
+  "module_path": "rscm_fair::eesc",
+  "language": "rust",
+  "description": "Calculates equivalent effective stratospheric chlorine from the concentrations of\nozone-depleting halogens, weighting bromine by its greater ozone depletion potency.\n\n$$EESC = \\sum_h \\Big(n_{Cl,h} C_h \\frac{f_h}{f_{11}}\n  + \\beta\\, n_{Br,h} C_h \\frac{f_h}{f_{11}}\\Big) f_{11}$$\n\nover halogens $h$ with concentration $C_h$, chlorine and bromine atoms $n$,\nfractional release $f$ (CFC-11's is $f_{11}$) and bromine potency $\\beta$.\nHalogens with a missing concentration are skipped.\n\n# Inputs\n\n- Each halogen's `concentration`, in its `unit`.\n  rscm.fair passes each `cfc-11` and `other halogen` species,\n  such as `Atmospheric Concentrations|CFC11` in ppt.\n\n# Outputs\n\n- The equivalent effective stratospheric chlorine named by `output`, in `unit` (ppt by default).\n  Its default name is `Equivalent Effective Stratospheric Chlorine`.",
+  "category": "Atmospheric Chemistry",
+  "tags": [
+    "chemistry",
+    "halogens",
+    "fair"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "halogens",
+      "type": "Vec<Halogen>",
+      "description": "Ozone-depleting halogens."
+    },
+    {
+      "name": "cfc11_fractional_release",
+      "type": "FloatValue",
+      "description": "Fraction of CFC-11 released in the stratosphere (FaIR `fractional_release` of CFC-11)."
+    },
+    {
+      "name": "br_cl_ratio",
+      "type": "FloatValue",
+      "description": "Ozone depletion potency of bromine relative to chlorine (FaIR `br_cl_ods_potential`)."
+    },
+    {
+      "name": "output",
+      "type": "String",
+      "description": "Name of the equivalent effective stratospheric chlorine output."
+    },
+    {
+      "name": "unit",
+      "type": "String",
+      "description": "Unit of the equivalent effective stratospheric chlorine output."
+    }
+  ],
+  "source_file": "crates/rscm-fair/src/eesc.rs"
+}

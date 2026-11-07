@@ -151,7 +151,7 @@ The bracketing is MAGICC7's order of operations.
 
 ## Inputs and outputs
 
-| Input                    | Units  | Fortran variable                              |
+| Input                    | Unit   | Fortran variable                              |
 | ------------------------ | ------ | --------------------------------------------- |
 | Species emissions        | kt/yr  | `DAT_FGAS_EMIS(i)`, `DAT_MHALO_EMIS(i)`       |
 | Prescribed concentrations | ppt   | `DAT_FGAS_CONC(i)`, `DAT_MHALO_CONC(i)`, up to the switch year |
@@ -159,7 +159,7 @@ The bracketing is MAGICC7's order of operations.
 | Warming                  | K      | `TEMP_MERIDIONALFLUX`                         |
 | Fossil CO2 emissions     | GtC/yr | `DAT_CO2I_EMIS`, for the F-gas pattern        |
 
-| Output                         | Units      | Fortran variable                         |
+| Output                         | Unit       | Fortran variable                         |
 | ------------------------------ | ---------- | ---------------------------------------- |
 | Species concentrations         | ppt        | `DAT_FGAS_CONC(i)`, `DAT_MHALO_CONC(i)`  |
 | Species forcing                | W/m²       | `DAT_FGAS_RF(i)`, `DAT_MHALO_RF(i)`      |
@@ -232,7 +232,7 @@ Montreal Protocol gases (`MHALO_*`):
 
 ### Global parameters
 
-| Parameter                                                         | Default | Units     | Description                                       |
+| Parameter                                                         | Default | Unit      | Description                                       |
 | ----------------------------------------------------------------- | ------- | --------- | ------------------------------------------------- |
 | `GEN_AIR_GRAMMPROMOL`                                             | 28.984  | g/mol     | Molar mass of air                                 |
 | `GEN_ATM_TOTMASS_1E21GRAMM`                                       | 5.133   | $10^{21}$ g | Mass of the atmosphere                          |
@@ -304,7 +304,7 @@ RSCM reproduces these unless the entry says otherwise.
 - **First F-gas year**: RSCM starts from $C_{pi}$, and `test_halocarbons` compares from the second year.
 - **Montreal Protocol pattern**: RSCM applies the lifetime-dependent pattern to F-gases only.
   The Montreal Protocol gases reach `ForcingAggregation` as global forcing spread by `RF_REGIONS_MHALO`,
-  and `test_coupled_run` matches MAGICC7's temperature that way.
+  and `test_coupled_run` reaches parity with MAGICC7's temperature that way.
 - **Holds**: RSCM has no `RF_FGAS_CONSTANTAFTERYR` or `RF_MHALO_CONSTANTAFTERYR`.
   The reference run sets both to 2105, its last year, so they have no effect there.
 - **Not in RSCM**: inverse emissions and the CFC-12 and HFC-134a equivalent concentrations.

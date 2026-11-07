@@ -1,0 +1,133 @@
+{
+  "name": "AerosolDirect",
+  "slug": "magicc-aerosoldirect",
+  "reference_model": "MAGICC7",
+  "module_path": "rscm_magicc::forcing::aerosol_direct",
+  "language": "rust",
+  "description": "Calculates the effective radiative forcing (ERF) from aerosol particles that interact directly\nwith solar radiation, by scattering (cooling) or absorption (warming).\nEach species contributes in proportion to its emissions above pre-industrial levels,\nwith a species-specific radiative efficiency.\n\n# What This Component Does\n\n1. Calculates ERF from sulfate aerosols (SOx), which cool by scattering\n2. Calculates ERF from black carbon (BC), which warms by absorption\n3. Calculates ERF from organic carbon (OC), which cools by scattering\n4. Calculates ERF from nitrate aerosols (from NOx), which cool by scattering\n5. Distributes the total ERF across the four-box grid\n\n# ERF Calculation\n\nFor each species $i$:\n\n$$\\Delta E_i = E_i - E_{i,pi}$$\n$$ERF_i = \\alpha_i \\cdot \\Delta E_i$$\n\nThe global ERF is the sum of the species contributions.\n\n# Regional Distribution\n\nThe global ERF is distributed across the four regions using emission-weighted\nregional patterns:\n\n$$ERF_{region} = ERF_{global} \\cdot \\sum_i w_{i,region} \\cdot |ERF_i| / \\sum_i |ERF_i|$$\n\nThis weights the regional pattern by each species' share of the total ERF magnitude.\n\n# Differences from MAGICC7\n\nThis is a simplified implementation:\n\n- **Source separation**: MAGICC7 separates industrial and biomass sources for\n  each species with different treatment. Here, all sources are combined.\n- **Optical thickness**: MAGICC7 can use historical optical thickness data\n  and extrapolate with emissions. Here, ERF scales linearly with emissions.\n- **Dust and BC on snow**: MAGICC7 includes mineral dust and BC-on-snow forcing.\n  Not implemented here.\n- **Harmonisation**: MAGICC7 has several harmonisation methods (APPLY=0,1,2,3).\n  The harmonisation parameters exist here but are not applied yet.\n- **Nitrate chemistry**: MAGICC7 uses the Hauglustaine parameterisation with\n  SOx-ammonia competition. Here, nitrate ERF scales linearly with NOx.\n- **Efficacy**: MAGICC7 applies species-specific efficacy factors.\n  Not implemented here.",
+  "category": "Radiative Forcing",
+  "tags": [
+    "forcing",
+    "aerosol",
+    "direct",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "sox_emissions",
+      "name": "Emissions|SOx",
+      "unit": "Mt S/yr",
+      "grid": "scalar",
+      "description": "Sulfur dioxide emissions over the step"
+    },
+    {
+      "rust_name": "bc_emissions",
+      "name": "Emissions|BC",
+      "unit": "Mt BC/yr",
+      "grid": "scalar",
+      "description": "Black carbon emissions over the step"
+    },
+    {
+      "rust_name": "oc_emissions",
+      "name": "Emissions|OC",
+      "unit": "Mt OC/yr",
+      "grid": "scalar",
+      "description": "Organic carbon emissions over the step"
+    },
+    {
+      "rust_name": "nox_emissions",
+      "name": "Emissions|NOx",
+      "unit": "Mt N/yr",
+      "grid": "scalar",
+      "description": "NOx emissions over the step, the precursor of nitrate aerosol"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "direct_erf",
+      "name": "Effective Radiative Forcing|Aerosols|Direct Effect",
+      "unit": "W/m^2",
+      "grid": "four_box",
+      "description": "Direct aerosol ERF in each region"
+    }
+  ],
+  "states": [],
+  "parameters": [
+    {
+      "name": "sox_coefficient",
+      "type": "f64",
+      "description": "SOx forcing coefficient.\n\nunit: W/m^2 per Mt S/yr\n\nNegative (cooling) because sulfate aerosols scatter incoming solar radiation.\n\nDefault: -0.0035 W/m²/(Mt S/yr), calibrated to the AR6 best estimate."
+    },
+    {
+      "name": "bc_coefficient",
+      "type": "f64",
+      "description": "Black carbon forcing coefficient.\n\nunit: W/m^2 per Mt BC/yr\n\nPositive (warming) because BC absorbs solar radiation.\n\nDefault: 0.0077 W/m²/(Mt BC/yr)"
+    },
+    {
+      "name": "oc_coefficient",
+      "type": "f64",
+      "description": "Organic carbon forcing coefficient.\n\nunit: W/m^2 per Mt OC/yr\n\nNegative (cooling) because OC mostly scatters radiation.\n\nDefault: -0.002 W/m²/(Mt OC/yr)"
+    },
+    {
+      "name": "nitrate_coefficient",
+      "type": "f64",
+      "description": "Nitrate forcing coefficient.\n\nunit: W/m^2 per Mt N/yr\n\nNegative (cooling) because nitrate aerosols scatter radiation.\n\nDefault: -0.001 W/m²/(Mt N/yr)"
+    },
+    {
+      "name": "sox_regional",
+      "type": "[f64;4]",
+      "description": "SOx regional pattern, as a fraction in each region of the four-box grid.\n\nunit: dimensionless\n\nThe default is concentrated in the Northern Hemisphere, especially over land."
+    },
+    {
+      "name": "bc_regional",
+      "type": "[f64;4]",
+      "description": "BC regional pattern, as a fraction in each region of the four-box grid.\n\nunit: dimensionless\n\nThe default is concentrated in the Northern Hemisphere."
+    },
+    {
+      "name": "oc_regional",
+      "type": "[f64;4]",
+      "description": "OC regional pattern, as a fraction in each region of the four-box grid.\n\nunit: dimensionless\n\nThe default is like SOx but more uniform."
+    },
+    {
+      "name": "nitrate_regional",
+      "type": "[f64;4]",
+      "description": "Nitrate regional pattern, as a fraction in each region of the four-box grid.\n\nunit: dimensionless\n\nThe default is concentrated in the Northern Hemisphere."
+    },
+    {
+      "name": "sox_pi",
+      "type": "f64",
+      "description": "Pre-industrial SOx emissions, from natural volcanic sources by default\n\nunit: Mt S/yr\n\nDefault: 1.0 Mt S/yr (natural volcanic)"
+    },
+    {
+      "name": "bc_pi",
+      "type": "f64",
+      "description": "Pre-industrial BC emissions, from biomass burning by default\n\nunit: Mt BC/yr\n\nDefault: 2.5 Mt BC/yr (biomass burning)"
+    },
+    {
+      "name": "oc_pi",
+      "type": "f64",
+      "description": "Pre-industrial OC emissions, from biomass burning by default\n\nunit: Mt OC/yr\n\nDefault: 10.0 Mt OC/yr (biomass burning)"
+    },
+    {
+      "name": "nox_pi",
+      "type": "f64",
+      "description": "Pre-industrial NOx emissions for nitrate, from natural sources by default\n\nunit: Mt N/yr\n\nDefault: 10.0 Mt N/yr (natural sources)"
+    },
+    {
+      "name": "include_harmonisation",
+      "type": "bool",
+      "description": "Scale the ERF to a target value in a reference year.\n\nWhen true, the ERF is scaled so that its value at `harmonisation_reference_year`\nequals `harmonisation_target`.\nThe component does not apply it yet."
+    },
+    {
+      "name": "harmonisation_reference_year",
+      "type": "f64",
+      "description": "Reference year for harmonisation\n\nunit: yr\n\nDefault: 2019.0"
+    },
+    {
+      "name": "harmonisation_target",
+      "type": "f64",
+      "description": "Target ERF in the reference year.\n\nunit: W/m^2\n\n\nDefault: -0.22 W/m² (AR6 central estimate for direct aerosol)"
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/forcing/aerosol_direct.rs"
+}
