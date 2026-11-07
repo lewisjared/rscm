@@ -27,8 +27,8 @@
 //! builder = TwoLayerBuilder.from_parameters({
 //!     "lambda0": 1.0,
 //!     "a": 0.0,
-//!     "efficacy": 1.0,
-//!     "eta": 0.7,
+//!     "deep_ocean_efficacy": 1.0,
+//!     "ocean_heat_transfer": 0.7,
 //!     "heat_capacity_surface": 8.0,
 //!     "heat_capacity_deep": 100.0,
 //! })
@@ -38,8 +38,8 @@
 //! model = (
 //!     ModelBuilder()
 //!     .with_time_axis(time_axis)
-//!     .with_rust_component(component)
-//!     .with_exogenous_variable("Effective Radiative Forcing", erf_timeseries)
+//!     .with_component(component)
+//!     .with_prescribed_variable("Effective Radiative Forcing", erf_timeseries)
 //!     .build()
 //! )
 //! model.run()

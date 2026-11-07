@@ -23,17 +23,17 @@ use crate::{Distribution, Error, Result};
 /// # Parameter Ordering
 ///
 /// Parameter order is **critical** - it determines the index mapping for parameter vectors
-/// used in sampling and optimization. The order is:
+/// used in sampling and optimisation. The order is:
 /// - Preserved from insertion order (fluent builder)
 /// - Preserved from IndexMap order (dict-based)
-/// - Available via `param_names()` for index lookups
+/// - Available via `parameter_names()` for index lookups
 ///
 /// # Sampling Methods
 ///
 /// - `sample_random(n)` - Simple random sampling from priors
 /// - `sample_lhs(n)` - Latin Hypercube Sampling for better parameter space coverage
 ///
-/// LHS is generally preferred for initialization as it provides more uniform exploration
+/// LHS is generally preferred for initialisation as it provides more uniform exploration
 /// of the parameter space with fewer samples.
 ///
 /// # Examples
@@ -43,20 +43,20 @@ use crate::{Distribution, Error, Result};
 /// use indexmap::IndexMap;
 ///
 /// // Fluent builder (recommended)
-/// let mut params = ParameterSet::new();
-/// params.add("sensitivity", Box::new(Uniform::new(0.5, 1.5).unwrap()));
-/// params.add("offset", Box::new(Normal::new(0.0, 0.1).unwrap()));
+/// let mut parameters = ParameterSet::new();
+/// parameters.add("sensitivity", Box::new(Uniform::new(0.5, 1.5).unwrap()));
+/// parameters.add("offset", Box::new(Normal::new(0.0, 0.1).unwrap()));
 ///
 /// // Sample initial parameter sets
-/// let random_samples = params.sample_random(100);  // 100 random samples
-/// let lhs_samples = params.sample_lhs(50);  // 50 LHS samples (better coverage)
+/// let random_samples = parameters.sample_random(100);  // 100 random samples
+/// let lhs_samples = parameters.sample_lhs(50);  // 50 LHS samples (better coverage)
 ///
 /// // Get parameter ordering
-/// let names = params.param_names();  // ["sensitivity", "offset"]
+/// let names = parameters.parameter_names();  // ["sensitivity", "offset"]
 ///
 /// // Evaluate log-prior for a parameter vector
 /// let params_vec = vec![1.0, 0.05];
-/// let log_prior = params.log_prior(&params_vec).unwrap();
+/// let log_prior = parameters.log_prior(&params_vec).unwrap();
 /// ```
 ///
 /// ```
@@ -67,7 +67,7 @@ use crate::{Distribution, Error, Result};
 /// let mut map = IndexMap::new();
 /// map.insert("x".to_string(), Box::new(Uniform::new(0.0, 1.0).unwrap()) as Box<dyn Distribution>);
 /// map.insert("y".to_string(), Box::new(Uniform::new(-1.0, 1.0).unwrap()) as Box<dyn Distribution>);
-/// let params = ParameterSet::from_map(map);
+/// let parameters = ParameterSet::from_map(map);
 /// ```
 #[derive(Serialize, Deserialize)]
 pub struct ParameterSet {
@@ -111,9 +111,9 @@ impl ParameterSet {
     /// ```
     /// use rscm_calibrate::{ParameterSet, Uniform, Normal};
     ///
-    /// let mut params = ParameterSet::new();
-    /// params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
-    /// params.add("y", Box::new(Normal::new(0.0, 1.0).unwrap()));
+    /// let mut parameters = ParameterSet::new();
+    /// parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+    /// parameters.add("y", Box::new(Normal::new(0.0, 1.0).unwrap()));
     /// ```
     pub fn add(
         &mut self,
@@ -127,7 +127,7 @@ impl ParameterSet {
     /// Get parameter names in definition order.
     ///
     /// The order matches the index used in parameter vectors.
-    pub fn param_names(&self) -> Vec<&str> {
+    pub fn parameter_names(&self) -> Vec<&str> {
         self.parameters.keys().map(|s| s.as_str()).collect()
     }
 
@@ -143,18 +143,18 @@ impl ParameterSet {
 
     /// Sample n parameter vectors randomly from the priors.
     ///
-    /// Returns an array of shape `(n, n_params)` where each row is a parameter vector.
+    /// Returns an array of shape `(n, n_parameters)` where each row is a parameter vector.
     ///
     /// # Examples
     ///
     /// ```
     /// use rscm_calibrate::{ParameterSet, Uniform};
     ///
-    /// let mut params = ParameterSet::new();
-    /// params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
-    /// params.add("y", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+    /// let mut parameters = ParameterSet::new();
+    /// parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+    /// parameters.add("y", Box::new(Uniform::new(0.0, 1.0).unwrap()));
     ///
-    /// let samples = params.sample_random(100);
+    /// let samples = parameters.sample_random(100);
     /// assert_eq!(samples.shape(), &[100, 2]);
     /// ```
     pub fn sample_random(&self, n: usize) -> ndarray::Array2<f64> {
@@ -166,8 +166,8 @@ impl ParameterSet {
     ///
     /// Useful for reproducible sampling with a seeded RNG.
     pub fn sample_random_with_rng<R: RngExt>(&self, n: usize, rng: &mut R) -> ndarray::Array2<f64> {
-        let n_params = self.len();
-        let mut samples = ndarray::Array2::zeros((n, n_params));
+        let n_parameters = self.len();
+        let mut samples = ndarray::Array2::zeros((n, n_parameters));
 
         for i in 0..n {
             for (j, dist) in self.parameters.values().enumerate() {
@@ -184,18 +184,18 @@ impl ParameterSet {
     /// Each parameter dimension is divided into n equal-probability intervals,
     /// and exactly one sample is placed in each interval.
     ///
-    /// Returns an array of shape `(n, n_params)`.
+    /// Returns an array of shape `(n, n_parameters)`.
     ///
     /// # Examples
     ///
     /// ```
     /// use rscm_calibrate::{ParameterSet, Uniform};
     ///
-    /// let mut params = ParameterSet::new();
-    /// params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
-    /// params.add("y", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+    /// let mut parameters = ParameterSet::new();
+    /// parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+    /// parameters.add("y", Box::new(Uniform::new(0.0, 1.0).unwrap()));
     ///
-    /// let samples = params.sample_lhs(100);
+    /// let samples = parameters.sample_lhs(100);
     /// assert_eq!(samples.shape(), &[100, 2]);
     /// ```
     pub fn sample_lhs(&self, n: usize) -> ndarray::Array2<f64> {
@@ -205,8 +205,8 @@ impl ParameterSet {
 
     /// Sample n parameter vectors using LHS with a specific RNG.
     pub fn sample_lhs_with_rng<R: RngExt>(&self, n: usize, rng: &mut R) -> ndarray::Array2<f64> {
-        let n_params = self.len();
-        let mut samples = ndarray::Array2::zeros((n, n_params));
+        let n_parameters = self.len();
+        let mut samples = ndarray::Array2::zeros((n, n_parameters));
 
         // For each parameter dimension
         for (j, (_, dist)) in self.parameters.iter().enumerate() {
@@ -234,7 +234,7 @@ impl ParameterSet {
 
     /// Compute the log prior probability of a parameter vector.
     ///
-    /// The parameter vector must match the order from [`param_names()`](Self::param_names).
+    /// The parameter vector must match the order from [`parameter_names()`](Self::parameter_names).
     ///
     /// # Errors
     ///
@@ -245,25 +245,25 @@ impl ParameterSet {
     /// ```
     /// use rscm_calibrate::{ParameterSet, Uniform};
     ///
-    /// let mut params = ParameterSet::new();
-    /// params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
-    /// params.add("y", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+    /// let mut parameters = ParameterSet::new();
+    /// parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+    /// parameters.add("y", Box::new(Uniform::new(0.0, 1.0).unwrap()));
     ///
-    /// let log_prior = params.log_prior(&[0.5, 0.5]).unwrap();
+    /// let log_prior = parameters.log_prior(&[0.5, 0.5]).unwrap();
     /// assert!(log_prior.is_finite());
     /// ```
-    pub fn log_prior(&self, params: &[f64]) -> Result<f64> {
-        if params.len() != self.len() {
+    pub fn log_prior(&self, parameters: &[f64]) -> Result<f64> {
+        if parameters.len() != self.len() {
             return Err(Error::InvalidParameter(format!(
                 "Parameter vector length {} does not match parameter set size {}",
-                params.len(),
+                parameters.len(),
                 self.len()
             )));
         }
 
         let mut log_p = 0.0;
-        for (value, dist) in params.iter().zip(self.parameters.values()) {
-            log_p += dist.ln_pdf(*value);
+        for (value, dist) in parameters.iter().zip(self.parameters.values()) {
+            log_p += dist.log_pdf(*value);
         }
 
         Ok(log_p)
@@ -271,7 +271,7 @@ impl ParameterSet {
 
     /// Extract bounds for all parameters.
     ///
-    /// Returns `(lower_bounds, upper_bounds)` where each vector has length `n_params`.
+    /// Returns `(lower_bounds, upper_bounds)` where each vector has length `n_parameters`.
     /// Unbounded parameters use `f64::NEG_INFINITY` and `f64::INFINITY`.
     ///
     /// # Examples
@@ -279,11 +279,11 @@ impl ParameterSet {
     /// ```
     /// use rscm_calibrate::{ParameterSet, Uniform, Normal};
     ///
-    /// let mut params = ParameterSet::new();
-    /// params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
-    /// params.add("y", Box::new(Normal::new(0.0, 1.0).unwrap()));
+    /// let mut parameters = ParameterSet::new();
+    /// parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+    /// parameters.add("y", Box::new(Normal::new(0.0, 1.0).unwrap()));
     ///
-    /// let (lower, upper) = params.bounds();
+    /// let (lower, upper) = parameters.bounds();
     /// assert_eq!(lower, vec![0.0, f64::NEG_INFINITY]);
     /// assert_eq!(upper, vec![1.0, f64::INFINITY]);
     /// ```
@@ -326,8 +326,8 @@ fn quantile_via_sampling<R: RngExt>(dist: &dyn Distribution, u: f64, rng: &mut R
         // This avoids the iterative search for the most common case
         if low.is_finite() && high.is_finite() {
             // Check if this is approximately uniform by checking PDF is constant
-            let pdf_low = dist.ln_pdf(low + (high - low) * 0.1);
-            let pdf_high = dist.ln_pdf(low + (high - low) * 0.9);
+            let pdf_low = dist.log_pdf(low + (high - low) * 0.1);
+            let pdf_high = dist.log_pdf(low + (high - low) * 0.9);
             if (pdf_low - pdf_high).abs() < 1e-10 {
                 return low + u * (high - low);
             }
@@ -387,41 +387,41 @@ mod tests {
             Box::new(Uniform::new(-1.0, 1.0).unwrap()) as Box<dyn Distribution>,
         );
 
-        let params = ParameterSet::from_map(map);
-        assert_eq!(params.len(), 2);
-        assert_eq!(params.param_names(), vec!["x", "y"]);
+        let parameters = ParameterSet::from_map(map);
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters.parameter_names(), vec!["x", "y"]);
     }
 
     #[test]
     fn test_fluent_builder() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .add("y", Box::new(Uniform::new(-1.0, 1.0).unwrap()))
             .clone();
 
-        assert_eq!(params.len(), 2);
-        assert_eq!(params.param_names(), vec!["x", "y"]);
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters.parameter_names(), vec!["x", "y"]);
     }
 
     #[test]
-    fn test_param_names_order() {
-        let params = ParameterSet::new()
+    fn test_parameter_names_order() {
+        let parameters = ParameterSet::new()
             .add("a", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .add("b", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .add("c", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .clone();
 
-        assert_eq!(params.param_names(), vec!["a", "b", "c"]);
+        assert_eq!(parameters.parameter_names(), vec!["a", "b", "c"]);
     }
 
     #[test]
     fn test_sample_random() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .add("y", Box::new(Uniform::new(-1.0, 1.0).unwrap()))
             .clone();
 
-        let samples = params.sample_random(100);
+        let samples = parameters.sample_random(100);
         assert_eq!(samples.shape(), &[100, 2]);
 
         // Check all samples are in bounds
@@ -433,27 +433,27 @@ mod tests {
 
     #[test]
     fn test_sample_random_reproducible() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .clone();
 
         let mut rng1 = rand::rngs::StdRng::seed_from_u64(42);
         let mut rng2 = rand::rngs::StdRng::seed_from_u64(42);
 
-        let samples1 = params.sample_random_with_rng(10, &mut rng1);
-        let samples2 = params.sample_random_with_rng(10, &mut rng2);
+        let samples1 = parameters.sample_random_with_rng(10, &mut rng1);
+        let samples2 = parameters.sample_random_with_rng(10, &mut rng2);
 
         assert_eq!(samples1, samples2);
     }
 
     #[test]
     fn test_sample_lhs() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .add("y", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .clone();
 
-        let samples = params.sample_lhs(10);
+        let samples = parameters.sample_lhs(10);
         assert_eq!(samples.shape(), &[10, 2]);
 
         // Check all samples are in bounds
@@ -467,11 +467,11 @@ mod tests {
     fn test_sample_lhs_coverage() {
         // LHS should have better coverage than random sampling.
         // For uniform [0, 1] with n=10, each 0.1 interval should have exactly 1 sample.
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .clone();
 
-        let samples = params.sample_lhs(10);
+        let samples = parameters.sample_lhs(10);
 
         // Count samples in each decile
         let mut counts = vec![0; 10];
@@ -489,32 +489,32 @@ mod tests {
 
     #[test]
     fn test_log_prior() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .add("y", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .clone();
 
         // Valid parameters
-        let log_p = params.log_prior(&[0.5, 0.5]).unwrap();
+        let log_p = parameters.log_prior(&[0.5, 0.5]).unwrap();
         assert!(log_p.is_finite());
 
         // Out of bounds
-        let log_p = params.log_prior(&[1.5, 0.5]).unwrap();
+        let log_p = parameters.log_prior(&[1.5, 0.5]).unwrap();
         assert_eq!(log_p, f64::NEG_INFINITY);
 
         // Wrong length
-        assert!(params.log_prior(&[0.5]).is_err());
-        assert!(params.log_prior(&[0.5, 0.5, 0.5]).is_err());
+        assert!(parameters.log_prior(&[0.5]).is_err());
+        assert!(parameters.log_prior(&[0.5, 0.5, 0.5]).is_err());
     }
 
     #[test]
     fn test_log_prior_sum() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 2.0).unwrap()))
             .add("y", Box::new(Uniform::new(0.0, 2.0).unwrap()))
             .clone();
 
-        let log_p = params.log_prior(&[1.0, 1.0]).unwrap();
+        let log_p = parameters.log_prior(&[1.0, 1.0]).unwrap();
 
         // log(1/2) + log(1/2) = -log(2) - log(2) = -2*log(2)
         let expected = -2.0 * 2.0_f64.ln();
@@ -523,13 +523,13 @@ mod tests {
 
     #[test]
     fn test_bounds() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .add("y", Box::new(Normal::new(0.0, 1.0).unwrap()))
             .add("z", Box::new(Uniform::new(-2.0, 2.0).unwrap()))
             .clone();
 
-        let (lower, upper) = params.bounds();
+        let (lower, upper) = parameters.bounds();
 
         assert_eq!(lower, vec![0.0, f64::NEG_INFINITY, -2.0]);
         assert_eq!(upper, vec![1.0, f64::INFINITY, 2.0]);
@@ -537,12 +537,12 @@ mod tests {
 
     #[test]
     fn test_empty_parameter_set() {
-        let params = ParameterSet::new();
-        assert!(params.is_empty());
-        assert_eq!(params.len(), 0);
-        assert_eq!(params.param_names(), Vec::<&str>::new());
+        let parameters = ParameterSet::new();
+        assert!(parameters.is_empty());
+        assert_eq!(parameters.len(), 0);
+        assert_eq!(parameters.parameter_names(), Vec::<&str>::new());
 
-        let samples = params.sample_random(10);
+        let samples = parameters.sample_random(10);
         assert_eq!(samples.shape(), &[10, 0]);
     }
 }

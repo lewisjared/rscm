@@ -41,12 +41,12 @@ impl PyTimeAxis {
         self.0.len()
     }
 
-    fn at(&self, index: usize) -> Option<Time> {
-        self.0.at(index)
+    fn at(&self, time_index: usize) -> Option<Time> {
+        self.0.at(time_index)
     }
 
-    fn at_bounds(&self, index: usize) -> Option<(Time, Time)> {
-        self.0.at_bounds(index)
+    fn at_bounds(&self, time_index: usize) -> Option<(Time, Time)> {
+        self.0.at_bounds(time_index)
     }
 }
 
@@ -83,7 +83,7 @@ impl PyTimeseries {
     fn new(
         values: Bound<PyArray1<FloatValue>>,
         time_axis: Bound<PyTimeAxis>,
-        units: String,
+        unit: String,
         interpolation_strategy: PyInterpolationStrategy,
     ) -> PyResult<Self> {
         let interpolation_strategy: InterpolationStrategy = interpolation_strategy.into();
@@ -100,7 +100,7 @@ impl PyTimeseries {
                 values_2d,
                 time_axis,
                 ScalarGrid,
-                units,
+                unit,
                 interpolation_strategy,
             )))
         }
@@ -109,15 +109,21 @@ impl PyTimeseries {
     #[staticmethod]
     fn from_values(
         values: Bound<PyArray1<FloatValue>>,
-        time: Bound<PyArray1<FloatValue>>,
+        time_axis: Bound<PyTimeAxis>,
     ) -> PyResult<Self> {
         let values = values.to_owned_array();
-        let time = time.to_owned_array();
+        let time_axis = time_axis.borrow().0.clone();
 
-        if values.len() != time.len() {
+        if values.len() != time_axis.len() {
             Err(PyValueError::new_err("Lengths do not match"))
         } else {
-            Ok(PyTimeseries(Timeseries::from_values(values, time)))
+            Ok(PyTimeseries(Timeseries::new(
+                values.insert_axis(Axis(1)),
+                time_axis,
+                ScalarGrid,
+                String::new(),
+                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+            )))
         }
     }
 
@@ -144,8 +150,8 @@ impl PyTimeseries {
     }
 
     #[getter]
-    fn units(&self) -> String {
-        self.0.units().to_string()
+    fn unit(&self) -> String {
+        self.0.unit().to_string()
     }
 
     #[getter]
@@ -179,7 +185,7 @@ impl From<PyTimeseries> for Timeseries<FloatValue> {
     }
 }
 
-/// Python wrapper for FourBox grid timeseries
+/// Python wrapper for four-box grid timeseries
 #[pyclass]
 #[pyo3(name = "FourBoxTimeseries")]
 pub struct PyFourBoxTimeseries(pub GridTimeseries<FloatValue, FourBoxGrid>);
@@ -192,7 +198,7 @@ impl PyFourBoxTimeseries {
     fn new(
         values: Bound<PyArray2<FloatValue>>,
         time_axis: Bound<PyTimeAxis>,
-        units: String,
+        unit: String,
         interpolation_strategy: PyInterpolationStrategy,
     ) -> PyResult<Self> {
         let values = values.to_owned_array();
@@ -206,7 +212,7 @@ impl PyFourBoxTimeseries {
             values,
             time_axis,
             FourBoxGrid::magicc_standard(),
-            units,
+            unit,
             interpolation_strategy.into(),
         )))
     }
@@ -230,8 +236,8 @@ impl PyFourBoxTimeseries {
     }
 
     #[getter]
-    fn units(&self) -> String {
-        self.0.units().to_string()
+    fn unit(&self) -> String {
+        self.0.unit().to_string()
     }
 
     #[getter]
@@ -247,6 +253,30 @@ pub struct PyHemisphericTimeseries(pub GridTimeseries<FloatValue, HemisphericGri
 
 #[pymethods]
 impl PyHemisphericTimeseries {
+    /// Create from values with shape (n_times, 2) in grid order (northern, southern).
+    #[new]
+    fn new(
+        values: Bound<PyArray2<FloatValue>>,
+        time_axis: Bound<PyTimeAxis>,
+        unit: String,
+        interpolation_strategy: PyInterpolationStrategy,
+    ) -> PyResult<Self> {
+        let values = values.to_owned_array();
+        let time_axis = time_axis.borrow().0.clone();
+        if values.nrows() != time_axis.len() || values.ncols() != 2 {
+            return Err(PyValueError::new_err(
+                "values must have shape (len(time_axis), 2)",
+            ));
+        }
+        Ok(Self(GridTimeseries::new(
+            values,
+            time_axis,
+            HemisphericGrid::equal_weights(),
+            unit,
+            interpolation_strategy.into(),
+        )))
+    }
+
     fn __repr__(&self) -> String {
         format!("<HemisphericTimeseries len={}>", self.0.len())
     }
@@ -266,8 +296,8 @@ impl PyHemisphericTimeseries {
     }
 
     #[getter]
-    fn units(&self) -> String {
-        self.0.units().to_string()
+    fn unit(&self) -> String {
+        self.0.unit().to_string()
     }
 
     #[getter]

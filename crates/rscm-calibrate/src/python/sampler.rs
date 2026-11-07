@@ -12,7 +12,7 @@ use super::model_runner::PyModelRunner;
 use super::parameter_set::PyParameterSet;
 use super::target::PyTarget;
 
-/// Walker initialization strategy.
+/// Walker initialisation strategy.
 ///
 /// Determines how walkers are positioned at the start of MCMC sampling.
 /// Use the static methods to create instances.
@@ -25,7 +25,7 @@ pub struct PyWalkerInit {
 #[derive(Clone)]
 enum WalkerInitInner {
     FromPrior,
-    Ball { center: Vec<f64>, radius: f64 },
+    Ball { centre: Vec<f64>, radius: f64 },
     Explicit { positions: Vec<Vec<f64>> },
 }
 
@@ -34,19 +34,19 @@ impl PyWalkerInit {
     fn to_rust(&self) -> WalkerInit {
         match &self.inner {
             WalkerInitInner::FromPrior => WalkerInit::FromPrior,
-            WalkerInitInner::Ball { center, radius } => WalkerInit::Ball {
-                center: center.clone(),
+            WalkerInitInner::Ball { centre, radius } => WalkerInit::Ball {
+                centre: centre.clone(),
                 radius: *radius,
             },
             WalkerInitInner::Explicit { positions } => {
                 // Convert Vec<Vec<f64>> to Array2<f64>
                 let n_walkers = positions.len();
-                let n_params = positions.first().map_or(0, |row| row.len());
+                let n_parameters = positions.first().map_or(0, |row| row.len());
                 let flat: Vec<f64> = positions
                     .iter()
                     .flat_map(|row| row.iter().copied())
                     .collect();
-                let array = Array2::from_shape_vec((n_walkers, n_params), flat)
+                let array = Array2::from_shape_vec((n_walkers, n_parameters), flat)
                     .expect("Invalid explicit positions shape");
                 WalkerInit::Explicit(array)
             }
@@ -56,7 +56,7 @@ impl PyWalkerInit {
 
 #[pymethods]
 impl PyWalkerInit {
-    /// Create a FromPrior initialization strategy.
+    /// Create a FromPrior initialisation strategy.
     ///
     /// Walkers will be sampled from the prior distributions.
     #[staticmethod]
@@ -66,27 +66,27 @@ impl PyWalkerInit {
         }
     }
 
-    /// Create a Ball initialization strategy.
+    /// Create a Ball initialisation strategy.
     ///
     /// Parameters
     /// ----------
-    /// center : list[float]
-    ///     Parameter values at the center of the ball
+    /// centre : list[float]
+    ///     Parameter values at the centre of the ball
     /// radius : float
-    ///     Radius of the ball (std deviation for each parameter)
+    ///     Radius of the ball (standard deviation for each parameter)
     #[staticmethod]
-    fn ball(center: Vec<f64>, radius: f64) -> Self {
+    fn ball(centre: Vec<f64>, radius: f64) -> Self {
         PyWalkerInit {
-            inner: WalkerInitInner::Ball { center, radius },
+            inner: WalkerInitInner::Ball { centre, radius },
         }
     }
 
-    /// Create an Explicit initialization strategy.
+    /// Create an Explicit initialisation strategy.
     ///
     /// Parameters
     /// ----------
     /// positions : list[list[float]]
-    ///     2D array of walker positions, shape (n_walkers, n_params)
+    ///     2D array of walker positions, shape (n_walkers, n_parameters)
     #[staticmethod]
     fn explicit(positions: Vec<Vec<f64>>) -> Self {
         PyWalkerInit {
@@ -97,8 +97,8 @@ impl PyWalkerInit {
     fn __repr__(&self) -> String {
         match &self.inner {
             WalkerInitInner::FromPrior => "WalkerInit.from_prior()".to_string(),
-            WalkerInitInner::Ball { center, radius } => {
-                format!("WalkerInit.ball({:?}, {})", center, radius)
+            WalkerInitInner::Ball { centre, radius } => {
+                format!("WalkerInit.ball({:?}, {})", centre, radius)
             }
             WalkerInitInner::Explicit { positions } => {
                 format!("WalkerInit.explicit({} walkers)", positions.len())
@@ -117,7 +117,7 @@ pub struct PyProgressInfo {
     pub iteration: usize,
 
     #[pyo3(get)]
-    pub total: usize,
+    pub n_iterations: usize,
 
     #[pyo3(get)]
     pub acceptance_rate: f64,
@@ -130,7 +130,7 @@ impl From<&ProgressInfo> for PyProgressInfo {
     fn from(info: &ProgressInfo) -> Self {
         PyProgressInfo {
             iteration: info.iteration,
-            total: info.total,
+            n_iterations: info.n_iterations,
             acceptance_rate: info.acceptance_rate,
             mean_log_prob: info.mean_log_prob,
         }
@@ -142,7 +142,7 @@ impl PyProgressInfo {
     fn __repr__(&self) -> String {
         format!(
             "ProgressInfo(iteration={}/{}, acceptance_rate={:.2}, mean_log_prob={:.2})",
-            self.iteration, self.total, self.acceptance_rate, self.mean_log_prob
+            self.iteration, self.n_iterations, self.acceptance_rate, self.mean_log_prob
         )
     }
 }
@@ -198,7 +198,7 @@ fn into_py_chain(chain: crate::Result<Chain>, raised: Option<PyErr>) -> PyResult
 ///
 /// Parameters
 /// ----------
-/// params : ParameterSet
+/// parameters : ParameterSet
 ///     Parameter set defining prior distributions for all model parameters
 /// runner : ModelRunner
 ///     Model runner for evaluating parameter sets in parallel
@@ -218,26 +218,26 @@ fn into_py_chain(chain: crate::Result<Chain>, raised: Option<PyErr>) -> PyResult
 /// )
 ///
 /// # Define prior distributions
-/// params = ParameterSet()
-/// params.add("sensitivity", Uniform(0.5, 1.5))
-/// params.add("offset", Normal(0.0, 0.1))
+/// parameters = ParameterSet()
+/// parameters.add("sensitivity", Uniform(0.5, 1.5))
+/// parameters.add("offset", Normal(0.0, 0.1))
 ///
 /// # Define observations
 /// target = Target()
-/// target.add_observation("Temperature", 2020.0, 1.2, 0.1)
-/// target.add_observation("Temperature", 2021.0, 1.3, 0.1)
+/// target.add_observation("Surface Air Temperature Change", 2020.0, 1.2, 0.1)
+/// target.add_observation("Surface Air Temperature Change", 2021.0, 1.3, 0.1)
 ///
 /// # Create model runner (user-defined callable)
-/// def model_factory(params):
+/// def model_factory(parameters):
 ///     # Build and run model with parameters
 ///     return model  # Returns model instance
-/// runner = ModelRunner(model_factory, ["sensitivity", "offset"], ["Temperature"])
+/// runner = ModelRunner(model_factory, ["sensitivity", "offset"], ["Surface Air Temperature Change"])
 ///
 /// # Create sampler
 /// likelihood = GaussianLikelihood()
-/// sampler = EnsembleSampler(params, runner, likelihood, target)
+/// sampler = EnsembleSampler(parameters, runner, likelihood, target)
 ///
-/// # Run MCMC (10,000 iterations, initialize from prior, store every 10th sample)
+/// # Run MCMC (10,000 iterations, initialise from prior, store every 10th sample)
 /// chain = sampler.run(10000, WalkerInit.from_prior(), thin=10)
 ///
 /// # Check convergence (discard first 1000 samples as burn-in)
@@ -245,7 +245,7 @@ fn into_py_chain(chain: crate::Result<Chain>, raised: Option<PyErr>) -> PyResult
 /// print(f"R-hat: {r_hat}")  # Should be < 1.1 for convergence
 ///
 /// # Extract posterior samples
-/// samples = chain.to_param_dict(discard=1000)
+/// samples = chain.to_parameter_dict(discard=1000)
 /// print(f"Sensitivity: {samples['sensitivity'].mean():.3f} ± {samples['sensitivity'].std():.3f}")
 /// ```
 ///
@@ -256,7 +256,7 @@ fn into_py_chain(chain: crate::Result<Chain>, raised: Option<PyErr>) -> PyResult
 ///
 /// See Also
 /// --------
-/// WalkerInit : Walker initialization strategies
+/// WalkerInit : Walker initialisation strategies
 /// Chain : MCMC chain with convergence diagnostics
 #[pyclass(name = "EnsembleSampler")]
 pub struct PyEnsembleSampler {
@@ -267,12 +267,12 @@ pub struct PyEnsembleSampler {
 impl PyEnsembleSampler {
     #[new]
     fn new(
-        params: PyParameterSet,
+        parameters: PyParameterSet,
         runner: PyModelRunner,
         likelihood: PyGaussianLikelihood,
         target: PyTarget,
     ) -> Self {
-        let sampler = EnsembleSampler::new(params.0, runner, likelihood, target.0);
+        let sampler = EnsembleSampler::new(parameters.0, runner, likelihood, target.0);
         PyEnsembleSampler { sampler }
     }
 
@@ -281,7 +281,7 @@ impl PyEnsembleSampler {
     /// Returns
     /// -------
     /// int
-    ///     Default number of walkers (max(2 * n_params, 32))
+    ///     Default number of walkers (max(2 * n_parameters, 32))
     fn default_n_walkers(&self) -> usize {
         self.sampler.default_n_walkers()
     }
@@ -293,7 +293,7 @@ impl PyEnsembleSampler {
     /// n_iterations : int
     ///     Number of MCMC iterations to run
     /// init : WalkerInit
-    ///     Walker initialization strategy
+    ///     Walker initialisation strategy
     /// thin : int, optional
     ///     Thinning interval (store every thin-th sample). Default is 1.
     ///
@@ -328,7 +328,7 @@ impl PyEnsembleSampler {
     /// n_iterations : int
     ///     Number of MCMC iterations to run
     /// init : WalkerInit
-    ///     Walker initialization strategy
+    ///     Walker initialisation strategy
     /// thin : int
     ///     Thinning interval (store every thin-th sample)
     /// progress_callback : callable
@@ -343,7 +343,7 @@ impl PyEnsembleSampler {
     /// Examples
     /// --------
     /// >>> def show_progress(info):
-    /// ...     print(f"Iteration {info.iteration}/{info.total}, acceptance={info.acceptance_rate:.2f}")
+    /// ...     print(f"Iteration {info.iteration}/{info.n_iterations}, acceptance={info.acceptance_rate:.2f}")
     /// >>> chain = sampler.run_with_progress(1000, WalkerInit.from_prior(), 1, show_progress)
     #[pyo3(signature = (n_iterations, init, thin, progress_callback))]
     fn run_with_progress(
@@ -378,7 +378,7 @@ impl PyEnsembleSampler {
     /// n_iterations : int
     ///     Number of MCMC iterations to run
     /// init : WalkerInit
-    ///     Walker initialization strategy
+    ///     Walker initialisation strategy
     /// thin : int
     ///     Thinning interval (store every thin-th sample)
     /// checkpoint_every : int
@@ -491,7 +491,7 @@ impl PyEnsembleSampler {
     ///
     /// Parameters
     /// ----------
-    /// params : ParameterSet
+    /// parameters : ParameterSet
     ///     Parameter set defining prior distributions
     /// runner : ModelRunner
     ///     Model runner for evaluating parameter sets
@@ -513,15 +513,15 @@ impl PyEnsembleSampler {
     /// lead to more aggressive proposals. The default of 2.0 is recommended
     /// for most applications.
     #[staticmethod]
-    fn with_stretch_param(
-        params: PyParameterSet,
+    fn with_stretch_parameter(
+        parameters: PyParameterSet,
         runner: PyModelRunner,
         likelihood: PyGaussianLikelihood,
         target: PyTarget,
         a: f64,
     ) -> PyResult<Self> {
-        let sampler = EnsembleSampler::new(params.0, runner, likelihood, target.0)
-            .with_stretch_param(a)
+        let sampler = EnsembleSampler::new(parameters.0, runner, likelihood, target.0)
+            .with_stretch_parameter(a)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
         Ok(PyEnsembleSampler { sampler })
     }

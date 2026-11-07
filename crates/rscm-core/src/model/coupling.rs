@@ -3,7 +3,7 @@
 //! [`Model::coupling`] reports the order components run in, every edge between them
 //! with whether it lags, and each variable's source and timeseries type.
 
-use crate::component::{GridType, RequirementType, TimeseriesType};
+use crate::component::{DeclaredVariable, GridType, VariableRole};
 use crate::errors::RSCMResult;
 use crate::state::VariableSource;
 use petgraph::visit::EdgeRef;
@@ -15,59 +15,6 @@ use std::fmt;
 use super::runtime::Model;
 use super::types::RequiredTransformation;
 
-/// Where a component reads an input from.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum VarSource {
-    /// Supplied to the model rather than produced by a component.
-    Exogenous,
-    /// Produced earlier in the same step.
-    Upstream,
-    /// The previous step's value.
-    Lagged,
-    /// The component's own state.
-    OwnState,
-}
-
-impl fmt::Display for VarSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            VarSource::Exogenous => "exogenous",
-            VarSource::Upstream => "upstream",
-            VarSource::Lagged => "lagged",
-            VarSource::OwnState => "own_state",
-        })
-    }
-}
-
-impl From<VariableSource> for VarSource {
-    fn from(vs: VariableSource) -> Self {
-        match vs {
-            VariableSource::Exogenous => VarSource::Exogenous,
-            VariableSource::UpstreamOutput => VarSource::Upstream,
-            VariableSource::OwnState => VarSource::OwnState,
-            VariableSource::Lagged => VarSource::Lagged,
-        }
-    }
-}
-
-/// A variable as one component declares it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VarInfo {
-    pub name: String,
-    pub unit: String,
-    #[serde(default, skip_serializing_if = "is_scalar")]
-    pub grid: GridType,
-    pub timeseries_type: TimeseriesType,
-    /// Where the component reads the variable from, `None` for outputs.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<VarSource>,
-}
-
-fn is_scalar(g: &GridType) -> bool {
-    *g == GridType::Scalar
-}
-
 /// A component and the variables it declares.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentCoupling {
@@ -76,12 +23,12 @@ pub struct ComponentCoupling {
     /// Component type name.
     pub name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub inputs: Vec<VarInfo>,
+    pub inputs: Vec<DeclaredVariable>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub outputs: Vec<VarInfo>,
+    pub outputs: Vec<DeclaredVariable>,
     /// State variables (read previous, write new).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub states: Vec<VarInfo>,
+    pub states: Vec<DeclaredVariable>,
 }
 
 /// A variable passed from the component that produces it to one that reads it.
@@ -111,7 +58,7 @@ pub struct ConversionInfo {
     pub factor: f64,
 }
 
-/// A model's coupling: execution order, edges and variable types.
+/// A model's coupling: execution order, edges, each input's variable source, grid transforms and unit conversions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Coupling {
     /// Components in the order the runtime steps them.
@@ -143,7 +90,7 @@ impl Coupling {
 
     fn render(&self, colour: bool) -> String {
         let paint = |text: &str, style: Style| style.paint(text, colour);
-        let tag = |v: &VarInfo| {
+        let tag = |v: &DeclaredVariable| {
             let grid = if v.grid == GridType::Scalar {
                 String::new()
             } else {
@@ -154,7 +101,7 @@ impl Coupling {
                 v.name,
                 paint(&format!("[{}]", v.unit), Style::Dim),
                 grid,
-                paint(&v.timeseries_type.to_string().to_lowercase(), Style::Dim),
+                paint(&v.timeseries_type.to_string(), Style::Dim),
             )
         };
         let producers: HashMap<(&str, &str), &str> = self
@@ -314,15 +261,11 @@ impl Model {
             let mut component_edges: Vec<CouplingEdge> = self
                 .components
                 .edges_directed(nx, Direction::Incoming)
-                .filter(|e| {
-                    e.source() != self.initial_node
-                        && e.source() != nx
-                        && e.weight().requirement_type != RequirementType::EmptyLink
-                })
+                .filter(|e| e.source() != self.initial_node && e.source() != nx)
                 .map(|e| CouplingEdge {
                     producer: names[&e.source()].clone(),
                     consumer: name.clone(),
-                    variable: e.weight().name.clone(),
+                    variable: e.weight().name().to_string(),
                     lagged: false,
                 })
                 .collect();
@@ -331,24 +274,18 @@ impl Model {
             let mut outputs = Vec::new();
             let mut states = Vec::new();
             for def in self.components[nx].definitions() {
-                let mut info = VarInfo {
-                    timeseries_type: self
-                        .timeseries_type(&def.name)
-                        .unwrap_or_else(|| def.resolved_timeseries_type()),
-                    name: def.name,
-                    unit: def.unit,
-                    grid: def.grid_type,
-                    source: None,
-                };
-                match def.requirement_type {
-                    RequirementType::Input => {
-                        let source: VarSource = self
+                let mut info = DeclaredVariable::from_definition(&def);
+                if let Some(timeseries_type) = self.timeseries_type(&def.name) {
+                    info.timeseries_type = timeseries_type;
+                }
+                match def.role {
+                    VariableRole::Input => {
+                        let source = self
                             .variable_sources()
                             .get(&(info.name.clone(), name.clone()))
                             .copied()
-                            .unwrap_or_default()
-                            .into();
-                        if source == VarSource::Lagged {
+                            .unwrap_or_default();
+                        if source == VariableSource::Lagged {
                             if let Some(producer) = producers.get(&info.name) {
                                 component_edges.push(CouplingEdge {
                                     producer: producer.to_string(),
@@ -361,12 +298,11 @@ impl Model {
                         info.source = Some(source);
                         inputs.push(info);
                     }
-                    RequirementType::Output => outputs.push(info),
-                    RequirementType::State => {
-                        info.source = Some(VarSource::OwnState);
+                    VariableRole::Output => outputs.push(info),
+                    VariableRole::State => {
+                        info.source = Some(VariableSource::OwnState);
                         states.push(info);
                     }
-                    RequirementType::EmptyLink => {}
                 }
             }
 
@@ -432,7 +368,9 @@ fn collect_transforms(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::component::{Component, InputState, OutputState, RequirementDefinition};
+    use crate::component::{
+        Component, InputState, OutputState, TimeseriesType, VariableDefinition,
+    };
     use crate::errors::RSCMResult;
     use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
     use crate::model::ModelBuilder;
@@ -449,10 +387,10 @@ mod tests {
 
     #[typetag::serde]
     impl Component for EmissionsComponent {
-        fn definitions(&self) -> Vec<RequirementDefinition> {
+        fn definitions(&self) -> Vec<VariableDefinition> {
             vec![
-                RequirementDefinition::scalar_input("Emissions|CO2", "GtCO2 / yr"),
-                RequirementDefinition::scalar_output("Concentration|CO2", "ppm"),
+                VariableDefinition::scalar_input("Emissions|CO2", "GtCO2/yr"),
+                VariableDefinition::scalar_output("Atmospheric Concentrations|CO2", "ppm"),
             ]
         }
 
@@ -473,10 +411,10 @@ mod tests {
 
     #[typetag::serde]
     impl Component for ForcingComponent {
-        fn definitions(&self) -> Vec<RequirementDefinition> {
+        fn definitions(&self) -> Vec<VariableDefinition> {
             vec![
-                RequirementDefinition::scalar_input("Concentration|CO2", "ppm"),
-                RequirementDefinition::scalar_output("ERF|CO2", "W / m^2"),
+                VariableDefinition::scalar_input("Atmospheric Concentrations|CO2", "ppm"),
+                VariableDefinition::scalar_output("Effective Radiative Forcing|CO2", "W/m^2"),
             ]
         }
 
@@ -496,7 +434,7 @@ mod tests {
             array![[10.0], [11.0], [12.0]],
             Arc::new(time_axis.clone()),
             ScalarGrid,
-            "GtCO2 / yr".to_string(),
+            "GtCO2/yr".to_string(),
             InterpolationStrategy::from(LinearSplineStrategy::new(true)),
         );
 
@@ -504,7 +442,7 @@ mod tests {
         builder.with_time_axis(time_axis);
         builder.with_component(Arc::new(EmissionsComponent { factor: 0.47 }));
         builder.with_component(Arc::new(ForcingComponent { sensitivity: 5.35 }));
-        builder.with_exogenous_variable("Emissions|CO2", emissions_ts);
+        builder.with_prescribed_variable("Emissions|CO2", emissions_ts);
         builder.build().unwrap()
     }
 
@@ -527,13 +465,13 @@ mod tests {
         assert_eq!(emissions.inputs.len(), 1);
         assert_eq!(emissions.inputs[0].name, "Emissions|CO2");
         assert_eq!(emissions.outputs.len(), 1);
-        assert_eq!(emissions.outputs[0].name, "Concentration|CO2");
+        assert_eq!(emissions.outputs[0].name, "Atmospheric Concentrations|CO2");
 
         let forcing = &coupling.components[1];
         assert_eq!(forcing.inputs.len(), 1);
-        assert_eq!(forcing.inputs[0].name, "Concentration|CO2");
+        assert_eq!(forcing.inputs[0].name, "Atmospheric Concentrations|CO2");
         assert_eq!(forcing.outputs.len(), 1);
-        assert_eq!(forcing.outputs[0].name, "ERF|CO2");
+        assert_eq!(forcing.outputs[0].name, "Effective Radiative Forcing|CO2");
     }
 
     #[test]
@@ -541,11 +479,11 @@ mod tests {
         let coupling = build_test_model().coupling().unwrap();
 
         let emissions = &coupling.components[0].inputs[0];
-        assert_eq!(emissions.source, Some(VarSource::Exogenous));
+        assert_eq!(emissions.source, Some(VariableSource::Prescribed));
         assert_eq!(emissions.timeseries_type, TimeseriesType::Average);
 
         let concentration = &coupling.components[1].inputs[0];
-        assert_eq!(concentration.source, Some(VarSource::Upstream));
+        assert_eq!(concentration.source, Some(VariableSource::Upstream));
         assert_eq!(concentration.timeseries_type, TimeseriesType::Point);
     }
 
@@ -558,7 +496,7 @@ mod tests {
             vec![CouplingEdge {
                 producer: "EmissionsComponent".into(),
                 consumer: "ForcingComponent".into(),
-                variable: "Concentration|CO2".into(),
+                variable: "Atmospheric Concentrations|CO2".into(),
                 lagged: false,
             }]
         );
@@ -580,11 +518,11 @@ mod tests {
 
         assert!(plain.contains("[0] EmissionsComponent"));
         assert!(plain.contains("[1] ForcingComponent"));
-        assert!(plain.contains("<- Emissions|CO2 [GtCO2 / yr] average (exogenous)"));
-        assert!(
-            plain.contains("<- Concentration|CO2 [ppm] point (upstream from EmissionsComponent)")
-        );
-        assert!(plain.contains("-> ERF|CO2 [W / m^2] point"));
+        assert!(plain.contains("<- Emissions|CO2 [GtCO2/yr] average (prescribed)"));
+        assert!(plain.contains(
+            "<- Atmospheric Concentrations|CO2 [ppm] point (upstream from EmissionsComponent)"
+        ));
+        assert!(plain.contains("-> Effective Radiative Forcing|CO2 [W/m^2] point"));
         assert!(!plain.contains("\x1b["));
     }
 

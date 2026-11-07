@@ -2,7 +2,7 @@
   "name": "OceanCarbon",
   "module_path": "rscm_magicc::carbon::ocean",
   "language": "rust",
-  "description": "Simulates the uptake of CO2 by the global ocean through air-sea gas exchange\nusing an Impulse Response Function (IRF) approach.\n\n# What This Component Does\n\n1. Calculates air-sea CO2 flux based on the partial pressure difference\n   between atmosphere and ocean surface\n\n2. Tracks how absorbed carbon mixes into the deep ocean using an IRF\n   convolution that \"remembers\" past flux history\n\n3. Updates ocean surface pCO2 accounting for:\n   - DIC accumulation (Joos A24 polynomial)\n   - Temperature effect on solubility (Joos A25)\n\n4. Uses monthly sub-stepping (12 steps per year). As in MAGICC7, atmospheric\n   CO2 evolves within the year from the other carbon sources and the ocean\n   uptake, so the uptake responds to the rising concentration.\n   Up to `concentration_switch_year` it is instead interpolated linearly to\n   `Atmospheric Concentration|CO2|Prescribed`.\n\n# Inputs\n\n- `Atmospheric Concentration|CO2` (ppm) - Concentration at the start of the year\n- `Surface Temperature` (K) - Drives the pCO2 feedback through the warming\n  since `tempfeedback_yrstart`, floored at zero\n- `Emissions|CO2|Fossil` (GtC/yr) - Fossil and industrial emissions\n- `Emissions|CO2|CH4 Oxidation` (GtC/yr) - CO2 from oxidised fossil CH4\n- `Carbon Flux|Terrestrial` (GtC/yr) - Net land uptake, including land use\n- `Emissions|CO2|Permafrost` (GtC/yr), only with the `permafrost` parameter\n\n# States (tracked between timesteps)\n\n- `Ocean Surface pCO2` (ppm) - Ocean surface CO2 partial pressure\n- `Cumulative Ocean Uptake` (GtC) - Total carbon absorbed by ocean\n\n# Outputs\n\n- `Carbon Flux|Ocean` (GtC/yr) - Annual mean air-sea flux (positive = ocean uptake)\n- `End-of-Year Atmospheric CO2` (ppm) - Concentration after the last sub-step,\n  which `CO2Budget` carries into the next year\n\n# Differences from MAGICC7\n\n- **Three IRF models**: 3D-GFDL (default), 2D-BERN, and HILDA are\n  implemented. MAGICC7 also supports BOXDIFF.\n- **No radiative-only mode**: MAGICC7 can make ocean \"see\" only PI CO2.\n  Not implemented.\n- **No biological pump**: Only abiotic chemistry is represented.\n- **No circulation changes**: IRF is static, doesn't respond to warming.",
+  "description": "Simulates the uptake of CO2 by the global ocean through air-sea gas exchange\nusing an Impulse Response Function (IRF) approach.\n\n# What This Component Does\n\n1. Calculates air-sea CO2 flux based on the partial pressure difference\n   between atmosphere and ocean surface\n\n2. Tracks how absorbed carbon mixes into the deep ocean using an IRF\n   convolution that \"remembers\" past flux history\n\n3. Updates ocean surface pCO2 accounting for:\n   - DIC accumulation (Joos A24 polynomial)\n   - Temperature effect on solubility (Joos A25)\n\n4. Uses monthly substepping (12 steps per year). As in MAGICC7, atmospheric\n   CO2 evolves within the year from the other carbon sources and the ocean\n   uptake, so the uptake responds to the rising concentration.\n   Up to `concentration_switch_year` it is instead interpolated linearly to\n   `Prescribed Atmospheric Concentrations|CO2`.\n\n# Inputs\n\n- `Atmospheric Concentrations|CO2` (ppm) - Concentration at the start of the year\n- `Surface Air Temperature Change` (K) - Drives the pCO2 feedback through the warming\n  since `temperature_feedback_start_year`, floored at zero\n- `Emissions|CO2|Fossil` (GtC/yr) - Fossil and industrial emissions\n- `Emissions|CO2|CH4 Oxidation` (GtC/yr) - CO2 from oxidised fossil CH4\n- `Net Atmosphere to Land Flux|CO2` (GtC/yr) - Net land uptake, including land use\n- `Emissions|CO2|Permafrost` (GtC/yr), only with the `include_permafrost` parameter\n\n# States (tracked between steps)\n\n- `Ocean Surface Partial Pressure|CO2` (ppm) - Ocean surface CO2 partial pressure\n- `Cumulative Carbon Uptake|Ocean` (GtC) - Total carbon absorbed by ocean\n\n# Outputs\n\n- `Net Atmosphere to Ocean Flux|CO2` (GtC/yr) - Annual mean air-sea flux (positive = ocean uptake)\n- `Ocean Carbon Atmospheric Concentrations|CO2` (ppm) - Concentration after the last substep,\n  which `CO2Budget` carries into the next year\n\n# Differences from MAGICC7\n\n- **Three IRF models**: 3D-GFDL (default), 2D-BERN, and HILDA are\n  implemented. MAGICC7 also supports BOXDIFF.\n- **No radiative-only mode**: MAGICC7 can make ocean \"see\" only PI CO2.\n  Not implemented.\n- **No biological pump**: Only abiotic chemistry is represented.\n- **No circulation changes**: IRF is static, doesn't respond to warming.",
   "category": "Carbon Cycle",
   "tags": [
     "carbon-cycle",
@@ -12,61 +12,61 @@
   "inputs": [
     {
       "rust_name": "co2_concentration",
-      "variable_name": "Atmospheric Concentration|CO2",
+      "name": "Atmospheric Concentrations|CO2",
       "unit": "ppm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "temperature",
-      "variable_name": "Surface Temperature",
+      "name": "Surface Air Temperature Change",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "fossil_emissions",
-      "variable_name": "Emissions|CO2|Fossil",
+      "name": "Emissions|CO2|Fossil",
       "unit": "GtC/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "ch4_oxidation",
-      "variable_name": "Emissions|CO2|CH4 Oxidation",
+      "name": "Emissions|CO2|CH4 Oxidation",
       "unit": "GtC/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "terrestrial_flux",
-      "variable_name": "Carbon Flux|Terrestrial",
+      "name": "Net Atmosphere to Land Flux|CO2",
       "unit": "GtC/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "air_sea_flux",
-      "variable_name": "Carbon Flux|Ocean",
+      "name": "Net Atmosphere to Ocean Flux|CO2",
       "unit": "GtC/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "co2_end_of_year",
-      "variable_name": "End-of-Year Atmospheric CO2",
+      "name": "Ocean Carbon Atmospheric Concentrations|CO2",
       "unit": "ppm",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "states": [
     {
       "rust_name": "ocean_pco2",
-      "variable_name": "Ocean Surface pCO2",
+      "name": "Ocean Surface Partial Pressure|CO2",
       "unit": "ppm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "cumulative_uptake",
-      "variable_name": "Cumulative Ocean Uptake",
+      "name": "Cumulative Carbon Uptake|Ocean",
       "unit": "GtC",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "parameters": [],

@@ -13,16 +13,17 @@ climate models.
 
 **Time series**
 
-- [TimeAxis][] defines the temporal grid for model execution and data.
+- [TimeAxis][] holds the ordered time bounds a model or timeseries is defined on.
 - [Timeseries][] holds time-indexed data with interpolation support.
+- [FourBoxTimeseries][] and [HemisphericTimeseries][] are its grid variants.
 - [TimeseriesCollection][] holds multiple named timeseries.
 - [InterpolationStrategy][] controls how values are interpolated between time points.
 
 **Components**
 
-- [PythonComponent][] wraps a Python component for use in Rust models.
-- [RequirementDefinition][] specifies one of a component's inputs or outputs.
-- [RequirementType][] is Input, Output, State or EmptyLink.
+- [PythonComponent][] wraps a Python component for `ModelBuilder.with_component`.
+- [VariableDefinition][] specifies one of a component's inputs or outputs.
+- [VariableRole][] is Input, Output or State.
 - [GridType][] is Scalar, FourBox or Hemispheric.
 - [TimeseriesType][] is Point or Average.
 
@@ -60,8 +61,8 @@ Building a simple model:
 >>> model = (
 ...     ModelBuilder()
 ...     .with_time_axis(TimeAxis.from_values(np.arange(2000, 2101)))
-...     .with_rust_component(my_component)
-...     .with_exogenous_variable("Emissions", emissions_ts)
+...     .with_component(my_component)
+...     .with_prescribed_variable("Emissions|CO2", emissions_ts)
 ... ).build()
 >>> model.run()
 >>> results = model.timeseries()
@@ -74,19 +75,19 @@ rscm.component : Base class for Python components
 from rscm._lib.core import (
     FourBoxTimeseries,
     GridType,
+    HemisphericTimeseries,
     InterpolationStrategy,
     Model,
     ModelBuilder,
     PythonComponent,
-    RequirementDefinition,
-    RequirementType,
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
     TimeseriesType,
     Unit,
+    VariableDefinition,
+    VariableRole,
     VariableSchema,
-    VariableType,
     build_models,
     run_models,
 )
@@ -119,13 +120,12 @@ __all__ = [
     "HemisphericGrid",
     "HemisphericRegion",
     "HemisphericSlice",
+    "HemisphericTimeseries",
     "HemisphericTimeseriesWindow",
     "InterpolationStrategy",
     "Model",
     "ModelBuilder",
     "PythonComponent",
-    "RequirementDefinition",
-    "RequirementType",
     "ScalarGrid",
     "ScalarRegion",
     "StateValue",
@@ -135,9 +135,10 @@ __all__ = [
     "TimeseriesType",
     "TimeseriesWindow",
     "Unit",
+    "VariableDefinition",
+    "VariableRole",
     "VariableSchema",
     "VariableSource",
-    "VariableType",
     "build_models",
     "run_models",
 ]

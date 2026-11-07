@@ -109,7 +109,7 @@ The group totals add the species in the order of the tables below.
 ### Regional pattern of F-gas forcing
 
 `calculate_halo_rf_box_fractions` spreads each F-gas over the four
-[boxes](module_00_initialization.md), so that short-lived species sit where they are emitted.
+[boxes](module_00_initialisation.md), so that short-lived species sit where they are emitted.
 With $w$ = `RF_REGIONS_FGAS` and box areas $a$, the global and hemispheric patterns are
 
 $$

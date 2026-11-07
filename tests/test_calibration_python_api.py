@@ -19,7 +19,7 @@ from rscm.calibrate import (
     LogNormal,
     ModelRunner,
     Normal,
-    Optimizer,
+    Optimiser,
     ParameterSet,
     PointEstimator,
     Target,
@@ -79,9 +79,9 @@ class TestDistributions:
         samples = [dist.sample() for _ in range(100)]
         assert all(s > 0 for s in samples)
 
-    def test_lognormal_mean_std(self):
-        """Test LogNormal mean/std constructor."""
-        dist = LogNormal(mean=1.0, std=0.5)
+    def test_lognormal_mean_std_dev(self):
+        """Test LogNormal mean/std_dev constructor."""
+        dist = LogNormal(mean=1.0, std_dev=0.5)
         assert dist is not None
 
         samples = [dist.sample() for _ in range(100)]
@@ -103,31 +103,31 @@ class TestParameterSet:
 
     def test_fluent_builder(self):
         """Test fluent builder API returns self for chaining."""
-        params = ParameterSet()
-        result = params.add("a", Uniform(0.0, 1.0))
-        assert result is params  # Should return self
+        parameters = ParameterSet()
+        result = parameters.add("a", Uniform(0.0, 1.0))
+        assert result is parameters  # Should return self
 
         # Chaining
-        params.add("b", Normal(0.0, 1.0)).add("c", Uniform(-5.0, 5.0))
-        assert len(params.param_names) == 3
+        parameters.add("b", Normal(0.0, 1.0)).add("c", Uniform(-5.0, 5.0))
+        assert len(parameters.parameter_names) == 3
 
-    def test_param_names_order(self):
+    def test_parameter_names_order(self):
         """Test parameter names preserve insertion order."""
-        params = ParameterSet()
-        params.add("z", Uniform(0.0, 1.0))
-        params.add("a", Uniform(0.0, 1.0))
-        params.add("m", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("z", Uniform(0.0, 1.0))
+        parameters.add("a", Uniform(0.0, 1.0))
+        parameters.add("m", Uniform(0.0, 1.0))
 
         # Should preserve insertion order
-        assert params.param_names == ["z", "a", "m"]
+        assert parameters.parameter_names == ["z", "a", "m"]
 
     def test_sample_random(self):
         """Test random sampling from priors."""
-        params = ParameterSet()
-        params.add("a", Uniform(0.0, 1.0))
-        params.add("b", Uniform(-5.0, 5.0))
+        parameters = ParameterSet()
+        parameters.add("a", Uniform(0.0, 1.0))
+        parameters.add("b", Uniform(-5.0, 5.0))
 
-        samples = params.sample_random(10)
+        samples = parameters.sample_random(10)
         assert samples.shape == (10, 2)
 
         # Check bounds
@@ -136,11 +136,11 @@ class TestParameterSet:
 
     def test_sample_lhs(self):
         """Test Latin Hypercube Sampling."""
-        params = ParameterSet()
-        params.add("a", Uniform(0.0, 1.0))
-        params.add("b", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("a", Uniform(0.0, 1.0))
+        parameters.add("b", Uniform(0.0, 1.0))
 
-        samples = params.sample_lhs(10)
+        samples = parameters.sample_lhs(10)
         assert samples.shape == (10, 2)
 
         # LHS should have better coverage than random
@@ -156,27 +156,27 @@ class TestParameterSet:
 
     def test_log_prior(self):
         """Test log prior probability computation."""
-        params = ParameterSet()
-        params.add("a", Uniform(0.0, 1.0))
-        params.add("b", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("a", Uniform(0.0, 1.0))
+        parameters.add("b", Uniform(0.0, 1.0))
 
         # In-bounds point
         in_bounds = [0.5, 0.5]
-        log_p = params.log_prior(in_bounds)
+        log_p = parameters.log_prior(in_bounds)
         assert np.isfinite(log_p)
 
         # Out-of-bounds point
         out_bounds = [1.5, 0.5]
-        log_p_out = params.log_prior(out_bounds)
+        log_p_out = parameters.log_prior(out_bounds)
         assert log_p_out == float("-inf")
 
     def test_bounds_extraction(self):
         """Test bounds extraction for optimisers."""
-        params = ParameterSet()
-        params.add("a", Uniform(0.0, 1.0))
-        params.add("b", Uniform(-5.0, 5.0))
+        parameters = ParameterSet()
+        parameters.add("a", Uniform(0.0, 1.0))
+        parameters.add("b", Uniform(-5.0, 5.0))
 
-        bounds = params.bounds()
+        bounds = parameters.bounds()
         # bounds() returns (lower_bounds, upper_bounds) as two lists
         assert len(bounds) == 2
         lower, upper = bounds
@@ -273,9 +273,9 @@ class TestChain:
     def sample_chain(self):
         """Create a sample chain for testing."""
         # Create simple model for sampling
-        params = ParameterSet()
-        params.add("a", Uniform(0.0, 5.0))
-        params.add("b", Uniform(0.0, 5.0))
+        parameters = ParameterSet()
+        parameters.add("a", Uniform(0.0, 5.0))
+        parameters.add("b", Uniform(0.0, 5.0))
 
         target = Target()
         target.add_observation("y", 1.0, 3.5, 0.1)
@@ -288,12 +288,12 @@ class TestChain:
 
         runner = ModelRunner(
             model_factory=model_factory,
-            param_names=["a", "b"],
+            parameter_names=["a", "b"],
             output_variables=["y"],
         )
 
         likelihood = GaussianLikelihood()
-        sampler = EnsembleSampler(params, runner, likelihood, target)
+        sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
         # Run short chain
         chain = sampler.run(50, WalkerInit.from_prior(), thin=1)
@@ -303,9 +303,9 @@ class TestChain:
         """Test chain basic properties."""
         assert len(sample_chain) > 0
         assert sample_chain.thin == 1
-        assert sample_chain.total_iterations == 50
-        assert "a" in sample_chain.param_names
-        assert "b" in sample_chain.param_names
+        assert sample_chain.n_iterations == 50
+        assert "a" in sample_chain.parameter_names
+        assert "b" in sample_chain.parameter_names
 
     def test_flat_samples(self, sample_chain):
         """Test flat_samples method."""
@@ -323,9 +323,9 @@ class TestChain:
         assert log_probs.ndim == 1
         assert np.all(np.isfinite(log_probs))
 
-    def test_to_param_dict(self, sample_chain):
-        """Test to_param_dict method."""
-        param_dict = sample_chain.to_param_dict(discard=10)
+    def test_to_parameter_dict(self, sample_chain):
+        """Test to_parameter_dict method."""
+        param_dict = sample_chain.to_parameter_dict(discard=10)
         assert "a" in param_dict
         assert "b" in param_dict
         assert isinstance(param_dict["a"], np.ndarray)
@@ -371,8 +371,8 @@ class TestChain:
             # Load
             loaded_chain = Chain.load(str(path))
             assert len(loaded_chain) == len(sample_chain)
-            assert loaded_chain.param_names == sample_chain.param_names
-            assert loaded_chain.total_iterations == sample_chain.total_iterations
+            assert loaded_chain.parameter_names == sample_chain.parameter_names
+            assert loaded_chain.n_iterations == sample_chain.n_iterations
 
             # Check samples match
             orig_samples = sample_chain.flat_samples(discard=0)
@@ -382,8 +382,8 @@ class TestChain:
     def test_to_dataframe_labels_walkers_and_iterations(self):
         """Each walker's rows hold its own samples, indexed by sampler iteration."""
         pytest.importorskip("pandas")
-        params = ParameterSet()
-        params.add("x", Uniform(-1.0, 40.0))
+        parameters = ParameterSet()
+        parameters.add("x", Uniform(-1.0, 40.0))
 
         target = Target()
         target.add_observation("y", 1.0, 0.0, 1.0)
@@ -396,9 +396,9 @@ class TestChain:
             return {"y": {1.0: param_dict["x"]}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
-        sampler = EnsembleSampler(params, runner, GaussianLikelihood(), target)
+        sampler = EnsembleSampler(parameters, runner, GaussianLikelihood(), target)
         starts = [float(w) for w in range(sampler.default_n_walkers())]
         chain = sampler.run(6, WalkerInit.explicit([[s] for s in starts]), thin=2)
 
@@ -419,8 +419,8 @@ class TestChain:
     def test_merge_chains(self):
         """Test merging multiple chain segments."""
         # Create two short chains
-        params = ParameterSet()
-        params.add("x", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("x", Uniform(0.0, 1.0))
 
         target = Target()
         target.add_observation("y", 1.0, 0.5, 0.1)
@@ -429,11 +429,11 @@ class TestChain:
             return {"y": {1.0: param_dict["x"]}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
 
         likelihood = GaussianLikelihood()
-        sampler = EnsembleSampler(params, runner, likelihood, target)
+        sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
         chain1 = sampler.run(20, WalkerInit.from_prior(), thin=1)
         chain2 = sampler.run(20, WalkerInit.from_prior(), thin=1)
@@ -444,17 +444,17 @@ class TestChain:
 
         # Merge modifies chain1 in place
         chain1.merge(chain2)
-        assert chain1.total_iterations == 40
+        assert chain1.n_iterations == 40
         assert len(chain1) == len1 + len2
 
 
 class TestPointEstimator:
-    """Test PointEstimator API and optimization."""
+    """Test PointEstimator API and optimisation."""
 
     def test_creation(self):
         """Test PointEstimator creation."""
-        params = ParameterSet()
-        params.add("a", Uniform(0.0, 5.0))
+        parameters = ParameterSet()
+        parameters.add("a", Uniform(0.0, 5.0))
 
         target = Target()
         target.add_observation("y", 1.0, 2.0, 0.1)
@@ -463,21 +463,21 @@ class TestPointEstimator:
             return {"y": {1.0: param_dict["a"]}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["a"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["a"], output_variables=["y"]
         )
 
         likelihood = GaussianLikelihood()
-        estimator = PointEstimator(params, runner, likelihood, target)
+        estimator = PointEstimator(parameters, runner, likelihood, target)
 
-        assert estimator.n_params == 1
-        assert estimator.param_names == ["a"]
+        assert estimator.n_parameters == 1
+        assert estimator.parameter_names == ["a"]
         assert estimator.n_evaluations == 0
 
     def test_random_search(self):
-        """Test random search optimization."""
-        params = ParameterSet()
-        params.add("a", Uniform(0.0, 5.0))
-        params.add("b", Uniform(0.0, 5.0))
+        """Test random search optimisation."""
+        parameters = ParameterSet()
+        parameters.add("a", Uniform(0.0, 5.0))
+        parameters.add("b", Uniform(0.0, 5.0))
 
         # Target: y = 2*x + 1
         target = Target()
@@ -491,25 +491,25 @@ class TestPointEstimator:
 
         runner = ModelRunner(
             model_factory=model_factory,
-            param_names=["a", "b"],
+            parameter_names=["a", "b"],
             output_variables=["y"],
         )
 
         likelihood = GaussianLikelihood()
-        estimator = PointEstimator(params, runner, likelihood, target)
+        estimator = PointEstimator(parameters, runner, likelihood, target)
 
         # Run random search
-        result = estimator.optimize(Optimizer.random_search(), n_samples=50)
+        result = estimator.optimise(Optimiser.random_search(), n_samples=50)
 
-        assert result.best_params is not None
-        assert len(result.best_params) == 2
+        assert result.best_parameters is not None
+        assert len(result.best_parameters) == 2
         assert np.isfinite(result.best_log_likelihood)
         assert estimator.n_evaluations == 50
 
     def test_evaluated_history(self):
         """Test access to evaluation history."""
-        params = ParameterSet()
-        params.add("x", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("x", Uniform(0.0, 1.0))
 
         target = Target()
         target.add_observation("y", 1.0, 0.5, 0.1)
@@ -518,27 +518,27 @@ class TestPointEstimator:
             return {"y": {1.0: param_dict["x"]}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
 
         likelihood = GaussianLikelihood()
-        estimator = PointEstimator(params, runner, likelihood, target)
+        estimator = PointEstimator(parameters, runner, likelihood, target)
 
-        # Run optimization
-        estimator.optimize(Optimizer.random_search(), n_samples=10)
+        # Run optimisation
+        estimator.optimise(Optimiser.random_search(), n_samples=10)
 
         # Check history
-        evaluated_params = estimator.evaluated_params()
+        evaluated_parameters = estimator.evaluated_parameters()
         evaluated_log_likes = estimator.evaluated_log_likelihoods()
 
-        assert len(evaluated_params) == 10
+        assert len(evaluated_parameters) == 10
         assert len(evaluated_log_likes) == 10
-        assert all(len(p) == 1 for p in evaluated_params)
+        assert all(len(p) == 1 for p in evaluated_parameters)
 
     def test_clear_history(self):
         """Test clearing evaluation history."""
-        params = ParameterSet()
-        params.add("x", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("x", Uniform(0.0, 1.0))
 
         target = Target()
         target.add_observation("y", 1.0, 0.5, 0.1)
@@ -547,24 +547,24 @@ class TestPointEstimator:
             return {"y": {1.0: param_dict["x"]}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
 
         likelihood = GaussianLikelihood()
-        estimator = PointEstimator(params, runner, likelihood, target)
+        estimator = PointEstimator(parameters, runner, likelihood, target)
 
         # Run and clear
-        estimator.optimize(Optimizer.random_search(), n_samples=10)
+        estimator.optimise(Optimiser.random_search(), n_samples=10)
         assert estimator.n_evaluations == 10
 
         estimator.clear_history()
         assert estimator.n_evaluations == 0
-        assert len(estimator.evaluated_params()) == 0
+        assert len(estimator.evaluated_parameters()) == 0
 
     def test_best_method(self):
         """Test best() method returns best result so far."""
-        params = ParameterSet()
-        params.add("x", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("x", Uniform(0.0, 1.0))
 
         target = Target()
         target.add_observation("y", 1.0, 0.5, 0.1)
@@ -573,22 +573,22 @@ class TestPointEstimator:
             return {"y": {1.0: param_dict["x"]}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
 
         likelihood = GaussianLikelihood()
-        estimator = PointEstimator(params, runner, likelihood, target)
+        estimator = PointEstimator(parameters, runner, likelihood, target)
 
         # Initially no best
         assert estimator.best() is None
 
-        # After optimization
-        estimator.optimize(Optimizer.random_search(), n_samples=10)
+        # After optimisation
+        estimator.optimise(Optimiser.random_search(), n_samples=10)
         best = estimator.best()
         assert best is not None
-        # best() returns (params, log_likelihood) tuple
-        best_params, best_log_likelihood = best
-        assert len(best_params) == 1
+        # best() returns (parameters, log_likelihood) tuple
+        best_parameters, best_log_likelihood = best
+        assert len(best_parameters) == 1
         assert np.isfinite(best_log_likelihood)
 
 
@@ -602,7 +602,7 @@ class TestModelRunner:
             return {"y": {1.0: param_dict["x"]}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
 
         assert runner is not None
@@ -617,21 +617,21 @@ class TestModelRunner:
             return {"y": {1.0: x, 2.0: 2 * x}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
 
-        params = ParameterSet()
-        params.add("x", Uniform(0.0, 5.0))
+        parameters = ParameterSet()
+        parameters.add("x", Uniform(0.0, 5.0))
 
         target = Target()
         target.add_observation("y", 1.0, 2.0, 0.1)
 
         likelihood = GaussianLikelihood()
-        estimator = PointEstimator(params, runner, likelihood, target)
+        estimator = PointEstimator(parameters, runner, likelihood, target)
 
         # This validates that the runner works
-        result = estimator.optimize(Optimizer.random_search(), n_samples=5)
-        assert result.best_params is not None
+        result = estimator.optimise(Optimiser.random_search(), n_samples=5)
+        assert result.best_parameters is not None
 
     def test_error_propagation(self):
         """Test that model errors are propagated."""
@@ -641,7 +641,7 @@ class TestModelRunner:
             raise ValueError(msg)
 
         runner = ModelRunner(
-            model_factory=failing_model, param_names=["x"], output_variables=["y"]
+            model_factory=failing_model, parameter_names=["x"], output_variables=["y"]
         )
 
         # Should propagate the error
@@ -650,7 +650,7 @@ class TestModelRunner:
 
 
 class TestWalkerInit:
-    """Test WalkerInit enum and initialization strategies."""
+    """Test WalkerInit enum and initialisation strategies."""
 
     def test_from_prior(self):
         """Test WalkerInit.from_prior() creates correct strategy."""
@@ -658,15 +658,15 @@ class TestWalkerInit:
         assert init is not None
 
     def test_from_ball(self):
-        """Test WalkerInit.ball() with center point."""
-        center = [1.0, 2.0, 3.0]
-        init = WalkerInit.ball(center, radius=0.1)
+        """Test WalkerInit.ball() with centre point."""
+        centre = [1.0, 2.0, 3.0]
+        init = WalkerInit.ball(centre, radius=0.1)
         assert init is not None
 
     def test_from_explicit(self):
         """Test WalkerInit.explicit() with positions."""
         rng = np.random.default_rng(42)
-        positions = rng.standard_normal((10, 3))  # 10 walkers, 3 params
+        positions = rng.standard_normal((10, 3))  # 10 walkers, 3 parameters
         init = WalkerInit.explicit(positions)
         assert init is not None
 
@@ -676,8 +676,8 @@ class TestEnsembleSampler:
 
     def test_creation(self):
         """Test sampler creation."""
-        params = ParameterSet()
-        params.add("x", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("x", Uniform(0.0, 1.0))
 
         target = Target()
         target.add_observation("y", 1.0, 0.5, 0.1)
@@ -686,18 +686,18 @@ class TestEnsembleSampler:
             return {"y": {1.0: param_dict["x"]}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
 
         likelihood = GaussianLikelihood()
-        sampler = EnsembleSampler(params, runner, likelihood, target)
+        sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
         assert sampler is not None
 
     def test_run_basic(self):
         """Test basic run method."""
-        params = ParameterSet()
-        params.add("x", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("x", Uniform(0.0, 1.0))
 
         target = Target()
         target.add_observation("y", 1.0, 0.5, 0.1)
@@ -706,20 +706,20 @@ class TestEnsembleSampler:
             return {"y": {1.0: param_dict["x"]}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
 
         likelihood = GaussianLikelihood()
-        sampler = EnsembleSampler(params, runner, likelihood, target)
+        sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
         chain = sampler.run(10, WalkerInit.from_prior(), thin=1)
         assert len(chain) > 0
-        assert chain.total_iterations == 10
+        assert chain.n_iterations == 10
 
     def test_checkpointing(self):
         """Test checkpoint save and resume."""
-        params = ParameterSet()
-        params.add("x", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("x", Uniform(0.0, 1.0))
 
         target = Target()
         target.add_observation("y", 1.0, 0.5, 0.1)
@@ -728,11 +728,11 @@ class TestEnsembleSampler:
             return {"y": {1.0: param_dict["x"]}}
 
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
 
         likelihood = GaussianLikelihood()
-        sampler = EnsembleSampler(params, runner, likelihood, target)
+        sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "checkpoint.bin"
@@ -749,7 +749,7 @@ class TestEnsembleSampler:
             # Checkpointing creates .chain and .state files
             assert (checkpoint_path.parent / f"{checkpoint_path.name}.chain").exists()
             assert (checkpoint_path.parent / f"{checkpoint_path.name}.state").exists()
-            assert chain1.total_iterations == 20
+            assert chain1.n_iterations == 20
 
             # Resume from checkpoint (n_iterations is total, not additional)
             chain2 = sampler.resume_from_checkpoint(
@@ -759,20 +759,20 @@ class TestEnsembleSampler:
                 checkpoint_path=str(checkpoint_path),
             )
 
-            assert chain2.total_iterations == 30
+            assert chain2.n_iterations == 30
 
 
 def _sampler_with_factory(model_factory):
-    params = ParameterSet()
-    params.add("x", Uniform(0.0, 1.0))
+    parameters = ParameterSet()
+    parameters.add("x", Uniform(0.0, 1.0))
 
     target = Target()
     target.add_observation("y", 1.0, 0.5, 0.1)
 
     runner = ModelRunner(
-        model_factory=model_factory, param_names=["x"], output_variables=["y"]
+        model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
     )
-    return EnsembleSampler(params, runner, GaussianLikelihood(), target)
+    return EnsembleSampler(parameters, runner, GaussianLikelihood(), target)
 
 
 class TestSamplerErrors:
@@ -824,15 +824,15 @@ class TestSamplerErrors:
             msg = "solver diverged"
             raise RuntimeError(msg)
 
-        params = ParameterSet()
-        params.add("x", Uniform(0.0, 1.0))
+        parameters = ParameterSet()
+        parameters.add("x", Uniform(0.0, 1.0))
         runner = ModelRunner(
-            model_factory=model_factory, param_names=["x"], output_variables=["y"]
+            model_factory=model_factory, parameter_names=["x"], output_variables=["y"]
         )
-        estimator = PointEstimator(params, runner, GaussianLikelihood(), Target())
+        estimator = PointEstimator(parameters, runner, GaussianLikelihood(), Target())
 
         with pytest.raises(ValueError, match=r"no valid samples.*solver diverged"):
-            estimator.optimize(Optimizer.random_search(), n_samples=5)
+            estimator.optimise(Optimiser.random_search(), n_samples=5)
 
 
 if __name__ == "__main__":

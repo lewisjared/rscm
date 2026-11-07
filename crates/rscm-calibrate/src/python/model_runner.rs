@@ -19,18 +19,18 @@ use std::sync::{Arc, Mutex};
 /// # Example
 ///
 /// ```python
-/// def model_factory(params):
-///     # params is a dict like {"climate_sensitivity": 3.0, "ocean_diff": 1200.0}
+/// def model_factory(parameters):
+///     # parameters is a dict like {"climate_sensitivity": 3.0, "ocean_diffusivity": 1200.0}
 ///     # Build and run model...
 ///     return {
-///         "Temperature|Global": {2020.0: 1.2, 2021.0: 1.3, ...},
-///         "OHC": {2020.0: 100.0, 2021.0: 105.0, ...}
+///         "Surface Air Temperature Change": {2020.0: 1.2, 2021.0: 1.3, ...},
+///         "Ocean Heat Content": {2020.0: 100.0, 2021.0: 105.0, ...}
 ///     }
 ///
 /// runner = ModelRunner(
 ///     model_factory=model_factory,
-///     param_names=["climate_sensitivity", "ocean_diff"],
-///     output_variables=["Temperature|Global", "OHC"]
+///     parameter_names=["climate_sensitivity", "ocean_diffusivity"],
+///     output_variables=["Surface Air Temperature Change", "Ocean Heat Content"]
 /// )
 /// ```
 #[pyclass(name = "ModelRunner")]
@@ -39,7 +39,7 @@ pub struct PyModelRunner {
     /// Python callable that creates and runs models
     factory: Arc<Mutex<Py<PyAny>>>,
     /// Parameter names in indexed order
-    param_names: Vec<String>,
+    parameter_names: Vec<String>,
     /// Output variable names to extract
     output_variables: Vec<String>,
 }
@@ -52,9 +52,9 @@ impl PyModelRunner {
     /// ----------
     /// model_factory : callable
     ///     Python function that takes a dict of parameters and returns a dict of outputs.
-    ///     Signature: `model_factory(params: dict[str, float]) -> dict[str, dict[float, float]]`
+    ///     Signature: `model_factory(parameters: dict[str, float]) -> dict[str, dict[float, float]]`
     ///     The outer dict keys are variable names, inner dict keys are times.
-    /// param_names : list[str]
+    /// parameter_names : list[str]
     ///     Names of parameters in the order they appear in parameter vectors
     /// output_variables : list[str]
     ///     Names of variables to extract from model output
@@ -72,21 +72,21 @@ impl PyModelRunner {
     /// Example
     /// -------
     /// ```python
-    /// def my_model(params):
-    ///     temp = params["sensitivity"] * params["forcing"]
-    ///     return {"Temperature": {2020.0: temp}}
+    /// def my_model(parameters):
+    ///     temp = parameters["sensitivity"] * parameters["forcing"]
+    ///     return {"Surface Air Temperature Change": {2020.0: temp}}
     ///
     /// runner = ModelRunner(
     ///     model_factory=my_model,
-    ///     param_names=["sensitivity", "forcing"],
-    ///     output_variables=["Temperature"]
+    ///     parameter_names=["sensitivity", "forcing"],
+    ///     output_variables=["Surface Air Temperature Change"]
     /// )
     /// ```
     #[new]
     fn new(
         py: Python<'_>,
         model_factory: Py<PyAny>,
-        param_names: Vec<String>,
+        parameter_names: Vec<String>,
         output_variables: Vec<String>,
     ) -> PyResult<Self> {
         // Verify callable
@@ -96,7 +96,7 @@ impl PyModelRunner {
 
         Ok(Self {
             factory: Arc::new(Mutex::new(model_factory)),
-            param_names,
+            parameter_names,
             output_variables,
         })
     }
@@ -108,8 +108,8 @@ impl PyModelRunner {
     /// list[str]
     ///     Names of parameters in indexed order
     #[getter]
-    fn param_names(&self) -> Vec<String> {
-        self.param_names.clone()
+    fn parameter_names(&self) -> Vec<String> {
+        self.parameter_names.clone()
     }
 
     /// Get output variable names.
@@ -125,8 +125,8 @@ impl PyModelRunner {
 
     fn __repr__(&self) -> String {
         format!(
-            "ModelRunner(param_names={:?}, output_variables={:?})",
-            self.param_names, self.output_variables
+            "ModelRunner(parameter_names={:?}, output_variables={:?})",
+            self.parameter_names, self.output_variables
         )
     }
 
@@ -134,8 +134,8 @@ impl PyModelRunner {
     ///
     /// Parameters
     /// ----------
-    /// params : list[float]
-    ///     Parameter values in the order specified by param_names
+    /// parameters : list[float]
+    ///     Parameter values in the order specified by parameter_names
     ///
     /// Returns
     /// -------
@@ -145,22 +145,22 @@ impl PyModelRunner {
     /// Raises
     /// ------
     /// ValueError
-    ///     If params length doesn't match param_names
+    ///     If parameters length doesn't match parameter_names
     /// Exception
     ///     If model execution fails
     #[pyo3(name = "run")]
-    fn py_run(&self, py: Python<'_>, params: Vec<f64>) -> PyResult<Py<PyAny>> {
-        if params.len() != self.param_names.len() {
+    fn py_run(&self, py: Python<'_>, parameters: Vec<f64>) -> PyResult<Py<PyAny>> {
+        if parameters.len() != self.parameter_names.len() {
             return Err(PyValueError::new_err(format!(
                 "Expected {} parameters, got {}",
-                self.param_names.len(),
-                params.len()
+                self.parameter_names.len(),
+                parameters.len()
             )));
         }
 
         // Build parameter dict
         let param_dict = PyDict::new(py);
-        for (name, value) in self.param_names.iter().zip(params.iter()) {
+        for (name, value) in self.parameter_names.iter().zip(parameters.iter()) {
             param_dict.set_item(name, value)?;
         }
 
@@ -176,16 +176,16 @@ impl PyModelRunner {
 }
 
 impl ModelRunner for PyModelRunner {
-    fn param_names(&self) -> &[String] {
-        &self.param_names
+    fn parameter_names(&self) -> &[String] {
+        &self.parameter_names
     }
 
-    fn run(&self, params: &[f64]) -> Result<ModelOutput> {
-        if params.len() != self.param_names.len() {
+    fn run(&self, parameters: &[f64]) -> Result<ModelOutput> {
+        if parameters.len() != self.parameter_names.len() {
             return Err(Error::SamplingError(format!(
                 "Expected {} parameters, got {}",
-                self.param_names.len(),
-                params.len()
+                self.parameter_names.len(),
+                parameters.len()
             )));
         }
 
@@ -193,9 +193,9 @@ impl ModelRunner for PyModelRunner {
         Python::attach(|py| {
             // Build parameter dict
             let param_dict = PyDict::new(py);
-            for (name, value) in self.param_names.iter().zip(params.iter()) {
+            for (name, value) in self.parameter_names.iter().zip(parameters.iter()) {
                 param_dict.set_item(name, value).map_err(|e| {
-                    Error::SamplingError(format!("Failed to create param dict: {}", e))
+                    Error::SamplingError(format!("Failed to create parameter dict: {}", e))
                 })?;
             }
 
@@ -271,9 +271,12 @@ impl ModelRunner for PyModelRunner {
         })
     }
 
-    fn run_batch(&self, param_sets: &[Vec<f64>]) -> Vec<Result<ModelOutput>> {
+    fn run_batch(&self, parameter_sets: &[Vec<f64>]) -> Vec<Result<ModelOutput>> {
         // Sequential execution for now
         // Python GIL prevents true parallelism with Python callables
-        param_sets.iter().map(|params| self.run(params)).collect()
+        parameter_sets
+            .iter()
+            .map(|parameters| self.run(parameters))
+            .collect()
     }
 }

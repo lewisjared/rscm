@@ -1,8 +1,8 @@
-# Main Timestep
+# Main Step
 
 ## Overview
 
-The main timestep runs every physics module within MAGICC7's annual loop.
+The main step runs every physics module within MAGICC7's annual loop.
 It decides the order of the carbon cycle, chemistry, forcing, climate and sea level calculations.
 
 Two subroutines do the work:
@@ -31,8 +31,8 @@ RSCM has no `magicc_step_year`.
 Each MAGICC7 module is a component, and the `Model` solves them in dependency order every annual step.
 Components added producer first are coupled within the step.
 Feedbacks such as temperature on the carbon cycle read the value from the start of the step,
-as MAGICC7's staggered scheme does.
-[Key concepts](../key_concepts.md#dependency-graph) describes the dependency graph and timestep semantics.
+through a lag, as in MAGICC7.
+[Key concepts](../key_concepts.md#dependency-graph) describes the dependency graph and step semantics.
 The monthly loops stay inside their components:
 `ClimateUDEB` runs the climate substeps and `OceanCarbon` the ocean carbon months.
 
@@ -41,19 +41,19 @@ The monthly loops stay inside their components:
 The modules run in the order of their physical dependencies.
 Inputs and outputs use MAGICC7's Fortran names.
 
-| Order | Module                                                   | Inputs                                                    | Outputs                                                | RSCM component                                 |
-| ----- | -------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------- |
-| 1     | [Permafrost](module_12_permafrost.md)                    | `DAT_SURFACE_TEMP` (previous year)                        | `DAT_CH4PF_EMIS`, `DAT_CO2PF_EMIS`                     | `Permafrost`                                   |
-| 2     | [CH4 Chemistry](module_01_ch4_chemistry.md)              | CH4 emissions, temperature, NOx, CO and NMVOC             | CH4 concentration and lifetime                         | `CH4Chemistry`, `CH4Oxidation`                 |
-| 3     | [N2O Chemistry](module_02_n2o_chemistry.md)              | N2O emissions                                             | N2O concentration                                      | `N2OChemistry`                                 |
-| 4     | [Terrestrial Carbon](module_09_terrestrial_carbon.md)    | `FEEDBACK_TEMPERATURE`, `DAT_CO2_CONC`, `DAT_CO2B_EMIS`   | `CO2_TERRBIO_AND_FOSSIL_EMIS`, the three pools         | `TerrestrialCarbon`                            |
-| 4a    | [Nitrogen Limitation](module_13_nitrogen_limitation.md)    | Called from `TERRCARBON2` when `NCYCLE_APPLY = 1`       | `NCYCLE_LIMIT_FACTOR`, which scales NPP                | `TerrestrialCarbon` with `nitrogen`            |
-| 5     | [Ocean Carbon](module_10_ocean_carbon.md)                | `c_atm_for_oceancc`, `co2_feed_deltatemp`                 | `co2_air2ocean_flux`, `dat_pco2s_conc`                 | `OceanCarbon`                                  |
-| 6     | [CO2 Budget](module_11_co2_budget.md)                    | Land and ocean fluxes, emissions                          | `DAT_CO2_CONC`                                         | `CO2Budget`                                    |
-| 7     | [Halocarbon Chemistry](module_03_halocarbon_chemistry.md)    | Halocarbon emissions                                  | Halocarbon concentrations                              | `HalocarbonChemistry`                          |
-| 8     | [RF Aggregation](module_07b_rf_aggregation.md)           | All concentrations and prescribed forcing                 | `dat_total_effrf`, `dat_volcanic_effrf` (four boxes)   | `GhgForcing`, `OzoneForcing`, `ForcingAggregation` |
-| 9     | [Climate](module_08_climate.md)                          | `dat_total_effrf`, `dat_volcanic_effrf`                   | `DAT_SURFACE_TEMP`, `TEMP_OCEANLAYERS`, heat uptake    | `ClimateUDEB`                                  |
-| 10    | [Sea Level Rise](module_14_sea_level_rise.md)            | `TEMP_OCEANLAYERS`, `DAT_SURFACE_TEMP`, `DAT_HEATCONTENT_AGGREG` | Sea level components and total                  | `SeaLevelRise`                                 |
+| Order | Module                                                    | Inputs                                                           | Outputs                                              | RSCM component                                     |
+| ----- | --------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------- |
+| 1     | [Permafrost](module_12_permafrost.md)                     | `DAT_SURFACE_TEMP` (previous year)                               | `DAT_CH4PF_EMIS`, `DAT_CO2PF_EMIS`                   | `Permafrost`                                       |
+| 2     | [CH4 Chemistry](module_01_ch4_chemistry.md)               | CH4 emissions, temperature, NOx, CO and NMVOC                    | CH4 concentration and lifetime                       | `CH4Chemistry`, `CH4Oxidation`                     |
+| 3     | [N2O Chemistry](module_02_n2o_chemistry.md)               | N2O emissions                                                    | N2O concentration                                    | `N2OChemistry`                                     |
+| 4     | [Terrestrial Carbon](module_09_terrestrial_carbon.md)     | `FEEDBACK_TEMPERATURE`, `DAT_CO2_CONC`, `DAT_CO2B_EMIS`          | `CO2_TERRBIO_AND_FOSSIL_EMIS`, the three pools       | `TerrestrialCarbon`                                |
+| 4a    | [Nitrogen Limitation](module_13_nitrogen_limitation.md)   | Called from `TERRCARBON2` when `NCYCLE_APPLY = 1`                | `NCYCLE_LIMIT_FACTOR`, which scales NPP              | `TerrestrialCarbon` with `nitrogen`                |
+| 5     | [Ocean Carbon](module_10_ocean_carbon.md)                 | `c_atm_for_oceancc`, `co2_feed_deltatemp`                        | `co2_air2ocean_flux`, `dat_pco2s_conc`               | `OceanCarbon`                                      |
+| 6     | [CO2 Budget](module_11_co2_budget.md)                     | Land and ocean fluxes, emissions                                 | `DAT_CO2_CONC`                                       | `CO2Budget`                                        |
+| 7     | [Halocarbon Chemistry](module_03_halocarbon_chemistry.md) | Halocarbon emissions                                             | Halocarbon concentrations                            | `HalocarbonChemistry`                              |
+| 8     | [RF Aggregation](module_07b_rf_aggregation.md)            | All concentrations and prescribed forcing                        | `dat_total_effrf`, `dat_volcanic_effrf` (four boxes) | `GHGForcing`, `OzoneForcing`, `ForcingAggregation` |
+| 9     | [Climate](module_08_climate.md)                           | `dat_total_effrf`, `dat_volcanic_effrf`                          | `DAT_SURFACE_TEMP`, `TEMP_OCEANLAYERS`, heat uptake  | `ClimateUDEB`                                      |
+| 10    | [Sea Level Rise](module_14_sea_level_rise.md)             | `TEMP_OCEANLAYERS`, `DAT_SURFACE_TEMP`, `DAT_HEATCONTENT_AGGREG` | Sea level components and total                       | `SeaLevelRise`                                     |
 
 Steps 1 to 8 run inside `DELTAQ`.
 `run_magicc7` adds the halocarbons before the terrestrial carbon cycle.
@@ -122,10 +122,10 @@ The implicit ocean scheme is stable at any step length.
 - `CURRENT_YEAR_IDX` runs from 1 to `NYEARS`.
   `NEXT_YEAR_IDX` is capped at `NYEARS` and `PREVIOUS_YEAR_IDX` floored at 1.
 - `CURRENT_TIME_IDX` counts substeps from the start, and `NEXT_TIME_IDX` is capped at `NTIMES`.
-- The first year starts at step 0, which includes the initial state.
-- The last year stops at step `STEPSPERYEAR - 1`, so it does not overshoot the time axis.
-- In other years step `STEPSPERYEAR` lands on 1 January of the next year,
-  which becomes that year's initial state.
+- The first year starts at substep 0, which includes the initial values.
+- The last year stops at substep `STEPSPERYEAR - 1`, so it does not overshoot the time axis.
+- In other years substep `STEPSPERYEAR` lands on 1 January of the next year,
+  which becomes the starting value of that year.
 
 Forcing is interpolated to each substep:
 

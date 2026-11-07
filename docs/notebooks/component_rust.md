@@ -29,7 +29,7 @@ A component module starts with these imports:
 
 ```rust
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
     ScalarWindow,
 };
 use rscm_core::errors::RSCMResult;
@@ -39,7 +39,7 @@ use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 ```
 
-The code `ComponentIO` generates refers to `GridType`, `RequirementType`, `ScalarWindow`, `StateValue`
+The code `ComponentIO` generates refers to `GridType`, `VariableRole`, `ScalarWindow`, `StateValue`
 and the other types above by their short names.
 Import them in the module that derives `ComponentIO`, even where your own code does not use them.
 
@@ -52,7 +52,7 @@ pub struct CO2ERFParameters {
     /// ERF due to a doubling of atmospheric CO2 concentrations (W/m^2)
     pub erf_2xco2: FloatValue,
     /// Pre-industrial atmospheric CO2 concentration (ppm)
-    pub conc_pi: FloatValue,
+    pub co2_pi: FloatValue,
 }
 
 /// CO2 effective radiative forcing component
@@ -62,7 +62,7 @@ pub struct CO2ERFParameters {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["radiative-forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
 #[inputs(
-    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 )]
 #[outputs(
     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
@@ -79,7 +79,7 @@ impl CO2ERF {
     /// Core physics calculation, extracted for testability
     pub fn calculate_erf(&self, concentration: FloatValue) -> FloatValue {
         self.parameters.erf_2xco2 / 2.0_f64.ln()
-            * (1.0 + (concentration - self.parameters.conc_pi) / self.parameters.conc_pi).ln()
+            * (1.0 + (concentration - self.parameters.co2_pi) / self.parameters.co2_pi).ln()
     }
 }
 ```
@@ -90,7 +90,7 @@ which reads the typed inputs and returns the typed outputs:
 ```rust
 #[typetag::serde]
 impl Component for CO2ERF {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -115,14 +115,14 @@ The later listings on this page leave them out.
 
 ### Attributes
 
-| Attribute                                       | Purpose                                                    |
-| ----------------------------------------------- | ---------------------------------------------------------- |
-| `#[inputs(field { name, unit, grid }, ...)]`    | Variables read from other components or exogenous data     |
-| `#[outputs(field { name, unit, grid }, ...)]`   | Variables written each timestep                            |
-| `#[states(field { name, unit, grid }, ...)]`    | Variables read at the start and written at the end         |
-| `#[component(tags = [...], category = "...")]`  | Optional metadata for the generated component docs         |
+| Attribute                                      | Purpose                                                 |
+| ---------------------------------------------- | ------------------------------------------------------- |
+| `#[inputs(field { name, unit, grid }, ...)]`   | Variables read from other components or prescribed data |
+| `#[outputs(field { name, unit, grid }, ...)]`  | Variables written each step                             |
+| `#[states(field { name, unit, grid }, ...)]`   | Variables read at the start and written at the end      |
+| `#[component(tags = [...], category = "...")]` | Optional metadata for the generated component docs      |
 
-`grid` is optional and is one of `"Scalar"` (the default), `"FourBox"` or `"Hemispheric"`.
+`grid` is optional and is one of `"scalar"` (the default), `"four_box"` or `"hemispheric"`.
 
 ## What the Macro Generates
 
@@ -142,7 +142,7 @@ impl<'a> CO2ERFInputs<'a> {
 
 `from_input_state` panics if a declared variable is missing from the input state.
 Inside a model every declared variable is present.
-A variable with no producer and no exogenous data reads as NaN rather than failing.
+A variable with no producer and no prescribed data reads as NaN rather than failing.
 
 ### Output Struct
 
@@ -158,7 +158,7 @@ impl From<CO2ERFOutputs> for OutputState { ... }
 
 ```rust
 impl CO2ERF {
-    pub fn generated_definitions() -> Vec<RequirementDefinition> { ... }
+    pub fn generated_definitions() -> Vec<VariableDefinition> { ... }
     pub fn component_metadata() -> ComponentMetadata { ... }
 }
 ```
@@ -166,46 +166,46 @@ impl CO2ERF {
 ## Input Access Patterns
 
 A scalar input is a `ScalarWindow`.
-It reads scalar data directly and aggregates FourBox or Hemispheric data to a global value.
+It reads scalar data directly and aggregates four-box or hemispheric data to a global value.
 
-| Method           | Description                                                                |
-| ---------------- | -------------------------------------------------------------------------- |
-| `get()`          | The value this component should use for the step                           |
-| `interval()`     | A point's values at the start and end of the step, as an `RSCMResult`      |
-| `history(n)`     | The value `n` steps before `get()`, or `None`                              |
-| `history_len()`  | Number of values `history` can read                                        |
-| `get_time()`     | Time of the value `get()` returns                                          |
-| `interpolate(t)` | Value at time `t`, such as a fixed reference year, as an `RSCMResult`      |
+| Method           | Description                                                           |
+| ---------------- | --------------------------------------------------------------------- |
+| `get()`          | The value this component should use for the step                      |
+| `interval()`     | A point's values at the start and end of the step, as an `RSCMResult` |
+| `history(n)`     | The value `n` steps before `get()`, or `None`                         |
+| `history_len()`  | Number of values `history` can read                                   |
+| `get_time()`     | Time of the value `get()` returns                                     |
+| `interpolate(t)` | Value at time `t`, such as a fixed reference year, as an `RSCMResult` |
 
 For a point, `get()` reads index N+1, the step's end, whether the input is prescribed or upstream,
 and index N for lagged inputs and own state.
 Prefer `get()` unless the physics needs both ends of the step.
-See [Timestep Semantics](../key_concepts.md#timestep-semantics) for the details.
+See [Step Semantics](../key_concepts.md#step-semantics) for the details.
 
 ## State Variables
 
-For variables that are both read and written each timestep, use `#[states(...)]`:
+For variables that are both read and written each step, use `#[states(...)]`:
 
 ```rust
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[inputs(
-    emissions { name = "Emissions|CO2", unit = "GtC / yr" },
+    emissions { name = "Emissions|CO2", unit = "GtC/yr" },
 )]
 #[outputs(
-    uptake { name = "Land Uptake", unit = "GtC / yr" },
+    uptake { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr" },
 )]
 #[states(
-    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
     cumulative { name = "Cumulative Emissions|CO2", unit = "Gt C" },
 )]
 pub struct CarbonCycle {
     pub tau: FloatValue,
-    pub conc_pi: FloatValue,
+    pub co2_pi: FloatValue,
 }
 ```
 
 State variables appear in both the `Inputs` and `Outputs` structs.
-This lets `solve` read the value at the start of the timestep and write the new value.
+This lets `solve` read the value at the start of the step and write the new value.
 State variables need an initial value, set with `ModelBuilder::with_initial_values`.
 
 ### Internal State
@@ -318,7 +318,7 @@ use std::sync::Arc;
     forcing { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[states(
-    temperature { name = "Surface Temperature", unit = "K" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
 )]
 pub struct OneBox {
     pub heat_capacity: FloatValue,
@@ -371,7 +371,7 @@ Add `ode_solvers` to the crate's dependencies for the vector types.
 
 RSCM supports spatially-resolved variables:
 
-- **FourBox**: Northern Ocean, Northern Land, Southern Ocean, Southern Land
+- **Four-box**: Northern Ocean, Northern Land, Southern Ocean, Southern Land
 - **Hemispheric**: Northern, Southern
 
 Set `grid` in the declaration, and return the matching slice type from `solve`.
@@ -383,10 +383,10 @@ use rscm_core::state::FourBoxSlice;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[inputs(
-    erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
+    erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[outputs(
-    heat_uptake { name = "Heat Uptake|Ocean", unit = "W/m^2", grid = "FourBox" },
+    heat_uptake { name = "Heat Uptake", unit = "W/m^2", grid = "four_box" },
 )]
 pub struct FourBoxOceanHeatUptake {
     pub parameters: FourBoxOceanHeatUptakeParameters,
@@ -405,16 +405,16 @@ let outputs = FourBoxOceanHeatUptakeOutputs {
 
 The full component is `crates/rscm-components/src/components/four_box_ocean_heat_uptake.rs`.
 
-### Grid Type Mapping
+### Grid Mapping
 
-| Grid Type        | Input Type                              | Output Type        |
-| ---------------- | --------------------------------------- | ------------------ |
-| Scalar (default) | `ScalarWindow<'a>`                      | `FloatValue`       |
-| FourBox          | `GridTimeseriesWindow<'a, FourBoxGrid>` | `FourBoxSlice`     |
-| Hemispheric      | `HemisphericWindow<'a>`                 | `HemisphericSlice` |
+| Grid                 | Input Type                              | Output Type        |
+| -------------------- | --------------------------------------- | ------------------ |
+| `"scalar"` (default) | `ScalarWindow<'a>`                      | `FloatValue`       |
+| `"four_box"`         | `GridTimeseriesWindow<'a, FourBoxGrid>` | `FourBoxSlice`     |
+| `"hemispheric"`      | `HemisphericWindow<'a>`                 | `HemisphericSlice` |
 
-A FourBox input also needs `FourBoxGrid` (from `rscm_core::spatial`) and `GridTimeseriesWindow` in scope.
-A Hemispheric input needs `HemisphericWindow`.
+A four-box input also needs `FourBoxGrid` (from `rscm_core::spatial`) and `GridTimeseriesWindow` in scope.
+A hemispheric input needs `HemisphericWindow`.
 Grid windows take a region, for example `get(FourBoxRegion::NorthernOcean)`.
 They also provide `get_all()`, and `history(n)` and `interval()` return every region.
 
@@ -428,13 +428,13 @@ use rscm_core::errors::RSCMError;
 
 if t_next - t_current != 1.0 {
     return Err(RSCMError::Error(format!(
-        "CO2ERF requires annual timesteps, got {}",
+        "CO2ERF requires annual steps, got {}",
         t_next - t_current
     )));
 }
 ```
 
-The model stops and adds the component name and timestep to the error.
+The model stops and adds the component name and step to the error.
 From Python it is raised as a `RuntimeError`.
 
 From Rust, `Model::run` and `Model::step` panic on a component error.
@@ -502,10 +502,10 @@ mod tests {
     fn test_calculate_erf_at_2x_co2() {
         let params = CO2ERFParameters {
             erf_2xco2: 3.7,
-            conc_pi: 278.0,
+            co2_pi: 278.0,
         };
         let component = CO2ERF::from_parameters(params.clone());
-        let erf = component.calculate_erf(params.conc_pi * 2.0);
+        let erf = component.calculate_erf(params.co2_pi * 2.0);
         assert!((erf - params.erf_2xco2).abs() < 1e-10);
     }
 }

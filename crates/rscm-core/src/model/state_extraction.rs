@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::component::{InputState, RequirementDefinition, RequirementType};
+use crate::component::{InputState, VariableDefinition, VariableRole};
 use crate::state::{ReadTransformInfo, TransformContext, VariableSource};
 use crate::timeseries::Time;
 use crate::timeseries_collection::TimeseriesCollection;
@@ -10,11 +10,11 @@ use crate::timeseries_collection::TimeseriesCollection;
 /// Extract the input state for solving one component on its own at `t_current`.
 ///
 /// `inputs` are the component's input definitions, as `Component::inputs` returns them.
-/// A state input reads as the component's own state and every other input as exogenous,
+/// A state input reads as the component's own state and every other input as prescribed,
 /// each with the point or average type its definition resolves to.
 pub fn extract_state(
     collection: &TimeseriesCollection,
-    inputs: Vec<RequirementDefinition>,
+    inputs: Vec<VariableDefinition>,
     t_current: Time,
 ) -> InputState<'_> {
     let mut state = Vec::new();
@@ -25,12 +25,12 @@ pub fn extract_state(
             .get_by_name(input.name.as_str())
             .unwrap_or_else(|| panic!("No timeseries with variable='{}'", input.name));
         state.push(ts);
-        let source = if input.requirement_type == RequirementType::State {
+        let source = if input.role == VariableRole::State {
             VariableSource::OwnState
         } else {
-            VariableSource::Exogenous
+            VariableSource::Prescribed
         };
-        let transform = ReadTransformInfo::new(ts.data.grid_type(), None)
+        let transform = ReadTransformInfo::new(ts.data.grid(), None)
             .with_source(source)
             .with_timeseries_type(input.resolved_timeseries_type());
         read_transforms.insert(input.name, transform);
@@ -67,7 +67,6 @@ mod tests {
     use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
     use crate::spatial::FourBoxGrid;
     use crate::timeseries::{GridTimeseries, TimeAxis};
-    use crate::timeseries_collection::VariableType;
     use numpy::array;
     use numpy::ndarray::Array2;
     use std::sync::Arc;
@@ -86,13 +85,12 @@ mod tests {
                 "W/m^2".to_string(),
                 InterpolationStrategy::from(PreviousStrategy::new(true)),
             ),
-            VariableType::Exogenous,
         );
 
-        let inputs = vec![RequirementDefinition::scalar_input("Forcing", "W/m^2")];
+        let inputs = vec![VariableDefinition::scalar_input("Forcing", "W/m^2")];
         let state = extract_state(&collection, inputs, 2000.0);
 
-        // An exogenous point reads the step's end, averaged with equal weights.
+        // A prescribed point reads the step's end, averaged with equal weights.
         assert_eq!(state.get_scalar_window("Forcing").get(), 6.5);
     }
 }

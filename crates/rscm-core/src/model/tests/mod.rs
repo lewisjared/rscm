@@ -18,7 +18,7 @@ mod grid_weights;
 #[cfg(test)]
 mod lags;
 #[cfg(test)]
-mod missing_exogenous;
+mod missing_prescribed;
 #[cfg(test)]
 mod parallel;
 #[cfg(test)]

@@ -63,7 +63,7 @@ The system SHALL support aggregating grid-based timeseries to global values.
 
 - **WHEN** calling `grid_timeseries.aggregate_global()`
 - **THEN** it MUST return a scalar timeseries (GridTimeseries<T, ScalarGrid>)
-- **AND** each timestep MUST be aggregated using `grid.aggregate_global()`
+- **AND** each step MUST be aggregated using `grid.aggregate_global()`
 - **AND** the aggregation MUST use grid-specific weights (e.g., area fractions)
 
 #### Scenario: Get global value at specific time
@@ -79,7 +79,7 @@ The system SHALL support transforming timeseries between different grid types.
 #### Scenario: Transform four-box to scalar grid
 
 - **WHEN** calling `four_box_timeseries.transform_to(ScalarGrid)`
-- **THEN** it MUST aggregate all four regions to a single global value for each timestep
+- **THEN** it MUST aggregate all four regions to a single global value for each step
 - **AND** return a `GridTimeseries<T, ScalarGrid>`
 
 #### Scenario: Transform four-box to hemispheric grid
@@ -106,14 +106,14 @@ The system SHALL provide convenient access to individual regional timeseries.
 - **WHEN** calling `grid_timeseries.region(region_index)`
 - **THEN** it MUST return a `GridTimeseries<T, ScalarGrid>` for that region only
 - **AND** the returned timeseries MUST have the same time axis
-- **AND** values MUST match the specified region's values at all timesteps
+- **AND** values MUST match the specified region's values at all steps
 
 #### Scenario: Set value for specific region and time
 
 - **WHEN** calling `grid_timeseries.set(time_index, region_index, value)`
 - **THEN** it MUST update the value at the specified time and region
 - **AND** NOT affect values at other times or regions
-- **AND** update the latest valid timestep if applicable
+- **AND** update the latest valid step if applicable
 
 ### Requirement: Serialization Support
 

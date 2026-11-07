@@ -3,7 +3,7 @@
 //! This module contains climate model components implementing MAGICC-style
 //! parameterisations and physics.
 //!
-//! - [`ClimateUDEB`]: 4-box upwelling-diffusion energy balance model with
+//! - [`ClimateUDEB`]: four-box upwelling-diffusion energy balance model with
 //!   50-layer ocean
 //! - [`SeaLevelRise`]: Sea level rise from land ice
 //! - [`lamcalc`]: Iterative feedback parameter solver
@@ -13,9 +13,6 @@ mod sea_level;
 pub(crate) mod state;
 mod udeb;
 
-pub use sea_level::{
-    thermal_expansion_increment, SeaLevelRise, SeaLevelRiseState, ANNUAL_MEAN_TEMPERATURE,
-    THERMAL_EXPANSION,
-};
+pub use sea_level::{thermal_expansion_increment, SeaLevelRise, SeaLevelRiseState};
 pub use state::ClimateUDEBState;
-pub use udeb::{ClimateUDEB, CLIMATE_SENSITIVITY, CO2_DOUBLING_ERF, REGIONAL_FORCING};
+pub use udeb::ClimateUDEB;

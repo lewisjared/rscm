@@ -44,7 +44,7 @@ impl Default for ReadTransformInfo {
             source_grid: GridType::Scalar,
             weights: None,
             unit_conversion_factor: 1.0,
-            variable_source: VariableSource::Exogenous,
+            variable_source: VariableSource::Prescribed,
             timeseries_type: TimeseriesType::Point,
         }
     }
@@ -57,7 +57,7 @@ impl ReadTransformInfo {
             source_grid,
             weights,
             unit_conversion_factor: 1.0,
-            variable_source: VariableSource::Exogenous,
+            variable_source: VariableSource::Prescribed,
             timeseries_type: TimeseriesType::Point,
         }
     }
@@ -68,7 +68,7 @@ impl ReadTransformInfo {
             source_grid: GridType::Scalar,
             weights: None,
             unit_conversion_factor: factor,
-            variable_source: VariableSource::Exogenous,
+            variable_source: VariableSource::Prescribed,
             timeseries_type: TimeseriesType::Point,
         }
     }
@@ -79,7 +79,7 @@ impl ReadTransformInfo {
         self
     }
 
-    /// Set the variable source type for `get()` behavior.
+    /// Set the variable source type for `get()` behaviour.
     pub fn with_source(mut self, source: VariableSource) -> Self {
         self.variable_source = source;
         self
@@ -92,7 +92,7 @@ impl ReadTransformInfo {
     }
 }
 
-/// A scalar window that aggregates from a FourBox timeseries.
+/// A scalar window that aggregates from a four-box timeseries.
 ///
 /// This provides the same API as `TimeseriesWindow` but reads from a FourBox
 /// timeseries and aggregates to a scalar value on each access.
@@ -101,12 +101,12 @@ impl ReadTransformInfo {
 #[derive(Debug)]
 pub struct AggregatingFourBoxWindow<'a> {
     timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
-    current_index: usize,
+    time_index: usize,
     name: &'a str,
     weights: Option<[f64; 4]>,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
-    /// Source type determining get() behavior
+    /// Source type determining get() behaviour
     variable_source: VariableSource,
     timeseries_type: TimeseriesType,
 }
@@ -114,42 +114,42 @@ pub struct AggregatingFourBoxWindow<'a> {
 impl<'a> AggregatingFourBoxWindow<'a> {
     pub fn new(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
-        current_index: usize,
+        time_index: usize,
         name: &'a str,
         weights: Option<Vec<f64>>,
     ) -> Self {
         Self::with_source(
             timeseries,
-            current_index,
+            time_index,
             name,
             weights,
             1.0,
-            VariableSource::Exogenous,
+            VariableSource::Prescribed,
         )
     }
 
     /// Create a new window with unit conversion.
     pub fn with_unit_conversion(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
-        current_index: usize,
+        time_index: usize,
         name: &'a str,
         weights: Option<Vec<f64>>,
         unit_conversion_factor: f64,
     ) -> Self {
         Self::with_source(
             timeseries,
-            current_index,
+            time_index,
             name,
             weights,
             unit_conversion_factor,
-            VariableSource::Exogenous,
+            VariableSource::Prescribed,
         )
     }
 
     /// Create a new window with all options including variable source.
     pub fn with_source(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
-        current_index: usize,
+        time_index: usize,
         name: &'a str,
         weights: Option<Vec<f64>>,
         unit_conversion_factor: f64,
@@ -159,12 +159,12 @@ impl<'a> AggregatingFourBoxWindow<'a> {
             let arr: [f64; 4] = w
                 .as_slice()
                 .try_into()
-                .expect("FourBox weights must have 4 elements");
+                .expect("four-box grid weights must have 4 elements");
             arr
         });
         Self {
             timeseries,
-            current_index,
+            time_index,
             name,
             weights,
             unit_conversion_factor,
@@ -211,7 +211,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
 
     fn read_index(&self) -> ReadIndex {
         ReadIndex {
-            current: self.current_index,
+            current: self.time_index,
             len: self.timeseries.len(),
             source: self.variable_source,
             timeseries_type: self.timeseries_type,
@@ -289,12 +289,12 @@ impl<'a> AggregatingFourBoxWindow<'a> {
 #[derive(Debug)]
 pub struct AggregatingHemisphericWindow<'a> {
     timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
-    current_index: usize,
+    time_index: usize,
     name: &'a str,
     weights: Option<[f64; 2]>,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
-    /// Source type determining get() behavior
+    /// Source type determining get() behaviour
     variable_source: VariableSource,
     timeseries_type: TimeseriesType,
 }
@@ -302,42 +302,42 @@ pub struct AggregatingHemisphericWindow<'a> {
 impl<'a> AggregatingHemisphericWindow<'a> {
     pub fn new(
         timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
-        current_index: usize,
+        time_index: usize,
         name: &'a str,
         weights: Option<Vec<f64>>,
     ) -> Self {
         Self::with_source(
             timeseries,
-            current_index,
+            time_index,
             name,
             weights,
             1.0,
-            VariableSource::Exogenous,
+            VariableSource::Prescribed,
         )
     }
 
     /// Create a new window with unit conversion.
     pub fn with_unit_conversion(
         timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
-        current_index: usize,
+        time_index: usize,
         name: &'a str,
         weights: Option<Vec<f64>>,
         unit_conversion_factor: f64,
     ) -> Self {
         Self::with_source(
             timeseries,
-            current_index,
+            time_index,
             name,
             weights,
             unit_conversion_factor,
-            VariableSource::Exogenous,
+            VariableSource::Prescribed,
         )
     }
 
     /// Create a new window with all options including variable source.
     pub fn with_source(
         timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
-        current_index: usize,
+        time_index: usize,
         name: &'a str,
         weights: Option<Vec<f64>>,
         unit_conversion_factor: f64,
@@ -352,7 +352,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
         });
         Self {
             timeseries,
-            current_index,
+            time_index,
             name,
             weights,
             unit_conversion_factor,
@@ -399,7 +399,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
 
     fn read_index(&self) -> ReadIndex {
         ReadIndex {
-            current: self.current_index,
+            current: self.time_index,
             len: self.timeseries.len(),
             source: self.variable_source,
             timeseries_type: self.timeseries_type,
@@ -479,7 +479,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
 pub enum ScalarWindow<'a> {
     /// Direct access to a scalar timeseries
     Direct(super::windows::TimeseriesWindow<'a>),
-    /// Aggregating access to a FourBox timeseries
+    /// Aggregating access to a four-box timeseries
     FromFourBox(AggregatingFourBoxWindow<'a>),
     /// Aggregating access to a Hemispheric timeseries
     FromHemispheric(AggregatingHemisphericWindow<'a>),
@@ -609,18 +609,18 @@ impl<'a> ScalarWindow<'a> {
     }
 }
 
-/// A window that aggregates from a FourBox timeseries to Hemispheric output.
+/// A window that aggregates from a four-box timeseries to Hemispheric output.
 ///
-/// This is used when reading a FourBox timeseries but the component wants Hemispheric data.
+/// This is used when reading a four-box timeseries but the component wants Hemispheric data.
 /// Optionally applies a unit conversion factor after aggregation.
 #[derive(Debug)]
 pub struct AggregatingFourBoxToHemisphericWindow<'a> {
     timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
-    current_index: usize,
+    time_index: usize,
     name: &'a str,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
-    /// Source type determining get() behavior
+    /// Source type determining get() behaviour
     variable_source: VariableSource,
     timeseries_type: TimeseriesType,
 }
@@ -628,45 +628,45 @@ pub struct AggregatingFourBoxToHemisphericWindow<'a> {
 impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     pub fn new(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
-        current_index: usize,
+        time_index: usize,
         name: &'a str,
     ) -> Self {
         Self::with_source(
             timeseries,
-            current_index,
+            time_index,
             name,
             1.0,
-            VariableSource::Exogenous,
+            VariableSource::Prescribed,
         )
     }
 
     /// Create a new window with unit conversion.
     pub fn with_unit_conversion(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
-        current_index: usize,
+        time_index: usize,
         name: &'a str,
         unit_conversion_factor: f64,
     ) -> Self {
         Self::with_source(
             timeseries,
-            current_index,
+            time_index,
             name,
             unit_conversion_factor,
-            VariableSource::Exogenous,
+            VariableSource::Prescribed,
         )
     }
 
     /// Create a new window with all options including variable source.
     pub fn with_source(
         timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
-        current_index: usize,
+        time_index: usize,
         name: &'a str,
         unit_conversion_factor: f64,
         variable_source: VariableSource,
     ) -> Self {
         Self {
             timeseries,
-            current_index,
+            time_index,
             name,
             unit_conversion_factor,
             variable_source,
@@ -705,7 +705,7 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
 
     fn read_index(&self) -> ReadIndex {
         ReadIndex {
-            current: self.current_index,
+            current: self.time_index,
             len: self.timeseries.len(),
             source: self.variable_source,
             timeseries_type: self.timeseries_type,
@@ -789,7 +789,7 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
 pub enum HemisphericWindow<'a> {
     /// Direct access to a Hemispheric timeseries
     Direct(GridTimeseriesWindow<'a, HemisphericGrid>),
-    /// Aggregating access from a FourBox timeseries
+    /// Aggregating access from a four-box timeseries
     FromFourBox(AggregatingFourBoxToHemisphericWindow<'a>),
 }
 
@@ -922,7 +922,7 @@ mod aggregating_window_tests {
     fn create_four_box_timeseries() -> GridTimeseries<FloatValue, FourBoxGrid> {
         let grid = FourBoxGrid::magicc_standard();
         let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0, 2002.0]));
-        // Values chosen for easy arithmetic: each timestep increases by 1
+        // Values chosen for easy arithmetic: each step increases by 1
         let values = Array2::from_shape_vec(
             (3, 4),
             vec![
@@ -998,7 +998,7 @@ mod aggregating_window_tests {
             "test",
             None,
             1.0,
-            VariableSource::UpstreamOutput,
+            VariableSource::Upstream,
         );
 
         // Index 2 values [12, 22, 32, 42], mean = 27.0
@@ -1015,7 +1015,7 @@ mod aggregating_window_tests {
             "Effective Radiative Forcing",
             None,
             1.0,
-            VariableSource::UpstreamOutput,
+            VariableSource::Upstream,
         );
         let _ = window.get();
     }
@@ -1105,7 +1105,7 @@ mod aggregating_window_tests {
             "test",
             None,
             1.0,
-            VariableSource::UpstreamOutput,
+            VariableSource::Upstream,
         );
 
         // Index 2 values [120, 240], mean = 180.0
@@ -1155,7 +1155,7 @@ mod aggregating_window_tests {
             1,
             "test",
             1.0,
-            VariableSource::UpstreamOutput,
+            VariableSource::Upstream,
         );
 
         // Index 2 values [12, 22, 32, 42]
@@ -1207,7 +1207,7 @@ mod aggregating_window_tests {
         let inner = AggregatingFourBoxWindow::new(&ts, 0, "test", None);
         let window = ScalarWindow::FromFourBox(inner);
 
-        // Same behavior as AggregatingFourBoxWindow
+        // Same behaviour as AggregatingFourBoxWindow
         assert_eq!(window.get(), 26.0);
         assert_eq!(window.history(1), Some(25.0));
         assert_eq!(window.get_time(), 2001.0);
@@ -1220,7 +1220,7 @@ mod aggregating_window_tests {
         let inner = AggregatingHemisphericWindow::new(&ts, 0, "test", None);
         let window = ScalarWindow::FromHemispheric(inner);
 
-        // Same behavior as AggregatingHemisphericWindow
+        // Same behaviour as AggregatingHemisphericWindow
         assert_eq!(window.get(), 165.0);
         assert_eq!(window.history(1), Some(150.0));
         assert_eq!(window.get_time(), 2001.0);
@@ -1323,16 +1323,16 @@ mod aggregating_window_tests {
         let window =
             |source| AggregatingFourBoxWindow::with_source(&ts, 1, "test", None, 2.0, source);
 
-        let exogenous = window(VariableSource::Exogenous);
-        assert_eq!(exogenous.get_time(), 2002.0);
-        assert_eq!(exogenous.history(0), Some(54.0));
-        assert_eq!(exogenous.history(1), Some(52.0));
-        assert_eq!(exogenous.history(3), None);
-        assert_eq!(exogenous.history_len(), 3);
-        assert_eq!(exogenous.interval().unwrap(), (52.0, 54.0));
-        assert_eq!(exogenous.interpolate(2002.0).unwrap(), 54.0);
+        let prescribed = window(VariableSource::Prescribed);
+        assert_eq!(prescribed.get_time(), 2002.0);
+        assert_eq!(prescribed.history(0), Some(54.0));
+        assert_eq!(prescribed.history(1), Some(52.0));
+        assert_eq!(prescribed.history(3), None);
+        assert_eq!(prescribed.history_len(), 3);
+        assert_eq!(prescribed.interval().unwrap(), (52.0, 54.0));
+        assert_eq!(prescribed.interpolate(2002.0).unwrap(), 54.0);
 
-        let upstream = window(VariableSource::UpstreamOutput);
+        let upstream = window(VariableSource::Upstream);
         assert_eq!(upstream.get_time(), 2002.0);
         assert_eq!(upstream.history(0), Some(54.0));
         assert_eq!(upstream.history_len(), 3);
@@ -1343,7 +1343,7 @@ mod aggregating_window_tests {
             (50.0, 52.0)
         );
         assert!(window(VariableSource::OwnState).interval().is_err());
-        assert!(window(VariableSource::Exogenous)
+        assert!(window(VariableSource::Prescribed)
             .with_timeseries_type(TimeseriesType::Average)
             .interval()
             .is_err());
@@ -1355,13 +1355,13 @@ mod aggregating_window_tests {
         let window =
             |source| AggregatingHemisphericWindow::with_source(&ts, 1, "test", None, 1.0, source);
 
-        let exogenous = window(VariableSource::Exogenous);
-        assert_eq!(exogenous.get_time(), 2002.0);
-        assert_eq!(exogenous.history(1), Some(165.0));
-        assert_eq!(exogenous.history_len(), 3);
-        assert_eq!(exogenous.interval().unwrap(), (165.0, 180.0));
+        let prescribed = window(VariableSource::Prescribed);
+        assert_eq!(prescribed.get_time(), 2002.0);
+        assert_eq!(prescribed.history(1), Some(165.0));
+        assert_eq!(prescribed.history_len(), 3);
+        assert_eq!(prescribed.interval().unwrap(), (165.0, 180.0));
 
-        let upstream = window(VariableSource::UpstreamOutput);
+        let upstream = window(VariableSource::Upstream);
         assert_eq!(upstream.get_time(), 2002.0);
         assert_eq!(upstream.history(0), Some(180.0));
 
@@ -1383,18 +1383,21 @@ mod aggregating_window_tests {
             AggregatingFourBoxToHemisphericWindow::with_source(&ts, 1, "test", 2.0, source)
         };
 
-        let exogenous = window(VariableSource::Exogenous);
-        assert_eq!(exogenous.get_time(), 2002.0);
-        assert_eq!(exogenous.history(0), Some(exogenous.get_all()));
-        assert_eq!(exogenous.history(1), Some(vec![32.0, 72.0]));
-        assert_eq!(exogenous.history_len(), 3);
+        let prescribed = window(VariableSource::Prescribed);
+        assert_eq!(prescribed.get_time(), 2002.0);
+        assert_eq!(prescribed.history(0), Some(prescribed.get_all()));
+        assert_eq!(prescribed.history(1), Some(vec![32.0, 72.0]));
+        assert_eq!(prescribed.history_len(), 3);
         assert_eq!(
-            exogenous.interval().unwrap(),
+            prescribed.interval().unwrap(),
             (vec![32.0, 72.0], vec![34.0, 74.0])
         );
-        assert_eq!(exogenous.interpolate_all(2010.0).unwrap(), vec![34.0, 74.0]);
+        assert_eq!(
+            prescribed.interpolate_all(2010.0).unwrap(),
+            vec![34.0, 74.0]
+        );
 
-        let upstream = window(VariableSource::UpstreamOutput);
+        let upstream = window(VariableSource::Upstream);
         assert_eq!(upstream.get_time(), 2002.0);
         assert_eq!(upstream.history(0), Some(vec![34.0, 74.0]));
 
@@ -1414,10 +1417,10 @@ mod aggregating_window_tests {
             "test",
             None,
             1.0,
-            VariableSource::UpstreamOutput,
+            VariableSource::Upstream,
         ))
         .with_timeseries_type(TimeseriesType::Average);
-        assert_eq!(scalar.variable_source(), VariableSource::UpstreamOutput);
+        assert_eq!(scalar.variable_source(), VariableSource::Upstream);
         assert_eq!(scalar.timeseries_type(), TimeseriesType::Average);
         assert_eq!(scalar.get_time(), 2001.0);
         assert_eq!(scalar.history(0), Some(26.0));
@@ -1449,7 +1452,7 @@ mod aggregating_window_tests {
         assert_eq!(info.source_grid, GridType::Scalar);
         assert!(info.weights.is_none());
         assert_eq!(info.unit_conversion_factor, 1.0);
-        assert_eq!(info.variable_source, VariableSource::Exogenous);
+        assert_eq!(info.variable_source, VariableSource::Prescribed);
         assert_eq!(info.timeseries_type, TimeseriesType::Point);
     }
 

@@ -41,9 +41,9 @@ erf = Timeseries(np.linspace(0.0, 4.0, len(time_axis)), time_axis, "W/m^2", Inte
 model = (
     ModelBuilder()
     .with_time_axis(time_axis)
-    .with_rust_component(TwoLayerBuilder.from_parameters(params).build())
-    .with_exogenous_variable("Effective Radiative Forcing", erf)
-    .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
+    .with_component(TwoLayerBuilder.from_parameters(params).build())
+    .with_prescribed_variable("Effective Radiative Forcing", erf)
+    .with_initial_values({"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0})
 ).build()
 model.run()
 ```
@@ -70,10 +70,10 @@ end = 2100
 type = "TwoLayer"
 
 [components.climate.parameters]
-lambda0 = 1.0        # Climate feedback (W/(m² K))
-a = 0.0              # Nonlinear coefficient (W/(m² K²))
-efficacy = 1.0       # Ocean heat uptake efficacy
-eta = 0.7            # Heat exchange coefficient (W/(m² K))
+lambda0 = 1.0                 # Climate feedback (W/(m² K))
+a = 0.0                       # Nonlinear coefficient (W/(m² K²))
+deep_ocean_efficacy = 1.0     # Ocean heat uptake efficacy
+ocean_heat_transfer = 0.7     # Heat exchange coefficient (W/(m² K))
 heat_capacity_surface = 8.0   # Surface layer (W yr/(m² K))
 heat_capacity_deep = 100.0    # Deep ocean (W yr/(m² K))
 
@@ -81,7 +81,7 @@ heat_capacity_deep = 100.0    # Deep ocean (W yr/(m² K))
 # "Effective Radiative Forcing" = { file = "data/erf.csv", unit = "W/m^2" }
 
 [initial_values]
-# "Surface Temperature" = 0.0
+# "Surface Air Temperature Change" = 0.0
 ```
 
 ### Known Top-Level Keys
@@ -112,7 +112,7 @@ from rscm.config import load_config_layers
 # Later files override earlier ones (nested dicts merge recursively)
 config = load_config_layers(
     "configs/two-layer/defaults.toml",      # Base defaults
-    "configs/two-layer/tuning/high-ecs.toml" # Override specific params
+    "configs/two-layer/tuning/high-ecs.toml" # Override specific parameters
 )
 ```
 
@@ -126,8 +126,8 @@ name = "two-layer-high-ecs"
 description = "Two-layer model tuned for high climate sensitivity"
 
 [components.climate.parameters]
-lambda0 = 0.7    # Lower feedback = higher sensitivity
-efficacy = 1.3   # Higher efficacy
+lambda0 = 0.7             # Lower feedback = higher sensitivity
+deep_ocean_efficacy = 1.3 # Higher efficacy
 ```
 
 **Merge behaviour:**
@@ -151,7 +151,7 @@ config = TwoLayerConfig(
     time=TimeConfig(start=1850, end=2100),
     climate=TwoLayerParameters(
         lambda0=0.8,
-        efficacy=1.2,
+        deep_ocean_efficacy=1.2,
     ),
 )
 ```
@@ -280,14 +280,11 @@ The two-layer model is automatically registered when importing `rscm.config.mode
 ## Model Building
 
 ```python
-from rscm.config import load_config, build_model, build_two_layer_model
+from rscm.config import load_config, build_model
 
-# Generic builder (dispatches by model type)
+# Dispatches on the model type
 config = load_config("configs/two-layer/defaults.toml")
 model = build_model(config)
-
-# Or build specific model type directly
-model = build_two_layer_model(config)
 ```
 
 The builder:
@@ -299,7 +296,7 @@ The builder:
 5. Sets zero initial values for the state variables
 6. Assembles and returns the model
 
-It adds no exogenous inputs yet, as the [Quick Start](#quick-start) warns.
+It adds no prescribed inputs yet, as the [Quick Start](#quick-start) warns.
 
 `build_model` only supports `type = "two-layer"` and raises `ValueError` for any other model type.
 `MAGICCConfig` in `rscm.config.models.magicc` describes MAGICC parameters,
@@ -327,7 +324,7 @@ legacy = {
 rscm_config = from_legacy_dict(legacy)
 # {
 #     "time": {"start": 1850, "end": 2100},
-#     "components": {"climate": {"parameters": {"climate_sensitivity": 3.0}}}
+#     "components": {"climate": {"parameters": {"ecs": 3.0}}}
 # }
 ```
 
@@ -362,7 +359,7 @@ from rscm.config.models.magicc.parameters import (
 # Check a parameter's status
 param = MAGICC_PARAMETERS["core_climatesensitivity"]
 param.status  # ParameterStatus.SUPPORTED
-param.rscm_path  # "components.climate.parameters.climate_sensitivity"
+param.rscm_path  # "components.climate.parameters.ecs"
 
 # Generate coverage report
 report = get_coverage_report()  # Markdown report

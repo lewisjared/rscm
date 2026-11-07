@@ -1,6 +1,6 @@
 //! Python bindings for the units module.
 //!
-//! This module provides Python access to unit parsing, normalization, and conversion
+//! This module provides Python access to unit parsing, normalisation, and conversion
 //! functionality. It exposes the [`PyUnit`] class which wraps the Rust [`Unit`] type.
 //!
 //! # Usage from Python
@@ -9,8 +9,8 @@
 //! from rscm._lib.core import Unit
 //!
 //! # Parse units with flexible syntax
-//! gtc = Unit("GtC / yr")
-//! mtco2 = Unit("MtCO2 / yr")
+//! gtc = Unit("Gt C / yr")
+//! mtco2 = Unit("Mt CO2 / yr")
 //!
 //! # Check compatibility
 //! assert gtc.is_compatible(mtco2)
@@ -26,7 +26,7 @@ use super::Unit;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
-/// A physical unit with parsing, normalization, and conversion support.
+/// A physical unit with parsing, normalisation, and conversion support.
 ///
 /// This class provides comprehensive support for working with physical units
 /// in climate models. It handles parsing of unit strings with flexible syntax,
@@ -40,6 +40,10 @@ use pyo3::prelude::*;
 /// - Division: `W/m^2`, `W m^-2`, `W per m^2`
 /// - Multiplication: `kg m`, `kg*m`
 /// - Whitespace: `W/m^2` == `W / m ^ 2`
+/// - Species after a mass unit: `Mt CH4/yr`, `Gt C/yr`, or fused for carbon: `GtC/yr`, `MtCO2/yr`
+///
+/// Units of one species family convert by molecular mass ratio (`Gt C` to `Mt CO2`).
+/// Units of different species never convert.
 ///
 /// # Examples
 ///
@@ -49,7 +53,7 @@ use pyo3::prelude::*;
 /// # Parse and compare units
 /// u1 = Unit("W/m^2")
 /// u2 = Unit("W / m ^ 2")
-/// assert u1 == u2  # Same normalized form
+/// assert u1 == u2  # Same normalised form
 ///
 /// # Convert between compatible units
 /// gtc = Unit("GtC/yr")
@@ -73,11 +77,12 @@ impl PyUnit {
     ///     - Exponents: `m^2`, `m**2`, `m2`
     ///     - Division: `W/m^2`, `W m^-2`, `W per m^2`
     ///     - Multiplication: `kg m`, `kg*m`
+    ///     - Species after a mass unit: `Mt CH4/yr`, `Gt C/yr`, `GtC/yr`
     ///
     /// Raises
     /// ------
     /// ValueError
-    ///     If the unit string cannot be parsed.
+    ///     If the unit string cannot be parsed, including an unknown species token.
     ///
     /// Examples
     /// --------
@@ -107,24 +112,27 @@ impl PyUnit {
         self.inner.original()
     }
 
-    /// Return the normalized string representation of this unit.
+    /// Return the normalised string representation of this unit.
     ///
-    /// The normalized form is canonical: units with positive exponents
+    /// The normalised form is canonical and compact: units with positive exponents
     /// first (alphabetically), then `/`, then units with negative exponents.
+    /// Carbon is fused to its mass unit and every other species is spaced.
     ///
     /// Returns
     /// -------
     /// str
-    ///     The normalized unit string.
+    ///     The normalised unit string.
     ///
     /// Examples
     /// --------
-    /// >>> Unit("W / m ^ 2").normalized()
-    /// 'W / m^2'
-    /// >>> Unit("m^-2 W").normalized()
-    /// 'W / m^2'
-    fn normalized(&self) -> String {
-        self.inner.normalized()
+    /// >>> Unit("W / m ^ 2").normalised()
+    /// 'W/m^2'
+    /// >>> Unit("Gt C / yr").normalised()
+    /// 'GtC/yr'
+    /// >>> Unit("MtCO2/yr").normalised()
+    /// 'Mt CO2/yr'
+    fn normalised(&self) -> String {
+        self.inner.normalised()
     }
 
     /// Check if this unit is dimensionless.
@@ -148,9 +156,10 @@ impl PyUnit {
 
     /// Check if this unit can be converted to another unit.
     ///
-    /// Units are compatible if they have the same physical dimension.
-    /// For example, GtC/yr and MtCO2/yr are compatible because they
-    /// both represent mass flux.
+    /// Units are compatible if they have the same physical dimension
+    /// and count species of the same family.
+    /// For example, GtC/yr and MtCO2/yr are compatible,
+    /// but Mt CH4/yr and Mt CO2/yr are not.
     ///
     /// Parameters
     /// ----------
@@ -194,7 +203,7 @@ impl PyUnit {
     /// Raises
     /// ------
     /// ValueError
-    ///     If the units have incompatible dimensions.
+    ///     If the units have incompatible dimensions or count different species.
     ///
     /// Examples
     /// --------
@@ -229,7 +238,7 @@ impl PyUnit {
     /// Raises
     /// ------
     /// ValueError
-    ///     If the units have incompatible dimensions.
+    ///     If the units have incompatible dimensions or count different species.
     ///
     /// Examples
     /// --------
@@ -245,17 +254,17 @@ impl PyUnit {
 
     /// Return a string representation of this unit.
     fn __repr__(&self) -> String {
-        format!("Unit('{}')", self.inner.normalized())
+        format!("Unit('{}')", self.inner.normalised())
     }
 
-    /// Return the normalized string representation.
+    /// Return the normalised string representation.
     fn __str__(&self) -> String {
-        self.inner.normalized()
+        self.inner.normalised()
     }
 
     /// Check equality with another unit.
     ///
-    /// Two units are equal if they have the same normalized representation.
+    /// Two units are equal if they have the same normalised representation.
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> PyResult<bool> {
         if let Ok(other_unit) = other.extract::<PyRef<PyUnit>>() {
             Ok(self.inner == other_unit.inner)
@@ -287,8 +296,8 @@ mod tests {
 
     #[test]
     fn test_py_unit_creation() {
-        let unit = PyUnit::new("W/m^2").unwrap();
-        assert_eq!(unit.normalized(), "W / m^2");
+        let unit = PyUnit::new("W / m^2").unwrap();
+        assert_eq!(unit.normalised(), "W/m^2");
     }
 
     #[test]
@@ -316,5 +325,18 @@ mod tests {
 
         assert!(!gtc.is_compatible(&flux));
         assert!(gtc.conversion_factor(&flux).is_err());
+    }
+
+    #[test]
+    fn test_py_unit_species() {
+        let spaced = PyUnit::new("Gt C/yr").unwrap();
+        let fused = PyUnit::new("GtC/yr").unwrap();
+        assert_eq!(spaced.inner, fused.inner);
+        assert_eq!(spaced.normalised(), "GtC/yr");
+
+        let ch4 = PyUnit::new("Mt CH4/yr").unwrap();
+        let co2 = PyUnit::new("Mt CO2/yr").unwrap();
+        assert!(!ch4.is_compatible(&co2));
+        assert!(PyUnit::new("Mt XYZ/yr").is_err());
     }
 }

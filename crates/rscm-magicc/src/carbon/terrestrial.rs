@@ -1,7 +1,7 @@
 //! Terrestrial Carbon Cycle Component
 //!
 //! Implements the MAGICC7 `TERRCARBON2` subroutine: a 3-pool terrestrial carbon
-//! model with three CO2 fertilization methods, two respiration methods,
+//! model with three CO2 fertilisation methods, two respiration methods,
 //! time-varying turnover times, no-feedback reference pools for regrowth
 //! attribution, and mass conservation correction.
 //!
@@ -13,19 +13,19 @@
 //!
 //! # Feedbacks
 //!
-//! 1. **CO2 Fertilization**: Three blendable methods (logarithmic, Gifford, sigmoid)
+//! 1. **CO2 Fertilisation**: Three blendable methods (logarithmic, Gifford, sigmoid)
 //! 2. **Temperature on NPP**: Exponential sensitivity
 //! 3. **Temperature on decay**: Separate sensitivities for detritus and soil
 //! 4. **Time-varying turnover**: Cumulative deforestation reduces turnover times
 //!
 //! # Inputs
 //!
-//! - `Atmospheric Concentration|CO2` (ppm)
-//! - `Surface Temperature` (K) - temperature anomaly. The feedbacks use the
-//!   warming since `tempfeedback_yrstart`, floored at zero
-//! - `Emissions|CO2|Land Use` (GtC/yr)
+//! - `Atmospheric Concentrations|CO2` (ppm)
+//! - `Surface Air Temperature Change` (K) - temperature anomaly. The feedbacks use the
+//!   warming since `temperature_feedback_start_year`, floored at zero
+//! - `Emissions|CO2|Biosphere` (GtC/yr)
 //!
-//! # States (tracked between timesteps)
+//! # States (tracked between steps)
 //!
 //! - `Carbon Pool|Plant` (GtC)
 //! - `Carbon Pool|Detritus` (GtC)
@@ -33,28 +33,29 @@
 //!
 //! # Outputs
 //!
-//! - `Carbon Flux|Terrestrial` (GtC/yr) - net flux (positive = land uptake)
+//! - `Net Atmosphere to Land Flux|CO2` (GtC/yr) - net flux (positive = land uptake)
 //! - `Emissions|CO2|Gross Deforestation` (GtC/yr)
 //! - `Carbon Flux|Regrowth` (GtC/yr)
 //! - `Net Primary Production` (GtC/yr)
-//! - `Respiration|Terrestrial` (GtC/yr)
+//! - `Respiration|Land` (GtC/yr)
 //!
 //! # Nitrogen limitation
 //!
 //! With the `nitrogen` parameter, NPP is limited by the nitrogen budget in
-//! [`super::nitrogen`]. This reads `Nitrogen Deposition` (Gt N/yr), and
-//! `Nitrogen Fixation` (Gt N/yr) unless fixation is prognostic,
+//! [`super::nitrogen`]. This reads `Nitrogen Flux|Deposition` (Gt N/yr), and
+//! `Nitrogen Flux|Fixation` (Gt N/yr) unless fixation is prognostic,
 //! and writes `Nitrogen Limitation Factor`, `Nitrogen Pool` (Gt N) and the
 //! `Nitrogen Flux|*` budget terms (Gt N/yr).
 
+use rscm_core::names::{NITROGEN_FLUX_DEPOSITION, NITROGEN_FLUX_FIXATION};
 use std::any::Any;
 
 use super::nitrogen::{NitrogenBudget, NitrogenDrivers, NitrogenState};
 use crate::parameters::TerrestrialCarbonParameters;
 use crate::reference::feedback_warming;
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType, TimeseriesType,
+    Component, ComponentState, GridType, InputState, OutputState, TimeseriesType,
+    VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -62,26 +63,26 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// Internal state persisted across timesteps.
+/// Internal state persisted across steps.
 ///
 /// Tracks no-feedback reference pools, regrowth history, CO2 reference,
 /// and cumulative land-use emissions for the MAGICC7 attribution scheme.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerrestrialCarbonState {
     /// No-feedback reference pools [plant, detritus, soil] (GtC).
-    /// Evolve without CO2 fertilization or temperature feedbacks.
+    /// Evolve without CO2 fertilisation or temperature feedbacks.
     pub nofeedback_pools: [FloatValue; 3],
 
     /// Previous year regrowth fluxes [plant, detritus, soil] (GtC/yr).
     pub prev_regrowth: [FloatValue; 3],
 
-    /// Reference CO2 for fertilization (ppm).
-    /// Tracks current CO2 before fertilization start year; after the start year
+    /// Reference CO2 for fertilisation (ppm).
+    /// Tracks current CO2 before fertilisation start year; after the start year
     /// it is capped at `co2_ref_max` (cannot exceed this ceiling, but may
     /// still vary below it).
     pub co2_ref: FloatValue,
 
-    /// CO2 reference ceiling (ppm). Set to the CO2 value at the fertilization
+    /// CO2 reference ceiling (ppm). Set to the CO2 value at the fertilisation
     /// start year; used to cap `co2_ref` after the start year.
     pub co2_ref_max: FloatValue,
 
@@ -91,8 +92,8 @@ pub struct TerrestrialCarbonState {
     /// CO2 history for quadratic extrapolation: [t-2, t-1] (ppm).
     pub co2_history: [FloatValue; 2],
 
-    /// Whether the state has been initialized (first timestep completed).
-    pub initialized: bool,
+    /// Whether the state has been initialised (first step completed).
+    pub initialised: bool,
 
     /// Total respiration of the previous year (GtC/yr), which drives nitrogen recycling.
     #[serde(default)]
@@ -112,14 +113,14 @@ impl Default for TerrestrialCarbonState {
             co2_ref_max: 0.0,
             cumulative_landuse: 0.0,
             co2_history: [0.0; 2],
-            initialized: false,
+            initialised: false,
             prev_respiration: None,
             nitrogen: NitrogenState::default(),
         }
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.TerrestrialCarbonState")]
 impl ComponentState for TerrestrialCarbonState {
     fn as_any(&self) -> &dyn Any {
         self
@@ -136,10 +137,10 @@ impl ComponentState for TerrestrialCarbonState {
 ///
 /// # Algorithm
 ///
-/// For each timestep:
+/// For each step:
 ///
 /// 1. Extrapolate CO2 to mid-year (quadratic)
-/// 2. Calculate CO2 fertilization factor (3 methods with blending)
+/// 2. Calculate CO2 fertilisation factor (3 methods with blending)
 /// 3. Calculate temperature feedback factors
 /// 4. Calculate NPP and respiration with feedbacks
 /// 5. Compute time-varying turnover times
@@ -149,9 +150,9 @@ impl ComponentState for TerrestrialCarbonState {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "terrestrial", "magicc"], category = "Carbon Cycle")]
 #[inputs(
-    co2_concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
-    temperature { name = "Surface Temperature", unit = "K" },
-    landuse_emissions { name = "Emissions|CO2|Land Use", unit = "GtC/yr" },
+    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
+    landuse_emissions { name = "Emissions|CO2|Biosphere", unit = "GtC/yr" },
 )]
 #[states(
     plant_pool { name = "Carbon Pool|Plant", unit = "GtC" },
@@ -159,11 +160,11 @@ impl ComponentState for TerrestrialCarbonState {
     soil_pool { name = "Carbon Pool|Soil", unit = "GtC" },
 )]
 #[outputs(
-    net_flux { name = "Carbon Flux|Terrestrial", unit = "GtC/yr" },
+    net_flux { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr" },
     gross_deforestation { name = "Emissions|CO2|Gross Deforestation", unit = "GtC/yr" },
     total_regrowth { name = "Carbon Flux|Regrowth", unit = "GtC/yr" },
     npp { name = "Net Primary Production", unit = "GtC/yr" },
-    total_respiration { name = "Respiration|Terrestrial", unit = "GtC/yr" },
+    total_respiration { name = "Respiration|Land", unit = "GtC/yr" },
 )]
 pub struct TerrestrialCarbon {
     parameters: TerrestrialCarbonParameters,
@@ -184,23 +185,23 @@ impl TerrestrialCarbon {
     ///
     /// MAGICC7: `CO2_EXTRAP = (3*CO2(t-2) - 10*CO2(t-1) + 15*CO2(t)) / 8`
     fn extrapolate_co2(&self, state: &TerrestrialCarbonState, co2: FloatValue) -> FloatValue {
-        if !state.initialized {
+        if !state.initialised {
             return co2;
         }
         (3.0 * state.co2_history[0] - 10.0 * state.co2_history[1] + 15.0 * co2) / 8.0
     }
 
-    /// Logarithmic fertilization (Keeling-Bacastow 1973).
+    /// Logarithmic fertilisation (Keeling-Bacastow 1973).
     ///
     /// $$\beta_{log} = 1 + \beta_0 \ln(CO_2 / CO_{2,ref})$$
     fn fert_logarithmic(&self, co2: FloatValue, co2_ref: FloatValue) -> FloatValue {
         if co2 <= 0.0 || co2_ref <= 0.0 {
             return 1.0;
         }
-        1.0 + self.parameters.beta * (co2 / co2_ref).ln()
+        1.0 + self.parameters.fertilisation_factor * (co2 / co2_ref).ln()
     }
 
-    /// Gifford rectangular hyperbolic / Michaelis-Menten fertilization.
+    /// Gifford rectangular hyperbolic / Michaelis-Menten fertilisation.
     ///
     /// Wigley (1993) Equations A2 and A5.
     fn fert_gifford(&self, co2: FloatValue, co2_ref: FloatValue) -> FloatValue {
@@ -208,11 +209,11 @@ impl TerrestrialCarbon {
             return 1.0;
         }
 
-        let zero = self.parameters.gifford_conc_for_zero_npp;
+        let zero = self.parameters.gifford_concentration_for_zero_npp;
 
         // Gifford R: ratio of NPP at 680 to NPP at 340, using logarithmic formula
-        let r = (1.0 + self.parameters.beta * (680.0 / co2_ref).ln())
-            / (1.0 + self.parameters.beta * (340.0 / co2_ref).ln());
+        let r = (1.0 + self.parameters.fertilisation_factor * (680.0 / co2_ref).ln())
+            / (1.0 + self.parameters.fertilisation_factor * (340.0 / co2_ref).ln());
 
         let ar = 680.0 - zero;
         let br = 340.0 - zero;
@@ -235,16 +236,16 @@ impl TerrestrialCarbon {
         (1.0 / cr + bee) / (1.0 / dr + bee)
     }
 
-    /// Saturating sigmoid fertilization (A. Norton).
+    /// Saturating sigmoid fertilisation (A. Norton).
     ///
     /// $$\beta_{sig} = A / (1 + \exp(-(CO_2 - CO_{2,ref,sig}) / B))$$
     ///
-    /// Requires `beta > 1.0` for meaningful sigmoid fertilization. If `beta <= 1.0`,
+    /// Requires `beta > 1.0` for meaningful sigmoid fertilisation. If `beta <= 1.0`,
     /// the asymptote is clamped to just above 1.0 and the sigmoid provides no
-    /// fertilization enhancement.
+    /// fertilisation enhancement.
     fn fert_sigmoid(&self, co2: FloatValue, co2_ref: FloatValue) -> FloatValue {
-        let a = self.parameters.beta.max(1.0 + 1e-10);
-        let b = self.parameters.fertilization_factor2;
+        let a = self.parameters.fertilisation_factor.max(1.0 + 1e-10);
+        let b = self.parameters.fertilisation_factor2;
 
         if b.abs() < 1e-15 {
             return 1.0;
@@ -256,18 +257,18 @@ impl TerrestrialCarbon {
         a / (1.0 + (-(co2 - co2_ref_sig) / b).exp())
     }
 
-    /// Calculate CO2 fertilization factor with method blending.
+    /// Calculate CO2 fertilisation factor with method blending.
     ///
     /// MAGICC7: CO2_EFF_FERTILIZATION_FACTOR
-    fn fertilization_factor(&self, co2: FloatValue, co2_ref: FloatValue) -> FloatValue {
-        use crate::parameters::FertilizationMethod;
+    fn fertilisation_factor(&self, co2: FloatValue, co2_ref: FloatValue) -> FloatValue {
+        use crate::parameters::FertilisationMethod;
 
-        let result = match &self.parameters.fertilization_method {
-            FertilizationMethod::None => return 1.0,
-            FertilizationMethod::Logarithmic => self.fert_logarithmic(co2, co2_ref),
-            FertilizationMethod::Gifford => self.fert_gifford(co2, co2_ref),
-            FertilizationMethod::Sigmoid => self.fert_sigmoid(co2, co2_ref),
-            FertilizationMethod::Blended(method) => {
+        let result = match &self.parameters.fertilisation_method {
+            FertilisationMethod::None => return 1.0,
+            FertilisationMethod::Logarithmic => self.fert_logarithmic(co2, co2_ref),
+            FertilisationMethod::Gifford => self.fert_gifford(co2, co2_ref),
+            FertilisationMethod::Sigmoid => self.fert_sigmoid(co2, co2_ref),
+            FertilisationMethod::Blended(method) => {
                 let method = method.clamp(1.0, 3.0);
                 if method <= 2.0 {
                     let w = method - 1.0;
@@ -281,7 +282,7 @@ impl TerrestrialCarbon {
             }
         };
 
-        result.max(0.1) // Floor to prevent negative/zero fertilization
+        result.max(0.1) // Floor to prevent negative/zero fertilisation
     }
 
     /// Calculate temperature effect multiplier.
@@ -297,7 +298,7 @@ impl TerrestrialCarbon {
     ///
     /// Pool-ratio scaling ensures respiration decreases when the plant pool
     /// shrinks below PI (e.g., from deforestation). The `alpha` parameter
-    /// (`plantbox_resp_fertscale`) controls how much CO2 fertilization
+    /// (`plant_respiration_fertilisation_scale`) controls how much CO2 fertilisation
     /// amplifies respiration.
     fn calculate_respiration(
         &self,
@@ -305,10 +306,12 @@ impl TerrestrialCarbon {
         temperature: FloatValue,
         plant_pool: FloatValue,
     ) -> FloatValue {
-        let alpha = self.parameters.plantbox_resp_fertscale;
+        let alpha = self.parameters.plant_respiration_fertilisation_scale;
         let pool_ratio = (plant_pool / self.parameters.plant_pool_pi).clamp(0.0, 1.0);
-        let temp_effect =
-            self.temperature_factor(temperature, self.parameters.resp_temp_sensitivity);
+        let temp_effect = self.temperature_factor(
+            temperature,
+            self.parameters.respiration_temperature_sensitivity,
+        );
 
         self.parameters.respiration_pi
             * (1.0 + alpha * (beta_fert - 1.0))
@@ -332,7 +335,7 @@ impl TerrestrialCarbon {
         let new_pool = ((1.0 - half_k) * pool_current + flux_in * dt) / (1.0 + half_k);
         let new_pool = new_pool.max(0.0);
 
-        // Turnover flux (average over timestep)
+        // Turnover flux (average over step)
         let turnover = 0.5 * k_eff * (pool_current + new_pool);
 
         (new_pool, turnover)
@@ -357,7 +360,7 @@ impl TerrestrialCarbon {
         tau.max(1.0) // Floor at 1 year for stability
     }
 
-    /// Advance a set of 3 pools by one timestep.
+    /// Advance a set of 3 pools by one step.
     ///
     /// Returns (new_pools, turnover_plant, turnover_detritus, turnover_soil).
     #[allow(clippy::too_many_arguments)]
@@ -376,14 +379,14 @@ impl TerrestrialCarbon {
     ) -> ([FloatValue; 3], FloatValue, FloatValue, FloatValue) {
         let [plant, detritus, soil] = *pools;
 
-        let npp_to_plant = npp * self.parameters.frac_npp_to_plant;
+        let npp_to_plant = npp * self.parameters.npp_to_plant_fraction;
         let flux_in_plant = npp_to_plant - respiration - gross_defo[0];
         let (new_plant, turnover_plant) =
             Self::implicit_pool_step(plant, tau_plant, flux_in_plant, 1.0, dt);
 
-        let npp_to_detritus = npp * self.parameters.frac_npp_to_detritus;
+        let npp_to_detritus = npp * self.parameters.npp_to_detritus_fraction;
         let flux_in_detritus = npp_to_detritus
-            + self.parameters.frac_plant_to_detritus * turnover_plant
+            + self.parameters.plant_to_detritus_fraction * turnover_plant
             - gross_defo[1];
         let (new_detritus, turnover_detritus) = Self::implicit_pool_step(
             detritus,
@@ -393,9 +396,9 @@ impl TerrestrialCarbon {
             dt,
         );
 
-        let npp_to_soil = npp * self.parameters.frac_npp_to_soil();
-        let plant_to_soil = (1.0 - self.parameters.frac_plant_to_detritus) * turnover_plant;
-        let detritus_to_soil = self.parameters.frac_detritus_to_soil * turnover_detritus;
+        let npp_to_soil = npp * self.parameters.npp_to_soil_fraction();
+        let plant_to_soil = (1.0 - self.parameters.plant_to_detritus_fraction) * turnover_plant;
+        let detritus_to_soil = self.parameters.detritus_to_soil_fraction * turnover_detritus;
         let flux_in_soil = npp_to_soil + plant_to_soil + detritus_to_soil - gross_defo[2];
         let (new_soil, turnover_soil) =
             Self::implicit_pool_step(soil, tau_soil, flux_in_soil, temp_factor_soil, dt);
@@ -408,7 +411,7 @@ impl TerrestrialCarbon {
         )
     }
 
-    /// Solve the terrestrial carbon cycle for one annual timestep (public API without state).
+    /// Solve the terrestrial carbon cycle for one annual step (public API without state).
     ///
     /// This is a simplified interface that creates a temporary state. For full
     /// MAGICC7 fidelity (regrowth, mass conservation), use `solve_with_state`.
@@ -424,15 +427,15 @@ impl TerrestrialCarbon {
         pools: [FloatValue; 3],
         dt: FloatValue,
     ) -> ([FloatValue; 3], FloatValue) {
-        // Pre-initialize state with PI pools and CO2 reference so the
-        // stateless API gets meaningful fertilization (co2_ref = co2_pi,
+        // Pre-initialise state with PI pools and CO2 reference so the
+        // stateless API gets meaningful fertilisation (co2_ref = co2_pi,
         // not the current CO2 which would give beta = 1.0).
         let mut state = TerrestrialCarbonState {
             nofeedback_pools: pools,
             co2_ref: self.parameters.co2_pi,
             co2_ref_max: self.parameters.co2_pi,
             co2_history: [co2, co2],
-            initialized: true,
+            initialised: true,
             ..Default::default()
         };
         let result = self.solve_terrestrial(
@@ -465,27 +468,27 @@ impl TerrestrialCarbon {
     ) -> TerrestrialResult {
         assert!(
             (dt - 1.0).abs() < 1e-6,
-            "TerrestrialCarbon only supports annual timesteps (dt=1.0), got dt={dt}"
+            "TerrestrialCarbon only supports annual steps (dt=1.0), got dt={dt}"
         );
 
         let p = &self.parameters;
 
-        // Initialize state on first call, using provided pool state and CO2
+        // Initialise state on first call, using provided pool state and CO2
         // as the baseline (supports non-PI initial conditions)
-        if !state.initialized {
+        if !state.initialised {
             state.nofeedback_pools = pools;
             state.co2_ref = co2;
             state.co2_ref_max = co2;
             state.co2_history = [co2, co2];
-            state.initialized = true;
+            state.initialised = true;
         }
 
         // Step 1: CO2 extrapolation to mid-year
         let co2_extrap = self.extrapolate_co2(state, co2);
 
-        // Step 2: Update reference CO2 for fertilization
-        let year = current_year.unwrap_or(p.fertilization_yrstart + 1.0);
-        if year < p.fertilization_yrstart {
+        // Step 2: Update reference CO2 for fertilisation
+        let year = current_year.unwrap_or(p.fertilisation_start_year + 1.0);
+        if year < p.fertilisation_start_year {
             state.co2_ref = co2_extrap;
             state.co2_ref_max = co2_extrap;
         } else {
@@ -494,15 +497,15 @@ impl TerrestrialCarbon {
         let co2_ref = state.co2_ref;
 
         // Step 3: Temperature feedback factors
-        let apply_temp = current_year.is_none_or(|y| y >= p.tempfeedback_yrstart);
+        let apply_temp = current_year.is_none_or(|y| y >= p.temperature_feedback_start_year);
         let temp = if apply_temp { temperature } else { 0.0 };
 
-        let temp_npp = self.temperature_factor(temp, p.npp_temp_sensitivity);
-        let temp_detritus = self.temperature_factor(temp, p.detritus_temp_sensitivity);
-        let temp_soil = self.temperature_factor(temp, p.soil_temp_sensitivity);
+        let temp_npp = self.temperature_factor(temp, p.npp_temperature_sensitivity);
+        let temp_detritus = self.temperature_factor(temp, p.detritus_temperature_sensitivity);
+        let temp_soil = self.temperature_factor(temp, p.soil_temperature_sensitivity);
 
-        // Step 4: CO2 fertilization
-        let beta_fert = self.fertilization_factor(co2_extrap, co2_ref);
+        // Step 4: CO2 fertilisation
+        let beta_fert = self.fertilisation_factor(co2_extrap, co2_ref);
 
         // Step 5: NPP with feedbacks
         let mut npp = p.npp_pi * beta_fert * temp_npp;
@@ -511,7 +514,7 @@ impl TerrestrialCarbon {
             let drivers = NitrogenDrivers {
                 npp,
                 respiration: state.prev_respiration.unwrap_or(npp),
-                fertilization: beta_fert,
+                fertilisation: beta_fert,
                 temperature_factor: temp_npp,
                 deposition,
                 fixation,
@@ -519,7 +522,7 @@ impl TerrestrialCarbon {
             n.solve(
                 &mut state.nitrogen,
                 &drivers,
-                year >= p.fertilization_yrstart,
+                year >= p.fertilisation_start_year,
             )
         });
         if let Some(budget) = &nitrogen {
@@ -533,24 +536,24 @@ impl TerrestrialCarbon {
         let cum_lu = state.cumulative_landuse + landuse_emissions * dt;
         let tau_plant = Self::time_varying_tau(
             p.plant_pool_pi,
-            p.norgrwth_frac_defo,
-            p.frac_deforest_plant,
+            p.deforestation_no_regrowth_fraction,
+            p.deforestation_plant_fraction,
             cum_lu,
             p.net_flux_to_plant_pi(),
         );
         let tau_detritus = Self::time_varying_tau(
             p.detritus_pool_pi,
-            p.norgrwth_frac_defo,
-            p.frac_deforest_detritus,
+            p.deforestation_no_regrowth_fraction,
+            p.deforestation_detritus_fraction,
             cum_lu,
             p.flux_into_detritus_pi(),
         );
-        let detritus_left =
-            p.detritus_pool_pi - p.norgrwth_frac_defo * p.frac_deforest_detritus * cum_lu;
+        let detritus_left = p.detritus_pool_pi
+            - p.deforestation_no_regrowth_fraction * p.deforestation_detritus_fraction * cum_lu;
         let tau_soil = Self::time_varying_tau(
             p.soil_pool_pi,
-            p.norgrwth_frac_defo,
-            p.frac_deforest_soil(),
+            p.deforestation_no_regrowth_fraction,
+            p.deforestation_soil_fraction(),
             cum_lu,
             p.flux_into_soil(detritus_left, tau_detritus),
         );
@@ -563,11 +566,11 @@ impl TerrestrialCarbon {
         // 3. Compute gross deforestation = net deforestation + regrowth
         // 4. Re-advance the no-feedback pool with gross deforestation
 
-        let nf_net_flux_plant = p.npp_pi * p.frac_npp_to_plant - p.respiration_pi;
+        let nf_net_flux_plant = p.npp_pi * p.npp_to_plant_fraction - p.respiration_pi;
         let net_defo = [
-            p.frac_deforest_plant * landuse_emissions,
-            p.frac_deforest_detritus * landuse_emissions,
-            p.frac_deforest_soil() * landuse_emissions,
+            p.deforestation_plant_fraction * landuse_emissions,
+            p.deforestation_detritus_fraction * landuse_emissions,
+            p.deforestation_soil_fraction() * landuse_emissions,
         ];
 
         let mut regrowth = [0.0; 3];
@@ -611,8 +614,8 @@ impl TerrestrialCarbon {
         {
             let half_k = 0.5 / tau_detritus;
             let nf_pool = state.nofeedback_pools[1];
-            let nf_net_flux =
-                p.npp_pi * p.frac_npp_to_detritus + p.frac_plant_to_detritus * nf_turnover_plant;
+            let nf_net_flux = p.npp_pi * p.npp_to_detritus_fraction
+                + p.plant_to_detritus_fraction * nf_turnover_plant;
 
             let nf_new_no_regrwth =
                 (nf_pool * (1.0 - half_k) + nf_net_flux - net_defo[1] - state.prev_regrowth[1])
@@ -639,9 +642,9 @@ impl TerrestrialCarbon {
         {
             let half_k = 0.5 / tau_soil;
             let nf_pool = state.nofeedback_pools[2];
-            let nf_net_flux = p.npp_pi * p.frac_npp_to_soil()
-                + (1.0 - p.frac_plant_to_detritus) * nf_turnover_plant
-                + p.frac_detritus_to_soil * nf_turnover_detritus;
+            let nf_net_flux = p.npp_pi * p.npp_to_soil_fraction()
+                + (1.0 - p.plant_to_detritus_fraction) * nf_turnover_plant
+                + p.detritus_to_soil_fraction * nf_turnover_detritus;
 
             let nf_new_no_regrwth =
                 (nf_pool * (1.0 - half_k) + nf_net_flux - net_defo[2] - state.prev_regrowth[2])
@@ -690,7 +693,7 @@ impl TerrestrialCarbon {
         // Include the mass correction in respiration, matching TERRCARBON2.
         let total_respiration = npp - net_flux - total_gross_defo;
 
-        // Update state for next timestep
+        // Update state for next step
         state.nofeedback_pools = new_nf_pools;
         state.prev_regrowth = regrowth;
         state.cumulative_landuse += landuse_emissions * dt;
@@ -720,7 +723,7 @@ impl TerrestrialCarbon {
         let dt = t_next - t_current;
         if !dt.is_finite() || (dt - 1.0).abs() >= 1e-6 {
             return Err(RSCMError::Error(format!(
-                "TerrestrialCarbon only supports annual timesteps (dt=1.0), got dt={dt}"
+                "TerrestrialCarbon only supports annual steps (dt=1.0), got dt={dt}"
             )));
         }
         let inputs = TerrestrialCarbonInputs::from_input_state(input_state);
@@ -729,17 +732,19 @@ impl TerrestrialCarbon {
         let temperature = feedback_warming(
             &inputs.temperature,
             t_current,
-            self.parameters.tempfeedback_yrstart,
+            self.parameters.temperature_feedback_start_year,
         );
         let landuse = inputs.landuse_emissions.get();
         let nitrogen_inputs = match &self.parameters.nitrogen {
             None => (0.0, 0.0),
             Some(n) => (
-                input_state.get_scalar_window(NITROGEN_DEPOSITION).get(),
+                input_state
+                    .get_scalar_window(NITROGEN_FLUX_DEPOSITION)
+                    .get(),
                 if n.prognostic_fixation.is_some() {
                     0.0
                 } else {
-                    input_state.get_scalar_window(NITROGEN_FIXATION).get()
+                    input_state.get_scalar_window(NITROGEN_FLUX_FIXATION).get()
                 },
             ),
         };
@@ -778,21 +783,29 @@ impl TerrestrialCarbon {
                 budget.uptake,
                 budget.recycling,
                 budget.losses,
-                budget.fixation,
-                budget.deposition,
             ];
             for ((name, _, _), value) in NITROGEN_OUTPUTS.iter().zip(values) {
                 output.insert(name.to_string(), StateValue::Scalar(value));
             }
+            if self.prognostic_fixation() {
+                output.insert(
+                    NITROGEN_FLUX_FIXATION.to_string(),
+                    StateValue::Scalar(budget.fixation),
+                );
+            }
         }
         Ok(output)
     }
+
+    fn prognostic_fixation(&self) -> bool {
+        self.parameters
+            .nitrogen
+            .as_ref()
+            .is_some_and(|n| n.prognostic_fixation.is_some())
+    }
 }
 
-const NITROGEN_DEPOSITION: &str = "Nitrogen Deposition";
-const NITROGEN_FIXATION: &str = "Nitrogen Fixation";
-
-const NITROGEN_OUTPUTS: [(&str, &str, TimeseriesType); 7] = [
+const NITROGEN_OUTPUTS: [(&str, &str, TimeseriesType); 5] = [
     // The factor applied over a step, which MAGICC7 labels by the step's start
     ("Nitrogen Limitation Factor", "1", TimeseriesType::Average),
     ("Nitrogen Pool", "Gt N", TimeseriesType::Point),
@@ -803,12 +816,6 @@ const NITROGEN_OUTPUTS: [(&str, &str, TimeseriesType); 7] = [
         TimeseriesType::Average,
     ),
     ("Nitrogen Flux|Losses", "Gt N/yr", TimeseriesType::Average),
-    ("Nitrogen Flux|Fixation", "Gt N/yr", TimeseriesType::Average),
-    (
-        "Nitrogen Flux|Deposition",
-        "Gt N/yr",
-        TimeseriesType::Average,
-    ),
 ];
 
 /// Internal result struct for solve_terrestrial.
@@ -828,24 +835,24 @@ impl Default for TerrestrialCarbon {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.TerrestrialCarbon")]
 impl Component for TerrestrialCarbon {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         if let Some(n) = &self.parameters.nitrogen {
-            definitions.push(RequirementDefinition::scalar_input(
-                NITROGEN_DEPOSITION,
+            definitions.push(VariableDefinition::scalar_input(
+                NITROGEN_FLUX_DEPOSITION,
                 "Gt N/yr",
             ));
-            if n.prognostic_fixation.is_none() {
-                definitions.push(RequirementDefinition::scalar_input(
-                    NITROGEN_FIXATION,
-                    "Gt N/yr",
-                ));
-            }
+            definitions.push(if n.prognostic_fixation.is_some() {
+                VariableDefinition::scalar_output(NITROGEN_FLUX_FIXATION, "Gt N/yr")
+                    .with_timeseries_type(TimeseriesType::Average)
+            } else {
+                VariableDefinition::scalar_input(NITROGEN_FLUX_FIXATION, "Gt N/yr")
+            });
             for (name, unit, timeseries_type) in NITROGEN_OUTPUTS {
                 definitions.push(
-                    RequirementDefinition::scalar_output(name, unit)
+                    VariableDefinition::scalar_output(name, unit)
                         .with_timeseries_type(timeseries_type),
                 );
             }
@@ -853,10 +860,10 @@ impl Component for TerrestrialCarbon {
         definitions
     }
 
-    /// Stateless single-timestep solve. Creates a fresh internal state each call,
+    /// Stateless single-step solve. Creates a fresh internal state each call,
     /// so state-dependent features (CO2 extrapolation, cumulative land-use,
     /// regrowth attribution, mass conservation) will not accumulate across calls.
-    /// For multi-timestep simulations, use `solve_with_state` instead.
+    /// For multi-step simulations, use `solve_with_state` instead.
     fn solve(
         &self,
         t_current: Time,
@@ -889,7 +896,7 @@ impl Component for TerrestrialCarbon {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parameters::FertilizationMethod;
+    use crate::parameters::FertilisationMethod;
 
     fn default_component() -> TerrestrialCarbon {
         TerrestrialCarbon::from_parameters(TerrestrialCarbonParameters::default())
@@ -905,8 +912,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "only supports annual timesteps")]
-    fn test_solve_pools_rejects_nonannual_timestep() {
+    #[should_panic(expected = "only supports annual steps")]
+    fn test_solve_pools_rejects_nonannual_step() {
         let component = TerrestrialCarbon::from_parameters(TerrestrialCarbonParameters::default());
         let p = &component.parameters;
         component.solve_pools(
@@ -978,7 +985,7 @@ mod tests {
         let factor = component.fert_logarithmic(co2_pi, co2_pi);
         assert!(
             (factor - 1.0).abs() < 1e-10,
-            "Log fertilization should be 1.0 at PI CO2"
+            "Log fertilisation should be 1.0 at PI CO2"
         );
     }
 
@@ -987,10 +994,10 @@ mod tests {
         let component = default_component();
         let co2_pi = component.parameters.co2_pi;
         let factor = component.fert_logarithmic(co2_pi * 2.0, co2_pi);
-        let expected = 1.0 + component.parameters.beta * 2.0_f64.ln();
+        let expected = 1.0 + component.parameters.fertilisation_factor * 2.0_f64.ln();
         assert!(
             (factor - expected).abs() < 0.01,
-            "Log fertilization at 2xCO2 should be {:.3}, got {:.3}",
+            "Log fertilisation at 2xCO2 should be {:.3}, got {:.3}",
             expected,
             factor
         );
@@ -1003,7 +1010,7 @@ mod tests {
         let factor = component.fert_gifford(co2_pi, co2_pi);
         assert!(
             (factor - 1.0).abs() < 1e-10,
-            "Gifford fertilization should be 1.0 at PI CO2, got {:.6}",
+            "Gifford fertilisation should be 1.0 at PI CO2, got {:.6}",
             factor
         );
     }
@@ -1029,21 +1036,21 @@ mod tests {
         let factor = component.fert_sigmoid(co2_pi, co2_pi);
         assert!(
             (factor - 1.0).abs() < 0.01,
-            "Sigmoid fertilization should be ~1.0 at PI CO2, got {:.6}",
+            "Sigmoid fertilisation should be ~1.0 at PI CO2, got {:.6}",
             factor
         );
     }
 
     #[test]
-    fn test_fertilization_blending_method_1_pure_log() {
+    fn test_fertilisation_blending_method_1_pure_log() {
         let params = TerrestrialCarbonParameters {
-            fertilization_method: FertilizationMethod::Logarithmic,
+            fertilisation_method: FertilisationMethod::Logarithmic,
             ..Default::default()
         };
         let component = TerrestrialCarbon::from_parameters(params);
         let co2_pi = component.parameters.co2_pi;
 
-        let blended = component.fertilization_factor(400.0, co2_pi);
+        let blended = component.fertilisation_factor(400.0, co2_pi);
         let pure_log = component.fert_logarithmic(400.0, co2_pi);
         assert!(
             (blended - pure_log).abs() < 1e-10,
@@ -1054,15 +1061,15 @@ mod tests {
     }
 
     #[test]
-    fn test_fertilization_blending_method_2_pure_gifford() {
+    fn test_fertilisation_blending_method_2_pure_gifford() {
         let params = TerrestrialCarbonParameters {
-            fertilization_method: FertilizationMethod::Gifford,
+            fertilisation_method: FertilisationMethod::Gifford,
             ..Default::default()
         };
         let component = TerrestrialCarbon::from_parameters(params);
         let co2_pi = component.parameters.co2_pi;
 
-        let blended = component.fertilization_factor(400.0, co2_pi);
+        let blended = component.fertilisation_factor(400.0, co2_pi);
         let pure_giff = component.fert_gifford(400.0, co2_pi);
         assert!(
             (blended - pure_giff).abs() < 1e-10,
@@ -1073,13 +1080,13 @@ mod tests {
     }
 
     #[test]
-    fn test_fertilization_no_fert_below_1() {
+    fn test_fertilisation_no_fert_below_1() {
         let params = TerrestrialCarbonParameters {
-            fertilization_method: FertilizationMethod::None,
+            fertilisation_method: FertilisationMethod::None,
             ..Default::default()
         };
         let component = TerrestrialCarbon::from_parameters(params);
-        let factor = component.fertilization_factor(500.0, 278.0);
+        let factor = component.fertilisation_factor(500.0, 278.0);
         assert!(
             (factor - 1.0).abs() < 1e-10,
             "Method < 1.0 should give factor 1.0, got {:.6}",
@@ -1090,7 +1097,7 @@ mod tests {
     #[test]
     fn test_respiration_method2_at_pi() {
         let params = TerrestrialCarbonParameters {
-            plantbox_resp_fertscale: 0.5,
+            plant_respiration_fertilisation_scale: 0.5,
             ..Default::default()
         };
         let component = TerrestrialCarbon::from_parameters(params.clone());
@@ -1124,7 +1131,7 @@ mod tests {
 
     #[test]
     fn test_warming_changes_net_uptake() {
-        // With MAGICC7 default parameters (negative detritus_temp_sensitivity),
+        // With MAGICC7 default parameters (negative detritus_temperature_sensitivity),
         // warming has competing effects: increases respiration but slows detritus
         // decay. The net direction depends on the balance of feedbacks.
         let component = default_component();
@@ -1237,44 +1244,44 @@ mod tests {
         );
 
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert!(names.contains(&"Atmospheric Concentration|CO2"));
-        assert!(names.contains(&"Surface Temperature"));
-        assert!(names.contains(&"Emissions|CO2|Land Use"));
+        assert!(names.contains(&"Atmospheric Concentrations|CO2"));
+        assert!(names.contains(&"Surface Air Temperature Change"));
+        assert!(names.contains(&"Emissions|CO2|Biosphere"));
         assert!(names.contains(&"Carbon Pool|Plant"));
         assert!(names.contains(&"Carbon Pool|Detritus"));
         assert!(names.contains(&"Carbon Pool|Soil"));
-        assert!(names.contains(&"Carbon Flux|Terrestrial"));
+        assert!(names.contains(&"Net Atmosphere to Land Flux|CO2"));
         assert!(names.contains(&"Net Primary Production"));
-        assert!(names.contains(&"Respiration|Terrestrial"));
+        assert!(names.contains(&"Respiration|Land"));
     }
 
     #[test]
-    fn test_serialization() {
+    fn test_serialisation() {
         let component = default_component();
-        let json = serde_json::to_string(&component).expect("Serialization failed");
+        let json = serde_json::to_string(&component).expect("Serialisation failed");
         let parsed: TerrestrialCarbon =
-            serde_json::from_str(&json).expect("Deserialization failed");
+            serde_json::from_str(&json).expect("Deserialisation failed");
 
         assert!(
             (component.parameters.npp_pi - parsed.parameters.npp_pi).abs() < 1e-10,
-            "Parameters should survive round-trip serialization"
+            "Parameters should survive round-trip serialisation"
         );
     }
 
     #[test]
-    fn test_state_serialization() {
+    fn test_state_serialisation() {
         let state = TerrestrialCarbonState {
-            initialized: true,
+            initialised: true,
             cumulative_landuse: 42.0,
             co2_ref: 300.0,
             ..Default::default()
         };
 
-        let json = serde_json::to_string(&state).expect("State serialization failed");
+        let json = serde_json::to_string(&state).expect("State serialisation failed");
         let parsed: TerrestrialCarbonState =
-            serde_json::from_str(&json).expect("State deserialization failed");
+            serde_json::from_str(&json).expect("State deserialisation failed");
 
-        assert!(parsed.initialized);
+        assert!(parsed.initialised);
         assert!((parsed.cumulative_landuse - 42.0).abs() < 1e-10);
         assert!((parsed.co2_ref - 300.0).abs() < 1e-10);
     }
@@ -1344,15 +1351,15 @@ mod tests {
 
         let tau_0 = TerrestrialCarbon::time_varying_tau(
             p.plant_pool_pi,
-            p.norgrwth_frac_defo,
-            p.frac_deforest_plant,
+            p.deforestation_no_regrowth_fraction,
+            p.deforestation_plant_fraction,
             0.0,
             p.net_flux_to_plant_pi(),
         );
         let tau_100 = TerrestrialCarbon::time_varying_tau(
             p.plant_pool_pi,
-            p.norgrwth_frac_defo,
-            p.frac_deforest_plant,
+            p.deforestation_no_regrowth_fraction,
+            p.deforestation_plant_fraction,
             100.0,
             p.net_flux_to_plant_pi(),
         );

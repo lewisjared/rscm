@@ -89,7 +89,7 @@ Extrapolation is not allowed. Target=1750, start of interpolation range=1850
 #### MissingInitialValue
 
 ```
-Missing initial value for state variable 'Surface Temperature' in component 'TwoLayer'.
+Missing initial value for state variable 'Surface Air Temperature Change' in component 'TwoLayer'.
 ```
 
 **Cause:** State variables require initial values before the model can run.
@@ -99,35 +99,35 @@ Missing initial value for state variable 'Surface Temperature' in component 'Two
 ```python
 model = (
     ModelBuilder()
-    .with_rust_component(component)
+    .with_component(component)
     .with_time_axis(time_axis)
-    .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
+    .with_initial_values({"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0})
     .build()
 )
 ```
 
-#### MissingExogenousInput
+#### MissingPrescribedInput
 
 ```
-Inputs with no producer, exogenous data or initial value: 'Effective Radiative Forcing' (read by TwoLayer).
+Inputs with no producer, prescribed data or initial value: 'Effective Radiative Forcing' (read by TwoLayer).
 ```
 
-**Cause:** No component produces an input, and no exogenous data or initial value supplies it.
+**Cause:** No component produces an input, and no prescribed data or initial value supplies it.
 
-**Fix:** Supply the input as exogenous data:
+**Fix:** Supply the input as prescribed data:
 
 ```python
 model = (
     ModelBuilder()
-    .with_rust_component(component)
+    .with_component(component)
     .with_time_axis(time_axis)
-    .with_exogenous_variable("Effective Radiative Forcing", erf)
-    .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
+    .with_prescribed_variable("Effective Radiative Forcing", erf)
+    .with_initial_values({"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0})
     .build()
 )
 ```
 
-If the input is meant to be empty, call `with_missing_exogenous_allowed()` before `build()`.
+If the input is meant to be empty, call `with_missing_prescribed_allowed()` before `build()`.
 The input is then NaN.
 
 #### Missing input when calling `solve` directly
@@ -138,30 +138,30 @@ pyo3_runtime.PanicException: No timeseries with variable='Emissions|CO2'
 
 **Cause:** A component's `solve` was called directly without one of its declared inputs.
 Inside a model this does not happen.
-A declared input with no producer and no exogenous data fails the build with `MissingExogenousInput` instead.
+A declared input with no producer and no prescribed data fails the build with `MissingPrescribedInput` instead.
 
 **Fixes:**
 
 - Check the exact variable name matches what the producing component outputs
-- Verify all required components and exogenous variables are added to the model
+- Verify all required components and prescribed variables are added to the model
 - Check for typos in variable names (names are case-sensitive)
 - If outputs are unexpectedly NaN, check `model.coupling()`.
-  Inputs marked `(exogenous)` have no producing component.
+  Inputs marked `(prescribed)` have no producing component.
 
 #### GridTypeMismatch
 
 ```
-Grid type mismatch for variable 'Temperature': producer component 'A' outputs FourBox but consumer component 'B' expects Scalar.
+Grid mismatch for variable 'Surface Air Temperature Change': producer component 'A' outputs four_box but consumer component 'B' expects scalar.
 ```
 
 **Cause:** Two connected components use different spatial grids.
 
 **Fixes:**
 
-1. Change the producer component to output the required grid type
-2. Change the consumer component to accept the available grid type
+1. Change the producer component to output the required grid
+2. Change the consumer component to accept the available grid
 3. Insert a grid transformation component between them
-4. Use automatic aggregation (FourBox to Scalar aggregates using area weights)
+4. Use automatic aggregation (four-box to scalar aggregation uses the grid weights)
 
 #### UnsupportedGridTransformation
 
@@ -169,21 +169,21 @@ Grid type mismatch for variable 'Temperature': producer component 'A' outputs Fo
 Unsupported grid transformation from Hemispheric to FourBox.
 ```
 
-**Cause:** RSCM cannot automatically transform between these grid types without additional physics assumptions.
+**Cause:** RSCM cannot automatically transform between these grids without additional physics assumptions.
 
-**Fix:** Create a custom component that implements the transformation with appropriate physics.
+**Fix:** Write a component that implements the transformation with appropriate physics.
 
 #### GridTransformationNotSupported
 
 ```
-Grid transformation not supported for variable 'Temperature': cannot transform from Scalar to FourBox.
+Grid transformation not supported for variable 'Surface Air Temperature Change': cannot transform from scalar to four_box.
 ```
 
 **Cause:** A component requires a finer grid resolution than the schema or producer provides. This occurs with [schema-driven auto-aggregation](../grids.md#schema-driven-auto-aggregation) when:
 
-- A component declares a FourBox input but the schema declares Scalar
+- A component declares a four-box input but the schema declares Scalar
 - A component declares a Hemispheric input but the schema declares Scalar
-- A component declares a FourBox input but the schema declares Hemispheric
+- A component declares a four-box input but the schema declares Hemispheric
 
 Disaggregation (broadcasting coarse data to finer grids) is not supported because it would require inventing spatial structure that doesn't exist.
 
@@ -193,26 +193,28 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
 
     ```python
     # Instead of:
-    temp = Input("Temperature", unit="K", grid="FourBox")
+    temp = Input("Surface Air Temperature Change", unit="K", grid="four_box")
 
     # Use:
-    temp = Input("Temperature", unit="K")  # Scalar
+    temp = Input("Surface Air Temperature Change", unit="K")  # Scalar
     ```
 
 2. **Change the schema** to provide finer resolution (if a component produces it):
 
     ```python
-    schema.add_variable("Temperature", "K", GridType.FourBox)
+    schema.add_variable("Surface Air Temperature Change", "K", GridType.FourBox)
     ```
 
 3. **Create an explicit disaggregation component** with domain-specific assumptions:
 
     ```python
     class ScalarToFourBox(Component):
-        """Disaggregate scalar to FourBox with configurable ratios."""
+        """Disaggregate a scalar temperature to four-box with configurable ratios."""
 
-        scalar_temp = Input("Temperature|Global", unit="K")
-        regional_temp = Output("Temperature", unit="K", grid="FourBox")
+        scalar_temp = Input("Surface Air Temperature Change", unit="K")
+        regional_temp = Output(
+            "Regional Surface Air Temperature Change", unit="K", grid="four_box"
+        )
 
         def __init__(self, ocean_ratio=1.05, land_ratio=0.95):
             self.ocean_ratio = ocean_ratio
@@ -231,11 +233,11 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
 
     The [Spatial Grids tutorial](../notebooks/grid_variables.py) builds and runs a disaggregation component.
 
-#### CircularDependency
+#### FeedbackLoop
 
 ```
 Feedback loop among components [CarbonCycle, TwoLayer] through variables [...].
-Break it with one of: with_lag_for("Surface Temperature", "CarbonCycle"), ...
+Break it with one of: with_lag_for("Surface Air Temperature Change", "CarbonCycle"), ...
 ```
 
 **Cause:** Components form a feedback loop that no lag breaks, where A depends on B and B depends on A.
@@ -257,13 +259,13 @@ Break it with one of: with_lag_for("Surface Temperature", "CarbonCycle"), ...
 
 ```python
 # Wrong: both calls return copies, so the collection is unchanged
-ts = collection.get_timeseries_by_name("Temperature")
+ts = collection.get_timeseries_by_name("Surface Air Temperature Change")
 ts.set(0, 999.0)
 ts.values()[0] = 999.0
 
 # Correct: create the timeseries with the right values, then add it
 values[0] = 999.0
-collection.add_timeseries("Temperature", Timeseries(values, time_axis, "K", strategy))
+collection.add_timeseries("Surface Air Temperature Change", Timeseries(values, time_axis, "K", strategy))
 ```
 
 `add_timeseries` panics if the name already exists (`pyo3_runtime.PanicException` in Python).
@@ -303,7 +305,7 @@ ImportError: cannot import name '_lib' from 'rscm'
 **Symptom:**
 
 ```
-ValueError: missing field `conc_pi`
+ValueError: missing field `co2_pi`
 ```
 
 **Cause:** The Python dict doesn't match the Rust struct fields.
@@ -352,7 +354,7 @@ Verify a component's inputs and outputs:
 ```python
 component = MyComponent(param=1.0)
 for defn in component.definitions():
-    print(f"{defn.requirement_type}: {defn.name} [{defn.unit}]")
+    print(f"{defn.role}: {defn.name} [{defn.unit}]")
 ```
 
 ## Common Mistakes
@@ -360,17 +362,18 @@ for defn in component.definitions():
 ### Unit Mismatches
 
 Components define expected units.
-The builder converts exogenous data into the unit the model stores it in,
+The builder converts prescribed data into the unit the model stores it in,
 for example `MtCO2/yr` to `GtC/yr`.
 That is the schema's unit, or without a schema the unit the components declare.
 With a `VariableSchema`, the model also converts compatible units when components read inputs.
 Incompatible units, such as `K` and `W/m^2`, fail when the model is built,
-as do unit strings the parser cannot read.
+as do units of different species, such as `Mt CH4/yr` and `Mt CO2/yr`,
+and unit strings the parser cannot read.
 See [Physical Units](../notebooks/units_tutorial.py).
 
-### Time Grid Alignment
+### Time Axis Alignment
 
-All timeseries in a model run should use compatible time grids:
+All timeseries in a model run should use compatible time axes:
 
 ```python
 # Ensure emissions and other inputs cover the full simulation period

@@ -137,14 +137,14 @@ The `ComponentIO` macro SHALL generate code that uses typed slice wrappers for g
 
 #### Scenario: FourBoxSlice converted to StateValue::FourBox
 
-- **WHEN** a component declares `#[outputs(temp { name = "Temperature", unit = "K", grid = "FourBox" })]`
+- **WHEN** a component declares `#[outputs(temp { name = "Surface Air Temperature Change", unit = "K", grid = "four_box" })]`
 - **THEN** the generated `{ComponentName}Outputs` struct has a `temp: FourBoxSlice` field
 - **AND** the `Into<OutputState>` implementation inserts `StateValue::FourBox(outputs.temp)`
 - **AND** no aggregation to scalar occurs
 
 #### Scenario: HemisphericSlice converted to StateValue::Hemispheric
 
-- **WHEN** a component declares `#[outputs(precip { name = "Precipitation", unit = "mm", grid = "Hemispheric" })]`
+- **WHEN** a component declares `#[outputs(precip { name = "Precipitation", unit = "mm", grid = "hemispheric" })]`
 - **THEN** the generated `{ComponentName}Outputs` struct has a `precip: HemisphericSlice` field
 - **AND** the `Into<OutputState>` implementation inserts `StateValue::Hemispheric(outputs.precip)`
 

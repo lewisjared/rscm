@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 /// reference year. This is useful for calibrating to observed/modelled forcing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct AerosolDirectParameters {
     // === Species Forcing Coefficients ===
     /// SOx forcing coefficient (W/m² per Mt S/yr).
@@ -99,18 +100,18 @@ pub struct AerosolDirectParameters {
     /// Enable harmonisation to reference year.
     ///
     /// When true, forcing is scaled so that the calculated forcing at
-    /// `harmonize_year` matches `harmonize_target`.
-    pub harmonize: bool,
+    /// `harmonisation_reference_year` matches `harmonisation_target`.
+    pub include_harmonisation: bool,
 
     /// Reference year for harmonisation.
     ///
     /// Default: 2019.0
-    pub harmonize_year: f64,
+    pub harmonisation_reference_year: f64,
 
     /// Target forcing at reference year (W/m²).
     ///
     /// Default: -0.22 W/m² (AR6 central estimate for direct aerosol)
-    pub harmonize_target: f64,
+    pub harmonisation_target: f64,
 }
 
 impl Default for AerosolDirectParameters {
@@ -136,9 +137,9 @@ impl Default for AerosolDirectParameters {
             nox_pi: 10.0, // Mt N/yr
 
             // Harmonisation disabled by default
-            harmonize: false,
-            harmonize_year: 2019.0,
-            harmonize_target: -0.22, // W/m²
+            include_harmonisation: false,
+            harmonisation_reference_year: 2019.0,
+            harmonisation_target: -0.22, // W/m²
         }
     }
 }
@@ -180,6 +181,7 @@ impl Default for AerosolDirectParameters {
 ///   Here, emissions are used directly as a proxy.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct AerosolIndirectParameters {
     /// Cloud albedo effect coefficient (W/m² per ln-unit).
     ///
@@ -220,17 +222,17 @@ pub struct AerosolIndirectParameters {
 
     // === Harmonisation ===
     /// Enable harmonisation to reference year.
-    pub harmonize: bool,
+    pub include_harmonisation: bool,
 
     /// Reference year for harmonisation.
     ///
     /// Default: 2019.0
-    pub harmonize_year: f64,
+    pub harmonisation_reference_year: f64,
 
     /// Target forcing at reference year (W/m²).
     ///
     /// Default: -0.89 W/m² (AR6 central estimate for cloud albedo effect)
-    pub harmonize_target: f64,
+    pub harmonisation_target: f64,
 }
 
 impl Default for AerosolIndirectParameters {
@@ -249,9 +251,9 @@ impl Default for AerosolIndirectParameters {
             oc_pi: 10.0, // Mt OC/yr
 
             // Harmonisation disabled by default
-            harmonize: false,
-            harmonize_year: 2019.0,
-            harmonize_target: -0.89, // W/m² (AR6 central estimate)
+            include_harmonisation: false,
+            harmonisation_reference_year: 2019.0,
+            harmonisation_target: -0.89, // W/m² (AR6 central estimate)
         }
     }
 }
@@ -320,18 +322,18 @@ mod tests {
     }
 
     #[test]
-    fn test_direct_serialization_roundtrip() {
+    fn test_direct_serialisation_roundtrip() {
         let params = AerosolDirectParameters::default();
         let json = serde_json::to_string(&params).unwrap();
         let restored: AerosolDirectParameters = serde_json::from_str(&json).unwrap();
 
         assert!((params.sox_coefficient - restored.sox_coefficient).abs() < 1e-10);
         assert!((params.bc_coefficient - restored.bc_coefficient).abs() < 1e-10);
-        assert_eq!(params.harmonize, restored.harmonize);
+        assert_eq!(params.include_harmonisation, restored.include_harmonisation);
     }
 
     #[test]
-    fn test_indirect_serialization_roundtrip() {
+    fn test_indirect_serialisation_roundtrip() {
         let params = AerosolIndirectParameters::default();
         let json = serde_json::to_string(&params).unwrap();
         let restored: AerosolIndirectParameters = serde_json::from_str(&json).unwrap();
@@ -343,24 +345,24 @@ mod tests {
     }
 
     #[test]
-    fn test_partial_deserialization() {
-        // Test that #[serde(default)] allows partial deserialization for both structs
+    fn test_partial_deserialisation() {
+        // Test that #[serde(default)] allows partial deserialisation for both structs
 
         // Direct parameters
-        let json_direct = r#"{"sox_coefficient": -0.005, "harmonize": true}"#;
+        let json_direct = r#"{"sox_coefficient": -0.005, "include_harmonisation": true}"#;
         let params: AerosolDirectParameters =
-            serde_json::from_str(json_direct).expect("Partial deserialization failed");
+            serde_json::from_str(json_direct).expect("Partial deserialisation failed");
 
         assert!((params.sox_coefficient + 0.005).abs() < 1e-10);
-        assert!(params.harmonize);
+        assert!(params.include_harmonisation);
         // Defaults for unspecified fields
         assert!((params.bc_coefficient - 0.0077).abs() < 1e-10);
-        assert!((params.harmonize_year - 2019.0).abs() < 1e-10);
+        assert!((params.harmonisation_reference_year - 2019.0).abs() < 1e-10);
 
         // Indirect parameters
         let json_indirect = r#"{"cloud_albedo_coefficient": -1.5}"#;
         let params: AerosolIndirectParameters =
-            serde_json::from_str(json_indirect).expect("Partial deserialization failed");
+            serde_json::from_str(json_indirect).expect("Partial deserialisation failed");
 
         assert!((params.cloud_albedo_coefficient + 1.5).abs() < 1e-10);
         // Defaults for unspecified fields

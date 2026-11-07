@@ -100,7 +100,7 @@ mod lambda_monotonicity {
                 panic!("LAMCALC should converge for ECS = {:.1}", ecs);
             });
 
-            let lambda_global = params.q_2xco2 / ecs;
+            let lambda_global = params.erf_2xco2 / ecs;
 
             let delta = match prev_lambda_ocean {
                 Some(prev) => {
@@ -146,19 +146,19 @@ mod time_varying_ecs {
         // adjusted ECS evolves as cumulative temperature accumulates.
         let params = ClimateUDEBParameters {
             ecs: 3.0,
-            feedback_cumt_sensitivity: 0.15,
-            feedback_q_sensitivity: 0.01,
-            feedback_cumt_period: 300.0,
+            feedback_cumulative_temperature_sensitivity: 0.15,
+            feedback_forcing_sensitivity: 0.01,
+            feedback_cumulative_temperature_period: 300.0,
             ..Default::default()
         };
 
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
         let n_years = 500;
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
         // Track the effective ECS by computing it from the temperature history
         // the same way adjusted_ecs() does internally.
@@ -185,14 +185,14 @@ mod time_varying_ecs {
                     panic!("solve_with_state failed at year {}: {:?}", year, e);
                 });
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             }
 
-            let global_sat = prev_temps.0[0] * fgno
-                + prev_temps.0[1] * fgnl
-                + prev_temps.0[2] * fgso
-                + prev_temps.0[3] * fgsl;
+            let global_sat = prev_temps.0[0] * nh_ocean
+                + prev_temps.0[1] * nh_land
+                + prev_temps.0[2] * sh_ocean
+                + prev_temps.0[3] * sh_land;
 
             // Store year-weighted temperature (T * dt_years) matching adjusted_ecs()
             let dt_years = 1.0;
@@ -200,8 +200,8 @@ mod time_varying_ecs {
 
             // Reconstruct adjusted ECS using the same year-weighted walk-back
             // as ClimateUDEB::adjusted_ecs()
-            let cumt_2x = params.ecs * params.feedback_cumt_period;
-            let period = params.feedback_cumt_period;
+            let cumt_2x = params.ecs * params.feedback_cumulative_temperature_period;
+            let period = params.feedback_cumulative_temperature_period;
             let mut years_remaining = period;
             let mut cum_t: FloatValue = 0.0;
             for i in (0..temp_history.len()).rev() {
@@ -218,11 +218,13 @@ mod time_varying_ecs {
             }
 
             let cumt_factor = if cumt_2x.abs() > 1e-15 {
-                1.0 + params.feedback_cumt_sensitivity * (cum_t - cumt_2x) / cumt_2x
+                1.0 + params.feedback_cumulative_temperature_sensitivity * (cum_t - cumt_2x)
+                    / cumt_2x
             } else {
                 1.0
             };
-            let q_factor = 1.0 + params.feedback_q_sensitivity * (erf.max(0.0) - params.rf_2xco2);
+            let q_factor =
+                1.0 + params.feedback_forcing_sensitivity * (erf.max(0.0) - params.erf_2xco2);
             let ecs_adj = params.ecs * cumt_factor * q_factor;
             ecs_trajectory.push(ecs_adj);
 
@@ -322,18 +324,18 @@ mod transient_ecs_convergence {
     #[test]
     fn test_transient_model_approaches_ecs() {
         let params = params_with_fixed_ecs(3.0);
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
 
         // Run for 3000 years to approach equilibrium
         let n_years = 3000;
         let records = run_udeb_simulation(&params, erf, n_years);
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
         let final_temps = &records[n_years - 1].surface_temperature;
-        let global_mean = final_temps.0[0] * fgno
-            + final_temps.0[1] * fgnl
-            + final_temps.0[2] * fgso
-            + final_temps.0[3] * fgsl;
+        let global_mean = final_temps.0[0] * nh_ocean
+            + final_temps.0[1] * nh_land
+            + final_temps.0[2] * sh_ocean
+            + final_temps.0[3] * sh_land;
 
         println!();
         println!(
@@ -372,8 +374,8 @@ mod heat_uptake_consistency {
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
-        let erf = params.rf_2xco2;
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let erf = params.erf_2xco2;
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
         // Get the lambda values by running LAMCALC with matching parameters
         let lamcalc_params = common::lamcalc_params_from_udeb(&params);
@@ -407,7 +409,7 @@ mod heat_uptake_consistency {
                     panic!("solve_with_state failed at year {}: {:?}", year, e);
                 });
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             }
 
@@ -418,7 +420,7 @@ mod heat_uptake_consistency {
 
             // Manual calculation: Q - sum(f_i * lambda_i * T_i)
             // Forcing is uniform across boxes (erf for each box)
-            let weights = [fgno, fgnl, fgso, fgsl];
+            let weights = [nh_ocean, nh_land, sh_ocean, sh_land];
             let lambdas = [lambda_ocean, lambda_land, lambda_ocean, lambda_land];
 
             let q_global: FloatValue = weights.iter().map(|&w| w * erf).sum();
@@ -495,7 +497,7 @@ mod land_ocean_ratio_equilibrium {
         // prescribed RLO. Test for multiple ECS values.
         let ecs_values = [2.0, 3.0, 4.5];
         let n_years = 1500;
-        let target_rlo = ClimateUDEBParameters::default().rlo;
+        let target_rlo = ClimateUDEBParameters::default().land_ocean_warming_ratio;
 
         println!();
         println!(
@@ -506,15 +508,17 @@ mod land_ocean_ratio_equilibrium {
 
         for &ecs in &ecs_values {
             let params = params_with_fixed_ecs(ecs);
-            let erf = params.rf_2xco2;
+            let erf = params.erf_2xco2;
 
             let records = run_udeb_simulation(&params, erf, n_years);
 
-            let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+            let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
             let final_temps = &records[n_years - 1].surface_temperature;
 
-            let ocean_mean = (final_temps.0[0] * fgno + final_temps.0[2] * fgso) / (fgno + fgso);
-            let land_mean = (final_temps.0[1] * fgnl + final_temps.0[3] * fgsl) / (fgnl + fgsl);
+            let ocean_mean =
+                (final_temps.0[0] * nh_ocean + final_temps.0[2] * sh_ocean) / (nh_ocean + sh_ocean);
+            let land_mean =
+                (final_temps.0[1] * nh_land + final_temps.0[3] * sh_land) / (nh_land + sh_land);
 
             assert!(
                 ocean_mean > 0.0,
@@ -533,8 +537,8 @@ mod land_ocean_ratio_equilibrium {
 
             // The LAMCALC RLO constraint is defined in terms of raw energy
             // balance temperatures, not the SST-to-SAT adjusted temperatures
-            // that ClimateUDEB outputs. The temp_adjust_alpha (1.04) and
-            // temp_adjust_gamma (-0.002) parameters amplify ocean SAT
+            // that ClimateUDEB outputs. The temperature_adjustment_alpha (1.04) and
+            // temperature_adjustment_gamma (-0.002) parameters amplify ocean SAT
             // relative to SST, which inflates the apparent SAT-based
             // land/ocean ratio. This effect grows with temperature (and
             // hence with ECS) because the quadratic gamma term increases
@@ -582,9 +586,9 @@ mod land_ocean_ratio_equilibrium {
         // Also verify the RLO is converging over time by comparing early
         // and late values for the default ECS case.
         let params = params_with_fixed_ecs(3.0);
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
         let records = run_udeb_simulation(&params, erf, n_years);
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
         println!();
         println!("RLO convergence over time (ECS = 3.0):");
@@ -602,8 +606,9 @@ mod land_ocean_ratio_equilibrium {
                 continue;
             }
             let temps = &records[yr - 1].surface_temperature;
-            let ocean_mean = (temps.0[0] * fgno + temps.0[2] * fgso) / (fgno + fgso);
-            let land_mean = (temps.0[1] * fgnl + temps.0[3] * fgsl) / (fgnl + fgsl);
+            let ocean_mean =
+                (temps.0[0] * nh_ocean + temps.0[2] * sh_ocean) / (nh_ocean + sh_ocean);
+            let land_mean = (temps.0[1] * nh_land + temps.0[3] * sh_land) / (nh_land + sh_land);
             let rlo = land_mean / ocean_mean;
             rlo_values.push(rlo);
 
@@ -659,19 +664,19 @@ mod ground_heat_capacity {
         // Run WITH ground heat capacity (default)
         let params_with = params_with_fixed_ecs(3.0);
         assert!(
-            params_with.land_heat_capacity_enabled,
+            params_with.include_land_heat_capacity,
             "Default should have ground heat enabled"
         );
         let records_with = run_udeb_simulation(&params_with, erf, n_years);
 
         // Run WITHOUT ground heat capacity
         let params_without = ClimateUDEBParameters {
-            land_heat_capacity_enabled: false,
+            include_land_heat_capacity: false,
             ..params_with.clone()
         };
         let records_without = run_udeb_simulation(&params_without, erf, n_years);
 
-        let (fgno, fgnl, fgso, fgsl) = params_with.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params_with.grid().weights();
 
         println!();
         println!(
@@ -685,12 +690,14 @@ mod ground_heat_capacity {
             let t_with = &records_with[yr - 1].surface_temperature;
             let t_without = &records_without[yr - 1].surface_temperature;
 
-            let global_with =
-                t_with.0[0] * fgno + t_with.0[1] * fgnl + t_with.0[2] * fgso + t_with.0[3] * fgsl;
-            let global_without = t_without.0[0] * fgno
-                + t_without.0[1] * fgnl
-                + t_without.0[2] * fgso
-                + t_without.0[3] * fgsl;
+            let global_with = t_with.0[0] * nh_ocean
+                + t_with.0[1] * nh_land
+                + t_with.0[2] * sh_ocean
+                + t_with.0[3] * sh_land;
+            let global_without = t_without.0[0] * nh_ocean
+                + t_without.0[1] * nh_land
+                + t_without.0[2] * sh_ocean
+                + t_without.0[3] * sh_land;
 
             let diff = global_with - global_without;
             println!(
@@ -738,7 +745,7 @@ mod ground_heat_capacity {
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
 
         let n_years = 500;
@@ -762,7 +769,7 @@ mod ground_heat_capacity {
                     panic!("solve_with_state failed at year {}: {:?}", year, e);
                 });
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             }
 
@@ -773,12 +780,12 @@ mod ground_heat_capacity {
                 || year == 199
                 || year == n_years - 1
             {
-                let diff = state.land_temps[0] - state.ground_temps[0];
+                let diff = state.land_temperatures[0] - state.ground_temperatures[0];
                 println!(
                     "{:>6} | {:>12.6} | {:>12.6} | {:>12.6}",
                     year + 1,
-                    state.land_temps[0],
-                    state.ground_temps[0],
+                    state.land_temperatures[0],
+                    state.ground_temperatures[0],
                     diff,
                 );
             }
@@ -786,15 +793,15 @@ mod ground_heat_capacity {
 
         // Ground temp should be positive (warming occurred)
         assert!(
-            state.ground_temps[0] > 0.0,
+            state.ground_temperatures[0] > 0.0,
             "NH ground temperature should be positive after warming: {:.6}",
-            state.ground_temps[0],
+            state.ground_temperatures[0],
         );
 
         // Ground temp should lag behind land temp but converge.
         // With land forcing amplification the transient temperatures are higher,
         // so the gap can be larger during the approach to equilibrium.
-        let gap_nh = (state.land_temps[0] - state.ground_temps[0]).abs();
+        let gap_nh = (state.land_temperatures[0] - state.ground_temperatures[0]).abs();
         assert!(
             gap_nh < 0.5,
             "After {} years, NH ground-land gap ({:.6} K) should be small",
@@ -804,9 +811,9 @@ mod ground_heat_capacity {
 
         // Same for SH
         assert!(
-            state.ground_temps[1] > 0.0,
+            state.ground_temperatures[1] > 0.0,
             "SH ground temperature should be positive after warming: {:.6}",
-            state.ground_temps[1],
+            state.ground_temperatures[1],
         );
     }
 
@@ -815,14 +822,14 @@ mod ground_heat_capacity {
     #[test]
     fn test_disabled_ground_heat_has_no_effect() {
         let params = ClimateUDEBParameters {
-            land_heat_capacity_enabled: false,
+            include_land_heat_capacity: false,
             ..params_with_fixed_ecs(3.0)
         };
 
         let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
-        let erf = params.rf_2xco2;
+        let erf = params.erf_2xco2;
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
 
         for year in 0..100 {
@@ -838,21 +845,21 @@ mod ground_heat_capacity {
                     panic!("solve_with_state failed at year {}: {:?}", year, e);
                 });
 
-            if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+            if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
                 prev_temps = *temps;
             }
         }
 
         // Ground temperatures should remain at zero when disabled
         assert!(
-            state.ground_temps[0].abs() < 1e-15,
+            state.ground_temperatures[0].abs() < 1e-15,
             "NH ground temp should be zero when disabled: {}",
-            state.ground_temps[0],
+            state.ground_temperatures[0],
         );
         assert!(
-            state.ground_temps[1].abs() < 1e-15,
+            state.ground_temperatures[1].abs() < 1e-15,
             "SH ground temp should be zero when disabled: {}",
-            state.ground_temps[1],
+            state.ground_temperatures[1],
         );
     }
 }

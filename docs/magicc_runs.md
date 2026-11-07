@@ -31,6 +31,7 @@ with efficacies and regional patterns, and ClimateUDEB with monthly volcanic for
 
 ```python
 import numpy as np
+from rscm.core import TimeAxis
 from rscm.magicc import full, prescribed, run_magicc7
 
 years = np.arange(1750.0, 2101.0)
@@ -39,30 +40,35 @@ ramp = np.linspace(0.1, 1.0, len(years))
 emissions = {
     f"{species}|{sector}": ramp
     for species in full.SECTORAL_EMISSIONS
-    for sector in ("Fossil", "AFOLU")
+    for sector in ("Fossil", "Biosphere")
 }
 emissions |= {species: np.zeros(len(years)) for species in full.halocarbon_species()}
 
-model = run_magicc7(years, emissions, parameters={"core_climatesensitivity": 3.0})
+model = run_magicc7(
+    TimeAxis.from_values(years), emissions, parameters={"core_climatesensitivity": 3.0}
+)
 timeseries = model.timeseries()
-co2 = timeseries.get_timeseries_by_name("Atmospheric Concentration|CO2").values()
-boxes = timeseries.get_fourbox_timeseries_by_name("Surface Temperature").values()
+co2 = timeseries.get_timeseries_by_name("Atmospheric Concentrations|CO2").values()
+boxes = timeseries.get_four_box_timeseries_by_name("Surface Air Temperature Change").values()
 temperature = boxes @ prescribed.area_fractions()
 ```
 
-`years` are consecutive annual labels and should start in 1750, the year of MAGICC7's initial state.
-With the default parameters they must reach 2019,
+The time axis has annual steps and should start in 1750, the year of MAGICC7's initial state.
+With the default parameters it must reach 2019,
 the year to which MAGICC7 scales its prescribed aerosol and land-use forcing.
-`emissions` holds one value per year for `"<species>|Fossil"` and `"<species>|AFOLU"`
+`emissions` holds one value per year for `"<species>|Fossil"` and `"<species>|Biosphere"`
 of each species in `full.SECTORAL_EMISSIONS`, in the units that mapping gives.
-It also holds one array per halocarbon in `full.halocarbon_species()`, in kt/yr.
+These are the gcages units, such as `Mt CO2/yr` and `Mt SO2/yr`.
+It also holds one array per halocarbon in `full.halocarbon_species()`, in kt of the gas per year.
+`convention=Convention.MAGICC7`, with `Convention` from `rscm.names`,
+takes the emissions in the units MAGICC7 reads instead, such as `GtC/yr` and `Mt S/yr`.
 Missing, unknown or misshapen emissions raise `ValueError`.
 
 The run returns the `Model` after its last step.
 Read outputs from `model.timeseries()`.
-Surface temperature and other regional variables are four-box timeseries
+Surface air temperature change and other regional variables are four-box timeseries
 in northern ocean, northern land, southern ocean, southern land order.
-Their area weights are always MAGICC7's default land fractions, 42% of the northern hemisphere
+Their grid weights are always MAGICC7's default land fractions, 42% of the northern hemisphere
 and 21% of the southern, as `prescribed.area_fractions()` gives.
 Overriding the `ClimateUDEB` land fractions through `component_parameters` does not change them.
 
@@ -74,8 +80,10 @@ The keyword arguments override MAGICC7's setup:
   ([#162](https://github.com/lewisjared/rscm/issues/162)).
 - `initial_concentrations` overrides MAGICC7's 1750 concentrations,
   which `full.default_initial_concentrations()` gives.
+  A gas it does not name raises `ValueError`.
 - `component_parameters` overrides the Rust parameters of single components, keyed by component name
   such as `"TerrestrialCarbon"`.
+  A name outside `full.COMPONENTS` raises `ValueError`.
 - `inputs` replaces the input files that `full.load_inputs` reads.
 
 The forcing MAGICC7 prescribes before the run comes from `rscm.magicc.prescribed`
@@ -90,7 +98,7 @@ Like MAGICC7's default configuration, `run_magicc7` prescribes the concentration
 CH4, N2O and every halocarbon up to 2015 from the packaged input files,
 and calculates them from emissions afterwards.
 `co2_switchfromconc2emis_year` and its `ch4`, `n2o`, `fgas` and `mhalo` counterparts move the switch.
-A switch year after the first year must fall within `years`.
+A switch year after the first year must fall within the time axis.
 While concentrations are prescribed, the ocean sees CO2 interpolated within the year
 and fossil CH4 oxidation scales with the inverse CH4 emissions, as in MAGICC7.
 With every switch year at or before the first year, the chain runs from emissions throughout.
@@ -107,7 +115,8 @@ With every switch year at or before the first year, the chain runs from emission
 - `co2_plantboxresp_method` must be 2, the only respiration method implemented.
   Other values raise `ValueError`.
 - `rf_efficacy_apply` sets how efficacies apply, including to the monthly volcanic forcing.
-  With 1, forcing is divided by each agent's internal efficacy and prescribed efficacies are ignored,
+  `full.EFFICACY_METHODS` maps its 0, 1 and 2 to the `none`, `unit` and `ar6` efficacy methods.
+  With 1, forcing is divided by each agent's internal efficacy and efficacies are ignored,
   as in MAGICC7.
 - `pf_apply=0` switches permafrost off.
   MAGICC7 enables it by default.
@@ -115,7 +124,7 @@ With every switch year at or before the first year, the chain runs from emission
   `ncycle_apply_ndep_from_emis=1` adds deposition from NOx and NH3.
 - `out_sealevel=1` adds `SeaLevelRise` and thermal expansion in `ClimateUDEB`.
 
-In a model built by hand, add `PermafrostBuilder` and set `permafrost` on
+In a model built by hand, add `PermafrostBuilder` and set `include_permafrost` on
 `CH4Chemistry`, `CH4Oxidation`, `OceanCarbon` and `CO2Budget` to feed permafrost emissions back.
 They then read `Emissions|CH4|Permafrost` and `Emissions|CO2|Permafrost`.
 
@@ -123,7 +132,7 @@ They then read `Emissions|CH4|Permafrost` and `Emissions|CO2|Permafrost`.
 
 `tests/regression/test_full_run.py` compares `run_magicc7` with MAGICC7 v7.5.3 runs of SSP2-4.5 emissions
 in every year from 1750 to 2105.
-It checks four-box surface temperature, the CO2, CH4 and N2O concentrations and total ERF
+It checks four-box surface air temperature change, the CO2, CH4 and N2O concentrations and total ERF
 at a relative tolerance of 1e-9 and an absolute tolerance of 1e-12, set in `tests/regression/full_run.py`.
 The tolerance asks for scientific parity rather than bit-for-bit agreement,
 but most cases currently agree to the last bit.
@@ -158,26 +167,27 @@ Other scenarios and parameter sets use the same code without a MAGICC7 compariso
 
 ```python
 import numpy as np
+from rscm.core import TimeAxis
 from rscm.magicc import Emissions, run_magicc_emissions
 
 years = np.arange(1750.0, 1851.0)
 n = len(years)
 result = run_magicc_emissions(
-    years,
+    TimeAxis.from_values(years),
     Emissions(
-        co2_fossil=np.full(n, 8.0),     # GtC/yr
-        co2_land_use=np.full(n, 1.0),   # GtC/yr
-        ch4=np.full(n, 300.0),          # Mt CH4/yr, anthropogenic
-        ch4_fossil=np.full(n, 120.0),   # Mt CH4/yr, part of ch4
-        n2o=np.full(n, 7.0),            # Mt N/yr
-        nox=np.full(n, 40.0),           # Mt N/yr
-        co=np.full(n, 900.0),           # Mt CO/yr
-        nmvoc=np.full(n, 200.0),        # Mt NMVOC/yr
+        co2_fossil=np.full(n, 29000.0),   # Mt CO2/yr
+        co2_biosphere=np.full(n, 3700.0), # Mt CO2/yr
+        ch4=np.full(n, 300.0),            # Mt CH4/yr, anthropogenic
+        ch4_fossil=np.full(n, 120.0),     # Mt CH4/yr, part of ch4
+        n2o=np.full(n, 11000.0),          # kt N2O/yr
+        nox=np.full(n, 130.0),            # Mt NO2/yr
+        co=np.full(n, 900.0),             # Mt CO/yr
+        nmvoc=np.full(n, 200.0),          # Mt VOC/yr
     ),
     initial_concentrations={"CO2": 278.0, "CH4": 722.0, "N2O": 270.0},
     other_forcing=np.zeros(len(years)),
 )
-co2 = result.values["Atmospheric Concentration|CO2"]
+co2 = result.values["Atmospheric Concentrations|CO2"]
 ```
 
 Emissions are annual mean rates, one per supplied year.
@@ -190,7 +200,7 @@ The run couples these components:
 - `TerrestrialCarbon` calculates the net land flux, including land-use emissions.
 - `OceanCarbon` calculates the uptake while CO2 evolves monthly within the year.
 - `CO2Budget` closes the atmospheric CO2 balance.
-- `GhgForcing` and `ClimateUDEB` calculate forcing and temperature.
+- `GHGForcing` and `ClimateUDEB` calculate forcing and temperature.
 
 Natural CH4 and N2O emissions are chemistry parameters.
 They default to the budget-closing values MAGICC7 derives for its standard historical concentrations.
@@ -215,7 +225,7 @@ is supplied through `other_forcing`.
 
 ```python
 parameters = {
-    "GhgForcing": {"co2_pi": 277.147, "ch4_pi": 731.406, "n2o_pi": 273.865},
+    "GHGForcing": {"co2_pi": 277.147, "ch4_pi": 731.406, "n2o_pi": 273.865},
     "CH4Chemistry": {"natural_emissions": 182.19},
     "ClimateUDEB": {"ecs": 3.0},
 }
@@ -223,7 +233,7 @@ parameters = {
 
 A `gtc_per_ppm` given for `CO2Budget` or `OceanCarbon` applies to both,
 because the ocean evolves atmospheric CO2 within the year and must match the budget.
-`ppb_to_tg`, `mixbox_size` and `natural_emissions` are shared the same way
+`tg_per_ppb`, `mixing_box_size` and `natural_emissions` are shared the same way
 between `CH4Chemistry` and `CH4Oxidation`, because the oxidation repeats the CH4 budget.
 Conflicting values raise `ValueError`.
 
@@ -244,6 +254,7 @@ It differs from MAGICC7's default configuration in three ways:
 
 ```python
 import numpy as np
+from rscm.core import TimeAxis
 from rscm.magicc import run_magicc
 
 years = np.arange(1750.0, 1851.0)
@@ -254,13 +265,13 @@ concentrations = {
 }
 
 result = run_magicc(
-    years,
+    TimeAxis.from_values(years),
     concentrations,
     other_forcing=np.zeros(len(years)),
     forcing_species=("CO2",),
-    forcing_parameters={"method": "Ipcctar", "adjust_co2": 1.0},
+    forcing_parameters={"method": "IPCCTAR", "adjust_co2": 1.0},
 )
-temperature = result.values["Surface Temperature"]
+temperature = result.values["Surface Air Temperature Change"]
 forcing = result.values["Effective Radiative Forcing"]
 ```
 
@@ -284,28 +295,29 @@ from rscm.magicc import CO2Emissions
 
 n = len(years)
 emissions_result = run_magicc(
-    years,
+    TimeAxis.from_values(years),
     {"CH4": concentrations["CH4"], "N2O": concentrations["N2O"]},
     other_forcing=np.zeros(n),
     co2_emissions=CO2Emissions(
         initial_concentration=278.0,
-        fossil=np.full(n, 8.0),
-        land_use=np.full(n, 1.0),
+        fossil=np.full(n, 29000.0),
+        biosphere=np.full(n, 3700.0),
         land_uptake=np.full(n, 2.0),
         ocean_uptake=np.full(n, 2.0),
     ),
 )
-co2 = emissions_result.values["Atmospheric Concentration|CO2"]
+co2 = emissions_result.values["Atmospheric Concentrations|CO2"]
 ```
 
-The four emissions and uptake arrays contain annual mean rates in GtC/yr.
+The arrays contain annual mean rates.
+The emissions are in Mt CO2/yr and the uptakes in GtC/yr.
 Positive uptake removes carbon from the atmosphere.
 Each entry applies over `[years[i], years[i + 1])`, so the last entry is never integrated.
 The budget uses 2.123 GtC per ppm.
 CO2 must not also be supplied as a prescribed concentration.
 CH4 and N2O remain prescribed.
-The budget receives the net land flux, `land_uptake - land_use`,
-because land-use emissions leave the land pools.
+The budget receives the net land flux, `land_uptake` less `biosphere` in GtC/yr,
+because biosphere emissions leave the land pools.
 
 This mode exercises emissions → calculated CO2 → forcing → temperature.
 It does not calculate land or ocean uptake, couple temperature back into those sinks,
@@ -315,11 +327,11 @@ or infer emissions from prescribed concentrations.
 
 These conventions apply to `run_magicc` and `run_magicc_emissions`.
 
-- Years are consecutive annual boundaries, with at least two entries.
-- Concentrations and forcing have one value per boundary, including the final year.
-  The model integrates only the intervals between these boundaries.
-- The runners evaluate initial forcing using the same Rust calculation as subsequent timesteps.
-  Each forcing output uses concentrations at its own boundary, with no one-year shift between them.
+- The time axis has at least two annual steps, and each step starts at a time bound.
+- Concentrations and forcing have one value per time bound, including the final year.
+  The model integrates only the steps between these time bounds.
+- The runners evaluate initial forcing using the same Rust calculation as subsequent steps.
+  Each forcing output uses concentrations at its own time bound, with no one-year shift between them.
 - Initial heat uptake includes the supplied forcing and the configured climate efficacy adjustment,
   even when starting above preindustrial concentrations.
 - Climate starts at zero temperature anomaly with an unperturbed ocean.
@@ -328,10 +340,10 @@ These conventions apply to `run_magicc` and `run_magicc_emissions`.
 - Preindustrial reference concentrations are component parameters, independent of the first supplied year.
   Set `co2_pi`, `ch4_pi` and `n2o_pi` explicitly when the experiment uses different references.
 
-For `run_magicc`, `climate_parameters` accepts ClimateUDEB parameter names such as `ecs` and `rf_2xco2`,
-and `forcing_parameters` accepts GhgForcing parameter names such as `method` and `delq2xco2`.
-`run_magicc_emissions` takes both through `parameters["ClimateUDEB"]` and `parameters["GhgForcing"]`.
-As in MAGICC7, `rf_2xco2` defaults to the ERF of doubling CO2 under the forcing configuration,
+For `run_magicc`, `climate_parameters` accepts ClimateUDEB parameter names such as `ecs` and `erf_2xco2`,
+and `forcing_parameters` accepts GHGForcing parameter names such as `method` and `erf_2xco2`.
+`run_magicc_emissions` takes both through `parameters["ClimateUDEB"]` and `parameters["GHGForcing"]`.
+As in MAGICC7, `erf_2xco2` defaults to the ERF of doubling CO2 under the forcing configuration,
 which is about 3.9 W/m² for OLBL.
 Set it explicitly only to decouple the climate feedback from the forcing.
 
@@ -340,11 +352,11 @@ Set it explicitly only to decouple the climate feedback from the forcing.
 `run_magicc` and `run_magicc_emissions` return a `MAGICCResult`.
 `result.years` labels the returned arrays.
 `result.values` and `result.units` contain concentrations, individual and total forcing,
-surface temperature, SST, heat uptake and ocean heat content.
+surface air temperature change, SST, heat uptake and ocean heat content.
 Emissions-driven results also contain the carbon pools and fluxes, the CH4 and N2O lifetimes
 and the CO2 from CH4 oxidation.
 The end-of-year CO2 and the airborne fraction are `NaN` at the first year.
-Global surface temperature uses the configured hemispheric land fractions.
+Global surface air temperature change uses the configured hemispheric land fractions.
 `result.regional_temperature` retains the four boxes in northern ocean, northern land, southern ocean,
 southern land order.
 Points, such as concentrations and temperature, are labelled by the time they hold at.

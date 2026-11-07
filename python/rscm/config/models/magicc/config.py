@@ -19,11 +19,11 @@ __all__ = [
 class ClimateConfig:
     """MAGICC climate model parameters."""
 
-    climate_sensitivity: float = 3.0
+    ecs: float = 3.0
     """Equilibrium climate sensitivity (K)."""
 
-    forcing_2xco2: float = 3.71
-    """Radiative forcing for doubling CO2 (W/m²)."""
+    erf_2xco2: float = 3.71
+    """2xCO2 effective radiative forcing (W/m²)."""
 
 
 @dataclass
@@ -49,11 +49,11 @@ class AggregationConfig:
 class TerrestrialCarbonConfig:
     """MAGICC terrestrial carbon cycle parameters."""
 
-    fertilization_method: float = 1.100486
-    """CO2 fertilization method (1=log, 2=Gifford, 3=sigmoid)."""
+    fertilisation_method: float = 1.100486
+    """CO2 fertilisation method (1=log, 2=Gifford, 3=sigmoid)."""
 
-    plantbox_resp_fertscale: float = 0.95
-    """Scaling of fertilization effect on plant respiration."""
+    plant_respiration_fertilisation_scale: float = 0.95
+    """Scaling of fertilisation effect on plant respiration."""
 
 
 @dataclass

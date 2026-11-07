@@ -1,6 +1,6 @@
 //! Relaxed grid validation tests with schema-based aggregation.
 
-use crate::component::{Component, GridType, InputState, OutputState, RequirementDefinition};
+use crate::component::{Component, GridType, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
 use crate::model::ModelBuilder;
 use crate::schema::VariableSchema;
@@ -11,7 +11,7 @@ use numpy::ndarray::Array;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-/// A component that produces FourBox output
+/// A component that produces four-box output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FourBoxProducer {
     var_name: String,
@@ -19,8 +19,8 @@ struct FourBoxProducer {
 
 #[typetag::serde]
 impl Component for FourBoxProducer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::four_box_output(&self.var_name, "K")]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::four_box_output(&self.var_name, "K")]
     }
 
     fn solve(
@@ -46,11 +46,8 @@ struct HemisphericProducer {
 
 #[typetag::serde]
 impl Component for HemisphericProducer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::hemispheric_output(
-            &self.var_name,
-            "K",
-        )]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::hemispheric_output(&self.var_name, "K")]
     }
 
     fn solve(
@@ -76,8 +73,8 @@ struct ScalarProducer {
 
 #[typetag::serde]
 impl Component for ScalarProducer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::scalar_output(&self.var_name, "K")]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::scalar_output(&self.var_name, "K")]
     }
 
     fn solve(
@@ -101,10 +98,10 @@ struct ScalarConsumer {
 
 #[typetag::serde]
 impl Component for ScalarConsumer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::scalar_input(&self.input_var, "K"),
-            RequirementDefinition::scalar_output(&self.output_var, "K"),
+            VariableDefinition::scalar_input(&self.input_var, "K"),
+            VariableDefinition::scalar_output(&self.output_var, "K"),
         ]
     }
 
@@ -121,7 +118,7 @@ impl Component for ScalarConsumer {
     }
 }
 
-/// A component that consumes FourBox input
+/// A component that consumes four-box input
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FourBoxConsumer {
     input_var: String,
@@ -130,10 +127,10 @@ struct FourBoxConsumer {
 
 #[typetag::serde]
 impl Component for FourBoxConsumer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::four_box_input(&self.input_var, "K"),
-            RequirementDefinition::scalar_output(&self.output_var, "K"),
+            VariableDefinition::four_box_input(&self.input_var, "K"),
+            VariableDefinition::scalar_output(&self.output_var, "K"),
         ]
     }
 
@@ -154,7 +151,7 @@ impl Component for FourBoxConsumer {
 // Write-side aggregation tests
 
 #[test]
-fn test_write_side_fourbox_to_scalar_allowed() {
+fn test_write_side_four_box_to_scalar_allowed() {
     // Schema declares Scalar, component produces FourBox
     // Should be allowed (write-side aggregation)
     let schema = VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
@@ -175,7 +172,7 @@ fn test_write_side_fourbox_to_scalar_allowed() {
 }
 
 #[test]
-fn test_write_side_fourbox_to_hemispheric_allowed() {
+fn test_write_side_four_box_to_hemispheric_allowed() {
     // Schema declares Hemispheric, component produces FourBox
     // Should be allowed (write-side aggregation)
     let schema =
@@ -218,7 +215,7 @@ fn test_write_side_hemispheric_to_scalar_allowed() {
 }
 
 #[test]
-fn test_write_side_scalar_to_fourbox_rejected() {
+fn test_write_side_scalar_to_four_box_rejected() {
     // Schema declares FourBox, component produces Scalar
     // Should be rejected (cannot broadcast/disaggregate)
     let schema = VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
@@ -265,7 +262,7 @@ fn test_write_side_scalar_to_hemispheric_rejected() {
 }
 
 #[test]
-fn test_write_side_hemispheric_to_fourbox_rejected() {
+fn test_write_side_hemispheric_to_four_box_rejected() {
     // Schema declares FourBox, component produces Hemispheric
     // Should be rejected (cannot disaggregate)
     let schema = VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
@@ -290,7 +287,7 @@ fn test_write_side_hemispheric_to_fourbox_rejected() {
 // Read-side aggregation tests
 
 #[test]
-fn test_read_side_fourbox_schema_scalar_consumer_allowed() {
+fn test_read_side_four_box_schema_scalar_consumer_allowed() {
     // Schema declares FourBox, component consumes Scalar
     // Should be allowed (read-side aggregation)
     let schema = VariableSchema::new()
@@ -344,7 +341,7 @@ fn test_read_side_hemispheric_schema_scalar_consumer_allowed() {
 }
 
 #[test]
-fn test_read_side_scalar_schema_fourbox_consumer_rejected() {
+fn test_read_side_scalar_schema_four_box_consumer_rejected() {
     // Schema declares Scalar, component consumes FourBox
     // Should be rejected (cannot disaggregate/broadcast)
     let schema = VariableSchema::new()

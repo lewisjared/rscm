@@ -6,7 +6,7 @@
 
 use super::{heat_capacity_per_metre, ClimateUDEB};
 use crate::climate::state::ClimateUDEBState;
-use crate::parameters::{CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER};
+use crate::parameters::{CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, EARTH_SURFACE_AREA, RHO_SEAWATER};
 use rscm_core::state::FourBoxSlice;
 use rscm_core::timeseries::FloatValue;
 use rscm_core::utils::linear_algebra::thomas_solve_inplace;
@@ -26,16 +26,16 @@ impl ClimateUDEB {
         hemi: usize,
     ) -> Vec<FloatValue> {
         let n = self.parameters.n_layers;
-        let t_top = state.ocean_temps[hemi][0];
-        let t_bottom = state.ocean_temps[hemi][n - 1];
+        let t_top = state.ocean_temperatures[hemi][0];
+        let t_bottom = state.ocean_temperatures[hemi][n - 1];
 
         let kappa_min_m2yr = self.parameters.kappa_min_m2_per_yr();
 
         self.kappa_slopes
             .iter()
             .map(|slope| {
-                let k =
-                    (slope * (t_top - t_bottom) + self.parameters.kappa) * DIFFUSIVITY_CM2S_TO_M2YR;
+                let k = (slope * (t_top - t_bottom) + self.parameters.vertical_diffusivity)
+                    * DIFFUSIVITY_CM2S_TO_M2YR;
                 k.max(kappa_min_m2yr)
             })
             .collect()
@@ -57,10 +57,10 @@ impl ClimateUDEB {
     /// * `hemi` - Hemisphere index (0 = NH, 1 = SH)
     /// * `ocean_forcing` - Forcing for this hemisphere's ocean box ($\text{W/m}^2$)
     /// * `land_forcing` - Forcing for this hemisphere's land box ($\text{W/m}^2$)
-    /// * `dt` - Timestep in years
+    /// * `dt` - Step in years
     /// * `lambda_ocean` - Ocean feedback parameter ($\text{W/m}^2\text{/K}$)
     /// * `lambda_land` - Land feedback parameter ($\text{W/m}^2\text{/K}$)
-    /// * `hemi_heat_exchange` - Inter-hemispheric heat exchange ($\text{W/m}^2$), computed
+    /// * `north_south_heat_flux` - Inter-hemispheric heat flux ($\text{W/m}^2$), computed
     ///   explicitly from previous substep air temperatures (MAGICC7 lines 3174-3177)
     /// * `ground_temp` - Ground reservoir temperature before this substep's update
     /// * `alpha_eff` - Effective SST-to-air-temperature ratio from the previous substep's SST
@@ -78,7 +78,7 @@ impl ClimateUDEB {
         dt: FloatValue,
         lambda_ocean: FloatValue,
         lambda_land: FloatValue,
-        hemi_heat_exchange: FloatValue,
+        north_south_heat_flux: FloatValue,
         ground_temp: FloatValue,
         alpha_eff: FloatValue,
     ) -> FloatValue {
@@ -94,17 +94,17 @@ impl ClimateUDEB {
         let afb = &self.area_factors.af_bottom[hemi];
         let afd = &self.area_factors.af_diff[hemi];
         let init = &state.initial_ocean_profile[hemi];
-        let t_polar = state.polar_sinking_temp;
-        let temps = &state.ocean_temps[hemi];
+        let t_polar = state.initial_polar_sinking_temperature;
+        let temps = &state.ocean_temperatures[hemi];
 
         let c = heat_capacity_per_metre();
-        let (fgno, fgnl, fgso, fgsl) = p.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *p.grid().weights();
         let (f_o, f_l) = if hemi == 0 {
-            (fgno, fgnl)
+            (nh_ocean, nh_land)
         } else {
-            (fgso, fgsl)
+            (sh_ocean, sh_land)
         };
-        let denom = (lambda_land * f_l + p.k_lo) * f_o;
+        let denom = (lambda_land * f_l + p.land_ocean_heat_exchange) * f_o;
 
         let mut coefficients = vec![0.0; 4 * n];
         let (a, rest) = coefficients.split_at_mut(n);
@@ -113,19 +113,21 @@ impl ClimateUDEB {
 
         let dtpdm = dt / p.mixed_layer_depth;
         let feedback =
-            ((p.amplify_ocean_to_land * (lambda_land * p.k_lo)) * f_l) / denom + lambda_ocean;
+            ((p.amplify_ocean_to_land * (lambda_land * p.land_ocean_heat_exchange)) * f_l) / denom
+                + lambda_ocean;
         b[0] = ((kappas[0] / dz1) * afb[0]
             + (pi_ratio * w) * afb[0]
             + (feedback * ((1.0 / c) * alpha_eff)) * aft[0])
             * dtpdm
             + 1.0;
         cc[0] = -((((kappas[0] / dz1) + w) * dtpdm) * afb[0]);
-        let flux = ((p.k_lo * land_forcing) * f_l) / denom + (hemi_heat_exchange + ocean_forcing);
+        let flux = ((p.land_ocean_heat_exchange * land_forcing) * f_l) / denom
+            + (north_south_heat_flux + ocean_forcing);
         d[0] = (((flux * dtpdm) / c) * aft[0] + temps[0])
             + ((init[1] - t_polar) * (dtpdm * dw)) * afb[0];
-        if p.land_heat_capacity_enabled {
-            d[0] -=
-                (((aft[0] * dtpdm) / (f_o * c)) * p.k_lg) * (state.land_temps[hemi] - ground_temp);
+        if p.include_land_heat_capacity {
+            d[0] -= (((aft[0] * dtpdm) / (f_o * c)) * p.land_ground_heat_exchange)
+                * (state.land_temperatures[hemi] - ground_temp);
         }
 
         let dtpdz = dt / dz;
@@ -160,12 +162,12 @@ impl ClimateUDEB {
 
         thomas_solve_inplace(a, b, cc, d);
 
-        let max_temp = p.max_temperature;
-        for (old, &temp) in state.ocean_temps[hemi].iter_mut().zip(d.iter()) {
+        let max_temp = p.maximum_temperature;
+        for (old, &temp) in state.ocean_temperatures[hemi].iter_mut().zip(d.iter()) {
             *old = temp.min(max_temp);
         }
 
-        state.ocean_temps[hemi][0]
+        state.ocean_temperatures[hemi][0]
     }
 
     /// Update upwelling rate based on global temperature.
@@ -176,12 +178,12 @@ impl ClimateUDEB {
     ///
     /// The change from $w_0$ is kept for the next substep's RHS correction.
     pub(super) fn update_upwelling(&self, state: &mut ClimateUDEBState, global_temp: FloatValue) {
-        let w_0 = self.parameters.w_initial;
-        let fw = self.parameters.w_variable_fraction * w_0;
-        let w_min = (1.0 - self.parameters.w_variable_fraction) * w_0;
+        let w_0 = self.parameters.initial_upwelling_rate;
+        let fw = self.parameters.upwelling_variable_fraction * w_0;
+        let w_min = (1.0 - self.parameters.upwelling_variable_fraction) * w_0;
         let thresholds = [
-            self.parameters.w_threshold_temp_nh,
-            self.parameters.w_threshold_temp_sh,
+            self.parameters.upwelling_threshold_temperature_nh,
+            self.parameters.upwelling_threshold_temperature_sh,
         ];
         for (hemi, thr) in thresholds.into_iter().enumerate() {
             let x = (fw * global_temp) / thr;
@@ -205,8 +207,7 @@ impl ClimateUDEB {
         lambda_ocean: FloatValue,
         lambda_land: FloatValue,
     ) -> FloatValue {
-        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
-        let weights = [fgno, fgnl, fgso, fgsl];
+        let weights = *self.parameters.grid().weights();
         let lambdas = [lambda_ocean, lambda_land, lambda_ocean, lambda_land];
 
         let mut q_global = 0.0;
@@ -219,28 +220,30 @@ impl ClimateUDEB {
         q_global - feedback_global
     }
 
-    /// Calculate total ocean heat content ($\text{J/m}^2$).
+    /// Calculate the global ocean heat content ($\text{J}$).
     ///
-    /// Integrates temperature anomaly over all ocean layers weighted by depth.
+    /// Integrates the temperature anomaly over the ocean layers and the ocean area of each hemisphere.
     pub(super) fn calculate_ocean_heat_content(&self, state: &ClimateUDEBState) -> FloatValue {
         let dz = self.parameters.layer_thickness;
         let dz_mix = self.parameters.mixed_layer_depth;
 
         let rho_c = RHO_SEAWATER * CP_SEAWATER;
+        let ocean_area = [
+            self.parameters.nh_ocean_fraction(),
+            self.parameters.sh_ocean_fraction(),
+        ]
+        .map(|fraction| 0.5 * EARTH_SURFACE_AREA * fraction);
 
         let mut total_heat = 0.0;
 
-        for hemi in 0..2 {
-            // Mixed layer contribution
-            total_heat += rho_c * dz_mix * state.ocean_temps[hemi][0];
-
-            // Deep layer contributions
+        for (hemi, area) in ocean_area.iter().enumerate() {
+            let mut column = dz_mix * state.ocean_temperatures[hemi][0];
             for layer in 1..self.parameters.n_layers {
-                total_heat += rho_c * dz * state.ocean_temps[hemi][layer];
+                column += dz * state.ocean_temperatures[hemi][layer];
             }
+            total_heat += rho_c * column * area;
         }
 
-        // Average over both hemispheres
-        total_heat / 2.0
+        total_heat
     }
 }

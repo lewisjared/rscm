@@ -2,7 +2,7 @@
 Example Python components for RSCM
 
 These components demonstrate the Python component API and serve as examples
-for implementing custom components.
+for implementing components.
 """
 
 from rscm.component import Component, Input, Output, State
@@ -36,19 +36,19 @@ class LinearConcentration(Component):
     """
 
     # Declare inputs
-    emissions = Input("Emissions|CO2", unit="GtCO2 / yr")
+    emissions = Input("Emissions|CO2", unit="Gt CO2/yr")
 
     # Declare state variables (read previous value, write new value)
-    concentration = State("Atmospheric Concentration|CO2", unit="ppm")
+    concentration = State("Atmospheric Concentrations|CO2", unit="ppm")
 
     # Declare outputs
-    airborne_emissions = Output("Airborne Emissions|CO2", unit="GtCO2 / yr")
+    airborne_emissions = Output("Airborne Emissions|CO2", unit="Gt CO2/yr")
 
     def __init__(
         self,
         airborne_fraction: float = 0.5,
         decay_rate: float = 0.01,
-        preindustrial_concentration: float = 278.0,
+        co2_pi: float = 278.0,
     ):
         """
         Initialise the linear concentration component.
@@ -59,12 +59,12 @@ class LinearConcentration(Component):
             Fraction of emissions that remain in the atmosphere (default: 0.5)
         decay_rate
             Rate at which excess CO2 decays per year (default: 0.01)
-        preindustrial_concentration
+        co2_pi
             Pre-industrial CO2 concentration in ppm (default: 278.0)
         """
         self.airborne_fraction = airborne_fraction
         self.decay_rate = decay_rate
-        self.preindustrial_concentration = preindustrial_concentration
+        self.co2_pi = co2_pi
 
     def solve(
         self,
@@ -73,14 +73,14 @@ class LinearConcentration(Component):
         inputs: "LinearConcentration.Inputs",
     ) -> "LinearConcentration.Outputs":
         """
-        Calculate concentration at the next timestep.
+        Calculate concentration at the next step.
 
         Parameters
         ----------
         t_current
             Current time (years)
         t_next
-            Next timestep time (years)
+            Next step time (years)
         inputs
             Typed inputs with emissions and previous concentration
 
@@ -98,7 +98,7 @@ class LinearConcentration(Component):
         airborne = emissions * self.airborne_fraction
 
         # Calculate new concentration with decay
-        excess = conc_prev - self.preindustrial_concentration
+        excess = conc_prev - self.co2_pi
         decay = excess * self.decay_rate * dt
         new_conc = conc_prev + airborne * dt - decay
 

@@ -10,6 +10,11 @@ import pytest
 from regression import full_run, test_fair
 from rscm.fair import run as fair_run
 from rscm.magicc import full
+from rscm.names import (
+    ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE,
+    ATMOSPHERIC_CONCENTRATIONS_CO2,
+    SURFACE_AIR_TEMPERATURE_CHANGE,
+)
 
 
 def _outputs(model):
@@ -17,7 +22,7 @@ def _outputs(model):
     out = {}
     getters = (
         ts.get_timeseries_by_name,
-        ts.get_fourbox_timeseries_by_name,
+        ts.get_four_box_timeseries_by_name,
         ts.get_hemispheric_timeseries_by_name,
     )
     for name in ts.names():
@@ -54,7 +59,7 @@ def _shuffled(function, seed):
 def _run_magicc7(**parameters):
     run = full_run.load()
     return full.run_magicc7(
-        run.years,
+        run.time_axis,
         full_run.emissions(run),
         parameters={**run.parameters, **parameters},
     )
@@ -74,8 +79,8 @@ def test_magicc7_shuffled(monkeypatch, parameters):
     run_components = full.run_components
     for seed in range(3):
 
-        def shuffled(years, components, _seed=seed, **kwargs):
-            return run_components(years, _shuffle(components, _seed), **kwargs)
+        def shuffled(time_axis, components, _seed=seed, **kwargs):
+            return run_components(time_axis, _shuffle(components, _seed), **kwargs)
 
         monkeypatch.setattr(full, "run_components", shuffled)
         _assert_identical(_outputs(_run_magicc7(**parameters)), expected)
@@ -85,23 +90,20 @@ def test_magicc7_shuffled(monkeypatch, parameters):
 def test_fair_shuffled(monkeypatch, case):
     run = test_fair.load(case)
     inputs = test_fair._inputs(run.config, run.timebounds, run.timepoints)
-    bounds = run.timebounds.index.to_numpy()
-    expected = _outputs(fair_run.run_fair(run.config, inputs, bounds))
-    build_components = fair_run.build_components
+    expected = _outputs(fair_run.run_fair(run.config, inputs, run.time_axis))
+    original = fair_run.components
     for seed in range(3):
-        monkeypatch.setattr(
-            fair_run, "build_components", _shuffled(build_components, seed)
-        )
+        monkeypatch.setattr(fair_run, "components", _shuffled(original, seed))
         _assert_identical(
-            _outputs(fair_run.run_fair(run.config, inputs, bounds)), expected
+            _outputs(fair_run.run_fair(run.config, inputs, run.time_axis)), expected
         )
 
 
 def test_magicc7_coupling_lags():
     """Forcing sees this year's CO2 and sea level this year's temperature."""
     lags = _lags(_run_magicc7(out_sealevel=True))
-    assert not lags["Atmospheric Concentration|CO2", "GhgForcing"]
-    assert not lags["Surface Temperature|Annual Mean", "SeaLevelRise"]
+    assert not lags[ATMOSPHERIC_CONCENTRATIONS_CO2, "GHGForcing"]
+    assert not lags[ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE, "SeaLevelRise"]
     for consumer in ("TerrestrialCarbon", "OceanCarbon"):
-        assert lags["Atmospheric Concentration|CO2", consumer]
-        assert lags["Surface Temperature", consumer]
+        assert lags[ATMOSPHERIC_CONCENTRATIONS_CO2, consumer]
+        assert lags[SURFACE_AIR_TEMPERATURE_CHANGE, consumer]

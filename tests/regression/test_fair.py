@@ -21,17 +21,18 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 
+from rscm import names
 from rscm.core import (
     GridType,
     InterpolationStrategy,
     ModelBuilder,
-    RequirementType,
     TimeAxis,
     Timeseries,
+    VariableRole,
     VariableSchema,
 )
 from rscm.fair import (
-    build_components,
+    components,
     from_fair,
     initial_values,
     load_config,
@@ -42,7 +43,12 @@ from rscm.fair import (
     run_fair,
     with_lags,
 )
-from rscm.fair.config import forcing_agents, is_ghg
+from rscm.fair.config import (
+    SUBTOTAL_CATEGORIES,
+    forcing_agents,
+    forcing_category,
+    is_ghg,
+)
 from rscm.fair.ensemble import SPECIES_ATTRIBUTES
 from rscm.fair.run import _on_timebounds
 from rscm.magicc import ClimateUDEBBuilder
@@ -100,7 +106,7 @@ class Run:
     outputs: TimeseriesCollection
 
     def rscm(self, variable: str) -> NDArray[np.float64]:
-        """Values of an RSCM variable on the timebounds."""
+        """Values of an RSCM variable on the FaIR timebounds."""
         series = self.outputs.get_timeseries_by_name(variable)
         assert series is not None, variable
         return np.asarray(series.values())
@@ -108,6 +114,11 @@ class Run:
     def fair(self, column: str) -> NDArray[np.float64]:
         """Values of a FaIR timebound column."""
         return self.timebounds[column].to_numpy()
+
+    @property
+    def time_axis(self) -> TimeAxis:
+        """Time axis with a step starting at each FaIR timebound."""
+        return _time_axis(self.timebounds)
 
 
 def _read(path: Path) -> pd.DataFrame:
@@ -119,9 +130,9 @@ def _inputs(
 ) -> dict[str, tuple[NDArray[np.float64], str]]:
     inputs = {}
     for s in config["species"]:
-        exogenous = naming.exogenous_variable(s)
-        if exogenous is not None:
-            variable, unit = exogenous
+        prescribed = naming.prescribed_variable(s)
+        if prescribed is not None:
+            variable, unit = prescribed
             mode = s["input_mode"]
             frame = timepoints if mode == "emissions" else timebounds
             column = f"{mode}|{s['name']}"
@@ -140,6 +151,10 @@ def calibration() -> dict[Any, dict[str, Any]]:
     )
 
 
+def _time_axis(timebounds: pd.DataFrame) -> TimeAxis:
+    return TimeAxis.from_values(timebounds.index.to_numpy(dtype=np.float64))
+
+
 @cache
 def load(case: str) -> Run:
     """Run RSCM on the inputs of a reference run."""
@@ -153,7 +168,7 @@ def load(case: str) -> Run:
     model = run_fair(
         config,
         _inputs(config, timebounds, timepoints),
-        timebounds.index.to_numpy(),
+        _time_axis(timebounds),
     )
     return Run(config, timebounds, timepoints, model.timeseries())
 
@@ -172,13 +187,13 @@ def test_climate(case: str) -> None:
             run.fair(f"temperature|{layer}"),
             f"layer {layer}",
         )
-    assert_close(run.rscm(naming.ENERGY_IMBALANCE), run.fair("toa_imbalance"))
+    assert_close(run.rscm(names.NET_ENERGY_IMBALANCE), run.fair("toa_imbalance"))
     assert_close(
-        run.rscm(naming.OCEAN_HEAT_CONTENT_CHANGE),
+        run.rscm(names.OCEAN_HEAT_CONTENT),
         run.fair("ocean_heat_content_change"),
     )
-    assert_close(run.rscm(naming.STOCHASTIC_FORCING), run.fair("stochastic_forcing"))
-    assert_close(run.rscm(naming.TOTAL_FORCING), run.fair("forcing_sum"))
+    assert_close(run.rscm(names.STOCHASTIC_FORCING), run.fair("stochastic_forcing"))
+    assert_close(run.rscm(names.ERF), run.fair("forcing_sum"))
 
 
 @pytest.mark.parametrize("case", CASES)
@@ -190,6 +205,21 @@ def test_forcing(case: str) -> None:
         )
 
 
+@pytest.mark.parametrize("case", CASES)
+def test_forcing_subtotals(case: str) -> None:
+    """Each subtotal is the sum of FaIR's forcing of the agents in its categories."""
+    run = load(case)
+    for name, categories in SUBTOTAL_CATEGORIES.items():
+        columns = [
+            run.fair(f"forcing|{s['name']}")
+            for s in forcing_agents(run.config)
+            if forcing_category(s) in categories
+        ]
+        actual = run.rscm(name)
+        expected = np.nansum(columns, axis=0) if columns else np.zeros_like(actual)
+        assert_close(actual, expected, name)
+
+
 @pytest.mark.parametrize("case", [c for c in CASES if not c.startswith("ebm")])
 def test_gas_cycle(case: str) -> None:
     run = load(case)
@@ -197,7 +227,7 @@ def test_gas_cycle(case: str) -> None:
         name = s["name"]
         if s["input_mode"] == "concentration":
             assert_close(
-                run.rscm(naming.emissions(name))[:-1],
+                run.rscm(naming.inverse_emissions(name))[:-1],
                 run.timepoints[f"emissions|{name}"].to_numpy(),
                 name,
             )
@@ -223,11 +253,11 @@ def test_gas_cycle(case: str) -> None:
 def test_chemistry(case: str) -> None:
     run = load(case)
     assert_close(
-        run.rscm(naming.EESC),
+        run.rscm(names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE),
         run.fair("concentration|Equivalent effective stratospheric chlorine"),
     )
     assert_close(
-        run.rscm(naming.CH4_LIFETIME_SCALING)[:-1], run.fair("alpha_lifetime|CH4")[:-1]
+        run.rscm(names.LIFETIME_SCALING_CH4)[:-1], run.fair("alpha_lifetime|CH4")[:-1]
     )
 
 
@@ -239,20 +269,21 @@ def test_prescribed_concentration_matches_modelled(gas: str) -> None:
     inputs = _inputs(run.config, run.timebounds, run.timepoints)
     del inputs[naming.emissions(gas)]
     entry["input_mode"] = "concentration"
-    variable, unit = naming.exogenous_variable(entry)
+    variable, unit = naming.prescribed_variable(entry)
     inputs[variable] = (run.rscm(variable), unit)
 
-    outputs = run_fair(config, inputs, run.timebounds.index.to_numpy()).timeseries()
+    outputs = run_fair(config, inputs, run.time_axis).timeseries()
 
-    assert set(outputs.names()) == set(run.outputs.names())
-    # Inverting the gas cycle rounds the gas's own emissions.
     emissions = naming.emissions(gas)
+    inverse = naming.inverse_emissions(gas)
+    assert set(outputs.names()) - {inverse} == set(run.outputs.names()) - {emissions}
+    # Inverting the gas cycle rounds the gas's own emissions.
     inverted = {naming.airborne_emissions(gas), naming.cumulative_emissions(gas)}
     for name in outputs.names():
         values = np.asarray(outputs.get_timeseries_by_name(name).values())
-        if name == emissions:
-            # Inverted emissions have no value at the final timebound.
-            assert_close(values[:-1], run.rscm(name)[:-1], name)
+        if name == inverse:
+            # Inverse emissions have no value at the final time bound.
+            assert_close(values[:-1], run.rscm(emissions)[:-1], name)
         elif name in inverted:
             assert_close(values, run.rscm(name), name)
         else:
@@ -299,22 +330,20 @@ def _assert_ensemble_member(result: Any, run: Run) -> None:
             if str(column).startswith(f"{attribute}|") and np.isfinite(values).all()
         }
         actual = {
-            specie
-            for specie in result.specie.values
-            if not np.isnan(result[attribute].sel(specie=specie).to_numpy()).all()
+            name
+            for name in result.specie.values
+            if not np.isnan(result[attribute].sel(specie=name).to_numpy()).all()
         }
         assert actual == expected, attribute
-        for specie in expected:
+        for name in expected:
             assert_close(
-                result[attribute].sel(specie=specie),
-                run.fair(f"{attribute}|{specie}"),
-                f"{attribute}|{specie}",
+                result[attribute].sel(specie=name),
+                run.fair(f"{attribute}|{name}"),
+                f"{attribute}|{name}",
             )
     for column in run.timepoints.columns:
-        specie = column.removeprefix("emissions|")
-        assert_close(
-            result.emissions.sel(specie=specie), run.timepoints[column], column
-        )
+        name = column.removeprefix("emissions|")
+        assert_close(result.emissions.sel(specie=name), run.timepoints[column], column)
 
 
 def test_ensemble() -> None:
@@ -331,7 +360,7 @@ def test_ensemble() -> None:
     result = run_ensemble(
         configs,
         {"historical": inputs},
-        first.timebounds.index.to_numpy(),
+        first.time_axis,
         scale_prescribed_forcing=True,
     )
 
@@ -347,7 +376,7 @@ def test_ensemble_prescribed() -> None:
     result = run_ensemble(
         {"config": run.config},
         {"ssp245": _inputs(run.config, run.timebounds, run.timepoints)},
-        run.timebounds.index.to_numpy(),
+        run.time_axis,
     )
     _assert_ensemble_member(result.sel(scenario="ssp245", config="config"), run)
 
@@ -360,12 +389,12 @@ def test_first_prescribed_forcing() -> None:
     values, unit = inputs[naming.prescribed_forcing(solar)]
     inputs[naming.prescribed_forcing(solar)] = (np.r_[0.3, values[1:]], unit)
 
-    outputs = run_fair(run.config, inputs, run.timebounds.index.to_numpy()).timeseries()
+    outputs = run_fair(run.config, inputs, run.time_axis).timeseries()
 
     for variable in (
         naming.forcing(solar),
-        naming.TOTAL_FORCING,
-        naming.ENERGY_IMBALANCE,
+        names.ERF,
+        names.NET_ENERGY_IMBALANCE,
     ):
         series = outputs.get_timeseries_by_name(variable)
         assert series is not None, variable
@@ -384,7 +413,7 @@ def test_prescribed_ghg_forcing_is_rejected() -> None:
         if s["name"] == "CH4":
             s["input_mode"] = "forcing"
     with pytest.raises(ValueError, match="CH4"):
-        build_components(config)
+        components(config)
 
 
 def test_from_fair() -> None:
@@ -416,13 +445,13 @@ def test_from_fair() -> None:
             fill(f.forcing, run.fair(f"forcing|{s}")[:, None, None], specie=s)
     initialise(f.concentration, f.species_configs["baseline_concentration"])
 
-    config, inputs, timebounds = from_fair(f)
+    config, inputs, time_axis = from_fair(f)
 
     assert config["options"] == run.config["options"]
-    outputs = run_fair(config, inputs, timebounds).timeseries()
+    outputs = run_fair(config, inputs, time_axis).timeseries()
     for variable, column in (
-        (naming.SURFACE_TEMPERATURE, "temperature|0"),
-        (naming.TOTAL_FORCING, "forcing_sum"),
+        (names.SURFACE_AIR_TEMPERATURE_CHANGE, "temperature|0"),
+        (names.ERF, "forcing_sum"),
         (naming.concentration("CO2"), "concentration|CO2"),
     ):
         series = outputs.get_timeseries_by_name(variable)
@@ -438,20 +467,16 @@ def test_climate_udeb_smoke() -> None:
     climate = ClimateUDEBBuilder.from_parameters(
         {"ecs": 3.0, "nh_land_fraction": nh, "sh_land_fraction": sh}
     )
-    components = [*build_components(run.config, energy_balance=False), climate.build()]
+    chain = [*components(run.config, energy_balance=False), climate.build()]
 
     schema = VariableSchema()
-    definitions = [d for c in components for d in c.definitions()]
-    # Writers first, so the schema keeps ClimateUDEB's four-box temperature.
-    for d in sorted(
-        definitions, key=lambda d: d.requirement_type == RequirementType.Input
-    ):
-        if d.requirement_type != RequirementType.EmptyLink and not schema.contains(
-            d.name
-        ):
-            schema.add_variable(d.name, d.unit, d.grid_type)
+    definitions = [d for c in chain for d in c.definitions()]
+    # Producers first, so the schema keeps ClimateUDEB's four-box temperature.
+    for d in sorted(definitions, key=lambda d: d.role == VariableRole.Input):
+        if not schema.contains(d.name):
+            schema.add_variable(d.name, d.unit, d.grid)
 
-    axis = TimeAxis.from_values(run.timebounds.index.to_numpy(dtype=np.float64))
+    axis = run.time_axis
     builder = (
         ModelBuilder()
         .with_time_axis(axis)
@@ -460,13 +485,13 @@ def test_climate_udeb_smoke() -> None:
             GridType.FourBox, [(1 - nh) / 2, nh / 2, (1 - sh) / 2, sh / 2]
         )
     )
-    for component in components:
-        builder.with_rust_component(component)
+    for component in chain:
+        builder.with_component(component)
     with_lags(builder, run.config)
     inputs = _inputs(run.config, run.timebounds, run.timepoints)
     n_bounds = len(axis.values())
     for name, (values, unit) in inputs.items():
-        builder.with_exogenous_variable(
+        builder.with_prescribed_variable(
             name,
             Timeseries(
                 _on_timebounds(name, values, n_bounds),
@@ -485,7 +510,9 @@ def test_climate_udeb_smoke() -> None:
     model.run()
 
     outputs = model.timeseries()
-    temperature = outputs.get_fourbox_timeseries_by_name(naming.SURFACE_TEMPERATURE)
+    temperature = outputs.get_four_box_timeseries_by_name(
+        names.SURFACE_AIR_TEMPERATURE_CHANGE
+    )
     assert temperature is not None
     co2 = outputs.get_timeseries_by_name(naming.concentration("CO2"))
     assert co2 is not None

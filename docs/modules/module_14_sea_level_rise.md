@@ -43,7 +43,7 @@ the start-year gates, the thermal expansion weighting, and the Levermann forcing
 
 ### Timing
 
-A year's annual mean warming $T(y)$ (`DAT_SURFACE_ANNUALMEANTEMP`, the mean of its 12 monthly steps)
+A year's annual mean warming $T(y)$ (`DAT_SURFACE_ANNUALMEANTEMP`, the mean of its 12 monthly substeps)
 sets the contributions at the start of year $y + 1$.
 A contribution runs for $y \ge$ its start year,
 so it first changes in the value for the year after its start year.
@@ -252,7 +252,7 @@ and each Antarctic region's baseline warming and melt history.
 
 | Direction | Variable                  | Units | Fortran variable                       | RSCM variable                                     |
 | --------- | ------------------------- | ----- | -------------------------------------- | ------------------------------------------------- |
-| Input     | Annual mean warming       | K     | `DAT_SURFACE_ANNUALMEANTEMP%DATGLOBE`  | `Surface Temperature|Annual Mean`                |
+| Input     | Annual mean warming       | K     | `DAT_SURFACE_ANNUALMEANTEMP%DATGLOBE`  | `Annual Mean Surface Air Temperature Change`                |
 | Input     | Ocean layer temperatures  | K     | `TEMP_OCEANLAYERS(I, CURRENT/NEXT_YEAR_IDX)` | `ClimateUDEB` state                         |
 | Input     | Land water rate           | mm yr⁻¹ | `SLR_LANDWATER_MMPYEAR`              | Not implemented                                   |
 | Output    | Total                     | mm    | `DAT_SLR_TOT`                          | `Sea Level Rise`                                  |
@@ -274,7 +274,7 @@ the hemisphere layer areas and the initial temperature profile.
 The "CFG default" column lists `MAGCFG_DEFAULTALL.CFG`.
 MAGICC7's CMIP5 mean and tuning files override most of these values.
 The "Effective default" column lists the values after those files are applied,
-which `SeaLevelRiseParameters` and `ThermalExpansionParameters` hold.
+which `SeaLevelRiseParameters` and `ThermalExpansion` hold.
 A dash marks a parameter RSCM does not have.
 
 ### Thermal expansion
@@ -478,7 +478,7 @@ The contributions are independent of each other except at the end, in this order
 - **Not implemented**: land water (off by default), the semi-empirical method,
   the `FETTWEIS` and `DECONTO` alternatives, and the anomalies to 1986 to 2005 (`ZEROED_*`).
 - **Glacier normalisations**: RSCM has no `SLR_GL_NORMPARA_VOL` or `SLR_GL_NORMPARA_TEMP`, so it assumes 1.
-- **Initial ocean profile**: `ocean_temp_profile` offers the exponential (1) and CMIP5 (2) profiles.
+- **Initial ocean profile**: `ocean_temperature_profile` offers the `analytical` exponential (MAGICC7 1) and `cmip5` (2) profiles.
   MAGICC7's third option, `TEMP_OCEAN_INI_PROFILE_ONE`, is not available.
 - **Steps must be one year long.**
 

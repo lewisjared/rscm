@@ -1,6 +1,6 @@
 //! Basic model tests: step, dot, serialisation.
 
-use crate::component::{Component, ComponentState, InputState, OutputState, RequirementDefinition};
+use crate::component::{Component, ComponentState, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
 use crate::example_components::{TestComponent, TestComponentParameters};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
@@ -35,7 +35,7 @@ fn step() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 
@@ -48,13 +48,13 @@ fn step() {
 
     let concentrations = model
         .timeseries()
-        .get_data("Concentrations|CO2")
+        .get_data("Atmospheric Concentrations|CO2")
         .and_then(|data| data.as_scalar())
         .unwrap();
 
-    // The first value for an endogenous timeseries without a y0 value is NaN.
+    // The first value for a modelled timeseries without a y0 value is NaN.
     // This is because the values in the timeseries represents the state at the start
-    // of a time step.
+    // of a step.
     // Since the values from t-1 aren't known we can't solve for y0
     assert!(concentrations.at(0, ScalarRegion::Global).unwrap().is_nan());
     let mut iter = concentrations.values().into_iter();
@@ -72,7 +72,7 @@ fn dot() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 
@@ -98,7 +98,7 @@ fn serialise_and_deserialise_model() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 
@@ -113,12 +113,12 @@ fn serialise_and_deserialise_model() {
 
     let expected = r#"initial_node = 0
 time_index = 1
-variable_sources = [["Emissions|CO2", "TestComponent", "Exogenous"]]
+variable_sources = [["Emissions|CO2", "TestComponent", "prescribed"]]
 
 [components]
 node_holes = []
 edge_property = "directed"
-edges = [[0, 1, { name = "", unit = "", requirement_type = "EmptyLink", grid_type = "Scalar" }]]
+edges = [[0, 1, "link"]]
 
 [[components.nodes]]
 type = "NullComponent"
@@ -130,39 +130,37 @@ type = "TestComponent"
 conversion_factor = 0.5
 
 [[collection.timeseries]]
-name = "Concentrations|CO2"
-variable_type = "Endogenous"
+name = "Atmospheric Concentrations|CO2"
 
-[collection.timeseries.data.Scalar]
-units = "ppm"
+[collection.timeseries.data.scalar]
+unit = "ppm"
 latest = 1
-interpolation_strategy = "Linear"
+interpolation_strategy = "linear"
 
-[collection.timeseries.data.Scalar.values]
+[collection.timeseries.data.scalar.values]
 v = 1
 dim = [5, 1]
 data = [nan, 5.0, nan, nan, nan]
 
-[collection.timeseries.data.Scalar.time_axis.bounds]
+[collection.timeseries.data.scalar.time_axis.bounds]
 v = 1
 dim = [6]
 data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 
 [[collection.timeseries]]
 name = "Emissions|CO2"
-variable_type = "Exogenous"
 
-[collection.timeseries.data.Scalar]
-units = "GtC / yr"
+[collection.timeseries.data.scalar]
+unit = "GtC / yr"
 latest = 4
-interpolation_strategy = "Previous"
+interpolation_strategy = "previous"
 
-[collection.timeseries.data.Scalar.values]
+[collection.timeseries.data.scalar.values]
 v = 1
 dim = [5, 1]
 data = [10.0, 10.0, 10.0, 10.0, 10.0]
 
-[collection.timeseries.data.Scalar.time_axis.bounds]
+[collection.timeseries.data.scalar.time_axis.bounds]
 v = 1
 dim = [6]
 data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
@@ -173,8 +171,8 @@ dim = [6]
 data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 
 [timeseries_types]
-"Concentrations|CO2" = "Point"
-"Emissions|CO2" = "Average"
+"Atmospheric Concentrations|CO2" = "point"
+"Emissions|CO2" = "average"
 
 [component_states.0]
 state_type = "unit"
@@ -207,10 +205,10 @@ state_type = "unit"
     assert_eq!(deserialised.current_time_bounds(), (2021.0, 2022.0));
 }
 
-// Module-level types for checkpoint test to enable proper serialization/deserialization
+// Module-level types for checkpoint test to enable proper serialisation/deserialisation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct StatefulTestComponentState {
-    call_count: usize,
+    n_calls: usize,
 }
 
 #[typetag::serde]
@@ -228,8 +226,8 @@ struct StatefulTestComponent {}
 
 #[typetag::serde]
 impl Component for StatefulTestComponent {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::scalar_input("input", "m")]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::scalar_input("input", "m")]
     }
 
     fn solve(
@@ -242,7 +240,7 @@ impl Component for StatefulTestComponent {
     }
 
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
-        Box::new(StatefulTestComponentState { call_count: 0 })
+        Box::new(StatefulTestComponentState { n_calls: 0 })
     }
 
     fn solve_with_state(
@@ -256,7 +254,7 @@ impl Component for StatefulTestComponent {
             .as_any_mut()
             .downcast_mut::<StatefulTestComponentState>()
             .expect("Wrong state type");
-        state.call_count += 1;
+        state.n_calls += 1;
         self.solve(t_current, t_next, input_state)
     }
 }
@@ -276,7 +274,7 @@ fn test_checkpoint_preserves_component_state() {
     let mut model = ModelBuilder::new()
         .with_time_axis(time_axis)
         .with_component(Arc::new(StatefulTestComponent {}))
-        .with_exogenous_variable("input", input_ts)
+        .with_prescribed_variable("input", input_ts)
         .build()
         .unwrap();
 
@@ -300,7 +298,7 @@ fn test_checkpoint_preserves_component_state() {
         .as_any()
         .downcast_ref::<StatefulTestComponentState>()
         .unwrap();
-    assert_eq!(typed_state.call_count, 3, "Should have been called 3 times");
+    assert_eq!(typed_state.n_calls, 3, "Should have been called 3 times");
 
     // Checkpoint and restore
     let checkpoint = model.checkpoint().unwrap();
@@ -313,8 +311,8 @@ fn test_checkpoint_preserves_component_state() {
         .downcast_ref::<StatefulTestComponentState>()
         .unwrap();
     assert_eq!(
-        restored_typed.call_count, 3,
-        "Restored state should have same call_count"
+        restored_typed.n_calls, 3,
+        "Restored state should have same n_calls"
     );
     assert_eq!(
         restored.time_index(),

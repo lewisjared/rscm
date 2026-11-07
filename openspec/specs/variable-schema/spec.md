@@ -22,10 +22,10 @@ The system SHALL provide a `VariableSchema` type for declaring model variables a
 - **AND** return self for method chaining
 - **AND** use `GridType::Scalar` as default
 
-#### Scenario: Add variable with grid type
+#### Scenario: Add variable with grid
 
-- **WHEN** calling `schema.variable_with_grid(name, unit, grid_type)`
-- **THEN** it MUST add a variable definition with the specified grid type
+- **WHEN** calling `schema.variable_with_grid(name, unit, grid)`
+- **THEN** it MUST add a variable definition with the specified grid
 
 #### Scenario: Duplicate variable name
 
@@ -46,9 +46,9 @@ The system SHALL provide an `AggregateOp` enum for specifying aggregation operat
 - **WHEN** using `AggregateOp::Mean`
 - **THEN** aggregation MUST compute the arithmetic mean of all contributor values
 
-#### Scenario: Weighted operation
+#### Scenario: Weighted sum operation
 
-- **WHEN** using `AggregateOp::Weighted(weights)`
+- **WHEN** using `AggregateOp::WeightedSum(weights)`
 - **THEN** aggregation MUST compute the weighted sum of contributor values
 - **AND** weights MUST be applied in contributor declaration order
 
@@ -102,9 +102,9 @@ The system SHALL validate aggregate definitions within the schema.
 - **WHEN** a contributor has a different grid type than its aggregate
 - **THEN** validation MUST fail with `GridTypeMismatch` error
 
-#### Scenario: Weighted aggregate weight count mismatch
+#### Scenario: WeightedSum aggregate weight count mismatch
 
-- **WHEN** a `Weighted` aggregate has a different number of weights than contributors
+- **WHEN** a `WeightedSum` aggregate has a different number of weights than contributors
 - **THEN** validation MUST fail with `WeightCountMismatch` error
 
 #### Scenario: Aggregate referencing another aggregate
@@ -151,7 +151,7 @@ The system SHALL compute aggregate values during model execution.
 
 #### Scenario: Aggregate computed after contributors
 
-- **WHEN** the model executes a timestep
+- **WHEN** the model executes a step
 - **THEN** aggregates MUST be computed after all contributor components have solved
 
 #### Scenario: All contributors present
@@ -165,7 +165,7 @@ The system SHALL compute aggregate values during model execution.
 - **THEN** NaN contributors MUST be excluded from the computation
 - **AND** the aggregate MUST be computed from remaining valid values
 - **AND** for `Mean`, the divisor MUST be the count of valid values (not total contributors)
-- **AND** for `Weighted`, the corresponding weights MUST also be excluded
+- **AND** for `WeightedSum`, the corresponding weights MUST also be excluded
 
 #### Scenario: All contributors NaN
 

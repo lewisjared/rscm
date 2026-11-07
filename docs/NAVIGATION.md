@@ -34,6 +34,7 @@ See https://oprypin.github.io/mkdocs-literate-nav/
   * [External Modules](external_modules.md)
   * [Development Practices](developers/development.md)
   * [Documenting Components](developers/documenting_components.md)
+  * [Naming Conventions](developers/naming_conventions.md)
   * [Rust Tips](developers/rust_tips.md)
   * [Troubleshooting](developers/troubleshooting.md)
 * [Changelog](changelog.md)

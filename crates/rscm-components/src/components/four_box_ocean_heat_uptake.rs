@@ -14,8 +14,7 @@
 //! This simplified model uses fixed regional fractions to distribute global forcing.
 
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
+    Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, StateValue};
@@ -26,9 +25,10 @@ use serde::{Deserialize, Serialize};
 /// Parameters for the four-box ocean heat uptake component
 ///
 /// The ratio parameters represent regional_uptake / global_ERF.
-/// With equal area weights (0.25 each), these ratios should average to 1.0
+/// With equal grid weights (0.25 each), these ratios should average to 1.0
 /// for the area-weighted mean to equal the global ERF.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FourBoxOceanHeatUptakeParameters {
     /// Ratio of Northern Ocean uptake to global ERF (regional / global)
     pub northern_ocean_ratio: f64,
@@ -58,7 +58,7 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 /// Four-box ocean heat uptake component
 ///
 /// Takes scalar ERF input and produces regional ocean heat uptake.
-/// Demonstrates disaggregation from scalar to grid resolution.
+/// Demonstrates disaggregation from the scalar grid to the four-box grid.
 ///
 /// # Example
 ///
@@ -74,10 +74,10 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["temperature", "ocean", "regional", "four-box", "experimental"], category = "Ocean")]
 #[inputs(
-    erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
+    erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[outputs(
-    heat_uptake { name = "Heat Uptake|Ocean", unit = "W/m^2", grid = "FourBox" },
+    heat_uptake { name = "Heat Uptake", unit = "W/m^2", grid = "four_box" },
 )]
 pub struct FourBoxOceanHeatUptake {
     pub parameters: FourBoxOceanHeatUptakeParameters,
@@ -105,7 +105,7 @@ impl FourBoxOceanHeatUptake {
 
 #[typetag::serde]
 impl Component for FourBoxOceanHeatUptake {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -121,7 +121,7 @@ impl Component for FourBoxOceanHeatUptake {
 
         // Disaggregate to four regions using ratios
         // Regional uptake = global ERF * (regional/global ratio)
-        // In a real model, this would be based on physical parameterizations
+        // In a real model, this would be based on physical parameterisations
         let outputs = FourBoxOceanHeatUptakeOutputs {
             heat_uptake: FourBoxSlice::from_array([
                 erf * self.parameters.northern_ocean_ratio,
@@ -142,7 +142,7 @@ mod tests {
     use rscm_core::spatial::SpatialGrid;
     use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
-    use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+    use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
 
     #[test]
     fn test_default_parameters_average_to_one() {
@@ -174,34 +174,31 @@ mod tests {
             FourBoxOceanHeatUptake::from_parameters(FourBoxOceanHeatUptakeParameters::default());
 
         // Create ERF input - use consistent values since get_scalar_window().get()
-        // returns the value at the current timestep index
+        // returns the value at the current step index
         let erf_timeseries = TimeseriesItem {
             data: TimeseriesData::Scalar(Timeseries::from_values(
                 array![2.5, 2.5],
                 array![2020.0, 2021.0],
             )),
-            name: "Effective Radiative Forcing|Aggregated".to_string(),
-            variable_type: VariableType::Exogenous,
+            name: rscm_core::names::ERF.to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
 
         // Verify input value using the new API
-        let erf_value = input_state
-            .get_scalar_window("Effective Radiative Forcing|Aggregated")
-            .get();
+        let erf_value = input_state.get_scalar_window(rscm_core::names::ERF).get();
         println!("ERF input value: {}", erf_value);
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
-        // Output should be FourBox heat uptake
-        assert!(output.contains_key("Heat Uptake|Ocean"));
-        let uptake_state = output.get("Heat Uptake|Ocean").unwrap();
+        // Output should be four-box heat uptake
+        assert!(output.contains_key("Heat Uptake"));
+        let uptake_state = output.get("Heat Uptake").unwrap();
 
-        // Extract the FourBox grid from the StateValue
+        // Extract the four-box grid from the StateValue
         let uptake_slice = match uptake_state {
             StateValue::FourBox(slice) => slice,
-            _ => panic!("Expected FourBox output"),
+            _ => panic!("Expected four-box output"),
         };
         println!("Heat uptake output: {:?}", uptake_slice);
 
@@ -229,23 +226,20 @@ mod tests {
                 array![10.0, 10.0],
                 array![2020.0, 2021.0],
             )),
-            name: "Effective Radiative Forcing|Aggregated".to_string(),
-            variable_type: VariableType::Exogenous,
+            name: rscm_core::names::ERF.to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
-        let erf_value = input_state
-            .get_scalar_window("Effective Radiative Forcing|Aggregated")
-            .get();
+        let erf_value = input_state.get_scalar_window(rscm_core::names::ERF).get();
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
-        let uptake_state = output.get("Heat Uptake|Ocean").unwrap();
+        let uptake_state = output.get("Heat Uptake").unwrap();
 
-        // Extract the FourBox grid from the StateValue
+        // Extract the four-box grid from the StateValue
         let uptake_slice = match uptake_state {
             StateValue::FourBox(slice) => slice,
-            _ => panic!("Expected FourBox output"),
+            _ => panic!("Expected four-box output"),
         };
 
         // Aggregate back to global to verify
@@ -264,10 +258,10 @@ mod tests {
 
         let inputs = component.input_names();
         assert_eq!(inputs.len(), 1);
-        assert!(inputs.contains(&"Effective Radiative Forcing|Aggregated".to_string()));
+        assert!(inputs.contains(&rscm_core::names::ERF.to_string()));
 
         let outputs = component.output_names();
         assert_eq!(outputs.len(), 1);
-        assert!(outputs.contains(&"Heat Uptake|Ocean".to_string()));
+        assert!(outputs.contains(&"Heat Uptake".to_string()));
     }
 }

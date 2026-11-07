@@ -7,7 +7,7 @@
 //! - [`FourBoxGrid`]: MAGICC standard four-box structure (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
 //! - [`HemisphericGrid`]: Simple Northern/Southern hemisphere split
 //!
-//! # Grid Types and Use Cases
+//! # Grids and use cases
 //!
 //! ## ScalarGrid
 //!
@@ -61,7 +61,7 @@
 //!
 //! Aggregation uses weighted averages based on grid weights (typically area fractions):
 //!
-//! ### FourBox -> Scalar
+//! ### Four-box to scalar
 //!
 //! ```text
 //! global = NO*w_NO + NL*w_NL + SO*w_SO + SL*w_SL
@@ -69,14 +69,14 @@
 //!
 //! where weights sum to 1.0.
 //!
-//! ### FourBox -> Hemispheric
+//! ### Four-box to hemispheric
 //!
 //! ```text
 //! northern = (NO*w_NO + NL*w_NL) / (w_NO + w_NL)
 //! southern = (SO*w_SO + SL*w_SL) / (w_SO + w_SL)
 //! ```
 //!
-//! ### Hemispheric -> Scalar
+//! ### Hemispheric to scalar
 //!
 //! ```text
 //! global = northern*w_N + southern*w_S
@@ -101,13 +101,13 @@
 //!
 //! ## Unsupported Transformations
 //!
-//! Some transformations (e.g., Hemispheric -> FourBox) are not supported because they
+//! Some transformations (e.g., hemispheric to four-box) are not supported because they
 //! require spatial disaggregation that cannot be determined uniquely. For example,
 //! splitting hemispheric data into ocean/land boxes requires assumptions about
 //! land-ocean temperature differences.
 //!
-//! If you need such a transformation, implement a custom component that explicitly
-//! performs the disaggregation based on your model's physics (see Custom Disaggregation below).
+//! If you need such a transformation, write a component that explicitly
+//! performs the disaggregation based on your model's physics (see Disaggregation Components below).
 //!
 //! # Component Integration Patterns
 //!
@@ -116,7 +116,7 @@
 //! Existing components that work with global values continue unchanged:
 //!
 //! ```rust,ignore
-//! # use rscm_core::component::{Component, RequirementDefinition, RequirementType, InputState, OutputState};
+//! # use rscm_core::component::{Component, VariableDefinition, VariableRole, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
 //! # use std::collections::HashMap;
@@ -124,19 +124,19 @@
 //! # struct CO2ERFComponent;
 //! #[typetag::serde]
 //! impl Component for CO2ERFComponent {
-//!     fn definitions(&self) -> Vec<RequirementDefinition> {
+//!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         vec![
-//!             RequirementDefinition::new("Atmospheric Concentration|CO2", "ppm", RequirementType::Input),
-//!             RequirementDefinition::new("ERF|CO2", "W/m^2", RequirementType::Output),
+//!             VariableDefinition::new("Atmospheric Concentrations|CO2", "ppm", VariableRole::Input),
+//!             VariableDefinition::new("Effective Radiative Forcing|CO2", "W/m^2", VariableRole::Output),
 //!         ]
 //!     }
 //!
 //!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
 //!         // Works with scalar values - InputState handles grid aggregation automatically
-//!         let co2 = input_state.get_scalar_window("Atmospheric Concentration|CO2").get();
+//!         let co2 = input_state.get_scalar_window("Atmospheric Concentrations|CO2").get();
 //!         // ... compute ERF ...
 //!         let mut output = HashMap::new();
-//!         output.insert("ERF|CO2".to_string(), StateValue::Scalar(co2 * 5.35_f64.ln()));
+//!         output.insert("Effective Radiative Forcing|CO2".to_string(), StateValue::Scalar(co2 * 5.35_f64.ln()));
 //!         Ok(output)
 //!     }
 //! }
@@ -156,7 +156,7 @@
 //! # use rscm_core::spatial::FourBoxGrid;
 //! fn solve_grid_component(input_state: &InputState, t_current: Time) -> RSCMResult<OutputState> {
 //!     // Get grid values using the typed window API
-//!     let window = input_state.get_four_box_window("ERF|FourBox");
+//!     let window = input_state.get_four_box_window("Effective Radiative Forcing");
 //!     let erf_regions = window.get_all();
 //!
 //!     // Compute regional heat uptake
@@ -164,10 +164,10 @@
 //!         .map(|erf| erf * 0.9) // Example: 90% absorbed by ocean
 //!         .collect();
 //!
-//!     // Return FourBox output with regional values
+//!     // Return four-box output with regional values
 //!     let mut output = HashMap::new();
 //!     output.insert(
-//!         "Heat Uptake|Ocean".to_string(),
+//!         "Heat Uptake".to_string(),
 //!         StateValue::FourBox(FourBoxSlice::from_array([
 //!             heat_uptake[0], heat_uptake[1], heat_uptake[2], heat_uptake[3]
 //!         ])),
@@ -185,8 +185,8 @@
 //! ```rust
 //! # use rscm_core::component::InputState;
 //! # fn example(input_state: &InputState, t_current: f64) {
-//! // Get aggregated global value automatically
-//! let global_temp = input_state.get_global("Surface Temperature").unwrap();
+//! // A scalar input reads a four-box variable as its area-weighted global mean
+//! let global_temp = input_state.get_scalar_window("Surface Air Temperature Change").get();
 //! let response = global_temp * 0.5; // Compute from global mean
 //! # }
 //! ```
@@ -198,7 +198,7 @@
 //! # use rscm_core::spatial::{FourBoxGrid, SpatialGrid};
 //! # fn example(input_state: &InputState) {
 //! // Get grid values, compute regionally, then aggregate
-//! let window = input_state.get_four_box_window("Surface Temperature|FourBox");
+//! let window = input_state.get_four_box_window("Surface Air Temperature Change");
 //! let temps = window.get_all();
 //! let regional_responses: Vec<f64> = temps.iter()
 //!     .map(|t| t * 0.5) // Different response per region
@@ -212,13 +212,13 @@
 //! - Use A when the physics is fundamentally global (e.g., global mean feedback)
 //! - Use B when regional differences matter (e.g., land-ocean heat capacity differences)
 //!
-//! # Custom Disaggregation Components
+//! # Disaggregation Components
 //!
-//! For unsupported transformations (e.g., Hemispheric -> FourBox), implement a custom
-//! disaggregation component that explicitly encodes the physics:
+//! For unsupported transformations (e.g., hemispheric to four-box), write a disaggregation
+//! component that explicitly encodes the physics:
 //!
 //! ```rust,ignore
-//! # use rscm_core::component::{Component, RequirementDefinition, RequirementType, InputState, OutputState, GridType};
+//! # use rscm_core::component::{Component, VariableDefinition, VariableRole, InputState, OutputState, GridType};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
 //! # use rscm_core::state::{StateValue, FourBoxSlice};
@@ -227,20 +227,20 @@
 //! # struct HemisphericToFourBoxDisaggregator { ocean_land_ratio: f64 }
 //! #[typetag::serde]
 //! impl Component for HemisphericToFourBoxDisaggregator {
-//!     fn definitions(&self) -> Vec<RequirementDefinition> {
+//!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         vec![
-//!             RequirementDefinition::with_grid("Temperature|Hemispheric", "degC", RequirementType::Input, GridType::Hemispheric),
-//!             RequirementDefinition::with_grid("Temperature|FourBox", "degC", RequirementType::Output, GridType::FourBox),
+//!             VariableDefinition::with_grid("Surface Air Temperature Change", "K", VariableRole::Input, GridType::Hemispheric),
+//!             VariableDefinition::with_grid("Regional Surface Air Temperature Change", "K", VariableRole::Output, GridType::FourBox),
 //!         ]
 //!     }
 //!
 //!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
 //!         // Get hemispheric input using typed window API
-//!         let window = input_state.get_hemispheric_window("Temperature|Hemispheric");
+//!         let window = input_state.get_hemispheric_window("Surface Air Temperature Change");
 //!         let values = window.get_all();
 //!         let (northern, southern) = (values[0], values[1]);
 //!
-//!         // Custom disaggregation based on physical reasoning
+//!         // Disaggregation based on physical reasoning
 //!         // Example: Ocean regions slightly warmer, land regions cooler
 //!         let four_box_values = FourBoxSlice::from_array([
 //!             northern * 1.1,  // Northern Ocean
@@ -250,7 +250,7 @@
 //!         ]);
 //!
 //!         let mut output = HashMap::new();
-//!         output.insert("Temperature|FourBox".to_string(), StateValue::FourBox(four_box_values));
+//!         output.insert("Regional Surface Air Temperature Change".to_string(), StateValue::FourBox(four_box_values));
 //!         Ok(output)
 //!     }
 //! }
@@ -268,7 +268,7 @@
 //!
 //! let grid = FourBoxGrid::magicc_standard();
 //! assert_eq!(grid.size(), 4);
-//! assert_eq!(grid.grid_name(), "FourBox");
+//! assert_eq!(grid.grid_name(), "four_box");
 //!
 //! // Aggregate regional values to global
 //! let regional_temps = vec![15.0, 14.0, 10.0, 9.0]; // degC
@@ -306,7 +306,7 @@ pub use scalar::{ScalarGrid, ScalarRegion};
 
 /// Trait for spatial grid structures used in climate models
 ///
-/// A spatial grid defines how climate variables are discretized spatially.
+/// A spatial grid defines how climate variables are discretised spatially.
 /// For example, a four-box grid divides the world into Northern Ocean, Northern Land,
 /// Southern Ocean, and Southern Land regions.
 ///
@@ -318,7 +318,7 @@ pub use scalar::{ScalarGrid, ScalarRegion};
 /// Note: This trait is not object-safe due to the generic `transform_to` method.
 /// Use the concrete grid types directly rather than trait objects.
 pub trait SpatialGrid: Clone + std::fmt::Debug + Send + Sync {
-    /// Unique name for this grid type
+    /// Unique snake_case name for this grid
     ///
     /// Used for error messages and debugging
     fn grid_name(&self) -> &'static str;

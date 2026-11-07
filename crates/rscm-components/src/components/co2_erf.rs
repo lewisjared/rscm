@@ -4,8 +4,7 @@
 //! using the standard logarithmic relationship.
 
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
+    Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
@@ -15,13 +14,14 @@ use serde::{Deserialize, Serialize};
 
 /// Parameters for the CO2 ERF component
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CO2ERFParameters {
     /// ERF due to a doubling of atmospheric CO2 concentrations
     /// unit: W/m^2
     pub erf_2xco2: FloatValue,
     /// Pre-industrial atmospheric CO2 concentration
     /// unit: ppm
-    pub conc_pi: FloatValue,
+    pub co2_pi: FloatValue,
 }
 
 /// CO2 effective radiative forcing (ERF) calculations
@@ -36,7 +36,7 @@ pub struct CO2ERFParameters {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["radiative-forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
 #[inputs(
-    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 )]
 #[outputs(
     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
@@ -56,13 +56,13 @@ impl CO2ERF {
     /// This is the core physics calculation, extracted for testability.
     pub fn calculate_erf(&self, concentration: FloatValue) -> FloatValue {
         self.parameters.erf_2xco2 / 2.0_f64.ln()
-            * (1.0 + (concentration - self.parameters.conc_pi) / self.parameters.conc_pi).ln()
+            * (1.0 + (concentration - self.parameters.co2_pi) / self.parameters.co2_pi).ln()
     }
 }
 
 #[typetag::serde]
 impl Component for CO2ERF {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -87,7 +87,7 @@ mod tests {
     fn default_parameters() -> CO2ERFParameters {
         CO2ERFParameters {
             erf_2xco2: 3.7,
-            conc_pi: 278.0,
+            co2_pi: 278.0,
         }
     }
 
@@ -105,7 +105,7 @@ mod tests {
     fn test_calculate_erf_at_2x_co2() {
         let params = default_parameters();
         let component = CO2ERF::from_parameters(params.clone());
-        let erf = component.calculate_erf(params.conc_pi * 2.0);
+        let erf = component.calculate_erf(params.co2_pi * 2.0);
         assert!(
             (erf - params.erf_2xco2).abs() < 1e-10,
             "ERF at 2xCO2 should equal erf_2xco2"
@@ -118,7 +118,7 @@ mod tests {
         let defs = component.definitions();
 
         assert_eq!(defs.len(), 2);
-        assert_eq!(defs[0].name, "Atmospheric Concentration|CO2");
+        assert_eq!(defs[0].name, "Atmospheric Concentrations|CO2");
         assert_eq!(defs[1].name, "Effective Radiative Forcing|CO2");
     }
 }

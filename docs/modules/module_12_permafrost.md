@@ -254,7 +254,7 @@ All per-band variables have dimensions (NYEARS, NBANDS).
 
 | Direction | Variable                   | Units        | Fortran variable                             | RSCM variable               |
 | --------- | -------------------------- | ------------ | -------------------------------------------- | --------------------------- |
-| Input     | Global surface temperature | K            | `DAT_SURFACE_TEMP%DATGLOBE(CURRENT_YEAR_IDX)` | `Surface Temperature`       |
+| Input     | Global surface temperature | K            | `DAT_SURFACE_TEMP%DATGLOBE(CURRENT_YEAR_IDX)` | `Surface Air Temperature Change`       |
 | Output    | CO2 emissions              | GtC yr⁻¹     | `DAT_CO2PF_EMIS%DATBOX(CURRENT_YEAR_IDX,2)`  | `Emissions|CO2|Permafrost` |
 | Output    | CH4 emissions              | Mt CH₄ yr⁻¹  | `DAT_CH4PF_EMIS%DATBOX(CURRENT_YEAR_IDX,2)`  | `Emissions|CH4|Permafrost` |
 | Output    | Thawed area                | fraction     | `DAT_PFTHAWED_AREA%DATBOX(NEXT_YEAR_IDX,2)`  | `Permafrost Thawed Area`    |
@@ -265,7 +265,7 @@ The CH4 emissions enter CH4 chemistry,
 and the share `PF_CO2FROMCH4OXINATM_FRACTION` of the permafrost CH4 burden
 counts towards the fossil CH4 whose atmospheric oxidation adds CO2.
 In RSCM, `CH4Chemistry`, `CH4Oxidation`, `OceanCarbon` and `CO2Budget` read the emissions
-when their `permafrost` parameter is set.
+when their `include_permafrost` parameter is set.
 
 ## Parameters
 

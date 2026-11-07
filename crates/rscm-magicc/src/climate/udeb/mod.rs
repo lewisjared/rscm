@@ -1,18 +1,18 @@
 //! Climate UDEB Component
 //!
-//! Implements a 4-box Upwelling-Diffusion Energy Balance (UDEB) climate model
+//! Implements a four-box Upwelling-Diffusion Energy Balance (UDEB) climate model
 //! with multi-layer ocean diffusion.
 //!
 //! # What This Component Does
 //!
-//! 1. Takes total effective radiative forcing (4-box regional) as input
+//! 1. Takes total effective radiative forcing (four-box regional) as input
 //! 2. Solves the ocean diffusion-advection equation using implicit Thomas algorithm
 //! 3. Calculates surface air temperature response (4 boxes: NH Ocean, NH Land, SH Ocean, SH Land)
 //! 4. Outputs heat uptake and ocean heat content
 //!
 //! # Physics Overview
 //!
-//! The model couples a 4-box atmosphere to a 50-layer ocean in each hemisphere.
+//! The model couples a four-box atmosphere to a 50-layer ocean in each hemisphere.
 //! The energy balance for the mixed layer is:
 //!
 //! $$C_{mix} \frac{dT}{dt} = Q - \lambda T + F_{diffusion} + F_{upwelling}$$
@@ -43,33 +43,36 @@
 //! - **Depth-dependent ocean area**: Implemented - see `OceanAreaFactors`.
 //! - **El Niño/AMV modes**: Internal variability modes. Not implemented.
 //! - **Ground heat reservoir**: Implemented - see
-//!   [`land_heat_capacity_enabled`](crate::parameters::ClimateUDEBParameters::land_heat_capacity_enabled).
+//!   [`include_land_heat_capacity`](crate::parameters::ClimateUDEBParameters::include_land_heat_capacity).
 
 mod ocean_column;
 
-use crate::climate::lamcalc::{self, LamcalcParams, LamcalcResult};
-use crate::climate::sea_level::{
-    thermal_expansion_increment, ANNUAL_MEAN_TEMPERATURE, THERMAL_EXPANSION,
-};
+use crate::climate::lamcalc::{self, LAMCALCParameters, LAMCALCResult};
+use crate::climate::sea_level::thermal_expansion_increment;
 use crate::climate::state::{ClimateUDEBState, OceanAreaFactors};
 use crate::parameters::{
-    ClimateUDEBParameters, SubannualForcing, CP_SEAWATER, RHO_SEAWATER, SECONDS_PER_YEAR,
+    ClimateUDEBParameters, EfficacyMethod, SubannualForcing, CP_SEAWATER, RHO_SEAWATER,
+    SECONDS_PER_YEAR,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType, TimeseriesType,
+    Component, ComponentState, GridType, InputState, OutputState, TimeseriesType,
+    VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
+use rscm_core::names::{
+    ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE, EFFICACY_ADJUSTED_ERF, ERF, ERF_2XCO2,
+    SEA_LEVEL_RISE_THERMAL_EXPANSION, SURFACE_AIR_TEMPERATURE_CHANGE,
+};
 use rscm_core::spatial::{FourBoxGrid, FourBoxRegion};
 use rscm_core::state::{FourBoxSlice, GridTimeseriesWindow, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// 4-box UDEB climate model component.
+/// four-box UDEB climate model component.
 ///
 /// Implements an Upwelling-Diffusion Energy Balance model with 50 ocean layers
-/// per hemisphere. Uses monthly sub-stepping with implicit Thomas algorithm
+/// per hemisphere. Uses monthly substepping with implicit Thomas algorithm
 /// for numerical stability.
 ///
 /// # State Variables
@@ -82,19 +85,19 @@ use serde::{Deserialize, Serialize};
 ///
 /// See [`ClimateUDEBParameters`] for configuration options.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
-#[serde(try_from = "SerializedClimateUDEB")]
+#[serde(try_from = "SerialisedClimateUDEB")]
 #[component(tags = ["climate", "udeb", "magicc"], category = "Climate")]
 #[inputs(
     total_erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[states(
-    surface_temperature { name = "Surface Temperature", unit = "K", grid = "FourBox" },
+    surface_temperature { name = "Surface Air Temperature Change", unit = "K", grid = "four_box" },
 )]
 #[outputs(
     heat_uptake { name = "Heat Uptake", unit = "W/m^2" },
-    ocean_heat_content { name = "Ocean Heat Content", unit = "J/m^2" },
+    ocean_heat_content { name = "Ocean Heat Content", unit = "J" },
     sst { name = "Sea Surface Temperature", unit = "K" },
-    climate_sensitivity { name = "Equilibrium Climate Sensitivity", unit = "K" },
+    ecs { name = "Equilibrium Climate Sensitivity", unit = "K" },
 )]
 pub struct ClimateUDEB {
     parameters: ClimateUDEBParameters,
@@ -126,7 +129,7 @@ pub struct ClimateUDEB {
 
     /// Per-box CO2 forcing fractions from the regional CO2 pattern.
     ///
-    /// Computed as `qfrac[i] = rf_regions_co2[i] / sum(rf_regions_co2[j] * area[j])`.
+    /// Computed as `qfrac[i] = co2_regional_pattern[i] / sum(co2_regional_pattern[j] * area[j])`.
     /// The area-weighted sum equals 1.0, preserving global mean forcing.
     /// Falls back to `[1.0; 4]` (uniform) if the weighted sum is near zero.
     #[serde(skip)]
@@ -135,26 +138,17 @@ pub struct ClimateUDEB {
 
 /// The serialised form of [`ClimateUDEB`], from which every derived field is rebuilt.
 #[derive(Deserialize)]
-struct SerializedClimateUDEB {
+struct SerialisedClimateUDEB {
     parameters: ClimateUDEBParameters,
 }
 
-impl TryFrom<SerializedClimateUDEB> for ClimateUDEB {
+impl TryFrom<SerialisedClimateUDEB> for ClimateUDEB {
     type Error = RSCMError;
 
-    fn try_from(value: SerializedClimateUDEB) -> RSCMResult<Self> {
+    fn try_from(value: SerialisedClimateUDEB) -> RSCMResult<Self> {
         Self::from_parameters(value.parameters)
     }
 }
-
-/// CO2 doubling ERF, read when `time_varying_q2x` is set.
-pub const CO2_DOUBLING_ERF: &str = "Effective Radiative Forcing|2xCO2";
-
-/// Climate sensitivity of the step, after the time-varying feedback adjustments.
-pub const CLIMATE_SENSITIVITY: &str = "Equilibrium Climate Sensitivity";
-
-/// Efficacy-adjusted forcing on the four boxes, read in regional mode.
-pub const REGIONAL_FORCING: &str = "Effective Radiative Forcing|Efficacy Adjusted";
 
 /// Forcing at the start and end of a step.
 enum ForcingInput {
@@ -190,12 +184,11 @@ impl ClimateUDEB {
             .expect("LAMCALC failed to converge with default parameters")
     }
 
-    /// Create a properly initialized state for this component.
+    /// Create a properly initialised state for this component.
     ///
-    /// The initial ocean temperature profile mode is controlled by the
-    /// `ocean_temp_profile` parameter:
-    /// - Mode 2 (default): CMIP5 multi-model mean profile
-    /// - Mode 1: Analytical exponential decay
+    /// The `ocean_temperature_profile` parameter sets the initial ocean temperature profile:
+    /// - `cmip5` (default): CMIP5 multi-model mean profile
+    /// - `analytical`: analytical exponential decay
     pub fn initial_state(&self) -> ClimateUDEBState {
         let profiles = [
             self.parameters.initial_ocean_profile(0),
@@ -203,8 +196,8 @@ impl ClimateUDEB {
         ];
         ClimateUDEBState::new(
             self.parameters.n_layers,
-            self.parameters.w_initial,
-            self.parameters.temp_adjust_alpha,
+            self.parameters.initial_upwelling_rate,
+            self.parameters.temperature_adjustment_alpha,
             profiles,
         )
     }
@@ -228,36 +221,30 @@ impl ClimateUDEB {
             ));
         }
 
-        if !parameters.prescribed_efficacy_co2.is_finite()
-            || parameters.prescribed_efficacy_co2 <= 0.0
-        {
+        if !parameters.co2_efficacy.is_finite() || parameters.co2_efficacy <= 0.0 {
             return Err(RSCMError::Error(format!(
-                "invalid prescribed_efficacy_co2: must be finite and positive, got {}",
-                parameters.prescribed_efficacy_co2
+                "invalid co2_efficacy: must be finite and positive, got {}",
+                parameters.co2_efficacy
             )));
         }
 
         // Calculate lambda_ocean and lambda_land via LAMCALC iteration.
         // This accounts for inter-box heat exchange when matching the
         // land-ocean warming ratio (RLO) at the given ECS.
-        let (fgno, fgnl, fgso, fgsl) = parameters.global_box_fractions();
-        let lam_result = lamcalc::lamcalc(&LamcalcParams {
-            q_2xco2: parameters.rf_2xco2,
-            k_lo: parameters.k_lo,
-            k_ns: parameters.k_ns,
+        let lam_result = lamcalc::lamcalc(&LAMCALCParameters {
+            erf_2xco2: parameters.erf_2xco2,
+            land_ocean_heat_exchange: parameters.land_ocean_heat_exchange,
+            north_south_heat_exchange: parameters.north_south_heat_exchange,
             ecs: parameters.ecs,
-            rlo: parameters.rlo,
+            land_ocean_warming_ratio: parameters.land_ocean_warming_ratio,
             amplify_ocean_to_land: parameters.amplify_ocean_to_land,
-            fgno,
-            fgnl,
-            fgso,
-            fgsl,
-            rf_regions_co2: parameters.rf_regions_co2,
+            grid: parameters.grid(),
+            co2_regional_pattern: parameters.co2_regional_pattern,
         })
         .ok_or_else(|| {
             RSCMError::Error(format!(
                 "LAMCALC iteration failed to converge for ECS={}, RLO={}",
-                parameters.ecs, parameters.rlo
+                parameters.ecs, parameters.land_ocean_warming_ratio
             ))
         })?;
         let lambda_ocean = lam_result.lambda_ocean;
@@ -266,8 +253,8 @@ impl ClimateUDEB {
         let co2_internal_efficacy = lam_result.co2_internal_efficacy;
 
         // Pre-compute per-box CO2 forcing fractions from the regional pattern
-        let area = [fgno, fgnl, fgso, fgsl];
-        let co2_qfrac = lamcalc::compute_qfrac(&parameters.rf_regions_co2, &area);
+        let area = *parameters.grid().weights();
+        let co2_qfrac = lamcalc::compute_qfrac(&parameters.co2_regional_pattern, &area);
 
         // Pre-compute depth-dependent ocean area factors
         let [(top_nh, bottom_nh, diff_nh), (top_sh, bottom_sh, diff_sh)] =
@@ -307,7 +294,7 @@ impl ClimateUDEB {
         &self.co2_qfrac
     }
 
-    /// Heat uptake at initialization with zero temperature anomalies.
+    /// Heat uptake at initialisation with zero temperature anomalies.
     /// Uses the same efficacy and regional forcing adjustments as annual diagnostics.
     pub fn initial_heat_uptake(&self, erf: FloatValue) -> FloatValue {
         let forcing = self.apply_efficacy_and_qfrac(erf, self.co2_internal_efficacy);
@@ -328,11 +315,17 @@ impl ClimateUDEB {
     /// LAMCALC is calibrated against the same total ERF, but breaks physical
     /// consistency for multi-agent forcing mixes. Per-agent regional patterns would
     /// require decomposed forcing inputs (future work).
-    fn apply_efficacy_and_qfrac(&self, erf: FloatValue, co2_efficacy: FloatValue) -> FourBoxSlice {
-        let erf_adjusted = match self.parameters.efficacy_apply {
-            1 if co2_efficacy.is_finite() && co2_efficacy > 0.0 => erf * (1.0 / co2_efficacy),
-            2 if co2_efficacy.is_finite() && co2_efficacy > 0.0 => {
-                erf * (self.parameters.prescribed_efficacy_co2 / co2_efficacy)
+    fn apply_efficacy_and_qfrac(
+        &self,
+        erf: FloatValue,
+        internal_efficacy: FloatValue,
+    ) -> FourBoxSlice {
+        let erf_adjusted = match self.parameters.efficacy_method {
+            EfficacyMethod::Unit if internal_efficacy.is_finite() && internal_efficacy > 0.0 => {
+                erf * (1.0 / internal_efficacy)
+            }
+            EfficacyMethod::AR6 if internal_efficacy.is_finite() && internal_efficacy > 0.0 => {
+                erf * (self.parameters.co2_efficacy / internal_efficacy)
             }
             _ => erf,
         };
@@ -349,11 +342,11 @@ impl ClimateUDEB {
         &self,
         input: &ForcingInput,
         frac: FloatValue,
-        co2_efficacy: FloatValue,
+        internal_efficacy: FloatValue,
     ) -> FourBoxSlice {
         match input {
             ForcingInput::Global(start, end) => {
-                self.apply_efficacy_and_qfrac(lerp(*start, *end, frac), co2_efficacy)
+                self.apply_efficacy_and_qfrac(lerp(*start, *end, frac), internal_efficacy)
             }
             ForcingInput::Regional(start, end) => {
                 FourBoxSlice::from_array(std::array::from_fn(|i| lerp(start[i], end[i], frac)))
@@ -362,38 +355,37 @@ impl ClimateUDEB {
     }
 
     /// Internal efficacy of an agent with the given regional forcing pattern.
-    pub fn internal_efficacy(&self, rf_regions: &[FloatValue; 4]) -> FloatValue {
-        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
+    pub fn internal_efficacy(&self, regional_pattern: &[FloatValue; 4]) -> FloatValue {
         lamcalc::calc_internal_efficacy(
-            self.parameters.rf_2xco2,
+            self.parameters.erf_2xco2,
             &self.matrix_inverse,
-            &[fgno, fgnl, fgso, fgsl],
-            rf_regions,
+            self.parameters.grid().weights(),
+            regional_pattern,
             self.parameters.ecs,
         )
     }
 
-    /// Initialize or ensure state is properly configured.
-    fn ensure_state_initialized(&self, state: &mut ClimateUDEBState) {
-        if !state.initialized {
+    /// Initialise or ensure state is properly configured.
+    fn ensure_state_initialised(&self, state: &mut ClimateUDEBState) {
+        if !state.initialised {
             let profiles = [
                 self.parameters.initial_ocean_profile(0),
                 self.parameters.initial_ocean_profile(1),
             ];
             let fresh = ClimateUDEBState::new(
                 self.parameters.n_layers,
-                self.parameters.w_initial,
-                self.parameters.temp_adjust_alpha,
+                self.parameters.initial_upwelling_rate,
+                self.parameters.temperature_adjustment_alpha,
                 profiles,
             );
-            state.ocean_temps = fresh.ocean_temps;
+            state.ocean_temperatures = fresh.ocean_temperatures;
             state.upwelling_rates = fresh.upwelling_rates;
             state.upwelling_delta = fresh.upwelling_delta;
             state.alpha_eff = fresh.alpha_eff;
             state.initial_ocean_profile = fresh.initial_ocean_profile;
-            state.polar_sinking_temp = fresh.polar_sinking_temp;
-            state.mixed_layer_initial_temp = fresh.mixed_layer_initial_temp;
-            state.initialized = true;
+            state.initial_polar_sinking_temperature = fresh.initial_polar_sinking_temperature;
+            state.initial_mixed_layer_temperature = fresh.initial_mixed_layer_temperature;
+            state.initialised = true;
         }
     }
 
@@ -403,32 +395,33 @@ impl ClimateUDEB {
     /// forcing level (MAGICC7.f90 lines 2747-2763).
     ///
     /// Temperature history is stored as year-weighted entries (`T * dt_years`)
-    /// so that the cumulative sum is correct regardless of model timestep size.
+    /// so that the cumulative sum is correct regardless of model step size.
     ///
     /// $$ECS_{adj} = ECS \times (1 + \alpha_T \times \frac{\sum T \, dt - \sum T_{2x}}{\sum T_{2x}})
     ///                       \times (1 + \alpha_Q \times (\max(0, Q) - Q_{2x}))$$
     fn adjusted_ecs(
         &self,
         global_forcing: FloatValue,
-        q_2xco2: FloatValue,
+        erf_2xco2: FloatValue,
         cum_t: FloatValue,
     ) -> FloatValue {
-        let cumt_2x = self.parameters.ecs * self.parameters.feedback_cumt_period;
+        let cumt_2x = self.parameters.ecs * self.parameters.feedback_cumulative_temperature_period;
         let cumt_factor = if cumt_2x.abs() > 1e-15 {
-            1.0 + self.parameters.feedback_cumt_sensitivity * (cum_t - cumt_2x) / cumt_2x
+            1.0 + self.parameters.feedback_cumulative_temperature_sensitivity * (cum_t - cumt_2x)
+                / cumt_2x
         } else {
             1.0
         };
 
-        let q_factor =
-            1.0 + self.parameters.feedback_q_sensitivity * (global_forcing.max(0.0) - q_2xco2);
+        let q_factor = 1.0
+            + self.parameters.feedback_forcing_sensitivity * (global_forcing.max(0.0) - erf_2xco2);
 
         self.parameters.ecs * cumt_factor * q_factor
     }
 
-    /// Year-weighted temperature summed oldest first over the last `feedback_cumt_period` years.
+    /// Year-weighted temperature summed oldest first over the last `feedback_cumulative_temperature_period` years.
     fn cumulative_temperature(&self, state: &ClimateUDEBState) -> FloatValue {
-        let mut years_remaining = self.parameters.feedback_cumt_period;
+        let mut years_remaining = self.parameters.feedback_cumulative_temperature_period;
         let mut start = state.temperature_history.len();
         let mut oldest_weight = 1.0;
         while start > 0 && years_remaining > 0.0 {
@@ -453,29 +446,25 @@ impl ClimateUDEB {
     }
 
     /// Feedback parameters and CO2 internal efficacy at the given sensitivity.
-    fn sensitivity(&self, ecs: FloatValue, q_2xco2: FloatValue) -> LamcalcResult {
-        if ecs == self.parameters.ecs && q_2xco2 == self.parameters.rf_2xco2 {
+    fn sensitivity(&self, ecs: FloatValue, erf_2xco2: FloatValue) -> LAMCALCResult {
+        if ecs == self.parameters.ecs && erf_2xco2 == self.parameters.erf_2xco2 {
             return self.initial_sensitivity();
         }
-        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
-        lamcalc::lamcalc(&LamcalcParams {
-            q_2xco2,
-            k_lo: self.parameters.k_lo,
-            k_ns: self.parameters.k_ns,
+        lamcalc::lamcalc(&LAMCALCParameters {
+            erf_2xco2,
+            land_ocean_heat_exchange: self.parameters.land_ocean_heat_exchange,
+            north_south_heat_exchange: self.parameters.north_south_heat_exchange,
             ecs,
-            rlo: self.parameters.rlo,
+            land_ocean_warming_ratio: self.parameters.land_ocean_warming_ratio,
             amplify_ocean_to_land: self.parameters.amplify_ocean_to_land,
-            fgno,
-            fgnl,
-            fgso,
-            fgsl,
-            rf_regions_co2: self.parameters.rf_regions_co2,
+            grid: self.parameters.grid(),
+            co2_regional_pattern: self.parameters.co2_regional_pattern,
         })
         .unwrap_or_else(|| self.initial_sensitivity())
     }
 
-    fn initial_sensitivity(&self) -> LamcalcResult {
-        LamcalcResult {
+    fn initial_sensitivity(&self) -> LAMCALCResult {
+        LAMCALCResult {
             lambda_ocean: self.lambda_ocean,
             lambda_land: self.lambda_land,
             matrix_inverse: self.matrix_inverse,
@@ -499,13 +488,13 @@ impl ClimateUDEB {
         land_fraction: FloatValue,
         lambda_land: FloatValue,
     ) -> FloatValue {
-        let k_lo = self.parameters.k_lo;
+        let k_lo = self.parameters.land_ocean_heat_exchange;
         let alpha = self.parameters.amplify_ocean_to_land;
 
         let numerator = land_forcing * land_fraction + k_lo * alpha * ocean_temp;
         let denominator = lambda_land * land_fraction + k_lo;
 
-        (numerator / denominator).min(self.parameters.max_temperature)
+        (numerator / denominator).min(self.parameters.maximum_temperature)
     }
 
     /// Convert ocean SST to surface air temperature.
@@ -518,8 +507,8 @@ impl ClimateUDEB {
     ///
     /// $$T_{air} = T_{sst} + \delta_{max}$$
     fn sst_to_air_temperature(&self, sst: FloatValue) -> FloatValue {
-        let alpha = self.parameters.temp_adjust_alpha;
-        let gamma = self.parameters.temp_adjust_gamma;
+        let alpha = self.parameters.temperature_adjustment_alpha;
+        let gamma = self.parameters.temperature_adjustment_gamma;
 
         // Threshold temperature where quadratic matches linear
         // T* = -(alpha - 1) / (2 * gamma)
@@ -539,7 +528,7 @@ impl ClimateUDEB {
     /// Ratio of air temperature to SST, applied to the mixed-layer feedback of the next substep.
     fn alpha_eff(&self, sst: FloatValue) -> FloatValue {
         if sst == 0.0 {
-            self.parameters.temp_adjust_alpha
+            self.parameters.temperature_adjustment_alpha
         } else {
             self.sst_to_air_temperature(sst) / sst
         }
@@ -553,31 +542,29 @@ impl ClimateUDEB {
         input_state: &InputState,
         state: &mut ClimateUDEBState,
     ) -> RSCMResult<OutputState> {
-        self.ensure_state_initialized(state);
+        self.ensure_state_initialised(state);
 
         // MAGICC7 interpolates forcing at each sub-annual time point:
         //   q(step) = ERF(year + step/steps_per_year)
         // Substep 12 lands on t_next. See docs/modules/time_conventions.md.
-        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
-        let area = [fgno, fgnl, fgso, fgsl];
-        let forcing_input = if self.parameters.regional_forcing {
+        let area = *self.parameters.grid().weights();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = area;
+        let forcing_input = if self.parameters.include_regional_forcing {
             let (start, end) = input_state
-                .get_four_box_window(REGIONAL_FORCING)
+                .get_four_box_window(EFFICACY_ADJUSTED_ERF)
                 .interval()?;
             ForcingInput::Regional(
                 [start[0], start[1], start[2], start[3]],
                 [end[0], end[1], end[2], end[3]],
             )
         } else {
-            let (start, end) = input_state
-                .get_scalar_window("Effective Radiative Forcing")
-                .interval()?;
+            let (start, end) = input_state.get_scalar_window(ERF).interval()?;
             ForcingInput::Global(start, end)
         };
         let steps = self.parameters.steps_per_year as FloatValue;
 
         // Get previous surface temperature state
-        let temperature = input_state.get_four_box_window("Surface Temperature");
+        let temperature = input_state.get_four_box_window(SURFACE_AIR_TEMPERATURE_CHANGE);
         let prev_temp = FourBoxSlice::from_array([
             temperature.get(FourBoxRegion::NorthernOcean),
             temperature.get(FourBoxRegion::NorthernLand),
@@ -585,26 +572,26 @@ impl ClimateUDEB {
             temperature.get(FourBoxRegion::SouthernLand),
         ]);
 
-        // Initialize internal state from previous surface temperatures if this
+        // Initialise internal state from previous surface temperatures if this
         // is a restart with non-zero initial conditions (e.g. warm-start).
-        if state.ocean_temps[0][0] == 0.0 && prev_temp.0[0] != 0.0 {
-            state.ocean_temps[0][0] = prev_temp.get(FourBoxRegion::NorthernOcean);
-            state.ocean_temps[1][0] = prev_temp.get(FourBoxRegion::SouthernOcean);
-            state.land_temps[0] = prev_temp.get(FourBoxRegion::NorthernLand);
-            state.land_temps[1] = prev_temp.get(FourBoxRegion::SouthernLand);
+        if state.ocean_temperatures[0][0] == 0.0 && prev_temp.0[0] != 0.0 {
+            state.ocean_temperatures[0][0] = prev_temp.get(FourBoxRegion::NorthernOcean);
+            state.ocean_temperatures[1][0] = prev_temp.get(FourBoxRegion::SouthernOcean);
+            state.land_temperatures[0] = prev_temp.get(FourBoxRegion::NorthernLand);
+            state.land_temperatures[1] = prev_temp.get(FourBoxRegion::SouthernLand);
             // Set ground temps equal to land temps to avoid artificial initial flux
-            state.ground_temps[0] = state.land_temps[0];
-            state.ground_temps[1] = state.land_temps[1];
+            state.ground_temperatures[0] = state.land_temperatures[0];
+            state.ground_temperatures[1] = state.land_temperatures[1];
         }
 
         let dt_year = t_next - t_current;
         let dt_sub = dt_year / self.parameters.steps_per_year as FloatValue;
 
-        let q_2xco2 = if self.parameters.time_varying_q2x {
-            let (_, q) = input_state.get_scalar_window(CO2_DOUBLING_ERF).interval()?;
+        let erf_2xco2 = if self.parameters.time_varying_erf_2xco2 {
+            let (_, q) = input_state.get_scalar_window(ERF_2XCO2).interval()?;
             q
         } else {
-            self.parameters.rf_2xco2
+            self.parameters.erf_2xco2
         };
         let cum_t = self.cumulative_temperature(state);
 
@@ -612,7 +599,7 @@ impl ClimateUDEB {
         // and the others the one before, so the first two years start from the initial one.
         let subannual_scales = match &self.parameters.subannual_forcing {
             Some(SubannualForcing {
-                rf_regions: Some(_),
+                regional_pattern: Some(_),
                 internal_efficacy,
                 efficacy,
                 ..
@@ -628,13 +615,13 @@ impl ClimateUDEB {
         };
 
         // Pre-compute ground heat capacity if enabled
-        let c_ground = if self.parameters.land_heat_capacity_enabled {
-            self.parameters.land_hc_eff_thickness * heat_capacity_per_metre()
+        let c_ground = if self.parameters.include_land_heat_capacity {
+            self.parameters.land_heat_capacity_effective_thickness * heat_capacity_per_metre()
         } else {
             0.0
         };
 
-        // Monthly sub-stepping with per-substep forcing interpolation.
+        // Monthly substepping with per-substep forcing interpolation.
         //
         // MAGICC7 runs steps 1..12 for normal years, with forcing queried at:
         //   step 1: year + 1/12, step 2: year + 2/12, ..., step 12: year + 12/12
@@ -642,11 +629,11 @@ impl ClimateUDEB {
         // The first year also runs step 0, at t_current.
         // See docs/modules/time_conventions.md for details.
         let first_step = usize::from(!state.temperature_history.is_empty());
-        let start_ocean_temps = self
+        let start_ocean_temperatures = self
             .parameters
             .thermal_expansion
             .as_ref()
-            .map(|_| state.ocean_temps.clone());
+            .map(|_| state.ocean_temperatures.clone());
         let mut box_temp_sums = [0.0; 4];
         let mut adjusted_ecs = self.parameters.ecs;
         let mut lam = self.initial_sensitivity();
@@ -680,8 +667,8 @@ impl ClimateUDEB {
                     (None, lerp(*start, *end, frac) + extra_global)
                 }
             };
-            adjusted_ecs = self.adjusted_ecs(global_forcing, q_2xco2, cum_t);
-            lam = self.sensitivity(adjusted_ecs, q_2xco2);
+            adjusted_ecs = self.adjusted_ecs(global_forcing, erf_2xco2, cum_t);
+            lam = self.sensitivity(adjusted_ecs, erf_2xco2);
             let (current_lambda_ocean, current_lambda_land) = (lam.lambda_ocean, lam.lambda_land);
             let forcing = regional.unwrap_or_else(|| {
                 add_extra(self.box_forcing(&forcing_input, frac, lam.co2_internal_efficacy))
@@ -689,16 +676,16 @@ impl ClimateUDEB {
             forcing_end = Some(forcing);
             // Forward Euler ground update from the previous substep's land temperatures.
             // The ocean solve sees the same flux, so it takes the ground temperatures from before.
-            let [nh_ground, sh_ground] = state.ground_temps;
-            if self.parameters.land_heat_capacity_enabled {
-                for (hemi, &f_l) in [fgnl, fgsl].iter().enumerate() {
+            let [nh_ground, sh_ground] = state.ground_temperatures;
+            if self.parameters.include_land_heat_capacity {
+                for (hemi, &f_l) in [nh_land, sh_land].iter().enumerate() {
                     if f_l < 1e-15 {
                         continue;
                     }
-                    let g = state.ground_temps[hemi];
-                    state.ground_temps[hemi] = g
-                        + (((dt_sub / f_l) / c_ground) * self.parameters.k_lg)
-                            * (state.land_temps[hemi] - g);
+                    let g = state.ground_temperatures[hemi];
+                    state.ground_temperatures[hemi] = g
+                        + (((dt_sub / f_l) / c_ground) * self.parameters.land_ground_heat_exchange)
+                            * (state.land_temperatures[hemi] - g);
                 }
             }
 
@@ -712,7 +699,7 @@ impl ClimateUDEB {
                 dt_sub,
                 current_lambda_ocean,
                 current_lambda_land,
-                state.hemi_heat_exchange[0],
+                state.north_south_heat_flux[0],
                 nh_ground,
                 alpha_eff_nh,
             );
@@ -724,7 +711,7 @@ impl ClimateUDEB {
                 dt_sub,
                 current_lambda_ocean,
                 current_lambda_land,
-                state.hemi_heat_exchange[1],
+                state.north_south_heat_flux[1],
                 sh_ground,
                 alpha_eff_sh,
             );
@@ -734,42 +721,42 @@ impl ClimateUDEB {
             // Update land temperatures from new ocean SSTs (MAGICC7 lines 3214-3222)
             let t_air_nho = self.sst_to_air_temperature(sst_nh);
             let t_air_sho = self.sst_to_air_temperature(sst_sh);
-            state.land_temps[0] = self.calculate_land_temperature(
+            state.land_temperatures[0] = self.calculate_land_temperature(
                 t_air_nho,
                 forcing.get(FourBoxRegion::NorthernLand),
-                fgnl,
+                nh_land,
                 current_lambda_land,
             );
-            state.land_temps[1] = self.calculate_land_temperature(
+            state.land_temperatures[1] = self.calculate_land_temperature(
                 t_air_sho,
                 forcing.get(FourBoxRegion::SouthernLand),
-                fgsl,
+                sh_land,
                 current_lambda_land,
             );
 
-            // Update inter-hemispheric heat exchange for the NEXT substep
+            // Update inter-hemispheric heat flux for the NEXT substep
             // using this substep's air temperatures (MAGICC7 lines 3174-3177).
             // HX(hemi) = K_NS / FGO(hemi) * (T_air_other_ocean - T_air_self_ocean)
-            let k_ns = self.parameters.k_ns;
-            if fgno > 1e-15 {
-                state.hemi_heat_exchange[0] = k_ns / fgno * (t_air_sho - t_air_nho);
+            let k_ns = self.parameters.north_south_heat_exchange;
+            if nh_ocean > 1e-15 {
+                state.north_south_heat_flux[0] = k_ns / nh_ocean * (t_air_sho - t_air_nho);
             }
-            if fgso > 1e-15 {
-                state.hemi_heat_exchange[1] = k_ns / fgso * (t_air_nho - t_air_sho);
+            if sh_ocean > 1e-15 {
+                state.north_south_heat_flux[1] = k_ns / sh_ocean * (t_air_nho - t_air_sho);
             }
 
             // Update upwelling based on area-weighted global air temperature
             // (MAGICC7.f90 line 3298: GLOBET = SUM(CURRENT_TIME_TEMPERATURE * GLOBALAREAFRACTIONS))
-            let global_temp = t_air_nho * fgno
-                + state.land_temps[0] * fgnl
-                + t_air_sho * fgso
-                + state.land_temps[1] * fgsl;
+            let global_temp = t_air_nho * nh_ocean
+                + state.land_temperatures[0] * nh_land
+                + t_air_sho * sh_ocean
+                + state.land_temperatures[1] * sh_land;
             if step_idx > 0 {
                 let boxes = [
                     t_air_nho,
-                    state.land_temps[0],
+                    state.land_temperatures[0],
                     t_air_sho,
-                    state.land_temps[1],
+                    state.land_temperatures[1],
                 ];
                 for (sum, t) in box_temp_sums.iter_mut().zip(boxes) {
                     *sum += t;
@@ -779,12 +766,12 @@ impl ClimateUDEB {
         }
 
         if let Some(SubannualForcing {
-            rf_regions: Some(pattern),
+            regional_pattern: Some(pattern),
             ..
         }) = &self.parameters.subannual_forcing
         {
             state.subannual_next_internal_efficacy = Some(lamcalc::calc_internal_efficacy(
-                q_2xco2,
+                erf_2xco2,
                 &lam.matrix_inverse,
                 &area,
                 pattern,
@@ -793,23 +780,23 @@ impl ClimateUDEB {
         }
 
         // Get final temperatures from the last substep
-        let sst_nh = state.ocean_temps[0][0];
-        let sst_sh = state.ocean_temps[1][0];
+        let sst_nh = state.ocean_temperatures[0][0];
+        let sst_sh = state.ocean_temperatures[1][0];
 
         let t_air_nho = self.sst_to_air_temperature(sst_nh);
         let t_air_sho = self.sst_to_air_temperature(sst_sh);
-        let t_air_nhl = state.land_temps[0];
-        let t_air_shl = state.land_temps[1];
+        let t_air_nhl = state.land_temperatures[0];
+        let t_air_shl = state.land_temperatures[1];
 
         let surface_temperature =
             FourBoxSlice::from_array([t_air_nho, t_air_nhl, t_air_sho, t_air_shl]);
 
         // Track year-weighted temperature history for cumulative-T adjustment.
-        // Each entry stores T * dt so the sum gives K-years regardless of timestep.
-        let global_temp = surface_temperature.0[0] * fgno
-            + surface_temperature.0[1] * fgnl
-            + surface_temperature.0[2] * fgso
-            + surface_temperature.0[3] * fgsl;
+        // Each entry stores T * dt so the sum gives K-years regardless of step.
+        let global_temp = surface_temperature.0[0] * nh_ocean
+            + surface_temperature.0[1] * nh_land
+            + surface_temperature.0[2] * sh_ocean
+            + surface_temperature.0[3] * sh_land;
         state.temperature_history.push(global_temp * dt_year);
         state.dt_history.push(dt_year);
 
@@ -831,16 +818,16 @@ impl ClimateUDEB {
             heat_uptake,
             ocean_heat_content,
             sst,
-            climate_sensitivity: adjusted_ecs,
+            ecs: adjusted_ecs,
         }
         .into();
         if let (Some(expansion), Some(start)) =
-            (&self.parameters.thermal_expansion, start_ocean_temps)
+            (&self.parameters.thermal_expansion, start_ocean_temperatures)
         {
             // MAGICC7 averages each box over the year before weighting by area
             let annual_mean_temp: FloatValue = box_temp_sums
                 .iter()
-                .zip([fgno, fgnl, fgso, fgsl])
+                .zip(area)
                 .map(|(sum, area)| sum / steps * area)
                 .sum();
             if t_current >= expansion.start_year {
@@ -849,15 +836,15 @@ impl ClimateUDEB {
                     &self.parameters,
                     &state.initial_ocean_profile,
                     &start,
-                    &state.ocean_temps,
+                    &state.ocean_temperatures,
                 );
             }
             outputs.insert(
-                ANNUAL_MEAN_TEMPERATURE.to_string(),
+                ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE.to_string(),
                 StateValue::Scalar(annual_mean_temp),
             );
             outputs.insert(
-                THERMAL_EXPANSION.to_string(),
+                SEA_LEVEL_RISE_THERMAL_EXPANSION.to_string(),
                 StateValue::Scalar(state.thermal_expansion),
             );
         }
@@ -872,30 +859,28 @@ impl Default for ClimateUDEB {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.ClimateUDEB")]
 impl Component for ClimateUDEB {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
-        if self.parameters.time_varying_q2x {
-            definitions.push(RequirementDefinition::scalar_input(
-                CO2_DOUBLING_ERF,
-                "W/m^2",
-            ));
+        if self.parameters.time_varying_erf_2xco2 {
+            definitions.push(VariableDefinition::scalar_input(ERF_2XCO2, "W/m^2"));
         }
         if self.parameters.thermal_expansion.is_some() {
             definitions.push(
-                RequirementDefinition::scalar_output(ANNUAL_MEAN_TEMPERATURE, "K")
+                VariableDefinition::scalar_output(ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE, "K")
                     .with_timeseries_type(TimeseriesType::Average),
             );
-            definitions.push(RequirementDefinition::scalar_output(
-                THERMAL_EXPANSION,
+            definitions.push(VariableDefinition::scalar_output(
+                SEA_LEVEL_RISE_THERMAL_EXPANSION,
                 "mm",
             ));
         }
-        if self.parameters.regional_forcing {
+        if self.parameters.include_regional_forcing {
             for definition in &mut definitions {
-                if definition.name == "Effective Radiative Forcing" {
-                    *definition = RequirementDefinition::four_box_input(REGIONAL_FORCING, "W/m^2");
+                if definition.name == ERF {
+                    *definition =
+                        VariableDefinition::four_box_input(EFFICACY_ADJUSTED_ERF, "W/m^2");
                 }
             }
         }
@@ -936,6 +921,7 @@ impl Component for ClimateUDEB {
 mod tests {
     use super::*;
     use ndarray::Array2;
+    use rscm_core::names::EQUILIBRIUM_CLIMATE_SENSITIVITY;
     use rscm_core::timeseries::GridTimeseries;
 
     fn default_component() -> ClimateUDEB {
@@ -950,9 +936,9 @@ mod tests {
     fn test_new_component() {
         let component = default_component();
         let state = default_state(&component);
-        assert_eq!(state.ocean_temps.len(), 2);
-        assert_eq!(state.ocean_temps[0].len(), 50);
-        assert_eq!(state.ocean_temps[1].len(), 50);
+        assert_eq!(state.ocean_temperatures.len(), 2);
+        assert_eq!(state.ocean_temperatures[0].len(), 50);
+        assert_eq!(state.ocean_temperatures[1].len(), 50);
     }
 
     #[test]
@@ -1012,14 +998,17 @@ mod tests {
         let state = component.initial_state();
 
         for hemi in 0..2 {
-            for (l, &t) in state.ocean_temps[hemi].iter().enumerate() {
+            for (l, &t) in state.ocean_temperatures[hemi].iter().enumerate() {
                 assert!(
                     t.abs() < 1e-15,
                     "initial anomaly temps should be zero: hemi={hemi} layer={l} T={t}"
                 );
             }
         }
-        assert_eq!(state.upwelling_rates, [component.parameters.w_initial; 2]);
+        assert_eq!(
+            state.upwelling_rates,
+            [component.parameters.initial_upwelling_rate; 2]
+        );
     }
 
     #[test]
@@ -1061,7 +1050,7 @@ mod tests {
         let forcing = 3.71; // W/m^2
         let dt = 1.0 / 12.0; // One month
 
-        let initial_temp = state.ocean_temps[0][0];
+        let initial_temp = state.ocean_temperatures[0][0];
         let new_temp = component.step_hemisphere(
             &mut state,
             0,
@@ -1070,9 +1059,9 @@ mod tests {
             dt,
             component.lambda_ocean,
             component.lambda_land,
-            0.0,                                    // other hemisphere SST
-            0.0,                                    // ground temp
-            component.parameters.temp_adjust_alpha, // alpha_eff (initial value, SST=0)
+            0.0,                                               // other hemisphere SST
+            0.0,                                               // ground temp
+            component.parameters.temperature_adjustment_alpha, // alpha_eff (initial value, SST=0)
         );
 
         assert!(
@@ -1124,8 +1113,8 @@ mod tests {
 
         // At threshold temperature, upwelling should reach minimum
         component.update_upwelling(&mut state, 10.0); // Above threshold
-        let w_min =
-            component.parameters.w_initial * (1.0 - component.parameters.w_variable_fraction);
+        let w_min = component.parameters.initial_upwelling_rate
+            * (1.0 - component.parameters.upwelling_variable_fraction);
         assert!(
             (state.upwelling_rates[0] - w_min).abs() < 1e-10,
             "Upwelling should reach minimum at threshold"
@@ -1144,8 +1133,8 @@ mod tests {
         );
 
         // Warm the mixed layer
-        state.ocean_temps[0][0] = 1.0;
-        state.ocean_temps[1][0] = 1.0;
+        state.ocean_temperatures[0][0] = 1.0;
+        state.ocean_temperatures[1][0] = 1.0;
 
         let new_heat = component.calculate_ocean_heat_content(&state);
         assert!(
@@ -1185,11 +1174,11 @@ mod tests {
 
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"Effective Radiative Forcing"));
-        assert!(names.contains(&"Surface Temperature"));
+        assert!(names.contains(&"Surface Air Temperature Change"));
         assert!(names.contains(&"Heat Uptake"));
         assert!(names.contains(&"Ocean Heat Content"));
         assert!(names.contains(&"Sea Surface Temperature"));
-        assert!(names.contains(&CLIMATE_SENSITIVITY));
+        assert!(names.contains(&EQUILIBRIUM_CLIMATE_SENSITIVITY));
     }
 
     #[test]
@@ -1198,7 +1187,7 @@ mod tests {
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         let component = default_component();
@@ -1215,10 +1204,9 @@ mod tests {
         let erf_item = TimeseriesItem {
             data: TimeseriesData::Scalar(erf_ts),
             name: "Effective Radiative Forcing".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
-        // Build FourBox surface temperature timeseries initialised to zero
+        // Build four-box surface temperature timeseries initialised to zero
         let surf_grid = FourBoxGrid::magicc_standard();
         let surf_values = Array2::zeros((2, 4));
         let surf_ts = GridTimeseries::new(
@@ -1230,8 +1218,7 @@ mod tests {
         );
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
-            name: "Surface Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
+            name: "Surface Air Temperature Change".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1250,8 +1237,8 @@ mod tests {
         };
 
         // SST should equal mean of the two ocean mixed-layer temperatures
-        let nh_ocean = state.ocean_temps[0][0];
-        let sh_ocean = state.ocean_temps[1][0];
+        let nh_ocean = state.ocean_temperatures[0][0];
+        let sh_ocean = state.ocean_temperatures[1][0];
         let expected_sst = (nh_ocean + sh_ocean) / 2.0;
 
         assert!(
@@ -1288,7 +1275,7 @@ mod tests {
         // With positive gradient (warm top, cold bottom), diffusivity should
         // decrease near surface (dK/dT is negative, gradient is positive)
         let mut warm_state = default_state(&component);
-        warm_state.ocean_temps[0][0] = 3.0; // warm surface
+        warm_state.ocean_temperatures[0][0] = 3.0; // warm surface
         let kappa_warm = component.layer_diffusivities(&warm_state, 0);
 
         // Surface layers should have lower diffusivity
@@ -1310,21 +1297,21 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization() {
+    fn test_serialisation() {
         let component = default_component();
-        let json = serde_json::to_string(&component).expect("Serialization failed");
-        let parsed: ClimateUDEB = serde_json::from_str(&json).expect("Deserialization failed");
+        let json = serde_json::to_string(&component).expect("Serialisation failed");
+        let parsed: ClimateUDEB = serde_json::from_str(&json).expect("Deserialisation failed");
 
         assert_eq!(component.parameters.n_layers, parsed.parameters.n_layers);
     }
 
     #[test]
-    fn test_deserialized_component_steps_like_original() {
+    fn test_deserialised_component_steps_like_original() {
         let component = default_component();
         let json = serde_json::to_string(&component).unwrap();
         let parsed: ClimateUDEB = serde_json::from_str(&json).unwrap();
 
-        let ocean_temps = |udeb: &ClimateUDEB| {
+        let ocean_temperatures = |udeb: &ClimateUDEB| {
             let mut state = default_state(udeb);
             for _ in 0..24 {
                 udeb.step_hemisphere(
@@ -1337,13 +1324,13 @@ mod tests {
                     udeb.lambda_land,
                     0.0,
                     0.0,
-                    udeb.parameters.temp_adjust_alpha,
+                    udeb.parameters.temperature_adjustment_alpha,
                 );
             }
-            state.ocean_temps[0].clone()
+            state.ocean_temperatures[0].clone()
         };
 
-        assert_eq!(ocean_temps(&component), ocean_temps(&parsed));
+        assert_eq!(ocean_temperatures(&component), ocean_temperatures(&parsed));
     }
 
     /// Helper to build a ClimateUDEBState with year-weighted temperature history.
@@ -1366,29 +1353,33 @@ mod tests {
     fn test_adjusted_ecs_with_defaults() {
         let component = default_component();
 
-        // With empty history and forcing equal to rf_2xco2, the q_factor is 1.0.
+        // With empty history and forcing equal to erf_2xco2, the q_factor is 1.0.
         // The cumt_factor = 1 + 0.08 * (0 - 900) / 900 = 0.92
         // So ecs_adj = 3.0 * 0.92 = 2.76
         let empty_state = default_state(&component);
         let ecs_adj =
             component.adjusted_ecs(3.71, 3.71, component.cumulative_temperature(&empty_state));
-        let expected =
-            component.parameters.ecs * (1.0 - component.parameters.feedback_cumt_sensitivity);
+        let expected = component.parameters.ecs
+            * (1.0
+                - component
+                    .parameters
+                    .feedback_cumulative_temperature_sensitivity);
         assert!(
             (ecs_adj - expected).abs() < 0.01,
             "Empty history should reduce ECS by cumt_sensitivity fraction: got {ecs_adj}, expected {expected}"
         );
 
         // With equilibrium history (cumT == cumT_2x), ECS should be unchanged
-        let cumt_2x = component.parameters.ecs * component.parameters.feedback_cumt_period;
-        let period = component.parameters.feedback_cumt_period as usize;
+        let cumt_2x =
+            component.parameters.ecs * component.parameters.feedback_cumulative_temperature_period;
+        let period = component.parameters.feedback_cumulative_temperature_period as usize;
         // Each year contributes cumt_2x/period temperature to reach cumT == cumT_2x
         let t_per_year = cumt_2x / period as FloatValue;
         let equilibrium_history: Vec<FloatValue> = vec![t_per_year; period];
         let eq_state = state_with_history(&component, &equilibrium_history);
         let ecs_eq = component.adjusted_ecs(
-            component.parameters.rf_2xco2,
-            component.parameters.rf_2xco2,
+            component.parameters.erf_2xco2,
+            component.parameters.erf_2xco2,
             component.cumulative_temperature(&eq_state),
         );
         assert!(
@@ -1400,7 +1391,7 @@ mod tests {
     #[test]
     fn test_adjusted_ecs_with_large_sensitivity() {
         let params = ClimateUDEBParameters {
-            feedback_cumt_sensitivity: 0.5, // exaggerated
+            feedback_cumulative_temperature_sensitivity: 0.5, // exaggerated
             ..Default::default()
         };
         let component = ClimateUDEB::from_parameters(params).unwrap();
@@ -1439,18 +1430,18 @@ mod tests {
     }
 
     #[test]
-    fn test_efficacy_mode_zero_unchanged() {
+    fn test_efficacy_method_none_unchanged() {
         use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
-        // Mode 0 (default) should produce identical results to a component
+        // The `none` method (default) should produce identical results to a component
         // that has no efficacy fields at all.
         let params = ClimateUDEBParameters {
-            efficacy_apply: 0,
+            efficacy_method: EfficacyMethod::None,
             ..Default::default()
         };
         let component = ClimateUDEB::from_parameters(params).unwrap();
@@ -1464,7 +1455,6 @@ mod tests {
         let erf_item = TimeseriesItem {
             data: TimeseriesData::Scalar(erf_ts),
             name: "Effective Radiative Forcing".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
         let surf_grid = FourBoxGrid::magicc_standard();
@@ -1478,8 +1468,7 @@ mod tests {
         );
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
-            name: "Surface Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
+            name: "Surface Air Temperature Change".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1487,7 +1476,7 @@ mod tests {
             .solve_impl(2000.0, 2001.0, &input_state, &mut state)
             .expect("solve_impl failed");
 
-        // Compare with default component (also mode 0)
+        // Compare with default component (also `none`)
         let default_comp = default_component();
         let mut default_st = default_state(&default_comp);
         let output_default = default_comp
@@ -1505,17 +1494,17 @@ mod tests {
 
         assert!(
             (sst_mode0 - sst_default).abs() < 1e-15,
-            "Mode 0 should be identical to default: mode0={sst_mode0}, default={sst_default}"
+            "none should be identical to default: none={sst_mode0}, default={sst_default}"
         );
     }
 
     #[test]
-    fn test_efficacy_mode_two_adjusts_temperature() {
+    fn test_efficacy_method_ar6_adjusts_temperature() {
         use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![2000.0, 2001.0]));
@@ -1526,7 +1515,6 @@ mod tests {
         let erf_item = TimeseriesItem {
             data: TimeseriesData::Scalar(erf_ts),
             name: "Effective Radiative Forcing".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
         let surf_grid = FourBoxGrid::magicc_standard();
@@ -1540,15 +1528,14 @@ mod tests {
         );
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
-            name: "Surface Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
+            name: "Surface Air Temperature Change".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
 
-        // Mode 0: no efficacy adjustment
+        // none: no efficacy adjustment
         let params_0 = ClimateUDEBParameters {
-            efficacy_apply: 0,
+            efficacy_method: EfficacyMethod::None,
             ..Default::default()
         };
         let comp_0 = ClimateUDEB::from_parameters(params_0).unwrap();
@@ -1557,9 +1544,9 @@ mod tests {
             .solve_impl(2000.0, 2001.0, &input_state, &mut state_0)
             .expect("solve failed");
 
-        // Mode 2: AR6 efficacy adjustment
+        // ar6: AR6 efficacy adjustment
         let params_2 = ClimateUDEBParameters {
-            efficacy_apply: 2,
+            efficacy_method: EfficacyMethod::AR6,
             ..Default::default()
         };
         let comp_2 = ClimateUDEB::from_parameters(params_2).unwrap();
@@ -1577,22 +1564,22 @@ mod tests {
             other => panic!("Expected scalar, got {:?}", other),
         };
 
-        println!("SST mode 0 = {sst_0:.6}, SST mode 2 = {sst_2:.6}");
+        println!("SST none = {sst_0:.6}, SST ar6 = {sst_2:.6}");
         println!(
             "CO2 internal efficacy = {:.6}",
             comp_2.co2_internal_efficacy()
         );
 
-        // Mode 2 divides forcing by co2_internal_efficacy.
+        // ar6 divides forcing by co2_internal_efficacy.
         // With AR6 defaults the efficacy is near 1.0 but not exactly 1.0,
         // so temperatures should differ.
         assert!(
             (sst_0 - sst_2).abs() > 1e-6,
-            "Mode 2 should shift temperature: mode0={sst_0}, mode2={sst_2}"
+            "ar6 should shift temperature: none={sst_0}, ar6={sst_2}"
         );
 
-        // The direction depends on whether co2_efficacy > 1 or < 1.
-        // With default AR6 rf_regions_co2, CO2 efficacy is typically slightly != 1.
+        // The direction depends on whether co2_internal_efficacy > 1 or < 1.
+        // With default AR6 co2_regional_pattern, CO2 efficacy is typically slightly != 1.
         if comp_2.co2_internal_efficacy() > 1.0 {
             assert!(
                 sst_2 < sst_0,
@@ -1619,8 +1606,7 @@ mod tests {
         }
 
         // Area-weighted sum of qfrac * area should equal 1.0
-        let (fgno, fgnl, fgso, fgsl) = component.parameters.global_box_fractions();
-        let area = [fgno, fgnl, fgso, fgsl];
+        let area = *component.parameters.grid().weights();
         let weighted_sum: FloatValue = qfrac.iter().zip(area.iter()).map(|(q, a)| q * a).sum();
         assert!(
             (weighted_sum - 1.0).abs() < 1e-10,
@@ -1629,30 +1615,30 @@ mod tests {
     }
 
     #[test]
-    fn test_uniform_rf_regions_gives_uniform_qfrac() {
+    fn test_uniform_co2_regional_pattern_gives_uniform_qfrac() {
         let params = ClimateUDEBParameters {
-            rf_regions_co2: [1.0; 4],
+            co2_regional_pattern: [1.0; 4],
             ..Default::default()
         };
         let component = ClimateUDEB::from_parameters(params).unwrap();
         let qfrac = component.co2_qfrac();
 
-        // Uniform rf_regions should give qfrac = 1.0 for all boxes
+        // Uniform regional_pattern should give qfrac = 1.0 for all boxes
         for (i, &q) in qfrac.iter().enumerate() {
             assert!(
                 (q - 1.0).abs() < 1e-10,
-                "Uniform rf_regions should give qfrac=1.0, box {i} got {q}"
+                "Uniform regional_pattern should give qfrac=1.0, box {i} got {q}"
             );
         }
     }
 
     #[test]
-    fn test_efficacy_mode_one_ignores_prescribed_efficacy() {
+    fn test_efficacy_method_unit_ignores_co2_efficacy() {
         use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![2000.0, 2001.0]));
@@ -1663,7 +1649,6 @@ mod tests {
         let erf_item = TimeseriesItem {
             data: TimeseriesData::Scalar(erf_ts),
             name: "Effective Radiative Forcing".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
         let surf_grid = FourBoxGrid::magicc_standard();
@@ -1677,16 +1662,15 @@ mod tests {
         );
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
-            name: "Surface Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
+            name: "Surface Air Temperature Change".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
 
-        let solve = |efficacy_apply, prescribed_efficacy_co2| {
+        let solve = |efficacy_method, co2_efficacy| {
             let params = ClimateUDEBParameters {
-                efficacy_apply,
-                prescribed_efficacy_co2,
+                efficacy_method,
+                co2_efficacy,
                 ..Default::default()
             };
             let comp = ClimateUDEB::from_parameters(params).unwrap();
@@ -1694,8 +1678,8 @@ mod tests {
             comp.solve_impl(2000.0, 2001.0, &input_state, &mut state)
                 .expect("solve failed")
         };
-        let out_1 = solve(1, 1.2);
-        let out_2 = solve(2, 1.0);
+        let out_1 = solve(EfficacyMethod::Unit, 1.2);
+        let out_2 = solve(EfficacyMethod::AR6, 1.0);
 
         let sst_1 = match out_1.get("Sea Surface Temperature").unwrap() {
             StateValue::Scalar(v) => *v,
@@ -1709,12 +1693,12 @@ mod tests {
     }
 
     #[test]
-    fn test_prescribed_efficacy_in_mode_two() {
+    fn test_co2_efficacy_with_ar6_method() {
         use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![2000.0, 2001.0]));
@@ -1725,7 +1709,6 @@ mod tests {
         let erf_item = TimeseriesItem {
             data: TimeseriesData::Scalar(erf_ts),
             name: "Effective Radiative Forcing".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
         let surf_grid = FourBoxGrid::magicc_standard();
@@ -1739,15 +1722,14 @@ mod tests {
         );
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
-            name: "Surface Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
+            name: "Surface Air Temperature Change".to_string(),
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
 
-        // Mode 2 with prescribed=1.0 (default)
+        // ar6 with co2_efficacy=1.0 (default)
         let params_2a = ClimateUDEBParameters {
-            efficacy_apply: 2,
+            efficacy_method: EfficacyMethod::AR6,
             ..Default::default()
         };
         let comp_2a = ClimateUDEB::from_parameters(params_2a).unwrap();
@@ -1756,10 +1738,10 @@ mod tests {
             .solve_impl(2000.0, 2001.0, &input_state, &mut state_2a)
             .expect("solve failed");
 
-        // Mode 2 with prescribed=1.1 (10% additional efficacy)
+        // ar6 with co2_efficacy=1.1 (10% additional efficacy)
         let params_2b = ClimateUDEBParameters {
-            efficacy_apply: 2,
-            prescribed_efficacy_co2: 1.1,
+            efficacy_method: EfficacyMethod::AR6,
+            co2_efficacy: 1.1,
             ..Default::default()
         };
         let comp_2b = ClimateUDEB::from_parameters(params_2b).unwrap();
@@ -1777,20 +1759,22 @@ mod tests {
             other => panic!("Expected scalar, got {:?}", other),
         };
 
-        println!("SST mode2(presc=1.0) = {sst_2a:.6}, SST mode2(presc=1.1) = {sst_2b:.6}");
-
-        // Higher prescribed efficacy should amplify the internal efficacy adjustment
-        assert!(
-            (sst_2a - sst_2b).abs() > 1e-6,
-            "Different prescribed efficacy should change temperature: \
-             presc=1.0: {sst_2a}, presc=1.1: {sst_2b}"
+        println!(
+            "SST ar6(co2_efficacy=1.0) = {sst_2a:.6}, SST ar6(co2_efficacy=1.1) = {sst_2b:.6}"
         );
 
-        // With prescribed > 1.0, effective forcing is larger, so more warming
+        // Higher `co2_efficacy` should amplify the internal efficacy adjustment
+        assert!(
+            (sst_2a - sst_2b).abs() > 1e-6,
+            "Different `co2_efficacy` should change temperature: \
+             co2_efficacy=1.0: {sst_2a}, co2_efficacy=1.1: {sst_2b}"
+        );
+
+        // With `co2_efficacy` > 1.0, effective forcing is larger, so more warming
         assert!(
             sst_2b > sst_2a,
-            "Higher prescribed efficacy should produce more warming: \
-             presc=1.0: {sst_2a}, presc=1.1: {sst_2b}"
+            "Higher `co2_efficacy` should produce more warming: \
+             co2_efficacy=1.0: {sst_2a}, co2_efficacy=1.1: {sst_2b}"
         );
     }
 
@@ -1804,36 +1788,36 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_prescribed_efficacy_rejected() {
+    fn test_invalid_co2_efficacy_rejected() {
         // Zero should be rejected
         let mut params = ClimateUDEBParameters {
-            prescribed_efficacy_co2: 0.0,
+            co2_efficacy: 0.0,
             ..Default::default()
         };
         assert!(
             ClimateUDEB::from_parameters(params.clone()).is_err(),
-            "prescribed_efficacy_co2=0.0 should be rejected"
+            "co2_efficacy=0.0 should be rejected"
         );
 
         // Negative should be rejected
-        params.prescribed_efficacy_co2 = -1.0;
+        params.co2_efficacy = -1.0;
         assert!(
             ClimateUDEB::from_parameters(params.clone()).is_err(),
-            "prescribed_efficacy_co2=-1.0 should be rejected"
+            "co2_efficacy=-1.0 should be rejected"
         );
 
         // NaN should be rejected
-        params.prescribed_efficacy_co2 = FloatValue::NAN;
+        params.co2_efficacy = FloatValue::NAN;
         assert!(
             ClimateUDEB::from_parameters(params.clone()).is_err(),
-            "prescribed_efficacy_co2=NaN should be rejected"
+            "co2_efficacy=NaN should be rejected"
         );
 
         // Positive value should be accepted
-        params.prescribed_efficacy_co2 = 0.5;
+        params.co2_efficacy = 0.5;
         assert!(
             ClimateUDEB::from_parameters(params).is_ok(),
-            "prescribed_efficacy_co2=0.5 should be accepted"
+            "co2_efficacy=0.5 should be accepted"
         );
     }
 
@@ -1842,7 +1826,7 @@ mod tests {
         use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         let times = ndarray::array![2000.0, 2001.0, 2002.0, 2003.0];
@@ -1860,22 +1844,23 @@ mod tests {
                     times,
                 )),
                 name: "Effective Radiative Forcing".to_string(),
-                variable_type: VariableType::Exogenous,
             },
             TimeseriesItem {
                 data: TimeseriesData::FourBox(temperature),
-                name: "Surface Temperature".to_string(),
-                variable_type: VariableType::Endogenous,
+                name: "Surface Air Temperature Change".to_string(),
             },
         ]
     }
 
     fn assert_same_climate(a: &ClimateUDEBState, b: &ClimateUDEBState, tolerance: FloatValue) {
         for hemi in 0..2 {
-            for (x, y) in a.ocean_temps[hemi].iter().zip(&b.ocean_temps[hemi]) {
+            for (x, y) in a.ocean_temperatures[hemi]
+                .iter()
+                .zip(&b.ocean_temperatures[hemi])
+            {
                 assert!((x - y).abs() < tolerance, "ocean {hemi}: {x} vs {y}");
             }
-            let (x, y) = (a.land_temps[hemi], b.land_temps[hemi]);
+            let (x, y) = (a.land_temperatures[hemi], b.land_temperatures[hemi]);
             assert!((x - y).abs() < tolerance, "land {hemi}: {x} vs {y}");
         }
     }
@@ -1886,15 +1871,15 @@ mod tests {
         let box_values = [1.0, 0.5, 0.8, 0.3];
         let erf = [0.0, 2.0, 4.0, 6.0];
         let params = |subannual| ClimateUDEBParameters {
-            feedback_cumt_sensitivity: 0.0,
-            feedback_q_sensitivity: 0.1,
+            feedback_cumulative_temperature_sensitivity: 0.0,
+            feedback_forcing_sensitivity: 0.1,
             subannual_forcing: Some(subannual),
             ..Default::default()
         };
         let scaled = ClimateUDEB::from_parameters(params(SubannualForcing {
             start: 2000.0,
             values: vec![box_values; 36],
-            rf_regions: Some(pattern),
+            regional_pattern: Some(pattern),
             internal_efficacy: 2.0,
             efficacy: 1.0,
         }))
@@ -1903,13 +1888,12 @@ mod tests {
         // Internal efficacy of the pattern at the sensitivity of a year's last substep,
         // whose forcing includes the scaled extra forcing
         let p = &scaled.parameters;
-        let (fgno, fgnl, fgso, fgsl) = p.global_box_fractions();
-        let area = [fgno, fgnl, fgso, fgsl];
+        let area = *p.grid().weights();
         let extra: FloatValue = (0..4).map(|i| box_values[i] * area[i]).sum();
         let efficacy = |year: usize, divisor: FloatValue| {
-            let ecs = scaled.adjusted_ecs(erf[year + 1] + extra / divisor, p.rf_2xco2, 0.0);
-            let lam = scaled.sensitivity(ecs, p.rf_2xco2);
-            lamcalc::calc_internal_efficacy(p.rf_2xco2, &lam.matrix_inverse, &area, &pattern, ecs)
+            let ecs = scaled.adjusted_ecs(erf[year + 1] + extra / divisor, p.erf_2xco2, 0.0);
+            let lam = scaled.sensitivity(ecs, p.erf_2xco2);
+            lamcalc::calc_internal_efficacy(p.erf_2xco2, &lam.matrix_inverse, &area, &pattern, ecs)
         };
         let e0 = efficacy(0, 2.0);
         let e1 = efficacy(1, e0);
@@ -1932,7 +1916,7 @@ mod tests {
                 .iter()
                 .map(|d| box_values.map(|v| v * (1.0 / d)))
                 .collect(),
-            rf_regions: None,
+            regional_pattern: None,
             internal_efficacy: 1.0,
             efficacy: 1.0,
         }))
@@ -1967,7 +1951,7 @@ mod tests {
         component
             .solve_impl(2000.0, 2001.0, &input_state, &mut state)
             .unwrap();
-        assert!(state.ocean_temps[0].iter().all(|t| t.is_finite()));
+        assert!(state.ocean_temperatures[0].iter().all(|t| t.is_finite()));
     }
 
     #[test]
@@ -1977,7 +1961,7 @@ mod tests {
                 subannual_forcing: Some(SubannualForcing {
                     start: 2000.0,
                     values: vec![values; 12],
-                    rf_regions: None,
+                    regional_pattern: None,
                     internal_efficacy: 1.0,
                     efficacy: 1.0,
                 }),
@@ -2004,8 +1988,8 @@ mod tests {
     fn test_alpha_eff_updates_every_substep() {
         // Twelve one-month steps match one annual step with twelve substeps
         let params = ClimateUDEBParameters {
-            feedback_cumt_sensitivity: 0.0,
-            feedback_q_sensitivity: 0.0,
+            feedback_cumulative_temperature_sensitivity: 0.0,
+            feedback_forcing_sensitivity: 0.0,
             ..Default::default()
         };
         let annual = ClimateUDEB::from_parameters(params.clone()).unwrap();
@@ -2047,7 +2031,7 @@ mod tests {
 
         // Holding alpha_eff for the year gives a measurably different climate
         let held = run_monthly(true);
-        let diff = (held.ocean_temps[0][0] - state_annual.ocean_temps[0][0]).abs();
+        let diff = (held.ocean_temperatures[0][0] - state_annual.ocean_temperatures[0][0]).abs();
         assert!(diff > 1e-8, "{diff}");
     }
 }

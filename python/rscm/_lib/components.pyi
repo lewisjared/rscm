@@ -8,7 +8,7 @@ Components are instantiated using the builder pattern:
 
     builder = CO2ERFBuilder.from_parameters({
         "erf_2xco2": 3.7,
-        "conc_pi": 278.0,
+        "co2_pi": 278.0,
     })
     component = builder.build()
 
@@ -17,7 +17,7 @@ The built component can then be added to a model via ModelBuilder.
 
 from typing import final
 
-from rscm._lib.core import Component, ComponentBuilder
+from rscm._lib.core import ComponentBuilder, RustComponent
 
 @final
 class CarbonCycleBuilder(ComponentBuilder):
@@ -31,10 +31,10 @@ class CarbonCycleBuilder(ComponentBuilder):
 
     **Parameter keys**
 
-    - `tau` (`float`): Timescale of the box's response (years).
-    - `conc_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm).
-    - `alpha_temperature` (`float`): Sensitivity of lifetime to changes in global-mean
-      temperature (1/K).
+    - `tau` (`float`): Response timescale of the box (years).
+    - `co2_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm).
+    - `alpha_temperature` (`float`): Sensitivity of the response timescale to changes
+      in global-mean temperature (1/K).
 
     Inputs, outputs and states are listed on the
     [CarbonCycle component page][component-carboncycle].
@@ -44,7 +44,7 @@ class CarbonCycleBuilder(ComponentBuilder):
     >>> builder = CarbonCycleBuilder.from_parameters(
     ...     {
     ...         "tau": 30.0,
-    ...         "conc_pi": 278.0,
+    ...         "co2_pi": 278.0,
     ...         "alpha_temperature": 0.0,
     ...     }
     ... )
@@ -54,7 +54,7 @@ class CarbonCycleBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: dict[str, float]) -> CarbonCycleBuilder:
         """Create a builder from a parameter dictionary."""
-    def build(self) -> Component:
+    def build(self) -> RustComponent:
         """Build the carbon cycle component."""
 
 @final
@@ -66,14 +66,14 @@ class CO2ERFBuilder(ComponentBuilder):
 
         ERF = (ERF_2xCO2 / ln(2)) * ln(1 + (C - C0) / C0)
 
-    where ERF_2xCO2 is the forcing for a CO2 doubling, C is the current
-    concentration, and C0 is the pre-industrial concentration.
+    where ERF_2xCO2 is the 2xCO2 effective radiative forcing, C is the
+    current concentration, and C0 is the pre-industrial concentration.
 
     **Parameter keys**
 
     - `erf_2xco2` (`float`): ERF due to a doubling of atmospheric CO2 concentrations
       (W/m^2). Typical value: 3.7 W/m^2.
-    - `conc_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm). Typical
+    - `co2_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm). Typical
       value: 278 ppm.
 
     Inputs, outputs and states are listed on the
@@ -84,7 +84,7 @@ class CO2ERFBuilder(ComponentBuilder):
     >>> builder = CO2ERFBuilder.from_parameters(
     ...     {
     ...         "erf_2xco2": 3.7,
-    ...         "conc_pi": 278.0,
+    ...         "co2_pi": 278.0,
     ...     }
     ... )
     >>> component = builder.build()
@@ -93,7 +93,7 @@ class CO2ERFBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: dict[str, float]) -> CO2ERFBuilder:
         """Create a builder from a parameter dictionary."""
-    def build(self) -> Component:
+    def build(self) -> RustComponent:
         """Build the CO2 ERF component."""
 
 @final
@@ -104,7 +104,7 @@ class FourBoxOceanHeatUptakeBuilder(ComponentBuilder):
     and produces regional ocean heat uptake values for a four-box grid
     (Northern Ocean, Northern Land, Southern Ocean, Southern Land).
 
-    The component demonstrates disaggregation from scalar to grid resolution.
+    The component demonstrates disaggregation from the scalar grid to the four-box grid.
     Regional uptake is calculated as: regional = global_ERF * ratio
 
     **Parameter keys**
@@ -139,5 +139,5 @@ class FourBoxOceanHeatUptakeBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: dict[str, float]) -> FourBoxOceanHeatUptakeBuilder:
         """Create a builder from a parameter dictionary."""
-    def build(self) -> Component:
+    def build(self) -> RustComponent:
         """Build the four-box ocean heat uptake component."""

@@ -50,8 +50,8 @@ impl PyUniform {
     /// -------
     /// float
     ///     ln(p(x))
-    fn ln_pdf(&self, x: f64) -> f64 {
-        Distribution::ln_pdf(&self.0, x)
+    fn log_pdf(&self, x: f64) -> f64 {
+        Distribution::log_pdf(&self.0, x)
     }
 
     /// Get the support bounds [min, max] of the distribution.
@@ -129,8 +129,8 @@ impl PyNormal {
     /// -------
     /// float
     ///     ln(p(x))
-    fn ln_pdf(&self, x: f64) -> f64 {
-        Distribution::ln_pdf(&self.0, x)
+    fn log_pdf(&self, x: f64) -> f64 {
+        Distribution::log_pdf(&self.0, x)
     }
 
     /// Get the support bounds [min, max] of the distribution (unbounded for Normal).
@@ -175,7 +175,7 @@ impl PyLogNormal {
     ///
     /// Can be parameterised in two ways:
     /// 1. Using underlying normal parameters: LogNormal(mu=..., sigma=...)
-    /// 2. Using mean and std of the log-normal: LogNormal(mean=..., std=...)
+    /// 2. Using mean and standard deviation of the log-normal: LogNormal(mean=..., std_dev=...)
     ///
     /// Parameters
     /// ----------
@@ -185,7 +185,7 @@ impl PyLogNormal {
     ///     Standard deviation of the underlying normal distribution (must be positive)
     /// mean : float, optional
     ///     Mean of the log-normal distribution (must be positive)
-    /// std : float, optional
+    /// std_dev : float, optional
     ///     Standard deviation of the log-normal distribution (must be positive)
     ///
     /// Raises
@@ -193,22 +193,22 @@ impl PyLogNormal {
     /// ValueError
     ///     If parameters are invalid or wrong combination provided
     #[new]
-    #[pyo3(signature = (*, mu=None, sigma=None, mean=None, std=None))]
+    #[pyo3(signature = (*, mu=None, sigma=None, mean=None, std_dev=None))]
     fn new(
         mu: Option<f64>,
         sigma: Option<f64>,
         mean: Option<f64>,
-        std: Option<f64>,
+        std_dev: Option<f64>,
     ) -> PyResult<Self> {
-        match (mu, sigma, mean, std) {
+        match (mu, sigma, mean, std_dev) {
             (Some(mu), Some(sigma), None, None) => LogNormal::new(mu, sigma)
                 .map(PyLogNormal)
                 .map_err(|e| PyValueError::new_err(e.to_string())),
-            (None, None, Some(mean), Some(std)) => LogNormal::from_mean_std(mean, std)
+            (None, None, Some(mean), Some(std_dev)) => LogNormal::from_mean_std_dev(mean, std_dev)
                 .map(PyLogNormal)
                 .map_err(|e| PyValueError::new_err(e.to_string())),
             _ => Err(PyValueError::new_err(
-                "Must provide either (mu, sigma) or (mean, std), not both or neither",
+                "Must provide either (mu, sigma) or (mean, std_dev), not both or neither",
             )),
         }
     }
@@ -234,8 +234,8 @@ impl PyLogNormal {
     /// -------
     /// float
     ///     ln(p(x))
-    fn ln_pdf(&self, x: f64) -> f64 {
-        Distribution::ln_pdf(&self.0, x)
+    fn log_pdf(&self, x: f64) -> f64 {
+        Distribution::log_pdf(&self.0, x)
     }
 
     /// Get the support bounds [min, max] of the distribution.
@@ -322,8 +322,8 @@ impl PyBound {
     /// -------
     /// float
     ///     ln(p(x))
-    fn ln_pdf(&self, x: f64) -> f64 {
-        Distribution::ln_pdf(&self.0, x)
+    fn log_pdf(&self, x: f64) -> f64 {
+        Distribution::log_pdf(&self.0, x)
     }
 
     /// Get the support bounds [min, max] of the distribution.

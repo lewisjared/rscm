@@ -1,6 +1,6 @@
-//! Null component for graph initialization.
+//! Null component for graph initialisation.
 
-use crate::component::{Component, InputState, OutputState, RequirementDefinition};
+use crate::component::{Component, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
 use crate::timeseries::Time;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ pub(crate) struct NullComponent {}
 
 #[typetag::serde]
 impl Component for NullComponent {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![]
     }
 

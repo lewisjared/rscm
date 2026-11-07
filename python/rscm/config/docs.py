@@ -34,11 +34,11 @@ def generate_parameter_docs(cls: type) -> str:
     >>> from dataclasses import dataclass
     >>> from rscm.config.parameters import parameter
     >>> @dataclass
-    ... class TestParams:
+    ... class TestParameters:
     ...     '''Test parameter class.'''
     ...
     ...     value: float = parameter(default=1.0, unit="K", description="A value")
-    >>> md = generate_parameter_docs(TestParams)
+    >>> md = generate_parameter_docs(TestParameters)
     >>> "value" in md
     True
     >>> "K" in md
@@ -105,7 +105,7 @@ def export_parameter_json(cls: type) -> dict[str, Any]:
     Returns
     -------
     dict
-        JSON-serializable dict with structure:
+        JSON-serialisable dict with structure:
         {
             "class": str,
             "description": str,
@@ -127,13 +127,13 @@ def export_parameter_json(cls: type) -> dict[str, Any]:
     >>> from dataclasses import dataclass
     >>> from rscm.config.parameters import parameter
     >>> @dataclass
-    ... class TestParams:
+    ... class TestParameters:
     ...     '''Test parameter class.'''
     ...
     ...     value: float = parameter(default=1.0, unit="K", description="A value")
-    >>> data = export_parameter_json(TestParams)
+    >>> data = export_parameter_json(TestParameters)
     >>> data["class"]
-    'TestParams'
+    'TestParameters'
     >>> len(data["parameters"])
     1
     """

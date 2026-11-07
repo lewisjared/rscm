@@ -1,12 +1,11 @@
 //! `Model::coupling` reports the runtime's execution plan.
 
-use crate::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType,
-};
+use crate::component::{Component, InputState, OutputState, VariableDefinition, VariableRole};
 use crate::errors::RSCMResult;
-use crate::model::{CouplingEdge, Model, ModelBuilder, VarSource};
+use crate::model::{CouplingEdge, Model, ModelBuilder};
 use crate::state::StateValue;
 use crate::timeseries::{Time, TimeAxis};
+use crate::VariableSource;
 use numpy::ndarray::Array;
 use petgraph::visit::Bfs;
 use serde::{Deserialize, Serialize};
@@ -20,10 +19,10 @@ macro_rules! link {
 
         #[typetag::serde]
         impl Component for $name {
-            fn definitions(&self) -> Vec<RequirementDefinition> {
+            fn definitions(&self) -> Vec<VariableDefinition> {
                 vec![
-                    $(RequirementDefinition::new($input, "1", RequirementType::Input),)*
-                    RequirementDefinition::new($output, "1", RequirementType::Output),
+                    $(VariableDefinition::new($input, "1", VariableRole::Input),)*
+                    VariableDefinition::new($output, "1", VariableRole::Output),
                 ]
             }
 
@@ -112,7 +111,7 @@ fn edges_flag_lags() {
     );
     assert_eq!(
         coupling.components[0].inputs[0].source,
-        Some(VarSource::Lagged)
+        Some(VariableSource::Lagged)
     );
     assert!(coupling
         .to_string()

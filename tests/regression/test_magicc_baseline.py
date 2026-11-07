@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from regression import magicc_baseline as baseline
+from rscm.names import SURFACE_AIR_TEMPERATURE_CHANGE
 
 
 @pytest.fixture
@@ -99,8 +100,8 @@ def test_real_report_and_residual_wiring(monkeypatch):
         np.testing.assert_array_equal(kwargs["other_forcing"], expected)
         assert set(concentrations) == set(baseline.GASES)
         assert (
-            kwargs["forcing_parameters"]["delq2xco2"]
-            == kwargs["climate_parameters"]["rf_2xco2"]
+            kwargs["forcing_parameters"]["erf_2xco2"]
+            == kwargs["climate_parameters"]["erf_2xco2"]
         )
         return original(years, concentrations, **kwargs)
 
@@ -112,9 +113,9 @@ def test_real_report_and_residual_wiring(monkeypatch):
     assert table.comparison_year.min() == 1750
     assert table.comparison_year.max() == 2100
     assert metadata["scientific_parity"] == "not_evaluated"
-    assert metadata["effective_parameters"]["ClimateUDEB"]["n_layers"] == 50
+    assert metadata["effective_parameters"]["magicc.ClimateUDEB"]["n_layers"] == 50
     assert metadata["reference_provenance_unknown"]
-    assert "Surface Temperature" in summary
+    assert SURFACE_AIR_TEMPERATURE_CHANGE in summary
 
 
 def test_endpoints_remain_in_summary(monkeypatch):
@@ -122,12 +123,12 @@ def test_endpoints_remain_in_summary(monkeypatch):
 
     def perturb(*args, **kwargs):
         result = original(*args, **kwargs)
-        result.values["Surface Temperature"][[0, -1]] = [1000.0, 2000.0]
+        result.values[SURFACE_AIR_TEMPERATURE_CHANGE][[0, -1]] = [1000.0, 2000.0]
         return result
 
     monkeypatch.setattr(baseline, "run_magicc", perturb)
     table, _, summary = baseline.build_report()
-    temperature = table[table.variable == "Surface Temperature"]
+    temperature = table[table.variable == SURFACE_AIR_TEMPERATURE_CHANGE]
     assert temperature.iloc[0].absolute_error >= 999
     assert temperature.iloc[-1].absolute_error >= 1900
     assert "| 2100 |" in summary
@@ -145,7 +146,7 @@ def test_deterministic_bundle_and_collision(tmp_path):
         baseline.write_report(a)
 
 
-def test_failed_serialization_leaves_no_bundle(tmp_path, monkeypatch):
+def test_failed_serialisation_leaves_no_bundle(tmp_path, monkeypatch):
     def fail(*args, **kwargs):
         msg = "disk failure"
         raise OSError(msg)

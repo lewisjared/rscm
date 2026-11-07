@@ -6,17 +6,18 @@
 //!
 //! $$r = r_0 + r_u (C_{cum} - C_{air}) + r_T T + r_a C_{air}$$
 //!
-//! capped at `iirf_max`, from the cumulative and airborne emissions at the start of the step
+//! capped at `maximum_iirf`, from the cumulative and airborne emissions at the start of the step
 //! and the surface temperature (Leach et al. 2021).
 //! A gas can instead read its lifetime scaling from another component, as CH4 does with
-//! [`crate::FairCH4Lifetime`].
+//! [`crate::CH4Lifetime`].
 //!
 //! Emissions-driven gases update the boxes with the exact solution for constant emissions over
 //! the step. Concentration-driven gases invert that solution to give the emissions.
 
 use crate::constants::{get, surface_temperature, temperature_unit};
+use crate::driver::Driver;
 use rscm_core::component::{
-    Component, ComponentState, InputState, OutputState, RequirementDefinition, TimeseriesType,
+    Component, ComponentState, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
@@ -24,31 +25,22 @@ use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
-/// How a gas is driven.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum GasMode {
-    /// Emissions in, concentration out.
-    Emissions,
-    /// Concentration in, emissions out.
-    Concentration,
-}
-
 /// One greenhouse gas.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GasSpecies {
-    /// How the gas is driven.
-    pub mode: GasMode,
-    /// Emissions variables, summed. Inputs in emissions mode.
+    /// How the gas is driven: emissions in and concentration out, or concentration in and emissions out.
+    pub driver: Driver,
+    /// Emissions variables, summed. Inputs when emissions-driven.
     pub emissions: Vec<String>,
-    /// Emissions output in concentration mode.
+    /// Inverse emissions output when concentration-driven.
     #[serde(default)]
     pub inverse_emissions: Option<String>,
     /// Emissions unit.
     pub emissions_unit: String,
     /// Unit of airborne and cumulative emissions.
     pub amount_unit: String,
-    /// Concentration variable: an output in emissions mode and an input in concentration mode.
+    /// Concentration variable: an output when emissions-driven and an input when concentration-driven.
     pub concentration: String,
     /// Concentration unit.
     pub concentration_unit: String,
@@ -85,20 +77,22 @@ pub struct GasSpecies {
     pub lifetime_scaling: Option<String>,
 }
 
-/// Parameters of [`FairGasCycle`].
+/// Parameters of [`GasCycle`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairGasCycleParameters {
+#[serde(deny_unknown_fields)]
+pub struct GasCycleParameters {
     /// The gases.
     pub species: Vec<GasSpecies>,
     /// Upper limit on the integrated impulse response (yr).
-    #[serde(default = "default_iirf_max")]
-    pub iirf_max: FloatValue,
+    /// FaIR: `iirf_max`
+    #[serde(default = "default_maximum_iirf")]
+    pub maximum_iirf: FloatValue,
     /// Surface temperature input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
 }
 
-fn default_iirf_max() -> FloatValue {
+fn default_maximum_iirf() -> FloatValue {
     100.0
 }
 
@@ -111,20 +105,20 @@ pub struct GasState {
     pub airborne: FloatValue,
     /// Cumulative emissions.
     pub cumulative: FloatValue,
-    /// Sum of the emission rates so far, which FaIR scales by the timestep for the cumulative
+    /// Sum of the emission rates so far, which FaIR scales by the step for the cumulative
     /// emissions of emissions-driven gases.
     pub emissions_sum: FloatValue,
 }
 
 /// State of every gas, in species order.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct FairGasCycleState {
+pub struct GasCycleState {
     /// One entry per gas.
     pub gases: Vec<GasState>,
 }
 
-#[typetag::serde]
-impl ComponentState for FairGasCycleState {
+#[typetag::serde(name = "fair.GasCycleState")]
+impl ComponentState for GasCycleState {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -137,16 +131,16 @@ impl ComponentState for FairGasCycleState {
 /// FaIR's greenhouse gas cycle for any set of gases.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "Unchecked")]
-pub struct FairGasCycle {
-    parameters: FairGasCycleParameters,
+pub struct GasCycle {
+    parameters: GasCycleParameters,
 }
 
 #[derive(Deserialize)]
 struct Unchecked {
-    parameters: FairGasCycleParameters,
+    parameters: GasCycleParameters,
 }
 
-impl TryFrom<Unchecked> for FairGasCycle {
+impl TryFrom<Unchecked> for GasCycle {
     type Error = RSCMError;
 
     fn try_from(unchecked: Unchecked) -> RSCMResult<Self> {
@@ -154,9 +148,9 @@ impl TryFrom<Unchecked> for FairGasCycle {
     }
 }
 
-impl FairGasCycle {
+impl GasCycle {
     /// Create the component, checking each gas.
-    pub fn from_parameters(parameters: FairGasCycleParameters) -> RSCMResult<Self> {
+    pub fn from_parameters(parameters: GasCycleParameters) -> RSCMResult<Self> {
         for species in &parameters.species {
             let n = species.partition_fraction.len();
             if n == 0 || species.unperturbed_lifetime.len() != n {
@@ -165,18 +159,24 @@ impl FairGasCycle {
                     species.concentration
                 )));
             }
-            match species.mode {
-                GasMode::Emissions if species.emissions.is_empty() => {
+            match species.driver {
+                Driver::Emissions if species.emissions.is_empty() => {
                     return Err(RSCMError::Error(format!(
                         "{}: an emissions-driven gas needs an emissions input",
                         species.concentration
                     )))
                 }
-                GasMode::Concentration if species.inverse_emissions.is_none() => {
+                Driver::Concentration if species.inverse_emissions.is_none() => {
                     return Err(RSCMError::Error(format!(
                         "{}: a concentration-driven gas needs inverse_emissions",
                         species.concentration
                     )))
+                }
+                Driver::CumulativeEmissions => {
+                    return Err(RSCMError::Error(format!(
+                    "{}: a gas is driven by emissions or concentration, not cumulative emissions",
+                    species.concentration
+                )))
                 }
                 _ => {}
             }
@@ -185,12 +185,12 @@ impl FairGasCycle {
     }
 
     /// Parameters of this component.
-    pub fn parameters(&self) -> &FairGasCycleParameters {
+    pub fn parameters(&self) -> &GasCycleParameters {
         &self.parameters
     }
 
-    fn initial_state(&self) -> FairGasCycleState {
-        FairGasCycleState {
+    fn initial_state(&self) -> GasCycleState {
+        GasCycleState {
             gases: self
                 .parameters
                 .species
@@ -214,7 +214,7 @@ impl FairGasCycle {
             + species.iirf_uptake * (state.cumulative - state.airborne)
             + species.iirf_temperature * temperature
             + species.iirf_airborne * state.airborne;
-        let max = self.parameters.iirf_max;
+        let max = self.parameters.maximum_iirf;
         // FaIR's cap, which gives 0 at exactly the maximum.
         let iirf = if iirf > max { max } else { 0.0 } + iirf * if iirf < max { 1.0 } else { 0.0 };
         let alpha = species.g0 * (iirf / species.g1).exp();
@@ -288,7 +288,7 @@ impl FairGasCycle {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-        state: &mut FairGasCycleState,
+        state: &mut GasCycleState,
     ) -> RSCMResult<OutputState> {
         let dt = t_next - t_current;
         let temperature = get(input_state, &self.parameters.surface_temperature);
@@ -298,8 +298,8 @@ impl FairGasCycle {
                 Some(name) => get(input_state, name),
                 None => self.alpha(species, gas, temperature),
             };
-            match species.mode {
-                GasMode::Emissions => {
+            match species.driver {
+                Driver::Emissions => {
                     let emissions = species
                         .emissions
                         .iter()
@@ -312,7 +312,7 @@ impl FairGasCycle {
                         StateValue::Scalar(concentration),
                     );
                 }
-                GasMode::Concentration => {
+                Driver::Concentration => {
                     let concentration = get(input_state, &species.concentration);
                     let emissions =
                         Self::step_concentration(species, gas, concentration, alpha, dt);
@@ -320,6 +320,7 @@ impl FairGasCycle {
                         output.insert(name.clone(), StateValue::Scalar(emissions));
                     }
                 }
+                Driver::CumulativeEmissions => unreachable!("rejected by from_parameters"),
             }
             if let Some(name) = &species.airborne_emissions {
                 output.insert(name.clone(), StateValue::Scalar(gas.airborne));
@@ -332,47 +333,45 @@ impl FairGasCycle {
     }
 }
 
-#[typetag::serde]
-impl Component for FairGasCycle {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        let mut definitions = vec![RequirementDefinition::scalar_input(
+#[typetag::serde(name = "fair.GasCycle")]
+impl Component for GasCycle {
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        let mut definitions = vec![VariableDefinition::scalar_input(
             &self.parameters.surface_temperature,
             &temperature_unit(),
         )];
         for s in &self.parameters.species {
-            match s.mode {
-                GasMode::Emissions => {
+            match s.driver {
+                Driver::Emissions => {
                     for name in &s.emissions {
-                        definitions
-                            .push(RequirementDefinition::scalar_input(name, &s.emissions_unit));
+                        definitions.push(VariableDefinition::scalar_input(name, &s.emissions_unit));
                     }
-                    definitions.push(RequirementDefinition::scalar_output(
+                    definitions.push(VariableDefinition::scalar_output(
                         &s.concentration,
                         &s.concentration_unit,
                     ));
                 }
-                GasMode::Concentration => {
-                    definitions.push(RequirementDefinition::scalar_input(
+                Driver::Concentration => {
+                    definitions.push(VariableDefinition::scalar_input(
                         &s.concentration,
                         &s.concentration_unit,
                     ));
                     if let Some(name) = &s.inverse_emissions {
-                        definitions.push(RequirementDefinition::scalar_output(
-                            name,
-                            &s.emissions_unit,
-                        ));
+                        definitions
+                            .push(VariableDefinition::scalar_output(name, &s.emissions_unit));
                     }
                 }
+                Driver::CumulativeEmissions => unreachable!("rejected by from_parameters"),
             }
             for name in [&s.airborne_emissions, &s.cumulative_emissions]
                 .into_iter()
                 .flatten()
             {
-                definitions.push(RequirementDefinition::scalar_output(name, &s.amount_unit));
+                definitions.push(VariableDefinition::scalar_output(name, &s.amount_unit));
             }
             if let Some(name) = &s.lifetime_scaling {
                 definitions.push(
-                    RequirementDefinition::scalar_input(name, "1")
+                    VariableDefinition::scalar_input(name, "1")
                         .with_timeseries_type(TimeseriesType::Average),
                 );
             }
@@ -405,8 +404,8 @@ impl Component for FairGasCycle {
     ) -> RSCMResult<OutputState> {
         let state = internal_state
             .as_any_mut()
-            .downcast_mut::<FairGasCycleState>()
-            .ok_or_else(|| RSCMError::Error("Internal state is not FairGasCycleState".into()))?;
+            .downcast_mut::<GasCycleState>()
+            .ok_or_else(|| RSCMError::Error("Internal state is not GasCycleState".into()))?;
         self.solve_impl(t_current, t_next, input_state, state)
     }
 }
@@ -415,15 +414,16 @@ impl Component for FairGasCycle {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use rscm_core::names::{ATMOSPHERIC_CONCENTRATIONS_CH4, EMISSIONS_CH4, INVERSE_EMISSIONS_CH4};
 
     fn ch4() -> GasSpecies {
         GasSpecies {
-            mode: GasMode::Emissions,
-            emissions: vec!["Emissions|CH4".into()],
-            inverse_emissions: Some("Emissions|CH4".into()),
+            driver: Driver::Emissions,
+            emissions: vec![EMISSIONS_CH4.into()],
+            inverse_emissions: Some(INVERSE_EMISSIONS_CH4.into()),
             emissions_unit: "Mt CH4/yr".into(),
             amount_unit: "Mt CH4".into(),
-            concentration: "Atmospheric Concentration|CH4".into(),
+            concentration: ATMOSPHERIC_CONCENTRATIONS_CH4.into(),
             concentration_unit: "ppb".into(),
             airborne_emissions: None,
             cumulative_emissions: None,
@@ -451,29 +451,40 @@ mod tests {
         };
         let mut inverse = forward.clone();
         for emissions in [100.0, 250.0, 400.0] {
-            let c = FairGasCycle::step_emissions(&species, &mut forward, emissions, 1.2, 1.0);
-            let e = FairGasCycle::step_concentration(&species, &mut inverse, c, 1.2, 1.0);
+            let c = GasCycle::step_emissions(&species, &mut forward, emissions, 1.2, 1.0);
+            let e = GasCycle::step_concentration(&species, &mut inverse, c, 1.2, 1.0);
             assert_relative_eq!(e, emissions, max_relative = 1e-10);
         }
     }
 
     #[test]
     fn deserialising_checks_the_parameters() {
-        let mut parameters = FairGasCycleParameters {
+        let mut parameters = GasCycleParameters {
             species: vec![ch4()],
-            iirf_max: default_iirf_max(),
+            maximum_iirf: default_maximum_iirf(),
             surface_temperature: surface_temperature(),
         };
         let valid =
-            serde_json::to_string(&FairGasCycle::from_parameters(parameters.clone()).unwrap())
-                .unwrap();
-        assert!(serde_json::from_str::<FairGasCycle>(&valid).is_ok());
+            serde_json::to_string(&GasCycle::from_parameters(parameters.clone()).unwrap()).unwrap();
+        assert!(serde_json::from_str::<GasCycle>(&valid).is_ok());
         parameters.species[0].unperturbed_lifetime.pop();
         let json = format!(
             r#"{{"parameters": {}}}"#,
             serde_json::to_string(&parameters).unwrap()
         );
-        assert!(serde_json::from_str::<FairGasCycle>(&json).is_err());
+        assert!(serde_json::from_str::<GasCycle>(&json).is_err());
+    }
+
+    #[test]
+    fn rejects_cumulative_emissions() {
+        let mut species = ch4();
+        species.driver = Driver::CumulativeEmissions;
+        let parameters = GasCycleParameters {
+            species: vec![species],
+            maximum_iirf: default_maximum_iirf(),
+            surface_temperature: surface_temperature(),
+        };
+        assert!(GasCycle::from_parameters(parameters).is_err());
     }
 
     #[test]
@@ -483,7 +494,7 @@ mod tests {
             boxes: vec![100.0, 0.0, 0.0, 0.0],
             ..GasState::default()
         };
-        FairGasCycle::step_emissions(&species, &mut state, 0.0, 1.0, 1.0);
+        GasCycle::step_emissions(&species, &mut state, 0.0, 1.0, 1.0);
         assert_relative_eq!(state.boxes[0], 100.0 * (-1.0 / 8.25_f64).exp());
     }
 }

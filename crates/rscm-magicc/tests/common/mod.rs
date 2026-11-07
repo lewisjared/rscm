@@ -10,9 +10,9 @@ use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStra
 use rscm_core::spatial::FourBoxGrid;
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
-use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
 use rscm_core::utils::linear_algebra::invert_4x4;
-use rscm_magicc::climate::lamcalc::{build_coupling_matrix, compute_qfrac, LamcalcParams};
+use rscm_magicc::climate::lamcalc::{build_coupling_matrix, compute_qfrac, LAMCALCParameters};
 use rscm_magicc::climate::ClimateUDEB;
 use rscm_magicc::parameters::ClimateUDEBParameters;
 use std::sync::Arc;
@@ -25,39 +25,37 @@ pub const RLO_TOLERANCE: FloatValue = 0.001;
 // ---------------------------------------------------------------------------
 
 /// Create default LAMCALC parameters matching MAGICC defaults.
-pub fn default_lamcalc_params() -> LamcalcParams {
+pub fn default_lamcalc_params() -> LAMCALCParameters {
     let nh_land = 0.42;
     let sh_land = 0.21;
-    LamcalcParams {
-        q_2xco2: 3.71,
-        k_lo: 1.44,
-        k_ns: 0.31,
+    LAMCALCParameters {
+        erf_2xco2: 3.71,
+        land_ocean_heat_exchange: 1.44,
+        north_south_heat_exchange: 0.31,
         ecs: 3.0,
-        rlo: 1.317,
+        land_ocean_warming_ratio: 1.317,
         amplify_ocean_to_land: 1.02,
-        fgno: 0.5 - nh_land / 2.0,
-        fgnl: nh_land / 2.0,
-        fgso: 0.5 - sh_land / 2.0,
-        fgsl: sh_land / 2.0,
-        rf_regions_co2: [1.0; 4],
+        grid: FourBoxGrid::with_weights([
+            0.5 - nh_land / 2.0,
+            nh_land / 2.0,
+            0.5 - sh_land / 2.0,
+            sh_land / 2.0,
+        ]),
+        co2_regional_pattern: [1.0; 4],
     }
 }
 
-/// Build LAMCALC params from ClimateUDEB parameters for consistency.
-pub fn lamcalc_params_from_udeb(params: &ClimateUDEBParameters) -> LamcalcParams {
-    let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
-    LamcalcParams {
-        q_2xco2: params.rf_2xco2,
-        k_lo: params.k_lo,
-        k_ns: params.k_ns,
+/// Build LAMCALC parameters from ClimateUDEB parameters for consistency.
+pub fn lamcalc_params_from_udeb(params: &ClimateUDEBParameters) -> LAMCALCParameters {
+    LAMCALCParameters {
+        erf_2xco2: params.erf_2xco2,
+        land_ocean_heat_exchange: params.land_ocean_heat_exchange,
+        north_south_heat_exchange: params.north_south_heat_exchange,
         ecs: params.ecs,
-        rlo: params.rlo,
+        land_ocean_warming_ratio: params.land_ocean_warming_ratio,
         amplify_ocean_to_land: params.amplify_ocean_to_land,
-        fgno,
-        fgnl,
-        fgso,
-        fgsl,
-        rf_regions_co2: params.rf_regions_co2,
+        grid: params.grid(),
+        co2_regional_pattern: params.co2_regional_pattern,
     }
 }
 
@@ -72,8 +70,8 @@ pub fn lamcalc_params_from_udeb(params: &ClimateUDEBParameters) -> LamcalcParams
 pub fn params_with_fixed_ecs(ecs: FloatValue) -> ClimateUDEBParameters {
     ClimateUDEBParameters {
         ecs,
-        feedback_cumt_sensitivity: 0.0,
-        feedback_q_sensitivity: 0.0,
+        feedback_cumulative_temperature_sensitivity: 0.0,
+        feedback_forcing_sensitivity: 0.0,
         ..Default::default()
     }
 }
@@ -105,10 +103,10 @@ pub struct EquilibriumTemperatures {
 /// ocean, land, and global means.
 ///
 /// Solves $M \cdot T = Q \cdot f \cdot qfrac$ where $M$ is the coupling matrix,
-/// $Q$ is the radiative forcing for CO2 doubling, $f$ is the area fraction
+/// $Q$ is the 2xCO2 effective radiative forcing, $f$ is the area fraction
 /// vector, and $qfrac$ accounts for regional CO2 forcing patterns.
 pub fn compute_equilibrium_temperatures(
-    params: &LamcalcParams,
+    params: &LAMCALCParameters,
     lam_o: FloatValue,
     lam_l: FloatValue,
 ) -> EquilibriumTemperatures {
@@ -120,10 +118,11 @@ pub fn compute_equilibrium_temperatures(
         )
     });
 
-    let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
-    let q = params.q_2xco2;
+    let area = *params.grid.weights();
+    let [nh_ocean, nh_land, sh_ocean, sh_land] = area;
+    let q = params.erf_2xco2;
 
-    let qfrac = compute_qfrac(&params.rf_regions_co2, &area);
+    let qfrac = compute_qfrac(&params.co2_regional_pattern, &area);
 
     let mut box_temps = [0.0_f64; 4];
     for row in 0..4 {
@@ -134,10 +133,8 @@ pub fn compute_equilibrium_temperatures(
         box_temps[row] = q * sum;
     }
 
-    let ocean_mean =
-        (params.fgno * box_temps[0] + params.fgso * box_temps[2]) / (params.fgno + params.fgso);
-    let land_mean =
-        (params.fgnl * box_temps[1] + params.fgsl * box_temps[3]) / (params.fgnl + params.fgsl);
+    let ocean_mean = (nh_ocean * box_temps[0] + sh_ocean * box_temps[2]) / (nh_ocean + sh_ocean);
+    let land_mean = (nh_land * box_temps[1] + sh_land * box_temps[3]) / (nh_land + sh_land);
     let global_mean = area[0] * box_temps[0]
         + area[1] * box_temps[1]
         + area[2] * box_temps[2]
@@ -158,7 +155,7 @@ pub fn compute_equilibrium_temperatures(
 // ---------------------------------------------------------------------------
 
 /// Build the [`InputState`] needed by `ClimateUDEB::solve_with_state` for a
-/// single timestep.
+/// single step.
 ///
 /// Provides a scalar ERF timeseries and a four-box surface temperature state.
 /// Both timeseries span `[t_current, t_next]` with constant values.
@@ -178,10 +175,9 @@ pub fn build_udeb_input_state(
     let erf_item = TimeseriesItem {
         data: TimeseriesData::Scalar(erf_ts),
         name: "Effective Radiative Forcing".to_string(),
-        variable_type: VariableType::Exogenous,
     };
 
-    // FourBox surface temperature state
+    // Four-box surface temperature state
     let surf_grid = FourBoxGrid::magicc_standard();
     let mut surf_values = Array2::zeros((2, 4));
     for col in 0..4 {
@@ -197,8 +193,7 @@ pub fn build_udeb_input_state(
     );
     let surf_item = TimeseriesItem {
         data: TimeseriesData::FourBox(surf_ts),
-        name: "Surface Temperature".to_string(),
-        variable_type: VariableType::Endogenous,
+        name: "Surface Air Temperature Change".to_string(),
     };
 
     (erf_item, surf_item)
@@ -235,7 +230,7 @@ pub fn run_udeb_simulation(
     let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
     let mut records = Vec::with_capacity(n_years);
 
-    let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+    let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
     for year in 0..n_years {
         let t_current = 2000.0 + year as FloatValue;
@@ -250,16 +245,19 @@ pub fn run_udeb_simulation(
                 panic!("solve_with_state failed at year {}: {:?}", year, e);
             });
 
-        if let Some(StateValue::FourBox(temps)) = output.get("Surface Temperature") {
+        if let Some(StateValue::FourBox(temps)) = output.get("Surface Air Temperature Change") {
             prev_temps = *temps;
         } else {
-            panic!("Year {}: Surface Temperature not found in output", year);
+            panic!(
+                "Year {}: Surface Air Temperature Change not found in output",
+                year
+            );
         }
 
-        let global_sat = prev_temps.0[0] * fgno
-            + prev_temps.0[1] * fgnl
-            + prev_temps.0[2] * fgso
-            + prev_temps.0[3] * fgsl;
+        let global_sat = prev_temps.0[0] * nh_ocean
+            + prev_temps.0[1] * nh_land
+            + prev_temps.0[2] * sh_ocean
+            + prev_temps.0[3] * sh_land;
 
         let sst = match output.get("Sea Surface Temperature") {
             Some(StateValue::Scalar(v)) => *v,

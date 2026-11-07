@@ -1,7 +1,7 @@
 //! n-layer energy balance model (FaIR step 16 to 18)
 //!
 //! The state $x = (F_s, T_1, \ldots, T_n)$ holds the forcing seen by the climate and the
-//! temperature of each layer, surface first. Over one timestep of length $\Delta t$,
+//! temperature of each layer, surface first. Over one step of length $\Delta t$,
 //!
 //! $$x' = e^{A} x + A^{-1} (e^{A} - I)\, b\, F$$
 //!
@@ -19,23 +19,20 @@ use crate::constants::{
     total_forcing, EARTH_RADIUS, SECONDS_PER_YEAR,
 };
 use nalgebra::{DMatrix, DVector};
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::{RSCMError, RSCMResult};
+use rscm_core::names::{
+    ocean_layer_temperature, NET_ENERGY_IMBALANCE, OCEAN_HEAT_CONTENT, STOCHASTIC_FORCING,
+};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
-/// Forcing seen by the climate, the first element of the state.
-pub const STOCHASTIC_FORCING: &str = "Stochastic Forcing";
-/// Top of atmosphere energy imbalance.
-pub const ENERGY_IMBALANCE: &str = "Net Energy Imbalance";
-/// Ocean heat content change since the start of the run.
-pub const OCEAN_HEAT_CONTENT_CHANGE: &str = "Ocean Heat Content Change";
-
-/// Parameters of [`FairEnergyBalance`].
+/// Parameters of [`EnergyBalance`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairEnergyBalanceParameters {
+#[serde(deny_unknown_fields)]
+pub struct EnergyBalanceParameters {
     /// Heat capacity of each layer, surface first (W yr m-2 K-1).
     pub ocean_heat_capacity: Vec<FloatValue>,
     /// Heat transfer coefficient of each layer, surface first (W m-2 K-1).
@@ -61,7 +58,7 @@ fn default_gamma() -> FloatValue {
     2.0
 }
 
-/// Discretised matrices for one timestep length.
+/// Discretised matrices for one step length.
 #[derive(Debug, Clone)]
 struct Discretised {
     dt: FloatValue,
@@ -72,18 +69,18 @@ struct Discretised {
 /// FaIR's n-layer energy balance model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "Unchecked")]
-pub struct FairEnergyBalance {
-    parameters: FairEnergyBalanceParameters,
+pub struct EnergyBalance {
+    parameters: EnergyBalanceParameters,
     #[serde(skip)]
     discretised: OnceLock<Discretised>,
 }
 
 #[derive(Deserialize)]
 struct Unchecked {
-    parameters: FairEnergyBalanceParameters,
+    parameters: EnergyBalanceParameters,
 }
 
-impl TryFrom<Unchecked> for FairEnergyBalance {
+impl TryFrom<Unchecked> for EnergyBalance {
     type Error = RSCMError;
 
     fn try_from(unchecked: Unchecked) -> RSCMResult<Self> {
@@ -91,13 +88,13 @@ impl TryFrom<Unchecked> for FairEnergyBalance {
     }
 }
 
-impl FairEnergyBalance {
+impl EnergyBalance {
     /// Create the component, checking the layer parameters.
-    pub fn from_parameters(parameters: FairEnergyBalanceParameters) -> RSCMResult<Self> {
+    pub fn from_parameters(parameters: EnergyBalanceParameters) -> RSCMResult<Self> {
         let n = parameters.ocean_heat_capacity.len();
         if n < 2 {
             return Err(RSCMError::Error(
-                "FairEnergyBalance needs at least two layers".into(),
+                "EnergyBalance needs at least two layers".into(),
             ));
         }
         if parameters.ocean_heat_transfer.len() != n {
@@ -109,7 +106,7 @@ impl FairEnergyBalance {
             parameters,
             discretised: OnceLock::new(),
         };
-        // The timestep scales whole rows, so it cannot make the matrix singular.
+        // The step scales whole rows, so it cannot make the matrix singular.
         if !component.eb_matrix(1.0).lu().is_invertible() {
             return Err(RSCMError::Error(
                 "The energy balance matrix is singular: check the heat transfers and gamma".into(),
@@ -119,7 +116,7 @@ impl FairEnergyBalance {
     }
 
     /// Parameters of this component.
-    pub fn parameters(&self) -> &FairEnergyBalanceParameters {
+    pub fn parameters(&self) -> &EnergyBalanceParameters {
         &self.parameters
     }
 
@@ -133,11 +130,11 @@ impl FairEnergyBalance {
         if layer == 0 {
             self.parameters.surface_temperature.clone()
         } else {
-            format!("Ocean Temperature|Layer {}", layer + 1)
+            ocean_layer_temperature(layer + 1)
         }
     }
 
-    /// Energy balance matrix with the forcing row and column, for timestep `dt`.
+    /// Energy balance matrix with the forcing row and column, for step `dt`.
     pub fn eb_matrix(&self, dt: FloatValue) -> DMatrix<FloatValue> {
         let p = &self.parameters;
         let n = self.n_layers();
@@ -179,7 +176,7 @@ impl FairEnergyBalance {
         }
     }
 
-    /// Advance the state one timestep under efficacy-adjusted forcing `forcing`.
+    /// Advance the state one step under efficacy-adjusted forcing `forcing`.
     pub fn step(
         &self,
         state: &DVector<FloatValue>,
@@ -206,27 +203,24 @@ impl FairEnergyBalance {
     }
 }
 
-#[typetag::serde]
-impl Component for FairEnergyBalance {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+#[typetag::serde(name = "fair.EnergyBalance")]
+impl Component for EnergyBalance {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         let mut definitions = vec![
-            RequirementDefinition::scalar_input(&p.forcing, &forcing_unit()),
-            RequirementDefinition::scalar_input(&p.efficacy_adjusted_forcing, &forcing_unit()),
-            RequirementDefinition::scalar_state(STOCHASTIC_FORCING, &forcing_unit()),
+            VariableDefinition::scalar_input(&p.forcing, &forcing_unit()),
+            VariableDefinition::scalar_input(&p.efficacy_adjusted_forcing, &forcing_unit()),
+            VariableDefinition::scalar_state(STOCHASTIC_FORCING, &forcing_unit()),
         ];
         for layer in 0..self.n_layers() {
-            definitions.push(RequirementDefinition::scalar_state(
+            definitions.push(VariableDefinition::scalar_state(
                 &self.layer_temperature(layer),
                 &temperature_unit(),
             ));
         }
-        definitions.push(RequirementDefinition::scalar_state(
-            OCEAN_HEAT_CONTENT_CHANGE,
-            "J",
-        ));
-        definitions.push(RequirementDefinition::scalar_output(
-            ENERGY_IMBALANCE,
+        definitions.push(VariableDefinition::scalar_state(OCEAN_HEAT_CONTENT, "J"));
+        definitions.push(VariableDefinition::scalar_output(
+            NET_ENERGY_IMBALANCE,
             &forcing_unit(),
         ));
         definitions
@@ -251,7 +245,7 @@ impl Component for FairEnergyBalance {
         let state = self.step(&state, get(&p.efficacy_adjusted_forcing), dt);
         let temperatures: Vec<FloatValue> = state.iter().skip(1).copied().collect();
         let imbalance = self.energy_imbalance(get(&p.forcing), &temperatures);
-        let heat = get(OCEAN_HEAT_CONTENT_CHANGE)
+        let heat = get(OCEAN_HEAT_CONTENT)
             + imbalance
                 * dt
                 * EARTH_RADIUS
@@ -265,11 +259,11 @@ impl Component for FairEnergyBalance {
         for (layer, t) in temperatures.iter().enumerate() {
             output.insert(self.layer_temperature(layer), StateValue::Scalar(*t));
         }
-        output.insert(ENERGY_IMBALANCE.to_string(), StateValue::Scalar(imbalance));
         output.insert(
-            OCEAN_HEAT_CONTENT_CHANGE.to_string(),
-            StateValue::Scalar(heat),
+            NET_ENERGY_IMBALANCE.to_string(),
+            StateValue::Scalar(imbalance),
         );
+        output.insert(OCEAN_HEAT_CONTENT.to_string(), StateValue::Scalar(heat));
         Ok(output)
     }
 }
@@ -279,8 +273,8 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
 
-    fn component() -> FairEnergyBalance {
-        FairEnergyBalance::from_parameters(FairEnergyBalanceParameters {
+    fn component() -> EnergyBalance {
+        EnergyBalance::from_parameters(EnergyBalanceParameters {
             ocean_heat_capacity: vec![8.0, 14.0, 100.0],
             ocean_heat_transfer: vec![1.1, 1.6, 0.9],
             deep_ocean_efficacy: 1.1,
@@ -297,17 +291,17 @@ mod tests {
         let mut p = component().parameters.clone();
         p.ocean_heat_capacity = vec![8.0];
         p.ocean_heat_transfer = vec![1.1];
-        assert!(FairEnergyBalance::from_parameters(p).is_err());
+        assert!(EnergyBalance::from_parameters(p).is_err());
     }
 
     #[test]
     fn rejects_a_singular_matrix() {
         let mut p = component().parameters.clone();
         p.ocean_heat_transfer[2] = 0.0;
-        assert!(FairEnergyBalance::from_parameters(p.clone()).is_err());
+        assert!(EnergyBalance::from_parameters(p.clone()).is_err());
         p.ocean_heat_transfer[2] = 0.9;
         p.gamma_autocorrelation = 0.0;
-        assert!(FairEnergyBalance::from_parameters(p).is_err());
+        assert!(EnergyBalance::from_parameters(p).is_err());
     }
 
     #[test]
@@ -318,9 +312,9 @@ mod tests {
             r#"{{"parameters": {}}}"#,
             serde_json::to_string(&p).unwrap()
         );
-        assert!(serde_json::from_str::<FairEnergyBalance>(&json).is_err());
+        assert!(serde_json::from_str::<EnergyBalance>(&json).is_err());
         let valid = serde_json::to_string(&component()).unwrap();
-        assert!(serde_json::from_str::<FairEnergyBalance>(&valid).is_ok());
+        assert!(serde_json::from_str::<EnergyBalance>(&valid).is_ok());
     }
 
     #[test]
@@ -341,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn timestep_length_changes_the_discretisation() {
+    fn step_length_changes_the_discretisation() {
         let c = component();
         let one = c.step(&DVector::zeros(4), 1.0, 1.0);
         let five = c.step(&DVector::zeros(4), 1.0, 5.0);

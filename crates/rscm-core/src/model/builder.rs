@@ -1,17 +1,15 @@
 //! Model builder for constructing models from components.
 
-use crate::component::{
-    Component, GridType, RequirementDefinition, RequirementType, TimeseriesType,
-};
+use crate::component::{Component, GridType, TimeseriesType, VariableDefinition, VariableRole};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, PreviousStrategy,
 };
 use crate::schema::VariableSchema;
-use crate::spatial::{FourBoxGrid, SpatialGrid};
+use crate::spatial::SpatialGrid;
 use crate::state::VariableSource;
 use crate::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
-use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData, VariableType};
+use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData};
 use crate::units::Unit;
 use numpy::ndarray::Array;
 use petgraph::graph::NodeIndex;
@@ -23,24 +21,25 @@ use std::sync::Arc;
 use super::null_component::NullComponent;
 use super::runtime::Model;
 use super::types::{
-    CGraph, RequiredTransformation, TransformDirection, UnitConversionInfo, VariableDefinition, C,
+    CGraph, GraphEdge, RequiredTransformation, ResolvedVariable, TransformDirection,
+    UnitConversionInfo, C,
 };
 use super::validation::{resolve_timeseries_types, verify_definition};
 
 /// Build a new model from a set of components.
 ///
 /// The builder generates a graph that defines the inter-component dependencies
-/// and determines what variables are endogenous and exogenous to the model.
+/// and determines what variables are modelled and prescribed to the model.
 /// This graph is used by the model to define the order in which components are solved.
 pub struct ModelBuilder {
     components: Vec<C>,
-    pub(crate) exogenous_variables: TimeseriesCollection,
+    pub(crate) prescribed_variables: TimeseriesCollection,
     initial_values: HashMap<String, FloatValue>,
     initial_grid_values: HashMap<String, Vec<FloatValue>>,
     /// The time axis for the model.
     pub time_axis: Arc<TimeAxis>,
     schema: Option<VariableSchema>,
-    /// Custom weights for grid aggregation, keyed by grid type.
+    /// Custom weights for grid aggregation, keyed by grid.
     ///
     /// When provided, these override the default weights used when creating
     /// timeseries and performing grid transformations. Weights must sum to 1.0.
@@ -49,7 +48,7 @@ pub struct ModelBuilder {
     lagged_edges: BTreeSet<(String, String)>,
     timeseries_types: HashMap<String, TimeseriesType>,
     state_type_check: bool,
-    missing_exogenous_allowed: bool,
+    missing_prescribed_allowed: bool,
 }
 
 impl ModelBuilder {
@@ -59,7 +58,7 @@ impl ModelBuilder {
             components: vec![],
             initial_values: HashMap::new(),
             initial_grid_values: HashMap::new(),
-            exogenous_variables: TimeseriesCollection::new(),
+            prescribed_variables: TimeseriesCollection::new(),
             time_axis: Arc::new(TimeAxis::from_values(Array::range(2000.0, 2100.0, 1.0))),
             schema: None,
             grid_weights: HashMap::new(),
@@ -67,21 +66,21 @@ impl ModelBuilder {
             lagged_edges: BTreeSet::new(),
             timeseries_types: HashMap::new(),
             state_type_check: true,
-            missing_exogenous_allowed: false,
+            missing_prescribed_allowed: false,
         }
     }
 
-    /// Allow inputs that no component produces and no exogenous data or initial value supplies.
+    /// Allow inputs that no component produces and no prescribed data or initial value supplies.
     ///
     /// Such an input is filled with NaN instead of failing the build.
-    pub fn with_missing_exogenous_allowed(&mut self) -> &mut Self {
-        self.missing_exogenous_allowed = true;
+    pub fn with_missing_prescribed_allowed(&mut self) -> &mut Self {
+        self.missing_prescribed_allowed = true;
         self
     }
 
     /// Lag every edge from `variable`, so each of its consumers reads the previous step's value.
     ///
-    /// The lag holds whether the variable is produced by a component or exogenous.
+    /// The lag holds whether the variable is produced by a component or prescribed.
     pub fn with_lag(&mut self, variable: &str) -> &mut Self {
         self.lagged_variables.insert(variable.to_string());
         self
@@ -108,11 +107,11 @@ impl ModelBuilder {
     fn validate_lags(
         &self,
         names: &[String],
-        requirements: &[(Vec<RequirementDefinition>, Vec<RequirementDefinition>)],
+        component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
     ) -> RSCMResult<()> {
         let aggregates = self.schema.as_ref().map(|s| &s.aggregates);
         for variable in &self.lagged_variables {
-            let known = requirements
+            let known = component_defs
                 .iter()
                 .flat_map(|(requires, provides)| requires.iter().chain(provides))
                 .any(|r| &r.name == variable)
@@ -135,12 +134,12 @@ impl ModelBuilder {
             }
             let reads = names
                 .iter()
-                .zip(requirements)
+                .zip(component_defs)
                 .filter(|(n, _)| *n == consumer)
                 .any(|(_, (requires, _))| {
-                    requires.iter().any(|r| {
-                        &r.name == variable && r.requirement_type == RequirementType::Input
-                    })
+                    requires
+                        .iter()
+                        .any(|r| &r.name == variable && r.role == VariableRole::Input)
                 });
             if !reads {
                 return Err(RSCMError::InvalidLag {
@@ -182,20 +181,20 @@ impl ModelBuilder {
         })
     }
 
-    /// Check that every input without a producer has exogenous data or an initial value.
-    fn check_exogenous_supplied(
+    /// Check that every input without a producer has prescribed data or an initial value.
+    fn check_prescribed_supplied(
         &self,
         names: &[String],
-        requirements: &[(Vec<RequirementDefinition>, Vec<RequirementDefinition>)],
-        endogenous: &HashMap<String, NodeIndex>,
+        component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
+        modelled: &HashMap<String, NodeIndex>,
     ) -> RSCMResult<()> {
         let mut missing: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for (consumer, (requires, _)) in names.iter().zip(requirements) {
-            for requirement in requires {
-                let name = &requirement.name;
-                if requirement.requirement_type == RequirementType::Input
-                    && !endogenous.contains_key(name)
-                    && self.exogenous_variables.get_data(name).is_none()
+        for (consumer, (requires, _)) in names.iter().zip(component_defs) {
+            for def in requires {
+                let name = &def.name;
+                if def.role == VariableRole::Input
+                    && !modelled.contains_key(name)
+                    && self.prescribed_variables.get_data(name).is_none()
                     && !self.initial_values.contains_key(name)
                     && !self.initial_grid_values.contains_key(name)
                 {
@@ -209,7 +208,7 @@ impl ModelBuilder {
         if missing.is_empty() {
             return Ok(());
         }
-        Err(RSCMError::MissingExogenousInput {
+        Err(RSCMError::MissingPrescribedInput {
             inputs: missing
                 .into_iter()
                 .map(|(variable, consumers)| (variable, consumers.into_iter().collect()))
@@ -217,7 +216,7 @@ impl ModelBuilder {
         })
     }
 
-    /// Set custom weights for a grid type.
+    /// Set custom weights for a grid.
     ///
     /// These weights override the default grid weights used when:
     /// - Creating timeseries for grid-based variables
@@ -225,20 +224,20 @@ impl ModelBuilder {
     ///
     /// # Arguments
     ///
-    /// * `grid_type` - The grid type to configure (FourBox or Hemispheric)
+    /// * `grid` - The grid to configure (four-box or hemispheric)
     /// * `weights` - Area-based weights that must sum to 1.0
     ///
     /// # Panics
     ///
     /// Panics if:
-    /// - `grid_type` is `Scalar` (scalars have no weights)
-    /// - `weights` length does not match the grid size (4 for FourBox, 2 for Hemispheric)
+    /// - `grid` is `Scalar` (scalars have no weights)
+    /// - `weights` length does not match the grid size (4 for four-box, 2 for hemispheric)
     /// - `weights` do not sum to approximately 1.0 (within 1e-6)
-    pub fn with_grid_weights(&mut self, grid_type: GridType, weights: Vec<f64>) -> &mut Self {
-        // Validate grid type
-        let expected_size = match grid_type {
+    pub fn with_grid_weights(&mut self, grid: GridType, weights: Vec<f64>) -> &mut Self {
+        // Validate grid
+        let expected_size = match grid {
             GridType::Scalar => {
-                panic!("Cannot set weights for Scalar grid type (scalars have no regional weights)")
+                panic!("Cannot set weights for the scalar grid, which has no regions")
             }
             GridType::FourBox => 4,
             GridType::Hemispheric => 2,
@@ -250,7 +249,7 @@ impl ModelBuilder {
             expected_size,
             "Weights length {} does not match {} grid size {}",
             weights.len(),
-            grid_type,
+            grid,
             expected_size
         );
 
@@ -262,7 +261,7 @@ impl ModelBuilder {
             sum
         );
 
-        self.grid_weights.insert(grid_type, weights);
+        self.grid_weights.insert(grid, weights);
         self
     }
 
@@ -274,7 +273,7 @@ impl ModelBuilder {
                 let weights_arr: [f64; 4] = weights
                     .as_slice()
                     .try_into()
-                    .expect("FourBox weights should have 4 elements");
+                    .expect("four-box grid weights should have 4 elements");
                 FourBoxGrid::with_weights(weights_arr)
             }
             None => FourBoxGrid::magicc_standard(),
@@ -317,39 +316,36 @@ impl ModelBuilder {
         self
     }
 
-    /// Supply exogenous data to be used by the model.
+    /// Supply prescribed data for a variable, on any grid.
     ///
     /// Any unneeded timeseries will be ignored.
     /// [`Self::build`] converts the data into the variable's unit, or fails if the units are incompatible.
-    pub fn with_exogenous_variable(
+    pub fn with_prescribed_variable(
         &mut self,
         name: &str,
-        timeseries: Timeseries<FloatValue>,
+        timeseries: impl Into<TimeseriesData>,
     ) -> &mut Self {
-        self.exogenous_variables.add_timeseries(
-            name.to_string(),
-            timeseries,
-            VariableType::Exogenous,
-        );
+        self.prescribed_variables
+            .add_data(name.to_string(), timeseries);
         self
     }
 
-    /// Supply exogenous data to be used by the model.
+    /// Supply prescribed data from a collection.
     ///
     /// Any unneeded timeseries will be ignored.
     /// [`Self::build`] converts the data into the variable's unit, or fails if the units are incompatible.
-    pub fn with_exogenous_collection(&mut self, collection: TimeseriesCollection) -> &mut Self {
-        self.exogenous_variables.extend(collection);
+    pub fn with_prescribed_collection(&mut self, collection: TimeseriesCollection) -> &mut Self {
+        self.prescribed_variables.extend(collection);
         self
     }
 
     /// Adds some state to the set of initial values.
     ///
     /// These initial values are used to provide some initial values at `t_0`.
-    /// Initial values are used for requirements which have a type of `RequirementType::State`.
-    /// State variables read their value from the previous timestep in order to generate a new value
-    /// for the next timestep.
-    /// Building a model where any variables which have `RequirementType::State`, but
+    /// Initial values are used for variables whose role is `VariableRole::State`.
+    /// State variables read their value from the previous step in order to generate a new value
+    /// for the next step.
+    /// Building a model where any variables which have `VariableRole::State`, but
     /// do not have an initial value will result in an error.
     pub fn with_initial_values(
         &mut self,
@@ -358,20 +354,6 @@ impl ModelBuilder {
         for (name, value) in initial_values.into_iter() {
             self.initial_values.insert(name, value);
         }
-        self
-    }
-
-    /// Adds a four-box exogenous variable.
-    pub fn with_exogenous_four_box_variable(
-        &mut self,
-        name: &str,
-        timeseries: GridTimeseries<FloatValue, FourBoxGrid>,
-    ) -> &mut Self {
-        self.exogenous_variables.add_four_box_timeseries(
-            name.to_string(),
-            timeseries,
-            VariableType::Exogenous,
-        );
         self
     }
 
@@ -389,13 +371,13 @@ impl ModelBuilder {
 
     /// Specify the time axis that will be used by the model.
     ///
-    /// This time axis defines the time steps (including bounds) on which the model will be iterated.
+    /// This time axis defines the steps (including bounds) on which the model will be iterated.
     pub fn with_time_axis(&mut self, time_axis: TimeAxis) -> &mut Self {
         self.time_axis = Arc::new(time_axis);
         self
     }
 
-    /// Declare whether an exogenous variable is a point or an average.
+    /// Declare whether a prescribed variable is a point or an average.
     ///
     /// Use it when the unit default is wrong. A component that produces the variable must agree.
     pub fn with_timeseries_type(
@@ -414,7 +396,7 @@ impl ModelBuilder {
         self
     }
 
-    /// Validate a component's requirements against the schema.
+    /// Validate a component's variable definitions against the schema.
     ///
     /// Checks that:
     /// - All outputs are defined in the schema (as variables or aggregates)
@@ -429,9 +411,9 @@ impl ModelBuilder {
         &self,
         schema: &VariableSchema,
         component_name: &str,
-        inputs: &[RequirementDefinition],
-        outputs: &[RequirementDefinition],
-        endogenous: &HashMap<String, NodeIndex>,
+        inputs: &[VariableDefinition],
+        outputs: &[VariableDefinition],
+        modelled: &HashMap<String, NodeIndex>,
     ) -> RSCMResult<(Vec<RequiredTransformation>, Vec<UnitConversionInfo>)> {
         let mut transformations = Vec::new();
         let mut unit_conversions = Vec::new();
@@ -461,16 +443,16 @@ impl ModelBuilder {
             }
 
             // Check grid type compatibility
-            if let Some(schema_grid) = schema.get_grid_type(&output.name) {
-                if schema_grid != output.grid_type {
+            if let Some(schema_grid) = schema.get_grid(&output.name) {
+                if schema_grid != output.grid {
                     // Write-side: component grid can aggregate to schema grid?
                     // Component produces finer data -> aggregation to schema is OK
-                    if output.grid_type.can_aggregate_to(schema_grid) {
+                    if output.grid.can_aggregate_to(schema_grid) {
                         // Valid write-side aggregation needed
                         transformations.push(RequiredTransformation {
                             variable: output.name.clone(),
                             unit: output.unit.clone(),
-                            source_grid: output.grid_type,
+                            source_grid: output.grid,
                             target_grid: schema_grid,
                             direction: TransformDirection::Write,
                         });
@@ -479,7 +461,7 @@ impl ModelBuilder {
                         // Component produces coarser data than schema expects
                         return Err(RSCMError::GridTransformationNotSupported {
                             variable: output.name.clone(),
-                            source_grid: output.grid_type.to_string(),
+                            source_grid: output.grid.to_string(),
                             target_grid: schema_grid.to_string(),
                         });
                     }
@@ -490,15 +472,10 @@ impl ModelBuilder {
         // Validate inputs
         // Read-side: component wants coarser grid than schema -> aggregate before read
         for input in inputs {
-            // Skip empty links
-            if input.requirement_type == RequirementType::EmptyLink {
-                continue;
-            }
-
             // Input is valid if:
             // 1. It's defined in the schema (as variable or aggregate), OR
-            // 2. It's produced by another component (endogenous)
-            if !schema.contains(&input.name) && !endogenous.contains_key(&input.name) {
+            // 2. It's produced by another component (modelled)
+            if !schema.contains(&input.name) && !modelled.contains_key(&input.name) {
                 return Err(RSCMError::SchemaUndefinedInput {
                     component: component_name.to_string(),
                     variable: input.name.clone(),
@@ -519,17 +496,17 @@ impl ModelBuilder {
                     }
                 }
 
-                if let Some(schema_grid) = schema.get_grid_type(&input.name) {
-                    if schema_grid != input.grid_type {
+                if let Some(schema_grid) = schema.get_grid(&input.name) {
+                    if schema_grid != input.grid {
                         // Read-side: schema grid can aggregate to component grid?
                         // Schema has finer data -> aggregation for component is OK
-                        if schema_grid.can_aggregate_to(input.grid_type) {
+                        if schema_grid.can_aggregate_to(input.grid) {
                             // Valid read-side aggregation needed
                             transformations.push(RequiredTransformation {
                                 variable: input.name.clone(),
                                 unit: input.unit.clone(),
                                 source_grid: schema_grid,
-                                target_grid: input.grid_type,
+                                target_grid: input.grid,
                                 direction: TransformDirection::Read,
                             });
                         } else {
@@ -538,7 +515,7 @@ impl ModelBuilder {
                             return Err(RSCMError::GridTransformationNotSupported {
                                 variable: input.name.clone(),
                                 source_grid: schema_grid.to_string(),
-                                target_grid: input.grid_type.to_string(),
+                                target_grid: input.grid.to_string(),
                             });
                         }
                     }
@@ -580,29 +557,18 @@ impl ModelBuilder {
                 details: e.to_string(),
             })?;
 
-        // Check if they're the same after normalization
+        // Check if they're the same after normalisation
         if parsed_schema == parsed_component {
             return Ok(None);
         }
 
         // Check dimensional compatibility
         if !parsed_schema.is_compatible(&parsed_component) {
-            let dim_schema = parsed_schema
-                .dimension()
-                .map(|d| d.to_string())
-                .unwrap_or_else(|_| "unknown".to_string());
-            let dim_component = parsed_component
-                .dimension()
-                .map(|d| d.to_string())
-                .unwrap_or_else(|_| "unknown".to_string());
-
-            return Err(RSCMError::IncompatibleUnits {
-                variable: variable.to_string(),
-                unit1: schema_unit.to_string(),
-                unit2: component_unit.to_string(),
-                dim1: dim_schema,
-                dim2: dim_component,
-            });
+            return Err(RSCMError::incompatible_units(
+                variable,
+                &parsed_schema,
+                &parsed_component,
+            ));
         }
 
         // Calculate conversion factor from schema unit to component unit
@@ -623,19 +589,19 @@ impl ModelBuilder {
         }))
     }
 
-    /// Interpolate exogenous data onto the model's time axis in the unit the model stores it in.
+    /// Interpolate prescribed data onto the model's time axis in the unit the model stores it in.
     ///
     /// Returns an error if the data's unit cannot be converted into `unit`.
-    fn exogenous_in_unit<G: SpatialGrid>(
+    fn prescribed_in_unit<G: SpatialGrid>(
         &self,
         name: &str,
         ts: &GridTimeseries<FloatValue, G>,
         unit: &str,
     ) -> RSCMResult<GridTimeseries<FloatValue, G>> {
-        let conversion = Self::check_unit_compatibility(name, "exogenous data", ts.units(), unit)?;
+        let conversion = Self::check_unit_compatibility(name, "prescribed data", ts.unit(), unit)?;
         let ts = ts.to_owned().interpolate_into(self.time_axis.clone());
         Ok(match conversion {
-            Some(conversion) => ts.convert_units(conversion.factor, unit.to_string()),
+            Some(conversion) => ts.convert_unit(conversion.factor, unit.to_string()),
             None => ts,
         })
     }
@@ -648,9 +614,9 @@ impl ModelBuilder {
 
         // todo: refactor once this is more stable
         let mut graph: CGraph = Graph::new();
-        let mut endogenous: HashMap<String, NodeIndex> = HashMap::new();
-        let mut exogenous: HashSet<String> = HashSet::new();
-        let mut definitions: HashMap<String, VariableDefinition> = HashMap::new();
+        let mut modelled: HashMap<String, NodeIndex> = HashMap::new();
+        let mut prescribed: HashSet<String> = HashSet::new();
+        let mut definitions: HashMap<String, ResolvedVariable> = HashMap::new();
         // Track which component owns each variable for better error messages
         let mut variable_owners: HashMap<String, String> = HashMap::new();
         // Collect unit conversion factors needed at runtime
@@ -658,14 +624,14 @@ impl ModelBuilder {
         let mut unit_conversions: Vec<UnitConversionInfo> = Vec::new();
         // Track variable sources keyed by (variable_name, component_name)
         // This enables different components to have different source classifications
-        // for the same variable (e.g., State for owner, UpstreamOutput for consumers)
+        // for the same variable (e.g., State for owner, Upstream for consumers)
         let mut variable_sources: HashMap<(String, String), VariableSource> = HashMap::new();
         let initial_node = graph.add_node(Arc::new(NullComponent {}));
-        let mut aggregator_nodes: HashSet<NodeIndex> = HashSet::new();
+        let mut aggregate_nodes: HashSet<NodeIndex> = HashSet::new();
 
-        // Track pending aggregate dependencies: (component_node, variable_name, requirement)
-        // These will be resolved after aggregators are added to the graph
-        let mut pending_aggregate_deps: Vec<(NodeIndex, String, RequirementDefinition)> = vec![];
+        // Track pending aggregate dependencies: (component_node, variable_name, definition)
+        // These will be resolved after aggregate components are added to the graph
+        let mut pending_aggregate_deps: Vec<(NodeIndex, String, VariableDefinition)> = vec![];
 
         // Get aggregate names for forward reference (if schema exists)
         let aggregate_names: HashSet<String> = self
@@ -675,7 +641,7 @@ impl ModelBuilder {
             .unwrap_or_default();
 
         // Each call builds the definitions afresh, so read them once.
-        let requirements: Vec<_> = self
+        let component_defs: Vec<_> = self
             .components
             .iter()
             .map(|component| (component.inputs(), component.outputs()))
@@ -686,7 +652,7 @@ impl ModelBuilder {
             .iter()
             .map(Model::extract_component_name)
             .collect();
-        self.validate_lags(&names, &requirements)?;
+        self.validate_lags(&names, &component_defs)?;
 
         let nodes: Vec<NodeIndex> = self
             .components
@@ -695,25 +661,25 @@ impl ModelBuilder {
             .collect();
 
         // Every producer is known before any input is classified, so registration order is irrelevant.
-        for (index, (_, provides)) in requirements.iter().enumerate() {
-            for requirement in provides {
-                if let Some(other) = variable_owners.get(&requirement.name) {
+        for (index, (_, provides)) in component_defs.iter().enumerate() {
+            for def in provides {
+                if let Some(other) = variable_owners.get(&def.name) {
                     return Err(RSCMError::MultipleProducers {
-                        variable: requirement.name.clone(),
+                        variable: def.name.clone(),
                         components: vec![other.clone(), names[index].clone()],
                     });
                 }
-                endogenous.insert(requirement.name.clone(), nodes[index]);
-                variable_owners.insert(requirement.name.clone(), names[index].clone());
+                modelled.insert(def.name.clone(), nodes[index]);
+                variable_owners.insert(def.name.clone(), names[index].clone());
             }
         }
 
         // Producers define each variable first, so consumers get the unit conversions.
-        for (index, (_, provides)) in requirements.iter().enumerate() {
-            for requirement in provides {
+        for (index, (_, provides)) in component_defs.iter().enumerate() {
+            for def in provides {
                 if let Some(conversion) = verify_definition(
                     &mut definitions,
-                    requirement,
+                    def,
                     &names[index],
                     Some(&names[index]),
                     self.schema.is_some(),
@@ -723,19 +689,16 @@ impl ModelBuilder {
             }
         }
 
-        for (index, (requires, _)) in requirements.iter().enumerate() {
+        for (index, (requires, _)) in component_defs.iter().enumerate() {
             let node = nodes[index];
             let component_name = &names[index];
             let mut has_dependencies = false;
 
-            for requirement in requires {
-                if requirement.requirement_type == RequirementType::EmptyLink {
-                    continue;
-                }
-                let existing_owner = variable_owners.get(&requirement.name).map(|s| s.as_str());
+            for def in requires {
+                let existing_owner = variable_owners.get(&def.name).map(|s| s.as_str());
                 if let Some(conversion) = verify_definition(
                     &mut definitions,
-                    requirement,
+                    def,
                     component_name,
                     existing_owner,
                     self.schema.is_some(),
@@ -743,40 +706,34 @@ impl ModelBuilder {
                     unit_conversions.push(conversion);
                 }
 
-                let name = &requirement.name;
+                let name = &def.name;
                 let lagged = self.is_lagged(name, component_name);
-                let producer = endogenous.get(name).copied();
-                let source = if requirement.requirement_type == RequirementType::State
-                    || producer == Some(node)
-                {
-                    exogenous.insert(name.clone());
+                let producer = modelled.get(name).copied();
+                let source = if def.role == VariableRole::State || producer == Some(node) {
+                    prescribed.insert(name.clone());
                     VariableSource::OwnState
                 } else if lagged {
-                    // A lagged read sees index N, which exogenous data may fill.
-                    exogenous.insert(name.clone());
+                    // A lagged read sees index N, which prescribed data may fill.
+                    prescribed.insert(name.clone());
                     VariableSource::Lagged
                 } else if let Some(producer) = producer {
-                    graph.add_edge(producer, node, requirement.clone());
+                    graph.add_edge(producer, node, GraphEdge::Variable(def.clone()));
                     has_dependencies = true;
-                    VariableSource::UpstreamOutput
+                    VariableSource::Upstream
                 } else if aggregate_names.contains(name) {
-                    pending_aggregate_deps.push((node, name.clone(), requirement.clone()));
+                    pending_aggregate_deps.push((node, name.clone(), def.clone()));
                     has_dependencies = true;
-                    VariableSource::UpstreamOutput
+                    VariableSource::Upstream
                 } else {
-                    exogenous.insert(name.clone());
-                    VariableSource::Exogenous
+                    prescribed.insert(name.clone());
+                    VariableSource::Prescribed
                 };
                 variable_sources.insert((name.clone(), component_name.clone()), source);
             }
 
             if !has_dependencies {
                 // Link to the initial node so the graph stays connected.
-                graph.add_edge(
-                    initial_node,
-                    node,
-                    RequirementDefinition::new("", "", RequirementType::EmptyLink),
-                );
+                graph.add_edge(initial_node, node, GraphEdge::Link);
             }
         }
 
@@ -789,7 +746,7 @@ impl ModelBuilder {
             schema.validate()?;
 
             // Validate each component against the schema and collect transformations
-            for (component, (requires, provides)) in self.components.iter().zip(&requirements) {
+            for (component, (requires, provides)) in self.components.iter().zip(&component_defs) {
                 let component_name = Model::extract_component_name(component);
 
                 let (component_transforms, component_unit_conversions) = self
@@ -798,7 +755,7 @@ impl ModelBuilder {
                         &component_name,
                         requires,
                         provides,
-                        &endogenous,
+                        &modelled,
                     )?;
                 all_transformations.extend(component_transforms);
                 unit_conversions.extend(component_unit_conversions);
@@ -811,119 +768,115 @@ impl ModelBuilder {
             // to match the schema (the schema is the source of truth for storage grid type).
             for (name, var_def) in &schema.variables {
                 if !definitions.contains_key(name) {
-                    // Variable not produced by any component - add it as exogenous
+                    // No component produces this variable, so it is prescribed
                     let parsed_unit = Unit::parse(&var_def.unit).ok();
                     definitions.insert(
                         name.clone(),
-                        VariableDefinition {
+                        ResolvedVariable {
                             name: name.clone(),
                             unit: var_def.unit.clone(),
                             parsed_unit,
-                            grid_type: var_def.grid_type,
-                            requirement_type: RequirementType::Input, // Schema-only variables are inputs
+                            grid: var_def.grid,
+                            role: VariableRole::Input, // Schema-only variables are inputs
                             timeseries_type: TimeseriesType::from_unit(&var_def.unit),
                         },
                     );
-                    // Mark as exogenous since it's not produced by any component
-                    exogenous.insert(name.clone());
+                    // Mark as prescribed since it's not produced by any component
+                    prescribed.insert(name.clone());
                 } else {
                     // Variable exists (from component input declaration) - update grid type to match schema
                     // This ensures storage uses schema's grid type, and read transforms will handle conversion
                     if let Some(def) = definitions.get_mut(name) {
-                        if def.grid_type != var_def.grid_type {
+                        if def.grid != var_def.grid {
                             // Update storage grid type to match schema
                             // Read/write transforms handle conversion between component and schema grid types
-                            def.grid_type = var_def.grid_type;
-                            if !endogenous.contains_key(name) {
-                                exogenous.insert(name.clone());
+                            def.grid = var_def.grid;
+                            if !modelled.contains_key(name) {
+                                prescribed.insert(name.clone());
                             }
                         }
                     }
                 }
             }
 
-            // Add aggregator components for each aggregate definition (5.1, 5.2, 5.3)
+            // Add a component for each aggregate definition
             // Process aggregates in topological order to handle chained aggregates
             let ordered_aggregates = schema.topological_order_aggregates();
             for agg_name in &ordered_aggregates {
                 let agg_def = schema.get_aggregate(agg_name).unwrap();
 
-                // Create the aggregator component (5.1)
-                let aggregator = crate::schema::AggregatorComponent::from_definition(agg_def);
+                // Create the aggregate's component
+                let agg_component = crate::schema::AggregateComponent::from_definition(agg_def);
 
-                // Add to graph (5.2)
-                let agg_node = graph.add_node(Arc::new(aggregator.clone()));
-                aggregator_nodes.insert(agg_node);
+                // Add to graph
+                let agg_node = graph.add_node(Arc::new(agg_component));
+                aggregate_nodes.insert(agg_node);
 
                 // Track the component name for variable ownership
-                let agg_component_name = format!("Aggregator:{}", agg_name);
+                let agg_component_name = format!("Aggregate:{}", agg_name);
                 variable_owners.insert(agg_name.clone(), agg_component_name.clone());
                 let runtime_name = Model::extract_component_name(&graph[agg_node]);
 
-                // Add dependency edges from contributor sources to aggregator (5.3)
+                // Add dependency edges from contributor sources to the aggregate's component
                 let mut has_dependencies = false;
                 for contributor in &agg_def.contributors {
                     let source = if self.is_lagged(contributor, &runtime_name) {
                         VariableSource::Lagged
-                    } else if let Some(&producer_node) = endogenous.get(contributor) {
+                    } else if let Some(&producer_node) = modelled.get(contributor) {
                         graph.add_edge(
                             producer_node,
                             agg_node,
-                            RequirementDefinition::with_grid(
+                            GraphEdge::Variable(VariableDefinition::with_grid(
                                 contributor,
                                 &agg_def.unit,
-                                RequirementType::Input,
-                                agg_def.grid_type,
-                            ),
+                                VariableRole::Input,
+                                agg_def.grid,
+                            )),
                         );
                         has_dependencies = true;
-                        VariableSource::UpstreamOutput
+                        VariableSource::Upstream
                     } else {
-                        VariableSource::Exogenous
+                        VariableSource::Prescribed
                     };
                     variable_sources.insert((contributor.clone(), runtime_name.clone()), source);
                 }
 
-                // If aggregator has no component dependencies, link to initial node
+                // If the aggregate has no component dependencies, link to initial node
                 if !has_dependencies {
-                    graph.add_edge(
-                        initial_node,
-                        agg_node,
-                        RequirementDefinition::new("", "", RequirementType::EmptyLink),
-                    );
+                    graph.add_edge(initial_node, agg_node, GraphEdge::Link);
                 }
 
-                // Register the aggregate output as endogenous
-                endogenous.insert(agg_name.clone(), agg_node);
+                // Register the aggregate output as modelled
+                modelled.insert(agg_name.clone(), agg_node);
 
                 // Add aggregate variable to definitions
                 let parsed_unit = Unit::parse(&agg_def.unit).ok();
                 definitions.insert(
                     agg_name.clone(),
-                    VariableDefinition {
+                    ResolvedVariable {
                         name: agg_name.clone(),
                         unit: agg_def.unit.clone(),
                         parsed_unit,
-                        grid_type: agg_def.grid_type,
-                        requirement_type: RequirementType::Output, // Aggregates are outputs
+                        grid: agg_def.grid,
+                        role: VariableRole::Output, // Aggregates are outputs
                         timeseries_type: TimeseriesType::from_unit(&agg_def.unit),
                     },
                 );
             }
 
-            // Resolve pending aggregate dependencies now that aggregators are in the graph
-            for (component_node, var_name, requirement) in pending_aggregate_deps {
-                if let Some(&agg_node) = endogenous.get(&var_name) {
-                    graph.add_edge(agg_node, component_node, requirement);
+            // Resolve pending aggregate dependencies now that aggregate components are in the graph
+            for (component_node, var_name, def) in pending_aggregate_deps {
+                if let Some(&agg_node) = modelled.get(&var_name) {
+                    graph.add_edge(agg_node, component_node, GraphEdge::Variable(def));
                 }
             }
         }
 
-        check_acyclic(&graph, &requirements, &names, &aggregator_nodes)?;
+        check_acyclic(&graph, &component_defs, &names, &aggregate_nodes)?;
         resolve_timeseries_types(
             &mut definitions,
             &names,
-            &requirements,
+            &component_defs,
             &self.timeseries_types,
             self.state_type_check,
         )?;
@@ -935,7 +888,7 @@ impl ModelBuilder {
 
         // Validate that all state variables have initial values
         for (name, def) in &definitions {
-            if def.requirement_type == RequirementType::State
+            if def.role == VariableRole::State
                 && !self.initial_values.contains_key(name)
                 && !self.initial_grid_values.contains_key(name)
             {
@@ -950,8 +903,8 @@ impl ModelBuilder {
             }
         }
 
-        if !self.missing_exogenous_allowed {
-            self.check_exogenous_supplied(&names, &requirements, &endogenous)?;
+        if !self.missing_prescribed_allowed {
+            self.check_prescribed_supplied(&names, &component_defs, &modelled)?;
         }
 
         // Store transformations for runtime grid auto-aggregation
@@ -982,22 +935,15 @@ impl ModelBuilder {
                 TimeseriesType::Average => InterpolationStrategy::from(PreviousStrategy::new(true)),
             };
 
-            let is_endogenous = endogenous.contains_key(&name);
-            let var_type = if is_endogenous {
-                VariableType::Endogenous
-            } else {
-                VariableType::Exogenous
-            };
-
             // Determine storage grid type: write transforms override the definition
             let storage_grid = write_transforms
                 .get(&name)
                 .map(|t| t.target_grid)
-                .unwrap_or(definition.grid_type);
+                .unwrap_or(definition.grid);
 
-            // Try to populate from: (1) exogenous data, (2) initial value, (3) empty
-            let exogenous_data = if exogenous.contains(&name) {
-                self.exogenous_variables.get_data(&name)
+            // Try to populate from: (1) prescribed data, (2) initial value, (3) empty
+            let prescribed_data = if prescribed.contains(&name) {
+                self.prescribed_variables.get_data(&name)
             } else {
                 None
             };
@@ -1022,9 +968,9 @@ impl ModelBuilder {
 
             match storage_grid {
                 GridType::Scalar => {
-                    if let Some(TimeseriesData::Scalar(ts)) = exogenous_data {
-                        let ts = self.exogenous_in_unit(&name, ts, storage_unit)?;
-                        collection.add_timeseries(name, ts, var_type);
+                    if let Some(TimeseriesData::Scalar(ts)) = prescribed_data {
+                        let ts = self.prescribed_in_unit(&name, ts, storage_unit)?;
+                        collection.add_timeseries(name, ts);
                     } else {
                         let mut ts = Timeseries::new_empty_scalar(
                             self.time_axis.clone(),
@@ -1034,13 +980,13 @@ impl ModelBuilder {
                         if let Some(val) = initial_grid.map(|v| v[0]).or(initial_val) {
                             ts.set(0, ScalarRegion::Global, val);
                         }
-                        collection.add_timeseries(name, ts, var_type);
+                        collection.add_timeseries(name, ts);
                     }
                 }
                 GridType::FourBox => {
-                    if let Some(TimeseriesData::FourBox(ts)) = exogenous_data {
-                        let ts = self.exogenous_in_unit(&name, ts, storage_unit)?;
-                        collection.add_four_box_timeseries(name, ts, var_type);
+                    if let Some(TimeseriesData::FourBox(ts)) = prescribed_data {
+                        let ts = self.prescribed_in_unit(&name, ts, storage_unit)?;
+                        collection.add_four_box_timeseries(name, ts);
                     } else {
                         let mut ts = GridTimeseries::new_empty(
                             self.time_axis.clone(),
@@ -1062,13 +1008,13 @@ impl ModelBuilder {
                                 ts.set(0, region, val);
                             }
                         }
-                        collection.add_four_box_timeseries(name, ts, var_type);
+                        collection.add_four_box_timeseries(name, ts);
                     }
                 }
                 GridType::Hemispheric => {
-                    if let Some(TimeseriesData::Hemispheric(ts)) = exogenous_data {
-                        let ts = self.exogenous_in_unit(&name, ts, storage_unit)?;
-                        collection.add_hemispheric_timeseries(name, ts, var_type);
+                    if let Some(TimeseriesData::Hemispheric(ts)) = prescribed_data {
+                        let ts = self.prescribed_in_unit(&name, ts, storage_unit)?;
+                        collection.add_hemispheric_timeseries(name, ts);
                     } else {
                         let mut ts = GridTimeseries::new_empty(
                             self.time_axis.clone(),
@@ -1085,7 +1031,7 @@ impl ModelBuilder {
                                 ts.set(0, region, val);
                             }
                         }
-                        collection.add_hemispheric_timeseries(name, ts, var_type);
+                        collection.add_hemispheric_timeseries(name, ts);
                     }
                 }
             }
@@ -1112,7 +1058,7 @@ impl ModelBuilder {
         );
         model.timeseries_types = timeseries_types;
 
-        // Initialize component states for each node
+        // Initialise component states for each node
         for node_idx in model.components.node_indices() {
             let component = &model.components[node_idx];
             let state = component.create_initial_state();
@@ -1129,21 +1075,17 @@ impl ModelBuilder {
 /// and the `with_lag_for` calls that would break it, edges into a component with its own state first.
 fn check_acyclic(
     graph: &CGraph,
-    requirements: &[(Vec<RequirementDefinition>, Vec<RequirementDefinition>)],
+    component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
     names: &[String],
-    aggregator_nodes: &HashSet<NodeIndex>,
+    aggregate_nodes: &HashSet<NodeIndex>,
 ) -> RSCMResult<()> {
     if !petgraph::algo::is_cyclic_directed(graph) {
         return Ok(());
     }
     let stateful: HashSet<&str> = names
         .iter()
-        .zip(requirements)
-        .filter(|(_, (requires, _))| {
-            requires
-                .iter()
-                .any(|r| r.requirement_type == RequirementType::State)
-        })
+        .zip(component_defs)
+        .filter(|(_, (requires, _))| requires.iter().any(|r| r.role == VariableRole::State))
         .map(|(name, _)| name.as_str())
         .collect();
     let mut components = BTreeSet::new();
@@ -1162,17 +1104,17 @@ fn check_acyclic(
             if !(members.contains(&edge.source()) && members.contains(&edge.target())) {
                 continue;
             }
-            let variable = edge.weight().name.clone();
+            let variable = edge.weight().name().to_string();
             variables.insert(variable.clone());
-            // Aggregators always read this step's contributions, so their inputs cannot lag.
-            if !aggregator_nodes.contains(&edge.target()) {
+            // Aggregate components always read this step's contributions, so their inputs cannot lag.
+            if !aggregate_nodes.contains(&edge.target()) {
                 let consumer = Model::extract_component_name(&graph[edge.target()]);
                 let rank = !stateful.contains(consumer.as_str());
                 suggestions.insert((rank, variable, consumer));
             }
         }
     }
-    Err(RSCMError::CircularDependency {
+    Err(RSCMError::FeedbackLoop {
         components: components.into_iter().collect(),
         variables: variables.into_iter().collect(),
         suggestions: suggestions

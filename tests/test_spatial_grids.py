@@ -17,7 +17,7 @@ def test_scalar_grid():
     """Test ScalarGrid basic functionality."""
     grid = ScalarGrid()
     assert grid.size() == 1
-    assert grid.grid_name() == "Scalar"
+    assert grid.grid_name() == "scalar"
     assert grid.region_names() == ["Global"]
 
     # Test aggregation (should return the same value)
@@ -29,7 +29,7 @@ def test_four_box_grid_default():
     """Test FourBoxGrid with default (equal) weights."""
     grid = FourBoxGrid()
     assert grid.size() == 4
-    assert grid.grid_name() == "FourBox"
+    assert grid.grid_name() == "four_box"
     assert len(grid.region_names()) == 4
     assert grid.region_names() == [
         "Northern Ocean",
@@ -81,7 +81,7 @@ def test_hemispheric_grid_default():
     """Test HemisphericGrid with default (equal) weights."""
     grid = HemisphericGrid()
     assert grid.size() == 2
-    assert grid.grid_name() == "Hemispheric"
+    assert grid.grid_name() == "hemispheric"
     assert len(grid.region_names()) == 2
     assert grid.region_names() == ["Northern Hemisphere", "Southern Hemisphere"]
 

@@ -19,7 +19,7 @@
 //! use rscm_core::ivp::{IVP, IVPBuilder, get_last_step};
 //! use rscm_core::component::InputState;
 //!
-//! // Define a component that implements IVP
+//! // Define a component that implements `IVP`
 //! struct TwoBoxModel {
 //!     heat_capacity_1: f64,  // J / (m^2 K)
 //!     heat_capacity_2: f64,
@@ -75,7 +75,7 @@ const T_THRESHOLD: Time = 5e-3;
 /// Extracts the final state vector from an ODE solver result.
 ///
 /// This function validates that the solver reached the expected end time
-/// (within a small threshold) and returns the state vector at the final timestep.
+/// (within a small threshold) and returns the state vector at the final step.
 ///
 /// # Arguments
 ///
@@ -85,7 +85,7 @@ const T_THRESHOLD: Time = 5e-3;
 /// # Panics
 ///
 /// Panics if:
-/// - The result contains fewer than 2 timesteps
+/// - The result contains fewer than 2 steps
 /// - The final time differs from `t_expected` by more than the threshold (5e-3)
 pub fn get_last_step<V>(results: &SolverResult<Time, V>, t_expected: Time) -> &V {
     let (t, y) = results.get();
@@ -96,9 +96,9 @@ pub fn get_last_step<V>(results: &SolverResult<Time, V>, t_expected: Time) -> &V
     // I couldn't figure out how to make this value a constant that worked with generics
     assert!(t_distance < T_THRESHOLD);
 
-    let last_timestep = y.last().unwrap();
+    let last_step = y.last().unwrap();
 
-    last_timestep
+    last_step
 }
 
 /// Trait for components that define an ODE system.
@@ -143,7 +143,7 @@ pub trait IVP<T, S> {
     ///
     /// # Arguments
     ///
-    /// * `t` - Current time
+    /// * `t` - Time within the step, between its start and end bounds
     /// * `input_state` - Access to input variables (e.g., forcing timeseries)
     /// * `y` - Current state vector
     /// * `dy_dt` - Output: time derivative of the state vector (mutated in place)
@@ -236,7 +236,7 @@ where
     ///
     /// * `t0` - Start time
     /// * `t1` - End time
-    /// * `step` - Fixed time step size (typically ~0.1 for annual models)
+    /// * `step` - Fixed step size (typically ~0.1 for annual models)
     ///
     /// # Returns
     ///

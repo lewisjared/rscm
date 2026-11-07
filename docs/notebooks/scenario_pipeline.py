@@ -76,7 +76,7 @@ emissions = {
     name: Timeseries(
         np.array(values),
         TimeAxis.from_values(np.array(times)),
-        "GtC / yr",
+        "GtC/yr",
         InterpolationStrategy.Linear,
     )
     for name, (times, values) in EMISSIONS_BREAKPOINTS.items()
@@ -128,8 +128,8 @@ plt.show()
 # ```
 #
 # `build_model` wraps the builder chain, because the historical run and every scenario use it.
-# The carbon cycle reads surface temperature, but `alpha_temperature=0` turns that feedback off,
-# so a constant zero series stands in for it.
+# The carbon cycle reads the surface air temperature change,
+# but `alpha_temperature=0` turns that feedback off, so a constant zero series stands in for it.
 #
 # To add a temperature response, you would add a climate component such as TwoLayer,
 # with a `VariableSchema` aggregate that sums the forcing from each species.
@@ -137,9 +137,9 @@ plt.show()
 
 # %%
 PRE_INDUSTRIAL = {
-    "Cumulative Land Uptake": 0.0,
+    "Cumulative Carbon Uptake|Land": 0.0,
     "Cumulative Emissions|CO2": 0.0,
-    "Atmospheric Concentration|CO2": 280.0,
+    "Atmospheric Concentrations|CO2": 280.0,
 }
 
 surface_temperature = Timeseries(
@@ -153,17 +153,17 @@ surface_temperature = Timeseries(
 def build_model(time_axis: TimeAxis, co2_emissions: Timeseries, initial_values: dict):
     """Build the carbon cycle and CO2 ERF model on `time_axis`."""
     carbon_cycle = CarbonCycleBuilder.from_parameters(
-        dict(tau=30.0, conc_pi=280.0, alpha_temperature=0.0)
+        dict(tau=30.0, co2_pi=280.0, alpha_temperature=0.0)
     ).build()
-    co2_erf = CO2ERFBuilder.from_parameters(dict(erf_2xco2=3.7, conc_pi=280.0)).build()
+    co2_erf = CO2ERFBuilder.from_parameters(dict(erf_2xco2=3.7, co2_pi=280.0)).build()
 
     return (
         ModelBuilder()
         .with_time_axis(time_axis)
-        .with_rust_component(carbon_cycle)
-        .with_rust_component(co2_erf)
-        .with_exogenous_variable("Emissions|CO2|Anthropogenic", co2_emissions)
-        .with_exogenous_variable("Surface Temperature", surface_temperature)
+        .with_component(carbon_cycle)
+        .with_component(co2_erf)
+        .with_prescribed_variable("Emissions|CO2", co2_emissions)
+        .with_prescribed_variable("Surface Air Temperature Change", surface_temperature)
         .with_initial_values(initial_values)
     ).build()
 
@@ -221,7 +221,7 @@ branch_state
 #
 # Each scenario gets a fresh model on the future time axis, starting from `branch_state`.
 #
-# A model restored with `Model.from_toml()` keeps its original time axis and exogenous data,
+# A model restored with `Model.from_toml()` keeps its original time axis and prescribed data,
 # so it cannot be extended with new scenario data.
 # Rebuilding from the state variables works here because these components keep no
 # internal state between steps.
@@ -257,7 +257,7 @@ def timeseries_to_dataframe(
     rows = {}
     for name in collection.names():
         ts = collection.get_timeseries_by_name(name)
-        rows[(name, ts.units, scenario)] = pd.Series(
+        rows[(name, ts.unit, scenario)] = pd.Series(
             ts.values(), index=ts.time_axis.values()
         )
     df = pd.DataFrame(rows).T
@@ -275,7 +275,7 @@ all_runs = pd.concat(
 # %% tags=["remove_input"]
 fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
 panels = [
-    ("Atmospheric Concentration|CO2", "CO2 (ppm)", "Atmospheric CO2 Concentration"),
+    ("Atmospheric Concentrations|CO2", "CO2 (ppm)", "Atmospheric CO2 Concentration"),
     (
         "Effective Radiative Forcing|CO2",
         "ERF (W/m2)",
@@ -311,7 +311,7 @@ plt.show()
 (
     all_runs.droplevel("unit")
     .loc[
-        ["Atmospheric Concentration|CO2", "Effective Radiative Forcing|CO2"],
+        ["Atmospheric Concentrations|CO2", "Effective Radiative Forcing|CO2"],
         [2050.0, 2100.0],
     ]
     .dropna()

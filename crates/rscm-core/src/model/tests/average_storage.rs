@@ -1,6 +1,6 @@
 //! Averages are stored at their step's start bound, whoever produced them.
 
-use crate::component::{Component, InputState, OutputState, RequirementDefinition};
+use crate::component::{Component, InputState, OutputState, VariableDefinition};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
 use crate::model::{Model, ModelBuilder};
@@ -18,8 +18,8 @@ struct FluxProducer;
 
 #[typetag::serde]
 impl Component for FluxProducer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::scalar_output("Flux", "GtC / yr")]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::scalar_output("Flux", "GtC / yr")]
     }
 
     fn solve(&self, t: Time, _t_next: Time, _inputs: &InputState) -> RSCMResult<OutputState> {
@@ -36,12 +36,12 @@ struct PoolIntegrator;
 
 #[typetag::serde]
 impl Component for PoolIntegrator {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::scalar_input("Flux", "GtC / yr"),
-            RequirementDefinition::scalar_state("Pool", "GtC"),
-            RequirementDefinition::scalar_output("Flux Read", "GtC / yr"),
-            RequirementDefinition::scalar_output("Previous Flux", "GtC / yr"),
+            VariableDefinition::scalar_input("Flux", "GtC / yr"),
+            VariableDefinition::scalar_state("Pool", "GtC"),
+            VariableDefinition::scalar_output("Flux Read", "GtC / yr"),
+            VariableDefinition::scalar_output("Previous Flux", "GtC / yr"),
         ]
     }
 
@@ -68,8 +68,8 @@ struct AverageCounter;
 
 #[typetag::serde]
 impl Component for AverageCounter {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::scalar_state("Flux", "GtC / yr")]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::scalar_state("Flux", "GtC / yr")]
     }
 
     fn solve(&self, _t: Time, _t_next: Time, inputs: &InputState) -> RSCMResult<OutputState> {
@@ -158,7 +158,7 @@ fn prescribing_a_modelled_average_gives_identical_results() {
         InterpolationStrategy::from(PreviousStrategy::new(true)),
     );
     let mut prescribed = builder(vec![Arc::new(PoolIntegrator)])
-        .with_exogenous_variable("Flux", prescribed_flux)
+        .with_prescribed_variable("Flux", prescribed_flux)
         .build()
         .unwrap();
     prescribed.run();

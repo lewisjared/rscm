@@ -13,9 +13,9 @@ def test_create_component():
     component = TwoLayerBuilder.from_parameters(
         dict(
             lambda0=0.3,
-            efficacy=31,
+            deep_ocean_efficacy=31,
             a=12,
-            eta=12,
+            ocean_heat_transfer=12,
             heat_capacity_deep=12,
             heat_capacity_surface=1,
         )
@@ -34,7 +34,7 @@ def test_create_component():
     )
     # Add state variables required by TwoLayer
     collection.add_timeseries(
-        "Surface Temperature",
+        "Surface Air Temperature Change",
         Timeseries(
             np.asarray([0.0, 0.0]),
             time_axis,
@@ -43,7 +43,7 @@ def test_create_component():
         ),
     )
     collection.add_timeseries(
-        "Deep Ocean Temperature",
+        "Ocean Temperature|Layer 2",
         Timeseries(
             np.asarray([0.0, 0.0]),
             time_axis,

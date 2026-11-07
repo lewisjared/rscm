@@ -2,7 +2,7 @@
 Pandas integration helpers for the calibration framework.
 
 These functions provide convenient conversions between calibration objects
-and pandas DataFrames for analysis and visualization.
+and pandas DataFrames for analysis and visualisation.
 """
 
 import numpy as np
@@ -15,7 +15,7 @@ def chain_to_dataframe(chain, discard=0):
 
     Creates a DataFrame with parameter columns and log_prob, using a
     multi-index (walker, iteration) for the rows. This format is useful
-    for analyzing walker behaviour and creating trace plots.
+    for analysing walker behaviour and creating trace plots.
 
     Parameters
     ----------
@@ -51,31 +51,33 @@ def chain_to_dataframe(chain, discard=0):
     are kept separate. For a flattened view of all samples, use
     `chain.flat_samples(discard)` directly.
     """
-    param_names = chain.param_names
+    parameter_names = chain.parameter_names
     flat_samples = chain.flat_samples(discard)
     flat_log_probs = chain.flat_log_probs(discard)
 
-    n_stored = len(chain) - discard
-    n_params = len(param_names)
-    n_walkers = flat_samples.shape[0] // n_stored if n_stored > 0 else 0
+    n_samples = len(chain) - discard
+    n_parameters = len(parameter_names)
+    n_walkers = flat_samples.shape[0] // n_samples if n_samples > 0 else 0
 
-    if n_walkers == 0 or n_stored == 0:
-        return pd.DataFrame(columns=[*param_names, "log_prob"])
+    if n_walkers == 0 or n_samples == 0:
+        return pd.DataFrame(columns=[*parameter_names, "log_prob"])
 
     # Flat arrays are iteration-major: row i * n_walkers + j is walker j at sample i.
-    samples = flat_samples.reshape(n_stored, n_walkers, n_params).transpose(1, 0, 2)
-    log_probs = flat_log_probs.reshape(n_stored, n_walkers).T
+    samples = flat_samples.reshape(n_samples, n_walkers, n_parameters).transpose(
+        1, 0, 2
+    )
+    log_probs = flat_log_probs.reshape(n_samples, n_walkers).T
 
-    walker_idx = np.repeat(np.arange(n_walkers), n_stored)
+    walker_idx = np.repeat(np.arange(n_walkers), n_samples)
     # The chain keeps every thin-th iteration: stored sample k is (k + 1) * thin - 1.
-    stored_idx = np.arange(discard, discard + n_stored)
+    stored_idx = np.arange(discard, discard + n_samples)
     iter_idx = np.tile((stored_idx + 1) * chain.thin - 1, n_walkers)
 
-    samples_flat = samples.reshape(-1, n_params)
+    samples_flat = samples.reshape(-1, n_parameters)
     log_probs_flat = log_probs.reshape(-1)
 
     # Create DataFrame
-    data = {name: samples_flat[:, i] for i, name in enumerate(param_names)}
+    data = {name: samples_flat[:, i] for i, name in enumerate(parameter_names)}
     data["log_prob"] = log_probs_flat
 
     df = pd.DataFrame(
@@ -134,16 +136,16 @@ def target_from_dataframe(
     ...     }
     ... )
     >>> target = Target.from_dataframe(df)
-    >>> target.add_variable("Temperature|Global", df)
+    >>> target.add_variable("Surface Air Temperature Change", df)
 
     >>> # Multiple variables
     >>> df = pd.DataFrame(
     ...     {
     ...         "variable": [
-    ...             "Temperature|Global",
-    ...             "Temperature|Global",
-    ...             "OHC|Total",
-    ...             "OHC|Total",
+    ...             "Surface Air Temperature Change",
+    ...             "Surface Air Temperature Change",
+    ...             "Ocean Heat Content",
+    ...             "Ocean Heat Content",
     ...         ],
     ...         "time": [1950, 2000, 1950, 2000],
     ...         "value": [0.5, 1.0, 100, 200],

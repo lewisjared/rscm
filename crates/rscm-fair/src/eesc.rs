@@ -7,17 +7,16 @@
 //! fractional release $f$ (CFC-11's is $f_{11}$) and bromine potency $\beta$.
 
 use crate::constants::get;
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::RSCMResult;
+use rscm_core::names::EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 
-/// Default name of the EESC output.
-pub const EESC: &str = "Equivalent Effective Stratospheric Chlorine";
-
 /// One ozone-depleting halogen.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Halogen {
     /// Concentration variable.
     pub concentration: String,
@@ -31,14 +30,16 @@ pub struct Halogen {
     pub fractional_release: FloatValue,
 }
 
-/// Parameters of [`FairEesc`].
+/// Parameters of [`EESC`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairEescParameters {
+#[serde(deny_unknown_fields)]
+pub struct EESCParameters {
     /// The halogens.
     pub halogens: Vec<Halogen>,
     /// Fractional release of CFC-11.
     pub cfc11_fractional_release: FloatValue,
     /// Ozone depletion potency of bromine relative to chlorine.
+    /// FaIR: `br_cl_ods_potential`
     #[serde(default = "default_br_cl_ratio")]
     pub br_cl_ratio: FloatValue,
     /// EESC output.
@@ -54,7 +55,7 @@ fn default_br_cl_ratio() -> FloatValue {
 }
 
 fn default_output() -> String {
-    EESC.to_string()
+    EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE.to_string()
 }
 
 fn default_unit() -> String {
@@ -63,13 +64,13 @@ fn default_unit() -> String {
 
 /// FaIR's EESC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FairEesc {
-    parameters: FairEescParameters,
+pub struct EESC {
+    parameters: EESCParameters,
 }
 
-impl FairEesc {
+impl EESC {
     /// Create the component.
-    pub fn from_parameters(parameters: FairEescParameters) -> Self {
+    pub fn from_parameters(parameters: EESCParameters) -> Self {
         Self { parameters }
     }
 
@@ -90,16 +91,16 @@ impl FairEesc {
     }
 }
 
-#[typetag::serde]
-impl Component for FairEesc {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+#[typetag::serde(name = "fair.EESC")]
+impl Component for EESC {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         let mut definitions: Vec<_> = p
             .halogens
             .iter()
-            .map(|h| RequirementDefinition::scalar_input(&h.concentration, &h.unit))
+            .map(|h| VariableDefinition::scalar_input(&h.concentration, &h.unit))
             .collect();
-        definitions.push(RequirementDefinition::scalar_output(&p.output, &p.unit));
+        definitions.push(VariableDefinition::scalar_output(&p.output, &p.unit));
         definitions
     }
 
@@ -131,7 +132,7 @@ mod tests {
 
     #[test]
     fn cfc11_counts_its_chlorine() {
-        let c = FairEesc::from_parameters(FairEescParameters {
+        let c = EESC::from_parameters(EESCParameters {
             halogens: vec![Halogen {
                 concentration: "CFC11".into(),
                 unit: "ppt".into(),

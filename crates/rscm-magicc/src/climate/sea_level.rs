@@ -18,7 +18,7 @@
 //!
 //! # Inputs
 //!
-//! - `Surface Temperature|Annual Mean` (K) - Mean warming over the step, from `ClimateUDEB`
+//! - `Annual Mean Surface Air Temperature Change` (K) - Mean warming over the step, from `ClimateUDEB`
 //! - `Sea Level Rise|Thermal Expansion` (mm) - From `ClimateUDEB`
 //!
 //! # Outputs
@@ -38,12 +38,10 @@
 //!   from an age of 216 years, and a delayed region releases one year of melt before it starts.
 
 use crate::parameters::{
-    ClimateUDEBParameters, SeaLevelRiseParameters, SurfaceMassBalanceParameters,
-    ThermalExpansionParameters,
+    ClimateUDEBParameters, SeaLevelRiseParameters, SurfaceMassBalance, ThermalExpansion,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType,
+    Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -52,24 +50,18 @@ use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
-/// Annual mean global surface warming, written by `ClimateUDEB` at the end of each step.
-pub const ANNUAL_MEAN_TEMPERATURE: &str = "Surface Temperature|Annual Mean";
-
-/// Cumulative thermal expansion, written by `ClimateUDEB`.
-pub const THERMAL_EXPANSION: &str = "Sea Level Rise|Thermal Expansion";
-
 /// Sea level rise from thermal expansion over one step, in mm.
 ///
 /// `start` and `end` are the ocean layer warming of each hemisphere at the ends of the step
 /// and `profile` the initial layer temperatures.
 pub fn thermal_expansion_increment(
-    expansion: &ThermalExpansionParameters,
+    expansion: &ThermalExpansion,
     climate: &ClimateUDEBParameters,
     profile: &[Vec<FloatValue>; 2],
     start: &[Vec<FloatValue>],
     end: &[Vec<FloatValue>],
 ) -> FloatValue {
-    let (fgno, _, fgso, _) = climate.global_box_fractions();
+    let [nh_ocean, _, sh_ocean, _] = *climate.grid().weights();
     let [p1, p2, p3, p4, p5, p6] = expansion.coefficients;
     let sc = expansion.scaling;
     let (mld, dz) = (climate.mixed_layer_depth, climate.layer_thickness);
@@ -85,7 +77,7 @@ pub fn thermal_expansion_increment(
     let total: FloatValue = (0..climate.n_layers)
         .map(|l| {
             let (area_nh, area_sh) = (area(0, l), area(1, l));
-            let (w_nh, w_sh) = (area_nh * fgno, area_sh * fgso);
+            let (w_nh, w_sh) = (area_nh * nh_ocean, area_sh * sh_ocean);
             let world = |t: &[Vec<FloatValue>]| (w_nh * t[0][l] + w_sh * t[1][l]) / (w_nh + w_sh);
             let (t_start, t_end) = (world(start), world(end));
             let warming = (t_end - t_start) * sc;
@@ -145,7 +137,7 @@ pub struct SeaLevelRiseState {
     pub antarctic_regions: Vec<AntarcticRegionState>,
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.SeaLevelRiseState")]
 impl ComponentState for SeaLevelRiseState {
     fn as_any(&self) -> &dyn Any {
         self
@@ -159,7 +151,7 @@ impl ComponentState for SeaLevelRiseState {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["climate", "sea-level", "magicc"], category = "Climate")]
 #[inputs(
-    temperature { name = "Surface Temperature|Annual Mean", unit = "K", timeseries_type = "average" },
+    temperature { name = "Annual Mean Surface Air Temperature Change", unit = "K", timeseries_type = "average" },
     thermal_expansion { name = "Sea Level Rise|Thermal Expansion", unit = "mm" },
 )]
 #[outputs(
@@ -211,11 +203,7 @@ impl SeaLevelRise {
         glaciers + p.sensitivity * (equilibrium - glaciers) * response
     }
 
-    fn smb_step(
-        p: &SurfaceMassBalanceParameters,
-        smb: FloatValue,
-        temperature: FloatValue,
-    ) -> FloatValue {
+    fn smb_step(p: &SurfaceMassBalance, smb: FloatValue, temperature: FloatValue) -> FloatValue {
         let melt = p.linear_fraction * temperature
             + (1.0 - p.linear_fraction) * temperature.max(0.0).powf(p.exponent);
         let remaining = p
@@ -310,13 +298,19 @@ impl SeaLevelRise {
         if year >= p.glaciers.start_year {
             state.glaciers = self.glacier_step(state.glaciers, temperature);
         }
-        if year >= p.greenland_smb.start_year {
-            state.greenland_smb =
-                Self::smb_step(&p.greenland_smb, state.greenland_smb, temperature);
+        if year >= p.greenland_surface_mass_balance.start_year {
+            state.greenland_smb = Self::smb_step(
+                &p.greenland_surface_mass_balance,
+                state.greenland_smb,
+                temperature,
+            );
         }
-        if year >= p.antarctic_smb.start_year {
-            state.antarctic_smb =
-                Self::smb_step(&p.antarctic_smb, state.antarctic_smb, temperature);
+        if year >= p.antarctic_surface_mass_balance.start_year {
+            state.antarctic_smb = Self::smb_step(
+                &p.antarctic_surface_mass_balance,
+                state.antarctic_smb,
+                temperature,
+            );
         }
         let greenland_discharge = self.greenland_discharge(state, year, temperature);
         let antarctic_discharge = self.antarctic_discharge(state, year, temperature);
@@ -343,9 +337,9 @@ impl Default for SeaLevelRise {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.SeaLevelRise")]
 impl Component for SeaLevelRise {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -385,7 +379,7 @@ mod tests {
     #[test]
     fn test_thermal_expansion_follows_warming() {
         let climate = ClimateUDEBParameters::default();
-        let expansion = ThermalExpansionParameters::default();
+        let expansion = ThermalExpansion::default();
         let profile = [0, 1].map(|hemi| climate.initial_ocean_profile(hemi));
         let cold = vec![vec![0.0; climate.n_layers]; 2];
         let warm = vec![vec![0.1; climate.n_layers]; 2];
@@ -419,7 +413,7 @@ mod tests {
                 0.0
             );
             state.greenland_smb = SeaLevelRise::smb_step(
-                &component.parameters.greenland_smb,
+                &component.parameters.greenland_surface_mass_balance,
                 state.greenland_smb,
                 0.0,
             );
@@ -430,7 +424,7 @@ mod tests {
 
     #[test]
     fn test_greenland_smb_limited_by_volume() {
-        let p = SurfaceMassBalanceParameters::greenland();
+        let p = SurfaceMassBalance::greenland();
         let mut smb = 0.0;
         for _ in 0..100_000 {
             smb = SeaLevelRise::smb_step(&p, smb, 10.0);

@@ -37,8 +37,8 @@ fn check_monotonic_increasing(arr: &Array1<Time>) -> bool {
 /// The time values must be monotonically increasing with
 /// contiguous bounds (i.e. there cannot be any gaps).
 ///
-/// The convention used here is that the value represents the start of a time step.
-/// Each time step has a half-open bound that denotes the time period over which that step is
+/// The convention used here is that the value represents the start of a step.
+/// Each step has a half-open bound that denotes the time period over which that step is
 /// calculated.
 ///
 /// Generally, decimal year values are used throughout
@@ -58,7 +58,7 @@ impl TimeAxis {
 
     /// Initialise using values
     ///
-    /// Assumes that the size of the last time step is equal to the size of the previous time step
+    /// Assumes that the size of the last step is equal to the size of the previous step
     ///
     /// # Example
     ///
@@ -144,18 +144,18 @@ impl TimeAxis {
     /// assert_eq!(ta.at(1).unwrap(), 2.0);
     /// assert_eq!(ta.at(27), None);
     /// ```
-    pub fn at(&self, index: usize) -> Option<Time> {
-        if index < self.len() {
-            Option::from(self.bounds[index])
+    pub fn at(&self, time_index: usize) -> Option<Time> {
+        if time_index < self.len() {
+            Option::from(self.bounds[time_index])
         } else {
             None
         }
     }
 
-    /// Get the bounds for a given index
-    pub fn at_bounds(&self, index: usize) -> Option<(Time, Time)> {
-        if index < self.len() {
-            let bound: (Time, Time) = (self.bounds[index], self.bounds[index + 1]);
+    /// Get the bounds for a given time index
+    pub fn at_bounds(&self, time_index: usize) -> Option<(Time, Time)> {
+        if time_index < self.len() {
+            let bound: (Time, Time) = (self.bounds[time_index], self.bounds[time_index + 1]);
             Option::from(bound)
         } else {
             None
@@ -244,7 +244,7 @@ impl TimeAxis {
 /// let grid = FourBoxGrid::magicc_standard();
 /// let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0, 2002.0]));
 ///
-/// // Values: shape (3 time steps, 4 regions)
+/// // Values: shape (3 steps, 4 regions)
 /// let values = Array2::from_shape_vec(
 ///     (3, 4),
 ///     vec![
@@ -276,8 +276,8 @@ where
     /// Values stored as `Array2<T>`: shape (time, space)
     values: Array2<T>,
     time_axis: Arc<TimeAxis>,
-    units: String,
-    /// Latest timestep with valid (non-NaN) values
+    unit: String,
+    /// Latest step with valid (non-NaN) values
     latest: usize,
     interpolation_strategy: InterpolationStrategy,
 }
@@ -294,7 +294,7 @@ where
     /// * `values` - 2D array with shape (time, space)
     /// * `time_axis` - Time axis defining the temporal dimension
     /// * `grid` - Spatial grid defining the spatial dimension
-    /// * `units` - Physical units of the values
+    /// * `unit` - Physical unit of the values
     /// * `interpolation_strategy` - Strategy for temporal interpolation
     ///
     /// # Panics
@@ -306,7 +306,7 @@ where
         values: Array2<T>,
         time_axis: Arc<TimeAxis>,
         grid: G,
-        units: String,
+        unit: String,
         interpolation_strategy: InterpolationStrategy,
     ) -> Self {
         assert_eq!(
@@ -320,7 +320,7 @@ where
             "Space dimension must match grid size"
         );
 
-        // Find latest valid timestep (all regions must be non-NaN)
+        // Find latest valid step (all regions must be non-NaN)
         let mut latest = 0;
         for (t, row) in values.rows().into_iter().enumerate() {
             if row.iter().all(|v| !v.is_nan()) {
@@ -332,7 +332,7 @@ where
             grid,
             values,
             time_axis,
-            units,
+            unit,
             latest,
             interpolation_strategy,
         }
@@ -342,16 +342,16 @@ where
     pub fn new_empty(
         time_axis: Arc<TimeAxis>,
         grid: G,
-        units: String,
+        unit: String,
         interpolation_strategy: InterpolationStrategy,
     ) -> Self {
         let mut values = Array2::zeros((time_axis.len(), grid.size()));
         values.fill(T::nan());
 
-        Self::new(values, time_axis, grid, units, interpolation_strategy)
+        Self::new(values, time_axis, grid, unit, interpolation_strategy)
     }
 
-    /// Get the number of timesteps
+    /// Get the number of steps
     pub fn len(&self) -> usize {
         self.values.nrows()
     }
@@ -374,12 +374,12 @@ where
         &self.time_axis
     }
 
-    /// Get the units
-    pub fn units(&self) -> &str {
-        &self.units
+    /// Get the unit
+    pub fn unit(&self) -> &str {
+        &self.unit
     }
 
-    /// Get the index of the latest valid timestep
+    /// Get the index of the latest valid step
     pub fn latest(&self) -> usize {
         self.latest
     }
@@ -399,7 +399,7 @@ where
     pub fn set_index(&mut self, time_index: usize, region_index: usize, value: T) {
         self.values[(time_index, region_index)] = value;
 
-        // Update latest if all regions at this timestep are now valid
+        // Update latest if all regions at this step are now valid
         if time_index >= self.latest && !value.is_nan() {
             let row = self.values.row(time_index);
             if row.iter().all(|v| !v.is_nan()) {
@@ -448,7 +448,7 @@ where
         }
     }
 
-    /// Get all regional values at the latest valid timestep
+    /// Get all regional values at the latest valid step
     pub fn latest_values(&self) -> Vec<T> {
         self.values.row(self.latest).to_vec()
     }
@@ -473,7 +473,7 @@ where
         Ok(result)
     }
 
-    /// Aggregate all regions to a single global value at the latest timestep
+    /// Aggregate all regions to a single global value at the latest step
     pub fn latest_global(&self) -> T {
         let values_f64: Vec<FloatValue> = self
             .latest_values()
@@ -485,7 +485,7 @@ where
 
     /// Aggregate all regions to a single global timeseries
     ///
-    /// Returns a scalar grid timeseries by aggregating all regions at each timestep
+    /// Returns a scalar grid timeseries by aggregating all regions at each step
     pub fn aggregate_global(&self) -> GridTimeseries<T, crate::spatial::ScalarGrid> {
         use crate::spatial::ScalarGrid;
 
@@ -501,7 +501,7 @@ where
             global_values,
             self.time_axis.clone(),
             ScalarGrid,
-            self.units.clone(),
+            self.unit.clone(),
             self.interpolation_strategy.clone(),
         )
     }
@@ -531,7 +531,7 @@ where
             transformed_values,
             self.time_axis.clone(),
             target_grid,
-            self.units.clone(),
+            self.unit.clone(),
             self.interpolation_strategy.clone(),
         ))
     }
@@ -558,7 +558,7 @@ where
             region_values,
             self.time_axis.clone(),
             ScalarGrid,
-            self.units.clone(),
+            self.unit.clone(),
             self.interpolation_strategy.clone(),
         )
     }
@@ -591,10 +591,10 @@ where
         self
     }
 
-    /// Multiply every value by `factor` and relabel the series with `units`.
-    pub(crate) fn convert_units(mut self, factor: T, units: String) -> Self {
+    /// Multiply every value by `factor` and relabel the series with `unit`.
+    pub(crate) fn convert_unit(mut self, factor: T, unit: String) -> Self {
         self.values.mapv_inplace(|v| v * factor);
-        self.units = units;
+        self.unit = unit;
         self
     }
 
@@ -632,7 +632,7 @@ where
             new_values,
             new_time_axis,
             self.grid,
-            self.units,
+            self.unit,
             self.interpolation_strategy,
         )
     }
@@ -683,15 +683,15 @@ where
     /// # Arguments
     ///
     /// * `time_axis` - Time axis defining the temporal dimension
-    /// * `units` - Physical units of the values
+    /// * `unit` - Physical unit of the values
     /// * `interpolation_strategy` - Strategy for temporal interpolation
     pub fn new_empty_scalar(
         time_axis: Arc<TimeAxis>,
-        units: String,
+        unit: String,
         interpolation_strategy: InterpolationStrategy,
     ) -> Self {
         use crate::spatial::ScalarGrid;
-        Self::new_empty(time_axis, ScalarGrid, units, interpolation_strategy)
+        Self::new_empty(time_axis, ScalarGrid, unit, interpolation_strategy)
     }
 
     /// Get the scalar value at a given time index
@@ -709,8 +709,8 @@ where
     /// assert_eq!(timeseries.at_scalar(1).unwrap(), 2.0);
     /// assert!(timeseries.at_scalar(12).is_none());
     /// ```
-    pub fn at_scalar(&self, index: usize) -> Option<T> {
-        self.at(index, crate::spatial::ScalarRegion::Global)
+    pub fn at_scalar(&self, time_index: usize) -> Option<T> {
+        self.at(time_index, crate::spatial::ScalarRegion::Global)
     }
 
     /// Set the scalar value at a given time index
@@ -718,7 +718,7 @@ where
         self.set(time_index, crate::spatial::ScalarRegion::Global, value);
     }
 
-    /// Get the index of the latest valid timestep (backwards compatibility)
+    /// Get the index of the latest valid step (backwards compatibility)
     ///
     /// Returns a reference for backwards compatibility
     pub fn latest_ref(&self) -> &usize {
@@ -983,7 +983,7 @@ mod tests {
         let serialised = serde_json::to_string(&timeseries).unwrap();
         assert_eq!(
             serialised,
-            r#"{"values":{"v":1,"dim":[3,1],"data":[1.0,1.5,2.0]},"time_axis":{"bounds":{"v":1,"dim":[4],"data":[2020.0,2021.0,2022.0,2023.0]}},"units":"","latest":2,"interpolation_strategy":"Linear"}"#
+            r#"{"values":{"v":1,"dim":[3,1],"data":[1.0,1.5,2.0]},"time_axis":{"bounds":{"v":1,"dim":[4],"data":[2020.0,2021.0,2022.0,2023.0]}},"unit":"","latest":2,"interpolation_strategy":"linear"}"#
         );
 
         let deserialised = serde_json::from_str::<Timeseries<f64>>(&serialised).unwrap();
@@ -1002,7 +1002,7 @@ mod tests {
         let serialised = serde_json::to_string(&timeseries).unwrap();
         assert_eq!(
             serialised,
-            r#"{"units":"","values":{"v":1,"dim":[3],"data":[1.0,1.5,null]},"time_axis":{"bounds":{"v":1,"dim":[4],"data":[2020.0,2021.0,2022.0,2023.0]}},"latest":2,"interpolation_strategy":"Linear"}"#
+            r#"{"unit":"","values":{"v":1,"dim":[3],"data":[1.0,1.5,null]},"time_axis":{"bounds":{"v":1,"dim":[4],"data":[2020.0,2021.0,2022.0,2023.0]}},"latest":2,"interpolation_strategy":"linear"}"#
         );
 
         // This panics as it can't handle null -> NaN values
@@ -1018,9 +1018,9 @@ mod tests {
 
         let serialised = toml::to_string(&timeseries).unwrap();
 
-        let expected = "units = \"\"
+        let expected = "unit = \"\"
 latest = 1
-interpolation_strategy = \"Linear\"
+interpolation_strategy = \"linear\"
 
 [values]
 v = 1
@@ -1139,7 +1139,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0]
 
             assert_eq!(ts.latest(), 0);
 
-            // Set values for second timestep
+            // Set values for second step
             ts.set_index(1, 0, 16.0);
             ts.set_index(1, 1, 15.0);
             ts.set_index(1, 2, 11.0);
@@ -1287,7 +1287,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0]
         }
 
         #[test]
-        fn grid_timeseries_serialization_json() {
+        fn grid_timeseries_serialisation_json() {
             let grid = FourBoxGrid::magicc_standard();
             let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
 
@@ -1303,14 +1303,14 @@ data = [2020.0, 2021.0, 2022.0, 2023.0]
                 InterpolationStrategy::from(LinearSplineStrategy::new(true)),
             );
 
-            let serialized = serde_json::to_string(&ts).unwrap();
-            let deserialized: GridTimeseries<FloatValue, FourBoxGrid> =
-                serde_json::from_str(&serialized).unwrap();
+            let serialised = serde_json::to_string(&ts).unwrap();
+            let deserialised: GridTimeseries<FloatValue, FourBoxGrid> =
+                serde_json::from_str(&serialised).unwrap();
 
-            assert_eq!(deserialized.len(), ts.len());
-            assert_eq!(deserialized.grid().size(), ts.grid().size());
+            assert_eq!(deserialised.len(), ts.len());
+            assert_eq!(deserialised.grid().size(), ts.grid().size());
             assert_eq!(
-                deserialized.at(0, FourBoxRegion::NorthernOcean),
+                deserialised.at(0, FourBoxRegion::NorthernOcean),
                 ts.at(0, FourBoxRegion::NorthernOcean)
             );
         }

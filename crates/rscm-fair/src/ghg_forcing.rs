@@ -8,7 +8,7 @@
 
 use crate::constants::{forcing_unit, get, one, surface_temperature, temperature_unit};
 use rscm_components::meinshausen2020::Meinshausen2020;
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -17,7 +17,8 @@ use std::sync::OnceLock;
 
 /// One greenhouse gas.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct GhgSpecies {
+#[serde(deny_unknown_fields)]
+pub struct GHGSpecies {
     /// Concentration input.
     pub concentration: String,
     /// Concentration unit.
@@ -42,24 +43,25 @@ pub struct GhgSpecies {
     pub temperature_feedback: FloatValue,
 }
 
-impl GhgSpecies {
+impl GHGSpecies {
     fn scale(&self) -> FloatValue {
         self.forcing_scale * (1.0 + self.tropospheric_adjustment)
     }
 }
 
-/// Parameters of [`FairGhgForcing`].
+/// Parameters of [`GHGForcing`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairGhgForcingParameters {
+#[serde(deny_unknown_fields)]
+pub struct GHGForcingParameters {
     /// CO2.
-    pub co2: GhgSpecies,
+    pub co2: GHGSpecies,
     /// CH4.
-    pub ch4: GhgSpecies,
+    pub ch4: GHGSpecies,
     /// N2O.
-    pub n2o: GhgSpecies,
+    pub n2o: GHGSpecies,
     /// Gases with forcing linear in concentration.
     #[serde(default)]
-    pub minor: Vec<GhgSpecies>,
+    pub minor: Vec<GHGSpecies>,
     /// Surface temperature input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
@@ -67,22 +69,22 @@ pub struct FairGhgForcingParameters {
 
 /// FaIR's Meinshausen et al. (2020) greenhouse gas forcing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FairGhgForcing {
-    parameters: FairGhgForcingParameters,
+pub struct GHGForcing {
+    parameters: GHGForcingParameters,
     #[serde(skip)]
     offset: OnceLock<Vec<FloatValue>>,
 }
 
-impl FairGhgForcing {
+impl GHGForcing {
     /// Create the component.
-    pub fn from_parameters(parameters: FairGhgForcingParameters) -> Self {
+    pub fn from_parameters(parameters: GHGForcingParameters) -> Self {
         Self {
             parameters,
             offset: OnceLock::new(),
         }
     }
 
-    fn species(&self) -> impl Iterator<Item = &GhgSpecies> {
+    fn species(&self) -> impl Iterator<Item = &GHGSpecies> {
         let p = &self.parameters;
         [&p.co2, &p.ch4, &p.n2o].into_iter().chain(&p.minor)
     }
@@ -119,19 +121,19 @@ impl FairGhgForcing {
     }
 }
 
-#[typetag::serde]
-impl Component for FairGhgForcing {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        let mut definitions = vec![RequirementDefinition::scalar_input(
+#[typetag::serde(name = "fair.GHGForcing")]
+impl Component for GHGForcing {
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        let mut definitions = vec![VariableDefinition::scalar_input(
             &self.parameters.surface_temperature,
             &temperature_unit(),
         )];
         for s in self.species() {
-            definitions.push(RequirementDefinition::scalar_input(
+            definitions.push(VariableDefinition::scalar_input(
                 &s.concentration,
                 &s.concentration_unit,
             ));
-            definitions.push(RequirementDefinition::scalar_output(
+            definitions.push(VariableDefinition::scalar_output(
                 &s.forcing,
                 &forcing_unit(),
             ));
@@ -166,8 +168,8 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
 
-    fn gas(name: &str, reference: FloatValue) -> GhgSpecies {
-        GhgSpecies {
+    fn gas(name: &str, reference: FloatValue) -> GHGSpecies {
+        GHGSpecies {
             concentration: name.into(),
             concentration_unit: "ppm".into(),
             forcing: format!("Effective Radiative Forcing|{name}"),
@@ -180,8 +182,8 @@ mod tests {
         }
     }
 
-    fn component() -> FairGhgForcing {
-        FairGhgForcing::from_parameters(FairGhgForcingParameters {
+    fn component() -> GHGForcing {
+        GHGForcing::from_parameters(GHGForcingParameters {
             co2: gas("CO2", 277.15),
             ch4: gas("CH4", 731.41),
             n2o: gas("N2O", 273.87),

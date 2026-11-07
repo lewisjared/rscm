@@ -9,21 +9,23 @@ use serde::{Deserialize, Serialize};
 /// Forcing calculation method
 ///
 /// Selects which radiative transfer parameterisation to use for
-/// CO2/CH4/N2O forcing.
+/// CO2/CH4/N2O forcing. Strings use MAGICC7's `CORE_CO2CH4N2O_RFMETHOD` spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ForcingMethod {
     /// IPCCTAR method (Myhre et al. 1998)
     ///
     /// Simple logarithmic/square-root formulae with CH4-N2O overlap.
     /// Used for backward compatibility and simpler validation.
-    Ipcctar,
+    #[serde(rename = "IPCCTAR")]
+    IPCCTAR,
 
     /// OLBL method (Oslo line-by-line)
     ///
     /// Concentration-dependent forcing coefficients calibrated against
     /// line-by-line radiative transfer calculations. This is the method
     /// used in MAGICC7 v7.5.3 for AR6 assessments.
-    Olbl,
+    #[serde(rename = "OLBL")]
+    OLBL,
 }
 
 /// Parameters for GHG radiative forcing
@@ -50,13 +52,15 @@ pub enum ForcingMethod {
 /// $$ERF_X = F_X \cdot \alpha_X$$
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct GhgForcingParameters {
+#[serde(deny_unknown_fields)]
+pub struct GHGForcingParameters {
     /// Forcing calculation method
     pub method: ForcingMethod,
 
     // === Pre-industrial concentrations ===
     /// Pre-industrial CO2 concentration (ppm).
     /// Default: 278.0 ppm
+    /// MAGICC7: CO2_PREINDCO2CONC
     pub co2_pi: f64,
 
     /// Pre-industrial CH4 concentration (ppb).
@@ -68,23 +72,26 @@ pub struct GhgForcingParameters {
     pub n2o_pi: f64,
 
     // === IPCCTAR-specific parameters ===
-    /// Forcing for CO2 doubling (W/m2).
+    /// 2xCO2 effective radiative forcing (W/m^2).
     ///
-    /// Used by IPCCTAR method: `alpha = delq2xco2 / ln(2)`.
+    /// Used by IPCCTAR method: `alpha = erf_2xco2 / ln(2)`.
     /// Default: 3.71 W/m2
-    pub delq2xco2: f64,
+    /// MAGICC7: CORE_DELQ2XCO2
+    pub erf_2xco2: f64,
 
     /// CH4 radiative efficiency (W/m2 per sqrt(ppb)).
     ///
     /// IPCCTAR coefficient for CH4 forcing.
+    /// MAGICC7: CH4_RADEFF_WM2PERPPB
     /// Default: 0.036
-    pub ch4_radeff: f64,
+    pub ch4_radiative_efficiency: f64,
 
     /// N2O radiative efficiency (W/m2 per sqrt(ppb)).
     ///
     /// IPCCTAR coefficient for N2O forcing.
+    /// MAGICC7: N2O_RADEFF_WM2PERPPB
     /// Default: 0.12
-    pub n2o_radeff: f64,
+    pub n2o_radiative_efficiency: f64,
 
     // === OLBL coefficients (MAGICC7 v7.5.3) ===
     // CO2: alpha = a1*(C-C0)^2 + b1*(C-C0) + d1 + c1*sqrt(N2O)
@@ -152,13 +159,13 @@ pub struct GhgForcingParameters {
 
     /// `CH4_ADDEDSTRATH2O_PERCENT`: stratospheric H2O ERF from CH4 oxidation
     /// as a fraction of CH4 ERF at pre-industrial N2O.
-    pub ch4_strat_h2o_fraction: f64,
+    pub ch4_stratospheric_h2o_fraction: f64,
 }
 
-impl Default for GhgForcingParameters {
+impl Default for GHGForcingParameters {
     fn default() -> Self {
         Self {
-            method: ForcingMethod::Olbl,
+            method: ForcingMethod::OLBL,
 
             // Pre-industrial concentrations
             co2_pi: 278.0, // ppm
@@ -166,9 +173,9 @@ impl Default for GhgForcingParameters {
             n2o_pi: 270.0, // ppb
 
             // IPCCTAR parameters
-            delq2xco2: 3.71,
-            ch4_radeff: 0.036,
-            n2o_radeff: 0.12,
+            erf_2xco2: 3.71,
+            ch4_radiative_efficiency: 0.036,
+            n2o_radiative_efficiency: 0.12,
 
             // OLBL coefficients (MAGICC7 v7.5.3 MAGCFG_DEFAULTALL.CFG)
             olbl_co2_a1: -2.4785e-7,
@@ -188,12 +195,12 @@ impl Default for GhgForcingParameters {
             adjust_ch4: 0.86,
             adjust_n2o: 1.0,
 
-            ch4_strat_h2o_fraction: 0.0923,
+            ch4_stratospheric_h2o_fraction: 0.0923,
         }
     }
 }
 
-impl GhgForcingParameters {
+impl GHGForcingParameters {
     /// OLBL coefficients.
     pub fn olbl(&self) -> Meinshausen2020 {
         Meinshausen2020 {
@@ -218,13 +225,13 @@ mod tests {
 
     #[test]
     fn test_default_parameters() {
-        let params = GhgForcingParameters::default();
+        let params = GHGForcingParameters::default();
 
-        assert_eq!(params.method, ForcingMethod::Olbl);
+        assert_eq!(params.method, ForcingMethod::OLBL);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
         assert!((params.ch4_pi - 722.0).abs() < 1e-10);
         assert!((params.n2o_pi - 270.0).abs() < 1e-10);
-        assert!((params.delq2xco2 - 3.71).abs() < 1e-10);
+        assert!((params.erf_2xco2 - 3.71).abs() < 1e-10);
 
         // Adjustment factors should be close to 1
         assert!(params.adjust_co2 > 0.5 && params.adjust_co2 < 2.0);
@@ -233,10 +240,10 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
-        let params = GhgForcingParameters::default();
+    fn test_serialisation_roundtrip() {
+        let params = GHGForcingParameters::default();
         let json = serde_json::to_string(&params).unwrap();
-        let restored: GhgForcingParameters = serde_json::from_str(&json).unwrap();
+        let restored: GHGForcingParameters = serde_json::from_str(&json).unwrap();
 
         assert_eq!(params.method, restored.method);
         assert!((params.co2_pi - restored.co2_pi).abs() < 1e-10);
@@ -244,12 +251,12 @@ mod tests {
     }
 
     #[test]
-    fn test_partial_deserialization() {
-        let json = r#"{"method": "Ipcctar", "delq2xco2": 3.80}"#;
-        let params: GhgForcingParameters = serde_json::from_str(json).unwrap();
+    fn test_partial_deserialisation() {
+        let json = r#"{"method": "IPCCTAR", "erf_2xco2": 3.80}"#;
+        let params: GHGForcingParameters = serde_json::from_str(json).unwrap();
 
-        assert_eq!(params.method, ForcingMethod::Ipcctar);
-        assert!((params.delq2xco2 - 3.80).abs() < 1e-10);
+        assert_eq!(params.method, ForcingMethod::IPCCTAR);
+        assert!((params.erf_2xco2 - 3.80).abs() < 1e-10);
         // Defaults for unspecified fields
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
     }

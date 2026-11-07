@@ -43,8 +43,8 @@ impl Chain {
             return result;
         }
 
-        let n_keep = self.len() - discard;
-        if n_keep < 4 {
+        let n_kept_samples = self.len() - discard;
+        if n_kept_samples < 4 {
             // Need at least 4 samples to split chains
             return result;
         }
@@ -52,24 +52,29 @@ impl Chain {
         let n_walkers = self.samples[0].nrows();
 
         // Split each walker's chain in half
-        let n_split = n_keep / 2;
+        let n_half_samples = n_kept_samples / 2;
         let n_chains = n_walkers * 2;
 
-        for (param_idx, param_name) in self.param_names.iter().enumerate() {
-            // Extract all samples for this parameter, organized by split chain
+        for (param_idx, param_name) in self.parameter_names.iter().enumerate() {
+            // Extract all samples for this parameter, organised by split chain
             let mut chain_samples = Vec::with_capacity(n_chains);
 
             for walker_idx in 0..n_walkers {
                 // First half of walker's chain
-                let mut first_half = Vec::with_capacity(n_split);
-                for sample in self.samples.iter().skip(discard).take(n_split) {
+                let mut first_half = Vec::with_capacity(n_half_samples);
+                for sample in self.samples.iter().skip(discard).take(n_half_samples) {
                     first_half.push(sample[[walker_idx, param_idx]]);
                 }
                 chain_samples.push(first_half);
 
                 // Second half of walker's chain
-                let mut second_half = Vec::with_capacity(n_split);
-                for sample in self.samples.iter().skip(discard + n_split).take(n_split) {
+                let mut second_half = Vec::with_capacity(n_half_samples);
+                for sample in self
+                    .samples
+                    .iter()
+                    .skip(discard + n_half_samples)
+                    .take(n_half_samples)
+                {
                     second_half.push(sample[[walker_idx, param_idx]]);
                 }
                 chain_samples.push(second_half);
@@ -80,9 +85,9 @@ impl Chain {
             let mut chain_vars = Vec::with_capacity(n_chains);
 
             for chain in &chain_samples {
-                let mean = chain.iter().sum::<f64>() / n_split as f64;
-                let variance =
-                    chain.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n_split - 1) as f64;
+                let mean = chain.iter().sum::<f64>() / n_half_samples as f64;
+                let variance = chain.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
+                    / (n_half_samples - 1) as f64;
 
                 chain_means.push(mean);
                 chain_vars.push(variance);
@@ -93,7 +98,7 @@ impl Chain {
 
             // Between-chain variance (B)
             let overall_mean = chain_means.iter().sum::<f64>() / n_chains as f64;
-            let b = n_split as f64
+            let b = n_half_samples as f64
                 * chain_means
                     .iter()
                     .map(|&m| (m - overall_mean).powi(2))
@@ -101,7 +106,7 @@ impl Chain {
                 / (n_chains - 1) as f64;
 
             // Variance estimate
-            let var_plus = ((n_split - 1) as f64 * w + b) / n_split as f64;
+            let var_plus = ((n_half_samples - 1) as f64 * w + b) / n_half_samples as f64;
 
             // R-hat
             let r_hat = (var_plus / w).sqrt();
@@ -168,20 +173,20 @@ impl Chain {
             return result;
         }
 
-        let n_keep = self.len() - discard;
-        if n_keep < 10 {
+        let n_kept_samples = self.len() - discard;
+        if n_kept_samples < 10 {
             // Need at least 10 samples for meaningful autocorrelation
             return result;
         }
 
         let n_walkers = self.samples[0].nrows();
 
-        for (param_idx, param_name) in self.param_names.iter().enumerate() {
+        for (param_idx, param_name) in self.parameter_names.iter().enumerate() {
             // Extract samples for this parameter from each walker
             let mut walker_chains = Vec::with_capacity(n_walkers);
 
             for walker_idx in 0..n_walkers {
-                let mut chain = Vec::with_capacity(n_keep);
+                let mut chain = Vec::with_capacity(n_kept_samples);
                 for sample in self.samples.iter().skip(discard) {
                     chain.push(sample[[walker_idx, param_idx]]);
                 }
@@ -189,7 +194,7 @@ impl Chain {
             }
 
             // Compute autocorrelation for each walker and average
-            let max_lag = (n_keep / 2).min(100); // Don't go beyond half the chain or 100 lags
+            let max_lag = (n_kept_samples / 2).min(100); // Don't go beyond half the chain or 100 lags
             let mut avg_autocorr = vec![0.0; max_lag];
 
             for chain in &walker_chains {
@@ -209,8 +214,8 @@ impl Chain {
             }
 
             // Compute ESS
-            let n_total = (n_keep * n_walkers) as f64;
-            let ess = n_total / (1.0 + 2.0 * sum_autocorr);
+            let n_flat_samples = (n_kept_samples * n_walkers) as f64;
+            let ess = n_flat_samples / (1.0 + 2.0 * sum_autocorr);
 
             result.insert(param_name.clone(), ess);
         }
@@ -258,20 +263,20 @@ impl Chain {
             return result;
         }
 
-        let n_keep = self.len() - discard;
-        if n_keep < 10 {
+        let n_kept_samples = self.len() - discard;
+        if n_kept_samples < 10 {
             // Need at least 10 samples for meaningful autocorrelation
             return result;
         }
 
         let n_walkers = self.samples[0].nrows();
 
-        for (param_idx, param_name) in self.param_names.iter().enumerate() {
+        for (param_idx, param_name) in self.parameter_names.iter().enumerate() {
             // Extract samples for this parameter from each walker
             let mut walker_chains = Vec::with_capacity(n_walkers);
 
             for walker_idx in 0..n_walkers {
-                let mut chain = Vec::with_capacity(n_keep);
+                let mut chain = Vec::with_capacity(n_kept_samples);
                 for sample in self.samples.iter().skip(discard) {
                     chain.push(sample[[walker_idx, param_idx]]);
                 }
@@ -279,7 +284,7 @@ impl Chain {
             }
 
             // Compute autocorrelation for each walker and average
-            let max_lag = (n_keep / 2).min(100); // Don't go beyond half the chain or 100 lags
+            let max_lag = (n_kept_samples / 2).min(100); // Don't go beyond half the chain or 100 lags
             let mut avg_autocorr = vec![0.0; max_lag];
 
             for chain in &walker_chains {
@@ -360,8 +365,8 @@ mod tests {
     fn test_r_hat_converged_chains() {
         // Create a chain with samples from a converged distribution
         // All walkers sampling from the same distribution should give R-hat ≈ 1.0
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names, 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names, 1);
 
         let n_walkers = 4;
         let n_samples = 100;
@@ -400,8 +405,8 @@ mod tests {
     fn test_r_hat_diverged_chains() {
         // Create a chain where different walkers sample from different distributions
         // This should give R-hat > 1.0
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names, 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names, 1);
 
         let n_walkers = 4;
         let n_samples = 100;
@@ -433,8 +438,8 @@ mod tests {
     #[test]
     fn test_r_hat_multiple_parameters() {
         // Test R-hat with multiple parameters
-        let param_names = vec!["x".to_string(), "y".to_string()];
-        let mut chain = Chain::new(param_names.clone(), 1);
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
+        let mut chain = Chain::new(parameter_names.clone(), 1);
 
         let n_walkers = 4;
         let n_samples = 100;
@@ -472,8 +477,8 @@ mod tests {
     #[test]
     fn test_r_hat_insufficient_samples() {
         // Test that R-hat returns empty map with insufficient samples
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names, 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names, 1);
 
         // Add only 3 samples (need at least 4 after discard)
         for _ in 0..3 {
@@ -487,8 +492,8 @@ mod tests {
     #[test]
     fn test_is_converged() {
         // Create a converged chain
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names, 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names, 1);
 
         let n_walkers = 4;
         let n_samples = 100;
@@ -520,8 +525,8 @@ mod tests {
     fn test_ess_independent_samples() {
         // Test ESS with independent samples (no autocorrelation)
         // ESS should be close to the total number of samples
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names, 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names, 1);
 
         let n_walkers = 4;
         let n_samples = 200;
@@ -547,16 +552,16 @@ mod tests {
         assert!(ess.contains_key("x"));
 
         // ESS should be close to total samples for independent draws
-        let total_samples = (n_samples - 10) * n_walkers;
+        let n_flat_samples = (n_samples - 10) * n_walkers;
         let ess_x = ess["x"];
 
         // Allow some variation due to finite sample effects
         // ESS should be at least 50% of total samples for independent data
         assert!(
-            ess_x > (total_samples as f64 * 0.5),
+            ess_x > (n_flat_samples as f64 * 0.5),
             "ESS = {} (expected > {})",
             ess_x,
-            total_samples as f64 * 0.5
+            n_flat_samples as f64 * 0.5
         );
     }
 
@@ -564,8 +569,8 @@ mod tests {
     fn test_ess_correlated_samples() {
         // Test ESS with highly autocorrelated samples
         // ESS should be much less than total number of samples
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names, 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names, 1);
 
         let n_walkers = 4;
         let n_samples = 200;
@@ -574,7 +579,7 @@ mod tests {
         use rand_distr::{Distribution as _, Normal};
         let normal = Normal::new(0.0, 0.1).unwrap(); // Small noise
 
-        // Initialize walker positions
+        // Initialise walker positions
         let mut current = vec![0.0; n_walkers];
 
         for _ in 0..n_samples {
@@ -594,22 +599,22 @@ mod tests {
         assert_eq!(ess.len(), 1);
 
         // ESS should be much less than total samples for autocorrelated data
-        let total_samples = (n_samples - 10) * n_walkers;
+        let n_flat_samples = (n_samples - 10) * n_walkers;
         let ess_x = ess["x"];
 
         assert!(
-            ess_x < (total_samples as f64 * 0.3),
+            ess_x < (n_flat_samples as f64 * 0.3),
             "ESS = {} (expected < {} for autocorrelated data)",
             ess_x,
-            total_samples as f64 * 0.3
+            n_flat_samples as f64 * 0.3
         );
     }
 
     #[test]
     fn test_ess_multiple_parameters() {
         // Test ESS with multiple parameters
-        let param_names = vec!["x".to_string(), "y".to_string()];
-        let mut chain = Chain::new(param_names.clone(), 1);
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
+        let mut chain = Chain::new(parameter_names.clone(), 1);
 
         let n_walkers = 4;
         let n_samples = 100;
@@ -645,8 +650,8 @@ mod tests {
     #[test]
     fn test_ess_insufficient_samples() {
         // Test that ESS returns empty map with insufficient samples
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names, 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names, 1);
 
         // Add only 9 samples (need at least 10 after discard)
         for _ in 0..9 {
@@ -665,8 +670,8 @@ mod tests {
 
         // Test autocorrelation time with independent samples
         // τ should be close to 1.0 (no correlation)
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names.clone(), 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names.clone(), 1);
 
         let mut rng = ChaCha8Rng::seed_from_u64(12345);
         let n_samples = 100;
@@ -694,8 +699,8 @@ mod tests {
     fn test_autocorr_time_correlated_samples() {
         // Test autocorrelation time with highly autocorrelated samples (random walk)
         // τ should be large (many correlated steps)
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names.clone(), 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names.clone(), 1);
 
         let n_samples = 100;
         let n_walkers = 4;
@@ -729,8 +734,8 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
 
         // Test autocorrelation time with multiple parameters
-        let param_names = vec!["x".to_string(), "y".to_string()];
-        let mut chain = Chain::new(param_names.clone(), 1);
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
+        let mut chain = Chain::new(parameter_names.clone(), 1);
 
         let mut rng = ChaCha8Rng::seed_from_u64(54321);
         let n_samples = 100;
@@ -762,8 +767,8 @@ mod tests {
     #[test]
     fn test_autocorr_time_insufficient_samples() {
         // Test that autocorr_time returns empty map with insufficient samples
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names, 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names, 1);
 
         // Add only 9 samples (need at least 10 after discard)
         for _ in 0..9 {
@@ -781,8 +786,8 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
 
         // Test the mathematical relationship: ESS ≈ N / τ
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names.clone(), 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names.clone(), 1);
 
         let mut rng = ChaCha8Rng::seed_from_u64(99999);
         let n_samples = 100;
@@ -806,8 +811,8 @@ mod tests {
         let x_tau = tau.get("x").unwrap();
         let x_ess = ess.get("x").unwrap();
 
-        let n_total = ((n_samples - 10) * n_walkers) as f64;
-        let expected_ess = n_total / x_tau;
+        let n_flat_samples = ((n_samples - 10) * n_walkers) as f64;
+        let expected_ess = n_flat_samples / x_tau;
 
         // ESS and τ should be consistent: ESS ≈ N / τ
         // Allow 20% relative error due to numerical differences in computation
@@ -817,7 +822,7 @@ mod tests {
             "ESS = {}, expected ≈ {} (N={}, τ={}), relative error = {:.1}%",
             x_ess,
             expected_ess,
-            n_total,
+            n_flat_samples,
             x_tau,
             relative_error * 100.0
         );

@@ -35,7 +35,7 @@
 //!
 //! let component = CO2ERF::from_parameters(CO2ERFParameters {
 //!     erf_2xco2: 3.7,    // W/m^2
-//!     conc_pi: 278.0,    // ppm
+//!     co2_pi: 278.0,    // ppm
 //! });
 //!
 //! // Add to model via ModelBuilder
@@ -44,7 +44,7 @@
 //!     .build();
 //! ```
 //!
-//! Each component declares its input requirements and output variables through the
+//! Each component declares its input and output variables through the
 //! `definitions()` method. The model orchestrator uses this information to resolve
 //! dependencies and execute components in topological order.
 

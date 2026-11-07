@@ -34,6 +34,7 @@ import shutil
 from fnmatch import fnmatchcase
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from utils import MAGICC_ROOT, make_config, output_dir, run_magicc_ctx
 
@@ -61,8 +62,11 @@ REFERENCE_VARIABLES = (
     *(
         f"Effective Radiative Forcing|{agent}"
         for agent in (
+            "Aerosols",
+            "Anthropogenic",
             "CH4 Oxidation Stratospheric H2O",
             "F-Gases",
+            "Greenhouse Gases",
             "Montreal Protocol Halogen Gases",
             "Stratospheric Ozone",
             "Volcanic",
@@ -267,11 +271,14 @@ class _Recorder(dict):
 
 def write_defaults() -> None:
     """Write the configuration values and 1750 concentrations the full chain reads."""
+    from rscm.core import TimeAxis  # noqa: PLC0415
     from rscm.magicc import full  # noqa: PLC0415
+    from rscm.names import SECTORS, Convention, convert_variable_name  # noqa: PLC0415
 
     config = default_config()
     data = pd.read_csv(OUT / f"{CASES[0][0]}.csv.gz")
     data = data[data.region == "World"].set_index("variable")
+    data.index = data.index.map(convert_variable_name)
     data = data[[c for c in data.columns if c[:4].isdigit()]]
     species = ("CO2", "CH4", "N2O", *full.halocarbon_species())
     concentrations = {
@@ -281,16 +288,15 @@ def write_defaults() -> None:
     files = full.prescribed_concentrations([1750.0, 1751.0], config)
     for s in full.halocarbon_species()[: config["fgas_n"]]:
         concentrations[s] = float(files[s][0][0])
-    sectors = {"Fossil": "MAGICC Fossil and Industrial", "AFOLU": "MAGICC AFOLU"}
     emissions = {
         **{
-            f"{s}|{sector}": data.loc[f"Emissions|{s}|{theirs}"].to_numpy()
+            f"{s}|{sector}": data.loc[f"Emissions|{s}|{sector}"].to_numpy()
             for s in full.SECTORAL_EMISSIONS
-            for sector, theirs in sectors.items()
+            for sector in SECTORS
         },
         **{s: data.loc[f"Emissions|{s}"].to_numpy() for s in full.halocarbon_species()},
     }
-    years = [int(c[:4]) for c in data.columns]
+    time_axis = TimeAxis.from_values(np.array([float(c[:4]) for c in data.columns]))
     defaults = {"parameters": {}, "initial_concentrations": concentrations}
     full._defaults = lambda: defaults
     recorder = _Recorder(config)
@@ -299,7 +305,9 @@ def write_defaults() -> None:
         recorder["ncycle_apply"] = ncycle_apply
         for flag in ("ndep_from_emis", "prognostic_nfix", "cn_initial_values"):
             recorder[f"ncycle_apply_{flag}"] = ncycle_apply
-        full.run_magicc7(years, emissions, parameters=recorder)
+        full.run_magicc7(
+            time_axis, emissions, parameters=recorder, convention=Convention.MAGICC7
+        )
     parameters = {key: config[key] for key in sorted(recorder.used)}
     with open(PACKAGE_DATA / "defaults.json", "w") as f:
         json.dump(

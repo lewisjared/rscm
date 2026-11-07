@@ -7,49 +7,51 @@
 //!
 //! 1. Sums fossil and industrial emissions with CO2 from fossil CH4 oxidation
 //! 2. Subtracts the net land and ocean uptake
-//! 3. Updates atmospheric CO2 concentration for the next timestep
+//! 3. Updates atmospheric CO2 concentration for the next step
 //! 4. Calculates the airborne fraction of the fossil sources
 //!
 //! # Inputs
 //!
 //! - `Emissions|CO2|Fossil` (GtC/yr) - Fossil fuel and industrial emissions
 //! - `Emissions|CO2|CH4 Oxidation` (GtC/yr) - CO2 from oxidised fossil CH4
-//! - `Carbon Flux|Terrestrial` (GtC/yr) - Net atmosphere-to-land flux (positive =
+//! - `Net Atmosphere to Land Flux|CO2` (GtC/yr) - Net atmosphere-to-land flux (positive =
 //!   uptake). Land-use emissions are part of this flux, as in MAGICC7, because
 //!   deforestation removes carbon from the land pools.
-//! - `Carbon Flux|Ocean` (GtC/yr) - Net ocean uptake (positive = uptake)
-//! - `End-of-Year Atmospheric CO2` (ppm) - Concentration after the ocean's last sub-step,
+//! - `Net Atmosphere to Ocean Flux|CO2` (GtC/yr) - Net ocean uptake (positive = uptake)
+//! - `Ocean Carbon Atmospheric Concentrations|CO2` (ppm) - Concentration after the ocean's last substep,
 //!   only with the `ocean_end_of_year` parameter
-//! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `permafrost` parameter
+//! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `include_permafrost` parameter
 //!
-//! # States (tracked between timesteps)
+//! # States (tracked between steps)
 //!
-//! - `Atmospheric Concentration|CO2` (ppm) - Atmospheric CO2 concentration
+//! - `Atmospheric Concentrations|CO2` (ppm) - Atmospheric CO2 concentration
 //!
 //! # Outputs
 //!
-//! - `Emissions|CO2|Net` (GtC/yr) - Net emissions to atmosphere
+//! - `Net Emissions|CO2` (GtC/yr) - Net emissions to atmosphere
 //! - `Airborne Fraction|CO2` (1) - Fraction of fossil sources remaining in the atmosphere
 //!
 //! # Differences from MAGICC7
 //!
 //! - **Monthly integration in the ocean**: in MAGICC7, atmospheric CO2 evolves over
-//!   the ocean's sub-steps, and the concentration it ends the year on becomes next year's.
+//!   the ocean's substeps, and the concentration it ends the year on becomes next year's.
 //!   `ocean_end_of_year` takes that value from `OceanCarbon`. Without it, the annual sum
 //!   in [`CO2Budget::solve_budget`] differs from it only by rounding.
 //! - **No concentration cap**: MAGICC7 can cap CO2 concentration. Not implemented.
 //! - **No inverse fossil emissions**: before `concentration_switch_year` the
-//!   concentration follows `Atmospheric Concentration|CO2|Prescribed` and
-//!   `Emissions|CO2|Net` is the implied net source, but fossil emissions are not inverted.
+//!   concentration follows `Prescribed Atmospheric Concentrations|CO2` and
+//!   `Net Emissions|CO2` is the implied net source, but fossil emissions are not inverted.
 
 use crate::parameters::CO2BudgetParameters;
-use crate::reference::{
-    permafrost_emissions, prescribed_concentration, prescribed_definition, PERMAFROST_CO2,
-};
+use crate::reference::{permafrost_emissions, prescribed_concentration, prescribed_definition};
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
+use rscm_core::names::{
+    ATMOSPHERIC_CONCENTRATIONS_CO2, EMISSIONS_CO2_PERMAFROST,
+    OCEAN_CARBON_ATMOSPHERIC_CONCENTRATIONS_CO2,
+};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -66,22 +68,19 @@ use serde::{Deserialize, Serialize};
 #[inputs(
     fossil_emissions { name = "Emissions|CO2|Fossil", unit = "GtC/yr" },
     ch4_oxidation { name = "Emissions|CO2|CH4 Oxidation", unit = "GtC/yr" },
-    terrestrial_flux { name = "Carbon Flux|Terrestrial", unit = "GtC/yr" },
-    ocean_flux { name = "Carbon Flux|Ocean", unit = "GtC/yr" },
+    terrestrial_flux { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr" },
+    ocean_flux { name = "Net Atmosphere to Ocean Flux|CO2", unit = "GtC/yr" },
 )]
 #[states(
-    co2_concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 )]
 #[outputs(
-    net_emissions { name = "Emissions|CO2|Net", unit = "GtC/yr" },
+    net_emissions { name = "Net Emissions|CO2", unit = "GtC/yr" },
     airborne_fraction { name = "Airborne Fraction|CO2", unit = "1" },
 )]
 pub struct CO2Budget {
     parameters: CO2BudgetParameters,
 }
-
-const CO2_CONCENTRATION: &str = "Atmospheric Concentration|CO2";
-const CO2_END_OF_YEAR: &str = "End-of-Year Atmospheric CO2";
 
 impl CO2Budget {
     /// Create a new CO2 budget component with default parameters.
@@ -94,7 +93,7 @@ impl CO2Budget {
         Self { parameters }
     }
 
-    /// Solve the CO2 budget for one timestep.
+    /// Solve the CO2 budget for one step.
     ///
     /// Returns (new CO2 concentration, net emissions, airborne fraction).
     pub fn solve_budget(
@@ -131,21 +130,24 @@ impl Default for CO2Budget {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.CO2Budget")]
 impl Component for CO2Budget {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
-        if self.parameters.permafrost {
-            definitions.push(RequirementDefinition::scalar_input(
-                PERMAFROST_CO2,
+        if self.parameters.include_permafrost {
+            definitions.push(VariableDefinition::scalar_input(
+                EMISSIONS_CO2_PERMAFROST,
                 "GtC/yr",
             ));
         }
         if self.parameters.ocean_end_of_year {
-            definitions.push(RequirementDefinition::scalar_input(CO2_END_OF_YEAR, "ppm"));
+            definitions.push(VariableDefinition::scalar_input(
+                OCEAN_CARBON_ATMOSPHERIC_CONCENTRATIONS_CO2,
+                "ppm",
+            ));
         }
         definitions.extend(prescribed_definition(
-            CO2_CONCENTRATION,
+            ATMOSPHERIC_CONCENTRATIONS_CO2,
             "ppm",
             self.parameters.concentration_switch_year,
         ));
@@ -162,7 +164,11 @@ impl Component for CO2Budget {
 
         let co2_start = inputs.co2_concentration.get();
         let fossil = inputs.fossil_emissions.get()
-            + permafrost_emissions(self.parameters.permafrost, input_state, PERMAFROST_CO2);
+            + permafrost_emissions(
+                self.parameters.include_permafrost,
+                input_state,
+                EMISSIONS_CO2_PERMAFROST,
+            );
         let sources = fossil + inputs.ch4_oxidation.get();
         let (mut co2_next, mut net_emissions, mut airborne_fraction) = self.solve_budget(
             fossil,
@@ -173,11 +179,13 @@ impl Component for CO2Budget {
             t_next - t_current,
         );
         if self.parameters.ocean_end_of_year {
-            co2_next = input_state.get_scalar_window(CO2_END_OF_YEAR).get();
+            co2_next = input_state
+                .get_scalar_window(OCEAN_CARBON_ATMOSPHERIC_CONCENTRATIONS_CO2)
+                .get();
         }
         if let Some(prescribed) = prescribed_concentration(
             input_state,
-            CO2_CONCENTRATION,
+            ATMOSPHERIC_CONCENTRATIONS_CO2,
             self.parameters.concentration_switch_year,
             t_next,
         ) {
@@ -270,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn test_half_year_timestep() {
+    fn test_half_year_step() {
         let component = default_component();
         let (co2_half, _, _) = component.solve_budget(10.0, 0.0, 2.0, 2.0, 400.0, 0.5);
         let (co2_full, _, _) = component.solve_budget(10.0, 0.0, 2.0, 2.0, 400.0, 1.0);
@@ -286,6 +294,6 @@ mod tests {
             .map(|d| d.name.clone())
             .collect();
         assert!(names.contains(&"Emissions|CO2|CH4 Oxidation".to_string()));
-        assert!(!names.contains(&"Emissions|CO2|Land Use".to_string()));
+        assert!(!names.contains(&"Emissions|CO2|Biosphere".to_string()));
     }
 }

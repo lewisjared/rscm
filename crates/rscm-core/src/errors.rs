@@ -1,3 +1,4 @@
+use crate::units::Unit;
 use thiserror::Error;
 
 /// Error type for invalid operations.
@@ -9,15 +10,15 @@ pub enum RSCMError {
     #[error("Extrapolation is not allowed. Target={0}, {1} interpolation range={2}")]
     ExtrapolationNotAllowed(f32, String, f32),
 
-    #[error("Wrong input units. Expected {0}, got {1}")]
-    WrongUnits(String, String),
+    #[error("Wrong input unit. Expected {0}, got {1}")]
+    WrongUnit(String, String),
 
     /// Grid transformation errors for unsupported conversions
-    #[error("Unsupported grid transformation from {from} to {to}. This transformation is not defined because it would require additional physical assumptions. Consider creating a custom component that explicitly handles this disaggregation, or use an intermediate transformation.")]
+    #[error("Unsupported grid transformation from {from} to {to}. This transformation is not defined because it would require additional physical assumptions. Consider writing a component that explicitly handles this disaggregation, or use an intermediate transformation.")]
     UnsupportedGridTransformation { from: String, to: String },
 
-    /// Grid type mismatch between connected components
-    #[error("Grid type mismatch for variable '{variable}': producer component '{producer_component}' outputs {producer_grid} but consumer component '{consumer_component}' expects {consumer_grid}. \n\nPossible resolutions:\n  1. Change {producer_component} to output {consumer_grid}\n  2. Change {consumer_component} to accept {producer_grid}\n  3. Insert a grid transformation component between them\n  4. If aggregation is acceptable, the model coupler can auto-transform from finer to coarser grids")]
+    /// Grid mismatch between connected components
+    #[error("Grid mismatch for variable '{variable}': producer component '{producer_component}' outputs {producer_grid} but consumer component '{consumer_component}' expects {consumer_grid}. \n\nPossible resolutions:\n  1. Change {producer_component} to output {consumer_grid}\n  2. Change {consumer_component} to accept {producer_grid}\n  3. Insert a grid transformation component between them\n  4. If aggregation is acceptable, the model coupler can auto-transform from finer to coarser grids")]
     GridTypeMismatch {
         variable: String,
         producer_component: String,
@@ -31,16 +32,14 @@ pub enum RSCMError {
     MissingInitialValue { variable: String, component: String },
 
     /// Variable not found in state
-    #[error("Variable '{name}' not found in state. Available variables: {available}. Ensure the variable is produced by a component or provided as exogenous input.")]
+    #[error("Variable '{name}' not found in state. Available variables: {available}. Ensure the variable is produced by a component or provided as prescribed input.")]
     VariableNotFound { name: String, available: String },
 
-    /// Invalid region index for grid type
-    #[error(
-        "Invalid region index {index} for grid type {grid_type}. Valid indices are 0..{max_index}."
-    )]
+    /// Invalid region index for a grid
+    #[error("Invalid region index {index} for grid {grid}. Valid indices are 0..{max_index}.")]
     InvalidRegionIndex {
         index: usize,
-        grid_type: String,
+        grid: String,
         max_index: usize,
     },
 
@@ -54,7 +53,7 @@ pub enum RSCMError {
         variables.join(", "),
         format_lag_suggestions(suggestions)
     )]
-    CircularDependency {
+    FeedbackLoop {
         components: Vec<String>,
         variables: Vec<String>,
         suggestions: Vec<(String, String)>,
@@ -64,14 +63,14 @@ pub enum RSCMError {
     #[error("Invalid lag {lag}: {reason}")]
     InvalidLag { lag: String, reason: String },
 
-    /// Inputs that no component produces and no exogenous data or initial value supplies.
+    /// Inputs that no component produces and no prescribed data or initial value supplies.
     ///
     /// `inputs` holds each `(variable, consumers)` pair, sorted by variable.
     #[error(
-        "Inputs with no producer, exogenous data or initial value: {}. Supply them as exogenous data, or call with_missing_exogenous_allowed() to fill them with NaN.",
+        "Inputs with no producer, prescribed data or initial value: {}. Supply them as prescribed data, or call with_missing_prescribed_allowed() to fill them with NaN.",
         format_missing_inputs(inputs)
     )]
-    MissingExogenousInput { inputs: Vec<(String, Vec<String>)> },
+    MissingPrescribedInput { inputs: Vec<(String, Vec<String>)> },
 
     /// Two components produce the same variable.
     #[error("Variable '{variable}' has more than one producer: {}", components.join(", "))]
@@ -95,7 +94,7 @@ pub enum RSCMError {
     AverageState { variable: String, component: String },
 
     /// Grid output type mismatch between component output and variable definition
-    #[error("Grid output mismatch for variable '{variable}': component tried to output {component_grid} but variable expects {expected_grid}. Ensure the component's StateValue variant matches the RequirementDefinition's grid_type.")]
+    #[error("Grid output mismatch for variable '{variable}': component tried to output {component_grid} but variable expects {expected_grid}. Ensure the component's StateValue variant matches the VariableDefinition's grid.")]
     GridOutputMismatch {
         variable: String,
         expected_grid: String,
@@ -104,11 +103,11 @@ pub enum RSCMError {
 
     /// Grid transformation not supported (disaggregation/broadcast attempt)
     ///
-    /// This error occurs when a component requires a finer grid resolution than
+    /// This error occurs when a component requires a finer grid than
     /// the schema or producer provides. Disaggregation (broadcasting coarse data
     /// to finer grids) is not supported because it would require inventing
     /// spatial structure that doesn't exist in the source data.
-    #[error("Grid transformation not supported for variable '{variable}': cannot transform from {source_grid} to {target_grid}. Disaggregation (broadcasting from coarser to finer grids) is not supported because it would require inventing spatial structure. \n\nPossible resolutions:\n  1. Change the consumer component to accept {source_grid} resolution\n  2. Change the producer component or schema to provide {target_grid} resolution\n  3. Create an explicit disaggregation component with domain-specific assumptions")]
+    #[error("Grid transformation not supported for variable '{variable}': cannot transform from {source_grid} to {target_grid}. Disaggregation (broadcasting from coarser to finer grids) is not supported because it would require inventing spatial structure. \n\nPossible resolutions:\n  1. Change the consumer component to accept the {source_grid} grid\n  2. Change the producer component or schema to provide the {target_grid} grid\n  3. Create an explicit disaggregation component with domain-specific assumptions")]
     GridTransformationNotSupported {
         variable: String,
         source_grid: String,
@@ -131,8 +130,8 @@ pub enum RSCMError {
         aggregate_unit: String,
     },
 
-    /// Grid type mismatch between schema aggregate and its contributor
-    #[error("Grid type mismatch in aggregate '{aggregate}': contributor '{contributor}' has grid type '{contributor_grid}' but aggregate expects '{aggregate_grid}'.")]
+    /// Grid mismatch between schema aggregate and its contributor
+    #[error("Grid mismatch in aggregate '{aggregate}': contributor '{contributor}' has grid '{contributor_grid}' but aggregate expects '{aggregate_grid}'.")]
     SchemaGridTypeMismatch {
         aggregate: String,
         contributor: String,
@@ -141,11 +140,11 @@ pub enum RSCMError {
     },
 
     /// Weight count mismatch for weighted aggregate
-    #[error("Weight count mismatch in weighted aggregate '{aggregate}': {weight_count} weights provided but {contributor_count} contributors defined.")]
+    #[error("Weight count mismatch in weighted aggregate '{aggregate}': {n_weights} weights provided but {n_contributors} contributors defined.")]
     WeightCountMismatch {
         aggregate: String,
-        weight_count: usize,
-        contributor_count: usize,
+        n_weights: usize,
+        n_contributors: usize,
     },
 
     /// Circular dependency detected in aggregate graph
@@ -179,8 +178,8 @@ pub enum RSCMError {
         schema_unit: String,
     },
 
-    /// Component output grid type mismatch with schema
-    #[error("Grid type mismatch for variable '{variable}': component '{component}' uses '{component_grid}' but schema defines '{schema_grid}'.")]
+    /// Component output grid mismatch with schema
+    #[error("Grid mismatch for variable '{variable}': component '{component}' uses '{component_grid}' but schema defines '{schema_grid}'.")]
     ComponentSchemaGridMismatch {
         variable: String,
         component: String,
@@ -201,14 +200,36 @@ pub enum RSCMError {
     /// This error occurs when two components use units with different physical dimensions
     /// for the same variable. For example, one component using "W/m^2" (radiative flux)
     /// and another using "GtC/yr" (mass rate) - these cannot be converted between.
-    #[error("Incompatible units for variable '{variable}': '{unit1}' has dimension {dim1} but '{unit2}' has dimension {dim2}. These units measure different physical quantities and cannot be converted.")]
+    #[error("Incompatible units for variable '{variable}': '{unit1}' (normalised '{normalised1}', dimension {dim1}) cannot be converted to '{unit2}' (normalised '{normalised2}', dimension {dim2}).")]
     IncompatibleUnits {
         variable: String,
         unit1: String,
         unit2: String,
+        normalised1: String,
+        normalised2: String,
         dim1: String,
         dim2: String,
     },
+}
+
+impl RSCMError {
+    /// Error for two units of `variable` that cannot be converted into each other.
+    pub fn incompatible_units(variable: &str, unit1: &Unit, unit2: &Unit) -> Self {
+        let dimension = |unit: &Unit| {
+            unit.dimension()
+                .map(|d| d.to_string())
+                .unwrap_or_else(|_| "unknown".to_string())
+        };
+        RSCMError::IncompatibleUnits {
+            variable: variable.to_string(),
+            unit1: unit1.original().to_string(),
+            unit2: unit2.original().to_string(),
+            normalised1: unit1.normalised(),
+            normalised2: unit2.normalised(),
+            dim1: dimension(unit1),
+            dim2: dimension(unit2),
+        }
+    }
 }
 
 /// Convenience type for `Result<T, RSCMError>`.

@@ -231,19 +231,19 @@ is subtracted from both the plant pool and the no-feedback plant pool.
 
 | Input                       | RSCM variable                   | Units  | Fortran variable                       |
 | --------------------------- | ------------------------------- | ------ | -------------------------------------- |
-| CO2 concentration           | `Atmospheric Concentration|CO2` | ppm    | `DAT_CO2_CONC`                         |
-| Feedback temperature        | `Surface Temperature`           | K      | `FEEDBACK_TEMPERATURE` (argument)      |
-| Land-use CO2 emissions      | `Emissions|CO2|Land Use`       | GtC/yr | `DAT_CO2B_EMIS`, `DAT_CO2B_CUMEMIS`    |
+| CO2 concentration           | `Atmospheric Concentrations|CO2` | ppm    | `DAT_CO2_CONC`                         |
+| Feedback temperature        | `Surface Air Temperature Change`           | K      | `FEEDBACK_TEMPERATURE` (argument)      |
+| Land-use CO2 emissions      | `Emissions|CO2|Biosphere`       | GtC/yr | `DAT_CO2B_EMIS`, `DAT_CO2B_CUMEMIS`    |
 | Nitrogen limitation factor  | (internal, with `nitrogen`)     | 1      | `NCYCLE_LIMIT_FACTOR`                  |
 
 | Output or state             | RSCM variable                          | Units  | Fortran variable                  |
 | --------------------------- | -------------------------------------- | ------ | --------------------------------- |
 | Plant, detritus, soil pools | `Carbon Pool|Plant`, `Carbon Pool|Detritus`, `Carbon Pool|Soil` | GtC    | `CO2_PLANT_POOL`, `CO2_DETRITUS_POOL`, `CO2_SOIL_POOL` |
-| Net land uptake             | `Carbon Flux|Terrestrial`              | GtC/yr | `CO2_DELTA_TERRPOOLS`             |
+| Net land uptake             | `Net Atmosphere to Land Flux|CO2`              | GtC/yr | `CO2_DELTA_TERRPOOLS`             |
 | Gross deforestation         | `Emissions|CO2|Gross Deforestation`    | GtC/yr | `CO2_GROSSDEFO_EMIS`              |
 | Regrowth                    | `Carbon Flux|Regrowth`                 | GtC/yr | `CO2_REGROWTH_TOTAL_FLUX`         |
 | NPP                         | `Net Primary Production`               | GtC/yr | `CO2_CURRENT_NPP`                 |
-| Total respiration           | `Respiration|Terrestrial`              | GtC/yr | `CO2_TOTALRESPIRATION`            |
+| Total respiration           | `Respiration|Land`              | GtC/yr | `CO2_TOTALRESPIRATION`            |
 
 MAGICC7 also stores the no-feedback pools (`CO2_NOFEED_*_POOL`), the regrowth per pool,
 the effective factors (`CO2_EFF_FERTILIZATION_FACTOR`, `CO2_EFF_*_TEMPFEEDBACK`)
@@ -353,7 +353,7 @@ Steps that only evaluate an equation above are named, not repeated.
 
 - The trapezoidal step is unconditionally stable for linear decay and second-order in time.
   It is applied once per year with no iteration.
-- The step assumes a one-year timestep. RSCM rejects any other.
+- The step assumes a one-year step. RSCM rejects any other.
 - If cumulative deforestation approaches a pool's initial size, its turnover time tends to zero.
 - The logarithmic factor falls below one when CO2 drops below the reference,
   and the Gifford form is singular near $CO_{2,zero}$.
@@ -387,7 +387,7 @@ Steps that only evaluate an equation above are named, not repeated.
 
 - Only respiration method 2 exists.
   `run_magicc7` raises `ValueError` for any other `co2_plantboxresp_method`.
-- `CO2_FEEDTEMP_LANDONLY_APPLY` is not supported. The feedbacks use `Surface Temperature`.
+- `CO2_FEEDTEMP_LANDONLY_APPLY` is not supported. The feedbacks use `Surface Air Temperature Change`.
 - `run_magicc7` maps `CO2_TEMPFEEDBACK_SWITCH = 0` to zero sensitivities.
 - RSCM adds guards: the fertilisation factor is floored at 0.1, turnover times at one year,
   and all three pools at zero.

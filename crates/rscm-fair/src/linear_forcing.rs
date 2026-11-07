@@ -8,8 +8,9 @@
 //! particle, stratospheric water vapour and land use forcing.
 
 use crate::constants::{driver_definitions, get, one, surface_temperature};
+use crate::driver::Driver;
 use rscm_core::component::{
-    Component, ComponentState, InputState, OutputState, RequirementDefinition,
+    Component, ComponentState, InputState, OutputState, VariableDefinition,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
@@ -17,27 +18,16 @@ use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
-/// What a driver is, which sets the time it is read at.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum DriverKind {
-    /// Emissions over the step.
-    Emissions,
-    /// Concentration at the end of the step.
-    Concentration,
-    /// Emissions summed to the end of the step.
-    CumulativeEmissions,
-}
-
 /// One driver of the forcing.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Driver {
+#[serde(deny_unknown_fields)]
+pub struct LinearDriver {
     /// Input variable. Cumulative drivers read the emissions rate.
     pub variable: String,
     /// Its unit.
     pub unit: String,
     /// What the driver is.
-    pub kind: DriverKind,
+    pub driver: Driver,
     /// Value with zero forcing.
     #[serde(default)]
     pub baseline: FloatValue,
@@ -45,13 +35,14 @@ pub struct Driver {
     pub radiative_efficiency: FloatValue,
 }
 
-/// Parameters of [`FairLinearForcing`].
+/// Parameters of [`LinearForcing`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairLinearForcingParameters {
+#[serde(deny_unknown_fields)]
+pub struct LinearForcingParameters {
     /// Forcing output.
     pub forcing: String,
     /// Drivers, summed in order.
-    pub drivers: Vec<Driver>,
+    pub drivers: Vec<LinearDriver>,
     /// Forcing scaling.
     #[serde(default = "one")]
     pub forcing_scale: FloatValue,
@@ -68,13 +59,13 @@ pub struct FairLinearForcingParameters {
 
 /// Running sums of the emission rates of cumulative drivers, in driver order.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct FairLinearForcingState {
-    /// One sum per driver, zero for other kinds.
+pub struct LinearForcingState {
+    /// One sum per driver, zero for other drivers.
     pub emissions_sum: Vec<FloatValue>,
 }
 
-#[typetag::serde]
-impl ComponentState for FairLinearForcingState {
+#[typetag::serde(name = "fair.LinearForcingState")]
+impl ComponentState for LinearForcingState {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -86,18 +77,18 @@ impl ComponentState for FairLinearForcingState {
 
 /// Forcing linear in emissions, concentrations or cumulative emissions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FairLinearForcing {
-    parameters: FairLinearForcingParameters,
+pub struct LinearForcing {
+    parameters: LinearForcingParameters,
 }
 
-impl FairLinearForcing {
+impl LinearForcing {
     /// Create the component.
-    pub fn from_parameters(parameters: FairLinearForcingParameters) -> Self {
+    pub fn from_parameters(parameters: LinearForcingParameters) -> Self {
         Self { parameters }
     }
 
-    fn initial_state(&self) -> FairLinearForcingState {
-        FairLinearForcingState {
+    fn initial_state(&self) -> LinearForcingState {
+        LinearForcingState {
             emissions_sum: vec![0.0; self.parameters.drivers.len()],
         }
     }
@@ -107,18 +98,16 @@ impl FairLinearForcing {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-        state: &mut FairLinearForcingState,
+        state: &mut LinearForcingState,
     ) -> RSCMResult<OutputState> {
         let p = &self.parameters;
         let dt = t_next - t_current;
         let scale = p.forcing_scale * (1.0 + p.tropospheric_adjustment);
         let mut forcing = 0.0;
         for (driver, sum) in p.drivers.iter().zip(state.emissions_sum.iter_mut()) {
-            let value = match driver.kind {
-                DriverKind::Emissions | DriverKind::Concentration => {
-                    get(input_state, &driver.variable)
-                }
-                DriverKind::CumulativeEmissions => {
+            let value = match driver.driver {
+                Driver::Emissions | Driver::Concentration => get(input_state, &driver.variable),
+                Driver::CumulativeEmissions => {
                     *sum += get(input_state, &driver.variable);
                     *sum * dt
                 }
@@ -135,9 +124,9 @@ impl FairLinearForcing {
     }
 }
 
-#[typetag::serde]
-impl Component for FairLinearForcing {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+#[typetag::serde(name = "fair.LinearForcing")]
+impl Component for LinearForcing {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         driver_definitions(
             &p.surface_temperature,
@@ -172,10 +161,8 @@ impl Component for FairLinearForcing {
     ) -> RSCMResult<OutputState> {
         let state = internal_state
             .as_any_mut()
-            .downcast_mut::<FairLinearForcingState>()
-            .ok_or_else(|| {
-                RSCMError::Error("Internal state is not FairLinearForcingState".into())
-            })?;
+            .downcast_mut::<LinearForcingState>()
+            .ok_or_else(|| RSCMError::Error("Internal state is not LinearForcingState".into()))?;
         self.solve_impl(t_current, t_next, input_state, state)
     }
 }

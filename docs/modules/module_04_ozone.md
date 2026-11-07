@@ -58,7 +58,7 @@ MAGICC7 evaluates it in this order:
 $$
 \begin{aligned}
 C &= (r \, o_{CH4}) \ln\left(\frac{M_Y}{M_0}\right) \\
-\Delta X &= (X^{fossil}_{Y-1} - X^{fossil}_0) + (X^{AFOLU}_{Y-1} - X^{AFOLU}_0) \\
+\Delta X &= (X^{fossil}_{Y-1} - X^{fossil}_0) + (X^{biosphere}_{Y-1} - X^{biosphere}_0) \\
 S &= (o_{NOx} \Delta NOx + o_{CO} \Delta CO) + o_{VOC} \Delta NMVOC \\
 RF_{trop} &= C + S \, r
 \end{aligned}
@@ -72,7 +72,7 @@ $$
   The emissions are the previous year's.
 - The subscript 0 is the first year of the run, MAGICC7's preindustrial reference year (1750).
 
-MAGICC7 spreads $RF_{trop}$ over the [boxes](module_00_initialization.md) with
+MAGICC7 spreads $RF_{trop}$ over the [boxes](module_00_initialisation.md) with
 `RF_REGIONS_TROPOZ` ($w$) normalised within each hemisphere $H$:
 
 $$
@@ -99,7 +99,7 @@ $$
 RF_{T} = \gamma \, T_{Y-1}
 $$
 
-with $T$ the global mean surface temperature anomaly (K) and $\gamma$ = `OZDUETOTEMPERATURE_SCALE`.
+with $T$ the global mean surface air temperature change (K) and $\gamma$ = `OZDUETOTEMPERATURE_SCALE`.
 The temperature is the previous year's, because the year's own temperature is not yet known.
 
 ### Total
@@ -114,13 +114,13 @@ RSCM has no total ozone output.
 
 ## Inputs and outputs
 
-| Component     | Input                        | Units                | Fortran variable                                   |
-| ------------- | ---------------------------- | -------------------- | -------------------------------------------------- |
-| Stratospheric | EESC                         | ppt                  | `DAT_EESC_CONC`                                    |
-| Tropospheric  | CH4 concentration            | ppb                  | `DAT_CH4_CONC`                                     |
-| Tropospheric  | NOx, CO and NMVOC emissions  | Mt/yr                | `DAT_NOXI_EMIS`, `DAT_NOXB_EMIS`, and so on        |
-| N2O           | N2O concentration            | ppb                  | `DAT_N2O_CONC`                                     |
-| Temperature   | Surface temperature anomaly  | K                    | `DAT_SURFACE_TEMP`                                 |
+| Component     | Input                          | Units                | Fortran variable                                   |
+| ------------- | ------------------------------ | -------------------- | -------------------------------------------------- |
+| Stratospheric | EESC                           | ppt                  | `DAT_EESC_CONC`                                    |
+| Tropospheric  | CH4 concentration              | ppb                  | `DAT_CH4_CONC`                                     |
+| Tropospheric  | NOx, CO and NMVOC emissions    | Mt/yr                | `DAT_NOXI_EMIS`, `DAT_NOXB_EMIS`, and so on        |
+| N2O           | N2O concentration              | ppb                  | `DAT_N2O_CONC`                                     |
+| Temperature   | Surface air temperature change | K                    | `DAT_SURFACE_TEMP`                                 |
 
 Each component writes RF, EffRF and ERF datastores:
 

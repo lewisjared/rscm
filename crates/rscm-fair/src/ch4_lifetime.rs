@@ -6,22 +6,21 @@
 //!   + \ln \max(1 + s_T T, \ln f)\Big)$$
 //!
 //! over precursor emissions and concentrations $x_i$ at the start of the step,
-//! where $f$ is the floor `ch4_min`.
+//! where $f$ is the floor `minimum_scaling`.
 
 use crate::constants::{get, surface_temperature, temperature_unit};
 use rscm_core::component::{
-    Component, InputState, OutputState, RequirementDefinition, TimeseriesType,
+    Component, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
 use rscm_core::errors::RSCMResult;
+use rscm_core::names::LIFETIME_SCALING_CH4;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 
-/// Default name of the CH4 lifetime scaling output.
-pub const CH4_LIFETIME_SCALING: &str = "Lifetime Scaling|CH4";
-
 /// A precursor of the CH4 lifetime.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Precursor {
     /// Emissions or concentration variable.
     pub variable: String,
@@ -33,18 +32,21 @@ pub struct Precursor {
     pub sensitivity: FloatValue,
 }
 
-/// Parameters of [`FairCH4Lifetime`].
+/// Parameters of [`CH4Lifetime`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairCH4LifetimeParameters {
+#[serde(deny_unknown_fields)]
+pub struct CH4LifetimeParameters {
     /// Precursor emissions, summed before the concentrations.
     pub emissions: Vec<Precursor>,
     /// Precursor concentrations.
     pub concentrations: Vec<Precursor>,
     /// Fractional lifetime change per kelvin.
+    /// FaIR: `lifetime_temperature_sensitivity`
     pub temperature_sensitivity: FloatValue,
     /// Floor on each scaling term.
-    #[serde(default = "default_ch4_min")]
-    pub ch4_min: FloatValue,
+    /// FaIR: `_ch4_min`
+    #[serde(default = "default_minimum_scaling")]
+    pub minimum_scaling: FloatValue,
     /// Surface temperature input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
@@ -53,23 +55,23 @@ pub struct FairCH4LifetimeParameters {
     pub output: String,
 }
 
-fn default_ch4_min() -> FloatValue {
+fn default_minimum_scaling() -> FloatValue {
     0.01
 }
 
 fn default_output() -> String {
-    CH4_LIFETIME_SCALING.to_string()
+    LIFETIME_SCALING_CH4.to_string()
 }
 
 /// Thornhill et al. (2021) CH4 lifetime scaling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FairCH4Lifetime {
-    parameters: FairCH4LifetimeParameters,
+pub struct CH4Lifetime {
+    parameters: CH4LifetimeParameters,
 }
 
-impl FairCH4Lifetime {
+impl CH4Lifetime {
     /// Create the component.
-    pub fn from_parameters(parameters: FairCH4LifetimeParameters) -> Self {
+    pub fn from_parameters(parameters: CH4LifetimeParameters) -> Self {
         Self { parameters }
     }
 
@@ -81,7 +83,7 @@ impl FairCH4Lifetime {
         temperature: FloatValue,
     ) -> FloatValue {
         let p = &self.parameters;
-        let log_floor = p.ch4_min.ln();
+        let log_floor = p.minimum_scaling.ln();
         let term = |precursors: &[Precursor], values: &[FloatValue]| -> FloatValue {
             precursors
                 .iter()
@@ -98,19 +100,19 @@ impl FairCH4Lifetime {
     }
 }
 
-#[typetag::serde]
-impl Component for FairCH4Lifetime {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+#[typetag::serde(name = "fair.CH4Lifetime")]
+impl Component for CH4Lifetime {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
-        let mut definitions = vec![RequirementDefinition::scalar_input(
+        let mut definitions = vec![VariableDefinition::scalar_input(
             &p.surface_temperature,
             &temperature_unit(),
         )];
         for x in p.emissions.iter().chain(&p.concentrations) {
-            definitions.push(RequirementDefinition::scalar_input(&x.variable, &x.unit));
+            definitions.push(VariableDefinition::scalar_input(&x.variable, &x.unit));
         }
         definitions.push(
-            RequirementDefinition::scalar_output(&p.output, "1")
+            VariableDefinition::scalar_output(&p.output, "1")
                 .with_timeseries_type(TimeseriesType::Average),
         );
         definitions
@@ -152,11 +154,11 @@ mod tests {
 
     #[test]
     fn baseline_gives_unit_scaling() {
-        let c = FairCH4Lifetime::from_parameters(FairCH4LifetimeParameters {
+        let c = CH4Lifetime::from_parameters(CH4LifetimeParameters {
             emissions: vec![precursor(2.0, 0.1)],
             concentrations: vec![precursor(700.0, 0.0003)],
             temperature_sensitivity: -0.0408,
-            ch4_min: 0.01,
+            minimum_scaling: 0.01,
             surface_temperature: surface_temperature(),
             output: default_output(),
         });
@@ -170,11 +172,11 @@ mod tests {
 
     #[test]
     fn terms_are_floored() {
-        let c = FairCH4Lifetime::from_parameters(FairCH4LifetimeParameters {
+        let c = CH4Lifetime::from_parameters(CH4LifetimeParameters {
             emissions: vec![precursor(0.0, -1.0)],
             concentrations: vec![],
             temperature_sensitivity: 0.0,
-            ch4_min: 0.01,
+            minimum_scaling: 0.01,
             surface_temperature: surface_temperature(),
             output: default_output(),
         });

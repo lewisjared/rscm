@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 /// where ${\tau_{OH}}$ varies with CH4 concentration and co-emitted species.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct CH4ChemistryParameters {
     /// Year from which the concentration and temperature feedbacks are measured
     /// (`CH4_FEED_YRSTART`). The reference concentration and temperature are
@@ -46,10 +47,11 @@ pub struct CH4ChemistryParameters {
     pub natural_emissions: FloatValue,
 
     /// Add `Emissions|CH4|Permafrost` from the `Permafrost` component to the emissions.
+    /// MAGICC7: PF_APPLY
     /// default: false
-    pub permafrost: bool,
+    pub include_permafrost: bool,
 
-    /// Last year of concentrations prescribed by `Atmospheric Concentration|CH4|Prescribed`,
+    /// Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|CH4`,
     /// or `None` to calculate them from emissions throughout.
     /// MAGICC7: CH4_SWITCHFROMCONC2EMIS_YEAR
     pub concentration_switch_year: Option<FloatValue>,
@@ -58,22 +60,25 @@ pub struct CH4ChemistryParameters {
     /// The OH lifetime is derived by removing the non-OH sinks.
     /// unit: years
     /// default: 9.9474
-    pub tau_total_init: FloatValue,
+    pub initial_ch4_lifetime: FloatValue,
 
     /// Soil uptake sink lifetime
     /// unit: years
     /// default: 150.0
-    pub tau_soil: FloatValue,
+    /// MAGICC7: CH4_TAUSOIL
+    pub soil_lifetime: FloatValue,
 
     /// Stratospheric sink lifetime
     /// unit: years
     /// default: 120.0
-    pub tau_strat: FloatValue,
+    /// MAGICC7: CH4_TAUSTRAT
+    pub stratospheric_lifetime: FloatValue,
 
     /// Tropospheric Cl sink lifetime
     /// unit: years
     /// default: 200.0
-    pub tau_trop_cl: FloatValue,
+    /// MAGICC7: CH4_TAUTROPCL
+    pub tropospheric_cl_lifetime: FloatValue,
 
     /// CH4 self-feedback coefficient (S in TAR Table 4.11)
     /// Represents how CH4 concentration affects OH and hence its own lifetime
@@ -110,11 +115,13 @@ pub struct CH4ChemistryParameters {
     /// Positive: warmer → shorter lifetime (more OH activity)
     /// unit: K^-1
     /// default: 0.07
-    pub temp_sensitivity: FloatValue,
+    /// MAGICC7: CH4_TAUTEMPSENSITIVITY
+    pub temperature_sensitivity: FloatValue,
 
     /// Enable temperature feedback on lifetime
     /// default: true
-    pub include_temp_feedback: bool,
+    /// MAGICC7: CH4_INCLUDE_TEMPFEEDBACK
+    pub include_temperature_feedback: bool,
 
     /// Enable NOx/CO/NMVOC emissions feedback on OH
     /// default: true
@@ -123,12 +130,13 @@ pub struct CH4ChemistryParameters {
     /// Conversion factor from ppb to Tg CH4
     /// unit: Tg CH4/ppb
     /// default: 2.824
-    pub ppb_to_tg: FloatValue,
+    /// MAGICC7: CH4_PPB2TGCH4
+    pub tg_per_ppb: FloatValue,
 
     /// Fraction of the atmosphere mixed with surface CH4 (`CH4_MIXBOXSIZE`)
     /// unit: dimensionless
     /// default: 0.973
-    pub mixbox_size: FloatValue,
+    pub mixing_box_size: FloatValue,
 }
 
 impl Default for CH4ChemistryParameters {
@@ -136,22 +144,22 @@ impl Default for CH4ChemistryParameters {
         Self {
             feedback_start_year: 1927.0,
             natural_emissions: 182.1908,
-            permafrost: false,
+            include_permafrost: false,
             concentration_switch_year: None,
-            tau_total_init: 9.9474,
-            tau_soil: 150.0,
-            tau_strat: 120.0,
-            tau_trop_cl: 200.0,
+            initial_ch4_lifetime: 9.9474,
+            soil_lifetime: 150.0,
+            stratospheric_lifetime: 120.0,
+            tropospheric_cl_lifetime: 200.0,
             ch4_self_feedback: -0.53775,
             oh_sensitivity_scale: 0.72448,
             oh_nox_sensitivity: 0.0093376,
             oh_co_sensitivity: -0.000113,
             oh_nmvoc_sensitivity: -0.0003142,
-            temp_sensitivity: 0.07,
-            include_temp_feedback: true,
+            temperature_sensitivity: 0.07,
+            include_temperature_feedback: true,
             include_emissions_feedback: true,
-            ppb_to_tg: 2.824,
-            mixbox_size: 0.973,
+            tg_per_ppb: 2.824,
+            mixing_box_size: 0.973,
         }
     }
 }
@@ -160,13 +168,15 @@ impl CH4ChemistryParameters {
     /// Calculate the combined non-OH lifetime
     ///
     /// $$\frac{1}{\tau_{other}} = \frac{1}{\tau_{soil}} + \frac{1}{\tau_{strat}} + \frac{1}{\tau_{trop\_cl}}$$
-    pub fn tau_other(&self) -> FloatValue {
-        1.0 / (1.0 / self.tau_soil + 1.0 / self.tau_strat + 1.0 / self.tau_trop_cl)
+    pub fn non_oh_lifetime(&self) -> FloatValue {
+        1.0 / (1.0 / self.soil_lifetime
+            + 1.0 / self.stratospheric_lifetime
+            + 1.0 / self.tropospheric_cl_lifetime)
     }
 
     /// Initial OH lifetime, $1 / (1/\tau_{total,init} - 1/\tau_{other})$
-    pub fn tau_oh_init(&self) -> FloatValue {
-        1.0 / (1.0 / self.tau_total_init - 1.0 / self.tau_other())
+    pub fn initial_oh_lifetime(&self) -> FloatValue {
+        1.0 / (1.0 / self.initial_ch4_lifetime - 1.0 / self.non_oh_lifetime())
     }
 }
 
@@ -178,30 +188,30 @@ mod tests {
     fn test_default_parameters() {
         let params = CH4ChemistryParameters::default();
         assert!((params.feedback_start_year - 1927.0).abs() < 1e-10);
-        assert!((params.tau_total_init - 9.9474).abs() < 1e-10);
-        assert!(params.include_temp_feedback);
+        assert!((params.initial_ch4_lifetime - 9.9474).abs() < 1e-10);
+        assert!(params.include_temperature_feedback);
     }
 
     #[test]
-    fn test_tau_other_calculation() {
+    fn test_non_oh_lifetime_calculation() {
         let params = CH4ChemistryParameters::default();
-        let tau_other = params.tau_other();
+        let non_oh_lifetime = params.non_oh_lifetime();
 
         // Expected: 1/(1/150 + 1/120 + 1/200) = 50
         let expected = 1.0 / (1.0 / 150.0 + 1.0 / 120.0 + 1.0 / 200.0);
         assert!(
-            (tau_other - expected).abs() < 1e-10,
-            "tau_other should be {:.2}, got {:.2}",
+            (non_oh_lifetime - expected).abs() < 1e-10,
+            "non_oh_lifetime should be {:.2}, got {:.2}",
             expected,
-            tau_other
+            non_oh_lifetime
         );
     }
 
     #[test]
-    fn test_tau_oh_init_matches_magicc() {
+    fn test_initial_oh_lifetime_matches_magicc() {
         // MAGICC7 reports 12.4179 years for the default configuration
         let params = CH4ChemistryParameters::default();
-        assert!((params.tau_oh_init() - 12.41792).abs() < 1e-4);
+        assert!((params.initial_oh_lifetime() - 12.41792).abs() < 1e-4);
     }
 
     #[test]
@@ -225,18 +235,18 @@ mod tests {
     }
 
     #[test]
-    fn test_partial_deserialization() {
-        // Test that #[serde(default)] allows partial deserialization
-        let json = r#"{"tau_total_init": 10.5, "include_temp_feedback": false}"#;
+    fn test_partial_deserialisation() {
+        // Test that #[serde(default)] allows partial deserialisation
+        let json = r#"{"initial_ch4_lifetime": 10.5, "include_temperature_feedback": false}"#;
         let params: CH4ChemistryParameters =
-            serde_json::from_str(json).expect("Partial deserialization failed");
+            serde_json::from_str(json).expect("Partial deserialisation failed");
 
         // Specified fields from JSON
-        assert!((params.tau_total_init - 10.5).abs() < 1e-10);
-        assert!(!params.include_temp_feedback);
+        assert!((params.initial_ch4_lifetime - 10.5).abs() < 1e-10);
+        assert!(!params.include_temperature_feedback);
 
         // Other fields should be defaults
         assert!((params.feedback_start_year - 1927.0).abs() < 1e-10);
-        assert!((params.tau_soil - 150.0).abs() < 1e-10);
+        assert!((params.soil_lifetime - 150.0).abs() < 1e-10);
     }
 }

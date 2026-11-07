@@ -17,14 +17,14 @@ impl PyParameterSet {
     ///
     /// Parameters
     /// ----------
-    /// params : dict[str, Distribution], optional
+    /// parameters : dict[str, Distribution], optional
     ///     Dictionary mapping parameter names to distributions.
     ///     If not provided, creates an empty parameter set.
     ///
     /// Examples
     /// --------
     /// >>> from rscm._lib.calibrate import ParameterSet, Uniform, Normal
-    /// >>> params = ParameterSet({
+    /// >>> parameters = ParameterSet({
     /// ...     "x": Uniform(0.0, 1.0),
     /// ...     "y": Normal(0.0, 1.0)
     /// ... })
@@ -34,11 +34,11 @@ impl PyParameterSet {
     /// ParameterSet
     ///     The parameter set
     #[new]
-    #[pyo3(signature = (params=None))]
-    fn new(params: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+    #[pyo3(signature = (parameters=None))]
+    fn new(parameters: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let mut param_set = ParameterSet::new();
 
-        if let Some(dict) = params {
+        if let Some(dict) = parameters {
             for (key, value) in dict.iter() {
                 let name: String = key.extract()?;
                 let dist: PyDistribution = value.extract()?;
@@ -76,7 +76,7 @@ impl PyParameterSet {
     /// Examples
     /// --------
     /// >>> from rscm._lib.calibrate import ParameterSet, Uniform, Normal
-    /// >>> params = ParameterSet().add("x", Uniform(0.0, 1.0)).add("y", Normal(0.0, 1.0))
+    /// >>> parameters = ParameterSet().add("x", Uniform(0.0, 1.0)).add("y", Normal(0.0, 1.0))
     fn add(
         mut slf: PyRefMut<'_, Self>,
         name: String,
@@ -100,8 +100,12 @@ impl PyParameterSet {
     /// list[str]
     ///     Parameter names
     #[getter]
-    fn param_names(&self) -> Vec<String> {
-        self.0.param_names().iter().map(|s| s.to_string()).collect()
+    fn parameter_names(&self) -> Vec<String> {
+        self.0
+            .parameter_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     }
 
     /// Get the number of parameters.
@@ -124,13 +128,13 @@ impl PyParameterSet {
     /// Returns
     /// -------
     /// numpy.ndarray
-    ///     Array of shape (n, n_params) where each row is a parameter vector
+    ///     Array of shape (n, n_parameters) where each row is a parameter vector
     ///
     /// Examples
     /// --------
     /// >>> from rscm._lib.calibrate import ParameterSet, Uniform
-    /// >>> params = ParameterSet({"x": Uniform(0.0, 1.0), "y": Uniform(0.0, 1.0)})
-    /// >>> samples = params.sample_random(100)
+    /// >>> parameters = ParameterSet({"x": Uniform(0.0, 1.0), "y": Uniform(0.0, 1.0)})
+    /// >>> samples = parameters.sample_random(100)
     /// >>> samples.shape
     /// (100, 2)
     fn sample_random<'py>(&self, py: Python<'py>, n: usize) -> Bound<'py, PyArray2<f64>> {
@@ -152,13 +156,13 @@ impl PyParameterSet {
     /// Returns
     /// -------
     /// numpy.ndarray
-    ///     Array of shape (n, n_params) where each row is a parameter vector
+    ///     Array of shape (n, n_parameters) where each row is a parameter vector
     ///
     /// Examples
     /// --------
     /// >>> from rscm._lib.calibrate import ParameterSet, Uniform
-    /// >>> params = ParameterSet({"x": Uniform(0.0, 1.0), "y": Uniform(0.0, 1.0)})
-    /// >>> samples = params.sample_lhs(100)
+    /// >>> parameters = ParameterSet({"x": Uniform(0.0, 1.0), "y": Uniform(0.0, 1.0)})
+    /// >>> samples = parameters.sample_lhs(100)
     /// >>> samples.shape
     /// (100, 2)
     fn sample_lhs<'py>(&self, py: Python<'py>, n: usize) -> Bound<'py, PyArray2<f64>> {
@@ -168,11 +172,11 @@ impl PyParameterSet {
 
     /// Compute the log prior probability of a parameter vector.
     ///
-    /// The parameter vector must match the order from param_names.
+    /// The parameter vector must match the order from parameter_names.
     ///
     /// Parameters
     /// ----------
-    /// params : list[float] | numpy.ndarray
+    /// parameters : list[float] | numpy.ndarray
     ///     Parameter vector
     ///
     /// Returns
@@ -188,11 +192,11 @@ impl PyParameterSet {
     /// Examples
     /// --------
     /// >>> from rscm._lib.calibrate import ParameterSet, Uniform
-    /// >>> params = ParameterSet({"x": Uniform(0.0, 1.0), "y": Uniform(0.0, 1.0)})
-    /// >>> log_p = params.log_prior([0.5, 0.5])
-    fn log_prior(&self, params: Vec<f64>) -> PyResult<f64> {
+    /// >>> parameters = ParameterSet({"x": Uniform(0.0, 1.0), "y": Uniform(0.0, 1.0)})
+    /// >>> log_p = parameters.log_prior([0.5, 0.5])
+    fn log_prior(&self, parameters: Vec<f64>) -> PyResult<f64> {
         self.0
-            .log_prior(&params)
+            .log_prior(&parameters)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
@@ -201,14 +205,14 @@ impl PyParameterSet {
     /// Returns
     /// -------
     /// tuple[list[float], list[float]]
-    ///     (lower_bounds, upper_bounds) where each list has length n_params.
+    ///     (lower_bounds, upper_bounds) where each list has length n_parameters.
     ///     Unbounded parameters use -inf and inf.
     ///
     /// Examples
     /// --------
     /// >>> from rscm._lib.calibrate import ParameterSet, Uniform, Normal
-    /// >>> params = ParameterSet({"x": Uniform(0.0, 1.0), "y": Normal(0.0, 1.0)})
-    /// >>> lower, upper = params.bounds()
+    /// >>> parameters = ParameterSet({"x": Uniform(0.0, 1.0), "y": Normal(0.0, 1.0)})
+    /// >>> lower, upper = parameters.bounds()
     /// >>> lower
     /// [0.0, -inf]
     /// >>> upper
@@ -218,7 +222,7 @@ impl PyParameterSet {
     }
 
     fn __repr__(&self) -> String {
-        format!("ParameterSet(n_params={})", self.0.len())
+        format!("ParameterSet(n_parameters={})", self.0.len())
     }
 }
 

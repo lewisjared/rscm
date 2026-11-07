@@ -3,23 +3,39 @@
 //! Parameters for the Upwelling-Diffusion Energy Balance (UDEB) climate model
 //! following MAGICC7.
 
-use super::ThermalExpansionParameters;
+use super::ThermalExpansion;
+use rscm_core::spatial::FourBoxGrid;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
-/// Initial ocean temperature profile mode (`CORE_SWITCH_OCN_TEMPPROFILE`).
+/// Initial ocean temperature profile (MAGICC7 `CORE_SWITCH_OCN_TEMPPROFILE`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OceanTempProfile {
-    /// Analytical exponential decay (uniform diffusivity + upwelling).
-    #[serde(rename = "1")]
-    Analytical = 1,
-    /// CMIP5 multi-model mean observational profile (default).
-    #[serde(rename = "2")]
-    CMIP5 = 2,
+#[serde(rename_all = "snake_case")]
+pub enum OceanTemperatureProfile {
+    /// Analytical exponential decay from uniform diffusivity and upwelling (MAGICC7 1).
+    Analytical,
+    /// CMIP5 multi-model mean observational profile (MAGICC7 2, the default).
+    #[serde(rename = "cmip5")]
+    CMIP5,
+}
+
+/// How efficacies and internal efficacies scale an agent's forcing (MAGICC7 `RF_EFFICACY_APPLY`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EfficacyMethod {
+    /// Forcing is left unchanged (MAGICC7 0).
+    #[default]
+    None,
+    /// Forcing is divided by the internal efficacy, so every agent has unit efficacy (MAGICC7 1).
+    Unit,
+    /// Forcing is scaled by the efficacy over the internal efficacy, as in AR6 (MAGICC7 2).
+    #[serde(rename = "ar6")]
+    AR6,
 }
 
 /// Box forcing given at every substep, such as monthly volcanic forcing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubannualForcing {
     /// Time of the start of the first substep (decimal year).
     pub start: FloatValue,
@@ -30,11 +46,11 @@ pub struct SubannualForcing {
     /// taken from the climate sensitivity of the year before.
     /// A substep belongs to the year it ends in.
     #[serde(default)]
-    pub rf_regions: Option<[FloatValue; 4]>,
-    /// Prescribed efficacy over the internal efficacy when `rf_regions` is set.
+    pub regional_pattern: Option<[FloatValue; 4]>,
+    /// Efficacy over the internal efficacy when `regional_pattern` is set.
     #[serde(default = "one")]
     pub efficacy: FloatValue,
-    /// Internal efficacy dividing the values of the first two years when `rf_regions` is set.
+    /// Internal efficacy dividing the values of the first two years when `regional_pattern` is set.
     #[serde(default = "one")]
     pub internal_efficacy: FloatValue,
 }
@@ -62,9 +78,9 @@ impl SubannualForcing {
     }
 }
 
-/// Parameters for the 4-box UDEB climate model.
+/// Parameters for the four-box UDEB climate model.
 ///
-/// The UDEB model couples a 4-box atmosphere (Northern Ocean, Northern Land,
+/// The UDEB model couples a four-box atmosphere (Northern Ocean, Northern Land,
 /// Southern Ocean, Southern Land) to a multi-layer ocean with vertical diffusion
 /// and upwelling.
 ///
@@ -79,6 +95,7 @@ impl SubannualForcing {
 /// Default values match MAGICC7 defaults from `MAGCFG_DEFAULTALL.CFG`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct ClimateUDEBParameters {
     // Ocean structure parameters
     /// Number of ocean layers (including mixed layer).
@@ -97,37 +114,41 @@ pub struct ClimateUDEBParameters {
     /// Base vertical diffusivity ($\text{cm}^2/\text{s}$).
     /// Converted to $\text{m}^2/\text{yr}$ internally using factor 3155.76.
     /// Default: 0.75
-    pub kappa: FloatValue,
+    pub vertical_diffusivity: FloatValue,
 
     /// Minimum vertical diffusivity ($\text{cm}^2/\text{s}$).
     /// Floor for temperature-dependent diffusivity.
     /// Default: 0.1
-    pub kappa_min: FloatValue,
+    pub minimum_vertical_diffusivity: FloatValue,
 
     /// Temperature gradient coefficient for diffusivity ($\text{cm}^2/\text{s/K}$).
     /// Controls how diffusivity changes with vertical temperature gradient.
     /// Default: -0.191
-    pub kappa_dkdt: FloatValue,
+    pub vertical_diffusivity_gradient_sensitivity: FloatValue,
 
     // Upwelling parameters
     /// Initial upwelling rate (m/yr).
     /// Base rate before temperature-dependent adjustment.
     /// Default: 3.5
-    pub w_initial: FloatValue,
+    /// MAGICC7: CORE_INITIAL_UPWELLING_RATE
+    pub initial_upwelling_rate: FloatValue,
 
     /// Variable fraction of upwelling (dimensionless).
     /// Fraction of upwelling that can vary with temperature.
     /// Default: 0.7
-    pub w_variable_fraction: FloatValue,
+    /// MAGICC7: CORE_UPWELLING_VARIABLE_PART
+    pub upwelling_variable_fraction: FloatValue,
 
     /// Temperature threshold for NH upwelling shutdown (K).
     /// Temperature anomaly at which upwelling reaches minimum.
     /// Default: 8.0
-    pub w_threshold_temp_nh: FloatValue,
+    /// MAGICC7: CORE_UPWELL_THRESH_TEMP_NH
+    pub upwelling_threshold_temperature_nh: FloatValue,
 
     /// Temperature threshold for SH upwelling shutdown (K).
     /// Default: 8.0
-    pub w_threshold_temp_sh: FloatValue,
+    /// MAGICC7: CORE_UPWELL_THRESH_TEMP_SH
+    pub upwelling_threshold_temperature_sh: FloatValue,
 
     // Climate sensitivity parameters
     /// Equilibrium climate sensitivity (K).
@@ -137,33 +158,37 @@ pub struct ClimateUDEBParameters {
 
     /// Radiative forcing for $2 \times \text{CO}_2$ ($\text{W/m}^2$).
     /// Default: 3.71
-    pub rf_2xco2: FloatValue,
+    pub erf_2xco2: FloatValue,
 
     /// Land-ocean warming ratio (dimensionless).
     /// Ratio of land to ocean equilibrium warming.
     /// Default: 1.317
-    pub rlo: FloatValue,
+    /// MAGICC7: CORE_RLO
+    pub land_ocean_warming_ratio: FloatValue,
 
     /// Sensitivity of ECS to forcing level (dimensionless).
     /// Default: 7.84e-9
-    pub feedback_q_sensitivity: FloatValue,
+    /// MAGICC7: CORE_FEEDBACK_QSENSITIVITY
+    pub feedback_forcing_sensitivity: FloatValue,
 
     /// Sensitivity of ECS to cumulative temperature (dimensionless).
     /// Default: 0.08
-    pub feedback_cumt_sensitivity: FloatValue,
+    /// MAGICC7: CORE_FEEDBACK_CUMTSENSITIVITY
+    pub feedback_cumulative_temperature_sensitivity: FloatValue,
 
     /// Period for cumulative temperature integration (years).
     /// Default: 300.0
-    pub feedback_cumt_period: FloatValue,
+    /// MAGICC7: CORE_FEEDBACK_CUMTPERIOD
+    pub feedback_cumulative_temperature_period: FloatValue,
 
     // Heat exchange parameters
     /// Land-ocean heat exchange coefficient ($\text{W/m}^2\text{/K}$).
     /// Default: 1.44
-    pub k_lo: FloatValue,
+    pub land_ocean_heat_exchange: FloatValue,
 
     /// Inter-hemispheric (North-South) heat exchange coefficient ($\text{W/m}^2\text{/K}$).
     /// Default: 0.31
-    pub k_ns: FloatValue,
+    pub north_south_heat_exchange: FloatValue,
 
     /// Ocean-to-land heat exchange amplification factor (dimensionless).
     /// Default: 1.02
@@ -191,12 +216,14 @@ pub struct ClimateUDEBParameters {
     /// Ocean-to-atmosphere temperature adjustment alpha (dimensionless).
     /// Linear coefficient for SAT/SST relationship.
     /// Default: 1.04
-    pub temp_adjust_alpha: FloatValue,
+    /// MAGICC7: CORE_TEMPADJUST_OCN2ATM_ALPHA
+    pub temperature_adjustment_alpha: FloatValue,
 
     /// Ocean-to-atmosphere temperature adjustment gamma (1/K).
     /// Quadratic coefficient for SAT/SST relationship.
     /// Default: -0.002
-    pub temp_adjust_gamma: FloatValue,
+    /// MAGICC7: CORE_TEMPADJUST_OCN2ATM_GAMMA
+    pub temperature_adjustment_gamma: FloatValue,
 
     // Polar sinking
     /// Polar sinking water temperature ratio (dimensionless).
@@ -210,7 +237,7 @@ pub struct ClimateUDEBParameters {
     /// When enabled, a ground heat reservoir damps the land temperature
     /// response by absorbing/releasing heat from the land surface.
     /// Default: true
-    pub land_heat_capacity_enabled: bool,
+    pub include_land_heat_capacity: bool,
 
     /// Land-ground heat exchange coefficient ($\text{W/m}^2\text{/K}$)
     /// (`CORE_HEATXCHANGE_LANDGROUND`).
@@ -218,7 +245,7 @@ pub struct ClimateUDEBParameters {
     /// Per unit globe area. Controls the rate of heat exchange between
     /// the land surface and the ground heat reservoir.
     /// Default: 0.1
-    pub k_lg: FloatValue,
+    pub land_ground_heat_exchange: FloatValue,
 
     /// Effective thickness of ground heat reservoir (m)
     /// (`CORE_LANDHC_EFFTHICKNESS`).
@@ -226,74 +253,75 @@ pub struct ClimateUDEBParameters {
     /// Ocean-water-equivalent depth parameterising the total land heat
     /// reservoir thermal inertia.
     /// Default: 300.0
-    pub land_hc_eff_thickness: FloatValue,
+    pub land_heat_capacity_effective_thickness: FloatValue,
 
     // Regional CO2 forcing
     /// Regional CO2 radiative forcing pattern (NH ocean, NH land, SH ocean, SH land).
     ///
     /// Relative weights used to compute per-box CO2 forcing fractions for the
-    /// LAMCALC solver. Normalized against global-area-weighted sum following
+    /// LAMCALC solver. Normalised against global-area-weighted sum following
     /// MAGICC7.f90 lines 8146-8165.
     ///
     /// Default values from `MAGCFG_DEFAULTALL.CFG` (AR6 calibration):
     /// `[1.4089, 1.37045, 1.43333, 1.33257]`.
-    pub rf_regions_co2: [FloatValue; 4],
+    pub co2_regional_pattern: [FloatValue; 4],
 
     // Efficacy parameters
-    /// Efficacy application mode (matches MAGICC7 `RF_EFFICACY_APPLY`).
+    /// How efficacies scale the forcing (MAGICC7 `RF_EFFICACY_APPLY`).
     ///
-    /// - `0` = disabled (default): all agents treated with uniform spatial efficacy.
-    /// - `1` = unit efficacy: effective forcing divided by the internal efficacy.
-    /// - `2` = AR6 mode: effective forcing adjusted by `prescribed_efficacy_co2 / internal_efficacy`.
+    /// - `none` (default): all agents treated with uniform spatial efficacy.
+    /// - `unit`: effective forcing divided by the internal efficacy.
+    /// - `ar6`: effective forcing adjusted by `co2_efficacy / internal_efficacy`.
     #[serde(default)]
-    pub efficacy_apply: u8,
+    pub efficacy_method: EfficacyMethod,
 
-    /// Prescribed CO2 efficacy factor (matches MAGICC7 `RF_EFFICACY_CO2`).
+    /// CO2 efficacy (matches MAGICC7 `RF_EFFICACY_CO2`).
     ///
-    /// Unused in mode 1.
-    /// In mode 2: $\text{EFFRF} = \text{ERF} \times \text{prescribed\_efficacy\_co2} / \text{internal\_efficacy}$.
+    /// Unused with the `unit` method.
+    /// With `ar6`: $\text{EFFRF} = \text{ERF} \times \text{co2\_efficacy} / \text{internal\_efficacy}$.
     ///
     /// Default: 1.0 (no-op).
-    #[serde(default = "default_prescribed_efficacy_co2")]
-    pub prescribed_efficacy_co2: FloatValue,
+    #[serde(default = "default_co2_efficacy")]
+    pub co2_efficacy: FloatValue,
 
     /// Read efficacy-adjusted four-box forcing instead of global ERF.
     ///
     /// When set, the forcing is used as given and the efficacy settings above
     /// are ignored. See `ForcingAggregation`.
-    pub regional_forcing: bool,
+    pub include_regional_forcing: bool,
 
     /// Efficacy-adjusted box forcing applied at each substep, on top of the
     /// annual input. MAGICC7 applies volcanic forcing this way.
     pub subannual_forcing: Option<SubannualForcing>,
 
     /// Write the annual mean warming and the thermal expansion of the ocean.
-    pub thermal_expansion: Option<ThermalExpansionParameters>,
+    pub thermal_expansion: Option<ThermalExpansion>,
 
-    /// Read the CO2 doubling ERF each year instead of using `rf_2xco2`.
+    /// Read `2xCO2 Effective Radiative Forcing` each year instead of using `erf_2xco2`.
     ///
     /// MAGICC7 recalculates it from the current concentrations with OLBL,
     /// which changes the feedback parameters as CO2 rises.
-    pub time_varying_q2x: bool,
+    pub time_varying_erf_2xco2: bool,
 
     // Initial ocean temperature profile
-    /// Initial ocean temperature profile mode (`CORE_SWITCH_OCN_TEMPPROFILE`).
+    /// Initial ocean temperature profile (`CORE_SWITCH_OCN_TEMPPROFILE`).
     ///
     /// The profile is used as a reference baseline for variable upwelling
     /// correction terms. When upwelling changes from its initial value, these
     /// corrections compensate for the shift in equilibrium profile. Using the
     /// CMIP5 profile matches MAGICC7's default behaviour.
-    pub ocean_temp_profile: OceanTempProfile,
+    pub ocean_temperature_profile: OceanTemperatureProfile,
 
     // Integration parameters
-    /// Steps per year for sub-annual integration.
+    /// Substeps per year.
     /// Default: 12 (monthly)
     pub steps_per_year: usize,
 
     /// Maximum temperature anomaly cap (K).
     /// Safety limit to prevent runaway temperatures.
     /// Default: 25.0
-    pub max_temperature: FloatValue,
+    /// MAGICC7: CORE_MAXIMAL_TEMPERATURE
+    pub maximum_temperature: FloatValue,
 }
 
 impl Default for ClimateUDEBParameters {
@@ -305,27 +333,27 @@ impl Default for ClimateUDEBParameters {
             layer_thickness: 100.0,
 
             // Diffusivity
-            kappa: 0.75,
-            kappa_min: 0.1,
-            kappa_dkdt: -0.191,
+            vertical_diffusivity: 0.75,
+            minimum_vertical_diffusivity: 0.1,
+            vertical_diffusivity_gradient_sensitivity: -0.191,
 
             // Upwelling
-            w_initial: 3.5,
-            w_variable_fraction: 0.7,
-            w_threshold_temp_nh: 8.0,
-            w_threshold_temp_sh: 8.0,
+            initial_upwelling_rate: 3.5,
+            upwelling_variable_fraction: 0.7,
+            upwelling_threshold_temperature_nh: 8.0,
+            upwelling_threshold_temperature_sh: 8.0,
 
             // Climate sensitivity
             ecs: 3.0,
-            rf_2xco2: 3.71,
-            rlo: 1.317,
-            feedback_q_sensitivity: 7.84e-9,
-            feedback_cumt_sensitivity: 0.08,
-            feedback_cumt_period: 300.0,
+            erf_2xco2: 3.71,
+            land_ocean_warming_ratio: 1.317,
+            feedback_forcing_sensitivity: 7.84e-9,
+            feedback_cumulative_temperature_sensitivity: 0.08,
+            feedback_cumulative_temperature_period: 300.0,
 
             // Heat exchange
-            k_lo: 1.44,
-            k_ns: 0.31,
+            land_ocean_heat_exchange: 1.44,
+            north_south_heat_exchange: 0.31,
             amplify_ocean_to_land: 1.02,
 
             // Area fractions
@@ -334,39 +362,39 @@ impl Default for ClimateUDEBParameters {
             depth_dependent_area: 1.0,
 
             // Temperature adjustment
-            temp_adjust_alpha: 1.04,
-            temp_adjust_gamma: -0.002,
+            temperature_adjustment_alpha: 1.04,
+            temperature_adjustment_gamma: -0.002,
 
             // Polar sinking
             polar_sinking_ratio: 0.2,
 
             // Ground heat reservoir
-            land_heat_capacity_enabled: true,
-            k_lg: 0.1,
-            land_hc_eff_thickness: 300.0,
+            include_land_heat_capacity: true,
+            land_ground_heat_exchange: 0.1,
+            land_heat_capacity_effective_thickness: 300.0,
 
             // Regional CO2 forcing (MAGCFG_DEFAULTALL.CFG)
-            rf_regions_co2: [1.4089, 1.37045, 1.43333, 1.33257],
+            co2_regional_pattern: [1.4089, 1.37045, 1.43333, 1.33257],
 
             // Efficacy
-            efficacy_apply: 0,
-            prescribed_efficacy_co2: 1.0,
-            regional_forcing: false,
-            time_varying_q2x: false,
+            efficacy_method: EfficacyMethod::None,
+            co2_efficacy: 1.0,
+            include_regional_forcing: false,
+            time_varying_erf_2xco2: false,
             subannual_forcing: None,
             thermal_expansion: None,
 
             // Initial ocean profile
-            ocean_temp_profile: OceanTempProfile::CMIP5,
+            ocean_temperature_profile: OceanTemperatureProfile::CMIP5,
 
             // Integration
             steps_per_year: 12,
-            max_temperature: 25.0,
+            maximum_temperature: 25.0,
         }
     }
 }
 
-fn default_prescribed_efficacy_co2() -> FloatValue {
+fn default_co2_efficacy() -> FloatValue {
     1.0
 }
 
@@ -386,6 +414,9 @@ pub const CP_SEAWATER: FloatValue = 0.9333 * 4.1856 * 1000.0;
 /// Seconds per Julian year ($\text{s/yr}$).
 pub const SECONDS_PER_YEAR: FloatValue = 31557600.0;
 
+/// Earth surface area ($\text{m}^2$), MAGICC7's value.
+pub const EARTH_SURFACE_AREA: FloatValue = 5.101e14;
+
 /// Volumetric heat capacity of seawater per unit depth ($\text{W yr / m}^2\text{ K}$).
 ///
 /// $$\frac{\rho \, c_p \, d}{\text{seconds per year}}$$
@@ -396,12 +427,12 @@ pub fn heat_capacity_per_unit_area(depth_m: FloatValue) -> FloatValue {
 impl ClimateUDEBParameters {
     /// Convert vertical diffusivity from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
     pub fn kappa_m2_per_yr(&self) -> FloatValue {
-        self.kappa * DIFFUSIVITY_CM2S_TO_M2YR
+        self.vertical_diffusivity * DIFFUSIVITY_CM2S_TO_M2YR
     }
 
     /// Convert minimum vertical diffusivity from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
     pub fn kappa_min_m2_per_yr(&self) -> FloatValue {
-        self.kappa_min * DIFFUSIVITY_CM2S_TO_M2YR
+        self.minimum_vertical_diffusivity * DIFFUSIVITY_CM2S_TO_M2YR
     }
 
     /// Diffusivity change per kelvin of top to bottom temperature difference at each layer boundary.
@@ -409,7 +440,10 @@ impl ClimateUDEBParameters {
         let n = self.n_layers;
         // MAGICC7 scales by boundary index, not depth, so the thicker mixed layer is ignored.
         (0..n - 1)
-            .map(|l| (1.0 - l as FloatValue / (n as FloatValue - 1.0)) * self.kappa_dkdt)
+            .map(|l| {
+                (1.0 - l as FloatValue / (n as FloatValue - 1.0))
+                    * self.vertical_diffusivity_gradient_sensitivity
+            })
             .collect()
     }
 
@@ -417,7 +451,7 @@ impl ClimateUDEBParameters {
     ///
     /// $$\lambda = \Delta Q_{2x} / \text{ECS}$$
     pub fn lambda_global(&self) -> FloatValue {
-        self.rf_2xco2 / self.ecs
+        self.erf_2xco2 / self.ecs
     }
 
     /// Get the ocean area fraction for Northern Hemisphere.
@@ -437,17 +471,14 @@ impl ClimateUDEBParameters {
         0.5 * (self.nh_ocean_fraction() + self.sh_ocean_fraction())
     }
 
-    /// Get per-box global area fractions (FGNO, FGNL, FGSO, FGSL).
+    /// Four-box grid weighted by the global area fraction of each box.
     ///
-    /// These are fractions of the total globe, not of each hemisphere.
-    /// Order: (NH ocean, NH land, SH ocean, SH land).
-    /// Matches MAGICC's GLOBALAREAFRACTIONS ordering.
-    pub fn global_box_fractions(&self) -> (FloatValue, FloatValue, FloatValue, FloatValue) {
-        let fgnl = self.nh_land_fraction / 2.0;
-        let fgno = 0.5 - fgnl;
-        let fgsl = self.sh_land_fraction / 2.0;
-        let fgso = 0.5 - fgsl;
-        (fgno, fgnl, fgso, fgsl)
+    /// The weights are fractions of the total globe, not of each hemisphere.
+    /// MAGICC7 stores them as GLOBALAREAFRACTIONS (FGNO, FGNL, FGSO, FGSL).
+    pub fn grid(&self) -> FourBoxGrid {
+        let nh_land = self.nh_land_fraction / 2.0;
+        let sh_land = self.sh_land_fraction / 2.0;
+        FourBoxGrid::with_weights([0.5 - nh_land, nh_land, 0.5 - sh_land, sh_land])
     }
 
     /// Get the global land fraction.
@@ -528,7 +559,7 @@ impl ClimateUDEBParameters {
     /// Uses ocean-water-equivalent heat capacity with the effective ground
     /// thickness parameterising the total land heat reservoir.
     pub fn ground_heat_capacity(&self) -> FloatValue {
-        heat_capacity_per_unit_area(self.land_hc_eff_thickness)
+        heat_capacity_per_unit_area(self.land_heat_capacity_effective_thickness)
     }
 
     /// Compute the initial ocean temperature profile for a given hemisphere.
@@ -536,9 +567,9 @@ impl ClimateUDEBParameters {
     /// Returns a Vec of length `n_layers` with the initial temperature (K)
     /// for each ocean layer. Layer 0 is the mixed layer.
     ///
-    /// When `ocean_temp_profile` is [`OceanTempProfile::CMIP5`] (default),
+    /// When `ocean_temperature_profile` is [`OceanTemperatureProfile::CMIP5`] (default),
     /// returns the CMIP5 multi-model mean profile. When
-    /// [`OceanTempProfile::Analytical`], returns the analytical exponential
+    /// [`OceanTemperatureProfile::Analytical`], returns the analytical exponential
     /// decay profile.
     pub fn initial_ocean_profile(&self, hemi: usize) -> Vec<FloatValue> {
         assert!(
@@ -547,8 +578,8 @@ impl ClimateUDEBParameters {
             hemi
         );
 
-        match self.ocean_temp_profile {
-            OceanTempProfile::CMIP5 => {
+        match self.ocean_temperature_profile {
+            OceanTemperatureProfile::CMIP5 => {
                 let cmip5 = if hemi == 0 {
                     &CMIP5_PROFILE_NH
                 } else {
@@ -566,11 +597,11 @@ impl ClimateUDEBParameters {
                 }
                 profile
             }
-            OceanTempProfile::Analytical => {
+            OceanTemperatureProfile::Analytical => {
                 let t_mix = 17.2_f64;
                 let t_polar = 1.0_f64;
                 let kappa = self.kappa_m2_per_yr();
-                let w = self.w_initial;
+                let w = self.initial_upwelling_rate;
                 let dz = self.layer_thickness;
 
                 let mut profile = vec![0.0; self.n_layers];
@@ -809,7 +840,7 @@ mod tests {
         // Check key defaults
         assert_eq!(params.n_layers, 50);
         assert!((params.ecs - 3.0).abs() < 1e-10);
-        assert!((params.rf_2xco2 - 3.71).abs() < 1e-10);
+        assert!((params.erf_2xco2 - 3.71).abs() < 1e-10);
         assert_eq!(params.steps_per_year, 12);
     }
 
@@ -860,11 +891,11 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization() {
+    fn test_serialisation() {
         let params = ClimateUDEBParameters::default();
-        let json = serde_json::to_string(&params).expect("Serialization failed");
+        let json = serde_json::to_string(&params).expect("Serialisation failed");
         let parsed: ClimateUDEBParameters =
-            serde_json::from_str(&json).expect("Deserialization failed");
+            serde_json::from_str(&json).expect("Deserialisation failed");
 
         assert_eq!(params.n_layers, parsed.n_layers);
         assert!((params.ecs - parsed.ecs).abs() < 1e-10);
@@ -873,21 +904,21 @@ mod tests {
     #[test]
     fn test_per_box_global_fractions() {
         let params = ClimateUDEBParameters::default();
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
-        assert!((fgnl - 0.21).abs() < 1e-10);
-        assert!((fgno - 0.29).abs() < 1e-10);
-        assert!((fgsl - 0.105).abs() < 1e-10);
-        assert!((fgso - 0.395).abs() < 1e-10);
-        assert!((fgno + fgnl + fgso + fgsl - 1.0).abs() < 1e-10);
+        assert!((nh_land - 0.21).abs() < 1e-10);
+        assert!((nh_ocean - 0.29).abs() < 1e-10);
+        assert!((sh_land - 0.105).abs() < 1e-10);
+        assert!((sh_ocean - 0.395).abs() < 1e-10);
+        assert!((nh_ocean + nh_land + sh_ocean + sh_land - 1.0).abs() < 1e-10);
     }
 
     #[test]
     fn test_time_varying_ecs_defaults() {
         let params = ClimateUDEBParameters::default();
-        assert!((params.feedback_q_sensitivity - 7.84e-9).abs() < 1e-12);
-        assert!((params.feedback_cumt_sensitivity - 0.08).abs() < 1e-10);
-        assert!((params.feedback_cumt_period - 300.0).abs() < 1e-10);
+        assert!((params.feedback_forcing_sensitivity - 7.84e-9).abs() < 1e-12);
+        assert!((params.feedback_cumulative_temperature_sensitivity - 0.08).abs() < 1e-10);
+        assert!((params.feedback_cumulative_temperature_period - 300.0).abs() < 1e-10);
     }
 
     #[test]
@@ -905,7 +936,8 @@ mod tests {
 
         // Ground capacity should scale linearly with thickness
         let ratio = c_ground / params.mixed_layer_heat_capacity();
-        let expected_ratio = params.land_hc_eff_thickness / params.mixed_layer_depth;
+        let expected_ratio =
+            params.land_heat_capacity_effective_thickness / params.mixed_layer_depth;
         assert!(
             (ratio - expected_ratio).abs() < 1e-10,
             "Ground/mixed capacity ratio should equal thickness ratio: {} vs {}",
@@ -917,24 +949,24 @@ mod tests {
     #[test]
     fn test_ground_heat_defaults() {
         let params = ClimateUDEBParameters::default();
-        assert!(params.land_heat_capacity_enabled);
-        assert!((params.k_lg - 0.1).abs() < 1e-10);
-        assert!((params.land_hc_eff_thickness - 300.0).abs() < 1e-10);
+        assert!(params.include_land_heat_capacity);
+        assert!((params.land_ground_heat_exchange - 0.1).abs() < 1e-10);
+        assert!((params.land_heat_capacity_effective_thickness - 300.0).abs() < 1e-10);
     }
 
     #[test]
-    fn test_partial_deserialization() {
-        // Test that #[serde(default)] allows partial deserialization
+    fn test_partial_deserialisation() {
+        // Test that #[serde(default)] allows partial deserialisation
         let json = r#"{"ecs": 4.5}"#;
         let params: ClimateUDEBParameters =
-            serde_json::from_str(json).expect("Partial deserialization failed");
+            serde_json::from_str(json).expect("Partial deserialisation failed");
 
         // ecs should be from JSON
         assert!((params.ecs - 4.5).abs() < 1e-10);
 
         // Other fields should be defaults
         assert_eq!(params.n_layers, 50);
-        assert!((params.kappa - 0.75).abs() < 1e-10);
-        assert!((params.rf_2xco2 - 3.71).abs() < 1e-10);
+        assert!((params.vertical_diffusivity - 0.75).abs() < 1e-10);
+        assert!((params.erf_2xco2 - 3.71).abs() < 1e-10);
     }
 }

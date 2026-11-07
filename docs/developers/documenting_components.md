@@ -45,7 +45,7 @@ because the page heading names the component.
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["radiative-forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
 #[inputs(
-    concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 )]
 #[outputs(
     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
@@ -78,7 +78,7 @@ so rustdoc conventions work:
 - Intra-doc links such as ``[`TwoLayerParameters`]`` become code,
   and `[text](crate::path)` becomes plain text.
 
-A `Units:` line in a parameter's doc comment fills the Unit column of the parameters table.
+A `unit:` line in a parameter's doc comment fills the Unit column of the parameters table.
 
 ### Component Metadata
 
@@ -156,19 +156,19 @@ class SimpleEmissionsToConcentration(Component):
     """
 
     emissions = Input("Emissions|CO2", unit="GtCO2")
-    concentration = State("Atmospheric Concentration|CO2", unit="ppm")
+    concentration = State("Atmospheric Concentrations|CO2", unit="ppm")
 
-    def __init__(self, airborne_fraction: float, gtc_to_ppm: float):
+    def __init__(self, airborne_fraction: float, ppm_per_gtc: float):
         """
         Parameters
         ----------
         airborne_fraction
             Fraction of emissions remaining in atmosphere (typically ~0.45)
-        gtc_to_ppm
-            Conversion factor from GtC to ppm (~0.47 ppm/GtC)
+        ppm_per_gtc
+            Conversion factor in ppm per GtC (~0.47 ppm/GtC)
         """
         self.airborne_fraction = airborne_fraction
-        self.gtc_to_ppm = gtc_to_ppm
+        self.ppm_per_gtc = ppm_per_gtc
 ```
 
 ### Registration
@@ -206,7 +206,7 @@ Each component page includes:
 
 1. **Header**: Name, category, tags, language
 2. **Description**: The doc comments, with rendered equations
-3. **Inputs table**: Variable name, unit, grid type and any description from `# Inputs`
+3. **Inputs table**: Variable name, unit, grid and any description from `# Inputs`
 4. **Outputs table**: The same for outputs
 5. **States table**: (if applicable) The same for state variables
 6. **Parameters table**: Name, type, unit and description of each parameter
@@ -246,9 +246,9 @@ The generated component pages appear under `site/components/`.
 Follow the hierarchical naming convention:
 
 - `Emissions|CO2` - CO2 emissions
-- `Atmospheric Concentration|CO2` - Atmospheric CO2 concentration
+- `Atmospheric Concentrations|CO2` - Atmospheric CO2 concentration
 - `Effective Radiative Forcing|CO2` - ERF from CO2
-- `Surface Temperature` - Global mean surface temperature
+- `Surface Air Temperature Change` - Global mean surface air temperature change
 
 ### Units
 

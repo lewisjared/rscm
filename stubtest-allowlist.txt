@@ -23,7 +23,7 @@
 # Submodule exports (PyO3 submodules exist but aren't exported from parent)
 # =============================================================================
 (?s:rscm\._lib\.(calibrate|components|core|fair|magicc|two_layer)$)
-(?s:rscm\._lib\.core\.(spatial|state)$)
+(?s:rscm\._lib\.core\.(names|spatial|state)$)
 
 # =============================================================================
 # Type aliases (stub-only for readability, not present at runtime)
@@ -33,20 +33,29 @@
 # =============================================================================
 # Protocol/ABC classes (stub-only for type checking)
 # =============================================================================
-rscm._lib.core.Component
+rscm._lib.core.RustComponent
 rscm._lib.core.ComponentBuilder
-rscm._lib.core.CustomComponent
 
 # =============================================================================
 # TypedDict parameter classes (stub-only for builder method kwargs)
 # =============================================================================
-(?s:rscm\._lib\.magicc\.[A-Z][A-Za-z0-9]*Params$)
+(?s:rscm\._lib\.magicc\.[A-Z][A-Za-z0-9]*Parameters$)
+rscm._lib.magicc.AntarcticDischarge
+rscm._lib.magicc.AntarcticRegion
+rscm._lib.magicc.DischargeCase
 rscm._lib.magicc.EfficacyClimate
-rscm._lib.magicc.FgasRegions
+rscm._lib.magicc.FGasRegions
 rscm._lib.magicc.ForcingAgent
+rscm._lib.magicc.ForcingCategory
 rscm._lib.magicc.ForcingTerm
+rscm._lib.magicc.Glacier
+rscm._lib.magicc.GreenlandDischarge
 rscm._lib.magicc.HalocarbonSpecies
-rscm._lib.magicc.TropOzoneRegions
+rscm._lib.magicc.PermafrostSoil
+rscm._lib.magicc.PrognosticFixation
+rscm._lib.magicc.SurfaceMassBalance
+rscm._lib.magicc.ThermalExpansion
+rscm._lib.magicc.TroposphericOzoneRegions
 
 # =============================================================================
 # PyO3 class constructors (__init__ and __new__ mismatch between runtime/stubs)

@@ -1,10 +1,13 @@
 from enum import Enum, auto
-from typing import Any, Literal, Protocol, Self, TypeVar, final
+from typing import TYPE_CHECKING, Literal, Protocol, Self, TypeVar, final
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .state import StateValue
+
+if TYPE_CHECKING:
+    from rscm.component import Component
 
 T = TypeVar("T")
 
@@ -18,7 +21,7 @@ F = np.float64 | float
 @final
 class TimeAxis:
     """
-    Time steps a model is solved on, in decimal years.
+    Steps a model is solved on, in decimal years.
 
     Each value is the start of a step, and each step covers the half-open
     interval up to the next bound.
@@ -35,10 +38,10 @@ class TimeAxis:
     def bounds(self) -> Arr:
         """Return the bounds of the steps."""
     def __len__(self) -> int: ...
-    def at(self, index: int) -> F:
-        """Return the start time of the step at `index`."""
-    def at_bounds(self, index: int) -> tuple[F, F]:
-        """Return the start and end of the step at `index`."""
+    def at(self, time_index: int) -> F:
+        """Return the start time of the step at `time_index`."""
+    def at_bounds(self, time_index: int) -> tuple[F, F]:
+        """Return the start and end of the step at `time_index`."""
 
 @final
 class InterpolationStrategy(Enum):
@@ -56,11 +59,11 @@ class Timeseries:
         self,
         values: Arr,
         time_axis: TimeAxis,
-        units: str,
+        unit: str,
         interpolation_strategy: InterpolationStrategy,
     ) -> None: ...
     @staticmethod
-    def from_values(values: Arr, time: TimeAxis) -> Timeseries: ...
+    def from_values(values: Arr, time_axis: TimeAxis) -> Timeseries: ...
     def with_interpolation_strategy(
         self, interpolation_strategy: InterpolationStrategy
     ) -> Timeseries: ...
@@ -70,7 +73,7 @@ class Timeseries:
     @property
     def latest(self) -> int: ...
     @property
-    def units(self) -> str: ...
+    def unit(self) -> str: ...
     @property
     def time_axis(self) -> TimeAxis: ...
     def latest_value(self) -> F | None: ...
@@ -99,13 +102,13 @@ class Timeseries:
 
 @final
 class FourBoxTimeseries:
-    """FourBox grid timeseries with 4 regional values per timestep."""
+    """Four-box grid timeseries with 4 regional values per step."""
 
     def __init__(
         self,
         values: NDArray[np.float64],
         time_axis: TimeAxis,
-        units: str,
+        unit: str,
         interpolation_strategy: InterpolationStrategy,
     ) -> None:
         """Create from values with shape (n_times, 4) in grid order.
@@ -119,13 +122,25 @@ class FourBoxTimeseries:
     @property
     def latest(self) -> int: ...
     @property
-    def units(self) -> str: ...
+    def unit(self) -> str: ...
     @property
     def time_axis(self) -> TimeAxis: ...
 
 @final
 class HemisphericTimeseries:
-    """Hemispheric grid timeseries with 2 regional values per timestep."""
+    """Hemispheric grid timeseries with 2 regional values per step."""
+
+    def __init__(
+        self,
+        values: NDArray[np.float64],
+        time_axis: TimeAxis,
+        unit: str,
+        interpolation_strategy: InterpolationStrategy,
+    ) -> None:
+        """Create from values with shape (n_times, 2) in grid order.
+
+        The order is northern, southern, with equal hemisphere weights.
+        """
 
     def __len__(self) -> int: ...
     def values(self) -> NDArray[np.float64]:
@@ -133,24 +148,14 @@ class HemisphericTimeseries:
     @property
     def latest(self) -> int: ...
     @property
-    def units(self) -> str: ...
+    def unit(self) -> str: ...
     @property
     def time_axis(self) -> TimeAxis: ...
 
 @final
-class VariableType(Enum):
-    Exogenous = auto()
-    Endogenous = auto()
-
-@final
 class TimeseriesCollection:
     def __init__(self) -> None: ...
-    def add_timeseries(
-        self,
-        name: str,
-        timeseries: Timeseries,
-        variable_type: VariableType = VariableType.Exogenous,
-    ) -> None: ...
+    def add_timeseries(self, name: str, timeseries: Timeseries) -> None: ...
     def get_timeseries_by_name(self, name: str) -> Timeseries | None:
         """
         Get a scalar timeseries from the collection by name.
@@ -168,9 +173,9 @@ class TimeseriesCollection:
         A clone of the timeseries or None if the collection doesn't contain
         a scalar timeseries by that name.
         """
-    def get_fourbox_timeseries_by_name(self, name: str) -> FourBoxTimeseries | None:
+    def get_four_box_timeseries_by_name(self, name: str) -> FourBoxTimeseries | None:
         """
-        Get a FourBox grid timeseries from the collection by name.
+        Get a four-box grid timeseries from the collection by name.
 
         Parameters
         ----------
@@ -180,13 +185,13 @@ class TimeseriesCollection:
         Returns
         -------
         A clone of the timeseries or None if the collection doesn't contain
-        a FourBox timeseries by that name.
+        a four-box timeseries by that name.
         """
     def get_hemispheric_timeseries_by_name(
         self, name: str
     ) -> HemisphericTimeseries | None:
         """
-        Get a Hemispheric grid timeseries from the collection by name.
+        Get a hemispheric grid timeseries from the collection by name.
 
         Parameters
         ----------
@@ -196,7 +201,7 @@ class TimeseriesCollection:
         Returns
         -------
         A clone of the timeseries or None if the collection doesn't contain
-        a Hemispheric timeseries by that name.
+        a hemispheric timeseries by that name.
         """
     def names(self) -> list[str]: ...
     def timeseries(self) -> list[Timeseries]:
@@ -207,7 +212,7 @@ class TimeseriesCollection:
         so they can be modified without affecting the original.
 
         Note: This only returns scalar timeseries. Use
-        get_fourbox_timeseries_by_name() or get_hemispheric_timeseries_by_name()
+        get_four_box_timeseries_by_name() or get_hemispheric_timeseries_by_name()
         to retrieve grid timeseries.
 
         Returns
@@ -216,17 +221,16 @@ class TimeseriesCollection:
         """
 
 @final
-class RequirementType(Enum):
+class VariableRole(Enum):
     """How a component uses a variable."""
 
     Input = auto()
     Output = auto()
     State = auto()
-    EmptyLink = auto()
 
 @final
 class GridType(Enum):
-    """Spatial resolution of a variable."""
+    """The spatial layout of a variable's values."""
 
     Scalar = auto()
     FourBox = auto()
@@ -240,57 +244,37 @@ class TimeseriesType(Enum):
     Average = auto()
 
 @final
-class RequirementDefinition:
-    """A variable a component reads or writes, with its unit, grid and time type."""
+class VariableDefinition:
+    """A variable a component reads or writes.
+
+    It carries a unit, a grid and a timeseries type.
+    """
 
     name: str
-    # TODO: fix naming inconsistency between 'unit' and 'units'
     unit: str
-    requirement_type: RequirementType
-    grid_type: GridType
+    role: VariableRole
+    grid: GridType
     timeseries_type: TimeseriesType | None
 
     def __init__(
         self,
         name: str,
         unit: str,
-        requirement_type: RequirementType,
-        grid_type: GridType = GridType.Scalar,
+        role: VariableRole,
+        grid: GridType = GridType.Scalar,
         timeseries_type: TimeseriesType | None = None,
     ): ...
 
-class Component(Protocol):
-    """A component of the model that can be solved"""
+class RustComponent(Protocol):
+    """A component defined in Rust, built by a component builder."""
 
-    def definitions(self) -> list[RequirementDefinition]: ...
+    def definitions(self) -> list[VariableDefinition]: ...
     def solve(
         self, t_current: float, t_next: float, collection: TimeseriesCollection
     ) -> dict[str, StateValue]: ...
 
-class CustomComponent(Protocol):
-    """
-    Interface required for registering Python-based component.
-
-    Components can use either:
-
-    - a dict-based interface:
-      `solve(..., input_state: dict[str, float]) -> dict[str, float]`.
-      Each input maps to the value its window's `get()` returns,
-      aggregated to a global value for a grid input.
-    - a typed interface: `solve(..., inputs: TypedInputs) -> TypedOutputs`
-
-    The typed interface is provided by inheriting from rscm.component.Component.
-
-    See Also
-    --------
-    rscm.component.Component : Base class for typed Python components
-    """
-
-    def definitions(self) -> list[RequirementDefinition]: ...
-    def solve(self, t_current: float, t_next: float, inputs: Any) -> Any: ...
-
 class ComponentBuilder(Protocol):
-    """A component of the model that can be solved"""
+    """Builder that creates a RustComponent from parameters."""
 
     @staticmethod
     def from_parameters(parameters: dict[str, F]) -> ComponentBuilder:
@@ -299,15 +283,15 @@ class ComponentBuilder(Protocol):
 
         Returns
         -------
-        Builder that can create a Component
+        Builder that can create a RustComponent
         """
-    def build(self) -> Component:
+    def build(self) -> RustComponent:
         """
         Create a concrete component
 
         Returns
         -------
-        Component object that can be solved
+        RustComponent that can be solved
         or coupled with other components via a `Model`.
         """
 
@@ -315,17 +299,15 @@ class ComponentBuilder(Protocol):
 class TestComponentBuilder(ComponentBuilder): ...
 
 @final
-class PythonComponent(Component):
+class PythonComponent(RustComponent):
     """
-    A component defined in Python.
+    The wrapper that lets a Rust model solve a Python component.
 
-    This component must conform with the `CustomComponent` protocol.
-
-    TODO: Example of creating a custom component
+    `ModelBuilder.with_component` applies it to an `rscm.component.Component` instance,
+    so it is rarely needed directly.
     """
 
-    @staticmethod
-    def build(component: CustomComponent) -> PythonComponent: ...
+    def __init__(self, component: Component) -> None: ...
     def input_names(self) -> list[str]:
         """Get the names of all input variables required by this component."""
     def output_names(self) -> list[str]:
@@ -337,13 +319,13 @@ class SchemaVariableDefinition:
 
     name: str
     unit: str
-    grid_type: GridType
+    grid: GridType
 
     def __init__(
         self,
         name: str,
         unit: str,
-        grid_type: GridType | None = None,
+        grid: GridType | None = None,
     ) -> None: ...
 
 @final
@@ -352,16 +334,16 @@ class AggregateDefinition:
 
     name: str
     unit: str
-    grid_type: GridType
+    grid: GridType
     contributors: list[str]
 
     @property
     def operation_type(self) -> str:
-        """Get the operation type as a string ("Sum", "Mean", or "Weighted")."""
+        """Get the operation type as a string ("sum", "mean" or "weighted_sum")."""
 
     @property
     def weights(self) -> list[float] | None:
-        """Get the weights for a Weighted operation, or None for Sum/Mean."""
+        """Get the weights of a weighted sum, or None for sum and mean."""
 
 @final
 class VariableSchema:
@@ -375,10 +357,13 @@ class VariableSchema:
     Examples
     --------
     >>> schema = VariableSchema()
-    >>> schema.add_variable("Emissions|CO2", "GtCO2/yr")
-    >>> schema.add_variable("Emissions|CH4", "GtCH4/yr")
+    >>> schema.add_variable("Emissions|CO2|Fossil", "Mt CO2/yr")
+    >>> schema.add_variable("Emissions|CO2|Biosphere", "Mt CO2/yr")
     >>> schema.add_aggregate(
-    ...     "Total Emissions", "GtCO2/yr", "Sum", ["Emissions|CO2", "Emissions|CH4"]
+    ...     "Emissions|CO2",
+    ...     "Mt CO2/yr",
+    ...     "sum",
+    ...     ["Emissions|CO2|Fossil", "Emissions|CO2|Biosphere"],
     ... )
     >>> schema.validate()
     """
@@ -387,9 +372,7 @@ class VariableSchema:
     aggregates: dict[str, AggregateDefinition]
 
     def __init__(self) -> None: ...
-    def add_variable(
-        self, name: str, unit: str, grid_type: GridType | None = None
-    ) -> None:
+    def add_variable(self, name: str, unit: str, grid: GridType | None = None) -> None:
         """Add a variable to the schema."""
 
     def add_aggregate(
@@ -399,7 +382,7 @@ class VariableSchema:
         operation: str,
         contributors: list[str],
         weights: list[float] | None = None,
-        grid_type: GridType | None = None,
+        grid: GridType | None = None,
     ) -> None:
         """
         Add an aggregate to the schema.
@@ -409,21 +392,21 @@ class VariableSchema:
         name
             Variable identifier for the aggregate result
         unit
-            Physical units (must match contributors)
+            Physical unit (must match contributors)
         operation
-            Operation type: "Sum", "Mean", or "Weighted"
+            Operation type: "sum", "mean" or "weighted_sum"
         contributors
             Names of variables that contribute to this aggregate
         weights
-            Weights for Weighted operation (required if operation="Weighted")
-        grid_type
-            Spatial resolution (defaults to Scalar)
+            Weights for the weighted sum (required if operation="weighted_sum")
+        grid
+            Grid of the aggregate's values (defaults to scalar)
 
         Raises
         ------
         ValueError
-            If operation is "Weighted" but weights not provided, or
-            if operation is not one of "Sum", "Mean", "Weighted".
+            If operation is "weighted_sum" but weights not provided, or
+            if operation is not one of "sum", "mean" or "weighted_sum".
         """
 
     def contains(self, name: str) -> bool:
@@ -437,7 +420,7 @@ class VariableSchema:
 
         - All aggregate contributors exist in the schema
         - Unit consistency between contributors and their aggregates
-        - Grid type consistency between contributors and their aggregates
+        - Grid consistency between contributors and their aggregates
         - Weighted aggregate weight counts match contributor counts
         - No circular dependencies between aggregates
 
@@ -454,29 +437,37 @@ class ModelBuilder:
     def __init__(self) -> None: ...
     def with_time_axis(self, time_axis: TimeAxis) -> Self:
         """Set the time axis the model is solved on."""
-    def with_py_component(self, component: PythonComponent) -> Self:
-        """Add a component defined in Python."""
-    def with_rust_component(self, component: Component) -> Self:
-        """Add a component built by a Rust component builder."""
+    def with_component(
+        self, component: RustComponent | PythonComponent | Component
+    ) -> Self:
+        """
+        Add a component.
+
+        Takes a Rust component, a `PythonComponent`
+        or an `rscm.component.Component` instance, which it wraps.
+        """
     def with_initial_values(self, initial_values: dict[str, F]) -> Self:
         """Set initial values for state variables, which are required at build time."""
     def with_initial_grid_values(self, initial_values: dict[str, list[F]]) -> Self:
         """Add initial values for grid variables, one per region in grid order."""
-    def with_exogenous_variable(self, name: str, timeseries: Timeseries) -> Self:
-        """Supply exogenous data for a variable. Unneeded timeseries are ignored."""
-    def with_exogenous_four_box_variable(
-        self, name: str, timeseries: FourBoxTimeseries
+    def with_prescribed_variable(
+        self,
+        name: str,
+        timeseries: Timeseries | FourBoxTimeseries | HemisphericTimeseries,
     ) -> Self:
-        """Supply exogenous four-box data for a variable."""
-    def with_exogenous_collection(self, timeseries: TimeseriesCollection) -> Self:
-        """Supply exogenous data from a collection. Unneeded timeseries are ignored."""
+        """Supply prescribed data for a variable on any grid.
+
+        Data no component needs is ignored.
+        """
+    def with_prescribed_collection(self, timeseries: TimeseriesCollection) -> Self:
+        """Supply prescribed data from a collection. Unneeded timeseries are ignored."""
     def with_lag(self, variable: str) -> Self:
         """
         Lag every edge from a variable.
 
         Each consumer then reads the previous step's value.
 
-        The lag holds whether the variable is produced by a component or exogenous.
+        The lag holds whether the variable is produced by a component or prescribed.
         Building fails if no component reads or produces the variable.
         """
     def with_lag_for(self, variable: str, consumer: str) -> Self:
@@ -491,7 +482,7 @@ class ModelBuilder:
         self, variable: str, timeseries_type: TimeseriesType
     ) -> Self:
         """
-        Declare whether an exogenous variable is a point or an average.
+        Declare whether a prescribed variable is a point or an average.
 
         Use it when the unit default is wrong.
         Building fails if a component produces the variable with another type.
@@ -502,12 +493,12 @@ class ModelBuilder:
 
         The check is on by default.
         """
-    def with_missing_exogenous_allowed(self) -> Self:
+    def with_missing_prescribed_allowed(self) -> Self:
         """
         Allow inputs that nothing supplies.
 
         By default, building fails if an input has no producer,
-        exogenous data or initial value.
+        prescribed data or initial value.
         With this flag, such an input is filled with NaN instead.
         """
     def with_schema(self, schema: VariableSchema) -> Self:
@@ -527,9 +518,9 @@ class ModelBuilder:
         -------
         Self for method chaining
         """
-    def with_grid_weights(self, grid_type: GridType, weights: list[float]) -> Self:
+    def with_grid_weights(self, grid: GridType, weights: list[float]) -> Self:
         """
-        Set custom weights for a grid type.
+        Set custom weights for a grid.
 
         These weights override the default grid weights used when:
 
@@ -538,11 +529,11 @@ class ModelBuilder:
 
         Parameters
         ----------
-        grid_type
-            The grid type to set weights for (FourBox or Hemispheric)
+        grid
+            The grid to set weights for (four-box or hemispheric)
         weights
             The weights for each region, which must sum to 1.0.
-            FourBox order is NorthernOcean, NorthernLand, SouthernOcean, SouthernLand.
+            Four-box order is NorthernOcean, NorthernLand, SouthernOcean, SouthernLand.
             Hemispheric order is Northern, Southern.
 
         Returns
@@ -552,7 +543,7 @@ class ModelBuilder:
         Raises
         ------
         ValueError
-            If grid_type is Scalar, weights have wrong length, or don't sum to 1.0
+            If grid is Scalar, weights have wrong length, or don't sum to 1.0
 
         Examples
         --------
@@ -578,7 +569,7 @@ class ModelBuilder:
 
 @final
 class Unit:
-    """A physical unit with parsing, normalization, and conversion support.
+    """A physical unit with parsing, normalisation, and conversion support.
 
     This class provides comprehensive support for working with physical units
     in climate models. It handles parsing of unit strings with flexible syntax,
@@ -592,6 +583,12 @@ class Unit:
     - Division: `W/m^2`, `W m^-2`, `W per m^2`
     - Multiplication: `kg m`, `kg*m`
     - Whitespace: `W/m^2` == `W / m ^ 2`
+    - Species after a mass unit: `Mt CH4/yr`, `Gt C/yr`,
+      or fused for carbon: `GtC/yr`, `MtCO2/yr`
+
+    Units of one species family convert by molecular mass ratio,
+    as in `Gt C` to `Mt CO2`.
+    Units of different species never convert.
 
     Examples
     --------
@@ -600,7 +597,7 @@ class Unit:
     >>> # Parse and compare units
     >>> u1 = Unit("W/m^2")
     >>> u2 = Unit("W / m ^ 2")
-    >>> assert u1 == u2  # Same normalized form
+    >>> assert u1 == u2  # Same normalised form
     >>>
     >>> # Convert between compatible units
     >>> gtc = Unit("GtC/yr")
@@ -619,21 +616,30 @@ class Unit:
         Raises
         ------
         ValueError
-            If the unit string cannot be parsed.
+            If the unit string cannot be parsed, including an unknown species token.
         """
 
     @property
     def original(self) -> str:
         """Return the original input string used to create this unit."""
 
-    def normalized(self) -> str:
-        """Return the normalized string representation of this unit."""
+    def normalised(self) -> str:
+        """Return the normalised string representation of this unit.
+
+        The form is compact, as in `W/m^2`.
+        Carbon is fused to its mass unit (`GtC/yr`),
+        and every other species is spaced (`Mt CO2/yr`).
+        """
 
     def is_dimensionless(self) -> bool:
         """Check if this unit is dimensionless."""
 
     def is_compatible(self, other: Unit) -> bool:
-        """Check if this unit can be converted to another unit."""
+        """Check if this unit can be converted to another unit.
+
+        Units are compatible if they have the same dimension
+        and count species of the same family.
+        """
 
     def conversion_factor(self, target: Unit) -> float:
         """Calculate the conversion factor from this unit to another unit.
@@ -641,7 +647,7 @@ class Unit:
         Raises
         ------
         ValueError
-            If the units have incompatible dimensions.
+            If the units have incompatible dimensions or count different species.
         """
 
     def convert(self, value: float, target: Unit) -> float:
@@ -650,7 +656,7 @@ class Unit:
         Raises
         ------
         ValueError
-            If the units have incompatible dimensions.
+            If the units have incompatible dimensions or count different species.
         """
 
     def __repr__(self) -> str: ...
@@ -663,17 +669,17 @@ class Model:
     """
     A coupled set of components that are solved on a common time axis.
 
-    These components are solved over time steps defined by the ['time_axis'].
+    These components are solved over the steps defined by the ['time_axis'].
     Components may pass state between themselves.
     Each component may require information from other components to be
-    solved (endogenous) or predefined data (exogenous).
+    solved (modelled) or predefined data (prescribed).
 
     For example, a component to calculate the
     Effective Radiative Forcing(ERF) of CO_2 may require
     CO_2 concentrations as input state and provide CO_2 ERF.
     The component is agnostic about where/how that state is defined.
     If the model has no components which provide CO_2 concentrations,
-    then a CO_2 concentration timeseries must be defined externally.
+    then a CO_2 concentration timeseries must be prescribed.
     If the model also contains a carbon cycle component which produced
     CO_2 concentrations, then the ERF component will be solved after
     the carbon cycle model.
@@ -715,7 +721,7 @@ class Model:
         Get the timeseries associated with the model.
 
         These timeseries will have the same time axis as the model.
-        Any endrogenous values that have not yet been solved for will be NaN.
+        Any modelled values that have not yet been solved for will be NaN.
 
         Returns
         -------
@@ -751,7 +757,7 @@ class Model:
         """
 
 def build_models(
-    builders: list[ModelBuilder], *, threads: int | None = None
+    builders: list[ModelBuilder], *, n_threads: int | None = None
 ) -> list[Model]:
     """
     Build every builder in parallel, in input order.
@@ -760,7 +766,7 @@ def build_models(
     ----------
     builders
         Builders to build. Each is left unchanged and can be built again.
-    threads
+    n_threads
         Number of threads, or None for one per core.
 
     Raises
@@ -769,7 +775,7 @@ def build_models(
         If a builder fails, naming the first that did.
     """
 
-def run_models(models: list[Model], *, threads: int | None = None) -> None:
+def run_models(models: list[Model], *, n_threads: int | None = None) -> None:
     """
     Run every model to completion in parallel.
 
@@ -780,7 +786,7 @@ def run_models(models: list[Model], *, threads: int | None = None) -> None:
     ----------
     models
         Models to run. A model may appear only once.
-    threads
+    n_threads
         Number of threads, or None for one per core.
 
     Raises

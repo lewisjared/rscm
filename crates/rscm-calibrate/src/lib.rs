@@ -21,32 +21,32 @@
 //! use rscm_calibrate::*;
 //!
 //! // 1. Define parameter priors
-//! let mut params = ParameterSet::new();
-//! params.add("climate_sensitivity", Box::new(Uniform::new(2.0, 5.0).unwrap()));
-//! params.add("heat_capacity", Box::new(Uniform::new(5.0, 15.0).unwrap()));
+//! let mut parameters = ParameterSet::new();
+//! parameters.add("climate_sensitivity", Box::new(Uniform::new(2.0, 5.0).unwrap()));
+//! parameters.add("heat_capacity", Box::new(Uniform::new(5.0, 15.0).unwrap()));
 //!
 //! // 2. Specify observation targets
 //! let mut target = Target::new();
-//! target.add_variable("Temperature|Global")
+//! target.add_variable("Surface Air Temperature Change")
 //!     .add(2020.0, 1.2, 0.1).unwrap()
 //!     .add(2021.0, 1.3, 0.1).unwrap();
 //!
 //! // 3. Create model runner (user implements ModelRunner trait)
-//! # struct MyModelRunner { param_names: Vec<String> }
+//! # struct MyModelRunner { parameter_names: Vec<String> }
 //! # impl ModelRunner for MyModelRunner {
-//! #     fn param_names(&self) -> &[String] { &self.param_names }
+//! #     fn parameter_names(&self) -> &[String] { &self.parameter_names }
 //! #     fn run(&self, _params: &[f64]) -> rscm_calibrate::Result<ModelOutput> {
 //! #         Ok(ModelOutput { variables: std::collections::HashMap::new() })
 //! #     }
 //! # }
-//! # let runner = MyModelRunner { param_names: vec!["climate_sensitivity".into(), "heat_capacity".into()] };
+//! # let runner = MyModelRunner { parameter_names: vec!["climate_sensitivity".into(), "heat_capacity".into()] };
 //!
 //! // 4. Configure likelihood
 //! let likelihood = GaussianLikelihood::new();
 //!
 //! // 5. Run MCMC sampling
 //! let sampler = EnsembleSampler::new(
-//!     params,
+//!     parameters,
 //!     runner,      // Takes runner directly (not boxed)
 //!     likelihood,  // Takes likelihood directly (not boxed)
 //!     target,
@@ -87,7 +87,7 @@
 pub mod distribution;
 pub mod likelihood;
 pub mod model_runner;
-pub mod optimizer;
+pub mod optimiser;
 pub mod parameter_set;
 pub mod point_estimator;
 #[cfg(feature = "python")]
@@ -100,7 +100,7 @@ mod test_support;
 pub use distribution::{Bound, Distribution, LogNormal, Normal, Uniform};
 pub use likelihood::{GaussianLikelihood, LikelihoodFn, ModelOutput, VariableOutput};
 pub use model_runner::{DefaultModelRunner, ModelRunner};
-pub use optimizer::{OptimizationResult, Optimizer};
+pub use optimiser::{OptimisationResult, Optimiser};
 pub use parameter_set::ParameterSet;
 pub use point_estimator::PointEstimator;
 pub use sampler::{Chain, EnsembleSampler, ProgressInfo, SamplerState, StretchMove, WalkerInit};

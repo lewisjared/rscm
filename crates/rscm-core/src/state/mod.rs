@@ -27,9 +27,9 @@ pub use aggregating::{
 };
 
 use crate::component::{GridType, TimeseriesType};
-use crate::spatial::{FourBoxGrid, ScalarRegion, SpatialGrid};
+use crate::spatial::FourBoxGrid;
 use crate::timeseries::{FloatValue, Time, TimeAxis};
-use crate::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+use crate::timeseries_collection::TimeseriesItem;
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -53,7 +53,7 @@ use std::collections::HashMap;
 /// let scalar = StateValue::Scalar(288.0);
 /// assert_eq!(scalar.to_scalar(), 288.0);
 ///
-/// // FourBox value
+/// // Four-box value
 /// let four_box = StateValue::FourBox(FourBoxSlice::from_array([15.0, 14.0, 10.0, 9.0]));
 /// assert_eq!(four_box.to_scalar(), 12.0); // Mean of all regions
 ///
@@ -62,6 +62,7 @@ use std::collections::HashMap;
 /// assert_eq!(hemispheric.to_scalar(), 12.5); // Mean of both hemispheres
 /// ```
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StateValue {
     /// A single scalar value (global average or non-spatial variable)
     Scalar(FloatValue),
@@ -99,7 +100,7 @@ impl StateValue {
         matches!(self, StateValue::Scalar(_))
     }
 
-    /// Check if this is a FourBox grid value
+    /// Check if this is a four-box grid value
     pub fn is_four_box(&self) -> bool {
         matches!(self, StateValue::FourBox(_))
     }
@@ -152,31 +153,41 @@ impl From<HemisphericSlice> for StateValue {
     }
 }
 
-/// Describes the source/origin of a variable in the model.
+/// Where one component's input is read from, as the builder wired it.
 ///
-/// With the variable's point or average type, this decides the timestep index `get()` reads.
-/// Exogenous and upstream inputs read the same index, so the distinction only describes the coupling.
-/// The source is computed at model build time based on the dependency graph.
+/// With the variable's point or average type, this decides the step index `get()` reads.
+/// Prescribed and upstream inputs read the same index, so the distinction only describes the coupling.
 #[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum VariableSource {
-    /// Variable is provided externally (exogenous input).
+    /// Supplied to the model rather than produced by a component.
     /// `get()` reads a point at index N+1 and an average at index N.
     #[default]
-    Exogenous,
+    Prescribed,
 
-    /// Variable is written by an upstream component in the dependency graph.
-    /// `get()` reads a point at index N+1, which the upstream component wrote earlier in this step,
-    /// and an average at index N.
-    UpstreamOutput,
+    /// Produced earlier in the same step by an upstream component.
+    /// `get()` reads a point at index N+1 and an average at index N.
+    Upstream,
 
-    /// Variable is this component's own state from the previous timestep.
-    /// `get()` reads a point at index N and an average at index N-1.
-    OwnState,
-
-    /// Variable is read from the previous step because the model wiring lags this edge.
+    /// Read from the previous step because the model lags this edge.
     /// `get()` reads index N, and `interval()` gives the previous step's (N-1, N).
     Lagged,
+
+    /// The component's own state from the previous step.
+    /// `get()` reads a point at index N and an average at index N-1.
+    OwnState,
+}
+
+impl std::fmt::Display for VariableSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            VariableSource::Prescribed => "prescribed",
+            VariableSource::Upstream => "upstream",
+            VariableSource::Lagged => "lagged",
+            VariableSource::OwnState => "own_state",
+        })
+    }
 }
 
 /// Transform context for automatic grid aggregation.
@@ -258,35 +269,6 @@ impl<'a> InputState<'a> {
         }
     }
 
-    /// Get the global aggregated value for a variable
-    ///
-    /// For scalar variables, returns the scalar value.
-    /// For grid variables, aggregates all regions to a single global value using the grid's weights.
-    pub fn get_global(&self, name: &str) -> Option<FloatValue> {
-        let item = self.find(name)?;
-
-        match &item.data {
-            TimeseriesData::Scalar(ts) => match item.variable_type {
-                VariableType::Exogenous => ts.at_time(self.current_time, ScalarRegion::Global).ok(),
-                VariableType::Endogenous => ts.latest_value(),
-            },
-            TimeseriesData::FourBox(ts) => {
-                let values = match item.variable_type {
-                    VariableType::Exogenous => ts.at_time_all(self.current_time).ok()?,
-                    VariableType::Endogenous => ts.latest_values(),
-                };
-                Some(ts.grid().aggregate_global(&values))
-            }
-            TimeseriesData::Hemispheric(ts) => {
-                let values = match item.variable_type {
-                    VariableType::Exogenous => ts.at_time_all(self.current_time).ok()?,
-                    VariableType::Endogenous => ts.latest_values(),
-                };
-                Some(ts.grid().aggregate_global(&values))
-            }
-        }
-    }
-
     /// Test if the state contains a value with the given name
     pub fn has(&self, name: &str) -> bool {
         self.find(name).is_some()
@@ -333,7 +315,7 @@ impl<'a> InputState<'a> {
     /// Get a scalar TimeseriesWindow for the named variable
     ///
     /// This provides zero-cost access to current, previous, and historical values.
-    /// If the underlying data is stored at a finer grid resolution (FourBox or Hemispheric)
+    /// If the underlying data is stored on a finer grid (FourBox or Hemispheric)
     /// and a read transform is configured, the data will be automatically aggregated
     /// to a scalar value on each access.
     ///
@@ -364,7 +346,7 @@ impl<'a> InputState<'a> {
             .as_ref()
             .and_then(|ctx| ctx.read_transforms.get(name));
 
-        // If there's a transform, use the source grid type and unit conversion factor
+        // If there's a transform, use the source grid and unit conversion factor
         if let Some(transform) = transform {
             let unit_factor = transform.unit_conversion_factor;
 
@@ -372,16 +354,16 @@ impl<'a> InputState<'a> {
                 GridType::FourBox => {
                     let ts = item.data.as_four_box().unwrap_or_else(|| {
                         panic!(
-                            "Variable '{}' requires FourBox->Scalar transform but is not FourBox",
+                            "Variable '{}' requires a four-box to scalar transform but is not a four-box timeseries",
                             name
                         )
                     });
 
-                    let current_index = self.time_index(ts.time_axis_ref(), name);
+                    let time_index = self.time_index(ts.time_axis_ref(), name);
 
                     return ScalarWindow::FromFourBox(AggregatingFourBoxWindow::with_source(
                         ts,
-                        current_index,
+                        time_index,
                         &item.name,
                         transform.weights.clone(),
                         unit_factor,
@@ -399,12 +381,12 @@ impl<'a> InputState<'a> {
                             )
                         });
 
-                    let current_index = self.time_index(ts.time_axis_ref(), name);
+                    let time_index = self.time_index(ts.time_axis_ref(), name);
 
                     return ScalarWindow::FromHemispheric(
                         AggregatingHemisphericWindow::with_source(
                             ts,
-                            current_index,
+                            time_index,
                             &item.name,
                             transform.weights.clone(),
                             unit_factor,
@@ -418,11 +400,11 @@ impl<'a> InputState<'a> {
                         panic!("Variable '{}' is not a scalar timeseries", name)
                     });
 
-                    let current_index = self.time_index(ts.time_axis_ref(), name);
+                    let time_index = self.time_index(ts.time_axis_ref(), name);
 
                     return ScalarWindow::Direct(TimeseriesWindow::with_source(
                         ts,
-                        current_index,
+                        time_index,
                         &item.name,
                         unit_factor,
                         transform.variable_source,
@@ -437,7 +419,7 @@ impl<'a> InputState<'a> {
             .as_scalar()
             .unwrap_or_else(|| panic!("Variable '{}' is not a scalar timeseries", name));
 
-        let current_index = self.time_index(ts.time_axis_ref(), name);
+        let time_index = self.time_index(ts.time_axis_ref(), name);
 
         // Get variable source from transform context if available
         let source = self
@@ -445,13 +427,10 @@ impl<'a> InputState<'a> {
             .as_ref()
             .and_then(|ctx| ctx.read_transforms.get(name))
             .map(|t| t.variable_source)
-            .unwrap_or(VariableSource::Exogenous);
+            .unwrap_or(VariableSource::Prescribed);
 
         ScalarWindow::Direct(TimeseriesWindow::with_source(
-            ts,
-            current_index,
-            &item.name,
-            1.0, // no unit conversion for direct access
+            ts, time_index, &item.name, 1.0, // no unit conversion for direct access
             source,
         ))
     }
@@ -463,7 +442,7 @@ impl<'a> InputState<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the variable is not found or is not a FourBox timeseries.
+    /// Panics if the variable is not found or is not a four-box timeseries.
     pub fn get_four_box_window(&self, name: &str) -> GridTimeseriesWindow<'_, FourBoxGrid> {
         let item = self
             .find(name)
@@ -472,10 +451,10 @@ impl<'a> InputState<'a> {
         let ts = item
             .data
             .as_four_box()
-            .unwrap_or_else(|| panic!("Variable '{}' is not a FourBox timeseries", name));
+            .unwrap_or_else(|| panic!("Variable '{}' is not a four-box timeseries", name));
 
         // Find the index corresponding to current_time in the timeseries
-        let current_index = self.time_index(ts.time_axis_ref(), name);
+        let time_index = self.time_index(ts.time_axis_ref(), name);
 
         // Check if there's a unit conversion factor and variable source
         let (unit_factor, source) = self
@@ -483,15 +462,15 @@ impl<'a> InputState<'a> {
             .as_ref()
             .and_then(|ctx| ctx.read_transforms.get(name))
             .map(|t| (t.unit_conversion_factor, t.variable_source))
-            .unwrap_or((1.0, VariableSource::Exogenous));
+            .unwrap_or((1.0, VariableSource::Prescribed));
 
-        GridTimeseriesWindow::with_source(ts, current_index, &item.name, unit_factor, source)
+        GridTimeseriesWindow::with_source(ts, time_index, &item.name, unit_factor, source)
             .with_timeseries_type(self.timeseries_type(name))
     }
 
     /// Get a Hemispheric GridTimeseriesWindow for the named variable
     ///
-    /// If the underlying data is stored at FourBox resolution and a read transform
+    /// If the underlying data is stored on the FourBox grid and a read transform
     /// is configured, the data will be automatically aggregated to Hemispheric
     /// on each access.
     ///
@@ -524,17 +503,17 @@ impl<'a> InputState<'a> {
             if transform.source_grid == GridType::FourBox {
                 let ts = item.data.as_four_box().unwrap_or_else(|| {
                     panic!(
-                        "Variable '{}' requires FourBox->Hemispheric transform but is not FourBox",
+                        "Variable '{}' requires a four-box to hemispheric transform but is not a four-box timeseries",
                         name
                     )
                 });
 
-                let current_index = self.time_index(ts.time_axis_ref(), name);
+                let time_index = self.time_index(ts.time_axis_ref(), name);
 
                 return HemisphericWindow::FromFourBox(
                     AggregatingFourBoxToHemisphericWindow::with_source(
                         ts,
-                        current_index,
+                        time_index,
                         &item.name,
                         unit_factor,
                         transform.variable_source,
@@ -548,11 +527,11 @@ impl<'a> InputState<'a> {
                     panic!("Variable '{}' is not a Hemispheric timeseries", name)
                 });
 
-                let current_index = self.time_index(ts.time_axis_ref(), name);
+                let time_index = self.time_index(ts.time_axis_ref(), name);
 
                 return HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
                     ts,
-                    current_index,
+                    time_index,
                     &item.name,
                     unit_factor,
                     transform.variable_source,
@@ -566,7 +545,7 @@ impl<'a> InputState<'a> {
             .as_hemispheric()
             .unwrap_or_else(|| panic!("Variable '{}' is not a Hemispheric timeseries", name));
 
-        let current_index = self.time_index(ts.time_axis_ref(), name);
+        let time_index = self.time_index(ts.time_axis_ref(), name);
 
         // Get variable source from transform context if available
         let source = self
@@ -574,14 +553,10 @@ impl<'a> InputState<'a> {
             .as_ref()
             .and_then(|ctx| ctx.read_transforms.get(name))
             .map(|t| t.variable_source)
-            .unwrap_or(VariableSource::Exogenous);
+            .unwrap_or(VariableSource::Prescribed);
 
         HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
-            ts,
-            current_index,
-            &item.name,
-            1.0,
-            source,
+            ts, time_index, &item.name, 1.0, source,
         ))
     }
 }
@@ -603,12 +578,13 @@ impl<'a> IntoIterator for InputState<'a> {
 /// - `StateValue::Hemispheric` for hemispheric values
 ///
 /// The model writes these values to the appropriate timeseries based on the
-/// variable's grid type in `RequirementDefinition`.
+/// variable's grid in `VariableDefinition`.
 pub type OutputState = HashMap<String, StateValue>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timeseries_collection::TimeseriesData;
 
     #[test]
     fn test_state_value_scalar() {
@@ -667,39 +643,6 @@ mod tests {
     }
 
     #[test]
-    fn test_input_state_get_global() {
-        use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
-        use crate::spatial::ScalarGrid;
-        use crate::timeseries::{TimeAxis, Timeseries};
-        use numpy::array;
-        use numpy::ndarray::Axis;
-        use std::sync::Arc;
-
-        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
-        let values = array![280.0, 285.0].insert_axis(Axis(1));
-        let ts = Timeseries::new(
-            values,
-            time_axis,
-            ScalarGrid,
-            "ppm".to_string(),
-            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-        );
-
-        let item = TimeseriesItem {
-            data: TimeseriesData::Scalar(ts),
-            name: "CO2".to_string(),
-            variable_type: VariableType::Endogenous,
-        };
-
-        // The step from 2000.0 ends at index 1
-        let state = InputState::build(vec![&item], 2000.0);
-
-        // An exogenous point's get() returns the value at the step's end (index 1)
-        assert_eq!(state.get_global("CO2"), Some(285.0));
-        assert_eq!(state.get_scalar_window("CO2").get(), 285.0);
-    }
-
-    #[test]
     fn test_input_state_grid_values() {
         use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
         use crate::spatial::FourBoxGrid;
@@ -725,7 +668,6 @@ mod tests {
         let item = TimeseriesItem {
             data: TimeseriesData::FourBox(ts),
             name: "Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
         };
 
         // The step from 2000.0 ends at index 1
@@ -735,10 +677,6 @@ mod tests {
         let window = state.get_four_box_window("Temperature");
         let values = window.get_all();
         assert_eq!(values, [16.0, 15.0, 11.0, 10.0]);
-
-        // Test get_global aggregates using weights (equal weights = mean)
-        let global = state.get_global("Temperature").unwrap();
-        assert_eq!(global, 13.0); // (16 + 15 + 11 + 10) / 4
     }
 }
 
@@ -750,6 +688,7 @@ mod input_state_window_tests {
         FourBoxGrid, FourBoxRegion, HemisphericGrid, HemisphericRegion, ScalarGrid,
     };
     use crate::timeseries::{GridTimeseries, TimeAxis, Timeseries};
+    use crate::timeseries_collection::TimeseriesData;
     use numpy::array;
     use numpy::ndarray::{Array2, Axis};
     use std::sync::Arc;
@@ -770,7 +709,6 @@ mod input_state_window_tests {
         TimeseriesItem {
             data: TimeseriesData::Scalar(ts),
             name: name.to_string(),
-            variable_type: VariableType::Endogenous,
         }
     }
 
@@ -796,7 +734,6 @@ mod input_state_window_tests {
         TimeseriesItem {
             data: TimeseriesData::FourBox(ts),
             name: name.to_string(),
-            variable_type: VariableType::Endogenous,
         }
     }
 
@@ -821,7 +758,6 @@ mod input_state_window_tests {
         TimeseriesItem {
             data: TimeseriesData::Hemispheric(ts),
             name: name.to_string(),
-            variable_type: VariableType::Endogenous,
         }
     }
 
@@ -833,7 +769,7 @@ mod input_state_window_tests {
 
         let window = state.get_scalar_window("CO2");
 
-        // An exogenous point's get() returns the value at the step's end
+        // A prescribed point's get() returns the value at the step's end
         assert_eq!(window.get(), 290.0);
         assert_eq!(window.interval().unwrap(), (285.0, 290.0));
         assert_eq!(window.history(1), Some(285.0));
@@ -867,7 +803,6 @@ mod input_state_window_tests {
         // get() returns values at index 1 (2001 values: [1100.0, 550.0])
         assert_eq!(window.get(HemisphericRegion::Northern), 1100.0);
         assert_eq!(window.get(HemisphericRegion::Southern), 550.0);
-        assert_eq!(state.get_global("Precipitation"), Some(825.0)); // Equal weights mean
     }
 
     #[test]
@@ -883,12 +818,12 @@ mod input_state_window_tests {
     fn test_get_scalar_window_wrong_type() {
         let item = create_four_box_item("Temperature");
         let state = InputState::build(vec![&item], 2000.0);
-        // Attempting to get scalar window for a FourBox variable should panic
+        // Attempting to get scalar window for a four-box variable should panic
         let _ = state.get_scalar_window("Temperature");
     }
 
     #[test]
-    #[should_panic(expected = "not a FourBox timeseries")]
+    #[should_panic(expected = "not a four-box timeseries")]
     fn test_get_four_box_window_wrong_type() {
         let item = create_scalar_item("CO2", vec![280.0, 285.0]);
         let state = InputState::build(vec![&item], 2000.0);
@@ -993,7 +928,7 @@ mod input_state_window_tests {
                 source_grid: GridType::Hemispheric,
                 weights: None,
                 unit_conversion_factor: 0.001, // Convert mm/yr to m/yr
-                variable_source: VariableSource::Exogenous,
+                variable_source: VariableSource::Prescribed,
                 timeseries_type: TimeseriesType::Point,
             },
         );
@@ -1050,7 +985,7 @@ mod input_state_window_tests {
             (
                 "Temperature".to_string(),
                 ReadTransformInfo::new(GridType::FourBox, None)
-                    .with_source(VariableSource::UpstreamOutput),
+                    .with_source(VariableSource::Upstream),
             ),
         ]);
         let state = InputState::build_with_transforms(

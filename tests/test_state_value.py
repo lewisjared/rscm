@@ -33,7 +33,7 @@ class TestStateValueBasics:
         assert sv.to_scalar() == 42.0
 
     def test_four_box_creation(self):
-        """Test creating a FourBox StateValue."""
+        """Test creating a four-box StateValue."""
         slice = FourBoxSlice(
             northern_ocean=1.0, northern_land=2.0, southern_ocean=3.0, southern_land=4.0
         )
@@ -74,7 +74,7 @@ class TestStateValueBasics:
         assert "StateValue.scalar(42" in repr(sv)
 
     def test_repr_four_box(self):
-        """Test repr for FourBox StateValue."""
+        """Test repr for four-box StateValue."""
         slice = FourBoxSlice.uniform(1.0)
         sv = StateValue.four_box(slice)
         assert "StateValue.four_box" in repr(sv)
@@ -114,11 +114,11 @@ class TestStateValueInComponents:
         assert sv.as_scalar() == 5.0
 
     def test_typed_component_with_four_box_output(self):
-        """Test that typed components can return FourBox outputs via StateValue."""
+        """Test that typed components can return four-box outputs via StateValue."""
 
         class FourBoxComponent(Component):
             input_var = Input("Input", unit="W/m^2")
-            output_var = Output("Regional Output", unit="K", grid="FourBox")
+            output_var = Output("Regional Output", unit="K", grid="four_box")
 
             def solve(self, t_current, t_next, inputs):
                 return self.Outputs(
@@ -157,7 +157,7 @@ class TestStateValueInComponents:
 
         class HemisphericComponent(Component):
             input_var = Input("Input", unit="W/m^2")
-            output_var = Output("Hemispheric Output", unit="K", grid="Hemispheric")
+            output_var = Output("Hemispheric Output", unit="K", grid="hemispheric")
 
             def solve(self, t_current, t_next, inputs):
                 return self.Outputs(
@@ -187,7 +187,7 @@ class TestStateValueInComponents:
         class MixedComponent(Component):
             input_var = Input("Input", unit="W/m^2")
             scalar_out = Output("Scalar Output", unit="K")
-            four_box_out = Output("FourBox Output", unit="K", grid="FourBox")
+            four_box_out = Output("FourBox Output", unit="K", grid="four_box")
 
             def solve(self, t_current, t_next, inputs):
                 return self.Outputs(
@@ -209,11 +209,13 @@ class TestStateValueInModel:
     """Test StateValue with full model integration."""
 
     def test_python_component_grid_output_in_model(self):
-        """Test Python component with FourBox output runs in model."""
+        """Test Python component with four-box output runs in model."""
 
         class GridProducerComponent(Component):
             input_var = Input("Forcing", unit="W/m^2")
-            output_var = Output("Regional Temperature", unit="K", grid="FourBox")
+            output_var = Output(
+                "Surface Air Temperature Change", unit="K", grid="four_box"
+            )
 
             def solve(self, t_current, t_next, inputs):
                 forcing = inputs.input_var.get()
@@ -236,13 +238,13 @@ class TestStateValueInModel:
         )
 
         component = GridProducerComponent()
-        py_component = PythonComponent.build(component)
+        py_component = PythonComponent(component)
 
         model = (
             ModelBuilder()
             .with_time_axis(time_axis)
-            .with_exogenous_variable("Forcing", forcing_ts)
-            .with_py_component(py_component)
+            .with_prescribed_variable("Forcing", forcing_ts)
+            .with_component(py_component)
             .build()
         )
 

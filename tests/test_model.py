@@ -14,27 +14,27 @@ def test_model(time_axis):
         dict(
             lambda0=0.0,
             a=0.0,
-            efficacy=0.0,
-            eta=0.0,
+            deep_ocean_efficacy=0.0,
+            ocean_heat_transfer=0.0,
             heat_capacity_deep=0.0,
             heat_capacity_surface=0.0,
         )
     ).build()
 
     builder = ModelBuilder()
-    builder.with_time_axis(time_axis).with_rust_component(component)
+    builder.with_time_axis(time_axis).with_component(component)
 
     erf = Timeseries(
         np.asarray([1.0] * len(time_axis)),
         time_axis,
-        "W / m^2",
+        "W/m^2",
         InterpolationStrategy.Next,
     )
 
     model = (
-        builder.with_exogenous_variable("Effective Radiative Forcing", erf)
+        builder.with_prescribed_variable("Effective Radiative Forcing", erf)
         .with_initial_values(
-            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+            {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
         )
         .build()
     )
@@ -44,13 +44,13 @@ def test_model(time_axis):
     model.run()
 
 
-def test_missing_exogenous_input(time_axis):
+def test_missing_prescribed_input(time_axis):
     component = TwoLayerBuilder.from_parameters(
         dict(
             lambda0=0.0,
             a=0.0,
-            efficacy=0.0,
-            eta=0.0,
+            deep_ocean_efficacy=0.0,
+            ocean_heat_transfer=0.0,
             heat_capacity_deep=0.0,
             heat_capacity_surface=0.0,
         )
@@ -58,9 +58,9 @@ def test_missing_exogenous_input(time_axis):
     builder = (
         ModelBuilder()
         .with_time_axis(time_axis)
-        .with_rust_component(component)
+        .with_component(component)
         .with_initial_values(
-            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+            {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
         )
     )
 
@@ -69,7 +69,7 @@ def test_missing_exogenous_input(time_axis):
     ):
         builder.build()
 
-    model = builder.with_missing_exogenous_allowed().build()
+    model = builder.with_missing_prescribed_allowed().build()
     erf = model.timeseries().get_timeseries_by_name("Effective Radiative Forcing")
     assert np.isnan(erf.values()).all()
 
@@ -79,8 +79,8 @@ def test_missing_initial_value_names_the_builder_method(time_axis):
         dict(
             lambda0=0.0,
             a=0.0,
-            efficacy=0.0,
-            eta=0.0,
+            deep_ocean_efficacy=0.0,
+            ocean_heat_transfer=0.0,
             heat_capacity_deep=0.0,
             heat_capacity_surface=0.0,
         )
@@ -88,13 +88,13 @@ def test_missing_initial_value_names_the_builder_method(time_axis):
     builder = (
         ModelBuilder()
         .with_time_axis(time_axis)
-        .with_rust_component(component)
-        .with_initial_values({"Deep Ocean Temperature": 0.0})
+        .with_component(component)
+        .with_initial_values({"Ocean Temperature|Layer 2": 0.0})
     )
 
     with pytest.raises(
         ValueError,
-        match=r'with_initial_values\(\{"Surface Temperature": value\}\)',
+        match=r'with_initial_values\(\{"Surface Air Temperature Change": value\}\)',
     ):
         builder.build()
 
@@ -104,26 +104,26 @@ def test_model_serialisation(time_axis):
         dict(
             lambda0=0.0,
             a=0.0,
-            efficacy=0.0,
-            eta=0.0,
+            deep_ocean_efficacy=0.0,
+            ocean_heat_transfer=0.0,
             heat_capacity_deep=0.0,
             heat_capacity_surface=0.0,
         )
     ).build()
 
     builder = ModelBuilder()
-    builder.with_time_axis(time_axis).with_rust_component(component)
+    builder.with_time_axis(time_axis).with_component(component)
     erf = Timeseries(
         np.asarray([1.0] * len(time_axis)),
         time_axis,
-        "W / m^2",
+        "W/m^2",
         InterpolationStrategy.Next,
     )
 
     model = (
-        builder.with_exogenous_variable("Effective Radiative Forcing", erf)
+        builder.with_prescribed_variable("Effective Radiative Forcing", erf)
         .with_initial_values(
-            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+            {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
         )
         .build()
     )
@@ -142,8 +142,12 @@ def test_model_serialisation(time_axis):
     new_model.run()
 
     npt.assert_allclose(
-        new_model.timeseries().get_timeseries_by_name("Surface Temperature").values(),
-        model.timeseries().get_timeseries_by_name("Surface Temperature").values(),
+        new_model.timeseries()
+        .get_timeseries_by_name("Surface Air Temperature Change")
+        .values(),
+        model.timeseries()
+        .get_timeseries_by_name("Surface Air Temperature Change")
+        .values(),
     )
 
 
@@ -152,8 +156,8 @@ def test_coupling_formats(time_axis):
         dict(
             lambda0=0.0,
             a=0.0,
-            efficacy=0.0,
-            eta=0.0,
+            deep_ocean_efficacy=0.0,
+            ocean_heat_transfer=0.0,
             heat_capacity_deep=0.0,
             heat_capacity_surface=0.0,
         )
@@ -161,11 +165,11 @@ def test_coupling_formats(time_axis):
     model = (
         ModelBuilder()
         .with_time_axis(time_axis)
-        .with_rust_component(component)
+        .with_component(component)
         .with_initial_values(
-            {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+            {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
         )
-        .with_missing_exogenous_allowed()
+        .with_missing_prescribed_allowed()
         .build()
     )
 
@@ -173,8 +177,8 @@ def test_coupling_formats(time_axis):
     (two_layer,) = coupling["components"]
     inputs = {v["name"]: v for v in two_layer["inputs"]}
     erf = inputs["Effective Radiative Forcing"]
-    assert erf["source"] == "exogenous"
-    assert erf["timeseries_type"] == "Point"
+    assert erf["source"] == "prescribed"
+    assert erf["timeseries_type"] == "point"
     assert "[0] TwoLayer" in model.coupling("plain")
     assert "TwoLayer" in model.coupling()
     with pytest.raises(ValueError, match="Unknown format"):

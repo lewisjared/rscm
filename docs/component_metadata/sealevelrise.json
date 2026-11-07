@@ -2,7 +2,7 @@
   "name": "SeaLevelRise",
   "module_path": "rscm_magicc::climate::sea_level",
   "language": "rust",
-  "description": "Global mean sea level rise from land ice and thermal expansion.\n\nSea level rise component.\n\n# What This Component Does\n\nEach contribution is driven by the annual mean global surface warming:\n\n1. Glaciers relax towards an equilibrium sea level that rises with warming\n2. Greenland and Antarctic surface mass balance follow a power of warming,\n   Greenland's shrinking with its remaining volume\n3. Greenland solid ice discharge depletes a low and a high volume case\n4. Antarctic solid ice discharge convolves basal melt with each drainage region's\n   response function (Levermann et al. 2014)\n\nThermal expansion needs the ocean layer temperatures, so `ClimateUDEB` calculates it\nwhen its `thermal_expansion` parameter is set, see [`thermal_expansion_increment`].\n\n# Inputs\n\n- `Surface Temperature|Annual Mean` (K) - Mean warming over the step, from `ClimateUDEB`\n- `Sea Level Rise|Thermal Expansion` (mm) - From `ClimateUDEB`\n\n# Outputs\n\n- `Sea Level Rise` (mm) - Sum of all contributions\n- `Sea Level Rise|Glaciers`, `Sea Level Rise|Greenland|Surface Mass Balance`,\n  `Sea Level Rise|Greenland|Solid Ice Discharge`, `Sea Level Rise|Antarctica|Surface Mass Balance`\n  and `Sea Level Rise|Antarctica|Solid Ice Discharge` (mm)\n\nA step's warming sets the sea level at its end, as in MAGICC7.\nSteps must be one year long.\n\n# Differences from MAGICC7\n\n- **Land water** is not implemented. MAGICC7's default run leaves it off.\n- **Antarctic discharge** keeps two MAGICC7 quirks: the response functions overflow\n  from an age of 216 years, and a delayed region releases one year of melt before it starts.",
+  "description": "Global mean sea level rise from land ice and thermal expansion.\n\nSea level rise component.\n\n# What This Component Does\n\nEach contribution is driven by the annual mean global surface warming:\n\n1. Glaciers relax towards an equilibrium sea level that rises with warming\n2. Greenland and Antarctic surface mass balance follow a power of warming,\n   Greenland's shrinking with its remaining volume\n3. Greenland solid ice discharge depletes a low and a high volume case\n4. Antarctic solid ice discharge convolves basal melt with each drainage region's\n   response function (Levermann et al. 2014)\n\nThermal expansion needs the ocean layer temperatures, so `ClimateUDEB` calculates it\nwhen its `thermal_expansion` parameter is set, see [`thermal_expansion_increment`].\n\n# Inputs\n\n- `Annual Mean Surface Air Temperature Change` (K) - Mean warming over the step, from `ClimateUDEB`\n- `Sea Level Rise|Thermal Expansion` (mm) - From `ClimateUDEB`\n\n# Outputs\n\n- `Sea Level Rise` (mm) - Sum of all contributions\n- `Sea Level Rise|Glaciers`, `Sea Level Rise|Greenland|Surface Mass Balance`,\n  `Sea Level Rise|Greenland|Solid Ice Discharge`, `Sea Level Rise|Antarctica|Surface Mass Balance`\n  and `Sea Level Rise|Antarctica|Solid Ice Discharge` (mm)\n\nA step's warming sets the sea level at its end, as in MAGICC7.\nSteps must be one year long.\n\n# Differences from MAGICC7\n\n- **Land water** is not implemented. MAGICC7's default run leaves it off.\n- **Antarctic discharge** keeps two MAGICC7 quirks: the response functions overflow\n  from an age of 216 years, and a delayed region releases one year of melt before it starts.",
   "category": "Climate",
   "tags": [
     "climate",
@@ -12,53 +12,53 @@
   "inputs": [
     {
       "rust_name": "temperature",
-      "variable_name": "Surface Temperature|Annual Mean",
+      "name": "Annual Mean Surface Air Temperature Change",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "thermal_expansion",
-      "variable_name": "Sea Level Rise|Thermal Expansion",
+      "name": "Sea Level Rise|Thermal Expansion",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "total",
-      "variable_name": "Sea Level Rise",
+      "name": "Sea Level Rise",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "glaciers",
-      "variable_name": "Sea Level Rise|Glaciers",
+      "name": "Sea Level Rise|Glaciers",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "greenland_smb",
-      "variable_name": "Sea Level Rise|Greenland|Surface Mass Balance",
+      "name": "Sea Level Rise|Greenland|Surface Mass Balance",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "greenland_discharge",
-      "variable_name": "Sea Level Rise|Greenland|Solid Ice Discharge",
+      "name": "Sea Level Rise|Greenland|Solid Ice Discharge",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "antarctic_smb",
-      "variable_name": "Sea Level Rise|Antarctica|Surface Mass Balance",
+      "name": "Sea Level Rise|Antarctica|Surface Mass Balance",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "antarctic_discharge",
-      "variable_name": "Sea Level Rise|Antarctica|Solid Ice Discharge",
+      "name": "Sea Level Rise|Antarctica|Solid Ice Discharge",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "states": [],

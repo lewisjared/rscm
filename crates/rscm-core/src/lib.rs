@@ -27,13 +27,13 @@
 //! ```text
 //! ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 //! │ Emissions       │────▶│  Carbon Cycle    │────▶│  ERF Component  │
-//! │ (exogenous)     │     │  (concentration) │     │  (forcing)      │
+//! │ (prescribed)     │     │  (concentration) │     │  (forcing)      │
 //! └─────────────────┘     └──────────────────┘     └─────────────────┘
 //! ```
 //!
 //! The [`ModelBuilder`](model::ModelBuilder) constructs a dependency graph and
 //! validates that all inputs are satisfied (either by other components or
-//! exogenous data).
+//! prescribed data).
 //!
 //! # Basic Usage
 //!
@@ -47,14 +47,14 @@
 //!     .with_time_axis(TimeAxis::from_values(array![2020.0, 2021.0, 2022.0]))
 //!     .with_component(Arc::new(my_carbon_cycle))
 //!     .with_component(Arc::new(my_erf_component))
-//!     .with_exogenous_variable("Emissions|CO2", emissions_timeseries)
+//!     .with_prescribed_variable("Emissions|CO2", emissions_timeseries)
 //!     .build()?;
 //!
 //! // Run the model
 //! model.run();
 //!
 //! // Access results
-//! let concentrations = model.timeseries().get_data("Atmospheric Concentration|CO2");
+//! let concentrations = model.timeseries().get_data("Atmospheric Concentrations|CO2");
 //! ```
 //!
 //! # Creating Components
@@ -67,19 +67,19 @@
 //!
 //! #[derive(Debug, Serialize, Deserialize, ComponentIO)]
 //! #[inputs(
-//!     concentration { name = "Atmospheric Concentration|CO2", unit = "ppm" },
+//!     concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
 //! )]
 //! #[outputs(
-//!     erf { name = "Effective Radiative Forcing|CO2", unit = "W / m^2" },
+//!     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
 //! )]
 //! pub struct CO2ERF {
 //!     pub erf_2xco2: f64,
-//!     pub conc_pi: f64,
+//!     pub co2_pi: f64,
 //! }
 //!
 //! #[typetag::serde]
 //! impl Component for CO2ERF {
-//!     fn definitions(&self) -> Vec<RequirementDefinition> {
+//!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         Self::generated_definitions()
 //!     }
 //!
@@ -87,7 +87,7 @@
 //!         let inputs = CO2ERFInputs::from_input_state(input_state);
 //!         let concentration = inputs.concentration.get();
 //!         let erf = self.erf_2xco2 / 2.0_f64.ln()
-//!             * (1.0 + (concentration - self.conc_pi) / self.conc_pi).ln();
+//!             * (1.0 + (concentration - self.co2_pi) / self.co2_pi).ln();
 //!         Ok(CO2ERFOutputs { erf }.into())
 //!     }
 //! }
@@ -95,14 +95,14 @@
 //!
 //! # Spatial Grids
 //!
-//! The framework supports spatially-resolved variables through different grid types:
+//! The framework supports spatially-resolved variables on different grids:
 //!
 //! - **Scalar**: Global mean values (default)
 //! - **FourBox**: Four regions (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
 //! - **Hemispheric**: Two hemispheres (Northern, Southern)
 //!
 //! Grid transformations (e.g., FourBox to Scalar aggregation) are handled automatically
-//! by the [`grid_transform`] module when components with different spatial resolutions
+//! by the [`grid_transform`] module when components on different grids
 //! are connected.
 
 // Allow macro-generated code to reference this crate by name
@@ -114,6 +114,7 @@ pub mod grid_transform;
 pub mod interpolate;
 pub mod ivp;
 pub mod model;
+pub mod names;
 pub mod python;
 pub mod schema;
 pub mod spatial;
@@ -124,12 +125,13 @@ pub mod units;
 pub mod utils;
 
 pub mod errors;
+pub mod forcing;
 
 // Re-export derive macro for convenience
 pub use rscm_macros::ComponentIO;
 
 // Re-export component types
 pub use component::{
-    Component, ComponentMetadata, ComponentState, GridType, RequirementDefinition, RequirementType,
-    VariableMetadata,
+    Component, ComponentMetadata, ComponentState, DeclaredVariable, GridType, VariableDefinition,
+    VariableRole, VariableSource,
 };

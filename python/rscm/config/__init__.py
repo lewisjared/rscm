@@ -19,7 +19,7 @@ Examples
 from __future__ import annotations
 
 from .base import InputSpec, ModelConfig, TimeConfig
-from .builder import build_model, build_two_layer_model
+from .builder import build_model
 from .docs import export_parameter_json, generate_parameter_docs
 from .exceptions import (
     ComponentNotFoundError,
@@ -48,7 +48,6 @@ __all__ = [
     "TimeConfig",
     "ValidationError",
     "build_model",
-    "build_two_layer_model",
     "check_schema_version",
     "component_registry",
     "deep_merge",

@@ -37,7 +37,7 @@ class Uniform:
     def __init__(self, low: F, high: F) -> None: ...
     def sample(self) -> F:
         """Sample a random value from the distribution."""
-    def ln_pdf(self, x: F) -> F:
+    def log_pdf(self, x: F) -> F:
         """Compute the log probability density at x."""
     def bounds(self) -> tuple[F, F]:
         """Return the (low, high) bounds of the distribution."""
@@ -69,7 +69,7 @@ class Normal:
     def __init__(self, mean: F, std_dev: F) -> None: ...
     def sample(self) -> F:
         """Sample a random value from the distribution."""
-    def ln_pdf(self, x: F) -> F:
+    def log_pdf(self, x: F) -> F:
         """Compute the log probability density at x."""
     def bounds(self) -> tuple[F, F] | None:
         """Return None (unbounded distribution)."""
@@ -86,7 +86,7 @@ class LogNormal:
     Log-normal distribution.
 
     Can be constructed using either (mu, sigma) parameters of the underlying
-    normal distribution, or (mean, std) of the log-normal distribution itself.
+    normal distribution, or (mean, std_dev) of the log-normal distribution itself.
 
     Parameters
     ----------
@@ -96,7 +96,7 @@ class LogNormal:
         Standard deviation of underlying normal distribution (log-space, positive)
     mean : float, optional
         Mean of the log-normal distribution (real-space, must be positive)
-    std : float, optional
+    std_dev : float, optional
         Standard deviation of the log-normal distribution (real-space, must be positive)
 
     Notes
@@ -104,7 +104,7 @@ class LogNormal:
     Must provide exactly one of:
 
     - (mu, sigma): log-space parameters
-    - (mean, std): real-space parameters
+    - (mean, std_dev): real-space parameters
 
     Raises
     ------
@@ -118,11 +118,11 @@ class LogNormal:
         mu: F | None = None,
         sigma: F | None = None,
         mean: F | None = None,
-        std: F | None = None,
+        std_dev: F | None = None,
     ) -> None: ...
     def sample(self) -> F:
         """Sample a random value from the distribution."""
-    def ln_pdf(self, x: F) -> F:
+    def log_pdf(self, x: F) -> F:
         """Compute the log probability density at x."""
     def bounds(self) -> tuple[F, F] | None:
         """Return (0, inf) bounds for log-normal distribution."""
@@ -161,8 +161,8 @@ class Bound:
     ) -> None: ...
     def sample(self) -> F:
         """Sample a random value from the bounded distribution."""
-    def ln_pdf(self, x: F) -> F:
-        """Compute the log probability density at x (unnormalized)."""
+    def log_pdf(self, x: F) -> F:
+        """Compute the log probability density at x (unnormalised)."""
     def bounds(self) -> tuple[F, F]:
         """Return the (low, high) bounds."""
 
@@ -178,20 +178,20 @@ class ParameterSet:
 
     Parameters
     ----------
-    params : dict[str, Uniform | Normal | LogNormal | Bound], optional
+    parameters : dict[str, Uniform | Normal | LogNormal | Bound], optional
         Dictionary mapping parameter names to distributions
 
     Examples
     --------
     >>> # Dict constructor
-    >>> params = ParameterSet({"x": Uniform(0, 1), "y": Normal(0, 1)})
+    >>> parameters = ParameterSet({"x": Uniform(0, 1), "y": Normal(0, 1)})
     >>>
     >>> # Fluent builder
-    >>> params = ParameterSet().add("x", Uniform(0, 1)).add("y", Normal(0, 1))
+    >>> parameters = ParameterSet().add("x", Uniform(0, 1)).add("y", Normal(0, 1))
     """
 
     def __init__(
-        self, params: dict[str, Uniform | Normal | LogNormal | Bound] | None = None
+        self, parameters: dict[str, Uniform | Normal | LogNormal | Bound] | None = None
     ) -> None: ...
     def add(
         self, name: str, distribution: Uniform | Normal | LogNormal | Bound
@@ -223,7 +223,7 @@ class ParameterSet:
         Returns
         -------
         NDArray[np.float64]
-            Array of shape (n, n_params) with random samples
+            Array of shape (n, n_parameters) with random samples
         """
     def sample_lhs(self, n: int) -> Arr:
         """
@@ -239,16 +239,16 @@ class ParameterSet:
         Returns
         -------
         NDArray[np.float64]
-            Array of shape (n, n_params) with LHS samples
+            Array of shape (n, n_parameters) with LHS samples
         """
-    def log_prior(self, params: Sequence[F]) -> F:
+    def log_prior(self, parameters: Sequence[F]) -> F:
         """
         Compute log prior probability for a parameter vector.
 
         Parameters
         ----------
-        params : array-like
-            Parameter values in the order given by param_names
+        parameters : array-like
+            Parameter values in the order given by parameter_names
 
         Returns
         -------
@@ -258,11 +258,11 @@ class ParameterSet:
         Raises
         ------
         ValueError
-            If params length doesn't match number of parameters
+            If parameters length doesn't match number of parameters
         """
     def bounds(self) -> tuple[list[F], list[F]]:
         """
-        Get parameter bounds for optimization.
+        Get parameter bounds for optimisation.
 
         Returns
         -------
@@ -272,7 +272,7 @@ class ParameterSet:
             Upper bounds for each parameter (+inf for unbounded)
         """
     @property
-    def param_names(self) -> list[str]:
+    def parameter_names(self) -> list[str]:
         """Get parameter names in definition order."""
 
 # ==================== Observations and Targets ====================
@@ -354,12 +354,14 @@ class Target:
     Examples
     --------
     >>> target = Target()
-    >>> target.add_observation("Temperature|Global", 2020, 1.2, 0.1)
-    >>> target.add_observation("Temperature|Global", 2021, 1.3, 0.1)
-    >>> target.set_reference_period("Temperature|Global", 1850, 1900)
+    >>> target.add_observation("Surface Air Temperature Change", 2020, 1.2, 0.1)
+    >>> target.add_observation("Surface Air Temperature Change", 2021, 1.3, 0.1)
+    >>> target.set_reference_period("Surface Air Temperature Change", 1850, 1900)
     >>>
     >>> # Using relative uncertainty
-    >>> target.add_observation_relative("OHC|Total", 2020, 200, 0.1)  # 10% error
+    >>> target.add_observation_relative(
+    ...     "Ocean Heat Content", 2020, 200, 0.1
+    ... )  # 10% error
     """
 
     def __init__(self) -> None: ...
@@ -458,7 +460,7 @@ class Target:
         """
     def variable_names(self) -> list[str]:
         """Get names of all variables with observations."""
-    def total_observations(self) -> int:
+    def n_observations(self) -> int:
         """Get the total number of observations across all variables."""
     def time_range(self) -> tuple[F, F] | None:
         """
@@ -482,8 +484,8 @@ class GaussianLikelihood:
 
     Parameters
     ----------
-    normalize : bool, optional
-        Whether to include normalization constant (default: False for MCMC).
+    normalise : bool, optional
+        Whether to include normalisation constant (default: False for MCMC).
         Set to True for maximum likelihood estimation or model comparison.
 
     Notes
@@ -492,7 +494,7 @@ class GaussianLikelihood:
     PointEstimator. This class is not intended to be called directly.
     """
 
-    def __init__(self, normalize: bool = False) -> None: ...
+    def __init__(self, normalise: bool = False) -> None: ...
 
 # ==================== Model Runner ====================
 
@@ -508,35 +510,37 @@ class ModelRunner:
     ----------
     model_factory : callable
         Function that takes dict[str, float] and returns dict[str, dict[float, float]]
-    param_names : list[str]
+    parameter_names : list[str]
         Parameter names in the order expected by indexed parameter vectors
     output_variables : list[str]
         Names of output variables to extract from model
 
     Examples
     --------
-    >>> def run_model(params):
-    ...     # Run model with params
-    ...     return {"Temperature|Global": {2020: 1.2, 2021: 1.3}}
+    >>> def run_model(parameters):
+    ...     # Run model with parameters
+    ...     return {"Surface Air Temperature Change": {2020: 1.2, 2021: 1.3}}
     >>>
-    >>> runner = ModelRunner(run_model, ["param1", "param2"], ["Temperature|Global"])
+    >>> runner = ModelRunner(
+    ...     run_model, ["param1", "param2"], ["Surface Air Temperature Change"]
+    ... )
     >>> result = runner.run([0.5, 1.0])
     """
 
     def __init__(
         self,
         model_factory: Callable[[dict[str, F]], dict[str, dict[F, F]]],
-        param_names: list[str],
+        parameter_names: list[str],
         output_variables: list[str],
     ) -> None: ...
-    def run(self, params: Sequence[F]) -> dict[str, dict[F, F]]:
+    def run(self, parameters: Sequence[F]) -> dict[str, dict[F, F]]:
         """
         Run the model with a parameter vector.
 
         Parameters
         ----------
-        params : list[float]
-            Parameter values in the order specified by param_names
+        parameters : list[float]
+            Parameter values in the order specified by parameter_names
 
         Returns
         -------
@@ -546,12 +550,12 @@ class ModelRunner:
         Raises
         ------
         ValueError
-            If params length doesn't match param_names
+            If parameters length doesn't match parameter_names
         Exception
             If model execution fails
         """
     @property
-    def param_names(self) -> list[str]:
+    def parameter_names(self) -> list[str]:
         """Get parameter names."""
     @property
     def output_variables(self) -> list[str]:
@@ -568,8 +572,8 @@ class ProgressInfo:
     ----------
     iteration : int
         Current iteration number
-    total : int
-        Total iterations to run
+    n_iterations : int
+        Number of iterations in the run
     acceptance_rate : float
         Mean acceptance rate across walkers
     mean_log_prob : float
@@ -580,8 +584,8 @@ class ProgressInfo:
     def iteration(self) -> int:
         """Current iteration."""
     @property
-    def total(self) -> int:
-        """Total iterations."""
+    def n_iterations(self) -> int:
+        """Number of iterations in the run."""
     @property
     def acceptance_rate(self) -> F:
         """Mean acceptance rate."""
@@ -592,20 +596,20 @@ class ProgressInfo:
 @final
 class WalkerInit:
     """
-    Walker initialization strategy for MCMC sampler.
+    Walker initialisation strategy for MCMC sampler.
 
-    Use static methods to construct initialization strategies.
+    Use static methods to construct initialisation strategies.
 
     Examples
     --------
     >>> # Sample from prior
     >>> init = WalkerInit.from_prior()
     >>>
-    >>> # Initialize in ball around point
+    >>> # Initialise in ball around point
     >>> init = WalkerInit.ball([0.5, 1.0], radius=0.1)
     >>>
     >>> # Explicit positions
-    >>> positions = np.random.rand(32, 2)  # 32 walkers, 2 params
+    >>> positions = np.random.rand(32, 2)  # 32 walkers, 2 parameters
     >>> init = WalkerInit.explicit(positions)
     """
 
@@ -613,26 +617,26 @@ class WalkerInit:
     def from_prior() -> WalkerInit:
         """Sample initial walker positions from parameter priors."""
     @staticmethod
-    def ball(center: Sequence[F], radius: F) -> WalkerInit:
+    def ball(centre: Sequence[F], radius: F) -> WalkerInit:
         """
-        Initialize walkers in a ball around a point.
+        Initialise walkers in a ball around a point.
 
         Parameters
         ----------
-        center : array-like
-            Center point for initialization
+        centre : array-like
+            Centre point for initialisation
         radius : float
-            Radius of ball for random initialization
+            Radius of ball for random initialisation
         """
     @staticmethod
     def explicit(positions: list[list[F]]) -> WalkerInit:
         """
-        Initialize walkers at explicit positions.
+        Initialise walkers at explicit positions.
 
         Parameters
         ----------
         positions : list[list[float]]
-            2D list of walker positions, shape (n_walkers, n_params)
+            2D list of walker positions, shape (n_walkers, n_parameters)
         """
 
 @final
@@ -642,11 +646,11 @@ class Chain:
 
     Attributes
     ----------
-    param_names : list[str]
+    parameter_names : list[str]
         Parameter names
     thin : int
         Thinning interval
-    total_iterations : int
+    n_iterations : int
         Total iterations run
 
     Examples
@@ -661,7 +665,7 @@ class Chain:
     >>> converged = chain.is_converged(discard=100, threshold=1.1)
     >>>
     >>> # Get parameter dict
-    >>> param_dict = chain.to_param_dict(discard=100)
+    >>> param_dict = chain.to_parameter_dict(discard=100)
     """
 
     def flat_samples(self, discard: int = 0) -> Arr:
@@ -676,7 +680,7 @@ class Chain:
         Returns
         -------
         NDArray[np.float64]
-            Array of shape (n_samples * n_walkers, n_params) with all samples
+            Array of shape (n_samples * n_walkers, n_parameters) with all samples
         """
     def flat_log_probs(self, discard: int = 0) -> Arr:
         """
@@ -692,7 +696,7 @@ class Chain:
         NDArray[np.float64]
             Array of shape (n_samples * n_walkers,) with log probabilities
         """
-    def to_param_dict(self, discard: int = 0) -> dict[str, Arr]:
+    def to_parameter_dict(self, discard: int = 0) -> dict[str, Arr]:
         """
         Get samples as dictionary of parameter arrays.
 
@@ -803,13 +807,13 @@ class Chain:
             If chains have incompatible parameters or thinning
         """
     @property
-    def param_names(self) -> list[str]:
+    def parameter_names(self) -> list[str]:
         """Parameter names."""
     @property
     def thin(self) -> int:
         """Thinning interval."""
     @property
-    def total_iterations(self) -> int:
+    def n_iterations(self) -> int:
         """Total iterations run."""
     def __len__(self) -> int:
         """Return number of stored samples per walker."""
@@ -824,7 +828,7 @@ class EnsembleSampler:
 
     Parameters
     ----------
-    params : ParameterSet
+    parameters : ParameterSet
         Parameter set with prior distributions
     runner : ModelRunner
         Model runner for evaluating likelihoods
@@ -835,13 +839,13 @@ class EnsembleSampler:
 
     Examples
     --------
-    >>> sampler = EnsembleSampler(params, runner, likelihood, target)
+    >>> sampler = EnsembleSampler(parameters, runner, likelihood, target)
     >>> chain = sampler.run(1000, WalkerInit.from_prior(), thin=1)
     """
 
     def __init__(
         self,
-        params: ParameterSet,
+        parameters: ParameterSet,
         runner: ModelRunner,
         likelihood: GaussianLikelihood,
         target: Target,
@@ -853,7 +857,7 @@ class EnsembleSampler:
         Returns
         -------
         int
-            Default number of walkers (max(2 * n_params, 32))
+            Default number of walkers (max(2 * n_parameters, 32))
         """
     def run(
         self,
@@ -869,7 +873,7 @@ class EnsembleSampler:
         n_iterations : int
             Number of iterations to run
         init : WalkerInit
-            Initialization strategy
+            Initialisation strategy
         thin : int, optional
             Store every Nth sample (default: 1)
 
@@ -899,7 +903,7 @@ class EnsembleSampler:
         n_iterations : int
             Number of iterations to run
         init : WalkerInit
-            Initialization strategy
+            Initialisation strategy
         thin : int
             Thinning interval (store every thin-th sample)
         progress_callback : callable
@@ -928,7 +932,7 @@ class EnsembleSampler:
         n_iterations : int
             Number of iterations to run
         init : WalkerInit
-            Initialization strategy
+            Initialisation strategy
         thin : int
             Thinning interval (store every thin-th sample)
         checkpoint_every : int
@@ -975,8 +979,8 @@ class EnsembleSampler:
             MCMC chain with all samples (original + new)
         """
     @staticmethod
-    def with_stretch_param(
-        params: ParameterSet,
+    def with_stretch_parameter(
+        parameters: ParameterSet,
         runner: ModelRunner,
         likelihood: GaussianLikelihood,
         target: Target,
@@ -987,7 +991,7 @@ class EnsembleSampler:
 
         Parameters
         ----------
-        params : ParameterSet
+        parameters : ParameterSet
             Parameter set defining prior distributions
         runner : ModelRunner
             Model runner for evaluating parameter sets
@@ -1013,29 +1017,29 @@ class EnsembleSampler:
 # ==================== Point Estimation ====================
 
 @final
-class Optimizer:
+class Optimiser:
     """
-    Optimization algorithm selector.
+    Optimisation algorithm selector.
 
-    Use static methods to construct optimizer instances.
+    Use static methods to construct optimiser instances.
 
     Examples
     --------
-    >>> optimizer = Optimizer.random_search()
+    >>> optimiser = Optimiser.random_search()
     """
 
     @staticmethod
-    def random_search() -> Optimizer:
-        """Random search optimizer (samples n points from the prior, returns best)."""
+    def random_search() -> Optimiser:
+        """Random search optimiser (samples n points from the prior, returns best)."""
 
 @final
-class OptimizationResult:
+class OptimisationResult:
     """
-    Result from point estimation optimization.
+    Result from point estimation optimisation.
 
     Attributes
     ----------
-    best_params : list[float]
+    best_parameters : list[float]
         Best parameter values found
     best_log_likelihood : float
         Log-likelihood at best parameters (not including prior)
@@ -1044,11 +1048,11 @@ class OptimizationResult:
     n_evaluations : int
         Number of model evaluations performed
     converged : bool
-        Whether the optimizer converged
+        Whether the optimiser converged
     """
 
     @property
-    def best_params(self) -> list[F]:
+    def best_parameters(self) -> list[F]:
         """Best parameter values."""
     @property
     def best_log_likelihood(self) -> F:
@@ -1061,16 +1065,16 @@ class OptimizationResult:
         """Number of evaluations performed."""
     @property
     def converged(self) -> bool:
-        """Whether the optimizer converged."""
+        """Whether the optimiser converged."""
 
 @final
 class PointEstimator:
     """
-    Point estimation optimizer for finding best-fit parameters.
+    Point estimation optimiser for finding best-fit parameters.
 
     Parameters
     ----------
-    params : ParameterSet
+    parameters : ParameterSet
         Parameter set with prior distributions
     runner : ModelRunner
         Model runner
@@ -1081,34 +1085,34 @@ class PointEstimator:
 
     Examples
     --------
-    >>> estimator = PointEstimator(params, runner, likelihood, target)
-    >>> result = estimator.optimize(Optimizer.random_search(), n_samples=1000)
-    >>> print(f"Best params: {result.best_params}")
+    >>> estimator = PointEstimator(parameters, runner, likelihood, target)
+    >>> result = estimator.optimise(Optimiser.random_search(), n_samples=1000)
+    >>> print(f"Best parameters: {result.best_parameters}")
     >>> print(f"Best log-likelihood: {result.best_log_likelihood}")
     """
 
     def __init__(
         self,
-        params: ParameterSet,
+        parameters: ParameterSet,
         runner: ModelRunner,
         likelihood: GaussianLikelihood,
         target: Target,
     ) -> None: ...
-    def optimize(self, optimizer: Optimizer, n_samples: int) -> OptimizationResult:
+    def optimise(self, optimiser: Optimiser, n_samples: int) -> OptimisationResult:
         """
-        Run optimization to find best-fit parameters.
+        Run optimisation to find best-fit parameters.
 
         Parameters
         ----------
-        optimizer : Optimizer
-            Optimization algorithm
+        optimiser : Optimiser
+            Optimisation algorithm
         n_samples : int
             Number of samples to evaluate (for random search)
 
         Returns
         -------
-        OptimizationResult
-            Optimization result with best parameters
+        OptimisationResult
+            Optimisation result with best parameters
         """
     def clear_history(self) -> None:
         """Clear evaluation history."""
@@ -1119,17 +1123,17 @@ class PointEstimator:
         Returns
         -------
         tuple[list[float], float] | None
-            (best_params, best_log_likelihood) or None if no evaluations
+            (best_parameters, best_log_likelihood) or None if no evaluations
         """
-    def evaluated_params(self) -> list[list[F]]:
+    def evaluated_parameters(self) -> list[list[F]]:
         """Get all evaluated parameter vectors."""
     def evaluated_log_likelihoods(self) -> list[F]:
         """Get all evaluated log-likelihoods."""
     @property
-    def n_params(self) -> int:
+    def n_parameters(self) -> int:
         """Number of parameters."""
     @property
-    def param_names(self) -> list[str]:
+    def parameter_names(self) -> list[str]:
         """Parameter names."""
     @property
     def n_evaluations(self) -> int:

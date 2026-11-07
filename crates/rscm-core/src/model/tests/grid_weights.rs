@@ -7,7 +7,7 @@ use crate::timeseries::TimeAxis;
 use numpy::ndarray::Array;
 
 #[test]
-fn test_with_grid_weights_fourbox_valid() {
+fn test_with_grid_weights_four_box_valid() {
     let mut builder = ModelBuilder::new();
     builder.with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14]);
 
@@ -40,7 +40,7 @@ fn test_with_grid_weights_hemispheric_valid() {
 }
 
 #[test]
-#[should_panic(expected = "Cannot set weights for Scalar")]
+#[should_panic(expected = "Cannot set weights for the scalar grid")]
 fn test_with_grid_weights_scalar_panics() {
     let mut builder = ModelBuilder::new();
     builder.with_grid_weights(GridType::Scalar, vec![1.0]);
@@ -62,7 +62,7 @@ fn test_with_grid_weights_wrong_sum_panics() {
 }
 
 #[test]
-fn test_custom_weights_applied_to_fourbox_timeseries() {
+fn test_custom_weights_applied_to_four_box_timeseries() {
     // Custom weights: different from default [0.25, 0.25, 0.25, 0.25]
     let custom_weights = vec![0.36, 0.14, 0.36, 0.14];
 

@@ -2,8 +2,7 @@
 use numpy::array;
 use numpy::ndarray::Array1;
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
+    Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
@@ -14,41 +13,42 @@ use std::iter::zip;
 
 /// Parameters for the Ocean Surface Partial Pressure component
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OceanSurfacePartialPressureParameters {
     /// Pre-industrial ocean surface partial pressure
-    /// Units: `ppm`
-    pub ospp_preindustrial: f64,
+    /// unit: `ppm`
+    pub ospp_pi: f64,
     /// Sensitivity of the ocean surface's partial pressure to changes in sea
     /// surface temperature relative to pre-industrial
-    /// Units: `1 / delta_degC`
+    /// unit: `1/delta_degC`
     pub sensitivity_ospp_to_temperature: f64,
 
     /// Pre-industrial sea surface temperature
-    /// Units: `degC`
-    pub sea_surface_temperature_preindustrial: f64,
+    /// unit: `degC`
+    pub sst_pi: f64,
 
     /// Vector of length 5 of offsets to be used when calculating the change in
     /// ocean surface partial pressure
-    /// Units: `ppm`
+    /// unit: `ppm`
     pub delta_ospp_offsets: [f64; 5],
     /// Vector of length 5 of coefficients (applied to pre-industrial sea surface temperatures)
     /// to be used when calculating the change in
     /// ocean surface partial pressure
     ///
-    /// Units: `ppm / delta_degC`
+    /// unit: `ppm/delta_degC`
     pub delta_ospp_coefficients: [f64; 5],
 }
 
 /// Calculate partial pressure of |CO2| at the ocean's surface
 ///
-/// # Requirements
+/// # Inputs
 /// delta_sea_surface_temperature
 ///    Change in sea surface temperature relative to pre-industrial
-///    Units: `delta_degC`
+///    Unit: `delta_degC`
 ///
 /// delta_dissolved_inorganic_carbon
 ///    Change in dissolved inorganic carbon relative to pre-industrial
-///    Units: `micromol / kg`
+///    Unit: `micromol/kg`
 ///
 /// Returns
 /// -------
@@ -104,7 +104,7 @@ pub struct OceanSurfacePartialPressureParameters {
 #[component(tags = ["ocean", "carbon-cycle", "magicc", "experimental"], category = "Ocean Carbon Cycle")]
 #[inputs(
     sea_surface_temperature { name = "Sea Surface Temperature", unit = "K" },
-    dissolved_inorganic_carbon { name = "Dissolved Inorganic Carbon", unit = "micromol / kg" },
+    dissolved_inorganic_carbon { name = "Dissolved Inorganic Carbon", unit = "micromol/kg" },
 )]
 #[outputs(
     ospp_co2 { name = "Ocean Surface Partial Pressure|CO2", unit = "ppm" },
@@ -139,9 +139,7 @@ impl OceanSurfacePartialPressure {
                 self.parameters.delta_ospp_offsets,
                 self.parameters.delta_ospp_coefficients,
             )
-            .map(|(offset, coeff)| {
-                offset + coeff * self.parameters.sea_surface_temperature_preindustrial
-            }),
+            .map(|(offset, coeff)| offset + coeff * self.parameters.sst_pi),
         )
         .dot(&delta_dissolved_inorganic_carbon_bits)
     }
@@ -149,7 +147,7 @@ impl OceanSurfacePartialPressure {
 
 #[typetag::serde]
 impl Component for OceanSurfacePartialPressure {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -167,7 +165,7 @@ impl Component for OceanSurfacePartialPressure {
             self.calculate_ospp(delta_dissolved_inorganic_carbon);
 
         // this exponential is basically just 1 given the scale of the constant
-        let ocean_surface_partial_pressure = (self.parameters.ospp_preindustrial
+        let ocean_surface_partial_pressure = (self.parameters.ospp_pi
             + delta_ocean_surface_partial_pressure)
             * (self.parameters.sensitivity_ospp_to_temperature * delta_sea_surface_temperature)
                 .exp();
@@ -186,7 +184,7 @@ mod tests {
     use rscm_core::model::extract_state;
     use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
-    use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
+    use rscm_core::timeseries_collection::TimeseriesCollection;
     use rstest::rstest;
 
     fn build_timeseries_collection(
@@ -201,7 +199,6 @@ mod tests {
                 array![f64::NAN, sea_surface_temperature],
                 array![2020.0, 2021.0],
             ),
-            VariableType::Exogenous,
         );
 
         collection.add_timeseries(
@@ -210,7 +207,6 @@ mod tests {
                 array![f64::NAN, dissolved_inorganic_carbon],
                 array![2020.0, 2021.0],
             ),
-            VariableType::Exogenous,
         );
         collection
     }
@@ -218,21 +214,21 @@ mod tests {
     #[rstest]
     #[case(
         OceanSurfacePartialPressureParameters {
-            ospp_preindustrial: 278.0,
+            ospp_pi: 278.0,
             sensitivity_ospp_to_temperature: 0.043,
             delta_ospp_offsets: [1.5568, 7.4706, 1.2748, 2.4491, 1.5468],
             delta_ospp_coefficients: [-0.013993, -0.20207, -0.12015, -0.12639, -0.15326],
-            sea_surface_temperature_preindustrial: 17.9,
+            sst_pi: 17.9,
         },
         339.089
     )]
     #[case(
         OceanSurfacePartialPressureParameters {
-            ospp_preindustrial: 315.0,
+            ospp_pi: 315.0,
             sensitivity_ospp_to_temperature: 0.0423,
             delta_ospp_offsets: [1.5, 7.5, 1.3, 2.5, 1.6],
             delta_ospp_coefficients: [-0.02, -0.2, -0.1, -0.14, -0.2],
-            sea_surface_temperature_preindustrial: 17.9,
+            sst_pi: 17.9,
         },
         381.003
     )]

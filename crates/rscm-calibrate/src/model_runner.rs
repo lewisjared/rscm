@@ -22,31 +22,31 @@ use rscm_core::timeseries_collection::TimeseriesData;
 /// # Design
 ///
 /// Parameters are indexed (`Vec<f64>`) rather than named (`HashMap<String, f64>`) for performance.
-/// The parameter order is defined by `param_names()` and must remain consistent across all
+/// The parameter order is defined by `parameter_names()` and must remain consistent across all
 /// method calls.
 ///
 /// # Example
 ///
 /// ```ignore
 /// let runner = MyModelRunner::new(/* ... */);
-/// let param_names = runner.param_names();
-/// // param_names = ["climate_sensitivity", "ocean_diffusivity"]
+/// let parameter_names = runner.parameter_names();
+/// // parameter_names = ["climate_sensitivity", "ocean_diffusivity"]
 ///
-/// let params = vec![3.0, 1200.0];  // Must match order of param_names
-/// let output = runner.run(&params)?;
+/// let parameters = vec![3.0, 1200.0];  // Must match order of parameter_names
+/// let output = runner.run(&parameters)?;
 /// ```
 pub trait ModelRunner {
     /// Get the names of parameters in the order they appear in parameter vectors.
     ///
     /// This defines the indexed parameter order used by `run()` and `run_batch()`.
     /// The order must remain consistent for the lifetime of the ModelRunner.
-    fn param_names(&self) -> &[String];
+    fn parameter_names(&self) -> &[String];
 
     /// Run the model with the given parameter vector.
     ///
     /// # Arguments
     ///
-    /// * `params` - Parameter values indexed by `param_names()` order
+    /// * `parameters` - Parameter values indexed by `parameter_names()` order
     ///
     /// # Returns
     ///
@@ -55,11 +55,11 @@ pub trait ModelRunner {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Parameter vector length doesn't match `param_names().len()`
+    /// - Parameter vector length doesn't match `parameter_names().len()`
     /// - Model construction fails (invalid parameters)
     /// - Model execution fails (solver divergence, NaN, etc.)
     /// - Output extraction fails (missing variables)
-    fn run(&self, params: &[f64]) -> Result<ModelOutput>;
+    fn run(&self, parameters: &[f64]) -> Result<ModelOutput>;
 
     /// Run the model for multiple parameter vectors.
     ///
@@ -68,19 +68,22 @@ pub trait ModelRunner {
     ///
     /// # Arguments
     ///
-    /// * `param_sets` - Multiple parameter vectors to evaluate
+    /// * `parameter_sets` - Multiple parameter vectors to evaluate
     ///
     /// # Returns
     ///
-    /// Vector of results in the same order as `param_sets`. Failed runs are returned
+    /// Vector of results in the same order as `parameter_sets`. Failed runs are returned
     /// as `Err` values (not filtered out).
     ///
     /// # Errors
     ///
     /// Individual model failures are returned as `Err` items in the result vector.
     /// The method itself only fails if there's a fundamental problem (e.g., thread pool error).
-    fn run_batch(&self, param_sets: &[Vec<f64>]) -> Vec<Result<ModelOutput>> {
-        param_sets.iter().map(|params| self.run(params)).collect()
+    fn run_batch(&self, parameter_sets: &[Vec<f64>]) -> Vec<Result<ModelOutput>> {
+        parameter_sets
+            .iter()
+            .map(|parameters| self.run(parameters))
+            .collect()
     }
 }
 
@@ -101,10 +104,10 @@ pub trait ModelRunner {
 ///
 /// let runner = DefaultModelRunner::new(
 ///     vec!["climate_sensitivity".to_string(), "ocean_diffusivity".to_string()],
-///     vec!["Temperature|Global".to_string(), "OHC".to_string()],
-///     |params| {
-///         let climate_sensitivity = params[0];
-///         let ocean_diffusivity = params[1];
+///     vec!["Surface Air Temperature Change".to_string(), "Ocean Heat Content".to_string()],
+///     |parameters| {
+///         let climate_sensitivity = parameters[0];
+///         let ocean_diffusivity = parameters[1];
 ///
 ///         let model = ModelBuilder::new()
 ///             // ... configure model with parameters ...
@@ -118,7 +121,7 @@ where
     F: Fn(&[f64]) -> Result<Model>,
 {
     /// Parameter names in indexed order
-    param_names: Vec<String>,
+    parameter_names: Vec<String>,
     /// Output variable names to extract
     output_variables: Vec<String>,
     /// Factory function to create models from parameter vectors
@@ -133,7 +136,7 @@ where
     ///
     /// # Arguments
     ///
-    /// * `param_names` - Names of parameters in the order they appear in parameter vectors
+    /// * `parameter_names` - Names of parameters in the order they appear in parameter vectors
     /// * `output_variables` - Names of variables to extract from model output
     /// * `factory` - Function to create a model from a parameter vector
     ///
@@ -142,16 +145,16 @@ where
     /// ```ignore
     /// let runner = DefaultModelRunner::new(
     ///     vec!["param1".to_string(), "param2".to_string()],
-    ///     vec!["Temperature|Global".to_string()],
-    ///     |params| {
-    ///         // Create model with params[0] and params[1]
+    ///     vec!["Surface Air Temperature Change".to_string()],
+    ///     |parameters| {
+    ///         // Create model with parameters[0] and parameters[1]
     ///         Ok(model)
     ///     }
     /// );
     /// ```
-    pub fn new(param_names: Vec<String>, output_variables: Vec<String>, factory: F) -> Self {
+    pub fn new(parameter_names: Vec<String>, output_variables: Vec<String>, factory: F) -> Self {
         Self {
-            param_names,
+            parameter_names,
             output_variables,
             factory,
         }
@@ -188,7 +191,7 @@ where
             };
 
             // Extract all time points
-            // The timeseries may contain NaN values for uncomputed timesteps
+            // The timeseries may contain NaN values for uncomputed steps
             // We only extract non-NaN values
             let time_axis = timeseries.time_axis();
             for i in 0..timeseries.len() {
@@ -199,7 +202,7 @@ where
                     .at_index(i, 0)
                     .ok_or_else(|| Error::ModelError(format!("Value index {} out of bounds", i)))?;
 
-                // Skip NaN values (uncomputed timesteps)
+                // Skip NaN values (uncomputed steps)
                 if !value.is_nan() {
                     var_output.add(time, value);
                 }
@@ -216,22 +219,22 @@ impl<F> ModelRunner for DefaultModelRunner<F>
 where
     F: Fn(&[f64]) -> Result<Model> + Sync,
 {
-    fn param_names(&self) -> &[String] {
-        &self.param_names
+    fn parameter_names(&self) -> &[String] {
+        &self.parameter_names
     }
 
-    fn run(&self, params: &[f64]) -> Result<ModelOutput> {
+    fn run(&self, parameters: &[f64]) -> Result<ModelOutput> {
         // Validate parameter count
-        if params.len() != self.param_names.len() {
+        if parameters.len() != self.parameter_names.len() {
             return Err(Error::ModelError(format!(
                 "Expected {} parameters, got {}",
-                self.param_names.len(),
-                params.len()
+                self.parameter_names.len(),
+                parameters.len()
             )));
         }
 
         // Create model using factory
-        let mut model = (self.factory)(params)
+        let mut model = (self.factory)(parameters)
             .map_err(|e| Error::ModelError(format!("Model construction failed: {}", e)))?;
 
         model
@@ -241,7 +244,7 @@ where
         // Check if model finished successfully
         if !model.finished() {
             return Err(Error::ModelError(
-                "Model did not complete all timesteps".to_string(),
+                "Model did not complete all steps".to_string(),
             ));
         }
 
@@ -259,10 +262,10 @@ where
     ///
     /// The factory function must be `Sync` to allow safe parallel execution.
     /// Each thread constructs its own model instance, so there's no shared state.
-    fn run_batch(&self, param_sets: &[Vec<f64>]) -> Vec<Result<ModelOutput>> {
-        param_sets
+    fn run_batch(&self, parameter_sets: &[Vec<f64>]) -> Vec<Result<ModelOutput>> {
+        parameter_sets
             .par_iter()
-            .map(|params| self.run(params))
+            .map(|parameters| self.run(parameters))
             .collect()
     }
 }
@@ -274,35 +277,35 @@ mod tests {
 
     /// Simple test implementation that squares parameters
     struct TestRunner {
-        param_names: Vec<String>,
+        parameter_names: Vec<String>,
         output_variables: Vec<String>,
     }
 
     impl TestRunner {
         fn new() -> Self {
             Self {
-                param_names: vec!["param1".to_string(), "param2".to_string()],
+                parameter_names: vec!["param1".to_string(), "param2".to_string()],
                 output_variables: vec!["output1".to_string()],
             }
         }
     }
 
     impl ModelRunner for TestRunner {
-        fn param_names(&self) -> &[String] {
-            &self.param_names
+        fn parameter_names(&self) -> &[String] {
+            &self.parameter_names
         }
 
-        fn run(&self, params: &[f64]) -> Result<ModelOutput> {
-            if params.len() != self.param_names.len() {
+        fn run(&self, parameters: &[f64]) -> Result<ModelOutput> {
+            if parameters.len() != self.parameter_names.len() {
                 return Err(Error::ModelError(format!(
                     "Expected {} parameters, got {}",
-                    self.param_names.len(),
-                    params.len()
+                    self.parameter_names.len(),
+                    parameters.len()
                 )));
             }
 
             // Simple test: output is sum of squared parameters
-            let value = params.iter().map(|&p| p * p).sum::<f64>();
+            let value = parameters.iter().map(|&p| p * p).sum::<f64>();
 
             let mut output = ModelOutput::new();
             let mut var = VariableOutput::new(&self.output_variables[0]);
@@ -314,26 +317,26 @@ mod tests {
     }
 
     #[test]
-    fn test_param_names() {
+    fn test_parameter_names() {
         let runner = TestRunner::new();
-        assert_eq!(runner.param_names(), &["param1", "param2"]);
+        assert_eq!(runner.parameter_names(), &["param1", "param2"]);
     }
 
     #[test]
     fn test_run_success() {
         let runner = TestRunner::new();
-        let params = vec![3.0, 4.0]; // 3^2 + 4^2 = 9 + 16 = 25
-        let output = runner.run(&params).unwrap();
+        let parameters = vec![3.0, 4.0]; // 3^2 + 4^2 = 9 + 16 = 25
+        let output = runner.run(&parameters).unwrap();
 
         let var = output.get_variable("output1").unwrap();
         assert_eq!(var.get(2020.0), Some(25.0));
     }
 
     #[test]
-    fn test_run_wrong_param_count() {
+    fn test_run_wrong_parameter_count() {
         let runner = TestRunner::new();
-        let params = vec![3.0]; // Wrong length
-        let result = runner.run(&params);
+        let parameters = vec![3.0]; // Wrong length
+        let result = runner.run(&parameters);
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::ModelError(_)));
@@ -342,9 +345,9 @@ mod tests {
     #[test]
     fn test_run_batch_default_implementation() {
         let runner = TestRunner::new();
-        let param_sets = vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
+        let parameter_sets = vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
 
-        let results = runner.run_batch(&param_sets);
+        let results = runner.run_batch(&parameter_sets);
 
         assert_eq!(results.len(), 3);
 
@@ -373,13 +376,13 @@ mod tests {
     #[test]
     fn test_run_batch_with_failures() {
         let runner = TestRunner::new();
-        let param_sets = vec![
+        let parameter_sets = vec![
             vec![1.0, 2.0], // Valid
             vec![3.0],      // Invalid - wrong length
             vec![4.0, 5.0], // Valid
         ];
 
-        let results = runner.run_batch(&param_sets);
+        let results = runner.run_batch(&parameter_sets);
 
         assert_eq!(results.len(), 3);
         assert!(results[0].is_ok());
@@ -388,7 +391,7 @@ mod tests {
     }
 
     // Tests for DefaultModelRunner with simple mock Model
-    use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+    use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
     use rscm_core::errors::RSCMResult;
     use rscm_core::model::ModelBuilder;
     use rscm_core::timeseries::{Time, TimeAxis};
@@ -397,7 +400,7 @@ mod tests {
 
     /// Simple test component that outputs a constant value based on a parameter
     ///
-    /// This component has no inputs and produces a constant output value at each timestep.
+    /// This component has no inputs and produces a constant output value at each step.
     #[derive(Debug, Clone, Serialize, Deserialize)]
     struct ConstantComponent {
         value: f64,
@@ -405,8 +408,8 @@ mod tests {
 
     #[typetag::serde]
     impl Component for ConstantComponent {
-        fn definitions(&self) -> Vec<RequirementDefinition> {
-            vec![RequirementDefinition::scalar_output("TestOutput", "units")]
+        fn definitions(&self) -> Vec<VariableDefinition> {
+            vec![VariableDefinition::scalar_output("TestOutput", "units")]
         }
 
         fn solve(
@@ -422,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn test_default_runner_param_names() {
+    fn test_default_runner_parameter_names() {
         let runner = DefaultModelRunner::new(
             vec!["param1".to_string(), "param2".to_string()],
             vec!["TestOutput".to_string()],
@@ -433,7 +436,7 @@ mod tests {
             },
         );
 
-        assert_eq!(runner.param_names(), &["param1", "param2"]);
+        assert_eq!(runner.parameter_names(), &["param1", "param2"]);
     }
 
     #[test]
@@ -441,8 +444,8 @@ mod tests {
         let runner = DefaultModelRunner::new(
             vec!["value".to_string()],
             vec!["TestOutput".to_string()],
-            |params| {
-                let value = params[0];
+            |parameters| {
+                let value = parameters[0];
                 let component = ConstantComponent { value };
 
                 let time_axis = TimeAxis::from_values(ndarray::Array::range(2000.0, 2010.0, 1.0));
@@ -473,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn test_default_runner_wrong_param_count() {
+    fn test_default_runner_wrong_parameter_count() {
         let runner = DefaultModelRunner::new(
             vec!["param1".to_string(), "param2".to_string()],
             vec!["TestOutput".to_string()],
@@ -490,12 +493,14 @@ mod tests {
         let runner = DefaultModelRunner::new(
             vec!["param1".to_string()],
             vec!["TestOutput".to_string()],
-            |params| {
-                if params[0] < 0.0 {
+            |parameters| {
+                if parameters[0] < 0.0 {
                     Err(Error::ModelError("Negative values not allowed".to_string()))
                 } else {
                     // Build a simple model
-                    let component = ConstantComponent { value: params[0] };
+                    let component = ConstantComponent {
+                        value: parameters[0],
+                    };
                     let time_axis =
                         TimeAxis::from_values(ndarray::Array::range(2000.0, 2005.0, 1.0));
                     let model = ModelBuilder::new()
@@ -522,8 +527,10 @@ mod tests {
         let runner = DefaultModelRunner::new(
             vec!["value".to_string()],
             vec!["NonExistentOutput".to_string()],
-            |params| {
-                let component = ConstantComponent { value: params[0] };
+            |parameters| {
+                let component = ConstantComponent {
+                    value: parameters[0],
+                };
                 let time_axis = TimeAxis::from_values(ndarray::Array::range(2000.0, 2005.0, 1.0));
                 let model = ModelBuilder::new()
                     .with_time_axis(time_axis)
@@ -552,10 +559,10 @@ mod tests {
 
         #[typetag::serde]
         impl Component for DualOutputComponent {
-            fn definitions(&self) -> Vec<RequirementDefinition> {
+            fn definitions(&self) -> Vec<VariableDefinition> {
                 vec![
-                    RequirementDefinition::scalar_output("Output1", "units"),
-                    RequirementDefinition::scalar_output("Output2", "units"),
+                    VariableDefinition::scalar_output("Output1", "units"),
+                    VariableDefinition::scalar_output("Output2", "units"),
                 ]
             }
 
@@ -575,10 +582,10 @@ mod tests {
         let runner = DefaultModelRunner::new(
             vec!["param1".to_string(), "param2".to_string()],
             vec!["Output1".to_string(), "Output2".to_string()],
-            |params| {
+            |parameters| {
                 let component = DualOutputComponent {
-                    value1: params[0],
-                    value2: params[1],
+                    value1: parameters[0],
+                    value2: parameters[1],
                 };
                 let time_axis = TimeAxis::from_values(ndarray::Array::range(2000.0, 2005.0, 1.0));
                 let model = ModelBuilder::new()
@@ -609,8 +616,10 @@ mod tests {
         let runner = DefaultModelRunner::new(
             vec!["value".to_string()],
             vec!["TestOutput".to_string()],
-            |params| {
-                let component = ConstantComponent { value: params[0] };
+            |parameters| {
+                let component = ConstantComponent {
+                    value: parameters[0],
+                };
                 let time_axis = TimeAxis::from_values(ndarray::Array::range(2000.0, 2005.0, 1.0));
                 let model = ModelBuilder::new()
                     .with_time_axis(time_axis)
@@ -622,9 +631,9 @@ mod tests {
         );
 
         // Run multiple parameter sets in parallel
-        let param_sets = vec![vec![10.0], vec![20.0], vec![30.0], vec![40.0], vec![50.0]];
+        let parameter_sets = vec![vec![10.0], vec![20.0], vec![30.0], vec![40.0], vec![50.0]];
 
-        let results = runner.run_batch(&param_sets);
+        let results = runner.run_batch(&parameter_sets);
 
         // All should succeed
         assert_eq!(results.len(), 5);
@@ -669,8 +678,8 @@ mod tests {
 
         #[typetag::serde]
         impl Component for FailingComponent {
-            fn definitions(&self) -> Vec<RequirementDefinition> {
-                vec![RequirementDefinition::scalar_output("TestOutput", "units")]
+            fn definitions(&self) -> Vec<VariableDefinition> {
+                vec![VariableDefinition::scalar_output("TestOutput", "units")]
             }
 
             fn solve(

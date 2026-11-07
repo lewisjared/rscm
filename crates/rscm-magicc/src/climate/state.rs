@@ -13,13 +13,13 @@ use serde::{Deserialize, Serialize};
 /// Internal state for ClimateUDEB component.
 ///
 /// This holds the ocean layer temperatures and upwelling rates that persist
-/// across solve() calls. Unlike coupled state (RequirementType::State), this
+/// across solve() calls. Unlike coupled state (VariableRole::State), this
 /// is private to the component and not shared between components.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClimateUDEBState {
     /// Ocean layer temperatures for each hemisphere (NH=0, SH=1).
     /// Shape: [hemisphere][layer], layer 0 is mixed layer.
-    pub ocean_temps: Vec<Vec<FloatValue>>,
+    pub ocean_temperatures: Vec<Vec<FloatValue>>,
 
     /// Current upwelling rate for each hemisphere (m/yr).
     pub upwelling_rates: [FloatValue; 2],
@@ -28,17 +28,17 @@ pub struct ClimateUDEBState {
     #[serde(default)]
     pub upwelling_delta: [FloatValue; 2],
 
-    /// Whether the state has been initialized with parameters.
-    pub initialized: bool,
+    /// Whether the state has been initialised with parameters.
+    pub initialised: bool,
 
     /// History of year-weighted global mean temperature for cumulative-T ECS adjustment.
     /// Each entry stores `temperature * dt_years`, so the sum over entries gives
-    /// the cumulative temperature in K-years regardless of timestep size.
+    /// the cumulative temperature in K-years regardless of step size.
     #[serde(default)]
     pub temperature_history: Vec<FloatValue>,
 
-    /// History of timestep sizes (years) corresponding to each temperature_history entry.
-    /// Used to determine how many entries span the `feedback_cumt_period` window.
+    /// History of step sizes (years) corresponding to each temperature_history entry.
+    /// Used to determine how many entries span the `feedback_cumulative_temperature_period` window.
     #[serde(default)]
     pub dt_history: Vec<FloatValue>,
 
@@ -46,12 +46,12 @@ pub struct ClimateUDEBState {
     /// Index 0 = NH, 1 = SH. Updated each substep when ground heat
     /// capacity is enabled.
     #[serde(default)]
-    pub land_temps: [FloatValue; 2],
+    pub land_temperatures: [FloatValue; 2],
 
     /// Ground heat reservoir temperatures for each hemisphere (K).
     /// Index 0 = NH, 1 = SH.
     #[serde(default)]
-    pub ground_temps: [FloatValue; 2],
+    pub ground_temperatures: [FloatValue; 2],
 
     /// Effective SST-to-air-temperature ratio for each hemisphere.
     /// Computed from the SST of the previous substep.
@@ -68,12 +68,12 @@ pub struct ClimateUDEBState {
     #[serde(default)]
     pub subannual_next_internal_efficacy: Option<FloatValue>,
 
-    /// Inter-hemispheric heat exchange (W/m^2) from the previous substep.
-    /// Persists across annual timesteps (MAGICC7 module-level variable,
-    /// initialized once at startup in climate_and_ocean.f90 line 140).
+    /// Inter-hemispheric heat flux (W/m^2) from the previous substep.
+    /// Persists across annual steps (MAGICC7 module-level variable,
+    /// initialised once at startup in climate_and_ocean.f90 line 140).
     /// Index 0 = NH, 1 = SH.
     #[serde(default)]
-    pub hemi_heat_exchange: [FloatValue; 2],
+    pub north_south_heat_flux: [FloatValue; 2],
 
     /// Initial equilibrium ocean temperature profile per hemisphere (K).
     ///
@@ -90,38 +90,38 @@ pub struct ClimateUDEBState {
 
     /// Initial temperature of polar sinking water (K).
     /// MAGICC7 default: 1.0 K.
-    #[serde(default = "default_polar_sinking_temp")]
-    pub polar_sinking_temp: FloatValue,
+    #[serde(default = "default_initial_polar_sinking_temperature")]
+    pub initial_polar_sinking_temperature: FloatValue,
 
     /// Initial mixed-layer temperature for the exponential profile (K).
     /// MAGICC7 default: 17.2 K.
-    #[serde(default = "default_mixed_layer_initial_temp")]
-    pub mixed_layer_initial_temp: FloatValue,
+    #[serde(default = "default_initial_mixed_layer_temperature")]
+    pub initial_mixed_layer_temperature: FloatValue,
 
     /// Cumulative sea level rise from thermal expansion (mm).
     #[serde(default)]
     pub thermal_expansion: FloatValue,
 }
 
-fn default_polar_sinking_temp() -> FloatValue {
+fn default_initial_polar_sinking_temperature() -> FloatValue {
     1.0
 }
 
-fn default_mixed_layer_initial_temp() -> FloatValue {
+fn default_initial_mixed_layer_temperature() -> FloatValue {
     17.2
 }
 
 impl ClimateUDEBState {
     /// Create a new state for a given number of layers and initial conditions.
     ///
-    /// `alpha_initial` is the SST-to-air-temperature ratio used before any
-    /// ocean temperature has developed (i.e. `temp_adjust_alpha` from parameters).
+    /// `initial_alpha` is the SST-to-air-temperature ratio used before any
+    /// ocean temperature has developed (i.e. `temperature_adjustment_alpha` from parameters).
     /// `profiles` is the per-hemisphere initial ocean temperature profiles,
     /// computed by [`ClimateUDEBParameters::initial_ocean_profile()`].
     pub fn new(
         n_layers: usize,
-        w_initial: FloatValue,
-        alpha_initial: FloatValue,
+        initial_upwelling_rate: FloatValue,
+        initial_alpha: FloatValue,
         profiles: [Vec<FloatValue>; 2],
     ) -> Self {
         assert!(
@@ -143,27 +143,27 @@ impl ClimateUDEBState {
         let t_mix = profiles[0][0];
 
         Self {
-            ocean_temps: vec![vec![0.0; n_layers]; 2],
-            upwelling_rates: [w_initial; 2],
+            ocean_temperatures: vec![vec![0.0; n_layers]; 2],
+            upwelling_rates: [initial_upwelling_rate; 2],
             upwelling_delta: [0.0; 2],
-            initialized: true,
+            initialised: true,
             temperature_history: Vec::new(),
             dt_history: Vec::new(),
-            land_temps: [0.0; 2],
-            ground_temps: [0.0; 2],
-            alpha_eff: [alpha_initial; 2],
-            hemi_heat_exchange: [0.0; 2],
+            land_temperatures: [0.0; 2],
+            ground_temperatures: [0.0; 2],
+            alpha_eff: [initial_alpha; 2],
+            north_south_heat_flux: [0.0; 2],
             subannual_internal_efficacy: None,
             subannual_next_internal_efficacy: None,
             initial_ocean_profile: profiles,
-            polar_sinking_temp: t_polar,
-            mixed_layer_initial_temp: t_mix,
+            initial_polar_sinking_temperature: t_polar,
+            initial_mixed_layer_temperature: t_mix,
             thermal_expansion: 0.0,
         }
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.ClimateUDEBState")]
 impl ComponentState for ClimateUDEBState {
     fn as_any(&self) -> &dyn Any {
         self

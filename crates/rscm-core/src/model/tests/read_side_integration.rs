@@ -3,7 +3,7 @@
 //! These tests verify that when a component reads a variable at a coarser resolution
 //! than the schema declares, the model automatically aggregates the data on read.
 
-use crate::component::{Component, GridType, InputState, OutputState, RequirementDefinition};
+use crate::component::{Component, GridType, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::model::ModelBuilder;
@@ -12,7 +12,6 @@ use crate::spatial::SpatialGrid;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, HemisphericRegion};
 use crate::state::{FourBoxSlice, StateValue};
 use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis};
-use crate::timeseries_collection::VariableType;
 use is_close::is_close;
 use numpy::ndarray::{Array, Array2};
 use serde::{Deserialize, Serialize};
@@ -28,10 +27,10 @@ struct ScalarReader {
 
 #[typetag::serde]
 impl Component for ScalarReader {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::scalar_input(&self.input_var, "K"),
-            RequirementDefinition::scalar_output(&self.output_var, "K"),
+            VariableDefinition::scalar_input(&self.input_var, "K"),
+            VariableDefinition::scalar_output(&self.output_var, "K"),
         ]
     }
 
@@ -58,10 +57,10 @@ struct HemisphericReader {
 
 #[typetag::serde]
 impl Component for HemisphericReader {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::hemispheric_input(&self.input_var, "K"),
-            RequirementDefinition::scalar_output(&self.output_var, "K"),
+            VariableDefinition::hemispheric_input(&self.input_var, "K"),
+            VariableDefinition::scalar_output(&self.output_var, "K"),
         ]
     }
 
@@ -82,7 +81,7 @@ impl Component for HemisphericReader {
     }
 }
 
-/// Component that reads FourBox input (used for error case testing).
+/// Component that reads four-box input (used for error case testing).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FourBoxReader {
     input_var: String,
@@ -91,10 +90,10 @@ struct FourBoxReader {
 
 #[typetag::serde]
 impl Component for FourBoxReader {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::four_box_input(&self.input_var, "K"),
-            RequirementDefinition::scalar_output(&self.output_var, "K"),
+            VariableDefinition::four_box_input(&self.input_var, "K"),
+            VariableDefinition::scalar_output(&self.output_var, "K"),
         ]
     }
 
@@ -112,7 +111,7 @@ impl Component for FourBoxReader {
     }
 }
 
-/// Component that writes FourBox output (producer for chained tests).
+/// Component that writes four-box output (producer for chained tests).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FourBoxWriter {
     var_name: String,
@@ -121,8 +120,8 @@ struct FourBoxWriter {
 
 #[typetag::serde]
 impl Component for FourBoxWriter {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::four_box_output(&self.var_name, "K")]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::four_box_output(&self.var_name, "K")]
     }
 
     fn solve(
@@ -140,10 +139,10 @@ impl Component for FourBoxWriter {
     }
 }
 
-/// Helper to create FourBox exogenous data.
-fn create_four_box_exogenous(
+/// Helper to create four-box prescribed data.
+fn create_four_box_prescribed(
     name: &str,
-    values: [[f64; 4]; 3], // 3 timesteps, 4 regions each
+    values: [[f64; 4]; 3], // 3 steps, 4 regions each
 ) -> (String, GridTimeseries<FloatValue, FourBoxGrid>) {
     let grid = FourBoxGrid::magicc_standard();
     let time_axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)));
@@ -160,10 +159,10 @@ fn create_four_box_exogenous(
     (name.to_string(), ts)
 }
 
-/// Helper to create Hemispheric exogenous data.
-fn create_hemispheric_exogenous(
+/// Helper to create Hemispheric prescribed data.
+fn create_hemispheric_prescribed(
     name: &str,
-    values: [[f64; 2]; 3], // 3 timesteps, 2 hemispheres each
+    values: [[f64; 2]; 3], // 3 steps, 2 hemispheres each
 ) -> (String, GridTimeseries<FloatValue, HemisphericGrid>) {
     let grid = HemisphericGrid::equal_weights();
     let time_axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)));
@@ -181,15 +180,15 @@ fn create_hemispheric_exogenous(
 }
 
 #[test]
-fn test_read_aggregation_fourbox_to_scalar() {
-    // Schema declares FourBox variable, component reads as Scalar
+fn test_read_aggregation_four_box_to_scalar() {
+    // Schema declares four-box variable, component reads as Scalar
     // Model should auto-aggregate FourBox to Scalar on read
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::FourBox)
-        .variable("GlobalTemp", "K");
+        .variable("Global Temperature", "K");
 
-    // FourBox data: [NO, NL, SO, SL] for each timestep
-    let (name, ts) = create_four_box_exogenous(
+    // Four-box data: [NO, NL, SO, SL] for each step
+    let (name, ts) = create_four_box_prescribed(
         "Temperature",
         [
             [10.0, 20.0, 30.0, 40.0], // t=2020
@@ -204,11 +203,11 @@ fn test_read_aggregation_fourbox_to_scalar() {
         .with_schema(schema)
         .with_component(Arc::new(ScalarReader {
             input_var: "Temperature".to_string(),
-            output_var: "GlobalTemp".to_string(),
+            output_var: "Global Temperature".to_string(),
         }));
     builder
-        .exogenous_variables
-        .add_four_box_timeseries(name, ts, VariableType::Exogenous);
+        .prescribed_variables
+        .add_four_box_timeseries(name, ts);
 
     let mut model = builder.build().expect("Model should build");
 
@@ -221,8 +220,8 @@ fn test_read_aggregation_fourbox_to_scalar() {
     // Run one step
     model.step();
 
-    // Check the output - should be the aggregated (mean) of the FourBox values
-    let data = model.timeseries().get_data("GlobalTemp").unwrap();
+    // The output is the mean of the four-box values
+    let data = model.timeseries().get_data("Global Temperature").unwrap();
     let ts = data.as_scalar().expect("Should be Scalar");
     let value = ts.at_scalar(1).expect("Should have value at index 1");
 
@@ -236,13 +235,13 @@ fn test_read_aggregation_fourbox_to_scalar() {
 }
 
 #[test]
-fn test_read_aggregation_fourbox_to_hemispheric() {
-    // Schema declares FourBox variable, component reads as Hemispheric
+fn test_read_aggregation_four_box_to_hemispheric() {
+    // Schema declares four-box variable, component reads as Hemispheric
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::FourBox)
-        .variable("MeanTemp", "K");
+        .variable("Mean Temperature", "K");
 
-    let (name, ts) = create_four_box_exogenous(
+    let (name, ts) = create_four_box_prescribed(
         "Temperature",
         [
             [10.0, 20.0, 30.0, 40.0], // [NO, NL, SO, SL]
@@ -257,11 +256,11 @@ fn test_read_aggregation_fourbox_to_hemispheric() {
         .with_schema(schema)
         .with_component(Arc::new(HemisphericReader {
             input_var: "Temperature".to_string(),
-            output_var: "MeanTemp".to_string(),
+            output_var: "Mean Temperature".to_string(),
         }));
     builder
-        .exogenous_variables
-        .add_four_box_timeseries(name, ts, VariableType::Exogenous);
+        .prescribed_variables
+        .add_four_box_timeseries(name, ts);
 
     let mut model = builder.build().expect("Model should build");
 
@@ -273,7 +272,7 @@ fn test_read_aggregation_fourbox_to_hemispheric() {
 
     model.step();
 
-    let data = model.timeseries().get_data("MeanTemp").unwrap();
+    let data = model.timeseries().get_data("Mean Temperature").unwrap();
     let ts = data.as_scalar().expect("Should be Scalar");
     let value = ts.at_scalar(1).expect("Should have value at index 1");
 
@@ -291,9 +290,9 @@ fn test_read_aggregation_hemispheric_to_scalar() {
     // Schema declares Hemispheric variable, component reads as Scalar
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::Hemispheric)
-        .variable("GlobalTemp", "K");
+        .variable("Global Temperature", "K");
 
-    let (name, ts) = create_hemispheric_exogenous(
+    let (name, ts) = create_hemispheric_prescribed(
         "Temperature",
         [
             [15.0, 35.0], // [Northern, Southern]
@@ -308,11 +307,11 @@ fn test_read_aggregation_hemispheric_to_scalar() {
         .with_schema(schema)
         .with_component(Arc::new(ScalarReader {
             input_var: "Temperature".to_string(),
-            output_var: "GlobalTemp".to_string(),
+            output_var: "Global Temperature".to_string(),
         }));
     builder
-        .exogenous_variables
-        .add_hemispheric_timeseries(name, ts, VariableType::Exogenous);
+        .prescribed_variables
+        .add_hemispheric_timeseries(name, ts);
 
     let mut model = builder.build().expect("Model should build");
 
@@ -323,7 +322,7 @@ fn test_read_aggregation_hemispheric_to_scalar() {
 
     model.step();
 
-    let data = model.timeseries().get_data("GlobalTemp").unwrap();
+    let data = model.timeseries().get_data("Global Temperature").unwrap();
     let ts = data.as_scalar().expect("Should be Scalar");
     let value = ts.at_scalar(1).expect("Should have value at index 1");
 
@@ -337,14 +336,14 @@ fn test_read_aggregation_hemispheric_to_scalar() {
 
 #[test]
 fn test_read_aggregation_multiple_consumers() {
-    // Two components reading same FourBox variable at different resolutions
+    // Two components reading same four-box variable at different resolutions
     // One reads as Scalar, other reads as Hemispheric
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::FourBox)
-        .variable("GlobalTemp", "K")
+        .variable("Global Temperature", "K")
         .variable("HemisphericMean", "K");
 
-    let (name, ts) = create_four_box_exogenous(
+    let (name, ts) = create_four_box_prescribed(
         "Temperature",
         [
             [10.0, 20.0, 30.0, 40.0],
@@ -359,15 +358,15 @@ fn test_read_aggregation_multiple_consumers() {
         .with_schema(schema)
         .with_component(Arc::new(ScalarReader {
             input_var: "Temperature".to_string(),
-            output_var: "GlobalTemp".to_string(),
+            output_var: "Global Temperature".to_string(),
         }))
         .with_component(Arc::new(HemisphericReader {
             input_var: "Temperature".to_string(),
             output_var: "HemisphericMean".to_string(),
         }));
     builder
-        .exogenous_variables
-        .add_four_box_timeseries(name, ts, VariableType::Exogenous);
+        .prescribed_variables
+        .add_four_box_timeseries(name, ts);
 
     let mut model = builder.build().expect("Model should build");
 
@@ -376,7 +375,7 @@ fn test_read_aggregation_multiple_consumers() {
     // ScalarReader should get mean of all 4: 25.0
     let global = model
         .timeseries()
-        .get_data("GlobalTemp")
+        .get_data("Global Temperature")
         .unwrap()
         .as_scalar()
         .unwrap()
@@ -405,8 +404,8 @@ fn test_read_aggregation_multiple_consumers() {
 }
 
 #[test]
-fn test_read_disaggregation_scalar_to_fourbox_rejected() {
-    // Schema declares Scalar, but component wants FourBox input
+fn test_read_disaggregation_scalar_to_four_box_rejected() {
+    // Schema declares Scalar, but component wants four-box input
     // This is disaggregation (broadcast) and should be rejected at build time
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::Scalar)
@@ -436,11 +435,11 @@ fn test_read_aggregation_chain_write_then_read() {
     // Test: FourBoxWriter writes FourBox -> schema is FourBox
     //       -> ScalarReader reads the start of the step as Scalar (read aggregation)
     //
-    // ScalarReader uses interval().0, the value from the previous timestep.
+    // ScalarReader uses interval().0, the value from the previous step.
     // We need to run at least 2 steps: first step populates, second step reads.
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::FourBox)
-        .variable("GlobalTemp", "K");
+        .variable("Global Temperature", "K");
 
     let mut model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2024.0, 1.0)))
@@ -451,7 +450,7 @@ fn test_read_aggregation_chain_write_then_read() {
         }))
         .with_component(Arc::new(ScalarReader {
             input_var: "Temperature".to_string(),
-            output_var: "GlobalTemp".to_string(),
+            output_var: "Global Temperature".to_string(),
         }))
         .build()
         .expect("Model should build");
@@ -465,13 +464,13 @@ fn test_read_aggregation_chain_write_then_read() {
     // First step: FourBoxWriter writes to index 1, ScalarReader reads from index 0 (NaN)
     model.step();
 
-    // Second step: FourBoxWriter writes to index 2, ScalarReader reads from index 1 (the FourBox value)
+    // Second step: FourBoxWriter writes to index 2, ScalarReader reads from index 1 (the four-box value)
     model.step();
 
     // Check the value at index 2 - ScalarReader read the aggregated value from step 1
     let value = model
         .timeseries()
-        .get_data("GlobalTemp")
+        .get_data("Global Temperature")
         .unwrap()
         .as_scalar()
         .unwrap()

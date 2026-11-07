@@ -37,14 +37,14 @@ def synthetic_observations():
     # True parameter values (physically realistic)
     true_params = {
         "lambda0": 1.1,
-        "efficacy": 1.3,
+        "deep_ocean_efficacy": 1.3,
         "a": 0.05,
-        "eta": 0.7,
+        "ocean_heat_transfer": 0.7,
         "heat_capacity_deep": 100.0,
         "heat_capacity_surface": 8.0,
     }
 
-    # Create true model and run a single timestep
+    # Create true model and run a single step
     component = TwoLayerBuilder.from_parameters(true_params).build()
 
     # Simple forcing scenario
@@ -58,20 +58,20 @@ def synthetic_observations():
     )
     # Add state variables required by TwoLayer
     collection.add_timeseries(
-        "Surface Temperature",
+        "Surface Air Temperature Change",
         Timeseries(
             np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
         ),
     )
     collection.add_timeseries(
-        "Deep Ocean Temperature",
+        "Ocean Temperature|Layer 2",
         Timeseries(
             np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
         ),
     )
 
     result = component.solve(2000, 2010, collection)
-    temp = result.get("Surface Temperature").as_scalar()
+    temp = result.get("Surface Air Temperature Change").as_scalar()
 
     # Return a single observation with uncertainty
     return {
@@ -86,11 +86,11 @@ def synthetic_observations():
 def calibration_setup(synthetic_observations):
     """Set up parameter priors and target observations."""
     # Define parameter priors (wide enough to include true values)
-    params = ParameterSet()
-    params.add(
+    parameters = ParameterSet()
+    parameters.add(
         "lambda0", Uniform(0.8, 1.5)
     )  # Climate feedback parameter: typical range
-    params.add("a", Uniform(0.0, 0.1))  # Nonlinear feedback: typical range
+    parameters.add("a", Uniform(0.0, 0.1))  # Nonlinear feedback: typical range
 
     # For this test, fix other parameters at their true values
     # In a real calibration, you might calibrate more parameters
@@ -102,11 +102,14 @@ def calibration_setup(synthetic_observations):
         synthetic_observations["temperatures"],
     ):
         target.add_observation(
-            "Surface Temperature", t, temp, synthetic_observations["uncertainty"]
+            "Surface Air Temperature Change",
+            t,
+            temp,
+            synthetic_observations["uncertainty"],
         )
 
     return {
-        "params": params,
+        "parameters": parameters,
         "target": target,
         "true_params": synthetic_observations["true_params"],
     }
@@ -136,7 +139,7 @@ def create_model_runner(fixed_params):
         # Create component
         component = TwoLayerBuilder.from_parameters(all_params).build()
 
-        # Run model with simple forcing scenario (single timestep)
+        # Run model with simple forcing scenario (single step)
         time_axis = TimeAxis.from_values(np.array([2000.0, 2010.0]))
         collection = TimeseriesCollection()
         collection.add_timeseries(
@@ -147,42 +150,42 @@ def create_model_runner(fixed_params):
         )
         # Add state variables required by TwoLayer
         collection.add_timeseries(
-            "Surface Temperature",
+            "Surface Air Temperature Change",
             Timeseries(
                 np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
             ),
         )
         collection.add_timeseries(
-            "Deep Ocean Temperature",
+            "Ocean Temperature|Layer 2",
             Timeseries(
                 np.array([0.0, 0.0]), time_axis, "K", InterpolationStrategy.Previous
             ),
         )
 
         result = component.solve(2000, 2010, collection)
-        temp = result.get("Surface Temperature").as_scalar()
+        temp = result.get("Surface Air Temperature Change").as_scalar()
 
         # Return output
-        return {"Surface Temperature": {2010.0: float(temp)}}
+        return {"Surface Air Temperature Change": {2010.0: float(temp)}}
 
     # Get parameter names from the factory
     return ModelRunner(
         model_factory=model_factory,
-        param_names=["lambda0", "a"],
-        output_variables=["Surface Temperature"],
+        parameter_names=["lambda0", "a"],
+        output_variables=["Surface Air Temperature Change"],
     )
 
 
 def test_point_estimation(calibration_setup):
     """Test point estimation finds reasonable parameters."""
-    params = calibration_setup["params"]
+    parameters = calibration_setup["parameters"]
     target = calibration_setup["target"]
     true_params = calibration_setup["true_params"]
 
     # Create fixed parameters
     fixed_params = {
-        "efficacy": true_params["efficacy"],
-        "eta": true_params["eta"],
+        "deep_ocean_efficacy": true_params["deep_ocean_efficacy"],
+        "ocean_heat_transfer": true_params["ocean_heat_transfer"],
         "heat_capacity_deep": true_params["heat_capacity_deep"],
         "heat_capacity_surface": true_params["heat_capacity_surface"],
     }
@@ -194,24 +197,24 @@ def test_point_estimation(calibration_setup):
     likelihood = GaussianLikelihood()
 
     # Create point estimator
-    estimator = PointEstimator(params, runner, likelihood, target)
+    estimator = PointEstimator(parameters, runner, likelihood, target)
 
     # Run random search (simple baseline)
-    from rscm.calibrate import Optimizer  # noqa: PLC0415
+    from rscm.calibrate import Optimiser  # noqa: PLC0415
 
-    result = estimator.optimize(Optimizer.random_search(), n_samples=50)
+    result = estimator.optimise(Optimiser.random_search(), n_samples=50)
 
     # Check that we found reasonable parameters
-    best_params_vec = result.best_params
-    param_names = estimator.param_names
-    best_params = dict(zip(param_names, best_params_vec))
+    best_parameters_vec = result.best_parameters
+    parameter_names = estimator.parameter_names
+    best_parameters = dict(zip(parameter_names, best_parameters_vec))
 
-    assert "lambda0" in best_params
-    assert "a" in best_params
+    assert "lambda0" in best_parameters
+    assert "a" in best_parameters
 
     # Parameters should be within prior bounds
-    assert 0.8 <= best_params["lambda0"] <= 1.5
-    assert 0.0 <= best_params["a"] <= 0.1
+    assert 0.8 <= best_parameters["lambda0"] <= 1.5
+    assert 0.0 <= best_parameters["a"] <= 0.1
 
     # Should have explored multiple points
     assert estimator.n_evaluations == 50
@@ -220,7 +223,7 @@ def test_point_estimation(calibration_setup):
     assert np.isfinite(result.best_log_likelihood)
 
     print("\nPoint estimation results:")
-    print(f"  Best parameters: {best_params}")
+    print(f"  Best parameters: {best_parameters}")
     print(f"  True parameters: lambda0={true_params['lambda0']}, a={true_params['a']}")
     print(f"  Best log likelihood: {result.best_log_likelihood:.3f}")
     print(f"  Evaluations: {estimator.n_evaluations}")
@@ -228,14 +231,14 @@ def test_point_estimation(calibration_setup):
 
 def test_mcmc_sampling(calibration_setup):
     """Test MCMC sampling converges to reasonable posterior."""
-    params = calibration_setup["params"]
+    parameters = calibration_setup["parameters"]
     target = calibration_setup["target"]
     true_params = calibration_setup["true_params"]
 
     # Create fixed parameters
     fixed_params = {
-        "efficacy": true_params["efficacy"],
-        "eta": true_params["eta"],
+        "deep_ocean_efficacy": true_params["deep_ocean_efficacy"],
+        "ocean_heat_transfer": true_params["ocean_heat_transfer"],
         "heat_capacity_deep": true_params["heat_capacity_deep"],
         "heat_capacity_surface": true_params["heat_capacity_surface"],
     }
@@ -247,7 +250,7 @@ def test_mcmc_sampling(calibration_setup):
     likelihood = GaussianLikelihood()
 
     # Create ensemble sampler
-    sampler = EnsembleSampler(params, runner, likelihood, target)
+    sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
     # Run MCMC (short run for testing)
     n_steps = 100
@@ -255,11 +258,11 @@ def test_mcmc_sampling(calibration_setup):
     chain = sampler.run(n_steps, WalkerInit.from_prior(), thin=thin)
 
     # Check chain structure
-    assert chain.total_iterations == n_steps
+    assert chain.n_iterations == n_steps
     assert chain.thin == thin
-    assert len(chain.param_names) == 2
-    assert "lambda0" in chain.param_names
-    assert "a" in chain.param_names
+    assert len(chain.parameter_names) == 2
+    assert "lambda0" in chain.parameter_names
+    assert "a" in chain.parameter_names
 
     # Check we have samples
     samples = chain.flat_samples(discard=50)  # Discard first 50 as burn-in
@@ -275,7 +278,7 @@ def test_mcmc_sampling(calibration_setup):
     r_hat = chain.r_hat(discard=50)
     print("\nMCMC results:")
     print(f"  Chain length: {len(chain)} samples")
-    print(f"  Total iterations: {chain.total_iterations}")
+    print(f"  Total iterations: {chain.n_iterations}")
     print(f"  R-hat: {r_hat}")
     mean_l0 = np.mean(lambda0_samples)
     print(f"  Mean lambda0: {mean_l0:.3f} (true: {true_params['lambda0']})")
@@ -287,14 +290,14 @@ def test_mcmc_sampling(calibration_setup):
 
 def test_chain_diagnostics(calibration_setup):
     """Test chain diagnostic methods work correctly."""
-    params = calibration_setup["params"]
+    parameters = calibration_setup["parameters"]
     target = calibration_setup["target"]
     true_params = calibration_setup["true_params"]
 
     # Create fixed parameters
     fixed_params = {
-        "efficacy": true_params["efficacy"],
-        "eta": true_params["eta"],
+        "deep_ocean_efficacy": true_params["deep_ocean_efficacy"],
+        "ocean_heat_transfer": true_params["ocean_heat_transfer"],
         "heat_capacity_deep": true_params["heat_capacity_deep"],
         "heat_capacity_surface": true_params["heat_capacity_surface"],
     }
@@ -302,13 +305,13 @@ def test_chain_diagnostics(calibration_setup):
     # Create model runner
     runner = create_model_runner(fixed_params)
     likelihood = GaussianLikelihood()
-    sampler = EnsembleSampler(params, runner, likelihood, target)
+    sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
     # Run short chain
     chain = sampler.run(50, WalkerInit.from_prior(), thin=1)
 
-    # Test to_param_dict
-    param_dict = chain.to_param_dict(discard=10)
+    # Test to_parameter_dict
+    param_dict = chain.to_parameter_dict(discard=10)
     assert "lambda0" in param_dict
     assert "a" in param_dict
     assert len(param_dict["lambda0"]) > 0

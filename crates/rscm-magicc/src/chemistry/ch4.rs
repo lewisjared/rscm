@@ -17,17 +17,17 @@
 //! # Inputs
 //!
 //! - `Emissions|CH4` (Tg CH4/yr) - Anthropogenic methane emissions
-//! - `Surface Temperature` (K) - Global mean surface temperature anomaly
+//! - `Surface Air Temperature Change` (K) - Global mean surface air temperature change
 //! - `Emissions|NOx` (Tg N/yr) - NOx emissions for OH feedback
 //! - `Emissions|CO` (Tg CO/yr) - CO emissions for OH feedback
 //! - `Emissions|NMVOC` (Tg NMVOC/yr) - NMVOC emissions for OH feedback
-//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `permafrost` parameter
+//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `include_permafrost` parameter
 //!
 //! # Outputs
 //!
-//! - `Atmospheric Concentration|CH4` (ppb) - Updated CH4 concentration
+//! - `Atmospheric Concentrations|CH4` (ppb) - Updated CH4 concentration
 //! - `Lifetime|CH4` (yr) - Effective total CH4 lifetime
-//! - `Lifetime|CH4|Effective` (yr): start-of-year burden over the CH4 removed during the step
+//! - `Effective Lifetime|CH4` (yr): start-of-year burden over the CH4 removed during the step
 //!
 //! # Feedback references
 //!
@@ -46,18 +46,21 @@
 //! - **Clathrate release**: MAGICC7 has optional methane clathrate feedback. Not implemented.
 //!
 //! With `concentration_switch_year` the concentration follows
-//! `Atmospheric Concentration|CH4|Prescribed` until that year, and `Emissions|CH4|Inverse`
+//! `Prescribed Atmospheric Concentrations|CH4` until that year, and `Inverse Emissions|CH4`
 //! holds the anthropogenic emissions that would reproduce it.
 
 use crate::parameters::CH4ChemistryParameters;
 use crate::reference::{
     feedback_warming, permafrost_emissions, prescribed_concentration, prescribed_definition,
-    reference_value, require_annual, value_at_year, PERMAFROST_CH4,
+    reference_value, require_annual, value_at_year,
 };
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
+use rscm_core::names::{
+    ATMOSPHERIC_CONCENTRATIONS_CH4, EMISSIONS_CH4_PERMAFROST, INVERSE_EMISSIONS_CH4,
+};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -65,9 +68,6 @@ use serde::{Deserialize, Serialize};
 
 /// Number of Prather iterations (fixed per MAGICC7 implementation)
 const PRATHER_ITERATIONS: usize = 4;
-const CH4_CONCENTRATION: &str = "Atmospheric Concentration|CH4";
-/// Anthropogenic emissions that reproduce the prescribed concentrations.
-pub const CH4_INVERSE_EMISSIONS: &str = "Emissions|CH4|Inverse";
 
 /// Root of a near-linear `f` by the secant method from two starting guesses.
 fn secant(
@@ -99,7 +99,7 @@ fn secant(
 ///
 /// # Algorithm
 ///
-/// For each timestep, starting from the burden $B$ at the start of the year,
+/// For each step, starting from the burden $B$ at the start of the year,
 /// performs 4 fixed-point iterations:
 ///
 /// 1. Mean burden: $\bar{B}_1 = B$, then $\bar{B}_n = (B + B_{n-1}) / 2$
@@ -113,18 +113,18 @@ fn secant(
 #[component(tags = ["chemistry", "ch4", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
     ch4_emissions { name = "Emissions|CH4", unit = "Mt CH4/yr" },
-    temperature { name = "Surface Temperature", unit = "K" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
     nox_emissions { name = "Emissions|NOx", unit = "Mt N/yr" },
     co_emissions { name = "Emissions|CO", unit = "Mt CO/yr" },
     nmvoc_emissions { name = "Emissions|NMVOC", unit = "Mt NMVOC/yr" },
 )]
 #[states(
-    ch4_concentration { name = "Atmospheric Concentration|CH4", unit = "ppb" },
+    ch4_concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb" },
 )]
 #[outputs(
     ch4_lifetime { name = "Lifetime|CH4", unit = "yr", timeseries_type = "average" },
     ch4_oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average" },
-    ch4_effective_lifetime { name = "Lifetime|CH4|Effective", unit = "yr", timeseries_type = "average" },
+    ch4_effective_lifetime { name = "Effective Lifetime|CH4", unit = "yr", timeseries_type = "average" },
 )]
 pub struct CH4Chemistry {
     parameters: CH4ChemistryParameters,
@@ -143,12 +143,12 @@ impl CH4Chemistry {
 
     /// Convert concentration (ppb) to burden (Tg CH4)
     fn concentration_to_burden(&self, concentration: FloatValue) -> FloatValue {
-        concentration * self.parameters.ppb_to_tg * self.parameters.mixbox_size
+        concentration * self.parameters.tg_per_ppb * self.parameters.mixing_box_size
     }
 
     /// Convert burden (Tg CH4) to concentration (ppb)
     fn burden_to_concentration(&self, burden: FloatValue) -> FloatValue {
-        burden / (self.parameters.ppb_to_tg * self.parameters.mixbox_size)
+        burden / (self.parameters.tg_per_ppb * self.parameters.mixing_box_size)
     }
 
     /// Feedback exponent $X = -\gamma S$
@@ -165,9 +165,9 @@ impl CH4Chemistry {
         delta_co: FloatValue,
         delta_nmvoc: FloatValue,
     ) -> FloatValue {
-        let tau_oh = self.parameters.tau_oh_init();
+        let oh_lifetime = self.parameters.initial_oh_lifetime();
         if !self.parameters.include_emissions_feedback {
-            return tau_oh;
+            return oh_lifetime;
         }
 
         let gamma = self.parameters.oh_sensitivity_scale;
@@ -176,7 +176,7 @@ impl CH4Chemistry {
                 + self.parameters.oh_co_sensitivity * delta_co
                 + self.parameters.oh_nmvoc_sensitivity * delta_nmvoc);
 
-        tau_oh * exponent.exp()
+        oh_lifetime * exponent.exp()
     }
 
     /// Apply temperature feedback to lifetime
@@ -184,22 +184,23 @@ impl CH4Chemistry {
     /// $$\tau_{adjusted} = \frac{\tau_0}{\tau_0/\tau + \alpha_T \cdot \max(0, \Delta T)}$$
     fn apply_temperature_feedback(
         &self,
-        tau_oh: FloatValue,
+        oh_lifetime: FloatValue,
         temperature_change: FloatValue,
     ) -> FloatValue {
-        if !self.parameters.include_temp_feedback {
-            return tau_oh;
+        if !self.parameters.include_temperature_feedback {
+            return oh_lifetime;
         }
 
-        let alpha = self.parameters.temp_sensitivity;
-        let tau_0 = self.parameters.tau_oh_init();
-        tau_0 / (tau_0 / tau_oh + alpha * temperature_change.max(0.0))
+        let alpha = self.parameters.temperature_sensitivity;
+        let initial_oh_lifetime = self.parameters.initial_oh_lifetime();
+        initial_oh_lifetime
+            / (initial_oh_lifetime / oh_lifetime + alpha * temperature_change.max(0.0))
     }
 
     /// Calculate total lifetime from OH lifetime and non-OH sinks
-    fn calculate_total_lifetime(&self, tau_oh: FloatValue) -> FloatValue {
-        let tau_other = self.parameters.tau_other();
-        1.0 / (1.0 / tau_oh + 1.0 / tau_other)
+    fn calculate_total_lifetime(&self, oh_lifetime: FloatValue) -> FloatValue {
+        let non_oh_lifetime = self.parameters.non_oh_lifetime();
+        1.0 / (1.0 / oh_lifetime + 1.0 / non_oh_lifetime)
     }
 
     /// Run the full Prather iteration scheme (4 iterations)
@@ -245,30 +246,31 @@ impl CH4Chemistry {
         let burden_reference = self.concentration_to_burden(ch4_reference);
         let base_lifetime = self.calculate_base_lifetime_factor(delta_nox, delta_co, delta_nmvoc);
         let x = self.feedback_exponent();
-        let tau_other = self.parameters.tau_other();
+        let non_oh_lifetime = self.parameters.non_oh_lifetime();
 
         let mut burden_next = burden;
         let mut delta_burden = 0.0;
-        let mut tau_oh = base_lifetime;
+        let mut oh_lifetime = base_lifetime;
         for iteration in 0..PRATHER_ITERATIONS {
             let burden_mean = if iteration == 0 {
                 burden
             } else {
                 (burden + burden_next) / 2.0
             };
-            tau_oh = base_lifetime * (burden_mean / burden_reference).max(1.0).powf(x);
+            oh_lifetime = base_lifetime * (burden_mean / burden_reference).max(1.0).powf(x);
             if iteration > 0 {
-                tau_oh *= 1.0 - 0.5 * x * delta_burden / burden;
+                oh_lifetime *= 1.0 - 0.5 * x * delta_burden / burden;
             }
-            tau_oh = self.apply_temperature_feedback(tau_oh, temperature_change);
-            delta_burden = total_emissions - burden_mean / tau_oh - burden_mean / tau_other;
+            oh_lifetime = self.apply_temperature_feedback(oh_lifetime, temperature_change);
+            delta_burden =
+                total_emissions - burden_mean / oh_lifetime - burden_mean / non_oh_lifetime;
             burden_next = burden + delta_burden;
         }
 
         (
             self.burden_to_concentration(burden_next),
-            self.calculate_total_lifetime(tau_oh),
-            tau_oh,
+            self.calculate_total_lifetime(oh_lifetime),
+            oh_lifetime,
         )
     }
 }
@@ -279,24 +281,24 @@ impl Default for CH4Chemistry {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.CH4Chemistry")]
 impl Component for CH4Chemistry {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
-        if self.parameters.permafrost {
-            definitions.push(RequirementDefinition::scalar_input(
-                PERMAFROST_CH4,
+        if self.parameters.include_permafrost {
+            definitions.push(VariableDefinition::scalar_input(
+                EMISSIONS_CH4_PERMAFROST,
                 "Mt CH4/yr",
             ));
         }
         definitions.extend(prescribed_definition(
-            CH4_CONCENTRATION,
+            ATMOSPHERIC_CONCENTRATIONS_CH4,
             "ppb",
             self.parameters.concentration_switch_year,
         ));
         if self.parameters.concentration_switch_year.is_some() {
-            definitions.push(RequirementDefinition::scalar_output(
-                CH4_INVERSE_EMISSIONS,
+            definitions.push(VariableDefinition::scalar_output(
+                INVERSE_EMISSIONS_CH4,
                 "Mt CH4/yr",
             ));
         }
@@ -320,8 +322,11 @@ impl Component for CH4Chemistry {
             |window: &ScalarWindow| window.get() - value_at_year(window, t_current, feedback_year);
 
         let anthropogenic = inputs.ch4_emissions.get();
-        let permafrost =
-            permafrost_emissions(self.parameters.permafrost, input_state, PERMAFROST_CH4);
+        let permafrost = permafrost_emissions(
+            self.parameters.include_permafrost,
+            input_state,
+            EMISSIONS_CH4_PERMAFROST,
+        );
         let (delta_nox, delta_co, delta_nmvoc) = (
             delta(&inputs.nox_emissions),
             delta(&inputs.co_emissions),
@@ -344,7 +349,7 @@ impl Component for CH4Chemistry {
         let mut inverse_emissions = anthropogenic;
         if let Some(prescribed) = prescribed_concentration(
             input_state,
-            CH4_CONCENTRATION,
+            ATMOSPHERIC_CONCENTRATIONS_CH4,
             self.parameters.concentration_switch_year,
             t_next,
         ) {
@@ -368,7 +373,7 @@ impl Component for CH4Chemistry {
         .into();
         if self.parameters.concentration_switch_year.is_some() {
             outputs.insert(
-                CH4_INVERSE_EMISSIONS.to_string(),
+                INVERSE_EMISSIONS_CH4.to_string(),
                 StateValue::Scalar(inverse_emissions),
             );
         }
@@ -387,7 +392,7 @@ mod tests {
     /// Concentration from which the default natural emissions alone are in balance
     fn natural_steady_state(component: &CH4Chemistry) -> FloatValue {
         let p = &component.parameters;
-        let tau = 1.0 / (1.0 / p.tau_oh_init() + 1.0 / p.tau_other());
+        let tau = 1.0 / (1.0 / p.initial_oh_lifetime() + 1.0 / p.non_oh_lifetime());
         component.burden_to_concentration(p.natural_emissions * tau)
     }
 
@@ -474,7 +479,7 @@ mod tests {
     #[test]
     fn test_temperature_feedback_disabled() {
         let params = CH4ChemistryParameters {
-            include_temp_feedback: false,
+            include_temperature_feedback: false,
             ..Default::default()
         };
         let component = CH4Chemistry::from_parameters(params);
@@ -521,8 +526,8 @@ mod tests {
         let defs = component.definitions();
         let names: Vec<_> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"Emissions|CH4"));
-        assert!(names.contains(&"Surface Temperature"));
-        assert!(names.contains(&"Atmospheric Concentration|CH4"));
+        assert!(names.contains(&"Surface Air Temperature Change"));
+        assert!(names.contains(&"Atmospheric Concentrations|CH4"));
         assert!(names.contains(&"Lifetime|CH4"));
     }
 
@@ -563,14 +568,13 @@ mod tests {
         name: &str,
         value: FloatValue,
     ) -> rscm_core::timeseries_collection::TimeseriesItem {
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         TimeseriesItem {
             data: TimeseriesData::Scalar(rscm_core::timeseries::Timeseries::from_values(
                 ndarray::array![value, value],
                 ndarray::array![2000.0, 2001.0],
             )),
             name: name.to_string(),
-            variable_type: VariableType::Exogenous,
         }
     }
 
@@ -581,9 +585,9 @@ mod tests {
         emissions: FloatValue,
     ) -> OutputState {
         let items = [
-            constant_item(CH4_CONCENTRATION, ch4),
+            constant_item(ATMOSPHERIC_CONCENTRATIONS_CH4, ch4),
             constant_item("Emissions|CH4", emissions),
-            constant_item("Surface Temperature", 0.0),
+            constant_item("Surface Air Temperature Change", 0.0),
             constant_item("Emissions|NOx", 0.0),
             constant_item("Emissions|CO", 0.0),
             constant_item("Emissions|NMVOC", 0.0),
@@ -600,9 +604,9 @@ mod tests {
     fn test_effective_lifetime_in_steady_state_is_total_lifetime() {
         let component = default_component();
         let p = &component.parameters;
-        let tau = 1.0 / (1.0 / p.tau_oh_init() + 1.0 / p.tau_other());
+        let tau = 1.0 / (1.0 / p.initial_oh_lifetime() + 1.0 / p.non_oh_lifetime());
         let output = solve_constant(&component, natural_steady_state(&component), 0.0);
-        let effective = scalar(&output, "Lifetime|CH4|Effective");
+        let effective = scalar(&output, "Effective Lifetime|CH4");
         assert!((effective / tau - 1.0).abs() < 1e-9, "{effective} vs {tau}");
     }
 
@@ -611,9 +615,10 @@ mod tests {
         // B_next = B + E - B / tau_eff, with E the anthropogenic and natural emissions
         let component = default_component();
         let output = solve_constant(&component, 1800.0, 300.0);
-        let effective = scalar(&output, "Lifetime|CH4|Effective");
+        let effective = scalar(&output, "Effective Lifetime|CH4");
         let burden = component.concentration_to_burden(1800.0);
-        let burden_next = component.concentration_to_burden(scalar(&output, CH4_CONCENTRATION));
+        let burden_next =
+            component.concentration_to_burden(scalar(&output, ATMOSPHERIC_CONCENTRATIONS_CH4));
         let emissions = 300.0 + component.parameters.natural_emissions;
         assert!((burden + emissions - burden / effective - burden_next).abs() < 1e-9);
         // It differs from the total lifetime `Lifetime|CH4`

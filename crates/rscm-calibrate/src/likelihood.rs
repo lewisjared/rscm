@@ -93,10 +93,10 @@ impl ModelOutput {
 /// ln L(θ) = Σ ln p(y_i | θ)
 /// ```
 ///
-/// # Normalization
+/// # Normalisation
 ///
-/// For MCMC sampling, normalization constants can be omitted since they cancel in
-/// acceptance ratios. Implementations may return unnormalized log-likelihoods.
+/// For MCMC sampling, normalisation constants can be omitted since they cancel in
+/// acceptance ratios. Implementations may return unnormalised log-likelihoods.
 pub trait LikelihoodFn {
     /// Compute the log-likelihood of the model output given the target observations.
     ///
@@ -107,7 +107,7 @@ pub trait LikelihoodFn {
     ///
     /// # Returns
     ///
-    /// The log-likelihood value. May be unnormalized (missing constant terms).
+    /// The log-likelihood value. May be unnormalised (missing constant terms).
     ///
     /// # Errors
     ///
@@ -115,7 +115,7 @@ pub trait LikelihoodFn {
     /// - Required variables are missing from the model output
     /// - Required times are missing from the model output
     /// - Model output contains NaN or infinite values (indicates model failure)
-    fn ln_likelihood(&self, output: &ModelOutput, target: &Target) -> Result<f64>;
+    fn log_likelihood(&self, output: &ModelOutput, target: &Target) -> Result<f64>;
 }
 
 /// Gaussian likelihood function with independent errors.
@@ -130,13 +130,13 @@ pub trait LikelihoodFn {
 ///
 /// ```text
 /// ln L = Σ ln p(y_i_obs | y_i_model, σ_i)
-///      = -0.5 × Σ[(y_i_obs - y_i_model)² / σ_i²] + normalization
+///      = -0.5 × Σ[(y_i_obs - y_i_model)² / σ_i²] + normalisation
 /// ```
 ///
-/// # Normalization
+/// # Normalisation
 ///
-/// By default, the normalization constant `(-0.5 × ln(2π) - ln(σ))` is **omitted**
-/// since it cancels in MCMC acceptance ratios. Set `normalize: true` for
+/// By default, the normalisation constant `(-0.5 × ln(2π) - ln(σ))` is **omitted**
+/// since it cancels in MCMC acceptance ratios. Set `normalise: true` for
 /// applications requiring absolute log-likelihood values (e.g., model comparison via BIC/AIC).
 ///
 /// # Missing Data
@@ -153,58 +153,58 @@ pub trait LikelihoodFn {
 /// let likelihood = GaussianLikelihood::new();
 ///
 /// let mut target = Target::new();
-/// target.add_variable("Temperature")
+/// target.add_variable("Surface Air Temperature Change")
 ///     .add(2020.0, 1.2, 0.1).unwrap();
 ///
 /// let mut output = ModelOutput::new();
-/// let mut var = VariableOutput::new("Temperature");
+/// let mut var = VariableOutput::new("Surface Air Temperature Change");
 /// var.add(2020.0, 1.15);
 /// output.add_variable(var);
 ///
-/// let log_l = likelihood.ln_likelihood(&output, &target).unwrap();
+/// let log_l = likelihood.log_likelihood(&output, &target).unwrap();
 /// assert!(log_l.is_finite());
 /// ```
 #[derive(Debug, Clone)]
 pub struct GaussianLikelihood {
-    /// Whether to include normalization constant (default: false for MCMC)
-    pub normalize: bool,
+    /// Whether to include normalisation constant (default: false for MCMC)
+    pub normalise: bool,
 }
 
 impl GaussianLikelihood {
-    /// Create a new Gaussian likelihood function without normalization.
+    /// Create a new Gaussian likelihood function without normalisation.
     ///
-    /// Use `with_normalize()` if you need the full normalized log-likelihood.
+    /// Use `with_normalisation()` if you need the full normalised log-likelihood.
     pub fn new() -> Self {
-        Self { normalize: false }
+        Self { normalise: false }
     }
 
-    /// Create with normalization constant included.
-    pub fn with_normalization() -> Self {
-        Self { normalize: true }
+    /// Create with normalisation constant included.
+    pub fn with_normalisation() -> Self {
+        Self { normalise: true }
     }
 
     /// Compute log-likelihood for a single observation.
-    fn observation_ln_likelihood(&self, obs: &Observation, model_value: f64) -> f64 {
+    fn observation_log_likelihood(&self, obs: &Observation, model_value: f64) -> f64 {
         let residual = obs.value - model_value;
         let chi_squared = (residual * residual) / (obs.uncertainty * obs.uncertainty);
 
-        let mut ln_l = -0.5 * chi_squared;
+        let mut log_l = -0.5 * chi_squared;
 
-        if self.normalize {
-            ln_l -= 0.5 * (2.0 * std::f64::consts::PI).ln();
-            ln_l -= obs.uncertainty.ln();
+        if self.normalise {
+            log_l -= 0.5 * (2.0 * std::f64::consts::PI).ln();
+            log_l -= obs.uncertainty.ln();
         }
 
-        ln_l
+        log_l
     }
 
     /// Compute log-likelihood for a single variable.
-    fn variable_ln_likelihood(
+    fn variable_log_likelihood(
         &self,
         var_output: &VariableOutput,
         var_target: &VariableTarget,
     ) -> Result<f64> {
-        let mut ln_l = 0.0;
+        let mut log_l = 0.0;
 
         for obs in &var_target.observations {
             let model_value = var_output.get(obs.time).ok_or_else(|| {
@@ -221,10 +221,10 @@ impl GaussianLikelihood {
                 )));
             }
 
-            ln_l += self.observation_ln_likelihood(obs, model_value);
+            log_l += self.observation_log_likelihood(obs, model_value);
         }
 
-        Ok(ln_l)
+        Ok(log_l)
     }
 }
 
@@ -235,37 +235,37 @@ impl Default for GaussianLikelihood {
 }
 
 impl LikelihoodFn for GaussianLikelihood {
-    fn ln_likelihood(&self, output: &ModelOutput, target: &Target) -> Result<f64> {
-        let mut total_ln_l = 0.0;
+    fn log_likelihood(&self, output: &ModelOutput, target: &Target) -> Result<f64> {
+        let mut total_log_l = 0.0;
 
         for (var_name, var_target) in target.variables() {
             let var_output = output.get_variable(var_name).ok_or_else(|| {
                 Error::ModelError(format!("Model output missing variable: {}", var_name))
             })?;
 
-            total_ln_l += self.variable_ln_likelihood(var_output, var_target)?;
+            total_log_l += self.variable_log_likelihood(var_output, var_target)?;
         }
 
-        Ok(total_ln_l)
+        Ok(total_log_l)
     }
 }
 
-/// `(log_posterior, log_likelihood)` of `params`, running the model only inside the prior support.
+/// `(log_posterior, log_likelihood)` of `values`, running the model only inside the prior support.
 ///
 /// A point outside the prior support is `Ok(-inf)`.
 /// A failed prior, model or likelihood evaluation is `Err`.
 pub(crate) fn log_posterior<L: LikelihoodFn>(
     parameters: &ParameterSet,
-    params: &[f64],
+    values: &[f64],
     run: impl FnOnce() -> Result<ModelOutput>,
     likelihood: &L,
     target: &Target,
 ) -> Result<(f64, f64)> {
-    let log_prior = parameters.log_prior(params)?;
+    let log_prior = parameters.log_prior(values)?;
     if !log_prior.is_finite() {
         return Ok((f64::NEG_INFINITY, f64::NEG_INFINITY));
     }
-    let log_likelihood = likelihood.ln_likelihood(&run()?, target)?;
+    let log_likelihood = likelihood.log_likelihood(&run()?, target)?;
     Ok((log_prior + log_likelihood, log_likelihood))
 }
 
@@ -298,17 +298,19 @@ mod tests {
     fn model_output_collection() {
         let mut output = ModelOutput::new();
 
-        let mut temp = VariableOutput::new("Temperature");
+        let mut temp = VariableOutput::new("Surface Air Temperature Change");
         temp.add(2020.0, 1.2);
 
-        let mut ohc = VariableOutput::new("OHC");
+        let mut ohc = VariableOutput::new("Ocean Heat Content");
         ohc.add(2020.0, 200.0);
 
         output.add_variable(temp);
         output.add_variable(ohc);
 
-        assert!(output.get_variable("Temperature").is_some());
-        assert!(output.get_variable("OHC").is_some());
+        assert!(output
+            .get_variable("Surface Air Temperature Change")
+            .is_some());
+        assert!(output.get_variable("Ocean Heat Content").is_some());
         assert!(output.get_variable("Missing").is_none());
     }
 
@@ -330,9 +332,9 @@ mod tests {
         temp.add(2021.0, 1.3);
         output.add_variable(temp);
 
-        let ln_l = likelihood.ln_likelihood(&output, &target).unwrap();
-        // Perfect match should give ln_l = 0 (without normalization)
-        assert_eq!(ln_l, 0.0);
+        let log_l = likelihood.log_likelihood(&output, &target).unwrap();
+        // Perfect match should give log_l = 0 (without normalisation)
+        assert_eq!(log_l, 0.0);
     }
 
     #[test]
@@ -350,11 +352,11 @@ mod tests {
         temp.add(2020.0, 1.1); // 0.1 off, 1-sigma error
         output.add_variable(temp);
 
-        let ln_l = likelihood.ln_likelihood(&output, &target).unwrap();
+        let log_l = likelihood.log_likelihood(&output, &target).unwrap();
         // Residual = 0.1, uncertainty = 0.1
         // chi^2 = (0.1/0.1)^2 = 1
-        // ln_l = -0.5 * 1 = -0.5
-        assert!((ln_l - (-0.5)).abs() < 1e-10);
+        // log_l = -0.5 * 1 = -0.5
+        assert!((log_l - (-0.5)).abs() < 1e-10);
     }
 
     #[test]
@@ -375,9 +377,9 @@ mod tests {
         temp.add(2021.0, 1.2); // chi^2 = 1
         output.add_variable(temp);
 
-        let ln_l = likelihood.ln_likelihood(&output, &target).unwrap();
-        // Total chi^2 = 2, ln_l = -0.5 * 2 = -1.0
-        assert!((ln_l - (-1.0)).abs() < 1e-10);
+        let log_l = likelihood.log_likelihood(&output, &target).unwrap();
+        // Total chi^2 = 2, log_l = -0.5 * 2 = -1.0
+        assert!((log_l - (-1.0)).abs() < 1e-10);
     }
 
     #[test]
@@ -386,22 +388,25 @@ mod tests {
 
         let mut target = Target::new();
         target
-            .add_variable("Temperature")
+            .add_variable("Surface Air Temperature Change")
             .add(2020.0, 1.0, 0.1)
             .unwrap();
-        target.add_variable("OHC").add(2020.0, 200.0, 10.0).unwrap();
+        target
+            .add_variable("Ocean Heat Content")
+            .add(2020.0, 200.0, 10.0)
+            .unwrap();
 
         let mut output = ModelOutput::new();
-        let mut temp = VariableOutput::new("Temperature");
+        let mut temp = VariableOutput::new("Surface Air Temperature Change");
         temp.add(2020.0, 1.1); // chi^2 = 1
-        let mut ohc = VariableOutput::new("OHC");
+        let mut ohc = VariableOutput::new("Ocean Heat Content");
         ohc.add(2020.0, 210.0); // residual = 10, uncertainty = 10, chi^2 = 1
         output.add_variable(temp);
         output.add_variable(ohc);
 
-        let ln_l = likelihood.ln_likelihood(&output, &target).unwrap();
-        // Total chi^2 = 2, ln_l = -0.5 * 2 = -1.0
-        assert!((ln_l - (-1.0)).abs() < 1e-10);
+        let log_l = likelihood.log_likelihood(&output, &target).unwrap();
+        // Total chi^2 = 2, log_l = -0.5 * 2 = -1.0
+        assert!((log_l - (-1.0)).abs() < 1e-10);
     }
 
     #[test]
@@ -416,7 +421,7 @@ mod tests {
 
         let output = ModelOutput::new(); // Empty output
 
-        let result = likelihood.ln_likelihood(&output, &target);
+        let result = likelihood.log_likelihood(&output, &target);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::ModelError(_)));
     }
@@ -438,7 +443,7 @@ mod tests {
         temp.add(2020.0, 1.0); // Missing 2021
         output.add_variable(temp);
 
-        let result = likelihood.ln_likelihood(&output, &target);
+        let result = likelihood.log_likelihood(&output, &target);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::ModelError(_)));
     }
@@ -458,14 +463,14 @@ mod tests {
         temp.add(2020.0, f64::NAN);
         output.add_variable(temp);
 
-        let result = likelihood.ln_likelihood(&output, &target);
+        let result = likelihood.log_likelihood(&output, &target);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::ModelError(_)));
     }
 
     #[test]
-    fn gaussian_likelihood_with_normalization() {
-        let likelihood = GaussianLikelihood::with_normalization();
+    fn gaussian_likelihood_with_normalisation() {
+        let likelihood = GaussianLikelihood::with_normalisation();
 
         let mut target = Target::new();
         target
@@ -478,9 +483,9 @@ mod tests {
         temp.add(2020.0, 1.0); // Perfect match
         output.add_variable(temp);
 
-        let ln_l = likelihood.ln_likelihood(&output, &target).unwrap();
-        // With normalization: -0.5 * ln(2π) - ln(0.1)
+        let log_l = likelihood.log_likelihood(&output, &target).unwrap();
+        // With normalisation: -0.5 * ln(2π) - ln(0.1)
         let expected = -0.5 * (2.0 * std::f64::consts::PI).ln() - 0.1_f64.ln();
-        assert!((ln_l - expected).abs() < 1e-10);
+        assert!((log_l - expected).abs() < 1e-10);
     }
 }

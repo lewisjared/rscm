@@ -59,9 +59,9 @@ from rscm.core import (
     GridType,
     InterpolationStrategy,
     ModelBuilder,
-    RequirementType,
     TimeAxis,
     Timeseries,
+    VariableRole,
     VariableSchema,
 )
 from rscm.magicc import (
@@ -70,7 +70,7 @@ from rscm.magicc import (
     ClimateUDEBBuilder,
     CO2BudgetBuilder,
     ForcingAggregationBuilder,
-    GhgForcingBuilder,
+    GHGForcingBuilder,
     HalocarbonChemistryBuilder,
     N2OChemistryBuilder,
     OceanCarbonBuilder,
@@ -83,15 +83,25 @@ from rscm.magicc import (
     run_magicc7,
 )
 from rscm.magicc import prescribed as pr
+from rscm.names import (
+    EFFICACY_ADJUSTED_ERF,
+    MAGICC7_EMISSIONS_UNITS,
+    SECTORS,
+    Convention,
+    convert_variable_name,
+    emissions_unit,
+)
 
 
 # %% tags=["remove_input"]
 def reference_run(name):
-    """Read a MAGICC7 reference run indexed by variable and region, one column per year."""
+    """Read a MAGICC7 reference run indexed by RSCM name and region, one column per year."""
     relative = Path("tests/regression/data/full_run") / f"{name}.csv.gz"
     candidates = [*Path.cwd().parents, Path.cwd(), *Path(rscm.__file__).parents]
     directory = next(d for d in candidates if (d / relative).exists())
-    data = pd.read_csv(directory / relative).set_index(["variable", "region"])
+    data = pd.read_csv(directory / relative)
+    data["variable"] = data["variable"].map(convert_variable_name)
+    data = data.set_index(["variable", "region"])
     data = data[[c for c in data.columns if c[:4].isdigit()]]
     data.columns = [int(c[:4]) for c in data.columns]
     return data
@@ -117,7 +127,7 @@ def reference_run(name):
 # | Carbon    | Nitrogen limitation                          | `nitrogen` parameters of `TerrestrialCarbon` |
 # | Forcing   | Ozone                                        | `OzoneForcingBuilder`                        |
 # | Forcing   | Aerosols and other prescribed forcing        | `rscm.magicc.prescribed`                     |
-# | Forcing   | GHG forcing                                  | `GhgForcingBuilder`                          |
+# | Forcing   | GHG forcing                                  | `GHGForcingBuilder`                          |
 # | Forcing   | Forcing aggregation                          | `ForcingAggregationBuilder`                  |
 # | Climate   | Climate (UDEB)                               | `ClimateUDEBBuilder`                         |
 # | Climate   | Sea level rise                               | `SeaLevelRiseBuilder`                        |
@@ -142,22 +152,25 @@ def reference_run(name):
 # The same file holds MAGICC7's results, which the run is checked against later.
 # A hidden helper, `reference_run`, reads such a file as a table indexed by variable and region,
 # with one column per year.
+# It translates MAGICC7's variable names to RSCM's with `rscm.names.convert_variable_name`,
+# so `Emissions|CO2|MAGICC AFOLU` becomes `Emissions|CO2|Biosphere`.
 #
-# MAGICC7 splits most species into a fossil and industrial sector and an AFOLU
-# (agriculture, forestry and other land use) sector.
-# `full.SECTORAL_EMISSIONS` lists them with their units.
-# Halocarbons are a single series per species, in kt/yr.
+# MAGICC7 splits most species into a fossil sector and a biosphere sector,
+# which MAGICC7 calls AFOLU (agriculture, forestry and other land use).
+# `full.SECTORAL_EMISSIONS` lists them.
+# The emissions stay in the units MAGICC7 reads, `MAGICC7_EMISSIONS_UNITS`,
+# because the components calculate in those units.
+# Halocarbons are a single series per species, in kt of the gas per year.
 
 # %%
 reference = reference_run("01_ssp245_emissions")
 years = reference.columns.to_numpy(dtype=float)
-sectors = {"Fossil": "MAGICC Fossil and Industrial", "AFOLU": "MAGICC AFOLU"}
 emissions = {
     f"{species}|{sector}": reference.loc[
-        (f"Emissions|{species}|{theirs}", "World")
+        (f"Emissions|{species}|{sector}", "World")
     ].to_numpy()
     for species in full.SECTORAL_EMISSIONS
-    for sector, theirs in sectors.items()
+    for sector in SECTORS
 }
 halocarbon_species = full.halocarbon_species()
 emissions |= {
@@ -172,13 +185,13 @@ print(
 # %% tags=["remove_input"]
 shown = [
     ("CO2|Fossil", "Fossil CO2 (GtC/yr)"),
-    ("CO2|AFOLU", "AFOLU CO2 (GtC/yr)"),
+    ("CO2|Biosphere", "Biosphere CO2 (GtC/yr)"),
     ("CH4|Fossil", "Fossil CH4 (Mt CH4/yr)"),
-    ("N2O|AFOLU", "AFOLU N2O (Mt N/yr)"),
+    ("N2O|Biosphere", "Biosphere N2O (Mt N2ON/yr)"),
     ("SOx|Fossil", "Fossil SOx (Mt S/yr)"),
     ("NOx|Fossil", "Fossil NOx (Mt N/yr)"),
-    ("CFC12", "CFC-12 (kt/yr)"),
-    ("HFC134a", "HFC-134a (kt/yr)"),
+    ("CFC12", "CFC-12 (kt CFC12/yr)"),
+    ("HFC134a", "HFC-134a (kt HFC134a/yr)"),
 ]
 fig, axes = plt.subplots(2, 4, figsize=(14, 5), sharex=True)
 for ax, (name, title) in zip(axes.flat, shown):
@@ -236,12 +249,12 @@ prescribed = full.prescribed_forcing(years, emissions, parameters, inputs)
 
 # %% tags=["remove_input"]
 groups = {
-    "Aerosol direct": [
-        name for name in prescribed if name.split("|")[0] in ("SOx", "BC", "OC", "NO3")
-    ]
-    + ["Mineral Dust"],
-    "Cloud albedo": ["Cloud Albedo"],
-    "Land use and BC on snow": ["Land Use", "BC on Snow"],
+    "Aerosol direct": [name for name in prescribed if name.startswith(full.DIRECT)],
+    "Aerosol indirect": ["Aerosols|Indirect Effect"],
+    "Land-use change and black carbon on snow": [
+        "Land-use Change",
+        "Black Carbon on Snow",
+    ],
     "Solar": ["Solar"],
 }
 fig, ax = plt.subplots(figsize=(10, 4))
@@ -271,9 +284,9 @@ plt.show()
 
 # %%
 p = parameters
-natural = full.natural_emissions(years, emissions, p)
+natural = full.natural_emissions(years, emissions, p, convention=Convention.MAGICC7)
 print(
-    f"Natural emissions: CH4 {natural['CH4']:.2f} Mt CH4/yr, N2O {natural['N2O']:.3f} Mt N/yr"
+    f"Natural emissions: CH4 {natural['CH4']:.2f} Mt CH4/yr, N2O {natural['N2O']:.3f} Mt N2ON/yr"
 )
 
 # %% [markdown]
@@ -304,7 +317,7 @@ def with_prefix(terms):
 aggregation = ForcingAggregationBuilder.from_parameters(
     {
         "agents": agents,
-        "efficacy_apply": p["rf_efficacy_apply"],
+        "efficacy_method": full.EFFICACY_METHODS[p["rf_efficacy_apply"]],
         "climate": full.efficacy_climate(climate_parameters),
         "summation": with_prefix(full.SUMMATION),
     }
@@ -316,20 +329,20 @@ aggregation = ForcingAggregationBuilder.from_parameters(
 # Both CH4 components repeat the CH4 budget, so they share its mass conversion and natural emissions.
 
 # %%
-ch4_mass = {"ppb_to_tg": p["ch4_ppb2tgch4"], "mixbox_size": p["ch4_mixboxsize"]}
+ch4_mass = {"tg_per_ppb": p["ch4_ppb2tgch4"], "mixing_box_size": p["ch4_mixboxsize"]}
 builders = {
     "Permafrost": PermafrostBuilder.from_parameters(full.permafrost_parameters(p)),
     "CH4Chemistry": CH4ChemistryBuilder.from_parameters(
         {
-            "permafrost": True,
-            "tau_total_init": p["ch4_tautot_init"],
+            "include_permafrost": True,
+            "initial_ch4_lifetime": p["ch4_tautot_init"],
             "natural_emissions": natural["CH4"],
             **ch4_mass,
         }
     ),
     "CH4Oxidation": CH4OxidationBuilder.from_parameters(
         {
-            "permafrost": True,
+            "include_permafrost": True,
             "permafrost_fraction": p["pf_co2fromch4oxinatm_fraction"],
             "natural_emissions": natural["CH4"],
             **ch4_mass,
@@ -337,17 +350,17 @@ builders = {
     ),
     "N2OChemistry": N2OChemistryBuilder.from_parameters(
         {
-            "tau_n2o": p["n2o_tauinit"],
-            "ppb_to_tg": p["n2o_ppb2tgn"],
+            "initial_n2o_lifetime": p["n2o_tauinit"],
+            "tg_per_ppb": p["n2o_ppb2tgn"],
             "natural_emissions": natural["N2O"],
         }
     ),
     "HalocarbonChemistry": HalocarbonChemistryBuilder.from_parameters(
         {
             "fgas_regions": {
-                "rf_regions": p["rf_regions_fgas"],
-                "lower_tau": p["fgas_rf_regionscaling_lowertau"],
-                "upper_tau": p["fgas_rf_regionscaling_uppertau"],
+                "regional_pattern": p["rf_regions_fgas"],
+                "lower_lifetime": p["fgas_rf_regionscaling_lowertau"],
+                "upper_lifetime": p["fgas_rf_regionscaling_uppertau"],
             }
         }
     ),
@@ -356,7 +369,7 @@ builders = {
 # %% [markdown]
 # The carbon cycle, forcing and climate complete the chain.
 # `TerrestrialCarbon` takes its preindustrial pools and temperature feedbacks from MAGICC7's `co2_*` names.
-# `GhgForcing` uses the OLBL formulas (after Etminan et al., 2016), MAGICC7's default for CO2, CH4 and N2O.
+# `GHGForcing` uses the OLBL formulas (after Etminan et al., 2016), MAGICC7's default for CO2, CH4 and N2O.
 
 # %%
 initial_concentrations = full.default_initial_concentrations()
@@ -366,27 +379,27 @@ terrestrial = {
         for pool in ("plant", "detritus", "soil")
     },
     **{
-        f"{ours}_temp_sensitivity": p[f"co2_feedbackfactor_{theirs}"]
+        f"{ours}_temperature_sensitivity": p[f"co2_feedbackfactor_{theirs}"]
         for ours, theirs in full.TERRESTRIAL_FEEDBACKS.items()
     },
     "npp_pi": p["co2_npp_initial"],
-    "fertilization_method": p["co2_fertilization_method"],
-    "plantbox_resp_fertscale": p["co2_plantboxresp_fertscale"],
+    "fertilisation_method": p["co2_fertilization_method"],
+    "plant_respiration_fertilisation_scale": p["co2_plantboxresp_fertscale"],
 }
 builders |= {
     "TerrestrialCarbon": TerrestrialCarbonBuilder.from_parameters(terrestrial),
-    "OceanCarbon": OceanCarbonBuilder.from_parameters({"permafrost": True}),
+    "OceanCarbon": OceanCarbonBuilder.from_parameters({"include_permafrost": True}),
     "CO2Budget": CO2BudgetBuilder.from_parameters(
-        {"permafrost": True, "ocean_end_of_year": True}
+        {"include_permafrost": True, "ocean_end_of_year": True}
     ),
-    "GhgForcing": GhgForcingBuilder.from_parameters(
+    "GHGForcing": GHGForcingBuilder.from_parameters(
         {
             **{
                 f"{gas.lower()}_pi": initial_concentrations[gas]
                 for gas in ("CO2", "CH4", "N2O")
             },
-            "method": "Olbl",
-            "ch4_strat_h2o_fraction": p["ch4_addedstrath2o_percent"],
+            "method": "OLBL",
+            "ch4_stratospheric_h2o_fraction": p["ch4_addedstrath2o_percent"],
         }
     ),
     "OzoneForcing": OzoneForcingBuilder.from_parameters(full.ozone_parameters(p)),
@@ -406,14 +419,11 @@ components = {name: builder.build() for name, builder in builders.items()}
 # - **State**: read at the start of the step and written at its end, so it needs an initial value.
 #
 # The names are what couple components.
-# For example `CO2Budget` writes `Atmospheric Concentration|CO2`, which `GhgForcing` reads:
+# For example `CO2Budget` writes `Atmospheric Concentrations|CO2`, which `GHGForcing` reads:
 
 # %%
 pd.DataFrame(
-    [
-        (d.name, d.requirement_type.name, d.unit)
-        for d in components["CO2Budget"].definitions()
-    ],
+    [(d.name, d.role.name, d.unit) for d in components["CO2Budget"].definitions()],
     columns=["Variable", "Type", "Unit"],
 )
 
@@ -422,15 +432,14 @@ pd.DataFrame(
 # `HalocarbonChemistry` tracks 41 species, each with its own emissions input, concentration state
 # and forcing output.
 # `ForcingAggregation` reads every forcing agent and writes the total ERF
-# and the four-box `Effective Radiative Forcing|Efficacy Adjusted` that drives `ClimateUDEB`.
+# and the four-box `Efficacy Adjusted Effective Radiative Forcing` that drives `ClimateUDEB`.
 
 # %% tags=["remove_input"]
-kinds = (RequirementType.Input, RequirementType.Output, RequirementType.State)
+kinds = (VariableRole.Input, VariableRole.Output, VariableRole.State)
 pd.DataFrame(
     {
         kind.name: [
-            sum(d.requirement_type == kind for d in c.definitions())
-            for c in components.values()
+            sum(d.role == kind for d in c.definitions()) for c in components.values()
         ]
         for kind in kinds
     },
@@ -446,7 +455,8 @@ pd.DataFrame(
 #   land and ocean carbon uptake and ozone forcing, which all change the forcing that drives temperature.
 # - CO2 from `CO2Budget` drives fertilisation on land and air-sea exchange,
 #   which set the fluxes that `CO2Budget` integrates.
-# - The CO2-doubling forcing and climate sensitivity set the internal efficacies in `ForcingAggregation`.
+# - The 2xCO2 effective radiative forcing and equilibrium climate sensitivity
+#   set the internal efficacies in `ForcingAggregation`.
 #
 # The builder links every component to the producers of its inputs, whatever order they are added in.
 # A loop must lag one of its edges, so the reader sees the value from the previous step.
@@ -454,17 +464,18 @@ pd.DataFrame(
 # and `with_lag_for(variable, consumer)` lags one.
 # Building a model with a loop that no lag breaks fails, and the error suggests the lags that would break it.
 #
-# MAGICC7 uses a staggered scheme.
+# MAGICC7 lags these edges.
 # Permafrost, chemistry, the carbon cycle and ozone use the temperature at the start of each year,
 # and the land and ocean the CO2 at the start of the year,
 # while forcing uses the concentrations at its end.
 # `SeaLevelRise` reads the annual mean warming of the same year.
+# `rscm.magicc.with_lags` adds these lags to a builder.
 
 # %%
-lag = ["Surface Temperature"]
+lag = ["Surface Air Temperature Change"]
 lag_for = [
-    ("Atmospheric Concentration|CO2", "TerrestrialCarbon"),
-    ("Atmospheric Concentration|CO2", "OceanCarbon"),
+    ("Atmospheric Concentrations|CO2", "TerrestrialCarbon"),
+    ("Atmospheric Concentrations|CO2", "OceanCarbon"),
     ("Equilibrium Climate Sensitivity", "ForcingAggregation"),
 ]
 
@@ -479,13 +490,13 @@ def lagged_couplings(components):
         d.name: name
         for name, component in components.items()
         for d in component.definitions()
-        if d.requirement_type in (RequirementType.Output, RequirementType.State)
+        if d.role in (VariableRole.Output, VariableRole.State)
     }
     return [
         (producers[d.name], d.name, reader)
         for reader, component in components.items()
         for d in component.definitions()
-        if d.requirement_type == RequirementType.Input
+        if d.role == VariableRole.Input
         and d.name in producers
         and (d.name in lag or (d.name, reader) in lag_for)
     ]
@@ -502,55 +513,59 @@ lagged = lagged_couplings(components)
 # %% [markdown]
 # ## Prescribed inputs and the schema
 #
-# Inputs that no component produces come from exogenous timeseries.
+# Inputs that no component produces come from prescribed timeseries.
 # The emissions are scalar, with a few totals and renamings the components expect.
 # The prescribed forcing is four-box.
 
 # %%
-SECTORAL_NAMES = {"CO2|AFOLU": "CO2|Land Use"}
-exogenous = {
+prescribed_emissions = {
     **{
-        f"Emissions|{SECTORAL_NAMES.get(name, name)}": (
-            values,
-            full.SECTORAL_EMISSIONS[name.split("|")[0]],
-        )
+        f"Emissions|{name}": (values, MAGICC7_EMISSIONS_UNITS[name.split("|")[0]])
         for name, values in emissions.items()
         if name.split("|")[0] in ("CO2", "CH4", "NOx", "CO", "NMVOC")
     },
     **{
         f"Emissions|{gas}": (
-            emissions[f"{gas}|Fossil"] + emissions[f"{gas}|AFOLU"],
-            full.SECTORAL_EMISSIONS[gas],
+            emissions[f"{gas}|Fossil"] + emissions[f"{gas}|Biosphere"],
+            MAGICC7_EMISSIONS_UNITS[gas],
         )
         for gas in ("CH4", "N2O", "NOx", "CO", "NMVOC")
     },
-    **{f"Emissions|{s}": (emissions[s], "kt/yr") for s in halocarbon_species},
+    **{
+        f"Emissions|{s}": (emissions[s], emissions_unit(f"Emissions|{s}"))
+        for s in halocarbon_species
+    },
 }
 prescribed_erf = {f"{ERF}|{name}": values for name, values in prescribed.items()}
 
 # %% [markdown]
 # A `VariableSchema` declares every variable with its unit and grid.
 # A variable is four-box if any component writes or reads it on the four-box grid.
-# Components that read a four-box variable as a scalar, such as `Surface Temperature` in the chemistry,
+# Components that read a four-box variable as a scalar,
+# such as `Surface Air Temperature Change` in the chemistry,
 # get the area-weighted mean using the grid weights set on the builder.
 # A hidden cell collects `grids`, the unit and grid of each variable, from the inputs and the definitions.
 
 # %% tags=["remove_input"]
 grids = {name: ("W/m^2", GridType.FourBox) for name in prescribed_erf}
-grids |= {name: (unit, GridType.Scalar) for name, (_, unit) in exogenous.items()}
+grids |= {
+    name: (unit, GridType.Scalar) for name, (_, unit) in prescribed_emissions.items()
+}
 for component in components.values():
     for d in component.definitions():
-        _, grid = grids.get(d.name, (d.unit, d.grid_type))
-        four_box = GridType.FourBox in (grid, d.grid_type)
+        _, grid = grids.get(d.name, (d.unit, d.grid))
+        four_box = GridType.FourBox in (grid, d.grid)
         grids[d.name] = (d.unit, GridType.FourBox if four_box else GridType.Scalar)
 
 # %%
 schema = VariableSchema()
 for name, (unit, grid) in grids.items():
     schema.add_variable(name, unit, grid)
-four_box_count = sum(g == GridType.FourBox for _, g in grids.values())
-print(f"{len(exogenous)} scalar and {len(prescribed_erf)} four-box prescribed inputs")
-print(f"{len(grids)} variables, {four_box_count} on four boxes")
+n_four_box_variables = sum(g == GridType.FourBox for _, g in grids.values())
+print(
+    f"{len(prescribed_emissions)} scalar and {len(prescribed_erf)} four-box prescribed inputs"
+)
+print(f"{len(grids)} variables, {n_four_box_variables} on four boxes")
 
 # %% [markdown]
 # ## Initial values
@@ -567,13 +582,16 @@ print(f"{len(grids)} variables, {four_box_count} on four boxes")
 ch4_burden = initial_concentrations["CH4"] * p["ch4_ppb2tgch4"] * p["ch4_mixboxsize"]
 initial_values = {
     **{
-        f"Atmospheric Concentration|{gas}": c
+        f"Atmospheric Concentrations|{gas}": c
         for gas, c in initial_concentrations.items()
     },
-    **{f"Atmospheric Burden|CH4|{s}": 0.0 for s in ("Fossil", "AFOLU", "Permafrost")},
+    **{
+        f"Atmospheric Burden|CH4|{s}": 0.0
+        for s in ("Fossil", "Biosphere", "Permafrost")
+    },
     "Atmospheric Burden|CH4|Natural": ch4_burden,
-    "Ocean Surface pCO2": initial_concentrations["CO2"],
-    "Cumulative Ocean Uptake": 0.0,
+    "Ocean Surface Partial Pressure|CO2": initial_concentrations["CO2"],
+    "Cumulative Carbon Uptake|Ocean": 0.0,
     **{
         f"Carbon Pool|{pool.title()}": terrestrial[f"{pool}_pool_pi"]
         for pool in ("plant", "detritus", "soil")
@@ -581,7 +599,7 @@ initial_values = {
     **{
         d.name: 0.0
         for d in components["SeaLevelRise"].definitions()
-        if d.requirement_type == RequirementType.Output
+        if d.role == VariableRole.Output
     },
 }
 
@@ -609,7 +627,7 @@ initial_agents = [
 # ## Building the model
 #
 # The builder steps are in a function so that a short run can reuse them.
-# Exogenous values use linear interpolation between the annual labels.
+# Prescribed values use linear interpolation between the annual labels.
 
 
 # %%
@@ -623,17 +641,17 @@ def build_model(n_years, initial_agents):
         .with_grid_weights(GridType.FourBox, list(area))
     )
     for component in components.values():
-        builder.with_rust_component(component)
+        builder.with_component(component)
     for variable in lag:
         builder.with_lag(variable)
     for variable, consumer in lag_for:
         builder.with_lag_for(variable, consumer)
-    for name, (values, unit) in exogenous.items():
-        builder.with_exogenous_variable(
+    for name, (values, unit) in prescribed_emissions.items():
+        builder.with_prescribed_variable(
             name, Timeseries(values[:n_years], axis, unit, InterpolationStrategy.Linear)
         )
     for name, values in prescribed_erf.items():
-        builder.with_exogenous_four_box_variable(
+        builder.with_prescribed_variable(
             name,
             FourBoxTimeseries(
                 values[:n_years], axis, "W/m^2", InterpolationStrategy.Linear
@@ -641,7 +659,7 @@ def build_model(n_years, initial_agents):
         )
     total, boxes = aggregation.aggregate(initial_agents)
     builder.with_initial_values({**initial_values, **climate.initial_values(total)})
-    builder.with_initial_grid_values({f"{ERF}|Efficacy Adjusted": list(boxes)})
+    builder.with_initial_grid_values({EFFICACY_ADJUSTED_ERF: list(boxes)})
     return builder.build()
 
 
@@ -653,7 +671,7 @@ def build_model(n_years, initial_agents):
 fgas = [agent["variable"] for agent in agents].index(f"{ERF}|F-Gases")
 two_years = build_model(2, initial_agents)
 two_years.run()
-fgas_boxes = two_years.timeseries().get_fourbox_timeseries_by_name(f"{ERF}|F-Gases")
+fgas_boxes = two_years.timeseries().get_four_box_timeseries_by_name(f"{ERF}|F-Gases")
 initial_agents[fgas] = list(fgas_boxes.values()[1])
 
 model = build_model(len(years), initial_agents)
@@ -674,7 +692,7 @@ model = build_model(len(years), initial_agents)
 DOMAINS = {
     "#c8e6c9": ["CH4Chemistry", "CH4Oxidation", "N2OChemistry", "HalocarbonChemistry"],
     "#bbdefb": ["Permafrost", "TerrestrialCarbon", "OceanCarbon", "CO2Budget"],
-    "#ffe0b2": ["GhgForcing", "OzoneForcing", "ForcingAggregation"],
+    "#ffe0b2": ["GHGForcing", "OzoneForcing", "ForcingAggregation"],
     "#f8bbd0": ["ClimateUDEB", "SeaLevelRise"],
 }
 COLOURS = {name: colour for colour, names in DOMAINS.items() for name in names}
@@ -737,14 +755,14 @@ show_svg(graph)
 #   and lagged values, apart from the permafrost CH4 that `CH4Chemistry` takes from `Permafrost`.
 # - The carbon chain runs from `TerrestrialCarbon` through `OceanCarbon` to `CO2Budget`.
 #   The ocean needs every CO2 source because it evolves atmospheric CO2 monthly within the year.
-# - `GhgForcing` waits for all three concentrations, and `OzoneForcing` waits for CH4, N2O and EESC.
+# - `GHGForcing` waits for all three concentrations, and `OzoneForcing` waits for CH4, N2O and EESC.
 # - `ForcingAggregation` collects every agent, including the prescribed ones,
 #   into the forcing that drives `ClimateUDEB`.
 #   The prescribed emissions and forcing, and the monthly volcanic forcing, are not drawn.
 # - `SeaLevelRise` reads the annual mean warming and thermal expansion from `ClimateUDEB`.
 # - The red arrows close the loops one step later.
 #   Temperature reaches seven components this way, CO2 reaches the land and ocean,
-#   and climate sensitivity reaches `ForcingAggregation`.
+#   and equilibrium climate sensitivity reaches `ForcingAggregation`.
 
 # %% [markdown]
 # ## Running the model
@@ -761,11 +779,11 @@ def series(name):
     scalar = results.get_timeseries_by_name(name)
     if scalar is not None:
         return scalar.values()
-    return results.get_fourbox_timeseries_by_name(name).values() @ area
+    return results.get_four_box_timeseries_by_name(name).values() @ area
 
 
-regional_temperature = results.get_fourbox_timeseries_by_name(
-    "Surface Temperature"
+regional_temperature = results.get_four_box_timeseries_by_name(
+    "Surface Air Temperature Change"
 ).values()
 global_temperature = regional_temperature @ area
 print(f"Warming in 2100: {global_temperature[years == 2100][0]:.2f} K")
@@ -789,13 +807,15 @@ def magicc_series(name):
 
 differences = {
     **{
-        gas: series(f"Atmospheric Concentration|{gas}")
+        gas: series(f"Atmospheric Concentrations|{gas}")
         / magicc_series(f"Atmospheric Concentrations|{gas}")
         - 1
         for gas in ("CO2", "CH4", "N2O")
     },
-    "Surface temperature": (global_temperature - magicc_series("Surface Temperature"))
-    / np.abs(magicc_series("Surface Temperature")).max(),
+    "Surface air temperature change": (
+        global_temperature - magicc_series("Surface Air Temperature Change")
+    )
+    / np.abs(magicc_series("Surface Air Temperature Change")).max(),
 }
 largest = pd.Series(
     {k: np.abs(v).max() for k, v in differences.items()},
@@ -810,7 +830,7 @@ largest.map("{:.1e}".format).to_frame()
 # CO2 and CH4 stay close to their 1750 values until anthropogenic emissions grow in the nineteenth century.
 # N2O falls by about 20 ppb first.
 # Its natural emissions close the budget over 1981 to 1991.
-# At 8.04 Mt N/yr they are below the 1750 sink of about 9.4 Mt N/yr,
+# At 8.04 Mt N2ON/yr they are below the 1750 sink of about 9.4 Mt N2ON/yr,
 # so N2O declines until anthropogenic emissions grow.
 # MAGICC7 shows the same dip, and its dashed lines sit on top of the RSCM ones.
 # EESC (equivalent effective stratospheric chlorine), which drives stratospheric ozone depletion,
@@ -819,7 +839,7 @@ largest.map("{:.1e}".format).to_frame()
 # %% tags=["remove_input"]
 fig, axes = plt.subplots(1, 4, figsize=(15, 3.5))
 for ax, gas, unit in zip(axes, ["CO2", "CH4", "N2O"], ["ppm", "ppb", "ppb"]):
-    ax.plot(years, series(f"Atmospheric Concentration|{gas}"), label="RSCM")
+    ax.plot(years, series(f"Atmospheric Concentrations|{gas}"), label="RSCM")
     ax.plot(
         years,
         magicc_series(f"Atmospheric Concentrations|{gas}"),
@@ -829,7 +849,7 @@ for ax, gas, unit in zip(axes, ["CO2", "CH4", "N2O"], ["ppm", "ppb", "ppb"]):
     )
     ax.set_title(f"{gas} ({unit})")
 axes[0].legend()
-axes[3].plot(years, series("EESC"))
+axes[3].plot(years, series("Equivalent Effective Stratospheric Chlorine"))
 axes[3].set_title("EESC (ppt)")
 fig.tight_layout()
 plt.show()
@@ -843,12 +863,7 @@ plt.show()
 # Volcanic forcing is not in either, because it enters `ClimateUDEB` monthly.
 
 # %% tags=["remove_input"]
-ozone = (
-    "Stratospheric Ozone",
-    "Tropospheric Ozone",
-    "Ozone due to N2O",
-    "Ozone due to Temperature",
-)
+ozone = ("Stratospheric", "Tropospheric", "N2O Feedback", "Temperature Feedback")
 forcing = {
     "CO2": series(f"{ERF}|CO2"),
     "CH4": series(f"{ERF}|CH4"),
@@ -858,7 +873,7 @@ forcing = {
         for group in full.HALOCARBON_GROUPS
         for name in full.halocarbon_forcing(group)
     ),
-    "Ozone": sum(series(f"{ERF}|{name}") for name in ozone),
+    "Ozone": sum(series(f"{ERF}|Ozone|{name}") for name in ozone),
     "Stratospheric H2O": series(f"{ERF}|CH4 Oxidation Stratospheric H2O"),
     **{
         label: sum(prescribed[name] for name in names) @ area
@@ -876,7 +891,7 @@ for label, values in forcing.items():
     ax.fill_between(years, negative, negative + down, color=colour)
     positive += up
     negative += down
-ax.plot(years, series(ERF), color="black", label="Total ERF")
+ax.plot(years, series(ERF), color="black", label="Total effective radiative forcing")
 ax.axhline(0, color="grey", linewidth=0.5)
 ax.set_ylabel("W/m^2")
 ax.set_title("Effective radiative forcing by agent")
@@ -884,7 +899,7 @@ ax.legend(loc="upper left", fontsize=8)
 plt.show()
 
 # %% [markdown]
-# ### Surface temperature
+# ### Surface air temperature change
 #
 # `ClimateUDEB` resolves four boxes.
 # Northern land warms fastest and the southern ocean slowest.
@@ -905,7 +920,7 @@ ax.plot(
     label="Global (area-weighted)",
 )
 ax.set_ylabel("K relative to 1750")
-ax.set_title("Surface temperature")
+ax.set_title("Surface air temperature change")
 ax.legend()
 plt.show()
 
@@ -923,8 +938,8 @@ plt.show()
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 for name, label in [
     ("Emissions|CO2|Fossil", "Fossil emissions"),
-    ("Carbon Flux|Terrestrial", "Net land uptake"),
-    ("Carbon Flux|Ocean", "Ocean uptake"),
+    ("Net Atmosphere to Land Flux|CO2", "Net land uptake"),
+    ("Net Atmosphere to Ocean Flux|CO2", "Ocean uptake"),
 ]:
     axes[0].plot(years, series(name), label=label)
 axes[0].axhline(0, color="grey", linewidth=0.5)
@@ -972,14 +987,18 @@ plt.show()
 # ## The convenience path: `run_magicc7`
 #
 # `rscm.magicc.run_magicc7` builds this whole chain for you, with the same lags.
-# It takes the emissions and MAGICC7 parameter names, and returns the run model.
+# It takes a time axis, the emissions and MAGICC7 parameter names, and returns the run model.
+# It takes emissions in gcages units, such as `Mt CO2/yr`, unless `convention` is MAGICC7.
 # With the same parameters it gives the same result as the hand-built model.
 
 # %%
-convenience = run_magicc7(years, emissions, parameters=parameters)
+time_axis = TimeAxis.from_values(years)
+convenience = run_magicc7(
+    time_axis, emissions, parameters=parameters, convention=Convention.MAGICC7
+)
 convenience_temperature = (
     convenience.timeseries()
-    .get_fourbox_timeseries_by_name("Surface Temperature")
+    .get_four_box_timeseries_by_name("Surface Air Temperature Change")
     .values()
 )
 print(
@@ -1001,18 +1020,21 @@ np.testing.assert_array_equal(convenience_temperature, regional_temperature)
 # The sweep uses the emissions-driven configuration so that CO2 responds from 1750.
 
 # %%
-default = run_magicc7(years, emissions).timeseries()
+default = run_magicc7(time_axis, emissions, convention=Convention.MAGICC7).timeseries()
 sweep = {}
 for ecs in (2.0, 3.0, 4.5):
     run = run_magicc7(
-        years, emissions, parameters=parameters | {"core_climatesensitivity": ecs}
+        time_axis,
+        emissions,
+        parameters=parameters | {"core_climatesensitivity": ecs},
+        convention=Convention.MAGICC7,
     )
     sweep[ecs] = run.timeseries()
 
 # %% tags=["remove_input"]
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 for gas, unit, ax in zip(("CO2", "N2O"), ("ppm", "ppb"), axes[:2]):
-    name = f"Atmospheric Concentration|{gas}"
+    name = f"Atmospheric Concentrations|{gas}"
     ax.plot(years, series(name), label="Emissions-driven")
     ax.plot(
         years, default.get_timeseries_by_name(name).values(), label="MAGICC7 default"
@@ -1020,9 +1042,11 @@ for gas, unit, ax in zip(("CO2", "N2O"), ("ppm", "ppb"), axes[:2]):
     ax.set_title(f"{gas} concentration ({unit})")
     ax.legend()
 for ecs, timeseries in sweep.items():
-    boxes = timeseries.get_fourbox_timeseries_by_name("Surface Temperature").values()
+    boxes = timeseries.get_four_box_timeseries_by_name(
+        "Surface Air Temperature Change"
+    ).values()
     axes[2].plot(years, boxes @ area, label=f"ECS {ecs} K")
-axes[2].set_title("Surface temperature (K)")
+axes[2].set_title("Surface air temperature change (K)")
 axes[2].legend()
 fig.tight_layout()
 plt.show()
@@ -1044,8 +1068,8 @@ ghg_forcing = sum(series(f"{ERF}|{gas}") for gas in ("CO2", "CH4", "N2O"))
 other_forcing = series(ERF) - ghg_forcing
 other_forcing[0], _ = aggregation.aggregate(initial_agents)
 result = run_magicc(
-    years,
-    {gas: series(f"Atmospheric Concentration|{gas}") for gas in ("CO2", "CH4", "N2O")},
+    time_axis,
+    {gas: series(f"Atmospheric Concentrations|{gas}") for gas in ("CO2", "CH4", "N2O")},
     other_forcing=other_forcing,
     forcing_parameters={
         f"{gas.lower()}_pi": initial_concentrations[gas]
@@ -1060,9 +1084,11 @@ result = run_magicc(
 # %% tags=["remove_input"]
 fig, ax = plt.subplots(figsize=(10, 4))
 ax.plot(years, global_temperature, label="Full chain")
-ax.plot(result.years, result.values["Surface Temperature"], label="run_magicc")
+ax.plot(
+    result.years, result.values["Surface Air Temperature Change"], label="run_magicc"
+)
 ax.set_ylabel("K relative to 1750")
-ax.set_title("Surface temperature")
+ax.set_title("Surface air temperature change")
 ax.legend()
 plt.show()
 

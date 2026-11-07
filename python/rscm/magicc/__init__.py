@@ -9,11 +9,12 @@ organised by domain:
   [N2OChemistryBuilder][], [HalocarbonChemistryBuilder][]
 - Carbon: [TerrestrialCarbonBuilder][], [OceanCarbonBuilder][],
   [CO2BudgetBuilder][], [PermafrostBuilder][]
-- Forcing: [GhgForcingBuilder][], [OzoneForcingBuilder][], [AerosolDirectBuilder][],
+- Forcing: [GHGForcingBuilder][], [OzoneForcingBuilder][], [AerosolDirectBuilder][],
   [AerosolIndirectBuilder][], [ForcingAggregationBuilder][]
 
 [run_magicc7][rscm.magicc.full.run_magicc7] runs the full MAGICC7 chain from
-emissions, see [rscm.magicc.full][].
+emissions, see [rscm.magicc.full][],
+and [with_lags][rscm.magicc.full.with_lags] adds its feedback lags to a builder.
 """
 
 from rscm._lib.magicc import (
@@ -24,7 +25,7 @@ from rscm._lib.magicc import (
     ClimateUDEBBuilder,
     CO2BudgetBuilder,
     ForcingAggregationBuilder,
-    GhgForcingBuilder,
+    GHGForcingBuilder,
     HalocarbonChemistryBuilder,
     N2OChemistryBuilder,
     OceanCarbonBuilder,
@@ -34,7 +35,7 @@ from rscm._lib.magicc import (
     TerrestrialCarbonBuilder,
 )
 from rscm.magicc.emissions import Emissions, run_magicc_emissions
-from rscm.magicc.full import run_magicc7
+from rscm.magicc.full import run_magicc7, with_lags
 from rscm.magicc.runner import CO2Emissions, MAGICCResult, run_magicc
 
 __all__ = [
@@ -47,7 +48,7 @@ __all__ = [
     "ClimateUDEBBuilder",
     "Emissions",
     "ForcingAggregationBuilder",
-    "GhgForcingBuilder",
+    "GHGForcingBuilder",
     "HalocarbonChemistryBuilder",
     "MAGICCResult",
     "N2OChemistryBuilder",
@@ -59,4 +60,5 @@ __all__ = [
     "run_magicc",
     "run_magicc7",
     "run_magicc_emissions",
+    "with_lags",
 ]

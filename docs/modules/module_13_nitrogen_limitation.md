@@ -128,8 +128,8 @@ $$
 | Previous respiration     | (internal to `TerrestrialCarbon`)   | GtC/yr   | `CO2_TOTALRESPIRATION(t-1)`          |
 | Fertilisation factor     | (internal to `TerrestrialCarbon`)   | 1        | `CO2_EFF_FERTILIZATION_FACTOR`       |
 | NPP temperature factor   | (internal to `TerrestrialCarbon`)   | 1        | `CO2_EFF_NPP_TEMPFEEDBACK`           |
-| Deposition               | `Nitrogen Deposition`               | Gt N/yr  | `DAT_NCYCLE_NDEP`, or NOx and NH3 emissions |
-| Prescribed fixation      | `Nitrogen Fixation`                 | Gt N/yr  | `DAT_NCYCLE_NFIX`                    |
+| Deposition               | `Nitrogen Flux|Deposition`          | Gt N/yr  | `DAT_NCYCLE_NDEP`, or NOx and NH3 emissions |
+| Prescribed fixation      | `Nitrogen Flux|Fixation`            | Gt N/yr  | `DAT_NCYCLE_NFIX`                    |
 
 | Output or state          | RSCM variable                       | Units    | Fortran variable                     |
 | ------------------------ | ----------------------------------- | -------- | ------------------------------------ |
@@ -138,10 +138,11 @@ $$
 | Plant uptake             | `Nitrogen Flux|Uptake`              | Gt N/yr  | `NCYCLE_FN_PLANTUPTAKE`              |
 | Recycling                | `Nitrogen Flux|Recycling`           | Gt N/yr  | `NCYCLE_FN_RECYCLING`                |
 | Losses                   | `Nitrogen Flux|Losses`              | Gt N/yr  | `NCYCLE_FN_LOSSES`                   |
-| Fixation                 | `Nitrogen Flux|Fixation`            | Gt N/yr  | `NCYCLE_FN_FIXATION`                 |
-| Deposition               | `Nitrogen Flux|Deposition`          | Gt N/yr  | `NCYCLE_FN_DEPOSITION`               |
+| Prognostic fixation      | `Nitrogen Flux|Fixation`            | Gt N/yr  | `NCYCLE_FN_FIXATION`                 |
 | Reference pool and NPP   | (component state)                   | Gt N, GtC/yr | `NCYCLE_NPOOL_0`, `CO2_CURRENT_NPP_0` |
 
+`Nitrogen Flux|Fixation` is an input when fixation is prescribed and an output when it is prognostic.
+Deposition is always an input, so the component does not write it back.
 MAGICC7 writes the outputs to `CARBONCYCLE.OUT` and `CARBONCYCLE.BINOUT`.
 
 ## Parameters

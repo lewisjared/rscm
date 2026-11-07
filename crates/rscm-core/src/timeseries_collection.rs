@@ -1,20 +1,22 @@
 //! Named collections of timeseries for managing model state.
 //!
 //! This module provides [`TimeseriesCollection`], the central data structure for
-//! storing all timeseries data during a model simulation. It holds both exogenous
-//! (externally provided) and endogenous (model-computed) variables.
+//! storing all timeseries data during a model simulation. It holds both prescribed
+//! (supplied to the model) and modelled (produced by a component) variables.
 //!
 //! # Overview
 //!
-//! A `TimeseriesCollection` maps variable names to their timeseries data. Variable
-//! names follow the convention `"Category|Subcategory|Species"`, for example:
-//! - `"Emissions|CO2"` - CO2 emissions in GtC/yr
-//! - `"Atmospheric Concentration|CO2"` - CO2 concentration in ppm
+//! A `TimeseriesCollection` maps variable names to their timeseries data.
+//! A variable name reads from general to specific: the quantity, then the species,
+//! then the sector, then any further breakdown, such as `"Emissions|CO2|Fossil"`.
+//! For example:
+//! - `"Emissions|CO2"` - CO2 emissions in Mt CO2/yr
+//! - `"Atmospheric Concentrations|CO2"` - CO2 concentration in ppm
 //! - `"Effective Radiative Forcing|CO2"` - CO2 forcing in W/m^2
 //!
-//! # Spatial Resolution
+//! # Grids
 //!
-//! The collection supports three spatial resolutions via [`TimeseriesData`]:
+//! The collection supports three grids via [`TimeseriesData`]:
 //! - **Scalar**: Global mean values
 //! - **FourBox**: Regional values (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
 //! - **Hemispheric**: Hemispheric values (Northern, Southern)
@@ -26,31 +28,15 @@ use crate::state::{FourBoxSlice, HemisphericSlice};
 use crate::timeseries::{FloatValue, GridTimeseries, Timeseries};
 use serde::{Deserialize, Serialize};
 
-/// Indicates whether a variable is determined inside or outside the model.
+/// Container for timeseries data on different grids.
 ///
-/// This distinction affects how the model handles the variable during simulation:
-/// - **Exogenous** variables are interpolated from provided data
-/// - **Endogenous** variables are computed by components and their latest value is used
-#[derive(Copy, Clone, PartialOrd, PartialEq, Eq, Debug, Serialize, Deserialize)]
-#[pyo3::pyclass]
-pub enum VariableType {
-    /// Values provided externally (e.g., emissions scenarios, solar irradiance).
-    /// These are interpolated to model timesteps.
-    Exogenous,
-    /// Values computed by model components (e.g., concentrations, temperatures).
-    /// The most recent computed value is used.
-    Endogenous,
-}
-
-/// Container for timeseries data at different spatial resolutions.
-///
-/// This enum wraps the different spatial grid types supported by the model,
+/// This enum wraps the different grids supported by the model,
 /// providing a unified interface for storing and accessing timeseries data
-/// regardless of spatial resolution.
+/// regardless of grid.
 ///
 /// # Variants
 ///
-/// - **Scalar**: Single global value per timestep (most common)
+/// - **Scalar**: Single global value per step (most common)
 /// - **FourBox**: Four regional values following MAGICC conventions
 /// - **Hemispheric**: Two hemispheric values
 ///
@@ -70,8 +56,9 @@ pub enum VariableType {
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TimeseriesData {
-    /// Scalar (global mean) timeseries - a single value per timestep.
+    /// Scalar (global mean) timeseries with a single value per step.
     Scalar(Timeseries<FloatValue>),
     /// Four-box regional timeseries with values for:
     /// - Northern Ocean
@@ -85,6 +72,24 @@ pub enum TimeseriesData {
     Hemispheric(GridTimeseries<FloatValue, HemisphericGrid>),
 }
 
+impl From<Timeseries<FloatValue>> for TimeseriesData {
+    fn from(timeseries: Timeseries<FloatValue>) -> Self {
+        TimeseriesData::Scalar(timeseries)
+    }
+}
+
+impl From<GridTimeseries<FloatValue, FourBoxGrid>> for TimeseriesData {
+    fn from(timeseries: GridTimeseries<FloatValue, FourBoxGrid>) -> Self {
+        TimeseriesData::FourBox(timeseries)
+    }
+}
+
+impl From<GridTimeseries<FloatValue, HemisphericGrid>> for TimeseriesData {
+    fn from(timeseries: GridTimeseries<FloatValue, HemisphericGrid>) -> Self {
+        TimeseriesData::Hemispheric(timeseries)
+    }
+}
+
 impl TimeseriesData {
     /// Get the grid size (number of regions)
     pub fn grid_size(&self) -> usize {
@@ -96,7 +101,7 @@ impl TimeseriesData {
     }
 
     /// The grid the series is stored on.
-    pub fn grid_type(&self) -> GridType {
+    pub fn grid(&self) -> GridType {
         match self {
             TimeseriesData::Scalar(_) => GridType::Scalar,
             TimeseriesData::FourBox(_) => GridType::FourBox,
@@ -127,7 +132,7 @@ impl TimeseriesData {
         self.len() == 0
     }
 
-    /// Get the index of the latest valid timestep
+    /// Get the index of the latest valid step
     pub fn latest(&self) -> usize {
         match self {
             TimeseriesData::Scalar(ts) => ts.latest(),
@@ -197,60 +202,65 @@ impl TimeseriesData {
         }
     }
 
-    /// Set a scalar value at the given index
+    /// Set a scalar value at the given time index
     ///
     /// # Errors
     ///
     /// Returns an error if this is not a Scalar timeseries
-    pub fn set_scalar(&mut self, name: &str, index: usize, value: FloatValue) -> RSCMResult<()> {
+    pub fn set_scalar(
+        &mut self,
+        name: &str,
+        time_index: usize,
+        value: FloatValue,
+    ) -> RSCMResult<()> {
         match self {
             TimeseriesData::Scalar(ts) => {
-                ts.set(index, crate::spatial::ScalarRegion::Global, value);
+                ts.set(time_index, crate::spatial::ScalarRegion::Global, value);
                 Ok(())
             }
             TimeseriesData::FourBox(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
-                expected_grid: "Scalar".to_string(),
-                component_grid: "FourBox".to_string(),
+                expected_grid: "scalar".to_string(),
+                component_grid: "four_box".to_string(),
             }),
             TimeseriesData::Hemispheric(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
-                expected_grid: "Scalar".to_string(),
-                component_grid: "Hemispheric".to_string(),
+                expected_grid: "scalar".to_string(),
+                component_grid: "hemispheric".to_string(),
             }),
         }
     }
 
-    /// Set a FourBox slice of values at the given index
+    /// Set a FourBox slice of values at the given time index
     ///
     /// # Errors
     ///
-    /// Returns an error if this is not a FourBox timeseries
+    /// Returns an error if this is not a four-box timeseries
     pub fn set_four_box(
         &mut self,
         name: &str,
-        index: usize,
+        time_index: usize,
         slice: &FourBoxSlice,
     ) -> RSCMResult<()> {
         match self {
             TimeseriesData::FourBox(ts) => {
-                ts.set_from_slice(index, slice);
+                ts.set_from_slice(time_index, slice);
                 Ok(())
             }
             TimeseriesData::Scalar(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
-                expected_grid: "FourBox".to_string(),
-                component_grid: "Scalar".to_string(),
+                expected_grid: "four_box".to_string(),
+                component_grid: "scalar".to_string(),
             }),
             TimeseriesData::Hemispheric(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
-                expected_grid: "FourBox".to_string(),
-                component_grid: "Hemispheric".to_string(),
+                expected_grid: "four_box".to_string(),
+                component_grid: "hemispheric".to_string(),
             }),
         }
     }
 
-    /// Set a Hemispheric slice of values at the given index
+    /// Set a Hemispheric slice of values at the given time index
     ///
     /// # Errors
     ///
@@ -258,41 +268,36 @@ impl TimeseriesData {
     pub fn set_hemispheric(
         &mut self,
         name: &str,
-        index: usize,
+        time_index: usize,
         slice: &HemisphericSlice,
     ) -> RSCMResult<()> {
         match self {
             TimeseriesData::Hemispheric(ts) => {
-                ts.set_from_slice(index, slice);
+                ts.set_from_slice(time_index, slice);
                 Ok(())
             }
             TimeseriesData::Scalar(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
-                expected_grid: "Hemispheric".to_string(),
-                component_grid: "Scalar".to_string(),
+                expected_grid: "hemispheric".to_string(),
+                component_grid: "scalar".to_string(),
             }),
             TimeseriesData::FourBox(_) => Err(crate::errors::RSCMError::GridOutputMismatch {
                 variable: name.to_string(),
-                expected_grid: "Hemispheric".to_string(),
-                component_grid: "FourBox".to_string(),
+                expected_grid: "hemispheric".to_string(),
+                component_grid: "four_box".to_string(),
             }),
         }
     }
 }
 
-/// A named timeseries with metadata about its origin.
-///
-/// This struct bundles a timeseries with its variable name and type,
-/// forming the items stored in a [`TimeseriesCollection`].
+/// A named timeseries, the item stored in a [`TimeseriesCollection`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeseriesItem {
     /// The timeseries data (scalar, four-box, or hemispheric)
     #[serde(alias = "timeseries")]
     pub data: TimeseriesData,
-    /// Variable name (e.g., "Emissions|CO2", "Surface Temperature")
+    /// Variable name (e.g., "Emissions|CO2", "Surface Air Temperature Change")
     pub name: String,
-    /// Whether this variable is exogenous (input) or endogenous (computed)
-    pub variable_type: VariableType,
 }
 
 /// A named collection of timeseries that holds all model state.
@@ -300,23 +305,19 @@ pub struct TimeseriesItem {
 /// `TimeseriesCollection` is the central data structure for managing model state
 /// during simulation. It provides:
 /// - Named access to variables via string keys
-/// - Support for multiple spatial resolutions
+/// - Support for multiple grids
 /// - Iteration over all contained timeseries
 ///
 /// # Usage
 ///
 /// ```ignore
-/// use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
+/// use rscm_core::timeseries_collection::TimeseriesCollection;
 /// use rscm_core::timeseries::Timeseries;
 ///
 /// let mut collection = TimeseriesCollection::new();
 ///
 /// // Add a scalar timeseries
-/// collection.add_timeseries(
-///     "Emissions|CO2".to_string(),
-///     emissions_ts,
-///     VariableType::Exogenous,
-/// );
+/// collection.add_timeseries("Emissions|CO2".to_string(), emissions_ts);
 ///
 /// // Retrieve by name
 /// if let Some(data) = collection.get_data("Emissions|CO2") {
@@ -357,17 +358,8 @@ impl TimeseriesCollection {
     ///
     /// # Panics
     /// Panics if a timeseries with the same name already exists in the collection
-    pub fn add_timeseries(
-        &mut self,
-        name: String,
-        timeseries: Timeseries<FloatValue>,
-        variable_type: VariableType,
-    ) {
-        self.insert(TimeseriesItem {
-            data: TimeseriesData::Scalar(timeseries),
-            name,
-            variable_type,
-        });
+    pub fn add_timeseries(&mut self, name: String, timeseries: Timeseries<FloatValue>) {
+        self.add_data(name, TimeseriesData::Scalar(timeseries));
     }
 
     /// Add a new four-box grid timeseries to the collection
@@ -378,13 +370,8 @@ impl TimeseriesCollection {
         &mut self,
         name: String,
         timeseries: GridTimeseries<FloatValue, FourBoxGrid>,
-        variable_type: VariableType,
     ) {
-        self.insert(TimeseriesItem {
-            data: TimeseriesData::FourBox(timeseries),
-            name,
-            variable_type,
-        });
+        self.add_data(name, TimeseriesData::FourBox(timeseries));
     }
 
     /// Add a new hemispheric grid timeseries to the collection
@@ -395,12 +382,18 @@ impl TimeseriesCollection {
         &mut self,
         name: String,
         timeseries: GridTimeseries<FloatValue, HemisphericGrid>,
-        variable_type: VariableType,
     ) {
+        self.add_data(name, TimeseriesData::Hemispheric(timeseries));
+    }
+
+    /// Add a timeseries on any grid to the collection
+    ///
+    /// # Panics
+    /// Panics if a timeseries with the same name already exists in the collection
+    pub fn add_data(&mut self, name: String, data: impl Into<TimeseriesData>) {
         self.insert(TimeseriesItem {
-            data: TimeseriesData::Hemispheric(timeseries),
+            data: data.into(),
             name,
-            variable_type,
         });
     }
 
@@ -438,12 +431,12 @@ impl TimeseriesCollection {
     ///
     /// This is the most common way to access timeseries data. Returns
     /// the [`TimeseriesData`] enum which can be pattern-matched or converted
-    /// to the appropriate grid type.
+    /// to the appropriate grid.
     ///
     /// # Example
     ///
     /// ```ignore
-    /// if let Some(data) = collection.get_data("Surface Temperature") {
+    /// if let Some(data) = collection.get_data("Surface Air Temperature Change") {
     ///     match data {
     ///         TimeseriesData::Scalar(ts) => println!("Global: {:?}", ts.latest_value()),
     ///         TimeseriesData::FourBox(ts) => println!("Regional: {:?}", ts.latest_values()),
@@ -516,25 +509,20 @@ mod tests {
         let timeseries =
             Timeseries::from_values(array![1.0, 2.0, 3.0], Array::range(2020.0, 2023.0, 1.0));
         collection.add_timeseries(
-            "Surface Temperature".to_string(),
+            "Surface Air Temperature Change".to_string(),
             timeseries.clone(),
-            VariableType::Exogenous,
         );
-        collection.add_timeseries(
-            "Emissions|CO2".to_string(),
-            timeseries.clone(),
-            VariableType::Endogenous,
-        );
+        collection.add_timeseries("Emissions|CO2".to_string(), timeseries.clone());
 
         assert_eq!(
             collection
-                .get_data("Surface Temperature")
+                .get_data("Surface Air Temperature Change")
                 .unwrap()
                 .grid_size(),
             1
         );
         assert!(collection
-            .get_data("Surface Temperature")
+            .get_data("Surface Air Temperature Change")
             .unwrap()
             .as_scalar()
             .is_some());
@@ -558,21 +546,11 @@ mod tests {
             InterpolationStrategy::from(LinearSplineStrategy::new(true)),
         );
 
-        collection.add_four_box_timeseries(
-            "Temperature|FourBox".to_string(),
-            ts,
-            VariableType::Endogenous,
-        );
+        collection.add_four_box_timeseries("Temperature".to_string(), ts);
 
-        assert_eq!(
-            collection
-                .get_data("Temperature|FourBox")
-                .unwrap()
-                .grid_size(),
-            4
-        );
+        assert_eq!(collection.get_data("Temperature").unwrap().grid_size(), 4);
         assert!(collection
-            .get_data("Temperature|FourBox")
+            .get_data("Temperature")
             .unwrap()
             .as_four_box()
             .is_some());
@@ -594,21 +572,11 @@ mod tests {
             InterpolationStrategy::from(LinearSplineStrategy::new(true)),
         );
 
-        collection.add_hemispheric_timeseries(
-            "Temperature|Hemispheric".to_string(),
-            ts,
-            VariableType::Endogenous,
-        );
+        collection.add_hemispheric_timeseries("Temperature".to_string(), ts);
 
-        assert_eq!(
-            collection
-                .get_data("Temperature|Hemispheric")
-                .unwrap()
-                .grid_size(),
-            2
-        );
+        assert_eq!(collection.get_data("Temperature").unwrap().grid_size(), 2);
         assert!(collection
-            .get_data("Temperature|Hemispheric")
+            .get_data("Temperature")
             .unwrap()
             .as_hemispheric()
             .is_some());
@@ -620,7 +588,7 @@ mod tests {
 
         // Add scalar
         let scalar = Timeseries::from_values(array![280.0, 285.0], array![2000.0, 2001.0]);
-        collection.add_timeseries("CO2|Global".to_string(), scalar, VariableType::Endogenous);
+        collection.add_timeseries("CO2".to_string(), scalar);
 
         // Add four-box
         let grid = FourBoxGrid::magicc_standard();
@@ -635,11 +603,7 @@ mod tests {
             "degC".to_string(),
             InterpolationStrategy::from(LinearSplineStrategy::new(true)),
         );
-        collection.add_four_box_timeseries(
-            "Temperature|FourBox".to_string(),
-            four_box,
-            VariableType::Endogenous,
-        );
+        collection.add_four_box_timeseries("Temperature".to_string(), four_box);
 
         // Add hemispheric
         let grid = HemisphericGrid::equal_weights();
@@ -651,28 +615,12 @@ mod tests {
             "W/m^2".to_string(),
             InterpolationStrategy::from(LinearSplineStrategy::new(true)),
         );
-        collection.add_hemispheric_timeseries(
-            "Radiation|Hemispheric".to_string(),
-            hemispheric,
-            VariableType::Endogenous,
-        );
+        collection.add_hemispheric_timeseries("Radiation".to_string(), hemispheric);
 
         // Verify all exist with correct grid sizes
-        assert_eq!(collection.get_data("CO2|Global").unwrap().grid_size(), 1);
-        assert_eq!(
-            collection
-                .get_data("Temperature|FourBox")
-                .unwrap()
-                .grid_size(),
-            4
-        );
-        assert_eq!(
-            collection
-                .get_data("Radiation|Hemispheric")
-                .unwrap()
-                .grid_size(),
-            2
-        );
+        assert_eq!(collection.get_data("CO2").unwrap().grid_size(), 1);
+        assert_eq!(collection.get_data("Temperature").unwrap().grid_size(), 4);
+        assert_eq!(collection.get_data("Radiation").unwrap().grid_size(), 2);
     }
 
     #[test]
@@ -682,15 +630,7 @@ mod tests {
 
         let timeseries =
             Timeseries::from_values(array![1.0, 2.0, 3.0], Array::range(2020.0, 2023.0, 1.0));
-        collection.add_timeseries(
-            "test".to_string(),
-            timeseries.clone(),
-            VariableType::Exogenous,
-        );
-        collection.add_timeseries(
-            "test".to_string(),
-            timeseries.clone(),
-            VariableType::Endogenous,
-        );
+        collection.add_timeseries("test".to_string(), timeseries.clone());
+        collection.add_timeseries("test".to_string(), timeseries.clone());
     }
 }

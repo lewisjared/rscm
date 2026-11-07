@@ -40,7 +40,7 @@ and the slow response of the deep ocean.
 - $\alpha_{eff}$ is updated every monthly substep from the previous substep's SST.
   Holding it fixed for the year leaves a cold drift of about $10^{-5}$ K by 2000.
 - The CO₂ internal efficacy comes from LAMCALC.
-  With `efficacy_apply = 2`, effective forcing is scaled by `prescribed_efficacy / internal_efficacy`.
+  With `efficacy_method = "ar6"`, effective forcing is scaled by `co2_efficacy / internal_efficacy`.
   `ForcingAggregation` applies an internal efficacy to every other agent.
   As in MAGICC7, they are recalculated each year from the previous year's climate sensitivity,
   so they drift as the climate warms.
@@ -98,7 +98,7 @@ and the hemispheres exchange heat only through their oceans.
 - $\lambda_o$ and $\lambda_l$ are the ocean and land feedback parameters.
 - $f_{NO}$, $f_{NL}$, $f_{SO}$ and $f_{SL}$ are the global area fractions of each box
   (`FGNO`, `FGNL`, `FGSO`, `FGSL`).
-  The initialisation page gives the [box order and area fractions](module_00_initialization.md#four-box-geography).
+  The initialisation page gives the [box order and area fractions](module_00_initialisation.md#four-box-geography).
 
 ### Climate sensitivity decomposition
 
@@ -380,9 +380,11 @@ It is stepped by forward Euler from the previous substep's land temperature.
 | Ground temperature              | K      | Output                          | `DAT_GROUND_TEMP`                |
 | Monthly temperatures            | K      | Output                          | `DAT_SURFACE_TEMP_SUBANNUAL`     |
 
-`ClimateUDEB` reads `Effective Radiative Forcing` and writes `Surface Temperature` (four-box),
+`ClimateUDEB` reads `Effective Radiative Forcing` and writes `Surface Air Temperature Change` (four-box),
 `Heat Uptake`, `Ocean Heat Content`, `Sea Surface Temperature` and `Equilibrium Climate Sensitivity`.
-With `thermal_expansion` set it also writes `Surface Temperature|Annual Mean` for `SeaLevelRise`.
+`Ocean Heat Content` is the global integral in J,
+over both hemispheres' ocean area (Earth surface area 5.101 × 10¹⁴ m²).
+With `thermal_expansion` set it also writes `Annual Mean Surface Air Temperature Change` for `SeaLevelRise`.
 
 ## Parameters
 
@@ -469,8 +471,8 @@ and the initial temperature profile (`CORE_SWITCH_OCN_TEMPPROFILE`, CMIP5-based 
 Each year `magicc_step_year` (MAGICC7.f90 lines 2646 to 3727) runs:
 
 1. `DELTAQ` for concentrations and forcing, except in the last year
-   (see [main timestep](module_15_main_timestep.md)).
-2. For each substep, from step 1 to `STEPSPERYEAR` (from step 0 in the first year, to 11 in the last):
+   (see [main step](module_15_main_step.md)).
+2. For each substep, from substep 1 to `STEPSPERYEAR` (from substep 0 in the first year, to 11 in the last):
     1. Interpolate the box forcing to the substep and add monthly volcanic forcing.
     2. Adjust the climate sensitivity from the substep's global forcing and the cumulative temperature,
        then call LAMCALC for $\lambda_o$, $\lambda_l$ and the CO₂ internal efficacy.

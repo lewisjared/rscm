@@ -17,18 +17,22 @@ const MOLAR_MASS_ORDER: [usize; 8] = [0, 6, 4, 7, 1, 5, 3, 2];
 
 /// A halocarbon species.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HalocarbonSpecies {
     /// Species name, as used in variable names.
     pub name: String,
 
     /// Unperturbed total lifetime (yr).
-    pub tau_total: FloatValue,
+    /// MAGICC7: FGAS_TAU_TOT, MHALO_TAU_TOT
+    pub total_lifetime: FloatValue,
 
     /// Unperturbed OH lifetime (yr), or 0 if not destroyed by OH.
-    pub tau_oh: FloatValue,
+    /// MAGICC7: FGAS_TAU_OH, MHALO_TAU_OH
+    pub oh_lifetime: FloatValue,
 
     /// Unperturbed stratospheric lifetime (yr), or 0 if not destroyed there.
-    pub tau_strat: FloatValue,
+    /// MAGICC7: FGAS_TAU_STRAT, MHALO_TAU_STRAT
+    pub stratospheric_lifetime: FloatValue,
 
     /// Radiative efficiency (W/m² per ppb).
     pub radiative_efficiency: FloatValue,
@@ -40,28 +44,31 @@ pub struct HalocarbonSpecies {
     pub molecular_mass: FloatValue,
 
     /// Chlorine atoms per molecule.
-    pub n_cl: u8,
+    /// MAGICC7: FGAS_CL_ATOMS, MHALO_CL_ATOMS
+    pub cl_atoms: u8,
 
     /// Bromine atoms per molecule.
-    pub n_br: u8,
+    /// MAGICC7: FGAS_BR_ATOMS, MHALO_BR_ATOMS
+    pub br_atoms: u8,
 
     /// Fractional release factor in the stratosphere.
     pub fractional_release: FloatValue,
 
     /// Fraction of the atmosphere the species mixes into.
-    #[serde(default = "default_mix_box")]
-    pub mix_box_size: FloatValue,
+    /// MAGICC7: FGAS_EFF_MIXBOXSIZE, MHALO_EFF_MIXBOXSIZE
+    #[serde(default = "default_mixing_box_size")]
+    pub mixing_box_size: FloatValue,
 }
 
 impl HalocarbonSpecies {
     /// Lifetime not attributed to OH or the stratosphere (yr), or `None` if there is none.
-    pub fn tau_other(&self) -> Option<FloatValue> {
-        let mut rate = 1.0 / self.tau_total;
-        if self.tau_oh > 0.0 {
-            rate -= 1.0 / self.tau_oh;
+    pub fn other_lifetime(&self) -> Option<FloatValue> {
+        let mut rate = 1.0 / self.total_lifetime;
+        if self.oh_lifetime > 0.0 {
+            rate -= 1.0 / self.oh_lifetime;
         }
-        if self.tau_strat > 0.0 {
-            rate -= 1.0 / self.tau_strat;
+        if self.stratospheric_lifetime > 0.0 {
+            rate -= 1.0 / self.stratospheric_lifetime;
         }
         (rate.abs() > 1e-12).then(|| 1.0 / rate)
     }
@@ -70,7 +77,8 @@ impl HalocarbonSpecies {
 /// Parameters for halocarbon chemistry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct HalocarbonParameters {
+#[serde(deny_unknown_fields)]
+pub struct HalocarbonChemistryParameters {
     /// F-gases, which do not deplete ozone.
     pub fgases: Vec<HalocarbonSpecies>,
 
@@ -78,13 +86,13 @@ pub struct HalocarbonParameters {
     pub montreal_gases: Vec<HalocarbonSpecies>,
 
     /// Ozone depletion by bromine relative to chlorine (`STRATOZ_BR_VS_CL_SCALE`).
-    pub br_vs_cl_scale: FloatValue,
+    pub br_cl_ratio: FloatValue,
 
     /// EESC scaling, the CFC-11 release factor (`MHALO_RELEASEFACTORC11`).
     pub cfc11_release_factor: FloatValue,
 
     /// Years from troposphere to stratosphere (`GEN_EESC_STRATMIXDELAY`).
-    pub eesc_delay: usize,
+    pub stratospheric_delay: usize,
 
     /// Molar mass of air (g/mol, `GEN_AIR_GRAMMPROMOL`).
     pub air_molar_mass: FloatValue,
@@ -93,76 +101,78 @@ pub struct HalocarbonParameters {
     pub atmosphere_mass: FloatValue,
 
     /// Scale OH lifetimes with the CH4 OH lifetime (`*_USE_TAUOH_VAR`).
-    pub variable_oh_lifetime: bool,
+    pub include_variable_oh_lifetime: bool,
 
     /// Unperturbed CH4 OH lifetime (yr), the reference for OH scaling.
-    pub ch4_oh_lifetime_init: FloatValue,
+    /// MAGICC7: from CH4_TAUTOT_INIT and the other CH4 lifetimes
+    pub initial_ch4_oh_lifetime: FloatValue,
 
     /// Scale stratospheric lifetimes with warming (`*_USE_TAUSTRAT_VAR`).
-    pub variable_strat_lifetime: bool,
+    pub include_variable_stratospheric_lifetime: bool,
 
     /// Year from which warming speeds up the meridional circulation
     /// (`GEN_CHANGE_MERIDIONALFLUX_YR`).
-    pub meridional_flux_year: FloatValue,
+    pub meridional_flux_reference_year: FloatValue,
 
     /// Change in meridional flux per degree of warming (`GEN_MERIDFLUX_CHNGPERDEG`).
-    pub meridional_flux_per_degree: FloatValue,
+    pub meridional_flux_change_per_degree: FloatValue,
 
     /// Sensitivity of stratospheric lifetimes to meridional flux
     /// (`*_TAUSTRAT_SENS2MERIDFLUX`).
-    pub strat_lifetime_sensitivity: FloatValue,
+    pub stratospheric_lifetime_sensitivity: FloatValue,
 
-    /// Last year of F-gas concentrations prescribed by `Atmospheric Concentration|<species>|Prescribed`,
+    /// Last year of F-gas concentrations prescribed by `Prescribed Atmospheric Concentrations|<species>`,
     /// or `None` to calculate them from emissions throughout.
     /// MAGICC7: FGAS_SWITCHFROMCONC2EMIS_YEAR
     pub fgas_switch_year: Option<FloatValue>,
 
     /// As `fgas_switch_year`, for the Montreal Protocol gases.
     /// MAGICC7: MHALO_SWITCHFROMCONC2EMIS_YEAR
-    pub mhalo_switch_year: Option<FloatValue>,
+    pub montreal_gases_switch_year: Option<FloatValue>,
 
     /// Regional pattern of F-gas forcing, which makes `Effective Radiative Forcing|F-Gases`
     /// a four-box output.
-    pub fgas_regions: Option<FgasRegions>,
+    pub fgas_regions: Option<FGasRegions>,
 }
 
 /// Regional pattern of F-gas forcing.
 ///
-/// Species with lifetimes of at least `upper_tau` follow `rf_regions` normalised globally.
-/// Those below `lower_tau` follow it normalised within each hemisphere,
+/// Species with lifetimes of at least `upper_lifetime` follow `regional_pattern` normalised globally.
+/// Those below `lower_lifetime` follow it normalised within each hemisphere,
 /// scaled by each hemisphere's share of fossil CO2 emissions, as MAGICC7 does.
 /// Lifetimes in between mix the two linearly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct FgasRegions {
+#[serde(deny_unknown_fields)]
+pub struct FGasRegions {
     /// Pattern (NH ocean, NH land, SH ocean, SH land).
     /// MAGICC7: RF_REGIONS_FGAS
-    pub rf_regions: [FloatValue; 4],
+    pub regional_pattern: [FloatValue; 4],
     /// unit: yr
     /// MAGICC7: FGAS_RF_REGIONSCALING_LOWERTAU
-    pub lower_tau: FloatValue,
+    pub lower_lifetime: FloatValue,
     /// unit: yr
     /// MAGICC7: FGAS_RF_REGIONSCALING_UPPERTAU
-    pub upper_tau: FloatValue,
+    pub upper_lifetime: FloatValue,
     /// Northern Hemisphere land fraction.
     pub nh_land_fraction: FloatValue,
     /// Southern Hemisphere land fraction.
     pub sh_land_fraction: FloatValue,
 }
 
-impl Default for FgasRegions {
+impl Default for FGasRegions {
     fn default() -> Self {
         Self {
-            rf_regions: [0.16695, 0.16218, 0.15508, 0.1463],
-            lower_tau: 1.0,
-            upper_tau: 8.0,
+            regional_pattern: [0.16695, 0.16218, 0.15508, 0.1463],
+            lower_lifetime: 1.0,
+            upper_lifetime: 8.0,
             nh_land_fraction: 0.42,
             sh_land_fraction: 0.21,
         }
     }
 }
 
-impl FgasRegions {
+impl FGasRegions {
     /// Box forcing per unit global forcing of a species with lifetime `tau`.
     ///
     /// `fossil_co2` is the global fossil CO2 emission, split equally between the land boxes
@@ -174,8 +184,8 @@ impl FgasRegions {
             (1.0 - self.sh_land_fraction) / 2.0,
             self.sh_land_fraction / 2.0,
         ];
-        let global = compute_qfrac(&self.rf_regions, &area);
-        if tau > self.upper_tau || fossil_co2 == 0.0 {
+        let global = compute_qfrac(&self.regional_pattern, &area);
+        if tau > self.upper_lifetime || fossil_co2 == 0.0 {
             return global;
         }
         let emissions = [0.0, fossil_co2 / 2.0, 0.0, fossil_co2 / 2.0];
@@ -189,18 +199,19 @@ impl FgasRegions {
                 short_lived[i] = global[i] / mean * share / total;
             }
         }
-        if tau < self.lower_tau {
+        if tau < self.lower_lifetime {
             return short_lived;
         }
-        let w = (tau - self.lower_tau) / (self.upper_tau - self.lower_tau);
+        let w = (tau - self.lower_lifetime) / (self.upper_lifetime - self.lower_lifetime);
         std::array::from_fn(|i| (global[i] - short_lived[i]) * w + short_lived[i])
     }
 }
 
-impl HalocarbonParameters {
+impl HalocarbonChemistryParameters {
     /// Concentration change (ppt) per kt of emissions.
     pub fn emission_to_concentration_factor(&self, species: &HalocarbonSpecies) -> FloatValue {
-        self.air_molar_mass / (self.atmosphere_mass * species.molecular_mass * species.mix_box_size)
+        self.air_molar_mass
+            / (self.atmosphere_mass * species.molecular_mass * species.mixing_box_size)
     }
 
     /// All species, F-gases first.
@@ -214,31 +225,31 @@ impl HalocarbonParameters {
     }
 }
 
-impl Default for HalocarbonParameters {
+impl Default for HalocarbonChemistryParameters {
     fn default() -> Self {
         Self {
             fgases: default_fgases(),
             montreal_gases: default_montreal_gases(),
-            br_vs_cl_scale: 62.5,
+            br_cl_ratio: 62.5,
             cfc11_release_factor: 0.75,
-            eesc_delay: 3,
+            stratospheric_delay: 3,
             air_molar_mass: 28.984,
             atmosphere_mass: 5.133,
-            variable_oh_lifetime: true,
+            include_variable_oh_lifetime: true,
             // 1 / (1/CH4_TAUTOT_INIT - 1/CH4_TAUSOIL - 1/CH4_TAUSTRAT - 1/CH4_TAUTROPCL)
-            ch4_oh_lifetime_init: 1.0 / (1.0 / 9.9474 - 1.0 / 150.0 - 1.0 / 120.0 - 1.0 / 200.0),
-            variable_strat_lifetime: true,
-            meridional_flux_year: 1980.0,
-            meridional_flux_per_degree: 0.15,
-            strat_lifetime_sensitivity: 0.3,
+            initial_ch4_oh_lifetime: 1.0 / (1.0 / 9.9474 - 1.0 / 150.0 - 1.0 / 120.0 - 1.0 / 200.0),
+            include_variable_stratospheric_lifetime: true,
+            meridional_flux_reference_year: 1980.0,
+            meridional_flux_change_per_degree: 0.15,
+            stratospheric_lifetime_sensitivity: 0.3,
             fgas_switch_year: None,
-            mhalo_switch_year: None,
+            montreal_gases_switch_year: None,
             fgas_regions: None,
         }
     }
 }
 
-fn default_mix_box() -> FloatValue {
+fn default_mixing_box_size() -> FloatValue {
     0.949
 }
 
@@ -246,7 +257,7 @@ fn default_mix_box() -> FloatValue {
 /// `[C, H, N, O, F, S, Cl, Br]`.
 fn species(
     name: &str,
-    [tau_total, tau_oh, tau_strat]: [FloatValue; 3],
+    [total_lifetime, oh_lifetime, stratospheric_lifetime]: [FloatValue; 3],
     radiative_efficiency: FloatValue,
     concentration_pi: FloatValue,
     atoms: [u8; 8],
@@ -254,19 +265,19 @@ fn species(
 ) -> HalocarbonSpecies {
     HalocarbonSpecies {
         name: name.to_string(),
-        tau_total,
-        tau_oh,
-        tau_strat,
+        total_lifetime,
+        oh_lifetime,
+        stratospheric_lifetime,
         radiative_efficiency,
         concentration_pi,
         molecular_mass: MOLAR_MASS_ORDER
             .iter()
             .map(|&i| FloatValue::from(atoms[i]) * ATOMIC_MASSES[i])
             .sum(),
-        n_cl: atoms[6],
-        n_br: atoms[7],
+        cl_atoms: atoms[6],
+        br_atoms: atoms[7],
         fractional_release,
-        mix_box_size: default_mix_box(),
+        mixing_box_size: default_mixing_box_size(),
     }
 }
 
@@ -362,7 +373,7 @@ fn default_fgases() -> Vec<HalocarbonSpecies> {
             0.0,
         ),
         species(
-            "HFC4310",
+            "HFC4310mee",
             [17.0, 17.9, 365.0],
             0.359,
             0.0,
@@ -616,35 +627,37 @@ mod tests {
 
     #[test]
     fn test_default_species_counts() {
-        let params = HalocarbonParameters::default();
+        let params = HalocarbonChemistryParameters::default();
         assert_eq!(params.fgases.len(), 23);
         assert_eq!(params.montreal_gases.len(), 18);
     }
 
     #[test]
     fn test_molecular_mass_from_atoms() {
-        let params = HalocarbonParameters::default();
+        let params = HalocarbonChemistryParameters::default();
         let cfc11 = params.get_species("CFC11").unwrap();
         assert!((cfc11.molecular_mass - (12.001 + 3.0 * 35.453 + 18.9984)).abs() < 1e-10);
     }
 
     #[test]
-    fn test_tau_other_balances_total() {
-        let params = HalocarbonParameters::default();
+    fn test_other_lifetime_balances_total() {
+        let params = HalocarbonChemistryParameters::default();
         let hcfc22 = params.get_species("HCFC22").unwrap();
-        let rate = 1.0 / hcfc22.tau_oh + 1.0 / hcfc22.tau_strat + 1.0 / hcfc22.tau_other().unwrap();
-        assert!((1.0 / rate - hcfc22.tau_total).abs() < 1e-10);
+        let rate = 1.0 / hcfc22.oh_lifetime
+            + 1.0 / hcfc22.stratospheric_lifetime
+            + 1.0 / hcfc22.other_lifetime().unwrap();
+        assert!((1.0 / rate - hcfc22.total_lifetime).abs() < 1e-10);
         let cfc11 = params.get_species("CFC11").unwrap();
-        assert!(cfc11.tau_other().is_some());
+        assert!(cfc11.other_lifetime().is_some());
         let sf6 = params.get_species("SF6").unwrap();
-        assert!((sf6.tau_other().unwrap() - 850.0).abs() < 1e-9);
+        assert!((sf6.other_lifetime().unwrap() - 850.0).abs() < 1e-9);
     }
 
-    fn equal_area_regions() -> FgasRegions {
-        FgasRegions {
-            rf_regions: [1.0, 2.0, 3.0, 4.0],
-            lower_tau: 1.0,
-            upper_tau: 8.0,
+    fn equal_area_regions() -> FGasRegions {
+        FGasRegions {
+            regional_pattern: [1.0, 2.0, 3.0, 4.0],
+            lower_lifetime: 1.0,
+            upper_lifetime: 8.0,
             nh_land_fraction: 0.5,
             sh_land_fraction: 0.5,
         }
@@ -688,7 +701,7 @@ mod tests {
 
     #[test]
     fn test_fgas_pattern_keeps_global_mean() {
-        let regions = FgasRegions::default();
+        let regions = FGasRegions::default();
         let area = [0.29, 0.21, 0.395, 0.105];
         for tau in [0.5, 1.0, 3.0, 8.0, 50.0] {
             let mean: FloatValue = (0..4).map(|i| regions.pattern(tau, 1.0)[i] * area[i]).sum();

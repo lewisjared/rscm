@@ -4,14 +4,16 @@
 //! and conversion factors to SI base units. It includes:
 //!
 //! - SI base units and prefixes
-//! - Climate-specific units (carbon, emissions, concentrations)
+//! - Concentrations (ppm, ppb, ppt)
 //! - Time units commonly used in climate modelling
+//!
+//! Species such as the `C` in `GtC` are not units: see [`super::species`].
 //!
 //! # Conversion Factor Convention
 //!
 //! All conversion factors are defined as the multiplier to convert FROM
 //! the registered unit TO the SI base unit. For example:
-//! - GtC has factor 1e12 (1 GtC = 1e12 kg of carbon)
+//! - Gt has factor 1e12 (1 Gt = 1e12 kg)
 //! - yr has factor 31557600 (1 yr = 31557600 s, using 365.25 days)
 
 use super::dimension::Dimension;
@@ -27,7 +29,7 @@ pub struct UnitInfo {
     pub dimension: Dimension,
     /// Conversion factor to SI base units.
     pub to_si_factor: f64,
-    /// Optional: the base unit this is derived from (for compound units like GtC).
+    /// The base unit a prefixed unit is derived from, such as `t` for `Gt`.
     pub base_unit: Option<String>,
 }
 
@@ -39,16 +41,6 @@ impl UnitInfo {
             dimension,
             to_si_factor,
             base_unit: None,
-        }
-    }
-
-    /// Creates a new unit info with a base unit reference.
-    fn with_base(name: &str, dimension: Dimension, to_si_factor: f64, base: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            dimension,
-            to_si_factor,
-            base_unit: Some(base.to_string()),
         }
     }
 }
@@ -154,12 +146,6 @@ pub const SECONDS_PER_HOUR: f64 = 3600.0;
 /// Seconds per minute.
 pub const SECONDS_PER_MINUTE: f64 = 60.0;
 
-// Constants for carbon conversions
-/// Molecular weight ratio CO2/C = 44/12.
-pub const CO2_TO_C_RATIO: f64 = 44.0 / 12.0;
-/// Molecular weight ratio C/CO2 = 12/44.
-pub const C_TO_CO2_RATIO: f64 = 12.0 / 44.0;
-
 /// The global unit registry.
 pub static UNIT_REGISTRY: LazyLock<UnitRegistry> = LazyLock::new(UnitRegistry::new);
 
@@ -187,7 +173,6 @@ impl UnitRegistry {
         };
         registry.register_base_units();
         registry.register_time_units();
-        registry.register_carbon_units();
         registry.register_concentration_units();
         registry.register_energy_units();
         registry.register_temperature_units();
@@ -310,57 +295,6 @@ impl UnitRegistry {
         self.aliases.insert("seconds", "s");
     }
 
-    /// Registers carbon and CO2 units.
-    ///
-    /// Carbon units use mass dimension. The conversion between C and CO2
-    /// is handled by treating them as different "flavours" of mass that
-    /// can be inter-converted using the molecular weight ratio.
-    fn register_carbon_units(&mut self) {
-        // Base carbon unit (kg of carbon)
-        // C and CO2 are both mass, but with different interpretations
-        // We'll track them separately and allow conversion between them
-
-        // Carbon as mass (reference: kg of carbon)
-        self.units
-            .insert("C", UnitInfo::new("C", Dimension::MASS, 1.0));
-        self.units
-            .insert("tC", UnitInfo::with_base("tC", Dimension::MASS, 1e3, "C"));
-        self.units
-            .insert("ktC", UnitInfo::with_base("ktC", Dimension::MASS, 1e6, "C"));
-        self.units
-            .insert("MtC", UnitInfo::with_base("MtC", Dimension::MASS, 1e9, "C"));
-        self.units.insert(
-            "GtC",
-            UnitInfo::with_base("GtC", Dimension::MASS, 1e12, "C"),
-        );
-        self.units.insert(
-            "PgC",
-            UnitInfo::with_base("PgC", Dimension::MASS, 1e12, "C"),
-        ); // 1 Pg = 1 Gt
-
-        // CO2 as mass (reference: kg of CO2)
-        // Note: to_si_factor converts to kg, and we apply the C/CO2 ratio
-        // so that CO2 and C units are interconvertible
-        self.units
-            .insert("CO2", UnitInfo::new("CO2", Dimension::MASS, C_TO_CO2_RATIO));
-        self.units.insert(
-            "tCO2",
-            UnitInfo::with_base("tCO2", Dimension::MASS, 1e3 * C_TO_CO2_RATIO, "CO2"),
-        );
-        self.units.insert(
-            "ktCO2",
-            UnitInfo::with_base("ktCO2", Dimension::MASS, 1e6 * C_TO_CO2_RATIO, "CO2"),
-        );
-        self.units.insert(
-            "MtCO2",
-            UnitInfo::with_base("MtCO2", Dimension::MASS, 1e9 * C_TO_CO2_RATIO, "CO2"),
-        );
-        self.units.insert(
-            "GtCO2",
-            UnitInfo::with_base("GtCO2", Dimension::MASS, 1e12 * C_TO_CO2_RATIO, "CO2"),
-        );
-    }
-
     /// Registers concentration units.
     fn register_concentration_units(&mut self) {
         // Concentration units are dimensionless ratios
@@ -437,26 +371,6 @@ mod tests {
     }
 
     #[test]
-    fn test_carbon_units() {
-        let registry = UnitRegistry::new();
-
-        let gtc = registry.lookup("GtC").expect("GtC should exist");
-        assert_eq!(gtc.dimension, Dimension::MASS);
-        assert!((gtc.to_si_factor - 1e12).abs() < f64::EPSILON);
-
-        let gtco2 = registry.lookup("GtCO2").expect("GtCO2 should exist");
-        assert_eq!(gtco2.dimension, Dimension::MASS);
-        // GtCO2 factor should be 1e12 * (12/44) for conversion to carbon-equivalent kg
-        let expected = 1e12 * C_TO_CO2_RATIO;
-        assert!(
-            (gtco2.to_si_factor - expected).abs() < 1e6,
-            "GtCO2 factor {} != expected {}",
-            gtco2.to_si_factor,
-            expected
-        );
-    }
-
-    #[test]
     fn test_time_units() {
         let registry = UnitRegistry::new();
 
@@ -485,23 +399,20 @@ mod tests {
     }
 
     #[test]
-    fn test_carbon_conversion_factors() {
+    fn test_mass_prefixes() {
         let registry = UnitRegistry::new();
+        for (symbol, factor) in [("kt", 1e6), ("Mt", 1e9), ("Gt", 1e12), ("Pg", 1e12)] {
+            let info = registry.lookup(symbol).unwrap();
+            assert_eq!(info.dimension, Dimension::MASS);
+            assert!((info.to_si_factor - factor).abs() < 1e-3, "{symbol}");
+        }
+    }
 
-        let gtc = registry.lookup("GtC").unwrap();
-        let mtco2 = registry.lookup("MtCO2").unwrap();
-
-        // To convert GtC to MtCO2:
-        // 1 GtC = 1e12 kg C
-        // 1e12 kg C * (44/12) = 1e12 * 3.667 kg CO2
-        // In MtCO2: 1e12 * 3.667 / 1e9 = 3666.67 MtCO2
-        let gtc_to_mtco2 = gtc.to_si_factor / mtco2.to_si_factor;
-        let expected = 1000.0 * CO2_TO_C_RATIO; // 3666.67
-        assert!(
-            (gtc_to_mtco2 - expected).abs() < 0.01,
-            "GtC to MtCO2 factor {} != expected {}",
-            gtc_to_mtco2,
-            expected
-        );
+    #[test]
+    fn test_species_are_not_units() {
+        let registry = UnitRegistry::new();
+        for symbol in ["C", "CO2", "GtC", "MtCO2"] {
+            assert!(registry.lookup(symbol).is_none(), "{symbol}");
+        }
     }
 }

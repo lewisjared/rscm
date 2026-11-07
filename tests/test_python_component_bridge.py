@@ -10,10 +10,10 @@ from rscm.core import (
     InterpolationStrategy,
     ModelBuilder,
     PythonComponent,
-    RequirementDefinition,
-    RequirementType,
     TimeAxis,
     Timeseries,
+    VariableDefinition,
+    VariableRole,
     VariableSchema,
 )
 
@@ -104,16 +104,14 @@ class TypedForcingReader(Component):
 
 
 class DictForcingReader:
-    def __init__(self, grid_type=GridType.Scalar):
-        self.grid_type = grid_type
+    def __init__(self, grid=GridType.Scalar):
+        self.grid = grid
         self.seen_values = []
 
     def definitions(self):
         return [
-            RequirementDefinition(
-                "Forcing", "mW/m^2", RequirementType.Input, self.grid_type
-            ),
-            RequirementDefinition("Seen", "mW/m^2", RequirementType.Output),
+            VariableDefinition("Forcing", "mW/m^2", VariableRole.Input, self.grid),
+            VariableDefinition("Seen", "mW/m^2", VariableRole.Output),
         ]
 
     def solve(self, t_current, t_next, inputs):
@@ -141,8 +139,8 @@ def build(component: Component):
     return (
         ModelBuilder()
         .with_time_axis(AXIS)
-        .with_py_component(PythonComponent.build(component))
-        .with_exogenous_variable("Emissions|CO2", emissions())
+        .with_component(component)
+        .with_prescribed_variable("Emissions|CO2", emissions())
         .with_initial_values({"Carbon Stock": 0.0})
         .build()
     )
@@ -172,7 +170,7 @@ def test_build_raises_when_definitions_fail():
             raise KeyError("missing")
 
     with pytest.raises(KeyError, match="missing"):
-        PythonComponent.build(Broken(1.0))
+        PythonComponent(Broken(1.0))
 
 
 def test_interval_end_reads_upstream_output_from_this_step():
@@ -180,8 +178,8 @@ def test_interval_end_reads_upstream_output_from_this_step():
     model = (
         ModelBuilder()
         .with_time_axis(AXIS)
-        .with_py_component(PythonComponent.build(Producer()))
-        .with_py_component(PythonComponent.build(recorder))
+        .with_component(Producer())
+        .with_component(recorder)
         .build()
     )
     model.run()
@@ -197,8 +195,8 @@ def test_inputs_are_converted_to_declared_units():
         ModelBuilder()
         .with_time_axis(AXIS)
         .with_schema(schema)
-        .with_py_component(PythonComponent.build(MegatonneReader()))
-        .with_exogenous_variable("Emissions|CO2", emissions())
+        .with_component(MegatonneReader())
+        .with_prescribed_variable("Emissions|CO2", emissions())
         .build()
     )
     model.run()
@@ -217,8 +215,8 @@ def test_scalar_input_aggregates_four_box_variable():
         .with_time_axis(AXIS)
         .with_schema(schema)
         .with_grid_weights(GridType.FourBox, [0.4, 0.1, 0.4, 0.1])
-        .with_py_component(PythonComponent.build(GlobalReader()))
-        .with_exogenous_four_box_variable(
+        .with_component(GlobalReader())
+        .with_prescribed_variable(
             "Regional Forcing",
             FourBoxTimeseries(regional, AXIS, "W/m^2", InterpolationStrategy.Previous),
         )
@@ -265,17 +263,12 @@ def run_forcing_reader(reader, forcing: Timeseries | None = None):
     schema.add_variable("Forcing", "W/m^2")
     schema.add_variable("Seen", "mW/m^2")
     builder = (
-        ModelBuilder()
-        .with_time_axis(AXIS)
-        .with_schema(schema)
-        .with_py_component(PythonComponent.build(reader))
+        ModelBuilder().with_time_axis(AXIS).with_schema(schema).with_component(reader)
     )
     if forcing is None:
-        builder = builder.with_py_component(
-            PythonComponent.build(NextForcingProducer())
-        )
+        builder = builder.with_component(NextForcingProducer())
     else:
-        builder = builder.with_exogenous_variable("Forcing", forcing)
+        builder = builder.with_prescribed_variable("Forcing", forcing)
     builder.build().run()
     return reader.seen_values
 
@@ -305,8 +298,8 @@ def run_four_box_forcing_reader(reader, weights=None):
     if weights is not None:
         builder = builder.with_grid_weights(GridType.FourBox, weights)
     (
-        builder.with_py_component(PythonComponent.build(reader))
-        .with_exogenous_four_box_variable(
+        builder.with_component(reader)
+        .with_prescribed_variable(
             "Forcing",
             FourBoxTimeseries(regional, AXIS, "W/m^2", InterpolationStrategy.Linear),
         )
@@ -316,12 +309,12 @@ def run_four_box_forcing_reader(reader, weights=None):
     return reader.seen_values
 
 
-@pytest.mark.parametrize("grid_type", [GridType.Scalar, GridType.FourBox])
-def test_dict_component_aggregates_grid_input_with_model_weights(grid_type):
+@pytest.mark.parametrize("grid", [GridType.Scalar, GridType.FourBox])
+def test_dict_component_aggregates_grid_input_with_model_weights(grid):
     weights = [0.4, 0.1, 0.4, 0.1]
 
     typed = run_four_box_forcing_reader(TypedForcingReader(), weights)
-    untyped = run_four_box_forcing_reader(DictForcingReader(grid_type), weights)
+    untyped = run_four_box_forcing_reader(DictForcingReader(grid), weights)
 
     np.testing.assert_allclose(typed, 2200.0 * np.arange(2.0, 6.0))
     np.testing.assert_allclose(untyped, typed)

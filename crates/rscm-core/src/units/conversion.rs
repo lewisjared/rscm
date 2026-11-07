@@ -1,14 +1,14 @@
 //! Unit conversion calculations.
 //!
 //! This module provides the high-level [`Unit`] type that combines parsing,
-//! normalization, and conversion into a single ergonomic API.
+//! normalisation, and conversion into a single ergonomic API.
 //!
 //! # Example
 //!
 //! ```
 //! use rscm_core::units::Unit;
 //!
-//! // Parse and compare units (normalized comparison)
+//! // Parse and compare units (normalised comparison)
 //! let u1 = Unit::parse("W/m^2").unwrap();
 //! let u2 = Unit::parse("W / m ^ 2").unwrap();
 //! assert_eq!(u1, u2);
@@ -36,6 +36,8 @@ pub enum ConversionError {
         from_unit: String,
         to_unit: String,
     },
+    /// Units have the same dimension but count species of different families.
+    IncompatibleSpecies { from_unit: String, to_unit: String },
     /// Failed to parse one of the units.
     ParseError(ParseError),
 }
@@ -55,6 +57,10 @@ impl fmt::Display for ConversionError {
                      incompatible dimensions ({from} vs {to})"
                 )
             }
+            Self::IncompatibleSpecies { from_unit, to_unit } => write!(
+                f,
+                "cannot convert from '{from_unit}' to '{to_unit}': they count different species"
+            ),
             Self::ParseError(e) => write!(f, "unit parse error: {e}"),
         }
     }
@@ -79,14 +85,15 @@ impl From<ParseError> for ConversionError {
 ///
 /// This is the primary type for working with units. It provides:
 /// - Parsing from strings with flexible syntax
-/// - Automatic normalization for comparison
+/// - Automatic normalisation for comparison
 /// - Conversion factor calculation between compatible units
 /// - Dimensional analysis
 ///
 /// # Equality
 ///
-/// Two units are equal if they have the same normalized representation.
-/// This means `Unit::parse("W/m^2") == Unit::parse("W / m ^ 2")`.
+/// Two units are equal if they have the same normalised representation.
+/// This means `Unit::parse("W/m^2") == Unit::parse("W / m ^ 2")`
+/// and `Unit::parse("Gt C/yr") == Unit::parse("GtC/yr")`.
 ///
 /// # Example
 ///
@@ -140,10 +147,10 @@ impl Unit {
         &self.original
     }
 
-    /// Returns the normalized string representation.
+    /// Returns the normalised string representation.
     #[must_use]
-    pub fn normalized(&self) -> String {
-        self.parsed.normalized()
+    pub fn normalised(&self) -> String {
+        self.parsed.normalised()
     }
 
     /// Returns true if this unit is physically dimensionless.
@@ -167,22 +174,28 @@ impl Unit {
 
     /// Returns true if this unit can be converted to the target unit.
     ///
-    /// Units are compatible if they have the same physical dimension.
+    /// Units are compatible if they have the same physical dimension
+    /// and count species of the same families.
+    /// `GtC/yr` and `Mt CO2/yr` are compatible, `Mt CH4/yr` and `Mt CO2/yr` are not.
     pub fn is_compatible(&self, other: &Self) -> bool {
         match (self.dimension(), other.dimension()) {
-            (Ok(d1), Ok(d2)) => d1.is_compatible(&d2),
+            (Ok(d1), Ok(d2)) => d1.is_compatible(&d2) && self.same_species_families(other),
             _ => false,
         }
+    }
+
+    fn same_species_families(&self, other: &Self) -> bool {
+        self.parsed.species_families() == other.parsed.species_families()
     }
 
     /// Returns true if this unit divides by a time unit, such as `GtC / yr`.
     ///
     /// `W / m^2` is not per time, although its dimension includes time.
     pub fn is_per_time(&self) -> bool {
-        self.parsed.components().iter().any(|(symbol, &exp)| {
+        self.parsed.components().iter().any(|(factor, &exp)| {
             exp < 0
                 && UNIT_REGISTRY
-                    .lookup(symbol)
+                    .lookup(&factor.symbol)
                     .is_some_and(|info| info.dimension == Dimension::TIME)
         })
     }
@@ -195,7 +208,8 @@ impl Unit {
     ///
     /// # Errors
     ///
-    /// Returns an error if the units have incompatible dimensions.
+    /// Returns an error if the units have incompatible dimensions
+    /// or count species of different families.
     ///
     /// # Example
     ///
@@ -218,6 +232,12 @@ impl Unit {
             return Err(ConversionError::IncompatibleDimensions {
                 from: dim_self,
                 to: dim_other,
+                from_unit: self.original.clone(),
+                to_unit: other.original.clone(),
+            });
+        }
+        if !self.same_species_families(other) {
+            return Err(ConversionError::IncompatibleSpecies {
                 from_unit: self.original.clone(),
                 to_unit: other.original.clone(),
             });
@@ -245,7 +265,7 @@ impl Unit {
 
 impl PartialEq for Unit {
     fn eq(&self, other: &Self) -> bool {
-        // Compare by normalized representation
+        // Compare by normalised representation
         self.parsed == other.parsed
     }
 }
@@ -254,18 +274,18 @@ impl Eq for Unit {}
 
 impl std::hash::Hash for Unit {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Hash the normalized string for consistency with PartialEq
-        self.normalized().hash(state);
+        // Hash the normalised string for consistency with PartialEq
+        self.normalised().hash(state);
     }
 }
 
 impl fmt::Display for Unit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.normalized())
+        write!(f, "{}", self.normalised())
     }
 }
 
-/// Checks if two unit strings are equivalent after normalization.
+/// Checks if two unit strings are equivalent after normalisation.
 ///
 /// This is a convenience function for quick comparisons without
 /// keeping the parsed `Unit` around.
@@ -304,7 +324,8 @@ pub fn conversion_factor(from: &str, to: &str) -> Result<f64, ConversionError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::units::registry::CO2_TO_C_RATIO;
+
+    const CO2_PER_C: f64 = 44.0 / 12.0;
 
     #[test]
     fn test_is_per_time() {
@@ -326,7 +347,7 @@ mod tests {
     #[test]
     fn test_unit_parse() {
         let unit = Unit::parse("W/m^2").unwrap();
-        assert_eq!(unit.normalized(), "W / m^2");
+        assert_eq!(unit.normalised(), "W/m^2");
     }
 
     #[test]
@@ -370,7 +391,7 @@ mod tests {
         let factor = gtc.conversion_factor(&mtco2).unwrap();
 
         // Expected: 1000 * (44/12) = 3666.67
-        let expected = 1000.0 * CO2_TO_C_RATIO;
+        let expected = 1000.0 * CO2_PER_C;
         assert!(
             (factor - expected).abs() < 0.01,
             "GtC/yr to MtCO2/yr: {factor} != {expected}"
@@ -441,7 +462,7 @@ mod tests {
         let value = 10.0; // 10 GtC/yr
         let converted = gtc.convert_to(value, &mtco2).unwrap();
 
-        let expected = 10.0 * 1000.0 * CO2_TO_C_RATIO;
+        let expected = 10.0 * 1000.0 * CO2_PER_C;
         assert!(
             (converted - expected).abs() < 0.1,
             "10 GtC/yr = {converted} MtCO2/yr (expected {expected})"
@@ -470,6 +491,99 @@ mod tests {
     fn test_original_preserved() {
         let unit = Unit::parse("W / m ^ 2").unwrap();
         assert_eq!(unit.original(), "W / m ^ 2");
-        assert_eq!(unit.normalized(), "W / m^2");
+        assert_eq!(unit.normalised(), "W/m^2");
+    }
+
+    fn factor(from: &str, to: &str) -> f64 {
+        conversion_factor(from, to).unwrap_or_else(|e| panic!("{from} -> {to}: {e}"))
+    }
+
+    fn assert_factor(from: &str, to: &str, expected: f64) {
+        let actual = factor(from, to);
+        assert!(
+            (actual - expected).abs() <= 1e-12 * expected.abs(),
+            "{from} -> {to}: {actual} != {expected}"
+        );
+        let back = factor(to, from);
+        assert!(
+            (back * expected - 1.0).abs() < 1e-12,
+            "{to} -> {from}: {back} != {}",
+            1.0 / expected
+        );
+    }
+
+    #[test]
+    fn test_carbon_family() {
+        assert_factor("Gt C", "GtC", 1.0);
+        assert_factor("Gt C/yr", "Mt CO2/yr", 1000.0 * 44.0 / 12.0);
+        assert_factor("GtC/yr", "Gt CO2/yr", 44.0 / 12.0);
+        assert_factor("PgC/yr", "GtC/yr", 1.0);
+    }
+
+    #[test]
+    fn test_sulfur_family() {
+        assert_factor("Mt S/yr", "Mt SO2/yr", 64.0 / 32.0);
+        assert_factor("Tg S/yr", "kt SO2/yr", 1000.0 * 64.0 / 32.0);
+    }
+
+    #[test]
+    fn test_nitrogen_oxides_family() {
+        assert_factor("Mt N/yr", "Mt NO2/yr", 46.0 / 14.0);
+        assert_factor("Mt N/yr", "Mt NOx/yr", 46.0 / 14.0);
+        assert_factor("Mt NOx/yr", "Mt NO2/yr", 1.0);
+    }
+
+    #[test]
+    fn test_nitrous_oxide_family() {
+        assert_factor("Mt N2ON/yr", "Mt N2O/yr", 44.0 / 28.0);
+        assert_factor("Mt N2ON/yr", "kt N2O/yr", 1000.0 * 44.0 / 28.0);
+    }
+
+    #[test]
+    fn test_standalone_species_convert_to_themselves() {
+        assert_factor("Mt CH4/yr", "kt CH4/yr", 1000.0);
+        assert_factor("Mt NMVOC/yr", "Mt VOC/yr", 1.0);
+        assert_factor("kt HFC4310/yr", "t HFC4310mee/yr", 1000.0);
+        assert_factor("kt SF6/yr", "kt SF6 / yr", 1.0);
+    }
+
+    #[test]
+    fn test_different_species_never_convert() {
+        for (from, to) in [
+            ("Mt CH4/yr", "Mt CO2/yr"),
+            ("Mt N/yr", "Mt N2ON/yr"),
+            ("Mt NO2/yr", "kt N2O/yr"),
+            ("Mt S/yr", "Mt C/yr"),
+            ("Mt NH3/yr", "Mt N/yr"),
+            ("kt CFC11/yr", "kt CFC12/yr"),
+            ("Mt BC/yr", "Mt OC/yr"),
+            ("Mt CH4/yr", "Mt/yr"),
+        ] {
+            let from_unit = Unit::parse(from).unwrap();
+            let to_unit = Unit::parse(to).unwrap();
+            assert!(!from_unit.is_compatible(&to_unit), "{from} -> {to}");
+            assert!(
+                matches!(
+                    from_unit.conversion_factor(&to_unit),
+                    Err(ConversionError::IncompatibleSpecies { .. })
+                ),
+                "{from} -> {to}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_species_ratio_unit_converts_within_family() {
+        // 1 kg CO2 counts 12/44 kg C.
+        assert_factor("kg CO2 / kg CH4", "kg C / kg CH4", 12.0 / 44.0);
+    }
+
+    #[test]
+    fn test_spaced_carbon_equals_fused() {
+        assert_eq!(Unit::parse("Gt C").unwrap(), Unit::parse("GtC").unwrap());
+        assert_eq!(
+            Unit::parse("Mt CO2/yr").unwrap(),
+            Unit::parse("MtCO2/yr").unwrap()
+        );
     }
 }

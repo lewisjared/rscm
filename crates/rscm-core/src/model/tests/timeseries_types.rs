@@ -1,6 +1,6 @@
 //! Point and average resolution of each variable's timeseries type.
 
-use crate::component::{Component, InputState, OutputState, RequirementDefinition, TimeseriesType};
+use crate::component::{Component, InputState, OutputState, TimeseriesType, VariableDefinition};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::model::{Model, ModelBuilder};
@@ -16,11 +16,11 @@ use std::sync::Arc;
 macro_rules! declared {
     ($name:ident) => {
         #[derive(Debug, Serialize, Deserialize)]
-        struct $name(Vec<RequirementDefinition>);
+        struct $name(Vec<VariableDefinition>);
 
         #[typetag::serde]
         impl Component for $name {
-            fn definitions(&self) -> Vec<RequirementDefinition> {
+            fn definitions(&self) -> Vec<VariableDefinition> {
                 self.0.clone()
             }
 
@@ -43,17 +43,17 @@ macro_rules! declared {
 declared!(Producer);
 declared!(Consumer);
 
-fn input(name: &str, unit: &str) -> RequirementDefinition {
-    RequirementDefinition::scalar_input(name, unit)
+fn input(name: &str, unit: &str) -> VariableDefinition {
+    VariableDefinition::scalar_input(name, unit)
 }
 
-fn output(name: &str, unit: &str) -> RequirementDefinition {
-    RequirementDefinition::scalar_output(name, unit)
+fn output(name: &str, unit: &str) -> VariableDefinition {
+    VariableDefinition::scalar_output(name, unit)
 }
 
 fn builder(components: Vec<Arc<dyn Component + Send + Sync>>) -> ModelBuilder {
     let mut builder = ModelBuilder::new();
-    builder.with_missing_exogenous_allowed();
+    builder.with_missing_prescribed_allowed();
     builder.with_time_axis(TimeAxis::from_values(Array::range(2000.0, 2006.0, 1.0)));
     for component in components {
         builder.with_component(component);
@@ -132,16 +132,16 @@ fn a_consumer_declaring_another_type_is_an_error() {
         } => {
             assert_eq!(variable, "Lifetime");
             assert_eq!(producer, "Producer");
-            assert_eq!(producer_type, "Average");
+            assert_eq!(producer_type, "average");
             assert_eq!(consumer, "Consumer");
-            assert_eq!(consumer_type, "Point");
+            assert_eq!(consumer_type, "point");
         }
         other => panic!("expected TimeseriesTypeMismatch, got {other:?}"),
     }
 }
 
 #[test]
-fn exogenous_type_comes_from_the_builder_then_consumers_then_the_unit() {
+fn prescribed_type_comes_from_the_builder_then_consumers_then_the_unit() {
     let consumer = || Arc::new(Consumer(vec![input("Lifetime", "yr")]));
 
     let model = build(vec![consumer()]).unwrap();
@@ -198,7 +198,7 @@ fn a_builder_declaration_must_match_the_producer() {
 #[test]
 fn an_average_state_is_an_error_unless_the_check_is_off() {
     let stateful = || {
-        Arc::new(Producer(vec![RequirementDefinition::scalar_state(
+        Arc::new(Producer(vec![VariableDefinition::scalar_state(
             "Flux", "GtC / yr",
         )]))
     };
@@ -218,10 +218,8 @@ fn an_average_state_is_an_error_unless_the_check_is_off() {
 
 #[test]
 fn a_point_state_passes_the_check() {
-    let point = Producer(vec![RequirementDefinition::scalar_state(
-        "Flux", "GtC / yr",
-    )
-    .with_timeseries_type(TimeseriesType::Point)]);
+    let point = Producer(vec![VariableDefinition::scalar_state("Flux", "GtC / yr")
+        .with_timeseries_type(TimeseriesType::Point)]);
     builder(vec![Arc::new(point)])
         .with_initial_values(HashMap::from([("Flux".to_string(), 0.0)]))
         .build()
@@ -251,7 +249,7 @@ fn builder_series_interpolate_by_type() {
 }
 
 #[test]
-fn exogenous_series_keep_their_interpolation() {
+fn prescribed_series_keep_their_interpolation() {
     let data = Timeseries::new(
         array![[0.0], [10.0]],
         Arc::new(TimeAxis::from_values(array![2000.0, 2010.0])),
@@ -263,7 +261,7 @@ fn exogenous_series_keep_their_interpolation() {
         "Emissions",
         "GtC / yr",
     )]))])
-    .with_exogenous_variable("Emissions", data)
+    .with_prescribed_variable("Emissions", data)
     .build()
     .unwrap();
     let value = model
@@ -282,7 +280,7 @@ struct IntervalReader;
 
 #[typetag::serde]
 impl Component for IntervalReader {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
             input("Emissions", "GtC / yr"),
             input("Temperature", "K"),

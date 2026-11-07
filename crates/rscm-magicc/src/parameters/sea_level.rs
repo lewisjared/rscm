@@ -26,7 +26,8 @@ fn over_defaults<'de, D: Deserializer<'de>, T: Serialize + DeserializeOwned>(
 /// Thermal expansion of the ocean, calculated by `ClimateUDEB`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct ThermalExpansionParameters {
+#[serde(deny_unknown_fields)]
+pub struct ThermalExpansion {
     /// Coefficients of the expansion polynomial (`SLR_EXPANSION_PARAMS`)
     pub coefficients: [FloatValue; 6],
     /// Scaling of the ocean layer warming (`SLR_EXPANSION_SCALING`)
@@ -35,7 +36,7 @@ pub struct ThermalExpansionParameters {
     pub start_year: FloatValue,
 }
 
-impl Default for ThermalExpansionParameters {
+impl Default for ThermalExpansion {
     fn default() -> Self {
         Self {
             coefficients: [52.2368, 0.9938, 1.0333, 0.6065, 24.2643, 0.7408],
@@ -48,7 +49,8 @@ impl Default for ThermalExpansionParameters {
 /// Mountain glaciers and small ice caps.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct GlacierParameters {
+#[serde(deny_unknown_fields)]
+pub struct Glacier {
     /// Fraction of the gap to equilibrium closed per year at 1 K of disequilibrium
     /// unit: 1/yr
     pub sensitivity: FloatValue,
@@ -64,7 +66,7 @@ pub struct GlacierParameters {
     pub equilibrium_sea_level: Vec<FloatValue>,
 }
 
-impl Default for GlacierParameters {
+impl Default for Glacier {
     fn default() -> Self {
         Self {
             sensitivity: 1.067337e-2,
@@ -99,7 +101,8 @@ const GLACIER_EQUILIBRIUM_SEA_LEVEL: [FloatValue; 104] = [
 /// reduced by `max(1 - S / volume, 0)^volume_exponent` when `volume` is set.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct SurfaceMassBalanceParameters {
+#[serde(deny_unknown_fields)]
+pub struct SurfaceMassBalance {
     /// unit: mm/yr
     pub sensitivity: FloatValue,
     /// Weight of the linear temperature term
@@ -115,7 +118,7 @@ pub struct SurfaceMassBalanceParameters {
     pub volume_exponent: FloatValue,
 }
 
-impl SurfaceMassBalanceParameters {
+impl SurfaceMassBalance {
     /// MAGICC7 default Greenland parameters.
     pub fn greenland() -> Self {
         Self {
@@ -141,7 +144,7 @@ impl SurfaceMassBalanceParameters {
     }
 }
 
-impl Default for SurfaceMassBalanceParameters {
+impl Default for SurfaceMassBalance {
     fn default() -> Self {
         Self::greenland()
     }
@@ -150,7 +153,8 @@ impl Default for SurfaceMassBalanceParameters {
 /// One discharge case of the Greenland ice sheet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct DischargeCaseParameters {
+#[serde(deny_unknown_fields)]
+pub struct DischargeCase {
     /// Ice available for discharge
     /// unit: mm
     pub volume: FloatValue,
@@ -161,7 +165,7 @@ pub struct DischargeCaseParameters {
     pub exponent: FloatValue,
 }
 
-impl DischargeCaseParameters {
+impl DischargeCase {
     /// MAGICC7 default low case.
     pub fn low() -> Self {
         Self {
@@ -181,30 +185,29 @@ impl DischargeCaseParameters {
     }
 }
 
-impl Default for DischargeCaseParameters {
+impl Default for DischargeCase {
     fn default() -> Self {
         Self::low()
     }
 }
 
-fn low_over_defaults<'de, D: Deserializer<'de>>(d: D) -> Result<DischargeCaseParameters, D::Error> {
-    over_defaults(d, DischargeCaseParameters::low())
+fn low_over_defaults<'de, D: Deserializer<'de>>(d: D) -> Result<DischargeCase, D::Error> {
+    over_defaults(d, DischargeCase::low())
 }
 
-fn high_over_defaults<'de, D: Deserializer<'de>>(
-    d: D,
-) -> Result<DischargeCaseParameters, D::Error> {
-    over_defaults(d, DischargeCaseParameters::high())
+fn high_over_defaults<'de, D: Deserializer<'de>>(d: D) -> Result<DischargeCase, D::Error> {
+    over_defaults(d, DischargeCase::high())
 }
 
 /// Solid ice discharge of the Greenland ice sheet, interpolated between a low and a high case.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct GreenlandDischargeParameters {
+#[serde(deny_unknown_fields)]
+pub struct GreenlandDischarge {
     #[serde(deserialize_with = "low_over_defaults")]
-    pub low: DischargeCaseParameters,
+    pub low: DischargeCase,
     #[serde(deserialize_with = "high_over_defaults")]
-    pub high: DischargeCaseParameters,
+    pub high: DischargeCase,
     /// Position between the low (0) and high (1) case
     pub case: FloatValue,
     pub scaling: FloatValue,
@@ -212,11 +215,11 @@ pub struct GreenlandDischargeParameters {
     pub start_year: FloatValue,
 }
 
-impl Default for GreenlandDischargeParameters {
+impl Default for GreenlandDischarge {
     fn default() -> Self {
         Self {
-            low: DischargeCaseParameters::low(),
-            high: DischargeCaseParameters::high(),
+            low: DischargeCase::low(),
+            high: DischargeCase::high(),
             case: 0.5,
             scaling: 5.0,
             start_year: 2000.0,
@@ -226,7 +229,8 @@ impl Default for GreenlandDischargeParameters {
 
 /// One Antarctic drainage region.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AntarcticRegionParameters {
+#[serde(deny_unknown_fields)]
+pub struct AntarcticRegion {
     pub name: String,
     /// Years after `start_year` before the region responds
     /// unit: yr
@@ -244,7 +248,8 @@ pub struct AntarcticRegionParameters {
 /// response function.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct AntarcticDischargeParameters {
+#[serde(deny_unknown_fields)]
+pub struct AntarcticDischarge {
     /// Basal melt per K of subsurface ocean warming
     /// unit: m/yr/K
     pub basal_melt_sensitivity: FloatValue,
@@ -254,12 +259,12 @@ pub struct AntarcticDischargeParameters {
     pub scaling: FloatValue,
     /// First year of discharge
     pub start_year: FloatValue,
-    pub regions: Vec<AntarcticRegionParameters>,
+    pub regions: Vec<AntarcticRegion>,
 }
 
-impl Default for AntarcticDischargeParameters {
+impl Default for AntarcticDischarge {
     fn default() -> Self {
-        let region = |name: &str, delay, temperature_scaling, response| AntarcticRegionParameters {
+        let region = |name: &str, delay, temperature_scaling, response| AntarcticRegion {
             name: name.into(),
             delay,
             temperature_scaling,
@@ -326,37 +331,40 @@ impl Default for AntarcticDischargeParameters {
 
 fn greenland_over_defaults<'de, D: Deserializer<'de>>(
     d: D,
-) -> Result<SurfaceMassBalanceParameters, D::Error> {
-    over_defaults(d, SurfaceMassBalanceParameters::greenland())
+) -> Result<SurfaceMassBalance, D::Error> {
+    over_defaults(d, SurfaceMassBalance::greenland())
 }
 
 fn antarctica_over_defaults<'de, D: Deserializer<'de>>(
     d: D,
-) -> Result<SurfaceMassBalanceParameters, D::Error> {
-    over_defaults(d, SurfaceMassBalanceParameters::antarctica())
+) -> Result<SurfaceMassBalance, D::Error> {
+    over_defaults(d, SurfaceMassBalance::antarctica())
 }
 
 /// Parameters for the sea level rise contributions other than thermal expansion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct SeaLevelRiseParameters {
-    pub glaciers: GlacierParameters,
+    pub glaciers: Glacier,
+    /// Greenland surface mass balance, MAGICC7: SLR_GIS_SMB_*
     #[serde(deserialize_with = "greenland_over_defaults")]
-    pub greenland_smb: SurfaceMassBalanceParameters,
-    pub greenland_discharge: GreenlandDischargeParameters,
+    pub greenland_surface_mass_balance: SurfaceMassBalance,
+    pub greenland_discharge: GreenlandDischarge,
+    /// Antarctic surface mass balance, MAGICC7: SLR_AIS_SMB_*
     #[serde(deserialize_with = "antarctica_over_defaults")]
-    pub antarctic_smb: SurfaceMassBalanceParameters,
-    pub antarctic_discharge: AntarcticDischargeParameters,
+    pub antarctic_surface_mass_balance: SurfaceMassBalance,
+    pub antarctic_discharge: AntarcticDischarge,
 }
 
 impl Default for SeaLevelRiseParameters {
     fn default() -> Self {
         Self {
-            glaciers: GlacierParameters::default(),
-            greenland_smb: SurfaceMassBalanceParameters::greenland(),
-            greenland_discharge: GreenlandDischargeParameters::default(),
-            antarctic_smb: SurfaceMassBalanceParameters::antarctica(),
-            antarctic_discharge: AntarcticDischargeParameters::default(),
+            glaciers: Glacier::default(),
+            greenland_surface_mass_balance: SurfaceMassBalance::greenland(),
+            greenland_discharge: GreenlandDischarge::default(),
+            antarctic_surface_mass_balance: SurfaceMassBalance::antarctica(),
+            antarctic_discharge: AntarcticDischarge::default(),
         }
     }
 }
@@ -368,12 +376,12 @@ mod tests {
     #[test]
     fn test_partial_overrides_keep_their_own_defaults() {
         let p: SeaLevelRiseParameters = serde_json::from_str(
-            r#"{"antarctic_smb": {"start_year": 1990}, "greenland_discharge": {"high": {"volume": 50}}}"#,
+            r#"{"antarctic_surface_mass_balance": {"start_year": 1990}, "greenland_discharge": {"high": {"volume": 50}}}"#,
         )
         .unwrap();
-        assert_eq!(p.antarctic_smb.start_year, 1990.0);
-        assert_eq!(p.antarctic_smb.sensitivity, -0.1208204);
-        assert_eq!(p.antarctic_smb.volume, None);
+        assert_eq!(p.antarctic_surface_mass_balance.start_year, 1990.0);
+        assert_eq!(p.antarctic_surface_mass_balance.sensitivity, -0.1208204);
+        assert_eq!(p.antarctic_surface_mass_balance.volume, None);
         assert_eq!(p.greenland_discharge.high.volume, 50.0);
         assert_eq!(p.greenland_discharge.high.exponent, 0.47216);
         assert_eq!(p.greenland_discharge.low.volume, 35.9803);

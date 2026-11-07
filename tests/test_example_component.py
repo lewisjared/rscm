@@ -2,26 +2,25 @@ import numpy as np
 import pytest
 
 from rscm._lib.core import TestComponentBuilder as ExampleComponentBuilder
-from rscm._lib.core import VariableType
 from rscm.core import (
     InterpolationStrategy,
     PythonComponent,
-    RequirementDefinition,
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
+    VariableDefinition,
 )
 
 
 class ExamplePythonComponent:
-    def definitions(self) -> list[RequirementDefinition]:
+    def definitions(self) -> list[VariableDefinition]:
         return []
 
     def solve(
-        self, time_current: float, time_next: float, input_state: dict[str, float]
+        self, t_current: float, t_next: float, inputs: dict[str, float]
     ) -> dict[str, float]:
-        print(input_state)
-        return {"output": input_state.get("input") * 3}
+        print(inputs)
+        return {"output": inputs.get("input") * 3}
 
 
 def test_component_definitions():
@@ -32,7 +31,7 @@ def test_component_definitions():
     definitions = component.definitions()
     assert len(definitions) == 2
     assert definitions[0].name == "Emissions|CO2"
-    assert definitions[1].name == "Concentrations|CO2"
+    assert definitions[1].name == "Atmospheric Concentrations|CO2"
 
 
 def test_component_invalid():
@@ -50,7 +49,7 @@ def test_component_invalid():
 @pytest.mark.xfail(reason="component definitions are not implemented")
 def test_user_derived_create_and_solve():
     py_component = ExamplePythonComponent()
-    component = PythonComponent.build(py_component)
+    component = PythonComponent(py_component)
 
     # TODO: resolve later
     assert component.definitions() == []
@@ -64,7 +63,6 @@ def test_user_derived_create_and_solve():
             "GtC",
             InterpolationStrategy.Previous,
         ),
-        variable_type=VariableType.Exogenous,
     )
 
     res = component.solve(0, 1, collection)

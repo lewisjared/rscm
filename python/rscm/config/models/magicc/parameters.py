@@ -65,7 +65,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_climatesensitivity": ParameterInfo(
         name="core_climatesensitivity",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.climate_sensitivity",
+        rscm_path="components.climate.parameters.ecs",
         unit="K",
         description="Equilibrium climate sensitivity for 2xCO2",
         category="climate",
@@ -73,9 +73,9 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_delq2xco2": ParameterInfo(
         name="core_delq2xco2",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.forcing_2xco2",
+        rscm_path="components.climate.parameters.erf_2xco2",
         unit="W/m^2",
-        description="Radiative forcing from doubling CO2",
+        description="2xCO2 effective radiative forcing",
         category="climate",
     ),
     # Radiative forcing method
@@ -136,17 +136,17 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "rf_efficacy_apply": ParameterInfo(
         name="rf_efficacy_apply",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.efficacy_apply",
+        rscm_path="components.climate.parameters.efficacy_method",
         unit=None,
-        description="Efficacy application mode (0=disabled, 1=prescribed, 2=AR6 mode)",
+        description="Efficacy method (0 none, 1 unit, 2 ar6)",
         category="forcing",
     ),
     "rf_efficacy_co2": ParameterInfo(
         name="rf_efficacy_co2",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.prescribed_efficacy_co2",
+        rscm_path="components.climate.parameters.co2_efficacy",
         unit=None,
-        description="Prescribed CO2 efficacy factor (default 1.0)",
+        description="CO2 efficacy (default 1.0)",
         category="forcing",
     ),
     # Concentration/emissions switching
@@ -268,7 +268,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_initial_upwelling_rate": ParameterInfo(
         name="core_initial_upwelling_rate",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.w_initial",
+        rscm_path="components.climate.parameters.initial_upwelling_rate",
         unit="m/yr",
         description="Initial upwelling rate",
         category="climate",
@@ -276,7 +276,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_upwelling_variable_part": ParameterInfo(
         name="core_upwelling_variable_part",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.w_variable_fraction",
+        rscm_path="components.climate.parameters.upwelling_variable_fraction",
         unit="1",
         description="Fraction of upwelling that varies with temperature",
         category="climate",
@@ -292,7 +292,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_verticaldiff_top_dkdt": ParameterInfo(
         name="core_verticaldiff_top_dkdt",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.kappa_dkdt",
+        rscm_path="components.climate.parameters.vertical_diffusivity_gradient_sensitivity",
         unit="cm^2/s/K",
         description="Temperature gradient coefficient for vertical diffusivity",
         category="climate",
@@ -300,7 +300,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_landheatcapacity_apply": ParameterInfo(
         name="core_landheatcapacity_apply",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.land_heat_capacity_enabled",
+        rscm_path="components.climate.parameters.include_land_heat_capacity",
         unit=None,
         description="Enable ground heat reservoir (0/1)",
         category="climate",
@@ -308,7 +308,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_landhc_effthickness": ParameterInfo(
         name="core_landhc_effthickness",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.land_hc_eff_thickness",
+        rscm_path="components.climate.parameters.land_heat_capacity_effective_thickness",
         unit="m",
         description="Effective thickness of ground heat reservoir",
         category="climate",
@@ -316,7 +316,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_heatxchange_landground": ParameterInfo(
         name="core_heatxchange_landground",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.k_lg",
+        rscm_path="components.climate.parameters.land_ground_heat_exchange",
         unit="W/m^2/K",
         description="Land-ground heat exchange coefficient",
         category="climate",
@@ -324,7 +324,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_heatxchange_northsouth": ParameterInfo(
         name="core_heatxchange_northsouth",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.k_ns",
+        rscm_path="components.climate.parameters.north_south_heat_exchange",
         unit="W/m^2/K",
         description="Inter-hemispheric heat exchange coefficient",
         category="climate",
@@ -332,7 +332,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_feedback_cumtsensitivity": ParameterInfo(
         name="core_feedback_cumtsensitivity",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.feedback_cumt_sensitivity",
+        rscm_path="components.climate.parameters.feedback_cumulative_temperature_sensitivity",
         unit="1",
         description="Sensitivity of ECS to cumulative temperature",
         category="climate",
@@ -340,7 +340,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_feedback_qsensitivity": ParameterInfo(
         name="core_feedback_qsensitivity",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.feedback_q_sensitivity",
+        rscm_path="components.climate.parameters.feedback_forcing_sensitivity",
         unit="1",
         description="Sensitivity of ECS to forcing level",
         category="climate",
@@ -377,9 +377,9 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "co2_fertilization_method": ParameterInfo(
         name="co2_fertilization_method",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.terrestrial_carbon.parameters.fertilization_method",
+        rscm_path="components.terrestrial_carbon.parameters.fertilisation_method",
         unit=None,
-        description="CO2 fertilization method (1=log, 2=Gifford, 3=sigmoid)",
+        description="CO2 fertilisation method (1=log, 2=Gifford, 3=sigmoid)",
         category="carbon_cycle",
     ),
     "co2_plantboxresp_method": ParameterInfo(
@@ -392,9 +392,9 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "co2_plantboxresp_fertscale": ParameterInfo(
         name="co2_plantboxresp_fertscale",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.terrestrial_carbon.parameters.plantbox_resp_fertscale",
+        rscm_path="components.terrestrial_carbon.parameters.plant_respiration_fertilisation_scale",
         unit=None,
-        description="Fertilization effect on respiration",
+        description="Fertilisation effect on respiration",
         category="carbon_cycle",
     ),
 }
@@ -408,11 +408,11 @@ _PERMAFROST = {
     ),
     "pf_nbands": ("permafrost.parameters.n_bands", "Number of zonal bands"),
     "pf_meltingtemp_min": (
-        "permafrost.parameters.melting_temp_min",
+        "permafrost.parameters.minimum_melting_temperature",
         "Southern melting threshold",
     ),
     "pf_meltingtemp_max": (
-        "permafrost.parameters.melting_temp_max",
+        "permafrost.parameters.maximum_melting_temperature",
         "Northern melting threshold",
     ),
     "pf_arctic_amplification": (
@@ -435,15 +435,21 @@ _PERMAFROST = {
         "permafrost.parameters.peat.decomposition_ratio",
         "Peat to mineral soil decomposition ratio",
     ),
-    "pf_q10_temp1": ("permafrost.parameters.q10_temp1", "Q10 reference temperature"),
-    "pf_q10_temp2": ("permafrost.parameters.q10_temp2", "Q10 offset temperature"),
+    "pf_q10_temp1": (
+        "permafrost.parameters.q10_temperature1",
+        "Q10 reference temperature",
+    ),
+    "pf_q10_temp2": (
+        "permafrost.parameters.q10_temperature2",
+        "Q10 offset temperature",
+    ),
     "pf_soilwater_m": ("permafrost.parameters.soil_water_slope", "Soil moisture slope"),
     "pf_soilwater_offset": (
         "permafrost.parameters.soil_water_offset",
         "Soil moisture offset",
     ),
     "pf_soilwater_minw": (
-        "permafrost.parameters.soil_water_min",
+        "permafrost.parameters.minimum_soil_water",
         "Minimum soil moisture",
     ),
     "pf_tot_pool": ("permafrost.parameters.total_pool", "Total permafrost carbon"),
@@ -474,12 +480,12 @@ _PERMAFROST = {
             ("thawfreeze_exp_temp", "thaw_exponent", "thaw exponent"),
             (
                 "anaerob_initial_areafraction",
-                "anaerobic_initial_fraction",
+                "initial_anaerobic_fraction",
                 "anaerobic fraction",
             ),
             (
                 "anaerob_max_areafraction",
-                "anaerobic_max_fraction",
+                "maximum_anaerobic_fraction",
                 "maximum anaerobic fraction",
             ),
             (
@@ -528,10 +534,16 @@ _NITROGEN_SWITCHES = {
 
 # MAGICC nitrogen limitation parameters and their path below ``nitrogen``.
 _NITROGEN = {
-    "ncycle_nfix_vmax": ("prognostic_fixation.vmax", "Maximum fixation rate"),
-    "ncycle_nfix_km": ("prognostic_fixation.km", "NPP at half the maximum fixation"),
-    "ncycle_ncratio_uptake": ("ncratio_uptake", "Plant uptake per unit NPP"),
-    "ncycle_ncratio_recyc": ("ncratio_recycling", "Recycling per unit respiration"),
+    "ncycle_nfix_vmax": (
+        "prognostic_fixation.maximum_fixation_rate",
+        "Maximum fixation rate",
+    ),
+    "ncycle_nfix_km": (
+        "prognostic_fixation.half_saturation_npp",
+        "NPP at half the maximum fixation",
+    ),
+    "ncycle_ncratio_uptake": ("uptake_nc_ratio", "Plant uptake per unit NPP"),
+    "ncycle_ncratio_recyc": ("recycling_nc_ratio", "Recycling per unit respiration"),
     "ncycle_recyc2cnratio_factor": (
         "recycling_cn_factor",
         "Damping of the recycled N:C ratio",

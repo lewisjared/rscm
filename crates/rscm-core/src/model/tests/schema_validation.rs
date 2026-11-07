@@ -25,10 +25,10 @@ fn get_emissions() -> Timeseries<FloatValue> {
 
 #[test]
 fn test_model_with_valid_schema() {
-    // Schema that matches component requirements
+    // Schema that matches the component definitions
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC / yr")
-        .variable("Concentrations|CO2", "ppm");
+        .variable("Atmospheric Concentrations|CO2", "ppm");
 
     let _model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -38,7 +38,7 @@ fn test_model_with_valid_schema() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 }
@@ -47,7 +47,7 @@ fn test_model_with_valid_schema() {
 fn test_schema_rejects_undefined_output() {
     // Schema missing the output variable
     let schema = VariableSchema::new().variable("Emissions|CO2", "GtC / yr");
-    // Missing "Concentrations|CO2"
+    // Missing "Atmospheric Concentrations|CO2"
 
     let result = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -57,14 +57,14 @@ fn test_schema_rejects_undefined_output() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build();
 
     assert!(result.is_err());
     let err = result.unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("Concentrations|CO2"),
+        msg.contains("Atmospheric Concentrations|CO2"),
         "Error should mention missing variable: {}",
         msg
     );
@@ -78,7 +78,7 @@ fn test_schema_rejects_undefined_output() {
 #[test]
 fn test_schema_rejects_undefined_input() {
     // Schema missing the input variable (and no component produces it)
-    let schema = VariableSchema::new().variable("Concentrations|CO2", "ppm");
+    let schema = VariableSchema::new().variable("Atmospheric Concentrations|CO2", "ppm");
     // Missing "Emissions|CO2"
 
     let result = ModelBuilder::new()
@@ -107,7 +107,7 @@ fn test_schema_rejects_incompatible_units() {
     // The component outputs "ppm" (dimensionless) but schema expects "GtC" (mass)
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC / yr")
-        .variable("Concentrations|CO2", "GtC"); // Wrong dimension - should be "ppm"
+        .variable("Atmospheric Concentrations|CO2", "GtC"); // Wrong dimension - should be "ppm"
 
     let result = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -117,7 +117,7 @@ fn test_schema_rejects_incompatible_units() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build();
 
     assert!(result.is_err());
@@ -130,7 +130,7 @@ fn test_schema_rejects_incompatible_units() {
         msg
     );
     assert!(
-        msg.contains("Concentrations|CO2"),
+        msg.contains("Atmospheric Concentrations|CO2"),
         "Error should mention the variable: {}",
         msg
     );
@@ -144,7 +144,7 @@ fn test_schema_rejects_incompatible_units() {
 
 #[test]
 fn test_schema_rejects_disaggregation_on_read() {
-    // Schema has Scalar temperature, but FourBoxConsumer wants FourBox input
+    // Schema has Scalar temperature, but FourBoxConsumer wants four-box input
     // This is a disaggregation (broadcast) attempt and should fail
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::Scalar)
@@ -166,7 +166,7 @@ fn test_schema_rejects_disaggregation_on_read() {
         msg
     );
     assert!(
-        msg.contains("Scalar") && msg.contains("FourBox"),
+        msg.contains("scalar") && msg.contains("four_box"),
         "Error should mention the grid types: {}",
         msg
     );
@@ -177,9 +177,9 @@ fn test_schema_with_aggregate_validates() {
     // Schema with an aggregate definition
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC / yr")
-        .variable("Concentrations|CO2", "ppm")
+        .variable("Atmospheric Concentrations|CO2", "ppm")
         .aggregate("Total Concentrations", "ppm", AggregateOp::Sum)
-        .from("Concentrations|CO2")
+        .from("Atmospheric Concentrations|CO2")
         .build();
 
     let _model = ModelBuilder::new()
@@ -190,7 +190,7 @@ fn test_schema_with_aggregate_validates() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 }
@@ -200,8 +200,8 @@ fn test_schema_creates_nan_for_unwritten_variables() {
     // Schema has a variable that no component writes to
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC / yr")
-        .variable("Concentrations|CO2", "ppm")
-        .variable("Concentrations|CH4", "ppb"); // No component writes this
+        .variable("Atmospheric Concentrations|CO2", "ppm")
+        .variable("Atmospheric Concentrations|CH4", "ppb"); // No component writes this
 
     let model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
@@ -211,14 +211,14 @@ fn test_schema_creates_nan_for_unwritten_variables() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 
     // The CH4 variable should exist but be all NaN
     let ch4 = model
         .timeseries()
-        .get_data("Concentrations|CH4")
+        .get_data("Atmospheric Concentrations|CH4")
         .and_then(|d| d.as_scalar());
     assert!(
         ch4.is_some(),
@@ -240,7 +240,7 @@ fn test_schema_invalid_aggregate_fails() {
         crate::schema::AggregateDefinition {
             name: "A".to_string(),
             unit: "units".to_string(),
-            grid_type: GridType::Scalar,
+            grid: GridType::Scalar,
             operation: AggregateOp::Sum,
             contributors: vec!["B".to_string()],
         },
@@ -250,7 +250,7 @@ fn test_schema_invalid_aggregate_fails() {
         crate::schema::AggregateDefinition {
             name: "B".to_string(),
             unit: "units".to_string(),
-            grid_type: GridType::Scalar,
+            grid: GridType::Scalar,
             operation: AggregateOp::Sum,
             contributors: vec!["A".to_string()],
         },
@@ -281,7 +281,7 @@ fn test_model_without_schema_still_works() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 }

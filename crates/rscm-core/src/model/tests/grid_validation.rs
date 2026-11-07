@@ -1,6 +1,6 @@
-//! Grid validation tests: grid type mismatch detection.
+//! Grid validation tests: grid mismatch detection.
 
-use crate::component::{Component, InputState, OutputState, RequirementDefinition};
+use crate::component::{Component, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
 use crate::model::ModelBuilder;
 use crate::spatial::SpatialGrid;
@@ -10,14 +10,14 @@ use numpy::ndarray::Array;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-/// A component that produces a FourBox output
+/// A component that produces a four-box output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FourBoxProducer;
 
 #[typetag::serde]
 impl Component for FourBoxProducer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::four_box_output("Temperature", "K")]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::four_box_output("Temperature", "K")]
     }
 
     fn solve(
@@ -41,10 +41,10 @@ struct ScalarConsumer;
 
 #[typetag::serde]
 impl Component for ScalarConsumer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::scalar_input("Temperature", "K"),
-            RequirementDefinition::scalar_output("Result", "W / m^2"),
+            VariableDefinition::scalar_input("Temperature", "K"),
+            VariableDefinition::scalar_output("Result", "W / m^2"),
         ]
     }
 
@@ -61,16 +61,16 @@ impl Component for ScalarConsumer {
     }
 }
 
-/// A component that expects a FourBox input (compatible with FourBoxProducer)
+/// A component that expects a four-box input (compatible with FourBoxProducer)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FourBoxConsumer;
 
 #[typetag::serde]
 impl Component for FourBoxConsumer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::four_box_input("Temperature", "K"),
-            RequirementDefinition::scalar_output("GlobalTemperature", "K"),
+            VariableDefinition::four_box_input("Temperature", "K"),
+            VariableDefinition::scalar_output("GlobalTemperature", "K"),
         ]
     }
 
@@ -89,7 +89,7 @@ impl Component for FourBoxConsumer {
 }
 
 #[test]
-fn test_grid_type_mismatch_returns_error() {
+fn test_grid_mismatch_returns_error() {
     // This should return an error because FourBoxProducer outputs FourBox
     // but ScalarConsumer expects Scalar
     let result = ModelBuilder::new()
@@ -101,15 +101,15 @@ fn test_grid_type_mismatch_returns_error() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     let err_msg = err.to_string();
-    assert!(err_msg.contains("Grid type mismatch for variable 'Temperature'"));
+    assert!(err_msg.contains("Grid mismatch for variable 'Temperature'"));
     assert!(err_msg.contains("FourBoxProducer"));
     assert!(err_msg.contains("ScalarConsumer"));
-    assert!(err_msg.contains("FourBox"));
-    assert!(err_msg.contains("Scalar"));
+    assert!(err_msg.contains("four_box"));
+    assert!(err_msg.contains("scalar"));
 }
 
 #[test]
-fn test_matching_grid_types_ok() {
+fn test_matching_grids_ok() {
     // This should work because both use FourBox for Temperature
     let _model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))

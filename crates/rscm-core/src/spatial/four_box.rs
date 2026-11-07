@@ -31,7 +31,7 @@ impl From<FourBoxRegion> for usize {
 /// - Southern Land
 ///
 /// This is the standard regional structure used in MAGICC and provides
-/// a simple but physically meaningful spatial discretization for climate models.
+/// a simple but physically meaningful spatial discretisation for climate models.
 ///
 /// # Examples
 ///
@@ -124,7 +124,7 @@ impl FourBoxGrid {
 
 impl SpatialGrid for FourBoxGrid {
     fn grid_name(&self) -> &'static str {
-        "FourBox"
+        "four_box"
     }
 
     fn size(&self) -> usize {

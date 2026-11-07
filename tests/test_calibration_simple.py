@@ -34,9 +34,9 @@ def test_point_estimation_simple():
     uncertainty = 0.1
 
     # Define parameter priors
-    params = ParameterSet()
-    params.add("a", Uniform(0.0, 5.0))
-    params.add("b", Uniform(0.0, 5.0))
+    parameters = ParameterSet()
+    parameters.add("a", Uniform(0.0, 5.0))
+    parameters.add("b", Uniform(0.0, 5.0))
 
     # Create target observations
     target = Target()
@@ -52,7 +52,7 @@ def test_point_estimation_simple():
 
     runner = ModelRunner(
         model_factory=model_factory,
-        param_names=["a", "b"],
+        parameter_names=["a", "b"],
         output_variables=["y"],
     )
 
@@ -60,24 +60,24 @@ def test_point_estimation_simple():
     likelihood = GaussianLikelihood()
 
     # Create point estimator
-    estimator = PointEstimator(params, runner, likelihood, target)
+    estimator = PointEstimator(parameters, runner, likelihood, target)
 
     # Run random search
-    from rscm.calibrate import Optimizer  # noqa: PLC0415
+    from rscm.calibrate import Optimiser  # noqa: PLC0415
 
-    result = estimator.optimize(Optimizer.random_search(), n_samples=1000)
+    result = estimator.optimise(Optimiser.random_search(), n_samples=1000)
 
     # Check results
-    best_params_vec = result.best_params
-    param_names = estimator.param_names
-    best_params = dict(zip(param_names, best_params_vec))
+    best_parameters_vec = result.best_parameters
+    parameter_names = estimator.parameter_names
+    best_parameters = dict(zip(parameter_names, best_parameters_vec))
 
-    assert "a" in best_params
-    assert "b" in best_params
+    assert "a" in best_parameters
+    assert "b" in best_parameters
 
     # Parameters should be within prior bounds
-    assert 0.0 <= best_params["a"] <= 5.0
-    assert 0.0 <= best_params["b"] <= 5.0
+    assert 0.0 <= best_parameters["a"] <= 5.0
+    assert 0.0 <= best_parameters["b"] <= 5.0
 
     # Should have explored multiple points
     assert estimator.n_evaluations == 1000
@@ -87,11 +87,13 @@ def test_point_estimation_simple():
 
     # With enough samples, should be reasonably close to true values
     # (within ~1.0 for this simple problem with random search)
-    assert abs(best_params["a"] - true_a) < 1.0
-    assert abs(best_params["b"] - true_b) < 1.0
+    assert abs(best_parameters["a"] - true_a) < 1.0
+    assert abs(best_parameters["b"] - true_b) < 1.0
 
     print("\nPoint estimation results:")
-    print(f"  Best parameters: a={best_params['a']:.3f}, b={best_params['b']:.3f}")
+    print(
+        f"  Best parameters: a={best_parameters['a']:.3f}, b={best_parameters['b']:.3f}"
+    )
     print(f"  True parameters: a={true_a}, b={true_b}")
     print(f"  Best log likelihood: {result.best_log_likelihood:.3f}")
     print(f"  Evaluations: {estimator.n_evaluations}")
@@ -111,9 +113,9 @@ def test_mcmc_sampling_simple():
     uncertainty = 0.1
 
     # Define parameter priors
-    params = ParameterSet()
-    params.add("a", Uniform(0.0, 5.0))
-    params.add("b", Uniform(0.0, 5.0))
+    parameters = ParameterSet()
+    parameters.add("a", Uniform(0.0, 5.0))
+    parameters.add("b", Uniform(0.0, 5.0))
 
     # Create target
     target = Target()
@@ -128,7 +130,7 @@ def test_mcmc_sampling_simple():
 
     runner = ModelRunner(
         model_factory=model_factory,
-        param_names=["a", "b"],
+        parameter_names=["a", "b"],
         output_variables=["y"],
     )
 
@@ -136,17 +138,17 @@ def test_mcmc_sampling_simple():
     likelihood = GaussianLikelihood()
 
     # Create ensemble sampler
-    sampler = EnsembleSampler(params, runner, likelihood, target)
+    sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
     # Run MCMC
     n_steps = 200
     chain = sampler.run(n_steps, WalkerInit.from_prior(), thin=1)
 
     # Check chain structure
-    assert chain.total_iterations == n_steps
-    assert len(chain.param_names) == 2
-    assert "a" in chain.param_names
-    assert "b" in chain.param_names
+    assert chain.n_iterations == n_steps
+    assert len(chain.parameter_names) == 2
+    assert "a" in chain.parameter_names
+    assert "b" in chain.parameter_names
 
     # Check we have samples
     discard = 100  # Discard first half as burn-in
@@ -188,9 +190,9 @@ def test_chain_diagnostics():
     x_obs = np.array([1.0, 2.0, 3.0])
     y_obs = np.array([2.5, 4.0, 5.5])
 
-    params = ParameterSet()
-    params.add("a", Uniform(0.0, 5.0))
-    params.add("b", Uniform(0.0, 5.0))
+    parameters = ParameterSet()
+    parameters.add("a", Uniform(0.0, 5.0))
+    parameters.add("b", Uniform(0.0, 5.0))
 
     target = Target()
     for x, y in zip(x_obs, y_obs):
@@ -203,18 +205,18 @@ def test_chain_diagnostics():
 
     runner = ModelRunner(
         model_factory=model_factory,
-        param_names=["a", "b"],
+        parameter_names=["a", "b"],
         output_variables=["y"],
     )
 
     likelihood = GaussianLikelihood()
-    sampler = EnsembleSampler(params, runner, likelihood, target)
+    sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
     # Run short chain
     chain = sampler.run(100, WalkerInit.from_prior(), thin=2)
 
-    # Test to_param_dict
-    param_dict = chain.to_param_dict(discard=20)
+    # Test to_parameter_dict
+    param_dict = chain.to_parameter_dict(discard=20)
     assert "a" in param_dict
     assert "b" in param_dict
     assert len(param_dict["a"]) > 0

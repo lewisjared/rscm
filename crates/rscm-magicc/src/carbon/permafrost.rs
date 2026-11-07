@@ -17,7 +17,7 @@
 //!
 //! # Inputs
 //!
-//! - `Surface Temperature` (K) - Global mean surface temperature anomaly
+//! - `Surface Air Temperature Change` (K) - Global mean surface air temperature change
 //!
 //! # Outputs
 //!
@@ -28,7 +28,7 @@
 //! Emissions use the temperature at the start of the step and the mean of the
 //! thawed pools before and after the step, as MAGICC7 does.
 //! The emissions enter `CH4Chemistry`, `CH4Oxidation`, `OceanCarbon` and
-//! `CO2Budget` when their `permafrost` parameter is set.
+//! `CO2Budget` when their `include_permafrost` parameter is set.
 //!
 //! # Rounding sensitivity
 //!
@@ -36,10 +36,9 @@
 //! Carbon moved between them divides one rounding residue by another,
 //! so emissions after such a refreeze depend on the last bits of the temperature.
 
-use crate::parameters::{PermafrostParameters, PermafrostSoilParameters};
+use crate::parameters::{PermafrostParameters, PermafrostSoil};
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType,
+    Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -74,7 +73,7 @@ pub struct PermafrostState {
     pub peat: Vec<SoilBand>,
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.PermafrostState")]
 impl ComponentState for PermafrostState {
     fn as_any(&self) -> &dyn Any {
         self
@@ -103,7 +102,7 @@ struct Decomposition {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "permafrost", "magicc"], category = "Carbon Cycle")]
 #[inputs(
-    temperature { name = "Surface Temperature", unit = "K" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
 )]
 #[outputs(
     co2_emissions { name = "Emissions|CO2|Permafrost", unit = "GtC/yr" },
@@ -140,8 +139,9 @@ impl Permafrost {
     fn melting_temp(&self, i: usize) -> FloatValue {
         let p = &self.parameters;
         let n = p.n_bands.max(2) - 1;
-        i as FloatValue * (p.melting_temp_max - p.melting_temp_min) / n as FloatValue
-            + p.melting_temp_min
+        i as FloatValue * (p.maximum_melting_temperature - p.minimum_melting_temperature)
+            / n as FloatValue
+            + p.minimum_melting_temperature
     }
 
     /// Fraction of the total pool in band `i`, a triangle shaped by `zonal_pool_distribution`.
@@ -171,10 +171,10 @@ impl Permafrost {
 
     /// Fully frozen permafrost.
     pub fn initial_state(&self) -> PermafrostState {
-        let frozen = |pool, soil: &PermafrostSoilParameters| SoilBand {
+        let frozen = |pool, soil: &PermafrostSoil| SoilBand {
             frozen_area: 1.0,
             frozen_pool: pool,
-            aerobic_fraction: 1.0 - soil.anaerobic_initial_fraction,
+            aerobic_fraction: 1.0 - soil.initial_anaerobic_fraction,
             ..Default::default()
         };
         let p = &self.parameters;
@@ -213,29 +213,29 @@ impl Permafrost {
         let soil_temp = offsets.map(|offset| summer_max + offset);
         let moisture = soil_temp.map(|soil_temp| {
             let water = (p.soil_water_slope * soil_temp + p.soil_water_offset)
-                .max(p.soil_water_min)
+                .max(p.minimum_soil_water)
                 .min(1.0);
             (1.0 - (-water).exp()) / (1.0 - (-1.0 as FloatValue).exp())
         });
         Season {
             summer_max,
             q10_temperature: soil_temp
-                .map(|soil_temp| 1.0 / p.q10_temp1 - 1.0 / (soil_temp + p.q10_temp2)),
+                .map(|soil_temp| 1.0 / p.q10_temperature1 - 1.0 / (soil_temp + p.q10_temperature2)),
             moisture,
         }
     }
 
     /// Annual mean aerobic fraction of the thawed area of a soil type.
-    fn aerobic_fraction(&self, soil: &PermafrostSoilParameters, season: &Season) -> FloatValue {
+    fn aerobic_fraction(&self, soil: &PermafrostSoil, season: &Season) -> FloatValue {
         let anaerobic_fraction: FloatValue = season
             .moisture
             .iter()
             .map(|moisture| {
-                (soil.anaerobic_initial_fraction
-                    + (soil.anaerobic_max_fraction - soil.anaerobic_initial_fraction)
+                (soil.initial_anaerobic_fraction
+                    + (soil.maximum_anaerobic_fraction - soil.initial_anaerobic_fraction)
                         * moisture
                         * soil.anaerobic_moisture_sensitivity)
-                    .min(soil.anaerobic_max_fraction)
+                    .min(soil.maximum_anaerobic_fraction)
                     .max(0.0)
             })
             .sum::<FloatValue>();
@@ -245,7 +245,7 @@ impl Permafrost {
     /// Annual mean (aerobic, anaerobic) decomposition rate of a soil type.
     fn decomposition_rates(
         &self,
-        soil: &PermafrostSoilParameters,
+        soil: &PermafrostSoil,
         season: &Season,
     ) -> (FloatValue, FloatValue) {
         let p = &self.parameters;
@@ -264,7 +264,7 @@ impl Permafrost {
     /// Advance one soil type in one band by `dt` years.
     fn step_band(
         &self,
-        soil: &PermafrostSoilParameters,
+        soil: &PermafrostSoil,
         band: &mut SoilBand,
         season: &Season,
         dt: FloatValue,
@@ -419,9 +419,9 @@ impl Default for Permafrost {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.Permafrost")]
 impl Component for Permafrost {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 

@@ -19,12 +19,12 @@
 //!
 //! # Inputs
 //!
-//! - `Emissions|N2O` (Mt N/yr) - Anthropogenic N2O emissions
-//! - `Surface Temperature` (K) - Global mean surface temperature anomaly
+//! - `Emissions|N2O` (Mt N2ON/yr) - Anthropogenic N2O emissions
+//! - `Surface Air Temperature Change` (K) - Global mean surface air temperature change
 //!
 //! # Outputs
 //!
-//! - `Atmospheric Concentration|N2O` (ppb) - Updated N2O concentration
+//! - `Atmospheric Concentrations|N2O` (ppb) - Updated N2O concentration
 //! - `Lifetime|N2O` (yr) - Effective N2O lifetime
 //!
 //! # Feedback references
@@ -40,7 +40,7 @@
 //!   `rscm.magicc.full.natural_emissions` calculates MAGICC7's budget-closing value for it.
 //!
 //! With `concentration_switch_year` the concentration follows
-//! `Atmospheric Concentration|N2O|Prescribed` until that year.
+//! `Prescribed Atmospheric Concentrations|N2O` until that year.
 
 use crate::parameters::N2OChemistryParameters;
 use crate::reference::{
@@ -48,9 +48,10 @@ use crate::reference::{
     require_annual, value_at_year,
 };
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
+use rscm_core::names::ATMOSPHERIC_CONCENTRATIONS_N2O;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -58,7 +59,6 @@ use serde::{Deserialize, Serialize};
 
 /// Number of fixed-point iterations (fixed per MAGICC7 implementation)
 const PRATHER_ITERATIONS: usize = 4;
-const N2O_CONCENTRATION: &str = "Atmospheric Concentration|N2O";
 
 /// N2O atmospheric chemistry component
 ///
@@ -69,11 +69,11 @@ const N2O_CONCENTRATION: &str = "Atmospheric Concentration|N2O";
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["chemistry", "n2o", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
-    n2o_emissions { name = "Emissions|N2O", unit = "Mt N/yr" },
-    temperature { name = "Surface Temperature", unit = "K" },
+    n2o_emissions { name = "Emissions|N2O", unit = "Mt N2ON/yr" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
 )]
 #[states(
-    n2o_concentration { name = "Atmospheric Concentration|N2O", unit = "ppb" },
+    n2o_concentration { name = "Atmospheric Concentrations|N2O", unit = "ppb" },
 )]
 #[outputs(
     n2o_lifetime { name = "Lifetime|N2O", unit = "yr", timeseries_type = "average" },
@@ -95,12 +95,12 @@ impl N2OChemistry {
 
     /// Convert concentration (ppb) to burden (Tg N)
     fn concentration_to_burden(&self, concentration: FloatValue) -> FloatValue {
-        concentration * self.parameters.ppb_to_tg
+        concentration * self.parameters.tg_per_ppb
     }
 
     /// Convert burden (Tg N) to concentration (ppb)
     fn burden_to_concentration(&self, burden: FloatValue) -> FloatValue {
-        burden / self.parameters.ppb_to_tg
+        burden / self.parameters.tg_per_ppb
     }
 
     /// Lifetime scaling from faster stratospheric overturning with warming
@@ -112,10 +112,10 @@ impl N2OChemistry {
         1.0 / (1.0
             + temperature_change.max(0.0)
                 * p.meridional_flux_change_per_degree
-                * p.tau_sensitivity_to_meridional_flux)
+                * p.lifetime_sensitivity_to_meridional_flux)
     }
 
-    /// Solve one timestep with 4 fixed-point iterations
+    /// Solve one step with 4 fixed-point iterations
     ///
     /// `n2o_lagged` is the mean concentration over the delayed years and
     /// `temperature_change` is the warming since the meridional flux reference.
@@ -133,7 +133,8 @@ impl N2OChemistry {
         let burden = self.concentration_to_burden(n2o_start);
         let burden_reference = self.concentration_to_burden(n2o_reference);
         let burden_lagged = self.concentration_to_burden(n2o_lagged);
-        let tau_base = self.meridional_flux_scale(temperature_change) * self.parameters.tau_n2o;
+        let tau_base =
+            self.meridional_flux_scale(temperature_change) * self.parameters.initial_n2o_lifetime;
 
         let mut burden_next = burden;
         let mut tau = tau_base;
@@ -160,12 +161,12 @@ impl Default for N2OChemistry {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.N2OChemistry")]
 impl Component for N2OChemistry {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         definitions.extend(prescribed_definition(
-            N2O_CONCENTRATION,
+            ATMOSPHERIC_CONCENTRATIONS_N2O,
             "ppb",
             self.parameters.concentration_switch_year,
         ));
@@ -187,7 +188,7 @@ impl Component for N2OChemistry {
         let n2o_reference = reference_value(concentration, t_current, p.feedback_start_year);
 
         // MAGICC7 clamps delayed indices to the first year of the run
-        let delay = p.strat_delay as Time;
+        let delay = p.stratospheric_delay as Time;
         let delayed = |lag: Time| value_at_year(concentration, t_current, t_current - lag);
         let n2o_lagged = (delayed(delay) + delayed(delay + 1.0)) / 2.0;
 
@@ -208,7 +209,7 @@ impl Component for N2OChemistry {
 
         let new_concentration = prescribed_concentration(
             input_state,
-            N2O_CONCENTRATION,
+            ATMOSPHERIC_CONCENTRATIONS_N2O,
             p.concentration_switch_year,
             t_next,
         )
@@ -234,7 +235,7 @@ mod tests {
     /// Concentration at which natural emissions balance the base lifetime
     fn natural_steady_state(component: &N2OChemistry) -> FloatValue {
         let p = &component.parameters;
-        component.burden_to_concentration(p.natural_emissions * p.tau_n2o)
+        component.burden_to_concentration(p.natural_emissions * p.initial_n2o_lifetime)
     }
 
     #[test]
@@ -243,7 +244,7 @@ mod tests {
         let c = natural_steady_state(&component);
         let (new_conc, lifetime) = component.solve_concentration(c, c, c, 0.0, 0.0, 1.0);
         assert!((new_conc - c).abs() < 1e-9, "Expected {c}, got {new_conc}");
-        assert!((lifetime - component.parameters.tau_n2o).abs() < 1e-9);
+        assert!((lifetime - component.parameters.initial_n2o_lifetime).abs() < 1e-9);
     }
 
     #[test]
@@ -276,7 +277,7 @@ mod tests {
     fn test_lifetime_floor_at_low_concentration() {
         let component = default_component();
         let (_, tau) = component.solve_concentration(200.0, 270.0, 200.0, 0.0, 0.0, 1.0);
-        assert!((tau - component.parameters.tau_n2o).abs() < 1e-9);
+        assert!((tau - component.parameters.initial_n2o_lifetime).abs() < 1e-9);
     }
 
     #[test]
@@ -326,8 +327,8 @@ mod tests {
             .map(|d| d.name.clone())
             .collect();
         assert!(names.contains(&"Emissions|N2O".to_string()));
-        assert!(names.contains(&"Surface Temperature".to_string()));
-        assert!(names.contains(&"Atmospheric Concentration|N2O".to_string()));
+        assert!(names.contains(&"Surface Air Temperature Change".to_string()));
+        assert!(names.contains(&"Atmospheric Concentrations|N2O".to_string()));
         assert!(names.contains(&"Lifetime|N2O".to_string()));
     }
 }

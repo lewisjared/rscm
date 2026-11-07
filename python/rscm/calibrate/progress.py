@@ -2,11 +2,11 @@
 Progress reporting utilities for calibration workflows.
 
 Provides integration with tqdm and other progress bar libraries for
-tracking long-running MCMC sampling and optimization tasks.
+tracking long-running MCMC sampling and optimisation tasks.
 """
 
 
-def create_tqdm_callback(total: int, desc: str = "Sampling", **tqdm_kwargs):
+def create_tqdm_callback(n_iterations: int, desc: str = "Sampling", **tqdm_kwargs):
     """
     Create a progress callback that updates a tqdm progress bar.
 
@@ -16,8 +16,8 @@ def create_tqdm_callback(total: int, desc: str = "Sampling", **tqdm_kwargs):
 
     Parameters
     ----------
-    total : int
-        Total number of iterations expected
+    n_iterations : int
+        Number of iterations the run will take
     desc : str, optional
         Description to display in the progress bar (default: "Sampling")
     **tqdm_kwargs
@@ -34,22 +34,25 @@ def create_tqdm_callback(total: int, desc: str = "Sampling", **tqdm_kwargs):
     >>> from rscm.calibrate import EnsembleSampler, WalkerInit
     >>> from rscm.calibrate.progress import create_tqdm_callback
     >>>
-    >>> # Create sampler (assumes params, runner, likelihood, target defined)
-    >>> sampler = EnsembleSampler(params, runner, likelihood, target)
+    >>> # Create sampler (assumes parameters, runner, likelihood, target defined)
+    >>> sampler = EnsembleSampler(parameters, runner, likelihood, target)
     >>>
     >>> # Create progress callback
-    >>> callback = create_tqdm_callback(total=1000, desc="MCMC Sampling")
+    >>> callback = create_tqdm_callback(n_iterations=1000, desc="MCMC Sampling")
     >>>
     >>> # Run with progress bar
     >>> chain = sampler.run_with_progress(
-    ...     n_iterations=1000, init=WalkerInit.from_prior(), callback=callback
+    ...     n_iterations=1000,
+    ...     init=WalkerInit.from_prior(),
+    ...     thin=1,
+    ...     progress_callback=callback,
     ... )
 
     Notes
     -----
     The callback displays:
 
-    - Current iteration / total iterations
+    - Current iteration out of the number of iterations
     - Percentage complete
     - Estimated time remaining
     - Mean acceptance rate
@@ -67,7 +70,7 @@ def create_tqdm_callback(total: int, desc: str = "Sampling", **tqdm_kwargs):
         raise ImportError(msg) from None
 
     # Set default tqdm kwargs
-    defaults = {"desc": desc, "total": total, "unit": "iter"}
+    defaults = {"desc": desc, "total": n_iterations, "unit": "iter"}
     defaults.update(tqdm_kwargs)
 
     pbar = tqdm(**defaults)
@@ -117,20 +120,23 @@ def create_simple_callback(print_every: int = 100):
     >>>
     >>> callback = create_simple_callback(print_every=50)
     >>> chain = sampler.run_with_progress(
-    ...     n_iterations=1000, init=WalkerInit.from_prior(), callback=callback
+    ...     n_iterations=1000,
+    ...     init=WalkerInit.from_prior(),
+    ...     thin=1,
+    ...     progress_callback=callback,
     ... )
     """
 
     def callback(progress_info):
         """Print progress information at regular intervals."""
         iteration = progress_info.iteration
-        total = progress_info.total
+        n_iterations = progress_info.n_iterations
 
         # Print at specified intervals or on last iteration
-        if (iteration + 1) % print_every == 0 or iteration + 1 == total:
-            pct = 100.0 * (iteration + 1) / total
+        if (iteration + 1) % print_every == 0 or iteration + 1 == n_iterations:
+            pct = 100.0 * (iteration + 1) / n_iterations
             print(
-                f"Iteration {iteration + 1}/{total} ({pct:.1f}%) | "
+                f"Iteration {iteration + 1}/{n_iterations} ({pct:.1f}%) | "
                 f"Acceptance rate: {progress_info.acceptance_rate:.3f} | "
                 f"Mean log prob: {progress_info.mean_log_prob:.2f}"
             )
@@ -143,7 +149,7 @@ class ProgressTracker:
     Track calibration progress with metrics history.
 
     This class provides a callback that stores progress metrics over time,
-    useful for later analysis or custom visualization.
+    useful for later analysis or custom visualisation.
 
     Parameters
     ----------
@@ -165,7 +171,10 @@ class ProgressTracker:
     >>>
     >>> tracker = ProgressTracker(print_every=100)
     >>> chain = sampler.run_with_progress(
-    ...     n_iterations=1000, init=WalkerInit.from_prior(), callback=tracker
+    ...     n_iterations=1000,
+    ...     init=WalkerInit.from_prior(),
+    ...     thin=1,
+    ...     progress_callback=tracker,
     ... )
     >>>
     >>> # Plot acceptance rate over time
@@ -190,11 +199,11 @@ class ProgressTracker:
 
         if self.print_every > 0:
             iteration = progress_info.iteration
-            total = progress_info.total
-            if (iteration + 1) % self.print_every == 0 or iteration + 1 == total:
-                pct = 100.0 * (iteration + 1) / total
+            n_iterations = progress_info.n_iterations
+            if (iteration + 1) % self.print_every == 0 or iteration + 1 == n_iterations:
+                pct = 100.0 * (iteration + 1) / n_iterations
                 print(
-                    f"Iteration {iteration + 1}/{total} ({pct:.1f}%) | "
+                    f"Iteration {iteration + 1}/{n_iterations} ({pct:.1f}%) | "
                     f"Acceptance rate: {progress_info.acceptance_rate:.3f} | "
                     f"Mean log prob: {progress_info.mean_log_prob:.2f}"
                 )

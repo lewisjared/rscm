@@ -20,7 +20,7 @@ The adjusted forcing is still the module's RF before efficacies
 
 ## RSCM implementation
 
-- **Component**: `GhgForcing` (Python builder `rscm.magicc.GhgForcingBuilder`).
+- **Component**: `GHGForcing` (Python builder `rscm.magicc.GHGForcingBuilder`).
 - **Source**: `crates/rscm-magicc/src/forcing/ghg.rs`, with parameters in
   `crates/rscm-magicc/src/parameters/ghg_forcing.rs`.
   The OLBL formulae live in `crates/rscm-components/src/meinshausen2020.rs`, shared with FaIR.
@@ -32,7 +32,7 @@ The adjusted forcing is still the module's RF before efficacies
   `ghg.rs` has unit tests for both methods.
 
 The regional split happens in `ForcingAggregation` ([forcing aggregation](module_07b_rf_aggregation.md)),
-not in `GhgForcing`.
+not in `GHGForcing`.
 
 ## Equations
 
@@ -117,13 +117,13 @@ $RF_{CH4,pure}$ is the CH4 forcing without the N2O overlap.
 IPCCTAR drops the overlap term, leaving $\beta_{CH4} (\sqrt{M} - \sqrt{M_0})$.
 OLBL evaluates the CH4 formula, rapid adjustment included, at pre-industrial N2O.
 
-### CO2 doubling forcing
+### 2xCO2 effective radiative forcing
 
 With OLBL, MAGICC7 recalculates `CORE_DELQ2XCO2` every year as
 $f_{CO2} \, \alpha_{CO2} \ln 2$ at the current concentrations,
 so the climate feedback parameter changes as CO2 rises.
 With IPCCTAR it keeps the configured value.
-`GhgForcing` reports this as `Effective Radiative Forcing|2xCO2`, which `ClimateUDEB` reads.
+`GHGForcing` reports this as `2xCO2 Effective Radiative Forcing`, which `ClimateUDEB` reads.
 
 ## Inputs and outputs
 
@@ -135,7 +135,7 @@ With IPCCTAR it keeps the configured value.
 | Pre-industrial CO2, CH4 and N2O | ppm, ppb | `DAT_*_CONC%PREIND_DATGLOBE` |
 
 Forcing is calculated for the end of the step, so it reads the next year's concentrations.
-`GhgForcing` reads the end of the step too.
+`GHGForcing` reads the end of the step too.
 
 | Output                 | Units | Fortran variable                                   |
 | ---------------------- | ----- | -------------------------------------------------- |
@@ -150,7 +150,7 @@ Forcing is calculated for the end of the step, so it reads the next year's conce
 | Parameter                   | Units          | Default     | Description                                          |
 | --------------------------- | -------------- | ----------- | ---------------------------------------------------- |
 | `CORE_CO2CH4N2O_RFMETHOD`   | string         | `OLBL`      | `IPCCTAR` or `OLBL`                                  |
-| `CORE_DELQ2XCO2`            | W/m²           | 3.71        | CO2 doubling forcing for IPCCTAR                     |
+| `CORE_DELQ2XCO2`            | W/m²           | 3.71        | 2xCO2 effective radiative forcing for IPCCTAR        |
 | `CH4_RADEFF_WM2PERPPB`      | W/m²/ppb^0.5   | 0.036       | $\beta_{CH4}$ for IPCCTAR                            |
 | `N2O_RADEFF_WM2PERPPB`      | W/m²/ppb^0.5   | 0.12        | $\beta_{N2O}$ for IPCCTAR                            |
 | `CORE_OLBL_CO2_A1`          | W/m²/ppm²      | -2.4785e-07 | $a_1$, quadratic term                                |
@@ -194,12 +194,12 @@ Each year `DELTAQ` in `MAGICC7.f90`:
    normalised by the box area fractions, and stores global and box values.
 7. Multiplies the pure CH4 forcing by `CH4_ADDEDSTRATH2O_PERCENT` and stores it the same way.
 
-`GhgForcing` covers steps 2 to 4 and 7, with global outputs only.
+`GHGForcing` covers steps 2 to 4 and 7, with global outputs only.
 `ForcingAggregation` does the regional split of step 6.
 
 ## Numerical considerations
 
-Neither MAGICC7 nor `GhgForcing` checks for zero or negative concentrations
+Neither MAGICC7 nor `GHGForcing` checks for zero or negative concentrations
 before taking logarithms and square roots.
 
 ## Issues in MAGICC7
@@ -215,11 +215,11 @@ RSCM reproduces each of these.
 ## Differences from MAGICC7
 
 - **Pre-industrial concentrations**: MAGICC7 takes them from the concentration files.
-  `GhgForcing` takes `co2_pi`, `ch4_pi` and `n2o_pi` as parameters,
+  `GHGForcing` takes `co2_pi`, `ch4_pi` and `n2o_pi` as parameters,
   and `run_magicc7` sets them to MAGICC7's 1750 concentrations.
   There is no `CO2_PREINDCO2CONC_APPLY` switch.
 - **Rapid adjustment with IPCCTAR**: MAGICC7 applies `CORE_RFRAPIDADJUST_*` only with OLBL.
-  `GhgForcing` applies its `adjust_*` factors with either method,
+  `GHGForcing` applies its `adjust_*` factors with either method,
   so `run_magicc7` sets them to 1 for IPCCTAR.
 
 ## References

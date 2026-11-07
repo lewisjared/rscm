@@ -46,32 +46,32 @@ pub const DELTA_OSPP_OFFSETS: [FloatValue; 5] = [1.5568, 7.4706, 1.2748, 2.4491,
 pub const DELTA_OSPP_COEFFICIENTS: [FloatValue; 5] =
     [-0.013993, -0.20207, -0.12015, -0.12639, -0.15326];
 
-/// Ocean carbon IRF model selection.
+/// Ocean carbon IRF method, named after the ocean model whose response it emulates.
 ///
 /// Controls which impulse response function and physical parameters are used
 /// for the ocean carbon cycle. Corresponds to MAGICC7's `OCEANCC_MODEL`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OceanCarbonModel {
+pub enum OceanCarbonMethod {
     /// 3D-GFDL model (MAGICC7 default).
     ///
     /// Uses polynomial IRF for the first year, exponential sum thereafter.
     /// Physical parameters: h=50.9m, A=3.55e14 m^2, SST_pi=17.7C.
     #[serde(rename = "3D-GFDL")]
-    GFDL3D,
+    Gfdl3d,
 
     /// 2D-BERN model.
     ///
     /// Uses exponential sum IRF for both early and late regimes.
     /// Physical parameters: h=50.0m, A=3.5375e14 m^2, SST_pi=18.2997C.
     #[serde(rename = "2D-BERN")]
-    BERN2D,
+    Bern2d,
 
     /// HILDA model.
     ///
     /// Uses exponential sum IRF for both early and late regimes.
     /// Physical parameters: h=75.0m, A=3.62e14 m^2, SST_pi=18.1716C.
     #[serde(rename = "HILDA")]
-    HILDA,
+    Hilda,
 }
 
 /// Impulse Response Function form.
@@ -80,8 +80,8 @@ pub enum OceanCarbonModel {
 /// of carbon in the mixed layer decays over time. Different ocean models use
 /// different functional forms for different time regimes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum IrfForm {
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum IRFForm {
     /// Polynomial: $IRF(t) = \sum_i c_i \cdot t^i$ where $t$ is in years.
     ///
     /// Used by 3D-GFDL for the pre-switch regime (first year).
@@ -105,16 +105,16 @@ pub enum IrfForm {
     },
 }
 
-impl IrfForm {
+impl IRFForm {
     /// Evaluate the IRF at time `t` (years).
     pub fn evaluate(&self, t: FloatValue) -> FloatValue {
         match self {
             // Summed term by term in ascending powers, as MAGICC7 does
-            IrfForm::Polynomial { coefficients } => coefficients
+            IRFForm::Polynomial { coefficients } => coefficients
                 .iter()
                 .enumerate()
                 .fold(0.0, |sum, (i, &c)| sum + c * t.powf(i as FloatValue)),
-            IrfForm::ExponentialSum {
+            IRFForm::ExponentialSum {
                 constant,
                 coefficients,
                 timescales,
@@ -156,25 +156,27 @@ impl IrfForm {
 /// 2. **Joos A25**: Temperature effect: $pCO2 = pCO2_{DIC} \times e^{\alpha_T \Delta T}$
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct OceanCarbonParameters {
-    /// Ocean carbon model selection.
+    /// Ocean carbon method (MAGICC7 `OCEANCC_MODEL`).
     ///
-    /// This field is informational only; it does not automatically select the
+    /// This field is informational only: it does not select the
     /// corresponding IRF coefficients or physical parameters. Use the named
     /// constructors (`gfdl_3d()`, `bern_2d()`, `hilda()`) to get a
-    /// self-consistent parameter set for a given model. Setting only this
-    /// field via serde partial deserialization will leave the IRF parameters
-    /// at their default (GFDL3D) values regardless of the variant chosen.
+    /// self-consistent parameter set for a given method. Setting only this
+    /// field via serde partial deserialisation leaves the IRF parameters
+    /// at their 3D-GFDL defaults regardless of the variant chosen.
     ///
-    /// default: GFDL3D (matches MAGICC7 OCEANCC_MODEL = "3D-GFDL")
-    pub model: OceanCarbonModel,
+    /// default: "3D-GFDL"
+    pub method: OceanCarbonMethod,
 
     /// Pre-industrial atmospheric CO2 (ppm).
     /// default: 278.0
+    /// MAGICC7: CO2_PREINDCO2CONC
     pub co2_pi: FloatValue,
 
     /// Pre-industrial ocean surface pCO2 (ppm).
-    /// When unset, the initial `Ocean Surface pCO2` is used, matching MAGICC7,
+    /// When unset, the initial `Ocean Surface Partial Pressure|CO2` is used, matching MAGICC7,
     /// which takes the first-year atmospheric concentration.
     /// default: None
     pub pco2_pi: Option<FloatValue>,
@@ -191,7 +193,7 @@ pub struct OceanCarbonParameters {
     /// Temperature sensitivity of pCO2 (K^-1).
     /// Joos A25 exponent. Corresponds to MAGICC7 OCEANCC_TEMPFEEDBACK.
     /// default: 0.03717879
-    pub temp_sensitivity: FloatValue,
+    pub temperature_sensitivity: FloatValue,
 
     /// IRF scaling factor (dimensionless).
     /// Corresponds to MAGICC7 OCEANCC_SCALE_IMPULSERESPONSE.
@@ -208,25 +210,25 @@ pub struct OceanCarbonParameters {
     /// Used in pCO2-DIC polynomial calculation (Joos A24).
     pub sst_pi: FloatValue,
 
-    /// Number of sub-steps per year.
+    /// Number of substeps per year.
     /// MAGICC7 uses monthly stepping (12) for stability.
     /// default: 12
     pub steps_per_year: usize,
 
-    /// Maximum flux history length in sub-steps.
-    /// Limits memory usage for IRF convolution (6000 monthly sub-steps = 500 years).
+    /// Maximum flux history length in substeps.
+    /// Limits memory usage for IRF convolution (6000 monthly substeps = 500 years).
     /// default: 6000
-    pub max_history_months: usize,
+    pub maximum_history_months: usize,
 
     /// IRF switch time (years).
     /// Time at which to switch from early to late IRF form.
     pub irf_switch_time: FloatValue,
 
     /// IRF form for the early regime (before switch time).
-    pub irf_early: IrfForm,
+    pub irf_early: IRFForm,
 
     /// IRF form for the late regime (after switch time).
-    pub irf_late: IrfForm,
+    pub irf_late: IRFForm,
 
     /// Joos A24 polynomial offsets.
     pub delta_ospp_offsets: [FloatValue; 5],
@@ -236,15 +238,16 @@ pub struct OceanCarbonParameters {
 
     /// Enable temperature feedback on pCO2.
     /// default: true
-    pub enable_temp_feedback: bool,
+    /// MAGICC7: CO2_TEMPFEEDBACK_SWITCH
+    pub include_temperature_feedback: bool,
 
     /// Year from which warming drives the pCO2 temperature feedback
     /// (`CO2_TEMPFEEDBACK_YRSTART`). The feedback uses the warming since this
     /// year, floored at zero.
     /// default: 1900.0
-    pub tempfeedback_yrstart: FloatValue,
+    pub temperature_feedback_start_year: FloatValue,
 
-    /// Largest change in air-sea flux between sub-steps (ppm/yr).
+    /// Largest change in air-sea flux between substeps (ppm/yr).
     /// MAGICC7 applies this limiter for stability. A non-positive value disables it.
     /// default: 0.04
     pub flux_change_limit: FloatValue,
@@ -254,10 +257,11 @@ pub struct OceanCarbonParameters {
     pub gtc_per_ppm: FloatValue,
 
     /// Add `Emissions|CO2|Permafrost` to the other sources. Must match `CO2Budget`.
+    /// MAGICC7: PF_APPLY
     /// default: false
-    pub permafrost: bool,
+    pub include_permafrost: bool,
 
-    /// Last year of prescribed CO2, interpolated within the year's sub-steps.
+    /// Last year of prescribed CO2, interpolated within the year's substeps.
     /// Must match `CO2Budget`.
     /// MAGICC7: CO2_SWITCHFROMCONC2EMIS_YEAR
     pub concentration_switch_year: Option<FloatValue>,
@@ -271,7 +275,7 @@ impl OceanCarbonParameters {
     /// (`carbon_cycle_ocean.f90` lines 124-132).
     pub fn gfdl_3d() -> Self {
         Self {
-            model: OceanCarbonModel::GFDL3D,
+            method: OceanCarbonMethod::Gfdl3d,
 
             co2_pi: 278.0,
             pco2_pi: None,
@@ -279,19 +283,19 @@ impl OceanCarbonParameters {
             gas_exchange_scale: 1.833492,
             gas_exchange_tau: 7.66,
 
-            temp_sensitivity: 0.03717879,
+            temperature_sensitivity: 0.03717879,
 
             irf_scale: 0.9492864,
             irf_switch_time: 1.0,
 
             // MAGICC7 carries more digits than the Joos et al. (2001) table.
-            irf_early: IrfForm::Polynomial {
+            irf_early: IRFForm::Polynomial {
                 coefficients: vec![
                     1.0, -2.261725, 14.00231, -48.77024, 82.98591, -67.52663, 21.0369,
                 ],
             },
             // In MAGICC7's order, which sets the rounding
-            irf_late: IrfForm::ExponentialSum {
+            irf_late: IRFForm::ExponentialSum {
                 constant: 0.01481883,
                 coefficients: vec![0.70367, 0.0664848, 0.0383437, 0.249664, 0.0194392],
                 timescales: vec![0.7017658, 15.28116, 65.35929, 2.348814, 347.547],
@@ -305,12 +309,12 @@ impl OceanCarbonParameters {
             delta_ospp_coefficients: DELTA_OSPP_COEFFICIENTS,
 
             steps_per_year: 12,
-            max_history_months: 6000,
-            enable_temp_feedback: true,
-            tempfeedback_yrstart: 1900.0,
+            maximum_history_months: 6000,
+            include_temperature_feedback: true,
+            temperature_feedback_start_year: 1900.0,
             flux_change_limit: 0.04,
             gtc_per_ppm: GTC_PER_PPM,
-            permafrost: false,
+            include_permafrost: false,
             concentration_switch_year: None,
         }
     }
@@ -322,7 +326,7 @@ impl OceanCarbonParameters {
     /// (`carbon_cycle_ocean.f90` lines 134-142).
     pub fn bern_2d() -> Self {
         Self {
-            model: OceanCarbonModel::BERN2D,
+            method: OceanCarbonMethod::Bern2d,
 
             co2_pi: 278.0,
             pco2_pi: None,
@@ -330,20 +334,20 @@ impl OceanCarbonParameters {
             gas_exchange_scale: 1.833492,
             gas_exchange_tau: 7.46,
 
-            temp_sensitivity: 0.03717879,
+            temperature_sensitivity: 0.03717879,
 
             irf_scale: 0.9492864,
             irf_switch_time: 9.9,
 
             // Early IRF: exponential sum (MAGICC7 lines 466-471)
-            irf_early: IrfForm::ExponentialSum {
+            irf_early: IRFForm::ExponentialSum {
                 constant: 0.058648,
                 coefficients: vec![0.07515, 0.079338, 0.41413, 0.24845, 0.12429],
                 timescales: vec![9.6218, 9.2364, 0.7603, 0.16294, 0.032825],
             },
 
             // Late IRF: exponential sum (MAGICC7 lines 491-496)
-            irf_late: IrfForm::ExponentialSum {
+            irf_late: IRFForm::ExponentialSum {
                 constant: 0.013691,
                 coefficients: vec![0.012456, 0.026933, 0.026994, 0.036608, 0.06738],
                 timescales: vec![331.54, 107.57, 38.946, 11.677, 10.515],
@@ -357,12 +361,12 @@ impl OceanCarbonParameters {
             delta_ospp_coefficients: DELTA_OSPP_COEFFICIENTS,
 
             steps_per_year: 12,
-            max_history_months: 6000,
-            enable_temp_feedback: true,
-            tempfeedback_yrstart: 1900.0,
+            maximum_history_months: 6000,
+            include_temperature_feedback: true,
+            temperature_feedback_start_year: 1900.0,
             flux_change_limit: 0.04,
             gtc_per_ppm: GTC_PER_PPM,
-            permafrost: false,
+            include_permafrost: false,
             concentration_switch_year: None,
         }
     }
@@ -374,7 +378,7 @@ impl OceanCarbonParameters {
     /// (`carbon_cycle_ocean.f90` lines 144-152, 506-554).
     pub fn hilda() -> Self {
         Self {
-            model: OceanCarbonModel::HILDA,
+            method: OceanCarbonMethod::Hilda,
 
             co2_pi: 278.0,
             pco2_pi: None,
@@ -382,20 +386,20 @@ impl OceanCarbonParameters {
             gas_exchange_scale: 1.833492,
             gas_exchange_tau: 9.06,
 
-            temp_sensitivity: 0.03717879,
+            temperature_sensitivity: 0.03717879,
 
             irf_scale: 0.9492864,
             irf_switch_time: 2.0,
 
             // Early IRF: exponential sum (MAGICC7 lines 516-521)
-            irf_early: IrfForm::ExponentialSum {
+            irf_early: IRFForm::ExponentialSum {
                 constant: 0.12935,
                 coefficients: vec![0.24093, 0.24071, 0.17003, 0.21898],
                 timescales: vec![4.9792, 0.96083, 0.26936, 0.034569],
             },
 
             // Late IRF: exponential sum (MAGICC7 lines 541-546)
-            irf_late: IrfForm::ExponentialSum {
+            irf_late: IRFForm::ExponentialSum {
                 constant: 0.022936,
                 coefficients: vec![0.035549, 0.037820, 0.089318, 0.13963, 0.24278],
                 timescales: vec![232.30, 68.736, 18.601, 5.2528, 1.2679],
@@ -409,12 +413,12 @@ impl OceanCarbonParameters {
             delta_ospp_coefficients: DELTA_OSPP_COEFFICIENTS,
 
             steps_per_year: 12,
-            max_history_months: 6000,
-            enable_temp_feedback: true,
-            tempfeedback_yrstart: 1900.0,
+            maximum_history_months: 6000,
+            include_temperature_feedback: true,
+            temperature_feedback_start_year: 1900.0,
             flux_change_limit: 0.04,
             gtc_per_ppm: GTC_PER_PPM,
-            permafrost: false,
+            include_permafrost: false,
             concentration_switch_year: None,
         }
     }
@@ -485,8 +489,8 @@ impl OceanCarbonParameters {
         delta_pco2_dic: FloatValue,
         warming: FloatValue,
     ) -> FloatValue {
-        let temp_factor = if self.enable_temp_feedback {
-            (self.temp_sensitivity * warming).exp()
+        let temp_factor = if self.include_temperature_feedback {
+            (self.temperature_sensitivity * warming).exp()
         } else {
             1.0
         };
@@ -494,7 +498,7 @@ impl OceanCarbonParameters {
         (pco2_reference + delta_pco2_dic) * temp_factor
     }
 
-    /// Mixed-layer DIC change (micromol/kg) from the IRF-weighted sum of sub-step fluxes (ppm/yr).
+    /// Mixed-layer DIC change (micromol/kg) from the IRF-weighted sum of substep fluxes (ppm/yr).
     pub fn delta_dic(&self, flux_integral: FloatValue) -> FloatValue {
         let per_ppm = OCEAN_MICROMOL_PER_PPM_M3_PER_KG / self.ocean_surface_area;
         (flux_integral / self.steps_per_year as FloatValue * per_ppm) / self.mixed_layer_depth
@@ -514,20 +518,20 @@ mod tests {
     #[test]
     fn test_default_is_gfdl_3d() {
         let params = OceanCarbonParameters::default();
-        assert_eq!(params.model, OceanCarbonModel::GFDL3D);
+        assert_eq!(params.method, OceanCarbonMethod::Gfdl3d);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
         assert!(params.pco2_pi.is_none());
-        assert!((params.temp_sensitivity - 0.03717879).abs() < 1e-10);
+        assert!((params.temperature_sensitivity - 0.03717879).abs() < 1e-10);
         assert!((params.mixed_layer_depth - 50.9).abs() < 1e-10);
         assert!((params.irf_switch_time - 1.0).abs() < 1e-10);
-        assert!(params.enable_temp_feedback);
+        assert!(params.include_temperature_feedback);
         assert_eq!(params.steps_per_year, 12);
     }
 
     #[test]
     fn test_bern_2d_constructor() {
         let params = OceanCarbonParameters::bern_2d();
-        assert_eq!(params.model, OceanCarbonModel::BERN2D);
+        assert_eq!(params.method, OceanCarbonMethod::Bern2d);
         assert!((params.mixed_layer_depth - 50.0).abs() < 1e-10);
         assert!((params.sst_pi - 18.2997).abs() < 1e-10);
         assert!((params.irf_switch_time - 9.9).abs() < 1e-10);
@@ -537,7 +541,7 @@ mod tests {
     #[test]
     fn test_hilda_constructor() {
         let params = OceanCarbonParameters::hilda();
-        assert_eq!(params.model, OceanCarbonModel::HILDA);
+        assert_eq!(params.method, OceanCarbonMethod::Hilda);
         assert!((params.mixed_layer_depth - 75.0).abs() < 1e-10);
         assert!((params.sst_pi - 18.1716).abs() < 1e-10);
         assert!((params.irf_switch_time - 2.0).abs() < 1e-10);
@@ -805,7 +809,7 @@ mod tests {
             pco2_warm
         );
 
-        let expected_factor = (params.temp_sensitivity * 1.0).exp();
+        let expected_factor = (params.temperature_sensitivity * 1.0).exp();
         let actual_factor = pco2_warm / pco2_cold;
         assert!(
             (actual_factor - expected_factor).abs() < 0.01,
@@ -818,7 +822,7 @@ mod tests {
     #[test]
     fn test_ocean_pco2_temp_feedback_disabled() {
         let params = OceanCarbonParameters {
-            enable_temp_feedback: false,
+            include_temperature_feedback: false,
             ..Default::default()
         };
 
@@ -848,34 +852,43 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
+    fn test_serialisation_roundtrip() {
         let params = OceanCarbonParameters::default();
-        let json = serde_json::to_string(&params).expect("Serialization failed");
+        let json = serde_json::to_string(&params).expect("Serialisation failed");
         let parsed: OceanCarbonParameters =
-            serde_json::from_str(&json).expect("Deserialization failed");
+            serde_json::from_str(&json).expect("Deserialisation failed");
 
         assert!(
             (params.co2_pi - parsed.co2_pi).abs() < 1e-10,
             "Parameters should survive round-trip"
         );
-        assert_eq!(params.model, parsed.model);
+        assert_eq!(params.method, parsed.method);
     }
 
     #[test]
-    fn test_serialization_bern_2d_roundtrip() {
-        let params = OceanCarbonParameters::bern_2d();
-        let json = serde_json::to_string(&params).expect("Serialization failed");
-        let parsed: OceanCarbonParameters =
-            serde_json::from_str(&json).expect("Deserialization failed");
+    fn test_irf_form_tags_are_snake_case() {
+        let params = OceanCarbonParameters::gfdl_3d();
+        let early = serde_json::to_value(&params.irf_early).expect("Serialisation failed");
+        let late = serde_json::to_value(&params.irf_late).expect("Serialisation failed");
+        assert_eq!(early["type"], "polynomial");
+        assert_eq!(late["type"], "exponential_sum");
+    }
 
-        assert_eq!(parsed.model, OceanCarbonModel::BERN2D);
+    #[test]
+    fn test_serialisation_bern_2d_roundtrip() {
+        let params = OceanCarbonParameters::bern_2d();
+        let json = serde_json::to_string(&params).expect("Serialisation failed");
+        let parsed: OceanCarbonParameters =
+            serde_json::from_str(&json).expect("Deserialisation failed");
+
+        assert_eq!(parsed.method, OceanCarbonMethod::Bern2d);
         assert!((parsed.irf_switch_time - 9.9).abs() < 1e-10);
     }
 
     #[test]
     fn test_polynomial_matches_horner() {
         let irf = OceanCarbonParameters::gfdl_3d().irf_early;
-        let IrfForm::Polynomial {
+        let IRFForm::Polynomial {
             coefficients: coeffs,
         } = &irf
         else {
@@ -905,11 +918,11 @@ mod tests {
     fn test_bern_2d_irf_constants() {
         // MAGICC7.f90 BERN timescale and a0 coefficient
         let params = OceanCarbonParameters::bern_2d();
-        let IrfForm::ExponentialSum { timescales, .. } = &params.irf_early else {
+        let IRFForm::ExponentialSum { timescales, .. } = &params.irf_early else {
             panic!("2D-BERN early IRF should be an exponential sum");
         };
         assert_eq!(timescales[4], 0.032825);
-        let IrfForm::ExponentialSum { constant, .. } = &params.irf_late else {
+        let IRFForm::ExponentialSum { constant, .. } = &params.irf_late else {
             panic!("2D-BERN late IRF should be an exponential sum");
         };
         assert_eq!(*constant, 0.013691);

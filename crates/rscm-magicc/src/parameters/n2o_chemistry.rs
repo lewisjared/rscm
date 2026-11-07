@@ -37,6 +37,7 @@ use serde::{Deserialize, Serialize};
 /// mix into the stratosphere where destruction occurs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct N2OChemistryParameters {
     /// Year from which the concentration feedback is measured (`N2O_FEED_YRSTART`).
     /// The reference concentration is taken from the year before.
@@ -55,7 +56,7 @@ pub struct N2OChemistryParameters {
     /// This is the reference lifetime before concentration feedback
     /// unit: years
     /// default: 139.275 (MAGICC7 default)
-    pub tau_n2o: FloatValue,
+    pub initial_n2o_lifetime: FloatValue,
 
     /// Lifetime feedback exponent (S)
     /// With S < 0, higher concentrations give slightly shorter lifetime:
@@ -68,12 +69,14 @@ pub struct N2OChemistryParameters {
     /// Time lag for tropospheric N2O to reach the stratosphere for destruction
     /// unit: years
     /// default: 1
-    pub strat_delay: usize,
+    /// MAGICC7: N2O_STRATMIXDELAY
+    pub stratospheric_delay: usize,
 
     /// Conversion factor from ppb to Tg N
     /// unit: Tg N/ppb
     /// default: 4.79
-    pub ppb_to_tg: FloatValue,
+    /// MAGICC7: N2O_PPB2TGN
+    pub tg_per_ppb: FloatValue,
 
     /// Enable the stratospheric lifetime response to meridional flux changes
     /// (`N2O_USE_TAUSTRAT_VAR`)
@@ -89,7 +92,7 @@ pub struct N2OChemistryParameters {
     /// Lifetime sensitivity to meridional flux changes (`N2O_TAUSTRAT_SENS2MERIDFLUX`)
     /// unit: dimensionless
     /// default: 0.04
-    pub tau_sensitivity_to_meridional_flux: FloatValue,
+    pub lifetime_sensitivity_to_meridional_flux: FloatValue,
 
     /// Year from which warming changes the meridional flux
     /// (`GEN_CHANGE_MERIDIONALFLUX_YR`)
@@ -97,7 +100,7 @@ pub struct N2OChemistryParameters {
     /// default: 1980.0
     pub meridional_flux_reference_year: FloatValue,
 
-    /// Last year of concentrations prescribed by `Atmospheric Concentration|N2O|Prescribed`,
+    /// Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|N2O`,
     /// or `None` to calculate them from emissions throughout.
     /// MAGICC7: N2O_SWITCHFROMCONC2EMIS_YEAR
     pub concentration_switch_year: Option<FloatValue>,
@@ -108,13 +111,13 @@ impl Default for N2OChemistryParameters {
         Self {
             feedback_start_year: 1925.0,
             natural_emissions: 8.0345017,
-            tau_n2o: 139.275,
+            initial_n2o_lifetime: 139.275,
             lifetime_feedback: -0.04,
-            strat_delay: 1,
-            ppb_to_tg: 4.79,
+            stratospheric_delay: 1,
+            tg_per_ppb: 4.79,
             include_meridional_flux_feedback: true,
             meridional_flux_change_per_degree: 0.15,
-            tau_sensitivity_to_meridional_flux: 0.04,
+            lifetime_sensitivity_to_meridional_flux: 0.04,
             meridional_flux_reference_year: 1980.0,
             concentration_switch_year: None,
         }
@@ -129,8 +132,8 @@ mod tests {
     fn test_default_parameters() {
         let params = N2OChemistryParameters::default();
         assert!((params.feedback_start_year - 1925.0).abs() < 1e-10);
-        assert!((params.tau_n2o - 139.275).abs() < 1e-10);
-        assert!((params.ppb_to_tg - 4.79).abs() < 1e-10);
+        assert!((params.initial_n2o_lifetime - 139.275).abs() < 1e-10);
+        assert!((params.tg_per_ppb - 4.79).abs() < 1e-10);
     }
 
     #[test]
@@ -148,7 +151,7 @@ mod tests {
         let params = N2OChemistryParameters::default();
         // Delay should be at least 1 year
         assert!(
-            params.strat_delay >= 1,
+            params.stratospheric_delay >= 1,
             "Stratospheric delay should be >= 1"
         );
     }

@@ -37,9 +37,9 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 
 **Learn to** combine multiple components into a complete climate model.
 
-- Assemble components, a time axis, exogenous data and initial values with `ModelBuilder`
+- Assemble components, a time axis, prescribed data and initial values with `ModelBuilder`
 - Run the model with `step()` and `run()`, and read results from `TimeseriesCollection`
-- Choose an interpolation strategy for exogenous data
+- Choose an interpolation strategy for prescribed data
 - Visualise the component dependency graph
 
 [**Start Tutorial: Coupled Models**](notebooks/coupled_model.py)
@@ -66,7 +66,7 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 **Learn to** combine multiple component outputs into derived values.
 
 - Declare variables and aggregates in a `VariableSchema`
-- Use `Sum`, `Mean` and `Weighted` aggregates, including aggregates of aggregates
+- Use `sum`, `mean` and `weighted_sum` aggregates, including aggregates of aggregates
 - Handle missing data (NaN values) in aggregations
 - Understand schema validation and its error messages
 
@@ -94,7 +94,7 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 - Inspect execution order, lags and variable sources with `coupling()`
 - Visualise the dependency graph with `as_dot()`
 - Step through a run with `model.step()`
-- Diagnose build errors, missing exogenous data and runtime errors
+- Diagnose build errors, missing prescribed data and runtime errors
 
 [**Start Tutorial: Model Debugging and Inspection**](notebooks/debugging_inspection.py)
 
@@ -151,8 +151,8 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 model = (
     ModelBuilder()
     .with_time_axis(TimeAxis.from_values(np.arange(2000, 2101)))
-    .with_rust_component(component)
-    .with_exogenous_variable("Variable Name", timeseries)
+    .with_component(component)
+    .with_prescribed_variable("Variable Name", timeseries)
     .with_initial_values({"State Variable": initial_value})
 ).build()
 ```
@@ -176,7 +176,7 @@ data = results.get_timeseries_by_name("Output Variable")
 
 ## Extending RSCM
 
-Want to create custom components? See the [Developer Guide](developers/index.md) for:
+Want to write your own components? See the [Developer Guide](developers/index.md) for:
 
-- [Python Components](notebooks/component_python.py): Create custom components with typed inputs and outputs
+- [Python Components](notebooks/component_python.py): Write components with typed inputs and outputs
 - [Rust Components](notebooks/component_rust.md): Build high-performance components in Rust

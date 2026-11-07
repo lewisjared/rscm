@@ -46,8 +46,8 @@ and each author had to pick between `at_start`, `at_end`, `get` and `previous` t
   `history` reads only the past.
   A fixed calendar year, such as MAGICC's 1927 reference for precursor emissions,
   is read by time with `interpolate(year)`.
-  It may read ahead of the step, so it suits exogenous data, and a future upstream value is not yet written.
+  It may read ahead of the step, so it suits prescribed data, and a future upstream value is not yet written.
 - `model.coupling()` replaces `debug_info()` ordering.
-  It shows the order, each lagged edge and each variable's [time type](0002-point-and-average-variables.md).
-- A missing exogenous input is a build error unless a builder flag allows it,
-  and exogenous units are converted at build time or rejected.
+  It shows the order, each lagged edge and each variable's [timeseries type](0002-point-and-average-variables.md).
+- A missing prescribed variable is a build error unless a builder flag allows it,
+  and units of prescribed data are converted at build time or rejected.

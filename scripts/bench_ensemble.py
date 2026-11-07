@@ -23,21 +23,28 @@ from regression import full_run
 
 from rscm.magicc import full
 
-_years: Any = None
+_time_axis: Any = None
 _emissions: Any = None
 _inputs: Any = None
 
 
 def _init() -> None:
-    global _years, _emissions, _inputs
+    global _time_axis, _emissions, _inputs
     run = full_run.load_default()
-    _years, _emissions, _inputs = run.years, full_run.emissions(run), full.load_inputs()
-    full.run_magicc7(_years, _emissions, inputs=_inputs)
+    _time_axis, _emissions, _inputs = (
+        run.time_axis,
+        full_run.emissions(run),
+        full.load_inputs(),
+    )
+    full.run_magicc7(_time_axis, _emissions, inputs=_inputs)
 
 
 def _run(ecs: float) -> None:
     full.run_magicc7(
-        _years, _emissions, parameters={"core_climatesensitivity": ecs}, inputs=_inputs
+        _time_axis,
+        _emissions,
+        parameters={"core_climatesensitivity": ecs},
+        inputs=_inputs,
     )
 
 

@@ -31,7 +31,7 @@
 //!
 //! Components are designed to be composed into a [`Model`](rscm_core::model::Model) using
 //! the [`ModelBuilder`](rscm_core::model::ModelBuilder). Each component declares its input
-//! and output requirements, and the model orchestrator automatically resolves dependencies
+//! and output variables, and the model orchestrator automatically resolves dependencies
 //! and executes components in the correct order.
 //!
 //! ```rust,ignore
@@ -40,13 +40,13 @@
 //!
 //! let carbon_cycle = CarbonCycle::from_parameters(CarbonCycleParameters {
 //!     tau: 30.0,
-//!     conc_pi: 278.0,
+//!     co2_pi: 278.0,
 //!     alpha_temperature: 0.0,
 //! });
 //!
 //! let co2_erf = CO2ERF::from_parameters(CO2ERFParameters {
 //!     erf_2xco2: 3.7,
-//!     conc_pi: 278.0,
+//!     co2_pi: 278.0,
 //! });
 //!
 //! let model = ModelBuilder::new()
@@ -70,3 +70,6 @@ pub mod meinshausen2020;
 pub mod python;
 
 pub use components::*;
+
+#[cfg(test)]
+mod component_names;

@@ -1,8 +1,6 @@
 //! Global producer resolution and feedback lags.
 
-use crate::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType,
-};
+use crate::component::{Component, InputState, OutputState, VariableDefinition, VariableRole};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::model::{Model, ModelBuilder};
 use crate::state::{StateValue, VariableSource};
@@ -20,16 +18,16 @@ macro_rules! link {
 
         #[typetag::serde]
         impl Component for $name {
-            fn definitions(&self) -> Vec<RequirementDefinition> {
-                let mut definitions: Vec<RequirementDefinition> = vec![
-                    $(RequirementDefinition::new($input, "1", RequirementType::Input),)*
+            fn definitions(&self) -> Vec<VariableDefinition> {
+                let mut definitions: Vec<VariableDefinition> = vec![
+                    $(VariableDefinition::new($input, "1", VariableRole::Input),)*
                 ];
                 let output_type = if $state {
-                    RequirementType::State
+                    VariableRole::State
                 } else {
-                    RequirementType::Output
+                    VariableRole::Output
                 };
-                definitions.push(RequirementDefinition::new($output, "1", output_type));
+                definitions.push(VariableDefinition::new($output, "1", output_type));
                 definitions
             }
 
@@ -100,13 +98,13 @@ fn unlagged_loop_fails_to_build() {
     let error = builder(vec![Arc::new(Climate), Arc::new(Carbon)])
         .build()
         .expect_err("a loop without a lag must not build");
-    let RSCMError::CircularDependency {
+    let RSCMError::FeedbackLoop {
         components,
         variables,
         suggestions,
     } = &error
     else {
-        panic!("expected CircularDependency, got {error}");
+        panic!("expected FeedbackLoop, got {error}");
     };
     assert_eq!(components, &["Carbon", "Climate"]);
     assert_eq!(variables, &["co2", "temperature"]);
@@ -143,10 +141,7 @@ fn lagged_loop_builds_in_any_order() {
         source(&forward, "temperature", "Carbon"),
         VariableSource::Lagged
     );
-    assert_eq!(
-        source(&forward, "co2", "Climate"),
-        VariableSource::UpstreamOutput
-    );
+    assert_eq!(source(&forward, "co2", "Climate"), VariableSource::Upstream);
     assert_eq!(forward.variable_sources(), backward.variable_sources());
     for variable in ["temperature", "co2"] {
         assert_eq!(values(&forward, variable), values(&backward, variable));
@@ -175,8 +170,8 @@ fn shuffled_chain_gives_identical_sources() {
         })
         .collect();
     for model in &models {
-        assert_eq!(source(model, "a", "ChainB"), VariableSource::UpstreamOutput);
-        assert_eq!(source(model, "b", "ChainC"), VariableSource::UpstreamOutput);
+        assert_eq!(source(model, "a", "ChainB"), VariableSource::Upstream);
+        assert_eq!(source(model, "b", "ChainC"), VariableSource::Upstream);
         assert_eq!(model.variable_sources(), models[0].variable_sources());
         assert_eq!(values(model, "c"), values(&models[0], "c"));
     }
@@ -195,7 +190,7 @@ fn lag_for_leaves_sibling_consumer_unlagged() {
     );
     assert_eq!(
         source(&model, "temperature", "Ozone"),
-        VariableSource::UpstreamOutput
+        VariableSource::Upstream
     );
 }
 
@@ -220,7 +215,7 @@ fn lag_marks_every_consumer() {
 }
 
 #[test]
-fn lag_holds_for_an_exogenous_variable() {
+fn lag_holds_for_a_prescribed_variable() {
     let model = builder(vec![Arc::new(Ozone)])
         .with_lag("temperature")
         .build()

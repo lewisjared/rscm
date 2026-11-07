@@ -21,20 +21,25 @@ import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
+from rscm import names
 from rscm._lib.fair import (
-    FairAerosolCloudBuilder,
-    FairCH4LifetimeBuilder,
-    FairEescBuilder,
-    FairEnergyBalanceBuilder,
-    FairForcingAggregationBuilder,
-    FairGasCycleBuilder,
-    FairGhgForcingBuilder,
-    FairLinearForcingBuilder,
+    AerosolCloudBuilder,
+    CH4LifetimeBuilder,
+    EESCBuilder,
+    EnergyBalanceBuilder,
+    ForcingAggregationBuilder,
+    GasCycleBuilder,
+    GHGForcingBuilder,
+    LinearForcingBuilder,
 )
 from rscm.fair import naming
 
 if TYPE_CHECKING:
-    from rscm._lib.core import Component, ModelBuilder
+    from collections.abc import Mapping
+
+    from rscm._lib.core import ModelBuilder, RustComponent
 
 FairConfig = dict[str, Any]
 Species = dict[str, Any]
@@ -97,7 +102,7 @@ def is_ghg(entry: Species) -> bool:
 
 
 def thornhill(config: FairConfig) -> bool:
-    """Whether CH4 takes its lifetime from `FairCH4Lifetime`."""
+    """Whether CH4 takes its lifetime from `CH4Lifetime`."""
     return (
         config["options"]["ch4_method"] == "thornhill2021"
         and _one(config, "ch4") is not None
@@ -107,21 +112,26 @@ def thornhill(config: FairConfig) -> bool:
 CH4_LIFETIME_SENSITIVITY = "ch4_lifetime_chemical_sensitivity"
 
 
-def _ch4_lifetime(config: FairConfig) -> Component:
-    sensitivity = CH4_LIFETIME_SENSITIVITY
-    emissions = _chemistry_drivers(config, "emissions", sensitivity, key="sensitivity")
-    concentrations = _chemistry_drivers(
-        config, "concentration", sensitivity, key="sensitivity"
-    )
-    return FairCH4LifetimeBuilder.from_parameters(
+def _precursors(config: FairConfig, driver: str) -> list[dict[str, Any]]:
+    # CH4Lifetime lists emissions and concentrations apart, so has no driver key.
+    return [
+        {k: v for k, v in precursor.items() if k != "driver"}
+        for precursor in _chemistry_drivers(
+            config, driver, CH4_LIFETIME_SENSITIVITY, key="sensitivity"
+        )
+    ]
+
+
+def _ch4_lifetime(config: FairConfig) -> RustComponent:
+    return CH4LifetimeBuilder.from_parameters(
         {
-            "emissions": emissions,
-            "concentrations": concentrations,
+            "emissions": _precursors(config, "emissions"),
+            "concentrations": _precursors(config, "concentration"),
             "temperature_sensitivity": config["species_configs"][
                 "lifetime_temperature_sensitivity"
             ],
-            "ch4_min": config["options"]["ch4_min"],
-            "output": naming.CH4_LIFETIME_SCALING,
+            "minimum_scaling": config["options"]["ch4_min"],
+            "output": names.LIFETIME_SCALING_CH4,
         }
     ).build()
 
@@ -156,22 +166,24 @@ def species_outputs(config: FairConfig) -> dict[str, dict[str, str]]:
             outputs["airborne_emissions"][name] = naming.airborne_emissions(name)
             outputs["cumulative_emissions"][name] = naming.cumulative_emissions(name)
         elif s["type"] == "eesc":
-            outputs["concentration"][name] = naming.EESC
+            outputs["concentration"][name] = (
+                names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE
+            )
     return outputs
 
 
 def _gas(config: FairConfig, entry: Species) -> dict[str, Any]:
     name = entry["name"]
     if entry["input_mode"] == "concentration":
-        mode = "concentration"
+        driver = "concentration"
         emissions: list[str] = []
     else:
-        mode = "emissions"
+        driver = "emissions"
         emissions = emission_drivers(config, entry)
     gas: dict[str, Any] = {
-        "mode": mode,
+        "driver": driver,
         "emissions": emissions,
-        "inverse_emissions": naming.emissions(name),
+        "inverse_emissions": naming.inverse_emissions(name),
         "emissions_unit": naming.emissions_unit(entry),
         "amount_unit": naming.amount_unit(entry),
         "concentration": naming.concentration(name),
@@ -179,7 +191,7 @@ def _gas(config: FairConfig, entry: Species) -> dict[str, Any]:
         "airborne_emissions": naming.airborne_emissions(name),
         "cumulative_emissions": naming.cumulative_emissions(name),
         "lifetime_scaling": (
-            naming.CH4_LIFETIME_SCALING
+            names.LIFETIME_SCALING_CH4
             if entry["type"] == "ch4" and thornhill(config)
             else None
         ),
@@ -201,19 +213,19 @@ def _gas(config: FairConfig, entry: Species) -> dict[str, Any]:
     return gas
 
 
-def _gas_cycle(config: FairConfig, gases: list[Species]) -> Component:
-    return FairGasCycleBuilder.from_parameters(
+def _gas_cycle(config: FairConfig, gases: list[Species]) -> RustComponent:
+    return GasCycleBuilder.from_parameters(
         {
             "species": [_gas(config, s) for s in gases],
-            "iirf_max": config["options"]["iirf_max"],
+            "maximum_iirf": config["options"]["iirf_max"],
         }
     ).build()
 
 
-def _eesc(config: FairConfig) -> Component:
+def _eesc(config: FairConfig) -> RustComponent:
     halogens = _of_type(config, *naming.HALOGEN_TYPES)
     (cfc11,) = _of_type(config, "cfc-11")
-    return FairEescBuilder.from_parameters(
+    return EESCBuilder.from_parameters(
         {
             "halogens": [
                 {
@@ -227,12 +239,12 @@ def _eesc(config: FairConfig) -> Component:
             ],
             "cfc11_fractional_release": _value(cfc11["fractional_release"]),
             "br_cl_ratio": config["options"]["br_cl_ods_potential"],
-            "output": naming.EESC,
+            "output": names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE,
         }
     ).build()
 
 
-def _ghg_forcing(config: FairConfig, gases: list[Species]) -> Component:
+def _ghg_forcing(config: FairConfig, gases: list[Species]) -> RustComponent:
     if config["options"]["ghg_method"] != "meinshausen2020":
         msg = f"ghg_method {config['options']['ghg_method']!r} is not implemented"
         raise NotImplementedError(msg)
@@ -259,20 +271,20 @@ def _ghg_forcing(config: FairConfig, gases: list[Species]) -> Component:
             raise ValueError(msg)
         major[kind] = gas(found[0])
     minor = [gas(s) for s in gases if s["type"] not in major]
-    return FairGhgForcingBuilder.from_parameters({**major, "minor": minor}).build()
+    return GHGForcingBuilder.from_parameters({**major, "minor": minor}).build()
 
 
 def _driver(
     entry: Species,
-    kind: str,
+    driver: str,
     coefficient: str,
     *,
     key: str = "radiative_efficiency",
     baselined: bool = True,
 ) -> dict[str, Any]:
-    if kind == "concentration":
+    if driver == "concentration":
         variable = (
-            naming.EESC
+            names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE
             if entry["type"] == "eesc"
             else naming.concentration(entry["name"])
         )
@@ -285,7 +297,7 @@ def _driver(
     return {
         "variable": variable,
         "unit": unit,
-        "kind": kind,
+        "driver": driver,
         "baseline": _value(baseline) if baselined else 0.0,
         key: _value(entry[coefficient]),
     }
@@ -293,16 +305,16 @@ def _driver(
 
 def _chemistry_drivers(
     config: FairConfig,
-    kind: str,
+    driver: str,
     coefficient: str,
     *,
     key: str = "radiative_efficiency",
 ) -> list[dict[str, Any]]:
-    """Drivers of the species with aerosol chemistry from `kind`, in species order."""
+    """Drivers of the species with aerosol chemistry from `driver`, in species order."""
     return [
-        _driver(s, kind, coefficient, key=key)
+        _driver(s, driver, coefficient, key=key)
         for s in config["species"]
-        if s[f"aerosol_chemistry_from_{kind}"]
+        if s[f"aerosol_chemistry_from_{driver}"]
     ]
 
 
@@ -327,7 +339,7 @@ def _aerosol_drivers(
     return drivers
 
 
-# Coefficient, driver kind and whether it is baselined, of the single-driver forcings.
+# Coefficient, driver and whether it is baselined, of the single-driver forcings.
 _LINEAR_DRIVERS = {
     "contrails": ("contrails_radiative_efficiency", "emissions", False),
     "lapsi": ("lapsi_radiative_efficiency", "emissions", True),
@@ -349,16 +361,16 @@ def _linear_drivers(config: FairConfig, kind: str) -> list[dict[str, Any]]:
         return _chemistry_drivers(
             config, "concentration", coefficient
         ) + _chemistry_drivers(config, "emissions", coefficient)
-    coefficient, driver_kind, baselined = _LINEAR_DRIVERS[kind]
+    coefficient, driver, baselined = _LINEAR_DRIVERS[kind]
     return [
-        _driver(s, driver_kind, coefficient, baselined=baselined)
+        _driver(s, driver, coefficient, baselined=baselined)
         for s in species
         if _nonzero(s.get(coefficient))
     ]
 
 
-def _linear_forcing(config: FairConfig, entry: Species) -> Component:
-    return FairLinearForcingBuilder.from_parameters(
+def _linear_forcing(config: FairConfig, entry: Species) -> RustComponent:
+    return LinearForcingBuilder.from_parameters(
         {
             "forcing": naming.forcing(entry),
             "drivers": _linear_drivers(config, entry["type"]),
@@ -368,8 +380,8 @@ def _linear_forcing(config: FairConfig, entry: Species) -> Component:
     ).build()
 
 
-def _aerosol_cloud(config: FairConfig, entry: Species) -> Component:
-    return FairAerosolCloudBuilder.from_parameters(
+def _aerosol_cloud(config: FairConfig, entry: Species) -> RustComponent:
+    return AerosolCloudBuilder.from_parameters(
         {
             "forcing": naming.forcing(entry),
             "drivers": _aerosol_drivers(config, "aci_shape", key="shape"),
@@ -391,23 +403,63 @@ def forcing_agents(config: FairConfig) -> list[Species]:
     ]
 
 
-def _aggregation(config: FairConfig) -> Component:
+def forcing_category(entry: Species) -> str:
+    """ForcingAggregation category of a species entry, by MAGICC7's ERF subtotals."""
+    kind = entry["type"]
+    if kind in naming.GHG_TYPES:
+        return "greenhouse_gas"
+    if kind in ("ari", "aci"):
+        return "aerosol"
+    if kind in ("solar", "volcanic"):
+        return "natural"
+    return "anthropogenic"
+
+
+SUBTOTAL_CATEGORIES = {
+    names.ERF_GREENHOUSE_GASES: ("greenhouse_gas",),
+    names.ERF_AEROSOLS: ("aerosol",),
+    names.ERF_ANTHROPOGENIC: ("greenhouse_gas", "aerosol", "anthropogenic"),
+}
+"""Categories of the agents in each ForcingAggregation subtotal."""
+
+
+def forcing_subtotals(
+    config: FairConfig, forcing: Mapping[str, float]
+) -> dict[str, float]:
+    """Return the ForcingAggregation subtotals of the agents' `forcing`, NaN skipped."""
+    agents = forcing_agents(config)
+    return {
+        name: float(
+            np.nansum(
+                [
+                    forcing[naming.forcing(s)]
+                    for s in agents
+                    if forcing_category(s) in categories
+                ]
+            )
+        )
+        for name, categories in SUBTOTAL_CATEGORIES.items()
+    }
+
+
+def _aggregation(config: FairConfig) -> RustComponent:
     agents = []
     for s in forcing_agents(config):
         agent = {
             "forcing": naming.forcing(s),
+            "category": forcing_category(s),
             "efficacy": _value(s["forcing_efficacy"]),
         }
         if s["input_mode"] == "forcing":
             agent["prescribed"] = naming.prescribed_forcing(s)
             agent["temperature_feedback"] = _value(s["forcing_temperature_feedback"])
         agents.append(agent)
-    return FairForcingAggregationBuilder.from_parameters({"agents": agents}).build()
+    return ForcingAggregationBuilder.from_parameters({"agents": agents}).build()
 
 
-def _energy_balance(config: FairConfig) -> Component:
+def _energy_balance(config: FairConfig) -> RustComponent:
     climate = config["climate"]
-    return FairEnergyBalanceBuilder.from_parameters(
+    return EnergyBalanceBuilder.from_parameters(
         {
             "ocean_heat_capacity": climate["ocean_heat_capacity"],
             "ocean_heat_transfer": climate["ocean_heat_transfer"],
@@ -419,9 +471,9 @@ def _energy_balance(config: FairConfig) -> Component:
     ).build()
 
 
-def build_components(
+def components(
     config: FairConfig, *, energy_balance: bool = True
-) -> list[Component]:
+) -> list[RustComponent]:
     """Components reproducing a FaIR run, in the order they must be added to a model.
 
     Without `energy_balance`, another climate component must write the surface
@@ -432,40 +484,40 @@ def build_components(
     if prescribed:
         msg = f"FaIR overwrites prescribed greenhouse gas forcing: {prescribed}"
         raise ValueError(msg)
-    components = []
+    result = []
     if thornhill(config):
-        components.append(_ch4_lifetime(config))
+        result.append(_ch4_lifetime(config))
     if gases:
-        components.append(_gas_cycle(config, gases))
+        result.append(_gas_cycle(config, gases))
     if _calculated(config, "eesc") is not None:
-        components.append(_eesc(config))
+        result.append(_eesc(config))
     if gases:
-        components.append(_ghg_forcing(config, gases))
+        result.append(_ghg_forcing(config, gases))
     for kind in LINEAR_TYPES:
         entry = _calculated(config, kind)
         if entry is not None:
-            components.append(_linear_forcing(config, entry))
+            result.append(_linear_forcing(config, entry))
     entry = _calculated(config, "aci")
     if entry is not None:
-        components.append(_aerosol_cloud(config, entry))
-    components.append(_aggregation(config))
+        result.append(_aerosol_cloud(config, entry))
+    result.append(_aggregation(config))
     if energy_balance:
-        components.append(_energy_balance(config))
-    return components
+        result.append(_energy_balance(config))
+    return result
 
 
 def with_lags(builder: ModelBuilder, config: FairConfig) -> ModelBuilder:
-    """Add FaIR's feedback lags to a builder of `build_components`.
+    """Add FaIR's feedback lags to a builder of `components`.
 
-    Every component reads the previous step's surface temperature,
+    Every component reads the previous step's surface air temperature change,
     and the methane lifetime the previous step's concentrations.
     """
-    builder.with_lag(naming.SURFACE_TEMPERATURE)
+    builder.with_lag(names.SURFACE_AIR_TEMPERATURE_CHANGE)
     if thornhill(config):
         for driver in _chemistry_drivers(
             config, "concentration", CH4_LIFETIME_SENSITIVITY, key="sensitivity"
         ):
-            builder.with_lag_for(driver["variable"], "FairCH4Lifetime")
+            builder.with_lag_for(driver["variable"], "CH4Lifetime")
     return builder
 
 
@@ -474,18 +526,18 @@ def initial_values(
 ) -> dict[str, float]:
     """Return FaIR's values at the first time of every variable the components write.
 
-    `energy_balance` matches `build_components`.
+    `energy_balance` matches `components`.
     """
     values = dict.fromkeys(
-        (naming.TOTAL_FORCING, naming.EFFICACY_ADJUSTED_FORCING), 0.0
+        (names.ERF, names.EFFICACY_ADJUSTED_ERF, *SUBTOTAL_CATEGORIES), 0.0
     )
     if energy_balance:
         n_layers = len(config["climate"]["ocean_heat_capacity"])
         values |= dict.fromkeys(
             (
-                naming.STOCHASTIC_FORCING,
-                naming.OCEAN_HEAT_CONTENT_CHANGE,
-                naming.ENERGY_IMBALANCE,
+                names.STOCHASTIC_FORCING,
+                names.OCEAN_HEAT_CONTENT,
+                names.NET_ENERGY_IMBALANCE,
                 *map(naming.layer_temperature, range(n_layers)),
             ),
             0.0,
@@ -499,7 +551,9 @@ def initial_values(
             values[naming.airborne_emissions(s["name"])] = 0.0
             values[naming.cumulative_emissions(s["name"])] = 0.0
         if s["type"] == "eesc" and s["input_mode"] == "calculated":
-            values[naming.EESC] = _value(s["baseline_concentration"])
+            values[names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE] = _value(
+                s["baseline_concentration"]
+            )
     for s in forcing_agents(config):
         values[naming.forcing(s)] = 0.0
     return values

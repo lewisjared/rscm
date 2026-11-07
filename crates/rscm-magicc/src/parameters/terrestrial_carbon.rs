@@ -1,7 +1,7 @@
 //! Terrestrial Carbon Parameters
 //!
 //! Parameters for the MAGICC7 3-pool terrestrial carbon cycle model with
-//! three CO2 fertilization methods, two respiration methods, and temperature feedbacks.
+//! three CO2 fertilisation methods, two respiration methods, and temperature feedbacks.
 //!
 //! # Reference
 //!
@@ -12,7 +12,7 @@ use super::NitrogenParameters;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
-/// CO2 fertilization method selector.
+/// CO2 fertilisation method selector.
 ///
 /// MAGICC7 uses a continuous float (1.0-3.0) that blends adjacent methods.
 /// This enum provides named variants for the three pure methods plus
@@ -21,8 +21,8 @@ use serde::{Deserialize, Serialize};
 /// MAGICC7: CO2_FERTILIZATION_METHOD
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(from = "FloatValue", into = "FloatValue")]
-pub enum FertilizationMethod {
-    /// No CO2 fertilization (MAGICC7 value < 1.0)
+pub enum FertilisationMethod {
+    /// No CO2 fertilisation (MAGICC7 value < 1.0)
     None,
     /// Logarithmic (Keeling-Bacastow 1973) (MAGICC7 value = 1.0)
     Logarithmic,
@@ -35,7 +35,7 @@ pub enum FertilizationMethod {
     Blended(FloatValue),
 }
 
-impl FertilizationMethod {
+impl FertilisationMethod {
     /// MAGICC7 continuous parameter value.
     pub fn as_f64(&self) -> FloatValue {
         match self {
@@ -48,7 +48,7 @@ impl FertilizationMethod {
     }
 }
 
-impl From<FloatValue> for FertilizationMethod {
+impl From<FloatValue> for FertilisationMethod {
     fn from(v: FloatValue) -> Self {
         if v < 1.0 {
             Self::None
@@ -64,8 +64,8 @@ impl From<FloatValue> for FertilizationMethod {
     }
 }
 
-impl From<FertilizationMethod> for FloatValue {
-    fn from(m: FertilizationMethod) -> Self {
+impl From<FertilisationMethod> for FloatValue {
+    fn from(m: FertilisationMethod) -> Self {
         m.as_f64()
     }
 }
@@ -90,7 +90,7 @@ impl From<FertilizationMethod> for FloatValue {
 ///
 /// # Key Feedbacks
 ///
-/// 1. **CO2 Fertilization**: Higher atmospheric CO2 enhances NPP via three
+/// 1. **CO2 Fertilisation**: Higher atmospheric CO2 enhances NPP via three
 ///    blendable methods (logarithmic, Gifford/Michaelis-Menten, sigmoid).
 ///
 /// 2. **Temperature-Respiration Feedback**: Warmer temperatures accelerate decay:
@@ -99,70 +99,71 @@ impl From<FertilizationMethod> for FloatValue {
 /// 3. **Time-varying turnover**: Cumulative deforestation reduces pool turnover times.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct TerrestrialCarbonParameters {
     /// Pre-industrial Net Primary Production (NPP)
     /// unit: GtC/yr
     /// MAGICC7: CO2_NPP_INITIAL
     pub npp_pi: FloatValue,
 
-    /// Pre-industrial CO2 concentration used as reference for fertilization
+    /// Pre-industrial CO2 concentration used as reference for fertilisation
     /// unit: ppm
     /// MAGICC7: CO2_PREINDCO2CONC
     pub co2_pi: FloatValue,
 
-    /// CO2 fertilization factor (beta in logarithmic formula, also used by Gifford/sigmoid)
+    /// CO2 fertilisation factor (beta in logarithmic formula, also used by Gifford/sigmoid)
     /// unit: dimensionless
     /// MAGICC7: CO2_FERTILIZATION_FACTOR
-    pub beta: FloatValue,
+    pub fertilisation_factor: FloatValue,
 
-    /// CO2 fertilization method.
+    /// CO2 fertilisation method.
     /// MAGICC7: CO2_FERTILIZATION_METHOD
-    pub fertilization_method: FertilizationMethod,
+    pub fertilisation_method: FertilisationMethod,
 
-    /// Curvature parameter for sigmoid fertilization method.
+    /// Curvature parameter for sigmoid fertilisation method.
     /// unit: ppm
     /// MAGICC7: CO2_FERTILIZATION_FACTOR2
-    pub fertilization_factor2: FloatValue,
+    pub fertilisation_factor2: FloatValue,
 
     /// CO2 concentration at which NPP would be zero (Gifford method).
     /// unit: ppm
     /// MAGICC7: CO2_GIFFORD_CONC_FOR_ZERONPP
-    pub gifford_conc_for_zero_npp: FloatValue,
+    pub gifford_concentration_for_zero_npp: FloatValue,
 
-    /// Year before which CO2 fertilization reference tracks current CO2.
+    /// Year before which CO2 fertilisation reference tracks current CO2.
     /// unit: year
     /// MAGICC7: CO2_FERTILIZATION_YRSTART
-    pub fertilization_yrstart: FloatValue,
+    pub fertilisation_start_year: FloatValue,
 
     /// NPP temperature sensitivity coefficient (gamma_NPP)
     /// Positive means warming increases NPP.
     /// unit: K^-1
     /// MAGICC7: CO2_FEEDBACKFACTOR_NPP
-    pub npp_temp_sensitivity: FloatValue,
+    pub npp_temperature_sensitivity: FloatValue,
 
     /// Respiration temperature sensitivity coefficient (gamma_resp)
     /// Controls how plant pool respiration responds to temperature.
     /// unit: K^-1
     /// MAGICC7: CO2_FEEDBACKFACTOR_RESPIRATION
-    pub resp_temp_sensitivity: FloatValue,
+    pub respiration_temperature_sensitivity: FloatValue,
 
     /// Detritus decay temperature sensitivity coefficient (gamma_detritus)
     /// Positive means warming increases decay rate.
     /// unit: K^-1
     /// MAGICC7: CO2_FEEDBACKFACTOR_DETRITUS
-    pub detritus_temp_sensitivity: FloatValue,
+    pub detritus_temperature_sensitivity: FloatValue,
 
     /// Soil decay temperature sensitivity coefficient (gamma_soil)
     /// Positive means warming increases decay rate.
     /// unit: K^-1
     /// MAGICC7: CO2_FEEDBACKFACTOR_SOIL
-    pub soil_temp_sensitivity: FloatValue,
+    pub soil_temperature_sensitivity: FloatValue,
 
     /// Year from which warming drives the temperature feedbacks.
     /// Feedbacks use the warming since this year, floored at zero.
     /// unit: year
     /// MAGICC7: CO2_TEMPFEEDBACK_YRSTART
-    pub tempfeedback_yrstart: FloatValue,
+    pub temperature_feedback_start_year: FloatValue,
 
     /// Pre-industrial plant pool carbon content
     /// unit: GtC
@@ -184,46 +185,46 @@ pub struct TerrestrialCarbonParameters {
     /// MAGICC7: CO2_RESPIRATION_INITIAL
     pub respiration_pi: FloatValue,
 
-    /// Scaling of fertilization effect on plant respiration.
+    /// Scaling of fertilisation effect on plant respiration.
     /// R_h = R_h0 * (1 + alpha*(beta-1)) * min(1, C_P/C_P0) * f_T_resp
     /// unit: dimensionless
     /// MAGICC7: CO2_PLANTBOXRESP_FERTSCALE
-    pub plantbox_resp_fertscale: FloatValue,
+    pub plant_respiration_fertilisation_scale: FloatValue,
 
     /// Fraction of NPP going directly to plant pool
     /// unit: dimensionless
     /// MAGICC7: CO2_FRACTION_NPP_2_PLANT
-    pub frac_npp_to_plant: FloatValue,
+    pub npp_to_plant_fraction: FloatValue,
 
     /// Fraction of NPP going directly to detritus pool
     /// unit: dimensionless
     /// MAGICC7: CO2_FRACTION_NPP_2_DETRITUS
-    pub frac_npp_to_detritus: FloatValue,
+    pub npp_to_detritus_fraction: FloatValue,
 
     /// Fraction of plant turnover flux going to detritus (vs soil)
     /// unit: dimensionless
     /// MAGICC7: CO2_FRACTION_PLANT_2_DETRITUS
-    pub frac_plant_to_detritus: FloatValue,
+    pub plant_to_detritus_fraction: FloatValue,
 
     /// Fraction of detritus decay going to soil (vs atmosphere)
     /// unit: dimensionless
     /// MAGICC7: CO2_FRACTION_DETRITUS_2_SOIL
-    pub frac_detritus_to_soil: FloatValue,
+    pub detritus_to_soil_fraction: FloatValue,
 
     /// Fraction of deforestation emissions from plant pool
     /// unit: dimensionless
     /// MAGICC7: CO2_FRACTION_DEFOREST_PLANT
-    pub frac_deforest_plant: FloatValue,
+    pub deforestation_plant_fraction: FloatValue,
 
     /// Fraction of deforestation emissions from detritus pool
     /// unit: dimensionless
     /// MAGICC7: CO2_FRACTION_DEFOREST_DETRITUS
-    pub frac_deforest_detritus: FloatValue,
+    pub deforestation_detritus_fraction: FloatValue,
 
     /// Fraction of deforestation that is permanent (no regrowth)
     /// unit: dimensionless
     /// MAGICC7: CO2_NORGRWTH_FRAC_DEFO
-    pub norgrwth_frac_defo: FloatValue,
+    pub deforestation_no_regrowth_fraction: FloatValue,
 
     /// Nitrogen limitation of NPP, off when `None`
     /// MAGICC7: NCYCLE_APPLY
@@ -235,33 +236,33 @@ impl Default for TerrestrialCarbonParameters {
         Self {
             npp_pi: 66.2716,
             co2_pi: 278.0,
-            beta: 0.6485981,
-            fertilization_method: FertilizationMethod::Blended(1.100486),
-            fertilization_factor2: 100.0,
-            gifford_conc_for_zero_npp: 80.0,
-            fertilization_yrstart: 1900.0,
+            fertilisation_factor: 0.6485981,
+            fertilisation_method: FertilisationMethod::Blended(1.100486),
+            fertilisation_factor2: 100.0,
+            gifford_concentration_for_zero_npp: 80.0,
+            fertilisation_start_year: 1900.0,
 
-            npp_temp_sensitivity: 0.01070037,
-            resp_temp_sensitivity: 0.06845893,
-            detritus_temp_sensitivity: -0.1357817,
-            soil_temp_sensitivity: 0.1540879,
-            tempfeedback_yrstart: 1900.0,
+            npp_temperature_sensitivity: 0.01070037,
+            respiration_temperature_sensitivity: 0.06845893,
+            detritus_temperature_sensitivity: -0.1357817,
+            soil_temperature_sensitivity: 0.1540879,
+            temperature_feedback_start_year: 1900.0,
 
             plant_pool_pi: 884.8584,
             detritus_pool_pi: 92.7738,
             soil_pool_pi: 1681.525,
 
             respiration_pi: 12.26025,
-            plantbox_resp_fertscale: 0.95,
+            plant_respiration_fertilisation_scale: 0.95,
 
-            frac_npp_to_plant: 0.4482615,
-            frac_npp_to_detritus: 0.3998165,
-            frac_plant_to_detritus: 0.9989021,
-            frac_detritus_to_soil: 0.00100763,
+            npp_to_plant_fraction: 0.4482615,
+            npp_to_detritus_fraction: 0.3998165,
+            plant_to_detritus_fraction: 0.9989021,
+            detritus_to_soil_fraction: 0.00100763,
 
-            frac_deforest_plant: 0.70,
-            frac_deforest_detritus: 0.05,
-            norgrwth_frac_defo: 0.5,
+            deforestation_plant_fraction: 0.70,
+            deforestation_detritus_fraction: 0.05,
+            deforestation_no_regrowth_fraction: 0.5,
             nitrogen: None,
         }
     }
@@ -270,9 +271,9 @@ impl Default for TerrestrialCarbonParameters {
 impl TerrestrialCarbonParameters {
     /// Fraction of NPP going directly to soil pool (derived).
     ///
-    /// Calculated as `1 - frac_npp_to_plant - frac_npp_to_detritus`.
-    pub fn frac_npp_to_soil(&self) -> FloatValue {
-        let f = 1.0 - self.frac_npp_to_plant - self.frac_npp_to_detritus;
+    /// Calculated as `1 - npp_to_plant_fraction - npp_to_detritus_fraction`.
+    pub fn npp_to_soil_fraction(&self) -> FloatValue {
+        let f = 1.0 - self.npp_to_plant_fraction - self.npp_to_detritus_fraction;
         f.max(0.0)
     }
 
@@ -280,23 +281,23 @@ impl TerrestrialCarbonParameters {
     ///
     /// Validates that plant + detritus fractions do not exceed 1.0 and derives
     /// the soil fraction as the residual.
-    pub fn frac_deforest_soil(&self) -> FloatValue {
-        let total = self.frac_deforest_plant + self.frac_deforest_detritus;
+    pub fn deforestation_soil_fraction(&self) -> FloatValue {
+        let total = self.deforestation_plant_fraction + self.deforestation_detritus_fraction;
         assert!(
             total <= 1.0 + 1e-9,
-            "frac_deforest_plant ({}) + frac_deforest_detritus ({}) must not exceed 1.0, got {}",
-            self.frac_deforest_plant,
-            self.frac_deforest_detritus,
+            "deforestation_plant_fraction ({}) + deforestation_detritus_fraction ({}) must not exceed 1.0, got {}",
+            self.deforestation_plant_fraction,
+            self.deforestation_detritus_fraction,
             total
         );
-        (1.0 - self.frac_deforest_plant - self.frac_deforest_detritus).max(0.0)
+        (1.0 - self.deforestation_plant_fraction - self.deforestation_detritus_fraction).max(0.0)
     }
 
     /// Net flux to plant pool at pre-industrial (NPP to plant - respiration).
     ///
     /// This is used to derive the initial turnover time for the plant pool.
     pub fn net_flux_to_plant_pi(&self) -> FloatValue {
-        self.frac_npp_to_plant * self.npp_pi - self.respiration_pi
+        self.npp_to_plant_fraction * self.npp_pi - self.respiration_pi
     }
 
     /// Initial turnover time for plant pool at pre-industrial (years).
@@ -317,8 +318,8 @@ impl TerrestrialCarbonParameters {
     /// MAGICC7: INI_TURNOVERTIME_DETRPOOL
     pub fn tau_detritus_pi(&self) -> FloatValue {
         let net_flux_plant = self.net_flux_to_plant_pi();
-        let flux_into_detritus =
-            self.frac_npp_to_detritus * self.npp_pi + self.frac_plant_to_detritus * net_flux_plant;
+        let flux_into_detritus = self.npp_to_detritus_fraction * self.npp_pi
+            + self.plant_to_detritus_fraction * net_flux_plant;
         if flux_into_detritus > 1e-10 {
             self.detritus_pool_pi / flux_into_detritus
         } else {
@@ -329,7 +330,8 @@ impl TerrestrialCarbonParameters {
     /// Flux into detritus at pre-industrial steady state (GtC/yr).
     pub fn flux_into_detritus_pi(&self) -> FloatValue {
         let net_flux_plant = self.net_flux_to_plant_pi();
-        self.frac_npp_to_detritus * self.npp_pi + self.frac_plant_to_detritus * net_flux_plant
+        self.npp_to_detritus_fraction * self.npp_pi
+            + self.plant_to_detritus_fraction * net_flux_plant
     }
 
     /// Initial turnover time for soil pool at pre-industrial (years).
@@ -359,7 +361,7 @@ impl TerrestrialCarbonParameters {
         tau_detritus: FloatValue,
     ) -> FloatValue {
         (self.npp_pi - self.respiration_pi)
-            - (1.0 - self.frac_detritus_to_soil) * detritus_pool / tau_detritus
+            - (1.0 - self.detritus_to_soil_fraction) * detritus_pool / tau_detritus
     }
 
     /// Total pre-industrial terrestrial carbon pool (GtC).
@@ -377,15 +379,16 @@ mod tests {
         let params = TerrestrialCarbonParameters::default();
         assert!((params.npp_pi - 66.2716).abs() < 1e-10);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
-        assert!((params.fertilization_method.as_f64() - 1.100486).abs() < 1e-10);
-        assert!((params.plantbox_resp_fertscale - 0.95).abs() < 1e-10);
+        assert!((params.fertilisation_method.as_f64() - 1.100486).abs() < 1e-10);
+        assert!((params.plant_respiration_fertilisation_scale - 0.95).abs() < 1e-10);
     }
 
     #[test]
     fn test_npp_fractions_sum_to_one() {
         let params = TerrestrialCarbonParameters::default();
-        let sum =
-            params.frac_npp_to_plant + params.frac_npp_to_detritus + params.frac_npp_to_soil();
+        let sum = params.npp_to_plant_fraction
+            + params.npp_to_detritus_fraction
+            + params.npp_to_soil_fraction();
         assert!(
             (sum - 1.0).abs() < 1e-10,
             "NPP fractions should sum to 1.0, got {}",
@@ -396,9 +399,9 @@ mod tests {
     #[test]
     fn test_deforest_fractions_sum_to_one() {
         let params = TerrestrialCarbonParameters::default();
-        let sum = params.frac_deforest_plant
-            + params.frac_deforest_detritus
-            + params.frac_deforest_soil();
+        let sum = params.deforestation_plant_fraction
+            + params.deforestation_detritus_fraction
+            + params.deforestation_soil_fraction();
         assert!(
             (sum - 1.0).abs() < 1e-10,
             "Deforestation fractions should sum to 1.0, got {}",
@@ -453,19 +456,19 @@ mod tests {
     fn test_temperature_sensitivities_positive() {
         let params = TerrestrialCarbonParameters::default();
         assert!(
-            params.resp_temp_sensitivity > 0.0,
+            params.respiration_temperature_sensitivity > 0.0,
             "Respiration temp sensitivity should be positive"
         );
         assert!(
-            params.soil_temp_sensitivity > 0.0,
+            params.soil_temperature_sensitivity > 0.0,
             "Soil temp sensitivity should be positive"
         );
     }
 
     #[test]
-    fn test_beta_fertilization_reasonable() {
+    fn test_beta_fertilisation_reasonable() {
         let params = TerrestrialCarbonParameters::default();
-        let doubled_co2_factor = 1.0 + params.beta * (2.0_f64).ln();
+        let doubled_co2_factor = 1.0 + params.fertilisation_factor * (2.0_f64).ln();
         assert!(
             (doubled_co2_factor - 1.45).abs() < 0.1,
             "Doubled CO2 should give ~45% NPP increase, got {:.1}%",

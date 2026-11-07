@@ -162,9 +162,9 @@ impl Serialize for InterpolationStrategy {
         S: serde::Serializer,
     {
         match self {
-            InterpolationStrategy::Linear(_) => serializer.serialize_str("Linear"),
-            InterpolationStrategy::Next(_) => serializer.serialize_str("Next"),
-            InterpolationStrategy::Previous(_) => serializer.serialize_str("Previous"),
+            InterpolationStrategy::Linear(_) => serializer.serialize_str("linear"),
+            InterpolationStrategy::Next(_) => serializer.serialize_str("next"),
+            InterpolationStrategy::Previous(_) => serializer.serialize_str("previous"),
         }
     }
 }
@@ -175,11 +175,11 @@ impl<'de> Deserialize<'de> for InterpolationStrategy {
     {
         let s = String::deserialize(deserializer)?;
         match s.as_str() {
-            "Linear" => Ok(InterpolationStrategy::Linear(LinearSplineStrategy::new(
+            "linear" => Ok(InterpolationStrategy::Linear(LinearSplineStrategy::new(
                 true,
             ))),
-            "Next" => Ok(InterpolationStrategy::Next(NextStrategy::new(true))),
-            "Previous" => Ok(InterpolationStrategy::Previous(PreviousStrategy::new(true))),
+            "next" => Ok(InterpolationStrategy::Next(NextStrategy::new(true))),
+            "previous" => Ok(InterpolationStrategy::Previous(PreviousStrategy::new(true))),
             _ => Err(serde::de::Error::custom(format!("Unknown strategy: {}", s))),
         }
     }

@@ -18,6 +18,7 @@ pub const GTC_PER_PPM: f64 = 2.123;
 /// land flux includes land-use emissions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct CO2BudgetParameters {
     /// Conversion factor: GtC per ppm CO2.
     ///
@@ -33,20 +34,22 @@ pub struct CO2BudgetParameters {
     /// Used for calculating airborne fraction relative to pre-industrial.
     ///
     /// Default: 278.0 ppm
+    /// MAGICC7: CO2_PREINDCO2CONC
     pub co2_pi: f64,
 
     /// Add `Emissions|CO2|Permafrost` from the `Permafrost` component to the sources.
+    /// MAGICC7: PF_APPLY
     ///
     /// Default: false
-    pub permafrost: bool,
+    pub include_permafrost: bool,
 
-    /// Last year of concentrations prescribed by `Atmospheric Concentration|CO2|Prescribed`,
+    /// Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|CO2`,
     /// or `None` to calculate them from emissions throughout.
     /// MAGICC7: CO2_SWITCHFROMCONC2EMIS_YEAR
     pub concentration_switch_year: Option<f64>,
 
-    /// Take next year's concentration from `End-of-Year Atmospheric CO2`, which
-    /// `OceanCarbon` integrates over its sub-steps as MAGICC7 does.
+    /// Take next year's concentration from `Ocean Carbon Atmospheric Concentrations|CO2`, which
+    /// `OceanCarbon` integrates over its substeps as MAGICC7 does.
     ///
     /// Default: false
     pub ocean_end_of_year: bool,
@@ -57,7 +60,7 @@ impl Default for CO2BudgetParameters {
         Self {
             gtc_per_ppm: GTC_PER_PPM,
             co2_pi: 278.0,
-            permafrost: false,
+            include_permafrost: false,
             concentration_switch_year: None,
             ocean_end_of_year: false,
         }

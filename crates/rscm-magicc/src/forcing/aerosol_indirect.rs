@@ -16,7 +16,7 @@
 //!
 //! # Outputs
 //!
-//! - `Effective Radiative Forcing|Aerosol|Indirect` (W/m²) - Cloud indirect forcing
+//! - `Effective Radiative Forcing|Aerosols|Indirect Effect` (W/m²) - Cloud indirect forcing
 //!
 //! # Differences from MAGICC7
 //!
@@ -39,7 +39,7 @@
 
 use crate::parameters::AerosolIndirectParameters;
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -82,7 +82,7 @@ use serde::{Deserialize, Serialize};
     oc_emissions { name = "Emissions|OC", unit = "Mt OC/yr" },
 )]
 #[outputs(
-    indirect_erf { name = "Effective Radiative Forcing|Aerosol|Indirect", unit = "W/m^2" },
+    indirect_erf { name = "Effective Radiative Forcing|Aerosols|Indirect Effect", unit = "W/m^2" },
 )]
 pub struct AerosolIndirect {
     parameters: AerosolIndirectParameters,
@@ -113,8 +113,8 @@ impl AerosolIndirect {
         p.sox_weight * sox + p.oc_weight * oc
     }
 
-    /// Calculate pre-industrial aerosol burden
-    pub fn preindustrial_burden(&self) -> FloatValue {
+    /// Pre-industrial aerosol burden.
+    pub fn burden_pi(&self) -> FloatValue {
         let p = &self.parameters;
         self.calculate_burden(p.sox_pi, p.oc_pi)
     }
@@ -131,7 +131,7 @@ impl AerosolIndirect {
         let p = &self.parameters;
 
         let burden = self.calculate_burden(sox, oc);
-        let burden_pi = self.preindustrial_burden();
+        let burden_pi = self.burden_pi();
         let delta_burden = burden - burden_pi;
 
         if delta_burden <= 0.0 {
@@ -160,9 +160,9 @@ impl Default for AerosolIndirect {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.AerosolIndirect")]
 impl Component for AerosolIndirect {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -190,7 +190,7 @@ impl Component for AerosolIndirect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rscm_core::component::RequirementType;
+    use rscm_core::component::VariableRole;
 
     fn default_component() -> AerosolIndirect {
         AerosolIndirect::from_parameters(AerosolIndirectParameters::default())
@@ -355,7 +355,7 @@ mod tests {
 
         let input_names: Vec<_> = defs
             .iter()
-            .filter(|d| d.requirement_type == RequirementType::Input)
+            .filter(|d| d.role == VariableRole::Input)
             .map(|d| d.name.as_str())
             .collect();
 
@@ -364,15 +364,15 @@ mod tests {
 
         let output_names: Vec<_> = defs
             .iter()
-            .filter(|d| d.requirement_type == RequirementType::Output)
+            .filter(|d| d.role == VariableRole::Output)
             .map(|d| d.name.as_str())
             .collect();
 
-        assert!(output_names.contains(&"Effective Radiative Forcing|Aerosol|Indirect"));
+        assert!(output_names.contains(&"Effective Radiative Forcing|Aerosols|Indirect Effect"));
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
+    fn test_serialisation_roundtrip() {
         let component = AerosolIndirect::from_parameters(AerosolIndirectParameters {
             cloud_albedo_coefficient: -1.2,
             reference_burden: 75.0,
@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_direct_plus_indirect_can_be_summed() {
-        // This test verifies the design: direct (FourBox) and indirect (scalar)
+        // This test verifies the design: direct (four-box) and indirect (scalar)
         // can be combined downstream. The indirect forcing applies uniformly
         // to all regions, while direct forcing is regionally distributed.
 

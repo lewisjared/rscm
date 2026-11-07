@@ -10,8 +10,7 @@ use ode_solvers::*;
 use std::sync::Arc;
 
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
+    Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
@@ -35,10 +34,11 @@ type ModelState = Vector3<FloatValue>;
 /// Probing the fast and slow components of global warming by returning abruptly to
 /// preindustrial forcing. Journal of Climate, 23(9), 2418-2427.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TwoLayerParameters {
     /// Climate feedback parameter at zero warming
     ///
-    /// Units: W/(m² K)
+    /// unit: W/(m² K)
     ///
     /// Controls the strength of radiative feedback. Higher values mean stronger
     /// negative feedback and lower climate sensitivity. Typical values: 0.8-1.5
@@ -46,35 +46,35 @@ pub struct TwoLayerParameters {
 
     /// Nonlinear feedback coefficient
     ///
-    /// Units: W/(m² K²)
+    /// unit: W/(m² K²)
     ///
     /// Represents state-dependence of climate feedbacks. Positive values indicate
     /// that feedback weakens (sensitivity increases) as temperature rises.
     /// Set to 0 for a linear model. Typical values: 0-0.1
     pub a: FloatValue,
 
-    /// Ocean heat uptake efficacy
+    /// Ocean heat uptake efficacy ($\varepsilon$)
     ///
-    /// Units: dimensionless
+    /// unit: dimensionless
     ///
     /// Ratio of the feedback parameter for ocean heat uptake to the equilibrium
     /// feedback parameter. Values > 1 indicate that ocean heat uptake is more
     /// effective at reducing surface warming than the equilibrium response suggests.
     /// Typical values: 1.0-1.8
-    pub efficacy: FloatValue,
+    pub deep_ocean_efficacy: FloatValue,
 
-    /// Heat exchange coefficient between surface and deep layers
+    /// Heat exchange coefficient between surface and deep layers ($\eta$)
     ///
-    /// Units: W/(m² K)
+    /// unit: W/(m² K)
     ///
     /// Controls the rate of heat transfer from the surface to the deep ocean.
     /// Higher values mean faster equilibration between layers.
     /// Typical values: 0.5-1.0
-    pub eta: FloatValue,
+    pub ocean_heat_transfer: FloatValue,
 
     /// Heat capacity of the surface layer (mixed layer ocean + atmosphere)
     ///
-    /// Units: W yr/(m² K)
+    /// unit: W yr/(m² K)
     ///
     /// Determines the thermal inertia of the fast-responding surface layer.
     /// Typical values: 5-15 (corresponding to ~50-150m mixed layer depth)
@@ -82,7 +82,7 @@ pub struct TwoLayerParameters {
 
     /// Heat capacity of the deep ocean layer
     ///
-    /// Units: W yr/(m² K)
+    /// unit: W yr/(m² K)
     ///
     /// Determines the thermal inertia of the slow-responding deep ocean.
     /// Typical values: 50-200 (much larger than surface layer)
@@ -128,10 +128,10 @@ pub struct TwoLayerParameters {
 /// use rscm_two_layer::{TwoLayer, TwoLayerParameters};
 ///
 /// let component = TwoLayer::from_parameters(TwoLayerParameters {
-///     lambda0: 1.0,              // Climate feedback parameter
-///     a: 0.0,                    // Linear model (no state-dependence)
-///     efficacy: 1.0,             // Standard efficacy
-///     eta: 0.7,                  // Heat exchange coefficient
+///     lambda0: 1.0,               // Climate feedback parameter
+///     a: 0.0,                     // Linear model (no state-dependence)
+///     deep_ocean_efficacy: 1.0,   // Ocean heat uptake efficacy
+///     ocean_heat_transfer: 0.7,   // Heat exchange coefficient
 ///     heat_capacity_surface: 8.0, // ~80m mixed layer
 ///     heat_capacity_deep: 100.0,  // Deep ocean
 /// });
@@ -148,8 +148,8 @@ pub struct TwoLayerParameters {
     erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[states(
-    surface_temperature { name = "Surface Temperature", unit = "K" },
-    deep_temperature { name = "Deep Ocean Temperature", unit = "K" },
+    surface_temperature { name = "Surface Air Temperature Change", unit = "K" },
+    deep_temperature { name = "Ocean Temperature|Layer 2", unit = "K" },
 )]
 pub struct TwoLayer {
     parameters: TwoLayerParameters,
@@ -172,13 +172,14 @@ impl IVP<Time, ModelState> for TwoLayer {
         let temperature_difference = temperature_surface - temperature_deep;
 
         let lambda_eff = self.parameters.lambda0 - self.parameters.a * temperature_surface;
-        let heat_exchange_surface =
-            self.parameters.efficacy * self.parameters.eta * temperature_difference;
+        let heat_exchange_surface = self.parameters.deep_ocean_efficacy
+            * self.parameters.ocean_heat_transfer
+            * temperature_difference;
         let dtemperature_surface_dt =
             (erf - lambda_eff * temperature_surface - heat_exchange_surface)
                 / self.parameters.heat_capacity_surface;
 
-        let heat_exchange_deep = self.parameters.eta * temperature_difference;
+        let heat_exchange_deep = self.parameters.ocean_heat_transfer * temperature_difference;
         let dtemperature_deep_dt = heat_exchange_deep / self.parameters.heat_capacity_deep;
 
         dy_dt[0] = dtemperature_surface_dt;
@@ -203,8 +204,8 @@ impl TwoLayer {
     /// let component = TwoLayer::from_parameters(TwoLayerParameters {
     ///     lambda0: 1.0,
     ///     a: 0.0,
-    ///     efficacy: 1.2,
-    ///     eta: 0.7,
+    ///     deep_ocean_efficacy: 1.2,
+    ///     ocean_heat_transfer: 0.7,
     ///     heat_capacity_surface: 8.0,
     ///     heat_capacity_deep: 100.0,
     /// });
@@ -216,7 +217,7 @@ impl TwoLayer {
 
 #[typetag::serde]
 impl Component for TwoLayer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -231,7 +232,7 @@ impl Component for TwoLayer {
         let prev_surface_temp = inputs.surface_temperature.get();
         let prev_deep_temp = inputs.deep_temperature.get();
 
-        // Initialize ODE with previous state
+        // Initialise ODE with previous state
         // y[0] = surface temperature, y[1] = deep temperature, y[2] = cumulative heat
         let y0 = ModelState::new(prev_surface_temp, prev_deep_temp, 0.0);
 
@@ -258,14 +259,14 @@ mod tests {
     use rscm_core::model::extract_state;
     use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
-    use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
+    use rscm_core::timeseries_collection::TimeseriesCollection;
 
     fn create_component() -> TwoLayer {
         TwoLayer::from_parameters(TwoLayerParameters {
             lambda0: 1.0,               // W/(m^2 K) - climate feedback parameter
             a: 0.0,                     // No nonlinear feedback for simpler testing
-            efficacy: 1.0,              // Ocean heat uptake efficacy
-            eta: 0.7,                   // W/(m^2 K) - heat exchange coefficient
+            deep_ocean_efficacy: 1.0,   // Ocean heat uptake efficacy
+            ocean_heat_transfer: 0.7,   // W/(m^2 K) - heat exchange coefficient
             heat_capacity_surface: 8.0, // W yr / (m^2 K) - realistic ocean mixed layer
             heat_capacity_deep: 100.0,  // W yr / (m^2 K) - deep ocean
         })
@@ -280,18 +281,15 @@ mod tests {
         ts_collection.add_timeseries(
             "Effective Radiative Forcing".to_string(),
             Timeseries::from_values(array![erf_value, erf_value], array![t_start, t_end]),
-            VariableType::Exogenous,
         );
         // Add state variables with zero initial values
         ts_collection.add_timeseries(
-            "Surface Temperature".to_string(),
+            "Surface Air Temperature Change".to_string(),
             Timeseries::from_values(array![0.0, 0.0], array![t_start, t_end]),
-            VariableType::Endogenous,
         );
         ts_collection.add_timeseries(
-            "Deep Ocean Temperature".to_string(),
+            "Ocean Temperature|Layer 2".to_string(),
             Timeseries::from_values(array![0.0, 0.0], array![t_start, t_end]),
-            VariableType::Endogenous,
         );
         ts_collection
     }
@@ -303,7 +301,7 @@ mod tests {
         let input_state = extract_state(&ts_collection, component.inputs(), 2000.0);
 
         let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
-        let temperature = match output_state.get("Surface Temperature").unwrap() {
+        let temperature = match output_state.get("Surface Air Temperature Change").unwrap() {
             StateValue::Scalar(t) => *t,
             _ => panic!("Expected scalar output"),
         };
@@ -331,7 +329,7 @@ mod tests {
         let input_state = extract_state(&ts_collection, component.inputs(), 2000.0);
 
         let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
-        let temperature = match output_state.get("Surface Temperature").unwrap() {
+        let temperature = match output_state.get("Surface Air Temperature Change").unwrap() {
             StateValue::Scalar(t) => *t,
             _ => panic!("Expected scalar output"),
         };
@@ -351,7 +349,7 @@ mod tests {
         let input_state = extract_state(&ts_collection, component.inputs(), 2000.0);
 
         let output_state = component.solve(2000.0, 2001.0, &input_state).unwrap();
-        let temperature = match output_state.get("Surface Temperature").unwrap() {
+        let temperature = match output_state.get("Surface Air Temperature Change").unwrap() {
             StateValue::Scalar(t) => *t,
             _ => panic!("Expected scalar output"),
         };
@@ -372,7 +370,7 @@ mod tests {
         let ts_collection_small = create_input_state_with_erf(2.0, 2000.0, 2001.0);
         let input_state_small = extract_state(&ts_collection_small, component.inputs(), 2000.0);
         let output_small = component.solve(2000.0, 2001.0, &input_state_small).unwrap();
-        let temp_small = match output_small.get("Surface Temperature").unwrap() {
+        let temp_small = match output_small.get("Surface Air Temperature Change").unwrap() {
             StateValue::Scalar(t) => *t,
             _ => panic!("Expected scalar output"),
         };
@@ -381,7 +379,7 @@ mod tests {
         let ts_collection_large = create_input_state_with_erf(4.0, 2000.0, 2001.0);
         let input_state_large = extract_state(&ts_collection_large, component.inputs(), 2000.0);
         let output_large = component.solve(2000.0, 2001.0, &input_state_large).unwrap();
-        let temp_large = match output_large.get("Surface Temperature").unwrap() {
+        let temp_large = match output_large.get("Surface Air Temperature Change").unwrap() {
             StateValue::Scalar(t) => *t,
             _ => panic!("Expected scalar output"),
         };

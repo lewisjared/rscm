@@ -19,8 +19,8 @@ pub struct ProgressInfo {
     /// Current iteration number (0-indexed)
     pub iteration: usize,
 
-    /// Total number of iterations
-    pub total: usize,
+    /// Number of iterations in the run
+    pub n_iterations: usize,
 
     /// Mean acceptance rate across all walkers
     pub acceptance_rate: f64,
@@ -35,7 +35,7 @@ pub struct ProgressInfo {
 /// and acceptance tracking information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SamplerState {
-    /// Current positions of walkers: shape (n_walkers, n_params)
+    /// Current positions of walkers: shape (n_walkers, n_parameters)
     pub positions: Array2<f64>,
 
     /// Log probabilities at current positions: shape (n_walkers,)
@@ -48,7 +48,7 @@ pub struct SamplerState {
     pub n_proposed: Array1<usize>,
 
     /// Parameter names in the order they appear in position vectors
-    pub param_names: Vec<String>,
+    pub parameter_names: Vec<String>,
 }
 
 impl SamplerState {
@@ -58,21 +58,21 @@ impl SamplerState {
     ///
     /// # Arguments
     ///
-    /// * `positions` - Initial walker positions, shape (n_walkers, n_params)
-    /// * `param_names` - Names of parameters in order
+    /// * `positions` - Initial walker positions, shape (n_walkers, n_parameters)
+    /// * `parameter_names` - Names of parameters in order
     ///
     /// # Returns
     ///
     /// A new `SamplerState` with log probabilities set to negative infinity
     /// (indicating they need to be computed) and zero acceptance counts.
-    pub fn new(positions: Array2<f64>, param_names: Vec<String>) -> Result<Self> {
-        let (n_walkers, n_params) = positions.dim();
+    pub fn new(positions: Array2<f64>, parameter_names: Vec<String>) -> Result<Self> {
+        let (n_walkers, n_parameters) = positions.dim();
 
-        if param_names.len() != n_params {
+        if parameter_names.len() != n_parameters {
             return Err(Error::SamplingError(format!(
                 "Number of parameter names ({}) does not match positions dimension ({})",
-                param_names.len(),
-                n_params
+                parameter_names.len(),
+                n_parameters
             )));
         }
 
@@ -87,7 +87,7 @@ impl SamplerState {
             log_probs: Array1::from_elem(n_walkers, f64::NEG_INFINITY),
             n_accepted: Array1::zeros(n_walkers),
             n_proposed: Array1::zeros(n_walkers),
-            param_names,
+            parameter_names,
         })
     }
 
@@ -97,7 +97,7 @@ impl SamplerState {
     }
 
     /// Get the number of parameters.
-    pub fn n_params(&self) -> usize {
+    pub fn n_parameters(&self) -> usize {
         self.positions.ncols()
     }
 
@@ -117,11 +117,11 @@ impl SamplerState {
 
     /// Get the mean acceptance rate across all walkers.
     pub fn mean_acceptance_rate(&self) -> f64 {
-        let total_accepted: usize = self.n_accepted.iter().sum();
-        let total_proposed: usize = self.n_proposed.iter().sum();
+        let n_accepted: usize = self.n_accepted.iter().sum();
+        let n_proposed: usize = self.n_proposed.iter().sum();
 
-        if total_proposed > 0 {
-            total_accepted as f64 / total_proposed as f64
+        if n_proposed > 0 {
+            n_accepted as f64 / n_proposed as f64
         } else {
             0.0
         }
@@ -135,7 +135,7 @@ impl SamplerState {
     ///
     /// # Returns
     ///
-    /// `Ok(())` on success, `Err` if serialization or file writing fails.
+    /// `Ok(())` on success, `Err` if serialisation or file writing fails.
     pub fn save_checkpoint<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let file = File::create(path).map_err(|e| {
             Error::SamplingError(format!("Failed to create checkpoint file: {}", e))
@@ -143,7 +143,7 @@ impl SamplerState {
         let mut writer = BufWriter::new(file);
 
         postcard::to_io(self, &mut writer)
-            .map_err(|e| Error::SamplingError(format!("Failed to serialize checkpoint: {}", e)))?;
+            .map_err(|e| Error::SamplingError(format!("Failed to serialise checkpoint: {}", e)))?;
 
         writer
             .flush()
@@ -160,7 +160,7 @@ impl SamplerState {
     ///
     /// # Returns
     ///
-    /// The loaded `SamplerState`, or an error if deserialization fails.
+    /// The loaded `SamplerState`, or an error if deserialisation fails.
     pub fn load_checkpoint<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file = File::open(path)
             .map_err(|e| Error::SamplingError(format!("Failed to open checkpoint file: {}", e)))?;
@@ -186,7 +186,7 @@ impl SamplerState {
             .map_err(|e| Error::SamplingError(format!("Failed to read checkpoint file: {}", e)))?;
 
         let state: SamplerState = postcard::from_bytes(&bytes).map_err(|e| {
-            Error::SamplingError(format!("Failed to deserialize checkpoint: {}", e))
+            Error::SamplingError(format!("Failed to deserialise checkpoint: {}", e))
         })?;
 
         Ok(state)
@@ -201,13 +201,13 @@ mod tests {
     #[test]
     fn test_sampler_state_creation() {
         let positions = array![[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]];
-        let param_names = vec!["x".to_string(), "y".to_string()];
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
 
-        let state = SamplerState::new(positions.clone(), param_names.clone()).unwrap();
+        let state = SamplerState::new(positions.clone(), parameter_names.clone()).unwrap();
 
         assert_eq!(state.n_walkers(), 3);
-        assert_eq!(state.n_params(), 2);
-        assert_eq!(state.param_names, param_names);
+        assert_eq!(state.n_parameters(), 2);
+        assert_eq!(state.parameter_names, parameter_names);
         assert_eq!(state.positions, positions);
         assert!(state.log_probs.iter().all(|&lp| lp == f64::NEG_INFINITY));
         assert!(state.n_accepted.iter().all(|&n| n == 0));
@@ -231,9 +231,9 @@ mod tests {
     #[test]
     fn test_acceptance_tracking() {
         let positions = array![[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]];
-        let param_names = vec!["x".to_string(), "y".to_string()];
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
 
-        let mut state = SamplerState::new(positions, param_names).unwrap();
+        let mut state = SamplerState::new(positions, parameter_names).unwrap();
 
         // No proposals yet
         assert_eq!(state.mean_acceptance_rate(), 0.0);
@@ -257,8 +257,8 @@ mod tests {
         use tempfile::tempdir;
 
         let positions = array![[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]];
-        let param_names = vec!["x".to_string(), "y".to_string()];
-        let mut state = SamplerState::new(positions.clone(), param_names.clone()).unwrap();
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
+        let mut state = SamplerState::new(positions.clone(), parameter_names.clone()).unwrap();
 
         // Simulate some acceptance tracking
         state.n_proposed[0] = 10;
@@ -278,7 +278,7 @@ mod tests {
         assert_eq!(loaded_state.log_probs, state.log_probs);
         assert_eq!(loaded_state.n_accepted, state.n_accepted);
         assert_eq!(loaded_state.n_proposed, state.n_proposed);
-        assert_eq!(loaded_state.param_names, state.param_names);
+        assert_eq!(loaded_state.parameter_names, state.parameter_names);
 
         // Cleanup
         fs::remove_file(&checkpoint_path).unwrap();

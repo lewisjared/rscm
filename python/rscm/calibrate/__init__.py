@@ -6,7 +6,7 @@ This package provides tools for:
 - Defining parameter priors and sampling parameter spaces
 - Specifying observation targets and computing likelihoods
 - MCMC sampling via affine-invariant ensemble sampling
-- Point estimation via optimization algorithms
+- Point estimation via optimisation algorithms
 - Convergence diagnostics and chain analysis
 """
 
@@ -23,8 +23,8 @@ from rscm._lib.calibrate import (
     Normal,
     # Observations and targets
     Observation,
-    OptimizationResult,
-    Optimizer,
+    OptimisationResult,
+    Optimiser,
     # Parameter set specification
     ParameterSet,
     # Point estimation
@@ -94,8 +94,8 @@ __all__ = [
     "Normal",
     # Observations
     "Observation",
-    "OptimizationResult",
-    "Optimizer",
+    "OptimisationResult",
+    "Optimiser",
     # Parameters
     "ParameterSet",
     # Point estimation

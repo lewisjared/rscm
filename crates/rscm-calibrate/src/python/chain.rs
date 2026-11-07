@@ -29,8 +29,8 @@ impl PyChain {
     /// int
     ///     Total number of MCMC iterations run
     #[getter]
-    fn total_iterations(&self) -> usize {
-        self.0.total_iterations()
+    fn n_iterations(&self) -> usize {
+        self.0.n_iterations()
     }
 
     /// Get the thinning interval.
@@ -51,8 +51,8 @@ impl PyChain {
     /// list[str]
     ///     Parameter names
     #[getter]
-    fn param_names(&self) -> Vec<String> {
-        self.0.param_names().to_vec()
+    fn parameter_names(&self) -> Vec<String> {
+        self.0.parameter_names().to_vec()
     }
 
     /// Get flattened samples, optionally discarding initial burn-in samples.
@@ -65,13 +65,13 @@ impl PyChain {
     /// Returns
     /// -------
     /// numpy.ndarray
-    ///     Array of shape ((len - discard) * n_walkers, n_params) containing all
+    ///     Array of shape ((len - discard) * n_walkers, n_parameters) containing all
     ///     post-burn-in samples from all walkers, concatenated.
     ///
     /// Examples
     /// --------
     /// >>> samples = chain.flat_samples(discard=100)
-    /// >>> print(samples.shape)  # (n_samples, n_params)
+    /// >>> print(samples.shape)  # (n_samples, n_parameters)
     #[pyo3(signature = (discard=0))]
     fn flat_samples<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyArray2<f64>> {
         self.0.flat_samples(discard).to_pyarray(py)
@@ -251,12 +251,12 @@ impl PyChain {
     ///
     /// Examples
     /// --------
-    /// >>> param_dict = chain.to_param_dict(discard=100)
+    /// >>> param_dict = chain.to_parameter_dict(discard=100)
     /// >>> import matplotlib.pyplot as plt
     /// >>> plt.hist(param_dict["x"], bins=50)
     #[pyo3(signature = (discard=0))]
-    fn to_param_dict<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyDict> {
-        let result = self.0.to_param_map(discard);
+    fn to_parameter_dict<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyDict> {
+        let result = self.0.to_parameter_map(discard);
         let dict = PyDict::new(py);
         for (name, values) in result {
             dict.set_item(name, values.to_pyarray(py)).unwrap();
@@ -274,7 +274,7 @@ impl PyChain {
     /// Raises
     /// ------
     /// ValueError
-    ///     If serialization or file writing fails
+    ///     If serialisation or file writing fails
     ///
     /// Examples
     /// --------
@@ -300,7 +300,7 @@ impl PyChain {
     /// Raises
     /// ------
     /// ValueError
-    ///     If deserialization fails
+    ///     If deserialisation fails
     ///
     /// Examples
     /// --------
@@ -338,9 +338,9 @@ impl PyChain {
 
     fn __repr__(&self) -> String {
         format!(
-            "Chain(n_samples={}, n_params={}, thin={})",
+            "Chain(n_samples={}, n_parameters={}, thin={})",
             self.0.len(),
-            self.0.param_names().len(),
+            self.0.parameter_names().len(),
             self.0.thin()
         )
     }

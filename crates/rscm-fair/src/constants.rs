@@ -1,6 +1,7 @@
 //! Physical constants from FaIR's `constants.py` and `earth_params.py`.
 
-use rscm_core::component::{InputState, RequirementDefinition};
+use rscm_core::component::{InputState, VariableDefinition};
+use rscm_core::names::{EFFICACY_ADJUSTED_ERF, ERF, SURFACE_AIR_TEMPERATURE_CHANGE};
 use rscm_core::timeseries::FloatValue;
 
 /// Radius of the Earth (m).
@@ -9,17 +10,8 @@ pub const EARTH_RADIUS: FloatValue = 6_371_000.0;
 /// Length of a tropical year (s).
 pub const SECONDS_PER_YEAR: FloatValue = 60.0 * 60.0 * 24.0 * 365.24219;
 
-/// Default name of the surface temperature variable.
-pub const SURFACE_TEMPERATURE: &str = "Surface Temperature";
-
-/// Default name of the total forcing variable.
-pub const TOTAL_FORCING: &str = "Effective Radiative Forcing";
-
-/// Default name of the efficacy-adjusted total forcing variable.
-pub const EFFICACY_ADJUSTED_FORCING: &str = "Effective Radiative Forcing|Efficacy Adjusted";
-
 pub(crate) fn surface_temperature() -> String {
-    SURFACE_TEMPERATURE.to_string()
+    SURFACE_AIR_TEMPERATURE_CHANGE.to_string()
 }
 
 pub(crate) fn temperature_unit() -> String {
@@ -31,11 +23,11 @@ pub(crate) fn forcing_unit() -> String {
 }
 
 pub(crate) fn total_forcing() -> String {
-    TOTAL_FORCING.to_string()
+    ERF.to_string()
 }
 
 pub(crate) fn efficacy_adjusted_forcing() -> String {
-    EFFICACY_ADJUSTED_FORCING.to_string()
+    EFFICACY_ADJUSTED_ERF.to_string()
 }
 
 pub(crate) fn one() -> FloatValue {
@@ -47,16 +39,13 @@ pub(crate) fn driver_definitions<'a>(
     temperature: &str,
     drivers: impl Iterator<Item = (&'a str, &'a str)>,
     forcing: &str,
-) -> Vec<RequirementDefinition> {
-    let mut definitions = vec![RequirementDefinition::scalar_input(
+) -> Vec<VariableDefinition> {
+    let mut definitions = vec![VariableDefinition::scalar_input(
         temperature,
         &temperature_unit(),
     )];
-    definitions.extend(drivers.map(|(v, u)| RequirementDefinition::scalar_input(v, u)));
-    definitions.push(RequirementDefinition::scalar_output(
-        forcing,
-        &forcing_unit(),
-    ));
+    definitions.extend(drivers.map(|(v, u)| VariableDefinition::scalar_input(v, u)));
+    definitions.push(VariableDefinition::scalar_output(forcing, &forcing_unit()));
     definitions
 }
 

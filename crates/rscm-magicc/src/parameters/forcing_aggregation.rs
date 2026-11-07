@@ -1,15 +1,22 @@
 //! Forcing Aggregation Parameters
 
+use super::EfficacyMethod;
+use rscm_core::forcing::ForcingCategory;
+use rscm_core::spatial::FourBoxGrid;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
 /// A forcing agent read by `ForcingAggregation`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ForcingAgent {
     /// Name of the agent's ERF variable (W/m²).
     pub variable: String,
 
-    /// Whether the ERF is a four-box variable. Global ERF is spread with `rf_regions`.
+    /// Subtotals the agent's ERF counts towards.
+    pub category: ForcingCategory,
+
+    /// Whether the ERF is a four-box variable. Global ERF is spread with `regional_pattern`.
     #[serde(default)]
     pub regional: bool,
 
@@ -25,18 +32,18 @@ pub struct ForcingAgent {
     /// Regional forcing pattern (NH ocean, NH land, SH ocean, SH land), as `RF_REGIONS_*`.
     /// It spreads global ERF over the boxes and, with `climate`, sets the internal efficacy.
     #[serde(default = "uniform")]
-    pub rf_regions: [FloatValue; 4],
+    pub regional_pattern: [FloatValue; 4],
 
-    /// Normalise `rf_regions` within each hemisphere instead of globally,
+    /// Normalise `regional_pattern` within each hemisphere instead of globally,
     /// so both hemispheres carry the global mean (MAGICC7 tropospheric ozone).
     #[serde(default)]
     pub hemispheric: bool,
 
     /// Take the internal efficacy from LAMCALC's CO2 response, as MAGICC7 does for CO2.
     #[serde(default)]
-    pub co2_efficacy: bool,
+    pub use_co2_internal_efficacy: bool,
 
-    /// Prescribed efficacy (`RF_EFFICACY_*`).
+    /// Efficacy (`RF_EFFICACY_*`).
     #[serde(default = "one")]
     pub efficacy: FloatValue,
 
@@ -48,6 +55,7 @@ pub struct ForcingAgent {
 /// Parameters for `ForcingAggregation`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct ForcingAggregationParameters {
     /// Agents summed into the total.
     pub agents: Vec<ForcingAgent>,
@@ -56,9 +64,8 @@ pub struct ForcingAggregationParameters {
     /// MAGICC7 sums its forcing groups this way. Empty sums the agents in order.
     pub summation: Vec<ForcingTerm>,
 
-    /// `RF_EFFICACY_APPLY`: 0 ignores efficacies, 1 divides by the internal efficacy
-    /// so every agent has unit efficacy, and 2 applies the prescribed efficacy over it.
-    pub efficacy_apply: u8,
+    /// How efficacies scale each agent's forcing (MAGICC7 `RF_EFFICACY_APPLY`).
+    pub efficacy_method: EfficacyMethod,
 
     /// Northern Hemisphere land fraction.
     pub nh_land_fraction: FloatValue,
@@ -84,24 +91,29 @@ pub enum ForcingTerm {
 /// Climate settings for recalculating internal efficacies.
 ///
 /// Each year the efficacies come from LAMCALC at the previous year's
-/// `Equilibrium Climate Sensitivity` and `Effective Radiative Forcing|2xCO2`.
+/// `Equilibrium Climate Sensitivity` and `2xCO2 Effective Radiative Forcing`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct EfficacyClimate {
-    /// Climate sensitivity used before the climate model reports one (K).
+    /// Equilibrium climate sensitivity used before the climate model reports one (K).
     pub ecs: FloatValue,
-    /// CO2 doubling forcing used before it is first calculated (W/m²).
-    pub rf_2xco2: FloatValue,
+    /// 2xCO2 effective radiative forcing used before it is first calculated (W/m²).
+    pub erf_2xco2: FloatValue,
     /// Land-ocean heat exchange coefficient (W/m²/K).
-    pub k_lo: FloatValue,
+    /// MAGICC7: CORE_HEATXCHANGE_LANDOCEAN
+    pub land_ocean_heat_exchange: FloatValue,
     /// Inter-hemispheric heat exchange coefficient (W/m²/K).
-    pub k_ns: FloatValue,
+    /// MAGICC7: CORE_HEATXCHANGE_NORTHSOUTH
+    pub north_south_heat_exchange: FloatValue,
     /// Land-ocean warming ratio.
-    pub rlo: FloatValue,
+    /// MAGICC7: CORE_RLO
+    pub land_ocean_warming_ratio: FloatValue,
     /// Ocean-to-land heat exchange amplification.
     pub amplify_ocean_to_land: FloatValue,
     /// Regional CO2 forcing pattern.
-    pub rf_regions_co2: [FloatValue; 4],
+    /// MAGICC7: RF_REGIONS_CO2
+    pub co2_regional_pattern: [FloatValue; 4],
 }
 
 impl Default for EfficacyClimate {
@@ -109,12 +121,12 @@ impl Default for EfficacyClimate {
         let p = crate::parameters::ClimateUDEBParameters::default();
         Self {
             ecs: p.ecs,
-            rf_2xco2: p.rf_2xco2,
-            k_lo: p.k_lo,
-            k_ns: p.k_ns,
-            rlo: p.rlo,
+            erf_2xco2: p.erf_2xco2,
+            land_ocean_heat_exchange: p.land_ocean_heat_exchange,
+            north_south_heat_exchange: p.north_south_heat_exchange,
+            land_ocean_warming_ratio: p.land_ocean_warming_ratio,
             amplify_ocean_to_land: p.amplify_ocean_to_land,
-            rf_regions_co2: p.rf_regions_co2,
+            co2_regional_pattern: p.co2_regional_pattern,
         }
     }
 }
@@ -124,7 +136,7 @@ impl Default for ForcingAggregationParameters {
         Self {
             agents: Vec::new(),
             summation: Vec::new(),
-            efficacy_apply: 2,
+            efficacy_method: EfficacyMethod::AR6,
             nh_land_fraction: 0.42,
             sh_land_fraction: 0.21,
             climate: None,
@@ -133,14 +145,14 @@ impl Default for ForcingAggregationParameters {
 }
 
 impl ForcingAggregationParameters {
-    /// Global area fractions of the four boxes.
-    pub fn area_fractions(&self) -> [FloatValue; 4] {
-        [
+    /// Four-box grid weighted by the global area fraction of each box.
+    pub fn grid(&self) -> FourBoxGrid {
+        FourBoxGrid::with_weights([
             (1.0 - self.nh_land_fraction) / 2.0,
             self.nh_land_fraction / 2.0,
             (1.0 - self.sh_land_fraction) / 2.0,
             self.sh_land_fraction / 2.0,
-        ]
+        ])
     }
 }
 
@@ -150,4 +162,19 @@ fn uniform() -> [FloatValue; 4] {
 
 fn one() -> FloatValue {
     1.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unknown_keys() {
+        let err = serde_json::from_str::<ForcingAggregationParameters>(r#"{"efficacy_apply": 0}"#)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field `efficacy_apply`"),
+            "{err}"
+        );
+    }
 }

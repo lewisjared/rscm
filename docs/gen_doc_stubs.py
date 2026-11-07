@@ -284,7 +284,7 @@ def extract_python_component_metadata(
             inputs.append(
                 {
                     "rust_name": attr_name,
-                    "variable_name": attr_value.name,
+                    "name": attr_value.name,
                     "unit": attr_value.unit,
                     "grid": attr_value.grid,
                 }
@@ -293,7 +293,7 @@ def extract_python_component_metadata(
             outputs.append(
                 {
                     "rust_name": attr_name,
-                    "variable_name": attr_value.name,
+                    "name": attr_value.name,
                     "unit": attr_value.unit,
                     "grid": attr_value.grid,
                 }
@@ -302,7 +302,7 @@ def extract_python_component_metadata(
             states.append(
                 {
                     "rust_name": attr_name,
-                    "variable_name": attr_value.name,
+                    "name": attr_value.name,
                     "unit": attr_value.unit,
                     "grid": attr_value.grid,
                 }
@@ -654,7 +654,7 @@ def extract_io_sections(
     Returns the remaining description, a description for each variable in the tables,
     and the prose bullets of variables the tables lack, by section.
     """
-    known = {v["variable_name"] for kind in IO_KINDS for v in meta.get(kind, [])}
+    known = {v["name"] for kind in IO_KINDS for v in meta.get(kind, [])}
     lines = description.splitlines()
     fenced = is_fenced(lines)
     kept: list[str] = []
@@ -711,9 +711,7 @@ def table_cell(text: str) -> str:
 
 def io_table(variables: list[dict[str, Any]], notes: dict[str, str]) -> list[str]:
     """Render an IO table, with a Description column only when a variable has one."""
-    descriptions = {
-        v["variable_name"]: notes.get(v["variable_name"], "") for v in variables
-    }
+    descriptions = {v["name"]: notes.get(v["name"], "") for v in variables}
     with_description = any(descriptions.values())
     header = "| Variable | Unit | Grid |" + (
         " Description |" if with_description else ""
@@ -721,9 +719,9 @@ def io_table(variables: list[dict[str, Any]], notes: dict[str, str]) -> list[str
     rule = "|----------|------|------|" + ("-------------|" if with_description else "")
     rows = [header, rule]
     for v in variables:
-        name = v["variable_name"]
+        name = v["name"]
         # Code spans keep their pipes in Python-Markdown tables
-        row = f"| `{name}` | {v.get('unit', '')} | {v.get('grid', 'Scalar')} |"
+        row = f"| `{name}` | {v.get('unit', '')} | {v.get('grid', 'scalar')} |"
         if with_description:
             row += f" {table_cell(descriptions[name])} |"
         rows.append(row)

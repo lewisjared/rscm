@@ -40,9 +40,9 @@ class TwoLayerParameters:
         Climate feedback parameter at zero warming (W/(m² K))
     a : float
         Nonlinear feedback coefficient (W/(m² K²)). Set to 0 for linear model.
-    efficacy : float
+    deep_ocean_efficacy : float
         Ocean heat uptake efficacy (dimensionless)
-    eta : float
+    ocean_heat_transfer : float
         Heat exchange coefficient between surface and deep layers (W/(m² K))
     heat_capacity_surface : float
         Heat capacity of surface layer (W yr/(m² K))
@@ -67,7 +67,7 @@ class TwoLayerParameters:
         typical_range=(0.0, 0.1),
     )
 
-    efficacy: float = parameter(
+    deep_ocean_efficacy: float = parameter(
         default=1.0,
         unit="dimensionless",
         description="Ocean heat uptake efficacy",
@@ -75,7 +75,7 @@ class TwoLayerParameters:
         typical_range=(1.0, 1.8),
     )
 
-    eta: float = parameter(
+    ocean_heat_transfer: float = parameter(
         default=0.7,
         unit="W/(m² K)",
         description="Heat exchange coefficient between surface and deep layers",

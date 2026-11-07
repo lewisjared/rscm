@@ -15,7 +15,7 @@ use approx::assert_relative_eq;
 use common::{compute_equilibrium_temperatures, default_lamcalc_params, RLO_TOLERANCE};
 use rscm_core::timeseries::FloatValue;
 use rscm_core::utils::linear_algebra::invert_4x4;
-use rscm_magicc::climate::lamcalc::{build_coupling_matrix, lamcalc, LamcalcResult};
+use rscm_magicc::climate::lamcalc::{build_coupling_matrix, lamcalc, LAMCALCResult};
 
 // ===========================================================================
 // 1. Energy conservation at equilibrium
@@ -35,7 +35,7 @@ mod energy_conservation {
         let result = lamcalc(&params).expect("LAMCALC should converge with default parameters");
         let eq = compute_equilibrium_temperatures(&params, result.lambda_ocean, result.lambda_land);
         let temps = eq.box_temps;
-        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+        let area = *params.grid.weights();
 
         // Per-box lambda: ocean boxes get lambda_ocean, land boxes get lambda_land
         let lambdas = [
@@ -46,7 +46,7 @@ mod energy_conservation {
         ];
 
         // Total forcing absorbed: sum_i(f_i * Q_2x * qfrac_i) where qfrac=1 for CO2
-        let total_forcing: FloatValue = area.iter().sum::<FloatValue>() * params.q_2xco2;
+        let total_forcing: FloatValue = area.iter().sum::<FloatValue>() * params.erf_2xco2;
 
         // Total radiative response: sum of (f_i * lambda_i * T_i) over all boxes
         // Note: the coupling matrix equation is M * T = Q * f, where the diagonal
@@ -113,7 +113,7 @@ mod energy_conservation {
             let eq =
                 compute_equilibrium_temperatures(&params, result.lambda_ocean, result.lambda_land);
             let temps = eq.box_temps;
-            let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+            let area = *params.grid.weights();
             let lambdas = [
                 result.lambda_ocean,
                 result.lambda_land,
@@ -121,7 +121,7 @@ mod energy_conservation {
                 result.lambda_land,
             ];
 
-            let total_forcing: FloatValue = area.iter().sum::<FloatValue>() * params.q_2xco2;
+            let total_forcing: FloatValue = area.iter().sum::<FloatValue>() * params.erf_2xco2;
             let total_feedback: FloatValue = (0..4).map(|i| area[i] * lambdas[i] * temps[i]).sum();
             let residual = total_forcing - total_feedback;
 
@@ -153,14 +153,14 @@ mod zero_coupling_limit {
     #[test]
     fn test_decoupled_boxes_yield_uniform_lambda() {
         let mut params = default_lamcalc_params();
-        params.k_lo = 0.0;
-        params.k_ns = 0.0;
+        params.land_ocean_heat_exchange = 0.0;
+        params.north_south_heat_exchange = 0.0;
         // With zero coupling, RLO is not meaningful (land and ocean decouple).
         // Set RLO = 1.0 to request equal warming, which is the only consistent
         // solution when boxes are decoupled with uniform forcing.
-        params.rlo = 1.0;
+        params.land_ocean_warming_ratio = 1.0;
 
-        let lam_global = params.q_2xco2 / params.ecs;
+        let lam_global = params.erf_2xco2 / params.ecs;
 
         let result =
             lamcalc(&params).expect("LAMCALC should converge with zero coupling and RLO=1.0");
@@ -191,8 +191,8 @@ mod zero_coupling_limit {
     #[test]
     fn test_coupling_matrix_is_diagonal_at_zero_coupling() {
         let mut params = default_lamcalc_params();
-        params.k_lo = 0.0;
-        params.k_ns = 0.0;
+        params.land_ocean_heat_exchange = 0.0;
+        params.north_south_heat_exchange = 0.0;
 
         let lam_o = 1.2;
         let lam_l = 1.5;
@@ -221,7 +221,7 @@ mod zero_coupling_limit {
         }
 
         // Diagonal elements should be f_i * lambda_i
-        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+        let area = *params.grid.weights();
         let lams = [lam_o, lam_l, lam_o, lam_l];
         for i in 0..4 {
             let expected = area[i] * lams[i];
@@ -259,9 +259,9 @@ mod infinite_coupling_limit {
 
         for &k in &coupling_strengths {
             let mut params = default_lamcalc_params();
-            params.k_lo = k;
-            params.k_ns = k;
-            params.rlo = 1.0; // Equal warming -- true mixing limit
+            params.land_ocean_heat_exchange = k;
+            params.north_south_heat_exchange = k;
+            params.land_ocean_warming_ratio = 1.0; // Equal warming -- true mixing limit
 
             let result = lamcalc(&params);
             let result = match result {
@@ -322,8 +322,8 @@ mod infinite_coupling_limit {
     #[test]
     fn test_global_mean_equals_ecs_at_strong_coupling() {
         let mut params = default_lamcalc_params();
-        params.k_lo = 100.0;
-        params.k_ns = 100.0;
+        params.land_ocean_heat_exchange = 100.0;
+        params.north_south_heat_exchange = 100.0;
 
         let result = match lamcalc(&params) {
             Some(r) => r,
@@ -370,12 +370,17 @@ mod k_lo_sweep {
         println!("--- k_lo sweep: lambda and RLO diagnostics ---");
         println!(
             "{:>6}  {:>12}  {:>12}  {:>10}  {:>10}  {:>10}",
-            "k_lo", "lambda_ocean", "lambda_land", "RLO_actual", "RLO_target", "RLO_error"
+            "land_ocean_heat_exchange",
+            "lambda_ocean",
+            "lambda_land",
+            "RLO_actual",
+            "RLO_target",
+            "RLO_error"
         );
 
         for &k_lo in &k_lo_values {
             let mut params = default_lamcalc_params();
-            params.k_lo = k_lo;
+            params.land_ocean_heat_exchange = k_lo;
 
             let result = match lamcalc(&params) {
                 Some(r) => r,
@@ -388,11 +393,16 @@ mod k_lo_sweep {
             let eq =
                 compute_equilibrium_temperatures(&params, result.lambda_ocean, result.lambda_land);
             let rlo_actual = eq.rlo_actual;
-            let rlo_error = (params.rlo - rlo_actual).abs();
+            let rlo_error = (params.land_ocean_warming_ratio - rlo_actual).abs();
 
             println!(
                 "{:>6.2}  {:>12.6}  {:>12.6}  {:>10.6}  {:>10.6}  {:>10.6}",
-                k_lo, result.lambda_ocean, result.lambda_land, rlo_actual, params.rlo, rlo_error
+                k_lo,
+                result.lambda_ocean,
+                result.lambda_land,
+                rlo_actual,
+                params.land_ocean_warming_ratio,
+                rlo_error
             );
 
             // RLO constraint must hold for every converged solution
@@ -401,7 +411,7 @@ mod k_lo_sweep {
                 "k_lo = {:.2}: RLO constraint violated. \
                  target = {:.6}, actual = {:.6}, error = {:.6} (tolerance = {:.6})",
                 k_lo,
-                params.rlo,
+                params.land_ocean_warming_ratio,
                 rlo_actual,
                 rlo_error,
                 RLO_TOLERANCE,
@@ -447,13 +457,13 @@ mod rlo_sweep {
         );
 
         let params_default = default_lamcalc_params();
-        let lam_global = params_default.q_2xco2 / params_default.ecs;
+        let lam_global = params_default.erf_2xco2 / params_default.ecs;
 
-        let mut results: Vec<(FloatValue, LamcalcResult)> = Vec::new();
+        let mut results: Vec<(FloatValue, LAMCALCResult)> = Vec::new();
 
         for &rlo in &rlo_values {
             let mut params = default_lamcalc_params();
-            params.rlo = rlo;
+            params.land_ocean_warming_ratio = rlo;
 
             let result = match lamcalc(&params) {
                 Some(r) => r,
@@ -567,13 +577,20 @@ mod coupling_matrix_properties {
         println!("--- Coupling matrix diagonal dominance (ocean rows) ---");
         println!(
             "{:>5}  {:>5}  {:>5}  {:>5}  {:>10}  {:>10}  {:>10}  {:>10}",
-            "lam_o", "lam_l", "k_lo", "k_ns", "diag[0]", "offsum[0]", "diag[2]", "offsum[2]"
+            "lam_o",
+            "lam_l",
+            "land_ocean_heat_exchange",
+            "north_south_heat_exchange",
+            "diag[0]",
+            "offsum[0]",
+            "diag[2]",
+            "offsum[2]"
         );
 
         for &(lam_o, lam_l, k_lo, k_ns) in &grid {
             let mut params = default_lamcalc_params();
-            params.k_lo = k_lo;
-            params.k_ns = k_ns;
+            params.land_ocean_heat_exchange = k_lo;
+            params.north_south_heat_exchange = k_ns;
 
             let matrix = build_coupling_matrix(&params, lam_o, lam_l);
 
@@ -619,13 +636,13 @@ mod coupling_matrix_properties {
         println!("--- Coupling matrix invertibility ---");
         println!(
             "{:>5}  {:>5}  {:>5}  {:>5}  {:>12}",
-            "lam_o", "lam_l", "k_lo", "k_ns", "invertible"
+            "lam_o", "lam_l", "land_ocean_heat_exchange", "north_south_heat_exchange", "invertible"
         );
 
         for &(lam_o, lam_l, k_lo, k_ns) in &grid {
             let mut params = default_lamcalc_params();
-            params.k_lo = k_lo;
-            params.k_ns = k_ns;
+            params.land_ocean_heat_exchange = k_lo;
+            params.north_south_heat_exchange = k_ns;
 
             let matrix = build_coupling_matrix(&params, lam_o, lam_l);
             let inv = invert_4x4(&matrix);
@@ -688,13 +705,21 @@ mod coupling_matrix_properties {
         println!("--- Gershgorin eigenvalue bounds ---");
         println!(
             "{:>5}  {:>5}  {:>5}  {:>5}  {:>8}  {:>8}  {:>8}  {:>8}  {:>10}",
-            "lam_o", "lam_l", "k_lo", "k_ns", "lb[0]", "lb[1]", "lb[2]", "lb[3]", "all_pos?"
+            "lam_o",
+            "lam_l",
+            "land_ocean_heat_exchange",
+            "north_south_heat_exchange",
+            "lb[0]",
+            "lb[1]",
+            "lb[2]",
+            "lb[3]",
+            "all_pos?"
         );
 
         for &(lam_o, lam_l, k_lo, k_ns) in &grid {
             let mut params = default_lamcalc_params();
-            params.k_lo = k_lo;
-            params.k_ns = k_ns;
+            params.land_ocean_heat_exchange = k_lo;
+            params.north_south_heat_exchange = k_ns;
 
             let matrix = build_coupling_matrix(&params, lam_o, lam_l);
 

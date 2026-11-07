@@ -99,7 +99,7 @@ Write it in Rust, with the `ComponentIO` derive macro, for performance or comple
         forcing { name = "Effective Radiative Forcing", unit = "W/m^2" },
     )]
     #[outputs(
-        temperature { name = "Surface Temperature", unit = "K" },
+        temperature { name = "Surface Air Temperature Change", unit = "K" },
     )]
     pub struct MyComponent {
         pub sensitivity: FloatValue,
@@ -107,7 +107,7 @@ Write it in Rust, with the `ComponentIO` derive macro, for performance or comple
 
     #[typetag::serde]
     impl Component for MyComponent {
-        fn definitions(&self) -> Vec<RequirementDefinition> {
+        fn definitions(&self) -> Vec<VariableDefinition> {
             Self::generated_definitions()
         }
 
@@ -145,5 +145,6 @@ Write it in Rust, with the `ComponentIO` derive macro, for performance or comple
 
 - [Development Practices](development.md): Workflows, versioning, releasing
 - [Rust Tips](rust_tips.md): Rust-specific guidance
+- [Naming Conventions](naming_conventions.md): How to name identifiers, parameters, variables and units
 - [Key Concepts](../key_concepts.md): Core abstractions (Component, Model, Timeseries)
 - [ComponentIO Macro](../notebooks/component_rust.md): Detailed macro documentation

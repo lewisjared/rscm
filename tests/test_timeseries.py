@@ -52,7 +52,7 @@ class TestTimeseries:
         ts = Timeseries(
             values=time_axis.values(),
             time_axis=time_axis,
-            units="Test",
+            unit="Test",
             interpolation_strategy=InterpolationStrategy.Next,
         )
 
@@ -69,7 +69,7 @@ class TestTimeseries:
             Timeseries(
                 values=values,
                 time_axis=time_axis,
-                units="Test",
+                unit="Test",
                 interpolation_strategy=InterpolationStrategy.Next,
             )
 

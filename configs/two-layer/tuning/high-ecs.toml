@@ -12,4 +12,4 @@ description = "Two-layer model tuned for high climate sensitivity"
 lambda0 = 0.7
 
 # Slightly higher efficacy
-efficacy = 1.3
+deep_ocean_efficacy = 1.3

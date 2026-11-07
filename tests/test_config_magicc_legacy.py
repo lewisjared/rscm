@@ -18,7 +18,7 @@ class TestLegacyMapping:
     """Tests for LEGACY_MAPPING."""
 
     def test_mapping_contains_supported_params(self):
-        """LEGACY_MAPPING should contain all SUPPORTED params."""
+        """LEGACY_MAPPING should contain all SUPPORTED parameters."""
         supported = [
             p
             for p in MAGICC_PARAMETERS.values()
@@ -64,8 +64,8 @@ class TestFromLegacyDict:
 
         assert config["time"]["start"] == 1750
         assert config["time"]["end"] == 2100
-        climate_sens = config["components"]["climate"]["parameters"]
-        assert climate_sens["climate_sensitivity"] == 3.0
+        climate_params = config["components"]["climate"]["parameters"]
+        assert climate_params["ecs"] == 3.0
 
     def test_not_implemented_logged_info(self, caplog):
         """NOT_IMPLEMENTED parameters should log INFO and be ignored."""
@@ -154,8 +154,8 @@ class TestFromLegacyDict:
         assert "climate" in config["components"]
         assert "parameters" in config["components"]["climate"]
         climate_params = config["components"]["climate"]["parameters"]
-        assert "climate_sensitivity" in climate_params
-        assert climate_params["climate_sensitivity"] == 3.5
+        assert "ecs" in climate_params
+        assert climate_params["ecs"] == 3.5
 
 
 class TestToLegacyDict:
@@ -165,7 +165,7 @@ class TestToLegacyDict:
         """Should export all SUPPORTED parameters that have values."""
         config = {
             "time": {"start": 1750, "end": 2100},
-            "components": {"climate": {"parameters": {"climate_sensitivity": 3.0}}},
+            "components": {"climate": {"parameters": {"ecs": 3.0}}},
         }
         legacy = to_legacy_dict(config)
 
@@ -255,7 +255,7 @@ class TestRoundTrip:
         """Config -> legacy -> config should preserve values."""
         original_config = {
             "time": {"start": 1750, "end": 2100},
-            "components": {"climate": {"parameters": {"climate_sensitivity": 3.0}}},
+            "components": {"climate": {"parameters": {"ecs": 3.0}}},
         }
 
         legacy = to_legacy_dict(original_config)
@@ -302,7 +302,7 @@ class TestEdgeCases:
         legacy = {"core_delq2xco2": 3.71}
         config = from_legacy_dict(legacy)
 
-        assert config["components"]["climate"]["parameters"]["forcing_2xco2"] == 3.71
+        assert config["components"]["climate"]["parameters"]["erf_2xco2"] == 3.71
 
 
 @pytest.mark.parametrize("key", ["co2_tempfeedback_switch", "CO2_TEMPFEEDBACK_SWITCH"])
@@ -333,6 +333,6 @@ def test_nitrogen_switches_keep_parameters(reverse):
         "prognostic_fixation": 1,
     }
     assert terrestrial["parameters"]["nitrogen"] == {
-        "ncratio_uptake": 0.013,
-        "prognostic_fixation": {"vmax": 0.2},
+        "uptake_nc_ratio": 0.013,
+        "prognostic_fixation": {"maximum_fixation_rate": 0.2},
     }

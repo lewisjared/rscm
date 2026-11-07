@@ -5,15 +5,15 @@
 //!
 //! # Inputs
 //!
-//! - `Atmospheric Concentration|CH4` (ppb), at the start and end of the step
+//! - `Atmospheric Concentrations|CH4` (ppb), at the start and end of the step
 //! - `Lifetime|CH4|OH` (yr): OH lifetime over the step
 //! - `Emissions|CH4|Fossil` (Mt CH4/yr) - Fossil and industrial CH4 emissions
-//! - `Emissions|CH4|AFOLU` (Mt CH4/yr) - Agriculture and land use CH4 emissions
-//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `permafrost` parameter
+//! - `Emissions|CH4|Biosphere` (Mt CH4/yr) - Agriculture and land use CH4 emissions
+//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `include_permafrost` parameter
 //!
-//! # States (tracked between timesteps)
+//! # States (tracked between steps)
 //!
-//! - `Atmospheric Burden|CH4|{Fossil,AFOLU,Natural,Permafrost}` (Mt CH4): CH4 in the atmosphere by source
+//! - `Atmospheric Burden|CH4|{Fossil,Biosphere,Natural,Permafrost}` (Mt CH4): CH4 in the atmosphere by source
 //!
 //! # Outputs
 //!
@@ -22,15 +22,16 @@
 //! As in MAGICC7, the sink is the mid-step concentration over the total lifetime,
 //! shared between the pools in proportion to their size.
 //! Anthropogenic pools receive the emissions that close the CH4 budget,
-//! split between fossil and AFOLU in proportion to their emissions.
+//! split between fossil and biosphere in proportion to their emissions.
 //! The fossil share counts the fossil pool and `permafrost_fraction` of the permafrost pool.
 
 use crate::parameters::CH4OxidationParameters;
-use crate::reference::{permafrost_emissions, require_annual, PERMAFROST_CH4};
+use crate::reference::{permafrost_emissions, require_annual};
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
+use rscm_core::names::EMISSIONS_CH4_PERMAFROST;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -39,14 +40,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["chemistry", "ch4", "carbon-cycle", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
-    concentration { name = "Atmospheric Concentration|CH4", unit = "ppb" },
+    concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb" },
     oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average" },
     fossil_emissions { name = "Emissions|CH4|Fossil", unit = "Mt CH4/yr" },
-    afolu_emissions { name = "Emissions|CH4|AFOLU", unit = "Mt CH4/yr" },
+    biosphere_emissions { name = "Emissions|CH4|Biosphere", unit = "Mt CH4/yr" },
 )]
 #[states(
     fossil_burden { name = "Atmospheric Burden|CH4|Fossil", unit = "Mt CH4" },
-    afolu_burden { name = "Atmospheric Burden|CH4|AFOLU", unit = "Mt CH4" },
+    biosphere_burden { name = "Atmospheric Burden|CH4|Biosphere", unit = "Mt CH4" },
     natural_burden { name = "Atmospheric Burden|CH4|Natural", unit = "Mt CH4" },
     permafrost_burden { name = "Atmospheric Burden|CH4|Permafrost", unit = "Mt CH4" },
 )]
@@ -61,14 +62,14 @@ pub struct CH4Oxidation {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CH4Pools {
     pub fossil: FloatValue,
-    pub afolu: FloatValue,
+    pub biosphere: FloatValue,
     pub natural: FloatValue,
     pub permafrost: FloatValue,
 }
 
 impl CH4Pools {
     fn total(&self) -> FloatValue {
-        self.fossil + self.afolu + self.natural + self.permafrost
+        self.fossil + self.biosphere + self.natural + self.permafrost
     }
 }
 
@@ -76,7 +77,7 @@ impl CH4Pools {
 #[derive(Debug, Clone, Copy)]
 pub struct CH4Sources {
     pub fossil: FloatValue,
-    pub afolu: FloatValue,
+    pub biosphere: FloatValue,
     pub permafrost: FloatValue,
 }
 
@@ -99,33 +100,33 @@ impl CH4Oxidation {
     ) -> (CH4Pools, FloatValue) {
         let p = &self.parameters;
         let (start, end) = concentration;
-        let sink_ppb = (1.0 / oh_lifetime + 1.0 / p.tau_other) * ((start + end) * 0.5);
-        let budget = (end - start + sink_ppb) * p.ppb_to_tg * p.mixbox_size
+        let sink_ppb = (1.0 / oh_lifetime + 1.0 / p.non_oh_lifetime) * ((start + end) * 0.5);
+        let budget = (end - start + sink_ppb) * p.tg_per_ppb * p.mixing_box_size
             - p.natural_emissions
             - sources.permafrost;
-        let anthropogenic = sources.fossil + sources.afolu;
-        let (fossil_share, afolu_share) = if anthropogenic != 0.0 {
-            (sources.fossil, sources.afolu)
-        } else if pools.fossil + pools.afolu != 0.0 {
-            (pools.fossil, pools.afolu)
+        let anthropogenic = sources.fossil + sources.biosphere;
+        let (fossil_share, biosphere_share) = if anthropogenic != 0.0 {
+            (sources.fossil, sources.biosphere)
+        } else if pools.fossil + pools.biosphere != 0.0 {
+            (pools.fossil, pools.biosphere)
         } else {
             // MAGICC7 takes the split of the first year with emissions, which a step cannot see.
             (0.0, 1.0)
         };
-        let split = fossil_share + afolu_share;
+        let split = fossil_share + biosphere_share;
 
         let total = pools.total();
-        let sink = sink_ppb * p.ppb_to_tg * p.mixbox_size;
+        let sink = sink_ppb * p.tg_per_ppb * p.mixing_box_size;
         let decay = |pool: FloatValue| pool * sink / total;
         let next = CH4Pools {
             fossil: fossil_share * budget / split + pools.fossil - decay(pools.fossil),
-            afolu: budget * afolu_share / split + pools.afolu - decay(pools.afolu),
+            biosphere: budget * biosphere_share / split + pools.biosphere - decay(pools.biosphere),
             natural: p.natural_emissions + pools.natural - decay(pools.natural),
             permafrost: sources.permafrost + pools.permafrost - decay(pools.permafrost),
         };
         let fossil_fraction = (p.permafrost_fraction * pools.permafrost + pools.fossil) / total;
-        let co2 =
-            p.ppb_to_tg * fossil_fraction * p.mixbox_size * sink_ppb / 1000.0 * p.carbon_per_ch4;
+        let co2 = p.tg_per_ppb * fossil_fraction * p.mixing_box_size * sink_ppb / 1000.0
+            * p.carbon_per_ch4;
         (next, co2)
     }
 }
@@ -136,13 +137,13 @@ impl Default for CH4Oxidation {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.CH4Oxidation")]
 impl Component for CH4Oxidation {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
-        if self.parameters.permafrost {
-            definitions.push(RequirementDefinition::scalar_input(
-                PERMAFROST_CH4,
+        if self.parameters.include_permafrost {
+            definitions.push(VariableDefinition::scalar_input(
+                EMISSIONS_CH4_PERMAFROST,
                 "Mt CH4/yr",
             ));
         }
@@ -159,17 +160,17 @@ impl Component for CH4Oxidation {
         let inputs = CH4OxidationInputs::from_input_state(input_state);
         let pools = CH4Pools {
             fossil: inputs.fossil_burden.get(),
-            afolu: inputs.afolu_burden.get(),
+            biosphere: inputs.biosphere_burden.get(),
             natural: inputs.natural_burden.get(),
             permafrost: inputs.permafrost_burden.get(),
         };
         let sources = CH4Sources {
             fossil: inputs.fossil_emissions.get(),
-            afolu: inputs.afolu_emissions.get(),
+            biosphere: inputs.biosphere_emissions.get(),
             permafrost: permafrost_emissions(
-                self.parameters.permafrost,
+                self.parameters.include_permafrost,
                 input_state,
-                PERMAFROST_CH4,
+                EMISSIONS_CH4_PERMAFROST,
             ),
         };
         let (next, co2_emissions) = self.solve_oxidation(
@@ -180,7 +181,7 @@ impl Component for CH4Oxidation {
         );
         Ok(CH4OxidationOutputs {
             fossil_burden: next.fossil,
-            afolu_burden: next.afolu,
+            biosphere_burden: next.biosphere,
             natural_burden: next.natural,
             permafrost_burden: next.permafrost,
             co2_emissions,
@@ -195,19 +196,19 @@ mod tests {
 
     const CONV: FloatValue = 2.824 * 0.973;
 
-    fn pools(fossil: FloatValue, afolu: FloatValue, natural: FloatValue) -> CH4Pools {
+    fn pools(fossil: FloatValue, biosphere: FloatValue, natural: FloatValue) -> CH4Pools {
         CH4Pools {
             fossil,
-            afolu,
+            biosphere,
             natural,
             permafrost: 0.0,
         }
     }
 
-    fn sources(fossil: FloatValue, afolu: FloatValue) -> CH4Sources {
+    fn sources(fossil: FloatValue, biosphere: FloatValue) -> CH4Sources {
         CH4Sources {
             fossil,
-            afolu,
+            biosphere,
             permafrost: 0.0,
         }
     }
@@ -222,14 +223,15 @@ mod tests {
         let lost = (182.1908 + start.natural - next.natural) / start.natural;
         let added = |next: FloatValue, start: FloatValue| next - start * (1.0 - lost);
         assert!(
-            (added(next.afolu, start.afolu) / added(next.fossil, start.fossil) - 2.0).abs() < 1e-9
+            (added(next.biosphere, start.biosphere) / added(next.fossil, start.fossil) - 2.0).abs()
+                < 1e-9
         );
     }
 
     #[test]
     fn test_only_fossil_share_is_oxidised() {
         let component = CH4Oxidation::new();
-        let total_lifetime = 1.0 / (1.0 / 9.0 + 1.0 / component.parameters.tau_other);
+        let total_lifetime = 1.0 / (1.0 / 9.0 + 1.0 / component.parameters.non_oh_lifetime);
         let sink = 700.0 * CONV / total_lifetime;
         let (_, all_fossil) = component.solve_oxidation(
             pools(700.0 * CONV, 0.0, 0.0),
@@ -257,7 +259,7 @@ mod tests {
         );
         let lost = (182.1908 + 1000.0 - next.natural) / 1000.0;
         let added = |next: FloatValue, start: FloatValue| next - start * (1.0 - lost);
-        assert!((added(next.afolu, 300.0) / added(next.fossil, 100.0) - 3.0).abs() < 1e-9);
+        assert!((added(next.biosphere, 300.0) / added(next.fossil, 100.0) - 3.0).abs() < 1e-9);
     }
 
     #[test]
@@ -270,9 +272,9 @@ mod tests {
         for name in [
             "Emissions|CO2|CH4 Oxidation",
             "Atmospheric Burden|CH4|Natural",
-            "Atmospheric Concentration|CH4",
+            "Atmospheric Concentrations|CH4",
             "Lifetime|CH4|OH",
-            "Emissions|CH4|AFOLU",
+            "Emissions|CH4|Biosphere",
         ] {
             assert!(names.contains(&name.to_string()), "{name}");
         }
@@ -281,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_solve_reads_concentration_change() {
-        use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
+        use rscm_core::timeseries_collection::TimeseriesCollection;
         let mut collection = TimeseriesCollection::new();
         let mut item = |name: &str, start: FloatValue, end: FloatValue| {
             collection.add_timeseries(
@@ -290,15 +292,14 @@ mod tests {
                     ndarray::array![start, end],
                     ndarray::array![2000.0, 2001.0],
                 ),
-                VariableType::Exogenous,
             )
         };
-        item("Atmospheric Concentration|CH4", 700.0, 720.0);
+        item("Atmospheric Concentrations|CH4", 700.0, 720.0);
         item("Lifetime|CH4|OH", 9.0, 9.0);
         item("Emissions|CH4|Fossil", 80.0, 80.0);
-        item("Emissions|CH4|AFOLU", 160.0, 160.0);
+        item("Emissions|CH4|Biosphere", 160.0, 160.0);
         item("Atmospheric Burden|CH4|Fossil", 100.0, 100.0);
-        item("Atmospheric Burden|CH4|AFOLU", 300.0, 300.0);
+        item("Atmospheric Burden|CH4|Biosphere", 300.0, 300.0);
         item("Atmospheric Burden|CH4|Natural", 700.0 * CONV - 400.0, 0.0);
         item("Atmospheric Burden|CH4|Permafrost", 0.0, 0.0);
         let component = CH4Oxidation::new();

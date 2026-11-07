@@ -9,7 +9,6 @@ from rscm.component import Component, Input, Output
 from rscm.core import (
     InterpolationStrategy,
     ModelBuilder,
-    PythonComponent,
     TimeAxis,
     Timeseries,
     build_models,
@@ -24,26 +23,30 @@ def two_layer(lambda0: float) -> ModelBuilder:
         {
             "lambda0": lambda0,
             "a": 0.0,
-            "efficacy": 1.0,
-            "eta": 0.7,
+            "deep_ocean_efficacy": 1.0,
+            "ocean_heat_transfer": 0.7,
             "heat_capacity_deep": 100.0,
             "heat_capacity_surface": 8.0,
         }
     ).build()
     erf = Timeseries(
-        np.linspace(0.0, 3.0, len(AXIS)), AXIS, "W / m^2", InterpolationStrategy.Next
+        np.linspace(0.0, 3.0, len(AXIS)), AXIS, "W/m^2", InterpolationStrategy.Next
     )
     builder = ModelBuilder()
-    builder.with_time_axis(AXIS).with_rust_component(component)
-    builder.with_exogenous_variable("Effective Radiative Forcing", erf)
+    builder.with_time_axis(AXIS).with_component(component)
+    builder.with_prescribed_variable("Effective Radiative Forcing", erf)
     builder.with_initial_values(
-        {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
+        {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
     )
     return builder
 
 
 def temperature(model) -> np.ndarray:
-    return model.timeseries().get_timeseries_by_name("Surface Temperature").values()
+    return (
+        model.timeseries()
+        .get_timeseries_by_name("Surface Air Temperature Change")
+        .values()
+    )
 
 
 class Scaled(Component):
@@ -64,17 +67,17 @@ def scaled(factor: float):
     return (
         ModelBuilder()
         .with_time_axis(AXIS)
-        .with_py_component(PythonComponent.build(Scaled(factor)))
-        .with_exogenous_variable("Effective Radiative Forcing", erf)
+        .with_component(Scaled(factor))
+        .with_prescribed_variable("Effective Radiative Forcing", erf)
         .build()
     )
 
 
-@pytest.mark.parametrize("threads", [None, 1, 4])
-def test_parallel_matches_serial(threads):
+@pytest.mark.parametrize("n_threads", [None, 1, 4])
+def test_parallel_matches_serial(n_threads):
     builders = [two_layer(lambda0) for lambda0 in np.linspace(0.5, 2.0, 12)]
-    models = build_models(builders, threads=threads)
-    run_models(models, threads=threads)
+    models = build_models(builders, n_threads=n_threads)
+    run_models(models, n_threads=n_threads)
 
     for builder, model in zip(builders, models):
         serial = builder.build()
@@ -111,4 +114,4 @@ def test_a_model_listed_twice_is_rejected():
 
 def test_zero_threads_is_rejected():
     with pytest.raises(ValueError, match="at least 1"):
-        run_models([scaled(1.0)], threads=0)
+        run_models([scaled(1.0)], n_threads=0)

@@ -2,7 +2,7 @@
   "name": "AerosolDirect",
   "module_path": "rscm_magicc::forcing::aerosol_direct",
   "language": "rust",
-  "description": "Calculates radiative forcing from aerosol particles that directly interact\nwith solar radiation through scattering (cooling) and absorption (warming).\n\nCalculates direct aerosol forcing from emissions of SOx, BC, OC, and NOx.\nEach species contributes to forcing proportional to its emissions above\npre-industrial levels, with species-specific radiative efficiencies.\n\n# What This Component Does\n\n1. Calculates forcing from sulfate aerosols (SOx) - cooling via scattering\n2. Calculates forcing from black carbon (BC) - warming via absorption\n3. Calculates forcing from organic carbon (OC) - cooling via scattering\n4. Calculates forcing from nitrate aerosols (from NOx) - cooling via scattering\n5. Distributes total forcing across four regional boxes\n\n# Inputs\n\n- `Emissions|SOx` (Mt S/yr) - Sulfur dioxide emissions\n- `Emissions|BC` (Mt BC/yr) - Black carbon emissions\n- `Emissions|OC` (Mt OC/yr) - Organic carbon emissions\n- `Emissions|NOx` (Mt N/yr) - NOx emissions (for nitrate formation)\n\n# Outputs\n\n- `Effective Radiative Forcing|Aerosol|Direct` (W/m², FourBox) - Regional direct aerosol forcing\n\n# Differences from MAGICC7\n\nThis is a simplified implementation:\n\n- **Source separation**: MAGICC7 separates industrial and biomass sources for\n  each species with different treatment. Here, all sources are combined.\n- **Optical thickness**: MAGICC7 can use historical optical thickness data\n  and extrapolate with emissions. Here, forcing scales linearly with emissions.\n- **Dust and BC on snow**: MAGICC7 includes mineral dust and BC-on-snow forcing.\n  Not implemented here.\n- **Harmonisation modes**: MAGICC7 has multiple harmonisation modes (APPLY=0,1,2,3).\n  Here, only simple scaling to target is implemented.\n- **Nitrate chemistry**: MAGICC7 uses Hauglustaine parameterisation with\n  SOx-ammonia competition. Here, nitrate forcing scales linearly with NOx.\n- **Efficacy**: MAGICC7 applies species-specific efficacy factors.\n  Not implemented here.\n\n# Forcing Calculation\n\nFor each species $i$:\n\n$$\\Delta E_i = E_i - E_{i,pi}$$\n$$RF_i = \\alpha_i \\cdot \\Delta E_i$$\n\nTotal global forcing is the sum of species contributions.\n\n# Regional Distribution\n\nThe global forcing is distributed across four boxes using emission-weighted\nregional patterns:\n\n$$RF_{region} = RF_{global} \\cdot \\sum_i w_{i,region} \\cdot |RF_i| / \\sum_i |RF_i|$$\n\nThis weights the regional pattern by each species' contribution to total\nforcing magnitude.",
+  "description": "Calculates radiative forcing from aerosol particles that directly interact\nwith solar radiation through scattering (cooling) and absorption (warming).\n\nCalculates direct aerosol forcing from emissions of SOx, BC, OC, and NOx.\nEach species contributes to forcing proportional to its emissions above\npre-industrial levels, with species-specific radiative efficiencies.\n\n# What This Component Does\n\n1. Calculates forcing from sulfate aerosols (SOx) - cooling via scattering\n2. Calculates forcing from black carbon (BC) - warming via absorption\n3. Calculates forcing from organic carbon (OC) - cooling via scattering\n4. Calculates forcing from nitrate aerosols (from NOx) - cooling via scattering\n5. Distributes total forcing across four regional boxes\n\n# Inputs\n\n- `Emissions|SOx` (Mt S/yr) - Sulfur dioxide emissions\n- `Emissions|BC` (Mt BC/yr) - Black carbon emissions\n- `Emissions|OC` (Mt OC/yr) - Organic carbon emissions\n- `Emissions|NOx` (Mt N/yr) - NOx emissions (for nitrate formation)\n\n# Outputs\n\n- `Effective Radiative Forcing|Aerosols|Direct Effect` (W/m², FourBox) - Regional direct aerosol forcing\n\n# Differences from MAGICC7\n\nThis is a simplified implementation:\n\n- **Source separation**: MAGICC7 separates industrial and biomass sources for\n  each species with different treatment. Here, all sources are combined.\n- **Optical thickness**: MAGICC7 can use historical optical thickness data\n  and extrapolate with emissions. Here, forcing scales linearly with emissions.\n- **Dust and BC on snow**: MAGICC7 includes mineral dust and BC-on-snow forcing.\n  Not implemented here.\n- **Harmonisation modes**: MAGICC7 has multiple harmonisation modes (APPLY=0,1,2,3).\n  Here, only simple scaling to target is implemented.\n- **Nitrate chemistry**: MAGICC7 uses Hauglustaine parameterisation with\n  SOx-ammonia competition. Here, nitrate forcing scales linearly with NOx.\n- **Efficacy**: MAGICC7 applies species-specific efficacy factors.\n  Not implemented here.\n\n# Forcing Calculation\n\nFor each species $i$:\n\n$$\\Delta E_i = E_i - E_{i,pi}$$\n$$RF_i = \\alpha_i \\cdot \\Delta E_i$$\n\nTotal global forcing is the sum of species contributions.\n\n# Regional Distribution\n\nThe global forcing is distributed across four boxes using emission-weighted\nregional patterns:\n\n$$RF_{region} = RF_{global} \\cdot \\sum_i w_{i,region} \\cdot |RF_i| / \\sum_i |RF_i|$$\n\nThis weights the regional pattern by each species' contribution to total\nforcing magnitude.",
   "category": "Radiative Forcing",
   "tags": [
     "forcing",
@@ -13,35 +13,35 @@
   "inputs": [
     {
       "rust_name": "sox_emissions",
-      "variable_name": "Emissions|SOx",
+      "name": "Emissions|SOx",
       "unit": "Mt S/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "bc_emissions",
-      "variable_name": "Emissions|BC",
+      "name": "Emissions|BC",
       "unit": "Mt BC/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "oc_emissions",
-      "variable_name": "Emissions|OC",
+      "name": "Emissions|OC",
       "unit": "Mt OC/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "nox_emissions",
-      "variable_name": "Emissions|NOx",
+      "name": "Emissions|NOx",
       "unit": "Mt N/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "direct_erf",
-      "variable_name": "Effective Radiative Forcing|Aerosol|Direct",
+      "name": "Effective Radiative Forcing|Aerosols|Direct Effect",
       "unit": "W/m^2",
-      "grid": "FourBox"
+      "grid": "four_box"
     }
   ],
   "states": [],

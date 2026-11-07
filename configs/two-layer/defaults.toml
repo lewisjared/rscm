@@ -28,11 +28,11 @@ a = 0.0
 
 # Ocean heat uptake efficacy (dimensionless)
 # Typical: 1.0-1.8
-efficacy = 1.0
+deep_ocean_efficacy = 1.0
 
 # Heat exchange coefficient (W/(m² K))
 # Controls heat transfer between surface and deep ocean
-eta = 0.7
+ocean_heat_transfer = 0.7
 
 # Surface layer heat capacity (W yr/(m² K))
 # Represents mixed layer + atmosphere
@@ -47,5 +47,5 @@ heat_capacity_deep = 100.0
 
 [initial_values]
 # Initial state variable values (defaults to 0 if not specified)
-# "Surface Temperature" = 0.0
-# "Deep Ocean Temperature" = 0.0
+# "Surface Air Temperature Change" = 0.0
+# "Ocean Temperature|Layer 2" = 0.0

@@ -1,6 +1,7 @@
 //! Fixed calendar-year references used by MAGICC7 feedbacks
 
 use rscm_core::errors::{RSCMError, RSCMResult};
+use rscm_core::names::prescribed;
 use rscm_core::state::ScalarWindow;
 use rscm_core::timeseries::{FloatValue, Time};
 
@@ -9,7 +10,7 @@ pub(crate) fn require_annual(component: &str, t_current: Time, t_next: Time) -> 
     let dt = t_next - t_current;
     if !dt.is_finite() || (dt - 1.0).abs() >= 1e-6 {
         return Err(RSCMError::Error(format!(
-            "{component} only supports annual timesteps (dt=1.0), got dt={dt}"
+            "{component} only supports annual steps (dt=1.0), got dt={dt}"
         )));
     }
     Ok(())
@@ -18,7 +19,7 @@ pub(crate) fn require_annual(component: &str, t_current: Time, t_next: Time) -> 
 /// Value of an annual series at `year`, clamped to the stored time axis.
 ///
 /// Feedback references in MAGICC7 are fixed calendar years, which may lie
-/// before the run starts or after the current timestep.
+/// before the run starts or after the current step.
 pub(crate) fn value_at_year(window: &ScalarWindow, t_current: Time, year: Time) -> FloatValue {
     window
         .interpolate(t_current + (year - t_current).round())
@@ -61,9 +62,6 @@ pub(crate) fn feedback_warming(
     (temperature.get() - value_at_year(temperature, t_current, start_year)).max(0.0)
 }
 
-pub(crate) const PERMAFROST_CO2: &str = "Emissions|CO2|Permafrost";
-pub(crate) const PERMAFROST_CH4: &str = "Emissions|CH4|Permafrost";
-
 /// Permafrost emissions named `name` when `enabled`, otherwise zero.
 pub(crate) fn permafrost_emissions(
     enabled: bool,
@@ -77,22 +75,14 @@ pub(crate) fn permafrost_emissions(
     }
 }
 
-/// Name of the input holding prescribed values of `concentration`.
-pub(crate) fn prescribed_name(concentration: &str) -> String {
-    format!("{concentration}|Prescribed")
-}
-
 /// Input of prescribed `concentration` when a switch year is set.
 pub(crate) fn prescribed_definition(
     concentration: &str,
     unit: &str,
     switch_year: Option<Time>,
-) -> Option<rscm_core::component::RequirementDefinition> {
+) -> Option<rscm_core::component::VariableDefinition> {
     switch_year.map(|_| {
-        rscm_core::component::RequirementDefinition::scalar_input(
-            &prescribed_name(concentration),
-            unit,
-        )
+        rscm_core::component::VariableDefinition::scalar_input(&prescribed(concentration), unit)
     })
 }
 
@@ -109,12 +99,7 @@ pub(crate) fn prescribed_concentration(
     if t_next > switch_year? {
         return None;
     }
-    prescribed_input(
-        input_state,
-        &prescribed_name(concentration),
-        switch_year,
-        t_next,
-    )
+    prescribed_input(input_state, &prescribed(concentration), switch_year, t_next)
 }
 
 /// [`prescribed_concentration`] given the name of its `prescribed` input.

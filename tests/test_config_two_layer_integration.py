@@ -63,8 +63,8 @@ class TestLayeredConfigMerge:
 
         # Unchanged from base
         assert (
-            layered["components"]["climate"]["parameters"]["eta"]
-            == base["components"]["climate"]["parameters"]["eta"]
+            layered["components"]["climate"]["parameters"]["ocean_heat_transfer"]
+            == base["components"]["climate"]["parameters"]["ocean_heat_transfer"]
         )
         assert layered["time"]["start"] == base["time"]["start"]
 
@@ -113,7 +113,7 @@ class TestInputValidation:
 
 
 class TestConfigRoundTrip:
-    """Tests for config serialization/deserialization."""
+    """Tests for config serialisation/deserialisation."""
 
     def test_toml_config_matches_typed_config(self):
         """TOML config should produce same model as equivalent typed config."""
@@ -127,8 +127,8 @@ class TestConfigRoundTrip:
             climate=TwoLayerParameters(
                 lambda0=1.0,
                 a=0.0,
-                efficacy=1.0,
-                eta=0.7,
+                deep_ocean_efficacy=1.0,
+                ocean_heat_transfer=0.7,
                 heat_capacity_surface=8.0,
                 heat_capacity_deep=100.0,
             ),

@@ -20,7 +20,7 @@
 //!
 //! # Outputs
 //!
-//! - `Effective Radiative Forcing|Aerosol|Direct` (W/m², FourBox) - Regional direct aerosol forcing
+//! - `Effective Radiative Forcing|Aerosols|Direct Effect` (W/m², FourBox) - Regional direct aerosol forcing
 //!
 //! # Differences from MAGICC7
 //!
@@ -41,7 +41,7 @@
 
 use crate::parameters::AerosolDirectParameters;
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
@@ -82,7 +82,7 @@ use serde::{Deserialize, Serialize};
     nox_emissions { name = "Emissions|NOx", unit = "Mt N/yr" },
 )]
 #[outputs(
-    direct_erf { name = "Effective Radiative Forcing|Aerosol|Direct", unit = "W/m^2", grid = "FourBox" },
+    direct_erf { name = "Effective Radiative Forcing|Aerosols|Direct Effect", unit = "W/m^2", grid = "four_box" },
 )]
 pub struct AerosolDirect {
     parameters: AerosolDirectParameters,
@@ -219,9 +219,9 @@ impl SpeciesForcing {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.AerosolDirect")]
 impl Component for AerosolDirect {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -251,7 +251,7 @@ impl Component for AerosolDirect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rscm_core::component::RequirementType;
+    use rscm_core::component::VariableRole;
     use rscm_core::spatial::FourBoxRegion;
 
     fn default_component() -> AerosolDirect {
@@ -482,7 +482,7 @@ mod tests {
 
         let input_names: Vec<_> = defs
             .iter()
-            .filter(|d| d.requirement_type == RequirementType::Input)
+            .filter(|d| d.role == VariableRole::Input)
             .map(|d| d.name.as_str())
             .collect();
 
@@ -493,15 +493,15 @@ mod tests {
 
         let output_names: Vec<_> = defs
             .iter()
-            .filter(|d| d.requirement_type == RequirementType::Output)
+            .filter(|d| d.role == VariableRole::Output)
             .map(|d| d.name.as_str())
             .collect();
 
-        assert!(output_names.contains(&"Effective Radiative Forcing|Aerosol|Direct"));
+        assert!(output_names.contains(&"Effective Radiative Forcing|Aerosols|Direct Effect"));
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
+    fn test_serialisation_roundtrip() {
         let component = AerosolDirect::from_parameters(AerosolDirectParameters {
             sox_coefficient: -0.004,
             bc_coefficient: 0.01,

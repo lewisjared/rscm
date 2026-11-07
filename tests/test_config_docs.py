@@ -14,7 +14,7 @@ from rscm.config.parameters import parameter
 
 
 @dataclass
-class SimpleParams:
+class SimpleParameters:
     """Simple test parameter class."""
 
     temperature: float = parameter(
@@ -24,7 +24,7 @@ class SimpleParams:
 
 
 @dataclass
-class ComplexParams:
+class ComplexParameters:
     """Complex parameter class with ranges and sources."""
 
     climate_sensitivity: float = parameter(
@@ -42,7 +42,7 @@ class ComplexParams:
 
 
 @dataclass
-class MinimalParams:
+class MinimalParameters:
     """Minimal parameter class without optional metadata."""
 
     value: float = parameter(default=1.0)
@@ -53,10 +53,10 @@ class TestGenerateParameterDocs:
 
     def test_simple_parameter_docs(self):
         """generate_parameter_docs generates markdown for simple parameters."""
-        md = generate_parameter_docs(SimpleParams)
+        md = generate_parameter_docs(SimpleParameters)
 
         # Check title
-        assert "# SimpleParams" in md
+        assert "# SimpleParameters" in md
 
         # Check docstring
         assert "Simple test parameter class." in md
@@ -76,7 +76,7 @@ class TestGenerateParameterDocs:
 
     def test_parameter_with_ranges(self):
         """generate_parameter_docs includes range information."""
-        md = generate_parameter_docs(ComplexParams)
+        md = generate_parameter_docs(ComplexParameters)
 
         # Check valid range
         assert "**Valid range**: [1.5, 4.5]" in md
@@ -86,13 +86,13 @@ class TestGenerateParameterDocs:
 
     def test_parameter_with_source(self):
         """generate_parameter_docs includes source information."""
-        md = generate_parameter_docs(ComplexParams)
+        md = generate_parameter_docs(ComplexParameters)
 
         assert "**Source**: IPCC AR6" in md
 
     def test_parameter_without_unit_shows_dimensionless(self):
         """generate_parameter_docs shows 'dimensionless' for parameters without unit."""
-        md = generate_parameter_docs(ComplexParams)
+        md = generate_parameter_docs(ComplexParameters)
 
         # count has unit=None
         assert "### `count`" in md
@@ -104,9 +104,9 @@ class TestGenerateParameterDocs:
 
     def test_minimal_parameter_docs(self):
         """generate_parameter_docs works with minimal metadata."""
-        md = generate_parameter_docs(MinimalParams)
+        md = generate_parameter_docs(MinimalParameters)
 
-        assert "# MinimalParams" in md
+        assert "# MinimalParameters" in md
         assert "### `value`" in md
         # Should still have unit field even if empty
         assert "**Unit**:" in md
@@ -128,12 +128,12 @@ class TestGenerateParameterDocs:
         """generate_parameter_docs handles classes without parameters."""
 
         @dataclass
-        class NoParams:
+        class NoParameters:
             """Class without parameters."""
 
-        md = generate_parameter_docs(NoParams)
+        md = generate_parameter_docs(NoParameters)
 
-        assert "# NoParams" in md
+        assert "# NoParameters" in md
         assert "Class without parameters." in md
         # Should not have Parameters section
         assert "## Parameters" not in md
@@ -144,9 +144,9 @@ class TestExportParameterJson:
 
     def test_simple_parameter_export(self):
         """export_parameter_json exports correct JSON structure."""
-        data = export_parameter_json(SimpleParams)
+        data = export_parameter_json(SimpleParameters)
 
-        assert data["class"] == "SimpleParams"
+        assert data["class"] == "SimpleParameters"
         assert data["description"] == "Simple test parameter class."
         assert len(data["parameters"]) == 2
 
@@ -161,7 +161,7 @@ class TestExportParameterJson:
 
     def test_parameter_with_ranges_export(self):
         """export_parameter_json includes range information."""
-        data = export_parameter_json(ComplexParams)
+        data = export_parameter_json(ComplexParameters)
 
         cs_param = next(
             p for p in data["parameters"] if p["name"] == "climate_sensitivity"
@@ -172,7 +172,7 @@ class TestExportParameterJson:
 
     def test_parameter_without_ranges_export(self):
         """export_parameter_json exports None for missing ranges."""
-        data = export_parameter_json(ComplexParams)
+        data = export_parameter_json(ComplexParameters)
 
         ohc_param = next(
             p for p in data["parameters"] if p["name"] == "ocean_heat_capacity"
@@ -183,14 +183,14 @@ class TestExportParameterJson:
 
     def test_type_inference_float(self):
         """export_parameter_json correctly infers float type."""
-        data = export_parameter_json(SimpleParams)
+        data = export_parameter_json(SimpleParameters)
 
         temp_param = next(p for p in data["parameters"] if p["name"] == "temperature")
         assert temp_param["type"] == "float"
 
     def test_type_inference_int(self):
         """export_parameter_json correctly infers int type."""
-        data = export_parameter_json(ComplexParams)
+        data = export_parameter_json(ComplexParameters)
 
         count_param = next(p for p in data["parameters"] if p["name"] == "count")
         assert count_param["type"] == "int"
@@ -225,18 +225,18 @@ class TestExportParameterJson:
         """export_parameter_json handles classes without parameters."""
 
         @dataclass
-        class NoParams:
+        class NoParameters:
             """Class without parameters."""
 
-        data = export_parameter_json(NoParams)
+        data = export_parameter_json(NoParameters)
 
-        assert data["class"] == "NoParams"
+        assert data["class"] == "NoParameters"
         assert data["description"] == "Class without parameters."
         assert data["parameters"] == []
 
-    def test_json_serializable(self):
-        """export_parameter_json returns JSON-serializable data."""
-        data = export_parameter_json(ComplexParams)
+    def test_json_serialisable(self):
+        """export_parameter_json returns JSON-serialisable data."""
+        data = export_parameter_json(ComplexParameters)
 
         # Should not raise
         json_str = json.dumps(data)

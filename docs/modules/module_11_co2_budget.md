@@ -26,7 +26,7 @@ This page collects the parts that belong to neither carbon module.
   `crates/rscm-magicc/tests/carbon_cycle_physics.rs` checks the mass balance
   with the land and ocean components.
 
-`OceanCarbon` integrates atmospheric CO2 over its monthly sub-steps, as MAGICC7 does.
+`OceanCarbon` integrates atmospheric CO2 over its monthly substeps, as MAGICC7 does.
 With `ocean_end_of_year`, which `run_magicc7` sets,
 `CO2Budget` takes next year's concentration from that integration.
 Without it, the annual mass balance below gives the same value up to rounding.
@@ -136,7 +136,7 @@ Each annual step runs:
 
 ## Numerical considerations
 
-- Atmospheric CO2 is integrated by forward Euler over the twelve monthly sub-steps of the ocean loop.
+- Atmospheric CO2 is integrated by forward Euler over the twelve monthly substeps of the ocean loop.
 - The land pools use the implicit trapezoidal scheme of [terrestrial carbon](module_09_terrestrial_carbon.md)
   on the annual step, so the land source is constant within the year.
 - The ocean side carries a flux change limiter and two-month averages,
@@ -152,7 +152,7 @@ Each annual step runs:
   with the second year's, under "TODO: check why we overwrite first year values".
 - **Inverse inconsistency** (lines 5080 to 5081): the source notes that prescribing zero CO2 emissions
   does not give zero inverse emissions, so the inverse is not fully consistent with the forward model.
-- **Hard-coded values**: `GTC_PER_PPM` (`carbon_cycle.f90:88`) and the twelve sub-steps a year
+- **Hard-coded values**: `GTC_PER_PPM` (`carbon_cycle.f90:88`) and the twelve substeps a year
   are not parameters.
 - **Overlapping flux variables**: `CO2_AIR2OCEAN_FLUX` (GtC/yr), `CO2_AIR2OCNFLX_ALLT_PPMPERYR`
   (monthly, ppm/yr), `CO2_AIR2LAND_FLUX`, `CO2_NETECOEXCH_FLUX` and `CO2_TERRBIO_AND_FOSSIL_EMIS`
@@ -163,7 +163,7 @@ Each annual step runs:
 - There is no concentration cap (`CO2_CAPCONC_APPLY`).
 - There is no zero-emissions switch (`CO2_ZEROEMIS_AFTERXPGC_APPLY`).
 - No inverse fossil emissions are calculated while CO2 is prescribed.
-  `Emissions|CO2|Net` is then the net source implied by the prescribed concentrations.
+  `Net Emissions|CO2` is then the net source implied by the prescribed concentrations.
 - `CO2Budget` also reports the airborne fraction, the net source over the sum of the sources.
 
 ## References

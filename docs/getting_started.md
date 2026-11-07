@@ -37,20 +37,20 @@ from rscm.two_layer import TwoLayerBuilder
 The time axis specifies when the model runs:
 
 ```python
-# Annual timesteps from 1850 to 2100
+# Annual steps from 1850 to 2100
 time_axis = TimeAxis.from_values(np.arange(1850.0, 2101.0, 1.0))
 ```
 
 ### Step 3: Create Input Data
 
-Provide radiative forcing as an exogenous (external) timeseries:
+Provide radiative forcing as a prescribed timeseries:
 
 ```python
 # Simple forcing scenario: 0 before 1950, then ramping to 4 W/m^2
 forcing = Timeseries(
     values=np.array([0.0, 0.0, 2.0, 4.0]),
     time_axis=TimeAxis.from_bounds(np.array([1850.0, 1950.0, 2000.0, 2050.0, 2100.0])),
-    units="W/m^2",
+    unit="W/m^2",
     interpolation_strategy=InterpolationStrategy.Linear,
 )
 ```
@@ -62,8 +62,8 @@ forcing = Timeseries(
 two_layer = TwoLayerBuilder.from_parameters({
     "lambda0": 1.2,                # Climate feedback parameter (W/m^2/K)
     "a": 0.0,                      # Nonlinear feedback coefficient (W/m^2/K^2)
-    "efficacy": 1.0,               # Ocean heat uptake efficacy
-    "eta": 0.8,                    # Heat exchange coefficient (W/m^2/K)
+    "deep_ocean_efficacy": 1.0,    # Ocean heat uptake efficacy
+    "ocean_heat_transfer": 0.8,    # Heat exchange coefficient (W/m^2/K)
     "heat_capacity_surface": 7.0,  # Surface layer heat capacity (W yr/m^2/K)
     "heat_capacity_deep": 100.0,   # Deep ocean heat capacity (W yr/m^2/K)
 }).build()
@@ -72,11 +72,11 @@ two_layer = TwoLayerBuilder.from_parameters({
 model = (
     ModelBuilder()
     .with_time_axis(time_axis)
-    .with_rust_component(two_layer)
-    .with_exogenous_variable("Effective Radiative Forcing", forcing)
+    .with_component(two_layer)
+    .with_prescribed_variable("Effective Radiative Forcing", forcing)
     .with_initial_values({
-        "Surface Temperature": 0.0,
-        "Deep Ocean Temperature": 0.0,
+        "Surface Air Temperature Change": 0.0,
+        "Ocean Temperature|Layer 2": 0.0,
     })
 ).build()
 
@@ -84,7 +84,7 @@ model.run()
 ```
 
 `build()` raises an exception if the components and inputs are inconsistent.
-`run()` raises `RuntimeError` if a component fails during a timestep.
+`run()` raises `RuntimeError` if a component fails during a step.
 Rebuild the model before retrying a failed run, because component state may already have changed.
 
 ### Step 5: Analyse Results
@@ -93,7 +93,7 @@ Rebuild the model before retrying a failed run, because component state may alre
 
 ```python
 results = model.timeseries()
-temperature = results.get_timeseries_by_name("Surface Temperature")
+temperature = results.get_timeseries_by_name("Surface Air Temperature Change")
 print(f"{temperature.values()[-1]:.2f} K in 2100")
 ```
 
@@ -115,11 +115,11 @@ plt.ylabel("Temperature Anomaly (K)")
 
 RSCM ships with pre-built components for common climate modelling tasks:
 
-| Component                       | Module            | Description                                      |
-| ------------------------------- | ----------------- | ------------------------------------------------ |
-| `TwoLayerBuilder`               | `rscm.two_layer`  | Two-layer energy balance model for temperature   |
+| Component                       | Module            | Description                                       |
+| ------------------------------- | ----------------- | ------------------------------------------------- |
+| `TwoLayerBuilder`               | `rscm.two_layer`  | Two-layer energy balance model for temperature    |
 | `CarbonCycleBuilder`            | `rscm.components` | One-box carbon cycle (emissions to concentration) |
-| `CO2ERFBuilder`                 | `rscm.components` | CO2 concentration to effective radiative forcing |
+| `CO2ERFBuilder`                 | `rscm.components` | CO2 concentration to effective radiative forcing  |
 | `FourBoxOceanHeatUptakeBuilder` | `rscm.components` | Example four-box disaggregation of scalar forcing |
 
 `rscm.magicc` reimplements MAGICC7's modules, and `rscm.magicc.full.run_magicc7` runs the full chain.
@@ -140,14 +140,14 @@ from rscm.core import VariableSchema
 emissions = Timeseries(
     values=np.array([0.5, 10.0, 2.0]),
     time_axis=TimeAxis.from_bounds(np.array([1850.0, 2020.0, 2100.0, 2101.0])),
-    units="GtC / yr",
+    unit="GtC/yr",
     interpolation_strategy=InterpolationStrategy.Linear,
 )
 
 carbon_cycle = CarbonCycleBuilder.from_parameters(
-    {"tau": 30.0, "conc_pi": 278.0, "alpha_temperature": 0.0}
+    {"tau": 30.0, "co2_pi": 278.0, "alpha_temperature": 0.0}
 ).build()
-co2_erf = CO2ERFBuilder.from_parameters({"erf_2xco2": 3.7, "conc_pi": 278.0}).build()
+co2_erf = CO2ERFBuilder.from_parameters({"erf_2xco2": 3.7, "co2_pi": 278.0}).build()
 ```
 
 The `CO2ERFBuilder` component writes `Effective Radiative Forcing|CO2`,
@@ -157,15 +157,15 @@ plus an aggregate that connects the two:
 
 ```python
 schema = VariableSchema()
-schema.add_variable("Emissions|CO2|Anthropogenic", "GtC / yr")
-schema.add_variable("Atmospheric Concentration|CO2", "ppm")
+schema.add_variable("Emissions|CO2", "GtC/yr")
+schema.add_variable("Atmospheric Concentrations|CO2", "ppm")
 schema.add_variable("Cumulative Emissions|CO2", "Gt C")
-schema.add_variable("Cumulative Land Uptake", "Gt C")
+schema.add_variable("Cumulative Carbon Uptake|Land", "Gt C")
 schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
-schema.add_variable("Surface Temperature", "K")
-schema.add_variable("Deep Ocean Temperature", "K")
+schema.add_variable("Surface Air Temperature Change", "K")
+schema.add_variable("Ocean Temperature|Layer 2", "K")
 schema.add_aggregate(
-    "Effective Radiative Forcing", "W/m^2", "Sum", ["Effective Radiative Forcing|CO2"]
+    "Effective Radiative Forcing", "W/m^2", "sum", ["Effective Radiative Forcing|CO2"]
 )
 ```
 
@@ -177,24 +177,24 @@ model = (
     ModelBuilder()
     .with_time_axis(time_axis)
     .with_schema(schema)
-    .with_rust_component(carbon_cycle)
-    .with_rust_component(co2_erf)
-    .with_rust_component(two_layer)
-    .with_lag_for("Surface Temperature", "CarbonCycle")
-    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
+    .with_component(carbon_cycle)
+    .with_component(co2_erf)
+    .with_component(two_layer)
+    .with_lag_for("Surface Air Temperature Change", "CarbonCycle")
+    .with_prescribed_variable("Emissions|CO2", emissions)
     .with_initial_values({
-        "Atmospheric Concentration|CO2": 278.0,
+        "Atmospheric Concentrations|CO2": 278.0,
         "Cumulative Emissions|CO2": 0.0,
-        "Cumulative Land Uptake": 0.0,
-        "Surface Temperature": 0.0,
-        "Deep Ocean Temperature": 0.0,
+        "Cumulative Carbon Uptake|Land": 0.0,
+        "Surface Air Temperature Change": 0.0,
+        "Ocean Temperature|Layer 2": 0.0,
     })
 ).build()
 model.run()
 ```
 
 RSCM builds a dependency graph from the components,
-and solves producers before their consumers within each timestep.
+and solves producers before their consumers within each step.
 The order you add components in does not matter.
 A feedback loop must lag one of its edges with `with_lag` or `with_lag_for`, or `build()` fails.
 See [Key Concepts](key_concepts.md#dependency-graph) for details.
@@ -214,5 +214,5 @@ See [Key Concepts](key_concepts.md#dependency-graph) for details.
 
 ### Want to Extend RSCM?
 
-If you want to create custom components in Python or contribute Rust components,
+If you want to write components in Python or contribute Rust components,
 see the [Developer Guide](developers/index.md).

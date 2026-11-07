@@ -112,7 +112,7 @@
 ### Features
 
 - Added Python regression test framework for validating MAGICC component implementations against Fortran MAGICC7 reference outputs. Tests cover concentration-driven runs, emissions-driven runs, climate sensitivity sweeps, and CO2-only forcing mode. All 9 tests are skipped pending MAGICC component implementation. ([#70](https://github.com/lewisjared/rscm/pull/70))
-- Added MAGICC components: `ClimateUDEB` (4-box energy balance), `CH4Chemistry`, `N2OChemistry`, `HalocarbonChemistry`, `TerrestrialCarbon`, `OceanCarbon`, `CO2Budget`, `OzoneForcing`, `AerosolDirect`, and `AerosolIndirect`. ([#73](https://github.com/lewisjared/rscm/pull/73))
+- Added MAGICC components: `ClimateUDEB` (four-box energy balance), `CH4Chemistry`, `N2OChemistry`, `HalocarbonChemistry`, `TerrestrialCarbon`, `OceanCarbon`, `CO2Budget`, `OzoneForcing`, `AerosolDirect`, and `AerosolIndirect`. ([#73](https://github.com/lewisjared/rscm/pull/73))
 - Added TOML-based configuration layer for defining and loading model configurations.
   This includes base config classes, a component registry, parameter metadata introspection, and a model builder.
 
@@ -147,7 +147,7 @@
   - `ClimateUDEB` gained regional forcing, a time-varying CO2 doubling forcing
     and monthly forcing such as volcanic eruptions.
   - `HalocarbonChemistry` covers all 41 MAGICC7 species, and `OzoneForcing` follows MAGICC7's ozone module.
-  - `ModelBuilder` gained `with_exogenous_four_box_variable` and `with_initial_grid_values`.
+  - `ModelBuilder` gained `with_prescribed_variable` and `with_initial_grid_values`.
   - Added `rscm.magicc.full.run_magicc7`, which runs the full chain from emissions
     with MAGICC7's default parameters and packaged input files.
   - `TerrestrialCarbon` gained MAGICC7's nitrogen limitation of NPP through its `nitrogen` parameters.
@@ -307,7 +307,7 @@ No significant changes.
 
 ### ⚠️ Breaking Changes ⚠️
 
-- Replaced `RequirementType::InputAndOutput` with `RequirementType::State` for variables that read previous values and write new values. ([#53](https://github.com/lewisjared/rscm/pull/53))
+- Replaced `VariableRole::InputAndOutput` with `VariableRole::State` for variables that read previous values and write new values. ([#53](https://github.com/lewisjared/rscm/pull/53))
 - Reorganised workspace structure with all Rust crates now under `crates/` directory and improved Python module organisation with dedicated submodules for spatial and state types.
   The public API of the Python package was reorganised. ([#55](https://github.com/lewisjared/rscm/pull/55))
 
