@@ -1,6 +1,6 @@
 //! Integration tests for write-side grid aggregation during model execution.
 
-use crate::component::{Component, GridType, InputState, OutputState, RequirementDefinition};
+use crate::component::{Component, GridType, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
 use crate::model::ModelBuilder;
 use crate::schema::VariableSchema;
@@ -11,7 +11,7 @@ use numpy::ndarray::Array;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-/// Component that produces FourBox output with known values
+/// Component that produces four-box output with known values
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FourBoxWriter {
     var_name: String,
@@ -21,8 +21,8 @@ struct FourBoxWriter {
 
 #[typetag::serde]
 impl Component for FourBoxWriter {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::four_box_output(&self.var_name, "K")]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::four_box_output(&self.var_name, "K")]
     }
 
     fn solve(
@@ -50,11 +50,8 @@ struct HemisphericWriter {
 
 #[typetag::serde]
 impl Component for HemisphericWriter {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::hemispheric_output(
-            &self.var_name,
-            "K",
-        )]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::hemispheric_output(&self.var_name, "K")]
     }
 
     fn solve(
@@ -73,9 +70,9 @@ impl Component for HemisphericWriter {
 }
 
 #[test]
-fn test_write_aggregation_fourbox_to_scalar_execution() {
+fn test_write_aggregation_four_box_to_scalar_execution() {
     // Schema declares Scalar, component produces FourBox
-    // The model should aggregate FourBox values to Scalar on write
+    // The model should aggregate four-box values to Scalar on write
     let schema = VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
 
     let mut model = ModelBuilder::new()
@@ -114,7 +111,7 @@ fn test_write_aggregation_fourbox_to_scalar_execution() {
 }
 
 #[test]
-fn test_write_aggregation_fourbox_to_scalar_custom_weights() {
+fn test_write_aggregation_four_box_to_scalar_custom_weights() {
     // Schema declares Scalar, component produces FourBox
     // Use custom weights for aggregation
     let schema = VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Scalar);
@@ -146,7 +143,7 @@ fn test_write_aggregation_fourbox_to_scalar_custom_weights() {
 }
 
 #[test]
-fn test_write_aggregation_fourbox_to_hemispheric_execution() {
+fn test_write_aggregation_four_box_to_hemispheric_execution() {
     // Schema declares Hemispheric, component produces FourBox
     let schema =
         VariableSchema::new().variable_with_grid("Temperature", "K", GridType::Hemispheric);

@@ -27,7 +27,7 @@ class StateValue:
         ...
     @staticmethod
     def four_box(slice: FourBoxSlice) -> StateValue:
-        """Create a FourBox StateValue from a FourBoxSlice."""
+        """Create a four-box StateValue from a FourBoxSlice."""
         ...
     @staticmethod
     def hemispheric(slice: HemisphericSlice) -> StateValue:
@@ -37,7 +37,7 @@ class StateValue:
         """Check if this is a scalar value."""
         ...
     def is_four_box(self) -> bool:
-        """Check if this is a FourBox grid value."""
+        """Check if this is a four-box grid value."""
         ...
     def is_hemispheric(self) -> bool:
         """Check if this is a Hemispheric grid value."""
@@ -128,10 +128,10 @@ class HemisphericSlice:
 class VariableSource(Enum):
     """Where an input's values come from, which decides the index `get()` reads."""
 
-    Exogenous = auto()
-    UpstreamOutput = auto()
-    OwnState = auto()
+    Prescribed = auto()
+    Upstream = auto()
     Lagged = auto()
+    OwnState = auto()
 
 @final
 class TimeseriesWindow:
@@ -143,7 +143,7 @@ class TimeseriesWindow:
     def __init__(
         self,
         values: list[float],
-        current_index: int,
+        time_index: int,
         *,
         times: list[float] | None = None,
         source: VariableSource = ...,
@@ -187,7 +187,7 @@ class TimeseriesWindow:
 
 @final
 class FourBoxTimeseriesWindow:
-    """View into FourBox grid timeseries data."""
+    """View into four-box grid timeseries data."""
 
     source: VariableSource
     timeseries_type: TimeseriesType
@@ -195,7 +195,7 @@ class FourBoxTimeseriesWindow:
     def __init__(
         self,
         values: list[list[float]],
-        current_index: int,
+        time_index: int,
         *,
         times: list[float] | None = None,
         source: VariableSource = ...,
@@ -247,7 +247,7 @@ class HemisphericTimeseriesWindow:
     def __init__(
         self,
         values: list[list[float]],
-        current_index: int,
+        time_index: int,
         *,
         times: list[float] | None = None,
         source: VariableSource = ...,

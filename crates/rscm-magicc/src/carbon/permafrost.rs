@@ -38,8 +38,7 @@
 
 use crate::parameters::{PermafrostParameters, PermafrostSoilParameters};
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType,
+    Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -421,7 +420,7 @@ impl Default for Permafrost {
 
 #[typetag::serde]
 impl Component for Permafrost {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 

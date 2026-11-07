@@ -9,7 +9,7 @@ pub(crate) fn require_annual(component: &str, t_current: Time, t_next: Time) -> 
     let dt = t_next - t_current;
     if !dt.is_finite() || (dt - 1.0).abs() >= 1e-6 {
         return Err(RSCMError::Error(format!(
-            "{component} only supports annual timesteps (dt=1.0), got dt={dt}"
+            "{component} only supports annual steps (dt=1.0), got dt={dt}"
         )));
     }
     Ok(())
@@ -18,7 +18,7 @@ pub(crate) fn require_annual(component: &str, t_current: Time, t_next: Time) -> 
 /// Value of an annual series at `year`, clamped to the stored time axis.
 ///
 /// Feedback references in MAGICC7 are fixed calendar years, which may lie
-/// before the run starts or after the current timestep.
+/// before the run starts or after the current step.
 pub(crate) fn value_at_year(window: &ScalarWindow, t_current: Time, year: Time) -> FloatValue {
     window
         .interpolate(t_current + (year - t_current).round())
@@ -87,9 +87,9 @@ pub(crate) fn prescribed_definition(
     concentration: &str,
     unit: &str,
     switch_year: Option<Time>,
-) -> Option<rscm_core::component::RequirementDefinition> {
+) -> Option<rscm_core::component::VariableDefinition> {
     switch_year.map(|_| {
-        rscm_core::component::RequirementDefinition::scalar_input(
+        rscm_core::component::VariableDefinition::scalar_input(
             &prescribed_name(concentration),
             unit,
         )

@@ -34,7 +34,7 @@ from rscm._lib.fair import (
 from rscm.fair import naming
 
 if TYPE_CHECKING:
-    from rscm._lib.core import Component, ModelBuilder
+    from rscm._lib.core import ModelBuilder, RustComponent
 
 FairConfig = dict[str, Any]
 Species = dict[str, Any]
@@ -107,7 +107,7 @@ def thornhill(config: FairConfig) -> bool:
 CH4_LIFETIME_SENSITIVITY = "ch4_lifetime_chemical_sensitivity"
 
 
-def _ch4_lifetime(config: FairConfig) -> Component:
+def _ch4_lifetime(config: FairConfig) -> RustComponent:
     sensitivity = CH4_LIFETIME_SENSITIVITY
     emissions = _chemistry_drivers(config, "emissions", sensitivity, key="sensitivity")
     concentrations = _chemistry_drivers(
@@ -201,7 +201,7 @@ def _gas(config: FairConfig, entry: Species) -> dict[str, Any]:
     return gas
 
 
-def _gas_cycle(config: FairConfig, gases: list[Species]) -> Component:
+def _gas_cycle(config: FairConfig, gases: list[Species]) -> RustComponent:
     return FairGasCycleBuilder.from_parameters(
         {
             "species": [_gas(config, s) for s in gases],
@@ -210,7 +210,7 @@ def _gas_cycle(config: FairConfig, gases: list[Species]) -> Component:
     ).build()
 
 
-def _eesc(config: FairConfig) -> Component:
+def _eesc(config: FairConfig) -> RustComponent:
     halogens = _of_type(config, *naming.HALOGEN_TYPES)
     (cfc11,) = _of_type(config, "cfc-11")
     return FairEescBuilder.from_parameters(
@@ -232,7 +232,7 @@ def _eesc(config: FairConfig) -> Component:
     ).build()
 
 
-def _ghg_forcing(config: FairConfig, gases: list[Species]) -> Component:
+def _ghg_forcing(config: FairConfig, gases: list[Species]) -> RustComponent:
     if config["options"]["ghg_method"] != "meinshausen2020":
         msg = f"ghg_method {config['options']['ghg_method']!r} is not implemented"
         raise NotImplementedError(msg)
@@ -357,7 +357,7 @@ def _linear_drivers(config: FairConfig, kind: str) -> list[dict[str, Any]]:
     ]
 
 
-def _linear_forcing(config: FairConfig, entry: Species) -> Component:
+def _linear_forcing(config: FairConfig, entry: Species) -> RustComponent:
     return FairLinearForcingBuilder.from_parameters(
         {
             "forcing": naming.forcing(entry),
@@ -368,7 +368,7 @@ def _linear_forcing(config: FairConfig, entry: Species) -> Component:
     ).build()
 
 
-def _aerosol_cloud(config: FairConfig, entry: Species) -> Component:
+def _aerosol_cloud(config: FairConfig, entry: Species) -> RustComponent:
     return FairAerosolCloudBuilder.from_parameters(
         {
             "forcing": naming.forcing(entry),
@@ -391,7 +391,7 @@ def forcing_agents(config: FairConfig) -> list[Species]:
     ]
 
 
-def _aggregation(config: FairConfig) -> Component:
+def _aggregation(config: FairConfig) -> RustComponent:
     agents = []
     for s in forcing_agents(config):
         agent = {
@@ -405,7 +405,7 @@ def _aggregation(config: FairConfig) -> Component:
     return FairForcingAggregationBuilder.from_parameters({"agents": agents}).build()
 
 
-def _energy_balance(config: FairConfig) -> Component:
+def _energy_balance(config: FairConfig) -> RustComponent:
     climate = config["climate"]
     return FairEnergyBalanceBuilder.from_parameters(
         {
@@ -421,7 +421,7 @@ def _energy_balance(config: FairConfig) -> Component:
 
 def build_components(
     config: FairConfig, *, energy_balance: bool = True
-) -> list[Component]:
+) -> list[RustComponent]:
     """Components reproducing a FaIR run, in the order they must be added to a model.
 
     Without `energy_balance`, another climate component must write the surface

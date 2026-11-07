@@ -1,13 +1,14 @@
 //! Aggregate execution tests.
 
-use crate::component::{Component, InputState, OutputState, RequirementDefinition, TimeseriesType};
+use crate::component::{Component, InputState, OutputState, TimeseriesType, VariableDefinition};
 use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
-use crate::model::{ModelBuilder, VarSource};
+use crate::model::ModelBuilder;
 use crate::schema::{AggregateOp, VariableSchema};
 use crate::spatial::{ScalarGrid, ScalarRegion};
 use crate::state::StateValue;
 use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
+use crate::VariableSource;
 use numpy::array;
 use numpy::ndarray::{Array, Axis};
 use serde::{Deserialize, Serialize};
@@ -22,10 +23,10 @@ struct ChainForcing {
 
 #[typetag::serde]
 impl Component for ChainForcing {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        let mut defs = vec![RequirementDefinition::scalar_output(&self.output, "W/m^2")];
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        let mut defs = vec![VariableDefinition::scalar_output(&self.output, "W/m^2")];
         if let Some(input) = &self.input {
-            defs.push(RequirementDefinition::scalar_input(input, "W/m^2"));
+            defs.push(VariableDefinition::scalar_input(input, "W/m^2"));
         }
         defs
     }
@@ -86,8 +87,8 @@ pub(super) struct FailingForcing;
 
 #[typetag::serde]
 impl Component for FailingForcing {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::scalar_output("failed", "W/m^2")]
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::scalar_output("failed", "W/m^2")]
     }
 
     fn solve(&self, _t: Time, _next: Time, _inputs: &InputState) -> RSCMResult<OutputState> {
@@ -119,10 +120,10 @@ struct CO2ERFComponent {
 
 #[typetag::serde]
 impl Component for CO2ERFComponent {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::scalar_input("Concentrations|CO2", "ppm"),
-            RequirementDefinition::scalar_output("ERF|CO2", "W/m^2"),
+            VariableDefinition::scalar_input("Concentrations|CO2", "ppm"),
+            VariableDefinition::scalar_output("ERF|CO2", "W/m^2"),
         ]
     }
 
@@ -150,10 +151,10 @@ struct CH4ERFComponent {
 
 #[typetag::serde]
 impl Component for CH4ERFComponent {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::scalar_input("Concentrations|CH4", "ppb"),
-            RequirementDefinition::scalar_output("ERF|CH4", "W/m^2"),
+            VariableDefinition::scalar_input("Concentrations|CH4", "ppb"),
+            VariableDefinition::scalar_output("ERF|CH4", "W/m^2"),
         ]
     }
 
@@ -217,8 +218,8 @@ fn test_aggregate_sum_execution() {
         .with_component(Arc::new(CH4ERFComponent {
             forcing_per_ppb: 0.001, // 1 W/m^2 per 1000 ppb
         }))
-        .with_exogenous_variable("Concentrations|CO2", get_co2_concentrations())
-        .with_exogenous_variable("Concentrations|CH4", get_ch4_concentrations())
+        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Concentrations|CH4", get_ch4_concentrations())
         .build()
         .unwrap();
 
@@ -266,8 +267,8 @@ fn test_aggregate_mean_execution() {
         .with_component(Arc::new(CH4ERFComponent {
             forcing_per_ppb: 0.001,
         }))
-        .with_exogenous_variable("Concentrations|CO2", get_co2_concentrations())
-        .with_exogenous_variable("Concentrations|CH4", get_ch4_concentrations())
+        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Concentrations|CH4", get_ch4_concentrations())
         .build()
         .unwrap();
 
@@ -299,7 +300,7 @@ fn test_aggregate_weighted_execution() {
         .aggregate(
             "ERF|Weighted",
             "W/m^2",
-            AggregateOp::Weighted(vec![0.8, 0.2]),
+            AggregateOp::WeightedSum(vec![0.8, 0.2]),
         )
         .from("ERF|CO2")
         .from("ERF|CH4")
@@ -314,8 +315,8 @@ fn test_aggregate_weighted_execution() {
         .with_component(Arc::new(CH4ERFComponent {
             forcing_per_ppb: 0.001,
         }))
-        .with_exogenous_variable("Concentrations|CO2", get_co2_concentrations())
-        .with_exogenous_variable("Concentrations|CH4", get_ch4_concentrations())
+        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Concentrations|CH4", get_ch4_concentrations())
         .build()
         .unwrap();
 
@@ -354,7 +355,7 @@ fn test_aggregate_with_nan_contributor() {
         .with_component(Arc::new(CO2ERFComponent {
             forcing_per_ppm: 0.01,
         }))
-        .with_exogenous_variable("Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
         .build()
         .unwrap();
 
@@ -402,8 +403,8 @@ fn test_chained_aggregates_execution() {
         .with_component(Arc::new(CH4ERFComponent {
             forcing_per_ppb: 0.001,
         }))
-        .with_exogenous_variable("Concentrations|CO2", get_co2_concentrations())
-        .with_exogenous_variable("Concentrations|CH4", get_ch4_concentrations())
+        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Concentrations|CH4", get_ch4_concentrations())
         .build()
         .unwrap();
 
@@ -451,7 +452,7 @@ fn test_aggregate_appears_in_dot_graph() {
         .with_component(Arc::new(CO2ERFComponent {
             forcing_per_ppm: 0.01,
         }))
-        .with_exogenous_variable("Concentrations|CO2", get_co2_concentrations())
+        .with_prescribed_variable("Concentrations|CO2", get_co2_concentrations())
         .build()
         .unwrap();
 
@@ -470,8 +471,8 @@ struct StepEmissions;
 
 #[typetag::serde]
 impl Component for StepEmissions {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::scalar_output(
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::scalar_output(
             "Emissions|Upstream",
             "GtC/yr",
         )]
@@ -486,16 +487,16 @@ impl Component for StepEmissions {
 }
 
 #[test]
-fn test_flux_aggregate_reads_exogenous_and_upstream_at_step_start() {
+fn test_flux_aggregate_reads_prescribed_and_upstream_at_step_start() {
     let schema = VariableSchema::new()
-        .variable("Emissions|Exogenous", "GtC/yr")
+        .variable("Emissions|Prescribed", "GtC/yr")
         .variable("Emissions|Upstream", "GtC/yr")
         .aggregate("Emissions|Total", "GtC/yr", AggregateOp::Sum)
-        .from("Emissions|Exogenous")
+        .from("Emissions|Prescribed")
         .from("Emissions|Upstream")
         .build();
     let axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)));
-    let exogenous = Timeseries::new(
+    let prescribed = Timeseries::new(
         array![1.0, 2.0, 3.0, 4.0, 5.0].insert_axis(Axis(1)),
         axis.clone(),
         ScalarGrid,
@@ -507,7 +508,7 @@ fn test_flux_aggregate_reads_exogenous_and_upstream_at_step_start() {
         .with_time_axis((*axis).clone())
         .with_schema(schema)
         .with_component(Arc::new(StepEmissions))
-        .with_exogenous_variable("Emissions|Exogenous", exogenous)
+        .with_prescribed_variable("Emissions|Prescribed", prescribed)
         .build()
         .unwrap();
 
@@ -523,17 +524,17 @@ fn test_flux_aggregate_reads_exogenous_and_upstream_at_step_start() {
         .map(|v| (v.name.as_str(), (v.source, v.timeseries_type)))
         .collect();
     assert_eq!(
-        sources["Emissions|Exogenous"],
-        (Some(VarSource::Exogenous), TimeseriesType::Average)
+        sources["Emissions|Prescribed"],
+        (Some(VariableSource::Prescribed), TimeseriesType::Average)
     );
     assert_eq!(
         sources["Emissions|Upstream"],
-        (Some(VarSource::Upstream), TimeseriesType::Average)
+        (Some(VariableSource::Upstream), TimeseriesType::Average)
     );
 
     model.run();
 
-    // Step N sums the exogenous value and the upstream output at N, and writes the total at N.
+    // Step N sums the prescribed value and the upstream output at N, and writes the total at N.
     let total = model
         .timeseries()
         .get_data("Emissions|Total")

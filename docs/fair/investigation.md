@@ -45,7 +45,7 @@ The loop, with the RSCM read for each input:
 | 1 | Lifetime scaling `alpha` from iIRF100 (cumulative uptake, airborne, temperature) | temperature `get()`, own state | `FairGasCycle` |
 | 2 | CH4 lifetime scaling, Thornhill 2021 (aerosol precursors, N2O, EESC, temperature) | everything `get()` | `FairCH4Lifetime` (added before the gas cycle) |
 | 3 | Emissions to concentration over up to 4 gas boxes | emissions `get()` | `FairGasCycle` |
-| 4 | Concentration to emissions (inverse mode) | concentration `get()` (exogenous) | `FairGasCycle` |
+| 4 | Concentration to emissions (inverse mode) | concentration `get()` (prescribed) | `FairGasCycle` |
 | 5 | GHG forcing: Meinshausen 2020, Etminan 2016, Myhre 1998 or Leach 2021 | concentrations `get()` | `FairGhgForcing` |
 | 6 | ERFari, linear in emissions and concentrations | emissions `get()`, concentrations `get()` | `FairAerosolForcing` |
 | 7 | ERFaci, log of a weighted sum | as step 6 | `FairAerosolForcing` |
@@ -57,7 +57,7 @@ The loop, with the RSCM read for each input:
 | 16 | n-layer energy balance step `x' = A_d x + b_d F + noise` | total forcing `get()`, own state | `FairEnergyBalance` |
 | 17 and 18 | TOA imbalance and ocean heat content, after the run | forcing, layer temperatures | `FairEnergyBalance`, per step |
 
-Steps 2 and 8 form a loop across timesteps: CH4 lifetime reads last step's EESC and concentrations.
+Steps 2 and 8 form a loop across steps: CH4 lifetime reads last step's EESC and concentrations.
 Adding `FairCH4Lifetime` before the gas cycle gives exactly that,
 since RSCM only creates edges to producers added earlier.
 
@@ -157,7 +157,7 @@ Settled on 2026-11-04.
 - Parity tests use `rtol = 1e-9`, the MAGICC bar.
 - v1 covers the default methods only: Meinshausen 2020 GHG forcing and Thornhill 2021 CH4 lifetime.
 - Stochastic runs come in a later slice. Restarts are deferred.
-- Any uniform timestep is supported.
+- Any uniform step is supported.
 - Components live in a new `crates/rscm-fair` crate, exposed as `rscm.fair`.
 - `FairGasCycle` is one component type configured with a list of species.
 - Each forcing component applies its own temperature feedback.

@@ -97,7 +97,7 @@ def build_two_layer_model(config: Any) -> Model:
         model_builder = model_builder.with_time_axis(time_axis)
 
     # Add component
-    model_builder = model_builder.with_rust_component(component)
+    model_builder = model_builder.with_component(component)
 
     # Add initial values for state variables
     model_builder = model_builder.with_initial_values(
@@ -105,4 +105,4 @@ def build_two_layer_model(config: Any) -> Model:
     )
 
     # Inputs are not read from the config yet, so forcing stays NaN.
-    return model_builder.with_missing_exogenous_allowed().build()
+    return model_builder.with_missing_prescribed_allowed().build()

@@ -65,7 +65,7 @@ class EmissionsComponent(Component):
 
 
 def test_typed_component_definitions():
-    """Test that typed components generate correct requirement definitions."""
+    """Test that typed components generate correct variable definitions."""
     component = SimpleCarbonCycle(sensitivity=0.5)
     defs = component.definitions()
 
@@ -82,13 +82,13 @@ def test_typed_component_definitions():
 
 def test_typed_component_in_model():
     """Test that typed components work in a model."""
-    # Use a simpler single-component test with exogenous emissions
+    # Use a simpler single-component test with prescribed emissions
     carbon_comp = PythonComponent.build(SimpleCarbonCycle(sensitivity=0.5))
 
     # Create time axis
     time_axis = TimeAxis.from_values(np.array([2020.0, 2021.0, 2022.0]))
 
-    # Create exogenous emissions timeseries
+    # Create prescribed emissions timeseries
     emissions = Timeseries(
         np.array([10.0, 10.0, 10.0]),
         time_axis,
@@ -99,14 +99,14 @@ def test_typed_component_in_model():
     # Build model with builder pattern
     model = (
         ModelBuilder()
-        .with_py_component(carbon_comp)
+        .with_component(carbon_comp)
         .with_time_axis(time_axis)
-        .with_exogenous_variable("Emissions|CO2", emissions)
+        .with_prescribed_variable("Emissions|CO2", emissions)
         .with_initial_values({"Atmospheric Concentration|CO2": 280.0})
         .build()
     )
 
-    # Run one timestep
+    # Run one step
     model.step()
 
     # Get timeseries collection after step
@@ -139,7 +139,7 @@ def test_typed_component_timeseries_window_access():
         ) -> "HistoryTestComponent.Outputs":
             current = inputs.temperature.get()
             previous = inputs.temperature.history(1)
-            # No previous value at the first timestep
+            # No previous value at the first step
             delta = 0.0 if previous is None else current - previous
 
             return self.Outputs(output=delta)
@@ -159,9 +159,9 @@ def test_typed_component_timeseries_window_access():
     # Build model
     model = (
         ModelBuilder()
-        .with_py_component(comp)
+        .with_component(comp)
         .with_time_axis(time_axis)
-        .with_exogenous_variable("Temperature", temp)
+        .with_prescribed_variable("Temperature", temp)
         .build()
     )
 
@@ -324,21 +324,21 @@ def test_typed_component_inheritance():
     assert "DerivedOutput" in def_names
 
 
-def test_exogenous_input_returns_correct_timestep_value():
-    """Test that an exogenous point's get() returns the value at the step's end.
+def test_prescribed_input_returns_correct_step_value():
+    """Test that a prescribed point's get() returns the value at the step's end.
 
     Regression test for GitHub issue #65: Python component TimeseriesWindow.current
-    always returns last value instead of the value at the current timestep.
+    always returns last value instead of the value at the current step.
 
-    Before the fix, exogenous variables that were pre-populated with all values
+    Before the fix, prescribed variables that were pre-populated with all values
     would always return the last value because the code used .latest() instead
     of computing the index from the current time.
     """
-    # Track values seen at each timestep to verify correctness
+    # Track values seen at each step to verify correctness
     observed_values = []
 
     class DebugComponent(Component, register=False):
-        """Component that records the concentration value seen at each timestep."""
+        """Component that records the concentration value seen at each step."""
 
         concentration = Input("Concentration|CO2", unit="ppm")
         erf = Output("ERF|Test", unit="W/m^2")
@@ -352,7 +352,7 @@ def test_exogenous_input_returns_correct_timestep_value():
 
     time_axis = TimeAxis.from_values(np.arange(2020.0, 2025.0, 1.0))
 
-    # Create concentration timeseries with distinct values at each timestep
+    # Create concentration timeseries with distinct values at each step
     # so we can verify which value is actually being returned
     concentration_ts = Timeseries(
         np.array([400.0, 410.0, 420.0, 430.0, 440.0]),
@@ -365,18 +365,18 @@ def test_exogenous_input_returns_correct_timestep_value():
     model = (
         ModelBuilder()
         .with_time_axis(time_axis)
-        .with_py_component(comp)
-        .with_exogenous_variable("Concentration|CO2", concentration_ts)
+        .with_component(comp)
+        .with_prescribed_variable("Concentration|CO2", concentration_ts)
         .build()
     )
 
-    # Run all timesteps
+    # Run all steps
     for _ in range(4):
         model.step()
 
-    # Verify that each timestep received the correct value
-    # Before the fix, all timesteps would see 440.0 (the last value)
-    # After the fix, each timestep should see its corresponding value
+    # Verify that each step received the correct value
+    # Before the fix, all steps would see 440.0 (the last value)
+    # After the fix, each step should see its corresponding value
     assert len(observed_values) == 4
 
     expected_values = [
@@ -448,10 +448,10 @@ def test_window_reads_follow_source_and_timeseries_type():
     axis = TimeAxis.from_values(np.array([2000.0, 2001.0, 2002.0, 2003.0]))
     model = (
         ModelBuilder()
-        .with_py_component(PythonComponent.build(ForcingProducer()))
-        .with_py_component(PythonComponent.build(reader))
+        .with_component(ForcingProducer())
+        .with_component(reader)
         .with_time_axis(axis)
-        .with_exogenous_variable(
+        .with_prescribed_variable(
             "Emissions",
             Timeseries(
                 np.array([1.0, 2.0, 3.0, 4.0]),
@@ -460,7 +460,7 @@ def test_window_reads_follow_source_and_timeseries_type():
                 InterpolationStrategy.Previous,
             ),
         )
-        .with_exogenous_variable(
+        .with_prescribed_variable(
             "Temperature",
             Timeseries(
                 np.array([10.0, 11.0, 12.0, 13.0]),
@@ -475,12 +475,12 @@ def test_window_reads_follow_source_and_timeseries_type():
     model.step()
 
     first, second = reader.reads
-    assert first["emissions"] == (1.0, VariableSource.Exogenous)
+    assert first["emissions"] == (1.0, VariableSource.Prescribed)
     assert first["emissions_type"] == TimeseriesType.Average
     assert first["temperature"] == (11.0, 2001.0, 10.0, 2, (10.0, 11.0), 10.5)
     assert second["temperature"] == (12.0, 2002.0, 11.0, 3, (11.0, 12.0), 11.5)
-    assert first["forcing"] == (2001.0, 2001.0, VariableSource.UpstreamOutput, 2001.0)
-    assert second["forcing"] == (2002.0, 2002.0, VariableSource.UpstreamOutput, 2002.0)
+    assert first["forcing"] == (2001.0, 2001.0, VariableSource.Upstream, 2001.0)
+    assert second["forcing"] == (2002.0, 2002.0, VariableSource.Upstream, 2002.0)
 
 
 def test_window_reads_by_source():
@@ -491,15 +491,15 @@ def test_window_reads_by_source():
     def window(source, **kwargs):
         return TimeseriesWindow(values, 2, times=times, source=source, **kwargs)
 
-    exogenous = window(VariableSource.Exogenous)
-    assert (exogenous.get(), exogenous.get_time(), exogenous.history_len()) == (
+    prescribed = window(VariableSource.Prescribed)
+    assert (prescribed.get(), prescribed.get_time(), prescribed.history_len()) == (
         4.0,
         2003.0,
         4,
     )
-    assert exogenous.interval() == (3.0, 4.0)
+    assert prescribed.interval() == (3.0, 4.0)
 
-    upstream = window(VariableSource.UpstreamOutput)
+    upstream = window(VariableSource.Upstream)
     assert (upstream.get(), upstream.get_time(), upstream.history(3)) == (
         4.0,
         2003.0,
@@ -518,9 +518,9 @@ def test_window_reads_by_source():
         window(VariableSource.OwnState).interval()
     with pytest.raises(ValueError, match="average"):
         average = TimeseriesType.Average
-        window(VariableSource.Exogenous, timeseries_type=average).interval()
+        window(VariableSource.Prescribed, timeseries_type=average).interval()
 
-    assert exogenous.interpolate(2010.0) == 4.0
+    assert prescribed.interpolate(2010.0) == 4.0
     with pytest.raises(ValueError, match="without times"):
         TimeseriesWindow(values, 2).get_time()
     with pytest.raises(ValueError, match="length"):

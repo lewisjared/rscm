@@ -41,8 +41,8 @@ erf = Timeseries(np.linspace(0.0, 4.0, len(time_axis)), time_axis, "W/m^2", Inte
 model = (
     ModelBuilder()
     .with_time_axis(time_axis)
-    .with_rust_component(TwoLayerBuilder.from_parameters(params).build())
-    .with_exogenous_variable("Effective Radiative Forcing", erf)
+    .with_component(TwoLayerBuilder.from_parameters(params).build())
+    .with_prescribed_variable("Effective Radiative Forcing", erf)
     .with_initial_values({"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0})
 ).build()
 model.run()
@@ -299,7 +299,7 @@ The builder:
 5. Sets zero initial values for the state variables
 6. Assembles and returns the model
 
-It adds no exogenous inputs yet, as the [Quick Start](#quick-start) warns.
+It adds no prescribed inputs yet, as the [Quick Start](#quick-start) warns.
 
 `build_model` only supports `type = "two-layer"` and raises `ValueError` for any other model type.
 `MAGICCConfig` in `rscm.config.models.magicc` describes MAGICC parameters,

@@ -9,25 +9,26 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 Components are the fundamental building blocks of RSCM.
 Each component encapsulates a specific piece of physics,
 such as the carbon cycle, radiative forcing or temperature response,
-that can be solved for a given timestep.
+that can be solved for a given step.
 
 ### What Components Do
 
 A component:
 
-- **Declares requirements**: Specifies what inputs it needs and what outputs it produces
+- **Declares variables**: Defines the inputs it reads and the outputs it produces
 - **Implements physics**: Contains the equations or algorithms for a particular process
-- **Exchanges state**: Reads inputs from other components or exogenous data,
+- **Exchanges state**: Reads inputs from other components or prescribed data,
   writes outputs for downstream components
 
-### Requirement Types
+### Variable Roles
 
-Each variable in a component has a **requirement type** that defines how it flows through the model:
+Each variable a component declares is a `VariableDefinition` with a **role** (`VariableRole`)
+that defines how it flows through the model:
 
-| Type     | Description                                                     | Read | Write |
+| Role     | Description                                                     | Read | Write |
 | -------- | --------------------------------------------------------------- | ---- | ----- |
 | `Input`  | External data or output from another component                  | Yes  | No    |
-| `Output` | New value produced each timestep                                | No   | Yes   |
+| `Output` | New value produced each step                                    | No   | Yes   |
 | `State`  | Reads previous value, writes new value (requires initial value) | Yes  | Yes   |
 
 ### Component Lifecycle
@@ -44,8 +45,8 @@ graph LR
 ```
 
 1. **Definition phase**: The component declares its inputs and outputs via `definitions()`
-2. **Build phase**: The model builder validates that all requirements can be satisfied
-3. **Solve phase**: At each timestep, `solve(t_current, t_next, input_state)` is called
+2. **Build phase**: The model builder validates that every declared input can be supplied
+3. **Solve phase**: At each step, `solve(t_current, t_next, input_state)` is called
 
 ### Creating Components
 
@@ -59,7 +60,7 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
     from rscm.component import Component, Input, Output, State
 
     class SimpleCarbonCycle(Component):
-        # Declare requirements using descriptors
+        # Declare variables using descriptors
         emissions = Input("Emissions|CO2", unit="GtCO2")
         concentration = State("Atmospheric Concentration|CO2", unit="ppm")
         uptake = Output("Land Uptake|CO2", unit="GtC")
@@ -98,7 +99,7 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
 
     #[typetag::serde]
     impl Component for SimpleCarbonCycle {
-        fn definitions(&self) -> Vec<RequirementDefinition> {
+        fn definitions(&self) -> Vec<VariableDefinition> {
             Self::generated_definitions()
         }
 
@@ -137,9 +138,9 @@ import numpy as np
 model = (
     ModelBuilder()
     .with_time_axis(TimeAxis.from_values(np.arange(1750, 2101, 1.0)))
-    .with_rust_component(carbon_cycle)
-    .with_rust_component(temperature_response)
-    .with_exogenous_variable("Emissions|CO2", emissions_ts)
+    .with_component(carbon_cycle)
+    .with_component(temperature_response)
+    .with_prescribed_variable("Emissions|CO2", emissions_ts)
     .with_initial_values({"Atmospheric Concentration|CO2": 280.0})
 ).build()
 ```
@@ -168,7 +169,7 @@ builder.with_lag_for("Atmospheric Concentration|CO2", "OceanCarbon")  # only Oce
 `with_lag(variable)` lags every edge from the variable.
 `with_lag_for(variable, consumer)` lags one edge, so other consumers still see this step's value.
 `consumer` is the component's type name, such as `"OceanCarbon"`.
-A lag holds whether the variable is produced by a component or exogenous.
+A lag holds whether the variable is produced by a component or prescribed.
 
 A loop that no lag breaks fails `build()` with an error that lists the components and variables in the loop,
 and the `with_lag_for` calls that would break it.
@@ -178,8 +179,8 @@ Runners such as `run_magicc7` and `run_fair` carry their models' lags.
 
 ### Model Execution
 
-Each timestep runs from `t_current` (index N) to `t_next` (index N+1).
-Within a timestep the model solves every producer before its consumers,
+Each step runs from `t_current` (index N) to `t_next` (index N+1).
+Within a step the model solves every producer before its consumers,
 using a topological sort of the graph.
 Each component reads its inputs with `get()`.
 It writes a point output to index N+1, the step's end,
@@ -194,9 +195,9 @@ sequenceDiagram
     participant C2 as Downstream Component
     participant State as Timeseries State
 
-    Note over State: Index N has values from previous timestep
+    Note over State: Index N has values from previous step
     Model->>C1: solve(t_current, t_next)
-    C1->>State: get() reads own state [index N] and exogenous points [index N+1]
+    C1->>State: get() reads own state [index N] and prescribed points [index N+1]
     C1->>State: Write point outputs [index N+1]
     Model->>C2: solve(t_current, t_next)
     C2->>State: get() reads C1's point [index N+1], or [index N] on a lagged edge
@@ -204,7 +205,7 @@ sequenceDiagram
     Note over State: Index N+1 now has new values
 ```
 
-### Timestep Semantics
+### Step Semantics
 
 A component never chooses a time index.
 It reads each input through three calls on the input's window:
@@ -218,12 +219,12 @@ The builder decides which value `get()` returns, from how the model is wired:
 
 | What you're reading                | Who wrote it           | `get()` reads a point | `get()` reads an average |
 | ---------------------------------- | ---------------------- | --------------------- | ------------------------ |
-| Your own previous state            | You, last timestep     | index N               | index N-1                |
-| Exogenous input (external forcing) | Pre-populated          | index N+1             | index N                  |
-| Upstream component output          | They ran this timestep | index N+1             | index N                  |
-| Lagged input                       | Written last timestep  | index N               | not supported            |
+| Your own previous state            | You, last step     | index N               | index N-1                |
+| Prescribed input (external forcing) | Pre-populated          | index N+1             | index N                  |
+| Upstream component output          | They ran this step | index N+1             | index N                  |
+| Lagged input                       | Written last step  | index N               | not supported            |
 
-An exogenous input reads the same index as an upstream output,
+A prescribed input reads the same index as an upstream output,
 so a component reads the same value whether the variable is prescribed or modelled.
 `with_lag(variable)` and `with_lag_for(variable, consumer)` make an edge read the previous step.
 A lagged input's `get()` gives last step's value, and its `interval()` gives last step's start and end.
@@ -233,7 +234,7 @@ Adding a lag changes the model wiring, not the component.
 and on a component's own state, whose end of step the component writes.
 `get_time()` gives the time of the value `get()` returns,
 and `history_len()` counts the values `history` can read.
-A fixed calendar year, such as a reference year of exogenous data, is read with `interpolate(year)`.
+A fixed calendar year, such as a reference year of prescribed data, is read with `interpolate(year)`.
 
 === "Python"
 
@@ -257,7 +258,7 @@ The component tutorials cover each call in more detail.
 ### Running a Model
 
 ```python
-# Step through one timestep at a time
+# Step through one step at a time
 model.step()
 print(f"Current time: {model.current_time_bounds()}")
 
@@ -274,7 +275,7 @@ In Rust, `Model::try_step` and `Model::try_run` return the error, while `step` a
 A failed step does not advance the time index, but components that already ran may have updated their state.
 Rebuild the model before retrying.
 An exception raised inside a Python component's `solve()` also surfaces as `RuntimeError`,
-with the component name, timestep and Python traceback in the message.
+with the component name, step and Python traceback in the message.
 
 ### Running Many Models
 
@@ -295,14 +296,14 @@ Python components hold the GIL while they solve, so models with Python component
 then raises `RuntimeError` naming the first that failed.
 In Rust, `rscm_core::model::build_models` and `run_models` return one result per model.
 
-### Exogenous vs Endogenous Variables
+### Prescribed vs Modelled Variables
 
 | Variable Type  | Source                       | Example                                 |
 | -------------- | ---------------------------- | --------------------------------------- |
-| **Exogenous**  | Provided externally          | Emissions scenarios, prescribed forcing |
-| **Endogenous** | Computed by model components | CO2 concentration, temperature          |
+| **Prescribed**  | Provided externally          | Emissions scenarios, prescribed forcing |
+| **Modelled** | Computed by model components | CO2 concentration, temperature          |
 
-Whether a variable is exogenous or endogenous is determined by the components in the model,
+Whether a variable is prescribed or modelled is determined by the components in the model,
 not by any intrinsic property of the variable itself.
 During the build phase, the `ModelBuilder` analyses all component definitions to identify:
 
@@ -310,14 +311,14 @@ During the build phase, the `ModelBuilder` analyses all component definitions to
 2. **Produced outputs**: Variables that components write
 
 Any required input that is not produced by another component in the model
-must be supplied as exogenous data via `with_exogenous_variable()`.
-The same variable can be exogenous in one model configuration and endogenous in another,
+must be supplied as prescribed data via `with_prescribed_variable()`.
+The same variable can be prescribed in one model configuration and modelled in another,
 depending on which components are included.
 
 For example, CO2 concentration might be:
 
-- **Endogenous** in a full carbon-cycle model where a component calculates concentration from emissions
-- **Exogenous** in a temperature-only model where concentration is prescribed directly
+- **Modelled** in a full carbon-cycle model where a component calculates concentration from emissions
+- **Prescribed** in a temperature-only model where concentration is prescribed directly
 
 The builder collects every component's outputs and states first,
 so the order components are added does not matter.
@@ -330,10 +331,10 @@ flowchart TD
   B -->|no| C{"Is this edge lagged by with_lag or with_lag_for?"}
   C -->|yes| L["Lagged: reads the previous step, adds no ordering edge"]
   C -->|no| D{"Does another component or a schema aggregate produce it?"}
-  D -->|yes| U["UpstreamOutput: the producer runs first in the same step"]
-  D -->|no| X["Exogenous: values supplied with the model"]
+  D -->|yes| U["Upstream: the producer runs first in the same step"]
+  D -->|no| X["Prescribed: values supplied with the model"]
   X --> E{"Was data supplied?"}
-  E -->|no| M["Build error: MissingExogenousInput, unless with_missing_exogenous_allowed()"]
+  E -->|no| M["Build error: MissingPrescribedInput, unless with_missing_prescribed_allowed()"]
   E -->|yes| F{"Is its unit compatible with the stored unit?"}
   F -->|yes| V["Converted to the stored unit"]
   F -->|no| W["Build error: IncompatibleUnits or UnitParseError"]
@@ -341,19 +342,19 @@ flowchart TD
 
 `model.coupling()` shows the source the builder chose for every input.
 
-`build()` raises `ValueError` if an exogenous input has no data and no initial value,
+`build()` raises `ValueError` if a prescribed input has no data and no initial value,
 naming each missing variable and the components that read it.
-`with_missing_exogenous_allowed()` builds the model anyway, with the missing inputs filled with NaN.
+`with_missing_prescribed_allowed()` builds the model anyway, with the missing inputs filled with NaN.
 State variables are also checked: `build()` raises `ValueError` if one has no initial value.
 
-Scalar exogenous data uses `with_exogenous_variable()` and scalar initial values use `with_initial_values()`.
+Scalar prescribed data uses `with_prescribed_variable()` and scalar initial values use `with_initial_values()`.
 Grid variables have their own methods:
 
-- `with_exogenous_four_box_variable(name, FourBoxTimeseries(...))` supplies FourBox exogenous data.
+- `with_prescribed_variable(name, FourBoxTimeseries(...))` supplies four-box prescribed data.
 - `with_initial_grid_values({name: [...]})` sets the initial value of a grid state variable,
   with one value per region in grid order.
 
-See [Gridded Exogenous Data and Initial Values](grids.md#gridded-exogenous-data-and-initial-values)
+See [Gridded Prescribed Data and Initial Values](grids.md#gridded-prescribed-data-and-initial-values)
 for examples.
 
 ### Points and Averages
@@ -373,11 +374,11 @@ class Chemistry(Component):
 ```
 
 In Rust, `ComponentIO` declarations take `timeseries_type = "average"`,
-and `RequirementDefinition::with_timeseries_type` sets it on a hand-written definition.
+and `VariableDefinition::with_timeseries_type` sets it on a hand-written definition.
 
 The producer decides the type and its consumers inherit it.
 An input that declares a different type makes `build()` fail.
-`ModelBuilder.with_timeseries_type(variable, TimeseriesType.Average)` declares the type of an exogenous variable.
+`ModelBuilder.with_timeseries_type(variable, TimeseriesType.Average)` declares the type of a prescribed variable.
 Without it, a consumer's declaration or the unit decides.
 `Model.timeseries_type(variable)` returns the resolved type.
 
@@ -405,7 +406,7 @@ because the first step has no previous value to read.
 
 The type sets the interpolation of each series the builder creates:
 `Previous` for an average and `Linear` for a point.
-Exogenous series keep the strategy they were given.
+Prescribed series keep the strategy they were given.
 
 ## Timeseries
 
@@ -423,7 +424,7 @@ import numpy as np
 # From values (assumes uniform spacing for last step)
 time_axis = TimeAxis.from_values(np.arange(2000.0, 2101.0, 1.0))
 
-# From explicit bounds (n+1 bounds for n timesteps)
+# From explicit bounds (n+1 bounds for n steps)
 time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0, 2050.0, 2100.0]))
 ```
 
@@ -437,7 +438,7 @@ from rscm.core import Timeseries, InterpolationStrategy
 emissions = Timeseries(
     values=np.array([0.0, 10.0, 15.0]),
     time_axis=TimeAxis.from_values(np.array([1850.0, 2000.0, 2100.0])),
-    units="GtC / yr",
+    unit="GtC / yr",
     interpolation_strategy=InterpolationStrategy.Linear,
 )
 ```
@@ -498,6 +499,16 @@ ts = collection.get_timeseries_by_name("Emissions|CO2")
 print(ts.values())
 ```
 
+### Variable Names
+
+A variable name is a list of segments joined by `|`, read from general to specific:
+the quantity, then the species, then the sector, then any further breakdown.
+For example `Emissions|CO2|Fossil` is the fossil sector of the CO2 emissions.
+
+- A child segment is always a part or breakdown of its parent.
+- Other qualifiers lead the first segment, as in `Atmospheric Concentration|CO2`.
+- The grid is metadata on the variable, not part of its name.
+
 ## Variable Schema
 
 A **VariableSchema** declares model variables and their aggregation relationships,
@@ -527,22 +538,24 @@ schema.add_variable("ERF|CH4", "W/m^2")
 schema.add_variable("ERF|N2O", "W/m^2")
 
 # Declare an aggregate and its contributors
-schema.add_aggregate("ERF|GHG", "W/m^2", "Sum", ["ERF|CO2", "ERF|CH4", "ERF|N2O"])
+schema.add_aggregate("ERF|GHG", "W/m^2", "sum", ["ERF|CO2", "ERF|CH4", "ERF|N2O"])
 
 schema.validate()
 ```
 
-`Weighted` aggregates also take a `weights` list with one weight per contributor.
+`weighted_sum` aggregates also take a `weights` list with one weight per contributor.
 In Rust, `VariableSchema::new()` offers a chained builder:
 `.variable(...)` and `.aggregate(...).from(...).build()`.
 
 ### Aggregation Operations
 
-| Operation  | Description                         |
-| ---------- | ----------------------------------- |
-| `Sum`      | Sum of all contributors             |
-| `Mean`     | Arithmetic mean                     |
-| `Weighted` | Weighted average (requires weights) |
+| Operation      | Description                                    |
+| -------------- | ---------------------------------------------- |
+| `sum`          | Sum of all contributors                        |
+| `mean`         | Arithmetic mean                                |
+| `weighted_sum` | Sum of each contributor times its weight       |
+
+The Rust enum members are `AggregateOp::Sum`, `Mean` and `WeightedSum`.
 
 ### Using Schema with ModelBuilder
 
@@ -551,10 +564,10 @@ model = (
     ModelBuilder()
     .with_time_axis(time_axis)
     .with_schema(schema)
-    .with_rust_component(co2_forcing)
-    .with_rust_component(ch4_forcing)
-    .with_rust_component(n2o_forcing)
-    # ... exogenous data and initial values
+    .with_component(co2_forcing)
+    .with_component(ch4_forcing)
+    .with_component(n2o_forcing)
+    # ... prescribed data and initial values
 ).build()
 ```
 
@@ -576,6 +589,6 @@ For a complete walkthrough, see the [Variable Schemas tutorial](notebooks/variab
 ## Putting It Together
 
 1. **Define components** with their inputs, outputs, and physics
-2. **Build a model** using `ModelBuilder`, providing components, exogenous data, initial values and a schema
+2. **Build a model** using `ModelBuilder`, providing components, prescribed data, initial values and a schema
 3. **Run the model** to generate results
 4. **Extract timeseries** for analysis and visualisation

@@ -1,7 +1,7 @@
 """Forcing that MAGICC7 derives from input files and emissions before a run starts.
 
 Aerosol, land-use, solar and volcanic forcing in MAGICC7 depend only on
-exogenous inputs, so MAGICC7 calculates them once during initialisation.
+prescribed inputs, so MAGICC7 calculates them once during initialisation.
 These functions reproduce those calculations for an annual axis whose first
 year is the preindustrial reference (1750 in MAGICC7).
 

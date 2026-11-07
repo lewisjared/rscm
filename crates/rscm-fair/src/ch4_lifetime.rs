@@ -10,7 +10,7 @@
 
 use crate::constants::{get, surface_temperature, temperature_unit};
 use rscm_core::component::{
-    Component, InputState, OutputState, RequirementDefinition, TimeseriesType,
+    Component, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
@@ -100,17 +100,17 @@ impl FairCH4Lifetime {
 
 #[typetag::serde]
 impl Component for FairCH4Lifetime {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
-        let mut definitions = vec![RequirementDefinition::scalar_input(
+        let mut definitions = vec![VariableDefinition::scalar_input(
             &p.surface_temperature,
             &temperature_unit(),
         )];
         for x in p.emissions.iter().chain(&p.concentrations) {
-            definitions.push(RequirementDefinition::scalar_input(&x.variable, &x.unit));
+            definitions.push(VariableDefinition::scalar_input(&x.variable, &x.unit));
         }
         definitions.push(
-            RequirementDefinition::scalar_output(&p.output, "1")
+            VariableDefinition::scalar_output(&p.output, "1")
                 .with_timeseries_type(TimeseriesType::Average),
         );
         definitions

@@ -160,10 +160,10 @@ def build_model(time_axis: TimeAxis, co2_emissions: Timeseries, initial_values: 
     return (
         ModelBuilder()
         .with_time_axis(time_axis)
-        .with_rust_component(carbon_cycle)
-        .with_rust_component(co2_erf)
-        .with_exogenous_variable("Emissions|CO2|Anthropogenic", co2_emissions)
-        .with_exogenous_variable("Surface Temperature", surface_temperature)
+        .with_component(carbon_cycle)
+        .with_component(co2_erf)
+        .with_prescribed_variable("Emissions|CO2|Anthropogenic", co2_emissions)
+        .with_prescribed_variable("Surface Temperature", surface_temperature)
         .with_initial_values(initial_values)
     ).build()
 
@@ -221,7 +221,7 @@ branch_state
 #
 # Each scenario gets a fresh model on the future time axis, starting from `branch_state`.
 #
-# A model restored with `Model.from_toml()` keeps its original time axis and exogenous data,
+# A model restored with `Model.from_toml()` keeps its original time axis and prescribed data,
 # so it cannot be extended with new scenario data.
 # Rebuilding from the state variables works here because these components keep no
 # internal state between steps.
@@ -257,7 +257,7 @@ def timeseries_to_dataframe(
     rows = {}
     for name in collection.names():
         ts = collection.get_timeseries_by_name(name)
-        rows[(name, ts.units, scenario)] = pd.Series(
+        rows[(name, ts.unit, scenario)] = pd.Series(
             ts.values(), index=ts.time_axis.values()
         )
     df = pd.DataFrame(rows).T

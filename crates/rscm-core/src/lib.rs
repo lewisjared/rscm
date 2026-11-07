@@ -27,13 +27,13 @@
 //! ```text
 //! ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 //! │ Emissions       │────▶│  Carbon Cycle    │────▶│  ERF Component  │
-//! │ (exogenous)     │     │  (concentration) │     │  (forcing)      │
+//! │ (prescribed)     │     │  (concentration) │     │  (forcing)      │
 //! └─────────────────┘     └──────────────────┘     └─────────────────┘
 //! ```
 //!
 //! The [`ModelBuilder`](model::ModelBuilder) constructs a dependency graph and
 //! validates that all inputs are satisfied (either by other components or
-//! exogenous data).
+//! prescribed data).
 //!
 //! # Basic Usage
 //!
@@ -47,7 +47,7 @@
 //!     .with_time_axis(TimeAxis::from_values(array![2020.0, 2021.0, 2022.0]))
 //!     .with_component(Arc::new(my_carbon_cycle))
 //!     .with_component(Arc::new(my_erf_component))
-//!     .with_exogenous_variable("Emissions|CO2", emissions_timeseries)
+//!     .with_prescribed_variable("Emissions|CO2", emissions_timeseries)
 //!     .build()?;
 //!
 //! // Run the model
@@ -79,7 +79,7 @@
 //!
 //! #[typetag::serde]
 //! impl Component for CO2ERF {
-//!     fn definitions(&self) -> Vec<RequirementDefinition> {
+//!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         Self::generated_definitions()
 //!     }
 //!
@@ -130,6 +130,6 @@ pub use rscm_macros::ComponentIO;
 
 // Re-export component types
 pub use component::{
-    Component, ComponentMetadata, ComponentState, GridType, RequirementDefinition, RequirementType,
-    VariableMetadata,
+    Component, ComponentMetadata, ComponentState, DeclaredVariable, GridType, VariableDefinition,
+    VariableRole, VariableSource,
 };

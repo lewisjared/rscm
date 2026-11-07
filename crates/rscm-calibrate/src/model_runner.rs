@@ -188,7 +188,7 @@ where
             };
 
             // Extract all time points
-            // The timeseries may contain NaN values for uncomputed timesteps
+            // The timeseries may contain NaN values for uncomputed steps
             // We only extract non-NaN values
             let time_axis = timeseries.time_axis();
             for i in 0..timeseries.len() {
@@ -199,7 +199,7 @@ where
                     .at_index(i, 0)
                     .ok_or_else(|| Error::ModelError(format!("Value index {} out of bounds", i)))?;
 
-                // Skip NaN values (uncomputed timesteps)
+                // Skip NaN values (uncomputed steps)
                 if !value.is_nan() {
                     var_output.add(time, value);
                 }
@@ -241,7 +241,7 @@ where
         // Check if model finished successfully
         if !model.finished() {
             return Err(Error::ModelError(
-                "Model did not complete all timesteps".to_string(),
+                "Model did not complete all steps".to_string(),
             ));
         }
 
@@ -388,7 +388,7 @@ mod tests {
     }
 
     // Tests for DefaultModelRunner with simple mock Model
-    use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+    use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
     use rscm_core::errors::RSCMResult;
     use rscm_core::model::ModelBuilder;
     use rscm_core::timeseries::{Time, TimeAxis};
@@ -397,7 +397,7 @@ mod tests {
 
     /// Simple test component that outputs a constant value based on a parameter
     ///
-    /// This component has no inputs and produces a constant output value at each timestep.
+    /// This component has no inputs and produces a constant output value at each step.
     #[derive(Debug, Clone, Serialize, Deserialize)]
     struct ConstantComponent {
         value: f64,
@@ -405,8 +405,8 @@ mod tests {
 
     #[typetag::serde]
     impl Component for ConstantComponent {
-        fn definitions(&self) -> Vec<RequirementDefinition> {
-            vec![RequirementDefinition::scalar_output("TestOutput", "units")]
+        fn definitions(&self) -> Vec<VariableDefinition> {
+            vec![VariableDefinition::scalar_output("TestOutput", "units")]
         }
 
         fn solve(
@@ -552,10 +552,10 @@ mod tests {
 
         #[typetag::serde]
         impl Component for DualOutputComponent {
-            fn definitions(&self) -> Vec<RequirementDefinition> {
+            fn definitions(&self) -> Vec<VariableDefinition> {
                 vec![
-                    RequirementDefinition::scalar_output("Output1", "units"),
-                    RequirementDefinition::scalar_output("Output2", "units"),
+                    VariableDefinition::scalar_output("Output1", "units"),
+                    VariableDefinition::scalar_output("Output2", "units"),
                 ]
             }
 
@@ -669,8 +669,8 @@ mod tests {
 
         #[typetag::serde]
         impl Component for FailingComponent {
-            fn definitions(&self) -> Vec<RequirementDefinition> {
-                vec![RequirementDefinition::scalar_output("TestOutput", "units")]
+            fn definitions(&self) -> Vec<VariableDefinition> {
+                vec![VariableDefinition::scalar_output("TestOutput", "units")]
             }
 
             fn solve(

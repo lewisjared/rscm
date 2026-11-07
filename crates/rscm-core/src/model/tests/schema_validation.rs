@@ -25,7 +25,7 @@ fn get_emissions() -> Timeseries<FloatValue> {
 
 #[test]
 fn test_model_with_valid_schema() {
-    // Schema that matches component requirements
+    // Schema that matches the component definitions
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtC / yr")
         .variable("Concentrations|CO2", "ppm");
@@ -38,7 +38,7 @@ fn test_model_with_valid_schema() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 }
@@ -57,7 +57,7 @@ fn test_schema_rejects_undefined_output() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build();
 
     assert!(result.is_err());
@@ -117,7 +117,7 @@ fn test_schema_rejects_incompatible_units() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build();
 
     assert!(result.is_err());
@@ -144,7 +144,7 @@ fn test_schema_rejects_incompatible_units() {
 
 #[test]
 fn test_schema_rejects_disaggregation_on_read() {
-    // Schema has Scalar temperature, but FourBoxConsumer wants FourBox input
+    // Schema has Scalar temperature, but FourBoxConsumer wants four-box input
     // This is a disaggregation (broadcast) attempt and should fail
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::Scalar)
@@ -166,7 +166,7 @@ fn test_schema_rejects_disaggregation_on_read() {
         msg
     );
     assert!(
-        msg.contains("Scalar") && msg.contains("FourBox"),
+        msg.contains("scalar") && msg.contains("four_box"),
         "Error should mention the grid types: {}",
         msg
     );
@@ -190,7 +190,7 @@ fn test_schema_with_aggregate_validates() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 }
@@ -211,7 +211,7 @@ fn test_schema_creates_nan_for_unwritten_variables() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 
@@ -240,7 +240,7 @@ fn test_schema_invalid_aggregate_fails() {
         crate::schema::AggregateDefinition {
             name: "A".to_string(),
             unit: "units".to_string(),
-            grid_type: GridType::Scalar,
+            grid: GridType::Scalar,
             operation: AggregateOp::Sum,
             contributors: vec!["B".to_string()],
         },
@@ -250,7 +250,7 @@ fn test_schema_invalid_aggregate_fails() {
         crate::schema::AggregateDefinition {
             name: "B".to_string(),
             unit: "units".to_string(),
-            grid_type: GridType::Scalar,
+            grid: GridType::Scalar,
             operation: AggregateOp::Sum,
             contributors: vec!["A".to_string()],
         },
@@ -281,7 +281,7 @@ fn test_model_without_schema_still_works() {
                 conversion_factor: 0.5,
             },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
 }

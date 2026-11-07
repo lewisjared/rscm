@@ -2,7 +2,7 @@
 
 ## Overview
 
-MAGICC7 prepares everything a run needs before its first timestep.
+MAGICC7 prepares everything a run needs before its first step.
 `magicc_init_run` reads the configuration, loads emissions, concentrations and forcing from input files,
 merges scenario data into the historical record and allocates every array.
 It also derives quantities that later modules depend on:
@@ -17,10 +17,10 @@ The physics of each step lives in the module page that uses it.
 RSCM has no single initialisation component.
 The work is split between the model framework and the MAGICC7 runner:
 
-- **Model set-up**: `ModelBuilder` assembles components and exogenous data into a `Model`,
+- **Model set-up**: `ModelBuilder` assembles components and prescribed data into a `Model`,
   see [Key Concepts](../key_concepts.md#modelbuilder-pattern).
   `Timeseries` and `TimeseriesCollection` replace the `DATASTORE`,
-  and the `FourBox` grid replaces `DATBOX`, see [Spatial Grids](../grids.md#fourbox-magicc-standard).
+  and the `FourBox` grid replaces `DATBOX`, see [Spatial Grids](../grids.md#four_box-magicc-standard).
 - **MAGICC7 initialisation**: `rscm.magicc.full.run_magicc7` (`python/rscm/magicc/full.py`).
   `default_parameters` returns MAGICC7 v7.5.3's defaults,
   packaged in `python/rscm/magicc/data/magicc7/defaults.json`.
@@ -88,8 +88,8 @@ and step `s` of year `y` is at `y + (s - 1) / 12`.
 `datastore_yr`, `datastore_get_globe` and `datastore_get_box` look up a year in a `DATASTORE`
 whose `FIRSTYEAR` may differ from `STARTYEAR`.
 
-How RSCM maps these conventions onto its timesteps is described in [time conventions](time_conventions.md)
-and in [Key Concepts](../key_concepts.md#timestep-semantics).
+How RSCM maps these conventions onto its steps is described in [time conventions](time_conventions.md)
+and in [Key Concepts](../key_concepts.md#step-semantics).
 
 ## Four-box geography
 

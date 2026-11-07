@@ -2,19 +2,18 @@ import numpy as np
 import pytest
 
 from rscm._lib.core import TestComponentBuilder as ExampleComponentBuilder
-from rscm._lib.core import VariableType
 from rscm.core import (
     InterpolationStrategy,
     PythonComponent,
-    RequirementDefinition,
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
+    VariableDefinition,
 )
 
 
 class ExamplePythonComponent:
-    def definitions(self) -> list[RequirementDefinition]:
+    def definitions(self) -> list[VariableDefinition]:
         return []
 
     def solve(
@@ -64,7 +63,6 @@ def test_user_derived_create_and_solve():
             "GtC",
             InterpolationStrategy.Previous,
         ),
-        variable_type=VariableType.Exogenous,
     )
 
     res = component.solve(0, 1, collection)

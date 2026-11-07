@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// Internal state for ClimateUDEB component.
 ///
 /// This holds the ocean layer temperatures and upwelling rates that persist
-/// across solve() calls. Unlike coupled state (RequirementType::State), this
+/// across solve() calls. Unlike coupled state (VariableRole::State), this
 /// is private to the component and not shared between components.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClimateUDEBState {
@@ -33,11 +33,11 @@ pub struct ClimateUDEBState {
 
     /// History of year-weighted global mean temperature for cumulative-T ECS adjustment.
     /// Each entry stores `temperature * dt_years`, so the sum over entries gives
-    /// the cumulative temperature in K-years regardless of timestep size.
+    /// the cumulative temperature in K-years regardless of step size.
     #[serde(default)]
     pub temperature_history: Vec<FloatValue>,
 
-    /// History of timestep sizes (years) corresponding to each temperature_history entry.
+    /// History of step sizes (years) corresponding to each temperature_history entry.
     /// Used to determine how many entries span the `feedback_cumt_period` window.
     #[serde(default)]
     pub dt_history: Vec<FloatValue>,
@@ -69,7 +69,7 @@ pub struct ClimateUDEBState {
     pub subannual_next_internal_efficacy: Option<FloatValue>,
 
     /// Inter-hemispheric heat exchange (W/m^2) from the previous substep.
-    /// Persists across annual timesteps (MAGICC7 module-level variable,
+    /// Persists across annual steps (MAGICC7 module-level variable,
     /// initialized once at startup in climate_and_ocean.f90 line 140).
     /// Index 0 = NH, 1 = SH.
     #[serde(default)]

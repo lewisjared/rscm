@@ -12,8 +12,8 @@ use pyo3::types::PyDict;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-// Reexport the Requirement Definition and GridType
-pub use crate::component::{GridType, RequirementDefinition, RequirementType, TimeseriesType};
+// Re-export VariableDefinition and GridType
+pub use crate::component::{GridType, TimeseriesType, VariableDefinition, VariableRole};
 
 /// Create a component builder that can be used by python to instantiate components created Rust.
 #[macro_export]
@@ -80,7 +80,7 @@ macro_rules! impl_component {
     ($py_component:ty) => {
         #[pymethods]
         impl $py_component {
-            fn definitions(&self) -> Vec<RequirementDefinition> {
+            fn definitions(&self) -> Vec<VariableDefinition> {
                 self.0.definitions()
             }
 
@@ -116,21 +116,21 @@ macro_rules! impl_component {
 }
 
 #[pymethods]
-impl RequirementDefinition {
+impl VariableDefinition {
     #[new]
-    #[pyo3(signature = (name, unit, requirement_type, grid_type=GridType::Scalar, timeseries_type=None))]
+    #[pyo3(signature = (name, unit, role, grid=GridType::Scalar, timeseries_type=None))]
     pub fn new_python(
         name: String,
         unit: String,
-        requirement_type: RequirementType,
-        grid_type: GridType,
+        role: VariableRole,
+        grid: GridType,
         timeseries_type: Option<TimeseriesType>,
     ) -> Self {
         Self {
             name,
             unit,
-            requirement_type,
-            grid_type,
+            role,
+            grid,
             timeseries_type,
         }
     }
@@ -151,7 +151,7 @@ impl_component!(PyRustComponent);
 pub struct PythonComponent {
     pub component: Py<PyAny>,
     name: String,
-    definitions: Vec<RequirementDefinition>,
+    definitions: Vec<VariableDefinition>,
 }
 
 impl std::fmt::Debug for PythonComponent {
@@ -228,12 +228,9 @@ impl PythonComponent {
         Ok(output_state)
     }
 
-    fn input_definitions(&self) -> impl Iterator<Item = &RequirementDefinition> {
+    fn input_definitions(&self) -> impl Iterator<Item = &VariableDefinition> {
         self.definitions.iter().filter(|definition| {
-            matches!(
-                definition.requirement_type,
-                RequirementType::Input | RequirementType::State
-            )
+            matches!(definition.role, VariableRole::Input | VariableRole::State)
         })
     }
 
@@ -253,7 +250,7 @@ impl PythonComponent {
 
     /// Python windows over the inputs, built from the same Rust windows Rust components read.
     ///
-    /// Values run from the first timestep to the end of the current one (index N+1),
+    /// Values run from the first step to the end of the current one (index N+1),
     /// with unit conversion and grid aggregation applied.
     fn input_windows<'py>(
         &self,
@@ -263,7 +260,7 @@ impl PythonComponent {
         let dict = PyDict::new(py);
         for definition in self.input_definitions() {
             let name = definition.name.as_str();
-            let window = match definition.grid_type {
+            let window = match definition.grid {
                 GridType::Scalar => {
                     let w = input_state.get_scalar_window(name);
                     let index = input_state.time_index(w.time_axis(), name);
@@ -339,7 +336,7 @@ fn regions<const N: usize>(values: Vec<FloatValue>) -> RSCMResult<[FloatValue; N
 
 #[typetag::serde]
 impl Component for PythonComponent {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         self.definitions.clone()
     }
 

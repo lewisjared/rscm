@@ -258,10 +258,10 @@ schema = VariableSchema()
 for agent in ("CO2", "CH4", "N2O", "Other"):
     schema.add_variable(f"{ERF}|{agent}", "W/m^2")
 schema.add_aggregate(
-    f"{ERF}|GHG", "W/m^2", "Sum", [f"{ERF}|CO2", f"{ERF}|CH4", f"{ERF}|N2O"]
+    f"{ERF}|GHG", "W/m^2", "sum", [f"{ERF}|CO2", f"{ERF}|CH4", f"{ERF}|N2O"]
 )
 # Top-level aggregate, read by ClimateUDEB
-schema.add_aggregate(ERF, "W/m^2", "Sum", [f"{ERF}|GHG", f"{ERF}|Other"])
+schema.add_aggregate(ERF, "W/m^2", "sum", [f"{ERF}|GHG", f"{ERF}|Other"])
 ```
 
 `run_magicc` and `run_magicc_emissions` build total ERF this way, as a plain sum.

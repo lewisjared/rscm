@@ -17,7 +17,7 @@ def _outputs(model):
     out = {}
     getters = (
         ts.get_timeseries_by_name,
-        ts.get_fourbox_timeseries_by_name,
+        ts.get_four_box_timeseries_by_name,
         ts.get_hemispheric_timeseries_by_name,
     )
     for name in ts.names():

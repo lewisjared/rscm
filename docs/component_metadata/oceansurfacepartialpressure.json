@@ -13,23 +13,23 @@
   "inputs": [
     {
       "rust_name": "sea_surface_temperature",
-      "variable_name": "Sea Surface Temperature",
+      "name": "Sea Surface Temperature",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "dissolved_inorganic_carbon",
-      "variable_name": "Dissolved Inorganic Carbon",
+      "name": "Dissolved Inorganic Carbon",
       "unit": "micromol / kg",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "ospp_co2",
-      "variable_name": "Ocean Surface Partial Pressure|CO2",
+      "name": "Ocean Surface Partial Pressure|CO2",
       "unit": "ppm",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "states": [],

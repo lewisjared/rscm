@@ -3,7 +3,7 @@
 //! This module contains climate model components implementing MAGICC-style
 //! parameterisations and physics.
 //!
-//! - [`ClimateUDEB`]: 4-box upwelling-diffusion energy balance model with
+//! - [`ClimateUDEB`]: four-box upwelling-diffusion energy balance model with
 //!   50-layer ocean
 //! - [`SeaLevelRise`]: Sea level rise from land ice
 //! - [`lamcalc`]: Iterative feedback parameter solver

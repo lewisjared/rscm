@@ -40,11 +40,12 @@ from rscm._lib.magicc import (
 from rscm.core import (
     FourBoxTimeseries,
     GridType,
+    HemisphericTimeseries,
     InterpolationStrategy,
     ModelBuilder,
-    RequirementType,
     TimeAxis,
     Timeseries,
+    VariableRole,
     VariableSchema,
 )
 from rscm.magicc import prescribed as pr
@@ -55,7 +56,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm._lib.core import Component
+    from rscm._lib.core import RustComponent
     from rscm.core import Model
 
 __all__ = [
@@ -783,19 +784,24 @@ def nitrogen_inputs(
     return out
 
 
+def _grid(values: NDArray[np.float64]) -> GridType:
+    if values.ndim == 1:
+        return GridType.Scalar
+    return GridType.FourBox if values.shape[1] == 4 else GridType.Hemispheric  # noqa: PLR2004
+
+
 def _schema(
-    components: Sequence[Component],
-    exogenous: Mapping[str, tuple[NDArray[np.float64], str]],
-    four_box: Mapping[str, tuple[NDArray[np.float64], str]],
+    components: Sequence[RustComponent],
+    prescribed: Mapping[str, tuple[NDArray[np.float64], str]],
 ) -> VariableSchema:
-    variables = {name: (unit, GridType.Scalar) for name, (_, unit) in exogenous.items()}
-    variables |= {
-        name: (unit, GridType.FourBox) for name, (_, unit) in four_box.items()
+    variables = {
+        name: (unit, _grid(np.asarray(values)))
+        for name, (values, unit) in prescribed.items()
     }
     for component in components:
         for d in component.definitions():
-            _, grid = variables.get(d.name, (d.unit, d.grid_type))
-            four = GridType.FourBox in (grid, d.grid_type)
+            _, grid = variables.get(d.name, (d.unit, d.grid))
+            four = GridType.FourBox in (grid, d.grid)
             variables[d.name] = (d.unit, GridType.FourBox if four else GridType.Scalar)
     schema = VariableSchema()
     for name, (unit, grid) in variables.items():
@@ -803,58 +809,55 @@ def _schema(
     return schema
 
 
+def _timeseries(
+    values: NDArray[np.float64], axis: TimeAxis, unit: str
+) -> Timeseries | FourBoxTimeseries | HemisphericTimeseries:
+    grid = _grid(values)
+    if grid == GridType.FourBox:
+        return FourBoxTimeseries(values, axis, unit, InterpolationStrategy.Linear)
+    if grid == GridType.Hemispheric:
+        return HemisphericTimeseries(values, axis, unit, InterpolationStrategy.Linear)
+    return Timeseries(values, axis, unit, InterpolationStrategy.Linear)
+
+
 def run_components(  # noqa: PLR0913
     years: NDArray[np.float64],
-    components: Sequence[Component],
+    components: Sequence[RustComponent],
     *,
-    exogenous: Mapping[str, tuple[NDArray[np.float64], str]] = {},
-    four_box: Mapping[str, tuple[NDArray[np.float64], str]] = {},
-    initial: Mapping[str, float] = {},
-    initial_grid: Mapping[str, Sequence[float]] = {},
+    prescribed: Mapping[str, tuple[NDArray[np.float64], str]] = {},
+    initial_values: Mapping[str, float] = {},
+    initial_grid_values: Mapping[str, Sequence[float]] = {},
     lag: Sequence[str] = (),
     lag_for: Sequence[tuple[str, str]] = (),
 ) -> Model:
-    """Run components on an annual axis with exogenous inputs and return the model.
+    """Run components on an annual axis with prescribed inputs and return the model.
 
+    ``prescribed`` maps each name to its values and unit.
+    The values' shape sets the grid: one value per year for a scalar,
+    four columns for four-box and two for hemispheric.
     Scalar readers of a four-box variable see its area-weighted mean.
     ``lag`` and ``lag_for`` pass feedback lags to `ModelBuilder.with_lag`
     and `ModelBuilder.with_lag_for`.
     """
     axis = TimeAxis.from_values(np.asarray(years, dtype=np.float64))
     builder = ModelBuilder().with_time_axis(axis)
-    if any(
-        d.grid_type == GridType.FourBox for c in components for d in c.definitions()
-    ):
-        builder.with_schema(_schema(components, exogenous, four_box))
+    if any(d.grid == GridType.FourBox for c in components for d in c.definitions()):
+        builder.with_schema(_schema(components, prescribed))
         builder.with_grid_weights(GridType.FourBox, list(pr.area_fractions()))
     for component in components:
-        builder.with_rust_component(component)
+        builder.with_component(component)
     for variable in lag:
         builder.with_lag(variable)
     for variable, consumer in lag_for:
         builder.with_lag_for(variable, consumer)
-    for name, (values, unit) in exogenous.items():
-        builder.with_exogenous_variable(
-            name,
-            Timeseries(
-                np.asarray(values, dtype=np.float64),
-                axis,
-                unit,
-                InterpolationStrategy.Linear,
-            ),
+    for name, (values, unit) in prescribed.items():
+        builder.with_prescribed_variable(
+            name, _timeseries(np.asarray(values, dtype=np.float64), axis, unit)
         )
-    for name, (values, unit) in four_box.items():
-        builder.with_exogenous_four_box_variable(
-            name,
-            FourBoxTimeseries(
-                np.asarray(values, dtype=np.float64),
-                axis,
-                unit,
-                InterpolationStrategy.Linear,
-            ),
-        )
-    builder.with_initial_values(dict(initial))
-    builder.with_initial_grid_values({k: list(v) for k, v in initial_grid.items()})
+    builder.with_initial_values(dict(initial_values))
+    builder.with_initial_grid_values(
+        {k: list(v) for k, v in initial_grid_values.items()}
+    )
     model = builder.build()
     model.run()
     return model
@@ -1137,10 +1140,10 @@ def run_magicc7(  # noqa: PLR0913
             d.name: 0.0
             for c in sea_level
             for d in c.definitions()
-            if d.requirement_type == RequirementType.Output
+            if d.role == VariableRole.Output
         },
     }
-    exogenous = {
+    prescribed_data = {
         "Emissions|CO2|Fossil": (data["CO2|Fossil"], "GtC/yr"),
         "Emissions|CO2|Land Use": (data["CO2|AFOLU"], "GtC/yr"),
         "Emissions|CH4|Fossil": (data["CH4|Fossil"], "Mt CH4/yr"),
@@ -1164,21 +1167,20 @@ def run_magicc7(  # noqa: PLR0913
         },
     }
     if nitrogen:
-        exogenous |= {
+        prescribed_data |= {
             name: (values, "Gt N/yr")
             for name, values in nitrogen_inputs(time, data, p, files).items()
         }
-    four_box = {f"{ERF}|{name}": (v, "W/m^2") for name, v in prescribed.items()}
+    prescribed_data |= {f"{ERF}|{name}": (v, "W/m^2") for name, v in prescribed.items()}
 
     def run(n: int, agents: list[list[float]]) -> Model:
         total, boxes = aggregation.aggregate(agents)
         return run_components(
             time[:n],
             components,
-            exogenous={k: (v[:n], unit) for k, (v, unit) in exogenous.items()},
-            four_box={k: (v[:n], unit) for k, (v, unit) in four_box.items()},
-            initial={**initial, **climate.initial_values(total)},
-            initial_grid={REGIONAL_FORCING: boxes},
+            prescribed={k: (v[:n], unit) for k, (v, unit) in prescribed_data.items()},
+            initial_values={**initial, **climate.initial_values(total)},
+            initial_grid_values={REGIONAL_FORCING: boxes},
             lag=LAG,
             lag_for=LAG_FOR,
         )
@@ -1192,7 +1194,7 @@ def run_magicc7(  # noqa: PLR0913
 def _second_year_fgas(model: Model) -> list[float]:
     ts = model.timeseries()
     name = f"{ERF}|F-Gases"
-    boxes = ts.get_fourbox_timeseries_by_name(name)
+    boxes = ts.get_four_box_timeseries_by_name(name)
     if boxes is not None:
         return [float(v) for v in boxes.values()[1]]
     scalar = ts.get_timeseries_by_name(name)

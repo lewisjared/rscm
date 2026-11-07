@@ -86,10 +86,8 @@ def test_calculated_forcing_matches_prescribed_climate_run(land_fractions):
     model = (
         ModelBuilder()
         .with_time_axis(axis)
-        .with_rust_component(
-            ClimateUDEBBuilder.from_parameters(climate_parameters).build()
-        )
-        .with_exogenous_variable(
+        .with_component(ClimateUDEBBuilder.from_parameters(climate_parameters).build())
+        .with_prescribed_variable(
             "Effective Radiative Forcing",
             Timeseries(expected_erf, axis, "W/m^2", InterpolationStrategy.Linear),
         )
@@ -99,7 +97,7 @@ def test_calculated_forcing_matches_prescribed_climate_run(land_fractions):
     model.run()
     regional = (
         model.timeseries()
-        .get_fourbox_timeseries_by_name("Surface Temperature")
+        .get_four_box_timeseries_by_name("Surface Temperature")
         .values()
     )
     npt.assert_allclose(

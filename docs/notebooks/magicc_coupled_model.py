@@ -59,9 +59,9 @@ from rscm.core import (
     GridType,
     InterpolationStrategy,
     ModelBuilder,
-    RequirementType,
     TimeAxis,
     Timeseries,
+    VariableRole,
     VariableSchema,
 )
 from rscm.magicc import (
@@ -410,10 +410,7 @@ components = {name: builder.build() for name, builder in builders.items()}
 
 # %%
 pd.DataFrame(
-    [
-        (d.name, d.requirement_type.name, d.unit)
-        for d in components["CO2Budget"].definitions()
-    ],
+    [(d.name, d.role.name, d.unit) for d in components["CO2Budget"].definitions()],
     columns=["Variable", "Type", "Unit"],
 )
 
@@ -425,12 +422,11 @@ pd.DataFrame(
 # and the four-box `Effective Radiative Forcing|Efficacy Adjusted` that drives `ClimateUDEB`.
 
 # %% tags=["remove_input"]
-kinds = (RequirementType.Input, RequirementType.Output, RequirementType.State)
+kinds = (VariableRole.Input, VariableRole.Output, VariableRole.State)
 pd.DataFrame(
     {
         kind.name: [
-            sum(d.requirement_type == kind for d in c.definitions())
-            for c in components.values()
+            sum(d.role == kind for d in c.definitions()) for c in components.values()
         ]
         for kind in kinds
     },
@@ -479,13 +475,13 @@ def lagged_couplings(components):
         d.name: name
         for name, component in components.items()
         for d in component.definitions()
-        if d.requirement_type in (RequirementType.Output, RequirementType.State)
+        if d.role in (VariableRole.Output, VariableRole.State)
     }
     return [
         (producers[d.name], d.name, reader)
         for reader, component in components.items()
         for d in component.definitions()
-        if d.requirement_type == RequirementType.Input
+        if d.role == VariableRole.Input
         and d.name in producers
         and (d.name in lag or (d.name, reader) in lag_for)
     ]
@@ -502,13 +498,13 @@ lagged = lagged_couplings(components)
 # %% [markdown]
 # ## Prescribed inputs and the schema
 #
-# Inputs that no component produces come from exogenous timeseries.
+# Inputs that no component produces come from prescribed timeseries.
 # The emissions are scalar, with a few totals and renamings the components expect.
 # The prescribed forcing is four-box.
 
 # %%
 SECTORAL_NAMES = {"CO2|AFOLU": "CO2|Land Use"}
-exogenous = {
+prescribed_emissions = {
     **{
         f"Emissions|{SECTORAL_NAMES.get(name, name)}": (
             values,
@@ -537,11 +533,11 @@ prescribed_erf = {f"{ERF}|{name}": values for name, values in prescribed.items()
 
 # %% tags=["remove_input"]
 grids = {name: ("W/m^2", GridType.FourBox) for name in prescribed_erf}
-grids |= {name: (unit, GridType.Scalar) for name, (_, unit) in exogenous.items()}
+grids |= {name: (unit, GridType.Scalar) for name, (_, unit) in prescribed_emissions.items()}
 for component in components.values():
     for d in component.definitions():
-        _, grid = grids.get(d.name, (d.unit, d.grid_type))
-        four_box = GridType.FourBox in (grid, d.grid_type)
+        _, grid = grids.get(d.name, (d.unit, d.grid))
+        four_box = GridType.FourBox in (grid, d.grid)
         grids[d.name] = (d.unit, GridType.FourBox if four_box else GridType.Scalar)
 
 # %%
@@ -549,7 +545,7 @@ schema = VariableSchema()
 for name, (unit, grid) in grids.items():
     schema.add_variable(name, unit, grid)
 four_box_count = sum(g == GridType.FourBox for _, g in grids.values())
-print(f"{len(exogenous)} scalar and {len(prescribed_erf)} four-box prescribed inputs")
+print(f"{len(prescribed_emissions)} scalar and {len(prescribed_erf)} four-box prescribed inputs")
 print(f"{len(grids)} variables, {four_box_count} on four boxes")
 
 # %% [markdown]
@@ -581,7 +577,7 @@ initial_values = {
     **{
         d.name: 0.0
         for d in components["SeaLevelRise"].definitions()
-        if d.requirement_type == RequirementType.Output
+        if d.role == VariableRole.Output
     },
 }
 
@@ -609,7 +605,7 @@ initial_agents = [
 # ## Building the model
 #
 # The builder steps are in a function so that a short run can reuse them.
-# Exogenous values use linear interpolation between the annual labels.
+# Prescribed values use linear interpolation between the annual labels.
 
 
 # %%
@@ -623,17 +619,17 @@ def build_model(n_years, initial_agents):
         .with_grid_weights(GridType.FourBox, list(area))
     )
     for component in components.values():
-        builder.with_rust_component(component)
+        builder.with_component(component)
     for variable in lag:
         builder.with_lag(variable)
     for variable, consumer in lag_for:
         builder.with_lag_for(variable, consumer)
-    for name, (values, unit) in exogenous.items():
-        builder.with_exogenous_variable(
+    for name, (values, unit) in prescribed_emissions.items():
+        builder.with_prescribed_variable(
             name, Timeseries(values[:n_years], axis, unit, InterpolationStrategy.Linear)
         )
     for name, values in prescribed_erf.items():
-        builder.with_exogenous_four_box_variable(
+        builder.with_prescribed_variable(
             name,
             FourBoxTimeseries(
                 values[:n_years], axis, "W/m^2", InterpolationStrategy.Linear
@@ -653,7 +649,7 @@ def build_model(n_years, initial_agents):
 fgas = [agent["variable"] for agent in agents].index(f"{ERF}|F-Gases")
 two_years = build_model(2, initial_agents)
 two_years.run()
-fgas_boxes = two_years.timeseries().get_fourbox_timeseries_by_name(f"{ERF}|F-Gases")
+fgas_boxes = two_years.timeseries().get_four_box_timeseries_by_name(f"{ERF}|F-Gases")
 initial_agents[fgas] = list(fgas_boxes.values()[1])
 
 model = build_model(len(years), initial_agents)
@@ -761,10 +757,10 @@ def series(name):
     scalar = results.get_timeseries_by_name(name)
     if scalar is not None:
         return scalar.values()
-    return results.get_fourbox_timeseries_by_name(name).values() @ area
+    return results.get_four_box_timeseries_by_name(name).values() @ area
 
 
-regional_temperature = results.get_fourbox_timeseries_by_name(
+regional_temperature = results.get_four_box_timeseries_by_name(
     "Surface Temperature"
 ).values()
 global_temperature = regional_temperature @ area
@@ -979,7 +975,7 @@ plt.show()
 convenience = run_magicc7(years, emissions, parameters=parameters)
 convenience_temperature = (
     convenience.timeseries()
-    .get_fourbox_timeseries_by_name("Surface Temperature")
+    .get_four_box_timeseries_by_name("Surface Temperature")
     .values()
 )
 print(
@@ -1020,7 +1016,7 @@ for gas, unit, ax in zip(("CO2", "N2O"), ("ppm", "ppb"), axes[:2]):
     ax.set_title(f"{gas} concentration ({unit})")
     ax.legend()
 for ecs, timeseries in sweep.items():
-    boxes = timeseries.get_fourbox_timeseries_by_name("Surface Temperature").values()
+    boxes = timeseries.get_four_box_timeseries_by_name("Surface Temperature").values()
     axes[2].plot(years, boxes @ area, label=f"ECS {ecs} K")
 axes[2].set_title("Surface temperature (K)")
 axes[2].legend()

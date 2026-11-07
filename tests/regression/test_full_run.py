@@ -20,7 +20,7 @@ from rscm._lib.magicc import (
     OzoneForcingBuilder,
     PermafrostBuilder,
 )
-from rscm.core import RequirementType
+from rscm.core import VariableRole
 from rscm.magicc import full
 from rscm.magicc import prescribed as pr
 
@@ -35,11 +35,11 @@ def test_halocarbons():
         for d in component.definitions()
         if d.name.startswith("Emissions|")
     ]
-    exogenous = {
+    prescribed = {
         f"Emissions|{s}": (run.series(f"Emissions|{s}"), "kt/yr") for s in species
     }
-    exogenous["Lifetime|CH4|OH"] = (run.series("CH4_TAUOH"), "yr")
-    exogenous["Surface Temperature"] = (run.series("Surface Temperature"), "K")
+    prescribed["Lifetime|CH4|OH"] = (run.series("CH4_TAUOH"), "yr")
+    prescribed["Surface Temperature"] = (run.series("Surface Temperature"), "K")
     # MAGICC7 reports an F-gas's second-year concentration in its first year
     fgases = set(full.halocarbon_species()[: run.parameters["fgas_n"]])
     defaults = full.default_initial_concentrations()
@@ -50,7 +50,11 @@ def test_halocarbons():
         for s in species
     }
     model = full_run.run_components(
-        run.years, [component], exogenous=exogenous, initial=initial, lag=full.LAG
+        run.years,
+        [component],
+        prescribed=prescribed,
+        initial_values=initial,
+        lag=full.LAG,
     )
 
     for s in species:
@@ -79,7 +83,7 @@ def test_ozone():
     component = OzoneForcingBuilder.from_parameters(
         full.ozone_parameters(run.parameters)
     ).build()
-    exogenous = {
+    prescribed = {
         "EESC": (run.series("EESC_CONC"), "ppt"),
         "Atmospheric Concentration|CH4": (
             run.series("Atmospheric Concentrations|CH4"),
@@ -107,7 +111,7 @@ def test_ozone():
         "Surface Temperature": (run.series("Surface Temperature"), "K"),
     }
     model = full_run.run_components(
-        run.years, [component], exogenous=exogenous, lag=full.LAG
+        run.years, [component], prescribed=prescribed, lag=full.LAG
     )
 
     erf = "Effective Radiative Forcing|"
@@ -123,7 +127,7 @@ def test_ozone():
             err_msg=ours,
         )
     trop = "Tropospheric Ozone"
-    boxes = model.timeseries().get_fourbox_timeseries_by_name(erf + trop).values()
+    boxes = model.timeseries().get_four_box_timeseries_by_name(erf + trop).values()
     full_run.assert_close(
         full_run.reported().erf(trop, boxes)[1:], run.boxes(erf + trop)[1:]
     )
@@ -145,7 +149,7 @@ def test_ch4_oxidation_strat_h2o():
             "ch4_strat_h2o_fraction": run.parameters["ch4_addedstrath2o_percent"],
         }
     )
-    exogenous = {
+    prescribed = {
         "Atmospheric Concentration|CO2": (
             run.series("Atmospheric Concentrations|CO2"),
             "ppm",
@@ -153,7 +157,7 @@ def test_ch4_oxidation_strat_h2o():
         "Atmospheric Concentration|CH4": (ch4, "ppb"),
         "Atmospheric Concentration|N2O": (n2o, "ppb"),
     }
-    model = full_run.run_components(run.years, [builder.build()], exogenous=exogenous)
+    model = full_run.run_components(run.years, [builder.build()], prescribed=prescribed)
     agent = "CH4 Oxidation Stratospheric H2O"
     name = f"Effective Radiative Forcing|{agent}"
     full_run.assert_close(
@@ -178,14 +182,16 @@ def test_climate():
     model = full_run.run_components(
         run.years,
         [ghg.build(), climate.build()],
-        exogenous={
-            f"Atmospheric Concentration|{gas}": (values, units[gas])
-            for gas, values in conc.items()
+        prescribed={
+            **{
+                f"Atmospheric Concentration|{gas}": (values, units[gas])
+                for gas, values in conc.items()
+            },
+            full_run.REGIONAL_FORCING: (boxes, "W/m^2"),
         },
-        four_box={full_run.REGIONAL_FORCING: (boxes, "W/m^2")},
-        initial=climate.initial_values(float(boxes[0] @ full_run.AREA)),
+        initial_values=climate.initial_values(float(boxes[0] @ full_run.AREA)),
     )
-    temperature = model.timeseries().get_fourbox_timeseries_by_name(
+    temperature = model.timeseries().get_four_box_timeseries_by_name(
         "Surface Temperature"
     )
     full_run.assert_close(temperature.values(), run.boxes("Surface Temperature"))
@@ -213,7 +219,7 @@ def test_permafrost():
     model = full_run.run_components(
         run.years,
         [component],
-        exogenous={"Surface Temperature": (run.series("Surface Temperature"), "K")},
+        prescribed={"Surface Temperature": (run.series("Surface Temperature"), "K")},
         lag=full.LAG,
     )
     full_run.assert_close(
@@ -230,7 +236,7 @@ def test_permafrost():
 
 def _all_outputs(model):
     ts = model.timeseries()
-    getters = (ts.get_timeseries_by_name, ts.get_fourbox_timeseries_by_name)
+    getters = (ts.get_timeseries_by_name, ts.get_four_box_timeseries_by_name)
     return {
         name: next(s for s in (get(name) for get in getters) if s is not None)
         .values()
@@ -239,7 +245,7 @@ def _all_outputs(model):
     }
 
 
-WRITES = (RequirementType.Output, RequirementType.State)
+WRITES = (VariableRole.Output, VariableRole.State)
 
 
 def _prescribing(modelled, variable):
@@ -251,9 +257,9 @@ def _prescribing(modelled, variable):
     outputs = _all_outputs(modelled)
     run_components = full.run_components
 
-    def run(years, components, *, exogenous, four_box, initial, **kwargs):
+    def run(years, components, *, prescribed, initial_values, **kwargs):
         def writes(c):
-            return {d.name: d for d in c.definitions() if d.requirement_type in WRITES}
+            return {d.name: d for d in c.definitions() if d.role in WRITES}
 
         (producer,) = [c for c in components if variable in writes(c)]
         kept = [c for c in components if c is not producer]
@@ -261,26 +267,21 @@ def _prescribing(modelled, variable):
             d.name
             for c in kept
             for d in c.definitions()
-            if d.requirement_type == RequirementType.Input
+            if d.role == VariableRole.Input
         }
-        prescribed = {
+        replaced = {
             name: (outputs[name][: len(years)], d.unit)
             for name, d in writes(producer).items()
             if name in read
         }
-        assert variable in prescribed
+        assert variable in replaced
         return run_components(
             years,
             kept,
-            exogenous={
-                **exogenous,
-                **{k: v for k, v in prescribed.items() if v[0].ndim == 1},
+            prescribed={**prescribed, **replaced},
+            initial_values={
+                k: v for k, v in initial_values.items() if k not in writes(producer)
             },
-            four_box={
-                **four_box,
-                **{k: v for k, v in prescribed.items() if v[0].ndim == 2},
-            },
-            initial={k: v for k, v in initial.items() if k not in writes(producer)},
             **kwargs,
         )
 
@@ -309,7 +310,7 @@ def test_prescribed_output_matches_modelled(monkeypatch, load, variable):
 
 
 def _assert_temperature(model, run):
-    temperature = model.timeseries().get_fourbox_timeseries_by_name(
+    temperature = model.timeseries().get_four_box_timeseries_by_name(
         "Surface Temperature"
     )
     full_run.assert_close(temperature.values(), run.boxes("Surface Temperature"))

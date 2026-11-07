@@ -38,7 +38,7 @@ use crate::reference::{
     feedback_warming, prescribed_definition, prescribed_input, prescribed_name, require_annual,
 };
 use rscm_core::component::{
-    Component, InputState, OutputState, RequirementDefinition, TimeseriesType,
+    Component, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
@@ -231,14 +231,14 @@ fn lagged(window: &ScalarWindow, end: FloatValue, lag: usize) -> FloatValue {
 
 #[typetag::serde]
 impl Component for HalocarbonChemistry {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Vec::new();
         for species in self.parameters.all_species() {
-            definitions.push(RequirementDefinition::scalar_input(
+            definitions.push(VariableDefinition::scalar_input(
                 &Self::emissions_name(&species.name),
                 "kt/yr",
             ));
-            definitions.push(RequirementDefinition::scalar_state(
+            definitions.push(VariableDefinition::scalar_state(
                 &Self::concentration_name(&species.name),
                 "ppt",
             ));
@@ -254,25 +254,22 @@ impl Component for HalocarbonChemistry {
         }
         if self.parameters.variable_oh_lifetime {
             definitions.push(
-                RequirementDefinition::scalar_input(CH4_OH_LIFETIME, "yr")
+                VariableDefinition::scalar_input(CH4_OH_LIFETIME, "yr")
                     .with_timeseries_type(TimeseriesType::Average),
             );
         }
         if self.parameters.variable_strat_lifetime {
-            definitions.push(RequirementDefinition::scalar_input(
-                "Surface Temperature",
-                "K",
-            ));
+            definitions.push(VariableDefinition::scalar_input("Surface Temperature", "K"));
         }
         if self.parameters.fgas_regions.is_some() {
-            definitions.push(RequirementDefinition::scalar_input(FOSSIL_CO2, "GtC/yr"));
+            definitions.push(VariableDefinition::scalar_input(FOSSIL_CO2, "GtC/yr"));
         }
         let regional = self.parameters.fgas_regions.is_some();
         let forcing = |name: &str, four_box: bool| {
             if four_box {
-                RequirementDefinition::four_box_output(name, "W/m^2")
+                VariableDefinition::four_box_output(name, "W/m^2")
             } else {
-                RequirementDefinition::scalar_output(name, "W/m^2")
+                VariableDefinition::scalar_output(name, "W/m^2")
             }
         };
         definitions.push(forcing(FGAS_FORCING, regional));
@@ -283,7 +280,7 @@ impl Component for HalocarbonChemistry {
                 definitions.push(forcing(&name, regional && group == 0));
             }
         }
-        definitions.push(RequirementDefinition::scalar_output(EESC, "ppt"));
+        definitions.push(VariableDefinition::scalar_output(EESC, "ppt"));
         definitions
     }
 

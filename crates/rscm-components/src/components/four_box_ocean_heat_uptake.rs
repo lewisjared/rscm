@@ -14,8 +14,7 @@
 //! This simplified model uses fixed regional fractions to distribute global forcing.
 
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
+    Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, StateValue};
@@ -77,7 +76,7 @@ impl Default for FourBoxOceanHeatUptakeParameters {
     erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
 )]
 #[outputs(
-    heat_uptake { name = "Heat Uptake|Ocean", unit = "W/m^2", grid = "FourBox" },
+    heat_uptake { name = "Heat Uptake|Ocean", unit = "W/m^2", grid = "four_box" },
 )]
 pub struct FourBoxOceanHeatUptake {
     pub parameters: FourBoxOceanHeatUptakeParameters,
@@ -105,7 +104,7 @@ impl FourBoxOceanHeatUptake {
 
 #[typetag::serde]
 impl Component for FourBoxOceanHeatUptake {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -142,7 +141,7 @@ mod tests {
     use rscm_core::spatial::SpatialGrid;
     use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
-    use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+    use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
 
     #[test]
     fn test_default_parameters_average_to_one() {
@@ -174,14 +173,13 @@ mod tests {
             FourBoxOceanHeatUptake::from_parameters(FourBoxOceanHeatUptakeParameters::default());
 
         // Create ERF input - use consistent values since get_scalar_window().get()
-        // returns the value at the current timestep index
+        // returns the value at the current step index
         let erf_timeseries = TimeseriesItem {
             data: TimeseriesData::Scalar(Timeseries::from_values(
                 array![2.5, 2.5],
                 array![2020.0, 2021.0],
             )),
             name: "Effective Radiative Forcing|Aggregated".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
@@ -194,14 +192,14 @@ mod tests {
 
         let output = component.solve(2020.0, 2021.0, &input_state).unwrap();
 
-        // Output should be FourBox heat uptake
+        // Output should be four-box heat uptake
         assert!(output.contains_key("Heat Uptake|Ocean"));
         let uptake_state = output.get("Heat Uptake|Ocean").unwrap();
 
-        // Extract the FourBox grid from the StateValue
+        // Extract the four-box grid from the StateValue
         let uptake_slice = match uptake_state {
             StateValue::FourBox(slice) => slice,
-            _ => panic!("Expected FourBox output"),
+            _ => panic!("Expected four-box output"),
         };
         println!("Heat uptake output: {:?}", uptake_slice);
 
@@ -230,7 +228,6 @@ mod tests {
                 array![2020.0, 2021.0],
             )),
             name: "Effective Radiative Forcing|Aggregated".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
         let input_state = InputState::build(vec![&erf_timeseries], 2020.0);
@@ -242,10 +239,10 @@ mod tests {
 
         let uptake_state = output.get("Heat Uptake|Ocean").unwrap();
 
-        // Extract the FourBox grid from the StateValue
+        // Extract the four-box grid from the StateValue
         let uptake_slice = match uptake_state {
             StateValue::FourBox(slice) => slice,
-            _ => panic!("Expected FourBox output"),
+            _ => panic!("Expected four-box output"),
         };
 
         // Aggregate back to global to verify

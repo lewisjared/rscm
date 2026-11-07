@@ -46,7 +46,6 @@ from rscm.component import Component, Input, Output
 from rscm.core import (
     InterpolationStrategy,
     ModelBuilder,
-    PythonComponent,
     TimeAxis,
     Timeseries,
     VariableSchema,
@@ -72,7 +71,7 @@ class CO2Forcing(Component):
         self.c_pi = c_pi
 
     def solve(self, t_current: float, t_next: float, inputs: "CO2Forcing.Inputs"):
-        """Compute CO2 forcing for a single timestep."""
+        """Compute CO2 forcing for a single step."""
         concentration = inputs.concentration.get()
         return self.Outputs(forcing=self.alpha * np.log(concentration / self.c_pi))
 
@@ -95,7 +94,7 @@ class CH4Forcing(Component):
         self.c_pi = c_pi
 
     def solve(self, t_current: float, t_next: float, inputs: "CH4Forcing.Inputs"):
-        """Compute CH4 forcing for a single timestep."""
+        """Compute CH4 forcing for a single step."""
         concentration = inputs.concentration.get()
         forcing = self.alpha * (np.sqrt(concentration) - np.sqrt(self.c_pi))
         return self.Outputs(forcing=forcing)
@@ -106,7 +105,7 @@ class CH4Forcing(Component):
 #
 # First, see what happens without a schema.
 # The model runs from 1750 to 2100 in 10-year steps.
-# `co2_conc` and `ch4_conc` are exogenous concentrations,
+# `co2_conc` and `ch4_conc` are prescribed concentrations,
 # rising from preindustrial levels (280 ppm and 700 ppb) to 500 ppm and 2200 ppb in 2050.
 
 # %% tags=["remove_input"]
@@ -130,10 +129,10 @@ ch4_conc = Timeseries(
 model_no_schema = (
     ModelBuilder()
     .with_time_axis(time_axis)
-    .with_py_component(PythonComponent.build(CO2Forcing()))
-    .with_py_component(PythonComponent.build(CH4Forcing()))
-    .with_exogenous_variable("Atmospheric Concentration|CO2", co2_conc)
-    .with_exogenous_variable("Atmospheric Concentration|CH4", ch4_conc)
+    .with_component(CO2Forcing())
+    .with_component(CH4Forcing())
+    .with_prescribed_variable("Atmospheric Concentration|CO2", co2_conc)
+    .with_prescribed_variable("Atmospheric Concentration|CH4", ch4_conc)
 ).build()
 model_no_schema.run()
 
@@ -170,7 +169,7 @@ schema = ghg_variables()
 schema.add_aggregate(
     name="Effective Radiative Forcing",
     unit="W/m^2",
-    operation="Sum",
+    operation="sum",
     contributors=[
         "Effective Radiative Forcing|CO2",
         "Effective Radiative Forcing|CH4",
@@ -195,10 +194,10 @@ model_with_schema = (
     ModelBuilder()
     .with_schema(schema)
     .with_time_axis(time_axis)
-    .with_py_component(PythonComponent.build(CO2Forcing()))
-    .with_py_component(PythonComponent.build(CH4Forcing()))
-    .with_exogenous_variable("Atmospheric Concentration|CO2", co2_conc)
-    .with_exogenous_variable("Atmospheric Concentration|CH4", ch4_conc)
+    .with_component(CO2Forcing())
+    .with_component(CH4Forcing())
+    .with_prescribed_variable("Atmospheric Concentration|CO2", co2_conc)
+    .with_prescribed_variable("Atmospheric Concentration|CH4", ch4_conc)
 ).build()
 model_with_schema.run()
 
@@ -207,7 +206,7 @@ print("\n".join(sorted(results.names())))
 
 # %% [markdown]
 # The `Effective Radiative Forcing` aggregate now appears in the results.
-# The model sums the CO2 and CH4 contributions at each timestep.
+# The model sums the CO2 and CH4 contributions at each step.
 
 # %% tags=["remove_input"]
 import matplotlib.pyplot as plt
@@ -241,24 +240,24 @@ print(model_with_schema.coupling(format="plain"))
 #
 # RSCM supports three aggregation operations:
 #
-# | Operation  | Description | Use Case |
-# |------------|-------------|----------|
-# | `Sum`      | Add all contributor values | Total forcing, total emissions |
-# | `Mean`     | Arithmetic average | Average temperature across regions |
-# | `Weighted` | Weighted sum with specified weights | Area-weighted global average |
+# | Operation      | Description | Use Case |
+# |----------------|-------------|----------|
+# | `sum`          | Add all contributor values | Total forcing, total emissions |
+# | `mean`         | Arithmetic average | Average temperature across regions |
+# | `weighted_sum` | Weighted sum with specified weights | Area-weighted global average |
 #
 # The rest of this page builds the same kind of model with different schemas,
 # so the build goes in a helper.
 
 
 # %%
-def forcing_model(schema, components, exogenous):
+def forcing_model(schema, components, prescribed):
     """Build and run a model of Python components with the given schema."""
     builder = ModelBuilder().with_schema(schema).with_time_axis(time_axis)
     for component in components:
-        builder.with_py_component(PythonComponent.build(component))
-    for name, timeseries in exogenous.items():
-        builder.with_exogenous_variable(name, timeseries)
+        builder.with_component(component)
+    for name, timeseries in prescribed.items():
+        builder.with_prescribed_variable(name, timeseries)
     model = builder.build()
     model.run()
     return model.timeseries()
@@ -280,7 +279,7 @@ mean_schema = ghg_variables()
 mean_schema.add_aggregate(
     name="Average Forcing",
     unit="W/m^2",
-    operation="Mean",
+    operation="mean",
     contributors=[
         "Effective Radiative Forcing|CO2",
         "Effective Radiative Forcing|CH4",
@@ -296,7 +295,7 @@ print(f"Sum {total_erf[-1]:.2f}, Mean {avg_forcing[-1]:.2f} W/m²")
 # %% [markdown]
 # ### Weighted Aggregation
 #
-# A `Weighted` aggregate gives each contributor its own weight,
+# A `weighted_sum` aggregate gives each contributor its own weight,
 # for example the area fraction of a region.
 # The weights follow the order of the contributors.
 
@@ -305,7 +304,7 @@ weighted_schema = ghg_variables()
 weighted_schema.add_aggregate(
     name="Weighted Forcing",
     unit="W/m^2",
-    operation="Weighted",
+    operation="weighted_sum",
     contributors=[
         "Effective Radiative Forcing|CO2",
         "Effective Radiative Forcing|CH4",
@@ -346,7 +345,7 @@ class AerosolForcing(Component):
         self.efficiency = efficiency
 
     def solve(self, t_current: float, t_next: float, inputs: "AerosolForcing.Inputs"):
-        """Compute aerosol forcing for a single timestep."""
+        """Compute aerosol forcing for a single step."""
         return self.Outputs(forcing=inputs.emissions.get() * self.efficiency)
 
 
@@ -373,7 +372,7 @@ hierarchical_schema.add_variable("Effective Radiative Forcing|Aerosol", "W/m^2")
 hierarchical_schema.add_aggregate(
     name="Effective Radiative Forcing|GHG",
     unit="W/m^2",
-    operation="Sum",
+    operation="sum",
     contributors=[
         "Effective Radiative Forcing|CO2",
         "Effective Radiative Forcing|CH4",
@@ -382,7 +381,7 @@ hierarchical_schema.add_aggregate(
 hierarchical_schema.add_aggregate(
     name="Effective Radiative Forcing",
     unit="W/m^2",
-    operation="Sum",
+    operation="sum",
     contributors=[
         "Effective Radiative Forcing|GHG",
         "Effective Radiative Forcing|Aerosol",
@@ -454,7 +453,7 @@ nan_schema.add_variable("Effective Radiative Forcing|Test", "W/m^2")
 nan_schema.add_aggregate(
     name="Effective Radiative Forcing",
     unit="W/m^2",
-    operation="Sum",
+    operation="sum",
     contributors=[
         "Effective Radiative Forcing|CO2",
         "Effective Radiative Forcing|Test",
@@ -513,7 +512,7 @@ try:
     bad_schema = VariableSchema()
     bad_schema.add_variable("A", "units")
     bad_schema.add_aggregate(
-        name="Total", unit="units", operation="Sum", contributors=["A", "B"]
+        name="Total", unit="units", operation="sum", contributors=["A", "B"]
     )
     bad_schema.validate()
 except ValueError as e:
@@ -528,14 +527,14 @@ try:
     bad_schema.add_variable("Temp", "K")
     bad_schema.add_variable("Forcing", "W/m^2")
     bad_schema.add_aggregate(
-        name="Total", unit="K", operation="Sum", contributors=["Temp", "Forcing"]
+        name="Total", unit="K", operation="sum", contributors=["Temp", "Forcing"]
     )
     bad_schema.validate()
 except ValueError as e:
     print(f"Error: {e}")
 
 # %% [markdown]
-# A `Weighted` aggregate needs one weight per contributor:
+# A `weighted_sum` aggregate needs one weight per contributor:
 
 # %%
 try:
@@ -545,7 +544,7 @@ try:
     bad_schema.add_aggregate(
         name="Total",
         unit="units",
-        operation="Weighted",
+        operation="weighted_sum",
         contributors=["A", "B", "C"],
         weights=[0.5, 0.5],
     )
@@ -560,10 +559,10 @@ except ValueError as e:
 try:
     bad_schema = VariableSchema()
     bad_schema.add_aggregate(
-        name="A", unit="units", operation="Sum", contributors=["B"]
+        name="A", unit="units", operation="sum", contributors=["B"]
     )
     bad_schema.add_aggregate(
-        name="B", unit="units", operation="Sum", contributors=["A"]
+        name="B", unit="units", operation="sum", contributors=["A"]
     )
     bad_schema.validate()
 except ValueError as e:
@@ -585,8 +584,8 @@ try:
         ModelBuilder()
         .with_schema(schema)
         .with_time_axis(time_axis)
-        .with_py_component(PythonComponent.build(AerosolForcing()))
-        .with_exogenous_variable("Emissions|Aerosol", aerosol_emissions)
+        .with_component(AerosolForcing())
+        .with_prescribed_variable("Emissions|Aerosol", aerosol_emissions)
     ).build()
 except ValueError as e:
     print(f"Error: {e}")

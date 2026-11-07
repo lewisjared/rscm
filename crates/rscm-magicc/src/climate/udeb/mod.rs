@@ -1,18 +1,18 @@
 //! Climate UDEB Component
 //!
-//! Implements a 4-box Upwelling-Diffusion Energy Balance (UDEB) climate model
+//! Implements a four-box Upwelling-Diffusion Energy Balance (UDEB) climate model
 //! with multi-layer ocean diffusion.
 //!
 //! # What This Component Does
 //!
-//! 1. Takes total effective radiative forcing (4-box regional) as input
+//! 1. Takes total effective radiative forcing (four-box regional) as input
 //! 2. Solves the ocean diffusion-advection equation using implicit Thomas algorithm
 //! 3. Calculates surface air temperature response (4 boxes: NH Ocean, NH Land, SH Ocean, SH Land)
 //! 4. Outputs heat uptake and ocean heat content
 //!
 //! # Physics Overview
 //!
-//! The model couples a 4-box atmosphere to a 50-layer ocean in each hemisphere.
+//! The model couples a four-box atmosphere to a 50-layer ocean in each hemisphere.
 //! The energy balance for the mixed layer is:
 //!
 //! $$C_{mix} \frac{dT}{dt} = Q - \lambda T + F_{diffusion} + F_{upwelling}$$
@@ -56,8 +56,8 @@ use crate::parameters::{
     ClimateUDEBParameters, SubannualForcing, CP_SEAWATER, RHO_SEAWATER, SECONDS_PER_YEAR,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType, TimeseriesType,
+    Component, ComponentState, GridType, InputState, OutputState, TimeseriesType,
+    VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::spatial::{FourBoxGrid, FourBoxRegion};
@@ -66,10 +66,10 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// 4-box UDEB climate model component.
+/// four-box UDEB climate model component.
 ///
 /// Implements an Upwelling-Diffusion Energy Balance model with 50 ocean layers
-/// per hemisphere. Uses monthly sub-stepping with implicit Thomas algorithm
+/// per hemisphere. Uses monthly substepping with implicit Thomas algorithm
 /// for numerical stability.
 ///
 /// # State Variables
@@ -88,7 +88,7 @@ use serde::{Deserialize, Serialize};
     total_erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
 )]
 #[states(
-    surface_temperature { name = "Surface Temperature", unit = "K", grid = "FourBox" },
+    surface_temperature { name = "Surface Temperature", unit = "K", grid = "four_box" },
 )]
 #[outputs(
     heat_uptake { name = "Heat Uptake", unit = "W/m^2" },
@@ -403,7 +403,7 @@ impl ClimateUDEB {
     /// forcing level (MAGICC7.f90 lines 2747-2763).
     ///
     /// Temperature history is stored as year-weighted entries (`T * dt_years`)
-    /// so that the cumulative sum is correct regardless of model timestep size.
+    /// so that the cumulative sum is correct regardless of model step size.
     ///
     /// $$ECS_{adj} = ECS \times (1 + \alpha_T \times \frac{\sum T \, dt - \sum T_{2x}}{\sum T_{2x}})
     ///                       \times (1 + \alpha_Q \times (\max(0, Q) - Q_{2x}))$$
@@ -634,7 +634,7 @@ impl ClimateUDEB {
             0.0
         };
 
-        // Monthly sub-stepping with per-substep forcing interpolation.
+        // Monthly substepping with per-substep forcing interpolation.
         //
         // MAGICC7 runs steps 1..12 for normal years, with forcing queried at:
         //   step 1: year + 1/12, step 2: year + 2/12, ..., step 12: year + 12/12
@@ -805,7 +805,7 @@ impl ClimateUDEB {
             FourBoxSlice::from_array([t_air_nho, t_air_nhl, t_air_sho, t_air_shl]);
 
         // Track year-weighted temperature history for cumulative-T adjustment.
-        // Each entry stores T * dt so the sum gives K-years regardless of timestep.
+        // Each entry stores T * dt so the sum gives K-years regardless of step.
         let global_temp = surface_temperature.0[0] * fgno
             + surface_temperature.0[1] * fgnl
             + surface_temperature.0[2] * fgso
@@ -874,28 +874,22 @@ impl Default for ClimateUDEB {
 
 #[typetag::serde]
 impl Component for ClimateUDEB {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         if self.parameters.time_varying_q2x {
-            definitions.push(RequirementDefinition::scalar_input(
-                CO2_DOUBLING_ERF,
-                "W/m^2",
-            ));
+            definitions.push(VariableDefinition::scalar_input(CO2_DOUBLING_ERF, "W/m^2"));
         }
         if self.parameters.thermal_expansion.is_some() {
             definitions.push(
-                RequirementDefinition::scalar_output(ANNUAL_MEAN_TEMPERATURE, "K")
+                VariableDefinition::scalar_output(ANNUAL_MEAN_TEMPERATURE, "K")
                     .with_timeseries_type(TimeseriesType::Average),
             );
-            definitions.push(RequirementDefinition::scalar_output(
-                THERMAL_EXPANSION,
-                "mm",
-            ));
+            definitions.push(VariableDefinition::scalar_output(THERMAL_EXPANSION, "mm"));
         }
         if self.parameters.regional_forcing {
             for definition in &mut definitions {
                 if definition.name == "Effective Radiative Forcing" {
-                    *definition = RequirementDefinition::four_box_input(REGIONAL_FORCING, "W/m^2");
+                    *definition = VariableDefinition::four_box_input(REGIONAL_FORCING, "W/m^2");
                 }
             }
         }
@@ -1198,7 +1192,7 @@ mod tests {
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         let component = default_component();
@@ -1215,10 +1209,9 @@ mod tests {
         let erf_item = TimeseriesItem {
             data: TimeseriesData::Scalar(erf_ts),
             name: "Effective Radiative Forcing".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
-        // Build FourBox surface temperature timeseries initialised to zero
+        // Build four-box surface temperature timeseries initialised to zero
         let surf_grid = FourBoxGrid::magicc_standard();
         let surf_values = Array2::zeros((2, 4));
         let surf_ts = GridTimeseries::new(
@@ -1231,7 +1224,6 @@ mod tests {
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
             name: "Surface Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1444,7 +1436,7 @@ mod tests {
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         // Mode 0 (default) should produce identical results to a component
@@ -1464,7 +1456,6 @@ mod tests {
         let erf_item = TimeseriesItem {
             data: TimeseriesData::Scalar(erf_ts),
             name: "Effective Radiative Forcing".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
         let surf_grid = FourBoxGrid::magicc_standard();
@@ -1479,7 +1470,6 @@ mod tests {
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
             name: "Surface Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1515,7 +1505,7 @@ mod tests {
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![2000.0, 2001.0]));
@@ -1526,7 +1516,6 @@ mod tests {
         let erf_item = TimeseriesItem {
             data: TimeseriesData::Scalar(erf_ts),
             name: "Effective Radiative Forcing".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
         let surf_grid = FourBoxGrid::magicc_standard();
@@ -1541,7 +1530,6 @@ mod tests {
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
             name: "Surface Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1652,7 +1640,7 @@ mod tests {
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![2000.0, 2001.0]));
@@ -1663,7 +1651,6 @@ mod tests {
         let erf_item = TimeseriesItem {
             data: TimeseriesData::Scalar(erf_ts),
             name: "Effective Radiative Forcing".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
         let surf_grid = FourBoxGrid::magicc_standard();
@@ -1678,7 +1665,6 @@ mod tests {
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
             name: "Surface Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1714,7 +1700,7 @@ mod tests {
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::state::StateValue;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         let time_axis = Arc::new(TimeAxis::from_values(ndarray::array![2000.0, 2001.0]));
@@ -1725,7 +1711,6 @@ mod tests {
         let erf_item = TimeseriesItem {
             data: TimeseriesData::Scalar(erf_ts),
             name: "Effective Radiative Forcing".to_string(),
-            variable_type: VariableType::Exogenous,
         };
 
         let surf_grid = FourBoxGrid::magicc_standard();
@@ -1740,7 +1725,6 @@ mod tests {
         let surf_item = TimeseriesItem {
             data: TimeseriesData::FourBox(surf_ts),
             name: "Surface Temperature".to_string(),
-            variable_type: VariableType::Endogenous,
         };
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
@@ -1842,7 +1826,7 @@ mod tests {
         use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
         use rscm_core::spatial::FourBoxGrid;
         use rscm_core::timeseries::TimeAxis;
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         use std::sync::Arc;
 
         let times = ndarray::array![2000.0, 2001.0, 2002.0, 2003.0];
@@ -1860,12 +1844,10 @@ mod tests {
                     times,
                 )),
                 name: "Effective Radiative Forcing".to_string(),
-                variable_type: VariableType::Exogenous,
             },
             TimeseriesItem {
                 data: TimeseriesData::FourBox(temperature),
                 name: "Surface Temperature".to_string(),
-                variable_type: VariableType::Endogenous,
             },
         ]
     }

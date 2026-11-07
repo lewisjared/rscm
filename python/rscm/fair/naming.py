@@ -118,7 +118,7 @@ def concentration_unit(entry: dict[str, Any]) -> str:
     return {"co2": "ppm", "ch4": "ppb", "n2o": "ppb"}.get(entry["type"], "ppt")
 
 
-def exogenous_variable(entry: dict[str, Any]) -> tuple[str, str] | None:
+def prescribed_variable(entry: dict[str, Any]) -> tuple[str, str] | None:
     """Return the input variable and unit of a species entry, None if calculated."""
     mode = entry["input_mode"]
     if mode == "emissions":

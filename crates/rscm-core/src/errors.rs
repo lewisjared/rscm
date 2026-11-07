@@ -31,16 +31,16 @@ pub enum RSCMError {
     MissingInitialValue { variable: String, component: String },
 
     /// Variable not found in state
-    #[error("Variable '{name}' not found in state. Available variables: {available}. Ensure the variable is produced by a component or provided as exogenous input.")]
+    #[error("Variable '{name}' not found in state. Available variables: {available}. Ensure the variable is produced by a component or provided as prescribed input.")]
     VariableNotFound { name: String, available: String },
 
     /// Invalid region index for grid type
     #[error(
-        "Invalid region index {index} for grid type {grid_type}. Valid indices are 0..{max_index}."
+        "Invalid region index {index} for grid type {grid}. Valid indices are 0..{max_index}."
     )]
     InvalidRegionIndex {
         index: usize,
-        grid_type: String,
+        grid: String,
         max_index: usize,
     },
 
@@ -64,14 +64,14 @@ pub enum RSCMError {
     #[error("Invalid lag {lag}: {reason}")]
     InvalidLag { lag: String, reason: String },
 
-    /// Inputs that no component produces and no exogenous data or initial value supplies.
+    /// Inputs that no component produces and no prescribed data or initial value supplies.
     ///
     /// `inputs` holds each `(variable, consumers)` pair, sorted by variable.
     #[error(
-        "Inputs with no producer, exogenous data or initial value: {}. Supply them as exogenous data, or call with_missing_exogenous_allowed() to fill them with NaN.",
+        "Inputs with no producer, prescribed data or initial value: {}. Supply them as prescribed data, or call with_missing_prescribed_allowed() to fill them with NaN.",
         format_missing_inputs(inputs)
     )]
-    MissingExogenousInput { inputs: Vec<(String, Vec<String>)> },
+    MissingPrescribedInput { inputs: Vec<(String, Vec<String>)> },
 
     /// Two components produce the same variable.
     #[error("Variable '{variable}' has more than one producer: {}", components.join(", "))]
@@ -95,7 +95,7 @@ pub enum RSCMError {
     AverageState { variable: String, component: String },
 
     /// Grid output type mismatch between component output and variable definition
-    #[error("Grid output mismatch for variable '{variable}': component tried to output {component_grid} but variable expects {expected_grid}. Ensure the component's StateValue variant matches the RequirementDefinition's grid_type.")]
+    #[error("Grid output mismatch for variable '{variable}': component tried to output {component_grid} but variable expects {expected_grid}. Ensure the component's StateValue variant matches the VariableDefinition's grid.")]
     GridOutputMismatch {
         variable: String,
         expected_grid: String,

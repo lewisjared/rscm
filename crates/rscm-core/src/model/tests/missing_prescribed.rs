@@ -1,8 +1,6 @@
 //! Inputs that no component produces must be supplied.
 
-use crate::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType,
-};
+use crate::component::{Component, InputState, OutputState, VariableDefinition, VariableRole};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
 use crate::model::ModelBuilder;
@@ -20,11 +18,11 @@ struct Warming;
 
 #[typetag::serde]
 impl Component for Warming {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::new("forcing", "W/m^2", RequirementType::Input),
-            RequirementDefinition::new("emissions", "GtC/yr", RequirementType::Input),
-            RequirementDefinition::new("temperature", "K", RequirementType::Output),
+            VariableDefinition::new("forcing", "W/m^2", VariableRole::Input),
+            VariableDefinition::new("emissions", "GtC/yr", VariableRole::Input),
+            VariableDefinition::new("temperature", "K", VariableRole::Output),
         ]
     }
 
@@ -44,10 +42,10 @@ struct Ocean;
 
 #[typetag::serde]
 impl Component for Ocean {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::new("forcing", "W/m^2", RequirementType::Input),
-            RequirementDefinition::new("ocean_heat", "J", RequirementType::Output),
+            VariableDefinition::new("forcing", "W/m^2", VariableRole::Input),
+            VariableDefinition::new("ocean_heat", "J", VariableRole::Output),
         ]
     }
 
@@ -83,8 +81,8 @@ fn missing_inputs_fail_the_build() {
         .with_component(Arc::new(Ocean))
         .build()
         .expect_err("unsupplied inputs must not build");
-    let RSCMError::MissingExogenousInput { inputs } = &error else {
-        panic!("expected MissingExogenousInput, got {error}");
+    let RSCMError::MissingPrescribedInput { inputs } = &error else {
+        panic!("expected MissingPrescribedInput, got {error}");
     };
     assert_eq!(
         inputs,
@@ -102,16 +100,16 @@ fn missing_inputs_fail_the_build() {
         "{message}"
     );
     assert!(
-        message.contains("with_missing_exogenous_allowed()"),
+        message.contains("with_missing_prescribed_allowed()"),
         "{message}"
     );
 }
 
 #[test]
-fn exogenous_data_and_initial_values_supply_inputs() {
+fn prescribed_data_and_initial_values_supply_inputs() {
     builder()
         .with_component(Arc::new(Warming))
-        .with_exogenous_variable("forcing", series("W/m^2"))
+        .with_prescribed_variable("forcing", series("W/m^2"))
         .with_initial_values(HashMap::from([("emissions".to_string(), 0.0)]))
         .build()
         .expect("supplied inputs build");
@@ -123,9 +121,9 @@ fn lagged_input_without_producer_must_be_supplied() {
         .with_component(Arc::new(Ocean))
         .with_lag("forcing")
         .build()
-        .expect_err("a lagged input with no producer is exogenous");
+        .expect_err("a lagged input with no producer is prescribed");
     assert!(
-        matches!(&error, RSCMError::MissingExogenousInput { inputs } if inputs[0].0 == "forcing"),
+        matches!(&error, RSCMError::MissingPrescribedInput { inputs } if inputs[0].0 == "forcing"),
         "{error}"
     );
 }
@@ -134,7 +132,7 @@ fn lagged_input_without_producer_must_be_supplied() {
 fn flag_fills_missing_inputs_with_nan() {
     let mut model = builder()
         .with_component(Arc::new(Warming))
-        .with_missing_exogenous_allowed()
+        .with_missing_prescribed_allowed()
         .build()
         .expect("the flag allows missing inputs");
     let forcing = model

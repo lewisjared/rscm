@@ -469,7 +469,7 @@ and the initial temperature profile (`CORE_SWITCH_OCN_TEMPPROFILE`, CMIP5-based 
 Each year `magicc_step_year` (MAGICC7.f90 lines 2646 to 3727) runs:
 
 1. `DELTAQ` for concentrations and forcing, except in the last year
-   (see [main timestep](module_15_main_timestep.md)).
+   (see [main step](module_15_main_timestep.md)).
 2. For each substep, from step 1 to `STEPSPERYEAR` (from step 0 in the first year, to 11 in the last):
     1. Interpolate the box forcing to the substep and add monthly volcanic forcing.
     2. Adjust the climate sensitivity from the substep's global forcing and the cumulative temperature,

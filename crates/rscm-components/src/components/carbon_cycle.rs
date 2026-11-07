@@ -6,8 +6,7 @@
 use crate::constants::GTC_PER_PPM;
 use ode_solvers::Vector3;
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
+    Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
@@ -95,7 +94,7 @@ impl CarbonCycle {
 
 #[typetag::serde]
 impl Component for CarbonCycle {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -140,7 +139,7 @@ impl IVP<Time, ModelState> for CarbonCycle {
     ) {
         let inputs = CarbonCycleInputs::from_input_state(input_state);
 
-        // Inputs come from input_state (could be exogenous or upstream)
+        // Inputs come from input_state (could be prescribed or upstream)
         let emissions = inputs.emissions.get();
         let temperature = inputs.temperature.get();
 

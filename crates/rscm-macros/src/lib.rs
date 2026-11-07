@@ -32,7 +32,7 @@
 //! This generates:
 //! - `CO2ERFComponentInputs` with a `concentration_co2: TimeseriesWindow<'a>` field
 //! - `CO2ERFComponentOutputs` with an `erf_co2: f64` field
-//! - Implementation of `generated_definitions()` returning the appropriate `RequirementDefinition`s
+//! - Implementation of `generated_definitions()` returning the appropriate `VariableDefinition`s
 //!
 //! # Compile-time Safety
 //!
@@ -96,7 +96,7 @@ struct IoFieldDecl {
     rust_name: Ident,
     variable_name: String,
     unit: String,
-    grid_type: String,
+    grid: String,
     timeseries_type: Option<String>,
 }
 
@@ -109,7 +109,7 @@ impl Parse for IoFieldDecl {
 
         let mut variable_name = None;
         let mut unit = None;
-        let mut grid_type = String::from("Scalar");
+        let mut grid = String::from("scalar");
         let mut timeseries_type = None;
 
         while !content.is_empty() {
@@ -120,7 +120,17 @@ impl Parse for IoFieldDecl {
             match key.to_string().as_str() {
                 "name" => variable_name = Some(value.value()),
                 "unit" => unit = Some(value.value()),
-                "grid" => grid_type = value.value(),
+                "grid" => match value.value().as_str() {
+                    "scalar" | "four_box" | "hemispheric" => grid = value.value(),
+                    other => {
+                        return Err(syn::Error::new(
+                            value.span(),
+                            format!(
+                                "grid must be \"scalar\", \"four_box\" or \"hemispheric\", got {other:?}"
+                            ),
+                        ))
+                    }
+                },
                 "timeseries_type" => match value.value().as_str() {
                     "point" | "average" => timeseries_type = Some(value.value()),
                     other => {
@@ -154,7 +164,7 @@ impl Parse for IoFieldDecl {
             rust_name,
             variable_name,
             unit,
-            grid_type,
+            grid,
             timeseries_type,
         })
     }
@@ -178,7 +188,7 @@ struct InputField {
     rust_name: Ident,
     variable_name: String,
     unit: String,
-    grid_type: String,
+    grid: String,
     timeseries_type: Option<String>,
 }
 
@@ -187,7 +197,7 @@ struct OutputField {
     rust_name: Ident,
     variable_name: String,
     unit: String,
-    grid_type: String,
+    grid: String,
     timeseries_type: Option<String>,
 }
 
@@ -196,7 +206,7 @@ struct StateField {
     rust_name: Ident,
     variable_name: String,
     unit: String,
-    grid_type: String,
+    grid: String,
     timeseries_type: Option<String>,
 }
 
@@ -296,7 +306,7 @@ fn extract_io_from_attrs(
                     rust_name: decl.rust_name,
                     variable_name: decl.variable_name,
                     unit: decl.unit,
-                    grid_type: decl.grid_type,
+                    grid: decl.grid,
                     timeseries_type: decl.timeseries_type,
                 });
             }
@@ -306,7 +316,7 @@ fn extract_io_from_attrs(
                     rust_name: decl.rust_name,
                     variable_name: decl.variable_name,
                     unit: decl.unit,
-                    grid_type: decl.grid_type,
+                    grid: decl.grid,
                     timeseries_type: decl.timeseries_type,
                 });
             }
@@ -316,7 +326,7 @@ fn extract_io_from_attrs(
                     rust_name: decl.rust_name,
                     variable_name: decl.variable_name,
                     unit: decl.unit,
-                    grid_type: decl.grid_type,
+                    grid: decl.grid,
                     timeseries_type: decl.timeseries_type,
                 });
             }
@@ -327,10 +337,10 @@ fn extract_io_from_attrs(
 }
 
 /// Generate the grid type token
-fn grid_type_token(grid: &str) -> TokenStream2 {
+fn grid_token(grid: &str) -> TokenStream2 {
     match grid {
-        "FourBox" => quote! { GridType::FourBox },
-        "Hemispheric" => quote! { GridType::Hemispheric },
+        "four_box" => quote! { GridType::FourBox },
+        "hemispheric" => quote! { GridType::Hemispheric },
         _ => quote! { GridType::Scalar },
     }
 }
@@ -349,8 +359,8 @@ fn timeseries_type_call(timeseries_type: &Option<String>) -> TokenStream2 {
 /// Generate the input window type based on grid
 fn input_window_type(grid: &str) -> TokenStream2 {
     match grid {
-        "FourBox" => quote! { GridTimeseriesWindow<'a, FourBoxGrid> },
-        "Hemispheric" => quote! { HemisphericWindow<'a> },
+        "four_box" => quote! { GridTimeseriesWindow<'a, FourBoxGrid> },
+        "hemispheric" => quote! { HemisphericWindow<'a> },
         _ => quote! { ScalarWindow<'a> },
     }
 }
@@ -358,8 +368,8 @@ fn input_window_type(grid: &str) -> TokenStream2 {
 /// Generate the output type based on grid
 fn output_type(grid: &str) -> TokenStream2 {
     match grid {
-        "FourBox" => quote! { FourBoxSlice },
-        "Hemispheric" => quote! { HemisphericSlice },
+        "four_box" => quote! { FourBoxSlice },
+        "hemispheric" => quote! { HemisphericSlice },
         _ => quote! { FloatValue },
     }
 }
@@ -375,7 +385,7 @@ fn output_type(grid: &str) -> TokenStream2 {
 ///   (states appear in both Inputs and Outputs structs)
 /// - `#[component(tags = ["tag1", "tag2"], category = "Category Name")]` - Metadata for documentation
 ///
-/// Where `grid` can be: "Scalar" (default), "FourBox", or "Hemispheric",
+/// Where `grid` can be "scalar" (the default), "four_box" or "hemispheric",
 /// and the optional `timeseries_type` can be "point" or "average" to override the unit default.
 ///
 /// # Generated Types
@@ -383,7 +393,7 @@ fn output_type(grid: &str) -> TokenStream2 {
 /// For a struct `Foo`, this macro generates:
 /// - `FooInputs<'a>` - Input struct with `TimeseriesWindow` or `GridTimeseriesWindow` fields
 /// - `FooOutputs` - Output struct with typed fields
-/// - `Foo::generated_definitions()` - Returns `Vec<RequirementDefinition>` for the Component trait
+/// - `Foo::generated_definitions()` - Returns `Vec<VariableDefinition>` for the Component trait
 /// - `Foo::component_metadata()` - Returns `ComponentMetadata` for documentation generation
 #[proc_macro_derive(ComponentIO, attributes(inputs, outputs, states, component))]
 pub fn derive_component_io(input: TokenStream) -> TokenStream {
@@ -423,12 +433,12 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .iter()
         .map(|f| {
             let name = &f.rust_name;
-            let ty = input_window_type(&f.grid_type);
+            let ty = input_window_type(&f.grid);
             quote! { pub #name: #ty }
         })
         .chain(state_fields.iter().map(|f| {
             let name = &f.rust_name;
-            let ty = input_window_type(&f.grid_type);
+            let ty = input_window_type(&f.grid);
             quote! { pub #name: #ty }
         }))
         .collect();
@@ -438,12 +448,12 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .iter()
         .map(|f| {
             let name = &f.rust_name;
-            let ty = output_type(&f.grid_type);
+            let ty = output_type(&f.grid);
             quote! { pub #name: #ty }
         })
         .chain(state_fields.iter().map(|f| {
             let name = &f.rust_name;
-            let ty = output_type(&f.grid_type);
+            let ty = output_type(&f.grid);
             quote! { pub #name: #ty }
         }))
         .collect();
@@ -454,10 +464,10 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .map(|f| {
             let name = &f.variable_name;
             let unit = &f.unit;
-            let grid = grid_type_token(&f.grid_type);
+            let grid = grid_token(&f.grid);
             let timeseries_type = timeseries_type_call(&f.timeseries_type);
             quote! {
-                RequirementDefinition::with_grid(#name, #unit, RequirementType::Input, #grid)
+                VariableDefinition::with_grid(#name, #unit, VariableRole::Input, #grid)
                     #timeseries_type
             }
         })
@@ -468,10 +478,10 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .map(|f| {
             let name = &f.variable_name;
             let unit = &f.unit;
-            let grid = grid_type_token(&f.grid_type);
+            let grid = grid_token(&f.grid);
             let timeseries_type = timeseries_type_call(&f.timeseries_type);
             quote! {
-                RequirementDefinition::with_grid(#name, #unit, RequirementType::Output, #grid)
+                VariableDefinition::with_grid(#name, #unit, VariableRole::Output, #grid)
                     #timeseries_type
             }
         })
@@ -482,10 +492,10 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .map(|f| {
             let name = &f.variable_name;
             let unit = &f.unit;
-            let grid = grid_type_token(&f.grid_type);
+            let grid = grid_token(&f.grid);
             let timeseries_type = timeseries_type_call(&f.timeseries_type);
             quote! {
-                RequirementDefinition::with_grid(#name, #unit, RequirementType::State, #grid)
+                VariableDefinition::with_grid(#name, #unit, VariableRole::State, #grid)
                     #timeseries_type
             }
         })
@@ -498,14 +508,14 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .map(|f| {
             let name = &f.rust_name;
             let var_name = &f.variable_name;
-            match f.grid_type.as_str() {
-                "FourBox" => quote! {
+            match f.grid.as_str() {
+                "four_box" => quote! {
                     map.insert(
                         #var_name.to_string(),
                         StateValue::FourBox(outputs.#name),
                     );
                 },
-                "Hemispheric" => quote! {
+                "hemispheric" => quote! {
                     map.insert(
                         #var_name.to_string(),
                         StateValue::Hemispheric(outputs.#name),
@@ -522,14 +532,14 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .chain(state_fields.iter().map(|f| {
             let name = &f.rust_name;
             let var_name = &f.variable_name;
-            match f.grid_type.as_str() {
-                "FourBox" => quote! {
+            match f.grid.as_str() {
+                "four_box" => quote! {
                     map.insert(
                         #var_name.to_string(),
                         StateValue::FourBox(outputs.#name),
                     );
                 },
-                "Hemispheric" => quote! {
+                "hemispheric" => quote! {
                     map.insert(
                         #var_name.to_string(),
                         StateValue::Hemispheric(outputs.#name),
@@ -551,11 +561,11 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .map(|f| {
             let name = &f.rust_name;
             let var_name = &f.variable_name;
-            match f.grid_type.as_str() {
-                "FourBox" => quote! {
+            match f.grid.as_str() {
+                "four_box" => quote! {
                     #name: input_state.get_four_box_window(#var_name)
                 },
-                "Hemispheric" => quote! {
+                "hemispheric" => quote! {
                     #name: input_state.get_hemispheric_window(#var_name)
                 },
                 _ => quote! {
@@ -566,11 +576,11 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .chain(state_fields.iter().map(|f| {
             let name = &f.rust_name;
             let var_name = &f.variable_name;
-            match f.grid_type.as_str() {
-                "FourBox" => quote! {
+            match f.grid.as_str() {
+                "four_box" => quote! {
                     #name: input_state.get_four_box_window(#var_name)
                 },
-                "Hemispheric" => quote! {
+                "hemispheric" => quote! {
                     #name: input_state.get_hemispheric_window(#var_name)
                 },
                 _ => quote! {
@@ -587,64 +597,17 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         None => quote! { None },
     };
 
-    // Generate VariableMetadata for inputs (using fully qualified path for cross-crate compatibility)
-    let input_metadata: Vec<TokenStream2> = input_fields
+    let input_rust_names: Vec<String> = input_fields
         .iter()
-        .map(|f| {
-            let rust_name = f.rust_name.to_string();
-            let variable_name = &f.variable_name;
-            let unit = &f.unit;
-            let grid = grid_type_token(&f.grid_type);
-            quote! {
-                ::rscm_core::component::VariableMetadata {
-                    rust_name: #rust_name.to_string(),
-                    variable_name: #variable_name.to_string(),
-                    unit: #unit.to_string(),
-                    grid: #grid,
-                    description: String::new(),
-                }
-            }
-        })
+        .map(|f| f.rust_name.to_string())
         .collect();
-
-    // Generate VariableMetadata for outputs (using fully qualified path for cross-crate compatibility)
-    let output_metadata: Vec<TokenStream2> = output_fields
+    let output_rust_names: Vec<String> = output_fields
         .iter()
-        .map(|f| {
-            let rust_name = f.rust_name.to_string();
-            let variable_name = &f.variable_name;
-            let unit = &f.unit;
-            let grid = grid_type_token(&f.grid_type);
-            quote! {
-                ::rscm_core::component::VariableMetadata {
-                    rust_name: #rust_name.to_string(),
-                    variable_name: #variable_name.to_string(),
-                    unit: #unit.to_string(),
-                    grid: #grid,
-                    description: String::new(),
-                }
-            }
-        })
+        .map(|f| f.rust_name.to_string())
         .collect();
-
-    // Generate VariableMetadata for states (using fully qualified path for cross-crate compatibility)
-    let state_metadata: Vec<TokenStream2> = state_fields
+    let state_rust_names: Vec<String> = state_fields
         .iter()
-        .map(|f| {
-            let rust_name = f.rust_name.to_string();
-            let variable_name = &f.variable_name;
-            let unit = &f.unit;
-            let grid = grid_type_token(&f.grid_type);
-            quote! {
-                ::rscm_core::component::VariableMetadata {
-                    rust_name: #rust_name.to_string(),
-                    variable_name: #variable_name.to_string(),
-                    unit: #unit.to_string(),
-                    grid: #grid,
-                    description: String::new(),
-                }
-            }
-        })
+        .map(|f| f.rust_name.to_string())
         .collect();
 
     // Generate the expanded code
@@ -680,7 +643,7 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
 
         impl #struct_name {
             /// Returns the variable definitions for this component
-            pub fn generated_definitions() -> Vec<RequirementDefinition> {
+            pub fn generated_definitions() -> Vec<VariableDefinition> {
                 vec![
                     #(#input_definitions,)*
                     #(#output_definitions,)*
@@ -692,13 +655,19 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
             ///
             /// This includes the component's name, tags, category, and I/O definitions.
             pub fn component_metadata() -> ::rscm_core::component::ComponentMetadata {
+                let declared = |definition: VariableDefinition, rust_name: &str| {
+                    let mut declared =
+                        ::rscm_core::component::DeclaredVariable::from_definition(&definition);
+                    declared.rust_name = rust_name.to_string();
+                    declared
+                };
                 ::rscm_core::component::ComponentMetadata {
                     name: #struct_name_str.to_string(),
                     tags: vec![#(#tags.to_string()),*],
                     category: #category_token,
-                    inputs: vec![#(#input_metadata),*],
-                    outputs: vec![#(#output_metadata),*],
-                    states: vec![#(#state_metadata),*],
+                    inputs: vec![#(declared(#input_definitions, #input_rust_names)),*],
+                    outputs: vec![#(declared(#output_definitions, #output_rust_names)),*],
+                    states: vec![#(declared(#state_definitions, #state_rust_names)),*],
                 }
             }
         }

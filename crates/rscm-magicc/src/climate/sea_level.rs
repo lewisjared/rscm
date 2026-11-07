@@ -42,8 +42,7 @@ use crate::parameters::{
     ThermalExpansionParameters,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType,
+    Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -345,7 +344,7 @@ impl Default for SeaLevelRise {
 
 #[typetag::serde]
 impl Component for SeaLevelRise {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 

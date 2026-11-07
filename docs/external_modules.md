@@ -99,8 +99,8 @@ emissions = Timeseries(
 model = (
     ModelBuilder()
     .with_time_axis(time_axis)
-    .with_py_component(PythonComponent.build(DecayingPool(timescale=50.0)))
-    .with_exogenous_variable("Emissions|CO2", emissions)
+    .with_component(DecayingPool(timescale=50.0))
+    .with_prescribed_variable("Emissions|CO2", emissions)
     .with_initial_values({"Carbon Pool": 0.0})
     .build()
 )
@@ -180,7 +180,7 @@ The extension does not need the same PyO3 version as RSCM for the same reason.
 
 ### When a kernel helps
 
-Every Python component pays a cost each timestep
+Every Python component pays a cost each step
 to build its inputs and read its outputs.
 The bridge copies each input's history up to the current step,
 so this cost grows over a long run.

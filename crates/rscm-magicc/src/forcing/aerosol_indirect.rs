@@ -39,7 +39,7 @@
 
 use crate::parameters::AerosolIndirectParameters;
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -162,7 +162,7 @@ impl Default for AerosolIndirect {
 
 #[typetag::serde]
 impl Component for AerosolIndirect {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -190,7 +190,7 @@ impl Component for AerosolIndirect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rscm_core::component::RequirementType;
+    use rscm_core::component::VariableRole;
 
     fn default_component() -> AerosolIndirect {
         AerosolIndirect::from_parameters(AerosolIndirectParameters::default())
@@ -355,7 +355,7 @@ mod tests {
 
         let input_names: Vec<_> = defs
             .iter()
-            .filter(|d| d.requirement_type == RequirementType::Input)
+            .filter(|d| d.role == VariableRole::Input)
             .map(|d| d.name.as_str())
             .collect();
 
@@ -364,7 +364,7 @@ mod tests {
 
         let output_names: Vec<_> = defs
             .iter()
-            .filter(|d| d.requirement_type == RequirementType::Output)
+            .filter(|d| d.role == VariableRole::Output)
             .map(|d| d.name.as_str())
             .collect();
 

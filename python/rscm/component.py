@@ -22,11 +22,11 @@ Usage Pattern
 1. Subclass ``Component``
 2. Declare variables using ``Input``, ``Output``, ``State`` class attributes
 3. Implement ``solve(t_current, t_next, inputs)`` returning ``self.Outputs(...)``
-4. Wrap with ``PythonComponent.build()`` for model integration
+4. Pass an instance to ``ModelBuilder.with_component()``
 
 The metaclass automatically generates:
 
-- ``definitions()`` method returning ``list[RequirementDefinition]``
+- ``definitions()`` method returning ``list[VariableDefinition]``
 - ``Inputs`` inner class with ``TimeseriesWindow`` fields for each input/state
 - ``Outputs`` inner class for constructing return values
 
@@ -39,7 +39,7 @@ from rscm.component import Component, Input, Output, State
 class CarbonCycle(Component):
     # Declare inputs
     emissions = Input("Emissions|CO2", unit="GtCO2")
-    temperature = Input("Surface Temperature", unit="K", grid="FourBox")
+    temperature = Input("Surface Temperature", unit="K", grid="four_box")
 
     # Declare state variables (read previous, write new)
     concentration = State("Atmospheric Concentration|CO2", unit="ppm")
@@ -72,9 +72,9 @@ Grid Support
 ------------
 Specify spatial grids with the ``grid`` parameter:
 
-- ``grid="Scalar"`` (default): Single global value
-- ``grid="FourBox"``: MAGICC four-box (NO, NL, SO, SL)
-- ``grid="Hemispheric"``: Northern/Southern hemispheres
+- ``grid="scalar"`` (default): Single global value
+- ``grid="four_box"``: MAGICC four-box (NO, NL, SO, SL)
+- ``grid="hemispheric"``: Northern/Southern hemispheres
 
 Grid outputs should return ``FourBoxSlice`` or ``HemisphericSlice`` objects.
 
@@ -83,7 +83,7 @@ See Also
 rscm.core : Core types including ModelBuilder, TimeAxis, Timeseries
 rscm.core.FourBoxSlice : Container for four-box regional values
 rscm.core.HemisphericSlice : Container for hemispheric values
-rscm.core.PythonComponent : Wrapper for using Python components in models
+rscm.core.ModelBuilder : Takes an instance through ``with_component()``
 """
 
 from __future__ import annotations
@@ -97,9 +97,9 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from rscm._lib.core import (
     GridType,
-    RequirementDefinition,
-    RequirementType,
     TimeseriesType,
+    VariableDefinition,
+    VariableRole,
 )
 from rscm._lib.core.state import (
     FourBoxSlice,
@@ -114,7 +114,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 # Valid grid type literals for component I/O declarations
-GridLiteral = Literal["Scalar", "FourBox", "Hemispheric"]
+GridLiteral = Literal["scalar", "four_box", "hemispheric"]
 
 # Valid timeseries type literals for component I/O declarations
 TimeseriesTypeLiteral = Literal["point", "average"]
@@ -147,23 +147,23 @@ class Input:
     unit
         The unit string (e.g., "GtCO2")
     grid
-        The spatial grid type: "Scalar" (default), "FourBox", or "Hemispheric"
+        The spatial grid: "scalar" (default), "four_box" or "hemispheric"
     timeseries_type
         "point" or "average", or None (default) to take it from the unit
     """
 
     name: str
     unit: str = ""
-    grid: GridLiteral = "Scalar"
+    grid: GridLiteral = "scalar"
     timeseries_type: TimeseriesTypeLiteral | None = None
 
-    def to_requirement(self) -> RequirementDefinition:
-        """Convert to a RequirementDefinition."""
-        return RequirementDefinition(
+    def to_definition(self) -> VariableDefinition:
+        """Convert to a VariableDefinition."""
+        return VariableDefinition(
             self.name,
             self.unit,
-            RequirementType.Input,
-            _parse_grid_type(self.grid),
+            VariableRole.Input,
+            _parse_grid(self.grid),
             _parse_timeseries_type(self.timeseries_type),
         )
 
@@ -179,23 +179,23 @@ class Output:
     unit
         The unit string (e.g., "ppm")
     grid
-        The spatial grid type: "Scalar" (default), "FourBox", or "Hemispheric"
+        The spatial grid: "scalar" (default), "four_box" or "hemispheric"
     timeseries_type
         "point" or "average", or None (default) to take it from the unit
     """
 
     name: str
     unit: str = ""
-    grid: GridLiteral = "Scalar"
+    grid: GridLiteral = "scalar"
     timeseries_type: TimeseriesTypeLiteral | None = None
 
-    def to_requirement(self) -> RequirementDefinition:
-        """Convert to a RequirementDefinition."""
-        return RequirementDefinition(
+    def to_definition(self) -> VariableDefinition:
+        """Convert to a VariableDefinition."""
+        return VariableDefinition(
             self.name,
             self.unit,
-            RequirementType.Output,
-            _parse_grid_type(self.grid),
+            VariableRole.Output,
+            _parse_grid(self.grid),
             _parse_timeseries_type(self.timeseries_type),
         )
 
@@ -204,7 +204,7 @@ class Output:
 class State:
     """Declare a state variable for a component.
 
-    State variables read their previous value and write a new value each timestep.
+    State variables read their previous value and write a new value each step.
     They appear in both inputs and outputs.
 
     Parameters
@@ -214,38 +214,38 @@ class State:
     unit
         The unit string (e.g., "ppm")
     grid
-        The spatial grid type: "Scalar" (default), "FourBox", or "Hemispheric"
+        The spatial grid: "scalar" (default), "four_box" or "hemispheric"
     timeseries_type
         "point" or "average", or None (default) to take it from the unit
     """
 
     name: str
     unit: str = ""
-    grid: GridLiteral = "Scalar"
+    grid: GridLiteral = "scalar"
     timeseries_type: TimeseriesTypeLiteral | None = None
 
-    def to_requirement(self) -> RequirementDefinition:
-        """Convert to a RequirementDefinition."""
-        return RequirementDefinition(
+    def to_definition(self) -> VariableDefinition:
+        """Convert to a VariableDefinition."""
+        return VariableDefinition(
             self.name,
             self.unit,
-            RequirementType.State,
-            _parse_grid_type(self.grid),
+            VariableRole.State,
+            _parse_grid(self.grid),
             _parse_timeseries_type(self.timeseries_type),
         )
 
 
-def _parse_grid_type(grid: GridLiteral) -> GridType:
+def _parse_grid(grid: GridLiteral) -> GridType:
     """Parse a grid type literal to GridType enum."""
-    if grid == "Scalar":
+    if grid == "scalar":
         return GridType.Scalar
-    elif grid == "FourBox":
+    elif grid == "four_box":
         return GridType.FourBox
-    elif grid == "Hemispheric":
+    elif grid == "hemispheric":
         return GridType.Hemispheric
     else:
         raise ValueError(  # noqa: TRY003
-            f"Unknown grid type: {grid}. Must be Scalar, FourBox, or Hemispheric"
+            f"Unknown grid: {grid}. Must be scalar, four_box or hemispheric"
         )
 
 
@@ -267,9 +267,9 @@ def _parse_timeseries_type(
 
 def _get_window_type(grid: GridLiteral) -> type:
     """Get the appropriate TimeseriesWindow type for a grid."""
-    if grid == "FourBox":
+    if grid == "four_box":
         return FourBoxTimeseriesWindow
-    elif grid == "Hemispheric":
+    elif grid == "hemispheric":
         return HemisphericTimeseriesWindow
     else:
         return TimeseriesWindow
@@ -277,9 +277,9 @@ def _get_window_type(grid: GridLiteral) -> type:
 
 def _get_output_type(grid: GridLiteral) -> type:
     """Get the appropriate output type for a grid."""
-    if grid == "FourBox":
+    if grid == "four_box":
         return FourBoxSlice
-    elif grid == "Hemispheric":
+    elif grid == "hemispheric":
         return HemisphericSlice
     else:
         return float
@@ -599,22 +599,22 @@ class Component(metaclass=ComponentMeta):
             )
         return cls._registry[name]
 
-    def definitions(self) -> list[RequirementDefinition]:
+    def definitions(self) -> list[VariableDefinition]:
         """Return the variable definitions for this component.
 
         This method is auto-generated from the Input, Output, and State
         class attributes.
         """
-        defs: list[RequirementDefinition] = []
+        defs: list[VariableDefinition] = []
 
         for inp in self._component_inputs.values():
-            defs.append(inp.to_requirement())
+            defs.append(inp.to_definition())
 
         for out in self._component_outputs.values():
-            defs.append(out.to_requirement())
+            defs.append(out.to_definition())
 
         for state in self._component_states.values():
-            defs.append(state.to_requirement())
+            defs.append(state.to_definition())
 
         return defs
 
@@ -624,14 +624,14 @@ class Component(metaclass=ComponentMeta):
         t_next: float,
         inputs: Any,
     ) -> Any:
-        """Compute outputs from inputs at the current timestep.
+        """Compute outputs from inputs at the current step.
 
         Parameters
         ----------
         t_current
             Current time
         t_next
-            Next timestep time
+            Next step time
         inputs
             Typed inputs object with TimeseriesWindow fields
 

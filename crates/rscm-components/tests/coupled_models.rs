@@ -78,8 +78,8 @@ fn test_carbon_cycle() {
             ("Atmospheric Concentration|CO2".to_string(), conc_initial),
         ]))
         .with_time_axis(time_axis.clone())
-        .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
-        .with_exogenous_variable("Surface Temperature", temperature)
+        .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
+        .with_prescribed_variable("Surface Temperature", temperature)
         .build()
         .unwrap();
 
@@ -190,8 +190,8 @@ fn test_coupled_model() {
             conc_pi,
         })))
         .with_time_axis(time_axis)
-        .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
-        .with_exogenous_variable("Surface Temperature", surface_temp)
+        .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
+        .with_prescribed_variable("Surface Temperature", surface_temp)
         .with_initial_values(HashMap::from([
             ("Cumulative Land Uptake".to_string(), 0.0),
             ("Cumulative Emissions|CO2".to_string(), 0.0),

@@ -33,9 +33,8 @@
 # =============================================================================
 # Protocol/ABC classes (stub-only for type checking)
 # =============================================================================
-rscm._lib.core.Component
+rscm._lib.core.RustComponent
 rscm._lib.core.ComponentBuilder
-rscm._lib.core.CustomComponent
 
 # =============================================================================
 # TypedDict parameter classes (stub-only for builder method kwargs)

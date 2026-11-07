@@ -348,7 +348,7 @@ impl PyStateValue {
         Self(StateValue::Scalar(value))
     }
 
-    /// Create a FourBox StateValue from a FourBoxSlice
+    /// Create a four-box StateValue from a FourBoxSlice
     #[staticmethod]
     fn four_box(slice: PyFourBoxSlice) -> Self {
         Self(StateValue::FourBox(slice.0))
@@ -365,7 +365,7 @@ impl PyStateValue {
         self.0.is_scalar()
     }
 
-    /// Check if this is a FourBox grid value
+    /// Check if this is a four-box grid value
     fn is_four_box(&self) -> bool {
         self.0.is_four_box()
     }
@@ -537,7 +537,7 @@ fn lerp_regions<const N: usize>(
 /// values and current position.
 ///
 /// Example:
-///     window = TimeseriesWindow(values=[1.0, 2.0, 3.0], current_index=1)
+///     window = TimeseriesWindow(values=[1.0, 2.0, 3.0], time_index=1)
 ///     print(window.get())  # 2.0
 ///     print(window.history(1))  # 1.0
 #[pyclass]
@@ -545,7 +545,7 @@ fn lerp_regions<const N: usize>(
 #[derive(Debug, Clone)]
 pub struct PyTimeseriesWindow {
     values: Vec<FloatValue>,
-    current_index: usize,
+    time_index: usize,
     meta: WindowMeta,
 }
 
@@ -554,30 +554,30 @@ impl PyTimeseriesWindow {
     #[new]
     #[pyo3(signature = (
         values,
-        current_index,
+        time_index,
         *,
         times=None,
-        source=VariableSource::Exogenous,
+        source=VariableSource::Prescribed,
         timeseries_type=TimeseriesType::Point,
     ))]
     pub fn new(
         values: Vec<FloatValue>,
-        current_index: usize,
+        time_index: usize,
         times: Option<Vec<Time>>,
         source: VariableSource,
         timeseries_type: TimeseriesType,
     ) -> PyResult<Self> {
-        if current_index >= values.len() && !values.is_empty() {
+        if time_index >= values.len() && !values.is_empty() {
             return Err(PyValueError::new_err(format!(
-                "current_index {} out of bounds for values of length {}",
-                current_index,
+                "time_index {} out of bounds for values of length {}",
+                time_index,
                 values.len()
             )));
         }
         let meta = WindowMeta::new(times, source, timeseries_type, values.len())?;
         Ok(Self {
             values,
-            current_index,
+            time_index,
             meta,
         })
     }
@@ -612,7 +612,7 @@ impl PyTimeseriesWindow {
     ///
     /// Raises ValueError on an average and on a component's own state.
     fn interval(&self) -> PyResult<(FloatValue, FloatValue)> {
-        let (start, end) = self.meta.interval(self.current_index, self.values.len())?;
+        let (start, end) = self.meta.interval(self.time_index, self.values.len())?;
         Ok((self.values[start], self.values[end]))
     }
 
@@ -645,11 +645,11 @@ impl PyTimeseriesWindow {
 
     fn __repr__(&self) -> String {
         format!(
-            "TimeseriesWindow(len={}, current_index={}, current={})",
+            "TimeseriesWindow(len={}, time_index={}, current={})",
             self.values.len(),
-            self.current_index,
+            self.time_index,
             self.values
-                .get(self.current_index)
+                .get(self.time_index)
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "N/A".to_string())
         )
@@ -658,7 +658,7 @@ impl PyTimeseriesWindow {
 
 impl PyTimeseriesWindow {
     fn index(&self) -> ReadIndex {
-        self.meta.read_index(self.current_index, self.values.len())
+        self.meta.read_index(self.time_index, self.values.len())
     }
 }
 
@@ -667,16 +667,16 @@ impl PyTimeseriesWindow {
 /// Provides view-like access to grid timeseries data with regional access.
 ///
 /// Example:
-///     window = FourBoxTimeseriesWindow(values=\[\[1,2,3,4\], \[5,6,7,8\]\], current_index=1)
+///     window = FourBoxTimeseriesWindow(values=\[\[1,2,3,4\], \[5,6,7,8\]\], time_index=1)
 ///     print(window.get())  # FourBoxSlice of [5, 6, 7, 8]
 ///     print(window.region(0))  # TimeseriesWindow for northern ocean
 #[pyclass]
 #[pyo3(name = "FourBoxTimeseriesWindow")]
 #[derive(Debug, Clone)]
 pub struct PyFourBoxTimeseriesWindow {
-    /// Values stored as [timestep][region]
+    /// Values stored as [step][region]
     values: Vec<[FloatValue; 4]>,
-    current_index: usize,
+    time_index: usize,
     meta: WindowMeta,
 }
 
@@ -685,30 +685,30 @@ impl PyFourBoxTimeseriesWindow {
     #[new]
     #[pyo3(signature = (
         values,
-        current_index,
+        time_index,
         *,
         times=None,
-        source=VariableSource::Exogenous,
+        source=VariableSource::Prescribed,
         timeseries_type=TimeseriesType::Point,
     ))]
     pub fn new(
         values: Vec<[FloatValue; 4]>,
-        current_index: usize,
+        time_index: usize,
         times: Option<Vec<Time>>,
         source: VariableSource,
         timeseries_type: TimeseriesType,
     ) -> PyResult<Self> {
-        if current_index >= values.len() && !values.is_empty() {
+        if time_index >= values.len() && !values.is_empty() {
             return Err(PyValueError::new_err(format!(
-                "current_index {} out of bounds for values of length {}",
-                current_index,
+                "time_index {} out of bounds for values of length {}",
+                time_index,
                 values.len()
             )));
         }
         let meta = WindowMeta::new(times, source, timeseries_type, values.len())?;
         Ok(Self {
             values,
-            current_index,
+            time_index,
             meta,
         })
     }
@@ -744,7 +744,7 @@ impl PyFourBoxTimeseriesWindow {
     ///
     /// Raises ValueError on an average and on a component's own state.
     fn interval(&self) -> PyResult<(PyFourBoxSlice, PyFourBoxSlice)> {
-        let (start, end) = self.meta.interval(self.current_index, self.values.len())?;
+        let (start, end) = self.meta.interval(self.time_index, self.values.len())?;
         Ok((
             PyFourBoxSlice(FourBoxSlice::from_array(self.values[start])),
             PyFourBoxSlice(FourBoxSlice::from_array(self.values[end])),
@@ -781,7 +781,7 @@ impl PyFourBoxTimeseriesWindow {
         let values: Vec<FloatValue> = self.values.iter().map(|v| v[region]).collect();
         Ok(PyTimeseriesWindow {
             values,
-            current_index: self.current_index,
+            time_index: self.time_index,
             meta: self.meta.clone(),
         })
     }
@@ -792,16 +792,16 @@ impl PyFourBoxTimeseriesWindow {
 
     fn __repr__(&self) -> String {
         format!(
-            "FourBoxTimeseriesWindow(len={}, current_index={})",
+            "FourBoxTimeseriesWindow(len={}, time_index={})",
             self.values.len(),
-            self.current_index
+            self.time_index
         )
     }
 }
 
 impl PyFourBoxTimeseriesWindow {
     fn index(&self) -> ReadIndex {
-        self.meta.read_index(self.current_index, self.values.len())
+        self.meta.read_index(self.time_index, self.values.len())
     }
 }
 
@@ -811,7 +811,7 @@ impl PyFourBoxTimeseriesWindow {
 #[derive(Debug, Clone)]
 pub struct PyHemisphericTimeseriesWindow {
     values: Vec<[FloatValue; 2]>,
-    current_index: usize,
+    time_index: usize,
     meta: WindowMeta,
 }
 
@@ -820,30 +820,30 @@ impl PyHemisphericTimeseriesWindow {
     #[new]
     #[pyo3(signature = (
         values,
-        current_index,
+        time_index,
         *,
         times=None,
-        source=VariableSource::Exogenous,
+        source=VariableSource::Prescribed,
         timeseries_type=TimeseriesType::Point,
     ))]
     pub fn new(
         values: Vec<[FloatValue; 2]>,
-        current_index: usize,
+        time_index: usize,
         times: Option<Vec<Time>>,
         source: VariableSource,
         timeseries_type: TimeseriesType,
     ) -> PyResult<Self> {
-        if current_index >= values.len() && !values.is_empty() {
+        if time_index >= values.len() && !values.is_empty() {
             return Err(PyValueError::new_err(format!(
-                "current_index {} out of bounds for values of length {}",
-                current_index,
+                "time_index {} out of bounds for values of length {}",
+                time_index,
                 values.len()
             )));
         }
         let meta = WindowMeta::new(times, source, timeseries_type, values.len())?;
         Ok(Self {
             values,
-            current_index,
+            time_index,
             meta,
         })
     }
@@ -879,7 +879,7 @@ impl PyHemisphericTimeseriesWindow {
     ///
     /// Raises ValueError on an average and on a component's own state.
     fn interval(&self) -> PyResult<(PyHemisphericSlice, PyHemisphericSlice)> {
-        let (start, end) = self.meta.interval(self.current_index, self.values.len())?;
+        let (start, end) = self.meta.interval(self.time_index, self.values.len())?;
         Ok((
             PyHemisphericSlice(HemisphericSlice::from_array(self.values[start])),
             PyHemisphericSlice(HemisphericSlice::from_array(self.values[end])),
@@ -916,7 +916,7 @@ impl PyHemisphericTimeseriesWindow {
         let values: Vec<FloatValue> = self.values.iter().map(|v| v[region]).collect();
         Ok(PyTimeseriesWindow {
             values,
-            current_index: self.current_index,
+            time_index: self.time_index,
             meta: self.meta.clone(),
         })
     }
@@ -927,16 +927,16 @@ impl PyHemisphericTimeseriesWindow {
 
     fn __repr__(&self) -> String {
         format!(
-            "HemisphericTimeseriesWindow(len={}, current_index={})",
+            "HemisphericTimeseriesWindow(len={}, time_index={})",
             self.values.len(),
-            self.current_index
+            self.time_index
         )
     }
 }
 
 impl PyHemisphericTimeseriesWindow {
     fn index(&self) -> ReadIndex {
-        self.meta.read_index(self.current_index, self.values.len())
+        self.meta.read_index(self.time_index, self.values.len())
     }
 }
 

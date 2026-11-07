@@ -318,7 +318,7 @@ one year later than in emissions-driven years.
 
 ## Numerical considerations
 
-- **Monthly stepping**: the module runs twelve sub-steps a year for stability,
+- **Monthly stepping**: the module runs twelve substeps a year for stability,
   which costs twelve times the annual work and stores the flux in ppm yr⁻¹ while stepping by months.
 - **Stability limiter**: the 0.04 ppm yr⁻¹ cap on the change between months is a numerical device,
   not physics.
@@ -359,7 +359,7 @@ Beyond these:
 - There is no radiative-only mode (`OCEANCC_RAD_SETTING`).
 - The concentration cap is not implemented
   (see [CO2 budget](module_11_co2_budget.md#differences-from-magicc7)).
-- The flux history keeps the last `max_history_months` sub-steps (6000, or 500 years).
+- The flux history keeps the last `max_history_months` substeps (6000, or 500 years).
   Longer runs drop the oldest months from the convolution, where MAGICC7 keeps them all.
 
 ## References

@@ -12,29 +12,29 @@
   "inputs": [
     {
       "rust_name": "temperature",
-      "variable_name": "Surface Temperature",
+      "name": "Surface Temperature",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "co2_emissions",
-      "variable_name": "Emissions|CO2|Permafrost",
+      "name": "Emissions|CO2|Permafrost",
       "unit": "GtC/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "ch4_emissions",
-      "variable_name": "Emissions|CH4|Permafrost",
+      "name": "Emissions|CH4|Permafrost",
       "unit": "Mt CH4/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "thawed_area",
-      "variable_name": "Permafrost Thawed Area",
+      "name": "Permafrost Thawed Area",
       "unit": "1",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "states": [],

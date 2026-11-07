@@ -116,7 +116,7 @@
 //! Existing components that work with global values continue unchanged:
 //!
 //! ```rust,ignore
-//! # use rscm_core::component::{Component, RequirementDefinition, RequirementType, InputState, OutputState};
+//! # use rscm_core::component::{Component, VariableDefinition, VariableRole, InputState, OutputState};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
 //! # use std::collections::HashMap;
@@ -124,10 +124,10 @@
 //! # struct CO2ERFComponent;
 //! #[typetag::serde]
 //! impl Component for CO2ERFComponent {
-//!     fn definitions(&self) -> Vec<RequirementDefinition> {
+//!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         vec![
-//!             RequirementDefinition::new("Atmospheric Concentration|CO2", "ppm", RequirementType::Input),
-//!             RequirementDefinition::new("ERF|CO2", "W/m^2", RequirementType::Output),
+//!             VariableDefinition::new("Atmospheric Concentration|CO2", "ppm", VariableRole::Input),
+//!             VariableDefinition::new("ERF|CO2", "W/m^2", VariableRole::Output),
 //!         ]
 //!     }
 //!
@@ -156,7 +156,7 @@
 //! # use rscm_core::spatial::FourBoxGrid;
 //! fn solve_grid_component(input_state: &InputState, t_current: Time) -> RSCMResult<OutputState> {
 //!     // Get grid values using the typed window API
-//!     let window = input_state.get_four_box_window("ERF|FourBox");
+//!     let window = input_state.get_four_box_window("Effective Radiative Forcing");
 //!     let erf_regions = window.get_all();
 //!
 //!     // Compute regional heat uptake
@@ -164,7 +164,7 @@
 //!         .map(|erf| erf * 0.9) // Example: 90% absorbed by ocean
 //!         .collect();
 //!
-//!     // Return FourBox output with regional values
+//!     // Return four-box output with regional values
 //!     let mut output = HashMap::new();
 //!     output.insert(
 //!         "Heat Uptake|Ocean".to_string(),
@@ -198,7 +198,7 @@
 //! # use rscm_core::spatial::{FourBoxGrid, SpatialGrid};
 //! # fn example(input_state: &InputState) {
 //! // Get grid values, compute regionally, then aggregate
-//! let window = input_state.get_four_box_window("Surface Temperature|FourBox");
+//! let window = input_state.get_four_box_window("Surface Temperature");
 //! let temps = window.get_all();
 //! let regional_responses: Vec<f64> = temps.iter()
 //!     .map(|t| t * 0.5) // Different response per region
@@ -218,7 +218,7 @@
 //! disaggregation component that explicitly encodes the physics:
 //!
 //! ```rust,ignore
-//! # use rscm_core::component::{Component, RequirementDefinition, RequirementType, InputState, OutputState, GridType};
+//! # use rscm_core::component::{Component, VariableDefinition, VariableRole, InputState, OutputState, GridType};
 //! # use rscm_core::timeseries::Time;
 //! # use rscm_core::errors::RSCMResult;
 //! # use rscm_core::state::{StateValue, FourBoxSlice};
@@ -227,16 +227,16 @@
 //! # struct HemisphericToFourBoxDisaggregator { ocean_land_ratio: f64 }
 //! #[typetag::serde]
 //! impl Component for HemisphericToFourBoxDisaggregator {
-//!     fn definitions(&self) -> Vec<RequirementDefinition> {
+//!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         vec![
-//!             RequirementDefinition::with_grid("Temperature|Hemispheric", "degC", RequirementType::Input, GridType::Hemispheric),
-//!             RequirementDefinition::with_grid("Temperature|FourBox", "degC", RequirementType::Output, GridType::FourBox),
+//!             VariableDefinition::with_grid("Surface Temperature", "degC", VariableRole::Input, GridType::Hemispheric),
+//!             VariableDefinition::with_grid("Regional Surface Temperature", "degC", VariableRole::Output, GridType::FourBox),
 //!         ]
 //!     }
 //!
 //!     fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState) -> RSCMResult<OutputState> {
 //!         // Get hemispheric input using typed window API
-//!         let window = input_state.get_hemispheric_window("Temperature|Hemispheric");
+//!         let window = input_state.get_hemispheric_window("Surface Temperature");
 //!         let values = window.get_all();
 //!         let (northern, southern) = (values[0], values[1]);
 //!
@@ -250,7 +250,7 @@
 //!         ]);
 //!
 //!         let mut output = HashMap::new();
-//!         output.insert("Temperature|FourBox".to_string(), StateValue::FourBox(four_box_values));
+//!         output.insert("Regional Surface Temperature".to_string(), StateValue::FourBox(four_box_values));
 //!         Ok(output)
 //!     }
 //! }

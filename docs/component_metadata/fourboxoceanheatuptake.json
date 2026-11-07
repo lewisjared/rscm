@@ -14,17 +14,17 @@
   "inputs": [
     {
       "rust_name": "erf",
-      "variable_name": "Effective Radiative Forcing|Aggregated",
+      "name": "Effective Radiative Forcing|Aggregated",
       "unit": "W/m^2",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "heat_uptake",
-      "variable_name": "Heat Uptake|Ocean",
+      "name": "Heat Uptake|Ocean",
       "unit": "W/m^2",
-      "grid": "FourBox"
+      "grid": "four_box"
     }
   ],
   "states": [],

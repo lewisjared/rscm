@@ -49,10 +49,10 @@ mod tuple_map_serde {
 
 /// A coupled set of components that are solved on a common time axis.
 ///
-/// These components are solved over time steps defined by the [`TimeAxis`].
+/// These components are solved over steps defined by the [`TimeAxis`].
 /// Components may pass state between themselves.
-/// Each component may require information from other components to be solved (endogenous) or
-/// predefined data (exogenous).
+/// Each component may require information from other components to be solved (modelled) or
+/// predefined data (prescribed).
 ///
 /// For example, a component to calculate the Effective Radiative Forcing(ERF) of CO_2 may
 /// require CO_2 concentrations as input state and provide CO_2 ERF.
@@ -65,7 +65,7 @@ mod tuple_map_serde {
 pub struct Model {
     /// A directed graph with components as nodes and the edges defining the state dependencies
     /// between nodes.
-    /// This graph is traversed on every time step to ensure that any state dependencies are
+    /// This graph is traversed on every step to ensure that any state dependencies are
     /// solved before another component needs the state.
     pub(crate) components: CGraph,
     /// The base node of the graph from where to begin traversing.
@@ -325,8 +325,8 @@ impl Model {
     /// Get the configured grid weights.
     ///
     /// Returns the custom weights if configured, or None if using defaults.
-    pub fn get_grid_weights(&self, grid_type: GridType) -> Option<&Vec<f64>> {
-        self.grid_weights.get(&grid_type)
+    pub fn get_grid_weights(&self, grid: GridType) -> Option<&Vec<f64>> {
+        self.grid_weights.get(&grid)
     }
 
     /// Get all required transformations for introspection.
@@ -368,7 +368,7 @@ impl Model {
     ///
     /// Returns the variable source types keyed by (variable_name, component_name).
     /// This enables different components to have different source classifications for the same variable.
-    /// For example, a state variable is `OwnState` for the producer component but `UpstreamOutput` for consumers.
+    /// For example, a state variable is `OwnState` for the producer component but `Upstream` for consumers.
     pub fn variable_sources(&self) -> &HashMap<(String, String), VariableSource> {
         &self.variable_sources
     }
@@ -432,7 +432,7 @@ impl Model {
             // A grid input always carries the model's weights, so a global read of it uses them.
             if source_grid != GridType::Scalar
                 || (unit_factor - 1.0).abs() > f64::EPSILON
-                || variable_source != VariableSource::Exogenous
+                || variable_source != VariableSource::Prescribed
                 || timeseries_type != TimeseriesType::Point
             {
                 let weights = self.grid_weights.get(&source_grid).cloned();
@@ -484,7 +484,7 @@ impl Model {
     fn stored_grid(&self, name: &str) -> GridType {
         self.collection
             .get_by_name(name)
-            .map_or(GridType::Scalar, |item| item.data.grid_type())
+            .map_or(GridType::Scalar, |item| item.data.grid())
     }
 
     /// Where an output is stored and how it is transformed on the way.
@@ -502,7 +502,7 @@ impl Model {
         })
     }
 
-    /// Solve a single component for the current timestep.
+    /// Solve a single component for the current step.
     ///
     /// The updated state from the component is then pushed into the model's timeseries collection
     /// to be later used by other components.
@@ -589,7 +589,7 @@ impl Model {
     ///
     /// Every producer runs before its consumers, including when branches
     /// of different lengths feed an aggregate. Self-edges describe a component's
-    /// own state and do not constrain the order within a timestep.
+    /// own state and do not constrain the order within a step.
     pub(crate) fn execution_order(&self) -> RSCMResult<Vec<NodeIndex>> {
         let graph = EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
         petgraph::algo::toposort(&graph, None).map_err(|cycle| RSCMError::CircularDependency {
@@ -609,7 +609,7 @@ impl Model {
             .map(|plan| plan.iter().map(|component| component.node).collect())
     }
 
-    /// Step the model forward a step by solving each component for the current time step.
+    /// Step the model forward a step by solving each component for the current step.
     fn step_model(&mut self) -> RSCMResult<()> {
         let plan = match self.plan.take() {
             Some(plan) => plan,
@@ -626,14 +626,14 @@ impl Model {
         result
     }
 
-    /// Steps the model forward one time step.
+    /// Steps the model forward one step.
     ///
-    /// This solves the current time step and then updates the index.
+    /// This solves the current step and then updates the index.
     pub fn step(&mut self) {
-        self.try_step().expect("Model timestep failed");
+        self.try_step().expect("Model step failed");
     }
 
-    /// Fallible timestep execution. On failure the time index is not advanced.
+    /// Fallible step execution. On failure the time index is not advanced.
     /// Components already executed may have updated their state; rebuild the
     /// model before retrying a failed run.
     pub fn try_step(&mut self) -> RSCMResult<()> {
@@ -669,7 +669,7 @@ impl Model {
         Dot::with_attr_getters(
             &self.components,
             &[Config::NodeNoLabel, Config::EdgeNoLabel],
-            &|_, er| format!("label = {:?}", er.weight().name),
+            &|_, er| format!("label = {:?}", er.weight().name()),
             &|_, (_, component)| {
                 // Escape quotes and backslashes for DOT format
                 let debug_str = format!("{:?}", component);
@@ -679,7 +679,7 @@ impl Model {
         )
     }
 
-    /// Returns true if the model has no more time steps to process.
+    /// Returns true if the model has no more steps to process.
     pub fn finished(&self) -> bool {
         self.time_index == self.time_axis.len() - 1
     }

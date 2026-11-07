@@ -7,7 +7,7 @@
 //! (Smith et al. 2021).
 
 use crate::constants::{driver_definitions, get, one, surface_temperature};
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -109,7 +109,7 @@ impl FairAerosolCloud {
 
 #[typetag::serde]
 impl Component for FairAerosolCloud {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         driver_definitions(
             &p.surface_temperature,

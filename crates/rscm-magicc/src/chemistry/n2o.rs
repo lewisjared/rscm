@@ -48,7 +48,7 @@ use crate::reference::{
     require_annual, value_at_year,
 };
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -115,7 +115,7 @@ impl N2OChemistry {
                 * p.tau_sensitivity_to_meridional_flux)
     }
 
-    /// Solve one timestep with 4 fixed-point iterations
+    /// Solve one step with 4 fixed-point iterations
     ///
     /// `n2o_lagged` is the mean concentration over the delayed years and
     /// `temperature_change` is the warming since the meridional flux reference.
@@ -162,7 +162,7 @@ impl Default for N2OChemistry {
 
 #[typetag::serde]
 impl Component for N2OChemistry {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         definitions.extend(prescribed_definition(
             N2O_CONCENTRATION,

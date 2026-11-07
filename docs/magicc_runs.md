@@ -46,7 +46,7 @@ emissions |= {species: np.zeros(len(years)) for species in full.halocarbon_speci
 model = run_magicc7(years, emissions, parameters={"core_climatesensitivity": 3.0})
 timeseries = model.timeseries()
 co2 = timeseries.get_timeseries_by_name("Atmospheric Concentration|CO2").values()
-boxes = timeseries.get_fourbox_timeseries_by_name("Surface Temperature").values()
+boxes = timeseries.get_four_box_timeseries_by_name("Surface Temperature").values()
 temperature = boxes @ prescribed.area_fractions()
 ```
 
@@ -318,7 +318,7 @@ These conventions apply to `run_magicc` and `run_magicc_emissions`.
 - Years are consecutive annual boundaries, with at least two entries.
 - Concentrations and forcing have one value per boundary, including the final year.
   The model integrates only the intervals between these boundaries.
-- The runners evaluate initial forcing using the same Rust calculation as subsequent timesteps.
+- The runners evaluate initial forcing using the same Rust calculation as subsequent steps.
   Each forcing output uses concentrations at its own boundary, with no one-year shift between them.
 - Initial heat uptake includes the supplied forcing and the configured climate efficacy adjustment,
   even when starting above preindustrial concentrations.

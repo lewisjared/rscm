@@ -44,11 +44,10 @@ from rscm.core import (
     InterpolationStrategy,
     Model,
     ModelBuilder,
-    PythonComponent,
-    RequirementDefinition,
-    RequirementType,
     TimeAxis,
     Timeseries,
+    VariableDefinition,
+    VariableRole,
 )
 
 # %% [markdown]
@@ -57,7 +56,7 @@ from rscm.core import (
 # We reuse the carbon cycle and CO2 ERF model from [Coupled Models](../coupled_model/),
 # with 10-year steps from 1750 to 2100 and CO2 emissions that change in 1850, 1950 and 2050.
 # The setup defines the components `carbon_cycle` and `co2_erf`, the `time_axis`,
-# the exogenous `emissions` and `surface_temp`, and a `builder` holding all of them.
+# the prescribed `emissions` and `surface_temp`, and a `builder` holding all of them.
 
 # %% tags=["remove_input"]
 t_initial = 1750.0
@@ -84,11 +83,11 @@ surface_temp = Timeseries(
 
 builder = (
     ModelBuilder()
-    .with_rust_component(carbon_cycle)
-    .with_rust_component(co2_erf)
+    .with_component(carbon_cycle)
+    .with_component(co2_erf)
     .with_time_axis(time_axis)
-    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
-    .with_exogenous_variable("Surface Temperature", surface_temp)
+    .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
+    .with_prescribed_variable("Surface Temperature", surface_temp)
     .with_initial_values(
         {
             "Cumulative Land Uptake": 0.0,
@@ -127,10 +126,10 @@ def show_graph(model):
 # For each component, you can see:
 #
 # - **`<-` (green)**: input variables, tagged with their source:
-#   - `(exogenous)`: supplied to the model rather than produced by a component.
+#   - `(prescribed)`: supplied to the model rather than produced by a component.
 #   - `(upstream from X)`: produced by component `X` earlier in the same step.
 #   - `(lagged from X)`: component `X`'s value from the previous step.
-#   - `(own_state)`: this component's own state from the previous timestep.
+#   - `(own_state)`: this component's own state from the previous step.
 # - **`<>` (magenta)**: state variables (read the previous value, write a new value).
 # - **`->` (blue)**: output variables produced by this component.
 # - **Grid tags** (yellow): non-scalar grid types (for example `[FourBox]`).
@@ -191,7 +190,7 @@ print(collection.names())
 # %%
 co2_conc = collection.get_timeseries_by_name("Atmospheric Concentration|CO2")
 
-print(f"Units: {co2_conc.units}")
+print(f"Units: {co2_conc.unit}")
 print(f"Latest value: {co2_conc.latest_value():.2f}")
 print(f"First values: {co2_conc.values()[:5]}")
 
@@ -220,7 +219,7 @@ for ax, var_name in zip(axes.flat, variables_to_trace):
     drawstyle = "steps-post" if var_name.startswith("Emissions") else "default"
     ax.plot(time_axis.values(), ts.values(), drawstyle=drawstyle)
     ax.set_title(var_name)
-    ax.set_ylabel(ts.units)
+    ax.set_ylabel(ts.unit)
     ax.grid(True, alpha=0.3)
 for ax in axes[-1]:
     ax.set_xlabel("Year")
@@ -230,7 +229,7 @@ plt.show()
 # %% [markdown]
 # ## Step-by-Step Debugging
 #
-# For detailed debugging, step through a fresh model one timestep at a time
+# For detailed debugging, step through a fresh model one step at a time
 # and inspect state after each step.
 # Here we advance to just before the emissions start in 1850 and print five steps.
 
@@ -277,16 +276,16 @@ np.testing.assert_allclose(
 # %% [markdown]
 # ## Diagnosing Common Issues
 #
-# ### Missing Exogenous Variables
+# ### Missing Prescribed Variables
 #
-# An input that no component produces needs exogenous data or an initial value.
+# An input that no component produces needs prescribed data or an initial value.
 # Without it the build fails, and the error names each missing variable and the components that read it.
 # This model leaves out both `Emissions|CO2|Anthropogenic` and `Surface Temperature`.
 
 # %%
 incomplete_builder = (
     ModelBuilder()
-    .with_rust_component(carbon_cycle)
+    .with_component(carbon_cycle)
     .with_time_axis(time_axis)
     .with_initial_values(
         {
@@ -303,11 +302,11 @@ except ValueError as e:
     print(f"Build failed: {e}")
 
 # %% [markdown]
-# `with_missing_exogenous_allowed()` builds the model anyway.
+# `with_missing_prescribed_allowed()` builds the model anyway.
 # The missing inputs are NaN, and the NaN propagates into the outputs.
 
 # %%
-incomplete_model = incomplete_builder.with_missing_exogenous_allowed().build()
+incomplete_model = incomplete_builder.with_missing_prescribed_allowed().build()
 incomplete_model.run()
 
 co2 = incomplete_model.timeseries().get_timeseries_by_name(
@@ -325,10 +324,10 @@ print(f"CO2 concentration: {co2.values()[:4]}")
 try:
     (
         ModelBuilder()
-        .with_rust_component(carbon_cycle)
+        .with_component(carbon_cycle)
         .with_time_axis(time_axis)
-        .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
-        .with_exogenous_variable("Surface Temperature", surface_temp)
+        .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
+        .with_prescribed_variable("Surface Temperature", surface_temp)
     ).build()
 except Exception as e:
     print(f"Build failed: {e}")
@@ -348,9 +347,7 @@ class MisnamedOutput:
 
     def definitions(self):
         """Declare the output."""
-        return [
-            RequirementDefinition("Ocean Heat Uptake", "W/m^2", RequirementType.Output)
-        ]
+        return [VariableDefinition("Ocean Heat Uptake", "W/m^2", VariableRole.Output)]
 
     def solve(self, t_current, t_next, inputs):
         """Return a value under the wrong name."""
@@ -358,9 +355,7 @@ class MisnamedOutput:
 
 
 failing_model = (
-    ModelBuilder()
-    .with_time_axis(time_axis)
-    .with_py_component(PythonComponent.build(MisnamedOutput()))
+    ModelBuilder().with_time_axis(time_axis).with_component(MisnamedOutput())
 ).build()
 
 try:
@@ -387,7 +382,7 @@ except RuntimeError as e:
 # ## Debugging Tips
 #
 # - Use `coupling()` to see execution order, where each input comes from, lags and grid types.
-# - Check inputs marked `(exogenous)` if a model built with `with_missing_exogenous_allowed()`
+# - Check inputs marked `(prescribed)` if a model built with `with_missing_prescribed_allowed()`
 #   gives NaN.
 # - Use `step()` to stop at a point of interest and read values with `get_timeseries_by_name()`.
 # - Save a problem state with `to_toml()` to reproduce or share it.

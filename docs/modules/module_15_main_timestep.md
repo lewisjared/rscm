@@ -1,8 +1,8 @@
-# Main Timestep
+# Main Step
 
 ## Overview
 
-The main timestep runs every physics module within MAGICC7's annual loop.
+The main step runs every physics module within MAGICC7's annual loop.
 It decides the order of the carbon cycle, chemistry, forcing, climate and sea level calculations.
 
 Two subroutines do the work:
@@ -32,7 +32,7 @@ Each MAGICC7 module is a component, and the `Model` solves them in dependency or
 Components added producer first are coupled within the step.
 Feedbacks such as temperature on the carbon cycle read the value from the start of the step,
 as MAGICC7's staggered scheme does.
-[Key concepts](../key_concepts.md#dependency-graph) describes the dependency graph and timestep semantics.
+[Key concepts](../key_concepts.md#dependency-graph) describes the dependency graph and step semantics.
 The monthly loops stay inside their components:
 `ClimateUDEB` runs the climate substeps and `OceanCarbon` the ocean carbon months.
 

@@ -2,7 +2,7 @@
   "name": "ClimateUDEB",
   "module_path": "rscm_magicc::climate::udeb",
   "language": "rust",
-  "description": "Implements a 4-box Upwelling-Diffusion Energy Balance (UDEB) climate model\nwith multi-layer ocean diffusion.\n\nImplements an Upwelling-Diffusion Energy Balance model with 50 ocean layers\nper hemisphere. Uses monthly sub-stepping with implicit Thomas algorithm\nfor numerical stability.\n\n# What This Component Does\n\n1. Takes total effective radiative forcing (4-box regional) as input\n2. Solves the ocean diffusion-advection equation using implicit Thomas algorithm\n3. Calculates surface air temperature response (4 boxes: NH Ocean, NH Land, SH Ocean, SH Land)\n4. Outputs heat uptake and ocean heat content\n\n# Physics Overview\n\nThe model couples a 4-box atmosphere to a 50-layer ocean in each hemisphere.\nThe energy balance for the mixed layer is:\n\n$$C_{mix} \\frac{dT}{dt} = Q - \\lambda T + F_{diffusion} + F_{upwelling}$$\n\nwhere:\n- $C_{mix}$ = mixed layer heat capacity\n- $Q$ = radiative forcing\n- $\\lambda$ = climate feedback parameter\n- $F_{diffusion}$ = diffusive heat flux from deeper ocean\n- $F_{upwelling}$ = advective heat flux from upwelling\n\nLand temperatures are calculated assuming equilibrium with adjacent ocean box,\nwith optional ground heat reservoir damping.\n\n# Module Structure\n\n- `state`: Internal state (`ClimateUDEBState`, `OceanAreaFactors`)\n- `ocean_column`: Ocean column solver (tridiagonal diffusion,\n  upwelling, heat uptake/content diagnostics)\n- `lamcalc`: Iterative feedback parameter solver\n\n# Differences from MAGICC7\n\n- **LAMCALC iterations**: Implemented - see [`lamcalc`](super::lamcalc).\n- **Time-varying ECS**: Implemented - see `adjusted_ecs()`.\n- **Temperature-dependent diffusivity**: Implemented - see\n  `ocean_column::layer_diffusivities()`.\n- **Depth-dependent ocean area**: Implemented - see `OceanAreaFactors`.\n- **El Niño/AMV modes**: Internal variability modes. Not implemented.\n- **Ground heat reservoir**: Implemented - see\n  [`land_heat_capacity_enabled`](crate::parameters::ClimateUDEBParameters::land_heat_capacity_enabled).\n\n# State Variables\n\nInternal state (not exposed via component IO):\n- Ocean layer temperatures for each hemisphere: `[2][n_layers]`\n- Current upwelling rates for each hemisphere: `[2]`\n\n# Parameters\n\nSee [`ClimateUDEBParameters`] for configuration options.",
+  "description": "Implements a four-box Upwelling-Diffusion Energy Balance (UDEB) climate model\nwith multi-layer ocean diffusion.\n\nImplements an Upwelling-Diffusion Energy Balance model with 50 ocean layers\nper hemisphere. Uses monthly substepping with implicit Thomas algorithm\nfor numerical stability.\n\n# What This Component Does\n\n1. Takes total effective radiative forcing (four-box regional) as input\n2. Solves the ocean diffusion-advection equation using implicit Thomas algorithm\n3. Calculates surface air temperature response (4 boxes: NH Ocean, NH Land, SH Ocean, SH Land)\n4. Outputs heat uptake and ocean heat content\n\n# Physics Overview\n\nThe model couples a four-box atmosphere to a 50-layer ocean in each hemisphere.\nThe energy balance for the mixed layer is:\n\n$$C_{mix} \\frac{dT}{dt} = Q - \\lambda T + F_{diffusion} + F_{upwelling}$$\n\nwhere:\n- $C_{mix}$ = mixed layer heat capacity\n- $Q$ = radiative forcing\n- $\\lambda$ = climate feedback parameter\n- $F_{diffusion}$ = diffusive heat flux from deeper ocean\n- $F_{upwelling}$ = advective heat flux from upwelling\n\nLand temperatures are calculated assuming equilibrium with adjacent ocean box,\nwith optional ground heat reservoir damping.\n\n# Module Structure\n\n- `state`: Internal state (`ClimateUDEBState`, `OceanAreaFactors`)\n- `ocean_column`: Ocean column solver (tridiagonal diffusion,\n  upwelling, heat uptake/content diagnostics)\n- `lamcalc`: Iterative feedback parameter solver\n\n# Differences from MAGICC7\n\n- **LAMCALC iterations**: Implemented - see [`lamcalc`](super::lamcalc).\n- **Time-varying ECS**: Implemented - see `adjusted_ecs()`.\n- **Temperature-dependent diffusivity**: Implemented - see\n  `ocean_column::layer_diffusivities()`.\n- **Depth-dependent ocean area**: Implemented - see `OceanAreaFactors`.\n- **El Niño/AMV modes**: Internal variability modes. Not implemented.\n- **Ground heat reservoir**: Implemented - see\n  [`land_heat_capacity_enabled`](crate::parameters::ClimateUDEBParameters::land_heat_capacity_enabled).\n\n# State Variables\n\nInternal state (not exposed via component IO):\n- Ocean layer temperatures for each hemisphere: `[2][n_layers]`\n- Current upwelling rates for each hemisphere: `[2]`\n\n# Parameters\n\nSee [`ClimateUDEBParameters`] for configuration options.",
   "category": "Climate",
   "tags": [
     "climate",
@@ -12,43 +12,43 @@
   "inputs": [
     {
       "rust_name": "total_erf",
-      "variable_name": "Effective Radiative Forcing",
+      "name": "Effective Radiative Forcing",
       "unit": "W/m^2",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "heat_uptake",
-      "variable_name": "Heat Uptake",
+      "name": "Heat Uptake",
       "unit": "W/m^2",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "ocean_heat_content",
-      "variable_name": "Ocean Heat Content",
+      "name": "Ocean Heat Content",
       "unit": "J/m^2",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "sst",
-      "variable_name": "Sea Surface Temperature",
+      "name": "Sea Surface Temperature",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "climate_sensitivity",
-      "variable_name": "Equilibrium Climate Sensitivity",
+      "name": "Equilibrium Climate Sensitivity",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "states": [
     {
       "rust_name": "surface_temperature",
-      "variable_name": "Surface Temperature",
+      "name": "Surface Temperature",
       "unit": "K",
-      "grid": "FourBox"
+      "grid": "four_box"
     }
   ],
   "parameters": [],

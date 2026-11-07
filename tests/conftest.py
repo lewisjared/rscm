@@ -14,6 +14,6 @@ def timeseries():
     return Timeseries(
         values=np.arange(1850.0, 2001.0, 5),
         time_axis=TimeAxis.from_values(np.arange(1850.0, 2001.0, 5)),
-        units="K",
+        unit="K",
         interpolation_strategy=InterpolationStrategy.Next,
     )

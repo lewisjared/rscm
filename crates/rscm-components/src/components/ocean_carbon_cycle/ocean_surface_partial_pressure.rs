@@ -2,8 +2,7 @@
 use numpy::array;
 use numpy::ndarray::Array1;
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
+    Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
@@ -149,7 +148,7 @@ impl OceanSurfacePartialPressure {
 
 #[typetag::serde]
 impl Component for OceanSurfacePartialPressure {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -186,7 +185,7 @@ mod tests {
     use rscm_core::model::extract_state;
     use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
-    use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
+    use rscm_core::timeseries_collection::TimeseriesCollection;
     use rstest::rstest;
 
     fn build_timeseries_collection(
@@ -201,7 +200,6 @@ mod tests {
                 array![f64::NAN, sea_surface_temperature],
                 array![2020.0, 2021.0],
             ),
-            VariableType::Exogenous,
         );
 
         collection.add_timeseries(
@@ -210,7 +208,6 @@ mod tests {
                 array![f64::NAN, dissolved_inorganic_carbon],
                 array![2020.0, 2021.0],
             ),
-            VariableType::Exogenous,
         );
         collection
     }

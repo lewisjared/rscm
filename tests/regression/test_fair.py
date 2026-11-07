@@ -25,9 +25,9 @@ from rscm.core import (
     GridType,
     InterpolationStrategy,
     ModelBuilder,
-    RequirementType,
     TimeAxis,
     Timeseries,
+    VariableRole,
     VariableSchema,
 )
 from rscm.fair import (
@@ -119,9 +119,9 @@ def _inputs(
 ) -> dict[str, tuple[NDArray[np.float64], str]]:
     inputs = {}
     for s in config["species"]:
-        exogenous = naming.exogenous_variable(s)
-        if exogenous is not None:
-            variable, unit = exogenous
+        prescribed = naming.prescribed_variable(s)
+        if prescribed is not None:
+            variable, unit = prescribed
             mode = s["input_mode"]
             frame = timepoints if mode == "emissions" else timebounds
             column = f"{mode}|{s['name']}"
@@ -239,7 +239,7 @@ def test_prescribed_concentration_matches_modelled(gas: str) -> None:
     inputs = _inputs(run.config, run.timebounds, run.timepoints)
     del inputs[naming.emissions(gas)]
     entry["input_mode"] = "concentration"
-    variable, unit = naming.exogenous_variable(entry)
+    variable, unit = naming.prescribed_variable(entry)
     inputs[variable] = (run.rscm(variable), unit)
 
     outputs = run_fair(config, inputs, run.timebounds.index.to_numpy()).timeseries()
@@ -443,13 +443,9 @@ def test_climate_udeb_smoke() -> None:
     schema = VariableSchema()
     definitions = [d for c in components for d in c.definitions()]
     # Writers first, so the schema keeps ClimateUDEB's four-box temperature.
-    for d in sorted(
-        definitions, key=lambda d: d.requirement_type == RequirementType.Input
-    ):
-        if d.requirement_type != RequirementType.EmptyLink and not schema.contains(
-            d.name
-        ):
-            schema.add_variable(d.name, d.unit, d.grid_type)
+    for d in sorted(definitions, key=lambda d: d.role == VariableRole.Input):
+        if not schema.contains(d.name):
+            schema.add_variable(d.name, d.unit, d.grid)
 
     axis = TimeAxis.from_values(run.timebounds.index.to_numpy(dtype=np.float64))
     builder = (
@@ -461,12 +457,12 @@ def test_climate_udeb_smoke() -> None:
         )
     )
     for component in components:
-        builder.with_rust_component(component)
+        builder.with_component(component)
     with_lags(builder, run.config)
     inputs = _inputs(run.config, run.timebounds, run.timepoints)
     n_bounds = len(axis.values())
     for name, (values, unit) in inputs.items():
-        builder.with_exogenous_variable(
+        builder.with_prescribed_variable(
             name,
             Timeseries(
                 _on_timebounds(name, values, n_bounds),
@@ -485,7 +481,7 @@ def test_climate_udeb_smoke() -> None:
     model.run()
 
     outputs = model.timeseries()
-    temperature = outputs.get_fourbox_timeseries_by_name(naming.SURFACE_TEMPERATURE)
+    temperature = outputs.get_four_box_timeseries_by_name(naming.SURFACE_TEMPERATURE)
     assert temperature is not None
     co2 = outputs.get_timeseries_by_name(naming.concentration("CO2"))
     assert co2 is not None

@@ -352,7 +352,7 @@ class Reported:
         return run_components(
             self.run.years,
             [component],
-            exogenous={
+            prescribed={
                 **{
                     f"Atmospheric Concentration|{s}|Prescribed": (c, "ppt")
                     for s, c in concentrations.items()
@@ -361,7 +361,7 @@ class Reported:
                 "Lifetime|CH4|OH": (np.ones(n), "yr"),
                 "Surface Temperature": (np.zeros(n), "K"),
             },
-            initial={
+            initial_values={
                 f"Atmospheric Concentration|{s}": c[0]
                 for s, c in concentrations.items()
             },
@@ -393,7 +393,7 @@ class Reported:
         for group in ("F-Gases", "Montreal Protocol Halogen Gases"):
             leaves[group] = self.halocarbons(group)
         trop = "Tropospheric Ozone"
-        boxes = self.model.timeseries().get_fourbox_timeseries_by_name(f"{ERF}|{trop}")
+        boxes = self.model.timeseries().get_four_box_timeseries_by_name(f"{ERF}|{trop}")
         leaves[trop] = self.erf(trop, pr.area_mean(boxes.values()))
         prescribed = prescribed_global_forcing(self.run)
         leaves.update({n: self.erf(n, v) for n, v in prescribed.items()})

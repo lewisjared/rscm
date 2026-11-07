@@ -29,7 +29,7 @@ A component module starts with these imports:
 
 ```rust
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
     ScalarWindow,
 };
 use rscm_core::errors::RSCMResult;
@@ -39,7 +39,7 @@ use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 ```
 
-The code `ComponentIO` generates refers to `GridType`, `RequirementType`, `ScalarWindow`, `StateValue`
+The code `ComponentIO` generates refers to `GridType`, `VariableRole`, `ScalarWindow`, `StateValue`
 and the other types above by their short names.
 Import them in the module that derives `ComponentIO`, even where your own code does not use them.
 
@@ -90,7 +90,7 @@ which reads the typed inputs and returns the typed outputs:
 ```rust
 #[typetag::serde]
 impl Component for CO2ERF {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -117,8 +117,8 @@ The later listings on this page leave them out.
 
 | Attribute                                       | Purpose                                                    |
 | ----------------------------------------------- | ---------------------------------------------------------- |
-| `#[inputs(field { name, unit, grid }, ...)]`    | Variables read from other components or exogenous data     |
-| `#[outputs(field { name, unit, grid }, ...)]`   | Variables written each timestep                            |
+| `#[inputs(field { name, unit, grid }, ...)]`    | Variables read from other components or prescribed data     |
+| `#[outputs(field { name, unit, grid }, ...)]`   | Variables written each step                            |
 | `#[states(field { name, unit, grid }, ...)]`    | Variables read at the start and written at the end         |
 | `#[component(tags = [...], category = "...")]`  | Optional metadata for the generated component docs         |
 
@@ -142,7 +142,7 @@ impl<'a> CO2ERFInputs<'a> {
 
 `from_input_state` panics if a declared variable is missing from the input state.
 Inside a model every declared variable is present.
-A variable with no producer and no exogenous data reads as NaN rather than failing.
+A variable with no producer and no prescribed data reads as NaN rather than failing.
 
 ### Output Struct
 
@@ -158,7 +158,7 @@ impl From<CO2ERFOutputs> for OutputState { ... }
 
 ```rust
 impl CO2ERF {
-    pub fn generated_definitions() -> Vec<RequirementDefinition> { ... }
+    pub fn generated_definitions() -> Vec<VariableDefinition> { ... }
     pub fn component_metadata() -> ComponentMetadata { ... }
 }
 ```
@@ -180,11 +180,11 @@ It reads scalar data directly and aggregates FourBox or Hemispheric data to a gl
 For a point, `get()` reads index N+1, the step's end, whether the input is prescribed or upstream,
 and index N for lagged inputs and own state.
 Prefer `get()` unless the physics needs both ends of the step.
-See [Timestep Semantics](../key_concepts.md#timestep-semantics) for the details.
+See [Step Semantics](../key_concepts.md#step-semantics) for the details.
 
 ## State Variables
 
-For variables that are both read and written each timestep, use `#[states(...)]`:
+For variables that are both read and written each step, use `#[states(...)]`:
 
 ```rust
 #[derive(Debug, Serialize, Deserialize, ComponentIO)]
@@ -205,7 +205,7 @@ pub struct CarbonCycle {
 ```
 
 State variables appear in both the `Inputs` and `Outputs` structs.
-This lets `solve` read the value at the start of the timestep and write the new value.
+This lets `solve` read the value at the start of the step and write the new value.
 State variables need an initial value, set with `ModelBuilder::with_initial_values`.
 
 ### Internal State
@@ -386,7 +386,7 @@ use rscm_core::state::FourBoxSlice;
     erf { name = "Effective Radiative Forcing|Aggregated", unit = "W/m^2" },
 )]
 #[outputs(
-    heat_uptake { name = "Heat Uptake|Ocean", unit = "W/m^2", grid = "FourBox" },
+    heat_uptake { name = "Heat Uptake|Ocean", unit = "W/m^2", grid = "four_box" },
 )]
 pub struct FourBoxOceanHeatUptake {
     pub parameters: FourBoxOceanHeatUptakeParameters,
@@ -413,7 +413,7 @@ The full component is `crates/rscm-components/src/components/four_box_ocean_heat
 | FourBox          | `GridTimeseriesWindow<'a, FourBoxGrid>` | `FourBoxSlice`     |
 | Hemispheric      | `HemisphericWindow<'a>`                 | `HemisphericSlice` |
 
-A FourBox input also needs `FourBoxGrid` (from `rscm_core::spatial`) and `GridTimeseriesWindow` in scope.
+A four-box input also needs `FourBoxGrid` (from `rscm_core::spatial`) and `GridTimeseriesWindow` in scope.
 A Hemispheric input needs `HemisphericWindow`.
 Grid windows take a region, for example `get(FourBoxRegion::NorthernOcean)`.
 They also provide `get_all()`, and `history(n)` and `interval()` return every region.
@@ -428,13 +428,13 @@ use rscm_core::errors::RSCMError;
 
 if t_next - t_current != 1.0 {
     return Err(RSCMError::Error(format!(
-        "CO2ERF requires annual timesteps, got {}",
+        "CO2ERF requires annual steps, got {}",
         t_next - t_current
     )));
 }
 ```
 
-The model stops and adds the component name and timestep to the error.
+The model stops and adds the component name and step to the error.
 From Python it is raised as a `RuntimeError`.
 
 From Rust, `Model::run` and `Model::step` panic on a component error.

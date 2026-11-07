@@ -7,7 +7,7 @@
 //! fractional release $f$ (CFC-11's is $f_{11}$) and bromine potency $\beta$.
 
 use crate::constants::get;
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -92,14 +92,14 @@ impl FairEesc {
 
 #[typetag::serde]
 impl Component for FairEesc {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         let mut definitions: Vec<_> = p
             .halogens
             .iter()
-            .map(|h| RequirementDefinition::scalar_input(&h.concentration, &h.unit))
+            .map(|h| VariableDefinition::scalar_input(&h.concentration, &h.unit))
             .collect();
-        definitions.push(RequirementDefinition::scalar_output(&p.output, &p.unit));
+        definitions.push(VariableDefinition::scalar_output(&p.output, &p.unit));
         definitions
     }
 

@@ -25,7 +25,7 @@
 //!   warming since `tempfeedback_yrstart`, floored at zero
 //! - `Emissions|CO2|Land Use` (GtC/yr)
 //!
-//! # States (tracked between timesteps)
+//! # States (tracked between steps)
 //!
 //! - `Carbon Pool|Plant` (GtC)
 //! - `Carbon Pool|Detritus` (GtC)
@@ -53,8 +53,8 @@ use super::nitrogen::{NitrogenBudget, NitrogenDrivers, NitrogenState};
 use crate::parameters::TerrestrialCarbonParameters;
 use crate::reference::feedback_warming;
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType, TimeseriesType,
+    Component, ComponentState, GridType, InputState, OutputState, TimeseriesType,
+    VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -62,7 +62,7 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// Internal state persisted across timesteps.
+/// Internal state persisted across steps.
 ///
 /// Tracks no-feedback reference pools, regrowth history, CO2 reference,
 /// and cumulative land-use emissions for the MAGICC7 attribution scheme.
@@ -91,7 +91,7 @@ pub struct TerrestrialCarbonState {
     /// CO2 history for quadratic extrapolation: [t-2, t-1] (ppm).
     pub co2_history: [FloatValue; 2],
 
-    /// Whether the state has been initialized (first timestep completed).
+    /// Whether the state has been initialized (first step completed).
     pub initialized: bool,
 
     /// Total respiration of the previous year (GtC/yr), which drives nitrogen recycling.
@@ -136,7 +136,7 @@ impl ComponentState for TerrestrialCarbonState {
 ///
 /// # Algorithm
 ///
-/// For each timestep:
+/// For each step:
 ///
 /// 1. Extrapolate CO2 to mid-year (quadratic)
 /// 2. Calculate CO2 fertilization factor (3 methods with blending)
@@ -332,7 +332,7 @@ impl TerrestrialCarbon {
         let new_pool = ((1.0 - half_k) * pool_current + flux_in * dt) / (1.0 + half_k);
         let new_pool = new_pool.max(0.0);
 
-        // Turnover flux (average over timestep)
+        // Turnover flux (average over step)
         let turnover = 0.5 * k_eff * (pool_current + new_pool);
 
         (new_pool, turnover)
@@ -357,7 +357,7 @@ impl TerrestrialCarbon {
         tau.max(1.0) // Floor at 1 year for stability
     }
 
-    /// Advance a set of 3 pools by one timestep.
+    /// Advance a set of 3 pools by one step.
     ///
     /// Returns (new_pools, turnover_plant, turnover_detritus, turnover_soil).
     #[allow(clippy::too_many_arguments)]
@@ -408,7 +408,7 @@ impl TerrestrialCarbon {
         )
     }
 
-    /// Solve the terrestrial carbon cycle for one annual timestep (public API without state).
+    /// Solve the terrestrial carbon cycle for one annual step (public API without state).
     ///
     /// This is a simplified interface that creates a temporary state. For full
     /// MAGICC7 fidelity (regrowth, mass conservation), use `solve_with_state`.
@@ -465,7 +465,7 @@ impl TerrestrialCarbon {
     ) -> TerrestrialResult {
         assert!(
             (dt - 1.0).abs() < 1e-6,
-            "TerrestrialCarbon only supports annual timesteps (dt=1.0), got dt={dt}"
+            "TerrestrialCarbon only supports annual steps (dt=1.0), got dt={dt}"
         );
 
         let p = &self.parameters;
@@ -690,7 +690,7 @@ impl TerrestrialCarbon {
         // Include the mass correction in respiration, matching TERRCARBON2.
         let total_respiration = npp - net_flux - total_gross_defo;
 
-        // Update state for next timestep
+        // Update state for next step
         state.nofeedback_pools = new_nf_pools;
         state.prev_regrowth = regrowth;
         state.cumulative_landuse += landuse_emissions * dt;
@@ -720,7 +720,7 @@ impl TerrestrialCarbon {
         let dt = t_next - t_current;
         if !dt.is_finite() || (dt - 1.0).abs() >= 1e-6 {
             return Err(RSCMError::Error(format!(
-                "TerrestrialCarbon only supports annual timesteps (dt=1.0), got dt={dt}"
+                "TerrestrialCarbon only supports annual steps (dt=1.0), got dt={dt}"
             )));
         }
         let inputs = TerrestrialCarbonInputs::from_input_state(input_state);
@@ -830,22 +830,22 @@ impl Default for TerrestrialCarbon {
 
 #[typetag::serde]
 impl Component for TerrestrialCarbon {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         if let Some(n) = &self.parameters.nitrogen {
-            definitions.push(RequirementDefinition::scalar_input(
+            definitions.push(VariableDefinition::scalar_input(
                 NITROGEN_DEPOSITION,
                 "Gt N/yr",
             ));
             if n.prognostic_fixation.is_none() {
-                definitions.push(RequirementDefinition::scalar_input(
+                definitions.push(VariableDefinition::scalar_input(
                     NITROGEN_FIXATION,
                     "Gt N/yr",
                 ));
             }
             for (name, unit, timeseries_type) in NITROGEN_OUTPUTS {
                 definitions.push(
-                    RequirementDefinition::scalar_output(name, unit)
+                    VariableDefinition::scalar_output(name, unit)
                         .with_timeseries_type(timeseries_type),
                 );
             }
@@ -853,10 +853,10 @@ impl Component for TerrestrialCarbon {
         definitions
     }
 
-    /// Stateless single-timestep solve. Creates a fresh internal state each call,
+    /// Stateless single-step solve. Creates a fresh internal state each call,
     /// so state-dependent features (CO2 extrapolation, cumulative land-use,
     /// regrowth attribution, mass conservation) will not accumulate across calls.
-    /// For multi-timestep simulations, use `solve_with_state` instead.
+    /// For multi-step simulations, use `solve_with_state` instead.
     fn solve(
         &self,
         t_current: Time,
@@ -905,8 +905,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "only supports annual timesteps")]
-    fn test_solve_pools_rejects_nonannual_timestep() {
+    #[should_panic(expected = "only supports annual steps")]
+    fn test_solve_pools_rejects_nonannual_step() {
         let component = TerrestrialCarbon::from_parameters(TerrestrialCarbonParameters::default());
         let p = &component.parameters;
         component.solve_pools(

@@ -13,17 +13,17 @@
   "inputs": [
     {
       "rust_name": "concentration",
-      "variable_name": "Atmospheric Concentration|CO2",
+      "name": "Atmospheric Concentration|CO2",
       "unit": "ppm",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "erf",
-      "variable_name": "Effective Radiative Forcing|CO2",
+      "name": "Effective Radiative Forcing|CO2",
       "unit": "W/m^2",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "states": [],

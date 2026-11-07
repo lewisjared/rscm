@@ -57,7 +57,7 @@ impl ClimateUDEB {
     /// * `hemi` - Hemisphere index (0 = NH, 1 = SH)
     /// * `ocean_forcing` - Forcing for this hemisphere's ocean box ($\text{W/m}^2$)
     /// * `land_forcing` - Forcing for this hemisphere's land box ($\text{W/m}^2$)
-    /// * `dt` - Timestep in years
+    /// * `dt` - Step in years
     /// * `lambda_ocean` - Ocean feedback parameter ($\text{W/m}^2\text{/K}$)
     /// * `lambda_land` - Land feedback parameter ($\text{W/m}^2\text{/K}$)
     /// * `hemi_heat_exchange` - Inter-hemispheric heat exchange ($\text{W/m}^2$), computed

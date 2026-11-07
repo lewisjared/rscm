@@ -8,7 +8,7 @@
 
 use crate::constants::{forcing_unit, get, one, surface_temperature, temperature_unit};
 use rscm_components::meinshausen2020::Meinshausen2020;
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -121,17 +121,17 @@ impl FairGhgForcing {
 
 #[typetag::serde]
 impl Component for FairGhgForcing {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        let mut definitions = vec![RequirementDefinition::scalar_input(
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        let mut definitions = vec![VariableDefinition::scalar_input(
             &self.parameters.surface_temperature,
             &temperature_unit(),
         )];
         for s in self.species() {
-            definitions.push(RequirementDefinition::scalar_input(
+            definitions.push(VariableDefinition::scalar_input(
                 &s.concentration,
                 &s.concentration_unit,
             ));
-            definitions.push(RequirementDefinition::scalar_output(
+            definitions.push(VariableDefinition::scalar_output(
                 &s.forcing,
                 &forcing_unit(),
             ));

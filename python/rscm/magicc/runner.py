@@ -188,7 +188,7 @@ def run_magicc(  # noqa: PLR0913
     )
     units = {CONCENTRATION + gas: "ppm" if gas == "CO2" else "ppb" for gas in SPECIES}
     units[ERF + "|Other"] = "W/m^2"
-    sources = {**dict.fromkeys(data, "prescribed"), ERF: "Sum"}
+    sources = {**dict.fromkeys(data, "prescribed"), ERF: "sum"}
     initial: dict[str, float] = {}
     budget = None
     if co2_emissions is not None:
@@ -280,7 +280,7 @@ def run_magicc(  # noqa: PLR0913
         schema.add_variable("Emissions|CO2|Net", "GtC/yr")
         schema.add_variable("Airborne Fraction|CO2", "1")
     contributors = (*(ERF + "|" + gas for gas in forcing_species), ERF + "|Other")
-    schema.add_aggregate(ERF, "W/m^2", "Sum", list(contributors))
+    schema.add_aggregate(ERF, "W/m^2", "sum", list(contributors))
     axis = TimeAxis.from_values(time)
     # Components reading global temperature must see the area-weighted mean
     builder = (
@@ -292,10 +292,10 @@ def run_magicc(  # noqa: PLR0913
     # Register the budget before forcing: its current-step concentration must
     # be available before the forcing diagnostic is evaluated.
     if budget is not None:
-        builder.with_rust_component(budget)
-    builder.with_rust_component(forcing.build()).with_rust_component(climate)
+        builder.with_component(budget)
+    builder.with_component(forcing.build()).with_component(climate)
     for name, values in data.items():
-        builder.with_exogenous_variable(
+        builder.with_prescribed_variable(
             name, Timeseries(values, axis, units[name], InterpolationStrategy.Linear)
         )
     builder.with_initial_values(initial)
@@ -319,7 +319,7 @@ def _collect_result(  # noqa: PLR0913
     ``diagnostics`` are per-step points, which have no value at the first label.
     """
     collection = model.timeseries()
-    temperature = collection.get_fourbox_timeseries_by_name("Surface Temperature")
+    temperature = collection.get_four_box_timeseries_by_name("Surface Temperature")
     if temperature is None:
         msg = "Missing Surface Temperature output"
         raise RuntimeError(msg)

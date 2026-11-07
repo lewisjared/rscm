@@ -9,7 +9,7 @@
 
 use crate::constants::{driver_definitions, get, one, surface_temperature};
 use rscm_core::component::{
-    Component, ComponentState, InputState, OutputState, RequirementDefinition,
+    Component, ComponentState, InputState, OutputState, VariableDefinition,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
@@ -137,7 +137,7 @@ impl FairLinearForcing {
 
 #[typetag::serde]
 impl Component for FairLinearForcing {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         driver_definitions(
             &p.surface_temperature,

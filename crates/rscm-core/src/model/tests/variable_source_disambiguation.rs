@@ -2,10 +2,10 @@
 //!
 //! This test verifies that the same variable can have different sources for different components:
 //! - For the producer component, a state variable is `OwnState`
-//! - For the consumer component, the same variable is `UpstreamOutput`
+//! - For the consumer component, the same variable is `Upstream`
 
 use crate::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
@@ -30,13 +30,13 @@ use std::sync::Arc;
     temperature { name = "Surface Temperature", unit = "degC" },
 )]
 struct TemperatureProducer {
-    /// Rate of temperature increase per timestep
+    /// Rate of temperature increase per step
     pub warming_rate: FloatValue,
 }
 
 #[typetag::serde]
 impl Component for TemperatureProducer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -81,7 +81,7 @@ struct TemperatureConsumer {
 
 #[typetag::serde]
 impl Component for TemperatureConsumer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -94,7 +94,7 @@ impl Component for TemperatureConsumer {
         let inputs = TemperatureConsumerInputs::from_input_state(input_state);
 
         // Read temperature from upstream producer using get()
-        // The framework knows this is UpstreamOutput, so get() reads this step's value
+        // The framework knows this is Upstream, so get() reads this step's value
         let temperature = inputs.temperature.get();
 
         // Calculate heat content
@@ -143,15 +143,15 @@ fn test_variable_sources_disambiguation() {
         "Producer should see Surface Temperature as OwnState"
     );
 
-    // Consumer component sees "Surface Temperature" as UpstreamOutput (reads producer's output)
+    // Consumer component sees "Surface Temperature" as Upstream (reads producer's output)
     let consumer_source = sources.get(&(
         "Surface Temperature".to_string(),
         "TemperatureConsumer".to_string(),
     ));
     assert_eq!(
         consumer_source,
-        Some(&VariableSource::UpstreamOutput),
-        "Consumer should see Surface Temperature as UpstreamOutput"
+        Some(&VariableSource::Upstream),
+        "Consumer should see Surface Temperature as Upstream"
     );
 }
 
@@ -219,11 +219,11 @@ fn test_variable_sources_with_get_method() {
 }
 
 #[test]
-fn test_variable_sources_with_exogenous_input() {
-    // Create a model with an exogenous input and a component that reads it
+fn test_variable_sources_with_prescribed_input() {
+    // Create a model with a prescribed input and a component that reads it
     let time_axis = TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0));
 
-    // Create exogenous forcing timeseries
+    // Create prescribed forcing timeseries
     let forcing_values = array![1.0, 2.0].insert_axis(Axis(1));
     let forcing_ts = Timeseries::new(
         forcing_values,
@@ -233,7 +233,7 @@ fn test_variable_sources_with_exogenous_input() {
         InterpolationStrategy::from(PreviousStrategy::new(true)),
     );
 
-    /// Component that reads exogenous forcing
+    /// Component that reads prescribed forcing
     #[derive(Debug, Serialize, Deserialize, ComponentIO)]
     #[inputs(
         forcing { name = "Radiative Forcing", unit = "W/m^2" },
@@ -247,7 +247,7 @@ fn test_variable_sources_with_exogenous_input() {
 
     #[typetag::serde]
     impl Component for ForcingConsumer {
-        fn definitions(&self) -> Vec<RequirementDefinition> {
+        fn definitions(&self) -> Vec<VariableDefinition> {
             Self::generated_definitions()
         }
 
@@ -259,7 +259,7 @@ fn test_variable_sources_with_exogenous_input() {
         ) -> RSCMResult<OutputState> {
             let inputs = ForcingConsumerInputs::from_input_state(input_state);
 
-            // Read exogenous forcing
+            // Read prescribed forcing
             let forcing = inputs.forcing.get();
 
             let outputs = ForcingConsumerOutputs {
@@ -273,11 +273,11 @@ fn test_variable_sources_with_exogenous_input() {
     let model = ModelBuilder::new()
         .with_time_axis(time_axis)
         .with_component(Arc::new(ForcingConsumer { sensitivity: 2.0 }))
-        .with_exogenous_variable("Radiative Forcing", forcing_ts)
+        .with_prescribed_variable("Radiative Forcing", forcing_ts)
         .build()
         .unwrap();
 
-    // Verify variable source for exogenous input
+    // Verify variable source for prescribed input
     let sources = model.variable_sources();
 
     let consumer_source = sources.get(&(
@@ -286,8 +286,8 @@ fn test_variable_sources_with_exogenous_input() {
     ));
     assert_eq!(
         consumer_source,
-        Some(&VariableSource::Exogenous),
-        "Consumer should see Radiative Forcing as Exogenous"
+        Some(&VariableSource::Prescribed),
+        "Consumer should see Radiative Forcing as Prescribed"
     );
 }
 
@@ -313,7 +313,7 @@ fn test_multiple_consumers_same_upstream() {
 
     #[typetag::serde]
     impl Component for AlbedoCalculator {
-        fn definitions(&self) -> Vec<RequirementDefinition> {
+        fn definitions(&self) -> Vec<VariableDefinition> {
             Self::generated_definitions()
         }
 
@@ -363,26 +363,26 @@ fn test_multiple_consumers_same_upstream() {
         "Producer should see Surface Temperature as OwnState"
     );
 
-    // First consumer sees it as UpstreamOutput
+    // First consumer sees it as Upstream
     let consumer1_source = sources.get(&(
         "Surface Temperature".to_string(),
         "TemperatureConsumer".to_string(),
     ));
     assert_eq!(
         consumer1_source,
-        Some(&VariableSource::UpstreamOutput),
-        "TemperatureConsumer should see Surface Temperature as UpstreamOutput"
+        Some(&VariableSource::Upstream),
+        "TemperatureConsumer should see Surface Temperature as Upstream"
     );
 
-    // Second consumer also sees it as UpstreamOutput
+    // Second consumer also sees it as Upstream
     let consumer2_source = sources.get(&(
         "Surface Temperature".to_string(),
         "AlbedoCalculator".to_string(),
     ));
     assert_eq!(
         consumer2_source,
-        Some(&VariableSource::UpstreamOutput),
-        "AlbedoCalculator should see Surface Temperature as UpstreamOutput"
+        Some(&VariableSource::Upstream),
+        "AlbedoCalculator should see Surface Temperature as Upstream"
     );
 }
 

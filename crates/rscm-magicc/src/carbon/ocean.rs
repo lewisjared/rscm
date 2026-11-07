@@ -15,7 +15,7 @@
 //!    - DIC accumulation (Joos A24 polynomial)
 //!    - Temperature effect on solubility (Joos A25)
 //!
-//! 4. Uses monthly sub-stepping (12 steps per year). As in MAGICC7, atmospheric
+//! 4. Uses monthly substepping (12 steps per year). As in MAGICC7, atmospheric
 //!    CO2 evolves within the year from the other carbon sources and the ocean
 //!    uptake, so the uptake responds to the rising concentration.
 //!    Up to `concentration_switch_year` it is instead interpolated linearly to
@@ -31,7 +31,7 @@
 //! - `Carbon Flux|Terrestrial` (GtC/yr) - Net land uptake, including land use
 //! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `permafrost` parameter
 //!
-//! # States (tracked between timesteps)
+//! # States (tracked between steps)
 //!
 //! - `Ocean Surface pCO2` (ppm) - Ocean surface CO2 partial pressure
 //! - `Cumulative Ocean Uptake` (GtC) - Total carbon absorbed by ocean
@@ -39,7 +39,7 @@
 //! # Outputs
 //!
 //! - `Carbon Flux|Ocean` (GtC/yr) - Annual mean air-sea flux (positive = ocean uptake)
-//! - `End-of-Year Atmospheric CO2` (ppm) - Concentration after the last sub-step,
+//! - `End-of-Year Atmospheric CO2` (ppm) - Concentration after the last substep,
 //!   which `CO2Budget` carries into the next year
 //!
 //! # Differences from MAGICC7
@@ -60,8 +60,7 @@ use crate::reference::{
     prescribed_definition, require_annual, PERMAFROST_CO2,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, RequirementDefinition,
-    RequirementType,
+    Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -71,25 +70,25 @@ use serde::{Deserialize, Serialize};
 
 /// Internal state for OceanCarbon component.
 ///
-/// Holds the flux history and the last monthly sub-step of the previous year,
+/// Holds the flux history and the last monthly substep of the previous year,
 /// which persist across solve() calls. Unlike coupled state
-/// (RequirementType::State), this is private to the component.
+/// (VariableRole::State), this is private to the component.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OceanCarbonState {
-    /// Air-sea flux of each sub-step for the IRF convolution (ppm/yr).
+    /// Air-sea flux of each substep for the IRF convolution (ppm/yr).
     pub flux_history: VecDeque<FloatValue>,
 
     /// First year of the run, which times the IRF lags as MAGICC7 does.
     pub start_year: Option<FloatValue>,
 
-    /// IRF at each lag in sub-steps, filled as the history grows.
+    /// IRF at each lag in substeps, filled as the history grows.
     #[serde(skip)]
     pub irf: Vec<FloatValue>,
 
-    /// Atmospheric CO2 one sub-step before the start of the year (ppm).
+    /// Atmospheric CO2 one substep before the start of the year (ppm).
     pub co2_previous: Option<FloatValue>,
 
-    /// Ocean pCO2 one sub-step before the start of the year (ppm).
+    /// Ocean pCO2 one substep before the start of the year (ppm).
     pub pco2_previous: Option<FloatValue>,
 
     /// Unperturbed ocean pCO2 (ppm), fixed on the first step.
@@ -116,7 +115,7 @@ pub struct OceanStepResult {
     pub cumulative_uptake: FloatValue,
     /// Annual mean air-sea flux (GtC/yr)
     pub flux: FloatValue,
-    /// Atmospheric CO2 at the end of the year implied by the sub-steps (ppm)
+    /// Atmospheric CO2 at the end of the year implied by the substeps (ppm)
     pub co2: FloatValue,
 }
 
@@ -128,11 +127,11 @@ pub struct OceanStepResult {
 ///
 /// # Algorithm
 ///
-/// For each monthly sub-step:
+/// For each monthly substep:
 ///
-/// 1. Calculate air-sea flux from the mean of the last two sub-steps:
+/// 1. Calculate air-sea flux from the mean of the last two substeps:
 ///    $$F = k \times (\overline{pCO2}_{atm} - \overline{pCO2}_{ocn})$$
-///    limiting its change from the previous sub-step to `flux_change_limit`
+///    limiting its change from the previous substep to `flux_change_limit`
 ///
 /// 2. Add flux to history and convolve with IRF to get $\Delta DIC$:
 ///    $$\Delta DIC = \int_0^t F(t') \times IRF(t - t') \, dt'$$
@@ -190,7 +189,7 @@ impl OceanCarbon {
     ///
     /// $$\Delta DIC = \text{factor} \times \sum_{i=1}^{n} F_i \times IRF(t_n - t_i) \times \Delta t$$
     ///
-    /// Uses a left-hand Riemann sum over the sub-step fluxes (ppm/yr).
+    /// Uses a left-hand Riemann sum over the substep fluxes (ppm/yr).
     /// Returns the change in DIC (micromol/kg).
     fn calculate_delta_dic(&self, state: &mut OceanCarbonState) -> FloatValue {
         let n = state.flux_history.len();
@@ -204,7 +203,7 @@ impl OceanCarbon {
         self.parameters.delta_dic(integral)
     }
 
-    /// Tabulate the IRF up to `len` lags at MAGICC7's sub-step times, `year + i / steps`.
+    /// Tabulate the IRF up to `len` lags at MAGICC7's substep times, `year + i / steps`.
     fn extend_irf(&self, state: &mut OceanCarbonState, len: usize) {
         if state.irf.len() >= len {
             return;
@@ -219,7 +218,7 @@ impl OceanCarbon {
         }
     }
 
-    /// Solve the ocean carbon cycle for one timestep with monthly sub-steps.
+    /// Solve the ocean carbon cycle for one step with monthly substeps.
     ///
     /// `other_sources` is the net carbon added to the atmosphere by everything
     /// except the ocean (GtC/yr) and `warming` drives the pCO2 temperature
@@ -248,7 +247,7 @@ impl OceanCarbon {
     }
 
     /// As [`Self::solve_ocean`], but with `co2_end` set atmospheric CO2 is
-    /// interpolated linearly to it over the sub-steps instead of evolving.
+    /// interpolated linearly to it over the substeps instead of evolving.
     #[allow(clippy::too_many_arguments)]
     pub fn solve_ocean_prescribed(
         &self,
@@ -318,7 +317,7 @@ impl OceanCarbon {
         }
     }
 
-    /// Reset the flux history and sub-step memory (for initialization or testing).
+    /// Reset the flux history and substep memory (for initialization or testing).
     pub fn reset_history(&self, state: &mut OceanCarbonState) {
         *state = OceanCarbonState::default();
     }
@@ -392,13 +391,10 @@ impl Default for OceanCarbon {
 
 #[typetag::serde]
 impl Component for OceanCarbon {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         if self.parameters.permafrost {
-            definitions.push(RequirementDefinition::scalar_input(
-                PERMAFROST_CO2,
-                "GtC/yr",
-            ));
+            definitions.push(VariableDefinition::scalar_input(PERMAFROST_CO2, "GtC/yr"));
         }
         definitions.extend(prescribed_definition(
             CO2_CONCENTRATION,

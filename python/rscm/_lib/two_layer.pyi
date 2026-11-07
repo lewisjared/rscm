@@ -18,7 +18,7 @@ preindustrial forcing. Journal of Climate, 23(9), 2418-2427.
 
 from typing import final
 
-from rscm._lib.core import Component, ComponentBuilder
+from rscm._lib.core import ComponentBuilder, RustComponent
 
 @final
 class TwoLayerBuilder(ComponentBuilder):
@@ -88,5 +88,5 @@ class TwoLayerBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: dict[str, float]) -> TwoLayerBuilder:
         """Create a builder from a parameter dictionary."""
-    def build(self) -> Component:
+    def build(self) -> RustComponent:
         """Build the two-layer model component."""

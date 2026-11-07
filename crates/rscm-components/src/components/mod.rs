@@ -44,7 +44,7 @@
 //!     .build();
 //! ```
 //!
-//! Each component declares its input requirements and output variables through the
+//! Each component declares its input and output variables through the
 //! `definitions()` method. The model orchestrator uses this information to resolve
 //! dependencies and execute components in topological order.
 

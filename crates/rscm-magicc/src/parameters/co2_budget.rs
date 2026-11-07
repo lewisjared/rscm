@@ -46,7 +46,7 @@ pub struct CO2BudgetParameters {
     pub concentration_switch_year: Option<f64>,
 
     /// Take next year's concentration from `End-of-Year Atmospheric CO2`, which
-    /// `OceanCarbon` integrates over its sub-steps as MAGICC7 does.
+    /// `OceanCarbon` integrates over its substeps as MAGICC7 does.
     ///
     /// Default: false
     pub ocean_end_of_year: bool,

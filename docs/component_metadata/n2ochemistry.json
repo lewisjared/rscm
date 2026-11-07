@@ -12,31 +12,31 @@
   "inputs": [
     {
       "rust_name": "n2o_emissions",
-      "variable_name": "Emissions|N2O",
+      "name": "Emissions|N2O",
       "unit": "Mt N/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "temperature",
-      "variable_name": "Surface Temperature",
+      "name": "Surface Temperature",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "n2o_lifetime",
-      "variable_name": "Lifetime|N2O",
+      "name": "Lifetime|N2O",
       "unit": "yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "states": [
     {
       "rust_name": "n2o_concentration",
-      "variable_name": "Atmospheric Concentration|N2O",
+      "name": "Atmospheric Concentration|N2O",
       "unit": "ppb",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "parameters": [],

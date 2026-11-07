@@ -12,36 +12,36 @@
   "inputs": [
     {
       "rust_name": "emissions",
-      "variable_name": "Emissions|CO2|Anthropogenic",
+      "name": "Emissions|CO2|Anthropogenic",
       "unit": "GtC / yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "temperature",
-      "variable_name": "Surface Temperature",
+      "name": "Surface Temperature",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [],
   "states": [
     {
       "rust_name": "concentration",
-      "variable_name": "Atmospheric Concentration|CO2",
+      "name": "Atmospheric Concentration|CO2",
       "unit": "ppm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "cumulative_emissions",
-      "variable_name": "Cumulative Emissions|CO2",
+      "name": "Cumulative Emissions|CO2",
       "unit": "Gt C",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "cumulative_uptake",
-      "variable_name": "Cumulative Land Uptake",
+      "name": "Cumulative Land Uptake",
       "unit": "Gt C",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "parameters": [

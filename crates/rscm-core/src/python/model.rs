@@ -1,15 +1,19 @@
 use crate::component::TimeseriesType;
 use crate::errors::RSCMResult;
 use crate::model::{self, Model, ModelBuilder};
-use crate::python::component::PyPythonComponent;
-use crate::python::timeseries::{PyFourBoxTimeseries, PyTimeAxis, PyTimeseries};
+use crate::python::component::{PyPythonComponent, PythonComponent};
+use crate::python::timeseries::{
+    PyFourBoxTimeseries, PyHemisphericTimeseries, PyTimeAxis, PyTimeseries,
+};
 use crate::python::timeseries_collection::PyTimeseriesCollection;
 use crate::python::PyRustComponent;
 use crate::schema::VariableSchema;
 use crate::timeseries::{FloatValue, Time};
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use crate::timeseries_collection::TimeseriesData;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[pyclass]
 #[pyo3(name = "ModelBuilder")]
@@ -22,22 +26,19 @@ impl PyModelBuilder {
         Self(ModelBuilder::new())
     }
 
-    /// Add a component that is defined in rust
-    fn with_rust_component<'py>(
+    /// Add a Rust component, a `PythonComponent` or an `rscm.component.Component` instance.
+    fn with_component<'py>(
         mut self_: PyRefMut<'py, Self>,
-        component: Bound<'py, PyRustComponent>,
+        component: Bound<'py, PyAny>,
     ) -> PyResult<PyRefMut<'py, Self>> {
-        self_.0.with_component(component.borrow().0.clone());
-        Ok(self_)
-    }
-
-    /// Pass a component that is defined in python (UserDerivedComponent)
-    fn with_py_component<'py>(
-        mut self_: PyRefMut<'py, Self>,
-        component: Bound<'py, PyPythonComponent>,
-    ) -> PyResult<PyRefMut<'py, Self>> {
-        let user_derived_component = component.borrow().0.clone();
-        self_.0.with_component(user_derived_component);
+        if let Ok(rust) = component.cast::<PyRustComponent>() {
+            self_.0.with_component(rust.borrow().0.clone());
+        } else if let Ok(wrapped) = component.cast::<PyPythonComponent>() {
+            self_.0.with_component(wrapped.borrow().0.clone());
+        } else {
+            let wrapped = PythonComponent::new(component.py(), component.unbind())?;
+            self_.0.with_component(Arc::new(wrapped));
+        }
         Ok(self_)
     }
 
@@ -67,35 +68,35 @@ impl PyModelBuilder {
         self_
     }
 
-    fn with_exogenous_variable<'py>(
+    /// Prescribe a `Timeseries`, `FourBoxTimeseries` or `HemisphericTimeseries` for `name`.
+    fn with_prescribed_variable<'py>(
         mut self_: PyRefMut<'py, Self>,
         name: &str,
-        timeseries: Bound<'py, PyTimeseries>,
-    ) -> PyRefMut<'py, Self> {
-        self_
-            .0
-            .with_exogenous_variable(name, timeseries.borrow().0.clone());
-        self_
+        timeseries: Bound<'py, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        let data: TimeseriesData = if let Ok(ts) = timeseries.cast::<PyTimeseries>() {
+            ts.borrow().0.clone().into()
+        } else if let Ok(ts) = timeseries.cast::<PyFourBoxTimeseries>() {
+            ts.borrow().0.clone().into()
+        } else if let Ok(ts) = timeseries.cast::<PyHemisphericTimeseries>() {
+            ts.borrow().0.clone().into()
+        } else {
+            return Err(PyTypeError::new_err(format!(
+                "Expected Timeseries, FourBoxTimeseries or HemisphericTimeseries for '{name}', got {}",
+                timeseries.get_type().name()?
+            )));
+        };
+        self_.0.with_prescribed_variable(name, data);
+        Ok(self_)
     }
 
-    fn with_exogenous_four_box_variable<'py>(
-        mut self_: PyRefMut<'py, Self>,
-        name: &str,
-        timeseries: Bound<'py, PyFourBoxTimeseries>,
-    ) -> PyRefMut<'py, Self> {
-        self_
-            .0
-            .with_exogenous_four_box_variable(name, timeseries.borrow().0.clone());
-        self_
-    }
-
-    fn with_exogenous_collection<'py>(
+    fn with_prescribed_collection<'py>(
         mut self_: PyRefMut<'py, Self>,
         timeseries: Bound<'py, PyTimeseriesCollection>,
     ) -> PyRefMut<'py, Self> {
         self_
             .0
-            .with_exogenous_collection(timeseries.borrow().0.clone());
+            .with_prescribed_collection(timeseries.borrow().0.clone());
         self_
     }
 
@@ -115,7 +116,7 @@ impl PyModelBuilder {
         self_
     }
 
-    /// Declare whether an exogenous variable is a point or an average, when its unit default is wrong.
+    /// Declare whether a prescribed variable is a point or an average, when its unit default is wrong.
     fn with_timeseries_type<'py>(
         mut self_: PyRefMut<'py, Self>,
         variable: &str,
@@ -134,9 +135,9 @@ impl PyModelBuilder {
         self_
     }
 
-    /// Allow inputs with no producer, exogenous data or initial value, filling them with NaN.
-    fn with_missing_exogenous_allowed(mut self_: PyRefMut<Self>) -> PyRefMut<Self> {
-        self_.0.with_missing_exogenous_allowed();
+    /// Allow inputs with no producer, prescribed data or initial value, filling them with NaN.
+    fn with_missing_prescribed_allowed(mut self_: PyRefMut<Self>) -> PyRefMut<Self> {
+        self_.0.with_missing_prescribed_allowed();
         self_
     }
 
@@ -160,27 +161,27 @@ impl PyModelBuilder {
     /// - Performing automatic grid transformations (aggregation)
     ///
     /// Args:
-    ///     grid_type: The grid type to set weights for (FourBox or Hemispheric)
+    ///     grid: The grid type to set weights for (FourBox or Hemispheric)
     ///     weights: The weights for each region. Must sum to 1.0.
     ///         - FourBox: [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand]
     ///         - Hemispheric: [Northern, Southern]
     ///
     /// Raises:
-    ///     ValueError: If grid_type is Scalar, weights have wrong length, or don't sum to 1.0
+    ///     ValueError: If grid is Scalar, weights have wrong length, or don't sum to 1.0
     ///
     /// Example:
     ///     >>> builder = ModelBuilder()
     ///     >>> builder.with_grid_weights(GridType.FourBox, [0.36, 0.14, 0.36, 0.14])
     fn with_grid_weights<'py>(
         mut self_: PyRefMut<'py, Self>,
-        grid_type: crate::component::GridType,
+        grid: crate::component::GridType,
         weights: Vec<f64>,
     ) -> PyResult<PyRefMut<'py, Self>> {
         use pyo3::exceptions::PyValueError;
 
         // Validate grid type
         let expected_size =
-            match grid_type {
+            match grid {
                 crate::component::GridType::Scalar => return Err(PyValueError::new_err(
                     "Cannot set weights for Scalar grid type (scalars have no regional weights)",
                 )),
@@ -193,7 +194,7 @@ impl PyModelBuilder {
             return Err(PyValueError::new_err(format!(
                 "Weights length ({}) does not match grid type {} (expected {})",
                 weights.len(),
-                grid_type,
+                grid,
                 expected_size
             )));
         }
@@ -207,7 +208,7 @@ impl PyModelBuilder {
             )));
         }
 
-        self_.0.with_grid_weights(grid_type, weights);
+        self_.0.with_grid_weights(grid, weights);
         Ok(self_)
     }
 

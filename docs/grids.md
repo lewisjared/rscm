@@ -73,8 +73,8 @@ Two-region grid splitting the globe into Northern and Southern hemispheres.
 
 
     class HemisphericResponse(Component):
-        temp = Input("Temperature|Hemispheric", unit="K", grid="Hemispheric")
-        response = Output("Response|Hemispheric", unit="W/m^2", grid="Hemispheric")
+        temp = Input("Temperature", unit="K", grid="hemispheric")
+        response = Output("Response", unit="W/m^2", grid="hemispheric")
 
         def solve(self, t_current, t_next, inputs):
             temp = inputs.temp.get()  # HemisphericSlice
@@ -87,10 +87,10 @@ Two-region grid splitting the globe into Northern and Southern hemispheres.
 
     ```rust
     #[inputs(
-        temp { name = "Temperature|Hemispheric", unit = "K", grid = "Hemispheric" },
+        temp { name = "Temperature", unit = "K", grid = "hemispheric" },
     )]
     #[outputs(
-        response { name = "Response|Hemispheric", unit = "W/m^2", grid = "Hemispheric" },
+        response { name = "Response", unit = "W/m^2", grid = "hemispheric" },
     )]
     ```
 
@@ -120,7 +120,7 @@ Four-region grid used by MAGICC and similar reduced-complexity models.
 
     class FourBoxHeatUptake(Component):
         erf = Input("ERF", unit="W/m^2")
-        heat_uptake = Output("Heat Uptake", unit="W/m^2", grid="FourBox")
+        heat_uptake = Output("Heat Uptake", unit="W/m^2", grid="four_box")
 
         def solve(self, t_current, t_next, inputs):
             erf = inputs.erf.get()
@@ -141,7 +141,7 @@ Four-region grid used by MAGICC and similar reduced-complexity models.
         erf { name = "ERF", unit = "W/m^2" },
     )]
     #[outputs(
-        heat_uptake { name = "Heat Uptake", unit = "W/m^2", grid = "FourBox" },
+        heat_uptake { name = "Heat Uptake", unit = "W/m^2", grid = "four_box" },
     )]
 
     // In solve(), build the output from an array in region order
@@ -150,7 +150,7 @@ Four-region grid used by MAGICC and similar reduced-complexity models.
     };
     ```
 
-    [`FourBoxOceanHeatUptake`](components/fourboxoceanheatuptake.md) is a complete Rust FourBox component.
+    [`FourBoxOceanHeatUptake`](components/fourboxoceanheatuptake.md) is a complete Rust four-box component.
 
 ## Grid Operations
 
@@ -256,11 +256,11 @@ because it would require inventing spatial structure.
 
 ### Example: FourBox to Scalar Auto-Aggregation
 
-A component producing FourBox output can feed directly into a component expecting Scalar input.
+A component producing four-box output can feed directly into a component expecting Scalar input.
 
 === "Python"
 
-    In Python, the producer writes FourBox values and the consumer reads a Scalar:
+    In Python, the producer writes four-box values and the consumer reads a Scalar:
 
     ```python
     import numpy as np
@@ -269,7 +269,7 @@ A component producing FourBox output can feed directly into a component expectin
 
 
     class RegionalProducer(Component):
-        temp = Output("Surface Temperature", unit="K", grid="FourBox")
+        temp = Output("Surface Temperature", unit="K", grid="four_box")
 
         def solve(self, t_current, t_next, inputs):
             return self.Outputs(temp=FourBoxSlice.from_array([288.0, 292.0, 285.0, 289.0]))
@@ -283,7 +283,7 @@ A component producing FourBox output can feed directly into a component expectin
             return self.Outputs(response=inputs.temp.get() * 0.1)
     ```
 
-    Declare the variable as Scalar in the schema, so the FourBox output is aggregated on write:
+    Declare the variable as Scalar in the schema, so the four-box output is aggregated on write:
 
     ```python
     schema = VariableSchema()
@@ -294,8 +294,8 @@ A component producing FourBox output can feed directly into a component expectin
         ModelBuilder()
         .with_time_axis(TimeAxis.from_values(np.arange(2020.0, 2026.0)))
         .with_schema(schema)
-        .with_py_component(PythonComponent.build(RegionalProducer()))
-        .with_py_component(PythonComponent.build(GlobalConsumer()))
+        .with_component(RegionalProducer())
+        .with_component(GlobalConsumer())
         .build()
     )
     model.run()
@@ -308,7 +308,7 @@ A component producing FourBox output can feed directly into a component expectin
 === "Rust"
 
     Rust components also support read-side aggregation.
-    Here the schema stores the FourBox values and the Scalar consumer reads the aggregate:
+    Here the schema stores the four-box values and the Scalar consumer reads the aggregate:
 
     ```rust
     let schema = VariableSchema::new()
@@ -363,7 +363,7 @@ These weights come from MAGICC's land fractions (42% of the NH, 21% of the SH):
 Weights must sum to 1.0.
 Python raises `ValueError` for invalid weights, while the Rust builder panics.
 
-`run_magicc` and `run_magicc_emissions` derive their FourBox weights from the ClimateUDEB land fractions,
+`run_magicc` and `run_magicc_emissions` derive their four-box weights from the ClimateUDEB land fractions,
 while `run_magicc7` always uses the 42% and 21% defaults.
 See [MAGICC Runs](magicc_runs.md).
 
@@ -376,19 +376,19 @@ print(model.coupling("plain"))
 ```
 
 The `Grid Transforms` section lists each transformed variable,
-for example `Surface Temperature FourBox -> Scalar (write)`.
+for example `Surface Temperature four_box -> scalar (write)`.
 In Rust, `Model::required_transformations()` returns the same information.
 
-## Gridded Exogenous Data and Initial Values
+## Gridded Prescribed Data and Initial Values
 
-`FourBoxTimeseries` holds exogenous FourBox data.
+`FourBoxTimeseries` holds prescribed four-box data.
 Its values have shape `(n_times, 4)` in region order.
-Pass it to `ModelBuilder.with_exogenous_four_box_variable()`.
+Pass it to `ModelBuilder.with_prescribed_variable()`.
 It is interpolated onto the model time axis like a scalar `Timeseries`.
 
 `ModelBuilder.with_initial_grid_values()` sets the initial value of a grid state variable,
 with one value per region in grid order.
-A FourBox state variable can also take a single value from `with_initial_values()`,
+A four-box state variable can also take a single value from `with_initial_values()`,
 which is used for every region.
 
 ```python
@@ -409,8 +409,8 @@ temperature = FourBoxTimeseries(
 
 
 class OceanHeat(Component):
-    temperature = Input("Surface Temperature", unit="K", grid="FourBox")
-    heat = State("Ocean Heat", unit="J/m^2", grid="FourBox")
+    temperature = Input("Surface Temperature", unit="K", grid="four_box")
+    heat = State("Ocean Heat", unit="J/m^2", grid="four_box")
 
     def solve(self, t_current, t_next, inputs):
         t = inputs.temperature.get()
@@ -421,13 +421,13 @@ class OceanHeat(Component):
 model = (
     ModelBuilder()
     .with_time_axis(time_axis)
-    .with_py_component(PythonComponent.build(OceanHeat()))
-    .with_exogenous_four_box_variable("Surface Temperature", temperature)
+    .with_component(OceanHeat())
+    .with_prescribed_variable("Surface Temperature", temperature)
     .with_initial_grid_values({"Ocean Heat": [0.0, 0.0, 0.0, 0.0]})
 ).build()
 model.run()
 
-heat = model.timeseries().get_fourbox_timeseries_by_name("Ocean Heat")
+heat = model.timeseries().get_four_box_timeseries_by_name("Ocean Heat")
 print(heat.values()[-1])
 ```
 
@@ -435,7 +435,7 @@ print(heat.values()[-1])
 [2.4e+08 3.6e+08 1.6e+08 2.8e+08]
 ```
 
-FourBox exogenous data also feeds Rust components that read a Scalar input.
+Four-box prescribed data also feeds Rust components that read a Scalar input.
 Declare the variable as FourBox in the schema, and the input is aggregated with the grid weights on read.
 Here the carbon cycle from [Getting Started](getting_started.md#coupling-components),
 built with a nonzero `alpha_temperature`, reads the area-weighted mean of the regional temperatures:
@@ -449,13 +449,13 @@ model = (
     ModelBuilder()
     .with_schema(schema)
     .with_grid_weights(GridType.FourBox, [0.29, 0.21, 0.395, 0.105])
-    .with_rust_component(carbon_cycle)
-    .with_exogenous_four_box_variable("Surface Temperature", temperature)
+    .with_component(carbon_cycle)
+    .with_prescribed_variable("Surface Temperature", temperature)
     # ... time axis, emissions and initial values, as in Getting Started
 ).build()
 ```
 
-`model.coupling("plain")` then lists `Surface Temperature FourBox -> Scalar (read)`.
+`model.coupling("plain")` then lists `Surface Temperature four_box -> scalar (read)`.
 
 There is no Hemispheric equivalent of `FourBoxTimeseries` in Python yet.
 
@@ -467,7 +467,7 @@ RSCM validates that connected components use compatible grid types:
 ```python
 # Without schema - this will fail at build time:
 class Producer(Component):
-    output = Output("Temperature", unit="K", grid="FourBox")
+    output = Output("Temperature", unit="K", grid="four_box")
 
 class Consumer(Component):
     input = Input("Temperature", unit="K")  # Scalar - MISMATCH!
@@ -476,8 +476,8 @@ class Consumer(Component):
 Error message:
 
 ```text
-ValueError: Grid type mismatch for variable 'Temperature': producer component 'PythonComponent'
-outputs FourBox but consumer component 'PythonComponent' expects Scalar.
+ValueError: Grid type mismatch for variable 'Temperature': producer component 'Producer'
+outputs four_box but consumer component 'Consumer' expects scalar.
 ```
 
 **Fixes:**
@@ -529,8 +529,8 @@ from rscm.core import FourBoxSlice
 class HemisphericToFourBox(Component):
     """Disaggregate hemispheric temperature to four-box."""
 
-    hemi_temp = Input("Temperature|Hemispheric", unit="K", grid="Hemispheric")
-    fb_temp = Output("Temperature|FourBox", unit="K", grid="FourBox")
+    hemi_temp = Input("Temperature", unit="K", grid="hemispheric")
+    fb_temp = Output("Regional Temperature", unit="K", grid="four_box")
 
     def __init__(self, ocean_land_ratio: float = 1.1):
         self.ocean_land_ratio = ocean_land_ratio

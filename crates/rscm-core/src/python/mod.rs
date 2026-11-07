@@ -31,11 +31,11 @@
 /// use numpy::array;
 /// use rscm_core::spatial::ScalarRegion;
 /// use rscm_core::timeseries::Timeseries;
-/// use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
+/// use rscm_core::timeseries_collection::TimeseriesCollection;
 /// let mut collection = TimeseriesCollection::new();
 /// let timeseries = Timeseries::from_values(array![1.0, 2.0, 3.0], array![1.0, 2.0, 3.0]);
 ///
-/// collection.add_timeseries("Surface Temperature".to_string(), timeseries, VariableType::Exogenous);
+/// collection.add_timeseries("Surface Temperature".to_string(), timeseries);
 /// // We can't access timeseries anymore because the collection has taken ownership
 /// // The line below generates a compiler error if uncommented
 /// // timeseries.at(0, ScalarRegion::Global)
@@ -63,11 +63,11 @@
 ///
 /// ```py
 /// import numpy as np
-/// from rscm.core import TimeseriesCollection, Timeseries, InterpolationStrategy, VariableType
+/// from rscm.core import TimeseriesCollection, Timeseries, InterpolationStrategy
 ///
 /// collection = TimeseriesCollection()
 /// timeseries = Timeseries(np.arange(2000.0, 2010.0), np.arange(2000.0, 2010.0), "units", InterpolationStrategy.Linear)
-/// collection.add_timeseries("Surface Temperature", timeseries, VariableType.Exogenous) # A clone is performed so that Rust can control ownership
+/// collection.add_timeseries("Surface Temperature", timeseries) # A clone is performed so that Rust can control ownership
 ///
 /// # timeseries can still be used as it doesn't follow Rust's ownership model
 /// # Modifications to timeseries aren't reflected in the collection so we don't expose any methods to modify it
@@ -115,12 +115,11 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // State management
     m.add_class::<timeseries_collection::PyTimeseriesCollection>()?;
-    m.add_class::<timeseries_collection::VariableType>()?;
 
     // Component definitions
     m.add_class::<component::PyPythonComponent>()?;
-    m.add_class::<component::RequirementDefinition>()?;
-    m.add_class::<component::RequirementType>()?;
+    m.add_class::<component::VariableDefinition>()?;
+    m.add_class::<component::VariableRole>()?;
     m.add_class::<component::GridType>()?;
     m.add_class::<component::TimeseriesType>()?;
 

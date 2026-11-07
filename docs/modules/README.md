@@ -42,7 +42,7 @@ They compare with MAGICC7's full-precision binary output at a relative tolerance
 | [Permafrost](module_12_permafrost.md)                        | Implemented | `Permafrost`                                                                        | `carbon/permafrost.rs`                                     | `test_permafrost`: thawed area and CO2 and CH4 emissions. `test_coupled_run[permafrost]`                                                                                               | [#115](https://github.com/lewisjared/rscm/issues/115) |
 | [Nitrogen Limitation](module_13_nitrogen_limitation.md)      | Implemented | `TerrestrialCarbon` with `nitrogen`                                                 | `carbon/nitrogen.rs`                                       | `test_nitrogen_coupled_run`: limitation factor, nitrogen pool and NPP at relative 1e-4 (MAGICC7 writes them only as text), temperature and concentrations at 1e-9                      | [#116](https://github.com/lewisjared/rscm/issues/116) |
 | [Sea Level Rise](module_14_sea_level_rise.md)                | Implemented | `SeaLevelRise`, thermal expansion in `ClimateUDEB`                                  | `climate/sea_level.rs`, `climate/udeb/`                    | `tests/regression/test_sea_level.py::test_contribution`: each contribution and the total                                                                                               | [#117](https://github.com/lewisjared/rscm/issues/117) |
-| [Main Timestep](module_15_main_timestep.md)                  | Implemented | `Model`, `run_magicc7`                                                              | `python/rscm/magicc/full.py`                               | `test_run_magicc7_defaults`: temperature, every concentration and total ERF. `test_run_magicc7_rejects_bad_emissions`                                                                  | [#105](https://github.com/lewisjared/rscm/issues/105) |
+| [Main Step](module_15_main_timestep.md)                  | Implemented | `Model`, `run_magicc7`                                                              | `python/rscm/magicc/full.py`                               | `test_run_magicc7_defaults`: temperature, every concentration and total ERF. `test_run_magicc7_rejects_bad_emissions`                                                                  | [#105](https://github.com/lewisjared/rscm/issues/105) |
 | Volcanic and solar forcing                                   | Implemented | `rscm.magicc.prescribed`: `solar`, `volcanic_pattern`, `volcanic_substeps`          | `python/rscm/magicc/prescribed.py`, `climate/udeb/`        | `test_prescribed_forcing[Solar]`. Volcanic through `test_coupled_run` temperature. `tests/test_magicc_prescribed.py` checks the volcanic pattern                                       | [#106](https://github.com/lewisjared/rscm/issues/106) |
 | Land-use albedo forcing                                      | Implemented | `rscm.magicc.prescribed.land_use`                                                   | `python/rscm/magicc/prescribed.py`                         | `test_prescribed_forcing[Land Use]`                                                                                                                                                    | [#107](https://github.com/lewisjared/rscm/issues/107) |
 
@@ -102,7 +102,7 @@ Most come from the "Differences from MAGICC7" notes in each component's Rust doc
 ## Module Dependency Graph
 
 The graph shows how the module groups connect.
-Solid arrows carry values within a timestep.
+Solid arrows carry values within a step.
 Dashed arrows carry the previous boundary's value, as in MAGICC7's staggered scheme:
 chemistry, the carbon cycle, permafrost and ozone forcing use the temperature at the start of each year,
 and the forcing aggregation uses that year's climate sensitivity.
@@ -187,7 +187,7 @@ This table lists where each module lives and how it iterates within a step.
 | [Permafrost](module_12_permafrost.md)                        | `permafrost.f90`           | Thaw-driven CH4 and CO2 release               |                                            |
 | [Nitrogen Limitation](module_13_nitrogen_limitation.md)      | `nitrogen_limitation.f90`  | Nitrogen constraint on NPP                    | Bisection, about 20 iterations             |
 | [Sea Level Rise](module_14_sea_level_rise.md)                | `sealevel.f90`             | Thermal expansion, glaciers and ice sheets    |                                            |
-| [Main Timestep](module_15_main_timestep.md)                  | `MAGICC7.f90`              | Orchestrates the annual steps                 |                                            |
+| [Main Step](module_15_main_timestep.md)                  | `MAGICC7.f90`              | Orchestrates the annual steps                 |                                            |
 
 Each module page covers the module's scientific purpose, equations, state variables, parameters,
 inputs and outputs, algorithm, Fortran references, numerical considerations and test cases.

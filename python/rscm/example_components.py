@@ -73,14 +73,14 @@ class LinearConcentration(Component):
         inputs: "LinearConcentration.Inputs",
     ) -> "LinearConcentration.Outputs":
         """
-        Calculate concentration at the next timestep.
+        Calculate concentration at the next step.
 
         Parameters
         ----------
         t_current
             Current time (years)
         t_next
-            Next timestep time (years)
+            Next step time (years)
         inputs
             Typed inputs with emissions and previous concentration
 

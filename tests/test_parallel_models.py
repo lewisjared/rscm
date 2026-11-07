@@ -9,7 +9,6 @@ from rscm.component import Component, Input, Output
 from rscm.core import (
     InterpolationStrategy,
     ModelBuilder,
-    PythonComponent,
     TimeAxis,
     Timeseries,
     build_models,
@@ -34,8 +33,8 @@ def two_layer(lambda0: float) -> ModelBuilder:
         np.linspace(0.0, 3.0, len(AXIS)), AXIS, "W / m^2", InterpolationStrategy.Next
     )
     builder = ModelBuilder()
-    builder.with_time_axis(AXIS).with_rust_component(component)
-    builder.with_exogenous_variable("Effective Radiative Forcing", erf)
+    builder.with_time_axis(AXIS).with_component(component)
+    builder.with_prescribed_variable("Effective Radiative Forcing", erf)
     builder.with_initial_values(
         {"Surface Temperature": 0.0, "Deep Ocean Temperature": 0.0}
     )
@@ -64,8 +63,8 @@ def scaled(factor: float):
     return (
         ModelBuilder()
         .with_time_axis(AXIS)
-        .with_py_component(PythonComponent.build(Scaled(factor)))
-        .with_exogenous_variable("Effective Radiative Forcing", erf)
+        .with_component(Scaled(factor))
+        .with_prescribed_variable("Effective Radiative Forcing", erf)
         .build()
     )
 

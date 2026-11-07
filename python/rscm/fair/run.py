@@ -60,7 +60,7 @@ def build_model(
 ) -> Model:
     """Build an unrun model of a FaIR configuration.
 
-    `inputs` maps each exogenous variable to its values and unit.
+    `inputs` maps each prescribed variable to its values and unit.
     Emissions are FaIR timepoint values, one per step.
     Prescribed concentrations and forcing are FaIR timebound values.
 
@@ -72,7 +72,7 @@ def build_model(
     scales = prescribed_forcing_scales(config) if scale_prescribed_forcing else {}
     builder = ModelBuilder().with_time_axis(axis)
     for component in build_components(config):
-        builder.with_rust_component(component)
+        builder.with_component(component)
     with_lags(builder, config)
     first = {}
     for name, (values, unit) in inputs.items():
@@ -80,7 +80,7 @@ def build_model(
         if name in scales:
             array = array * scales[name]
         first[name] = float(array[0])
-        builder.with_exogenous_variable(
+        builder.with_prescribed_variable(
             name, Timeseries(array, axis, unit, InterpolationStrategy.Previous)
         )
     initial = initial_values(config)

@@ -10,8 +10,7 @@ use ode_solvers::*;
 use std::sync::Arc;
 
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
+    Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
@@ -216,7 +215,7 @@ impl TwoLayer {
 
 #[typetag::serde]
 impl Component for TwoLayer {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 
@@ -258,7 +257,7 @@ mod tests {
     use rscm_core::model::extract_state;
     use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
-    use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
+    use rscm_core::timeseries_collection::TimeseriesCollection;
 
     fn create_component() -> TwoLayer {
         TwoLayer::from_parameters(TwoLayerParameters {
@@ -280,18 +279,15 @@ mod tests {
         ts_collection.add_timeseries(
             "Effective Radiative Forcing".to_string(),
             Timeseries::from_values(array![erf_value, erf_value], array![t_start, t_end]),
-            VariableType::Exogenous,
         );
         // Add state variables with zero initial values
         ts_collection.add_timeseries(
             "Surface Temperature".to_string(),
             Timeseries::from_values(array![0.0, 0.0], array![t_start, t_end]),
-            VariableType::Endogenous,
         );
         ts_collection.add_timeseries(
             "Deep Ocean Temperature".to_string(),
             Timeseries::from_values(array![0.0, 0.0], array![t_start, t_end]),
-            VariableType::Endogenous,
         );
         ts_collection
     }

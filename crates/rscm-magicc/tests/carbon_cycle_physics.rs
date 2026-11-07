@@ -869,7 +869,7 @@ mod ocean_gas_exchange {
         }
 
         // Flux should approximately double when gradient doubles
-        // (not exactly due to pCO2 evolving within the year of sub-steps)
+        // (not exactly due to pCO2 evolving within the year of substeps)
         let ratio_2x = fluxes[1] / fluxes[0]; // 100/50
         let ratio_4x = fluxes[2] / fluxes[0]; // 200/50
 

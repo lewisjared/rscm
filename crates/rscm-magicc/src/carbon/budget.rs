@@ -7,7 +7,7 @@
 //!
 //! 1. Sums fossil and industrial emissions with CO2 from fossil CH4 oxidation
 //! 2. Subtracts the net land and ocean uptake
-//! 3. Updates atmospheric CO2 concentration for the next timestep
+//! 3. Updates atmospheric CO2 concentration for the next step
 //! 4. Calculates the airborne fraction of the fossil sources
 //!
 //! # Inputs
@@ -18,11 +18,11 @@
 //!   uptake). Land-use emissions are part of this flux, as in MAGICC7, because
 //!   deforestation removes carbon from the land pools.
 //! - `Carbon Flux|Ocean` (GtC/yr) - Net ocean uptake (positive = uptake)
-//! - `End-of-Year Atmospheric CO2` (ppm) - Concentration after the ocean's last sub-step,
+//! - `End-of-Year Atmospheric CO2` (ppm) - Concentration after the ocean's last substep,
 //!   only with the `ocean_end_of_year` parameter
 //! - `Emissions|CO2|Permafrost` (GtC/yr), only with the `permafrost` parameter
 //!
-//! # States (tracked between timesteps)
+//! # States (tracked between steps)
 //!
 //! - `Atmospheric Concentration|CO2` (ppm) - Atmospheric CO2 concentration
 //!
@@ -34,7 +34,7 @@
 //! # Differences from MAGICC7
 //!
 //! - **Monthly integration in the ocean**: in MAGICC7, atmospheric CO2 evolves over
-//!   the ocean's sub-steps, and the concentration it ends the year on becomes next year's.
+//!   the ocean's substeps, and the concentration it ends the year on becomes next year's.
 //!   `ocean_end_of_year` takes that value from `OceanCarbon`. Without it, the annual sum
 //!   in [`CO2Budget::solve_budget`] differs from it only by rounding.
 //! - **No concentration cap**: MAGICC7 can cap CO2 concentration. Not implemented.
@@ -47,7 +47,7 @@ use crate::reference::{
     permafrost_emissions, prescribed_concentration, prescribed_definition, PERMAFROST_CO2,
 };
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -94,7 +94,7 @@ impl CO2Budget {
         Self { parameters }
     }
 
-    /// Solve the CO2 budget for one timestep.
+    /// Solve the CO2 budget for one step.
     ///
     /// Returns (new CO2 concentration, net emissions, airborne fraction).
     pub fn solve_budget(
@@ -133,16 +133,13 @@ impl Default for CO2Budget {
 
 #[typetag::serde]
 impl Component for CO2Budget {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         if self.parameters.permafrost {
-            definitions.push(RequirementDefinition::scalar_input(
-                PERMAFROST_CO2,
-                "GtC/yr",
-            ));
+            definitions.push(VariableDefinition::scalar_input(PERMAFROST_CO2, "GtC/yr"));
         }
         if self.parameters.ocean_end_of_year {
-            definitions.push(RequirementDefinition::scalar_input(CO2_END_OF_YEAR, "ppm"));
+            definitions.push(VariableDefinition::scalar_input(CO2_END_OF_YEAR, "ppm"));
         }
         definitions.extend(prescribed_definition(
             CO2_CONCENTRATION,
@@ -270,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn test_half_year_timestep() {
+    fn test_half_year_step() {
         let component = default_component();
         let (co2_half, _, _) = component.solve_budget(10.0, 0.0, 2.0, 2.0, 400.0, 0.5);
         let (co2_full, _, _) = component.solve_budget(10.0, 0.0, 2.0, 2.0, 400.0, 1.0);

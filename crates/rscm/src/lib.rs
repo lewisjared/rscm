@@ -38,8 +38,8 @@
 //! model = (
 //!     ModelBuilder()
 //!     .with_time_axis(time_axis)
-//!     .with_rust_component(component)
-//!     .with_exogenous_variable("Effective Radiative Forcing", erf_timeseries)
+//!     .with_component(component)
+//!     .with_prescribed_variable("Effective Radiative Forcing", erf_timeseries)
 //!     .build()
 //! )
 //! model.run()

@@ -132,12 +132,12 @@ mod tests {
     use is_close::is_close;
 
     #[test]
-    fn test_fourbox_to_scalar_default_weights() {
+    fn test_four_box_to_scalar_default_weights() {
         // With equal weights (default MAGICC standard), result is mean
-        let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+        let four_box = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
 
         let result =
-            aggregate_state_value(&fourbox, GridType::FourBox, GridType::Scalar, None).unwrap();
+            aggregate_state_value(&four_box, GridType::FourBox, GridType::Scalar, None).unwrap();
 
         match result {
             StateValue::Scalar(v) => {
@@ -150,12 +150,12 @@ mod tests {
     }
 
     #[test]
-    fn test_fourbox_to_scalar_custom_weights() {
-        let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+    fn test_four_box_to_scalar_custom_weights() {
+        let four_box = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
         let weights = vec![0.36, 0.14, 0.36, 0.14]; // Ocean-biased weights
 
         let result = aggregate_state_value(
-            &fourbox,
+            &four_box,
             GridType::FourBox,
             GridType::Scalar,
             Some(&weights),
@@ -172,11 +172,11 @@ mod tests {
     }
 
     #[test]
-    fn test_fourbox_to_hemispheric_default_weights() {
-        let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+    fn test_four_box_to_hemispheric_default_weights() {
+        let four_box = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
 
         let result =
-            aggregate_state_value(&fourbox, GridType::FourBox, GridType::Hemispheric, None)
+            aggregate_state_value(&four_box, GridType::FourBox, GridType::Hemispheric, None)
                 .unwrap();
 
         match result {
@@ -200,12 +200,12 @@ mod tests {
     }
 
     #[test]
-    fn test_fourbox_to_hemispheric_custom_weights() {
-        let fourbox = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
+    fn test_four_box_to_hemispheric_custom_weights() {
+        let four_box = StateValue::FourBox(FourBoxSlice::from([10.0, 20.0, 30.0, 40.0]));
         let weights = vec![0.36, 0.14, 0.36, 0.14]; // Ocean-biased
 
         let result = aggregate_state_value(
-            &fourbox,
+            &four_box,
             GridType::FourBox,
             GridType::Hemispheric,
             Some(&weights),
@@ -285,11 +285,11 @@ mod tests {
     }
 
     #[test]
-    fn test_identity_transformation_fourbox() {
-        let fourbox = StateValue::FourBox(FourBoxSlice::from([1.0, 2.0, 3.0, 4.0]));
+    fn test_identity_transformation_four_box() {
+        let four_box = StateValue::FourBox(FourBoxSlice::from([1.0, 2.0, 3.0, 4.0]));
 
         let result =
-            aggregate_state_value(&fourbox, GridType::FourBox, GridType::FourBox, None).unwrap();
+            aggregate_state_value(&four_box, GridType::FourBox, GridType::FourBox, None).unwrap();
 
         match result {
             StateValue::FourBox(slice) => {
@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn test_disaggregation_scalar_to_fourbox_rejected() {
+    fn test_disaggregation_scalar_to_four_box_rejected() {
         let scalar = StateValue::Scalar(25.0);
 
         let result = aggregate_state_value(&scalar, GridType::Scalar, GridType::FourBox, None);
@@ -324,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn test_disaggregation_hemispheric_to_fourbox_rejected() {
+    fn test_disaggregation_hemispheric_to_four_box_rejected() {
         let hemispheric = StateValue::Hemispheric(HemisphericSlice::from([15.0, 35.0]));
 
         let result =

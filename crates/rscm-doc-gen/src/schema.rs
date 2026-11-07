@@ -4,16 +4,16 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Metadata for a single variable (input, output, or state)
+/// A variable as one component declares it (input, output or state)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VariableMetadata {
+pub struct DeclaredVariable {
     /// Rust field name (e.g., "emissions_co2")
     pub rust_name: String,
     /// Variable name in the model (e.g., "Atmospheric Concentration|CO2")
-    pub variable_name: String,
-    /// Physical units (e.g., "ppm")
+    pub name: String,
+    /// Physical unit (e.g., "ppm")
     pub unit: String,
-    /// Spatial grid type (Scalar, FourBox, Hemispheric)
+    /// Spatial grid ("scalar", "four_box" or "hemispheric")
     pub grid: String,
     /// Description from doc comments
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -57,11 +57,11 @@ pub struct ComponentDocMetadata {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     /// Input variable definitions
-    pub inputs: Vec<VariableMetadata>,
+    pub inputs: Vec<DeclaredVariable>,
     /// Output variable definitions
-    pub outputs: Vec<VariableMetadata>,
+    pub outputs: Vec<DeclaredVariable>,
     /// State variable definitions
-    pub states: Vec<VariableMetadata>,
+    pub states: Vec<DeclaredVariable>,
     /// Component parameters
     pub parameters: Vec<ParameterMetadata>,
     /// Python builder class (if applicable)

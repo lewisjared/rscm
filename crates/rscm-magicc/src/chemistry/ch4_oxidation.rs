@@ -11,7 +11,7 @@
 //! - `Emissions|CH4|AFOLU` (Mt CH4/yr) - Agriculture and land use CH4 emissions
 //! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `permafrost` parameter
 //!
-//! # States (tracked between timesteps)
+//! # States (tracked between steps)
 //!
 //! - `Atmospheric Burden|CH4|{Fossil,AFOLU,Natural,Permafrost}` (Mt CH4): CH4 in the atmosphere by source
 //!
@@ -28,7 +28,7 @@
 use crate::parameters::CH4OxidationParameters;
 use crate::reference::{permafrost_emissions, require_annual, PERMAFROST_CH4};
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -138,10 +138,10 @@ impl Default for CH4Oxidation {
 
 #[typetag::serde]
 impl Component for CH4Oxidation {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         if self.parameters.permafrost {
-            definitions.push(RequirementDefinition::scalar_input(
+            definitions.push(VariableDefinition::scalar_input(
                 PERMAFROST_CH4,
                 "Mt CH4/yr",
             ));
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_solve_reads_concentration_change() {
-        use rscm_core::timeseries_collection::{TimeseriesCollection, VariableType};
+        use rscm_core::timeseries_collection::TimeseriesCollection;
         let mut collection = TimeseriesCollection::new();
         let mut item = |name: &str, start: FloatValue, end: FloatValue| {
             collection.add_timeseries(
@@ -290,7 +290,6 @@ mod tests {
                     ndarray::array![start, end],
                     ndarray::array![2000.0, 2001.0],
                 ),
-                VariableType::Exogenous,
             )
         };
         item("Atmospheric Concentration|CH4", 700.0, 720.0);

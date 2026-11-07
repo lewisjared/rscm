@@ -25,7 +25,7 @@
 
 use crate::parameters::OzoneForcingParameters;
 use crate::reference::{first_value, require_annual, value_at_year};
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -103,28 +103,28 @@ impl Default for OzoneForcing {
 
 #[typetag::serde]
 impl Component for OzoneForcing {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = vec![
-            RequirementDefinition::scalar_input(EESC, "ppt"),
-            RequirementDefinition::scalar_input(CH4, "ppb"),
-            RequirementDefinition::scalar_input(N2O, "ppb"),
+            VariableDefinition::scalar_input(EESC, "ppt"),
+            VariableDefinition::scalar_input(CH4, "ppb"),
+            VariableDefinition::scalar_input(N2O, "ppb"),
         ];
         for (gas, unit) in PRECURSORS {
             for sector in SECTORS {
                 let name = format!("Emissions|{gas}|{sector}");
-                definitions.push(RequirementDefinition::scalar_input(&name, unit));
+                definitions.push(VariableDefinition::scalar_input(&name, unit));
             }
         }
         definitions.extend([
-            RequirementDefinition::scalar_input(TEMPERATURE, "K"),
-            RequirementDefinition::scalar_output(STRAT_OZONE_FORCING, "W/m^2"),
+            VariableDefinition::scalar_input(TEMPERATURE, "K"),
+            VariableDefinition::scalar_output(STRAT_OZONE_FORCING, "W/m^2"),
             if self.parameters.trop_regions.is_some() {
-                RequirementDefinition::four_box_output(TROP_OZONE_FORCING, "W/m^2")
+                VariableDefinition::four_box_output(TROP_OZONE_FORCING, "W/m^2")
             } else {
-                RequirementDefinition::scalar_output(TROP_OZONE_FORCING, "W/m^2")
+                VariableDefinition::scalar_output(TROP_OZONE_FORCING, "W/m^2")
             },
-            RequirementDefinition::scalar_output(N2O_OZONE_FORCING, "W/m^2"),
-            RequirementDefinition::scalar_output(TEMPERATURE_OZONE_FORCING, "W/m^2"),
+            VariableDefinition::scalar_output(N2O_OZONE_FORCING, "W/m^2"),
+            VariableDefinition::scalar_output(TEMPERATURE_OZONE_FORCING, "W/m^2"),
         ]);
         definitions
     }

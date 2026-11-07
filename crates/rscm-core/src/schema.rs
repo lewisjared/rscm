@@ -32,7 +32,7 @@
 //!
 //! - [`AggregateOp::Sum`]: Sum all contributor values
 //! - [`AggregateOp::Mean`]: Arithmetic mean (divides by count of valid values)
-//! - [`AggregateOp::Weighted`]: Weighted sum with provided weights
+//! - [`AggregateOp::WeightedSum`]: Weighted sum with provided weights
 //!
 //! NaN values are excluded from computations (treated as missing data).
 //!
@@ -57,6 +57,7 @@ use std::collections::{HashMap, HashSet};
 /// Note: This enum cannot use `#[pyclass]` directly because PyO3 doesn't support
 /// complex enums with data variants. Python bindings are provided via wrapper types.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AggregateOp {
     /// Sum all contributor values.
     ///
@@ -76,23 +77,23 @@ pub enum AggregateOp {
     /// When a contributor is NaN, both the value and its weight are excluded.
     ///
     /// $$ \text{result} = \sum_{i} w_i \cdot x_i $$
-    Weighted(Vec<f64>),
+    WeightedSum(Vec<f64>),
 }
 
 impl AggregateOp {
     /// Returns a display name for this operation
     pub fn name(&self) -> &'static str {
         match self {
-            AggregateOp::Sum => "Sum",
-            AggregateOp::Mean => "Mean",
-            AggregateOp::Weighted(_) => "Weighted",
+            AggregateOp::Sum => "sum",
+            AggregateOp::Mean => "mean",
+            AggregateOp::WeightedSum(_) => "weighted_sum",
         }
     }
 
-    /// Returns the weights if this is a Weighted operation, None otherwise
+    /// Returns the weights of a weighted sum, None otherwise
     pub fn weights(&self) -> Option<&[f64]> {
         match self {
-            AggregateOp::Weighted(w) => Some(w),
+            AggregateOp::WeightedSum(w) => Some(w),
             _ => None,
         }
     }
@@ -101,7 +102,7 @@ impl AggregateOp {
 /// Definition of a single variable in the schema.
 ///
 /// Variables represent timeseries data that can be produced by components
-/// or provided as exogenous input.
+/// or provided as prescribed input.
 #[pyclass]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SchemaVariableDefinition {
@@ -115,7 +116,7 @@ pub struct SchemaVariableDefinition {
 
     /// Spatial resolution
     #[pyo3(get)]
-    pub grid_type: GridType,
+    pub grid: GridType,
 }
 
 impl SchemaVariableDefinition {
@@ -124,20 +125,16 @@ impl SchemaVariableDefinition {
         Self {
             name: name.into(),
             unit: unit.into(),
-            grid_type: GridType::Scalar,
+            grid: GridType::Scalar,
         }
     }
 
     /// Create a new variable definition with explicit grid type
-    pub fn with_grid(
-        name: impl Into<String>,
-        unit: impl Into<String>,
-        grid_type: GridType,
-    ) -> Self {
+    pub fn with_grid(name: impl Into<String>, unit: impl Into<String>, grid: GridType) -> Self {
         Self {
             name: name.into(),
             unit: unit.into(),
-            grid_type,
+            grid,
         }
     }
 }
@@ -145,19 +142,19 @@ impl SchemaVariableDefinition {
 #[pymethods]
 impl SchemaVariableDefinition {
     #[new]
-    #[pyo3(signature = (name, unit, grid_type=None))]
-    fn py_new(name: String, unit: String, grid_type: Option<GridType>) -> Self {
+    #[pyo3(signature = (name, unit, grid=None))]
+    fn py_new(name: String, unit: String, grid: Option<GridType>) -> Self {
         Self {
             name,
             unit,
-            grid_type: grid_type.unwrap_or(GridType::Scalar),
+            grid: grid.unwrap_or(GridType::Scalar),
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "SchemaVariableDefinition(name={:?}, unit={:?}, grid_type={:?})",
-            self.name, self.unit, self.grid_type
+            "SchemaVariableDefinition(name={:?}, unit={:?}, grid={:?})",
+            self.name, self.unit, self.grid
         )
     }
 }
@@ -179,7 +176,7 @@ pub struct AggregateDefinition {
 
     /// Spatial resolution (must match contributors)
     #[pyo3(get)]
-    pub grid_type: GridType,
+    pub grid: GridType,
 
     /// Operation to apply to contributors
     pub operation: AggregateOp,
@@ -197,7 +194,7 @@ impl AggregateDefinition {
         Self {
             name: name.into(),
             unit: unit.into(),
-            grid_type: GridType::Scalar,
+            grid: GridType::Scalar,
             operation,
             contributors: Vec::new(),
         }
@@ -207,13 +204,13 @@ impl AggregateDefinition {
     pub fn with_grid(
         name: impl Into<String>,
         unit: impl Into<String>,
-        grid_type: GridType,
+        grid: GridType,
         operation: AggregateOp,
     ) -> Self {
         Self {
             name: name.into(),
             unit: unit.into(),
-            grid_type,
+            grid,
             operation,
             contributors: Vec::new(),
         }
@@ -222,13 +219,13 @@ impl AggregateDefinition {
 
 #[pymethods]
 impl AggregateDefinition {
-    /// Get the operation type as a string ("Sum", "Mean", or "Weighted")
+    /// Get the operation type as a string ("sum", "mean" or "weighted_sum")
     #[getter]
     fn operation_type(&self) -> &'static str {
         self.operation.name()
     }
 
-    /// Get the weights for a Weighted operation, or None for Sum/Mean
+    /// Get the weights of a weighted sum, or None for sum and mean
     #[getter]
     fn weights(&self) -> Option<Vec<f64>> {
         self.operation.weights().map(|w| w.to_vec())
@@ -236,8 +233,8 @@ impl AggregateDefinition {
 
     fn __repr__(&self) -> String {
         format!(
-            "AggregateDefinition(name={:?}, unit={:?}, grid_type={:?}, operation={:?}, contributors={:?})",
-            self.name, self.unit, self.grid_type, self.operation, self.contributors
+            "AggregateDefinition(name={:?}, unit={:?}, grid={:?}, operation={:?}, contributors={:?})",
+            self.name, self.unit, self.grid, self.operation, self.contributors
         )
     }
 }
@@ -318,10 +315,10 @@ impl VariableSchema {
         mut self,
         name: impl Into<String>,
         unit: impl Into<String>,
-        grid_type: GridType,
+        grid: GridType,
     ) -> Self {
         let name = name.into();
-        let def = SchemaVariableDefinition::with_grid(name.clone(), unit, grid_type);
+        let def = SchemaVariableDefinition::with_grid(name.clone(), unit, grid);
         self.variables.insert(name, def);
         self
     }
@@ -349,10 +346,10 @@ impl VariableSchema {
         self,
         name: impl Into<String>,
         unit: impl Into<String>,
-        grid_type: GridType,
+        grid: GridType,
         operation: AggregateOp,
     ) -> AggregateBuilder {
-        let def = AggregateDefinition::with_grid(name, unit, grid_type, operation);
+        let def = AggregateDefinition::with_grid(name, unit, grid, operation);
         AggregateBuilder {
             schema: self,
             aggregate: def,
@@ -383,11 +380,11 @@ impl VariableSchema {
     }
 
     /// Get the grid type for a name (variable or aggregate)
-    pub fn get_grid_type(&self, name: &str) -> Option<GridType> {
+    pub fn get_grid(&self, name: &str) -> Option<GridType> {
         self.variables
             .get(name)
-            .map(|v| v.grid_type)
-            .or_else(|| self.aggregates.get(name).map(|a| a.grid_type))
+            .map(|v| v.grid)
+            .or_else(|| self.aggregates.get(name).map(|a| a.grid))
     }
 
     /// Validate the schema for consistency.
@@ -441,20 +438,20 @@ impl VariableSchema {
                 }
 
                 // 3.4: Validate grid type consistency
-                if let Some(contributor_grid) = self.get_grid_type(contributor) {
-                    if contributor_grid != agg_def.grid_type {
+                if let Some(contributor_grid) = self.get_grid(contributor) {
+                    if contributor_grid != agg_def.grid {
                         return Err(RSCMError::SchemaGridTypeMismatch {
                             aggregate: agg_name.clone(),
                             contributor: contributor.clone(),
-                            contributor_grid: format!("{:?}", contributor_grid),
-                            aggregate_grid: format!("{:?}", agg_def.grid_type),
+                            contributor_grid: contributor_grid.to_string(),
+                            aggregate_grid: agg_def.grid.to_string(),
                         });
                     }
                 }
             }
 
             // 3.5: Validate weighted aggregate weight count
-            if let AggregateOp::Weighted(weights) = &agg_def.operation {
+            if let AggregateOp::WeightedSum(weights) = &agg_def.operation {
                 if weights.len() != agg_def.contributors.len() {
                     return Err(RSCMError::WeightCountMismatch {
                         aggregate: agg_name.clone(),
@@ -605,12 +602,12 @@ impl VariableSchema {
 
     /// Add a scalar variable to the schema (Python API)
     #[pyo3(name = "add_variable")]
-    #[pyo3(signature = (name, unit, grid_type=None))]
-    fn py_add_variable(&mut self, name: String, unit: String, grid_type: Option<GridType>) {
+    #[pyo3(signature = (name, unit, grid=None))]
+    fn py_add_variable(&mut self, name: String, unit: String, grid: Option<GridType>) {
         let def = SchemaVariableDefinition {
             name: name.clone(),
             unit,
-            grid_type: grid_type.unwrap_or(GridType::Scalar),
+            grid: grid.unwrap_or(GridType::Scalar),
         };
         self.variables.insert(name, def);
     }
@@ -620,12 +617,12 @@ impl VariableSchema {
     /// # Arguments
     /// * `name` - Variable identifier for the aggregate result
     /// * `unit` - Physical units (must match contributors)
-    /// * `operation` - Operation type: "Sum", "Mean", or "Weighted"
+    /// * `operation` - Operation type: "sum", "mean" or "weighted_sum"
     /// * `contributors` - Names of variables that contribute to this aggregate
-    /// * `weights` - Weights for Weighted operation (required if operation="Weighted")
-    /// * `grid_type` - Spatial resolution (defaults to Scalar)
+    /// * `weights` - Weights for the weighted sum (required if operation="weighted_sum")
+    /// * `grid` - Spatial resolution (defaults to Scalar)
     #[pyo3(name = "add_aggregate")]
-    #[pyo3(signature = (name, unit, operation, contributors, weights=None, grid_type=None))]
+    #[pyo3(signature = (name, unit, operation, contributors, weights=None, grid=None))]
     fn py_add_aggregate(
         &mut self,
         name: String,
@@ -633,22 +630,22 @@ impl VariableSchema {
         operation: &str,
         contributors: Vec<String>,
         weights: Option<Vec<f64>>,
-        grid_type: Option<GridType>,
+        grid: Option<GridType>,
     ) -> pyo3::PyResult<()> {
         let op = match operation {
-            "Sum" => AggregateOp::Sum,
-            "Mean" => AggregateOp::Mean,
-            "Weighted" => {
+            "sum" => AggregateOp::Sum,
+            "mean" => AggregateOp::Mean,
+            "weighted_sum" => {
                 let w = weights.ok_or_else(|| {
                     pyo3::exceptions::PyValueError::new_err(
-                        "weights must be provided for Weighted operation",
+                        "weights must be provided for the weighted_sum operation",
                     )
                 })?;
-                AggregateOp::Weighted(w)
+                AggregateOp::WeightedSum(w)
             }
             _ => {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Unknown operation '{}'. Valid operations: Sum, Mean, Weighted",
+                    "Unknown operation '{}'. Valid operations: sum, mean, weighted_sum",
                     operation
                 )))
             }
@@ -657,7 +654,7 @@ impl VariableSchema {
         let def = AggregateDefinition {
             name: name.clone(),
             unit,
-            grid_type: grid_type.unwrap_or(GridType::Scalar),
+            grid: grid.unwrap_or(GridType::Scalar),
             operation: op,
             contributors,
         };
@@ -724,7 +721,7 @@ impl AggregateBuilder {
 /// NaN values are excluded from the computation (treated as missing data).
 /// If all contributors are NaN, the result is NaN.
 ///
-/// For `Weighted` aggregates, weights corresponding to NaN values are also excluded.
+/// For `WeightedSum` aggregates, weights corresponding to NaN values are also excluded.
 ///
 /// # Arguments
 ///
@@ -754,7 +751,7 @@ impl AggregateBuilder {
 ///
 /// // Weighted sum
 /// let values = vec![10.0, 20.0];
-/// let op = AggregateOp::Weighted(vec![0.3, 0.7]);
+/// let op = AggregateOp::WeightedSum(vec![0.3, 0.7]);
 /// assert_eq!(compute_aggregate(&values, &op), 17.0); // 10*0.3 + 20*0.7
 /// ```
 pub fn compute_aggregate(contributors: &[f64], op: &AggregateOp) -> f64 {
@@ -783,7 +780,7 @@ pub fn compute_aggregate(contributors: &[f64], op: &AggregateOp) -> f64 {
                 valid.iter().sum::<f64>() / valid.len() as f64
             }
         }
-        AggregateOp::Weighted(weights) => {
+        AggregateOp::WeightedSum(weights) => {
             // Filter out NaN values and their corresponding weights
             let valid_pairs: Vec<(f64, f64)> = contributors
                 .iter()
@@ -805,9 +802,7 @@ pub fn compute_aggregate(contributors: &[f64], op: &AggregateOp) -> f64 {
 // Virtual Components (Aggregator)
 // =============================================================================
 
-use crate::component::{
-    Component, InputState, OutputState, RequirementDefinition, RequirementType,
-};
+use crate::component::{Component, InputState, OutputState, VariableDefinition, VariableRole};
 use crate::state::StateValue;
 use crate::timeseries::Time;
 
@@ -825,7 +820,7 @@ pub struct AggregatorComponent {
     /// The unit of the aggregate variable
     pub unit: String,
     /// The grid type of the aggregate
-    pub grid_type: GridType,
+    pub grid: GridType,
     /// The aggregation operation to apply
     pub operation: AggregateOp,
     /// The names of the contributor variables to read
@@ -838,7 +833,7 @@ impl AggregatorComponent {
         Self {
             aggregate_name: def.name.clone(),
             unit: def.unit.clone(),
-            grid_type: def.grid_type,
+            grid: def.grid,
             operation: def.operation.clone(),
             contributors: def.contributors.clone(),
         }
@@ -847,25 +842,25 @@ impl AggregatorComponent {
 
 #[typetag::serde]
 impl Component for AggregatorComponent {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut defs = Vec::with_capacity(self.contributors.len() + 1);
 
         // Input: read from each contributor
         for contributor in &self.contributors {
-            defs.push(RequirementDefinition::with_grid(
+            defs.push(VariableDefinition::with_grid(
                 contributor,
                 &self.unit,
-                RequirementType::Input,
-                self.grid_type,
+                VariableRole::Input,
+                self.grid,
             ));
         }
 
         // Output: the aggregate variable
-        defs.push(RequirementDefinition::with_grid(
+        defs.push(VariableDefinition::with_grid(
             &self.aggregate_name,
             &self.unit,
-            RequirementType::Output,
-            self.grid_type,
+            VariableRole::Output,
+            self.grid,
         ));
 
         defs
@@ -879,7 +874,7 @@ impl Component for AggregatorComponent {
     ) -> RSCMResult<OutputState> {
         let mut output = OutputState::new();
 
-        match self.grid_type {
+        match self.grid {
             GridType::Scalar => {
                 let values: Vec<f64> = self
                     .contributors
@@ -946,11 +941,11 @@ mod tests {
     fn test_aggregate_op_variants() {
         let sum = AggregateOp::Sum;
         let mean = AggregateOp::Mean;
-        let weighted = AggregateOp::Weighted(vec![0.5, 0.3, 0.2]);
+        let weighted = AggregateOp::WeightedSum(vec![0.5, 0.3, 0.2]);
 
         assert_eq!(sum, AggregateOp::Sum);
         assert_eq!(mean, AggregateOp::Mean);
-        assert!(matches!(weighted, AggregateOp::Weighted(_)));
+        assert!(matches!(weighted, AggregateOp::WeightedSum(_)));
     }
 
     #[test]
@@ -960,7 +955,7 @@ mod tests {
         let deserialized: AggregateOp = serde_json::from_str(&json).unwrap();
         assert_eq!(sum, deserialized);
 
-        let weighted = AggregateOp::Weighted(vec![0.5, 0.5]);
+        let weighted = AggregateOp::WeightedSum(vec![0.5, 0.5]);
         let json = serde_json::to_string(&weighted).unwrap();
         let deserialized: AggregateOp = serde_json::from_str(&json).unwrap();
         assert_eq!(weighted, deserialized);
@@ -971,7 +966,7 @@ mod tests {
         let def = SchemaVariableDefinition::new("Emissions|CO2", "GtCO2/yr");
         assert_eq!(def.name, "Emissions|CO2");
         assert_eq!(def.unit, "GtCO2/yr");
-        assert_eq!(def.grid_type, GridType::Scalar);
+        assert_eq!(def.grid, GridType::Scalar);
     }
 
     #[test]
@@ -979,7 +974,7 @@ mod tests {
         let def = SchemaVariableDefinition::with_grid("Temperature", "K", GridType::FourBox);
         assert_eq!(def.name, "Temperature");
         assert_eq!(def.unit, "K");
-        assert_eq!(def.grid_type, GridType::FourBox);
+        assert_eq!(def.grid, GridType::FourBox);
     }
 
     #[test]
@@ -987,7 +982,7 @@ mod tests {
         let def = AggregateDefinition::new("Total ERF", "W/m^2", AggregateOp::Sum);
         assert_eq!(def.name, "Total ERF");
         assert_eq!(def.unit, "W/m^2");
-        assert_eq!(def.grid_type, GridType::Scalar);
+        assert_eq!(def.grid, GridType::Scalar);
         assert_eq!(def.operation, AggregateOp::Sum);
         assert!(def.contributors.is_empty());
     }
@@ -1007,10 +1002,10 @@ mod tests {
 
         let co2 = schema.get_variable("Emissions|CO2").unwrap();
         assert_eq!(co2.unit, "GtCO2/yr");
-        assert_eq!(co2.grid_type, GridType::Scalar);
+        assert_eq!(co2.grid, GridType::Scalar);
 
         let temp = schema.get_variable("Regional Temperature").unwrap();
-        assert_eq!(temp.grid_type, GridType::FourBox);
+        assert_eq!(temp.grid, GridType::FourBox);
     }
 
     #[test]
@@ -1042,14 +1037,14 @@ mod tests {
             .aggregate(
                 "Weighted Total",
                 "units",
-                AggregateOp::Weighted(vec![0.7, 0.3]),
+                AggregateOp::WeightedSum(vec![0.7, 0.3]),
             )
             .from("Source A")
             .from("Source B")
             .build();
 
         let agg = schema.get_aggregate("Weighted Total").unwrap();
-        assert!(matches!(agg.operation, AggregateOp::Weighted(ref w) if w == &vec![0.7, 0.3]));
+        assert!(matches!(agg.operation, AggregateOp::WeightedSum(ref w) if w == &vec![0.7, 0.3]));
     }
 
     #[test]
@@ -1091,7 +1086,7 @@ mod tests {
     }
 
     #[test]
-    fn test_variable_schema_get_grid_type() {
+    fn test_variable_schema_get_grid() {
         let schema = VariableSchema::new()
             .variable("Global", "K")
             .variable_with_grid("Regional", "K", GridType::FourBox)
@@ -1099,13 +1094,10 @@ mod tests {
             .from("Regional")
             .build();
 
-        assert_eq!(schema.get_grid_type("Global"), Some(GridType::Scalar));
-        assert_eq!(schema.get_grid_type("Regional"), Some(GridType::FourBox));
-        assert_eq!(
-            schema.get_grid_type("Regional Total"),
-            Some(GridType::FourBox)
-        );
-        assert_eq!(schema.get_grid_type("Nonexistent"), None);
+        assert_eq!(schema.get_grid("Global"), Some(GridType::Scalar));
+        assert_eq!(schema.get_grid("Regional"), Some(GridType::FourBox));
+        assert_eq!(schema.get_grid("Regional Total"), Some(GridType::FourBox));
+        assert_eq!(schema.get_grid("Nonexistent"), None);
     }
 
     #[test]
@@ -1195,7 +1187,7 @@ mod tests {
         let schema = VariableSchema::new()
             .variable("A", "units")
             .variable("B", "units")
-            .aggregate("Total", "units", AggregateOp::Weighted(vec![0.6, 0.4]))
+            .aggregate("Total", "units", AggregateOp::WeightedSum(vec![0.6, 0.4]))
             .from("A")
             .from("B")
             .build();
@@ -1253,13 +1245,13 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_grid_type_mismatch() {
+    fn test_validate_grid_mismatch() {
         let schema = VariableSchema::new()
             .variable("Global Temp", "K")
             .variable_with_grid("Regional Temp", "K", GridType::FourBox)
             .aggregate("Total Temp", "K", AggregateOp::Sum) // Scalar aggregate
             .from("Global Temp")
-            .from("Regional Temp") // FourBox contributor
+            .from("Regional Temp") // four-box contributor
             .build();
 
         let err = schema.validate().unwrap_err();
@@ -1270,8 +1262,8 @@ mod tests {
             msg
         );
         assert!(
-            msg.contains("FourBox"),
-            "Error should mention FourBox: {}",
+            msg.contains("four_box"),
+            "Error should mention four_box: {}",
             msg
         );
     }
@@ -1285,7 +1277,7 @@ mod tests {
             .aggregate(
                 "Total",
                 "units",
-                AggregateOp::Weighted(vec![0.5, 0.5]), // Only 2 weights
+                AggregateOp::WeightedSum(vec![0.5, 0.5]), // Only 2 weights
             )
             .from("A")
             .from("B")
@@ -1320,7 +1312,7 @@ mod tests {
             AggregateDefinition {
                 name: "A".to_string(),
                 unit: "units".to_string(),
-                grid_type: GridType::Scalar,
+                grid: GridType::Scalar,
                 operation: AggregateOp::Sum,
                 contributors: vec!["B".to_string()],
             },
@@ -1330,7 +1322,7 @@ mod tests {
             AggregateDefinition {
                 name: "B".to_string(),
                 unit: "units".to_string(),
-                grid_type: GridType::Scalar,
+                grid: GridType::Scalar,
                 operation: AggregateOp::Sum,
                 contributors: vec!["A".to_string()],
             },
@@ -1354,7 +1346,7 @@ mod tests {
             AggregateDefinition {
                 name: "A".to_string(),
                 unit: "units".to_string(),
-                grid_type: GridType::Scalar,
+                grid: GridType::Scalar,
                 operation: AggregateOp::Sum,
                 contributors: vec!["A".to_string()],
             },
@@ -1378,7 +1370,7 @@ mod tests {
             AggregateDefinition {
                 name: "A".to_string(),
                 unit: "units".to_string(),
-                grid_type: GridType::Scalar,
+                grid: GridType::Scalar,
                 operation: AggregateOp::Sum,
                 contributors: vec!["B".to_string()],
             },
@@ -1388,7 +1380,7 @@ mod tests {
             AggregateDefinition {
                 name: "B".to_string(),
                 unit: "units".to_string(),
-                grid_type: GridType::Scalar,
+                grid: GridType::Scalar,
                 operation: AggregateOp::Sum,
                 contributors: vec!["C".to_string()],
             },
@@ -1398,7 +1390,7 @@ mod tests {
             AggregateDefinition {
                 name: "C".to_string(),
                 unit: "units".to_string(),
-                grid_type: GridType::Scalar,
+                grid: GridType::Scalar,
                 operation: AggregateOp::Sum,
                 contributors: vec!["A".to_string()],
             },
@@ -1502,7 +1494,7 @@ mod tests {
     fn test_compute_aggregate_weighted() {
         let values = vec![10.0, 20.0, 30.0];
         let weights = vec![0.5, 0.3, 0.2];
-        let result = compute_aggregate(&values, &AggregateOp::Weighted(weights));
+        let result = compute_aggregate(&values, &AggregateOp::WeightedSum(weights));
         assert_eq!(result, 17.0); // 10*0.5 + 20*0.3 + 30*0.2 = 5 + 6 + 6 = 17
     }
 
@@ -1510,7 +1502,7 @@ mod tests {
     fn test_compute_aggregate_weighted_with_nan() {
         let values = vec![10.0, f64::NAN, 30.0];
         let weights = vec![0.5, 0.3, 0.2];
-        let result = compute_aggregate(&values, &AggregateOp::Weighted(weights));
+        let result = compute_aggregate(&values, &AggregateOp::WeightedSum(weights));
         assert_eq!(result, 11.0); // 10*0.5 + 30*0.2 = 5 + 6 = 11 (NaN value and its weight excluded)
     }
 
@@ -1518,7 +1510,7 @@ mod tests {
     fn test_compute_aggregate_weighted_all_nan() {
         let values = vec![f64::NAN, f64::NAN];
         let weights = vec![0.6, 0.4];
-        let result = compute_aggregate(&values, &AggregateOp::Weighted(weights));
+        let result = compute_aggregate(&values, &AggregateOp::WeightedSum(weights));
         assert!(result.is_nan());
     }
 
@@ -1529,7 +1521,7 @@ mod tests {
         let def = AggregateDefinition {
             name: "Total ERF".to_string(),
             unit: "W/m^2".to_string(),
-            grid_type: GridType::Scalar,
+            grid: GridType::Scalar,
             operation: AggregateOp::Sum,
             contributors: vec!["ERF|CO2".to_string(), "ERF|CH4".to_string()],
         };
@@ -1538,7 +1530,7 @@ mod tests {
 
         assert_eq!(agg.aggregate_name, "Total ERF");
         assert_eq!(agg.unit, "W/m^2");
-        assert_eq!(agg.grid_type, GridType::Scalar);
+        assert_eq!(agg.grid, GridType::Scalar);
         assert_eq!(agg.operation, AggregateOp::Sum);
         assert_eq!(agg.contributors, vec!["ERF|CO2", "ERF|CH4"]);
     }
@@ -1548,7 +1540,7 @@ mod tests {
         let def = AggregateDefinition {
             name: "Total ERF".to_string(),
             unit: "W/m^2".to_string(),
-            grid_type: GridType::Scalar,
+            grid: GridType::Scalar,
             operation: AggregateOp::Sum,
             contributors: vec!["ERF|CO2".to_string(), "ERF|CH4".to_string()],
         };
@@ -1561,13 +1553,13 @@ mod tests {
 
         // First two are inputs
         assert_eq!(defs[0].name, "ERF|CO2");
-        assert_eq!(defs[0].requirement_type, RequirementType::Input);
+        assert_eq!(defs[0].role, VariableRole::Input);
         assert_eq!(defs[1].name, "ERF|CH4");
-        assert_eq!(defs[1].requirement_type, RequirementType::Input);
+        assert_eq!(defs[1].role, VariableRole::Input);
 
         // Last one is output
         assert_eq!(defs[2].name, "Total ERF");
-        assert_eq!(defs[2].requirement_type, RequirementType::Output);
+        assert_eq!(defs[2].role, VariableRole::Output);
     }
 
     #[test]
@@ -1575,7 +1567,7 @@ mod tests {
         let def = AggregateDefinition {
             name: "Total".to_string(),
             unit: "units".to_string(),
-            grid_type: GridType::Scalar,
+            grid: GridType::Scalar,
             operation: AggregateOp::Mean,
             contributors: vec!["A".to_string(), "B".to_string()],
         };
@@ -1595,15 +1587,15 @@ mod tests {
     fn test_deserialize_valid_schema_json() {
         let json = r#"{
             "variables": {
-                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid_type": "Scalar"},
-                "ERF|CH4": {"name": "ERF|CH4", "unit": "W/m^2", "grid_type": "Scalar"}
+                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid": "scalar"},
+                "ERF|CH4": {"name": "ERF|CH4", "unit": "W/m^2", "grid": "scalar"}
             },
             "aggregates": {
                 "Total ERF": {
                     "name": "Total ERF",
                     "unit": "W/m^2",
-                    "grid_type": "Scalar",
-                    "operation": "Sum",
+                    "grid": "scalar",
+                    "operation": "sum",
                     "contributors": ["ERF|CO2", "ERF|CH4"]
                 }
             }
@@ -1618,14 +1610,14 @@ mod tests {
     fn test_deserialize_invalid_schema_undefined_contributor() {
         let json = r#"{
             "variables": {
-                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid_type": "Scalar"}
+                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid": "scalar"}
             },
             "aggregates": {
                 "Total ERF": {
                     "name": "Total ERF",
                     "unit": "W/m^2",
-                    "grid_type": "Scalar",
-                    "operation": "Sum",
+                    "grid": "scalar",
+                    "operation": "sum",
                     "contributors": ["ERF|CO2", "ERF|CH4"]
                 }
             }
@@ -1650,15 +1642,15 @@ mod tests {
     fn test_deserialize_invalid_schema_unit_mismatch() {
         let json = r#"{
             "variables": {
-                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid_type": "Scalar"},
-                "Emissions|CO2": {"name": "Emissions|CO2", "unit": "GtCO2/yr", "grid_type": "Scalar"}
+                "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid": "scalar"},
+                "Emissions|CO2": {"name": "Emissions|CO2", "unit": "GtCO2/yr", "grid": "scalar"}
             },
             "aggregates": {
                 "Total": {
                     "name": "Total",
                     "unit": "W/m^2",
-                    "grid_type": "Scalar",
-                    "operation": "Sum",
+                    "grid": "scalar",
+                    "operation": "sum",
                     "contributors": ["ERF|CO2", "Emissions|CO2"]
                 }
             }
@@ -1682,15 +1674,15 @@ mod tests {
                 "A": {
                     "name": "A",
                     "unit": "units",
-                    "grid_type": "Scalar",
-                    "operation": "Sum",
+                    "grid": "scalar",
+                    "operation": "sum",
                     "contributors": ["B"]
                 },
                 "B": {
                     "name": "B",
                     "unit": "units",
-                    "grid_type": "Scalar",
-                    "operation": "Sum",
+                    "grid": "scalar",
+                    "operation": "sum",
                     "contributors": ["A"]
                 }
             }
@@ -1710,16 +1702,16 @@ mod tests {
     fn test_deserialize_invalid_schema_weight_count_mismatch() {
         let json = r#"{
             "variables": {
-                "A": {"name": "A", "unit": "units", "grid_type": "Scalar"},
-                "B": {"name": "B", "unit": "units", "grid_type": "Scalar"},
-                "C": {"name": "C", "unit": "units", "grid_type": "Scalar"}
+                "A": {"name": "A", "unit": "units", "grid": "scalar"},
+                "B": {"name": "B", "unit": "units", "grid": "scalar"},
+                "C": {"name": "C", "unit": "units", "grid": "scalar"}
             },
             "aggregates": {
                 "Total": {
                     "name": "Total",
                     "unit": "units",
-                    "grid_type": "Scalar",
-                    "operation": {"Weighted": [0.5, 0.5]},
+                    "grid": "scalar",
+                    "operation": {"weighted_sum": [0.5, 0.5]},
                     "contributors": ["A", "B", "C"]
                 }
             }
@@ -1743,13 +1735,13 @@ mod tests {
             [variables."ERF|CO2"]
             name = "ERF|CO2"
             unit = "W/m^2"
-            grid_type = "Scalar"
+            grid = "scalar"
 
             [aggregates.Total]
             name = "Total"
             unit = "W/m^2"
-            grid_type = "Scalar"
-            operation = "Sum"
+            grid = "scalar"
+            operation = "sum"
             contributors = ["ERF|CO2"]
         "#;
 
@@ -1767,8 +1759,8 @@ mod tests {
             [aggregates.Total]
             name = "Total"
             unit = "W/m^2"
-            grid_type = "Scalar"
-            operation = "Sum"
+            grid = "scalar"
+            operation = "sum"
             contributors = ["Missing"]
         "#;
 

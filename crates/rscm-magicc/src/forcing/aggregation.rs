@@ -26,7 +26,7 @@ use crate::climate::lamcalc::{
 };
 use crate::climate::{CLIMATE_SENSITIVITY, CO2_DOUBLING_ERF, REGIONAL_FORCING};
 use crate::parameters::{ForcingAgent, ForcingAggregationParameters, ForcingTerm};
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -266,7 +266,7 @@ fn agent_inputs(agent: &ForcingAgent) -> Vec<&str> {
 
 #[typetag::serde]
 impl Component for ForcingAggregation {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions: Vec<_> = self
             .parameters
             .agents
@@ -274,25 +274,19 @@ impl Component for ForcingAggregation {
             .flat_map(|agent| {
                 agent_inputs(agent).into_iter().map(|name| {
                     if agent.regional {
-                        RequirementDefinition::four_box_input(name, "W/m^2")
+                        VariableDefinition::four_box_input(name, "W/m^2")
                     } else {
-                        RequirementDefinition::scalar_input(name, "W/m^2")
+                        VariableDefinition::scalar_input(name, "W/m^2")
                     }
                 })
             })
             .collect();
         if self.parameters.climate.is_some() {
-            definitions.push(RequirementDefinition::scalar_input(
-                CLIMATE_SENSITIVITY,
-                "K",
-            ));
-            definitions.push(RequirementDefinition::scalar_input(
-                CO2_DOUBLING_ERF,
-                "W/m^2",
-            ));
+            definitions.push(VariableDefinition::scalar_input(CLIMATE_SENSITIVITY, "K"));
+            definitions.push(VariableDefinition::scalar_input(CO2_DOUBLING_ERF, "W/m^2"));
         }
-        definitions.push(RequirementDefinition::scalar_output(TOTAL_FORCING, "W/m^2"));
-        definitions.push(RequirementDefinition::four_box_output(
+        definitions.push(VariableDefinition::scalar_output(TOTAL_FORCING, "W/m^2"));
+        definitions.push(VariableDefinition::four_box_output(
             REGIONAL_FORCING,
             "W/m^2",
         ));
@@ -354,7 +348,7 @@ mod tests {
     use super::*;
     use crate::parameters::{EfficacyClimate, ForcingAgent};
     use rscm_core::state::{ReadTransformInfo, TransformContext, VariableSource};
-    use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+    use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
     use std::collections::HashMap;
 
     fn agent(regional: bool, efficacy: FloatValue, internal: FloatValue) -> ForcingAgent {
@@ -463,7 +457,6 @@ mod tests {
                 ndarray::array![2000.0, 2001.0],
             )),
             name: name.to_string(),
-            variable_type: VariableType::Exogenous,
         }
     }
 
@@ -577,7 +570,6 @@ mod tests {
                 ),
             )),
             name: name.to_string(),
-            variable_type: VariableType::Exogenous,
         }
     }
 

@@ -28,7 +28,7 @@ Its concentrations, forcing and temperatures are on timebounds, one more than th
 
 A configuration is a plain dict with FaIR's options, climate configs and one entry per species.
 `rscm.fair.config` documents its keys.
-`naming.exogenous_variable` names the input of each species.
+`naming.prescribed_variable` names the input of each species.
 Prescribed forcing is an input such as `Prescribed Effective Radiative Forcing|Solar`.
 `FairForcingAggregation` adds its temperature feedback and writes `Effective Radiative Forcing|Solar`.
 
@@ -50,7 +50,7 @@ config = configs[1939]
 # emissions[name] has one value per step and forcing[name] one per bound
 inputs = {}
 for entry in config["species"]:
-    variable = naming.exogenous_variable(entry)
+    variable = naming.prescribed_variable(entry)
     if variable is not None:
         name, unit = variable
         source = emissions if entry["input_mode"] == "emissions" else forcing

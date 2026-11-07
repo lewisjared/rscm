@@ -1,7 +1,7 @@
 //! n-layer energy balance model (FaIR step 16 to 18)
 //!
 //! The state $x = (F_s, T_1, \ldots, T_n)$ holds the forcing seen by the climate and the
-//! temperature of each layer, surface first. Over one timestep of length $\Delta t$,
+//! temperature of each layer, surface first. Over one step of length $\Delta t$,
 //!
 //! $$x' = e^{A} x + A^{-1} (e^{A} - I)\, b\, F$$
 //!
@@ -19,7 +19,7 @@ use crate::constants::{
     total_forcing, EARTH_RADIUS, SECONDS_PER_YEAR,
 };
 use nalgebra::{DMatrix, DVector};
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -61,7 +61,7 @@ fn default_gamma() -> FloatValue {
     2.0
 }
 
-/// Discretised matrices for one timestep length.
+/// Discretised matrices for one step length.
 #[derive(Debug, Clone)]
 struct Discretised {
     dt: FloatValue,
@@ -109,7 +109,7 @@ impl FairEnergyBalance {
             parameters,
             discretised: OnceLock::new(),
         };
-        // The timestep scales whole rows, so it cannot make the matrix singular.
+        // The step scales whole rows, so it cannot make the matrix singular.
         if !component.eb_matrix(1.0).lu().is_invertible() {
             return Err(RSCMError::Error(
                 "The energy balance matrix is singular: check the heat transfers and gamma".into(),
@@ -137,7 +137,7 @@ impl FairEnergyBalance {
         }
     }
 
-    /// Energy balance matrix with the forcing row and column, for timestep `dt`.
+    /// Energy balance matrix with the forcing row and column, for step `dt`.
     pub fn eb_matrix(&self, dt: FloatValue) -> DMatrix<FloatValue> {
         let p = &self.parameters;
         let n = self.n_layers();
@@ -179,7 +179,7 @@ impl FairEnergyBalance {
         }
     }
 
-    /// Advance the state one timestep under efficacy-adjusted forcing `forcing`.
+    /// Advance the state one step under efficacy-adjusted forcing `forcing`.
     pub fn step(
         &self,
         state: &DVector<FloatValue>,
@@ -208,24 +208,24 @@ impl FairEnergyBalance {
 
 #[typetag::serde]
 impl Component for FairEnergyBalance {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         let mut definitions = vec![
-            RequirementDefinition::scalar_input(&p.forcing, &forcing_unit()),
-            RequirementDefinition::scalar_input(&p.efficacy_adjusted_forcing, &forcing_unit()),
-            RequirementDefinition::scalar_state(STOCHASTIC_FORCING, &forcing_unit()),
+            VariableDefinition::scalar_input(&p.forcing, &forcing_unit()),
+            VariableDefinition::scalar_input(&p.efficacy_adjusted_forcing, &forcing_unit()),
+            VariableDefinition::scalar_state(STOCHASTIC_FORCING, &forcing_unit()),
         ];
         for layer in 0..self.n_layers() {
-            definitions.push(RequirementDefinition::scalar_state(
+            definitions.push(VariableDefinition::scalar_state(
                 &self.layer_temperature(layer),
                 &temperature_unit(),
             ));
         }
-        definitions.push(RequirementDefinition::scalar_state(
+        definitions.push(VariableDefinition::scalar_state(
             OCEAN_HEAT_CONTENT_CHANGE,
             "J",
         ));
-        definitions.push(RequirementDefinition::scalar_output(
+        definitions.push(VariableDefinition::scalar_output(
             ENERGY_IMBALANCE,
             &forcing_unit(),
         ));
@@ -341,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn timestep_length_changes_the_discretisation() {
+    fn step_length_changes_the_discretisation() {
         let c = component();
         let one = c.step(&DVector::zeros(4), 1.0, 1.0);
         let five = c.step(&DVector::zeros(4), 1.0, 5.0);

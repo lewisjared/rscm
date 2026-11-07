@@ -1,11 +1,11 @@
 //! Validation functions for model building.
 
-use crate::component::{RequirementDefinition, RequirementType, TimeseriesType};
+use crate::component::{TimeseriesType, VariableDefinition, VariableRole};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::units::Unit;
 use std::collections::HashMap;
 
-use super::types::{UnitConversionInfo, VariableDefinition};
+use super::types::{ResolvedVariable, UnitConversionInfo};
 
 /// Result of unit validation between two definitions.
 #[derive(Debug)]
@@ -26,8 +26,8 @@ pub(crate) enum UnitValidationResult {
 /// Returns an error if the parameter definition is inconsistent with any existing definitions.
 /// Returns an optional `UnitConversionInfo` if the units differ but are compatible.
 pub(crate) fn verify_definition(
-    definitions: &mut HashMap<String, VariableDefinition>,
-    definition: &RequirementDefinition,
+    definitions: &mut HashMap<String, ResolvedVariable>,
+    definition: &VariableDefinition,
     component_name: &str,
     existing_component_name: Option<&str>,
     has_schema: bool,
@@ -45,15 +45,15 @@ pub(crate) fn verify_definition(
                 )?;
 
                 // Skip grid type check when schema is present
-                if !has_schema && existing.grid_type != definition.grid_type {
+                if !has_schema && existing.grid != definition.grid {
                     return Err(RSCMError::GridTypeMismatch {
                         variable: definition.name.clone(),
                         producer_component: existing_component_name
                             .unwrap_or("unknown")
                             .to_string(),
                         consumer_component: component_name.to_string(),
-                        producer_grid: existing.grid_type.to_string(),
-                        consumer_grid: definition.grid_type.to_string(),
+                        producer_grid: existing.grid.to_string(),
+                        consumer_grid: definition.grid.to_string(),
                     });
                 }
 
@@ -69,15 +69,15 @@ pub(crate) fn verify_definition(
                 }
             } else {
                 // Units match exactly - still check grid type
-                if !has_schema && existing.grid_type != definition.grid_type {
+                if !has_schema && existing.grid != definition.grid {
                     return Err(RSCMError::GridTypeMismatch {
                         variable: definition.name.clone(),
                         producer_component: existing_component_name
                             .unwrap_or("unknown")
                             .to_string(),
                         consumer_component: component_name.to_string(),
-                        producer_grid: existing.grid_type.to_string(),
-                        consumer_grid: definition.grid_type.to_string(),
+                        producer_grid: existing.grid.to_string(),
+                        consumer_grid: definition.grid.to_string(),
                     });
                 }
             }
@@ -85,7 +85,7 @@ pub(crate) fn verify_definition(
         None => {
             definitions.insert(
                 definition.name.clone(),
-                VariableDefinition::from_requirement_definition(definition),
+                ResolvedVariable::from_definition(definition),
             );
         }
     }
@@ -97,14 +97,14 @@ pub(crate) fn verify_definition(
 /// A produced variable takes its producer's type.
 /// Otherwise the builder's declaration, then a consumer's, then the unit default decides.
 pub(crate) fn resolve_timeseries_types(
-    definitions: &mut HashMap<String, VariableDefinition>,
+    definitions: &mut HashMap<String, ResolvedVariable>,
     names: &[String],
-    requirements: &[(Vec<RequirementDefinition>, Vec<RequirementDefinition>)],
+    component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
     declared_types: &HashMap<String, TimeseriesType>,
     state_type_check: bool,
 ) -> RSCMResult<()> {
     let mut sources: HashMap<&str, (TimeseriesType, String)> = HashMap::new();
-    for (name, (_, provides)) in names.iter().zip(requirements) {
+    for (name, (_, provides)) in names.iter().zip(component_defs) {
         for r in provides {
             sources.insert(&r.name, (r.resolved_timeseries_type(), name.clone()));
         }
@@ -131,22 +131,22 @@ pub(crate) fn resolve_timeseries_types(
     }
     let declarations = names
         .iter()
-        .zip(requirements)
+        .zip(component_defs)
         .flat_map(|(name, (requires, _))| {
             requires
                 .iter()
                 .filter_map(move |r| r.timeseries_type.map(|t| (name, r, t)))
         });
-    for (consumer, requirement, declared) in declarations {
-        let (resolved, producer) = sources.entry(requirement.name.as_str()).or_insert_with(|| {
+    for (consumer, def, declared) in declarations {
+        let (resolved, producer) = sources.entry(def.name.as_str()).or_insert_with(|| {
             (
                 declared,
-                format!("exogenous data as declared by {consumer}"),
+                format!("prescribed data as declared by {consumer}"),
             )
         });
         if *resolved != declared {
             return Err(RSCMError::TimeseriesTypeMismatch {
-                variable: requirement.name.clone(),
+                variable: def.name.clone(),
                 producer: producer.clone(),
                 producer_type: resolved.to_string(),
                 consumer: consumer.clone(),
@@ -161,9 +161,9 @@ pub(crate) fn resolve_timeseries_types(
     }
 
     if state_type_check {
-        for (component, (requires, _)) in names.iter().zip(requirements) {
+        for (component, (requires, _)) in names.iter().zip(component_defs) {
             for r in requires {
-                if r.requirement_type == RequirementType::State
+                if r.role == VariableRole::State
                     && definitions[&r.name].timeseries_type == TimeseriesType::Average
                 {
                     return Err(RSCMError::AverageState {

@@ -58,13 +58,13 @@ from rscm.core import (
 # To create a component, subclass `rscm.component.Component` and declare
 # inputs/outputs using descriptors. The metaclass automatically generates:
 #
-# - `definitions()` method returning `list[RequirementDefinition]`
+# - `definitions()` method returning `list[VariableDefinition]`
 # - Inner `Inputs` class with typed fields for each input
 # - Inner `Outputs` class for constructing return values
 #
 # `solve()` reads each input with `get()`,
 # the value the model hands the component for the step.
-# See [Timestep Semantics](../../key_concepts/#timestep-semantics) for how the model wiring sets it.
+# See [Step Semantics](../../key_concepts/#step-semantics) for how the model wiring sets it.
 #
 # ### Basic Example: Scalar Component
 
@@ -110,19 +110,20 @@ scale_component = ScaleComponent(scale_factor=3, scale_year=2015)
 
 # %%
 for defn in scale_component.definitions():
-    print(f"  {defn.requirement_type}: {defn.name} [{defn.unit}]")
+    print(f"  {defn.role}: {defn.name} [{defn.unit}]")
 
 # %% [markdown]
 # ## Wrapping for Rust Integration
 #
-# To use a Python component in an RSCM model, wrap it with `PythonComponent.build()`.
-# This creates a Rust struct that:
+# `ModelBuilder.with_component()` takes a Python component instance directly.
+# It wraps the instance in a `PythonComponent`, a Rust struct that:
 #
 # - Holds a reference to your Python object
 # - Implements the Rust `Component` trait
 # - Handles data conversion between Python and Rust
 #
-# This enables seamless coupling between Rust and Python components.
+# `PythonComponent.build()` applies the same wrapper by hand,
+# which lets you call the component outside a model.
 
 # %%
 wrapped = PythonComponent.build(scale_component)
@@ -156,9 +157,9 @@ print(f"Output value: {result['output'].to_scalar()}")
 #
 # Components are typically used within a `Model` that handles:
 #
-# - Time stepping
+# - Stepping
 # - Dependency resolution between components
-# - State management across timesteps
+# - State management across steps
 
 # %%
 input_ts = Timeseries(
@@ -172,9 +173,9 @@ time_axis = TimeAxis.from_bounds(np.arange(1750.0, 2100, 10.0))
 
 model = (
     ModelBuilder()
-    .with_py_component(wrapped)
+    .with_component(wrapped)
     .with_time_axis(time_axis)
-    .with_exogenous_variable("input", input_ts)
+    .with_prescribed_variable("input", input_ts)
 ).build()
 model.run()
 
@@ -196,7 +197,7 @@ plt.title("ScaleComponent: Input vs Output")
 plt.show()
 
 # %% [markdown]
-# The output lags the input by one timestep, because the component reads its input at the start
+# The output lags the input by one step, because the component reads its input at the start
 # of a step and writes its output at the end.
 # The model steps every 10 years, so the first step that starts after 2015 runs from 2020 to 2030.
 # The tripled output therefore first appears in 2030.
@@ -204,7 +205,7 @@ plt.show()
 # %% [markdown]
 # ## State Variables
 #
-# A `State` is read at the start of each timestep and written at the end.
+# A `State` is read at the start of each step and written at the end.
 # It appears in both `Inputs` and `Outputs`.
 # The model needs an initial value for every state variable.
 
@@ -217,7 +218,7 @@ class Accumulator(Component):
     cumulative = State("Cumulative Emissions|CO2", unit="GtC")
 
     def solve(self, t_current: float, t_next: float, inputs):
-        """Add this timestep's emissions to the running total."""
+        """Add this step's emissions to the running total."""
         dt = t_next - t_current
         total = inputs.cumulative.get() + inputs.emissions.get() * dt
         return self.Outputs(cumulative=total)
@@ -232,9 +233,9 @@ emissions_ts = Timeseries(
 
 state_model = (
     ModelBuilder()
-    .with_py_component(PythonComponent.build(Accumulator()))
+    .with_component(Accumulator())
     .with_time_axis(TimeAxis.from_bounds(np.arange(2000.0, 2006.0)))
-    .with_exogenous_variable("Emissions|CO2", emissions_ts)
+    .with_prescribed_variable("Emissions|CO2", emissions_ts)
     .with_initial_values({"Cumulative Emissions|CO2": 0.0})
 ).build()
 state_model.run()
@@ -259,7 +260,7 @@ class RegionalComponent(Component):
     """Regional temperature response to a global forcing."""
 
     forcing = Input("Effective Radiative Forcing", unit="W/m^2")
-    regional_temp = Output("Regional Temperature", unit="K", grid="FourBox")
+    regional_temp = Output("Regional Temperature", unit="K", grid="four_box")
 
     def __init__(self, sensitivity: float):
         self.sensitivity = sensitivity
@@ -281,8 +282,8 @@ class RegionalComponent(Component):
 regional = RegionalComponent(sensitivity=0.5)
 
 for defn in regional.definitions():
-    grid = defn.grid_type
-    print(f"  {defn.requirement_type.name}: {defn.name} [{defn.unit}] ({grid})")
+    grid = defn.grid
+    print(f"  {defn.role.name}: {defn.name} [{defn.unit}] ({grid})")
 
 # %% [markdown]
 # Solving it once returns a FourBox `StateValue` for the regional output:
@@ -345,7 +346,7 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # and `region(i)` returns a scalar window for one region.
 #
 # Inputs arrive in the declared unit and grid when the model has a schema.
-# See [Timestep Semantics](../../key_concepts/#timestep-semantics) for how the model picks the step.
+# See [Step Semantics](../../key_concepts/#step-semantics) for how the model picks the step.
 
 # %% [markdown]
 # ## Saving Models
@@ -365,6 +366,6 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # 1. Subclass `rscm.component.Component`
 # 2. Declare variables with `Input()`, `Output()`, or `State()` descriptors
 # 3. Implement `solve(t_current, t_next, inputs)` returning `self.Outputs(...)`
-# 4. Wrap with `PythonComponent.build()` for model integration
-# 5. Use `grid="FourBox"` or `grid="Hemispheric"` for spatial variables
+# 4. Pass an instance to `ModelBuilder.with_component()`
+# 5. Use `grid="four_box"` or `grid="hemispheric"` for spatial variables
 # 6. Component outputs are `StateValue` objects, so use `.to_scalar()` for floats

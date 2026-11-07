@@ -55,7 +55,7 @@ use crate::reference::{
     reference_value, require_annual, value_at_year, PERMAFROST_CH4,
 };
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -99,7 +99,7 @@ fn secant(
 ///
 /// # Algorithm
 ///
-/// For each timestep, starting from the burden $B$ at the start of the year,
+/// For each step, starting from the burden $B$ at the start of the year,
 /// performs 4 fixed-point iterations:
 ///
 /// 1. Mean burden: $\bar{B}_1 = B$, then $\bar{B}_n = (B + B_{n-1}) / 2$
@@ -281,10 +281,10 @@ impl Default for CH4Chemistry {
 
 #[typetag::serde]
 impl Component for CH4Chemistry {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         if self.parameters.permafrost {
-            definitions.push(RequirementDefinition::scalar_input(
+            definitions.push(VariableDefinition::scalar_input(
                 PERMAFROST_CH4,
                 "Mt CH4/yr",
             ));
@@ -295,7 +295,7 @@ impl Component for CH4Chemistry {
             self.parameters.concentration_switch_year,
         ));
         if self.parameters.concentration_switch_year.is_some() {
-            definitions.push(RequirementDefinition::scalar_output(
+            definitions.push(VariableDefinition::scalar_output(
                 CH4_INVERSE_EMISSIONS,
                 "Mt CH4/yr",
             ));
@@ -563,14 +563,13 @@ mod tests {
         name: &str,
         value: FloatValue,
     ) -> rscm_core::timeseries_collection::TimeseriesItem {
-        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
         TimeseriesItem {
             data: TimeseriesData::Scalar(rscm_core::timeseries::Timeseries::from_values(
                 ndarray::array![value, value],
                 ndarray::array![2000.0, 2001.0],
             )),
             name: name.to_string(),
-            variable_type: VariableType::Exogenous,
         }
     }
 

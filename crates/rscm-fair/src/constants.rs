@@ -1,6 +1,6 @@
 //! Physical constants from FaIR's `constants.py` and `earth_params.py`.
 
-use rscm_core::component::{InputState, RequirementDefinition};
+use rscm_core::component::{InputState, VariableDefinition};
 use rscm_core::timeseries::FloatValue;
 
 /// Radius of the Earth (m).
@@ -47,16 +47,13 @@ pub(crate) fn driver_definitions<'a>(
     temperature: &str,
     drivers: impl Iterator<Item = (&'a str, &'a str)>,
     forcing: &str,
-) -> Vec<RequirementDefinition> {
-    let mut definitions = vec![RequirementDefinition::scalar_input(
+) -> Vec<VariableDefinition> {
+    let mut definitions = vec![VariableDefinition::scalar_input(
         temperature,
         &temperature_unit(),
     )];
-    definitions.extend(drivers.map(|(v, u)| RequirementDefinition::scalar_input(v, u)));
-    definitions.push(RequirementDefinition::scalar_output(
-        forcing,
-        &forcing_unit(),
-    ));
+    definitions.extend(drivers.map(|(v, u)| VariableDefinition::scalar_input(v, u)));
+    definitions.push(VariableDefinition::scalar_output(forcing, &forcing_unit()));
     definitions
 }
 

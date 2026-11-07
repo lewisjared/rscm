@@ -16,7 +16,7 @@
 
 use crate::constants::{get, surface_temperature, temperature_unit};
 use rscm_core::component::{
-    Component, ComponentState, InputState, OutputState, RequirementDefinition, TimeseriesType,
+    Component, ComponentState, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
@@ -111,7 +111,7 @@ pub struct GasState {
     pub airborne: FloatValue,
     /// Cumulative emissions.
     pub cumulative: FloatValue,
-    /// Sum of the emission rates so far, which FaIR scales by the timestep for the cumulative
+    /// Sum of the emission rates so far, which FaIR scales by the step for the cumulative
     /// emissions of emissions-driven gases.
     pub emissions_sum: FloatValue,
 }
@@ -334,8 +334,8 @@ impl FairGasCycle {
 
 #[typetag::serde]
 impl Component for FairGasCycle {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        let mut definitions = vec![RequirementDefinition::scalar_input(
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        let mut definitions = vec![VariableDefinition::scalar_input(
             &self.parameters.surface_temperature,
             &temperature_unit(),
         )];
@@ -343,24 +343,21 @@ impl Component for FairGasCycle {
             match s.mode {
                 GasMode::Emissions => {
                     for name in &s.emissions {
-                        definitions
-                            .push(RequirementDefinition::scalar_input(name, &s.emissions_unit));
+                        definitions.push(VariableDefinition::scalar_input(name, &s.emissions_unit));
                     }
-                    definitions.push(RequirementDefinition::scalar_output(
+                    definitions.push(VariableDefinition::scalar_output(
                         &s.concentration,
                         &s.concentration_unit,
                     ));
                 }
                 GasMode::Concentration => {
-                    definitions.push(RequirementDefinition::scalar_input(
+                    definitions.push(VariableDefinition::scalar_input(
                         &s.concentration,
                         &s.concentration_unit,
                     ));
                     if let Some(name) = &s.inverse_emissions {
-                        definitions.push(RequirementDefinition::scalar_output(
-                            name,
-                            &s.emissions_unit,
-                        ));
+                        definitions
+                            .push(VariableDefinition::scalar_output(name, &s.emissions_unit));
                     }
                 }
             }
@@ -368,11 +365,11 @@ impl Component for FairGasCycle {
                 .into_iter()
                 .flatten()
             {
-                definitions.push(RequirementDefinition::scalar_output(name, &s.amount_unit));
+                definitions.push(VariableDefinition::scalar_output(name, &s.amount_unit));
             }
             if let Some(name) = &s.lifetime_scaling {
                 definitions.push(
-                    RequirementDefinition::scalar_input(name, "1")
+                    VariableDefinition::scalar_input(name, "1")
                         .with_timeseries_type(TimeseriesType::Average),
                 );
             }

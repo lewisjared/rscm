@@ -55,7 +55,6 @@ from rscm.core import (
     HemisphericSlice,
     InterpolationStrategy,
     ModelBuilder,
-    PythonComponent,
     TimeAxis,
     Timeseries,
     VariableSchema,
@@ -66,7 +65,7 @@ from rscm.core import (
 #
 # ### FourBox Grid
 #
-# The FourBox grid divides the globe into four regions based on hemisphere
+# The four-box grid divides the globe into four regions based on hemisphere
 # and surface type:
 #
 # ```
@@ -215,7 +214,7 @@ print(f"Outputs: {heat_uptake_component.output_names()}")
 # We need to provide:
 #
 # 1. A time axis for model execution
-# 2. Exogenous forcing data (scalar input)
+# 2. Prescribed forcing data (scalar input)
 # 3. The gridded component
 
 # %%
@@ -235,9 +234,9 @@ forcing = Timeseries(
 
 model = (
     ModelBuilder()
-    .with_rust_component(heat_uptake_component)
+    .with_component(heat_uptake_component)
     .with_time_axis(time_axis)
-    .with_exogenous_variable("Effective Radiative Forcing|Aggregated", forcing)
+    .with_prescribed_variable("Effective Radiative Forcing|Aggregated", forcing)
 ).build()
 
 # %% [markdown]
@@ -250,9 +249,9 @@ model = (
 model.run()
 collection = model.timeseries()
 
-heat_uptake_ts = collection.get_fourbox_timeseries_by_name("Heat Uptake|Ocean")
+heat_uptake_ts = collection.get_four_box_timeseries_by_name("Heat Uptake|Ocean")
 values = heat_uptake_ts.values()
-print(f"Units: {heat_uptake_ts.units}, shape: {values.shape}")
+print(f"Units: {heat_uptake_ts.unit}, shape: {values.shape}")
 
 # %% [markdown]
 # ### Visualising Regional Results
@@ -308,13 +307,13 @@ hemi_temps = [1.6, 0.9]
 print(f"Global mean: {hemi_grid.aggregate_global(hemi_temps)} K")
 
 # %% [markdown]
-# A model aggregates FourBox values to Hemispheric by averaging ocean and land in each hemisphere.
+# A model aggregates four-box values to Hemispheric by averaging ocean and land in each hemisphere.
 # The [example below](#aggregating-inside-a-model) shows this.
 
 # %% [markdown]
 # ## Writing Gridded Python Components
 #
-# Declare a gridded variable by passing `grid="FourBox"` or `grid="Hemispheric"`
+# Declare a gridded variable by passing `grid="four_box"` or `grid="hemispheric"`
 # to `Input`, `Output` or `State`.
 # Return a `FourBoxSlice` or `HemisphericSlice` for gridded outputs.
 #
@@ -327,7 +326,7 @@ class RegionalWarming(Component):
     """Scale global forcing into regional temperatures."""
 
     forcing = Input("Effective Radiative Forcing", unit="W/m^2")
-    temperature = Output("Surface Temperature", unit="K", grid="FourBox")
+    temperature = Output("Surface Temperature", unit="K", grid="four_box")
 
     def __init__(self, sensitivity: list[float]):
         # Regional sensitivities in K per W/m^2, ordered [NO, NL, SO, SL]
@@ -344,11 +343,11 @@ class RegionalWarming(Component):
 class LandOceanContrast(Component):
     """Difference between mean land and mean ocean temperature."""
 
-    temperature = Input("Surface Temperature", unit="K", grid="FourBox")
+    temperature = Input("Surface Temperature", unit="K", grid="four_box")
     contrast = Output("Land-Ocean Contrast", unit="K")
 
     def solve(self, t_current, t_next, inputs):
-        """Read regional values from the FourBox window."""
+        """Read regional values from the four-box window."""
         regional, _ = inputs.temperature.interval()
         land = (regional.northern_land + regional.southern_land) / 2
         ocean = (
@@ -389,14 +388,14 @@ regional_model = (
     ModelBuilder()
     .with_time_axis(grid_time_axis)
     .with_schema(schema)
-    .with_py_component(PythonComponent.build(RegionalWarming(sensitivity)))
-    .with_py_component(PythonComponent.build(LandOceanContrast()))
-    .with_exogenous_variable("Effective Radiative Forcing", grid_forcing)
+    .with_component(RegionalWarming(sensitivity))
+    .with_component(LandOceanContrast())
+    .with_prescribed_variable("Effective Radiative Forcing", grid_forcing)
 ).build()
 regional_model.run()
 
 regional_results = regional_model.timeseries()
-temps = regional_results.get_fourbox_timeseries_by_name("Surface Temperature").values()
+temps = regional_results.get_four_box_timeseries_by_name("Surface Temperature").values()
 contrast = regional_results.get_timeseries_by_name("Land-Ocean Contrast").values()
 for year, t, c in zip(grid_time_axis.values()[1:4], temps[1:4], contrast[1:4]):
     print(
@@ -410,7 +409,7 @@ for year, t, c in zip(grid_time_axis.values()[1:4], temps[1:4], contrast[1:4]):
 # If a component writes a finer grid than the schema declares,
 # the model aggregates the output when writing it.
 # Here the schema stores `Surface Temperature` as a scalar,
-# so the FourBox output of `RegionalWarming` becomes a global mean.
+# so the four-box output of `RegionalWarming` becomes a global mean.
 #
 # By default the model aggregates with equal weights.
 # `ModelBuilder.with_grid_weights()` sets area weights for a grid type.
@@ -432,8 +431,8 @@ def build_regional_model(
         ModelBuilder()
         .with_time_axis(grid_time_axis)
         .with_schema(schema)
-        .with_py_component(PythonComponent.build(RegionalWarming(sensitivity)))
-        .with_exogenous_variable("Effective Radiative Forcing", grid_forcing)
+        .with_component(RegionalWarming(sensitivity))
+        .with_prescribed_variable("Effective Radiative Forcing", grid_forcing)
     )
     if weights is not None:
         builder = builder.with_grid_weights(GridType.FourBox, weights)
@@ -490,7 +489,7 @@ print(f"[N, S] for 2001 to 2003:\n{np.round(hemi_values[1:4], 3)}")
 #
 # Automatic aggregation needs a schema that declares the coarser grid.
 # The builder validates grids when the model is built.
-# Without a schema, a FourBox producer cannot feed a Scalar consumer:
+# Without a schema, a four-box producer cannot feed a Scalar consumer:
 
 
 # %%
@@ -509,9 +508,9 @@ try:
     (
         ModelBuilder()
         .with_time_axis(grid_time_axis)
-        .with_py_component(PythonComponent.build(RegionalWarming(sensitivity)))
-        .with_py_component(PythonComponent.build(ScalarReader()))
-        .with_exogenous_variable("Effective Radiative Forcing", grid_forcing)
+        .with_component(RegionalWarming(sensitivity))
+        .with_component(ScalarReader())
+        .with_prescribed_variable("Effective Radiative Forcing", grid_forcing)
     ).build()
 except ValueError as e:
     print(e)
@@ -526,22 +525,22 @@ except ValueError as e:
 class HemisphericProducer(Component):
     """Produces hemispheric temperatures."""
 
-    temperature = Output("Surface Temperature", unit="K", grid="Hemispheric")
+    temperature = Output("Surface Temperature", unit="K", grid="hemispheric")
 
     def solve(self, t_current, t_next, inputs):
         """Return fixed hemispheric values."""
         return self.Outputs(temperature=HemisphericSlice(northern=1.2, southern=0.8))
 
 
-fourbox_schema = VariableSchema()
-fourbox_schema.add_variable("Surface Temperature", "K", GridType.FourBox)
+four_box_schema = VariableSchema()
+four_box_schema.add_variable("Surface Temperature", "K", GridType.FourBox)
 
 try:
     (
         ModelBuilder()
         .with_time_axis(grid_time_axis)
-        .with_schema(fourbox_schema)
-        .with_py_component(PythonComponent.build(HemisphericProducer()))
+        .with_schema(four_box_schema)
+        .with_component(HemisphericProducer())
     ).build()
 except ValueError as e:
     print(e)
@@ -558,8 +557,8 @@ except ValueError as e:
 class HemisphericToFourBox(Component):
     """Split hemispheric temperatures into ocean and land with a fixed ocean/land ratio."""
 
-    hemispheric = Input("Surface Temperature", unit="K", grid="Hemispheric")
-    fourbox = Output("Surface Temperature|FourBox", unit="K", grid="FourBox")
+    hemispheric = Input("Surface Temperature", unit="K", grid="hemispheric")
+    four_box = Output("Regional Surface Temperature", unit="K", grid="four_box")
 
     def __init__(self, ocean_land_ratio: float):
         self.ocean_factor = 2 * ocean_land_ratio / (1 + ocean_land_ratio)
@@ -569,7 +568,7 @@ class HemisphericToFourBox(Component):
         """Scale each hemisphere so that its ocean and land values average to it."""
         hemi, _ = inputs.hemispheric.interval()
         return self.Outputs(
-            fourbox=FourBoxSlice(
+            four_box=FourBoxSlice(
                 northern_ocean=hemi.northern * self.ocean_factor,
                 northern_land=hemi.northern * self.land_factor,
                 southern_ocean=hemi.southern * self.ocean_factor,
@@ -581,16 +580,14 @@ class HemisphericToFourBox(Component):
 split_model = (
     ModelBuilder()
     .with_time_axis(grid_time_axis)
-    .with_py_component(PythonComponent.build(HemisphericProducer()))
-    .with_py_component(
-        PythonComponent.build(HemisphericToFourBox(ocean_land_ratio=1.2))
-    )
+    .with_component(HemisphericProducer())
+    .with_component(HemisphericToFourBox(ocean_land_ratio=1.2))
 ).build()
 split_model.run()
 
 no, nl, so, sl = (
     split_model.timeseries()
-    .get_fourbox_timeseries_by_name("Surface Temperature|FourBox")
+    .get_four_box_timeseries_by_name("Regional Surface Temperature")
     .values()[-1]
 )
 print(f"NO={no:.3f}, NL={nl:.3f}, SO={so:.3f}, SL={sl:.3f}")

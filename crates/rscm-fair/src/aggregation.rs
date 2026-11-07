@@ -10,7 +10,7 @@ use crate::constants::{
     efficacy_adjusted_forcing, forcing_unit, get, one, surface_temperature, temperature_unit,
     total_forcing,
 };
-use rscm_core::component::{Component, InputState, OutputState, RequirementDefinition};
+use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -70,35 +70,32 @@ impl FairForcingAggregation {
 
 #[typetag::serde]
 impl Component for FairForcingAggregation {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         let mut definitions = Vec::with_capacity(p.agents.len() + 3);
         for a in &p.agents {
             match &a.prescribed {
                 Some(input) => {
-                    definitions.push(RequirementDefinition::scalar_input(input, &forcing_unit()));
-                    definitions.push(RequirementDefinition::scalar_output(
+                    definitions.push(VariableDefinition::scalar_input(input, &forcing_unit()));
+                    definitions.push(VariableDefinition::scalar_output(
                         &a.forcing,
                         &forcing_unit(),
                     ));
                 }
-                None => definitions.push(RequirementDefinition::scalar_input(
+                None => definitions.push(VariableDefinition::scalar_input(
                     &a.forcing,
                     &forcing_unit(),
                 )),
             }
         }
         if self.has_feedback() {
-            definitions.push(RequirementDefinition::scalar_input(
+            definitions.push(VariableDefinition::scalar_input(
                 &p.surface_temperature,
                 &temperature_unit(),
             ));
         }
-        definitions.push(RequirementDefinition::scalar_output(
-            &p.total,
-            &forcing_unit(),
-        ));
-        definitions.push(RequirementDefinition::scalar_output(
+        definitions.push(VariableDefinition::scalar_output(&p.total, &forcing_unit()));
+        definitions.push(VariableDefinition::scalar_output(
             &p.efficacy_adjusted,
             &forcing_unit(),
         ));

@@ -76,9 +76,9 @@ def from_fair(
                 entry[str(var)] = _plain(data.sel(specie=name).values)
         species.append(entry)
 
-        exogenous = naming.exogenous_variable(entry)
-        if exogenous is not None:
-            variable, unit = exogenous
+        prescribed = naming.prescribed_variable(entry)
+        if prescribed is not None:
+            variable, unit = prescribed
             values = getattr(f, entry["input_mode"]).sel(
                 specie=name, scenario=scenario, config=config
             )

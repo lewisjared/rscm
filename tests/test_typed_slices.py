@@ -11,9 +11,9 @@ from rscm.core import (
     GridType,
     HemisphericSlice,
     HemisphericTimeseriesWindow,
-    RequirementDefinition,
-    RequirementType,
     TimeseriesWindow,
+    VariableDefinition,
+    VariableRole,
 )
 
 
@@ -269,7 +269,7 @@ class TestHemisphericSlice:
 class TestGridType:
     """Tests for GridType enum."""
 
-    def test_grid_type_exists(self):
+    def test_grid_exists(self):
         """Test GridType enum values exist."""
         assert hasattr(GridType, "Scalar")
         assert hasattr(GridType, "FourBox")
@@ -311,15 +311,15 @@ class TestTimeseriesWindow:
         r = repr(w)
         assert "TimeseriesWindow" in r
         assert "len=3" in r
-        assert "current_index=1" in r
+        assert "time_index=1" in r
 
-    def test_invalid_current_index(self):
-        """Test that invalid current_index raises."""
+    def test_invalid_time_index(self):
+        """Test that invalid time_index raises."""
         with pytest.raises(ValueError, match="out of bounds"):
             TimeseriesWindow([1.0, 2.0], 5)
 
     def test_get(self):
-        """Test get returns the value at the step's end for an exogenous point."""
+        """Test get returns the value at the step's end for a prescribed point."""
         w = TimeseriesWindow([1.0, 2.0, 3.0], 0)
         assert w.get() == 2.0
 
@@ -328,7 +328,7 @@ class TestTimeseriesWindow:
         w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
         assert w.interval() == (2.0, 3.0)
 
-    def test_interval_raises_at_last_timestep(self):
+    def test_interval_raises_at_last_step(self):
         """Test interval raises when the step has no end."""
         w = TimeseriesWindow([1.0, 2.0, 3.0], 2)
         with pytest.raises(ValueError, match="last"):
@@ -394,7 +394,7 @@ class TestFourBoxTimeseriesWindow:
         assert end.northern_ocean == 9.0
         assert end.southern_land == 12.0
 
-    def test_interval_raises_at_last_timestep(self):
+    def test_interval_raises_at_last_step(self):
         """Test interval raises when the step has no end."""
         values = [[1, 2, 3, 4], [5, 6, 7, 8]]
         w = FourBoxTimeseriesWindow(values, 1)
@@ -443,7 +443,7 @@ class TestHemisphericTimeseriesWindow:
         assert (start.northern, start.southern) == (3.0, 4.0)
         assert (end.northern, end.southern) == (5.0, 6.0)
 
-    def test_interval_raises_at_last_timestep(self):
+    def test_interval_raises_at_last_step(self):
         """Test interval raises when the step has no end."""
         values = [[1, 2], [3, 4]]
         w = HemisphericTimeseriesWindow(values, 1)
@@ -451,25 +451,25 @@ class TestHemisphericTimeseriesWindow:
             w.interval()
 
 
-class TestRequirementDefinitionWithGridType:
-    """Tests for RequirementDefinition with grid_type parameter."""
+class TestVariableDefinitionWithGrid:
+    """Tests for VariableDefinition with grid parameter."""
 
-    def test_requirement_definition_default_grid_type(self):
-        """Test that default grid_type is Scalar."""
-        req = RequirementDefinition("Emissions|CO2", "GtC / yr", RequirementType.Input)
+    def test_variable_definition_default_grid(self):
+        """Test that default grid is Scalar."""
+        req = VariableDefinition("Emissions|CO2", "GtC / yr", VariableRole.Input)
         # PyO3 enums need name comparison
-        assert str(req.grid_type) == str(GridType.Scalar)
+        assert str(req.grid) == str(GridType.Scalar)
 
-    def test_requirement_definition_explicit_grid_type(self):
-        """Test setting explicit grid_type."""
-        req = RequirementDefinition(
-            "Temperature", "K", RequirementType.Output, GridType.FourBox
+    def test_variable_definition_explicit_grid(self):
+        """Test setting explicit grid."""
+        req = VariableDefinition(
+            "Temperature", "K", VariableRole.Output, GridType.FourBox
         )
-        assert str(req.grid_type) == str(GridType.FourBox)
+        assert str(req.grid) == str(GridType.FourBox)
 
-    def test_requirement_definition_hemispheric_grid_type(self):
-        """Test setting hemispheric grid_type."""
-        req = RequirementDefinition(
-            "Precipitation", "mm / yr", RequirementType.Input, GridType.Hemispheric
+    def test_variable_definition_hemispheric_grid(self):
+        """Test setting hemispheric grid."""
+        req = VariableDefinition(
+            "Precipitation", "mm / yr", VariableRole.Input, GridType.Hemispheric
         )
-        assert str(req.grid_type) == str(GridType.Hemispheric)
+        assert str(req.grid) == str(GridType.Hemispheric)

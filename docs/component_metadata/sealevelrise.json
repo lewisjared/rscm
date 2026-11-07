@@ -12,53 +12,53 @@
   "inputs": [
     {
       "rust_name": "temperature",
-      "variable_name": "Surface Temperature|Annual Mean",
+      "name": "Surface Temperature|Annual Mean",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "thermal_expansion",
-      "variable_name": "Sea Level Rise|Thermal Expansion",
+      "name": "Sea Level Rise|Thermal Expansion",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "total",
-      "variable_name": "Sea Level Rise",
+      "name": "Sea Level Rise",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "glaciers",
-      "variable_name": "Sea Level Rise|Glaciers",
+      "name": "Sea Level Rise|Glaciers",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "greenland_smb",
-      "variable_name": "Sea Level Rise|Greenland|Surface Mass Balance",
+      "name": "Sea Level Rise|Greenland|Surface Mass Balance",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "greenland_discharge",
-      "variable_name": "Sea Level Rise|Greenland|Solid Ice Discharge",
+      "name": "Sea Level Rise|Greenland|Solid Ice Discharge",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "antarctic_smb",
-      "variable_name": "Sea Level Rise|Antarctica|Surface Mass Balance",
+      "name": "Sea Level Rise|Antarctica|Surface Mass Balance",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "antarctic_discharge",
-      "variable_name": "Sea Level Rise|Antarctica|Solid Ice Discharge",
+      "name": "Sea Level Rise|Antarctica|Solid Ice Discharge",
       "unit": "mm",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "states": [],

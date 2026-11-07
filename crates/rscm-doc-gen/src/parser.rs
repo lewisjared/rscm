@@ -1,7 +1,7 @@
 //! Rust source file parser for extracting component metadata
 
 use crate::extractor::{extract_description, extract_doc_comments};
-use crate::schema::{ComponentDocMetadata, ParameterMetadata, VariableMetadata};
+use crate::schema::{ComponentDocMetadata, DeclaredVariable, ParameterMetadata};
 use std::fs;
 use std::path::Path;
 use syn::{Attribute, Fields, Item, ItemStruct, Meta, MetaList, Type};
@@ -201,7 +201,7 @@ fn parse_component_attr(attr: &Attribute, metadata: &mut ComponentDocMetadata) {
 }
 
 /// Parse #[inputs(...)], #[outputs(...)], or #[states(...)] attribute
-fn parse_io_attr(attr: &Attribute) -> Result<Vec<VariableMetadata>, ()> {
+fn parse_io_attr(attr: &Attribute) -> Result<Vec<DeclaredVariable>, ()> {
     let mut variables = Vec::new();
 
     if let Meta::List(MetaList { tokens, .. }) = &attr.meta {
@@ -218,11 +218,11 @@ fn parse_io_attr(attr: &Attribute) -> Result<Vec<VariableMetadata>, ()> {
             let rust_name = cap.get(1).map(|m| m.as_str()).unwrap_or("");
             let var_name = cap.get(2).map(|m| m.as_str()).unwrap_or("");
             let unit = cap.get(3).map(|m| m.as_str()).unwrap_or("");
-            let grid = cap.get(4).map(|m| m.as_str()).unwrap_or("Scalar");
+            let grid = cap.get(4).map(|m| m.as_str()).unwrap_or("scalar");
 
-            variables.push(VariableMetadata {
+            variables.push(DeclaredVariable {
                 rust_name: rust_name.to_string(),
-                variable_name: var_name.to_string(),
+                name: var_name.to_string(),
                 unit: unit.to_string(),
                 grid: grid.to_string(),
                 description: String::new(),

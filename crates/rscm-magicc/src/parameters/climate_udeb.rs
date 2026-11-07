@@ -62,9 +62,9 @@ impl SubannualForcing {
     }
 }
 
-/// Parameters for the 4-box UDEB climate model.
+/// Parameters for the four-box UDEB climate model.
 ///
-/// The UDEB model couples a 4-box atmosphere (Northern Ocean, Northern Land,
+/// The UDEB model couples a four-box atmosphere (Northern Ocean, Northern Land,
 /// Southern Ocean, Southern Land) to a multi-layer ocean with vertical diffusion
 /// and upwelling.
 ///

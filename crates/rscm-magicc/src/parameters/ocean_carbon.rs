@@ -208,13 +208,13 @@ pub struct OceanCarbonParameters {
     /// Used in pCO2-DIC polynomial calculation (Joos A24).
     pub sst_pi: FloatValue,
 
-    /// Number of sub-steps per year.
+    /// Number of substeps per year.
     /// MAGICC7 uses monthly stepping (12) for stability.
     /// default: 12
     pub steps_per_year: usize,
 
-    /// Maximum flux history length in sub-steps.
-    /// Limits memory usage for IRF convolution (6000 monthly sub-steps = 500 years).
+    /// Maximum flux history length in substeps.
+    /// Limits memory usage for IRF convolution (6000 monthly substeps = 500 years).
     /// default: 6000
     pub max_history_months: usize,
 
@@ -244,7 +244,7 @@ pub struct OceanCarbonParameters {
     /// default: 1900.0
     pub tempfeedback_yrstart: FloatValue,
 
-    /// Largest change in air-sea flux between sub-steps (ppm/yr).
+    /// Largest change in air-sea flux between substeps (ppm/yr).
     /// MAGICC7 applies this limiter for stability. A non-positive value disables it.
     /// default: 0.04
     pub flux_change_limit: FloatValue,
@@ -257,7 +257,7 @@ pub struct OceanCarbonParameters {
     /// default: false
     pub permafrost: bool,
 
-    /// Last year of prescribed CO2, interpolated within the year's sub-steps.
+    /// Last year of prescribed CO2, interpolated within the year's substeps.
     /// Must match `CO2Budget`.
     /// MAGICC7: CO2_SWITCHFROMCONC2EMIS_YEAR
     pub concentration_switch_year: Option<FloatValue>,
@@ -494,7 +494,7 @@ impl OceanCarbonParameters {
         (pco2_reference + delta_pco2_dic) * temp_factor
     }
 
-    /// Mixed-layer DIC change (micromol/kg) from the IRF-weighted sum of sub-step fluxes (ppm/yr).
+    /// Mixed-layer DIC change (micromol/kg) from the IRF-weighted sum of substep fluxes (ppm/yr).
     pub fn delta_dic(&self, flux_integral: FloatValue) -> FloatValue {
         let per_ppm = OCEAN_MICROMOL_PER_PPM_M3_PER_KG / self.ocean_surface_area;
         (flux_integral / self.steps_per_year as FloatValue * per_ppm) / self.mixed_layer_depth

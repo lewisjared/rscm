@@ -220,7 +220,7 @@ except ValueError as e:
 # 2. **Calculates conversion factors**: the builder computes the multiplier needed at runtime.
 # 3. **Applies conversion at runtime**: values are converted as Rust components read their inputs.
 #
-# The builder also converts exogenous data into the unit the model stores it in:
+# The builder also converts prescribed data into the unit the model stores it in:
 # the schema's unit, or without a schema the unit the components declare.
 # Data in a unit with a different dimension, or a unit the parser cannot read, fails `build()`.
 #
@@ -246,13 +246,13 @@ model = (
     ModelBuilder()
     .with_time_axis(TimeAxis.from_values(np.arange(2000.0, 2011.0)))
     .with_schema(schema)
-    .with_rust_component(
+    .with_component(
         CarbonCycleBuilder.from_parameters(
             dict(tau=20.3, conc_pi=280.0, alpha_temperature=0.0)
         ).build()
     )
-    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
-    .with_exogenous_variable("Surface Temperature", temperature)
+    .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
+    .with_prescribed_variable("Surface Temperature", temperature)
     .with_initial_values(
         {
             "Cumulative Land Uptake": 0.0,

@@ -31,7 +31,7 @@
 //!
 //! Components are designed to be composed into a [`Model`](rscm_core::model::Model) using
 //! the [`ModelBuilder`](rscm_core::model::ModelBuilder). Each component declares its input
-//! and output requirements, and the model orchestrator automatically resolves dependencies
+//! and output variables, and the model orchestrator automatically resolves dependencies
 //! and executes components in the correct order.
 //!
 //! ```rust,ignore

@@ -11,7 +11,7 @@ It covers:
 - mineral dust, which follows land-use change,
 - black carbon on snow, which darkens snow and ice.
 
-Aerosol forcing depends only on exogenous inputs, so MAGICC7 calculates it once before the run.
+Aerosol forcing depends only on prescribed inputs, so MAGICC7 calculates it once before the run.
 Most species start from a historical four-box forcing file,
 extend it with emissions after the file ends,
 and harmonise the result to a target forcing in a reference year.

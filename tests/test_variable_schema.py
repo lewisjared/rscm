@@ -31,26 +31,26 @@ class TestVariableSchemaBuilder:
         var = schema.variables["Emissions|CO2"]
         assert var.name == "Emissions|CO2"
         assert var.unit == "GtCO2/yr"
-        assert var.grid_type == GridType.Scalar
+        assert var.grid == GridType.Scalar
 
-    def test_add_variable_with_grid_type(self):
+    def test_add_variable_with_grid(self):
         schema = VariableSchema()
         schema.add_variable("Regional Temperature", "K", GridType.FourBox)
 
         var = schema.variables["Regional Temperature"]
-        assert var.grid_type == GridType.FourBox
+        assert var.grid == GridType.FourBox
 
     def test_add_aggregate_sum(self):
         schema = VariableSchema()
         schema.add_variable("ERF|CO2", "W/m^2")
         schema.add_variable("ERF|CH4", "W/m^2")
-        schema.add_aggregate("Total ERF", "W/m^2", "Sum", ["ERF|CO2", "ERF|CH4"])
+        schema.add_aggregate("Total ERF", "W/m^2", "sum", ["ERF|CO2", "ERF|CH4"])
 
         assert "Total ERF" in schema.aggregates
         agg = schema.aggregates["Total ERF"]
         assert agg.name == "Total ERF"
         assert agg.unit == "W/m^2"
-        assert agg.operation_type == "Sum"
+        assert agg.operation_type == "sum"
         assert agg.contributors == ["ERF|CO2", "ERF|CH4"]
         assert agg.weights is None
 
@@ -58,10 +58,10 @@ class TestVariableSchemaBuilder:
         schema = VariableSchema()
         schema.add_variable("Value|A", "units")
         schema.add_variable("Value|B", "units")
-        schema.add_aggregate("Average", "units", "Mean", ["Value|A", "Value|B"])
+        schema.add_aggregate("Average", "units", "mean", ["Value|A", "Value|B"])
 
         agg = schema.aggregates["Average"]
-        assert agg.operation_type == "Mean"
+        assert agg.operation_type == "mean"
 
     def test_add_aggregate_weighted(self):
         schema = VariableSchema()
@@ -70,13 +70,13 @@ class TestVariableSchemaBuilder:
         schema.add_aggregate(
             "Weighted Total",
             "units",
-            "Weighted",
+            "weighted_sum",
             ["Value|A", "Value|B"],
             weights=[0.6, 0.4],
         )
 
         agg = schema.aggregates["Weighted Total"]
-        assert agg.operation_type == "Weighted"
+        assert agg.operation_type == "weighted_sum"
         assert agg.weights == [0.6, 0.4]
 
     def test_weighted_requires_weights(self):
@@ -84,7 +84,7 @@ class TestVariableSchemaBuilder:
         schema.add_variable("Value|A", "units")
 
         with pytest.raises(ValueError, match="weights must be provided"):
-            schema.add_aggregate("Weighted", "units", "Weighted", ["Value|A"])
+            schema.add_aggregate("Weighted", "units", "weighted_sum", ["Value|A"])
 
     def test_invalid_operation_raises(self):
         schema = VariableSchema()
@@ -96,7 +96,7 @@ class TestVariableSchemaBuilder:
     def test_contains(self):
         schema = VariableSchema()
         schema.add_variable("Var1", "units")
-        schema.add_aggregate("Agg1", "units", "Sum", ["Var1"])
+        schema.add_aggregate("Agg1", "units", "sum", ["Var1"])
 
         assert schema.contains("Var1")
         assert schema.contains("Agg1")
@@ -110,7 +110,7 @@ class TestVariableSchemaValidation:
         schema = VariableSchema()
         schema.add_variable("ERF|CO2", "W/m^2")
         schema.add_variable("ERF|CH4", "W/m^2")
-        schema.add_aggregate("Total ERF", "W/m^2", "Sum", ["ERF|CO2", "ERF|CH4"])
+        schema.add_aggregate("Total ERF", "W/m^2", "sum", ["ERF|CO2", "ERF|CH4"])
 
         # Should not raise
         schema.validate()
@@ -125,7 +125,7 @@ class TestVariableSchemaValidation:
         schema.add_aggregate(
             "Total ERF",
             "W/m^2",
-            "Sum",
+            "sum",
             ["ERF|CO2", "ERF|CH4"],  # ERF|CH4 not defined
         )
 
@@ -139,7 +139,7 @@ class TestVariableSchemaValidation:
         schema.add_aggregate(
             "Total",
             "W/m^2",
-            "Sum",
+            "sum",
             ["ERF|CO2", "Emissions|CO2"],
         )
 
@@ -150,7 +150,7 @@ class TestVariableSchemaValidation:
         schema = VariableSchema()
         schema.add_variable("Global", "K", GridType.Scalar)
         schema.add_variable("Regional", "K", GridType.FourBox)
-        schema.add_aggregate("Total", "K", "Sum", ["Global", "Regional"])
+        schema.add_aggregate("Total", "K", "sum", ["Global", "Regional"])
 
         with pytest.raises(ValueError, match="Grid type mismatch"):
             schema.validate()
@@ -163,7 +163,7 @@ class TestVariableSchemaValidation:
         schema.add_aggregate(
             "Total",
             "units",
-            "Weighted",
+            "weighted_sum",
             ["A", "B", "C"],
             weights=[0.5, 0.5],  # 2 weights, 3 contributors
         )
@@ -175,8 +175,8 @@ class TestVariableSchemaValidation:
         # Need to construct this manually since the Python API doesn't allow
         # adding aggregates that reference undefined contributors before validation
         schema = VariableSchema()
-        schema.add_aggregate("A", "units", "Sum", ["B"])
-        schema.add_aggregate("B", "units", "Sum", ["A"])
+        schema.add_aggregate("A", "units", "sum", ["B"])
+        schema.add_aggregate("B", "units", "sum", ["A"])
 
         with pytest.raises(ValueError, match="Circular dependency"):
             schema.validate()
@@ -227,8 +227,8 @@ class TestSchemaModelIntegration:
             ModelBuilder()
             .with_time_axis(time_axis)
             .with_schema(schema)
-            .with_py_component(component)
-            .with_exogenous_variable("Concentration|CO2", concentration_ts)
+            .with_component(component)
+            .with_prescribed_variable("Concentration|CO2", concentration_ts)
             .build()
         )
 
@@ -238,7 +238,7 @@ class TestSchemaModelIntegration:
         erf_ts = ts.get_timeseries_by_name("ERF|Test")
         assert erf_ts is not None
         # Verify that the model ran and produced output (values calculated correctly)
-        # The exact timestep-by-timestep values depend on component execution timing,
+        # The exact step-by-step values depend on component execution timing,
         # but the final value should be correct
         assert not np.isnan(erf_ts.values()[-1])
 
@@ -256,8 +256,8 @@ class TestSchemaModelIntegration:
                 ModelBuilder()
                 .with_time_axis(time_axis)
                 .with_schema(schema)
-                .with_py_component(component)
-                .with_exogenous_variable("Concentration|CO2", concentration_ts)
+                .with_component(component)
+                .with_prescribed_variable("Concentration|CO2", concentration_ts)
                 .build()
             )
 
@@ -289,10 +289,10 @@ class TestSchemaModelIntegration:
         schema.add_variable("Concentration|CH4", "ppb")
         schema.add_variable("ERF|CO2", "W/m^2")
         schema.add_variable("ERF|CH4", "W/m^2")
-        schema.add_aggregate("Total ERF", "W/m^2", "Sum", ["ERF|CO2", "ERF|CH4"])
+        schema.add_aggregate("Total ERF", "W/m^2", "sum", ["ERF|CO2", "ERF|CH4"])
         schema.validate()
 
-        # Create exogenous data
+        # Create prescribed data
         co2_ts = Timeseries(
             np.array([400.0, 410.0, 420.0, 430.0, 440.0]),
             time_axis,
@@ -310,10 +310,10 @@ class TestSchemaModelIntegration:
             ModelBuilder()
             .with_time_axis(time_axis)
             .with_schema(schema)
-            .with_py_component(PythonComponent.build(CO2ERF()))
-            .with_py_component(PythonComponent.build(CH4ERF()))
-            .with_exogenous_variable("Concentration|CO2", co2_ts)
-            .with_exogenous_variable("Concentration|CH4", ch4_ts)
+            .with_component(CO2ERF())
+            .with_component(CH4ERF())
+            .with_prescribed_variable("Concentration|CO2", co2_ts)
+            .with_prescribed_variable("Concentration|CH4", ch4_ts)
             .build()
         )
 
@@ -346,13 +346,13 @@ class TestGridAutoAggregation:
     def time_axis(self):
         return TimeAxis.from_values(np.arange(2020.0, 2025.0, 1.0))
 
-    def test_with_grid_weights_fourbox(self, time_axis):
-        """Test setting custom FourBox weights on ModelBuilder."""
+    def test_with_grid_weights_four_box(self, time_axis):
+        """Test setting custom four-box weights on ModelBuilder."""
 
         class FourBoxProducer(Component):
-            """Component that produces FourBox output."""
+            """Component that produces four-box output."""
 
-            regional_temp = Output("Temperature|Regional", unit="K", grid="FourBox")
+            regional_temp = Output("Temperature|Regional", unit="K", grid="four_box")
 
             def solve(
                 self, t_current, t_next, inputs: "FourBoxProducer.Inputs"
@@ -374,7 +374,7 @@ class TestGridAutoAggregation:
             .with_time_axis(time_axis)
             .with_schema(schema)
             .with_grid_weights(GridType.FourBox, custom_weights)
-            .with_py_component(PythonComponent.build(FourBoxProducer()))
+            .with_component(FourBoxProducer())
             .build()
         )
 
@@ -395,7 +395,7 @@ class TestGridAutoAggregation:
         class HemisphericProducer(Component):
             """Component that produces Hemispheric output."""
 
-            temp = Output("Temperature|Hemispheric", unit="K", grid="Hemispheric")
+            temp = Output("Temperature", unit="K", grid="hemispheric")
 
             def solve(
                 self, t_current, t_next, inputs: "HemisphericProducer.Inputs"
@@ -404,7 +404,7 @@ class TestGridAutoAggregation:
                 return self.Outputs(temp=HemisphericSlice.from_array([20.0, 10.0]))
 
         schema = VariableSchema()
-        schema.add_variable("Temperature|Hemispheric", "K", GridType.Scalar)
+        schema.add_variable("Temperature", "K", GridType.Scalar)
 
         # Custom weights: northern-heavy
         custom_weights = [0.6, 0.4]
@@ -414,14 +414,14 @@ class TestGridAutoAggregation:
             .with_time_axis(time_axis)
             .with_schema(schema)
             .with_grid_weights(GridType.Hemispheric, custom_weights)
-            .with_py_component(PythonComponent.build(HemisphericProducer()))
+            .with_component(HemisphericProducer())
             .build()
         )
 
         model.step()
 
         ts = model.timeseries()
-        temp_ts = ts.get_timeseries_by_name("Temperature|Hemispheric")
+        temp_ts = ts.get_timeseries_by_name("Temperature")
         assert temp_ts is not None
 
         # With custom weights: 20*0.6 + 10*0.4 = 16.0
@@ -455,7 +455,7 @@ class TestGridAutoAggregation:
                 return self.Outputs(temp=15.0)
 
         class FourBoxReader(Component):
-            temp = Input("Temperature", unit="K", grid="FourBox")  # FourBox
+            temp = Input("Temperature", unit="K", grid="four_box")  # FourBox
             output = Output("Processed", unit="K")
 
             def solve(
@@ -469,12 +469,14 @@ class TestGridAutoAggregation:
         schema.add_variable("Processed", "K", GridType.Scalar)
 
         # Should fail during build - broadcast is not supported
-        with pytest.raises(ValueError, match="cannot transform from Scalar to FourBox"):
+        with pytest.raises(
+            ValueError, match="cannot transform from scalar to four_box"
+        ):
             (
                 ModelBuilder()
                 .with_time_axis(time_axis)
                 .with_schema(schema)
-                .with_py_component(PythonComponent.build(ScalarWriter()))
-                .with_py_component(PythonComponent.build(FourBoxReader()))
+                .with_component(ScalarWriter())
+                .with_component(FourBoxReader())
                 .build()
             )

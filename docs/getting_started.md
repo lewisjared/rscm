@@ -37,20 +37,20 @@ from rscm.two_layer import TwoLayerBuilder
 The time axis specifies when the model runs:
 
 ```python
-# Annual timesteps from 1850 to 2100
+# Annual steps from 1850 to 2100
 time_axis = TimeAxis.from_values(np.arange(1850.0, 2101.0, 1.0))
 ```
 
 ### Step 3: Create Input Data
 
-Provide radiative forcing as an exogenous (external) timeseries:
+Provide radiative forcing as a prescribed (external) timeseries:
 
 ```python
 # Simple forcing scenario: 0 before 1950, then ramping to 4 W/m^2
 forcing = Timeseries(
     values=np.array([0.0, 0.0, 2.0, 4.0]),
     time_axis=TimeAxis.from_bounds(np.array([1850.0, 1950.0, 2000.0, 2050.0, 2100.0])),
-    units="W/m^2",
+    unit="W/m^2",
     interpolation_strategy=InterpolationStrategy.Linear,
 )
 ```
@@ -72,8 +72,8 @@ two_layer = TwoLayerBuilder.from_parameters({
 model = (
     ModelBuilder()
     .with_time_axis(time_axis)
-    .with_rust_component(two_layer)
-    .with_exogenous_variable("Effective Radiative Forcing", forcing)
+    .with_component(two_layer)
+    .with_prescribed_variable("Effective Radiative Forcing", forcing)
     .with_initial_values({
         "Surface Temperature": 0.0,
         "Deep Ocean Temperature": 0.0,
@@ -84,7 +84,7 @@ model.run()
 ```
 
 `build()` raises an exception if the components and inputs are inconsistent.
-`run()` raises `RuntimeError` if a component fails during a timestep.
+`run()` raises `RuntimeError` if a component fails during a step.
 Rebuild the model before retrying a failed run, because component state may already have changed.
 
 ### Step 5: Analyse Results
@@ -140,7 +140,7 @@ from rscm.core import VariableSchema
 emissions = Timeseries(
     values=np.array([0.5, 10.0, 2.0]),
     time_axis=TimeAxis.from_bounds(np.array([1850.0, 2020.0, 2100.0, 2101.0])),
-    units="GtC / yr",
+    unit="GtC / yr",
     interpolation_strategy=InterpolationStrategy.Linear,
 )
 
@@ -165,7 +165,7 @@ schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
 schema.add_variable("Surface Temperature", "K")
 schema.add_variable("Deep Ocean Temperature", "K")
 schema.add_aggregate(
-    "Effective Radiative Forcing", "W/m^2", "Sum", ["Effective Radiative Forcing|CO2"]
+    "Effective Radiative Forcing", "W/m^2", "sum", ["Effective Radiative Forcing|CO2"]
 )
 ```
 
@@ -177,11 +177,11 @@ model = (
     ModelBuilder()
     .with_time_axis(time_axis)
     .with_schema(schema)
-    .with_rust_component(carbon_cycle)
-    .with_rust_component(co2_erf)
-    .with_rust_component(two_layer)
+    .with_component(carbon_cycle)
+    .with_component(co2_erf)
+    .with_component(two_layer)
     .with_lag_for("Surface Temperature", "CarbonCycle")
-    .with_exogenous_variable("Emissions|CO2|Anthropogenic", emissions)
+    .with_prescribed_variable("Emissions|CO2|Anthropogenic", emissions)
     .with_initial_values({
         "Atmospheric Concentration|CO2": 278.0,
         "Cumulative Emissions|CO2": 0.0,
@@ -194,7 +194,7 @@ model.run()
 ```
 
 RSCM builds a dependency graph from the components,
-and solves producers before their consumers within each timestep.
+and solves producers before their consumers within each step.
 The order you add components in does not matter.
 A feedback loop must lag one of its edges with `with_lag` or `with_lag_for`, or `build()` fails.
 See [Key Concepts](key_concepts.md#dependency-graph) for details.

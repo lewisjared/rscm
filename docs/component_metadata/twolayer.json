@@ -13,24 +13,24 @@
   "inputs": [
     {
       "rust_name": "erf",
-      "variable_name": "Effective Radiative Forcing",
+      "name": "Effective Radiative Forcing",
       "unit": "W/m^2",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [],
   "states": [
     {
       "rust_name": "surface_temperature",
-      "variable_name": "Surface Temperature",
+      "name": "Surface Temperature",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "deep_temperature",
-      "variable_name": "Deep Ocean Temperature",
+      "name": "Deep Ocean Temperature",
       "unit": "K",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "parameters": [

@@ -4,8 +4,7 @@
 //! using the standard logarithmic relationship.
 
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
-    ScalarWindow,
+    Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
@@ -62,7 +61,7 @@ impl CO2ERF {
 
 #[typetag::serde]
 impl Component for CO2ERF {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
 

@@ -17,7 +17,7 @@ fn builder(conversion_factor: FloatValue) -> ModelBuilder {
         .with_component(Arc::new(TestComponent::from_parameters(
             TestComponentParameters { conversion_factor },
         )))
-        .with_exogenous_variable("Emissions|CO2", get_emissions());
+        .with_prescribed_variable("Emissions|CO2", get_emissions());
     builder
 }
 

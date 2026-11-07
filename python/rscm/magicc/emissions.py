@@ -208,7 +208,7 @@ def _schema(units: Mapping[str, str], contributors: tuple[str, ...]) -> Variable
             schema.add_variable(name, unit, GridType.FourBox)
         elif name != ERF:
             schema.add_variable(name, unit)
-    schema.add_aggregate(ERF, "W/m^2", "Sum", list(contributors))
+    schema.add_aggregate(ERF, "W/m^2", "sum", list(contributors))
     return schema
 
 
@@ -219,7 +219,7 @@ def _variables(
     units = {name: unit for name, unit in EMISSION_VARIABLES.values()}
     units["Emissions|CH4|AFOLU"] = "Mt CH4/yr"
     units[ERF + "|Other"] = "W/m^2"
-    sources = {**dict.fromkeys(data, "prescribed"), ERF: "Sum"}
+    sources = {**dict.fromkeys(data, "prescribed"), ERF: "sum"}
     owners = {"CO2": "CO2Budget", "CH4": "CH4Chemistry", "N2O": "N2OChemistry"}
     for gas, owner in owners.items():
         units[CONCENTRATION + gas] = "ppm" if gas == "CO2" else "ppb"
@@ -335,13 +335,13 @@ def run_magicc_emissions(  # noqa: PLR0913
             component = climate.build()
         else:
             component = component_builder.from_parameters(params[name]).build()
-        builder.with_rust_component(component)
+        builder.with_component(component)
     for variable in LAG:
         builder.with_lag(variable)
     for variable, consumer in LAG_FOR:
         builder.with_lag_for(variable, consumer)
     for name, values in data.items():
-        builder.with_exogenous_variable(
+        builder.with_prescribed_variable(
             name, Timeseries(values, axis, units[name], InterpolationStrategy.Linear)
         )
     builder.with_initial_values(initial)

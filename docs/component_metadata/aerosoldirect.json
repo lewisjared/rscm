@@ -13,35 +13,35 @@
   "inputs": [
     {
       "rust_name": "sox_emissions",
-      "variable_name": "Emissions|SOx",
+      "name": "Emissions|SOx",
       "unit": "Mt S/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "bc_emissions",
-      "variable_name": "Emissions|BC",
+      "name": "Emissions|BC",
       "unit": "Mt BC/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "oc_emissions",
-      "variable_name": "Emissions|OC",
+      "name": "Emissions|OC",
       "unit": "Mt OC/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     },
     {
       "rust_name": "nox_emissions",
-      "variable_name": "Emissions|NOx",
+      "name": "Emissions|NOx",
       "unit": "Mt N/yr",
-      "grid": "Scalar"
+      "grid": "scalar"
     }
   ],
   "outputs": [
     {
       "rust_name": "direct_erf",
-      "variable_name": "Effective Radiative Forcing|Aerosol|Direct",
+      "name": "Effective Radiative Forcing|Aerosol|Direct",
       "unit": "W/m^2",
-      "grid": "FourBox"
+      "grid": "four_box"
     }
   ],
   "states": [],

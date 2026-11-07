@@ -44,7 +44,7 @@ def synthetic_observations():
         "heat_capacity_surface": 8.0,
     }
 
-    # Create true model and run a single timestep
+    # Create true model and run a single step
     component = TwoLayerBuilder.from_parameters(true_params).build()
 
     # Simple forcing scenario
@@ -136,7 +136,7 @@ def create_model_runner(fixed_params):
         # Create component
         component = TwoLayerBuilder.from_parameters(all_params).build()
 
-        # Run model with simple forcing scenario (single timestep)
+        # Run model with simple forcing scenario (single step)
         time_axis = TimeAxis.from_values(np.array([2000.0, 2010.0]))
         collection = TimeseriesCollection()
         collection.add_timeseries(

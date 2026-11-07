@@ -353,7 +353,7 @@ Steps that only evaluate an equation above are named, not repeated.
 
 - The trapezoidal step is unconditionally stable for linear decay and second-order in time.
   It is applied once per year with no iteration.
-- The step assumes a one-year timestep. RSCM rejects any other.
+- The step assumes a one-year step. RSCM rejects any other.
 - If cumulative deforestation approaches a pool's initial size, its turnover time tends to zero.
 - The logarithmic factor falls below one when CO2 drops below the reference,
   and the Gifford form is singular near $CO_{2,zero}$.

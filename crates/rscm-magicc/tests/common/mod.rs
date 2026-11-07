@@ -10,7 +10,7 @@ use rscm_core::interpolate::strategies::{InterpolationStrategy, LinearSplineStra
 use rscm_core::spatial::FourBoxGrid;
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
-use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem, VariableType};
+use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
 use rscm_core::utils::linear_algebra::invert_4x4;
 use rscm_magicc::climate::lamcalc::{build_coupling_matrix, compute_qfrac, LamcalcParams};
 use rscm_magicc::climate::ClimateUDEB;
@@ -158,7 +158,7 @@ pub fn compute_equilibrium_temperatures(
 // ---------------------------------------------------------------------------
 
 /// Build the [`InputState`] needed by `ClimateUDEB::solve_with_state` for a
-/// single timestep.
+/// single step.
 ///
 /// Provides a scalar ERF timeseries and a four-box surface temperature state.
 /// Both timeseries span `[t_current, t_next]` with constant values.
@@ -178,10 +178,9 @@ pub fn build_udeb_input_state(
     let erf_item = TimeseriesItem {
         data: TimeseriesData::Scalar(erf_ts),
         name: "Effective Radiative Forcing".to_string(),
-        variable_type: VariableType::Exogenous,
     };
 
-    // FourBox surface temperature state
+    // Four-box surface temperature state
     let surf_grid = FourBoxGrid::magicc_standard();
     let mut surf_values = Array2::zeros((2, 4));
     for col in 0..4 {
@@ -198,7 +197,6 @@ pub fn build_udeb_input_state(
     let surf_item = TimeseriesItem {
         data: TimeseriesData::FourBox(surf_ts),
         name: "Surface Temperature".to_string(),
-        variable_type: VariableType::Endogenous,
     };
 
     (erf_item, surf_item)

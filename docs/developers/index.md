@@ -107,7 +107,7 @@ Write it in Rust, with the `ComponentIO` derive macro, for performance or comple
 
     #[typetag::serde]
     impl Component for MyComponent {
-        fn definitions(&self) -> Vec<RequirementDefinition> {
+        fn definitions(&self) -> Vec<VariableDefinition> {
             Self::generated_definitions()
         }
 

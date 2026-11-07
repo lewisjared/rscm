@@ -7,7 +7,7 @@
 //! - Unit conversion factors are correctly calculated
 
 use crate::component::{
-    Component, GridType, InputState, OutputState, RequirementDefinition, RequirementType,
+    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
 use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
@@ -30,14 +30,10 @@ struct EmissionsToConcentration {
 
 #[typetag::serde]
 impl Component for EmissionsToConcentration {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::new("Emissions|CO2", &self.input_unit, RequirementType::Input),
-            RequirementDefinition::new(
-                "Concentration|CO2",
-                &self.output_unit,
-                RequirementType::Output,
-            ),
+            VariableDefinition::new("Emissions|CO2", &self.input_unit, VariableRole::Input),
+            VariableDefinition::new("Concentration|CO2", &self.output_unit, VariableRole::Output),
         ]
     }
 
@@ -60,14 +56,10 @@ struct ConcentrationToForcing {
 
 #[typetag::serde]
 impl Component for ConcentrationToForcing {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::new(
-                "Concentration|CO2",
-                &self.input_unit,
-                RequirementType::Input,
-            ),
-            RequirementDefinition::new("ERF|CO2", &self.output_unit, RequirementType::Output),
+            VariableDefinition::new("Concentration|CO2", &self.input_unit, VariableRole::Input),
+            VariableDefinition::new("ERF|CO2", &self.output_unit, VariableRole::Output),
         ]
     }
 
@@ -108,7 +100,7 @@ fn test_identical_units_accepted() {
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_component(Arc::new(comp1))
         .with_component(Arc::new(comp2))
-        .with_exogenous_variable("Emissions|CO2", get_emissions("GtC/yr"))
+        .with_prescribed_variable("Emissions|CO2", get_emissions("GtC/yr"))
         .build();
 
     assert!(
@@ -140,7 +132,7 @@ fn test_whitespace_normalized_units_accepted() {
         .with_schema(schema)
         .with_component(Arc::new(comp1))
         .with_component(Arc::new(comp2))
-        .with_exogenous_variable("Emissions|CO2", get_emissions("GtC/yr"))
+        .with_prescribed_variable("Emissions|CO2", get_emissions("GtC/yr"))
         .build();
 
     assert!(
@@ -164,12 +156,12 @@ fn test_compatible_units_different_magnitudes_between_components() {
     let result = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_component(Arc::new(comp1))
-        .with_exogenous_variable("Emissions|CO2", get_emissions("MtC/yr")) // Different magnitude!
+        .with_prescribed_variable("Emissions|CO2", get_emissions("MtC/yr")) // Different magnitude!
         .build();
 
     // Without schema, components must use identical units
-    // The exogenous timeseries unit doesn't participate in component validation
-    // This should succeed because exogenous variable unit matching isn't checked
+    // The prescribed timeseries unit doesn't participate in component validation
+    // This should succeed because prescribed variable unit matching isn't checked
     assert!(result.is_ok());
 }
 
@@ -196,7 +188,7 @@ fn test_schema_accepts_compatible_units() {
         .with_schema(schema)
         .with_component(Arc::new(comp1))
         .with_component(Arc::new(comp2))
-        .with_exogenous_variable("Emissions|CO2", get_emissions("GtC/yr"))
+        .with_prescribed_variable("Emissions|CO2", get_emissions("GtC/yr"))
         .build();
 
     // This should now succeed because MtC/yr is dimensionally compatible with GtC/yr
@@ -223,7 +215,7 @@ fn test_schema_rejects_dimensionally_incompatible_units() {
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_schema(schema)
         .with_component(Arc::new(comp))
-        .with_exogenous_variable("Emissions|CO2", get_emissions("GtC/yr"))
+        .with_prescribed_variable("Emissions|CO2", get_emissions("GtC/yr"))
         .build();
 
     assert!(result.is_err());
@@ -262,7 +254,7 @@ fn test_carbon_co2_conversion_accepted() {
         .with_schema(schema)
         .with_component(Arc::new(comp1))
         .with_component(Arc::new(comp2))
-        .with_exogenous_variable("Emissions|CO2", get_emissions("GtCO2/yr"))
+        .with_prescribed_variable("Emissions|CO2", get_emissions("GtCO2/yr"))
         .build();
 
     // GtC/yr and GtCO2/yr are dimensionally compatible (both mass/time)
@@ -287,7 +279,7 @@ fn test_unparseable_units_warn_but_allow_string_comparison() {
     let result = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_component(Arc::new(comp1))
-        .with_exogenous_variable("Emissions|CO2", get_emissions("strange_unit"))
+        .with_prescribed_variable("Emissions|CO2", get_emissions("strange_unit"))
         .build();
 
     // Identical strings match without parsing.
@@ -310,7 +302,7 @@ fn test_between_component_units_must_match_without_schema() {
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_component(Arc::new(comp1))
         .with_component(Arc::new(comp2))
-        .with_exogenous_variable("Emissions|CO2", get_emissions("GtC/yr"))
+        .with_prescribed_variable("Emissions|CO2", get_emissions("GtC/yr"))
         .build();
 
     assert!(result.is_err());
@@ -338,11 +330,11 @@ fn test_between_component_units_compatible_but_different() {
 
     #[typetag::serde]
     impl Component for MassReader {
-        fn definitions(&self) -> Vec<RequirementDefinition> {
-            vec![RequirementDefinition::new(
+        fn definitions(&self) -> Vec<VariableDefinition> {
+            vec![VariableDefinition::new(
                 "Concentration|CO2",
                 &self.input_unit,
-                RequirementType::Input,
+                VariableRole::Input,
             )]
         }
 
@@ -364,7 +356,7 @@ fn test_between_component_units_compatible_but_different() {
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_component(Arc::new(comp1))
         .with_component(Arc::new(comp2))
-        .with_exogenous_variable("Emissions|CO2", get_emissions("GtC/yr"))
+        .with_prescribed_variable("Emissions|CO2", get_emissions("GtC/yr"))
         .build();
 
     // This should succeed because GtC and MtC are dimensionally compatible
@@ -391,10 +383,10 @@ struct ScaleAndOutput {
 
 #[typetag::serde]
 impl Component for ScaleAndOutput {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
+    fn definitions(&self) -> Vec<VariableDefinition> {
         vec![
-            RequirementDefinition::new("Input", &self.input_unit, RequirementType::Input),
-            RequirementDefinition::new("Output", "1", RequirementType::Output),
+            VariableDefinition::new("Input", &self.input_unit, VariableRole::Input),
+            VariableDefinition::new("Output", "1", VariableRole::Output),
         ]
     }
 
@@ -430,7 +422,7 @@ fn test_unit_conversion_applied_at_runtime_gtc_to_mtc() {
         scale: 1.0,                       // Just pass through the converted value
     };
 
-    // Create exogenous data with known values
+    // Create prescribed data with known values
     let time_axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)));
     let values = array![10.0, 20.0, 30.0].insert_axis(Axis(1)); // 10, 20, 30 GtC/yr
     let emissions = Timeseries::new(
@@ -445,7 +437,7 @@ fn test_unit_conversion_applied_at_runtime_gtc_to_mtc() {
         .with_time_axis((*time_axis).clone())
         .with_schema(schema)
         .with_component(Arc::new(comp))
-        .with_exogenous_variable("Input", emissions)
+        .with_prescribed_variable("Input", emissions)
         .build()
         .expect("Model should build successfully");
 
@@ -514,7 +506,7 @@ fn test_unit_conversion_applied_at_runtime_co2_to_c() {
         .with_time_axis((*time_axis).clone())
         .with_schema(schema)
         .with_component(Arc::new(comp))
-        .with_exogenous_variable("Input", emissions)
+        .with_prescribed_variable("Input", emissions)
         .build()
         .expect("Model should build successfully");
 
@@ -562,7 +554,7 @@ fn test_unit_conversion_combined_with_prefix_and_molecular_weight() {
         .with_time_axis((*time_axis).clone())
         .with_schema(schema)
         .with_component(Arc::new(comp))
-        .with_exogenous_variable("Input", emissions)
+        .with_prescribed_variable("Input", emissions)
         .build()
         .expect("Model should build successfully");
 
@@ -625,7 +617,7 @@ fn test_no_conversion_when_units_match() {
         .with_time_axis((*time_axis).clone())
         .with_schema(schema)
         .with_component(Arc::new(comp))
-        .with_exogenous_variable("Input", emissions)
+        .with_prescribed_variable("Input", emissions)
         .build()
         .expect("Model should build successfully");
 
@@ -663,7 +655,7 @@ fn emissions_model(component_unit: &str, data: Timeseries<FloatValue>) -> RSCMRe
             input_unit: component_unit.to_string(),
             output_unit: "ppm".to_string(),
         }))
-        .with_exogenous_variable("Emissions|CO2", data)
+        .with_prescribed_variable("Emissions|CO2", data)
         .build()
 }
 
@@ -676,11 +668,11 @@ fn stored_emissions(model: &Model) -> &Timeseries<FloatValue> {
 }
 
 #[test]
-fn test_exogenous_data_converted_into_declared_unit() {
+fn test_prescribed_data_converted_into_declared_unit() {
     let model = emissions_model("GtC / yr", get_emissions("MtCO2 / yr")).unwrap();
 
     let stored = stored_emissions(&model);
-    assert_eq!(stored.units(), "GtC / yr");
+    assert_eq!(stored.unit(), "GtC / yr");
     let expected = 10.0 * 12.0 / 44.0 / 1000.0;
     let value = stored.at_scalar(0).unwrap();
     assert!(
@@ -690,14 +682,14 @@ fn test_exogenous_data_converted_into_declared_unit() {
 }
 
 #[test]
-fn test_exogenous_data_in_equivalent_unit_unchanged() {
+fn test_prescribed_data_in_equivalent_unit_unchanged() {
     let model = emissions_model("GtC/yr", get_emissions("GtC / yr")).unwrap();
 
     assert_eq!(stored_emissions(&model).at_scalar(0).unwrap(), 10.0);
 }
 
 #[test]
-fn test_exogenous_data_with_incompatible_unit_rejected() {
+fn test_prescribed_data_with_incompatible_unit_rejected() {
     let err = emissions_model("GtC / yr", get_emissions("W / m^2")).unwrap_err();
 
     match err {
@@ -707,7 +699,7 @@ fn test_exogenous_data_with_incompatible_unit_rejected() {
 }
 
 #[test]
-fn test_exogenous_data_with_unparseable_unit_rejected() {
+fn test_prescribed_data_with_unparseable_unit_rejected() {
     let err = emissions_model("GtC / yr", get_emissions("")).unwrap_err();
 
     match err {
@@ -717,7 +709,7 @@ fn test_exogenous_data_with_unparseable_unit_rejected() {
 }
 
 #[test]
-fn test_exogenous_data_converted_into_schema_unit() {
+fn test_prescribed_data_converted_into_schema_unit() {
     let schema = VariableSchema::new()
         .variable("Emissions|CO2", "GtCO2 / yr")
         .variable("Concentration|CO2", "ppm");
@@ -729,12 +721,12 @@ fn test_exogenous_data_converted_into_schema_unit() {
             input_unit: "GtC / yr".to_string(),
             output_unit: "ppm".to_string(),
         }))
-        .with_exogenous_variable("Emissions|CO2", get_emissions("MtCO2 / yr"))
+        .with_prescribed_variable("Emissions|CO2", get_emissions("MtCO2 / yr"))
         .build()
         .unwrap();
 
     let stored = stored_emissions(&model);
-    assert_eq!(stored.units(), "GtCO2 / yr");
+    assert_eq!(stored.unit(), "GtCO2 / yr");
     assert!((stored.at_scalar(0).unwrap() - 0.01).abs() < 1e-12);
 }
 
@@ -743,11 +735,11 @@ struct FourBoxReader;
 
 #[typetag::serde]
 impl Component for FourBoxReader {
-    fn definitions(&self) -> Vec<RequirementDefinition> {
-        vec![RequirementDefinition::with_grid(
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        vec![VariableDefinition::with_grid(
             "Surface Temperature",
             "K",
-            RequirementType::Input,
+            VariableRole::Input,
             GridType::FourBox,
         )]
     }
@@ -775,12 +767,12 @@ fn four_box_model(unit: &str) -> RSCMResult<Model> {
     ModelBuilder::new()
         .with_time_axis((*time_axis).clone())
         .with_component(Arc::new(FourBoxReader))
-        .with_exogenous_four_box_variable("Surface Temperature", data)
+        .with_prescribed_variable("Surface Temperature", data)
         .build()
 }
 
 #[test]
-fn test_four_box_exogenous_data_converted() {
+fn test_four_box_prescribed_data_converted() {
     let model = four_box_model("mK").unwrap();
 
     let stored = model
@@ -788,12 +780,12 @@ fn test_four_box_exogenous_data_converted() {
         .get_data("Surface Temperature")
         .and_then(|data| data.as_four_box())
         .unwrap();
-    assert_eq!(stored.units(), "K");
+    assert_eq!(stored.unit(), "K");
     assert_eq!(stored.at_time_index(0).unwrap(), vec![0.001; 4]);
 }
 
 #[test]
-fn test_four_box_exogenous_data_with_incompatible_unit_rejected() {
+fn test_four_box_prescribed_data_with_incompatible_unit_rejected() {
     let err = four_box_model("W / m^2").unwrap_err();
 
     assert!(
