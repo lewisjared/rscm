@@ -51,9 +51,11 @@ from rscm.core import (
 from rscm.magicc import prescribed as pr
 from rscm.magicc.runner import CH4_OTHER_LIFETIMES, _ch4_burdens, _ch4_non_oh_lifetime
 from rscm.names import (
+    ATMOSPHERIC_CONCENTRATIONS,
     ATMOSPHERIC_CONCENTRATIONS_CO2,
     CUMULATIVE_CARBON_UPTAKE_OCEAN,
     EFFICACY_ADJUSTED_ERF,
+    EMISSIONS,
     EMISSIONS_UNITS,
     EQUILIBRIUM_CLIMATE_SENSITIVITY,
     ERF,
@@ -65,6 +67,7 @@ from rscm.names import (
     SECTORS,
     SURFACE_AIR_TEMPERATURE_CHANGE,
     Convention,
+    child,
     emissions_conversion_factor,
     emissions_unit,
 )
@@ -641,7 +644,7 @@ def _agent(
 ) -> dict[str, Any]:
     p = parameters
     return {
-        "variable": f"{ERF}|{name}",
+        "variable": child(ERF, name),
         "category": _category(name),
         "regional": regional,
         "efficacy": p.get(f"rf_efficacy_{key}", 1.0),
@@ -702,7 +705,7 @@ def forcing_agents(
             BIOMASS,
             "aer_dir",
             regional=True,
-            sum_of=[f"{ERF}|{name}" for name in BIOMASS_AGENTS],
+            sum_of=[child(ERF, name) for name in BIOMASS_AGENTS],
         )
     )
     return agents
@@ -710,7 +713,7 @@ def forcing_agents(
 
 def _summation(terms: list[Any]) -> list[Any]:
     return [
-        _summation(term) if isinstance(term, list) else f"{ERF}|{term}"
+        _summation(term) if isinstance(term, list) else child(ERF, term)
         for term in terms
     ]
 
@@ -956,7 +959,7 @@ def magicc7_units(
     return {
         name: np.asarray(values, dtype=np.float64)
         * emissions_conversion_factor(
-            f"Emissions|{name}", Convention.RSCM, Convention.MAGICC7
+            child(EMISSIONS, name), Convention.RSCM, Convention.MAGICC7
         )
         for name, values in emissions.items()
     }
@@ -1113,7 +1116,7 @@ def run_magicc7(  # noqa: PLR0913
     native = _native(data, convention)
 
     def params(name: str, base: Mapping[str, Any]) -> Any:
-        return {**base, **overrides.get(name, {})}
+        return {**base, **overrides[name]}
 
     sealevel = bool(p["out_sealevel"])
     climate_base = climate_parameters(p, files, time[0], time[-1])
@@ -1268,7 +1271,7 @@ def run_magicc7(  # noqa: PLR0913
             ).build(),
         )
     initial = {
-        **{f"Atmospheric Concentrations|{gas}": c for gas, c in conc.items()},
+        **{child(ATMOSPHERIC_CONCENTRATIONS, gas): c for gas, c in conc.items()},
         **_ch4_burdens(conc["CH4"], p["ch4_ppb2tgch4"], p["ch4_mixboxsize"]),
         OCEAN_SURFACE_PARTIAL_PRESSURE_CO2: conc["CO2"],
         CUMULATIVE_CARBON_UPTAKE_OCEAN: 0.0,
@@ -1286,7 +1289,7 @@ def run_magicc7(  # noqa: PLR0913
     # In the units MAGICC's components declare, so reading them needs no conversion.
     prescribed_data = {
         **{
-            f"Emissions|{gas}": (_total(native, gas), MAGICC7_EMISSIONS_UNITS[gas])
+            child(EMISSIONS, gas): (_total(native, gas), MAGICC7_EMISSIONS_UNITS[gas])
             for gas in ("CH4", "N2O", "NOx", "CO", "NMVOC")
         },
         **{
@@ -1298,11 +1301,11 @@ def run_magicc7(  # noqa: PLR0913
             for sector in SECTORS
         },
         **{
-            f"Emissions|{s}": (native[s], emissions_unit(f"Emissions|{s}"))
+            child(EMISSIONS, s): (native[s], emissions_unit(child(EMISSIONS, s)))
             for s in species
         },
         **{
-            prescribed_input(f"Atmospheric Concentrations|{s}"): values
+            prescribed_input(child(ATMOSPHERIC_CONCENTRATIONS, s)): values
             for s, values in prescribed_concentrations(time, p, files).items()
         },
     }
@@ -1311,7 +1314,9 @@ def run_magicc7(  # noqa: PLR0913
             name: (values, "Gt N/yr")
             for name, values in nitrogen_inputs(time, native, p, files).items()
         }
-    prescribed_data |= {f"{ERF}|{name}": (v, "W/m^2") for name, v in prescribed.items()}
+    prescribed_data |= {
+        child(ERF, name): (v, "W/m^2") for name, v in prescribed.items()
+    }
 
     def run(n: int, agents: list[list[float]]) -> Model:
         total, boxes = aggregation.aggregate(agents)

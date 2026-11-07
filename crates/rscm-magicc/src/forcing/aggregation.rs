@@ -148,6 +148,7 @@ impl ForcingAggregation {
             .map(|(agent, value)| self.agent_forcing(agent, std::slice::from_ref(value)))
             .collect();
         self.aggregate_with(&forcing, &self.initial_internal_efficacies())
+            .0
     }
 
     /// Global and box ERF of each of an agent's variables.
@@ -172,8 +173,13 @@ impl ForcingAggregation {
             .collect()
     }
 
-    fn aggregate_with(&self, forcing: &[Vec<Forcing>], internal: &[FloatValue]) -> Forcing {
-        let adjusted: Vec<Forcing> = self
+    /// Total forcing and global subtotals, both added in the order of `summation`.
+    fn aggregate_with(
+        &self,
+        forcing: &[Vec<Forcing>],
+        internal: &[FloatValue],
+    ) -> (Forcing, ForcingSubtotals) {
+        let per_agent: Vec<(Forcing, ForcingSubtotals)> = self
             .parameters
             .agents
             .iter()
@@ -185,38 +191,27 @@ impl ForcingAggregation {
                     EfficacyMethod::Unit => 1.0 / internal,
                     EfficacyMethod::Ar6 => agent.efficacy / internal,
                 };
+                // Scaling leaves the global value alone, so it is the agent's unadjusted ERF.
                 let scaled = |(global, boxes): Forcing| (global, boxes.map(|b| b * scale));
-                if agent.efficacy_per_variable {
+                let adjusted = if agent.efficacy_per_variable {
                     sum(parts.iter().copied().map(scaled))
                 } else {
                     scaled(sum(parts.iter().copied()))
-                }
+                };
+                (adjusted, agent.category.subtotals(adjusted.0))
             })
             .collect();
+        let add = |(f1, s1): (Forcing, ForcingSubtotals), (f2, s2): (Forcing, ForcingSubtotals)| {
+            (sum([f1, f2].into_iter()), s1 + s2)
+        };
         let p = &self.parameters;
-        if p.summation.is_empty() {
-            sum(adjusted.into_iter())
+        let total = if p.summation.is_empty() {
+            per_agent.into_iter().reduce(add)
         } else {
             let index = |name: &str| p.agents.iter().position(|a| a.variable == name).unwrap();
-            sum_terms(&p.summation, &|name| adjusted[index(name)])
-        }
-    }
-
-    /// Global ERF of each category, added in the order of `summation`.
-    fn subtotals(&self, forcing: &[Vec<Forcing>]) -> ForcingSubtotals {
-        let p = &self.parameters;
-        let agent_subtotals: Vec<ForcingSubtotals> = p
-            .agents
-            .iter()
-            .zip(forcing)
-            .map(|(agent, parts)| agent.category.subtotals(sum(parts.iter().copied()).0))
-            .collect();
-        if p.summation.is_empty() {
-            agent_subtotals.into_iter().sum()
-        } else {
-            let index = |name: &str| p.agents.iter().position(|a| a.variable == name).unwrap();
-            subtotal_terms(&p.summation, &|name| agent_subtotals[index(name)])
-        }
+            fold_terms(&p.summation, &|name| per_agent[index(name)], &add)
+        };
+        total.unwrap_or_default()
     }
 }
 
@@ -229,24 +224,18 @@ fn sum(terms: impl Iterator<Item = Forcing>) -> Forcing {
         .unwrap_or((0.0, [0.0; 4]))
 }
 
-fn sum_terms(terms: &[ForcingTerm], agent: &dyn Fn(&str) -> Forcing) -> Forcing {
-    sum(terms.iter().map(|term| match term {
-        ForcingTerm::Agent(name) => agent(name),
-        ForcingTerm::Sum(nested) => sum_terms(nested, agent),
-    }))
-}
-
-fn subtotal_terms(
+fn fold_terms<T: Copy>(
     terms: &[ForcingTerm],
-    agent: &dyn Fn(&str) -> ForcingSubtotals,
-) -> ForcingSubtotals {
+    agent: &dyn Fn(&str) -> T,
+    add: &dyn Fn(T, T) -> T,
+) -> Option<T> {
     terms
         .iter()
-        .map(|term| match term {
-            ForcingTerm::Agent(name) => agent(name),
-            ForcingTerm::Sum(nested) => subtotal_terms(nested, agent),
+        .filter_map(|term| match term {
+            ForcingTerm::Agent(name) => Some(agent(name)),
+            ForcingTerm::Sum(nested) => fold_terms(nested, agent, add),
         })
-        .sum()
+        .reduce(add)
 }
 
 /// Check that `summation`, when given, names every agent exactly once.
@@ -362,10 +351,10 @@ impl Component for ForcingAggregation {
                 })?
             }
         };
-        let (total, adjusted) = self.aggregate_with(&forcing, &internal);
+        let ((total, adjusted), subtotals) = self.aggregate_with(&forcing, &internal);
         let mut output = OutputState::new();
         output.insert(ERF.to_string(), StateValue::Scalar(total));
-        self.subtotals(&forcing).insert_into(&mut output);
+        subtotals.insert_into(&mut output);
         output.insert(
             EFFICACY_ADJUSTED_ERF.to_string(),
             StateValue::FourBox(FourBoxSlice::from_array(adjusted)),
@@ -520,7 +509,8 @@ mod tests {
         let expected = |ecs: FloatValue, q: FloatValue| {
             let forcing = [c.agent_forcing(&c.parameters().agents[0], &[vec![1.0]])];
             c.aggregate_with(&forcing, &c.internal_efficacies(ecs, q).unwrap())
-                .1
+                .0
+                 .1
         };
 
         let adjusted = solve_adjusted(&c, [2.0, 4.5]);

@@ -23,16 +23,24 @@ from rscm.core import (
     VariableSchema,
 )
 from rscm.names import (
+    AIRBORNE_FRACTION_CO2,
     ATMOSPHERIC_CONCENTRATIONS,
+    EMISSIONS_CO2_BIOSPHERE,
+    EMISSIONS_CO2_CH4_OXIDATION,
+    EMISSIONS_CO2_FOSSIL,
     EMISSIONS_UNITS,
     EQUILIBRIUM_CLIMATE_SENSITIVITY,
     ERF,
     ERF_2XCO2,
     ERF_CH4_OXIDATION_STRATOSPHERIC_H2O,
     HEAT_UPTAKE,
+    NET_ATMOSPHERE_TO_LAND_FLUX_CO2,
+    NET_ATMOSPHERE_TO_OCEAN_FLUX_CO2,
+    NET_EMISSIONS_CO2,
     OCEAN_HEAT_CONTENT,
     SEA_SURFACE_TEMPERATURE,
     SURFACE_AIR_TEMPERATURE_CHANGE,
+    child,
 )
 
 if TYPE_CHECKING:
@@ -45,7 +53,6 @@ if TYPE_CHECKING:
 
 __all__ = ["CO2Emissions", "MagiccResult", "run_magicc"]
 
-CONCENTRATION = ATMOSPHERIC_CONCENTRATIONS + "|"
 SPECIES = ("CO2", "CH4", "N2O")
 
 
@@ -155,10 +162,12 @@ def _prepare_inputs(
         raise ValueError(msg)
 
     data = {
-        CONCENTRATION + gas: _series(gas, concentrations[gas], len(time), positive=True)
+        child(ATMOSPHERIC_CONCENTRATIONS, gas): _series(
+            gas, concentrations[gas], len(time), positive=True
+        )
         for gas in required
     }
-    data[ERF + "|Other"] = _series("other_forcing", other_forcing, len(time))
+    data[child(ERF, "Other")] = _series("other_forcing", other_forcing, len(time))
     return time, data
 
 
@@ -168,8 +177,8 @@ def _co2_budget_inputs(
     fossil, biosphere, land_uptake, ocean_uptake = (
         _average_series(name, values, n)
         for name, values in (
-            ("Emissions|CO2|Fossil", co2_emissions.fossil),
-            ("Emissions|CO2|Biosphere", co2_emissions.biosphere),
+            (EMISSIONS_CO2_FOSSIL, co2_emissions.fossil),
+            (EMISSIONS_CO2_BIOSPHERE, co2_emissions.biosphere),
             ("land uptake", co2_emissions.land_uptake),
             ("ocean uptake", co2_emissions.ocean_uptake),
         )
@@ -178,11 +187,11 @@ def _co2_budget_inputs(
     gtc = Unit(unit).conversion_factor(Unit("GtC/yr"))
     # The budget takes the net land flux, which includes biosphere emissions
     return {
-        "Emissions|CO2|Fossil": (fossil, unit),
-        "Emissions|CO2|Biosphere": (biosphere, unit),
-        "Emissions|CO2|CH4 Oxidation": (np.zeros(n), unit),
-        "Net Atmosphere to Land Flux|CO2": (land_uptake - gtc * biosphere, "GtC/yr"),
-        "Net Atmosphere to Ocean Flux|CO2": (ocean_uptake, "GtC/yr"),
+        EMISSIONS_CO2_FOSSIL: (fossil, unit),
+        EMISSIONS_CO2_BIOSPHERE: (biosphere, unit),
+        EMISSIONS_CO2_CH4_OXIDATION: (np.zeros(n), unit),
+        NET_ATMOSPHERE_TO_LAND_FLUX_CO2: (land_uptake - gtc * biosphere, "GtC/yr"),
+        NET_ATMOSPHERE_TO_OCEAN_FLUX_CO2: (ocean_uptake, "GtC/yr"),
     }
 
 
@@ -223,13 +232,16 @@ def run_magicc(  # noqa: PLR0913
     time, data = _prepare_inputs(
         time_axis, concentrations, other_forcing, co2_emissions, forcing_species
     )
-    units = {CONCENTRATION + gas: "ppm" if gas == "CO2" else "ppb" for gas in SPECIES}
-    units[ERF + "|Other"] = "W/m^2"
+    units = {
+        child(ATMOSPHERIC_CONCENTRATIONS, gas): "ppm" if gas == "CO2" else "ppb"
+        for gas in SPECIES
+    }
+    units[child(ERF, "Other")] = "W/m^2"
     sources = {**dict.fromkeys(data, "prescribed"), ERF: "sum"}
     initial: dict[str, float] = {}
     budget = None
     if co2_emissions is not None:
-        initial[CONCENTRATION + "CO2"] = float(
+        initial[child(ATMOSPHERIC_CONCENTRATIONS, "CO2")] = float(
             _series(
                 "initial CO2", [co2_emissions.initial_concentration], 1, positive=True
             )[0]
@@ -241,26 +253,26 @@ def run_magicc(  # noqa: PLR0913
             units[name] = unit
             sources[name] = "prescribed"
         budget = CO2BudgetBuilder.from_parameters({}).build()
-        sources[CONCENTRATION + "CO2"] = "CO2Budget"
+        sources[child(ATMOSPHERIC_CONCENTRATIONS, "CO2")] = "CO2Budget"
 
     forcing = GhgForcingBuilder.from_parameters(forcing_parameters or {})
     start_co2 = (
-        initial[CONCENTRATION + "CO2"]
+        initial[child(ATMOSPHERIC_CONCENTRATIONS, "CO2")]
         if co2_emissions is not None
-        else float(data[CONCENTRATION + "CO2"][0])
+        else float(data[child(ATMOSPHERIC_CONCENTRATIONS, "CO2")][0])
     )
     initial_erf = forcing.calculate_forcings(
         start_co2,
-        float(data[CONCENTRATION + "CH4"][0]),
-        float(data[CONCENTRATION + "N2O"][0]),
+        float(data[child(ATMOSPHERIC_CONCENTRATIONS, "CH4")][0]),
+        float(data[child(ATMOSPHERIC_CONCENTRATIONS, "N2O")][0]),
     )
     for gas, value in initial_erf.items():
-        name = ERF + "|" + gas
+        name = child(ERF, gas)
         initial[name] = value
         units[name] = "W/m^2"
         sources[name] = "GhgForcing"
     initial[ERF] = sum(initial_erf[gas] for gas in forcing_species) + float(
-        data[ERF + "|Other"][0]
+        data[child(ERF, "Other")][0]
     )
     if not all(np.isfinite(value) for value in initial.values()):
         msg = "Component parameters produced nonfinite initial forcing"
@@ -302,9 +314,9 @@ def run_magicc(  # noqa: PLR0913
                 else GridType.Scalar,
             )
     if budget is not None:
-        schema.add_variable("Net Emissions|CO2", "GtC/yr")
-        schema.add_variable("Airborne Fraction|CO2", "1")
-    contributors = (*(ERF + "|" + gas for gas in forcing_species), ERF + "|Other")
+        schema.add_variable(NET_EMISSIONS_CO2, "GtC/yr")
+        schema.add_variable(AIRBORNE_FRACTION_CO2, "1")
+    contributors = (*(child(ERF, gas) for gas in forcing_species), child(ERF, "Other"))
     schema.add_aggregate(ERF, "W/m^2", "sum", list(contributors))
     # Components reading global temperature must see the area-weighted mean
     builder = (
@@ -370,7 +382,7 @@ def _collect_result(  # noqa: PLR0913
             msg = f"Nonfinite {name} at year {time[index]}"
             raise RuntimeError(msg)
     for gas in SPECIES:
-        if np.any(values[CONCENTRATION + gas] <= 0):
+        if np.any(values[child(ATMOSPHERIC_CONCENTRATIONS, gas)] <= 0):
             msg = f"Nonpositive {gas} concentration calculated during run"
             raise RuntimeError(msg)
     return MagiccResult(time, values, units, regional, sources, contributors)
