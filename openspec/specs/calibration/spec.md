@@ -24,7 +24,7 @@ And the mean is approximately 3.0
 #### Scenario: Log probability density
 
 Given a Normal(0, 1) distribution
-When I compute ln_pdf(0)
+When I compute log_pdf(0)
 Then the result is approximately -0.919 (ln(1/sqrt(2*pi)))
 
 ### Requirement: ParameterSet Type
@@ -56,9 +56,9 @@ And all values respect parameter bounds
 #### Scenario: Compute log prior
 
 Given a ParameterSet with Uniform(0, 1) for "x"
-When I compute ln_prior([0.5])
+When I compute log_prior([0.5])
 Then the result is 0.0 (uniform density = 1)
-When I compute ln_prior([1.5])
+When I compute log_prior([1.5])
 Then the result is -infinity (out of bounds)
 
 ### Requirement: Target Type
@@ -84,9 +84,9 @@ Given a DataFrame without explicit uncertainties
 When I call Target.from_dataframe(df, ..., relative_error=0.05)
 Then uncertainties are computed as 5% of observation values
 
-#### Scenario: Reference period normalization
+#### Scenario: Reference period normalisation
 
-Given a Target with "Surface Temperature" from 1850-2020
+Given a Target with "Surface Air Temperature Change" from 1850-2020
 When I set reference_period(1850, 1900)
 Then values are converted to anomalies relative to 1850-1900 mean
 
@@ -98,7 +98,7 @@ The system SHALL provide a GaussianLikelihood type for computing log-likelihood 
 
 Given observations with values [1.0, 2.0] and uncertainties [0.1, 0.2]
 And model output [1.05, 1.95]
-When I compute ln_likelihood
+When I compute log_likelihood
 Then the result reflects Gaussian probability given the uncertainties
 
 #### Scenario: Relative error specification
@@ -114,7 +114,7 @@ The system SHALL provide a ModelRunner trait as the interface for running models
 
 #### Scenario: Run model with indexed parameters
 
-Given a ModelRunner with param_names() = ["sensitivity", "feedback"]
+Given a ModelRunner with parameter_names() = ["sensitivity", "feedback"]
 When I call run([3.0, 0.1])
 Then the model executes with sensitivity=3.0, feedback=0.1
 And returns ModelOutput with requested variables
@@ -130,17 +130,17 @@ And I receive 100 Result<ModelOutput> (handling failures gracefully)
 
 Given a ModelRunner and parameters that cause solver divergence
 When I call run(invalid_params)
-Then the result is Err(RSCMError)
+Then the result is Err(RscmError)
 And the likelihood function returns -INFINITY for this run
 
 ### Requirement: EnsembleSampler
 
-The system SHALL provide an EnsembleSampler implementing the affine-invariant ensemble MCMC algorithm (Goodman & Weare 2010). Default walker count is max(2 * n_params, 32).
+The system SHALL provide an EnsembleSampler implementing the affine-invariant ensemble MCMC algorithm (Goodman & Weare 2010). Default walker count is max(2 * n_parameters, 32).
 
-#### Scenario: Initialize from prior
+#### Scenario: Initialise from prior
 
 Given an EnsembleSampler with 3 parameters (default 32 walkers)
-When I call initialize(Prior)
+When I call initialise(Prior)
 Then I get SamplerState with 32 walker positions
 And all positions are sampled from the prior
 
@@ -152,14 +152,14 @@ Then n_walkers defaults to 100 (2 * 50)
 
 #### Scenario: Run MCMC steps with thinning
 
-Given an initialized EnsembleSampler
+Given an initialised EnsembleSampler
 When I run 10000 steps with thin=100
 Then I get a Chain with 100 stored iterations
 And each iteration has n_walkers positions
 
 #### Scenario: Progress callback
 
-Given an initialized EnsembleSampler
+Given an initialised EnsembleSampler
 When I run with a progress callback
 Then the callback is called each iteration
 And receives ProgressInfo with iteration, acceptance_rate, mean_log_prob
@@ -205,7 +205,7 @@ Then shape is (1000, 32, 5)
 
 Given a Chain from 1000 iterations
 When I call flat_samples(discard=200)
-Then I get (800 * n_walkers, n_params) array
+Then I get (800 * n_walkers, n_parameters) array
 And the first 200 iterations are excluded
 
 #### Scenario: Log probabilities
@@ -216,7 +216,7 @@ Then shape is (n_iterations, n_walkers)
 
 #### Scenario: Export to DataFrame
 
-Given a Chain with param_names ["sensitivity", "feedback"]
+Given a Chain with parameter_names ["sensitivity", "feedback"]
 When I call to_dataframe(discard=200)
 Then I get a pandas DataFrame with columns ["sensitivity", "feedback"]
 And rows correspond to flat_samples(discard=200)
@@ -240,19 +240,19 @@ Then the result is False
 
 ### Requirement: PointEstimator
 
-The system SHALL provide a PointEstimator for finding best-fit parameter values via optimization.
+The system SHALL provide a PointEstimator for finding best-fit parameter values via optimisation.
 
-#### Scenario: Optimize with L-BFGS
+#### Scenario: Optimise with L-BFGS
 
 Given a PointEstimator with parameters and target
-When I call optimize(LBFGS)
-Then the optimizer finds parameters maximizing likelihood
-And returns PointEstimateResult with best_params
+When I call optimise(LBFGS)
+Then the optimiser finds parameters maximising likelihood
+And returns OptimisationResult with best_parameters
 
 #### Scenario: Random search
 
 Given a PointEstimator
-When I call optimize(RandomSearch(n_samples=1000))
+When I call optimise(RandomSearch(n_samples=1000))
 Then 1000 random parameter sets are evaluated
 And the best one is returned
 
@@ -341,7 +341,7 @@ Then .add() returns self for method chaining
 
 ```python
 sampler = EnsembleSampler(params, target, runner, likelihood)
-state = sampler.initialize("prior")
+state = sampler.initialise("prior")
 chain = sampler.run(state, n_steps=10000, thin=100, progress=True)
 ```
 
@@ -377,9 +377,9 @@ df = chain.to_dataframe(discard=1000)
 Then df is a pandas DataFrame with parameter names as columns
 And df.describe() shows posterior statistics
 
-### Requirement: Python Visualization
+### Requirement: Python Visualisation
 
-The system SHALL provide visualization utilities via a `plot` namespace on Chain for discoverability.
+The system SHALL provide visualisation utilities via a `plot` namespace on Chain for discoverability.
 
 #### Scenario: Trace plot via plot namespace
 

@@ -75,7 +75,7 @@ impl GridType {
         *self == GridType::Scalar
     }
 
-    /// Returns true if `self` is strictly coarser (lower resolution) than `other`.
+    /// Returns true if `self` is strictly coarser than `other`.
     ///
     /// The grid hierarchy from finest to coarsest is:
     /// - FourBox (4 regions) > Hemispheric (2 regions) > Scalar (1 value)
@@ -466,8 +466,8 @@ pub trait Component: Debug + Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `t_current` - Current time
-    /// * `t_next` - Next step
+    /// * `t_current` - Start bound of the step
+    /// * `t_next` - End bound of the step
     /// * `input_state` - Input state from model
     /// * `internal_state` - Mutable reference to component's internal state
     fn solve_with_state(

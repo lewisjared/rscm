@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 /// Parameters for the four-box ocean heat uptake component
 ///
 /// The ratio parameters represent regional_uptake / global_ERF.
-/// With equal area weights (0.25 each), these ratios should average to 1.0
+/// With equal grid weights (0.25 each), these ratios should average to 1.0
 /// for the area-weighted mean to equal the global ERF.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FourBoxOceanHeatUptakeParameters {
@@ -57,7 +57,7 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 /// Four-box ocean heat uptake component
 ///
 /// Takes scalar ERF input and produces regional ocean heat uptake.
-/// Demonstrates disaggregation from scalar to grid resolution.
+/// Demonstrates disaggregation from the scalar grid to the four-box grid.
 ///
 /// # Example
 ///

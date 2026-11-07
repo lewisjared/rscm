@@ -43,7 +43,7 @@ time_axis = TimeAxis.from_values(np.arange(1850.0, 2101.0, 1.0))
 
 ### Step 3: Create Input Data
 
-Provide radiative forcing as a prescribed (external) timeseries:
+Provide radiative forcing as a prescribed timeseries:
 
 ```python
 # Simple forcing scenario: 0 before 1950, then ramping to 4 W/m^2
@@ -214,5 +214,5 @@ See [Key Concepts](key_concepts.md#dependency-graph) for details.
 
 ### Want to Extend RSCM?
 
-If you want to create custom components in Python or contribute Rust components,
+If you want to write components in Python or contribute Rust components,
 see the [Developer Guide](developers/index.md).

@@ -396,7 +396,7 @@ impl TerrestrialCarbon {
             dt,
         );
 
-        let npp_to_soil = npp * self.parameters.frac_npp_to_soil();
+        let npp_to_soil = npp * self.parameters.npp_to_soil_fraction();
         let plant_to_soil = (1.0 - self.parameters.plant_to_detritus_fraction) * turnover_plant;
         let detritus_to_soil = self.parameters.detritus_to_soil_fraction * turnover_detritus;
         let flux_in_soil = npp_to_soil + plant_to_soil + detritus_to_soil - gross_defo[2];
@@ -553,7 +553,7 @@ impl TerrestrialCarbon {
         let tau_soil = Self::time_varying_tau(
             p.soil_pool_pi,
             p.deforestation_no_regrowth_fraction,
-            p.frac_deforest_soil(),
+            p.deforestation_soil_fraction(),
             cum_lu,
             p.flux_into_soil(detritus_left, tau_detritus),
         );
@@ -570,7 +570,7 @@ impl TerrestrialCarbon {
         let net_defo = [
             p.deforestation_plant_fraction * landuse_emissions,
             p.deforestation_detritus_fraction * landuse_emissions,
-            p.frac_deforest_soil() * landuse_emissions,
+            p.deforestation_soil_fraction() * landuse_emissions,
         ];
 
         let mut regrowth = [0.0; 3];
@@ -642,7 +642,7 @@ impl TerrestrialCarbon {
         {
             let half_k = 0.5 / tau_soil;
             let nf_pool = state.nofeedback_pools[2];
-            let nf_net_flux = p.npp_pi * p.frac_npp_to_soil()
+            let nf_net_flux = p.npp_pi * p.npp_to_soil_fraction()
                 + (1.0 - p.plant_to_detritus_fraction) * nf_turnover_plant
                 + p.detritus_to_soil_fraction * nf_turnover_detritus;
 

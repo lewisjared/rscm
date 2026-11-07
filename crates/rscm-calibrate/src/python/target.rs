@@ -119,7 +119,7 @@ impl PyVariableTarget {
 /// >>> target.add_observation("Surface Air Temperature Change", 2020.0, 1.2, 0.1)
 /// >>> target.add_observation("Surface Air Temperature Change", 2021.0, 1.3, 0.1)
 /// >>> target.set_reference_period("Surface Air Temperature Change", 1850.0, 1900.0)
-/// >>> target.add_observation_relative("OHC", 2020.0, 200.0, 0.05)
+/// >>> target.add_observation_relative("Ocean Heat Content", 2020.0, 200.0, 0.05)
 #[pyclass(name = "Target")]
 #[derive(Clone)]
 pub struct PyTarget(pub Target);

@@ -144,18 +144,18 @@ impl TimeAxis {
     /// assert_eq!(ta.at(1).unwrap(), 2.0);
     /// assert_eq!(ta.at(27), None);
     /// ```
-    pub fn at(&self, index: usize) -> Option<Time> {
-        if index < self.len() {
-            Option::from(self.bounds[index])
+    pub fn at(&self, time_index: usize) -> Option<Time> {
+        if time_index < self.len() {
+            Option::from(self.bounds[time_index])
         } else {
             None
         }
     }
 
-    /// Get the bounds for a given index
-    pub fn at_bounds(&self, index: usize) -> Option<(Time, Time)> {
-        if index < self.len() {
-            let bound: (Time, Time) = (self.bounds[index], self.bounds[index + 1]);
+    /// Get the bounds for a given time index
+    pub fn at_bounds(&self, time_index: usize) -> Option<(Time, Time)> {
+        if time_index < self.len() {
+            let bound: (Time, Time) = (self.bounds[time_index], self.bounds[time_index + 1]);
             Option::from(bound)
         } else {
             None
@@ -709,8 +709,8 @@ where
     /// assert_eq!(timeseries.at_scalar(1).unwrap(), 2.0);
     /// assert!(timeseries.at_scalar(12).is_none());
     /// ```
-    pub fn at_scalar(&self, index: usize) -> Option<T> {
-        self.at(index, crate::spatial::ScalarRegion::Global)
+    pub fn at_scalar(&self, time_index: usize) -> Option<T> {
+        self.at(time_index, crate::spatial::ScalarRegion::Global)
     }
 
     /// Set the scalar value at a given time index

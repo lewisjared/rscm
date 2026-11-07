@@ -22,7 +22,7 @@
 #
 # Modelling a complex system usually needs several components coupled together.
 # Each component models one aspect of the Earth system with a set of equations and known inputs and outputs.
-# Those inputs come from other components or are prescribed as prescribed variables.
+# Those inputs come from other components or are prescribed variables.
 #
 # ## Related Resources
 #
@@ -145,15 +145,15 @@ model_builder = model_builder.with_time_axis(time_axis)
 
 # %%
 tau = 20.3
-conc_pi = 280.0
+co2_pi = 280.0
 erf_2xco2 = 4.0
 alpha_temperature = 0.0  # No temperature feedback
 
 co2_erf_component = CO2ErfBuilder.from_parameters(
-    dict(erf_2xco2=erf_2xco2, co2_pi=conc_pi)
+    dict(erf_2xco2=erf_2xco2, co2_pi=co2_pi)
 ).build()
 carbon_cycle_component = CarbonCycleBuilder.from_parameters(
-    dict(tau=tau, co2_pi=conc_pi, alpha_temperature=alpha_temperature)
+    dict(tau=tau, co2_pi=co2_pi, alpha_temperature=alpha_temperature)
 ).build()
 
 # %%
@@ -164,8 +164,8 @@ model_builder = model_builder.with_component(carbon_cycle_component).with_compon
 # %% [markdown]
 # ## Prescribed Variables
 #
-# Variables that no component produces must be provided as prescribed (external) data.
-# Each prescribed variable is a `Timeseries` with values, a time axis, units and an interpolation strategy.
+# Variables that no component produces must be provided as prescribed data.
+# Each prescribed variable is a `Timeseries` with values, a time axis, a unit and an interpolation strategy.
 #
 # Here CO2 emissions step from 0 to 10 GtC/yr in 1850.
 
@@ -220,7 +220,7 @@ for strategy in [
     print(f"{strategy}: {ts.at_time(1825.0):.2f}")
 
 # %% [markdown]
-# The surface temperature is held at a constant 0.42 K.
+# The surface air temperature change is held at a constant 0.42 K.
 
 # %%
 surface_temp = Timeseries(
@@ -242,13 +242,13 @@ model_builder = model_builder.with_prescribed_variable(
 # Later steps use the state from the previous step.
 
 # %%
-initial_state = {
+initial_values = {
     "Cumulative Carbon Uptake|Land": 0.0,
     "Cumulative Emissions|CO2": 0.0,
     "Atmospheric Concentrations|CO2": 300.0,
 }
 
-model_builder = model_builder.with_initial_values(initial_state)
+model_builder = model_builder.with_initial_values(initial_values)
 
 # %% [markdown]
 # ## Build the Model
@@ -283,7 +283,7 @@ model = (
     .with_time_axis(time_axis)
     .with_prescribed_variable("Surface Air Temperature Change", surface_temp)
     .with_prescribed_variable("Emissions|CO2", emissions)
-    .with_initial_values(initial_state)
+    .with_initial_values(initial_values)
 ).build()
 
 # %% [markdown]
@@ -338,7 +338,7 @@ plot_variables(
 # %% [markdown]
 # ## Complex Coupled Model with Feedback
 #
-# The example above uses a prescribed surface temperature.
+# The example above uses a prescribed surface air temperature change.
 # In reality, temperature responds to radiative forcing,
 # and temperature changes can affect carbon cycle processes
 # (for example soil respiration and ocean solubility).
@@ -353,14 +353,14 @@ plot_variables(
 #
 # 1. **Carbon Cycle**: converts emissions to atmospheric CO2 concentration.
 # 2. **CO2 ERF**: calculates radiative forcing from the CO2 concentration.
-# 3. **Two-Layer Model**: computes surface temperature from the radiative forcing.
+# 3. **Two-Layer Model**: computes the surface air temperature change from the effective radiative forcing.
 # 4. **Temperature Feedback**: warming lengthens the carbon cycle's CO2 lifetime,
 #    so more CO2 stays in the atmosphere.
 
 # %%
 co2_erf = CO2ErfBuilder.from_parameters(
     dict(
-        erf_2xco2=3.7,  # Forcing from CO2 doubling (W/m²)
+        erf_2xco2=3.7,  # 2xCO2 effective radiative forcing (W/m²)
         co2_pi=278.0,  # Pre-industrial CO2 (ppm)
     )
 ).build()
@@ -491,7 +491,7 @@ print(feedback_model.coupling())
 # - **CarbonCycle**: takes emissions and temperature, outputs CO2 concentration.
 # - **CO2Erf**: takes CO2 concentration, outputs radiative forcing.
 # - **AggregatorComponent**: sums the forcing contributors declared in the schema.
-# - **TwoLayer**: takes radiative forcing, outputs surface temperature.
+# - **TwoLayer**: takes radiative forcing, outputs surface air temperature change.
 
 # %% tags=["remove_input"]
 show_graph(feedback_model)
@@ -545,7 +545,7 @@ plt.show()
 # The temperature feedback amplifies warming by reducing the efficiency of natural carbon sinks
 # at higher temperatures.
 # With the feedback, the model gives higher CO2 concentrations, more radiative forcing
-# and higher surface temperatures.
+# and more warming.
 #
 # ## Summary
 #

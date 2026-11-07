@@ -185,7 +185,7 @@ fn test_read_aggregation_four_box_to_scalar() {
     // Model should auto-aggregate FourBox to Scalar on read
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::FourBox)
-        .variable("GlobalTemp", "K");
+        .variable("Global Temperature", "K");
 
     // Four-box data: [NO, NL, SO, SL] for each step
     let (name, ts) = create_four_box_prescribed(
@@ -203,7 +203,7 @@ fn test_read_aggregation_four_box_to_scalar() {
         .with_schema(schema)
         .with_component(Arc::new(ScalarReader {
             input_var: "Temperature".to_string(),
-            output_var: "GlobalTemp".to_string(),
+            output_var: "Global Temperature".to_string(),
         }));
     builder
         .prescribed_variables
@@ -221,7 +221,7 @@ fn test_read_aggregation_four_box_to_scalar() {
     model.step();
 
     // The output is the mean of the four-box values
-    let data = model.timeseries().get_data("GlobalTemp").unwrap();
+    let data = model.timeseries().get_data("Global Temperature").unwrap();
     let ts = data.as_scalar().expect("Should be Scalar");
     let value = ts.at_scalar(1).expect("Should have value at index 1");
 
@@ -239,7 +239,7 @@ fn test_read_aggregation_four_box_to_hemispheric() {
     // Schema declares four-box variable, component reads as Hemispheric
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::FourBox)
-        .variable("MeanTemp", "K");
+        .variable("Mean Temperature", "K");
 
     let (name, ts) = create_four_box_prescribed(
         "Temperature",
@@ -256,7 +256,7 @@ fn test_read_aggregation_four_box_to_hemispheric() {
         .with_schema(schema)
         .with_component(Arc::new(HemisphericReader {
             input_var: "Temperature".to_string(),
-            output_var: "MeanTemp".to_string(),
+            output_var: "Mean Temperature".to_string(),
         }));
     builder
         .prescribed_variables
@@ -272,7 +272,7 @@ fn test_read_aggregation_four_box_to_hemispheric() {
 
     model.step();
 
-    let data = model.timeseries().get_data("MeanTemp").unwrap();
+    let data = model.timeseries().get_data("Mean Temperature").unwrap();
     let ts = data.as_scalar().expect("Should be Scalar");
     let value = ts.at_scalar(1).expect("Should have value at index 1");
 
@@ -290,7 +290,7 @@ fn test_read_aggregation_hemispheric_to_scalar() {
     // Schema declares Hemispheric variable, component reads as Scalar
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::Hemispheric)
-        .variable("GlobalTemp", "K");
+        .variable("Global Temperature", "K");
 
     let (name, ts) = create_hemispheric_prescribed(
         "Temperature",
@@ -307,7 +307,7 @@ fn test_read_aggregation_hemispheric_to_scalar() {
         .with_schema(schema)
         .with_component(Arc::new(ScalarReader {
             input_var: "Temperature".to_string(),
-            output_var: "GlobalTemp".to_string(),
+            output_var: "Global Temperature".to_string(),
         }));
     builder
         .prescribed_variables
@@ -322,7 +322,7 @@ fn test_read_aggregation_hemispheric_to_scalar() {
 
     model.step();
 
-    let data = model.timeseries().get_data("GlobalTemp").unwrap();
+    let data = model.timeseries().get_data("Global Temperature").unwrap();
     let ts = data.as_scalar().expect("Should be Scalar");
     let value = ts.at_scalar(1).expect("Should have value at index 1");
 
@@ -340,7 +340,7 @@ fn test_read_aggregation_multiple_consumers() {
     // One reads as Scalar, other reads as Hemispheric
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::FourBox)
-        .variable("GlobalTemp", "K")
+        .variable("Global Temperature", "K")
         .variable("HemisphericMean", "K");
 
     let (name, ts) = create_four_box_prescribed(
@@ -358,7 +358,7 @@ fn test_read_aggregation_multiple_consumers() {
         .with_schema(schema)
         .with_component(Arc::new(ScalarReader {
             input_var: "Temperature".to_string(),
-            output_var: "GlobalTemp".to_string(),
+            output_var: "Global Temperature".to_string(),
         }))
         .with_component(Arc::new(HemisphericReader {
             input_var: "Temperature".to_string(),
@@ -375,7 +375,7 @@ fn test_read_aggregation_multiple_consumers() {
     // ScalarReader should get mean of all 4: 25.0
     let global = model
         .timeseries()
-        .get_data("GlobalTemp")
+        .get_data("Global Temperature")
         .unwrap()
         .as_scalar()
         .unwrap()
@@ -439,7 +439,7 @@ fn test_read_aggregation_chain_write_then_read() {
     // We need to run at least 2 steps: first step populates, second step reads.
     let schema = VariableSchema::new()
         .variable_with_grid("Temperature", "K", GridType::FourBox)
-        .variable("GlobalTemp", "K");
+        .variable("Global Temperature", "K");
 
     let mut model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2024.0, 1.0)))
@@ -450,7 +450,7 @@ fn test_read_aggregation_chain_write_then_read() {
         }))
         .with_component(Arc::new(ScalarReader {
             input_var: "Temperature".to_string(),
-            output_var: "GlobalTemp".to_string(),
+            output_var: "Global Temperature".to_string(),
         }))
         .build()
         .expect("Model should build");
@@ -470,7 +470,7 @@ fn test_read_aggregation_chain_write_then_read() {
     // Check the value at index 2 - ScalarReader read the aggregated value from step 1
     let value = model
         .timeseries()
-        .get_data("GlobalTemp")
+        .get_data("Global Temperature")
         .unwrap()
         .as_scalar()
         .unwrap()

@@ -28,7 +28,7 @@ Four-box arrays follow the box order in [initialisation](module_00_initialisatio
 - **Source**: `python/rscm/magicc/prescribed.py`.
 - **Status**: Implemented for the cloud albedo effect.
   See the [status table](README.md#rscm-implementation-status).
-- **Tests**: `test_prescribed_forcing[Cloud Albedo]` in `tests/regression/test_full_run.py`.
+- **Tests**: `test_prescribed_forcing[Aerosols|Indirect Effect]` in `tests/regression/test_full_run.py`.
 
 `ForcingAggregation` takes the result as the four-box agent
 `Effective Radiative Forcing|Aerosols|Indirect Effect`.
@@ -100,7 +100,7 @@ The total cloud forcing is the sum of the two.
 | ------------------------------------------------------ | ----------------------------------------- |
 | `FILE_{SOXI,SOXNB,OCI,OCB,OCN,BCI,BCB,SS}_OT`          | Historical four-box optical thickness     |
 | Total nitrate forcing from [direct aerosol forcing](module_05_aerosol_direct.md) | Nitrate proxy                |
-| SOx, OC and BC emissions by source, industrial NOx     | Extension after the data end              |
+| SOx, OC and BC emissions by sector, industrial NOx     | Extension after the data end              |
 
 | Output                                                 | Description                               |
 | ------------------------------------------------------ | ----------------------------------------- |
@@ -127,7 +127,7 @@ The total cloud forcing is the sum of the two.
 | `RF_REGIONS_CLOUD_COVER`        | -1.33278, -1.5806, -0.52942, -0.81127  | Cover pattern (W/m²)                         |
 | `RF_REGIONS_NORMYEAR`           | 2000                                 | Year of the regional pattern                   |
 | `CLOUD_APPLY_LIMIT_MAX`         | 0                                    | Caps box forcing at `CLOUD_LIMIT_MAX`          |
-| `RF_EFFICACY_CLOUD_ALBEDO`      | 1.0                                  | Prescribed efficacy                            |
+| `RF_EFFICACY_CLOUD_ALBEDO`      | 1.0                                  | Efficacy                                       |
 | `SRF_FACTOR_CLOUD_ALBEDO`       | 0.8                                  | Surface to top-of-atmosphere forcing ratio     |
 | `SRF_FACTOR_CLOUD_COVER`        | 0.9                                  | Surface to top-of-atmosphere forcing ratio     |
 

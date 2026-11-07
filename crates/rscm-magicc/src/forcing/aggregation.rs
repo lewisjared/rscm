@@ -69,7 +69,8 @@ impl ForcingAggregation {
         Ok(component)
     }
 
-    /// Internal efficacy of each agent at climate sensitivity `ecs` and CO2 doubling forcing `erf_2xco2`.
+    /// Internal efficacy of each agent at equilibrium climate sensitivity `ecs`
+    /// and 2xCO2 effective radiative forcing `erf_2xco2`.
     ///
     /// Without `climate` these are the agents' own `internal_efficacy`.
     /// Returns None if LAMCALC does not converge.
@@ -466,7 +467,7 @@ mod tests {
         let high = c.internal_efficacies(4.5, 3.71).unwrap()[0];
         assert!((low - high).abs() > 1e-4, "{low} {high}");
 
-        // Without climate the prescribed internal efficacy holds at any sensitivity
+        // Without climate the configured internal efficacy holds at any sensitivity
         let fixed = component(vec![agent(false, 1.0, 1.3)], EfficacyMethod::Ar6);
         assert_eq!(fixed.internal_efficacies(2.0, 3.71).unwrap(), vec![1.3]);
         assert_eq!(fixed.internal_efficacies(4.5, 3.71).unwrap(), vec![1.3]);

@@ -35,9 +35,9 @@ class TestVariableSchemaBuilder:
 
     def test_add_variable_with_grid(self):
         schema = VariableSchema()
-        schema.add_variable("Regional Temperature", "K", GridType.FourBox)
+        schema.add_variable("Surface Air Temperature Change", "K", GridType.FourBox)
 
-        var = schema.variables["Regional Temperature"]
+        var = schema.variables["Surface Air Temperature Change"]
         assert var.grid == GridType.FourBox
 
     def test_add_aggregate_sum(self):
@@ -45,15 +45,15 @@ class TestVariableSchemaBuilder:
         schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
         schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
         schema.add_aggregate(
-            "Total ERF",
+            "Effective Radiative Forcing",
             "W/m^2",
             "sum",
             ["Effective Radiative Forcing|CO2", "Effective Radiative Forcing|CH4"],
         )
 
-        assert "Total ERF" in schema.aggregates
-        agg = schema.aggregates["Total ERF"]
-        assert agg.name == "Total ERF"
+        assert "Effective Radiative Forcing" in schema.aggregates
+        agg = schema.aggregates["Effective Radiative Forcing"]
+        assert agg.name == "Effective Radiative Forcing"
         assert agg.unit == "W/m^2"
         assert agg.operation_type == "sum"
         assert agg.contributors == [
@@ -119,7 +119,7 @@ class TestVariableSchemaValidation:
         schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
         schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
         schema.add_aggregate(
-            "Total ERF",
+            "Effective Radiative Forcing",
             "W/m^2",
             "sum",
             ["Effective Radiative Forcing|CO2", "Effective Radiative Forcing|CH4"],
@@ -136,7 +136,7 @@ class TestVariableSchemaValidation:
         schema = VariableSchema()
         schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
         schema.add_aggregate(
-            "Total ERF",
+            "Effective Radiative Forcing",
             "W/m^2",
             "sum",
             [
@@ -168,7 +168,7 @@ class TestVariableSchemaValidation:
         schema.add_variable("Regional", "K", GridType.FourBox)
         schema.add_aggregate("Total", "K", "sum", ["Global", "Regional"])
 
-        with pytest.raises(ValueError, match="Grid type mismatch"):
+        with pytest.raises(ValueError, match="Grid mismatch"):
             schema.validate()
 
     def test_weight_count_mismatch_fails(self):
@@ -310,7 +310,7 @@ class TestSchemaModelIntegration:
         schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
         schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
         schema.add_aggregate(
-            "Total ERF",
+            "Effective Radiative Forcing",
             "W/m^2",
             "sum",
             ["Effective Radiative Forcing|CO2", "Effective Radiative Forcing|CH4"],
@@ -355,13 +355,13 @@ class TestSchemaModelIntegration:
         assert not np.isnan(ch4_erf.values()[-1])
 
         # Check aggregate was computed
-        total_erf = ts.get_timeseries_by_name("Total ERF")
-        assert total_erf is not None
+        erf = ts.get_timeseries_by_name("Effective Radiative Forcing")
+        assert erf is not None
 
         # The aggregate should be the sum of the two ERFs
         # Check that the last value is the sum (this is robust to timing issues)
         expected_total = co2_erf.values()[-1] + ch4_erf.values()[-1]
-        np.testing.assert_allclose(total_erf.values()[-1], expected_total)
+        np.testing.assert_allclose(erf.values()[-1], expected_total)
 
 
 class TestGridAutoAggregation:
@@ -456,8 +456,8 @@ class TestGridAutoAggregation:
         np.testing.assert_allclose(temp_ts.at(1), expected)
 
     def test_with_grid_weights_validation_scalar_rejected(self, time_axis):
-        """Test that setting weights for Scalar grid type raises ValueError."""
-        with pytest.raises(ValueError, match="Cannot set weights for Scalar"):
+        """Test that setting weights for the scalar grid raises ValueError."""
+        with pytest.raises(ValueError, match="Cannot set weights for the scalar grid"):
             ModelBuilder().with_grid_weights(GridType.Scalar, [1.0])
 
     def test_with_grid_weights_validation_wrong_length(self, time_axis):
@@ -482,13 +482,13 @@ class TestGridAutoAggregation:
                 return self.Outputs(temp=15.0)
 
         class FourBoxReader(Component):
-            temp = Input("Temperature", unit="K", grid="four_box")  # FourBox
+            temp = Input("Temperature", unit="K", grid="four_box")
             output = Output("Processed", unit="K")
 
             def solve(
                 self, t_current, t_next, inputs: "FourBoxReader.Inputs"
             ) -> "FourBoxReader.Outputs":
-                # This should fail - can't broadcast scalar to FourBox
+                # This should fail - can't broadcast scalar to four-box
                 return self.Outputs(output=0.0)
 
         schema = VariableSchema()

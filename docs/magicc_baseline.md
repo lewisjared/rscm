@@ -23,7 +23,7 @@ The default is resolved relative to the repository even when invoking the script
 The command writes three files only after the run and serialisation succeed:
 
 - `comparison.csv` has 1,755 rows: five observables at all 351 annual labels from 1750 through 2100.
-  These are CO2, CH4 and N2O ERF, total ERF and surface temperature.
+  These are CO2, CH4 and N2O ERF, total ERF and surface air temperature change.
   Each row retains its raw reference timestamp, comparison year, units, actual and reference values,
   signed error, absolute error and relative error.
 - `metadata.json` records fixture hashes, repository revision and source hashes,
@@ -52,7 +52,7 @@ so total forcing does not independently validate the processes represented by th
 This case uses first-year concentrations as preindustrial references,
 and unit rapid-adjustment factors for IPCCTAR when the configuration does not set them.
 It sets the climate `erf_2xco2` to the configured `core_delq2xco2`
-rather than the runner's default CO2-doubling ERF.
+rather than the runner's default 2xCO2 effective radiative forcing.
 Climate begins with zero temperature and ocean anomalies, without spin-up.
 The effective Rust defaults are recorded through model serialisation.
 The reference JSON contains overrides only.

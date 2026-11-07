@@ -19,7 +19,7 @@
 //! - `Effective Radiative Forcing|F-Gases` (W/m²), four-box with `fgas_regions`
 //! - `Effective Radiative Forcing|Montreal Protocol Halogen Gases` (W/m²)
 //! - Each species' share of these, as `Effective Radiative Forcing|<group>|<species>`
-//! - `EESC` (ppt): equivalent effective stratospheric chlorine
+//! - `Equivalent Effective Stratospheric Chlorine` (ppt)
 //!
 //! # Lifetimes
 //!
@@ -40,8 +40,9 @@ use rscm_core::component::{
 };
 use rscm_core::errors::RscmResult;
 use rscm_core::names::{
-    prescribed, EMISSIONS_CO2_FOSSIL, EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE, ERF_F_GASES,
-    ERF_MONTREAL_PROTOCOL_HALOGEN_GASES, LIFETIME_CH4_OH,
+    child, prescribed, ATMOSPHERIC_CONCENTRATIONS, EMISSIONS, EMISSIONS_CO2_FOSSIL,
+    EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE, ERF_F_GASES, ERF_MONTREAL_PROTOCOL_HALOGEN_GASES,
+    LIFETIME_CH4_OH, SURFACE_AIR_TEMPERATURE_CHANGE,
 };
 use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -85,11 +86,11 @@ impl HalocarbonChemistry {
     }
 
     fn emissions_name(species: &str) -> String {
-        format!("Emissions|{species}")
+        child(EMISSIONS, species)
     }
 
     fn concentration_name(species: &str) -> String {
-        format!("Atmospheric Concentrations|{species}")
+        child(ATMOSPHERIC_CONCENTRATIONS, species)
     }
 
     /// ERF variable of a species in group 0 (F-gases) or 1 (Montreal gases).
@@ -165,7 +166,7 @@ impl HalocarbonChemistry {
             1.0
         };
         let strat_scale = if p.include_variable_stratospheric_lifetime {
-            let temperature = input_state.get_scalar_window("Surface Air Temperature Change");
+            let temperature = input_state.get_scalar_window(SURFACE_AIR_TEMPERATURE_CHANGE);
             let warming =
                 feedback_warming(&temperature, t_current, p.meridional_flux_reference_year);
             1.0 / (1.0
@@ -259,7 +260,7 @@ impl Component for HalocarbonChemistry {
         }
         if self.parameters.include_variable_stratospheric_lifetime {
             definitions.push(VariableDefinition::scalar_input(
-                "Surface Air Temperature Change",
+                SURFACE_AIR_TEMPERATURE_CHANGE,
                 "K",
             ));
         }

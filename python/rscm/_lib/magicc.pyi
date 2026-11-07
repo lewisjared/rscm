@@ -102,7 +102,7 @@ class ClimateUdebBuilder(ComponentBuilder):
     - `upwelling_threshold_temperature_sh` (`float`, default `8.0`): Temperature
       threshold for SH upwelling shutdown (K).
     - `ecs` (`float`, default `3.0`): Equilibrium climate sensitivity (K).
-    - `erf_2xco2` (`float`, default `3.71`): Radiative forcing for 2xCO2 (W/m^2).
+    - `erf_2xco2` (`float`, default `3.71`): 2xCO2 effective radiative forcing (W/m^2).
     - `land_ocean_warming_ratio` (`float`, default `1.317`): Land-ocean warming ratio.
     - `land_ocean_heat_exchange` (`float`, default `1.44`): Land-ocean heat exchange
       coefficient (W/m^2/K).
@@ -118,7 +118,7 @@ class ClimateUdebBuilder(ComponentBuilder):
       temperature adjustment gamma (1/K).
     - `polar_sinking_ratio` (`float`, default `0.2`): Polar sinking water temperature
       ratio.
-    - `steps_per_year` (`int`, default `12`): Steps per year for sub-annual integration.
+    - `steps_per_year` (`int`, default `12`): Substeps per year.
     - `maximum_temperature` (`float`, default `25.0`): Maximum temperature anomaly cap
       (K).
 
@@ -138,7 +138,11 @@ class ClimateUdebBuilder(ComponentBuilder):
     """
 
     def initial_values(self, erf: float) -> dict[str, float]:
-        """Return initial state and diagnostics at zero temperature anomaly."""
+        """
+        Return initial values and diagnostics for an unperturbed climate.
+
+        The supplied ERF sets the initial heat uptake.
+        """
     def internal_efficacy(
         self, regional_pattern: tuple[float, float, float, float]
     ) -> float:
@@ -525,7 +529,7 @@ class HalocarbonChemistryBuilder(ComponentBuilder):
       four-box with ``fgas_regions``.
     - `Effective Radiative Forcing|Montreal Protocol Halogen Gases`: Montreal
       Protocol gas ERF (W/m²).
-    - `EESC`: Equivalent Effective Stratospheric Chlorine (ppt).
+    - `Equivalent Effective Stratospheric Chlorine` (ppt).
 
     Examples
     --------
@@ -850,12 +854,12 @@ class OzoneForcingBuilder(ComponentBuilder):
 
     **Inputs**
 
-    - `EESC`: Equivalent effective stratospheric chlorine (ppt).
+    - `Equivalent Effective Stratospheric Chlorine` (ppt).
     - `Atmospheric Concentrations|CH4`: CH4 concentration (ppb).
     - `Atmospheric Concentrations|N2O`: N2O concentration (ppb).
     - `Emissions|{NOx,CO,NMVOC}|{Fossil,Biosphere}`: Precursor emissions by sector
       (Mt N/yr, Mt CO/yr, Mt NMVOC/yr), lagged by a year.
-    - `Surface Air Temperature Change`: Global mean surface temperature anomaly (K),
+    - `Surface Air Temperature Change`: Global mean surface air temperature change (K),
       lagged by a year.
 
     **Outputs**
@@ -1063,7 +1067,7 @@ class GhgForcingBuilder(ComponentBuilder):
     - `co2_pi` (`float`, default `278.0`): Pre-industrial CO2 (ppm).
     - `ch4_pi` (`float`, default `722.0`): Pre-industrial CH4 (ppb).
     - `n2o_pi` (`float`, default `270.0`): Pre-industrial N2O (ppb).
-    - `erf_2xco2` (`float`, default `3.71`): Forcing for CO2 doubling (W/m2).
+    - `erf_2xco2` (`float`, default `3.71`): 2xCO2 effective radiative forcing (W/m^2).
     - `adjust_co2` (`float`, default `1.05`): Rapid adjustment factor for CO2.
     - `adjust_ch4` (`float`, default `0.86`): Rapid adjustment factor for CH4.
     - `adjust_n2o` (`float`, default `1.0`): Rapid adjustment factor for N2O.
@@ -1181,9 +1185,9 @@ class ForcingAggregationBuilder(ComponentBuilder):
     ) -> tuple[float, tuple[float, float, float, float]]:
         """Return total ERF and box forcing from each agent's value or box values."""
     def internal_efficacies(self, ecs: float, erf_2xco2: float) -> list[float]:
-        """Return the internal efficacy of each agent at climate sensitivity ``ecs``.
+        """Return each agent's internal efficacy at climate sensitivity ``ecs``.
 
-        ``erf_2xco2`` is the CO2 doubling forcing in W/m².
+        ``erf_2xco2`` is the 2xCO2 effective radiative forcing in W/m².
         Without ``climate`` these are the agents' own ``internal_efficacy``.
         """
     def build(self) -> RustComponent:

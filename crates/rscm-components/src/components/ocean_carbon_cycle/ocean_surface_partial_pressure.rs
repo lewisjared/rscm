@@ -15,39 +15,39 @@ use std::iter::zip;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OceanSurfacePartialPressureParameters {
     /// Pre-industrial ocean surface partial pressure
-    /// Units: `ppm`
+    /// unit: `ppm`
     pub ospp_pi: f64,
     /// Sensitivity of the ocean surface's partial pressure to changes in sea
     /// surface temperature relative to pre-industrial
-    /// Units: `1 / delta_degC`
+    /// unit: `1/delta_degC`
     pub sensitivity_ospp_to_temperature: f64,
 
     /// Pre-industrial sea surface temperature
-    /// Units: `degC`
+    /// unit: `degC`
     pub sst_pi: f64,
 
     /// Vector of length 5 of offsets to be used when calculating the change in
     /// ocean surface partial pressure
-    /// Units: `ppm`
+    /// unit: `ppm`
     pub delta_ospp_offsets: [f64; 5],
     /// Vector of length 5 of coefficients (applied to pre-industrial sea surface temperatures)
     /// to be used when calculating the change in
     /// ocean surface partial pressure
     ///
-    /// Units: `ppm / delta_degC`
+    /// unit: `ppm/delta_degC`
     pub delta_ospp_coefficients: [f64; 5],
 }
 
 /// Calculate partial pressure of |CO2| at the ocean's surface
 ///
-/// # Requirements
+/// # Inputs
 /// delta_sea_surface_temperature
 ///    Change in sea surface temperature relative to pre-industrial
-///    Units: `delta_degC`
+///    Unit: `delta_degC`
 ///
 /// delta_dissolved_inorganic_carbon
 ///    Change in dissolved inorganic carbon relative to pre-industrial
-///    Units: `micromol / kg`
+///    Unit: `micromol/kg`
 ///
 /// Returns
 /// -------
@@ -103,7 +103,7 @@ pub struct OceanSurfacePartialPressureParameters {
 #[component(tags = ["ocean", "carbon-cycle", "magicc", "experimental"], category = "Ocean Carbon Cycle")]
 #[inputs(
     sea_surface_temperature { name = "Sea Surface Temperature", unit = "K" },
-    dissolved_inorganic_carbon { name = "Dissolved Inorganic Carbon", unit = "micromol / kg" },
+    dissolved_inorganic_carbon { name = "Dissolved Inorganic Carbon", unit = "micromol/kg" },
 )]
 #[outputs(
     ospp_co2 { name = "Ocean Surface Partial Pressure|CO2", unit = "ppm" },

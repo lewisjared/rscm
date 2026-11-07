@@ -208,11 +208,7 @@ fn test_aggregate_sum_execution() {
         .variable("Atmospheric Concentrations|CH4", "ppb")
         .variable("Effective Radiative Forcing|CO2", "W/m^2")
         .variable("Effective Radiative Forcing|CH4", "W/m^2")
-        .aggregate(
-            "Effective Radiative Forcing|Total",
-            "W/m^2",
-            AggregateOp::Sum,
-        )
+        .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
         .from("Effective Radiative Forcing|CO2")
         .from("Effective Radiative Forcing|CH4")
         .build();
@@ -237,18 +233,18 @@ fn test_aggregate_sum_execution() {
     // Check that the aggregate was computed
     let total_erf = model
         .timeseries()
-        .get_data("Effective Radiative Forcing|Total")
+        .get_data("Effective Radiative Forcing")
         .and_then(|d| d.as_scalar())
-        .expect("Effective Radiative Forcing|Total should exist");
+        .expect("Effective Radiative Forcing should exist");
 
     // At 2021+ (after first step):
     // CO2: 400 ppm * 0.01 = 4.0 W/m^2
     // CH4: 1800 ppb * 0.001 = 1.8 W/m^2
-    // Total: 5.8 W/m^2
+    // Sum: 5.8 W/m^2
     let value = total_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (value - 5.8).abs() < 1e-10,
-        "Effective Radiative Forcing|Total should be 5.8, got {}",
+        "Effective Radiative Forcing should be 5.8, got {}",
         value
     );
 }
@@ -262,7 +258,7 @@ fn test_aggregate_mean_execution() {
         .variable("Effective Radiative Forcing|CO2", "W/m^2")
         .variable("Effective Radiative Forcing|CH4", "W/m^2")
         .aggregate(
-            "Effective Radiative Forcing|Mean",
+            "Mean Effective Radiative Forcing",
             "W/m^2",
             AggregateOp::Mean,
         )
@@ -288,15 +284,15 @@ fn test_aggregate_mean_execution() {
 
     let mean_erf = model
         .timeseries()
-        .get_data("Effective Radiative Forcing|Mean")
+        .get_data("Mean Effective Radiative Forcing")
         .and_then(|d| d.as_scalar())
-        .expect("Effective Radiative Forcing|Mean should exist");
+        .expect("Mean Effective Radiative Forcing should exist");
 
     // Mean of 4.0 and 1.8 = 2.9 W/m^2
     let value = mean_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (value - 2.9).abs() < 1e-10,
-        "Effective Radiative Forcing|Mean should be 2.9, got {}",
+        "Mean Effective Radiative Forcing should be 2.9, got {}",
         value
     );
 }
@@ -310,7 +306,7 @@ fn test_aggregate_weighted_execution() {
         .variable("Effective Radiative Forcing|CO2", "W/m^2")
         .variable("Effective Radiative Forcing|CH4", "W/m^2")
         .aggregate(
-            "Effective Radiative Forcing|Weighted",
+            "Effective Radiative Forcing",
             "W/m^2",
             AggregateOp::WeightedSum(vec![0.8, 0.2]),
         )
@@ -336,15 +332,15 @@ fn test_aggregate_weighted_execution() {
 
     let weighted_erf = model
         .timeseries()
-        .get_data("Effective Radiative Forcing|Weighted")
+        .get_data("Effective Radiative Forcing")
         .and_then(|d| d.as_scalar())
-        .expect("Effective Radiative Forcing|Weighted should exist");
+        .expect("Effective Radiative Forcing should exist");
 
     // Weighted: 4.0 * 0.8 + 1.8 * 0.2 = 3.2 + 0.36 = 3.56 W/m^2
     let value = weighted_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (value - 3.56).abs() < 1e-10,
-        "Effective Radiative Forcing|Weighted should be 3.56, got {}",
+        "Effective Radiative Forcing should be 3.56, got {}",
         value
     );
 }
@@ -356,11 +352,7 @@ fn test_aggregate_with_nan_contributor() {
         .variable("Atmospheric Concentrations|CO2", "ppm")
         .variable("Effective Radiative Forcing|CO2", "W/m^2")
         .variable("Effective Radiative Forcing|N2O", "W/m^2") // No component writes this
-        .aggregate(
-            "Effective Radiative Forcing|Total",
-            "W/m^2",
-            AggregateOp::Sum,
-        )
+        .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
         .from("Effective Radiative Forcing|CO2")
         .from("Effective Radiative Forcing|N2O")
         .build();
@@ -379,22 +371,22 @@ fn test_aggregate_with_nan_contributor() {
 
     let total_erf = model
         .timeseries()
-        .get_data("Effective Radiative Forcing|Total")
+        .get_data("Effective Radiative Forcing")
         .and_then(|d| d.as_scalar())
-        .expect("Effective Radiative Forcing|Total should exist");
+        .expect("Effective Radiative Forcing should exist");
 
     // Effective Radiative Forcing|N2O is NaN, so Sum should just be Effective Radiative Forcing|CO2 = 4.0 W/m^2
     let value = total_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (value - 4.0).abs() < 1e-10,
-        "Effective Radiative Forcing|Total should be 4.0 (NaN excluded), got {}",
+        "Effective Radiative Forcing should be 4.0 (NaN excluded), got {}",
         value
     );
 }
 
 #[test]
 fn test_chained_aggregates_execution() {
-    // Schema with chained aggregates: Total depends on GHG, GHG depends on CO2+CH4
+    // Chained aggregates: the forcing sums Greenhouse Gases and Other, Greenhouse Gases sums CO2 and CH4
     let schema = VariableSchema::new()
         .variable("Atmospheric Concentrations|CO2", "ppm")
         .variable("Atmospheric Concentrations|CH4", "ppb")
@@ -409,11 +401,7 @@ fn test_chained_aggregates_execution() {
         .from("Effective Radiative Forcing|CO2")
         .from("Effective Radiative Forcing|CH4")
         .build()
-        .aggregate(
-            "Effective Radiative Forcing|Total",
-            "W/m^2",
-            AggregateOp::Sum,
-        )
+        .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
         .from("Effective Radiative Forcing|Greenhouse Gases")
         .from("Effective Radiative Forcing|Other")
         .build();
@@ -447,16 +435,16 @@ fn test_chained_aggregates_execution() {
         ghg_value
     );
 
-    // Check Effective Radiative Forcing|Total = GHG + Other(NaN) = 5.8
+    // Check Effective Radiative Forcing = Greenhouse Gases + Other (NaN) = 5.8
     let total_erf = model
         .timeseries()
-        .get_data("Effective Radiative Forcing|Total")
+        .get_data("Effective Radiative Forcing")
         .and_then(|d| d.as_scalar())
-        .expect("Effective Radiative Forcing|Total should exist");
+        .expect("Effective Radiative Forcing should exist");
     let total_value = total_erf.at(1, ScalarRegion::Global).unwrap();
     assert!(
         (total_value - 5.8).abs() < 1e-10,
-        "Effective Radiative Forcing|Total should be 5.8, got {}",
+        "Effective Radiative Forcing should be 5.8, got {}",
         total_value
     );
 }
@@ -466,11 +454,7 @@ fn test_aggregate_appears_in_dot_graph() {
     let schema = VariableSchema::new()
         .variable("Atmospheric Concentrations|CO2", "ppm")
         .variable("Effective Radiative Forcing|CO2", "W/m^2")
-        .aggregate(
-            "Effective Radiative Forcing|Total",
-            "W/m^2",
-            AggregateOp::Sum,
-        )
+        .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
         .from("Effective Radiative Forcing|CO2")
         .build();
 
@@ -501,14 +485,14 @@ struct StepEmissions;
 impl Component for StepEmissions {
     fn definitions(&self) -> Vec<VariableDefinition> {
         vec![VariableDefinition::scalar_output(
-            "Emissions|Upstream",
+            "Upstream Emissions",
             "GtC/yr",
         )]
     }
 
     fn solve(&self, t: Time, _next: Time, _inputs: &InputState) -> RscmResult<OutputState> {
         Ok(OutputState::from([(
-            "Emissions|Upstream".to_string(),
+            "Upstream Emissions".to_string(),
             StateValue::Scalar(100.0 + (t - 2020.0)),
         )]))
     }
@@ -517,11 +501,11 @@ impl Component for StepEmissions {
 #[test]
 fn test_flux_aggregate_reads_prescribed_and_upstream_at_step_start() {
     let schema = VariableSchema::new()
-        .variable("Emissions|Prescribed", "GtC/yr")
-        .variable("Emissions|Upstream", "GtC/yr")
-        .aggregate("Emissions|Total", "GtC/yr", AggregateOp::Sum)
-        .from("Emissions|Prescribed")
-        .from("Emissions|Upstream")
+        .variable("Prescribed Emissions", "GtC/yr")
+        .variable("Upstream Emissions", "GtC/yr")
+        .aggregate("Emissions", "GtC/yr", AggregateOp::Sum)
+        .from("Prescribed Emissions")
+        .from("Upstream Emissions")
         .build();
     let axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)));
     let prescribed = Timeseries::new(
@@ -536,7 +520,7 @@ fn test_flux_aggregate_reads_prescribed_and_upstream_at_step_start() {
         .with_time_axis((*axis).clone())
         .with_schema(schema)
         .with_component(Arc::new(StepEmissions))
-        .with_prescribed_variable("Emissions|Prescribed", prescribed)
+        .with_prescribed_variable("Prescribed Emissions", prescribed)
         .build()
         .unwrap();
 
@@ -552,11 +536,11 @@ fn test_flux_aggregate_reads_prescribed_and_upstream_at_step_start() {
         .map(|v| (v.name.as_str(), (v.source, v.timeseries_type)))
         .collect();
     assert_eq!(
-        sources["Emissions|Prescribed"],
+        sources["Prescribed Emissions"],
         (Some(VariableSource::Prescribed), TimeseriesType::Average)
     );
     assert_eq!(
-        sources["Emissions|Upstream"],
+        sources["Upstream Emissions"],
         (Some(VariableSource::Upstream), TimeseriesType::Average)
     );
 
@@ -565,7 +549,7 @@ fn test_flux_aggregate_reads_prescribed_and_upstream_at_step_start() {
     // Step N sums the prescribed value and the upstream output at N, and writes the total at N.
     let total = model
         .timeseries()
-        .get_data("Emissions|Total")
+        .get_data("Emissions")
         .and_then(|d| d.as_scalar())
         .unwrap();
     let values: Vec<_> = (0..4)

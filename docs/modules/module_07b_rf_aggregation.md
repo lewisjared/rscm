@@ -25,7 +25,7 @@ because floating-point addition is not associative.
 - **Tests**: `test_coupled_run` in `tests/regression/test_full_run.py` checks total ERF and temperature,
   including the `no_efficacy` (`RF_EFFICACY_APPLY` 0) and `prescribed_efficacy` (1) variants.
   `test_forcing_subtotals` checks the [reported subtotals](#reported-subtotals).
-  `aggregation.rs` has Rust unit tests for the patterns and efficacy modes.
+  `aggregation.rs` has Rust unit tests for the patterns and efficacy methods.
 
 Volcanic forcing enters `ClimateUdeb` directly, as in MAGICC7.
 
@@ -39,8 +39,8 @@ MAGICC7 keeps three forcing datastores for every agent:
 | EffRF | `DAT_*_EFFRF` | RF scaled by the efficacy factor $f$ below, which drives the climate model           |
 | ERF   | `DAT_*_ERF`   | EffRF multiplied back by the internal efficacy, which MAGICC7 reports as ERF         |
 
-With the default `RF_EFFICACY_APPLY = 2`, ERF is RF times the prescribed efficacy.
-Every prescribed efficacy defaults to 1, so ERF and RF then differ only by rounding.
+With the default `RF_EFFICACY_APPLY = 2`, ERF is RF times the efficacy.
+Every efficacy defaults to 1, so ERF and RF then differ only by rounding.
 
 In RSCM each component's `Effective Radiative Forcing|<agent>` output is MAGICC7's RF.
 `ForcingAggregation` writes the box EffRF as `Efficacy Adjusted Effective Radiative Forcing`,
@@ -80,7 +80,7 @@ f = \begin{cases}
 \end{cases}
 $$
 
-$\varepsilon$ is the prescribed efficacy `RF_EFFICACY_*`.
+$\varepsilon$ is the efficacy `RF_EFFICACY_*`.
 Mode 1 cancels each pattern's own efficacy, so every agent has unit efficacy.
 RSCM's `efficacy_method` names modes 0, 1 and 2 `none`, `unit` and `ar6`.
 
@@ -100,15 +100,15 @@ $$
 CO2 takes its internal efficacy from LAMCALC's CO2 response instead.
 Patterns weighted towards land, which warms more, give $\varepsilon_{int} > 1$.
 MAGICC7 recalculates the internal efficacies each year
-from the previous year's climate sensitivity and CO2 doubling forcing.
+from the previous year's equilibrium climate sensitivity and 2xCO2 effective radiative forcing.
 Before the climate model reports them it uses the configured sensitivity and $Q_{2\times} = 3.71$ W/m².
 
 ## Parameters
 
 | Parameter                  | Default | Description                                                        |
 | -------------------------- | ------- | ------------------------------------------------------------------ |
-| `RF_EFFICACY_APPLY`        | 2       | Efficacy mode, see [Efficacy](#efficacy)                           |
-| `RF_EFFICACY_*`            | 1.0     | Prescribed efficacy $\varepsilon$ of each agent                    |
+| `RF_EFFICACY_APPLY`        | 2       | Efficacy method, see [Efficacy](#efficacy)                         |
+| `RF_EFFICACY_*`            | 1.0     | Efficacy $\varepsilon$ of each agent                               |
 | `RF_INTEFFICACY_*`         | table   | Internal efficacy, overwritten each year by LAMCALC                |
 | `RF_REGIONS_*`             | table   | Regional pattern of each agent, in box order                       |
 | `RF_REGIONS_NORMYEAR`      | 2000    | Year whose box forcing sets the land use and BC on snow patterns   |
@@ -303,7 +303,7 @@ because Gauss-Jordan elimination differs in the last bit and shifts some interna
 
 - **Global total and subtotals**: `Effective Radiative Forcing` and the reported subtotals sum the agents' RF,
   not MAGICC7's reported ERF.
-  The two differ only by rounding while every prescribed efficacy is 1.
+  The two differ only by rounding while every efficacy is 1.
   With another efficacy and `RF_EFFICACY_APPLY = 2`, MAGICC7 reports that agent's RF times its efficacy.
 - **Run modes, surface forcing and freeze controls**: only the `ALL` run mode is implemented,
   there is no surface forcing and most freeze controls are missing (see [Algorithm](#algorithm)).

@@ -48,7 +48,7 @@ def rscm_name(species: str) -> str:
 
 def emissions(species: str) -> str:
     """Emissions variable of a species."""
-    return f"Emissions|{rscm_name(species)}"
+    return names.child(names.EMISSIONS, rscm_name(species))
 
 
 def inverse_emissions(species: str) -> str:

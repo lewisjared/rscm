@@ -23,7 +23,7 @@ const RLO_TOLERANCE: FloatValue = 0.001;
 /// Parameters for the LAMCALC iteration.
 #[derive(Debug, Clone, Copy)]
 pub struct LamcalcParameters {
-    /// Radiative forcing for a doubling of $\text{CO}_2$ (W/m$^2$), typically 3.71.
+    /// 2xCO2 effective radiative forcing (W/m$^2$), typically 3.71.
     pub erf_2xco2: FloatValue,
     /// Land-ocean heat exchange coefficient (W/m$^2$/K), typically 1.44.
     pub land_ocean_heat_exchange: FloatValue,
@@ -44,11 +44,11 @@ pub struct LamcalcParameters {
     pub fgso: FloatValue,
     /// Southern hemisphere land global fraction.
     pub fgsl: FloatValue,
-    /// Regional CO2 radiative forcing pattern (NH ocean, NH land, SH ocean, SH land).
+    /// Regional CO2 effective radiative forcing pattern (NH ocean, NH land, SH ocean, SH land).
     ///
     /// Used to compute per-box forcing fractions (qfrac) following MAGICC7:
     ///
-    /// $$\text{qfrac}_i = \frac{\text{rf\_regions\_co2}_i}{\sum_j \text{rf\_regions\_co2}_j \times f_j}$$
+    /// $$\text{qfrac}_i = \frac{\text{co2\_regional\_pattern}_i}{\sum_j \text{co2\_regional\_pattern}_j \times f_j}$$
     ///
     /// Default `[1.0; 4]` produces uniform qfrac = 1.0 for all boxes.
     ///
@@ -177,7 +177,7 @@ pub fn hemispheric_qfrac(pattern: &[FloatValue; 4], area: &[FloatValue; 4]) -> [
 /// in high-feedback regions (land, high latitudes) get efficacy > 1, while those
 /// in low-feedback regions (ocean, tropics) get efficacy < 1.
 ///
-/// In AR6 mode: $\text{EFFRF} = \text{RF} \times \text{prescribed\_efficacy} / \text{internal\_efficacy}$.
+/// With the `ar6` efficacy method: $\text{EFFRF} = \text{RF} \times \text{efficacy} / \text{internal\_efficacy}$.
 ///
 /// Returns 1.0 as fallback if `regional_pattern` sums to zero.
 ///
@@ -628,7 +628,7 @@ mod tests {
     }
 
     #[test]
-    fn test_non_uniform_rf_regions_produces_different_lambdas() {
+    fn test_non_uniform_co2_regional_pattern_produces_different_lambdas() {
         // Uniform forcing (default): all boxes receive equal CO2 forcing fraction.
         let uniform_params = default_params();
         let uniform_result =
@@ -770,7 +770,7 @@ mod tests {
 
     #[test]
     fn test_calc_internal_efficacy_uniform_pattern() {
-        // Uniform regional_pattern [1;4] with uniform lamcalc params should give efficacy = 1.0
+        // Uniform regional_pattern [1;4] with uniform LAMCALC parameters should give efficacy = 1.0
         let mut params = default_params();
         params.co2_regional_pattern = [1.0; 4];
         let result = lamcalc(&params).expect("LAMCALC should converge");

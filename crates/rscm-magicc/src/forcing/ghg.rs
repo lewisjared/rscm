@@ -73,7 +73,7 @@ use serde::{Deserialize, Serialize};
     co2_erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
     ch4_erf { name = "Effective Radiative Forcing|CH4", unit = "W/m^2" },
     n2o_erf { name = "Effective Radiative Forcing|N2O", unit = "W/m^2" },
-    co2_doubling_erf { name = "2xCO2 Effective Radiative Forcing", unit = "W/m^2" },
+    erf_2xco2 { name = "2xCO2 Effective Radiative Forcing", unit = "W/m^2" },
     ch4_strat_h2o_erf { name = "Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O", unit = "W/m^2" },
 )]
 pub struct GhgForcing {
@@ -194,11 +194,11 @@ impl GhgForcing {
 
     // === OLBL implementations (MAGICC7 v7.5.3) ===
 
-    /// ERF of a CO2 doubling at the current concentrations (`CORE_DELQ2XCO2`).
+    /// 2xCO2 effective radiative forcing at the current concentrations (`CORE_DELQ2XCO2`).
     ///
     /// MAGICC7 recalculates this every year for OLBL, which changes the climate
     /// feedback parameter as CO2 rises. IPCCTAR keeps the configured value.
-    pub fn co2_doubling_erf(&self, co2: FloatValue, n2o: FloatValue) -> FloatValue {
+    pub fn erf_2xco2(&self, co2: FloatValue, n2o: FloatValue) -> FloatValue {
         let p = &self.parameters;
         match p.method {
             ForcingMethod::Ipcctar => p.erf_2xco2 * p.adjust_co2,
@@ -278,7 +278,7 @@ impl Component for GhgForcing {
             co2_erf: result.co2_erf,
             ch4_erf: result.ch4_erf,
             n2o_erf: result.n2o_erf,
-            co2_doubling_erf: self.co2_doubling_erf(co2, n2o),
+            erf_2xco2: self.erf_2xco2(co2, n2o),
             ch4_strat_h2o_erf: self.ch4_strat_h2o_erf(ch4),
         };
 

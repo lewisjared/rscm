@@ -98,13 +98,13 @@ fn unlagged_loop_fails_to_build() {
     let error = builder(vec![Arc::new(Climate), Arc::new(Carbon)])
         .build()
         .expect_err("a loop without a lag must not build");
-    let RscmError::CircularDependency {
+    let RscmError::FeedbackLoop {
         components,
         variables,
         suggestions,
     } = &error
     else {
-        panic!("expected CircularDependency, got {error}");
+        panic!("expected FeedbackLoop, got {error}");
     };
     assert_eq!(components, &["Carbon", "Climate"]);
     assert_eq!(variables, &["co2", "temperature"]);
@@ -215,7 +215,7 @@ fn lag_marks_every_consumer() {
 }
 
 #[test]
-fn lag_holds_for_an_prescribed_variable() {
+fn lag_holds_for_a_prescribed_variable() {
     let model = builder(vec![Arc::new(Ozone)])
         .with_lag("temperature")
         .build()

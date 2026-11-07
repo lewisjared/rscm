@@ -50,6 +50,10 @@ def build_model(config: ModelConfig | dict[str, Any]) -> Model:
 def _two_layer_model(config: Any) -> Model:
     from rscm._lib.core import ModelBuilder, TimeAxis  # noqa: PLC0415
     from rscm.config.models import two_layer  # noqa: F401, PLC0415
+    from rscm.names import (  # noqa: PLC0415
+        SURFACE_AIR_TEMPERATURE_CHANGE,
+        ocean_layer_temperature,
+    )
 
     # Import models module to ensure TwoLayerBuilder is registered
     # This is a side-effect import that populates component_registry
@@ -89,7 +93,7 @@ def _two_layer_model(config: Any) -> Model:
 
     # Add initial values for state variables
     model_builder = model_builder.with_initial_values(
-        {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
+        {SURFACE_AIR_TEMPERATURE_CHANGE: 0.0, ocean_layer_temperature(2): 0.0}
     )
 
     # Inputs are not read from the config yet, so forcing stays NaN.

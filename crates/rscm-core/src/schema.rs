@@ -38,9 +38,9 @@
 //!
 //! # Aggregate Execution
 //!
-//! When a model has a schema with aggregates, virtual aggregator components are
+//! When a model has a schema with aggregates, the components that compute aggregates are
 //! inserted into the component graph during `ModelBuilder::build()`. These
-//! aggregators read from their contributor variables and write to the aggregate
+//! components read from their contributor variables and write to the aggregate
 //! variable after all contributors have been solved.
 
 use crate::component::GridType;
@@ -110,11 +110,11 @@ pub struct SchemaVariableDefinition {
     #[pyo3(get)]
     pub name: String,
 
-    /// Physical units (e.g., "ppm", "W/m^2")
+    /// Physical unit (e.g., "ppm", "W/m^2")
     #[pyo3(get)]
     pub unit: String,
 
-    /// Spatial resolution
+    /// Grid of the variable's values
     #[pyo3(get)]
     pub grid: GridType,
 }
@@ -129,7 +129,7 @@ impl SchemaVariableDefinition {
         }
     }
 
-    /// Create a new variable definition with explicit grid type
+    /// Create a new variable definition with an explicit grid
     pub fn with_grid(name: impl Into<String>, unit: impl Into<String>, grid: GridType) -> Self {
         Self {
             name: name.into(),
@@ -170,11 +170,11 @@ pub struct AggregateDefinition {
     #[pyo3(get)]
     pub name: String,
 
-    /// Physical units (must match contributors)
+    /// Physical unit (must match contributors)
     #[pyo3(get)]
     pub unit: String,
 
-    /// Spatial resolution (must match contributors)
+    /// Grid of the aggregate's values (must match contributors)
     #[pyo3(get)]
     pub grid: GridType,
 
@@ -200,7 +200,7 @@ impl AggregateDefinition {
         }
     }
 
-    /// Create a new aggregate definition with explicit grid type
+    /// Create a new aggregate definition with an explicit grid
     pub fn with_grid(
         name: impl Into<String>,
         unit: impl Into<String>,
@@ -310,7 +310,7 @@ impl VariableSchema {
         self
     }
 
-    /// Add a variable with explicit grid type to the schema
+    /// Add a variable with an explicit grid to the schema
     ///
     /// Returns self for method chaining.
     pub fn variable_with_grid(
@@ -341,7 +341,7 @@ impl VariableSchema {
         }
     }
 
-    /// Begin defining an aggregate variable with explicit grid type
+    /// Begin defining an aggregate variable with an explicit grid
     ///
     /// Returns an [`AggregateBuilder`] for adding contributors.
     pub fn aggregate_with_grid(
@@ -381,7 +381,7 @@ impl VariableSchema {
             .or_else(|| self.aggregates.get(name).map(|a| a.unit.as_str()))
     }
 
-    /// Get the grid type for a name (variable or aggregate)
+    /// Get the grid for a name (variable or aggregate)
     pub fn get_grid(&self, name: &str) -> Option<GridType> {
         self.variables
             .get(name)
@@ -394,7 +394,7 @@ impl VariableSchema {
     /// Performs the following checks:
     /// - All aggregate contributors exist in the schema (as variables or aggregates)
     /// - Unit consistency between contributors and their aggregates
-    /// - Grid type consistency between contributors and their aggregates
+    /// - Grid consistency between contributors and their aggregates
     /// - Weighted aggregate weight counts match contributor counts
     /// - No circular dependencies between aggregates
     ///
@@ -409,7 +409,7 @@ impl VariableSchema {
     ///
     /// let schema = VariableSchema::new()
     ///     .variable("Effective Radiative Forcing|CO2", "W/m^2")
-    ///     .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+    ///     .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
     ///         .from("Effective Radiative Forcing|CO2")
     ///         .build();
     ///
@@ -439,7 +439,7 @@ impl VariableSchema {
                     }
                 }
 
-                // 3.4: Validate grid type consistency
+                // 3.4: Validate grid consistency
                 if let Some(contributor_grid) = self.get_grid(contributor) {
                     if contributor_grid != agg_def.grid {
                         return Err(RscmError::SchemaGridTypeMismatch {
@@ -618,11 +618,11 @@ impl VariableSchema {
     ///
     /// # Arguments
     /// * `name` - Variable identifier for the aggregate result
-    /// * `unit` - Physical units (must match contributors)
+    /// * `unit` - Physical unit (must match contributors)
     /// * `operation` - Operation type: "sum", "mean" or "weighted_sum"
     /// * `contributors` - Names of variables that contribute to this aggregate
     /// * `weights` - Weights for the weighted sum (required if operation="weighted_sum")
-    /// * `grid` - Spatial resolution (defaults to Scalar)
+    /// * `grid` - Grid of the aggregate's values (defaults to scalar)
     #[pyo3(name = "add_aggregate")]
     #[pyo3(signature = (name, unit, operation, contributors, weights=None, grid=None))]
     fn py_add_aggregate(
@@ -801,14 +801,14 @@ pub fn compute_aggregate(contributors: &[f64], op: &AggregateOp) -> f64 {
 }
 
 // =============================================================================
-// Virtual Components (Aggregator)
+// Aggregate components
 // =============================================================================
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition, VariableRole};
 use crate::state::StateValue;
 use crate::timeseries::Time;
 
-/// A virtual component that computes aggregate values from contributors.
+/// The component that computes an aggregate from its contributors.
 ///
 /// `AggregatorComponent` is automatically created by `ModelBuilder` when a
 /// schema with aggregates is provided. It reads values from all contributors
@@ -821,7 +821,7 @@ pub struct AggregatorComponent {
     pub aggregate_name: String,
     /// The unit of the aggregate variable
     pub unit: String,
-    /// The grid type of the aggregate
+    /// The grid of the aggregate
     pub grid: GridType,
     /// The aggregation operation to apply
     pub operation: AggregateOp,
@@ -830,7 +830,7 @@ pub struct AggregatorComponent {
 }
 
 impl AggregatorComponent {
-    /// Create a new aggregator component from an aggregate definition.
+    /// Create the component for an aggregate definition.
     pub fn from_definition(def: &AggregateDefinition) -> Self {
         Self {
             aggregate_name: def.name.clone(),
@@ -981,8 +981,9 @@ mod tests {
 
     #[test]
     fn test_aggregate_definition_new() {
-        let def = AggregateDefinition::new("Total ERF", "W/m^2", AggregateOp::Sum);
-        assert_eq!(def.name, "Total ERF");
+        let def =
+            AggregateDefinition::new("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum);
+        assert_eq!(def.name, "Effective Radiative Forcing");
         assert_eq!(def.unit, "W/m^2");
         assert_eq!(def.grid, GridType::Scalar);
         assert_eq!(def.operation, AggregateOp::Sum);
@@ -994,19 +995,21 @@ mod tests {
         let schema = VariableSchema::new()
             .variable("Emissions|CO2", "GtCO2/yr")
             .variable("Atmospheric Concentrations|CO2", "ppm")
-            .variable_with_grid("Regional Temperature", "K", GridType::FourBox);
+            .variable_with_grid("Surface Air Temperature Change", "K", GridType::FourBox);
 
         assert_eq!(schema.variables.len(), 3);
         assert!(schema.contains("Emissions|CO2"));
         assert!(schema.contains("Atmospheric Concentrations|CO2"));
-        assert!(schema.contains("Regional Temperature"));
+        assert!(schema.contains("Surface Air Temperature Change"));
         assert!(!schema.contains("Nonexistent"));
 
         let co2 = schema.get_variable("Emissions|CO2").unwrap();
         assert_eq!(co2.unit, "GtCO2/yr");
         assert_eq!(co2.grid, GridType::Scalar);
 
-        let temp = schema.get_variable("Regional Temperature").unwrap();
+        let temp = schema
+            .get_variable("Surface Air Temperature Change")
+            .unwrap();
         assert_eq!(temp.grid, GridType::FourBox);
     }
 
@@ -1015,7 +1018,7 @@ mod tests {
         let schema = VariableSchema::new()
             .variable("Effective Radiative Forcing|CO2", "W/m^2")
             .variable("Effective Radiative Forcing|CH4", "W/m^2")
-            .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+            .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
             .from("Effective Radiative Forcing|CO2")
             .from("Effective Radiative Forcing|CH4")
             .build();
@@ -1023,9 +1026,9 @@ mod tests {
         assert_eq!(schema.variables.len(), 2);
         assert_eq!(schema.aggregates.len(), 1);
         assert!(schema.contains("Effective Radiative Forcing|CO2"));
-        assert!(schema.contains("Total ERF"));
+        assert!(schema.contains("Effective Radiative Forcing"));
 
-        let agg = schema.get_aggregate("Total ERF").unwrap();
+        let agg = schema.get_aggregate("Effective Radiative Forcing").unwrap();
         assert_eq!(agg.unit, "W/m^2");
         assert_eq!(agg.operation, AggregateOp::Sum);
         assert_eq!(
@@ -1070,7 +1073,7 @@ mod tests {
             .from("Effective Radiative Forcing|CO2")
             .from("Effective Radiative Forcing|CH4")
             .build()
-            .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+            .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
             .from("Effective Radiative Forcing|Greenhouse Gases")
             .from("Effective Radiative Forcing|Other")
             .build();
@@ -1088,7 +1091,7 @@ mod tests {
             ]
         );
 
-        let total = schema.get_aggregate("Total ERF").unwrap();
+        let total = schema.get_aggregate("Effective Radiative Forcing").unwrap();
         assert_eq!(
             total.contributors,
             vec![
@@ -1131,7 +1134,7 @@ mod tests {
         let schema = VariableSchema::new()
             .variable("Effective Radiative Forcing|CO2", "W/m^2")
             .variable("Effective Radiative Forcing|CH4", "W/m^2")
-            .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+            .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
             .from("Effective Radiative Forcing|CO2")
             .from("Effective Radiative Forcing|CH4")
             .build();
@@ -1142,8 +1145,8 @@ mod tests {
         assert_eq!(schema.variables.len(), deserialised.variables.len());
         assert_eq!(schema.aggregates.len(), deserialised.aggregates.len());
         assert_eq!(
-            schema.get_aggregate("Total ERF"),
-            deserialised.get_aggregate("Total ERF")
+            schema.get_aggregate("Effective Radiative Forcing"),
+            deserialised.get_aggregate("Effective Radiative Forcing")
         );
     }
 
@@ -1151,7 +1154,7 @@ mod tests {
     fn test_variable_schema_toml_serialisation() {
         let schema = VariableSchema::new()
             .variable("Effective Radiative Forcing|CO2", "W/m^2")
-            .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+            .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
             .from("Effective Radiative Forcing|CO2")
             .build();
 
@@ -1176,7 +1179,7 @@ mod tests {
         let schema = VariableSchema::new()
             .variable("Effective Radiative Forcing|CO2", "W/m^2")
             .variable("Effective Radiative Forcing|CH4", "W/m^2")
-            .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+            .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
             .from("Effective Radiative Forcing|CO2")
             .from("Effective Radiative Forcing|CH4")
             .build();
@@ -1204,7 +1207,7 @@ mod tests {
             .from("Effective Radiative Forcing|CO2")
             .from("Effective Radiative Forcing|CH4")
             .build()
-            .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+            .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
             .from("Effective Radiative Forcing|Greenhouse Gases")
             .from("Effective Radiative Forcing|Other")
             .build();
@@ -1231,7 +1234,7 @@ mod tests {
     fn test_validate_undefined_contributor() {
         let schema = VariableSchema::new()
             .variable("Effective Radiative Forcing|CO2", "W/m^2")
-            .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
+            .aggregate("Effective Radiative Forcing", "W/m^2", AggregateOp::Sum)
             .from("Effective Radiative Forcing|CO2")
             .from("Effective Radiative Forcing|CH4") // Not defined
             .build();
@@ -1277,17 +1280,17 @@ mod tests {
     #[test]
     fn test_validate_grid_mismatch() {
         let schema = VariableSchema::new()
-            .variable("Global Temp", "K")
-            .variable_with_grid("Regional Temp", "K", GridType::FourBox)
-            .aggregate("Total Temp", "K", AggregateOp::Sum) // Scalar aggregate
-            .from("Global Temp")
-            .from("Regional Temp") // four-box contributor
+            .variable("Global Temperature", "K")
+            .variable_with_grid("Regional Temperature", "K", GridType::FourBox)
+            .aggregate("Temperature", "K", AggregateOp::Sum) // Scalar aggregate
+            .from("Global Temperature")
+            .from("Regional Temperature") // four-box contributor
             .build();
 
         let err = schema.validate().unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("Grid type mismatch"),
+            msg.contains("Grid mismatch"),
             "Expected SchemaGridTypeMismatch error, got: {}",
             msg
         );
@@ -1549,7 +1552,7 @@ mod tests {
     #[test]
     fn test_aggregator_component_from_definition() {
         let def = AggregateDefinition {
-            name: "Total ERF".to_string(),
+            name: "Effective Radiative Forcing".to_string(),
             unit: "W/m^2".to_string(),
             grid: GridType::Scalar,
             operation: AggregateOp::Sum,
@@ -1561,7 +1564,7 @@ mod tests {
 
         let agg = AggregatorComponent::from_definition(&def);
 
-        assert_eq!(agg.aggregate_name, "Total ERF");
+        assert_eq!(agg.aggregate_name, "Effective Radiative Forcing");
         assert_eq!(agg.unit, "W/m^2");
         assert_eq!(agg.grid, GridType::Scalar);
         assert_eq!(agg.operation, AggregateOp::Sum);
@@ -1577,7 +1580,7 @@ mod tests {
     #[test]
     fn test_aggregator_component_definitions() {
         let def = AggregateDefinition {
-            name: "Total ERF".to_string(),
+            name: "Effective Radiative Forcing".to_string(),
             unit: "W/m^2".to_string(),
             grid: GridType::Scalar,
             operation: AggregateOp::Sum,
@@ -1600,7 +1603,7 @@ mod tests {
         assert_eq!(defs[1].role, VariableRole::Input);
 
         // Last one is output
-        assert_eq!(defs[2].name, "Total ERF");
+        assert_eq!(defs[2].name, "Effective Radiative Forcing");
         assert_eq!(defs[2].role, VariableRole::Output);
     }
 
@@ -1633,8 +1636,8 @@ mod tests {
                 "Effective Radiative Forcing|CH4": {"name": "Effective Radiative Forcing|CH4", "unit": "W/m^2", "grid": "scalar"}
             },
             "aggregates": {
-                "Total ERF": {
-                    "name": "Total ERF",
+                "Effective Radiative Forcing": {
+                    "name": "Effective Radiative Forcing",
                     "unit": "W/m^2",
                     "grid": "scalar",
                     "operation": "sum",
@@ -1655,8 +1658,8 @@ mod tests {
                 "Effective Radiative Forcing|CO2": {"name": "Effective Radiative Forcing|CO2", "unit": "W/m^2", "grid": "scalar"}
             },
             "aggregates": {
-                "Total ERF": {
-                    "name": "Total ERF",
+                "Effective Radiative Forcing": {
+                    "name": "Effective Radiative Forcing",
                     "unit": "W/m^2",
                     "grid": "scalar",
                     "operation": "sum",

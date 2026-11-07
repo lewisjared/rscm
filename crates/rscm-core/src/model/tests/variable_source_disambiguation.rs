@@ -72,7 +72,7 @@ impl Component for TemperatureProducer {
     temperature { name = "Surface Air Temperature Change", unit = "degC" },
 )]
 #[outputs(
-    heat_content { name = "Ocean Heat Content", unit = "ZJ" },
+    heat_content { name = "Ocean Heat Content", unit = "J" },
 )]
 struct TemperatureConsumer {
     /// Conversion factor from temperature to heat content
@@ -236,7 +236,7 @@ fn test_variable_sources_with_prescribed_input() {
     /// Component that reads prescribed forcing
     #[derive(Debug, Serialize, Deserialize, ComponentIO)]
     #[inputs(
-        forcing { name = "Radiative Forcing", unit = "W/m^2" },
+        forcing { name = "Effective Radiative Forcing", unit = "W/m^2" },
     )]
     #[outputs(
         response { name = "Climate Response", unit = "K" },
@@ -273,7 +273,7 @@ fn test_variable_sources_with_prescribed_input() {
     let model = ModelBuilder::new()
         .with_time_axis(time_axis)
         .with_component(Arc::new(ForcingConsumer { sensitivity: 2.0 }))
-        .with_prescribed_variable("Radiative Forcing", forcing_ts)
+        .with_prescribed_variable("Effective Radiative Forcing", forcing_ts)
         .build()
         .unwrap();
 
@@ -281,13 +281,13 @@ fn test_variable_sources_with_prescribed_input() {
     let sources = model.variable_sources();
 
     let consumer_source = sources.get(&(
-        "Radiative Forcing".to_string(),
+        "Effective Radiative Forcing".to_string(),
         "ForcingConsumer".to_string(),
     ));
     assert_eq!(
         consumer_source,
         Some(&VariableSource::Prescribed),
-        "Consumer should see Radiative Forcing as Prescribed"
+        "Consumer should see Effective Radiative Forcing as Prescribed"
     );
 }
 

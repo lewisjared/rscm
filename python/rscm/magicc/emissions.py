@@ -51,6 +51,7 @@ from rscm.names import (
     ATMOSPHERIC_BURDEN_CH4_NATURAL,
     ATMOSPHERIC_BURDEN_CH4_PERMAFROST,
     ATMOSPHERIC_CONCENTRATIONS,
+    ATMOSPHERIC_CONCENTRATIONS_CO2,
     CARBON_FLUX_REGROWTH,
     CARBON_POOL_DETRITUS,
     CARBON_POOL_PLANT,
@@ -70,14 +71,19 @@ from rscm.names import (
     EMISSIONS_NOX,
     EMISSIONS_UNITS,
     ERF,
+    HEAT_UPTAKE,
     LIFETIME_CH4,
     LIFETIME_CH4_OH,
     LIFETIME_N2O,
     NET_ATMOSPHERE_TO_LAND_FLUX_CO2,
     NET_ATMOSPHERE_TO_OCEAN_FLUX_CO2,
     NET_EMISSIONS_CO2,
+    NET_PRIMARY_PRODUCTION,
+    OCEAN_CARBON_ATMOSPHERIC_CONCENTRATIONS_CO2,
+    OCEAN_HEAT_CONTENT,
     OCEAN_SURFACE_PARTIAL_PRESSURE_CO2,
     RESPIRATION_LAND,
+    SEA_SURFACE_TEMPERATURE,
     SURFACE_AIR_TEMPERATURE_CHANGE,
     child,
 )
@@ -92,7 +98,11 @@ if TYPE_CHECKING:
 __all__ = ["Emissions", "run_magicc_emissions"]
 
 # MAGICC7 preindustrial land pools (CO2_*POOL_INITIAL), the TerrestrialCarbon defaults
-DEFAULT_POOLS = {"plant": 884.8584, "detritus": 92.7738, "soil": 1681.525}
+DEFAULT_POOLS = {
+    CARBON_POOL_PLANT: ("plant", 884.8584),
+    CARBON_POOL_DETRITUS: ("detritus", 92.7738),
+    CARBON_POOL_SOIL: ("soil", 1681.525),
+}
 
 # Components in registration order, which sets the lags between them.
 COMPONENTS = {
@@ -109,12 +119,12 @@ COMPONENTS = {
 # and the carbon sinks last year's CO2.
 _LAG = (SURFACE_AIR_TEMPERATURE_CHANGE,)
 _LAG_FOR = (
-    (child(ATMOSPHERIC_CONCENTRATIONS, "CO2"), "TerrestrialCarbon"),
-    (child(ATMOSPHERIC_CONCENTRATIONS, "CO2"), "OceanCarbon"),
+    (ATMOSPHERIC_CONCENTRATIONS_CO2, "TerrestrialCarbon"),
+    (ATMOSPHERIC_CONCENTRATIONS_CO2, "OceanCarbon"),
 )
 
-CH4_PPB_TO_TG = 2.824
-CH4_MIXBOX_SIZE = 0.973
+CH4_TG_PER_PPB = 2.824
+CH4_MIXING_BOX_SIZE = 0.973
 CH4_BUDGET_PARAMETERS = ("tg_per_ppb", "mixing_box_size", "natural_emissions")
 
 EMISSION_VARIABLES = {
@@ -145,24 +155,24 @@ CALCULATED = {
     NET_ATMOSPHERE_TO_LAND_FLUX_CO2: ("GtC/yr", "TerrestrialCarbon"),
     EMISSIONS_CO2_GROSS_DEFORESTATION: ("GtC/yr", "TerrestrialCarbon"),
     CARBON_FLUX_REGROWTH: ("GtC/yr", "TerrestrialCarbon"),
-    "Net Primary Production": ("GtC/yr", "TerrestrialCarbon"),
+    NET_PRIMARY_PRODUCTION: ("GtC/yr", "TerrestrialCarbon"),
     RESPIRATION_LAND: ("GtC/yr", "TerrestrialCarbon"),
     OCEAN_SURFACE_PARTIAL_PRESSURE_CO2: ("ppm", "OceanCarbon"),
     CUMULATIVE_CARBON_UPTAKE_OCEAN: ("GtC", "OceanCarbon"),
     NET_ATMOSPHERE_TO_OCEAN_FLUX_CO2: ("GtC/yr", "OceanCarbon"),
-    "Ocean Carbon Atmospheric Concentrations|CO2": ("ppm", "OceanCarbon"),
+    OCEAN_CARBON_ATMOSPHERIC_CONCENTRATIONS_CO2: ("ppm", "OceanCarbon"),
     NET_EMISSIONS_CO2: ("GtC/yr", "CO2Budget"),
     AIRBORNE_FRACTION_CO2: ("1", "CO2Budget"),
     SURFACE_AIR_TEMPERATURE_CHANGE: ("K", "ClimateUdeb"),
-    "Sea Surface Temperature": ("K", "ClimateUdeb"),
-    "Heat Uptake": ("W/m^2", "ClimateUdeb"),
-    "Ocean Heat Content": ("J", "ClimateUdeb"),
+    SEA_SURFACE_TEMPERATURE: ("K", "ClimateUdeb"),
+    HEAT_UPTAKE: ("W/m^2", "ClimateUdeb"),
+    OCEAN_HEAT_CONTENT: ("J", "ClimateUdeb"),
 }
 
 
 # Per-step points, undefined at the first label.
 DIAGNOSTICS = frozenset(
-    {"Ocean Carbon Atmospheric Concentrations|CO2", AIRBORNE_FRACTION_CO2}
+    {OCEAN_CARBON_ATMOSPHERIC_CONCENTRATIONS_CO2, AIRBORNE_FRACTION_CO2}
 )
 
 
@@ -291,9 +301,9 @@ def run_magicc_emissions(  # noqa: PLR0913
     ``other_forcing`` is the ERF in W/m² from everything except the selected
     gases, one value per boundary. ``parameters`` maps component names from
     ``COMPONENTS`` to their Rust parameter dictionaries. ClimateUdeb's
-    ``erf_2xco2`` defaults to the CO2-doubling ERF of the forcing configuration,
-    as in MAGICC7. A ``gtc_per_ppm`` given for CO2Budget or OceanCarbon applies
-    to both.
+    ``erf_2xco2`` defaults to the 2xCO2 effective radiative forcing of the
+    forcing configuration, as in MAGICC7. A ``gtc_per_ppm`` given for CO2Budget
+    or OceanCarbon applies to both.
 
     As in MAGICC7, chemistry and the carbon cycle use the temperature at the
     start of each year, and forcing uses the concentrations at its end.
@@ -347,16 +357,14 @@ def run_magicc_emissions(  # noqa: PLR0913
         **climate.initial_values(total_erf),
         **_ch4_burdens(
             initial_conc["CH4"],
-            float(params["CH4Chemistry"].get("tg_per_ppb", CH4_PPB_TO_TG)),
-            float(params["CH4Chemistry"].get("mixing_box_size", CH4_MIXBOX_SIZE)),
+            float(params["CH4Chemistry"].get("tg_per_ppb", CH4_TG_PER_PPB)),
+            float(params["CH4Chemistry"].get("mixing_box_size", CH4_MIXING_BOX_SIZE)),
         ),
         OCEAN_SURFACE_PARTIAL_PRESSURE_CO2: initial_conc["CO2"],
         CUMULATIVE_CARBON_UPTAKE_OCEAN: 0.0,
         **{
-            f"Carbon Pool|{pool.title()}": float(
-                terrestrial.get(f"{pool}_pool_pi", default)
-            )
-            for pool, default in DEFAULT_POOLS.items()
+            name: float(terrestrial.get(f"{pool}_pool_pi", default))
+            for name, (pool, default) in DEFAULT_POOLS.items()
         },
     }
 

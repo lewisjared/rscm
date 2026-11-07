@@ -455,7 +455,8 @@ pd.DataFrame(
 #   land and ocean carbon uptake and ozone forcing, which all change the forcing that drives temperature.
 # - CO2 from `CO2Budget` drives fertilisation on land and air-sea exchange,
 #   which set the fluxes that `CO2Budget` integrates.
-# - The CO2-doubling forcing and climate sensitivity set the internal efficacies in `ForcingAggregation`.
+# - The 2xCO2 effective radiative forcing and equilibrium climate sensitivity
+#   set the internal efficacies in `ForcingAggregation`.
 #
 # The builder links every component to the producers of its inputs, whatever order they are added in.
 # A loop must lag one of its edges, so the reader sees the value from the previous step.
@@ -463,7 +464,7 @@ pd.DataFrame(
 # and `with_lag_for(variable, consumer)` lags one.
 # Building a model with a loop that no lag breaks fails, and the error suggests the lags that would break it.
 #
-# MAGICC7 uses a staggered scheme.
+# MAGICC7 lags these edges.
 # Permafrost, chemistry, the carbon cycle and ozone use the temperature at the start of each year,
 # and the land and ocean the CO2 at the start of the year,
 # while forcing uses the concentrations at its end.
@@ -761,7 +762,7 @@ show_svg(graph)
 # - `SeaLevelRise` reads the annual mean warming and thermal expansion from `ClimateUdeb`.
 # - The red arrows close the loops one step later.
 #   Temperature reaches seven components this way, CO2 reaches the land and ocean,
-#   and climate sensitivity reaches `ForcingAggregation`.
+#   and equilibrium climate sensitivity reaches `ForcingAggregation`.
 
 # %% [markdown]
 # ## Running the model
@@ -811,7 +812,7 @@ differences = {
         - 1
         for gas in ("CO2", "CH4", "N2O")
     },
-    "Surface temperature": (
+    "Surface air temperature change": (
         global_temperature - magicc_series("Surface Air Temperature Change")
     )
     / np.abs(magicc_series("Surface Air Temperature Change")).max(),
@@ -898,7 +899,7 @@ ax.legend(loc="upper left", fontsize=8)
 plt.show()
 
 # %% [markdown]
-# ### Surface temperature
+# ### Surface air temperature change
 #
 # `ClimateUdeb` resolves four boxes.
 # Northern land warms fastest and the southern ocean slowest.
@@ -919,7 +920,7 @@ ax.plot(
     label="Global (area-weighted)",
 )
 ax.set_ylabel("K relative to 1750")
-ax.set_title("Surface temperature")
+ax.set_title("Surface air temperature change")
 ax.legend()
 plt.show()
 
@@ -1045,7 +1046,7 @@ for ecs, timeseries in sweep.items():
         "Surface Air Temperature Change"
     ).values()
     axes[2].plot(years, boxes @ area, label=f"ECS {ecs} K")
-axes[2].set_title("Surface temperature (K)")
+axes[2].set_title("Surface air temperature change (K)")
 axes[2].legend()
 fig.tight_layout()
 plt.show()
@@ -1087,7 +1088,7 @@ ax.plot(
     result.years, result.values["Surface Air Temperature Change"], label="run_magicc"
 )
 ax.set_ylabel("K relative to 1750")
-ax.set_title("Surface temperature")
+ax.set_title("Surface air temperature change")
 ax.legend()
 plt.show()
 

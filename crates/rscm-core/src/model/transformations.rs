@@ -8,13 +8,13 @@ use crate::state::{HemisphericSlice, StateValue};
 /// Aggregate a StateValue from a finer grid to a coarser grid.
 ///
 /// This function performs write-side grid transformation, aggregating component output
-/// at a finer resolution to the schema's declared coarser resolution before storage.
+/// on a finer grid to the schema's declared coarser grid before storage.
 ///
 /// # Arguments
 ///
 /// * `value` - The StateValue to aggregate
-/// * `source_grid` - The grid type the component produced (finer resolution)
-/// * `target_grid` - The grid type the schema expects (coarser resolution)
+/// * `source_grid` - The grid the component produced (finer)
+/// * `target_grid` - The grid the schema expects (coarser)
 /// * `weights` - Optional custom weights for aggregation; uses default grid weights if None
 ///
 /// # Supported transformations
@@ -47,7 +47,10 @@ pub(crate) fn aggregate_state_value(
             let grid = match weights {
                 Some(w) => {
                     let arr: [f64; 4] = w.as_slice().try_into().unwrap_or_else(|_| {
-                        panic!("FourBox weights must have 4 elements, got {}", w.len())
+                        panic!(
+                            "four-box grid weights must have 4 elements, got {}",
+                            w.len()
+                        )
                     });
                     FourBoxGrid::with_weights(arr)
                 }
@@ -68,7 +71,10 @@ pub(crate) fn aggregate_state_value(
             let grid_weights = match weights {
                 Some(w) => {
                     let arr: [f64; 4] = w.as_slice().try_into().unwrap_or_else(|_| {
-                        panic!("FourBox weights must have 4 elements, got {}", w.len())
+                        panic!(
+                            "four-box grid weights must have 4 elements, got {}",
+                            w.len()
+                        )
                     });
                     arr
                 }
@@ -113,13 +119,13 @@ pub(crate) fn aggregate_state_value(
             Ok(StateValue::Scalar(slice.aggregate_global(&grid)))
         }
 
-        // Same grid type: no transformation needed (identity)
+        // Same grid: no transformation needed (identity)
         (s, t) if s == t => Ok(value.clone()),
 
         // Any other combination is not supported (disaggregation)
         _ => Err(RscmError::GridTransformationNotSupported {
-            source_grid: format!("{:?}", source_grid),
-            target_grid: format!("{:?}", target_grid),
+            source_grid: source_grid.to_string(),
+            target_grid: target_grid.to_string(),
             variable: "unknown".to_string(),
         }),
     }

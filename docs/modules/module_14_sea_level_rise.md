@@ -43,7 +43,7 @@ the start-year gates, the thermal expansion weighting, and the Levermann forcing
 
 ### Timing
 
-A year's annual mean warming $T(y)$ (`DAT_SURFACE_ANNUALMEANTEMP`, the mean of its 12 monthly steps)
+A year's annual mean warming $T(y)$ (`DAT_SURFACE_ANNUALMEANTEMP`, the mean of its 12 monthly substeps)
 sets the contributions at the start of year $y + 1$.
 A contribution runs for $y \ge$ its start year,
 so it first changes in the value for the year after its start year.

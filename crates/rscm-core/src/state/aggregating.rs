@@ -159,7 +159,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
             let arr: [f64; 4] = w
                 .as_slice()
                 .try_into()
-                .expect("FourBox weights must have 4 elements");
+                .expect("four-box grid weights must have 4 elements");
             arr
         });
         Self {

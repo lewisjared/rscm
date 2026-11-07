@@ -73,11 +73,11 @@ def scaled(factor: float):
     )
 
 
-@pytest.mark.parametrize("threads", [None, 1, 4])
-def test_parallel_matches_serial(threads):
+@pytest.mark.parametrize("n_threads", [None, 1, 4])
+def test_parallel_matches_serial(n_threads):
     builders = [two_layer(lambda0) for lambda0 in np.linspace(0.5, 2.0, 12)]
-    models = build_models(builders, threads=threads)
-    run_models(models, threads=threads)
+    models = build_models(builders, n_threads=n_threads)
+    run_models(models, n_threads=n_threads)
 
     for builder, model in zip(builders, models):
         serial = builder.build()
@@ -114,4 +114,4 @@ def test_a_model_listed_twice_is_rejected():
 
 def test_zero_threads_is_rejected():
     with pytest.raises(ValueError, match="at least 1"):
-        run_models([scaled(1.0)], threads=0)
+        run_models([scaled(1.0)], n_threads=0)

@@ -132,7 +132,7 @@ def show_graph(model):
 #   - `(own_state)`: this component's own state from the previous step.
 # - **`<>` (magenta)**: state variables (read the previous value, write a new value).
 # - **`->` (blue)**: output variables produced by this component.
-# - **Grid tags** (yellow): non-scalar grid types (for example `[FourBox]`).
+# - **Grid tags** (yellow): non-scalar grids (for example `[four_box]`).
 # - **`point` or `average`**: whether the value holds at an instant or over a step.
 #
 # A "Lagged Edges" section then lists every edge that reads the previous step.
@@ -190,7 +190,7 @@ print(collection.names())
 # %%
 co2_conc = collection.get_timeseries_by_name("Atmospheric Concentrations|CO2")
 
-print(f"Units: {co2_conc.unit}")
+print(f"Unit: {co2_conc.unit}")
 print(f"Latest value: {co2_conc.latest_value():.2f}")
 print(f"First values: {co2_conc.values()[:5]}")
 
@@ -381,7 +381,7 @@ except RuntimeError as e:
 # %% [markdown]
 # ## Debugging Tips
 #
-# - Use `coupling()` to see execution order, where each input comes from, lags and grid types.
+# - Use `coupling()` to see execution order, where each input comes from, lags and grids.
 # - Check inputs marked `(prescribed)` if a model built with `with_missing_prescribed_allowed()`
 #   gives NaN.
 # - Use `step()` to stop at a point of interest and read values with `get_timeseries_by_name()`.

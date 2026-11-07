@@ -37,6 +37,7 @@ pub struct EescParameters {
     /// Fractional release of CFC-11.
     pub cfc11_fractional_release: FloatValue,
     /// Ozone depletion potency of bromine relative to chlorine.
+    /// FaIR: `br_cl_ods_potential`
     #[serde(default = "default_br_cl_ratio")]
     pub br_cl_ratio: FloatValue,
     /// EESC output.

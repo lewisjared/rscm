@@ -122,7 +122,7 @@ The later listings on this page leave them out.
 | `#[states(field { name, unit, grid }, ...)]`   | Variables read at the start and written at the end      |
 | `#[component(tags = [...], category = "...")]` | Optional metadata for the generated component docs      |
 
-`grid` is optional and is one of `"Scalar"` (the default), `"FourBox"` or `"Hemispheric"`.
+`grid` is optional and is one of `"scalar"` (the default), `"four_box"` or `"hemispheric"`.
 
 ## What the Macro Generates
 
@@ -166,7 +166,7 @@ impl CO2Erf {
 ## Input Access Patterns
 
 A scalar input is a `ScalarWindow`.
-It reads scalar data directly and aggregates FourBox or Hemispheric data to a global value.
+It reads scalar data directly and aggregates four-box or hemispheric data to a global value.
 
 | Method           | Description                                                           |
 | ---------------- | --------------------------------------------------------------------- |
@@ -371,7 +371,7 @@ Add `ode_solvers` to the crate's dependencies for the vector types.
 
 RSCM supports spatially-resolved variables:
 
-- **FourBox**: Northern Ocean, Northern Land, Southern Ocean, Southern Land
+- **Four-box**: Northern Ocean, Northern Land, Southern Ocean, Southern Land
 - **Hemispheric**: Northern, Southern
 
 Set `grid` in the declaration, and return the matching slice type from `solve`.
@@ -405,16 +405,16 @@ let outputs = FourBoxOceanHeatUptakeOutputs {
 
 The full component is `crates/rscm-components/src/components/four_box_ocean_heat_uptake.rs`.
 
-### Grid Type Mapping
+### Grid Mapping
 
-| Grid Type        | Input Type                              | Output Type        |
-| ---------------- | --------------------------------------- | ------------------ |
-| Scalar (default) | `ScalarWindow<'a>`                      | `FloatValue`       |
-| FourBox          | `GridTimeseriesWindow<'a, FourBoxGrid>` | `FourBoxSlice`     |
-| Hemispheric      | `HemisphericWindow<'a>`                 | `HemisphericSlice` |
+| Grid                 | Input Type                              | Output Type        |
+| -------------------- | --------------------------------------- | ------------------ |
+| `"scalar"` (default) | `ScalarWindow<'a>`                      | `FloatValue`       |
+| `"four_box"`         | `GridTimeseriesWindow<'a, FourBoxGrid>` | `FourBoxSlice`     |
+| `"hemispheric"`      | `HemisphericWindow<'a>`                 | `HemisphericSlice` |
 
 A four-box input also needs `FourBoxGrid` (from `rscm_core::spatial`) and `GridTimeseriesWindow` in scope.
-A Hemispheric input needs `HemisphericWindow`.
+A hemispheric input needs `HemisphericWindow`.
 Grid windows take a region, for example `get(FourBoxRegion::NorthernOcean)`.
 They also provide `get_all()`, and `history(n)` and `interval()` return every region.
 

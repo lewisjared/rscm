@@ -329,7 +329,7 @@ impl<'a> InputState<'a> {
     /// Get a scalar TimeseriesWindow for the named variable
     ///
     /// This provides zero-cost access to current, previous, and historical values.
-    /// If the underlying data is stored at a finer grid resolution (FourBox or Hemispheric)
+    /// If the underlying data is stored on a finer grid (FourBox or Hemispheric)
     /// and a read transform is configured, the data will be automatically aggregated
     /// to a scalar value on each access.
     ///
@@ -360,7 +360,7 @@ impl<'a> InputState<'a> {
             .as_ref()
             .and_then(|ctx| ctx.read_transforms.get(name));
 
-        // If there's a transform, use the source grid type and unit conversion factor
+        // If there's a transform, use the source grid and unit conversion factor
         if let Some(transform) = transform {
             let unit_factor = transform.unit_conversion_factor;
 
@@ -368,7 +368,7 @@ impl<'a> InputState<'a> {
                 GridType::FourBox => {
                     let ts = item.data.as_four_box().unwrap_or_else(|| {
                         panic!(
-                            "Variable '{}' requires FourBox->Scalar transform but is not FourBox",
+                            "Variable '{}' requires a four-box to scalar transform but is not a four-box timeseries",
                             name
                         )
                     });
@@ -484,7 +484,7 @@ impl<'a> InputState<'a> {
 
     /// Get a Hemispheric GridTimeseriesWindow for the named variable
     ///
-    /// If the underlying data is stored at four-box resolution and a read transform
+    /// If the underlying data is stored on the FourBox grid and a read transform
     /// is configured, the data will be automatically aggregated to Hemispheric
     /// on each access.
     ///
@@ -517,7 +517,7 @@ impl<'a> InputState<'a> {
             if transform.source_grid == GridType::FourBox {
                 let ts = item.data.as_four_box().unwrap_or_else(|| {
                     panic!(
-                        "Variable '{}' requires FourBox->Hemispheric transform but is not FourBox",
+                        "Variable '{}' requires a four-box to hemispheric transform but is not a four-box timeseries",
                         name
                     )
                 });
@@ -592,7 +592,7 @@ impl<'a> IntoIterator for InputState<'a> {
 /// - `StateValue::Hemispheric` for hemispheric values
 ///
 /// The model writes these values to the appropriate timeseries based on the
-/// variable's grid type in `VariableDefinition`.
+/// variable's grid in `VariableDefinition`.
 pub type OutputState = HashMap<String, StateValue>;
 
 #[cfg(test)]

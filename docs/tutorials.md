@@ -176,7 +176,7 @@ data = results.get_timeseries_by_name("Output Variable")
 
 ## Extending RSCM
 
-Want to create custom components? See the [Developer Guide](developers/index.md) for:
+Want to write your own components? See the [Developer Guide](developers/index.md) for:
 
-- [Python Components](notebooks/component_python.py): Create custom components with typed inputs and outputs
+- [Python Components](notebooks/component_python.py): Write components with typed inputs and outputs
 - [Rust Components](notebooks/component_rust.md): Build high-performance components in Rust

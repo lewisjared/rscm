@@ -16,7 +16,7 @@
 # # Working with Grid Variables
 #
 # This notebook demonstrates how to use spatially-resolved variables in RSCM.
-# You will learn to work with FourBox and Hemispheric grids, couple scalar
+# You will learn to work with four-box and hemispheric grids, couple scalar
 # components with gridded components, and understand grid validation patterns.
 #
 # ## Overview
@@ -27,13 +27,13 @@
 # - Ocean heat uptake varies by region
 # - Aerosol forcing is spatially heterogeneous
 #
-# RSCM provides three grid types to capture this:
+# RSCM provides three grids to capture this:
 #
-# | Grid Type       | Regions              | Use Case                    |
+# | Grid            | Regions              | Use Case                    |
 # |-----------------|----------------------|-----------------------------|
 # | **Scalar**      | 1 (global)           | Well-mixed, global averages |
 # | **Hemispheric** | 2 (Northern/Southern)| Latitudinal gradients       |
-# | **FourBox**     | 4 (NO/NL/SO/SL)      | MAGICC-style ocean-land     |
+# | **Four-box**    | 4 (NO/NL/SO/SL)      | MAGICC-style ocean-land     |
 #
 # ## Related Resources
 #
@@ -54,6 +54,7 @@ from rscm.core import (
     HemisphericGrid,
     HemisphericSlice,
     InterpolationStrategy,
+    Model,
     ModelBuilder,
     TimeAxis,
     Timeseries,
@@ -61,9 +62,9 @@ from rscm.core import (
 )
 
 # %% [markdown]
-# ## Understanding Grid Types
+# ## Understanding Grids
 #
-# ### FourBox Grid
+# ### Four-box grid
 #
 # The four-box grid divides the globe into four regions based on hemisphere
 # and surface type:
@@ -85,7 +86,7 @@ from rscm.core import (
 # magicc_standard() weights the four regions equally
 fb_grid = FourBoxGrid.magicc_standard()
 
-print("FourBox Grid Properties:")
+print("Four-box grid properties:")
 print(f"  Name: {fb_grid.grid_name()}")
 print(f"  Size: {fb_grid.size()} regions")
 print(f"  Regions: {fb_grid.region_names()}")
@@ -141,14 +142,16 @@ print(f"Global mean (equal weights): {global_temp:.2f} K")
 
 # %% [markdown]
 # Equal weights ignore that the Northern Hemisphere has more land than the Southern.
-# `FourBoxGrid.with_weights()` takes area weights instead.
+# `FourBoxGrid.with_weights()` takes other grid weights instead.
 # The weights below come from MAGICC's land fractions (42% of the NH, 21% of the SH)
 # and are used throughout this notebook.
 
 # %%
-area_weights = [0.29, 0.21, 0.395, 0.105]
-area_grid = FourBoxGrid.with_weights(area_weights)
-print(f"Global mean (area weights): {area_grid.aggregate_global(regional_temps):.2f} K")
+magicc_weights = [0.29, 0.21, 0.395, 0.105]
+magicc_grid = FourBoxGrid.with_weights(magicc_weights)
+print(
+    f"Global mean (MAGICC weights): {magicc_grid.aggregate_global(regional_temps):.2f} K"
+)
 
 # %% [markdown]
 # These grid objects only affect standalone calculations.
@@ -251,7 +254,7 @@ collection = model.timeseries()
 
 heat_uptake_ts = collection.get_four_box_timeseries_by_name("Heat Uptake")
 values = heat_uptake_ts.values()
-print(f"Units: {heat_uptake_ts.unit}, shape: {values.shape}")
+print(f"Unit: {heat_uptake_ts.unit}, shape: {values.shape}")
 
 # %% [markdown]
 # ### Visualising Regional Results
@@ -414,8 +417,8 @@ for year, t, c in zip(grid_time_axis.values()[1:4], temps[1:4], contrast[1:4]):
 # so the four-box output of `RegionalWarming` becomes a global mean.
 #
 # By default the model aggregates with equal weights.
-# `ModelBuilder.with_grid_weights()` sets area weights for a grid type.
-# The weights must sum to 1.0, ordered `[NO, NL, SO, SL]` for FourBox and `[N, S]` for Hemispheric.
+# `ModelBuilder.with_grid_weights()` sets the grid weights for a grid.
+# The weights must sum to 1.0, ordered `[NO, NL, SO, SL]` for the four-box grid and `[N, S]` for the hemispheric grid.
 #
 # The helper below builds the `RegionalWarming` model with `Surface Air Temperature Change` stored on a chosen grid.
 
@@ -423,7 +426,7 @@ for year, t, c in zip(grid_time_axis.values()[1:4], temps[1:4], contrast[1:4]):
 # %%
 def build_regional_model(
     temperature_grid: GridType, weights: list[float] | None = None
-) -> ModelBuilder:
+) -> Model:
     """Build a model whose schema stores Surface Air Temperature Change on the given grid."""
     schema = VariableSchema()
     schema.add_variable("Effective Radiative Forcing", "W/m^2")
@@ -438,15 +441,15 @@ def build_regional_model(
     )
     if weights is not None:
         builder = builder.with_grid_weights(GridType.FourBox, weights)
-    return builder
+    return builder.build()
 
 
-equal_model = build_regional_model(GridType.Scalar).build()
-weighted_model = build_regional_model(GridType.Scalar, area_weights).build()
+equal_model = build_regional_model(GridType.Scalar)
+weighted_model = build_regional_model(GridType.Scalar, magicc_weights)
 equal_model.run()
 weighted_model.run()
 
-for label, m in [("Equal weights", equal_model), ("Area weights", weighted_model)]:
+for label, m in [("Equal weights", equal_model), ("MAGICC weights", weighted_model)]:
     temps = (
         m.timeseries().get_timeseries_by_name("Surface Air Temperature Change").values()
     )
@@ -462,7 +465,7 @@ print(weighted_model.coupling("plain"))
 # Declaring the schema variable as `Hemispheric` instead averages ocean and land within each hemisphere.
 
 # %%
-hemi_model = build_regional_model(GridType.Hemispheric).build()
+hemi_model = build_regional_model(GridType.Hemispheric)
 hemi_model.run()
 hemi_values = (
     hemi_model.timeseries()
@@ -602,10 +605,10 @@ np.testing.assert_allclose([(no + nl) / 2, (so + sl) / 2], [1.2, 0.8])
 #
 # ## Summary
 #
-# - Choose the grid type from the physics: well-mixed quantities are Scalar, regional ones gridded.
+# - Choose the grid from the physics: well-mixed quantities are Scalar, regional ones gridded.
 # - Aggregation order matters for nonlinear processes.
 # - The schema sets the stored grid, and the model aggregates finer outputs on write.
-# - `with_grid_weights()` sets the area weights the model uses for aggregation.
+# - `with_grid_weights()` sets the grid weights the model uses for aggregation.
 # - Disaggregation needs an explicit assumption, written as a component.
 #
 # ### Next Steps

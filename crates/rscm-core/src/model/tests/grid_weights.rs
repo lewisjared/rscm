@@ -40,7 +40,7 @@ fn test_with_grid_weights_hemispheric_valid() {
 }
 
 #[test]
-#[should_panic(expected = "Cannot set weights for Scalar")]
+#[should_panic(expected = "Cannot set weights for the scalar grid")]
 fn test_with_grid_weights_scalar_panics() {
     let mut builder = ModelBuilder::new();
     builder.with_grid_weights(GridType::Scalar, vec![1.0]);

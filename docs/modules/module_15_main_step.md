@@ -31,7 +31,7 @@ RSCM has no `magicc_step_year`.
 Each MAGICC7 module is a component, and the `Model` solves them in dependency order every annual step.
 Components added producer first are coupled within the step.
 Feedbacks such as temperature on the carbon cycle read the value from the start of the step,
-as MAGICC7's staggered scheme does.
+through a lag, as in MAGICC7.
 [Key concepts](../key_concepts.md#dependency-graph) describes the dependency graph and step semantics.
 The monthly loops stay inside their components:
 `ClimateUdeb` runs the climate substeps and `OceanCarbon` the ocean carbon months.
@@ -122,10 +122,10 @@ The implicit ocean scheme is stable at any step length.
 - `CURRENT_YEAR_IDX` runs from 1 to `NYEARS`.
   `NEXT_YEAR_IDX` is capped at `NYEARS` and `PREVIOUS_YEAR_IDX` floored at 1.
 - `CURRENT_TIME_IDX` counts substeps from the start, and `NEXT_TIME_IDX` is capped at `NTIMES`.
-- The first year starts at step 0, which includes the initial state.
-- The last year stops at step `STEPSPERYEAR - 1`, so it does not overshoot the time axis.
-- In other years step `STEPSPERYEAR` lands on 1 January of the next year,
-  which becomes that year's initial state.
+- The first year starts at substep 0, which includes the initial values.
+- The last year stops at substep `STEPSPERYEAR - 1`, so it does not overshoot the time axis.
+- In other years substep `STEPSPERYEAR` lands on 1 January of the next year,
+  which becomes the starting value of that year.
 
 Forcing is interpolated to each substep:
 

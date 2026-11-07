@@ -37,7 +37,7 @@ type ModelState = Vector3<FloatValue>;
 pub struct TwoLayerParameters {
     /// Climate feedback parameter at zero warming
     ///
-    /// Units: W/(m² K)
+    /// unit: W/(m² K)
     ///
     /// Controls the strength of radiative feedback. Higher values mean stronger
     /// negative feedback and lower climate sensitivity. Typical values: 0.8-1.5
@@ -45,7 +45,7 @@ pub struct TwoLayerParameters {
 
     /// Nonlinear feedback coefficient
     ///
-    /// Units: W/(m² K²)
+    /// unit: W/(m² K²)
     ///
     /// Represents state-dependence of climate feedbacks. Positive values indicate
     /// that feedback weakens (sensitivity increases) as temperature rises.
@@ -54,7 +54,7 @@ pub struct TwoLayerParameters {
 
     /// Ocean heat uptake efficacy ($\varepsilon$)
     ///
-    /// Units: dimensionless
+    /// unit: dimensionless
     ///
     /// Ratio of the feedback parameter for ocean heat uptake to the equilibrium
     /// feedback parameter. Values > 1 indicate that ocean heat uptake is more
@@ -64,7 +64,7 @@ pub struct TwoLayerParameters {
 
     /// Heat exchange coefficient between surface and deep layers ($\eta$)
     ///
-    /// Units: W/(m² K)
+    /// unit: W/(m² K)
     ///
     /// Controls the rate of heat transfer from the surface to the deep ocean.
     /// Higher values mean faster equilibration between layers.
@@ -73,7 +73,7 @@ pub struct TwoLayerParameters {
 
     /// Heat capacity of the surface layer (mixed layer ocean + atmosphere)
     ///
-    /// Units: W yr/(m² K)
+    /// unit: W yr/(m² K)
     ///
     /// Determines the thermal inertia of the fast-responding surface layer.
     /// Typical values: 5-15 (corresponding to ~50-150m mixed layer depth)
@@ -81,7 +81,7 @@ pub struct TwoLayerParameters {
 
     /// Heat capacity of the deep ocean layer
     ///
-    /// Units: W yr/(m² K)
+    /// unit: W yr/(m² K)
     ///
     /// Determines the thermal inertia of the slow-responding deep ocean.
     /// Typical values: 50-200 (much larger than surface layer)
@@ -129,7 +129,7 @@ pub struct TwoLayerParameters {
 /// let component = TwoLayer::from_parameters(TwoLayerParameters {
 ///     lambda0: 1.0,               // Climate feedback parameter
 ///     a: 0.0,                     // Linear model (no state-dependence)
-///     deep_ocean_efficacy: 1.0,   // Standard efficacy
+///     deep_ocean_efficacy: 1.0,   // Ocean heat uptake efficacy
 ///     ocean_heat_transfer: 0.7,   // Heat exchange coefficient
 ///     heat_capacity_surface: 8.0, // ~80m mixed layer
 ///     heat_capacity_deep: 100.0,  // Deep ocean

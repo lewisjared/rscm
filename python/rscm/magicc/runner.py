@@ -24,7 +24,14 @@ from rscm.core import (
 )
 from rscm.names import (
     AIRBORNE_FRACTION_CO2,
+    ATMOSPHERIC_BURDEN_CH4_BIOSPHERE,
+    ATMOSPHERIC_BURDEN_CH4_FOSSIL,
+    ATMOSPHERIC_BURDEN_CH4_NATURAL,
+    ATMOSPHERIC_BURDEN_CH4_PERMAFROST,
     ATMOSPHERIC_CONCENTRATIONS,
+    ATMOSPHERIC_CONCENTRATIONS_CH4,
+    ATMOSPHERIC_CONCENTRATIONS_CO2,
+    ATMOSPHERIC_CONCENTRATIONS_N2O,
     EMISSIONS_CO2_BIOSPHERE,
     EMISSIONS_CO2_CH4_OXIDATION,
     EMISSIONS_CO2_FOSSIL,
@@ -79,11 +86,11 @@ class MagiccResult:
     """Run output and the processes used to produce it.
 
     ``values`` contains every variable at the year labels,
-    with global surface temperature computed using the configured box areas.
+    with global surface air temperature change computed using the configured box areas.
     A point, such as a concentration, holds at its label.
     An average, such as a flux, holds over the year its label starts,
     so a modelled average has no value at the last label.
-    ``regional_temperature`` retains the four individual surface temperatures.
+    ``regional_temperature`` retains the four regional surface air temperature changes.
     ``sources`` identifies calculated and prescribed variables;
     ``forcing_contributors`` identifies the terms included in total ERF.
     """
@@ -220,8 +227,8 @@ def run_magicc(  # noqa: PLR0913
     for absorption overlap calculations.
 
     Component parameter dictionaries use their Rust names and defaults, except
-    that ``erf_2xco2`` defaults to the CO2-doubling ERF of the forcing
-    configuration, as in MAGICC7.
+    that ``erf_2xco2`` defaults to the 2xCO2 effective radiative forcing of the
+    forcing configuration, as in MAGICC7.
     Preindustrial reference concentrations are independent of the start year.
     Climate starts from an unperturbed ocean and zero temperature anomaly.
 
@@ -241,7 +248,7 @@ def run_magicc(  # noqa: PLR0913
     initial: dict[str, float] = {}
     budget = None
     if co2_emissions is not None:
-        initial[child(ATMOSPHERIC_CONCENTRATIONS, "CO2")] = float(
+        initial[ATMOSPHERIC_CONCENTRATIONS_CO2] = float(
             _series(
                 "initial CO2", [co2_emissions.initial_concentration], 1, positive=True
             )[0]
@@ -253,18 +260,18 @@ def run_magicc(  # noqa: PLR0913
             units[name] = unit
             sources[name] = "prescribed"
         budget = CO2BudgetBuilder.from_parameters({}).build()
-        sources[child(ATMOSPHERIC_CONCENTRATIONS, "CO2")] = "CO2Budget"
+        sources[ATMOSPHERIC_CONCENTRATIONS_CO2] = "CO2Budget"
 
     forcing = GhgForcingBuilder.from_parameters(forcing_parameters or {})
     start_co2 = (
-        initial[child(ATMOSPHERIC_CONCENTRATIONS, "CO2")]
+        initial[ATMOSPHERIC_CONCENTRATIONS_CO2]
         if co2_emissions is not None
-        else float(data[child(ATMOSPHERIC_CONCENTRATIONS, "CO2")][0])
+        else float(data[ATMOSPHERIC_CONCENTRATIONS_CO2][0])
     )
     initial_erf = forcing.calculate_forcings(
         start_co2,
-        float(data[child(ATMOSPHERIC_CONCENTRATIONS, "CH4")][0]),
-        float(data[child(ATMOSPHERIC_CONCENTRATIONS, "N2O")][0]),
+        float(data[ATMOSPHERIC_CONCENTRATIONS_CH4][0]),
+        float(data[ATMOSPHERIC_CONCENTRATIONS_N2O][0]),
     )
     for gas, value in initial_erf.items():
         name = child(ERF, gas)
@@ -407,10 +414,11 @@ def _ch4_burdens(
     concentration: float, tg_per_ppb: float, mixing_box_size: float
 ) -> dict[str, float]:
     """Return initial CH4Oxidation pools, with all CH4 natural as in MAGICC7."""
-    burden = "Atmospheric Burden|CH4|"
     return {
-        **{burden + source: 0.0 for source in ("Fossil", "Biosphere", "Permafrost")},
-        burden + "Natural": tg_per_ppb * concentration * mixing_box_size,
+        ATMOSPHERIC_BURDEN_CH4_FOSSIL: 0.0,
+        ATMOSPHERIC_BURDEN_CH4_BIOSPHERE: 0.0,
+        ATMOSPHERIC_BURDEN_CH4_PERMAFROST: 0.0,
+        ATMOSPHERIC_BURDEN_CH4_NATURAL: tg_per_ppb * concentration * mixing_box_size,
     }
 
 

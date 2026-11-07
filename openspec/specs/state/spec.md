@@ -58,7 +58,7 @@ across time and regions, through `get_all()`, `interval()` and `history(n)`.
 
 - **WHEN** calling `window.history(n)`
 - **THEN** it MUST return `Some(Vec)` containing values for all regions `n` steps before `get_all()`
-- **AND** return `None` before the first timestep
+- **AND** return `None` before the first step
 
 ### Requirement: Type-Safe FourBox Window Access
 
@@ -176,27 +176,27 @@ The system SHALL provide an `OutputState` type for components to return their co
 - **AND** both hemispheres MUST contain values
 - **AND** the model MUST write to a Hemispheric timeseries without aggregation
 
-### Requirement: Exogenous vs Endogenous Variable Handling
+### Requirement: Prescribed vs Modelled Variable Handling
 
-The system SHALL handle exogenous (external input) and endogenous (model-computed) variables differently.
+The system SHALL handle prescribed (supplied to the model) and modelled (produced by a component) variables differently.
 
-#### Scenario: Exogenous variable access
+#### Scenario: Prescribed variable access
 
-- **WHEN** accessing an exogenous variable
+- **WHEN** accessing a prescribed variable
 - **THEN** the value MUST be interpolated to the current solve time
 - **AND** use the timeseries's interpolation strategy
 
-#### Scenario: Endogenous variable access
+#### Scenario: Modelled variable access
 
-- **WHEN** accessing an endogenous variable
+- **WHEN** accessing a modelled variable
 - **THEN** the latest computed value MUST be returned
-- **AND** NOT interpolate (use discrete timestep value)
+- **AND** NOT interpolate (use discrete step value)
 
-### Requirement: Timestep Access Semantics
+### Requirement: Step Access Semantics
 
 The system SHALL let components read inputs without choosing a time index,
 reflecting the forward-Euler time-stepping scheme,
-where values at index N represent state at the start of timestep N,
+where values at index N represent state at the start of step N,
 and components write outputs to index N+1.
 The model builder decides which value `get()` returns from the model wiring.
 
@@ -204,7 +204,7 @@ The model builder decides which value `get()` returns from the model wiring.
 
 - **WHEN** calling `window.get()`
 - **THEN** it MUST return the value at index N+1 for an output written upstream in the same step
-- **AND** return the value at index N for exogenous data, a component's own state and a lagged edge
+- **AND** return the value at index N for prescribed data, a component's own state and a lagged edge
 - **AND** NOT allocate memory
 - **AND** panic with the variable name if that index lies past the end of the timeseries
 
@@ -224,10 +224,10 @@ The model builder decides which value `get()` returns from the model wiring.
 
 - **WHEN** calling `window.history(n)`
 - **THEN** it MUST return the value `n` steps before the one `get()` returns
-- **AND** return `None` before the first timestep
+- **AND** return `None` before the first step
 - **AND** never return a value after the one `get()` returns
 
 #### Scenario: Read a fixed calendar year
 
-- **WHEN** a component reads exogenous data at a fixed time, such as a reference year
+- **WHEN** a component reads prescribed data at a fixed time, such as a reference year
 - **THEN** it SHOULD use `interpolate(t)`, which may read ahead of the step

@@ -6,19 +6,19 @@ Defines the Python interface for RSCM components, including protocols for Python
 
 ## Requirements
 
-### Requirement: Component Protocol
+### Requirement: RustComponent Protocol
 
-The system SHALL provide a `Component` Protocol that defines the Python interface for all components.
+The system SHALL provide a `RustComponent` Protocol in `rscm.core` that defines the Python interface for Rust components.
 
-#### Scenario: Component protocol methods
+#### Scenario: RustComponent protocol methods
 
-- **WHEN** a class implements the `Component` protocol
-- **THEN** it MUST implement `definitions() -> list[RequirementDefinition]`
+- **WHEN** a class implements the `RustComponent` protocol
+- **THEN** it MUST implement `definitions() -> list[VariableDefinition]`
 - **AND** implement `solve(t_current: float, t_next: float, collection: TimeseriesCollection) -> dict[str, StateValue]`
 
-### Requirement: CustomComponent Protocol
+### Requirement: Python Component Interfaces
 
-The system SHALL provide a `CustomComponent` Protocol for user-defined Python components.
+The system SHALL accept Python components that subclass `rscm.component.Component` (typed) or define a dict-based `solve()` (untyped).
 
 #### Scenario: Dict-based interface (legacy)
 
@@ -38,11 +38,11 @@ The system SHALL provide a `CustomComponent` Protocol for user-defined Python co
 
 The system SHALL provide a `PythonComponent` class that wraps Python-defined components for use in Rust models.
 
-#### Scenario: Build Python component
+#### Scenario: Wrap Python component
 
-- **WHEN** calling `PythonComponent.build(component)`
-- **THEN** it MUST wrap the `CustomComponent` instance
-- **AND** expose it as a `Component` usable by `ModelBuilder`
+- **WHEN** calling `PythonComponent(component)`
+- **THEN** it MUST wrap the `rscm.component.Component` instance
+- **AND** expose it as a component usable by `ModelBuilder.with_component`
 
 #### Scenario: Solve delegates to Python
 
@@ -71,7 +71,7 @@ The system SHALL provide a `RustComponent` class that exposes Rust-defined compo
 #### Scenario: RustComponent methods
 
 - **WHEN** using a `RustComponent` in Python
-- **THEN** `definitions()` MUST return `list[RequirementDefinition]`
+- **THEN** `definitions()` MUST return `list[VariableDefinition]`
 - **AND** `solve()` MUST accept `TimeseriesCollection` and return `dict[str, StateValue]`
 
 ### Requirement: ComponentBuilder Protocol
@@ -90,20 +90,20 @@ The system SHALL provide a `ComponentBuilder` Protocol for constructing Rust com
 - **THEN** it MUST return a `RustComponent` instance
 - **AND** the component is ready for use in models
 
-### Requirement: Python RequirementDefinition
+### Requirement: Python VariableDefinition
 
-The system SHALL expose `RequirementDefinition`, `RequirementType`, and `GridType` to Python.
+The system SHALL expose `VariableDefinition`, `VariableRole`, and `GridType` to Python.
 
-#### Scenario: Create RequirementDefinition
+#### Scenario: Create VariableDefinition
 
-- **WHEN** calling `RequirementDefinition(name, units, requirement_type, grid_type=GridType.Scalar)`
+- **WHEN** calling `VariableDefinition(name, unit, role, grid=GridType.Scalar, timeseries_type=None)`
 - **THEN** it MUST create a definition with the specified values
-- **AND** `grid_type` MUST default to `GridType.Scalar`
+- **AND** `grid` MUST default to `GridType.Scalar`
 
-#### Scenario: RequirementType enum values
+#### Scenario: VariableRole enum values
 
-- **WHEN** using `RequirementType` in Python
-- **THEN** it MUST have `Input`, `Output`, `State`, and `EmptyLink` variants
+- **WHEN** using `VariableRole` in Python
+- **THEN** it MUST have `Input`, `Output` and `State` variants
 
 #### Scenario: GridType enum values
 
@@ -121,7 +121,7 @@ The system SHALL provide Python window types for typed component input access.
 - **AND** `window.get()` returns the value the model wired the input to
 - **AND** `window.interval()` returns the values at the start and end of the step
   (raises `ValueError` on an average or a component's own state)
-- **AND** `window.history(n)` returns the value `n` steps before `get()`, or `None` before the first timestep
+- **AND** `window.history(n)` returns the value `n` steps before `get()`, or `None` before the first step
 - **AND** `window.interpolate(t)` returns the value at time `t`, such as a fixed reference year
 
 #### Scenario: FourBoxTimeseriesWindow for grid access
@@ -129,7 +129,7 @@ The system SHALL provide Python window types for typed component input access.
 - **WHEN** a typed Python component receives FourBox inputs
 - **THEN** the variable MUST be accessible via `FourBoxTimeseriesWindow`
 - **AND** `window.get()` returns a `FourBoxSlice`
-- **AND** `window.history(n)` returns a `FourBoxSlice`, or `None` before the first timestep
+- **AND** `window.history(n)` returns a `FourBoxSlice`, or `None` before the first step
 - **AND** `window.region(index)` returns a `TimeseriesWindow` for that region
 
 #### Scenario: HemisphericTimeseriesWindow for hemispheric access
@@ -145,24 +145,24 @@ The system SHALL provide a `Component` base class with metaclass-based code gene
 
 #### Scenario: Declare inputs with Input descriptor
 
-- **WHEN** a class attribute is set to `Input(name, unit, grid="Scalar")`
+- **WHEN** a class attribute is set to `Input(name, unit, grid="scalar")`
 - **THEN** it MUST be collected as a component input
 - **AND** the field name becomes the accessor name on `Inputs` class
-- **AND** `grid` MUST be a `Literal["Scalar", "FourBox", "Hemispheric"]` defaulting to "Scalar"
+- **AND** `grid` MUST be a `Literal["scalar", "four_box", "hemispheric"]` defaulting to "scalar"
 
 #### Scenario: Declare outputs with Output descriptor
 
-- **WHEN** a class attribute is set to `Output(name, unit, grid="Scalar")`
+- **WHEN** a class attribute is set to `Output(name, unit, grid="scalar")`
 - **THEN** it MUST be collected as a component output
 - **AND** the field name becomes the required field on `Outputs` class
-- **AND** `grid` MUST be a `Literal["Scalar", "FourBox", "Hemispheric"]` defaulting to "Scalar"
+- **AND** `grid` MUST be a `Literal["scalar", "four_box", "hemispheric"]` defaulting to "scalar"
 
 #### Scenario: Declare state with State descriptor
 
-- **WHEN** a class attribute is set to `State(name, unit, grid="Scalar")`
+- **WHEN** a class attribute is set to `State(name, unit, grid="scalar")`
 - **THEN** it MUST appear in BOTH `Inputs` and `Outputs` classes
 - **AND** require an initial value at model build time
-- **AND** `grid` MUST be a `Literal["Scalar", "FourBox", "Hemispheric"]` defaulting to "Scalar"
+- **AND** `grid` MUST be a `Literal["scalar", "four_box", "hemispheric"]` defaulting to "scalar"
 
 #### Scenario: Metaclass generates Inputs class
 
@@ -184,8 +184,8 @@ The system SHALL provide a `Component` base class with metaclass-based code gene
 #### Scenario: definitions() auto-generated
 
 - **WHEN** calling `component.definitions()` on a typed Python component
-- **THEN** it MUST return `list[RequirementDefinition]` for all inputs, outputs, and states
-- **AND** convert descriptors to `RequirementDefinition` objects
+- **THEN** it MUST return `list[VariableDefinition]` for all inputs, outputs, and states
+- **AND** convert descriptors to `VariableDefinition` objects
 
 #### Scenario: solve() method contract
 
@@ -256,11 +256,10 @@ The system SHALL provide a `ModelBuilder` class for constructing models in Pytho
 
 - **WHEN** using `ModelBuilder` in Python
 - **THEN** `with_time_axis(time_axis)` sets the model time axis
-- **AND** `with_py_component(component)` adds a `PythonComponent`
-- **AND** `with_rust_component(component)` adds a `RustComponent`
+- **AND** `with_component(component)` adds a Rust component, a `PythonComponent` or an `rscm.component.Component` instance
 - **AND** `with_initial_values(dict)` sets initial state values
-- **AND** `with_exogenous_variable(name, timeseries)` adds exogenous data
-- **AND** `with_exogenous_collection(collection)` adds multiple exogenous timeseries
+- **AND** `with_prescribed_variable(name, timeseries)` adds prescribed data from a `Timeseries`, `FourBoxTimeseries` or `HemisphericTimeseries`
+- **AND** `with_prescribed_collection(collection)` adds multiple prescribed timeseries
 - **AND** `build()` returns a `Model` instance
 
 #### Scenario: ModelBuilder validation
@@ -276,7 +275,7 @@ The system SHALL provide a `Model` class for running simulations in Python.
 #### Scenario: Model execution
 
 - **WHEN** using a `Model` in Python
-- **THEN** `step()` advances the model by one timestep
+- **THEN** `step()` advances the model by one step
 - **AND** `run()` runs the model to completion
 - **AND** `finished()` returns whether the model has completed
 

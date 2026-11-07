@@ -65,7 +65,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "core_climatesensitivity": ParameterInfo(
         name="core_climatesensitivity",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.climate_sensitivity",
+        rscm_path="components.climate.parameters.ecs",
         unit="K",
         description="Equilibrium climate sensitivity for 2xCO2",
         category="climate",
@@ -75,7 +75,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         status=ParameterStatus.SUPPORTED,
         rscm_path="components.climate.parameters.erf_2xco2",
         unit="W/m^2",
-        description="Radiative forcing from doubling CO2",
+        description="2xCO2 effective radiative forcing",
         category="climate",
     ),
     # Radiative forcing method
@@ -146,7 +146,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         status=ParameterStatus.SUPPORTED,
         rscm_path="components.climate.parameters.co2_efficacy",
         unit=None,
-        description="Prescribed CO2 efficacy factor (default 1.0)",
+        description="CO2 efficacy (default 1.0)",
         category="forcing",
     ),
     # Concentration/emissions switching

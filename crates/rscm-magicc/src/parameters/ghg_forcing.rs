@@ -71,7 +71,7 @@ pub struct GhgForcingParameters {
     pub n2o_pi: f64,
 
     // === IPCCTAR-specific parameters ===
-    /// Forcing for CO2 doubling (W/m2).
+    /// 2xCO2 effective radiative forcing (W/m^2).
     ///
     /// Used by IPCCTAR method: `alpha = erf_2xco2 / ln(2)`.
     /// Default: 3.71 W/m2

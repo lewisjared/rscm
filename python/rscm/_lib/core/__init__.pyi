@@ -38,10 +38,10 @@ class TimeAxis:
     def bounds(self) -> Arr:
         """Return the bounds of the steps."""
     def __len__(self) -> int: ...
-    def at(self, index: int) -> F:
-        """Return the start time of the step at `index`."""
-    def at_bounds(self, index: int) -> tuple[F, F]:
-        """Return the start and end of the step at `index`."""
+    def at(self, time_index: int) -> F:
+        """Return the start time of the step at `time_index`."""
+    def at_bounds(self, time_index: int) -> tuple[F, F]:
+        """Return the start and end of the step at `time_index`."""
 
 @final
 class InterpolationStrategy(Enum):
@@ -230,7 +230,7 @@ class VariableRole(Enum):
 
 @final
 class GridType(Enum):
-    """Spatial resolution of a variable."""
+    """The spatial layout of a variable's values."""
 
     Scalar = auto()
     FourBox = auto()
@@ -245,7 +245,10 @@ class TimeseriesType(Enum):
 
 @final
 class VariableDefinition:
-    """A variable a component reads or writes, with its unit, grid and time type."""
+    """A variable a component reads or writes.
+
+    It carries a unit, a grid and a timeseries type.
+    """
 
     name: str
     unit: str
@@ -271,7 +274,7 @@ class RustComponent(Protocol):
     ) -> dict[str, StateValue]: ...
 
 class ComponentBuilder(Protocol):
-    """A component of the model that can be solved"""
+    """Builder that creates a RustComponent from parameters."""
 
     @staticmethod
     def from_parameters(parameters: dict[str, F]) -> ComponentBuilder:
@@ -280,7 +283,7 @@ class ComponentBuilder(Protocol):
 
         Returns
         -------
-        Builder that can create a Component
+        Builder that can create a RustComponent
         """
     def build(self) -> RustComponent:
         """
@@ -288,7 +291,7 @@ class ComponentBuilder(Protocol):
 
         Returns
         -------
-        Component object that can be solved
+        RustComponent that can be solved
         or coupled with other components via a `Model`.
         """
 
@@ -389,7 +392,7 @@ class VariableSchema:
         name
             Variable identifier for the aggregate result
         unit
-            Physical units (must match contributors)
+            Physical unit (must match contributors)
         operation
             Operation type: "sum", "mean" or "weighted_sum"
         contributors
@@ -397,7 +400,7 @@ class VariableSchema:
         weights
             Weights for the weighted sum (required if operation="weighted_sum")
         grid
-            Spatial resolution (defaults to Scalar)
+            Grid of the aggregate's values (defaults to scalar)
 
         Raises
         ------
@@ -417,7 +420,7 @@ class VariableSchema:
 
         - All aggregate contributors exist in the schema
         - Unit consistency between contributors and their aggregates
-        - Grid type consistency between contributors and their aggregates
+        - Grid consistency between contributors and their aggregates
         - Weighted aggregate weight counts match contributor counts
         - No circular dependencies between aggregates
 
@@ -517,7 +520,7 @@ class ModelBuilder:
         """
     def with_grid_weights(self, grid: GridType, weights: list[float]) -> Self:
         """
-        Set custom weights for a grid type.
+        Set custom weights for a grid.
 
         These weights override the default grid weights used when:
 
@@ -527,7 +530,7 @@ class ModelBuilder:
         Parameters
         ----------
         grid
-            The grid to set weights for (FourBox or Hemispheric)
+            The grid to set weights for (four-box or hemispheric)
         weights
             The weights for each region, which must sum to 1.0.
             Four-box order is NorthernOcean, NorthernLand, SouthernOcean, SouthernLand.
@@ -676,7 +679,7 @@ class Model:
     CO_2 concentrations as input state and provide CO_2 ERF.
     The component is agnostic about where/how that state is defined.
     If the model has no components which provide CO_2 concentrations,
-    then a CO_2 concentration timeseries must be defined externally.
+    then a CO_2 concentration timeseries must be prescribed.
     If the model also contains a carbon cycle component which produced
     CO_2 concentrations, then the ERF component will be solved after
     the carbon cycle model.
@@ -754,7 +757,7 @@ class Model:
         """
 
 def build_models(
-    builders: list[ModelBuilder], *, threads: int | None = None
+    builders: list[ModelBuilder], *, n_threads: int | None = None
 ) -> list[Model]:
     """
     Build every builder in parallel, in input order.
@@ -763,7 +766,7 @@ def build_models(
     ----------
     builders
         Builders to build. Each is left unchanged and can be built again.
-    threads
+    n_threads
         Number of threads, or None for one per core.
 
     Raises
@@ -772,7 +775,7 @@ def build_models(
         If a builder fails, naming the first that did.
     """
 
-def run_models(models: list[Model], *, threads: int | None = None) -> None:
+def run_models(models: list[Model], *, n_threads: int | None = None) -> None:
     """
     Run every model to completion in parallel.
 
@@ -783,7 +786,7 @@ def run_models(models: list[Model], *, threads: int | None = None) -> None:
     ----------
     models
         Models to run. A model may appear only once.
-    threads
+    n_threads
         Number of threads, or None for one per core.
 
     Raises

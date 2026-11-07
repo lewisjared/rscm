@@ -27,7 +27,7 @@
 # and update it whenever you add or remove a forcing source.
 #
 # A `VariableSchema` declares the aggregation rules at the model level instead.
-# The framework adds virtual components that compute the aggregates.
+# The model computes each aggregate from its contributors every step.
 #
 # ## Prerequisites
 #
@@ -66,14 +66,14 @@ class CO2Forcing(Component):
     concentration = Input("Atmospheric Concentrations|CO2", unit="ppm")
     forcing = Output("Effective Radiative Forcing|CO2", unit="W/m^2")
 
-    def __init__(self, alpha: float = 5.35, c_pi: float = 280.0):
+    def __init__(self, alpha: float = 5.35, co2_pi: float = 280.0):
         self.alpha = alpha
-        self.c_pi = c_pi
+        self.co2_pi = co2_pi
 
     def solve(self, t_current: float, t_next: float, inputs: "CO2Forcing.Inputs"):
         """Compute CO2 forcing for a single step."""
         concentration = inputs.concentration.get()
-        return self.Outputs(forcing=self.alpha * np.log(concentration / self.c_pi))
+        return self.Outputs(forcing=self.alpha * np.log(concentration / self.co2_pi))
 
 
 # %% [markdown]
@@ -89,14 +89,14 @@ class CH4Forcing(Component):
     concentration = Input("Atmospheric Concentrations|CH4", unit="ppb")
     forcing = Output("Effective Radiative Forcing|CH4", unit="W/m^2")
 
-    def __init__(self, alpha: float = 0.036, c_pi: float = 700.0):
+    def __init__(self, alpha: float = 0.036, ch4_pi: float = 700.0):
         self.alpha = alpha
-        self.c_pi = c_pi
+        self.ch4_pi = ch4_pi
 
     def solve(self, t_current: float, t_next: float, inputs: "CH4Forcing.Inputs"):
         """Compute CH4 forcing for a single step."""
         concentration = inputs.concentration.get()
-        forcing = self.alpha * (np.sqrt(concentration) - np.sqrt(self.c_pi))
+        forcing = self.alpha * (np.sqrt(concentration) - np.sqrt(self.ch4_pi))
         return self.Outputs(forcing=forcing)
 
 
@@ -227,9 +227,9 @@ ax.grid(True, alpha=0.3)
 plt.show()
 
 # %% [markdown]
-# ## Inspecting the Aggregator
+# ## Inspecting Aggregates
 #
-# The schema adds a virtual `AggregatorComponent` to the model.
+# The schema adds an `AggregatorComponent` to the model for its aggregates.
 # `coupling()` lists it after the two forcing components, with both forcings as inputs.
 
 # %%
@@ -336,9 +336,9 @@ np.testing.assert_allclose(weighted_forcing, 0.7 * co2_erf + 0.3 * ch4_erf)
 
 # %%
 class AerosolForcing(Component):
-    """Aerosol forcing proportional to emissions (negative forcing)."""
+    """Aerosol forcing proportional to SOx emissions (negative forcing)."""
 
-    emissions = Input("Emissions|Aerosol", unit="Tg/yr")
+    emissions = Input("Emissions|SOx", unit="Mt SO2/yr")
     forcing = Output("Effective Radiative Forcing|Aerosols", unit="W/m^2")
 
     def __init__(self, efficiency: float = -0.01):
@@ -350,13 +350,13 @@ class AerosolForcing(Component):
 
 
 # %% [markdown]
-# `aerosol_emissions` rises from 10 Tg/yr before 1850 to a peak of 80 Tg/yr in 2000, then falls.
+# `aerosol_emissions` rises from 10 Mt SO2/yr before 1850 to a peak of 80 Mt SO2/yr in 2000, then falls.
 
 # %% tags=["remove_input"]
 aerosol_emissions = Timeseries(
     np.array([10.0, 10.0, 50.0, 80.0, 70.0, 40.0]),
     TimeAxis.from_bounds(scenario_bounds),
-    "Tg/yr",
+    "Mt SO2/yr",
     InterpolationStrategy.Linear,
 )
 
@@ -366,7 +366,7 @@ aerosol_emissions = Timeseries(
 
 # %%
 hierarchical_schema = ghg_variables()
-hierarchical_schema.add_variable("Emissions|Aerosol", "Tg/yr")
+hierarchical_schema.add_variable("Emissions|SOx", "Mt SO2/yr")
 hierarchical_schema.add_variable("Effective Radiative Forcing|Aerosols", "W/m^2")
 
 hierarchical_schema.add_aggregate(
@@ -392,7 +392,7 @@ hierarchical_schema.validate()
 results_hier = forcing_model(
     hierarchical_schema,
     [*ghg_components, AerosolForcing()],
-    {**ghg_concentrations, "Emissions|Aerosol": aerosol_emissions},
+    {**ghg_concentrations, "Emissions|SOx": aerosol_emissions},
 )
 
 # %% [markdown]
@@ -585,7 +585,7 @@ try:
         .with_schema(schema)
         .with_time_axis(time_axis)
         .with_component(AerosolForcing())
-        .with_prescribed_variable("Emissions|Aerosol", aerosol_emissions)
+        .with_prescribed_variable("Emissions|SOx", aerosol_emissions)
     ).build()
 except ValueError as e:
     print(f"Error: {e}")
@@ -611,9 +611,9 @@ for name, aggregate in hierarchical_schema.aggregates.items():
 # ## Key Points
 #
 # - Use a `VariableSchema` to combine several component outputs into one variable.
-# - Contributors must share the aggregate's unit and grid type.
+# - Contributors must share the aggregate's unit and grid.
 # - Aggregates appear as regular variables in the model output,
-#   and their virtual aggregator components appear in `coupling()`.
+#   and the component that computes them appears in `coupling()`.
 # - Aggregates exclude NaN contributors.
 # - Errors surface early, when you call `validate()` or build the model.
 #

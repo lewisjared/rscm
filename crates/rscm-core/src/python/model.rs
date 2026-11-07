@@ -154,14 +154,14 @@ impl PyModelBuilder {
         self_
     }
 
-    /// Set custom weights for a grid type.
+    /// Set custom weights for a grid.
     ///
     /// These weights override the default grid weights used when:
     /// - Creating timeseries for grid-based variables
     /// - Performing automatic grid transformations (aggregation)
     ///
     /// Args:
-    ///     grid: The grid type to set weights for (FourBox or Hemispheric)
+    ///     grid: The grid to set weights for (four-box or hemispheric)
     ///     weights: The weights for each region. Must sum to 1.0.
     ///         - FourBox: [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand]
     ///         - Hemispheric: [Northern, Southern]
@@ -179,20 +179,21 @@ impl PyModelBuilder {
     ) -> PyResult<PyRefMut<'py, Self>> {
         use pyo3::exceptions::PyValueError;
 
-        // Validate grid type
-        let expected_size =
-            match grid {
-                crate::component::GridType::Scalar => return Err(PyValueError::new_err(
-                    "Cannot set weights for Scalar grid type (scalars have no regional weights)",
-                )),
-                crate::component::GridType::FourBox => 4,
-                crate::component::GridType::Hemispheric => 2,
-            };
+        // Validate grid
+        let expected_size = match grid {
+            crate::component::GridType::Scalar => {
+                return Err(PyValueError::new_err(
+                    "Cannot set weights for the scalar grid, which has no regions",
+                ))
+            }
+            crate::component::GridType::FourBox => 4,
+            crate::component::GridType::Hemispheric => 2,
+        };
 
         // Validate weights length
         if weights.len() != expected_size {
             return Err(PyValueError::new_err(format!(
-                "Weights length ({}) does not match grid type {} (expected {})",
+                "Weights length {} does not match {} grid size {}",
                 weights.len(),
                 grid,
                 expected_size
@@ -321,11 +322,11 @@ impl PyModel {
     }
 }
 
-/// Run `work` on a pool of `threads` threads, or on rayon's global pool.
-fn on_pool<R: Send>(threads: Option<usize>, work: impl FnOnce() -> R + Send) -> PyResult<R> {
-    match threads {
+/// Run `work` on a pool of `n_threads` threads, or on rayon's global pool.
+fn on_pool<R: Send>(n_threads: Option<usize>, work: impl FnOnce() -> R + Send) -> PyResult<R> {
+    match n_threads {
         None => Ok(work()),
-        Some(0) => Err(PyValueError::new_err("threads must be at least 1")),
+        Some(0) => Err(PyValueError::new_err("n_threads must be at least 1")),
         Some(n) => rayon::ThreadPoolBuilder::new()
             .num_threads(n)
             .build()
@@ -357,27 +358,27 @@ fn all_ok<T>(
 
 /// Build every builder in parallel, raising ValueError for the first that fails.
 #[pyfunction]
-#[pyo3(name = "build_models", signature = (builders, *, threads = None))]
+#[pyo3(name = "build_models", signature = (builders, *, n_threads = None))]
 pub fn py_build_models(
     py: Python<'_>,
     builders: Vec<PyRef<'_, PyModelBuilder>>,
-    threads: Option<usize>,
+    n_threads: Option<usize>,
 ) -> PyResult<Vec<PyModel>> {
     let builders: Vec<&ModelBuilder> = builders.iter().map(|b| &b.0).collect();
-    let results = py.detach(|| on_pool(threads, || model::build_models(&builders)))?;
+    let results = py.detach(|| on_pool(n_threads, || model::build_models(&builders)))?;
     let models = all_ok(results, "build", PyValueError::new_err::<String>)?;
     Ok(models.into_iter().map(PyModel).collect())
 }
 
 /// Run every model in parallel, raising RuntimeError for the first that fails.
 #[pyfunction]
-#[pyo3(name = "run_models", signature = (models, *, threads = None))]
+#[pyo3(name = "run_models", signature = (models, *, n_threads = None))]
 pub fn py_run_models(
     py: Python<'_>,
     mut models: Vec<PyRefMut<'_, PyModel>>,
-    threads: Option<usize>,
+    n_threads: Option<usize>,
 ) -> PyResult<()> {
     let mut refs: Vec<&mut Model> = models.iter_mut().map(|m| &mut m.0).collect();
-    let results = py.detach(|| on_pool(threads, || model::run_models(&mut refs)))?;
+    let results = py.detach(|| on_pool(n_threads, || model::run_models(&mut refs)))?;
     all_ok(results, "run", PyRuntimeError::new_err::<String>).map(|_| ())
 }

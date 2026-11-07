@@ -30,7 +30,7 @@
       "grid": "scalar"
     },
     {
-      "rust_name": "afolu_emissions",
+      "rust_name": "biosphere_emissions",
       "name": "Emissions|CH4|Biosphere",
       "unit": "Mt CH4/yr",
       "grid": "scalar"
@@ -52,7 +52,7 @@
       "grid": "scalar"
     },
     {
-      "rust_name": "afolu_burden",
+      "rust_name": "biosphere_burden",
       "name": "Atmospheric Burden|CH4|Biosphere",
       "unit": "Mt CH4",
       "grid": "scalar"

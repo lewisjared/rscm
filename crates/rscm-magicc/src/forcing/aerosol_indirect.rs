@@ -113,8 +113,8 @@ impl AerosolIndirect {
         p.sox_weight * sox + p.oc_weight * oc
     }
 
-    /// Calculate pre-industrial aerosol burden
-    pub fn preindustrial_burden(&self) -> FloatValue {
+    /// Pre-industrial aerosol burden.
+    pub fn burden_pi(&self) -> FloatValue {
         let p = &self.parameters;
         self.calculate_burden(p.sox_pi, p.oc_pi)
     }
@@ -131,7 +131,7 @@ impl AerosolIndirect {
         let p = &self.parameters;
 
         let burden = self.calculate_burden(sox, oc);
-        let burden_pi = self.preindustrial_burden();
+        let burden_pi = self.burden_pi();
         let delta_burden = burden - burden_pi;
 
         if delta_burden <= 0.0 {
@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_direct_plus_indirect_can_be_summed() {
-        // This test verifies the design: direct (FourBox) and indirect (scalar)
+        // This test verifies the design: direct (four-box) and indirect (scalar)
         // can be combined downstream. The indirect forcing applies uniformly
         // to all regions, while direct forcing is regionally distributed.
 

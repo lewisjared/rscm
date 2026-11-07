@@ -41,7 +41,7 @@ pub struct ForcingAgent {
     #[serde(default)]
     pub co2_efficacy: bool,
 
-    /// Prescribed efficacy (`RF_EFFICACY_*`).
+    /// Efficacy (`RF_EFFICACY_*`).
     #[serde(default = "one")]
     pub efficacy: FloatValue,
 
@@ -92,9 +92,9 @@ pub enum ForcingTerm {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EfficacyClimate {
-    /// Climate sensitivity used before the climate model reports one (K).
+    /// Equilibrium climate sensitivity used before the climate model reports one (K).
     pub ecs: FloatValue,
-    /// CO2 doubling forcing used before it is first calculated (W/m²).
+    /// 2xCO2 effective radiative forcing used before it is first calculated (W/m²).
     pub erf_2xco2: FloatValue,
     /// Land-ocean heat exchange coefficient (W/m²/K).
     /// MAGICC7: CORE_HEATXCHANGE_LANDOCEAN

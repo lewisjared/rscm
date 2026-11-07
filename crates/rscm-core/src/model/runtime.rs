@@ -58,7 +58,7 @@ mod tuple_map_serde {
 /// require CO_2 concentrations as input state and provide CO_2 ERF.
 /// The component is agnostic about where/how that state is defined.
 /// If the model has no components which provide CO_2 concentrations,
-/// then a CO_2 concentration timeseries must be defined externally.
+/// then a CO_2 concentration timeseries must be prescribed.
 /// If the model also contains a carbon cycle component which produced CO_2 concentrations,
 /// then the ERF component will be solved after the carbon cycle model.
 #[derive(Debug, Serialize, Deserialize)]
@@ -77,7 +77,7 @@ pub struct Model {
     collection: TimeseriesCollection,
     time_axis: Arc<TimeAxis>,
     time_index: usize,
-    /// Custom weights for grid aggregation, keyed by grid type.
+    /// Custom weights for grid aggregation, keyed by grid.
     ///
     /// Used for grid transformations during model execution.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -592,7 +592,7 @@ impl Model {
     /// own state and do not constrain the order within a step.
     pub(crate) fn execution_order(&self) -> RscmResult<Vec<NodeIndex>> {
         let graph = EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
-        petgraph::algo::toposort(&graph, None).map_err(|cycle| RscmError::CircularDependency {
+        petgraph::algo::toposort(&graph, None).map_err(|cycle| RscmError::FeedbackLoop {
             components: vec![Self::extract_component_name(
                 &self.components[cycle.node_id()],
             )],
@@ -639,7 +639,7 @@ impl Model {
     pub fn try_step(&mut self) -> RscmResult<()> {
         if self.time_index + 1 >= self.time_axis.len() {
             return Err(RscmError::Error(
-                "Model is already at its final boundary".into(),
+                "Model is already at its final time bound".into(),
             ));
         }
         self.step_model()?;

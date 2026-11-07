@@ -259,9 +259,9 @@ def _nitrate_total(  # noqa: PLR0913
     natural_nh3: float = 21.0,
     natural_sox: float = 14.0,
     lambda_so2: float = 1.6,
-    preindustrial_burden: float = 0.0085,
-    preindustrial_ot: float = 1.41,
-    burden_to_ot_exponent: float = 0.76,
+    burden_pi: float = 0.0085,
+    optical_thickness_pi: float = 1.41,
+    burden_to_optical_thickness_exponent: float = 0.76,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Total nitrate forcing boxes, before the source split, and per hemisphere."""
     y = np.asarray(years, dtype=np.float64)
@@ -271,12 +271,12 @@ def _nitrate_total(  # noqa: PLR0913
     a = ((nh3_i + nh3_b) + natural_nh3) / 14.0
     s = (np.asarray(sox, dtype=np.float64) + natural_sox) / 32.07
     alpha = (n * a) / ((s * lambda_so2) / a + 1.0)
-    burden = (preindustrial_burden * alpha) / alpha[0]
+    burden = (burden_pi * alpha) / alpha[0]
     # math.pow matches MAGICC7's libm, unlike numpy's vectorised power.
-    ot = np.array(
-        [math.pow(b / preindustrial_burden, burden_to_ot_exponent) for b in burden]
+    optical_thickness = np.array(
+        [math.pow(b / burden_pi, burden_to_optical_thickness_exponent) for b in burden]
     )
-    rf = ot * preindustrial_ot - preindustrial_ot
+    rf = optical_thickness * optical_thickness_pi - optical_thickness_pi
     rf = rf * (target / rf[_switch_index(y, target_year)])
 
     product = (nh3_i * 0.5 + nh3_b * 0.5) * (nox_b * 0.5 + nox_i * 0.5)
@@ -305,9 +305,9 @@ def nitrate(  # noqa: PLR0913
     natural_nh3: float = 21.0,
     natural_sox: float = 14.0,
     lambda_so2: float = 1.6,
-    preindustrial_burden: float = 0.0085,
-    preindustrial_ot: float = 1.41,
-    burden_to_ot_exponent: float = 0.76,
+    burden_pi: float = 0.0085,
+    optical_thickness_pi: float = 1.41,
+    burden_to_optical_thickness_exponent: float = 0.76,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Industrial and biomass nitrate direct forcing (Hauglustaine et al. 2014).
 
@@ -329,9 +329,9 @@ def nitrate(  # noqa: PLR0913
         natural_nh3=natural_nh3,
         natural_sox=natural_sox,
         lambda_so2=lambda_so2,
-        preindustrial_burden=preindustrial_burden,
-        preindustrial_ot=preindustrial_ot,
-        burden_to_ot_exponent=burden_to_ot_exponent,
+        burden_pi=burden_pi,
+        optical_thickness_pi=optical_thickness_pi,
+        burden_to_optical_thickness_exponent=burden_to_optical_thickness_exponent,
     )
     nox_i, nox_b = (np.asarray(e, dtype=np.float64) for e in nox)
     nh3_i, nh3_b = (np.asarray(e, dtype=np.float64) for e in nh3)

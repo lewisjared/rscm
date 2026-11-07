@@ -1,6 +1,6 @@
-//! Grid transformation components for automatic spatial resolution conversion.
+//! Grid transformation components for automatic grid conversion.
 //!
-//! When components with different spatial resolutions are connected in a model,
+//! When components on different grids are connected in a model,
 //! the framework needs to aggregate values from finer grids to coarser grids.
 //! This module provides transformation components that are automatically inserted
 //! by the [`ModelBuilder`](crate::model::ModelBuilder) to handle these conversions.
@@ -21,7 +21,7 @@
 //!
 //! # Aggregation Weights
 //!
-//! Each grid type defines weights that determine how regional values are combined:
+//! Each grid defines weights that determine how regional values are combined:
 //!
 //! - **Four-box (MAGICC standard)**: Equal weights (0.25 each) for Northern Ocean,
 //!   Northern Land, Southern Ocean, Southern Land
@@ -65,7 +65,7 @@ use std::collections::HashMap;
 pub struct FourBoxToScalarTransform {
     input_name: String,
     output_name: String,
-    /// Physical units of the variable
+    /// Physical unit of the variable
     unit: String,
     /// Grid definition with aggregation weights
     grid: FourBoxGrid,
@@ -139,7 +139,7 @@ impl Component for FourBoxToScalarTransform {
 pub struct FourBoxToHemisphericTransform {
     input_name: String,
     output_name: String,
-    /// Physical units of the variable
+    /// Physical unit of the variable
     unit: String,
     /// Grid definition with aggregation weights
     grid: FourBoxGrid,
@@ -219,7 +219,7 @@ impl Component for FourBoxToHemisphericTransform {
 pub struct HemisphericToScalarTransform {
     input_name: String,
     output_name: String,
-    /// Physical units of the variable
+    /// Physical unit of the variable
     unit: String,
     /// Grid definition with aggregation weights
     grid: HemisphericGrid,
@@ -286,16 +286,16 @@ impl Component for HemisphericToScalarTransform {
     }
 }
 
-/// Check if two grid types can be connected (possibly with a transform).
+/// Check if two grids can be connected (possibly with a transform).
 ///
-/// Two grid types are compatible if:
+/// Two grids are compatible if:
 /// - They are identical (no transform needed)
-/// - The producer has a finer resolution than the consumer (aggregation is possible)
+/// - The producer is on a finer grid than the consumer (aggregation is possible)
 ///
 /// # Arguments
 ///
-/// * `producer` - Grid type of the component producing the variable
-/// * `consumer` - Grid type expected by the consuming component
+/// * `producer` - Grid of the component producing the variable
+/// * `consumer` - Grid expected by the consuming component
 ///
 /// # Returns
 ///
@@ -329,13 +329,13 @@ pub fn grids_compatible(producer: GridType, consumer: GridType) -> bool {
 /// Check if a grid transformation component should be inserted.
 ///
 /// Returns `true` if:
-/// - The grid types differ (transform needed)
+/// - The grids differ (transform needed)
 /// - The connection is compatible (aggregation is possible)
 ///
 /// # Arguments
 ///
-/// * `producer` - Grid type of the component producing the variable
-/// * `consumer` - Grid type expected by the consuming component
+/// * `producer` - Grid of the component producing the variable
+/// * `consumer` - Grid expected by the consuming component
 ///
 /// # Example
 ///
@@ -346,7 +346,7 @@ pub fn grids_compatible(producer: GridType, consumer: GridType) -> bool {
 /// // Four-box producer to Scalar consumer: needs transform
 /// assert!(needs_transform(GridType::FourBox, GridType::Scalar));
 ///
-/// // Same grid type: no transform needed
+/// // Same grid: no transform needed
 /// assert!(!needs_transform(GridType::Scalar, GridType::Scalar));
 ///
 /// // Incompatible (Scalar to FourBox): returns false (would error elsewhere)

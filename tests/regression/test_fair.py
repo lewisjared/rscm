@@ -106,7 +106,7 @@ class Run:
     outputs: TimeseriesCollection
 
     def rscm(self, variable: str) -> NDArray[np.float64]:
-        """Values of an RSCM variable on the timebounds."""
+        """Values of an RSCM variable on the FaIR timebounds."""
         series = self.outputs.get_timeseries_by_name(variable)
         assert series is not None, variable
         return np.asarray(series.values())
@@ -282,7 +282,7 @@ def test_prescribed_concentration_matches_modelled(gas: str) -> None:
     for name in outputs.names():
         values = np.asarray(outputs.get_timeseries_by_name(name).values())
         if name == inverse:
-            # Inverted emissions have no value at the final timebound.
+            # Inverse emissions have no value at the final time bound.
             assert_close(values[:-1], run.rscm(emissions)[:-1], name)
         elif name in inverted:
             assert_close(values, run.rscm(name), name)
@@ -471,7 +471,7 @@ def test_climate_udeb_smoke() -> None:
 
     schema = VariableSchema()
     definitions = [d for c in chain for d in c.definitions()]
-    # Writers first, so the schema keeps ClimateUdeb's four-box temperature.
+    # Producers first, so the schema keeps ClimateUdeb's four-box temperature.
     for d in sorted(definitions, key=lambda d: d.role == VariableRole.Input):
         if not schema.contains(d.name):
             schema.add_variable(d.name, d.unit, d.grid)

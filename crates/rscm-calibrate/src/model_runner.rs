@@ -104,7 +104,7 @@ pub trait ModelRunner {
 ///
 /// let runner = DefaultModelRunner::new(
 ///     vec!["climate_sensitivity".to_string(), "ocean_diffusivity".to_string()],
-///     vec!["Surface Air Temperature Change".to_string(), "OHC".to_string()],
+///     vec!["Surface Air Temperature Change".to_string(), "Ocean Heat Content".to_string()],
 ///     |parameters| {
 ///         let climate_sensitivity = parameters[0];
 ///         let ocean_diffusivity = parameters[1];

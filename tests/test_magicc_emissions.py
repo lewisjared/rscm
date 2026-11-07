@@ -93,7 +93,8 @@ def test_co2_mass_balance():
 def test_climate_feedback_follows_forcing_configuration():
     default = run(emissions())
     explicit = run(emissions(), parameters={"ClimateUdeb": {"erf_2xco2": 3.71}})
-    # A smaller doubling forcing weakens the feedback, so the climate warms more
+    # A smaller 2xCO2 effective radiative forcing weakens the feedback,
+    # so the climate warms more
     assert (
         explicit.values["Surface Air Temperature Change"][-1]
         > default.values["Surface Air Temperature Change"][-1]

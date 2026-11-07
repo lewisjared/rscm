@@ -13,7 +13,7 @@ receives forcing at both boundaries and returns temperature at `t_next`.
 
 ClimateUdeb divides each annual step into 12 monthly substeps (matching
 MAGICC7's `STEPSPERYEAR = 12`).
-The substep loop runs from step 1 to step 12, or from step 0 in the first year:
+The substep loop runs from substep 1 to substep 12, or from substep 0 in the first year:
 
 ```rust
 for step_idx in first_step..=self.parameters.steps_per_year {
@@ -31,7 +31,7 @@ The last substep uses forcing at exactly `t_next`.
 
 ### Temperature output
 
-The output from `solve_impl` is the temperature after the last substep (step 12),
+The output from `solve_impl` is the temperature after the last substep (substep 12),
 representing the state at `t_next` (January 1 of the next year). This is a
 **point-in-time** value, not an annual mean.
 
@@ -39,15 +39,15 @@ representing the state at `t_next` (January 1 of the next year). This is a
 
 ### First-year boundary handling
 
-MAGICC7 runs 13 substeps (steps 0..12) in the first year instead of the normal 12.
-Step 0 uses the forcing at the start of the simulation.
+MAGICC7 runs 13 substeps (substeps 0..12) in the first year instead of the normal 12.
+Substep 0 uses the forcing at the start of the simulation.
 RSCM does the same.
 
 Reference: MAGICC7.f90 lines 2702-2716
 
 ### Last-year boundary handling
 
-MAGICC7 runs only 11 substeps in the final year (steps 1..11).
+MAGICC7 runs only 11 substeps in the final year (substeps 1..11).
 RSCM always runs 12.
 The full-chain regression runs still agree with MAGICC7 in every year they report, up to 2105,
 so the difference does not reach their output.

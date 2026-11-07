@@ -19,11 +19,11 @@ __all__ = [
 class ClimateConfig:
     """MAGICC climate model parameters."""
 
-    climate_sensitivity: float = 3.0
+    ecs: float = 3.0
     """Equilibrium climate sensitivity (K)."""
 
     erf_2xco2: float = 3.71
-    """Radiative forcing for doubling CO2 (W/m²)."""
+    """2xCO2 effective radiative forcing (W/m²)."""
 
 
 @dataclass

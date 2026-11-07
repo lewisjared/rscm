@@ -298,17 +298,19 @@ mod tests {
     fn model_output_collection() {
         let mut output = ModelOutput::new();
 
-        let mut temp = VariableOutput::new("Temperature");
+        let mut temp = VariableOutput::new("Surface Air Temperature Change");
         temp.add(2020.0, 1.2);
 
-        let mut ohc = VariableOutput::new("OHC");
+        let mut ohc = VariableOutput::new("Ocean Heat Content");
         ohc.add(2020.0, 200.0);
 
         output.add_variable(temp);
         output.add_variable(ohc);
 
-        assert!(output.get_variable("Temperature").is_some());
-        assert!(output.get_variable("OHC").is_some());
+        assert!(output
+            .get_variable("Surface Air Temperature Change")
+            .is_some());
+        assert!(output.get_variable("Ocean Heat Content").is_some());
         assert!(output.get_variable("Missing").is_none());
     }
 
@@ -386,15 +388,18 @@ mod tests {
 
         let mut target = Target::new();
         target
-            .add_variable("Temperature")
+            .add_variable("Surface Air Temperature Change")
             .add(2020.0, 1.0, 0.1)
             .unwrap();
-        target.add_variable("OHC").add(2020.0, 200.0, 10.0).unwrap();
+        target
+            .add_variable("Ocean Heat Content")
+            .add(2020.0, 200.0, 10.0)
+            .unwrap();
 
         let mut output = ModelOutput::new();
-        let mut temp = VariableOutput::new("Temperature");
+        let mut temp = VariableOutput::new("Surface Air Temperature Change");
         temp.add(2020.0, 1.1); // chi^2 = 1
-        let mut ohc = VariableOutput::new("OHC");
+        let mut ohc = VariableOutput::new("Ocean Heat Content");
         ohc.add(2020.0, 210.0); // residual = 10, uncertainty = 10, chi^2 = 1
         output.add_variable(temp);
         output.add_variable(ohc);

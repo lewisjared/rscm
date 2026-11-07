@@ -31,7 +31,7 @@ enabling climate scientists to leverage Rust's speed while maintaining Python's 
 - **Minimum Python:** 3.13+
 - **Minimum Rust:** 1.75+
 - **License:** Apache-2.0
-- **Computational Efficiency:** Climate models run many timesteps; performance is critical
+- **Computational Efficiency:** Climate models run many steps, performance is critical
 
 ## External Dependencies
 

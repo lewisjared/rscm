@@ -271,7 +271,7 @@ impl TerrestrialCarbonParameters {
     /// Fraction of NPP going directly to soil pool (derived).
     ///
     /// Calculated as `1 - npp_to_plant_fraction - npp_to_detritus_fraction`.
-    pub fn frac_npp_to_soil(&self) -> FloatValue {
+    pub fn npp_to_soil_fraction(&self) -> FloatValue {
         let f = 1.0 - self.npp_to_plant_fraction - self.npp_to_detritus_fraction;
         f.max(0.0)
     }
@@ -280,7 +280,7 @@ impl TerrestrialCarbonParameters {
     ///
     /// Validates that plant + detritus fractions do not exceed 1.0 and derives
     /// the soil fraction as the residual.
-    pub fn frac_deforest_soil(&self) -> FloatValue {
+    pub fn deforestation_soil_fraction(&self) -> FloatValue {
         let total = self.deforestation_plant_fraction + self.deforestation_detritus_fraction;
         assert!(
             total <= 1.0 + 1e-9,
@@ -387,7 +387,7 @@ mod tests {
         let params = TerrestrialCarbonParameters::default();
         let sum = params.npp_to_plant_fraction
             + params.npp_to_detritus_fraction
-            + params.frac_npp_to_soil();
+            + params.npp_to_soil_fraction();
         assert!(
             (sum - 1.0).abs() < 1e-10,
             "NPP fractions should sum to 1.0, got {}",
@@ -400,7 +400,7 @@ mod tests {
         let params = TerrestrialCarbonParameters::default();
         let sum = params.deforestation_plant_fraction
             + params.deforestation_detritus_fraction
-            + params.frac_deforest_soil();
+            + params.deforestation_soil_fraction();
         assert!(
             (sum - 1.0).abs() < 1e-10,
             "Deforestation fractions should sum to 1.0, got {}",

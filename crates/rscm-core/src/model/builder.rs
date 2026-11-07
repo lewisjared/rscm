@@ -39,7 +39,7 @@ pub struct ModelBuilder {
     /// The time axis for the model.
     pub time_axis: Arc<TimeAxis>,
     schema: Option<VariableSchema>,
-    /// Custom weights for grid aggregation, keyed by grid type.
+    /// Custom weights for grid aggregation, keyed by grid.
     ///
     /// When provided, these override the default weights used when creating
     /// timeseries and performing grid transformations. Weights must sum to 1.0.
@@ -216,7 +216,7 @@ impl ModelBuilder {
         })
     }
 
-    /// Set custom weights for a grid type.
+    /// Set custom weights for a grid.
     ///
     /// These weights override the default grid weights used when:
     /// - Creating timeseries for grid-based variables
@@ -224,20 +224,20 @@ impl ModelBuilder {
     ///
     /// # Arguments
     ///
-    /// * `grid` - The grid type to configure (FourBox or Hemispheric)
+    /// * `grid` - The grid to configure (four-box or hemispheric)
     /// * `weights` - Area-based weights that must sum to 1.0
     ///
     /// # Panics
     ///
     /// Panics if:
     /// - `grid` is `Scalar` (scalars have no weights)
-    /// - `weights` length does not match the grid size (4 for FourBox, 2 for Hemispheric)
+    /// - `weights` length does not match the grid size (4 for four-box, 2 for hemispheric)
     /// - `weights` do not sum to approximately 1.0 (within 1e-6)
     pub fn with_grid_weights(&mut self, grid: GridType, weights: Vec<f64>) -> &mut Self {
-        // Validate grid type
+        // Validate grid
         let expected_size = match grid {
             GridType::Scalar => {
-                panic!("Cannot set weights for Scalar grid type (scalars have no regional weights)")
+                panic!("Cannot set weights for the scalar grid, which has no regions")
             }
             GridType::FourBox => 4,
             GridType::Hemispheric => 2,
@@ -273,7 +273,7 @@ impl ModelBuilder {
                 let weights_arr: [f64; 4] = weights
                     .as_slice()
                     .try_into()
-                    .expect("FourBox weights should have 4 elements");
+                    .expect("four-box grid weights should have 4 elements");
                 FourBoxGrid::with_weights(weights_arr)
             }
             None => FourBoxGrid::magicc_standard(),
@@ -799,16 +799,16 @@ impl ModelBuilder {
                 }
             }
 
-            // Add aggregator components for each aggregate definition (5.1, 5.2, 5.3)
+            // Add a component for each aggregate definition
             // Process aggregates in topological order to handle chained aggregates
             let ordered_aggregates = schema.topological_order_aggregates();
             for agg_name in &ordered_aggregates {
                 let agg_def = schema.get_aggregate(agg_name).unwrap();
 
-                // Create the aggregator component (5.1)
+                // Create the aggregate's component
                 let aggregator = crate::schema::AggregatorComponent::from_definition(agg_def);
 
-                // Add to graph (5.2)
+                // Add to graph
                 let agg_node = graph.add_node(Arc::new(aggregator.clone()));
                 aggregator_nodes.insert(agg_node);
 
@@ -817,7 +817,7 @@ impl ModelBuilder {
                 variable_owners.insert(agg_name.clone(), agg_component_name.clone());
                 let runtime_name = Model::extract_component_name(&graph[agg_node]);
 
-                // Add dependency edges from contributor sources to aggregator (5.3)
+                // Add dependency edges from contributor sources to the aggregate's component
                 let mut has_dependencies = false;
                 for contributor in &agg_def.contributors {
                     let source = if self.is_lagged(contributor, &runtime_name) {
@@ -1114,7 +1114,7 @@ fn check_acyclic(
             }
         }
     }
-    Err(RscmError::CircularDependency {
+    Err(RscmError::FeedbackLoop {
         components: components.into_iter().collect(),
         variables: variables.into_iter().collect(),
         suggestions: suggestions

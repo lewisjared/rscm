@@ -17,7 +17,7 @@ pub enum OceanTemperatureProfile {
     Cmip5,
 }
 
-/// How prescribed and internal efficacies scale an agent's forcing (MAGICC7 `RF_EFFICACY_APPLY`).
+/// How efficacies and internal efficacies scale an agent's forcing (MAGICC7 `RF_EFFICACY_APPLY`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EfficacyMethod {
@@ -26,7 +26,7 @@ pub enum EfficacyMethod {
     None,
     /// Forcing is divided by the internal efficacy, so every agent has unit efficacy (MAGICC7 1).
     Unit,
-    /// Forcing is scaled by the prescribed over the internal efficacy, as in AR6 (MAGICC7 2).
+    /// Forcing is scaled by the efficacy over the internal efficacy, as in AR6 (MAGICC7 2).
     Ar6,
 }
 
@@ -43,7 +43,7 @@ pub struct SubannualForcing {
     /// A substep belongs to the year it ends in.
     #[serde(default)]
     pub regional_pattern: Option<[FloatValue; 4]>,
-    /// Prescribed efficacy over the internal efficacy when `regional_pattern` is set.
+    /// Efficacy over the internal efficacy when `regional_pattern` is set.
     #[serde(default = "one")]
     pub efficacy: FloatValue,
     /// Internal efficacy dividing the values of the first two years when `regional_pattern` is set.
@@ -266,17 +266,17 @@ pub struct ClimateUdebParameters {
     ///
     /// - `none` (default): all agents treated with uniform spatial efficacy.
     /// - `unit`: effective forcing divided by the internal efficacy.
-    /// - `ar6`: effective forcing adjusted by `prescribed_efficacy_co2 / internal_efficacy`.
+    /// - `ar6`: effective forcing adjusted by `co2_efficacy / internal_efficacy`.
     #[serde(default)]
     pub efficacy_method: EfficacyMethod,
 
-    /// Prescribed CO2 efficacy factor (matches MAGICC7 `RF_EFFICACY_CO2`).
+    /// CO2 efficacy (matches MAGICC7 `RF_EFFICACY_CO2`).
     ///
     /// Unused with the `unit` method.
-    /// With `ar6`: $\text{EFFRF} = \text{ERF} \times \text{prescribed\_efficacy\_co2} / \text{internal\_efficacy}$.
+    /// With `ar6`: $\text{EFFRF} = \text{ERF} \times \text{co2\_efficacy} / \text{internal\_efficacy}$.
     ///
     /// Default: 1.0 (no-op).
-    #[serde(default = "default_prescribed_efficacy_co2")]
+    #[serde(default = "default_co2_efficacy")]
     pub co2_efficacy: FloatValue,
 
     /// Read efficacy-adjusted four-box forcing instead of global ERF.
@@ -292,7 +292,7 @@ pub struct ClimateUdebParameters {
     /// Write the annual mean warming and the thermal expansion of the ocean.
     pub thermal_expansion: Option<ThermalExpansionParameters>,
 
-    /// Read the CO2 doubling ERF each year instead of using `erf_2xco2`.
+    /// Read `2xCO2 Effective Radiative Forcing` each year instead of using `erf_2xco2`.
     ///
     /// MAGICC7 recalculates it from the current concentrations with OLBL,
     /// which changes the feedback parameters as CO2 rises.
@@ -308,7 +308,7 @@ pub struct ClimateUdebParameters {
     pub ocean_temperature_profile: OceanTemperatureProfile,
 
     // Integration parameters
-    /// Steps per year for sub-annual integration.
+    /// Substeps per year.
     /// Default: 12 (monthly)
     pub steps_per_year: usize,
 
@@ -389,7 +389,7 @@ impl Default for ClimateUdebParameters {
     }
 }
 
-fn default_prescribed_efficacy_co2() -> FloatValue {
+fn default_co2_efficacy() -> FloatValue {
     1.0
 }
 

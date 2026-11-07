@@ -66,8 +66,8 @@ class CO2ErfBuilder(ComponentBuilder):
 
         ERF = (ERF_2xCO2 / ln(2)) * ln(1 + (C - C0) / C0)
 
-    where ERF_2xCO2 is the forcing for a CO2 doubling, C is the current
-    concentration, and C0 is the pre-industrial concentration.
+    where ERF_2xCO2 is the 2xCO2 effective radiative forcing, C is the
+    current concentration, and C0 is the pre-industrial concentration.
 
     **Parameter keys**
 
@@ -104,7 +104,7 @@ class FourBoxOceanHeatUptakeBuilder(ComponentBuilder):
     and produces regional ocean heat uptake values for a four-box grid
     (Northern Ocean, Northern Land, Southern Ocean, Southern Land).
 
-    The component demonstrates disaggregation from scalar to grid resolution.
+    The component demonstrates disaggregation from the scalar grid to the four-box grid.
     Regional uptake is calculated as: regional = global_ERF * ratio
 
     **Parameter keys**

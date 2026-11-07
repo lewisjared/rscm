@@ -16,7 +16,7 @@
 //!
 //! #[derive(ComponentIO, Serialize, Deserialize)]
 //! #[inputs(
-//!     emissions { name = "Emissions|CO2", unit = "GtCO2/yr" },
+//!     emissions { name = "Emissions|CO2", unit = "Gt CO2/yr" },
 //! )]
 //! #[outputs(
 //!     concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
@@ -43,7 +43,7 @@
 //!
 //! #[derive(ComponentIO, Serialize, Deserialize)]
 //! #[inputs(
-//!     emissions { name = "Emissions|CO2", unit = "GtCO2/yr" },
+//!     emissions { name = "Emissions|CO2", unit = "Gt CO2/yr" },
 //! )]
 //! #[outputs(
 //!     concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
@@ -72,7 +72,7 @@
 //!
 //! #[derive(ComponentIO, Serialize, Deserialize)]
 //! #[inputs(
-//!     emissions { name = "Emissions|CO2", unit = "GtCO2/yr" },
+//!     emissions { name = "Emissions|CO2", unit = "Gt CO2/yr" },
 //! )]
 //! #[outputs(
 //!     concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },

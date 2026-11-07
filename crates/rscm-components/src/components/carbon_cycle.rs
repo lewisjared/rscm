@@ -28,7 +28,7 @@ pub struct CarbonCycleParameters {
     /// unit: ppm
     pub co2_pi: FloatValue,
     /// Sensitivity of lifetime to changes in global-mean temperature
-    /// unit: 1 / K
+    /// unit: 1/K
     pub alpha_temperature: FloatValue,
 }
 
@@ -57,7 +57,7 @@ pub struct SolverOptions {
 /// - $C_0$ is pre-industrial concentration (ppm)
 /// - $\tau$ is the baseline lifetime (yr)
 /// - $\alpha_T$ is the temperature sensitivity (1/K)
-/// - $T$ is the surface temperature anomaly (K)
+/// - $T$ is the surface air temperature change (K)
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "simple", "stable"], category = "Carbon Cycle")]
 #[inputs(

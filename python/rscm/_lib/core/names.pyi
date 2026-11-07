@@ -14,7 +14,7 @@ SURFACE_AIR_TEMPERATURE_CHANGE: Final = "Surface Air Temperature Change"
 ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE: Final = (
     "Annual Mean Surface Air Temperature Change"
 )
-"""Annual mean surface air temperature anomaly, where sub-annual steps resolve it."""
+"""Annual mean surface air temperature anomaly, where substeps resolve it."""
 SEA_SURFACE_TEMPERATURE: Final = "Sea Surface Temperature"
 """Sea surface temperature anomaly."""
 OCEAN_TEMPERATURE: Final = "Ocean Temperature"
@@ -94,7 +94,7 @@ ATMOSPHERIC_CONCENTRATIONS_N2O: Final = "Atmospheric Concentrations|N2O"
 OCEAN_CARBON_ATMOSPHERIC_CONCENTRATIONS_CO2: Final = (
     "Ocean Carbon Atmospheric Concentrations|CO2"
 )
-"""Atmospheric CO2 at the end of the ocean carbon cycle's last sub-step."""
+"""Atmospheric CO2 at the end of the ocean carbon cycle's last substep."""
 EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE: Final = (
     "Equivalent Effective Stratospheric Chlorine"
 )

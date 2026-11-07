@@ -1,4 +1,4 @@
-//! Grid validation tests: grid type mismatch detection.
+//! Grid validation tests: grid mismatch detection.
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition};
 use crate::errors::RscmResult;
@@ -101,7 +101,7 @@ fn test_grid_mismatch_returns_error() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     let err_msg = err.to_string();
-    assert!(err_msg.contains("Grid type mismatch for variable 'Temperature'"));
+    assert!(err_msg.contains("Grid mismatch for variable 'Temperature'"));
     assert!(err_msg.contains("FourBoxProducer"));
     assert!(err_msg.contains("ScalarConsumer"));
     assert!(err_msg.contains("four_box"));

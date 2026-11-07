@@ -20,17 +20,17 @@ use std::sync::{Arc, Mutex};
 ///
 /// ```python
 /// def model_factory(parameters):
-///     # parameters is a dict like {"climate_sensitivity": 3.0, "ocean_diff": 1200.0}
+///     # parameters is a dict like {"climate_sensitivity": 3.0, "ocean_diffusivity": 1200.0}
 ///     # Build and run model...
 ///     return {
 ///         "Surface Air Temperature Change": {2020.0: 1.2, 2021.0: 1.3, ...},
-///         "OHC": {2020.0: 100.0, 2021.0: 105.0, ...}
+///         "Ocean Heat Content": {2020.0: 100.0, 2021.0: 105.0, ...}
 ///     }
 ///
 /// runner = ModelRunner(
 ///     model_factory=model_factory,
-///     parameter_names=["climate_sensitivity", "ocean_diff"],
-///     output_variables=["Surface Air Temperature Change", "OHC"]
+///     parameter_names=["climate_sensitivity", "ocean_diffusivity"],
+///     output_variables=["Surface Air Temperature Change", "Ocean Heat Content"]
 /// )
 /// ```
 #[pyclass(name = "ModelRunner")]

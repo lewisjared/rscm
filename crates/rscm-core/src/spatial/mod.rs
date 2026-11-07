@@ -106,8 +106,8 @@
 //! splitting hemispheric data into ocean/land boxes requires assumptions about
 //! land-ocean temperature differences.
 //!
-//! If you need such a transformation, implement a custom component that explicitly
-//! performs the disaggregation based on your model's physics (see Custom Disaggregation below).
+//! If you need such a transformation, write a component that explicitly
+//! performs the disaggregation based on your model's physics (see Disaggregation Components below).
 //!
 //! # Component Integration Patterns
 //!
@@ -212,10 +212,10 @@
 //! - Use A when the physics is fundamentally global (e.g., global mean feedback)
 //! - Use B when regional differences matter (e.g., land-ocean heat capacity differences)
 //!
-//! # Custom Disaggregation Components
+//! # Disaggregation Components
 //!
-//! For unsupported transformations (e.g., Hemispheric -> FourBox), implement a custom
-//! disaggregation component that explicitly encodes the physics:
+//! For unsupported transformations (e.g., Hemispheric -> FourBox), write a disaggregation
+//! component that explicitly encodes the physics:
 //!
 //! ```rust,ignore
 //! # use rscm_core::component::{Component, VariableDefinition, VariableRole, InputState, OutputState, GridType};
@@ -229,8 +229,8 @@
 //! impl Component for HemisphericToFourBoxDisaggregator {
 //!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         vec![
-//!             VariableDefinition::with_grid("Surface Air Temperature Change", "degC", VariableRole::Input, GridType::Hemispheric),
-//!             VariableDefinition::with_grid("Regional Surface Temperature", "degC", VariableRole::Output, GridType::FourBox),
+//!             VariableDefinition::with_grid("Surface Air Temperature Change", "K", VariableRole::Input, GridType::Hemispheric),
+//!             VariableDefinition::with_grid("Regional Surface Temperature", "K", VariableRole::Output, GridType::FourBox),
 //!         ]
 //!     }
 //!
@@ -240,7 +240,7 @@
 //!         let values = window.get_all();
 //!         let (northern, southern) = (values[0], values[1]);
 //!
-//!         // Custom disaggregation based on physical reasoning
+//!         // Disaggregation based on physical reasoning
 //!         // Example: Ocean regions slightly warmer, land regions cooler
 //!         let four_box_values = FourBoxSlice::from_array([
 //!             northern * 1.1,  // Northern Ocean
@@ -268,7 +268,7 @@
 //!
 //! let grid = FourBoxGrid::magicc_standard();
 //! assert_eq!(grid.size(), 4);
-//! assert_eq!(grid.grid_name(), "FourBox");
+//! assert_eq!(grid.grid_name(), "four_box");
 //!
 //! // Aggregate regional values to global
 //! let regional_temps = vec![15.0, 14.0, 10.0, 9.0]; // degC
@@ -318,7 +318,7 @@ pub use scalar::{ScalarGrid, ScalarRegion};
 /// Note: This trait is not object-safe due to the generic `transform_to` method.
 /// Use the concrete grid types directly rather than trait objects.
 pub trait SpatialGrid: Clone + std::fmt::Debug + Send + Sync {
-    /// Unique name for this grid type
+    /// Unique snake_case name for this grid
     ///
     /// Used for error messages and debugging
     fn grid_name(&self) -> &'static str;

@@ -30,7 +30,7 @@ def _on_timebounds(
     name: str, values: ArrayLike, n_timebounds: int
 ) -> NDArray[np.float64]:
     array = np.asarray(values, dtype=np.float64)
-    timepoints = name.startswith("Emissions|")
+    timepoints = name.startswith(f"{names.EMISSIONS}|")
     if timepoints and array.shape == (n_timebounds - 1,):
         # No step starts at the last bound, so its value is never read.
         return np.append(array, array[-1])

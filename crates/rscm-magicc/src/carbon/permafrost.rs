@@ -17,7 +17,7 @@
 //!
 //! # Inputs
 //!
-//! - `Surface Air Temperature Change` (K) - Global mean surface temperature anomaly
+//! - `Surface Air Temperature Change` (K) - Global mean surface air temperature change
 //!
 //! # Outputs
 //!

@@ -318,7 +318,7 @@ plt.show()
 # ### Running the Model
 #
 # `run_two_layer` builds the component from a full parameter dict, applies a constant 3 W/m² forcing
-# from 2000 to 2010 and returns the surface temperature in 2010.
+# from 2000 to 2010 and returns the surface air temperature change in 2010.
 # The forcing collection also holds the starting temperatures, so it is built once and reused.
 
 # %%
@@ -341,7 +341,7 @@ for name, value, unit in [
 
 
 def run_two_layer(parameters: dict) -> float:
-    """Return the 2010 surface temperature for a full parameter set."""
+    """Return the 2010 surface air temperature change for a full parameter set."""
     component = TwoLayerBuilder.from_parameters(parameters).build()
     result = component.solve(2000, 2010, forcing)
     return float(result.get("Surface Air Temperature Change").as_scalar())

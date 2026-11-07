@@ -95,14 +95,14 @@
 //!
 //! # Spatial Grids
 //!
-//! The framework supports spatially-resolved variables through different grid types:
+//! The framework supports spatially-resolved variables on different grids:
 //!
 //! - **Scalar**: Global mean values (default)
 //! - **FourBox**: Four regions (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
 //! - **Hemispheric**: Two hemispheres (Northern, Southern)
 //!
 //! Grid transformations (e.g., FourBox to Scalar aggregation) are handled automatically
-//! by the [`grid_transform`] module when components with different spatial resolutions
+//! by the [`grid_transform`] module when components on different grids
 //! are connected.
 
 // Allow macro-generated code to reference this crate by name

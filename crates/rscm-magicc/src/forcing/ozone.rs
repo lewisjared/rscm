@@ -4,7 +4,7 @@
 //!
 //! # Inputs
 //!
-//! - `EESC` (ppt)
+//! - `Equivalent Effective Stratospheric Chlorine` (ppt)
 //! - `Atmospheric Concentrations|CH4` (ppb) and `Atmospheric Concentrations|N2O` (ppb)
 //! - `Emissions|{NOx,CO,NMVOC}|{Fossil,Biosphere}` (Mt N/yr, Mt CO/yr and Mt NMVOC/yr)
 //! - `Surface Air Temperature Change` (K)
@@ -28,7 +28,7 @@ use crate::reference::{first_value, require_annual, value_at_year};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::RscmResult;
 use rscm_core::names::{
-    ATMOSPHERIC_CONCENTRATIONS_CH4, ATMOSPHERIC_CONCENTRATIONS_N2O,
+    child, ATMOSPHERIC_CONCENTRATIONS_CH4, ATMOSPHERIC_CONCENTRATIONS_N2O, EMISSIONS,
     EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE, ERF_OZONE_N2O_FEEDBACK, ERF_OZONE_STRATOSPHERIC,
     ERF_OZONE_TEMPERATURE_FEEDBACK, ERF_OZONE_TROPOSPHERIC, SURFACE_AIR_TEMPERATURE_CHANGE,
 };
@@ -43,6 +43,10 @@ const PRECURSORS: [(&str, &str); 3] = [
     ("NMVOC", "Mt NMVOC/yr"),
 ];
 const SECTORS: [&str; 2] = ["Fossil", "Biosphere"];
+
+fn precursor_name(gas: &str, sector: &str) -> String {
+    child(&child(EMISSIONS, gas), sector)
+}
 
 /// Ozone forcing component.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,8 +112,10 @@ impl Component for OzoneForcing {
         ];
         for (gas, unit) in PRECURSORS {
             for sector in SECTORS {
-                let name = format!("Emissions|{gas}|{sector}");
-                definitions.push(VariableDefinition::scalar_input(&name, unit));
+                definitions.push(VariableDefinition::scalar_input(
+                    &precursor_name(gas, sector),
+                    unit,
+                ));
             }
         }
         definitions.extend([
@@ -146,9 +152,9 @@ impl Component for OzoneForcing {
 
         let ch4 = window(ATMOSPHERIC_CONCENTRATIONS_CH4);
         let change = |gas: &str| {
-            let [fossil, afolu] = SECTORS
-                .map(|sector| input_state.get_scalar_window(&format!("Emissions|{gas}|{sector}")));
-            (fossil.get() - first_value(&fossil)) + (afolu.get() - first_value(&afolu))
+            let [fossil, biosphere] =
+                SECTORS.map(|sector| input_state.get_scalar_window(&precursor_name(gas, sector)));
+            (fossil.get() - first_value(&fossil)) + (biosphere.get() - first_value(&biosphere))
         };
         let trop = self.trop_forcing(
             ch4.get() / first_value(&ch4),

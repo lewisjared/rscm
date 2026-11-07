@@ -45,12 +45,12 @@ The loop, with the RSCM read for each input:
 | 1 | Lifetime scaling `alpha` from iIRF100 (cumulative uptake, airborne, temperature) | temperature `get()`, own state | `GasCycle` |
 | 2 | CH4 lifetime scaling, Thornhill 2021 (aerosol precursors, N2O, EESC, temperature) | everything `get()` | `CH4Lifetime` (added before the gas cycle) |
 | 3 | Emissions to concentration over up to 4 gas boxes | emissions `get()` | `GasCycle` |
-| 4 | Concentration to emissions (inverse mode) | concentration `get()` (prescribed) | `GasCycle` |
+| 4 | Concentration to inverse emissions (concentration driven) | concentration `get()` (prescribed) | `GasCycle` |
 | 5 | GHG forcing: Meinshausen 2020, Etminan 2016, Myhre 1998 or Leach 2021 | concentrations `get()` | `GhgForcing` |
-| 6 | ERFari, linear in emissions and concentrations | emissions `get()`, concentrations `get()` | `FairAerosolForcing` |
-| 7 | ERFaci, log of a weighted sum | as step 6 | `FairAerosolForcing` |
+| 6 | ERFari, linear in emissions and concentrations | emissions `get()`, concentrations `get()` | `LinearForcing` |
+| 7 | ERFaci, log of a weighted sum | as step 6 | `AerosolCloud` |
 | 8 | EESC from halogen concentrations | concentrations `get()` | `Eesc` |
-| 9 | Ozone, Thornhill 2021, linear | as step 6, plus EESC | `FairOzoneForcing` |
+| 9 | Ozone, Thornhill 2021, linear | as step 6, plus EESC | `LinearForcing` |
 | 10 to 13 | Contrails, LAPSI, stratospheric H2O, land use: all linear | emissions, CH4 concentration, cumulative AFOLU CO2 | `LinearForcing`, one instance per agent |
 | 14 | Temperature feedback on each forcing agent | temperature `get()` | `ForcingAggregation` |
 | 15 | Total forcing and efficacy-weighted total | forcings `get()` | `ForcingAggregation` |
@@ -73,10 +73,10 @@ What already maps cleanly:
   which avoids a 4-wide grid that is not a spatial grid.
 - **Matrix exponential.** `rscm-core` already depends on nalgebra, which has `Matrix::exp`.
   `A_d` and `b_d` can be built once in the constructor.
-- **Mode per species is fixed for the run.**
+- **The driver of each species is fixed for the run.**
   FaIR never switches a species from concentration to emissions mid-run,
   unlike MAGICC's 2015 switch.
-  Each species' mode is a build-time choice, which suits the graph.
+  Each species' driver is a build-time choice, which suits the graph.
 - **Shared GHG formula.** FaIR's Meinshausen 2020 and MAGICC's OLBL are the same formulae.
   Both use `rscm_components::meinshausen2020`, with their own coefficients.
   FaIR scales by `forcing_scale * (1 + tropospheric_adjustment)` and subtracts the baseline offset.
@@ -129,7 +129,7 @@ Cases, roughly in build order:
 - Energy balance alone, driven by prescribed total forcing, for 2-layer and 3-layer configs.
 - CO2 only, emissions driven, default AR6 species config, Meinshausen forcing.
 - Every default species, SSP2-4.5 and SSP1-1.9, with Leach and Thornhill CH4 methods.
-- Concentration-driven minor GHGs (inverse mode), as in fair-calibrate's historical setup.
+- Concentration-driven minor GHGs with inverse emissions, as in fair-calibrate's historical setup.
 - A few members of the calibrated ensemble.
 - Stochastic run with FaIR's noise passed in.
 
@@ -139,7 +139,7 @@ Cases, roughly in build order:
    This proves the expm discretisation and time convention.
 2. `GasCycle` for CO2 and `GhgForcing` for CO2, coupled to slice 1.
    This proves the gas-box state and the temperature feedback on `alpha`.
-3. All GHGs, inverse mode, `CH4Lifetime`, `Eesc`.
+3. All GHGs, concentration driven with inverse emissions, `CH4Lifetime`, `Eesc`.
 4. Aerosol, ozone and linear forcings, plus `ForcingAggregation` with efficacy and feedback.
 5. `rscm.fair` Python package:
    species table and calibration loaders, `run_fair` runner, `.pyi` stubs, docs page.

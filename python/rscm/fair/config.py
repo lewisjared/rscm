@@ -509,7 +509,7 @@ def components(
 def with_lags(builder: ModelBuilder, config: FairConfig) -> ModelBuilder:
     """Add FaIR's feedback lags to a builder of `components`.
 
-    Every component reads the previous step's surface temperature,
+    Every component reads the previous step's surface air temperature change,
     and the methane lifetime the previous step's concentrations.
     """
     builder.with_lag(names.SURFACE_AIR_TEMPERATURE_CHANGE)

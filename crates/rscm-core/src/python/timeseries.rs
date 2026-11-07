@@ -41,12 +41,12 @@ impl PyTimeAxis {
         self.0.len()
     }
 
-    fn at(&self, index: usize) -> Option<Time> {
-        self.0.at(index)
+    fn at(&self, time_index: usize) -> Option<Time> {
+        self.0.at(time_index)
     }
 
-    fn at_bounds(&self, index: usize) -> Option<(Time, Time)> {
-        self.0.at_bounds(index)
+    fn at_bounds(&self, time_index: usize) -> Option<(Time, Time)> {
+        self.0.at_bounds(time_index)
     }
 }
 

@@ -14,9 +14,9 @@
 //! - `"Atmospheric Concentrations|CO2"` - CO2 concentration in ppm
 //! - `"Effective Radiative Forcing|CO2"` - CO2 forcing in W/m^2
 //!
-//! # Spatial Resolution
+//! # Grids
 //!
-//! The collection supports three spatial resolutions via [`TimeseriesData`]:
+//! The collection supports three grids via [`TimeseriesData`]:
 //! - **Scalar**: Global mean values
 //! - **FourBox**: Regional values (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
 //! - **Hemispheric**: Hemispheric values (Northern, Southern)
@@ -28,11 +28,11 @@ use crate::state::{FourBoxSlice, HemisphericSlice};
 use crate::timeseries::{FloatValue, GridTimeseries, Timeseries};
 use serde::{Deserialize, Serialize};
 
-/// Container for timeseries data at different spatial resolutions.
+/// Container for timeseries data on different grids.
 ///
-/// This enum wraps the different spatial grid types supported by the model,
+/// This enum wraps the different grids supported by the model,
 /// providing a unified interface for storing and accessing timeseries data
-/// regardless of spatial resolution.
+/// regardless of grid.
 ///
 /// # Variants
 ///
@@ -202,15 +202,20 @@ impl TimeseriesData {
         }
     }
 
-    /// Set a scalar value at the given index
+    /// Set a scalar value at the given time index
     ///
     /// # Errors
     ///
     /// Returns an error if this is not a Scalar timeseries
-    pub fn set_scalar(&mut self, name: &str, index: usize, value: FloatValue) -> RscmResult<()> {
+    pub fn set_scalar(
+        &mut self,
+        name: &str,
+        time_index: usize,
+        value: FloatValue,
+    ) -> RscmResult<()> {
         match self {
             TimeseriesData::Scalar(ts) => {
-                ts.set(index, crate::spatial::ScalarRegion::Global, value);
+                ts.set(time_index, crate::spatial::ScalarRegion::Global, value);
                 Ok(())
             }
             TimeseriesData::FourBox(_) => Err(crate::errors::RscmError::GridOutputMismatch {
@@ -226,7 +231,7 @@ impl TimeseriesData {
         }
     }
 
-    /// Set a FourBox slice of values at the given index
+    /// Set a FourBox slice of values at the given time index
     ///
     /// # Errors
     ///
@@ -234,12 +239,12 @@ impl TimeseriesData {
     pub fn set_four_box(
         &mut self,
         name: &str,
-        index: usize,
+        time_index: usize,
         slice: &FourBoxSlice,
     ) -> RscmResult<()> {
         match self {
             TimeseriesData::FourBox(ts) => {
-                ts.set_from_slice(index, slice);
+                ts.set_from_slice(time_index, slice);
                 Ok(())
             }
             TimeseriesData::Scalar(_) => Err(crate::errors::RscmError::GridOutputMismatch {
@@ -255,7 +260,7 @@ impl TimeseriesData {
         }
     }
 
-    /// Set a Hemispheric slice of values at the given index
+    /// Set a Hemispheric slice of values at the given time index
     ///
     /// # Errors
     ///
@@ -263,12 +268,12 @@ impl TimeseriesData {
     pub fn set_hemispheric(
         &mut self,
         name: &str,
-        index: usize,
+        time_index: usize,
         slice: &HemisphericSlice,
     ) -> RscmResult<()> {
         match self {
             TimeseriesData::Hemispheric(ts) => {
-                ts.set_from_slice(index, slice);
+                ts.set_from_slice(time_index, slice);
                 Ok(())
             }
             TimeseriesData::Scalar(_) => Err(crate::errors::RscmError::GridOutputMismatch {
@@ -300,7 +305,7 @@ pub struct TimeseriesItem {
 /// `TimeseriesCollection` is the central data structure for managing model state
 /// during simulation. It provides:
 /// - Named access to variables via string keys
-/// - Support for multiple spatial resolutions
+/// - Support for multiple grids
 /// - Iteration over all contained timeseries
 ///
 /// # Usage
@@ -426,7 +431,7 @@ impl TimeseriesCollection {
     ///
     /// This is the most common way to access timeseries data. Returns
     /// the [`TimeseriesData`] enum which can be pattern-matched or converted
-    /// to the appropriate grid type.
+    /// to the appropriate grid.
     ///
     /// # Example
     ///

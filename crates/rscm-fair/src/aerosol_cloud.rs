@@ -161,13 +161,14 @@ impl Component for AerosolCloud {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use rscm_core::names::{EMISSIONS_SOX, ERF_AEROSOLS_INDIRECT_EFFECT};
 
     #[test]
     fn baseline_has_no_forcing_and_more_sulfur_cools() {
         let c = AerosolCloud::from_parameters(AerosolCloudParameters {
-            forcing: "ERFaci".into(),
+            forcing: ERF_AEROSOLS_INDIRECT_EFFECT.into(),
             drivers: vec![CloudDriver {
-                variable: "Emissions|SOx".into(),
+                variable: EMISSIONS_SOX.into(),
                 unit: "Mt SO2/yr".into(),
                 driver: Driver::Emissions,
                 baseline: 2.4,
@@ -187,9 +188,9 @@ mod tests {
     #[test]
     fn rejects_cumulative_emissions() {
         let parameters = AerosolCloudParameters {
-            forcing: "ERFaci".into(),
+            forcing: ERF_AEROSOLS_INDIRECT_EFFECT.into(),
             drivers: vec![CloudDriver {
-                variable: "Emissions|SOx".into(),
+                variable: EMISSIONS_SOX.into(),
                 unit: "Mt SO2/yr".into(),
                 driver: Driver::CumulativeEmissions,
                 baseline: 0.0,

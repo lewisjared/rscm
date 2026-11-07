@@ -21,7 +21,9 @@ use crate::constants::{
 use nalgebra::{DMatrix, DVector};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::{RscmError, RscmResult};
-use rscm_core::names::{NET_ENERGY_IMBALANCE, OCEAN_HEAT_CONTENT, STOCHASTIC_FORCING};
+use rscm_core::names::{
+    ocean_layer_temperature, NET_ENERGY_IMBALANCE, OCEAN_HEAT_CONTENT, STOCHASTIC_FORCING,
+};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -127,7 +129,7 @@ impl EnergyBalance {
         if layer == 0 {
             self.parameters.surface_temperature.clone()
         } else {
-            format!("Ocean Temperature|Layer {}", layer + 1)
+            ocean_layer_temperature(layer + 1)
         }
     }
 

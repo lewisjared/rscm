@@ -79,7 +79,7 @@ class TestDistributions:
         samples = [dist.sample() for _ in range(100)]
         assert all(s > 0 for s in samples)
 
-    def test_lognormal_mean_std(self):
+    def test_lognormal_mean_std_dev(self):
         """Test LogNormal mean/std_dev constructor."""
         dist = LogNormal(mean=1.0, std_dev=0.5)
         assert dist is not None

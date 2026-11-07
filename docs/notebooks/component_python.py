@@ -28,7 +28,7 @@
 #
 # - Auto-generated `definitions()` method
 # - Type-safe input/output access
-# - Support for scalar and grid-based (FourBox, Hemispheric) variables
+# - Support for scalar and grid-based (four-box, hemispheric) variables
 #
 # ## Related Resources
 #
@@ -247,12 +247,12 @@ print(
 # %% [markdown]
 # ## Grid-Based Components
 #
-# RSCM supports spatially-resolved variables using two grid types:
+# RSCM supports spatially-resolved variables using two grids:
 #
-# - **FourBox**: Northern Ocean, Northern Land, Southern Ocean, Southern Land
+# - **Four-box**: Northern Ocean, Northern Land, Southern Ocean, Southern Land
 # - **Hemispheric**: Northern, Southern
 #
-# Specify the grid type in your `Input` or `Output` descriptor:
+# Specify the grid in your `Input` or `Output` descriptor:
 
 
 # %%
@@ -260,7 +260,7 @@ class RegionalComponent(Component):
     """Regional temperature response to a global forcing."""
 
     forcing = Input("Effective Radiative Forcing", unit="W/m^2")
-    regional_temp = Output("Regional Temperature", unit="K", grid="four_box")
+    regional_temp = Output("Surface Air Temperature Change", unit="K", grid="four_box")
 
     def __init__(self, sensitivity: float):
         self.sensitivity = sensitivity
@@ -286,7 +286,7 @@ for defn in regional.definitions():
     print(f"  {defn.role.name}: {defn.name} [{defn.unit}] ({grid})")
 
 # %% [markdown]
-# Solving it once returns a FourBox `StateValue` for the regional output:
+# Solving it once returns a four-box `StateValue` for the regional output:
 
 # %%
 forcing = TimeseriesCollection()
@@ -299,7 +299,7 @@ forcing.add_timeseries(
         InterpolationStrategy.Previous,
     ),
 )
-PythonComponent(regional).solve(2000, 2001, forcing)["Regional Temperature"]
+PythonComponent(regional).solve(2000, 2001, forcing)["Surface Air Temperature Change"]
 
 # %% [markdown]
 # ## StateValue: Understanding Component Outputs

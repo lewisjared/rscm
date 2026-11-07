@@ -151,17 +151,17 @@ A declared input with no producer and no prescribed data fails the build with `M
 #### GridTypeMismatch
 
 ```
-Grid type mismatch for variable 'Temperature': producer component 'A' outputs four_box but consumer component 'B' expects scalar.
+Grid mismatch for variable 'Surface Air Temperature Change': producer component 'A' outputs four_box but consumer component 'B' expects scalar.
 ```
 
 **Cause:** Two connected components use different spatial grids.
 
 **Fixes:**
 
-1. Change the producer component to output the required grid type
-2. Change the consumer component to accept the available grid type
+1. Change the producer component to output the required grid
+2. Change the consumer component to accept the available grid
 3. Insert a grid transformation component between them
-4. Use automatic aggregation (FourBox to Scalar aggregates using area weights)
+4. Use automatic aggregation (four-box to scalar aggregation uses the grid weights)
 
 #### UnsupportedGridTransformation
 
@@ -169,14 +169,14 @@ Grid type mismatch for variable 'Temperature': producer component 'A' outputs fo
 Unsupported grid transformation from Hemispheric to FourBox.
 ```
 
-**Cause:** RSCM cannot automatically transform between these grid types without additional physics assumptions.
+**Cause:** RSCM cannot automatically transform between these grids without additional physics assumptions.
 
-**Fix:** Create a custom component that implements the transformation with appropriate physics.
+**Fix:** Write a component that implements the transformation with appropriate physics.
 
 #### GridTransformationNotSupported
 
 ```
-Grid transformation not supported for variable 'Temperature': cannot transform from scalar to four_box.
+Grid transformation not supported for variable 'Surface Air Temperature Change': cannot transform from scalar to four_box.
 ```
 
 **Cause:** A component requires a finer grid resolution than the schema or producer provides. This occurs with [schema-driven auto-aggregation](../grids.md#schema-driven-auto-aggregation) when:
@@ -231,7 +231,7 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
 
     The [Spatial Grids tutorial](../notebooks/grid_variables.py) builds and runs a disaggregation component.
 
-#### CircularDependency
+#### FeedbackLoop
 
 ```
 Feedback loop among components [CarbonCycle, TwoLayer] through variables [...].
@@ -369,9 +369,9 @@ as do units of different species, such as `Mt CH4/yr` and `Mt CO2/yr`,
 and unit strings the parser cannot read.
 See [Physical Units](../notebooks/units_tutorial.py).
 
-### Time Grid Alignment
+### Time Axis Alignment
 
-All timeseries in a model run should use compatible time grids:
+All timeseries in a model run should use compatible time axes:
 
 ```python
 # Ensure emissions and other inputs cover the full simulation period

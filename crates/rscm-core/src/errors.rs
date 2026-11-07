@@ -10,15 +10,15 @@ pub enum RscmError {
     #[error("Extrapolation is not allowed. Target={0}, {1} interpolation range={2}")]
     ExtrapolationNotAllowed(f32, String, f32),
 
-    #[error("Wrong input units. Expected {0}, got {1}")]
-    WrongUnits(String, String),
+    #[error("Wrong input unit. Expected {0}, got {1}")]
+    WrongUnit(String, String),
 
     /// Grid transformation errors for unsupported conversions
-    #[error("Unsupported grid transformation from {from} to {to}. This transformation is not defined because it would require additional physical assumptions. Consider creating a custom component that explicitly handles this disaggregation, or use an intermediate transformation.")]
+    #[error("Unsupported grid transformation from {from} to {to}. This transformation is not defined because it would require additional physical assumptions. Consider writing a component that explicitly handles this disaggregation, or use an intermediate transformation.")]
     UnsupportedGridTransformation { from: String, to: String },
 
-    /// Grid type mismatch between connected components
-    #[error("Grid type mismatch for variable '{variable}': producer component '{producer_component}' outputs {producer_grid} but consumer component '{consumer_component}' expects {consumer_grid}. \n\nPossible resolutions:\n  1. Change {producer_component} to output {consumer_grid}\n  2. Change {consumer_component} to accept {producer_grid}\n  3. Insert a grid transformation component between them\n  4. If aggregation is acceptable, the model coupler can auto-transform from finer to coarser grids")]
+    /// Grid mismatch between connected components
+    #[error("Grid mismatch for variable '{variable}': producer component '{producer_component}' outputs {producer_grid} but consumer component '{consumer_component}' expects {consumer_grid}. \n\nPossible resolutions:\n  1. Change {producer_component} to output {consumer_grid}\n  2. Change {consumer_component} to accept {producer_grid}\n  3. Insert a grid transformation component between them\n  4. If aggregation is acceptable, the model coupler can auto-transform from finer to coarser grids")]
     GridTypeMismatch {
         variable: String,
         producer_component: String,
@@ -35,10 +35,8 @@ pub enum RscmError {
     #[error("Variable '{name}' not found in state. Available variables: {available}. Ensure the variable is produced by a component or provided as prescribed input.")]
     VariableNotFound { name: String, available: String },
 
-    /// Invalid region index for grid type
-    #[error(
-        "Invalid region index {index} for grid type {grid}. Valid indices are 0..{max_index}."
-    )]
+    /// Invalid region index for a grid
+    #[error("Invalid region index {index} for grid {grid}. Valid indices are 0..{max_index}.")]
     InvalidRegionIndex {
         index: usize,
         grid: String,
@@ -55,7 +53,7 @@ pub enum RscmError {
         variables.join(", "),
         format_lag_suggestions(suggestions)
     )]
-    CircularDependency {
+    FeedbackLoop {
         components: Vec<String>,
         variables: Vec<String>,
         suggestions: Vec<(String, String)>,
@@ -105,11 +103,11 @@ pub enum RscmError {
 
     /// Grid transformation not supported (disaggregation/broadcast attempt)
     ///
-    /// This error occurs when a component requires a finer grid resolution than
+    /// This error occurs when a component requires a finer grid than
     /// the schema or producer provides. Disaggregation (broadcasting coarse data
     /// to finer grids) is not supported because it would require inventing
     /// spatial structure that doesn't exist in the source data.
-    #[error("Grid transformation not supported for variable '{variable}': cannot transform from {source_grid} to {target_grid}. Disaggregation (broadcasting from coarser to finer grids) is not supported because it would require inventing spatial structure. \n\nPossible resolutions:\n  1. Change the consumer component to accept {source_grid} resolution\n  2. Change the producer component or schema to provide {target_grid} resolution\n  3. Create an explicit disaggregation component with domain-specific assumptions")]
+    #[error("Grid transformation not supported for variable '{variable}': cannot transform from {source_grid} to {target_grid}. Disaggregation (broadcasting from coarser to finer grids) is not supported because it would require inventing spatial structure. \n\nPossible resolutions:\n  1. Change the consumer component to accept the {source_grid} grid\n  2. Change the producer component or schema to provide the {target_grid} grid\n  3. Create an explicit disaggregation component with domain-specific assumptions")]
     GridTransformationNotSupported {
         variable: String,
         source_grid: String,
@@ -132,8 +130,8 @@ pub enum RscmError {
         aggregate_unit: String,
     },
 
-    /// Grid type mismatch between schema aggregate and its contributor
-    #[error("Grid type mismatch in aggregate '{aggregate}': contributor '{contributor}' has grid type '{contributor_grid}' but aggregate expects '{aggregate_grid}'.")]
+    /// Grid mismatch between schema aggregate and its contributor
+    #[error("Grid mismatch in aggregate '{aggregate}': contributor '{contributor}' has grid '{contributor_grid}' but aggregate expects '{aggregate_grid}'.")]
     SchemaGridTypeMismatch {
         aggregate: String,
         contributor: String,
@@ -180,8 +178,8 @@ pub enum RscmError {
         schema_unit: String,
     },
 
-    /// Component output grid type mismatch with schema
-    #[error("Grid type mismatch for variable '{variable}': component '{component}' uses '{component_grid}' but schema defines '{schema_grid}'.")]
+    /// Component output grid mismatch with schema
+    #[error("Grid mismatch for variable '{variable}': component '{component}' uses '{component_grid}' but schema defines '{schema_grid}'.")]
     ComponentSchemaGridMismatch {
         variable: String,
         component: String,

@@ -112,7 +112,7 @@ from rscm.config import load_config_layers
 # Later files override earlier ones (nested dicts merge recursively)
 config = load_config_layers(
     "configs/two-layer/defaults.toml",      # Base defaults
-    "configs/two-layer/tuning/high-ecs.toml" # Override specific params
+    "configs/two-layer/tuning/high-ecs.toml" # Override specific parameters
 )
 ```
 
@@ -324,7 +324,7 @@ legacy = {
 rscm_config = from_legacy_dict(legacy)
 # {
 #     "time": {"start": 1850, "end": 2100},
-#     "components": {"climate": {"parameters": {"climate_sensitivity": 3.0}}}
+#     "components": {"climate": {"parameters": {"ecs": 3.0}}}
 # }
 ```
 
@@ -359,7 +359,7 @@ from rscm.config.models.magicc.parameters import (
 # Check a parameter's status
 param = MAGICC_PARAMETERS["core_climatesensitivity"]
 param.status  # ParameterStatus.SUPPORTED
-param.rscm_path  # "components.climate.parameters.climate_sensitivity"
+param.rscm_path  # "components.climate.parameters.ecs"
 
 # Generate coverage report
 report = get_coverage_report()  # Markdown report

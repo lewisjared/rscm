@@ -27,7 +27,7 @@ that defines how it flows through the model:
 
 | Role     | Description                                                     | Read | Write |
 | -------- | --------------------------------------------------------------- | ---- | ----- |
-| `Input`  | External data or output from another component                  | Yes  | No    |
+| `Input`  | Prescribed data or output from another component                | Yes  | No    |
 | `Output` | New value produced each step                                    | No   | Yes   |
 | `State`  | Reads previous value, writes new value (requires initial value) | Yes  | Yes   |
 
@@ -38,7 +38,7 @@ graph LR
     subgraph Component
         D[definitions] --> S[solve]
     end
-    E[External Data] --> S
+    E[Prescribed Data] --> S
     P[Previous State] --> S
     S --> O[Outputs]
     S --> N[Next State]
@@ -61,9 +61,9 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
 
     class SimpleCarbonCycle(Component):
         # Declare variables using descriptors
-        emissions = Input("Emissions|CO2", unit="GtCO2")
+        emissions = Input("Emissions|CO2", unit="Mt CO2/yr")
         concentration = State("Atmospheric Concentrations|CO2", unit="ppm")
-        uptake = Output("Net Atmosphere to Land Flux|CO2", unit="GtC")
+        uptake = Output("Net Atmosphere to Land Flux|CO2", unit="Mt CO2/yr")
 
         def __init__(self, sensitivity: float):
             self.sensitivity = sensitivity
@@ -85,13 +85,13 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
     ```rust
     #[derive(Debug, Serialize, Deserialize, ComponentIO)]
     #[inputs(
-        emissions { name = "Emissions|CO2", unit = "GtCO2" },
+        emissions { name = "Emissions|CO2", unit = "Mt CO2/yr" },
     )]
     #[states(
         concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
     )]
     #[outputs(
-        uptake { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC" },
+        uptake { name = "Net Atmosphere to Land Flux|CO2", unit = "Mt CO2/yr" },
     )]
     pub struct SimpleCarbonCycle {
         pub sensitivity: f64,
@@ -220,7 +220,7 @@ The builder decides which value `get()` returns, from how the model is wired:
 | What you're reading                 | Who wrote it       | `get()` reads a point | `get()` reads an average |
 | ----------------------------------- | ------------------ | --------------------- | ------------------------ |
 | Your own previous state             | You, last step     | index N               | index N-1                |
-| Prescribed input (external forcing) | Pre-populated      | index N+1             | index N                  |
+| Prescribed input                    | Pre-populated      | index N+1             | index N                  |
 | Upstream component output           | They ran this step | index N+1             | index N                  |
 | Lagged input                        | Written last step  | index N               | not supported            |
 
@@ -290,7 +290,7 @@ run_models(models)
 ```
 
 Each model owns its state, so the results are the same as running the models in turn.
-`threads` limits the thread count, and the default is one thread per core.
+`n_threads` limits the thread count, and the default is one thread per core.
 Python components hold the GIL while they solve, so models with Python components gain less.
 `run_models` runs every model even when one fails,
 then raises `RuntimeError` naming the first that failed.
@@ -298,9 +298,9 @@ In Rust, `rscm_core::model::build_models` and `run_models` return one result per
 
 ### Prescribed vs Modelled Variables
 
-| Variable Type  | Source                       | Example                                 |
+| Variable       | Source                       | Example                                 |
 | -------------- | ---------------------------- | --------------------------------------- |
-| **Prescribed** | Provided externally          | Emissions scenarios, prescribed forcing |
+| **Prescribed** | Supplied to the model        | Emissions scenarios, prescribed forcing |
 | **Modelled**   | Computed by model components | CO2 concentration, temperature          |
 
 Whether a variable is prescribed or modelled is determined by the components in the model,
@@ -415,7 +415,7 @@ with support for different interpolation strategies.
 
 ### TimeAxis
 
-A `TimeAxis` defines the temporal grid for a timeseries:
+A `TimeAxis` holds the ordered time bounds a timeseries is defined on:
 
 ```python
 from rscm.core import TimeAxis
@@ -430,7 +430,7 @@ time_axis = TimeAxis.from_bounds(np.array([2000.0, 2010.0, 2050.0, 2100.0]))
 
 ### Timeseries
 
-A `Timeseries` combines values, time axis, units, and interpolation strategy:
+A `Timeseries` combines values, time axis, unit, and interpolation strategy:
 
 ```python
 from rscm.core import Timeseries, InterpolationStrategy
@@ -508,6 +508,9 @@ For example `Emissions|CO2|Fossil` is the fossil sector of the CO2 emissions.
 - A child segment is always a part or breakdown of its parent.
 - Other qualifiers lead the first segment, as in `Prescribed Atmospheric Concentrations|CO2` or `Net Emissions|CO2`.
 - The grid is metadata on the variable, not part of its name.
+- A name never encodes a step position such as the start or end of a year. The timeseries type carries it.
+- A statistic appears only when a point and an average form of the same quantity coexist,
+  as a leading qualifier: `Annual Mean Surface Air Temperature Change`.
 - Quantities are spelt out in full. Chemical formulae such as `CO2` and `NOx` stay as formulae.
 - Emissions use the gcages mass basis: `Mt CO2/yr`, `Mt SO2/yr`, `Mt NO2/yr`, `kt N2O/yr`, `Mt VOC/yr`,
   `Mt CH4/yr` and `kt <halocarbon>/yr`.
@@ -531,9 +534,9 @@ so derived values are computed automatically from multiple component outputs.
 
 When building climate models, you often need to aggregate multiple forcing agents into totals:
 
-- Sum CO2, CH4, and N2O forcing into "GHG Forcing"
+- Sum CO2, CH4, and N2O forcing into "Effective Radiative Forcing|Greenhouse Gases"
 - Compute weighted averages across regions
-- Build hierarchical aggregates (e.g., "Total Forcing" from sub-totals)
+- Build hierarchical aggregates (e.g., "Effective Radiative Forcing" from sub-totals)
 
 Without a schema, you'd need to write custom aggregation components.
 With VariableSchema, you declare the relationships and RSCM handles the rest.
@@ -588,14 +591,14 @@ During build, RSCM:
 
 1. Validates that all aggregate contributors exist
 2. Checks for circular dependencies
-3. Inserts virtual aggregator components into the dependency graph
+3. Adds a node to the dependency graph for each aggregate, which runs after its contributors
 4. Ensures unit consistency between contributors and aggregates
 
 ### Key Behaviours
 
 - **NaN handling**: Contributors with NaN values are excluded from computation (treated as missing data)
 - **Hierarchical aggregates**: Aggregates can reference other aggregates as contributors
-- **Partial models**: Schema variables with no writer component remain NaN
+- **Partial models**: Schema variables with no producer remain NaN
 
 For a complete walkthrough, see the [Variable Schemas tutorial](notebooks/variable_schema.py).
 

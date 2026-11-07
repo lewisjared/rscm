@@ -1,4 +1,4 @@
-/// Macros for exposing a component to Python and using python-defined modules in rust
+/// Macros for exposing a component to Python and using components written in Python from Rust
 use crate::component::{Component, InputState, OutputState};
 use crate::errors::{RscmError, RscmResult};
 use crate::python::rscm_error_from_py;

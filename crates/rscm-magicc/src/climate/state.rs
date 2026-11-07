@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 pub struct ClimateUdebState {
     /// Ocean layer temperatures for each hemisphere (NH=0, SH=1).
     /// Shape: [hemisphere][layer], layer 0 is mixed layer.
-    pub ocean_temps: Vec<Vec<FloatValue>>,
+    pub ocean_temperatures: Vec<Vec<FloatValue>>,
 
     /// Current upwelling rate for each hemisphere (m/yr).
     pub upwelling_rates: [FloatValue; 2],
@@ -46,12 +46,12 @@ pub struct ClimateUdebState {
     /// Index 0 = NH, 1 = SH. Updated each substep when ground heat
     /// capacity is enabled.
     #[serde(default)]
-    pub land_temps: [FloatValue; 2],
+    pub land_temperatures: [FloatValue; 2],
 
     /// Ground heat reservoir temperatures for each hemisphere (K).
     /// Index 0 = NH, 1 = SH.
     #[serde(default)]
-    pub ground_temps: [FloatValue; 2],
+    pub ground_temperatures: [FloatValue; 2],
 
     /// Effective SST-to-air-temperature ratio for each hemisphere.
     /// Computed from the SST of the previous substep.
@@ -73,7 +73,7 @@ pub struct ClimateUdebState {
     /// initialised once at startup in climate_and_ocean.f90 line 140).
     /// Index 0 = NH, 1 = SH.
     #[serde(default)]
-    pub hemi_heat_exchange: [FloatValue; 2],
+    pub hemispheric_heat_exchange: [FloatValue; 2],
 
     /// Initial equilibrium ocean temperature profile per hemisphere (K).
     ///
@@ -90,38 +90,38 @@ pub struct ClimateUdebState {
 
     /// Initial temperature of polar sinking water (K).
     /// MAGICC7 default: 1.0 K.
-    #[serde(default = "default_polar_sinking_temp")]
-    pub polar_sinking_temp: FloatValue,
+    #[serde(default = "default_initial_polar_sinking_temperature")]
+    pub initial_polar_sinking_temperature: FloatValue,
 
     /// Initial mixed-layer temperature for the exponential profile (K).
     /// MAGICC7 default: 17.2 K.
-    #[serde(default = "default_mixed_layer_initial_temp")]
-    pub mixed_layer_initial_temp: FloatValue,
+    #[serde(default = "default_initial_mixed_layer_temperature")]
+    pub initial_mixed_layer_temperature: FloatValue,
 
     /// Cumulative sea level rise from thermal expansion (mm).
     #[serde(default)]
     pub thermal_expansion: FloatValue,
 }
 
-fn default_polar_sinking_temp() -> FloatValue {
+fn default_initial_polar_sinking_temperature() -> FloatValue {
     1.0
 }
 
-fn default_mixed_layer_initial_temp() -> FloatValue {
+fn default_initial_mixed_layer_temperature() -> FloatValue {
     17.2
 }
 
 impl ClimateUdebState {
     /// Create a new state for a given number of layers and initial conditions.
     ///
-    /// `alpha_initial` is the SST-to-air-temperature ratio used before any
+    /// `initial_alpha` is the SST-to-air-temperature ratio used before any
     /// ocean temperature has developed (i.e. `temperature_adjustment_alpha` from parameters).
     /// `profiles` is the per-hemisphere initial ocean temperature profiles,
     /// computed by [`ClimateUdebParameters::initial_ocean_profile()`].
     pub fn new(
         n_layers: usize,
         initial_upwelling_rate: FloatValue,
-        alpha_initial: FloatValue,
+        initial_alpha: FloatValue,
         profiles: [Vec<FloatValue>; 2],
     ) -> Self {
         assert!(
@@ -143,21 +143,21 @@ impl ClimateUdebState {
         let t_mix = profiles[0][0];
 
         Self {
-            ocean_temps: vec![vec![0.0; n_layers]; 2],
+            ocean_temperatures: vec![vec![0.0; n_layers]; 2],
             upwelling_rates: [initial_upwelling_rate; 2],
             upwelling_delta: [0.0; 2],
             initialised: true,
             temperature_history: Vec::new(),
             dt_history: Vec::new(),
-            land_temps: [0.0; 2],
-            ground_temps: [0.0; 2],
-            alpha_eff: [alpha_initial; 2],
-            hemi_heat_exchange: [0.0; 2],
+            land_temperatures: [0.0; 2],
+            ground_temperatures: [0.0; 2],
+            alpha_eff: [initial_alpha; 2],
+            hemispheric_heat_exchange: [0.0; 2],
             subannual_internal_efficacy: None,
             subannual_next_internal_efficacy: None,
             initial_ocean_profile: profiles,
-            polar_sinking_temp: t_polar,
-            mixed_layer_initial_temp: t_mix,
+            initial_polar_sinking_temperature: t_polar,
+            initial_mixed_layer_temperature: t_mix,
             thermal_expansion: 0.0,
         }
     }

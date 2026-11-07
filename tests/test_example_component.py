@@ -17,10 +17,10 @@ class ExamplePythonComponent:
         return []
 
     def solve(
-        self, time_current: float, time_next: float, input_state: dict[str, float]
+        self, t_current: float, t_next: float, inputs: dict[str, float]
     ) -> dict[str, float]:
-        print(input_state)
-        return {"output": input_state.get("input") * 3}
+        print(inputs)
+        return {"output": inputs.get("input") * 3}
 
 
 def test_component_definitions():

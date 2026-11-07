@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["LEGACY_MAPPING", "from_legacy_dict", "to_legacy_dict"]
 
-# Build mapping from parameter registry (only SUPPORTED params with rscm_path)
+# Build mapping from parameter registry (only SUPPORTED parameters with rscm_path)
 LEGACY_MAPPING: dict[str, str] = {
     p.name.lower(): p.rscm_path
     for p in MAGICC_PARAMETERS.values()

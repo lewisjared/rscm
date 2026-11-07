@@ -58,7 +58,7 @@ pub struct ConversionInfo {
     pub factor: f64,
 }
 
-/// A model's coupling: execution order, edges and variable types.
+/// A model's coupling: execution order, edges, each input's variable source, grid transforms and unit conversions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Coupling {
     /// Components in the order the runtime steps them.

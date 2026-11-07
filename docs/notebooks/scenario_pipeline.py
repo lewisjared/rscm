@@ -128,8 +128,8 @@ plt.show()
 # ```
 #
 # `build_model` wraps the builder chain, because the historical run and every scenario use it.
-# The carbon cycle reads surface temperature, but `alpha_temperature=0` turns that feedback off,
-# so a constant zero series stands in for it.
+# The carbon cycle reads the surface air temperature change,
+# but `alpha_temperature=0` turns that feedback off, so a constant zero series stands in for it.
 #
 # To add a temperature response, you would add a climate component such as TwoLayer,
 # with a `VariableSchema` aggregate that sums the forcing from each species.

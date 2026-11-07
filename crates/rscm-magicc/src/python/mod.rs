@@ -1,6 +1,9 @@
 use pyo3::prelude::*;
 use pyo3::{pymodule, Bound, PyResult};
-use rscm_core::names::SEA_LEVEL_RISE_THERMAL_EXPANSION;
+use rscm_core::names::{
+    HEAT_UPTAKE, OCEAN_HEAT_CONTENT, SEA_LEVEL_RISE_THERMAL_EXPANSION, SEA_SURFACE_TEMPERATURE,
+    SURFACE_AIR_TEMPERATURE_CHANGE,
+};
 
 use rscm_core::create_component_builder;
 use rscm_core::python::PyRustComponent;
@@ -28,7 +31,7 @@ pub struct ClimateUdebBuilder {
 
 #[pymethods]
 impl ClimateUdebBuilder {
-    /// Initial state and diagnostics for an unperturbed climate at the supplied ERF.
+    /// Initial values and diagnostics for an unperturbed climate at the supplied ERF.
     pub fn initial_values(&self, erf: f64) -> PyResult<std::collections::HashMap<String, f64>> {
         let component = ClimateUdeb::from_parameters(self.parameters.clone())
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
@@ -38,10 +41,10 @@ impl ClimateUdebBuilder {
             ));
         }
         let mut values = std::collections::HashMap::from([
-            ("Surface Air Temperature Change".into(), 0.0),
-            ("Sea Surface Temperature".into(), 0.0),
-            ("Ocean Heat Content".into(), 0.0),
-            ("Heat Uptake".into(), component.initial_heat_uptake(erf)),
+            (SURFACE_AIR_TEMPERATURE_CHANGE.into(), 0.0),
+            (SEA_SURFACE_TEMPERATURE.into(), 0.0),
+            (OCEAN_HEAT_CONTENT.into(), 0.0),
+            (HEAT_UPTAKE.into(), component.initial_heat_uptake(erf)),
         ]);
         if self.parameters.thermal_expansion.is_some() {
             values.insert(SEA_LEVEL_RISE_THERMAL_EXPANSION.into(), 0.0);
@@ -189,7 +192,8 @@ impl ForcingAggregationBuilder {
         Ok(component.aggregate(&values))
     }
 
-    /// Internal efficacy of each agent at climate sensitivity `ecs` and CO2 doubling forcing `erf_2xco2`.
+    /// Internal efficacy of each agent at equilibrium climate sensitivity `ecs`
+    /// and 2xCO2 effective radiative forcing `erf_2xco2`.
     pub fn internal_efficacies(&self, ecs: f64, erf_2xco2: f64) -> PyResult<Vec<f64>> {
         ForcingAggregation::from_parameters(self.parameters.clone())
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?

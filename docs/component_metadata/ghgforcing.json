@@ -52,7 +52,7 @@
       "grid": "scalar"
     },
     {
-      "rust_name": "co2_doubling_erf",
+      "rust_name": "erf_2xco2",
       "name": "2xCO2 Effective Radiative Forcing",
       "unit": "W/m^2",
       "grid": "scalar"

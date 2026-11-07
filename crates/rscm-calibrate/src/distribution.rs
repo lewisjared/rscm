@@ -616,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lognormal_from_mean_std() {
+    fn test_lognormal_from_mean_std_dev() {
         let mean = 1.0;
         let std_dev = 0.5;
         let dist = LogNormal::from_mean_std_dev(mean, std_dev).unwrap();

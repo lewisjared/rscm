@@ -145,7 +145,7 @@ class Input:
     name
         The variable name (e.g., "Emissions|CO2")
     unit
-        The unit string (e.g., "GtCO2")
+        The unit string (e.g., "Mt CO2/yr")
     grid
         The spatial grid: "scalar" (default), "four_box" or "hemispheric"
     timeseries_type

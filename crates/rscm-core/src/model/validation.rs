@@ -23,7 +23,7 @@ pub(crate) enum UnitValidationResult {
 /// When `has_schema` is true, grid type checking is skipped because the schema validation
 /// will handle grid compatibility with relaxed rules (allowing aggregation).
 ///
-/// Returns an error if the parameter definition is inconsistent with any existing definitions.
+/// Returns an error if the variable definition is inconsistent with any existing definitions.
 /// Returns an optional `UnitConversionInfo` if the units differ but are compatible.
 pub(crate) fn verify_definition(
     definitions: &mut HashMap<String, ResolvedVariable>,

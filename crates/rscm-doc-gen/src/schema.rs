@@ -28,7 +28,7 @@ pub struct ParameterMetadata {
     /// Rust type (e.g., "f64", "SolverOptions")
     #[serde(rename = "type")]
     pub param_type: String,
-    /// Physical units (if documented)
+    /// Physical unit (if documented)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub unit: String,
     /// Description from doc comments

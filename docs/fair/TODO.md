@@ -27,7 +27,7 @@ It differs from the C library's by an ulp, which CO2's 1e9-year box turns into a
 
 ## Slice 3: all greenhouse gases
 
-- [x] Every default GHG in `GasCycle`, including inverse (concentration-driven) mode.
+- [x] Every default GHG in `GasCycle`, including concentration-driven species and their inverse emissions.
 - [x] `CH4Lifetime` (Thornhill 2021) and `Eesc`.
 - [x] Parity for every default GHG.
 

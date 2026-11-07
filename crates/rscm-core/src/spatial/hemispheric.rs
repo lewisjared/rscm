@@ -86,7 +86,7 @@ impl Default for HemisphericGrid {
 
 impl SpatialGrid for HemisphericGrid {
     fn grid_name(&self) -> &'static str {
-        "Hemispheric"
+        "hemispheric"
     }
 
     fn size(&self) -> usize {

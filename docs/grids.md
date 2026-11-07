@@ -2,7 +2,7 @@
 
 RSCM supports spatially-resolved variables,
 using a grid system that balances physical realism with computational simplicity.
-This page explains the available grid types and how to use them.
+This page explains the available grids and how to use them.
 
 See the [Python API](api/rscm/index.md) for full class documentation.
 
@@ -10,19 +10,19 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 
 Climate variables often have spatial structure.
 Temperatures differ between land and ocean, and between hemispheres.
-RSCM provides three grid types to capture this:
+RSCM provides three grids to capture this:
 
-| Grid Type       | Regions         | Use Case                                      |
+| Grid            | Regions         | Use Case                                      |
 | --------------- | --------------- | --------------------------------------------- |
 | **Scalar**      | 1 (global)      | Well-mixed quantities, global averages        |
 | **Hemispheric** | 2 (N/S)         | Latitudinal gradients                         |
 | **FourBox**     | 4 (NO/NL/SO/SL) | MAGICC-style ocean-land-hemisphere resolution |
 
-## Grid Types
+## Grids
 
 ### Scalar (Global Average)
 
-The default grid type. Represents a single global value.
+The default grid. Represents a single global value.
 
 **Use for:**
 
@@ -35,7 +35,7 @@ The default grid type. Represents a single global value.
     ```python
     from rscm.component import Input, Output
 
-    emissions = Input("Emissions|CO2", unit="GtCO2")  # Scalar by default
+    emissions = Input("Emissions|CO2", unit="Mt CO2/yr")  # Scalar by default
     forcing = Output("Effective Radiative Forcing|CO2", unit="W/m^2")  # Scalar by default
     ```
 
@@ -43,7 +43,7 @@ The default grid type. Represents a single global value.
 
     ```rust
     #[inputs(
-        emissions { name = "Emissions|CO2", unit = "GtCO2" },  // Scalar by default
+        emissions { name = "Emissions|CO2", unit = "Mt CO2/yr" },  // Scalar by default
     )]
     #[outputs(
         forcing { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },  // Scalar by default
@@ -237,7 +237,7 @@ as described in [Schema-Driven Auto-Aggregation](#schema-driven-auto-aggregation
 
 When using a `VariableSchema`,
 RSCM can automatically aggregate grid data when components use different resolutions.
-The schema declares the "native" grid type for each variable,
+The schema declares the "native" grid for each variable,
 and the model handles transformations transparently.
 
 ### How It Works
@@ -265,7 +265,7 @@ A component producing four-box output can feed directly into a component expecti
     ```python
     import numpy as np
     from rscm.component import Component, Input, Output
-    from rscm.core import FourBoxSlice, GridType, ModelBuilder, PythonComponent, TimeAxis, VariableSchema
+    from rscm.core import FourBoxSlice, GridType, ModelBuilder, TimeAxis, VariableSchema
 
 
     class RegionalProducer(Component):
@@ -355,7 +355,7 @@ These weights come from MAGICC's land fractions (42% of the NH, 21% of the SH):
 
 **Weight order:**
 
-| Grid Type   | Weight Order                                               |
+| Grid        | Weight Order                                               |
 | ----------- | ---------------------------------------------------------- |
 | FourBox     | [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand] |
 | Hemispheric | [Northern, Southern]                                       |
@@ -395,7 +395,7 @@ which is used for every region.
 import numpy as np
 from rscm.component import Component, Input, State
 from rscm.core import FourBoxSlice, FourBoxTimeseries, InterpolationStrategy
-from rscm.core import ModelBuilder, PythonComponent, TimeAxis
+from rscm.core import ModelBuilder, TimeAxis
 
 time_axis = TimeAxis.from_values(np.arange(2000.0, 2006.0))
 
@@ -462,7 +462,7 @@ There is no Hemispheric equivalent of `FourBoxTimeseries` in Python yet.
 ## Grid Coupling Validation
 
 When building a model **without a schema**,
-RSCM validates that connected components use compatible grid types:
+RSCM validates that connected components use compatible grids:
 
 ```python
 # Without schema - this will fail at build time:
@@ -476,19 +476,19 @@ class Consumer(Component):
 Error message:
 
 ```text
-ValueError: Grid type mismatch for variable 'Temperature': producer component 'Producer'
+ValueError: Grid mismatch for variable 'Surface Air Temperature Change': producer component 'Producer'
 outputs four_box but consumer component 'Consumer' expects scalar.
 ```
 
 **Fixes:**
 
 1. **Add a schema** to enable auto-aggregation (recommended)
-2. Ensure producer and consumer use the same grid type
+2. Ensure producer and consumer use the same grid
 3. Add an explicit aggregation component
 
 ## Best Practices
 
-### When to Use Each Grid Type
+### When to Use Each Grid
 
 | Scenario                                  | Recommended Grid                        |
 | ----------------------------------------- | --------------------------------------- |

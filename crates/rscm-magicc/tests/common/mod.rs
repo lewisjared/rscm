@@ -43,7 +43,7 @@ pub fn default_lamcalc_params() -> LamcalcParameters {
     }
 }
 
-/// Build LAMCALC params from ClimateUdeb parameters for consistency.
+/// Build LAMCALC parameters from ClimateUdeb parameters for consistency.
 pub fn lamcalc_params_from_udeb(params: &ClimateUdebParameters) -> LamcalcParameters {
     let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
     LamcalcParameters {
@@ -105,7 +105,7 @@ pub struct EquilibriumTemperatures {
 /// ocean, land, and global means.
 ///
 /// Solves $M \cdot T = Q \cdot f \cdot qfrac$ where $M$ is the coupling matrix,
-/// $Q$ is the radiative forcing for CO2 doubling, $f$ is the area fraction
+/// $Q$ is the 2xCO2 effective radiative forcing, $f$ is the area fraction
 /// vector, and $qfrac$ accounts for regional CO2 forcing patterns.
 pub fn compute_equilibrium_temperatures(
     params: &LamcalcParameters,

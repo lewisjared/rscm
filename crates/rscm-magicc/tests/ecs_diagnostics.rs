@@ -775,12 +775,12 @@ mod ground_heat_capacity {
                 || year == 199
                 || year == n_years - 1
             {
-                let diff = state.land_temps[0] - state.ground_temps[0];
+                let diff = state.land_temperatures[0] - state.ground_temperatures[0];
                 println!(
                     "{:>6} | {:>12.6} | {:>12.6} | {:>12.6}",
                     year + 1,
-                    state.land_temps[0],
-                    state.ground_temps[0],
+                    state.land_temperatures[0],
+                    state.ground_temperatures[0],
                     diff,
                 );
             }
@@ -788,15 +788,15 @@ mod ground_heat_capacity {
 
         // Ground temp should be positive (warming occurred)
         assert!(
-            state.ground_temps[0] > 0.0,
+            state.ground_temperatures[0] > 0.0,
             "NH ground temperature should be positive after warming: {:.6}",
-            state.ground_temps[0],
+            state.ground_temperatures[0],
         );
 
         // Ground temp should lag behind land temp but converge.
         // With land forcing amplification the transient temperatures are higher,
         // so the gap can be larger during the approach to equilibrium.
-        let gap_nh = (state.land_temps[0] - state.ground_temps[0]).abs();
+        let gap_nh = (state.land_temperatures[0] - state.ground_temperatures[0]).abs();
         assert!(
             gap_nh < 0.5,
             "After {} years, NH ground-land gap ({:.6} K) should be small",
@@ -806,9 +806,9 @@ mod ground_heat_capacity {
 
         // Same for SH
         assert!(
-            state.ground_temps[1] > 0.0,
+            state.ground_temperatures[1] > 0.0,
             "SH ground temperature should be positive after warming: {:.6}",
-            state.ground_temps[1],
+            state.ground_temperatures[1],
         );
     }
 
@@ -847,14 +847,14 @@ mod ground_heat_capacity {
 
         // Ground temperatures should remain at zero when disabled
         assert!(
-            state.ground_temps[0].abs() < 1e-15,
+            state.ground_temperatures[0].abs() < 1e-15,
             "NH ground temp should be zero when disabled: {}",
-            state.ground_temps[0],
+            state.ground_temperatures[0],
         );
         assert!(
-            state.ground_temps[1].abs() < 1e-15,
+            state.ground_temperatures[1].abs() < 1e-15,
             "SH ground temp should be zero when disabled: {}",
-            state.ground_temps[1],
+            state.ground_temperatures[1],
         );
     }
 }

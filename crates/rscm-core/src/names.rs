@@ -26,7 +26,7 @@ names! {
 
     /// Global mean surface air temperature anomaly.
     SURFACE_AIR_TEMPERATURE_CHANGE = "Surface Air Temperature Change";
-    /// Annual mean surface air temperature anomaly, where sub-annual steps resolve it.
+    /// Annual mean surface air temperature anomaly, where substeps resolve it.
     ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE = "Annual Mean Surface Air Temperature Change";
     /// Sea surface temperature anomaly.
     SEA_SURFACE_TEMPERATURE = "Sea Surface Temperature";
@@ -96,7 +96,7 @@ names! {
     ATMOSPHERIC_CONCENTRATIONS_CH4 = "Atmospheric Concentrations|CH4";
     /// Atmospheric N2O concentration.
     ATMOSPHERIC_CONCENTRATIONS_N2O = "Atmospheric Concentrations|N2O";
-    /// Atmospheric CO2 at the end of the ocean carbon cycle's last sub-step.
+    /// Atmospheric CO2 at the end of the ocean carbon cycle's last substep.
     OCEAN_CARBON_ATMOSPHERIC_CONCENTRATIONS_CO2 = "Ocean Carbon Atmospheric Concentrations|CO2";
     /// Equivalent effective stratospheric chlorine.
     EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE = "Equivalent Effective Stratospheric Chlorine";

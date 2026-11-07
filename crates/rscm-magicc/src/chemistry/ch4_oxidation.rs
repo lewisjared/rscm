@@ -43,11 +43,11 @@ use serde::{Deserialize, Serialize};
     concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb" },
     oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average" },
     fossil_emissions { name = "Emissions|CH4|Fossil", unit = "Mt CH4/yr" },
-    afolu_emissions { name = "Emissions|CH4|Biosphere", unit = "Mt CH4/yr" },
+    biosphere_emissions { name = "Emissions|CH4|Biosphere", unit = "Mt CH4/yr" },
 )]
 #[states(
     fossil_burden { name = "Atmospheric Burden|CH4|Fossil", unit = "Mt CH4" },
-    afolu_burden { name = "Atmospheric Burden|CH4|Biosphere", unit = "Mt CH4" },
+    biosphere_burden { name = "Atmospheric Burden|CH4|Biosphere", unit = "Mt CH4" },
     natural_burden { name = "Atmospheric Burden|CH4|Natural", unit = "Mt CH4" },
     permafrost_burden { name = "Atmospheric Burden|CH4|Permafrost", unit = "Mt CH4" },
 )]
@@ -62,14 +62,14 @@ pub struct CH4Oxidation {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CH4Pools {
     pub fossil: FloatValue,
-    pub afolu: FloatValue,
+    pub biosphere: FloatValue,
     pub natural: FloatValue,
     pub permafrost: FloatValue,
 }
 
 impl CH4Pools {
     fn total(&self) -> FloatValue {
-        self.fossil + self.afolu + self.natural + self.permafrost
+        self.fossil + self.biosphere + self.natural + self.permafrost
     }
 }
 
@@ -77,7 +77,7 @@ impl CH4Pools {
 #[derive(Debug, Clone, Copy)]
 pub struct CH4Sources {
     pub fossil: FloatValue,
-    pub afolu: FloatValue,
+    pub biosphere: FloatValue,
     pub permafrost: FloatValue,
 }
 
@@ -104,23 +104,23 @@ impl CH4Oxidation {
         let budget = (end - start + sink_ppb) * p.tg_per_ppb * p.mixing_box_size
             - p.natural_emissions
             - sources.permafrost;
-        let anthropogenic = sources.fossil + sources.afolu;
-        let (fossil_share, afolu_share) = if anthropogenic != 0.0 {
-            (sources.fossil, sources.afolu)
-        } else if pools.fossil + pools.afolu != 0.0 {
-            (pools.fossil, pools.afolu)
+        let anthropogenic = sources.fossil + sources.biosphere;
+        let (fossil_share, biosphere_share) = if anthropogenic != 0.0 {
+            (sources.fossil, sources.biosphere)
+        } else if pools.fossil + pools.biosphere != 0.0 {
+            (pools.fossil, pools.biosphere)
         } else {
             // MAGICC7 takes the split of the first year with emissions, which a step cannot see.
             (0.0, 1.0)
         };
-        let split = fossil_share + afolu_share;
+        let split = fossil_share + biosphere_share;
 
         let total = pools.total();
         let sink = sink_ppb * p.tg_per_ppb * p.mixing_box_size;
         let decay = |pool: FloatValue| pool * sink / total;
         let next = CH4Pools {
             fossil: fossil_share * budget / split + pools.fossil - decay(pools.fossil),
-            afolu: budget * afolu_share / split + pools.afolu - decay(pools.afolu),
+            biosphere: budget * biosphere_share / split + pools.biosphere - decay(pools.biosphere),
             natural: p.natural_emissions + pools.natural - decay(pools.natural),
             permafrost: sources.permafrost + pools.permafrost - decay(pools.permafrost),
         };
@@ -160,13 +160,13 @@ impl Component for CH4Oxidation {
         let inputs = CH4OxidationInputs::from_input_state(input_state);
         let pools = CH4Pools {
             fossil: inputs.fossil_burden.get(),
-            afolu: inputs.afolu_burden.get(),
+            biosphere: inputs.biosphere_burden.get(),
             natural: inputs.natural_burden.get(),
             permafrost: inputs.permafrost_burden.get(),
         };
         let sources = CH4Sources {
             fossil: inputs.fossil_emissions.get(),
-            afolu: inputs.afolu_emissions.get(),
+            biosphere: inputs.biosphere_emissions.get(),
             permafrost: permafrost_emissions(
                 self.parameters.include_permafrost,
                 input_state,
@@ -181,7 +181,7 @@ impl Component for CH4Oxidation {
         );
         Ok(CH4OxidationOutputs {
             fossil_burden: next.fossil,
-            afolu_burden: next.afolu,
+            biosphere_burden: next.biosphere,
             natural_burden: next.natural,
             permafrost_burden: next.permafrost,
             co2_emissions,
@@ -196,19 +196,19 @@ mod tests {
 
     const CONV: FloatValue = 2.824 * 0.973;
 
-    fn pools(fossil: FloatValue, afolu: FloatValue, natural: FloatValue) -> CH4Pools {
+    fn pools(fossil: FloatValue, biosphere: FloatValue, natural: FloatValue) -> CH4Pools {
         CH4Pools {
             fossil,
-            afolu,
+            biosphere,
             natural,
             permafrost: 0.0,
         }
     }
 
-    fn sources(fossil: FloatValue, afolu: FloatValue) -> CH4Sources {
+    fn sources(fossil: FloatValue, biosphere: FloatValue) -> CH4Sources {
         CH4Sources {
             fossil,
-            afolu,
+            biosphere,
             permafrost: 0.0,
         }
     }
@@ -223,7 +223,8 @@ mod tests {
         let lost = (182.1908 + start.natural - next.natural) / start.natural;
         let added = |next: FloatValue, start: FloatValue| next - start * (1.0 - lost);
         assert!(
-            (added(next.afolu, start.afolu) / added(next.fossil, start.fossil) - 2.0).abs() < 1e-9
+            (added(next.biosphere, start.biosphere) / added(next.fossil, start.fossil) - 2.0).abs()
+                < 1e-9
         );
     }
 
@@ -258,7 +259,7 @@ mod tests {
         );
         let lost = (182.1908 + 1000.0 - next.natural) / 1000.0;
         let added = |next: FloatValue, start: FloatValue| next - start * (1.0 - lost);
-        assert!((added(next.afolu, 300.0) / added(next.fossil, 100.0) - 3.0).abs() < 1e-9);
+        assert!((added(next.biosphere, 300.0) / added(next.fossil, 100.0) - 3.0).abs() < 1e-9);
     }
 
     #[test]

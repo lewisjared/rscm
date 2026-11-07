@@ -80,7 +80,7 @@ pub enum OceanCarbonMethod {
 /// of carbon in the mixed layer decays over time. Different ocean models use
 /// different functional forms for different time regimes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum IrfForm {
     /// Polynomial: $IRF(t) = \sum_i c_i \cdot t^i$ where $t$ is in years.
     ///
@@ -862,6 +862,15 @@ mod tests {
             "Parameters should survive round-trip"
         );
         assert_eq!(params.method, parsed.method);
+    }
+
+    #[test]
+    fn test_irf_form_tags_are_snake_case() {
+        let params = OceanCarbonParameters::gfdl_3d();
+        let early = serde_json::to_value(&params.irf_early).expect("Serialisation failed");
+        let late = serde_json::to_value(&params.irf_late).expect("Serialisation failed");
+        assert_eq!(early["type"], "polynomial");
+        assert_eq!(late["type"], "exponential_sum");
     }
 
     #[test]

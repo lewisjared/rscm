@@ -32,7 +32,7 @@ pub struct GasSpecies {
     pub driver: Driver,
     /// Emissions variables, summed. Inputs when emissions-driven.
     pub emissions: Vec<String>,
-    /// Emissions output when concentration-driven.
+    /// Inverse emissions output when concentration-driven.
     #[serde(default)]
     pub inverse_emissions: Option<String>,
     /// Emissions unit.
@@ -412,15 +412,16 @@ impl Component for GasCycle {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use rscm_core::names::{ATMOSPHERIC_CONCENTRATIONS_CH4, EMISSIONS_CH4, INVERSE_EMISSIONS_CH4};
 
     fn ch4() -> GasSpecies {
         GasSpecies {
             driver: Driver::Emissions,
-            emissions: vec!["Emissions|CH4".into()],
-            inverse_emissions: Some("Emissions|CH4".into()),
+            emissions: vec![EMISSIONS_CH4.into()],
+            inverse_emissions: Some(INVERSE_EMISSIONS_CH4.into()),
             emissions_unit: "Mt CH4/yr".into(),
             amount_unit: "Mt CH4".into(),
-            concentration: "Atmospheric Concentrations|CH4".into(),
+            concentration: ATMOSPHERIC_CONCENTRATIONS_CH4.into(),
             concentration_unit: "ppb".into(),
             airborne_emissions: None,
             cumulative_emissions: None,

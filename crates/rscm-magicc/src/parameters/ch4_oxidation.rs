@@ -42,7 +42,7 @@ pub struct CH4OxidationParameters {
 
     /// Combined soil, stratospheric and tropospheric chlorine lifetime
     /// unit: yr
-    /// default: `CH4ChemistryParameters::tau_other`
+    /// default: `CH4ChemistryParameters::non_oh_lifetime()`
     /// MAGICC7: from CH4_TAUSOIL, CH4_TAUSTRAT and CH4_TAUTROPCL
     pub non_oh_lifetime: FloatValue,
 

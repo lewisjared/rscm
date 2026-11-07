@@ -13,7 +13,7 @@ climate models.
 
 **Time series**
 
-- [TimeAxis][] defines the temporal grid for model execution and data.
+- [TimeAxis][] holds the ordered time bounds a model or timeseries is defined on.
 - [Timeseries][] holds time-indexed data with interpolation support.
 - [FourBoxTimeseries][] and [HemisphericTimeseries][] are its grid variants.
 - [TimeseriesCollection][] holds multiple named timeseries.

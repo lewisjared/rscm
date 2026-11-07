@@ -749,7 +749,7 @@ mod climate_udeb_equilibrium {
         // 4. Temperature should be finite and physically reasonable
         assert!(
             final_global_sat < params.maximum_temperature,
-            "Global SAT ({:.4} K) should not exceed max_temperature ({:.1} K)",
+            "Global SAT ({:.4} K) should not exceed maximum_temperature ({:.1} K)",
             final_global_sat,
             params.maximum_temperature,
         );

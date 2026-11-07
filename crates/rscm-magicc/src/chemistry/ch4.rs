@@ -17,7 +17,7 @@
 //! # Inputs
 //!
 //! - `Emissions|CH4` (Tg CH4/yr) - Anthropogenic methane emissions
-//! - `Surface Air Temperature Change` (K) - Global mean surface temperature anomaly
+//! - `Surface Air Temperature Change` (K) - Global mean surface air temperature change
 //! - `Emissions|NOx` (Tg N/yr) - NOx emissions for OH feedback
 //! - `Emissions|CO` (Tg CO/yr) - CO emissions for OH feedback
 //! - `Emissions|NMVOC` (Tg NMVOC/yr) - NMVOC emissions for OH feedback
@@ -165,9 +165,9 @@ impl CH4Chemistry {
         delta_co: FloatValue,
         delta_nmvoc: FloatValue,
     ) -> FloatValue {
-        let tau_oh = self.parameters.initial_oh_lifetime();
+        let oh_lifetime = self.parameters.initial_oh_lifetime();
         if !self.parameters.include_emissions_feedback {
-            return tau_oh;
+            return oh_lifetime;
         }
 
         let gamma = self.parameters.oh_sensitivity_scale;
@@ -176,7 +176,7 @@ impl CH4Chemistry {
                 + self.parameters.oh_co_sensitivity * delta_co
                 + self.parameters.oh_nmvoc_sensitivity * delta_nmvoc);
 
-        tau_oh * exponent.exp()
+        oh_lifetime * exponent.exp()
     }
 
     /// Apply temperature feedback to lifetime
@@ -184,22 +184,23 @@ impl CH4Chemistry {
     /// $$\tau_{adjusted} = \frac{\tau_0}{\tau_0/\tau + \alpha_T \cdot \max(0, \Delta T)}$$
     fn apply_temperature_feedback(
         &self,
-        tau_oh: FloatValue,
+        oh_lifetime: FloatValue,
         temperature_change: FloatValue,
     ) -> FloatValue {
         if !self.parameters.include_temperature_feedback {
-            return tau_oh;
+            return oh_lifetime;
         }
 
         let alpha = self.parameters.temperature_sensitivity;
-        let tau_0 = self.parameters.initial_oh_lifetime();
-        tau_0 / (tau_0 / tau_oh + alpha * temperature_change.max(0.0))
+        let initial_oh_lifetime = self.parameters.initial_oh_lifetime();
+        initial_oh_lifetime
+            / (initial_oh_lifetime / oh_lifetime + alpha * temperature_change.max(0.0))
     }
 
     /// Calculate total lifetime from OH lifetime and non-OH sinks
-    fn calculate_total_lifetime(&self, tau_oh: FloatValue) -> FloatValue {
+    fn calculate_total_lifetime(&self, oh_lifetime: FloatValue) -> FloatValue {
         let non_oh_lifetime = self.parameters.non_oh_lifetime();
-        1.0 / (1.0 / tau_oh + 1.0 / non_oh_lifetime)
+        1.0 / (1.0 / oh_lifetime + 1.0 / non_oh_lifetime)
     }
 
     /// Run the full Prather iteration scheme (4 iterations)
@@ -249,26 +250,27 @@ impl CH4Chemistry {
 
         let mut burden_next = burden;
         let mut delta_burden = 0.0;
-        let mut tau_oh = base_lifetime;
+        let mut oh_lifetime = base_lifetime;
         for iteration in 0..PRATHER_ITERATIONS {
             let burden_mean = if iteration == 0 {
                 burden
             } else {
                 (burden + burden_next) / 2.0
             };
-            tau_oh = base_lifetime * (burden_mean / burden_reference).max(1.0).powf(x);
+            oh_lifetime = base_lifetime * (burden_mean / burden_reference).max(1.0).powf(x);
             if iteration > 0 {
-                tau_oh *= 1.0 - 0.5 * x * delta_burden / burden;
+                oh_lifetime *= 1.0 - 0.5 * x * delta_burden / burden;
             }
-            tau_oh = self.apply_temperature_feedback(tau_oh, temperature_change);
-            delta_burden = total_emissions - burden_mean / tau_oh - burden_mean / non_oh_lifetime;
+            oh_lifetime = self.apply_temperature_feedback(oh_lifetime, temperature_change);
+            delta_burden =
+                total_emissions - burden_mean / oh_lifetime - burden_mean / non_oh_lifetime;
             burden_next = burden + delta_burden;
         }
 
         (
             self.burden_to_concentration(burden_next),
-            self.calculate_total_lifetime(tau_oh),
-            tau_oh,
+            self.calculate_total_lifetime(oh_lifetime),
+            oh_lifetime,
         )
     }
 }

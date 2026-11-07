@@ -115,11 +115,9 @@ class TestRegressionConfigImport:
             assert "components" in result
             assert "climate" in result["components"]
             assert "parameters" in result["components"]["climate"]
+            assert "ecs" in result["components"]["climate"]["parameters"]
             assert (
-                "climate_sensitivity" in result["components"]["climate"]["parameters"]
-            )
-            assert (
-                result["components"]["climate"]["parameters"]["climate_sensitivity"]
+                result["components"]["climate"]["parameters"]["ecs"]
                 == config_dict["core_climatesensitivity"]
             )
 
@@ -185,7 +183,7 @@ class TestRegressionConfigSpecifics:
         assert result["time"]["start"] == 1750
         assert result["time"]["end"] == 2100
         climate_params = result["components"]["climate"]["parameters"]
-        assert climate_params["climate_sensitivity"] == 3.0
+        assert climate_params["ecs"] == 3.0
         assert climate_params["erf_2xco2"] == 3.71
 
 

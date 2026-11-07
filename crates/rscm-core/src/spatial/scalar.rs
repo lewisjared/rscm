@@ -40,7 +40,7 @@ pub struct ScalarGrid;
 
 impl SpatialGrid for ScalarGrid {
     fn grid_name(&self) -> &'static str {
-        "Scalar"
+        "scalar"
     }
 
     fn size(&self) -> usize {

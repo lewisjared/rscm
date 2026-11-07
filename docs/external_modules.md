@@ -86,7 +86,6 @@ import numpy as np
 from rscm.core import (
     InterpolationStrategy,
     ModelBuilder,
-    PythonComponent,
     TimeAxis,
     Timeseries,
 )

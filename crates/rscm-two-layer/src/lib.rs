@@ -30,7 +30,7 @@
 //! - [`TwoLayer`]: The main component implementing the [`Component`](rscm_core::component::Component)
 //!   trait for integration into RSCM models
 //! - [`TwoLayerParameters`]: Configuration parameters for the model (feedback strength,
-//!   heat capacities, efficacy, etc.)
+//!   heat capacities, ocean heat uptake efficacy, etc.)
 //!
 //! # Usage
 //!

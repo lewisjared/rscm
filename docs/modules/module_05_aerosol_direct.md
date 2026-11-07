@@ -27,7 +27,7 @@ Four-box arrays follow the box order in [initialisation](module_00_initialisatio
 - **Source**: `python/rscm/magicc/prescribed.py`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
 - **Tests**: `test_prescribed_forcing` in `tests/regression/test_full_run.py`,
-  parametrised over SOx, BC, OC and nitrate for each source, mineral dust and BC on snow.
+  parametrised over SOx, BC, OC and nitrate for each sector, mineral dust and BC on snow.
 
 `ForcingAggregation` takes the results as four-box agents (see [forcing aggregation](module_07b_rf_aggregation.md)).
 
@@ -125,14 +125,14 @@ The order matters for parity, so [forcing aggregation](module_07b_rf_aggregation
 | `FILE_{SOXI,SOXB,BCI,BCB,OCI,OCB}_RF`  | W/m²     | Historical four-box forcing                 |
 | `FILE_BCSNOW_RF`                       | W/m²     | Historical BC on snow forcing               |
 | `FILE_MINERALDUST_RF`                  | W/m²     | Land-use forcing, `GISS_LANDUSE_RF.IN`      |
-| SOx, BC and OC emissions by source     | Mt/yr    | Extension after the files end               |
-| NOx and NH3 emissions by source        | Mt N/yr  | Nitrate                                     |
+| SOx, BC and OC emissions by sector     | Mt/yr    | Extension after the files end               |
+| NOx and NH3 emissions by sector        | Mt N/yr  | Nitrate                                     |
 | Biosphere CO2 emissions                | GtC/yr   | Mineral dust, cumulatively                  |
 
 | Output                                          | Description                                |
 | ----------------------------------------------- | ------------------------------------------ |
 | `DAT_{SOXI,SOXB,BCI,BCB,OCI,OCB}_RF`            | Forcing by species and source              |
-| `DAT_NO3I_RF`, `DAT_NO3B_RF`, `DAT_NO3T_RF`     | Nitrate forcing by source and in total     |
+| `DAT_NO3I_RF`, `DAT_NO3B_RF`, `DAT_NO3T_RF`     | Nitrate forcing by sector and in total     |
 | `DAT_MINERALDUST_RF`, `DAT_BCSNOW_RF`           | Mineral dust and BC on snow forcing        |
 | `DAT_BIOMASSAER_RF`                             | Biomass aerosol forcing                    |
 | `DAT_TOTAER_DIR_RF`, `_EFFRF`, `_ERF`, `_SRF`   | Total direct aerosol forcing               |

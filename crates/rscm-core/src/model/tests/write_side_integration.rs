@@ -94,7 +94,7 @@ fn test_write_aggregation_four_box_to_scalar_execution() {
     // Run one step
     model.step();
 
-    // Check the collection has scalar data (not FourBox)
+    // Check the collection has scalar data (not four-box)
     let data = model.timeseries().get_data("Temperature").unwrap();
     let ts = data.as_scalar().expect("Should be stored as Scalar");
 

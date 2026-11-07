@@ -213,7 +213,9 @@ class TestStateValueInModel:
 
         class GridProducerComponent(Component):
             input_var = Input("Forcing", unit="W/m^2")
-            output_var = Output("Regional Temperature", unit="K", grid="four_box")
+            output_var = Output(
+                "Surface Air Temperature Change", unit="K", grid="four_box"
+            )
 
             def solve(self, t_current, t_next, inputs):
                 forcing = inputs.input_var.get()

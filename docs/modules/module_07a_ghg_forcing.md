@@ -117,7 +117,7 @@ $RF_{CH4,pure}$ is the CH4 forcing without the N2O overlap.
 IPCCTAR drops the overlap term, leaving $\beta_{CH4} (\sqrt{M} - \sqrt{M_0})$.
 OLBL evaluates the CH4 formula, rapid adjustment included, at pre-industrial N2O.
 
-### CO2 doubling forcing
+### 2xCO2 effective radiative forcing
 
 With OLBL, MAGICC7 recalculates `CORE_DELQ2XCO2` every year as
 $f_{CO2} \, \alpha_{CO2} \ln 2$ at the current concentrations,
@@ -150,7 +150,7 @@ Forcing is calculated for the end of the step, so it reads the next year's conce
 | Parameter                   | Units          | Default     | Description                                          |
 | --------------------------- | -------------- | ----------- | ---------------------------------------------------- |
 | `CORE_CO2CH4N2O_RFMETHOD`   | string         | `OLBL`      | `IPCCTAR` or `OLBL`                                  |
-| `CORE_DELQ2XCO2`            | W/m²           | 3.71        | CO2 doubling forcing for IPCCTAR                     |
+| `CORE_DELQ2XCO2`            | W/m²           | 3.71        | 2xCO2 effective radiative forcing for IPCCTAR        |
 | `CH4_RADEFF_WM2PERPPB`      | W/m²/ppb^0.5   | 0.036       | $\beta_{CH4}$ for IPCCTAR                            |
 | `N2O_RADEFF_WM2PERPPB`      | W/m²/ppb^0.5   | 0.12        | $\beta_{N2O}$ for IPCCTAR                            |
 | `CORE_OLBL_CO2_A1`          | W/m²/ppm²      | -2.4785e-07 | $a_1$, quadratic term                                |

@@ -325,7 +325,7 @@ pub fn conversion_factor(from: &str, to: &str) -> Result<f64, ConversionError> {
 mod tests {
     use super::*;
 
-    const CO2_TO_C_RATIO: f64 = 44.0 / 12.0;
+    const CO2_PER_C: f64 = 44.0 / 12.0;
 
     #[test]
     fn test_is_per_time() {
@@ -391,7 +391,7 @@ mod tests {
         let factor = gtc.conversion_factor(&mtco2).unwrap();
 
         // Expected: 1000 * (44/12) = 3666.67
-        let expected = 1000.0 * CO2_TO_C_RATIO;
+        let expected = 1000.0 * CO2_PER_C;
         assert!(
             (factor - expected).abs() < 0.01,
             "GtC/yr to MtCO2/yr: {factor} != {expected}"
@@ -462,7 +462,7 @@ mod tests {
         let value = 10.0; // 10 GtC/yr
         let converted = gtc.convert_to(value, &mtco2).unwrap();
 
-        let expected = 10.0 * 1000.0 * CO2_TO_C_RATIO;
+        let expected = 10.0 * 1000.0 * CO2_PER_C;
         assert!(
             (converted - expected).abs() < 0.1,
             "10 GtC/yr = {converted} MtCO2/yr (expected {expected})"

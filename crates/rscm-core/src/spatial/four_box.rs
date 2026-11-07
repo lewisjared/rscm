@@ -124,7 +124,7 @@ impl FourBoxGrid {
 
 impl SpatialGrid for FourBoxGrid {
     fn grid_name(&self) -> &'static str {
-        "FourBox"
+        "four_box"
     }
 
     fn size(&self) -> usize {

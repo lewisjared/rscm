@@ -53,6 +53,9 @@ from rscm.magicc.runner import CH4_OTHER_LIFETIMES, _ch4_burdens, _ch4_non_oh_li
 from rscm.names import (
     ATMOSPHERIC_CONCENTRATIONS,
     ATMOSPHERIC_CONCENTRATIONS_CO2,
+    CARBON_POOL_DETRITUS,
+    CARBON_POOL_PLANT,
+    CARBON_POOL_SOIL,
     CUMULATIVE_CARBON_UPTAKE_OCEAN,
     EFFICACY_ADJUSTED_ERF,
     EMISSIONS,
@@ -259,7 +262,7 @@ COMPONENTS = (
 
 EFFICACY_ERF_2XCO2 = 3.71
 """
-CO2 doubling forcing behind MAGICC7's internal efficacies
+2xCO2 effective radiative forcing behind MAGICC7's internal efficacies
 until the run calculates one.
 """
 
@@ -345,10 +348,11 @@ def halocarbon_forcing(group: str) -> list[str]:
 def halocarbon_species() -> list[str]:
     """Names of the halocarbons the chain reads emissions of, in kt per year."""
     component = HalocarbonChemistryBuilder.from_parameters({}).build()
+    prefix = f"{EMISSIONS}|"
     return [
-        d.name.removeprefix("Emissions|")
+        d.name.removeprefix(prefix)
         for d in component.definitions()
-        if d.name.startswith("Emissions|")
+        if d.name.startswith(prefix)
     ]
 
 
@@ -498,9 +502,9 @@ def _nitrate_inputs(
         "natural_nh3": p["rf_nh3n_emis"],
         "natural_sox": p["sox_natural_emissions"],
         "lambda_so2": p["rf_no3_lambdaso2"],
-        "preindustrial_burden": p["rf_no3_preindburden"],
-        "preindustrial_ot": p["rf_no3_preindot"],
-        "burden_to_ot_exponent": p["rf_no3_burden2ot_exp"],
+        "burden_pi": p["rf_no3_preindburden"],
+        "optical_thickness_pi": p["rf_no3_preindot"],
+        "burden_to_optical_thickness_exponent": p["rf_no3_burden2ot_exp"],
     }
     return args, kwargs
 
@@ -1276,8 +1280,12 @@ def run_magicc7(  # noqa: PLR0913
         OCEAN_SURFACE_PARTIAL_PRESSURE_CO2: conc["CO2"],
         CUMULATIVE_CARBON_UPTAKE_OCEAN: 0.0,
         **{
-            f"Carbon Pool|{pool.title()}": terrestrial[f"{pool}_pool_pi"]
-            for pool in ("plant", "detritus", "soil")
+            name: terrestrial[f"{pool}_pool_pi"]
+            for name, pool in (
+                (CARBON_POOL_PLANT, "plant"),
+                (CARBON_POOL_DETRITUS, "detritus"),
+                (CARBON_POOL_SOIL, "soil"),
+            )
         },
         **{
             d.name: 0.0
@@ -1293,7 +1301,7 @@ def run_magicc7(  # noqa: PLR0913
             for gas in ("CH4", "N2O", "NOx", "CO", "NMVOC")
         },
         **{
-            f"Emissions|{gas}|{sector}": (
+            child(child(EMISSIONS, gas), sector): (
                 native[f"{gas}|{sector}"],
                 MAGICC7_EMISSIONS_UNITS[gas],
             )

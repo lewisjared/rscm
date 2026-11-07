@@ -20,7 +20,7 @@
 //! # Inputs
 //!
 //! - `Emissions|N2O` (Mt N2ON/yr) - Anthropogenic N2O emissions
-//! - `Surface Air Temperature Change` (K) - Global mean surface temperature anomaly
+//! - `Surface Air Temperature Change` (K) - Global mean surface air temperature change
 //!
 //! # Outputs
 //!

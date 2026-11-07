@@ -18,7 +18,13 @@ from enum import StrEnum
 
 from rscm._lib.core import Unit
 from rscm._lib.core.names import *  # noqa: F403
-from rscm._lib.core.names import ERF, OCEAN_TEMPERATURE
+from rscm._lib.core.names import (
+    ATMOSPHERIC_CONCENTRATIONS,
+    EMISSIONS,
+    ERF,
+    OCEAN_TEMPERATURE,
+    SURFACE_AIR_TEMPERATURE_CHANGE,
+)
 
 SECTORS = ("Fossil", "Biosphere")
 """Sector labels of sectoral emissions, as in `Emissions|CO2|Fossil`."""
@@ -105,15 +111,15 @@ _FORCING_OUT = {
     "Ozone|Tropospheric": "Tropospheric Ozone",
 }
 
-_NAMES_IN = {"Surface Temperature": "Surface Air Temperature Change"}
+_NAMES_IN = {"Surface Temperature": SURFACE_AIR_TEMPERATURE_CHANGE}
 _NAMES_OUT = {v: k for k, v in _NAMES_IN.items()}
 
 # RCMIP groups halocarbons, as in `Emissions|F-Gases|PFC|CF4`.
 _HALOCARBON_GROUP = re.compile(
-    r"^(Emissions|Atmospheric Concentrations)\|"
+    rf"^({re.escape(EMISSIONS)}|{re.escape(ATMOSPHERIC_CONCENTRATIONS)})\|"
     r"(?:F-Gases|Montreal Gases)\|(?:(?:PFC|HFC|CFC)\|)?"
 )
-_QUANTITIES = ("Emissions", "Atmospheric Concentrations")
+_QUANTITIES = (EMISSIONS, ATMOSPHERIC_CONCENTRATIONS)
 # Fewest segments of a name that ends in a sector, as in `Emissions|CO2|Fossil`.
 _SECTORAL_SEGMENTS = 3
 
