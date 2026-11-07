@@ -1,6 +1,6 @@
-//! Point estimation optimizers for parameter calibration.
+//! Point estimation optimisers for parameter calibration.
 //!
-//! This module provides optimization algorithms for finding maximum likelihood
+//! This module provides optimisation algorithms for finding maximum likelihood
 //! or maximum a posteriori (MAP) parameter estimates.
 //!
 //! Currently implemented:
@@ -9,34 +9,34 @@
 //! # Example
 //!
 //! ```ignore
-//! use rscm_calibrate::{Optimizer, PointEstimator};
+//! use rscm_calibrate::{Optimiser, PointEstimator};
 //!
-//! let estimator = PointEstimator::new(params, runner, likelihood, target);
-//! let result = estimator.optimize(Optimizer::RandomSearch, 1000)?;
+//! let estimator = PointEstimator::new(parameters, runner, likelihood, target);
+//! let result = estimator.optimise(Optimiser::RandomSearch, 1000)?;
 //!
-//! println!("Best parameters: {:?}", result.best_params);
+//! println!("Best parameters: {:?}", result.best_parameters);
 //! println!("Best log likelihood: {}", result.best_log_likelihood);
 //! ```
 
 use crate::{point_estimator::PointEstimator, Result};
 
-/// Optimization algorithm to use for point estimation.
+/// Optimisation algorithm to use for point estimation.
 #[derive(Debug, Clone, Copy)]
-pub enum Optimizer {
+pub enum Optimiser {
     /// Random search baseline
     ///
     /// Samples random parameter sets from the prior
-    /// and returns the best. Useful as a baseline or for initialization.
+    /// and returns the best. Useful as a baseline or for initialisation.
     ///
     /// Note: Number of samples controlled by n_samples parameter.
     RandomSearch,
 }
 
-/// Result of a point estimation optimization.
+/// Result of a point estimation optimisation.
 #[derive(Debug, Clone)]
-pub struct OptimizationResult {
+pub struct OptimisationResult {
     /// Best parameter vector found
-    pub best_params: Vec<f64>,
+    pub best_parameters: Vec<f64>,
 
     /// Log likelihood at best parameters (not including prior)
     pub best_log_likelihood: f64,
@@ -47,78 +47,78 @@ pub struct OptimizationResult {
     /// Number of function evaluations performed
     pub n_evaluations: usize,
 
-    /// Whether the optimizer converged
+    /// Whether the optimiser converged
     pub converged: bool,
 }
 
 impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> PointEstimator<R, L> {
-    /// Run point estimation optimization.
+    /// Run point estimation optimisation.
     ///
     /// # Arguments
     ///
-    /// * `optimizer` - Optimization algorithm to use
+    /// * `optimiser` - Optimisation algorithm to use
     /// * `n_samples` - Number of samples to evaluate
     ///
     /// # Returns
     ///
-    /// An `OptimizationResult` with the best parameters and diagnostics.
+    /// An `OptimisationResult` with the best parameters and diagnostics.
     ///
     /// # Example
     ///
     /// ```ignore
-    /// let result = estimator.optimize(Optimizer::RandomSearch, 1000)?;
+    /// let result = estimator.optimise(Optimiser::RandomSearch, 1000)?;
     /// ```
-    pub fn optimize(
+    pub fn optimise(
         &mut self,
-        optimizer: Optimizer,
+        optimiser: Optimiser,
         n_samples: usize,
-    ) -> Result<OptimizationResult> {
-        match optimizer {
-            Optimizer::RandomSearch => self.optimize_random_search(n_samples),
+    ) -> Result<OptimisationResult> {
+        match optimiser {
+            Optimiser::RandomSearch => self.optimise_random_search(n_samples),
         }
     }
 
-    /// Optimize using random search.
+    /// Optimise using random search.
     ///
     /// Samples n_samples parameter sets from the prior and returns the best.
-    fn optimize_random_search(&mut self, n_samples: usize) -> Result<OptimizationResult> {
+    fn optimise_random_search(&mut self, n_samples: usize) -> Result<OptimisationResult> {
         // Sample parameters from prior
-        let samples = self.sample_initial_params(n_samples);
+        let samples = self.sample_initial_parameters(n_samples);
 
-        let mut best_params: Option<Vec<f64>> = None;
+        let mut best_parameters: Option<Vec<f64>> = None;
         let mut best_log_posterior = f64::NEG_INFINITY;
         let mut best_log_likelihood = f64::NEG_INFINITY;
 
         let mut first_error = None;
 
-        for params in samples.iter() {
-            let log_posterior = self.try_evaluate(params).unwrap_or_else(|e| {
+        for parameters in samples.iter() {
+            let log_posterior = self.try_evaluate(parameters).unwrap_or_else(|e| {
                 first_error.get_or_insert(e);
                 f64::NEG_INFINITY
             });
 
             if log_posterior > best_log_posterior {
                 best_log_posterior = log_posterior;
-                best_params = Some(params.clone());
+                best_parameters = Some(parameters.clone());
 
                 // Find corresponding log likelihood from history
                 best_log_likelihood = self
                     .evaluated_log_likelihoods()
                     .iter()
-                    .zip(self.evaluated_params().iter())
-                    .find(|(_, p)| *p == params)
+                    .zip(self.evaluated_parameters().iter())
+                    .find(|(_, p)| *p == parameters)
                     .map(|(ll, _)| *ll)
                     .unwrap_or(f64::NEG_INFINITY);
             }
         }
 
-        let best = best_params.ok_or_else(|| {
+        let best = best_parameters.ok_or_else(|| {
             let reason = crate::no_valid_reason(first_error.as_ref(), "sample");
             crate::Error::SamplingError(format!("Random search found no valid samples ({reason})"))
         })?;
 
-        Ok(OptimizationResult {
-            best_params: best,
+        Ok(OptimisationResult {
+            best_parameters: best,
             best_log_likelihood,
             best_log_posterior,
             n_evaluations: n_samples,
@@ -127,8 +127,8 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
     }
 
     /// Draw `n` parameter vectors from the prior.
-    fn sample_initial_params(&self, n: usize) -> Vec<Vec<f64>> {
-        self.params
+    fn sample_initial_parameters(&self, n: usize) -> Vec<Vec<f64>> {
+        self.parameters
             .sample_random(n)
             .outer_iter()
             .map(|row| row.to_vec())
@@ -150,24 +150,24 @@ mod tests {
     // Simple quadratic model for testing: y = (x - 2)^2
     // Minimum at x = 2
     struct QuadraticModel {
-        param_names: Vec<String>,
+        parameter_names: Vec<String>,
     }
 
     impl QuadraticModel {
         fn new() -> Self {
             Self {
-                param_names: vec!["x".to_string()],
+                parameter_names: vec!["x".to_string()],
             }
         }
     }
 
     impl ModelRunner for QuadraticModel {
-        fn param_names(&self) -> &[String] {
-            &self.param_names
+        fn parameter_names(&self) -> &[String] {
+            &self.parameter_names
         }
 
-        fn run(&self, params: &[f64]) -> crate::Result<ModelOutput> {
-            let x = params[0];
+        fn run(&self, parameters: &[f64]) -> crate::Result<ModelOutput> {
+            let x = parameters[0];
             let y = (x - 2.0).powi(2);
 
             let mut output = ModelOutput::new();
@@ -180,10 +180,10 @@ mod tests {
     }
 
     #[test]
-    fn test_random_search_optimizer() {
-        // Create a simple optimization problem
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Uniform::new(0.0, 4.0).unwrap()));
+    fn test_random_search_optimiser() {
+        // Create a simple optimisation problem
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Uniform::new(0.0, 4.0).unwrap()));
 
         // Target: y should be 0 (achieved when x=2)
         let mut target = Target::new();
@@ -192,12 +192,12 @@ mod tests {
         let runner = QuadraticModel::new();
         let likelihood = GaussianLikelihood::default();
 
-        let mut estimator = PointEstimator::new(params, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
 
         // Run random search
         let result = estimator
-            .optimize(Optimizer::RandomSearch, 100)
-            .expect("Optimization should succeed");
+            .optimise(Optimiser::RandomSearch, 100)
+            .expect("Optimisation should succeed");
 
         // Check result
         assert_eq!(result.n_evaluations, 100);
@@ -205,7 +205,7 @@ mod tests {
         assert!(result.best_log_posterior.is_finite());
 
         // Best parameter should be in bounds
-        let best_x = result.best_params[0];
+        let best_x = result.best_parameters[0];
         assert!((0.0..=4.0).contains(&best_x), "Best x out of bounds");
 
         // Should have found something better than worst case
@@ -217,25 +217,25 @@ mod tests {
         // 2D quadratic: y = (x1 - 1)^2 + (x2 - 3)^2
         // Minimum at (1, 3)
         struct Quadratic2D {
-            param_names: Vec<String>,
+            parameter_names: Vec<String>,
         }
 
         impl Quadratic2D {
             fn new() -> Self {
                 Self {
-                    param_names: vec!["x1".to_string(), "x2".to_string()],
+                    parameter_names: vec!["x1".to_string(), "x2".to_string()],
                 }
             }
         }
 
         impl ModelRunner for Quadratic2D {
-            fn param_names(&self) -> &[String] {
-                &self.param_names
+            fn parameter_names(&self) -> &[String] {
+                &self.parameter_names
             }
 
-            fn run(&self, params: &[f64]) -> crate::Result<ModelOutput> {
-                let x1 = params[0];
-                let x2 = params[1];
+            fn run(&self, parameters: &[f64]) -> crate::Result<ModelOutput> {
+                let x1 = parameters[0];
+                let x2 = parameters[1];
                 let y = (x1 - 1.0).powi(2) + (x2 - 3.0).powi(2);
 
                 let mut output = ModelOutput::new();
@@ -247,9 +247,9 @@ mod tests {
             }
         }
 
-        let mut params = ParameterSet::new();
-        params.add("x1", Box::new(Uniform::new(-2.0, 4.0).unwrap()));
-        params.add("x2", Box::new(Uniform::new(0.0, 6.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x1", Box::new(Uniform::new(-2.0, 4.0).unwrap()));
+        parameters.add("x2", Box::new(Uniform::new(0.0, 6.0).unwrap()));
 
         let mut target = Target::new();
         target.add_variable("y").add(0.0, 0.0, 0.1).unwrap();
@@ -257,15 +257,15 @@ mod tests {
         let runner = Quadratic2D::new();
         let likelihood = GaussianLikelihood::default();
 
-        let mut estimator = PointEstimator::new(params, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
 
         let result = estimator
-            .optimize(Optimizer::RandomSearch, 500)
-            .expect("Optimization should succeed");
+            .optimise(Optimiser::RandomSearch, 500)
+            .expect("Optimisation should succeed");
 
         // Check parameters are in bounds
-        let best_x1 = result.best_params[0];
-        let best_x2 = result.best_params[1];
+        let best_x1 = result.best_parameters[0];
+        let best_x2 = result.best_parameters[1];
 
         assert!(
             (-2.0..=4.0).contains(&best_x1),
@@ -288,14 +288,18 @@ mod tests {
 
     #[test]
     fn test_random_search_reports_underlying_error_when_every_evaluation_fails() {
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Uniform::new(0.0, 4.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Uniform::new(0.0, 4.0).unwrap()));
         let runner = crate::test_support::FailingModel::new(None);
-        let mut estimator =
-            PointEstimator::new(params, runner, GaussianLikelihood::default(), Target::new());
+        let mut estimator = PointEstimator::new(
+            parameters,
+            runner,
+            GaussianLikelihood::default(),
+            Target::new(),
+        );
 
         let err = estimator
-            .optimize(Optimizer::RandomSearch, 10)
+            .optimise(Optimiser::RandomSearch, 10)
             .expect_err("no evaluation succeeded");
 
         assert!(err.to_string().contains("no valid samples"), "got: {err}");
@@ -304,26 +308,26 @@ mod tests {
 
     #[test]
     fn test_random_search_samples_unbounded_prior() {
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(crate::Normal::new(2.0, 0.5).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(crate::Normal::new(2.0, 0.5).unwrap()));
 
         let mut target = Target::new();
         target.add_variable("y").add(0.0, 0.0, 0.1).unwrap();
 
         let mut estimator = PointEstimator::new(
-            params,
+            parameters,
             QuadraticModel::new(),
             GaussianLikelihood::default(),
             target,
         );
 
         let result = estimator
-            .optimize(Optimizer::RandomSearch, 50)
+            .optimise(Optimiser::RandomSearch, 50)
             .expect("samples drawn from a Normal prior are valid");
 
         assert!(result.best_log_posterior.is_finite());
         assert!(estimator
-            .evaluated_params()
+            .evaluated_parameters()
             .iter()
             .all(|p| p[0].is_finite()));
     }

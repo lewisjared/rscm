@@ -35,9 +35,9 @@ def create_simple_linear_model():
     uncertainty = 0.1
 
     # Define parameter priors
-    params = ParameterSet()
-    params.add("a", Uniform(0.0, 5.0))
-    params.add("b", Uniform(0.0, 5.0))
+    parameters = ParameterSet()
+    parameters.add("a", Uniform(0.0, 5.0))
+    parameters.add("b", Uniform(0.0, 5.0))
 
     # Create target observations
     target = Target()
@@ -52,19 +52,19 @@ def create_simple_linear_model():
 
     runner = ModelRunner(
         model_factory=model_factory,
-        param_names=["a", "b"],
+        parameter_names=["a", "b"],
         output_variables=["y"],
     )
 
     likelihood = GaussianLikelihood()
 
-    return params, runner, likelihood, target
+    return parameters, runner, likelihood, target
 
 
 def test_progress_tracker():
     """Test ProgressTracker stores progress metrics correctly."""
-    params, runner, likelihood, target = create_simple_linear_model()
-    sampler = EnsembleSampler(params, runner, likelihood, target)
+    parameters, runner, likelihood, target = create_simple_linear_model()
+    sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
     # Create tracker
     tracker = ProgressTracker()
@@ -97,8 +97,8 @@ def test_progress_tracker():
 
 def test_simple_callback(capsys):
     """Test simple text callback prints progress."""
-    params, runner, likelihood, target = create_simple_linear_model()
-    sampler = EnsembleSampler(params, runner, likelihood, target)
+    parameters, runner, likelihood, target = create_simple_linear_model()
+    sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
     # Create simple callback that prints every 5 iterations
     callback = create_simple_callback(print_every=5)
@@ -126,11 +126,11 @@ def test_tqdm_callback():
     """Test tqdm callback integration."""
     pytest.importorskip("tqdm")  # Skip if tqdm not installed
 
-    params, runner, likelihood, target = create_simple_linear_model()
-    sampler = EnsembleSampler(params, runner, likelihood, target)
+    parameters, runner, likelihood, target = create_simple_linear_model()
+    sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
     # Create tqdm callback
-    callback = create_tqdm_callback(total=10, desc="Test Sampling")
+    callback = create_tqdm_callback(n_iterations=10, desc="Test Sampling")
 
     # Run short chain
     n_iterations = 10
@@ -158,8 +158,8 @@ def test_tqdm_not_installed():
 
 def test_tracker_with_print(capsys):
     """Test ProgressTracker with printing enabled."""
-    params, runner, likelihood, target = create_simple_linear_model()
-    sampler = EnsembleSampler(params, runner, likelihood, target)
+    parameters, runner, likelihood, target = create_simple_linear_model()
+    sampler = EnsembleSampler(parameters, runner, likelihood, target)
 
     # Create tracker with printing
     tracker = ProgressTracker(print_every=5)

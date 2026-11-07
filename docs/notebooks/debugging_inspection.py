@@ -152,11 +152,11 @@ print(model.coupling())
 # %%
 coupling = json.loads(model.coupling("json"))
 for comp in coupling["components"]:
-    n_in = len(comp.get("inputs", []))
-    n_out = len(comp.get("outputs", []))
-    n_state = len(comp.get("states", []))
+    n_inputs = len(comp.get("inputs", []))
+    n_outputs = len(comp.get("outputs", []))
+    n_states = len(comp.get("states", []))
     print(
-        f"[{comp['order']}] {comp['name']}: {n_in} inputs, {n_out} outputs, {n_state} states"
+        f"[{comp['order']}] {comp['name']}: {n_inputs} inputs, {n_outputs} outputs, {n_states} states"
     )
 
 # %% [markdown]

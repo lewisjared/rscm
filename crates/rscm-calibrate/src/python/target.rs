@@ -282,8 +282,8 @@ impl PyTarget {
     /// -------
     /// int
     ///     Total observation count
-    fn total_observations(&self) -> usize {
-        self.0.total_observations()
+    fn n_observations(&self) -> usize {
+        self.0.n_observations()
     }
 
     /// Get the time range covered by all observations.
@@ -300,7 +300,7 @@ impl PyTarget {
         format!(
             "Target(n_variables={}, n_observations={})",
             self.0.variables().len(),
-            self.0.total_observations()
+            self.0.n_observations()
         )
     }
 }

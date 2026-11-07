@@ -13,7 +13,7 @@ use crate::{Error, Result};
 /// A probability distribution for model parameters.
 ///
 /// This trait provides the interface for parameter priors in Bayesian calibration.
-/// All distributions are object-safe and support serialization via `typetag::serde`.
+/// All distributions are object-safe and support serialisation via `typetag::serde`.
 ///
 /// # Usage in Calibration
 ///
@@ -37,7 +37,7 @@ use crate::{Error, Result};
 /// let y = normal_ref.sample();
 ///
 /// // Evaluate log-probability density
-/// let log_p = uniform.ln_pdf(0.5);
+/// let log_p = uniform.log_pdf(0.5);
 /// assert!(log_p.is_finite());
 /// ```
 ///
@@ -57,19 +57,19 @@ pub trait Distribution: Send + Sync {
     ///
     /// Returns `f64::NEG_INFINITY` for values outside the support.
     ///
-    /// # Note on Normalization
+    /// # Note on Normalisation
     ///
-    /// For bounded distributions, the returned value may be unnormalized
-    /// (missing the normalization constant). This is acceptable for MCMC
+    /// For bounded distributions, the returned value may be unnormalised
+    /// (missing the normalisation constant). This is acceptable for MCMC
     /// where the constant cancels in acceptance ratios.
-    fn ln_pdf(&self, x: f64) -> f64;
+    fn log_pdf(&self, x: f64) -> f64;
 
     /// Get the support bounds `[min, max]` of the distribution.
     ///
     /// Returns `Some((min, max))` for bounded distributions, or `None`
     /// for distributions with unbounded support (e.g., Normal).
     ///
-    /// These bounds are used by optimizers to constrain parameter searches.
+    /// These bounds are used by optimisers to constrain parameter searches.
     fn bounds(&self) -> Option<(f64, f64)>;
 
     /// Clone the distribution into a boxed trait object.
@@ -104,11 +104,11 @@ impl dyn Distribution {
 /// assert!(x >= 0.0 && x <= 10.0);
 ///
 /// // Log-PDF is constant inside bounds
-/// let log_p = dist.ln_pdf(5.0);
+/// let log_p = dist.log_pdf(5.0);
 /// assert_eq!(log_p, -(10.0_f64.ln()));
 ///
 /// // Zero probability outside bounds
-/// assert_eq!(dist.ln_pdf(-1.0), f64::NEG_INFINITY);
+/// assert_eq!(dist.log_pdf(-1.0), f64::NEG_INFINITY);
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Uniform {
@@ -154,7 +154,7 @@ impl Distribution for Uniform {
         self.low + rng.random::<f64>() * (self.high - self.low)
     }
 
-    fn ln_pdf(&self, x: f64) -> f64 {
+    fn log_pdf(&self, x: f64) -> f64 {
         if x < self.low || x > self.high {
             f64::NEG_INFINITY
         } else {
@@ -200,8 +200,8 @@ impl Uniform {
 /// let x = dist_ref.sample();
 ///
 /// // Evaluate log-PDF (maximum at mean)
-/// let log_p_mean = dist.ln_pdf(0.0);
-/// let log_p_away = dist.ln_pdf(2.0);
+/// let log_p_mean = dist.log_pdf(0.0);
+/// let log_p_away = dist.log_pdf(2.0);
 /// assert!(log_p_mean > log_p_away);
 ///
 /// // No bounds (unbounded support)
@@ -218,7 +218,7 @@ impl Normal {
     ///
     /// # Arguments
     ///
-    /// * `mean` - Mean (center) of the distribution
+    /// * `mean` - Mean (centre) of the distribution
     /// * `std_dev` - Standard deviation (must be positive)
     ///
     /// # Errors
@@ -253,7 +253,7 @@ impl Distribution for Normal {
         rng.sample(dist)
     }
 
-    fn ln_pdf(&self, x: f64) -> f64 {
+    fn log_pdf(&self, x: f64) -> f64 {
         let z = (x - self.mean) / self.std_dev;
         -0.5 * z * z - self.std_dev.ln() - 0.5 * (2.0 * std::f64::consts::PI).ln()
     }
@@ -306,7 +306,7 @@ impl LogNormal {
     /// # Errors
     ///
     /// Returns an error if `mean <= 0` or `std_dev <= 0`.
-    pub fn from_mean_std(mean: f64, std_dev: f64) -> Result<Self> {
+    pub fn from_mean_std_dev(mean: f64, std_dev: f64) -> Result<Self> {
         if mean <= 0.0 {
             return Err(Error::InvalidParameter(format!(
                 "LogNormal: mean ({}) must be positive",
@@ -350,13 +350,13 @@ impl Distribution for LogNormal {
         rng.sample(dist)
     }
 
-    fn ln_pdf(&self, x: f64) -> f64 {
+    fn log_pdf(&self, x: f64) -> f64 {
         if x <= 0.0 {
             return f64::NEG_INFINITY;
         }
-        let ln_x = x.ln();
-        let z = (ln_x - self.mu) / self.sigma;
-        -0.5 * z * z - ln_x - self.sigma.ln() - 0.5 * (2.0 * std::f64::consts::PI).ln()
+        let log_x = x.ln();
+        let z = (log_x - self.mu) / self.sigma;
+        -0.5 * z * z - log_x - self.sigma.ln() - 0.5 * (2.0 * std::f64::consts::PI).ln()
     }
 
     fn bounds(&self) -> Option<(f64, f64)> {
@@ -408,9 +408,9 @@ impl LogNormal {
 /// assert!(x >= -2.0 && x <= 2.0);
 ///
 /// // PDF is zero outside bounds
-/// assert_eq!(bounded.ln_pdf(-3.0), f64::NEG_INFINITY);
+/// assert_eq!(bounded.log_pdf(-3.0), f64::NEG_INFINITY);
 ///
-/// // Bounds are available for optimizers
+/// // Bounds are available for optimisers
 /// assert_eq!(bounded.bounds(), Some((-2.0, 2.0)));
 /// ```
 #[derive(Serialize, Deserialize)]
@@ -487,12 +487,12 @@ impl Distribution for Bound {
         }
     }
 
-    fn ln_pdf(&self, x: f64) -> f64 {
+    fn log_pdf(&self, x: f64) -> f64 {
         if x < self.low || x > self.high {
             f64::NEG_INFINITY
         } else {
             // Return unnormalised PDF - normalisation constant doesn't affect MCMC
-            self.distribution.ln_pdf(x)
+            self.distribution.log_pdf(x)
         }
     }
 
@@ -538,11 +538,11 @@ mod tests {
         let dist = Uniform::new(0.0, 2.0).unwrap();
 
         // Inside bounds
-        assert_abs_diff_eq!(dist.ln_pdf(0.5), -(2.0_f64.ln()), epsilon = 1e-10);
+        assert_abs_diff_eq!(dist.log_pdf(0.5), -(2.0_f64.ln()), epsilon = 1e-10);
 
         // Outside bounds
-        assert_eq!(dist.ln_pdf(-0.1), f64::NEG_INFINITY);
-        assert_eq!(dist.ln_pdf(2.1), f64::NEG_INFINITY);
+        assert_eq!(dist.log_pdf(-0.1), f64::NEG_INFINITY);
+        assert_eq!(dist.log_pdf(2.1), f64::NEG_INFINITY);
     }
 
     #[test]
@@ -579,11 +579,11 @@ mod tests {
 
         // At mean
         let expected = -0.5 * (2.0 * std::f64::consts::PI).ln();
-        assert_abs_diff_eq!(dist.ln_pdf(0.0), expected, epsilon = 1e-10);
+        assert_abs_diff_eq!(dist.log_pdf(0.0), expected, epsilon = 1e-10);
 
         // One sigma away
         let expected = -0.5 - 0.5 * (2.0 * std::f64::consts::PI).ln();
-        assert_abs_diff_eq!(dist.ln_pdf(1.0), expected, epsilon = 1e-10);
+        assert_abs_diff_eq!(dist.log_pdf(1.0), expected, epsilon = 1e-10);
     }
 
     #[test]
@@ -608,18 +608,18 @@ mod tests {
         let dist = LogNormal::new(0.0, 1.0).unwrap();
 
         // Positive values
-        assert!(dist.ln_pdf(1.0).is_finite());
+        assert!(dist.log_pdf(1.0).is_finite());
 
         // Non-positive values
-        assert_eq!(dist.ln_pdf(0.0), f64::NEG_INFINITY);
-        assert_eq!(dist.ln_pdf(-1.0), f64::NEG_INFINITY);
+        assert_eq!(dist.log_pdf(0.0), f64::NEG_INFINITY);
+        assert_eq!(dist.log_pdf(-1.0), f64::NEG_INFINITY);
     }
 
     #[test]
     fn test_lognormal_from_mean_std() {
         let mean = 1.0;
         let std_dev = 0.5;
-        let dist = LogNormal::from_mean_std(mean, std_dev).unwrap();
+        let dist = LogNormal::from_mean_std_dev(mean, std_dev).unwrap();
 
         // Check that samples are positive
         let mut rng = rand::rng();
@@ -633,8 +633,8 @@ mod tests {
     fn test_lognormal_validation() {
         assert!(LogNormal::new(0.0, 0.0).is_err());
         assert!(LogNormal::new(0.0, -1.0).is_err());
-        assert!(LogNormal::from_mean_std(0.0, 1.0).is_err());
-        assert!(LogNormal::from_mean_std(1.0, 0.0).is_err());
+        assert!(LogNormal::from_mean_std_dev(0.0, 1.0).is_err());
+        assert!(LogNormal::from_mean_std_dev(1.0, 0.0).is_err());
     }
 
     #[test]
@@ -653,12 +653,12 @@ mod tests {
         let dist = Bound::new(Box::new(Normal::new(0.0, 1.0).unwrap()), -1.0, 1.0).unwrap();
 
         // Inside bounds - should match underlying distribution
-        let inner_pdf = dist.inner().ln_pdf(0.5);
-        assert_abs_diff_eq!(dist.ln_pdf(0.5), inner_pdf, epsilon = 1e-10);
+        let inner_pdf = dist.inner().log_pdf(0.5);
+        assert_abs_diff_eq!(dist.log_pdf(0.5), inner_pdf, epsilon = 1e-10);
 
         // Outside bounds
-        assert_eq!(dist.ln_pdf(-1.5), f64::NEG_INFINITY);
-        assert_eq!(dist.ln_pdf(1.5), f64::NEG_INFINITY);
+        assert_eq!(dist.log_pdf(-1.5), f64::NEG_INFINITY);
+        assert_eq!(dist.log_pdf(1.5), f64::NEG_INFINITY);
     }
 
     #[test]

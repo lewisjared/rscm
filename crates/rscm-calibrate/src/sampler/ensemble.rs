@@ -25,7 +25,7 @@ use std::path::Path;
 ///
 /// # Algorithm Overview
 ///
-/// The sampler maintains N walkers (where N ≥ 2 × n_params) that evolve in parallel:
+/// The sampler maintains N walkers (where N ≥ 2 × n_parameters) that evolve in parallel:
 ///
 /// 1. Split walkers into two groups
 /// 2. For each group:
@@ -44,9 +44,9 @@ use std::path::Path;
 /// # Workflow
 ///
 /// 1. **Create sampler** with parameters, model runner, likelihood function, and target data
-/// 2. **Initialize walkers** from prior, around a point, or explicitly
+/// 2. **Initialise walkers** from prior, around a point, or explicitly
 /// 3. **Run sampling** with optional progress callbacks and checkpointing
-/// 4. **Analyze chain** using built-in diagnostics (R-hat, ESS, autocorrelation)
+/// 4. **Analyse chain** using built-in diagnostics (R-hat, ESS, autocorrelation)
 ///
 /// # Example
 ///
@@ -55,9 +55,9 @@ use std::path::Path;
 /// use rscm_calibrate::likelihood::GaussianLikelihood;
 ///
 /// // Define priors
-/// let mut params = ParameterSet::new();
-/// params.add("sensitivity", Box::new(Uniform::new(0.5, 1.5).unwrap()));
-/// params.add("offset", Box::new(Normal::new(0.0, 0.1).unwrap()));
+/// let mut parameters = ParameterSet::new();
+/// parameters.add("sensitivity", Box::new(Uniform::new(0.5, 1.5).unwrap()));
+/// parameters.add("offset", Box::new(Normal::new(0.0, 0.1).unwrap()));
 ///
 /// // Define observations
 /// let mut target = Target::new();
@@ -68,9 +68,9 @@ use std::path::Path;
 /// // Create sampler
 /// let runner = MyModelRunner::new();
 /// let likelihood = GaussianLikelihood::new();
-/// let sampler = EnsembleSampler::new(params, runner, likelihood, target);
+/// let sampler = EnsembleSampler::new(parameters, runner, likelihood, target);
 ///
-/// // Run MCMC sampling (1000 iterations, initialize from prior, no thinning)
+/// // Run MCMC sampling (1000 iterations, initialise from prior, no thinning)
 /// let chain = sampler.run(1000, WalkerInit::FromPrior, 1)?;
 ///
 /// // Check convergence
@@ -80,7 +80,7 @@ use std::path::Path;
 /// }
 ///
 /// // Extract posterior samples
-/// let samples = chain.to_param_dict(500);  // Discard burn-in
+/// let samples = chain.to_parameter_map(500);  // Discard burn-in
 /// ```
 ///
 /// # References
@@ -89,7 +89,7 @@ use std::path::Path;
 /// Communications in Applied Mathematics and Computational Science, 5(1), 65-80.
 pub struct EnsembleSampler<R: ModelRunner, L: LikelihoodFn> {
     /// Parameter set defining the prior distributions
-    params: ParameterSet,
+    parameters: ParameterSet,
 
     /// Model runner for evaluating parameter sets
     runner: R,
@@ -103,7 +103,7 @@ pub struct EnsembleSampler<R: ModelRunner, L: LikelihoodFn> {
     /// Stretch move configuration
     stretch: StretchMove,
 
-    /// Default number of walkers (2 * n_params, minimum 32)
+    /// Default number of walkers (2 * n_parameters, minimum 32)
     default_n_walkers: usize,
 }
 
@@ -112,16 +112,16 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     ///
     /// # Arguments
     ///
-    /// * `params` - Parameter set defining priors
+    /// * `parameters` - Parameter set defining priors
     /// * `runner` - Model runner for evaluating parameter sets
     /// * `likelihood` - Likelihood function
     /// * `target` - Target observations
-    pub fn new(params: ParameterSet, runner: R, likelihood: L, target: Target) -> Self {
-        let n_params = params.len();
-        let default_n_walkers = (2 * n_params).max(32);
+    pub fn new(parameters: ParameterSet, runner: R, likelihood: L, target: Target) -> Self {
+        let n_parameters = parameters.len();
+        let default_n_walkers = (2 * n_parameters).max(32);
 
         Self {
-            params,
+            parameters,
             runner,
             likelihood,
             target,
@@ -131,7 +131,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     }
 
     /// Create a sampler with custom stretch move parameter.
-    pub fn with_stretch_param(mut self, a: f64) -> Result<Self> {
+    pub fn with_stretch_parameter(mut self, a: f64) -> Result<Self> {
         self.stretch = StretchMove::new(a)?;
         Ok(self)
     }
@@ -146,29 +146,29 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// log_posterior = log_prior + log_likelihood.
     /// A point outside the prior support is `Ok(-inf)`.
     /// A failed prior, model or likelihood evaluation is `Err`.
-    fn try_log_posterior_batch(&self, param_sets: &[Vec<f64>]) -> Vec<Result<f64>> {
-        self.log_posteriors(param_sets).collect()
+    fn try_log_posterior_batch(&self, parameter_sets: &[Vec<f64>]) -> Vec<Result<f64>> {
+        self.log_posteriors(parameter_sets).collect()
     }
 
     /// Log posteriors for proposals, where a failed evaluation rejects the proposal.
-    fn log_posterior_batch(&self, param_sets: &[Vec<f64>]) -> Vec<f64> {
-        self.log_posteriors(param_sets)
+    fn log_posterior_batch(&self, parameter_sets: &[Vec<f64>]) -> Vec<f64> {
+        self.log_posteriors(parameter_sets)
             .map(|lp| lp.unwrap_or(f64::NEG_INFINITY))
             .collect()
     }
 
     fn log_posteriors<'a>(
         &'a self,
-        param_sets: &'a [Vec<f64>],
+        parameter_sets: &'a [Vec<f64>],
     ) -> impl IndexedParallelIterator<Item = Result<f64>> + 'a {
-        let outputs = self.runner.run_batch(param_sets);
-        param_sets
+        let outputs = self.runner.run_batch(parameter_sets);
+        parameter_sets
             .par_iter()
             .zip(outputs.into_par_iter())
-            .map(|(params, output)| {
+            .map(|(parameters, output)| {
                 log_posterior(
-                    &self.params,
-                    params,
+                    &self.parameters,
+                    parameters,
                     || output,
                     &self.likelihood,
                     &self.target,
@@ -181,8 +181,8 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     ///
     /// Fails if no walker has a finite log posterior, because no proposal could then be accepted.
     fn initial_log_probs(&self, positions: &ndarray::Array2<f64>) -> Result<Array1<f64>> {
-        let params: Vec<Vec<f64>> = positions.outer_iter().map(|row| row.to_vec()).collect();
-        let results = self.try_log_posterior_batch(&params);
+        let parameters: Vec<Vec<f64>> = positions.outer_iter().map(|row| row.to_vec()).collect();
+        let results = self.try_log_posterior_batch(&parameters);
 
         if !results
             .iter()
@@ -205,14 +205,14 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// Run the ensemble sampler for Bayesian parameter estimation.
     ///
     /// Performs MCMC sampling using the affine-invariant ensemble algorithm.
-    /// Walkers are initialized according to `init`, then evolved through
+    /// Walkers are initialised according to `init`, then evolved through
     /// `n_iterations` of the stretch move algorithm. All model evaluations
-    /// are parallelized via rayon.
+    /// are parallelised via rayon.
     ///
     /// # Arguments
     ///
     /// * `n_iterations` - Number of MCMC iterations to run (each iteration updates all walkers once)
-    /// * `init` - Walker initialization strategy (from prior, around a point, or explicit)
+    /// * `init` - Walker initialisation strategy (from prior, around a point, or explicit)
     /// * `thin` - Thinning interval - store every `thin`-th sample (1 = no thinning)
     ///
     /// # Returns
@@ -223,19 +223,19 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// # Burn-in and Thinning
     ///
     /// - **Burn-in**: The first N samples before the chain converges. Discard when extracting
-    ///   posterior samples using `chain.flat_samples(discard)` or `chain.to_param_dict(discard)`.
+    ///   posterior samples using `chain.flat_samples(discard)` or `chain.to_parameter_map(discard)`.
     /// - **Thinning**: Reduces memory by storing only every Nth sample. Use to reduce
     ///   autocorrelation or save disk space for long runs. Set `thin=1` to store all samples.
     ///
     /// # Walker Count
     ///
-    /// Uses the default number of walkers: `max(2 × n_params, 32)`.
+    /// Uses the default number of walkers: `max(2 × n_parameters, 32)`.
     /// For custom walker count, use `run_with_walkers()`.
     ///
     /// # Example
     ///
     /// ```ignore
-    /// // Run 10,000 iterations, initialize from prior, store every 10th sample
+    /// // Run 10,000 iterations, initialise from prior, store every 10th sample
     /// let chain = sampler.run(10000, WalkerInit::FromPrior, 10)?;
     ///
     /// // Check convergence (discard first 1000 samples as burn-in)
@@ -243,7 +243,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// println!("R-hat: {:?}", r_hat);
     ///
     /// // Extract converged posterior samples
-    /// let samples = chain.flat_samples(1000);  // shape: (n_samples, n_params)
+    /// let samples = chain.flat_samples(1000);  // shape: (n_samples, n_parameters)
     /// ```
     pub fn run(&self, n_iterations: usize, init: WalkerInit, thin: usize) -> Result<Chain> {
         self.run_with_walkers(
@@ -260,7 +260,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// # Arguments
     ///
     /// * `n_iterations` - Number of MCMC iterations to run
-    /// * `init` - Walker initialization strategy
+    /// * `init` - Walker initialisation strategy
     /// * `thin` - Thinning interval (store every thin-th sample)
     /// * `progress_callback` - Callback for progress reporting. An `Err` from it stops the run.
     pub fn run_with_progress<F>(
@@ -290,7 +290,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// # Arguments
     ///
     /// * `n_iterations` - Number of MCMC iterations to run
-    /// * `init` - Walker initialization strategy
+    /// * `init` - Walker initialisation strategy
     /// * `thin` - Thinning interval (store every thin-th sample)
     /// * `checkpoint_every` - Save checkpoint every N iterations
     /// * `checkpoint_path` - Base path for checkpoint files (will append .state and .chain)
@@ -369,7 +369,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// # Arguments
     ///
     /// * `n_iterations` - Number of MCMC iterations to run
-    /// * `init` - Walker initialization strategy
+    /// * `init` - Walker initialisation strategy
     /// * `n_walkers` - Number of walkers (must be even and >= 2)
     /// * `thin` - Thinning interval (store every thin-th sample)
     /// * `checkpoint_every` - Save checkpoint every N iterations (0 = no checkpointing)
@@ -402,19 +402,19 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
             ));
         }
 
-        // Initialize walkers
+        // Initialise walkers
         let mut rng = rand::rng();
-        let positions = init.initialize(n_walkers, &self.params, &mut rng)?;
+        let positions = init.initialise(n_walkers, &self.parameters, &mut rng)?;
 
         // Create initial state
-        let param_names: Vec<String> = self
-            .params
-            .param_names()
+        let parameter_names: Vec<String> = self
+            .parameters
+            .parameter_names()
             .iter()
             .map(|s| s.to_string())
             .collect();
-        let state = SamplerState::new(positions, param_names.clone())?;
-        let chain = Chain::new(param_names, thin);
+        let state = SamplerState::new(positions, parameter_names.clone())?;
+        let chain = Chain::new(parameter_names, thin);
 
         self.run_from_state(
             state,
@@ -431,7 +431,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
     /// # Arguments
     ///
     /// * `n_iterations` - Number of MCMC iterations to run
-    /// * `init` - Walker initialization strategy
+    /// * `init` - Walker initialisation strategy
     /// * `n_walkers` - Number of walkers (must be even and >= 2)
     /// * `thin` - Thinning interval (store every thin-th sample)
     /// * `progress_callback` - Optional callback for progress reporting. An `Err` from it stops the run.
@@ -499,7 +499,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
             // Compute acceptance probability
             let accept_prob = self.stretch.acceptance_probability(
                 *z,
-                state.n_params(),
+                state.n_parameters(),
                 log_prob_old,
                 log_prob_new,
             );
@@ -544,7 +544,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
         F: FnMut(&ProgressInfo) -> Result<()>,
         P: AsRef<Path>,
     {
-        let iterations_completed = chain.total_iterations();
+        let iterations_completed = chain.n_iterations();
         let iterations_remaining = n_iterations.saturating_sub(iterations_completed);
 
         if iterations_remaining == 0 {
@@ -621,7 +621,7 @@ impl<R: ModelRunner + Sync, L: LikelihoodFn + Sync> EnsembleSampler<R, L> {
             if let Some(ref mut callback) = progress_callback {
                 let info = ProgressInfo {
                     iteration,
-                    total: n_iterations,
+                    n_iterations,
                     acceptance_rate: state.mean_acceptance_rate(),
                     mean_log_prob: state.log_probs.mean().unwrap_or(f64::NEG_INFINITY),
                 };
@@ -647,25 +647,25 @@ mod tests {
 
     // Simple model for testing: y = a * x + b
     struct LinearModel {
-        param_names: Vec<String>,
+        parameter_names: Vec<String>,
     }
 
     impl LinearModel {
         fn new() -> Self {
             Self {
-                param_names: vec!["a".to_string(), "b".to_string()],
+                parameter_names: vec!["a".to_string(), "b".to_string()],
             }
         }
     }
 
     impl ModelRunner for LinearModel {
-        fn param_names(&self) -> &[String] {
-            &self.param_names
+        fn parameter_names(&self) -> &[String] {
+            &self.parameter_names
         }
 
-        fn run(&self, params: &[f64]) -> crate::Result<crate::likelihood::ModelOutput> {
-            let a = params[0];
-            let b = params[1];
+        fn run(&self, parameters: &[f64]) -> crate::Result<crate::likelihood::ModelOutput> {
+            let a = parameters[0];
+            let b = parameters[1];
 
             let mut output = crate::likelihood::ModelOutput::new();
             let mut var = crate::likelihood::VariableOutput::new("y");
@@ -683,24 +683,24 @@ mod tests {
 
     // Constant model for simple testing
     struct ConstantModel {
-        param_names: Vec<String>,
+        parameter_names: Vec<String>,
     }
 
     impl ConstantModel {
         fn new() -> Self {
             Self {
-                param_names: vec!["x".to_string()],
+                parameter_names: vec!["x".to_string()],
             }
         }
     }
 
     impl ModelRunner for ConstantModel {
-        fn param_names(&self) -> &[String] {
-            &self.param_names
+        fn parameter_names(&self) -> &[String] {
+            &self.parameter_names
         }
 
-        fn run(&self, params: &[f64]) -> crate::Result<crate::likelihood::ModelOutput> {
-            let x = params[0];
+        fn run(&self, parameters: &[f64]) -> crate::Result<crate::likelihood::ModelOutput> {
+            let x = parameters[0];
 
             let mut output = crate::likelihood::ModelOutput::new();
             let mut var = crate::likelihood::VariableOutput::new("value");
@@ -713,20 +713,20 @@ mod tests {
 
     // Dummy model for validation testing
     struct DummyModel {
-        param_names: Vec<String>,
+        parameter_names: Vec<String>,
     }
 
     impl DummyModel {
         fn new() -> Self {
             Self {
-                param_names: vec!["x".to_string()],
+                parameter_names: vec!["x".to_string()],
             }
         }
     }
 
     impl ModelRunner for DummyModel {
-        fn param_names(&self) -> &[String] {
-            &self.param_names
+        fn parameter_names(&self) -> &[String] {
+            &self.parameter_names
         }
 
         fn run(&self, _params: &[f64]) -> crate::Result<crate::likelihood::ModelOutput> {
@@ -752,14 +752,14 @@ mod tests {
             .unwrap(); // y(4) = 9
 
         // Set up parameter priors
-        let mut params = ParameterSet::new();
-        params.add("a", Box::new(Uniform::new(0.0, 5.0).unwrap()));
-        params.add("b", Box::new(Uniform::new(-2.0, 4.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("a", Box::new(Uniform::new(0.0, 5.0).unwrap()));
+        parameters.add("b", Box::new(Uniform::new(-2.0, 4.0).unwrap()));
 
         // Create sampler
         let runner = LinearModel::new();
         let likelihood = GaussianLikelihood::default();
-        let sampler = EnsembleSampler::new(params, runner, likelihood, target);
+        let sampler = EnsembleSampler::new(parameters, runner, likelihood, target);
 
         // Run a short chain to test functionality
         let chain = sampler
@@ -768,7 +768,7 @@ mod tests {
 
         // Basic checks
         assert_eq!(chain.len(), 10); // All 10 iterations stored (thin=1)
-        assert_eq!(chain.param_names(), &["a", "b"]);
+        assert_eq!(chain.parameter_names(), &["a", "b"]);
 
         // Check that we got some samples
         let flat_samples = chain.flat_samples(0);
@@ -777,9 +777,9 @@ mod tests {
 
         // Check log probabilities are finite (at least some valid samples)
         let flat_lp = chain.flat_log_probs(0);
-        let n_finite = flat_lp.iter().filter(|&&lp| lp.is_finite()).count();
+        let n_finite_values = flat_lp.iter().filter(|&&lp| lp.is_finite()).count();
         assert!(
-            n_finite > 0,
+            n_finite_values > 0,
             "Should have at least some finite log probabilities"
         );
     }
@@ -790,16 +790,16 @@ mod tests {
         let mut target = Target::new();
         target.add_variable("value").add(0.0, 0.5, 0.1).unwrap();
 
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
 
         let runner = ConstantModel::new();
         let likelihood = GaussianLikelihood::default();
-        let sampler = EnsembleSampler::new(params, runner, likelihood, target);
+        let sampler = EnsembleSampler::new(parameters, runner, likelihood, target);
 
-        // Initialize walkers in a ball around the true value
+        // Initialise walkers in a ball around the true value
         let init = WalkerInit::Ball {
-            center: vec![0.5],
+            centre: vec![0.5],
             radius: 0.01,
         };
 
@@ -820,12 +820,12 @@ mod tests {
     #[test]
     fn test_ensemble_sampler_odd_walkers_error() {
         let target = Target::new();
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
 
         let runner = DummyModel::new();
         let likelihood = GaussianLikelihood::default();
-        let sampler = EnsembleSampler::new(params, runner, likelihood, target);
+        let sampler = EnsembleSampler::new(parameters, runner, likelihood, target);
 
         // Try with odd number of walkers (should fail)
         let result = sampler.run_with_walkers(5, WalkerInit::FromPrior, 3, 1, None::<NoProgress>);
@@ -835,12 +835,12 @@ mod tests {
     #[test]
     fn test_progress_callback() {
         let target = Target::new();
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
 
         let runner = DummyModel::new();
         let likelihood = GaussianLikelihood::default();
-        let sampler = EnsembleSampler::new(params, runner, likelihood, target);
+        let sampler = EnsembleSampler::new(parameters, runner, likelihood, target);
 
         // Track progress updates
         let progress_updates = Rc::new(RefCell::new(Vec::new()));
@@ -849,7 +849,7 @@ mod tests {
         let callback = move |info: &ProgressInfo| {
             progress_updates_clone.borrow_mut().push((
                 info.iteration,
-                info.total,
+                info.n_iterations,
                 info.acceptance_rate,
                 info.mean_log_prob,
             ));
@@ -886,14 +886,14 @@ mod tests {
         // Sample from known posterior and verify recovered statistics
         //
         // Setup: Uniform prior on [-10, 10]^2, single observation at (1.0, 2.0) with sigma = 1.0
-        // Posterior is bivariate normal centered at observation (independent dimensions)
+        // Posterior is bivariate normal centred at observation (independent dimensions)
 
         let true_mean = [1.0, 2.0]; // True parameter values (= posterior mean)
         let obs_std = 1.0; // Observation uncertainty = posterior std (with uniform prior)
 
         // Create parameter priors (uniform, wide enough to not dominate)
-        let mut params = ParameterSet::new();
-        params
+        let mut parameters = ParameterSet::new();
+        parameters
             .add(
                 "x".to_string(),
                 Box::new(crate::distribution::Uniform::new(-10.0, 10.0).unwrap()),
@@ -916,21 +916,21 @@ mod tests {
 
         // Create model runner that simply returns the parameters as outputs
         struct IdentityRunner {
-            param_names: Vec<String>,
+            parameter_names: Vec<String>,
         }
 
         impl ModelRunner for IdentityRunner {
-            fn param_names(&self) -> &[String] {
-                &self.param_names
+            fn parameter_names(&self) -> &[String] {
+                &self.parameter_names
             }
 
-            fn run(&self, params: &[f64]) -> crate::Result<ModelOutput> {
+            fn run(&self, parameters: &[f64]) -> crate::Result<ModelOutput> {
                 let mut output = std::collections::HashMap::new();
 
                 // Create output for x variable
                 let mut x_values = std::collections::HashMap::new();
                 for i in 0..20 {
-                    x_values.insert(format!("{:.6}", i as f64), params[0]);
+                    x_values.insert(format!("{:.6}", i as f64), parameters[0]);
                 }
                 output.insert(
                     "x".to_string(),
@@ -943,7 +943,7 @@ mod tests {
                 // Create output for y variable
                 let mut y_values = std::collections::HashMap::new();
                 for i in 0..20 {
-                    y_values.insert(format!("{:.6}", i as f64), params[1]);
+                    y_values.insert(format!("{:.6}", i as f64), parameters[1]);
                 }
                 output.insert(
                     "y".to_string(),
@@ -958,13 +958,13 @@ mod tests {
         }
 
         let runner = IdentityRunner {
-            param_names: vec!["x".to_string(), "y".to_string()],
+            parameter_names: vec!["x".to_string(), "y".to_string()],
         };
         let likelihood = GaussianLikelihood::new();
 
         // Run sampler
         // Use enough iterations for reliable R-hat convergence (stochastic test)
-        let sampler = EnsembleSampler::new(params.clone(), runner, likelihood, target.clone());
+        let sampler = EnsembleSampler::new(parameters.clone(), runner, likelihood, target.clone());
         let n_iterations = 2000;
         let n_walkers = 32;
         let burn_in = 1000;
@@ -981,9 +981,9 @@ mod tests {
 
         // Extract samples after burn-in
         let samples = chain.flat_samples(burn_in);
-        let (n_samples, n_params) = samples.dim();
+        let (n_samples, n_parameters) = samples.dim();
 
-        assert_eq!(n_params, 2);
+        assert_eq!(n_parameters, 2);
         assert_eq!(n_samples, (n_iterations - burn_in) * n_walkers);
 
         // Compute sample mean
@@ -1068,8 +1068,8 @@ mod tests {
         // WalkerInit::FromPrior uses thread_rng() which may not be deterministic in parallel.
 
         // Create simple test setup
-        let mut params = ParameterSet::new();
-        params
+        let mut parameters = ParameterSet::new();
+        parameters
             .add("x".to_string(), Box::new(Normal::new(0.0, 5.0).unwrap()))
             .add("y".to_string(), Box::new(Normal::new(0.0, 5.0).unwrap()));
 
@@ -1078,21 +1078,21 @@ mod tests {
         target.add_variable("y").add(0.0, 2.0, 0.5).unwrap();
 
         struct IdentityRunner {
-            param_names: Vec<String>,
+            parameter_names: Vec<String>,
         }
 
         impl ModelRunner for IdentityRunner {
-            fn param_names(&self) -> &[String] {
-                &self.param_names
+            fn parameter_names(&self) -> &[String] {
+                &self.parameter_names
             }
 
-            fn run(&self, params: &[f64]) -> crate::Result<ModelOutput> {
+            fn run(&self, parameters: &[f64]) -> crate::Result<ModelOutput> {
                 let mut output = std::collections::HashMap::new();
                 output.insert(
                     "x".to_string(),
                     VariableOutput {
                         name: "x".to_string(),
-                        values: vec![("0.000000".to_string(), params[0])]
+                        values: vec![("0.000000".to_string(), parameters[0])]
                             .into_iter()
                             .collect(),
                     },
@@ -1101,7 +1101,7 @@ mod tests {
                     "y".to_string(),
                     VariableOutput {
                         name: "y".to_string(),
-                        values: vec![("0.000000".to_string(), params[1])]
+                        values: vec![("0.000000".to_string(), parameters[1])]
                             .into_iter()
                             .collect(),
                     },
@@ -1111,16 +1111,17 @@ mod tests {
         }
 
         let runner = IdentityRunner {
-            param_names: vec!["x".to_string(), "y".to_string()],
+            parameter_names: vec!["x".to_string(), "y".to_string()],
         };
         let likelihood = GaussianLikelihood::new();
-        let sampler = EnsembleSampler::new(params, runner, likelihood, target);
+        let sampler = EnsembleSampler::new(parameters, runner, likelihood, target);
 
         // Generate deterministic initial positions
         let n_walkers = 16;
-        let n_params = 2;
+        let n_parameters = 2;
         let mut rng = ChaCha8Rng::seed_from_u64(12345);
-        let positions = Array2::from_shape_fn((n_walkers, n_params), |_| rng.random::<f64>() * 2.0);
+        let positions =
+            Array2::from_shape_fn((n_walkers, n_parameters), |_| rng.random::<f64>() * 2.0);
 
         // Run sampler twice with same initial positions
         let init = WalkerInit::Explicit(positions.clone());
@@ -1137,9 +1138,9 @@ mod tests {
             .unwrap();
 
         // Both chains should have same shape
-        assert_eq!(chain1.param_names, chain2.param_names);
+        assert_eq!(chain1.parameter_names, chain2.parameter_names);
         assert_eq!(chain1.thin, chain2.thin);
-        assert_eq!(chain1.total_iterations, chain2.total_iterations);
+        assert_eq!(chain1.n_iterations, chain2.n_iterations);
 
         // Get final samples from both chains
         let samples1 = chain1.flat_samples(50);
@@ -1180,26 +1181,26 @@ mod tests {
         use crate::likelihood::{ModelOutput, VariableOutput};
 
         // Test 1D sampling (single parameter)
-        let mut params = ParameterSet::new();
-        params.add("x".to_string(), Box::new(Normal::new(0.0, 5.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x".to_string(), Box::new(Normal::new(0.0, 5.0).unwrap()));
 
         let mut target = Target::new();
         target.add_variable("x").add(0.0, 1.0, 0.5).unwrap();
 
-        struct SingleParamRunner;
-        impl ModelRunner for SingleParamRunner {
-            fn param_names(&self) -> &[String] {
+        struct SingleParameterRunner;
+        impl ModelRunner for SingleParameterRunner {
+            fn parameter_names(&self) -> &[String] {
                 static NAMES: [String; 1] = [String::new()];
                 &NAMES
             }
 
-            fn run(&self, params: &[f64]) -> crate::Result<ModelOutput> {
+            fn run(&self, parameters: &[f64]) -> crate::Result<ModelOutput> {
                 let mut output = std::collections::HashMap::new();
                 output.insert(
                     "x".to_string(),
                     VariableOutput {
                         name: "x".to_string(),
-                        values: vec![("0.000000".to_string(), params[0])]
+                        values: vec![("0.000000".to_string(), parameters[0])]
                             .into_iter()
                             .collect(),
                     },
@@ -1208,8 +1209,12 @@ mod tests {
             }
         }
 
-        let sampler =
-            EnsembleSampler::new(params, SingleParamRunner, GaussianLikelihood::new(), target);
+        let sampler = EnsembleSampler::new(
+            parameters,
+            SingleParameterRunner,
+            GaussianLikelihood::new(),
+            target,
+        );
 
         let chain = sampler
             .run_with_walkers(50, WalkerInit::FromPrior, 10, 1, None::<NoProgress>)
@@ -1234,14 +1239,14 @@ mod tests {
         use crate::likelihood::{ModelOutput, VariableOutput};
 
         // Test high-dimensional sampling (50 parameters)
-        let n_params = 50;
-        let mut params = ParameterSet::new();
-        for i in 0..n_params {
-            params.add(format!("x{}", i), Box::new(Normal::new(0.0, 10.0).unwrap()));
+        let n_parameters = 50;
+        let mut parameters = ParameterSet::new();
+        for i in 0..n_parameters {
+            parameters.add(format!("x{}", i), Box::new(Normal::new(0.0, 10.0).unwrap()));
         }
 
         let mut target = Target::new();
-        for i in 0..n_params {
+        for i in 0..n_parameters {
             target
                 .add_variable(format!("x{}", i))
                 .add(0.0, (i as f64) * 0.1, 1.0)
@@ -1249,18 +1254,18 @@ mod tests {
         }
 
         struct HighDimRunner {
-            n_params: usize,
-            param_names: Vec<String>,
+            n_parameters: usize,
+            parameter_names: Vec<String>,
         }
 
         impl ModelRunner for HighDimRunner {
-            fn param_names(&self) -> &[String] {
-                &self.param_names
+            fn parameter_names(&self) -> &[String] {
+                &self.parameter_names
             }
 
-            fn run(&self, params: &[f64]) -> crate::Result<ModelOutput> {
+            fn run(&self, parameters: &[f64]) -> crate::Result<ModelOutput> {
                 let mut output = std::collections::HashMap::new();
-                for (i, &param_val) in params.iter().enumerate().take(self.n_params) {
+                for (i, &param_val) in parameters.iter().enumerate().take(self.n_parameters) {
                     output.insert(
                         format!("x{}", i),
                         VariableOutput {
@@ -1276,13 +1281,13 @@ mod tests {
         }
 
         let runner = HighDimRunner {
-            n_params,
-            param_names: (0..n_params).map(|i| format!("x{}", i)).collect(),
+            n_parameters,
+            parameter_names: (0..n_parameters).map(|i| format!("x{}", i)).collect(),
         };
 
-        let sampler = EnsembleSampler::new(params, runner, GaussianLikelihood::new(), target);
+        let sampler = EnsembleSampler::new(parameters, runner, GaussianLikelihood::new(), target);
 
-        // For high-D, need many walkers (at least 2*n_params)
+        // For high-D, need many walkers (at least 2*n_parameters)
         let n_walkers = 100;
 
         let chain = sampler
@@ -1290,11 +1295,11 @@ mod tests {
             .unwrap();
 
         let samples = chain.flat_samples(50);
-        assert_eq!(samples.ncols(), n_params);
+        assert_eq!(samples.ncols(), n_parameters);
         assert!(samples.nrows() > 0);
 
         // Check that sampler ran successfully and produced reasonable output
-        for i in 0..n_params {
+        for i in 0..n_parameters {
             let mean = samples.column(i).mean().unwrap();
             let expected = (i as f64) * 0.1;
             assert!(
@@ -1322,13 +1327,13 @@ mod tests {
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
 
-        // Test all walkers initialized very close together
+        // Test all walkers initialised very close together
         // Note: The stretch move CANNOT work if all walkers are at exactly the same point,
         // since the proposal is y = c + z*(x - c) where c is complementary walker.
         // If x == c, then y == c always (no movement).
         // So we test with walkers in a very tight ball instead.
-        let mut params = ParameterSet::new();
-        params
+        let mut parameters = ParameterSet::new();
+        parameters
             .add("x".to_string(), Box::new(Normal::new(0.0, 5.0).unwrap()))
             .add("y".to_string(), Box::new(Normal::new(0.0, 5.0).unwrap()));
 
@@ -1337,21 +1342,21 @@ mod tests {
         target.add_variable("y").add(0.0, 2.0, 0.5).unwrap();
 
         struct IdentityRunner {
-            param_names: Vec<String>,
+            parameter_names: Vec<String>,
         }
 
         impl ModelRunner for IdentityRunner {
-            fn param_names(&self) -> &[String] {
-                &self.param_names
+            fn parameter_names(&self) -> &[String] {
+                &self.parameter_names
             }
 
-            fn run(&self, params: &[f64]) -> crate::Result<ModelOutput> {
+            fn run(&self, parameters: &[f64]) -> crate::Result<ModelOutput> {
                 let mut output = std::collections::HashMap::new();
                 output.insert(
                     "x".to_string(),
                     VariableOutput {
                         name: "x".to_string(),
-                        values: vec![("0.000000".to_string(), params[0])]
+                        values: vec![("0.000000".to_string(), parameters[0])]
                             .into_iter()
                             .collect(),
                     },
@@ -1360,7 +1365,7 @@ mod tests {
                     "y".to_string(),
                     VariableOutput {
                         name: "y".to_string(),
-                        values: vec![("0.000000".to_string(), params[1])]
+                        values: vec![("0.000000".to_string(), parameters[1])]
                             .into_iter()
                             .collect(),
                     },
@@ -1370,12 +1375,12 @@ mod tests {
         }
 
         let runner = IdentityRunner {
-            param_names: vec!["x".to_string(), "y".to_string()],
+            parameter_names: vec!["x".to_string(), "y".to_string()],
         };
 
-        let sampler = EnsembleSampler::new(params, runner, GaussianLikelihood::new(), target);
+        let sampler = EnsembleSampler::new(parameters, runner, GaussianLikelihood::new(), target);
 
-        // Initialize all walkers in a tiny ball around (0, 0)
+        // Initialise all walkers in a tiny ball around (0, 0)
         let n_walkers = 16;
         let mut rng = ChaCha8Rng::seed_from_u64(555);
         let mut positions = Array2::zeros((n_walkers, 2));
@@ -1426,12 +1431,12 @@ mod tests {
     fn failing_sampler(
         threshold: Option<f64>,
     ) -> EnsembleSampler<FailingModel, GaussianLikelihood> {
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
         let mut target = Target::new();
         target.add_variable("value").add(0.0, 0.2, 0.1).unwrap();
         EnsembleSampler::new(
-            params,
+            parameters,
             FailingModel::new(threshold),
             GaussianLikelihood::default(),
             target,
@@ -1475,7 +1480,7 @@ mod tests {
     fn test_failed_proposals_are_rejected_not_fatal() {
         let sampler = failing_sampler(Some(0.5));
         let init = WalkerInit::Ball {
-            center: vec![0.2],
+            centre: vec![0.2],
             radius: 0.01,
         };
 

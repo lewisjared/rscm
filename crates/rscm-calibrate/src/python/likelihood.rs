@@ -17,11 +17,11 @@ use pyo3::prelude::*;
 /// # Example
 ///
 /// ```python
-/// # Create likelihood function (default: no normalization for MCMC)
+/// # Create likelihood function (default: no normalisation for MCMC)
 /// likelihood = GaussianLikelihood()
 ///
-/// # Create with normalization constant (for MLE)
-/// likelihood_normalized = GaussianLikelihood(normalize=True)
+/// # Create with normalisation constant (for MLE)
+/// likelihood_normalised = GaussianLikelihood(normalise=True)
 /// ```
 #[pyclass(name = "GaussianLikelihood")]
 #[derive(Clone)]
@@ -33,8 +33,8 @@ impl PyGaussianLikelihood {
     ///
     /// Parameters
     /// ----------
-    /// normalize : bool, optional
-    ///     Whether to include normalization constant (default: False for MCMC).
+    /// normalise : bool, optional
+    ///     Whether to include normalisation constant (default: False for MCMC).
     ///     Set to True for maximum likelihood estimation or model comparison.
     ///
     /// Returns
@@ -45,35 +45,35 @@ impl PyGaussianLikelihood {
     /// Example
     /// -------
     /// ```python
-    /// # For MCMC (normalization not needed)
+    /// # For MCMC (normalisation not needed)
     /// likelihood = GaussianLikelihood()
     ///
     /// # For MLE or model comparison
-    /// likelihood = GaussianLikelihood(normalize=True)
+    /// likelihood = GaussianLikelihood(normalise=True)
     /// ```
     #[new]
-    #[pyo3(signature = (normalize=false))]
-    fn new(normalize: bool) -> Self {
-        if normalize {
-            PyGaussianLikelihood(GaussianLikelihood::with_normalization())
+    #[pyo3(signature = (normalise=false))]
+    fn new(normalise: bool) -> Self {
+        if normalise {
+            PyGaussianLikelihood(GaussianLikelihood::with_normalisation())
         } else {
             PyGaussianLikelihood(GaussianLikelihood::new())
         }
     }
 
     fn __repr__(&self) -> String {
-        format!("GaussianLikelihood(normalize={})", self.0.normalize)
+        format!("GaussianLikelihood(normalise={})", self.0.normalise)
     }
 }
 
 // Implement LikelihoodFn trait for PyGaussianLikelihood
 // This allows it to be used with EnsembleSampler
 impl LikelihoodFn for PyGaussianLikelihood {
-    fn ln_likelihood(&self, model_output: &ModelOutput, target: &Target) -> Result<f64> {
-        self.0.ln_likelihood(model_output, target)
+    fn log_likelihood(&self, model_output: &ModelOutput, target: &Target) -> Result<f64> {
+        self.0.log_likelihood(model_output, target)
     }
 }
 
-// Note: The ln_likelihood method is not exposed to Python directly
+// Note: The log_likelihood method is not exposed to Python directly
 // Instead, it will be called internally by EnsembleSampler
 // If direct access is needed, we can add a method that takes PyModelOutput and PyTarget

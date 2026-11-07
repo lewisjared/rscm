@@ -44,7 +44,7 @@ let mut rng = rand::thread_rng();
 let sample = prior.sample(&mut rng);
 
 // Evaluate log probability density
-let log_prob = prior.ln_pdf(0.5);
+let log_prob = prior.log_pdf(0.5);
 ```
 
 ## License

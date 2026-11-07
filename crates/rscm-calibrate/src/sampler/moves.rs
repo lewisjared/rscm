@@ -9,7 +9,7 @@ use rand::RngExt;
 
 /// Configuration for the stretch move proposal.
 ///
-/// The stretch move is parameterized by a scale parameter `a` that controls
+/// The stretch move is parameterised by a scale parameter `a` that controls
 /// the proposal distribution. The default value of 2.0 is recommended by
 /// Goodman & Weare (2010).
 #[derive(Debug, Clone, Copy)]
@@ -61,12 +61,12 @@ impl StretchMove {
     /// Compute the Metropolis-Hastings acceptance probability for a stretch move.
     ///
     /// For the stretch move, the acceptance probability is:
-    /// min(1, z^(n_params - 1) * exp(log_prob_new - log_prob_old))
+    /// min(1, z^(n_parameters - 1) * exp(log_prob_new - log_prob_old))
     ///
     /// # Arguments
     ///
     /// * `z` - Stretch factor used for the proposal
-    /// * `n_params` - Number of parameters (dimensionality)
+    /// * `n_parameters` - Number of parameters (dimensionality)
     /// * `log_prob_old` - Log probability at current position
     /// * `log_prob_new` - Log probability at proposed position
     ///
@@ -76,7 +76,7 @@ impl StretchMove {
     pub fn acceptance_probability(
         &self,
         z: f64,
-        n_params: usize,
+        n_parameters: usize,
         log_prob_old: f64,
         log_prob_new: f64,
     ) -> f64 {
@@ -85,7 +85,7 @@ impl StretchMove {
             return 0.0;
         }
 
-        let log_ratio = (n_params as f64 - 1.0) * z.ln() + (log_prob_new - log_prob_old);
+        let log_ratio = (n_parameters as f64 - 1.0) * z.ln() + (log_prob_new - log_prob_old);
         let prob = log_ratio.exp();
 
         prob.min(1.0)
@@ -117,8 +117,8 @@ impl StretchMove {
         let z = self.sample_z(rng);
 
         // Select random complementary walker
-        let n_complementary = complementary_positions.nrows();
-        let comp_idx = rng.random_range(0..n_complementary);
+        let n_complementary_walkers = complementary_positions.nrows();
+        let comp_idx = rng.random_range(0..n_complementary_walkers);
         let comp_pos = complementary_positions.row(comp_idx);
 
         // Compute proposal: y = c + z * (x - c)

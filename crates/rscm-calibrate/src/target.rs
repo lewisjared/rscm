@@ -247,7 +247,7 @@ impl Target {
     }
 
     /// Get the total number of observations across all variables.
-    pub fn total_observations(&self) -> usize {
+    pub fn n_observations(&self) -> usize {
         self.variables.values().map(|v| v.observations.len()).sum()
     }
 
@@ -386,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn target_total_observations() {
+    fn target_n_observations() {
         let mut target = Target::new();
         target.add_variable("Var1").add(2020.0, 1.0, 0.1).unwrap();
         target
@@ -396,7 +396,7 @@ mod tests {
             .add(2021.0, 2.1, 0.1)
             .unwrap();
 
-        assert_eq!(target.total_observations(), 3);
+        assert_eq!(target.n_observations(), 3);
     }
 
     #[test]
@@ -422,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn target_serialization() {
+    fn target_serialisation() {
         let mut target = Target::new();
         target
             .add_variable("Temperature")
@@ -431,10 +431,10 @@ mod tests {
             .with_reference_period(1850.0, 1900.0);
 
         let json = serde_json::to_string(&target).unwrap();
-        let deserialized: Target = serde_json::from_str(&json).unwrap();
+        let deserialised: Target = serde_json::from_str(&json).unwrap();
 
         assert_eq!(
-            deserialized
+            deserialised
                 .get_variable("Temperature")
                 .unwrap()
                 .observations
@@ -442,7 +442,7 @@ mod tests {
             1
         );
         assert_eq!(
-            deserialized
+            deserialised
                 .get_variable("Temperature")
                 .unwrap()
                 .reference_period,

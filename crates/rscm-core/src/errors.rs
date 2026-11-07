@@ -141,11 +141,11 @@ pub enum RscmError {
     },
 
     /// Weight count mismatch for weighted aggregate
-    #[error("Weight count mismatch in weighted aggregate '{aggregate}': {weight_count} weights provided but {contributor_count} contributors defined.")]
+    #[error("Weight count mismatch in weighted aggregate '{aggregate}': {n_weights} weights provided but {n_contributors} contributors defined.")]
     WeightCountMismatch {
         aggregate: String,
-        weight_count: usize,
-        contributor_count: usize,
+        n_weights: usize,
+        n_contributors: usize,
     },
 
     /// Circular dependency detected in aggregate graph

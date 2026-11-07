@@ -5,7 +5,7 @@
 //! - Parameter set specification and sampling
 //! - Target observations and likelihood computation
 //! - MCMC ensemble sampling
-//! - Point estimation via optimization
+//! - Point estimation via optimisation
 //! - Convergence diagnostics
 
 use pyo3::prelude::*;
@@ -24,7 +24,7 @@ pub use distribution::{PyBound, PyDistribution, PyLogNormal, PyNormal, PyUniform
 pub use likelihood::PyGaussianLikelihood;
 pub use model_runner::PyModelRunner;
 pub use parameter_set::PyParameterSet;
-pub use point_estimator::{PyOptimizationResult, PyOptimizer, PyPointEstimator};
+pub use point_estimator::{PyOptimisationResult, PyOptimiser, PyPointEstimator};
 pub use sampler::{PyEnsembleSampler, PyProgressInfo, PyWalkerInit};
 pub use target::{PyObservation, PyTarget, PyVariableTarget};
 
@@ -61,8 +61,8 @@ pub fn calibrate(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Point estimator
     m.add_class::<PyPointEstimator>()?;
-    m.add_class::<PyOptimizer>()?;
-    m.add_class::<PyOptimizationResult>()?;
+    m.add_class::<PyOptimiser>()?;
+    m.add_class::<PyOptimisationResult>()?;
 
     Ok(())
 }

@@ -17,7 +17,7 @@ use crate::{
 /// and tracks all evaluated points and their likelihoods during optimisation.
 pub struct PointEstimator<R: ModelRunner, L: LikelihoodFn> {
     /// Parameter set defining the prior distributions and bounds
-    pub(crate) params: ParameterSet,
+    pub(crate) parameters: ParameterSet,
 
     /// Model runner for evaluating parameter sets
     runner: R,
@@ -29,7 +29,7 @@ pub struct PointEstimator<R: ModelRunner, L: LikelihoodFn> {
     target: Target,
 
     /// All evaluated parameter vectors (each row is one evaluation)
-    evaluated_params: Vec<Vec<f64>>,
+    evaluated_parameters: Vec<Vec<f64>>,
 
     /// Log likelihood values for each evaluated parameter set
     evaluated_log_likelihoods: Vec<f64>,
@@ -40,36 +40,36 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
     ///
     /// # Arguments
     ///
-    /// * `params` - Parameter set defining priors and bounds
+    /// * `parameters` - Parameter set defining priors and bounds
     /// * `runner` - Model runner for evaluating parameter sets
     /// * `likelihood` - Likelihood function
     /// * `target` - Target observations
-    pub fn new(params: ParameterSet, runner: R, likelihood: L, target: Target) -> Self {
+    pub fn new(parameters: ParameterSet, runner: R, likelihood: L, target: Target) -> Self {
         Self {
-            params,
+            parameters,
             runner,
             likelihood,
             target,
-            evaluated_params: Vec::new(),
+            evaluated_parameters: Vec::new(),
             evaluated_log_likelihoods: Vec::new(),
         }
     }
 
     /// Get the number of parameters.
-    pub fn n_params(&self) -> usize {
-        self.params.len()
+    pub fn n_parameters(&self) -> usize {
+        self.parameters.len()
     }
 
     /// Get the parameter names.
-    pub fn param_names(&self) -> Vec<&str> {
-        self.params.param_names()
+    pub fn parameter_names(&self) -> Vec<&str> {
+        self.parameters.parameter_names()
     }
 
     /// Get the parameter bounds for optimisation.
     ///
     /// Returns `(lower_bounds, upper_bounds)` as vectors.
     pub fn bounds(&self) -> (Vec<f64>, Vec<f64>) {
-        self.params.bounds()
+        self.parameters.bounds()
     }
 
     /// Evaluate the log posterior for a parameter vector.
@@ -79,7 +79,7 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
     ///
     /// # Arguments
     ///
-    /// * `params` - Parameter vector (must match order of param_names)
+    /// * `parameters` - Parameter vector (must match order of parameter_names)
     ///
     /// # Returns
     ///
@@ -87,29 +87,29 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
     /// - Parameter is outside prior support
     /// - Model execution fails
     /// - Likelihood computation fails
-    pub fn evaluate(&mut self, params: &[f64]) -> f64 {
-        self.try_evaluate(params).unwrap_or(f64::NEG_INFINITY)
+    pub fn evaluate(&mut self, parameters: &[f64]) -> f64 {
+        self.try_evaluate(parameters).unwrap_or(f64::NEG_INFINITY)
     }
 
     /// Evaluate the log posterior, returning why a prior, model or likelihood evaluation failed.
     ///
     /// A point outside the prior support is `Ok(-inf)`.
     /// The evaluation is recorded in the history either way.
-    pub(crate) fn try_evaluate(&mut self, params: &[f64]) -> Result<f64> {
-        let result = self.log_posterior_and_likelihood(params);
+    pub(crate) fn try_evaluate(&mut self, parameters: &[f64]) -> Result<f64> {
+        let result = self.log_posterior_and_likelihood(parameters);
         let log_likelihood = result.as_ref().map_or(f64::NEG_INFINITY, |&(_, ll)| ll);
 
-        self.evaluated_params.push(params.to_vec());
+        self.evaluated_parameters.push(parameters.to_vec());
         self.evaluated_log_likelihoods.push(log_likelihood);
 
         result.map(|(log_posterior, _)| log_posterior)
     }
 
-    fn log_posterior_and_likelihood(&self, params: &[f64]) -> Result<(f64, f64)> {
+    fn log_posterior_and_likelihood(&self, parameters: &[f64]) -> Result<(f64, f64)> {
         log_posterior(
-            &self.params,
-            params,
-            || self.runner.run(params),
+            &self.parameters,
+            parameters,
+            || self.runner.run(parameters),
             &self.likelihood,
             &self.target,
         )
@@ -118,8 +118,8 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
     /// Get all evaluated parameter vectors.
     ///
     /// Returns a reference to the history of all parameter sets evaluated.
-    pub fn evaluated_params(&self) -> &[Vec<f64>] {
-        &self.evaluated_params
+    pub fn evaluated_parameters(&self) -> &[Vec<f64>] {
+        &self.evaluated_parameters
     }
 
     /// Get all evaluated log likelihood values.
@@ -151,7 +151,7 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
             }
         }
 
-        Some((&self.evaluated_params[best_idx], best_ll))
+        Some((&self.evaluated_parameters[best_idx], best_ll))
     }
 
     /// Clear the evaluation history.
@@ -159,13 +159,13 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
     /// This can be useful when running multiple optimisation attempts
     /// and you want to track each attempt separately.
     pub fn clear_history(&mut self) {
-        self.evaluated_params.clear();
+        self.evaluated_parameters.clear();
         self.evaluated_log_likelihoods.clear();
     }
 
     /// Get the number of evaluations performed.
     pub fn n_evaluations(&self) -> usize {
-        self.evaluated_params.len()
+        self.evaluated_parameters.len()
     }
 }
 
@@ -175,22 +175,22 @@ mod tests {
     use crate::{GaussianLikelihood, Normal, Observation};
 
     struct ConstantModel {
-        param_names: Vec<String>,
+        parameter_names: Vec<String>,
         constant_value: f64,
     }
 
     impl ConstantModel {
         fn new(constant_value: f64) -> Self {
             Self {
-                param_names: vec!["x".to_string()],
+                parameter_names: vec!["x".to_string()],
                 constant_value,
             }
         }
     }
 
     impl ModelRunner for ConstantModel {
-        fn param_names(&self) -> &[String] {
-            &self.param_names
+        fn parameter_names(&self) -> &[String] {
+            &self.parameter_names
         }
 
         fn run(&self, _params: &[f64]) -> crate::Result<crate::likelihood::ModelOutput> {
@@ -205,24 +205,24 @@ mod tests {
 
     #[test]
     fn test_point_estimator_creation() {
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
 
         let runner = ConstantModel::new(5.0);
         let likelihood = GaussianLikelihood::default();
         let target = Target::new();
 
-        let estimator = PointEstimator::new(params, runner, likelihood, target);
+        let estimator = PointEstimator::new(parameters, runner, likelihood, target);
 
-        assert_eq!(estimator.n_params(), 1);
-        assert_eq!(estimator.param_names(), vec!["x"]);
+        assert_eq!(estimator.n_parameters(), 1);
+        assert_eq!(estimator.parameter_names(), vec!["x"]);
         assert_eq!(estimator.n_evaluations(), 0);
     }
 
     #[test]
     fn test_point_estimator_evaluate() {
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
 
         let runner = ConstantModel::new(5.0);
         let likelihood = GaussianLikelihood::default();
@@ -235,7 +235,7 @@ mod tests {
             .add_observation(obs1)
             .add_observation(obs2);
 
-        let mut estimator = PointEstimator::new(params, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
 
         // Evaluate at x=0.0 (mean of prior)
         let log_post = estimator.evaluate(&[0.0]);
@@ -243,7 +243,7 @@ mod tests {
 
         // Check history
         assert_eq!(estimator.n_evaluations(), 1);
-        assert_eq!(estimator.evaluated_params(), &[vec![0.0]]);
+        assert_eq!(estimator.evaluated_parameters(), &[vec![0.0]]);
         assert_eq!(estimator.evaluated_log_likelihoods().len(), 1);
 
         // Evaluate at another point
@@ -256,8 +256,8 @@ mod tests {
 
     #[test]
     fn test_point_estimator_best() {
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
 
         let runner = ConstantModel::new(5.0);
         let likelihood = GaussianLikelihood::default();
@@ -266,7 +266,7 @@ mod tests {
         let obs = Observation::new(0.0, 5.0, 0.1).unwrap();
         target.add_variable("y").add_observation(obs);
 
-        let mut estimator = PointEstimator::new(params, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
 
         // No evaluations yet
         assert!(estimator.best().is_none());
@@ -277,24 +277,26 @@ mod tests {
         estimator.evaluate(&[0.5]);
 
         // Get best
-        let (best_params, best_ll) = estimator.best().unwrap();
-        assert_eq!(best_params.len(), 1);
+        let (best_parameters, best_ll) = estimator.best().unwrap();
+        assert_eq!(best_parameters.len(), 1);
         assert!(best_ll.is_finite());
 
         // Best should be one of the evaluated points
-        assert!(estimator.evaluated_params().contains(&best_params.to_vec()));
+        assert!(estimator
+            .evaluated_parameters()
+            .contains(&best_parameters.to_vec()));
     }
 
     #[test]
     fn test_point_estimator_clear_history() {
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
 
         let runner = ConstantModel::new(5.0);
         let likelihood = GaussianLikelihood::default();
         let target = Target::new();
 
-        let mut estimator = PointEstimator::new(params, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
 
         // Evaluate some points
         estimator.evaluate(&[0.0]);
@@ -311,15 +313,15 @@ mod tests {
     fn test_point_estimator_bounds() {
         use crate::Uniform;
 
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
-        params.add("y", Box::new(Uniform::new(-5.0, 5.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+        parameters.add("y", Box::new(Uniform::new(-5.0, 5.0).unwrap()));
 
         let runner = ConstantModel::new(5.0);
         let likelihood = GaussianLikelihood::default();
         let target = Target::new();
 
-        let estimator = PointEstimator::new(params, runner, likelihood, target);
+        let estimator = PointEstimator::new(parameters, runner, likelihood, target);
 
         let (lower, upper) = estimator.bounds();
 
@@ -334,14 +336,14 @@ mod tests {
 
     #[test]
     fn test_point_estimator_model_failure() {
-        let mut params = ParameterSet::new();
-        params.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Normal::new(0.0, 1.0).unwrap()));
 
         let runner = crate::test_support::FailingModel::new(None);
         let likelihood = GaussianLikelihood::default();
         let target = Target::new();
 
-        let mut estimator = PointEstimator::new(params, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
 
         // Model failure should return NEG_INFINITY
         let log_post = estimator.evaluate(&[0.0]);

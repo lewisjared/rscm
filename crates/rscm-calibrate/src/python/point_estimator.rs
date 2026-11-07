@@ -3,7 +3,7 @@
 use pyo3::prelude::*;
 
 use crate::{
-    optimizer::{OptimizationResult, Optimizer},
+    optimiser::{OptimisationResult, Optimiser},
     point_estimator::PointEstimator,
 };
 
@@ -12,52 +12,52 @@ use super::{
     target::PyTarget,
 };
 
-/// Optimization algorithm for point estimation.
+/// Optimisation algorithm for point estimation.
 ///
-/// This enum specifies which optimization algorithm to use when finding
+/// This enum specifies which optimisation algorithm to use when finding
 /// the maximum likelihood or maximum a posteriori (MAP) parameter estimates.
-#[pyclass(name = "Optimizer")]
+#[pyclass(name = "Optimiser")]
 #[derive(Clone, Copy)]
-pub struct PyOptimizer {
-    inner: Optimizer,
+pub struct PyOptimiser {
+    inner: Optimiser,
 }
 
 #[pymethods]
-impl PyOptimizer {
+impl PyOptimiser {
     /// Random search baseline.
     ///
     /// Samples random parameter sets from the prior
-    /// and returns the best. Useful as a baseline or for initialization.
+    /// and returns the best. Useful as a baseline or for initialisation.
     #[staticmethod]
     fn random_search() -> Self {
         Self {
-            inner: Optimizer::RandomSearch,
+            inner: Optimiser::RandomSearch,
         }
     }
 
     fn __repr__(&self) -> String {
         match self.inner {
-            Optimizer::RandomSearch => "Optimizer.random_search()".to_string(),
+            Optimiser::RandomSearch => "Optimiser.random_search()".to_string(),
         }
     }
 }
 
-/// Result of a point estimation optimization.
+/// Result of a point estimation optimisation.
 ///
 /// Contains the best parameters found, log likelihood, log posterior,
-/// and optimization diagnostics.
-#[pyclass(name = "OptimizationResult")]
+/// and optimisation diagnostics.
+#[pyclass(name = "OptimisationResult")]
 #[derive(Clone)]
-pub struct PyOptimizationResult {
-    inner: OptimizationResult,
+pub struct PyOptimisationResult {
+    inner: OptimisationResult,
 }
 
 #[pymethods]
-impl PyOptimizationResult {
+impl PyOptimisationResult {
     /// Best parameter vector found.
     #[getter]
-    fn best_params(&self) -> Vec<f64> {
-        self.inner.best_params.clone()
+    fn best_parameters(&self) -> Vec<f64> {
+        self.inner.best_parameters.clone()
     }
 
     /// Log likelihood at best parameters (not including prior).
@@ -78,7 +78,7 @@ impl PyOptimizationResult {
         self.inner.n_evaluations
     }
 
-    /// Whether the optimizer converged.
+    /// Whether the optimiser converged.
     #[getter]
     fn converged(&self) -> bool {
         self.inner.converged
@@ -86,7 +86,7 @@ impl PyOptimizationResult {
 
     fn __repr__(&self) -> String {
         format!(
-            "OptimizationResult(best_log_likelihood={:.4}, n_evaluations={}, converged={})",
+            "OptimisationResult(best_log_likelihood={:.4}, n_evaluations={}, converged={})",
             self.inner.best_log_likelihood, self.inner.n_evaluations, self.inner.converged
         )
     }
@@ -96,32 +96,32 @@ impl PyOptimizationResult {
 ///
 /// This class wraps the calibration components (parameters, model runner,
 /// likelihood, target) and provides methods for point estimation via
-/// optimization algorithms.
+/// optimisation algorithms.
 ///
 /// The estimator tracks all evaluated parameter sets and their log likelihoods,
-/// enabling analysis of the optimization trajectory.
+/// enabling analysis of the optimisation trajectory.
 ///
 /// # Examples
 ///
 /// ```python
 /// from rscm._lib.calibrate import (
 ///     ParameterSet, Uniform, ModelRunner, GaussianLikelihood,
-///     Target, PointEstimator, Optimizer
+///     Target, PointEstimator, Optimiser
 /// )
 ///
 /// # Set up calibration components
-/// params = ParameterSet()
-/// params.add("x", Uniform(0.0, 10.0))
+/// parameters = ParameterSet()
+/// parameters.add("x", Uniform(0.0, 10.0))
 ///
 /// # ... create model_runner, target ...
 ///
 /// # Create point estimator
 /// likelihood = GaussianLikelihood()
-/// estimator = PointEstimator(params, model_runner, likelihood, target)
+/// estimator = PointEstimator(parameters, model_runner, likelihood, target)
 ///
-/// # Run optimization
-/// result = estimator.optimize(Optimizer.random_search(), n_samples=1000)
-/// print(f"Best parameters: {result.best_params}")
+/// # Run optimisation
+/// result = estimator.optimise(Optimiser.random_search(), n_samples=1000)
+/// print(f"Best parameters: {result.best_parameters}")
 /// print(f"Log likelihood: {result.best_log_likelihood}")
 /// ```
 #[pyclass(name = "PointEstimator")]
@@ -135,7 +135,7 @@ impl PyPointEstimator {
     ///
     /// # Arguments
     ///
-    /// * `params` - Parameter set defining priors and bounds
+    /// * `parameters` - Parameter set defining priors and bounds
     /// * `runner` - Model runner for evaluating parameter sets
     /// * `likelihood` - Likelihood function
     /// * `target` - Target observations
@@ -145,14 +145,14 @@ impl PyPointEstimator {
     /// A new PointEstimator instance.
     #[new]
     fn new(
-        params: PyParameterSet,
+        parameters: PyParameterSet,
         runner: PyModelRunner,
         likelihood: PyGaussianLikelihood,
         target: PyTarget,
     ) -> Self {
         Self {
             inner: PointEstimator::new(
-                params.into_inner(),
+                parameters.into_inner(),
                 runner,
                 likelihood,
                 target.into_inner(),
@@ -162,15 +162,15 @@ impl PyPointEstimator {
 
     /// Get the number of parameters.
     #[getter]
-    fn n_params(&self) -> usize {
-        self.inner.n_params()
+    fn n_parameters(&self) -> usize {
+        self.inner.n_parameters()
     }
 
     /// Get the parameter names.
     #[getter]
-    fn param_names(&self) -> Vec<String> {
+    fn parameter_names(&self) -> Vec<String> {
         self.inner
-            .param_names()
+            .parameter_names()
             .iter()
             .map(|s| s.to_string())
             .collect()
@@ -182,46 +182,46 @@ impl PyPointEstimator {
         self.inner.n_evaluations()
     }
 
-    /// Run point estimation optimization.
+    /// Run point estimation optimisation.
     ///
-    /// Finds the parameter set that maximizes the log posterior (prior + likelihood).
+    /// Finds the parameter set that maximises the log posterior (prior + likelihood).
     ///
     /// # Arguments
     ///
-    /// * `optimizer` - Optimization algorithm to use
+    /// * `optimiser` - Optimisation algorithm to use
     /// * `n_samples` - Number of samples to evaluate (interpretation depends on algorithm)
     ///
     /// # Returns
     ///
-    /// An OptimizationResult with the best parameters and diagnostics.
+    /// An OptimisationResult with the best parameters and diagnostics.
     ///
     /// # Raises
     ///
-    /// ValueError: If optimization fails or finds no valid samples.
+    /// ValueError: If optimisation fails or finds no valid samples.
     ///
     /// # Examples
     ///
     /// ```python
-    /// result = estimator.optimize(Optimizer.random_search(), n_samples=1000)
-    /// print(f"Best: {result.best_params}")
+    /// result = estimator.optimise(Optimiser.random_search(), n_samples=1000)
+    /// print(f"Best: {result.best_parameters}")
     /// print(f"Log likelihood: {result.best_log_likelihood}")
     /// ```
-    fn optimize(
+    fn optimise(
         &mut self,
-        optimizer: PyOptimizer,
+        optimiser: PyOptimiser,
         n_samples: usize,
-    ) -> PyResult<PyOptimizationResult> {
+    ) -> PyResult<PyOptimisationResult> {
         let result = self
             .inner
-            .optimize(optimizer.inner, n_samples)
+            .optimise(optimiser.inner, n_samples)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
 
-        Ok(PyOptimizationResult { inner: result })
+        Ok(PyOptimisationResult { inner: result })
     }
 
     /// Clear the evaluation history.
     ///
-    /// This can be useful when running multiple optimization attempts
+    /// This can be useful when running multiple optimisation attempts
     /// and you want to track each attempt separately.
     fn clear_history(&mut self) {
         self.inner.clear_history();
@@ -229,7 +229,7 @@ impl PyPointEstimator {
 
     /// Get the best parameter set found so far.
     ///
-    /// Returns a tuple of (best_params, best_log_likelihood), or None
+    /// Returns a tuple of (best_parameters, best_log_likelihood), or None
     /// if no evaluations have been performed yet.
     ///
     /// # Returns
@@ -237,23 +237,25 @@ impl PyPointEstimator {
     /// * `(list[float], float)` - Best parameters and their log likelihood
     /// * `None` - If no evaluations performed yet
     fn best(&self) -> Option<(Vec<f64>, f64)> {
-        self.inner.best().map(|(params, ll)| (params.to_vec(), ll))
+        self.inner
+            .best()
+            .map(|(parameters, ll)| (parameters.to_vec(), ll))
     }
 
     /// Get all evaluated parameter vectors.
     ///
-    /// Returns the history of all parameter sets evaluated during optimization.
+    /// Returns the history of all parameter sets evaluated during optimisation.
     ///
     /// # Returns
     ///
     /// List of parameter vectors (each vector is a list of floats).
-    fn evaluated_params(&self) -> Vec<Vec<f64>> {
-        self.inner.evaluated_params().to_vec()
+    fn evaluated_parameters(&self) -> Vec<Vec<f64>> {
+        self.inner.evaluated_parameters().to_vec()
     }
 
     /// Get all evaluated log likelihood values.
     ///
-    /// Returns the history of log likelihoods corresponding to evaluated_params().
+    /// Returns the history of log likelihoods corresponding to evaluated_parameters().
     /// Note: These are log likelihoods, not log posteriors (prior not included).
     ///
     /// # Returns
@@ -265,8 +267,8 @@ impl PyPointEstimator {
 
     fn __repr__(&self) -> String {
         format!(
-            "PointEstimator(n_params={}, n_evaluations={})",
-            self.inner.n_params(),
+            "PointEstimator(n_parameters={}, n_evaluations={})",
+            self.inner.n_parameters(),
             self.inner.n_evaluations()
         )
     }

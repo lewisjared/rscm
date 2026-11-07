@@ -455,8 +455,8 @@ impl VariableSchema {
                 if weights.len() != agg_def.contributors.len() {
                     return Err(RscmError::WeightCountMismatch {
                         aggregate: agg_name.clone(),
-                        weight_count: weights.len(),
-                        contributor_count: agg_def.contributors.len(),
+                        n_weights: weights.len(),
+                        n_contributors: agg_def.contributors.len(),
                     });
                 }
             }

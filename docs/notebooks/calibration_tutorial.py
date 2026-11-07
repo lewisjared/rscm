@@ -44,7 +44,7 @@ from rscm.calibrate import (
     LogNormal,
     ModelRunner,
     Normal,
-    Optimizer,
+    Optimiser,
     ParameterSet,
     PointEstimator,
     Target,
@@ -146,12 +146,12 @@ y_obs = quadratic(x_obs, **true_params) + np.random.normal(
 # This might be an initial guess or a physically plausible range.
 
 # %%
-params = ParameterSet()
-params.add("a", Uniform(-2.0, 2.0))
-params.add("b", Uniform(0.0, 5.0))
-params.add("c", Uniform(0.0, 5.0))
+parameters = ParameterSet()
+parameters.add("a", Uniform(-2.0, 2.0))
+parameters.add("b", Uniform(0.0, 5.0))
+parameters.add("c", Uniform(0.0, 5.0))
 
-params.param_names
+parameters.parameter_names
 
 # %% [markdown]
 # Uniform priors are the simplest choice.
@@ -162,7 +162,7 @@ params.param_names
 # %%
 informative_params = ParameterSet(
     {
-        "sensitivity": LogNormal(mean=3.0, std=1.0),
+        "sensitivity": LogNormal(mean=3.0, std_dev=1.0),
         "offset": Normal(0.0, 0.5),
         "efficacy": Bound(Normal(1.0, 0.3), 0.5, 2.0),
     }
@@ -202,7 +202,7 @@ def model_factory(param_dict):
 
 runner = ModelRunner(
     model_factory=model_factory,
-    param_names=["a", "b", "c"],
+    parameter_names=["a", "b", "c"],
     output_variables=["y"],
 )
 
@@ -214,19 +214,19 @@ runner = ModelRunner(
 
 # %%
 likelihood = GaussianLikelihood()
-estimator = PointEstimator(params, runner, likelihood, target)
-result = estimator.optimize(Optimizer.random_search(), n_samples=1000)
+estimator = PointEstimator(parameters, runner, likelihood, target)
+result = estimator.optimise(Optimiser.random_search(), n_samples=1000)
 
-best_params = dict(zip(estimator.param_names, result.best_params))
+best_parameters = dict(zip(estimator.parameter_names, result.best_parameters))
 print(f"Best log likelihood: {result.best_log_likelihood:.3f}")
-pd.DataFrame({"best": best_params, "true": true_params}).round(3)
+pd.DataFrame({"best": best_parameters, "true": true_params}).round(3)
 
 # %% tags=["remove_input"]
 x_plot = np.linspace(0, 6, 100)
 plt.figure(figsize=(8, 5))
 plt.errorbar(x_obs, y_obs, yerr=uncertainty, fmt="o", label="Observations", capsize=5)
 plt.plot(x_plot, quadratic(x_plot, **true_params), "--", label="True model", alpha=0.7)
-plt.plot(x_plot, quadratic(x_plot, **best_params), "-", label="Best fit")
+plt.plot(x_plot, quadratic(x_plot, **best_parameters), "-", label="Best fit")
 plt.xlabel("x")
 plt.ylabel("y")
 plt.legend()
@@ -242,7 +242,7 @@ plt.show()
 # The progress callback prints a line every 500 iterations.
 
 # %%
-sampler = EnsembleSampler(params, runner, likelihood, target)
+sampler = EnsembleSampler(parameters, runner, likelihood, target)
 chain = sampler.run_with_progress(
     n_iterations=1000,
     init=WalkerInit.from_prior(),
@@ -250,7 +250,7 @@ chain = sampler.run_with_progress(
     progress_callback=progress.create_simple_callback(print_every=500),
 )
 
-print(f"{sampler.default_n_walkers()} walkers, {chain.total_iterations} iterations")
+print(f"{sampler.default_n_walkers()} walkers, {chain.n_iterations} iterations")
 
 # %% [markdown]
 # ### Convergence Diagnostics
@@ -275,11 +275,11 @@ pd.DataFrame(
 # %% [markdown]
 # ### Posterior Distribution
 #
-# `to_param_dict` returns the samples after burn-in as one array per parameter.
+# `to_parameter_dict` returns the samples after burn-in as one array per parameter.
 # The hidden `posterior_table` helper summarises each one.
 
 # %%
-samples = chain.to_param_dict(discard)
+samples = chain.to_parameter_dict(discard)
 posterior_table(samples, true_params)
 
 # %% tags=["remove_input"]
@@ -386,7 +386,7 @@ climate_target.add_observation("Surface Temperature", 2010.0, obs_temp, obs_unce
 fixed_climate_params = {
     name: value
     for name, value in true_climate_params.items()
-    if name not in climate_params.param_names
+    if name not in climate_params.parameter_names
 }
 
 
@@ -398,7 +398,7 @@ def climate_model_factory(param_values):
 
 climate_runner = ModelRunner(
     model_factory=climate_model_factory,
-    param_names=climate_params.param_names,
+    parameter_names=climate_params.parameter_names,
     output_variables=["Surface Temperature"],
 )
 
@@ -409,10 +409,10 @@ climate_runner = ModelRunner(
 climate_estimator = PointEstimator(
     climate_params, climate_runner, GaussianLikelihood(), climate_target
 )
-climate_result = climate_estimator.optimize(Optimizer.random_search(), n_samples=1000)
+climate_result = climate_estimator.optimise(Optimiser.random_search(), n_samples=1000)
 
 best_climate_params = dict(
-    zip(climate_estimator.param_names, climate_result.best_params)
+    zip(climate_estimator.parameter_names, climate_result.best_parameters)
 )
 print(f"Best log likelihood: {climate_result.best_log_likelihood:.3f}")
 pd.DataFrame(
@@ -431,7 +431,7 @@ pd.DataFrame(
 # ### Climate MCMC Sampling
 #
 # The walkers start near the point estimate rather than across the whole prior.
-# `WalkerInit.ball(center, radius)` spreads them uniformly over a box of width `radius` around `center`.
+# `WalkerInit.ball(centre, radius)` spreads them uniformly over a box of width `radius` around `centre`.
 # `WalkerInit.explicit(positions)` takes one row of parameter values per walker instead.
 
 # %%
@@ -440,7 +440,7 @@ climate_sampler = EnsembleSampler(
 )
 climate_chain = climate_sampler.run_with_progress(
     n_iterations=1000,
-    init=WalkerInit.ball(climate_result.best_params, 0.01),
+    init=WalkerInit.ball(climate_result.best_parameters, 0.01),
     thin=1,
     progress_callback=progress.create_simple_callback(print_every=500),
 )
@@ -454,7 +454,7 @@ pd.DataFrame(
 # ### Climate Posterior
 
 # %%
-climate_samples = climate_chain.to_param_dict(discard)
+climate_samples = climate_chain.to_parameter_dict(discard)
 posterior_table(climate_samples, true_climate_params)
 
 # %% tags=["remove_input"]
@@ -489,7 +489,7 @@ chain_1 = sampler.run_with_checkpoint(
     checkpoint_every=100,
     checkpoint_path=checkpoint_path,
 )
-print(f"First run: {chain_1.total_iterations} iterations")
+print(f"First run: {chain_1.n_iterations} iterations")
 
 # %% [markdown]
 # `resume_from_checkpoint` continues an interrupted run.
@@ -503,7 +503,7 @@ chain_2 = sampler.resume_from_checkpoint(
     checkpoint_every=100,
     thin=1,
 )
-print(f"Resumed run: {chain_2.total_iterations} iterations")
+print(f"Resumed run: {chain_2.n_iterations} iterations")
 
 # %% [markdown]
 # ### Thinning
@@ -532,12 +532,12 @@ chain_file = os.path.join(temp_dir, "saved_chain.bin")
 chain.save(chain_file)
 loaded_chain = Chain.load(chain_file)
 print(
-    f"Loaded: {loaded_chain.total_iterations} iterations of {loaded_chain.param_names}"
+    f"Loaded: {loaded_chain.n_iterations} iterations of {loaded_chain.parameter_names}"
 )
 
 merged_chain = Chain.load(chain_file)
 merged_chain.merge(loaded_chain)
-print(f"Merged: {merged_chain.total_iterations} iterations")
+print(f"Merged: {merged_chain.n_iterations} iterations")
 
 # %% [markdown]
 # ### DataFrame Integration
@@ -564,7 +564,7 @@ obs_df = pd.DataFrame(
 df_target = Target.from_dataframe(obs_df)
 
 print(f"Variables: {df_target.variable_names()}")
-print(f"Observations: {df_target.total_observations()}")
+print(f"Observations: {df_target.n_observations()}")
 
 # %% [markdown]
 # ### Relative Uncertainties and Reference Periods
@@ -659,8 +659,8 @@ shutil.rmtree(temp_dir)
 # ## Next Steps
 #
 # - Try calibrating with multiple observation variables.
-# - Tune the proposal with `EnsembleSampler.with_stretch_param`.
-# - Use `GaussianLikelihood(normalize=True)` when comparing models by likelihood.
+# - Tune the proposal with `EnsembleSampler.with_stretch_parameter`.
+# - Use `GaussianLikelihood(normalise=True)` when comparing models by likelihood.
 # - Explore posterior predictive checks to validate model fit.
 #
 # ## Further Reading

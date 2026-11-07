@@ -8,10 +8,10 @@
 //! # Module Structure
 //!
 //! - [`state`]: Sampler state management and progress tracking
-//! - [`chain`]: MCMC chain storage and serialization
+//! - [`chain`]: MCMC chain storage and serialisation
 //! - [`diagnostics`]: Convergence diagnostics (R-hat, ESS, autocorrelation)
 //! - [`moves`]: Proposal mechanisms (stretch move)
-//! - [`init`]: Walker initialization strategies
+//! - [`init`]: Walker initialisation strategies
 //! - [`ensemble`]: Main ensemble sampler implementation
 //!
 //! # Quick Start
@@ -21,8 +21,8 @@
 //! use rscm_calibrate::likelihood::GaussianLikelihood;
 //!
 //! // Define priors
-//! let mut params = ParameterSet::new();
-//! params.add("sensitivity", Box::new(Uniform::new(0.5, 1.5).unwrap()));
+//! let mut parameters = ParameterSet::new();
+//! parameters.add("sensitivity", Box::new(Uniform::new(0.5, 1.5).unwrap()));
 //!
 //! // Define observations
 //! let mut target = Target::new();
@@ -30,7 +30,7 @@
 //!     .add(2020.0, 1.2, 0.1).unwrap();
 //!
 //! // Create and run sampler
-//! let sampler = EnsembleSampler::new(params, runner, GaussianLikelihood::new(), target);
+//! let sampler = EnsembleSampler::new(parameters, runner, GaussianLikelihood::new(), target);
 //! let chain = sampler.run(1000, WalkerInit::FromPrior, 1)?;
 //!
 //! // Check convergence and extract samples

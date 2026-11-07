@@ -547,11 +547,11 @@ for component in components.values():
 schema = VariableSchema()
 for name, (unit, grid) in grids.items():
     schema.add_variable(name, unit, grid)
-four_box_count = sum(g == GridType.FourBox for _, g in grids.values())
+n_four_box_variables = sum(g == GridType.FourBox for _, g in grids.values())
 print(
     f"{len(prescribed_emissions)} scalar and {len(prescribed_erf)} four-box prescribed inputs"
 )
-print(f"{len(grids)} variables, {four_box_count} on four boxes")
+print(f"{len(grids)} variables, {n_four_box_variables} on four boxes")
 
 # %% [markdown]
 # ## Initial values

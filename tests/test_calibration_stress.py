@@ -73,9 +73,9 @@ def simple_calibration_setup():
     temp = result.get("Surface Temperature").as_scalar()
 
     # Define parameters (2 parameters for simplicity)
-    params = ParameterSet()
-    params.add("lambda0", Uniform(0.8, 1.5))
-    params.add("a", Uniform(0.0, 0.1))
+    parameters = ParameterSet()
+    parameters.add("lambda0", Uniform(0.8, 1.5))
+    parameters.add("a", Uniform(0.0, 0.1))
 
     # Create target
     target = Target()
@@ -120,14 +120,14 @@ def simple_calibration_setup():
 
     runner = ModelRunner(
         model_factory=model_factory,
-        param_names=["lambda0", "a"],
+        parameter_names=["lambda0", "a"],
         output_variables=["Surface Temperature"],
     )
 
     likelihood = GaussianLikelihood()
 
     return {
-        "params": params,
+        "parameters": parameters,
         "runner": runner,
         "likelihood": likelihood,
         "target": target,
@@ -149,7 +149,7 @@ def test_large_chain_memory(simple_calibration_setup):
 
     # Create sampler
     sampler = EnsembleSampler(
-        setup["params"],
+        setup["parameters"],
         setup["runner"],
         setup["likelihood"],
         setup["target"],
@@ -164,7 +164,7 @@ def test_large_chain_memory(simple_calibration_setup):
     chain = sampler.run(n_steps, WalkerInit.from_prior(), thin=thin)
 
     # Verify chain structure
-    assert chain.total_iterations == n_steps
+    assert chain.n_iterations == n_steps
     assert chain.thin == thin
 
     # Get flat samples (should handle large arrays)
@@ -213,7 +213,7 @@ def test_checkpoint_resume(simple_calibration_setup, tmp_path):
 
     # Create sampler
     sampler = EnsembleSampler(
-        setup["params"],
+        setup["parameters"],
         setup["runner"],
         setup["likelihood"],
         setup["target"],
@@ -232,7 +232,7 @@ def test_checkpoint_resume(simple_calibration_setup, tmp_path):
         thin=1,
     )
 
-    assert chain_1.total_iterations == n_steps_1
+    assert chain_1.n_iterations == n_steps_1
     # Checkpoint creates .chain and .state files
     assert (checkpoint_path.parent / f"{checkpoint_path.name}.chain").exists()
     assert (checkpoint_path.parent / f"{checkpoint_path.name}.state").exists()
@@ -250,7 +250,7 @@ def test_checkpoint_resume(simple_calibration_setup, tmp_path):
 
     # Verify resumed chain has correct length
     # Chain 2 should contain samples from both runs
-    assert chain_2.total_iterations == n_steps_total
+    assert chain_2.n_iterations == n_steps_total
 
     # Get samples from both chains
     samples_1 = chain_1.flat_samples(discard=0)
@@ -289,15 +289,15 @@ def test_chain_persistence(simple_calibration_setup, tmp_path):
     Test saving and loading large chains.
 
     This validates:
-    - Chain serialization to disk
-    - Chain deserialization matches original
+    - Chain serialisation to disk
+    - Chain deserialisation matches original
     - Chain merging from multiple saved segments
     """
     setup = simple_calibration_setup
 
     # Create sampler
     sampler = EnsembleSampler(
-        setup["params"],
+        setup["parameters"],
         setup["runner"],
         setup["likelihood"],
         setup["target"],
@@ -386,7 +386,7 @@ def test_thinning_memory_efficiency(simple_calibration_setup):
 
     # Create sampler
     sampler = EnsembleSampler(
-        setup["params"],
+        setup["parameters"],
         setup["runner"],
         setup["likelihood"],
         setup["target"],

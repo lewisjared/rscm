@@ -1,7 +1,7 @@
-//! MCMC chain storage and serialization.
+//! MCMC chain storage and serialisation.
 //!
 //! This module contains the `Chain` struct for storing MCMC samples with support
-//! for thinning, serialization, and merging chains from checkpointed runs.
+//! for thinning, serialisation, and merging chains from checkpointed runs.
 
 use crate::{Error, Result};
 use indexmap::IndexMap;
@@ -17,20 +17,20 @@ use std::path::Path;
 /// Supports thinning (storing only every Nth sample) to reduce memory usage.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chain {
-    /// Stored samples: shape (n_stored, n_walkers, n_params)
+    /// Stored samples: shape (n_stored_samples, n_walkers, n_parameters)
     pub(crate) samples: Vec<Array2<f64>>,
 
-    /// Log probabilities: shape (n_stored, n_walkers)
+    /// Log probabilities: shape (n_stored_samples, n_walkers)
     pub(crate) log_probs: Vec<Array1<f64>>,
 
     /// Parameter names in order
-    pub(crate) param_names: Vec<String>,
+    pub(crate) parameter_names: Vec<String>,
 
     /// Thinning interval (store every thin-th sample)
     pub(crate) thin: usize,
 
     /// Total number of iterations run (including thinned samples)
-    pub(crate) total_iterations: usize,
+    pub(crate) n_iterations: usize,
 }
 
 impl Chain {
@@ -38,15 +38,15 @@ impl Chain {
     ///
     /// # Arguments
     ///
-    /// * `param_names` - Names of parameters in order
+    /// * `parameter_names` - Names of parameters in order
     /// * `thin` - Thinning interval (store every thin-th sample). Default is 1 (no thinning).
-    pub fn new(param_names: Vec<String>, thin: usize) -> Self {
+    pub fn new(parameter_names: Vec<String>, thin: usize) -> Self {
         Self {
             samples: Vec::new(),
             log_probs: Vec::new(),
-            param_names,
+            parameter_names,
             thin: thin.max(1), // Ensure at least 1
-            total_iterations: 0,
+            n_iterations: 0,
         }
     }
 
@@ -54,16 +54,16 @@ impl Chain {
     ///
     /// # Arguments
     ///
-    /// * `positions` - Walker positions, shape (n_walkers, n_params)
+    /// * `positions` - Walker positions, shape (n_walkers, n_parameters)
     /// * `log_probs` - Log probabilities, shape (n_walkers,)
     ///
     /// # Returns
     ///
     /// `true` if the sample was stored, `false` if it was skipped due to thinning.
     pub fn push(&mut self, positions: Array2<f64>, log_probs: Array1<f64>) -> bool {
-        self.total_iterations += 1;
+        self.n_iterations += 1;
 
-        if self.total_iterations.is_multiple_of(self.thin) {
+        if self.n_iterations.is_multiple_of(self.thin) {
             self.samples.push(positions);
             self.log_probs.push(log_probs);
             true
@@ -83,8 +83,8 @@ impl Chain {
     }
 
     /// Get the total number of iterations (including thinned samples).
-    pub fn total_iterations(&self) -> usize {
-        self.total_iterations
+    pub fn n_iterations(&self) -> usize {
+        self.n_iterations
     }
 
     /// Get the thinning interval.
@@ -93,8 +93,8 @@ impl Chain {
     }
 
     /// Get parameter names.
-    pub fn param_names(&self) -> &[String] {
-        &self.param_names
+    pub fn parameter_names(&self) -> &[String] {
+        &self.parameter_names
     }
 
     /// Get flattened samples, optionally discarding initial burn-in samples.
@@ -105,18 +105,18 @@ impl Chain {
     ///
     /// # Returns
     ///
-    /// Array of shape ((len - discard) * n_walkers, n_params) containing all
+    /// Array of shape ((len - discard) * n_walkers, n_parameters) containing all
     /// post-burn-in samples from all walkers, concatenated.
     pub fn flat_samples(&self, discard: usize) -> Array2<f64> {
         if self.is_empty() || discard >= self.len() {
-            return Array2::zeros((0, self.param_names.len()));
+            return Array2::zeros((0, self.parameter_names.len()));
         }
 
-        let n_keep = self.len() - discard;
+        let n_kept_samples = self.len() - discard;
         let n_walkers = self.samples[0].nrows();
-        let n_params = self.param_names.len();
+        let n_parameters = self.parameter_names.len();
 
-        let mut flat = Array2::zeros((n_keep * n_walkers, n_params));
+        let mut flat = Array2::zeros((n_kept_samples * n_walkers, n_parameters));
 
         for (i, sample) in self.samples.iter().skip(discard).enumerate() {
             for (j, walker) in sample.outer_iter().enumerate() {
@@ -142,10 +142,10 @@ impl Chain {
             return Array1::zeros(0);
         }
 
-        let n_keep = self.len() - discard;
+        let n_kept_samples = self.len() - discard;
         let n_walkers = self.samples[0].nrows();
 
-        let mut flat = Array1::zeros(n_keep * n_walkers);
+        let mut flat = Array1::zeros(n_kept_samples * n_walkers);
 
         for (i, log_prob) in self.log_probs.iter().skip(discard).enumerate() {
             for (j, &lp) in log_prob.iter().enumerate() {
@@ -167,11 +167,11 @@ impl Chain {
     /// # Returns
     ///
     /// Map from parameter name to Array1 of all post-burn-in samples for that parameter.
-    pub fn to_param_map(&self, discard: usize) -> IndexMap<String, Array1<f64>> {
+    pub fn to_parameter_map(&self, discard: usize) -> IndexMap<String, Array1<f64>> {
         let flat = self.flat_samples(discard);
         let mut map = IndexMap::new();
 
-        for (i, name) in self.param_names.iter().enumerate() {
+        for (i, name) in self.parameter_names.iter().enumerate() {
             map.insert(name.clone(), flat.column(i).to_owned());
         }
 
@@ -186,14 +186,14 @@ impl Chain {
     ///
     /// # Returns
     ///
-    /// `Ok(())` on success, `Err` if serialization or file writing fails.
+    /// `Ok(())` on success, `Err` if serialisation or file writing fails.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let file = File::create(path)
             .map_err(|e| Error::SamplingError(format!("Failed to create chain file: {}", e)))?;
         let mut writer = BufWriter::new(file);
 
         postcard::to_io(self, &mut writer)
-            .map_err(|e| Error::SamplingError(format!("Failed to serialize chain: {}", e)))?;
+            .map_err(|e| Error::SamplingError(format!("Failed to serialise chain: {}", e)))?;
 
         writer
             .flush()
@@ -210,7 +210,7 @@ impl Chain {
     ///
     /// # Returns
     ///
-    /// The loaded `Chain`, or an error if deserialization fails.
+    /// The loaded `Chain`, or an error if deserialisation fails.
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file = File::open(path)
             .map_err(|e| Error::SamplingError(format!("Failed to open chain file: {}", e)))?;
@@ -236,7 +236,7 @@ impl Chain {
             .map_err(|e| Error::SamplingError(format!("Failed to read chain file: {}", e)))?;
 
         let chain: Chain = postcard::from_bytes(&bytes)
-            .map_err(|e| Error::SamplingError(format!("Failed to deserialize chain: {}", e)))?;
+            .map_err(|e| Error::SamplingError(format!("Failed to deserialise chain: {}", e)))?;
 
         Ok(chain)
     }
@@ -254,10 +254,10 @@ impl Chain {
     ///
     /// `Ok(())` on success, `Err` if chains are incompatible.
     pub fn merge(&mut self, other: &Chain) -> Result<()> {
-        if self.param_names != other.param_names {
+        if self.parameter_names != other.parameter_names {
             return Err(Error::SamplingError(format!(
                 "Cannot merge chains with different parameter names: {:?} vs {:?}",
-                self.param_names, other.param_names
+                self.parameter_names, other.parameter_names
             )));
         }
 
@@ -271,7 +271,7 @@ impl Chain {
         // Append samples and log probs
         self.samples.extend(other.samples.iter().cloned());
         self.log_probs.extend(other.log_probs.iter().cloned());
-        self.total_iterations += other.total_iterations;
+        self.n_iterations += other.n_iterations;
 
         Ok(())
     }
@@ -284,13 +284,13 @@ mod tests {
 
     #[test]
     fn test_chain_creation_and_push() {
-        let param_names = vec!["x".to_string(), "y".to_string()];
-        let mut chain = Chain::new(param_names.clone(), 1);
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
+        let mut chain = Chain::new(parameter_names.clone(), 1);
 
         assert_eq!(chain.len(), 0);
         assert!(chain.is_empty());
-        assert_eq!(chain.total_iterations(), 0);
-        assert_eq!(chain.param_names(), param_names.as_slice());
+        assert_eq!(chain.n_iterations(), 0);
+        assert_eq!(chain.parameter_names(), parameter_names.as_slice());
 
         // Add first sample
         let pos1 = array![[0.0, 1.0], [2.0, 3.0]];
@@ -299,7 +299,7 @@ mod tests {
 
         assert_eq!(chain.len(), 1);
         assert!(!chain.is_empty());
-        assert_eq!(chain.total_iterations(), 1);
+        assert_eq!(chain.n_iterations(), 1);
 
         // Add second sample
         let pos2 = array![[0.5, 1.5], [2.5, 3.5]];
@@ -307,13 +307,13 @@ mod tests {
         assert!(chain.push(pos2, lp2));
 
         assert_eq!(chain.len(), 2);
-        assert_eq!(chain.total_iterations(), 2);
+        assert_eq!(chain.n_iterations(), 2);
     }
 
     #[test]
     fn test_chain_thinning() {
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names, 3);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names, 3);
 
         // Add 10 samples, only every 3rd should be stored
         for i in 0..10 {
@@ -327,13 +327,13 @@ mod tests {
         }
 
         assert_eq!(chain.len(), 3); // Stored samples 3, 6, 9
-        assert_eq!(chain.total_iterations(), 10);
+        assert_eq!(chain.n_iterations(), 10);
     }
 
     #[test]
     fn test_flat_samples() {
-        let param_names = vec!["x".to_string(), "y".to_string()];
-        let mut chain = Chain::new(param_names, 1);
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
+        let mut chain = Chain::new(parameter_names, 1);
 
         // Add 3 samples with 2 walkers each
         chain.push(array![[0.0, 1.0], [2.0, 3.0]], array![-1.0, -2.0]);
@@ -361,8 +361,8 @@ mod tests {
 
     #[test]
     fn test_flat_log_probs() {
-        let param_names = vec!["x".to_string()];
-        let mut chain = Chain::new(param_names, 1);
+        let parameter_names = vec!["x".to_string()];
+        let mut chain = Chain::new(parameter_names, 1);
 
         chain.push(array![[0.0], [1.0]], array![-1.0, -2.0]);
         chain.push(array![[0.5], [1.5]], array![-1.5, -2.5]);
@@ -375,14 +375,14 @@ mod tests {
     }
 
     #[test]
-    fn test_to_param_map() {
-        let param_names = vec!["x".to_string(), "y".to_string()];
-        let mut chain = Chain::new(param_names.clone(), 1);
+    fn test_to_parameter_map() {
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
+        let mut chain = Chain::new(parameter_names.clone(), 1);
 
         chain.push(array![[0.0, 1.0], [2.0, 3.0]], array![-1.0, -2.0]);
         chain.push(array![[0.5, 1.5], [2.5, 3.5]], array![-1.5, -2.5]);
 
-        let param_map = chain.to_param_map(0);
+        let param_map = chain.to_parameter_map(0);
 
         assert_eq!(param_map.len(), 2);
         assert_eq!(param_map["x"], array![0.0, 2.0, 0.5, 2.5]);
@@ -390,21 +390,21 @@ mod tests {
     }
 
     #[test]
-    fn test_chain_serialization() {
-        let param_names = vec!["x".to_string(), "y".to_string()];
-        let mut chain = Chain::new(param_names, 2);
+    fn test_chain_serialisation() {
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
+        let mut chain = Chain::new(parameter_names, 2);
 
         chain.push(array![[0.0, 1.0]], array![-1.0]);
         chain.push(array![[0.5, 1.5]], array![-1.5]);
 
-        // Serialize and deserialize
-        let serialized = serde_json::to_string(&chain).unwrap();
-        let deserialized: Chain = serde_json::from_str(&serialized).unwrap();
+        // Serialise and deserialise
+        let serialised = serde_json::to_string(&chain).unwrap();
+        let deserialised: Chain = serde_json::from_str(&serialised).unwrap();
 
-        assert_eq!(deserialized.len(), chain.len());
-        assert_eq!(deserialized.total_iterations(), chain.total_iterations());
-        assert_eq!(deserialized.param_names(), chain.param_names());
-        assert_eq!(deserialized.thin(), chain.thin());
+        assert_eq!(deserialised.len(), chain.len());
+        assert_eq!(deserialised.n_iterations(), chain.n_iterations());
+        assert_eq!(deserialised.parameter_names(), chain.parameter_names());
+        assert_eq!(deserialised.thin(), chain.thin());
     }
 
     #[test]
@@ -412,8 +412,8 @@ mod tests {
         use std::fs;
         use tempfile::tempdir;
 
-        let param_names = vec!["x".to_string(), "y".to_string()];
-        let mut chain = Chain::new(param_names.clone(), 2);
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
+        let mut chain = Chain::new(parameter_names.clone(), 2);
 
         // Add some samples
         chain.push(array![[0.0, 1.0], [2.0, 3.0]], array![-1.0, -2.0]);
@@ -429,8 +429,8 @@ mod tests {
 
         // Verify chain matches
         assert_eq!(loaded_chain.len(), chain.len());
-        assert_eq!(loaded_chain.total_iterations(), chain.total_iterations());
-        assert_eq!(loaded_chain.param_names(), chain.param_names());
+        assert_eq!(loaded_chain.n_iterations(), chain.n_iterations());
+        assert_eq!(loaded_chain.parameter_names(), chain.parameter_names());
         assert_eq!(loaded_chain.thin(), chain.thin());
         assert_eq!(loaded_chain.flat_samples(0), chain.flat_samples(0));
         assert_eq!(loaded_chain.flat_log_probs(0), chain.flat_log_probs(0));
@@ -441,9 +441,9 @@ mod tests {
 
     #[test]
     fn test_chain_merge() {
-        let param_names = vec!["x".to_string(), "y".to_string()];
-        let mut chain1 = Chain::new(param_names.clone(), 1);
-        let mut chain2 = Chain::new(param_names.clone(), 1);
+        let parameter_names = vec!["x".to_string(), "y".to_string()];
+        let mut chain1 = Chain::new(parameter_names.clone(), 1);
+        let mut chain2 = Chain::new(parameter_names.clone(), 1);
 
         // Add samples to both chains
         chain1.push(array![[0.0, 1.0], [2.0, 3.0]], array![-1.0, -2.0]);
@@ -457,7 +457,7 @@ mod tests {
 
         // Verify merged chain
         assert_eq!(chain1.len(), 4);
-        assert_eq!(chain1.total_iterations(), 4);
+        assert_eq!(chain1.n_iterations(), 4);
 
         let flat_samples = chain1.flat_samples(0);
         assert_eq!(flat_samples.nrows(), 8); // 4 samples * 2 walkers

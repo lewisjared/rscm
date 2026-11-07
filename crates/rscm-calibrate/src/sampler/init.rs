@@ -1,22 +1,22 @@
-//! Walker initialization strategies for ensemble sampling.
+//! Walker initialisation strategies for ensemble sampling.
 //!
-//! This module provides different strategies for initializing walker positions
+//! This module provides different strategies for initialising walker positions
 //! in the parameter space before MCMC sampling begins.
 
 use crate::{parameter_set::ParameterSet, Error, Result};
 use ndarray::Array2;
 use rand::RngExt;
 
-/// Walker initialization strategy for the ensemble sampler.
+/// Walker initialisation strategy for the ensemble sampler.
 #[derive(Debug, Clone)]
 pub enum WalkerInit {
     /// Sample walkers from the prior distribution
     FromPrior,
 
-    /// Initialize walkers in a ball around a point
+    /// Initialise walkers in a ball around a point
     Ball {
-        /// Center point for the ball
-        center: Vec<f64>,
+        /// Centre point for the ball
+        centre: Vec<f64>,
         /// Radius of the ball (standard deviation in each dimension)
         radius: f64,
     },
@@ -26,46 +26,46 @@ pub enum WalkerInit {
 }
 
 impl WalkerInit {
-    /// Initialize walker positions.
+    /// Initialise walker positions.
     ///
     /// # Arguments
     ///
-    /// * `n_walkers` - Number of walkers to initialize
-    /// * `params` - Parameter set defining the parameter space
+    /// * `n_walkers` - Number of walkers to initialise
+    /// * `parameters` - Parameter set defining the parameter space
     /// * `rng` - Random number generator
     ///
     /// # Returns
     ///
-    /// Array of shape (n_walkers, n_params) with initial positions.
-    pub fn initialize<R: RngExt>(
+    /// Array of shape (n_walkers, n_parameters) with initial positions.
+    pub fn initialise<R: RngExt>(
         &self,
         n_walkers: usize,
-        params: &ParameterSet,
+        parameters: &ParameterSet,
         rng: &mut R,
     ) -> Result<Array2<f64>> {
         match self {
             WalkerInit::FromPrior => {
                 // Sample from prior
-                Ok(params.sample_random_with_rng(n_walkers, rng))
+                Ok(parameters.sample_random_with_rng(n_walkers, rng))
             }
-            WalkerInit::Ball { center, radius } => {
-                // Validate center length
-                if center.len() != params.len() {
+            WalkerInit::Ball { centre, radius } => {
+                // Validate centre length
+                if centre.len() != parameters.len() {
                     return Err(Error::InvalidParameter(format!(
-                        "Ball center length {} does not match parameter count {}",
-                        center.len(),
-                        params.len()
+                        "Ball centre length {} does not match parameter count {}",
+                        centre.len(),
+                        parameters.len()
                     )));
                 }
 
-                let n_params = params.len();
-                let mut positions = Array2::zeros((n_walkers, n_params));
+                let n_parameters = parameters.len();
+                let mut positions = Array2::zeros((n_walkers, n_parameters));
 
                 for i in 0..n_walkers {
-                    for j in 0..n_params {
-                        // Sample from normal distribution around center
+                    for j in 0..n_parameters {
+                        // Sample from normal distribution around centre
                         let offset = rng.random::<f64>() - 0.5; // Uniform(-0.5, 0.5)
-                        positions[[i, j]] = center[j] + offset * radius;
+                        positions[[i, j]] = centre[j] + offset * radius;
                     }
                 }
 
@@ -80,11 +80,11 @@ impl WalkerInit {
                         n_walkers
                     )));
                 }
-                if positions.ncols() != params.len() {
+                if positions.ncols() != parameters.len() {
                     return Err(Error::InvalidParameter(format!(
                         "Explicit positions have {} parameters, expected {}",
                         positions.ncols(),
-                        params.len()
+                        parameters.len()
                     )));
                 }
 
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_walker_init_from_prior() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .add("y", Box::new(Uniform::new(-1.0, 1.0).unwrap()))
             .clone();
@@ -112,7 +112,7 @@ mod tests {
         let init = WalkerInit::FromPrior;
         let mut rng = ChaCha8Rng::seed_from_u64(42);
 
-        let positions = init.initialize(10, &params, &mut rng).unwrap();
+        let positions = init.initialise(10, &parameters, &mut rng).unwrap();
 
         assert_eq!(positions.dim(), (10, 2));
 
@@ -125,22 +125,22 @@ mod tests {
 
     #[test]
     fn test_walker_init_ball() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 10.0).unwrap()))
             .add("y", Box::new(Uniform::new(0.0, 10.0).unwrap()))
             .clone();
 
         let init = WalkerInit::Ball {
-            center: vec![5.0, 5.0],
+            centre: vec![5.0, 5.0],
             radius: 0.1,
         };
         let mut rng = ChaCha8Rng::seed_from_u64(42);
 
-        let positions = init.initialize(10, &params, &mut rng).unwrap();
+        let positions = init.initialise(10, &parameters, &mut rng).unwrap();
 
         assert_eq!(positions.dim(), (10, 2));
 
-        // Check all walkers are near center
+        // Check all walkers are near centre
         for i in 0..10 {
             assert!((positions[[i, 0]] - 5.0).abs() < 0.1);
             assert!((positions[[i, 1]] - 5.0).abs() < 0.1);
@@ -149,23 +149,23 @@ mod tests {
 
     #[test]
     fn test_walker_init_ball_wrong_dimension() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .clone();
 
         let init = WalkerInit::Ball {
-            center: vec![0.5, 0.5], // Wrong dimension
+            centre: vec![0.5, 0.5], // Wrong dimension
             radius: 0.1,
         };
         let mut rng = ChaCha8Rng::seed_from_u64(42);
 
-        let result = init.initialize(10, &params, &mut rng);
+        let result = init.initialise(10, &parameters, &mut rng);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_walker_init_explicit() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .add("y", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .clone();
@@ -174,14 +174,14 @@ mod tests {
         let init = WalkerInit::Explicit(explicit_positions.clone());
         let mut rng = ChaCha8Rng::seed_from_u64(42);
 
-        let positions = init.initialize(3, &params, &mut rng).unwrap();
+        let positions = init.initialise(3, &parameters, &mut rng).unwrap();
 
         assert_eq!(positions, explicit_positions);
     }
 
     #[test]
     fn test_walker_init_explicit_wrong_dimension() {
-        let params = ParameterSet::new()
+        let parameters = ParameterSet::new()
             .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .add("y", Box::new(Uniform::new(0.0, 1.0).unwrap()))
             .clone();
@@ -191,7 +191,7 @@ mod tests {
         let init = WalkerInit::Explicit(explicit_positions);
         let mut rng = ChaCha8Rng::seed_from_u64(42);
 
-        let result = init.initialize(3, &params, &mut rng);
+        let result = init.initialise(3, &parameters, &mut rng);
         assert!(result.is_err());
     }
 }

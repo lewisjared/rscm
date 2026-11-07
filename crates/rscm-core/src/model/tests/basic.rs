@@ -208,7 +208,7 @@ state_type = "unit"
 // Module-level types for checkpoint test to enable proper serialisation/deserialisation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct StatefulTestComponentState {
-    call_count: usize,
+    n_calls: usize,
 }
 
 #[typetag::serde]
@@ -240,7 +240,7 @@ impl Component for StatefulTestComponent {
     }
 
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
-        Box::new(StatefulTestComponentState { call_count: 0 })
+        Box::new(StatefulTestComponentState { n_calls: 0 })
     }
 
     fn solve_with_state(
@@ -254,7 +254,7 @@ impl Component for StatefulTestComponent {
             .as_any_mut()
             .downcast_mut::<StatefulTestComponentState>()
             .expect("Wrong state type");
-        state.call_count += 1;
+        state.n_calls += 1;
         self.solve(t_current, t_next, input_state)
     }
 }
@@ -298,7 +298,7 @@ fn test_checkpoint_preserves_component_state() {
         .as_any()
         .downcast_ref::<StatefulTestComponentState>()
         .unwrap();
-    assert_eq!(typed_state.call_count, 3, "Should have been called 3 times");
+    assert_eq!(typed_state.n_calls, 3, "Should have been called 3 times");
 
     // Checkpoint and restore
     let checkpoint = model.checkpoint().unwrap();
@@ -311,8 +311,8 @@ fn test_checkpoint_preserves_component_state() {
         .downcast_ref::<StatefulTestComponentState>()
         .unwrap();
     assert_eq!(
-        restored_typed.call_count, 3,
-        "Restored state should have same call_count"
+        restored_typed.n_calls, 3,
+        "Restored state should have same n_calls"
     );
     assert_eq!(
         restored.time_index(),
