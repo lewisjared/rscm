@@ -185,8 +185,8 @@
 //! ```rust
 //! # use rscm_core::component::InputState;
 //! # fn example(input_state: &InputState, t_current: f64) {
-//! // Get aggregated global value automatically
-//! let global_temp = input_state.get_global("Surface Air Temperature Change").unwrap();
+//! // A scalar input reads a four-box variable as its area-weighted global mean
+//! let global_temp = input_state.get_scalar_window("Surface Air Temperature Change").get();
 //! let response = global_temp * 0.5; // Compute from global mean
 //! # }
 //! ```

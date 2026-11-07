@@ -27,9 +27,9 @@ pub use aggregating::{
 };
 
 use crate::component::{GridType, TimeseriesType};
-use crate::spatial::{FourBoxGrid, SpatialGrid};
+use crate::spatial::FourBoxGrid;
 use crate::timeseries::{FloatValue, Time, TimeAxis};
-use crate::timeseries_collection::{TimeseriesData, TimeseriesItem};
+use crate::timeseries_collection::TimeseriesItem;
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -267,20 +267,6 @@ impl<'a> InputState<'a> {
             state: vec![],
             transform_context: None,
         }
-    }
-
-    /// The value `get()` reads for a variable, aggregated to one global value with the grid's weights.
-    pub fn get_global(&self, name: &str) -> Option<FloatValue> {
-        let item = self.find(name)?;
-        Some(match &item.data {
-            TimeseriesData::Scalar(_) => self.get_scalar_window(name).get(),
-            TimeseriesData::FourBox(ts) => ts
-                .grid()
-                .aggregate_global(&self.get_four_box_window(name).get_all()),
-            TimeseriesData::Hemispheric(ts) => ts
-                .grid()
-                .aggregate_global(&self.get_hemispheric_window(name).get_all()),
-        })
     }
 
     /// Test if the state contains a value with the given name
@@ -598,6 +584,7 @@ pub type OutputState = HashMap<String, StateValue>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timeseries_collection::TimeseriesData;
 
     #[test]
     fn test_state_value_scalar() {
@@ -656,38 +643,6 @@ mod tests {
     }
 
     #[test]
-    fn test_input_state_get_global() {
-        use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
-        use crate::spatial::ScalarGrid;
-        use crate::timeseries::{TimeAxis, Timeseries};
-        use numpy::array;
-        use numpy::ndarray::Axis;
-        use std::sync::Arc;
-
-        let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
-        let values = array![280.0, 285.0].insert_axis(Axis(1));
-        let ts = Timeseries::new(
-            values,
-            time_axis,
-            ScalarGrid,
-            "ppm".to_string(),
-            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
-        );
-
-        let item = TimeseriesItem {
-            data: TimeseriesData::Scalar(ts),
-            name: "CO2".to_string(),
-        };
-
-        // The step from 2000.0 ends at index 1
-        let state = InputState::build(vec![&item], 2000.0);
-
-        // A prescribed point's get() returns the value at the step's end (index 1)
-        assert_eq!(state.get_global("CO2"), Some(285.0));
-        assert_eq!(state.get_scalar_window("CO2").get(), 285.0);
-    }
-
-    #[test]
     fn test_input_state_grid_values() {
         use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
         use crate::spatial::FourBoxGrid;
@@ -722,10 +677,6 @@ mod tests {
         let window = state.get_four_box_window("Temperature");
         let values = window.get_all();
         assert_eq!(values, [16.0, 15.0, 11.0, 10.0]);
-
-        // Test get_global aggregates using weights (equal weights = mean)
-        let global = state.get_global("Temperature").unwrap();
-        assert_eq!(global, 13.0); // (16 + 15 + 11 + 10) / 4
     }
 }
 
@@ -737,6 +688,7 @@ mod input_state_window_tests {
         FourBoxGrid, FourBoxRegion, HemisphericGrid, HemisphericRegion, ScalarGrid,
     };
     use crate::timeseries::{GridTimeseries, TimeAxis, Timeseries};
+    use crate::timeseries_collection::TimeseriesData;
     use numpy::array;
     use numpy::ndarray::{Array2, Axis};
     use std::sync::Arc;
@@ -851,7 +803,6 @@ mod input_state_window_tests {
         // get() returns values at index 1 (2001 values: [1100.0, 550.0])
         assert_eq!(window.get(HemisphericRegion::Northern), 1100.0);
         assert_eq!(window.get(HemisphericRegion::Southern), 550.0);
-        assert_eq!(state.get_global("Precipitation"), Some(825.0)); // Equal weights mean
     }
 
     #[test]
