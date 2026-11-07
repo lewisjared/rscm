@@ -2,37 +2,44 @@
 
 use crate::extractor::{extract_description, extract_doc_comments};
 use crate::schema::{ComponentDocMetadata, DeclaredVariable, ParameterMetadata};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use syn::{Attribute, Fields, Item, ItemStruct, Meta, MetaList, Type};
+use syn::parse::{ParseStream, Parser};
+use syn::punctuated::Punctuated;
+use syn::{
+    braced, Attribute, Fields, Ident, Item, ItemStruct, LitStr, Meta, MetaList, Token, Type,
+};
 
-/// Parse a Rust source file and extract component metadata
-pub fn parse_file(path: &Path) -> Vec<ComponentDocMetadata> {
-    let content = match fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Failed to read {}: {}", path.display(), e);
-            return Vec::new();
-        }
-    };
+/// Parameters structs of every scanned file, keyed by crate so same-named structs don't collide
+pub type StructIndex<'a> = HashMap<(String, String), &'a ItemStruct>;
 
-    let syntax = match syn::parse_file(&content) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Failed to parse {}: {}", path.display(), e);
-            return Vec::new();
-        }
-    };
+/// Read and parse a Rust source file
+pub fn read_file(path: &Path) -> Result<syn::File, String> {
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    syn::parse_file(&content).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
+}
 
-    // First pass: collect all structs by name for parameter struct lookup
-    let mut all_structs: std::collections::HashMap<String, &ItemStruct> =
-        std::collections::HashMap::new();
+/// Add the parameters structs of a parsed file to the index
+pub fn index_structs<'a>(crate_name: &str, syntax: &'a syn::File, index: &mut StructIndex<'a>) {
     for item in &syntax.items {
         if let Item::Struct(item_struct) = item {
-            all_structs.insert(item_struct.ident.to_string(), item_struct);
+            let name = item_struct.ident.to_string();
+            if name.ends_with("Parameters") {
+                index.insert((crate_name.to_string(), name), item_struct);
+            }
         }
     }
+}
 
+/// Extract component metadata from a parsed file
+pub fn parse_file(
+    crate_name: &str,
+    path: &Path,
+    syntax: &syn::File,
+    index: &StructIndex,
+) -> Result<Vec<ComponentDocMetadata>, String> {
     let mut components = Vec::new();
 
     // Extract module-level documentation
@@ -42,41 +49,37 @@ pub fn parse_file(path: &Path) -> Vec<ComponentDocMetadata> {
     for item in &syntax.items {
         if let Item::Struct(item_struct) = item {
             if let Some(metadata) =
-                parse_component_struct(item_struct, path, &module_docs, &all_structs)
+                parse_component_struct(item_struct, crate_name, path, &module_docs, index)?
             {
                 components.push(metadata);
             }
         }
     }
 
-    components
+    Ok(components)
 }
 
-/// Check if a struct has the ComponentIO derive macro
-fn has_component_io_derive(attrs: &[Attribute]) -> bool {
-    for attr in attrs {
-        if attr.path().is_ident("derive") {
-            if let Meta::List(MetaList { tokens, .. }) = &attr.meta {
-                let tokens_str = tokens.to_string();
-                if tokens_str.contains("ComponentIO") {
-                    return true;
-                }
-            }
-        }
-    }
-    false
+/// Check whether a struct derives the named macro
+fn has_derive(attrs: &[Attribute], derive: &str) -> bool {
+    attrs.iter().any(|attr| {
+        attr.path().is_ident("derive")
+            && matches!(&attr.meta, Meta::List(MetaList { tokens, .. })
+                if tokens.to_string().split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .any(|token| token == derive))
+    })
 }
 
 /// Parse a struct that uses ComponentIO derive macro
 fn parse_component_struct(
     item: &ItemStruct,
+    crate_name: &str,
     source_path: &Path,
     module_docs: &str,
-    all_structs: &std::collections::HashMap<String, &ItemStruct>,
-) -> Option<ComponentDocMetadata> {
-    // Only process structs with ComponentIO derive
-    if !has_component_io_derive(&item.attrs) {
-        return None;
+    index: &StructIndex,
+) -> Result<Option<ComponentDocMetadata>, String> {
+    let declares_io = has_derive(&item.attrs, "ComponentIO");
+    if !declares_io && !has_derive(&item.attrs, "ComponentMetadata") {
+        return Ok(None);
     }
 
     let struct_name = item.ident.to_string();
@@ -92,15 +95,39 @@ fn parse_component_struct(
     // Both introductions come before any section, so the struct's does not read as part of the last one.
     let (module_intro, module_sections) = split_intro(module_body);
     let (struct_intro, struct_sections) = split_intro(struct_body);
-    let combined_docs = [module_intro, struct_intro, module_sections, struct_sections]
-        .iter()
-        .map(|docs| docs.trim())
-        .filter(|docs| !docs.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n\n");
+    let join_docs = |docs: &[&str]| {
+        docs.iter()
+            .map(|docs| docs.trim())
+            .filter(|docs| !docs.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    };
+    let mut combined_docs =
+        join_docs(&[module_intro, struct_intro, module_sections, struct_sections]);
+    // A component documented by a title alone keeps it rather than having no description
+    if combined_docs.is_empty() {
+        combined_docs = join_docs(&[module_docs, &struct_docs]);
+    }
 
+    let reference_model = match crate_name {
+        "rscm-magicc" => Some("MAGICC7"),
+        "rscm-fair" => Some("FaIR"),
+        _ => None,
+    };
+    // Ported models reuse component names (both have a GHGForcing), so their pages take a prefix
+    let slug = match reference_model {
+        Some(_) => format!(
+            "{}-{}",
+            crate_name.trim_start_matches("rscm-"),
+            struct_name.to_lowercase()
+        ),
+        None => struct_name.to_lowercase(),
+    };
     let mut metadata = ComponentDocMetadata {
         name: struct_name.clone(),
+        slug,
+        reference_model: reference_model.map(str::to_string),
+        variables_from_parameters: !declares_io,
         module_path: infer_module_path(source_path),
         description: extract_description(&combined_docs),
         source_file: source_path.to_string_lossy().to_string(),
@@ -109,21 +136,20 @@ fn parse_component_struct(
 
     // Parse struct-level attributes
     for attr in &item.attrs {
-        if attr.path().is_ident("component") {
+        let target = if attr.path().is_ident("component") {
             parse_component_attr(attr, &mut metadata);
+            continue;
         } else if attr.path().is_ident("inputs") {
-            if let Ok(vars) = parse_io_attr(attr) {
-                metadata.inputs = vars;
-            }
+            &mut metadata.inputs
         } else if attr.path().is_ident("outputs") {
-            if let Ok(vars) = parse_io_attr(attr) {
-                metadata.outputs = vars;
-            }
+            &mut metadata.outputs
         } else if attr.path().is_ident("states") {
-            if let Ok(vars) = parse_io_attr(attr) {
-                metadata.states = vars;
-            }
-        }
+            &mut metadata.states
+        } else {
+            continue;
+        };
+        *target = parse_io_attr(attr)
+            .map_err(|e| format!("Failed to parse the IO of {struct_name}: {e}"))?;
     }
 
     // Parse struct fields and resolve parameter structs
@@ -131,8 +157,8 @@ fn parse_component_struct(
         for field in &fields.named {
             let field_type = type_to_string(&field.ty);
 
-            // Check if this field's type is a *Parameters struct we can expand
-            if let Some(params_struct) = all_structs.get(&field_type) {
+            // A *Parameters field in the same crate expands into the parameter table
+            if let Some(params_struct) = index.get(&(crate_name.to_string(), field_type)) {
                 // Extract fields from the parameters struct
                 if let Fields::Named(param_fields) = &params_struct.fields {
                     for param_field in &param_fields.named {
@@ -145,13 +171,14 @@ fn parse_component_struct(
         }
     }
 
-    Some(metadata)
+    Ok(Some(metadata))
 }
 
-/// Drop a doc block's summary line when it is a one-line paragraph followed by more text
+/// Drop a doc block's summary line when its first paragraph is one line
 fn drop_summary_line(docs: &str) -> &str {
     match docs.split_once("\n\n") {
         Some((summary, rest)) if !summary.contains('\n') => rest.trim_start(),
+        None if !docs.contains('\n') => "",
         _ => docs,
     }
 }
@@ -201,36 +228,44 @@ fn parse_component_attr(attr: &Attribute, metadata: &mut ComponentDocMetadata) {
 }
 
 /// Parse #[inputs(...)], #[outputs(...)], or #[states(...)] attribute
-fn parse_io_attr(attr: &Attribute) -> Result<Vec<DeclaredVariable>, ()> {
-    let mut variables = Vec::new();
-
-    if let Meta::List(MetaList { tokens, .. }) = &attr.meta {
-        // Parse the tokens as a string and extract field definitions
-        // Format: field_name { name = "...", unit = "...", grid = "...", timeseries_type = "..." }
-        let tokens_str = tokens.to_string();
-
-        let re = regex::Regex::new(
-            r#"(\w+)\s*\{\s*name\s*=\s*"([^"]+)"(?:\s*,\s*unit\s*=\s*"([^"]*)")?(?:\s*,\s*grid\s*=\s*"([^"]*)")?(?:\s*,\s*timeseries_type\s*=\s*"[^"]*")?\s*\}"#,
-        )
-        .expect("Invalid regex");
-
-        for cap in re.captures_iter(&tokens_str) {
-            let rust_name = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            let var_name = cap.get(2).map(|m| m.as_str()).unwrap_or("");
-            let unit = cap.get(3).map(|m| m.as_str()).unwrap_or("");
-            let grid = cap.get(4).map(|m| m.as_str()).unwrap_or("scalar");
-
-            variables.push(DeclaredVariable {
-                rust_name: rust_name.to_string(),
-                name: var_name.to_string(),
-                unit: unit.to_string(),
-                grid: grid.to_string(),
-                description: String::new(),
-            });
+///
+/// Each entry is `field { name = "...", unit = "...", grid = "...", description = "..." }`.
+fn parse_io_attr(attr: &Attribute) -> syn::Result<Vec<DeclaredVariable>> {
+    let entry = |input: ParseStream| -> syn::Result<DeclaredVariable> {
+        let rust_name: Ident = input.parse()?;
+        let content;
+        braced!(content in input);
+        let pairs =
+            Punctuated::<(Ident, LitStr), Token![,]>::parse_terminated_with(&content, |pair| {
+                let key: Ident = pair.parse()?;
+                pair.parse::<Token![=]>()?;
+                Ok((key, pair.parse()?))
+            })?;
+        let mut variable = DeclaredVariable {
+            rust_name: rust_name.to_string(),
+            name: String::new(),
+            unit: String::new(),
+            grid: "scalar".to_string(),
+            description: String::new(),
+        };
+        for (key, value) in pairs {
+            match key.to_string().as_str() {
+                "name" => variable.name = value.value(),
+                "unit" => variable.unit = value.value(),
+                "grid" => variable.grid = value.value(),
+                "description" => variable.description = value.value(),
+                _ => {}
+            }
         }
-    }
-
-    Ok(variables)
+        Ok(variable)
+    };
+    let list = |input: ParseStream| {
+        Punctuated::<DeclaredVariable, Token![,]>::parse_terminated_with(input, entry)
+    };
+    Ok(list
+        .parse2(attr.meta.require_list()?.tokens.clone())?
+        .into_iter()
+        .collect())
 }
 
 /// Parse a struct field as a parameter
@@ -305,7 +340,7 @@ mod tests {
             drop_summary_line("Two lines\nof summary\n\nBody"),
             "Two lines\nof summary\n\nBody"
         );
-        assert_eq!(drop_summary_line("Only a summary"), "Only a summary");
+        assert_eq!(drop_summary_line("Only a summary"), "");
     }
 
     #[test]
@@ -319,23 +354,32 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_io_attr_tokens() {
-        // This tests the regex-based parsing
-        let tokens_str = r#"emissions { name = "Emissions|CO2", unit = "GtC/yr" }"#;
-        let re = regex::Regex::new(
-            r#"(\w+)\s*\{\s*name\s*=\s*"([^"]+)"(?:\s*,\s*unit\s*=\s*"([^"]*)")?(?:\s*,\s*grid\s*=\s*"([^"]*)")?(?:\s*,\s*timeseries_type\s*=\s*"[^"]*")?\s*\}"#,
-        )
-        .unwrap();
+    fn test_parse_io_attr() {
+        let attr: Attribute = syn::parse_quote! {
+            #[inputs(
+                emissions { name = "Emissions|CO2", unit = "GtC/yr" },
+                lifetime { name = "Lifetime|CH4", unit = "yr", timeseries_type = "average",
+                    description = "Total \"effective\" lifetime" },
+                heat { name = "Heat Uptake", unit = "W/m^2", grid = "four_box" },
+            )]
+        };
+        let vars = parse_io_attr(&attr).unwrap();
+        assert_eq!(vars.len(), 3);
+        assert_eq!(vars[0].rust_name, "emissions");
+        assert_eq!(vars[0].name, "Emissions|CO2");
+        assert_eq!(vars[0].unit, "GtC/yr");
+        assert_eq!(vars[0].grid, "scalar");
+        assert_eq!(vars[1].description, "Total \"effective\" lifetime");
+        assert_eq!(vars[2].grid, "four_box");
+    }
 
-        let cap = re.captures(tokens_str).expect("Should match");
-        assert_eq!(cap.get(1).unwrap().as_str(), "emissions");
-        assert_eq!(cap.get(2).unwrap().as_str(), "Emissions|CO2");
-        assert_eq!(cap.get(3).unwrap().as_str(), "GtC/yr");
-
-        let tokens_str =
-            r#"lifetime { name = "Lifetime|CH4", unit = "yr", timeseries_type = "average" }"#;
-        let cap = re.captures(tokens_str).expect("Should match");
-        assert_eq!(cap.get(2).unwrap().as_str(), "Lifetime|CH4");
-        assert_eq!(cap.get(3).unwrap().as_str(), "yr");
+    #[test]
+    fn test_has_derive() {
+        let item: ItemStruct = syn::parse_quote! {
+            #[derive(Debug, rscm_core::ComponentMetadata)]
+            struct Foo;
+        };
+        assert!(has_derive(&item.attrs, "ComponentMetadata"));
+        assert!(!has_derive(&item.attrs, "ComponentIO"));
     }
 }

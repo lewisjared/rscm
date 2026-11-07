@@ -3,27 +3,15 @@
 //! Tracks atmospheric methane by source and the CO2 released as its fossil share
 //! is oxidised, which MAGICC7 adds to fossil CO2 emissions.
 //!
-//! # Inputs
-//!
-//! - `Atmospheric Concentrations|CH4` (ppb), at the start and end of the step
-//! - `Lifetime|CH4|OH` (yr): OH lifetime over the step
-//! - `Emissions|CH4|Fossil` (Mt CH4/yr) - Fossil and industrial CH4 emissions
-//! - `Emissions|CH4|Biosphere` (Mt CH4/yr) - Agriculture and land use CH4 emissions
-//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `include_permafrost` parameter
-//!
-//! # States (tracked between steps)
-//!
-//! - `Atmospheric Burden|CH4|{Fossil,Biosphere,Natural,Permafrost}` (Mt CH4): CH4 in the atmosphere by source
-//!
-//! # Outputs
-//!
-//! - `Emissions|CO2|CH4 Oxidation` (GtC/yr) - CO2 released by oxidation
-//!
 //! As in MAGICC7, the sink is the mid-step concentration over the total lifetime,
 //! shared between the pools in proportion to their size.
 //! Anthropogenic pools receive the emissions that close the CH4 budget,
 //! split between fossil and biosphere in proportion to their emissions.
 //! The fossil share counts the fossil pool and `permafrost_fraction` of the permafrost pool.
+//!
+//! # Inputs
+//!
+//! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `include_permafrost` parameter
 
 use crate::parameters::CH4OxidationParameters;
 use crate::reference::{permafrost_emissions, require_annual};
@@ -37,22 +25,23 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
+/// CH4 oxidation component.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["chemistry", "ch4", "carbon-cycle", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
-    concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb" },
-    oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average" },
-    fossil_emissions { name = "Emissions|CH4|Fossil", unit = "Mt CH4/yr" },
-    biosphere_emissions { name = "Emissions|CH4|Biosphere", unit = "Mt CH4/yr" },
+    concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb", description = "CH4 concentration, read at the start and end of the step" },
+    oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average", description = "CH4 lifetime against the tropospheric OH sink over the step" },
+    fossil_emissions { name = "Emissions|CH4|Fossil", unit = "Mt CH4/yr", description = "Fossil CH4 emissions over the step" },
+    biosphere_emissions { name = "Emissions|CH4|Biosphere", unit = "Mt CH4/yr", description = "Biosphere CH4 emissions over the step" },
 )]
 #[states(
-    fossil_burden { name = "Atmospheric Burden|CH4|Fossil", unit = "Mt CH4" },
-    biosphere_burden { name = "Atmospheric Burden|CH4|Biosphere", unit = "Mt CH4" },
-    natural_burden { name = "Atmospheric Burden|CH4|Natural", unit = "Mt CH4" },
-    permafrost_burden { name = "Atmospheric Burden|CH4|Permafrost", unit = "Mt CH4" },
+    fossil_burden { name = "Atmospheric Burden|CH4|Fossil", unit = "Mt CH4", description = "Atmospheric CH4 from fossil emissions" },
+    biosphere_burden { name = "Atmospheric Burden|CH4|Biosphere", unit = "Mt CH4", description = "Atmospheric CH4 from biosphere emissions" },
+    natural_burden { name = "Atmospheric Burden|CH4|Natural", unit = "Mt CH4", description = "Atmospheric CH4 from natural emissions" },
+    permafrost_burden { name = "Atmospheric Burden|CH4|Permafrost", unit = "Mt CH4", description = "Atmospheric CH4 from permafrost emissions" },
 )]
 #[outputs(
-    co2_emissions { name = "Emissions|CO2|CH4 Oxidation", unit = "GtC/yr" },
+    co2_emissions { name = "Emissions|CO2|CH4 Oxidation", unit = "GtC/yr", description = "CO2 released by oxidising fossil CH4 over the step" },
 )]
 pub struct CH4Oxidation {
     parameters: CH4OxidationParameters,

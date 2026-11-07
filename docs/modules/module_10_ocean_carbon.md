@@ -24,7 +24,7 @@ The module represents:
 - **Source**: `crates/rscm-magicc/src/carbon/ocean.rs`,
   with parameters and IRF forms in `crates/rscm-magicc/src/parameters/ocean_carbon.rs`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
-  `run_magicc7` uses the component's defaults, which are MAGICC7's 3D-GFDL settings.
+  `run_magicc7` uses the component's defaults, which are MAGICC7's 3D-GFDL parameters.
 - **Tests**: `tests/regression/test_full_run.py::test_coupled_run` and `test_run_magicc7_defaults`
   check the CO2 concentration against MAGICC7 v7.5.3.
   `crates/rscm-magicc/tests/carbon_cycle_physics.rs` and `conservation.rs` check the
@@ -141,7 +141,7 @@ so the ocean takes up carbon less efficiently as it absorbs more.
 
 ## State variables
 
-| Variable             | Fortran name                                    | Units | Initial value                  |
+| Variable             | Fortran name                                    | Unit  | Initial value                  |
 | -------------------- | ----------------------------------------------- | ----- | ------------------------------ |
 | Ocean surface pCO2   | `pco2s_currentstep`, `DAT_PCO2S_CONC%DATGLOBE`  | ppm   | `DAT_CO2_CONC%DATGLOBE(1)`     |
 | Air-sea flux history | `CO2_AIR2OCNFLX_ALLT_PPMPERYR`                  | ppm/yr | 0                             |
@@ -151,7 +151,7 @@ so the ocean takes up carbon less efficiently as it absorbs more.
 
 ## Inputs and outputs
 
-| Direction | Variable                     | Units  | Fortran variable                             |
+| Direction | Variable                     | Unit   | Fortran variable                             |
 | --------- | ---------------------------- | ------ | -------------------------------------------- |
 | Input     | Atmospheric CO2              | ppm    | `DAT_CO2_CONC%DATGLOBE(current_year_idx)`    |
 | Input     | Other carbon sources         | GtC/yr | `CO2_TERRBIO_AND_FOSSIL_EMIS` (CO2 budget)   |
@@ -169,7 +169,7 @@ minus the net land uptake.
 
 ### Configurable parameters
 
-| Parameter          | Fortran name                      | RSCM field                        | Units  | Default    | Description                              |
+| Parameter          | Fortran name                      | RSCM field                        | Unit   | Default    | Description                              |
 | ------------------ | --------------------------------- | --------------------------------- | ------ | ---------- | ---------------------------------------- |
 | Ocean model        | `OCEANCC_MODEL`                   | constructor                       | -      | "3D-GFDL"  | "3D-GFDL", "2D-BERN", "HILDA", "BOXDIFF" |
 | Gas exchange scale | `OCEANCC_SCALE_GASXCHANGE`        | `gas_exchange_scale`              | 1      | 1.833492   | Scales the gas exchange rate $k$         |
@@ -338,7 +338,7 @@ The MAGICC7 source flags these design problems with TODO comments and its own is
 | #207          | Runs the monthly loop in `MAGICC7.f90`, not in the ocean calculator       | Ocean state is split between `mod_ocean_carbon_cycle` and the driver |
 | #208          | Averages the last two months and limits the flux change                   | Stability comes from ad hoc devices rather than the integrator    |
 | #209          | Steps monthly "because of issues with the stability"                      | The comment doubts this is needed with a better integrator        |
-| #210          | Handles the radiative-only setting inside the physics                     | The switch is entangled with the flux calculation                 |
+| #210          | Handles the radiative-only switch inside the physics                      | The switch is entangled with the flux calculation                 |
 | #211          | Applies the CO2 concentration cap inside the physics                      | The cap is entangled with the atmospheric update                  |
 
 Beyond these:
@@ -356,7 +356,7 @@ Beyond these:
 - RSCM has the 3D-GFDL, 2D-BERN and HILDA models
   (`OceanCarbonParameters::gfdl_3d`, `bern_2d` and `hilda` in Rust), but not BOXDIFF.
   The Python builder defaults to 3D-GFDL, and another model needs its constants and IRF forms passed in.
-- There is no radiative-only mode (`OCEANCC_RAD_SETTING`).
+- There is no radiative-only switch (`OCEANCC_RAD_SETTING`).
 - The concentration cap is not implemented
   (see [CO2 budget](module_11_co2_budget.md#differences-from-magicc7)).
 - The flux history keeps the last `maximum_history_months` substeps (6000, or 500 years).

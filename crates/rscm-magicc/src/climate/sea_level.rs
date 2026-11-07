@@ -1,6 +1,7 @@
 //! Sea Level Rise Component
 //!
-//! Global mean sea level rise from land ice and thermal expansion.
+//! Calculates global mean sea level rise from glaciers, the Greenland and Antarctic ice sheets
+//! and thermal expansion, following MAGICC7.
 //!
 //! # What This Component Does
 //!
@@ -15,18 +16,6 @@
 //!
 //! Thermal expansion needs the ocean layer temperatures, so `ClimateUDEB` calculates it
 //! when its `thermal_expansion` parameter is set, see [`thermal_expansion_increment`].
-//!
-//! # Inputs
-//!
-//! - `Annual Mean Surface Air Temperature Change` (K) - Mean warming over the step, from `ClimateUDEB`
-//! - `Sea Level Rise|Thermal Expansion` (mm) - From `ClimateUDEB`
-//!
-//! # Outputs
-//!
-//! - `Sea Level Rise` (mm) - Sum of all contributions
-//! - `Sea Level Rise|Glaciers`, `Sea Level Rise|Greenland|Surface Mass Balance`,
-//!   `Sea Level Rise|Greenland|Solid Ice Discharge`, `Sea Level Rise|Antarctica|Surface Mass Balance`
-//!   and `Sea Level Rise|Antarctica|Solid Ice Discharge` (mm)
 //!
 //! A step's warming sets the sea level at its end, as in MAGICC7.
 //! Steps must be one year long.
@@ -151,16 +140,16 @@ impl ComponentState for SeaLevelRiseState {
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["climate", "sea-level", "magicc"], category = "Climate")]
 #[inputs(
-    temperature { name = "Annual Mean Surface Air Temperature Change", unit = "K", timeseries_type = "average" },
-    thermal_expansion { name = "Sea Level Rise|Thermal Expansion", unit = "mm" },
+    temperature { name = "Annual Mean Surface Air Temperature Change", unit = "K", timeseries_type = "average", description = "Mean warming over the step, from `ClimateUDEB`" },
+    thermal_expansion { name = "Sea Level Rise|Thermal Expansion", unit = "mm", description = "Thermal expansion at the end of the step, from `ClimateUDEB`" },
 )]
 #[outputs(
-    total { name = "Sea Level Rise", unit = "mm" },
-    glaciers { name = "Sea Level Rise|Glaciers", unit = "mm" },
-    greenland_smb { name = "Sea Level Rise|Greenland|Surface Mass Balance", unit = "mm" },
-    greenland_discharge { name = "Sea Level Rise|Greenland|Solid Ice Discharge", unit = "mm" },
-    antarctic_smb { name = "Sea Level Rise|Antarctica|Surface Mass Balance", unit = "mm" },
-    antarctic_discharge { name = "Sea Level Rise|Antarctica|Solid Ice Discharge", unit = "mm" },
+    total { name = "Sea Level Rise", unit = "mm", description = "Sum of all contributions at the end of the step" },
+    glaciers { name = "Sea Level Rise|Glaciers", unit = "mm", description = "Contribution of glaciers and ice caps" },
+    greenland_smb { name = "Sea Level Rise|Greenland|Surface Mass Balance", unit = "mm", description = "Contribution of Greenland surface mass balance" },
+    greenland_discharge { name = "Sea Level Rise|Greenland|Solid Ice Discharge", unit = "mm", description = "Contribution of Greenland solid ice discharge" },
+    antarctic_smb { name = "Sea Level Rise|Antarctica|Surface Mass Balance", unit = "mm", description = "Contribution of Antarctic surface mass balance" },
+    antarctic_discharge { name = "Sea Level Rise|Antarctica|Solid Ice Discharge", unit = "mm", description = "Contribution of Antarctic solid ice discharge" },
 )]
 pub struct SeaLevelRise {
     parameters: SeaLevelRiseParameters,

@@ -31,12 +31,12 @@ Three effects modify the lifetime:
 ### Mass balance
 
 $$
-\frac{dB}{dt} = E - \frac{\bar{B}_{lag}}{\tau}
+\frac{dB}{dt} = E - \frac{\bar{B}_{delayed}}{\tau}
 $$
 
 - $B = k C$ is the N2O burden (Tg N) for a concentration $C$ in ppb, with $k$ = `N2O_PPB2TGN`.
 - $E$ is total N2O emissions (Tg N/yr).
-- $\bar{B}_{lag}$ is the burden averaged over the delayed years (see below), not the current burden.
+- $\bar{B}_{delayed}$ is the burden averaged over the delayed years (see below), not the current burden.
 - $\tau$ is the lifetime (yr).
 
 ### Lifetime
@@ -69,7 +69,7 @@ Otherwise $s = 1$.
 The sink uses the mean of two delayed concentrations, with $d$ = `N2O_STRATMIXDELAY`:
 
 $$
-\bar{B}_{lag} = k \, \frac{C_{t-d} + C_{t-d-1}}{2}
+\bar{B}_{delayed} = k \, \frac{C_{t-d} + C_{t-d-1}}{2}
 $$
 
 Indices before the first year of the run are clamped to the first year.
@@ -82,7 +82,7 @@ $$
 \begin{aligned}
 \bar{B}_n &= \frac{B + B_{n-1}}{2} \quad (\bar{B}_1 = B) \\
 \tau_n &= s \, \tau_{init} \left(\max\left(1, \frac{\bar{B}_n}{B_{00}}\right)\right)^S \\
-B_n &= B + E - \frac{\bar{B}_{lag}}{\tau_n}
+B_n &= B + E - \frac{\bar{B}_{delayed}}{\tau_n}
 \end{aligned}
 $$
 
@@ -99,7 +99,7 @@ Reproducing v7.5.3 SSP245 emissions-driven output fixed these details:
 
 ## Inputs and outputs
 
-| Input                          | Units     | Fortran variable                                   |
+| Input                          | Unit      | Fortran variable                                   |
 | ------------------------------ | --------- | -------------------------------------------------- |
 | Current N2O concentration      | ppb       | `DAT_N2O_CONC%DATGLOBE(CURRENT_YEAR_IDX)`          |
 | Delayed concentrations         | ppb       | `DAT_N2O_CONC%DATGLOBE(DELAY_ENDYEAR_IDX)` and `(DELAY_STARTYEAR_IDX)` |
@@ -108,7 +108,7 @@ Reproducing v7.5.3 SSP245 emissions-driven output fixed these details:
 | Natural emissions              | Tg N/yr   | `DAT_N2ON_EMIS%DATGLOBE`                           |
 | Lifetime scale $s$             | 1         | `SCALEFACTOR_TAUSTRAT`                             |
 
-| Output                     | Units     | Fortran variable                          |
+| Output                     | Unit      | Fortran variable                          |
 | -------------------------- | --------- | ----------------------------------------- |
 | Next year's N2O            | ppb       | `DAT_N2O_CONC%DATGLOBE(NEXT_YEAR_IDX)`    |
 | Lifetime                   | yr        | `DAT_N2O_TAUTOT%DATGLOBE`                 |
@@ -117,7 +117,7 @@ Reproducing v7.5.3 SSP245 emissions-driven output fixed these details:
 
 ## Parameters
 
-| Parameter                      | Units     | Default  | Description                                          |
+| Parameter                      | Unit      | Default  | Description                                          |
 | ------------------------------ | --------- | -------- | ---------------------------------------------------- |
 | `N2O_TAUINIT`                  | yr        | 139.275  | Reference lifetime                                   |
 | `N2O_PPB2TGN`                  | Tg N/ppb  | 4.79     | Concentration to mass                                |
@@ -162,15 +162,15 @@ with its two lifetimes.
 6. Stores the lifetime,
    and from `N2O_SWITCHFROMCONC2EMIS_YEAR` the calculated concentration for the next year.
    Before then the prescribed concentration is kept.
-7. Diagnoses the inverse emissions as $k (C_{t+1} - C_t + \bar{C}_{lag} / \tau) - E_{nat}$,
-   with $\bar{C}_{lag} = \bar{B}_{lag} / k$.
+7. Diagnoses the inverse emissions as $k (C_{t+1} - C_t + \bar{C}_{delayed} / \tau) - E_{nat}$,
+   with $\bar{C}_{delayed} = \bar{B}_{delayed} / k$.
 
 ## Issues in MAGICC7
 
 RSCM reproduces each of these.
 
 - **Fixed iterations**: `NITROUS` always runs four iterations, with no convergence check.
-- **Lagged sink, current lifetime**: the sink divides the delayed burden $\bar{B}_{lag}$
+- **Delayed sink, current lifetime**: the sink divides the delayed burden $\bar{B}_{delayed}$
   by a lifetime evaluated at the current mid-step burden $\bar{B}_n$.
 - **Floor on the burden ratio**: $\max(1, \bar{B}/B_{00})$ keeps the lifetime at $s \, \tau_{init}$
   when N2O is below the reference burden.

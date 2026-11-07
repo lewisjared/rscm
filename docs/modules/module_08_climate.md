@@ -2,7 +2,7 @@
 
 ## Overview
 
-The climate module turns radiative forcing into temperature.
+The climate module turns effective radiative forcing into temperature.
 It couples an upwelling-diffusion-entrainment ocean to a four-box atmosphere:
 Northern Ocean, Northern Land, Southern Ocean and Southern Land.
 It accounts for:
@@ -28,7 +28,7 @@ and the slow response of the deep ocean.
 - **Tests**:
   - `tests/regression/test_full_run.py::test_climate` drives `ClimateUDEB` with MAGICC7's own box forcing.
   - `tests/regression/test_full_run.py::test_coupled_run` runs the coupled chain,
-    with variants on climate sensitivity, upwelling, diffusivity, ocean geometry, ground heat,
+    with variants on equilibrium climate sensitivity, upwelling, diffusivity, ocean geometry, ground heat,
     inter-hemispheric exchange, feedback and efficacy.
   - Rust tests in `crates/rscm-magicc/tests/` (`lamcalc_integration.rs`, `lamcalc_reference_values.rs`,
     `ecs_diagnostics.rs`, `conservation.rs`) check LAMCALC and energy conservation.
@@ -42,7 +42,7 @@ and the slow response of the deep ocean.
 - The CO₂ internal efficacy comes from LAMCALC.
   With `efficacy_method = "ar6"`, effective forcing is scaled by `co2_efficacy / internal_efficacy`.
   `ForcingAggregation` applies an internal efficacy to every other agent.
-  As in MAGICC7, they are recalculated each year from the previous year's climate sensitivity,
+  As in MAGICC7, they are recalculated each year from the previous year's equilibrium climate sensitivity,
   so they drift as the climate warms.
 - Monthly volcanic forcing enters through the `subannual_forcing` parameter.
   `rscm.magicc.prescribed.volcanic_pattern` reproduces MAGICC7's regional pattern,
@@ -66,7 +66,7 @@ where:
 
 - $C$ is the effective heat capacity (J m⁻² K⁻¹).
 - $T$ is the temperature anomaly (K).
-- $Q$ is the radiative forcing (W m⁻²).
+- $Q$ is the effective radiative forcing (W m⁻²).
 - $\lambda$ is the feedback parameter (W m⁻² K⁻¹).
 - $H_{exchange}$ is the heat exchange with other boxes.
 
@@ -100,7 +100,7 @@ and the hemispheres exchange heat only through their oceans.
   (`FGNO`, `FGNL`, `FGSO`, `FGSL`).
   The initialisation page gives the [box order and area fractions](module_00_initialisation.md#four-box-geography).
 
-### Climate sensitivity decomposition
+### Equilibrium climate sensitivity decomposition
 
 LAMCALC splits the equilibrium climate sensitivity (`CORE_CLIMATESENSITIVITY`)
 into $\lambda_o$ and $\lambda_l$, so that the land-ocean warming ratio `CORE_RLO` holds:
@@ -129,9 +129,9 @@ After LAMCALC converges, MAGICC7 repeats the equilibrium calculation with each a
 The ratio of the global response to the CO₂ response at the same global-mean forcing
 is that agent's internal efficacy.
 
-### Time-varying climate sensitivity
+### Time-varying equilibrium climate sensitivity
 
-Climate sensitivity varies with forcing and with cumulative temperature:
+Equilibrium climate sensitivity (ECS) varies with forcing and with cumulative temperature:
 
 $$
 ECS_{eff} = ECS \left(1 + \alpha_T \frac{\sum T - ECS \cdot P}{ECS \cdot P}\right)
@@ -342,7 +342,7 @@ It is stepped by forward Euler from the previous substep's land temperature.
 
 ## State variables
 
-| Variable                        | Fortran name                        | Units  | Initial value                 |
+| Variable                        | Fortran name                        | Unit   | Initial value                 |
 | ------------------------------- | ----------------------------------- | ------ | ----------------------------- |
 | Ocean layer temperatures (NH)   | `OCN_HEMISPHERIC_LAYERTEMPS(1,:)`   | K      | 0                             |
 | Ocean layer temperatures (SH)   | `OCN_HEMISPHERIC_LAYERTEMPS(2,:)`   | K      | 0                             |
@@ -356,7 +356,7 @@ It is stepped by forward Euler from the previous substep's land temperature.
 
 ## Inputs and outputs
 
-| Input                       | Units | Source             | Fortran variable                    |
+| Input                       | Unit  | Source             | Fortran variable                    |
 | --------------------------- | ----- | ------------------ | ----------------------------------- |
 | Total effective forcing     | W m⁻² | Forcing aggregation | `dat_total_effrf`, 4 boxes         |
 | Volcanic forcing            | W m⁻² | Forcing            | `dat_volcanic_effrf`, 4 boxes       |
@@ -365,20 +365,20 @@ It is stepped by forward Euler from the previous substep's land temperature.
 | Prescribed upwelling rate   | m yr⁻¹ | File              | `DAT_UPWELLING_RATE`, if prescribed |
 | Prescribed temperature      | K     | File               | `DAT_RAW_SURFACE_TEMP`, if enabled  |
 
-| Output                          | Units  | Used by                         | Fortran variable                 |
-| ------------------------------- | ------ | ------------------------------- | -------------------------------- |
-| Surface temperature, 4 boxes    | K      | Carbon cycle, sea level, CH4    | `DAT_SURFACE_TEMP`               |
-| Annual mean temperature         | K      | Sea level                       | `DAT_SURFACE_ANNUALMEANTEMP`     |
-| Mixed-layer temperature         | K      | Output                          | `DAT_SURFACE_MIXEDLAYERTEMP`     |
-| Ocean layer temperatures        | K      | Sea level (thermal expansion)   | `TEMP_OCEANLAYERS`               |
-| Heat uptake                     | W m⁻²  | Output                          | `DAT_HEATUPTAKE_EBALANCE_TOTAL`  |
-| Heat content                    | 10²² J | Output                          | `DAT_HEATCONTENT_EBALANCE_TOTAL` |
-| Heat content by depth           | 10²² J | Output                          | `DAT_HEATCONTENT_AGGREG(1:4)`    |
-| Upwelling rate                  | m yr⁻¹ | Output                          | `DAT_UPWELLING_RATE`             |
-| Equilibrium climate sensitivity | K      | Output                          | `DAT_CLIMSENS_EQ`                |
-| Effective climate sensitivity   | K      | Output                          | `DAT_CLIMSENS_EFF`               |
-| Ground temperature              | K      | Output                          | `DAT_GROUND_TEMP`                |
-| Monthly temperatures            | K      | Output                          | `DAT_SURFACE_TEMP_SUBANNUAL`     |
+| Output                                     | Unit   | Used by                       | Fortran variable                 |
+| ------------------------------------------ | ------ | ----------------------------- | -------------------------------- |
+| Surface air temperature change, 4 boxes    | K      | Carbon cycle, sea level, CH4  | `DAT_SURFACE_TEMP`               |
+| Annual mean surface air temperature change | K      | Sea level                     | `DAT_SURFACE_ANNUALMEANTEMP`     |
+| Mixed-layer temperature                    | K      | Output                        | `DAT_SURFACE_MIXEDLAYERTEMP`     |
+| Ocean layer temperatures                   | K      | Sea level (thermal expansion) | `TEMP_OCEANLAYERS`               |
+| Heat uptake                                | W m⁻²  | Output                        | `DAT_HEATUPTAKE_EBALANCE_TOTAL`  |
+| Heat content                               | 10²² J | Output                        | `DAT_HEATCONTENT_EBALANCE_TOTAL` |
+| Heat content by depth                      | 10²² J | Output                        | `DAT_HEATCONTENT_AGGREG(1:4)`    |
+| Upwelling rate                             | m yr⁻¹ | Output                        | `DAT_UPWELLING_RATE`             |
+| Equilibrium climate sensitivity            | K      | Output                        | `DAT_CLIMSENS_EQ`                |
+| Effective climate sensitivity              | K      | Output                        | `DAT_CLIMSENS_EFF`               |
+| Ground temperature                         | K      | Output                        | `DAT_GROUND_TEMP`                |
+| Monthly temperatures                       | K      | Output                        | `DAT_SURFACE_TEMP_SUBANNUAL`     |
 
 `ClimateUDEB` reads `Effective Radiative Forcing` and writes `Surface Air Temperature Change` (four-box),
 `Heat Uptake`, `Ocean Heat Content`, `Sea Surface Temperature` and `Equilibrium Climate Sensitivity`.
@@ -392,12 +392,12 @@ Defaults are MAGICC7 v7.5.3's, from `run/MAGCFG_DEFAULTALL.CFG`.
 `run_magicc7` takes them from `python/rscm/magicc/data/magicc7/defaults.json`.
 `ClimateUDEBParameters::default()` rounds some of them (for example `CORE_RLO` to 1.317).
 
-### Climate sensitivity
+### Equilibrium climate sensitivity
 
-| Parameter                          | Fortran name                    | Units    | Default      |
+| Parameter                          | Fortran name                    | Unit     | Default      |
 | ---------------------------------- | ------------------------------- | -------- | ------------ |
 | Equilibrium climate sensitivity    | `CORE_CLIMATESENSITIVITY`       | K        | 3.0          |
-| Forcing for doubled CO₂            | `CORE_DELQ2XCO2`                | W m⁻²    | 3.71         |
+| 2xCO2 effective radiative forcing  | `CORE_DELQ2XCO2`                | W m⁻²    | 3.71         |
 | Land-ocean warming ratio           | `CORE_RLO`                      | -        | 1.317229     |
 | Forcing sensitivity                | `CORE_FEEDBACK_QSENSITIVITY`    | per W m⁻² | 7.842035e-9 |
 | Cumulative temperature sensitivity | `CORE_FEEDBACK_CUMTSENSITIVITY` | -        | 0.08         |
@@ -405,7 +405,7 @@ Defaults are MAGICC7 v7.5.3's, from `run/MAGCFG_DEFAULTALL.CFG`.
 
 ### Ocean
 
-| Parameter                    | Fortran name                    | Units       | Default    |
+| Parameter                    | Fortran name                    | Unit        | Default    |
 | ---------------------------- | ------------------------------- | ----------- | ---------- |
 | Mixed-layer depth            | `CORE_MIXEDLAYER_DEPTH`         | m           | 60         |
 | Number of ocean layers       | `CORE_OCN_NLEVELS`              | -           | 50         |
@@ -417,7 +417,7 @@ Defaults are MAGICC7 v7.5.3's, from `run/MAGCFG_DEFAULTALL.CFG`.
 
 ### Upwelling
 
-| Parameter                   | Fortran name                    | Units  | Default |
+| Parameter                   | Fortran name                    | Unit   | Default |
 | --------------------------- | ------------------------------- | ------ | ------- |
 | Initial upwelling rate      | `CORE_INITIAL_UPWELLING_RATE`   | m yr⁻¹ | 3.5     |
 | Variable upwelling fraction | `CORE_UPWELLING_VARIABLE_PART`  | -      | 0.7     |
@@ -428,7 +428,7 @@ Defaults are MAGICC7 v7.5.3's, from `run/MAGCFG_DEFAULTALL.CFG`.
 
 ### Heat exchange
 
-| Parameter                    | Fortran name                      | Units     | Default   |
+| Parameter                    | Fortran name                      | Unit      | Default   |
 | ---------------------------- | --------------------------------- | --------- | --------- |
 | Land-ocean heat exchange     | `CORE_HEATXCHANGE_LANDOCEAN`      | W m⁻² K⁻¹ | 1.442816  |
 | Inter-hemispheric exchange   | `CORE_HEATXCHANGE_NORTHSOUTH`     | W m⁻² K⁻¹ | 0.3115475 |
@@ -439,7 +439,7 @@ Defaults are MAGICC7 v7.5.3's, from `run/MAGCFG_DEFAULTALL.CFG`.
 
 ### Temperature adjustment and area
 
-| Parameter                     | Fortran name                     | Units | Default |
+| Parameter                     | Fortran name                     | Unit  | Default |
 | ----------------------------- | -------------------------------- | ----- | ------- |
 | Apply ocean-to-air adjustment | `CORE_SWITCH_TEMPADJUST_OCN2ATM` | -     | 1       |
 | Linear coefficient            | `CORE_TEMPADJUST_OCN2ATM_ALPHA`  | -     | 1.04    |
@@ -453,7 +453,7 @@ Defaults are MAGICC7 v7.5.3's, from `run/MAGCFG_DEFAULTALL.CFG`.
 MAGICC7's defaults switch both modes off (`CORE_ELNINO_APPLY = 0`, `CORE_AMV_APPLY = 0`),
 and RSCM does not implement them.
 
-| Parameter            | Fortran name              | Units | Default |
+| Parameter            | Fortran name              | Unit  | Default |
 | -------------------- | ------------------------- | ----- | ------- |
 | Apply El Niño        | `CORE_ELNINO_APPLY`       | -     | 0       |
 | El Niño scale        | `CORE_ELNINO_SCALE`       | K     | 0.010825 |
@@ -474,7 +474,7 @@ Each year `magicc_step_year` (MAGICC7.f90 lines 2646 to 3727) runs:
    (see [main step](module_15_main_step.md)).
 2. For each substep, from substep 1 to `STEPSPERYEAR` (from substep 0 in the first year, to 11 in the last):
     1. Interpolate the box forcing to the substep and add monthly volcanic forcing.
-    2. Adjust the climate sensitivity from the substep's global forcing and the cumulative temperature,
+    2. Adjust the equilibrium climate sensitivity for the substep's global forcing and cumulative temperature,
        then call LAMCALC for $\lambda_o$, $\lambda_l$ and the CO₂ internal efficacy.
     3. Step the ground reservoir from the previous substep's land temperature.
        The ocean solve below still uses the ground temperature from before this update.
@@ -528,7 +528,7 @@ and compares the area-weighted land and ocean equilibrium temperatures with $RLO
 - **Variable upwelling**: it needs the change from the initial rate and the initial profile
   for each of the three profile types.
 - **LAMCALC cost**: it inverts the matrix iteratively and runs every substep,
-  because the climate sensitivity changes with each substep's forcing.
+  because the equilibrium climate sensitivity changes with each substep's forcing.
 - **Dead code**: commented-out blocks remain (`climate_and_ocean.f90` lines 119 to 135,
   `MAGICC7.f90` lines 3420 to 3422), with several "PROCEED HERE" comments.
 
@@ -542,29 +542,29 @@ and compares the area-weighted land and ocean equilibrium temperatures with $RLO
 
 ## References
 
-| File                                          | Lines     | Content                                   |
-| --------------------------------------------- | --------- | ----------------------------------------- |
-| `src/libmagicc/physics/climate_and_ocean.f90` | 1-295     | Module variables, `ocean_init` (102-292)  |
-| `src/libmagicc/physics/core_calculations.f90` | 1-110     | Ocean-to-air temperature conversion       |
-| `src/libmagicc/MAGICC7.f90`                   | 237-246   | `HEAT_CAPACITY_PERM`                      |
-| `src/libmagicc/MAGICC7.f90`                   | 249-269   | Area fractions                            |
-| `src/libmagicc/MAGICC7.f90`                   | 2646-3727 | `magicc_step_year`                        |
-| `src/libmagicc/MAGICC7.f90`                   | 2724      | Forcing interpolation                     |
-| `src/libmagicc/MAGICC7.f90`                   | 2747-2768 | Climate sensitivity adjustment            |
-| `src/libmagicc/MAGICC7.f90`                   | 2783-2799 | Vertical diffusivity                      |
-| `src/libmagicc/MAGICC7.f90`                   | 2826-3074 | Tridiagonal coefficients                  |
-| `src/libmagicc/MAGICC7.f90`                   | 3080-3094 | Thomas algorithm                          |
-| `src/libmagicc/MAGICC7.f90`                   | 3102-3112 | Temperature caps                          |
-| `src/libmagicc/MAGICC7.f90`                   | 3159-3187 | Ocean-to-air conversion                   |
-| `src/libmagicc/MAGICC7.f90`                   | 3214-3223 | Land temperature                          |
-| `src/libmagicc/MAGICC7.f90`                   | 3258-3281 | Heat uptake                               |
-| `src/libmagicc/MAGICC7.f90`                   | 3300-3388 | Upwelling                                 |
-| `src/libmagicc/MAGICC7.f90`                   | 3627-3721 | Heat content                              |
-| `src/libmagicc/MAGICC7.f90`                   | 8070-8278 | `LAMCALC` (iteration 8116-8207)           |
-| `src/libmagicc/MAGICC7.f90`                   | 8291-8338 | `CALC_INTERNAL_EFFICACY`                  |
-| `src/libmagicc/allcfgs.f90`                   | 1-431     | Parameter namelist                        |
-| `src/libmagicc/utils/areas.f90`               | 1-8       | Area fraction variables                   |
-| `run/MAGCFG_DEFAULTALL.CFG`                   | 81-139    | `CORE_*` defaults                         |
+| File                                          | Lines     | Content                                    |
+| --------------------------------------------- | --------- | ------------------------------------------ |
+| `src/libmagicc/physics/climate_and_ocean.f90` | 1-295     | Module variables, `ocean_init` (102-292)   |
+| `src/libmagicc/physics/core_calculations.f90` | 1-110     | Ocean-to-air temperature conversion        |
+| `src/libmagicc/MAGICC7.f90`                   | 237-246   | `HEAT_CAPACITY_PERM`                       |
+| `src/libmagicc/MAGICC7.f90`                   | 249-269   | Area fractions                             |
+| `src/libmagicc/MAGICC7.f90`                   | 2646-3727 | `magicc_step_year`                         |
+| `src/libmagicc/MAGICC7.f90`                   | 2724      | Forcing interpolation                      |
+| `src/libmagicc/MAGICC7.f90`                   | 2747-2768 | Equilibrium climate sensitivity adjustment |
+| `src/libmagicc/MAGICC7.f90`                   | 2783-2799 | Vertical diffusivity                       |
+| `src/libmagicc/MAGICC7.f90`                   | 2826-3074 | Tridiagonal coefficients                   |
+| `src/libmagicc/MAGICC7.f90`                   | 3080-3094 | Thomas algorithm                           |
+| `src/libmagicc/MAGICC7.f90`                   | 3102-3112 | Temperature caps                           |
+| `src/libmagicc/MAGICC7.f90`                   | 3159-3187 | Ocean-to-air conversion                    |
+| `src/libmagicc/MAGICC7.f90`                   | 3214-3223 | Land temperature                           |
+| `src/libmagicc/MAGICC7.f90`                   | 3258-3281 | Heat uptake                                |
+| `src/libmagicc/MAGICC7.f90`                   | 3300-3388 | Upwelling                                  |
+| `src/libmagicc/MAGICC7.f90`                   | 3627-3721 | Heat content                               |
+| `src/libmagicc/MAGICC7.f90`                   | 8070-8278 | `LAMCALC` (iteration 8116-8207)            |
+| `src/libmagicc/MAGICC7.f90`                   | 8291-8338 | `CALC_INTERNAL_EFFICACY`                   |
+| `src/libmagicc/allcfgs.f90`                   | 1-431     | Parameter namelist                         |
+| `src/libmagicc/utils/areas.f90`               | 1-8       | Area fraction variables                    |
+| `run/MAGCFG_DEFAULTALL.CFG`                   | 81-139    | `CORE_*` defaults                          |
 
 | Constant    | Value  | Location                   | Meaning                         |
 | ----------- | ------ | -------------------------- | ------------------------------- |

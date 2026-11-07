@@ -1,0 +1,176 @@
+{
+  "name": "CH4Chemistry",
+  "slug": "magicc-ch4chemistry",
+  "reference_model": "MAGICC7",
+  "module_path": "rscm_magicc::chemistry::ch4",
+  "language": "rust",
+  "description": "Simulates atmospheric methane chemistry with a concentration-dependent lifetime,\nusing Prather's iterative method from IPCC TAR.\nThe method accounts for the positive feedback where higher CH4 concentrations deplete\ntropospheric OH, which in turn lengthens the CH4 lifetime.\n\n# What This Component Does\n\n1. Calculates the effective CH4 atmospheric lifetime including:\n   - OH sink with self-feedback (higher CH4 → depleted OH → longer lifetime)\n   - Non-OH sinks (soil uptake, stratospheric destruction, tropospheric Cl)\n   - Temperature feedback (warmer → more OH → shorter lifetime)\n   - Emissions feedback from co-emitted species (NOx, CO, NMVOC)\n\n2. Solves the mass balance equation using 4 Prather iterations:\n   $$\\frac{dB}{dt} = E - \\frac{B}{\\tau_{OH}} - \\frac{B}{\\tau_{other}}$$\n\n# Algorithm\n\nFor each step, starting from the burden $B$ at the start of the year,\nit performs 4 fixed-point iterations:\n\n1. Mean burden: $\\bar{B}_1 = B$, then $\\bar{B}_n = (B + B_{n-1}) / 2$\n2. Calculate effective OH lifetime with feedbacks\n3. Calculate burden change: $\\Delta B_n = E - \\bar{B}_n/\\tau_{OH} - \\bar{B}_n/\\tau_{other}$\n4. Update burden: $B_n = B + \\Delta B_n$\n\nFrom iteration 2 onwards, a correction factor $(1 - 0.5 X \\Delta B_{n-1}/B)$\nis applied to improve convergence.\n\n# Inputs\n\n- `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `include_permafrost` parameter\n- `Prescribed Atmospheric Concentrations|CH4` (ppb), only with the `concentration_switch_year` parameter\n\n# Outputs\n\n- `Inverse Emissions|CH4` (Mt CH4/yr), only with the `concentration_switch_year` parameter\n\n# Feedback references\n\nAs in MAGICC7, the concentration and temperature feedbacks are measured from\nthe year before `feedback_start_year` and the NOx, CO and NMVOC feedbacks from\nemissions in `feedback_start_year`. Before then the reference concentration\ntracks the current concentration and the temperature feedback is zero.\nReferences outside the run are clamped to its first or last year.\n\n# Differences from MAGICC7\n\n- **Budget initialisation**: natural emissions are a fixed parameter.\n  `rscm.magicc.full.natural_emissions` calculates MAGICC7's budget-closing value for it.\n- **Wetland feedback**: MAGICC7 includes temperature-dependent wetland CH4\n  emissions. These are not implemented, as they need a natural emissions component.\n- **Clathrate release**: MAGICC7 has optional methane clathrate feedback. Not implemented.\n\nWith `concentration_switch_year` the concentration follows\n`Prescribed Atmospheric Concentrations|CH4` until that year, and `Inverse Emissions|CH4`\nholds the anthropogenic emissions that would reproduce it.",
+  "category": "Atmospheric Chemistry",
+  "tags": [
+    "chemistry",
+    "ch4",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "ch4_emissions",
+      "name": "Emissions|CH4",
+      "unit": "Mt CH4/yr",
+      "grid": "scalar",
+      "description": "Anthropogenic methane emissions over the step"
+    },
+    {
+      "rust_name": "temperature",
+      "name": "Surface Air Temperature Change",
+      "unit": "K",
+      "grid": "scalar",
+      "description": "Surface air temperature change that drives the lifetime feedback"
+    },
+    {
+      "rust_name": "nox_emissions",
+      "name": "Emissions|NOx",
+      "unit": "Mt N/yr",
+      "grid": "scalar",
+      "description": "NOx emissions over the step, for the OH feedback"
+    },
+    {
+      "rust_name": "co_emissions",
+      "name": "Emissions|CO",
+      "unit": "Mt CO/yr",
+      "grid": "scalar",
+      "description": "CO emissions over the step, for the OH feedback"
+    },
+    {
+      "rust_name": "nmvoc_emissions",
+      "name": "Emissions|NMVOC",
+      "unit": "Mt NMVOC/yr",
+      "grid": "scalar",
+      "description": "NMVOC emissions over the step, for the OH feedback"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "ch4_lifetime",
+      "name": "Lifetime|CH4",
+      "unit": "yr",
+      "grid": "scalar",
+      "description": "Total atmospheric CH4 lifetime over the step"
+    },
+    {
+      "rust_name": "ch4_oh_lifetime",
+      "name": "Lifetime|CH4|OH",
+      "unit": "yr",
+      "grid": "scalar",
+      "description": "CH4 lifetime against the tropospheric OH sink over the step"
+    },
+    {
+      "rust_name": "ch4_effective_lifetime",
+      "name": "Effective Lifetime|CH4",
+      "unit": "yr",
+      "grid": "scalar",
+      "description": "Start-of-step burden over the CH4 removed during the step"
+    }
+  ],
+  "states": [
+    {
+      "rust_name": "ch4_concentration",
+      "name": "Atmospheric Concentrations|CH4",
+      "unit": "ppb",
+      "grid": "scalar",
+      "description": "CH4 concentration at the end of the step"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "feedback_start_year",
+      "type": "FloatValue",
+      "description": "Year from which the concentration and temperature feedbacks are measured (MAGICC7 `CH4_FEED_YRSTART`).\n\nunit: yr\n\nThe reference concentration and temperature are taken from the year before.\nNOx, CO and NMVOC feedbacks are relative to emissions in this year."
+    },
+    {
+      "name": "natural_emissions",
+      "type": "FloatValue",
+      "description": "Natural CH4 emissions from wetlands, termites, oceans and other sources.\n\nunit: Mt CH4/yr\n\nMAGICC7 closes the 1995-2004 budget against observed concentrations.\nThe default is the value it derives for its standard historical inputs."
+    },
+    {
+      "name": "include_permafrost",
+      "type": "bool",
+      "description": "Add `Emissions|CH4|Permafrost` from the `Permafrost` component to the emissions (MAGICC7 `PF_APPLY`)"
+    },
+    {
+      "name": "concentration_switch_year",
+      "type": "Option<FloatValue>",
+      "description": "Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|CH4`\n(MAGICC7 `CH4_SWITCHFROMCONC2EMIS_YEAR`).\n\nunit: yr\n\n`None` calculates concentrations from emissions throughout."
+    },
+    {
+      "name": "initial_ch4_lifetime",
+      "type": "FloatValue",
+      "description": "Total atmospheric lifetime at the reference state (MAGICC7 `CH4_TAUTOT_INIT`).\n\nunit: yr\n\nThe OH lifetime is derived by removing the non-OH sinks."
+    },
+    {
+      "name": "soil_lifetime",
+      "type": "FloatValue",
+      "description": "Soil uptake sink lifetime (MAGICC7 `CH4_TAUSOIL`)\n\nunit: yr"
+    },
+    {
+      "name": "stratospheric_lifetime",
+      "type": "FloatValue",
+      "description": "Stratospheric sink lifetime (MAGICC7 `CH4_TAUSTRAT`)\n\nunit: yr"
+    },
+    {
+      "name": "tropospheric_cl_lifetime",
+      "type": "FloatValue",
+      "description": "Tropospheric Cl sink lifetime (MAGICC7 `CH4_TAUTROPCL`)\n\nunit: yr"
+    },
+    {
+      "name": "ch4_self_feedback",
+      "type": "FloatValue",
+      "description": "CH4 self-feedback coefficient, S in TAR Table 4.11.\n\nunit: dimensionless\n\nHow CH4 concentration affects OH and so its own lifetime.\nNegative because higher CH4 lowers OH and lengthens the lifetime (a positive feedback)."
+    },
+    {
+      "name": "oh_sensitivity_scale",
+      "type": "FloatValue",
+      "description": "OH sensitivity scaling factor, $\\gamma$ in the equations.\n\nunit: dimensionless\n\nScales the response of the OH lifetime to the feedbacks."
+    },
+    {
+      "name": "oh_nox_sensitivity",
+      "type": "FloatValue",
+      "description": "Effect of NOx emissions on OH, $A_{NOx}$.\n\nunit: (Mt N/yr)^-1\n\nPositive because more NOx gives more OH and a shorter CH4 lifetime."
+    },
+    {
+      "name": "oh_co_sensitivity",
+      "type": "FloatValue",
+      "description": "Effect of CO emissions on OH, $A_{CO}$.\n\nunit: (Mt CO/yr)^-1\n\nNegative because more CO gives less OH and a longer CH4 lifetime."
+    },
+    {
+      "name": "oh_nmvoc_sensitivity",
+      "type": "FloatValue",
+      "description": "Effect of NMVOC emissions on OH, $A_{VOC}$.\n\nunit: (Mt NMVOC/yr)^-1\n\nNegative because more NMVOC gives less OH and a longer CH4 lifetime."
+    },
+    {
+      "name": "temperature_sensitivity",
+      "type": "FloatValue",
+      "description": "Temperature sensitivity of the lifetime (MAGICC7 `CH4_TAUTEMPSENSITIVITY`).\n\nunit: K^-1\n\nPositive because warming increases OH activity and shortens the lifetime."
+    },
+    {
+      "name": "include_temperature_feedback",
+      "type": "bool",
+      "description": "Apply the temperature feedback on the lifetime (MAGICC7 `CH4_INCLUDE_TEMPFEEDBACK`)"
+    },
+    {
+      "name": "include_emissions_feedback",
+      "type": "bool",
+      "description": "Apply the NOx, CO and NMVOC emissions feedback on OH"
+    },
+    {
+      "name": "tg_per_ppb",
+      "type": "FloatValue",
+      "description": "Conversion factor from ppb to Tg CH4 (MAGICC7 `CH4_PPB2TGCH4`)\n\nunit: Tg CH4/ppb"
+    },
+    {
+      "name": "mixing_box_size",
+      "type": "FloatValue",
+      "description": "Fraction of the atmosphere mixed with surface CH4 (MAGICC7 `CH4_MIXBOXSIZE`)\n\nunit: dimensionless"
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/chemistry/ch4.rs"
+}

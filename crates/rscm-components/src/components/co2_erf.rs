@@ -1,7 +1,8 @@
-//! CO2 Effective Radiative Forcing component
+//! CO2 effective radiative forcing component
 //!
-//! This component calculates the effective radiative forcing (ERF) from CO2 concentrations
-//! using the standard logarithmic relationship.
+//! The effective radiative forcing of CO2 grows with the logarithm of its atmospheric concentration.
+//! It is zero at the pre-industrial concentration and equals the 2xCO2 effective radiative forcing
+//! when the concentration doubles.
 
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
@@ -16,7 +17,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CO2ERFParameters {
-    /// ERF due to a doubling of atmospheric CO2 concentrations
+    /// 2xCO2 effective radiative forcing, from doubling the pre-industrial CO2 concentration
     /// unit: W/m^2
     pub erf_2xco2: FloatValue,
     /// Pre-industrial atmospheric CO2 concentration
@@ -24,22 +25,24 @@ pub struct CO2ERFParameters {
     pub co2_pi: FloatValue,
 }
 
-/// CO2 effective radiative forcing (ERF) calculations
+/// CO2 effective radiative forcing component
 ///
-/// Computes ERF using the standard logarithmic relationship:
+/// The forcing is
+///
 /// $$ ERF = \frac{ERF_{2xCO2}}{\log(2)} \cdot \log\left(1 + \frac{C - C_0}{C_0}\right) $$
 ///
-/// Where:
-/// - $ERF_{2xCO2}$ is the ERF for a doubling of CO2
-/// - $C$ is the current CO2 concentration
+/// where:
+///
+/// - $ERF_{2xCO2}$ is the 2xCO2 effective radiative forcing
+/// - $C$ is the CO2 concentration
 /// - $C_0$ is the pre-industrial CO2 concentration
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
-#[component(tags = ["radiative-forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
+#[component(tags = ["forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
 #[inputs(
-    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm", description = "Atmospheric CO2 concentration" },
 )]
 #[outputs(
-    erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
+    erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2", description = "Effective radiative forcing of CO2" },
 )]
 pub struct CO2ERF {
     parameters: CO2ERFParameters,

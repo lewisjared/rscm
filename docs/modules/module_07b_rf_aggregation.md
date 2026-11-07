@@ -81,13 +81,13 @@ f = \begin{cases}
 $$
 
 $\varepsilon$ is the efficacy `RF_EFFICACY_*`.
-Mode 1 cancels each pattern's own efficacy, so every agent has unit efficacy.
-RSCM's `efficacy_method` names modes 0, 1 and 2 `none`, `unit` and `ar6`.
+`RF_EFFICACY_APPLY = 1` cancels each pattern's own efficacy, so every agent has unit efficacy.
+RSCM's `efficacy_method` names the values 0, 1 and 2 `none`, `unit` and `ar6`.
 
 ### Internal efficacy
 
 The internal efficacy $\varepsilon_{int}$ (`RF_INTEFFICACY_*`) is the warming of the climate model's
-four-box equilibrium for the agent's pattern, relative to its climate sensitivity.
+four-box equilibrium for the agent's pattern, relative to its equilibrium climate sensitivity (ECS).
 `CALC_INTERNAL_EFFICACY` evaluates it with $M^{-1}$, the inverse coupling matrix from LAMCALC
 (see [climate](module_08_climate.md)):
 
@@ -101,7 +101,7 @@ CO2 takes its internal efficacy from LAMCALC's CO2 response instead.
 Patterns weighted towards land, which warms more, give $\varepsilon_{int} > 1$.
 MAGICC7 recalculates the internal efficacies each year
 from the previous year's equilibrium climate sensitivity and 2xCO2 effective radiative forcing.
-Before the climate model reports them it uses the configured sensitivity and $Q_{2\times} = 3.71$ W/m².
+Before the climate model reports them it uses the configured ECS and $Q_{2\times} = 3.71$ W/m².
 
 ## Parameters
 
@@ -158,7 +158,7 @@ Notes on the table:
 - **Volcanic**: monthly volcanic forcing (`RF_EFFICACY_VOLC`, `SRF_FACTOR_VOLC` 0.7) goes straight to the
   climate model, through `ClimateUDEB`'s `subannual_forcing` in RSCM.
 - **Not in the default total**: cloud cover is zero by default ([indirect aerosol forcing](module_06_aerosol_indirect.md)),
-  external forcing (`QXTRA`) needs `RF_EXTRA_READ`, and the aviation agents (H2O, contrails, cirrus)
+  extra prescribed forcing (`QXTRA`) needs `RF_EXTRA_READ`, and the aviation agents (H2O, contrails, cirrus)
   have no term in the summation order.
   RSCM has none of them.
 
@@ -205,7 +205,7 @@ The subtotals are built in the same order as above:
 | `AEROSOL`         | Direct aerosols and cloud albedo                             |
 | `STRATO3`         | Stratospheric ozone                                          |
 | `TROPO3`          | Tropospheric ozone                                           |
-| `QEXTRA`          | External forcing                                             |
+| `QEXTRA`          | Extra prescribed forcing                                     |
 
 Modes without natural forcing also leave out volcanic forcing.
 RSCM implements only `ALL`.

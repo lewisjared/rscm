@@ -1,0 +1,37 @@
+{
+  "name": "GasCycle",
+  "slug": "fair-gascycle",
+  "reference_model": "FaIR",
+  "variables_from_parameters": true,
+  "module_path": "rscm_fair::gas_cycle",
+  "language": "rust",
+  "description": "Calculates the atmospheric concentration of each emissions-driven greenhouse gas,\nand the inverse emissions of each concentration-driven one.\nIt also tracks the airborne and cumulative emissions of every gas.\n\nEach gas is held in up to four boxes that decay with lifetimes $\\alpha \\tau_i$.\nThe lifetime scaling $\\alpha = g_0 \\exp(r / g_1)$ follows the 100-year integrated impulse\nresponse\n\n$$r = r_0 + r_u (C_{cum} - C_{air}) + r_T T + r_a C_{air}$$\n\ncapped at `maximum_iirf`, from the cumulative and airborne emissions at the start of the step\nand the surface air temperature change (Leach et al. 2021).\nA gas can instead read its lifetime scaling from another component, as CH4 does with\n[`crate::CH4Lifetime`].\n\nEmissions-driven gases update the boxes with the exact solution for constant emissions over\nthe step.\nConcentration-driven gases invert that solution to give the inverse emissions.\n\n# Inputs\n\n- The surface air temperature change named by `surface_temperature` (K).\n  Its default is `Surface Air Temperature Change`.\n- Each of a gas's `emissions`, in its `emissions_unit`, when the gas is emissions driven.\n  rscm.fair passes `Emissions|<species>`,\n  or `Emissions|CO2|Fossil` and `Emissions|CO2|Biosphere` when FaIR calculates CO2 from them.\n- A gas's `concentration`, in its `concentration_unit`, when the gas is concentration driven.\n  rscm.fair names it `Atmospheric Concentrations|<species>`.\n- The lifetime scaling named by a gas's `lifetime_scaling` (1), an average over the step,\n  when it is set.\n  rscm.fair sets `Lifetime Scaling|CH4` for CH4 with the `thornhill2021` CH4 method.\n\n# Outputs\n\n- A gas's `concentration`, in its `concentration_unit`, when the gas is emissions driven.\n  rscm.fair names it `Atmospheric Concentrations|<species>`.\n- A gas's `inverse_emissions`, in its `emissions_unit`, when the gas is concentration driven.\n  rscm.fair names it `Inverse Emissions|<species>`.\n- A gas's `airborne_emissions` and `cumulative_emissions`, in its `amount_unit`,\n  when they are set.\n  rscm.fair names them `Airborne Emissions|<species>` and `Cumulative Emissions|<species>`.",
+  "category": "Atmospheric Chemistry",
+  "tags": [
+    "chemistry",
+    "carbon-cycle",
+    "gas-cycle",
+    "fair"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "species",
+      "type": "Vec<GasSpecies>",
+      "description": "Greenhouse gases the component tracks."
+    },
+    {
+      "name": "maximum_iirf",
+      "type": "FloatValue",
+      "description": "Upper limit on the 100-year integrated impulse response (FaIR `iirf_max`).\nunit: yr"
+    },
+    {
+      "name": "surface_temperature",
+      "type": "String",
+      "description": "Name of the surface air temperature change input."
+    }
+  ],
+  "source_file": "crates/rscm-fair/src/gas_cycle.rs"
+}

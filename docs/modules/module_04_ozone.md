@@ -114,7 +114,7 @@ RSCM has no total ozone output.
 
 ## Inputs and outputs
 
-| Component     | Input                          | Units                | Fortran variable                                   |
+| Component     | Input                          | Unit                 | Fortran variable                                   |
 | ------------- | ------------------------------ | -------------------- | -------------------------------------------------- |
 | Stratospheric | EESC                           | ppt                  | `DAT_EESC_CONC`                                    |
 | Tropospheric  | CH4 concentration              | ppb                  | `DAT_CH4_CONC`                                     |
@@ -136,7 +136,7 @@ Each component writes RF, EffRF and ERF datastores:
 
 ## Parameters
 
-| Component     | Parameter                     | Default   | Units              | Description                                    |
+| Component     | Parameter                     | Default   | Unit               | Description                                    |
 | ------------- | ----------------------------- | --------- | ------------------ | ---------------------------------------------- |
 | Stratospheric | `STRATOZ_O3SCALE`             | -0.0043   | W/m²               | $s$                                            |
 | Stratospheric | `STRATOZ_CLEXPON`             | 1.7       | 1                  | $\beta$                                        |

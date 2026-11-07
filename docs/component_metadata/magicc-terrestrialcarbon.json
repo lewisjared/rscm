@@ -1,0 +1,225 @@
+{
+  "name": "TerrestrialCarbon",
+  "slug": "magicc-terrestrialcarbon",
+  "reference_model": "MAGICC7",
+  "module_path": "rscm_magicc::carbon::terrestrial",
+  "language": "rust",
+  "description": "Simulates carbon in three terrestrial pools and the net atmosphere to land CO2 flux,\nfollowing the MAGICC7 `TERRCARBON2` subroutine.\nIt offers three CO2 fertilisation methods and two respiration methods,\nwith time-varying turnover times, no-feedback reference pools for regrowth\nattribution, and a mass conservation correction.\nIt integrates with an implicit trapezoidal (Crank-Nicolson) method for numerical stability.\n\n# Pools\n\n- Plant biomass (living vegetation)\n- Detritus/litter (dead organic matter)\n- Soil carbon (long-lived organic carbon)\n\n# Feedbacks\n\n1. **CO2 Fertilisation**: Three blendable methods (logarithmic, Gifford, sigmoid)\n2. **Temperature on NPP**: Exponential sensitivity\n3. **Temperature on decay**: Separate sensitivities for detritus and soil\n4. **Time-varying turnover**: Cumulative deforestation reduces turnover times\n\n# Algorithm\n\nFor each step:\n\n1. Extrapolate CO2 to mid-year (quadratic)\n2. Calculate CO2 fertilisation factor (3 methods with blending)\n3. Calculate temperature feedback factors\n4. Calculate NPP and respiration with feedbacks\n5. Compute time-varying turnover times\n6. Update pools using the implicit trapezoidal method\n7. Advance no-feedback reference pools and compute regrowth\n8. Apply mass conservation correction\n\n# Nitrogen limitation\n\nWith the `nitrogen` parameter, a nitrogen budget limits NPP.\nNitrogen fixation is an input unless fixation is prognostic, when it is an output.\n\n# Inputs\n\n- `Nitrogen Flux|Deposition` (Gt N/yr), only with the `nitrogen` parameter\n- `Nitrogen Flux|Fixation` (Gt N/yr), only with the `nitrogen` parameter and no prognostic fixation\n\n# Outputs\n\n- `Nitrogen Flux|Fixation` (Gt N/yr), only with the `nitrogen` parameter and prognostic fixation\n- `Nitrogen Limitation Factor` (1), only with the `nitrogen` parameter\n- `Nitrogen Pool` (Gt N), only with the `nitrogen` parameter\n- `Nitrogen Flux|{Uptake,Recycling,Losses}` (Gt N/yr), only with the `nitrogen` parameter",
+  "category": "Carbon Cycle",
+  "tags": [
+    "carbon-cycle",
+    "terrestrial",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "co2_concentration",
+      "name": "Atmospheric Concentrations|CO2",
+      "unit": "ppm",
+      "grid": "scalar",
+      "description": "Atmospheric CO2 concentration, extrapolated to mid-year for fertilisation"
+    },
+    {
+      "rust_name": "temperature",
+      "name": "Surface Air Temperature Change",
+      "unit": "K",
+      "grid": "scalar",
+      "description": "Drives the feedbacks through the warming since `temperature_feedback_start_year`, floored at zero"
+    },
+    {
+      "rust_name": "landuse_emissions",
+      "name": "Emissions|CO2|Biosphere",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Biosphere CO2 emissions over the step, taken from the pools as deforestation"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "net_flux",
+      "name": "Net Atmosphere to Land Flux|CO2",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Net atmosphere to land flux over the step, positive for land uptake and including deforestation"
+    },
+    {
+      "rust_name": "gross_deforestation",
+      "name": "Emissions|CO2|Gross Deforestation",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Gross deforestation emissions over the step, before regrowth"
+    },
+    {
+      "rust_name": "total_regrowth",
+      "name": "Carbon Flux|Regrowth",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Carbon taken up by regrowth on deforested land over the step"
+    },
+    {
+      "rust_name": "npp",
+      "name": "Net Primary Production",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Net primary production over the step, with fertilisation and temperature feedbacks"
+    },
+    {
+      "rust_name": "total_respiration",
+      "name": "Respiration|Land",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Respiration and decay over the step, the NPP that is neither stored nor deforested"
+    }
+  ],
+  "states": [
+    {
+      "rust_name": "plant_pool",
+      "name": "Carbon Pool|Plant",
+      "unit": "GtC",
+      "grid": "scalar",
+      "description": "Carbon in living vegetation at the end of the step"
+    },
+    {
+      "rust_name": "detritus_pool",
+      "name": "Carbon Pool|Detritus",
+      "unit": "GtC",
+      "grid": "scalar",
+      "description": "Carbon in detritus and litter at the end of the step"
+    },
+    {
+      "rust_name": "soil_pool",
+      "name": "Carbon Pool|Soil",
+      "unit": "GtC",
+      "grid": "scalar",
+      "description": "Carbon in soil at the end of the step"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "npp_pi",
+      "type": "FloatValue",
+      "description": "Pre-industrial net primary production (MAGICC7 `CO2_NPP_INITIAL`)\n\nunit: GtC/yr"
+    },
+    {
+      "name": "co2_pi",
+      "type": "FloatValue",
+      "description": "Pre-industrial CO2 concentration used as reference for fertilisation (MAGICC7 `CO2_PREINDCO2CONC`)\n\nunit: ppm"
+    },
+    {
+      "name": "fertilisation_factor",
+      "type": "FloatValue",
+      "description": "CO2 fertilisation factor, $\\beta$ in the logarithmic method and also used by Gifford and sigmoid\n(MAGICC7 `CO2_FERTILIZATION_FACTOR`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "fertilisation_method",
+      "type": "FertilisationMethod",
+      "description": "CO2 fertilisation method (MAGICC7 `CO2_FERTILIZATION_METHOD`)"
+    },
+    {
+      "name": "fertilisation_factor2",
+      "type": "FloatValue",
+      "description": "Curvature parameter of the sigmoid fertilisation method (MAGICC7 `CO2_FERTILIZATION_FACTOR2`)\n\nunit: ppm"
+    },
+    {
+      "name": "gifford_concentration_for_zero_npp",
+      "type": "FloatValue",
+      "description": "CO2 concentration at which NPP would be zero in the Gifford method\n(MAGICC7 `CO2_GIFFORD_CONC_FOR_ZERONPP`)\n\nunit: ppm"
+    },
+    {
+      "name": "fertilisation_start_year",
+      "type": "FloatValue",
+      "description": "Year before which CO2 fertilisation reference tracks current CO2\n(MAGICC7 `CO2_FERTILIZATION_YRSTART`)\n\nunit: yr"
+    },
+    {
+      "name": "npp_temperature_sensitivity",
+      "type": "FloatValue",
+      "description": "NPP temperature sensitivity coefficient, $\\gamma_{NPP}$ (MAGICC7 `CO2_FEEDBACKFACTOR_NPP`).\n\nunit: K^-1\n\nPositive means warming increases NPP."
+    },
+    {
+      "name": "respiration_temperature_sensitivity",
+      "type": "FloatValue",
+      "description": "Respiration temperature sensitivity coefficient, $\\gamma_{resp}$\n(MAGICC7 `CO2_FEEDBACKFACTOR_RESPIRATION`).\n\nunit: K^-1\n\nControls how plant pool respiration responds to temperature."
+    },
+    {
+      "name": "detritus_temperature_sensitivity",
+      "type": "FloatValue",
+      "description": "Detritus decay temperature sensitivity coefficient, $\\gamma_{detritus}$\n(MAGICC7 `CO2_FEEDBACKFACTOR_DETRITUS`).\n\nunit: K^-1\n\nPositive means warming increases decay rate."
+    },
+    {
+      "name": "soil_temperature_sensitivity",
+      "type": "FloatValue",
+      "description": "Soil decay temperature sensitivity coefficient, $\\gamma_{soil}$ (MAGICC7 `CO2_FEEDBACKFACTOR_SOIL`).\n\nunit: K^-1\n\nPositive means warming increases decay rate."
+    },
+    {
+      "name": "temperature_feedback_start_year",
+      "type": "FloatValue",
+      "description": "Year from which warming drives the temperature feedbacks (MAGICC7 `CO2_TEMPFEEDBACK_YRSTART`).\n\nunit: yr\n\nFeedbacks use the warming since this year, floored at zero."
+    },
+    {
+      "name": "plant_pool_pi",
+      "type": "FloatValue",
+      "description": "Pre-industrial plant pool carbon content (MAGICC7 `CO2_PLANTPOOL_INITIAL`)\n\nunit: GtC"
+    },
+    {
+      "name": "detritus_pool_pi",
+      "type": "FloatValue",
+      "description": "Pre-industrial detritus pool carbon content (MAGICC7 `CO2_DETRITUSPOOL_INITIAL`)\n\nunit: GtC"
+    },
+    {
+      "name": "soil_pool_pi",
+      "type": "FloatValue",
+      "description": "Pre-industrial soil pool carbon content (MAGICC7 `CO2_SOILPOOL_INITIAL`)\n\nunit: GtC"
+    },
+    {
+      "name": "respiration_pi",
+      "type": "FloatValue",
+      "description": "Pre-industrial respiration from the plant pool, $R_{h0}$ (MAGICC7 `CO2_RESPIRATION_INITIAL`)\n\nunit: GtC/yr"
+    },
+    {
+      "name": "plant_respiration_fertilisation_scale",
+      "type": "FloatValue",
+      "description": "Scaling of fertilisation effect on plant respiration (MAGICC7 `CO2_PLANTBOXRESP_FERTSCALE`).\n\nunit: dimensionless\n\nPlant respiration is $R_h = R_{h0} (1 + \\alpha (\\beta - 1)) \\min(1, C_P / C_{P0}) f_{T,resp}$,\nwith this scale as $\\alpha$."
+    },
+    {
+      "name": "npp_to_plant_fraction",
+      "type": "FloatValue",
+      "description": "Fraction of NPP going directly to plant pool (MAGICC7 `CO2_FRACTION_NPP_2_PLANT`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "npp_to_detritus_fraction",
+      "type": "FloatValue",
+      "description": "Fraction of NPP going directly to detritus pool (MAGICC7 `CO2_FRACTION_NPP_2_DETRITUS`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "plant_to_detritus_fraction",
+      "type": "FloatValue",
+      "description": "Fraction of plant turnover flux going to detritus (vs soil)\n(MAGICC7 `CO2_FRACTION_PLANT_2_DETRITUS`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "detritus_to_soil_fraction",
+      "type": "FloatValue",
+      "description": "Fraction of detritus decay going to soil rather than the atmosphere\n(MAGICC7 `CO2_FRACTION_DETRITUS_2_SOIL`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "deforestation_plant_fraction",
+      "type": "FloatValue",
+      "description": "Fraction of deforestation emissions from plant pool (MAGICC7 `CO2_FRACTION_DEFOREST_PLANT`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "deforestation_detritus_fraction",
+      "type": "FloatValue",
+      "description": "Fraction of deforestation emissions from detritus pool (MAGICC7 `CO2_FRACTION_DEFOREST_DETRITUS`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "deforestation_no_regrowth_fraction",
+      "type": "FloatValue",
+      "description": "Fraction of deforestation that is permanent, with no regrowth (MAGICC7 `CO2_NORGRWTH_FRAC_DEFO`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "nitrogen",
+      "type": "Option<NitrogenParameters>",
+      "description": "Nitrogen limitation of NPP, off when `None` (MAGICC7 `NCYCLE_APPLY`)"
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/carbon/terrestrial.rs"
+}

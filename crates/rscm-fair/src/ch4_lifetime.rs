@@ -1,12 +1,31 @@
 //! Methane lifetime from its chemical precursors and temperature (FaIR step 2)
 //!
-//! Following Thornhill et al. (2021), the CH4 lifetime scales by
+//! Calculates a scaling of the CH4 atmospheric lifetime from the emissions and concentrations
+//! of its chemical precursors and from the surface air temperature change.
+//! The method follows Thornhill et al. (2021).
+//! [`crate::GasCycle`] reads the scaling when a gas sets `lifetime_scaling`,
+//! as rscm.fair does for CH4 with the `thornhill2021` CH4 method.
 //!
 //! $$\alpha = \exp\Big(\sum_i \max(\ln(1 + s_i (x_i - x_{i,0})), \ln f)
 //!   + \ln \max(1 + s_T T, \ln f)\Big)$$
 //!
 //! over precursor emissions and concentrations $x_i$ at the start of the step,
-//! where $f$ is the floor `minimum_scaling`.
+//! with sensitivities $s_i$ and baselines $x_{i,0}$.
+//! $s_T$ is `temperature_sensitivity`, $T$ the surface air temperature change
+//! and $f$ the floor `minimum_scaling`.
+//!
+//! # Inputs
+//!
+//! - The surface air temperature change named by `surface_temperature` (K).
+//!   Its default is `Surface Air Temperature Change`.
+//! - Each precursor's `variable`, in its `unit`, from `emissions` then `concentrations`.
+//!   rscm.fair passes each species FaIR marks for aerosol chemistry,
+//!   such as `Emissions|NOx` and `Atmospheric Concentrations|CH4`.
+//!
+//! # Outputs
+//!
+//! - The lifetime scaling named by `output` (1), an average over the step.
+//!   Its default is `Lifetime Scaling|CH4`.
 
 use crate::constants::{get, surface_temperature, temperature_unit};
 use rscm_core::component::{
@@ -16,19 +35,20 @@ use rscm_core::errors::RSCMResult;
 use rscm_core::names::LIFETIME_SCALING_CH4;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 
 /// A precursor of the CH4 lifetime.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Precursor {
-    /// Emissions or concentration variable.
+    /// Name of the emissions or concentration input.
     pub variable: String,
-    /// Its unit.
+    /// Unit of the input.
     pub unit: String,
-    /// Value with no effect on the lifetime.
+    /// Value of the input with no effect on the lifetime, in its unit.
     pub baseline: FloatValue,
-    /// Fractional lifetime change per unit.
+    /// Fractional lifetime change per unit of the input (FaIR `ch4_lifetime_chemical_sensitivity`).
     pub sensitivity: FloatValue,
 }
 
@@ -40,17 +60,17 @@ pub struct CH4LifetimeParameters {
     pub emissions: Vec<Precursor>,
     /// Precursor concentrations.
     pub concentrations: Vec<Precursor>,
-    /// Fractional lifetime change per kelvin.
-    /// FaIR: `lifetime_temperature_sensitivity`
+    /// Fractional lifetime change per kelvin of surface air temperature change
+    /// (FaIR `lifetime_temperature_sensitivity`).
+    /// unit: 1/K
     pub temperature_sensitivity: FloatValue,
-    /// Floor on each scaling term.
-    /// FaIR: `_ch4_min`
+    /// Floor on each scaling term (FaIR `_ch4_min`).
     #[serde(default = "default_minimum_scaling")]
     pub minimum_scaling: FloatValue,
-    /// Surface temperature input.
+    /// Name of the surface air temperature change input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
-    /// Lifetime scaling output.
+    /// Name of the lifetime scaling output.
     #[serde(default = "default_output")]
     pub output: String,
 }
@@ -64,7 +84,8 @@ fn default_output() -> String {
 }
 
 /// Thornhill et al. (2021) CH4 lifetime scaling.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["chemistry", "ch4", "fair"], category = "Atmospheric Chemistry")]
 pub struct CH4Lifetime {
     parameters: CH4LifetimeParameters,
 }

@@ -1,15 +1,15 @@
 //! Aerosol forcing parameters
 //!
-//! Parameters for direct and indirect aerosol radiative forcing calculations.
+//! Parameters for direct and indirect aerosol effective radiative forcing.
 
 use serde::{Deserialize, Serialize};
 
-/// Parameters for direct aerosol radiative forcing
+/// Parameters for direct aerosol effective radiative forcing
 ///
-/// Direct aerosol forcing is calculated as a linear combination of emissions
+/// Direct aerosol ERF is calculated as a linear combination of emissions
 /// from different aerosol species, each with its own radiative efficiency:
 ///
-/// $$RF_{direct} = \sum_i \alpha_i \cdot E_i$$
+/// $$ERF_{direct} = \sum_i \alpha_i \cdot E_i$$
 ///
 /// where $\alpha_i$ is the forcing coefficient and $E_i$ is the emission rate
 /// for species $i$.
@@ -29,86 +29,120 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct AerosolDirectParameters {
     // === Species Forcing Coefficients ===
-    /// SOx forcing coefficient (W/m² per Mt S/yr).
+    /// SOx forcing coefficient.
+    ///
+    /// unit: W/m^2 per Mt S/yr
     ///
     /// Negative (cooling) because sulfate aerosols scatter incoming solar radiation.
-    /// Default: -0.0035 W/m²/(Mt S/yr), calibrated to AR6 best estimate.
+    ///
+    /// Default: -0.0035 W/m²/(Mt S/yr), calibrated to the AR6 best estimate.
     pub sox_coefficient: f64,
 
-    /// Black carbon forcing coefficient (W/m² per Mt BC/yr).
+    /// Black carbon forcing coefficient.
+    ///
+    /// unit: W/m^2 per Mt BC/yr
     ///
     /// Positive (warming) because BC absorbs solar radiation.
+    ///
     /// Default: 0.0077 W/m²/(Mt BC/yr)
     pub bc_coefficient: f64,
 
-    /// Organic carbon forcing coefficient (W/m² per Mt OC/yr).
+    /// Organic carbon forcing coefficient.
     ///
-    /// Negative (cooling) because OC primarily scatters radiation.
+    /// unit: W/m^2 per Mt OC/yr
+    ///
+    /// Negative (cooling) because OC mostly scatters radiation.
+    ///
     /// Default: -0.002 W/m²/(Mt OC/yr)
     pub oc_coefficient: f64,
 
-    /// Nitrate forcing coefficient (W/m² per Mt N/yr).
+    /// Nitrate forcing coefficient.
+    ///
+    /// unit: W/m^2 per Mt N/yr
     ///
     /// Negative (cooling) because nitrate aerosols scatter radiation.
+    ///
     /// Default: -0.001 W/m²/(Mt N/yr)
     pub nitrate_coefficient: f64,
 
     // === Regional Distribution Weights ===
     // Order: [Northern Ocean, Northern Land, Southern Ocean, Southern Land]
-    /// SOx regional distribution pattern.
+    /// SOx regional pattern, as a fraction in each region of the four-box grid.
     ///
-    /// Default: Concentrated in Northern Hemisphere, especially over land.
+    /// unit: dimensionless
+    ///
+    /// The default is concentrated in the Northern Hemisphere, especially over land.
     pub sox_regional: [f64; 4],
 
-    /// BC regional distribution pattern.
+    /// BC regional pattern, as a fraction in each region of the four-box grid.
     ///
-    /// Default: Concentrated in Northern Hemisphere.
+    /// unit: dimensionless
+    ///
+    /// The default is concentrated in the Northern Hemisphere.
     pub bc_regional: [f64; 4],
 
-    /// OC regional distribution pattern.
+    /// OC regional pattern, as a fraction in each region of the four-box grid.
     ///
-    /// Default: Similar to SOx but more uniform.
+    /// unit: dimensionless
+    ///
+    /// The default is like SOx but more uniform.
     pub oc_regional: [f64; 4],
 
-    /// Nitrate regional distribution pattern.
+    /// Nitrate regional pattern, as a fraction in each region of the four-box grid.
     ///
-    /// Default: Concentrated in Northern Hemisphere.
+    /// unit: dimensionless
+    ///
+    /// The default is concentrated in the Northern Hemisphere.
     pub nitrate_regional: [f64; 4],
 
     // === Pre-industrial emissions (baseline) ===
-    /// Pre-industrial SOx emissions (Mt S/yr).
+    /// Pre-industrial SOx emissions, from natural volcanic sources by default
+    ///
+    /// unit: Mt S/yr
     ///
     /// Default: 1.0 Mt S/yr (natural volcanic)
     pub sox_pi: f64,
 
-    /// Pre-industrial BC emissions (Mt BC/yr).
+    /// Pre-industrial BC emissions, from biomass burning by default
+    ///
+    /// unit: Mt BC/yr
     ///
     /// Default: 2.5 Mt BC/yr (biomass burning)
     pub bc_pi: f64,
 
-    /// Pre-industrial OC emissions (Mt OC/yr).
+    /// Pre-industrial OC emissions, from biomass burning by default
+    ///
+    /// unit: Mt OC/yr
     ///
     /// Default: 10.0 Mt OC/yr (biomass burning)
     pub oc_pi: f64,
 
-    /// Pre-industrial NOx emissions for nitrate (Mt N/yr).
+    /// Pre-industrial NOx emissions for nitrate, from natural sources by default
+    ///
+    /// unit: Mt N/yr
     ///
     /// Default: 10.0 Mt N/yr (natural sources)
     pub nox_pi: f64,
 
     // === Harmonisation ===
-    /// Enable harmonisation to reference year.
+    /// Scale the ERF to a target value in a reference year.
     ///
-    /// When true, forcing is scaled so that the calculated forcing at
-    /// `harmonisation_reference_year` matches `harmonisation_target`.
+    /// When true, the ERF is scaled so that its value at `harmonisation_reference_year`
+    /// equals `harmonisation_target`.
+    /// The component does not apply it yet.
     pub include_harmonisation: bool,
 
-    /// Reference year for harmonisation.
+    /// Reference year for harmonisation
+    ///
+    /// unit: yr
     ///
     /// Default: 2019.0
     pub harmonisation_reference_year: f64,
 
-    /// Target forcing at reference year (W/m²).
+    /// Target ERF in the reference year.
+    ///
+    /// unit: W/m^2
+    ///
     ///
     /// Default: -0.22 W/m² (AR6 central estimate for direct aerosol)
     pub harmonisation_target: f64,
@@ -144,9 +178,9 @@ impl Default for AerosolDirectParameters {
     }
 }
 
-/// Parameters for indirect aerosol radiative forcing (cloud effects)
+/// Parameters for indirect aerosol effective radiative forcing (cloud effects)
 ///
-/// Indirect aerosol forcing arises from aerosol effects on cloud properties:
+/// Indirect aerosol ERF arises from aerosol effects on cloud properties:
 ///
 /// 1. **Cloud Albedo Effect (First Indirect / Twomey Effect)**: More aerosols
 ///    provide more cloud condensation nuclei (CCN), producing more but smaller
@@ -161,7 +195,7 @@ impl Default for AerosolDirectParameters {
 ///
 /// The forcing uses a logarithmic relationship with aerosol burden:
 ///
-/// $$RF_{indirect} = \alpha \cdot \ln(1 + B / B_0)$$
+/// $$ERF_{indirect} = \alpha \cdot \ln(1 + B / B_0)$$
 ///
 /// where $B$ is the aerosol burden (proxy: SOx + OC emissions) and $B_0$ is
 /// a reference burden scale.
@@ -183,53 +217,75 @@ impl Default for AerosolDirectParameters {
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct AerosolIndirectParameters {
-    /// Cloud albedo effect coefficient (W/m² per ln-unit).
+    /// Cloud albedo effect coefficient.
     ///
-    /// Controls the strength of the first indirect effect.
-    /// Negative (cooling) because higher aerosol loading increases cloud albedo.
+    /// unit: W/m^2
+    ///
+    /// Sets the strength of the first indirect effect.
+    /// Negative (cooling) because more aerosol increases cloud albedo.
+    ///
     /// Default: -1.0 W/m² (calibrated to AR6 central estimate)
     pub cloud_albedo_coefficient: f64,
 
-    /// Reference aerosol burden for logarithmic scaling (Tg/yr).
+    /// Reference aerosol burden for the logarithmic scaling.
     ///
-    /// The emission level at which ln(1 + B/B0) = ln(2), i.e., forcing
-    /// equals the coefficient value.
+    /// unit: Tg/yr
+    ///
+    /// At this burden $\ln(1 + B/B_0) = \ln(2)$, so the ERF equals the coefficient.
+    ///
     /// Default: 50.0 Tg/yr
     pub reference_burden: f64,
 
-    /// SOx weight in aerosol burden calculation.
+    /// SOx weight in the aerosol burden.
+    ///
+    /// unit: dimensionless
     ///
     /// SOx is a primary CCN source and contributes strongly to indirect effects.
+    ///
     /// Default: 1.0 (emissions used directly)
     pub sox_weight: f64,
 
-    /// OC weight in aerosol burden calculation.
+    /// OC weight in the aerosol burden.
     ///
-    /// OC contributes to CCN, but less effectively than sulfate.
+    /// unit: dimensionless
+    ///
+    /// OC contributes to CCN, but less effectively than sulfate per unit mass.
+    ///
     /// Default: 0.3 (30% as effective as SOx per mass)
     pub oc_weight: f64,
 
     // === Pre-industrial emissions (baseline) ===
-    /// Pre-industrial SOx emissions (Mt S/yr).
+    /// Pre-industrial SOx emissions
+    ///
+    /// unit: Mt S/yr
     ///
     /// Default: 1.0 Mt S/yr
     pub sox_pi: f64,
 
-    /// Pre-industrial OC emissions (Mt OC/yr).
+    /// Pre-industrial OC emissions
+    ///
+    /// unit: Mt OC/yr
     ///
     /// Default: 10.0 Mt OC/yr
     pub oc_pi: f64,
 
     // === Harmonisation ===
-    /// Enable harmonisation to reference year.
+    /// Scale the ERF to a target value in a reference year.
+    ///
+    /// The component does not apply it yet.
     pub include_harmonisation: bool,
 
-    /// Reference year for harmonisation.
+    /// Reference year for harmonisation
+    ///
+    /// unit: yr
     ///
     /// Default: 2019.0
     pub harmonisation_reference_year: f64,
 
-    /// Target forcing at reference year (W/m²).
+    /// Target ERF in the reference year.
+    ///
+    /// unit: W/m^2
+    ///
     ///
     /// Default: -0.89 W/m² (AR6 central estimate for cloud albedo effect)
     pub harmonisation_target: f64,

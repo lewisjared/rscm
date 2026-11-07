@@ -127,7 +127,7 @@ With IPCCTAR it keeps the configured value.
 
 ## Inputs and outputs
 
-| Input              | Units | Fortran variable                         |
+| Input              | Unit  | Fortran variable                         |
 | ------------------ | ----- | ---------------------------------------- |
 | CO2 concentration  | ppm   | `DAT_CO2_CONC%DATGLOBE(NEXT_YEAR_IDX)`   |
 | CH4 concentration  | ppb   | `DAT_CH4_CONC%DATGLOBE(NEXT_YEAR_IDX)`   |
@@ -137,7 +137,7 @@ With IPCCTAR it keeps the configured value.
 Forcing is calculated for the end of the step, so it reads the next year's concentrations.
 `GHGForcing` reads the end of the step too.
 
-| Output                 | Units | Fortran variable                                   |
+| Output                 | Unit  | Fortran variable                                   |
 | ---------------------- | ----- | -------------------------------------------------- |
 | CO2 forcing            | W/m²  | `DAT_CO2_RF%DATGLOBE(NEXT_YEAR_IDX)`               |
 | CH4 forcing            | W/m²  | `DAT_CH4_RF%DATGLOBE(NEXT_YEAR_IDX)`               |
@@ -147,7 +147,7 @@ Forcing is calculated for the end of the step, so it reads the next year's conce
 
 ## Parameters
 
-| Parameter                   | Units          | Default     | Description                                          |
+| Parameter                   | Unit           | Default     | Description                                          |
 | --------------------------- | -------------- | ----------- | ---------------------------------------------------- |
 | `CORE_CO2CH4N2O_RFMETHOD`   | string         | `OLBL`      | `IPCCTAR` or `OLBL`                                  |
 | `CORE_DELQ2XCO2`            | W/m²           | 3.71        | 2xCO2 effective radiative forcing for IPCCTAR        |

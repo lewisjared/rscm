@@ -123,7 +123,7 @@ class ClimateUDEBBuilder(ComponentBuilder):
       (K).
 
     Inputs, outputs and states are listed on the
-    [ClimateUDEB component page][component-climateudeb].
+    [ClimateUDEB component page][component-magicc-climateudeb].
 
     Examples
     --------
@@ -239,7 +239,7 @@ class SeaLevelRiseBuilder(ComponentBuilder):
     with ``thermal_expansion`` set. Steps must be one year long.
 
     Inputs, outputs and states are listed on the
-    [SeaLevelRise component page][component-sealevelrise].
+    [SeaLevelRise component page][component-magicc-sealevelrise].
 
     Examples
     --------
@@ -325,7 +325,7 @@ class CH4ChemistryBuilder(ComponentBuilder):
       with surface CH4.
 
     Inputs, outputs and states are listed on the
-    [CH4Chemistry component page][component-ch4chemistry].
+    [CH4Chemistry component page][component-magicc-ch4chemistry].
 
     Examples
     --------
@@ -373,7 +373,7 @@ class CH4OxidationBuilder(ComponentBuilder):
       oxidised.
 
     Inputs, outputs and states are listed on the
-    [CH4Oxidation component page][component-ch4oxidation].
+    [CH4Oxidation component page][component-magicc-ch4oxidation].
     """
 
     @staticmethod
@@ -429,7 +429,7 @@ class N2OChemistryBuilder(ComponentBuilder):
       warming changes the meridional flux.
 
     Inputs, outputs and states are listed on the
-    [N2OChemistry component page][component-n2ochemistry].
+    [N2OChemistry component page][component-magicc-n2ochemistry].
 
     Examples
     --------
@@ -531,6 +531,9 @@ class HalocarbonChemistryBuilder(ComponentBuilder):
       Protocol gas ERF (W/m²).
     - `Equivalent Effective Stratospheric Chlorine` (ppt).
 
+    Inputs, outputs and states are listed on the
+    [HalocarbonChemistry component page][component-magicc-halocarbonchemistry].
+
     Examples
     --------
     >>> builder = HalocarbonChemistryBuilder.from_parameters({"stratospheric_delay": 3})
@@ -609,7 +612,7 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
     times, no-feedback reference pools, and mass conservation correction.
 
     Inputs, outputs and states are listed on the
-    [TerrestrialCarbon component page][component-terrestrialcarbon].
+    [TerrestrialCarbon component page][component-magicc-terrestrialcarbon].
 
     Examples
     --------
@@ -694,7 +697,7 @@ class OceanCarbonBuilder(ComponentBuilder):
     - `gtc_per_ppm` (`float`, default `2.123`): Conversion factor GtC per ppm CO2.
 
     Inputs, outputs and states are listed on the
-    [OceanCarbon component page][component-oceancarbon].
+    [OceanCarbon component page][component-magicc-oceancarbon].
 
     Examples
     --------
@@ -737,7 +740,7 @@ class CO2BudgetBuilder(ComponentBuilder):
     - `co2_pi` (`float`, default `278.0`): Pre-industrial CO2 concentration (ppm).
 
     Inputs, outputs and states are listed on the
-    [CO2Budget component page][component-co2budget].
+    [CO2Budget component page][component-magicc-co2budget].
 
     Examples
     --------
@@ -805,7 +808,7 @@ class PermafrostBuilder(ComponentBuilder):
     budget to feed the emissions back.
 
     Inputs, outputs and states are listed on the
-    [Permafrost component page][component-permafrost].
+    [Permafrost component page][component-magicc-permafrost].
 
     Examples
     --------
@@ -873,6 +876,9 @@ class OzoneForcingBuilder(ComponentBuilder):
       (W/m^2).
     - `Effective Radiative Forcing|Ozone|Temperature Feedback`: Ozone response to
       warming (W/m^2).
+
+    Inputs, outputs and states are listed on the
+    [OzoneForcing component page][component-magicc-ozoneforcing].
     """
 
     @staticmethod
@@ -940,7 +946,7 @@ class AerosolDirectBuilder(ComponentBuilder):
       year (W/m^2).
 
     Inputs, outputs and states are listed on the
-    [AerosolDirect component page][component-aerosoldirect].
+    [AerosolDirect component page][component-magicc-aerosoldirect].
 
     Examples
     --------
@@ -1000,7 +1006,7 @@ class AerosolIndirectBuilder(ComponentBuilder):
       year (W/m^2).
 
     Inputs, outputs and states are listed on the
-    [AerosolIndirect component page][component-aerosolindirect].
+    [AerosolIndirect component page][component-magicc-aerosolindirect].
 
     Examples
     --------
@@ -1073,7 +1079,7 @@ class GHGForcingBuilder(ComponentBuilder):
     - `adjust_n2o` (`float`, default `1.0`): Rapid adjustment factor for N2O.
 
     Inputs, outputs and states are listed on the
-    [GHGForcing component page][component-ghgforcing].
+    [GHGForcing component page][component-magicc-ghgforcing].
 
     Examples
     --------
@@ -1175,6 +1181,9 @@ class ForcingAggregationBuilder(ComponentBuilder):
     Reads each agent's ERF and writes the total effective radiative forcing and
     the four-box ``Efficacy Adjusted Effective Radiative Forcing`` read by
     ClimateUDEB when ``include_regional_forcing`` is set.
+
+    Inputs, outputs and states are listed on the
+    [ForcingAggregation component page][component-magicc-forcingaggregation].
     """
 
     @staticmethod

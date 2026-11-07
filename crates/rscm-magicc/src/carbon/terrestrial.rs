@@ -1,9 +1,11 @@
 //! Terrestrial Carbon Cycle Component
 //!
-//! Implements the MAGICC7 `TERRCARBON2` subroutine: a 3-pool terrestrial carbon
-//! model with three CO2 fertilisation methods, two respiration methods,
-//! time-varying turnover times, no-feedback reference pools for regrowth
-//! attribution, and mass conservation correction.
+//! Simulates carbon in three terrestrial pools and the net atmosphere to land CO2 flux,
+//! following the MAGICC7 `TERRCARBON2` subroutine.
+//! It offers three CO2 fertilisation methods and two respiration methods,
+//! with time-varying turnover times, no-feedback reference pools for regrowth
+//! attribution, and a mass conservation correction.
+//! It integrates with an implicit trapezoidal (Crank-Nicolson) method for numerical stability.
 //!
 //! # Pools
 //!
@@ -18,34 +20,35 @@
 //! 3. **Temperature on decay**: Separate sensitivities for detritus and soil
 //! 4. **Time-varying turnover**: Cumulative deforestation reduces turnover times
 //!
-//! # Inputs
+//! # Algorithm
 //!
-//! - `Atmospheric Concentrations|CO2` (ppm)
-//! - `Surface Air Temperature Change` (K) - temperature anomaly. The feedbacks use the
-//!   warming since `temperature_feedback_start_year`, floored at zero
-//! - `Emissions|CO2|Biosphere` (GtC/yr)
+//! For each step:
 //!
-//! # States (tracked between steps)
-//!
-//! - `Carbon Pool|Plant` (GtC)
-//! - `Carbon Pool|Detritus` (GtC)
-//! - `Carbon Pool|Soil` (GtC)
-//!
-//! # Outputs
-//!
-//! - `Net Atmosphere to Land Flux|CO2` (GtC/yr) - net flux (positive = land uptake)
-//! - `Emissions|CO2|Gross Deforestation` (GtC/yr)
-//! - `Carbon Flux|Regrowth` (GtC/yr)
-//! - `Net Primary Production` (GtC/yr)
-//! - `Respiration|Land` (GtC/yr)
+//! 1. Extrapolate CO2 to mid-year (quadratic)
+//! 2. Calculate CO2 fertilisation factor (3 methods with blending)
+//! 3. Calculate temperature feedback factors
+//! 4. Calculate NPP and respiration with feedbacks
+//! 5. Compute time-varying turnover times
+//! 6. Update pools using the implicit trapezoidal method
+//! 7. Advance no-feedback reference pools and compute regrowth
+//! 8. Apply mass conservation correction
 //!
 //! # Nitrogen limitation
 //!
-//! With the `nitrogen` parameter, NPP is limited by the nitrogen budget in
-//! [`super::nitrogen`]. This reads `Nitrogen Flux|Deposition` (Gt N/yr), and
-//! `Nitrogen Flux|Fixation` (Gt N/yr) unless fixation is prognostic,
-//! and writes `Nitrogen Limitation Factor`, `Nitrogen Pool` (Gt N) and the
-//! `Nitrogen Flux|*` budget terms (Gt N/yr).
+//! With the `nitrogen` parameter, a nitrogen budget limits NPP.
+//! Nitrogen fixation is an input unless fixation is prognostic, when it is an output.
+//!
+//! # Inputs
+//!
+//! - `Nitrogen Flux|Deposition` (Gt N/yr), only with the `nitrogen` parameter
+//! - `Nitrogen Flux|Fixation` (Gt N/yr), only with the `nitrogen` parameter and no prognostic fixation
+//!
+//! # Outputs
+//!
+//! - `Nitrogen Flux|Fixation` (Gt N/yr), only with the `nitrogen` parameter and prognostic fixation
+//! - `Nitrogen Limitation Factor` (1), only with the `nitrogen` parameter
+//! - `Nitrogen Pool` (Gt N), only with the `nitrogen` parameter
+//! - `Nitrogen Flux|{Uptake,Recycling,Losses}` (Gt N/yr), only with the `nitrogen` parameter
 
 use rscm_core::names::{NITROGEN_FLUX_DEPOSITION, NITROGEN_FLUX_FIXATION};
 use std::any::Any;
@@ -66,7 +69,7 @@ use serde::{Deserialize, Serialize};
 /// Internal state persisted across steps.
 ///
 /// Tracks no-feedback reference pools, regrowth history, CO2 reference,
-/// and cumulative land-use emissions for the MAGICC7 attribution scheme.
+/// and cumulative Biosphere CO2 emissions for the MAGICC7 attribution scheme.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerrestrialCarbonState {
     /// No-feedback reference pools [plant, detritus, soil] (GtC).
@@ -86,7 +89,7 @@ pub struct TerrestrialCarbonState {
     /// start year; used to cap `co2_ref` after the start year.
     pub co2_ref_max: FloatValue,
 
-    /// Cumulative land-use emissions (GtC).
+    /// Cumulative Biosphere CO2 emissions (GtC).
     pub cumulative_landuse: FloatValue,
 
     /// CO2 history for quadratic extrapolation: [t-2, t-1] (ppm).
@@ -131,40 +134,25 @@ impl ComponentState for TerrestrialCarbonState {
     }
 }
 
-/// Terrestrial carbon cycle component implementing MAGICC7 TERRCARBON2.
-///
-/// Uses implicit trapezoidal (Crank-Nicolson) integration for numerical stability.
-///
-/// # Algorithm
-///
-/// For each step:
-///
-/// 1. Extrapolate CO2 to mid-year (quadratic)
-/// 2. Calculate CO2 fertilisation factor (3 methods with blending)
-/// 3. Calculate temperature feedback factors
-/// 4. Calculate NPP and respiration with feedbacks
-/// 5. Compute time-varying turnover times
-/// 6. Update pools using implicit trapezoidal scheme
-/// 7. Advance no-feedback reference pools and compute regrowth
-/// 8. Apply mass conservation correction
+/// Terrestrial carbon cycle component.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "terrestrial", "magicc"], category = "Carbon Cycle")]
 #[inputs(
-    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
-    temperature { name = "Surface Air Temperature Change", unit = "K" },
-    landuse_emissions { name = "Emissions|CO2|Biosphere", unit = "GtC/yr" },
+    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm", description = "Atmospheric CO2 concentration, extrapolated to mid-year for fertilisation" },
+    temperature { name = "Surface Air Temperature Change", unit = "K", description = "Drives the feedbacks through the warming since `temperature_feedback_start_year`, floored at zero" },
+    landuse_emissions { name = "Emissions|CO2|Biosphere", unit = "GtC/yr", description = "Biosphere CO2 emissions over the step, taken from the pools as deforestation" },
 )]
 #[states(
-    plant_pool { name = "Carbon Pool|Plant", unit = "GtC" },
-    detritus_pool { name = "Carbon Pool|Detritus", unit = "GtC" },
-    soil_pool { name = "Carbon Pool|Soil", unit = "GtC" },
+    plant_pool { name = "Carbon Pool|Plant", unit = "GtC", description = "Carbon in living vegetation at the end of the step" },
+    detritus_pool { name = "Carbon Pool|Detritus", unit = "GtC", description = "Carbon in detritus and litter at the end of the step" },
+    soil_pool { name = "Carbon Pool|Soil", unit = "GtC", description = "Carbon in soil at the end of the step" },
 )]
 #[outputs(
-    net_flux { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr" },
-    gross_deforestation { name = "Emissions|CO2|Gross Deforestation", unit = "GtC/yr" },
-    total_regrowth { name = "Carbon Flux|Regrowth", unit = "GtC/yr" },
-    npp { name = "Net Primary Production", unit = "GtC/yr" },
-    total_respiration { name = "Respiration|Land", unit = "GtC/yr" },
+    net_flux { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr", description = "Net atmosphere to land flux over the step, positive for land uptake and including deforestation" },
+    gross_deforestation { name = "Emissions|CO2|Gross Deforestation", unit = "GtC/yr", description = "Gross deforestation emissions over the step, before regrowth" },
+    total_regrowth { name = "Carbon Flux|Regrowth", unit = "GtC/yr", description = "Carbon taken up by regrowth on deforested land over the step" },
+    npp { name = "Net Primary Production", unit = "GtC/yr", description = "Net primary production over the step, with fertilisation and temperature feedbacks" },
+    total_respiration { name = "Respiration|Land", unit = "GtC/yr", description = "Respiration and decay over the step, the NPP that is neither stored nor deforested" },
 )]
 pub struct TerrestrialCarbon {
     parameters: TerrestrialCarbonParameters,
@@ -259,7 +247,7 @@ impl TerrestrialCarbon {
 
     /// Calculate CO2 fertilisation factor with method blending.
     ///
-    /// MAGICC7: CO2_EFF_FERTILIZATION_FACTOR
+    /// MAGICC7 `CO2_EFF_FERTILIZATION_FACTOR`.
     fn fertilisation_factor(&self, co2: FloatValue, co2_ref: FloatValue) -> FloatValue {
         use crate::parameters::FertilisationMethod;
 
@@ -861,7 +849,7 @@ impl Component for TerrestrialCarbon {
     }
 
     /// Stateless single-step solve. Creates a fresh internal state each call,
-    /// so state-dependent features (CO2 extrapolation, cumulative land-use,
+    /// so state-dependent features (CO2 extrapolation, cumulative Biosphere emissions,
     /// regrowth attribution, mass conservation) will not accumulate across calls.
     /// For multi-step simulations, use `solve_with_state` instead.
     fn solve(

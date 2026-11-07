@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 /// This enum provides named variants for the three pure methods plus
 /// a `Blended` variant for fractional values.
 ///
-/// MAGICC7: CO2_FERTILIZATION_METHOD
+/// MAGICC7 `CO2_FERTILIZATION_METHOD`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(from = "FloatValue", into = "FloatValue")]
 pub enum FertilisationMethod {
@@ -73,9 +73,9 @@ impl From<FertilisationMethod> for FloatValue {
 /// Parameters for terrestrial carbon cycle calculations.
 ///
 /// The terrestrial carbon cycle tracks three carbon pools:
-/// 1. Plant biomass - living vegetation (leaves, stems, roots)
-/// 2. Detritus - dead organic matter in transition
-/// 3. Soil - organic carbon in soils
+/// 1. Plant biomass: living vegetation (leaves, stems, roots)
+/// 2. Detritus: dead organic matter in transition
+/// 3. Soil: organic carbon in soils
 ///
 /// # Carbon Flows
 ///
@@ -101,133 +101,145 @@ impl From<FertilisationMethod> for FloatValue {
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct TerrestrialCarbonParameters {
-    /// Pre-industrial Net Primary Production (NPP)
+    /// Pre-industrial net primary production (MAGICC7 `CO2_NPP_INITIAL`)
+    ///
     /// unit: GtC/yr
-    /// MAGICC7: CO2_NPP_INITIAL
     pub npp_pi: FloatValue,
 
-    /// Pre-industrial CO2 concentration used as reference for fertilisation
+    /// Pre-industrial CO2 concentration used as reference for fertilisation (MAGICC7 `CO2_PREINDCO2CONC`)
+    ///
     /// unit: ppm
-    /// MAGICC7: CO2_PREINDCO2CONC
     pub co2_pi: FloatValue,
 
-    /// CO2 fertilisation factor (beta in logarithmic formula, also used by Gifford/sigmoid)
+    /// CO2 fertilisation factor, $\beta$ in the logarithmic method and also used by Gifford and sigmoid
+    /// (MAGICC7 `CO2_FERTILIZATION_FACTOR`)
+    ///
     /// unit: dimensionless
-    /// MAGICC7: CO2_FERTILIZATION_FACTOR
     pub fertilisation_factor: FloatValue,
 
-    /// CO2 fertilisation method.
-    /// MAGICC7: CO2_FERTILIZATION_METHOD
+    /// CO2 fertilisation method (MAGICC7 `CO2_FERTILIZATION_METHOD`)
     pub fertilisation_method: FertilisationMethod,
 
-    /// Curvature parameter for sigmoid fertilisation method.
+    /// Curvature parameter of the sigmoid fertilisation method (MAGICC7 `CO2_FERTILIZATION_FACTOR2`)
+    ///
     /// unit: ppm
-    /// MAGICC7: CO2_FERTILIZATION_FACTOR2
     pub fertilisation_factor2: FloatValue,
 
-    /// CO2 concentration at which NPP would be zero (Gifford method).
+    /// CO2 concentration at which NPP would be zero in the Gifford method
+    /// (MAGICC7 `CO2_GIFFORD_CONC_FOR_ZERONPP`)
+    ///
     /// unit: ppm
-    /// MAGICC7: CO2_GIFFORD_CONC_FOR_ZERONPP
     pub gifford_concentration_for_zero_npp: FloatValue,
 
-    /// Year before which CO2 fertilisation reference tracks current CO2.
-    /// unit: year
-    /// MAGICC7: CO2_FERTILIZATION_YRSTART
+    /// Year before which CO2 fertilisation reference tracks current CO2
+    /// (MAGICC7 `CO2_FERTILIZATION_YRSTART`)
+    ///
+    /// unit: yr
     pub fertilisation_start_year: FloatValue,
 
-    /// NPP temperature sensitivity coefficient (gamma_NPP)
-    /// Positive means warming increases NPP.
+    /// NPP temperature sensitivity coefficient, $\gamma_{NPP}$ (MAGICC7 `CO2_FEEDBACKFACTOR_NPP`).
+    ///
     /// unit: K^-1
-    /// MAGICC7: CO2_FEEDBACKFACTOR_NPP
+    ///
+    /// Positive means warming increases NPP.
     pub npp_temperature_sensitivity: FloatValue,
 
-    /// Respiration temperature sensitivity coefficient (gamma_resp)
-    /// Controls how plant pool respiration responds to temperature.
+    /// Respiration temperature sensitivity coefficient, $\gamma_{resp}$
+    /// (MAGICC7 `CO2_FEEDBACKFACTOR_RESPIRATION`).
+    ///
     /// unit: K^-1
-    /// MAGICC7: CO2_FEEDBACKFACTOR_RESPIRATION
+    ///
+    /// Controls how plant pool respiration responds to temperature.
     pub respiration_temperature_sensitivity: FloatValue,
 
-    /// Detritus decay temperature sensitivity coefficient (gamma_detritus)
-    /// Positive means warming increases decay rate.
+    /// Detritus decay temperature sensitivity coefficient, $\gamma_{detritus}$
+    /// (MAGICC7 `CO2_FEEDBACKFACTOR_DETRITUS`).
+    ///
     /// unit: K^-1
-    /// MAGICC7: CO2_FEEDBACKFACTOR_DETRITUS
+    ///
+    /// Positive means warming increases decay rate.
     pub detritus_temperature_sensitivity: FloatValue,
 
-    /// Soil decay temperature sensitivity coefficient (gamma_soil)
-    /// Positive means warming increases decay rate.
+    /// Soil decay temperature sensitivity coefficient, $\gamma_{soil}$ (MAGICC7 `CO2_FEEDBACKFACTOR_SOIL`).
+    ///
     /// unit: K^-1
-    /// MAGICC7: CO2_FEEDBACKFACTOR_SOIL
+    ///
+    /// Positive means warming increases decay rate.
     pub soil_temperature_sensitivity: FloatValue,
 
-    /// Year from which warming drives the temperature feedbacks.
+    /// Year from which warming drives the temperature feedbacks (MAGICC7 `CO2_TEMPFEEDBACK_YRSTART`).
+    ///
+    /// unit: yr
+    ///
     /// Feedbacks use the warming since this year, floored at zero.
-    /// unit: year
-    /// MAGICC7: CO2_TEMPFEEDBACK_YRSTART
     pub temperature_feedback_start_year: FloatValue,
 
-    /// Pre-industrial plant pool carbon content
+    /// Pre-industrial plant pool carbon content (MAGICC7 `CO2_PLANTPOOL_INITIAL`)
+    ///
     /// unit: GtC
-    /// MAGICC7: CO2_PLANTPOOL_INITIAL
     pub plant_pool_pi: FloatValue,
 
-    /// Pre-industrial detritus pool carbon content
+    /// Pre-industrial detritus pool carbon content (MAGICC7 `CO2_DETRITUSPOOL_INITIAL`)
+    ///
     /// unit: GtC
-    /// MAGICC7: CO2_DETRITUSPOOL_INITIAL
     pub detritus_pool_pi: FloatValue,
 
-    /// Pre-industrial soil pool carbon content
+    /// Pre-industrial soil pool carbon content (MAGICC7 `CO2_SOILPOOL_INITIAL`)
+    ///
     /// unit: GtC
-    /// MAGICC7: CO2_SOILPOOL_INITIAL
     pub soil_pool_pi: FloatValue,
 
-    /// Pre-industrial respiration from plant pool (R_h0)
+    /// Pre-industrial respiration from the plant pool, $R_{h0}$ (MAGICC7 `CO2_RESPIRATION_INITIAL`)
+    ///
     /// unit: GtC/yr
-    /// MAGICC7: CO2_RESPIRATION_INITIAL
     pub respiration_pi: FloatValue,
 
-    /// Scaling of fertilisation effect on plant respiration.
-    /// R_h = R_h0 * (1 + alpha*(beta-1)) * min(1, C_P/C_P0) * f_T_resp
+    /// Scaling of fertilisation effect on plant respiration (MAGICC7 `CO2_PLANTBOXRESP_FERTSCALE`).
+    ///
     /// unit: dimensionless
-    /// MAGICC7: CO2_PLANTBOXRESP_FERTSCALE
+    ///
+    /// Plant respiration is $R_h = R_{h0} (1 + \alpha (\beta - 1)) \min(1, C_P / C_{P0}) f_{T,resp}$,
+    /// with this scale as $\alpha$.
     pub plant_respiration_fertilisation_scale: FloatValue,
 
-    /// Fraction of NPP going directly to plant pool
+    /// Fraction of NPP going directly to plant pool (MAGICC7 `CO2_FRACTION_NPP_2_PLANT`)
+    ///
     /// unit: dimensionless
-    /// MAGICC7: CO2_FRACTION_NPP_2_PLANT
     pub npp_to_plant_fraction: FloatValue,
 
-    /// Fraction of NPP going directly to detritus pool
+    /// Fraction of NPP going directly to detritus pool (MAGICC7 `CO2_FRACTION_NPP_2_DETRITUS`)
+    ///
     /// unit: dimensionless
-    /// MAGICC7: CO2_FRACTION_NPP_2_DETRITUS
     pub npp_to_detritus_fraction: FloatValue,
 
     /// Fraction of plant turnover flux going to detritus (vs soil)
+    /// (MAGICC7 `CO2_FRACTION_PLANT_2_DETRITUS`)
+    ///
     /// unit: dimensionless
-    /// MAGICC7: CO2_FRACTION_PLANT_2_DETRITUS
     pub plant_to_detritus_fraction: FloatValue,
 
-    /// Fraction of detritus decay going to soil (vs atmosphere)
+    /// Fraction of detritus decay going to soil rather than the atmosphere
+    /// (MAGICC7 `CO2_FRACTION_DETRITUS_2_SOIL`)
+    ///
     /// unit: dimensionless
-    /// MAGICC7: CO2_FRACTION_DETRITUS_2_SOIL
     pub detritus_to_soil_fraction: FloatValue,
 
-    /// Fraction of deforestation emissions from plant pool
+    /// Fraction of deforestation emissions from plant pool (MAGICC7 `CO2_FRACTION_DEFOREST_PLANT`)
+    ///
     /// unit: dimensionless
-    /// MAGICC7: CO2_FRACTION_DEFOREST_PLANT
     pub deforestation_plant_fraction: FloatValue,
 
-    /// Fraction of deforestation emissions from detritus pool
+    /// Fraction of deforestation emissions from detritus pool (MAGICC7 `CO2_FRACTION_DEFOREST_DETRITUS`)
+    ///
     /// unit: dimensionless
-    /// MAGICC7: CO2_FRACTION_DEFOREST_DETRITUS
     pub deforestation_detritus_fraction: FloatValue,
 
-    /// Fraction of deforestation that is permanent (no regrowth)
+    /// Fraction of deforestation that is permanent, with no regrowth (MAGICC7 `CO2_NORGRWTH_FRAC_DEFO`)
+    ///
     /// unit: dimensionless
-    /// MAGICC7: CO2_NORGRWTH_FRAC_DEFO
     pub deforestation_no_regrowth_fraction: FloatValue,
 
-    /// Nitrogen limitation of NPP, off when `None`
-    /// MAGICC7: NCYCLE_APPLY
+    /// Nitrogen limitation of NPP, off when `None` (MAGICC7 `NCYCLE_APPLY`)
     pub nitrogen: Option<NitrogenParameters>,
 }
 
@@ -303,7 +315,7 @@ impl TerrestrialCarbonParameters {
     /// Initial turnover time for plant pool at pre-industrial (years).
     ///
     /// Derived from steady-state assumption: pool_size / net_flux.
-    /// MAGICC7: INITIAL_TURNOVERTIME_PLANTPOOL
+    /// MAGICC7 `INITIAL_TURNOVERTIME_PLANTPOOL`.
     pub fn tau_plant_pi(&self) -> FloatValue {
         let net_flux = self.net_flux_to_plant_pi();
         if net_flux > 1e-10 {
@@ -315,7 +327,7 @@ impl TerrestrialCarbonParameters {
 
     /// Initial turnover time for detritus pool at pre-industrial (years).
     ///
-    /// MAGICC7: INI_TURNOVERTIME_DETRPOOL
+    /// MAGICC7 `INI_TURNOVERTIME_DETRPOOL`.
     pub fn tau_detritus_pi(&self) -> FloatValue {
         let net_flux_plant = self.net_flux_to_plant_pi();
         let flux_into_detritus = self.npp_to_detritus_fraction * self.npp_pi
@@ -337,7 +349,7 @@ impl TerrestrialCarbonParameters {
     /// Initial turnover time for soil pool at pre-industrial (years).
     ///
     /// Derived from steady-state: uses the MAGICC7 formulation.
-    /// MAGICC7: INITIAL_TURNOVERTIME_SOILPOOL
+    /// MAGICC7 `INITIAL_TURNOVERTIME_SOILPOOL`.
     pub fn tau_soil_pi(&self) -> FloatValue {
         let flux_into_soil = self.flux_into_soil_pi();
         if flux_into_soil > 1e-10 {

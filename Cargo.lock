@@ -1242,7 +1242,6 @@ dependencies = [
  "clap",
  "proc-macro2",
  "quote",
- "regex",
  "serde",
  "serde_json",
  "syn 2.0.114",

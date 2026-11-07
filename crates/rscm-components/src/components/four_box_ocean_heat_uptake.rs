@@ -1,17 +1,19 @@
 //! Four-box ocean heat uptake component
 //!
-//! This example component demonstrates using grid timeseries in RSCM.
-//! It takes scalar effective radiative forcing (ERF) as input and produces
-//! regional ocean heat uptake values for a four-box grid structure.
+//! This example component splits a global effective radiative forcing into heat uptake
+//! in each region of the four-box grid.
+//! It shows how a component reads a scalar input and writes a four-box output.
 //!
 //! # Physics
 //!
-//! Ocean heat uptake varies by region due to:
-//! - Ocean vs. land: Oceans have higher heat capacity and absorb more energy
-//! - Latitude: Polar regions have different uptake characteristics
-//! - Mixing: Deep ocean mixing affects heat penetration
+//! Ocean heat uptake varies by region because of:
 //!
-//! This simplified model uses fixed regional fractions to distribute global forcing.
+//! - Ocean and land: oceans have a higher heat capacity and absorb more energy
+//! - Latitude: polar regions take up heat differently
+//! - Mixing: deep ocean mixing affects how far heat penetrates
+//!
+//! The component scales the forcing by a fixed ratio for each region.
+//! The four ratios must average to 1, so the area-weighted mean uptake equals the global forcing.
 
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
@@ -24,19 +26,19 @@ use serde::{Deserialize, Serialize};
 
 /// Parameters for the four-box ocean heat uptake component
 ///
-/// The ratio parameters represent regional_uptake / global_ERF.
-/// With equal grid weights (0.25 each), these ratios should average to 1.0
-/// for the area-weighted mean to equal the global ERF.
+/// Each ratio is the regional heat uptake divided by the global effective radiative forcing.
+/// With equal grid weights (0.25 each), the ratios must average to 1
+/// for the area-weighted mean to equal the global forcing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FourBoxOceanHeatUptakeParameters {
-    /// Ratio of Northern Ocean uptake to global ERF (regional / global)
+    /// Ratio of northern ocean heat uptake to the global effective radiative forcing
     pub northern_ocean_ratio: f64,
-    /// Ratio of Northern Land uptake to global ERF (regional / global)
+    /// Ratio of northern land heat uptake to the global effective radiative forcing
     pub northern_land_ratio: f64,
-    /// Ratio of Southern Ocean uptake to global ERF (regional / global)
+    /// Ratio of southern ocean heat uptake to the global effective radiative forcing
     pub southern_ocean_ratio: f64,
-    /// Ratio of Southern Land uptake to global ERF (regional / global)
+    /// Ratio of southern land heat uptake to the global effective radiative forcing
     pub southern_land_ratio: f64,
 }
 
@@ -57,9 +59,6 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 
 /// Four-box ocean heat uptake component
 ///
-/// Takes scalar ERF input and produces regional ocean heat uptake.
-/// Demonstrates disaggregation from the scalar grid to the four-box grid.
-///
 /// # Example
 ///
 /// ```rust
@@ -72,12 +71,12 @@ impl Default for FourBoxOceanHeatUptakeParameters {
 /// let component = FourBoxOceanHeatUptake::from_parameters(params);
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
-#[component(tags = ["temperature", "ocean", "regional", "four-box", "experimental"], category = "Ocean")]
+#[component(tags = ["temperature", "ocean", "regional", "four-box", "experimental"], category = "Climate")]
 #[inputs(
-    erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
+    erf { name = "Effective Radiative Forcing", unit = "W/m^2", description = "Global effective radiative forcing" },
 )]
 #[outputs(
-    heat_uptake { name = "Heat Uptake", unit = "W/m^2", grid = "four_box" },
+    heat_uptake { name = "Heat Uptake", unit = "W/m^2", grid = "four_box", description = "Heat uptake in each region" },
 )]
 pub struct FourBoxOceanHeatUptake {
     pub parameters: FourBoxOceanHeatUptakeParameters,

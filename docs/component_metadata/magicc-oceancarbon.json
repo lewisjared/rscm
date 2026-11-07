@@ -1,0 +1,201 @@
+{
+  "name": "OceanCarbon",
+  "slug": "magicc-oceancarbon",
+  "reference_model": "MAGICC7",
+  "module_path": "rscm_magicc::carbon::ocean",
+  "language": "rust",
+  "description": "Simulates the uptake of CO2 by the global ocean through air-sea gas exchange\nusing an Impulse Response Function (IRF) approach.\n\n# What This Component Does\n\n1. Calculates air-sea CO2 flux based on the partial pressure difference\n   between atmosphere and ocean surface\n\n2. Tracks how absorbed carbon mixes into the deep ocean using an IRF\n   convolution that \"remembers\" past flux history\n\n3. Updates ocean surface pCO2 accounting for:\n   - DIC accumulation (Joos A24 polynomial)\n   - Temperature effect on solubility (Joos A25)\n\n4. Integrates over monthly substeps (12 substeps per year). As in MAGICC7, atmospheric\n   CO2 evolves within the year from the other carbon sources and the ocean\n   uptake, so the uptake responds to the rising concentration.\n   Up to `concentration_switch_year` it is instead interpolated linearly to\n   `Prescribed Atmospheric Concentrations|CO2`.\n\nBiosphere CO2 emissions are part of the net atmosphere to land flux, as in `CO2Budget`.\n\n# Inputs\n\n- `Emissions|CO2|Permafrost` (GtC/yr), only with the `include_permafrost` parameter\n- `Prescribed Atmospheric Concentrations|CO2` (ppm), only with the `concentration_switch_year` parameter\n\n# Differences from MAGICC7\n\n- **Three IRF methods**: 3D-GFDL (default), 2D-BERN, and HILDA are\n  implemented. MAGICC7 also supports BOXDIFF.\n- **No radiative-only mode**: MAGICC7 can make the ocean \"see\" only pre-industrial CO2.\n  Not implemented.\n- **No biological pump**: Only abiotic chemistry is represented.\n- **No circulation changes**: the IRF is static and does not respond to warming.",
+  "category": "Carbon Cycle",
+  "tags": [
+    "carbon-cycle",
+    "ocean",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "co2_concentration",
+      "name": "Atmospheric Concentrations|CO2",
+      "unit": "ppm",
+      "grid": "scalar",
+      "description": "Atmospheric CO2 concentration at the start of the year"
+    },
+    {
+      "rust_name": "temperature",
+      "name": "Surface Air Temperature Change",
+      "unit": "K",
+      "grid": "scalar",
+      "description": "Drives the pCO2 feedback through the warming since `temperature_feedback_start_year`, floored at zero"
+    },
+    {
+      "rust_name": "fossil_emissions",
+      "name": "Emissions|CO2|Fossil",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Fossil CO2 emissions over the step, which raise CO2 within the year"
+    },
+    {
+      "rust_name": "ch4_oxidation",
+      "name": "Emissions|CO2|CH4 Oxidation",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "CO2 from oxidised fossil CH4 over the step"
+    },
+    {
+      "rust_name": "terrestrial_flux",
+      "name": "Net Atmosphere to Land Flux|CO2",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Net atmosphere to land flux over the step, positive for uptake"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "air_sea_flux",
+      "name": "Net Atmosphere to Ocean Flux|CO2",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Mean air-sea flux over the step, positive for ocean uptake"
+    },
+    {
+      "rust_name": "co2_end_of_year",
+      "name": "Ocean Carbon Atmospheric Concentrations|CO2",
+      "unit": "ppm",
+      "grid": "scalar",
+      "description": "Atmospheric CO2 after the last substep, which `CO2Budget` carries into the next year"
+    }
+  ],
+  "states": [
+    {
+      "rust_name": "ocean_pco2",
+      "name": "Ocean Surface Partial Pressure|CO2",
+      "unit": "ppm",
+      "grid": "scalar",
+      "description": "Ocean surface CO2 partial pressure at the end of the step"
+    },
+    {
+      "rust_name": "cumulative_uptake",
+      "name": "Cumulative Carbon Uptake|Ocean",
+      "unit": "GtC",
+      "grid": "scalar",
+      "description": "Total carbon absorbed by the ocean by the end of the step"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "method",
+      "type": "OceanCarbonMethod",
+      "description": "Ocean carbon method (MAGICC7 `OCEANCC_MODEL`).\n\nThis field is informational only: it does not select the\ncorresponding IRF coefficients or physical parameters.\nUse the named constructors (`gfdl_3d()`, `bern_2d()`, `hilda()`) to get a\nself-consistent parameter set for a given method.\nSetting only this field leaves the IRF parameters at their 3D-GFDL defaults."
+    },
+    {
+      "name": "co2_pi",
+      "type": "FloatValue",
+      "description": "Pre-industrial atmospheric CO2 concentration (MAGICC7 `CO2_PREINDCO2CONC`)\n\nunit: ppm"
+    },
+    {
+      "name": "pco2_pi",
+      "type": "Option<FloatValue>",
+      "description": "Pre-industrial ocean surface pCO2.\n\nunit: ppm\n\nWhen unset, the initial `Ocean Surface Partial Pressure|CO2` is used.\nMAGICC7 takes the first-year atmospheric concentration."
+    },
+    {
+      "name": "gas_exchange_scale",
+      "type": "FloatValue",
+      "description": "Gas exchange rate scaling factor (MAGICC7 `OCEANCC_SCALE_GASXCHANGE`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "gas_exchange_tau",
+      "type": "FloatValue",
+      "description": "Characteristic time for air-sea equilibration, which depends on the method\n\nunit: yr"
+    },
+    {
+      "name": "temperature_sensitivity",
+      "type": "FloatValue",
+      "description": "Temperature sensitivity of pCO2, the Joos A25 exponent (MAGICC7 `OCEANCC_TEMPFEEDBACK`)\n\nunit: K^-1"
+    },
+    {
+      "name": "irf_scale",
+      "type": "FloatValue",
+      "description": "IRF scaling factor (MAGICC7 `OCEANCC_SCALE_IMPULSERESPONSE`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "mixed_layer_depth",
+      "type": "FloatValue",
+      "description": "Mixed layer depth, which depends on the method\n\nunit: m"
+    },
+    {
+      "name": "ocean_surface_area",
+      "type": "FloatValue",
+      "description": "Ocean surface area, which depends on the method\n\nunit: m^2"
+    },
+    {
+      "name": "sst_pi",
+      "type": "FloatValue",
+      "description": "Pre-industrial sea surface temperature for the Joos A24 pCO2-DIC polynomial.\n\nunit: degC\n\nIt depends on the method."
+    },
+    {
+      "name": "steps_per_year",
+      "type": "usize",
+      "description": "Substeps per year, 12 (monthly) by default as in MAGICC7"
+    },
+    {
+      "name": "maximum_history_months",
+      "type": "usize",
+      "description": "Maximum flux history length in substeps.\n\nLimits memory for the IRF convolution.\n6000 monthly substeps are 500 years."
+    },
+    {
+      "name": "irf_switch_time",
+      "type": "FloatValue",
+      "description": "Time at which the IRF switches from its early to its late form\n\nunit: yr"
+    },
+    {
+      "name": "irf_early",
+      "type": "IRFForm",
+      "description": "IRF form for the early regime, before the switch time"
+    },
+    {
+      "name": "irf_late",
+      "type": "IRFForm",
+      "description": "IRF form for the late regime, after the switch time"
+    },
+    {
+      "name": "delta_ospp_offsets",
+      "type": "[FloatValue;5]",
+      "description": "Joos A24 polynomial offsets"
+    },
+    {
+      "name": "delta_ospp_coefficients",
+      "type": "[FloatValue;5]",
+      "description": "Joos A24 polynomial temperature coefficients"
+    },
+    {
+      "name": "include_temperature_feedback",
+      "type": "bool",
+      "description": "Apply the temperature feedback on pCO2 (MAGICC7 `CO2_TEMPFEEDBACK_SWITCH`)"
+    },
+    {
+      "name": "temperature_feedback_start_year",
+      "type": "FloatValue",
+      "description": "Year from which warming drives the pCO2 temperature feedback (MAGICC7 `CO2_TEMPFEEDBACK_YRSTART`).\n\nunit: yr\n\nThe feedback uses the warming since this year, floored at zero."
+    },
+    {
+      "name": "flux_change_limit",
+      "type": "FloatValue",
+      "description": "Largest change in air-sea flux between substeps.\n\nunit: ppm/yr\n\nMAGICC7 applies this limiter for stability.\nA non-positive value disables it."
+    },
+    {
+      "name": "gtc_per_ppm",
+      "type": "FloatValue",
+      "description": "Conversion factor from atmospheric carbon mass to CO2 concentration, which must agree with `CO2Budget`\n\nunit: GtC/ppm"
+    },
+    {
+      "name": "include_permafrost",
+      "type": "bool",
+      "description": "Add `Emissions|CO2|Permafrost` to the other sources (MAGICC7 `PF_APPLY`).\n\nMust agree with `CO2Budget`."
+    },
+    {
+      "name": "concentration_switch_year",
+      "type": "Option<FloatValue>",
+      "description": "Last year of prescribed CO2, interpolated within the year's substeps\n(MAGICC7 `CO2_SWITCHFROMCONC2EMIS_YEAR`).\n\nunit: yr\n\nMust agree with `CO2Budget`."
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/carbon/ocean.rs"
+}

@@ -1,7 +1,8 @@
-//! Carbon cycle component
+//! One-box carbon cycle component
 //!
-//! A simple one-box carbon cycle model that tracks atmospheric CO2 concentrations
-//! and land uptake based on emissions and temperature.
+//! A single box tracks the atmospheric CO2 concentration,
+//! which CO2 emissions raise and land uptake lowers.
+//! Land uptake removes the concentration excess over pre-industrial at a temperature-dependent rate.
 
 use crate::constants::GTC_PER_PPM;
 use ode_solvers::Vector3;
@@ -28,7 +29,7 @@ pub struct CarbonCycleParameters {
     /// Pre-industrial atmospheric CO2 concentration
     /// unit: ppm
     pub co2_pi: FloatValue,
-    /// Sensitivity of the response timescale to changes in global-mean temperature
+    /// Exponential scaling of the response timescale with surface air temperature change
     /// unit: 1/K
     pub alpha_temperature: FloatValue,
 }
@@ -42,34 +43,28 @@ pub struct SolverOptions {
 
 /// One-box carbon cycle component
 ///
-/// This component models the carbon cycle using a simple one-box model where:
-///
-/// - CO2 emissions increase atmospheric concentrations
-/// - Land uptake removes CO2 at a rate that depends on the concentration anomaly
-/// - The uptake rate is temperature-dependent
-///
-/// The governing equations are:
+/// The concentration follows
 ///
 /// $$ \frac{dC}{dt} = E - \frac{C - C_0}{\tau \exp(\alpha_T \cdot T)} $$
 ///
-/// Where:
+/// where:
 ///
-/// - $C$ is atmospheric CO2 concentration (ppm)
-/// - $E$ is emissions (GtC/yr converted to ppm/yr)
-/// - $C_0$ is pre-industrial concentration (ppm)
+/// - $C$ is the atmospheric CO2 concentration (ppm)
+/// - $E$ is the CO2 emissions (GtC/yr converted to ppm/yr)
+/// - $C_0$ is the pre-industrial concentration (ppm)
 /// - $\tau$ is the response timescale (yr)
-/// - $\alpha_T$ is the temperature sensitivity (1/K)
+/// - $\alpha_T$ scales the response timescale with warming (1/K)
 /// - $T$ is the surface air temperature change (K)
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["carbon-cycle", "simple", "stable"], category = "Carbon Cycle")]
 #[inputs(
-    emissions { name = "Emissions|CO2", unit = "GtC/yr" },
-    temperature { name = "Surface Air Temperature Change", unit = "K" },
+    emissions { name = "Emissions|CO2", unit = "GtC/yr", description = "CO2 emissions, added to the atmosphere" },
+    temperature { name = "Surface Air Temperature Change", unit = "K", description = "Surface air temperature change, which scales the response timescale" },
 )]
 #[states(
-    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
-    cumulative_emissions { name = "Cumulative Emissions|CO2", unit = "GtC" },
-    cumulative_uptake { name = "Cumulative Carbon Uptake|Land", unit = "GtC" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm", description = "Atmospheric CO2 concentration at the end of the step" },
+    cumulative_emissions { name = "Cumulative Emissions|CO2", unit = "GtC", description = "CO2 emitted up to the end of the step" },
+    cumulative_uptake { name = "Cumulative Carbon Uptake|Land", unit = "GtC", description = "Carbon taken up by land up to the end of the step" },
 )]
 pub struct CarbonCycle {
     parameters: CarbonCycleParameters,

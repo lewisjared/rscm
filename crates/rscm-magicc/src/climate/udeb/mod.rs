@@ -1,31 +1,50 @@
 //! Climate UDEB Component
 //!
-//! Implements a four-box Upwelling-Diffusion Energy Balance (UDEB) climate model
-//! with multi-layer ocean diffusion.
+//! Calculates the surface air temperature response to effective radiative forcing (ERF)
+//! with a four-box Upwelling-Diffusion Energy Balance (UDEB) method and multi-layer ocean diffusion.
+//! It has 50 ocean layers per hemisphere and integrates over monthly substeps
+//! with an implicit Thomas algorithm for numerical stability.
 //!
 //! # What This Component Does
 //!
-//! 1. Takes total effective radiative forcing (four-box regional) as input
-//! 2. Solves the ocean diffusion-advection equation using implicit Thomas algorithm
-//! 3. Calculates surface air temperature response (4 boxes: NH Ocean, NH Land, SH Ocean, SH Land)
+//! 1. Takes the global ERF as input, or the four-box efficacy-adjusted ERF
+//!    with the `include_regional_forcing` parameter
+//! 2. Solves the ocean diffusion-advection equation using the implicit Thomas algorithm
+//! 3. Calculates the surface air temperature response on the four-box grid
 //! 4. Outputs heat uptake and ocean heat content
 //!
 //! # Physics Overview
 //!
-//! The model couples a four-box atmosphere to a 50-layer ocean in each hemisphere.
+//! `ClimateUDEB` couples a four-box atmosphere to a 50-layer ocean in each hemisphere.
 //! The energy balance for the mixed layer is:
 //!
 //! $$C_{mix} \frac{dT}{dt} = Q - \lambda T + F_{diffusion} + F_{upwelling}$$
 //!
 //! where:
 //! - $C_{mix}$ = mixed layer heat capacity
-//! - $Q$ = radiative forcing
+//! - $Q$ = effective radiative forcing
 //! - $\lambda$ = climate feedback parameter
 //! - $F_{diffusion}$ = diffusive heat flux from deeper ocean
 //! - $F_{upwelling}$ = advective heat flux from upwelling
 //!
-//! Land temperatures are calculated assuming equilibrium with adjacent ocean box,
+//! Land temperatures are calculated assuming equilibrium with the adjacent ocean box,
 //! with optional ground heat reservoir damping.
+//!
+//! # Inputs
+//!
+//! - `Efficacy Adjusted Effective Radiative Forcing` (W/m^2, four-box), only with the
+//!   `include_regional_forcing` parameter, in place of `Effective Radiative Forcing`
+//! - `2xCO2 Effective Radiative Forcing` (W/m^2), only with the `time_varying_erf_2xco2` parameter
+//!
+//! # Outputs
+//!
+//! - `Annual Mean Surface Air Temperature Change` (K), only with the `thermal_expansion` parameter
+//! - `Sea Level Rise|Thermal Expansion` (mm), only with the `thermal_expansion` parameter
+//!
+//! # Internal state
+//!
+//! - Ocean layer temperatures for each hemisphere: `[2][n_layers]`
+//! - Current upwelling rates for each hemisphere: `[2]`
 //!
 //! # Module Structure
 //!
@@ -36,13 +55,13 @@
 //!
 //! # Differences from MAGICC7
 //!
-//! - **LAMCALC iterations**: Implemented - see [`lamcalc`](super::lamcalc).
-//! - **Time-varying ECS**: Implemented - see `adjusted_ecs()`.
-//! - **Temperature-dependent diffusivity**: Implemented - see
+//! - **LAMCALC iterations**: Implemented, see [`lamcalc`](super::lamcalc).
+//! - **Time-varying ECS**: Implemented, see `adjusted_ecs()`.
+//! - **Temperature-dependent diffusivity**: Implemented, see
 //!   `ocean_column::layer_diffusivities()`.
-//! - **Depth-dependent ocean area**: Implemented - see `OceanAreaFactors`.
+//! - **Depth-dependent ocean area**: Implemented, see `OceanAreaFactors`.
 //! - **El Niño/AMV modes**: Internal variability modes. Not implemented.
-//! - **Ground heat reservoir**: Implemented - see
+//! - **Ground heat reservoir**: Implemented, see
 //!   [`include_land_heat_capacity`](crate::parameters::ClimateUDEBParameters::include_land_heat_capacity).
 
 mod ocean_column;
@@ -69,35 +88,21 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// four-box UDEB climate model component.
-///
-/// Implements an Upwelling-Diffusion Energy Balance model with 50 ocean layers
-/// per hemisphere. Uses monthly substepping with implicit Thomas algorithm
-/// for numerical stability.
-///
-/// # State Variables
-///
-/// Internal state (not exposed via component IO):
-/// - Ocean layer temperatures for each hemisphere: `[2][n_layers]`
-/// - Current upwelling rates for each hemisphere: `[2]`
-///
-/// # Parameters
-///
-/// See [`ClimateUDEBParameters`] for configuration options.
+/// Four-box UDEB climate component.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[serde(try_from = "SerialisedClimateUDEB")]
 #[component(tags = ["climate", "udeb", "magicc"], category = "Climate")]
 #[inputs(
-    total_erf { name = "Effective Radiative Forcing", unit = "W/m^2" },
+    total_erf { name = "Effective Radiative Forcing", unit = "W/m^2", description = "Global ERF over the step, interpolated to each substep" },
 )]
 #[states(
-    surface_temperature { name = "Surface Air Temperature Change", unit = "K", grid = "four_box" },
+    surface_temperature { name = "Surface Air Temperature Change", unit = "K", grid = "four_box", description = "Surface air temperature change in each region at the end of the step" },
 )]
 #[outputs(
-    heat_uptake { name = "Heat Uptake", unit = "W/m^2" },
-    ocean_heat_content { name = "Ocean Heat Content", unit = "J" },
-    sst { name = "Sea Surface Temperature", unit = "K" },
-    ecs { name = "Equilibrium Climate Sensitivity", unit = "K" },
+    heat_uptake { name = "Heat Uptake", unit = "W/m^2", description = "Global heat uptake at the end of the step, the ERF less the climate feedback" },
+    ocean_heat_content { name = "Ocean Heat Content", unit = "J", description = "Global ocean heat content anomaly at the end of the step" },
+    sst { name = "Sea Surface Temperature", unit = "K", description = "Mean of the two hemispheres' mixed-layer temperature change at the end of the step" },
+    ecs { name = "Equilibrium Climate Sensitivity", unit = "K", description = "Equilibrium climate sensitivity used in the step, which can vary with cumulative warming and ERF" },
 )]
 pub struct ClimateUDEB {
     parameters: ClimateUDEBParameters,
@@ -311,9 +316,9 @@ impl ClimateUDEB {
     /// NOTE: This applies the CO2 regional forcing pattern to the *total* ERF input,
     /// not just the CO2 component. This is correct when forcing is CO2-only, but
     /// when non-CO2 agents contribute to total ERF, their forcing is also distributed
-    /// using the CO2 pattern. This matches MAGICC's single-agent architecture where
-    /// LAMCALC is calibrated against the same total ERF, but breaks physical
-    /// consistency for multi-agent forcing mixes. Per-agent regional patterns would
+    /// using the CO2 pattern.
+    /// MAGICC's single-agent architecture does the same, because LAMCALC is calibrated against the same total ERF.
+    /// This breaks physical consistency for multi-agent forcing mixes. Per-agent regional patterns would
     /// require decomposed forcing inputs (future work).
     fn apply_efficacy_and_qfrac(
         &self,
@@ -419,7 +424,8 @@ impl ClimateUDEB {
         self.parameters.ecs * cumt_factor * q_factor
     }
 
-    /// Year-weighted temperature summed oldest first over the last `feedback_cumulative_temperature_period` years.
+    /// Year-weighted temperature summed oldest first
+    /// over the last `feedback_cumulative_temperature_period` years.
     fn cumulative_temperature(&self, state: &ClimateUDEBState) -> FloatValue {
         let mut years_remaining = self.parameters.feedback_cumulative_temperature_period;
         let mut start = state.temperature_history.len();

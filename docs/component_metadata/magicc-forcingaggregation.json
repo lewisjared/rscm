@@ -1,0 +1,51 @@
+{
+  "name": "ForcingAggregation",
+  "slug": "magicc-forcingaggregation",
+  "reference_model": "MAGICC7",
+  "variables_from_parameters": true,
+  "module_path": "rscm_magicc::forcing::aggregation",
+  "language": "rust",
+  "description": "Combines the ERF of each forcing agent into the four-box efficacy-adjusted\nERF that drives `ClimateUDEB`, following MAGICC7's DELTAQ.\n\nEach agent is either global, spread over the regions with its regional\npattern, or already regional. Its regional ERF is then scaled by\n\n$$\\text{EFFRF} = \\text{ERF} \\times \\frac{\\epsilon_{\\text{prescribed}}}{\\epsilon_{\\text{internal}}}$$\n\nwhen `efficacy_method` is `ar6` (the MAGICC7 default), by $1 / \\epsilon_{\\text{internal}}$\nwhen it is `unit`, and left unchanged when it is `none`.\n\nWith `climate` set, the internal efficacies follow MAGICC7 in coming from\nLAMCALC at the previous year's `Equilibrium Climate Sensitivity` and\n`2xCO2 Effective Radiative Forcing`, so they drift as the climate warms.\n\nThe `agents` parameter names the variables it reads and has no default agents.\n`rscm.magicc.full.forcing_agents` builds MAGICC7's list.\n\n# Inputs\n\n- `Effective Radiative Forcing|{agent}` (W/m^2): the ERF of each agent, named by its `variable`,\n  or each variable in its `sum_of`. It is on the four-box grid when the agent is `regional`.\n- `Equilibrium Climate Sensitivity` (K), only with the `climate` parameter:\n  the previous year's value, for the internal efficacies\n- `2xCO2 Effective Radiative Forcing` (W/m^2), only with the `climate` parameter:\n  the previous year's value, for the internal efficacies\n\n# Outputs\n\n- `Effective Radiative Forcing` (W/m^2): area-weighted sum of the agent ERF\n- `Effective Radiative Forcing|{Greenhouse Gases,Aerosols,Anthropogenic}` (W/m^2):\n  the same sum over the agents of each [`ForcingCategory`](rscm_core::forcing::ForcingCategory)\n- `Efficacy Adjusted Effective Radiative Forcing` (W/m^2, four-box): the ERF that drives the climate",
+  "category": "Radiative Forcing",
+  "tags": [
+    "forcing",
+    "aggregation",
+    "magicc"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "agents",
+      "type": "Vec<ForcingAgent>",
+      "description": "Agents summed into the total.\n\n`rscm.magicc.full.forcing_agents` builds MAGICC7's agents."
+    },
+    {
+      "name": "summation",
+      "type": "Vec<ForcingTerm>",
+      "description": "Order in which agents are summed, by `variable`, with nested lists summed first.\n\nMAGICC7 sums its forcing groups this way.\nEmpty sums the agents in order."
+    },
+    {
+      "name": "efficacy_method",
+      "type": "EfficacyMethod",
+      "description": "How efficacies scale each agent's ERF (MAGICC7 `RF_EFFICACY_APPLY`)"
+    },
+    {
+      "name": "nh_land_fraction",
+      "type": "FloatValue",
+      "description": "Northern Hemisphere land fraction\n\nunit: dimensionless"
+    },
+    {
+      "name": "sh_land_fraction",
+      "type": "FloatValue",
+      "description": "Southern Hemisphere land fraction\n\nunit: dimensionless"
+    },
+    {
+      "name": "climate",
+      "type": "Option<EfficacyClimate>",
+      "description": "Recalculate internal efficacies each year from the equilibrium climate sensitivity.\n\nMAGICC7 does this, instead of using each agent's `internal_efficacy`."
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/forcing/aggregation.rs"
+}

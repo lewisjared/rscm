@@ -30,7 +30,7 @@ See [issues in MAGICC7](#issues-in-magicc7).
   `rscm.magicc.full.run_magicc7` reads `ncycle_apply` and the `ncycle_*` parameters.
 - **Tests**: `tests/regression/test_full_run.py::test_nitrogen_coupled_run` runs the coupled SSP245 chain
   with deposition from emissions and fixation from `NCYCLE_NFIX3.IN`.
-  Temperature and concentrations match MAGICC7 v7.5.3's binary output to a relative 1e-9.
+  Temperature and concentrations reach parity with MAGICC7 v7.5.3's binary output to a relative 1e-9.
   The limitation factor, nitrogen pool and NPP appear only in `CARBONCYCLE.OUT`,
   so they are compared at its print precision (relative 1e-4).
   Unit tests are in `nitrogen.rs`.
@@ -122,7 +122,7 @@ $$
 
 ## Inputs and outputs
 
-| Input                    | RSCM variable                       | Units    | Fortran variable                     |
+| Input                    | RSCM variable                       | Unit     | Fortran variable                     |
 | ------------------------ | ----------------------------------- | -------- | ------------------------------------ |
 | NPP before limitation    | (internal to `TerrestrialCarbon`)   | GtC/yr   | `CO2_CURRENT_NPP`                    |
 | Previous respiration     | (internal to `TerrestrialCarbon`)   | GtC/yr   | `CO2_TOTALRESPIRATION(t-1)`          |
@@ -131,7 +131,7 @@ $$
 | Deposition               | `Nitrogen Flux|Deposition`          | Gt N/yr  | `DAT_NCYCLE_NDEP`, or NOx and NH3 emissions |
 | Prescribed fixation      | `Nitrogen Flux|Fixation`            | Gt N/yr  | `DAT_NCYCLE_NFIX`                    |
 
-| Output or state          | RSCM variable                       | Units    | Fortran variable                     |
+| Output or state          | RSCM variable                       | Unit     | Fortran variable                     |
 | ------------------------ | ----------------------------------- | -------- | ------------------------------------ |
 | Limitation factor        | `Nitrogen Limitation Factor`        | 1        | `NCYCLE_LIMIT_FACTOR`                |
 | Nitrogen pool            | `Nitrogen Pool`                     | Gt N     | `NCYCLE_NPOOL`                       |
@@ -151,7 +151,7 @@ Defaults are those MAGICC7 v7.5.3 runs with.
 The three marked * are absent from `MAGCFG_DEFAULTALL.CFG` and take the value 0
 (see [issues in MAGICC7](#issues-in-magicc7)).
 
-| Parameter                        | Units      | Default  | Description                                          |
+| Parameter                        | Unit       | Default  | Description                                          |
 | -------------------------------- | ---------- | -------- | ---------------------------------------------------- |
 | `NCYCLE_APPLY`                   | flag       | 0        | Turns nitrogen limitation on                         |
 | `NCYCLE_APPLY_CN_INITIAL_VALUES` | flag       | 0        | Use the `NCYCLE_*_INITIAL` pools and NPP below       |
@@ -214,7 +214,7 @@ A rounding-level change in the inputs flips the pool by one grid step,
 which feeds back through NPP, CO2 and temperature.
 A relative change of $10^{-13}$ in one year's fossil CO2 emissions moves 2100 CO2 by 0.03 ppm
 and temperature by $3 \times 10^{-5}$ K.
-RSCM matches MAGICC7 only because it repeats MAGICC7's floating-point operations closely enough
+RSCM reaches parity with MAGICC7 only because it repeats MAGICC7's floating-point operations closely enough
 to land on the same grid steps.
 
 The pool is a steady state each year, so it cannot accumulate or draw down over time.
@@ -261,7 +261,7 @@ RSCM keeps the bug for parity.
 ## Differences from MAGICC7
 
 - RSCM's diagnostic fluxes include deposition, so they close.
-  The pool and limitation factor match MAGICC7.
+  The pool and limitation factor reach parity with MAGICC7.
 - A deposition file missing from the inputs gives zero deposition, as in v7.5.3.
 
 ## References

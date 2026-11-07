@@ -1,0 +1,46 @@
+{
+  "name": "GHGForcing",
+  "slug": "fair-ghgforcing",
+  "reference_model": "FaIR",
+  "variables_from_parameters": true,
+  "module_path": "rscm_fair::ghg_forcing",
+  "language": "rust",
+  "description": "Calculates the effective radiative forcing of each greenhouse gas from its concentration.\nCO2, CH4 and N2O use the Meinshausen et al. (2020) method, with the overlaps between them,\nand the minor gases have forcing linear in concentration.\n\nEach forcing is relative to the forcing at the baseline concentrations,\nscaled by `forcing_scale * (1 + tropospheric_adjustment)`,\nplus a feedback on the surface air temperature change at the start of the step.\nA minor gas's radiative efficiency is per ppb and its concentration is in ppt.\n\n# Inputs\n\n- The surface air temperature change named by `surface_temperature` (K).\n  Its default is `Surface Air Temperature Change`.\n- The `concentration` of `co2`, `ch4`, `n2o` and each `minor` gas, in its `concentration_unit`.\n  rscm.fair names it `Atmospheric Concentrations|<species>`,\n  such as `Atmospheric Concentrations|CO2` in ppm.\n\n# Outputs\n\n- The `forcing` of each gas (W/m^2).\n  rscm.fair names it `Effective Radiative Forcing|<species>` for CO2, CH4 and N2O,\n  `Effective Radiative Forcing|F-Gases|<species>` for the F-gases\n  and `Effective Radiative Forcing|Montreal Protocol Halogen Gases|<species>` for the halogens.",
+  "category": "Radiative Forcing",
+  "tags": [
+    "forcing",
+    "ghg",
+    "fair"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "co2",
+      "type": "GHGSpecies",
+      "description": "CO2, with the Meinshausen et al. (2020) CO2 formula."
+    },
+    {
+      "name": "ch4",
+      "type": "GHGSpecies",
+      "description": "CH4, with the Meinshausen et al. (2020) CH4 formula."
+    },
+    {
+      "name": "n2o",
+      "type": "GHGSpecies",
+      "description": "N2O, with the Meinshausen et al. (2020) N2O formula."
+    },
+    {
+      "name": "minor",
+      "type": "Vec<GHGSpecies>",
+      "description": "Gases with effective radiative forcing linear in concentration."
+    },
+    {
+      "name": "surface_temperature",
+      "type": "String",
+      "description": "Name of the surface air temperature change input."
+    }
+  ],
+  "source_file": "crates/rscm-fair/src/ghg_forcing.rs"
+}

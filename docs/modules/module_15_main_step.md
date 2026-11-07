@@ -178,7 +178,7 @@ when `NCYCLE_APPLY = 1`.
 
 Updated every substep:
 
-| Variable                     | Lines     | Units  |
+| Variable                     | Lines     | Unit   |
 | ---------------------------- | --------- | ------ |
 | `GROUND_HEMISPHERIC_TEMPS`   | 2905-2912 | K      |
 | `ELNINO_N34_DOUBLEDELTABOX`  | 2930-2932 | K      |
@@ -222,7 +222,8 @@ Updated once a year, for the next year's index:
 - **Sequential updates**: concentrations, forcing and temperature are updated in turn,
   so each module sees slightly stale values from the others.
   Iterating within the step would be more accurate but costs more.
-- **Annual forcing**: most forcing agents (aerosols, land use) are annual values applied to every substep.
+- **Annual forcing**: most forcing agents (aerosols, land use) are averages over the step,
+  applied to every substep.
   Only volcanic forcing varies within the year.
 - **Update timing**: upwelling is updated at the end of a substep from that substep's temperature,
   but that temperature used forcing from before the update.

@@ -1,7 +1,7 @@
 //! N2O Chemistry Component
 //!
-//! Simulates atmospheric nitrous oxide chemistry with concentration-dependent
-//! lifetime and stratospheric transport delay using Prather-style fixed-point
+//! Simulates atmospheric nitrous oxide chemistry with a concentration-dependent
+//! lifetime and a stratospheric transport delay, using Prather-style fixed-point
 //! iterations.
 //!
 //! # What This Component Does
@@ -12,20 +12,19 @@
 //!    - Faster stratospheric overturning with warming (meridional flux feedback)
 //!
 //! 2. Solves the mass balance equation using 4 fixed-point iterations:
-//!    $$\frac{dB}{dt} = E - \frac{\bar{B}_{lagged}}{\tau}$$
+//!    $$\frac{dB}{dt} = E - \frac{\bar{B}_{delayed}}{\tau}$$
 //!
-//!    where the sink term uses lagged concentrations to account for
+//!    where the sink term uses delayed concentrations to account for the
 //!    stratospheric transport delay.
+//!
+//! This follows the MAGICC7 `NITROUS` subroutine. Starting from the burden $B$ at the
+//! start of the year, each iteration estimates the mid-year burden, evaluates
+//! the lifetime from it and integrates the sink using the burden averaged over
+//! the delayed years.
 //!
 //! # Inputs
 //!
-//! - `Emissions|N2O` (Mt N2ON/yr) - Anthropogenic N2O emissions
-//! - `Surface Air Temperature Change` (K) - Global mean surface air temperature change
-//!
-//! # Outputs
-//!
-//! - `Atmospheric Concentrations|N2O` (ppb) - Updated N2O concentration
-//! - `Lifetime|N2O` (yr) - Effective N2O lifetime
+//! - `Prescribed Atmospheric Concentrations|N2O` (ppb), only with the `concentration_switch_year` parameter
 //!
 //! # Feedback references
 //!
@@ -60,23 +59,18 @@ use serde::{Deserialize, Serialize};
 /// Number of fixed-point iterations (fixed per MAGICC7 implementation)
 const PRATHER_ITERATIONS: usize = 4;
 
-/// N2O atmospheric chemistry component
-///
-/// Implements the MAGICC7 `NITROUS` scheme. Starting from the burden $B$ at the
-/// start of the year, each iteration estimates the mid-year burden, evaluates
-/// the lifetime from it and integrates the sink using the burden averaged over
-/// the delayed years.
+/// N2O atmospheric chemistry component.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["chemistry", "n2o", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
-    n2o_emissions { name = "Emissions|N2O", unit = "Mt N2ON/yr" },
-    temperature { name = "Surface Air Temperature Change", unit = "K" },
+    n2o_emissions { name = "Emissions|N2O", unit = "Mt N2ON/yr", description = "Anthropogenic N2O emissions over the step" },
+    temperature { name = "Surface Air Temperature Change", unit = "K", description = "Surface air temperature change that drives the meridional flux feedback" },
 )]
 #[states(
-    n2o_concentration { name = "Atmospheric Concentrations|N2O", unit = "ppb" },
+    n2o_concentration { name = "Atmospheric Concentrations|N2O", unit = "ppb", description = "N2O concentration at the end of the step" },
 )]
 #[outputs(
-    n2o_lifetime { name = "Lifetime|N2O", unit = "yr", timeseries_type = "average" },
+    n2o_lifetime { name = "Lifetime|N2O", unit = "yr", timeseries_type = "average", description = "Effective N2O lifetime over the step" },
 )]
 pub struct N2OChemistry {
     parameters: N2OChemistryParameters,

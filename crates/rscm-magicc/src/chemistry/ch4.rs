@@ -1,7 +1,9 @@
 //! CH4 Chemistry Component
 //!
-//! Simulates atmospheric methane chemistry with concentration-dependent lifetime
+//! Simulates atmospheric methane chemistry with a concentration-dependent lifetime,
 //! using Prather's iterative method from IPCC TAR.
+//! The method accounts for the positive feedback where higher CH4 concentrations deplete
+//! tropospheric OH, which in turn lengthens the CH4 lifetime.
 //!
 //! # What This Component Does
 //!
@@ -14,20 +16,27 @@
 //! 2. Solves the mass balance equation using 4 Prather iterations:
 //!    $$\frac{dB}{dt} = E - \frac{B}{\tau_{OH}} - \frac{B}{\tau_{other}}$$
 //!
+//! # Algorithm
+//!
+//! For each step, starting from the burden $B$ at the start of the year,
+//! it performs 4 fixed-point iterations:
+//!
+//! 1. Mean burden: $\bar{B}_1 = B$, then $\bar{B}_n = (B + B_{n-1}) / 2$
+//! 2. Calculate effective OH lifetime with feedbacks
+//! 3. Calculate burden change: $\Delta B_n = E - \bar{B}_n/\tau_{OH} - \bar{B}_n/\tau_{other}$
+//! 4. Update burden: $B_n = B + \Delta B_n$
+//!
+//! From iteration 2 onwards, a correction factor $(1 - 0.5 X \Delta B_{n-1}/B)$
+//! is applied to improve convergence.
+//!
 //! # Inputs
 //!
-//! - `Emissions|CH4` (Tg CH4/yr) - Anthropogenic methane emissions
-//! - `Surface Air Temperature Change` (K) - Global mean surface air temperature change
-//! - `Emissions|NOx` (Tg N/yr) - NOx emissions for OH feedback
-//! - `Emissions|CO` (Tg CO/yr) - CO emissions for OH feedback
-//! - `Emissions|NMVOC` (Tg NMVOC/yr) - NMVOC emissions for OH feedback
 //! - `Emissions|CH4|Permafrost` (Mt CH4/yr), only with the `include_permafrost` parameter
+//! - `Prescribed Atmospheric Concentrations|CH4` (ppb), only with the `concentration_switch_year` parameter
 //!
 //! # Outputs
 //!
-//! - `Atmospheric Concentrations|CH4` (ppb) - Updated CH4 concentration
-//! - `Lifetime|CH4` (yr) - Effective total CH4 lifetime
-//! - `Effective Lifetime|CH4` (yr): start-of-year burden over the CH4 removed during the step
+//! - `Inverse Emissions|CH4` (Mt CH4/yr), only with the `concentration_switch_year` parameter
 //!
 //! # Feedback references
 //!
@@ -90,41 +99,23 @@ fn secant(
     x1
 }
 
-/// CH4 atmospheric chemistry component
-///
-/// Implements Prather's iterative method for solving the nonlinear methane
-/// mass balance equation. The method accounts for the positive feedback where
-/// higher CH4 concentrations deplete tropospheric OH, which in turn increases
-/// CH4 lifetime.
-///
-/// # Algorithm
-///
-/// For each step, starting from the burden $B$ at the start of the year,
-/// performs 4 fixed-point iterations:
-///
-/// 1. Mean burden: $\bar{B}_1 = B$, then $\bar{B}_n = (B + B_{n-1}) / 2$
-/// 2. Calculate effective OH lifetime with feedbacks
-/// 3. Calculate burden change: $\Delta B_n = E - \bar{B}_n/\tau_{OH} - \bar{B}_n/\tau_{other}$
-/// 4. Update burden: $B_n = B + \Delta B_n$
-///
-/// From iteration 2 onwards, a correction factor $(1 - 0.5 X \Delta B_{n-1}/B)$
-/// is applied to improve convergence.
+/// CH4 atmospheric chemistry component.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["chemistry", "ch4", "magicc"], category = "Atmospheric Chemistry")]
 #[inputs(
-    ch4_emissions { name = "Emissions|CH4", unit = "Mt CH4/yr" },
-    temperature { name = "Surface Air Temperature Change", unit = "K" },
-    nox_emissions { name = "Emissions|NOx", unit = "Mt N/yr" },
-    co_emissions { name = "Emissions|CO", unit = "Mt CO/yr" },
-    nmvoc_emissions { name = "Emissions|NMVOC", unit = "Mt NMVOC/yr" },
+    ch4_emissions { name = "Emissions|CH4", unit = "Mt CH4/yr", description = "Anthropogenic methane emissions over the step" },
+    temperature { name = "Surface Air Temperature Change", unit = "K", description = "Surface air temperature change that drives the lifetime feedback" },
+    nox_emissions { name = "Emissions|NOx", unit = "Mt N/yr", description = "NOx emissions over the step, for the OH feedback" },
+    co_emissions { name = "Emissions|CO", unit = "Mt CO/yr", description = "CO emissions over the step, for the OH feedback" },
+    nmvoc_emissions { name = "Emissions|NMVOC", unit = "Mt NMVOC/yr", description = "NMVOC emissions over the step, for the OH feedback" },
 )]
 #[states(
-    ch4_concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb" },
+    ch4_concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb", description = "CH4 concentration at the end of the step" },
 )]
 #[outputs(
-    ch4_lifetime { name = "Lifetime|CH4", unit = "yr", timeseries_type = "average" },
-    ch4_oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average" },
-    ch4_effective_lifetime { name = "Effective Lifetime|CH4", unit = "yr", timeseries_type = "average" },
+    ch4_lifetime { name = "Lifetime|CH4", unit = "yr", timeseries_type = "average", description = "Total atmospheric CH4 lifetime over the step" },
+    ch4_oh_lifetime { name = "Lifetime|CH4|OH", unit = "yr", timeseries_type = "average", description = "CH4 lifetime against the tropospheric OH sink over the step" },
+    ch4_effective_lifetime { name = "Effective Lifetime|CH4", unit = "yr", timeseries_type = "average", description = "Start-of-step burden over the CH4 removed during the step" },
 )]
 pub struct CH4Chemistry {
     parameters: CH4ChemistryParameters,
