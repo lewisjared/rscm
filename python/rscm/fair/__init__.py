@@ -5,8 +5,7 @@ A port of FaIR v2.2.5 (Leach et al. 2021, Smith et al. 2024) that reproduces its
 methods: Meinshausen et al. (2020) greenhouse gas forcing and either the generic or the
 Thornhill et al. (2021) CH4 lifetime.
 
-[build_components][rscm.fair.config.build_components] turns a FaIR configuration into
-components,
+[components][rscm.fair.config.components] lists the components of a FaIR configuration,
 [with_lags][rscm.fair.config.with_lags] adds FaIR's feedback lags to a builder,
 and [run_fair][rscm.fair.run.run_fair] runs one.
 [rscm.fair.loaders][] reads configurations from FaIR's species CSV
@@ -18,18 +17,18 @@ Variables use RSCM names (see [rscm.fair.naming][]) and FaIR's units.
 """
 
 from rscm._lib.fair import (
-    FairAerosolCloudBuilder,
-    FairCH4LifetimeBuilder,
-    FairEescBuilder,
-    FairEnergyBalanceBuilder,
-    FairForcingAggregationBuilder,
-    FairGasCycleBuilder,
-    FairGhgForcingBuilder,
-    FairLinearForcingBuilder,
+    AerosolCloudBuilder,
+    CH4LifetimeBuilder,
+    EescBuilder,
+    EnergyBalanceBuilder,
+    ForcingAggregationBuilder,
+    GasCycleBuilder,
+    GhgForcingBuilder,
+    LinearForcingBuilder,
 )
 from rscm.fair.config import (
     FairConfig,
-    build_components,
+    components,
     initial_values,
     load_config,
     with_lags,
@@ -40,17 +39,17 @@ from rscm.fair.loaders import make_config, read_calibration, read_config, read_s
 from rscm.fair.run import build_model, prescribed_forcing_scales, run_fair
 
 __all__ = [
-    "FairAerosolCloudBuilder",
-    "FairCH4LifetimeBuilder",
+    "AerosolCloudBuilder",
+    "CH4LifetimeBuilder",
+    "EescBuilder",
+    "EnergyBalanceBuilder",
     "FairConfig",
-    "FairEescBuilder",
-    "FairEnergyBalanceBuilder",
-    "FairForcingAggregationBuilder",
-    "FairGasCycleBuilder",
-    "FairGhgForcingBuilder",
-    "FairLinearForcingBuilder",
-    "build_components",
+    "ForcingAggregationBuilder",
+    "GasCycleBuilder",
+    "GhgForcingBuilder",
+    "LinearForcingBuilder",
     "build_model",
+    "components",
     "from_fair",
     "initial_values",
     "load_config",

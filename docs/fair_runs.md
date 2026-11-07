@@ -10,27 +10,28 @@ It reproduces FaIR's default methods to a relative tolerance of 1e-9:
 Variables use RSCM names (see `rscm.fair.naming`) and keep FaIR's units.
 FaIR's emissions are on timepoints, one per step.
 Its concentrations, forcing and temperatures are on timebounds, one more than the steps.
+The runners take a time axis with a step starting at each timebound, `TimeAxis.from_values(timebounds)`.
 
 ## Components
 
-`build_components` turns a configuration into components, in the order they must be added to a model:
+`components` lists the components of a configuration, in the order they must be added to a model:
 
-| Component                | FaIR step                                                    |
-| ------------------------ | ------------------------------------------------------------ |
-| `FairCH4Lifetime`        | CH4 lifetime scaling (Thornhill 2021 only)                   |
-| `FairGasCycle`           | Gas boxes, concentrations, airborne and cumulative emissions |
-| `FairEesc`               | Equivalent effective stratospheric chlorine                  |
-| `FairGhgForcing`         | Meinshausen 2020 greenhouse gas forcing                      |
-| `FairLinearForcing`      | Aerosol-radiation, ozone, contrails, LAPSI, H2O and land use |
-| `FairAerosolCloud`       | Aerosol-cloud interactions                                   |
-| `FairForcingAggregation` | Total and efficacy-adjusted forcing                          |
-| `FairEnergyBalance`      | Layer temperatures, TOA imbalance and ocean heat content     |
+| Component            | FaIR step                                                    |
+| -------------------- | ------------------------------------------------------------ |
+| `CH4Lifetime`        | CH4 lifetime scaling (Thornhill 2021 only)                   |
+| `GasCycle`           | Gas boxes, concentrations, airborne and cumulative emissions |
+| `Eesc`               | Equivalent effective stratospheric chlorine                  |
+| `GhgForcing`         | Meinshausen 2020 greenhouse gas forcing                      |
+| `LinearForcing`      | Aerosol-radiation, ozone, contrails, LAPSI, H2O and land use |
+| `AerosolCloud`       | Aerosol-cloud interactions                                   |
+| `ForcingAggregation` | Total and efficacy-adjusted forcing                          |
+| `EnergyBalance`      | Layer temperatures, TOA imbalance and ocean heat content     |
 
 A configuration is a plain dict with FaIR's options, climate configs and one entry per species.
 `rscm.fair.config` documents its keys.
 `naming.prescribed_variable` names the input of each species.
 Prescribed forcing is an input such as `Prescribed Effective Radiative Forcing|Solar`.
-`FairForcingAggregation` adds its temperature feedback and writes `Effective Radiative Forcing|Solar`.
+`ForcingAggregation` adds its temperature feedback and writes `Effective Radiative Forcing|Solar`.
 
 ## Running a calibrated member
 
@@ -39,6 +40,7 @@ fair-calibrate scales prescribed forcing by its `forcing_scale` outside FaIR,
 so `scale_prescribed_forcing=True` does the same.
 
 ```python
+from rscm.core import TimeAxis
 from rscm.fair import naming, read_calibration, run_fair
 
 configs = read_calibration(
@@ -56,7 +58,9 @@ for entry in config["species"]:
         source = emissions if entry["input_mode"] == "emissions" else forcing
         inputs[name] = (source[entry["name"]], unit)
 
-model = run_fair(config, inputs, timebounds, scale_prescribed_forcing=True)
+model = run_fair(
+    config, inputs, TimeAxis.from_values(timebounds), scale_prescribed_forcing=True
+)
 temperature = model.timeseries().get_timeseries_by_name("Surface Temperature")
 ```
 
@@ -70,7 +74,12 @@ with `timebounds`, `scenario`, `config`, `specie` and `layer` dimensions:
 ```python
 from rscm.fair import run_ensemble
 
-result = run_ensemble(configs, {"historical": inputs}, timebounds, scale_prescribed_forcing=True)
+result = run_ensemble(
+    configs,
+    {"historical": inputs},
+    TimeAxis.from_values(timebounds),
+    scale_prescribed_forcing=True,
+)
 result.temperature.sel(layer=0, scenario="historical")
 ```
 
@@ -79,21 +88,21 @@ It needs xarray, from the `fair` extra (`pip install 'rscm[fair]'`).
 
 ## Converting from FaIR
 
-`from_fair` takes a configured `fair.FAIR` and returns the configuration, inputs and timebounds
+`from_fair` takes a configured `fair.FAIR` and returns the configuration, inputs and time axis
 of one of its configs and scenarios:
 
 ```python
 from rscm.fair import from_fair, run_fair
 
-config, inputs, timebounds = from_fair(f, config="member", scenario="ssp245")
-model = run_fair(config, inputs, timebounds)
+config, inputs, time_axis = from_fair(f, config="member", scenario="ssp245")
+model = run_fair(config, inputs, time_axis)
 ```
 
 ## Other climate components
 
-`build_components(config, energy_balance=False)` leaves out `FairEnergyBalance`,
+`components(config, energy_balance=False)` leaves out `EnergyBalance`,
 so another component can write `Surface Temperature` from `Effective Radiative Forcing`.
-The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateUDEB` this way.
+The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateUdeb` this way.
 `initial_values` takes the same flag.
 
 ## Differences from FaIR
@@ -101,7 +110,7 @@ The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateU
 - Stochastic runs are not supported. `read_calibration` ignores the stochastic parameters
   and `from_fair` rejects a stochastic config.
 - Only the Meinshausen 2020 greenhouse gas method is implemented.
-- `build_components` rejects greenhouse gases with prescribed forcing.
+- `components` rejects greenhouse gases with prescribed forcing.
   FaIR 2.2.5 overwrites it with the forcing of the unset concentration, which is NaN,
   so it drops out of the total.
 - FaIR calculates EESC after the aerosol forcing, so calculated EESC never reaches ERFari or ERFaci.

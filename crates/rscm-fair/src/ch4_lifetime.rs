@@ -12,7 +12,7 @@ use crate::constants::{get, surface_temperature, temperature_unit};
 use rscm_core::component::{
     Component, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -33,9 +33,9 @@ pub struct Precursor {
     pub sensitivity: FloatValue,
 }
 
-/// Parameters of [`FairCH4Lifetime`].
+/// Parameters of [`CH4Lifetime`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairCH4LifetimeParameters {
+pub struct CH4LifetimeParameters {
     /// Precursor emissions, summed before the concentrations.
     pub emissions: Vec<Precursor>,
     /// Precursor concentrations.
@@ -63,13 +63,13 @@ fn default_output() -> String {
 
 /// Thornhill et al. (2021) CH4 lifetime scaling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FairCH4Lifetime {
-    parameters: FairCH4LifetimeParameters,
+pub struct CH4Lifetime {
+    parameters: CH4LifetimeParameters,
 }
 
-impl FairCH4Lifetime {
+impl CH4Lifetime {
     /// Create the component.
-    pub fn from_parameters(parameters: FairCH4LifetimeParameters) -> Self {
+    pub fn from_parameters(parameters: CH4LifetimeParameters) -> Self {
         Self { parameters }
     }
 
@@ -98,8 +98,8 @@ impl FairCH4Lifetime {
     }
 }
 
-#[typetag::serde]
-impl Component for FairCH4Lifetime {
+#[typetag::serde(name = "fair.CH4Lifetime")]
+impl Component for CH4Lifetime {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         let mut definitions = vec![VariableDefinition::scalar_input(
@@ -121,7 +121,7 @@ impl Component for FairCH4Lifetime {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let p = &self.parameters;
         let get_of = |x: &Precursor| get(input_state, &x.variable);
         let emissions: Vec<_> = p.emissions.iter().map(get_of).collect();
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn baseline_gives_unit_scaling() {
-        let c = FairCH4Lifetime::from_parameters(FairCH4LifetimeParameters {
+        let c = CH4Lifetime::from_parameters(CH4LifetimeParameters {
             emissions: vec![precursor(2.0, 0.1)],
             concentrations: vec![precursor(700.0, 0.0003)],
             temperature_sensitivity: -0.0408,
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn terms_are_floored() {
-        let c = FairCH4Lifetime::from_parameters(FairCH4LifetimeParameters {
+        let c = CH4Lifetime::from_parameters(CH4LifetimeParameters {
             emissions: vec![precursor(0.0, -1.0)],
             concentrations: vec![],
             temperature_sensitivity: 0.0,

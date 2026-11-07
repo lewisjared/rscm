@@ -21,6 +21,7 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 
+from rscm.core import TimeAxis
 from rscm.magicc import ForcingAggregationBuilder, HalocarbonChemistryBuilder, full
 from rscm.magicc import prescribed as pr
 from rscm.magicc.full import ERF, REGIONAL_FORCING, run_components
@@ -71,6 +72,11 @@ class FullRun:
     def years(self) -> NDArray[np.float64]:
         """Annual labels of the run."""
         return self.data.columns.to_numpy(dtype=np.float64)
+
+    @property
+    def time_axis(self) -> TimeAxis:
+        """Time axis with a step starting at each annual label."""
+        return TimeAxis.from_values(self.years)
 
     def series(self, variable: str, region: str = "World") -> NDArray[np.float64]:
         """Global (or one region's) values of a variable."""
@@ -223,7 +229,7 @@ def prescribed_forcing() -> dict[str, NDArray[np.float64]]:
 
 
 def climate_parameters(run: FullRun) -> dict[str, Any]:
-    """ClimateUDEB parameters of the reference run."""
+    """ClimateUdeb parameters of the reference run."""
     return full.climate_parameters(
         run.parameters, full.load_inputs(run.parameters), run.years[0]
     )
@@ -307,7 +313,7 @@ class Reported:
         aggregation = ForcingAggregationBuilder.from_parameters(
             {
                 "agents": agents,
-                "efficacy_apply": p["rf_efficacy_apply"],
+                "efficacy_method": full.EFFICACY_METHODS[p["rf_efficacy_apply"]],
                 "climate": full.efficacy_climate(climate),
             }
         )
@@ -350,7 +356,7 @@ class Reported:
             {"fgas_switch_year": np.inf, "mhalo_switch_year": np.inf}
         ).build()
         return run_components(
-            self.run.years,
+            self.run.time_axis,
             [component],
             prescribed={
                 **{
@@ -415,7 +421,7 @@ class Reported:
 def default_model() -> Model:
     """`full.run_magicc7` with its packaged defaults on the reference emissions."""
     run = load_default()
-    return full.run_magicc7(run.years, emissions(run))
+    return full.run_magicc7(run.time_axis, emissions(run))
 
 
 @cache
@@ -431,7 +437,7 @@ def run_coupled(run: FullRun) -> Model:
     n_fgas = run.parameters["fgas_n"]
     species = ("CO2", "CH4", "N2O", *full.halocarbon_species()[n_fgas:])
     return full.run_magicc7(
-        run.years,
+        run.time_axis,
         emissions(run),
         parameters=run.parameters,
         initial_concentrations={

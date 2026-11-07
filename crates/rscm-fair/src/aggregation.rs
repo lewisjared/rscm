@@ -11,7 +11,7 @@ use crate::constants::{
     total_forcing,
 };
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -32,9 +32,9 @@ pub struct ForcingAgent {
     pub temperature_feedback: FloatValue,
 }
 
-/// Parameters of [`FairForcingAggregation`].
+/// Parameters of [`ForcingAggregation`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairForcingAggregationParameters {
+pub struct ForcingAggregationParameters {
     /// The agents.
     pub agents: Vec<ForcingAgent>,
     /// Total forcing output.
@@ -50,13 +50,13 @@ pub struct FairForcingAggregationParameters {
 
 /// FaIR's forcing sums.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FairForcingAggregation {
-    parameters: FairForcingAggregationParameters,
+pub struct ForcingAggregation {
+    parameters: ForcingAggregationParameters,
 }
 
-impl FairForcingAggregation {
+impl ForcingAggregation {
     /// Create the component.
-    pub fn from_parameters(parameters: FairForcingAggregationParameters) -> Self {
+    pub fn from_parameters(parameters: ForcingAggregationParameters) -> Self {
         Self { parameters }
     }
 
@@ -68,8 +68,8 @@ impl FairForcingAggregation {
     }
 }
 
-#[typetag::serde]
-impl Component for FairForcingAggregation {
+#[typetag::serde(name = "fair.ForcingAggregation")]
+impl Component for ForcingAggregation {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         let mut definitions = Vec::with_capacity(p.agents.len() + 3);
@@ -107,7 +107,7 @@ impl Component for FairForcingAggregation {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let p = &self.parameters;
         let temperature = if self.has_feedback() {
             get(input_state, &p.surface_temperature)

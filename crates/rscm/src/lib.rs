@@ -13,7 +13,7 @@
 //!   - `rscm._lib.core` - Core abstractions (Model, Component, Timeseries, etc.)
 //!     - `rscm._lib.core.spatial` - Spatial grid types (FourBox, Hemispheric)
 //!     - `rscm._lib.core.state` - State value types (StateValue, FourBoxSlice, etc.)
-//!   - `rscm._lib.components` - Generic climate model components (CarbonCycle, CO2ERF, etc.)
+//!   - `rscm._lib.components` - Generic climate model components (CarbonCycle, CO2Erf, etc.)
 //!   - `rscm._lib.two_layer` - Two-layer energy balance model
 //!   - `rscm._lib.magicc` - MAGICC component implementations (scaffold)
 //!

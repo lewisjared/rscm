@@ -67,7 +67,7 @@ from rscm.core import (
 from rscm.magicc import (
     CH4ChemistryBuilder,
     CH4OxidationBuilder,
-    ClimateUDEBBuilder,
+    ClimateUdebBuilder,
     CO2BudgetBuilder,
     ForcingAggregationBuilder,
     GhgForcingBuilder,
@@ -119,7 +119,7 @@ def reference_run(name):
 # | Forcing   | Aerosols and other prescribed forcing        | `rscm.magicc.prescribed`                     |
 # | Forcing   | GHG forcing                                  | `GhgForcingBuilder`                          |
 # | Forcing   | Forcing aggregation                          | `ForcingAggregationBuilder`                  |
-# | Climate   | Climate (UDEB)                               | `ClimateUDEBBuilder`                         |
+# | Climate   | Climate (UDEB)                               | `ClimateUdebBuilder`                         |
 # | Climate   | Sea level rise                               | `SeaLevelRiseBuilder`                        |
 #
 # UDEB is MAGICC7's upwelling-diffusion ocean coupled to an energy balance.
@@ -255,7 +255,7 @@ plt.show()
 
 # %% [markdown]
 # Volcanic forcing is different.
-# MAGICC7 applies it monthly inside the climate model, so it is a parameter of `ClimateUDEB`
+# MAGICC7 applies it monthly inside the climate model, so it is a parameter of `ClimateUdeb`
 # rather than an input variable.
 #
 # ## Configuring the components
@@ -279,12 +279,12 @@ print(
 # %% [markdown]
 # `full.climate_parameters` carries the climate configuration over,
 # including the monthly volcanic forcing from the input files.
-# Setting `thermal_expansion` makes `ClimateUDEB` write the thermal expansion that `SeaLevelRise` reads.
+# Setting `thermal_expansion` makes `ClimateUdeb` write the thermal expansion that `SeaLevelRise` reads.
 
 # %%
 climate_parameters = full.climate_parameters(p, inputs, years[0])
 climate_parameters["thermal_expansion"] = {}
-climate = ClimateUDEBBuilder.from_parameters(climate_parameters)
+climate = ClimateUdebBuilder.from_parameters(climate_parameters)
 
 # %% [markdown]
 # `ForcingAggregation` takes one entry per forcing agent.
@@ -304,7 +304,7 @@ def with_prefix(terms):
 aggregation = ForcingAggregationBuilder.from_parameters(
     {
         "agents": agents,
-        "efficacy_apply": p["rf_efficacy_apply"],
+        "efficacy_method": full.EFFICACY_METHODS[p["rf_efficacy_apply"]],
         "climate": full.efficacy_climate(climate_parameters),
         "summation": with_prefix(full.SUMMATION),
     }
@@ -370,7 +370,7 @@ terrestrial = {
         for ours, theirs in full.TERRESTRIAL_FEEDBACKS.items()
     },
     "npp_pi": p["co2_npp_initial"],
-    "fertilization_method": p["co2_fertilization_method"],
+    "fertilisation_method": p["co2_fertilization_method"],
     "plantbox_resp_fertscale": p["co2_plantboxresp_fertscale"],
 }
 builders |= {
@@ -385,13 +385,13 @@ builders |= {
                 f"{gas.lower()}_pi": initial_concentrations[gas]
                 for gas in ("CO2", "CH4", "N2O")
             },
-            "method": "Olbl",
+            "method": "OLBL",
             "ch4_strat_h2o_fraction": p["ch4_addedstrath2o_percent"],
         }
     ),
     "OzoneForcing": OzoneForcingBuilder.from_parameters(full.ozone_parameters(p)),
     "ForcingAggregation": aggregation,
-    "ClimateUDEB": climate,
+    "ClimateUdeb": climate,
     "SeaLevelRise": SeaLevelRiseBuilder.from_parameters({}),
 }
 components = {name: builder.build() for name, builder in builders.items()}
@@ -419,7 +419,7 @@ pd.DataFrame(
 # `HalocarbonChemistry` tracks 41 species, each with its own emissions input, concentration state
 # and forcing output.
 # `ForcingAggregation` reads every forcing agent and writes the total ERF
-# and the four-box `Effective Radiative Forcing|Efficacy Adjusted` that drives `ClimateUDEB`.
+# and the four-box `Effective Radiative Forcing|Efficacy Adjusted` that drives `ClimateUdeb`.
 
 # %% tags=["remove_input"]
 kinds = (VariableRole.Input, VariableRole.Output, VariableRole.State)
@@ -438,7 +438,7 @@ pd.DataFrame(
 #
 # MAGICC has feedback loops:
 #
-# - Temperature from `ClimateUDEB` changes permafrost thaw, the CH4, N2O and halocarbon lifetimes,
+# - Temperature from `ClimateUdeb` changes permafrost thaw, the CH4, N2O and halocarbon lifetimes,
 #   land and ocean carbon uptake and ozone forcing, which all change the forcing that drives temperature.
 # - CO2 from `CO2Budget` drives fertilisation on land and air-sea exchange,
 #   which set the fluxes that `CO2Budget` integrates.
@@ -455,6 +455,7 @@ pd.DataFrame(
 # and the land and ocean the CO2 at the start of the year,
 # while forcing uses the concentrations at its end.
 # `SeaLevelRise` reads the annual mean warming of the same year.
+# `rscm.magicc.with_lags` adds these lags to a builder.
 
 # %%
 lag = ["Surface Temperature"]
@@ -589,7 +590,7 @@ initial_values = {
 # The climate needs the forcing at the first boundary.
 # `ForcingAggregation.aggregate` turns one value per agent, `initial_agents`,
 # into the total and four-box forcing,
-# and `ClimateUDEB.initial_values` gives the matching climate state.
+# and `ClimateUdeb.initial_values` gives the matching climate state.
 # The prescribed agents take their first-year forcing and the calculated agents start at zero,
 # apart from F-gases, which the next section fills in.
 
@@ -675,7 +676,7 @@ DOMAINS = {
     "#c8e6c9": ["CH4Chemistry", "CH4Oxidation", "N2OChemistry", "HalocarbonChemistry"],
     "#bbdefb": ["Permafrost", "TerrestrialCarbon", "OceanCarbon", "CO2Budget"],
     "#ffe0b2": ["GhgForcing", "OzoneForcing", "ForcingAggregation"],
-    "#f8bbd0": ["ClimateUDEB", "SeaLevelRise"],
+    "#f8bbd0": ["ClimateUdeb", "SeaLevelRise"],
 }
 COLOURS = {name: colour for colour, names in DOMAINS.items() for name in names}
 
@@ -739,9 +740,9 @@ show_svg(graph)
 #   The ocean needs every CO2 source because it evolves atmospheric CO2 monthly within the year.
 # - `GhgForcing` waits for all three concentrations, and `OzoneForcing` waits for CH4, N2O and EESC.
 # - `ForcingAggregation` collects every agent, including the prescribed ones,
-#   into the forcing that drives `ClimateUDEB`.
+#   into the forcing that drives `ClimateUdeb`.
 #   The prescribed emissions and forcing, and the monthly volcanic forcing, are not drawn.
-# - `SeaLevelRise` reads the annual mean warming and thermal expansion from `ClimateUDEB`.
+# - `SeaLevelRise` reads the annual mean warming and thermal expansion from `ClimateUdeb`.
 # - The red arrows close the loops one step later.
 #   Temperature reaches seven components this way, CO2 reaches the land and ocean,
 #   and climate sensitivity reaches `ForcingAggregation`.
@@ -840,7 +841,7 @@ plt.show()
 # The stacked areas are each agent's forcing before efficacies,
 # positive agents above zero and negative agents below it.
 # The black line is the total ERF from `ForcingAggregation`, after efficacies.
-# Volcanic forcing is not in either, because it enters `ClimateUDEB` monthly.
+# Volcanic forcing is not in either, because it enters `ClimateUdeb` monthly.
 
 # %% tags=["remove_input"]
 ozone = (
@@ -886,7 +887,7 @@ plt.show()
 # %% [markdown]
 # ### Surface temperature
 #
-# `ClimateUDEB` resolves four boxes.
+# `ClimateUdeb` resolves four boxes.
 # Northern land warms fastest and the southern ocean slowest.
 # The dips are volcanic eruptions.
 
@@ -947,7 +948,7 @@ plt.show()
 # %% [markdown]
 # ### Sea level rise
 #
-# `ClimateUDEB` calculates thermal expansion from the ocean temperature profile.
+# `ClimateUdeb` calculates thermal expansion from the ocean temperature profile.
 # `SeaLevelRise` adds glaciers and the Greenland and Antarctic ice sheets.
 # MAGICC7 counts sea level rise from 1850, so every term is zero before then.
 
@@ -972,11 +973,12 @@ plt.show()
 # ## The convenience path: `run_magicc7`
 #
 # `rscm.magicc.run_magicc7` builds this whole chain for you, with the same lags.
-# It takes the emissions and MAGICC7 parameter names, and returns the run model.
+# It takes a time axis, the emissions and MAGICC7 parameter names, and returns the run model.
 # With the same parameters it gives the same result as the hand-built model.
 
 # %%
-convenience = run_magicc7(years, emissions, parameters=parameters)
+time_axis = TimeAxis.from_values(years)
+convenience = run_magicc7(time_axis, emissions, parameters=parameters)
 convenience_temperature = (
     convenience.timeseries()
     .get_four_box_timeseries_by_name("Surface Temperature")
@@ -1001,11 +1003,11 @@ np.testing.assert_array_equal(convenience_temperature, regional_temperature)
 # The sweep uses the emissions-driven configuration so that CO2 responds from 1750.
 
 # %%
-default = run_magicc7(years, emissions).timeseries()
+default = run_magicc7(time_axis, emissions).timeseries()
 sweep = {}
 for ecs in (2.0, 3.0, 4.5):
     run = run_magicc7(
-        years, emissions, parameters=parameters | {"core_climatesensitivity": ecs}
+        time_axis, emissions, parameters=parameters | {"core_climatesensitivity": ecs}
     )
     sweep[ecs] = run.timeseries()
 
@@ -1044,7 +1046,7 @@ ghg_forcing = sum(series(f"{ERF}|{gas}") for gas in ("CO2", "CH4", "N2O"))
 other_forcing = series(ERF) - ghg_forcing
 other_forcing[0], _ = aggregation.aggregate(initial_agents)
 result = run_magicc(
-    years,
+    time_axis,
     {gas: series(f"Atmospheric Concentration|{gas}") for gas in ("CO2", "CH4", "N2O")},
     other_forcing=other_forcing,
     forcing_parameters={

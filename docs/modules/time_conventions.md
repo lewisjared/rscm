@@ -1,6 +1,6 @@
-# ClimateUDEB Time Conventions
+# ClimateUdeb Time Conventions
 
-Sub-annual stepping and output conventions for the ClimateUDEB
+Sub-annual stepping and output conventions for the ClimateUdeb
 ocean-atmosphere energy balance model.
 
 ## Annual Step
@@ -11,7 +11,7 @@ receives forcing at both boundaries and returns temperature at `t_next`.
 
 ## Sub-Annual Stepping
 
-ClimateUDEB divides each annual step into 12 monthly substeps (matching
+ClimateUdeb divides each annual step into 12 monthly substeps (matching
 MAGICC7's `STEPSPERYEAR = 12`).
 The substep loop runs from step 1 to step 12, or from step 0 in the first year:
 
@@ -62,7 +62,7 @@ MAGICC7 produces two temperature variables:
   within the year.
 
 RSCM outputs point-in-time values, matching `DAT_SURFACE_TEMP`.
-When `thermal_expansion` is set, `ClimateUDEB` also writes `Surface Temperature|Annual Mean`,
+When `thermal_expansion` is set, `ClimateUdeb` also writes `Surface Temperature|Annual Mean`,
 matching `DAT_SURFACE_ANNUALMEANTEMP`.
 It is an average, so it is stored at the start of the year it covers, as MAGICC7 labels it.
 `SeaLevelRise` reads it.

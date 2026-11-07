@@ -39,7 +39,7 @@ rscm._lib.core.ComponentBuilder
 # =============================================================================
 # TypedDict parameter classes (stub-only for builder method kwargs)
 # =============================================================================
-(?s:rscm\._lib\.magicc\.[A-Z][A-Za-z0-9]*Params$)
+(?s:rscm\._lib\.magicc\.[A-Z][A-Za-z0-9]*Parameters$)
 rscm._lib.magicc.EfficacyClimate
 rscm._lib.magicc.FgasRegions
 rscm._lib.magicc.ForcingAgent

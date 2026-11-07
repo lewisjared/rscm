@@ -10,13 +10,13 @@ Each case writes three files to ``tests/regression/data/fair``:
 ``alpha_lifetime`` sits on timebounds,
 but its value at bound ``i`` is the one used for step ``i``.
 
-Columns are ``<FAIR attribute>|<specie or layer>``.
+Columns are ``<FAIR attribute>|<species or layer>``.
 Inputs are part of the output.
 Emissions-driven species keep their emissions,
 concentration-driven species their concentrations
 and forcing-driven species their forcing.
 FaIR adds the temperature feedback to prescribed forcing in place,
-so a case with that feedback also writes the input as ``prescribed_forcing|<specie>``.
+so a case with that feedback also writes the input as ``prescribed_forcing|<species>``.
 
 Usage:
     uv run --no-project --with fair==2.2.5 --with numpy==2.4.2 \
@@ -252,14 +252,14 @@ def _scenario(  # noqa: PLR0913
     """Run the default AR6 species on an RCMIP scenario.
 
     `eesc` prescribes the EESC.
-    `feedback` sets `forcing_temperature_feedback` by specie.
+    `feedback` sets `forcing_temperature_feedback` by species.
     """
     species, properties = read_properties()
     if only is not None:
         species = [s for s in species if s in only]
         properties = {s: properties[s] for s in species}
-    for specie in concentration:
-        properties[specie]["input_mode"] = "concentration"
+    for gas in concentration:
+        properties[gas]["input_mode"] = "concentration"
     f = FAIR(ch4_method=ch4_method)
     f.define_time(1750, 2100, step)
     f.define_scenarios([scenario_name])
@@ -274,8 +274,8 @@ def _scenario(  # noqa: PLR0913
         f.properties_df.loc[EESC, "input_mode"] = "calculated"
         f.fill_from_rcmip()
         f.properties_df.loc[EESC, "input_mode"] = "concentration"
-    for specie, value in (feedback or {}).items():
-        fill(f.species_configs["forcing_temperature_feedback"], value, specie=specie)
+    for agent, value in (feedback or {}).items():
+        fill(f.species_configs["forcing_temperature_feedback"], value, specie=agent)
     _climate(f, CLIMATE_3)
     _initialise(f)
     if eesc is not None:
@@ -302,10 +302,10 @@ def prescribed():
     calculated = _scenario("ssp245")
     eesc = calculated.concentration.sel(specie=EESC).values
     inputs = {
-        f"prescribed_forcing|{specie}": calculated.forcing.sel(
-            specie=specie, scenario="scenario", config="config"
+        f"prescribed_forcing|{agent}": calculated.forcing.sel(
+            specie=agent, scenario="scenario", config="config"
         ).values
-        for specie in feedback
+        for agent in feedback
     }
     f = _scenario("ssp245", concentration=(EESC,), eesc=eesc, feedback=feedback)
     _write("ssp245_prescribed", f, CLIMATE_3, extra=inputs)
@@ -343,12 +343,12 @@ def calibrated():
     }
     species, properties = read_properties(species_file)
     parameters = pd.read_csv(parameters_file, index_col=0)
-    emissions_by_specie = {
+    emissions_by_species = {
         s: emissions.loc[s, years].to_numpy(dtype=float)[:, None, None]
         for s in species
         if properties[s]["input_mode"] == "emissions"
     }
-    forcing_by_specie = {
+    forcing_by_species = {
         s: forcing.loc[1750:2024].to_numpy()[:, None, None]
         for s, forcing in prescribed.items()
     }
@@ -374,11 +374,11 @@ def calibrated():
         f.fill_species_configs(species_file)
         f.override_defaults(parameters_file)
         fill(f.climate_configs["stochastic_run"], False)
-        for specie, values in emissions_by_specie.items():
-            fill(f.emissions, values, specie=specie)
-        for specie, values in forcing_by_specie.items():
-            scale = parameters.loc[member, f"forcing_scale[{specie}]"]
-            fill(f.forcing, values * scale, specie=specie)
+        for name, values in emissions_by_species.items():
+            fill(f.emissions, values, specie=name)
+        for agent, values in forcing_by_species.items():
+            scale = parameters.loc[member, f"forcing_scale[{agent}]"]
+            fill(f.forcing, values * scale, specie=agent)
         _initialise(f)
         f.run(progress=False)
         _write(f"calibrated_{member}", f, CLIMATE_3, member)

@@ -104,7 +104,7 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
         }
 
         fn solve(&self, t_current: Time, t_next: Time, input_state: &InputState)
-            -> RSCMResult<OutputState>
+            -> RscmResult<OutputState>
         {
             let inputs = SimpleCarbonCycleInputs::from_input_state(input_state);
             let emis = inputs.emissions.get();
@@ -217,12 +217,12 @@ It reads each input through three calls on the input's window:
 
 The builder decides which value `get()` returns, from how the model is wired:
 
-| What you're reading                | Who wrote it           | `get()` reads a point | `get()` reads an average |
-| ---------------------------------- | ---------------------- | --------------------- | ------------------------ |
-| Your own previous state            | You, last step     | index N               | index N-1                |
-| Prescribed input (external forcing) | Pre-populated          | index N+1             | index N                  |
-| Upstream component output          | They ran this step | index N+1             | index N                  |
-| Lagged input                       | Written last step  | index N               | not supported            |
+| What you're reading                 | Who wrote it       | `get()` reads a point | `get()` reads an average |
+| ----------------------------------- | ------------------ | --------------------- | ------------------------ |
+| Your own previous state             | You, last step     | index N               | index N-1                |
+| Prescribed input (external forcing) | Pre-populated      | index N+1             | index N                  |
+| Upstream component output           | They ran this step | index N+1             | index N                  |
+| Lagged input                        | Written last step  | index N               | not supported            |
 
 A prescribed input reads the same index as an upstream output,
 so a component reads the same value whether the variable is prescribed or modelled.
@@ -300,8 +300,8 @@ In Rust, `rscm_core::model::build_models` and `run_models` return one result per
 
 | Variable Type  | Source                       | Example                                 |
 | -------------- | ---------------------------- | --------------------------------------- |
-| **Prescribed**  | Provided externally          | Emissions scenarios, prescribed forcing |
-| **Modelled** | Computed by model components | CO2 concentration, temperature          |
+| **Prescribed** | Provided externally          | Emissions scenarios, prescribed forcing |
+| **Modelled**   | Computed by model components | CO2 concentration, temperature          |
 
 Whether a variable is prescribed or modelled is determined by the components in the model,
 not by any intrinsic property of the variable itself.
@@ -397,7 +397,7 @@ A component's own state and a lagged edge read the step's start, index N.
 `get()` reads an average at its own step, index N, and a component's own average at the step before.
 A lag holds when the variable is prescribed,
 so a prescribed run must declare the lags the coupled run declares.
-`rscm.magicc.full.LAG` and `LAG_FOR` hold MAGICC7's lags, and `rscm.fair.with_lags` adds FaIR's.
+`rscm.magicc.with_lags` adds MAGICC7's lags, and `rscm.fair.with_lags` adds FaIR's.
 With those lags, prescribing a point or an average with values a model wrote for it
 gives the same results as modelling it.
 
@@ -549,11 +549,11 @@ In Rust, `VariableSchema::new()` offers a chained builder:
 
 ### Aggregation Operations
 
-| Operation      | Description                                    |
-| -------------- | ---------------------------------------------- |
-| `sum`          | Sum of all contributors                        |
-| `mean`         | Arithmetic mean                                |
-| `weighted_sum` | Sum of each contributor times its weight       |
+| Operation      | Description                              |
+| -------------- | ---------------------------------------- |
+| `sum`          | Sum of all contributors                  |
+| `mean`         | Arithmetic mean                          |
+| `weighted_sum` | Sum of each contributor times its weight |
 
 The Rust enum members are `AggregateOp::Sum`, `Mean` and `WeightedSum`.
 

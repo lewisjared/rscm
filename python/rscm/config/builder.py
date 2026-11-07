@@ -13,7 +13,7 @@ from .registry import component_registry
 if TYPE_CHECKING:
     from rscm._lib.core import Model
 
-__all__ = ["build_model", "build_two_layer_model"]
+__all__ = ["build_model"]
 
 
 def build_model(config: ModelConfig | dict[str, Any]) -> Model:
@@ -41,25 +41,13 @@ def build_model(config: ModelConfig | dict[str, Any]) -> Model:
         model_type = config.model_type
 
     if model_type == "two-layer":
-        return build_two_layer_model(config)
+        return _two_layer_model(config)
 
     msg = f"Unknown model type: {model_type!r}"
     raise ValueError(msg)
 
 
-def build_two_layer_model(config: Any) -> Model:
-    """Build two-layer model from configuration.
-
-    Parameters
-    ----------
-    config
-        TwoLayerConfig instance or dict from TOML
-
-    Returns
-    -------
-    Model
-        Configured two-layer model
-    """
+def _two_layer_model(config: Any) -> Model:
     from rscm._lib.core import ModelBuilder, TimeAxis  # noqa: PLC0415
     from rscm.config.models import two_layer  # noqa: F401, PLC0415
 

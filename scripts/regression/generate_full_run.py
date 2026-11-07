@@ -34,6 +34,7 @@ import shutil
 from fnmatch import fnmatchcase
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from utils import MAGICC_ROOT, make_config, output_dir, run_magicc_ctx
 
@@ -267,6 +268,7 @@ class _Recorder(dict):
 
 def write_defaults() -> None:
     """Write the configuration values and 1750 concentrations the full chain reads."""
+    from rscm.core import TimeAxis  # noqa: PLC0415
     from rscm.magicc import full  # noqa: PLC0415
 
     config = default_config()
@@ -290,7 +292,7 @@ def write_defaults() -> None:
         },
         **{s: data.loc[f"Emissions|{s}"].to_numpy() for s in full.halocarbon_species()},
     }
-    years = [int(c[:4]) for c in data.columns]
+    time_axis = TimeAxis.from_values(np.array([float(c[:4]) for c in data.columns]))
     defaults = {"parameters": {}, "initial_concentrations": concentrations}
     full._defaults = lambda: defaults
     recorder = _Recorder(config)
@@ -299,7 +301,7 @@ def write_defaults() -> None:
         recorder["ncycle_apply"] = ncycle_apply
         for flag in ("ndep_from_emis", "prognostic_nfix", "cn_initial_values"):
             recorder[f"ncycle_apply_{flag}"] = ncycle_apply
-        full.run_magicc7(years, emissions, parameters=recorder)
+        full.run_magicc7(time_axis, emissions, parameters=recorder)
     parameters = {key: config[key] for key in sorted(recorder.used)}
     with open(PACKAGE_DATA / "defaults.json", "w") as f:
         json.dump(

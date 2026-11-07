@@ -43,7 +43,7 @@ use crate::parameters::AerosolDirectParameters;
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -219,7 +219,7 @@ impl SpeciesForcing {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.AerosolDirect")]
 impl Component for AerosolDirect {
     fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
@@ -230,7 +230,7 @@ impl Component for AerosolDirect {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let inputs = AerosolDirectInputs::from_input_state(input_state);
 
         let sox = inputs.sox_emissions.get();
@@ -501,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
+    fn test_serialisation_roundtrip() {
         let component = AerosolDirect::from_parameters(AerosolDirectParameters {
             sox_coefficient: -0.004,
             bc_coefficient: 0.01,

@@ -1,7 +1,7 @@
 //! Inputs that no component produces must be supplied.
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition, VariableRole};
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
 use crate::model::ModelBuilder;
 use crate::state::StateValue;
@@ -26,7 +26,7 @@ impl Component for Warming {
         ]
     }
 
-    fn solve(&self, _: Time, _: Time, input_state: &InputState) -> RSCMResult<OutputState> {
+    fn solve(&self, _: Time, _: Time, input_state: &InputState) -> RscmResult<OutputState> {
         let value = input_state.get_scalar_window("forcing").get()
             + input_state.get_scalar_window("emissions").get();
         Ok(HashMap::from([(
@@ -49,7 +49,7 @@ impl Component for Ocean {
         ]
     }
 
-    fn solve(&self, _: Time, _: Time, input_state: &InputState) -> RSCMResult<OutputState> {
+    fn solve(&self, _: Time, _: Time, input_state: &InputState) -> RscmResult<OutputState> {
         let value = input_state.get_scalar_window("forcing").get();
         Ok(HashMap::from([(
             "ocean_heat".to_string(),
@@ -81,7 +81,7 @@ fn missing_inputs_fail_the_build() {
         .with_component(Arc::new(Ocean))
         .build()
         .expect_err("unsupplied inputs must not build");
-    let RSCMError::MissingPrescribedInput { inputs } = &error else {
+    let RscmError::MissingPrescribedInput { inputs } = &error else {
         panic!("expected MissingPrescribedInput, got {error}");
     };
     assert_eq!(
@@ -123,7 +123,7 @@ fn lagged_input_without_producer_must_be_supplied() {
         .build()
         .expect_err("a lagged input with no producer is prescribed");
     assert!(
-        matches!(&error, RSCMError::MissingPrescribedInput { inputs } if inputs[0].0 == "forcing"),
+        matches!(&error, RscmError::MissingPrescribedInput { inputs } if inputs[0].0 == "forcing"),
         "{error}"
     );
 }

@@ -50,7 +50,7 @@ use crate::reference::{
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -160,7 +160,7 @@ impl Default for N2OChemistry {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.N2OChemistry")]
 impl Component for N2OChemistry {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
@@ -177,7 +177,7 @@ impl Component for N2OChemistry {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         require_annual("N2OChemistry", t_current, t_next)?;
         let inputs = N2OChemistryInputs::from_input_state(input_state);
         let p = &self.parameters;

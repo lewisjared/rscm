@@ -39,7 +39,7 @@ import json
 
 import numpy as np
 
-from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
+from rscm.components import CarbonCycleBuilder, CO2ErfBuilder
 from rscm.core import (
     InterpolationStrategy,
     Model,
@@ -63,7 +63,7 @@ t_initial = 1750.0
 t_final = 2100.0
 time_axis = TimeAxis.from_values(np.arange(t_initial, t_final + 1, 10.0))
 
-co2_erf = CO2ERFBuilder.from_parameters(dict(erf_2xco2=4.0, conc_pi=280.0)).build()
+co2_erf = CO2ErfBuilder.from_parameters(dict(erf_2xco2=4.0, conc_pi=280.0)).build()
 carbon_cycle = CarbonCycleBuilder.from_parameters(
     dict(tau=20.3, conc_pi=280.0, alpha_temperature=0.0)
 ).build()

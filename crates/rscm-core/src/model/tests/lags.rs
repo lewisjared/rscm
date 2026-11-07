@@ -1,7 +1,7 @@
 //! Global producer resolution and feedback lags.
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition, VariableRole};
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::model::{Model, ModelBuilder};
 use crate::state::{StateValue, VariableSource};
 use crate::timeseries::{FloatValue, Time, TimeAxis};
@@ -36,7 +36,7 @@ macro_rules! link {
                 _t_current: Time,
                 _t_next: Time,
                 input_state: &InputState,
-            ) -> RSCMResult<OutputState> {
+            ) -> RscmResult<OutputState> {
                 let mut total = 1.0;
                 $(total += input_state.get_scalar_window($input).get();)*
                 if $state {
@@ -98,7 +98,7 @@ fn unlagged_loop_fails_to_build() {
     let error = builder(vec![Arc::new(Climate), Arc::new(Carbon)])
         .build()
         .expect_err("a loop without a lag must not build");
-    let RSCMError::CircularDependency {
+    let RscmError::CircularDependency {
         components,
         variables,
         suggestions,
@@ -249,7 +249,7 @@ fn invalid_lags_fail_to_build() {
     for (result, reason) in cases {
         let error = result.expect_err("an invalid lag must not build");
         assert!(
-            matches!(error, RSCMError::InvalidLag { .. }) && error.to_string().contains(reason),
+            matches!(error, RscmError::InvalidLag { .. }) && error.to_string().contains(reason),
             "{error}"
         );
     }
@@ -261,7 +261,7 @@ fn two_producers_fail_to_build() {
         .build()
         .expect_err("two producers must not build");
     assert!(
-        matches!(&error, RSCMError::MultipleProducers { variable, .. } if variable == "co2"),
+        matches!(&error, RscmError::MultipleProducers { variable, .. } if variable == "co2"),
         "{error}"
     );
 }

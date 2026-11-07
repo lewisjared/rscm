@@ -1,7 +1,7 @@
 //! Averages are stored at their step's start bound, whoever produced them.
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition};
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
 use crate::model::{Model, ModelBuilder};
 use crate::spatial::ScalarGrid;
@@ -22,7 +22,7 @@ impl Component for FluxProducer {
         vec![VariableDefinition::scalar_output("Flux", "GtC / yr")]
     }
 
-    fn solve(&self, t: Time, _t_next: Time, _inputs: &InputState) -> RSCMResult<OutputState> {
+    fn solve(&self, t: Time, _t_next: Time, _inputs: &InputState) -> RscmResult<OutputState> {
         Ok(HashMap::from([(
             "Flux".to_string(),
             StateValue::Scalar(1.0 + (t - 2000.0).powi(2)),
@@ -45,7 +45,7 @@ impl Component for PoolIntegrator {
         ]
     }
 
-    fn solve(&self, t: Time, t_next: Time, inputs: &InputState) -> RSCMResult<OutputState> {
+    fn solve(&self, t: Time, t_next: Time, inputs: &InputState) -> RscmResult<OutputState> {
         let flux = inputs.get_scalar_window("Flux");
         let pool = inputs.get_scalar_window("Pool").get();
         Ok(HashMap::from([
@@ -72,7 +72,7 @@ impl Component for AverageCounter {
         vec![VariableDefinition::scalar_state("Flux", "GtC / yr")]
     }
 
-    fn solve(&self, _t: Time, _t_next: Time, inputs: &InputState) -> RSCMResult<OutputState> {
+    fn solve(&self, _t: Time, _t_next: Time, inputs: &InputState) -> RscmResult<OutputState> {
         let previous = inputs.get_scalar_window("Flux").get();
         Ok(HashMap::from([(
             "Flux".to_string(),
@@ -191,7 +191,7 @@ fn a_lagged_average_fails_to_build() {
     ] {
         let error = builder.expect_err("a lagged average must not build");
         assert!(
-            matches!(&error, RSCMError::InvalidLag { lag: l, .. } if l == lag),
+            matches!(&error, RscmError::InvalidLag { lag: l, .. } if l == lag),
             "{error}"
         );
         assert!(error.to_string().contains("average"), "{error}");

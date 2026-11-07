@@ -10,7 +10,7 @@ Available Components
 --------------------
 Climate:
 
-- ClimateUDEBBuilder: four-box UDEB climate model with ocean diffusion
+- ClimateUdebBuilder: four-box UDEB climate model with ocean diffusion
 - SeaLevelRiseBuilder: Sea level rise from glaciers and ice sheets
 
 Chemistry:
@@ -39,8 +39,8 @@ from rscm._lib.core import ComponentBuilder, RustComponent
 
 # Climate Components
 
-class ClimateUDEBParams(TypedDict, total=False):
-    """Parameters for ClimateUDEB component.
+class ClimateUdebParameters(TypedDict, total=False):
+    """Parameters for ClimateUdeb component.
 
     All fields optional - defaults provided by Rust.
     """
@@ -63,7 +63,7 @@ class ClimateUDEBParams(TypedDict, total=False):
     amplify_ocean_to_land: float
     nh_land_fraction: float
     sh_land_fraction: float
-    efficacy_apply: int
+    efficacy_method: Literal["none", "unit", "ar6"]
     prescribed_efficacy_co2: float
     regional_forcing: bool
     time_varying_q2x: bool
@@ -72,10 +72,10 @@ class ClimateUDEBParams(TypedDict, total=False):
     polar_sinking_ratio: float
     steps_per_year: int
     max_temperature: float
-    thermal_expansion: ThermalExpansionParams | None
+    thermal_expansion: ThermalExpansionParameters | None
 
 @final
-class ClimateUDEBBuilder(ComponentBuilder):
+class ClimateUdebBuilder(ComponentBuilder):
     """Builder for the four-box UDEB climate model component.
 
     The UDEB (Upwelling-Diffusion Energy Balance) model couples a four-box atmosphere
@@ -118,11 +118,11 @@ class ClimateUDEBBuilder(ComponentBuilder):
     - `max_temperature` (`float`, default `25.0`): Maximum temperature anomaly cap (K).
 
     Inputs, outputs and states are listed on the
-    [ClimateUDEB component page][component-climateudeb].
+    [ClimateUdeb component page][component-climateudeb].
 
     Examples
     --------
-    >>> builder = ClimateUDEBBuilder.from_parameters(
+    >>> builder = ClimateUdebBuilder.from_parameters(
     ...     {
     ...         "ecs": 3.0,
     ...         "rf_2xco2": 3.71,
@@ -137,15 +137,15 @@ class ClimateUDEBBuilder(ComponentBuilder):
     def internal_efficacy(self, rf_regions: tuple[float, float, float, float]) -> float:
         """Return the internal efficacy of an agent with this regional pattern."""
     @staticmethod
-    def from_parameters(parameters: ClimateUDEBParams) -> ClimateUDEBBuilder:  # type: ignore[override]
+    def from_parameters(parameters: ClimateUdebParameters) -> ClimateUdebBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the UDEB climate model component."""
 
-class ThermalExpansionParams(TypedDict, total=False):
-    """Thermal expansion of the ocean, calculated by ClimateUDEB.
+class ThermalExpansionParameters(TypedDict, total=False):
+    """Thermal expansion of the ocean, calculated by ClimateUdeb.
 
-    Setting it makes ClimateUDEB write ``Surface Temperature|Annual Mean`` (K)
+    Setting it makes ClimateUdeb write ``Surface Temperature|Annual Mean`` (K)
     and ``Sea Level Rise|Thermal Expansion`` (mm).
     """
 
@@ -153,7 +153,7 @@ class ThermalExpansionParams(TypedDict, total=False):
     scaling: float
     start_year: float
 
-class GlacierParams(TypedDict, total=False):
+class GlacierParameters(TypedDict, total=False):
     """Mountain glaciers and small ice caps."""
 
     sensitivity: float
@@ -162,7 +162,7 @@ class GlacierParams(TypedDict, total=False):
     equilibrium_temperature: list[float]
     equilibrium_sea_level: list[float]
 
-class SurfaceMassBalanceParams(TypedDict, total=False):
+class SurfaceMassBalanceParameters(TypedDict, total=False):
     """Surface mass balance of an ice sheet."""
 
     sensitivity: float
@@ -172,23 +172,23 @@ class SurfaceMassBalanceParams(TypedDict, total=False):
     volume: float | None
     volume_exponent: float
 
-class DischargeCaseParams(TypedDict, total=False):
+class DischargeCaseParameters(TypedDict, total=False):
     """One discharge case of the Greenland ice sheet."""
 
     volume: float
     sensitivity: float
     exponent: float
 
-class GreenlandDischargeParams(TypedDict, total=False):
+class GreenlandDischargeParameters(TypedDict, total=False):
     """Greenland solid ice discharge, between a low and a high case."""
 
-    low: DischargeCaseParams
-    high: DischargeCaseParams
+    low: DischargeCaseParameters
+    high: DischargeCaseParameters
     case: float
     scaling: float
     start_year: float
 
-class AntarcticRegionParams(TypedDict):
+class AntarcticRegionParameters(TypedDict):
     """One Antarctic drainage region."""
 
     name: str
@@ -196,34 +196,34 @@ class AntarcticRegionParams(TypedDict):
     temperature_scaling: float
     response: tuple[float, float, float, float, float]
 
-class AntarcticDischargeParams(TypedDict, total=False):
+class AntarcticDischargeParameters(TypedDict, total=False):
     """Antarctic solid ice discharge (Levermann et al. 2014)."""
 
     basal_melt_sensitivity: float
     response_span: int
     scaling: float
     start_year: float
-    regions: list[AntarcticRegionParams]
+    regions: list[AntarcticRegionParameters]
 
-class SeaLevelRiseParams(TypedDict, total=False):
+class SeaLevelRiseParameters(TypedDict, total=False):
     """Parameters for the sea level rise component.
 
     All fields optional - defaults are MAGICC7's effective defaults.
     Fields missing from a nested group keep that group's defaults.
     """
 
-    glaciers: GlacierParams
-    greenland_smb: SurfaceMassBalanceParams
-    greenland_discharge: GreenlandDischargeParams
-    antarctic_smb: SurfaceMassBalanceParams
-    antarctic_discharge: AntarcticDischargeParams
+    glaciers: GlacierParameters
+    greenland_smb: SurfaceMassBalanceParameters
+    greenland_discharge: GreenlandDischargeParameters
+    antarctic_smb: SurfaceMassBalanceParameters
+    antarctic_discharge: AntarcticDischargeParameters
 
 @final
 class SeaLevelRiseBuilder(ComponentBuilder):
     """Builder for the sea level rise component.
 
     Glaciers, Greenland and Antarctic surface mass balance and solid ice discharge
-    respond to the annual mean warming. Thermal expansion comes from ClimateUDEB
+    respond to the annual mean warming. Thermal expansion comes from ClimateUdeb
     with ``thermal_expansion`` set. Steps must be one year long.
 
     Inputs, outputs and states are listed on the
@@ -238,14 +238,14 @@ class SeaLevelRiseBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: SeaLevelRiseParams) -> SeaLevelRiseBuilder:  # type: ignore[override]
+    def from_parameters(parameters: SeaLevelRiseParameters) -> SeaLevelRiseBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the sea level rise component."""
 
 # Chemistry Components
 
-class CH4ChemistryParams(TypedDict, total=False):
+class CH4ChemistryParameters(TypedDict, total=False):
     """Parameters for CH4 chemistry component.
 
     All fields optional - defaults provided by Rust.
@@ -324,12 +324,12 @@ class CH4ChemistryBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: CH4ChemistryParams) -> CH4ChemistryBuilder:  # type: ignore[override]
+    def from_parameters(parameters: CH4ChemistryParameters) -> CH4ChemistryBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the CH4 chemistry component."""
 
-class CH4OxidationParams(TypedDict, total=False):
+class CH4OxidationParameters(TypedDict, total=False):
     """Parameters for the fossil CH4 oxidation component.
 
     All fields optional - defaults provided by Rust.
@@ -362,12 +362,12 @@ class CH4OxidationBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: CH4OxidationParams) -> CH4OxidationBuilder:  # type: ignore[override]
+    def from_parameters(parameters: CH4OxidationParameters) -> CH4OxidationBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the CH4 oxidation component."""
 
-class N2OChemistryParams(TypedDict, total=False):
+class N2OChemistryParameters(TypedDict, total=False):
     """Parameters for N2O chemistry component.
 
     All fields optional - defaults provided by Rust.
@@ -427,7 +427,7 @@ class N2OChemistryBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: N2OChemistryParams) -> N2OChemistryBuilder:  # type: ignore[override]
+    def from_parameters(parameters: N2OChemistryParameters) -> N2OChemistryBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the N2O chemistry component."""
@@ -462,7 +462,7 @@ class FgasRegions(TypedDict, total=False):
     nh_land_fraction: float
     sh_land_fraction: float
 
-class HalocarbonChemistryParams(TypedDict, total=False):
+class HalocarbonChemistryParameters(TypedDict, total=False):
     """Parameters for halocarbon chemistry component.
 
     All fields optional, defaults provided by Rust.
@@ -523,7 +523,7 @@ class HalocarbonChemistryBuilder(ComponentBuilder):
 
     @staticmethod
     def from_parameters(  # type: ignore[override]
-        parameters: HalocarbonChemistryParams,
+        parameters: HalocarbonChemistryParameters,
     ) -> HalocarbonChemistryBuilder:
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
@@ -531,7 +531,7 @@ class HalocarbonChemistryBuilder(ComponentBuilder):
 
 # Carbon Cycle Components
 
-class TerrestrialCarbonParams(TypedDict, total=False):
+class TerrestrialCarbonParameters(TypedDict, total=False):
     """Parameters for terrestrial carbon cycle component.
 
     All fields optional - defaults provided by Rust.
@@ -540,10 +540,10 @@ class TerrestrialCarbonParams(TypedDict, total=False):
     npp_pi: float
     co2_pi: float
     beta: float
-    fertilization_method: float
-    fertilization_factor2: float
+    fertilisation_method: float
+    fertilisation_factor2: float
     gifford_conc_for_zero_npp: float
-    fertilization_yrstart: float
+    fertilisation_yrstart: float
     npp_temp_sensitivity: float
     resp_temp_sensitivity: float
     detritus_temp_sensitivity: float
@@ -561,15 +561,15 @@ class TerrestrialCarbonParams(TypedDict, total=False):
     frac_deforest_plant: float
     frac_deforest_detritus: float
     norgrwth_frac_defo: float
-    nitrogen: NitrogenParams | None
+    nitrogen: NitrogenParameters | None
 
-class PrognosticFixationParams(TypedDict):
+class PrognosticFixationParameters(TypedDict):
     """Michaelis-Menten nitrogen fixation from NPP."""
 
     vmax: float
     km: float
 
-class NitrogenParams(TypedDict, total=False):
+class NitrogenParameters(TypedDict, total=False):
     """Parameters for the nitrogen limitation of NPP.
 
     All fields optional - defaults provided by Rust.
@@ -582,14 +582,14 @@ class NitrogenParams(TypedDict, total=False):
     availability_factor_a: float
     availability_factor_c: float
     loss_turnover_time: float
-    prognostic_fixation: PrognosticFixationParams | None
+    prognostic_fixation: PrognosticFixationParameters | None
 
 @final
 class TerrestrialCarbonBuilder(ComponentBuilder):
     """Builder for the terrestrial carbon cycle component.
 
     Implements the MAGICC7 3-pool terrestrial carbon model with three CO2
-    fertilization methods, two respiration methods, time-varying turnover
+    fertilisation methods, two respiration methods, time-varying turnover
     times, no-feedback reference pools, and mass conservation correction.
 
     Inputs, outputs and states are listed on the
@@ -601,7 +601,7 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
     ...     {
     ...         "npp_pi": 66.27,
     ...         "beta": 0.6486,
-    ...         "fertilization_method": 1.10,
+    ...         "fertilisation_method": 1.10,
     ...     }
     ... )
     >>> component = builder.build()
@@ -609,13 +609,13 @@ class TerrestrialCarbonBuilder(ComponentBuilder):
 
     @staticmethod
     def from_parameters(  # type: ignore[override]
-        parameters: TerrestrialCarbonParams,
+        parameters: TerrestrialCarbonParameters,
     ) -> TerrestrialCarbonBuilder:
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the terrestrial carbon cycle component."""
 
-class OceanCarbonParams(TypedDict, total=False):
+class OceanCarbonParameters(TypedDict, total=False):
     """Parameters for ocean carbon cycle component.
 
     All fields optional - defaults provided by Rust.
@@ -692,12 +692,12 @@ class OceanCarbonBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: OceanCarbonParams) -> OceanCarbonBuilder:  # type: ignore[override]
+    def from_parameters(parameters: OceanCarbonParameters) -> OceanCarbonBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the ocean carbon cycle component."""
 
-class CO2BudgetParams(TypedDict, total=False):
+class CO2BudgetParameters(TypedDict, total=False):
     """Parameters for CO2 budget component.
 
     All fields optional - defaults provided by Rust.
@@ -735,12 +735,12 @@ class CO2BudgetBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: CO2BudgetParams) -> CO2BudgetBuilder:  # type: ignore[override]
+    def from_parameters(parameters: CO2BudgetParameters) -> CO2BudgetBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the CO2 budget component."""
 
-class PermafrostSoilParams(TypedDict, total=False):
+class PermafrostSoilParameters(TypedDict, total=False):
     """Parameters of one permafrost soil type (mineral soil or peat)."""
 
     thaw_rate: float
@@ -753,7 +753,7 @@ class PermafrostSoilParams(TypedDict, total=False):
     anaerobic_moisture_sensitivity: float
     ch4_oxidation_fraction: float
 
-class PermafrostParams(TypedDict, total=False):
+class PermafrostParameters(TypedDict, total=False):
     """Parameters for the permafrost component.
 
     All fields optional - defaults provided by Rust.
@@ -776,8 +776,8 @@ class PermafrostParams(TypedDict, total=False):
     mineral_soil_fraction_south: float
     mineral_soil_fraction_north: float
     zonal_pool_distribution: float
-    mineral_soil: PermafrostSoilParams
-    peat: PermafrostSoilParams
+    mineral_soil: PermafrostSoilParameters
+    peat: PermafrostSoilParameters
 
 @final
 class PermafrostBuilder(ComponentBuilder):
@@ -798,14 +798,14 @@ class PermafrostBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: PermafrostParams) -> PermafrostBuilder:  # type: ignore[override]
+    def from_parameters(parameters: PermafrostParameters) -> PermafrostBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the permafrost component."""
 
 # Forcing Components
 
-class OzoneForcingParams(TypedDict, total=False):
+class OzoneForcingParameters(TypedDict, total=False):
     """Parameters for the ozone forcing component.
 
     All fields optional - defaults provided by Rust.
@@ -859,12 +859,12 @@ class OzoneForcingBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: OzoneForcingParams) -> OzoneForcingBuilder:  # type: ignore[override]
+    def from_parameters(parameters: OzoneForcingParameters) -> OzoneForcingBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the ozone forcing component."""
 
-class AerosolDirectParams(TypedDict, total=False):
+class AerosolDirectParameters(TypedDict, total=False):
     """Parameters for direct aerosol forcing component.
 
     All fields optional - defaults provided by Rust.
@@ -882,9 +882,9 @@ class AerosolDirectParams(TypedDict, total=False):
     bc_pi: float
     oc_pi: float
     nox_pi: float
-    harmonize: bool
-    harmonize_year: float
-    harmonize_target: float
+    harmonise: bool
+    harmonise_year: float
+    harmonise_target: float
 
 @final
 class AerosolDirectBuilder(ComponentBuilder):
@@ -915,9 +915,9 @@ class AerosolDirectBuilder(ComponentBuilder):
     - `bc_pi` (`float`, default `2.5`): Pre-industrial BC emissions (Tg BC/yr).
     - `oc_pi` (`float`, default `10.0`): Pre-industrial OC emissions (Tg OC/yr).
     - `nox_pi` (`float`, default `10.0`): Pre-industrial NOx emissions (Tg N/yr).
-    - `harmonize` (`bool`, default `False`): Enable harmonisation to reference year.
-    - `harmonize_year` (`float`, default `2019.0`): Reference year for harmonisation.
-    - `harmonize_target` (`float`, default `-0.22`): Target forcing at reference year
+    - `harmonise` (`bool`, default `False`): Enable harmonisation to reference year.
+    - `harmonise_year` (`float`, default `2019.0`): Reference year for harmonisation.
+    - `harmonise_target` (`float`, default `-0.22`): Target forcing at reference year
       (W/m^2).
 
     Inputs, outputs and states are listed on the
@@ -929,19 +929,19 @@ class AerosolDirectBuilder(ComponentBuilder):
     ...     {
     ...         "sox_coefficient": -0.0035,
     ...         "bc_coefficient": 0.0077,
-    ...         "harmonize": False,
+    ...         "harmonise": False,
     ...     }
     ... )
     >>> component = builder.build()
     """
 
     @staticmethod
-    def from_parameters(parameters: AerosolDirectParams) -> AerosolDirectBuilder:  # type: ignore[override]
+    def from_parameters(parameters: AerosolDirectParameters) -> AerosolDirectBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the direct aerosol forcing component."""
 
-class AerosolIndirectParams(TypedDict, total=False):
+class AerosolIndirectParameters(TypedDict, total=False):
     """Parameters for indirect aerosol forcing component.
 
     All fields optional - defaults provided by Rust.
@@ -953,9 +953,9 @@ class AerosolIndirectParams(TypedDict, total=False):
     oc_weight: float
     sox_pi: float
     oc_pi: float
-    harmonize: bool
-    harmonize_year: float
-    harmonize_target: float
+    harmonise: bool
+    harmonise_year: float
+    harmonise_target: float
 
 @final
 class AerosolIndirectBuilder(ComponentBuilder):
@@ -973,9 +973,9 @@ class AerosolIndirectBuilder(ComponentBuilder):
     - `oc_weight` (`float`, default `0.3`): OC weight in aerosol burden.
     - `sox_pi` (`float`, default `1.0`): Pre-industrial SOx emissions (Tg S/yr).
     - `oc_pi` (`float`, default `10.0`): Pre-industrial OC emissions (Tg OC/yr).
-    - `harmonize` (`bool`, default `False`): Enable harmonisation to reference year.
-    - `harmonize_year` (`float`, default `2019.0`): Reference year for harmonisation.
-    - `harmonize_target` (`float`, default `-0.89`): Target forcing at reference year
+    - `harmonise` (`bool`, default `False`): Enable harmonisation to reference year.
+    - `harmonise_year` (`float`, default `2019.0`): Reference year for harmonisation.
+    - `harmonise_target` (`float`, default `-0.89`): Target forcing at reference year
       (W/m^2).
 
     Inputs, outputs and states are listed on the
@@ -987,27 +987,29 @@ class AerosolIndirectBuilder(ComponentBuilder):
     ...     {
     ...         "cloud_albedo_coefficient": -1.0,
     ...         "reference_burden": 50.0,
-    ...         "harmonize": False,
+    ...         "harmonise": False,
     ...     }
     ... )
     >>> component = builder.build()
     """
 
     @staticmethod
-    def from_parameters(parameters: AerosolIndirectParams) -> AerosolIndirectBuilder:  # type: ignore[override]
+    def from_parameters(  # type: ignore[override]
+        parameters: AerosolIndirectParameters,
+    ) -> AerosolIndirectBuilder:
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the indirect aerosol forcing component."""
 
 # GHG Forcing
 
-class GhgForcingParams(TypedDict, total=False):
+class GhgForcingParameters(TypedDict, total=False):
     """Parameters for GhgForcing component.
 
     All fields optional - defaults provided by Rust.
     """
 
-    method: Literal["Ipcctar", "Olbl"]
+    method: Literal["IPCCTAR", "OLBL"]
     co2_pi: float
     ch4_pi: float
     n2o_pi: float
@@ -1040,7 +1042,7 @@ class GhgForcingBuilder(ComponentBuilder):
 
     **Parameter keys**
 
-    - `method` (`str`, default `"Olbl"`): Forcing method: "Ipcctar" or "Olbl".
+    - `method` (`str`, default `"OLBL"`): Forcing method: "IPCCTAR" or "OLBL".
     - `co2_pi` (`float`, default `278.0`): Pre-industrial CO2 (ppm).
     - `ch4_pi` (`float`, default `722.0`): Pre-industrial CH4 (ppb).
     - `n2o_pi` (`float`, default `270.0`): Pre-industrial N2O (ppb).
@@ -1056,7 +1058,7 @@ class GhgForcingBuilder(ComponentBuilder):
     --------
     >>> builder = GhgForcingBuilder.from_parameters(
     ...     {
-    ...         "method": "Ipcctar",
+    ...         "method": "IPCCTAR",
     ...         "delq2xco2": 3.71,
     ...         "adjust_co2": 1.05,
     ...     }
@@ -1065,7 +1067,7 @@ class GhgForcingBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: GhgForcingParams) -> GhgForcingBuilder:  # type: ignore[override]
+    def from_parameters(parameters: GhgForcingParameters) -> GhgForcingBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the GHG radiative forcing component."""
@@ -1118,7 +1120,7 @@ class EfficacyClimate(TypedDict, total=False):
     amplify_ocean_to_land: float
     rf_regions_co2: tuple[float, float, float, float]
 
-class ForcingAggregationParams(TypedDict, total=False):
+class ForcingAggregationParameters(TypedDict, total=False):
     """Parameters for ForcingAggregation."""
 
     agents: list[ForcingAgent]
@@ -1127,7 +1129,7 @@ class ForcingAggregationParams(TypedDict, total=False):
 
     Nested lists are added first. Empty adds the agents in order.
     """
-    efficacy_apply: int
+    efficacy_method: Literal["none", "unit", "ar6"]
     nh_land_fraction: float
     sh_land_fraction: float
     climate: EfficacyClimate
@@ -1137,13 +1139,13 @@ class ForcingAggregationBuilder(ComponentBuilder):
     """Builder for the component combining agent ERF into four-box climate forcing.
 
     Reads each agent's ERF and writes the total ERF and the four-box
-    ``Effective Radiative Forcing|Efficacy Adjusted`` read by ClimateUDEB
+    ``Effective Radiative Forcing|Efficacy Adjusted`` read by ClimateUdeb
     when ``regional_forcing`` is set.
     """
 
     @staticmethod
     def from_parameters(  # type: ignore[override]
-        parameters: ForcingAggregationParams,
+        parameters: ForcingAggregationParameters,
     ) -> ForcingAggregationBuilder:
         """Create a builder from a parameter dictionary."""
     def aggregate(

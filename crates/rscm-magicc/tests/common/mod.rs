@@ -1,7 +1,7 @@
 //! Shared test helpers for rscm-magicc integration tests.
 //!
 //! Provides common parameter construction, equilibrium temperature computation,
-//! and ClimateUDEB input state builders used across multiple test files.
+//! and ClimateUdeb input state builders used across multiple test files.
 #![allow(dead_code)] // Each test binary uses a different subset of these helpers.
 
 use ndarray::Array2;
@@ -12,9 +12,9 @@ use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
 use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
 use rscm_core::utils::linear_algebra::invert_4x4;
-use rscm_magicc::climate::lamcalc::{build_coupling_matrix, compute_qfrac, LamcalcParams};
-use rscm_magicc::climate::ClimateUDEB;
-use rscm_magicc::parameters::ClimateUDEBParameters;
+use rscm_magicc::climate::lamcalc::{build_coupling_matrix, compute_qfrac, LamcalcParameters};
+use rscm_magicc::climate::ClimateUdeb;
+use rscm_magicc::parameters::ClimateUdebParameters;
 use std::sync::Arc;
 
 /// Convergence tolerance used by LAMCALC internally.
@@ -25,10 +25,10 @@ pub const RLO_TOLERANCE: FloatValue = 0.001;
 // ---------------------------------------------------------------------------
 
 /// Create default LAMCALC parameters matching MAGICC defaults.
-pub fn default_lamcalc_params() -> LamcalcParams {
+pub fn default_lamcalc_params() -> LamcalcParameters {
     let nh_land = 0.42;
     let sh_land = 0.21;
-    LamcalcParams {
+    LamcalcParameters {
         q_2xco2: 3.71,
         k_lo: 1.44,
         k_ns: 0.31,
@@ -43,10 +43,10 @@ pub fn default_lamcalc_params() -> LamcalcParams {
     }
 }
 
-/// Build LAMCALC params from ClimateUDEB parameters for consistency.
-pub fn lamcalc_params_from_udeb(params: &ClimateUDEBParameters) -> LamcalcParams {
+/// Build LAMCALC params from ClimateUdeb parameters for consistency.
+pub fn lamcalc_params_from_udeb(params: &ClimateUdebParameters) -> LamcalcParameters {
     let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
-    LamcalcParams {
+    LamcalcParameters {
         q_2xco2: params.rf_2xco2,
         k_lo: params.k_lo,
         k_ns: params.k_ns,
@@ -62,15 +62,15 @@ pub fn lamcalc_params_from_udeb(params: &ClimateUDEBParameters) -> LamcalcParams
 }
 
 // ---------------------------------------------------------------------------
-// ClimateUDEB parameter construction
+// ClimateUdeb parameter construction
 // ---------------------------------------------------------------------------
 
-/// Create [`ClimateUDEBParameters`] with time-varying ECS adjustments disabled.
+/// Create [`ClimateUdebParameters`] with time-varying ECS adjustments disabled.
 ///
 /// This isolates the base ECS for equilibrium tests by zeroing out the
 /// cumulative-temperature and forcing sensitivity coefficients.
-pub fn params_with_fixed_ecs(ecs: FloatValue) -> ClimateUDEBParameters {
-    ClimateUDEBParameters {
+pub fn params_with_fixed_ecs(ecs: FloatValue) -> ClimateUdebParameters {
+    ClimateUdebParameters {
         ecs,
         feedback_cumt_sensitivity: 0.0,
         feedback_q_sensitivity: 0.0,
@@ -108,7 +108,7 @@ pub struct EquilibriumTemperatures {
 /// $Q$ is the radiative forcing for CO2 doubling, $f$ is the area fraction
 /// vector, and $qfrac$ accounts for regional CO2 forcing patterns.
 pub fn compute_equilibrium_temperatures(
-    params: &LamcalcParams,
+    params: &LamcalcParameters,
     lam_o: FloatValue,
     lam_l: FloatValue,
 ) -> EquilibriumTemperatures {
@@ -154,10 +154,10 @@ pub fn compute_equilibrium_temperatures(
 }
 
 // ---------------------------------------------------------------------------
-// ClimateUDEB input state construction
+// ClimateUdeb input state construction
 // ---------------------------------------------------------------------------
 
-/// Build the [`InputState`] needed by `ClimateUDEB::solve_with_state` for a
+/// Build the [`InputState`] needed by `ClimateUdeb::solve_with_state` for a
 /// single step.
 ///
 /// Provides a scalar ERF timeseries and a four-box surface temperature state.
@@ -203,10 +203,10 @@ pub fn build_udeb_input_state(
 }
 
 // ---------------------------------------------------------------------------
-// ClimateUDEB simulation runner
+// ClimateUdeb simulation runner
 // ---------------------------------------------------------------------------
 
-/// Per-year record from a ClimateUDEB simulation under constant forcing.
+/// Per-year record from a ClimateUdeb simulation under constant forcing.
 #[allow(dead_code)]
 pub struct YearRecord {
     /// Area-weighted global surface air temperature.
@@ -219,16 +219,16 @@ pub struct YearRecord {
     pub surface_temperature: FourBoxSlice,
 }
 
-/// Run ClimateUDEB for `n_years` under constant forcing and return per-year
+/// Run ClimateUdeb for `n_years` under constant forcing and return per-year
 /// records of global SAT, SST, heat uptake, and surface temperature.
 ///
 /// Starts from zero initial surface temperatures at year 2000.
 pub fn run_udeb_simulation(
-    params: &ClimateUDEBParameters,
+    params: &ClimateUdebParameters,
     erf: FloatValue,
     n_years: usize,
 ) -> Vec<YearRecord> {
-    let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
+    let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
     let mut state = component.initial_state();
     let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
     let mut records = Vec::with_capacity(n_years);

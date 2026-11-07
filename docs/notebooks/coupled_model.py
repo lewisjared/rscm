@@ -34,7 +34,7 @@
 # %%
 import numpy as np
 
-from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
+from rscm.components import CarbonCycleBuilder, CO2ErfBuilder
 from rscm.core import (
     InterpolationStrategy,
     ModelBuilder,
@@ -149,7 +149,7 @@ conc_pi = 280.0
 erf_2xco2 = 4.0
 alpha_temperature = 0.0  # No temperature feedback
 
-co2_erf_component = CO2ERFBuilder.from_parameters(
+co2_erf_component = CO2ErfBuilder.from_parameters(
     dict(erf_2xco2=erf_2xco2, conc_pi=conc_pi)
 ).build()
 carbon_cycle_component = CarbonCycleBuilder.from_parameters(
@@ -358,7 +358,7 @@ plot_variables(
 #    so more CO2 stays in the atmosphere.
 
 # %%
-co2_erf = CO2ERFBuilder.from_parameters(
+co2_erf = CO2ErfBuilder.from_parameters(
     dict(
         erf_2xco2=3.7,  # Forcing from CO2 doubling (W/m²)
         conc_pi=278.0,  # Pre-industrial CO2 (ppm)
@@ -489,7 +489,7 @@ print(feedback_model.coupling())
 #
 # - **NullComponent**: the root.
 # - **CarbonCycle**: takes emissions and temperature, outputs CO2 concentration.
-# - **CO2ERF**: takes CO2 concentration, outputs radiative forcing.
+# - **CO2Erf**: takes CO2 concentration, outputs radiative forcing.
 # - **AggregatorComponent**: sums the forcing contributors declared in the schema.
 # - **TwoLayer**: takes radiative forcing, outputs surface temperature.
 

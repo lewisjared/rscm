@@ -83,7 +83,7 @@ def test_typed_component_definitions():
 def test_typed_component_in_model():
     """Test that typed components work in a model."""
     # Use a simpler single-component test with prescribed emissions
-    carbon_comp = PythonComponent.build(SimpleCarbonCycle(sensitivity=0.5))
+    carbon_comp = PythonComponent(SimpleCarbonCycle(sensitivity=0.5))
 
     # Create time axis
     time_axis = TimeAxis.from_values(np.array([2020.0, 2021.0, 2022.0]))
@@ -145,7 +145,7 @@ def test_typed_component_timeseries_window_access():
             return self.Outputs(output=delta)
 
     # Wrap component
-    comp = PythonComponent.build(HistoryTestComponent())
+    comp = PythonComponent(HistoryTestComponent())
 
     # Create time axis and temperature timeseries
     time_axis = TimeAxis.from_values(np.array([2020.0, 2021.0, 2022.0, 2023.0]))
@@ -361,7 +361,7 @@ def test_prescribed_input_returns_correct_step_value():
         InterpolationStrategy.Previous,
     )
 
-    comp = PythonComponent.build(DebugComponent())
+    comp = PythonComponent(DebugComponent())
     model = (
         ModelBuilder()
         .with_time_axis(time_axis)

@@ -16,7 +16,7 @@ class TestComponentRegistry:
     """Tests for ComponentRegistry class."""
 
     def test_registry_init_empty(self):
-        """ComponentRegistry initializes with empty registry."""
+        """ComponentRegistry initialises with empty registry."""
         registry = ComponentRegistry()
         assert registry.list() == []
 

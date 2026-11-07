@@ -383,7 +383,7 @@ def returns_result(meta: dict[str, Any]) -> bool:
     if not source.is_file():
         return False
     return bool(
-        re.search(r"fn from_parameters\([^)]*\)\s*->\s*RSCMResult", source.read_text())
+        re.search(r"fn from_parameters\([^)]*\)\s*->\s*RscmResult", source.read_text())
     )
 
 

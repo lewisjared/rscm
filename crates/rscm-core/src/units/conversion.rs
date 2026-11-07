@@ -1,14 +1,14 @@
 //! Unit conversion calculations.
 //!
 //! This module provides the high-level [`Unit`] type that combines parsing,
-//! normalization, and conversion into a single ergonomic API.
+//! normalisation, and conversion into a single ergonomic API.
 //!
 //! # Example
 //!
 //! ```
 //! use rscm_core::units::Unit;
 //!
-//! // Parse and compare units (normalized comparison)
+//! // Parse and compare units (normalised comparison)
 //! let u1 = Unit::parse("W/m^2").unwrap();
 //! let u2 = Unit::parse("W / m ^ 2").unwrap();
 //! assert_eq!(u1, u2);
@@ -85,13 +85,13 @@ impl From<ParseError> for ConversionError {
 ///
 /// This is the primary type for working with units. It provides:
 /// - Parsing from strings with flexible syntax
-/// - Automatic normalization for comparison
+/// - Automatic normalisation for comparison
 /// - Conversion factor calculation between compatible units
 /// - Dimensional analysis
 ///
 /// # Equality
 ///
-/// Two units are equal if they have the same normalized representation.
+/// Two units are equal if they have the same normalised representation.
 /// This means `Unit::parse("W/m^2") == Unit::parse("W / m ^ 2")`
 /// and `Unit::parse("Gt C/yr") == Unit::parse("GtC/yr")`.
 ///
@@ -147,10 +147,10 @@ impl Unit {
         &self.original
     }
 
-    /// Returns the normalized string representation.
+    /// Returns the normalised string representation.
     #[must_use]
-    pub fn normalized(&self) -> String {
-        self.parsed.normalized()
+    pub fn normalised(&self) -> String {
+        self.parsed.normalised()
     }
 
     /// Returns true if this unit is physically dimensionless.
@@ -265,7 +265,7 @@ impl Unit {
 
 impl PartialEq for Unit {
     fn eq(&self, other: &Self) -> bool {
-        // Compare by normalized representation
+        // Compare by normalised representation
         self.parsed == other.parsed
     }
 }
@@ -274,18 +274,18 @@ impl Eq for Unit {}
 
 impl std::hash::Hash for Unit {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Hash the normalized string for consistency with PartialEq
-        self.normalized().hash(state);
+        // Hash the normalised string for consistency with PartialEq
+        self.normalised().hash(state);
     }
 }
 
 impl fmt::Display for Unit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.normalized())
+        write!(f, "{}", self.normalised())
     }
 }
 
-/// Checks if two unit strings are equivalent after normalization.
+/// Checks if two unit strings are equivalent after normalisation.
 ///
 /// This is a convenience function for quick comparisons without
 /// keeping the parsed `Unit` around.
@@ -347,7 +347,7 @@ mod tests {
     #[test]
     fn test_unit_parse() {
         let unit = Unit::parse("W/m^2").unwrap();
-        assert_eq!(unit.normalized(), "W/m^2");
+        assert_eq!(unit.normalised(), "W/m^2");
     }
 
     #[test]
@@ -491,7 +491,7 @@ mod tests {
     fn test_original_preserved() {
         let unit = Unit::parse("W / m ^ 2").unwrap();
         assert_eq!(unit.original(), "W / m ^ 2");
-        assert_eq!(unit.normalized(), "W/m^2");
+        assert_eq!(unit.normalised(), "W/m^2");
     }
 
     fn factor(from: &str, to: &str) -> f64 {

@@ -15,7 +15,7 @@ import pandas as pd
 
 import rscm._lib as rust_lib
 from rscm.core import ModelBuilder, TimeAxis
-from rscm.magicc import ClimateUDEBBuilder, GhgForcingBuilder, run_magicc
+from rscm.magicc import ClimateUdebBuilder, GhgForcingBuilder, run_magicc
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(__file__).parent / "data" / "magicc_baseline"
@@ -108,7 +108,7 @@ def parameters(config: dict, concentrations: dict) -> tuple[dict, dict]:
     if missing:
         msg = f"Configuration is missing mapped parameters: {sorted(missing)}"
         raise ValueError(msg)
-    forcing = {"method": "Ipcctar", "delq2xco2": config["core_delq2xco2"]}
+    forcing = {"method": "IPCCTAR", "delq2xco2": config["core_delq2xco2"]}
     for gas in GASES:
         forcing[f"{gas.lower()}_pi"] = float(concentrations[gas][0])
         forcing[f"adjust_{gas.lower()}"] = config.get(
@@ -133,12 +133,12 @@ def parameters(config: dict, concentrations: dict) -> tuple[dict, dict]:
 
 
 def effective_parameters(forcing: dict, climate: dict) -> dict:
-    """Read resolved component parameters from existing Rust serialization."""
+    """Read resolved component parameters from existing Rust serialisation."""
     model = (
         ModelBuilder()
         .with_time_axis(TimeAxis.from_values(np.array([1750.0, 1751.0])))
         .with_component(GhgForcingBuilder.from_parameters(forcing).build())
-        .with_component(ClimateUDEBBuilder.from_parameters(climate).build())
+        .with_component(ClimateUdebBuilder.from_parameters(climate).build())
         .with_initial_values({"Surface Temperature": 0.0})
         # Built only to serialise parameters, never run.
         .with_missing_prescribed_allowed()
@@ -174,7 +174,7 @@ def build_report(data_dir: Path = DATA_DIR) -> tuple[pd.DataFrame, dict, str]:
     forcing, climate = parameters(config, concentrations)
     residual = reference[ERF] - sum(reference[f"{ERF}|{gas}"] for gas in GASES)
     result = run_magicc(
-        years,
+        TimeAxis.from_values(years),
         concentrations,
         other_forcing=residual,
         forcing_parameters=forcing,

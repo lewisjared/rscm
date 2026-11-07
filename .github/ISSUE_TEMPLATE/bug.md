@@ -24,7 +24,7 @@ def test_bug_12():
 ```
 -->
 
-## Expected behavior
+## Expected behaviour
 <!--- A clear and concise description of what you expected to happen. -->
 
 ## Screenshots

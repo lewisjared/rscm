@@ -10,7 +10,7 @@ __all__ = [
     "AggregationConfig",
     "ClimateConfig",
     "ForcingConfig",
-    "MAGICCConfig",
+    "MagiccConfig",
     "TerrestrialCarbonConfig",
 ]
 
@@ -49,15 +49,15 @@ class AggregationConfig:
 class TerrestrialCarbonConfig:
     """MAGICC terrestrial carbon cycle parameters."""
 
-    fertilization_method: float = 1.100486
-    """CO2 fertilization method (1=log, 2=Gifford, 3=sigmoid)."""
+    fertilisation_method: float = 1.100486
+    """CO2 fertilisation method (1=log, 2=Gifford, 3=sigmoid)."""
 
     plantbox_resp_fertscale: float = 0.95
-    """Scaling of fertilization effect on plant respiration."""
+    """Scaling of fertilisation effect on plant respiration."""
 
 
 @dataclass
-class MAGICCConfig(ModelConfig):
+class MagiccConfig(ModelConfig):
     """Configuration for MAGICC model.
 
     This is a skeleton configuration that will be expanded as MAGICC

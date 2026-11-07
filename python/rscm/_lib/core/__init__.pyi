@@ -63,7 +63,7 @@ class Timeseries:
         interpolation_strategy: InterpolationStrategy,
     ) -> None: ...
     @staticmethod
-    def from_values(values: Arr, time: TimeAxis) -> Timeseries: ...
+    def from_values(values: Arr, time_axis: TimeAxis) -> Timeseries: ...
     def with_interpolation_strategy(
         self, interpolation_strategy: InterpolationStrategy
     ) -> Timeseries: ...
@@ -304,8 +304,7 @@ class PythonComponent(RustComponent):
     so it is rarely needed directly.
     """
 
-    @staticmethod
-    def build(component: Component) -> PythonComponent: ...
+    def __init__(self, component: Component) -> None: ...
     def input_names(self) -> list[str]:
         """Get the names of all input variables required by this component."""
     def output_names(self) -> list[str]:
@@ -564,7 +563,7 @@ class ModelBuilder:
 
 @final
 class Unit:
-    """A physical unit with parsing, normalization, and conversion support.
+    """A physical unit with parsing, normalisation, and conversion support.
 
     This class provides comprehensive support for working with physical units
     in climate models. It handles parsing of unit strings with flexible syntax,
@@ -592,7 +591,7 @@ class Unit:
     >>> # Parse and compare units
     >>> u1 = Unit("W/m^2")
     >>> u2 = Unit("W / m ^ 2")
-    >>> assert u1 == u2  # Same normalized form
+    >>> assert u1 == u2  # Same normalised form
     >>>
     >>> # Convert between compatible units
     >>> gtc = Unit("GtC/yr")
@@ -618,8 +617,8 @@ class Unit:
     def original(self) -> str:
         """Return the original input string used to create this unit."""
 
-    def normalized(self) -> str:
-        """Return the normalized string representation of this unit.
+    def normalised(self) -> str:
+        """Return the normalised string representation of this unit.
 
         The form is compact, as in `W/m^2`.
         Carbon is fused to its mass unit (`GtC/yr`),

@@ -5,8 +5,8 @@
 | Runner                 | Couples                                                | Returns        | Tested against MAGICC7 |
 | ---------------------- | ------------------------------------------------------ | -------------- | ---------------------- |
 | `run_magicc7`          | The full MAGICC7 chain, with its input files           | `Model`        | Yes                    |
-| `run_magicc_emissions` | Chemistry, carbon cycle, GHG forcing and climate       | `MAGICCResult` | No                     |
-| `run_magicc`           | GHG forcing and climate from prescribed concentrations | `MAGICCResult` | No                     |
+| `run_magicc_emissions` | Chemistry, carbon cycle, GHG forcing and climate       | `MagiccResult` | No                     |
+| `run_magicc`           | GHG forcing and climate from prescribed concentrations | `MagiccResult` | No                     |
 
 - Use `run_magicc7` to reproduce MAGICC7.
 - Use `run_magicc_emissions` for a small coupled chain that needs no input files
@@ -27,10 +27,11 @@ see the [concentration baseline](magicc_baseline.md).
 
 `rscm.magicc.run_magicc7` couples every MAGICC7 component RSCM implements:
 chemistry, the carbon cycle, permafrost, GHG and ozone forcing, forcing aggregation
-with efficacies and regional patterns, and ClimateUDEB with monthly volcanic forcing.
+with efficacies and regional patterns, and ClimateUdeb with monthly volcanic forcing.
 
 ```python
 import numpy as np
+from rscm.core import TimeAxis
 from rscm.magicc import full, prescribed, run_magicc7
 
 years = np.arange(1750.0, 2101.0)
@@ -43,14 +44,16 @@ emissions = {
 }
 emissions |= {species: np.zeros(len(years)) for species in full.halocarbon_species()}
 
-model = run_magicc7(years, emissions, parameters={"core_climatesensitivity": 3.0})
+model = run_magicc7(
+    TimeAxis.from_values(years), emissions, parameters={"core_climatesensitivity": 3.0}
+)
 timeseries = model.timeseries()
 co2 = timeseries.get_timeseries_by_name("Atmospheric Concentration|CO2").values()
 boxes = timeseries.get_four_box_timeseries_by_name("Surface Temperature").values()
 temperature = boxes @ prescribed.area_fractions()
 ```
 
-`years` are consecutive annual labels and should start in 1750, the year of MAGICC7's initial state.
+The time axis has annual steps and should start in 1750, the year of MAGICC7's initial state.
 With the default parameters they must reach 2019,
 the year to which MAGICC7 scales its prescribed aerosol and land-use forcing.
 `emissions` holds one value per year for `"<species>|Fossil"` and `"<species>|AFOLU"`
@@ -64,7 +67,7 @@ Surface temperature and other regional variables are four-box timeseries
 in northern ocean, northern land, southern ocean, southern land order.
 Their area weights are always MAGICC7's default land fractions, 42% of the northern hemisphere
 and 21% of the southern, as `prescribed.area_fractions()` gives.
-Overriding the `ClimateUDEB` land fractions through `component_parameters` does not change them.
+Overriding the `ClimateUdeb` land fractions through `component_parameters` does not change them.
 
 The keyword arguments override MAGICC7's setup:
 
@@ -107,13 +110,14 @@ With every switch year at or before the first year, the chain runs from emission
 - `co2_plantboxresp_method` must be 2, the only respiration method implemented.
   Other values raise `ValueError`.
 - `rf_efficacy_apply` sets how efficacies apply, including to the monthly volcanic forcing.
+  `full.EFFICACY_METHODS` maps its 0, 1 and 2 to the `none`, `unit` and `ar6` efficacy methods.
   With 1, forcing is divided by each agent's internal efficacy and prescribed efficacies are ignored,
   as in MAGICC7.
 - `pf_apply=0` switches permafrost off.
   MAGICC7 enables it by default.
 - `ncycle_apply=1` limits NPP by nitrogen, reading fixation from MAGICC7's packaged `NCYCLE_NFIX3.IN`.
   `ncycle_apply_ndep_from_emis=1` adds deposition from NOx and NH3.
-- `out_sealevel=1` adds `SeaLevelRise` and thermal expansion in `ClimateUDEB`.
+- `out_sealevel=1` adds `SeaLevelRise` and thermal expansion in `ClimateUdeb`.
 
 In a model built by hand, add `PermafrostBuilder` and set `permafrost` on
 `CH4Chemistry`, `CH4Oxidation`, `OceanCarbon` and `CO2Budget` to feed permafrost emissions back.
@@ -158,12 +162,13 @@ Other scenarios and parameter sets use the same code without a MAGICC7 compariso
 
 ```python
 import numpy as np
+from rscm.core import TimeAxis
 from rscm.magicc import Emissions, run_magicc_emissions
 
 years = np.arange(1750.0, 1851.0)
 n = len(years)
 result = run_magicc_emissions(
-    years,
+    TimeAxis.from_values(years),
     Emissions(
         co2_fossil=np.full(n, 8.0),     # GtC/yr
         co2_land_use=np.full(n, 1.0),   # GtC/yr
@@ -190,7 +195,7 @@ The run couples these components:
 - `TerrestrialCarbon` calculates the net land flux, including land-use emissions.
 - `OceanCarbon` calculates the uptake while CO2 evolves monthly within the year.
 - `CO2Budget` closes the atmospheric CO2 balance.
-- `GhgForcing` and `ClimateUDEB` calculate forcing and temperature.
+- `GhgForcing` and `ClimateUdeb` calculate forcing and temperature.
 
 Natural CH4 and N2O emissions are chemistry parameters.
 They default to the budget-closing values MAGICC7 derives for its standard historical concentrations.
@@ -217,7 +222,7 @@ is supplied through `other_forcing`.
 parameters = {
     "GhgForcing": {"co2_pi": 277.147, "ch4_pi": 731.406, "n2o_pi": 273.865},
     "CH4Chemistry": {"natural_emissions": 182.19},
-    "ClimateUDEB": {"ecs": 3.0},
+    "ClimateUdeb": {"ecs": 3.0},
 }
 ```
 
@@ -244,6 +249,7 @@ It differs from MAGICC7's default configuration in three ways:
 
 ```python
 import numpy as np
+from rscm.core import TimeAxis
 from rscm.magicc import run_magicc
 
 years = np.arange(1750.0, 1851.0)
@@ -254,11 +260,11 @@ concentrations = {
 }
 
 result = run_magicc(
-    years,
+    TimeAxis.from_values(years),
     concentrations,
     other_forcing=np.zeros(len(years)),
     forcing_species=("CO2",),
-    forcing_parameters={"method": "Ipcctar", "adjust_co2": 1.0},
+    forcing_parameters={"method": "IPCCTAR", "adjust_co2": 1.0},
 )
 temperature = result.values["Surface Temperature"]
 forcing = result.values["Effective Radiative Forcing"]
@@ -284,7 +290,7 @@ from rscm.magicc import CO2Emissions
 
 n = len(years)
 emissions_result = run_magicc(
-    years,
+    TimeAxis.from_values(years),
     {"CH4": concentrations["CH4"], "N2O": concentrations["N2O"]},
     other_forcing=np.zeros(n),
     co2_emissions=CO2Emissions(
@@ -315,7 +321,7 @@ or infer emissions from prescribed concentrations.
 
 These conventions apply to `run_magicc` and `run_magicc_emissions`.
 
-- Years are consecutive annual boundaries, with at least two entries.
+- The time axis has at least two annual steps, and each step starts at a boundary.
 - Concentrations and forcing have one value per boundary, including the final year.
   The model integrates only the intervals between these boundaries.
 - The runners evaluate initial forcing using the same Rust calculation as subsequent steps.
@@ -328,16 +334,16 @@ These conventions apply to `run_magicc` and `run_magicc_emissions`.
 - Preindustrial reference concentrations are component parameters, independent of the first supplied year.
   Set `co2_pi`, `ch4_pi` and `n2o_pi` explicitly when the experiment uses different references.
 
-For `run_magicc`, `climate_parameters` accepts ClimateUDEB parameter names such as `ecs` and `rf_2xco2`,
+For `run_magicc`, `climate_parameters` accepts ClimateUdeb parameter names such as `ecs` and `rf_2xco2`,
 and `forcing_parameters` accepts GhgForcing parameter names such as `method` and `delq2xco2`.
-`run_magicc_emissions` takes both through `parameters["ClimateUDEB"]` and `parameters["GhgForcing"]`.
+`run_magicc_emissions` takes both through `parameters["ClimateUdeb"]` and `parameters["GhgForcing"]`.
 As in MAGICC7, `rf_2xco2` defaults to the ERF of doubling CO2 under the forcing configuration,
 which is about 3.9 W/m² for OLBL.
 Set it explicitly only to decouple the climate feedback from the forcing.
 
 ## Results and verification
 
-`run_magicc` and `run_magicc_emissions` return a `MAGICCResult`.
+`run_magicc` and `run_magicc_emissions` return a `MagiccResult`.
 `result.years` labels the returned arrays.
 `result.values` and `result.units` contain concentrations, individual and total forcing,
 surface temperature, SST, heat uptake and ocean heat content.

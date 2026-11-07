@@ -112,7 +112,7 @@ def test_real_report_and_residual_wiring(monkeypatch):
     assert table.comparison_year.min() == 1750
     assert table.comparison_year.max() == 2100
     assert metadata["scientific_parity"] == "not_evaluated"
-    assert metadata["effective_parameters"]["ClimateUDEB"]["n_layers"] == 50
+    assert metadata["effective_parameters"]["magicc.ClimateUdeb"]["n_layers"] == 50
     assert metadata["reference_provenance_unknown"]
     assert "Surface Temperature" in summary
 
@@ -145,7 +145,7 @@ def test_deterministic_bundle_and_collision(tmp_path):
         baseline.write_report(a)
 
 
-def test_failed_serialization_leaves_no_bundle(tmp_path, monkeypatch):
+def test_failed_serialisation_leaves_no_bundle(tmp_path, monkeypatch):
     def fail(*args, **kwargs):
         msg = "disk failure"
         raise OSError(msg)

@@ -1,7 +1,7 @@
 //! Grid validation tests: grid type mismatch detection.
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition};
-use crate::errors::RSCMResult;
+use crate::errors::RscmResult;
 use crate::model::ModelBuilder;
 use crate::spatial::SpatialGrid;
 use crate::state::{FourBoxSlice, StateValue};
@@ -25,7 +25,7 @@ impl Component for FourBoxProducer {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let mut output = OutputState::new();
         output.insert(
             "Temperature".to_string(),
@@ -53,7 +53,7 @@ impl Component for ScalarConsumer {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let temp = input_state.get_scalar_window("Temperature").get();
         let mut output = OutputState::new();
         output.insert("Result".to_string(), StateValue::Scalar(temp * 2.0));
@@ -79,7 +79,7 @@ impl Component for FourBoxConsumer {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let window = input_state.get_four_box_window("Temperature");
         let temp = window.grid().aggregate_global(&window.get_all());
         let mut output = OutputState::new();

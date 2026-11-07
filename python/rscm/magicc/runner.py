@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from rscm._lib.magicc import ClimateUDEBBuilder, CO2BudgetBuilder, GhgForcingBuilder
+from rscm._lib.magicc import ClimateUdebBuilder, CO2BudgetBuilder, GhgForcingBuilder
 from rscm.core import (
     GridType,
     InterpolationStrategy,
@@ -27,10 +27,10 @@ if TYPE_CHECKING:
 
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm._lib.magicc import ClimateUDEBParams, GhgForcingParams
+    from rscm._lib.magicc import ClimateUdebParameters, GhgForcingParameters
     from rscm.core import Model
 
-__all__ = ["CO2Emissions", "MAGICCResult", "run_magicc"]
+__all__ = ["CO2Emissions", "MagiccResult", "run_magicc"]
 
 CONCENTRATION = "Atmospheric Concentration|"
 ERF = "Effective Radiative Forcing"
@@ -55,7 +55,7 @@ class CO2Emissions:
 
 
 @dataclass(frozen=True)
-class MAGICCResult:
+class MagiccResult:
     """Run output and the processes used to produce it.
 
     ``values`` contains every variable at the year labels,
@@ -101,18 +101,18 @@ def _average_series(name: str, values: ArrayLike, size: int) -> NDArray[np.float
 
 
 def _validate_axis(
-    years: ArrayLike, forcing_species: tuple[str, ...]
+    time_axis: TimeAxis, forcing_species: tuple[str, ...]
 ) -> NDArray[np.float64]:
-    """Validate annual boundaries and the selected forcing gases."""
-    time = np.array(years, dtype=np.float64, copy=True)
+    """Validate annual steps and the selected forcing gases."""
+    bounds = np.asarray(time_axis.bounds(), dtype=np.float64)
     if (
-        time.ndim != 1
-        or len(time) <= 1
-        or not np.isfinite(time).all()
-        or not np.all(np.diff(time) == 1)
+        len(time_axis) <= 1
+        or not np.isfinite(bounds).all()
+        or not np.all(np.diff(bounds) == 1)
     ):
-        msg = "years must contain at least two consecutive annual boundaries"
+        msg = "time_axis must have at least two annual steps"
         raise ValueError(msg)
+    time = np.array(time_axis.values(), dtype=np.float64, copy=True)
     if (
         not forcing_species
         or len(set(forcing_species)) != len(forcing_species)
@@ -124,14 +124,14 @@ def _validate_axis(
 
 
 def _prepare_inputs(
-    years: ArrayLike,
+    time_axis: TimeAxis,
     concentrations: Mapping[str, ArrayLike],
     other_forcing: ArrayLike,
     co2_emissions: CO2Emissions | None,
     forcing_species: tuple[str, ...],
 ) -> tuple[NDArray[np.float64], dict[str, NDArray[np.float64]]]:
     """Validate boundary data and ownership before constructing components."""
-    time = _validate_axis(years, forcing_species)
+    time = _validate_axis(time_axis, forcing_species)
     required = set(SPECIES) - ({"CO2"} if co2_emissions is not None else set())
     if set(concentrations) != required:
         msg = (
@@ -150,18 +150,18 @@ def _prepare_inputs(
 
 
 def run_magicc(  # noqa: PLR0913
-    years: ArrayLike,
+    time_axis: TimeAxis,
     concentrations: Mapping[str, ArrayLike],
     *,
     other_forcing: ArrayLike,
     co2_emissions: CO2Emissions | None = None,
     forcing_species: tuple[str, ...] = SPECIES,
-    forcing_parameters: GhgForcingParams | None = None,
-    climate_parameters: ClimateUDEBParams | None = None,
-) -> MAGICCResult:
+    forcing_parameters: GhgForcingParameters | None = None,
+    climate_parameters: ClimateUdebParameters | None = None,
+) -> MagiccResult:
     """Run GHG forcing, aggregation and UDEB on annual boundaries.
 
-    ``years`` must contain at least two consecutive annual boundaries. Supply
+    ``time_axis`` must have at least two annual steps. Supply
     CO2 in ppm and CH4/N2O in ppb, keyed by species, with one concentration per
     boundary. In partial emissions mode, omit CO2 from ``concentrations`` and
     supply ``co2_emissions`` instead. CH4 and N2O remain prescribed.
@@ -184,7 +184,7 @@ def run_magicc(  # noqa: PLR0913
     non-GHG forcing are prescribed, with no temperature feedback to carbon.
     """
     time, data = _prepare_inputs(
-        years, concentrations, other_forcing, co2_emissions, forcing_species
+        time_axis, concentrations, other_forcing, co2_emissions, forcing_species
     )
     units = {CONCENTRATION + gas: "ppm" if gas == "CO2" else "ppb" for gas in SPECIES}
     units[ERF + "|Other"] = "W/m^2"
@@ -243,11 +243,11 @@ def run_magicc(  # noqa: PLR0913
         msg = "Component parameters produced nonfinite initial forcing"
         raise ValueError(msg)
 
-    climate_params: ClimateUDEBParams = {
+    climate_params: ClimateUdebParameters = {
         "rf_2xco2": forcing.co2_doubling_forcing(),
         **(climate_parameters or {}),
     }
-    climate_builder = ClimateUDEBBuilder.from_parameters(climate_params)
+    climate_builder = ClimateUdebBuilder.from_parameters(climate_params)
     climate = climate_builder.build()
     initial.update(climate_builder.initial_values(initial[ERF]))
     weights = _climate_weights(climate_params)
@@ -266,7 +266,7 @@ def run_magicc(  # noqa: PLR0913
         "Heat Uptake",
         "Ocean Heat Content",
     ):
-        sources[name] = "ClimateUDEB"
+        sources[name] = "ClimateUdeb"
 
     schema = _base_schema()
     for name, unit in units.items():
@@ -281,11 +281,10 @@ def run_magicc(  # noqa: PLR0913
         schema.add_variable("Airborne Fraction|CO2", "1")
     contributors = (*(ERF + "|" + gas for gas in forcing_species), ERF + "|Other")
     schema.add_aggregate(ERF, "W/m^2", "sum", list(contributors))
-    axis = TimeAxis.from_values(time)
     # Components reading global temperature must see the area-weighted mean
     builder = (
         ModelBuilder()
-        .with_time_axis(axis)
+        .with_time_axis(time_axis)
         .with_schema(schema)
         .with_grid_weights(GridType.FourBox, list(weights))
     )
@@ -296,7 +295,8 @@ def run_magicc(  # noqa: PLR0913
     builder.with_component(forcing.build()).with_component(climate)
     for name, values in data.items():
         builder.with_prescribed_variable(
-            name, Timeseries(values, axis, units[name], InterpolationStrategy.Linear)
+            name,
+            Timeseries(values, time_axis, units[name], InterpolationStrategy.Linear),
         )
     builder.with_initial_values(initial)
     model = builder.build()
@@ -312,7 +312,7 @@ def _collect_result(  # noqa: PLR0913
     contributors: tuple[str, ...],
     weights: NDArray[np.float64],
     diagnostics: frozenset[str] = frozenset(),
-) -> MAGICCResult:
+) -> MagiccResult:
     """Validate every returned value and retain the four regional temperatures.
 
     An average has no value at the last label.
@@ -345,7 +345,7 @@ def _collect_result(  # noqa: PLR0913
         if np.any(values[CONCENTRATION + gas] <= 0):
             msg = f"Nonpositive {gas} concentration calculated during run"
             raise RuntimeError(msg)
-    return MAGICCResult(time, values, units, regional, sources, contributors)
+    return MagiccResult(time, values, units, regional, sources, contributors)
 
 
 def _base_schema() -> VariableSchema:
@@ -357,7 +357,7 @@ def _base_schema() -> VariableSchema:
     return schema
 
 
-def _climate_weights(parameters: ClimateUDEBParams) -> NDArray[np.float64]:
+def _climate_weights(parameters: ClimateUdebParameters) -> NDArray[np.float64]:
     nh_land = parameters.get("nh_land_fraction", 0.42)
     sh_land = parameters.get("sh_land_fraction", 0.21)
     return np.array([1 - nh_land, nh_land, 1 - sh_land, sh_land]) * 0.5

@@ -42,23 +42,23 @@ The loop, with the RSCM read for each input:
 
 | FaIR step | Calculation | Reads | Proposed component |
 | --- | --- | --- | --- |
-| 1 | Lifetime scaling `alpha` from iIRF100 (cumulative uptake, airborne, temperature) | temperature `get()`, own state | `FairGasCycle` |
-| 2 | CH4 lifetime scaling, Thornhill 2021 (aerosol precursors, N2O, EESC, temperature) | everything `get()` | `FairCH4Lifetime` (added before the gas cycle) |
-| 3 | Emissions to concentration over up to 4 gas boxes | emissions `get()` | `FairGasCycle` |
-| 4 | Concentration to emissions (inverse mode) | concentration `get()` (prescribed) | `FairGasCycle` |
-| 5 | GHG forcing: Meinshausen 2020, Etminan 2016, Myhre 1998 or Leach 2021 | concentrations `get()` | `FairGhgForcing` |
+| 1 | Lifetime scaling `alpha` from iIRF100 (cumulative uptake, airborne, temperature) | temperature `get()`, own state | `GasCycle` |
+| 2 | CH4 lifetime scaling, Thornhill 2021 (aerosol precursors, N2O, EESC, temperature) | everything `get()` | `CH4Lifetime` (added before the gas cycle) |
+| 3 | Emissions to concentration over up to 4 gas boxes | emissions `get()` | `GasCycle` |
+| 4 | Concentration to emissions (inverse mode) | concentration `get()` (prescribed) | `GasCycle` |
+| 5 | GHG forcing: Meinshausen 2020, Etminan 2016, Myhre 1998 or Leach 2021 | concentrations `get()` | `GhgForcing` |
 | 6 | ERFari, linear in emissions and concentrations | emissions `get()`, concentrations `get()` | `FairAerosolForcing` |
 | 7 | ERFaci, log of a weighted sum | as step 6 | `FairAerosolForcing` |
-| 8 | EESC from halogen concentrations | concentrations `get()` | `FairEesc` |
+| 8 | EESC from halogen concentrations | concentrations `get()` | `Eesc` |
 | 9 | Ozone, Thornhill 2021, linear | as step 6, plus EESC | `FairOzoneForcing` |
-| 10 to 13 | Contrails, LAPSI, stratospheric H2O, land use: all linear | emissions, CH4 concentration, cumulative AFOLU CO2 | `FairLinearForcing`, one instance per agent |
-| 14 | Temperature feedback on each forcing agent | temperature `get()` | `FairForcingAggregation` |
-| 15 | Total forcing and efficacy-weighted total | forcings `get()` | `FairForcingAggregation` |
-| 16 | n-layer energy balance step `x' = A_d x + b_d F + noise` | total forcing `get()`, own state | `FairEnergyBalance` |
-| 17 and 18 | TOA imbalance and ocean heat content, after the run | forcing, layer temperatures | `FairEnergyBalance`, per step |
+| 10 to 13 | Contrails, LAPSI, stratospheric H2O, land use: all linear | emissions, CH4 concentration, cumulative AFOLU CO2 | `LinearForcing`, one instance per agent |
+| 14 | Temperature feedback on each forcing agent | temperature `get()` | `ForcingAggregation` |
+| 15 | Total forcing and efficacy-weighted total | forcings `get()` | `ForcingAggregation` |
+| 16 | n-layer energy balance step `x' = A_d x + b_d F + noise` | total forcing `get()`, own state | `EnergyBalance` |
+| 17 and 18 | TOA imbalance and ocean heat content, after the run | forcing, layer temperatures | `EnergyBalance`, per step |
 
 Steps 2 and 8 form a loop across steps: CH4 lifetime reads last step's EESC and concentrations.
-Adding `FairCH4Lifetime` before the gas cycle gives exactly that,
+Adding `CH4Lifetime` before the gas cycle gives exactly that,
 since RSCM only creates edges to producers added earlier.
 
 ## Fit with RSCM
@@ -67,7 +67,7 @@ What already maps cleanly:
 
 - **Per-species variables.**
   `HalocarbonChemistry` already builds its definitions from a species list at runtime.
-  `FairGasCycle` can do the same for every GHG and pick input or output per species from its input mode.
+  `GasCycle` can do the same for every GHG and pick input or output per species from its input mode.
 - **Gas-box state.** `TerrestrialCarbon` keeps its pools in a `ComponentState`.
   Gas boxes, airborne emissions and cumulative emissions fit there,
   which avoids a 4-wide grid that is not a spatial grid.
@@ -135,12 +135,12 @@ Cases, roughly in build order:
 
 ## Proposed slices
 
-1. `crates/rscm-fair` with `FairEnergyBalance`, parity against forcing-driven FaIR.
+1. `crates/rscm-fair` with `EnergyBalance`, parity against forcing-driven FaIR.
    This proves the expm discretisation and time convention.
-2. `FairGasCycle` for CO2 and `FairGhgForcing` for CO2, coupled to slice 1.
+2. `GasCycle` for CO2 and `GhgForcing` for CO2, coupled to slice 1.
    This proves the gas-box state and the temperature feedback on `alpha`.
-3. All GHGs, inverse mode, `FairCH4Lifetime`, `FairEesc`.
-4. Aerosol, ozone and linear forcings, plus `FairForcingAggregation` with efficacy and feedback.
+3. All GHGs, inverse mode, `CH4Lifetime`, `Eesc`.
+4. Aerosol, ozone and linear forcings, plus `ForcingAggregation` with efficacy and feedback.
 5. `rscm.fair` Python package:
    species table and calibration loaders, `run_fair` runner, `.pyi` stubs, docs page.
 6. Stochastic mode.
@@ -159,7 +159,7 @@ Settled on 2026-11-04.
 - Stochastic runs come in a later slice. Restarts are deferred.
 - Any uniform step is supported.
 - Components live in a new `crates/rscm-fair` crate, exposed as `rscm.fair`.
-- `FairGasCycle` is one component type configured with a list of species.
+- `GasCycle` is one component type configured with a list of species.
 - Each forcing component applies its own temperature feedback.
 - The Meinshausen formula is shared with MAGICC's OLBL in `rscm_components::meinshausen2020`.
 - Variables use RSCM and MAGICC names (`Emissions|HFC134a`, `Emissions|SOx`). Components keep FaIR's units.
@@ -168,6 +168,6 @@ Settled on 2026-11-04.
 - Calibrated runs target the fair-calibrate v1.6.1 posterior.
 - Parity fixtures are committed and regenerated by a script with pinned `fair==2.2.5`.
 - Ensembles run as a Python loop over models. A benchmark against `fair` is reported but does not gate.
-- One smoke test couples FaIR components with MAGICC's `ClimateUDEB`.
+- One smoke test couples FaIR components with MAGICC's `ClimateUdeb`.
 
 Progress is tracked in [TODO.md](TODO.md).

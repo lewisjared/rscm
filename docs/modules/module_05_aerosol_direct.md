@@ -18,7 +18,7 @@ and harmonise the result to a target forcing in a reference year.
 Nitrate instead follows the Hauglustaine et al. (2014) parameterisation from emissions.
 
 The page uses RF, EffRF and ERF as the [forcing aggregation page defines them](module_07b_rf_aggregation.md#forcing-types).
-Four-box arrays follow the box order in [initialisation](module_00_initialization.md).
+Four-box arrays follow the box order in [initialisation](module_00_initialisation.md).
 
 ## RSCM implementation
 

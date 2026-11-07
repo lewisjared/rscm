@@ -113,7 +113,7 @@ class TestInputValidation:
 
 
 class TestConfigRoundTrip:
-    """Tests for config serialization/deserialization."""
+    """Tests for config serialisation/deserialisation."""
 
     def test_toml_config_matches_typed_config(self):
         """TOML config should produce same model as equivalent typed config."""

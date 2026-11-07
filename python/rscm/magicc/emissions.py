@@ -16,7 +16,7 @@ import numpy as np
 from rscm._lib.magicc import (
     CH4ChemistryBuilder,
     CH4OxidationBuilder,
-    ClimateUDEBBuilder,
+    ClimateUdebBuilder,
     CO2BudgetBuilder,
     GhgForcingBuilder,
     N2OChemistryBuilder,
@@ -36,7 +36,7 @@ from rscm.magicc.runner import (
     CONCENTRATION,
     ERF,
     SPECIES,
-    MAGICCResult,
+    MagiccResult,
     _average_series,
     _base_schema,
     _ch4_burdens,
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm._lib.magicc import ClimateUDEBParams, GhgForcingParams
+    from rscm._lib.magicc import ClimateUdebParameters, GhgForcingParameters
 
 __all__ = ["Emissions", "run_magicc_emissions"]
 
@@ -68,12 +68,12 @@ COMPONENTS = {
     "OceanCarbon": OceanCarbonBuilder,
     "CO2Budget": CO2BudgetBuilder,
     "GhgForcing": GhgForcingBuilder,
-    "ClimateUDEB": ClimateUDEBBuilder,
+    "ClimateUdeb": ClimateUdebBuilder,
 }
 # Chemistry and the carbon cycle read last year's temperature,
 # and the carbon sinks last year's CO2.
-LAG = ("Surface Temperature",)
-LAG_FOR = (
+_LAG = ("Surface Temperature",)
+_LAG_FOR = (
     (CONCENTRATION + "CO2", "TerrestrialCarbon"),
     (CONCENTRATION + "CO2", "OceanCarbon"),
 )
@@ -118,10 +118,10 @@ CALCULATED = {
     "End-of-Year Atmospheric CO2": ("ppm", "OceanCarbon"),
     "Emissions|CO2|Net": ("GtC/yr", "CO2Budget"),
     "Airborne Fraction|CO2": ("1", "CO2Budget"),
-    "Surface Temperature": ("K", "ClimateUDEB"),
-    "Sea Surface Temperature": ("K", "ClimateUDEB"),
-    "Heat Uptake": ("W/m^2", "ClimateUDEB"),
-    "Ocean Heat Content": ("J/m^2", "ClimateUDEB"),
+    "Surface Temperature": ("K", "ClimateUdeb"),
+    "Sea Surface Temperature": ("K", "ClimateUdeb"),
+    "Heat Uptake": ("W/m^2", "ClimateUdeb"),
+    "Ocean Heat Content": ("J/m^2", "ClimateUdeb"),
 }
 
 
@@ -234,24 +234,24 @@ def _variables(
 
 
 def run_magicc_emissions(  # noqa: PLR0913
-    years: ArrayLike,
+    time_axis: TimeAxis,
     emissions: Emissions,
     *,
     initial_concentrations: Mapping[str, float],
     other_forcing: ArrayLike,
     forcing_species: tuple[str, ...] = SPECIES,
     parameters: Mapping[str, Mapping[str, Any]] | None = None,
-) -> MAGICCResult:
+) -> MagiccResult:
     """Run the coupled MAGICC chain from emissions on annual boundaries.
 
-    ``years`` must contain at least two consecutive annual boundaries.
+    ``time_axis`` must have at least two annual steps.
     ``initial_concentrations`` gives CO2 (ppm), CH4 and N2O (ppb) at the first
     boundary. The ocean starts in equilibrium with that CO2 and the land pools
     at their preindustrial sizes, so the first year should be preindustrial.
 
     ``other_forcing`` is the ERF in W/m² from everything except the selected
     gases, one value per boundary. ``parameters`` maps component names from
-    ``COMPONENTS`` to their Rust parameter dictionaries. ClimateUDEB's
+    ``COMPONENTS`` to their Rust parameter dictionaries. ClimateUdeb's
     ``rf_2xco2`` defaults to the CO2-doubling ERF of the forcing configuration,
     as in MAGICC7. A ``gtc_per_ppm`` given for CO2Budget or OceanCarbon applies
     to both.
@@ -262,7 +262,7 @@ def run_magicc_emissions(  # noqa: PLR0913
     Raises ``ValueError`` for invalid inputs and ``RuntimeError`` for nonfinite
     or nonpositive outputs.
     """
-    time = _validate_axis(years, forcing_species)
+    time = _validate_axis(time_axis, forcing_species)
     if set(initial_concentrations) != set(SPECIES):
         msg = f"initial_concentrations must give exactly {list(SPECIES)}"
         raise ValueError(msg)
@@ -286,17 +286,17 @@ def run_magicc_emissions(  # noqa: PLR0913
     units, sources = _variables(data)
 
     forcing = GhgForcingBuilder.from_parameters(
-        cast("GhgForcingParams", params["GhgForcing"])
+        cast("GhgForcingParameters", params["GhgForcing"])
     )
     initial_erf = forcing.calculate_forcings(*(initial_conc[gas] for gas in SPECIES))
     total_erf = sum(initial_erf[gas] for gas in forcing_species) + float(
         data[ERF + "|Other"][0]
     )
     climate_params = cast(
-        "ClimateUDEBParams",
-        {"rf_2xco2": forcing.co2_doubling_forcing(), **params["ClimateUDEB"]},
+        "ClimateUdebParameters",
+        {"rf_2xco2": forcing.co2_doubling_forcing(), **params["ClimateUdeb"]},
     )
-    climate = ClimateUDEBBuilder.from_parameters(climate_params)
+    climate = ClimateUdebBuilder.from_parameters(climate_params)
     terrestrial = params["TerrestrialCarbon"]
     initial = {
         **{CONCENTRATION + gas: value for gas, value in initial_conc.items()},
@@ -319,30 +319,30 @@ def run_magicc_emissions(  # noqa: PLR0913
     }
 
     contributors = (*(ERF + "|" + gas for gas in forcing_species), ERF + "|Other")
-    axis = TimeAxis.from_values(time)
     weights = _climate_weights(climate_params)
     # Components reading global temperature must see the area-weighted mean
     builder = (
         ModelBuilder()
-        .with_time_axis(axis)
+        .with_time_axis(time_axis)
         .with_schema(_schema(units, contributors))
         .with_grid_weights(GridType.FourBox, list(weights))
     )
     for name, component_builder in COMPONENTS.items():
         if name == "GhgForcing":
             component = forcing.build()
-        elif name == "ClimateUDEB":
+        elif name == "ClimateUdeb":
             component = climate.build()
         else:
             component = component_builder.from_parameters(params[name]).build()
         builder.with_component(component)
-    for variable in LAG:
+    for variable in _LAG:
         builder.with_lag(variable)
-    for variable, consumer in LAG_FOR:
+    for variable, consumer in _LAG_FOR:
         builder.with_lag_for(variable, consumer)
     for name, values in data.items():
         builder.with_prescribed_variable(
-            name, Timeseries(values, axis, units[name], InterpolationStrategy.Linear)
+            name,
+            Timeseries(values, time_axis, units[name], InterpolationStrategy.Linear),
         )
     builder.with_initial_values(initial)
     model = builder.build()

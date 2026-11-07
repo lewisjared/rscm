@@ -236,7 +236,7 @@ class TestStateValueInModel:
         )
 
         component = GridProducerComponent()
-        py_component = PythonComponent.build(component)
+        py_component = PythonComponent(component)
 
         model = (
             ModelBuilder()

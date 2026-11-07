@@ -1,5 +1,5 @@
 //! Integration tests for the LAMCALC feedback parameter solver and its
-//! integration with ClimateUDEB.
+//! integration with ClimateUdeb.
 //!
 //! These tests verify:
 //! 1. ECS-Lambda consistency across a range of climate sensitivities
@@ -7,7 +7,7 @@
 //! 3. Sensitivity to coupling parameters (k_lo, k_ns, amplify_ocean_to_land)
 //! 4. Edge cases with extreme but physically plausible parameters
 //! 5. Coupling matrix mathematical properties
-//! 6. ClimateUDEB long-run equilibrium approaching ECS under constant forcing
+//! 6. ClimateUdeb long-run equilibrium approaching ECS under constant forcing
 
 mod common;
 
@@ -15,9 +15,11 @@ use rscm_core::component::{Component, InputState};
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::FloatValue;
 use rscm_core::utils::linear_algebra::invert_4x4;
-use rscm_magicc::climate::lamcalc::{build_coupling_matrix, lamcalc, LamcalcParams, LamcalcResult};
-use rscm_magicc::climate::ClimateUDEB;
-use rscm_magicc::parameters::ClimateUDEBParameters;
+use rscm_magicc::climate::lamcalc::{
+    build_coupling_matrix, lamcalc, LamcalcParameters, LamcalcResult,
+};
+use rscm_magicc::climate::ClimateUdeb;
+use rscm_magicc::parameters::ClimateUdebParameters;
 
 // ---------------------------------------------------------------------------
 // Helper functions
@@ -30,7 +32,7 @@ use rscm_magicc::parameters::ClimateUDEBParameters;
 /// [`LamcalcResult`] directly, which is convenient for tests that already
 /// hold a solved result.
 fn compute_equilibrium_temperatures(
-    params: &LamcalcParams,
+    params: &LamcalcParameters,
     result: &LamcalcResult,
 ) -> (FloatValue, FloatValue, FloatValue, FloatValue) {
     let eq =
@@ -623,7 +625,7 @@ mod matrix_properties {
 }
 
 // ---------------------------------------------------------------------------
-// 6. ClimateUDEB long-run equilibrium
+// 6. ClimateUdeb long-run equilibrium
 // ---------------------------------------------------------------------------
 
 mod climate_udeb_equilibrium {
@@ -631,7 +633,7 @@ mod climate_udeb_equilibrium {
 
     #[test]
     fn test_equilibrium_temperature_warming_and_stabilisation() {
-        // ClimateUDEB outputs surface air temperature (SAT), which includes
+        // ClimateUdeb outputs surface air temperature (SAT), which includes
         // SST-to-SAT amplification (temp_adjust_alpha, temp_adjust_gamma) and
         // land temperature amplification. Therefore the equilibrium global mean
         // SAT does NOT equal ECS directly -- it exceeds ECS because of these
@@ -641,9 +643,9 @@ mod climate_udeb_equilibrium {
         // 1. Temperature increases monotonically under constant forcing
         // 2. The rate of warming decreases over time (approaching equilibrium)
         // 3. SST (the raw ocean quantity) converges towards ECS
-        let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
+        let params = common::params_with_fixed_ecs(ClimateUdebParameters::default().ecs);
 
-        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
+        let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
         let erf = params.rf_2xco2;
@@ -750,9 +752,9 @@ mod climate_udeb_equilibrium {
 
     #[test]
     fn test_zero_forcing_produces_zero_temperature() {
-        let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
+        let params = common::params_with_fixed_ecs(ClimateUdebParameters::default().ecs);
 
-        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
+        let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
         let erf = 0.0;
@@ -829,7 +831,7 @@ mod climate_udeb_equilibrium {
 
     #[test]
     fn test_land_warms_more_than_ocean_during_transient() {
-        let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
+        let params = common::params_with_fixed_ecs(ClimateUdebParameters::default().ecs);
         let records = common::run_udeb_simulation(&params, params.rf_2xco2, 100);
 
         let last = records.last().unwrap();
@@ -868,7 +870,7 @@ mod climate_udeb_equilibrium {
 
     #[test]
     fn test_heat_uptake_positive_during_warming() {
-        let params = common::params_with_fixed_ecs(ClimateUDEBParameters::default().ecs);
+        let params = common::params_with_fixed_ecs(ClimateUdebParameters::default().ecs);
         let records = common::run_udeb_simulation(&params, params.rf_2xco2, 50);
 
         for (year, record) in records.iter().enumerate() {
@@ -884,15 +886,15 @@ mod climate_udeb_equilibrium {
 
     #[test]
     fn test_lamcalc_consistency_with_climate_udeb_construction() {
-        // Verify that LAMCALC parameters solved during ClimateUDEB construction
+        // Verify that LAMCALC parameters solved during ClimateUdeb construction
         // match what we get from calling lamcalc directly.
-        let params = ClimateUDEBParameters::default();
+        let params = ClimateUdebParameters::default();
         let lamcalc_params = common::lamcalc_params_from_udeb(&params);
 
         let direct_result = lamcalc(&lamcalc_params).expect("Direct LAMCALC call should converge");
 
-        // ClimateUDEB internally calls lamcalc during from_parameters
-        let component = ClimateUDEB::from_parameters(params).unwrap();
+        // ClimateUdeb internally calls lamcalc during from_parameters
+        let component = ClimateUdeb::from_parameters(params).unwrap();
 
         // We cannot access lambda_ocean/lambda_land directly since they are private
         // and #[serde(skip)] (they deserialise as 0.0, not recalculated).
@@ -924,7 +926,7 @@ mod climate_udeb_equilibrium {
         let defs = component.definitions();
         assert!(
             !defs.is_empty(),
-            "ClimateUDEB should have definitions after successful construction"
+            "ClimateUdeb should have definitions after successful construction"
         );
     }
 }

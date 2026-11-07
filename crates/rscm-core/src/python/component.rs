@@ -1,6 +1,6 @@
 /// Macros for exposing a component to Python and using python-defined modules in rust
 use crate::component::{Component, InputState, OutputState};
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::python::rscm_error_from_py;
 use crate::python::state::{
     PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyStateValue, PyTimeseriesWindow,
@@ -268,7 +268,7 @@ impl PythonComponent {
                     let values = times
                         .iter()
                         .map(|&t| w.interpolate(t))
-                        .collect::<RSCMResult<Vec<_>>>()?;
+                        .collect::<RscmResult<Vec<_>>>()?;
                     PyTimeseriesWindow::new(
                         values,
                         index,
@@ -286,7 +286,7 @@ impl PythonComponent {
                     let values = times
                         .iter()
                         .map(|&t| regions(w.interpolate_all(t)?))
-                        .collect::<RSCMResult<Vec<_>>>()?;
+                        .collect::<RscmResult<Vec<_>>>()?;
                     PyFourBoxTimeseriesWindow::new(
                         values,
                         index,
@@ -304,7 +304,7 @@ impl PythonComponent {
                     let values = times
                         .iter()
                         .map(|&t| regions(w.interpolate_all(t)?))
-                        .collect::<RSCMResult<Vec<_>>>()?;
+                        .collect::<RscmResult<Vec<_>>>()?;
                     PyHemisphericTimeseriesWindow::new(
                         values,
                         index,
@@ -328,9 +328,9 @@ fn through_next(axis: &TimeAxis, index: usize) -> Vec<Time> {
 }
 
 /// Regional values as a fixed-size array.
-fn regions<const N: usize>(values: Vec<FloatValue>) -> RSCMResult<[FloatValue; N]> {
+fn regions<const N: usize>(values: Vec<FloatValue>) -> RscmResult<[FloatValue; N]> {
     values.try_into().map_err(|v: Vec<FloatValue>| {
-        RSCMError::Error(format!("expected {N} regions, got {}", v.len()))
+        RscmError::Error(format!("expected {N} regions, got {}", v.len()))
     })
 }
 
@@ -345,7 +345,7 @@ impl Component for PythonComponent {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         Python::attach(|py| {
             self.solve_py(py, t_current, t_next, input_state)
                 .map_err(|err| rscm_error_from_py(py, err))
@@ -421,8 +421,8 @@ pub struct PyPythonComponent(pub Arc<PythonComponent>);
 
 #[pymethods]
 impl PyPythonComponent {
-    #[staticmethod]
-    pub fn build(py: Python<'_>, component: Py<PyAny>) -> PyResult<Self> {
+    #[new]
+    pub fn new(py: Python<'_>, component: Py<PyAny>) -> PyResult<Self> {
         Ok(Self(Arc::new(PythonComponent::new(py, component)?)))
     }
 }

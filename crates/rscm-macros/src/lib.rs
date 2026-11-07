@@ -22,7 +22,7 @@
 //! #[outputs(
 //!     erf_co2 { name = "Effective Radiative Forcing|CO2", unit = "W / m^2" },
 //! )]
-//! pub struct CO2ERFComponent {
+//! pub struct CO2ErfComponent {
 //!     // Only actual parameters - no phantom fields needed
 //!     pub erf_2xco2: f64,
 //!     pub conc_pi: f64,
@@ -30,8 +30,8 @@
 //! ```
 //!
 //! This generates:
-//! - `CO2ERFComponentInputs` with a `concentration_co2: TimeseriesWindow<'a>` field
-//! - `CO2ERFComponentOutputs` with an `erf_co2: f64` field
+//! - `CO2ErfComponentInputs` with a `concentration_co2: TimeseriesWindow<'a>` field
+//! - `CO2ErfComponentOutputs` with an `erf_co2: f64` field
 //! - Implementation of `generated_definitions()` returning the appropriate `VariableDefinition`s
 //!
 //! # Compile-time Safety

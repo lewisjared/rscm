@@ -22,7 +22,7 @@ Each component:
 
 ## Creating a Component
 
-This section walks through `CO2ERF`, which computes CO2 forcing from concentration.
+This section walks through `CO2Erf`, which computes CO2 forcing from concentration.
 The full source is `crates/rscm-components/src/components/co2_erf.rs`.
 
 A component module starts with these imports:
@@ -32,7 +32,7 @@ use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
     ScalarWindow,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -48,7 +48,7 @@ The component struct derives `ComponentIO` and declares its inputs and outputs w
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CO2ERFParameters {
+pub struct CO2ErfParameters {
     /// ERF due to a doubling of atmospheric CO2 concentrations (W/m^2)
     pub erf_2xco2: FloatValue,
     /// Pre-industrial atmospheric CO2 concentration (ppm)
@@ -67,12 +67,12 @@ pub struct CO2ERFParameters {
 #[outputs(
     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
 )]
-pub struct CO2ERF {
-    parameters: CO2ERFParameters,
+pub struct CO2Erf {
+    parameters: CO2ErfParameters,
 }
 
-impl CO2ERF {
-    pub fn from_parameters(parameters: CO2ERFParameters) -> Self {
+impl CO2Erf {
+    pub fn from_parameters(parameters: CO2ErfParameters) -> Self {
         Self { parameters }
     }
 
@@ -89,7 +89,7 @@ which reads the typed inputs and returns the typed outputs:
 
 ```rust
 #[typetag::serde]
-impl Component for CO2ERF {
+impl Component for CO2Erf {
     fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
     }
@@ -99,13 +99,13 @@ impl Component for CO2ERF {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
-        let inputs = CO2ERFInputs::from_input_state(input_state);
+    ) -> RscmResult<OutputState> {
+        let inputs = CO2ErfInputs::from_input_state(input_state);
 
         let concentration = inputs.concentration.get();
         let erf = self.calculate_erf(concentration);
 
-        Ok(CO2ERFOutputs { erf }.into())
+        Ok(CO2ErfOutputs { erf }.into())
     }
 }
 ```
@@ -115,27 +115,27 @@ The later listings on this page leave them out.
 
 ### Attributes
 
-| Attribute                                       | Purpose                                                    |
-| ----------------------------------------------- | ---------------------------------------------------------- |
-| `#[inputs(field { name, unit, grid }, ...)]`    | Variables read from other components or prescribed data     |
-| `#[outputs(field { name, unit, grid }, ...)]`   | Variables written each step                            |
-| `#[states(field { name, unit, grid }, ...)]`    | Variables read at the start and written at the end         |
-| `#[component(tags = [...], category = "...")]`  | Optional metadata for the generated component docs         |
+| Attribute                                      | Purpose                                                 |
+| ---------------------------------------------- | ------------------------------------------------------- |
+| `#[inputs(field { name, unit, grid }, ...)]`   | Variables read from other components or prescribed data |
+| `#[outputs(field { name, unit, grid }, ...)]`  | Variables written each step                             |
+| `#[states(field { name, unit, grid }, ...)]`   | Variables read at the start and written at the end      |
+| `#[component(tags = [...], category = "...")]` | Optional metadata for the generated component docs      |
 
 `grid` is optional and is one of `"Scalar"` (the default), `"FourBox"` or `"Hemispheric"`.
 
 ## What the Macro Generates
 
-For a struct `CO2ERF`, the `ComponentIO` macro generates the following.
+For a struct `CO2Erf`, the `ComponentIO` macro generates the following.
 
 ### Input Struct
 
 ```rust
-pub struct CO2ERFInputs<'a> {
+pub struct CO2ErfInputs<'a> {
     pub concentration: ScalarWindow<'a>,
 }
 
-impl<'a> CO2ERFInputs<'a> {
+impl<'a> CO2ErfInputs<'a> {
     pub fn from_input_state(input_state: &'a InputState<'_>) -> Self { ... }
 }
 ```
@@ -147,17 +147,17 @@ A variable with no producer and no prescribed data reads as NaN rather than fail
 ### Output Struct
 
 ```rust
-pub struct CO2ERFOutputs {
+pub struct CO2ErfOutputs {
     pub erf: FloatValue,
 }
 
-impl From<CO2ERFOutputs> for OutputState { ... }
+impl From<CO2ErfOutputs> for OutputState { ... }
 ```
 
 ### Associated Functions
 
 ```rust
-impl CO2ERF {
+impl CO2Erf {
     pub fn generated_definitions() -> Vec<VariableDefinition> { ... }
     pub fn component_metadata() -> ComponentMetadata { ... }
 }
@@ -168,14 +168,14 @@ impl CO2ERF {
 A scalar input is a `ScalarWindow`.
 It reads scalar data directly and aggregates FourBox or Hemispheric data to a global value.
 
-| Method           | Description                                                                |
-| ---------------- | -------------------------------------------------------------------------- |
-| `get()`          | The value this component should use for the step                           |
-| `interval()`     | A point's values at the start and end of the step, as an `RSCMResult`      |
-| `history(n)`     | The value `n` steps before `get()`, or `None`                              |
-| `history_len()`  | Number of values `history` can read                                        |
-| `get_time()`     | Time of the value `get()` returns                                          |
-| `interpolate(t)` | Value at time `t`, such as a fixed reference year, as an `RSCMResult`      |
+| Method           | Description                                                           |
+| ---------------- | --------------------------------------------------------------------- |
+| `get()`          | The value this component should use for the step                      |
+| `interval()`     | A point's values at the start and end of the step, as an `RscmResult` |
+| `history(n)`     | The value `n` steps before `get()`, or `None`                         |
+| `history_len()`  | Number of values `history` can read                                   |
+| `get_time()`     | Time of the value `get()` returns                                     |
+| `interpolate(t)` | Value at time `t`, such as a fixed reference year, as an `RscmResult` |
 
 For a point, `get()` reads index N+1, the step's end, whether the input is prescribed or upstream,
 and index N for lagged inputs and own state.
@@ -253,7 +253,7 @@ impl Lagged {
         &self,
         input_state: &InputState,
         state: &mut LaggedState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let inputs = LaggedInputs::from_input_state(input_state);
         state.history.push(inputs.forcing.get());
         let start = state.history.len().saturating_sub(self.window);
@@ -265,14 +265,14 @@ impl Lagged {
 
 #[typetag::serde]
 impl Component for Lagged {
-    // definitions() as in CO2ERF
+    // definitions() as in CO2Erf
 
     fn solve(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         self.solve_impl(input_state, &mut LaggedState::default())
     }
 
@@ -286,7 +286,7 @@ impl Component for Lagged {
         _t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<LaggedState>()
@@ -303,14 +303,14 @@ See `OceanCarbon` in `crates/rscm-magicc/src/carbon/ocean.rs` for a full example
 
 ## ODE-Based Components
 
-Components defined by differential equations implement the `IVP` (initial value problem) trait
-and solve with `IVPBuilder`.
+Components defined by differential equations implement the `Ivp` (initial value problem) trait
+and solve with `IvpBuilder`.
 `calculate_dy_dt` reads inputs from the input state and the current solution from `y`:
 
 ```rust
 use ode_solvers::Vector1;
-use rscm_core::errors::RSCMError;
-use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
+use rscm_core::errors::RscmError;
+use rscm_core::ivp::{get_last_step, IvpBuilder, Ivp};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
@@ -325,7 +325,7 @@ pub struct OneBox {
     pub feedback: FloatValue,
 }
 
-impl IVP<Time, Vector1<FloatValue>> for OneBox {
+impl Ivp<Time, Vector1<FloatValue>> for OneBox {
     fn calculate_dy_dt(
         &self,
         _t: Time,
@@ -340,22 +340,22 @@ impl IVP<Time, Vector1<FloatValue>> for OneBox {
 
 #[typetag::serde]
 impl Component for OneBox {
-    // definitions() as in CO2ERF
+    // definitions() as in CO2Erf
 
     fn solve(
         &self,
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let inputs = OneBoxInputs::from_input_state(input_state);
         let y0 = Vector1::new(inputs.temperature.get());
 
-        let mut solver = IVPBuilder::new(Arc::new(self.clone()), input_state, y0)
+        let mut solver = IvpBuilder::new(Arc::new(self.clone()), input_state, y0)
             .to_rk4(t_current, t_next, 0.1);
         solver
             .integrate()
-            .map_err(|e| RSCMError::Error(format!("OneBox integration failed: {e}")))?;
+            .map_err(|e| RscmError::Error(format!("OneBox integration failed: {e}")))?;
         let y = get_last_step(solver.results(), t_next);
 
         Ok(OneBoxOutputs { temperature: y[0] }.into())
@@ -363,7 +363,7 @@ impl Component for OneBox {
 }
 ```
 
-The component must be `Clone`, because `IVPBuilder` takes it in an `Arc`.
+The component must be `Clone`, because `IvpBuilder` takes it in an `Arc`.
 Add `ode_solvers` to the crate's dependencies for the vector types.
 `CarbonCycle` in `crates/rscm-components/src/components/carbon_cycle.rs` is a three-variable example.
 
@@ -420,15 +420,15 @@ They also provide `get_all()`, and `history(n)` and `interval()` return every re
 
 ## Error Handling
 
-`solve` returns `RSCMResult<OutputState>`.
-Return an `RSCMError` rather than panicking when inputs or configuration are invalid:
+`solve` returns `RscmResult<OutputState>`.
+Return an `RscmError` rather than panicking when inputs or configuration are invalid:
 
 ```rust
-use rscm_core::errors::RSCMError;
+use rscm_core::errors::RscmError;
 
 if t_next - t_current != 1.0 {
-    return Err(RSCMError::Error(format!(
-        "CO2ERF requires annual steps, got {}",
+    return Err(RscmError::Error(format!(
+        "CO2Erf requires annual steps, got {}",
         t_next - t_current
     )));
 }
@@ -438,7 +438,7 @@ The model stops and adds the component name and step to the error.
 From Python it is raised as a `RuntimeError`.
 
 From Rust, `Model::run` and `Model::step` panic on a component error.
-Use `try_run` or `try_step` to get the `RSCMResult` instead:
+Use `try_run` or `try_step` to get the `RscmResult` instead:
 
 ```rust
 let mut model = ModelBuilder::new()
@@ -461,21 +461,21 @@ Generate a builder with the `create_component_builder!` macro:
 ```rust
 use rscm_core::create_component_builder;
 
-create_component_builder!(CO2ERFBuilder, CO2ERF, CO2ERFParameters);
+create_component_builder!(CO2ErfBuilder, CO2Erf, CO2ErfParameters);
 ```
 
-This generates a Python-callable `CO2ERFBuilder` class with `from_parameters()` and `build()` methods.
+This generates a Python-callable `CO2ErfBuilder` class with `from_parameters()` and `build()` methods.
 
 Register the builder in the crate's Python module, for example `crates/rscm-components/src/python/mod.rs`:
 
 ```rust
-m.add_class::<CO2ERFBuilder>()?;
+m.add_class::<CO2ErfBuilder>()?;
 ```
 
 Add the class to the matching stub file, for example `python/rscm/_lib/components.pyi`:
 
 ```python
-class CO2ERFBuilder(ComponentBuilder): ...
+class CO2ErfBuilder(ComponentBuilder): ...
 ```
 
 Run `make validate-pyi` to check the stubs match the compiled module.
@@ -500,11 +500,11 @@ mod tests {
 
     #[test]
     fn test_calculate_erf_at_2x_co2() {
-        let params = CO2ERFParameters {
+        let params = CO2ErfParameters {
             erf_2xco2: 3.7,
             conc_pi: 278.0,
         };
-        let component = CO2ERF::from_parameters(params.clone());
+        let component = CO2Erf::from_parameters(params.clone());
         let erf = component.calculate_erf(params.conc_pi * 2.0);
         assert!((erf - params.erf_2xco2).abs() < 1e-10);
     }

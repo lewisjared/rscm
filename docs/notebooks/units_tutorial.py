@@ -68,7 +68,7 @@ assert all(u == units[0] for u in units)
 
 # %%
 for notation in ["m^2", "m**2", "m2", "W/m^2", "W m^-2", "W per m^2"]:
-    print(f"{notation!r:12} -> {Unit(notation).normalized()}")
+    print(f"{notation!r:12} -> {Unit(notation).normalised()}")
 
 # %% [markdown]
 # ### Original vs Normalised
@@ -80,7 +80,7 @@ for notation in ["m^2", "m**2", "m2", "W/m^2", "W m^-2", "W per m^2"]:
 # %%
 for s in ["  GtC  /  yr  ", "Gt C / yr", "MtCO2/yr", "Mt CH4 / yr", "Mt NMVOC/yr"]:
     u = Unit(s)
-    print(f"{u.original!r:18} -> {u.normalized()!r}")
+    print(f"{u.original!r:18} -> {u.normalised()!r}")
 
 # %% [markdown]
 # ## Climate-Specific Units
@@ -330,7 +330,7 @@ print(f"CO2 concentration in 2010: {concentration.values()[-1]:.1f} ppm")
 # | Method | Description |
 # |--------|-------------|
 # | `Unit(unit_str)` | Parse a unit string |
-# | `unit.normalized()` | Get the normalised string representation |
+# | `unit.normalised()` | Get the normalised string representation |
 # | `unit.is_dimensionless()` | Check if unit is dimensionless |
 # | `unit.is_compatible(other)` | Check if conversion is possible |
 # | `unit.conversion_factor(other)` | Get the conversion multiplier |

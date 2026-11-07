@@ -45,7 +45,7 @@ class ComponentRegistry:
     """
 
     def __init__(self) -> None:
-        """Initialize an empty registry."""
+        """Initialise an empty registry."""
         self._registry: dict[str, type[ComponentBuilder]] = {}
 
     def register(self, name: str, builder_class: type[ComponentBuilder]) -> None:

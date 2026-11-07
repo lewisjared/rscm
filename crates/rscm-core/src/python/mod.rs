@@ -83,7 +83,7 @@
 /// the library which results in code that is less readable.
 /// This tradeoff might be worth it if we need to expose a lot of functionality to Python,
 /// and it would also reduce the amount of boilerplate code.
-use crate::errors::RSCMError;
+use crate::errors::RscmError;
 use crate::schema::{AggregateDefinition, SchemaVariableDefinition, VariableSchema};
 use crate::units::python::PyUnit;
 use pyo3::exceptions::PyRuntimeError;
@@ -147,17 +147,17 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-impl From<RSCMError> for PyErr {
-    fn from(e: RSCMError) -> PyErr {
+impl From<RscmError> for PyErr {
+    fn from(e: RscmError) -> PyErr {
         PyRuntimeError::new_err(e.to_string())
     }
 }
 
 /// Convert a Python exception into an error that keeps its traceback.
-pub(crate) fn rscm_error_from_py(py: Python<'_>, err: PyErr) -> RSCMError {
+pub(crate) fn rscm_error_from_py(py: Python<'_>, err: PyErr) -> RscmError {
     let traceback = err
         .traceback(py)
         .and_then(|tb| tb.format().ok())
         .unwrap_or_default();
-    RSCMError::Error(format!("{err}\n{traceback}"))
+    RscmError::Error(format!("{err}\n{traceback}"))
 }

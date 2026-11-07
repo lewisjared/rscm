@@ -20,7 +20,7 @@ with the author missing.
 Like the [direct aerosol forcing](module_05_aerosol_direct.md),
 this depends only on prescribed inputs, so MAGICC7 calculates it once before the run.
 The page uses RF, EffRF and ERF as the [forcing aggregation page defines them](module_07b_rf_aggregation.md#forcing-types).
-Four-box arrays follow the box order in [initialisation](module_00_initialization.md).
+Four-box arrays follow the box order in [initialisation](module_00_initialisation.md).
 
 ## RSCM implementation
 

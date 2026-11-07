@@ -2,7 +2,7 @@
 //!
 //! This module contains carbon cycle components:
 //!
-//! - `TerrestrialCarbon`: 3-pool terrestrial carbon cycle with CO2 fertilization,
+//! - `TerrestrialCarbon`: 3-pool terrestrial carbon cycle with CO2 fertilisation,
 //!   temperature feedbacks, MAGICC7-compatible regrowth/attribution and optional
 //!   nitrogen limitation
 //! - `OceanCarbon`: IRF-based ocean carbon cycle with air-sea exchange and

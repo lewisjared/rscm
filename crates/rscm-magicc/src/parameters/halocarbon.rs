@@ -70,7 +70,7 @@ impl HalocarbonSpecies {
 /// Parameters for halocarbon chemistry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct HalocarbonParameters {
+pub struct HalocarbonChemistryParameters {
     /// F-gases, which do not deplete ozone.
     pub fgases: Vec<HalocarbonSpecies>,
 
@@ -197,7 +197,7 @@ impl FgasRegions {
     }
 }
 
-impl HalocarbonParameters {
+impl HalocarbonChemistryParameters {
     /// Concentration change (ppt) per kt of emissions.
     pub fn emission_to_concentration_factor(&self, species: &HalocarbonSpecies) -> FloatValue {
         self.air_molar_mass / (self.atmosphere_mass * species.molecular_mass * species.mix_box_size)
@@ -214,7 +214,7 @@ impl HalocarbonParameters {
     }
 }
 
-impl Default for HalocarbonParameters {
+impl Default for HalocarbonChemistryParameters {
     fn default() -> Self {
         Self {
             fgases: default_fgases(),
@@ -616,21 +616,21 @@ mod tests {
 
     #[test]
     fn test_default_species_counts() {
-        let params = HalocarbonParameters::default();
+        let params = HalocarbonChemistryParameters::default();
         assert_eq!(params.fgases.len(), 23);
         assert_eq!(params.montreal_gases.len(), 18);
     }
 
     #[test]
     fn test_molecular_mass_from_atoms() {
-        let params = HalocarbonParameters::default();
+        let params = HalocarbonChemistryParameters::default();
         let cfc11 = params.get_species("CFC11").unwrap();
         assert!((cfc11.molecular_mass - (12.001 + 3.0 * 35.453 + 18.9984)).abs() < 1e-10);
     }
 
     #[test]
     fn test_tau_other_balances_total() {
-        let params = HalocarbonParameters::default();
+        let params = HalocarbonChemistryParameters::default();
         let hcfc22 = params.get_species("HCFC22").unwrap();
         let rate = 1.0 / hcfc22.tau_oh + 1.0 / hcfc22.tau_strat + 1.0 / hcfc22.tau_other().unwrap();
         assert!((1.0 / rate - hcfc22.tau_total).abs() < 1e-10);

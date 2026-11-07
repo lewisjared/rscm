@@ -2,7 +2,7 @@ use thiserror::Error;
 
 /// Error type for invalid operations.
 #[derive(Error, Debug)]
-pub enum RSCMError {
+pub enum RscmError {
     #[error("{0}")]
     Error(String),
 
@@ -211,8 +211,8 @@ pub enum RSCMError {
     },
 }
 
-/// Convenience type for `Result<T, RSCMError>`.
-pub type RSCMResult<T> = Result<T, RSCMError>;
+/// Convenience type for `Result<T, RscmError>`.
+pub type RscmResult<T> = Result<T, RscmError>;
 
 fn format_lag_suggestions(suggestions: &[(String, String)]) -> String {
     suggestions

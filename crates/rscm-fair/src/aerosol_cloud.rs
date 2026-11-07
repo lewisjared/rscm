@@ -7,22 +7,13 @@
 //! (Smith et al. 2021).
 
 use crate::constants::{driver_definitions, get, one, surface_temperature};
+use crate::driver::Driver;
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::{RscmError, RscmResult};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
-
-/// What a driver is, which sets the time it is read at.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum CloudDriverKind {
-    /// Emissions over the step.
-    Emissions,
-    /// Concentration at the end of the step.
-    Concentration,
-}
 
 /// One driver of aerosol-cloud interactions.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -32,7 +23,7 @@ pub struct CloudDriver {
     /// Its unit.
     pub unit: String,
     /// Emissions or concentration.
-    pub kind: CloudDriverKind,
+    pub driver: Driver,
     /// Pre-industrial value.
     #[serde(default)]
     pub baseline: FloatValue,
@@ -40,12 +31,12 @@ pub struct CloudDriver {
     pub shape: FloatValue,
 }
 
-/// Parameters of [`FairAerosolCloud`].
+/// Parameters of [`AerosolCloud`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairAerosolCloudParameters {
+pub struct AerosolCloudParameters {
     /// Forcing output.
     pub forcing: String,
-    /// Drivers; emissions are summed before concentrations.
+    /// Drivers. Emissions are summed before concentrations.
     pub drivers: Vec<CloudDriver>,
     /// Scale of the logarithmic response (W m-2).
     pub scale: FloatValue,
@@ -65,33 +56,57 @@ pub struct FairAerosolCloudParameters {
 
 /// FaIR's logarithmic aerosol-cloud forcing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FairAerosolCloud {
-    parameters: FairAerosolCloudParameters,
+#[serde(try_from = "Unchecked")]
+pub struct AerosolCloud {
+    parameters: AerosolCloudParameters,
     #[serde(skip)]
     baseline_effect: OnceLock<FloatValue>,
 }
 
-impl FairAerosolCloud {
-    /// Create the component.
-    pub fn from_parameters(parameters: FairAerosolCloudParameters) -> Self {
-        Self {
+#[derive(Deserialize)]
+struct Unchecked {
+    parameters: AerosolCloudParameters,
+}
+
+impl TryFrom<Unchecked> for AerosolCloud {
+    type Error = RscmError;
+
+    fn try_from(unchecked: Unchecked) -> RscmResult<Self> {
+        Self::from_parameters(unchecked.parameters)
+    }
+}
+
+impl AerosolCloud {
+    /// Create the component, checking each driver is emissions or a concentration.
+    pub fn from_parameters(parameters: AerosolCloudParameters) -> RscmResult<Self> {
+        if let Some(d) = parameters
+            .drivers
+            .iter()
+            .find(|d| d.driver == Driver::CumulativeEmissions)
+        {
+            return Err(RscmError::Error(format!(
+                "aerosol-cloud driver {} cannot be cumulative emissions",
+                d.variable
+            )));
+        }
+        Ok(Self {
             parameters,
             baseline_effect: OnceLock::new(),
-        }
+        })
     }
 
     /// Radiative effect of values in driver order.
     fn effect(&self, values: &[FloatValue]) -> FloatValue {
         let p = &self.parameters;
-        let sum = |kind| -> FloatValue {
+        let sum = |driver| -> FloatValue {
             p.drivers
                 .iter()
                 .zip(values)
-                .filter(|(d, _)| d.kind == kind)
+                .filter(|(d, _)| d.driver == driver)
                 .map(|(d, v)| d.shape * v)
                 .sum()
         };
-        p.scale * (1.0 + sum(CloudDriverKind::Emissions) + sum(CloudDriverKind::Concentration)).ln()
+        p.scale * (1.0 + sum(Driver::Emissions) + sum(Driver::Concentration)).ln()
     }
 
     /// Forcing before the temperature feedback, for values in driver order.
@@ -107,8 +122,8 @@ impl FairAerosolCloud {
     }
 }
 
-#[typetag::serde]
-impl Component for FairAerosolCloud {
+#[typetag::serde(name = "fair.AerosolCloud")]
+impl Component for AerosolCloud {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         driver_definitions(
@@ -125,7 +140,7 @@ impl Component for FairAerosolCloud {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let p = &self.parameters;
         let values: Vec<_> = p
             .drivers
@@ -149,12 +164,12 @@ mod tests {
 
     #[test]
     fn baseline_has_no_forcing_and_more_sulfur_cools() {
-        let c = FairAerosolCloud::from_parameters(FairAerosolCloudParameters {
+        let c = AerosolCloud::from_parameters(AerosolCloudParameters {
             forcing: "ERFaci".into(),
             drivers: vec![CloudDriver {
                 variable: "Emissions|SOx".into(),
                 unit: "Mt SO2/yr".into(),
-                kind: CloudDriverKind::Emissions,
+                driver: Driver::Emissions,
                 baseline: 2.4,
                 shape: 0.0169,
             }],
@@ -163,8 +178,29 @@ mod tests {
             tropospheric_adjustment: 0.0,
             temperature_feedback: 0.0,
             surface_temperature: surface_temperature(),
-        });
+        })
+        .unwrap();
         assert_relative_eq!(c.forcing(&[2.4]), 0.0);
         assert!(c.forcing(&[100.0]) < 0.0);
+    }
+
+    #[test]
+    fn rejects_cumulative_emissions() {
+        let parameters = AerosolCloudParameters {
+            forcing: "ERFaci".into(),
+            drivers: vec![CloudDriver {
+                variable: "Emissions|SOx".into(),
+                unit: "Mt SO2/yr".into(),
+                driver: Driver::CumulativeEmissions,
+                baseline: 0.0,
+                shape: 0.0169,
+            }],
+            scale: -1.03,
+            forcing_scale: 1.0,
+            tropospheric_adjustment: 0.0,
+            temperature_feedback: 0.0,
+            surface_temperature: surface_temperature(),
+        };
+        assert!(AerosolCloud::from_parameters(parameters).is_err());
     }
 }

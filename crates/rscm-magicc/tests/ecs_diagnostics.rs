@@ -21,8 +21,8 @@ use rscm_core::component::{Component, InputState};
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::FloatValue;
 use rscm_magicc::climate::lamcalc::lamcalc;
-use rscm_magicc::climate::ClimateUDEB;
-use rscm_magicc::parameters::ClimateUDEBParameters;
+use rscm_magicc::climate::ClimateUdeb;
+use rscm_magicc::parameters::ClimateUdebParameters;
 
 // ---------------------------------------------------------------------------
 // 1. ECS-Lambda consistency sweep
@@ -144,7 +144,7 @@ mod time_varying_ecs {
     fn test_adjusted_ecs_changes_over_time() {
         // Create a component with non-zero feedback sensitivities so that
         // adjusted ECS evolves as cumulative temperature accumulates.
-        let params = ClimateUDEBParameters {
+        let params = ClimateUdebParameters {
             ecs: 3.0,
             feedback_cumt_sensitivity: 0.15,
             feedback_q_sensitivity: 0.01,
@@ -152,7 +152,7 @@ mod time_varying_ecs {
             ..Default::default()
         };
 
-        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
+        let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
         let erf = params.rf_2xco2;
@@ -199,7 +199,7 @@ mod time_varying_ecs {
             temp_history.push(global_sat * dt_years);
 
             // Reconstruct adjusted ECS using the same year-weighted walk-back
-            // as ClimateUDEB::adjusted_ecs()
+            // as ClimateUdeb::adjusted_ecs()
             let cumt_2x = params.ecs * params.feedback_cumt_period;
             let period = params.feedback_cumt_period;
             let mut years_remaining = period;
@@ -369,7 +369,7 @@ mod heat_uptake_consistency {
         // We verify that the component-reported heat_uptake matches this
         // formula computed from the same temperatures and lambda values.
         let params = params_with_fixed_ecs(3.0);
-        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
+        let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
         let erf = params.rf_2xco2;
@@ -490,12 +490,12 @@ mod land_ocean_ratio_equilibrium {
 
     #[test]
     fn test_rlo_convergence_for_multiple_ecs() {
-        // Run ClimateUDEB to near-equilibrium (1500 years, constant forcing)
+        // Run ClimateUdeb to near-equilibrium (1500 years, constant forcing)
         // and verify the land/ocean temperature ratio converges to the
         // prescribed RLO. Test for multiple ECS values.
         let ecs_values = [2.0, 3.0, 4.5];
         let n_years = 1500;
-        let target_rlo = ClimateUDEBParameters::default().rlo;
+        let target_rlo = ClimateUdebParameters::default().rlo;
 
         println!();
         println!(
@@ -533,7 +533,7 @@ mod land_ocean_ratio_equilibrium {
 
             // The LAMCALC RLO constraint is defined in terms of raw energy
             // balance temperatures, not the SST-to-SAT adjusted temperatures
-            // that ClimateUDEB outputs. The temp_adjust_alpha (1.04) and
+            // that ClimateUdeb outputs. The temp_adjust_alpha (1.04) and
             // temp_adjust_gamma (-0.002) parameters amplify ocean SAT
             // relative to SST, which inflates the apparent SAT-based
             // land/ocean ratio. This effect grows with temperature (and
@@ -665,7 +665,7 @@ mod ground_heat_capacity {
         let records_with = run_udeb_simulation(&params_with, erf, n_years);
 
         // Run WITHOUT ground heat capacity
-        let params_without = ClimateUDEBParameters {
+        let params_without = ClimateUdebParameters {
             land_heat_capacity_enabled: false,
             ..params_with.clone()
         };
@@ -735,7 +735,7 @@ mod ground_heat_capacity {
     #[test]
     fn test_ground_temperature_tracks_land() {
         let params = params_with_fixed_ecs(3.0);
-        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
+        let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
         let erf = params.rf_2xco2;
@@ -814,12 +814,12 @@ mod ground_heat_capacity {
     /// pre-implementation behaviour (no ground temperature evolution).
     #[test]
     fn test_disabled_ground_heat_has_no_effect() {
-        let params = ClimateUDEBParameters {
+        let params = ClimateUdebParameters {
             land_heat_capacity_enabled: false,
             ..params_with_fixed_ecs(3.0)
         };
 
-        let component = ClimateUDEB::from_parameters(params.clone()).unwrap();
+        let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
 
         let erf = params.rf_2xco2;

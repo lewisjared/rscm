@@ -1,5 +1,5 @@
 use super::SpatialGrid;
-use crate::errors::RSCMResult;
+use crate::errors::RscmResult;
 use crate::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -61,7 +61,7 @@ impl SpatialGrid for ScalarGrid {
         &self,
         values: &[FloatValue],
         target: &G,
-    ) -> RSCMResult<Vec<FloatValue>> {
+    ) -> RscmResult<Vec<FloatValue>> {
         assert_eq!(
             values.len(),
             self.size(),

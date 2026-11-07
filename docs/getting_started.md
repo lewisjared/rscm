@@ -115,11 +115,11 @@ plt.ylabel("Temperature Anomaly (K)")
 
 RSCM ships with pre-built components for common climate modelling tasks:
 
-| Component                       | Module            | Description                                      |
-| ------------------------------- | ----------------- | ------------------------------------------------ |
-| `TwoLayerBuilder`               | `rscm.two_layer`  | Two-layer energy balance model for temperature   |
+| Component                       | Module            | Description                                       |
+| ------------------------------- | ----------------- | ------------------------------------------------- |
+| `TwoLayerBuilder`               | `rscm.two_layer`  | Two-layer energy balance model for temperature    |
 | `CarbonCycleBuilder`            | `rscm.components` | One-box carbon cycle (emissions to concentration) |
-| `CO2ERFBuilder`                 | `rscm.components` | CO2 concentration to effective radiative forcing |
+| `CO2ErfBuilder`                 | `rscm.components` | CO2 concentration to effective radiative forcing  |
 | `FourBoxOceanHeatUptakeBuilder` | `rscm.components` | Example four-box disaggregation of scalar forcing |
 
 `rscm.magicc` reimplements MAGICC7's modules, and `rscm.magicc.full.run_magicc7` runs the full chain.
@@ -134,7 +134,7 @@ This pipeline runs from CO2 emissions to temperature,
 and reuses `time_axis` and the `two_layer` component from the Quickstart:
 
 ```python
-from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
+from rscm.components import CarbonCycleBuilder, CO2ErfBuilder
 from rscm.core import VariableSchema
 
 emissions = Timeseries(
@@ -147,10 +147,10 @@ emissions = Timeseries(
 carbon_cycle = CarbonCycleBuilder.from_parameters(
     {"tau": 30.0, "conc_pi": 278.0, "alpha_temperature": 0.0}
 ).build()
-co2_erf = CO2ERFBuilder.from_parameters({"erf_2xco2": 3.7, "conc_pi": 278.0}).build()
+co2_erf = CO2ErfBuilder.from_parameters({"erf_2xco2": 3.7, "conc_pi": 278.0}).build()
 ```
 
-The `CO2ERFBuilder` component writes `Effective Radiative Forcing|CO2`,
+The `CO2ErfBuilder` component writes `Effective Radiative Forcing|CO2`,
 but the `TwoLayerBuilder` component reads `Effective Radiative Forcing`.
 A [`VariableSchema`][rscm.core.VariableSchema] declares every variable the components use,
 plus an aggregate that connects the two:

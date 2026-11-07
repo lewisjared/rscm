@@ -24,7 +24,7 @@ pub use aerosol::{AerosolDirectParameters, AerosolIndirectParameters};
 pub use ch4_chemistry::CH4ChemistryParameters;
 pub use ch4_oxidation::CH4OxidationParameters;
 pub use climate_udeb::{
-    ClimateUDEBParameters, OceanTempProfile, SubannualForcing, CP_SEAWATER,
+    ClimateUdebParameters, EfficacyMethod, OceanTempProfile, SubannualForcing, CP_SEAWATER,
     DIFFUSIVITY_CM2S_TO_M2YR, RHO_SEAWATER, SECONDS_PER_YEAR,
 };
 pub use co2_budget::CO2BudgetParameters;
@@ -32,10 +32,10 @@ pub use forcing_aggregation::{
     EfficacyClimate, ForcingAgent, ForcingAggregationParameters, ForcingTerm,
 };
 pub use ghg_forcing::{ForcingMethod, GhgForcingParameters};
-pub use halocarbon::{FgasRegions, HalocarbonParameters, HalocarbonSpecies};
+pub use halocarbon::{FgasRegions, HalocarbonChemistryParameters, HalocarbonSpecies};
 pub use n2o_chemistry::N2OChemistryParameters;
 pub use nitrogen::{NitrogenParameters, PrognosticFixation};
-pub use ocean_carbon::{IrfForm, OceanCarbonModel, OceanCarbonParameters};
+pub use ocean_carbon::{IrfForm, OceanCarbonMethod, OceanCarbonParameters};
 pub use ozone_forcing::{OzoneForcingParameters, TropOzoneRegions};
 pub use permafrost::{PermafrostParameters, PermafrostSoilParameters};
 pub use sea_level::{
@@ -43,4 +43,4 @@ pub use sea_level::{
     GlacierParameters, GreenlandDischargeParameters, SeaLevelRiseParameters,
     SurfaceMassBalanceParameters, ThermalExpansionParameters,
 };
-pub use terrestrial_carbon::{FertilizationMethod, TerrestrialCarbonParameters};
+pub use terrestrial_carbon::{FertilisationMethod, TerrestrialCarbonParameters};

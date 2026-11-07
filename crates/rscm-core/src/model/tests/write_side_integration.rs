@@ -1,7 +1,7 @@
 //! Integration tests for write-side grid aggregation during model execution.
 
 use crate::component::{Component, GridType, InputState, OutputState, VariableDefinition};
-use crate::errors::RSCMResult;
+use crate::errors::RscmResult;
 use crate::model::ModelBuilder;
 use crate::schema::VariableSchema;
 use crate::state::{FourBoxSlice, HemisphericSlice, StateValue};
@@ -30,7 +30,7 @@ impl Component for FourBoxWriter {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let mut output = OutputState::new();
         output.insert(
             self.var_name.clone(),
@@ -59,7 +59,7 @@ impl Component for HemisphericWriter {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let mut output = OutputState::new();
         output.insert(
             self.var_name.clone(),

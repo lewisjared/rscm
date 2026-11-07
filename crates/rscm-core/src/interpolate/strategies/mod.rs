@@ -2,7 +2,7 @@ pub mod linear_spline;
 pub mod next;
 pub mod previous;
 
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use is_close::is_close;
 pub use linear_spline::LinearSplineStrategy;
 pub use next::NextStrategy;
@@ -25,7 +25,7 @@ fn find_segment<T>(
     target: T::Elem,
     time_bounds: &ArrayBase<T, Ix1>,
     extrapolate: bool,
-) -> RSCMResult<(SegmentOptions, usize)>
+) -> RscmResult<(SegmentOptions, usize)>
 where
     T: Data,
     T::Elem: Float,
@@ -44,13 +44,13 @@ where
 
     if needs_extrap & (!extrapolate) {
         if needs_extrap_backward {
-            return Err(RSCMError::ExtrapolationNotAllowed(
+            return Err(RscmError::ExtrapolationNotAllowed(
                 target.to_f32().unwrap(),
                 "start of".to_string(),
                 time_bounds[0].to_f32().unwrap(),
             ));
         } else {
-            return Err(RSCMError::ExtrapolationNotAllowed(
+            return Err(RscmError::ExtrapolationNotAllowed(
                 target.to_f32().unwrap(),
                 "end of".to_string(),
                 time_bounds[time_bounds.len() - 1].to_f32().unwrap(),
@@ -98,7 +98,7 @@ where
         time: &ArrayBase<At, Ix1>,
         y: &ArrayBase<Ay, Ix1>,
         time_target: At::Elem,
-    ) -> RSCMResult<Ay::Elem>;
+    ) -> RscmResult<Ay::Elem>;
 }
 
 #[derive(Clone)]
@@ -120,7 +120,7 @@ where
         time: &ArrayBase<At, Ix1>,
         y: &ArrayBase<Ay, Ix1>,
         time_target: At::Elem,
-    ) -> RSCMResult<Ay::Elem> {
+    ) -> RscmResult<Ay::Elem> {
         match self {
             InterpolationStrategy::Linear(strat) => strat.interpolate(time, y, time_target),
             InterpolationStrategy::Next(strat) => strat.interpolate(time, y, time_target),

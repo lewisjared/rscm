@@ -1,7 +1,7 @@
 //! Model struct and runtime execution.
 
 use crate::component::{ComponentState, GridType, TimeseriesType};
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::state::{
     lookup_order, InputState, ReadTransformInfo, StateValue, TransformContext, VariableSource,
 };
@@ -17,8 +17,8 @@ use std::sync::Arc;
 use super::transformations::aggregate_state_value;
 use super::types::{CGraph, RequiredTransformation, C};
 
-/// Custom serialization for HashMap<(String, String), T> to work with JSON.
-/// Serializes as a Vec of (key1, key2, value) tuples.
+/// Custom serialisation for HashMap<(String, String), T> to work with JSON.
+/// Serialises as a Vec of (key1, key2, value) tuples.
 mod tuple_map_serde {
     use super::*;
 
@@ -104,7 +104,7 @@ pub struct Model {
         with = "tuple_map_serde"
     )]
     unit_conversions: HashMap<(String, String), f64>,
-    /// Variable source types for get() behavior.
+    /// Variable source types for get() behaviour.
     /// Key: (variable_name, component_name) -> source type.
     /// This matches the unit_conversions pattern since the same variable
     /// can have different sources for different components.
@@ -118,7 +118,7 @@ pub struct Model {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) timeseries_types: BTreeMap<String, TimeseriesType>,
     /// Internal state for each component, keyed by node index.
-    /// Uses Box<dyn ComponentState> with typetag for serialization.
+    /// Uses Box<dyn ComponentState> with typetag for serialisation.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) component_states: BTreeMap<NodeIndex, Box<dyn ComponentState>>,
     /// Execution order and read context of each component, built on the first step.
@@ -295,7 +295,7 @@ impl Model {
         self.component_states.get(&node_index).map(|b| b.as_ref())
     }
 
-    /// Create a checkpoint of the model state that can be serialized.
+    /// Create a checkpoint of the model state that can be serialised.
     ///
     /// The checkpoint includes:
     /// - All timeseries data (including current state)
@@ -303,18 +303,18 @@ impl Model {
     /// - Current time index
     ///
     /// Use this to save model state mid-run for later resumption.
-    pub fn checkpoint(&self) -> RSCMResult<String> {
+    pub fn checkpoint(&self) -> RscmResult<String> {
         serde_json::to_string(self)
-            .map_err(|e| RSCMError::Error(format!("Serialization failed: {}", e)))
+            .map_err(|e| RscmError::Error(format!("Serialisation failed: {}", e)))
     }
 
     /// Restore a model from a JSON checkpoint string.
     ///
     /// This recreates the exact state of the model at checkpoint time,
     /// including component internal states.
-    pub fn from_checkpoint(json: &str) -> RSCMResult<Self> {
+    pub fn from_checkpoint(json: &str) -> RscmResult<Self> {
         serde_json::from_str(json)
-            .map_err(|e| RSCMError::Error(format!("Deserialization failed: {}", e)))
+            .map_err(|e| RscmError::Error(format!("Deserialisation failed: {}", e)))
     }
 
     /// Get the current time index (useful for checkpointing).
@@ -507,7 +507,7 @@ impl Model {
     /// The updated state from the component is then pushed into the model's timeseries collection
     /// to be later used by other components.
     /// A point output is stored at the step's end and an average at its start.
-    fn step_model_component(&mut self, plan: &ComponentPlan) -> RSCMResult<()> {
+    fn step_model_component(&mut self, plan: &ComponentPlan) -> RscmResult<()> {
         let component = &self.components[plan.node];
         let component_name = &plan.name;
         let items = plan
@@ -524,16 +524,16 @@ impl Model {
 
         let (start, end) = self.current_time_bounds();
 
-        // Get component state - must exist since we initialize all states in build()
+        // Get component state - must exist since we initialise all states in build()
         let internal_state = self
             .component_states
             .get_mut(&plan.node)
-            .expect("Component state not initialized - this is a bug in Model::build()");
+            .expect("Component state not initialised, a bug in Model::build()");
 
         let output_state = component
             .solve_with_state(start, end, &input_state, internal_state.as_mut())
             .map_err(|err| {
-                RSCMError::Error(format!(
+                RscmError::Error(format!(
                     "{component_name} failed during {start}..{end}: {err}"
                 ))
             })?;
@@ -547,7 +547,7 @@ impl Model {
                 Err(_) => self.output_target(key),
             };
             let target = target.ok_or_else(|| {
-                RSCMError::Error(format!(
+                RscmError::Error(format!(
                     "{component_name} returned undeclared output {key} during {start}..{end}"
                 ))
             })?;
@@ -560,7 +560,7 @@ impl Model {
                     self.grid_weights.get(&source_grid),
                 )
                 .map_err(|err| {
-                    RSCMError::Error(format!(
+                    RscmError::Error(format!(
                         "{component_name} could not aggregate {key} during {start}..{end}: {err}"
                     ))
                 })?
@@ -577,7 +577,7 @@ impl Model {
                 StateValue::Hemispheric(slice) => data.set_hemispheric(key, at, slice),
             };
             result.map_err(|err| {
-                RSCMError::Error(format!(
+                RscmError::Error(format!(
                     "{component_name} could not write {key} during {start}..{end}: {err}"
                 ))
             })?;
@@ -590,9 +590,9 @@ impl Model {
     /// Every producer runs before its consumers, including when branches
     /// of different lengths feed an aggregate. Self-edges describe a component's
     /// own state and do not constrain the order within a step.
-    pub(crate) fn execution_order(&self) -> RSCMResult<Vec<NodeIndex>> {
+    pub(crate) fn execution_order(&self) -> RscmResult<Vec<NodeIndex>> {
         let graph = EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
-        petgraph::algo::toposort(&graph, None).map_err(|cycle| RSCMError::CircularDependency {
+        petgraph::algo::toposort(&graph, None).map_err(|cycle| RscmError::CircularDependency {
             components: vec![Self::extract_component_name(
                 &self.components[cycle.node_id()],
             )],
@@ -610,7 +610,7 @@ impl Model {
     }
 
     /// Step the model forward a step by solving each component for the current step.
-    fn step_model(&mut self) -> RSCMResult<()> {
+    fn step_model(&mut self) -> RscmResult<()> {
         let plan = match self.plan.take() {
             Some(plan) => plan,
             None => self
@@ -636,9 +636,9 @@ impl Model {
     /// Fallible step execution. On failure the time index is not advanced.
     /// Components already executed may have updated their state; rebuild the
     /// model before retrying a failed run.
-    pub fn try_step(&mut self) -> RSCMResult<()> {
+    pub fn try_step(&mut self) -> RscmResult<()> {
         if self.time_index + 1 >= self.time_axis.len() {
-            return Err(RSCMError::Error(
+            return Err(RscmError::Error(
                 "Model is already at its final boundary".into(),
             ));
         }
@@ -655,7 +655,7 @@ impl Model {
 
     /// Run to completion, returning the first component or output error.
     /// As with `try_step`, discard the model after a failed run.
-    pub fn try_run(&mut self) -> RSCMResult<()> {
+    pub fn try_run(&mut self) -> RscmResult<()> {
         while self.time_index + 1 < self.time_axis.len() {
             self.try_step()?;
         }

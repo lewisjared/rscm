@@ -1,7 +1,7 @@
 //! Point and average resolution of each variable's timeseries type.
 
 use crate::component::{Component, InputState, OutputState, TimeseriesType, VariableDefinition};
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::model::{Model, ModelBuilder};
 use crate::spatial::{ScalarGrid, ScalarRegion};
@@ -29,7 +29,7 @@ macro_rules! declared {
                 _t_current: Time,
                 t_next: Time,
                 _input_state: &InputState,
-            ) -> RSCMResult<OutputState> {
+            ) -> RscmResult<OutputState> {
                 Ok(self
                     .outputs()
                     .into_iter()
@@ -61,7 +61,7 @@ fn builder(components: Vec<Arc<dyn Component + Send + Sync>>) -> ModelBuilder {
     builder
 }
 
-fn build(components: Vec<Arc<dyn Component + Send + Sync>>) -> RSCMResult<Model> {
+fn build(components: Vec<Arc<dyn Component + Send + Sync>>) -> RscmResult<Model> {
     builder(components).build()
 }
 
@@ -123,7 +123,7 @@ fn a_consumer_declaring_another_type_is_an_error() {
     ]);
     let err = build(vec![lifetime_producer(), Arc::new(disagreeing)]).unwrap_err();
     match err {
-        RSCMError::TimeseriesTypeMismatch {
+        RscmError::TimeseriesTypeMismatch {
             variable,
             producer,
             producer_type,
@@ -176,7 +176,7 @@ fn prescribed_type_comes_from_the_builder_then_consumers_then_the_unit() {
         .build()
         .unwrap_err();
     assert!(
-        matches!(err, RSCMError::TimeseriesTypeMismatch { ref producer, .. }
+        matches!(err, RscmError::TimeseriesTypeMismatch { ref producer, .. }
             if producer == "ModelBuilder::with_timeseries_type"),
         "{err:?}"
     );
@@ -189,7 +189,7 @@ fn a_builder_declaration_must_match_the_producer() {
         .build()
         .unwrap_err();
     assert!(
-        matches!(err, RSCMError::TimeseriesTypeMismatch { ref consumer, .. }
+        matches!(err, RscmError::TimeseriesTypeMismatch { ref consumer, .. }
             if consumer == "ModelBuilder::with_timeseries_type"),
         "{err:?}"
     );
@@ -207,7 +207,7 @@ fn an_average_state_is_an_error_unless_the_check_is_off() {
 
     let err = builder.build().unwrap_err();
     assert!(
-        matches!(err, RSCMError::AverageState { ref variable, ref component }
+        matches!(err, RscmError::AverageState { ref variable, ref component }
             if variable == "Flux" && component == "Producer"),
         "{err:?}"
     );
@@ -294,7 +294,7 @@ impl Component for IntervalReader {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let average = input_state.get_scalar_window("Emissions").interval();
         let (_, end) = input_state.get_scalar_window("Temperature").interval()?;
         Ok(HashMap::from([

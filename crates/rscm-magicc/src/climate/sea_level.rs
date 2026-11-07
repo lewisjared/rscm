@@ -13,13 +13,13 @@
 //! 4. Antarctic solid ice discharge convolves basal melt with each drainage region's
 //!    response function (Levermann et al. 2014)
 //!
-//! Thermal expansion needs the ocean layer temperatures, so `ClimateUDEB` calculates it
+//! Thermal expansion needs the ocean layer temperatures, so `ClimateUdeb` calculates it
 //! when its `thermal_expansion` parameter is set, see [`thermal_expansion_increment`].
 //!
 //! # Inputs
 //!
-//! - `Surface Temperature|Annual Mean` (K) - Mean warming over the step, from `ClimateUDEB`
-//! - `Sea Level Rise|Thermal Expansion` (mm) - From `ClimateUDEB`
+//! - `Surface Temperature|Annual Mean` (K) - Mean warming over the step, from `ClimateUdeb`
+//! - `Sea Level Rise|Thermal Expansion` (mm) - From `ClimateUdeb`
 //!
 //! # Outputs
 //!
@@ -38,23 +38,23 @@
 //!   from an age of 216 years, and a delayed region releases one year of melt before it starts.
 
 use crate::parameters::{
-    ClimateUDEBParameters, SeaLevelRiseParameters, SurfaceMassBalanceParameters,
+    ClimateUdebParameters, SeaLevelRiseParameters, SurfaceMassBalanceParameters,
     ThermalExpansionParameters,
 };
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::{RSCMError, RSCMResult};
+use rscm_core::errors::{RscmError, RscmResult};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
-/// Annual mean global surface warming, written by `ClimateUDEB` at the end of each step.
+/// Annual mean global surface warming, written by `ClimateUdeb` at the end of each step.
 pub const ANNUAL_MEAN_TEMPERATURE: &str = "Surface Temperature|Annual Mean";
 
-/// Cumulative thermal expansion, written by `ClimateUDEB`.
+/// Cumulative thermal expansion, written by `ClimateUdeb`.
 pub const THERMAL_EXPANSION: &str = "Sea Level Rise|Thermal Expansion";
 
 /// Sea level rise from thermal expansion over one step, in mm.
@@ -63,7 +63,7 @@ pub const THERMAL_EXPANSION: &str = "Sea Level Rise|Thermal Expansion";
 /// and `profile` the initial layer temperatures.
 pub fn thermal_expansion_increment(
     expansion: &ThermalExpansionParameters,
-    climate: &ClimateUDEBParameters,
+    climate: &ClimateUdebParameters,
     profile: &[Vec<FloatValue>; 2],
     start: &[Vec<FloatValue>],
     end: &[Vec<FloatValue>],
@@ -144,7 +144,7 @@ pub struct SeaLevelRiseState {
     pub antarctic_regions: Vec<AntarcticRegionState>,
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.SeaLevelRiseState")]
 impl ComponentState for SeaLevelRiseState {
     fn as_any(&self) -> &dyn Any {
         self
@@ -297,7 +297,7 @@ impl SeaLevelRise {
         t_current: Time,
         input_state: &InputState,
         state: &mut SeaLevelRiseState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         if state.antarctic_regions.len() != self.parameters.antarctic_discharge.regions.len() {
             *state = self.initial_state();
         }
@@ -342,7 +342,7 @@ impl Default for SeaLevelRise {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.SeaLevelRise")]
 impl Component for SeaLevelRise {
     fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
@@ -353,7 +353,7 @@ impl Component for SeaLevelRise {
         t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let mut state = self.initial_state();
         self.solve_impl(t_current, input_state, &mut state)
     }
@@ -368,11 +368,11 @@ impl Component for SeaLevelRise {
         _t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<SeaLevelRiseState>()
-            .ok_or_else(|| RSCMError::Error("Internal state should be SeaLevelRiseState".into()))?;
+            .ok_or_else(|| RscmError::Error("Internal state should be SeaLevelRiseState".into()))?;
         self.solve_impl(t_current, input_state, state)
     }
 }
@@ -383,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_thermal_expansion_follows_warming() {
-        let climate = ClimateUDEBParameters::default();
+        let climate = ClimateUdebParameters::default();
         let expansion = ThermalExpansionParameters::default();
         let profile = [0, 1].map(|hemi| climate.initial_ocean_profile(hemi));
         let cold = vec![vec![0.0; climate.n_layers]; 2];

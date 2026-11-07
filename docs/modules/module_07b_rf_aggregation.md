@@ -26,7 +26,7 @@ because floating-point addition is not associative.
   including the `no_efficacy` (`RF_EFFICACY_APPLY` 0) and `prescribed_efficacy` (1) variants.
   `aggregation.rs` has Rust unit tests for the patterns and efficacy modes.
 
-Volcanic forcing enters `ClimateUDEB` directly, as in MAGICC7.
+Volcanic forcing enters `ClimateUdeb` directly, as in MAGICC7.
 
 ## Forcing types
 
@@ -43,7 +43,7 @@ Every prescribed efficacy defaults to 1, so ERF and RF then differ only by round
 
 In RSCM each component's `Effective Radiative Forcing|<agent>` output is MAGICC7's RF.
 `ForcingAggregation` writes the box EffRF as `Effective Radiative Forcing|Efficacy Adjusted`,
-which `ClimateUDEB` reads,
+which `ClimateUdeb` reads,
 and the area-weighted sum of the agents' RF as `Effective Radiative Forcing`.
 The parity tests rebuild MAGICC7's reported ERF from these outputs
 with `Reported` in `tests/regression/full_run.py`.
@@ -53,7 +53,7 @@ with `Reported` in `tests/regression/full_run.py`.
 ### Regional patterns
 
 The four boxes are in the order NH ocean, NH land, SH ocean, SH land,
-with area fractions $a_i$ from [initialisation](module_00_initialization.md#four-box-geography).
+with area fractions $a_i$ from [initialisation](module_00_initialisation.md#four-box-geography).
 A global forcing $Q$ is spread over the boxes with the agent's pattern $r_i$ (`RF_REGIONS_*`),
 normalised so the area-weighted mean is $Q$:
 
@@ -81,6 +81,7 @@ $$
 
 $\varepsilon$ is the prescribed efficacy `RF_EFFICACY_*`.
 Mode 1 cancels each pattern's own efficacy, so every agent has unit efficacy.
+RSCM's `efficacy_method` names modes 0, 1 and 2 `none`, `unit` and `ar6`.
 
 ### Internal efficacy
 
@@ -154,7 +155,7 @@ Notes on the table:
 - **Patterns from forcing**: land use and BC on snow take their pattern from their box forcing in
   `RF_REGIONS_NORMYEAR`, and nitrate from its total forcing in that year.
 - **Volcanic**: monthly volcanic forcing (`RF_EFFICACY_VOLC`, `SRF_FACTOR_VOLC` 0.7) goes straight to the
-  climate model, through `ClimateUDEB`'s `subannual_forcing` in RSCM.
+  climate model, through `ClimateUdeb`'s `subannual_forcing` in RSCM.
 - **Not in the default total**: cloud cover is zero by default ([indirect aerosol forcing](module_06_aerosol_indirect.md)),
   external forcing (`QXTRA`) needs `RF_EXTRA_READ`, and the aviation agents (H2O, contrails, cirrus)
   have no term in the summation order.
@@ -260,12 +261,12 @@ for agent in ("CO2", "CH4", "N2O", "Other"):
 schema.add_aggregate(
     f"{ERF}|GHG", "W/m^2", "sum", [f"{ERF}|CO2", f"{ERF}|CH4", f"{ERF}|N2O"]
 )
-# Top-level aggregate, read by ClimateUDEB
+# Top-level aggregate, read by ClimateUdeb
 schema.add_aggregate(ERF, "W/m^2", "sum", [f"{ERF}|GHG", f"{ERF}|Other"])
 ```
 
 `run_magicc` and `run_magicc_emissions` build total ERF this way, as a plain sum.
-`ClimateUDEB` then applies the CO2 efficacy and regional pattern to that total
+`ClimateUdeb` then applies the CO2 efficacy and regional pattern to that total
 (see [climate](module_08_climate.md)).
 `rscm.magicc.full.run_magicc7` uses `ForcingAggregation` instead.
 See the [tutorials](../tutorials.md) for a walkthrough.

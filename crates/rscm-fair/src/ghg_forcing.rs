@@ -9,7 +9,7 @@
 use crate::constants::{forcing_unit, get, one, surface_temperature, temperature_unit};
 use rscm_components::meinshausen2020::Meinshausen2020;
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -48,9 +48,9 @@ impl GhgSpecies {
     }
 }
 
-/// Parameters of [`FairGhgForcing`].
+/// Parameters of [`GhgForcing`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairGhgForcingParameters {
+pub struct GhgForcingParameters {
     /// CO2.
     pub co2: GhgSpecies,
     /// CH4.
@@ -67,15 +67,15 @@ pub struct FairGhgForcingParameters {
 
 /// FaIR's Meinshausen et al. (2020) greenhouse gas forcing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FairGhgForcing {
-    parameters: FairGhgForcingParameters,
+pub struct GhgForcing {
+    parameters: GhgForcingParameters,
     #[serde(skip)]
     offset: OnceLock<Vec<FloatValue>>,
 }
 
-impl FairGhgForcing {
+impl GhgForcing {
     /// Create the component.
-    pub fn from_parameters(parameters: FairGhgForcingParameters) -> Self {
+    pub fn from_parameters(parameters: GhgForcingParameters) -> Self {
         Self {
             parameters,
             offset: OnceLock::new(),
@@ -119,8 +119,8 @@ impl FairGhgForcing {
     }
 }
 
-#[typetag::serde]
-impl Component for FairGhgForcing {
+#[typetag::serde(name = "fair.GhgForcing")]
+impl Component for GhgForcing {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = vec![VariableDefinition::scalar_input(
             &self.parameters.surface_temperature,
@@ -144,7 +144,7 @@ impl Component for FairGhgForcing {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let concentrations: Vec<_> = self
             .species()
             .map(|s| get(input_state, &s.concentration))
@@ -180,8 +180,8 @@ mod tests {
         }
     }
 
-    fn component() -> FairGhgForcing {
-        FairGhgForcing::from_parameters(FairGhgForcingParameters {
+    fn component() -> GhgForcing {
+        GhgForcing::from_parameters(GhgForcingParameters {
             co2: gas("CO2", 277.15),
             ch4: gas("CH4", 731.41),
             n2o: gas("N2O", 273.87),

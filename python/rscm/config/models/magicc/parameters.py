@@ -136,9 +136,9 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "rf_efficacy_apply": ParameterInfo(
         name="rf_efficacy_apply",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.climate.parameters.efficacy_apply",
+        rscm_path="components.climate.parameters.efficacy_method",
         unit=None,
-        description="Efficacy application mode (0=disabled, 1=prescribed, 2=AR6 mode)",
+        description="Efficacy method (0 none, 1 unit, 2 ar6)",
         category="forcing",
     ),
     "rf_efficacy_co2": ParameterInfo(
@@ -377,9 +377,9 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
     "co2_fertilization_method": ParameterInfo(
         name="co2_fertilization_method",
         status=ParameterStatus.SUPPORTED,
-        rscm_path="components.terrestrial_carbon.parameters.fertilization_method",
+        rscm_path="components.terrestrial_carbon.parameters.fertilisation_method",
         unit=None,
-        description="CO2 fertilization method (1=log, 2=Gifford, 3=sigmoid)",
+        description="CO2 fertilisation method (1=log, 2=Gifford, 3=sigmoid)",
         category="carbon_cycle",
     ),
     "co2_plantboxresp_method": ParameterInfo(
@@ -394,7 +394,7 @@ MAGICC_PARAMETERS: dict[str, ParameterInfo] = {
         status=ParameterStatus.SUPPORTED,
         rscm_path="components.terrestrial_carbon.parameters.plantbox_resp_fertscale",
         unit=None,
-        description="Fertilization effect on respiration",
+        description="Fertilisation effect on respiration",
         category="carbon_cycle",
     ),
 }

@@ -18,7 +18,7 @@
 //!
 //! Components that calculate radiative forcing from greenhouse gas concentrations:
 //!
-//! - [`CO2ERF`] - CO2 effective radiative forcing using the logarithmic relationship
+//! - [`CO2Erf`] - CO2 effective radiative forcing using the logarithmic relationship
 //!
 //! ## Ocean Heat Uptake Components
 //!
@@ -31,9 +31,9 @@
 //! Components are instantiated with their parameters and added to a model:
 //!
 //! ```rust,ignore
-//! use rscm_components::{CO2ERF, CO2ERFParameters};
+//! use rscm_components::{CO2Erf, CO2ErfParameters};
 //!
-//! let component = CO2ERF::from_parameters(CO2ERFParameters {
+//! let component = CO2Erf::from_parameters(CO2ErfParameters {
 //!     erf_2xco2: 3.7,    // W/m^2
 //!     conc_pi: 278.0,    // ppm
 //! });
@@ -54,5 +54,5 @@ pub mod four_box_ocean_heat_uptake;
 pub mod ocean_carbon_cycle;
 
 pub use carbon_cycle::{CarbonCycle, CarbonCycleParameters, SolverOptions};
-pub use co2_erf::{CO2ERFParameters, CO2ERF};
+pub use co2_erf::{CO2Erf, CO2ErfParameters};
 pub use four_box_ocean_heat_uptake::{FourBoxOceanHeatUptake, FourBoxOceanHeatUptakeParameters};

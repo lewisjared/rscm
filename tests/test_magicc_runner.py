@@ -5,7 +5,11 @@ import numpy.testing as npt
 import pytest
 
 from rscm.core import InterpolationStrategy, ModelBuilder, TimeAxis, Timeseries
-from rscm.magicc import ClimateUDEBBuilder, CO2Emissions, GhgForcingBuilder, run_magicc
+from rscm.magicc import ClimateUdebBuilder, CO2Emissions, GhgForcingBuilder, run_magicc
+
+
+def _axis(years):
+    return TimeAxis.from_values(np.asarray(years, dtype=np.float64))
 
 
 def concentrations(n):
@@ -19,7 +23,7 @@ def concentrations(n):
 def test_preindustrial_equilibrium():
     years = np.arange(1750.0, 1801.0)
     result = run_magicc(
-        years, concentrations(len(years)), other_forcing=np.zeros(len(years))
+        _axis(years), concentrations(len(years)), other_forcing=np.zeros(len(years))
     )
     npt.assert_array_equal(result.years, years)
     npt.assert_allclose(result.values["Effective Radiative Forcing"], 0.0, atol=1e-12)
@@ -30,11 +34,11 @@ def test_preindustrial_equilibrium():
 def test_initial_heat_uptake_respects_efficacy():
     def heat_uptake(efficacy):
         result = run_magicc(
-            [1750, 1751],
+            _axis([1750, 1751]),
             concentrations(2),
             other_forcing=[1.0, 1.0],
             climate_parameters={
-                "efficacy_apply": 2,
+                "efficacy_method": "ar6",
                 "prescribed_efficacy_co2": efficacy,
             },
         )
@@ -43,13 +47,13 @@ def test_initial_heat_uptake_respects_efficacy():
     npt.assert_allclose(heat_uptake(2.0), 2 * heat_uptake(1.0))
 
 
-@pytest.mark.parametrize("method", ["Ipcctar", "Olbl"])
+@pytest.mark.parametrize("method", ["IPCCTAR", "OLBL"])
 def test_forcing_has_same_boundary_as_concentrations(method):
     years = np.arange(2000.0, 2011.0)
     conc = concentrations(len(years))
     conc["CO2"] = np.linspace(400.0, 556.0, len(years))
     result = run_magicc(
-        years,
+        _axis(years),
         conc,
         other_forcing=np.zeros(len(years)),
         forcing_parameters={"method": method, "adjust_co2": 1.0},
@@ -72,10 +76,10 @@ def test_calculated_forcing_matches_prescribed_climate_run(land_fractions):
     nh_land, sh_land = land_fractions
     climate_parameters = {"nh_land_fraction": nh_land, "sh_land_fraction": sh_land}
     result = run_magicc(
-        years,
+        _axis(years),
         conc,
         other_forcing=other,
-        forcing_parameters={"method": "Ipcctar", "adjust_co2": 1.0},
+        forcing_parameters={"method": "IPCCTAR", "adjust_co2": 1.0},
         forcing_species=("CO2",),
         climate_parameters=climate_parameters,
     )
@@ -86,7 +90,7 @@ def test_calculated_forcing_matches_prescribed_climate_run(land_fractions):
     model = (
         ModelBuilder()
         .with_time_axis(axis)
-        .with_component(ClimateUDEBBuilder.from_parameters(climate_parameters).build())
+        .with_component(ClimateUdebBuilder.from_parameters(climate_parameters).build())
         .with_prescribed_variable(
             "Effective Radiative Forcing",
             Timeseries(expected_erf, axis, "W/m^2", InterpolationStrategy.Linear),
@@ -120,7 +124,7 @@ def test_partial_emissions_budget_and_concentration_replay():
         ocean_uptake=np.full_like(rates, 0.25),
     )
     result = run_magicc(
-        years, conc, other_forcing=np.zeros(len(years)), co2_emissions=emissions
+        _axis(years), conc, other_forcing=np.zeros(len(years)), co2_emissions=emissions
     )
     expected = 278.0 + np.r_[0.0, np.cumsum(rates[:-1] + 1.0 - 0.5 - 0.25) / 2.123]
     npt.assert_allclose(result.values["Atmospheric Concentration|CO2"], expected)
@@ -128,7 +132,7 @@ def test_partial_emissions_budget_and_concentration_replay():
     assert result.sources["Carbon Flux|Ocean"] == "prescribed"
 
     conc["CO2"] = result.values["Atmospheric Concentration|CO2"]
-    replay = run_magicc(years, conc, other_forcing=np.zeros(len(years)))
+    replay = run_magicc(_axis(years), conc, other_forcing=np.zeros(len(years)))
     for variable in ("Effective Radiative Forcing", "Surface Temperature"):
         npt.assert_allclose(
             result.values[variable], replay.values[variable], atol=1e-12
@@ -140,31 +144,38 @@ def test_invalid_concentrations_rejected(bad):
     conc = concentrations(3)
     conc["CH4"][1] = bad
     with pytest.raises(ValueError, match="CH4"):
-        run_magicc([1750, 1751, 1752], conc, other_forcing=[0, 0, 0])
+        run_magicc(_axis([1750, 1751, 1752]), conc, other_forcing=[0, 0, 0])
 
 
 def test_missing_concentration_rejected():
     with pytest.raises(ValueError, match="N2O"):
         run_magicc(
-            [1750, 1751], {"CO2": [278, 278], "CH4": [722, 722]}, other_forcing=[0, 0]
+            _axis([1750, 1751]),
+            {"CO2": [278, 278], "CH4": [722, 722]},
+            other_forcing=[0, 0],
         )
 
 
 @pytest.mark.parametrize(
-    "years", [[1750], [1750, 1750], [1751, 1750], [1750, 1752], [1750, np.nan]]
+    "bounds",
+    [
+        [1750, 1751],
+        [1750, 1750.5, 1751],
+        [1750, 1751, 1753],
+        [1750, 1752, 1754],
+    ],
 )
-def test_invalid_years_rejected(years):
-    with pytest.raises(ValueError, match="years"):
-        run_magicc(
-            years, concentrations(len(years)), other_forcing=np.zeros(len(years))
-        )
+def test_invalid_time_axis_rejected(bounds):
+    axis = TimeAxis.from_bounds(np.asarray(bounds, dtype=np.float64))
+    with pytest.raises(ValueError, match="time_axis"):
+        run_magicc(axis, concentrations(len(axis)), other_forcing=np.zeros(len(axis)))
 
 
 def test_conflicting_co2_ownership_rejected():
     emissions = CO2Emissions(278.0, [0, 0], [0, 0], [0, 0], [0, 0])
     with pytest.raises(ValueError, match="CO2"):
         run_magicc(
-            [1750, 1751],
+            _axis([1750, 1751]),
             concentrations(2),
             other_forcing=[0, 0],
             co2_emissions=emissions,
@@ -176,20 +187,22 @@ def test_interval_driver_length_rejected():
     conc = concentrations(2)
     del conc["CO2"]
     with pytest.raises(ValueError, match="Fossil has 1 values, one per interval"):
-        run_magicc([1750, 1751], conc, other_forcing=[0, 0], co2_emissions=emissions)
+        run_magicc(
+            _axis([1750, 1751]), conc, other_forcing=[0, 0], co2_emissions=emissions
+        )
 
 
 @pytest.mark.parametrize("other", [[0], [0, np.nan], [0, np.inf]])
 def test_invalid_residual_forcing_rejected(other):
     with pytest.raises(ValueError, match="other_forcing"):
-        run_magicc([1750, 1751], concentrations(2), other_forcing=other)
+        run_magicc(_axis([1750, 1751]), concentrations(2), other_forcing=other)
 
 
 @pytest.mark.parametrize("species", [(), ("CO2", "CO2"), ("SF6",)])
 def test_invalid_forcing_selection_rejected(species):
     with pytest.raises(ValueError, match="forcing_species"):
         run_magicc(
-            [1750, 1751],
+            _axis([1750, 1751]),
             concentrations(2),
             other_forcing=[0, 0],
             forcing_species=species,
@@ -201,9 +214,9 @@ def test_nonfinite_calculated_output_fails_run():
     conc["CO2"][1] = 556.0
     with pytest.raises(RuntimeError, match="Nonfinite"):
         run_magicc(
-            [1750, 1751],
+            _axis([1750, 1751]),
             conc,
             other_forcing=[0, 0],
-            forcing_parameters={"method": "Ipcctar", "adjust_co2": 1e308},
+            forcing_parameters={"method": "IPCCTAR", "adjust_co2": 1e308},
             climate_parameters={"rf_2xco2": 3.71},
         )

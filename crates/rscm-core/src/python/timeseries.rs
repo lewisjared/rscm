@@ -1,4 +1,4 @@
-use crate::errors::RSCMResult;
+use crate::errors::RscmResult;
 use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, NextStrategy, PreviousStrategy,
 };
@@ -109,15 +109,21 @@ impl PyTimeseries {
     #[staticmethod]
     fn from_values(
         values: Bound<PyArray1<FloatValue>>,
-        time: Bound<PyArray1<FloatValue>>,
+        time_axis: Bound<PyTimeAxis>,
     ) -> PyResult<Self> {
         let values = values.to_owned_array();
-        let time = time.to_owned_array();
+        let time_axis = time_axis.borrow().0.clone();
 
-        if values.len() != time.len() {
+        if values.len() != time_axis.len() {
             Err(PyValueError::new_err("Lengths do not match"))
         } else {
-            Ok(PyTimeseries(Timeseries::from_values(values, time)))
+            Ok(PyTimeseries(Timeseries::new(
+                values.insert_axis(Axis(1)),
+                time_axis,
+                ScalarGrid,
+                String::new(),
+                InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+            )))
         }
     }
 
@@ -168,7 +174,7 @@ impl PyTimeseries {
         self.0.at(time_index, ScalarRegion::Global)
     }
 
-    fn at_time(&self, time: Time) -> RSCMResult<FloatValue> {
+    fn at_time(&self, time: Time) -> RscmResult<FloatValue> {
         self.0.at_time(time, ScalarRegion::Global)
     }
 }

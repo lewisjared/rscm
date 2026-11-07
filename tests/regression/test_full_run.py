@@ -14,7 +14,7 @@ import pytest
 
 from regression import full_run
 from rscm._lib.magicc import (
-    ClimateUDEBBuilder,
+    ClimateUdebBuilder,
     GhgForcingBuilder,
     HalocarbonChemistryBuilder,
     OzoneForcingBuilder,
@@ -23,6 +23,10 @@ from rscm._lib.magicc import (
 from rscm.core import VariableRole
 from rscm.magicc import full
 from rscm.magicc import prescribed as pr
+
+
+def _lag_temperature(builder):
+    return builder.with_lag("Surface Temperature")
 
 
 def test_halocarbons():
@@ -50,11 +54,11 @@ def test_halocarbons():
         for s in species
     }
     model = full_run.run_components(
-        run.years,
+        run.time_axis,
         [component],
         prescribed=prescribed,
         initial_values=initial,
-        lag=full.LAG,
+        lags=_lag_temperature,
     )
 
     for s in species:
@@ -111,7 +115,7 @@ def test_ozone():
         "Surface Temperature": (run.series("Surface Temperature"), "K"),
     }
     model = full_run.run_components(
-        run.years, [component], prescribed=prescribed, lag=full.LAG
+        run.time_axis, [component], prescribed=prescribed, lags=_lag_temperature
     )
 
     erf = "Effective Radiative Forcing|"
@@ -157,7 +161,9 @@ def test_ch4_oxidation_strat_h2o():
         "Atmospheric Concentration|CH4": (ch4, "ppb"),
         "Atmospheric Concentration|N2O": (n2o, "ppb"),
     }
-    model = full_run.run_components(run.years, [builder.build()], prescribed=prescribed)
+    model = full_run.run_components(
+        run.time_axis, [builder.build()], prescribed=prescribed
+    )
     agent = "CH4 Oxidation Stratospheric H2O"
     name = f"Effective Radiative Forcing|{agent}"
     full_run.assert_close(
@@ -176,11 +182,11 @@ def test_climate():
     ghg = GhgForcingBuilder.from_parameters(
         {f"{gas.lower()}_pi": values[0] for gas, values in conc.items()}
     )
-    climate = ClimateUDEBBuilder.from_parameters(full_run.climate_parameters(run))
+    climate = ClimateUdebBuilder.from_parameters(full_run.climate_parameters(run))
     boxes = run.boxes("TOTAL_EFFRF")
     units = {"CO2": "ppm", "CH4": "ppb", "N2O": "ppb"}
     model = full_run.run_components(
-        run.years,
+        run.time_axis,
         [ghg.build(), climate.build()],
         prescribed={
             **{
@@ -217,10 +223,10 @@ def test_permafrost():
         full.permafrost_parameters(run.parameters)
     ).build()
     model = full_run.run_components(
-        run.years,
+        run.time_axis,
         [component],
         prescribed={"Surface Temperature": (run.series("Surface Temperature"), "K")},
-        lag=full.LAG,
+        lags=_lag_temperature,
     )
     full_run.assert_close(
         full_run.output(model, "Permafrost Thawed Area")[1:],
@@ -257,7 +263,7 @@ def _prescribing(modelled, variable):
     outputs = _all_outputs(modelled)
     run_components = full.run_components
 
-    def run(years, components, *, prescribed, initial_values, **kwargs):
+    def run(time_axis, components, *, prescribed, initial_values, **kwargs):
         def writes(c):
             return {d.name: d for d in c.definitions() if d.role in WRITES}
 
@@ -270,13 +276,13 @@ def _prescribing(modelled, variable):
             if d.role == VariableRole.Input
         }
         replaced = {
-            name: (outputs[name][: len(years)], d.unit)
+            name: (outputs[name][: len(time_axis)], d.unit)
             for name, d in writes(producer).items()
             if name in read
         }
         assert variable in replaced
         return run_components(
-            years,
+            time_axis,
             kept,
             prescribed={**prescribed, **replaced},
             initial_values={
@@ -405,7 +411,7 @@ def test_run_magicc7_reads_no_files_given_inputs(monkeypatch):
         pytest.fail(f"read {path}")
 
     monkeypatch.setattr(full.pr, "read_input", no_reads)
-    model = full.run_magicc7(run.years, full_run.emissions(run), inputs=inputs)
+    model = full.run_magicc7(run.time_axis, full_run.emissions(run), inputs=inputs)
     for name in ("Atmospheric Concentration|CO2", "Effective Radiative Forcing"):
         npt.assert_array_equal(
             full_run.output(model, name),
@@ -427,4 +433,4 @@ def test_run_magicc7_rejects_bad_emissions(change, match):
     emissions = full_run.emissions(run)
     change(emissions)
     with pytest.raises(ValueError, match=match):
-        full.run_magicc7(run.years, emissions)
+        full.run_magicc7(run.time_axis, emissions)

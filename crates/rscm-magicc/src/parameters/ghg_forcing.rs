@@ -9,13 +9,14 @@ use serde::{Deserialize, Serialize};
 /// Forcing calculation method
 ///
 /// Selects which radiative transfer parameterisation to use for
-/// CO2/CH4/N2O forcing.
+/// CO2/CH4/N2O forcing. Strings use MAGICC7's `CORE_CO2CH4N2O_RFMETHOD` spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ForcingMethod {
     /// IPCCTAR method (Myhre et al. 1998)
     ///
     /// Simple logarithmic/square-root formulae with CH4-N2O overlap.
     /// Used for backward compatibility and simpler validation.
+    #[serde(rename = "IPCCTAR")]
     Ipcctar,
 
     /// OLBL method (Oslo line-by-line)
@@ -23,6 +24,7 @@ pub enum ForcingMethod {
     /// Concentration-dependent forcing coefficients calibrated against
     /// line-by-line radiative transfer calculations. This is the method
     /// used in MAGICC7 v7.5.3 for AR6 assessments.
+    #[serde(rename = "OLBL")]
     Olbl,
 }
 
@@ -233,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
+    fn test_serialisation_roundtrip() {
         let params = GhgForcingParameters::default();
         let json = serde_json::to_string(&params).unwrap();
         let restored: GhgForcingParameters = serde_json::from_str(&json).unwrap();
@@ -244,8 +246,8 @@ mod tests {
     }
 
     #[test]
-    fn test_partial_deserialization() {
-        let json = r#"{"method": "Ipcctar", "delq2xco2": 3.80}"#;
+    fn test_partial_deserialisation() {
+        let json = r#"{"method": "IPCCTAR", "delq2xco2": 3.80}"#;
         let params: GhgForcingParameters = serde_json::from_str(json).unwrap();
 
         assert_eq!(params.method, ForcingMethod::Ipcctar);

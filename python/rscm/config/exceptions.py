@@ -51,7 +51,7 @@ class IncompatibleSchemaError(ConfigError):
 
     def __init__(self, config_version: str, loader_version: str) -> None:
         """
-        Initialize the exception.
+        Initialise the exception.
 
         Parameters
         ----------
@@ -84,7 +84,7 @@ class ComponentNotFoundError(ConfigError):
 
     def __init__(self, name: str, available: list[str]) -> None:
         """
-        Initialize the exception.
+        Initialise the exception.
 
         Parameters
         ----------

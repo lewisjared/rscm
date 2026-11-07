@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from rscm.core import TimeAxis
 from rscm.fair import naming
 from rscm.fair.config import CLIMATE_CONFIGS, FairConfig, Species
 from rscm.fair.loaders import make_config
@@ -41,8 +42,8 @@ def from_fair(
     *,
     config: Hashable | None = None,
     scenario: Hashable | None = None,
-) -> tuple[FairConfig, Inputs, NDArray[np.float64]]:
-    """Return the configuration, inputs and timebounds of a config and scenario of `f`.
+) -> tuple[FairConfig, Inputs, TimeAxis]:
+    """Return the configuration, inputs and time axis of a config and scenario of `f`.
 
     `f` is a `fair.FAIR` with its species, configs and inputs filled.
     `config` and `scenario` may be left out when `f` has only one.
@@ -98,4 +99,8 @@ def from_fair(
         br_cl_ods_potential=float(f.br_cl_ods_potential),
         ch4_min=float(f._ch4_min),
     )
-    return fair_config, inputs, np.asarray(f.timebounds, dtype=np.float64)
+    return (
+        fair_config,
+        inputs,
+        TimeAxis.from_values(np.asarray(f.timebounds, dtype=np.float64)),
+    )

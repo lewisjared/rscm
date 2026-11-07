@@ -6,7 +6,7 @@ to Python through PyO3 bindings.
 
 Components are instantiated using the builder pattern:
 
-    builder = CO2ERFBuilder.from_parameters({
+    builder = CO2ErfBuilder.from_parameters({
         "erf_2xco2": 3.7,
         "conc_pi": 278.0,
     })
@@ -58,7 +58,7 @@ class CarbonCycleBuilder(ComponentBuilder):
         """Build the carbon cycle component."""
 
 @final
-class CO2ERFBuilder(ComponentBuilder):
+class CO2ErfBuilder(ComponentBuilder):
     """Builder for the CO2 effective radiative forcing component.
 
     Computes effective radiative forcing (ERF) from CO2 concentrations using
@@ -77,11 +77,11 @@ class CO2ERFBuilder(ComponentBuilder):
       value: 278 ppm.
 
     Inputs, outputs and states are listed on the
-    [CO2ERF component page][component-co2erf].
+    [CO2Erf component page][component-co2erf].
 
     Examples
     --------
-    >>> builder = CO2ERFBuilder.from_parameters(
+    >>> builder = CO2ErfBuilder.from_parameters(
     ...     {
     ...         "erf_2xco2": 3.7,
     ...         "conc_pi": 278.0,
@@ -91,7 +91,7 @@ class CO2ERFBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: dict[str, float]) -> CO2ERFBuilder:
+    def from_parameters(parameters: dict[str, float]) -> CO2ErfBuilder:
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the CO2 ERF component."""

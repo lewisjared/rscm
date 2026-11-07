@@ -1,7 +1,7 @@
 //! Model builder for constructing models from components.
 
 use crate::component::{Component, GridType, TimeseriesType, VariableDefinition, VariableRole};
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, PreviousStrategy,
 };
@@ -108,7 +108,7 @@ impl ModelBuilder {
         &self,
         names: &[String],
         component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
-    ) -> RSCMResult<()> {
+    ) -> RscmResult<()> {
         let aggregates = self.schema.as_ref().map(|s| &s.aggregates);
         for variable in &self.lagged_variables {
             let known = component_defs
@@ -117,7 +117,7 @@ impl ModelBuilder {
                 .any(|r| &r.name == variable)
                 || aggregates.is_some_and(|a| a.contains_key(variable));
             if !known {
-                return Err(RSCMError::InvalidLag {
+                return Err(RscmError::InvalidLag {
                     lag: format!("with_lag({variable:?})"),
                     reason: "no component reads or produces this variable".to_string(),
                 });
@@ -127,7 +127,7 @@ impl ModelBuilder {
             let lag = format!("with_lag_for({variable:?}, {consumer:?})");
             if !names.contains(consumer) {
                 let known: BTreeSet<&str> = names.iter().map(String::as_str).collect();
-                return Err(RSCMError::InvalidLag {
+                return Err(RscmError::InvalidLag {
                     lag,
                     reason: format!("no component named {consumer:?}, components are {known:?}"),
                 });
@@ -142,7 +142,7 @@ impl ModelBuilder {
                         .any(|r| &r.name == variable && r.role == VariableRole::Input)
                 });
             if !reads {
-                return Err(RSCMError::InvalidLag {
+                return Err(RscmError::InvalidLag {
                     lag,
                     reason: format!("{consumer} does not read {variable:?} as an input"),
                 });
@@ -156,7 +156,7 @@ impl ModelBuilder {
         &self,
         variable_sources: &HashMap<(String, String), VariableSource>,
         timeseries_types: &BTreeMap<String, TimeseriesType>,
-    ) -> RSCMResult<()> {
+    ) -> RscmResult<()> {
         let lagged_average = variable_sources
             .iter()
             .filter(|((variable, _), &source)| {
@@ -173,7 +173,7 @@ impl ModelBuilder {
         } else {
             format!("with_lag_for({variable:?}, {consumer:?})")
         };
-        Err(RSCMError::InvalidLag {
+        Err(RscmError::InvalidLag {
             lag,
             reason: format!(
                 "{variable:?} is an average read by {consumer}, and lagged averages are not supported yet"
@@ -187,7 +187,7 @@ impl ModelBuilder {
         names: &[String],
         component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
         modelled: &HashMap<String, NodeIndex>,
-    ) -> RSCMResult<()> {
+    ) -> RscmResult<()> {
         let mut missing: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for (consumer, (requires, _)) in names.iter().zip(component_defs) {
             for def in requires {
@@ -208,7 +208,7 @@ impl ModelBuilder {
         if missing.is_empty() {
             return Ok(());
         }
-        Err(RSCMError::MissingPrescribedInput {
+        Err(RscmError::MissingPrescribedInput {
             inputs: missing
                 .into_iter()
                 .map(|(variable, consumers)| (variable, consumers.into_iter().collect()))
@@ -414,7 +414,7 @@ impl ModelBuilder {
         inputs: &[VariableDefinition],
         outputs: &[VariableDefinition],
         modelled: &HashMap<String, NodeIndex>,
-    ) -> RSCMResult<(Vec<RequiredTransformation>, Vec<UnitConversionInfo>)> {
+    ) -> RscmResult<(Vec<RequiredTransformation>, Vec<UnitConversionInfo>)> {
         let mut transformations = Vec::new();
         let mut unit_conversions = Vec::new();
 
@@ -423,7 +423,7 @@ impl ModelBuilder {
         for output in outputs {
             // Check if output is defined in schema
             if !schema.contains(&output.name) {
-                return Err(RSCMError::SchemaUndefinedOutput {
+                return Err(RscmError::SchemaUndefinedOutput {
                     component: component_name.to_string(),
                     variable: output.name.clone(),
                     unit: output.unit.clone(),
@@ -459,7 +459,7 @@ impl ModelBuilder {
                     } else {
                         // Invalid: would require disaggregation (broadcast)
                         // Component produces coarser data than schema expects
-                        return Err(RSCMError::GridTransformationNotSupported {
+                        return Err(RscmError::GridTransformationNotSupported {
                             variable: output.name.clone(),
                             source_grid: output.grid.to_string(),
                             target_grid: schema_grid.to_string(),
@@ -476,7 +476,7 @@ impl ModelBuilder {
             // 1. It's defined in the schema (as variable or aggregate), OR
             // 2. It's produced by another component (modelled)
             if !schema.contains(&input.name) && !modelled.contains_key(&input.name) {
-                return Err(RSCMError::SchemaUndefinedInput {
+                return Err(RscmError::SchemaUndefinedInput {
                     component: component_name.to_string(),
                     variable: input.name.clone(),
                     unit: input.unit.clone(),
@@ -512,7 +512,7 @@ impl ModelBuilder {
                         } else {
                             // Invalid: would require disaggregation (broadcast)
                             // Component wants finer data than schema provides
-                            return Err(RSCMError::GridTransformationNotSupported {
+                            return Err(RscmError::GridTransformationNotSupported {
                                 variable: input.name.clone(),
                                 source_grid: schema_grid.to_string(),
                                 target_grid: input.grid.to_string(),
@@ -537,27 +537,27 @@ impl ModelBuilder {
         component: &str,
         schema_unit: &str,
         component_unit: &str,
-    ) -> RSCMResult<Option<UnitConversionInfo>> {
+    ) -> RscmResult<Option<UnitConversionInfo>> {
         // Fast path: exact string match
         if schema_unit == component_unit {
             return Ok(None);
         }
 
         // Parse both units
-        let parsed_schema = Unit::parse(schema_unit).map_err(|e| RSCMError::UnitParseError {
+        let parsed_schema = Unit::parse(schema_unit).map_err(|e| RscmError::UnitParseError {
             variable: variable.to_string(),
             unit_string: schema_unit.to_string(),
             details: e.to_string(),
         })?;
 
         let parsed_component =
-            Unit::parse(component_unit).map_err(|e| RSCMError::UnitParseError {
+            Unit::parse(component_unit).map_err(|e| RscmError::UnitParseError {
                 variable: variable.to_string(),
                 unit_string: component_unit.to_string(),
                 details: e.to_string(),
             })?;
 
-        // Check if they're the same after normalization
+        // Check if they're the same after normalisation
         if parsed_schema == parsed_component {
             return Ok(None);
         }
@@ -573,7 +573,7 @@ impl ModelBuilder {
                 .map(|d| d.to_string())
                 .unwrap_or_else(|_| "unknown".to_string());
 
-            return Err(RSCMError::IncompatibleUnits {
+            return Err(RscmError::IncompatibleUnits {
                 variable: variable.to_string(),
                 unit1: schema_unit.to_string(),
                 unit2: component_unit.to_string(),
@@ -585,7 +585,7 @@ impl ModelBuilder {
         // Calculate conversion factor from schema unit to component unit
         let factor = parsed_schema
             .conversion_factor(&parsed_component)
-            .map_err(|e| RSCMError::UnitParseError {
+            .map_err(|e| RscmError::UnitParseError {
                 variable: variable.to_string(),
                 unit_string: format!("{schema_unit} -> {component_unit}"),
                 details: e.to_string(),
@@ -608,7 +608,7 @@ impl ModelBuilder {
         name: &str,
         ts: &GridTimeseries<FloatValue, G>,
         unit: &str,
-    ) -> RSCMResult<GridTimeseries<FloatValue, G>> {
+    ) -> RscmResult<GridTimeseries<FloatValue, G>> {
         let conversion = Self::check_unit_compatibility(name, "prescribed data", ts.unit(), unit)?;
         let ts = ts.to_owned().interpolate_into(self.time_axis.clone());
         Ok(match conversion {
@@ -620,7 +620,7 @@ impl ModelBuilder {
     /// Builds the component graph for the registered components and creates a concrete model.
     ///
     /// Returns an error if the component definitions are inconsistent.
-    pub fn build(&self) -> RSCMResult<Model> {
+    pub fn build(&self) -> RscmResult<Model> {
         use crate::spatial::ScalarRegion;
 
         // todo: refactor once this is more stable
@@ -675,7 +675,7 @@ impl ModelBuilder {
         for (index, (_, provides)) in component_defs.iter().enumerate() {
             for def in provides {
                 if let Some(other) = variable_owners.get(&def.name) {
-                    return Err(RSCMError::MultipleProducers {
+                    return Err(RscmError::MultipleProducers {
                         variable: def.name.clone(),
                         components: vec![other.clone(), names[index].clone()],
                     });
@@ -907,7 +907,7 @@ impl ModelBuilder {
                     .get(name)
                     .cloned()
                     .unwrap_or_else(|| "unknown".to_string());
-                return Err(RSCMError::MissingInitialValue {
+                return Err(RscmError::MissingInitialValue {
                     variable: name.clone(),
                     component,
                 });
@@ -970,7 +970,7 @@ impl ModelBuilder {
             };
             if let Some(values) = initial_grid {
                 if values.len() != expected_len {
-                    return Err(RSCMError::Error(format!(
+                    return Err(RscmError::Error(format!(
                         "Initial values for {name} must have {expected_len} entries, got {}",
                         values.len()
                     )));
@@ -1069,7 +1069,7 @@ impl ModelBuilder {
         );
         model.timeseries_types = timeseries_types;
 
-        // Initialize component states for each node
+        // Initialise component states for each node
         for node_idx in model.components.node_indices() {
             let component = &model.components[node_idx];
             let state = component.create_initial_state();
@@ -1089,7 +1089,7 @@ fn check_acyclic(
     component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
     names: &[String],
     aggregator_nodes: &HashSet<NodeIndex>,
-) -> RSCMResult<()> {
+) -> RscmResult<()> {
     if !petgraph::algo::is_cyclic_directed(graph) {
         return Ok(());
     }
@@ -1125,7 +1125,7 @@ fn check_acyclic(
             }
         }
     }
-    Err(RSCMError::CircularDependency {
+    Err(RscmError::CircularDependency {
         components: components.into_iter().collect(),
         variables: variables.into_iter().collect(),
         suggestions: suggestions

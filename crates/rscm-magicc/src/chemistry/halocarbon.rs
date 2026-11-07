@@ -33,14 +33,14 @@
 //! Crank-Nicolson for lifetimes of at least 5 years, otherwise the exact
 //! exponential solution, with the emissions and lifetime of the start of the year.
 
-use crate::parameters::{HalocarbonParameters, HalocarbonSpecies};
+use crate::parameters::{HalocarbonChemistryParameters, HalocarbonSpecies};
 use crate::reference::{
     feedback_warming, prescribed_definition, prescribed_input, prescribed_name, require_annual,
 };
 use rscm_core::component::{
     Component, InputState, OutputState, TimeseriesType, VariableDefinition,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -59,7 +59,7 @@ const FOSSIL_CO2: &str = "Emissions|CO2|Fossil";
 /// Halocarbon atmospheric chemistry component.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HalocarbonChemistry {
-    parameters: HalocarbonParameters,
+    parameters: HalocarbonChemistryParameters,
     #[serde(skip)]
     names: OnceLock<[Vec<SpeciesNames>; 2]>,
 }
@@ -76,11 +76,11 @@ struct SpeciesNames {
 impl HalocarbonChemistry {
     /// Create a component with MAGICC7 default parameters.
     pub fn new() -> Self {
-        Self::from_parameters(HalocarbonParameters::default())
+        Self::from_parameters(HalocarbonChemistryParameters::default())
     }
 
     /// Create a component from parameters.
-    pub fn from_parameters(parameters: HalocarbonParameters) -> Self {
+    pub fn from_parameters(parameters: HalocarbonChemistryParameters) -> Self {
         Self {
             parameters,
             names: OnceLock::new(),
@@ -88,7 +88,7 @@ impl HalocarbonChemistry {
     }
 
     /// Parameters of this component.
-    pub fn parameters(&self) -> &HalocarbonParameters {
+    pub fn parameters(&self) -> &HalocarbonChemistryParameters {
         &self.parameters
     }
 
@@ -229,7 +229,7 @@ fn lagged(window: &ScalarWindow, end: FloatValue, lag: usize) -> FloatValue {
         .expect("offsets below history_len are stored")
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.HalocarbonChemistry")]
 impl Component for HalocarbonChemistry {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Vec::new();
@@ -289,7 +289,7 @@ impl Component for HalocarbonChemistry {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         require_annual("HalocarbonChemistry", t_current, t_next)?;
         let (oh_scale, strat_scale) = self.scale_factors(t_current, input_state);
         let names = self.names();

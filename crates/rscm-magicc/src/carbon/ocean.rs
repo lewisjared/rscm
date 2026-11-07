@@ -62,7 +62,7 @@ use crate::reference::{
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -95,7 +95,7 @@ pub struct OceanCarbonState {
     pub pco2_reference: Option<FloatValue>,
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.OceanCarbonState")]
 impl ComponentState for OceanCarbonState {
     fn as_any(&self) -> &dyn Any {
         self
@@ -317,7 +317,7 @@ impl OceanCarbon {
         }
     }
 
-    /// Reset the flux history and substep memory (for initialization or testing).
+    /// Reset the flux history and substep memory (for initialisation or testing).
     pub fn reset_history(&self, state: &mut OceanCarbonState) {
         *state = OceanCarbonState::default();
     }
@@ -334,7 +334,7 @@ impl OceanCarbon {
         t_next: Time,
         input_state: &InputState,
         state: &mut OceanCarbonState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         require_annual("OceanCarbon", t_current, t_next)?;
         let inputs = OceanCarbonInputs::from_input_state(input_state);
 
@@ -389,7 +389,7 @@ impl Default for OceanCarbon {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.OceanCarbon")]
 impl Component for OceanCarbon {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
@@ -409,7 +409,7 @@ impl Component for OceanCarbon {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         // For standalone use, create a temporary state
         let mut state = OceanCarbonState::default();
         self.solve_impl(t_current, t_next, input_state, &mut state)
@@ -425,7 +425,7 @@ impl Component for OceanCarbon {
         t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<OceanCarbonState>()
@@ -650,7 +650,7 @@ mod tests {
     }
 
     #[test]
-    fn test_component_state_serialization_roundtrip() {
+    fn test_component_state_serialisation_roundtrip() {
         let component = default_component();
         let mut state = fresh_state();
         run_years(&component, &mut state, PI, 5.0, 0.0, 2);

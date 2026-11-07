@@ -225,11 +225,11 @@ mod tests {
     }
 
     #[test]
-    fn test_partial_deserialization() {
-        // Test that #[serde(default)] allows partial deserialization
+    fn test_partial_deserialisation() {
+        // Test that #[serde(default)] allows partial deserialisation
         let json = r#"{"tau_total_init": 10.5, "include_temp_feedback": false}"#;
         let params: CH4ChemistryParameters =
-            serde_json::from_str(json).expect("Partial deserialization failed");
+            serde_json::from_str(json).expect("Partial deserialisation failed");
 
         // Specified fields from JSON
         assert!((params.tau_total_init - 10.5).abs() < 1e-10);

@@ -8,7 +8,7 @@
 
 use crate::constants::get;
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -31,9 +31,9 @@ pub struct Halogen {
     pub fractional_release: FloatValue,
 }
 
-/// Parameters of [`FairEesc`].
+/// Parameters of [`Eesc`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairEescParameters {
+pub struct EescParameters {
     /// The halogens.
     pub halogens: Vec<Halogen>,
     /// Fractional release of CFC-11.
@@ -63,13 +63,13 @@ fn default_unit() -> String {
 
 /// FaIR's EESC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FairEesc {
-    parameters: FairEescParameters,
+pub struct Eesc {
+    parameters: EescParameters,
 }
 
-impl FairEesc {
+impl Eesc {
     /// Create the component.
-    pub fn from_parameters(parameters: FairEescParameters) -> Self {
+    pub fn from_parameters(parameters: EescParameters) -> Self {
         Self { parameters }
     }
 
@@ -90,8 +90,8 @@ impl FairEesc {
     }
 }
 
-#[typetag::serde]
-impl Component for FairEesc {
+#[typetag::serde(name = "fair.Eesc")]
+impl Component for Eesc {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         let mut definitions: Vec<_> = p
@@ -108,7 +108,7 @@ impl Component for FairEesc {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let concentrations = self
             .parameters
             .halogens
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn cfc11_counts_its_chlorine() {
-        let c = FairEesc::from_parameters(FairEescParameters {
+        let c = Eesc::from_parameters(EescParameters {
             halogens: vec![Halogen {
                 concentration: "CFC11".into(),
                 unit: "ppt".into(),

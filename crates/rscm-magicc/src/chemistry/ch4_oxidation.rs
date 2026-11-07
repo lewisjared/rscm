@@ -30,7 +30,7 @@ use crate::reference::{permafrost_emissions, require_annual, PERMAFROST_CH4};
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -136,7 +136,7 @@ impl Default for CH4Oxidation {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.CH4Oxidation")]
 impl Component for CH4Oxidation {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
@@ -154,7 +154,7 @@ impl Component for CH4Oxidation {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         require_annual("CH4Oxidation", t_current, t_next)?;
         let inputs = CH4OxidationInputs::from_input_state(input_state);
         let pools = CH4Pools {

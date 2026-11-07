@@ -49,7 +49,7 @@ def test_component_invalid():
 @pytest.mark.xfail(reason="component definitions are not implemented")
 def test_user_derived_create_and_solve():
     py_component = ExamplePythonComponent()
-    component = PythonComponent.build(py_component)
+    component = PythonComponent(py_component)
 
     # TODO: resolve later
     assert component.definitions() == []

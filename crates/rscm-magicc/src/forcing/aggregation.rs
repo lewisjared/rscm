@@ -1,15 +1,15 @@
 //! Forcing Aggregation Component
 //!
 //! Combines the ERF of each forcing agent into the four-box efficacy-adjusted
-//! forcing that drives `ClimateUDEB`, following MAGICC7's DELTAQ.
+//! forcing that drives `ClimateUdeb`, following MAGICC7's DELTAQ.
 //!
 //! Each agent is either global, spread over the boxes with its regional
 //! pattern, or already regional. Its box forcing is then scaled by
 //!
 //! $$\text{EFFRF} = \text{ERF} \times \frac{\epsilon_{\text{prescribed}}}{\epsilon_{\text{internal}}}$$
 //!
-//! when `efficacy_apply` is 2 (the MAGICC7 default), by $1 / \epsilon_{\text{internal}}$
-//! when it is 1, and left unchanged when it is 0.
+//! when `efficacy_method` is `ar6` (the MAGICC7 default), by $1 / \epsilon_{\text{internal}}$
+//! when it is `unit`, and left unchanged when it is `none`.
 //!
 //! With `climate` set, the internal efficacies follow MAGICC7 in coming from
 //! LAMCALC at the previous year's `Equilibrium Climate Sensitivity` and
@@ -22,12 +22,12 @@
 //!   climate driver.
 
 use crate::climate::lamcalc::{
-    calc_internal_efficacy, compute_qfrac, hemispheric_qfrac, lamcalc, LamcalcParams,
+    calc_internal_efficacy, compute_qfrac, hemispheric_qfrac, lamcalc, LamcalcParameters,
 };
 use crate::climate::{CLIMATE_SENSITIVITY, CO2_DOUBLING_ERF, REGIONAL_FORCING};
-use crate::parameters::{ForcingAgent, ForcingAggregationParameters, ForcingTerm};
+use crate::parameters::{EfficacyMethod, ForcingAgent, ForcingAggregationParameters, ForcingTerm};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::{RSCMError, RSCMResult};
+use rscm_core::errors::{RscmError, RscmResult};
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -43,22 +43,16 @@ pub struct ForcingAggregation {
 
 impl ForcingAggregation {
     /// Create the component, validating the agent list.
-    pub fn from_parameters(parameters: ForcingAggregationParameters) -> RSCMResult<Self> {
+    pub fn from_parameters(parameters: ForcingAggregationParameters) -> RscmResult<Self> {
         for agent in &parameters.agents {
             if !(agent.efficacy.is_finite() && agent.internal_efficacy.is_finite())
                 || agent.internal_efficacy <= 0.0
             {
-                return Err(RSCMError::Error(format!(
+                return Err(RscmError::Error(format!(
                     "invalid efficacy for {}: prescribed {}, internal {}",
                     agent.variable, agent.efficacy, agent.internal_efficacy
                 )));
             }
-        }
-        if parameters.efficacy_apply > 2 {
-            return Err(RSCMError::Error(format!(
-                "invalid efficacy_apply: {}",
-                parameters.efficacy_apply
-            )));
         }
         validate_summation(&parameters)?;
         let component = Self { parameters };
@@ -66,7 +60,7 @@ impl ForcingAggregation {
             component
                 .internal_efficacies(climate.ecs, climate.rf_2xco2)
                 .ok_or_else(|| {
-                    RSCMError::Error(format!(
+                    RscmError::Error(format!(
                         "LAMCALC failed to converge for ECS={}, RLO={}",
                         climate.ecs, climate.rlo
                     ))
@@ -89,7 +83,7 @@ impl ForcingAggregation {
             return Some(agents.iter().map(|a| a.internal_efficacy).collect());
         };
         let area = self.parameters.area_fractions();
-        let result = lamcalc(&LamcalcParams {
+        let result = lamcalc(&LamcalcParameters {
             q_2xco2,
             k_lo: climate.k_lo,
             k_ns: climate.k_ns,
@@ -186,10 +180,10 @@ impl ForcingAggregation {
             .zip(forcing)
             .zip(internal)
             .map(|((agent, parts), internal)| {
-                let scale = match self.parameters.efficacy_apply {
-                    0 => 1.0,
-                    1 => 1.0 / internal,
-                    _ => agent.efficacy / internal,
+                let scale = match self.parameters.efficacy_method {
+                    EfficacyMethod::None => 1.0,
+                    EfficacyMethod::Unit => 1.0 / internal,
+                    EfficacyMethod::Ar6 => agent.efficacy / internal,
                 };
                 let scaled = |(global, boxes): Forcing| (global, boxes.map(|b| b * scale));
                 if agent.efficacy_per_variable {
@@ -226,7 +220,7 @@ fn sum_terms(terms: &[ForcingTerm], agent: &dyn Fn(&str) -> Forcing) -> Forcing 
 }
 
 /// Check that `summation`, when given, names every agent exactly once.
-fn validate_summation(parameters: &ForcingAggregationParameters) -> RSCMResult<()> {
+fn validate_summation(parameters: &ForcingAggregationParameters) -> RscmResult<()> {
     fn names<'a>(terms: &'a [ForcingTerm], out: &mut Vec<&'a str>) {
         for term in terms {
             match term {
@@ -248,7 +242,7 @@ fn validate_summation(parameters: &ForcingAggregationParameters) -> RSCMResult<(
     listed.sort_unstable();
     agents.sort_unstable();
     if listed != agents {
-        return Err(RSCMError::Error(format!(
+        return Err(RscmError::Error(format!(
             "summation must name each agent once: {listed:?} against agents {agents:?}"
         )));
     }
@@ -264,7 +258,7 @@ fn agent_inputs(agent: &ForcingAgent) -> Vec<&str> {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.ForcingAggregation")]
 impl Component for ForcingAggregation {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions: Vec<_> = self
@@ -298,7 +292,7 @@ impl Component for ForcingAggregation {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let forcing: Vec<Vec<Forcing>> = self
             .parameters
             .agents
@@ -328,7 +322,7 @@ impl Component for ForcingAggregation {
                     (climate.ecs, climate.rf_2xco2)
                 };
                 self.internal_efficacies(ecs, q).ok_or_else(|| {
-                    RSCMError::Error(format!("LAMCALC failed to converge for ECS={ecs}"))
+                    RscmError::Error(format!("LAMCALC failed to converge for ECS={ecs}"))
                 })?
             }
         };
@@ -365,10 +359,10 @@ mod tests {
         }
     }
 
-    fn component(agents: Vec<ForcingAgent>, efficacy_apply: u8) -> ForcingAggregation {
+    fn component(agents: Vec<ForcingAgent>, efficacy_method: EfficacyMethod) -> ForcingAggregation {
         ForcingAggregation::from_parameters(ForcingAggregationParameters {
             agents,
-            efficacy_apply,
+            efficacy_method,
             ..Default::default()
         })
         .unwrap()
@@ -376,7 +370,7 @@ mod tests {
 
     #[test]
     fn global_agent_keeps_global_mean() {
-        let c = component(vec![agent(false, 1.0, 1.0)], 2);
+        let c = component(vec![agent(false, 1.0, 1.0)], EfficacyMethod::Ar6);
         let (total, boxes) = c.aggregate(&[vec![2.0]]);
         let area = c.parameters().area_fractions();
         let mean: FloatValue = (0..4).map(|i| boxes[i] * area[i]).sum();
@@ -390,7 +384,7 @@ mod tests {
         let mut tropoz = agent(false, 1.0, 1.0);
         tropoz.rf_regions = [0.46565, 0.51646, 0.17687, 0.23793];
         tropoz.hemispheric = true;
-        let c = component(vec![tropoz], 0);
+        let c = component(vec![tropoz], EfficacyMethod::None);
         let (total, boxes) = c.aggregate(&[vec![1.0]]);
         let expected = [0.95618, 1.06051, 0.9324, 1.25429];
         for i in 0..4 {
@@ -400,14 +394,14 @@ mod tests {
     }
 
     #[test]
-    fn efficacy_modes_scale_box_forcing() {
+    fn efficacy_methods_scale_box_forcing() {
         let values = [vec![1.0, 2.0, 3.0, 4.0]];
-        let adjusted = |mode| component(vec![agent(true, 1.5, 1.2)], mode).aggregate(&values);
-        let (total, none) = adjusted(0);
+        let adjusted = |method| component(vec![agent(true, 1.5, 1.2)], method).aggregate(&values);
+        let (total, none) = adjusted(EfficacyMethod::None);
         assert_eq!(none, [1.0, 2.0, 3.0, 4.0]);
-        assert!((adjusted(1).1[3] - 4.0 / 1.2).abs() < 1e-12);
-        assert!((adjusted(2).1[3] - 5.0).abs() < 1e-12);
-        assert_eq!(adjusted(2).0, total);
+        assert!((adjusted(EfficacyMethod::Unit).1[3] - 4.0 / 1.2).abs() < 1e-12);
+        assert!((adjusted(EfficacyMethod::Ar6).1[3] - 5.0).abs() < 1e-12);
+        assert_eq!(adjusted(EfficacyMethod::Ar6).0, total);
     }
 
     fn with_climate(agents: Vec<ForcingAgent>) -> ForcingAggregation {
@@ -421,7 +415,7 @@ mod tests {
 
     #[test]
     fn climate_internal_efficacies_match_udeb() {
-        let udeb = crate::climate::ClimateUDEB::new();
+        let udeb = crate::climate::ClimateUdeb::new();
         let co2 = EfficacyClimate::default().rf_regions_co2;
         let mut co2_agent = agent(false, 1.0, 1.0);
         co2_agent.rf_regions = co2;
@@ -445,7 +439,7 @@ mod tests {
         assert!((low - high).abs() > 1e-4, "{low} {high}");
 
         // Without climate the prescribed internal efficacy holds at any sensitivity
-        let fixed = component(vec![agent(false, 1.0, 1.3)], 2);
+        let fixed = component(vec![agent(false, 1.0, 1.3)], EfficacyMethod::Ar6);
         assert_eq!(fixed.internal_efficacies(2.0, 3.71).unwrap(), vec![1.3]);
         assert_eq!(fixed.internal_efficacies(4.5, 3.71).unwrap(), vec![1.3]);
     }
@@ -511,12 +505,12 @@ mod tests {
     fn summation_adds_nested_terms_first() {
         // 1 + (1e-16 + 1e-16) keeps the small terms that a left-to-right sum loses
         let agents = vec![named("a", false), named("b", false), named("c", false)];
-        let flat = component(agents.clone(), 0);
+        let flat = component(agents.clone(), EfficacyMethod::None);
         let values = [vec![1.0], vec![1e-16], vec![1e-16]];
         assert_eq!(flat.aggregate(&values).0, 1.0);
         let nested = ForcingAggregation::from_parameters(ForcingAggregationParameters {
             agents,
-            efficacy_apply: 0,
+            efficacy_method: EfficacyMethod::None,
             summation: vec![
                 ForcingTerm::Agent("a".into()),
                 ForcingTerm::Sum(vec![
@@ -545,7 +539,7 @@ mod tests {
         let mut biomass = named("biomass", true);
         biomass.sum_of = vec!["p".into(), "q".into()];
         biomass.efficacy = 2.0;
-        let c = component(vec![biomass], 2);
+        let c = component(vec![biomass], EfficacyMethod::Ar6);
         let items = [four_box_item("p", 1.0), four_box_item("q", 2.0)];
         let input_state = InputState::build(items.iter().collect(), 2000.0);
         let output = c.solve(2000.0, 2001.0, &input_state).unwrap();

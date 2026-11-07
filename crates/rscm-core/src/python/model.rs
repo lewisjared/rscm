@@ -1,5 +1,5 @@
 use crate::component::TimeseriesType;
-use crate::errors::RSCMResult;
+use crate::errors::RscmResult;
 use crate::model::{self, Model, ModelBuilder};
 use crate::python::component::{PyPythonComponent, PythonComponent};
 use crate::python::timeseries::{
@@ -336,7 +336,7 @@ fn on_pool<R: Send>(threads: Option<usize>, work: impl FnOnce() -> R + Send) -> 
 
 /// Unwrap per-model results, or raise `error` with the failure count and the first failure.
 fn all_ok<T>(
-    results: Vec<RSCMResult<T>>,
+    results: Vec<RscmResult<T>>,
     action: &str,
     error: fn(String) -> PyErr,
 ) -> PyResult<Vec<T>> {

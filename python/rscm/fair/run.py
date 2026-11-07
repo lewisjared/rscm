@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from rscm.core import InterpolationStrategy, ModelBuilder, TimeAxis, Timeseries
+from rscm.core import InterpolationStrategy, ModelBuilder, Timeseries
 from rscm.fair import naming
 from rscm.fair.config import (
     FairConfig,
-    build_components,
+    components,
     forcing_agents,
     initial_values,
     with_lags,
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm.core import Model
+    from rscm.core import Model, TimeAxis
 
 
 def _on_timebounds(
@@ -54,7 +54,7 @@ def prescribed_forcing_scales(config: FairConfig) -> dict[str, float]:
 def build_model(
     config: FairConfig,
     inputs: Mapping[str, tuple[ArrayLike, str]],
-    timebounds: ArrayLike,
+    time_axis: TimeAxis,
     *,
     scale_prescribed_forcing: bool = False,
 ) -> Model:
@@ -63,25 +63,26 @@ def build_model(
     `inputs` maps each prescribed variable to its values and unit.
     Emissions are FaIR timepoint values, one per step.
     Prescribed concentrations and forcing are FaIR timebound values.
+    `time_axis` has a step starting at each FaIR timebound,
+    `TimeAxis.from_values(timebounds)`.
 
     FaIR ignores `forcing_scale` for prescribed forcing.
     `scale_prescribed_forcing` applies it to the inputs, as fair-calibrate does.
     """
-    bounds = np.asarray(timebounds, dtype=np.float64)
-    axis = TimeAxis.from_values(bounds)
+    n_timebounds = len(time_axis)
     scales = prescribed_forcing_scales(config) if scale_prescribed_forcing else {}
-    builder = ModelBuilder().with_time_axis(axis)
-    for component in build_components(config):
+    builder = ModelBuilder().with_time_axis(time_axis)
+    for component in components(config):
         builder.with_component(component)
     with_lags(builder, config)
     first = {}
     for name, (values, unit) in inputs.items():
-        array = _on_timebounds(name, values, len(bounds))
+        array = _on_timebounds(name, values, n_timebounds)
         if name in scales:
             array = array * scales[name]
         first[name] = float(array[0])
         builder.with_prescribed_variable(
-            name, Timeseries(array, axis, unit, InterpolationStrategy.Previous)
+            name, Timeseries(array, time_axis, unit, InterpolationStrategy.Previous)
         )
     initial = initial_values(config)
     agents = [naming.forcing(s) for s in forcing_agents(config)]
@@ -99,13 +100,13 @@ def build_model(
 def run_fair(
     config: FairConfig,
     inputs: Mapping[str, tuple[ArrayLike, str]],
-    timebounds: ArrayLike,
+    time_axis: TimeAxis,
     *,
     scale_prescribed_forcing: bool = False,
 ) -> Model:
     """Run a FaIR configuration and return the model, see `build_model`."""
     model = build_model(
-        config, inputs, timebounds, scale_prescribed_forcing=scale_prescribed_forcing
+        config, inputs, time_axis, scale_prescribed_forcing=scale_prescribed_forcing
     )
     model.run()
     return model

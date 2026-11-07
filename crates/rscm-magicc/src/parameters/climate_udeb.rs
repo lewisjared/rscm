@@ -7,15 +7,27 @@ use super::ThermalExpansionParameters;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
-/// Initial ocean temperature profile mode (`CORE_SWITCH_OCN_TEMPPROFILE`).
+/// Initial ocean temperature profile (MAGICC7 `CORE_SWITCH_OCN_TEMPPROFILE`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OceanTempProfile {
-    /// Analytical exponential decay (uniform diffusivity + upwelling).
-    #[serde(rename = "1")]
-    Analytical = 1,
-    /// CMIP5 multi-model mean observational profile (default).
-    #[serde(rename = "2")]
-    CMIP5 = 2,
+    /// Analytical exponential decay from uniform diffusivity and upwelling (MAGICC7 1).
+    Analytical,
+    /// CMIP5 multi-model mean observational profile (MAGICC7 2, the default).
+    Cmip5,
+}
+
+/// How prescribed and internal efficacies scale an agent's forcing (MAGICC7 `RF_EFFICACY_APPLY`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EfficacyMethod {
+    /// Forcing is left unchanged (MAGICC7 0).
+    #[default]
+    None,
+    /// Forcing is divided by the internal efficacy, so every agent has unit efficacy (MAGICC7 1).
+    Unit,
+    /// Forcing is scaled by the prescribed over the internal efficacy, as in AR6 (MAGICC7 2).
+    Ar6,
 }
 
 /// Box forcing given at every substep, such as monthly volcanic forcing.
@@ -79,7 +91,7 @@ impl SubannualForcing {
 /// Default values match MAGICC7 defaults from `MAGCFG_DEFAULTALL.CFG`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct ClimateUDEBParameters {
+pub struct ClimateUdebParameters {
     // Ocean structure parameters
     /// Number of ocean layers (including mixed layer).
     /// Default: 50
@@ -232,7 +244,7 @@ pub struct ClimateUDEBParameters {
     /// Regional CO2 radiative forcing pattern (NH ocean, NH land, SH ocean, SH land).
     ///
     /// Relative weights used to compute per-box CO2 forcing fractions for the
-    /// LAMCALC solver. Normalized against global-area-weighted sum following
+    /// LAMCALC solver. Normalised against global-area-weighted sum following
     /// MAGICC7.f90 lines 8146-8165.
     ///
     /// Default values from `MAGCFG_DEFAULTALL.CFG` (AR6 calibration):
@@ -240,18 +252,18 @@ pub struct ClimateUDEBParameters {
     pub rf_regions_co2: [FloatValue; 4],
 
     // Efficacy parameters
-    /// Efficacy application mode (matches MAGICC7 `RF_EFFICACY_APPLY`).
+    /// How efficacies scale the forcing (MAGICC7 `RF_EFFICACY_APPLY`).
     ///
-    /// - `0` = disabled (default): all agents treated with uniform spatial efficacy.
-    /// - `1` = unit efficacy: effective forcing divided by the internal efficacy.
-    /// - `2` = AR6 mode: effective forcing adjusted by `prescribed_efficacy_co2 / internal_efficacy`.
+    /// - `none` (default): all agents treated with uniform spatial efficacy.
+    /// - `unit`: effective forcing divided by the internal efficacy.
+    /// - `ar6`: effective forcing adjusted by `prescribed_efficacy_co2 / internal_efficacy`.
     #[serde(default)]
-    pub efficacy_apply: u8,
+    pub efficacy_method: EfficacyMethod,
 
     /// Prescribed CO2 efficacy factor (matches MAGICC7 `RF_EFFICACY_CO2`).
     ///
-    /// Unused in mode 1.
-    /// In mode 2: $\text{EFFRF} = \text{ERF} \times \text{prescribed\_efficacy\_co2} / \text{internal\_efficacy}$.
+    /// Unused with the `unit` method.
+    /// With `ar6`: $\text{EFFRF} = \text{ERF} \times \text{prescribed\_efficacy\_co2} / \text{internal\_efficacy}$.
     ///
     /// Default: 1.0 (no-op).
     #[serde(default = "default_prescribed_efficacy_co2")]
@@ -277,7 +289,7 @@ pub struct ClimateUDEBParameters {
     pub time_varying_q2x: bool,
 
     // Initial ocean temperature profile
-    /// Initial ocean temperature profile mode (`CORE_SWITCH_OCN_TEMPPROFILE`).
+    /// Initial ocean temperature profile (`CORE_SWITCH_OCN_TEMPPROFILE`).
     ///
     /// The profile is used as a reference baseline for variable upwelling
     /// correction terms. When upwelling changes from its initial value, these
@@ -296,7 +308,7 @@ pub struct ClimateUDEBParameters {
     pub max_temperature: FloatValue,
 }
 
-impl Default for ClimateUDEBParameters {
+impl Default for ClimateUdebParameters {
     fn default() -> Self {
         Self {
             // Ocean structure
@@ -349,7 +361,7 @@ impl Default for ClimateUDEBParameters {
             rf_regions_co2: [1.4089, 1.37045, 1.43333, 1.33257],
 
             // Efficacy
-            efficacy_apply: 0,
+            efficacy_method: EfficacyMethod::None,
             prescribed_efficacy_co2: 1.0,
             regional_forcing: false,
             time_varying_q2x: false,
@@ -357,7 +369,7 @@ impl Default for ClimateUDEBParameters {
             thermal_expansion: None,
 
             // Initial ocean profile
-            ocean_temp_profile: OceanTempProfile::CMIP5,
+            ocean_temp_profile: OceanTempProfile::Cmip5,
 
             // Integration
             steps_per_year: 12,
@@ -393,7 +405,7 @@ pub fn heat_capacity_per_unit_area(depth_m: FloatValue) -> FloatValue {
     RHO_SEAWATER * CP_SEAWATER * depth_m / SECONDS_PER_YEAR
 }
 
-impl ClimateUDEBParameters {
+impl ClimateUdebParameters {
     /// Convert vertical diffusivity from $\text{cm}^2/\text{s}$ to $\text{m}^2/\text{yr}$.
     pub fn kappa_m2_per_yr(&self) -> FloatValue {
         self.kappa * DIFFUSIVITY_CM2S_TO_M2YR
@@ -536,7 +548,7 @@ impl ClimateUDEBParameters {
     /// Returns a Vec of length `n_layers` with the initial temperature (K)
     /// for each ocean layer. Layer 0 is the mixed layer.
     ///
-    /// When `ocean_temp_profile` is [`OceanTempProfile::CMIP5`] (default),
+    /// When `ocean_temp_profile` is [`OceanTempProfile::Cmip5`] (default),
     /// returns the CMIP5 multi-model mean profile. When
     /// [`OceanTempProfile::Analytical`], returns the analytical exponential
     /// decay profile.
@@ -548,7 +560,7 @@ impl ClimateUDEBParameters {
         );
 
         match self.ocean_temp_profile {
-            OceanTempProfile::CMIP5 => {
+            OceanTempProfile::Cmip5 => {
                 let cmip5 = if hemi == 0 {
                     &CMIP5_PROFILE_NH
                 } else {
@@ -804,7 +816,7 @@ mod tests {
 
     #[test]
     fn test_default_parameters() {
-        let params = ClimateUDEBParameters::default();
+        let params = ClimateUdebParameters::default();
 
         // Check key defaults
         assert_eq!(params.n_layers, 50);
@@ -815,7 +827,7 @@ mod tests {
 
     #[test]
     fn test_kappa_conversion() {
-        let params = ClimateUDEBParameters::default();
+        let params = ClimateUdebParameters::default();
         let kappa_m2_yr = params.kappa_m2_per_yr();
 
         // 0.75 cm^2/s * 3155.76 ~= 2366.82 m^2/yr
@@ -824,7 +836,7 @@ mod tests {
 
     #[test]
     fn test_lambda_global() {
-        let params = ClimateUDEBParameters::default();
+        let params = ClimateUdebParameters::default();
         let lambda = params.lambda_global();
 
         // 3.71 / 3.0 ~= 1.237 W/m^2/K
@@ -833,7 +845,7 @@ mod tests {
 
     #[test]
     fn test_area_fractions() {
-        let params = ClimateUDEBParameters::default();
+        let params = ClimateUdebParameters::default();
 
         // NH: 42% land, 58% ocean
         assert!((params.nh_ocean_fraction() - 0.58).abs() < 1e-10);
@@ -851,7 +863,7 @@ mod tests {
 
     #[test]
     fn test_mixed_layer_heat_capacity() {
-        let params = ClimateUDEBParameters::default();
+        let params = ClimateUdebParameters::default();
         let c_mix = params.mixed_layer_heat_capacity();
 
         // For 60m mixed layer, expect ~7.8 W yr / m^2 K
@@ -860,11 +872,11 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization() {
-        let params = ClimateUDEBParameters::default();
-        let json = serde_json::to_string(&params).expect("Serialization failed");
-        let parsed: ClimateUDEBParameters =
-            serde_json::from_str(&json).expect("Deserialization failed");
+    fn test_serialisation() {
+        let params = ClimateUdebParameters::default();
+        let json = serde_json::to_string(&params).expect("Serialisation failed");
+        let parsed: ClimateUdebParameters =
+            serde_json::from_str(&json).expect("Deserialisation failed");
 
         assert_eq!(params.n_layers, parsed.n_layers);
         assert!((params.ecs - parsed.ecs).abs() < 1e-10);
@@ -872,7 +884,7 @@ mod tests {
 
     #[test]
     fn test_per_box_global_fractions() {
-        let params = ClimateUDEBParameters::default();
+        let params = ClimateUdebParameters::default();
         let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
 
         assert!((fgnl - 0.21).abs() < 1e-10);
@@ -884,7 +896,7 @@ mod tests {
 
     #[test]
     fn test_time_varying_ecs_defaults() {
-        let params = ClimateUDEBParameters::default();
+        let params = ClimateUdebParameters::default();
         assert!((params.feedback_q_sensitivity - 7.84e-9).abs() < 1e-12);
         assert!((params.feedback_cumt_sensitivity - 0.08).abs() < 1e-10);
         assert!((params.feedback_cumt_period - 300.0).abs() < 1e-10);
@@ -892,7 +904,7 @@ mod tests {
 
     #[test]
     fn test_ground_heat_capacity() {
-        let params = ClimateUDEBParameters::default();
+        let params = ClimateUdebParameters::default();
         let c_ground = params.ground_heat_capacity();
 
         // For 300m effective thickness, expect ~38.1 W yr / m^2 K
@@ -916,18 +928,18 @@ mod tests {
 
     #[test]
     fn test_ground_heat_defaults() {
-        let params = ClimateUDEBParameters::default();
+        let params = ClimateUdebParameters::default();
         assert!(params.land_heat_capacity_enabled);
         assert!((params.k_lg - 0.1).abs() < 1e-10);
         assert!((params.land_hc_eff_thickness - 300.0).abs() < 1e-10);
     }
 
     #[test]
-    fn test_partial_deserialization() {
-        // Test that #[serde(default)] allows partial deserialization
+    fn test_partial_deserialisation() {
+        // Test that #[serde(default)] allows partial deserialisation
         let json = r#"{"ecs": 4.5}"#;
-        let params: ClimateUDEBParameters =
-            serde_json::from_str(json).expect("Partial deserialization failed");
+        let params: ClimateUdebParameters =
+            serde_json::from_str(json).expect("Partial deserialisation failed");
 
         // ecs should be from JSON
         assert!((params.ecs - 4.5).abs() < 1e-10);

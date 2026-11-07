@@ -46,32 +46,32 @@ pub const DELTA_OSPP_OFFSETS: [FloatValue; 5] = [1.5568, 7.4706, 1.2748, 2.4491,
 pub const DELTA_OSPP_COEFFICIENTS: [FloatValue; 5] =
     [-0.013993, -0.20207, -0.12015, -0.12639, -0.15326];
 
-/// Ocean carbon IRF model selection.
+/// Ocean carbon IRF method, named after the ocean model whose response it emulates.
 ///
 /// Controls which impulse response function and physical parameters are used
 /// for the ocean carbon cycle. Corresponds to MAGICC7's `OCEANCC_MODEL`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OceanCarbonModel {
+pub enum OceanCarbonMethod {
     /// 3D-GFDL model (MAGICC7 default).
     ///
     /// Uses polynomial IRF for the first year, exponential sum thereafter.
     /// Physical parameters: h=50.9m, A=3.55e14 m^2, SST_pi=17.7C.
     #[serde(rename = "3D-GFDL")]
-    GFDL3D,
+    Gfdl3d,
 
     /// 2D-BERN model.
     ///
     /// Uses exponential sum IRF for both early and late regimes.
     /// Physical parameters: h=50.0m, A=3.5375e14 m^2, SST_pi=18.2997C.
     #[serde(rename = "2D-BERN")]
-    BERN2D,
+    Bern2d,
 
     /// HILDA model.
     ///
     /// Uses exponential sum IRF for both early and late regimes.
     /// Physical parameters: h=75.0m, A=3.62e14 m^2, SST_pi=18.1716C.
     #[serde(rename = "HILDA")]
-    HILDA,
+    Hilda,
 }
 
 /// Impulse Response Function form.
@@ -157,17 +157,17 @@ impl IrfForm {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OceanCarbonParameters {
-    /// Ocean carbon model selection.
+    /// Ocean carbon method (MAGICC7 `OCEANCC_MODEL`).
     ///
-    /// This field is informational only; it does not automatically select the
+    /// This field is informational only: it does not select the
     /// corresponding IRF coefficients or physical parameters. Use the named
     /// constructors (`gfdl_3d()`, `bern_2d()`, `hilda()`) to get a
-    /// self-consistent parameter set for a given model. Setting only this
-    /// field via serde partial deserialization will leave the IRF parameters
-    /// at their default (GFDL3D) values regardless of the variant chosen.
+    /// self-consistent parameter set for a given method. Setting only this
+    /// field via serde partial deserialisation leaves the IRF parameters
+    /// at their 3D-GFDL defaults regardless of the variant chosen.
     ///
-    /// default: GFDL3D (matches MAGICC7 OCEANCC_MODEL = "3D-GFDL")
-    pub model: OceanCarbonModel,
+    /// default: "3D-GFDL"
+    pub method: OceanCarbonMethod,
 
     /// Pre-industrial atmospheric CO2 (ppm).
     /// default: 278.0
@@ -271,7 +271,7 @@ impl OceanCarbonParameters {
     /// (`carbon_cycle_ocean.f90` lines 124-132).
     pub fn gfdl_3d() -> Self {
         Self {
-            model: OceanCarbonModel::GFDL3D,
+            method: OceanCarbonMethod::Gfdl3d,
 
             co2_pi: 278.0,
             pco2_pi: None,
@@ -322,7 +322,7 @@ impl OceanCarbonParameters {
     /// (`carbon_cycle_ocean.f90` lines 134-142).
     pub fn bern_2d() -> Self {
         Self {
-            model: OceanCarbonModel::BERN2D,
+            method: OceanCarbonMethod::Bern2d,
 
             co2_pi: 278.0,
             pco2_pi: None,
@@ -374,7 +374,7 @@ impl OceanCarbonParameters {
     /// (`carbon_cycle_ocean.f90` lines 144-152, 506-554).
     pub fn hilda() -> Self {
         Self {
-            model: OceanCarbonModel::HILDA,
+            method: OceanCarbonMethod::Hilda,
 
             co2_pi: 278.0,
             pco2_pi: None,
@@ -514,7 +514,7 @@ mod tests {
     #[test]
     fn test_default_is_gfdl_3d() {
         let params = OceanCarbonParameters::default();
-        assert_eq!(params.model, OceanCarbonModel::GFDL3D);
+        assert_eq!(params.method, OceanCarbonMethod::Gfdl3d);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
         assert!(params.pco2_pi.is_none());
         assert!((params.temp_sensitivity - 0.03717879).abs() < 1e-10);
@@ -527,7 +527,7 @@ mod tests {
     #[test]
     fn test_bern_2d_constructor() {
         let params = OceanCarbonParameters::bern_2d();
-        assert_eq!(params.model, OceanCarbonModel::BERN2D);
+        assert_eq!(params.method, OceanCarbonMethod::Bern2d);
         assert!((params.mixed_layer_depth - 50.0).abs() < 1e-10);
         assert!((params.sst_pi - 18.2997).abs() < 1e-10);
         assert!((params.irf_switch_time - 9.9).abs() < 1e-10);
@@ -537,7 +537,7 @@ mod tests {
     #[test]
     fn test_hilda_constructor() {
         let params = OceanCarbonParameters::hilda();
-        assert_eq!(params.model, OceanCarbonModel::HILDA);
+        assert_eq!(params.method, OceanCarbonMethod::Hilda);
         assert!((params.mixed_layer_depth - 75.0).abs() < 1e-10);
         assert!((params.sst_pi - 18.1716).abs() < 1e-10);
         assert!((params.irf_switch_time - 2.0).abs() < 1e-10);
@@ -848,27 +848,27 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
+    fn test_serialisation_roundtrip() {
         let params = OceanCarbonParameters::default();
-        let json = serde_json::to_string(&params).expect("Serialization failed");
+        let json = serde_json::to_string(&params).expect("Serialisation failed");
         let parsed: OceanCarbonParameters =
-            serde_json::from_str(&json).expect("Deserialization failed");
+            serde_json::from_str(&json).expect("Deserialisation failed");
 
         assert!(
             (params.co2_pi - parsed.co2_pi).abs() < 1e-10,
             "Parameters should survive round-trip"
         );
-        assert_eq!(params.model, parsed.model);
+        assert_eq!(params.method, parsed.method);
     }
 
     #[test]
-    fn test_serialization_bern_2d_roundtrip() {
+    fn test_serialisation_bern_2d_roundtrip() {
         let params = OceanCarbonParameters::bern_2d();
-        let json = serde_json::to_string(&params).expect("Serialization failed");
+        let json = serde_json::to_string(&params).expect("Serialisation failed");
         let parsed: OceanCarbonParameters =
-            serde_json::from_str(&json).expect("Deserialization failed");
+            serde_json::from_str(&json).expect("Deserialisation failed");
 
-        assert_eq!(parsed.model, OceanCarbonModel::BERN2D);
+        assert_eq!(parsed.method, OceanCarbonMethod::Bern2d);
         assert!((parsed.irf_switch_time - 9.9).abs() < 1e-10);
     }
 

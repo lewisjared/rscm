@@ -1,7 +1,7 @@
 //! Terrestrial Carbon Parameters
 //!
 //! Parameters for the MAGICC7 3-pool terrestrial carbon cycle model with
-//! three CO2 fertilization methods, two respiration methods, and temperature feedbacks.
+//! three CO2 fertilisation methods, two respiration methods, and temperature feedbacks.
 //!
 //! # Reference
 //!
@@ -12,7 +12,7 @@ use super::NitrogenParameters;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
-/// CO2 fertilization method selector.
+/// CO2 fertilisation method selector.
 ///
 /// MAGICC7 uses a continuous float (1.0-3.0) that blends adjacent methods.
 /// This enum provides named variants for the three pure methods plus
@@ -21,8 +21,8 @@ use serde::{Deserialize, Serialize};
 /// MAGICC7: CO2_FERTILIZATION_METHOD
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(from = "FloatValue", into = "FloatValue")]
-pub enum FertilizationMethod {
-    /// No CO2 fertilization (MAGICC7 value < 1.0)
+pub enum FertilisationMethod {
+    /// No CO2 fertilisation (MAGICC7 value < 1.0)
     None,
     /// Logarithmic (Keeling-Bacastow 1973) (MAGICC7 value = 1.0)
     Logarithmic,
@@ -35,7 +35,7 @@ pub enum FertilizationMethod {
     Blended(FloatValue),
 }
 
-impl FertilizationMethod {
+impl FertilisationMethod {
     /// MAGICC7 continuous parameter value.
     pub fn as_f64(&self) -> FloatValue {
         match self {
@@ -48,7 +48,7 @@ impl FertilizationMethod {
     }
 }
 
-impl From<FloatValue> for FertilizationMethod {
+impl From<FloatValue> for FertilisationMethod {
     fn from(v: FloatValue) -> Self {
         if v < 1.0 {
             Self::None
@@ -64,8 +64,8 @@ impl From<FloatValue> for FertilizationMethod {
     }
 }
 
-impl From<FertilizationMethod> for FloatValue {
-    fn from(m: FertilizationMethod) -> Self {
+impl From<FertilisationMethod> for FloatValue {
+    fn from(m: FertilisationMethod) -> Self {
         m.as_f64()
     }
 }
@@ -90,7 +90,7 @@ impl From<FertilizationMethod> for FloatValue {
 ///
 /// # Key Feedbacks
 ///
-/// 1. **CO2 Fertilization**: Higher atmospheric CO2 enhances NPP via three
+/// 1. **CO2 Fertilisation**: Higher atmospheric CO2 enhances NPP via three
 ///    blendable methods (logarithmic, Gifford/Michaelis-Menten, sigmoid).
 ///
 /// 2. **Temperature-Respiration Feedback**: Warmer temperatures accelerate decay:
@@ -105,34 +105,34 @@ pub struct TerrestrialCarbonParameters {
     /// MAGICC7: CO2_NPP_INITIAL
     pub npp_pi: FloatValue,
 
-    /// Pre-industrial CO2 concentration used as reference for fertilization
+    /// Pre-industrial CO2 concentration used as reference for fertilisation
     /// unit: ppm
     /// MAGICC7: CO2_PREINDCO2CONC
     pub co2_pi: FloatValue,
 
-    /// CO2 fertilization factor (beta in logarithmic formula, also used by Gifford/sigmoid)
+    /// CO2 fertilisation factor (beta in logarithmic formula, also used by Gifford/sigmoid)
     /// unit: dimensionless
     /// MAGICC7: CO2_FERTILIZATION_FACTOR
     pub beta: FloatValue,
 
-    /// CO2 fertilization method.
+    /// CO2 fertilisation method.
     /// MAGICC7: CO2_FERTILIZATION_METHOD
-    pub fertilization_method: FertilizationMethod,
+    pub fertilisation_method: FertilisationMethod,
 
-    /// Curvature parameter for sigmoid fertilization method.
+    /// Curvature parameter for sigmoid fertilisation method.
     /// unit: ppm
     /// MAGICC7: CO2_FERTILIZATION_FACTOR2
-    pub fertilization_factor2: FloatValue,
+    pub fertilisation_factor2: FloatValue,
 
     /// CO2 concentration at which NPP would be zero (Gifford method).
     /// unit: ppm
     /// MAGICC7: CO2_GIFFORD_CONC_FOR_ZERONPP
     pub gifford_conc_for_zero_npp: FloatValue,
 
-    /// Year before which CO2 fertilization reference tracks current CO2.
+    /// Year before which CO2 fertilisation reference tracks current CO2.
     /// unit: year
     /// MAGICC7: CO2_FERTILIZATION_YRSTART
-    pub fertilization_yrstart: FloatValue,
+    pub fertilisation_yrstart: FloatValue,
 
     /// NPP temperature sensitivity coefficient (gamma_NPP)
     /// Positive means warming increases NPP.
@@ -184,7 +184,7 @@ pub struct TerrestrialCarbonParameters {
     /// MAGICC7: CO2_RESPIRATION_INITIAL
     pub respiration_pi: FloatValue,
 
-    /// Scaling of fertilization effect on plant respiration.
+    /// Scaling of fertilisation effect on plant respiration.
     /// R_h = R_h0 * (1 + alpha*(beta-1)) * min(1, C_P/C_P0) * f_T_resp
     /// unit: dimensionless
     /// MAGICC7: CO2_PLANTBOXRESP_FERTSCALE
@@ -236,10 +236,10 @@ impl Default for TerrestrialCarbonParameters {
             npp_pi: 66.2716,
             co2_pi: 278.0,
             beta: 0.6485981,
-            fertilization_method: FertilizationMethod::Blended(1.100486),
-            fertilization_factor2: 100.0,
+            fertilisation_method: FertilisationMethod::Blended(1.100486),
+            fertilisation_factor2: 100.0,
             gifford_conc_for_zero_npp: 80.0,
-            fertilization_yrstart: 1900.0,
+            fertilisation_yrstart: 1900.0,
 
             npp_temp_sensitivity: 0.01070037,
             resp_temp_sensitivity: 0.06845893,
@@ -377,7 +377,7 @@ mod tests {
         let params = TerrestrialCarbonParameters::default();
         assert!((params.npp_pi - 66.2716).abs() < 1e-10);
         assert!((params.co2_pi - 278.0).abs() < 1e-10);
-        assert!((params.fertilization_method.as_f64() - 1.100486).abs() < 1e-10);
+        assert!((params.fertilisation_method.as_f64() - 1.100486).abs() < 1e-10);
         assert!((params.plantbox_resp_fertscale - 0.95).abs() < 1e-10);
     }
 
@@ -463,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn test_beta_fertilization_reasonable() {
+    fn test_beta_fertilisation_reasonable() {
         let params = TerrestrialCarbonParameters::default();
         let doubled_co2_factor = 1.0 + params.beta * (2.0_f64).ln();
         assert!(

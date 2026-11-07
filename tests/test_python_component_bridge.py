@@ -170,7 +170,7 @@ def test_build_raises_when_definitions_fail():
             raise KeyError("missing")
 
     with pytest.raises(KeyError, match="missing"):
-        PythonComponent.build(Broken(1.0))
+        PythonComponent(Broken(1.0))
 
 
 def test_interval_end_reads_upstream_output_from_this_step():

@@ -1,4 +1,4 @@
-//! Internal state for the ClimateUDEB component.
+//! Internal state for the ClimateUdeb component.
 //!
 //! This module contains the private state structures that persist across
 //! solve() calls, including ocean layer temperatures, upwelling rates,
@@ -10,13 +10,13 @@ use rscm_core::component::ComponentState;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
-/// Internal state for ClimateUDEB component.
+/// Internal state for ClimateUdeb component.
 ///
 /// This holds the ocean layer temperatures and upwelling rates that persist
 /// across solve() calls. Unlike coupled state (VariableRole::State), this
 /// is private to the component and not shared between components.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ClimateUDEBState {
+pub struct ClimateUdebState {
     /// Ocean layer temperatures for each hemisphere (NH=0, SH=1).
     /// Shape: [hemisphere][layer], layer 0 is mixed layer.
     pub ocean_temps: Vec<Vec<FloatValue>>,
@@ -28,8 +28,8 @@ pub struct ClimateUDEBState {
     #[serde(default)]
     pub upwelling_delta: [FloatValue; 2],
 
-    /// Whether the state has been initialized with parameters.
-    pub initialized: bool,
+    /// Whether the state has been initialised with parameters.
+    pub initialised: bool,
 
     /// History of year-weighted global mean temperature for cumulative-T ECS adjustment.
     /// Each entry stores `temperature * dt_years`, so the sum over entries gives
@@ -70,7 +70,7 @@ pub struct ClimateUDEBState {
 
     /// Inter-hemispheric heat exchange (W/m^2) from the previous substep.
     /// Persists across annual steps (MAGICC7 module-level variable,
-    /// initialized once at startup in climate_and_ocean.f90 line 140).
+    /// initialised once at startup in climate_and_ocean.f90 line 140).
     /// Index 0 = NH, 1 = SH.
     #[serde(default)]
     pub hemi_heat_exchange: [FloatValue; 2],
@@ -111,13 +111,13 @@ fn default_mixed_layer_initial_temp() -> FloatValue {
     17.2
 }
 
-impl ClimateUDEBState {
+impl ClimateUdebState {
     /// Create a new state for a given number of layers and initial conditions.
     ///
     /// `alpha_initial` is the SST-to-air-temperature ratio used before any
     /// ocean temperature has developed (i.e. `temp_adjust_alpha` from parameters).
     /// `profiles` is the per-hemisphere initial ocean temperature profiles,
-    /// computed by [`ClimateUDEBParameters::initial_ocean_profile()`].
+    /// computed by [`ClimateUdebParameters::initial_ocean_profile()`].
     pub fn new(
         n_layers: usize,
         w_initial: FloatValue,
@@ -126,13 +126,13 @@ impl ClimateUDEBState {
     ) -> Self {
         assert!(
             n_layers >= 2,
-            "ClimateUDEBState::new requires n_layers >= 2, got {}",
+            "ClimateUdebState::new requires n_layers >= 2, got {}",
             n_layers
         );
         for (i, hemi_profile) in profiles.iter().enumerate() {
             assert!(
                 hemi_profile.len() == n_layers,
-                "ClimateUDEBState::new requires hemisphere {} profile to have {} layers, got {}",
+                "ClimateUdebState::new requires hemisphere {} profile to have {} layers, got {}",
                 i,
                 n_layers,
                 hemi_profile.len()
@@ -146,7 +146,7 @@ impl ClimateUDEBState {
             ocean_temps: vec![vec![0.0; n_layers]; 2],
             upwelling_rates: [w_initial; 2],
             upwelling_delta: [0.0; 2],
-            initialized: true,
+            initialised: true,
             temperature_history: Vec::new(),
             dt_history: Vec::new(),
             land_temps: [0.0; 2],
@@ -163,8 +163,8 @@ impl ClimateUDEBState {
     }
 }
 
-#[typetag::serde]
-impl ComponentState for ClimateUDEBState {
+#[typetag::serde(name = "magicc.ClimateUdebState")]
+impl ComponentState for ClimateUdebState {
     fn as_any(&self) -> &dyn Any {
         self
     }

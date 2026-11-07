@@ -5,10 +5,10 @@
 //! $$F_{dep} + F_{recyc} + F_{fix} = F_{up} + N / \tau$$
 //!
 //! found by bisection as MAGICC7 does.
-//! Before `fertilization_yrstart` plant uptake is a fixed fraction of NPP and NPP
+//! Before `fertilisation_yrstart` plant uptake is a fixed fraction of NPP and NPP
 //! is not limited. From then on uptake and NPP scale with the nitrogen availability
 //! $\phi(N, NPP) = (1 + A) / (A + e^{-C (N^2 / (N + S) - k \, NPP)})$
-//! relative to its value in the last year before `fertilization_yrstart`.
+//! relative to its value in the last year before `fertilisation_yrstart`.
 
 use crate::parameters::NitrogenParameters;
 use rscm_core::timeseries::FloatValue;
@@ -50,7 +50,7 @@ pub struct NitrogenDrivers {
     /// Heterotrophic respiration of the previous year (GtC/yr)
     pub respiration: FloatValue,
     /// CO2 fertilisation factor of NPP
-    pub fertilization: FloatValue,
+    pub fertilisation: FloatValue,
     /// Temperature factor of NPP
     pub temperature_factor: FloatValue,
     /// Deposition (Gt N/yr)
@@ -78,7 +78,7 @@ impl NitrogenParameters {
 
     /// Solve the nitrogen pool for one year.
     ///
-    /// `limited` is false before `fertilization_yrstart`, when the year also becomes
+    /// `limited` is false before `fertilisation_yrstart`, when the year also becomes
     /// the reference for limitation.
     pub fn solve(
         &self,
@@ -88,7 +88,7 @@ impl NitrogenParameters {
     ) -> NitrogenBudget {
         let f = self.recycling_cn_factor;
         let recycling = self.ncratio_recycling * drivers.respiration * (1.0 + f)
-            / (f + drivers.fertilization)
+            / (f + drivers.fertilisation)
             * (1.0 + f)
             / (f + drivers.temperature_factor);
         let ratio = |pool: FloatValue| {
@@ -151,7 +151,7 @@ mod tests {
         NitrogenDrivers {
             npp,
             respiration: npp,
-            fertilization: 1.0,
+            fertilisation: 1.0,
             temperature_factor: 1.0,
             deposition: 0.0,
             fixation: 0.1694,

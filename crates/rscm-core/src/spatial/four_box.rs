@@ -1,5 +1,5 @@
 use super::SpatialGrid;
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -31,7 +31,7 @@ impl From<FourBoxRegion> for usize {
 /// - Southern Land
 ///
 /// This is the standard regional structure used in MAGICC and provides
-/// a simple but physically meaningful spatial discretization for climate models.
+/// a simple but physically meaningful spatial discretisation for climate models.
 ///
 /// # Examples
 ///
@@ -161,7 +161,7 @@ impl SpatialGrid for FourBoxGrid {
         &self,
         values: &[FloatValue],
         target: &G,
-    ) -> RSCMResult<Vec<FloatValue>> {
+    ) -> RscmResult<Vec<FloatValue>> {
         assert_eq!(
             values.len(),
             self.size(),
@@ -190,7 +190,7 @@ impl SpatialGrid for FourBoxGrid {
                 // FourBox to FourBox: identity
                 Ok(values.to_vec())
             }
-            _ => Err(RSCMError::UnsupportedGridTransformation {
+            _ => Err(RscmError::UnsupportedGridTransformation {
                 from: self.grid_name().to_string(),
                 to: target.grid_name().to_string(),
             }),

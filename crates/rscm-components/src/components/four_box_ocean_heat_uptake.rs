@@ -16,7 +16,7 @@
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::Time;
 use rscm_core::ComponentIO;
@@ -113,14 +113,14 @@ impl Component for FourBoxOceanHeatUptake {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         // Get scalar ERF input using typed inputs
         let inputs = FourBoxOceanHeatUptakeInputs::from_input_state(input_state);
         let erf = inputs.erf.get();
 
         // Disaggregate to four regions using ratios
         // Regional uptake = global ERF * (regional/global ratio)
-        // In a real model, this would be based on physical parameterizations
+        // In a real model, this would be based on physical parameterisations
         let outputs = FourBoxOceanHeatUptakeOutputs {
             heat_uptake: FourBoxSlice::from_array([
                 erf * self.parameters.northern_ocean_ratio,

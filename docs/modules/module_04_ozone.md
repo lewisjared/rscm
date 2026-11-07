@@ -72,7 +72,7 @@ $$
   The emissions are the previous year's.
 - The subscript 0 is the first year of the run, MAGICC7's preindustrial reference year (1750).
 
-MAGICC7 spreads $RF_{trop}$ over the [boxes](module_00_initialization.md) with
+MAGICC7 spreads $RF_{trop}$ over the [boxes](module_00_initialisation.md) with
 `RF_REGIONS_TROPOZ` ($w$) normalised within each hemisphere $H$:
 
 $$

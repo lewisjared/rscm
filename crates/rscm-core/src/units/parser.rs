@@ -176,7 +176,7 @@ impl ParsedUnit {
     ///
     /// let carbon = ParsedUnit::parse("Gt C/yr").unwrap();
     /// assert_eq!(carbon, ParsedUnit::parse("GtC/yr").unwrap());
-    /// assert_eq!(carbon.normalized(), "GtC/yr");
+    /// assert_eq!(carbon.normalised(), "GtC/yr");
     /// ```
     pub fn parse(input: &str) -> Result<Self, ParseError> {
         let input = input.trim();
@@ -312,7 +312,7 @@ impl ParsedUnit {
     /// There are no spaces around `/` or `^`, and factors are separated by a space.
     /// Carbon is fused to its mass unit (`GtC/yr`) and other species are spaced (`Mt CH4/yr`).
     #[must_use]
-    pub fn normalized(&self) -> String {
+    pub fn normalised(&self) -> String {
         let format_part = |parts: Vec<String>| parts.join(" ");
 
         let numerator: Vec<String> = self
@@ -339,13 +339,13 @@ impl ParsedUnit {
 
 impl fmt::Display for ParsedUnit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.normalized())
+        write!(f, "{}", self.normalised())
     }
 }
 
 impl From<ParsedUnit> for String {
     fn from(unit: ParsedUnit) -> Self {
-        unit.normalized()
+        unit.normalised()
     }
 }
 
@@ -699,9 +699,9 @@ mod tests {
     }
 
     #[test]
-    fn test_normalized_output() {
+    fn test_normalised_output() {
         let unit = ParsedUnit::parse("m^-2 W").unwrap();
-        assert_eq!(unit.normalized(), "W/m^2");
+        assert_eq!(unit.normalised(), "W/m^2");
     }
 
     #[test]
@@ -893,7 +893,7 @@ mod tests {
     }
 
     #[test]
-    fn test_normalized_is_compact() {
+    fn test_normalised_is_compact() {
         for (input, expected) in [
             ("W / m ^ 2", "W/m^2"),
             ("GtC / yr", "GtC/yr"),
@@ -911,7 +911,7 @@ mod tests {
             ("GtC^2", "GtC^2"),
         ] {
             assert_eq!(
-                ParsedUnit::parse(input).unwrap().normalized(),
+                ParsedUnit::parse(input).unwrap().normalised(),
                 expected,
                 "{input}"
             );
@@ -919,7 +919,7 @@ mod tests {
     }
 
     #[test]
-    fn test_normalized_round_trips() {
+    fn test_normalised_round_trips() {
         for input in [
             "W / m ^ 2",
             "Gt C / yr",
@@ -932,11 +932,11 @@ mod tests {
             "K / Tt C",
         ] {
             let unit = ParsedUnit::parse(input).unwrap();
-            let normalized = unit.normalized();
-            assert_eq!(ParsedUnit::parse(&normalized).unwrap(), unit, "{input}");
+            let normalised = unit.normalised();
+            assert_eq!(ParsedUnit::parse(&normalised).unwrap(), unit, "{input}");
             assert_eq!(
-                ParsedUnit::parse(&normalized).unwrap().normalized(),
-                normalized
+                ParsedUnit::parse(&normalised).unwrap().normalised(),
+                normalised
             );
         }
     }
@@ -949,7 +949,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serde_uses_normalized_string() {
+    fn test_serde_uses_normalised_string() {
         let unit = ParsedUnit::parse("Mt CH4 / yr").unwrap();
         let json = serde_json::to_string(&unit).unwrap();
         assert_eq!(json, "\"Mt CH4/yr\"");

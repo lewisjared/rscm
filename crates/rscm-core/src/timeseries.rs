@@ -1,4 +1,4 @@
-use crate::errors::RSCMResult;
+use crate::errors::RscmResult;
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::interpolate::Interp1d;
 use crate::spatial::SpatialGrid;
@@ -457,7 +457,7 @@ where
     ///
     /// Uses the interpolation strategy to compute values for all regions
     /// at the given time point.
-    pub fn at_time_all(&self, time: Time) -> RSCMResult<Vec<T>> {
+    pub fn at_time_all(&self, time: Time) -> RscmResult<Vec<T>> {
         let mut result = Vec::with_capacity(self.grid.size());
 
         for region_idx in 0..self.grid.size() {
@@ -514,7 +514,7 @@ where
     pub fn transform_to<G2: SpatialGrid>(
         &self,
         target_grid: G2,
-    ) -> RSCMResult<GridTimeseries<T, G2>> {
+    ) -> RscmResult<GridTimeseries<T, G2>> {
         let target_size = target_grid.size();
         let mut transformed_values = Array2::zeros((self.len(), target_size));
 
@@ -763,7 +763,7 @@ where
     ///
     /// This method interpolates using the current interpolation strategy to determine
     /// the value at `time`.
-    pub fn at_time(&self, time: Time, region: crate::spatial::ScalarRegion) -> RSCMResult<T> {
+    pub fn at_time(&self, time: Time, region: crate::spatial::ScalarRegion) -> RscmResult<T> {
         let result = self.at_time_all(time)?;
         Ok(result[region as usize])
     }
@@ -825,7 +825,7 @@ where
     }
 
     /// Get the value at a given time with interpolation (type-safe for FourBoxGrid)
-    pub fn at_time(&self, time: Time, region: crate::spatial::FourBoxRegion) -> RSCMResult<T> {
+    pub fn at_time(&self, time: Time, region: crate::spatial::FourBoxRegion) -> RscmResult<T> {
         let result = self.at_time_all(time)?;
         Ok(result[region as usize])
     }
@@ -861,7 +861,7 @@ where
     }
 
     /// Get the value at a given time with interpolation (type-safe for HemisphericGrid)
-    pub fn at_time(&self, time: Time, region: crate::spatial::HemisphericRegion) -> RSCMResult<T> {
+    pub fn at_time(&self, time: Time, region: crate::spatial::HemisphericRegion) -> RscmResult<T> {
         let result = self.at_time_all(time)?;
         Ok(result[region as usize])
     }
@@ -1287,7 +1287,7 @@ data = [2020.0, 2021.0, 2022.0, 2023.0]
         }
 
         #[test]
-        fn grid_timeseries_serialization_json() {
+        fn grid_timeseries_serialisation_json() {
             let grid = FourBoxGrid::magicc_standard();
             let time_axis = Arc::new(TimeAxis::from_values(array![2000.0, 2001.0]));
 
@@ -1303,14 +1303,14 @@ data = [2020.0, 2021.0, 2022.0, 2023.0]
                 InterpolationStrategy::from(LinearSplineStrategy::new(true)),
             );
 
-            let serialized = serde_json::to_string(&ts).unwrap();
-            let deserialized: GridTimeseries<FloatValue, FourBoxGrid> =
-                serde_json::from_str(&serialized).unwrap();
+            let serialised = serde_json::to_string(&ts).unwrap();
+            let deserialised: GridTimeseries<FloatValue, FourBoxGrid> =
+                serde_json::from_str(&serialised).unwrap();
 
-            assert_eq!(deserialized.len(), ts.len());
-            assert_eq!(deserialized.grid().size(), ts.grid().size());
+            assert_eq!(deserialised.len(), ts.len());
+            assert_eq!(deserialised.grid().size(), ts.grid().size());
             assert_eq!(
-                deserialized.at(0, FourBoxRegion::NorthernOcean),
+                deserialised.at(0, FourBoxRegion::NorthernOcean),
                 ts.at(0, FourBoxRegion::NorthernOcean)
             );
         }

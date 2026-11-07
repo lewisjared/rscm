@@ -182,7 +182,7 @@ class TestVariableSchemaValidation:
             schema.validate()
 
 
-class ERFComponent(Component):
+class ErfComponent(Component):
     """Simple component that outputs ERF from concentration."""
 
     concentration = Input("Concentration|CO2", unit="ppm")
@@ -192,8 +192,8 @@ class ERFComponent(Component):
         self.forcing_per_ppm = forcing_per_ppm
 
     def solve(
-        self, t_current, t_next, inputs: "ERFComponent.Inputs"
-    ) -> "ERFComponent.Outputs":
+        self, t_current, t_next, inputs: "ErfComponent.Inputs"
+    ) -> "ErfComponent.Outputs":
         conc = inputs.concentration.get()
         return self.Outputs(erf=conc * self.forcing_per_ppm)
 
@@ -221,7 +221,7 @@ class TestSchemaModelIntegration:
         schema.add_variable("ERF|Test", "W/m^2")
         schema.validate()
 
-        component = PythonComponent.build(ERFComponent())
+        component = PythonComponent(ErfComponent())
 
         model = (
             ModelBuilder()
@@ -249,7 +249,7 @@ class TestSchemaModelIntegration:
         # Note: ERF|Test is NOT in the schema
         schema.validate()
 
-        component = PythonComponent.build(ERFComponent())
+        component = PythonComponent(ErfComponent())
 
         with pytest.raises(ValueError, match="not defined in the schema"):
             (
@@ -265,22 +265,22 @@ class TestSchemaModelIntegration:
         """Test model execution with a Sum aggregate."""
 
         # Two components producing different ERF values
-        class CO2ERF(Component):
+        class CO2Erf(Component):
             concentration = Input("Concentration|CO2", unit="ppm")
             erf = Output("ERF|CO2", unit="W/m^2")
 
             def solve(
-                self, t_current, t_next, inputs: "CO2ERF.Inputs"
-            ) -> "CO2ERF.Outputs":
+                self, t_current, t_next, inputs: "CO2Erf.Inputs"
+            ) -> "CO2Erf.Outputs":
                 return self.Outputs(erf=inputs.concentration.get() * 0.01)
 
-        class CH4ERF(Component):
+        class CH4Erf(Component):
             concentration = Input("Concentration|CH4", unit="ppb")
             erf = Output("ERF|CH4", unit="W/m^2")
 
             def solve(
-                self, t_current, t_next, inputs: "CH4ERF.Inputs"
-            ) -> "CH4ERF.Outputs":
+                self, t_current, t_next, inputs: "CH4Erf.Inputs"
+            ) -> "CH4Erf.Outputs":
                 return self.Outputs(erf=inputs.concentration.get() * 0.001)
 
         # Create schema with aggregate
@@ -310,8 +310,8 @@ class TestSchemaModelIntegration:
             ModelBuilder()
             .with_time_axis(time_axis)
             .with_schema(schema)
-            .with_component(CO2ERF())
-            .with_component(CH4ERF())
+            .with_component(CO2Erf())
+            .with_component(CH4Erf())
             .with_prescribed_variable("Concentration|CO2", co2_ts)
             .with_prescribed_variable("Concentration|CH4", ch4_ts)
             .build()

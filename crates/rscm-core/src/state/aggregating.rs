@@ -4,7 +4,7 @@
 //! to coarser representations (e.g., Scalar or Hemispheric).
 
 use crate::component::{GridType, TimeseriesType};
-use crate::errors::RSCMResult;
+use crate::errors::RscmResult;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, HemisphericRegion, SpatialGrid};
 use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis};
 
@@ -79,7 +79,7 @@ impl ReadTransformInfo {
         self
     }
 
-    /// Set the variable source type for `get()` behavior.
+    /// Set the variable source type for `get()` behaviour.
     pub fn with_source(mut self, source: VariableSource) -> Self {
         self.variable_source = source;
         self
@@ -106,7 +106,7 @@ pub struct AggregatingFourBoxWindow<'a> {
     weights: Option<[f64; 4]>,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
-    /// Source type determining get() behavior
+    /// Source type determining get() behaviour
     variable_source: VariableSource,
     timeseries_type: TimeseriesType,
 }
@@ -256,7 +256,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
     /// Values at the start and end of the step.
     ///
     /// See [`TimeseriesWindow::interval()`](super::TimeseriesWindow::interval) for lagged inputs and errors.
-    pub fn interval(&self) -> RSCMResult<(FloatValue, FloatValue)> {
+    pub fn interval(&self) -> RscmResult<(FloatValue, FloatValue)> {
         let (start, end) = self.read_index().interval()?;
         Ok((self.value_at(start), self.value_at(end)))
     }
@@ -265,7 +265,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
     ///
     /// See [`TimeseriesWindow::interpolate()`](super::TimeseriesWindow::interpolate)
     /// for nodes, the axis ends and upstream outputs.
-    pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
+    pub fn interpolate(&self, t: Time) -> RscmResult<FloatValue> {
         match stored_index(self.time_axis(), t) {
             Some(index) => Ok(self.value_at(index)),
             None => Ok(self.aggregate(&self.timeseries.at_time_all(t)?)),
@@ -294,7 +294,7 @@ pub struct AggregatingHemisphericWindow<'a> {
     weights: Option<[f64; 2]>,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
-    /// Source type determining get() behavior
+    /// Source type determining get() behaviour
     variable_source: VariableSource,
     timeseries_type: TimeseriesType,
 }
@@ -444,7 +444,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
     /// Values at the start and end of the step.
     ///
     /// See [`TimeseriesWindow::interval()`](super::TimeseriesWindow::interval) for lagged inputs and errors.
-    pub fn interval(&self) -> RSCMResult<(FloatValue, FloatValue)> {
+    pub fn interval(&self) -> RscmResult<(FloatValue, FloatValue)> {
         let (start, end) = self.read_index().interval()?;
         Ok((self.value_at(start), self.value_at(end)))
     }
@@ -453,7 +453,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
     ///
     /// See [`TimeseriesWindow::interpolate()`](super::TimeseriesWindow::interpolate)
     /// for nodes, the axis ends and upstream outputs.
-    pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
+    pub fn interpolate(&self, t: Time) -> RscmResult<FloatValue> {
         match stored_index(self.time_axis(), t) {
             Some(index) => Ok(self.value_at(index)),
             None => Ok(self.aggregate(&self.timeseries.at_time_all(t)?)),
@@ -570,7 +570,7 @@ impl<'a> ScalarWindow<'a> {
     /// Values at the start and end of the step.
     ///
     /// See [`TimeseriesWindow::interval()`](super::TimeseriesWindow::interval) for lagged inputs and errors.
-    pub fn interval(&self) -> RSCMResult<(FloatValue, FloatValue)> {
+    pub fn interval(&self) -> RscmResult<(FloatValue, FloatValue)> {
         match self {
             ScalarWindow::Direct(w) => w.interval(),
             ScalarWindow::FromFourBox(w) => w.interval(),
@@ -582,7 +582,7 @@ impl<'a> ScalarWindow<'a> {
     ///
     /// See [`TimeseriesWindow::interpolate()`](super::TimeseriesWindow::interpolate)
     /// for nodes, the axis ends and upstream outputs.
-    pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
+    pub fn interpolate(&self, t: Time) -> RscmResult<FloatValue> {
         match self {
             ScalarWindow::Direct(w) => w.interpolate(t),
             ScalarWindow::FromFourBox(w) => w.interpolate(t),
@@ -620,7 +620,7 @@ pub struct AggregatingFourBoxToHemisphericWindow<'a> {
     name: &'a str,
     /// Unit conversion factor applied to all returned values.
     unit_conversion_factor: f64,
-    /// Source type determining get() behavior
+    /// Source type determining get() behaviour
     variable_source: VariableSource,
     timeseries_type: TimeseriesType,
 }
@@ -743,7 +743,7 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     /// Regional values at the start and end of the step.
     ///
     /// See [`TimeseriesWindow::interval()`](super::TimeseriesWindow::interval) for lagged inputs and errors.
-    pub fn interval(&self) -> RSCMResult<(Vec<FloatValue>, Vec<FloatValue>)> {
+    pub fn interval(&self) -> RscmResult<(Vec<FloatValue>, Vec<FloatValue>)> {
         let (start, end) = self.read_index().interval()?;
         Ok((self.values_at(start), self.values_at(end)))
     }
@@ -752,7 +752,7 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     ///
     /// See [`TimeseriesWindow::interpolate()`](super::TimeseriesWindow::interpolate)
     /// for nodes, the axis ends and upstream outputs.
-    pub fn interpolate_all(&self, t: Time) -> RSCMResult<Vec<FloatValue>> {
+    pub fn interpolate_all(&self, t: Time) -> RscmResult<Vec<FloatValue>> {
         match stored_index(self.time_axis(), t) {
             Some(index) => Ok(self.values_at(index)),
             None => Ok(self
@@ -874,7 +874,7 @@ impl<'a> HemisphericWindow<'a> {
     /// Regional values at the start and end of the step.
     ///
     /// See [`TimeseriesWindow::interval()`](super::TimeseriesWindow::interval) for lagged inputs and errors.
-    pub fn interval(&self) -> RSCMResult<(Vec<FloatValue>, Vec<FloatValue>)> {
+    pub fn interval(&self) -> RscmResult<(Vec<FloatValue>, Vec<FloatValue>)> {
         match self {
             HemisphericWindow::Direct(w) => w.interval(),
             HemisphericWindow::FromFourBox(w) => w.interval(),
@@ -885,7 +885,7 @@ impl<'a> HemisphericWindow<'a> {
     ///
     /// See [`TimeseriesWindow::interpolate()`](super::TimeseriesWindow::interpolate)
     /// for nodes, the axis ends and upstream outputs.
-    pub fn interpolate_all(&self, t: Time) -> RSCMResult<Vec<FloatValue>> {
+    pub fn interpolate_all(&self, t: Time) -> RscmResult<Vec<FloatValue>> {
         match self {
             HemisphericWindow::Direct(w) => w.interpolate_all(t),
             HemisphericWindow::FromFourBox(w) => w.interpolate_all(t),
@@ -1207,7 +1207,7 @@ mod aggregating_window_tests {
         let inner = AggregatingFourBoxWindow::new(&ts, 0, "test", None);
         let window = ScalarWindow::FromFourBox(inner);
 
-        // Same behavior as AggregatingFourBoxWindow
+        // Same behaviour as AggregatingFourBoxWindow
         assert_eq!(window.get(), 26.0);
         assert_eq!(window.history(1), Some(25.0));
         assert_eq!(window.get_time(), 2001.0);
@@ -1220,7 +1220,7 @@ mod aggregating_window_tests {
         let inner = AggregatingHemisphericWindow::new(&ts, 0, "test", None);
         let window = ScalarWindow::FromHemispheric(inner);
 
-        // Same behavior as AggregatingHemisphericWindow
+        // Same behaviour as AggregatingHemisphericWindow
         assert_eq!(window.get(), 165.0);
         assert_eq!(window.history(1), Some(150.0));
         assert_eq!(window.get_time(), 2001.0);

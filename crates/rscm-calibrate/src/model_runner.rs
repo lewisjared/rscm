@@ -389,7 +389,7 @@ mod tests {
 
     // Tests for DefaultModelRunner with simple mock Model
     use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-    use rscm_core::errors::RSCMResult;
+    use rscm_core::errors::RscmResult;
     use rscm_core::model::ModelBuilder;
     use rscm_core::timeseries::{Time, TimeAxis};
     use serde::{Deserialize, Serialize};
@@ -414,7 +414,7 @@ mod tests {
             _t_current: Time,
             _t_next: Time,
             _input_state: &InputState,
-        ) -> RSCMResult<OutputState> {
+        ) -> RscmResult<OutputState> {
             let mut output = OutputState::new();
             output.insert("TestOutput".to_string(), self.value.into());
             Ok(output)
@@ -564,7 +564,7 @@ mod tests {
                 _t_current: Time,
                 _t_next: Time,
                 _input_state: &InputState,
-            ) -> RSCMResult<OutputState> {
+            ) -> RscmResult<OutputState> {
                 let mut output = OutputState::new();
                 output.insert("Output1".to_string(), self.value1.into());
                 output.insert("Output2".to_string(), self.value2.into());
@@ -678,8 +678,8 @@ mod tests {
                 _t_current: Time,
                 _t_next: Time,
                 _input_state: &InputState,
-            ) -> RSCMResult<OutputState> {
-                Err(rscm_core::errors::RSCMError::Error(
+            ) -> RscmResult<OutputState> {
+                Err(rscm_core::errors::RscmError::Error(
                     "solver diverged".to_string(),
                 ))
             }

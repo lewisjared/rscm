@@ -41,7 +41,7 @@ use crate::parameters::AerosolIndirectParameters;
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -160,7 +160,7 @@ impl Default for AerosolIndirect {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.AerosolIndirect")]
 impl Component for AerosolIndirect {
     fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
@@ -171,7 +171,7 @@ impl Component for AerosolIndirect {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let inputs = AerosolIndirectInputs::from_input_state(input_state);
 
         let sox = inputs.sox_emissions.get();
@@ -372,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
+    fn test_serialisation_roundtrip() {
         let component = AerosolIndirect::from_parameters(AerosolIndirectParameters {
             cloud_albedo_coefficient: -1.2,
             reference_burden: 75.0,

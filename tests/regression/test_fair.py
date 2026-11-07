@@ -31,7 +31,7 @@ from rscm.core import (
     VariableSchema,
 )
 from rscm.fair import (
-    build_components,
+    components,
     from_fair,
     initial_values,
     load_config,
@@ -45,7 +45,7 @@ from rscm.fair import (
 from rscm.fair.config import forcing_agents, is_ghg
 from rscm.fair.ensemble import SPECIES_ATTRIBUTES
 from rscm.fair.run import _on_timebounds
-from rscm.magicc import ClimateUDEBBuilder
+from rscm.magicc import ClimateUdebBuilder
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -109,6 +109,11 @@ class Run:
         """Values of a FaIR timebound column."""
         return self.timebounds[column].to_numpy()
 
+    @property
+    def time_axis(self) -> TimeAxis:
+        """Time axis with a step starting at each FaIR timebound."""
+        return _time_axis(self.timebounds)
+
 
 def _read(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, index_col=0, float_precision="round_trip")
@@ -140,6 +145,10 @@ def calibration() -> dict[Any, dict[str, Any]]:
     )
 
 
+def _time_axis(timebounds: pd.DataFrame) -> TimeAxis:
+    return TimeAxis.from_values(timebounds.index.to_numpy(dtype=np.float64))
+
+
 @cache
 def load(case: str) -> Run:
     """Run RSCM on the inputs of a reference run."""
@@ -153,7 +162,7 @@ def load(case: str) -> Run:
     model = run_fair(
         config,
         _inputs(config, timebounds, timepoints),
-        timebounds.index.to_numpy(),
+        _time_axis(timebounds),
     )
     return Run(config, timebounds, timepoints, model.timeseries())
 
@@ -242,7 +251,7 @@ def test_prescribed_concentration_matches_modelled(gas: str) -> None:
     variable, unit = naming.prescribed_variable(entry)
     inputs[variable] = (run.rscm(variable), unit)
 
-    outputs = run_fair(config, inputs, run.timebounds.index.to_numpy()).timeseries()
+    outputs = run_fair(config, inputs, run.time_axis).timeseries()
 
     assert set(outputs.names()) == set(run.outputs.names())
     # Inverting the gas cycle rounds the gas's own emissions.
@@ -299,22 +308,20 @@ def _assert_ensemble_member(result: Any, run: Run) -> None:
             if str(column).startswith(f"{attribute}|") and np.isfinite(values).all()
         }
         actual = {
-            specie
-            for specie in result.specie.values
-            if not np.isnan(result[attribute].sel(specie=specie).to_numpy()).all()
+            name
+            for name in result.specie.values
+            if not np.isnan(result[attribute].sel(specie=name).to_numpy()).all()
         }
         assert actual == expected, attribute
-        for specie in expected:
+        for name in expected:
             assert_close(
-                result[attribute].sel(specie=specie),
-                run.fair(f"{attribute}|{specie}"),
-                f"{attribute}|{specie}",
+                result[attribute].sel(specie=name),
+                run.fair(f"{attribute}|{name}"),
+                f"{attribute}|{name}",
             )
     for column in run.timepoints.columns:
-        specie = column.removeprefix("emissions|")
-        assert_close(
-            result.emissions.sel(specie=specie), run.timepoints[column], column
-        )
+        name = column.removeprefix("emissions|")
+        assert_close(result.emissions.sel(specie=name), run.timepoints[column], column)
 
 
 def test_ensemble() -> None:
@@ -331,7 +338,7 @@ def test_ensemble() -> None:
     result = run_ensemble(
         configs,
         {"historical": inputs},
-        first.timebounds.index.to_numpy(),
+        first.time_axis,
         scale_prescribed_forcing=True,
     )
 
@@ -347,7 +354,7 @@ def test_ensemble_prescribed() -> None:
     result = run_ensemble(
         {"config": run.config},
         {"ssp245": _inputs(run.config, run.timebounds, run.timepoints)},
-        run.timebounds.index.to_numpy(),
+        run.time_axis,
     )
     _assert_ensemble_member(result.sel(scenario="ssp245", config="config"), run)
 
@@ -360,7 +367,7 @@ def test_first_prescribed_forcing() -> None:
     values, unit = inputs[naming.prescribed_forcing(solar)]
     inputs[naming.prescribed_forcing(solar)] = (np.r_[0.3, values[1:]], unit)
 
-    outputs = run_fair(run.config, inputs, run.timebounds.index.to_numpy()).timeseries()
+    outputs = run_fair(run.config, inputs, run.time_axis).timeseries()
 
     for variable in (
         naming.forcing(solar),
@@ -384,7 +391,7 @@ def test_prescribed_ghg_forcing_is_rejected() -> None:
         if s["name"] == "CH4":
             s["input_mode"] = "forcing"
     with pytest.raises(ValueError, match="CH4"):
-        build_components(config)
+        components(config)
 
 
 def test_from_fair() -> None:
@@ -416,10 +423,10 @@ def test_from_fair() -> None:
             fill(f.forcing, run.fair(f"forcing|{s}")[:, None, None], specie=s)
     initialise(f.concentration, f.species_configs["baseline_concentration"])
 
-    config, inputs, timebounds = from_fair(f)
+    config, inputs, time_axis = from_fair(f)
 
     assert config["options"] == run.config["options"]
-    outputs = run_fair(config, inputs, timebounds).timeseries()
+    outputs = run_fair(config, inputs, time_axis).timeseries()
     for variable, column in (
         (naming.SURFACE_TEMPERATURE, "temperature|0"),
         (naming.TOTAL_FORCING, "forcing_sum"),
@@ -431,23 +438,23 @@ def test_from_fair() -> None:
 
 
 def test_climate_udeb_smoke() -> None:
-    """FaIR's gas cycle and forcing drive MAGICC's ClimateUDEB in place of the EBM."""
+    """FaIR's gas cycle and forcing drive MAGICC's ClimateUdeb in place of the EBM."""
     member = CALIBRATION_MEMBERS[0]
     run = load(f"calibrated_{member}")
     nh, sh = 0.42, 0.21
-    climate = ClimateUDEBBuilder.from_parameters(
+    climate = ClimateUdebBuilder.from_parameters(
         {"ecs": 3.0, "nh_land_fraction": nh, "sh_land_fraction": sh}
     )
-    components = [*build_components(run.config, energy_balance=False), climate.build()]
+    chain = [*components(run.config, energy_balance=False), climate.build()]
 
     schema = VariableSchema()
-    definitions = [d for c in components for d in c.definitions()]
-    # Writers first, so the schema keeps ClimateUDEB's four-box temperature.
+    definitions = [d for c in chain for d in c.definitions()]
+    # Writers first, so the schema keeps ClimateUdeb's four-box temperature.
     for d in sorted(definitions, key=lambda d: d.role == VariableRole.Input):
         if not schema.contains(d.name):
             schema.add_variable(d.name, d.unit, d.grid)
 
-    axis = TimeAxis.from_values(run.timebounds.index.to_numpy(dtype=np.float64))
+    axis = run.time_axis
     builder = (
         ModelBuilder()
         .with_time_axis(axis)
@@ -456,7 +463,7 @@ def test_climate_udeb_smoke() -> None:
             GridType.FourBox, [(1 - nh) / 2, nh / 2, (1 - sh) / 2, sh / 2]
         )
     )
-    for component in components:
+    for component in chain:
         builder.with_component(component)
     with_lags(builder, run.config)
     inputs = _inputs(run.config, run.timebounds, run.timepoints)

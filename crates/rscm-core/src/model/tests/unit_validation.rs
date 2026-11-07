@@ -9,7 +9,7 @@
 use crate::component::{
     Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
 use crate::model::{Model, ModelBuilder};
 use crate::schema::VariableSchema;
@@ -42,7 +42,7 @@ impl Component for EmissionsToConcentration {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         Ok(OutputState::new())
     }
 }
@@ -68,7 +68,7 @@ impl Component for ConcentrationToForcing {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         Ok(OutputState::new())
     }
 }
@@ -111,7 +111,7 @@ fn test_identical_units_accepted() {
 }
 
 #[test]
-fn test_whitespace_normalized_units_accepted() {
+fn test_whitespace_normalised_units_accepted() {
     // Units that differ only in whitespace should be accepted
     let comp1 = EmissionsToConcentration {
         input_unit: "GtC/yr".to_string(),
@@ -137,7 +137,7 @@ fn test_whitespace_normalized_units_accepted() {
 
     assert!(
         result.is_ok(),
-        "Whitespace-normalized units should be accepted: {:?}",
+        "Whitespace-normalised units should be accepted: {:?}",
         result.err()
     );
 }
@@ -343,7 +343,7 @@ fn test_between_component_units_compatible_but_different() {
             _t_current: Time,
             _t_next: Time,
             _input_state: &InputState,
-        ) -> RSCMResult<OutputState> {
+        ) -> RscmResult<OutputState> {
             Ok(OutputState::new())
         }
     }
@@ -395,7 +395,7 @@ impl Component for ScaleAndOutput {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         // Get the input value (after any unit conversion has been applied)
         let input_window = input_state.get_scalar_window("Input");
         let input_value = input_window.get();
@@ -648,7 +648,7 @@ fn test_no_conversion_when_units_match() {
     );
 }
 
-fn emissions_model(component_unit: &str, data: Timeseries<FloatValue>) -> RSCMResult<Model> {
+fn emissions_model(component_unit: &str, data: Timeseries<FloatValue>) -> RscmResult<Model> {
     ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_component(Arc::new(EmissionsToConcentration {
@@ -693,7 +693,7 @@ fn test_prescribed_data_with_incompatible_unit_rejected() {
     let err = emissions_model("GtC / yr", get_emissions("W / m^2")).unwrap_err();
 
     match err {
-        RSCMError::IncompatibleUnits { variable, .. } => assert_eq!(variable, "Emissions|CO2"),
+        RscmError::IncompatibleUnits { variable, .. } => assert_eq!(variable, "Emissions|CO2"),
         other => panic!("expected IncompatibleUnits, got {other:?}"),
     }
 }
@@ -703,7 +703,7 @@ fn test_prescribed_data_with_unparseable_unit_rejected() {
     let err = emissions_model("GtC / yr", get_emissions("")).unwrap_err();
 
     match err {
-        RSCMError::UnitParseError { variable, .. } => assert_eq!(variable, "Emissions|CO2"),
+        RscmError::UnitParseError { variable, .. } => assert_eq!(variable, "Emissions|CO2"),
         other => panic!("expected UnitParseError, got {other:?}"),
     }
 }
@@ -749,12 +749,12 @@ impl Component for FourBoxReader {
         _t_current: Time,
         _t_next: Time,
         _input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         Ok(OutputState::new())
     }
 }
 
-fn four_box_model(unit: &str) -> RSCMResult<Model> {
+fn four_box_model(unit: &str) -> RscmResult<Model> {
     let time_axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)));
     let values = Array::from_elem((time_axis.len(), 4), 1.0);
     let data = GridTimeseries::new(
@@ -789,7 +789,7 @@ fn test_four_box_prescribed_data_with_incompatible_unit_rejected() {
     let err = four_box_model("W / m^2").unwrap_err();
 
     assert!(
-        matches!(err, RSCMError::IncompatibleUnits { ref variable, .. } if variable == "Surface Temperature"),
+        matches!(err, RscmError::IncompatibleUnits { ref variable, .. } if variable == "Surface Temperature"),
         "expected IncompatibleUnits, got {err:?}"
     );
 }

@@ -40,7 +40,7 @@ use crate::parameters::{PermafrostParameters, PermafrostSoilParameters};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::{RSCMError, RSCMResult};
+use rscm_core::errors::{RscmError, RscmResult};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -73,7 +73,7 @@ pub struct PermafrostState {
     pub peat: Vec<SoilBand>,
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.PermafrostState")]
 impl ComponentState for PermafrostState {
     fn as_any(&self) -> &dyn Any {
         self
@@ -374,7 +374,7 @@ impl Permafrost {
         t_next: Time,
         input_state: &InputState,
         state: &mut PermafrostState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         if state.mineral_soil.len() != self.parameters.n_bands {
             *state = self.initial_state();
         }
@@ -418,7 +418,7 @@ impl Default for Permafrost {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.Permafrost")]
 impl Component for Permafrost {
     fn definitions(&self) -> Vec<VariableDefinition> {
         Self::generated_definitions()
@@ -429,7 +429,7 @@ impl Component for Permafrost {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let mut state = self.initial_state();
         self.solve_impl(t_current, t_next, input_state, &mut state)
     }
@@ -444,11 +444,11 @@ impl Component for Permafrost {
         t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<PermafrostState>()
-            .ok_or_else(|| RSCMError::Error("Internal state should be PermafrostState".into()))?;
+            .ok_or_else(|| RscmError::Error("Internal state should be PermafrostState".into()))?;
         self.solve_impl(t_current, t_next, input_state, state)
     }
 }

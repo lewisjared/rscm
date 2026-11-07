@@ -121,7 +121,7 @@
 use crate::component::{
     Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
-use crate::errors::RSCMResult;
+use crate::errors::RscmResult;
 use crate::state::StateValue;
 use crate::timeseries::{FloatValue, Time};
 use crate::ComponentIO;
@@ -183,7 +183,7 @@ impl Component for TestComponent {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         // Use the generated typed inputs struct
         let inputs = TestComponentInputs::from_input_state(input_state);
 

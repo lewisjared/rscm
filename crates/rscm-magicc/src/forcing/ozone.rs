@@ -26,7 +26,7 @@
 use crate::parameters::OzoneForcingParameters;
 use crate::reference::{first_value, require_annual, value_at_year};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::RscmResult;
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -101,7 +101,7 @@ impl Default for OzoneForcing {
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "magicc.OzoneForcing")]
 impl Component for OzoneForcing {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = vec![
@@ -134,7 +134,7 @@ impl Component for OzoneForcing {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         require_annual("OzoneForcing", t_current, t_next)?;
         let p = &self.parameters;
         let window = |name| input_state.get_scalar_window(name);

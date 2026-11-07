@@ -6,6 +6,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+from rscm.core import TimeAxis
 from rscm.magicc import Emissions, run_magicc_emissions
 
 YEARS = np.arange(1750.0, 1851.0)
@@ -35,7 +36,7 @@ def run(emis: Emissions, **kwargs):
         "initial_concentrations", {"CO2": 278.0, "CH4": 722.0, "N2O": 270.0}
     )
     kwargs.setdefault("other_forcing", np.zeros(len(YEARS)))
-    return run_magicc_emissions(YEARS, emis, **kwargs)
+    return run_magicc_emissions(TimeAxis.from_values(YEARS), emis, **kwargs)
 
 
 def test_rising_emissions_raise_concentrations_and_temperature():
@@ -84,7 +85,7 @@ def test_co2_mass_balance():
 
 def test_climate_feedback_follows_forcing_configuration():
     default = run(emissions())
-    explicit = run(emissions(), parameters={"ClimateUDEB": {"rf_2xco2": 3.71}})
+    explicit = run(emissions(), parameters={"ClimateUdeb": {"rf_2xco2": 3.71}})
     # A smaller doubling forcing weakens the feedback, so the climate warms more
     assert (
         explicit.values["Surface Temperature"][-1]
@@ -164,9 +165,9 @@ def test_invalid_inputs_rejected():
         run(replace(emissions(), ch4_fossil=emissions().ch4 + 1.0))
     with pytest.raises(ValueError, match="other_forcing"):
         run(emissions(), other_forcing=np.zeros(len(YEARS) - 1))
-    with pytest.raises(ValueError, match="years"):
+    with pytest.raises(ValueError, match="time_axis"):
         run_magicc_emissions(
-            [1750.0],
+            TimeAxis.from_bounds(np.array([1750.0, 1751.0])),
             emissions(),
             initial_concentrations={"CO2": 278.0, "CH4": 722.0, "N2O": 270.0},
             other_forcing=[0.0],

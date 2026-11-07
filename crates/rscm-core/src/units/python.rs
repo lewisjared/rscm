@@ -1,6 +1,6 @@
 //! Python bindings for the units module.
 //!
-//! This module provides Python access to unit parsing, normalization, and conversion
+//! This module provides Python access to unit parsing, normalisation, and conversion
 //! functionality. It exposes the [`PyUnit`] class which wraps the Rust [`Unit`] type.
 //!
 //! # Usage from Python
@@ -26,7 +26,7 @@ use super::Unit;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
-/// A physical unit with parsing, normalization, and conversion support.
+/// A physical unit with parsing, normalisation, and conversion support.
 ///
 /// This class provides comprehensive support for working with physical units
 /// in climate models. It handles parsing of unit strings with flexible syntax,
@@ -53,7 +53,7 @@ use pyo3::prelude::*;
 /// # Parse and compare units
 /// u1 = Unit("W/m^2")
 /// u2 = Unit("W / m ^ 2")
-/// assert u1 == u2  # Same normalized form
+/// assert u1 == u2  # Same normalised form
 ///
 /// # Convert between compatible units
 /// gtc = Unit("GtC/yr")
@@ -112,27 +112,27 @@ impl PyUnit {
         self.inner.original()
     }
 
-    /// Return the normalized string representation of this unit.
+    /// Return the normalised string representation of this unit.
     ///
-    /// The normalized form is canonical and compact: units with positive exponents
+    /// The normalised form is canonical and compact: units with positive exponents
     /// first (alphabetically), then `/`, then units with negative exponents.
     /// Carbon is fused to its mass unit and every other species is spaced.
     ///
     /// Returns
     /// -------
     /// str
-    ///     The normalized unit string.
+    ///     The normalised unit string.
     ///
     /// Examples
     /// --------
-    /// >>> Unit("W / m ^ 2").normalized()
+    /// >>> Unit("W / m ^ 2").normalised()
     /// 'W/m^2'
-    /// >>> Unit("Gt C / yr").normalized()
+    /// >>> Unit("Gt C / yr").normalised()
     /// 'GtC/yr'
-    /// >>> Unit("MtCO2/yr").normalized()
+    /// >>> Unit("MtCO2/yr").normalised()
     /// 'Mt CO2/yr'
-    fn normalized(&self) -> String {
-        self.inner.normalized()
+    fn normalised(&self) -> String {
+        self.inner.normalised()
     }
 
     /// Check if this unit is dimensionless.
@@ -254,17 +254,17 @@ impl PyUnit {
 
     /// Return a string representation of this unit.
     fn __repr__(&self) -> String {
-        format!("Unit('{}')", self.inner.normalized())
+        format!("Unit('{}')", self.inner.normalised())
     }
 
-    /// Return the normalized string representation.
+    /// Return the normalised string representation.
     fn __str__(&self) -> String {
-        self.inner.normalized()
+        self.inner.normalised()
     }
 
     /// Check equality with another unit.
     ///
-    /// Two units are equal if they have the same normalized representation.
+    /// Two units are equal if they have the same normalised representation.
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> PyResult<bool> {
         if let Ok(other_unit) = other.extract::<PyRef<PyUnit>>() {
             Ok(self.inner == other_unit.inner)
@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn test_py_unit_creation() {
         let unit = PyUnit::new("W / m^2").unwrap();
-        assert_eq!(unit.normalized(), "W/m^2");
+        assert_eq!(unit.normalised(), "W/m^2");
     }
 
     #[test]
@@ -332,7 +332,7 @@ mod tests {
         let spaced = PyUnit::new("Gt C/yr").unwrap();
         let fused = PyUnit::new("GtC/yr").unwrap();
         assert_eq!(spaced.inner, fused.inner);
-        assert_eq!(spaced.normalized(), "GtC/yr");
+        assert_eq!(spaced.normalised(), "GtC/yr");
 
         let ch4 = PyUnit::new("Mt CH4/yr").unwrap();
         let co2 = PyUnit::new("Mt CO2/yr").unwrap();

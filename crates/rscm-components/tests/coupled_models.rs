@@ -1,7 +1,7 @@
 use numpy::array;
 use numpy::ndarray::{Array, Axis};
 use rscm_components::{
-    CO2ERFParameters, CarbonCycle, CarbonCycleParameters, SolverOptions, CO2ERF,
+    CO2Erf, CO2ErfParameters, CarbonCycle, CarbonCycleParameters, SolverOptions,
 };
 use rscm_core::interpolate::strategies::{InterpolationStrategy, NextStrategy, PreviousStrategy};
 use rscm_core::model::ModelBuilder;
@@ -185,7 +185,7 @@ fn test_coupled_model() {
                 alpha_temperature,
             },
         )))
-        .with_component(Arc::new(CO2ERF::from_parameters(CO2ERFParameters {
+        .with_component(Arc::new(CO2Erf::from_parameters(CO2ErfParameters {
             erf_2xco2,
             conc_pi,
         })))

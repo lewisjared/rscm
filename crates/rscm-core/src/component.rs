@@ -1,4 +1,4 @@
-use crate::errors::RSCMResult;
+use crate::errors::RscmResult;
 pub use crate::state::{
     FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, HemisphericWindow, InputState,
     OutputState, ScalarWindow, TimeseriesWindow, VariableSource,
@@ -357,7 +357,7 @@ pub struct ComponentMetadata {
     pub states: Vec<DeclaredVariable>,
 }
 
-/// Trait for component internal state with automatic serialization support.
+/// Trait for component internal state with automatic serialisation support.
 ///
 /// Internal state is private to a component and persists across solve() calls.
 /// Unlike coupled state (VariableRole::State), internal state is not shared
@@ -368,10 +368,10 @@ pub struct ComponentMetadata {
 /// - Use `()` for stateless components (most components)
 /// - Define a custom struct for components that need substepping history
 ///
-/// # Serialization
+/// # Serialisation
 ///
 /// Uses `#[typetag::serde]` for automatic type registry, enabling polymorphic
-/// serialization of `Box<dyn ComponentState>` without manual type tagging.
+/// serialisation of `Box<dyn ComponentState>` without manual type tagging.
 #[typetag::serde(tag = "state_type")]
 pub trait ComponentState: Debug + Send + Sync + Any {
     /// Downcast to concrete type for component use
@@ -403,12 +403,12 @@ impl ComponentState for () {
 /// or solved alone during calibration.
 ///
 /// Each component contains:
-/// * parameters: Time invariant constants used to parameterize the components physics
+/// * parameters: Time invariant constants used to parameterise the components physics
 /// * inputs: State information required to solve the model. This come from either other
 ///   components as part of a coupled system or from prescribed data.
 /// * outputs: Information that is solved by the component
 ///
-/// Structs implementing the `Component` trait should be serializable and deserializable
+/// Structs implementing the `Component` trait should be serialisable and deserialisable
 /// and use the `#[typetag::serde]` macro when implementing the trait to enable
 /// serialisation/deserialisation when using `Component` as an object trait
 /// (i.e. where `dyn Component` is used; see `models.rs`).
@@ -457,7 +457,7 @@ pub trait Component: Debug + Send + Sync {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState>;
+    ) -> RscmResult<OutputState>;
 
     /// Solve with internal state support.
     ///
@@ -476,7 +476,7 @@ pub trait Component: Debug + Send + Sync {
         t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         // Default: ignore state, call existing solve()
         let _ = internal_state;
         self.solve(t_current, t_next, input_state)
@@ -682,15 +682,15 @@ mod tests {
     }
 
     #[test]
-    fn test_component_state_unit_type_serialization() {
-        // Test that the unit type () can be serialized as ComponentState
+    fn test_component_state_unit_type_serialisation() {
+        // Test that the unit type () can be serialised as ComponentState
         let state: Box<dyn ComponentState> = Box::new(());
         let json = serde_json::to_string(&state).unwrap();
         assert!(json.contains("\"state_type\":\"unit\""));
 
-        // Test deserialization
-        let deserialized: Box<dyn ComponentState> = serde_json::from_str(&json).unwrap();
-        assert!(deserialized.as_any().is::<()>());
+        // Test deserialisation
+        let deserialised: Box<dyn ComponentState> = serde_json::from_str(&json).unwrap();
+        assert!(deserialised.as_any().is::<()>());
     }
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -709,14 +709,14 @@ mod tests {
     }
 
     #[test]
-    fn test_component_state_custom_type_serialization() {
-        // Test that custom state types can be serialized
+    fn test_component_state_custom_type_serialisation() {
+        // Test that custom state types can be serialised
         let state: Box<dyn ComponentState> = Box::new(TestComponentState { value: 42.0 });
         let json = serde_json::to_string(&state).unwrap();
 
         // Deserialize and verify
-        let deserialized: Box<dyn ComponentState> = serde_json::from_str(&json).unwrap();
-        let concrete = deserialized
+        let deserialised: Box<dyn ComponentState> = serde_json::from_str(&json).unwrap();
+        let concrete = deserialised
             .as_any()
             .downcast_ref::<TestComponentState>()
             .unwrap();

@@ -3,7 +3,7 @@
 `run_magicc7` couples every MAGICC7 process RSCM implements:
 chemistry, the carbon cycle, permafrost, GHG and ozone forcing,
 the forcing MAGICC7 prescribes from its input files, forcing aggregation
-with efficacies and regional patterns, and ClimateUDEB with monthly volcanic forcing.
+with efficacies and regional patterns, and ClimateUdeb with monthly volcanic forcing.
 
 Parameters use MAGICC7's configuration names in lower case,
 such as ``core_climatesensitivity``.
@@ -25,7 +25,7 @@ import numpy as np
 from rscm._lib.magicc import (
     CH4ChemistryBuilder,
     CH4OxidationBuilder,
-    ClimateUDEBBuilder,
+    ClimateUdebBuilder,
     CO2BudgetBuilder,
     ForcingAggregationBuilder,
     GhgForcingBuilder,
@@ -52,7 +52,7 @@ from rscm.magicc import prescribed as pr
 from rscm.magicc.runner import CH4_OTHER_LIFETIMES, _ch4_burdens, _ch4_tau_other
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from numpy.typing import ArrayLike, NDArray
 
@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from rscm.core import Model
 
 __all__ = [
+    "EFFICACY_METHODS",
     "INPUT_FILES",
     "PRESCRIBED_AGENTS",
     "REWRITTEN_PARAMETERS",
@@ -81,14 +82,15 @@ __all__ = [
     "prescribed_forcing",
     "run_components",
     "run_magicc7",
+    "with_lags",
 ]
 
 DATA = Path(__file__).parent / "data" / "magicc7"
 ERF = "Effective Radiative Forcing"
 REGIONAL_FORCING = f"{ERF}|Efficacy Adjusted"
 # MAGICC7 feeds back last year's temperature, CO2 and climate sensitivity.
-LAG = ("Surface Temperature",)
-LAG_FOR = (
+_LAG = ("Surface Temperature",)
+_LAG_FOR = (
     ("Atmospheric Concentration|CO2", "TerrestrialCarbon"),
     ("Atmospheric Concentration|CO2", "OceanCarbon"),
     ("Equilibrium Climate Sensitivity", "ForcingAggregation"),
@@ -226,8 +228,8 @@ CALCULATED_AGENTS = {
 }
 """Agents calculated during the run, and the MAGICC7 efficacy key of each."""
 
-GHG_METHODS = {"OLBL": "Olbl", "IPCCTAR": "Ipcctar"}
-"""GhgForcing methods by MAGICC7's ``core_co2ch4n2o_rfmethod``."""
+EFFICACY_METHODS = {0: "none", 1: "unit", 2: "ar6"}
+"""Efficacy methods by MAGICC7's ``rf_efficacy_apply``."""
 
 TERRESTRIAL_FEEDBACKS = {
     "npp": "npp",
@@ -262,7 +264,7 @@ CLIMATE_PARAMETERS = {
     "rf_regions_co2": "rf_regions_co2",
     "land_hc_eff_thickness": "core_landhc_effthickness",
 }
-"""ClimateUDEB parameters and their MAGICC7 names."""
+"""ClimateUdeb parameters and their MAGICC7 names."""
 
 
 @cache
@@ -536,7 +538,7 @@ def climate_parameters(
     start_year: float,
     end_year: float | None = None,
 ) -> dict[str, Any]:
-    """ClimateUDEB parameters, with regional and monthly volcanic forcing.
+    """ClimateUdeb parameters, with regional and monthly volcanic forcing.
 
     With ``end_year``, months after the run ends are left out.
     """
@@ -552,10 +554,10 @@ def climate_parameters(
         scale=p["rf_volcanic_scale"],
     )
     base = {ours: p[theirs] for ours, theirs in CLIMATE_PARAMETERS.items()}
-    initial = ClimateUDEBBuilder.from_parameters(
+    initial = ClimateUdebBuilder.from_parameters(
         cast("Any", {**base, "rf_2xco2": EFFICACY_Q2XCO2})
     ).internal_efficacy(pattern)
-    apply = p["rf_efficacy_apply"]
+    method = EFFICACY_METHODS[p["rf_efficacy_apply"]]
     return {
         **base,
         "land_heat_capacity_enabled": bool(p["core_landheatcapacity_apply"]),
@@ -567,9 +569,9 @@ def climate_parameters(
             values[:, 0],
             values[:, 1],
             scale=p["rf_volcanic_scale"],
-            efficacy=p["rf_efficacy_volc"] if apply == 2 else 1.0,  # noqa: PLR2004
-            internal_efficacy=initial if apply else 1.0,
-            rf_regions=pattern if apply else None,
+            efficacy=p["rf_efficacy_volc"] if method == "ar6" else 1.0,
+            internal_efficacy=initial if method != "none" else 1.0,
+            rf_regions=pattern if method != "none" else None,
             until=end_year,
         ),
     }
@@ -652,14 +654,14 @@ def _pattern(patterns: Mapping[str, list[float]], key: str) -> dict[str, Any]:
 
 
 def efficacy_climate(climate: Mapping[str, Any]) -> dict[str, Any]:
-    """ForcingAggregation ``climate`` from ClimateUDEB parameters."""
+    """ForcingAggregation ``climate`` from ClimateUdeb parameters."""
     keys = ("ecs", "k_lo", "k_ns", "rlo", "amplify_ocean_to_land", "rf_regions_co2")
     return {**{k: climate[k] for k in keys}, "rf_2xco2": EFFICACY_Q2XCO2}
 
 
 def _ghg_method(parameters: Mapping[str, Any]) -> dict[str, Any]:
-    method = GHG_METHODS[parameters["core_co2ch4n2o_rfmethod"].strip().upper()]
-    if method == "Olbl":
+    method = parameters["core_co2ch4n2o_rfmethod"].strip().upper()
+    if method == "OLBL":
         return {"method": method}
     # MAGICC7 applies no rapid adjustment with IPCCTAR
     return {
@@ -820,39 +822,43 @@ def _timeseries(
     return Timeseries(values, axis, unit, InterpolationStrategy.Linear)
 
 
+def with_lags(builder: ModelBuilder) -> ModelBuilder:
+    """Add MAGICC7's feedback lags to a builder of the `run_magicc7` chain."""
+    for variable in _LAG:
+        builder.with_lag(variable)
+    for variable, consumer in _LAG_FOR:
+        builder.with_lag_for(variable, consumer)
+    return builder
+
+
 def run_components(  # noqa: PLR0913
-    years: NDArray[np.float64],
+    time_axis: TimeAxis,
     components: Sequence[RustComponent],
     *,
     prescribed: Mapping[str, tuple[NDArray[np.float64], str]] = {},
     initial_values: Mapping[str, float] = {},
     initial_grid_values: Mapping[str, Sequence[float]] = {},
-    lag: Sequence[str] = (),
-    lag_for: Sequence[tuple[str, str]] = (),
+    lags: Callable[[ModelBuilder], object] | None = None,
 ) -> Model:
-    """Run components on an annual axis with prescribed inputs and return the model.
+    """Run components with prescribed inputs and return the model.
 
     ``prescribed`` maps each name to its values and unit.
-    The values' shape sets the grid: one value per year for a scalar,
+    The values' shape sets the grid: one value per step for a scalar,
     four columns for four-box and two for hemispheric.
     Scalar readers of a four-box variable see its area-weighted mean.
-    ``lag`` and ``lag_for`` pass feedback lags to `ModelBuilder.with_lag`
-    and `ModelBuilder.with_lag_for`.
+    ``lags`` adds feedback lags to the builder, such as `with_lags`.
     """
-    axis = TimeAxis.from_values(np.asarray(years, dtype=np.float64))
-    builder = ModelBuilder().with_time_axis(axis)
+    builder = ModelBuilder().with_time_axis(time_axis)
     if any(d.grid == GridType.FourBox for c in components for d in c.definitions()):
         builder.with_schema(_schema(components, prescribed))
         builder.with_grid_weights(GridType.FourBox, list(pr.area_fractions()))
     for component in components:
         builder.with_component(component)
-    for variable in lag:
-        builder.with_lag(variable)
-    for variable, consumer in lag_for:
-        builder.with_lag_for(variable, consumer)
+    if lags is not None:
+        lags(builder)
     for name, (values, unit) in prescribed.items():
         builder.with_prescribed_variable(
-            name, _timeseries(np.asarray(values, dtype=np.float64), axis, unit)
+            name, _timeseries(np.asarray(values, dtype=np.float64), time_axis, unit)
         )
     builder.with_initial_values(dict(initial_values))
     builder.with_initial_grid_values(
@@ -936,7 +942,7 @@ def natural_emissions(
 
 
 def run_magicc7(  # noqa: PLR0913
-    years: ArrayLike,
+    time_axis: TimeAxis,
     emissions: Mapping[str, ArrayLike],
     *,
     parameters: Mapping[str, Any] | None = None,
@@ -946,9 +952,9 @@ def run_magicc7(  # noqa: PLR0913
 ) -> Model:
     """Run the full MAGICC7 chain from emissions and return the run model.
 
-    ``years`` are consecutive annual labels starting in the preindustrial year,
+    ``time_axis`` has annual steps starting in the preindustrial year,
     1750 in MAGICC7's default configuration.
-    ``emissions`` has one value per year for ``"<species>|Fossil"`` and
+    ``emissions`` has one value per step for ``"<species>|Fossil"`` and
     ``"<species>|AFOLU"`` of each species in `SECTORAL_EMISSIONS`,
     and for each name from `halocarbon_species`.
 
@@ -962,10 +968,10 @@ def run_magicc7(  # noqa: PLR0913
     ``component_parameters`` overrides the parameters of single components,
     keyed by component name such as ``"TerrestrialCarbon"``.
     """
-    time = np.asarray(years, dtype=np.float64)
-    if time.ndim != 1 or len(time) < 2 or np.any(np.diff(time) != 1.0):  # noqa: PLR2004
-        msg = "years must be at least two consecutive annual labels"
+    if len(time_axis) < 2 or np.any(np.diff(time_axis.bounds()) != 1.0):  # noqa: PLR2004
+        msg = "time_axis must have at least two annual steps"
         raise ValueError(msg)
+    time = np.asarray(time_axis.values(), dtype=np.float64)
     p = ChainMap(cast("dict[str, Any]", parameters or {}), default_parameters())
     files = dict(inputs) if inputs is not None else load_inputs(p)
     conc = {**default_initial_concentrations(), **(initial_concentrations or {})}
@@ -980,7 +986,7 @@ def run_magicc7(  # noqa: PLR0913
     climate_base = climate_parameters(p, files, time[0], time[-1])
     if sealevel:
         climate_base["thermal_expansion"] = {}
-    climate = ClimateUDEBBuilder.from_parameters(params("ClimateUDEB", climate_base))
+    climate = ClimateUdebBuilder.from_parameters(params("ClimateUdeb", climate_base))
     prescribed = prescribed_forcing(time, data, p, files)
     agents = forcing_agents(p, time, prescribed, data)
     aggregation = ForcingAggregationBuilder.from_parameters(
@@ -988,7 +994,7 @@ def run_magicc7(  # noqa: PLR0913
             "ForcingAggregation",
             {
                 "agents": agents,
-                "efficacy_apply": p["rf_efficacy_apply"],
+                "efficacy_method": EFFICACY_METHODS[p["rf_efficacy_apply"]],
                 "climate": efficacy_climate(climate_base),
                 "summation": _summation(SUMMATION),
             },
@@ -1024,7 +1030,7 @@ def run_magicc7(  # noqa: PLR0913
                 for ours, theirs in TERRESTRIAL_FEEDBACKS.items()
             },
             "npp_pi": p[f"{source}_npp_initial"],
-            "fertilization_method": p["co2_fertilization_method"],
+            "fertilisation_method": p["co2_fertilization_method"],
             "plantbox_resp_fertscale": p["co2_plantboxresp_fertscale"],
             "nitrogen": nitrogen,
         },
@@ -1176,13 +1182,12 @@ def run_magicc7(  # noqa: PLR0913
     def run(n: int, agents: list[list[float]]) -> Model:
         total, boxes = aggregation.aggregate(agents)
         return run_components(
-            time[:n],
+            TimeAxis.from_values(time[:n]),
             components,
             prescribed={k: (v[:n], unit) for k, (v, unit) in prescribed_data.items()},
             initial_values={**initial, **climate.initial_values(total)},
             initial_grid_values={REGIONAL_FORCING: boxes},
-            lag=LAG,
-            lag_for=LAG_FOR,
+            lags=with_lags,
         )
 
     # MAGICC7 starts from its second year's F-gas forcing.

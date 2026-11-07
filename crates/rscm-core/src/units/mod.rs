@@ -26,7 +26,7 @@
 //! // A species after a mass unit, spaced or fused for carbon
 //! let gtc = Unit::parse("Gt C/yr").unwrap();
 //! assert_eq!(gtc, Unit::parse("GtC/yr").unwrap());
-//! assert_eq!(gtc.normalized(), "GtC/yr");
+//! assert_eq!(gtc.normalised(), "GtC/yr");
 //!
 //! // Units of one species family convert by molecular mass ratio
 //! let mtco2 = Unit::parse("Mt CO2/yr").unwrap();
@@ -128,7 +128,7 @@ mod tests {
     /// Test that the main example from the task works correctly.
     #[test]
     fn test_main_api() {
-        // Parsing and normalization
+        // Parsing and normalisation
         let u1 = Unit::parse("W/m^2").unwrap();
         let u2 = Unit::parse("W / m ^ 2").unwrap();
         assert_eq!(u1, u2);

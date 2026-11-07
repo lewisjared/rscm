@@ -503,11 +503,11 @@ def volcanic_substeps(  # noqa: PLR0913
     rf_regions: Sequence[float] | None = None,
     until: float | None = None,
 ) -> dict[str, object]:
-    """Monthly volcanic forcing as ClimateUDEB's ``subannual_forcing``.
+    """Monthly volcanic forcing as ClimateUdeb's ``subannual_forcing``.
 
     Each valid month in ``times`` (decimal years) drives the substep ending
     at that time, matching MAGICC7's reading of ``.MON`` files.
-    With ``rf_regions``, ClimateUDEB divides ``efficacy`` by the internal efficacy,
+    With ``rf_regions``, ClimateUdeb divides ``efficacy`` by the internal efficacy,
     which it recalculates each year, and ``internal_efficacy`` applies only in the
     first year.
     Months more than a year after ``until`` are left out, as no run to then reads them.

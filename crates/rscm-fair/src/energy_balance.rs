@@ -20,7 +20,7 @@ use crate::constants::{
 };
 use nalgebra::{DMatrix, DVector};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
-use rscm_core::errors::{RSCMError, RSCMResult};
+use rscm_core::errors::{RscmError, RscmResult};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use serde::{Deserialize, Serialize};
@@ -33,9 +33,9 @@ pub const ENERGY_IMBALANCE: &str = "Net Energy Imbalance";
 /// Ocean heat content change since the start of the run.
 pub const OCEAN_HEAT_CONTENT_CHANGE: &str = "Ocean Heat Content Change";
 
-/// Parameters of [`FairEnergyBalance`].
+/// Parameters of [`EnergyBalance`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FairEnergyBalanceParameters {
+pub struct EnergyBalanceParameters {
     /// Heat capacity of each layer, surface first (W yr m-2 K-1).
     pub ocean_heat_capacity: Vec<FloatValue>,
     /// Heat transfer coefficient of each layer, surface first (W m-2 K-1).
@@ -72,36 +72,36 @@ struct Discretised {
 /// FaIR's n-layer energy balance model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "Unchecked")]
-pub struct FairEnergyBalance {
-    parameters: FairEnergyBalanceParameters,
+pub struct EnergyBalance {
+    parameters: EnergyBalanceParameters,
     #[serde(skip)]
     discretised: OnceLock<Discretised>,
 }
 
 #[derive(Deserialize)]
 struct Unchecked {
-    parameters: FairEnergyBalanceParameters,
+    parameters: EnergyBalanceParameters,
 }
 
-impl TryFrom<Unchecked> for FairEnergyBalance {
-    type Error = RSCMError;
+impl TryFrom<Unchecked> for EnergyBalance {
+    type Error = RscmError;
 
-    fn try_from(unchecked: Unchecked) -> RSCMResult<Self> {
+    fn try_from(unchecked: Unchecked) -> RscmResult<Self> {
         Self::from_parameters(unchecked.parameters)
     }
 }
 
-impl FairEnergyBalance {
+impl EnergyBalance {
     /// Create the component, checking the layer parameters.
-    pub fn from_parameters(parameters: FairEnergyBalanceParameters) -> RSCMResult<Self> {
+    pub fn from_parameters(parameters: EnergyBalanceParameters) -> RscmResult<Self> {
         let n = parameters.ocean_heat_capacity.len();
         if n < 2 {
-            return Err(RSCMError::Error(
-                "FairEnergyBalance needs at least two layers".into(),
+            return Err(RscmError::Error(
+                "EnergyBalance needs at least two layers".into(),
             ));
         }
         if parameters.ocean_heat_transfer.len() != n {
-            return Err(RSCMError::Error(
+            return Err(RscmError::Error(
                 "ocean_heat_capacity and ocean_heat_transfer must have the same length".into(),
             ));
         }
@@ -111,7 +111,7 @@ impl FairEnergyBalance {
         };
         // The step scales whole rows, so it cannot make the matrix singular.
         if !component.eb_matrix(1.0).lu().is_invertible() {
-            return Err(RSCMError::Error(
+            return Err(RscmError::Error(
                 "The energy balance matrix is singular: check the heat transfers and gamma".into(),
             ));
         }
@@ -119,7 +119,7 @@ impl FairEnergyBalance {
     }
 
     /// Parameters of this component.
-    pub fn parameters(&self) -> &FairEnergyBalanceParameters {
+    pub fn parameters(&self) -> &EnergyBalanceParameters {
         &self.parameters
     }
 
@@ -206,8 +206,8 @@ impl FairEnergyBalance {
     }
 }
 
-#[typetag::serde]
-impl Component for FairEnergyBalance {
+#[typetag::serde(name = "fair.EnergyBalance")]
+impl Component for EnergyBalance {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let p = &self.parameters;
         let mut definitions = vec![
@@ -237,7 +237,7 @@ impl Component for FairEnergyBalance {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let dt = t_next - t_current;
         let n = self.n_layers();
         let p = &self.parameters;
@@ -279,8 +279,8 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
 
-    fn component() -> FairEnergyBalance {
-        FairEnergyBalance::from_parameters(FairEnergyBalanceParameters {
+    fn component() -> EnergyBalance {
+        EnergyBalance::from_parameters(EnergyBalanceParameters {
             ocean_heat_capacity: vec![8.0, 14.0, 100.0],
             ocean_heat_transfer: vec![1.1, 1.6, 0.9],
             deep_ocean_efficacy: 1.1,
@@ -297,17 +297,17 @@ mod tests {
         let mut p = component().parameters.clone();
         p.ocean_heat_capacity = vec![8.0];
         p.ocean_heat_transfer = vec![1.1];
-        assert!(FairEnergyBalance::from_parameters(p).is_err());
+        assert!(EnergyBalance::from_parameters(p).is_err());
     }
 
     #[test]
     fn rejects_a_singular_matrix() {
         let mut p = component().parameters.clone();
         p.ocean_heat_transfer[2] = 0.0;
-        assert!(FairEnergyBalance::from_parameters(p.clone()).is_err());
+        assert!(EnergyBalance::from_parameters(p.clone()).is_err());
         p.ocean_heat_transfer[2] = 0.9;
         p.gamma_autocorrelation = 0.0;
-        assert!(FairEnergyBalance::from_parameters(p).is_err());
+        assert!(EnergyBalance::from_parameters(p).is_err());
     }
 
     #[test]
@@ -318,9 +318,9 @@ mod tests {
             r#"{{"parameters": {}}}"#,
             serde_json::to_string(&p).unwrap()
         );
-        assert!(serde_json::from_str::<FairEnergyBalance>(&json).is_err());
+        assert!(serde_json::from_str::<EnergyBalance>(&json).is_err());
         let valid = serde_json::to_string(&component()).unwrap();
-        assert!(serde_json::from_str::<FairEnergyBalance>(&valid).is_ok());
+        assert!(serde_json::from_str::<EnergyBalance>(&valid).is_ok());
     }
 
     #[test]

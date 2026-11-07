@@ -22,7 +22,7 @@ pub struct PrognosticFixation {
 ///
 /// Each year the plant-available nitrogen pool is solved for the steady state of
 /// deposition, recycling and fixation against plant uptake and losses.
-/// From `fertilization_yrstart` NPP is scaled by the nitrogen availability
+/// From `fertilisation_yrstart` NPP is scaled by the nitrogen availability
 /// relative to the last year before it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

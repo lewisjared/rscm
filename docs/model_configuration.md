@@ -280,14 +280,11 @@ The two-layer model is automatically registered when importing `rscm.config.mode
 ## Model Building
 
 ```python
-from rscm.config import load_config, build_model, build_two_layer_model
+from rscm.config import load_config, build_model
 
-# Generic builder (dispatches by model type)
+# Dispatches on the model type
 config = load_config("configs/two-layer/defaults.toml")
 model = build_model(config)
-
-# Or build specific model type directly
-model = build_two_layer_model(config)
 ```
 
 The builder:
@@ -302,7 +299,7 @@ The builder:
 It adds no prescribed inputs yet, as the [Quick Start](#quick-start) warns.
 
 `build_model` only supports `type = "two-layer"` and raises `ValueError` for any other model type.
-`MAGICCConfig` in `rscm.config.models.magicc` describes MAGICC parameters,
+`MagiccConfig` in `rscm.config.models.magicc` describes MAGICC parameters,
 but cannot yet be built into a model.
 `rscm.magicc.full.run_magicc7` runs the full MAGICC7 chain without the config layer.
 See [MAGICC Runs](magicc_runs.md#full-magicc7-chain).
@@ -333,7 +330,7 @@ rscm_config = from_legacy_dict(legacy)
 
 The mapping also covers the permafrost `pf_*` parameters.
 For example, `pf_apply` maps to `components.permafrost.enabled`.
-`MAGICCConfig` has no permafrost section yet, so these paths only exist in the dict form.
+`MagiccConfig` has no permafrost section yet, so these paths only exist in the dict form.
 
 ### Export to MAGICC
 

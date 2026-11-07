@@ -1,7 +1,7 @@
 //! Validation functions for model building.
 
 use crate::component::{TimeseriesType, VariableDefinition, VariableRole};
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::units::Unit;
 use std::collections::HashMap;
 
@@ -31,7 +31,7 @@ pub(crate) fn verify_definition(
     component_name: &str,
     existing_component_name: Option<&str>,
     has_schema: bool,
-) -> RSCMResult<Option<UnitConversionInfo>> {
+) -> RscmResult<Option<UnitConversionInfo>> {
     let existing = definitions.get(&definition.name);
     match existing {
         Some(existing) => {
@@ -46,7 +46,7 @@ pub(crate) fn verify_definition(
 
                 // Skip grid type check when schema is present
                 if !has_schema && existing.grid != definition.grid {
-                    return Err(RSCMError::GridTypeMismatch {
+                    return Err(RscmError::GridTypeMismatch {
                         variable: definition.name.clone(),
                         producer_component: existing_component_name
                             .unwrap_or("unknown")
@@ -70,7 +70,7 @@ pub(crate) fn verify_definition(
             } else {
                 // Units match exactly - still check grid type
                 if !has_schema && existing.grid != definition.grid {
-                    return Err(RSCMError::GridTypeMismatch {
+                    return Err(RscmError::GridTypeMismatch {
                         variable: definition.name.clone(),
                         producer_component: existing_component_name
                             .unwrap_or("unknown")
@@ -102,7 +102,7 @@ pub(crate) fn resolve_timeseries_types(
     component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
     declared_types: &HashMap<String, TimeseriesType>,
     state_type_check: bool,
-) -> RSCMResult<()> {
+) -> RscmResult<()> {
     let mut sources: HashMap<&str, (TimeseriesType, String)> = HashMap::new();
     for (name, (_, provides)) in names.iter().zip(component_defs) {
         for r in provides {
@@ -112,7 +112,7 @@ pub(crate) fn resolve_timeseries_types(
     for (variable, &declared) in declared_types {
         match sources.get(variable.as_str()) {
             Some((resolved, producer)) if *resolved != declared => {
-                return Err(RSCMError::TimeseriesTypeMismatch {
+                return Err(RscmError::TimeseriesTypeMismatch {
                     variable: variable.clone(),
                     producer: producer.clone(),
                     producer_type: resolved.to_string(),
@@ -145,7 +145,7 @@ pub(crate) fn resolve_timeseries_types(
             )
         });
         if *resolved != declared {
-            return Err(RSCMError::TimeseriesTypeMismatch {
+            return Err(RscmError::TimeseriesTypeMismatch {
                 variable: def.name.clone(),
                 producer: producer.clone(),
                 producer_type: resolved.to_string(),
@@ -166,7 +166,7 @@ pub(crate) fn resolve_timeseries_types(
                 if r.role == VariableRole::State
                     && definitions[&r.name].timeseries_type == TimeseriesType::Average
                 {
-                    return Err(RSCMError::AverageState {
+                    return Err(RscmError::AverageState {
                         variable: r.name.clone(),
                         component: component.clone(),
                     });
@@ -179,28 +179,28 @@ pub(crate) fn resolve_timeseries_types(
 
 /// Validates that two unit strings are dimensionally compatible.
 ///
-/// Returns `UnitValidationResult::Identical` if the normalized units are the same,
+/// Returns `UnitValidationResult::Identical` if the normalised units are the same,
 /// `UnitValidationResult::Compatible` with the conversion factor if they have the same dimension,
 /// or an error if they are incompatible.
 fn validate_unit_compatibility(
     existing_unit: &str,
     new_unit: &str,
     variable_name: &str,
-) -> RSCMResult<UnitValidationResult> {
+) -> RscmResult<UnitValidationResult> {
     // Parse both units
-    let parsed_existing = Unit::parse(existing_unit).map_err(|e| RSCMError::UnitParseError {
+    let parsed_existing = Unit::parse(existing_unit).map_err(|e| RscmError::UnitParseError {
         variable: variable_name.to_string(),
         unit_string: existing_unit.to_string(),
         details: e.to_string(),
     })?;
 
-    let parsed_new = Unit::parse(new_unit).map_err(|e| RSCMError::UnitParseError {
+    let parsed_new = Unit::parse(new_unit).map_err(|e| RscmError::UnitParseError {
         variable: variable_name.to_string(),
         unit_string: new_unit.to_string(),
         details: e.to_string(),
     })?;
 
-    // Check if they're the same after normalization
+    // Check if they're the same after normalisation
     if parsed_existing == parsed_new {
         return Ok(UnitValidationResult::Identical);
     }
@@ -210,7 +210,7 @@ fn validate_unit_compatibility(
         // Calculate conversion factor from existing (source) to new (target)
         let factor = parsed_existing
             .conversion_factor(&parsed_new)
-            .map_err(|e| RSCMError::UnitParseError {
+            .map_err(|e| RscmError::UnitParseError {
                 variable: variable_name.to_string(),
                 unit_string: format!("{existing_unit} -> {new_unit}"),
                 details: e.to_string(),
@@ -228,7 +228,7 @@ fn validate_unit_compatibility(
             .map(|d| d.to_string())
             .unwrap_or_else(|_| "unknown".to_string());
 
-        Err(RSCMError::IncompatibleUnits {
+        Err(RscmError::IncompatibleUnits {
             variable: variable_name.to_string(),
             unit1: existing_unit.to_string(),
             unit2: new_unit.to_string(),

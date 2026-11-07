@@ -3,7 +3,7 @@
 This module provides component builders for MAGICC-derived climate processes,
 organised by domain:
 
-- Climate: [ClimateUDEBBuilder][] (upwelling-diffusion energy balance),
+- Climate: [ClimateUdebBuilder][] (upwelling-diffusion energy balance),
   [SeaLevelRiseBuilder][]
 - Chemistry: [CH4ChemistryBuilder][], [CH4OxidationBuilder][],
   [N2OChemistryBuilder][], [HalocarbonChemistryBuilder][]
@@ -13,7 +13,8 @@ organised by domain:
   [AerosolIndirectBuilder][], [ForcingAggregationBuilder][]
 
 [run_magicc7][rscm.magicc.full.run_magicc7] runs the full MAGICC7 chain from
-emissions, see [rscm.magicc.full][].
+emissions, see [rscm.magicc.full][],
+and [with_lags][rscm.magicc.full.with_lags] adds its feedback lags to a builder.
 """
 
 from rscm._lib.magicc import (
@@ -21,7 +22,7 @@ from rscm._lib.magicc import (
     AerosolIndirectBuilder,
     CH4ChemistryBuilder,
     CH4OxidationBuilder,
-    ClimateUDEBBuilder,
+    ClimateUdebBuilder,
     CO2BudgetBuilder,
     ForcingAggregationBuilder,
     GhgForcingBuilder,
@@ -34,8 +35,8 @@ from rscm._lib.magicc import (
     TerrestrialCarbonBuilder,
 )
 from rscm.magicc.emissions import Emissions, run_magicc_emissions
-from rscm.magicc.full import run_magicc7
-from rscm.magicc.runner import CO2Emissions, MAGICCResult, run_magicc
+from rscm.magicc.full import run_magicc7, with_lags
+from rscm.magicc.runner import CO2Emissions, MagiccResult, run_magicc
 
 __all__ = [
     "AerosolDirectBuilder",
@@ -44,12 +45,12 @@ __all__ = [
     "CH4OxidationBuilder",
     "CO2BudgetBuilder",
     "CO2Emissions",
-    "ClimateUDEBBuilder",
+    "ClimateUdebBuilder",
     "Emissions",
     "ForcingAggregationBuilder",
     "GhgForcingBuilder",
     "HalocarbonChemistryBuilder",
-    "MAGICCResult",
+    "MagiccResult",
     "N2OChemistryBuilder",
     "OceanCarbonBuilder",
     "OzoneForcingBuilder",
@@ -59,4 +60,5 @@ __all__ = [
     "run_magicc",
     "run_magicc7",
     "run_magicc_emissions",
+    "with_lags",
 ]

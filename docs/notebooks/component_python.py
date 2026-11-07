@@ -122,11 +122,11 @@ for defn in scale_component.definitions():
 # - Implements the Rust `Component` trait
 # - Handles data conversion between Python and Rust
 #
-# `PythonComponent.build()` applies the same wrapper by hand,
+# `PythonComponent()` applies the same wrapper by hand,
 # which lets you call the component outside a model.
 
 # %%
-wrapped = PythonComponent.build(scale_component)
+wrapped = PythonComponent(scale_component)
 
 # %% [markdown]
 # ### Direct Component Invocation
@@ -299,7 +299,7 @@ forcing.add_timeseries(
         InterpolationStrategy.Previous,
     ),
 )
-PythonComponent.build(regional).solve(2000, 2001, forcing)["Regional Temperature"]
+PythonComponent(regional).solve(2000, 2001, forcing)["Regional Temperature"]
 
 # %% [markdown]
 # ## StateValue: Understanding Component Outputs

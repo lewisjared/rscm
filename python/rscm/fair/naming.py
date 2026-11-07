@@ -50,24 +50,24 @@ OCEAN_HEAT_CONTENT_CHANGE = "Ocean Heat Content Change"
 ENERGY_IMBALANCE = "Net Energy Imbalance"
 
 
-def rscm_name(specie: str) -> str:
+def rscm_name(species: str) -> str:
     """RSCM name of a FaIR species, as used after `Emissions|`."""
-    return SPECIES_NAMES.get(specie, specie.replace("-", ""))
+    return SPECIES_NAMES.get(species, species.replace("-", ""))
 
 
-def emissions(specie: str) -> str:
+def emissions(species: str) -> str:
     """Emissions variable of a species."""
-    return f"Emissions|{rscm_name(specie)}"
+    return f"Emissions|{rscm_name(species)}"
 
 
-def concentration(specie: str) -> str:
+def concentration(species: str) -> str:
     """Concentration variable of a species."""
-    return f"Atmospheric Concentration|{rscm_name(specie)}"
+    return f"Atmospheric Concentration|{rscm_name(species)}"
 
 
-def airborne_emissions(specie: str) -> str:
+def airborne_emissions(species: str) -> str:
     """Airborne emissions variable of a greenhouse gas."""
-    return f"Airborne Emissions|{rscm_name(specie)}"
+    return f"Airborne Emissions|{rscm_name(species)}"
 
 
 def prescribed_forcing(entry: dict[str, Any]) -> str:
@@ -75,9 +75,9 @@ def prescribed_forcing(entry: dict[str, Any]) -> str:
     return f"Prescribed {forcing(entry)}"
 
 
-def cumulative_emissions(specie: str) -> str:
+def cumulative_emissions(species: str) -> str:
     """Cumulative emissions variable of a greenhouse gas."""
-    return f"Cumulative Emissions|{rscm_name(specie)}"
+    return f"Cumulative Emissions|{rscm_name(species)}"
 
 
 def forcing(entry: dict[str, Any]) -> str:
@@ -97,8 +97,8 @@ def emissions_unit(entry: dict[str, Any]) -> str:
     """FaIR's emissions unit of a species entry, unless the entry sets one."""
     if "emissions_unit" in entry:
         return str(entry["emissions_unit"])
-    specie = entry["name"]
-    molecule = _EMISSIONS_MOLECULE.get(specie, specie.replace("-", ""))
+    name = entry["name"]
+    molecule = _EMISSIONS_MOLECULE.get(name, name.replace("-", ""))
     if entry["type"] in ("co2 ffi", "co2 afolu", "co2"):
         return "Gt CO2/yr"
     if entry["type"] in ("f-gas", *HALOGEN_TYPES):

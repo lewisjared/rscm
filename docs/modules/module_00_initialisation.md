@@ -28,7 +28,7 @@ The work is split between the model framework and the MAGICC7 runner:
   and `natural_emissions` closes the CH4 and N2O budgets.
   The forcing calculated from inputs comes from `rscm.magicc.prescribed`,
   see [direct aerosol forcing](module_05_aerosol_direct.md) and [indirect aerosol forcing](module_06_aerosol_indirect.md).
-- **Climate feedback parameters**: LAMCALC runs inside `ClimateUDEB`
+- **Climate feedback parameters**: LAMCALC runs inside `ClimateUdeb`
   (`crates/rscm-magicc/src/climate/lamcalc.rs`), see [climate](module_08_climate.md).
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
 - **Tests**: every coupled run starts from this set-up, so `test_coupled_run` and `test_run_magicc7_defaults`
@@ -108,7 +108,7 @@ $f_{NL}$ = `CORE_HEMISFRACTION_NH_LAND` (default 0.42)
 and $f_{SL}$ = `CORE_HEMISFRACTION_SH_LAND` (default 0.21) are land fractions of each hemisphere.
 MAGICC7 stores the four fractions as `GLOBALAREAFRACTIONS` (aliases `FGNO`, `FGNL`, `FGSO`, `FGSL`).
 In RSCM they are `rscm.magicc.prescribed.area_fractions()`
-and the `nh_land_fraction` and `sh_land_fraction` parameters of `ClimateUDEB` and `ForcingAggregation`.
+and the `nh_land_fraction` and `sh_land_fraction` parameters of `ClimateUdeb` and `ForcingAggregation`.
 
 `NULLORAVGORSUM` sets how box values combine into the global value $X_g$:
 

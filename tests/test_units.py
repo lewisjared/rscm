@@ -37,10 +37,10 @@ def test_spaced_and_fused_carbon_are_equal(spaced, fused):
         ("1 / yr", "1/yr"),
     ],
 )
-def test_normalized_is_compact(unit, expected):
-    assert Unit(unit).normalized() == expected
+def test_normalised_is_compact(unit, expected):
+    assert Unit(unit).normalised() == expected
     assert str(Unit(unit)) == expected
-    assert Unit(expected).normalized() == expected
+    assert Unit(expected).normalised() == expected
 
 
 @pytest.mark.parametrize(

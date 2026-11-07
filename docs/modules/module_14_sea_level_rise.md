@@ -23,7 +23,7 @@ Each has its own start year and can be switched independently.
 
 - **Component**: `SeaLevelRise`, built from Python with `rscm.magicc.SeaLevelRiseBuilder`,
   calculates glaciers and the Greenland and Antarctic SMB and SID, and sums them with thermal expansion.
-  `ClimateUDEB` calculates thermal expansion when its `thermal_expansion` parameter is set,
+  `ClimateUdeb` calculates thermal expansion when its `thermal_expansion` parameter is set,
   because it needs the ocean layer temperatures.
 - **Source**: `crates/rscm-magicc/src/climate/sea_level.rs` and `climate/udeb/mod.rs`,
   parameters in `parameters/sea_level.rs`.
@@ -246,14 +246,14 @@ $$
 
 RSCM's `SeaLevelRiseState` keeps the glacier and SMB contributions, the two Greenland volumes,
 and each Antarctic region's baseline warming and melt history.
-`ClimateUDEB` keeps the cumulative thermal expansion.
+`ClimateUdeb` keeps the cumulative thermal expansion.
 
 ## Inputs and outputs
 
 | Direction | Variable                  | Units | Fortran variable                       | RSCM variable                                     |
 | --------- | ------------------------- | ----- | -------------------------------------- | ------------------------------------------------- |
 | Input     | Annual mean warming       | K     | `DAT_SURFACE_ANNUALMEANTEMP%DATGLOBE`  | `Surface Temperature|Annual Mean`                |
-| Input     | Ocean layer temperatures  | K     | `TEMP_OCEANLAYERS(I, CURRENT/NEXT_YEAR_IDX)` | `ClimateUDEB` state                         |
+| Input     | Ocean layer temperatures  | K     | `TEMP_OCEANLAYERS(I, CURRENT/NEXT_YEAR_IDX)` | `ClimateUdeb` state                         |
 | Input     | Land water rate           | mm yr⁻¹ | `SLR_LANDWATER_MMPYEAR`              | Not implemented                                   |
 | Output    | Total                     | mm    | `DAT_SLR_TOT`                          | `Sea Level Rise`                                  |
 | Output    | Thermal expansion         | mm    | `DAT_SLR_EXPANSION`                    | `Sea Level Rise|Thermal Expansion`               |
@@ -478,7 +478,7 @@ The contributions are independent of each other except at the end, in this order
 - **Not implemented**: land water (off by default), the semi-empirical method,
   the `FETTWEIS` and `DECONTO` alternatives, and the anomalies to 1986 to 2005 (`ZEROED_*`).
 - **Glacier normalisations**: RSCM has no `SLR_GL_NORMPARA_VOL` or `SLR_GL_NORMPARA_TEMP`, so it assumes 1.
-- **Initial ocean profile**: `ocean_temp_profile` offers the exponential (1) and CMIP5 (2) profiles.
+- **Initial ocean profile**: `ocean_temp_profile` offers the `analytical` exponential (MAGICC7 1) and `cmip5` (2) profiles.
   MAGICC7's third option, `TEMP_OCEAN_INI_PROFILE_ONE`, is not available.
 - **Steps must be one year long.**
 

@@ -50,8 +50,8 @@ because the page heading names the component.
 #[outputs(
     erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
 )]
-pub struct CO2ERF {
-    parameters: CO2ERFParameters,
+pub struct CO2Erf {
+    parameters: CO2ErfParameters,
 }
 ```
 

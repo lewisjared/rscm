@@ -22,7 +22,7 @@ const RLO_TOLERANCE: FloatValue = 0.001;
 
 /// Parameters for the LAMCALC iteration.
 #[derive(Debug, Clone, Copy)]
-pub struct LamcalcParams {
+pub struct LamcalcParameters {
     /// Radiative forcing for a doubling of $\text{CO}_2$ (W/m$^2$), typically 3.71.
     pub q_2xco2: FloatValue,
     /// Land-ocean heat exchange coefficient (W/m$^2$/K), typically 1.44.
@@ -82,7 +82,7 @@ pub struct LamcalcResult {
 /// * `lam_o` - Ocean feedback parameter
 /// * `lam_l` - Land feedback parameter
 pub fn build_coupling_matrix(
-    params: &LamcalcParams,
+    params: &LamcalcParameters,
     lam_o: FloatValue,
     lam_l: FloatValue,
 ) -> [[FloatValue; 4]; 4] {
@@ -126,7 +126,7 @@ pub fn invert_by_cofactors(a: &[[FloatValue; 4]; 4]) -> Option<[[FloatValue; 4];
 
 /// Compute per-box forcing fractions from a regional forcing pattern.
 ///
-/// Normalizes `rf_regions` by the area-weighted sum to produce `qfrac` values
+/// Normalises `rf_regions` by the area-weighted sum to produce `qfrac` values
 /// such that area-weighted forcing is preserved. Returns `[1.0; 4]` if the
 /// weighted sum is near zero.
 ///
@@ -210,7 +210,7 @@ pub fn calc_internal_efficacy(
 ///
 /// Returns `None` if the iteration fails to converge within [`MAX_ITERATIONS`] steps
 /// or if a singular coupling matrix is encountered.
-pub fn lamcalc(params: &LamcalcParams) -> Option<LamcalcResult> {
+pub fn lamcalc(params: &LamcalcParameters) -> Option<LamcalcResult> {
     let lam = params.q_2xco2 / params.ecs;
     let fgosum = params.fgno + params.fgso;
     let fglsum = params.fgnl + params.fgsl;
@@ -335,10 +335,10 @@ mod tests {
     use super::*;
 
     /// Create default LAMCALC parameters matching MAGICC defaults.
-    fn default_params() -> LamcalcParams {
+    fn default_params() -> LamcalcParameters {
         let nh_land = 0.42;
         let sh_land = 0.21;
-        LamcalcParams {
+        LamcalcParameters {
             q_2xco2: 3.71,
             k_lo: 1.44,
             k_ns: 0.31,

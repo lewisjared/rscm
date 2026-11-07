@@ -44,7 +44,7 @@
 //! variable after all contributors have been solved.
 
 use crate::component::GridType;
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use pyo3::{pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -269,7 +269,7 @@ pub struct VariableSchema {
     pub aggregates: HashMap<String, AggregateDefinition>,
 }
 
-/// Helper struct for deserializing VariableSchema without validation
+/// Helper struct for deserialising VariableSchema without validation
 /// Used internally to avoid infinite recursion in custom Deserialize impl
 #[derive(Deserialize)]
 struct VariableSchemaRaw {
@@ -413,13 +413,13 @@ impl VariableSchema {
     ///
     /// assert!(schema.validate().is_ok());
     /// ```
-    pub fn validate(&self) -> RSCMResult<()> {
+    pub fn validate(&self) -> RscmResult<()> {
         // Check each aggregate
         for (agg_name, agg_def) in &self.aggregates {
             // 3.2: Validate contributor references exist
             for contributor in &agg_def.contributors {
                 if !self.contains(contributor) {
-                    return Err(RSCMError::UndefinedContributor {
+                    return Err(RscmError::UndefinedContributor {
                         contributor: contributor.clone(),
                         aggregate: agg_name.clone(),
                     });
@@ -428,7 +428,7 @@ impl VariableSchema {
                 // 3.3: Validate unit consistency
                 if let Some(contributor_unit) = self.get_unit(contributor) {
                     if contributor_unit != agg_def.unit {
-                        return Err(RSCMError::SchemaUnitMismatch {
+                        return Err(RscmError::SchemaUnitMismatch {
                             aggregate: agg_name.clone(),
                             contributor: contributor.clone(),
                             contributor_unit: contributor_unit.to_string(),
@@ -440,7 +440,7 @@ impl VariableSchema {
                 // 3.4: Validate grid type consistency
                 if let Some(contributor_grid) = self.get_grid(contributor) {
                     if contributor_grid != agg_def.grid {
-                        return Err(RSCMError::SchemaGridTypeMismatch {
+                        return Err(RscmError::SchemaGridTypeMismatch {
                             aggregate: agg_name.clone(),
                             contributor: contributor.clone(),
                             contributor_grid: contributor_grid.to_string(),
@@ -453,7 +453,7 @@ impl VariableSchema {
             // 3.5: Validate weighted aggregate weight count
             if let AggregateOp::WeightedSum(weights) = &agg_def.operation {
                 if weights.len() != agg_def.contributors.len() {
-                    return Err(RSCMError::WeightCountMismatch {
+                    return Err(RscmError::WeightCountMismatch {
                         aggregate: agg_name.clone(),
                         weight_count: weights.len(),
                         contributor_count: agg_def.contributors.len(),
@@ -531,7 +531,7 @@ impl VariableSchema {
     /// Check for circular dependencies in aggregate definitions.
     ///
     /// Uses depth-first search to detect cycles in the aggregate dependency graph.
-    fn check_circular_dependencies(&self) -> RSCMResult<()> {
+    fn check_circular_dependencies(&self) -> RscmResult<()> {
         // Track visited nodes and current path for cycle detection
         let mut visited = HashSet::new();
         let mut path = Vec::new();
@@ -554,7 +554,7 @@ impl VariableSchema {
         visited: &mut HashSet<String>,
         path: &mut Vec<String>,
         path_set: &mut HashSet<String>,
-    ) -> RSCMResult<()> {
+    ) -> RscmResult<()> {
         // If we've seen this node in the current path, we have a cycle
         if path_set.contains(current) {
             // Build cycle description
@@ -562,7 +562,7 @@ impl VariableSchema {
             let mut cycle_nodes: Vec<_> = path[cycle_start..].to_vec();
             cycle_nodes.push(current.to_string());
             let cycle = cycle_nodes.join(" -> ");
-            return Err(RSCMError::AggregateCircularDependency { cycle });
+            return Err(RscmError::AggregateCircularDependency { cycle });
         }
 
         // Skip if already fully processed
@@ -871,7 +871,7 @@ impl Component for AggregatorComponent {
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+    ) -> RscmResult<OutputState> {
         let mut output = OutputState::new();
 
         match self.grid {
@@ -949,16 +949,16 @@ mod tests {
     }
 
     #[test]
-    fn test_aggregate_op_serialization() {
+    fn test_aggregate_op_serialisation() {
         let sum = AggregateOp::Sum;
         let json = serde_json::to_string(&sum).unwrap();
-        let deserialized: AggregateOp = serde_json::from_str(&json).unwrap();
-        assert_eq!(sum, deserialized);
+        let deserialised: AggregateOp = serde_json::from_str(&json).unwrap();
+        assert_eq!(sum, deserialised);
 
         let weighted = AggregateOp::WeightedSum(vec![0.5, 0.5]);
         let json = serde_json::to_string(&weighted).unwrap();
-        let deserialized: AggregateOp = serde_json::from_str(&json).unwrap();
-        assert_eq!(weighted, deserialized);
+        let deserialised: AggregateOp = serde_json::from_str(&json).unwrap();
+        assert_eq!(weighted, deserialised);
     }
 
     #[test]
@@ -1101,7 +1101,7 @@ mod tests {
     }
 
     #[test]
-    fn test_variable_schema_serialization_roundtrip() {
+    fn test_variable_schema_serialisation_roundtrip() {
         let schema = VariableSchema::new()
             .variable("ERF|CO2", "W/m^2")
             .variable("ERF|CH4", "W/m^2")
@@ -1111,18 +1111,18 @@ mod tests {
             .build();
 
         let json = serde_json::to_string(&schema).unwrap();
-        let deserialized: VariableSchema = serde_json::from_str(&json).unwrap();
+        let deserialised: VariableSchema = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(schema.variables.len(), deserialized.variables.len());
-        assert_eq!(schema.aggregates.len(), deserialized.aggregates.len());
+        assert_eq!(schema.variables.len(), deserialised.variables.len());
+        assert_eq!(schema.aggregates.len(), deserialised.aggregates.len());
         assert_eq!(
             schema.get_aggregate("Total ERF"),
-            deserialized.get_aggregate("Total ERF")
+            deserialised.get_aggregate("Total ERF")
         );
     }
 
     #[test]
-    fn test_variable_schema_toml_serialization() {
+    fn test_variable_schema_toml_serialisation() {
         let schema = VariableSchema::new()
             .variable("ERF|CO2", "W/m^2")
             .aggregate("Total ERF", "W/m^2", AggregateOp::Sum)
@@ -1130,9 +1130,9 @@ mod tests {
             .build();
 
         let toml = toml::to_string(&schema).unwrap();
-        let deserialized: VariableSchema = toml::from_str(&toml).unwrap();
+        let deserialised: VariableSchema = toml::from_str(&toml).unwrap();
 
-        assert_eq!(schema, deserialized);
+        assert_eq!(schema, deserialised);
     }
 
     #[test]
@@ -1563,7 +1563,7 @@ mod tests {
     }
 
     #[test]
-    fn test_aggregator_component_serialization() {
+    fn test_aggregator_component_serialisation() {
         let def = AggregateDefinition {
             name: "Total".to_string(),
             unit: "units".to_string(),
@@ -1574,17 +1574,17 @@ mod tests {
 
         let agg = AggregatorComponent::from_definition(&def);
         let json = serde_json::to_string(&agg).unwrap();
-        let deserialized: AggregatorComponent = serde_json::from_str(&json).unwrap();
+        let deserialised: AggregatorComponent = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(agg.aggregate_name, deserialized.aggregate_name);
-        assert_eq!(agg.operation, deserialized.operation);
-        assert_eq!(agg.contributors, deserialized.contributors);
+        assert_eq!(agg.aggregate_name, deserialised.aggregate_name);
+        assert_eq!(agg.operation, deserialised.operation);
+        assert_eq!(agg.contributors, deserialised.contributors);
     }
 
-    // Deserialization validation tests
+    // Deserialisation validation tests
 
     #[test]
-    fn test_deserialize_valid_schema_json() {
+    fn test_deserialise_valid_schema_json() {
         let json = r#"{
             "variables": {
                 "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid": "scalar"},
@@ -1607,7 +1607,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_invalid_schema_undefined_contributor() {
+    fn test_deserialise_invalid_schema_undefined_contributor() {
         let json = r#"{
             "variables": {
                 "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid": "scalar"}
@@ -1639,7 +1639,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_invalid_schema_unit_mismatch() {
+    fn test_deserialise_invalid_schema_unit_mismatch() {
         let json = r#"{
             "variables": {
                 "ERF|CO2": {"name": "ERF|CO2", "unit": "W/m^2", "grid": "scalar"},
@@ -1667,7 +1667,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_invalid_schema_circular_dependency() {
+    fn test_deserialise_invalid_schema_circular_dependency() {
         let json = r#"{
             "variables": {},
             "aggregates": {
@@ -1699,7 +1699,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_invalid_schema_weight_count_mismatch() {
+    fn test_deserialise_invalid_schema_weight_count_mismatch() {
         let json = r#"{
             "variables": {
                 "A": {"name": "A", "unit": "units", "grid": "scalar"},
@@ -1728,7 +1728,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_valid_schema_toml() {
+    fn test_deserialise_valid_schema_toml() {
         // TOML keys must match the name in the contributor list
         // The HashMap key is used for lookup, so keys must match contributor references
         let toml = r#"
@@ -1751,7 +1751,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_invalid_schema_toml_undefined_contributor() {
+    fn test_deserialise_invalid_schema_toml_undefined_contributor() {
         // Need to include variables field (can be empty)
         let toml = r#"
             [variables]

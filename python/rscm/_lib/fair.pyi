@@ -1,7 +1,7 @@
 """FaIR v2 components.
 
 Builders for the components of FaIR v2.2.5, in the order a model needs them.
-`rscm.fair.build_components` builds them from a FaIR configuration.
+`rscm.fair.components` builds them from a FaIR configuration.
 """
 
 from collections.abc import Mapping
@@ -10,7 +10,7 @@ from typing import Any, final
 from rscm._lib.core import ComponentBuilder, RustComponent
 
 @final
-class FairCH4LifetimeBuilder(ComponentBuilder):
+class CH4LifetimeBuilder(ComponentBuilder):
     """CH4 lifetime scaling from precursors (Thornhill et al. 2021).
 
     **Parameter keys**
@@ -21,13 +21,13 @@ class FairCH4LifetimeBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: Mapping[str, Any]) -> FairCH4LifetimeBuilder:  # type: ignore[override]
+    def from_parameters(parameters: Mapping[str, Any]) -> CH4LifetimeBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the component, checking the parameters."""
 
 @final
-class FairGasCycleBuilder(ComponentBuilder):
+class GasCycleBuilder(ComponentBuilder):
     """Greenhouse gas cycle with lifetime boxes, forward or inverse.
 
     **Parameter keys**
@@ -37,13 +37,13 @@ class FairGasCycleBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: Mapping[str, Any]) -> FairGasCycleBuilder:  # type: ignore[override]
+    def from_parameters(parameters: Mapping[str, Any]) -> GasCycleBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the component, checking the parameters."""
 
 @final
-class FairEescBuilder(ComponentBuilder):
+class EescBuilder(ComponentBuilder):
     """Equivalent effective stratospheric chlorine.
 
     **Parameter keys**
@@ -54,13 +54,13 @@ class FairEescBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: Mapping[str, Any]) -> FairEescBuilder:  # type: ignore[override]
+    def from_parameters(parameters: Mapping[str, Any]) -> EescBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the component, checking the parameters."""
 
 @final
-class FairGhgForcingBuilder(ComponentBuilder):
+class GhgForcingBuilder(ComponentBuilder):
     """Meinshausen et al. (2020) greenhouse gas forcing.
 
     **Parameter keys**
@@ -73,49 +73,49 @@ class FairGhgForcingBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: Mapping[str, Any]) -> FairGhgForcingBuilder:  # type: ignore[override]
+    def from_parameters(parameters: Mapping[str, Any]) -> GhgForcingBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the component, checking the parameters."""
 
 @final
-class FairLinearForcingBuilder(ComponentBuilder):
+class LinearForcingBuilder(ComponentBuilder):
     """Forcing linear in emissions, concentrations or their sum.
 
     **Parameter keys**
 
     - `forcing`
-    - `drivers`: `variable`, `unit`, `kind`, `baseline`, `radiative_efficiency`
+    - `drivers`: `variable`, `unit`, `driver`, `baseline`, `radiative_efficiency`
     - `forcing_scale`, `tropospheric_adjustment`, `temperature_feedback`,
       `surface_temperature`
     """
 
     @staticmethod
-    def from_parameters(parameters: Mapping[str, Any]) -> FairLinearForcingBuilder:  # type: ignore[override]
+    def from_parameters(parameters: Mapping[str, Any]) -> LinearForcingBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the component, checking the parameters."""
 
 @final
-class FairAerosolCloudBuilder(ComponentBuilder):
+class AerosolCloudBuilder(ComponentBuilder):
     """Logarithmic aerosol-cloud interaction forcing.
 
     **Parameter keys**
 
     - `forcing`, `scale`
-    - `drivers`: `variable`, `unit`, `kind`, `baseline`, `shape`
+    - `drivers`: `variable`, `unit`, `driver`, `baseline`, `shape`
     - `forcing_scale`, `tropospheric_adjustment`, `temperature_feedback`,
       `surface_temperature`
     """
 
     @staticmethod
-    def from_parameters(parameters: Mapping[str, Any]) -> FairAerosolCloudBuilder:  # type: ignore[override]
+    def from_parameters(parameters: Mapping[str, Any]) -> AerosolCloudBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the component, checking the parameters."""
 
 @final
-class FairForcingAggregationBuilder(ComponentBuilder):
+class ForcingAggregationBuilder(ComponentBuilder):
     """Total and efficacy-adjusted forcing.
 
     **Parameter keys**
@@ -125,13 +125,13 @@ class FairForcingAggregationBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: Mapping[str, Any]) -> FairForcingAggregationBuilder:  # type: ignore[override]
+    def from_parameters(parameters: Mapping[str, Any]) -> ForcingAggregationBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the component, checking the parameters."""
 
 @final
-class FairEnergyBalanceBuilder(ComponentBuilder):
+class EnergyBalanceBuilder(ComponentBuilder):
     """n-layer energy balance model (Cummins et al. 2020).
 
     **Parameter keys**
@@ -142,7 +142,7 @@ class FairEnergyBalanceBuilder(ComponentBuilder):
     """
 
     @staticmethod
-    def from_parameters(parameters: Mapping[str, Any]) -> FairEnergyBalanceBuilder:  # type: ignore[override]
+    def from_parameters(parameters: Mapping[str, Any]) -> EnergyBalanceBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the component, checking the parameters."""

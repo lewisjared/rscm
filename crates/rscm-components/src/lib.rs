@@ -14,7 +14,7 @@
 //!
 //! ## Radiative Forcing
 //!
-//! - [`CO2ERF`] - Calculates effective radiative forcing from CO2 concentrations using the
+//! - [`CO2Erf`] - Calculates effective radiative forcing from CO2 concentrations using the
 //!   standard logarithmic relationship
 //!
 //! ## Ocean Heat Uptake
@@ -36,7 +36,7 @@
 //!
 //! ```rust,ignore
 //! use rscm_core::model::ModelBuilder;
-//! use rscm_components::{CarbonCycle, CarbonCycleParameters, CO2ERF, CO2ERFParameters};
+//! use rscm_components::{CarbonCycle, CarbonCycleParameters, CO2Erf, CO2ErfParameters};
 //!
 //! let carbon_cycle = CarbonCycle::from_parameters(CarbonCycleParameters {
 //!     tau: 30.0,
@@ -44,7 +44,7 @@
 //!     alpha_temperature: 0.0,
 //! });
 //!
-//! let co2_erf = CO2ERF::from_parameters(CO2ERFParameters {
+//! let co2_erf = CO2Erf::from_parameters(CO2ErfParameters {
 //!     erf_2xco2: 3.7,
 //!     conc_pi: 278.0,
 //! });

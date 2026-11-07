@@ -5,7 +5,7 @@
 
 use super::VariableSource;
 use crate::component::TimeseriesType;
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{RscmError, RscmResult};
 use crate::spatial::{
     FourBoxGrid, FourBoxRegion, HemisphericGrid, HemisphericRegion, ScalarGrid, ScalarRegion,
     SpatialGrid,
@@ -54,14 +54,14 @@ impl ReadIndex {
     }
 
     /// Indices of the step's start and end values.
-    pub fn interval(self) -> RSCMResult<(usize, usize)> {
+    pub fn interval(self) -> RscmResult<(usize, usize)> {
         if self.timeseries_type == TimeseriesType::Average {
-            return Err(RSCMError::Error(
+            return Err(RscmError::Error(
                 "interval() is undefined for an average, which has one value per step".to_string(),
             ));
         }
         match self.source {
-            VariableSource::OwnState => Err(RSCMError::Error(
+            VariableSource::OwnState => Err(RscmError::Error(
                 "interval() is undefined for a component's own state, whose step end it writes"
                     .to_string(),
             )),
@@ -70,7 +70,7 @@ impl ReadIndex {
                 if self.current + 1 < self.len {
                     Ok((self.current, self.current + 1))
                 } else {
-                    Err(RSCMError::Error(format!(
+                    Err(RscmError::Error(format!(
                         "interval() needs the step's end, but index {} is the last of {}",
                         self.current, self.len
                     )))
@@ -126,7 +126,7 @@ pub struct TimeseriesWindow<'a> {
     /// Unit conversion factor applied to all returned values.
     /// Default is 1.0 (no conversion).
     unit_conversion_factor: f64,
-    /// Source type determining get() behavior
+    /// Source type determining get() behaviour
     variable_source: VariableSource,
     timeseries_type: TimeseriesType,
 }
@@ -259,7 +259,7 @@ impl<'a> TimeseriesWindow<'a> {
     ///
     /// A lagged input gives the previous step's interval.
     /// Errors on an average, which has one value per step, and on a component's own state.
-    pub fn interval(&self) -> RSCMResult<(FloatValue, FloatValue)> {
+    pub fn interval(&self) -> RscmResult<(FloatValue, FloatValue)> {
         let (start, end) = self.read_index().interval()?;
         Ok((self.value_at(start), self.value_at(end)))
     }
@@ -270,7 +270,7 @@ impl<'a> TimeseriesWindow<'a> {
     /// Between nodes it uses the series's interpolation strategy.
     /// This suits fixed reference years of prescribed data,
     /// but a future value of an upstream output is not yet written.
-    pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
+    pub fn interpolate(&self, t: Time) -> RscmResult<FloatValue> {
         match stored_index(self.time_axis(), t) {
             Some(index) => Ok(self.value_at(index)),
             None => self
@@ -322,7 +322,7 @@ where
     /// Unit conversion factor applied to all returned values.
     /// Default is 1.0 (no conversion).
     unit_conversion_factor: f64,
-    /// Source type determining get() behavior
+    /// Source type determining get() behaviour
     variable_source: VariableSource,
     timeseries_type: TimeseriesType,
 }
@@ -467,7 +467,7 @@ where
     /// Regional values at the start and end of the step.
     ///
     /// See [`TimeseriesWindow::interval()`] for lagged inputs and errors.
-    pub fn interval(&self) -> RSCMResult<(Vec<FloatValue>, Vec<FloatValue>)> {
+    pub fn interval(&self) -> RscmResult<(Vec<FloatValue>, Vec<FloatValue>)> {
         let (start, end) = self.read_index().interval()?;
         Ok((self.values_at(start), self.values_at(end)))
     }
@@ -490,7 +490,7 @@ where
     /// Regional values of the stored series at time `t`, past or future.
     ///
     /// See [`TimeseriesWindow::interpolate()`] for nodes, the axis ends and upstream outputs.
-    pub fn interpolate_all(&self, t: Time) -> RSCMResult<Vec<FloatValue>> {
+    pub fn interpolate_all(&self, t: Time) -> RscmResult<Vec<FloatValue>> {
         match stored_index(self.time_axis(), t) {
             Some(index) => Ok(self.values_at(index)),
             None => self
@@ -520,7 +520,7 @@ impl<'a> GridTimeseriesWindow<'a, FourBoxGrid> {
     /// A single region's value of the stored series at time `t`, past or future.
     ///
     /// See [`TimeseriesWindow::interpolate()`] for nodes, the axis ends and upstream outputs.
-    pub fn interpolate(&self, t: Time, region: FourBoxRegion) -> RSCMResult<FloatValue> {
+    pub fn interpolate(&self, t: Time, region: FourBoxRegion) -> RscmResult<FloatValue> {
         match stored_index(self.time_axis(), t) {
             Some(index) => Ok(self.region_at(index, region)),
             None => self
@@ -550,7 +550,7 @@ impl<'a> GridTimeseriesWindow<'a, HemisphericGrid> {
     /// A single region's value of the stored series at time `t`, past or future.
     ///
     /// See [`TimeseriesWindow::interpolate()`] for nodes, the axis ends and upstream outputs.
-    pub fn interpolate(&self, t: Time, region: HemisphericRegion) -> RSCMResult<FloatValue> {
+    pub fn interpolate(&self, t: Time, region: HemisphericRegion) -> RscmResult<FloatValue> {
         match stored_index(self.time_axis(), t) {
             Some(index) => Ok(self.region_at(index, region)),
             None => self
@@ -580,7 +580,7 @@ impl<'a> GridTimeseriesWindow<'a, ScalarGrid> {
     /// Value of the stored series at time `t`, past or future.
     ///
     /// See [`TimeseriesWindow::interpolate()`] for nodes, the axis ends and upstream outputs.
-    pub fn interpolate(&self, t: Time) -> RSCMResult<FloatValue> {
+    pub fn interpolate(&self, t: Time) -> RscmResult<FloatValue> {
         match stored_index(self.time_axis(), t) {
             Some(index) => Ok(self.scalar_at(index)),
             None => self

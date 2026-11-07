@@ -1,5 +1,6 @@
 //! Forcing Aggregation Parameters
 
+use super::EfficacyMethod;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -56,9 +57,8 @@ pub struct ForcingAggregationParameters {
     /// MAGICC7 sums its forcing groups this way. Empty sums the agents in order.
     pub summation: Vec<ForcingTerm>,
 
-    /// `RF_EFFICACY_APPLY`: 0 ignores efficacies, 1 divides by the internal efficacy
-    /// so every agent has unit efficacy, and 2 applies the prescribed efficacy over it.
-    pub efficacy_apply: u8,
+    /// How efficacies scale each agent's forcing (MAGICC7 `RF_EFFICACY_APPLY`).
+    pub efficacy_method: EfficacyMethod,
 
     /// Northern Hemisphere land fraction.
     pub nh_land_fraction: FloatValue,
@@ -106,7 +106,7 @@ pub struct EfficacyClimate {
 
 impl Default for EfficacyClimate {
     fn default() -> Self {
-        let p = crate::parameters::ClimateUDEBParameters::default();
+        let p = crate::parameters::ClimateUdebParameters::default();
         Self {
             ecs: p.ecs,
             rf_2xco2: p.rf_2xco2,
@@ -124,7 +124,7 @@ impl Default for ForcingAggregationParameters {
         Self {
             agents: Vec::new(),
             summation: Vec::new(),
-            efficacy_apply: 2,
+            efficacy_method: EfficacyMethod::Ar6,
             nh_land_fraction: 0.42,
             sh_land_fraction: 0.21,
             climate: None,

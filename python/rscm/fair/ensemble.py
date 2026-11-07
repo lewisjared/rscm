@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     import xarray as xr
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm.core import TimeseriesCollection
+    from rscm.core import TimeAxis, TimeseriesCollection
     from rscm.fair.config import FairConfig, Species
 
     Inputs = Mapping[str, tuple[ArrayLike, str]]
@@ -56,7 +56,7 @@ def _emissions(config: FairConfig, s: Species) -> tuple[list[str], slice] | None
 def run_ensemble(
     configs: Mapping[Hashable, FairConfig],
     scenarios: Mapping[str, Inputs],
-    timebounds: ArrayLike,
+    time_axis: TimeAxis,
     *,
     scale_prescribed_forcing: bool = False,
 ) -> xr.Dataset:
@@ -90,7 +90,7 @@ def run_ensemble(
             )
             raise ValueError(msg)
 
-    bounds = np.asarray(timebounds, dtype=np.float64)
+    bounds = np.asarray(time_axis.values(), dtype=np.float64)
     coords: dict[str, Any] = {
         "timebounds": bounds,
         "timepoints": (bounds[:-1] + bounds[1:]) / 2,
@@ -99,11 +99,11 @@ def run_ensemble(
         "specie": species,
         "layer": np.arange(n_layers),
     }
-    by_specie = ("scenario", "config", "specie")
+    by_species = ("scenario", "config", "specie")
     dims = {
         "temperature": ("timebounds", "scenario", "config", "layer"),
-        "emissions": ("timepoints", *by_specie),
-        **{a: ("timebounds", *by_specie) for a in SPECIES_ATTRIBUTES},
+        "emissions": ("timepoints", *by_species),
+        **{a: ("timebounds", *by_species) for a in SPECIES_ATTRIBUTES},
         **{a: ("timebounds", "scenario", "config") for a in SCALAR_ATTRIBUTES},
     }
     sizes = {name: len(values) for name, values in coords.items()}
@@ -114,16 +114,16 @@ def run_ensemble(
     # FaIR has zero airborne emissions of the species without a gas cycle.
     data["airborne_emissions"][..., [not is_ghg(s) for s in first["species"]]] = 0.0
     timestep = bounds[1] - bounds[0]
-    index = {specie: k for k, specie in enumerate(species)}
+    index = {s: k for k, s in enumerate(species)}
     species_series = {}
     emission_series = {}
     accumulated = {}
     for name in config_names:
         config = configs[name]
         species_series[name] = [
-            (attribute, index[specie], variable)
+            (attribute, index[s], variable)
             for attribute, variables in species_outputs(config).items()
-            for specie, variable in variables.items()
+            for s, variable in variables.items()
         ]
         emission_series[name] = [
             (index[s["name"]], *found)
@@ -140,7 +140,7 @@ def run_ensemble(
             outputs = run_fair(
                 configs[name],
                 inputs,
-                bounds,
+                time_axis,
                 scale_prescribed_forcing=scale_prescribed_forcing,
             ).timeseries()
             for layer in range(n_layers):

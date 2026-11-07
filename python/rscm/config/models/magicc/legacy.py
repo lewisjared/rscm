@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from rscm.magicc.full import EFFICACY_METHODS
+
 from .parameters import MAGICC_PARAMETERS, ParameterStatus
 
 logger = logging.getLogger(__name__)
@@ -17,6 +19,9 @@ LEGACY_MAPPING: dict[str, str] = {
     for p in MAGICC_PARAMETERS.values()
     if p.status == ParameterStatus.SUPPORTED and p.rscm_path
 }
+
+# Named values of MAGICC7 integer switches.
+_NAMED_VALUES: dict[str, dict[int, str]] = {"rf_efficacy_apply": EFFICACY_METHODS}
 
 
 def _set_nested_attr(obj: dict, path: str, value: Any) -> None:
@@ -80,7 +85,8 @@ def from_legacy_dict(legacy: dict[str, Any]) -> dict[str, Any]:
         if key_lower in LEGACY_MAPPING:
             # SUPPORTED parameter - map to RSCM config
             rscm_path = LEGACY_MAPPING[key_lower]
-            _set_nested_attr(config, rscm_path, value)
+            named = _NAMED_VALUES.get(key_lower)
+            _set_nested_attr(config, rscm_path, named[int(value)] if named else value)
         elif key_lower in MAGICC_PARAMETERS:
             # Known but not supported
             param = MAGICC_PARAMETERS[key_lower]
@@ -114,6 +120,9 @@ def to_legacy_dict(config: dict[str, Any]) -> dict[str, Any]:
     for legacy_key, rscm_path in LEGACY_MAPPING.items():
         value = _get_nested_attr(config, rscm_path)
         if value is not None:
+            if legacy_key in _NAMED_VALUES:
+                codes = {name: code for code, name in _NAMED_VALUES[legacy_key].items()}
+                value = codes[value]
             legacy[legacy_key] = value
 
     return legacy
