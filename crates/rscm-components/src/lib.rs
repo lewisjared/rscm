@@ -22,11 +22,6 @@
 //! - [`FourBoxOceanHeatUptake`] - Distributes scalar ERF to regional ocean heat uptake using
 //!   a four-box grid structure (Northern/Southern Ocean/Land)
 //!
-//! ## Ocean Carbon Cycle
-//!
-//! - [`ocean_carbon_cycle::OceanSurfacePartialPressure`] - Calculates partial pressure of CO2
-//!   at the ocean surface based on temperature and dissolved inorganic carbon
-//!
 //! # Usage
 //!
 //! Components are designed to be composed into a [`Model`](rscm_core::model::Model) using
