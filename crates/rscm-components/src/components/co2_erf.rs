@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 /// Parameters for the CO2 ERF component
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CO2ErfParameters {
     /// ERF due to a doubling of atmospheric CO2 concentrations
     /// unit: W/m^2

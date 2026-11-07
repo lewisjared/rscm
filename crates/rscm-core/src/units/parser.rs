@@ -504,6 +504,9 @@ impl<'a> UnitParser<'a> {
 
             if !trailing.is_empty() && trailing.chars().all(|c| c.is_ascii_digit()) {
                 self.pos = start + last_letter_idx + 1;
+                if let Some((mass, species)) = split_fused(base) {
+                    return Ok(UnitFactor::mass_of(mass, &species));
+                }
                 return Ok(UnitFactor::unit(base));
             }
         }
@@ -517,7 +520,7 @@ impl<'a> UnitParser<'a> {
             return true;
         }
         let base = token.trim_end_matches(|c: char| c.is_ascii_digit());
-        base != token && UNIT_REGISTRY.lookup(base).is_some()
+        base != token && (UNIT_REGISTRY.lookup(base).is_some() || split_fused(base).is_some())
     }
 
     fn parse_optional_exponent(&mut self) -> Result<i32, ParseError> {
@@ -781,6 +784,14 @@ mod tests {
         // Some systems write m2 instead of m^2
         let unit = ParsedUnit::parse("m2").unwrap();
         assert_eq!(unit.exponent_of("m"), Some(2));
+    }
+
+    #[test]
+    fn test_implicit_exponent_on_fused_species() {
+        assert_eq!(
+            ParsedUnit::parse("GtC2").unwrap(),
+            ParsedUnit::parse("GtC^2").unwrap()
+        );
     }
 
     #[test]

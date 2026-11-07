@@ -18,6 +18,7 @@ pub const GTC_PER_PPM: f64 = 2.123;
 /// land flux includes land-use emissions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct CO2BudgetParameters {
     /// Conversion factor: GtC per ppm CO2.
     ///

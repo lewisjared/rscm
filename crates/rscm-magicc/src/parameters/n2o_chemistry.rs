@@ -37,6 +37,7 @@ use serde::{Deserialize, Serialize};
 /// mix into the stratosphere where destruction occurs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct N2OChemistryParameters {
     /// Year from which the concentration feedback is measured (`N2O_FEED_YRSTART`).
     /// The reference concentration is taken from the year before.

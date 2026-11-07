@@ -17,6 +17,7 @@ const MOLAR_MASS_ORDER: [usize; 8] = [0, 6, 4, 7, 1, 5, 3, 2];
 
 /// A halocarbon species.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HalocarbonSpecies {
     /// Species name, as used in variable names.
     pub name: String,
@@ -76,6 +77,7 @@ impl HalocarbonSpecies {
 /// Parameters for halocarbon chemistry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct HalocarbonChemistryParameters {
     /// F-gases, which do not deplete ozone.
     pub fgases: Vec<HalocarbonSpecies>,
@@ -141,6 +143,7 @@ pub struct HalocarbonChemistryParameters {
 /// Lifetimes in between mix the two linearly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct FgasRegions {
     /// Pattern (NH ocean, NH land, SH ocean, SH land).
     /// MAGICC7: RF_REGIONS_FGAS

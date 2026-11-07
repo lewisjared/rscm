@@ -33,6 +33,7 @@ pub enum EfficacyMethod {
 
 /// Box forcing given at every substep, such as monthly volcanic forcing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubannualForcing {
     /// Time of the start of the first substep (decimal year).
     pub start: FloatValue,
@@ -92,6 +93,7 @@ impl SubannualForcing {
 /// Default values match MAGICC7 defaults from `MAGCFG_DEFAULTALL.CFG`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct ClimateUdebParameters {
     // Ocean structure parameters
     /// Number of ocean layers (including mixed layer).

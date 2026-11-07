@@ -20,6 +20,7 @@ type ModelState = Vector3<FloatValue>;
 
 /// Parameters for the one-box carbon cycle component
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CarbonCycleParameters {
     /// Response timescale of the box
     /// unit: yr
@@ -34,6 +35,7 @@ pub struct CarbonCycleParameters {
 
 /// Solver options for the ODE integration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SolverOptions {
     pub step_size: FloatValue,
 }

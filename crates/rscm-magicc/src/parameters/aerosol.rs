@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 /// reference year. This is useful for calibrating to observed/modelled forcing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct AerosolDirectParameters {
     // === Species Forcing Coefficients ===
     /// SOx forcing coefficient (W/m² per Mt S/yr).
@@ -180,6 +181,7 @@ impl Default for AerosolDirectParameters {
 ///   Here, emissions are used directly as a proxy.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct AerosolIndirectParameters {
     /// Cloud albedo effect coefficient (W/m² per ln-unit).
     ///

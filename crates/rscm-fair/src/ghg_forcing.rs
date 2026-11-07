@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 
 /// One greenhouse gas.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GhgSpecies {
     /// Concentration input.
     pub concentration: String,
@@ -50,6 +51,7 @@ impl GhgSpecies {
 
 /// Parameters of [`GhgForcing`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GhgForcingParameters {
     /// CO2.
     pub co2: GhgSpecies,

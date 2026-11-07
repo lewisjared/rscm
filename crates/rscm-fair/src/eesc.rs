@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 /// One ozone-depleting halogen.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Halogen {
     /// Concentration variable.
     pub concentration: String,
@@ -31,6 +32,7 @@ pub struct Halogen {
 
 /// Parameters of [`Eesc`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct EescParameters {
     /// The halogens.
     pub halogens: Vec<Halogen>,

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Parameters for `OzoneForcing`, named after their MAGICC7 counterparts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct OzoneForcingParameters {
     /// `STRATOZ_O3SCALE` (W/m²): negative because depletion cools.
     pub stratospheric_o3_scale: FloatValue,
@@ -48,6 +49,7 @@ pub struct OzoneForcingParameters {
 /// Regional pattern of tropospheric ozone forcing, normalised within each hemisphere.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct TroposphericOzoneRegions {
     /// Pattern (NH ocean, NH land, SH ocean, SH land).
     /// MAGICC7: RF_REGIONS_TROPOZ

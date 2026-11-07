@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Michaelis-Menten nitrogen fixation, calculated from NPP.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PrognosticFixation {
     /// Maximum fixation rate
     /// unit: Tg N/yr
@@ -26,6 +27,7 @@ pub struct PrognosticFixation {
 /// relative to the last year before it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct NitrogenParameters {
     /// Plant nitrogen uptake per unit NPP
     /// unit: Gt N/GtC

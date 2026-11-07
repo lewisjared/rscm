@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 /// The CH4 budget parameters must match `CH4Chemistry`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct CH4OxidationParameters {
     /// Mass of carbon per mass of CH4 oxidised
     /// unit: dimensionless

@@ -31,6 +31,7 @@ use std::sync::OnceLock;
 
 /// Parameters of [`EnergyBalance`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct EnergyBalanceParameters {
     /// Heat capacity of each layer, surface first (W yr m-2 K-1).
     pub ocean_heat_capacity: Vec<FloatValue>,

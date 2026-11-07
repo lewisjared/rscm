@@ -34,6 +34,7 @@ type ModelState = Vector3<FloatValue>;
 /// Probing the fast and slow components of global warming by returning abruptly to
 /// preindustrial forcing. Journal of Climate, 23(9), 2418-2427.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TwoLayerParameters {
     /// Climate feedback parameter at zero warming
     ///

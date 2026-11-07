@@ -9,6 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 /// Parameters of one permafrost soil type (mineral soil or peat).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct PermafrostSoil {
     /// Fraction of the frozen area thawed per year and per K of summer warming
     /// above the melting threshold
@@ -77,6 +78,7 @@ impl Default for PermafrostSoil {
 /// linearly from `minimum_melting_temperature` in the south to `maximum_melting_temperature` in the north.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct PermafrostParameters {
     /// Number of zonal bands
     pub n_bands: usize,

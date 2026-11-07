@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 /// With equal grid weights (0.25 each), these ratios should average to 1.0
 /// for the area-weighted mean to equal the global ERF.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FourBoxOceanHeatUptakeParameters {
     /// Ratio of Northern Ocean uptake to global ERF (regional / global)
     pub northern_ocean_ratio: f64,

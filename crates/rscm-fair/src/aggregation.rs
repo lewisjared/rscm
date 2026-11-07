@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 /// One forcing agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ForcingAgent {
     /// Forcing, an output when `prescribed` is set and an input otherwise.
     pub forcing: String,
@@ -38,6 +39,7 @@ pub struct ForcingAgent {
 
 /// Parameters of [`ForcingAggregation`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ForcingAggregationParameters {
     /// The agents.
     pub agents: Vec<ForcingAgent>,

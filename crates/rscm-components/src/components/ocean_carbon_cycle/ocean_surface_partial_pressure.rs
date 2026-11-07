@@ -13,6 +13,7 @@ use std::iter::zip;
 
 /// Parameters for the Ocean Surface Partial Pressure component
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OceanSurfacePartialPressureParameters {
     /// Pre-industrial ocean surface partial pressure
     /// unit: `ppm`

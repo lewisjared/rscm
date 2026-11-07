@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 
 /// One driver of aerosol-cloud interactions.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct CloudDriver {
     /// Input variable.
     pub variable: String,
@@ -33,6 +34,7 @@ pub struct CloudDriver {
 
 /// Parameters of [`AerosolCloud`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct AerosolCloudParameters {
     /// Forcing output.
     pub forcing: String,

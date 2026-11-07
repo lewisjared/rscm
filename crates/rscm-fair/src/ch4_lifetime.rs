@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 /// A precursor of the CH4 lifetime.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Precursor {
     /// Emissions or concentration variable.
     pub variable: String,
@@ -33,6 +34,7 @@ pub struct Precursor {
 
 /// Parameters of [`CH4Lifetime`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct CH4LifetimeParameters {
     /// Precursor emissions, summed before the concentrations.
     pub emissions: Vec<Precursor>,

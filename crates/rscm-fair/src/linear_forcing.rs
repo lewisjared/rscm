@@ -20,6 +20,7 @@ use std::any::Any;
 
 /// One driver of the forcing.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct LinearDriver {
     /// Input variable. Cumulative drivers read the emissions rate.
     pub variable: String,
@@ -36,6 +37,7 @@ pub struct LinearDriver {
 
 /// Parameters of [`LinearForcing`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct LinearForcingParameters {
     /// Forcing output.
     pub forcing: String,

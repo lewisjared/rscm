@@ -156,6 +156,7 @@ impl IrfForm {
 /// 2. **Joos A25**: Temperature effect: $pCO2 = pCO2_{DIC} \times e^{\alpha_T \Delta T}$
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct OceanCarbonParameters {
     /// Ocean carbon method (MAGICC7 `OCEANCC_MODEL`).
     ///

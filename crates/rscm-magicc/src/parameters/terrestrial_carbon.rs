@@ -99,6 +99,7 @@ impl From<FertilisationMethod> for FloatValue {
 /// 3. **Time-varying turnover**: Cumulative deforestation reduces pool turnover times.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct TerrestrialCarbonParameters {
     /// Pre-industrial Net Primary Production (NPP)
     /// unit: GtC/yr

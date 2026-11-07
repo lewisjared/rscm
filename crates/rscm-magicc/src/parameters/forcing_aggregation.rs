@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// A forcing agent read by `ForcingAggregation`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ForcingAgent {
     /// Name of the agent's ERF variable (W/m²).
     pub variable: String,
@@ -54,6 +55,7 @@ pub struct ForcingAgent {
 /// Parameters for `ForcingAggregation`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct ForcingAggregationParameters {
     /// Agents summed into the total.
     pub agents: Vec<ForcingAgent>,
@@ -92,6 +94,7 @@ pub enum ForcingTerm {
 /// `Equilibrium Climate Sensitivity` and `2xCO2 Effective Radiative Forcing`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct EfficacyClimate {
     /// Equilibrium climate sensitivity used before the climate model reports one (K).
     pub ecs: FloatValue,
@@ -159,4 +162,19 @@ fn uniform() -> [FloatValue; 4] {
 
 fn one() -> FloatValue {
     1.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unknown_keys() {
+        let err = serde_json::from_str::<ForcingAggregationParameters>(r#"{"efficacy_apply": 0}"#)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field `efficacy_apply`"),
+            "{err}"
+        );
+    }
 }

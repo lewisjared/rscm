@@ -52,6 +52,7 @@ pub enum ForcingMethod {
 /// $$ERF_X = F_X \cdot \alpha_X$$
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct GhgForcingParameters {
     /// Forcing calculation method
     pub method: ForcingMethod,

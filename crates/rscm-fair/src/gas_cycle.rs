@@ -27,6 +27,7 @@ use std::any::Any;
 
 /// One greenhouse gas.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GasSpecies {
     /// How the gas is driven: emissions in and concentration out, or concentration in and emissions out.
     pub driver: Driver,
@@ -78,6 +79,7 @@ pub struct GasSpecies {
 
 /// Parameters of [`GasCycle`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GasCycleParameters {
     /// The gases.
     pub species: Vec<GasSpecies>,

@@ -882,6 +882,9 @@ def _grid(values: NDArray[np.float64]) -> GridType:
     return GridType.FourBox if values.shape[1] == 4 else GridType.Hemispheric  # noqa: PLR2004
 
 
+_GRID_RESOLUTION = (GridType.Scalar, GridType.Hemispheric, GridType.FourBox)
+
+
 def _schema(
     components: Sequence[RustComponent],
     prescribed: Mapping[str, tuple[NDArray[np.float64], str]],
@@ -893,8 +896,7 @@ def _schema(
     for component in components:
         for d in component.definitions():
             _, grid = variables.get(d.name, (d.unit, d.grid))
-            four = GridType.FourBox in (grid, d.grid)
-            variables[d.name] = (d.unit, GridType.FourBox if four else GridType.Scalar)
+            variables[d.name] = (d.unit, max(grid, d.grid, key=_GRID_RESOLUTION.index))
     schema = VariableSchema()
     for name, (unit, grid) in variables.items():
         schema.add_variable(name, unit, grid)

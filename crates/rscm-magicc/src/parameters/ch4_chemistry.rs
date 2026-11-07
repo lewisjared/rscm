@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 /// where ${\tau_{OH}}$ varies with CH4 concentration and co-emitted species.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct CH4ChemistryParameters {
     /// Year from which the concentration and temperature feedbacks are measured
     /// (`CH4_FEED_YRSTART`). The reference concentration and temperature are

@@ -26,6 +26,7 @@ fn over_defaults<'de, D: Deserializer<'de>, T: Serialize + DeserializeOwned>(
 /// Thermal expansion of the ocean, calculated by `ClimateUdeb`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct ThermalExpansion {
     /// Coefficients of the expansion polynomial (`SLR_EXPANSION_PARAMS`)
     pub coefficients: [FloatValue; 6],
@@ -48,6 +49,7 @@ impl Default for ThermalExpansion {
 /// Mountain glaciers and small ice caps.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct Glacier {
     /// Fraction of the gap to equilibrium closed per year at 1 K of disequilibrium
     /// unit: 1/yr
@@ -99,6 +101,7 @@ const GLACIER_EQUILIBRIUM_SEA_LEVEL: [FloatValue; 104] = [
 /// reduced by `max(1 - S / volume, 0)^volume_exponent` when `volume` is set.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct SurfaceMassBalance {
     /// unit: mm/yr
     pub sensitivity: FloatValue,
@@ -150,6 +153,7 @@ impl Default for SurfaceMassBalance {
 /// One discharge case of the Greenland ice sheet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct DischargeCase {
     /// Ice available for discharge
     /// unit: mm
@@ -198,6 +202,7 @@ fn high_over_defaults<'de, D: Deserializer<'de>>(d: D) -> Result<DischargeCase, 
 /// Solid ice discharge of the Greenland ice sheet, interpolated between a low and a high case.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct GreenlandDischarge {
     #[serde(deserialize_with = "low_over_defaults")]
     pub low: DischargeCase,
@@ -224,6 +229,7 @@ impl Default for GreenlandDischarge {
 
 /// One Antarctic drainage region.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AntarcticRegion {
     pub name: String,
     /// Years after `start_year` before the region responds
@@ -242,6 +248,7 @@ pub struct AntarcticRegion {
 /// response function.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct AntarcticDischarge {
     /// Basal melt per K of subsurface ocean warming
     /// unit: m/yr/K
@@ -337,6 +344,7 @@ fn antarctica_over_defaults<'de, D: Deserializer<'de>>(
 /// Parameters for the sea level rise contributions other than thermal expansion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct SeaLevelRiseParameters {
     pub glaciers: Glacier,
     /// Greenland surface mass balance, MAGICC7: SLR_GIS_SMB_*
