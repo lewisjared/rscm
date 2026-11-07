@@ -12,7 +12,6 @@
 //! Components that model the exchange of carbon between atmosphere, ocean, and land:
 //!
 //! - [`CarbonCycle`] - One-box atmospheric carbon model with temperature-dependent uptake
-//! - [`ocean_carbon_cycle`] - Ocean carbon cycle submodule with surface partial pressure calculations
 //!
 //! ## Radiative Forcing Components
 //!
@@ -51,7 +50,6 @@
 mod carbon_cycle;
 mod co2_erf;
 pub mod four_box_ocean_heat_uptake;
-pub mod ocean_carbon_cycle;
 
 pub use carbon_cycle::{CarbonCycle, CarbonCycleParameters, SolverOptions};
 pub use co2_erf::{CO2ERFParameters, CO2ERF};

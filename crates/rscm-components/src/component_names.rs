@@ -41,11 +41,3 @@ fn four_box_ocean_heat_uptake_names() {
         &[ERF, HEAT_UPTAKE],
     );
 }
-
-#[test]
-fn ocean_surface_partial_pressure_names() {
-    declares(
-        crate::components::ocean_carbon_cycle::OceanSurfacePartialPressure::generated_definitions(),
-        &[OCEAN_SURFACE_PARTIAL_PRESSURE_CO2, SEA_SURFACE_TEMPERATURE],
-    );
-}
