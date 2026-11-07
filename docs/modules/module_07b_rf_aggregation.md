@@ -24,6 +24,7 @@ because floating-point addition is not associative.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
 - **Tests**: `test_coupled_run` in `tests/regression/test_full_run.py` checks total ERF and temperature,
   including the `no_efficacy` (`RF_EFFICACY_APPLY` 0) and `prescribed_efficacy` (1) variants.
+  `test_forcing_subtotals` checks the [reported subtotals](#reported-subtotals).
   `aggregation.rs` has Rust unit tests for the patterns and efficacy modes.
 
 Volcanic forcing enters `ClimateUdeb` directly, as in MAGICC7.
@@ -122,35 +123,35 @@ The agents of MAGICC7's default total, with their RSCM input in `run_magicc7`.
 Internal efficacies are the defaults in `python/rscm/magicc/data/magicc7/defaults.json`, rounded.
 `SRF_FACTOR_*` sets each agent's surface forcing, which RSCM does not calculate.
 
-| Agent (`Effective Radiative Forcing|…`) | Key            | Input  | $\varepsilon_{int}$ | `SRF_FACTOR` |
-| ---------------------------------------- | -------------- | ------ | ------------------- | ------------ |
-| `CO2`                                    | `CO2`          | global | 1.000               | 0.2          |
-| `CH4`                                    | `CH4`          | global | 0.983               | 0.5          |
-| `N2O`                                    | `N2O`          | global | 0.993               | 0.2          |
-| `F-Gases`                                | `FGAS`         | box    | 1.006               | 0.2          |
-| `Montreal Protocol Halogen Gases`        | `MHALO`        | global | 1.006               | 1.0          |
-| `Stratospheric Ozone`                    | `STRATOZ`      | global | 0.933               | -0.5         |
-| `Tropospheric Ozone`                     | `TROPOZ`       | box    | 1.075               | 0.6          |
-| `Ozone due to N2O`                       | `OZDUETON2O`   | global | 1.002               |              |
-| `Ozone due to Temperature`               | `OZDUETOTEMPERATURE` | global | 1.002         |              |
-| `CH4 Oxidation Stratospheric H2O`        | `CH4OXSTRATH2O`| global | 0.958               | 0.0          |
-| `SOx|Fossil`                            | `SOX`          | box    | 1.167               | 1.0          |
-| `BC|Fossil`                             | `BC`           | box    | 1.160               | -1.9         |
-| `OC|Fossil`                             | `OC`           | box    | 1.104               | 1.0          |
-| `NO3|Fossil`                            | `NO3`          | box    | 1.000               | 1.0          |
-| `Biomass Burning Aerosols`               | `AER_DIR`      | box    | 1.135               |              |
-| `Mineral Dust`                           | `AER_DIR`      | box    | 1.135               | 2.0          |
-| `Cloud Albedo`                           | `CLOUD_ALBEDO` | box    | 1.097               | 0.8          |
-| `BC on Snow`                             | `BCSNOW`       | box    | 1.263               | 1.0          |
-| `Land Use`                               | `LANDUSE`      | box    | 1.204               | 1.5          |
-| `Solar`                                  | `SOLAR`        | box    | 1.002               | 1.0          |
+| Agent (`Effective Radiative Forcing|…`)  | Key                  | Input  | $\varepsilon_{int}$ | `SRF_FACTOR` |
+| ---------------------------------------- | -------------------- | ------ | ------------------- | ------------ |
+| `CO2`                                    | `CO2`                | global | 1.000               | 0.2          |
+| `CH4`                                    | `CH4`                | global | 0.983               | 0.5          |
+| `N2O`                                    | `N2O`                | global | 0.993               | 0.2          |
+| `F-Gases`                                | `FGAS`               | box    | 1.006               | 0.2          |
+| `Montreal Protocol Halogen Gases`        | `MHALO`              | global | 1.006               | 1.0          |
+| `Ozone|Stratospheric`                    | `STRATOZ`            | global | 0.933               | -0.5         |
+| `Ozone|Tropospheric`                     | `TROPOZ`             | box    | 1.075               | 0.6          |
+| `Ozone|N2O Feedback`                     | `OZDUETON2O`         | global | 1.002               |              |
+| `Ozone|Temperature Feedback`             | `OZDUETOTEMPERATURE` | global | 1.002               |              |
+| `CH4 Oxidation Stratospheric H2O`        | `CH4OXSTRATH2O`      | global | 0.958               | 0.0          |
+| `Aerosols|Direct Effect|SOx|Fossil`      | `SOX`                | box    | 1.167               | 1.0          |
+| `Aerosols|Direct Effect|BC|Fossil`       | `BC`                 | box    | 1.160               | -1.9         |
+| `Aerosols|Direct Effect|OC|Fossil`       | `OC`                 | box    | 1.104               | 1.0          |
+| `Aerosols|Direct Effect|NO3|Fossil`      | `NO3`                | box    | 1.000               | 1.0          |
+| `Aerosols|Direct Effect|Biomass Burning` | `AER_DIR`            | box    | 1.135               |              |
+| `Aerosols|Direct Effect|Mineral Dust`    | `AER_DIR`            | box    | 1.135               | 2.0          |
+| `Aerosols|Indirect Effect`               | `CLOUD_ALBEDO`       | box    | 1.097               | 0.8          |
+| `Black Carbon on Snow`                   | `BCSNOW`             | box    | 1.263               | 1.0          |
+| `Land-use Change`                        | `LANDUSE`            | box    | 1.204               | 1.5          |
+| `Solar`                                  | `SOLAR`              | box    | 1.002               | 1.0          |
 
 Notes on the table:
 
 - **Halocarbons**: the F-gas and Montreal Protocol agents apply the efficacy to each species before summing,
   and each F-gas species has its own box pattern ([halocarbon chemistry](module_03_halocarbon_chemistry.md)).
-- **Biomass burning**: `Biomass Burning Aerosols` sums the SOx, NO3, OC and BC `|Biosphere` forcing
-  before its efficacy applies.
+- **Biomass burning**: `Aerosols|Direct Effect|Biomass Burning` sums the SOx, NO3, OC and BC
+  `|Biosphere` forcing before its efficacy applies.
   Like mineral dust, it takes the direct aerosol efficacy and pattern (`AER_DIR`).
 - **Patterns from forcing**: land use and BC on snow take their pattern from their box forcing in
   `RF_REGIONS_NORMYEAR`, and nitrate from its total forcing in that year.
@@ -181,7 +182,7 @@ TOTAL_INCLVOLCANIC = TOTAL + VOLCANIC_ANNUAL
 `ForcingAggregation` takes this order as its `summation` parameter, a nested list of agent variables,
 and checks that it names every agent once.
 `rscm.magicc.full.SUMMATION` holds MAGICC7's order.
-`CLOUD_TOT` is the single `Cloud Albedo` agent there, because cloud cover is not modelled.
+`CLOUD_TOT` is the single `Aerosols|Indirect Effect` agent there, because cloud cover is not modelled.
 
 ### Run modes
 
@@ -208,6 +209,23 @@ The subtotals are built in the same order as above:
 
 Modes without natural forcing also leave out volcanic forcing.
 RSCM implements only `ALL`.
+
+### Reported subtotals
+
+MAGICC7 reports three of the subtotals as ERF.
+`ForcingAggregation` writes the same sums of its agents' RF, by each agent's `category`:
+
+| Output (`Effective Radiative Forcing|…`) | MAGICC7        | Definition                                   | `category`        |
+| ---------------------------------------- | -------------- | -------------------------------------------- | ----------------- |
+| `Greenhouse Gases`                       | `GHG`          | CO2 + CH4 + N2O + FGASSUM + MHALOSUM         | `greenhouse_gas`  |
+| `Aerosols`                               | `AEROSOL`      | TOTAER_DIR + CLOUD_TOT                       | `aerosol`         |
+| `Anthropogenic`                          | `TOTAL_ANTHRO` | TOTAL_INCLVOLCANIC − SOLAR − VOLCANIC_ANNUAL | all but `natural` |
+
+Ozone, CH4 oxidation, land use and BC on snow are `anthropogenic`, and solar is `natural`.
+Each subtotal follows `summation`, so it adds its agents in MAGICC7's order.
+Volcanic forcing is not an agent, so the anthropogenic subtotal needs no correction for it.
+`rscm.fair` gives FaIR's agents the same categories: its greenhouse gases, then `ari` and `aci` as aerosols,
+and solar and volcanic forcing as natural.
 
 ### Pre-industrial reference
 
@@ -251,21 +269,19 @@ They declare the total as an aggregate in a [VariableSchema](../key_concepts.md#
 
 ```python
 from rscm.core import VariableSchema
+from rscm.names import ERF
 
-ERF = "Effective Radiative Forcing"
-
+agents = [f"{ERF}|{agent}" for agent in ("CO2", "CH4", "N2O", "Other")]
 schema = VariableSchema()
 # Individual agents, named as GhgForcing outputs them, plus a prescribed residual
-for agent in ("CO2", "CH4", "N2O", "Other"):
-    schema.add_variable(f"{ERF}|{agent}", "W/m^2")
-schema.add_aggregate(
-    f"{ERF}|GHG", "W/m^2", "sum", [f"{ERF}|CO2", f"{ERF}|CH4", f"{ERF}|N2O"]
-)
-# Top-level aggregate, read by ClimateUdeb
-schema.add_aggregate(ERF, "W/m^2", "sum", [f"{ERF}|GHG", f"{ERF}|Other"])
+for agent in agents:
+    schema.add_variable(agent, "W/m^2")
+# Total, read by ClimateUdeb
+schema.add_aggregate(ERF, "W/m^2", "sum", agents)
 ```
 
-`run_magicc` and `run_magicc_emissions` build total ERF this way, as a plain sum.
+`run_magicc` and `run_magicc_emissions` build total ERF this way, as a plain sum,
+so they write none of the subtotals in [Reported subtotals](#reported-subtotals).
 `ClimateUdeb` then applies the CO2 efficacy and regional pattern to that total
 (see [climate](module_08_climate.md)).
 `rscm.magicc.full.run_magicc7` uses `ForcingAggregation` instead.
@@ -285,8 +301,10 @@ because Gauss-Jordan elimination differs in the last bit and shifts some interna
 
 ## Differences from MAGICC7
 
-- **Global total**: `Effective Radiative Forcing` sums the agents' RF, not MAGICC7's reported ERF.
+- **Global total and subtotals**: `Effective Radiative Forcing` and the reported subtotals sum the agents' RF,
+  not MAGICC7's reported ERF.
   The two differ only by rounding while every prescribed efficacy is 1.
+  With another efficacy and `RF_EFFICACY_APPLY = 2`, MAGICC7 reports that agent's RF times its efficacy.
 - **Run modes, surface forcing and freeze controls**: only the `ALL` run mode is implemented,
   there is no surface forcing and most freeze controls are missing (see [Algorithm](#algorithm)).
 - **NaN checks**: MAGICC7 stops with a fatal error that names each agent whose EffRF is NaN.

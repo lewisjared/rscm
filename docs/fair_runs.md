@@ -32,6 +32,9 @@ A configuration is a plain dict with FaIR's options, climate configs and one ent
 `naming.prescribed_variable` names the input of each species.
 Prescribed forcing is an input such as `Prescribed Effective Radiative Forcing|Solar`.
 `ForcingAggregation` adds its temperature feedback and writes `Effective Radiative Forcing|Solar`.
+It also writes the greenhouse gas, aerosol and anthropogenic ERF with MAGICC7's definitions,
+from each agent's `category`
+(see [forcing aggregation](modules/module_07b_rf_aggregation.md#reported-subtotals)).
 
 ## Running a calibrated member
 

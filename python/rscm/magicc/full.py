@@ -194,6 +194,15 @@ Prescribed agents whose regional pattern MAGICC7 takes from their forcing
 in ``rf_regions_normyear``.
 """
 
+GREENHOUSE_GASES = ("CO2", "CH4", "N2O", "F-Gases", "Montreal Protocol Halogen Gases")
+"""
+Agents in MAGICC7's greenhouse gas ERF.
+Agents under ``Aerosols|`` form its aerosol ERF.
+"""
+
+NATURAL_AGENTS = ("Solar",)
+"""Agents left out of MAGICC7's anthropogenic ERF, along with volcanic forcing."""
+
 HALOCARBON_GROUPS = ("F-Gases", "Montreal Protocol Halogen Gases")
 """Halocarbon agents whose efficacy MAGICC7 applies to each species."""
 
@@ -227,6 +236,23 @@ SUMMATION: list[Any] = [
     "Solar",
 ]
 """Order in which MAGICC7 adds the agents into its total, nesting its subtotals."""
+
+COMPONENTS = (
+    "CH4Chemistry",
+    "CH4Oxidation",
+    "CO2Budget",
+    "ClimateUdeb",
+    "ForcingAggregation",
+    "GhgForcing",
+    "HalocarbonChemistry",
+    "N2OChemistry",
+    "OceanCarbon",
+    "OzoneForcing",
+    "Permafrost",
+    "SeaLevelRise",
+    "TerrestrialCarbon",
+)
+"""Components of `run_magicc7` that ``component_parameters`` can override."""
 
 EFFICACY_ERF_2XCO2 = 3.71
 """
@@ -616,12 +642,23 @@ def _agent(
     p = parameters
     return {
         "variable": f"{ERF}|{name}",
+        "category": _category(name),
         "regional": regional,
         "efficacy": p.get(f"rf_efficacy_{key}", 1.0),
         "internal_efficacy": p[f"rf_intefficacy_{key}"],
         "regional_pattern": p.get(f"rf_regions_{key}", [1.0] * 4),
         **extra,
     }
+
+
+def _category(name: str) -> str:
+    if name in GREENHOUSE_GASES:
+        return "greenhouse_gas"
+    if name.startswith("Aerosols|"):
+        return "aerosol"
+    if name in NATURAL_AGENTS:
+        return "natural"
+    return "anthropogenic"
 
 
 def forcing_agents(
@@ -1019,6 +1056,16 @@ def natural_emissions(
     return out
 
 
+def _override[T](
+    argument: str, defaults: dict[str, T], given: Mapping[str, T] | None
+) -> dict[str, T]:
+    unknown = sorted(set(given or {}) - set(defaults))
+    if unknown:
+        msg = f"unknown {argument}: {', '.join(unknown)}"
+        raise ValueError(msg)
+    return {**defaults, **(given or {})}
+
+
 def run_magicc7(  # noqa: PLR0913
     time_axis: TimeAxis,
     emissions: Mapping[str, ArrayLike],
@@ -1054,8 +1101,13 @@ def run_magicc7(  # noqa: PLR0913
     time = np.asarray(time_axis.values(), dtype=np.float64)
     p = ChainMap(cast("dict[str, Any]", parameters or {}), default_parameters())
     files = dict(inputs) if inputs is not None else load_inputs(p)
-    conc = {**default_initial_concentrations(), **(initial_concentrations or {})}
-    overrides = component_parameters or {}
+    conc = _override(
+        "initial_concentrations",
+        default_initial_concentrations(),
+        initial_concentrations,
+    )
+    no_overrides: dict[str, Mapping[str, Any]] = {name: {} for name in COMPONENTS}
+    overrides = _override("component_parameters", no_overrides, component_parameters)
     species = halocarbon_species()
     data = _validate_emissions(emissions, len(time), species)
     native = _native(data, convention)

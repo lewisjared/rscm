@@ -43,7 +43,12 @@ from rscm.fair import (
     run_fair,
     with_lags,
 )
-from rscm.fair.config import forcing_agents, is_ghg
+from rscm.fair.config import (
+    SUBTOTAL_CATEGORIES,
+    forcing_agents,
+    forcing_category,
+    is_ghg,
+)
 from rscm.fair.ensemble import SPECIES_ATTRIBUTES
 from rscm.fair.run import _on_timebounds
 from rscm.magicc import ClimateUdebBuilder
@@ -198,6 +203,21 @@ def test_forcing(case: str) -> None:
         assert_close(
             run.rscm(naming.forcing(s)), run.fair(f"forcing|{s['name']}"), s["name"]
         )
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_forcing_subtotals(case: str) -> None:
+    """Each subtotal is the sum of FaIR's forcing of the agents in its categories."""
+    run = load(case)
+    for name, categories in SUBTOTAL_CATEGORIES.items():
+        columns = [
+            run.fair(f"forcing|{s['name']}")
+            for s in forcing_agents(run.config)
+            if forcing_category(s) in categories
+        ]
+        actual = run.rscm(name)
+        expected = np.nansum(columns, axis=0) if columns else np.zeros_like(actual)
+        assert_close(actual, expected, name)
 
 
 @pytest.mark.parametrize("case", [c for c in CASES if not c.startswith("ebm")])

@@ -62,7 +62,7 @@ Building a simple model:
 ...     ModelBuilder()
 ...     .with_time_axis(TimeAxis.from_values(np.arange(2000, 2101)))
 ...     .with_component(my_component)
-...     .with_prescribed_variable("Emissions", emissions_ts)
+...     .with_prescribed_variable("Emissions|CO2", emissions_ts)
 ... ).build()
 >>> model.run()
 >>> results = model.timeseries()

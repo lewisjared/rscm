@@ -21,6 +21,8 @@ import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 from rscm import names
 from rscm._lib.fair import (
     AerosolCloudBuilder,
@@ -35,6 +37,8 @@ from rscm._lib.fair import (
 from rscm.fair import naming
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from rscm._lib.core import ModelBuilder, RustComponent
 
 FairConfig = dict[str, Any]
@@ -399,11 +403,51 @@ def forcing_agents(config: FairConfig) -> list[Species]:
     ]
 
 
+def forcing_category(entry: Species) -> str:
+    """ForcingAggregation category of a species entry, by MAGICC7's ERF subtotals."""
+    kind = entry["type"]
+    if kind in naming.GHG_TYPES:
+        return "greenhouse_gas"
+    if kind in ("ari", "aci"):
+        return "aerosol"
+    if kind in ("solar", "volcanic"):
+        return "natural"
+    return "anthropogenic"
+
+
+SUBTOTAL_CATEGORIES = {
+    names.ERF_GREENHOUSE_GASES: ("greenhouse_gas",),
+    names.ERF_AEROSOLS: ("aerosol",),
+    names.ERF_ANTHROPOGENIC: ("greenhouse_gas", "aerosol", "anthropogenic"),
+}
+"""Categories of the agents in each ForcingAggregation subtotal."""
+
+
+def forcing_subtotals(
+    config: FairConfig, forcing: Mapping[str, float]
+) -> dict[str, float]:
+    """Return the ForcingAggregation subtotals of the agents' `forcing`, NaN skipped."""
+    agents = forcing_agents(config)
+    return {
+        name: float(
+            np.nansum(
+                [
+                    forcing[naming.forcing(s)]
+                    for s in agents
+                    if forcing_category(s) in categories
+                ]
+            )
+        )
+        for name, categories in SUBTOTAL_CATEGORIES.items()
+    }
+
+
 def _aggregation(config: FairConfig) -> RustComponent:
     agents = []
     for s in forcing_agents(config):
         agent = {
             "forcing": naming.forcing(s),
+            "category": forcing_category(s),
             "efficacy": _value(s["forcing_efficacy"]),
         }
         if s["input_mode"] == "forcing":
@@ -484,7 +528,9 @@ def initial_values(
 
     `energy_balance` matches `components`.
     """
-    values = dict.fromkeys((names.ERF, names.EFFICACY_ADJUSTED_ERF), 0.0)
+    values = dict.fromkeys(
+        (names.ERF, names.EFFICACY_ADJUSTED_ERF, *SUBTOTAL_CATEGORIES), 0.0
+    )
     if energy_balance:
         n_layers = len(config["climate"]["ocean_heat_capacity"])
         values |= dict.fromkeys(

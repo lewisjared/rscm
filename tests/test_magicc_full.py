@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from rscm.core import TimeAxis
 from rscm.magicc import full
 from rscm.magicc import prescribed as pr
 from rscm.names import Convention
@@ -77,3 +78,16 @@ def test_load_inputs_skips_missing_concentration_files():
     assert "file_co2_conc" not in inputs
     with pytest.raises(KeyError, match="file_co2_conc"):
         full.prescribed_concentrations(np.arange(1750.0, 1800.0), p, inputs)
+
+
+@pytest.mark.parametrize(
+    ("argument", "value"),
+    [
+        ("component_parameters", {"ClimateUDEB": {}}),
+        ("initial_concentrations", {"HFC4310": 0.0}),
+    ],
+)
+def test_run_magicc7_rejects_unknown_keys(argument, value):
+    time_axis = TimeAxis.from_values(np.arange(1750.0, 1753.0))
+    with pytest.raises(ValueError, match=f"unknown {argument}"):
+        full.run_magicc7(time_axis, {}, **{argument: value})

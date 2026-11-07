@@ -50,7 +50,7 @@ MAGICC7 calculates the historical aerosol, land-use, solar and volcanic forcing 
 from its input files and emissions.
 `rscm.magicc.prescribed` reproduces those calculations in Python and `ForcingAggregation`
 combines them with the calculated agents.
-Nitrate is split between industrial and AFOLU sources by each source's NOx times NH3 emissions.
+Nitrate is split between the fossil and biosphere sectors by each source's NOx times NH3 emissions.
 Monthly volcanic forcing enters `ClimateUdeb` through its `subannual_forcing` parameter.
 
 ### Coupled runs

@@ -62,8 +62,11 @@ REFERENCE_VARIABLES = (
     *(
         f"Effective Radiative Forcing|{agent}"
         for agent in (
+            "Aerosols",
+            "Anthropogenic",
             "CH4 Oxidation Stratospheric H2O",
             "F-Gases",
+            "Greenhouse Gases",
             "Montreal Protocol Halogen Gases",
             "Stratospheric Ozone",
             "Volcanic",

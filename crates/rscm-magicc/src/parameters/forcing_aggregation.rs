@@ -1,6 +1,7 @@
 //! Forcing Aggregation Parameters
 
 use super::EfficacyMethod;
+use rscm_core::forcing::ForcingCategory;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +10,9 @@ use serde::{Deserialize, Serialize};
 pub struct ForcingAgent {
     /// Name of the agent's ERF variable (W/m²).
     pub variable: String,
+
+    /// Subtotals the agent's ERF counts towards.
+    pub category: ForcingCategory,
 
     /// Whether the ERF is a four-box variable. Global ERF is spread with `regional_pattern`.
     #[serde(default)]

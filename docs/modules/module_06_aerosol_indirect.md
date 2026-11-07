@@ -30,7 +30,8 @@ Four-box arrays follow the box order in [initialisation](module_00_initialisatio
   See the [status table](README.md#rscm-implementation-status).
 - **Tests**: `test_prescribed_forcing[Cloud Albedo]` in `tests/regression/test_full_run.py`.
 
-`ForcingAggregation` takes the result as the four-box `Cloud Albedo` agent.
+`ForcingAggregation` takes the result as the four-box agent
+`Effective Radiative Forcing|Aerosols|Indirect Effect`.
 
 ## Equations
 

@@ -18,6 +18,8 @@
 //! # Outputs
 //!
 //! - `Effective Radiative Forcing` (W/m²): area-weighted sum of agent ERF.
+//! - `Effective Radiative Forcing|Greenhouse Gases`, `|Aerosols` and `|Anthropogenic` (W/m²):
+//!   the same sum over the agents of each [`ForcingCategory`](rscm_core::forcing::ForcingCategory).
 //! - `Efficacy Adjusted Effective Radiative Forcing` (W/m², FourBox): the
 //!   climate driver.
 
@@ -27,6 +29,7 @@ use crate::climate::lamcalc::{
 use crate::parameters::{EfficacyMethod, ForcingAgent, ForcingAggregationParameters, ForcingTerm};
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
 use rscm_core::errors::{RscmError, RscmResult};
+use rscm_core::forcing::ForcingSubtotals;
 use rscm_core::names::{EFFICACY_ADJUSTED_ERF, EQUILIBRIUM_CLIMATE_SENSITIVITY, ERF, ERF_2XCO2};
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -198,6 +201,23 @@ impl ForcingAggregation {
             sum_terms(&p.summation, &|name| adjusted[index(name)])
         }
     }
+
+    /// Global ERF of each category, added in the order of `summation`.
+    fn subtotals(&self, forcing: &[Vec<Forcing>]) -> ForcingSubtotals {
+        let p = &self.parameters;
+        let agent_subtotals: Vec<ForcingSubtotals> = p
+            .agents
+            .iter()
+            .zip(forcing)
+            .map(|(agent, parts)| agent.category.subtotals(sum(parts.iter().copied()).0))
+            .collect();
+        if p.summation.is_empty() {
+            agent_subtotals.into_iter().sum()
+        } else {
+            let index = |name: &str| p.agents.iter().position(|a| a.variable == name).unwrap();
+            subtotal_terms(&p.summation, &|name| agent_subtotals[index(name)])
+        }
+    }
 }
 
 /// Global ERF and efficacy-adjusted (or plain) box forcing.
@@ -214,6 +234,19 @@ fn sum_terms(terms: &[ForcingTerm], agent: &dyn Fn(&str) -> Forcing) -> Forcing 
         ForcingTerm::Agent(name) => agent(name),
         ForcingTerm::Sum(nested) => sum_terms(nested, agent),
     }))
+}
+
+fn subtotal_terms(
+    terms: &[ForcingTerm],
+    agent: &dyn Fn(&str) -> ForcingSubtotals,
+) -> ForcingSubtotals {
+    terms
+        .iter()
+        .map(|term| match term {
+            ForcingTerm::Agent(name) => agent(name),
+            ForcingTerm::Sum(nested) => subtotal_terms(nested, agent),
+        })
+        .sum()
 }
 
 /// Check that `summation`, when given, names every agent exactly once.
@@ -280,6 +313,7 @@ impl Component for ForcingAggregation {
             definitions.push(VariableDefinition::scalar_input(ERF_2XCO2, "W/m^2"));
         }
         definitions.push(VariableDefinition::scalar_output(ERF, "W/m^2"));
+        definitions.extend(ForcingSubtotals::definitions("W/m^2"));
         definitions.push(VariableDefinition::four_box_output(
             EFFICACY_ADJUSTED_ERF,
             "W/m^2",
@@ -331,6 +365,7 @@ impl Component for ForcingAggregation {
         let (total, adjusted) = self.aggregate_with(&forcing, &internal);
         let mut output = OutputState::new();
         output.insert(ERF.to_string(), StateValue::Scalar(total));
+        self.subtotals(&forcing).insert_into(&mut output);
         output.insert(
             EFFICACY_ADJUSTED_ERF.to_string(),
             StateValue::FourBox(FourBoxSlice::from_array(adjusted)),
@@ -343,6 +378,7 @@ impl Component for ForcingAggregation {
 mod tests {
     use super::*;
     use crate::parameters::{EfficacyClimate, ForcingAgent};
+    use rscm_core::forcing::ForcingCategory;
     use rscm_core::state::{ReadTransformInfo, TransformContext, VariableSource};
     use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
     use std::collections::HashMap;
@@ -350,6 +386,7 @@ mod tests {
     fn agent(regional: bool, efficacy: FloatValue, internal: FloatValue) -> ForcingAgent {
         ForcingAgent {
             variable: "x".into(),
+            category: ForcingCategory::Anthropogenic,
             regional,
             sum_of: Vec::new(),
             efficacy_per_variable: false,
@@ -549,6 +586,40 @@ mod tests {
             StateValue::FourBox(slice) => assert_eq!(slice.0, [6.0; 4]),
             other => panic!("expected four-box forcing, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn subtotals_sum_global_erf_by_category() {
+        let categorised = |variable, category| ForcingAgent {
+            category,
+            efficacy: 2.0,
+            ..named(variable, false)
+        };
+        let c = component(
+            vec![
+                categorised("co2", ForcingCategory::GreenhouseGas),
+                categorised("aer", ForcingCategory::Aerosol),
+                categorised("o3", ForcingCategory::Anthropogenic),
+                categorised("solar", ForcingCategory::Natural),
+            ],
+            EfficacyMethod::Ar6,
+        );
+        let items = [
+            scalar_item("co2", [2.0, 2.0]),
+            scalar_item("aer", [-0.5, -0.5]),
+            scalar_item("o3", [0.25, 0.25]),
+            scalar_item("solar", [0.125, 0.125]),
+        ];
+        let input_state = InputState::build(items.iter().collect(), 2000.0);
+        let output = c.solve(2000.0, 2001.0, &input_state).unwrap();
+        let scalar = |name: &str| match &output[name] {
+            StateValue::Scalar(value) => *value,
+            other => panic!("expected a scalar, got {other:?}"),
+        };
+        assert_eq!(scalar(rscm_core::names::ERF_GREENHOUSE_GASES), 2.0);
+        assert_eq!(scalar(rscm_core::names::ERF_AEROSOLS), -0.5);
+        assert_eq!(scalar(rscm_core::names::ERF_ANTHROPOGENIC), 1.75);
+        assert_eq!(scalar(ERF), 1.875);
     }
 
     fn four_box_item(name: &str, value: FloatValue) -> TimeseriesItem {

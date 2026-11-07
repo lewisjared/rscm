@@ -125,6 +125,7 @@ pub mod units;
 pub mod utils;
 
 pub mod errors;
+pub mod forcing;
 
 // Re-export derive macro for convenience
 pub use rscm_macros::ComponentIO;

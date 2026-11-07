@@ -27,6 +27,9 @@ from rscm.names import (
     EFFICACY_ADJUSTED_ERF,
     EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE,
     ERF,
+    ERF_AEROSOLS,
+    ERF_ANTHROPOGENIC,
+    ERF_GREENHOUSE_GASES,
     LIFETIME_CH4_OH,
     SECTORS,
     SURFACE_AIR_TEMPERATURE_CHANGE,
@@ -222,6 +225,16 @@ def test_prescribed_forcing(agent):
     full_run.assert_close(
         full_run.reported().erf(agent, full_run.prescribed_forcing()[agent]), expected
     )
+
+
+@pytest.mark.parametrize(
+    "name", [ERF_GREENHOUSE_GASES, ERF_AEROSOLS, ERF_ANTHROPOGENIC]
+)
+def test_forcing_subtotals(name):
+    """ForcingAggregation's subtotals of the coupled run against MAGICC7's."""
+    run = full_run.load()
+    actual = full_run.output(full_run.reported().model, name)
+    full_run.assert_close(actual[1:], run.series(name)[1:])
 
 
 PERMAFROST_FLUX = "Net Land to Atmosphere Flux|{}|Earth System Feedbacks|Permafrost"

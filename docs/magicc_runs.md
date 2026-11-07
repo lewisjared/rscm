@@ -80,8 +80,10 @@ The keyword arguments override MAGICC7's setup:
   ([#162](https://github.com/lewisjared/rscm/issues/162)).
 - `initial_concentrations` overrides MAGICC7's 1750 concentrations,
   which `full.default_initial_concentrations()` gives.
+  A gas it does not name raises `ValueError`.
 - `component_parameters` overrides the Rust parameters of single components, keyed by component name
   such as `"TerrestrialCarbon"`.
+  A name outside `full.COMPONENTS` raises `ValueError`.
 - `inputs` replaces the input files that `full.load_inputs` reads.
 
 The forcing MAGICC7 prescribes before the run comes from `rscm.magicc.prescribed`

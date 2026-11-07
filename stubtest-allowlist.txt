@@ -43,6 +43,7 @@ rscm._lib.core.ComponentBuilder
 rscm._lib.magicc.EfficacyClimate
 rscm._lib.magicc.FgasRegions
 rscm._lib.magicc.ForcingAgent
+rscm._lib.magicc.ForcingCategory
 rscm._lib.magicc.ForcingTerm
 rscm._lib.magicc.HalocarbonSpecies
 rscm._lib.magicc.TroposphericOzoneRegions

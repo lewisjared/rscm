@@ -102,7 +102,7 @@ The industrial and biomass shares follow each source's NOx times NH3 product.
 ### Mineral dust and BC on snow
 
 Mineral dust follows the global land-use albedo forcing.
-The land-use file is extended with cumulative AFOLU CO2 emissions,
+The land-use file is extended with cumulative biosphere CO2 emissions,
 harmonised to `RF_MINERALDUST_DIR_WM2`, spread over the boxes with `RF_REGIONS_DUST`,
 and held constant after `RF_MINERALDUST_CONSTANTAFTERYR`.
 
@@ -127,7 +127,7 @@ The order matters for parity, so [forcing aggregation](module_07b_rf_aggregation
 | `FILE_MINERALDUST_RF`                  | W/m²     | Land-use forcing, `GISS_LANDUSE_RF.IN`      |
 | SOx, BC and OC emissions by source     | Mt/yr    | Extension after the files end               |
 | NOx and NH3 emissions by source        | Mt N/yr  | Nitrate                                     |
-| AFOLU CO2 emissions                    | GtC/yr   | Mineral dust, cumulatively                  |
+| Biosphere CO2 emissions                | GtC/yr   | Mineral dust, cumulatively                  |
 
 | Output                                          | Description                                |
 | ----------------------------------------------- | ------------------------------------------ |

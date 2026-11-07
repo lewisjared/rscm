@@ -1255,6 +1255,7 @@ version = "0.7.0"
 dependencies = [
  "approx",
  "nalgebra 0.34.2",
+ "ndarray",
  "pyo3",
  "pythonize",
  "rscm-components",

@@ -120,7 +120,7 @@ class ForcingAggregationBuilder(ComponentBuilder):
 
     **Parameter keys**
 
-    - `agents`: `forcing`, `prescribed`, `efficacy`, `temperature_feedback`
+    - `agents`: `forcing`, `category`, `prescribed`, `efficacy`, `temperature_feedback`
     - `total`, `efficacy_adjusted`, `surface_temperature`
     """
 

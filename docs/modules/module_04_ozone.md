@@ -58,7 +58,7 @@ MAGICC7 evaluates it in this order:
 $$
 \begin{aligned}
 C &= (r \, o_{CH4}) \ln\left(\frac{M_Y}{M_0}\right) \\
-\Delta X &= (X^{fossil}_{Y-1} - X^{fossil}_0) + (X^{AFOLU}_{Y-1} - X^{AFOLU}_0) \\
+\Delta X &= (X^{fossil}_{Y-1} - X^{fossil}_0) + (X^{biosphere}_{Y-1} - X^{biosphere}_0) \\
 S &= (o_{NOx} \Delta NOx + o_{CO} \Delta CO) + o_{VOC} \Delta NMVOC \\
 RF_{trop} &= C + S \, r
 \end{aligned}

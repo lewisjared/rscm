@@ -33,7 +33,7 @@ Forcing:
 - AerosolIndirectBuilder: Indirect aerosol cloud effects
 """
 
-from typing import Any, Literal, NotRequired, TypedDict, final
+from typing import Any, Literal, NotRequired, Required, TypedDict, final
 
 from rscm._lib.core import ComponentBuilder, RustComponent
 
@@ -1105,9 +1105,14 @@ class GhgForcingBuilder(ComponentBuilder):
 # Forcing aggregation
 
 class ForcingAgent(TypedDict, total=False):
-    """A forcing agent read by ForcingAggregation. Only ``variable`` is required."""
+    """A forcing agent read by ForcingAggregation.
 
-    variable: str
+    Only ``variable`` and ``category`` are required.
+    """
+
+    variable: Required[str]
+    category: Required[ForcingCategory]
+    """Subtotals the agent's ERF counts towards."""
     regional: bool
     regional_pattern: tuple[float, float, float, float]
     hemispheric: bool
@@ -1118,6 +1123,12 @@ class ForcingAgent(TypedDict, total=False):
 
     Empty reads ``variable`` itself.
     """
+
+type ForcingCategory = Literal["greenhouse_gas", "aerosol", "anthropogenic", "natural"]
+"""Which of the greenhouse gas, aerosol and anthropogenic ERF an agent counts towards.
+
+Every category but ``natural`` counts towards the anthropogenic ERF.
+"""
 
 type ForcingTerm = str | list[ForcingTerm]
 """An agent ``variable``, or a list of terms summed before the enclosing sum."""
