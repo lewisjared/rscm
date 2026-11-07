@@ -34,13 +34,12 @@ pub use forcing_aggregation::{
 pub use ghg_forcing::{ForcingMethod, GhgForcingParameters};
 pub use halocarbon::{FgasRegions, HalocarbonChemistryParameters, HalocarbonSpecies};
 pub use n2o_chemistry::N2OChemistryParameters;
-pub use nitrogen::{NitrogenParameters, PrognosticFixationParameters};
+pub use nitrogen::{NitrogenParameters, PrognosticFixation};
 pub use ocean_carbon::{IrfForm, OceanCarbonMethod, OceanCarbonParameters};
 pub use ozone_forcing::{OzoneForcingParameters, TroposphericOzoneRegions};
-pub use permafrost::{PermafrostParameters, PermafrostSoilParameters};
+pub use permafrost::{PermafrostParameters, PermafrostSoil};
 pub use sea_level::{
-    AntarcticDischargeParameters, AntarcticRegionParameters, DischargeCaseParameters,
-    GlacierParameters, GreenlandDischargeParameters, SeaLevelRiseParameters,
-    SurfaceMassBalanceParameters, ThermalExpansionParameters,
+    AntarcticDischarge, AntarcticRegion, DischargeCase, Glacier, GreenlandDischarge,
+    SeaLevelRiseParameters, SurfaceMassBalance, ThermalExpansion,
 };
 pub use terrestrial_carbon::{FertilisationMethod, TerrestrialCarbonParameters};

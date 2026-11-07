@@ -229,7 +229,7 @@ plt.show()
 # %% [markdown]
 # ## Inspecting Aggregates
 #
-# The schema adds an `AggregatorComponent` to the model for its aggregates.
+# The schema adds an `AggregateComponent` to the model for its aggregates.
 # `coupling()` lists it after the two forcing components, with both forcings as inputs.
 
 # %%

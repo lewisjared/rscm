@@ -60,7 +60,7 @@ impl ClimateUdeb {
     /// * `dt` - Step in years
     /// * `lambda_ocean` - Ocean feedback parameter ($\text{W/m}^2\text{/K}$)
     /// * `lambda_land` - Land feedback parameter ($\text{W/m}^2\text{/K}$)
-    /// * `hemispheric_heat_exchange` - Inter-hemispheric heat exchange ($\text{W/m}^2$), computed
+    /// * `north_south_heat_flux` - Inter-hemispheric heat flux ($\text{W/m}^2$), computed
     ///   explicitly from previous substep air temperatures (MAGICC7 lines 3174-3177)
     /// * `ground_temp` - Ground reservoir temperature before this substep's update
     /// * `alpha_eff` - Effective SST-to-air-temperature ratio from the previous substep's SST
@@ -78,7 +78,7 @@ impl ClimateUdeb {
         dt: FloatValue,
         lambda_ocean: FloatValue,
         lambda_land: FloatValue,
-        hemispheric_heat_exchange: FloatValue,
+        north_south_heat_flux: FloatValue,
         ground_temp: FloatValue,
         alpha_eff: FloatValue,
     ) -> FloatValue {
@@ -98,11 +98,11 @@ impl ClimateUdeb {
         let temps = &state.ocean_temperatures[hemi];
 
         let c = heat_capacity_per_metre();
-        let (fgno, fgnl, fgso, fgsl) = p.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *p.grid().weights();
         let (f_o, f_l) = if hemi == 0 {
-            (fgno, fgnl)
+            (nh_ocean, nh_land)
         } else {
-            (fgso, fgsl)
+            (sh_ocean, sh_land)
         };
         let denom = (lambda_land * f_l + p.land_ocean_heat_exchange) * f_o;
 
@@ -122,7 +122,7 @@ impl ClimateUdeb {
             + 1.0;
         cc[0] = -((((kappas[0] / dz1) + w) * dtpdm) * afb[0]);
         let flux = ((p.land_ocean_heat_exchange * land_forcing) * f_l) / denom
-            + (hemispheric_heat_exchange + ocean_forcing);
+            + (north_south_heat_flux + ocean_forcing);
         d[0] = (((flux * dtpdm) / c) * aft[0] + temps[0])
             + ((init[1] - t_polar) * (dtpdm * dw)) * afb[0];
         if p.include_land_heat_capacity {
@@ -207,8 +207,7 @@ impl ClimateUdeb {
         lambda_ocean: FloatValue,
         lambda_land: FloatValue,
     ) -> FloatValue {
-        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
-        let weights = [fgno, fgnl, fgso, fgsl];
+        let weights = *self.parameters.grid().weights();
         let lambdas = [lambda_ocean, lambda_land, lambda_ocean, lambda_land];
 
         let mut q_global = 0.0;

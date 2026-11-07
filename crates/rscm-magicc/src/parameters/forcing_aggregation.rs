@@ -2,6 +2,7 @@
 
 use super::EfficacyMethod;
 use rscm_core::forcing::ForcingCategory;
+use rscm_core::spatial::FourBoxGrid;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +40,7 @@ pub struct ForcingAgent {
 
     /// Take the internal efficacy from LAMCALC's CO2 response, as MAGICC7 does for CO2.
     #[serde(default)]
-    pub co2_efficacy: bool,
+    pub use_co2_internal_efficacy: bool,
 
     /// Efficacy (`RF_EFFICACY_*`).
     #[serde(default = "one")]
@@ -141,14 +142,14 @@ impl Default for ForcingAggregationParameters {
 }
 
 impl ForcingAggregationParameters {
-    /// Global area fractions of the four boxes.
-    pub fn area_fractions(&self) -> [FloatValue; 4] {
-        [
+    /// Four-box grid weighted by the global area fraction of each box.
+    pub fn grid(&self) -> FourBoxGrid {
+        FourBoxGrid::with_weights([
             (1.0 - self.nh_land_fraction) / 2.0,
             self.nh_land_fraction / 2.0,
             (1.0 - self.sh_land_fraction) / 2.0,
             self.sh_land_fraction / 2.0,
-        ]
+        ])
     }
 }
 

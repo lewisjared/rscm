@@ -31,10 +31,10 @@ class CarbonCycleBuilder(ComponentBuilder):
 
     **Parameter keys**
 
-    - `tau` (`float`): Timescale of the box's response (years).
+    - `tau` (`float`): Response timescale of the box (years).
     - `co2_pi` (`float`): Pre-industrial atmospheric CO2 concentration (ppm).
-    - `alpha_temperature` (`float`): Sensitivity of lifetime to changes in global-mean
-      temperature (1/K).
+    - `alpha_temperature` (`float`): Sensitivity of the response timescale to changes
+      in global-mean temperature (1/K).
 
     Inputs, outputs and states are listed on the
     [CarbonCycle component page][component-carboncycle].

@@ -565,7 +565,9 @@ class HemisphericToFourBox(Component):
     """Split hemispheric temperatures into ocean and land with a fixed ocean/land ratio."""
 
     hemispheric = Input("Surface Air Temperature Change", unit="K", grid="hemispheric")
-    four_box = Output("Regional Surface Temperature", unit="K", grid="four_box")
+    four_box = Output(
+        "Regional Surface Air Temperature Change", unit="K", grid="four_box"
+    )
 
     def __init__(self, ocean_land_ratio: float):
         self.ocean_factor = 2 * ocean_land_ratio / (1 + ocean_land_ratio)
@@ -594,7 +596,7 @@ split_model.run()
 
 no, nl, so, sl = (
     split_model.timeseries()
-    .get_four_box_timeseries_by_name("Regional Surface Temperature")
+    .get_four_box_timeseries_by_name("Regional Surface Air Temperature Change")
     .values()[-1]
 )
 print(f"NO={no:.3f}, NL={nl:.3f}, SO={so:.3f}, SL={sl:.3f}")

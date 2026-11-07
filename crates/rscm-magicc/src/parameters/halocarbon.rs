@@ -90,7 +90,7 @@ pub struct HalocarbonChemistryParameters {
     pub cfc11_release_factor: FloatValue,
 
     /// Years from troposphere to stratosphere (`GEN_EESC_STRATMIXDELAY`).
-    pub eesc_delay: usize,
+    pub stratospheric_delay: usize,
 
     /// Molar mass of air (g/mol, `GEN_AIR_GRAMMPROMOL`).
     pub air_molar_mass: FloatValue,
@@ -229,7 +229,7 @@ impl Default for HalocarbonChemistryParameters {
             montreal_gases: default_montreal_gases(),
             br_cl_ratio: 62.5,
             cfc11_release_factor: 0.75,
-            eesc_delay: 3,
+            stratospheric_delay: 3,
             air_molar_mass: 28.984,
             atmosphere_mass: 5.133,
             include_variable_oh_lifetime: true,

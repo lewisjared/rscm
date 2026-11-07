@@ -143,7 +143,7 @@ pub trait Ivp<T, S> {
     ///
     /// # Arguments
     ///
-    /// * `t` - Current time
+    /// * `t` - Time within the step, between its start and end bounds
     /// * `input_state` - Access to input variables (e.g., forcing timeseries)
     /// * `y` - Current state vector
     /// * `dy_dt` - Output: time derivative of the state vector (mutated in place)

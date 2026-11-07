@@ -174,7 +174,9 @@ impl ForcingAggregationBuilder {
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
     }
 
-    /// Total ERF and four-box efficacy-adjusted forcing for one value per agent.
+    /// Total effective radiative forcing and four-box efficacy-adjusted forcing.
+    ///
+    /// Takes one value per agent.
     pub fn aggregate(&self, values: Vec<Vec<f64>>) -> PyResult<(f64, [f64; 4])> {
         let component = ForcingAggregation::from_parameters(self.parameters.clone())
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;

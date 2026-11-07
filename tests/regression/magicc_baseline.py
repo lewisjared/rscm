@@ -286,10 +286,13 @@ def build_report(data_dir: Path = DATA_DIR) -> tuple[pd.DataFrame, dict, str]:
                 "remains unverified."
             ),
             (
-                "Total ERF includes a reference-derived residual and is not "
-                "independent validation of other forcing."
+                "Total effective radiative forcing includes a reference-derived "
+                "residual and is not independent validation of other forcing."
             ),
-            "UDEB applies the CO2 regional forcing pattern to total ERF.",
+            (
+                "UDEB applies the CO2 regional forcing pattern to total "
+                "effective radiative forcing."
+            ),
         ],
         "reference_provenance_unknown": [
             "executable version/hash",

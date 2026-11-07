@@ -83,7 +83,7 @@ impl ForcingAggregation {
         let Some(climate) = &self.parameters.climate else {
             return Some(agents.iter().map(|a| a.internal_efficacy).collect());
         };
-        let area = self.parameters.area_fractions();
+        let grid = self.parameters.grid();
         let result = lamcalc(&LamcalcParameters {
             erf_2xco2,
             land_ocean_heat_exchange: climate.land_ocean_heat_exchange,
@@ -91,23 +91,20 @@ impl ForcingAggregation {
             ecs,
             land_ocean_warming_ratio: climate.land_ocean_warming_ratio,
             amplify_ocean_to_land: climate.amplify_ocean_to_land,
-            fgno: area[0],
-            fgnl: area[1],
-            fgso: area[2],
-            fgsl: area[3],
+            grid: grid.clone(),
             co2_regional_pattern: climate.co2_regional_pattern,
         })?;
         Some(
             agents
                 .iter()
                 .map(|a| {
-                    if a.co2_efficacy {
+                    if a.use_co2_internal_efficacy {
                         return result.co2_internal_efficacy;
                     }
                     calc_internal_efficacy(
                         erf_2xco2,
                         &result.matrix_inverse,
-                        &area,
+                        grid.weights(),
                         &a.regional_pattern,
                         ecs,
                     )
@@ -154,7 +151,7 @@ impl ForcingAggregation {
 
     /// Global and box ERF of each of an agent's variables.
     fn agent_forcing(&self, agent: &ForcingAgent, values: &[Vec<FloatValue>]) -> Vec<Forcing> {
-        let area = self.parameters.area_fractions();
+        let area = *self.parameters.grid().weights();
         let qfrac = if agent.hemispheric {
             hemispheric_qfrac(&agent.regional_pattern, &area)
         } else {
@@ -382,7 +379,7 @@ mod tests {
             efficacy_per_variable: false,
             regional_pattern: [1.0, 2.0, 1.0, 2.0],
             hemispheric: false,
-            co2_efficacy: false,
+            use_co2_internal_efficacy: false,
             efficacy,
             internal_efficacy: internal,
         }
@@ -401,7 +398,7 @@ mod tests {
     fn global_agent_keeps_global_mean() {
         let c = component(vec![agent(false, 1.0, 1.0)], EfficacyMethod::Ar6);
         let (total, boxes) = c.aggregate(&[vec![2.0]]);
-        let area = c.parameters().area_fractions();
+        let area = *c.parameters().grid().weights();
         let mean: FloatValue = (0..4).map(|i| boxes[i] * area[i]).sum();
         assert!((total - 2.0).abs() < 1e-12);
         assert!((mean - 2.0).abs() < 1e-12);
@@ -448,7 +445,7 @@ mod tests {
         let co2 = EfficacyClimate::default().co2_regional_pattern;
         let mut co2_agent = agent(false, 1.0, 1.0);
         co2_agent.regional_pattern = co2;
-        co2_agent.co2_efficacy = true;
+        co2_agent.use_co2_internal_efficacy = true;
         let pattern = agent(false, 1.0, 1.0).regional_pattern;
         let c = with_climate(vec![agent(false, 1.0, 1.0), co2_agent]);
         let climate = c.parameters().climate.clone().unwrap();

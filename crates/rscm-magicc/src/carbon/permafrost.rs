@@ -36,7 +36,7 @@
 //! Carbon moved between them divides one rounding residue by another,
 //! so emissions after such a refreeze depend on the last bits of the temperature.
 
-use crate::parameters::{PermafrostParameters, PermafrostSoilParameters};
+use crate::parameters::{PermafrostParameters, PermafrostSoil};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
 };
@@ -171,7 +171,7 @@ impl Permafrost {
 
     /// Fully frozen permafrost.
     pub fn initial_state(&self) -> PermafrostState {
-        let frozen = |pool, soil: &PermafrostSoilParameters| SoilBand {
+        let frozen = |pool, soil: &PermafrostSoil| SoilBand {
             frozen_area: 1.0,
             frozen_pool: pool,
             aerobic_fraction: 1.0 - soil.initial_anaerobic_fraction,
@@ -226,7 +226,7 @@ impl Permafrost {
     }
 
     /// Annual mean aerobic fraction of the thawed area of a soil type.
-    fn aerobic_fraction(&self, soil: &PermafrostSoilParameters, season: &Season) -> FloatValue {
+    fn aerobic_fraction(&self, soil: &PermafrostSoil, season: &Season) -> FloatValue {
         let anaerobic_fraction: FloatValue = season
             .moisture
             .iter()
@@ -245,7 +245,7 @@ impl Permafrost {
     /// Annual mean (aerobic, anaerobic) decomposition rate of a soil type.
     fn decomposition_rates(
         &self,
-        soil: &PermafrostSoilParameters,
+        soil: &PermafrostSoil,
         season: &Season,
     ) -> (FloatValue, FloatValue) {
         let p = &self.parameters;
@@ -264,7 +264,7 @@ impl Permafrost {
     /// Advance one soil type in one band by `dt` years.
     fn step_band(
         &self,
-        soil: &PermafrostSoilParameters,
+        soil: &PermafrostSoil,
         band: &mut SoilBand,
         season: &Season,
         dt: FloatValue,

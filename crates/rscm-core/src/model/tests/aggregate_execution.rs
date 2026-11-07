@@ -470,10 +470,10 @@ fn test_aggregate_appears_in_dot_graph() {
 
     let dot = format!("{:?}", model.as_dot());
 
-    // The aggregator component should appear in the graph
+    // The aggregate component should appear in the graph
     assert!(
-        dot.contains("AggregatorComponent"),
-        "Graph should contain AggregatorComponent: {}",
+        dot.contains("AggregateComponent"),
+        "Graph should contain AggregateComponent: {}",
         dot
     );
 }
@@ -525,12 +525,12 @@ fn test_flux_aggregate_reads_prescribed_and_upstream_at_step_start() {
         .unwrap();
 
     let coupling = model.coupling().unwrap();
-    let aggregator = coupling
+    let agg_component = coupling
         .components
         .iter()
-        .find(|c| c.name == "AggregatorComponent")
+        .find(|c| c.name == "AggregateComponent")
         .unwrap();
-    let sources: HashMap<_, _> = aggregator
+    let sources: HashMap<_, _> = agg_component
         .inputs
         .iter()
         .map(|v| (v.name.as_str(), (v.source, v.timeseries_type)))

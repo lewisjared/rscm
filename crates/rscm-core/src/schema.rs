@@ -810,13 +810,13 @@ use crate::timeseries::Time;
 
 /// The component that computes an aggregate from its contributors.
 ///
-/// `AggregatorComponent` is automatically created by `ModelBuilder` when a
+/// `AggregateComponent` is automatically created by `ModelBuilder` when a
 /// schema with aggregates is provided. It reads values from all contributors
 /// and writes the computed aggregate to its output variable.
 ///
 /// This component is internal and should not be created directly by users.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AggregatorComponent {
+pub struct AggregateComponent {
     /// The name of the aggregate variable this component produces
     pub aggregate_name: String,
     /// The unit of the aggregate variable
@@ -829,7 +829,7 @@ pub struct AggregatorComponent {
     pub contributors: Vec<String>,
 }
 
-impl AggregatorComponent {
+impl AggregateComponent {
     /// Create the component for an aggregate definition.
     pub fn from_definition(def: &AggregateDefinition) -> Self {
         Self {
@@ -843,7 +843,7 @@ impl AggregatorComponent {
 }
 
 #[typetag::serde]
-impl Component for AggregatorComponent {
+impl Component for AggregateComponent {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut defs = Vec::with_capacity(self.contributors.len() + 1);
 
@@ -1280,11 +1280,19 @@ mod tests {
     #[test]
     fn test_validate_grid_mismatch() {
         let schema = VariableSchema::new()
-            .variable("Global Temperature", "K")
-            .variable_with_grid("Regional Temperature", "K", GridType::FourBox)
-            .aggregate("Temperature", "K", AggregateOp::Sum) // Scalar aggregate
-            .from("Global Temperature")
-            .from("Regional Temperature") // four-box contributor
+            .variable("Surface Air Temperature Change", "K")
+            .variable_with_grid(
+                "Regional Surface Air Temperature Change",
+                "K",
+                GridType::FourBox,
+            )
+            .aggregate(
+                "Combined Surface Air Temperature Change",
+                "K",
+                AggregateOp::Sum,
+            ) // Scalar aggregate
+            .from("Surface Air Temperature Change")
+            .from("Regional Surface Air Temperature Change") // four-box contributor
             .build();
 
         let err = schema.validate().unwrap_err();
@@ -1547,10 +1555,10 @@ mod tests {
         assert!(result.is_nan());
     }
 
-    // AggregatorComponent tests
+    // AggregateComponent tests
 
     #[test]
-    fn test_aggregator_component_from_definition() {
+    fn test_aggregate_component_from_definition() {
         let def = AggregateDefinition {
             name: "Effective Radiative Forcing".to_string(),
             unit: "W/m^2".to_string(),
@@ -1562,7 +1570,7 @@ mod tests {
             ],
         };
 
-        let agg = AggregatorComponent::from_definition(&def);
+        let agg = AggregateComponent::from_definition(&def);
 
         assert_eq!(agg.aggregate_name, "Effective Radiative Forcing");
         assert_eq!(agg.unit, "W/m^2");
@@ -1578,7 +1586,7 @@ mod tests {
     }
 
     #[test]
-    fn test_aggregator_component_definitions() {
+    fn test_aggregate_component_definitions() {
         let def = AggregateDefinition {
             name: "Effective Radiative Forcing".to_string(),
             unit: "W/m^2".to_string(),
@@ -1590,7 +1598,7 @@ mod tests {
             ],
         };
 
-        let agg = AggregatorComponent::from_definition(&def);
+        let agg = AggregateComponent::from_definition(&def);
         let defs = agg.definitions();
 
         // Should have 2 inputs + 1 output
@@ -1608,7 +1616,7 @@ mod tests {
     }
 
     #[test]
-    fn test_aggregator_component_serialisation() {
+    fn test_aggregate_component_serialisation() {
         let def = AggregateDefinition {
             name: "Total".to_string(),
             unit: "units".to_string(),
@@ -1617,9 +1625,9 @@ mod tests {
             contributors: vec!["A".to_string(), "B".to_string()],
         };
 
-        let agg = AggregatorComponent::from_definition(&def);
+        let agg = AggregateComponent::from_definition(&def);
         let json = serde_json::to_string(&agg).unwrap();
-        let deserialised: AggregatorComponent = serde_json::from_str(&json).unwrap();
+        let deserialised: AggregateComponent = serde_json::from_str(&json).unwrap();
 
         assert_eq!(agg.aggregate_name, deserialised.aggregate_name);
         assert_eq!(agg.operation, deserialised.operation);

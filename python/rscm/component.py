@@ -629,9 +629,9 @@ class Component(metaclass=ComponentMeta):
         Parameters
         ----------
         t_current
-            Current time
+            Start bound of the step
         t_next
-            Next step time
+            End bound of the step
         inputs
             Typed inputs object with TimeseriesWindow fields
 

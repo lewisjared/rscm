@@ -1,6 +1,6 @@
 # ClimateUdeb Time Conventions
 
-Sub-annual stepping and output conventions for the ClimateUdeb
+Substep and output conventions for the ClimateUdeb
 ocean-atmosphere energy balance model.
 
 ## Annual Step
@@ -9,7 +9,7 @@ The RSCM framework calls `solve(t_current, t_next, input_state)` once per year.
 `t_current` and `t_next` are decimal years (e.g. 1750.0, 1751.0). The component
 receives forcing at both boundaries and returns temperature at `t_next`.
 
-## Sub-Annual Stepping
+## Substeps
 
 ClimateUdeb divides each annual step into 12 monthly substeps (matching
 MAGICC7's `STEPSPERYEAR = 12`).

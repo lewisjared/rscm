@@ -72,7 +72,7 @@ class ClimateUdebParameters(TypedDict, total=False):
     polar_sinking_ratio: float
     steps_per_year: int
     maximum_temperature: float
-    thermal_expansion: ThermalExpansionParameters | None
+    thermal_expansion: ThermalExpansion | None
 
 @final
 class ClimateUdebBuilder(ComponentBuilder):
@@ -153,7 +153,7 @@ class ClimateUdebBuilder(ComponentBuilder):
     def build(self) -> RustComponent:
         """Build the UDEB climate model component."""
 
-class ThermalExpansionParameters(TypedDict, total=False):
+class ThermalExpansion(TypedDict, total=False):
     """Thermal expansion of the ocean, calculated by ClimateUdeb.
 
     Setting it makes ClimateUdeb write
@@ -165,7 +165,7 @@ class ThermalExpansionParameters(TypedDict, total=False):
     scaling: float
     start_year: float
 
-class GlacierParameters(TypedDict, total=False):
+class Glacier(TypedDict, total=False):
     """Mountain glaciers and small ice caps."""
 
     sensitivity: float
@@ -174,7 +174,7 @@ class GlacierParameters(TypedDict, total=False):
     equilibrium_temperature: list[float]
     equilibrium_sea_level: list[float]
 
-class SurfaceMassBalanceParameters(TypedDict, total=False):
+class SurfaceMassBalance(TypedDict, total=False):
     """Surface mass balance of an ice sheet."""
 
     sensitivity: float
@@ -184,23 +184,23 @@ class SurfaceMassBalanceParameters(TypedDict, total=False):
     volume: float | None
     volume_exponent: float
 
-class DischargeCaseParameters(TypedDict, total=False):
+class DischargeCase(TypedDict, total=False):
     """One discharge case of the Greenland ice sheet."""
 
     volume: float
     sensitivity: float
     exponent: float
 
-class GreenlandDischargeParameters(TypedDict, total=False):
+class GreenlandDischarge(TypedDict, total=False):
     """Greenland solid ice discharge, between a low and a high case."""
 
-    low: DischargeCaseParameters
-    high: DischargeCaseParameters
+    low: DischargeCase
+    high: DischargeCase
     case: float
     scaling: float
     start_year: float
 
-class AntarcticRegionParameters(TypedDict):
+class AntarcticRegion(TypedDict):
     """One Antarctic drainage region."""
 
     name: str
@@ -208,14 +208,14 @@ class AntarcticRegionParameters(TypedDict):
     temperature_scaling: float
     response: tuple[float, float, float, float, float]
 
-class AntarcticDischargeParameters(TypedDict, total=False):
+class AntarcticDischarge(TypedDict, total=False):
     """Antarctic solid ice discharge (Levermann et al. 2014)."""
 
     basal_melt_sensitivity: float
     response_span: int
     scaling: float
     start_year: float
-    regions: list[AntarcticRegionParameters]
+    regions: list[AntarcticRegion]
 
 class SeaLevelRiseParameters(TypedDict, total=False):
     """Parameters for the sea level rise component.
@@ -224,11 +224,11 @@ class SeaLevelRiseParameters(TypedDict, total=False):
     Fields missing from a nested group keep that group's defaults.
     """
 
-    glaciers: GlacierParameters
-    greenland_surface_mass_balance: SurfaceMassBalanceParameters
-    greenland_discharge: GreenlandDischargeParameters
-    antarctic_surface_mass_balance: SurfaceMassBalanceParameters
-    antarctic_discharge: AntarcticDischargeParameters
+    glaciers: Glacier
+    greenland_surface_mass_balance: SurfaceMassBalance
+    greenland_discharge: GreenlandDischarge
+    antarctic_surface_mass_balance: SurfaceMassBalance
+    antarctic_discharge: AntarcticDischarge
 
 @final
 class SeaLevelRiseBuilder(ComponentBuilder):
@@ -488,7 +488,7 @@ class HalocarbonChemistryParameters(TypedDict, total=False):
     montreal_gases: list[HalocarbonSpecies]
     br_cl_ratio: float
     cfc11_release_factor: float
-    eesc_delay: int
+    stratospheric_delay: int
     air_molar_mass: float
     atmosphere_mass: float
     include_variable_oh_lifetime: bool
@@ -533,7 +533,7 @@ class HalocarbonChemistryBuilder(ComponentBuilder):
 
     Examples
     --------
-    >>> builder = HalocarbonChemistryBuilder.from_parameters({"eesc_delay": 3})
+    >>> builder = HalocarbonChemistryBuilder.from_parameters({"stratospheric_delay": 3})
     >>> component = builder.build()
     """
 
@@ -579,7 +579,7 @@ class TerrestrialCarbonParameters(TypedDict, total=False):
     deforestation_no_regrowth_fraction: float
     nitrogen: NitrogenParameters | None
 
-class PrognosticFixationParameters(TypedDict):
+class PrognosticFixation(TypedDict):
     """Michaelis-Menten nitrogen fixation from NPP."""
 
     maximum_fixation_rate: float
@@ -598,7 +598,7 @@ class NitrogenParameters(TypedDict, total=False):
     availability_factor_a: float
     availability_factor_c: float
     loss_turnover_time: float
-    prognostic_fixation: PrognosticFixationParameters | None
+    prognostic_fixation: PrognosticFixation | None
 
 @final
 class TerrestrialCarbonBuilder(ComponentBuilder):
@@ -756,7 +756,7 @@ class CO2BudgetBuilder(ComponentBuilder):
     def build(self) -> RustComponent:
         """Build the CO2 budget component."""
 
-class PermafrostSoilParameters(TypedDict, total=False):
+class PermafrostSoil(TypedDict, total=False):
     """Parameters of one permafrost soil type (mineral soil or peat)."""
 
     thaw_rate: float
@@ -792,8 +792,8 @@ class PermafrostParameters(TypedDict, total=False):
     mineral_soil_fraction_south: float
     mineral_soil_fraction_north: float
     zonal_pool_distribution: float
-    mineral_soil: PermafrostSoilParameters
-    peat: PermafrostSoilParameters
+    mineral_soil: PermafrostSoil
+    peat: PermafrostSoil
 
 @final
 class PermafrostBuilder(ComponentBuilder):
@@ -1120,6 +1120,8 @@ class ForcingAgent(TypedDict, total=False):
     regional: bool
     regional_pattern: tuple[float, float, float, float]
     hemispheric: bool
+    use_co2_internal_efficacy: bool
+    """Take the internal efficacy from LAMCALC's CO2 response, as MAGICC7 does."""
     efficacy: float
     internal_efficacy: float
     sum_of: list[str]
@@ -1170,9 +1172,9 @@ class ForcingAggregationParameters(TypedDict, total=False):
 class ForcingAggregationBuilder(ComponentBuilder):
     """Builder for the component combining agent ERF into four-box climate forcing.
 
-    Reads each agent's ERF and writes the total ERF and the four-box
-    ``Efficacy Adjusted Effective Radiative Forcing`` read by ClimateUdeb
-    when ``include_regional_forcing`` is set.
+    Reads each agent's ERF and writes the total effective radiative forcing and
+    the four-box ``Efficacy Adjusted Effective Radiative Forcing`` read by
+    ClimateUdeb when ``include_regional_forcing`` is set.
     """
 
     @staticmethod
@@ -1183,7 +1185,10 @@ class ForcingAggregationBuilder(ComponentBuilder):
     def aggregate(
         self, values: list[list[float]]
     ) -> tuple[float, tuple[float, float, float, float]]:
-        """Return total ERF and box forcing from each agent's value or box values."""
+        """Return total effective radiative forcing and box forcing.
+
+        Takes each agent's value or box values.
+        """
     def internal_efficacies(self, ecs: float, erf_2xco2: float) -> list[float]:
         """Return each agent's internal efficacy at climate sensitivity ``ecs``.
 

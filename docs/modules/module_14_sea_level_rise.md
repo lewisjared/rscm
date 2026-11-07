@@ -274,7 +274,7 @@ the hemisphere layer areas and the initial temperature profile.
 The "CFG default" column lists `MAGCFG_DEFAULTALL.CFG`.
 MAGICC7's CMIP5 mean and tuning files override most of these values.
 The "Effective default" column lists the values after those files are applied,
-which `SeaLevelRiseParameters` and `ThermalExpansionParameters` hold.
+which `SeaLevelRiseParameters` and `ThermalExpansion` hold.
 A dash marks a parameter RSCM does not have.
 
 ### Thermal expansion

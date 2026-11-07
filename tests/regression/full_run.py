@@ -284,8 +284,8 @@ def prescribed_global_forcing(run: FullRun) -> dict[str, NDArray[np.float64]]:
             files[f"file_{code}b_rf"],
             fossil,
             em[f"{species}|Biosphere"],
-            target=float(pr.area_mean(raw[i]) - pr.area_mean(raw[0])),
-            target_year=year,
+            harmonisation_target=float(pr.area_mean(raw[i]) - pr.area_mean(raw[0])),
+            harmonisation_reference_year=year,
         )
         factor = pr._harmonise(raw, y, year, target)
         for sector, values in zip(SECTORS, unscaled, strict=True):

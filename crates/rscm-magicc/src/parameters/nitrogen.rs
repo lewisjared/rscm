@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Michaelis-Menten nitrogen fixation, calculated from NPP.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrognosticFixationParameters {
+pub struct PrognosticFixation {
     /// Maximum fixation rate
     /// unit: Tg N/yr
     /// MAGICC7: NCYCLE_NFIX_VMAX
@@ -54,7 +54,7 @@ pub struct NitrogenParameters {
     pub loss_turnover_time: FloatValue,
     /// Fixation from NPP, or `None` to read `Nitrogen Flux|Fixation`
     /// MAGICC7: NCYCLE_APPLY_PROGNOSTIC_NFIX
-    pub prognostic_fixation: Option<PrognosticFixationParameters>,
+    pub prognostic_fixation: Option<PrognosticFixation>,
 }
 
 impl Default for NitrogenParameters {

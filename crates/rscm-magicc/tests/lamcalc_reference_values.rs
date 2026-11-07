@@ -35,7 +35,7 @@ mod energy_conservation {
         let result = lamcalc(&params).expect("LAMCALC should converge with default parameters");
         let eq = compute_equilibrium_temperatures(&params, result.lambda_ocean, result.lambda_land);
         let temps = eq.box_temps;
-        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+        let area = *params.grid.weights();
 
         // Per-box lambda: ocean boxes get lambda_ocean, land boxes get lambda_land
         let lambdas = [
@@ -113,7 +113,7 @@ mod energy_conservation {
             let eq =
                 compute_equilibrium_temperatures(&params, result.lambda_ocean, result.lambda_land);
             let temps = eq.box_temps;
-            let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+            let area = *params.grid.weights();
             let lambdas = [
                 result.lambda_ocean,
                 result.lambda_land,
@@ -221,7 +221,7 @@ mod zero_coupling_limit {
         }
 
         // Diagonal elements should be f_i * lambda_i
-        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+        let area = *params.grid.weights();
         let lams = [lam_o, lam_l, lam_o, lam_l];
         for i in 0..4 {
             let expected = area[i] * lams[i];

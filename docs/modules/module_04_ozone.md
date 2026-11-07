@@ -99,7 +99,7 @@ $$
 RF_{T} = \gamma \, T_{Y-1}
 $$
 
-with $T$ the global mean surface temperature anomaly (K) and $\gamma$ = `OZDUETOTEMPERATURE_SCALE`.
+with $T$ the global mean surface air temperature change (K) and $\gamma$ = `OZDUETOTEMPERATURE_SCALE`.
 The temperature is the previous year's, because the year's own temperature is not yet known.
 
 ### Total
@@ -114,13 +114,13 @@ RSCM has no total ozone output.
 
 ## Inputs and outputs
 
-| Component     | Input                        | Units                | Fortran variable                                   |
-| ------------- | ---------------------------- | -------------------- | -------------------------------------------------- |
-| Stratospheric | EESC                         | ppt                  | `DAT_EESC_CONC`                                    |
-| Tropospheric  | CH4 concentration            | ppb                  | `DAT_CH4_CONC`                                     |
-| Tropospheric  | NOx, CO and NMVOC emissions  | Mt/yr                | `DAT_NOXI_EMIS`, `DAT_NOXB_EMIS`, and so on        |
-| N2O           | N2O concentration            | ppb                  | `DAT_N2O_CONC`                                     |
-| Temperature   | Surface temperature anomaly  | K                    | `DAT_SURFACE_TEMP`                                 |
+| Component     | Input                          | Units                | Fortran variable                                   |
+| ------------- | ------------------------------ | -------------------- | -------------------------------------------------- |
+| Stratospheric | EESC                           | ppt                  | `DAT_EESC_CONC`                                    |
+| Tropospheric  | CH4 concentration              | ppb                  | `DAT_CH4_CONC`                                     |
+| Tropospheric  | NOx, CO and NMVOC emissions    | Mt/yr                | `DAT_NOXI_EMIS`, `DAT_NOXB_EMIS`, and so on        |
+| N2O           | N2O concentration              | ppb                  | `DAT_N2O_CONC`                                     |
+| Temperature   | Surface air temperature change | K                    | `DAT_SURFACE_TEMP`                                 |
 
 Each component writes RF, EffRF and ERF datastores:
 

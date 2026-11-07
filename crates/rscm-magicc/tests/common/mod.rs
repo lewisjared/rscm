@@ -35,17 +35,18 @@ pub fn default_lamcalc_params() -> LamcalcParameters {
         ecs: 3.0,
         land_ocean_warming_ratio: 1.317,
         amplify_ocean_to_land: 1.02,
-        fgno: 0.5 - nh_land / 2.0,
-        fgnl: nh_land / 2.0,
-        fgso: 0.5 - sh_land / 2.0,
-        fgsl: sh_land / 2.0,
+        grid: FourBoxGrid::with_weights([
+            0.5 - nh_land / 2.0,
+            nh_land / 2.0,
+            0.5 - sh_land / 2.0,
+            sh_land / 2.0,
+        ]),
         co2_regional_pattern: [1.0; 4],
     }
 }
 
 /// Build LAMCALC parameters from ClimateUdeb parameters for consistency.
 pub fn lamcalc_params_from_udeb(params: &ClimateUdebParameters) -> LamcalcParameters {
-    let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
     LamcalcParameters {
         erf_2xco2: params.erf_2xco2,
         land_ocean_heat_exchange: params.land_ocean_heat_exchange,
@@ -53,10 +54,7 @@ pub fn lamcalc_params_from_udeb(params: &ClimateUdebParameters) -> LamcalcParame
         ecs: params.ecs,
         land_ocean_warming_ratio: params.land_ocean_warming_ratio,
         amplify_ocean_to_land: params.amplify_ocean_to_land,
-        fgno,
-        fgnl,
-        fgso,
-        fgsl,
+        grid: params.grid(),
         co2_regional_pattern: params.co2_regional_pattern,
     }
 }
@@ -120,7 +118,8 @@ pub fn compute_equilibrium_temperatures(
         )
     });
 
-    let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+    let area = *params.grid.weights();
+    let [nh_ocean, nh_land, sh_ocean, sh_land] = area;
     let q = params.erf_2xco2;
 
     let qfrac = compute_qfrac(&params.co2_regional_pattern, &area);
@@ -134,10 +133,8 @@ pub fn compute_equilibrium_temperatures(
         box_temps[row] = q * sum;
     }
 
-    let ocean_mean =
-        (params.fgno * box_temps[0] + params.fgso * box_temps[2]) / (params.fgno + params.fgso);
-    let land_mean =
-        (params.fgnl * box_temps[1] + params.fgsl * box_temps[3]) / (params.fgnl + params.fgsl);
+    let ocean_mean = (nh_ocean * box_temps[0] + sh_ocean * box_temps[2]) / (nh_ocean + sh_ocean);
+    let land_mean = (nh_land * box_temps[1] + sh_land * box_temps[3]) / (nh_land + sh_land);
     let global_mean = area[0] * box_temps[0]
         + area[1] * box_temps[1]
         + area[2] * box_temps[2]
@@ -233,7 +230,7 @@ pub fn run_udeb_simulation(
     let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
     let mut records = Vec::with_capacity(n_years);
 
-    let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+    let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
     for year in 0..n_years {
         let t_current = 2000.0 + year as FloatValue;
@@ -257,10 +254,10 @@ pub fn run_udeb_simulation(
             );
         }
 
-        let global_sat = prev_temps.0[0] * fgno
-            + prev_temps.0[1] * fgnl
-            + prev_temps.0[2] * fgso
-            + prev_temps.0[3] * fgsl;
+        let global_sat = prev_temps.0[0] * nh_ocean
+            + prev_temps.0[1] * nh_land
+            + prev_temps.0[2] * sh_ocean
+            + prev_temps.0[3] * sh_land;
 
         let sst = match output.get("Sea Surface Temperature") {
             Some(StateValue::Scalar(v)) => *v,

@@ -158,7 +158,7 @@ mod time_varying_ecs {
         let erf = params.erf_2xco2;
         let n_years = 500;
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
         // Track the effective ECS by computing it from the temperature history
         // the same way adjusted_ecs() does internally.
@@ -189,10 +189,10 @@ mod time_varying_ecs {
                 prev_temps = *temps;
             }
 
-            let global_sat = prev_temps.0[0] * fgno
-                + prev_temps.0[1] * fgnl
-                + prev_temps.0[2] * fgso
-                + prev_temps.0[3] * fgsl;
+            let global_sat = prev_temps.0[0] * nh_ocean
+                + prev_temps.0[1] * nh_land
+                + prev_temps.0[2] * sh_ocean
+                + prev_temps.0[3] * sh_land;
 
             // Store year-weighted temperature (T * dt_years) matching adjusted_ecs()
             let dt_years = 1.0;
@@ -329,13 +329,13 @@ mod transient_ecs_convergence {
         // Run for 3000 years to approach equilibrium
         let n_years = 3000;
         let records = run_udeb_simulation(&params, erf, n_years);
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
         let final_temps = &records[n_years - 1].surface_temperature;
-        let global_mean = final_temps.0[0] * fgno
-            + final_temps.0[1] * fgnl
-            + final_temps.0[2] * fgso
-            + final_temps.0[3] * fgsl;
+        let global_mean = final_temps.0[0] * nh_ocean
+            + final_temps.0[1] * nh_land
+            + final_temps.0[2] * sh_ocean
+            + final_temps.0[3] * sh_land;
 
         println!();
         println!(
@@ -375,7 +375,7 @@ mod heat_uptake_consistency {
         let mut state = component.initial_state();
 
         let erf = params.erf_2xco2;
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
         // Get the lambda values by running LAMCALC with matching parameters
         let lamcalc_params = common::lamcalc_params_from_udeb(&params);
@@ -420,7 +420,7 @@ mod heat_uptake_consistency {
 
             // Manual calculation: Q - sum(f_i * lambda_i * T_i)
             // Forcing is uniform across boxes (erf for each box)
-            let weights = [fgno, fgnl, fgso, fgsl];
+            let weights = [nh_ocean, nh_land, sh_ocean, sh_land];
             let lambdas = [lambda_ocean, lambda_land, lambda_ocean, lambda_land];
 
             let q_global: FloatValue = weights.iter().map(|&w| w * erf).sum();
@@ -512,11 +512,13 @@ mod land_ocean_ratio_equilibrium {
 
             let records = run_udeb_simulation(&params, erf, n_years);
 
-            let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+            let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
             let final_temps = &records[n_years - 1].surface_temperature;
 
-            let ocean_mean = (final_temps.0[0] * fgno + final_temps.0[2] * fgso) / (fgno + fgso);
-            let land_mean = (final_temps.0[1] * fgnl + final_temps.0[3] * fgsl) / (fgnl + fgsl);
+            let ocean_mean =
+                (final_temps.0[0] * nh_ocean + final_temps.0[2] * sh_ocean) / (nh_ocean + sh_ocean);
+            let land_mean =
+                (final_temps.0[1] * nh_land + final_temps.0[3] * sh_land) / (nh_land + sh_land);
 
             assert!(
                 ocean_mean > 0.0,
@@ -586,7 +588,7 @@ mod land_ocean_ratio_equilibrium {
         let params = params_with_fixed_ecs(3.0);
         let erf = params.erf_2xco2;
         let records = run_udeb_simulation(&params, erf, n_years);
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
         println!();
         println!("RLO convergence over time (ECS = 3.0):");
@@ -604,8 +606,9 @@ mod land_ocean_ratio_equilibrium {
                 continue;
             }
             let temps = &records[yr - 1].surface_temperature;
-            let ocean_mean = (temps.0[0] * fgno + temps.0[2] * fgso) / (fgno + fgso);
-            let land_mean = (temps.0[1] * fgnl + temps.0[3] * fgsl) / (fgnl + fgsl);
+            let ocean_mean =
+                (temps.0[0] * nh_ocean + temps.0[2] * sh_ocean) / (nh_ocean + sh_ocean);
+            let land_mean = (temps.0[1] * nh_land + temps.0[3] * sh_land) / (nh_land + sh_land);
             let rlo = land_mean / ocean_mean;
             rlo_values.push(rlo);
 
@@ -673,7 +676,7 @@ mod ground_heat_capacity {
         };
         let records_without = run_udeb_simulation(&params_without, erf, n_years);
 
-        let (fgno, fgnl, fgso, fgsl) = params_with.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params_with.grid().weights();
 
         println!();
         println!(
@@ -687,12 +690,14 @@ mod ground_heat_capacity {
             let t_with = &records_with[yr - 1].surface_temperature;
             let t_without = &records_without[yr - 1].surface_temperature;
 
-            let global_with =
-                t_with.0[0] * fgno + t_with.0[1] * fgnl + t_with.0[2] * fgso + t_with.0[3] * fgsl;
-            let global_without = t_without.0[0] * fgno
-                + t_without.0[1] * fgnl
-                + t_without.0[2] * fgso
-                + t_without.0[3] * fgsl;
+            let global_with = t_with.0[0] * nh_ocean
+                + t_with.0[1] * nh_land
+                + t_with.0[2] * sh_ocean
+                + t_with.0[3] * sh_land;
+            let global_without = t_without.0[0] * nh_ocean
+                + t_without.0[1] * nh_land
+                + t_without.0[2] * sh_ocean
+                + t_without.0[3] * sh_land;
 
             let diff = global_with - global_without;
             println!(

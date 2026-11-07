@@ -12,6 +12,7 @@
 //!
 //! Reference: MAGICC7.f90 lines 8070-8278.
 
+use rscm_core::spatial::FourBoxGrid;
 use rscm_core::timeseries::FloatValue;
 
 /// Maximum number of iterations for convergence.
@@ -21,7 +22,7 @@ const MAX_ITERATIONS: usize = 40;
 const RLO_TOLERANCE: FloatValue = 0.001;
 
 /// Parameters for the LAMCALC iteration.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct LamcalcParameters {
     /// 2xCO2 effective radiative forcing (W/m$^2$), typically 3.71.
     pub erf_2xco2: FloatValue,
@@ -36,14 +37,8 @@ pub struct LamcalcParameters {
     pub land_ocean_warming_ratio: FloatValue,
     /// Ocean-to-land amplification factor, typically 1.02.
     pub amplify_ocean_to_land: FloatValue,
-    /// Northern hemisphere ocean global fraction.
-    pub fgno: FloatValue,
-    /// Northern hemisphere land global fraction.
-    pub fgnl: FloatValue,
-    /// Southern hemisphere ocean global fraction.
-    pub fgso: FloatValue,
-    /// Southern hemisphere land global fraction.
-    pub fgsl: FloatValue,
+    /// Four-box grid whose weights are the global area fractions of the boxes.
+    pub grid: FourBoxGrid,
     /// Regional CO2 effective radiative forcing pattern (NH ocean, NH land, SH ocean, SH land).
     ///
     /// Used to compute per-box forcing fractions (qfrac) following MAGICC7:
@@ -90,16 +85,17 @@ pub fn build_coupling_matrix(
     let alpha = params.amplify_ocean_to_land;
     let k_lo = params.land_ocean_heat_exchange;
     let k_ns = params.north_south_heat_exchange;
+    let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid.weights();
 
     [
         // Row 0: NH ocean
-        [params.fgno * lam_o + k_lo * alpha + k_ns, -k_lo, -k_ns, 0.0],
+        [nh_ocean * lam_o + k_lo * alpha + k_ns, -k_lo, -k_ns, 0.0],
         // Row 1: NH land
-        [-k_lo * alpha, params.fgnl * lam_l + k_lo, 0.0, 0.0],
+        [-k_lo * alpha, nh_land * lam_l + k_lo, 0.0, 0.0],
         // Row 2: SH ocean
-        [-k_ns, 0.0, params.fgso * lam_o + k_lo * alpha + k_ns, -k_lo],
+        [-k_ns, 0.0, sh_ocean * lam_o + k_lo * alpha + k_ns, -k_lo],
         // Row 3: SH land
-        [0.0, 0.0, -k_lo * alpha, params.fgsl * lam_l + k_lo],
+        [0.0, 0.0, -k_lo * alpha, sh_land * lam_l + k_lo],
     ]
 }
 
@@ -224,11 +220,9 @@ pub fn calc_internal_efficacy(
 /// or if a singular coupling matrix is encountered.
 pub fn lamcalc(params: &LamcalcParameters) -> Option<LamcalcResult> {
     let lam = params.erf_2xco2 / params.ecs;
-    let fgosum = params.fgno + params.fgso;
-    let fglsum = params.fgnl + params.fgsl;
-    let fratio = fgosum / fglsum;
-
-    let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+    let area = *params.grid.weights();
+    let [nh_ocean, nh_land, sh_ocean, sh_land] = area;
+    let fratio = (nh_ocean + sh_ocean) / (nh_land + sh_land);
 
     // Compute per-box CO2 forcing fractions from regional pattern.
     let qfrac = compute_qfrac(&params.co2_regional_pattern, &area);
@@ -272,10 +266,8 @@ pub fn lamcalc(params: &LamcalcParameters) -> Option<LamcalcResult> {
         }
 
         // Compute area-weighted ocean and land mean temperatures
-        let ocean_mean =
-            (params.fgno * temps[0] + params.fgso * temps[2]) / (params.fgno + params.fgso);
-        let land_mean =
-            (params.fgnl * temps[1] + params.fgsl * temps[3]) / (params.fgnl + params.fgsl);
+        let ocean_mean = (nh_ocean * temps[0] + sh_ocean * temps[2]) / (nh_ocean + sh_ocean);
+        let land_mean = (nh_land * temps[1] + sh_land * temps[3]) / (nh_land + sh_land);
 
         let rlo_est = land_mean / ocean_mean;
 
@@ -327,9 +319,8 @@ pub fn lamcalc(params: &LamcalcParameters) -> Option<LamcalcResult> {
 
         // MAGICC7 sums CO2's global response by hemisphere, unlike other agents.
         let t = converged_temps;
-        let co2_internal_efficacy = ((params.fgno * t[0] + params.fgnl * t[1])
-            + (params.fgso * t[2] + params.fgsl * t[3]))
-            / params.ecs;
+        let co2_internal_efficacy =
+            ((nh_ocean * t[0] + nh_land * t[1]) + (sh_ocean * t[2] + sh_land * t[3])) / params.ecs;
 
         Some(LamcalcResult {
             lambda_ocean: converged_lam_o,
@@ -357,10 +348,12 @@ mod tests {
             ecs: 3.0,
             land_ocean_warming_ratio: 1.317,
             amplify_ocean_to_land: 1.02,
-            fgno: 0.5 - nh_land / 2.0,
-            fgnl: nh_land / 2.0,
-            fgso: 0.5 - sh_land / 2.0,
-            fgsl: sh_land / 2.0,
+            grid: FourBoxGrid::with_weights([
+                0.5 - nh_land / 2.0,
+                nh_land / 2.0,
+                0.5 - sh_land / 2.0,
+                sh_land / 2.0,
+            ]),
             co2_regional_pattern: [1.0; 4],
         }
     }
@@ -405,7 +398,8 @@ mod tests {
         let matrix = build_coupling_matrix(&params, result.lambda_ocean, result.lambda_land);
         let inv = invert_by_cofactors(&matrix).expect("Coupling matrix should be invertible");
 
-        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+        let area = *params.grid.weights();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = area;
         let q = params.erf_2xco2;
 
         let mut temps = [0.0_f64; 4];
@@ -417,10 +411,8 @@ mod tests {
             temps[row] = q * sum;
         }
 
-        let ocean_mean =
-            (params.fgno * temps[0] + params.fgso * temps[2]) / (params.fgno + params.fgso);
-        let land_mean =
-            (params.fgnl * temps[1] + params.fgsl * temps[3]) / (params.fgnl + params.fgsl);
+        let ocean_mean = (nh_ocean * temps[0] + sh_ocean * temps[2]) / (nh_ocean + sh_ocean);
+        let land_mean = (nh_land * temps[1] + sh_land * temps[3]) / (nh_land + sh_land);
         let rlo_actual = land_mean / ocean_mean;
 
         println!(
@@ -479,7 +471,8 @@ mod tests {
             // Verify the converged result actually satisfies the RLO constraint
             let matrix = build_coupling_matrix(&params, result.lambda_ocean, result.lambda_land);
             let inv = invert_by_cofactors(&matrix).expect("Matrix should be invertible");
-            let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+            let area = *params.grid.weights();
+            let [nh_ocean, nh_land, sh_ocean, sh_land] = area;
             let q = params.erf_2xco2;
             let mut temps = [0.0_f64; 4];
             for row in 0..4 {
@@ -488,10 +481,8 @@ mod tests {
                 }
                 temps[row] *= q;
             }
-            let ocean_mean =
-                (params.fgno * temps[0] + params.fgso * temps[2]) / (params.fgno + params.fgso);
-            let land_mean =
-                (params.fgnl * temps[1] + params.fgsl * temps[3]) / (params.fgnl + params.fgsl);
+            let ocean_mean = (nh_ocean * temps[0] + sh_ocean * temps[2]) / (nh_ocean + sh_ocean);
+            let land_mean = (nh_land * temps[1] + sh_land * temps[3]) / (nh_land + sh_land);
             let rlo_actual = land_mean / ocean_mean;
             assert!(
                 (params.land_ocean_warming_ratio - rlo_actual).abs() < RLO_TOLERANCE,
@@ -672,7 +663,8 @@ mod tests {
         ] {
             let matrix = build_coupling_matrix(params, result.lambda_ocean, result.lambda_land);
             let inv = invert_by_cofactors(&matrix).expect("Coupling matrix should be invertible");
-            let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+            let area = *params.grid.weights();
+            let [nh_ocean, nh_land, sh_ocean, sh_land] = area;
 
             let qfrac = compute_qfrac(&params.co2_regional_pattern, &area);
 
@@ -685,10 +677,8 @@ mod tests {
                 temps[row] *= q;
             }
 
-            let ocean_mean =
-                (params.fgno * temps[0] + params.fgso * temps[2]) / (params.fgno + params.fgso);
-            let land_mean =
-                (params.fgnl * temps[1] + params.fgsl * temps[3]) / (params.fgnl + params.fgsl);
+            let ocean_mean = (nh_ocean * temps[0] + sh_ocean * temps[2]) / (nh_ocean + sh_ocean);
+            let land_mean = (nh_land * temps[1] + sh_land * temps[3]) / (nh_land + sh_land);
             let rlo_actual = land_mean / ocean_mean;
 
             println!(
@@ -775,7 +765,7 @@ mod tests {
         params.co2_regional_pattern = [1.0; 4];
         let result = lamcalc(&params).expect("LAMCALC should converge");
 
-        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+        let area = *params.grid.weights();
         let uniform_rf = [1.0; 4];
         let efficacy = calc_internal_efficacy(
             params.erf_2xco2,
@@ -797,7 +787,7 @@ mod tests {
         // Different spatial patterns should produce different efficacies
         let params = default_params();
         let result = lamcalc(&params).expect("LAMCALC should converge");
-        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+        let area = *params.grid.weights();
 
         // CO2-like pattern (slight land enhancement)
         let co2_pattern = [1.4089, 1.37045, 1.43333, 1.33257];
@@ -834,7 +824,7 @@ mod tests {
     fn test_calc_internal_efficacy_zero_pattern() {
         let params = default_params();
         let result = lamcalc(&params).expect("LAMCALC should converge");
-        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+        let area = *params.grid.weights();
 
         let zero_rf = [0.0; 4];
         let efficacy = calc_internal_efficacy(

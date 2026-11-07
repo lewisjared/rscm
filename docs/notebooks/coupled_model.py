@@ -490,7 +490,7 @@ print(feedback_model.coupling())
 # - **NullComponent**: the root.
 # - **CarbonCycle**: takes emissions and temperature, outputs CO2 concentration.
 # - **CO2Erf**: takes CO2 concentration, outputs radiative forcing.
-# - **AggregatorComponent**: sums the forcing contributors declared in the schema.
+# - **AggregateComponent**: sums the forcing contributors declared in the schema.
 # - **TwoLayer**: takes radiative forcing, outputs surface air temperature change.
 
 # %% tags=["remove_input"]

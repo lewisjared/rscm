@@ -12,6 +12,7 @@
 mod common;
 
 use rscm_core::component::{Component, InputState};
+use rscm_core::spatial::FourBoxGrid;
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::FloatValue;
 use rscm_core::utils::linear_algebra::invert_4x4;
@@ -437,17 +438,19 @@ mod edge_cases {
         // produce identical NH and SH box temperatures.
         let mut params = common::default_lamcalc_params();
         let land_frac = 0.30;
-        params.fgnl = land_frac / 2.0;
-        params.fgsl = land_frac / 2.0;
-        params.fgno = 0.5 - params.fgnl;
-        params.fgso = 0.5 - params.fgsl;
+        params.grid = FourBoxGrid::with_weights([
+            0.5 - land_frac / 2.0,
+            land_frac / 2.0,
+            0.5 - land_frac / 2.0,
+            land_frac / 2.0,
+        ]);
 
         let result = lamcalc(&params).expect("Should converge with symmetric hemispheres");
 
         let matrix = build_coupling_matrix(&params, result.lambda_ocean, result.lambda_land);
         let inv = invert_4x4(&matrix).expect("Matrix should be invertible");
 
-        let area = [params.fgno, params.fgnl, params.fgso, params.fgsl];
+        let area = *params.grid.weights();
         let q = params.erf_2xco2;
 
         let mut temps = [0.0_f64; 4];
@@ -680,11 +683,11 @@ mod climate_udeb_equilibrium {
                 );
             }
 
-            let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
-            let global_temp = prev_temps.0[0] * fgno
-                + prev_temps.0[1] * fgnl
-                + prev_temps.0[2] * fgso
-                + prev_temps.0[3] * fgsl;
+            let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
+            let global_temp = prev_temps.0[0] * nh_ocean
+                + prev_temps.0[1] * nh_land
+                + prev_temps.0[2] * sh_ocean
+                + prev_temps.0[3] * sh_land;
             global_temps.push(global_temp);
 
             // Extract SST (raw ocean surface temperature, no amplification)
@@ -840,13 +843,13 @@ mod climate_udeb_equilibrium {
         let records = common::run_udeb_simulation(&params, params.erf_2xco2, 100);
 
         let last = records.last().unwrap();
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
-        let ocean_mean = (last.surface_temperature.0[0] * fgno
-            + last.surface_temperature.0[2] * fgso)
-            / (fgno + fgso);
-        let land_mean = (last.surface_temperature.0[1] * fgnl
-            + last.surface_temperature.0[3] * fgsl)
-            / (fgnl + fgsl);
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
+        let ocean_mean = (last.surface_temperature.0[0] * nh_ocean
+            + last.surface_temperature.0[2] * sh_ocean)
+            / (nh_ocean + sh_ocean);
+        let land_mean = (last.surface_temperature.0[1] * nh_land
+            + last.surface_temperature.0[3] * sh_land)
+            / (nh_land + sh_land);
         let transient_rlo = land_mean / ocean_mean;
 
         println!(

@@ -7,7 +7,7 @@
 //! - [`FourBoxGrid`]: MAGICC standard four-box structure (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
 //! - [`HemisphericGrid`]: Simple Northern/Southern hemisphere split
 //!
-//! # Grid Types and Use Cases
+//! # Grids and use cases
 //!
 //! ## ScalarGrid
 //!
@@ -61,7 +61,7 @@
 //!
 //! Aggregation uses weighted averages based on grid weights (typically area fractions):
 //!
-//! ### FourBox -> Scalar
+//! ### Four-box to scalar
 //!
 //! ```text
 //! global = NO*w_NO + NL*w_NL + SO*w_SO + SL*w_SL
@@ -69,14 +69,14 @@
 //!
 //! where weights sum to 1.0.
 //!
-//! ### FourBox -> Hemispheric
+//! ### Four-box to hemispheric
 //!
 //! ```text
 //! northern = (NO*w_NO + NL*w_NL) / (w_NO + w_NL)
 //! southern = (SO*w_SO + SL*w_SL) / (w_SO + w_SL)
 //! ```
 //!
-//! ### Hemispheric -> Scalar
+//! ### Hemispheric to scalar
 //!
 //! ```text
 //! global = northern*w_N + southern*w_S
@@ -101,7 +101,7 @@
 //!
 //! ## Unsupported Transformations
 //!
-//! Some transformations (e.g., Hemispheric -> FourBox) are not supported because they
+//! Some transformations (e.g., hemispheric to four-box) are not supported because they
 //! require spatial disaggregation that cannot be determined uniquely. For example,
 //! splitting hemispheric data into ocean/land boxes requires assumptions about
 //! land-ocean temperature differences.
@@ -214,7 +214,7 @@
 //!
 //! # Disaggregation Components
 //!
-//! For unsupported transformations (e.g., Hemispheric -> FourBox), write a disaggregation
+//! For unsupported transformations (e.g., hemispheric to four-box), write a disaggregation
 //! component that explicitly encodes the physics:
 //!
 //! ```rust,ignore
@@ -230,7 +230,7 @@
 //!     fn definitions(&self) -> Vec<VariableDefinition> {
 //!         vec![
 //!             VariableDefinition::with_grid("Surface Air Temperature Change", "K", VariableRole::Input, GridType::Hemispheric),
-//!             VariableDefinition::with_grid("Regional Surface Temperature", "K", VariableRole::Output, GridType::FourBox),
+//!             VariableDefinition::with_grid("Regional Surface Air Temperature Change", "K", VariableRole::Output, GridType::FourBox),
 //!         ]
 //!     }
 //!
@@ -250,7 +250,7 @@
 //!         ]);
 //!
 //!         let mut output = HashMap::new();
-//!         output.insert("Regional Surface Temperature".to_string(), StateValue::FourBox(four_box_values));
+//!         output.insert("Regional Surface Air Temperature Change".to_string(), StateValue::FourBox(four_box_values));
 //!         Ok(output)
 //!     }
 //! }

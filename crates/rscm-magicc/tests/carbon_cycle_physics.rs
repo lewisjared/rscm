@@ -686,7 +686,7 @@ mod climate_tcr {
         let erf_2xco2 = params.erf_2xco2;
         let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
         let mut state = component.initial_state();
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
         let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
         let n_years = 70;
@@ -718,10 +718,10 @@ mod climate_tcr {
                 prev_temps = *temps;
             }
 
-            let global_t = prev_temps.0[0] * fgno
-                + prev_temps.0[1] * fgnl
-                + prev_temps.0[2] * fgso
-                + prev_temps.0[3] * fgsl;
+            let global_t = prev_temps.0[0] * nh_ocean
+                + prev_temps.0[1] * nh_land
+                + prev_temps.0[2] * sh_ocean
+                + prev_temps.0[3] * sh_land;
 
             if year == 0 || year == 9 || year == 19 || year == 49 || year == 69 {
                 println!(
@@ -735,10 +735,10 @@ mod climate_tcr {
         }
 
         // TCR is the temperature at year 70 (when CO2 has doubled)
-        let tcr = prev_temps.0[0] * fgno
-            + prev_temps.0[1] * fgnl
-            + prev_temps.0[2] * fgso
-            + prev_temps.0[3] * fgsl;
+        let tcr = prev_temps.0[0] * nh_ocean
+            + prev_temps.0[1] * nh_land
+            + prev_temps.0[2] * sh_ocean
+            + prev_temps.0[3] * sh_land;
 
         let tcr_ecs_ratio = tcr / ecs;
 
@@ -783,7 +783,7 @@ mod climate_tcr {
             let erf_2xco2 = params.erf_2xco2;
             let component = ClimateUdeb::from_parameters(params.clone()).unwrap();
             let mut state = component.initial_state();
-            let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+            let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
             let mut prev_temps = FourBoxSlice::from_array([0.0, 0.0, 0.0, 0.0]);
 
@@ -809,10 +809,10 @@ mod climate_tcr {
                 }
             }
 
-            let tcr = prev_temps.0[0] * fgno
-                + prev_temps.0[1] * fgnl
-                + prev_temps.0[2] * fgso
-                + prev_temps.0[3] * fgsl;
+            let tcr = prev_temps.0[0] * nh_ocean
+                + prev_temps.0[1] * nh_land
+                + prev_temps.0[2] * sh_ocean
+                + prev_temps.0[3] * sh_land;
 
             println!("{:>6.1} | {:>8.4} | {:>10.4}", ecs, tcr, tcr / ecs);
 

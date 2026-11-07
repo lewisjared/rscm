@@ -627,10 +627,10 @@ impl ModelBuilder {
         // for the same variable (e.g., State for owner, Upstream for consumers)
         let mut variable_sources: HashMap<(String, String), VariableSource> = HashMap::new();
         let initial_node = graph.add_node(Arc::new(NullComponent {}));
-        let mut aggregator_nodes: HashSet<NodeIndex> = HashSet::new();
+        let mut aggregate_nodes: HashSet<NodeIndex> = HashSet::new();
 
         // Track pending aggregate dependencies: (component_node, variable_name, definition)
-        // These will be resolved after aggregators are added to the graph
+        // These will be resolved after aggregate components are added to the graph
         let mut pending_aggregate_deps: Vec<(NodeIndex, String, VariableDefinition)> = vec![];
 
         // Get aggregate names for forward reference (if schema exists)
@@ -806,14 +806,14 @@ impl ModelBuilder {
                 let agg_def = schema.get_aggregate(agg_name).unwrap();
 
                 // Create the aggregate's component
-                let aggregator = crate::schema::AggregatorComponent::from_definition(agg_def);
+                let agg_component = crate::schema::AggregateComponent::from_definition(agg_def);
 
                 // Add to graph
-                let agg_node = graph.add_node(Arc::new(aggregator.clone()));
-                aggregator_nodes.insert(agg_node);
+                let agg_node = graph.add_node(Arc::new(agg_component));
+                aggregate_nodes.insert(agg_node);
 
                 // Track the component name for variable ownership
-                let agg_component_name = format!("Aggregator:{}", agg_name);
+                let agg_component_name = format!("Aggregate:{}", agg_name);
                 variable_owners.insert(agg_name.clone(), agg_component_name.clone());
                 let runtime_name = Model::extract_component_name(&graph[agg_node]);
 
@@ -841,7 +841,7 @@ impl ModelBuilder {
                     variable_sources.insert((contributor.clone(), runtime_name.clone()), source);
                 }
 
-                // If aggregator has no component dependencies, link to initial node
+                // If the aggregate has no component dependencies, link to initial node
                 if !has_dependencies {
                     graph.add_edge(initial_node, agg_node, GraphEdge::Link);
                 }
@@ -864,7 +864,7 @@ impl ModelBuilder {
                 );
             }
 
-            // Resolve pending aggregate dependencies now that aggregators are in the graph
+            // Resolve pending aggregate dependencies now that aggregate components are in the graph
             for (component_node, var_name, def) in pending_aggregate_deps {
                 if let Some(&agg_node) = modelled.get(&var_name) {
                     graph.add_edge(agg_node, component_node, GraphEdge::Variable(def));
@@ -872,7 +872,7 @@ impl ModelBuilder {
             }
         }
 
-        check_acyclic(&graph, &component_defs, &names, &aggregator_nodes)?;
+        check_acyclic(&graph, &component_defs, &names, &aggregate_nodes)?;
         resolve_timeseries_types(
             &mut definitions,
             &names,
@@ -1077,7 +1077,7 @@ fn check_acyclic(
     graph: &CGraph,
     component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
     names: &[String],
-    aggregator_nodes: &HashSet<NodeIndex>,
+    aggregate_nodes: &HashSet<NodeIndex>,
 ) -> RscmResult<()> {
     if !petgraph::algo::is_cyclic_directed(graph) {
         return Ok(());
@@ -1106,8 +1106,8 @@ fn check_acyclic(
             }
             let variable = edge.weight().name().to_string();
             variables.insert(variable.clone());
-            // Aggregators always read this step's contributions, so their inputs cannot lag.
-            if !aggregator_nodes.contains(&edge.target()) {
+            // Aggregate components always read this step's contributions, so their inputs cannot lag.
+            if !aggregate_nodes.contains(&edge.target()) {
                 let consumer = Model::extract_component_name(&graph[edge.target()]);
                 let rank = !stateful.contains(consumer.as_str());
                 suggestions.insert((rank, variable, consumer));

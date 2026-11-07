@@ -3,7 +3,8 @@
 //! Parameters for the Upwelling-Diffusion Energy Balance (UDEB) climate model
 //! following MAGICC7.
 
-use super::ThermalExpansionParameters;
+use super::ThermalExpansion;
+use rscm_core::spatial::FourBoxGrid;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -290,7 +291,7 @@ pub struct ClimateUdebParameters {
     pub subannual_forcing: Option<SubannualForcing>,
 
     /// Write the annual mean warming and the thermal expansion of the ocean.
-    pub thermal_expansion: Option<ThermalExpansionParameters>,
+    pub thermal_expansion: Option<ThermalExpansion>,
 
     /// Read `2xCO2 Effective Radiative Forcing` each year instead of using `erf_2xco2`.
     ///
@@ -466,17 +467,14 @@ impl ClimateUdebParameters {
         0.5 * (self.nh_ocean_fraction() + self.sh_ocean_fraction())
     }
 
-    /// Get per-box global area fractions (FGNO, FGNL, FGSO, FGSL).
+    /// Four-box grid weighted by the global area fraction of each box.
     ///
-    /// These are fractions of the total globe, not of each hemisphere.
-    /// Order: (NH ocean, NH land, SH ocean, SH land).
-    /// Matches MAGICC's GLOBALAREAFRACTIONS ordering.
-    pub fn global_box_fractions(&self) -> (FloatValue, FloatValue, FloatValue, FloatValue) {
-        let fgnl = self.nh_land_fraction / 2.0;
-        let fgno = 0.5 - fgnl;
-        let fgsl = self.sh_land_fraction / 2.0;
-        let fgso = 0.5 - fgsl;
-        (fgno, fgnl, fgso, fgsl)
+    /// The weights are fractions of the total globe, not of each hemisphere.
+    /// MAGICC7 stores them as GLOBALAREAFRACTIONS (FGNO, FGNL, FGSO, FGSL).
+    pub fn grid(&self) -> FourBoxGrid {
+        let nh_land = self.nh_land_fraction / 2.0;
+        let sh_land = self.sh_land_fraction / 2.0;
+        FourBoxGrid::with_weights([0.5 - nh_land, nh_land, 0.5 - sh_land, sh_land])
     }
 
     /// Get the global land fraction.
@@ -902,13 +900,13 @@ mod tests {
     #[test]
     fn test_per_box_global_fractions() {
         let params = ClimateUdebParameters::default();
-        let (fgno, fgnl, fgso, fgsl) = params.global_box_fractions();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = *params.grid().weights();
 
-        assert!((fgnl - 0.21).abs() < 1e-10);
-        assert!((fgno - 0.29).abs() < 1e-10);
-        assert!((fgsl - 0.105).abs() < 1e-10);
-        assert!((fgso - 0.395).abs() < 1e-10);
-        assert!((fgno + fgnl + fgso + fgsl - 1.0).abs() < 1e-10);
+        assert!((nh_land - 0.21).abs() < 1e-10);
+        assert!((nh_ocean - 0.29).abs() < 1e-10);
+        assert!((sh_land - 0.105).abs() < 1e-10);
+        assert!((sh_ocean - 0.395).abs() < 1e-10);
+        assert!((nh_ocean + nh_land + sh_ocean + sh_land - 1.0).abs() < 1e-10);
     }
 
     #[test]

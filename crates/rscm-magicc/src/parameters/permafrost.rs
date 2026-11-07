@@ -9,7 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 /// Parameters of one permafrost soil type (mineral soil or peat).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct PermafrostSoilParameters {
+pub struct PermafrostSoil {
     /// Fraction of the frozen area thawed per year and per K of summer warming
     /// above the melting threshold
     /// unit: 1/K/yr
@@ -36,7 +36,7 @@ pub struct PermafrostSoilParameters {
     pub ch4_oxidation_fraction: FloatValue,
 }
 
-impl PermafrostSoilParameters {
+impl PermafrostSoil {
     /// MAGICC7 default mineral soil parameters.
     pub fn mineral_soil() -> Self {
         Self {
@@ -65,7 +65,7 @@ impl PermafrostSoilParameters {
     }
 }
 
-impl Default for PermafrostSoilParameters {
+impl Default for PermafrostSoil {
     fn default() -> Self {
         Self::mineral_soil()
     }
@@ -124,16 +124,16 @@ pub struct PermafrostParameters {
     /// Shape of the zonal carbon distribution, from -1 (north heavy) to 1 (south heavy)
     pub zonal_pool_distribution: FloatValue,
     #[serde(deserialize_with = "mineral_soil_over_defaults")]
-    pub mineral_soil: PermafrostSoilParameters,
+    pub mineral_soil: PermafrostSoil,
     #[serde(deserialize_with = "peat_over_defaults")]
-    pub peat: PermafrostSoilParameters,
+    pub peat: PermafrostSoil,
 }
 
 /// Fields given for a soil type override that soil's own defaults.
 fn over_defaults<'de, D: Deserializer<'de>>(
     deserializer: D,
-    defaults: PermafrostSoilParameters,
-) -> Result<PermafrostSoilParameters, D::Error> {
+    defaults: PermafrostSoil,
+) -> Result<PermafrostSoil, D::Error> {
     let serde_json::Value::Object(given) = serde_json::Value::deserialize(deserializer)? else {
         return Err(D::Error::custom("soil parameters must be an object"));
     };
@@ -146,14 +146,14 @@ fn over_defaults<'de, D: Deserializer<'de>>(
 
 fn mineral_soil_over_defaults<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<PermafrostSoilParameters, D::Error> {
-    over_defaults(deserializer, PermafrostSoilParameters::mineral_soil())
+) -> Result<PermafrostSoil, D::Error> {
+    over_defaults(deserializer, PermafrostSoil::mineral_soil())
 }
 
 fn peat_over_defaults<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<PermafrostSoilParameters, D::Error> {
-    over_defaults(deserializer, PermafrostSoilParameters::peat())
+) -> Result<PermafrostSoil, D::Error> {
+    over_defaults(deserializer, PermafrostSoil::peat())
 }
 
 impl Default for PermafrostParameters {
@@ -175,8 +175,8 @@ impl Default for PermafrostParameters {
             mineral_soil_fraction_south: 0.8,
             mineral_soil_fraction_north: 0.8,
             zonal_pool_distribution: 0.0,
-            mineral_soil: PermafrostSoilParameters::mineral_soil(),
-            peat: PermafrostSoilParameters::peat(),
+            mineral_soil: PermafrostSoil::mineral_soil(),
+            peat: PermafrostSoil::peat(),
         }
     }
 }

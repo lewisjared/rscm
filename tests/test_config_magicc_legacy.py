@@ -18,7 +18,7 @@ class TestLegacyMapping:
     """Tests for LEGACY_MAPPING."""
 
     def test_mapping_contains_supported_params(self):
-        """LEGACY_MAPPING should contain all SUPPORTED params."""
+        """LEGACY_MAPPING should contain all SUPPORTED parameters."""
         supported = [
             p
             for p in MAGICC_PARAMETERS.values()

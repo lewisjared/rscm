@@ -530,7 +530,9 @@ class HemisphericToFourBox(Component):
     """Disaggregate hemispheric temperature to four-box."""
 
     hemi_temp = Input("Surface Air Temperature Change", unit="K", grid="hemispheric")
-    fb_temp = Output("Regional Temperature", unit="K", grid="four_box")
+    fb_temp = Output(
+        "Regional Surface Air Temperature Change", unit="K", grid="four_box"
+    )
 
     def __init__(self, ocean_land_ratio: float = 1.1):
         self.ocean_land_ratio = ocean_land_ratio

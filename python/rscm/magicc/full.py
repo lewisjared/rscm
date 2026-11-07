@@ -496,8 +496,8 @@ def _nitrate_inputs(
         p["rf_regions_no3"],
     )
     kwargs = {
-        "target": p["rf_no3t_dir_wm2"],
-        "target_year": p["rf_no3t_dir_yr"],
+        "harmonisation_target": p["rf_no3t_dir_wm2"],
+        "harmonisation_reference_year": p["rf_no3t_dir_yr"],
         "natural_nox": p["rf_noxn_emis"],
         "natural_nh3": p["rf_nh3n_emis"],
         "natural_sox": p["sox_natural_emissions"],
@@ -533,8 +533,8 @@ def prescribed_forcing(
             inputs[f"file_{code}b_rf"],
             emissions[f"{species}|Fossil"],
             emissions[f"{species}|Biosphere"],
-            target=p[f"rf_{code}i_dir_wm2"],
-            target_year=p[f"rf_{code}i_dir_yr"],
+            harmonisation_target=p[f"rf_{code}i_dir_wm2"],
+            harmonisation_reference_year=p[f"rf_{code}i_dir_yr"],
         )
     nitrate_args, nitrate_kwargs = _nitrate_inputs(years, emissions, p)
     out[f"{DIRECT}|NO3|Fossil"], out[f"{DIRECT}|NO3|Biosphere"] = pr.nitrate(
@@ -546,8 +546,8 @@ def prescribed_forcing(
         years,
         land_use,
         co2_biosphere,
-        target=p["rf_landuse_albedo_wm2"],
-        target_year=p["rf_landuse_albedo_yr"],
+        harmonisation_target=p["rf_landuse_albedo_wm2"],
+        harmonisation_reference_year=p["rf_landuse_albedo_yr"],
         constant_after=p["rf_landuse_constantafteryr"],
     )
     out[f"{DIRECT}|Mineral Dust"] = pr.mineral_dust(
@@ -555,16 +555,16 @@ def prescribed_forcing(
         land_use,
         co2_biosphere,
         p["rf_regions_dust"],
-        target=p["rf_mineraldust_dir_wm2"],
-        target_year=p["rf_mineraldust_dir_yr"],
+        harmonisation_target=p["rf_mineraldust_dir_wm2"],
+        harmonisation_reference_year=p["rf_mineraldust_dir_yr"],
         constant_after=p["rf_mineraldust_constantafteryr"],
     )
     out["Black Carbon on Snow"] = pr.bc_on_snow(
         years,
         inputs["file_bcsnow_rf"],
         _total(emissions, "BC"),
-        target=p["rf_bcsnow_albedo_wm2"],
-        target_year=p["rf_bcsnow_albedo_yr"],
+        harmonisation_target=p["rf_bcsnow_albedo_wm2"],
+        harmonisation_reference_year=p["rf_bcsnow_albedo_yr"],
     )
     names = ("SOXI", "SOXNB", "OCI", "OCB", "OCN", "BCI", "BCB", "SS")
     out["Aerosols|Indirect Effect"] = pr.cloud_albedo(
@@ -583,8 +583,8 @@ def prescribed_forcing(
         emissions["NOx|Fossil"],
         {g: p[f"cloud_weight_{g}"] for g in ("no3", "bc", "oc", "sox", "ss")},
         p["rf_regions_cloud_albedo"],
-        target=p["rf_cloud_albedo_aer_wm2"],
-        target_year=p["rf_cloud_albedo_aer_yr"],
+        harmonisation_target=p["rf_cloud_albedo_aer_wm2"],
+        harmonisation_reference_year=p["rf_cloud_albedo_aer_yr"],
         bci_soluble_ratio=p["cloud_bci2bcb_soluble_ratio"],
         natural_sox=p["sox_natural_emissions"],
     )
@@ -690,7 +690,13 @@ def forcing_agents(
     args, kwargs = _nitrate_inputs(years, emissions, p)
     patterns["no3"] = pr.nitrate_pattern(*args, index=i, **kwargs)
     agents = [
-        _agent(p, name, key, regional=name == "F-Gases", co2_efficacy=name == "CO2")
+        _agent(
+            p,
+            name,
+            key,
+            regional=name == "F-Gases",
+            use_co2_internal_efficacy=name == "CO2",
+        )
         for name, key in CALCULATED_AGENTS.items()
     ]
     for agent in agents:

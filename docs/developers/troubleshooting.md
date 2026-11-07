@@ -212,7 +212,9 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
         """Disaggregate a scalar temperature to four-box with configurable ratios."""
 
         scalar_temp = Input("Surface Air Temperature Change", unit="K")
-        regional_temp = Output("Regional Temperature", unit="K", grid="four_box")
+        regional_temp = Output(
+            "Regional Surface Air Temperature Change", unit="K", grid="four_box"
+        )
 
         def __init__(self, ocean_ratio=1.05, land_ratio=0.95):
             self.ocean_ratio = ocean_ratio

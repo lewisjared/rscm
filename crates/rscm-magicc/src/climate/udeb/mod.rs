@@ -231,7 +231,6 @@ impl ClimateUdeb {
         // Calculate lambda_ocean and lambda_land via LAMCALC iteration.
         // This accounts for inter-box heat exchange when matching the
         // land-ocean warming ratio (RLO) at the given ECS.
-        let (fgno, fgnl, fgso, fgsl) = parameters.global_box_fractions();
         let lam_result = lamcalc::lamcalc(&LamcalcParameters {
             erf_2xco2: parameters.erf_2xco2,
             land_ocean_heat_exchange: parameters.land_ocean_heat_exchange,
@@ -239,10 +238,7 @@ impl ClimateUdeb {
             ecs: parameters.ecs,
             land_ocean_warming_ratio: parameters.land_ocean_warming_ratio,
             amplify_ocean_to_land: parameters.amplify_ocean_to_land,
-            fgno,
-            fgnl,
-            fgso,
-            fgsl,
+            grid: parameters.grid(),
             co2_regional_pattern: parameters.co2_regional_pattern,
         })
         .ok_or_else(|| {
@@ -257,7 +253,7 @@ impl ClimateUdeb {
         let co2_internal_efficacy = lam_result.co2_internal_efficacy;
 
         // Pre-compute per-box CO2 forcing fractions from the regional pattern
-        let area = [fgno, fgnl, fgso, fgsl];
+        let area = *parameters.grid().weights();
         let co2_qfrac = lamcalc::compute_qfrac(&parameters.co2_regional_pattern, &area);
 
         // Pre-compute depth-dependent ocean area factors
@@ -360,11 +356,10 @@ impl ClimateUdeb {
 
     /// Internal efficacy of an agent with the given regional forcing pattern.
     pub fn internal_efficacy(&self, regional_pattern: &[FloatValue; 4]) -> FloatValue {
-        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
         lamcalc::calc_internal_efficacy(
             self.parameters.erf_2xco2,
             &self.matrix_inverse,
-            &[fgno, fgnl, fgso, fgsl],
+            self.parameters.grid().weights(),
             regional_pattern,
             self.parameters.ecs,
         )
@@ -455,7 +450,6 @@ impl ClimateUdeb {
         if ecs == self.parameters.ecs && erf_2xco2 == self.parameters.erf_2xco2 {
             return self.initial_sensitivity();
         }
-        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
         lamcalc::lamcalc(&LamcalcParameters {
             erf_2xco2,
             land_ocean_heat_exchange: self.parameters.land_ocean_heat_exchange,
@@ -463,10 +457,7 @@ impl ClimateUdeb {
             ecs,
             land_ocean_warming_ratio: self.parameters.land_ocean_warming_ratio,
             amplify_ocean_to_land: self.parameters.amplify_ocean_to_land,
-            fgno,
-            fgnl,
-            fgso,
-            fgsl,
+            grid: self.parameters.grid(),
             co2_regional_pattern: self.parameters.co2_regional_pattern,
         })
         .unwrap_or_else(|| self.initial_sensitivity())
@@ -556,8 +547,8 @@ impl ClimateUdeb {
         // MAGICC7 interpolates forcing at each sub-annual time point:
         //   q(step) = ERF(year + step/steps_per_year)
         // Substep 12 lands on t_next. See docs/modules/time_conventions.md.
-        let (fgno, fgnl, fgso, fgsl) = self.parameters.global_box_fractions();
-        let area = [fgno, fgnl, fgso, fgsl];
+        let area = *self.parameters.grid().weights();
+        let [nh_ocean, nh_land, sh_ocean, sh_land] = area;
         let forcing_input = if self.parameters.include_regional_forcing {
             let (start, end) = input_state
                 .get_four_box_window(EFFICACY_ADJUSTED_ERF)
@@ -687,7 +678,7 @@ impl ClimateUdeb {
             // The ocean solve sees the same flux, so it takes the ground temperatures from before.
             let [nh_ground, sh_ground] = state.ground_temperatures;
             if self.parameters.include_land_heat_capacity {
-                for (hemi, &f_l) in [fgnl, fgsl].iter().enumerate() {
+                for (hemi, &f_l) in [nh_land, sh_land].iter().enumerate() {
                     if f_l < 1e-15 {
                         continue;
                     }
@@ -708,7 +699,7 @@ impl ClimateUdeb {
                 dt_sub,
                 current_lambda_ocean,
                 current_lambda_land,
-                state.hemispheric_heat_exchange[0],
+                state.north_south_heat_flux[0],
                 nh_ground,
                 alpha_eff_nh,
             );
@@ -720,7 +711,7 @@ impl ClimateUdeb {
                 dt_sub,
                 current_lambda_ocean,
                 current_lambda_land,
-                state.hemispheric_heat_exchange[1],
+                state.north_south_heat_flux[1],
                 sh_ground,
                 alpha_eff_sh,
             );
@@ -733,33 +724,33 @@ impl ClimateUdeb {
             state.land_temperatures[0] = self.calculate_land_temperature(
                 t_air_nho,
                 forcing.get(FourBoxRegion::NorthernLand),
-                fgnl,
+                nh_land,
                 current_lambda_land,
             );
             state.land_temperatures[1] = self.calculate_land_temperature(
                 t_air_sho,
                 forcing.get(FourBoxRegion::SouthernLand),
-                fgsl,
+                sh_land,
                 current_lambda_land,
             );
 
-            // Update inter-hemispheric heat exchange for the NEXT substep
+            // Update inter-hemispheric heat flux for the NEXT substep
             // using this substep's air temperatures (MAGICC7 lines 3174-3177).
             // HX(hemi) = K_NS / FGO(hemi) * (T_air_other_ocean - T_air_self_ocean)
             let k_ns = self.parameters.north_south_heat_exchange;
-            if fgno > 1e-15 {
-                state.hemispheric_heat_exchange[0] = k_ns / fgno * (t_air_sho - t_air_nho);
+            if nh_ocean > 1e-15 {
+                state.north_south_heat_flux[0] = k_ns / nh_ocean * (t_air_sho - t_air_nho);
             }
-            if fgso > 1e-15 {
-                state.hemispheric_heat_exchange[1] = k_ns / fgso * (t_air_nho - t_air_sho);
+            if sh_ocean > 1e-15 {
+                state.north_south_heat_flux[1] = k_ns / sh_ocean * (t_air_nho - t_air_sho);
             }
 
             // Update upwelling based on area-weighted global air temperature
             // (MAGICC7.f90 line 3298: GLOBET = SUM(CURRENT_TIME_TEMPERATURE * GLOBALAREAFRACTIONS))
-            let global_temp = t_air_nho * fgno
-                + state.land_temperatures[0] * fgnl
-                + t_air_sho * fgso
-                + state.land_temperatures[1] * fgsl;
+            let global_temp = t_air_nho * nh_ocean
+                + state.land_temperatures[0] * nh_land
+                + t_air_sho * sh_ocean
+                + state.land_temperatures[1] * sh_land;
             if step_idx > 0 {
                 let boxes = [
                     t_air_nho,
@@ -802,10 +793,10 @@ impl ClimateUdeb {
 
         // Track year-weighted temperature history for cumulative-T adjustment.
         // Each entry stores T * dt so the sum gives K-years regardless of step.
-        let global_temp = surface_temperature.0[0] * fgno
-            + surface_temperature.0[1] * fgnl
-            + surface_temperature.0[2] * fgso
-            + surface_temperature.0[3] * fgsl;
+        let global_temp = surface_temperature.0[0] * nh_ocean
+            + surface_temperature.0[1] * nh_land
+            + surface_temperature.0[2] * sh_ocean
+            + surface_temperature.0[3] * sh_land;
         state.temperature_history.push(global_temp * dt_year);
         state.dt_history.push(dt_year);
 
@@ -836,7 +827,7 @@ impl ClimateUdeb {
             // MAGICC7 averages each box over the year before weighting by area
             let annual_mean_temp: FloatValue = box_temp_sums
                 .iter()
-                .zip([fgno, fgnl, fgso, fgsl])
+                .zip(area)
                 .map(|(sum, area)| sum / steps * area)
                 .sum();
             if t_current >= expansion.start_year {
@@ -1615,8 +1606,7 @@ mod tests {
         }
 
         // Area-weighted sum of qfrac * area should equal 1.0
-        let (fgno, fgnl, fgso, fgsl) = component.parameters.global_box_fractions();
-        let area = [fgno, fgnl, fgso, fgsl];
+        let area = *component.parameters.grid().weights();
         let weighted_sum: FloatValue = qfrac.iter().zip(area.iter()).map(|(q, a)| q * a).sum();
         assert!(
             (weighted_sum - 1.0).abs() < 1e-10,
@@ -1898,8 +1888,7 @@ mod tests {
         // Internal efficacy of the pattern at the sensitivity of a year's last substep,
         // whose forcing includes the scaled extra forcing
         let p = &scaled.parameters;
-        let (fgno, fgnl, fgso, fgsl) = p.global_box_fractions();
-        let area = [fgno, fgnl, fgso, fgsl];
+        let area = *p.grid().weights();
         let extra: FloatValue = (0..4).map(|i| box_values[i] * area[i]).sum();
         let efficacy = |year: usize, divisor: FloatValue| {
             let ecs = scaled.adjusted_ecs(erf[year + 1] + extra / divisor, p.erf_2xco2, 0.0);

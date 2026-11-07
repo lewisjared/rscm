@@ -19,6 +19,12 @@ macro_rules! names {
 names! {
     /// Quantity segment of emissions.
     EMISSIONS = "Emissions";
+    /// Quantity segment of emissions inferred from prescribed concentrations.
+    INVERSE_EMISSIONS = "Inverse Emissions";
+    /// Quantity segment of the cumulative emissions still in the atmosphere.
+    AIRBORNE_EMISSIONS = "Airborne Emissions";
+    /// Quantity segment of cumulative emissions.
+    CUMULATIVE_EMISSIONS = "Cumulative Emissions";
     /// Quantity segment of atmospheric concentrations.
     ATMOSPHERIC_CONCENTRATIONS = "Atmospheric Concentrations";
     /// Total effective radiative forcing, and the parent of each agent's forcing.
@@ -222,6 +228,68 @@ mod tests {
     fn names_are_unique() {
         let values: HashSet<_> = ALL.iter().map(|(_, name)| *name).collect();
         assert_eq!(values.len(), ALL.len());
+    }
+
+    #[test]
+    fn names_follow_grammar() {
+        const CONNECTORS: &[&str] = &["to", "of", "on", "per", "and"];
+        const BANNED_WORDS: &[&str] = &[
+            "EESC",
+            "OHC",
+            "pCO2",
+            "ERF",
+            "Total",
+            "AFOLU",
+            "Current",
+            "Next",
+            "Previous",
+            "End-of-Year",
+            "FourBox",
+            "Hemispheric",
+            "Scalar",
+        ];
+        const BANNED_PHRASES: &[&str] = &["Atmospheric Concentration|", "End of Year", "Four Box"];
+        for (id, name) in ALL {
+            for word in name.split(['|', ' ']) {
+                let leading = word.chars().next().unwrap_or(' ');
+                assert!(
+                    leading.is_ascii_uppercase()
+                        || leading.is_ascii_digit()
+                        || CONNECTORS.contains(&word),
+                    "{id}: {word:?} in {name:?} is not Title Case"
+                );
+                assert!(
+                    !BANNED_WORDS.contains(&word),
+                    "{id}: {name:?} uses {word:?}"
+                );
+            }
+            for phrase in BANNED_PHRASES {
+                assert!(!name.contains(phrase), "{id}: {name:?} uses {phrase:?}");
+            }
+            assert!(
+                !name
+                    .replace("Sea Surface Temperature", "")
+                    .contains("Surface Temperature"),
+                "{id}: {name:?} uses Surface Temperature for the air temperature"
+            );
+        }
+    }
+
+    #[test]
+    fn identifiers_match_names() {
+        for (id, name) in ALL {
+            if *id == "ERF_2XCO2" {
+                continue;
+            }
+            let expected = name
+                .replace("Effective Radiative Forcing", "ERF")
+                .split(|c: char| !c.is_ascii_alphanumeric())
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join("_")
+                .to_ascii_uppercase();
+            assert_eq!(*id, expected, "identifier of {name:?}");
+        }
     }
 
     #[test]

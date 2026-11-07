@@ -68,12 +68,12 @@ pub struct ClimateUdebState {
     #[serde(default)]
     pub subannual_next_internal_efficacy: Option<FloatValue>,
 
-    /// Inter-hemispheric heat exchange (W/m^2) from the previous substep.
+    /// Inter-hemispheric heat flux (W/m^2) from the previous substep.
     /// Persists across annual steps (MAGICC7 module-level variable,
     /// initialised once at startup in climate_and_ocean.f90 line 140).
     /// Index 0 = NH, 1 = SH.
     #[serde(default)]
-    pub hemispheric_heat_exchange: [FloatValue; 2],
+    pub north_south_heat_flux: [FloatValue; 2],
 
     /// Initial equilibrium ocean temperature profile per hemisphere (K).
     ///
@@ -152,7 +152,7 @@ impl ClimateUdebState {
             land_temperatures: [0.0; 2],
             ground_temperatures: [0.0; 2],
             alpha_eff: [initial_alpha; 2],
-            hemispheric_heat_exchange: [0.0; 2],
+            north_south_heat_flux: [0.0; 2],
             subannual_internal_efficacy: None,
             subannual_next_internal_efficacy: None,
             initial_ocean_profile: profiles,

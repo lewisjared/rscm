@@ -38,8 +38,7 @@
 //!   from an age of 216 years, and a delayed region releases one year of melt before it starts.
 
 use crate::parameters::{
-    ClimateUdebParameters, SeaLevelRiseParameters, SurfaceMassBalanceParameters,
-    ThermalExpansionParameters,
+    ClimateUdebParameters, SeaLevelRiseParameters, SurfaceMassBalance, ThermalExpansion,
 };
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
@@ -56,13 +55,13 @@ use std::any::Any;
 /// `start` and `end` are the ocean layer warming of each hemisphere at the ends of the step
 /// and `profile` the initial layer temperatures.
 pub fn thermal_expansion_increment(
-    expansion: &ThermalExpansionParameters,
+    expansion: &ThermalExpansion,
     climate: &ClimateUdebParameters,
     profile: &[Vec<FloatValue>; 2],
     start: &[Vec<FloatValue>],
     end: &[Vec<FloatValue>],
 ) -> FloatValue {
-    let (fgno, _, fgso, _) = climate.global_box_fractions();
+    let [nh_ocean, _, sh_ocean, _] = *climate.grid().weights();
     let [p1, p2, p3, p4, p5, p6] = expansion.coefficients;
     let sc = expansion.scaling;
     let (mld, dz) = (climate.mixed_layer_depth, climate.layer_thickness);
@@ -78,7 +77,7 @@ pub fn thermal_expansion_increment(
     let total: FloatValue = (0..climate.n_layers)
         .map(|l| {
             let (area_nh, area_sh) = (area(0, l), area(1, l));
-            let (w_nh, w_sh) = (area_nh * fgno, area_sh * fgso);
+            let (w_nh, w_sh) = (area_nh * nh_ocean, area_sh * sh_ocean);
             let world = |t: &[Vec<FloatValue>]| (w_nh * t[0][l] + w_sh * t[1][l]) / (w_nh + w_sh);
             let (t_start, t_end) = (world(start), world(end));
             let warming = (t_end - t_start) * sc;
@@ -204,11 +203,7 @@ impl SeaLevelRise {
         glaciers + p.sensitivity * (equilibrium - glaciers) * response
     }
 
-    fn smb_step(
-        p: &SurfaceMassBalanceParameters,
-        smb: FloatValue,
-        temperature: FloatValue,
-    ) -> FloatValue {
+    fn smb_step(p: &SurfaceMassBalance, smb: FloatValue, temperature: FloatValue) -> FloatValue {
         let melt = p.linear_fraction * temperature
             + (1.0 - p.linear_fraction) * temperature.max(0.0).powf(p.exponent);
         let remaining = p
@@ -384,7 +379,7 @@ mod tests {
     #[test]
     fn test_thermal_expansion_follows_warming() {
         let climate = ClimateUdebParameters::default();
-        let expansion = ThermalExpansionParameters::default();
+        let expansion = ThermalExpansion::default();
         let profile = [0, 1].map(|hemi| climate.initial_ocean_profile(hemi));
         let cold = vec![vec![0.0; climate.n_layers]; 2];
         let warm = vec![vec![0.1; climate.n_layers]; 2];
@@ -429,7 +424,7 @@ mod tests {
 
     #[test]
     fn test_greenland_smb_limited_by_volume() {
-        let p = SurfaceMassBalanceParameters::greenland();
+        let p = SurfaceMassBalance::greenland();
         let mut smb = 0.0;
         for _ in 0..100_000 {
             smb = SeaLevelRise::smb_step(&p, smb, 10.0);

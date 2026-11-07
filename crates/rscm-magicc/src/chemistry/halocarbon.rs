@@ -337,7 +337,7 @@ impl Component for HalocarbonChemistry {
                     StateValue::Scalar(species_forcing)
                 };
                 output.insert(names.forcing.clone(), value);
-                let delayed = lagged(&window, next, self.parameters.eesc_delay);
+                let delayed = lagged(&window, next, self.parameters.stratospheric_delay);
                 eesc += self.eesc_contribution(species, delayed);
                 output.insert(names.concentration.clone(), StateValue::Scalar(next));
             }

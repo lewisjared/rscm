@@ -4,6 +4,12 @@ from typing import Final
 
 EMISSIONS: Final = "Emissions"
 """Quantity segment of emissions."""
+INVERSE_EMISSIONS: Final = "Inverse Emissions"
+"""Quantity segment of emissions inferred from prescribed concentrations."""
+AIRBORNE_EMISSIONS: Final = "Airborne Emissions"
+"""Quantity segment of the cumulative emissions still in the atmosphere."""
+CUMULATIVE_EMISSIONS: Final = "Cumulative Emissions"
+"""Quantity segment of cumulative emissions."""
 ATMOSPHERIC_CONCENTRATIONS: Final = "Atmospheric Concentrations"
 """Quantity segment of atmospheric concentrations."""
 ERF: Final = "Effective Radiative Forcing"

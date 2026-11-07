@@ -53,7 +53,7 @@ def emissions(species: str) -> str:
 
 def inverse_emissions(species: str) -> str:
     """Emissions of a species inferred from its prescribed concentration."""
-    return f"Inverse Emissions|{rscm_name(species)}"
+    return names.child(names.INVERSE_EMISSIONS, rscm_name(species))
 
 
 def concentration(species: str) -> str:
@@ -63,7 +63,7 @@ def concentration(species: str) -> str:
 
 def airborne_emissions(species: str) -> str:
     """Airborne emissions variable of a greenhouse gas."""
-    return f"Airborne Emissions|{rscm_name(species)}"
+    return names.child(names.AIRBORNE_EMISSIONS, rscm_name(species))
 
 
 def prescribed_forcing(entry: dict[str, Any]) -> str:
@@ -73,7 +73,7 @@ def prescribed_forcing(entry: dict[str, Any]) -> str:
 
 def cumulative_emissions(species: str) -> str:
     """Cumulative emissions variable of a greenhouse gas."""
-    return f"Cumulative Emissions|{rscm_name(species)}"
+    return names.child(names.CUMULATIVE_EMISSIONS, rscm_name(species))
 
 
 def forcing(entry: dict[str, Any]) -> str:
