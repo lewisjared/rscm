@@ -1,0 +1,56 @@
+{
+  "name": "EnergyBalance",
+  "slug": "fair-energybalance",
+  "reference_model": "FaIR",
+  "variables_from_parameters": true,
+  "module_path": "rscm_fair::energy_balance",
+  "language": "rust",
+  "description": "Calculates the surface air temperature change and the temperature of each ocean layer\nfrom the effective radiative forcing,\nwith the resulting energy imbalance and ocean heat content.\nIt solves the n-layer energy balance of Cummins et al. (2020) exactly over each step.\n\nThe state $x = (F_s, T_1, \\ldots, T_n)$ holds the forcing seen by the climate and the\ntemperature of each layer, surface first.\nOver one step of length $\\Delta t$,\n\n$$x' = e^{A} x + A^{-1} (e^{A} - I)\\, b\\, F$$\n\nwhere $A$ is the energy balance matrix with heat capacities divided by $\\Delta t$,\n$b = (\\gamma, 0, \\ldots, 0)$ and $F$ the efficacy-adjusted effective radiative forcing.\nThe top of atmosphere energy imbalance is\n\n$$N = F_{tot} - \\kappa_1 T_1 + (1 - \\epsilon) \\kappa_n (T_{n-1} - T_n)$$\n\nfrom the total effective radiative forcing $F_{tot}$,\nand the ocean heat content change integrates $N$ over the Earth's surface.\nStochastic internal variability is not implemented,\nso $F_s$ relaxes towards $F$ at the rate `gamma_autocorrelation`.\n\n# Inputs\n\n- The total effective radiative forcing named by `forcing` (W/m^2), for the energy imbalance.\n  Its default is `Effective Radiative Forcing`.\n- The efficacy-adjusted effective radiative forcing named by `efficacy_adjusted_forcing`\n  (W/m^2), which drives the temperatures.\n  Its default is `Efficacy Adjusted Effective Radiative Forcing`.\n\n# States\n\n- `Stochastic Forcing` (W/m^2), the forcing seen by the climate.\n- The surface air temperature change named by `surface_temperature` (K).\n  Its default is `Surface Air Temperature Change`.\n- `Ocean Temperature|Layer 2` to `Ocean Temperature|Layer n` (K),\n  one per layer below the surface.\n- `Ocean Heat Content` (J).\n\n# Outputs\n\n- `Net Energy Imbalance` (W/m^2), the top of atmosphere energy imbalance.",
+  "category": "Climate",
+  "tags": [
+    "climate",
+    "energy-balance",
+    "fair"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "ocean_heat_capacity",
+      "type": "Vec<FloatValue>",
+      "description": "Heat capacity of each layer, surface first (FaIR `ocean_heat_capacity`).\nunit: W yr/m^2/K"
+    },
+    {
+      "name": "ocean_heat_transfer",
+      "type": "Vec<FloatValue>",
+      "description": "Heat transfer coefficient of each layer, surface first (FaIR `ocean_heat_transfer`).\nThe first is the climate feedback parameter.\nunit: W/m^2/K"
+    },
+    {
+      "name": "deep_ocean_efficacy",
+      "type": "FloatValue",
+      "description": "Efficacy of heat transfer into the deepest layer (FaIR `deep_ocean_efficacy`)."
+    },
+    {
+      "name": "gamma_autocorrelation",
+      "type": "FloatValue",
+      "description": "Rate at which the forcing seen by the climate relaxes towards the efficacy-adjusted\neffective radiative forcing (FaIR `gamma_autocorrelation`).\nunit: 1/yr"
+    },
+    {
+      "name": "surface_temperature",
+      "type": "String",
+      "description": "Name of the surface air temperature change state."
+    },
+    {
+      "name": "forcing",
+      "type": "String",
+      "description": "Name of the total effective radiative forcing input, for the energy imbalance."
+    },
+    {
+      "name": "efficacy_adjusted_forcing",
+      "type": "String",
+      "description": "Name of the efficacy-adjusted effective radiative forcing input,\nwhich drives the temperatures."
+    }
+  ],
+  "source_file": "crates/rscm-fair/src/energy_balance.rs"
+}

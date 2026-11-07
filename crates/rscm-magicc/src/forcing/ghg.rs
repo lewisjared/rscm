@@ -1,26 +1,15 @@
-//! GHG Radiative Forcing Component
+//! GHG Forcing Component
 //!
-//! Calculates effective radiative forcing (ERF) from well-mixed greenhouse
-//! gases (CO2, CH4, N2O) following MAGICC7 forcing methods.
+//! Calculates effective radiative forcing (ERF) from the well-mixed greenhouse
+//! gases CO2, CH4 and N2O, following MAGICC7's forcing methods.
 //!
 //! # What This Component Does
 //!
-//! 1. Calculates instantaneous radiative forcing from CO2, CH4, and N2O
-//!    concentrations using either IPCCTAR or OLBL methods
+//! 1. Calculates instantaneous radiative forcing from CO2, CH4 and N2O
+//!    concentrations using either the IPCCTAR or the OLBL method
 //! 2. Accounts for CH4-N2O absorption band overlap
 //! 3. Applies rapid adjustment factors to convert to effective radiative forcing
-//!
-//! # Inputs
-//!
-//! - `Atmospheric Concentrations|CO2` (ppm) - CO2 concentration
-//! - `Atmospheric Concentrations|CH4` (ppb) - CH4 concentration
-//! - `Atmospheric Concentrations|N2O` (ppb) - N2O concentration
-//!
-//! # Outputs
-//!
-//! - `Effective Radiative Forcing|CO2` (W/m^2) - CO2 ERF
-//! - `Effective Radiative Forcing|CH4` (W/m^2) - CH4 ERF
-//! - `Effective Radiative Forcing|N2O` (W/m^2) - N2O ERF
+//! 4. Reports the 2xCO2 ERF and the ERF of stratospheric H2O from CH4 oxidation
 //!
 //! # Methods
 //!
@@ -29,10 +18,21 @@
 //! Simple analytical formulae: logarithmic for CO2, square-root for CH4/N2O,
 //! with overlap correction.
 //!
+//! $$F_{CO2} = \frac{\Delta Q_{2 \times CO2}}{\ln 2} \cdot \ln\left(\frac{C}{C_0}\right)$$
+//!
+//! The CH4-N2O overlap is
+//!
+//! $$f(M, N) = 0.47 \cdot \ln\left(1 + 2.01 \times 10^{-5} (MN)^{0.75}
+//!     + 5.31 \times 10^{-15} M (MN)^{1.52}\right)$$
+//!
 //! ## Oslo line-by-line (OLBL)
 //!
 //! Meinshausen et al. (2020), shared with FaIR in [`rscm_components::meinshausen2020`],
 //! with MAGICC7's coefficients and the pre-industrial concentrations as reference.
+//! For CO2:
+//!
+//! $$\alpha = a_1 (\Delta C)^2 + b_1 \Delta C + d_1 + c_1 \sqrt{N_2O}$$
+//! $$F_{CO2} = \alpha \cdot \ln(C / C_0)$$
 
 use crate::parameters::{ForcingMethod, GHGForcingParameters};
 use rscm_core::component::{
@@ -44,37 +44,20 @@ use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
-/// GHG radiative forcing component
-///
-/// Calculates effective radiative forcing from CO2, CH4, and N2O
-/// concentrations using configurable forcing methods.
-///
-/// # CO2 Forcing (IPCCTAR)
-///
-/// $$F_{CO2} = \frac{\Delta Q_{2 \times CO2}}{\ln 2} \cdot \ln\left(\frac{C}{C_0}\right)$$
-///
-/// # CO2 Forcing (OLBL)
-///
-/// $$\alpha = a_1 (\Delta C)^2 + b_1 \Delta C + d_1 + c_1 \sqrt{N_2O}$$
-/// $$F_{CO2} = \alpha \cdot \ln(C / C_0)$$
-///
-/// # CH4-N2O Overlap (IPCCTAR)
-///
-/// $$f(M, N) = 0.47 \cdot \ln\left(1 + 2.01 \times 10^{-5} (MN)^{0.75}
-///     + 5.31 \times 10^{-15} M (MN)^{1.52}\right)$$
+/// GHG effective radiative forcing component.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[component(tags = ["forcing", "ghg", "co2", "ch4", "n2o", "magicc"], category = "Radiative Forcing")]
 #[inputs(
-    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
-    ch4_concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb" },
-    n2o_concentration { name = "Atmospheric Concentrations|N2O", unit = "ppb" },
+    co2_concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm", description = "Atmospheric CO2 concentration" },
+    ch4_concentration { name = "Atmospheric Concentrations|CH4", unit = "ppb", description = "Atmospheric CH4 concentration" },
+    n2o_concentration { name = "Atmospheric Concentrations|N2O", unit = "ppb", description = "Atmospheric N2O concentration" },
 )]
 #[outputs(
-    co2_erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
-    ch4_erf { name = "Effective Radiative Forcing|CH4", unit = "W/m^2" },
-    n2o_erf { name = "Effective Radiative Forcing|N2O", unit = "W/m^2" },
-    erf_2xco2 { name = "2xCO2 Effective Radiative Forcing", unit = "W/m^2" },
-    ch4_strat_h2o_erf { name = "Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O", unit = "W/m^2" },
+    co2_erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2", description = "CO2 ERF" },
+    ch4_erf { name = "Effective Radiative Forcing|CH4", unit = "W/m^2", description = "CH4 ERF" },
+    n2o_erf { name = "Effective Radiative Forcing|N2O", unit = "W/m^2", description = "N2O ERF" },
+    erf_2xco2 { name = "2xCO2 Effective Radiative Forcing", unit = "W/m^2", description = "2xCO2 ERF, recalculated from the current CO2 and N2O with OLBL and fixed by `erf_2xco2` with IPCCTAR" },
+    ch4_strat_h2o_erf { name = "Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O", unit = "W/m^2", description = "ERF of stratospheric H2O from CH4 oxidation, a fixed fraction of the CH4 ERF taken at pre-industrial N2O with OLBL and without the N2O overlap with IPCCTAR" },
 )]
 pub struct GHGForcing {
     parameters: GHGForcingParameters,

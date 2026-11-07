@@ -1,0 +1,101 @@
+{
+  "name": "HalocarbonChemistry",
+  "slug": "magicc-halocarbonchemistry",
+  "reference_model": "MAGICC7",
+  "variables_from_parameters": true,
+  "module_path": "rscm_magicc::chemistry::halocarbon",
+  "language": "rust",
+  "description": "Calculates the concentrations, effective radiative forcing (ERF) and equivalent effective\nstratospheric chlorine (EESC) of the F-gases and Montreal Protocol gases, following MAGICC7.\n\nThe species come from the `fgases` and `montreal_gases` parameters, and `{species}` below\nstands for each of them.\nTheir defaults are the 23 F-gases and 18 Montreal Protocol gases of MAGICC7 v7.5.3\n(its `FGAS_*` and `MHALO_*` configuration), so by default the component declares about 128 variables.\n\n# Inputs\n\n- `Emissions|{species}` (kt {species}/yr): emissions of each species over the step\n- `Prescribed Atmospheric Concentrations|{species}` (ppt): prescribed concentration of each F-gas\n  with the `fgas_switch_year` parameter,\n  and of each Montreal Protocol gas with `montreal_gases_switch_year`\n- `Lifetime|CH4|OH` (yr), only with the `include_variable_oh_lifetime` parameter: scales the OH lifetimes\n- `Surface Air Temperature Change` (K), only with the `include_variable_stratospheric_lifetime` parameter:\n  shortens the stratospheric lifetimes\n- `Emissions|CO2|Fossil` (GtC/yr), only with the `fgas_regions` parameter:\n  spreads short-lived F-gases between the hemispheres\n\n# States\n\n- `Atmospheric Concentrations|{species}` (ppt): concentration of each species at the end of the step\n\n# Outputs\n\n- `Effective Radiative Forcing|F-Gases` (W/m^2): total F-gas ERF,\n  on the four-box grid with the `fgas_regions` parameter\n- `Effective Radiative Forcing|Montreal Protocol Halogen Gases` (W/m^2): total Montreal Protocol gas ERF\n- `Effective Radiative Forcing|F-Gases|{species}` (W/m^2): ERF of each F-gas,\n  on the four-box grid with the `fgas_regions` parameter\n- `Effective Radiative Forcing|Montreal Protocol Halogen Gases|{species}` (W/m^2):\n  ERF of each Montreal Protocol gas\n- `Equivalent Effective Stratospheric Chlorine` (ppt):\n  EESC from the chlorine and bromine of every species,\n  from concentrations `stratospheric_delay` years earlier\n\n# Lifetimes\n\n$$\\frac{1}{\\tau} = \\frac{1}{s_{OH} \\tau_{OH}} + \\frac{1}{s_{strat} \\tau_{strat}} + \\frac{1}{\\tau_{other}}$$\n\nwhere $s_{OH}$ is the CH4 OH lifetime relative to its unperturbed value and\n$s_{strat} = 1 / (1 + f \\cdot k \\cdot \\max(0, T - T_{1980}))$ after 1980.\n\n# Concentrations\n\nSpecies with lifetimes of at least 5 years are integrated with Crank-Nicolson.\nShorter-lived species use the exact exponential solution.\nBoth use the emissions and lifetime at the start of the year.",
+  "category": "Atmospheric Chemistry",
+  "tags": [
+    "chemistry",
+    "halocarbon",
+    "magicc"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "fgases",
+      "type": "Vec<HalocarbonSpecies>",
+      "description": "F-gases, which do not deplete ozone.\n\nThe default is MAGICC7's 23 `FGAS_*` species."
+    },
+    {
+      "name": "montreal_gases",
+      "type": "Vec<HalocarbonSpecies>",
+      "description": "Montreal Protocol gases.\n\nThe default is MAGICC7's 18 `MHALO_*` species."
+    },
+    {
+      "name": "br_cl_ratio",
+      "type": "FloatValue",
+      "description": "Ozone depletion by bromine relative to chlorine (MAGICC7 `STRATOZ_BR_VS_CL_SCALE`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "cfc11_release_factor",
+      "type": "FloatValue",
+      "description": "EESC scaling, the CFC-11 release factor (MAGICC7 `MHALO_RELEASEFACTORC11`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "stratospheric_delay",
+      "type": "usize",
+      "description": "Time from the troposphere to the stratosphere (MAGICC7 `GEN_EESC_STRATMIXDELAY`)\n\nunit: yr"
+    },
+    {
+      "name": "air_molar_mass",
+      "type": "FloatValue",
+      "description": "Molar mass of air (MAGICC7 `GEN_AIR_GRAMMPROMOL`)\n\nunit: g/mol"
+    },
+    {
+      "name": "atmosphere_mass",
+      "type": "FloatValue",
+      "description": "Mass of the atmosphere (MAGICC7 `GEN_ATM_TOTMASS_1E21GRAMM`)\n\nunit: 1e21 g"
+    },
+    {
+      "name": "include_variable_oh_lifetime",
+      "type": "bool",
+      "description": "Scale OH lifetimes with the CH4 OH lifetime (MAGICC7 `*_USE_TAUOH_VAR`)"
+    },
+    {
+      "name": "initial_ch4_oh_lifetime",
+      "type": "FloatValue",
+      "description": "Unperturbed CH4 OH lifetime, the reference for the OH scaling.\n\nunit: yr\n\nMAGICC7 derives it from `CH4_TAUTOT_INIT` and the other CH4 lifetimes."
+    },
+    {
+      "name": "include_variable_stratospheric_lifetime",
+      "type": "bool",
+      "description": "Scale stratospheric lifetimes with warming (MAGICC7 `*_USE_TAUSTRAT_VAR`)"
+    },
+    {
+      "name": "meridional_flux_reference_year",
+      "type": "FloatValue",
+      "description": "Year from which warming speeds up the meridional circulation (MAGICC7 `GEN_CHANGE_MERIDIONALFLUX_YR`)\n\nunit: yr"
+    },
+    {
+      "name": "meridional_flux_change_per_degree",
+      "type": "FloatValue",
+      "description": "Change in meridional flux per degree of warming (MAGICC7 `GEN_MERIDFLUX_CHNGPERDEG`)\n\nunit: K^-1"
+    },
+    {
+      "name": "stratospheric_lifetime_sensitivity",
+      "type": "FloatValue",
+      "description": "Sensitivity of stratospheric lifetimes to the meridional flux (MAGICC7 `*_TAUSTRAT_SENS2MERIDFLUX`)\n\nunit: dimensionless"
+    },
+    {
+      "name": "fgas_switch_year",
+      "type": "Option<FloatValue>",
+      "description": "Last year of F-gas concentrations prescribed by `Prescribed Atmospheric Concentrations|{species}`\n(MAGICC7 `FGAS_SWITCHFROMCONC2EMIS_YEAR`).\n\nunit: yr\n\n`None` calculates them from emissions throughout."
+    },
+    {
+      "name": "montreal_gases_switch_year",
+      "type": "Option<FloatValue>",
+      "description": "As `fgas_switch_year`, for the Montreal Protocol gases (MAGICC7 `MHALO_SWITCHFROMCONC2EMIS_YEAR`)\n\nunit: yr"
+    },
+    {
+      "name": "fgas_regions",
+      "type": "Option<FGasRegions>",
+      "description": "Regional pattern of F-gas ERF.\n\nSetting it makes `Effective Radiative Forcing|F-Gases` and each F-gas ERF four-box outputs."
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/chemistry/halocarbon.rs"
+}

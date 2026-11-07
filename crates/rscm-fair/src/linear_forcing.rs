@@ -1,11 +1,31 @@
-//! Forcing linear in its drivers (FaIR steps 6 and 9 to 13)
+//! Effective radiative forcing linear in its drivers (FaIR steps 6 and 9 to 13)
+//!
+//! Calculates an effective radiative forcing that is linear in a set of emissions,
+//! concentrations or cumulative emissions.
+//! One instance each gives FaIR's aerosol-radiation interactions, ozone, contrail,
+//! light absorbing particles on snow, stratospheric water vapour and land-use change forcing.
 //!
 //! $$F = \sum_i (x_i - x_{i,0})\, \eta_i\, s + \lambda T$$
 //!
-//! with radiative efficiencies $\eta_i$, forcing scale $s$ and a feedback $\lambda$ on the
-//! surface temperature at the start of the step.
-//! One instance each gives FaIR's aerosol-radiation, ozone, contrail, light absorbing
-//! particle, stratospheric water vapour and land use forcing.
+//! with drivers $x_i$, baselines $x_{i,0}$, radiative efficiencies $\eta_i$, forcing scale $s$
+//! and a feedback $\lambda$ on the surface air temperature change $T$ at the start of the step.
+//! The forcing scale is `forcing_scale * (1 + tropospheric_adjustment)`.
+//! A cumulative emissions driver reads an emissions rate and accumulates it over the run.
+//!
+//! # Inputs
+//!
+//! - The surface air temperature change named by `surface_temperature` (K).
+//!   Its default is `Surface Air Temperature Change`.
+//! - Each driver's `variable`, in the driver's `unit`.
+//!   rscm.fair passes, for example, `Emissions|SOx` for aerosol-radiation interactions
+//!   and `Emissions|CO2|Biosphere` for land-use change.
+//!
+//! # Outputs
+//!
+//! - The effective radiative forcing named by `forcing` (W/m^2).
+//!   rscm.fair names it after the forcing agent,
+//!   such as `Effective Radiative Forcing|Aerosols|Direct Effect`
+//!   or `Effective Radiative Forcing|Ozone`.
 
 use crate::constants::{driver_definitions, get, one, surface_temperature};
 use crate::driver::Driver;
@@ -15,6 +35,7 @@ use rscm_core::component::{
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
@@ -22,16 +43,16 @@ use std::any::Any;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LinearDriver {
-    /// Input variable. Cumulative drivers read the emissions rate.
+    /// Name of the input. A cumulative emissions driver reads the emissions rate.
     pub variable: String,
-    /// Its unit.
+    /// Unit of the input.
     pub unit: String,
-    /// What the driver is.
+    /// Whether the input is emissions, a concentration or cumulative emissions.
     pub driver: Driver,
-    /// Value with zero forcing.
+    /// Value of the driver with zero effective radiative forcing.
     #[serde(default)]
     pub baseline: FloatValue,
-    /// Forcing per unit of the driver.
+    /// Effective radiative forcing per unit of the driver.
     pub radiative_efficiency: FloatValue,
 }
 
@@ -39,20 +60,23 @@ pub struct LinearDriver {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LinearForcingParameters {
-    /// Forcing output.
+    /// Name of the effective radiative forcing output.
     pub forcing: String,
-    /// Drivers, summed in order.
+    /// Emissions, concentrations or cumulative emissions the forcing is linear in, summed in order.
     pub drivers: Vec<LinearDriver>,
-    /// Forcing scaling.
+    /// Multiplier on the effective radiative forcing (FaIR `forcing_scale`).
     #[serde(default = "one")]
     pub forcing_scale: FloatValue,
-    /// Tropospheric adjustment.
+    /// Fractional tropospheric adjustment, applied as `1 + tropospheric_adjustment`
+    /// (FaIR `tropospheric_adjustment`).
     #[serde(default)]
     pub tropospheric_adjustment: FloatValue,
-    /// Forcing per kelvin of surface temperature.
+    /// Effective radiative forcing per kelvin of surface air temperature change
+    /// (FaIR `forcing_temperature_feedback`).
+    /// unit: W/m^2/K
     #[serde(default)]
     pub temperature_feedback: FloatValue,
-    /// Surface temperature input.
+    /// Name of the surface air temperature change input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
 }
@@ -75,8 +99,9 @@ impl ComponentState for LinearForcingState {
     }
 }
 
-/// Forcing linear in emissions, concentrations or cumulative emissions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Effective radiative forcing linear in emissions, concentrations or cumulative emissions.
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["forcing", "aerosol", "ozone", "fair"], category = "Radiative Forcing")]
 pub struct LinearForcing {
     parameters: LinearForcingParameters,
 }

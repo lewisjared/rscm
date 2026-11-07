@@ -1,8 +1,9 @@
 {
   "name": "CarbonCycle",
+  "slug": "carboncycle",
   "module_path": "rscm_components::components::carbon_cycle",
   "language": "rust",
-  "description": "A simple one-box carbon cycle model that tracks atmospheric CO2 concentrations\nand land uptake based on emissions and temperature.\n\nThis component models the carbon cycle using a simple one-box model where:\n\n- CO2 emissions increase atmospheric concentrations\n- Land uptake removes CO2 at a rate that depends on the concentration anomaly\n- The uptake rate is temperature-dependent\n\nThe governing equations are:\n\n$$ \\frac{dC}{dt} = E - \\frac{C - C_0}{\\tau \\exp(\\alpha_T \\cdot T)} $$\n\nWhere:\n\n- $C$ is atmospheric CO2 concentration (ppm)\n- $E$ is emissions (GtC/yr converted to ppm/yr)\n- $C_0$ is pre-industrial concentration (ppm)\n- $\\tau$ is the response timescale (yr)\n- $\\alpha_T$ is the temperature sensitivity (1/K)\n- $T$ is the surface air temperature change (K)",
+  "description": "A single box tracks the atmospheric CO2 concentration,\nwhich CO2 emissions raise and land uptake lowers.\nLand uptake removes the concentration excess over pre-industrial at a temperature-dependent rate.\n\nThe concentration follows\n\n$$ \\frac{dC}{dt} = E - \\frac{C - C_0}{\\tau \\exp(\\alpha_T \\cdot T)} $$\n\nwhere:\n\n- $C$ is the atmospheric CO2 concentration (ppm)\n- $E$ is the CO2 emissions (GtC/yr converted to ppm/yr)\n- $C_0$ is the pre-industrial concentration (ppm)\n- $\\tau$ is the response timescale (yr)\n- $\\alpha_T$ scales the response timescale with warming (1/K)\n- $T$ is the surface air temperature change (K)",
   "category": "Carbon Cycle",
   "tags": [
     "carbon-cycle",
@@ -14,13 +15,15 @@
       "rust_name": "emissions",
       "name": "Emissions|CO2",
       "unit": "GtC/yr",
-      "grid": "scalar"
+      "grid": "scalar",
+      "description": "CO2 emissions, added to the atmosphere"
     },
     {
       "rust_name": "temperature",
       "name": "Surface Air Temperature Change",
       "unit": "K",
-      "grid": "scalar"
+      "grid": "scalar",
+      "description": "Surface air temperature change, which scales the response timescale"
     }
   ],
   "outputs": [],
@@ -29,19 +32,22 @@
       "rust_name": "concentration",
       "name": "Atmospheric Concentrations|CO2",
       "unit": "ppm",
-      "grid": "scalar"
+      "grid": "scalar",
+      "description": "Atmospheric CO2 concentration at the end of the step"
     },
     {
       "rust_name": "cumulative_emissions",
       "name": "Cumulative Emissions|CO2",
       "unit": "GtC",
-      "grid": "scalar"
+      "grid": "scalar",
+      "description": "CO2 emitted up to the end of the step"
     },
     {
       "rust_name": "cumulative_uptake",
       "name": "Cumulative Carbon Uptake|Land",
       "unit": "GtC",
-      "grid": "scalar"
+      "grid": "scalar",
+      "description": "Carbon taken up by land up to the end of the step"
     }
   ],
   "parameters": [
@@ -58,11 +64,7 @@
     {
       "name": "alpha_temperature",
       "type": "FloatValue",
-      "description": "Sensitivity of the response timescale to changes in global-mean temperature\nunit: 1/K"
-    },
-    {
-      "name": "step_size",
-      "type": "FloatValue"
+      "description": "Exponential scaling of the response timescale with surface air temperature change\nunit: 1/K"
     }
   ],
   "source_file": "crates/rscm-components/src/components/carbon_cycle.rs"

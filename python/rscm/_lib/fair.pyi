@@ -18,6 +18,9 @@ class CH4LifetimeBuilder(ComponentBuilder):
     - `emissions` and `concentrations`: precursors with `variable`, `unit`,
       `baseline` and `sensitivity`
     - `temperature_sensitivity`, `minimum_scaling`, `surface_temperature`, `output`
+
+    Inputs, outputs and states are listed on the
+    [CH4Lifetime component page][component-fair-ch4lifetime].
     """
 
     @staticmethod
@@ -34,6 +37,9 @@ class GasCycleBuilder(ComponentBuilder):
 
     - `species`: one dict per gas, see `rscm.fair.config`
     - `maximum_iirf`, `surface_temperature`
+
+    Inputs, outputs and states are listed on the
+    [GasCycle component page][component-fair-gascycle].
     """
 
     @staticmethod
@@ -51,6 +57,9 @@ class EESCBuilder(ComponentBuilder):
     - `halogens`: `concentration`, `unit`, `cl_atoms`, `br_atoms`,
       `fractional_release`
     - `cfc11_fractional_release`, `br_cl_ratio`, `output`, `unit`
+
+    Inputs, outputs and states are listed on the
+    [EESC component page][component-fair-eesc].
     """
 
     @staticmethod
@@ -70,6 +79,9 @@ class GHGForcingBuilder(ComponentBuilder):
       `baseline_concentration`, `forcing_scale`, `tropospheric_adjustment`,
       `radiative_efficiency`, `temperature_feedback`
     - `surface_temperature`
+
+    Inputs, outputs and states are listed on the
+    [GHGForcing component page][component-fair-ghgforcing].
     """
 
     @staticmethod
@@ -88,6 +100,9 @@ class LinearForcingBuilder(ComponentBuilder):
     - `drivers`: `variable`, `unit`, `driver`, `baseline`, `radiative_efficiency`
     - `forcing_scale`, `tropospheric_adjustment`, `temperature_feedback`,
       `surface_temperature`
+
+    Inputs, outputs and states are listed on the
+    [LinearForcing component page][component-fair-linearforcing].
     """
 
     @staticmethod
@@ -106,6 +121,9 @@ class AerosolCloudBuilder(ComponentBuilder):
     - `drivers`: `variable`, `unit`, `driver`, `baseline`, `shape`
     - `forcing_scale`, `tropospheric_adjustment`, `temperature_feedback`,
       `surface_temperature`
+
+    Inputs, outputs and states are listed on the
+    [AerosolCloud component page][component-fair-aerosolcloud].
     """
 
     @staticmethod
@@ -122,6 +140,9 @@ class ForcingAggregationBuilder(ComponentBuilder):
 
     - `agents`: `forcing`, `category`, `prescribed`, `efficacy`, `temperature_feedback`
     - `total`, `efficacy_adjusted`, `surface_temperature`
+
+    Inputs, outputs and states are listed on the
+    [ForcingAggregation component page][component-fair-forcingaggregation].
     """
 
     @staticmethod
@@ -139,6 +160,9 @@ class EnergyBalanceBuilder(ComponentBuilder):
     - `ocean_heat_capacity`, `ocean_heat_transfer`, `deep_ocean_efficacy`
     - `gamma_autocorrelation`, `surface_temperature`, `forcing`,
       `efficacy_adjusted_forcing`
+
+    Inputs, outputs and states are listed on the
+    [EnergyBalance component page][component-fair-energybalance].
     """
 
     @staticmethod

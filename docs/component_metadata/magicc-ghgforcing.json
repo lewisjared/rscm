@@ -1,0 +1,191 @@
+{
+  "name": "GHGForcing",
+  "slug": "magicc-ghgforcing",
+  "reference_model": "MAGICC7",
+  "module_path": "rscm_magicc::forcing::ghg",
+  "language": "rust",
+  "description": "Calculates effective radiative forcing (ERF) from the well-mixed greenhouse\ngases CO2, CH4 and N2O, following MAGICC7's forcing methods.\n\n# What This Component Does\n\n1. Calculates instantaneous radiative forcing from CO2, CH4 and N2O\n   concentrations using either the IPCCTAR or the OLBL method\n2. Accounts for CH4-N2O absorption band overlap\n3. Applies rapid adjustment factors to convert to effective radiative forcing\n4. Reports the 2xCO2 ERF and the ERF of stratospheric H2O from CH4 oxidation\n\n# Methods\n\n## IPCCTAR (Myhre et al. 1998)\n\nSimple analytical formulae: logarithmic for CO2, square-root for CH4/N2O,\nwith overlap correction.\n\n$$F_{CO2} = \\frac{\\Delta Q_{2 \\times CO2}}{\\ln 2} \\cdot \\ln\\left(\\frac{C}{C_0}\\right)$$\n\nThe CH4-N2O overlap is\n\n$$f(M, N) = 0.47 \\cdot \\ln\\left(1 + 2.01 \\times 10^{-5} (MN)^{0.75}\n    + 5.31 \\times 10^{-15} M (MN)^{1.52}\\right)$$\n\n## Oslo line-by-line (OLBL)\n\nMeinshausen et al. (2020), shared with FaIR in [`rscm_components::meinshausen2020`],\nwith MAGICC7's coefficients and the pre-industrial concentrations as reference.\nFor CO2:\n\n$$\\alpha = a_1 (\\Delta C)^2 + b_1 \\Delta C + d_1 + c_1 \\sqrt{N_2O}$$\n$$F_{CO2} = \\alpha \\cdot \\ln(C / C_0)$$",
+  "category": "Radiative Forcing",
+  "tags": [
+    "forcing",
+    "ghg",
+    "co2",
+    "ch4",
+    "n2o",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "co2_concentration",
+      "name": "Atmospheric Concentrations|CO2",
+      "unit": "ppm",
+      "grid": "scalar",
+      "description": "Atmospheric CO2 concentration"
+    },
+    {
+      "rust_name": "ch4_concentration",
+      "name": "Atmospheric Concentrations|CH4",
+      "unit": "ppb",
+      "grid": "scalar",
+      "description": "Atmospheric CH4 concentration"
+    },
+    {
+      "rust_name": "n2o_concentration",
+      "name": "Atmospheric Concentrations|N2O",
+      "unit": "ppb",
+      "grid": "scalar",
+      "description": "Atmospheric N2O concentration"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "co2_erf",
+      "name": "Effective Radiative Forcing|CO2",
+      "unit": "W/m^2",
+      "grid": "scalar",
+      "description": "CO2 ERF"
+    },
+    {
+      "rust_name": "ch4_erf",
+      "name": "Effective Radiative Forcing|CH4",
+      "unit": "W/m^2",
+      "grid": "scalar",
+      "description": "CH4 ERF"
+    },
+    {
+      "rust_name": "n2o_erf",
+      "name": "Effective Radiative Forcing|N2O",
+      "unit": "W/m^2",
+      "grid": "scalar",
+      "description": "N2O ERF"
+    },
+    {
+      "rust_name": "erf_2xco2",
+      "name": "2xCO2 Effective Radiative Forcing",
+      "unit": "W/m^2",
+      "grid": "scalar",
+      "description": "2xCO2 ERF, recalculated from the current CO2 and N2O with OLBL and fixed by `erf_2xco2` with IPCCTAR"
+    },
+    {
+      "rust_name": "ch4_strat_h2o_erf",
+      "name": "Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O",
+      "unit": "W/m^2",
+      "grid": "scalar",
+      "description": "ERF of stratospheric H2O from CH4 oxidation, a fixed fraction of the CH4 ERF taken at pre-industrial N2O with OLBL and without the N2O overlap with IPCCTAR"
+    }
+  ],
+  "states": [],
+  "parameters": [
+    {
+      "name": "method",
+      "type": "ForcingMethod",
+      "description": "Forcing method (MAGICC7 `CORE_CO2CH4N2O_RFMETHOD`)"
+    },
+    {
+      "name": "co2_pi",
+      "type": "f64",
+      "description": "Pre-industrial CO2 concentration (MAGICC7 `CO2_PREINDCO2CONC`)\n\nunit: ppm\n\nDefault: 278.0 ppm\nMAGICC7: CO2_PREINDCO2CONC"
+    },
+    {
+      "name": "ch4_pi",
+      "type": "f64",
+      "description": "Pre-industrial CH4 concentration\n\nunit: ppb\n\nDefault: 722.0 ppb"
+    },
+    {
+      "name": "n2o_pi",
+      "type": "f64",
+      "description": "Pre-industrial N2O concentration\n\nunit: ppb\n\nDefault: 270.0 ppb"
+    },
+    {
+      "name": "erf_2xco2",
+      "type": "f64",
+      "description": "2xCO2 effective radiative forcing (MAGICC7 `CORE_DELQ2XCO2`).\n\nunit: W/m^2\n\nThe IPCCTAR method uses `alpha = erf_2xco2 / ln(2)`.\n\nDefault: 3.71 W/m2\nMAGICC7: CORE_DELQ2XCO2"
+    },
+    {
+      "name": "ch4_radiative_efficiency",
+      "type": "f64",
+      "description": "CH4 radiative efficiency, the IPCCTAR coefficient for CH4 (MAGICC7 `CH4_RADEFF_WM2PERPPB`)\n\nunit: W/m^2 per sqrt(ppb)\n\nDefault: 0.036"
+    },
+    {
+      "name": "n2o_radiative_efficiency",
+      "type": "f64",
+      "description": "N2O radiative efficiency, the IPCCTAR coefficient for N2O (MAGICC7 `N2O_RADEFF_WM2PERPPB`)\n\nunit: W/m^2 per sqrt(ppb)\n\nDefault: 0.12"
+    },
+    {
+      "name": "olbl_co2_a1",
+      "type": "f64",
+      "description": "OLBL CO2 quadratic coefficient $a_1$\n\nunit: W/m^2/ppm^2\n\nDefault: -2.4785e-7"
+    },
+    {
+      "name": "olbl_co2_b1",
+      "type": "f64",
+      "description": "OLBL CO2 linear coefficient $b_1$\n\nunit: W/m^2/ppm\n\nDefault: 7.5906e-4"
+    },
+    {
+      "name": "olbl_co2_c1",
+      "type": "f64",
+      "description": "OLBL CO2 N2O overlap coefficient $c_1$\n\nunit: W/m^2/sqrt(ppb)\n\nDefault: -2.1492e-3"
+    },
+    {
+      "name": "olbl_co2_d1",
+      "type": "f64",
+      "description": "OLBL CO2 constant $d_1$\n\nunit: W/m^2\n\nDefault: 5.2"
+    },
+    {
+      "name": "olbl_ch4_a3",
+      "type": "f64",
+      "description": "OLBL CH4 self-overlap coefficient $a_3$\n\nunit: W/m^2/sqrt(ppb)\n\nDefault: -8.9603e-5"
+    },
+    {
+      "name": "olbl_ch4_b3",
+      "type": "f64",
+      "description": "OLBL CH4 N2O overlap coefficient $b_3$\n\nunit: W/m^2/sqrt(ppb)\n\nDefault: -1.2462e-4"
+    },
+    {
+      "name": "olbl_ch4_d3",
+      "type": "f64",
+      "description": "OLBL CH4 constant $d_3$\n\nunit: W/m^2\n\nDefault: 0.045"
+    },
+    {
+      "name": "olbl_n2o_a2",
+      "type": "f64",
+      "description": "OLBL N2O CO2 overlap coefficient $a_2$\n\nunit: W/m^2/sqrt(ppm)\n\nDefault: -3.4197e-4"
+    },
+    {
+      "name": "olbl_n2o_b2",
+      "type": "f64",
+      "description": "OLBL N2O self-overlap coefficient $b_2$\n\nunit: W/m^2/sqrt(ppb)\n\nDefault: 2.5455e-4"
+    },
+    {
+      "name": "olbl_n2o_c2",
+      "type": "f64",
+      "description": "OLBL N2O CH4 overlap coefficient $c_2$\n\nunit: W/m^2/sqrt(ppb)\n\nDefault: -2.4357e-4"
+    },
+    {
+      "name": "olbl_n2o_d2",
+      "type": "f64",
+      "description": "OLBL N2O constant $d_2$\n\nunit: W/m^2\n\nDefault: 0.14"
+    },
+    {
+      "name": "adjust_co2",
+      "type": "f64",
+      "description": "Rapid adjustment factor that converts instantaneous CO2 forcing to ERF\n\nunit: dimensionless"
+    },
+    {
+      "name": "adjust_ch4",
+      "type": "f64",
+      "description": "Rapid adjustment factor that converts instantaneous CH4 forcing to ERF.\n\nunit: dimensionless\n\nBelow 1 because CH4 has a negative tropospheric adjustment.\n\nDefault: 0.86 (CH4 has negative tropospheric adjustment)"
+    },
+    {
+      "name": "adjust_n2o",
+      "type": "f64",
+      "description": "Rapid adjustment factor that converts instantaneous N2O forcing to ERF.\n\nunit: dimensionless\n\nMAGICC7 v7.5.3 applies no adjustment.\n\nDefault: 1.0 (no adjustment in MAGICC7 v7.5.3)"
+    },
+    {
+      "name": "ch4_stratospheric_h2o_fraction",
+      "type": "f64",
+      "description": "Stratospheric H2O ERF from CH4 oxidation as a fraction of CH4 ERF at pre-industrial N2O\n(MAGICC7 `CH4_ADDEDSTRATH2O_PERCENT`)\n\nunit: dimensionless"
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/forcing/ghg.rs"
+}

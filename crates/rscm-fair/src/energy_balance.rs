@@ -1,18 +1,47 @@
-//! n-layer energy balance model (FaIR step 16 to 18)
+//! n-layer energy balance (FaIR steps 16 to 18)
+//!
+//! Calculates the surface air temperature change and the temperature of each ocean layer
+//! from the effective radiative forcing,
+//! with the resulting energy imbalance and ocean heat content.
+//! It solves the n-layer energy balance of Cummins et al. (2020) exactly over each step.
 //!
 //! The state $x = (F_s, T_1, \ldots, T_n)$ holds the forcing seen by the climate and the
-//! temperature of each layer, surface first. Over one step of length $\Delta t$,
+//! temperature of each layer, surface first.
+//! Over one step of length $\Delta t$,
 //!
 //! $$x' = e^{A} x + A^{-1} (e^{A} - I)\, b\, F$$
 //!
-//! where $A$ is the energy balance matrix of Cummins et al. (2020) with heat capacities
-//! divided by $\Delta t$, $b = (\gamma, 0, \ldots, 0)$ and $F$ the efficacy-adjusted forcing.
-//! The top of atmosphere imbalance is
+//! where $A$ is the energy balance matrix with heat capacities divided by $\Delta t$,
+//! $b = (\gamma, 0, \ldots, 0)$ and $F$ the efficacy-adjusted effective radiative forcing.
+//! The top of atmosphere energy imbalance is
 //!
 //! $$N = F_{tot} - \kappa_1 T_1 + (1 - \epsilon) \kappa_n (T_{n-1} - T_n)$$
 //!
-//! from the unadjusted forcing, and the ocean heat content change integrates $N$ over the Earth.
-//! Stochastic internal variability is not implemented.
+//! from the total effective radiative forcing $F_{tot}$,
+//! and the ocean heat content change integrates $N$ over the Earth's surface.
+//! Stochastic internal variability is not implemented,
+//! so $F_s$ relaxes towards $F$ at the rate `gamma_autocorrelation`.
+//!
+//! # Inputs
+//!
+//! - The total effective radiative forcing named by `forcing` (W/m^2), for the energy imbalance.
+//!   Its default is `Effective Radiative Forcing`.
+//! - The efficacy-adjusted effective radiative forcing named by `efficacy_adjusted_forcing`
+//!   (W/m^2), which drives the temperatures.
+//!   Its default is `Efficacy Adjusted Effective Radiative Forcing`.
+//!
+//! # States
+//!
+//! - `Stochastic Forcing` (W/m^2), the forcing seen by the climate.
+//! - The surface air temperature change named by `surface_temperature` (K).
+//!   Its default is `Surface Air Temperature Change`.
+//! - `Ocean Temperature|Layer 2` to `Ocean Temperature|Layer n` (K),
+//!   one per layer below the surface.
+//! - `Ocean Heat Content` (J).
+//!
+//! # Outputs
+//!
+//! - `Net Energy Imbalance` (W/m^2), the top of atmosphere energy imbalance.
 
 use crate::constants::{
     efficacy_adjusted_forcing, forcing_unit, get, surface_temperature, temperature_unit,
@@ -26,6 +55,7 @@ use rscm_core::names::{
 };
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
@@ -33,23 +63,28 @@ use std::sync::OnceLock;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EnergyBalanceParameters {
-    /// Heat capacity of each layer, surface first (W yr m-2 K-1).
+    /// Heat capacity of each layer, surface first (FaIR `ocean_heat_capacity`).
+    /// unit: W yr/m^2/K
     pub ocean_heat_capacity: Vec<FloatValue>,
-    /// Heat transfer coefficient of each layer, surface first (W m-2 K-1).
+    /// Heat transfer coefficient of each layer, surface first (FaIR `ocean_heat_transfer`).
     /// The first is the climate feedback parameter.
+    /// unit: W/m^2/K
     pub ocean_heat_transfer: Vec<FloatValue>,
-    /// Efficacy of heat transfer into the deepest layer.
+    /// Efficacy of heat transfer into the deepest layer (FaIR `deep_ocean_efficacy`).
     pub deep_ocean_efficacy: FloatValue,
-    /// Autocorrelation of the forcing seen by the climate (yr-1).
+    /// Rate at which the forcing seen by the climate relaxes towards the efficacy-adjusted
+    /// effective radiative forcing (FaIR `gamma_autocorrelation`).
+    /// unit: 1/yr
     #[serde(default = "default_gamma")]
     pub gamma_autocorrelation: FloatValue,
-    /// Surface temperature state.
+    /// Name of the surface air temperature change state.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
-    /// Total forcing input, for the energy imbalance.
+    /// Name of the total effective radiative forcing input, for the energy imbalance.
     #[serde(default = "total_forcing")]
     pub forcing: String,
-    /// Efficacy-adjusted forcing input, which drives the temperature.
+    /// Name of the efficacy-adjusted effective radiative forcing input,
+    /// which drives the temperatures.
     #[serde(default = "efficacy_adjusted_forcing")]
     pub efficacy_adjusted_forcing: String,
 }
@@ -66,8 +101,9 @@ struct Discretised {
     forcing_vector_d: DVector<FloatValue>,
 }
 
-/// FaIR's n-layer energy balance model.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// FaIR's n-layer energy balance.
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["climate", "energy-balance", "fair"], category = "Climate")]
 #[serde(try_from = "Unchecked")]
 pub struct EnergyBalance {
     parameters: EnergyBalanceParameters,

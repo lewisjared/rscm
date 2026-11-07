@@ -202,7 +202,7 @@ def load_component_metadata() -> dict[str, dict[str, Any]]:
 
     Returns
     -------
-    Dictionary mapping component names to their metadata dicts
+    Dictionary mapping page slugs to their metadata dicts
     """
     metadata = {}
     if not COMPONENT_META_DIR.exists():
@@ -212,7 +212,7 @@ def load_component_metadata() -> dict[str, dict[str, Any]]:
         try:
             with open(json_file) as f:
                 data = json.load(f)
-                metadata[data["name"]] = data
+                metadata[data["slug"]] = data
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Warning: Failed to load {json_file}: {e}")
 
@@ -248,7 +248,7 @@ def load_python_components() -> dict[str, dict[str, Any]]:
         module = cls.__module__
         meta = extract_python_component_metadata(cls, module)
         if meta:
-            metadata[name] = meta
+            metadata[meta["slug"]] = meta
 
     return metadata
 
@@ -341,6 +341,7 @@ def extract_python_component_metadata(
 
     return {
         "name": name,
+        "slug": name.lower(),
         "module_path": f"{module_name}.{name}",
         "language": "python",
         "description": description,
@@ -355,12 +356,24 @@ def extract_python_component_metadata(
     }
 
 
-PYTHON_BUILDER_MODULES = ("rscm.components", "rscm.two_layer", "rscm.magicc")
+GENERIC_BUILDER_MODULES = ("rscm.components", "rscm.two_layer")
+# Ported models reuse component names, so look builders up in their own module.
+REFERENCE_MODEL_MODULES = {"MAGICC7": "rscm.magicc", "FaIR": "rscm.fair"}
+PYTHON_BUILDER_MODULES = (*GENERIC_BUILDER_MODULES, *REFERENCE_MODEL_MODULES.values())
 
 
-def find_python_builder_module(component_name: str) -> str | None:
-    """Return the Python module exposing ``<component_name>Builder``, if any."""
-    for module_name in PYTHON_BUILDER_MODULES:
+def title(meta: dict[str, Any]) -> str:
+    """Name a component, with the model it ports when there is one."""
+    model = meta.get("reference_model")
+    return f"{meta['name']} ({model})" if model else meta["name"]
+
+
+def find_python_builder_module(meta: dict[str, Any]) -> str | None:
+    """Return the Python module exposing the component's builder, if any."""
+    component_name = meta["name"]
+    model = meta.get("reference_model")
+    candidates = (REFERENCE_MODEL_MODULES[model],) if model else GENERIC_BUILDER_MODULES
+    for module_name in candidates:
         try:
             module = importlib.import_module(module_name)
         except ImportError:
@@ -387,10 +400,11 @@ def returns_result(meta: dict[str, Any]) -> bool:
     )
 
 
-def find_parameters_struct(component_name: str) -> tuple[str, bool] | None:
+def find_parameters_struct(meta: dict[str, Any]) -> tuple[str, bool] | None:
     """Return the import path of ``<Name>Parameters`` and whether it has a default."""
-    struct = f"{component_name}Parameters"
-    for source in Path("crates").glob("*/src/**/*.rs"):
+    struct = f"{meta['name']}Parameters"
+    crate_dir = Path(meta.get("source_file", "crates/")).parts[:2]
+    for source in Path(*crate_dir).glob("src/**/*.rs"):
         text = source.read_text()
         if not re.search(rf"pub struct {struct}\b", text):
             continue
@@ -711,7 +725,9 @@ def table_cell(text: str) -> str:
 
 def io_table(variables: list[dict[str, Any]], notes: dict[str, str]) -> list[str]:
     """Render an IO table, with a Description column only when a variable has one."""
-    descriptions = {v["name"]: notes.get(v["name"], "") for v in variables}
+    descriptions = {
+        v["name"]: v.get("description") or notes.get(v["name"], "") for v in variables
+    }
     with_description = any(descriptions.values())
     header = "| Variable | Unit | Grid |" + (
         " Description |" if with_description else ""
@@ -774,7 +790,7 @@ def usage_section(meta: dict[str, Any]) -> list[str]:
         ]
 
     has_parameter_table = bool(meta.get("parameters"))
-    builder_module = find_python_builder_module(name)
+    builder_module = find_python_builder_module(meta)
     if builder_module:
         builder = f"{name}Builder"
         defaults = builder_module == "rscm.magicc"
@@ -799,7 +815,7 @@ def usage_section(meta: dict[str, Any]) -> list[str]:
             ]
         )
 
-    struct = find_parameters_struct(name)
+    struct = find_parameters_struct(meta)
     construct = f"{name}::from_parameters(parameters)"
     imports = [f"use {rust_import_path(meta['module_path'])}::{name};"]
     rust_intro = "From Rust:"
@@ -822,8 +838,7 @@ def usage_section(meta: dict[str, Any]) -> list[str]:
 
 def generate_component_page(meta: dict[str, Any]) -> str:
     """Generate markdown for a component documentation page."""
-    name = meta["name"]
-    lines = [f"# {name} {{ #component-{name.lower()} }}", ""]
+    lines = [f"# {title(meta)} {{ #component-{meta['slug']} }}", ""]
 
     if meta.get("category"):
         lines.append(f"**Category:** {meta['category']}  ")
@@ -839,15 +854,25 @@ def generate_component_page(meta: dict[str, Any]) -> str:
     if description.strip():
         lines.extend([normalise_rustdoc(description), ""])
 
-    for kind, (title, verb) in IO_KINDS.items():
+    if meta.get("variables_from_parameters"):
+        lines.extend(
+            [
+                "Its parameters decide which variables it reads and writes,",
+                "so these lists come from its documentation rather than its code.",
+                "",
+            ]
+        )
+
+    for kind, (heading, verb) in IO_KINDS.items():
         variables = meta.get(kind) or []
         if not variables and not extras.get(kind):
             continue
-        lines.extend([f"## {title}", ""])
+        lines.extend([f"## {heading}", ""])
         if variables:
             lines.extend([*io_table(variables, notes), ""])
         if extras.get(kind):
-            lines.extend([f"Depending on its parameters, it also {verb}:", ""])
+            if variables:
+                lines.extend([f"Depending on its parameters, it also {verb}:", ""])
             lines.extend(f"- {text}" for text in extras[kind])
             lines.append("")
 
@@ -896,14 +921,17 @@ def generate_component_index(all_metadata: dict[str, dict[str, Any]]) -> str:
         "",
     ]
 
+    documented = {
+        (find_python_builder_module(meta), f"{meta['name']}Builder")
+        for meta in all_metadata.values()
+    }
     undocumented = [
         (module_name, builder)
         for module_name in PYTHON_BUILDER_MODULES
         for builder in sorted(
             getattr(importlib.import_module(module_name), "__all__", [])
         )
-        if builder.endswith("Builder")
-        and builder.removesuffix("Builder") not in all_metadata
+        if builder.endswith("Builder") and (module_name, builder) not in documented
     ]
     if undocumented:
         links = [
@@ -927,12 +955,13 @@ def generate_component_index(all_metadata: dict[str, dict[str, Any]]) -> str:
                 "|-----------|----------|-------------|------|",
             ]
         )
-        for meta in sorted(components, key=lambda m: m["name"]):
-            name = meta["name"]
+        for meta in sorted(components, key=title):
             lang = meta.get("language", "rust").title()
             desc = summarise(meta.get("description") or "")
             tags = " ".join(f"`{t}`" for t in meta.get("tags", []))
-            lines.append(f"| [{name}]({name.lower()}.md) | {lang} | {desc} | {tags} |")
+            lines.append(
+                f"| [{title(meta)}]({meta['slug']}.md) | {lang} | {desc} | {tags} |"
+            )
         lines.append("")
 
     return "\n".join(lines)
@@ -952,9 +981,9 @@ def write_component_docs():
         return
 
     # Write individual component pages
-    for name, meta in all_metadata.items():
+    for slug, meta in all_metadata.items():
         page_content = generate_component_page(meta)
-        page_path = COMPONENT_DOCS_DIR / f"{name.lower()}.md"
+        page_path = COMPONENT_DOCS_DIR / f"{slug}.md"
 
         with mkdocs_gen_files.open(page_path, "w") as fh:
             fh.write(page_content)

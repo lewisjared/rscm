@@ -74,7 +74,7 @@ Some of the main instances:
 | `DAT_MHALO_EMIS(i)`   | Montreal Protocol gas emissions (kt/yr)          |
 | `DAT_TOTAL_EFFRF`     | Total efficacy-adjusted forcing (W/m²)           |
 | `DAT_VOLCANIC_RF`     | Volcanic forcing (W/m², monthly)                 |
-| `DAT_SURFACE_TEMP`    | Surface temperature anomaly (K)                  |
+| `DAT_SURFACE_TEMP`    | Surface air temperature change (K)               |
 
 ## Time convention
 
@@ -153,7 +153,7 @@ The defaults of each module's own parameters are on its page.
 1. Reads the ocean area factor and initial temperature profile files when their switches are set,
    and the glacier sea level parameters.
 2. Adjusts dependent parameters: the CO2 fertilisation temperature switches,
-   the CH4 lifetime feedback from NOx, VOC and CO, the climate sensitivity's dependence on RLO
+   the CH4 lifetime feedback from NOx, VOC and CO, the equilibrium climate sensitivity's dependence on RLO
    and the heat capacities.
 3. Calculates the [area fractions](#four-box-geography).
 4. Allocates the ocean, carbon cycle, methane and cloud arrays.

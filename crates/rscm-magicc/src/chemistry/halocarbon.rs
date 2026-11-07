@@ -1,25 +1,41 @@
 //! Halocarbon Chemistry Component
 //!
-//! Concentrations, forcing and EESC of F-gases and Montreal Protocol gases,
-//! following MAGICC7.
+//! Calculates the concentrations, effective radiative forcing (ERF) and equivalent effective
+//! stratospheric chlorine (EESC) of the F-gases and Montreal Protocol gases, following MAGICC7.
+//!
+//! The species come from the `fgases` and `montreal_gases` parameters, and `{species}` below
+//! stands for each of them.
+//! Their defaults are the 23 F-gases and 18 Montreal Protocol gases of MAGICC7 v7.5.3
+//! (its `FGAS_*` and `MHALO_*` configuration), so by default the component declares about 128 variables.
 //!
 //! # Inputs
 //!
-//! - `Emissions|<species>` (kt <species>/yr) for each species
-//! - `Lifetime|CH4|OH` (yr), which scales OH lifetimes
-//! - `Surface Air Temperature Change` (K), which shortens stratospheric lifetimes
-//! - `Emissions|CO2|Fossil` (GtC/yr) with `fgas_regions`, which spreads short-lived F-gases
+//! - `Emissions|{species}` (kt {species}/yr): emissions of each species over the step
+//! - `Prescribed Atmospheric Concentrations|{species}` (ppt): prescribed concentration of each F-gas
+//!   with the `fgas_switch_year` parameter,
+//!   and of each Montreal Protocol gas with `montreal_gases_switch_year`
+//! - `Lifetime|CH4|OH` (yr), only with the `include_variable_oh_lifetime` parameter: scales the OH lifetimes
+//! - `Surface Air Temperature Change` (K), only with the `include_variable_stratospheric_lifetime` parameter:
+//!   shortens the stratospheric lifetimes
+//! - `Emissions|CO2|Fossil` (GtC/yr), only with the `fgas_regions` parameter:
+//!   spreads short-lived F-gases between the hemispheres
 //!
 //! # States
 //!
-//! - `Atmospheric Concentrations|<species>` (ppt)
+//! - `Atmospheric Concentrations|{species}` (ppt): concentration of each species at the end of the step
 //!
 //! # Outputs
 //!
-//! - `Effective Radiative Forcing|F-Gases` (W/m²), four-box with `fgas_regions`
-//! - `Effective Radiative Forcing|Montreal Protocol Halogen Gases` (W/m²)
-//! - Each species' share of these, as `Effective Radiative Forcing|<group>|<species>`
-//! - `Equivalent Effective Stratospheric Chlorine` (ppt)
+//! - `Effective Radiative Forcing|F-Gases` (W/m^2): total F-gas ERF,
+//!   on the four-box grid with the `fgas_regions` parameter
+//! - `Effective Radiative Forcing|Montreal Protocol Halogen Gases` (W/m^2): total Montreal Protocol gas ERF
+//! - `Effective Radiative Forcing|F-Gases|{species}` (W/m^2): ERF of each F-gas,
+//!   on the four-box grid with the `fgas_regions` parameter
+//! - `Effective Radiative Forcing|Montreal Protocol Halogen Gases|{species}` (W/m^2):
+//!   ERF of each Montreal Protocol gas
+//! - `Equivalent Effective Stratospheric Chlorine` (ppt):
+//!   EESC from the chlorine and bromine of every species,
+//!   from concentrations `stratospheric_delay` years earlier
 //!
 //! # Lifetimes
 //!
@@ -30,8 +46,9 @@
 //!
 //! # Concentrations
 //!
-//! Crank-Nicolson for lifetimes of at least 5 years, otherwise the exact
-//! exponential solution, with the emissions and lifetime of the start of the year.
+//! Species with lifetimes of at least 5 years are integrated with Crank-Nicolson.
+//! Shorter-lived species use the exact exponential solution.
+//! Both use the emissions and lifetime at the start of the year.
 
 use crate::parameters::{HalocarbonChemistryParameters, HalocarbonSpecies};
 use crate::reference::{feedback_warming, prescribed_definition, prescribed_input, require_annual};
@@ -46,11 +63,13 @@ use rscm_core::names::{
 };
 use rscm_core::state::{FourBoxSlice, ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
 /// Halocarbon atmospheric chemistry component.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["chemistry", "halocarbon", "magicc"], category = "Atmospheric Chemistry")]
 pub struct HalocarbonChemistry {
     parameters: HalocarbonChemistryParameters,
     #[serde(skip)]

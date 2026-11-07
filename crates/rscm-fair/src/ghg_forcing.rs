@@ -1,10 +1,28 @@
-//! Greenhouse gas forcing (FaIR step 5)
+//! Greenhouse gas effective radiative forcing (FaIR step 5)
 //!
-//! Meinshausen et al. (2020) forcing for CO2, CH4 and N2O, with the overlaps between them,
-//! and forcing linear in concentration for the minor gases.
+//! Calculates the effective radiative forcing of each greenhouse gas from its concentration.
+//! CO2, CH4 and N2O use the Meinshausen et al. (2020) method, with the overlaps between them,
+//! and the minor gases have forcing linear in concentration.
+//!
 //! Each forcing is relative to the forcing at the baseline concentrations,
 //! scaled by `forcing_scale * (1 + tropospheric_adjustment)`,
-//! plus a feedback on the surface temperature at the start of the step.
+//! plus a feedback on the surface air temperature change at the start of the step.
+//! A minor gas's radiative efficiency is per ppb and its concentration is in ppt.
+//!
+//! # Inputs
+//!
+//! - The surface air temperature change named by `surface_temperature` (K).
+//!   Its default is `Surface Air Temperature Change`.
+//! - The `concentration` of `co2`, `ch4`, `n2o` and each `minor` gas, in its `concentration_unit`.
+//!   rscm.fair names it `Atmospheric Concentrations|<species>`,
+//!   such as `Atmospheric Concentrations|CO2` in ppm.
+//!
+//! # Outputs
+//!
+//! - The `forcing` of each gas (W/m^2).
+//!   rscm.fair names it `Effective Radiative Forcing|<species>` for CO2, CH4 and N2O,
+//!   `Effective Radiative Forcing|F-Gases|<species>` for the F-gases
+//!   and `Effective Radiative Forcing|Montreal Protocol Halogen Gases|<species>` for the halogens.
 
 use crate::constants::{forcing_unit, get, one, surface_temperature, temperature_unit};
 use rscm_components::meinshausen2020::Meinshausen2020;
@@ -12,6 +30,7 @@ use rscm_core::component::{Component, InputState, OutputState, VariableDefinitio
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
@@ -19,26 +38,32 @@ use std::sync::OnceLock;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GHGSpecies {
-    /// Concentration input.
+    /// Name of the concentration input.
     pub concentration: String,
-    /// Concentration unit.
+    /// Unit of the concentration.
     pub concentration_unit: String,
-    /// Forcing output.
+    /// Name of the effective radiative forcing output.
     pub forcing: String,
-    /// Reference concentration of the forcing formula.
+    /// Reference concentration of the forcing formula, in `concentration_unit`
+    /// (FaIR `forcing_reference_concentration`).
     pub reference_concentration: FloatValue,
-    /// Concentration with zero forcing.
+    /// Concentration with zero effective radiative forcing (FaIR `baseline_concentration`).
     pub baseline_concentration: FloatValue,
-    /// Forcing scaling.
+    /// Multiplier on the effective radiative forcing (FaIR `forcing_scale`).
     #[serde(default = "one")]
     pub forcing_scale: FloatValue,
-    /// Tropospheric adjustment to the stratospherically adjusted forcing.
+    /// Tropospheric adjustment to the stratospherically adjusted radiative forcing
+    /// (FaIR `tropospheric_adjustment`).
     #[serde(default)]
     pub tropospheric_adjustment: FloatValue,
-    /// Radiative efficiency (W m-2 ppb-1). Only used for the minor gases.
+    /// Radiative efficiency, used only for the minor gases
+    /// (FaIR `greenhouse_gas_radiative_efficiency`).
+    /// unit: W/m^2/ppb
     #[serde(default)]
     pub radiative_efficiency: FloatValue,
-    /// Forcing per kelvin of surface temperature.
+    /// Effective radiative forcing per kelvin of surface air temperature change
+    /// (FaIR `forcing_temperature_feedback`).
+    /// unit: W/m^2/K
     #[serde(default)]
     pub temperature_feedback: FloatValue,
 }
@@ -53,22 +78,23 @@ impl GHGSpecies {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GHGForcingParameters {
-    /// CO2.
+    /// CO2, with the Meinshausen et al. (2020) CO2 formula.
     pub co2: GHGSpecies,
-    /// CH4.
+    /// CH4, with the Meinshausen et al. (2020) CH4 formula.
     pub ch4: GHGSpecies,
-    /// N2O.
+    /// N2O, with the Meinshausen et al. (2020) N2O formula.
     pub n2o: GHGSpecies,
-    /// Gases with forcing linear in concentration.
+    /// Gases with effective radiative forcing linear in concentration.
     #[serde(default)]
     pub minor: Vec<GHGSpecies>,
-    /// Surface temperature input.
+    /// Name of the surface air temperature change input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
 }
 
-/// FaIR's Meinshausen et al. (2020) greenhouse gas forcing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// FaIR's Meinshausen et al. (2020) greenhouse gas effective radiative forcing.
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["forcing", "ghg", "fair"], category = "Radiative Forcing")]
 pub struct GHGForcing {
     parameters: GHGForcingParameters,
     #[serde(skip)]

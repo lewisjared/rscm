@@ -31,111 +31,112 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct CH4ChemistryParameters {
-    /// Year from which the concentration and temperature feedbacks are measured
-    /// (`CH4_FEED_YRSTART`). The reference concentration and temperature are
-    /// taken from the year before. NOx, CO and NMVOC deltas are relative to
-    /// emissions in this year.
-    /// unit: year
-    /// default: 1927.0
+    /// Year from which the concentration and temperature feedbacks are measured (MAGICC7 `CH4_FEED_YRSTART`).
+    ///
+    /// unit: yr
+    ///
+    /// The reference concentration and temperature are taken from the year before.
+    /// NOx, CO and NMVOC feedbacks are relative to emissions in this year.
     pub feedback_start_year: FloatValue,
 
-    /// Natural CH4 emissions (wetlands, termites, oceans, etc.)
+    /// Natural CH4 emissions from wetlands, termites, oceans and other sources.
+    ///
+    /// unit: Mt CH4/yr
+    ///
     /// MAGICC7 closes the 1995-2004 budget against observed concentrations.
     /// The default is the value it derives for its standard historical inputs.
-    /// unit: Mt CH4/yr
-    /// default: 182.1908
     pub natural_emissions: FloatValue,
 
-    /// Add `Emissions|CH4|Permafrost` from the `Permafrost` component to the emissions.
-    /// MAGICC7: PF_APPLY
-    /// default: false
+    /// Add `Emissions|CH4|Permafrost` from the `Permafrost` component to the emissions (MAGICC7 `PF_APPLY`)
     pub include_permafrost: bool,
 
-    /// Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|CH4`,
-    /// or `None` to calculate them from emissions throughout.
-    /// MAGICC7: CH4_SWITCHFROMCONC2EMIS_YEAR
+    /// Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|CH4`
+    /// (MAGICC7 `CH4_SWITCHFROMCONC2EMIS_YEAR`).
+    ///
+    /// unit: yr
+    ///
+    /// `None` calculates concentrations from emissions throughout.
     pub concentration_switch_year: Option<FloatValue>,
 
-    /// Total atmospheric lifetime at the reference state (`CH4_TAUTOT_INIT`).
+    /// Total atmospheric lifetime at the reference state (MAGICC7 `CH4_TAUTOT_INIT`).
+    ///
+    /// unit: yr
+    ///
     /// The OH lifetime is derived by removing the non-OH sinks.
-    /// unit: years
-    /// default: 9.9474
     pub initial_ch4_lifetime: FloatValue,
 
-    /// Soil uptake sink lifetime
-    /// unit: years
-    /// default: 150.0
-    /// MAGICC7: CH4_TAUSOIL
+    /// Soil uptake sink lifetime (MAGICC7 `CH4_TAUSOIL`)
+    ///
+    /// unit: yr
     pub soil_lifetime: FloatValue,
 
-    /// Stratospheric sink lifetime
-    /// unit: years
-    /// default: 120.0
-    /// MAGICC7: CH4_TAUSTRAT
+    /// Stratospheric sink lifetime (MAGICC7 `CH4_TAUSTRAT`)
+    ///
+    /// unit: yr
     pub stratospheric_lifetime: FloatValue,
 
-    /// Tropospheric Cl sink lifetime
-    /// unit: years
-    /// default: 200.0
-    /// MAGICC7: CH4_TAUTROPCL
+    /// Tropospheric Cl sink lifetime (MAGICC7 `CH4_TAUTROPCL`)
+    ///
+    /// unit: yr
     pub tropospheric_cl_lifetime: FloatValue,
 
-    /// CH4 self-feedback coefficient (S in TAR Table 4.11)
-    /// Represents how CH4 concentration affects OH and hence its own lifetime
-    /// Negative value: higher CH4 → lower OH → longer lifetime (positive feedback)
+    /// CH4 self-feedback coefficient, S in TAR Table 4.11.
+    ///
     /// unit: dimensionless
-    /// default: -0.53775
+    ///
+    /// How CH4 concentration affects OH and so its own lifetime.
+    /// Negative because higher CH4 lowers OH and lengthens the lifetime (a positive feedback).
     pub ch4_self_feedback: FloatValue,
 
-    /// OH sensitivity scaling factor (γ in the equations)
-    /// Scales the OH-lifetime feedback response
+    /// OH sensitivity scaling factor, $\gamma$ in the equations.
+    ///
     /// unit: dimensionless
-    /// default: 0.72448
+    ///
+    /// Scales the response of the OH lifetime to the feedbacks.
     pub oh_sensitivity_scale: FloatValue,
 
-    /// NOx emissions effect on OH (A_NOx)
-    /// Positive: more NOx → more OH → shorter CH4 lifetime
+    /// Effect of NOx emissions on OH, $A_{NOx}$.
+    ///
     /// unit: (Mt N/yr)^-1
-    /// default: 0.0093376
+    ///
+    /// Positive because more NOx gives more OH and a shorter CH4 lifetime.
     pub oh_nox_sensitivity: FloatValue,
 
-    /// CO emissions effect on OH (A_CO)
-    /// Negative: more CO → less OH → longer CH4 lifetime
+    /// Effect of CO emissions on OH, $A_{CO}$.
+    ///
     /// unit: (Mt CO/yr)^-1
-    /// default: -0.000113
+    ///
+    /// Negative because more CO gives less OH and a longer CH4 lifetime.
     pub oh_co_sensitivity: FloatValue,
 
-    /// NMVOC emissions effect on OH (A_VOC)
-    /// Negative: more VOC → less OH → longer CH4 lifetime
+    /// Effect of NMVOC emissions on OH, $A_{VOC}$.
+    ///
     /// unit: (Mt NMVOC/yr)^-1
-    /// default: -0.0003142
+    ///
+    /// Negative because more NMVOC gives less OH and a longer CH4 lifetime.
     pub oh_nmvoc_sensitivity: FloatValue,
 
-    /// Temperature sensitivity of lifetime
-    /// Positive: warmer → shorter lifetime (more OH activity)
+    /// Temperature sensitivity of the lifetime (MAGICC7 `CH4_TAUTEMPSENSITIVITY`).
+    ///
     /// unit: K^-1
-    /// default: 0.07
-    /// MAGICC7: CH4_TAUTEMPSENSITIVITY
+    ///
+    /// Positive because warming increases OH activity and shortens the lifetime.
     pub temperature_sensitivity: FloatValue,
 
-    /// Enable temperature feedback on lifetime
-    /// default: true
-    /// MAGICC7: CH4_INCLUDE_TEMPFEEDBACK
+    /// Apply the temperature feedback on the lifetime (MAGICC7 `CH4_INCLUDE_TEMPFEEDBACK`)
     pub include_temperature_feedback: bool,
 
-    /// Enable NOx/CO/NMVOC emissions feedback on OH
-    /// default: true
+    /// Apply the NOx, CO and NMVOC emissions feedback on OH
     pub include_emissions_feedback: bool,
 
-    /// Conversion factor from ppb to Tg CH4
+    /// Conversion factor from ppb to Tg CH4 (MAGICC7 `CH4_PPB2TGCH4`)
+    ///
     /// unit: Tg CH4/ppb
-    /// default: 2.824
-    /// MAGICC7: CH4_PPB2TGCH4
     pub tg_per_ppb: FloatValue,
 
-    /// Fraction of the atmosphere mixed with surface CH4 (`CH4_MIXBOXSIZE`)
+    /// Fraction of the atmosphere mixed with surface CH4 (MAGICC7 `CH4_MIXBOXSIZE`)
+    ///
     /// unit: dimensionless
-    /// default: 0.973
     pub mixing_box_size: FloatValue,
 }
 

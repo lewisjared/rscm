@@ -1,0 +1,97 @@
+{
+  "name": "CO2Budget",
+  "slug": "magicc-co2budget",
+  "reference_model": "MAGICC7",
+  "module_path": "rscm_magicc::carbon::budget",
+  "language": "rust",
+  "description": "Closes the global carbon cycle by integrating emissions and uptakes to\nupdate the atmospheric CO2 concentration.\nThe concentration changes as\n\n$$\\frac{dC}{dt} = \\frac{E_{fossil} + E_{CH_4\\,ox} - F_{land} - F_{ocean}}{\\text{GtC\\_per\\_ppm}}$$\n\n# What This Component Does\n\n1. Sums fossil emissions with CO2 from fossil CH4 oxidation\n2. Subtracts the net land and ocean uptake\n3. Updates atmospheric CO2 concentration for the next step\n4. Calculates the airborne fraction of the fossil sources\n\nBiosphere CO2 emissions are part of the net atmosphere to land flux, as in MAGICC7,\nbecause deforestation removes carbon from the land pools.\n\n# Inputs\n\n- `Ocean Carbon Atmospheric Concentrations|CO2` (ppm), only with the `ocean_end_of_year` parameter:\n  concentration after the ocean's last substep\n- `Emissions|CO2|Permafrost` (GtC/yr), only with the `include_permafrost` parameter\n- `Prescribed Atmospheric Concentrations|CO2` (ppm), only with the `concentration_switch_year` parameter\n\n# Differences from MAGICC7\n\n- **Monthly integration in the ocean**: in MAGICC7, atmospheric CO2 evolves over\n  the ocean's substeps, and the concentration it ends the year on becomes next year's.\n  `ocean_end_of_year` takes that value from `OceanCarbon`. Without it, the annual sum\n  in [`CO2Budget::solve_budget`] differs from it only by rounding.\n- **No concentration cap**: MAGICC7 can cap CO2 concentration. Not implemented.\n- **No inverse fossil emissions**: before `concentration_switch_year` the\n  concentration follows `Prescribed Atmospheric Concentrations|CO2` and\n  `Net Emissions|CO2` is the implied net source, but fossil emissions are not inverted.",
+  "category": "Carbon Cycle",
+  "tags": [
+    "carbon-cycle",
+    "budget",
+    "magicc"
+  ],
+  "inputs": [
+    {
+      "rust_name": "fossil_emissions",
+      "name": "Emissions|CO2|Fossil",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Fossil CO2 emissions over the step"
+    },
+    {
+      "rust_name": "ch4_oxidation",
+      "name": "Emissions|CO2|CH4 Oxidation",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "CO2 from oxidised fossil CH4 over the step"
+    },
+    {
+      "rust_name": "terrestrial_flux",
+      "name": "Net Atmosphere to Land Flux|CO2",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Net atmosphere to land flux over the step, positive for uptake and including Biosphere CO2 emissions"
+    },
+    {
+      "rust_name": "ocean_flux",
+      "name": "Net Atmosphere to Ocean Flux|CO2",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Net atmosphere to ocean flux over the step, positive for uptake"
+    }
+  ],
+  "outputs": [
+    {
+      "rust_name": "net_emissions",
+      "name": "Net Emissions|CO2",
+      "unit": "GtC/yr",
+      "grid": "scalar",
+      "description": "Net CO2 emissions to the atmosphere over the step"
+    },
+    {
+      "rust_name": "airborne_fraction",
+      "name": "Airborne Fraction|CO2",
+      "unit": "1",
+      "grid": "scalar",
+      "description": "Fraction of the step's fossil sources that stays in the atmosphere"
+    }
+  ],
+  "states": [
+    {
+      "rust_name": "co2_concentration",
+      "name": "Atmospheric Concentrations|CO2",
+      "unit": "ppm",
+      "grid": "scalar",
+      "description": "Atmospheric CO2 concentration at the end of the step"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "gtc_per_ppm",
+      "type": "f64",
+      "description": "Conversion factor from atmospheric carbon mass to CO2 concentration\n\nunit: GtC/ppm\n\nDefault: 2.123 GtC/ppm"
+    },
+    {
+      "name": "co2_pi",
+      "type": "f64",
+      "description": "Pre-industrial CO2 concentration (MAGICC7 `CO2_PREINDCO2CONC`).\n\nunit: ppm\n\nThe component does not use it yet.\n\nDefault: 278.0 ppm\nMAGICC7: CO2_PREINDCO2CONC"
+    },
+    {
+      "name": "include_permafrost",
+      "type": "bool",
+      "description": "Add `Emissions|CO2|Permafrost` from the `Permafrost` component to the sources (MAGICC7 `PF_APPLY`)\n\nDefault: false"
+    },
+    {
+      "name": "concentration_switch_year",
+      "type": "Option<f64>",
+      "description": "Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|CO2`\n(MAGICC7 `CO2_SWITCHFROMCONC2EMIS_YEAR`).\n\nunit: yr\n\n`None` calculates concentrations from emissions throughout."
+    },
+    {
+      "name": "ocean_end_of_year",
+      "type": "bool",
+      "description": "Take next year's concentration from `Ocean Carbon Atmospheric Concentrations|CO2`.\n\n`OceanCarbon` integrates it over its substeps, as MAGICC7 does.\n\nDefault: false"
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/carbon/budget.rs"
+}

@@ -16,6 +16,7 @@ mod parser;
 mod schema;
 
 use clap::Parser;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -49,76 +50,85 @@ fn main() {
         std::process::exit(1);
     }
 
-    let mut all_components: Vec<ComponentDocMetadata> = Vec::new();
-
-    // Process each crate
+    // Parse every file first, so a component can find its parameters struct in another file
+    let mut files = Vec::new();
     for crate_path in &args.crates {
-        if !crate_path.exists() {
-            eprintln!(
-                "Warning: Crate path does not exist: {}",
-                crate_path.display()
-            );
-            continue;
-        }
-
         let src_path = crate_path.join("src");
         if !src_path.exists() {
-            eprintln!("Warning: No src directory in {}", crate_path.display());
-            continue;
+            fail(&format!("No src directory in {}", crate_path.display()));
         }
 
         if args.verbose {
             println!("Scanning {}", crate_path.display());
         }
+        let crate_name = crate_path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
 
-        // Walk through all .rs files
-        for entry in WalkDir::new(&src_path)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
+        for entry in WalkDir::new(&src_path).follow_links(true) {
+            let entry = entry.unwrap_or_else(|e| fail(&e.to_string()));
             let path = entry.path();
             if path.extension().map(|e| e == "rs").unwrap_or(false) {
-                let components = parser::parse_file(path);
-
-                for mut component in components {
-                    // Make the source file path relative to workspace root
-                    component.source_file = make_relative_path(path);
-
-                    if args.verbose {
-                        println!(
-                            "  Found component: {} ({} inputs, {} outputs, {} states)",
-                            component.name,
-                            component.inputs.len(),
-                            component.outputs.len(),
-                            component.states.len()
-                        );
-                        if !component.tags.is_empty() {
-                            println!("    Tags: {:?}", component.tags);
-                        }
-                        if let Some(ref cat) = component.category {
-                            println!("    Category: {}", cat);
-                        }
-                    }
-
-                    all_components.push(component);
-                }
+                let syntax = parser::read_file(path).unwrap_or_else(|e| fail(&e));
+                files.push((crate_name.clone(), path.to_path_buf(), syntax));
             }
+        }
+    }
+
+    let mut index = parser::StructIndex::new();
+    for (crate_name, _, syntax) in &files {
+        parser::index_structs(crate_name, syntax, &mut index);
+    }
+
+    let mut all_components: Vec<ComponentDocMetadata> = Vec::new();
+    for (crate_name, path, syntax) in &files {
+        let components =
+            parser::parse_file(crate_name, path, syntax, &index).unwrap_or_else(|e| fail(&e));
+        for mut component in components {
+            // Make the source file path relative to workspace root
+            component.source_file = make_relative_path(path);
+
+            if args.verbose {
+                println!(
+                    "  Found component: {} ({} inputs, {} outputs, {} states, {} parameters)",
+                    component.name,
+                    component.inputs.len(),
+                    component.outputs.len(),
+                    component.states.len(),
+                    component.parameters.len()
+                );
+            }
+
+            all_components.push(component);
         }
     }
 
     // Write JSON files
     for component in &all_components {
-        let filename = format!("{}.json", component.name.to_lowercase());
+        let filename = format!("{}.json", component.slug);
         let output_path = args.output.join(&filename);
 
         let json = serde_json::to_string_pretty(component).expect("Failed to serialize JSON");
         let json_with_newline = format!("{}\n", json);
 
         if let Err(e) = fs::write(&output_path, json_with_newline) {
-            eprintln!("Failed to write {}: {}", output_path.display(), e);
+            fail(&format!("Failed to write {}: {}", output_path.display(), e));
         } else if args.verbose {
             println!("Wrote {}", output_path.display());
+        }
+    }
+
+    // Pruned only once every component is written, so a failed run leaves the old files in place
+    let written: HashSet<String> = all_components
+        .iter()
+        .map(|c| format!("{}.json", c.slug))
+        .collect();
+    let existing = fs::read_dir(&args.output).unwrap_or_else(|e| fail(&e.to_string()));
+    for entry in existing.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.ends_with(".json") && !written.contains(&name) {
+            fs::remove_file(entry.path()).unwrap_or_else(|e| fail(&e.to_string()));
         }
     }
 
@@ -127,6 +137,12 @@ fn main() {
         all_components.len(),
         args.output.display()
     );
+}
+
+/// Report an error and exit, so `make docs-metadata` fails rather than dropping a component
+fn fail(message: &str) -> ! {
+    eprintln!("{message}");
+    std::process::exit(1);
 }
 
 /// Convert an absolute path to a workspace-relative path

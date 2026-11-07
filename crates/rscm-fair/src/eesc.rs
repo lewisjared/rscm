@@ -1,10 +1,25 @@
 //! Equivalent effective stratospheric chlorine (FaIR step 8)
 //!
+//! Calculates equivalent effective stratospheric chlorine from the concentrations of
+//! ozone-depleting halogens, weighting bromine by its greater ozone depletion potency.
+//!
 //! $$EESC = \sum_h \Big(n_{Cl,h} C_h \frac{f_h}{f_{11}}
 //!   + \beta\, n_{Br,h} C_h \frac{f_h}{f_{11}}\Big) f_{11}$$
 //!
 //! over halogens $h$ with concentration $C_h$, chlorine and bromine atoms $n$,
 //! fractional release $f$ (CFC-11's is $f_{11}$) and bromine potency $\beta$.
+//! Halogens with a missing concentration are skipped.
+//!
+//! # Inputs
+//!
+//! - Each halogen's `concentration`, in its `unit`.
+//!   rscm.fair passes each `cfc-11` and `other halogen` species,
+//!   such as `Atmospheric Concentrations|CFC11` in ppt.
+//!
+//! # Outputs
+//!
+//! - The equivalent effective stratospheric chlorine named by `output`, in `unit` (ppt by default).
+//!   Its default name is `Equivalent Effective Stratospheric Chlorine`.
 
 use crate::constants::get;
 use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
@@ -12,21 +27,22 @@ use rscm_core::errors::RSCMResult;
 use rscm_core::names::EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE;
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 
 /// One ozone-depleting halogen.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Halogen {
-    /// Concentration variable.
+    /// Name of the concentration input.
     pub concentration: String,
-    /// Concentration unit, which is also the EESC unit.
+    /// Unit of the concentration, which is also the unit of the output.
     pub unit: String,
-    /// Chlorine atoms per molecule.
+    /// Chlorine atoms per molecule (FaIR `cl_atoms`).
     pub cl_atoms: FloatValue,
-    /// Bromine atoms per molecule.
+    /// Bromine atoms per molecule (FaIR `br_atoms`).
     pub br_atoms: FloatValue,
-    /// Fraction released in the stratosphere.
+    /// Fraction released in the stratosphere (FaIR `fractional_release`).
     pub fractional_release: FloatValue,
 }
 
@@ -34,18 +50,17 @@ pub struct Halogen {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EESCParameters {
-    /// The halogens.
+    /// Ozone-depleting halogens.
     pub halogens: Vec<Halogen>,
-    /// Fractional release of CFC-11.
+    /// Fraction of CFC-11 released in the stratosphere (FaIR `fractional_release` of CFC-11).
     pub cfc11_fractional_release: FloatValue,
-    /// Ozone depletion potency of bromine relative to chlorine.
-    /// FaIR: `br_cl_ods_potential`
+    /// Ozone depletion potency of bromine relative to chlorine (FaIR `br_cl_ods_potential`).
     #[serde(default = "default_br_cl_ratio")]
     pub br_cl_ratio: FloatValue,
-    /// EESC output.
+    /// Name of the equivalent effective stratospheric chlorine output.
     #[serde(default = "default_output")]
     pub output: String,
-    /// EESC unit.
+    /// Unit of the equivalent effective stratospheric chlorine output.
     #[serde(default = "default_unit")]
     pub unit: String,
 }
@@ -62,8 +77,9 @@ fn default_unit() -> String {
     "ppt".to_string()
 }
 
-/// FaIR's EESC.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// FaIR's equivalent effective stratospheric chlorine.
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["chemistry", "halogens", "fair"], category = "Atmospheric Chemistry")]
 pub struct EESC {
     parameters: EESCParameters,
 }

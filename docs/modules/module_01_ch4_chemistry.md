@@ -112,7 +112,7 @@ Reproducing v7.5.3 SSP245 emissions-driven output fixed these details:
 
 ## Inputs and outputs
 
-| Input                       | Units      | Fortran variable                                        |
+| Input                       | Unit       | Fortran variable                                        |
 | --------------------------- | ---------- | ------------------------------------------------------- |
 | Previous CH4 concentration  | ppb        | `DAT_CH4_CONC%DATGLOBE(CURRENT_YEAR_IDX)`               |
 | Total CH4 emissions         | Tg CH4/yr  | `CH4_TOTEMIS`                                           |
@@ -123,7 +123,7 @@ Total emissions are the sum of industrial (`DAT_CH4I_EMIS`), biomass burning (`D
 and natural (`DAT_CH4N_EMIS`) emissions,
 plus permafrost (`DAT_CH4PF_EMIS`) and clathrate emissions when they are enabled.
 
-| Output              | Units      | Fortran variable                         |
+| Output              | Unit       | Fortran variable                         |
 | ------------------- | ---------- | ---------------------------------------- |
 | Next year's CH4     | ppb        | `DAT_CH4_CONC%DATGLOBE(NEXT_YEAR_IDX)`   |
 | OH lifetime         | yr         | `DAT_CH4_TAUOH%DATGLOBE`                 |
@@ -132,7 +132,7 @@ plus permafrost (`DAT_CH4PF_EMIS`) and clathrate emissions when they are enabled
 
 ## Parameters
 
-| Parameter                      | Units            | Default    | Description                                              |
+| Parameter                      | Unit             | Default    | Description                                              |
 | ------------------------------ | ---------------- | ---------- | -------------------------------------------------------- |
 | `CH4_TAUTOT_INIT`              | yr               | 9.9474     | Total lifetime in the budget period                      |
 | `CH4_TAUSOIL`                  | yr               | 150.0      | Soil sink lifetime                                       |
@@ -154,7 +154,7 @@ plus permafrost (`DAT_CH4PF_EMIS`) and clathrate emissions when they are enabled
 | `CH4_LASTBUDGETYEAR`           | year             | 2004       | Last year of the budget period                           |
 | `CH4_INCL_CH4OX`               | flag             | 1          | Adds CO2 from CH4 oxidation                              |
 | `CH4_APPLYFOSSFUELFRACTION`    | flag             | 0          | Uses `CH4_FOSSFUELFRACTION` instead of the source pools  |
-| `CH4_FOSSFUELFRACTION`         | 1                | 0.18       | Prescribed fossil fraction                               |
+| `CH4_FOSSFUELFRACTION`         | 1                | 0.18       | Fixed fossil fraction                                    |
 | `CH4_WETLAND_SLOPE`            | Mt CH4/yr/K      | 22.4       | Warming response of wetland emissions                    |
 | `CH4_CLATHRATEFEED_APPLY`      | flag             | 0          | Enables clathrate release                                |
 | `CH4_CLATHRATEFEED_YRSTART`    | year             | 2010       | First year of clathrate release                          |
@@ -205,7 +205,8 @@ the prescribed concentration of the following year.
 The fossil CH4 burden that feeds `CH4_2CO2_OXIDISATION_EMIS` then grows from
 fossil emissions scaled by `CH4_INVERSE_EMIS` over the anthropogenic total,
 fossil plus biomass burning.
-RSCM matches both, and `CH4Chemistry` finds the inverse emissions with the secant method.
+RSCM reaches parity with MAGICC7 on both.
+`CH4Chemistry` finds the inverse emissions with the secant method.
 
 ## Issues in MAGICC7
 

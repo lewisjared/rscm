@@ -16,40 +16,40 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct CH4OxidationParameters {
-    /// Mass of carbon per mass of CH4 oxidised
+    /// Mass of carbon per mass of CH4 oxidised, 12/16 by default
+    ///
     /// unit: dimensionless
-    /// default: 0.75 (12/16)
     pub carbon_per_ch4: FloatValue,
 
-    /// Add `Emissions|CH4|Permafrost` to the CH4 budget.
-    /// MAGICC7: PF_APPLY
-    /// default: false
+    /// Add `Emissions|CH4|Permafrost` to the CH4 budget (MAGICC7 `PF_APPLY`)
     pub include_permafrost: bool,
 
-    /// Fraction of permafrost CH4 counted as fossil (`PF_CO2FROMCH4OXINATM_FRACTION`)
+    /// Fraction of permafrost CH4 counted as fossil (MAGICC7 `PF_CO2FROMCH4OXINATM_FRACTION`)
+    ///
     /// unit: dimensionless
-    /// default: 1.0
     pub permafrost_fraction: FloatValue,
 
-    /// Conversion from ppb to Tg CH4 (`CH4_PPB2TGCH4`)
+    /// Conversion factor from ppb to Tg CH4 (MAGICC7 `CH4_PPB2TGCH4`)
+    ///
     /// unit: Tg CH4/ppb
-    /// default: 2.824
     pub tg_per_ppb: FloatValue,
 
-    /// Fraction of the atmosphere mixed with surface CH4 (`CH4_MIXBOXSIZE`)
+    /// Fraction of the atmosphere mixed with surface CH4 (MAGICC7 `CH4_MIXBOXSIZE`)
+    ///
     /// unit: dimensionless
-    /// default: 0.973
     pub mixing_box_size: FloatValue,
 
-    /// Combined soil, stratospheric and tropospheric chlorine lifetime
+    /// Combined soil, stratospheric and tropospheric chlorine lifetime.
+    ///
     /// unit: yr
-    /// default: `CH4ChemistryParameters::non_oh_lifetime()`
-    /// MAGICC7: from CH4_TAUSOIL, CH4_TAUSTRAT and CH4_TAUTROPCL
+    ///
+    /// The default combines the `CH4ChemistryParameters` sink lifetimes
+    /// (MAGICC7 `CH4_TAUSOIL`, `CH4_TAUSTRAT` and `CH4_TAUTROPCL`).
     pub non_oh_lifetime: FloatValue,
 
     /// Natural CH4 emissions
+    ///
     /// unit: Mt CH4/yr
-    /// default: 182.1908
     pub natural_emissions: FloatValue,
 }
 

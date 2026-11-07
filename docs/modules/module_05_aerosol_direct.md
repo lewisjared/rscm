@@ -120,7 +120,7 @@ The order matters for parity, so [forcing aggregation](module_07b_rf_aggregation
 
 ## Inputs and outputs
 
-| Input                                  | Units    | Use                                         |
+| Input                                  | Unit     | Use                                         |
 | -------------------------------------- | -------- | ------------------------------------------- |
 | `FILE_{SOXI,SOXB,BCI,BCB,OCI,OCB}_RF`  | W/m²     | Historical four-box forcing                 |
 | `FILE_BCSNOW_RF`                       | W/m²     | Historical BC on snow forcing               |
@@ -155,7 +155,7 @@ Harmonisation of each species (MAGICC7 v7.5.3 defaults):
 
 Other parameters:
 
-| Parameter                         | Default | Units  | Description                                  |
+| Parameter                         | Default | Unit   | Description                                  |
 | --------------------------------- | ------- | ------ | -------------------------------------------- |
 | `RF_NOXN_EMIS`                    | 10.0    | Mt N/yr | Natural NOx emissions                       |
 | `RF_NH3N_EMIS`                    | 21.0    | Mt N/yr | Natural NH3 emissions                       |

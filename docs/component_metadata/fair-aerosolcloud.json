@@ -1,0 +1,57 @@
+{
+  "name": "AerosolCloud",
+  "slug": "fair-aerosolcloud",
+  "reference_model": "FaIR",
+  "variables_from_parameters": true,
+  "module_path": "rscm_fair::aerosol_cloud",
+  "language": "rust",
+  "description": "Calculates the effective radiative forcing from aerosol-cloud interactions,\nwhich grows with the logarithm of a weighted sum of aerosol emissions and concentrations.\nThe method follows Smith et al. (2021).\n\n$$F = \\big(\\beta \\ln(1 + \\textstyle\\sum_i s_i x_i) - \\beta \\ln(1 + \\sum_i s_i x_{i,0})\\big)\\, s$$\n\nover emissions and concentrations $x_i$ with shapes $s_i$, pre-industrial values $x_{i,0}$,\nscale $\\beta$ and forcing scale $s$.\nThe forcing scale is `forcing_scale * (1 + tropospheric_adjustment)`.\nIt adds a feedback of `temperature_feedback` times the surface air temperature change\nat the start of the step.\nEach driver is an emissions rate or a concentration, never cumulative emissions.\n\n# Inputs\n\n- The surface air temperature change named by `surface_temperature` (K).\n  Its default is `Surface Air Temperature Change`.\n- Each driver's `variable`, in the driver's `unit`.\n  rscm.fair passes the emissions or concentration of each species with an `aci_shape`,\n  such as `Emissions|SOx`.\n\n# Outputs\n\n- The effective radiative forcing named by `forcing` (W/m^2).\n  rscm.fair names it `Effective Radiative Forcing|Aerosols|Indirect Effect`.",
+  "category": "Radiative Forcing",
+  "tags": [
+    "forcing",
+    "aerosol",
+    "cloud",
+    "fair"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "forcing",
+      "type": "String",
+      "description": "Name of the effective radiative forcing output."
+    },
+    {
+      "name": "drivers",
+      "type": "Vec<CloudDriver>",
+      "description": "Emissions and concentrations that drive the response.\nEmissions are summed before concentrations."
+    },
+    {
+      "name": "scale",
+      "type": "FloatValue",
+      "description": "Scale of the logarithmic response (FaIR `aci_scale`).\nunit: W/m^2"
+    },
+    {
+      "name": "forcing_scale",
+      "type": "FloatValue",
+      "description": "Multiplier on the effective radiative forcing (FaIR `forcing_scale`)."
+    },
+    {
+      "name": "tropospheric_adjustment",
+      "type": "FloatValue",
+      "description": "Fractional tropospheric adjustment, applied as `1 + tropospheric_adjustment`\n(FaIR `tropospheric_adjustment`)."
+    },
+    {
+      "name": "temperature_feedback",
+      "type": "FloatValue",
+      "description": "Effective radiative forcing per kelvin of surface air temperature change\n(FaIR `forcing_temperature_feedback`).\nunit: W/m^2/K"
+    },
+    {
+      "name": "surface_temperature",
+      "type": "String",
+      "description": "Name of the surface air temperature change input."
+    }
+  ],
+  "source_file": "crates/rscm-fair/src/aerosol_cloud.rs"
+}

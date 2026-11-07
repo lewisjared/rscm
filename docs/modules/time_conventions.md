@@ -6,8 +6,8 @@ ocean-atmosphere energy balance model.
 ## Annual Step
 
 The RSCM framework calls `solve(t_current, t_next, input_state)` once per year.
-`t_current` and `t_next` are decimal years (e.g. 1750.0, 1751.0). The component
-receives forcing at both boundaries and returns temperature at `t_next`.
+`t_current` and `t_next` are decimal years (e.g. 1750.0, 1751.0).
+The component receives forcing at both time bounds and returns temperature at `t_next`.
 
 ## Substeps
 
@@ -25,27 +25,27 @@ for step_idx in first_step..=self.parameters.steps_per_year {
 
 ### Forcing interpolation
 
-Forcing is linearly interpolated between the annual boundaries.
+Forcing is linearly interpolated between the step's time bounds.
 Substep `k` uses the forcing at `t_current + k/12`, which is `erf_start + k/12 * (erf_end - erf_start)`.
 The last substep uses forcing at exactly `t_next`.
 
 ### Temperature output
 
 The output from `solve_impl` is the temperature after the last substep (substep 12),
-representing the state at `t_next` (January 1 of the next year). This is a
-**point-in-time** value, not an annual mean.
+representing the state at `t_next` (January 1 of the next year).
+This is a **point**, not an average.
 
-## Year boundaries
+## First and last steps
 
-### First-year boundary handling
+### First step
 
 MAGICC7 runs 13 substeps (substeps 0..12) in the first year instead of the normal 12.
-Substep 0 uses the forcing at the start of the simulation.
+Substep 0 uses the forcing at the start of the run.
 RSCM does the same.
 
 Reference: MAGICC7.f90 lines 2702-2716
 
-### Last-year boundary handling
+### Last step
 
 MAGICC7 runs only 11 substeps in the final year (substeps 1..11).
 RSCM always runs 12.
@@ -56,12 +56,11 @@ so the difference does not reach their output.
 
 MAGICC7 produces two temperature variables:
 
-- `DAT_SURFACE_TEMP`: Point-in-time at the end of the year (January 1 of next
-  year). This is the standard output written by `OUT_TEMPERATURE`.
-- `DAT_SURFACE_ANNUALMEANTEMP`: Arithmetic mean of the 12 substep temperatures
-  within the year.
+- `DAT_SURFACE_TEMP`: a point at the end of the year (January 1 of the next year).
+  This is the standard output written by `OUT_TEMPERATURE`.
+- `DAT_SURFACE_ANNUALMEANTEMP`: an average, the mean of the 12 substep temperatures within the year.
 
-RSCM outputs point-in-time values, matching `DAT_SURFACE_TEMP`.
+RSCM outputs points, matching `DAT_SURFACE_TEMP`.
 When `thermal_expansion` is set, `ClimateUDEB` also writes `Annual Mean Surface Air Temperature Change`,
 matching `DAT_SURFACE_ANNUALMEANTEMP`.
 It is an average, so it is stored at the start of the year it covers, as MAGICC7 labels it.

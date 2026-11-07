@@ -98,6 +98,7 @@ struct IoFieldDecl {
     unit: String,
     grid: String,
     timeseries_type: Option<String>,
+    description: String,
 }
 
 impl Parse for IoFieldDecl {
@@ -111,6 +112,7 @@ impl Parse for IoFieldDecl {
         let mut unit = None;
         let mut grid = String::from("scalar");
         let mut timeseries_type = None;
+        let mut description = String::new();
 
         while !content.is_empty() {
             let key: Ident = content.parse()?;
@@ -120,6 +122,7 @@ impl Parse for IoFieldDecl {
             match key.to_string().as_str() {
                 "name" => variable_name = Some(value.value()),
                 "unit" => unit = Some(value.value()),
+                "description" => description = value.value(),
                 "grid" => match value.value().as_str() {
                     "scalar" | "four_box" | "hemispheric" => grid = value.value(),
                     other => {
@@ -166,6 +169,7 @@ impl Parse for IoFieldDecl {
             unit,
             grid,
             timeseries_type,
+            description,
         })
     }
 }
@@ -181,33 +185,6 @@ impl Parse for IoFieldList {
         let fields = Punctuated::parse_terminated(input)?;
         Ok(IoFieldList { fields })
     }
-}
-
-/// Metadata for an input field
-struct InputField {
-    rust_name: Ident,
-    variable_name: String,
-    unit: String,
-    grid: String,
-    timeseries_type: Option<String>,
-}
-
-/// Metadata for an output field
-struct OutputField {
-    rust_name: Ident,
-    variable_name: String,
-    unit: String,
-    grid: String,
-    timeseries_type: Option<String>,
-}
-
-/// Metadata for a state field (appears in both inputs and outputs)
-struct StateField {
-    rust_name: Ident,
-    variable_name: String,
-    unit: String,
-    grid: String,
-    timeseries_type: Option<String>,
 }
 
 /// Component-level attributes (tags and category)
@@ -291,49 +268,50 @@ fn parse_io_list_attribute(attr: &Attribute) -> syn::Result<Vec<IoFieldDecl>> {
     Ok(list.fields.into_iter().collect())
 }
 
+type IoFields = (Vec<IoFieldDecl>, Vec<IoFieldDecl>, Vec<IoFieldDecl>);
+
 /// Extract inputs, outputs, and states from struct-level attributes
-fn extract_io_from_attrs(
-    attrs: &[Attribute],
-) -> syn::Result<(Vec<InputField>, Vec<OutputField>, Vec<StateField>)> {
+fn extract_io_from_attrs(attrs: &[Attribute]) -> syn::Result<IoFields> {
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
     let mut states = Vec::new();
 
     for attr in attrs {
         if attr.path().is_ident("inputs") {
-            for decl in parse_io_list_attribute(attr)? {
-                inputs.push(InputField {
-                    rust_name: decl.rust_name,
-                    variable_name: decl.variable_name,
-                    unit: decl.unit,
-                    grid: decl.grid,
-                    timeseries_type: decl.timeseries_type,
-                });
-            }
+            inputs.extend(parse_io_list_attribute(attr)?);
         } else if attr.path().is_ident("outputs") {
-            for decl in parse_io_list_attribute(attr)? {
-                outputs.push(OutputField {
-                    rust_name: decl.rust_name,
-                    variable_name: decl.variable_name,
-                    unit: decl.unit,
-                    grid: decl.grid,
-                    timeseries_type: decl.timeseries_type,
-                });
-            }
+            outputs.extend(parse_io_list_attribute(attr)?);
         } else if attr.path().is_ident("states") {
-            for decl in parse_io_list_attribute(attr)? {
-                states.push(StateField {
-                    rust_name: decl.rust_name,
-                    variable_name: decl.variable_name,
-                    unit: decl.unit,
-                    grid: decl.grid,
-                    timeseries_type: decl.timeseries_type,
-                });
-            }
+            states.extend(parse_io_list_attribute(attr)?);
         }
     }
 
     Ok((inputs, outputs, states))
+}
+
+/// The `ComponentMetadata` value both derives return from `component_metadata()`
+fn component_metadata_value(
+    struct_name: &str,
+    attrs: &ComponentAttrs,
+    inputs: TokenStream2,
+    outputs: TokenStream2,
+    states: TokenStream2,
+) -> TokenStream2 {
+    let tags = &attrs.tags;
+    let category = match &attrs.category {
+        Some(cat) => quote! { Some(#cat.to_string()) },
+        None => quote! { None },
+    };
+    quote! {
+        ::rscm_core::component::ComponentMetadata {
+            name: #struct_name.to_string(),
+            tags: vec![#(#tags.to_string()),*],
+            category: #category,
+            inputs: #inputs,
+            outputs: #outputs,
+            states: #states,
+        }
+    }
 }
 
 /// Generate the grid type token
@@ -383,6 +361,7 @@ fn output_type(grid: &str) -> TokenStream2 {
 /// - `#[outputs(field { name = "...", unit = "...", grid = "..." }, ...)]` - Declare output variables
 /// - `#[states(field { name = "...", unit = "...", grid = "..." }, ...)]` - Declare state variables
 ///   (states appear in both Inputs and Outputs structs)
+/// - An optional `description = "..."` on any field documents that variable on the component's page
 /// - `#[component(tags = ["tag1", "tag2"], category = "Category Name")]` - Metadata for documentation
 ///
 /// Where `grid` can be "scalar" (the default), "four_box" or "hemispheric",
@@ -590,13 +569,6 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         }))
         .collect();
 
-    // Generate component metadata
-    let tags = &component_attrs.tags;
-    let category_token = match &component_attrs.category {
-        Some(cat) => quote! { Some(#cat.to_string()) },
-        None => quote! { None },
-    };
-
     let input_rust_names: Vec<String> = input_fields
         .iter()
         .map(|f| f.rust_name.to_string())
@@ -609,6 +581,16 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         .iter()
         .map(|f| f.rust_name.to_string())
         .collect();
+    let input_descriptions = input_fields.iter().map(|f| &f.description);
+    let output_descriptions = output_fields.iter().map(|f| &f.description);
+    let state_descriptions = state_fields.iter().map(|f| &f.description);
+    let metadata = component_metadata_value(
+        &struct_name_str,
+        &component_attrs,
+        quote! { vec![#(declared(#input_definitions, #input_rust_names, #input_descriptions)),*] },
+        quote! { vec![#(declared(#output_definitions, #output_rust_names, #output_descriptions)),*] },
+        quote! { vec![#(declared(#state_definitions, #state_rust_names, #state_descriptions)),*] },
+    );
 
     // Generate the expanded code
     let expanded = quote! {
@@ -655,20 +637,14 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
             ///
             /// This includes the component's name, tags, category, and I/O definitions.
             pub fn component_metadata() -> ::rscm_core::component::ComponentMetadata {
-                let declared = |definition: VariableDefinition, rust_name: &str| {
+                let declared = |definition: VariableDefinition, rust_name: &str, description: &str| {
                     let mut declared =
                         ::rscm_core::component::DeclaredVariable::from_definition(&definition);
                     declared.rust_name = rust_name.to_string();
+                    declared.description = description.to_string();
                     declared
                 };
-                ::rscm_core::component::ComponentMetadata {
-                    name: #struct_name_str.to_string(),
-                    tags: vec![#(#tags.to_string()),*],
-                    category: #category_token,
-                    inputs: vec![#(declared(#input_definitions, #input_rust_names)),*],
-                    outputs: vec![#(declared(#output_definitions, #output_rust_names)),*],
-                    states: vec![#(declared(#state_definitions, #state_rust_names)),*],
-                }
+                #metadata
             }
         }
 
@@ -682,4 +658,39 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+/// Derive documentation metadata for a component that implements `definitions()` by hand
+///
+/// Use it when a component's variables depend on its parameters, so `ComponentIO` cannot declare them.
+/// It reads the same `#[component(tags = [...], category = "...")]` attribute as `ComponentIO`.
+/// The generated `component_metadata()` has no variables, so document them in the rustdoc
+/// under `# Inputs` and `# Outputs` headings.
+#[proc_macro_derive(ComponentMetadata, attributes(component))]
+pub fn derive_component_metadata(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let struct_name = &input.ident;
+    let component_attrs = match extract_component_attrs(&input.attrs) {
+        Ok(attrs) => attrs,
+        Err(e) => return e.to_compile_error().into(),
+    };
+    let metadata = component_metadata_value(
+        &struct_name.to_string(),
+        &component_attrs,
+        quote! { Vec::new() },
+        quote! { Vec::new() },
+        quote! { Vec::new() },
+    );
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    TokenStream::from(quote! {
+        impl #impl_generics #struct_name #ty_generics #where_clause {
+            /// Returns metadata about this component for documentation generation
+            ///
+            /// The variables depend on the parameters, so the metadata lists none.
+            pub fn component_metadata() -> ::rscm_core::component::ComponentMetadata {
+                #metadata
+            }
+        }
+    })
 }

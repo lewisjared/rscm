@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ForcingAgent {
-    /// Name of the agent's ERF variable (W/m²).
+    /// Name of the agent's ERF variable, in W/m^2
     pub variable: String,
 
     /// Subtotals the agent's ERF counts towards.
@@ -29,8 +29,11 @@ pub struct ForcingAgent {
     #[serde(default)]
     pub efficacy_per_variable: bool,
 
-    /// Regional forcing pattern (NH ocean, NH land, SH ocean, SH land), as `RF_REGIONS_*`.
-    /// It spreads global ERF over the boxes and, with `climate`, sets the internal efficacy.
+    /// Regional ERF pattern in each region of the four-box grid (MAGICC7 `RF_REGIONS_*`).
+    ///
+    /// unit: dimensionless
+    ///
+    /// It spreads global ERF over the regions and, with `climate`, sets the internal efficacy.
     #[serde(default = "uniform")]
     pub regional_pattern: [FloatValue; 4],
 
@@ -43,11 +46,15 @@ pub struct ForcingAgent {
     #[serde(default)]
     pub use_co2_internal_efficacy: bool,
 
-    /// Efficacy (`RF_EFFICACY_*`).
+    /// Efficacy (MAGICC7 `RF_EFFICACY_*`)
+    ///
+    /// unit: dimensionless
     #[serde(default = "one")]
     pub efficacy: FloatValue,
 
-    /// Internal efficacy of the agent's pattern (`RF_INTEFFICACY_*`), unused with `climate`.
+    /// Internal efficacy of the agent's pattern, unused with `climate` (MAGICC7 `RF_INTEFFICACY_*`)
+    ///
+    /// unit: dimensionless
     #[serde(default = "one")]
     pub internal_efficacy: FloatValue,
 }
@@ -58,23 +65,32 @@ pub struct ForcingAgent {
 #[serde(deny_unknown_fields)]
 pub struct ForcingAggregationParameters {
     /// Agents summed into the total.
+    ///
+    /// `rscm.magicc.full.forcing_agents` builds MAGICC7's agents.
     pub agents: Vec<ForcingAgent>,
 
     /// Order in which agents are summed, by `variable`, with nested lists summed first.
-    /// MAGICC7 sums its forcing groups this way. Empty sums the agents in order.
+    ///
+    /// MAGICC7 sums its forcing groups this way.
+    /// Empty sums the agents in order.
     pub summation: Vec<ForcingTerm>,
 
-    /// How efficacies scale each agent's forcing (MAGICC7 `RF_EFFICACY_APPLY`).
+    /// How efficacies scale each agent's ERF (MAGICC7 `RF_EFFICACY_APPLY`)
     pub efficacy_method: EfficacyMethod,
 
-    /// Northern Hemisphere land fraction.
+    /// Northern Hemisphere land fraction
+    ///
+    /// unit: dimensionless
     pub nh_land_fraction: FloatValue,
 
-    /// Southern Hemisphere land fraction.
+    /// Southern Hemisphere land fraction
+    ///
+    /// unit: dimensionless
     pub sh_land_fraction: FloatValue,
 
-    /// Recalculate internal efficacies each year from the climate sensitivity,
-    /// as MAGICC7 does, instead of using each agent's `internal_efficacy`.
+    /// Recalculate internal efficacies each year from the equilibrium climate sensitivity.
+    ///
+    /// MAGICC7 does this, instead of using each agent's `internal_efficacy`.
     pub climate: Option<EfficacyClimate>,
 }
 
@@ -96,23 +112,33 @@ pub enum ForcingTerm {
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct EfficacyClimate {
-    /// Equilibrium climate sensitivity used before the climate model reports one (K).
+    /// Equilibrium climate sensitivity used before the climate component reports one
+    ///
+    /// unit: K
     pub ecs: FloatValue,
-    /// 2xCO2 effective radiative forcing used before it is first calculated (W/m²).
+    /// 2xCO2 effective radiative forcing used before it is first calculated
+    ///
+    /// unit: W/m^2
     pub erf_2xco2: FloatValue,
-    /// Land-ocean heat exchange coefficient (W/m²/K).
-    /// MAGICC7: CORE_HEATXCHANGE_LANDOCEAN
+    /// Land-ocean heat exchange coefficient (MAGICC7 `CORE_HEATXCHANGE_LANDOCEAN`)
+    ///
+    /// unit: W/m^2/K
     pub land_ocean_heat_exchange: FloatValue,
-    /// Inter-hemispheric heat exchange coefficient (W/m²/K).
-    /// MAGICC7: CORE_HEATXCHANGE_NORTHSOUTH
+    /// Inter-hemispheric heat exchange coefficient (MAGICC7 `CORE_HEATXCHANGE_NORTHSOUTH`)
+    ///
+    /// unit: W/m^2/K
     pub north_south_heat_exchange: FloatValue,
-    /// Land-ocean warming ratio.
-    /// MAGICC7: CORE_RLO
+    /// Land-ocean warming ratio (MAGICC7 `CORE_RLO`)
+    ///
+    /// unit: dimensionless
     pub land_ocean_warming_ratio: FloatValue,
-    /// Ocean-to-land heat exchange amplification.
+    /// Ocean-to-land heat exchange amplification
+    ///
+    /// unit: dimensionless
     pub amplify_ocean_to_land: FloatValue,
-    /// Regional CO2 forcing pattern.
-    /// MAGICC7: RF_REGIONS_CO2
+    /// Regional CO2 ERF pattern in each region of the four-box grid (MAGICC7 `RF_REGIONS_CO2`)
+    ///
+    /// unit: dimensionless
     pub co2_regional_pattern: [FloatValue; 4],
 }
 

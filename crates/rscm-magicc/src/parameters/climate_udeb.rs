@@ -43,7 +43,7 @@ pub struct SubannualForcing {
     /// with `steps_per_year` substeps a year. Zero outside the given range.
     pub values: Vec<[FloatValue; 4]>,
     /// Regional pattern whose internal efficacy divides `efficacy` for the values of each year,
-    /// taken from the climate sensitivity of the year before.
+    /// taken from the equilibrium climate sensitivity of the year before.
     /// A substep belongs to the year it ends in.
     #[serde(default)]
     pub regional_pattern: Option<[FloatValue; 4]>,
@@ -78,9 +78,9 @@ impl SubannualForcing {
     }
 }
 
-/// Parameters for the four-box UDEB climate model.
+/// Parameters for the four-box UDEB climate component.
 ///
-/// The UDEB model couples a four-box atmosphere (Northern Ocean, Northern Land,
+/// `ClimateUDEB` couples a four-box atmosphere (Northern Ocean, Northern Land,
 /// Southern Ocean, Southern Land) to a multi-layer ocean with vertical diffusion
 /// and upwelling.
 ///
@@ -92,209 +92,279 @@ impl SubannualForcing {
 ///
 /// # Default Values
 ///
-/// Default values match MAGICC7 defaults from `MAGCFG_DEFAULTALL.CFG`.
+/// Default values are the MAGICC7 defaults from `MAGCFG_DEFAULTALL.CFG`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct ClimateUDEBParameters {
     // Ocean structure parameters
-    /// Number of ocean layers (including mixed layer).
+    /// Number of ocean layers, including the mixed layer
+    ///
     /// Default: 50
     pub n_layers: usize,
 
-    /// Mixed layer depth (m).
+    /// Mixed layer depth
+    ///
+    /// unit: m
+    ///
     /// Default: 60.0
     pub mixed_layer_depth: FloatValue,
 
-    /// Layer thickness for deeper ocean layers (m).
+    /// Thickness of each deeper ocean layer
+    ///
+    /// unit: m
+    ///
     /// Default: 100.0
     pub layer_thickness: FloatValue,
 
     // Diffusivity parameters
-    /// Base vertical diffusivity ($\text{cm}^2/\text{s}$).
-    /// Converted to $\text{m}^2/\text{yr}$ internally using factor 3155.76.
+    /// Base vertical diffusivity.
+    ///
+    /// unit: cm^2/s
+    ///
+    /// Converted to m^2/yr internally with the factor 3155.76.
+    ///
     /// Default: 0.75
     pub vertical_diffusivity: FloatValue,
 
-    /// Minimum vertical diffusivity ($\text{cm}^2/\text{s}$).
-    /// Floor for temperature-dependent diffusivity.
+    /// Minimum vertical diffusivity, the floor for the temperature-dependent diffusivity
+    ///
+    /// unit: cm^2/s
+    ///
     /// Default: 0.1
     pub minimum_vertical_diffusivity: FloatValue,
 
-    /// Temperature gradient coefficient for diffusivity ($\text{cm}^2/\text{s/K}$).
-    /// Controls how diffusivity changes with vertical temperature gradient.
+    /// Change in diffusivity with the vertical temperature gradient
+    ///
+    /// unit: cm^2/s/K
+    ///
     /// Default: -0.191
     pub vertical_diffusivity_gradient_sensitivity: FloatValue,
 
     // Upwelling parameters
-    /// Initial upwelling rate (m/yr).
-    /// Base rate before temperature-dependent adjustment.
+    /// Initial upwelling rate, before the temperature-dependent adjustment
+    /// (MAGICC7 `CORE_INITIAL_UPWELLING_RATE`)
+    ///
+    /// unit: m/yr
+    ///
     /// Default: 3.5
     /// MAGICC7: CORE_INITIAL_UPWELLING_RATE
     pub initial_upwelling_rate: FloatValue,
 
-    /// Variable fraction of upwelling (dimensionless).
-    /// Fraction of upwelling that can vary with temperature.
+    /// Fraction of upwelling that varies with temperature (MAGICC7 `CORE_UPWELLING_VARIABLE_PART`)
+    ///
+    /// unit: dimensionless
+    ///
     /// Default: 0.7
     /// MAGICC7: CORE_UPWELLING_VARIABLE_PART
     pub upwelling_variable_fraction: FloatValue,
 
-    /// Temperature threshold for NH upwelling shutdown (K).
-    /// Temperature anomaly at which upwelling reaches minimum.
+    /// Temperature change at which NH upwelling reaches its minimum (MAGICC7 `CORE_UPWELL_THRESH_TEMP_NH`)
+    ///
+    /// unit: K
+    ///
     /// Default: 8.0
     /// MAGICC7: CORE_UPWELL_THRESH_TEMP_NH
     pub upwelling_threshold_temperature_nh: FloatValue,
 
-    /// Temperature threshold for SH upwelling shutdown (K).
+    /// Temperature change at which SH upwelling reaches its minimum (MAGICC7 `CORE_UPWELL_THRESH_TEMP_SH`)
+    ///
+    /// unit: K
+    ///
     /// Default: 8.0
     /// MAGICC7: CORE_UPWELL_THRESH_TEMP_SH
     pub upwelling_threshold_temperature_sh: FloatValue,
 
     // Climate sensitivity parameters
-    /// Equilibrium climate sensitivity (K).
-    /// Equilibrium warming for CO2 doubling.
+    /// Equilibrium climate sensitivity, the equilibrium warming after CO2 doubles
+    ///
+    /// unit: K
+    ///
     /// Default: 3.0
     pub ecs: FloatValue,
 
-    /// Radiative forcing for $2 \times \text{CO}_2$ ($\text{W/m}^2$).
+    /// 2xCO2 effective radiative forcing
+    ///
+    /// unit: W/m^2
+    ///
     /// Default: 3.71
     pub erf_2xco2: FloatValue,
 
-    /// Land-ocean warming ratio (dimensionless).
-    /// Ratio of land to ocean equilibrium warming.
+    /// Ratio of land to ocean equilibrium warming (MAGICC7 `CORE_RLO`)
+    ///
+    /// unit: dimensionless
+    ///
     /// Default: 1.317
     /// MAGICC7: CORE_RLO
     pub land_ocean_warming_ratio: FloatValue,
 
-    /// Sensitivity of ECS to forcing level (dimensionless).
+    /// Change in equilibrium climate sensitivity with the ERF level (MAGICC7 `CORE_FEEDBACK_QSENSITIVITY`)
+    ///
+    /// unit: dimensionless
+    ///
     /// Default: 7.84e-9
     /// MAGICC7: CORE_FEEDBACK_QSENSITIVITY
     pub feedback_forcing_sensitivity: FloatValue,
 
-    /// Sensitivity of ECS to cumulative temperature (dimensionless).
+    /// Change in equilibrium climate sensitivity with cumulative warming
+    /// (MAGICC7 `CORE_FEEDBACK_CUMTSENSITIVITY`)
+    ///
+    /// unit: dimensionless
+    ///
     /// Default: 0.08
     /// MAGICC7: CORE_FEEDBACK_CUMTSENSITIVITY
     pub feedback_cumulative_temperature_sensitivity: FloatValue,
 
-    /// Period for cumulative temperature integration (years).
+    /// Period over which warming is accumulated (MAGICC7 `CORE_FEEDBACK_CUMTPERIOD`)
+    ///
+    /// unit: yr
+    ///
     /// Default: 300.0
     /// MAGICC7: CORE_FEEDBACK_CUMTPERIOD
     pub feedback_cumulative_temperature_period: FloatValue,
 
     // Heat exchange parameters
-    /// Land-ocean heat exchange coefficient ($\text{W/m}^2\text{/K}$).
+    /// Land-ocean heat exchange coefficient
+    ///
+    /// unit: W/m^2/K
+    ///
     /// Default: 1.44
     pub land_ocean_heat_exchange: FloatValue,
 
-    /// Inter-hemispheric (North-South) heat exchange coefficient ($\text{W/m}^2\text{/K}$).
+    /// Inter-hemispheric (north-south) heat exchange coefficient
+    ///
+    /// unit: W/m^2/K
+    ///
     /// Default: 0.31
     pub north_south_heat_exchange: FloatValue,
 
-    /// Ocean-to-land heat exchange amplification factor (dimensionless).
+    /// Ocean-to-land heat exchange amplification factor
+    ///
+    /// unit: dimensionless
+    ///
     /// Default: 1.02
     pub amplify_ocean_to_land: FloatValue,
 
     // Area fractions
-    /// Northern Hemisphere land fraction (dimensionless).
+    /// Northern Hemisphere land fraction
+    ///
+    /// unit: dimensionless
+    ///
     /// Default: 0.42
     pub nh_land_fraction: FloatValue,
 
-    /// Southern Hemisphere land fraction (dimensionless).
+    /// Southern Hemisphere land fraction
+    ///
+    /// unit: dimensionless
+    ///
     /// Default: 0.21
     pub sh_land_fraction: FloatValue,
 
-    /// Depth-dependent ocean area scale factor (0-1).
+    /// Strength of the ocean basin narrowing with depth, from 0 to 1.
     ///
-    /// Controls the strength of basin narrowing with depth:
-    /// - 0.0 = cylindrical ocean (no narrowing)
-    /// - 1.0 = full hypsometric profile
+    /// unit: dimensionless
+    ///
+    /// 0 is a cylindrical ocean with no narrowing and 1 is the full hypsometric profile.
     ///
     /// Default: 1.0
     pub depth_dependent_area: FloatValue,
 
     // Ocean temperature adjustment
-    /// Ocean-to-atmosphere temperature adjustment alpha (dimensionless).
-    /// Linear coefficient for SAT/SST relationship.
+    /// Linear coefficient of the air temperature to SST relationship
+    /// (MAGICC7 `CORE_TEMPADJUST_OCN2ATM_ALPHA`)
+    ///
+    /// unit: dimensionless
+    ///
     /// Default: 1.04
     /// MAGICC7: CORE_TEMPADJUST_OCN2ATM_ALPHA
     pub temperature_adjustment_alpha: FloatValue,
 
-    /// Ocean-to-atmosphere temperature adjustment gamma (1/K).
-    /// Quadratic coefficient for SAT/SST relationship.
+    /// Quadratic coefficient of the air temperature to SST relationship
+    /// (MAGICC7 `CORE_TEMPADJUST_OCN2ATM_GAMMA`)
+    ///
+    /// unit: K^-1
+    ///
     /// Default: -0.002
     /// MAGICC7: CORE_TEMPADJUST_OCN2ATM_GAMMA
     pub temperature_adjustment_gamma: FloatValue,
 
     // Polar sinking
-    /// Polar sinking water temperature ratio (dimensionless).
-    /// Fraction of surface temperature in polar sinking water.
+    /// Fraction of the surface temperature change carried by polar sinking water
+    ///
+    /// unit: dimensionless
+    ///
     /// Default: 0.2
     pub polar_sinking_ratio: FloatValue,
 
     // Ground heat reservoir parameters
-    /// Enable ground heat reservoir (`CORE_LANDHEATCAPACITY_APPLY`).
+    /// Apply the ground heat reservoir (MAGICC7 `CORE_LANDHEATCAPACITY_APPLY`).
     ///
-    /// When enabled, a ground heat reservoir damps the land temperature
-    /// response by absorbing/releasing heat from the land surface.
+    /// The reservoir damps the land temperature response by absorbing and releasing heat
+    /// from the land surface.
+    ///
     /// Default: true
     pub include_land_heat_capacity: bool,
 
-    /// Land-ground heat exchange coefficient ($\text{W/m}^2\text{/K}$)
-    /// (`CORE_HEATXCHANGE_LANDGROUND`).
+    /// Land-ground heat exchange coefficient, per unit globe area (MAGICC7 `CORE_HEATXCHANGE_LANDGROUND`).
     ///
-    /// Per unit globe area. Controls the rate of heat exchange between
-    /// the land surface and the ground heat reservoir.
+    /// unit: W/m^2/K
+    ///
+    /// Sets the rate of heat exchange between the land surface and the ground heat reservoir.
+    ///
     /// Default: 0.1
     pub land_ground_heat_exchange: FloatValue,
 
-    /// Effective thickness of ground heat reservoir (m)
-    /// (`CORE_LANDHC_EFFTHICKNESS`).
+    /// Effective thickness of the ground heat reservoir (MAGICC7 `CORE_LANDHC_EFFTHICKNESS`).
     ///
-    /// Ocean-water-equivalent depth parameterising the total land heat
-    /// reservoir thermal inertia.
+    /// unit: m
+    ///
+    /// The ocean-water-equivalent depth that sets the thermal inertia of the land heat reservoir.
+    ///
     /// Default: 300.0
     pub land_heat_capacity_effective_thickness: FloatValue,
 
     // Regional CO2 forcing
-    /// Regional CO2 radiative forcing pattern (NH ocean, NH land, SH ocean, SH land).
+    /// Regional CO2 ERF pattern in each region of the four-box grid (MAGICC7 `RF_REGIONS_CO2`).
     ///
-    /// Relative weights used to compute per-box CO2 forcing fractions for the
-    /// LAMCALC solver. Normalised against global-area-weighted sum following
-    /// MAGICC7.f90 lines 8146-8165.
+    /// unit: dimensionless
+    ///
+    /// Relative weights for the CO2 ERF fraction of each region in the LAMCALC solver,
+    /// normalised by their global area-weighted sum as in MAGICC7.
     ///
     /// Default values from `MAGCFG_DEFAULTALL.CFG` (AR6 calibration):
     /// `[1.4089, 1.37045, 1.43333, 1.33257]`.
     pub co2_regional_pattern: [FloatValue; 4],
 
     // Efficacy parameters
-    /// How efficacies scale the forcing (MAGICC7 `RF_EFFICACY_APPLY`).
+    /// How efficacies scale the ERF (MAGICC7 `RF_EFFICACY_APPLY`).
     ///
-    /// - `none` (default): all agents treated with uniform spatial efficacy.
-    /// - `unit`: effective forcing divided by the internal efficacy.
-    /// - `ar6`: effective forcing adjusted by `co2_efficacy / internal_efficacy`.
+    /// `none` leaves the ERF unchanged, `unit` divides it by the internal efficacy,
+    /// and `ar6` scales it by `co2_efficacy / internal_efficacy`.
     #[serde(default)]
     pub efficacy_method: EfficacyMethod,
 
-    /// CO2 efficacy (matches MAGICC7 `RF_EFFICACY_CO2`).
+    /// CO2 efficacy (MAGICC7 `RF_EFFICACY_CO2`).
     ///
-    /// Unused with the `unit` method.
-    /// With `ar6`: $\text{EFFRF} = \text{ERF} \times \text{co2\_efficacy} / \text{internal\_efficacy}$.
+    /// unit: dimensionless
+    ///
+    /// Used only by the `ar6` method:
+    /// $\text{EFFRF} = \text{ERF} \times \text{co2\_efficacy} / \text{internal\_efficacy}$.
     ///
     /// Default: 1.0 (no-op).
     #[serde(default = "default_co2_efficacy")]
     pub co2_efficacy: FloatValue,
 
-    /// Read efficacy-adjusted four-box forcing instead of global ERF.
+    /// Read the four-box efficacy-adjusted ERF from `ForcingAggregation` instead of the global ERF.
     ///
-    /// When set, the forcing is used as given and the efficacy settings above
-    /// are ignored. See `ForcingAggregation`.
+    /// The ERF is then used as given and the efficacy parameters above are ignored.
     pub include_regional_forcing: bool,
 
-    /// Efficacy-adjusted box forcing applied at each substep, on top of the
-    /// annual input. MAGICC7 applies volcanic forcing this way.
+    /// Efficacy-adjusted regional ERF applied at each substep, on top of the annual input.
+    ///
+    /// MAGICC7 applies volcanic forcing this way.
     pub subannual_forcing: Option<SubannualForcing>,
 
-    /// Write the annual mean warming and the thermal expansion of the ocean.
+    /// Write the annual mean warming and the thermal expansion of the ocean
     pub thermal_expansion: Option<ThermalExpansion>,
 
     /// Read `2xCO2 Effective Radiative Forcing` each year instead of using `erf_2xco2`.
@@ -304,21 +374,24 @@ pub struct ClimateUDEBParameters {
     pub time_varying_erf_2xco2: bool,
 
     // Initial ocean temperature profile
-    /// Initial ocean temperature profile (`CORE_SWITCH_OCN_TEMPPROFILE`).
+    /// Initial ocean temperature profile (MAGICC7 `CORE_SWITCH_OCN_TEMPPROFILE`).
     ///
-    /// The profile is used as a reference baseline for variable upwelling
-    /// correction terms. When upwelling changes from its initial value, these
-    /// corrections compensate for the shift in equilibrium profile. Using the
-    /// CMIP5 profile matches MAGICC7's default behaviour.
+    /// The profile is the reference for the variable upwelling correction terms.
+    /// When upwelling changes from its initial value, these corrections compensate
+    /// for the shift in the equilibrium profile.
+    /// MAGICC7 uses the CMIP5 profile by default.
     pub ocean_temperature_profile: OceanTemperatureProfile,
 
     // Integration parameters
-    /// Substeps per year.
+    /// Substeps per year, 12 (monthly) by default
+    ///
     /// Default: 12 (monthly)
     pub steps_per_year: usize,
 
-    /// Maximum temperature anomaly cap (K).
-    /// Safety limit to prevent runaway temperatures.
+    /// Cap on the temperature change, to prevent runaway temperatures (MAGICC7 `CORE_MAXIMAL_TEMPERATURE`)
+    ///
+    /// unit: K
+    ///
     /// Default: 25.0
     /// MAGICC7: CORE_MAXIMAL_TEMPERATURE
     pub maximum_temperature: FloatValue,

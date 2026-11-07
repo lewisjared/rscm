@@ -28,11 +28,15 @@ fn over_defaults<'de, D: Deserializer<'de>, T: Serialize + DeserializeOwned>(
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct ThermalExpansion {
-    /// Coefficients of the expansion polynomial (`SLR_EXPANSION_PARAMS`)
+    /// Coefficients of the expansion polynomial (MAGICC7 `SLR_EXPANSION_PARAMS`)
     pub coefficients: [FloatValue; 6],
-    /// Scaling of the ocean layer warming (`SLR_EXPANSION_SCALING`)
+    /// Scaling of the ocean layer warming (MAGICC7 `SLR_EXPANSION_SCALING`)
+    ///
+    /// unit: dimensionless
     pub scaling: FloatValue,
     /// First year whose warming expands the ocean
+    ///
+    /// unit: yr
     pub start_year: FloatValue,
 }
 
@@ -52,16 +56,23 @@ impl Default for ThermalExpansion {
 #[serde(deny_unknown_fields)]
 pub struct Glacier {
     /// Fraction of the gap to equilibrium closed per year at 1 K of disequilibrium
+    ///
     /// unit: 1/yr
     pub sensitivity: FloatValue,
     /// Exponent applied to the temperature disequilibrium
+    ///
+    /// unit: dimensionless
     pub exponent: FloatValue,
     /// First year of glacier melt
+    ///
+    /// unit: yr
     pub start_year: FloatValue,
     /// Warming at which `equilibrium_sea_level` is reached
+    ///
     /// unit: K
     pub equilibrium_temperature: Vec<FloatValue>,
     /// Equilibrium sea level contribution at each `equilibrium_temperature`
+    ///
     /// unit: mm
     pub equilibrium_sea_level: Vec<FloatValue>,
 }
@@ -103,18 +114,29 @@ const GLACIER_EQUILIBRIUM_SEA_LEVEL: [FloatValue; 104] = [
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct SurfaceMassBalance {
+    /// Sea level contribution per year at 1 K of warming
+    ///
     /// unit: mm/yr
     pub sensitivity: FloatValue,
     /// Weight of the linear temperature term
+    ///
+    /// unit: dimensionless
     pub linear_fraction: FloatValue,
     /// Exponent of the warming term
+    ///
+    /// unit: dimensionless
     pub exponent: FloatValue,
     /// First year of surface melt
+    ///
+    /// unit: yr
     pub start_year: FloatValue,
     /// Sea level equivalent of the ice sheet, `None` for no depletion
+    ///
     /// unit: mm
     pub volume: Option<FloatValue>,
     /// Exponent of the remaining volume fraction
+    ///
+    /// unit: dimensionless
     pub volume_exponent: FloatValue,
 }
 
@@ -156,11 +178,15 @@ impl Default for SurfaceMassBalance {
 #[serde(deny_unknown_fields)]
 pub struct DischargeCase {
     /// Ice available for discharge
+    ///
     /// unit: mm
     pub volume: FloatValue,
     /// Fraction of the remaining volume discharged per year at zero warming
+    ///
     /// unit: 1/yr
     pub sensitivity: FloatValue,
+    /// Exponential rate at which discharge grows with warming
+    ///
     /// unit: 1/K
     pub exponent: FloatValue,
 }
@@ -204,14 +230,23 @@ fn high_over_defaults<'de, D: Deserializer<'de>>(d: D) -> Result<DischargeCase, 
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct GreenlandDischarge {
+    /// Low discharge case
     #[serde(deserialize_with = "low_over_defaults")]
     pub low: DischargeCase,
+    /// High discharge case
     #[serde(deserialize_with = "high_over_defaults")]
     pub high: DischargeCase,
     /// Position between the low (0) and high (1) case
+    ///
+    /// unit: dimensionless
     pub case: FloatValue,
+    /// Scaling of the interpolated discharge
+    ///
+    /// unit: dimensionless
     pub scaling: FloatValue,
     /// First year of discharge
+    ///
+    /// unit: yr
     pub start_year: FloatValue,
 }
 
@@ -231,13 +266,18 @@ impl Default for GreenlandDischarge {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AntarcticRegion {
+    /// Region name
     pub name: String,
-    /// Years after `start_year` before the region responds
+    /// Time after `start_year` before the region responds
+    ///
     /// unit: yr
     pub delay: usize,
     /// Ratio of subsurface ocean warming to global warming
+    ///
+    /// unit: dimensionless
     pub temperature_scaling: FloatValue,
     /// Quartic response to a unit basal melt pulse, highest power first
+    ///
     /// unit: m per m/yr
     pub response: [FloatValue; 5],
 }
@@ -251,14 +291,22 @@ pub struct AntarcticRegion {
 #[serde(deny_unknown_fields)]
 pub struct AntarcticDischarge {
     /// Basal melt per K of subsurface ocean warming
+    ///
     /// unit: m/yr/K
     pub basal_melt_sensitivity: FloatValue,
-    /// Years after which the response functions are zero
+    /// Age after which the response functions are zero
+    ///
     /// unit: yr
     pub response_span: usize,
+    /// Scaling of the total discharge
+    ///
+    /// unit: dimensionless
     pub scaling: FloatValue,
     /// First year of discharge
+    ///
+    /// unit: yr
     pub start_year: FloatValue,
+    /// Drainage regions
     pub regions: Vec<AntarcticRegion>,
 }
 
@@ -346,14 +394,17 @@ fn antarctica_over_defaults<'de, D: Deserializer<'de>>(
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct SeaLevelRiseParameters {
+    /// Mountain glaciers and small ice caps (MAGICC7 `SLR_GL_*`)
     pub glaciers: Glacier,
-    /// Greenland surface mass balance, MAGICC7: SLR_GIS_SMB_*
+    /// Greenland surface mass balance (MAGICC7 `SLR_GIS_SMB_*`)
     #[serde(deserialize_with = "greenland_over_defaults")]
     pub greenland_surface_mass_balance: SurfaceMassBalance,
+    /// Greenland solid ice discharge (MAGICC7 `SLR_GIS_SID_*`)
     pub greenland_discharge: GreenlandDischarge,
-    /// Antarctic surface mass balance, MAGICC7: SLR_AIS_SMB_*
+    /// Antarctic surface mass balance (MAGICC7 `SLR_AIS_SMB_*`)
     #[serde(deserialize_with = "antarctica_over_defaults")]
     pub antarctic_surface_mass_balance: SurfaceMassBalance,
+    /// Antarctic solid ice discharge (MAGICC7 `SLR_AIS_SID_*`)
     pub antarctic_discharge: AntarcticDischarge,
 }
 

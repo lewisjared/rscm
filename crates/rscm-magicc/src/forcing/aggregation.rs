@@ -1,10 +1,10 @@
 //! Forcing Aggregation Component
 //!
 //! Combines the ERF of each forcing agent into the four-box efficacy-adjusted
-//! forcing that drives `ClimateUDEB`, following MAGICC7's DELTAQ.
+//! ERF that drives `ClimateUDEB`, following MAGICC7's DELTAQ.
 //!
-//! Each agent is either global, spread over the boxes with its regional
-//! pattern, or already regional. Its box forcing is then scaled by
+//! Each agent is either global, spread over the regions with its regional
+//! pattern, or already regional. Its regional ERF is then scaled by
 //!
 //! $$\text{EFFRF} = \text{ERF} \times \frac{\epsilon_{\text{prescribed}}}{\epsilon_{\text{internal}}}$$
 //!
@@ -15,13 +15,24 @@
 //! LAMCALC at the previous year's `Equilibrium Climate Sensitivity` and
 //! `2xCO2 Effective Radiative Forcing`, so they drift as the climate warms.
 //!
+//! The `agents` parameter names the variables it reads and has no default agents.
+//! `rscm.magicc.full.forcing_agents` builds MAGICC7's list.
+//!
+//! # Inputs
+//!
+//! - `Effective Radiative Forcing|{agent}` (W/m^2): the ERF of each agent, named by its `variable`,
+//!   or each variable in its `sum_of`. It is on the four-box grid when the agent is `regional`.
+//! - `Equilibrium Climate Sensitivity` (K), only with the `climate` parameter:
+//!   the previous year's value, for the internal efficacies
+//! - `2xCO2 Effective Radiative Forcing` (W/m^2), only with the `climate` parameter:
+//!   the previous year's value, for the internal efficacies
+//!
 //! # Outputs
 //!
-//! - `Effective Radiative Forcing` (W/m²): area-weighted sum of agent ERF.
-//! - `Effective Radiative Forcing|Greenhouse Gases`, `|Aerosols` and `|Anthropogenic` (W/m²):
-//!   the same sum over the agents of each [`ForcingCategory`](rscm_core::forcing::ForcingCategory).
-//! - `Efficacy Adjusted Effective Radiative Forcing` (W/m², FourBox): the
-//!   climate driver.
+//! - `Effective Radiative Forcing` (W/m^2): area-weighted sum of the agent ERF
+//! - `Effective Radiative Forcing|{Greenhouse Gases,Aerosols,Anthropogenic}` (W/m^2):
+//!   the same sum over the agents of each [`ForcingCategory`](rscm_core::forcing::ForcingCategory)
+//! - `Efficacy Adjusted Effective Radiative Forcing` (W/m^2, four-box): the ERF that drives the climate
 
 use crate::climate::lamcalc::{
     calc_internal_efficacy, compute_qfrac, hemispheric_qfrac, lamcalc, LAMCALCParameters,
@@ -33,10 +44,12 @@ use rscm_core::forcing::ForcingSubtotals;
 use rscm_core::names::{EFFICACY_ADJUSTED_ERF, EQUILIBRIUM_CLIMATE_SENSITIVITY, ERF, ERF_2XCO2};
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 
 /// Aggregates agent ERF into four-box efficacy-adjusted forcing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["forcing", "aggregation", "magicc"], category = "Radiative Forcing")]
 pub struct ForcingAggregation {
     parameters: ForcingAggregationParameters,
 }

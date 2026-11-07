@@ -1,9 +1,10 @@
 {
   "name": "FourBoxOceanHeatUptake",
+  "slug": "fourboxoceanheatuptake",
   "module_path": "rscm_components::components::four_box_ocean_heat_uptake",
   "language": "rust",
-  "description": "This example component demonstrates using grid timeseries in RSCM.\nIt takes scalar effective radiative forcing (ERF) as input and produces\nregional ocean heat uptake values for a four-box grid structure.\n\nTakes scalar ERF input and produces regional ocean heat uptake.\nDemonstrates disaggregation from the scalar grid to the four-box grid.\n\n# Physics\n\nOcean heat uptake varies by region due to:\n- Ocean vs. land: Oceans have higher heat capacity and absorb more energy\n- Latitude: Polar regions have different uptake characteristics\n- Mixing: Deep ocean mixing affects heat penetration\n\nThis simplified model uses fixed regional fractions to distribute global forcing.\n\n# Example\n\n```rust\nuse rscm_components::{\n    FourBoxOceanHeatUptake,\n    FourBoxOceanHeatUptakeParameters,\n};\n\nlet params = FourBoxOceanHeatUptakeParameters::default();\nlet component = FourBoxOceanHeatUptake::from_parameters(params);\n```",
-  "category": "Ocean",
+  "description": "This example component splits a global effective radiative forcing into heat uptake\nin each region of the four-box grid.\nIt shows how a component reads a scalar input and writes a four-box output.\n\n# Physics\n\nOcean heat uptake varies by region because of:\n\n- Ocean and land: oceans have a higher heat capacity and absorb more energy\n- Latitude: polar regions take up heat differently\n- Mixing: deep ocean mixing affects how far heat penetrates\n\nThe component scales the forcing by a fixed ratio for each region.\nThe four ratios must average to 1, so the area-weighted mean uptake equals the global forcing.\n\n# Example\n\n```rust\nuse rscm_components::{\n    FourBoxOceanHeatUptake,\n    FourBoxOceanHeatUptakeParameters,\n};\n\nlet params = FourBoxOceanHeatUptakeParameters::default();\nlet component = FourBoxOceanHeatUptake::from_parameters(params);\n```",
+  "category": "Climate",
   "tags": [
     "temperature",
     "ocean",
@@ -16,7 +17,8 @@
       "rust_name": "erf",
       "name": "Effective Radiative Forcing",
       "unit": "W/m^2",
-      "grid": "scalar"
+      "grid": "scalar",
+      "description": "Global effective radiative forcing"
     }
   ],
   "outputs": [
@@ -24,7 +26,8 @@
       "rust_name": "heat_uptake",
       "name": "Heat Uptake",
       "unit": "W/m^2",
-      "grid": "four_box"
+      "grid": "four_box",
+      "description": "Heat uptake in each region"
     }
   ],
   "states": [],
@@ -32,22 +35,22 @@
     {
       "name": "northern_ocean_ratio",
       "type": "f64",
-      "description": "Ratio of Northern Ocean uptake to global ERF (regional / global)"
+      "description": "Ratio of northern ocean heat uptake to the global effective radiative forcing"
     },
     {
       "name": "northern_land_ratio",
       "type": "f64",
-      "description": "Ratio of Northern Land uptake to global ERF (regional / global)"
+      "description": "Ratio of northern land heat uptake to the global effective radiative forcing"
     },
     {
       "name": "southern_ocean_ratio",
       "type": "f64",
-      "description": "Ratio of Southern Ocean uptake to global ERF (regional / global)"
+      "description": "Ratio of southern ocean heat uptake to the global effective radiative forcing"
     },
     {
       "name": "southern_land_ratio",
       "type": "f64",
-      "description": "Ratio of Southern Land uptake to global ERF (regional / global)"
+      "description": "Ratio of southern land heat uptake to the global effective radiative forcing"
     }
   ],
   "source_file": "crates/rscm-components/src/components/four_box_ocean_heat_uptake.rs"

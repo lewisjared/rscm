@@ -1,23 +1,35 @@
 //! Ozone Forcing Component
 //!
-//! Ozone ERF terms of MAGICC7.
+//! Calculates the effective radiative forcing (ERF) of stratospheric and tropospheric ozone,
+//! and of the N2O and temperature feedbacks on ozone, following MAGICC7.
 //!
 //! # Inputs
 //!
-//! - `Equivalent Effective Stratospheric Chlorine` (ppt)
-//! - `Atmospheric Concentrations|CH4` (ppb) and `Atmospheric Concentrations|N2O` (ppb)
-//! - `Emissions|{NOx,CO,NMVOC}|{Fossil,Biosphere}` (Mt N/yr, Mt CO/yr and Mt NMVOC/yr)
-//! - `Surface Air Temperature Change` (K)
+//! - `Equivalent Effective Stratospheric Chlorine` (ppt): drives the stratospheric ozone ERF
+//! - `Atmospheric Concentrations|CH4` (ppb): drives the CH4 term of the tropospheric ozone ERF
+//! - `Atmospheric Concentrations|N2O` (ppb): drives the N2O feedback
+//! - `Emissions|{NOx,CO,NMVOC}|{Fossil,Biosphere}` (Mt N/yr, Mt CO/yr and Mt NMVOC/yr):
+//!   ozone precursor emissions by sector over the step
+//! - `Surface Air Temperature Change` (K): drives the temperature feedback
 //!
-//! # Outputs (W/m²) at the end of each year $Y$
+//! # Outputs
 //!
-//! - `Effective Radiative Forcing|Ozone|Stratospheric`:
-//!   $s \max(0, (E_Y - E_{Y_0}) / 100)^{\beta}$ from the threshold year $Y_0$, zero before.
-//! - `Effective Radiative Forcing|Ozone|Tropospheric`:
-//!   $r o_{CH4} \ln(M_Y / M_0) + r [o_{NOx} \Delta NOx_{Y-1} + o_{CO} \Delta CO_{Y-1} + o_{VOC} \Delta VOC_{Y-1}]$,
-//!   four-box with `tropospheric_ozone_regions` as MAGICC7 spreads it within each hemisphere.
-//! - `Effective Radiative Forcing|Ozone|N2O Feedback`: $k (N_Y - N_0)$
-//! - `Effective Radiative Forcing|Ozone|Temperature Feedback`: $\gamma T_{Y-1}$
+//! - `Effective Radiative Forcing|Ozone|Stratospheric` (W/m^2): ERF of stratospheric ozone depletion
+//! - `Effective Radiative Forcing|Ozone|Tropospheric` (W/m^2): ERF of tropospheric ozone,
+//!   on the four-box grid with the `tropospheric_ozone_regions` parameter
+//! - `Effective Radiative Forcing|Ozone|N2O Feedback` (W/m^2): ozone ERF from the N2O concentration
+//! - `Effective Radiative Forcing|Ozone|Temperature Feedback` (W/m^2): ozone ERF from warming
+//!
+//! # ERF terms
+//!
+//! At the end of each year $Y$:
+//!
+//! - Stratospheric: $s \max(0, (E_Y - E_{Y_0}) / 100)^{\beta}$ from the threshold year $Y_0$, zero before.
+//! - Tropospheric:
+//!   $r o_{CH4} \ln(M_Y / M_0) + r [o_{NOx} \Delta NOx_{Y-1} + o_{CO} \Delta CO_{Y-1} + o_{VOC} \Delta VOC_{Y-1}]$.
+//!   With `tropospheric_ozone_regions` it is spread within each hemisphere, as MAGICC7 does.
+//! - N2O feedback: $k (N_Y - N_0)$
+//! - Temperature feedback: $\gamma T_{Y-1}$
 //!
 //! Changes ($\Delta$) and the subscript 0 are relative to the first year of the run.
 //! Each change is the sum of the fossil and biosphere changes, in MAGICC7's order.
@@ -34,6 +46,7 @@ use rscm_core::names::{
 };
 use rscm_core::state::{FourBoxSlice, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
+use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 
 /// Precursors with their emission units, each given as fossil and biosphere sectors.
@@ -49,7 +62,8 @@ fn precursor_name(gas: &str, sector: &str) -> String {
 }
 
 /// Ozone forcing component.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
+#[component(tags = ["forcing", "ozone", "magicc"], category = "Radiative Forcing")]
 pub struct OzoneForcing {
     parameters: OzoneForcingParameters,
 }

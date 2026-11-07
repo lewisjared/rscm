@@ -31,7 +31,7 @@ Each has its own start year and can be switched independently.
   `rscm.magicc.full.run_magicc7` adds both with `out_sealevel=1`. MAGICC7's default is 0.
 - **Tests**: `tests/regression/test_sea_level.py::test_contribution` runs the coupled chain
   on MAGICC7 v7.5.3's SSP245 emissions run with sea level (`04_ssp245_emissions_sealevel`)
-  and matches every contribution and the total in MAGICC7's binary output.
+  and checks parity for every contribution and the total against MAGICC7's binary output.
   `test_sea_level_off_by_default` checks that the default chain has no sea level.
   Unit tests in `sea_level.rs` cover expansion, interpolation, zero warming and the Greenland volume limit.
 
@@ -227,7 +227,7 @@ $$
 
 ## State variables
 
-| Variable                  | Fortran name                          | Units | Description                       | Initial value               |
+| Variable                  | Fortran name                          | Unit  | Description                       | Initial value               |
 | ------------------------- | ------------------------------------- | ----- | --------------------------------- | --------------------------- |
 | Total                     | `SLR_TOTAL_CONTRIBUTION`              | mm    | Cumulative total sea level rise   | 0                           |
 | Thermal expansion         | `SLR_EXPANSION_CONTRIBUTION`          | mm    | $S_{exp}$                         | 0                           |
@@ -250,7 +250,7 @@ and each Antarctic region's baseline warming and melt history.
 
 ## Inputs and outputs
 
-| Direction | Variable                  | Units | Fortran variable                       | RSCM variable                                     |
+| Direction | Variable                  | Unit  | Fortran variable                       | RSCM variable                                     |
 | --------- | ------------------------- | ----- | -------------------------------------- | ------------------------------------------------- |
 | Input     | Annual mean warming       | K     | `DAT_SURFACE_ANNUALMEANTEMP%DATGLOBE`  | `Annual Mean Surface Air Temperature Change`                |
 | Input     | Ocean layer temperatures  | K     | `TEMP_OCEANLAYERS(I, CURRENT/NEXT_YEAR_IDX)` | `ClimateUDEB` state                         |
@@ -279,7 +279,7 @@ A dash marks a parameter RSCM does not have.
 
 ### Thermal expansion
 
-| Parameter              | Fortran name              | Units   | CFG default                          | Effective default                                    | Description               |
+| Parameter              | Fortran name              | Unit    | CFG default                          | Effective default                                    | Description               |
 | ---------------------- | ------------------------- | ------- | ------------------------------------ | ---------------------------------------------------- | ------------------------- |
 | Expansion coefficients | `SLR_EXPANSION_PARAMS`    | various | [52.24, 0.99, 1.03, 0.61, 24.26, 0.74] | [52.2368, 0.9938, 1.0333, 0.6065, 24.2643, 0.7408] | $p_1 \dots p_6$           |
 | Expansion scaling      | `SLR_EXPANSION_SCALING`   | 1       | 0.8824                               | 0.8823828                                            | $s$                       |
@@ -288,7 +288,7 @@ A dash marks a parameter RSCM does not have.
 
 ### Glaciers
 
-| Parameter             | Fortran name             | Units | CFG default                          | Effective default    | Description                    |
+| Parameter             | Fortran name             | Unit  | CFG default                          | Effective default    | Description                    |
 | --------------------- | ------------------------ | ----- | ------------------------------------ | -------------------- | ------------------------------ |
 | Sensitivity           | `SLR_GL_SENS_MMPYRDEG`   | yr⁻¹  | 0.625                                | 1.067337 × 10⁻²      | $k$                            |
 | Temperature exponent  | `SLR_GL_TEMP_EXPONENT`   | 1     | 0.82                                 | 7.881273 × 10⁻²      | $e$                            |
@@ -302,7 +302,7 @@ A dash marks a parameter RSCM does not have.
 
 ### Greenland SMB
 
-| Parameter            | Fortran name                    | Units | CFG default | Effective default   | Description              |
+| Parameter            | Fortran name                    | Unit  | CFG default | Effective default   | Description              |
 | -------------------- | ------------------------------- | ----- | ----------- | ------------------- | ------------------------ |
 | Parameterisation     | `SLR_GIS_SMB_PARAMETERISATION`  |       | `DEFAULT`   | `DEFAULT` only      | `DEFAULT` or `FETTWEIS`  |
 | Coefficient 1        | `SLR_GIS_SMB_COEF1`             | mm yr⁻¹ | 0.015     | 0.1148748           | $c_1$                    |
@@ -316,7 +316,7 @@ A dash marks a parameter RSCM does not have.
 
 ### Greenland SID
 
-| Parameter          | Fortran name                         | Units | CFG default | Effective default | Description                  |
+| Parameter          | Fortran name                         | Unit  | CFG default | Effective default | Description                  |
 | ------------------ | ------------------------------------ | ----- | ----------- | ----------------- | ---------------------------- |
 | Case selector      | `SLR_GIS_SID_CASE`                   | 1     | 0.5         | 0.5               | $c$, low (0) to high (1)     |
 | Scaling            | `SLR_GIS_SID_SCALING`                | 1     | 5.0         | 5.0               | $\sigma$, AR5 upscaling      |
@@ -330,7 +330,7 @@ A dash marks a parameter RSCM does not have.
 
 ### Antarctic SMB
 
-| Parameter            | Fortran name                | Units   | CFG default | Effective default    | Description              |
+| Parameter            | Fortran name                | Unit    | CFG default | Effective default    | Description              |
 | -------------------- | --------------------------- | ------- | ----------- | -------------------- | ------------------------ |
 | Coefficient 1        | `SLR_AIS_SMB_COEF1`         | mm yr⁻¹ | 0.128       | -0.1208204           | $c_1$                    |
 | Coefficient 2        | `SLR_AIS_SMB_COEF2`         | 1       | -0.424      | -7.702955 × 10⁻¹⁵    | $c_2$, linear weight     |
@@ -340,7 +340,7 @@ A dash marks a parameter RSCM does not have.
 
 ### Antarctic SID, common
 
-| Parameter            | Fortran name                   | Units | CFG default   | Effective default | Description                  |
+| Parameter            | Fortran name                   | Unit  | CFG default   | Effective default | Description                  |
 | -------------------- | ------------------------------ | ----- | ------------- | ----------------- | ---------------------------- |
 | Parameterisation     | `SLR_AIS_SID_PARAMETERISATION` |       | `LEVERMANN`   | `LEVERMANN` only  | `LEVERMANN` or `DECONTO`     |
 | Scaling              | `SLR_AIS_SID_SCALING`          | 1     | 1.0           | 1.0               | $\sigma_{AIS}$               |
@@ -350,7 +350,7 @@ A dash marks a parameter RSCM does not have.
 
 ### Antarctic SID, DECONTO
 
-| Parameter             | Fortran name                    | Units   | CFG default | Description          |
+| Parameter             | Fortran name                    | Unit    | CFG default | Description          |
 | --------------------- | ------------------------------- | ------- | ----------- | -------------------- |
 | Total volume          | `SLR_AIS_SID_TOTALVOL`          | mm      | 17560.0     | Initial $V$          |
 | Discharge sensitivity | `SLR_AIS_SID_DSCHRG_SENS`       | yr⁻¹    | 5.28 × 10⁻⁵ | $d$                  |
@@ -363,7 +363,7 @@ RSCM does not implement DECONTO, so these have no effective default.
 
 ### Antarctic SID, LEVERMANN
 
-| Parameter                 | Fortran name                             | Units     | CFG default | Effective default | Description          |
+| Parameter                 | Fortran name                             | Unit      | CFG default | Effective default | Description          |
 | ------------------------- | ---------------------------------------- | --------- | ----------- | ----------------- | -------------------- |
 | Basal melt                | `SLR_AIS_SID_BASALMELT`                  | m yr⁻¹ K⁻¹ | 11.5       | 11.5              | $b$                  |
 | Response span             | `SLR_AIS_SID_IRF_YRSPAN`                 | yr        | 500         | 500               | Response cut-off     |
@@ -387,7 +387,7 @@ The response coefficients `SLR_AIS_SID_IRF_r` are the same in both, highest powe
 
 ### Land water storage
 
-| Parameter       | Fortran name                    | Units | CFG default             | Description                      |
+| Parameter       | Fortran name                    | Unit  | CFG default             | Description                      |
 | --------------- | ------------------------------- | ----- | ----------------------- | -------------------------------- |
 | Switch          | `SLR_LANDWATER_SWITCH`          | flag  | 0                       | Enable land water                |
 | Case selector   | `SLR_LANDWATER_CASE`            | 1     | 1.0                     | Low (0) to high (1)              |
@@ -399,7 +399,7 @@ The response coefficients `SLR_AIS_SID_IRF_r` are the same in both, highest powe
 
 ### Semi-empirical method and output control
 
-| Parameter            | Fortran name                      | Units      | CFG default    | Description                       |
+| Parameter            | Fortran name                      | Unit       | CFG default    | Description                       |
 | -------------------- | --------------------------------- | ---------- | -------------- | --------------------------------- |
 | Zero rate warming    | `SLR_SEMIEMPI_ZERORATETEMP`       | K          | -0.5           | Warming offset                    |
 | Rate sensitivity     | `SLR_SEMIEMPI_RATE_SENS`          | mm yr⁻¹ K⁻¹ | 0.3353        | Rahmstorf coefficient             |

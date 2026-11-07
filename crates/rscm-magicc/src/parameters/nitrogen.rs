@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrognosticFixation {
-    /// Maximum fixation rate
+    /// Maximum fixation rate (MAGICC7 `NCYCLE_NFIX_VMAX`)
+    ///
     /// unit: Tg N/yr
-    /// MAGICC7: NCYCLE_NFIX_VMAX
     pub maximum_fixation_rate: FloatValue,
-    /// NPP at half the maximum fixation rate
+    /// NPP at half the maximum fixation rate (MAGICC7 `NCYCLE_NFIX_KM`)
+    ///
     /// unit: GtC/yr
-    /// MAGICC7: NCYCLE_NFIX_KM
     pub half_saturation_npp: FloatValue,
 }
 
@@ -29,33 +29,38 @@ pub struct PrognosticFixation {
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct NitrogenParameters {
-    /// Plant nitrogen uptake per unit NPP
+    /// Plant nitrogen uptake per unit NPP (MAGICC7 `NCYCLE_NCRATIO_UPTAKE`)
+    ///
     /// unit: Gt N/GtC
-    /// MAGICC7: NCYCLE_NCRATIO_UPTAKE
     pub uptake_nc_ratio: FloatValue,
-    /// Nitrogen recycled per unit heterotrophic respiration
+    /// Nitrogen recycled per unit heterotrophic respiration (MAGICC7 `NCYCLE_NCRATIO_RECYC`)
+    ///
     /// unit: Gt N/GtC
-    /// MAGICC7: NCYCLE_NCRATIO_RECYC
     pub recycling_nc_ratio: FloatValue,
     /// Damping of the CO2 and temperature effects on the recycled N:C ratio
-    /// MAGICC7: NCYCLE_RECYC2CNRATIO_FACTOR
+    /// (MAGICC7 `NCYCLE_RECYC2CNRATIO_FACTOR`)
+    ///
+    /// unit: dimensionless
     pub recycling_cn_factor: FloatValue,
     /// Half saturation of nitrogen supply in the availability function
+    /// (MAGICC7 `NCYCLE_NCRATIO_UPTAKE_SUPPLY`)
+    ///
     /// unit: Gt N
-    /// MAGICC7: NCYCLE_NCRATIO_UPTAKE_SUPPLY
     pub uptake_supply: FloatValue,
-    /// Sensitivity of nitrogen availability (A)
-    /// MAGICC7: NCYCLE_NPP2NAVAIL_FACTOR_A
+    /// Sensitivity of nitrogen availability, $A$ (MAGICC7 `NCYCLE_NPP2NAVAIL_FACTOR_A`)
+    ///
+    /// unit: dimensionless
     pub availability_factor_a: FloatValue,
-    /// Steepness of nitrogen availability (C)
-    /// MAGICC7: NCYCLE_NPP2NAVAIL_FACTOR_C
+    /// Steepness of nitrogen availability, $C$ (MAGICC7 `NCYCLE_NPP2NAVAIL_FACTOR_C`)
+    ///
+    /// unit: dimensionless
     pub availability_factor_c: FloatValue,
-    /// Residence time of the nitrogen pool against losses
+    /// Residence time of the nitrogen pool against losses (MAGICC7 `NCYCLE_TURNOVERTIME_LOSSES`)
+    ///
     /// unit: yr
-    /// MAGICC7: NCYCLE_TURNOVERTIME_LOSSES
     pub loss_turnover_time: FloatValue,
     /// Fixation from NPP, or `None` to read `Nitrogen Flux|Fixation`
-    /// MAGICC7: NCYCLE_APPLY_PROGNOSTIC_NFIX
+    /// (MAGICC7 `NCYCLE_APPLY_PROGNOSTIC_NFIX`)
     pub prognostic_fixation: Option<PrognosticFixation>,
 }
 

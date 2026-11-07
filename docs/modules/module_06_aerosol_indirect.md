@@ -13,7 +13,7 @@ MAGICC7 has two effects:
 
 The aerosol number comes from optical thickness, or nitrate forcing, as a proxy.
 A log-linear relation turns it into a cloud droplet number,
-whose change is spread over the four boxes with a prescribed pattern and harmonised to a target forcing.
+whose change is spread over the four boxes with a fixed pattern and harmonised to a target forcing.
 The Fortran attributes the formula to "a simple formula by xxxxx as used as well in" Hansen et al. (2005),
 with the author missing.
 

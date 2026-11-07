@@ -32,77 +32,75 @@ use serde::{Deserialize, Serialize};
 ///
 /// # Stratospheric Delay
 ///
-/// Unlike CH4 which uses instantaneous burden for the sink, N2O uses a lagged
-/// average burden to account for the time required for tropospheric N2O to
+/// Unlike CH4, whose sink uses the current burden, the N2O sink uses a delayed
+/// average burden to account for the time tropospheric N2O takes to
 /// mix into the stratosphere where destruction occurs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct N2OChemistryParameters {
-    /// Year from which the concentration feedback is measured (`N2O_FEED_YRSTART`).
+    /// Year from which the concentration feedback is measured (MAGICC7 `N2O_FEED_YRSTART`).
+    ///
+    /// unit: yr
+    ///
     /// The reference concentration is taken from the year before.
-    /// unit: year
-    /// default: 1925.0
     pub feedback_start_year: FloatValue,
 
-    /// Natural N2O emissions (soils, oceans, etc.)
+    /// Natural N2O emissions from soils, oceans and other sources.
+    ///
+    /// unit: Mt N2ON/yr
+    ///
     /// MAGICC7 closes the 1982-1991 budget against observed concentrations.
     /// The default is the value it derives for its standard historical inputs.
-    /// unit: Mt N/yr
-    /// default: 8.0345017
     pub natural_emissions: FloatValue,
 
-    /// Base atmospheric lifetime (τ_init)
-    /// This is the reference lifetime before concentration feedback
-    /// unit: years
-    /// default: 139.275 (MAGICC7 default)
+    /// Base atmospheric lifetime before the concentration feedback, $\tau_{init}$
+    ///
+    /// unit: yr
     pub initial_n2o_lifetime: FloatValue,
 
-    /// Lifetime feedback exponent (S)
-    /// With S < 0, higher concentrations give slightly shorter lifetime:
-    /// tau = tau_init * max(1, ratio)^S, and ratio^(-0.04) < 1 when ratio > 1.
+    /// Lifetime feedback exponent, $S$.
+    ///
     /// unit: dimensionless
-    /// default: -0.04
+    ///
+    /// With $S < 0$, higher concentrations give a slightly shorter lifetime,
+    /// because $\tau = \tau_{init} \max(1, B/B_0)^S$.
     pub lifetime_feedback: FloatValue,
 
-    /// Stratospheric mixing delay
-    /// Time lag for tropospheric N2O to reach the stratosphere for destruction
-    /// unit: years
-    /// default: 1
-    /// MAGICC7: N2O_STRATMIXDELAY
+    /// Delay for tropospheric N2O to reach the stratosphere and be destroyed (MAGICC7 `N2O_STRATMIXDELAY`)
+    ///
+    /// unit: yr
     pub stratospheric_delay: usize,
 
-    /// Conversion factor from ppb to Tg N
+    /// Conversion factor from ppb to Tg N (MAGICC7 `N2O_PPB2TGN`)
+    ///
     /// unit: Tg N/ppb
-    /// default: 4.79
-    /// MAGICC7: N2O_PPB2TGN
     pub tg_per_ppb: FloatValue,
 
-    /// Enable the stratospheric lifetime response to meridional flux changes
-    /// (`N2O_USE_TAUSTRAT_VAR`)
-    /// default: true
+    /// Apply the stratospheric lifetime response to meridional flux changes (MAGICC7 `N2O_USE_TAUSTRAT_VAR`)
     pub include_meridional_flux_feedback: bool,
 
-    /// Fractional change in meridional flux per degree of warming
-    /// (`GEN_MERIDFLUX_CHNGPERDEG`)
+    /// Fractional change in meridional flux per degree of warming (MAGICC7 `GEN_MERIDFLUX_CHNGPERDEG`)
+    ///
     /// unit: K^-1
-    /// default: 0.15
     pub meridional_flux_change_per_degree: FloatValue,
 
-    /// Lifetime sensitivity to meridional flux changes (`N2O_TAUSTRAT_SENS2MERIDFLUX`)
+    /// Lifetime sensitivity to meridional flux changes (MAGICC7 `N2O_TAUSTRAT_SENS2MERIDFLUX`)
+    ///
     /// unit: dimensionless
-    /// default: 0.04
     pub lifetime_sensitivity_to_meridional_flux: FloatValue,
 
-    /// Year from which warming changes the meridional flux
-    /// (`GEN_CHANGE_MERIDIONALFLUX_YR`)
-    /// unit: year
-    /// default: 1980.0
+    /// Year from which warming changes the meridional flux (MAGICC7 `GEN_CHANGE_MERIDIONALFLUX_YR`)
+    ///
+    /// unit: yr
     pub meridional_flux_reference_year: FloatValue,
 
-    /// Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|N2O`,
-    /// or `None` to calculate them from emissions throughout.
-    /// MAGICC7: N2O_SWITCHFROMCONC2EMIS_YEAR
+    /// Last year of concentrations prescribed by `Prescribed Atmospheric Concentrations|N2O`
+    /// (MAGICC7 `N2O_SWITCHFROMCONC2EMIS_YEAR`).
+    ///
+    /// unit: yr
+    ///
+    /// `None` calculates concentrations from emissions throughout.
     pub concentration_switch_year: Option<FloatValue>,
 }
 

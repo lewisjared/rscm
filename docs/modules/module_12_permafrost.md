@@ -36,7 +36,8 @@ and the CO2 and CH4 released add to atmospheric concentrations.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
   `rscm.magicc.full.run_magicc7` adds it with `pf_apply`, which MAGICC7 sets to 1 by default.
 - **Tests**: `tests/regression/test_full_run.py::test_permafrost` drives `Permafrost`
-  with MAGICC7's full-precision temperature and matches its thawed area and CO2 and CH4 emissions bit for bit.
+  with MAGICC7's full-precision temperature.
+  It reaches bit-for-bit parity on MAGICC7's thawed area and CO2 and CH4 emissions.
   `test_coupled_run[permafrost]` checks the coupled chain against MAGICC7's permafrost run.
   Unit tests in `permafrost.rs` cover conservation, refreezing and the thaw split.
 
@@ -91,7 +92,7 @@ $$
 T_{melt}(i) = T_{melt,min} + \frac{i-1}{N-1} \left( T_{melt,max} - T_{melt,min} \right)
 $$
 
-$\Delta T_{global}(t)$ is the global mean surface temperature at the start of the year.
+$\Delta T_{global}(t)$ is the global mean surface air temperature change at the start of the year.
 
 ### Thaw and refreeze rate
 
@@ -229,7 +230,7 @@ $$
 
 All per-band variables have dimensions (NYEARS, NBANDS).
 
-| Variable                   | Fortran name                 | Units      | Description                                         |
+| Variable                   | Fortran name                 | Unit       | Description                                         |
 | -------------------------- | ---------------------------- | ---------- | --------------------------------------------------- |
 | MS aerobic area            | `PF_MS_AEROB_AREA`           | fraction   | Thawed mineral soil area under aerobic conditions   |
 | MS anaerobic area          | `PF_MS_ANAEROB_AREA`         | fraction   | Thawed mineral soil area under anaerobic conditions |
@@ -252,12 +253,12 @@ All per-band variables have dimensions (NYEARS, NBANDS).
 
 ## Inputs and outputs
 
-| Direction | Variable                   | Units        | Fortran variable                             | RSCM variable               |
-| --------- | -------------------------- | ------------ | -------------------------------------------- | --------------------------- |
-| Input     | Global surface temperature | K            | `DAT_SURFACE_TEMP%DATGLOBE(CURRENT_YEAR_IDX)` | `Surface Air Temperature Change`       |
-| Output    | CO2 emissions              | GtC yr⁻¹     | `DAT_CO2PF_EMIS%DATBOX(CURRENT_YEAR_IDX,2)`  | `Emissions|CO2|Permafrost` |
-| Output    | CH4 emissions              | Mt CH₄ yr⁻¹  | `DAT_CH4PF_EMIS%DATBOX(CURRENT_YEAR_IDX,2)`  | `Emissions|CH4|Permafrost` |
-| Output    | Thawed area                | fraction     | `DAT_PFTHAWED_AREA%DATBOX(NEXT_YEAR_IDX,2)`  | `Permafrost Thawed Area`    |
+| Direction | Variable                              | Unit        | Fortran variable                              | RSCM variable                    |
+| --------- | ------------------------------------- | ----------- | --------------------------------------------- | -------------------------------- |
+| Input     | Global surface air temperature change | K           | `DAT_SURFACE_TEMP%DATGLOBE(CURRENT_YEAR_IDX)` | `Surface Air Temperature Change` |
+| Output    | CO2 emissions                         | GtC yr⁻¹    | `DAT_CO2PF_EMIS%DATBOX(CURRENT_YEAR_IDX,2)`   | `Emissions|CO2|Permafrost`       |
+| Output    | CH4 emissions                         | Mt CH₄ yr⁻¹ | `DAT_CH4PF_EMIS%DATBOX(CURRENT_YEAR_IDX,2)`   | `Emissions|CH4|Permafrost`       |
+| Output    | Thawed area                           | fraction    | `DAT_PFTHAWED_AREA%DATBOX(NEXT_YEAR_IDX,2)`   | `Permafrost Thawed Area`         |
 
 MAGICC7 assigns the emissions to box 2 (northern hemisphere land) and copies them to the global totals.
 The CO2 emissions enter the CO2 budget.
@@ -273,14 +274,14 @@ Defaults are MAGICC7's (`python/rscm/magicc/data/magicc7/defaults.json`) and mat
 
 ### Master switch and structure
 
-| Parameter        | Fortran name | Units   | Default | Description                    |
+| Parameter        | Fortran name | Unit    | Default | Description                    |
 | ---------------- | ------------ | ------- | ------- | ------------------------------ |
 | Apply permafrost | `PF_APPLY`   | flag    | 1       | Enable or disable the module   |
 | Number of bands  | `PF_NBANDS`  | integer | 50      | Number of zonal latitude bands |
 
 ### Temperature and thawing
 
-| Parameter              | Fortran name                       | Units | Default | Valid range | Description                                   |
+| Parameter              | Fortran name                       | Unit  | Default | Valid range | Description                                   |
 | ---------------------- | ---------------------------------- | ----- | ------- | ----------- | --------------------------------------------- |
 | Melting temp (min)     | `PF_MELTINGTEMP_MIN`               | K     | 1.0     | 0 to 5      | Arctic warming threshold of the southern band |
 | Melting temp (max)     | `PF_MELTINGTEMP_MAX`               | K     | 12.5    | 5 to 15     | Arctic warming threshold of the northern band |
@@ -293,7 +294,7 @@ Defaults are MAGICC7's (`python/rscm/magicc/data/magicc7/defaults.json`) and mat
 
 ### Carbon pools and distribution
 
-| Parameter           | Fortran name                       | Units    | Default | Valid range | Description                             |
+| Parameter           | Fortran name                       | Unit     | Default | Valid range | Description                             |
 | ------------------- | ---------------------------------- | -------- | ------- | ----------- | --------------------------------------- |
 | Total pool          | `PF_TOT_POOL`                      | GtC      | 800.0   | 500 to 1600 | Total carbon in the permafrost region   |
 | MS fraction (south) | `PF_MINSOIL_SOUTHERN_POOLFRACTION` | fraction | 0.8     | 0.5 to 1.0  | Mineral soil share in the southern band |
@@ -302,7 +303,7 @@ Defaults are MAGICC7's (`python/rscm/magicc/data/magicc7/defaults.json`) and mat
 
 ### Decomposition
 
-| Parameter           | Fortran name                             | Units | Default | Valid range | Description                           |
+| Parameter           | Fortran name                             | Unit  | Default | Valid range | Description                           |
 | ------------------- | ---------------------------------------- | ----- | ------- | ----------- | ------------------------------------- |
 | MS aerob turnover   | `PF_MS_AEROB_DECOMP_TURNOVERTIME`        | yr    | 20.0    | 5 to 100    | Turnover time $\tau$                  |
 | Peat/MS ratio       | `PF_DECOMPRATE_PEAT_OVER_MS_RATIO`       | ratio | 0.5     | 0.1 to 1.0  | Peat decomposition relative to MS     |
@@ -310,7 +311,7 @@ Defaults are MAGICC7's (`python/rscm/magicc/data/magicc7/defaults.json`) and mat
 
 ### Q10 temperature sensitivity
 
-| Parameter              | Fortran name                | Units | Default | Description                    |
+| Parameter              | Fortran name                | Unit  | Default | Description                    |
 | ---------------------- | --------------------------- | ----- | ------- | ------------------------------ |
 | Q10 alpha (MS aerob)   | `PF_Q10_MS_AEROB_ALPHA`     | K     | 308.56  | Q10 exponent, MS aerobic       |
 | Q10 alpha (MS anaerob) | `PF_Q10_MS_ANAEROB_ALPHA`   | K     | 308.56  | Q10 exponent, MS anaerobic     |
@@ -321,7 +322,7 @@ Defaults are MAGICC7's (`python/rscm/magicc/data/magicc7/defaults.json`) and mat
 
 ### Soil moisture
 
-| Parameter        | Fortran name          | Units    | Default | Description                     |
+| Parameter        | Fortran name          | Unit     | Default | Description                     |
 | ---------------- | --------------------- | -------- | ------- | ------------------------------- |
 | Moisture slope   | `PF_SOILWATER_M`      | K⁻¹      | 0.02    | Moisture per K of soil warming  |
 | Moisture offset  | `PF_SOILWATER_OFFSET` | fraction | 0.2     | Moisture at the threshold       |
@@ -329,7 +330,7 @@ Defaults are MAGICC7's (`python/rscm/magicc/data/magicc7/defaults.json`) and mat
 
 ### Aerobic and anaerobic partitioning
 
-| Parameter                | Fortran name                           | Units    | Default | Description                         |
+| Parameter                | Fortran name                           | Unit     | Default | Description                         |
 | ------------------------ | -------------------------------------- | -------- | ------- | ----------------------------------- |
 | MS anaerob initial       | `PF_MS_ANAEROB_INITIAL_AREAFRACTION`   | fraction | 0.05    | $f_{init}$, mineral soil            |
 | MS anaerob max           | `PF_MS_ANAEROB_MAX_AREAFRACTION`       | fraction | 0.3     | $f_{max}$, mineral soil             |
@@ -340,7 +341,7 @@ Defaults are MAGICC7's (`python/rscm/magicc/data/magicc7/defaults.json`) and mat
 
 ### Methane oxidation
 
-| Parameter            | Fortran name                      | Units    | Default | Description                                     |
+| Parameter            | Fortran name                      | Unit     | Default | Description                                     |
 | -------------------- | --------------------------------- | -------- | ------- | ----------------------------------------------- |
 | MS CH4 oxidation     | `PF_MS_CH4OXIDISATION_FRACTION`   | fraction | 0.25    | Share oxidised in the soil (mineral soil)       |
 | Peat CH4 oxidation   | `PF_PEAT_CH4OXIDISATION_FRACTION` | fraction | 0.6     | Share oxidised in the soil (peat)               |
@@ -411,7 +412,7 @@ so that the rounding residues described below start from the same values.
 
 ## Differences from MAGICC7
 
-None known: `test_permafrost` matches MAGICC7 bit for bit.
+None known: `test_permafrost` reaches bit-for-bit parity with MAGICC7.
 RSCM has no conservation diagnostics (`PF_TOT_TOT_POOL`, `PF_TOTPLUSEMIS_POOL`) and no per-band outputs.
 
 ## References
