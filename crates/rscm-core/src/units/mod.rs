@@ -1,4 +1,4 @@
-//! Unit parsing, normalization, and conversion for climate model variables.
+//! Unit parsing, normalisation, and conversion for climate model variables.
 //!
 //! This module provides comprehensive support for working with physical units
 //! in climate models. It handles parsing of unit strings with flexible syntax,
@@ -9,10 +9,9 @@
 //! - **Flexible parsing**: Handles various notations for the same unit
 //!   (`W/m^2`, `W / m ^ 2`, `W m^-2` are all equivalent)
 //! - **Dimensional analysis**: Validates that conversions are physically meaningful
-//! - **Climate-specific units**: Carbon (C, CO2), concentrations (ppm, ppb),
-//!   radiative forcing (W/m^2), and emissions rates (GtC/yr)
+//! - **Species**: a mass unit can name what it counts, as in `Mt CH4/yr` or `Gt C/yr`
 //! - **Conversion factors**: Automatically calculates multipliers between
-//!   compatible units including the CO2-C molecular weight ratio
+//!   compatible units, including molecular mass ratios such as 44/12 for CO2 to C
 //!
 //! # Quick Start
 //!
@@ -22,20 +21,24 @@
 //! // Parse units with flexible syntax
 //! let u1 = Unit::parse("W/m^2").unwrap();
 //! let u2 = Unit::parse("W / m ^ 2").unwrap();
-//! assert_eq!(u1, u2);  // Normalized comparison
+//! assert_eq!(u1, u2);  // Normalised comparison
 //!
-//! // Convert between compatible units
-//! let gtc = Unit::parse("GtC/yr").unwrap();
-//! let mtco2 = Unit::parse("MtCO2/yr").unwrap();
+//! // A species after a mass unit, spaced or fused for carbon
+//! let gtc = Unit::parse("Gt C/yr").unwrap();
+//! assert_eq!(gtc, Unit::parse("GtC/yr").unwrap());
+//! assert_eq!(gtc.normalized(), "GtC/yr");
 //!
-//! // Check compatibility (same physical dimension)
+//! // Units of one species family convert by molecular mass ratio
+//! let mtco2 = Unit::parse("Mt CO2/yr").unwrap();
 //! assert!(gtc.is_compatible(&mtco2));
-//!
-//! // Get conversion factor
 //! let factor = gtc.conversion_factor(&mtco2).unwrap();
-//! // 1 GtC/yr ≈ 3666.67 MtCO2/yr
+//! assert!((factor - 1000.0 * 44.0 / 12.0).abs() < 1e-9);
 //!
-//! // Incompatible units produce errors
+//! // Different species never convert, even though both are mass per time
+//! let ch4 = Unit::parse("Mt CH4/yr").unwrap();
+//! assert!(!ch4.is_compatible(&mtco2));
+//!
+//! // Incompatible dimensions produce errors
 //! let flux = Unit::parse("W/m^2").unwrap();
 //! assert!(!gtc.is_compatible(&flux));
 //! assert!(gtc.conversion_factor(&flux).is_err());
@@ -50,16 +53,34 @@
 //! | `m^2`, `m**2`, `m2` | Square metres |
 //! | `W/m^2`, `W m^-2`, `W per m^2` | Watts per square metre |
 //! | `kg m`, `kg*m`, `kg·m` | Kilogram-metres |
-//! | `GtC / yr` | Gigatonnes of carbon per year |
+//! | `Gt C/yr`, `GtC / yr` | Gigatonnes of carbon per year |
+//! | `Mt CO2/yr`, `MtCO2/yr` | Megatonnes of CO2 per year |
+//! | `Mt CH4/yr` | Megatonnes of methane per year |
 //!
-//! Whitespace is normalized automatically.
+//! Whitespace is normalised automatically.
+//! The normalised form is compact, with no spaces around `/` or `^`.
+//! Carbon is fused to its mass unit (`GtC/yr`) and every other species is spaced (`Mt CO2/yr`).
 //!
-//! # Climate-Specific Units
+//! # Species
 //!
-//! The module includes units commonly used in climate modelling:
+//! A species token directly follows a mass unit and names what the mass counts.
+//! Only the carbon family (`C`, `CO2`) may also be written fused, as in `GtC`.
+//! An unknown token after a mass unit is a parse error naming the token.
 //!
-//! - **Carbon**: `C`, `CO2` with automatic molecular weight conversion (44/12)
-//! - **Mass prefixes**: `Gt` (giga-tonne), `Mt` (mega-tonne), `kt`, `t`, etc.
+//! | Family | Species | Ratio |
+//! |--------|---------|-------|
+//! | carbon | `C`, `CO2` | 44/12 |
+//! | sulfur | `S`, `SO2` | 64/32 |
+//! | nitrogen oxides | `N`, `NO2`, `NOx` (counted as NO2) | 46/14 |
+//! | nitrous oxide | `N2ON` (the nitrogen in N2O), `N2O` | 44/28 |
+//!
+//! Every other species converts only to itself:
+//! `CH4`, `CO`, `NH3`, `BC`, `OC`, `VOC` (synonym `NMVOC`) and the halocarbons gcages names,
+//! such as `CFC11`, `HFC134a` and `HFC4310mee` (synonym `HFC4310`).
+//!
+//! # Other Climate-Specific Units
+//!
+//! - **Mass prefixes**: `Gt` (giga-tonne), `Mt` (mega-tonne), `kt`, `t`, `Pg`, `Tg`, etc.
 //! - **Concentrations**: `ppm`, `ppb`, `ppt`
 //! - **Time**: `yr` (365.25 days), `day`, `h`, `min`, `s`
 //! - **Energy/Power**: `W`, `J` with SI prefixes
@@ -69,8 +90,11 @@
 //!
 //! | From | To | Factor |
 //! |------|-----|--------|
-//! | GtC | MtCO2 | 3666.67 (1000 * 44/12) |
-//! | GtCO2 | GtC | 0.273 (12/44) |
+//! | GtC | Mt CO2 | 3666.67 (1000 * 44/12) |
+//! | Gt CO2 | GtC | 0.273 (12/44) |
+//! | Mt S | Mt SO2 | 2 (64/32) |
+//! | Mt N | Mt NO2 | 3.29 (46/14) |
+//! | Mt N2ON | kt N2O | 1571.43 (1000 * 44/28) |
 //! | GtC/yr | GtC/s | 3.17e-8 |
 //! | km | m | 1000 |
 //! | ppm | ppb | 1000 |
@@ -79,7 +103,8 @@
 //!
 //! - [`dimension`]: Physical dimension types (M, L, T, Θ, etc.)
 //! - [`registry`]: Known units with conversion factors
-//! - [`parser`]: Unit string parsing with normalization
+//! - [`species`]: Species tokens, their families and molecular masses
+//! - [`parser`]: Unit string parsing with normalisation
 //! - [`conversion`]: High-level [`Unit`] type and conversion API
 
 pub mod conversion;
@@ -87,12 +112,14 @@ pub mod dimension;
 pub mod parser;
 pub mod python;
 pub mod registry;
+pub mod species;
 
 // Re-export the main types for convenient access
 pub use conversion::{conversion_factor, units_equal, ConversionError, Unit};
 pub use dimension::Dimension;
-pub use parser::{ParseError, ParsedUnit};
+pub use parser::{ParseError, ParsedUnit, UnitFactor};
 pub use registry::{UnitInfo, UnitRegistry, UNIT_REGISTRY};
+pub use species::Species;
 
 #[cfg(test)]
 mod tests {

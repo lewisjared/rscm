@@ -365,7 +365,8 @@ for example `MtCO2/yr` to `GtC/yr`.
 That is the schema's unit, or without a schema the unit the components declare.
 With a `VariableSchema`, the model also converts compatible units when components read inputs.
 Incompatible units, such as `K` and `W/m^2`, fail when the model is built,
-as do unit strings the parser cannot read.
+as do units of different species, such as `Mt CH4/yr` and `Mt CO2/yr`,
+and unit strings the parser cannot read.
 See [Physical Units](../notebooks/units_tutorial.py).
 
 ### Time Grid Alignment

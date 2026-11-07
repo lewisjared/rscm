@@ -591,7 +591,7 @@ except ValueError as e:
     print(f"Error: {e}")
 
 # %% [markdown]
-# Units only need the same dimension, not the same spelling.
+# Units only need the same dimension and species family, not the same spelling.
 # When a Rust component declares a compatible unit that differs from the schema,
 # the model converts values as the component reads them.
 # See the [Units tutorial](../units_tutorial/) for details.

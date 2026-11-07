@@ -21,10 +21,10 @@
 #
 # - **Flexible parsing**: `W/m^2`, `W / m ^ 2` and `W m^-2` are the same unit.
 # - **Dimensional analysis**: conversions are only allowed between units of the same dimension.
-# - **Climate-specific units**: carbon (C, CO₂), concentrations (ppm, ppb),
-#   radiative forcing (W/m²) and emission rates (GtC/yr).
+# - **Species**: a mass unit can name what it counts, as in `Mt CH4/yr` or `Gt C/yr`.
+# - **Climate-specific units**: concentrations (ppm, ppb), radiative forcing (W/m²) and emission rates (GtC/yr).
 # - **Conversion factors**: multipliers between compatible units,
-#   including the CO₂ to C molecular weight ratio.
+#   including molecular mass ratios such as CO₂ to C (44/12).
 
 # %%
 import numpy as np
@@ -62,7 +62,9 @@ assert all(u == units[0] for u in units)
 # | `m^2`, `m**2`, `m2` | Square metres |
 # | `W/m^2`, `W m^-2`, `W per m^2` | Watts per square metre |
 # | `kg m`, `kg*m`, `kg·m` | Kilogram-metres |
-# | `GtC / yr` | Gigatonnes of carbon per year |
+# | `Gt C/yr`, `GtC / yr` | Gigatonnes of carbon per year |
+# | `Mt CO2/yr`, `MtCO2/yr` | Megatonnes of CO₂ per year |
+# | `Mt CH4/yr` | Megatonnes of methane per year |
 
 # %%
 for notation in ["m^2", "m**2", "m2", "W/m^2", "W m^-2", "W per m^2"]:
@@ -72,11 +74,13 @@ for notation in ["m^2", "m**2", "m2", "W/m^2", "W m^-2", "W per m^2"]:
 # ### Original vs Normalised
 #
 # The `Unit` class keeps the original input string and provides a normalised form for comparison.
+# The normalised form is compact, with no spaces around `/` or `^`.
+# Carbon is fused to its mass unit (`GtC/yr`) and every other species is spaced (`Mt CO2/yr`).
 
 # %%
-u = Unit("  GtC  /  yr  ")
-print(f"Original:   {u.original!r}")
-print(f"Normalised: {u.normalized()!r}")
+for s in ["  GtC  /  yr  ", "Gt C / yr", "MtCO2/yr", "Mt CH4 / yr", "Mt NMVOC/yr"]:
+    u = Unit(s)
+    print(f"{u.original!r:18} -> {u.normalized()!r}")
 
 # %% [markdown]
 # ## Climate-Specific Units
@@ -85,17 +89,57 @@ print(f"Normalised: {u.normalized()!r}")
 #
 # | Category | Units |
 # |----------|-------|
-# | Carbon | `C`, `CO2` with automatic molecular weight conversion (44/12) |
 # | Mass prefixes | `Gt` (giga-tonne), `Mt` (mega-tonne), `kt`, `t`, etc. |
 # | Concentrations | `ppm`, `ppb`, `ppt` |
 # | Time | `yr` (365.25 days), `day`, `h`, `min`, `s` |
 # | Energy/Power | `W`, `J` with SI prefixes |
 # | Temperature | `K`, `degC` (for differences) |
 #
+# ## Species
+#
+# A species token after a mass unit names what the mass counts: `Mt CH4/yr` is megatonnes of methane per year.
+# The carbon family may also be written fused, so `Gt C/yr` and `GtC/yr` are the same unit.
+#
+# Species group into families, and units of one family convert by molecular mass ratio:
+#
+# | Family | Species | Ratio |
+# |--------|---------|-------|
+# | Carbon | `C`, `CO2` | 44/12 |
+# | Sulfur | `S`, `SO2` | 64/32 |
+# | Nitrogen oxides | `N`, `NO2`, `NOx` (counted as NO₂) | 46/14 |
+# | Nitrous oxide | `N2ON` (the nitrogen in N₂O), `N2O` | 44/28 |
+#
+# Every other species converts only to itself:
+# `CH4`, `CO`, `NH3`, `BC`, `OC`, `VOC` (or `NMVOC`) and the halocarbons, such as `CFC11` and `HFC134a`.
+# `HFC4310` is a synonym of `HFC4310mee`.
+
+# %%
+for source, target in [
+    ("Mt S/yr", "Mt SO2/yr"),
+    ("Mt N/yr", "Mt NO2/yr"),
+    ("Mt N2ON/yr", "kt N2O/yr"),
+    ("Mt NMVOC/yr", "Mt VOC/yr"),
+]:
+    factor = Unit(source).conversion_factor(Unit(target))
+    print(f"{source:<11} -> {target:<10} {factor:>10.4f}")
+
+# %% [markdown]
+# Units of different species never convert, even though both are a mass per time.
+# An unknown species is a parse error that names the token.
+
+# %%
+print(Unit("Mt CH4/yr").is_compatible(Unit("Mt CO2/yr")))
+
+try:
+    Unit("Mt XYZ/yr")
+except ValueError as e:
+    print(f"Error: {e}")
+
+# %% [markdown]
 # ## Checking Compatibility
 #
-# Units are compatible if they have the same physical dimension.
-# `GtC/yr` and `MtCO2/yr` are both mass per time, so one converts to the other.
+# Units are compatible if they have the same physical dimension and count species of the same family.
+# `GtC/yr` and `MtCO2/yr` are both carbon-family mass per time, so one converts to the other.
 
 # %%
 gtc_yr = Unit("GtC/yr")
@@ -166,7 +210,7 @@ for from_str, to_str in conversions:
 # ## Carbon-CO₂ Conversions
 #
 # Climate models often convert between carbon mass and CO₂ mass.
-# The molecular weight ratio is 44/12 ≈ 3.667:
+# The molecular mass ratio is 44/12 ≈ 3.667:
 #
 # - **C → CO₂**: multiply by 44/12.
 # - **CO₂ → C**: multiply by 12/44.
@@ -206,23 +250,25 @@ for year, e_co2, e_c in zip(years, emissions_gtco2, emissions_gtc):
 # Converting between incompatible units raises a `ValueError`.
 
 # %%
-try:
-    gtc_yr.conversion_factor(flux)
-except ValueError as e:
-    print(f"Error: {e}")
+for target in [flux, Unit("Mt CH4/yr")]:
+    try:
+        gtc_yr.conversion_factor(target)
+    except ValueError as e:
+        print(f"Error: {e}")
 
 # %% [markdown]
 # ## Integration with Model Building
 #
 # When a model has a `VariableSchema`, the builder compares each component's declared units with the schema:
 #
-# 1. **Validates compatibility**: the schema unit and component unit must have the same dimension.
+# 1. **Validates compatibility**: the schema unit and component unit must have the same dimension
+#    and count the same species family.
 # 2. **Calculates conversion factors**: the builder computes the multiplier needed at runtime.
 # 3. **Applies conversion at runtime**: values are converted as Rust components read their inputs.
 #
 # The builder also converts prescribed data into the unit the model stores it in:
 # the schema's unit, or without a schema the unit the components declare.
-# Data in a unit with a different dimension, or a unit the parser cannot read, fails `build()`.
+# Data in a unit with a different dimension or species, or a unit the parser cannot read, fails `build()`.
 #
 # Below, the schema stores CO₂ emissions in `MtCO2/yr`.
 # The carbon cycle component expects `GtC / yr`, so the model converts the values as it reads them.

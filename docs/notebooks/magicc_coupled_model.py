@@ -533,7 +533,9 @@ prescribed_erf = {f"{ERF}|{name}": values for name, values in prescribed.items()
 
 # %% tags=["remove_input"]
 grids = {name: ("W/m^2", GridType.FourBox) for name in prescribed_erf}
-grids |= {name: (unit, GridType.Scalar) for name, (_, unit) in prescribed_emissions.items()}
+grids |= {
+    name: (unit, GridType.Scalar) for name, (_, unit) in prescribed_emissions.items()
+}
 for component in components.values():
     for d in component.definitions():
         _, grid = grids.get(d.name, (d.unit, d.grid))
@@ -545,7 +547,9 @@ schema = VariableSchema()
 for name, (unit, grid) in grids.items():
     schema.add_variable(name, unit, grid)
 four_box_count = sum(g == GridType.FourBox for _, g in grids.values())
-print(f"{len(prescribed_emissions)} scalar and {len(prescribed_erf)} four-box prescribed inputs")
+print(
+    f"{len(prescribed_emissions)} scalar and {len(prescribed_erf)} four-box prescribed inputs"
+)
 print(f"{len(grids)} variables, {four_box_count} on four boxes")
 
 # %% [markdown]

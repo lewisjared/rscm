@@ -578,6 +578,12 @@ class Unit:
     - Division: `W/m^2`, `W m^-2`, `W per m^2`
     - Multiplication: `kg m`, `kg*m`
     - Whitespace: `W/m^2` == `W / m ^ 2`
+    - Species after a mass unit: `Mt CH4/yr`, `Gt C/yr`,
+      or fused for carbon: `GtC/yr`, `MtCO2/yr`
+
+    Units of one species family convert by molecular mass ratio,
+    as in `Gt C` to `Mt CO2`.
+    Units of different species never convert.
 
     Examples
     --------
@@ -605,7 +611,7 @@ class Unit:
         Raises
         ------
         ValueError
-            If the unit string cannot be parsed.
+            If the unit string cannot be parsed, including an unknown species token.
         """
 
     @property
@@ -613,13 +619,22 @@ class Unit:
         """Return the original input string used to create this unit."""
 
     def normalized(self) -> str:
-        """Return the normalized string representation of this unit."""
+        """Return the normalized string representation of this unit.
+
+        The form is compact, as in `W/m^2`.
+        Carbon is fused to its mass unit (`GtC/yr`),
+        and every other species is spaced (`Mt CO2/yr`).
+        """
 
     def is_dimensionless(self) -> bool:
         """Check if this unit is dimensionless."""
 
     def is_compatible(self, other: Unit) -> bool:
-        """Check if this unit can be converted to another unit."""
+        """Check if this unit can be converted to another unit.
+
+        Units are compatible if they have the same dimension
+        and count species of the same family.
+        """
 
     def conversion_factor(self, target: Unit) -> float:
         """Calculate the conversion factor from this unit to another unit.
@@ -627,7 +642,7 @@ class Unit:
         Raises
         ------
         ValueError
-            If the units have incompatible dimensions.
+            If the units have incompatible dimensions or count different species.
         """
 
     def convert(self, value: float, target: Unit) -> float:
@@ -636,7 +651,7 @@ class Unit:
         Raises
         ------
         ValueError
-            If the units have incompatible dimensions.
+            If the units have incompatible dimensions or count different species.
         """
 
     def __repr__(self) -> str: ...
