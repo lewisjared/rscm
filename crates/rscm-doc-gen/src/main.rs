@@ -16,6 +16,7 @@ mod parser;
 mod schema;
 
 use clap::Parser;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -52,18 +53,9 @@ fn main() {
     // Parse every file first, so a component can find its parameters struct in another file
     let mut files = Vec::new();
     for crate_path in &args.crates {
-        if !crate_path.exists() {
-            eprintln!(
-                "Warning: Crate path does not exist: {}",
-                crate_path.display()
-            );
-            continue;
-        }
-
         let src_path = crate_path.join("src");
         if !src_path.exists() {
-            eprintln!("Warning: No src directory in {}", crate_path.display());
-            continue;
+            fail(&format!("No src directory in {}", crate_path.display()));
         }
 
         if args.verbose {
@@ -74,16 +66,12 @@ fn main() {
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        for entry in WalkDir::new(&src_path)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
+        for entry in WalkDir::new(&src_path).follow_links(true) {
+            let entry = entry.unwrap_or_else(|e| fail(&e.to_string()));
             let path = entry.path();
             if path.extension().map(|e| e == "rs").unwrap_or(false) {
-                if let Some(syntax) = parser::read_file(path) {
-                    files.push((crate_name.clone(), path.to_path_buf(), syntax));
-                }
+                let syntax = parser::read_file(path).unwrap_or_else(|e| fail(&e));
+                files.push((crate_name.clone(), path.to_path_buf(), syntax));
             }
         }
     }
@@ -95,7 +83,9 @@ fn main() {
 
     let mut all_components: Vec<ComponentDocMetadata> = Vec::new();
     for (crate_name, path, syntax) in &files {
-        for mut component in parser::parse_file(crate_name, path, syntax, &index) {
+        let components =
+            parser::parse_file(crate_name, path, syntax, &index).unwrap_or_else(|e| fail(&e));
+        for mut component in components {
             // Make the source file path relative to workspace root
             component.source_file = make_relative_path(path);
 
@@ -123,9 +113,22 @@ fn main() {
         let json_with_newline = format!("{}\n", json);
 
         if let Err(e) = fs::write(&output_path, json_with_newline) {
-            eprintln!("Failed to write {}: {}", output_path.display(), e);
+            fail(&format!("Failed to write {}: {}", output_path.display(), e));
         } else if args.verbose {
             println!("Wrote {}", output_path.display());
+        }
+    }
+
+    // Pruned only once every component is written, so a failed run leaves the old files in place
+    let written: HashSet<String> = all_components
+        .iter()
+        .map(|c| format!("{}.json", c.slug))
+        .collect();
+    let existing = fs::read_dir(&args.output).unwrap_or_else(|e| fail(&e.to_string()));
+    for entry in existing.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.ends_with(".json") && !written.contains(&name) {
+            fs::remove_file(entry.path()).unwrap_or_else(|e| fail(&e.to_string()));
         }
     }
 
@@ -134,6 +137,12 @@ fn main() {
         all_components.len(),
         args.output.display()
     );
+}
+
+/// Report an error and exit, so `make docs-metadata` fails rather than dropping a component
+fn fail(message: &str) -> ! {
+    eprintln!("{message}");
+    std::process::exit(1);
 }
 
 /// Convert an absolute path to a workspace-relative path

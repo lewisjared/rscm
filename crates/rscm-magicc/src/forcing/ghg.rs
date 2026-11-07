@@ -57,7 +57,7 @@ use serde::{Deserialize, Serialize};
     ch4_erf { name = "Effective Radiative Forcing|CH4", unit = "W/m^2", description = "CH4 ERF" },
     n2o_erf { name = "Effective Radiative Forcing|N2O", unit = "W/m^2", description = "N2O ERF" },
     erf_2xco2 { name = "2xCO2 Effective Radiative Forcing", unit = "W/m^2", description = "2xCO2 ERF, recalculated from the current CO2 and N2O with OLBL and fixed by `erf_2xco2` with IPCCTAR" },
-    ch4_strat_h2o_erf { name = "Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O", unit = "W/m^2", description = "ERF of stratospheric H2O from CH4 oxidation, a fixed fraction of the CH4 ERF" },
+    ch4_strat_h2o_erf { name = "Effective Radiative Forcing|CH4 Oxidation Stratospheric H2O", unit = "W/m^2", description = "ERF of stratospheric H2O from CH4 oxidation, a fixed fraction of the CH4 ERF taken at pre-industrial N2O with OLBL and without the N2O overlap with IPCCTAR" },
 )]
 pub struct GHGForcing {
     parameters: GHGForcingParameters,

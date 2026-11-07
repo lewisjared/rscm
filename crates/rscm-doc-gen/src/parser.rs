@@ -15,13 +15,10 @@ use syn::{
 pub type StructIndex<'a> = HashMap<(String, String), &'a ItemStruct>;
 
 /// Read and parse a Rust source file
-pub fn read_file(path: &Path) -> Option<syn::File> {
+pub fn read_file(path: &Path) -> Result<syn::File, String> {
     let content = fs::read_to_string(path)
-        .map_err(|e| eprintln!("Failed to read {}: {}", path.display(), e))
-        .ok()?;
-    syn::parse_file(&content)
-        .map_err(|e| eprintln!("Failed to parse {}: {}", path.display(), e))
-        .ok()
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    syn::parse_file(&content).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
 }
 
 /// Add the parameters structs of a parsed file to the index
@@ -42,7 +39,7 @@ pub fn parse_file(
     path: &Path,
     syntax: &syn::File,
     index: &StructIndex,
-) -> Vec<ComponentDocMetadata> {
+) -> Result<Vec<ComponentDocMetadata>, String> {
     let mut components = Vec::new();
 
     // Extract module-level documentation
@@ -52,14 +49,14 @@ pub fn parse_file(
     for item in &syntax.items {
         if let Item::Struct(item_struct) = item {
             if let Some(metadata) =
-                parse_component_struct(item_struct, crate_name, path, &module_docs, index)
+                parse_component_struct(item_struct, crate_name, path, &module_docs, index)?
             {
                 components.push(metadata);
             }
         }
     }
 
-    components
+    Ok(components)
 }
 
 /// Check whether a struct derives the named macro
@@ -79,10 +76,10 @@ fn parse_component_struct(
     source_path: &Path,
     module_docs: &str,
     index: &StructIndex,
-) -> Option<ComponentDocMetadata> {
+) -> Result<Option<ComponentDocMetadata>, String> {
     let declares_io = has_derive(&item.attrs, "ComponentIO");
     if !declares_io && !has_derive(&item.attrs, "ComponentMetadata") {
-        return None;
+        return Ok(None);
     }
 
     let struct_name = item.ident.to_string();
@@ -151,10 +148,8 @@ fn parse_component_struct(
         } else {
             continue;
         };
-        match parse_io_attr(attr) {
-            Ok(vars) => *target = vars,
-            Err(e) => eprintln!("Failed to parse the IO of {struct_name}: {e}"),
-        }
+        *target = parse_io_attr(attr)
+            .map_err(|e| format!("Failed to parse the IO of {struct_name}: {e}"))?;
     }
 
     // Parse struct fields and resolve parameter structs
@@ -176,7 +171,7 @@ fn parse_component_struct(
         }
     }
 
-    Some(metadata)
+    Ok(Some(metadata))
 }
 
 /// Drop a doc block's summary line when its first paragraph is one line
