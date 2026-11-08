@@ -253,15 +253,22 @@ def _initial_forcing(
         variable = agent["variable"]
         if variable in given:
             out.append([float(v) for v in given[variable]])
-        elif agent["regional"]:
-            total = np.zeros(4)
-            for name in agent.get("sum_of", [variable]):
-                if name in first:
-                    total = total + first[name]
-            out.append(total.tolist())
-        else:
-            out.append([0.0])
+            continue
+        regional = agent.get("regional", False)
+        total = np.zeros(4 if regional else 1)
+        for name in agent.get("sum_of") or [variable]:
+            if name in first:
+                total = total + (first[name] if regional else _global(first[name]))
+        out.append(total.tolist())
     return out
+
+
+def _global(values: NDArray[np.float64]) -> float:
+    if values.ndim == 0:
+        return float(values)
+    if len(values) == 4:  # noqa: PLR2004
+        return float(values @ pr.area_fractions())
+    return float(values.mean())
 
 
 def build(

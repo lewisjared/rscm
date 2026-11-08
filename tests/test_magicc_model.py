@@ -1,13 +1,15 @@
 """Building the emissions- and concentration-driven MAGICC models."""
 
+import copy
 import math
 
 import numpy as np
 import pytest
 
 from rscm.core import TimeAxis
-from rscm.magicc import concentration_driven, emissions_driven, full
-from rscm.names import SECTORS, prescribed
+from rscm.magicc import concentration_driven, emissions_driven, full, model
+from rscm.magicc.prescribed import area_fractions
+from rscm.names import ERF, SECTORS, prescribed
 
 # MAGICC7 harmonises prescribed forcing in 2019.
 YEARS = np.arange(1750.0, 2021.0)
@@ -90,3 +92,43 @@ def test_concentration_driven_follows_prescribed_concentrations(emissions, input
             inputs[prescribed(name)][0][1:],
             err_msg=gas,
         )
+
+
+def test_build_model_uses_rust_forcing_agent_defaults(translated):
+    config, inputs = translated
+    time_axis = TimeAxis.from_values(YEARS)
+    agents = copy.deepcopy(config["components"]["ForcingAggregation"]["agents"])
+    for agent in agents:
+        if agent["variable"] == f"{ERF}|CO2":
+            del agent["regional"]
+        if agent["variable"] == f"{ERF}|Solar":
+            agent["sum_of"] = []
+    components = {
+        **config["components"],
+        "ForcingAggregation": {
+            **config["components"]["ForcingAggregation"],
+            "agents": agents,
+        },
+    }
+
+    expected = emissions_driven.run_model(config, inputs, time_axis)
+    actual = emissions_driven.run_model(
+        {**config, "components": components}, inputs, time_axis
+    )
+    np.testing.assert_array_equal(
+        actual.timeseries().get_timeseries_by_name(ERF).values(),
+        expected.timeseries().get_timeseries_by_name(ERF).values(),
+    )
+
+
+def test_scalar_agents_start_from_their_prescribed_forcing():
+    boxes = np.array([1.0, 2.0, 3.0, 4.0])
+    first = {"A": np.float64(0.5), "B": boxes, "C": np.array([1.0, 3.0])}
+    agents = [{"variable": v} for v in ("A", "B", "C", "D")]
+
+    assert model._initial_forcing(agents, first, {}) == [
+        [0.5],
+        [float(boxes @ area_fractions())],
+        [2.0],
+        [0.0],
+    ]
