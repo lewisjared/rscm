@@ -46,7 +46,7 @@ from rscm.core import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
     from rscm.core import GridType, Model, PrescribedInput, TimeAxis, VariableSchema
 
@@ -117,6 +117,8 @@ class ModelSpec:
         def lists(values: Mapping[Any, Sequence[float]]) -> dict[Any, list[float]]:
             return {key: list(v) for key, v in values.items()}
 
+        object.__setattr__(self, "components", dict(self.components))
+        object.__setattr__(self, "lags", tuple(self.lags))
         object.__setattr__(self, "initial_values", dict(self.initial_values))
         object.__setattr__(self, "initial_grid_values", lists(self.initial_grid_values))
         object.__setattr__(self, "grid_weights", lists(self.grid_weights))
@@ -173,11 +175,9 @@ class ModelSetup:
     def describe(self) -> str:
         """Summarise the components, lags, inputs and initial state."""
         spec = self.spec
-        bounds = np.asarray(self.time_axis.bounds())
         lines = [
             spec.name,
-            f"  time axis  {bounds[0]:g} to {bounds[-1]:g}, "
-            f"{len(self.time_axis)} steps",
+            f"  time axis  {_axis(self.time_axis)}",
             f"  components ({len(spec.components)}, in the order added)",
         ]
         lines += _table(
@@ -215,6 +215,11 @@ def run_all(
     models = build_models([setup.builder() for setup in setups], n_threads=n_threads)
     run_models(models, n_threads=n_threads)
     return models
+
+
+def _axis(time_axis: TimeAxis) -> str:
+    bounds = np.asarray(time_axis.bounds())
+    return f"{bounds[0]:g} to {bounds[-1]:g}, {len(time_axis)} steps"
 
 
 def _table(rows: Any) -> list[str]:
@@ -271,6 +276,12 @@ def _count_changes(a: Mapping[str, Any], b: Mapping[str, Any]) -> str:
     return ", ".join(f"{n} {kind}" for kind, n in counts.items() if n)
 
 
+def _schema_names(schema: VariableSchema | None) -> set[str]:
+    if schema is None:
+        return set()
+    return set(schema.variables) | set(schema.aggregates)
+
+
 def _differ(a: Any, b: Any) -> bool:
     return not np.array_equal(np.asarray(a), np.asarray(b), equal_nan=True)
 
@@ -286,13 +297,30 @@ def _show(value: Any) -> str:
 def diff(a: ModelSetup, b: ModelSetup, *, limit: int = 6) -> str:
     """Describe what differs between two setups.
 
-    Lists added, removed and replaced components, changed parameters,
-    scalar and gridded initial values, lags and the names of prescribed data.
+    Lists changes to the time axis, components and their parameters,
+    initial values, grid weights, schema variables, lags
+    and the names of prescribed data.
+    Prescribed values themselves are not compared.
     At most ``limit`` parameter changes are shown for each component.
     """
     lines = [f"{a.spec.name} -> {b.spec.name}"]
-    ca, cb = a.spec.components, b.spec.components
-    lines += [f"  - component {name}" for name in ca if name not in cb]
+    if _differ(a.time_axis.bounds(), b.time_axis.bounds()):
+        lines.append(f"  ~ time axis: {_axis(a.time_axis)} -> {_axis(b.time_axis)}")
+    lines += _diff_components(a.spec.components, b.spec.components, limit)
+    lines += _diff_state(a.spec, b.spec)
+    la, lb = set(a.spec.lags), set(b.spec.lags)
+    lines += [f"  - lag {lag}" for lag in sorted(la - lb, key=str)]
+    lines += [f"  + lag {lag}" for lag in sorted(lb - la, key=str)]
+    lines += _diff_prescribed(a.prescribed.keys(), b.prescribed.keys())
+    if len(lines) == 1:
+        lines.append("  identical")
+    return "\n".join(lines)
+
+
+def _diff_components(
+    ca: Mapping[str, ComponentSpec], cb: Mapping[str, ComponentSpec], limit: int
+) -> list[str]:
+    lines = [f"  - component {name}" for name in ca if name not in cb]
     lines += [f"  + component {name}" for name in cb if name not in ca]
     for name in (n for n in ca if n in cb):
         if ca[name].builder is not cb[name].builder:
@@ -309,24 +337,33 @@ def diff(a: ModelSetup, b: ModelSetup, *, limit: int = 6) -> str:
         ]
         if len(changed) > limit:
             lines.append(f"  ~ {name}: {len(changed) - limit} more parameters")
+    return lines
+
+
+def _diff_state(a: ModelSpec, b: ModelSpec) -> list[str]:
+    lines = []
     for label, ia, ib in (
-        ("initial values", a.spec.initial_values, b.spec.initial_values),
-        (
-            "initial grid values",
-            a.spec.initial_grid_values,
-            b.spec.initial_grid_values,
-        ),
+        ("initial values", a.initial_values, b.initial_values),
+        ("initial grid values", a.initial_grid_values, b.initial_grid_values),
     ):
         shown = _count_changes(ia, ib)
         if shown:
             lines.append(f"  ~ {label}: {shown}")
-    la, lb = set(a.spec.lags), set(b.spec.lags)
-    lines += [f"  - lag {lag}" for lag in sorted(la - lb, key=str)]
-    lines += [f"  + lag {lag}" for lag in sorted(lb - la, key=str)]
-    for sign, names in (
-        ("-", a.prescribed.keys() - b.prescribed.keys()),
-        ("+", b.prescribed.keys() - a.prescribed.keys()),
-    ):
+    wa, wb = a.grid_weights, b.grid_weights
+    for grid in sorted(wa.keys() | wb.keys(), key=str):
+        if grid not in wa or grid not in wb or _differ(wa[grid], wb[grid]):
+            before, after = _show(wa.get(grid)), _show(wb.get(grid))
+            lines.append(f"  ~ {grid.name} weights: {before} -> {after}")
+    sa, sb = _schema_names(a.schema), _schema_names(b.schema)
+    if sa != sb:
+        shown = _count_changes(dict.fromkeys(sa), dict.fromkeys(sb))
+        lines.append(f"  ~ schema variables: {shown}")
+    return lines
+
+
+def _diff_prescribed(na: Collection[str], nb: Collection[str]) -> list[str]:
+    lines = []
+    for sign, names in (("-", set(na) - set(nb)), ("+", set(nb) - set(na))):
         groups = Counter(_group(n) for n in names)
         for group, count in sorted(groups.items()):
             members = sorted(n for n in names if _group(n) == group)
@@ -336,6 +373,4 @@ def diff(a: ModelSetup, b: ModelSetup, *, limit: int = 6) -> str:
             parts = [n.split("|", 1)[-1] for n in members]
             shown = ", ".join(parts[:4]) + (", ..." if count > 4 else "")  # noqa: PLR2004
             lines.append(f"  {sign} {count} prescribed {group}|{{{shown}}}")
-    if len(lines) == 1:
-        lines.append("  identical")
-    return "\n".join(lines)
+    return lines

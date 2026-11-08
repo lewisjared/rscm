@@ -1,9 +1,17 @@
 """Describing, inspecting and building a model from a spec."""
 
+import dataclasses
+
 import numpy as np
 import pytest
 
-from rscm.core import GridType, InterpolationStrategy, Timeseries
+from rscm.core import (
+    GridType,
+    InterpolationStrategy,
+    TimeAxis,
+    Timeseries,
+    VariableSchema,
+)
 from rscm.example_components import LinearConcentration
 from rscm.spec import ComponentSpec, Lag, ModelSpec, _flatten, diff
 from rscm.two_layer import TwoLayerBuilder
@@ -137,3 +145,28 @@ def test_flatten_keeps_identities_that_share_a_last_segment():
         "agents[Concentrations|CO2#1].scale": 2.0,
         "agents[Concentrations|CO2#2].scale": 3.0,
     }
+
+
+def test_diff_reports_time_axis_grid_weights_and_schema(spec, time_axis):
+    schema = VariableSchema()
+    schema.add_variable("Forcing", "W/m^2")
+    other = dataclasses.replace(
+        spec, grid_weights={GridType.FourBox: [0.25] * 4}, schema=schema
+    )
+    shorter = TimeAxis.from_values(np.asarray(time_axis.values())[:-1])
+
+    assert diff(spec.bind({}, time_axis), other.bind({}, shorter)).splitlines()[1:] == [
+        "  ~ time axis: 1850 to 2000, 30 steps -> 1850 to 1995, 29 steps",
+        "  ~ FourBox weights: None -> [0.25, 0.25, 0.25, 0.25]",
+        "  ~ schema variables: 1 added",
+    ]
+
+
+def test_spec_keeps_a_copy_of_its_components_and_lags():
+    components = {"TwoLayer": ComponentSpec(TwoLayerBuilder, TWO_LAYER)}
+    lags = [Lag("Surface Air Temperature Change")]
+    spec = ModelSpec(components=components, lags=lags)
+    components.clear()
+    lags.clear()
+    assert list(spec.components) == ["TwoLayer"]
+    assert len(spec.lags) == 1
