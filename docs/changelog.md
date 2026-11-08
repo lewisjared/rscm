@@ -1,3 +1,234 @@
+## rscm 0.8.0 (2026-11-08)
+
+### ⚠️ Breaking Changes ⚠️
+
+- Components are now linked to their producers wherever they were registered,
+  so registration order no longer changes a model.
+  A feedback loop must be broken with `ModelBuilder.with_lag` or `ModelBuilder.with_lag_for`,
+  otherwise `build()` fails with an error that suggests which edge to lag. ([#196](https://github.com/lewisjared/rscm/pull/196))
+- `build()` now fails when an input has no producer, exogenous data or initial value,
+  with an error that names each missing variable and the components that read it.
+  Call `ModelBuilder.with_missing_exogenous_allowed()` to build anyway, with the missing inputs filled with NaN. ([#197](https://github.com/lewisjared/rscm/pull/197))
+- `ModelBuilder.build()` now converts exogenous timeseries into the unit the model stores each variable in,
+  the schema's unit or otherwise the unit the components declare.
+  Data in a unit with a different dimension, or a unit the parser cannot read, now fails the build
+  rather than running with wrong values. ([#198](https://github.com/lewisjared/rscm/pull/198))
+- `ModelBuilder.build()` now fails when an input declares a different timeseries type from its producer, or when a state variable is an average, unless `with_state_type_check(False)` is set. ([#199](https://github.com/lewisjared/rscm/pull/199))
+- Replaced `Model.debug_info()` with `Model.coupling()`, which lists components in the order the runtime steps them, every edge with whether it lags, and each variable's source and timeseries type.
+  Inputs read from another component are now tagged `(upstream from X)` or `(lagged from X)`, and exogenous inputs `(exogenous)` instead of `(exo)`. ([#200](https://github.com/lewisjared/rscm/pull/200))
+- `interpolate(t)` on input windows now holds the first or last stored value beyond the time axis instead of extrapolating. ([#201](https://github.com/lewisjared/rscm/pull/201))
+- Schema aggregates now read each contributor by its source and timeseries type.
+  A point is read at the step end, as before.
+  An average is read with `get()`, so an exogenous average contributor gives its value for the step
+  instead of the next step's.
+  `with_lag` on a contributor now lags the aggregate's read too. ([#203](https://github.com/lewisjared/rscm/pull/203))
+- Removed the old input window accessors in Rust and Python:
+  `at_start()`, `at_end()`, `previous()`, `at_offset()`, `last_n()`, `last_n_converted()`,
+  the `*_all()` forms other than `get_all()`,
+  `current_global()`, `previous_global()`, `time()`, `index()` and `all()`,
+  and `current_index` on Python windows.
+  Read inputs with `get()`, `interval()` and `history(n)`, and a fixed calendar year with `interpolate(t)`.
+  `get()` no longer falls back to the step's start for an upstream output on the last time point.
+  It panics with the variable name in Rust and raises `ValueError` in Python.
+  Rust window constructors take the variable's name in place of the current time. ([#204](https://github.com/lewisjared/rscm/pull/204))
+- Averages are now stored at the start of the step they cover, as input files and MAGICC7 label them.
+  Prescribing an average with values a model wrote for it now gives the same results as modelling it.
+  Every average a component writes, such as emissions, carbon fluxes, lifetimes,
+  `Nitrogen Limitation Factor` and `Surface Temperature|Annual Mean`, moves one time point earlier
+  and has no value at the last time point.
+  A lag on an average now fails `build()`.
+  `run_magicc` and `run_magicc_emissions` take one emission value per year, `len(years)` in all,
+  instead of one per interval.
+  `ClimateUDEB.initial_values` no longer returns `Surface Temperature|Annual Mean`.
+  See [Points and Averages](key_concepts.md#points-and-averages). ([#205](https://github.com/lewisjared/rscm/pull/205))
+- Prescribed points are now read at the step's end, as upstream outputs are,
+  so `get()` returns the same value whether a point is prescribed or modelled.
+  A component's own state and a lagged edge still read the step's start.
+  A component that read an exogenous point with `get()` now sees the next value,
+  and one that read `interval()[1]` for it can use `get()`.
+  A lag holds when its variable is prescribed, so a prescribed run must declare the lags of the coupled run.
+  `rscm.magicc.full.LAG` and `LAG_FOR` hold MAGICC7's lags.
+  Calling `solve` on a component outside a model now needs a value at `t_next` for each point input,
+  and the Rust `extract_state` takes the component's input definitions.
+  See [Points and Averages](key_concepts.md#points-and-averages). ([#206](https://github.com/lewisjared/rscm/pull/206))
+- `Target.get_variable` now returns a read-only `VariableTarget`,
+  because edits to the copy it returned were silently lost.
+  `VariableTarget` can no longer be constructed and lost `add`, `add_relative` and `with_reference_period`.
+  Use `Target.add_observation`, `add_observation_relative` and `set_reference_period` instead.
+  In Rust, sampler progress callbacks now return `Result<()>`, and an `Err` stops the run.
+  `InputState::to_hashmap` was removed. ([#209](https://github.com/lewisjared/rscm/pull/209))
+- Reworked the vocabulary of the whole API for consistency,
+  following the new [glossary](https://github.com/lewisjared/rscm/blob/main/GLOSSARY.md).
+  Every rename is breaking and no aliases are kept.
+
+  - Prescribed is now the term for data supplied to a model.
+    `with_exogenous_variable` and `with_exogenous_four_box_variable`
+    were merged into `with_prescribed_variable`,
+    which takes a `Timeseries`, `FourBoxTimeseries` or `HemisphericTimeseries`.
+    `VariableSource` is now `{Prescribed, Upstream, Lagged, OwnState}`.
+    `VarSource` and `VariableType` were removed,
+    so `TimeseriesCollection.add_timeseries` takes only a name and a timeseries.
+    `InputState.get_global` was removed.
+    Declare the input as scalar and read `get_scalar_window(name).get()` for a global mean.
+  - `RequirementDefinition` and `RequirementType` became `VariableDefinition` and `VariableRole`.
+    `Input.to_requirement`, `Output.to_requirement` and `State.to_requirement` became `to_definition`.
+  - `with_rust_component` and `with_py_component` were merged into `with_component`.
+    The core component Protocol is now `RustComponent`, `CustomComponent` was removed,
+    and `PythonComponent.build(c)` became `PythonComponent(c)`.
+  - A variable's unit is `unit` everywhere (`Timeseries(unit=)`, `Timeseries.unit()`),
+    and its grid is `grid` (`get_grid`).
+    Window constructors, `TimeAxis.at` and `TimeAxis.at_bounds` take `time_index`.
+  - Enum values are snake_case strings,
+    for example `grid="four_box"`, `timeseries_type="average"` and `operation="sum"`.
+    `grid_name()` on the grid classes returns `scalar`, `four_box` or `hemispheric`.
+    `AggregateOp::Weighted` became `WeightedSum`.
+    MAGICC `IRFForm` tags are `polynomial` and `exponential_sum`.
+    Method names from MAGICC7 and FaIR keep their source spelling (`OLBL`, `IPCCTAR`, `leach2021`).
+  - Type and enum member names keep acronyms upper case, as in `ClimateUDEB` and `RSCMError`.
+    `GhgForcing`, `GhgSpecies`, `IrfForm`, `FgasRegions` and `LamcalcParams` became
+    `GHGForcing`, `GHGSpecies`, `IRFForm`, `FGasRegions` and `LAMCALCParameters`,
+    and `ForcingMethod::Ipcctar` and `ForcingMethod::Olbl` became `IPCCTAR` and `OLBL`.
+    FaIR types lost their `Fair` prefix, and every component's parameter type ends in `Parameters`.
+    Typetag names are namespaced as `fair.<Type>` and `magicc.<Type>`, so saved models must be serialised again.
+    Nested MAGICC parameter records dropped the suffix:
+    `DischargeCase`, `AntarcticRegion`, `AntarcticDischarge`, `GreenlandDischarge`, `Glacier`,
+    `SurfaceMassBalance`, `ThermalExpansion`, `PermafrostSoil` and `PrognosticFixation`.
+  - `AggregatorComponent` became `AggregateComponent`,
+    and the coupling labels an aggregate's component `Aggregate:<name>` instead of `Aggregator:<name>`.
+  - `GasMode`, `DriverKind` and `CloudDriverKind` were merged into `Driver`,
+    and `OceanCarbonModel` became `OceanCarbonMethod`.
+    MAGICC7 integer switches became named values (`efficacy_method`, `ocean_temperature_profile`).
+  - Runners take a `TimeAxis` as `time_axis` instead of arrays of years or time bounds.
+    `Timeseries.from_values` takes its axis as `time_axis=` instead of `time=`.
+    `rscm.magicc.with_lags` publishes the MAGICC lags,
+    `rscm.fair.build_components` became `rscm.fair.components`,
+    and `rscm.config.build_two_layer_model` was removed in favour of `build_model`.
+  - Parameter fields use full words,
+    for example `erf_2xco2`, `vertical_diffusivity`, `oh_lifetime`, `npp_to_plant_fraction`
+    and `include_permafrost`.
+    MAGICC7 configuration keys still map to the renamed fields,
+    and the MAGICC config key `climate_sensitivity` is now `ecs`.
+    `HalocarbonChemistryParameters.eesc_delay` became `stratospheric_delay`,
+    and the example `LinearConcentration` takes `co2_pi`.
+  - `ForcingAgent.co2_efficacy` became `use_co2_internal_efficacy`.
+  - `LAMCALCParameters` takes the box area fractions as a `FourBoxGrid` in `grid`,
+    in place of `fgno`, `fgnl`, `fgso` and `fgsl`.
+    `ClimateUDEBParameters.global_box_fractions()` and `ForcingAggregationParameters.area_fractions()`
+    became `grid()`.
+  - `ClimateUDEBState` fields use full words:
+    `ocean_temperatures`, `land_temperatures`, `ground_temperatures`, `north_south_heat_flux`,
+    `initial_polar_sinking_temperature` and `initial_mixed_layer_temperature`.
+  - `GHGForcing::co2_doubling_erf` became `erf_2xco2`,
+    and `AerosolIndirect::preindustrial_burden` became `burden_pi`.
+    `TerrestrialCarbonParameters` methods `frac_npp_to_soil` and `frac_deforest_soil`
+    became `npp_to_soil_fraction` and `deforestation_soil_fraction`.
+  - The `rscm.magicc.prescribed` forcing builders take `harmonisation_target` and `harmonisation_reference_year`
+    instead of `target` and `target_year`.
+    `nitrate` takes `burden_pi`, `optical_thickness_pi` and `burden_to_optical_thickness_exponent`,
+    and `cloud_albedo` takes `pattern_reference_year` instead of `pattern_year`.
+  - Calibration uses `log_pdf`, `std_dev`, `n_iterations`, `n_parameters`, `parameters=`, `parameter_names`,
+    `best_parameters`, `Optimiser`, `optimise`, `normalise=` and `centre=`.
+  - `build_models` and `run_models` take `n_threads` instead of `threads`.
+  - Variable names follow gcages and MAGICC7, for example `Atmospheric Concentrations|CO2`,
+    `Surface Air Temperature Change`, `Emissions|CO2|Biosphere`, `Inverse Emissions|CH4`,
+    `Effective Radiative Forcing|Aerosols|Direct Effect` and `Net Atmosphere to Land Flux|CO2`.
+    Shared names live in the new `rscm.names` module,
+    which also translates MAGICC7 names with `convert_variable_name`.
+  - MAGICC `ClimateUDEB` writes `Ocean Heat Content` as a global integral in `J`,
+    where it used to write a per-area value in `J/m^2`.
+    This matches FaIR, whose `Ocean Heat Content Change` became `Ocean Heat Content`.
+  - Emissions use the gcages units, such as `Mt CO2/yr`, `Mt SO2/yr`, `Mt NO2/yr` and `kt N2O/yr`.
+    MAGICC components convert them to their own units as they read them.
+  - Unit strings now read a species after a mass unit,
+    so `Gt C/yr` equals `GtC/yr` and `Mt CH4/yr` is a mass of methane.
+    Units of one species family convert by molecular mass ratio, and units of different species never convert.
+    `Unit.normalized()` became `Unit.normalised()`,
+    which returns the compact form, such as `W/m^2` and `Mt CO2/yr`.
+  - `RSCMError::CircularDependency` became `RSCMError::FeedbackLoop`,
+    and `RSCMError::WrongUnits` became `RSCMError::WrongUnit`.
+  - `run_magicc7` now raises `ValueError` for unknown `component_parameters` and `initial_concentrations` keys,
+    which it used to ignore.
+
+  ([#210](https://github.com/lewisjared/rscm/pull/210))
+- Removed the `OceanSurfacePartialPressure` component and the `rscm_components::components::ocean_carbon_cycle` module.
+  Its code did not follow the Joos et al. (2001) equation it documented.
+  The MAGICC `OceanCarbon` component calculates the ocean surface partial pressure of CO2. ([#212](https://github.com/lewisjared/rscm/pull/212))
+- Split building a MAGICC model from running it, as in FaIR.
+  `rscm.magicc.emissions_driven` and `rscm.magicc.concentration_driven` are separate models,
+  each with `build_model(config, inputs, time_axis)`, which returns an unrun `Model`, and `run_model`.
+  `rscm.magicc.full.from_magicc7` translates MAGICC7's parameters, input files and emissions
+  into their configuration and inputs, and `concentration_driven=True` prescribes every concentration.
+  The configuration is a plain dict of component parameters and initial values,
+  so it can be edited before building.
+  Removed `run_magicc7`, `run_magicc`, `run_magicc_emissions`, `Emissions`, `CO2Emissions` and `MAGICCResult`,
+  and the MAGICC concentration baseline comparison.
+  `with_lags` moved from `rscm.magicc.full` to `rscm.magicc.model`,
+  and `run_components` moved there as `run_from_components`.
+  See [MAGICC runs](magicc_runs.md). ([#213](https://github.com/lewisjared/rscm/pull/213))
+- Removed `build_model` and `run_model` from `rscm.fair`, `rscm.magicc.emissions_driven`
+  and `rscm.magicc.concentration_driven`, and `rscm.fair.run_fair`.
+  Use `setup_model(...).build()` or `setup_model(...).run()`,
+  or `rscm.spec.run_all` for many setups.
+  Replaced `rscm.magicc.model.build` with `setup`, which returns a `ModelSetup`,
+  and removed `rscm.magicc.model.run_from_components`. ([#215](https://github.com/lewisjared/rscm/pull/215))
+
+### Features
+
+- Added `timeseries_type`, which declares whether a variable is a point or an average.
+  It defaults from the unit, so a unit per time such as `GtC / yr` is an average and anything else is a point.
+  Inputs inherit their producer's type, and `ModelBuilder.with_timeseries_type` declares the type of an exogenous variable.
+  `Model.timeseries_type` returns the resolved type.
+  See [Points and Averages](key_concepts.md#points-and-averages). ([#199](https://github.com/lewisjared/rscm/pull/199))
+- Input windows gained `get_time()`, `history(n)`, `history_len()` and `interval()`, in Rust and Python.
+  `history(n)` reads `n` steps before `get()` and returns `None` before the first step.
+  `interval()` gives a point's values at the start and end of the step, and raises for an average.
+  `interpolate(t)` now exists on every window type and reads the stored series at any time.
+  Python windows take keyword-only `times`, `source` and `timeseries_type` arguments,
+  and `VariableSource` is exported from `rscm.core`. ([#201](https://github.com/lewisjared/rscm/pull/201))
+- The MAGICC and FaIR `ForcingAggregation` components now write
+  `Effective Radiative Forcing|Greenhouse Gases`, `|Aerosols` and `|Anthropogenic`
+  with MAGICC7's definitions.
+  Each forcing agent takes a required `category`
+  (`greenhouse_gas`, `aerosol`, `anthropogenic` or `natural`) that picks its subtotals.
+  `rscm.magicc.full` and `rscm.fair` set it for their own agents. ([#210](https://github.com/lewisjared/rscm/pull/210))
+- Added the `ComponentMetadata` derive for components that build their variables from their parameters,
+  so they get component pages.
+  `ComponentIO` variables now accept a `description` key, shown in the component page's IO tables. ([#211](https://github.com/lewisjared/rscm/pull/211))
+- Added a concentration-driven MAGICC model, `rscm.magicc.concentration_driven`,
+  with land and ocean carbon following the prescribed CO2 and inverse CH4 emissions.
+  It matches a MAGICC7 v7.5.3 concentration-driven SSP2-4.5 run. ([#213](https://github.com/lewisjared/rscm/pull/213))
+- Added `rscm.spec`, which describes a model as data before it is built.
+  A `ModelSpec` holds the components with their parameters, the lags and the initial values,
+  and `bind` adds prescribed data and a time axis to give a `ModelSetup`.
+  A setup lists the inputs the model needs, prints a summary and builds or runs the model,
+  and `rscm.spec.diff` shows what differs between two setups.
+  `rscm.fair` and both MAGICC models gained `setup_model`.
+  `rscm.spec.run_all` builds and runs many setups in parallel, from any model.
+  `rscm.fair.run_ensemble` runs the configurations of each scenario in parallel.
+  `ModelBuilder.prescribed_inputs` lists every input no component produces and whether it is supplied.
+  See [Model Specs and Setups](key_concepts.md#model-specs-and-setups). ([#215](https://github.com/lewisjared/rscm/pull/215))
+
+### Bug Fixes
+
+- Python components whose `solve` takes a dict of inputs now get each input's `get()` value,
+  with unit conversion, the point and average rules and the model's grid weights.
+  Before, they got the last stored value of each series, unconverted.
+  `Chain.to_dataframe` now labels walkers and iterations correctly for a chain from a single run.
+  Random search now samples from the prior, so Normal and LogNormal priors work.
+  Sampling now fails with the first underlying error when no initial walker has a finite log posterior.
+  Exceptions raised in a progress callback now stop the run and reach the caller instead of being printed.
+  The missing initial value error now names `with_initial_values`. ([#209](https://github.com/lewisjared/rscm/pull/209))
+
+### Improved Documentation
+
+- Guides, tutorials and examples now read inputs with `get()`, `interval()` and `history()`
+  in place of `at_start()`, `at_end()` and `previous()`. ([#203](https://github.com/lewisjared/rscm/pull/203))
+- Added component pages for every FaIR component and for the MAGICC
+  `HalocarbonChemistry`, `OzoneForcing` and `ForcingAggregation` components.
+  MAGICC pages now list their parameters.
+  MAGICC and FaIR pages moved to `components/magicc-<name>.md` and `components/fair-<name>.md`. ([#211](https://github.com/lewisjared/rscm/pull/211))
+
+
 ## rscm 0.7.0 (2026-11-05)
 
 ### ⚠️ Breaking Changes ⚠️
