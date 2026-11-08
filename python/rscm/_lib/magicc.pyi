@@ -499,6 +499,8 @@ class HalocarbonChemistryParameters(TypedDict, total=False):
     stratospheric_lifetime_sensitivity: float
     fgas_switch_year: float | None
     montreal_gases_switch_year: float | None
+    fgas_forcing_scale: float
+    montreal_gases_forcing_scale: float
     fgas_regions: FGasRegions | None
     """Makes ``Effective Radiative Forcing|F-Gases`` a four-box output."""
 
@@ -638,8 +640,10 @@ class OceanCarbonParameters(TypedDict, total=False):
     """Parameters for ocean carbon cycle component.
 
     All fields optional - defaults provided by Rust.
+    ``method`` sets the defaults of the IRF and physical parameters.
     """
 
+    method: Literal["3D-GFDL", "2D-BERN", "HILDA"]
     co2_pi: float
     pco2_pi: float | None
     gas_exchange_scale: float

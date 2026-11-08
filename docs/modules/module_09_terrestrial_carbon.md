@@ -54,6 +54,9 @@ flowchart LR
 ```
 
 NPP is split between the pools by the fractions $f_P$, $f_D$ and $f_S = 1 - f_P - f_D$.
+Like MAGICC7 at initialisation, `TerrestrialCarbonParameters::normalised` scales $f_P$ and $f_D$ down
+to sum to 1 when they exceed it, and does the same for the deforestation fractions.
+It also caps `CO2_FRACTION_PLANT_2_DETRITUS` at 1 and the pre-industrial respiration at 99% of the NPP to the plant pool.
 Deforestation removes carbon from each pool as well (see [land-use change](#land-use-change-and-regrowth)).
 
 ### Temperature factors

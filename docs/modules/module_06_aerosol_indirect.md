@@ -132,7 +132,9 @@ The total cloud forcing is the sum of the two.
 | `SRF_FACTOR_CLOUD_COVER`        | 0.9                                  | Surface to top-of-atmosphere forcing ratio     |
 
 MAGICC7 renormalises the weights to sum to 1, and the defaults above are those normalised values.
+It sums them in order, so `rscm.magicc.prescribed.cloud_albedo` avoids Python's compensated `sum`.
 With `RF_CLOUD_ALBEDO_AER_APPLY = 1`, `RF_CLOUD_ALBEDO_AER_FACTOR` is an output.
+With 2, the forcing is scaled by `RF_CLOUD_ALBEDO_AER_FACTOR` instead.
 The patterns come from Hansen et al. (2005).
 
 ## Algorithm

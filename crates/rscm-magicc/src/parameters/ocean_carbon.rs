@@ -24,7 +24,7 @@
 
 use super::co2_budget::GTC_PER_PPM;
 use rscm_core::timeseries::FloatValue;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Unit conversion constant: micromol/(ppm * m^3/kg).
 ///
@@ -154,17 +154,19 @@ impl IRFForm {
 /// The ocean surface pCO2 is calculated using:
 /// 1. **Joos A24**: DIC effect on pCO2 via polynomial expansion
 /// 2. **Joos A25**: Temperature effect: $pCO2 = pCO2_{DIC} \times e^{\alpha_T \Delta T}$
+///
+/// When deserialised, `method` selects the defaults of the other fields,
+/// as `for_method` gives them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
 pub struct OceanCarbonParameters {
     /// Ocean carbon method (MAGICC7 `OCEANCC_MODEL`).
     ///
-    /// This field is informational only: it does not select the
-    /// corresponding IRF coefficients or physical parameters.
-    /// Use the named constructors (`gfdl_3d()`, `bern_2d()`, `hilda()`) to get a
-    /// self-consistent parameter set for a given method.
-    /// Setting only this field leaves the IRF parameters at their 3D-GFDL defaults.
+    /// Deserialising selects this method's IRF and physical parameters
+    /// for every field not given.
+    /// Constructing the struct directly does not, so use `for_method` there.
     pub method: OceanCarbonMethod,
 
     /// Pre-industrial atmospheric CO2 concentration (MAGICC7 `CO2_PREINDCO2CONC`)
@@ -280,7 +282,45 @@ pub struct OceanCarbonParameters {
     pub concentration_switch_year: Option<FloatValue>,
 }
 
+impl Serialize for OceanCarbonParameters {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        OceanCarbonParameters::serialize(self, serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for OceanCarbonParameters {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        use serde_json::Value;
+
+        let given = serde_json::Map::<String, Value>::deserialize(deserializer)?;
+        let method = match given.get("method") {
+            Some(value) => OceanCarbonMethod::deserialize(value).map_err(D::Error::custom)?,
+            None => OceanCarbonMethod::Gfdl3d,
+        };
+        let base = OceanCarbonParameters::serialize(
+            &Self::for_method(method),
+            serde_json::value::Serializer,
+        )
+        .map_err(D::Error::custom)?;
+        let Value::Object(mut merged) = base else {
+            return Err(D::Error::custom("parameters must serialise to a map"));
+        };
+        merged.extend(given);
+        OceanCarbonParameters::deserialize(Value::Object(merged)).map_err(D::Error::custom)
+    }
+}
+
 impl OceanCarbonParameters {
+    /// Parameters of the ocean model that `method` emulates.
+    pub fn for_method(method: OceanCarbonMethod) -> Self {
+        match method {
+            OceanCarbonMethod::Gfdl3d => Self::gfdl_3d(),
+            OceanCarbonMethod::Bern2d => Self::bern_2d(),
+            OceanCarbonMethod::Hilda => Self::hilda(),
+        }
+    }
+
     /// Construct parameters for the 3D-GFDL ocean carbon model (MAGICC7 default).
     ///
     /// 3D-GFDL uses a polynomial IRF for the first year and exponential sum
@@ -896,6 +936,19 @@ mod tests {
 
         assert_eq!(parsed.method, OceanCarbonMethod::Bern2d);
         assert!((parsed.irf_switch_time - 9.9).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_deserialising_method_selects_its_defaults() {
+        let parsed: OceanCarbonParameters =
+            serde_json::from_str(r#"{"method": "2D-BERN", "co2_pi": 280.0}"#)
+                .expect("Deserialisation failed");
+
+        let bern = OceanCarbonParameters::bern_2d();
+        assert_eq!(parsed.method, OceanCarbonMethod::Bern2d);
+        assert_eq!(parsed.irf_switch_time, bern.irf_switch_time);
+        assert_eq!(parsed.mixed_layer_depth, bern.mixed_layer_depth);
+        assert_eq!(parsed.co2_pi, 280.0);
     }
 
     #[test]

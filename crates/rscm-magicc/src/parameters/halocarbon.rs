@@ -167,6 +167,16 @@ pub struct HalocarbonChemistryParameters {
     /// unit: yr
     pub montreal_gases_switch_year: Option<FloatValue>,
 
+    /// Scale on the ERF of every F-gas (MAGICC7 `RF_FGASSUM_SCALE`)
+    ///
+    /// unit: dimensionless
+    pub fgas_forcing_scale: FloatValue,
+
+    /// Scale on the ERF of every Montreal Protocol gas (MAGICC7 `RF_MHALOSUM_SCALE`)
+    ///
+    /// unit: dimensionless
+    pub montreal_gases_forcing_scale: FloatValue,
+
     /// Regional pattern of F-gas ERF.
     ///
     /// Setting it makes `Effective Radiative Forcing|F-Gases` and each F-gas ERF four-box outputs.
@@ -290,6 +300,8 @@ impl Default for HalocarbonChemistryParameters {
             stratospheric_lifetime_sensitivity: 0.3,
             fgas_switch_year: None,
             montreal_gases_switch_year: None,
+            fgas_forcing_scale: 1.0,
+            montreal_gases_forcing_scale: 1.0,
             fgas_regions: None,
         }
     }

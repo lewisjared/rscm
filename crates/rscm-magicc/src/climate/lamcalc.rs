@@ -230,6 +230,8 @@ pub fn lamcalc(params: &LAMCALCParameters) -> Option<LAMCALCResult> {
     // Storage for iteration history
     let mut lamo = vec![0.0; MAX_ITERATIONS + 2];
     let mut diff = vec![0.0; MAX_ITERATIONS + 2];
+    // MAGICC7 never sets DIFF(1) and reads a positive subnormal left on the stack.
+    diff[1] = FloatValue::MIN_POSITIVE;
 
     // Initial guesses
     lamo[1] = lam;
@@ -739,6 +741,28 @@ mod tests {
         let mut singular = a;
         singular[3] = singular[0];
         assert!(invert_by_cofactors(&singular).is_none());
+    }
+
+    #[test]
+    fn test_lamcalc_first_step_overshoots_like_magicc7() {
+        // AR6 member 444, whose first step overshoots the target ratio.
+        let params = LAMCALCParameters {
+            land_ocean_heat_exchange: 1.0651234720289464,
+            north_south_heat_exchange: 2.5373479182589205,
+            ecs: 1.839639834144496,
+            land_ocean_warming_ratio: 1.3527798086155938,
+            amplify_ocean_to_land: 1.4868266314555647,
+            co2_regional_pattern: [1.4089, 1.37045, 1.43333, 1.33257],
+            ..default_params()
+        };
+        let result = lamcalc(&params).expect("LAMCALC should converge");
+
+        // MAGICC7 v7.5.3 output for this member
+        assert!(
+            (result.co2_internal_efficacy - 0.999997889).abs() < 1e-9,
+            "got {}",
+            result.co2_internal_efficacy
+        );
     }
 
     #[test]

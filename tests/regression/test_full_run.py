@@ -457,6 +457,16 @@ def test_concentration_driven_run():
     )
 
 
+@pytest.mark.parametrize("member", full_run.AR6_MEMBERS)
+def test_ar6_member(member):
+    """Members of the AR6 ensemble, run like MAGICC7's default run."""
+    run = full_run.load_ar6(member)
+    model = full_run.ar6_model(member)
+    _assert_temperature(model, run)
+    _assert_concentrations(model, run, ("CO2", "CH4", "N2O"))
+    _assert_total_erf(model, run)
+
+
 def test_from_magicc7_reads_no_files_given_input_files(monkeypatch):
     """Loaded inputs reproduce the default run without reading a file."""
     run = full_run.load_default()

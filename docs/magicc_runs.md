@@ -226,6 +226,10 @@ and NOx, CO and NMVOC drive tropospheric ozone.
   `full.EFFICACY_METHODS` maps its 0, 1 and 2 to the `none`, `unit` and `ar6` efficacy methods.
   With 1, forcing is divided by each agent's internal efficacy and efficacies are ignored,
   as in MAGICC7.
+- `rf_<agent>_apply` sets how each prescribed aerosol, albedo and cloud forcing scales:
+  1 harmonises it to `rf_<agent>_wm2` in `rf_<agent>_yr`, and 2 scales it by `rf_<agent>_factor`.
+  The AR6 ensemble uses 2.
+- `rf_fgassum_scale` and `rf_mhalosum_scale` scale the ERF of every F-gas and Montreal Protocol gas.
 - `pf_apply=0` leaves `Permafrost` out of the configuration.
   MAGICC7 enables it by default.
 - `ncycle_apply=1` limits NPP by nitrogen, reading fixation from MAGICC7's packaged `NCYCLE_NFIX3.IN`.
@@ -258,6 +262,8 @@ The cases are:
 - The concentration-driven run, with every switch year after the run and permafrost.
   This case also checks every halocarbon concentration, the land and ocean CO2 fluxes
   and the inverse CH4 emissions.
+- 25 members of the AR6 probabilistic ensemble, run like MAGICC7's default run with each member's parameters.
+  `AR6_MEMBERS` in `tests/regression/full_run.py` lists them.
 
 In the default, emissions-driven, permafrost and concentration-driven runs,
 temperature, concentrations and total ERF match MAGICC7 to the last bit in every year.
@@ -266,6 +272,10 @@ Seven of the 15 variants also match to the last bit.
 The others stay within 7.1e-15 K in temperature and a relative 1.4e-15 in concentrations.
 The inverse CH4 emissions agree within 0.2% in the 1750s and to about a relative 1e-6 after.
 
+All 600 members of the AR6 ensemble agree within the tolerance,
+with the largest difference a fifth of it.
+`scripts/regression/generate_ar6_ensemble.py --members all` writes the whole ensemble to check.
+
 The bisection on the nitrogen pool makes the nitrogen-limited run chaotic in MAGICC7 too:
 a 1e-13 relative change in one year's emissions moves CO2 by 0.03 ppm.
 
@@ -273,7 +283,7 @@ The same file also drives single components with MAGICC7's own inputs,
 so a difference points at that component alone.
 `tests/regression/test_sea_level.py` checks each sea level contribution of the `out_sealevel=1` run.
 Only SSP2-4.5 and these configurations have a reference run.
-Other scenarios and parameter sets use the same code without a MAGICC7 comparison.
+Other scenarios use the same code without a MAGICC7 comparison.
 
 Run the tests with:
 

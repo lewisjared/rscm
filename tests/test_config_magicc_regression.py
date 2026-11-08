@@ -263,7 +263,12 @@ class TestRegressionConfigCoverage:
 
     def test_regression_configs_use_known_parameters(self):
         """All parameters in regression configs should be in registry."""
-        config_files = list(REGRESSION_DIR.glob("**/*_config.json"))
+        # AR6 members carry whole drawnset configurations for run_magicc7.
+        config_files = [
+            p
+            for p in REGRESSION_DIR.glob("**/*_config.json")
+            if not p.name.startswith("07_ssp245_ar6_")
+        ]
         if not config_files:
             pytest.skip("No regression configs found")
 

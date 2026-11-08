@@ -158,9 +158,15 @@ impl HalocarbonChemistry {
         }
     }
 
-    /// ERF of a species at a concentration (W/m²).
-    pub fn species_forcing(species: &HalocarbonSpecies, concentration: FloatValue) -> FloatValue {
-        (concentration - species.concentration_pi) * (species.radiative_efficiency / 1000.0)
+    /// ERF of a species at a concentration (W/m²), with its group's forcing scale.
+    ///
+    /// The scale multiplies the radiative efficiency, as in MAGICC7.
+    pub fn species_forcing(
+        species: &HalocarbonSpecies,
+        concentration: FloatValue,
+        scale: FloatValue,
+    ) -> FloatValue {
+        (concentration - species.concentration_pi) * (species.radiative_efficiency * scale / 1000.0)
     }
 
     /// EESC contribution of a species at a concentration (ppt).
@@ -331,6 +337,10 @@ impl Component for HalocarbonChemistry {
             .as_ref()
             .map(|_| input_state.get_scalar_window(EMISSIONS_CO2_FOSSIL).get());
 
+        let scales = [
+            self.parameters.fgas_forcing_scale,
+            self.parameters.montreal_gases_forcing_scale,
+        ];
         for (group, (list, switch_year)) in self.switch_years().into_iter().enumerate() {
             for (species, names) in list.iter().zip(&names[group]) {
                 let window = input_state.get_scalar_window(&names.concentration);
@@ -340,7 +350,7 @@ impl Component for HalocarbonChemistry {
                     .unwrap_or_else(|| {
                         self.step_concentration(species, window.get(), emissions, tau)
                     });
-                let species_forcing = Self::species_forcing(species, next);
+                let species_forcing = Self::species_forcing(species, next, scales[group]);
                 forcing[group] += species_forcing;
                 let value = if let (0, Some(regions), Some(fossil_co2)) =
                     (group, &self.parameters.fgas_regions, fossil_co2)
@@ -444,10 +454,16 @@ mod tests {
     fn test_forcing_relative_to_initial() {
         let cfc12 = species("CFC12");
         assert_eq!(
-            HalocarbonChemistry::species_forcing(&cfc12, cfc12.concentration_pi),
+            HalocarbonChemistry::species_forcing(&cfc12, cfc12.concentration_pi, 1.0),
             0.0
         );
-        assert!((HalocarbonChemistry::species_forcing(&cfc12, 500.0) - 0.182).abs() < 1e-12);
+        assert!((HalocarbonChemistry::species_forcing(&cfc12, 500.0, 1.0) - 0.182).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_forcing_scale_multiplies_radiative_efficiency() {
+        let cfc12 = species("CFC12");
+        assert!((HalocarbonChemistry::species_forcing(&cfc12, 500.0, 2.0) - 0.364).abs() < 1e-12);
     }
 
     #[test]

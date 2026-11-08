@@ -49,6 +49,7 @@ and the slow response of the deep ocean.
   which is derived from the run itself:
   the mean monthly box forcing, scaled by `RF_VOLCANIC_SCALE`,
   from the first year to `RF_VOLC_FORC_PATTERN_MAX_LAST_YEAR`, less its global mean and 1.
+  The global mean sums box times area, as MAGICC7 does, because the hemispheric mean rounds differently.
   Substeps 1 to 11 take the previous year's volcanic internal efficacy and substep 12 the current one.
   The first year keeps the initial value.
 
@@ -493,6 +494,9 @@ LAMCALC (MAGICC7.f90 lines 8070 to 8278) starts from $\lambda_o = \lambda + 0.7$
 reversing when the error in $RLO$ grows.
 After the first sign change it switches to the secant method.
 It gives up after 40 iterations.
+MAGICC7 never sets the error before the first step, `DIFF(1)`, and in practice reads a tiny positive value.
+So a first step that overshoots $RLO$ already counts as a sign change,
+and RSCM starts the error at the smallest positive normal float to take the same path.
 Each iteration derives $\lambda_l$, builds and inverts $\mathbf{A}$,
 and compares the area-weighted land and ocean equilibrium temperatures with $RLO$.
 
