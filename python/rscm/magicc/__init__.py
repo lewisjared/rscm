@@ -12,9 +12,16 @@ organised by domain:
 - Forcing: [GHGForcingBuilder][], [OzoneForcingBuilder][], [AerosolDirectBuilder][],
   [AerosolIndirectBuilder][], [ForcingAggregationBuilder][]
 
-[run_magicc7][rscm.magicc.full.run_magicc7] runs the full MAGICC7 chain from
-emissions, see [rscm.magicc.full][],
-and [with_lags][rscm.magicc.full.with_lags] adds its feedback lags to a builder.
+Two models couple them:
+
+- [rscm.magicc.emissions_driven][] calculates concentrations from emissions,
+  after an optional period of prescribed concentrations.
+- [rscm.magicc.concentration_driven][] prescribes concentrations for the whole run.
+
+Each builds from a configuration and prescribed inputs, see [rscm.magicc.model][].
+[from_magicc7][rscm.magicc.full.from_magicc7] translates a MAGICC7 configuration,
+its input files and emissions into them,
+and [with_lags][rscm.magicc.model.with_lags] adds MAGICC7's feedback lags to a builder.
 """
 
 from rscm._lib.magicc import (
@@ -34,9 +41,9 @@ from rscm._lib.magicc import (
     SeaLevelRiseBuilder,
     TerrestrialCarbonBuilder,
 )
-from rscm.magicc.emissions import Emissions, run_magicc_emissions
-from rscm.magicc.full import run_magicc7, with_lags
-from rscm.magicc.runner import CO2Emissions, MAGICCResult, run_magicc
+from rscm.magicc import concentration_driven, emissions_driven
+from rscm.magicc.full import from_magicc7
+from rscm.magicc.model import with_lags
 
 __all__ = [
     "AerosolDirectBuilder",
@@ -44,21 +51,18 @@ __all__ = [
     "CH4ChemistryBuilder",
     "CH4OxidationBuilder",
     "CO2BudgetBuilder",
-    "CO2Emissions",
     "ClimateUDEBBuilder",
-    "Emissions",
     "ForcingAggregationBuilder",
     "GHGForcingBuilder",
     "HalocarbonChemistryBuilder",
-    "MAGICCResult",
     "N2OChemistryBuilder",
     "OceanCarbonBuilder",
     "OzoneForcingBuilder",
     "PermafrostBuilder",
     "SeaLevelRiseBuilder",
     "TerrestrialCarbonBuilder",
-    "run_magicc",
-    "run_magicc7",
-    "run_magicc_emissions",
+    "concentration_driven",
+    "emissions_driven",
+    "from_magicc7",
     "with_lags",
 ]

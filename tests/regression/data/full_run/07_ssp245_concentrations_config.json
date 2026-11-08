@@ -1,0 +1,15 @@
+{
+  "startyear": 1750,
+  "endyear": 2105,
+  "core_climatesensitivity": 3.0,
+  "co2_switchfromconc2emis_year": 2500,
+  "ch4_switchfromconc2emis_year": 2500,
+  "n2o_switchfromconc2emis_year": 2500,
+  "mhalo_switchfromconc2emis_year": 2500,
+  "fgas_switchfromconc2emis_year": 2500,
+  "out_dynamic_vars": [
+    "DAT_CO2_AIR2LAND_FLUX",
+    "DAT_CO2_AIR2OCEAN_FLUX",
+    "DAT_CH4_INVERSE_EMMS"
+  ]
+}

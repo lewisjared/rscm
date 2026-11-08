@@ -24,8 +24,8 @@ The module represents:
 - **Source**: `crates/rscm-magicc/src/carbon/ocean.rs`,
   with parameters and IRF forms in `crates/rscm-magicc/src/parameters/ocean_carbon.rs`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
-  `run_magicc7` uses the component's defaults, which are MAGICC7's 3D-GFDL parameters.
-- **Tests**: `tests/regression/test_full_run.py::test_coupled_run` and `test_run_magicc7_defaults`
+  `from_magicc7` uses the component's defaults, which are MAGICC7's 3D-GFDL parameters.
+- **Tests**: `tests/regression/test_full_run.py::test_coupled_run` and `test_default_run`
   check the CO2 concentration against MAGICC7 v7.5.3.
   `crates/rscm-magicc/tests/carbon_cycle_physics.rs` and `conservation.rs` check the
   temperature effect, the Revelle buffer and cumulative uptake.

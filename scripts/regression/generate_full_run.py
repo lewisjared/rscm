@@ -8,7 +8,8 @@ against its own MAGICC counterpart as well as the coupled model.
 
 A second run enables permafrost and a third nitrogen limitation with deposition
 from emissions. A fourth writes sea level rise,
-and the variants each change one climate, efficacy or method switch.
+the variants each change one climate, efficacy or method switch,
+and a last run prescribes concentrations throughout.
 Their emissions and inputs are unchanged,
 so only the variables compared against the coupled model are kept.
 
@@ -24,6 +25,7 @@ Output:
     tests/regression/data/full_run/04_ssp245_emissions_sealevel*
     tests/regression/data/full_run/05_ssp245_default*
     tests/regression/data/full_run/06_ssp245_emissions_<variant>*
+    tests/regression/data/full_run/07_ssp245_concentrations*
     python/rscm/magicc/data/magicc7/*.gz (the run's forcing input files)
     python/rscm/magicc/data/magicc7/defaults.json (the configuration the chain reads)
 """
@@ -145,6 +147,28 @@ DEFAULT_VARIABLES = (
     "Effective Radiative Forcing|Volcanic",
 )
 
+# Concentrations prescribed for the whole run, which switches after it ends.
+CONCENTRATIONS = make_config(
+    DEFAULT,
+    **{
+        f"{gas}_switchfromconc2emis_year": 2500
+        for gas in ("co2", "ch4", "n2o", "mhalo", "fgas")
+    },
+    out_dynamic_vars=[
+        "DAT_CO2_AIR2LAND_FLUX",
+        "DAT_CO2_AIR2OCEAN_FLUX",
+        "DAT_CH4_INVERSE_EMMS",
+    ],
+)
+
+# Variables kept from the concentration-driven run.
+CONCENTRATIONS_VARIABLES = (
+    *DEFAULT_VARIABLES,
+    "Net Atmosphere to Land Flux|CO2",
+    "Net Atmosphere to Ocean Flux|CO2",
+    "CH4_INVERSE_EMMS",
+)
+
 # Climate, efficacy and method switches of the emissions run, each changed alone.
 VARIANTS = {
     "ecs_1p5": {"core_climatesensitivity": 1.5},
@@ -192,6 +216,13 @@ CASES = (
     ),
     ("04_ssp245_emissions_sealevel", SEALEVEL, SEALEVEL_VARIABLES, (), True),
     ("05_ssp245_default", DEFAULT, DEFAULT_VARIABLES, (), True),
+    (
+        "07_ssp245_concentrations",
+        CONCENTRATIONS,
+        CONCENTRATIONS_VARIABLES,
+        (),
+        True,
+    ),
     *(
         (
             f"06_ssp245_emissions_{name}",
@@ -305,7 +336,7 @@ def write_defaults() -> None:
         recorder["ncycle_apply"] = ncycle_apply
         for flag in ("ndep_from_emis", "prognostic_nfix", "cn_initial_values"):
             recorder[f"ncycle_apply_{flag}"] = ncycle_apply
-        full.run_magicc7(
+        full.from_magicc7(
             time_axis, emissions, parameters=recorder, convention=Convention.MAGICC7
         )
     parameters = {key: config[key] for key in sorted(recorder.used)}

@@ -175,7 +175,7 @@ A loop that no lag breaks fails `build()` with an error that lists the component
 and the `with_lag_for` calls that would break it.
 Edges into a component that holds its own state come first.
 The builder never chooses a lag itself.
-Runners such as `run_magicc7` and `run_fair` carry their models' lags.
+Model builders such as `rscm.magicc.emissions_driven.build_model` and `run_fair` carry their models' lags.
 
 ### Model Execution
 

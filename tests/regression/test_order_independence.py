@@ -9,7 +9,8 @@ import pytest
 
 from regression import full_run, test_fair
 from rscm.fair import run as fair_run
-from rscm.magicc import full
+from rscm.magicc import concentration_driven, emissions_driven, full
+from rscm.magicc import model as magicc_model
 from rscm.names import (
     ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE,
     ATMOSPHERIC_CONCENTRATIONS_CO2,
@@ -56,13 +57,16 @@ def _shuffled(function, seed):
     return wrapper
 
 
-def _run_magicc7(**parameters):
+def _run_magicc7(*, concentrations=False, **parameters):
     run = full_run.load()
-    return full.run_magicc7(
+    config, inputs = full.from_magicc7(
         run.time_axis,
         full_run.emissions(run),
         parameters={**run.parameters, **parameters},
+        concentration_driven=concentrations,
     )
+    model = concentration_driven if concentrations else emissions_driven
+    return model.run_model(config, inputs, run.time_axis)
 
 
 MAGICC7_CASES = {
@@ -70,19 +74,22 @@ MAGICC7_CASES = {
     "permafrost": {"pf_apply": True},
     "sea level": {"out_sealevel": True},
     "permafrost and sea level": {"pf_apply": True, "out_sealevel": True},
+    "concentration-driven": {"concentrations": True, "pf_apply": True},
 }
 
 
 @pytest.mark.parametrize("parameters", MAGICC7_CASES.values(), ids=MAGICC7_CASES)
 def test_magicc7_shuffled(monkeypatch, parameters):
     expected = _outputs(_run_magicc7(**parameters))
-    run_components = full.run_components
+    build_from_components = magicc_model.build_from_components
     for seed in range(3):
 
         def shuffled(time_axis, components, _seed=seed, **kwargs):
-            return run_components(time_axis, _shuffle(components, _seed), **kwargs)
+            return build_from_components(
+                time_axis, _shuffle(components, _seed), **kwargs
+            )
 
-        monkeypatch.setattr(full, "run_components", shuffled)
+        monkeypatch.setattr(magicc_model, "build_from_components", shuffled)
         _assert_identical(_outputs(_run_magicc7(**parameters)), expected)
 
 

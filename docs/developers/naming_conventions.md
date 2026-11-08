@@ -12,14 +12,14 @@ When a rule and the code disagree, fix one of them in the same PR.
 - A variable has one `unit`, never `units`: `Input(..., unit="K")`, `Timeseries.unit`.
 - The grid field and keyword is `grid`, and its enum is `GridType`: `Input(..., grid="four_box")`.
 - The four-box grid is `FourBox` in types, `four_box` in snake case and four-box in prose.
-- Every entry point takes the time axis as `time_axis: TimeAxis`: `run_magicc7(time_axis, ...)`.
+- Every entry point takes the time axis as `time_axis: TimeAxis`: `from_magicc7(time_axis, ...)`.
 - `solve` takes `t_current` and `t_next`, and every index argument is `time_index`: `Timeseries.at`.
 - Prose says step, and substep for a component's inner steps, never timestep or time step.
 - Type names say `Parameters` and public arguments say `parameters`: `ParameterSet(parameters=...)`.
 - Counts and lists of parameters follow: `parameter_names`, `best_parameters`, `n_parameters`.
 - `params` is fine for a local variable only.
 - `with_prescribed_variable` supplies prescribed data on every grid, dispatching on the timeseries type.
-- Initial values are `initial_values` and `initial_grid_values`: `run_components(initial_values=...)`.
+- Initial values are `initial_values` and `initial_grid_values`: `build_from_components(initial_values=...)`.
 - `Component` is only the author's base class, `rscm.component.Component`.
 - `RustComponent` is the protocol a Rust component satisfies in Python.
 - A builder adds any component with `with_component`, in Rust and in Python.

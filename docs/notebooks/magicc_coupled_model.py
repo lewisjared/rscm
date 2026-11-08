@@ -31,7 +31,8 @@
 # - Break the feedback loops with lags, as MAGICC7 does.
 # - Feed prescribed forcing in on the four-box grid.
 # - Render the component graph and run the model from 1750 to 2105.
-# - Check the result against MAGICC7 v7.5.3 and against `run_magicc7`.
+# - Check the result against MAGICC7 v7.5.3 and against the packaged emissions-driven model.
+# - Run the concentration-driven model from the same configuration.
 #
 # Code that only reads files, tidies tables or draws figures is hidden on this page.
 # The downloadable notebook has all of it.
@@ -40,7 +41,7 @@
 #
 # - [Coupled Models](../coupled_model/): the `ModelBuilder` basics this notebook builds on
 # - [Variable Schemas](../variable_schema/): declaring variables and grids
-# - [MAGICC runs](../../magicc_runs/): the `run_magicc7`, `run_magicc` and `run_magicc_emissions` runners
+# - [MAGICC runs](../../magicc_runs/): the emissions-driven and concentration-driven models
 # - [MAGICC modules](../../modules/): module specifications, status and parity evidence
 
 # %%
@@ -78,9 +79,9 @@ from rscm.magicc import (
     PermafrostBuilder,
     SeaLevelRiseBuilder,
     TerrestrialCarbonBuilder,
+    concentration_driven,
+    emissions_driven,
     full,
-    run_magicc,
-    run_magicc7,
 )
 from rscm.magicc import prescribed as pr
 from rscm.names import (
@@ -275,7 +276,7 @@ plt.show()
 #
 # Each builder takes a dictionary of parameters keyed by their Rust names.
 # Omitted parameters take the MAGICC7 defaults documented on each builder.
-# The cells below set the rest from the MAGICC7 configuration, as `run_magicc7` does.
+# The cells below set the rest from the MAGICC7 configuration, as `full.from_magicc7` does.
 # The helpers in `rscm.magicc.full` handle the components with long parameter lists.
 #
 # Natural CH4 and N2O emissions are not parameters MAGICC7 reads.
@@ -984,33 +985,45 @@ ax.legend(fontsize=8)
 plt.show()
 
 # %% [markdown]
-# ## The convenience path: `run_magicc7`
+# ## The packaged model: `emissions_driven`
 #
-# `rscm.magicc.run_magicc7` builds this whole chain for you, with the same lags.
-# It takes a time axis, the emissions and MAGICC7 parameter names, and returns the run model.
+# `full.from_magicc7` repeats the set-up above.
+# It translates the emissions and MAGICC7 parameter names into a configuration and inputs.
 # It takes emissions in gcages units, such as `Mt CO2/yr`, unless `convention` is MAGICC7.
+# `rscm.magicc.emissions_driven.build_model` builds this whole chain from them, with the same lags,
+# and `run_model` builds and runs it.
 # With the same parameters it gives the same result as the hand-built model.
 
 # %%
 time_axis = TimeAxis.from_values(years)
-convenience = run_magicc7(
+config, inputs = full.from_magicc7(
     time_axis, emissions, parameters=parameters, convention=Convention.MAGICC7
 )
-convenience_temperature = (
-    convenience.timeseries()
+packaged = emissions_driven.run_model(config, inputs, time_axis)
+packaged_temperature = (
+    packaged.timeseries()
     .get_four_box_timeseries_by_name("Surface Air Temperature Change")
     .values()
 )
 print(
     "Largest temperature difference: "
-    f"{np.abs(convenience_temperature - regional_temperature).max():.1e} K"
+    f"{np.abs(packaged_temperature - regional_temperature).max():.1e} K"
 )
-np.testing.assert_array_equal(convenience_temperature, regional_temperature)
+np.testing.assert_array_equal(packaged_temperature, regional_temperature)
 
 # %% [markdown]
-# Without `parameters`, `run_magicc7` uses MAGICC7's default configuration.
+# The configuration is a plain dict, keyed by component, that can be edited before building.
+# Its `initial_values` hold the state at the first time bound.
+
+# %%
+print(sorted(config["components"]))
+print(config["components"]["ClimateUDEB"]["ecs"])
+
+
+# %% [markdown]
+# Without `parameters`, `from_magicc7` uses MAGICC7's default configuration.
 # It prescribes concentrations from MAGICC7's packaged files until 2015
-# and calculates them from emissions after.
+# and the model calculates them from emissions after.
 # Natural emissions close the budget against those observed concentrations,
 # so CO2, CH4 and N2O follow the observations until 2015 rather than drifting.
 #
@@ -1018,18 +1031,27 @@ np.testing.assert_array_equal(convenience_temperature, regional_temperature)
 # A small sweep over `core_climatesensitivity` (ECS) shows the carbon-cycle feedback at work:
 # a more sensitive climate warms more, which weakens the land and ocean sinks and leaves more CO2 in the air.
 # The sweep uses the emissions-driven configuration so that CO2 responds from 1750.
+# It loads the input files once and shares them between the translations.
+
 
 # %%
-default = run_magicc7(time_axis, emissions, convention=Convention.MAGICC7).timeseries()
-sweep = {}
-for ecs in (2.0, 3.0, 4.5):
-    run = run_magicc7(
-        time_axis,
-        emissions,
-        parameters=parameters | {"core_climatesensitivity": ecs},
-        convention=Convention.MAGICC7,
+def run_magicc7(**kwargs):
+    """Translate a MAGICC7 configuration and run the emissions-driven model."""
+    config, inputs = full.from_magicc7(
+        time_axis, emissions, convention=Convention.MAGICC7, **kwargs
     )
-    sweep[ecs] = run.timeseries()
+    return emissions_driven.run_model(config, inputs, time_axis).timeseries()
+
+
+input_files = full.load_inputs()
+default = run_magicc7(input_files=input_files)
+sweep = {
+    ecs: run_magicc7(
+        parameters=parameters | {"core_climatesensitivity": ecs},
+        input_files=input_files,
+    )
+    for ecs in (2.0, 3.0, 4.5)
+}
 
 # %% tags=["remove_input"]
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
@@ -1052,50 +1074,62 @@ fig.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ## The smaller runners
+# ## The concentration-driven model
 #
-# `rscm.magicc` also has `run_magicc` and `run_magicc_emissions`, which couple only part of the chain
-# and take one global series for all other forcing.
-# [MAGICC runs](../../magicc_runs/) compares the three runners.
+# MAGICC7 runs concentration-driven by moving every switch year past the end of the run.
+# RSCM keeps that as a separate model, `rscm.magicc.concentration_driven`,
+# because it calculates inverse emissions only for CH4.
+# It has the same components and forces every switch year to infinity.
+# `from_magicc7` with `concentration_driven=True` prescribes every concentration for the whole run.
 #
-# Feeding `run_magicc` the concentrations from the hand-built run, with the rest of the forcing as one series,
-# shows the size of that simplification.
-# Outputs calculated during a step have no value in the first year,
-# so the first year of the other forcing comes from the initial forcing instead.
+# The carbon cycle still follows the prescribed CO2,
+# and `CH4Chemistry` writes the anthropogenic CH4 emissions that reproduce the prescribed CH4.
 
 # %%
-ghg_forcing = sum(series(f"{ERF}|{gas}") for gas in ("CO2", "CH4", "N2O"))
-other_forcing = series(ERF) - ghg_forcing
-other_forcing[0], _ = aggregation.aggregate(initial_agents)
-result = run_magicc(
+config, inputs = full.from_magicc7(
     time_axis,
-    {gas: series(f"Atmospheric Concentrations|{gas}") for gas in ("CO2", "CH4", "N2O")},
-    other_forcing=other_forcing,
-    forcing_parameters={
-        f"{gas.lower()}_pi": initial_concentrations[gas]
-        for gas in ("CO2", "CH4", "N2O")
-    },
-    climate_parameters={"ecs": parameters["core_climatesensitivity"]},
+    emissions,
+    parameters=parameters,
+    input_files=input_files,
+    convention=Convention.MAGICC7,
+    concentration_driven=True,
 )
+concentrations = concentration_driven.run_model(config, inputs, time_axis).timeseries()
 
 # %% [markdown]
-# Without monthly volcanic forcing, its temperature misses the eruptions but otherwise stays close.
+# Until 2015 its temperature matches the MAGICC7 default run, which prescribes the same concentrations.
+# The inverse CH4 emissions are those that reproduce the prescribed CH4.
 
 # %% tags=["remove_input"]
-fig, ax = plt.subplots(figsize=(10, 4))
-ax.plot(years, global_temperature, label="Full chain")
-ax.plot(
-    result.years, result.values["Surface Air Temperature Change"], label="run_magicc"
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+axes[0].plot(years, global_temperature, label="Emissions-driven")
+for label, timeseries in (
+    ("MAGICC7 default", default),
+    ("Concentration-driven", concentrations),
+):
+    boxes = timeseries.get_four_box_timeseries_by_name(
+        "Surface Air Temperature Change"
+    ).values()
+    axes[0].plot(years, boxes @ area, label=label)
+axes[0].set_title("Surface air temperature change (K)")
+axes[0].legend()
+axes[1].plot(
+    years[:-1],
+    concentrations.get_timeseries_by_name("Inverse Emissions|CH4").values()[:-1],
+    label="Inverse",
 )
-ax.set_ylabel("K relative to 1750")
-ax.set_title("Surface air temperature change")
-ax.legend()
+axes[1].plot(
+    years, emissions["CH4|Fossil"] + emissions["CH4|Biosphere"], label="Scenario"
+)
+axes[1].set_title("Anthropogenic CH4 emissions (Mt CH4/yr)")
+axes[1].legend()
+fig.tight_layout()
 plt.show()
 
 # %% [markdown]
 # ## What is validated
 #
 # This notebook checks one configuration, the emissions-driven SSP2-4.5 run with permafrost.
-# The regression tests hold `run_magicc7` to MAGICC7 in several more,
+# The regression tests hold both packaged models to MAGICC7 in several more,
 # and [Agreement with MAGICC7](../../magicc_runs/#agreement-with-magicc7) lists them.
 # The [known gaps](../../modules/#known-gaps) list what the port leaves out.

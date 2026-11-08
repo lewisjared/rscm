@@ -22,7 +22,7 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 
 1. [Coupled Models](notebooks/coupled_model.py): Combine components
 2. [A Coupled MAGICC Model](notebooks/magicc_coupled_model.py): Assemble MAGICC7's full chain
-3. [MAGICC Runs](magicc_runs.md): `run_magicc7` and the smaller runners
+3. [MAGICC Runs](magicc_runs.md): the emissions-driven and concentration-driven models
 
 ### Creating New Components
 
@@ -133,7 +133,8 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 - Map MAGICC modules onto RSCM components and configure them from MAGICC7's parameter names
 - Feed prescribed forcing in on the four-box grid
 - Couple chemistry, carbon cycle, forcing, climate and sea level with `ModelBuilder`
-- Check the hand-built model against MAGICC7 v7.5.3 and `run_magicc7`
+- Check the hand-built model against MAGICC7 v7.5.3 and the packaged emissions-driven model
+- Run the concentration-driven model from the same configuration
 
 [**Start Tutorial: A Coupled MAGICC Model**](notebooks/magicc_coupled_model.py)
 

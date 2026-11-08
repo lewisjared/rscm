@@ -17,15 +17,16 @@ The climate module runs monthly substeps inside the year.
 ## RSCM implementation
 
 - **Component**: `Model`, built with `rscm.core.ModelBuilder`.
-  `rscm.magicc.full.run_magicc7` assembles the MAGICC7 chain with MAGICC7's defaults.
-- **Source**: `python/rscm/magicc/full.py` for the chain,
+  `rscm.magicc.emissions_driven` and `rscm.magicc.concentration_driven` assemble the MAGICC7 chain,
+  and `rscm.magicc.full.from_magicc7` configures it with MAGICC7's defaults.
+- **Source**: `python/rscm/magicc/model.py` for the chain, `python/rscm/magicc/full.py` for the translation,
   and `crates/rscm-core/src/model/` for the model.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
-- **Tests**: `tests/regression/test_full_run.py::test_run_magicc7_defaults`
+- **Tests**: `tests/regression/test_full_run.py::test_default_run`
   checks temperature, every concentration and total ERF against MAGICC7 v7.5.3.
-  `test_run_magicc7_rejects_bad_emissions` checks the emissions validation.
+  `test_from_magicc7_rejects_bad_emissions` checks the emissions validation.
   `test_coupled_run` covers the chain with permafrost and the parameter variants.
-  [MAGICC runs](../magicc_runs.md#full-magicc7-chain) shows how to use it.
+  [MAGICC runs](../magicc_runs.md#running-a-magicc7-configuration) shows how to use it.
 
 RSCM has no `magicc_step_year`.
 Each MAGICC7 module is a component, and the `Model` solves them in dependency order every annual step.
@@ -56,7 +57,7 @@ Inputs and outputs use MAGICC7's Fortran names.
 | 10    | [Sea Level Rise](module_14_sea_level_rise.md)             | `TEMP_OCEANLAYERS`, `DAT_SURFACE_TEMP`, `DAT_HEATCONTENT_AGGREG` | Sea level components and total                       | `SeaLevelRise`                                     |
 
 Steps 1 to 8 run inside `DELTAQ`.
-`run_magicc7` adds the halocarbons before the terrestrial carbon cycle.
+The MAGICC models add the halocarbons before the terrestrial carbon cycle.
 The two are independent, so the order does not change the result.
 
 ### Feedback loops
@@ -231,7 +232,7 @@ Updated once a year, for the next year's index:
 ## Differences from MAGICC7
 
 - The last year runs 12 substeps where MAGICC7 runs 11 (see [time conventions](time_conventions.md)).
-- `run_magicc7` supports only `co2_plantboxresp_method` 2.
+- `from_magicc7` supports only `co2_plantboxresp_method` 2.
 
 ## References
 

@@ -216,7 +216,7 @@ RSCM reproduces each of these.
 - **Surface forcing**: RSCM does not calculate `DAT_TOTAER_DIR_SRF`.
   MAGICC7 leaves BC on snow out of it.
 - **Rust component**: `AerosolDirect` (`crates/rscm-magicc/src/forcing/aerosol_direct.rs`)
-  is a simplified version with no MAGICC7 parity test, and `run_magicc7` does not use it.
+  is a simplified version with no MAGICC7 parity test, and the MAGICC models do not use it.
   It takes global emissions, combines sources and scales forcing linearly with emissions.
   It spreads the forcing over the four boxes with species-weighted regional patterns.
   It has no dust, BC on snow or Hauglustaine nitrate.

@@ -33,16 +33,20 @@ FLATTENED_PACKAGES = {"rscm.config"}
 # Per-module mkdocstrings options, merged over the defaults in mkdocs.yml.
 DIRECTIVE_OPTIONS: dict[str, dict[str, Any]] = {
     "rscm": {"members": False},
-    # run_magicc7 is documented once, on rscm.magicc.full.
-    "rscm.magicc": {"filters": ["!^_[^_]", "!^run_magicc7$"]},
+    # Re-exports are documented once, on their own modules.
+    "rscm.magicc": {
+        "filters": [
+            "!^_[^_]",
+            "!^(from_magicc7|with_lags|concentration_driven|emissions_driven)$",
+        ]
+    },
     "rscm.magicc.full": {
         "group_by_category": False,
         "members": [
-            "run_magicc7",
+            "from_magicc7",
             "default_parameters",
             "load_inputs",
             "natural_emissions",
-            "run_components",
             "default_initial_concentrations",
             "climate_parameters",
             "forcing_agents",

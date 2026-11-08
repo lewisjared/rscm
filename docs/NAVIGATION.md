@@ -17,7 +17,6 @@ See https://oprypin.github.io/mkdocs-literate-nav/
   * [MAGICC Coupled Model](notebooks/magicc_coupled_model.py)
 * Reference
   * [MAGICC Runs](magicc_runs.md)
-  * [MAGICC Concentration Baseline](magicc_baseline.md)
   * [FaIR Runs](fair_runs.md)
   * [MAGICC Modules](modules/README.md)
   * [ClimateUDEB Time Conventions](modules/time_conventions.md)

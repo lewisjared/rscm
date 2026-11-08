@@ -27,7 +27,7 @@ See [issues in MAGICC7](#issues-in-magicc7).
   parameters in `crates/rscm-magicc/src/parameters/nitrogen.rs`.
   Deposition from emissions is calculated in Python by `rscm.magicc.full.nitrogen_inputs`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
-  `rscm.magicc.full.run_magicc7` reads `ncycle_apply` and the `ncycle_*` parameters.
+  `rscm.magicc.full.from_magicc7` reads `ncycle_apply` and the `ncycle_*` parameters.
 - **Tests**: `tests/regression/test_full_run.py::test_nitrogen_coupled_run` runs the coupled SSP245 chain
   with deposition from emissions and fixation from `NCYCLE_NFIX3.IN`.
   Temperature and concentrations reach parity with MAGICC7 v7.5.3's binary output to a relative 1e-9.

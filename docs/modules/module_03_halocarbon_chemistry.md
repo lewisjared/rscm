@@ -25,7 +25,7 @@ from which [ozone](module_04_ozone.md#stratospheric-ozone) calculates stratosphe
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
 - **Tests**: `test_halocarbons` in `tests/regression/test_full_run.py` runs all 41 species from emissions
   and checks their concentrations, the F-gas and Montreal Protocol forcing, and EESC.
-  `test_run_magicc7_defaults` checks every concentration in MAGICC7's default run.
+  `test_default_run` checks every concentration in MAGICC7's default run.
   Both Rust files have unit tests.
 
 `HalocarbonChemistry` outputs each species' forcing as `Effective Radiative Forcing|F-Gases|<species>`

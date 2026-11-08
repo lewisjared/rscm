@@ -28,7 +28,7 @@ Each has its own start year and can be switched independently.
 - **Source**: `crates/rscm-magicc/src/climate/sea_level.rs` and `climate/udeb/mod.rs`,
   parameters in `parameters/sea_level.rs`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
-  `rscm.magicc.full.run_magicc7` adds both with `out_sealevel=1`. MAGICC7's default is 0.
+  `rscm.magicc.full.from_magicc7` adds both with `out_sealevel=1`. MAGICC7's default is 0.
 - **Tests**: `tests/regression/test_sea_level.py::test_contribution` runs the coupled chain
   on MAGICC7 v7.5.3's SSP245 emissions run with sea level (`04_ssp245_emissions_sealevel`)
   and checks parity for every contribution and the total against MAGICC7's binary output.
