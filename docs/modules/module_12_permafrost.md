@@ -34,7 +34,7 @@ and the CO2 and CH4 released add to atmospheric concentrations.
 - **Component**: `Permafrost`, built from Python with `rscm.magicc.PermafrostBuilder`.
 - **Source**: `crates/rscm-magicc/src/carbon/permafrost.rs`, parameters in `parameters/permafrost.rs`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
-  `rscm.magicc.full.run_magicc7` adds it with `pf_apply`, which MAGICC7 sets to 1 by default.
+  `rscm.magicc.full.from_magicc7` adds it with `pf_apply`, which MAGICC7 sets to 1 by default.
 - **Tests**: `tests/regression/test_full_run.py::test_permafrost` drives `Permafrost`
   with MAGICC7's full-precision temperature.
   It reaches bit-for-bit parity on MAGICC7's thawed area and CO2 and CH4 emissions.

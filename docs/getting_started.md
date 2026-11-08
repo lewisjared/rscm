@@ -122,7 +122,8 @@ RSCM ships with pre-built components for common climate modelling tasks:
 | `CO2ERFBuilder`                 | `rscm.components` | CO2 concentration to effective radiative forcing  |
 | `FourBoxOceanHeatUptakeBuilder` | `rscm.components` | Example four-box disaggregation of scalar forcing |
 
-`rscm.magicc` reimplements MAGICC7's modules, and `rscm.magicc.full.run_magicc7` runs the full chain.
+`rscm.magicc` reimplements MAGICC7's modules,
+and `rscm.magicc.emissions_driven` and `rscm.magicc.concentration_driven` build the full chain.
 See [MAGICC Runs](magicc_runs.md) to run it, and the [MAGICC module specs](modules/README.md) for each module.
 
 The [Components](components/index.md) reference lists the inputs, outputs and parameters of every component.

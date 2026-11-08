@@ -22,12 +22,12 @@ This page collects the parts that belong to neither carbon module.
   with parameters in `crates/rscm-magicc/src/parameters/co2_budget.rs`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
 - **Tests**: `tests/regression/test_full_run.py::test_coupled_run` checks CO2 from emissions,
-  and `test_run_magicc7_defaults` checks CO2 prescribed up to 2015 and calculated after.
+  and `test_default_run` checks CO2 prescribed up to 2015 and calculated after.
   `crates/rscm-magicc/tests/carbon_cycle_physics.rs` checks the mass balance
   with the land and ocean components.
 
 `OceanCarbon` integrates atmospheric CO2 over its monthly substeps, as MAGICC7 does.
-With `ocean_end_of_year`, which `run_magicc7` sets,
+With `ocean_end_of_year`, which `from_magicc7` sets,
 `CO2Budget` takes next year's concentration from that integration.
 Without it, the annual mass balance below gives the same value up to rounding.
 

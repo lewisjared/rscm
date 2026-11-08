@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from rscm.core import GridType, TimeAxis
-from rscm.magicc import full
+from rscm.magicc import full, model
 from rscm.magicc import prescribed as pr
 from rscm.names import Convention
 
@@ -82,17 +82,14 @@ def test_load_inputs_skips_missing_concentration_files():
         full.prescribed_concentrations(np.arange(1750.0, 1800.0), p, inputs)
 
 
-@pytest.mark.parametrize(
-    ("argument", "value"),
-    [
-        ("component_parameters", {"NotAComponent": {}}),
-        ("initial_concentrations", {"HFC4310": 0.0}),  # naming: allow
-    ],
-)
-def test_run_magicc7_rejects_unknown_keys(argument, value):
+def test_from_magicc7_rejects_unknown_initial_concentrations():
     time_axis = TimeAxis.from_values(np.arange(1750.0, 1753.0))
-    with pytest.raises(ValueError, match=f"unknown {argument}"):
-        full.run_magicc7(time_axis, {}, **{argument: value})
+    with pytest.raises(ValueError, match="unknown initial_concentrations"):
+        full.from_magicc7(
+            time_axis,
+            {},
+            initial_concentrations={"HFC4310": 0.0},  # naming: allow
+        )
 
 
 def test_schema_keeps_the_finest_grid():
@@ -100,7 +97,7 @@ def test_schema_keeps_the_finest_grid():
     temperature = SimpleNamespace(name="T", unit="K", grid=GridType.FourBox)
     component = SimpleNamespace(definitions=lambda: [erf, temperature])
 
-    schema = full._schema([component], {"ERF": (np.zeros((3, 2)), "W/m^2")})
+    schema = model._schema([component], {"ERF": (np.zeros((3, 2)), "W/m^2")})
 
     assert schema.variables["ERF"].grid == GridType.Hemispheric
     assert schema.variables["T"].grid == GridType.FourBox

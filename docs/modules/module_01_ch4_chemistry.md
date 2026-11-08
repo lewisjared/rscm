@@ -19,7 +19,7 @@ whose oxidation adds CO2 to fossil emissions.
 - **Source**: `crates/rscm-magicc/src/chemistry/ch4.rs`
   and `crates/rscm-magicc/src/chemistry/ch4_oxidation.rs`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
-- **Tests**: `test_coupled_run` and `test_run_magicc7_defaults` in `tests/regression/test_full_run.py`
+- **Tests**: `test_coupled_run` and `test_default_run` in `tests/regression/test_full_run.py`
   check the CH4 concentration, and `test_coupled_run` the CO2 that oxidation adds.
   `tests/test_magicc_full.py` checks the budget-closing natural emissions,
   and `tests/test_magicc_emissions.py::test_ch4_budget_shared_between_chemistry_and_oxidation`

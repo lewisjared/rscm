@@ -21,7 +21,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 from regression import full_run
 
-from rscm.magicc import full
+from rscm.magicc import emissions_driven, full
 
 _time_axis: Any = None
 _emissions: Any = None
@@ -36,16 +36,17 @@ def _init() -> None:
         full_run.emissions(run),
         full.load_inputs(),
     )
-    full.run_magicc7(_time_axis, _emissions, inputs=_inputs)
+    _run(3.0)
 
 
 def _run(ecs: float) -> None:
-    full.run_magicc7(
+    config, inputs = full.from_magicc7(
         _time_axis,
         _emissions,
         parameters={"core_climatesensitivity": ecs},
-        inputs=_inputs,
+        input_files=_inputs,
     )
+    emissions_driven.run_model(config, inputs, _time_axis)
 
 
 def main() -> None:

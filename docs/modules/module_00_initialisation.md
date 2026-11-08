@@ -21,7 +21,7 @@ The work is split between the model framework and the MAGICC7 runner:
   see [Key Concepts](../key_concepts.md#modelbuilder-pattern).
   `Timeseries` and `TimeseriesCollection` replace the `DATASTORE`,
   and the `FourBox` grid replaces `DATBOX`, see [Spatial Grids](../grids.md#four_box-magicc-standard).
-- **MAGICC7 initialisation**: `rscm.magicc.full.run_magicc7` (`python/rscm/magicc/full.py`).
+- **MAGICC7 initialisation**: `rscm.magicc.full.from_magicc7` (`python/rscm/magicc/full.py`).
   `default_parameters` returns MAGICC7 v7.5.3's defaults,
   packaged in `python/rscm/magicc/data/magicc7/defaults.json`.
   `load_inputs` reads the packaged input files, `prescribed_concentrations` the concentration files
@@ -31,7 +31,7 @@ The work is split between the model framework and the MAGICC7 runner:
 - **Climate feedback parameters**: LAMCALC runs inside `ClimateUDEB`
   (`crates/rscm-magicc/src/climate/lamcalc.rs`), see [climate](module_08_climate.md).
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
-- **Tests**: every coupled run starts from this set-up, so `test_coupled_run` and `test_run_magicc7_defaults`
+- **Tests**: every coupled run starts from this set-up, so `test_coupled_run` and `test_default_run`
   in `tests/regression/test_full_run.py` cover it.
   `tests/test_magicc_full.py` checks that the natural emissions close the CH4 and N2O budgets.
   `crates/rscm-magicc/tests/lamcalc_integration.rs` and `lamcalc_reference_values.rs` test LAMCALC.
@@ -180,12 +180,12 @@ The defaults of each module's own parameters are on its page.
 - **No global state**: RSCM components receive their parameters and inputs explicitly,
   so there is nothing to allocate or free between runs.
 - **Configuration**: RSCM reads no namelists.
-  `run_magicc7` takes a mapping that overrides `default_parameters`, with lowercase MAGICC7 names.
-- **Scenario files**: `run_magicc7` takes emissions as arrays with one value per year,
+  `from_magicc7` takes a mapping that overrides `default_parameters`, with lowercase MAGICC7 names.
+- **Scenario files**: `from_magicc7` takes emissions as arrays with one value per year,
   instead of reading and merging `.SCEN7` files.
 - **Natural emissions**: MAGICC7 adds them to `DAT_CH4N_EMIS` and `DAT_N2ON_EMIS`.
   RSCM passes them to `CH4Chemistry` and `N2OChemistry` as constant parameters.
-  `natural_emissions` calculates MAGICC7's budget-closing values, and `run_magicc7` passes them in.
+  `natural_emissions` calculates MAGICC7's budget-closing values, and `from_magicc7` passes them in.
 
 ## References
 

@@ -23,9 +23,9 @@ It is also a testbed for modularising MAGICC and reimplementing it in Rust.
   * The terrestrial carbon cycle with nitrogen limitation, ocean carbon, CO2 budget and permafrost.
   * GHG, ozone and aerosol forcing, and forcing aggregation with efficacies.
   * The upwelling-diffusion climate and sea level rise.
-* `rscm.magicc.full.run_magicc7`, which runs the full MAGICC7 chain from emissions.
-  It matches MAGICC7 v7.5.3 on its default SSP245 run.
-* Simpler MAGICC runners for concentration-driven and emissions-driven experiments.
+* Emissions-driven and concentration-driven MAGICC models (`rscm.magicc.emissions_driven`,
+  `rscm.magicc.concentration_driven`), with `rscm.magicc.full.from_magicc7` to translate MAGICC7's configuration.
+  They match MAGICC7 v7.5.3 on its SSP245 runs.
 * MCMC calibration and point estimation (`rscm.calibrate`).
 
 <!--- --8<-- [end:description] -->

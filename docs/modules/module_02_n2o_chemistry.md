@@ -20,7 +20,7 @@ Three effects modify the lifetime:
 - **Component**: `N2OChemistry` (Python builder `rscm.magicc.N2OChemistryBuilder`).
 - **Source**: `crates/rscm-magicc/src/chemistry/n2o.rs`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
-- **Tests**: `test_coupled_run` and `test_run_magicc7_defaults` in `tests/regression/test_full_run.py`
+- **Tests**: `test_coupled_run` and `test_default_run` in `tests/regression/test_full_run.py`
   check the N2O concentration.
   `tests/test_magicc_full.py::test_natural_emissions_close_budget` checks the budget-closing
   natural emissions.

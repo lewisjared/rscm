@@ -216,11 +216,11 @@ RSCM reproduces each of these.
 
 - **Pre-industrial concentrations**: MAGICC7 takes them from the concentration files.
   `GHGForcing` takes `co2_pi`, `ch4_pi` and `n2o_pi` as parameters,
-  and `run_magicc7` sets them to MAGICC7's 1750 concentrations.
+  and `from_magicc7` sets them to MAGICC7's 1750 concentrations.
   There is no `CO2_PREINDCO2CONC_APPLY` switch.
 - **Rapid adjustment with IPCCTAR**: MAGICC7 applies `CORE_RFRAPIDADJUST_*` only with OLBL.
   `GHGForcing` applies its `adjust_*` factors with either method,
-  so `run_magicc7` sets them to 1 for IPCCTAR.
+  so `from_magicc7` sets them to 1 for IPCCTAR.
 
 ## References
 

@@ -118,7 +118,7 @@ Before the climate model reports them it uses the configured ECS and $Q_{2\times
 
 ### Agent inventory
 
-The agents of MAGICC7's default total, with their RSCM input in `run_magicc7`.
+The agents of MAGICC7's default total, with their RSCM input in `from_magicc7`.
 "Global" agents are spread with their pattern, and "box" agents enter as four-box values.
 Internal efficacies are the defaults in `python/rscm/magicc/data/magicc7/defaults.json`, rounded.
 `SRF_FACTOR_*` sets each agent's surface forcing, which RSCM does not calculate.
@@ -264,8 +264,8 @@ RSCM applies the land use and mineral dust holds in `rscm.magicc.prescribed`, an
 
 ### Building a total with VariableSchema
 
-The simpler runners do not need MAGICC7's efficacies or summation order.
-They declare the total as an aggregate in a [VariableSchema](../key_concepts.md#variable-schema):
+A model that does not need MAGICC7's efficacies or summation order
+can declare the total as an aggregate in a [VariableSchema](../key_concepts.md#variable-schema):
 
 ```python
 from rscm.core import VariableSchema
@@ -280,11 +280,11 @@ for agent in agents:
 schema.add_aggregate(ERF, "W/m^2", "sum", agents)
 ```
 
-`run_magicc` and `run_magicc_emissions` build total ERF this way, as a plain sum,
-so they write none of the subtotals in [Reported subtotals](#reported-subtotals).
+A total built this way is a plain sum,
+so the model writes none of the subtotals in [Reported subtotals](#reported-subtotals).
 `ClimateUDEB` then applies the CO2 efficacy and regional pattern to that total
 (see [climate](module_08_climate.md)).
-`rscm.magicc.full.run_magicc7` uses `ForcingAggregation` instead.
+The MAGICC models in `rscm.magicc` use `ForcingAggregation` instead.
 See the [tutorials](../tutorials.md) for a walkthrough.
 
 ## Numerical considerations

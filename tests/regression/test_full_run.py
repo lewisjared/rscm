@@ -21,7 +21,8 @@ from rscm._lib.magicc import (
     PermafrostBuilder,
 )
 from rscm.core import VariableRole
-from rscm.magicc import full
+from rscm.magicc import emissions_driven, full
+from rscm.magicc import model as magicc_model
 from rscm.magicc import prescribed as pr
 from rscm.names import (
     EFFICACY_ADJUSTED_ERF,
@@ -68,7 +69,7 @@ def test_halocarbons():
         else run.series(f"Atmospheric Concentrations|{s}")[0]
         for s in species
     }
-    model = full_run.run_components(
+    model = full_run.run_from_components(
         run.time_axis,
         [component],
         prescribed=prescribed,
@@ -127,7 +128,7 @@ def test_ozone():
             "K",
         ),
     }
-    model = full_run.run_components(
+    model = full_run.run_from_components(
         run.time_axis, [component], prescribed=prescribed, lags=_lag_temperature
     )
 
@@ -173,7 +174,7 @@ def test_ch4_oxidation_strat_h2o():
         "Atmospheric Concentrations|CH4": (ch4, "ppb"),
         "Atmospheric Concentrations|N2O": (n2o, "ppb"),
     }
-    model = full_run.run_components(
+    model = full_run.run_from_components(
         run.time_axis, [builder.build()], prescribed=prescribed
     )
     agent = "CH4 Oxidation Stratospheric H2O"
@@ -197,7 +198,7 @@ def test_climate():
     climate = ClimateUDEBBuilder.from_parameters(full_run.climate_parameters(run))
     boxes = run.boxes("TOTAL_EFFRF")
     units = {"CO2": "ppm", "CH4": "ppb", "N2O": "ppb"}
-    model = full_run.run_components(
+    model = full_run.run_from_components(
         run.time_axis,
         [ghg.build(), climate.build()],
         prescribed={
@@ -246,7 +247,7 @@ def test_permafrost():
     component = PermafrostBuilder.from_parameters(
         full.permafrost_parameters(run.parameters)
     ).build()
-    model = full_run.run_components(
+    model = full_run.run_from_components(
         run.time_axis,
         [component],
         prescribed={
@@ -284,13 +285,13 @@ WRITES = (VariableRole.Output, VariableRole.State)
 
 
 def _prescribing(modelled, variable):
-    """`full.run_components` with `variable`'s producer replaced by `modelled` outputs.
+    """`build_from_components` with `variable`'s producer replaced by `modelled`.
 
     Every output of the producer that another component reads is prescribed.
     The runner's lags stay as they are.
     """
     outputs = _all_outputs(modelled)
-    run_components = full.run_components
+    build_from_components = magicc_model.build_from_components
 
     def run(time_axis, components, *, prescribed, initial_values, **kwargs):
         def writes(c):
@@ -310,7 +311,7 @@ def _prescribing(modelled, variable):
             if name in read
         }
         assert variable in replaced
-        return run_components(
+        return build_from_components(
             time_axis,
             kept,
             prescribed={**prescribed, **replaced},
@@ -335,7 +336,9 @@ def test_prescribed_output_matches_modelled(monkeypatch, load, variable):
     """Prescribing a variable with its modelled values reproduces the run exactly."""
     run = load()
     modelled = full_run.run_coupled(run)
-    monkeypatch.setattr(full, "run_components", _prescribing(modelled, variable))
+    monkeypatch.setattr(
+        magicc_model, "build_from_components", _prescribing(modelled, variable)
+    )
     prescribed = _all_outputs(full_run.run_coupled(run))
     expected = _all_outputs(modelled)
     assert variable in prescribed
@@ -418,7 +421,7 @@ def test_nitrogen_coupled_run():
     _assert_concentrations(model, run, ("CO2", "CH4", "N2O"))
 
 
-def test_run_magicc7_defaults():
+def test_default_run():
     """The packaged defaults reproduce MAGICC7's default run.
 
     It prescribes concentrations up to 2015 and has permafrost.
@@ -432,7 +435,29 @@ def test_run_magicc7_defaults():
     _assert_total_erf(model, run)
 
 
-def test_run_magicc7_reads_no_files_given_inputs(monkeypatch):
+def test_concentration_driven_run():
+    """The concentration-driven model against MAGICC7 with switches after the run."""
+    run = full_run.load_concentrations()
+    model = full_run.concentration_model()
+    _assert_temperature(model, run)
+    _assert_concentrations(
+        model, run, ("CO2", "CH4", "N2O", *full.halocarbon_species())
+    )
+    _assert_total_erf(model, run)
+    land = "Net Atmosphere to Land Flux|CO2"
+    full_run.assert_close(full_run.output(model, land)[:-1], run.series(land)[:-1])
+    # MAGICC7 labels the ocean flux by the end of its year
+    ocean = "Net Atmosphere to Ocean Flux|CO2"
+    full_run.assert_close(full_run.output(model, ocean)[:-1], run.series(ocean)[1:])
+    # Within 0.2%, worst in the 1750s
+    npt.assert_allclose(
+        full_run.output(model, "Inverse Emissions|CH4")[:-1],
+        run.series("CH4_INVERSE_EMMS")[:-1],
+        rtol=2e-3,
+    )
+
+
+def test_from_magicc7_reads_no_files_given_input_files(monkeypatch):
     """Loaded inputs reproduce the default run without reading a file."""
     run = full_run.load_default()
     inputs = full.load_inputs()
@@ -442,15 +467,16 @@ def test_run_magicc7_reads_no_files_given_inputs(monkeypatch):
         pytest.fail(f"read {path}")
 
     monkeypatch.setattr(full.pr, "read_input", no_reads)
-    model = full.run_magicc7(
+    config, prescribed = full.from_magicc7(
         run.time_axis,
         full_run.magicc7_emissions(run),
-        inputs=inputs,
+        input_files=inputs,
         convention=Convention.MAGICC7,
     )
+    result = emissions_driven.run_model(config, prescribed, run.time_axis)
     for name in ("Atmospheric Concentrations|CO2", ERF):
         npt.assert_array_equal(
-            full_run.output(model, name),
+            full_run.output(result, name),
             full_run.output(expected, name),
             err_msg=name,
         )
@@ -464,9 +490,9 @@ def test_run_magicc7_reads_no_files_given_inputs(monkeypatch):
         (lambda e: e.update({"CFC11": e["CFC11"][:-1]}), "one per year"),
     ],
 )
-def test_run_magicc7_rejects_bad_emissions(change, match):
+def test_from_magicc7_rejects_bad_emissions(change, match):
     run = full_run.load()
     emissions = full_run.emissions(run)
     change(emissions)
     with pytest.raises(ValueError, match=match):
-        full.run_magicc7(run.time_axis, emissions)
+        full.from_magicc7(run.time_axis, emissions)

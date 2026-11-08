@@ -1,13 +1,16 @@
-"""Runs of the full MAGICC7 chain from emissions.
+"""Translate MAGICC7's configuration and input files into an RSCM MAGICC model.
 
-`run_magicc7` couples every MAGICC7 process RSCM implements:
-chemistry, the carbon cycle, permafrost, GHG and ozone forcing,
+`from_magicc7` turns MAGICC7 parameters, input files and emissions
+into the configuration and inputs that [rscm.magicc.emissions_driven][]
+and [rscm.magicc.concentration_driven][] build.
+It covers chemistry, the carbon cycle, permafrost, GHG and ozone forcing,
 the forcing MAGICC7 prescribes from its input files, forcing aggregation
 with efficacies and regional patterns, and ClimateUDEB with monthly volcanic forcing.
 
 Parameters use MAGICC7's configuration names in lower case,
 such as ``core_climatesensitivity``.
-`default_parameters` gives MAGICC7 v7.5.3's defaults for every name the chain reads,
+`default_parameters` gives MAGICC7 v7.5.3's defaults
+for every name the translation reads,
 and the packaged input files are those of its default SSP245 run.
 """
 
@@ -22,45 +25,22 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from rscm._lib.magicc import (
-    CH4ChemistryBuilder,
-    CH4OxidationBuilder,
-    ClimateUDEBBuilder,
-    CO2BudgetBuilder,
-    ForcingAggregationBuilder,
-    GHGForcingBuilder,
-    HalocarbonChemistryBuilder,
-    N2OChemistryBuilder,
-    OceanCarbonBuilder,
-    OzoneForcingBuilder,
-    PermafrostBuilder,
-    SeaLevelRiseBuilder,
-    TerrestrialCarbonBuilder,
-)
-from rscm.core import (
-    FourBoxTimeseries,
-    GridType,
-    HemisphericTimeseries,
-    InterpolationStrategy,
-    ModelBuilder,
-    TimeAxis,
-    Timeseries,
-    VariableRole,
-    VariableSchema,
-)
+from rscm._lib.magicc import ClimateUDEBBuilder, HalocarbonChemistryBuilder
+from rscm.core import TimeAxis
+from rscm.magicc import emissions_driven, model
 from rscm.magicc import prescribed as pr
-from rscm.magicc.runner import CH4_OTHER_LIFETIMES, _ch4_burdens, _ch4_non_oh_lifetime
 from rscm.names import (
+    ATMOSPHERIC_BURDEN_CH4_BIOSPHERE,
+    ATMOSPHERIC_BURDEN_CH4_FOSSIL,
+    ATMOSPHERIC_BURDEN_CH4_NATURAL,
+    ATMOSPHERIC_BURDEN_CH4_PERMAFROST,
     ATMOSPHERIC_CONCENTRATIONS,
-    ATMOSPHERIC_CONCENTRATIONS_CO2,
     CARBON_POOL_DETRITUS,
     CARBON_POOL_PLANT,
     CARBON_POOL_SOIL,
     CUMULATIVE_CARBON_UPTAKE_OCEAN,
-    EFFICACY_ADJUSTED_ERF,
     EMISSIONS,
     EMISSIONS_UNITS,
-    EQUILIBRIUM_CLIMATE_SENSITIVITY,
     ERF,
     ERF_F_GASES,
     MAGICC7_EMISSIONS_UNITS,
@@ -68,7 +48,6 @@ from rscm.names import (
     NITROGEN_FLUX_FIXATION,
     OCEAN_SURFACE_PARTIAL_PRESSURE_CO2,
     SECTORS,
-    SURFACE_AIR_TEMPERATURE_CHANGE,
     Convention,
     child,
     emissions_conversion_factor,
@@ -77,12 +56,14 @@ from rscm.names import (
 from rscm.names import prescribed as prescribed_input
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm._lib.core import RustComponent
     from rscm.core import Model
+    from rscm.magicc.model import ModelConfig
+
+    Inputs = dict[str, tuple[NDArray[np.float64], str]]
 
 __all__ = [
     "EFFICACY_METHODS",
@@ -96,6 +77,7 @@ __all__ = [
     "default_parameters",
     "efficacy_climate",
     "forcing_agents",
+    "from_magicc7",
     "halocarbon_species",
     "load_inputs",
     "magicc7_units",
@@ -106,20 +88,9 @@ __all__ = [
     "permafrost_parameters",
     "prescribed_concentrations",
     "prescribed_forcing",
-    "run_components",
-    "run_magicc7",
-    "with_lags",
 ]
 
 DATA = Path(__file__).parent / "data" / "magicc7"
-# MAGICC7 feeds back last year's temperature, CO2 and climate sensitivity.
-_LAG = (SURFACE_AIR_TEMPERATURE_CHANGE,)
-_LAG_FOR = (
-    (ATMOSPHERIC_CONCENTRATIONS_CO2, "TerrestrialCarbon"),
-    (ATMOSPHERIC_CONCENTRATIONS_CO2, "OceanCarbon"),
-    (EQUILIBRIUM_CLIMATE_SENSITIVITY, "ForcingAggregation"),
-)
-
 SECTORAL_EMISSIONS = {
     species: EMISSIONS_UNITS[species]
     for species in ("CO2", "CH4", "N2O", "SOx", "BC", "OC", "NOx", "NH3", "CO", "NMVOC")
@@ -243,23 +214,6 @@ SUMMATION: list[Any] = [
 ]
 """Order in which MAGICC7 adds the agents into its total, nesting its subtotals."""
 
-COMPONENTS = (
-    "CH4Chemistry",
-    "CH4Oxidation",
-    "CO2Budget",
-    "ClimateUDEB",
-    "ForcingAggregation",
-    "GHGForcing",
-    "HalocarbonChemistry",
-    "N2OChemistry",
-    "OceanCarbon",
-    "OzoneForcing",
-    "Permafrost",
-    "SeaLevelRise",
-    "TerrestrialCarbon",
-)
-"""Components of `run_magicc7` that ``component_parameters`` can override."""
-
 EFFICACY_ERF_2XCO2 = 3.71
 """
 2xCO2 effective radiative forcing behind MAGICC7's internal efficacies
@@ -316,6 +270,30 @@ CLIMATE_PARAMETERS = {
     "land_heat_capacity_effective_thickness": "core_landhc_effthickness",
 }
 """ClimateUDEB parameters and their MAGICC7 names."""
+
+
+# CH4Chemistry defaults of the lifetimes combined into ``non_oh_lifetime``
+CH4_OTHER_LIFETIMES = {
+    "soil_lifetime": 150.0,
+    "stratospheric_lifetime": 120.0,
+    "tropospheric_cl_lifetime": 200.0,
+}
+
+
+# CH4 lifetime against soil, stratospheric and chlorine loss, as in MAGICC7
+_CH4_NON_OH_LIFETIME = 1.0 / sum(1.0 / tau for tau in CH4_OTHER_LIFETIMES.values())
+
+
+def _ch4_burdens(
+    concentration: float, tg_per_ppb: float, mixing_box_size: float
+) -> dict[str, float]:
+    """Return initial CH4Oxidation pools, with all CH4 natural as in MAGICC7."""
+    return {
+        ATMOSPHERIC_BURDEN_CH4_FOSSIL: 0.0,
+        ATMOSPHERIC_BURDEN_CH4_BIOSPHERE: 0.0,
+        ATMOSPHERIC_BURDEN_CH4_PERMAFROST: 0.0,
+        ATMOSPHERIC_BURDEN_CH4_NATURAL: tg_per_ppb * concentration * mixing_box_size,
+    }
 
 
 @cache
@@ -876,95 +854,10 @@ def nitrogen_inputs(
     return out
 
 
-def _grid(values: NDArray[np.float64]) -> GridType:
-    if values.ndim == 1:
-        return GridType.Scalar
-    return GridType.FourBox if values.shape[1] == 4 else GridType.Hemispheric  # noqa: PLR2004
-
-
-_GRID_RESOLUTION = (GridType.Scalar, GridType.Hemispheric, GridType.FourBox)
-
-
-def _schema(
-    components: Sequence[RustComponent],
-    prescribed: Mapping[str, tuple[NDArray[np.float64], str]],
-) -> VariableSchema:
-    variables = {
-        name: (unit, _grid(np.asarray(values)))
-        for name, (values, unit) in prescribed.items()
-    }
-    for component in components:
-        for d in component.definitions():
-            _, grid = variables.get(d.name, (d.unit, d.grid))
-            variables[d.name] = (d.unit, max(grid, d.grid, key=_GRID_RESOLUTION.index))
-    schema = VariableSchema()
-    for name, (unit, grid) in variables.items():
-        schema.add_variable(name, unit, grid)
-    return schema
-
-
-def _timeseries(
-    values: NDArray[np.float64], axis: TimeAxis, unit: str
-) -> Timeseries | FourBoxTimeseries | HemisphericTimeseries:
-    grid = _grid(values)
-    if grid == GridType.FourBox:
-        return FourBoxTimeseries(values, axis, unit, InterpolationStrategy.Linear)
-    if grid == GridType.Hemispheric:
-        return HemisphericTimeseries(values, axis, unit, InterpolationStrategy.Linear)
-    return Timeseries(values, axis, unit, InterpolationStrategy.Linear)
-
-
-def with_lags(builder: ModelBuilder) -> ModelBuilder:
-    """Add MAGICC7's feedback lags to a builder of the `run_magicc7` chain."""
-    for variable in _LAG:
-        builder.with_lag(variable)
-    for variable, consumer in _LAG_FOR:
-        builder.with_lag_for(variable, consumer)
-    return builder
-
-
-def run_components(  # noqa: PLR0913
-    time_axis: TimeAxis,
-    components: Sequence[RustComponent],
-    *,
-    prescribed: Mapping[str, tuple[NDArray[np.float64], str]] = {},
-    initial_values: Mapping[str, float] = {},
-    initial_grid_values: Mapping[str, Sequence[float]] = {},
-    lags: Callable[[ModelBuilder], object] | None = None,
-) -> Model:
-    """Run components with prescribed inputs and return the model.
-
-    ``prescribed`` maps each name to its values and unit.
-    The values' shape sets the grid: one value per step for a scalar,
-    four columns for four-box and two for hemispheric.
-    Scalar readers of a four-box variable see its area-weighted mean.
-    ``lags`` adds feedback lags to the builder, such as `with_lags`.
-    """
-    builder = ModelBuilder().with_time_axis(time_axis)
-    if any(d.grid == GridType.FourBox for c in components for d in c.definitions()):
-        builder.with_schema(_schema(components, prescribed))
-        builder.with_grid_weights(GridType.FourBox, list(pr.area_fractions()))
-    for component in components:
-        builder.with_component(component)
-    if lags is not None:
-        lags(builder)
-    for name, (values, unit) in prescribed.items():
-        builder.with_prescribed_variable(
-            name, _timeseries(np.asarray(values, dtype=np.float64), time_axis, unit)
-        )
-    builder.with_initial_values(dict(initial_values))
-    builder.with_initial_grid_values(
-        {k: list(v) for k, v in initial_grid_values.items()}
-    )
-    model = builder.build()
-    model.run()
-    return model
-
-
 def magicc7_units(
     emissions: Mapping[str, NDArray[np.float64]],
 ) -> dict[str, NDArray[np.float64]]:
-    """Emissions as for `run_magicc7`, converted to the units MAGICC7 calculates in.
+    """Emissions as for `from_magicc7`, converted to the units MAGICC7 calculates in.
 
     NH3 becomes Mt N/yr, which the unit parser cannot convert to.
     """
@@ -1021,7 +914,8 @@ def natural_emissions(
     As in MAGICC7, the budget covers the ``<gas>_budget_avgyears`` years
     up to ``<gas>_lastbudgetyear``, with mid-year concentrations and emissions
     and the initial lifetime.
-    ``emissions`` is as for `run_magicc7`, on ``years``, in the units of ``convention``.
+    ``emissions`` is as for `from_magicc7`, on ``years``,
+    in the units of ``convention``.
     Gases whose budget years are not all in ``years`` are left out.
     ``inputs`` defaults to `load_inputs` of ``parameters``.
     """
@@ -1036,7 +930,7 @@ def natural_emissions(
         },
         convention,
     )
-    non_oh_lifetime = _ch4_non_oh_lifetime(CH4_OTHER_LIFETIMES)
+    non_oh_lifetime = _CH4_NON_OH_LIFETIME
     oh_lifetime = 1.0 / (1.0 / p["ch4_tautot_init"] - 1.0 / non_oh_lifetime)
     budget = {
         "CH4": (
@@ -1081,94 +975,125 @@ def _override[T](
     return {**defaults, **(given or {})}
 
 
-def run_magicc7(  # noqa: PLR0913
+def _pre_run_fgas(
+    config: ModelConfig, inputs: Inputs, time: NDArray[np.float64]
+) -> list[float]:
+    """F-gas forcing in the second year of a two-year run of ``config``."""
+    result = emissions_driven.run_model(
+        config,
+        {name: (values[:2], unit) for name, (values, unit) in inputs.items()},
+        TimeAxis.from_values(time[:2]),
+    )
+    return _second_year(result, ERF_F_GASES)
+
+
+def _second_year(model: Model, name: str) -> list[float]:
+    ts = model.timeseries()
+    boxes = ts.get_four_box_timeseries_by_name(name)
+    if boxes is not None:
+        return [float(v) for v in boxes.values()[1]]
+    scalar = ts.get_timeseries_by_name(name)
+    if scalar is None:
+        msg = f"missing {name}"
+        raise KeyError(msg)
+    return [float(scalar.values()[1])]
+
+
+def from_magicc7(  # noqa: PLR0913
     time_axis: TimeAxis,
     emissions: Mapping[str, ArrayLike],
     *,
     parameters: Mapping[str, Any] | None = None,
-    inputs: Mapping[str, pr.AerosolHistory] | None = None,
+    input_files: Mapping[str, pr.AerosolHistory] | None = None,
     initial_concentrations: Mapping[str, float] | None = None,
-    component_parameters: Mapping[str, Mapping[str, Any]] | None = None,
     convention: Convention | str = Convention.RSCM,
-) -> Model:
-    """Run the full MAGICC7 chain from emissions and return the run model.
+    concentration_driven: bool = False,
+) -> tuple[ModelConfig, Inputs]:
+    """Translate a MAGICC7 run into the configuration and inputs of a MAGICC model.
 
     ``time_axis`` has annual steps starting in the preindustrial year,
     1750 in MAGICC7's default configuration.
-    ``emissions`` has one value per step for ``"<species>|Fossil"`` and
+    ``emissions`` has one value per year for ``"<species>|Fossil"`` and
     ``"<species>|Biosphere"`` of each species in `SECTORAL_EMISSIONS`, in its unit,
     and for each name from `halocarbon_species`, in kt of the gas per year.
     ``convention`` set to MAGICC7 takes them in `MAGICC7_EMISSIONS_UNITS` instead.
 
-    ``parameters`` overrides `default_parameters`, and ``pf_apply`` enables permafrost.
+    ``parameters`` overrides `default_parameters`.
     Concentrations follow MAGICC7's files until ``<gas>_switchfromconc2emis_year``,
     see `prescribed_concentrations`.
-    ``out_sealevel`` adds sea level rise with MAGICC7's default sea level parameters.
-    ``inputs`` replaces the files from `load_inputs`.
-    Load them once and pass them to every run of an ensemble that shares its files.
+    ``concentration_driven`` prescribes them for the whole run,
+    for [rscm.magicc.concentration_driven][].
+    ``input_files`` replaces the files from `load_inputs`.
+    Load them once and pass them to every translation of an ensemble.
     ``initial_concentrations`` overrides `default_initial_concentrations`.
-    ``component_parameters`` overrides the parameters of single components,
-    keyed by component name such as ``"TerrestrialCarbon"``.
+
+    As in MAGICC7, the F-gas forcing at the first time bound is that of the second year,
+    which a two-year run of the translated configuration calculates.
     """
-    if len(time_axis) < 2 or np.any(np.diff(time_axis.bounds()) != 1.0):  # noqa: PLR2004
-        msg = "time_axis must have at least two annual steps"
-        raise ValueError(msg)
+    model.check_axis(time_axis)
     time = np.asarray(time_axis.values(), dtype=np.float64)
-    p = ChainMap(cast("dict[str, Any]", parameters or {}), default_parameters())
-    files = dict(inputs) if inputs is not None else load_inputs(p)
+    driver = (
+        {f"{group}_switchfromconc2emis_year": np.inf for group in CONCENTRATION_UNITS}
+        if concentration_driven
+        else {}
+    )
+    p = ChainMap(driver, cast("dict[str, Any]", parameters or {}), default_parameters())
+    files = dict(input_files) if input_files is not None else load_inputs(p)
     conc = _override(
         "initial_concentrations",
         default_initial_concentrations(),
         initial_concentrations,
     )
-    no_overrides: dict[str, Mapping[str, Any]] = {name: {} for name in COMPONENTS}
-    overrides = _override("component_parameters", no_overrides, component_parameters)
     species = halocarbon_species()
     data = _validate_emissions(emissions, len(time), species)
     native = _native(data, convention)
+    if p["co2_plantboxresp_method"] != 2:  # noqa: PLR2004
+        msg = "only co2_plantboxresp_method 2 is implemented"
+        raise ValueError(msg)
 
-    def params(name: str, base: Mapping[str, Any]) -> Any:
-        return {**base, **overrides[name]}
-
-    sealevel = bool(p["out_sealevel"])
-    climate_base = climate_parameters(p, files, time[0], time[-1])
-    if sealevel:
-        climate_base["thermal_expansion"] = {}
-    climate = ClimateUDEBBuilder.from_parameters(params("ClimateUDEB", climate_base))
+    climate = climate_parameters(p, files, time[0], time[-1])
+    if p["out_sealevel"]:
+        climate["thermal_expansion"] = {}
     prescribed = prescribed_forcing(time, native, p, files)
     agents = forcing_agents(p, time, prescribed, native)
-    aggregation = ForcingAggregationBuilder.from_parameters(
-        params(
-            "ForcingAggregation",
-            {
-                "agents": agents,
-                "efficacy_method": EFFICACY_METHODS[p["rf_efficacy_apply"]],
-                "climate": efficacy_climate(climate_base),
-                "summation": _summation(SUMMATION),
-            },
-        )
-    )
-    biomass = prescribed[BIOMASS_AGENTS[0]]
-    for name in BIOMASS_AGENTS[1:]:
-        biomass = biomass + prescribed[name]
-    rf0 = {**prescribed, BIOMASS: biomass}
-    initial_agents = [
-        list(rf0.get(a["variable"].removeprefix(ERF + "|"), np.zeros((1, 4)))[0])
-        if a["regional"]
-        else [0.0]
-        for a in agents
-    ]
     permafrost = {"include_permafrost": bool(p["pf_apply"])}
     switch = concentration_switch_years(time, p)
     nitrogen = nitrogen_parameters(p)
     source = "ncycle" if nitrogen and p["ncycle_apply_cn_initial_values"] else "co2"
-    if p["co2_plantboxresp_method"] != 2:  # noqa: PLR2004
-        msg = "only co2_plantboxresp_method 2 is implemented"
-        raise ValueError(msg)
     feedback = bool(p["co2_tempfeedback_switch"])
-    terrestrial = params(
-        "TerrestrialCarbon",
-        {
+    natural = natural_emissions(time, native, p, files, Convention.MAGICC7)
+    components: dict[str, dict[str, Any]] = {
+        "CH4Chemistry": {
+            **permafrost,
+            "concentration_switch_year": switch["ch4"],
+            "initial_ch4_lifetime": p["ch4_tautot_init"],
+            "tg_per_ppb": p["ch4_ppb2tgch4"],
+            "mixing_box_size": p["ch4_mixboxsize"],
+            **_natural(natural, "CH4"),
+        },
+        "CH4Oxidation": {
+            **permafrost,
+            "permafrost_fraction": p["pf_co2fromch4oxinatm_fraction"],
+            "tg_per_ppb": p["ch4_ppb2tgch4"],
+            "mixing_box_size": p["ch4_mixboxsize"],
+            **_natural(natural, "CH4"),
+        },
+        "N2OChemistry": {
+            "concentration_switch_year": switch["n2o"],
+            "initial_n2o_lifetime": p["n2o_tauinit"],
+            "tg_per_ppb": p["n2o_ppb2tgn"],
+            **_natural(natural, "N2O"),
+        },
+        "HalocarbonChemistry": {
+            "fgas_switch_year": switch["fgas"],
+            "montreal_gases_switch_year": switch["mhalo"],
+            "fgas_regions": {
+                "regional_pattern": p["rf_regions_fgas"],
+                "lower_lifetime": p["fgas_rf_regionscaling_lowertau"],
+                "upper_lifetime": p["fgas_rf_regionscaling_uppertau"],
+            },
+        },
+        "TerrestrialCarbon": {
             **{
                 f"{pool}_pool_pi": p[f"{source}_{pool}pool_initial"]
                 for pool in ("plant", "detritus", "soil")
@@ -1183,127 +1108,42 @@ def run_magicc7(  # noqa: PLR0913
             "plant_respiration_fertilisation_scale": p["co2_plantboxresp_fertscale"],
             "nitrogen": nitrogen,
         },
-    )
-    natural = natural_emissions(time, native, p, files, Convention.MAGICC7)
-    components = [
-        CH4ChemistryBuilder.from_parameters(
-            params(
-                "CH4Chemistry",
-                {
-                    **permafrost,
-                    "concentration_switch_year": switch["ch4"],
-                    "initial_ch4_lifetime": p["ch4_tautot_init"],
-                    "tg_per_ppb": p["ch4_ppb2tgch4"],
-                    "mixing_box_size": p["ch4_mixboxsize"],
-                    **_natural(natural, "CH4"),
-                },
-            )
-        ).build(),
-        CH4OxidationBuilder.from_parameters(
-            params(
-                "CH4Oxidation",
-                {
-                    **permafrost,
-                    "permafrost_fraction": p["pf_co2fromch4oxinatm_fraction"],
-                    "tg_per_ppb": p["ch4_ppb2tgch4"],
-                    "mixing_box_size": p["ch4_mixboxsize"],
-                    **_natural(natural, "CH4"),
-                },
-            )
-        ).build(),
-        N2OChemistryBuilder.from_parameters(
-            params(
-                "N2OChemistry",
-                {
-                    "concentration_switch_year": switch["n2o"],
-                    "initial_n2o_lifetime": p["n2o_tauinit"],
-                    "tg_per_ppb": p["n2o_ppb2tgn"],
-                    **_natural(natural, "N2O"),
-                },
-            )
-        ).build(),
-        HalocarbonChemistryBuilder.from_parameters(
-            params(
-                "HalocarbonChemistry",
-                {
-                    "fgas_switch_year": switch["fgas"],
-                    "montreal_gases_switch_year": switch["mhalo"],
-                    "fgas_regions": {
-                        "regional_pattern": p["rf_regions_fgas"],
-                        "lower_lifetime": p["fgas_rf_regionscaling_lowertau"],
-                        "upper_lifetime": p["fgas_rf_regionscaling_uppertau"],
-                    },
-                },
-            )
-        ).build(),
-        TerrestrialCarbonBuilder.from_parameters(cast("Any", terrestrial)).build(),
-        OceanCarbonBuilder.from_parameters(
-            params(
-                "OceanCarbon",
-                {**permafrost, "concentration_switch_year": switch["co2"]},
-            )
-        ).build(),
-        CO2BudgetBuilder.from_parameters(
-            params(
-                "CO2Budget",
-                {
-                    **permafrost,
-                    "concentration_switch_year": switch["co2"],
-                    "ocean_end_of_year": True,
-                },
-            )
-        ).build(),
-        GHGForcingBuilder.from_parameters(
-            params(
-                "GHGForcing",
-                {
-                    **{f"{gas.lower()}_pi": conc[gas] for gas in ("CO2", "CH4", "N2O")},
-                    **_ghg_method(p),
-                    "ch4_stratospheric_h2o_fraction": p["ch4_addedstrath2o_percent"],
-                },
-            )
-        ).build(),
-        OzoneForcingBuilder.from_parameters(
-            params("OzoneForcing", ozone_parameters(p))
-        ).build(),
-        aggregation.build(),
-        climate.build(),
-    ]
-    sea_level = (
-        [SeaLevelRiseBuilder.from_parameters(params("SeaLevelRise", {})).build()]
-        if sealevel
-        else []
-    )
-    components.extend(sea_level)
+        "OceanCarbon": {**permafrost, "concentration_switch_year": switch["co2"]},
+        "CO2Budget": {
+            **permafrost,
+            "concentration_switch_year": switch["co2"],
+            "ocean_end_of_year": True,
+        },
+        "GHGForcing": {
+            **{f"{gas.lower()}_pi": conc[gas] for gas in ("CO2", "CH4", "N2O")},
+            **_ghg_method(p),
+            "ch4_stratospheric_h2o_fraction": p["ch4_addedstrath2o_percent"],
+        },
+        "OzoneForcing": ozone_parameters(p),
+        "ForcingAggregation": {
+            "agents": agents,
+            "efficacy_method": EFFICACY_METHODS[p["rf_efficacy_apply"]],
+            "climate": efficacy_climate(climate),
+            "summation": _summation(SUMMATION),
+        },
+        "ClimateUDEB": climate,
+    }
     if permafrost["include_permafrost"]:
-        components.insert(
-            0,
-            PermafrostBuilder.from_parameters(
-                params("Permafrost", permafrost_parameters(p))
-            ).build(),
-        )
+        components["Permafrost"] = permafrost_parameters(p)
+    if p["out_sealevel"]:
+        components["SeaLevelRise"] = {}
+    terrestrial = components["TerrestrialCarbon"]
     initial = {
         **{child(ATMOSPHERIC_CONCENTRATIONS, gas): c for gas, c in conc.items()},
         **_ch4_burdens(conc["CH4"], p["ch4_ppb2tgch4"], p["ch4_mixboxsize"]),
         OCEAN_SURFACE_PARTIAL_PRESSURE_CO2: conc["CO2"],
         CUMULATIVE_CARBON_UPTAKE_OCEAN: 0.0,
-        **{
-            name: terrestrial[f"{pool}_pool_pi"]
-            for name, pool in (
-                (CARBON_POOL_PLANT, "plant"),
-                (CARBON_POOL_DETRITUS, "detritus"),
-                (CARBON_POOL_SOIL, "soil"),
-            )
-        },
-        **{
-            d.name: 0.0
-            for c in sea_level
-            for d in c.definitions()
-            if d.role == VariableRole.Output
-        },
+        CARBON_POOL_PLANT: terrestrial["plant_pool_pi"],
+        CARBON_POOL_DETRITUS: terrestrial["detritus_pool_pi"],
+        CARBON_POOL_SOIL: terrestrial["soil_pool_pi"],
     }
     # In the units MAGICC's components declare, so reading them needs no conversion.
-    prescribed_data = {
+    inputs: Inputs = {
         **{
             child(EMISSIONS, gas): (_total(native, gas), MAGICC7_EMISSIONS_UNITS[gas])
             for gas in ("CH4", "N2O", "NOx", "CO", "NMVOC")
@@ -1326,39 +1166,12 @@ def run_magicc7(  # noqa: PLR0913
         },
     }
     if nitrogen:
-        prescribed_data |= {
+        inputs |= {
             name: (values, "Gt N/yr")
             for name, values in nitrogen_inputs(time, native, p, files).items()
         }
-    prescribed_data |= {
-        child(ERF, name): (v, "W/m^2") for name, v in prescribed.items()
-    }
+    inputs |= {child(ERF, name): (v, "W/m^2") for name, v in prescribed.items()}
 
-    def run(n: int, agents: list[list[float]]) -> Model:
-        total, boxes = aggregation.aggregate(agents)
-        return run_components(
-            TimeAxis.from_values(time[:n]),
-            components,
-            prescribed={k: (v[:n], unit) for k, (v, unit) in prescribed_data.items()},
-            initial_values={**initial, **climate.initial_values(total)},
-            initial_grid_values={EFFICACY_ADJUSTED_ERF: boxes},
-            lags=with_lags,
-        )
-
-    # MAGICC7 starts from its second year's F-gas forcing.
-    fgas = [a["variable"] for a in agents].index(ERF_F_GASES)
-    initial_agents[fgas] = _second_year_fgas(run(2, initial_agents))
-    return run(len(time), initial_agents)
-
-
-def _second_year_fgas(model: Model) -> list[float]:
-    ts = model.timeseries()
-    name = ERF_F_GASES
-    boxes = ts.get_four_box_timeseries_by_name(name)
-    if boxes is not None:
-        return [float(v) for v in boxes.values()[1]]
-    scalar = ts.get_timeseries_by_name(name)
-    if scalar is None:
-        msg = f"missing {name}"
-        raise KeyError(msg)
-    return [float(scalar.values()[1])]
+    config: ModelConfig = {"components": components, "initial_values": initial}
+    config["initial_forcing"] = {ERF_F_GASES: _pre_run_fgas(config, inputs, time)}
+    return config, inputs

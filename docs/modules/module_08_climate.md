@@ -389,7 +389,7 @@ With `thermal_expansion` set it also writes `Annual Mean Surface Air Temperature
 ## Parameters
 
 Defaults are MAGICC7 v7.5.3's, from `run/MAGCFG_DEFAULTALL.CFG`.
-`run_magicc7` takes them from `python/rscm/magicc/data/magicc7/defaults.json`.
+`from_magicc7` takes them from `python/rscm/magicc/data/magicc7/defaults.json`.
 `ClimateUDEBParameters::default()` rounds some of them (for example `CORE_RLO` to 1.317).
 
 ### Equilibrium climate sensitivity

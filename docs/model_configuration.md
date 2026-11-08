@@ -301,8 +301,9 @@ It adds no prescribed inputs yet, as the [Quick Start](#quick-start) warns.
 `build_model` only supports `type = "two-layer"` and raises `ValueError` for any other model type.
 `MAGICCConfig` in `rscm.config.models.magicc` describes MAGICC parameters,
 but cannot yet be built into a model.
-`rscm.magicc.full.run_magicc7` runs the full MAGICC7 chain without the config layer.
-See [MAGICC Runs](magicc_runs.md#full-magicc7-chain).
+`rscm.magicc.full.from_magicc7` translates MAGICC7's configuration for the MAGICC models
+without the config layer.
+See [MAGICC Runs](magicc_runs.md#running-a-magicc7-configuration).
 
 ## Legacy Format Support (MAGICC)
 
@@ -378,8 +379,8 @@ stats = get_coverage_stats()
 | `NOT_NEEDED` | Output/file control handled differently |
 | `DEPRECATED` | Superseded in MAGICC7 |
 
-These statuses describe the config-layer mapping, not what `run_magicc7` supports.
-For example, `ch4_switchfromconc2emis_year` is `NOT_IMPLEMENTED` here, but `run_magicc7` reads it.
+These statuses describe the config-layer mapping, not what `from_magicc7` supports.
+For example, `ch4_switchfromconc2emis_year` is `NOT_IMPLEMENTED` here, but `from_magicc7` reads it.
 
 ## Schema Versioning
 

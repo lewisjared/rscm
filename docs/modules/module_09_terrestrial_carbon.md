@@ -386,9 +386,9 @@ Steps that only evaluate an equation above are named, not repeated.
 ## Differences from MAGICC7
 
 - Only respiration method 2 exists.
-  `run_magicc7` raises `ValueError` for any other `co2_plantboxresp_method`.
+  `from_magicc7` raises `ValueError` for any other `co2_plantboxresp_method`.
 - `CO2_FEEDTEMP_LANDONLY_APPLY` is not supported. The feedbacks use `Surface Air Temperature Change`.
-- `run_magicc7` maps `CO2_TEMPFEEDBACK_SWITCH = 0` to zero sensitivities.
+- `from_magicc7` maps `CO2_TEMPFEEDBACK_SWITCH = 0` to zero sensitivities.
 - RSCM adds guards: the fertilisation factor is floored at 0.1, turnover times at one year,
   and all three pools at zero.
   The parity tests agree with MAGICC7 to 1e-9, so the guards do not bind in those runs.
