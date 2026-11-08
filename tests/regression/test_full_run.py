@@ -467,6 +467,40 @@ def test_ar6_member(member):
     _assert_total_erf(model, run)
 
 
+def test_from_magicc7_fixes_bugs():
+    """Fixing the MAGICC7 bugs switches each off and moves the member it affects."""
+    run = full_run.load_ar6(444)
+    parameters = {**run.parameters, "out_sealevel": 1}
+    emissions = full_run.magicc7_emissions(run)
+    config, inputs = full.from_magicc7(
+        run.time_axis,
+        emissions,
+        parameters=parameters,
+        convention=Convention.MAGICC7,
+        bugs=(),
+    )
+    components = config["components"]
+    assert not components["ClimateUDEB"]["include_unset_lamcalc_error"]
+    assert not components["ForcingAggregation"]["climate"][
+        "include_unset_lamcalc_error"
+    ]
+    assert components["SeaLevelRise"]["antarctic_discharge"] == {
+        "include_response_overflow": False,
+        "include_early_release": False,
+    }
+    fixed = emissions_driven.setup_model(config, inputs, run.time_axis).run()
+
+    def temperature(model):
+        series = model.timeseries().get_four_box_timeseries_by_name(
+            SURFACE_AIR_TEMPERATURE_CHANGE
+        )
+        return series.values()[:-1]
+
+    assert not np.allclose(
+        temperature(fixed), temperature(full_run.ar6_model(444)), rtol=1e-9, atol=0
+    )
+
+
 def test_from_magicc7_reads_no_files_given_input_files(monkeypatch):
     """Loaded inputs reproduce the default run without reading a file."""
     run = full_run.load_default()

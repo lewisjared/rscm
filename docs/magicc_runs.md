@@ -240,6 +240,28 @@ With `Permafrost`, set `include_permafrost` on `CH4Chemistry`, `CH4Oxidation`, `
 and `CO2Budget` to feed permafrost emissions back, as `from_magicc7` does.
 They then read `Emissions|CH4|Permafrost` and `Emissions|CO2|Permafrost`.
 
+## MAGICC7 bugs
+
+`from_magicc7` reproduces the known bugs of MAGICC7 v7.5.3 by default, so its runs match that release.
+`full.MAGICC7_BUGS` names and describes each:
+
+- `unset_lamcalc_error`: LAMCALC reads its first error before setting it.
+- `nh3_deposition_counted_twice`: nitrogen deposition from emissions counts industrial NH3 twice
+  and leaves out biomass NH3.
+- `antarctic_response_overflow`: Antarctic discharge raises the response age to powers in 32-bit integers.
+- `antarctic_early_release`: a delayed Antarctic region releases a year of melt before it starts.
+
+`bugs` takes a release in `full.BUG_COMPATIBILITY` or the names to reproduce:
+
+```python
+config, inputs = full.from_magicc7(time_axis, emissions, bugs=())  # fix them all
+config, inputs = full.from_magicc7(time_axis, emissions, bugs=["unset_lamcalc_error"])
+```
+
+Each sets an `include_*` parameter of the component it affects,
+`ClimateUDEB` and `ForcingAggregation` for LAMCALC and `SeaLevelRise` for Antarctic discharge.
+The components default to reproducing them too.
+
 ## Agreement with MAGICC7
 
 `tests/regression/test_full_run.py` compares both models with MAGICC7 v7.5.3 runs of SSP2-4.5

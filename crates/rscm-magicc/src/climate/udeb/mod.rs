@@ -66,7 +66,7 @@
 
 mod ocean_column;
 
-use crate::climate::lamcalc::{self, LAMCALCParameters, LAMCALCResult};
+use crate::climate::lamcalc::{self, LAMCALCResult};
 use crate::climate::sea_level::thermal_expansion_increment;
 use crate::climate::state::{ClimateUDEBState, OceanAreaFactors};
 use crate::parameters::{
@@ -236,22 +236,14 @@ impl ClimateUDEB {
         // Calculate lambda_ocean and lambda_land via LAMCALC iteration.
         // This accounts for inter-box heat exchange when matching the
         // land-ocean warming ratio (RLO) at the given ECS.
-        let lam_result = lamcalc::lamcalc(&LAMCALCParameters {
-            erf_2xco2: parameters.erf_2xco2,
-            land_ocean_heat_exchange: parameters.land_ocean_heat_exchange,
-            north_south_heat_exchange: parameters.north_south_heat_exchange,
-            ecs: parameters.ecs,
-            land_ocean_warming_ratio: parameters.land_ocean_warming_ratio,
-            amplify_ocean_to_land: parameters.amplify_ocean_to_land,
-            grid: parameters.grid(),
-            co2_regional_pattern: parameters.co2_regional_pattern,
-        })
-        .ok_or_else(|| {
-            RSCMError::Error(format!(
-                "LAMCALC iteration failed to converge for ECS={}, RLO={}",
-                parameters.ecs, parameters.land_ocean_warming_ratio
-            ))
-        })?;
+        let lam_result =
+            lamcalc::lamcalc(&parameters.lamcalc_parameters(parameters.ecs, parameters.erf_2xco2))
+                .ok_or_else(|| {
+                    RSCMError::Error(format!(
+                        "LAMCALC iteration failed to converge for ECS={}, RLO={}",
+                        parameters.ecs, parameters.land_ocean_warming_ratio
+                    ))
+                })?;
         let lambda_ocean = lam_result.lambda_ocean;
         let lambda_land = lam_result.lambda_land;
         let matrix_inverse = lam_result.matrix_inverse;
@@ -456,17 +448,8 @@ impl ClimateUDEB {
         if ecs == self.parameters.ecs && erf_2xco2 == self.parameters.erf_2xco2 {
             return self.initial_sensitivity();
         }
-        lamcalc::lamcalc(&LAMCALCParameters {
-            erf_2xco2,
-            land_ocean_heat_exchange: self.parameters.land_ocean_heat_exchange,
-            north_south_heat_exchange: self.parameters.north_south_heat_exchange,
-            ecs,
-            land_ocean_warming_ratio: self.parameters.land_ocean_warming_ratio,
-            amplify_ocean_to_land: self.parameters.amplify_ocean_to_land,
-            grid: self.parameters.grid(),
-            co2_regional_pattern: self.parameters.co2_regional_pattern,
-        })
-        .unwrap_or_else(|| self.initial_sensitivity())
+        lamcalc::lamcalc(&self.parameters.lamcalc_parameters(ecs, erf_2xco2))
+            .unwrap_or_else(|| self.initial_sensitivity())
     }
 
     fn initial_sensitivity(&self) -> LAMCALCResult {

@@ -497,6 +497,7 @@ It gives up after 40 iterations.
 MAGICC7 never sets the error before the first step, `DIFF(1)`, and in practice reads a tiny positive value.
 So a first step that overshoots $RLO$ already counts as a sign change,
 and RSCM starts the error at the smallest positive normal float to take the same path.
+`include_unset_lamcalc_error=false` starts it at zero instead.
 Each iteration derives $\lambda_l$, builds and inverts $\mathbf{A}$,
 and compares the area-weighted land and ocean equilibrium temperatures with $RLO$.
 

@@ -56,7 +56,7 @@ from rscm.names import (
 from rscm.names import prescribed as prescribed_input
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Collection, Iterable, Mapping, Sequence
 
     from numpy.typing import ArrayLike, NDArray
 
@@ -66,8 +66,10 @@ if TYPE_CHECKING:
     Inputs = dict[str, tuple[NDArray[np.float64], str]]
 
 __all__ = [
+    "BUG_COMPATIBILITY",
     "EFFICACY_METHODS",
     "INPUT_FILES",
+    "MAGICC7_BUGS",
     "PRESCRIBED_AGENTS",
     "REWRITTEN_PARAMETERS",
     "SECTORAL_EMISSIONS",
@@ -88,6 +90,7 @@ __all__ = [
     "permafrost_parameters",
     "prescribed_concentrations",
     "prescribed_forcing",
+    "reproduced_bugs",
 ]
 
 DATA = Path(__file__).parent / "data" / "magicc7"
@@ -235,6 +238,48 @@ CALCULATED_AGENTS = {
     "Ozone|Temperature Feedback": "ozduetotemperature",
 }
 """Agents calculated during the run, and the MAGICC7 efficacy key of each."""
+
+MAGICC7_BUGS = {
+    "unset_lamcalc_error": "LAMCALC reads its first error, DIFF(1), before setting it.",
+    "nh3_deposition_counted_twice": (
+        "Deposition from emissions counts industrial NH3 twice"
+        " and leaves out biomass NH3."
+    ),
+    "antarctic_response_overflow": (
+        "Antarctic discharge raises the response age to powers in 32-bit integers."
+    ),
+    "antarctic_early_release": (
+        "A delayed Antarctic region releases a year of melt before it starts."
+    ),
+}
+"""Known MAGICC7 bugs that `from_magicc7` can reproduce, by name."""
+
+BUG_COMPATIBILITY = {"7.5.3": frozenset(MAGICC7_BUGS)}
+"""The `MAGICC7_BUGS` of each MAGICC7 release."""
+
+
+def reproduced_bugs(bugs: str | Collection[str]) -> frozenset[str]:
+    """Return the names in `MAGICC7_BUGS` that ``bugs`` reproduces.
+
+    ``bugs`` is a release in `BUG_COMPATIBILITY` or names from `MAGICC7_BUGS`.
+    """
+    if isinstance(bugs, str):
+        if bugs not in BUG_COMPATIBILITY:
+            msg = f"bugs must be one of {sorted(BUG_COMPATIBILITY)}, not {bugs!r}"
+            raise ValueError(msg)
+        return BUG_COMPATIBILITY[bugs]
+    unknown = set(bugs) - MAGICC7_BUGS.keys()
+    if unknown:
+        msg = f"unknown MAGICC7 bugs: {sorted(unknown)}"
+        raise ValueError(msg)
+    return frozenset(bugs)
+
+
+def _included(bugs: str | Collection[str]) -> dict[str, bool]:
+    """Whether ``bugs`` reproduces each of `MAGICC7_BUGS`."""
+    reproduced = reproduced_bugs(bugs)
+    return {name: name in reproduced for name in MAGICC7_BUGS}
+
 
 EFFICACY_METHODS = {0: "none", 1: "unit", 2: "ar6"}
 """Efficacy methods by MAGICC7's ``rf_efficacy_apply``."""
@@ -620,10 +665,12 @@ def climate_parameters(
     inputs: Mapping[str, pr.AerosolHistory],
     start_year: float,
     end_year: float | None = None,
+    bugs: str | Collection[str] = "7.5.3",
 ) -> dict[str, Any]:
     """ClimateUDEB parameters, with regional and monthly volcanic forcing.
 
     With ``end_year``, months after the run ends are left out.
+    ``bugs`` selects the bugs to reproduce, see `reproduced_bugs`.
     """
     p = parameters
     volcanic = inputs["file_volcanic_rf"]
@@ -642,6 +689,7 @@ def climate_parameters(
     base["upwelling_threshold_temperature_sh"] = p[
         f"core_upwell_thresh_temp_{southern}"
     ]
+    base["include_unset_lamcalc_error"] = _included(bugs)["unset_lamcalc_error"]
     initial = ClimateUDEBBuilder.from_parameters(
         cast("Any", {**base, "erf_2xco2": EFFICACY_ERF_2XCO2})
     ).internal_efficacy(pattern)
@@ -794,6 +842,7 @@ def efficacy_climate(climate: Mapping[str, Any]) -> dict[str, Any]:
         "land_ocean_warming_ratio",
         "amplify_ocean_to_land",
         "co2_regional_pattern",
+        "include_unset_lamcalc_error",
     )
     return {**{k: climate[k] for k in keys}, "erf_2xco2": EFFICACY_ERF_2XCO2}
 
@@ -916,10 +965,12 @@ def nitrogen_inputs(
     emissions: Mapping[str, NDArray[np.float64]],
     parameters: Mapping[str, Any],
     inputs: Mapping[str, pr.AerosolHistory],
+    bugs: str | Collection[str] = "7.5.3",
 ) -> dict[str, NDArray[np.float64]]:
     """Nitrogen deposition and fixation (Gt N/yr) driving the nitrogen limitation.
 
     ``emissions`` are in MAGICC7's units, see `magicc7_units`.
+    ``bugs`` selects the bugs to reproduce, see `reproduced_bugs`.
     A deposition file missing from ``inputs`` gives no deposition,
     as in MAGICC7 v7.5.3, which ships without its default deposition file.
     """
@@ -934,11 +985,12 @@ def nitrogen_inputs(
         return np.where(np.isnan(values), last, values)
 
     if p["ncycle_apply_ndep_from_emis"]:
-        # MAGICC7 counts industrial NH3 twice and leaves out biosphere NH3
+        twice = _included(bugs)["nh3_deposition_counted_twice"]
+        nh3 = emissions["NH3|Fossil" if twice else "NH3|Biosphere"]
         nitrogen = (
             emissions["NOx|Fossil"]
             + emissions["NOx|Biosphere"]
-            + 2.0 * emissions["NH3|Fossil"]
+            + (emissions["NH3|Fossil"] + nh3)
         )
         deposition = 1e-3 * p["ncycle_frac_ndep_land"] * nitrogen
     else:
@@ -1103,6 +1155,7 @@ def from_magicc7(  # noqa: PLR0913
     initial_concentrations: Mapping[str, float] | None = None,
     convention: Convention | str = Convention.RSCM,
     concentration_driven: bool = False,
+    bugs: str | Collection[str] = "7.5.3",
 ) -> tuple[ModelConfig, Inputs]:
     """Translate a MAGICC7 run into the configuration and inputs of a MAGICC model.
 
@@ -1121,6 +1174,8 @@ def from_magicc7(  # noqa: PLR0913
     ``input_files`` replaces the files from `load_inputs`.
     Load them once and pass them to every translation of an ensemble.
     ``initial_concentrations`` overrides `default_initial_concentrations`.
+    ``bugs`` names the MAGICC7 release whose known bugs to reproduce,
+    or the names from `MAGICC7_BUGS` to reproduce, so ``()`` fixes them all.
 
     As in MAGICC7, the F-gas forcing at the first time bound is that of the second year,
     which a two-year run of the translated configuration calculates.
@@ -1146,7 +1201,8 @@ def from_magicc7(  # noqa: PLR0913
         msg = "only co2_plantboxresp_method 2 is implemented"
         raise ValueError(msg)
 
-    climate = climate_parameters(p, files, time[0], time[-1])
+    include = _included(bugs)
+    climate = climate_parameters(p, files, time[0], time[-1], bugs)
     if p["out_sealevel"]:
         climate["thermal_expansion"] = {}
     prescribed = prescribed_forcing(time, native, p, files)
@@ -1231,7 +1287,12 @@ def from_magicc7(  # noqa: PLR0913
     if permafrost["include_permafrost"]:
         components["Permafrost"] = permafrost_parameters(p)
     if p["out_sealevel"]:
-        components["SeaLevelRise"] = {}
+        components["SeaLevelRise"] = {
+            "antarctic_discharge": {
+                "include_response_overflow": include["antarctic_response_overflow"],
+                "include_early_release": include["antarctic_early_release"],
+            }
+        }
     terrestrial = components["TerrestrialCarbon"]
     initial = {
         **{child(ATMOSPHERIC_CONCENTRATIONS, gas): c for gas, c in conc.items()},
@@ -1268,7 +1329,7 @@ def from_magicc7(  # noqa: PLR0913
     if nitrogen:
         inputs |= {
             name: (values, "Gt N/yr")
-            for name, values in nitrogen_inputs(time, native, p, files).items()
+            for name, values in nitrogen_inputs(time, native, p, files, bugs).items()
         }
     inputs |= {child(ERF, name): (v, "W/m^2") for name, v in prescribed.items()}
 

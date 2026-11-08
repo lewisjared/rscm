@@ -49,6 +49,10 @@ pub struct LAMCALCParameters {
     ///
     /// Reference: MAGICC7.f90 lines 8146-8165.
     pub co2_regional_pattern: [FloatValue; 4],
+    /// Reproduce MAGICC7 v7.5.3 reading the error before the first step, `DIFF(1)`, unset.
+    ///
+    /// When the first step overshoots, it then counts as a sign change.
+    pub include_unset_lamcalc_error: bool,
 }
 
 /// Result of the LAMCALC iteration.
@@ -230,8 +234,10 @@ pub fn lamcalc(params: &LAMCALCParameters) -> Option<LAMCALCResult> {
     // Storage for iteration history
     let mut lamo = vec![0.0; MAX_ITERATIONS + 2];
     let mut diff = vec![0.0; MAX_ITERATIONS + 2];
-    // MAGICC7 never sets DIFF(1) and reads a positive subnormal left on the stack.
-    diff[1] = FloatValue::MIN_POSITIVE;
+    if params.include_unset_lamcalc_error {
+        // MAGICC7 reads a positive subnormal left on the stack
+        diff[1] = FloatValue::MIN_POSITIVE;
+    }
 
     // Initial guesses
     lamo[1] = lam;
@@ -357,6 +363,7 @@ mod tests {
                 sh_land / 2.0,
             ]),
             co2_regional_pattern: [1.0; 4],
+            include_unset_lamcalc_error: true,
         }
     }
 
@@ -763,6 +770,13 @@ mod tests {
             "got {}",
             result.co2_internal_efficacy
         );
+
+        let fixed = lamcalc(&LAMCALCParameters {
+            include_unset_lamcalc_error: false,
+            ..params
+        })
+        .expect("LAMCALC should converge");
+        assert!((fixed.co2_internal_efficacy - result.co2_internal_efficacy).abs() > 1e-9);
     }
 
     #[test]

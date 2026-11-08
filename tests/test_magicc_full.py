@@ -101,3 +101,34 @@ def test_schema_keeps_the_finest_grid():
 
     assert schema.variables["ERF"].grid == GridType.Hemispheric
     assert schema.variables["T"].grid == GridType.FourBox
+
+
+def test_reproduced_bugs():
+    assert full.reproduced_bugs("7.5.3") == set(full.MAGICC7_BUGS)
+    assert full.reproduced_bugs(["unset_lamcalc_error"]) == {"unset_lamcalc_error"}
+    assert full.reproduced_bugs(()) == set()
+    with pytest.raises(ValueError, match="bugs must be one of"):
+        full.reproduced_bugs("7.6.0")
+    with pytest.raises(ValueError, match="unknown MAGICC7 bugs"):
+        full.reproduced_bugs(["lamcalc"])
+
+
+def test_nitrogen_deposition_fixes_nh3_double_count():
+    p = full.default_parameters() | {
+        "ncycle_apply_ndep_from_emis": 1,
+        "ncycle_apply_prognostic_nfix": 1,
+        "ncycle_frac_ndep_land": 1.0,
+    }
+    n = len(YEARS)
+    emissions = {
+        "NOx|Fossil": np.zeros(n),
+        "NOx|Biosphere": np.zeros(n),
+        "NH3|Fossil": np.ones(n),
+        "NH3|Biosphere": np.full(n, 2.0),
+    }
+
+    (reproduced,) = full.nitrogen_inputs(YEARS, emissions, p, {}).values()
+    (fixed,) = full.nitrogen_inputs(YEARS, emissions, p, {}, bugs=()).values()
+
+    np.testing.assert_allclose(reproduced, 2e-3)
+    np.testing.assert_allclose(fixed, 3e-3)

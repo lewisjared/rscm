@@ -106,6 +106,7 @@ impl ForcingAggregation {
             amplify_ocean_to_land: climate.amplify_ocean_to_land,
             grid: grid.clone(),
             co2_regional_pattern: climate.co2_regional_pattern,
+            include_unset_lamcalc_error: climate.include_unset_lamcalc_error,
         })?;
         Some(
             agents
