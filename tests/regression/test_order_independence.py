@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from functools import cache
 
 import numpy as np
 import pytest
@@ -57,12 +58,18 @@ def _shuffled(function, seed):
     return wrapper
 
 
+@cache
+def _input_files():
+    return full.load_inputs(full_run.load().parameters)
+
+
 def _run_magicc7(*, concentrations=False, **parameters):
     run = full_run.load()
     config, inputs = full.from_magicc7(
         run.time_axis,
         full_run.emissions(run),
         parameters={**run.parameters, **parameters},
+        input_files=_input_files(),
         concentration_driven=concentrations,
     )
     model = concentration_driven if concentrations else emissions_driven

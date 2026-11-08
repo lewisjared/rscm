@@ -27,7 +27,7 @@ import numpy as np
 
 from rscm._lib.magicc import ClimateUDEBBuilder, HalocarbonChemistryBuilder
 from rscm.core import TimeAxis
-from rscm.magicc import emissions_driven
+from rscm.magicc import emissions_driven, model
 from rscm.magicc import prescribed as pr
 from rscm.names import (
     ATMOSPHERIC_BURDEN_CH4_BIOSPHERE,
@@ -280,10 +280,8 @@ CH4_OTHER_LIFETIMES = {
 }
 
 
-def _ch4_non_oh_lifetime(lifetimes: Mapping[str, float]) -> float:
-    """CH4 lifetime against soil, stratospheric and chlorine loss, as in MAGICC7."""
-    tau = {**CH4_OTHER_LIFETIMES, **lifetimes}
-    return 1.0 / sum(1.0 / tau[k] for k in CH4_OTHER_LIFETIMES)
+# CH4 lifetime against soil, stratospheric and chlorine loss, as in MAGICC7
+_CH4_NON_OH_LIFETIME = 1.0 / sum(1.0 / tau for tau in CH4_OTHER_LIFETIMES.values())
 
 
 def _ch4_burdens(
@@ -932,7 +930,7 @@ def natural_emissions(
         },
         convention,
     )
-    non_oh_lifetime = _ch4_non_oh_lifetime(CH4_OTHER_LIFETIMES)
+    non_oh_lifetime = _CH4_NON_OH_LIFETIME
     oh_lifetime = 1.0 / (1.0 / p["ch4_tautot_init"] - 1.0 / non_oh_lifetime)
     budget = {
         "CH4": (
@@ -981,12 +979,12 @@ def _pre_run_fgas(
     config: ModelConfig, inputs: Inputs, time: NDArray[np.float64]
 ) -> list[float]:
     """F-gas forcing in the second year of a two-year run of ``config``."""
-    model = emissions_driven.run_model(
+    result = emissions_driven.run_model(
         config,
         {name: (values[:2], unit) for name, (values, unit) in inputs.items()},
         TimeAxis.from_values(time[:2]),
     )
-    return _second_year(model, ERF_F_GASES)
+    return _second_year(result, ERF_F_GASES)
 
 
 def _second_year(model: Model, name: str) -> list[float]:
@@ -1032,9 +1030,7 @@ def from_magicc7(  # noqa: PLR0913
     As in MAGICC7, the F-gas forcing at the first time bound is that of the second year,
     which a two-year run of the translated configuration calculates.
     """
-    if len(time_axis) < 2 or np.any(np.diff(time_axis.bounds()) != 1.0):  # noqa: PLR2004
-        msg = "time_axis must have at least two annual steps"
-        raise ValueError(msg)
+    model.check_axis(time_axis)
     time = np.asarray(time_axis.values(), dtype=np.float64)
     driver = (
         {f"{group}_switchfromconc2emis_year": np.inf for group in CONCENTRATION_UNITS}

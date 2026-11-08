@@ -25,8 +25,15 @@ def emissions():
 
 
 @pytest.fixture(scope="module")
-def translated(emissions):
-    return full.from_magicc7(TimeAxis.from_values(YEARS), emissions)
+def input_files():
+    return full.load_inputs()
+
+
+@pytest.fixture(scope="module")
+def translated(emissions, input_files):
+    return full.from_magicc7(
+        TimeAxis.from_values(YEARS), emissions, input_files=input_files
+    )
 
 
 def test_build_model_does_not_run(translated):
@@ -68,9 +75,11 @@ def test_build_model_rejects_inputs_off_the_axis(translated):
         )
 
 
-def test_concentration_driven_follows_prescribed_concentrations(emissions):
+def test_concentration_driven_follows_prescribed_concentrations(emissions, input_files):
     time_axis = TimeAxis.from_values(YEARS)
-    config, inputs = full.from_magicc7(time_axis, emissions, concentration_driven=True)
+    config, inputs = full.from_magicc7(
+        time_axis, emissions, input_files=input_files, concentration_driven=True
+    )
 
     assert config["components"]["CO2Budget"]["concentration_switch_year"] == math.inf
     model = concentration_driven.run_model(config, inputs, time_axis)

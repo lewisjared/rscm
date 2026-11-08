@@ -78,6 +78,7 @@ __all__ = [
     "ModelConfig",
     "build",
     "build_from_components",
+    "check_axis",
     "run_from_components",
     "with_lags",
 ]
@@ -204,7 +205,8 @@ def run_from_components(
     return model
 
 
-def _check_axis(time_axis: TimeAxis) -> None:
+def check_axis(time_axis: TimeAxis) -> None:
+    """Raise `ValueError` unless ``time_axis`` has at least two annual steps."""
     if len(time_axis) < 2 or np.any(np.diff(time_axis.bounds()) != 1.0):  # noqa: PLR2004
         msg = "time_axis must have at least two annual steps"
         raise ValueError(msg)
@@ -274,7 +276,7 @@ def build(
 
     ``time_axis`` has annual steps.
     """
-    _check_axis(time_axis)
+    check_axis(time_axis)
     prescribed = _on_axis(inputs, len(time_axis))
     builders = _builders(config, required, optional)
     components = {name: builder.build() for name, builder in builders.items()}
@@ -283,15 +285,13 @@ def build(
     total, boxes = builders["ForcingAggregation"].aggregate(
         _initial_forcing(agents, first, config.get("initial_forcing", {}))
     )
-    sea_level = {
-        d.name: 0.0
-        for d in (
-            components["SeaLevelRise"].definitions()
-            if "SeaLevelRise" in components
-            else []
-        )
-        if d.role == VariableRole.Output
-    }
+    sea_level = {}
+    if "SeaLevelRise" in components:
+        sea_level = {
+            d.name: 0.0
+            for d in components["SeaLevelRise"].definitions()
+            if d.role == VariableRole.Output
+        }
     return build_from_components(
         time_axis,
         list(components.values()),

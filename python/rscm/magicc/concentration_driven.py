@@ -30,30 +30,13 @@ import math
 from typing import TYPE_CHECKING, Any
 
 from rscm.magicc import model
+from rscm.magicc.emissions_driven import COMPONENTS, OPTIONAL_COMPONENTS
 
 if TYPE_CHECKING:
     from rscm.core import Model, TimeAxis
     from rscm.magicc.model import Inputs, ModelConfig
 
 __all__ = ["COMPONENTS", "OPTIONAL_COMPONENTS", "build_model", "run_model"]
-
-COMPONENTS = (
-    "CH4Chemistry",
-    "CH4Oxidation",
-    "N2OChemistry",
-    "HalocarbonChemistry",
-    "TerrestrialCarbon",
-    "OceanCarbon",
-    "CO2Budget",
-    "GHGForcing",
-    "OzoneForcing",
-    "ForcingAggregation",
-    "ClimateUDEB",
-)
-"""Components the configuration must give parameters for."""
-
-OPTIONAL_COMPONENTS = ("Permafrost", "SeaLevelRise")
-"""Components the model includes when the configuration gives their parameters."""
 
 _PRESCRIBED: dict[str, dict[str, Any]] = {
     "CH4Chemistry": {"concentration_switch_year": math.inf},
