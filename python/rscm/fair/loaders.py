@@ -168,7 +168,7 @@ def read_calibration(
     The stochastic parameters are ignored, so the members run deterministically.
     Parameters of species missing from the configuration are skipped.
     FaIR ignores `forcing_scale` for prescribed forcing,
-    so scale it in the inputs as fair-calibrate does, see `build_model`.
+    so scale it in the inputs as fair-calibrate does, see `setup_model`.
     """
     import pandas as pd  # noqa: PLC0415
 

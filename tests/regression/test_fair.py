@@ -40,7 +40,6 @@ from rscm.fair import (
     prescribed_forcing_scales,
     read_calibration,
     run_ensemble,
-    run_model,
     setup_model,
     with_lags,
 )
@@ -166,11 +165,11 @@ def load(case: str) -> Run:
     )
     timebounds = _read(DATA / f"{case}_timebounds.csv.gz")
     timepoints = _read(DATA / f"{case}_timepoints.csv.gz")
-    model = run_model(
+    model = setup_model(
         config,
         _inputs(config, timebounds, timepoints),
         _time_axis(timebounds),
-    )
+    ).run()
     return Run(config, timebounds, timepoints, model.timeseries())
 
 
@@ -273,7 +272,7 @@ def test_prescribed_concentration_matches_modelled(gas: str) -> None:
     variable, unit = naming.prescribed_variable(entry)
     inputs[variable] = (run.rscm(variable), unit)
 
-    outputs = run_model(config, inputs, run.time_axis).timeseries()
+    outputs = setup_model(config, inputs, run.time_axis).run().timeseries()
 
     emissions = naming.emissions(gas)
     inverse = naming.inverse_emissions(gas)
@@ -390,7 +389,7 @@ def test_first_prescribed_forcing() -> None:
     values, unit = inputs[naming.prescribed_forcing(solar)]
     inputs[naming.prescribed_forcing(solar)] = (np.r_[0.3, values[1:]], unit)
 
-    outputs = run_model(run.config, inputs, run.time_axis).timeseries()
+    outputs = setup_model(run.config, inputs, run.time_axis).run().timeseries()
 
     for variable in (
         naming.forcing(solar),
@@ -449,7 +448,7 @@ def test_from_fair() -> None:
     config, inputs, time_axis = from_fair(f)
 
     assert config["options"] == run.config["options"]
-    outputs = run_model(config, inputs, time_axis).timeseries()
+    outputs = setup_model(config, inputs, time_axis).run().timeseries()
     for variable, column in (
         (names.SURFACE_AIR_TEMPERATURE_CHANGE, "temperature|0"),
         (names.ERF, "forcing_sum"),

@@ -46,7 +46,7 @@ so `scale_prescribed_forcing=True` does the same.
 
 ```python
 from rscm.core import TimeAxis
-from rscm.fair import naming, read_calibration, run_model
+from rscm.fair import naming, read_calibration, setup_model
 
 configs = read_calibration(
     "species_configs_properties.csv",
@@ -63,9 +63,9 @@ for entry in config["species"]:
         source = emissions if entry["input_mode"] == "emissions" else forcing
         inputs[name] = (source[entry["name"]], unit)
 
-model = run_model(
+model = setup_model(
     config, inputs, TimeAxis.from_values(timebounds), scale_prescribed_forcing=True
-)
+).run()
 temperature = model.timeseries().get_timeseries_by_name("Surface Air Temperature Change")
 ```
 
@@ -88,8 +88,19 @@ result = run_ensemble(
 result.temperature.sel(layer=0, scenario="historical")
 ```
 
-Each member is its own model, run in a Python loop.
+Each member is its own model.
+The members of each scenario run in parallel, on `n_threads` threads or one per core.
 It needs xarray, from the `fair` extra (`pip install 'rscm[fair]'`).
+
+`rscm.spec.run_all` runs any list of setups in parallel and returns the models,
+for results in another layout:
+
+```python
+from rscm.spec import run_all
+
+setups = [setup_model(c, inputs, time_axis) for c in configs.values()]
+models = run_all(setups)
+```
 
 ## Converting from FaIR
 
@@ -97,15 +108,15 @@ It needs xarray, from the `fair` extra (`pip install 'rscm[fair]'`).
 of one of its configs and scenarios:
 
 ```python
-from rscm.fair import from_fair, run_model
+from rscm.fair import from_fair, setup_model
 
 config, inputs, time_axis = from_fair(f, config="member", scenario="ssp245")
-model = run_model(config, inputs, time_axis)
+model = setup_model(config, inputs, time_axis).run()
 ```
 
 ## Inspecting a model before building
 
-`setup_model` takes the same arguments as `run_model` and returns a `rscm.spec.ModelSetup`:
+`setup_model` returns a `rscm.spec.ModelSetup`:
 the components with their parameters, FaIR's lags, the initial values and the prescribed data.
 
 ```python
@@ -121,7 +132,7 @@ model = setup.run()
 
 `diff(setup, other)` shows what changes between two setups,
 such as the species parameters and inputs that switch when a gas becomes concentration-driven.
-`build_model` and `run_model` are `setup_model(...).build()` and `setup_model(...).run()`.
+`setup.build()` returns the unrun model and `setup.run()` the run one.
 
 ## Other climate components
 

@@ -9,7 +9,8 @@ import numpy as np
 from rscm import names
 from rscm.fair import naming
 from rscm.fair.config import emission_drivers, is_ghg, species_outputs
-from rscm.fair.run import run_model
+from rscm.fair.run import setup_model
+from rscm.spec import run_all
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Mapping
@@ -60,11 +61,14 @@ def run_ensemble(
     time_axis: TimeAxis,
     *,
     scale_prescribed_forcing: bool = False,
+    n_threads: int | None = None,
 ) -> xr.Dataset:
     """Run every configuration on every scenario and collect the results like FaIR.
 
     The configurations must share their species and layers.
-    `scenarios` maps each scenario to its inputs, see `rscm.fair.build_model`.
+    `scenarios` maps each scenario to its inputs, see `rscm.fair.setup_model`.
+    The configurations of each scenario run in parallel on ``n_threads`` threads,
+    or one per core.
     The dataset has FaIR's `temperature`, `emissions`, `concentration`, `forcing`,
     `forcing_sum`, `airborne_emissions`, `cumulative_emissions`,
     `ocean_heat_content_change` and `toa_imbalance`,
@@ -137,13 +141,18 @@ def run_ensemble(
         ]
 
     for i, inputs in enumerate(scenarios.values()):
-        for j, name in enumerate(config_names):
-            outputs = run_model(
+        setups = [
+            setup_model(
                 configs[name],
                 inputs,
                 time_axis,
                 scale_prescribed_forcing=scale_prescribed_forcing,
-            ).timeseries()
+            )
+            for name in config_names
+        ]
+        models = run_all(setups, n_threads=n_threads)
+        for j, (name, model) in enumerate(zip(config_names, models, strict=True)):
+            outputs = model.timeseries()
             for layer in range(n_layers):
                 data["temperature"][:, i, j, layer] = _values(
                     outputs, naming.layer_temperature(layer)

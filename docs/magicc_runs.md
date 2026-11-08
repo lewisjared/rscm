@@ -11,9 +11,9 @@ of every gas but CH4.
 | `rscm.magicc.concentration_driven` | Prescribed for the whole run                       | Yes           |
 
 As in FaIR, building a model is separate from running it.
-Each module has `setup_model(config, inputs, time_axis)`, which returns a `rscm.spec.ModelSetup`
-to inspect before building, `build_model`, which returns an unrun `Model`,
-and `run_model`, which builds and runs it.
+Each module has `setup_model(config, inputs, time_axis)`, which returns a `rscm.spec.ModelSetup`.
+`setup.build()` returns an unrun `Model` and `setup.run()` a run one.
+`rscm.spec.run_all` runs many setups in parallel, from either model or from FaIR.
 `rscm.magicc.full.from_magicc7` translates MAGICC7's configuration, input files and emissions
 into the `config` and `inputs` both models take.
 
@@ -41,7 +41,7 @@ emissions |= {species: np.zeros(len(years)) for species in full.halocarbon_speci
 config, inputs = full.from_magicc7(
     time_axis, emissions, parameters={"core_climatesensitivity": 3.0}
 )
-model = emissions_driven.run_model(config, inputs, time_axis)
+model = emissions_driven.setup_model(config, inputs, time_axis).run()
 timeseries = model.timeseries()
 co2 = timeseries.get_timeseries_by_name("Atmospheric Concentrations|CO2").values()
 boxes = timeseries.get_four_box_timeseries_by_name("Surface Air Temperature Change").values()
@@ -60,7 +60,7 @@ takes the emissions in the units MAGICC7 reads instead, such as `GtC/yr` and `Mt
 Missing, unknown or misshapen emissions raise `ValueError`.
 Emissions are annual mean rates, labelled by the year they start, as MAGICC7 input files are.
 
-`run_model` returns the `Model` after its last step.
+`run()` returns the `Model` after its last step.
 Read outputs from `model.timeseries()`.
 Surface air temperature change and other regional variables are four-box timeseries
 in northern ocean, northern land, southern ocean, southern land order.
@@ -104,8 +104,7 @@ The configuration is a plain dict that can be edited before building:
 
 ```python
 config["components"]["ClimateUDEB"]["ecs"] = 2.5
-model = emissions_driven.build_model(config, inputs, time_axis)
-model.run()
+model = emissions_driven.setup_model(config, inputs, time_axis).run()
 ```
 
 `inputs` maps each prescribed variable to its values and unit, with one value per time bound.
@@ -201,7 +200,7 @@ The carbon cycle still runs, so land and ocean fluxes and pools follow the presc
 from rscm.magicc import concentration_driven
 
 config, inputs = full.from_magicc7(time_axis, emissions, concentration_driven=True)
-model = concentration_driven.run_model(config, inputs, time_axis)
+model = concentration_driven.setup_model(config, inputs, time_axis).run()
 ```
 
 `CH4Chemistry` writes the anthropogenic CH4 emissions that reproduce the prescribed concentration

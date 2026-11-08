@@ -1,4 +1,4 @@
-"""Run FaIR in RSCM."""
+"""Set up FaIR configurations as RSCM models."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm.core import Model, TimeAxis
+    from rscm.core import TimeAxis
 
 
 def _on_timebounds(
@@ -101,29 +101,3 @@ def setup_model(
         name="FaIR",
     )
     return spec.bind(prescribed, time_axis)
-
-
-def build_model(
-    config: FairConfig,
-    inputs: Mapping[str, tuple[ArrayLike, str]],
-    time_axis: TimeAxis,
-    *,
-    scale_prescribed_forcing: bool = False,
-) -> Model:
-    """Build an unrun model of a FaIR configuration, see `setup_model`."""
-    return setup_model(
-        config, inputs, time_axis, scale_prescribed_forcing=scale_prescribed_forcing
-    ).build()
-
-
-def run_model(
-    config: FairConfig,
-    inputs: Mapping[str, tuple[ArrayLike, str]],
-    time_axis: TimeAxis,
-    *,
-    scale_prescribed_forcing: bool = False,
-) -> Model:
-    """Run a FaIR configuration and return the model, see `setup_model`."""
-    return setup_model(
-        config, inputs, time_axis, scale_prescribed_forcing=scale_prescribed_forcing
-    ).run()

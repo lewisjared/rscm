@@ -473,7 +473,7 @@ def test_from_magicc7_reads_no_files_given_input_files(monkeypatch):
         input_files=inputs,
         convention=Convention.MAGICC7,
     )
-    result = emissions_driven.run_model(config, prescribed, run.time_axis)
+    result = emissions_driven.setup_model(config, prescribed, run.time_axis).run()
     for name in ("Atmospheric Concentrations|CO2", ERF):
         npt.assert_array_equal(
             full_run.output(result, name),

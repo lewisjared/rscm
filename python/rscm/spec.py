@@ -6,6 +6,7 @@ its lags, initial values and grid weights.
 [bind][rscm.spec.ModelSpec.bind] adds prescribed data and a time axis
 to give a [ModelSetup][rscm.spec.ModelSetup],
 which lists the inputs the model needs, summarises itself and builds the model.
+[run_all][rscm.spec.run_all] builds and runs many setups in parallel.
 
 Model packages return a setup from their configuration,
 such as [rscm.fair.setup_model][rscm.fair.run.setup_model]
@@ -40,6 +41,8 @@ from rscm.core import (
     HemisphericTimeseries,
     ModelBuilder,
     Timeseries,
+    build_models,
+    run_models,
 )
 
 if TYPE_CHECKING:
@@ -49,7 +52,7 @@ if TYPE_CHECKING:
 
     Prescribed = Timeseries | FourBoxTimeseries | HemisphericTimeseries
 
-__all__ = ["ComponentSpec", "Lag", "ModelSetup", "ModelSpec", "diff"]
+__all__ = ["ComponentSpec", "Lag", "ModelSetup", "ModelSpec", "diff", "run_all"]
 
 
 @dataclass(frozen=True)
@@ -198,6 +201,20 @@ class ModelSetup:
 
     def __str__(self) -> str:
         return self.describe()
+
+
+def run_all(
+    setups: Sequence[ModelSetup], *, n_threads: int | None = None
+) -> list[Model]:
+    """Build and run every setup in parallel and return the models in input order.
+
+    The setups can come from any model, such as FaIR and MAGICC together.
+    ``n_threads`` is the number of threads, or None for one per core.
+    Python components hold the GIL while they solve, so they run one at a time.
+    """
+    models = build_models([setup.builder() for setup in setups], n_threads=n_threads)
+    run_models(models, n_threads=n_threads)
+    return models
 
 
 def _table(rows: Any) -> list[str]:

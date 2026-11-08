@@ -174,6 +174,7 @@ and a Python component class gets them as keyword arguments.
 `rscm.fair.setup_model` and `rscm.magicc.emissions_driven.setup_model` return the setup of a configuration,
 so a packaged model and a hand-written one are explored the same way.
 `rscm.spec.diff` shows what differs between two setups.
+`rscm.spec.run_all(setups)` builds and runs many setups in parallel, whichever models they come from.
 
 ### Dependency Graph
 
@@ -319,6 +320,7 @@ models = build_models([make_builder(p) for p in parameter_sets])
 run_models(models)
 ```
 
+`rscm.spec.run_all` does both for a list of setups.
 Each model owns its state, so the results are the same as running the models in turn.
 `n_threads` limits the thread count, and the default is one thread per core.
 Python components hold the GIL while they solve, so models with Python components gain less.

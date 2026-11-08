@@ -46,7 +46,7 @@ def _run(ecs: float) -> None:
         parameters={"core_climatesensitivity": ecs},
         input_files=_inputs,
     )
-    emissions_driven.run_model(config, inputs, _time_axis)
+    emissions_driven.setup_model(config, inputs, _time_axis).run()
 
 
 def main() -> None:

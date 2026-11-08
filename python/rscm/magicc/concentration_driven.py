@@ -33,15 +33,13 @@ from rscm.magicc import model
 from rscm.magicc.emissions_driven import COMPONENTS, OPTIONAL_COMPONENTS
 
 if TYPE_CHECKING:
-    from rscm.core import Model, TimeAxis
+    from rscm.core import TimeAxis
     from rscm.magicc.model import Inputs, ModelConfig
     from rscm.spec import ModelSetup
 
 __all__ = [
     "COMPONENTS",
     "OPTIONAL_COMPONENTS",
-    "build_model",
-    "run_model",
     "setup_model",
 ]
 
@@ -78,13 +76,3 @@ def setup_model(config: ModelConfig, inputs: Inputs, time_axis: TimeAxis) -> Mod
         optional=OPTIONAL_COMPONENTS,
         name="MAGICC concentration-driven",
     )
-
-
-def build_model(config: ModelConfig, inputs: Inputs, time_axis: TimeAxis) -> Model:
-    """Build an unrun concentration-driven model, see `setup_model`."""
-    return setup_model(config, inputs, time_axis).build()
-
-
-def run_model(config: ModelConfig, inputs: Inputs, time_axis: TimeAxis) -> Model:
-    """Build and run a concentration-driven model and return it, see `setup_model`."""
-    return setup_model(config, inputs, time_axis).run()

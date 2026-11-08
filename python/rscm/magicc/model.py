@@ -82,7 +82,6 @@ __all__ = [
     "build_from_components",
     "check_axis",
     "component_specs",
-    "run_from_components",
     "setup",
     "with_lags",
 ]
@@ -208,17 +207,6 @@ def build_from_components(  # noqa: PLR0913
         {k: list(v) for k, v in initial_grid_values.items()}
     )
     return builder.build()
-
-
-def run_from_components(
-    time_axis: TimeAxis,
-    components: Sequence[RustComponent],
-    **kwargs: Any,
-) -> Model:
-    """Build and run components and return the model, see `build_from_components`."""
-    model = build_from_components(time_axis, components, **kwargs)
-    model.run()
-    return model
 
 
 def check_axis(time_axis: TimeAxis) -> None:

@@ -979,11 +979,11 @@ def _pre_run_fgas(
     config: ModelConfig, inputs: Inputs, time: NDArray[np.float64]
 ) -> list[float]:
     """F-gas forcing in the second year of a two-year run of ``config``."""
-    result = emissions_driven.run_model(
+    result = emissions_driven.setup_model(
         config,
         {name: (values[:2], unit) for name, (values, unit) in inputs.items()},
         TimeAxis.from_values(time[:2]),
-    )
+    ).run()
     return _second_year(result, ERF_F_GASES)
 
 

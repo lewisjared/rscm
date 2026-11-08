@@ -73,7 +73,7 @@ def _run_magicc7(*, concentrations=False, **parameters):
         concentration_driven=concentrations,
     )
     model = concentration_driven if concentrations else emissions_driven
-    return model.run_model(config, inputs, run.time_axis)
+    return model.setup_model(config, inputs, run.time_axis).run()
 
 
 MAGICC7_CASES = {
@@ -98,12 +98,13 @@ def test_magicc7_shuffled(monkeypatch, parameters):
 def test_fair_shuffled(monkeypatch, case):
     run = test_fair.load(case)
     inputs = test_fair._inputs(run.config, run.timebounds, run.timepoints)
-    expected = _outputs(fair_run.run_model(run.config, inputs, run.time_axis))
+    expected = _outputs(fair_run.setup_model(run.config, inputs, run.time_axis).run())
     original = fair_run.component_specs
     for seed in range(3):
         monkeypatch.setattr(fair_run, "component_specs", _shuffled(original, seed))
         _assert_identical(
-            _outputs(fair_run.run_model(run.config, inputs, run.time_axis)), expected
+            _outputs(fair_run.setup_model(run.config, inputs, run.time_axis).run()),
+            expected,
         )
 
 

@@ -7,9 +7,7 @@ Thornhill et al. (2021) CH4 lifetime.
 
 [setup_model][rscm.fair.run.setup_model] gives the [setup][rscm.spec.ModelSetup]
 of a FaIR configuration: its components, lags, initial values and prescribed data,
-ready to inspect and build.
-[build_model][rscm.fair.run.build_model] builds it unrun
-and [run_model][rscm.fair.run.run_model] runs it.
+ready to inspect, build and run.
 [component_specs][rscm.fair.config.component_specs] and [lags][rscm.fair.config.lags]
 give the parts on their own.
 [rscm.fair.loaders][] reads configurations from FaIR's species CSV
@@ -42,12 +40,7 @@ from rscm.fair.config import (
 from rscm.fair.convert import from_fair
 from rscm.fair.ensemble import run_ensemble
 from rscm.fair.loaders import make_config, read_calibration, read_config, read_species
-from rscm.fair.run import (
-    build_model,
-    prescribed_forcing_scales,
-    run_model,
-    setup_model,
-)
+from rscm.fair.run import prescribed_forcing_scales, setup_model
 
 __all__ = [
     "AerosolCloudBuilder",
@@ -59,7 +52,6 @@ __all__ = [
     "GHGForcingBuilder",
     "GasCycleBuilder",
     "LinearForcingBuilder",
-    "build_model",
     "component_specs",
     "components",
     "from_fair",
@@ -72,7 +64,6 @@ __all__ = [
     "read_config",
     "read_species",
     "run_ensemble",
-    "run_model",
     "setup_model",
     "with_lags",
 ]
