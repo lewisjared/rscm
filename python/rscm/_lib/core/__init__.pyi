@@ -265,6 +265,20 @@ class VariableDefinition:
         timeseries_type: TimeseriesType | None = None,
     ): ...
 
+@final
+class PrescribedInput:
+    """An input that no component or schema aggregate produces.
+
+    The model must be given prescribed data or an initial value for it.
+    """
+
+    definition: VariableDefinition
+    """The variable as its first consumer, by name, declares it."""
+    consumers: list[str]
+    """The components that read it, sorted by name."""
+    supplied: bool
+    """Whether prescribed data or an initial value supplies it."""
+
 class RustComponent(Protocol):
     """A component defined in Rust, built by a component builder."""
 
@@ -549,6 +563,13 @@ class ModelBuilder:
         --------
         >>> builder = ModelBuilder()
         >>> builder.with_grid_weights(GridType.FourBox, [0.36, 0.14, 0.36, 0.14])
+        """
+    def prescribed_inputs(self) -> list[PrescribedInput]:
+        """
+        Every input that no component or schema aggregate produces, sorted by name.
+
+        Each is marked with whether prescribed data or an initial value supplies it.
+        `build` fails if any is not supplied.
         """
     def build(self) -> Model:
         """

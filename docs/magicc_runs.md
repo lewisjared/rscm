@@ -11,8 +11,9 @@ of every gas but CH4.
 | `rscm.magicc.concentration_driven` | Prescribed for the whole run                       | Yes           |
 
 As in FaIR, building a model is separate from running it.
-Each module has `build_model(config, inputs, time_axis)`, which returns an unrun `Model`,
-and `run_model`, which builds and runs it.
+Each module has `setup_model(config, inputs, time_axis)`, which returns a `rscm.spec.ModelSetup`.
+`setup.build()` returns an unrun `Model` and `setup.run()` a run one.
+`rscm.spec.run_all` runs many setups in parallel, from either model or from FaIR.
 `rscm.magicc.full.from_magicc7` translates MAGICC7's configuration, input files and emissions
 into the `config` and `inputs` both models take.
 
@@ -40,7 +41,7 @@ emissions |= {species: np.zeros(len(years)) for species in full.halocarbon_speci
 config, inputs = full.from_magicc7(
     time_axis, emissions, parameters={"core_climatesensitivity": 3.0}
 )
-model = emissions_driven.run_model(config, inputs, time_axis)
+model = emissions_driven.setup_model(config, inputs, time_axis).run()
 timeseries = model.timeseries()
 co2 = timeseries.get_timeseries_by_name("Atmospheric Concentrations|CO2").values()
 boxes = timeseries.get_four_box_timeseries_by_name("Surface Air Temperature Change").values()
@@ -59,7 +60,7 @@ takes the emissions in the units MAGICC7 reads instead, such as `GtC/yr` and `Mt
 Missing, unknown or misshapen emissions raise `ValueError`.
 Emissions are annual mean rates, labelled by the year they start, as MAGICC7 input files are.
 
-`run_model` returns the `Model` after its last step.
+`run()` returns the `Model` after its last step.
 Read outputs from `model.timeseries()`.
 Surface air temperature change and other regional variables are four-box timeseries
 in northern ocean, northern land, southern ocean, southern land order.
@@ -103,17 +104,75 @@ The configuration is a plain dict that can be edited before building:
 
 ```python
 config["components"]["ClimateUDEB"]["ecs"] = 2.5
-model = emissions_driven.build_model(config, inputs, time_axis)
-model.run()
+model = emissions_driven.setup_model(config, inputs, time_axis).run()
 ```
 
 `inputs` maps each prescribed variable to its values and unit, with one value per time bound.
 Four-box values have four columns and hemispheric values two.
 An input off the time axis raises `ValueError`.
 
-The models add MAGICC7's feedback lags with `rscm.magicc.with_lags`.
+The models carry MAGICC7's feedback lags, `rscm.magicc.model.LAGS`.
 So chemistry and the carbon cycle use the temperature and CO2 at the start of each year,
 and forcing uses the concentrations at its end.
+
+## Inspecting a model before building
+
+`setup_model` returns the model as data: its components with the parameters they are built from,
+its lags, initial values and prescribed data.
+Printing it summarises them and names any input that nothing supplies.
+
+```python
+from rscm.magicc import concentration_driven
+from rscm.spec import diff
+
+setup = emissions_driven.setup_model(config, inputs, time_axis)
+print(setup)
+```
+
+```text
+MAGICC emissions-driven
+  time axis  1750 to 2101, 351 steps
+  components (12, in the order added)
+    Permafrost           18 parameters
+    CH4Chemistry         6 parameters
+    ...
+    ClimateUDEB          26 parameters
+  lags (4)
+    Surface Air Temperature Change -> every consumer
+    Atmospheric Concentrations|CO2 -> TerrestrialCarbon
+    Atmospheric Concentrations|CO2 -> OceanCarbon
+    Equilibrium Climate Sensitivity -> ForcingAggregation
+  prescribed data (113)
+    Effective Radiative Forcing            13
+    Emissions                              56
+    Prescribed Atmospheric Concentrations  44
+  missing inputs: none
+  initial values: 57 scalar, 1 gridded
+```
+
+`setup.spec.components["CO2Budget"].parameters` gives one component's parameters,
+and `setup.prescribed_inputs()` lists every input no component produces,
+with its unit, its consumers and whether the setup supplies it.
+`diff` shows what changes between two setups.
+Here the concentration-driven model differs only in its switch years:
+
+```python
+print(diff(setup, concentration_driven.setup_model(config, inputs, time_axis)))
+```
+
+```text
+MAGICC emissions-driven -> MAGICC concentration-driven
+  ~ CH4Chemistry.concentration_switch_year: 2015.0 -> inf
+  ~ N2OChemistry.concentration_switch_year: 2015.0 -> inf
+  ~ HalocarbonChemistry.fgas_switch_year: 2015.0 -> inf
+  ~ HalocarbonChemistry.montreal_gases_switch_year: 2015.0 -> inf
+  ~ OceanCarbon.concentration_switch_year: 2015.0 -> inf
+  ~ CO2Budget.concentration_switch_year: 2015.0 -> inf
+```
+
+`setup.build()` returns the unrun model and `setup.run()` the run one.
+To change the model, edit the configuration and call `setup_model` again,
+because the initial values follow from the parameters and the first year's forcing.
 
 ## Emissions-driven model
 
@@ -133,7 +192,7 @@ With every switch year at or before the first year, the chain runs from emission
 ## Concentration-driven model
 
 `rscm.magicc.concentration_driven` has the components of the emissions-driven model.
-`build_model` sets every concentration switch year to infinity, whatever the configuration holds,
+`setup_model` sets every concentration switch year to infinity, whatever the configuration holds,
 so CO2, CH4, N2O and every halocarbon follow their prescribed concentrations for the whole run.
 The carbon cycle still runs, so land and ocean fluxes and pools follow the prescribed CO2.
 
@@ -141,7 +200,7 @@ The carbon cycle still runs, so land and ocean fluxes and pools follow the presc
 from rscm.magicc import concentration_driven
 
 config, inputs = full.from_magicc7(time_axis, emissions, concentration_driven=True)
-model = concentration_driven.run_model(config, inputs, time_axis)
+model = concentration_driven.setup_model(config, inputs, time_axis).run()
 ```
 
 `CH4Chemistry` writes the anthropogenic CH4 emissions that reproduce the prescribed concentration

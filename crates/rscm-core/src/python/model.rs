@@ -213,6 +213,14 @@ impl PyModelBuilder {
         Ok(self_)
     }
 
+    /// Every input that no component or schema aggregate produces, sorted by name.
+    ///
+    /// Each is marked with whether prescribed data or an initial value supplies it.
+    /// `build` fails if any is not supplied.
+    fn prescribed_inputs(&self) -> Vec<model::PrescribedInput> {
+        self.0.prescribed_inputs()
+    }
+
     fn build(&self) -> PyResult<PyModel> {
         self.0
             .build()

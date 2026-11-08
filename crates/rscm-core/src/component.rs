@@ -41,7 +41,7 @@ impl VariableRole {
 /// The spatial layout of a variable's values.
 ///
 /// Coupling validation compares the grids that components declare.
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, hash, frozen)]
 #[derive(
     Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Serialize, Deserialize, Default,
 )]

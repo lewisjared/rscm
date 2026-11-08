@@ -172,6 +172,15 @@ The object that collects components, prescribed data, initial values and lags,
 decides the coupling and builds a model.
 _Avoid_: Factory, assembler
 
+**Model spec**:
+A model described as data before it is built: its components as builders and parameters,
+its lags, initial values and grid weights.
+_Avoid_: Recipe, blueprint, model config (for the spec)
+
+**Model setup**:
+A model spec bound to prescribed data and a time axis, ready to inspect and build.
+_Avoid_: Prepared model, run inputs, model setup (for the act of building)
+
 **Parameter**:
 A number or option that configures a component,
 fixed when the component is built and constant through the run.

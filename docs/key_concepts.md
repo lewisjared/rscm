@@ -145,6 +145,37 @@ model = (
 ).build()
 ```
 
+### Model Specs and Setups
+
+A [`ModelSpec`][rscm.spec.ModelSpec] describes the same model as data before anything is built:
+each component as its builder and parameters, the lags, initial values and grid weights.
+Binding prescribed data and a time axis gives a [`ModelSetup`][rscm.spec.ModelSetup],
+which prints a summary, lists the inputs nothing supplies and builds the model.
+
+```python
+from rscm.spec import ComponentSpec, Lag, ModelSpec
+
+spec = ModelSpec(
+    components={
+        "CarbonCycle": ComponentSpec(CarbonCycleBuilder, {"tau": 30.0}),
+        "Temperature": ComponentSpec(TemperatureBuilder, {"ecs": 3.0}),
+    },
+    lags=(Lag("Surface Air Temperature Change"),),
+    initial_values={"Atmospheric Concentrations|CO2": 280.0},
+)
+setup = spec.bind({"Emissions|CO2": emissions_ts}, time_axis)
+print(setup)
+setup.prescribed_inputs()  # inputs no component produces, and whether each is supplied
+model = setup.build()
+```
+
+A component builder from Rust gets its parameters through `from_parameters`,
+and a Python component class gets them as keyword arguments.
+`rscm.fair.setup_model` and `rscm.magicc.emissions_driven.setup_model` return the setup of a configuration,
+so a packaged model and a hand-written one are explored the same way.
+`rscm.spec.diff` shows what differs between two setups.
+`rscm.spec.run_all(setups)` builds and runs many setups in parallel, whichever models they come from.
+
 ### Dependency Graph
 
 When you build a model, the builder constructs a **dependency graph**:
@@ -175,7 +206,7 @@ A loop that no lag breaks fails `build()` with an error that lists the component
 and the `with_lag_for` calls that would break it.
 Edges into a component that holds its own state come first.
 The builder never chooses a lag itself.
-Model builders such as `rscm.magicc.emissions_driven.build_model` and `run_fair` carry their models' lags.
+Packaged models carry their lags in their setups, such as `rscm.magicc.model.LAGS` and `rscm.fair.lags(config)`.
 
 ### Model Execution
 
@@ -289,6 +320,7 @@ models = build_models([make_builder(p) for p in parameter_sets])
 run_models(models)
 ```
 
+`rscm.spec.run_all` does both for a list of setups.
 Each model owns its state, so the results are the same as running the models in turn.
 `n_threads` limits the thread count, and the default is one thread per core.
 Python components hold the GIL while they solve, so models with Python components gain less.

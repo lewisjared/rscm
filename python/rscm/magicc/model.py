@@ -6,7 +6,7 @@ A configuration is a plain dict:
 - ``components``: the Rust parameters of each component, keyed by component name
   such as ``"TerrestrialCarbon"``.
 - ``initial_values``: the value at the first time bound of each state variable,
-  apart from those of ClimateUDEB and ForcingAggregation, which the build calculates
+  apart from those of ClimateUDEB and ForcingAggregation, which `setup` calculates
   from the forcing at the first time bound.
 - ``initial_forcing`` (optional): the forcing of ForcingAggregation agents
   at the first time bound, keyed by agent variable,
@@ -17,8 +17,9 @@ The inputs map each prescribed variable to its values and unit,
 with one value per time bound.
 Four-box values have four columns and hemispheric values two.
 
+`setup` turns a configuration and inputs into a [ModelSetup][rscm.spec.ModelSetup].
 [rscm.magicc.emissions_driven][] and [rscm.magicc.concentration_driven][]
-build the two models from the same configuration.
+set up the two models from the same configuration.
 [from_magicc7][rscm.magicc.full.from_magicc7] translates a MAGICC7 configuration
 into it.
 """
@@ -62,6 +63,7 @@ from rscm.names import (
     EQUILIBRIUM_CLIMATE_SENSITIVITY,
     SURFACE_AIR_TEMPERATURE_CHANGE,
 )
+from rscm.spec import ComponentSpec, Lag, ModelSetup, ModelSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Mapping, Sequence
@@ -75,11 +77,12 @@ if TYPE_CHECKING:
 
 __all__ = [
     "BUILDERS",
+    "LAGS",
     "ModelConfig",
-    "build",
     "build_from_components",
     "check_axis",
-    "run_from_components",
+    "component_specs",
+    "setup",
     "with_lags",
 ]
 
@@ -102,21 +105,19 @@ BUILDERS: dict[str, Any] = {
 }
 """Builder of each component a configuration can hold, in the order they are added."""
 
-# MAGICC7 feeds back last year's temperature, CO2 and climate sensitivity.
-_LAG = (SURFACE_AIR_TEMPERATURE_CHANGE,)
-_LAG_FOR = (
-    (ATMOSPHERIC_CONCENTRATIONS_CO2, "TerrestrialCarbon"),
-    (ATMOSPHERIC_CONCENTRATIONS_CO2, "OceanCarbon"),
-    (EQUILIBRIUM_CLIMATE_SENSITIVITY, "ForcingAggregation"),
+LAGS = (
+    Lag(SURFACE_AIR_TEMPERATURE_CHANGE),
+    Lag(ATMOSPHERIC_CONCENTRATIONS_CO2, "TerrestrialCarbon"),
+    Lag(ATMOSPHERIC_CONCENTRATIONS_CO2, "OceanCarbon"),
+    Lag(EQUILIBRIUM_CLIMATE_SENSITIVITY, "ForcingAggregation"),
 )
+"""MAGICC7's feedback lags on last year's temperature, CO2 and climate sensitivity."""
 
 
 def with_lags(builder: ModelBuilder) -> ModelBuilder:
-    """Add MAGICC7's feedback lags to a builder of the MAGICC components."""
-    for variable in _LAG:
-        builder.with_lag(variable)
-    for variable, consumer in _LAG_FOR:
-        builder.with_lag_for(variable, consumer)
+    """Add MAGICC7's feedback `LAGS` to a builder of the MAGICC components."""
+    for lag in LAGS:
+        lag.add_to(builder)
     return builder
 
 
@@ -145,6 +146,18 @@ def _schema(
     for name, (unit, grid) in variables.items():
         schema.add_variable(name, unit, grid)
     return schema
+
+
+def _grid_setup(
+    components: Sequence[RustComponent],
+    prescribed: Mapping[str, tuple[NDArray[np.float64], str]],
+) -> tuple[VariableSchema | None, dict[GridType, list[float]]]:
+    """Return the schema and grid weights, which only four-box components need."""
+    if not any(d.grid == GridType.FourBox for c in components for d in c.definitions()):
+        return None, {}
+    return _schema(components, prescribed), {
+        GridType.FourBox: list(pr.area_fractions())
+    }
 
 
 def _timeseries(
@@ -176,9 +189,11 @@ def build_from_components(  # noqa: PLR0913
     ``lags`` adds feedback lags to the builder, such as `with_lags`.
     """
     builder = ModelBuilder().with_time_axis(time_axis)
-    if any(d.grid == GridType.FourBox for c in components for d in c.definitions()):
-        builder.with_schema(_schema(components, prescribed))
-        builder.with_grid_weights(GridType.FourBox, list(pr.area_fractions()))
+    schema, grid_weights = _grid_setup(components, prescribed)
+    if schema is not None:
+        builder.with_schema(schema)
+    for grid, weights in grid_weights.items():
+        builder.with_grid_weights(grid, weights)
     for component in components:
         builder.with_component(component)
     if lags is not None:
@@ -192,17 +207,6 @@ def build_from_components(  # noqa: PLR0913
         {k: list(v) for k, v in initial_grid_values.items()}
     )
     return builder.build()
-
-
-def run_from_components(
-    time_axis: TimeAxis,
-    components: Sequence[RustComponent],
-    **kwargs: Any,
-) -> Model:
-    """Build and run components and return the model, see `build_from_components`."""
-    model = build_from_components(time_axis, components, **kwargs)
-    model.run()
-    return model
 
 
 def check_axis(time_axis: TimeAxis) -> None:
@@ -223,9 +227,14 @@ def _on_axis(inputs: Inputs, n: int) -> dict[str, tuple[NDArray[np.float64], str
     return out
 
 
-def _builders(
-    config: ModelConfig, required: Collection[str], optional: Collection[str]
-) -> dict[str, Any]:
+def component_specs(
+    config: ModelConfig, *, required: Collection[str], optional: Collection[str] = ()
+) -> dict[str, ComponentSpec]:
+    """Return the ``required`` and any ``optional`` components a configuration holds.
+
+    They are in the order of `BUILDERS`.
+    Raises `ValueError` if a required component is missing or another is unknown.
+    """
     given = config["components"]
     missing = sorted(set(required) - set(given))
     if missing:
@@ -236,7 +245,7 @@ def _builders(
         msg = f"components not in this model: {', '.join(unknown)}"
         raise ValueError(msg)
     return {
-        name: builder.from_parameters(given[name])
+        name: ComponentSpec(builder, given[name])
         for name, builder in BUILDERS.items()
         if name in given
     }
@@ -271,26 +280,31 @@ def _global(values: NDArray[np.float64]) -> float:
     return float(values.mean())
 
 
-def build(
+def setup(  # noqa: PLR0913
     config: ModelConfig,
     inputs: Inputs,
     time_axis: TimeAxis,
     *,
     required: Collection[str],
     optional: Collection[str] = (),
-) -> Model:
-    """Build an unrun model of the ``required`` and any ``optional`` components.
+    name: str = "MAGICC",
+) -> ModelSetup:
+    """Return the setup of the ``required`` and any ``optional`` components.
 
     ``time_axis`` has annual steps.
+    ClimateUDEB's initial values and the initial efficacy-adjusted forcing
+    come from the forcing at the first time bound.
     """
     check_axis(time_axis)
     prescribed = _on_axis(inputs, len(time_axis))
-    builders = _builders(config, required, optional)
-    components = {name: builder.build() for name, builder in builders.items()}
-    agents = config["components"]["ForcingAggregation"]["agents"]
-    first = {name: values[0] for name, (values, _) in prescribed.items()}
-    total, boxes = builders["ForcingAggregation"].aggregate(
-        _initial_forcing(agents, first, config.get("initial_forcing", {}))
+    specs = component_specs(config, required=required, optional=optional)
+    components = {key: spec.build() for key, spec in specs.items()}
+    first = {key: values[0] for key, (values, _) in prescribed.items()}
+    aggregation = specs["ForcingAggregation"]
+    total, boxes = aggregation.configure().aggregate(
+        _initial_forcing(
+            aggregation.parameters["agents"], first, config.get("initial_forcing", {})
+        )
     )
     sea_level = {}
     if "SeaLevelRise" in components:
@@ -299,15 +313,24 @@ def build(
             for d in components["SeaLevelRise"].definitions()
             if d.role == VariableRole.Output
         }
-    return build_from_components(
-        time_axis,
-        list(components.values()),
-        prescribed=prescribed,
+    schema, grid_weights = _grid_setup(list(components.values()), prescribed)
+    spec = ModelSpec(
+        components=specs,
+        lags=LAGS,
         initial_values={
             **config["initial_values"],
             **sea_level,
-            **builders["ClimateUDEB"].initial_values(total),
+            **specs["ClimateUDEB"].configure().initial_values(total),
         },
         initial_grid_values={EFFICACY_ADJUSTED_ERF: boxes},
-        lags=with_lags,
+        grid_weights=grid_weights,
+        schema=schema,
+        name=name,
+    )
+    return spec.bind(
+        {
+            key: _timeseries(values, time_axis, unit)
+            for key, (values, unit) in prescribed.items()
+        },
+        time_axis,
     )

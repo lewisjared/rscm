@@ -1,4 +1,4 @@
-"""Run FaIR in RSCM."""
+"""Set up FaIR configurations as RSCM models."""
 
 from __future__ import annotations
 
@@ -7,23 +7,24 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from rscm import names
-from rscm.core import InterpolationStrategy, ModelBuilder, Timeseries
+from rscm.core import InterpolationStrategy, Timeseries
 from rscm.fair import naming
 from rscm.fair.config import (
     FairConfig,
-    components,
+    component_specs,
     forcing_agents,
     forcing_subtotals,
     initial_values,
-    with_lags,
+    lags,
 )
+from rscm.spec import ModelSetup, ModelSpec
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm.core import Model, TimeAxis
+    from rscm.core import TimeAxis
 
 
 def _on_timebounds(
@@ -53,14 +54,14 @@ def prescribed_forcing_scales(config: FairConfig) -> dict[str, float]:
     }
 
 
-def build_model(
+def setup_model(
     config: FairConfig,
     inputs: Mapping[str, tuple[ArrayLike, str]],
     time_axis: TimeAxis,
     *,
     scale_prescribed_forcing: bool = False,
-) -> Model:
-    """Build an unrun model of a FaIR configuration.
+) -> ModelSetup:
+    """Return the setup of a FaIR configuration, ready to inspect and build.
 
     `inputs` maps each prescribed variable to its values and unit.
     Emissions are FaIR timepoint values, one per step.
@@ -73,18 +74,15 @@ def build_model(
     """
     n_timebounds = len(time_axis)
     scales = prescribed_forcing_scales(config) if scale_prescribed_forcing else {}
-    builder = ModelBuilder().with_time_axis(time_axis)
-    for component in components(config):
-        builder.with_component(component)
-    with_lags(builder, config)
+    prescribed = {}
     first = {}
     for name, (values, unit) in inputs.items():
         array = _on_timebounds(name, values, n_timebounds)
         if name in scales:
             array = array * scales[name]
         first[name] = float(array[0])
-        builder.with_prescribed_variable(
-            name, Timeseries(array, time_axis, unit, InterpolationStrategy.Previous)
+        prescribed[name] = Timeseries(
+            array, time_axis, unit, InterpolationStrategy.Previous
         )
     initial = initial_values(config)
     agents = [naming.forcing(s) for s in forcing_agents(config)]
@@ -96,20 +94,10 @@ def build_model(
     total = float(np.nansum([initial[agent] for agent in agents]))
     initial[names.ERF] = initial[names.NET_ENERGY_IMBALANCE] = total
     initial |= forcing_subtotals(config, initial)
-    builder.with_initial_values(initial)
-    return builder.build()
-
-
-def run_fair(
-    config: FairConfig,
-    inputs: Mapping[str, tuple[ArrayLike, str]],
-    time_axis: TimeAxis,
-    *,
-    scale_prescribed_forcing: bool = False,
-) -> Model:
-    """Run a FaIR configuration and return the model, see `build_model`."""
-    model = build_model(
-        config, inputs, time_axis, scale_prescribed_forcing=scale_prescribed_forcing
+    spec = ModelSpec(
+        components=component_specs(config),
+        lags=lags(config),
+        initial_values=initial,
+        name="FaIR",
     )
-    model.run()
-    return model
+    return spec.bind(prescribed, time_axis)

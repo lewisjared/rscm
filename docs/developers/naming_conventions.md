@@ -23,10 +23,14 @@ When a rule and the code disagree, fix one of them in the same PR.
 - `Component` is only the author's base class, `rscm.component.Component`.
 - `RustComponent` is the protocol a Rust component satisfies in Python.
 - A builder adds any component with `with_component`, in Rust and in Python.
-- `Builder` names an object, and `build_` a function that returns a `Model`: `ModelBuilder`, `build_model`.
+- `Builder` names an object, and `build_` a function that returns a `Model`: `ModelBuilder`, `build_models`.
 - A function that returns a list of components is `components`: `rscm.fair.config.components`.
+- A function that returns components as specs by name is `component_specs`: `rscm.fair.config.component_specs`.
+- Each model package has `setup_model`, which returns a `ModelSetup`.
+  Building, running and running in parallel are shared: `setup.build()`, `setup.run()`, `run_all(setups)`.
 - A component declares a `VariableDefinition` with a `VariableRole` of `Input`, `Output` or `State`.
-- Each runner module publishes its lags as `with_lags(builder, ...)`: `rscm.magicc.with_lags`.
+- Each model package publishes its lags as `Lag` data, `LAGS` or `lags(config)`,
+  and applies them to a builder with `with_lags(builder, ...)`: `rscm.magicc.model.LAGS`.
 - Say prescribed and modelled, never exogenous and endogenous: `VariableSource.Prescribed`.
 - Log probabilities start with `log_`: `log_pdf`, `log_prior`, `log_likelihood`.
 - A standard deviation is `std_dev`, and log-space parameters are `mu` and `sigma`: `LogNormal`.

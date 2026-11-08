@@ -7,7 +7,7 @@ They drive the same forcing and climate as in the emissions-driven model,
 and the carbon cycle, so land and ocean fluxes and pools follow the prescribed CO2.
 
 The model has the components of [rscm.magicc.emissions_driven][].
-`build_model` sets every concentration switch year to infinity,
+`setup_model` sets every concentration switch year to infinity,
 whatever the configuration holds.
 So a configuration of the emissions-driven model also builds this model,
 given inputs that prescribe every concentration over the whole run.
@@ -33,10 +33,15 @@ from rscm.magicc import model
 from rscm.magicc.emissions_driven import COMPONENTS, OPTIONAL_COMPONENTS
 
 if TYPE_CHECKING:
-    from rscm.core import Model, TimeAxis
+    from rscm.core import TimeAxis
     from rscm.magicc.model import Inputs, ModelConfig
+    from rscm.spec import ModelSetup
 
-__all__ = ["COMPONENTS", "OPTIONAL_COMPONENTS", "build_model", "run_model"]
+__all__ = [
+    "COMPONENTS",
+    "OPTIONAL_COMPONENTS",
+    "setup_model",
+]
 
 _PRESCRIBED: dict[str, dict[str, Any]] = {
     "CH4Chemistry": {"concentration_switch_year": math.inf},
@@ -50,29 +55,24 @@ _PRESCRIBED: dict[str, dict[str, Any]] = {
 }
 
 
-def build_model(config: ModelConfig, inputs: Inputs, time_axis: TimeAxis) -> Model:
-    """Build an unrun concentration-driven model.
+def setup_model(config: ModelConfig, inputs: Inputs, time_axis: TimeAxis) -> ModelSetup:
+    """Return the setup of a concentration-driven model, ready to inspect and build.
 
     ``time_axis`` has annual steps.
     ``inputs`` holds ``Prescribed Atmospheric Concentrations|<gas>`` of every gas
     at every time bound, the emissions in the units the components declare
     and the prescribed forcing of each ForcingAggregation agent.
+    The setup holds the switch years set to infinity.
     """
     components = {
         name: {**parameters, **_PRESCRIBED.get(name, {})}
         for name, parameters in config["components"].items()
     }
-    return model.build(
+    return model.setup(
         {**config, "components": components},
         inputs,
         time_axis,
         required=COMPONENTS,
         optional=OPTIONAL_COMPONENTS,
+        name="MAGICC concentration-driven",
     )
-
-
-def run_model(config: ModelConfig, inputs: Inputs, time_axis: TimeAxis) -> Model:
-    """Build and run a concentration-driven model and return it, see `build_model`."""
-    result = build_model(config, inputs, time_axis)
-    result.run()
-    return result

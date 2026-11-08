@@ -15,6 +15,7 @@ use numpy::ndarray::Array;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Graph;
+use pyo3::pyclass;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
@@ -25,6 +26,18 @@ use super::types::{
     UnitConversionInfo, C,
 };
 use super::validation::{resolve_timeseries_types, verify_definition};
+
+/// An input that no component or schema aggregate produces, so the model must be given it.
+#[pyclass(frozen, get_all)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrescribedInput {
+    /// The variable as its first consumer, by name, declares it.
+    pub definition: VariableDefinition,
+    /// The components that read it, sorted by name.
+    pub consumers: Vec<String>,
+    /// Whether prescribed data or an initial value supplies it.
+    pub supplied: bool,
+}
 
 /// Build a new model from a set of components.
 ///
@@ -186,34 +199,73 @@ impl ModelBuilder {
         &self,
         names: &[String],
         component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
-        modelled: &HashMap<String, NodeIndex>,
     ) -> RSCMResult<()> {
-        let mut missing: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let missing: Vec<(String, Vec<String>)> = self
+            .collect_prescribed_inputs(names, component_defs)
+            .into_iter()
+            .filter(|input| !input.supplied)
+            .map(|input| (input.definition.name, input.consumers))
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        Err(RSCMError::MissingPrescribedInput { inputs: missing })
+    }
+
+    /// Every input that no component or schema aggregate produces, sorted by name.
+    ///
+    /// These are the prescribed variables the model needs,
+    /// each marked with whether prescribed data or an initial value supplies it.
+    /// `build` fails if any is not supplied, unless missing inputs are allowed.
+    pub fn prescribed_inputs(&self) -> Vec<PrescribedInput> {
+        let names: Vec<String> = self
+            .components
+            .iter()
+            .map(Model::extract_component_name)
+            .collect();
+        let component_defs: Vec<_> = self
+            .components
+            .iter()
+            .map(|component| (component.inputs(), component.outputs()))
+            .collect();
+        self.collect_prescribed_inputs(&names, &component_defs)
+    }
+
+    fn collect_prescribed_inputs(
+        &self,
+        names: &[String],
+        component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
+    ) -> Vec<PrescribedInput> {
+        let mut produced: HashSet<&str> = self
+            .schema
+            .as_ref()
+            .map(|schema| schema.aggregates.keys().map(String::as_str).collect())
+            .unwrap_or_default();
+        for (_, provides) in component_defs {
+            produced.extend(provides.iter().map(|def| def.name.as_str()));
+        }
+        let mut inputs: BTreeMap<String, (VariableDefinition, BTreeSet<String>)> = BTreeMap::new();
         for (consumer, (requires, _)) in names.iter().zip(component_defs) {
             for def in requires {
-                let name = &def.name;
-                if def.role == VariableRole::Input
-                    && !modelled.contains_key(name)
-                    && self.prescribed_variables.get_data(name).is_none()
-                    && !self.initial_values.contains_key(name)
-                    && !self.initial_grid_values.contains_key(name)
-                {
-                    missing
-                        .entry(name.clone())
-                        .or_default()
+                if def.role == VariableRole::Input && !produced.contains(def.name.as_str()) {
+                    inputs
+                        .entry(def.name.clone())
+                        .or_insert_with(|| (def.clone(), BTreeSet::new()))
+                        .1
                         .insert(consumer.clone());
                 }
             }
         }
-        if missing.is_empty() {
-            return Ok(());
-        }
-        Err(RSCMError::MissingPrescribedInput {
-            inputs: missing
-                .into_iter()
-                .map(|(variable, consumers)| (variable, consumers.into_iter().collect()))
-                .collect(),
-        })
+        inputs
+            .into_iter()
+            .map(|(name, (definition, consumers))| PrescribedInput {
+                supplied: self.prescribed_variables.get_data(&name).is_some()
+                    || self.initial_values.contains_key(&name)
+                    || self.initial_grid_values.contains_key(&name),
+                definition,
+                consumers: consumers.into_iter().collect(),
+            })
+            .collect()
     }
 
     /// Set custom weights for a grid.
@@ -904,7 +956,7 @@ impl ModelBuilder {
         }
 
         if !self.missing_prescribed_allowed {
-            self.check_prescribed_supplied(&names, &component_defs, &modelled)?;
+            self.check_prescribed_supplied(&names, &component_defs)?;
         }
 
         // Store transformations for runtime grid auto-aggregation

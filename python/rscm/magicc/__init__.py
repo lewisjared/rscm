@@ -18,7 +18,9 @@ Two models couple them:
   after an optional period of prescribed concentrations.
 - [rscm.magicc.concentration_driven][] prescribes concentrations for the whole run.
 
-Each builds from a configuration and prescribed inputs, see [rscm.magicc.model][].
+Each has `setup_model`, which takes a configuration and prescribed inputs
+(see [rscm.magicc.model][]) and returns a [ModelSetup][rscm.spec.ModelSetup]
+to inspect, build and run.
 [from_magicc7][rscm.magicc.full.from_magicc7] translates a MAGICC7 configuration,
 its input files and emissions into them,
 and [with_lags][rscm.magicc.model.with_lags] adds MAGICC7's feedback lags to a builder.

@@ -990,8 +990,8 @@ plt.show()
 # `full.from_magicc7` repeats the set-up above.
 # It translates the emissions and MAGICC7 parameter names into a configuration and inputs.
 # It takes emissions in gcages units, such as `Mt CO2/yr`, unless `convention` is MAGICC7.
-# `rscm.magicc.emissions_driven.build_model` builds this whole chain from them, with the same lags,
-# and `run_model` builds and runs it.
+# `rscm.magicc.emissions_driven.setup_model` sets up this whole chain from them, with the same lags,
+# and `.run()` builds and runs it.
 # With the same parameters it gives the same result as the hand-built model.
 
 # %%
@@ -999,7 +999,7 @@ time_axis = TimeAxis.from_values(years)
 config, inputs = full.from_magicc7(
     time_axis, emissions, parameters=parameters, convention=Convention.MAGICC7
 )
-packaged = emissions_driven.run_model(config, inputs, time_axis)
+packaged = emissions_driven.setup_model(config, inputs, time_axis).run()
 packaged_temperature = (
     packaged.timeseries()
     .get_four_box_timeseries_by_name("Surface Air Temperature Change")
@@ -1040,7 +1040,7 @@ def run_magicc7(**kwargs):
     config, inputs = full.from_magicc7(
         time_axis, emissions, convention=Convention.MAGICC7, **kwargs
     )
-    return emissions_driven.run_model(config, inputs, time_axis).timeseries()
+    return emissions_driven.setup_model(config, inputs, time_axis).run().timeseries()
 
 
 input_files = full.load_inputs()
@@ -1094,7 +1094,9 @@ config, inputs = full.from_magicc7(
     convention=Convention.MAGICC7,
     concentration_driven=True,
 )
-concentrations = concentration_driven.run_model(config, inputs, time_axis).timeseries()
+concentrations = (
+    concentration_driven.setup_model(config, inputs, time_axis).run().timeseries()
+)
 
 # %% [markdown]
 # Until 2015 its temperature matches the MAGICC7 default run, which prescribes the same concentrations.

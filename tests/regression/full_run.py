@@ -32,7 +32,7 @@ from rscm.magicc import (
 )
 from rscm.magicc import prescribed as pr
 from rscm.magicc.full import DIRECT
-from rscm.magicc.model import run_from_components
+from rscm.magicc.model import build_from_components
 from rscm.names import (
     EFFICACY_ADJUSTED_ERF,
     ERF,
@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from rscm.core import Model
+    from rscm.spec import ModelSetup
 
 __all__ = ["EFFICACY_ADJUSTED_ERF", "ERF", "run_from_components"]
 
@@ -209,6 +210,13 @@ def load_variant(name: str) -> FullRun:
     switches = {k: v for k, v in _json(stem, "config").items() if base.get(k) != v}
     run = FullRun(_read_data(stem), {**load().parameters, **switches})
     return _with_inputs(run)
+
+
+def run_from_components(time_axis: TimeAxis, components: Any, **kwargs: Any) -> Model:
+    """Build and run components, see `rscm.magicc.model.build_from_components`."""
+    model = build_from_components(time_axis, components, **kwargs)
+    model.run()
+    return model
 
 
 def output(model: Model, name: str) -> NDArray[np.float64]:
@@ -457,7 +465,7 @@ def default_model() -> Model:
     config, inputs = full.from_magicc7(
         run.time_axis, magicc7_emissions(run), convention=Convention.MAGICC7
     )
-    return emissions_driven.run_model(config, inputs, run.time_axis)
+    return emissions_driven.setup_model(config, inputs, run.time_axis).run()
 
 
 @cache
@@ -471,7 +479,7 @@ def concentration_model() -> Model:
         convention=Convention.MAGICC7,
         concentration_driven=True,
     )
-    return concentration_driven.run_model(config, inputs, run.time_axis)
+    return concentration_driven.setup_model(config, inputs, run.time_axis).run()
 
 
 @cache
@@ -483,6 +491,11 @@ def reported() -> Reported:
 
 def run_coupled(run: FullRun) -> Model:
     """Run the emissions-driven model from the reference run's emissions and inputs."""
+    return setup_coupled(run).run()
+
+
+def setup_coupled(run: FullRun) -> ModelSetup:
+    """Set up the emissions-driven model from the reference run's inputs."""
     # MAGICC7 reports an F-gas's second-year concentration in its first year.
     n_fgas = run.parameters["fgas_n"]
     species = ("CO2", "CH4", "N2O", *full.halocarbon_species()[n_fgas:])
@@ -495,4 +508,4 @@ def run_coupled(run: FullRun) -> Model:
         },
         convention=Convention.MAGICC7,
     )
-    return emissions_driven.run_model(config, inputs, run.time_axis)
+    return emissions_driven.setup_model(config, inputs, run.time_axis)
