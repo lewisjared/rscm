@@ -647,7 +647,7 @@ def prescribed_forcing(
             "BCB": emissions["BC|Biosphere"],
         },
         # The cloud code reads total nitrate, which differs from the sum of sources.
-        pr._nitrate_total(*nitrate_args, **nitrate_kwargs)[0],
+        pr._nitrate_total(*nitrate_args, shape_only=True, **nitrate_kwargs)[0],
         emissions["NOx|Fossil"],
         {g: p[f"cloud_weight_{g}"] for g in ("no3", "bc", "oc", "sox", "ss")},
         p["rf_regions_cloud_albedo"],

@@ -72,6 +72,7 @@ class ClimateUDEBParameters(TypedDict, total=False):
     polar_sinking_ratio: float
     steps_per_year: int
     maximum_temperature: float
+    include_unset_lamcalc_error: bool
     thermal_expansion: ThermalExpansion | None
 
 @final
@@ -216,6 +217,8 @@ class AntarcticDischarge(TypedDict, total=False):
     scaling: float
     start_year: float
     regions: list[AntarcticRegion]
+    include_response_overflow: bool
+    include_early_release: bool
 
 class SeaLevelRiseParameters(TypedDict, total=False):
     """Parameters for the sea level rise component.
@@ -1163,6 +1166,7 @@ class EfficacyClimate(TypedDict, total=False):
     land_ocean_warming_ratio: float
     amplify_ocean_to_land: float
     co2_regional_pattern: tuple[float, float, float, float]
+    include_unset_lamcalc_error: bool
 
 class ForcingAggregationParameters(TypedDict, total=False):
     """Parameters for ForcingAggregation."""

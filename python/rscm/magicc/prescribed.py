@@ -303,8 +303,12 @@ def _nitrate_total(  # noqa: PLR0913
     optical_thickness_pi: float = 1.41,
     burden_to_optical_thickness_exponent: float = 0.76,
     factor: float | None = None,
+    shape_only: bool = False,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Total nitrate forcing boxes, before the source split, and its global value."""
+    """Total nitrate forcing boxes, before the source split, and its global value.
+
+    ``shape_only`` callers normalise the forcing, so a zero scale is replaced by one.
+    """
     y = np.asarray(years, dtype=np.float64)
     nox_i, nox_b = (np.asarray(e, dtype=np.float64) for e in nox)
     nh3_i, nh3_b = (np.asarray(e, dtype=np.float64) for e in nh3)
@@ -321,6 +325,8 @@ def _nitrate_total(  # noqa: PLR0913
     if factor is None:
         reference = rf[_switch_index(y, harmonisation_reference_year)]
         factor = _scale(harmonisation_target, None, reference)
+    if shape_only and factor == 0:
+        factor = 1.0
     rf = rf * factor
 
     product = (nh3_i * 0.5 + nh3_b * 0.5) * (nox_b * 0.5 + nox_i * 0.5)
@@ -403,7 +409,7 @@ def nitrate_pattern(
     It is the total forcing boxes over the global forcing at ``index``.
     Takes the arguments of `nitrate`.
     """
-    total, rf = _nitrate_total(*args, **kwargs)
+    total, rf = _nitrate_total(*args, shape_only=True, **kwargs)
     return (total[index] / rf[index]).tolist()
 
 

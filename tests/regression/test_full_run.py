@@ -540,3 +540,25 @@ def test_from_magicc7_rejects_bad_emissions(change, match):
     change(emissions)
     with pytest.raises(ValueError, match=match):
         full.from_magicc7(run.time_axis, emissions)
+
+
+def test_from_magicc7_zero_nitrate_factor():
+    """A zero nitrate factor keeps the cloud forcing and regional patterns finite."""
+    run = full_run.load_default()
+    parameters = {
+        **run.parameters,
+        "rf_no3t_dir_apply": 2,
+        "rf_no3t_dir_factor": 0.0,
+    }
+    config, inputs = full.from_magicc7(
+        run.time_axis,
+        full_run.magicc7_emissions(run),
+        parameters=parameters,
+        convention=Convention.MAGICC7,
+    )
+    model = emissions_driven.setup_model(config, inputs, run.time_axis).run()
+
+    temperature = model.timeseries().get_four_box_timeseries_by_name(
+        SURFACE_AIR_TEMPERATURE_CHANGE
+    )
+    assert np.isfinite(temperature.values()[:-1]).all()
