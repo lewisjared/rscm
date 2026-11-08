@@ -24,7 +24,7 @@
 
 use super::co2_budget::GTC_PER_PPM;
 use rscm_core::timeseries::FloatValue;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Unit conversion constant: micromol/(ppm * m^3/kg).
 ///
@@ -157,10 +157,7 @@ impl IRFForm {
 ///
 /// When deserialised, `method` selects the defaults of the other fields,
 /// as `for_method` gives them.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(remote = "Self")]
-#[serde(default)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize)]
 pub struct OceanCarbonParameters {
     /// Ocean carbon method (MAGICC7 `OCEANCC_MODEL`).
     ///
@@ -282,32 +279,78 @@ pub struct OceanCarbonParameters {
     pub concentration_switch_year: Option<FloatValue>,
 }
 
-impl Serialize for OceanCarbonParameters {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        OceanCarbonParameters::serialize(self, serializer)
-    }
+/// Fields given when deserialising, each replacing its method's default.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GivenOceanCarbonParameters {
+    method: Option<OceanCarbonMethod>,
+    co2_pi: Option<FloatValue>,
+    #[serde(default, deserialize_with = "given")]
+    pco2_pi: Option<Option<FloatValue>>,
+    gas_exchange_scale: Option<FloatValue>,
+    gas_exchange_tau: Option<FloatValue>,
+    temperature_sensitivity: Option<FloatValue>,
+    irf_scale: Option<FloatValue>,
+    mixed_layer_depth: Option<FloatValue>,
+    ocean_surface_area: Option<FloatValue>,
+    sst_pi: Option<FloatValue>,
+    steps_per_year: Option<usize>,
+    maximum_history_months: Option<usize>,
+    irf_switch_time: Option<FloatValue>,
+    irf_early: Option<IRFForm>,
+    irf_late: Option<IRFForm>,
+    delta_ospp_offsets: Option<[FloatValue; 5]>,
+    delta_ospp_coefficients: Option<[FloatValue; 5]>,
+    include_temperature_feedback: Option<bool>,
+    temperature_feedback_start_year: Option<FloatValue>,
+    flux_change_limit: Option<FloatValue>,
+    gtc_per_ppm: Option<FloatValue>,
+    include_permafrost: Option<bool>,
+    #[serde(default, deserialize_with = "given")]
+    concentration_switch_year: Option<Option<FloatValue>>,
+}
+
+/// Distinguishes a given null from an absent field.
+fn given<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> {
+    T::deserialize(d).map(Some)
 }
 
 impl<'de> Deserialize<'de> for OceanCarbonParameters {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::Error;
-        use serde_json::Value;
-
-        let given = serde_json::Map::<String, Value>::deserialize(deserializer)?;
-        let method = match given.get("method") {
-            Some(value) => OceanCarbonMethod::deserialize(value).map_err(D::Error::custom)?,
-            None => OceanCarbonMethod::Gfdl3d,
-        };
-        let base = OceanCarbonParameters::serialize(
-            &Self::for_method(method),
-            serde_json::value::Serializer,
-        )
-        .map_err(D::Error::custom)?;
-        let Value::Object(mut merged) = base else {
-            return Err(D::Error::custom("parameters must serialise to a map"));
-        };
-        merged.extend(given);
-        OceanCarbonParameters::deserialize(Value::Object(merged)).map_err(D::Error::custom)
+        let given = GivenOceanCarbonParameters::deserialize(deserializer)?;
+        let mut parameters = Self::for_method(given.method.unwrap_or(OceanCarbonMethod::Gfdl3d));
+        macro_rules! replace {
+            ($($field:ident),* $(,)?) => {
+                $(if let Some(value) = given.$field {
+                    parameters.$field = value;
+                })*
+            };
+        }
+        replace!(
+            co2_pi,
+            pco2_pi,
+            gas_exchange_scale,
+            gas_exchange_tau,
+            temperature_sensitivity,
+            irf_scale,
+            mixed_layer_depth,
+            ocean_surface_area,
+            sst_pi,
+            steps_per_year,
+            maximum_history_months,
+            irf_switch_time,
+            irf_early,
+            irf_late,
+            delta_ospp_offsets,
+            delta_ospp_coefficients,
+            include_temperature_feedback,
+            temperature_feedback_start_year,
+            flux_change_limit,
+            gtc_per_ppm,
+            include_permafrost,
+            concentration_switch_year,
+        );
+        Ok(parameters)
     }
 }
 
@@ -949,6 +992,14 @@ mod tests {
         assert_eq!(parsed.irf_switch_time, bern.irf_switch_time);
         assert_eq!(parsed.mixed_layer_depth, bern.mixed_layer_depth);
         assert_eq!(parsed.co2_pi, 280.0);
+    }
+
+    #[test]
+    fn test_serialised_parameters_deserialise() {
+        let hilda = serde_json::to_value(OceanCarbonParameters::hilda()).unwrap();
+        let parsed: OceanCarbonParameters = serde_json::from_value(hilda).unwrap();
+        assert_eq!(parsed.method, OceanCarbonMethod::Hilda);
+        assert_eq!(parsed.sst_pi, OceanCarbonParameters::hilda().sst_pi);
     }
 
     #[test]
