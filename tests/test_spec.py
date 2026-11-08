@@ -5,7 +5,7 @@ import pytest
 
 from rscm.core import GridType, InterpolationStrategy, Timeseries
 from rscm.example_components import LinearConcentration
-from rscm.spec import ComponentSpec, Lag, ModelSpec, diff
+from rscm.spec import ComponentSpec, Lag, ModelSpec, _flatten, diff
 from rscm.two_layer import TwoLayerBuilder
 
 TWO_LAYER = {
@@ -101,3 +101,39 @@ def test_diff(spec, forcing, time_axis):
         ]
     )
     assert diff(a, a).endswith("identical")
+
+
+def test_diff_reports_replaced_builders_and_grid_values(spec, time_axis):
+    a = spec.bind({}, time_axis)
+    b = ModelSpec(
+        components={"TwoLayer": ComponentSpec(LinearConcentration, TWO_LAYER)},
+        initial_values=spec.initial_values,
+        initial_grid_values={"Forcing": [1.0, 2.0, 3.0, 4.0]},
+        name="Two layer",
+    ).bind({}, time_axis)
+
+    assert diff(a, b).splitlines()[1:] == [
+        "  ~ TwoLayer: TwoLayerBuilder -> LinearConcentration",
+        "  ~ initial grid values: 1 added",
+    ]
+
+
+def test_spec_keeps_a_copy_of_its_parameters():
+    parameters = {"agents": [{"variable": "A", "efficacy": 1.0}]}
+    component = ComponentSpec(TwoLayerBuilder, parameters)
+    parameters["agents"][0]["efficacy"] = 2.0
+    assert component.parameters["agents"][0]["efficacy"] == 1.0
+
+
+def test_flatten_keeps_identities_that_share_a_last_segment():
+    agents = [
+        {"variable": "Emissions|CO2", "scale": 1.0},
+        {"variable": "Concentrations|CO2", "scale": 2.0},
+        {"variable": "Concentrations|CO2", "scale": 3.0},
+    ]
+    flat = _flatten({"agents": agents}, "")
+    assert {k: v for k, v in flat.items() if k.endswith(".scale")} == {
+        "agents[Emissions|CO2].scale": 1.0,
+        "agents[Concentrations|CO2#1].scale": 2.0,
+        "agents[Concentrations|CO2#2].scale": 3.0,
+    }

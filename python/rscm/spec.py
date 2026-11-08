@@ -27,6 +27,7 @@ A new model can write its spec by hand:
 
 from __future__ import annotations
 
+import copy
 import math
 from collections import Counter
 from dataclasses import dataclass, field
@@ -58,6 +59,10 @@ class ComponentSpec:
     builder: Any
     """A component builder such as `ClimateUDEBBuilder`, or a Python component class."""
     parameters: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # A copy, so later edits to the caller's configuration leave the spec unchanged.
+        object.__setattr__(self, "parameters", copy.deepcopy(dict(self.parameters)))
 
     def configure(self) -> Any:
         """Return the builder configured with the parameters, before building."""
@@ -104,6 +109,14 @@ class ModelSpec:
     grid_weights: Mapping[GridType, Sequence[float]] = field(default_factory=dict)
     schema: VariableSchema | None = None
     name: str = "Model"
+
+    def __post_init__(self) -> None:
+        def lists(values: Mapping[Any, Sequence[float]]) -> dict[Any, list[float]]:
+            return {key: list(v) for key, v in values.items()}
+
+        object.__setattr__(self, "initial_values", dict(self.initial_values))
+        object.__setattr__(self, "initial_grid_values", lists(self.initial_grid_values))
+        object.__setattr__(self, "grid_weights", lists(self.grid_weights))
 
     def bind(
         self, prescribed: Mapping[str, Prescribed], time_axis: TimeAxis
@@ -208,11 +221,41 @@ def _flatten(value: Any, prefix: str) -> dict[str, Any]:
         return out
     if isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
         out = {}
-        for index, item in enumerate(value):
-            key = next((item[k] for k in _IDENTITY_KEYS if item.get(k)), index)
-            out |= _flatten(item, f"{prefix}[{str(key).split('|')[-1]}]")
+        for key, item in zip(_identities(value), value):
+            out |= _flatten(item, f"{prefix}[{key}]")
         return out
     return {prefix: value}
+
+
+def _identities(items: list[dict[str, Any]]) -> list[str]:
+    """Name each item by its identity, shortened to its last segment if unambiguous."""
+    full = [
+        str(next((item[k] for k in _IDENTITY_KEYS if item.get(k)), index))
+        for index, item in enumerate(items)
+    ]
+    short = [key.split("|")[-1] for key in full]
+    keys = short if len(set(short)) == len(short) else full
+    counts = Counter(keys)
+    return [
+        key if counts[key] == 1 else f"{key}#{index}" for index, key in enumerate(keys)
+    ]
+
+
+def _builder_name(builder: Any) -> str:
+    return getattr(builder, "__name__", repr(builder))
+
+
+def _count_changes(a: Mapping[str, Any], b: Mapping[str, Any]) -> str:
+    counts = {
+        "changed": sum(_differ(a[k], b[k]) for k in a.keys() & b.keys()),
+        "added": len(b.keys() - a.keys()),
+        "removed": len(a.keys() - b.keys()),
+    }
+    return ", ".join(f"{n} {kind}" for kind, n in counts.items() if n)
+
+
+def _differ(a: Any, b: Any) -> bool:
+    return not np.array_equal(np.asarray(a), np.asarray(b), equal_nan=True)
 
 
 def _show(value: Any) -> str:
@@ -226,8 +269,8 @@ def _show(value: Any) -> str:
 def diff(a: ModelSetup, b: ModelSetup, *, limit: int = 6) -> str:
     """Describe what differs between two setups.
 
-    Lists added and removed components, changed parameters, initial values,
-    lags and the names of prescribed data.
+    Lists added, removed and replaced components, changed parameters,
+    scalar and gridded initial values, lags and the names of prescribed data.
     At most ``limit`` parameter changes are shown for each component.
     """
     lines = [f"{a.spec.name} -> {b.spec.name}"]
@@ -235,6 +278,11 @@ def diff(a: ModelSetup, b: ModelSetup, *, limit: int = 6) -> str:
     lines += [f"  - component {name}" for name in ca if name not in cb]
     lines += [f"  + component {name}" for name in cb if name not in ca]
     for name in (n for n in ca if n in cb):
+        if ca[name].builder is not cb[name].builder:
+            lines.append(
+                f"  ~ {name}: {_builder_name(ca[name].builder)} -> "
+                f"{_builder_name(cb[name].builder)}"
+            )
         pa = _flatten(dict(ca[name].parameters), "")
         pb = _flatten(dict(cb[name].parameters), "")
         changed = sorted(k for k in pa.keys() | pb.keys() if pa.get(k) != pb.get(k))
@@ -244,15 +292,17 @@ def diff(a: ModelSetup, b: ModelSetup, *, limit: int = 6) -> str:
         ]
         if len(changed) > limit:
             lines.append(f"  ~ {name}: {len(changed) - limit} more parameters")
-    ia, ib = a.spec.initial_values, b.spec.initial_values
-    counts = {
-        "changed": sum(ia[k] != ib[k] for k in ia.keys() & ib.keys()),
-        "added": len(ib.keys() - ia.keys()),
-        "removed": len(ia.keys() - ib.keys()),
-    }
-    if any(counts.values()):
-        shown = ", ".join(f"{n} {kind}" for kind, n in counts.items() if n)
-        lines.append(f"  ~ initial values: {shown}")
+    for label, ia, ib in (
+        ("initial values", a.spec.initial_values, b.spec.initial_values),
+        (
+            "initial grid values",
+            a.spec.initial_grid_values,
+            b.spec.initial_grid_values,
+        ),
+    ):
+        shown = _count_changes(ia, ib)
+        if shown:
+            lines.append(f"  ~ {label}: {shown}")
     la, lb = set(a.spec.lags), set(b.spec.lags)
     lines += [f"  - lag {lag}" for lag in sorted(la - lb, key=str)]
     lines += [f"  + lag {lag}" for lag in sorted(lb - la, key=str)]
