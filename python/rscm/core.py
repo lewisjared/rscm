@@ -8,6 +8,8 @@ climate models.
 **Model building**
 
 - [ModelBuilder][] assembles a climate model from components.
+- [PrescribedInput][] is an input no component produces,
+  as `ModelBuilder.prescribed_inputs` lists them.
 - [Model][] is a coupled set of components solved on a common time axis.
 - [build_models][] and [run_models][] build and run many models in parallel.
 
@@ -79,6 +81,7 @@ from rscm._lib.core import (
     InterpolationStrategy,
     Model,
     ModelBuilder,
+    PrescribedInput,
     PythonComponent,
     TimeAxis,
     Timeseries,
@@ -125,6 +128,7 @@ __all__ = [
     "InterpolationStrategy",
     "Model",
     "ModelBuilder",
+    "PrescribedInput",
     "PythonComponent",
     "ScalarGrid",
     "ScalarRegion",

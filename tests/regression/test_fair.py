@@ -40,7 +40,8 @@ from rscm.fair import (
     prescribed_forcing_scales,
     read_calibration,
     run_ensemble,
-    run_fair,
+    run_model,
+    setup_model,
     with_lags,
 )
 from rscm.fair.config import (
@@ -165,7 +166,7 @@ def load(case: str) -> Run:
     )
     timebounds = _read(DATA / f"{case}_timebounds.csv.gz")
     timepoints = _read(DATA / f"{case}_timepoints.csv.gz")
-    model = run_fair(
+    model = run_model(
         config,
         _inputs(config, timebounds, timepoints),
         _time_axis(timebounds),
@@ -272,7 +273,7 @@ def test_prescribed_concentration_matches_modelled(gas: str) -> None:
     variable, unit = naming.prescribed_variable(entry)
     inputs[variable] = (run.rscm(variable), unit)
 
-    outputs = run_fair(config, inputs, run.time_axis).timeseries()
+    outputs = run_model(config, inputs, run.time_axis).timeseries()
 
     emissions = naming.emissions(gas)
     inverse = naming.inverse_emissions(gas)
@@ -389,7 +390,7 @@ def test_first_prescribed_forcing() -> None:
     values, unit = inputs[naming.prescribed_forcing(solar)]
     inputs[naming.prescribed_forcing(solar)] = (np.r_[0.3, values[1:]], unit)
 
-    outputs = run_fair(run.config, inputs, run.time_axis).timeseries()
+    outputs = run_model(run.config, inputs, run.time_axis).timeseries()
 
     for variable in (
         naming.forcing(solar),
@@ -448,7 +449,7 @@ def test_from_fair() -> None:
     config, inputs, time_axis = from_fair(f)
 
     assert config["options"] == run.config["options"]
-    outputs = run_fair(config, inputs, time_axis).timeseries()
+    outputs = run_model(config, inputs, time_axis).timeseries()
     for variable, column in (
         (names.SURFACE_AIR_TEMPERATURE_CHANGE, "temperature|0"),
         (names.ERF, "forcing_sum"),
@@ -457,6 +458,16 @@ def test_from_fair() -> None:
         series = outputs.get_timeseries_by_name(variable)
         assert series is not None, variable
         assert_close(series.values(), run.fair(column), variable)
+
+
+def test_setup_names_each_linear_forcing() -> None:
+    run = load("ssp245")
+    inputs = _inputs(run.config, run.timebounds, run.timepoints)
+    setup = setup_model(run.config, inputs, run.time_axis)
+
+    linear = [n for n in setup.spec.components if n.startswith("LinearForcing[")]
+    assert len(set(linear)) == 6
+    assert all(i.supplied for i in setup.prescribed_inputs())
 
 
 def test_climate_udeb_smoke() -> None:

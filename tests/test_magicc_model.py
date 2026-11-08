@@ -10,6 +10,7 @@ from rscm.core import TimeAxis
 from rscm.magicc import concentration_driven, emissions_driven, full, model
 from rscm.magicc.prescribed import area_fractions
 from rscm.names import ERF, SECTORS, prescribed
+from rscm.spec import diff
 
 # MAGICC7 harmonises prescribed forcing in 2019.
 YEARS = np.arange(1750.0, 2021.0)
@@ -132,3 +133,26 @@ def test_scalar_agents_start_from_their_prescribed_forcing():
         [2.0],
         [0.0],
     ]
+
+
+def test_setups_differ_only_in_switch_years(translated):
+    config, inputs = translated
+    time_axis = TimeAxis.from_values(YEARS)
+    emissions = emissions_driven.setup_model(config, inputs, time_axis)
+    concentrations = concentration_driven.setup_model(config, inputs, time_axis)
+
+    lines = diff(emissions, concentrations).splitlines()[1:]
+    assert len(lines) == 6
+    assert all("switch_year" in line and line.endswith("-> inf") for line in lines)
+    assert all(i.supplied for i in emissions.prescribed_inputs())
+
+
+def test_setup_builds_the_same_model(translated):
+    config, inputs = translated
+    time_axis = TimeAxis.from_values(YEARS)
+    expected = emissions_driven.run_model(config, inputs, time_axis)
+    actual = emissions_driven.setup_model(config, inputs, time_axis).run()
+    np.testing.assert_array_equal(
+        actual.timeseries().get_timeseries_by_name(ERF).values(),
+        expected.timeseries().get_timeseries_by_name(ERF).values(),
+    )

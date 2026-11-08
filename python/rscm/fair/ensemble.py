@@ -9,7 +9,7 @@ import numpy as np
 from rscm import names
 from rscm.fair import naming
 from rscm.fair.config import emission_drivers, is_ghg, species_outputs
-from rscm.fair.run import run_fair
+from rscm.fair.run import run_model
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Mapping
@@ -138,7 +138,7 @@ def run_ensemble(
 
     for i, inputs in enumerate(scenarios.values()):
         for j, name in enumerate(config_names):
-            outputs = run_fair(
+            outputs = run_model(
                 configs[name],
                 inputs,
                 time_axis,

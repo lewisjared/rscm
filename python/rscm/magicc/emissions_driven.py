@@ -41,8 +41,15 @@ from rscm.magicc import model
 if TYPE_CHECKING:
     from rscm.core import Model, TimeAxis
     from rscm.magicc.model import Inputs, ModelConfig
+    from rscm.spec import ModelSetup
 
-__all__ = ["COMPONENTS", "OPTIONAL_COMPONENTS", "build_model", "run_model"]
+__all__ = [
+    "COMPONENTS",
+    "OPTIONAL_COMPONENTS",
+    "build_model",
+    "run_model",
+    "setup_model",
+]
 
 COMPONENTS = (
     "CH4Chemistry",
@@ -63,25 +70,29 @@ OPTIONAL_COMPONENTS = ("Permafrost", "SeaLevelRise")
 """Components the model includes when the configuration gives their parameters."""
 
 
-def build_model(config: ModelConfig, inputs: Inputs, time_axis: TimeAxis) -> Model:
-    """Build an unrun emissions-driven model.
+def setup_model(config: ModelConfig, inputs: Inputs, time_axis: TimeAxis) -> ModelSetup:
+    """Return the setup of an emissions-driven model, ready to inspect and build.
 
     ``time_axis`` has annual steps.
     ``inputs`` holds the emissions in the units the components declare,
     the prescribed forcing of each ForcingAggregation agent
     and the concentrations prescribed before each switch year.
     """
-    return model.build(
+    return model.setup(
         config,
         inputs,
         time_axis,
         required=COMPONENTS,
         optional=OPTIONAL_COMPONENTS,
+        name="MAGICC emissions-driven",
     )
 
 
+def build_model(config: ModelConfig, inputs: Inputs, time_axis: TimeAxis) -> Model:
+    """Build an unrun emissions-driven model, see `setup_model`."""
+    return setup_model(config, inputs, time_axis).build()
+
+
 def run_model(config: ModelConfig, inputs: Inputs, time_axis: TimeAxis) -> Model:
-    """Build and run an emissions-driven model and return it, see `build_model`."""
-    result = build_model(config, inputs, time_axis)
-    result.run()
-    return result
+    """Build and run an emissions-driven model and return it, see `setup_model`."""
+    return setup_model(config, inputs, time_axis).run()

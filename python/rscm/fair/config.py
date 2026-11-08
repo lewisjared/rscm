@@ -35,6 +35,7 @@ from rscm._lib.fair import (
     LinearForcingBuilder,
 )
 from rscm.fair import naming
+from rscm.spec import ComponentSpec, Lag
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -122,8 +123,9 @@ def _precursors(config: FairConfig, driver: str) -> list[dict[str, Any]]:
     ]
 
 
-def _ch4_lifetime(config: FairConfig) -> RustComponent:
-    return CH4LifetimeBuilder.from_parameters(
+def _ch4_lifetime(config: FairConfig) -> ComponentSpec:
+    return ComponentSpec(
+        CH4LifetimeBuilder,
         {
             "emissions": _precursors(config, "emissions"),
             "concentrations": _precursors(config, "concentration"),
@@ -132,8 +134,8 @@ def _ch4_lifetime(config: FairConfig) -> RustComponent:
             ],
             "minimum_scaling": config["options"]["ch4_min"],
             "output": names.LIFETIME_SCALING_CH4,
-        }
-    ).build()
+        },
+    )
 
 
 def emission_drivers(config: FairConfig, entry: Species) -> list[str]:
@@ -213,19 +215,21 @@ def _gas(config: FairConfig, entry: Species) -> dict[str, Any]:
     return gas
 
 
-def _gas_cycle(config: FairConfig, gases: list[Species]) -> RustComponent:
-    return GasCycleBuilder.from_parameters(
+def _gas_cycle(config: FairConfig, gases: list[Species]) -> ComponentSpec:
+    return ComponentSpec(
+        GasCycleBuilder,
         {
             "species": [_gas(config, s) for s in gases],
             "maximum_iirf": config["options"]["iirf_max"],
-        }
-    ).build()
+        },
+    )
 
 
-def _eesc(config: FairConfig) -> RustComponent:
+def _eesc(config: FairConfig) -> ComponentSpec:
     halogens = _of_type(config, *naming.HALOGEN_TYPES)
     (cfc11,) = _of_type(config, "cfc-11")
-    return EESCBuilder.from_parameters(
+    return ComponentSpec(
+        EESCBuilder,
         {
             "halogens": [
                 {
@@ -240,11 +244,11 @@ def _eesc(config: FairConfig) -> RustComponent:
             "cfc11_fractional_release": _value(cfc11["fractional_release"]),
             "br_cl_ratio": config["options"]["br_cl_ods_potential"],
             "output": names.EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE,
-        }
-    ).build()
+        },
+    )
 
 
-def _ghg_forcing(config: FairConfig, gases: list[Species]) -> RustComponent:
+def _ghg_forcing(config: FairConfig, gases: list[Species]) -> ComponentSpec:
     if config["options"]["ghg_method"] != "meinshausen2020":
         msg = f"ghg_method {config['options']['ghg_method']!r} is not implemented"
         raise NotImplementedError(msg)
@@ -271,7 +275,7 @@ def _ghg_forcing(config: FairConfig, gases: list[Species]) -> RustComponent:
             raise ValueError(msg)
         major[kind] = gas(found[0])
     minor = [gas(s) for s in gases if s["type"] not in major]
-    return GHGForcingBuilder.from_parameters({**major, "minor": minor}).build()
+    return ComponentSpec(GHGForcingBuilder, {**major, "minor": minor})
 
 
 def _driver(
@@ -369,27 +373,29 @@ def _linear_drivers(config: FairConfig, kind: str) -> list[dict[str, Any]]:
     ]
 
 
-def _linear_forcing(config: FairConfig, entry: Species) -> RustComponent:
-    return LinearForcingBuilder.from_parameters(
+def _linear_forcing(config: FairConfig, entry: Species) -> ComponentSpec:
+    return ComponentSpec(
+        LinearForcingBuilder,
         {
             "forcing": naming.forcing(entry),
             "drivers": _linear_drivers(config, entry["type"]),
             "temperature_feedback": _value(entry["forcing_temperature_feedback"]),
             **_scale(entry),
-        }
-    ).build()
+        },
+    )
 
 
-def _aerosol_cloud(config: FairConfig, entry: Species) -> RustComponent:
-    return AerosolCloudBuilder.from_parameters(
+def _aerosol_cloud(config: FairConfig, entry: Species) -> ComponentSpec:
+    return ComponentSpec(
+        AerosolCloudBuilder,
         {
             "forcing": naming.forcing(entry),
             "drivers": _aerosol_drivers(config, "aci_shape", key="shape"),
             "scale": config["species_configs"]["aci_scale"],
             "temperature_feedback": _value(entry["forcing_temperature_feedback"]),
             **_scale(entry),
-        }
-    ).build()
+        },
+    )
 
 
 def forcing_agents(config: FairConfig) -> list[Species]:
@@ -442,7 +448,7 @@ def forcing_subtotals(
     }
 
 
-def _aggregation(config: FairConfig) -> RustComponent:
+def _aggregation(config: FairConfig) -> ComponentSpec:
     agents = []
     for s in forcing_agents(config):
         agent = {
@@ -454,12 +460,13 @@ def _aggregation(config: FairConfig) -> RustComponent:
             agent["prescribed"] = naming.prescribed_forcing(s)
             agent["temperature_feedback"] = _value(s["forcing_temperature_feedback"])
         agents.append(agent)
-    return ForcingAggregationBuilder.from_parameters({"agents": agents}).build()
+    return ComponentSpec(ForcingAggregationBuilder, {"agents": agents})
 
 
-def _energy_balance(config: FairConfig) -> RustComponent:
+def _energy_balance(config: FairConfig) -> ComponentSpec:
     climate = config["climate"]
-    return EnergyBalanceBuilder.from_parameters(
+    return ComponentSpec(
+        EnergyBalanceBuilder,
         {
             "ocean_heat_capacity": climate["ocean_heat_capacity"],
             "ocean_heat_transfer": climate["ocean_heat_transfer"],
@@ -467,15 +474,16 @@ def _energy_balance(config: FairConfig) -> RustComponent:
             "gamma_autocorrelation": climate.get(
                 "gamma_autocorrelation", GAMMA_AUTOCORRELATION
             ),
-        }
-    ).build()
+        },
+    )
 
 
-def components(
+def component_specs(
     config: FairConfig, *, energy_balance: bool = True
-) -> list[RustComponent]:
-    """Components reproducing a FaIR run, in the order they must be added to a model.
+) -> dict[str, ComponentSpec]:
+    """Components reproducing a FaIR run, by name, in the order they are added.
 
+    Each linear forcing is named by its species, such as ``LinearForcing[ozone]``.
     Without `energy_balance`, another climate component must write the surface
     temperature from the total effective radiative forcing.
     """
@@ -484,40 +492,57 @@ def components(
     if prescribed:
         msg = f"FaIR overwrites prescribed greenhouse gas forcing: {prescribed}"
         raise ValueError(msg)
-    result = []
+    result = {}
     if thornhill(config):
-        result.append(_ch4_lifetime(config))
+        result["CH4Lifetime"] = _ch4_lifetime(config)
     if gases:
-        result.append(_gas_cycle(config, gases))
+        result["GasCycle"] = _gas_cycle(config, gases)
     if _calculated(config, "eesc") is not None:
-        result.append(_eesc(config))
+        result["EESC"] = _eesc(config)
     if gases:
-        result.append(_ghg_forcing(config, gases))
+        result["GHGForcing"] = _ghg_forcing(config, gases)
     for kind in LINEAR_TYPES:
         entry = _calculated(config, kind)
         if entry is not None:
-            result.append(_linear_forcing(config, entry))
+            result[f"LinearForcing[{entry['name']}]"] = _linear_forcing(config, entry)
     entry = _calculated(config, "aci")
     if entry is not None:
-        result.append(_aerosol_cloud(config, entry))
-    result.append(_aggregation(config))
+        result["AerosolCloud"] = _aerosol_cloud(config, entry)
+    result["ForcingAggregation"] = _aggregation(config)
     if energy_balance:
-        result.append(_energy_balance(config))
+        result["EnergyBalance"] = _energy_balance(config)
     return result
 
 
-def with_lags(builder: ModelBuilder, config: FairConfig) -> ModelBuilder:
-    """Add FaIR's feedback lags to a builder of `components`.
+def components(
+    config: FairConfig, *, energy_balance: bool = True
+) -> list[RustComponent]:
+    """Build the components of `component_specs`, in the order they are added."""
+    specs = component_specs(config, energy_balance=energy_balance)
+    return [spec.build() for spec in specs.values()]
+
+
+def lags(config: FairConfig) -> tuple[Lag, ...]:
+    """FaIR's feedback lags.
 
     Every component reads the previous step's surface air temperature change,
     and the methane lifetime the previous step's concentrations.
     """
-    builder.with_lag(names.SURFACE_AIR_TEMPERATURE_CHANGE)
+    result = [Lag(names.SURFACE_AIR_TEMPERATURE_CHANGE)]
     if thornhill(config):
-        for driver in _chemistry_drivers(
-            config, "concentration", CH4_LIFETIME_SENSITIVITY, key="sensitivity"
-        ):
-            builder.with_lag_for(driver["variable"], "CH4Lifetime")
+        result += [
+            Lag(driver["variable"], "CH4Lifetime")
+            for driver in _chemistry_drivers(
+                config, "concentration", CH4_LIFETIME_SENSITIVITY, key="sensitivity"
+            )
+        ]
+    return tuple(result)
+
+
+def with_lags(builder: ModelBuilder, config: FairConfig) -> ModelBuilder:
+    """Add FaIR's feedback `lags` to a builder of `components`."""
+    for lag in lags(config):
+        lag.add_to(builder)
     return builder
 
 

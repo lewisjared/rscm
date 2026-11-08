@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from rscm.core import Model
+    from rscm.spec import ModelSetup
 
 __all__ = ["EFFICACY_ADJUSTED_ERF", "ERF", "run_from_components"]
 
@@ -483,6 +484,11 @@ def reported() -> Reported:
 
 def run_coupled(run: FullRun) -> Model:
     """Run the emissions-driven model from the reference run's emissions and inputs."""
+    return setup_coupled(run).run()
+
+
+def setup_coupled(run: FullRun) -> ModelSetup:
+    """Set up the emissions-driven model from the reference run's inputs."""
     # MAGICC7 reports an F-gas's second-year concentration in its first year.
     n_fgas = run.parameters["fgas_n"]
     species = ("CO2", "CH4", "N2O", *full.halocarbon_species()[n_fgas:])
@@ -495,4 +501,4 @@ def run_coupled(run: FullRun) -> Model:
         },
         convention=Convention.MAGICC7,
     )
-    return emissions_driven.run_model(config, inputs, run.time_axis)
+    return emissions_driven.setup_model(config, inputs, run.time_axis)

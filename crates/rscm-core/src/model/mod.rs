@@ -25,7 +25,7 @@ mod validation;
 mod tests;
 
 // Public re-exports
-pub use builder::ModelBuilder;
+pub use builder::{ModelBuilder, PrescribedInput};
 pub use coupling::{ComponentCoupling, ConversionInfo, Coupling, CouplingEdge, TransformInfo};
 pub use parallel::{build_models, run_models};
 pub use runtime::Model;

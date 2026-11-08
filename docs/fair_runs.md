@@ -14,7 +14,9 @@ The runners take a time axis with a step starting at each timebound, `TimeAxis.f
 
 ## Components
 
-`components` lists the components of a configuration, in the order they must be added to a model:
+`component_specs` gives the components of a configuration by name, in the order they are added to a model,
+and `components` builds them.
+Each `LinearForcing` is named by its species, such as `LinearForcing[Ozone]`.
 
 | Component            | FaIR step                                                    |
 | -------------------- | ------------------------------------------------------------ |
@@ -44,7 +46,7 @@ so `scale_prescribed_forcing=True` does the same.
 
 ```python
 from rscm.core import TimeAxis
-from rscm.fair import naming, read_calibration, run_fair
+from rscm.fair import naming, read_calibration, run_model
 
 configs = read_calibration(
     "species_configs_properties.csv",
@@ -61,7 +63,7 @@ for entry in config["species"]:
         source = emissions if entry["input_mode"] == "emissions" else forcing
         inputs[name] = (source[entry["name"]], unit)
 
-model = run_fair(
+model = run_model(
     config, inputs, TimeAxis.from_values(timebounds), scale_prescribed_forcing=True
 )
 temperature = model.timeseries().get_timeseries_by_name("Surface Air Temperature Change")
@@ -95,11 +97,31 @@ It needs xarray, from the `fair` extra (`pip install 'rscm[fair]'`).
 of one of its configs and scenarios:
 
 ```python
-from rscm.fair import from_fair, run_fair
+from rscm.fair import from_fair, run_model
 
 config, inputs, time_axis = from_fair(f, config="member", scenario="ssp245")
-model = run_fair(config, inputs, time_axis)
+model = run_model(config, inputs, time_axis)
 ```
+
+## Inspecting a model before building
+
+`setup_model` takes the same arguments as `run_model` and returns a `rscm.spec.ModelSetup`:
+the components with their parameters, FaIR's lags, the initial values and the prescribed data.
+
+```python
+from rscm.fair import setup_model
+from rscm.spec import diff
+
+setup = setup_model(config, inputs, time_axis)
+print(setup)
+setup.spec.components["EnergyBalance"].parameters
+setup.prescribed_inputs()  # inputs no component produces, and whether each is supplied
+model = setup.run()
+```
+
+`diff(setup, other)` shows what changes between two setups,
+such as the species parameters and inputs that switch when a gas becomes concentration-driven.
+`build_model` and `run_model` are `setup_model(...).build()` and `setup_model(...).run()`.
 
 ## Other climate components
 

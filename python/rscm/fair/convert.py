@@ -47,7 +47,7 @@ def from_fair(
 
     `f` is a `fair.FAIR` with its species, configs and inputs filled.
     `config` and `scenario` may be left out when `f` has only one.
-    The result runs with `rscm.fair.run_fair`.
+    The result runs with `rscm.fair.run_model`.
     FaIR ignores `forcing_scale` for prescribed forcing, so the inputs are unscaled.
     """
     config = _only(list(f.configs), "config", config)

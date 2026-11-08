@@ -7,8 +7,10 @@ component alone. See ``regression/full_run.py`` for the fixture.
 
 from __future__ import annotations
 
+import dataclasses
 from functools import partial
 
+import numpy as np
 import numpy.testing as npt
 import pytest
 
@@ -284,44 +286,42 @@ def _all_outputs(model):
 WRITES = (VariableRole.Output, VariableRole.State)
 
 
-def _prescribing(modelled, variable):
-    """`build_from_components` with `variable`'s producer replaced by `modelled`.
+def _prescribing(setup, modelled, variable):
+    """``setup`` with ``variable``'s producer replaced by its outputs in ``modelled``.
 
     Every output of the producer that another component reads is prescribed.
-    The runner's lags stay as they are.
+    The lags stay as they are.
+    Also returns the producer's other outputs, which the new setup leaves unset.
     """
     outputs = _all_outputs(modelled)
-    build_from_components = magicc_model.build_from_components
+    built = {key: c.build() for key, c in setup.spec.components.items()}
 
-    def run(time_axis, components, *, prescribed, initial_values, **kwargs):
-        def writes(c):
-            return {d.name: d for d in c.definitions() if d.role in WRITES}
+    def writes(c):
+        return {d.name: d for d in c.definitions() if d.role in WRITES}
 
-        (producer,) = [c for c in components if variable in writes(c)]
-        kept = [c for c in components if c is not producer]
-        read = {
-            d.name
-            for c in kept
-            for d in c.definitions()
-            if d.role == VariableRole.Input
-        }
-        replaced = {
-            name: (outputs[name][: len(time_axis)], d.unit)
-            for name, d in writes(producer).items()
-            if name in read
-        }
-        assert variable in replaced
-        return build_from_components(
-            time_axis,
-            kept,
-            prescribed={**prescribed, **replaced},
-            initial_values={
-                k: v for k, v in initial_values.items() if k not in writes(producer)
-            },
-            **kwargs,
-        )
-
-    return run
+    (producer,) = [key for key, c in built.items() if variable in writes(c)]
+    written = writes(built.pop(producer))
+    read = {
+        d.name
+        for c in built.values()
+        for d in c.definitions()
+        if d.role == VariableRole.Input
+    }
+    axis = setup.time_axis
+    replaced = {
+        name: magicc_model._timeseries(outputs[name][: len(axis)], axis, d.unit)
+        for name, d in written.items()
+        if name in read
+    }
+    assert variable in replaced
+    spec = dataclasses.replace(
+        setup.spec,
+        components={k: c for k, c in setup.spec.components.items() if k != producer},
+        initial_values={
+            k: v for k, v in setup.spec.initial_values.items() if k not in written
+        },
+    )
+    return spec.bind({**setup.prescribed, **replaced}, axis), written.keys() - replaced
 
 
 @pytest.mark.parametrize(
@@ -332,16 +332,16 @@ def _prescribing(modelled, variable):
         (full_run.load, SURFACE_AIR_TEMPERATURE_CHANGE),
     ],
 )
-def test_prescribed_output_matches_modelled(monkeypatch, load, variable):
+def test_prescribed_output_matches_modelled(load, variable):
     """Prescribing a variable with its modelled values reproduces the run exactly."""
-    run = load()
-    modelled = full_run.run_coupled(run)
-    monkeypatch.setattr(
-        magicc_model, "build_from_components", _prescribing(modelled, variable)
-    )
-    prescribed = _all_outputs(full_run.run_coupled(run))
+    setup = full_run.setup_coupled(load())
+    modelled = setup.run()
+    replaced, unset = _prescribing(setup, modelled, variable)
+    prescribed = _all_outputs(replaced.run())
     expected = _all_outputs(modelled)
     assert variable in prescribed
+    for name in unset:
+        assert np.isnan(prescribed.pop(name)).all(), name
     for name, values in prescribed.items():
         npt.assert_array_equal(values, expected[name], err_msg=name)
         assert values.tobytes() == expected[name].tobytes(), name

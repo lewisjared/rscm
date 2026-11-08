@@ -143,3 +143,28 @@ fn flag_fills_missing_inputs_with_nan() {
     assert!(forcing.values().iter().all(|v| v.is_nan()));
     model.run();
 }
+
+#[test]
+fn prescribed_inputs_lists_unproduced_inputs() {
+    let mut builder = builder();
+    builder
+        .with_component(Arc::new(Warming))
+        .with_component(Arc::new(Ocean))
+        .with_prescribed_variable("forcing", series("W/m^2"));
+    let inputs: Vec<_> = builder
+        .prescribed_inputs()
+        .into_iter()
+        .map(|input| (input.definition.name, input.consumers, input.supplied))
+        .collect();
+    assert_eq!(
+        inputs,
+        [
+            ("emissions".to_string(), vec!["Warming".to_string()], false),
+            (
+                "forcing".to_string(),
+                vec!["Ocean".to_string(), "Warming".to_string()],
+                true
+            ),
+        ]
+    );
+}
