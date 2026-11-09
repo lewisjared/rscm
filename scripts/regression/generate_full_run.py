@@ -33,6 +33,7 @@ Output:
 import gzip
 import json
 import shutil
+from collections import ChainMap
 from fnmatch import fnmatchcase
 from pathlib import Path
 
@@ -339,6 +340,19 @@ def write_defaults() -> None:
         full.from_magicc7(
             time_axis, emissions, parameters=recorder, convention=Convention.MAGICC7
         )
+    # Keys read only with fixed-factor aerosol scaling or per-hemisphere upwelling
+    switched = {k: 2 for k in config if k.startswith("rf_") and k.endswith("_apply")}
+    switched = {
+        k: v
+        for k, v in switched.items()
+        if k.removesuffix("_apply") + "_factor" in config
+    }
+    full.from_magicc7(
+        time_axis,
+        emissions,
+        parameters=ChainMap({**switched, "core_upwell_thresh_oneglobal": 0}, recorder),
+        convention=Convention.MAGICC7,
+    )
     parameters = {key: config[key] for key in sorted(recorder.used)}
     with open(PACKAGE_DATA / "defaults.json", "w") as f:
         json.dump(
@@ -368,14 +382,15 @@ def _kept(variable: str, region: str, variables: tuple[str, ...]) -> bool:
     return matches(variables) and (region == "World" or matches(BOX_VARIABLES))
 
 
-def run_case(
+def run_case(  # noqa: PLR0913
     name: str,
     config: dict,
     variables: tuple[str, ...],
     carboncycle: tuple[str, ...],
     parameters: bool,
+    out: Path = OUT,
 ) -> None:
-    """Run MAGICC with one configuration and write its fixture."""
+    """Run MAGICC with one configuration and write its fixture in ``out``."""
     with run_magicc_ctx() as m:
         # CARBONCYCLE.OUT is only written as ASCII, the rest at full precision
         if carboncycle:
@@ -403,11 +418,11 @@ def run_case(
     if carboncycle:
         times = {t.year: t for t in table.columns if hasattr(t, "year")}
         table = pd.concat([table, extra.rename(columns=times)])
-    table.to_csv(OUT / f"{name}.csv.gz", index=False)
-    with open(OUT / f"{name}_config.json", "w") as f:
+    table.to_csv(out / f"{name}.csv.gz", index=False)
+    with open(out / f"{name}_config.json", "w") as f:
         json.dump(config, f, indent=2)
     if parameters:
-        with open(OUT / f"{name}_parameters.json", "w") as f:
+        with open(out / f"{name}_parameters.json", "w") as f:
             json.dump(
                 res.metadata["parameters"], f, indent=1, sort_keys=True, default=str
             )

@@ -457,6 +457,50 @@ def test_concentration_driven_run():
     )
 
 
+@pytest.mark.parametrize("member", full_run.AR6_MEMBERS)
+def test_ar6_member(member):
+    """Members of the AR6 ensemble, run like MAGICC7's default run."""
+    run = full_run.load_ar6(member)
+    model = full_run.ar6_model(member)
+    _assert_temperature(model, run)
+    _assert_concentrations(model, run, ("CO2", "CH4", "N2O"))
+    _assert_total_erf(model, run)
+
+
+def test_from_magicc7_fixes_bugs():
+    """Fixing the MAGICC7 bugs switches each off and moves the member it affects."""
+    run = full_run.load_ar6(444)
+    parameters = {**run.parameters, "out_sealevel": 1}
+    emissions = full_run.magicc7_emissions(run)
+    config, inputs = full.from_magicc7(
+        run.time_axis,
+        emissions,
+        parameters=parameters,
+        convention=Convention.MAGICC7,
+        bugs=(),
+    )
+    components = config["components"]
+    assert not components["ClimateUDEB"]["include_unset_lamcalc_error"]
+    assert not components["ForcingAggregation"]["climate"][
+        "include_unset_lamcalc_error"
+    ]
+    assert components["SeaLevelRise"]["antarctic_discharge"] == {
+        "include_response_overflow": False,
+        "include_early_release": False,
+    }
+    fixed = emissions_driven.setup_model(config, inputs, run.time_axis).run()
+
+    def temperature(model):
+        series = model.timeseries().get_four_box_timeseries_by_name(
+            SURFACE_AIR_TEMPERATURE_CHANGE
+        )
+        return series.values()[:-1]
+
+    assert not np.allclose(
+        temperature(fixed), temperature(full_run.ar6_model(444)), rtol=1e-9, atol=0
+    )
+
+
 def test_from_magicc7_reads_no_files_given_input_files(monkeypatch):
     """Loaded inputs reproduce the default run without reading a file."""
     run = full_run.load_default()
@@ -496,3 +540,25 @@ def test_from_magicc7_rejects_bad_emissions(change, match):
     change(emissions)
     with pytest.raises(ValueError, match=match):
         full.from_magicc7(run.time_axis, emissions)
+
+
+def test_from_magicc7_zero_nitrate_factor():
+    """A zero nitrate factor keeps the cloud forcing and regional patterns finite."""
+    run = full_run.load_default()
+    parameters = {
+        **run.parameters,
+        "rf_no3t_dir_apply": 2,
+        "rf_no3t_dir_factor": 0.0,
+    }
+    config, inputs = full.from_magicc7(
+        run.time_axis,
+        full_run.magicc7_emissions(run),
+        parameters=parameters,
+        convention=Convention.MAGICC7,
+    )
+    model = emissions_driven.setup_model(config, inputs, run.time_axis).run()
+
+    temperature = model.timeseries().get_four_box_timeseries_by_name(
+        SURFACE_AIR_TEMPERATURE_CHANGE
+    )
+    assert np.isfinite(temperature.values()[:-1]).all()

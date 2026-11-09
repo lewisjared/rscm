@@ -291,18 +291,38 @@ impl TerrestrialCarbonParameters {
 
     /// Fraction of deforestation emissions from soil pool (derived).
     ///
-    /// Validates that plant + detritus fractions do not exceed 1.0 and derives
-    /// the soil fraction as the residual.
+    /// The residual of the plant and detritus fractions, floored at zero.
     pub fn deforestation_soil_fraction(&self) -> FloatValue {
-        let total = self.deforestation_plant_fraction + self.deforestation_detritus_fraction;
-        assert!(
-            total <= 1.0 + 1e-9,
-            "deforestation_plant_fraction ({}) + deforestation_detritus_fraction ({}) must not exceed 1.0, got {}",
-            self.deforestation_plant_fraction,
-            self.deforestation_detritus_fraction,
-            total
-        );
         (1.0 - self.deforestation_plant_fraction - self.deforestation_detritus_fraction).max(0.0)
+    }
+
+    /// Applies the adjustments MAGICC7 makes when it initialises the carbon cycle.
+    ///
+    /// - NPP and deforestation plant and detritus fractions summing above 1 are scaled down to sum to 1.
+    /// - `plant_to_detritus_fraction` is capped at 1.
+    /// - `respiration_pi` is capped at 99% of the NPP to the plant pool.
+    pub fn normalised(mut self) -> Self {
+        fn rescale(plant: &mut FloatValue, detritus: &mut FloatValue) {
+            let soil = 1.0 - *plant - *detritus;
+            if soil < 0.0 {
+                *plant /= 1.0 - soil;
+                *detritus /= 1.0 - soil;
+            }
+        }
+        rescale(
+            &mut self.npp_to_plant_fraction,
+            &mut self.npp_to_detritus_fraction,
+        );
+        rescale(
+            &mut self.deforestation_plant_fraction,
+            &mut self.deforestation_detritus_fraction,
+        );
+        self.plant_to_detritus_fraction = self.plant_to_detritus_fraction.min(1.0);
+        let npp_to_plant = self.npp_to_plant_fraction * self.npp_pi;
+        if npp_to_plant < self.respiration_pi {
+            self.respiration_pi = 0.99 * npp_to_plant;
+        }
+        self
     }
 
     /// Net flux to plant pool at pre-industrial (NPP to plant - respiration).
@@ -486,5 +506,48 @@ mod tests {
             "Doubled CO2 should give ~45% NPP increase, got {:.1}%",
             (doubled_co2_factor - 1.0) * 100.0
         );
+    }
+
+    #[test]
+    fn test_normalised_keeps_defaults() {
+        let defaults = TerrestrialCarbonParameters::default();
+        let params = defaults.clone().normalised();
+        assert_eq!(params.npp_to_plant_fraction, defaults.npp_to_plant_fraction);
+        assert_eq!(
+            params.deforestation_plant_fraction,
+            defaults.deforestation_plant_fraction
+        );
+        assert_eq!(params.respiration_pi, defaults.respiration_pi);
+    }
+
+    #[test]
+    fn test_normalised_scales_fractions_down_to_one() {
+        let params = TerrestrialCarbonParameters {
+            npp_to_plant_fraction: 0.6,
+            npp_to_detritus_fraction: 0.6,
+            deforestation_plant_fraction: 0.9,
+            deforestation_detritus_fraction: 0.3,
+            plant_to_detritus_fraction: 1.5,
+            ..Default::default()
+        }
+        .normalised();
+        assert!((params.npp_to_plant_fraction - 0.5).abs() < 1e-15);
+        assert!((params.npp_to_detritus_fraction - 0.5).abs() < 1e-15);
+        assert!((params.deforestation_plant_fraction - 0.75).abs() < 1e-15);
+        assert!((params.deforestation_detritus_fraction - 0.25).abs() < 1e-15);
+        assert!(params.deforestation_soil_fraction().abs() < 1e-15);
+        assert_eq!(params.plant_to_detritus_fraction, 1.0);
+    }
+
+    #[test]
+    fn test_normalised_caps_respiration_below_plant_npp() {
+        let defaults = TerrestrialCarbonParameters::default();
+        let params = TerrestrialCarbonParameters {
+            respiration_pi: defaults.npp_pi,
+            ..defaults
+        }
+        .normalised();
+        let npp_to_plant = params.npp_to_plant_fraction * params.npp_pi;
+        assert_eq!(params.respiration_pi, 0.99 * npp_to_plant);
     }
 }

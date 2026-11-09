@@ -308,6 +308,12 @@ pub struct AntarcticDischarge {
     pub start_year: FloatValue,
     /// Drainage regions
     pub regions: Vec<AntarcticRegion>,
+    /// Reproduce MAGICC7 v7.5.3 raising the response age to powers in 32-bit integers,
+    /// so the fourth power wraps from an age of 216
+    pub include_response_overflow: bool,
+    /// Reproduce MAGICC7 v7.5.3 releasing one year of melt, against zero warming,
+    /// the year before a delayed region starts
+    pub include_early_release: bool,
 }
 
 impl Default for AntarcticDischarge {
@@ -323,6 +329,8 @@ impl Default for AntarcticDischarge {
             response_span: 500,
             scaling: 1.0,
             start_year: 1850.0,
+            include_response_overflow: true,
+            include_early_release: true,
             regions: vec![
                 region(
                     "Amundsen",

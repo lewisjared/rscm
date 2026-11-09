@@ -165,8 +165,12 @@ impl TerrestrialCarbon {
     }
 
     /// Create a new terrestrial carbon component from parameters.
+    ///
+    /// The parameters are [normalised](TerrestrialCarbonParameters::normalised) as in MAGICC7.
     pub fn from_parameters(parameters: TerrestrialCarbonParameters) -> Self {
-        Self { parameters }
+        Self {
+            parameters: parameters.normalised(),
+        }
     }
 
     /// Extrapolate CO2 to mid-year using quadratic formula.

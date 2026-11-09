@@ -42,21 +42,13 @@ pub fn default_lamcalc_params() -> LAMCALCParameters {
             sh_land / 2.0,
         ]),
         co2_regional_pattern: [1.0; 4],
+        include_unset_lamcalc_error: true,
     }
 }
 
 /// Build LAMCALC parameters from ClimateUDEB parameters for consistency.
 pub fn lamcalc_params_from_udeb(params: &ClimateUDEBParameters) -> LAMCALCParameters {
-    LAMCALCParameters {
-        erf_2xco2: params.erf_2xco2,
-        land_ocean_heat_exchange: params.land_ocean_heat_exchange,
-        north_south_heat_exchange: params.north_south_heat_exchange,
-        ecs: params.ecs,
-        land_ocean_warming_ratio: params.land_ocean_warming_ratio,
-        amplify_ocean_to_land: params.amplify_ocean_to_land,
-        grid: params.grid(),
-        co2_regional_pattern: params.co2_regional_pattern,
-    }
+    params.lamcalc_parameters(params.ecs, params.erf_2xco2)
 }
 
 // ---------------------------------------------------------------------------

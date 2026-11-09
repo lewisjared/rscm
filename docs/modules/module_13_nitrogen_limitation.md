@@ -233,7 +233,7 @@ where the second term should be `DAT_NH3B_EMIS`
 ```
 
 Industrial NH3 is counted twice and biomass-burning NH3 is left out.
-RSCM keeps the bug for parity.
+RSCM keeps the bug for parity unless `from_magicc7` leaves out `nh3_deposition_counted_twice` from `bugs`.
 
 ### Other issues
 

@@ -72,6 +72,7 @@ class ClimateUDEBParameters(TypedDict, total=False):
     polar_sinking_ratio: float
     steps_per_year: int
     maximum_temperature: float
+    include_unset_lamcalc_error: bool
     thermal_expansion: ThermalExpansion | None
 
 @final
@@ -216,6 +217,8 @@ class AntarcticDischarge(TypedDict, total=False):
     scaling: float
     start_year: float
     regions: list[AntarcticRegion]
+    include_response_overflow: bool
+    include_early_release: bool
 
 class SeaLevelRiseParameters(TypedDict, total=False):
     """Parameters for the sea level rise component.
@@ -499,6 +502,8 @@ class HalocarbonChemistryParameters(TypedDict, total=False):
     stratospheric_lifetime_sensitivity: float
     fgas_switch_year: float | None
     montreal_gases_switch_year: float | None
+    fgas_forcing_scale: float
+    montreal_gases_forcing_scale: float
     fgas_regions: FGasRegions | None
     """Makes ``Effective Radiative Forcing|F-Gases`` a four-box output."""
 
@@ -638,8 +643,10 @@ class OceanCarbonParameters(TypedDict, total=False):
     """Parameters for ocean carbon cycle component.
 
     All fields optional - defaults provided by Rust.
+    ``method`` sets the defaults of the IRF and physical parameters.
     """
 
+    method: Literal["3D-GFDL", "2D-BERN", "HILDA"]
     co2_pi: float
     pco2_pi: float | None
     gas_exchange_scale: float
@@ -1159,6 +1166,7 @@ class EfficacyClimate(TypedDict, total=False):
     land_ocean_warming_ratio: float
     amplify_ocean_to_land: float
     co2_regional_pattern: tuple[float, float, float, float]
+    include_unset_lamcalc_error: bool
 
 class ForcingAggregationParameters(TypedDict, total=False):
     """Parameters for ForcingAggregation."""

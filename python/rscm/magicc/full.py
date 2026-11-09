@@ -56,7 +56,7 @@ from rscm.names import (
 from rscm.names import prescribed as prescribed_input
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Collection, Iterable, Mapping, Sequence
 
     from numpy.typing import ArrayLike, NDArray
 
@@ -66,8 +66,10 @@ if TYPE_CHECKING:
     Inputs = dict[str, tuple[NDArray[np.float64], str]]
 
 __all__ = [
+    "BUG_COMPATIBILITY",
     "EFFICACY_METHODS",
     "INPUT_FILES",
+    "MAGICC7_BUGS",
     "PRESCRIBED_AGENTS",
     "REWRITTEN_PARAMETERS",
     "SECTORAL_EMISSIONS",
@@ -88,6 +90,7 @@ __all__ = [
     "permafrost_parameters",
     "prescribed_concentrations",
     "prescribed_forcing",
+    "reproduced_bugs",
 ]
 
 DATA = Path(__file__).parent / "data" / "magicc7"
@@ -146,6 +149,9 @@ NITROGEN_INPUT_FILES = ("file_nfix_in", "file_ndep_in")
 """Configuration keys of the nitrogen input files, read when they exist."""
 
 DIRECT = "Aerosols|Direct Effect"
+DIRECT_SPECIES = {"sox": "SOx", "bc": "BC", "oc": "OC"}
+"""MAGICC7 keys of the direct aerosol species with industrial and biomass forcing."""
+
 PRESCRIBED_AGENTS = {
     f"{DIRECT}|SOx|Fossil": "sox",
     f"{DIRECT}|BC|Fossil": "bc",
@@ -233,8 +239,65 @@ CALCULATED_AGENTS = {
 }
 """Agents calculated during the run, and the MAGICC7 efficacy key of each."""
 
+MAGICC7_BUGS = {
+    "unset_lamcalc_error": "LAMCALC reads its first error, DIFF(1), before setting it.",
+    "nh3_deposition_counted_twice": (
+        "Deposition from emissions counts industrial NH3 twice"
+        " and leaves out biomass NH3."
+    ),
+    "antarctic_response_overflow": (
+        "Antarctic discharge raises the response age to powers in 32-bit integers."
+    ),
+    "antarctic_early_release": (
+        "A delayed Antarctic region releases a year of melt before it starts."
+    ),
+}
+"""Known MAGICC7 bugs that `from_magicc7` can reproduce, by name."""
+
+BUG_COMPATIBILITY = {"7.5.3": frozenset(MAGICC7_BUGS)}
+"""The `MAGICC7_BUGS` of each MAGICC7 release."""
+
+
+def reproduced_bugs(bugs: str | Collection[str]) -> frozenset[str]:
+    """Return the names in `MAGICC7_BUGS` that ``bugs`` reproduces.
+
+    ``bugs`` is a release in `BUG_COMPATIBILITY` or names from `MAGICC7_BUGS`.
+    """
+    if isinstance(bugs, str):
+        if bugs not in BUG_COMPATIBILITY:
+            msg = f"bugs must be one of {sorted(BUG_COMPATIBILITY)}, not {bugs!r}"
+            raise ValueError(msg)
+        return BUG_COMPATIBILITY[bugs]
+    unknown = set(bugs) - MAGICC7_BUGS.keys()
+    if unknown:
+        msg = f"unknown MAGICC7 bugs: {sorted(unknown)}"
+        raise ValueError(msg)
+    return frozenset(bugs)
+
+
+def _included(bugs: str | Collection[str]) -> dict[str, bool]:
+    """Whether ``bugs`` reproduces each of `MAGICC7_BUGS`."""
+    reproduced = reproduced_bugs(bugs)
+    return {name: name in reproduced for name in MAGICC7_BUGS}
+
+
 EFFICACY_METHODS = {0: "none", 1: "unit", 2: "ar6"}
 """Efficacy methods by MAGICC7's ``rf_efficacy_apply``."""
+
+TERRESTRIAL_PARAMETERS = {
+    "fertilisation_factor": "co2_fertilization_factor",
+    "fertilisation_factor2": "co2_fertilization_factor2",
+    "fertilisation_method": "co2_fertilization_method",
+    "plant_respiration_fertilisation_scale": "co2_plantboxresp_fertscale",
+    "respiration_pi": "co2_respiration_initial",
+    "npp_to_plant_fraction": "co2_fraction_npp_2_plant",
+    "npp_to_detritus_fraction": "co2_fraction_npp_2_detritus",
+    "plant_to_detritus_fraction": "co2_fraction_plant_2_detritus",
+    "detritus_to_soil_fraction": "co2_fraction_detritus_2_soil",
+    "deforestation_plant_fraction": "co2_fraction_deforest_plant",
+    "deforestation_detritus_fraction": "co2_fraction_deforest_detritus",
+}
+"""TerrestrialCarbon parameters and their MAGICC7 names."""
 
 TERRESTRIAL_FEEDBACKS = {
     "npp": "npp",
@@ -245,6 +308,14 @@ TERRESTRIAL_FEEDBACKS = {
 """
 TerrestrialCarbon temperature sensitivities and their ``co2_feedbackfactor_*`` names.
 """
+
+OCEAN_CARBON_PARAMETERS = {
+    "method": "oceancc_model",
+    "gas_exchange_scale": "oceancc_scale_gasxchange",
+    "irf_scale": "oceancc_scale_impulseresponse",
+    "temperature_sensitivity": "oceancc_tempfeedback",
+}
+"""OceanCarbon parameters and their MAGICC7 names."""
 
 CLIMATE_PARAMETERS = {
     "ecs": "core_climatesensitivity",
@@ -267,6 +338,7 @@ CLIMATE_PARAMETERS = {
     "land_ground_heat_exchange": "core_heatxchange_landground",
     "mixed_layer_depth": "core_mixedlayer_depth",
     "co2_regional_pattern": "rf_regions_co2",
+    "upwelling_threshold_temperature_nh": "core_upwell_thresh_temp_nh",
     "land_heat_capacity_effective_thickness": "core_landhc_effthickness",
 }
 """ClimateUDEB parameters and their MAGICC7 names."""
@@ -459,6 +531,29 @@ def _total(
     return emissions[f"{species}|Fossil"] + emissions[f"{species}|Biosphere"]
 
 
+SCALING_APPLY = {1: "harmonise", 2: "factor"}
+"""How MAGICC7's ``rf_<agent>_apply`` scales a prescribed agent's forcing."""
+
+
+def _scaling(parameters: Mapping[str, Any], key: str) -> dict[str, Any]:
+    """Keyword arguments that scale a prescribed agent as ``rf_<key>_apply`` sets.
+
+    1 harmonises to ``rf_<key>_wm2`` in ``rf_<key>_yr``
+    and 2 scales by ``rf_<key>_factor``.
+    """
+    p = parameters
+    apply = p[f"rf_{key}_apply"]
+    if SCALING_APPLY.get(apply) == "harmonise":
+        return {
+            "harmonisation_target": p[f"rf_{key}_wm2"],
+            "harmonisation_reference_year": p[f"rf_{key}_yr"],
+        }
+    if SCALING_APPLY.get(apply) == "factor":
+        return {"factor": p[f"rf_{key}_factor"]}
+    msg = f"rf_{key}_apply must be one of {sorted(SCALING_APPLY)}, not {apply}"
+    raise ValueError(msg)
+
+
 def _nitrate_inputs(
     years: NDArray[np.float64],
     emissions: Mapping[str, NDArray[np.float64]],
@@ -474,8 +569,7 @@ def _nitrate_inputs(
         p["rf_regions_no3"],
     )
     kwargs = {
-        "harmonisation_target": p["rf_no3t_dir_wm2"],
-        "harmonisation_reference_year": p["rf_no3t_dir_yr"],
+        **_scaling(p, "no3t_dir"),
         "natural_nox": p["rf_noxn_emis"],
         "natural_nh3": p["rf_nh3n_emis"],
         "natural_sox": p["sox_natural_emissions"],
@@ -511,8 +605,7 @@ def prescribed_forcing(
             inputs[f"file_{code}b_rf"],
             emissions[f"{species}|Fossil"],
             emissions[f"{species}|Biosphere"],
-            harmonisation_target=p[f"rf_{code}i_dir_wm2"],
-            harmonisation_reference_year=p[f"rf_{code}i_dir_yr"],
+            **_scaling(p, f"{code}i_dir"),
         )
     nitrate_args, nitrate_kwargs = _nitrate_inputs(years, emissions, p)
     out[f"{DIRECT}|NO3|Fossil"], out[f"{DIRECT}|NO3|Biosphere"] = pr.nitrate(
@@ -524,8 +617,7 @@ def prescribed_forcing(
         years,
         land_use,
         co2_biosphere,
-        harmonisation_target=p["rf_landuse_albedo_wm2"],
-        harmonisation_reference_year=p["rf_landuse_albedo_yr"],
+        **_scaling(p, "landuse_albedo"),
         constant_after=p["rf_landuse_constantafteryr"],
     )
     out[f"{DIRECT}|Mineral Dust"] = pr.mineral_dust(
@@ -533,16 +625,14 @@ def prescribed_forcing(
         land_use,
         co2_biosphere,
         p["rf_regions_dust"],
-        harmonisation_target=p["rf_mineraldust_dir_wm2"],
-        harmonisation_reference_year=p["rf_mineraldust_dir_yr"],
+        **_scaling(p, "mineraldust_dir"),
         constant_after=p["rf_mineraldust_constantafteryr"],
     )
     out["Black Carbon on Snow"] = pr.bc_on_snow(
         years,
         inputs["file_bcsnow_rf"],
         _total(emissions, "BC"),
-        harmonisation_target=p["rf_bcsnow_albedo_wm2"],
-        harmonisation_reference_year=p["rf_bcsnow_albedo_yr"],
+        **_scaling(p, "bcsnow_albedo"),
     )
     names = ("SOXI", "SOXNB", "OCI", "OCB", "OCN", "BCI", "BCB", "SS")
     out["Aerosols|Indirect Effect"] = pr.cloud_albedo(
@@ -557,12 +647,11 @@ def prescribed_forcing(
             "BCB": emissions["BC|Biosphere"],
         },
         # The cloud code reads total nitrate, which differs from the sum of sources.
-        pr._nitrate_total(*nitrate_args, **nitrate_kwargs)[0],
+        pr._nitrate_total(*nitrate_args, shape_only=True, **nitrate_kwargs)[0],
         emissions["NOx|Fossil"],
         {g: p[f"cloud_weight_{g}"] for g in ("no3", "bc", "oc", "sox", "ss")},
         p["rf_regions_cloud_albedo"],
-        harmonisation_target=p["rf_cloud_albedo_aer_wm2"],
-        harmonisation_reference_year=p["rf_cloud_albedo_aer_yr"],
+        **_scaling(p, "cloud_albedo_aer"),
         bci_soluble_ratio=p["cloud_bci2bcb_soluble_ratio"],
         natural_sox=p["sox_natural_emissions"],
     )
@@ -576,10 +665,12 @@ def climate_parameters(
     inputs: Mapping[str, pr.AerosolHistory],
     start_year: float,
     end_year: float | None = None,
+    bugs: str | Collection[str] = "7.5.3",
 ) -> dict[str, Any]:
     """ClimateUDEB parameters, with regional and monthly volcanic forcing.
 
     With ``end_year``, months after the run ends are left out.
+    ``bugs`` selects the bugs to reproduce, see `reproduced_bugs`.
     """
     p = parameters
     volcanic = inputs["file_volcanic_rf"]
@@ -593,6 +684,12 @@ def climate_parameters(
         scale=p["rf_volcanic_scale"],
     )
     base = {ours: p[theirs] for ours, theirs in CLIMATE_PARAMETERS.items()}
+    # MAGICC7 applies the northern threshold to both hemispheres by default
+    southern = "nh" if p["core_upwell_thresh_oneglobal"] else "sh"
+    base["upwelling_threshold_temperature_sh"] = p[
+        f"core_upwell_thresh_temp_{southern}"
+    ]
+    base["include_unset_lamcalc_error"] = _included(bugs)["unset_lamcalc_error"]
     initial = ClimateUDEBBuilder.from_parameters(
         cast("Any", {**base, "erf_2xco2": EFFICACY_ERF_2XCO2})
     ).internal_efficacy(pattern)
@@ -657,7 +754,9 @@ def forcing_agents(
     ``emissions`` are in MAGICC7's units, see `magicc7_units`.
     The patterns in `NORMYEAR_PATTERNS` come from `prescribed` forcing
     on `years` in ``rf_regions_normyear``, or the closest year.
-    Nitrate's pattern comes from its total forcing in that year.
+    The SOx, BC and OC patterns come from their industrial and biomass forcing
+    in that year, nitrate's from its total forcing,
+    and the direct aerosol pattern from the SOx, BC, OC and dust forcing.
     """
     p = parameters
     i = int(np.abs(np.asarray(years) - p["rf_regions_normyear"]).argmin())
@@ -667,6 +766,13 @@ def forcing_agents(
     }
     args, kwargs = _nitrate_inputs(years, emissions, p)
     patterns["no3"] = pr.nitrate_pattern(*args, index=i, **kwargs)
+    for key, species in DIRECT_SPECIES.items():
+        fossil, biomass = (
+            np.asarray(prescribed[f"{DIRECT}|{species}|{sector}"])[i]
+            for sector in ("Fossil", "Biosphere")
+        )
+        patterns[key] = (fossil + biomass).tolist()
+    patterns["aer_dir"] = _direct_aerosol_pattern(prescribed, i)
     agents = [
         _agent(
             p,
@@ -694,9 +800,26 @@ def forcing_agents(
             "aer_dir",
             regional=True,
             sum_of=[child(ERF, name) for name in BIOMASS_AGENTS],
+            **_pattern(patterns, "aer_dir"),
         )
     )
     return agents
+
+
+def _direct_aerosol_pattern(
+    prescribed: Mapping[str, NDArray[np.float64]], index: int
+) -> list[float]:
+    """MAGICC7's ``rf_regions_aer_dir``: industrial, biomass and dust forcing boxes."""
+
+    def box(species: str, sector: str) -> NDArray[np.float64]:
+        return np.asarray(prescribed[f"{DIRECT}|{species}|{sector}"])[index]
+
+    industrial = (box("OC", "Fossil") + box("BC", "Fossil")) + box("SOx", "Fossil")
+    biomass = (box("SOx", "Biosphere") + box("OC", "Biosphere")) + box(
+        "BC", "Biosphere"
+    )
+    dust = np.asarray(prescribed[f"{DIRECT}|Mineral Dust"])[index]
+    return ((industrial + biomass) + dust).tolist()
 
 
 def _summation(terms: list[Any]) -> list[Any]:
@@ -719,14 +842,35 @@ def efficacy_climate(climate: Mapping[str, Any]) -> dict[str, Any]:
         "land_ocean_warming_ratio",
         "amplify_ocean_to_land",
         "co2_regional_pattern",
+        "include_unset_lamcalc_error",
     )
     return {**{k: climate[k] for k in keys}, "erf_2xco2": EFFICACY_ERF_2XCO2}
 
 
+OLBL_COEFFICIENTS = {
+    "co2": ("a1", "b1", "c1", "d1"),
+    "ch4": ("a3", "b3", "d3"),
+    "n2o": ("a2", "b2", "c2", "d2"),
+}
+"""Coefficients of MAGICC7's OLBL formulas, ``core_olbl_<gas>_<coefficient>``."""
+
+
 def _ghg_method(parameters: Mapping[str, Any]) -> dict[str, Any]:
-    method = parameters["core_co2ch4n2o_rfmethod"].strip().upper()
+    p = parameters
+    method = p["core_co2ch4n2o_rfmethod"].strip().upper()
     if method == "OLBL":
-        return {"method": method}
+        return {
+            "method": method,
+            **{
+                f"olbl_{gas}_{c}": p[f"core_olbl_{gas}_{c}"]
+                for gas, coefficients in OLBL_COEFFICIENTS.items()
+                for c in coefficients
+            },
+            **{
+                f"adjust_{gas}": p[f"core_rfrapidadjust_{gas}"]
+                for gas in OLBL_COEFFICIENTS
+            },
+        }
     # MAGICC7 applies no rapid adjustment with IPCCTAR
     return {
         "method": method,
@@ -821,10 +965,12 @@ def nitrogen_inputs(
     emissions: Mapping[str, NDArray[np.float64]],
     parameters: Mapping[str, Any],
     inputs: Mapping[str, pr.AerosolHistory],
+    bugs: str | Collection[str] = "7.5.3",
 ) -> dict[str, NDArray[np.float64]]:
     """Nitrogen deposition and fixation (Gt N/yr) driving the nitrogen limitation.
 
     ``emissions`` are in MAGICC7's units, see `magicc7_units`.
+    ``bugs`` selects the bugs to reproduce, see `reproduced_bugs`.
     A deposition file missing from ``inputs`` gives no deposition,
     as in MAGICC7 v7.5.3, which ships without its default deposition file.
     """
@@ -839,11 +985,12 @@ def nitrogen_inputs(
         return np.where(np.isnan(values), last, values)
 
     if p["ncycle_apply_ndep_from_emis"]:
-        # MAGICC7 counts industrial NH3 twice and leaves out biosphere NH3
+        twice = _included(bugs)["nh3_deposition_counted_twice"]
+        nh3 = emissions["NH3|Fossil" if twice else "NH3|Biosphere"]
         nitrogen = (
             emissions["NOx|Fossil"]
             + emissions["NOx|Biosphere"]
-            + 2.0 * emissions["NH3|Fossil"]
+            + (emissions["NH3|Fossil"] + nh3)
         )
         deposition = 1e-3 * p["ncycle_frac_ndep_land"] * nitrogen
     else:
@@ -1008,6 +1155,7 @@ def from_magicc7(  # noqa: PLR0913
     initial_concentrations: Mapping[str, float] | None = None,
     convention: Convention | str = Convention.RSCM,
     concentration_driven: bool = False,
+    bugs: str | Collection[str] = "7.5.3",
 ) -> tuple[ModelConfig, Inputs]:
     """Translate a MAGICC7 run into the configuration and inputs of a MAGICC model.
 
@@ -1026,6 +1174,8 @@ def from_magicc7(  # noqa: PLR0913
     ``input_files`` replaces the files from `load_inputs`.
     Load them once and pass them to every translation of an ensemble.
     ``initial_concentrations`` overrides `default_initial_concentrations`.
+    ``bugs`` names the MAGICC7 release whose known bugs to reproduce,
+    or the names from `MAGICC7_BUGS` to reproduce, so ``()`` fixes them all.
 
     As in MAGICC7, the F-gas forcing at the first time bound is that of the second year,
     which a two-year run of the translated configuration calculates.
@@ -1051,7 +1201,8 @@ def from_magicc7(  # noqa: PLR0913
         msg = "only co2_plantboxresp_method 2 is implemented"
         raise ValueError(msg)
 
-    climate = climate_parameters(p, files, time[0], time[-1])
+    include = _included(bugs)
+    climate = climate_parameters(p, files, time[0], time[-1], bugs)
     if p["out_sealevel"]:
         climate["thermal_expansion"] = {}
     prescribed = prescribed_forcing(time, native, p, files)
@@ -1087,6 +1238,8 @@ def from_magicc7(  # noqa: PLR0913
         "HalocarbonChemistry": {
             "fgas_switch_year": switch["fgas"],
             "montreal_gases_switch_year": switch["mhalo"],
+            "fgas_forcing_scale": p["rf_fgassum_scale"],
+            "montreal_gases_forcing_scale": p["rf_mhalosum_scale"],
             "fgas_regions": {
                 "regional_pattern": p["rf_regions_fgas"],
                 "lower_lifetime": p["fgas_rf_regionscaling_lowertau"],
@@ -1103,12 +1256,15 @@ def from_magicc7(  # noqa: PLR0913
                 * feedback
                 for ours, theirs in TERRESTRIAL_FEEDBACKS.items()
             },
+            **{ours: p[theirs] for ours, theirs in TERRESTRIAL_PARAMETERS.items()},
             "npp_pi": p[f"{source}_npp_initial"],
-            "fertilisation_method": p["co2_fertilization_method"],
-            "plant_respiration_fertilisation_scale": p["co2_plantboxresp_fertscale"],
             "nitrogen": nitrogen,
         },
-        "OceanCarbon": {**permafrost, "concentration_switch_year": switch["co2"]},
+        "OceanCarbon": {
+            **{k: p[v] for k, v in OCEAN_CARBON_PARAMETERS.items()},
+            **permafrost,
+            "concentration_switch_year": switch["co2"],
+        },
         "CO2Budget": {
             **permafrost,
             "concentration_switch_year": switch["co2"],
@@ -1131,7 +1287,12 @@ def from_magicc7(  # noqa: PLR0913
     if permafrost["include_permafrost"]:
         components["Permafrost"] = permafrost_parameters(p)
     if p["out_sealevel"]:
-        components["SeaLevelRise"] = {}
+        components["SeaLevelRise"] = {
+            "antarctic_discharge": {
+                "include_response_overflow": include["antarctic_response_overflow"],
+                "include_early_release": include["antarctic_early_release"],
+            }
+        }
     terrestrial = components["TerrestrialCarbon"]
     initial = {
         **{child(ATMOSPHERIC_CONCENTRATIONS, gas): c for gas, c in conc.items()},
@@ -1168,7 +1329,7 @@ def from_magicc7(  # noqa: PLR0913
     if nitrogen:
         inputs |= {
             name: (values, "Gt N/yr")
-            for name, values in nitrogen_inputs(time, native, p, files).items()
+            for name, values in nitrogen_inputs(time, native, p, files, bugs).items()
         }
     inputs |= {child(ERF, name): (v, "W/m^2") for name, v in prescribed.items()}
 

@@ -23,8 +23,9 @@
 //! # Differences from MAGICC7
 //!
 //! - **Land water** is not implemented. MAGICC7's default run leaves it off.
-//! - **Antarctic discharge** keeps two MAGICC7 quirks: the response functions overflow
-//!   from an age of 216 years, and a delayed region releases one year of melt before it starts.
+//! - **Antarctic discharge** keeps two MAGICC7 v7.5.3 bugs unless switched off:
+//!   the response functions overflow from an age of 216 years (`include_response_overflow`),
+//!   and a delayed region releases one year of melt before it starts (`include_early_release`).
 
 use crate::parameters::{
     ClimateUDEBParameters, SeaLevelRiseParameters, SurfaceMassBalance, ThermalExpansion,
@@ -235,17 +236,19 @@ impl SeaLevelRise {
                     return 0.0;
                 }
                 let c = region.response;
-                // MAGICC7 raises the age to powers in int32, so the fourth power wraps from 216
-                let x = age as i32;
-                let x2 = x.wrapping_mul(x);
-                let [x, x2, x3, x4] =
-                    [x, x2, x2.wrapping_mul(x), x2.wrapping_mul(x2)].map(FloatValue::from);
+                let [x, x2, x3, x4] = if p.include_response_overflow {
+                    let x = age as i32;
+                    let x2 = x.wrapping_mul(x);
+                    [x, x2, x2.wrapping_mul(x), x2.wrapping_mul(x2)].map(FloatValue::from)
+                } else {
+                    let x = age as FloatValue;
+                    [x, x * x, x * x * x, x * x * x * x]
+                };
                 (c[0] * x4 + c[1] * x3 + c[2] * x2 + c[3] * x + c[4]).max(0.0)
             };
             let region_start = p.start_year + region.delay as FloatValue;
             if year < region_start {
-                // MAGICC7 releases one year of melt against zero warming the year before a region starts
-                if year >= p.start_year && year + 1.0 >= region_start {
+                if p.include_early_release && year >= p.start_year && year + 1.0 >= region_start {
                     let melt = temperature * region.temperature_scaling * p.basal_melt_sensitivity;
                     total += melt * response(0) * 1000.0;
                 }
@@ -409,6 +412,32 @@ mod tests {
         }
         assert_eq!(state.greenland_smb, 0.0);
         assert_eq!(state.greenland_discharge_volume, [35.9803, 53.6289]);
+    }
+
+    #[test]
+    fn test_antarctic_bugs_switch_off() {
+        let run = |overflow, early| {
+            let mut parameters = SeaLevelRiseParameters::default();
+            parameters.antarctic_discharge.include_response_overflow = overflow;
+            parameters.antarctic_discharge.include_early_release = early;
+            let component = SeaLevelRise::from_parameters(parameters);
+            let mut state = component.initial_state();
+            (1850..2300)
+                .map(|year| {
+                    let warming = 0.01 * (year - 1850) as FloatValue;
+                    component.antarctic_discharge(&mut state, year as Time, warming)
+                })
+                .collect::<Vec<_>>()
+        };
+        let magicc = run(true, true);
+        // The Ross region starts in 1850, so its response reaches an age of 216 in 2066
+        let fixed = run(false, true);
+        assert_eq!(magicc[..216], fixed[..216]);
+        assert_ne!(magicc[216..], fixed[216..]);
+        // The first delayed region starts in 1900
+        let fixed = run(true, false);
+        assert_eq!(magicc[..49], fixed[..49]);
+        assert_ne!(magicc[49], fixed[49]);
     }
 
     #[test]

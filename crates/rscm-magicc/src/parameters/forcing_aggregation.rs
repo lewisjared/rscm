@@ -140,6 +140,8 @@ pub struct EfficacyClimate {
     ///
     /// unit: dimensionless
     pub co2_regional_pattern: [FloatValue; 4],
+    /// Reproduce MAGICC7 v7.5.3 reading LAMCALC's first error, `DIFF(1)`, unset
+    pub include_unset_lamcalc_error: bool,
 }
 
 impl Default for EfficacyClimate {
@@ -153,6 +155,7 @@ impl Default for EfficacyClimate {
             land_ocean_warming_ratio: p.land_ocean_warming_ratio,
             amplify_ocean_to_land: p.amplify_ocean_to_land,
             co2_regional_pattern: p.co2_regional_pattern,
+            include_unset_lamcalc_error: p.include_unset_lamcalc_error,
         }
     }
 }

@@ -186,12 +186,13 @@ S_{AIS,SID}(y+1) = \sigma_{AIS} \sum_r 1000 \sum_{a=0}^{y - y_r} m_r(y - a)\, R_
 $$
 
 with $\sigma_{AIS}$ = `SLR_AIS_SID_SCALING`.
-Two MAGICC7 quirks are part of the formulation:
+Two MAGICC7 bugs are part of the formulation,
+each switched off by an `include_*` parameter of `antarctic_discharge`:
 
-- **Response overflow**: MAGICC7 raises the age to its powers in 32-bit integers,
+- **Response overflow** (`include_response_overflow`): MAGICC7 raises the age to its powers in 32-bit integers,
   so $a^4$ wraps from $a = 216$.
   Ross, with no delay in the default configuration, reaches that age in 2067.
-- **Start release**: in the year $y_r - 1$,
+- **Start release** (`include_early_release`): in the year $y_r - 1$,
   MAGICC7 adds $1000\, b\, \theta_r\, T(y)\, R_r(0)$ for that year alone,
   against zero warming.
 

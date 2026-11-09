@@ -4,6 +4,7 @@
 //! following MAGICC7.
 
 use super::ThermalExpansion;
+use crate::climate::lamcalc::LAMCALCParameters;
 use rscm_core::spatial::FourBoxGrid;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
@@ -335,6 +336,9 @@ pub struct ClimateUDEBParameters {
     /// `[1.4089, 1.37045, 1.43333, 1.33257]`.
     pub co2_regional_pattern: [FloatValue; 4],
 
+    /// Reproduce MAGICC7 v7.5.3 reading LAMCALC's first error, `DIFF(1)`, unset.
+    pub include_unset_lamcalc_error: bool,
+
     // Efficacy parameters
     /// How efficacies scale the ERF (MAGICC7 `RF_EFFICACY_APPLY`).
     ///
@@ -448,6 +452,7 @@ impl Default for ClimateUDEBParameters {
 
             // Regional CO2 forcing (MAGCFG_DEFAULTALL.CFG)
             co2_regional_pattern: [1.4089, 1.37045, 1.43333, 1.33257],
+            include_unset_lamcalc_error: true,
 
             // Efficacy
             efficacy_method: EfficacyMethod::None,
@@ -552,6 +557,21 @@ impl ClimateUDEBParameters {
         let nh_land = self.nh_land_fraction / 2.0;
         let sh_land = self.sh_land_fraction / 2.0;
         FourBoxGrid::with_weights([0.5 - nh_land, nh_land, 0.5 - sh_land, sh_land])
+    }
+
+    /// LAMCALC parameters at the given sensitivity and 2xCO2 ERF.
+    pub fn lamcalc_parameters(&self, ecs: FloatValue, erf_2xco2: FloatValue) -> LAMCALCParameters {
+        LAMCALCParameters {
+            erf_2xco2,
+            land_ocean_heat_exchange: self.land_ocean_heat_exchange,
+            north_south_heat_exchange: self.north_south_heat_exchange,
+            ecs,
+            land_ocean_warming_ratio: self.land_ocean_warming_ratio,
+            amplify_ocean_to_land: self.amplify_ocean_to_land,
+            grid: self.grid(),
+            co2_regional_pattern: self.co2_regional_pattern,
+            include_unset_lamcalc_error: self.include_unset_lamcalc_error,
+        }
     }
 
     /// Get the global land fraction.

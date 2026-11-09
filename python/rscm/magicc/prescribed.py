@@ -14,8 +14,10 @@ replace with the final year's own.
 
 from __future__ import annotations
 
+import functools
 import gzip
 import math
+import operator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -134,12 +136,31 @@ def _extend(
     return out
 
 
+def _scale(target: float | None, factor: float | None, reference: float) -> float:
+    """``factor``, or the factor that scales ``reference`` to ``target``."""
+    if factor is not None:
+        return float(factor)
+    if target is None:
+        msg = "give harmonisation_target or factor"
+        raise ValueError(msg)
+    return float(target / reference)
+
+
 def _harmonise(
-    boxes: NDArray[np.float64], years: NDArray[np.float64], year: float, target: float
+    boxes: NDArray[np.float64],
+    years: NDArray[np.float64],
+    year: float,
+    target: float | None,
+    factor: float | None = None,
 ) -> float:
-    """Factor that sets the global forcing change since the first year to ``target``."""
+    """Factor that sets the global forcing change since the first year to ``target``.
+
+    A given ``factor`` is returned as it is.
+    """
+    if factor is not None:
+        return float(factor)
     i = _switch_index(years, year)
-    return float(target / (area_mean(boxes[i]) - area_mean(boxes[0])))
+    return _scale(target, None, float(area_mean(boxes[i]) - area_mean(boxes[0])))
 
 
 def direct_aerosol(  # noqa: PLR0913
@@ -149,14 +170,16 @@ def direct_aerosol(  # noqa: PLR0913
     industrial_emissions: ArrayLike,
     biomass_emissions: ArrayLike,
     *,
-    harmonisation_target: float,
+    harmonisation_target: float | None = None,
     harmonisation_reference_year: float = 2019,
+    factor: float | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Industrial and biomass direct forcing of SOx, BC or OC (`RF_*I_DIR_APPLY=1`).
+    """Industrial and biomass direct forcing of SOx, BC or OC.
 
     Industrial forcing scales with emissions above the first year's after the
     file ends, and is harmonised to ``harmonisation_target`` W/m²
-    in ``harmonisation_reference_year``.
+    in ``harmonisation_reference_year`` (`RF_*I_DIR_APPLY=1`),
+    or scaled by ``factor`` (`RF_*I_DIR_APPLY=2`).
     Biomass forcing (`RF_*B_DIR_APPLY=3`) uses the industrial factor.
     MAGICC7 v7.5.3 extends each biomass box by half the change in midyear
     emissions above the first year's, which is reproduced here.
@@ -166,7 +189,9 @@ def direct_aerosol(  # noqa: PLR0913
     y = np.asarray(years, dtype=np.float64)
     ind = np.asarray(industrial_emissions, dtype=np.float64)
     ind_rf = _extend(industrial, y, ind - ind[0])
-    factor = _harmonise(ind_rf, y, harmonisation_reference_year, harmonisation_target)
+    factor = _harmonise(
+        ind_rf, y, harmonisation_reference_year, harmonisation_target, factor
+    )
 
     bio_rf = on_axis(biomass, y)
     sw = _switch_index(y, biomass.last_year())
@@ -178,22 +203,25 @@ def direct_aerosol(  # noqa: PLR0913
     return ind_rf * factor, bio_rf * factor
 
 
-def bc_on_snow(
+def bc_on_snow(  # noqa: PLR0913
     years: ArrayLike,
     history: AerosolHistory,
     bc_emissions: ArrayLike,
     *,
-    harmonisation_target: float,
+    harmonisation_target: float | None = None,
     harmonisation_reference_year: float = 2019,
+    factor: float | None = None,
 ) -> NDArray[np.float64]:
     """Return black carbon on snow forcing relative to the first year.
 
     The file is extended with total BC emissions
-    and harmonised to ``harmonisation_target``.
+    and harmonised to ``harmonisation_target``, or scaled by ``factor``.
     """
     y = np.asarray(years, dtype=np.float64)
     rf = _extend(history, y, bc_emissions)
-    factor = _harmonise(rf, y, harmonisation_reference_year, harmonisation_target)
+    factor = _harmonise(
+        rf, y, harmonisation_reference_year, harmonisation_target, factor
+    )
     return rf * factor - rf[0] * factor
 
 
@@ -212,19 +240,23 @@ def land_use(  # noqa: PLR0913
     history: AerosolHistory,
     land_use_co2: ArrayLike,
     *,
-    harmonisation_target: float,
+    harmonisation_target: float | None = None,
     harmonisation_reference_year: float = 2019,
     constant_after: float = 2018,
+    factor: float | None = None,
 ) -> NDArray[np.float64]:
     """Land-use albedo forcing.
 
     The file is extended with cumulative land-use CO2 emissions and held
     after ``constant_after``, which does not affect harmonisation.
+    It is harmonised to ``harmonisation_target``, or scaled by ``factor``.
     Years before the file have no land-use forcing.
     """
     y = np.asarray(years, dtype=np.float64)
     raw = _extend(history, y, np.cumsum(land_use_co2), before=0.0)
-    factor = _harmonise(raw, y, harmonisation_reference_year, harmonisation_target)
+    factor = _harmonise(
+        raw, y, harmonisation_reference_year, harmonisation_target, factor
+    )
     return _hold_after(raw, y, constant_after) * factor
 
 
@@ -234,15 +266,21 @@ def mineral_dust(  # noqa: PLR0913
     land_use_co2: ArrayLike,
     pattern: ArrayLike,
     *,
-    harmonisation_target: float,
+    harmonisation_target: float | None = None,
     harmonisation_reference_year: float = 2019,
     constant_after: float = 2018,
+    factor: float | None = None,
 ) -> NDArray[np.float64]:
-    """Mineral dust forcing, following global land-use forcing on its own pattern."""
+    """Mineral dust forcing, following global land-use forcing on its own pattern.
+
+    It is harmonised to ``harmonisation_target``, or scaled by ``factor``.
+    """
     y = np.asarray(years, dtype=np.float64)
     raw = area_mean(_extend(land_use_history, y, np.cumsum(land_use_co2), before=0.0))
-    i = _switch_index(y, harmonisation_reference_year)
-    scaled = raw * (harmonisation_target / (raw[i] - raw[0]))
+    if factor is None:
+        i = _switch_index(y, harmonisation_reference_year)
+        factor = _scale(harmonisation_target, None, raw[i] - raw[0])
+    scaled = raw * factor
     p = np.asarray(pattern, dtype=np.float64)
     boxes = scaled[:, None] * p / area_mean(p)
     return _hold_after(boxes, y, constant_after)
@@ -255,7 +293,7 @@ def _nitrate_total(  # noqa: PLR0913
     sox: ArrayLike,
     pattern: ArrayLike,
     *,
-    harmonisation_target: float,
+    harmonisation_target: float | None = None,
     harmonisation_reference_year: float = 2019,
     natural_nox: float = 10.0,
     natural_nh3: float = 21.0,
@@ -264,8 +302,13 @@ def _nitrate_total(  # noqa: PLR0913
     burden_pi: float = 0.0085,
     optical_thickness_pi: float = 1.41,
     burden_to_optical_thickness_exponent: float = 0.76,
+    factor: float | None = None,
+    shape_only: bool = False,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Total nitrate forcing boxes, before the source split, and per hemisphere."""
+    """Total nitrate forcing boxes, before the source split, and its global value.
+
+    ``shape_only`` callers normalise the forcing, so a zero scale is replaced by one.
+    """
     y = np.asarray(years, dtype=np.float64)
     nox_i, nox_b = (np.asarray(e, dtype=np.float64) for e in nox)
     nh3_i, nh3_b = (np.asarray(e, dtype=np.float64) for e in nh3)
@@ -279,8 +322,12 @@ def _nitrate_total(  # noqa: PLR0913
         [math.pow(b / burden_pi, burden_to_optical_thickness_exponent) for b in burden]
     )
     rf = optical_thickness * optical_thickness_pi - optical_thickness_pi
-    reference = rf[_switch_index(y, harmonisation_reference_year)]
-    rf = rf * (harmonisation_target / reference)
+    if factor is None:
+        reference = rf[_switch_index(y, harmonisation_reference_year)]
+        factor = _scale(harmonisation_target, None, reference)
+    if shape_only and factor == 0:
+        factor = 1.0
+    rf = rf * factor
 
     product = (nh3_i * 0.5 + nh3_b * 0.5) * (nox_b * 0.5 + nox_i * 0.5)
     hemisphere = ((rf + rf) * product) / (product + product)
@@ -292,7 +339,7 @@ def _nitrate_total(  # noqa: PLR0913
         sea, lnd, wo, wl = ocean[h], land[h], w[2 * h], w[2 * h + 1]
         total[:, 2 * h] = ((hemisphere * (sea + lnd)) * wo) / (sea * wo + lnd * wl)
         total[:, 2 * h + 1] = ((hemisphere * (lnd + sea)) * wl) / (lnd * wl + sea * wo)
-    return total, hemisphere
+    return total, rf
 
 
 def nitrate(  # noqa: PLR0913
@@ -302,7 +349,7 @@ def nitrate(  # noqa: PLR0913
     sox: ArrayLike,
     pattern: ArrayLike,
     *,
-    harmonisation_target: float,
+    harmonisation_target: float | None = None,
     harmonisation_reference_year: float = 2019,
     natural_nox: float = 10.0,
     natural_nh3: float = 21.0,
@@ -311,6 +358,7 @@ def nitrate(  # noqa: PLR0913
     burden_pi: float = 0.0085,
     optical_thickness_pi: float = 1.41,
     burden_to_optical_thickness_exponent: float = 0.76,
+    factor: float | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Industrial and biomass nitrate direct forcing (Hauglustaine et al. 2014).
 
@@ -319,6 +367,7 @@ def nitrate(  # noqa: PLR0913
     Each hemisphere's forcing follows its share of NOx x NH3, spread over its
     boxes by ``pattern``, and splits between the sources by the same product.
     Emissions fall half on each hemisphere's land, as MAGICC7 spreads global inputs.
+    The forcing is harmonised to ``harmonisation_target``, or scaled by ``factor``.
     """
     total, _ = _nitrate_total(
         years,
@@ -335,6 +384,7 @@ def nitrate(  # noqa: PLR0913
         burden_pi=burden_pi,
         optical_thickness_pi=optical_thickness_pi,
         burden_to_optical_thickness_exponent=burden_to_optical_thickness_exponent,
+        factor=factor,
     )
     nox_i, nox_b = (np.asarray(e, dtype=np.float64) for e in nox)
     nh3_i, nh3_b = (np.asarray(e, dtype=np.float64) for e in nh3)
@@ -356,11 +406,11 @@ def nitrate_pattern(
 ) -> list[float]:
     """Regional pattern of nitrate forcing, as MAGICC7 sets ``RF_REGIONS_NO3``.
 
-    It is the total forcing boxes over the hemispheric forcing at ``index``.
+    It is the total forcing boxes over the global forcing at ``index``.
     Takes the arguments of `nitrate`.
     """
-    total, hemisphere = _nitrate_total(*args, **kwargs)
-    return (total[index] / hemisphere[index]).tolist()
+    total, rf = _nitrate_total(*args, shape_only=True, **kwargs)
+    return (total[index] / rf[index]).tolist()
 
 
 # Cloud-active species and their components, in MAGICC7's summation order.
@@ -406,8 +456,9 @@ def cloud_albedo(  # noqa: PLR0913
     weights: Mapping[str, float],
     pattern: ArrayLike,
     *,
-    harmonisation_target: float,
+    harmonisation_target: float | None = None,
     harmonisation_reference_year: float = 2019,
+    factor: float | None = None,
     bci_soluble_ratio: float = 0.75,
     natural_sox: float = 14.0,
     pattern_reference_year: float = 2000,
@@ -422,6 +473,7 @@ def cloud_albedo(  # noqa: PLR0913
     ``nitrate_forcing`` is the total nitrate forcing boxes, extended the same way
     with ``industrial_nox`` from ``nitrate_switch_year``.
     ``weights`` has the keys no3, bc, oc, sox and ss.
+    The forcing is harmonised to ``harmonisation_target``, or scaled by ``factor``.
     """
     y = np.asarray(years, dtype=np.float64)
     components = {}
@@ -446,7 +498,8 @@ def cloud_albedo(  # noqa: PLR0913
     sw = _switch_index(y, nitrate_switch_year)
     no3 = _scale_from(no3 / area_mean(no3[sw]), sw, *_cloud_drive(industrial_nox, sw))
 
-    total = sum(weights[g] for g in ("no3", *CLOUD_GROUPS))
+    # Summed in order like MAGICC7, because builtin sum compensates float rounding.
+    total = functools.reduce(operator.add, (weights[g] for g in ("no3", *CLOUD_GROUPS)))
 
     def number_index(
         c: Mapping[str, NDArray[np.float64]], nitrate: NDArray[np.float64]
@@ -464,8 +517,11 @@ def cloud_albedo(  # noqa: PLR0913
     cdnc = log10(index) - log10(reference)
     pattern_index = _switch_index(y, pattern_reference_year)
     boxes = (cdnc / cdnc[pattern_index]) * np.asarray(pattern)
-    harmonisation_index = _switch_index(y, harmonisation_reference_year)
-    return boxes * (harmonisation_target / area_mean(boxes[harmonisation_index]))
+    if factor is None:
+        harmonisation_index = _switch_index(y, harmonisation_reference_year)
+        harmonised = float(area_mean(boxes[harmonisation_index]))
+        factor = _scale(harmonisation_target, None, harmonised)
+    return boxes * factor
 
 
 def solar(values: ArrayLike, scale: float = 0.66) -> NDArray[np.float64]:
@@ -493,7 +549,7 @@ def volcanic_pattern(  # noqa: PLR0913
     ok = ~(np.isnan(nh) | np.isnan(sh)) & (t >= start_year) & (t < last_year + 1)
     # Sequential sums of the scaled values, as MAGICC7 adds them.
     north, south = (np.cumsum(x[ok] * scale)[-1] / ok.sum() for x in (nh, sh))
-    mean = 0.5 * (north + south)
+    mean = float(area_mean([north, north, south, south]))
     return (north - mean - 1, north - mean - 1, south - mean - 1, south - mean - 1)
 
 

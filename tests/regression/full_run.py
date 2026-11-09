@@ -47,6 +47,8 @@ from rscm.names import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from numpy.typing import NDArray
 
     from rscm.core import Model
@@ -199,6 +201,23 @@ VARIANTS = (
 )
 
 
+# AR6 ensemble members kept as fixtures, `generate_ar6_ensemble.MEMBERS`.
+AR6_MEMBERS = (*range(0, 600, 30), 9, 126, 167, 444, 489)
+
+
+@cache
+def load_ar6(member: int) -> FullRun:
+    """Load an AR6 ensemble member, with the default run's parameters and inputs.
+
+    Its parameters are the default run's with the member's configuration.
+    """
+    stem = DATA.with_name(f"07_ssp245_ar6_{member:03d}")
+    run = FullRun(
+        _read_data(stem), {**load_default().parameters, **_json(stem, "config")}
+    )
+    return _with_inputs(run)
+
+
 @cache
 def load_variant(name: str) -> FullRun:
     """Load a variant in `VARIANTS`, with the reference run's unchanged inputs.
@@ -276,6 +295,15 @@ def _sum(terms: list[NDArray[np.float64]]) -> NDArray[np.float64]:
     return total
 
 
+def _factor(p: dict[str, Any], key: str, change: Callable[[float], float]) -> float:
+    """Scale of a prescribed agent, from ``change`` in a year when harmonised."""
+    scaling = full._scaling(p, key)
+    if "factor" in scaling:
+        return float(scaling["factor"])
+    target = scaling["harmonisation_target"]
+    return float(target / change(scaling["harmonisation_reference_year"]))
+
+
 def prescribed_global_forcing(run: FullRun) -> dict[str, NDArray[np.float64]]:
     """Global ERF of each prescribed agent as MAGICC7 reports it.
 
@@ -293,42 +321,43 @@ def prescribed_global_forcing(run: FullRun) -> dict[str, NDArray[np.float64]]:
     indirect = "Aerosols|Indirect Effect"
     out[indirect] = pr.area_mean(boxes[indirect])
     out["Solar"] = boxes["Solar"][:, 0]
+
+    def change(raw: NDArray[np.float64]) -> Callable[[float], float]:
+        def at(year: float) -> float:
+            i = pr._switch_index(y, year)
+            return float(pr.area_mean(raw[i]) - pr.area_mean(raw[0]))
+
+        return at
+
     for species in ("SOx", "BC", "OC"):
         code = species.lower()
         industrial = files[f"file_{code}i_rf"]
         fossil = em[f"{species}|Fossil"]
         raw = pr._extend(industrial, y, fossil - fossil[0])
-        year, target = p[f"rf_{code}i_dir_yr"], p[f"rf_{code}i_dir_wm2"]
-        i = pr._switch_index(y, year)
-        # A target of the unscaled change gives a factor of exactly 1.
         unscaled = pr.direct_aerosol(
             y,
             industrial,
             files[f"file_{code}b_rf"],
             fossil,
             em[f"{species}|Biosphere"],
-            harmonisation_target=float(pr.area_mean(raw[i]) - pr.area_mean(raw[0])),
-            harmonisation_reference_year=year,
+            factor=1.0,
         )
-        factor = pr._harmonise(raw, y, year, target)
+        factor = _factor(p, f"{code}i_dir", change(raw))
         for sector, values in zip(SECTORS, unscaled, strict=True):
             out[f"{DIRECT}|{species}|{sector}"] = pr.area_mean(values) * factor
     raw = pr._extend(files["file_bcsnow_rf"], y, em["BC|Fossil"] + em["BC|Biosphere"])
-    factor = pr._harmonise(raw, y, p["rf_bcsnow_albedo_yr"], p["rf_bcsnow_albedo_wm2"])
+    factor = _factor(p, "bcsnow_albedo", change(raw))
     snow = pr.area_mean(raw)
     out["Black Carbon on Snow"] = snow * factor - snow[0] * factor
     land_use = files["file_landuse_rf"]
     raw = pr._extend(land_use, y, np.cumsum(em["CO2|Biosphere"]), before=0.0)
-    factor = pr._harmonise(
-        raw, y, p["rf_landuse_albedo_yr"], p["rf_landuse_albedo_wm2"]
-    )
+    factor = _factor(p, "landuse_albedo", change(raw))
     hold = pr._hold_after(pr.area_mean(raw), y, p["rf_landuse_constantafteryr"])
     out["Land-use Change"] = hold * factor
     dust = pr.area_mean(raw)
-    i = pr._switch_index(y, p["rf_mineraldust_dir_yr"])
-    scaled = dust * (p["rf_mineraldust_dir_wm2"] / (dust[i] - dust[0]))
+    factor = _factor(p, "mineraldust_dir", change(raw))
     out[f"{DIRECT}|Mineral Dust"] = pr._hold_after(
-        scaled, y, p["rf_mineraldust_constantafteryr"]
+        dust * factor, y, p["rf_mineraldust_constantafteryr"]
     )
     return out
 
@@ -393,8 +422,14 @@ class Reported:
             s: output(self.model, f"Atmospheric Concentrations|{s}") for s in species
         }
         n = len(self.run.years)
+        p = self.run.parameters
         component = HalocarbonChemistryBuilder.from_parameters(
-            {"fgas_switch_year": np.inf, "montreal_gases_switch_year": np.inf}
+            {
+                "fgas_switch_year": np.inf,
+                "montreal_gases_switch_year": np.inf,
+                "fgas_forcing_scale": p["rf_fgassum_scale"],
+                "montreal_gases_forcing_scale": p["rf_mhalosum_scale"],
+            }
         ).build()
         return run_from_components(
             self.run.time_axis,
@@ -464,6 +499,19 @@ def default_model() -> Model:
     run = load_default()
     config, inputs = full.from_magicc7(
         run.time_axis, magicc7_emissions(run), convention=Convention.MAGICC7
+    )
+    return emissions_driven.setup_model(config, inputs, run.time_axis).run()
+
+
+@cache
+def ar6_model(member: int) -> Model:
+    """The emissions-driven model of an AR6 ensemble member."""
+    run = load_ar6(member)
+    config, inputs = full.from_magicc7(
+        run.time_axis,
+        magicc7_emissions(run),
+        parameters=run.parameters,
+        convention=Convention.MAGICC7,
     )
     return emissions_driven.setup_model(config, inputs, run.time_axis).run()
 
