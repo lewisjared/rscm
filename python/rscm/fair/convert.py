@@ -151,8 +151,14 @@ def _check_initial_state(
                 f.airborne_emissions.sel(first).sel(specie=name).data,
                 0.0,
             )
-        # A run overwrites the gas partitions with their final state.
-        if ghg and not has_run:
+        if ghg and has_run:
+            v.add(
+                IssueKind.UNSUPPORTED,
+                f"{name}.gas_partitions",
+                "FAIR has run, which overwrites its initial gas partitions, "
+                "so convert it before f.run()",
+            )
+        elif ghg:
             expect(
                 f"{name}.gas_partitions",
                 f.gas_partitions.sel(at).sel(specie=name).data,
@@ -166,7 +172,7 @@ def _check_initial_state(
             )
         forcing = f.forcing.sel(first).sel(specie=name).data
         # FaIR's first total forcing skips NaN.
-        if mode == "calculated" and not np.isnan(forcing).all():
+        if mode != "forcing" and not np.isnan(forcing).all():
             expect(f"{name}.forcing", forcing, 0.0)
 
 

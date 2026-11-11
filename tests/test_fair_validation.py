@@ -148,6 +148,24 @@ def test_null_ocean_parameter(key: str, config: dict[str, Any]) -> None:
     assert _issues(config) == {(IssueKind.NON_FINITE, f"climate.{key}")}
 
 
+@pytest.mark.parametrize("value", [None, math.nan])
+@pytest.mark.parametrize("key", ["partition_fraction", "unperturbed_lifetime"])
+def test_null_gas_boxes(key: str, value: Any, config: dict[str, Any]) -> None:
+    _species(config, "CO2")[key] = value
+    assert _issues(config) == {(IssueKind.NON_FINITE, f"CO2.{key}")}
+
+
+@pytest.mark.parametrize("key", ["g0", "iirf_0"])
+def test_infinite_lifetime_scaling(key: str, config: dict[str, Any]) -> None:
+    _species(config, "HFC-134a")[key] = math.inf
+    assert _issues(config) == {(IssueKind.NON_FINITE, f"HFC-134a.{key}")}
+
+
+def test_nan_lifetime_scaling_is_allowed(config: dict[str, Any]) -> None:
+    _species(config, "HFC-134a")["g0"] = math.nan
+    validate(config)
+
+
 def test_energy_balance_needs_two_layers(config: dict[str, Any]) -> None:
     config["climate"] |= {"ocean_heat_capacity": [8.0], "ocean_heat_transfer": [1.2]}
     assert _issues(config) == {(IssueKind.OUT_OF_RANGE, "climate.ocean_heat_capacity")}
@@ -271,6 +289,7 @@ def test_setup_model_validates(config: dict[str, Any]) -> None:
         setup_model(config, inputs, _time_axis())
     assert [(i.kind, i.location) for i in info.value.issues] == [
         (IssueKind.NON_FINITE, "climate.ocean_heat_capacity"),
+        (IssueKind.MISSING, "Emissions|BC"),
     ]
 
 

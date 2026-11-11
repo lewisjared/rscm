@@ -96,6 +96,15 @@ _GAS_PARAMETERS = (
     "concentration_per_emission",
 )
 _SCALE_PARAMETERS = ("forcing_scale", "tropospheric_adjustment")
+# FaIR sets a NaN lifetime scaling to 1, so only infinity is invalid.
+_LIFETIME_SCALING_PARAMETERS = (
+    "iirf_0",
+    "iirf_airborne",
+    "iirf_uptake",
+    "iirf_temperature",
+    "g0",
+    "g1",
+)
 
 
 def _number(value: Any) -> float:
@@ -267,18 +276,30 @@ def _check_gas(v: Validator, s: Species, at: str) -> None:
             f"{at}{s['name']}.input_mode",
             "FaIR overwrites the prescribed forcing of a greenhouse gas",
         )
-    if len(s["partition_fraction"]) != len(s["unperturbed_lifetime"]):
+    boxes = [
+        _species_parameter(v, s, key, at=at)
+        for key in ("partition_fraction", "unperturbed_lifetime")
+    ]
+    if all(boxes) and np.size(s["partition_fraction"]) != np.size(
+        s["unperturbed_lifetime"]
+    ):
         v.add(
             IssueKind.SHAPE,
             f"{at}{s['name']}.unperturbed_lifetime",
             "needs one lifetime per partition fraction",
         )
-    keys = ["partition_fraction", "unperturbed_lifetime", *_GAS_PARAMETERS]
-    keys += ["forcing_reference_concentration", *_SCALE_PARAMETERS]
+    keys = [*_GAS_PARAMETERS, "forcing_reference_concentration", *_SCALE_PARAMETERS]
     if s["type"] not in ("co2", "ch4", "n2o"):
         keys.append("greenhouse_gas_radiative_efficiency")
     for key in keys:
         _species_parameter(v, s, key, at=at)
+    for key in _LIFETIME_SCALING_PARAMETERS:
+        v.check(
+            not math.isinf(_number(s[key])),
+            IssueKind.NON_FINITE,
+            f"{at}{s['name']}.{key}",
+            f"is {s[key]}",
+        )
 
 
 def _check_drivers(
@@ -385,27 +406,29 @@ def _check_entries(v: Validator, species: list[Species], at: str) -> bool:
 
 
 def check_config(config: FairConfig, v: Validator, *, at: str = "") -> bool:
-    """Record the issues of a configuration, and return whether it has none.
+    """Record the issues of a configuration.
 
+    Returns whether its species are well formed, so its inputs can be checked.
     `at` prefixes each location, such as the name of an ensemble member.
     """
     before = len(v.issues)
     _keys(v, f"{at}config", config, (*CONFIG_KEYS, *METADATA_KEYS))
-    for key in CONFIG_KEYS:
-        if key not in config:
-            v.add(IssueKind.MISSING, f"{at}{key}", "the configuration has no key")
-    if len(v.issues) > before:
+    missing = [key for key in CONFIG_KEYS if key not in config]
+    for key in missing:
+        v.add(IssueKind.MISSING, f"{at}{key}", "the configuration has no key")
+    if missing:
         return False
     _check_options(v, config["options"], at)
     _check_climate(v, config["climate"], at)
     _keys(v, f"{at}species_configs", config["species_configs"], GLOBAL_SPECIES_CONFIGS)
 
-    if _check_entries(v, config["species"], at):
+    well_formed = _check_entries(v, config["species"], at)
+    if well_formed:
         _check_dependencies(v, config["species"], at)
         _check_species(v, config, at)
     # Forcings that share a driver check its baseline once each.
     v.issues[before:] = list(dict.fromkeys(v.issues[before:]))
-    return len(v.issues) == before
+    return well_formed
 
 
 def _length_ok(

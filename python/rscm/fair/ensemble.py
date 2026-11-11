@@ -69,6 +69,7 @@ def _validate(
 ) -> None:
     """Check every configuration and scenario, so a bad one fails before any run."""
     v = Validator()
+    # Inputs are checked for every configuration with well-formed species.
     valid = [name for name in configs if check_config(configs[name], v, at=f"{name}: ")]
     if scale_prescribed_forcing:
         for name in valid:

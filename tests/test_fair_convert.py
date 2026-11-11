@@ -79,7 +79,15 @@ def test_inputs_are_copies() -> None:
 def test_converting_after_the_run_is_rejected() -> None:
     f = _fair()
     f.run(progress=False)
-    assert _issues(f) == {(IssueKind.UNSUPPORTED, "Solar.forcing")}
+    assert _issues(f) == {
+        (IssueKind.UNSUPPORTED, location)
+        for location in (
+            "Solar.forcing",
+            "CO2.gas_partitions",
+            "CH4.gas_partitions",
+            "N2O.gas_partitions",
+        )
+    }
 
 
 def test_properties_df_is_read() -> None:
@@ -132,6 +140,12 @@ def test_initial_gas_partitions_are_unsupported() -> None:
     f = _fair()
     f.gas_partitions.loc[{"specie": "CO2"}] = 0.5
     assert _issues(f) == {(IssueKind.UNSUPPORTED, "CO2.gas_partitions")}
+
+
+def test_initial_forcing_of_an_emissions_driven_gas_is_unsupported() -> None:
+    f = _fair()
+    initialise(f.forcing, 1.0, specie="CH4")
+    assert _issues(f) == {(IssueKind.UNSUPPORTED, "CH4.forcing")}
 
 
 def test_uninitialised_state_is_rejected() -> None:

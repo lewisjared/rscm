@@ -198,10 +198,11 @@ The error takes the exit code of its first issue.
     - `temperature_prescribed`.
     - A `ghg_forcing_offset` other than FaIR's default.
     - An initial state other than FaIR's default, such as a nonzero temperature,
-      cumulative emissions, gas partitions or a concentration away from the baseline.
+      cumulative emissions, gas partitions, forcing or a concentration away from the baseline.
       An uninitialised (NaN) initial state is rejected as non-finite.
-    - A FAIR that has already run with a temperature feedback on prescribed forcing,
-      because FaIR adds the feedback to that forcing in place.
+    - A FAIR that has already run.
+      FaIR overwrites its gas partitions with their final state,
+      and adds any temperature feedback to prescribed forcing in place.
 - `run_ensemble` starts cumulative emissions from 0, the only initial value `from_fair` accepts.
 - Restarts from a previous run are not supported.
 
