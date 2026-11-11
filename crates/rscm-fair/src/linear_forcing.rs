@@ -118,7 +118,7 @@ impl LinearForcing {
     }
 
     /// Forcing before the temperature feedback, for driver values in driver order.
-    pub fn forcing(&self, values: &[FloatValue]) -> FloatValue {
+    pub fn forcing(&self, values: impl IntoIterator<Item = FloatValue>) -> FloatValue {
         let p = &self.parameters;
         let scale = p.forcing_scale * (1.0 + p.tropospheric_adjustment);
         p.drivers
@@ -144,7 +144,7 @@ impl LinearForcing {
     ) -> RSCMResult<OutputState> {
         let p = &self.parameters;
         let dt = t_next - t_current;
-        let values: Vec<_> = p
+        let values = p
             .drivers
             .iter()
             .zip(state.emissions_sum.iter_mut())
@@ -154,9 +154,8 @@ impl LinearForcing {
                     *sum += get(input_state, &driver.variable);
                     *sum * dt
                 }
-            })
-            .collect();
-        let forcing = self.forcing(&values);
+            });
+        let forcing = self.forcing(values);
         let temperature = get(input_state, &p.surface_temperature);
         let mut output = OutputState::with_capacity(1);
         output.insert(
@@ -238,11 +237,11 @@ mod tests {
 
     #[test]
     fn nan_terms_drop_out_when_skipped() {
-        assert_eq!(linear(true).forcing(&[3.0, 4.0]), 2.0);
+        assert_eq!(linear(true).forcing([3.0, 4.0]), 2.0);
     }
 
     #[test]
     fn nan_terms_make_the_forcing_nan_by_default() {
-        assert!(linear(false).forcing(&[3.0, 4.0]).is_nan());
+        assert!(linear(false).forcing([3.0, 4.0]).is_nan());
     }
 }

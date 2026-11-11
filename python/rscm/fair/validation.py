@@ -22,6 +22,7 @@ from rscm import names
 from rscm.fair import naming
 from rscm.fair.config import (
     CLIMATE_CONFIGS,
+    LINEAR_COEFFICIENTS,
     LINEAR_TYPES,
     PROPERTY_FLAGS,
     SPECIES_CONFIGS,
@@ -272,16 +273,6 @@ def _check_gas(v: Validator, s: Species, at: str) -> None:
         _species_parameter(v, s, key, at=at)
 
 
-_LINEAR_COEFFICIENTS = {
-    "ari": "erfari_radiative_efficiency",
-    "ozone": "ozone_radiative_efficiency",
-    "contrails": "contrails_radiative_efficiency",
-    "lapsi": "lapsi_radiative_efficiency",
-    "h2o stratospheric": "h2o_stratospheric_factor",
-    "land use": "land_use_cumulative_emissions_to_forcing",
-}
-
-
 def _check_drivers(
     v: Validator,
     drivers: list[tuple[Species, dict[str, Any]]],
@@ -316,7 +307,7 @@ def _check_species(v: Validator, config: FairConfig, at: str) -> None:
     for s in forcing_agents(config):
         for key in ("forcing_efficacy", "forcing_temperature_feedback"):
             _species_parameter(v, s, key, at=at)
-    for kind, coefficient in _LINEAR_COEFFICIENTS.items():
+    for kind, coefficient in LINEAR_COEFFICIENTS.items():
         if _calculated(species, kind):
             _check_drivers(v, linear_drivers(config, kind), coefficient, at)
     if _calculated(species, "aci"):
@@ -382,7 +373,7 @@ def check_config(config: FairConfig, v: Validator, *, at: str = "") -> bool:
     `at` prefixes each location, such as the name of an ensemble member.
     """
     before = len(v.issues)
-    _keys(v, f"{at}config".rstrip("."), config, (*CONFIG_KEYS, *METADATA_KEYS))
+    _keys(v, f"{at}config", config, (*CONFIG_KEYS, *METADATA_KEYS))
     for key in CONFIG_KEYS:
         if key not in config:
             v.add(IssueKind.MISSING, f"{at}{key}", "the configuration has no key")

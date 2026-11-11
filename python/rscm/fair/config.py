@@ -385,15 +385,23 @@ _LINEAR_DRIVERS = {
 }
 
 
+# Coefficient of each linear forcing type.
+LINEAR_COEFFICIENTS = {
+    "ari": "erfari_radiative_efficiency",
+    "ozone": "ozone_radiative_efficiency",
+    **{kind: coefficient for kind, (coefficient, _, _) in _LINEAR_DRIVERS.items()},
+}
+
+
 def linear_drivers(
     config: FairConfig, kind: str
 ) -> list[tuple[Species, dict[str, Any]]]:
     """Species and drivers of a linear forcing type, in species order."""
     species = config["species"]
     if kind == "ari":
-        return aerosol_drivers(config, "erfari_radiative_efficiency")
+        return aerosol_drivers(config, LINEAR_COEFFICIENTS[kind])
     if kind == "ozone":
-        coefficient = "ozone_radiative_efficiency"
+        coefficient = LINEAR_COEFFICIENTS[kind]
         return [
             (s, _driver(s, driver, coefficient))
             for driver in ("concentration", "emissions")

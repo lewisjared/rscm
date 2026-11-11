@@ -9,7 +9,7 @@ import numpy as np
 from rscm import names
 from rscm.fair import naming
 from rscm.fair.config import emission_drivers, is_ghg, species_outputs
-from rscm.fair.run import _on_timebounds, setup_model
+from rscm.fair.run import _on_timebounds, _setup_model
 from rscm.fair.validation import check_config, check_inputs
 from rscm.spec import run_all
 from rscm.validation import Validator
@@ -53,12 +53,11 @@ def _values(
     raise KeyError(msg)
 
 
-def _emissions(config: FairConfig, s: Species) -> tuple[list[str], slice] | None:
-    """Variables summing to a species' emissions and the slice onto timepoints."""
+def _emissions(config: FairConfig, s: Species) -> list[str] | None:
+    """Variables summing to a species' emissions."""
     if s["input_mode"] == "concentration" and is_ghg(s):
-        return [naming.inverse_emissions(s["name"])], slice(None, -1)
-    drivers = emission_drivers(config, s)
-    return (drivers, slice(None, -1)) if drivers else None
+        return [naming.inverse_emissions(s["name"])]
+    return emission_drivers(config, s) or None
 
 
 def _validate(
@@ -69,16 +68,11 @@ def _validate(
     """Check every configuration and scenario, so a bad one fails before any run."""
     v = Validator()
     valid = [name for name in configs if check_config(configs[name], v, at=f"{name}: ")]
-    seen = set()
     for scenario, inputs in scenarios.items():
         for name in valid:
-            scenario_v = Validator()
-            check_inputs(configs[name], inputs, time_axis, scenario_v)
-            for issue in scenario_v.issues:
-                # Configurations with the same species share each input issue.
-                if issue not in seen:
-                    seen.add(issue)
-                    v.add(issue.kind, f"{scenario}: {issue.location}", issue.message)
+            check_inputs(configs[name], inputs, time_axis, v, at=f"{scenario}: ")
+    # Configurations with the same species share each input issue.
+    v.issues[:] = list(dict.fromkeys(v.issues))
     v.raise_if_any()
 
 
@@ -161,18 +155,18 @@ def run_ensemble(
             for s, variable in variables.items()
         ]
         emission_series[name] = [
-            (index[s["name"]], *found)
+            (index[s["name"]], found)
             for s in config["species"]
             if (found := _emissions(config, s)) is not None
         ]
         # The gas cycle accumulates greenhouse gas emissions.
         accumulated[name] = [
-            k for k, *_ in emission_series[name] if not is_ghg(config["species"][k])
+            k for k, _ in emission_series[name] if not is_ghg(config["species"][k])
         ]
 
     for i, inputs in enumerate(scenarios.values()):
         setups = [
-            setup_model(
+            _setup_model(
                 configs[name],
                 inputs,
                 time_axis,
@@ -193,12 +187,9 @@ def run_ensemble(
                 data[attribute][:, i, j, k] = _values(
                     outputs, variable, inputs, n_bounds
                 )
-            for k, variables, timepoints in emission_series[name]:
+            for k, variables in emission_series[name]:
                 data["emissions"][:, i, j, k] = np.sum(
-                    [
-                        _values(outputs, v, inputs, n_bounds)[timepoints]
-                        for v in variables
-                    ],
+                    [_values(outputs, v, inputs, n_bounds)[:-1] for v in variables],
                     axis=0,
                 )
             for k in accumulated[name]:
