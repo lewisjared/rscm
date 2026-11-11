@@ -1207,6 +1207,9 @@ COMPUTED_PATTERNS = ("aer_dir", "bc", "bcsnow", "landuse", "no3", "oc", "sox")
 HEMISPHERIC_PATTERNS = ("fgas", "tropoz")
 """``rf_regions_<agent>`` normalised within each hemisphere."""
 
+BOX_AREAS = np.array([0.58, 0.42, 0.79, 0.21]) / 2.0
+"""Area fraction of each box, as `ForcingAggregation` weights the patterns."""
+
 
 def _upper(value: Any) -> str:
     return str(value).strip().upper()
@@ -1254,6 +1257,13 @@ def _check_ranges(v: Validator, p: Mapping[str, Any]) -> None:
             key,
             f"{p[key]} must be positive",
         )
+    if p["out_sealevel"] and not str(p["file_slr_thexp_params"]).strip():
+        key = "slr_expansion_params"
+        coefficients = np.asarray(p[key], dtype=np.float64)
+        if v.check(
+            coefficients.shape == (6,), IssueKind.SHAPE, key, "must have 6 coefficients"
+        ):
+            v.finite(key, coefficients)
     sinks = ("ch4_tausoil", "ch4_taustrat", "ch4_tautropcl")
     for key in sinks:
         value = float(p[key])
@@ -1292,14 +1302,17 @@ def _check_ranges(v: Validator, p: Mapping[str, Any]) -> None:
             and v.finite(key, pattern)
         ):
             continue
+        weighted = pattern * BOX_AREAS
         halves = (
-            (pattern[:2], pattern[2:]) if agent in HEMISPHERIC_PATTERNS else (pattern,)
+            (weighted[:2], weighted[2:])
+            if agent in HEMISPHERIC_PATTERNS
+            else (weighted,)
         )
         v.check(
-            all(np.any(h != 0.0) for h in halves),
+            not any(np.isclose(h.sum(), 0.0, rtol=0.0, atol=1e-15) for h in halves),
             IssueKind.OUT_OF_RANGE,
             key,
-            f"{pattern.tolist()} is zero"
+            f"{pattern.tolist()} has a zero area-weighted mean"
             f"{' in a hemisphere' if len(halves) > 1 else ''},"
             " so it cannot be normalised",
         )
@@ -1330,18 +1343,19 @@ def _check_files(
             budget_years[gas.upper()] = last
     groups = _concentration_files(p)
     for group, switch in concentration_switch_years(time, p).items():
-        if switch is None:
-            _check_initial_file_values(v, time[0], groups[group], files)
-            continue
         for species, file in groups[group]:
+            key = _concentration_key(species)
+            if switch is None and species not in budget_years:
+                _check_initial_file_value(v, time[0], key, files)
+                continue
             if not file.strip():
                 continue
-            key = _concentration_key(species)
             if not v.check(
                 key in files, IssueKind.MISSING, key, f"no input file {file!r}"
             ):
                 continue
-            until = max(min(switch, time[-1]), budget_years.get(species, time[0]))
+            prescribed_until = time[0] if switch is None else min(switch, time[-1])
+            until = max(prescribed_until, budget_years.get(species, time[0]))
             history = files[key]
             v.check(
                 history.last_year() >= until,
@@ -1373,27 +1387,22 @@ def _load_checked(v: Validator, p: Mapping[str, Any]) -> dict[str, pr.AerosolHis
     return load_inputs(p)
 
 
-def _check_initial_file_values(
-    v: Validator,
-    start: float,
-    group: Sequence[tuple[str, str]],
-    files: Mapping[str, pr.AerosolHistory],
+def _check_initial_file_value(
+    v: Validator, start: float, key: str, files: Mapping[str, pr.AerosolHistory]
 ) -> None:
-    """Check the first-year values a group read only for initialisation starts from."""
-    for species, _ in group:
-        key = _concentration_key(species)
-        if key not in files:
-            continue
-        value = float(pr.on_axis(files[key], [start])[0, 0])
-        if v.check(
-            bool(np.isfinite(value)), IssueKind.NON_FINITE, key, f"{value} in {start:g}"
-        ):
-            v.check(
-                value >= 0.0,
-                IssueKind.OUT_OF_RANGE,
-                key,
-                f"{value} in {start:g} is a negative concentration",
-            )
+    """Check the first-year value of a file read only for initialisation."""
+    if key not in files:
+        return
+    value = float(pr.on_axis(files[key], [start])[0, 0])
+    if v.check(
+        bool(np.isfinite(value)), IssueKind.NON_FINITE, key, f"{value} in {start:g}"
+    ):
+        v.check(
+            value >= 0.0,
+            IssueKind.OUT_OF_RANGE,
+            key,
+            f"{value} in {start:g} is a negative concentration",
+        )
 
 
 def _check_prescribed(

@@ -198,6 +198,8 @@ def test_thermal_expansion_file_must_be_known():
         ("rf_regions_fgas", [1.0, 1.0, 0.0, 0.0], IssueKind.OUT_OF_RANGE),
         ("rf_regions_co2", [1.0, 1.0, 1.0], IssueKind.SHAPE),
         ("rf_regions_n2o", [1.0, np.nan, 1.0, 1.0], IssueKind.NON_FINITE),
+        ("rf_regions_ch4", [0.42, -0.58, 0.0, 0.0], IssueKind.OUT_OF_RANGE),
+        ("rf_regions_tropoz", [0.42, -0.58, 1.0, 1.0], IssueKind.OUT_OF_RANGE),
     ],
 )
 def test_out_of_domain_parameters_are_rejected(key, value, kind):
@@ -451,3 +453,27 @@ def test_missing_forcing_file_is_reported_before_reading():
     found = issues(parameters={"file_solar_rf": "MISSING_SOLAR_RF.IN"})
 
     assert found == {(IssueKind.MISSING, "file_solar_rf")}
+
+
+def test_budget_files_are_checked_without_prescribed_years(inputs):
+    files = {k: v for k, v in inputs.items() if k != "file_ch4_conc"}
+
+    found = issues(
+        input_files=files, parameters={"ch4_switchfromconc2emis_year": YEARS[0]}
+    )
+
+    assert found == {(IssueKind.MISSING, "file_ch4_conc")}
+
+
+@pytest.mark.parametrize(
+    ("value", "kind"),
+    [([1.0] * 5, IssueKind.SHAPE), ([np.nan] * 6, IssueKind.NON_FINITE)],
+)
+def test_bad_thermal_expansion_coefficients_are_rejected(value, kind):
+    parameters = {
+        "out_sealevel": 1,
+        "file_slr_thexp_params": "",
+        "slr_expansion_params": value,
+    }
+
+    assert issues(parameters=parameters) == {(kind, "slr_expansion_params")}
