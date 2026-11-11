@@ -51,6 +51,8 @@ class Unsupported:
     """Which values are rejected."""
     check: Callable[[Any, Any, Context], bool]
     """Whether ``(value, default, context)`` is rejected."""
+    always: bool = False
+    """Whether to check the default too, for a rule that depends on another key."""
 
 
 def _normalise(value: Any) -> Any:
@@ -148,6 +150,7 @@ def matches(other: str) -> Unsupported:
         f"separate F-gas and Montreal gas values, RSCM reads {other} for both",
         f"a value other than {other}",
         check,
+        always=True,
     )
 
 
@@ -412,10 +415,6 @@ IGNORED = {
         "rf_efficacy_cloud_cover",
         "rf_regions_cloud_cover",
     ),
-    "is only read with the IPCCTAR greenhouse gas forcing method": (
-        "ch4_radeff_wm2perppb",
-        "n2o_radeff_wm2perppb",
-    ),
     "has no effect on the outputs RSCM produces": (
         "cloud_apply_limit_max",
         "co2_feedtemp_landonly_apply",
@@ -624,14 +623,17 @@ def check_parameters(
     known = {*read, *IGNORED_PARAMETERS, *UNSUPPORTED_PARAMETERS}
     merged = {**unsupported_defaults, **read, **given}
     context = Context(merged, *run)
-    for key in sorted(given):
+    always = {key for key, rule in UNSUPPORTED_PARAMETERS.items() if rule.always}
+    for key in sorted({*given, *always}):
         if key in UNSUPPORTED_PARAMETERS:
             rule = UNSUPPORTED_PARAMETERS[key]
-            if rule.check(given[key], unsupported_defaults.get(key), context):
+            default = unsupported_defaults.get(key)
+            value = given.get(key, default)
+            if rule.check(value, default, context):
                 validator.add(
                     IssueKind.UNSUPPORTED,
                     key,
-                    f"{given[key]!r} needs {rule.gap}, which RSCM does not implement"
+                    f"{value!r} needs {rule.gap}, which RSCM does not implement"
                     f" (rejects {rule.rejects})",
                 )
         elif key not in known:

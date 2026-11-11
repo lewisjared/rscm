@@ -245,7 +245,8 @@ and NOx, CO and NMVOC drive tropospheric ozone.
 
 - `core_co2ch4n2o_rfmethod` selects the GHG forcing formulas:
   OLBL (after Etminan et al., 2016, the default) or IPCCTAR (from the IPCC Third Assessment Report).
-  With IPCCTAR it applies no rapid adjustment, because MAGICC7 ignores `core_rfrapidadjust_*` there.
+  With IPCCTAR it applies no rapid adjustment, because MAGICC7 ignores `core_rfrapidadjust_*` there,
+  and reads `ch4_radeff_wm2perppb` and `n2o_radeff_wm2perppb`.
 - `co2_fertilization_method` and `co2_plantboxresp_fertscale` set CO2 fertilisation.
 - `co2_feedbackfactor_*` and `co2_tempfeedback_switch` set the carbon cycle temperature feedbacks.
 - `co2_plantboxresp_method` must be 2, the only respiration method implemented.

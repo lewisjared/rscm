@@ -982,7 +982,9 @@ def _ghg_method(parameters: Mapping[str, Any]) -> dict[str, Any]:
     # MAGICC7 applies no rapid adjustment with IPCCTAR
     return {
         "method": method,
-        "erf_2xco2": parameters["core_delq2xco2"],
+        "erf_2xco2": p["core_delq2xco2"],
+        "ch4_radiative_efficiency": p["ch4_radeff_wm2perppb"],
+        "n2o_radiative_efficiency": p["n2o_radeff_wm2perppb"],
         **{f"adjust_{gas}": 1.0 for gas in ("co2", "ch4", "n2o")},
     }
 
@@ -1329,6 +1331,7 @@ def _check_files(
     groups = _concentration_files(p)
     for group, switch in concentration_switch_years(time, p).items():
         if switch is None:
+            _check_initial_file_values(v, time[0], groups[group], files)
             continue
         for species, file in groups[group]:
             if not file.strip():
@@ -1355,6 +1358,42 @@ def _check_files(
                     f"{file!r} has negative concentrations,"
                     f" first {values[values < 0][0]}",
                 )
+
+
+def _load_checked(v: Validator, p: Mapping[str, Any]) -> dict[str, pr.AerosolHistory]:
+    """`load_inputs`, after reporting the packaged forcing files that do not exist."""
+    for key in INPUT_FILES:
+        v.check(
+            _find(DATA, p[key]).exists(),
+            IssueKind.MISSING,
+            key,
+            f"no input file {p[key]!r}",
+        )
+    v.raise_if_any()
+    return load_inputs(p)
+
+
+def _check_initial_file_values(
+    v: Validator,
+    start: float,
+    group: Sequence[tuple[str, str]],
+    files: Mapping[str, pr.AerosolHistory],
+) -> None:
+    """Check the first-year values a group read only for initialisation starts from."""
+    for species, _ in group:
+        key = _concentration_key(species)
+        if key not in files:
+            continue
+        value = float(pr.on_axis(files[key], [start])[0, 0])
+        if v.check(
+            bool(np.isfinite(value)), IssueKind.NON_FINITE, key, f"{value} in {start:g}"
+        ):
+            v.check(
+                value >= 0.0,
+                IssueKind.OUT_OF_RANGE,
+                key,
+                f"{value} in {start:g} is a negative concentration",
+            )
 
 
 def _check_prescribed(
@@ -1518,7 +1557,7 @@ def from_magicc7(  # noqa: PLR0913
     p = p.new_child(
         {k: float(np.clip(p[k], time[0], time[-1])) for k in FEEDBACK_START_YEARS}
     )
-    files = dict(input_files) if input_files is not None else load_inputs(p)
+    files = dict(input_files) if input_files is not None else _load_checked(v, p)
     _check_files(v, time, p, files)
     v.raise_if_any()
     conc = {

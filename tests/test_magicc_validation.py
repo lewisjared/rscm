@@ -402,3 +402,52 @@ def test_thermal_expansion_follows_scaling_and_file():
     config, _ = translate(parameters={**parameters, "file_slr_thexp_params": ""})
     expansion = config["components"]["ClimateUDEB"]["thermal_expansion"]
     assert expansion["coefficients"] == [1.0] * 6
+
+
+@pytest.mark.parametrize(
+    "name", ["use_tauoh_var", "use_taustrat_var", "taustrat_sens2meridflux"]
+)
+def test_changing_only_the_montreal_gas_setting_is_rejected(name):
+    value = full._defaults()["unsupported"][f"fgas_{name}"]
+    changed = 0 if isinstance(value, int) else value * 2
+
+    found = issues(parameters={f"mhalo_{name}": changed})
+
+    assert found == {(IssueKind.UNSUPPORTED, f"fgas_{name}")}
+
+
+def test_ipcctar_reads_the_radiative_efficiencies():
+    parameters = {
+        "core_co2ch4n2o_rfmethod": "IPCCTAR",
+        "ch4_radeff_wm2perppb": 0.04,
+        "n2o_radeff_wm2perppb": 0.13,
+    }
+    config, _ = translate(parameters=parameters)
+    ghg = config["components"]["GHGForcing"]
+
+    assert ghg["ch4_radiative_efficiency"] == 0.04
+    assert ghg["n2o_radiative_efficiency"] == 0.13
+
+
+@pytest.mark.parametrize(
+    ("value", "kind"), [(np.nan, IssueKind.NON_FINITE), (-5.0, IssueKind.OUT_OF_RANGE)]
+)
+def test_initial_values_from_files_are_checked_without_prescribed_years(
+    inputs, value, kind
+):
+    co2 = inputs["file_co2_conc"]
+    values = np.array(co2.values, dtype=np.float64)
+    values[int(YEARS[0] - np.asarray(co2.years)[0])] = value
+    files = {**inputs, "file_co2_conc": replace(co2, values=values)}
+
+    found = issues(
+        input_files=files, parameters={"co2_switchfromconc2emis_year": YEARS[0]}
+    )
+
+    assert found == {(kind, "file_co2_conc")}
+
+
+def test_missing_forcing_file_is_reported_before_reading():
+    found = issues(parameters={"file_solar_rf": "MISSING_SOLAR_RF.IN"})
+
+    assert found == {(IssueKind.MISSING, "file_solar_rf")}
