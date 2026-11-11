@@ -276,13 +276,18 @@ def _check_gas(v: Validator, s: Species, at: str) -> None:
             f"{at}{s['name']}.input_mode",
             "FaIR overwrites the prescribed forcing of a greenhouse gas",
         )
-    boxes = [
-        _species_parameter(v, s, key, at=at)
-        for key in ("partition_fraction", "unperturbed_lifetime")
-    ]
-    if all(boxes) and np.size(s["partition_fraction"]) != np.size(
-        s["unperturbed_lifetime"]
-    ):
+    lengths = []
+    for key in ("partition_fraction", "unperturbed_lifetime"):
+        if _species_parameter(v, s, key, at=at):
+            shape = np.shape(s[key])
+            if v.check(
+                len(shape) == 1 and shape[0] > 0,
+                IssueKind.SHAPE,
+                f"{at}{s['name']}.{key}",
+                f"has shape {shape}, expected one value per gas box",
+            ):
+                lengths.append(shape[0])
+    if len(lengths) == 2 and lengths[0] != lengths[1]:  # noqa: PLR2004
         v.add(
             IssueKind.SHAPE,
             f"{at}{s['name']}.unperturbed_lifetime",

@@ -155,6 +155,26 @@ def test_null_gas_boxes(key: str, value: Any, config: dict[str, Any]) -> None:
     assert _issues(config) == {(IssueKind.NON_FINITE, f"CO2.{key}")}
 
 
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("partition_fraction", [[0.25, 0.25], [0.25, 0.25]]),
+        ("partition_fraction", []),
+        ("unperturbed_lifetime", 1.0),
+    ],
+)
+def test_gas_boxes_are_one_dimensional(
+    key: str, value: Any, config: dict[str, Any]
+) -> None:
+    _species(config, "CO2")[key] = value
+    assert _issues(config) == {(IssueKind.SHAPE, f"CO2.{key}")}
+
+
+def test_gas_boxes_match(config: dict[str, Any]) -> None:
+    _species(config, "CO2")["unperturbed_lifetime"] = [1.0, 2.0]
+    assert _issues(config) == {(IssueKind.SHAPE, "CO2.unperturbed_lifetime")}
+
+
 @pytest.mark.parametrize("key", ["g0", "iirf_0"])
 def test_infinite_lifetime_scaling(key: str, config: dict[str, Any]) -> None:
     _species(config, "HFC-134a")[key] = math.inf
