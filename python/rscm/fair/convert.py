@@ -66,6 +66,10 @@ def _has_default_ghg_forcing_offset(f: Any) -> bool:
     )
 
 
+def _has_run(f: Any) -> bool:
+    return bool(np.isfinite(f.temperature.data[1:]).any())
+
+
 def _check_options(f: Any, v: Validator, config: Hashable, scenario: Hashable) -> None:
     """Record the FaIR options that `from_fair` cannot carry over."""
     climate_configs = f.climate_configs.sel(config=config)
@@ -87,7 +91,8 @@ def _check_options(f: Any, v: Validator, config: Hashable, scenario: Hashable) -
             "ghg_forcing_offset",
             "a user-set greenhouse gas forcing offset is not supported",
         )
-    if np.isfinite(f.temperature.data[1:]).any():
+    has_run = _has_run(f)
+    if has_run:
         feedback = f.species_configs["forcing_temperature_feedback"].sel(config=config)
         for name, row in f.properties_df.iterrows():
             if row["input_mode"] == "forcing" and feedback.sel(specie=name) != 0:
@@ -97,11 +102,11 @@ def _check_options(f: Any, v: Validator, config: Hashable, scenario: Hashable) -
                     "FAIR has run, which adds the temperature feedback "
                     "to its prescribed forcing in place, so convert it before f.run()",
                 )
-    _check_initial_state(f, v, config, scenario)
+    _check_initial_state(f, v, config, scenario, has_run=has_run)
 
 
 def _check_initial_state(
-    f: Any, v: Validator, config: Hashable, scenario: Hashable
+    f: Any, v: Validator, config: Hashable, scenario: Hashable, *, has_run: bool
 ) -> None:
     """Record initial values other than FaIR's defaults, which RSCM starts from."""
     at = {"config": config, "scenario": scenario}
@@ -144,6 +149,13 @@ def _check_initial_state(
             expect(
                 f"{name}.airborne_emissions",
                 f.airborne_emissions.sel(first).sel(specie=name).data,
+                0.0,
+            )
+        # A run overwrites the gas partitions with their final state.
+        if ghg and not has_run:
+            expect(
+                f"{name}.gas_partitions",
+                f.gas_partitions.sel(at).sel(specie=name).data,
                 0.0,
             )
         if ghg or mode == "emissions":

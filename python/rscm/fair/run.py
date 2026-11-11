@@ -75,7 +75,9 @@ def setup_model(
     Raises an `InputValidationError` before building anything
     if the configuration or inputs are invalid, see `rscm.fair.validation`.
     """
-    validate(config, inputs, time_axis)
+    validate(
+        config, inputs, time_axis, scale_prescribed_forcing=scale_prescribed_forcing
+    )
     return _setup_model(
         config, inputs, time_axis, scale_prescribed_forcing=scale_prescribed_forcing
     )

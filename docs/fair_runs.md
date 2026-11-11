@@ -156,7 +156,9 @@ They reject:
 
 - Unknown configuration keys and calibration columns (`unknown-key`).
 - Fewer than two ocean layers, non-positive heat capacities or mismatched layer lengths.
-- NaN or infinite climate parameters, and species parameters that a calculation reads.
+- NaN or infinite climate parameters, and species parameters that a calculation reads,
+  such as the CH4 lifetime sensitivity of each precursor
+  or the `forcing_scale` of prescribed forcing when `scale_prescribed_forcing` applies it.
   Terms a calculation skips, such as a zero coefficient, are not checked.
 - Species a calculation needs but the configuration lacks (`missing`):
   calculated CO2 without CO2 FFI and CO2 AFOLU in emissions mode,
@@ -196,7 +198,7 @@ The error takes the exit code of its first issue.
     - `temperature_prescribed`.
     - A `ghg_forcing_offset` other than FaIR's default.
     - An initial state other than FaIR's default, such as a nonzero temperature,
-      cumulative emissions or a concentration away from the baseline.
+      cumulative emissions, gas partitions or a concentration away from the baseline.
       An uninitialised (NaN) initial state is rejected as non-finite.
     - A FAIR that has already run with a temperature feedback on prescribed forcing,
       because FaIR adds the feedback to that forcing in place.

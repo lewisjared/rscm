@@ -21,6 +21,7 @@ import numpy as np
 from rscm import names
 from rscm.fair import naming
 from rscm.fair.config import (
+    CH4_LIFETIME_SENSITIVITY,
     CLIMATE_CONFIGS,
     LINEAR_COEFFICIENTS,
     LINEAR_TYPES,
@@ -185,9 +186,16 @@ def _check_climate(v: Validator, climate: Mapping[str, Any], at: str) -> None:
     for key in ("ocean_heat_capacity", "ocean_heat_transfer", "deep_ocean_efficacy"):
         if key not in climate:
             v.add(IssueKind.MISSING, f"{at}climate.{key}", "the parameter is missing")
-    capacity = climate.get("ocean_heat_capacity")
-    transfer = climate.get("ocean_heat_transfer")
-    if capacity is not None:
+    capacity: Any = climate.get("ocean_heat_capacity")
+    transfer: Any = climate.get("ocean_heat_transfer")
+    # A present but null parameter is non-finite, not missing.
+    has_capacity = "ocean_heat_capacity" in climate and _finite(
+        v, f"{at}climate.ocean_heat_capacity", capacity
+    )
+    has_transfer = "ocean_heat_transfer" in climate and _finite(
+        v, f"{at}climate.ocean_heat_transfer", transfer
+    )
+    if has_capacity:
         n_layers = len(np.atleast_1d(capacity))
         v.check(
             n_layers >= 2,  # noqa: PLR2004
@@ -196,9 +204,9 @@ def _check_climate(v: Validator, climate: Mapping[str, Any], at: str) -> None:
             f"the energy balance needs at least two layers, got {n_layers}",
         )
         _positive(v, f"{at}climate.ocean_heat_capacity", capacity)
-    if transfer is not None:
+    if has_transfer:
         _positive(v, f"{at}climate.ocean_heat_transfer", transfer)
-    if capacity is not None and transfer is not None:
+    if has_capacity and has_transfer:
         v.check(
             len(np.atleast_1d(capacity)) == len(np.atleast_1d(transfer)),
             IssueKind.SHAPE,
@@ -295,6 +303,16 @@ def _calculated(species: list[Species], kind: str) -> bool:
     return any(s["type"] == kind and s["input_mode"] == "calculated" for s in species)
 
 
+def _check_ch4_lifetime(v: Validator, config: FairConfig, at: str) -> None:
+    key = "lifetime_temperature_sensitivity"
+    _finite(v, f"{at}species_configs.{key}", config["species_configs"].get(key))
+    for driver in ("emissions", "concentration"):
+        for s in config["species"]:
+            if s[f"aerosol_chemistry_from_{driver}"]:
+                _species_parameter(v, s, CH4_LIFETIME_SENSITIVITY, at=at)
+                _species_parameter(v, s, f"baseline_{driver}", at=at)
+
+
 def _check_species(v: Validator, config: FairConfig, at: str) -> None:
     species = config["species"]
     species_configs = config["species_configs"]
@@ -315,8 +333,7 @@ def _check_species(v: Validator, config: FairConfig, at: str) -> None:
         _check_drivers(v, drivers, "aci_shape", at)
         _finite(v, f"{at}species_configs.aci_scale", species_configs.get("aci_scale"))
     if thornhill(config):
-        key = "lifetime_temperature_sensitivity"
-        _finite(v, f"{at}species_configs.{key}", species_configs.get(key))
+        _check_ch4_lifetime(v, config, at)
     if _calculated(species, "eesc"):
         _check_eesc(v, species, at)
 
@@ -452,16 +469,29 @@ def check_inputs(
     return len(v.issues) == before
 
 
+def check_prescribed_scales(config: FairConfig, v: Validator, *, at: str = "") -> None:
+    """Record non-finite `forcing_scale` values that scale prescribed forcing."""
+    for s in config["species"]:
+        if s["input_mode"] == "forcing":
+            _species_parameter(v, s, "forcing_scale", at=at)
+
+
 def validate(
     config: FairConfig,
     inputs: Mapping[str, tuple[ArrayLike, str]] | None = None,
     time_axis: TimeAxis | None = None,
+    *,
+    scale_prescribed_forcing: bool = False,
 ) -> None:
     """Raise an `InputValidationError` with every issue of a configuration and inputs.
 
     The inputs are checked when given, against `time_axis`.
+    `scale_prescribed_forcing` also checks the scales of prescribed forcing.
     """
     v = Validator()
-    if check_config(config, v) and inputs is not None and time_axis is not None:
-        check_inputs(config, inputs, time_axis, v)
+    if check_config(config, v):
+        if scale_prescribed_forcing:
+            check_prescribed_scales(config, v)
+        if inputs is not None and time_axis is not None:
+            check_inputs(config, inputs, time_axis, v)
     v.raise_if_any()

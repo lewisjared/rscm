@@ -142,6 +142,12 @@ def test_climate_parameters(
     assert _issues(config) == {(kind, f"climate.{key}")}
 
 
+@pytest.mark.parametrize("key", ["ocean_heat_capacity", "ocean_heat_transfer"])
+def test_null_ocean_parameter(key: str, config: dict[str, Any]) -> None:
+    config["climate"][key] = None
+    assert _issues(config) == {(IssueKind.NON_FINITE, f"climate.{key}")}
+
+
 def test_energy_balance_needs_two_layers(config: dict[str, Any]) -> None:
     config["climate"] |= {"ocean_heat_capacity": [8.0], "ocean_heat_transfer": [1.2]}
     assert _issues(config) == {(IssueKind.OUT_OF_RANGE, "climate.ocean_heat_capacity")}
@@ -159,6 +165,7 @@ def test_energy_balance_needs_two_layers(config: dict[str, Any]) -> None:
         ("Ozone", "forcing_scale"),
         ("Solar", "forcing_temperature_feedback"),
         ("CFC-11", "fractional_release"),
+        ("NOx", "ch4_lifetime_chemical_sensitivity"),
     ],
 )
 def test_non_finite_species_parameter(
@@ -267,6 +274,20 @@ def test_setup_model_validates(config: dict[str, Any]) -> None:
     ]
 
 
+def test_scaled_prescribed_forcing_needs_a_finite_scale(
+    config: dict[str, Any],
+) -> None:
+    _species(config, "Solar")["forcing_scale"] = math.nan
+    setup_model(config, _inputs(config), _time_axis())
+    with pytest.raises(InputValidationError) as info:
+        setup_model(
+            config, _inputs(config), _time_axis(), scale_prescribed_forcing=True
+        )
+    assert [(i.kind, i.location) for i in info.value.issues] == [
+        (IssueKind.NON_FINITE, "Solar.forcing_scale"),
+    ]
+
+
 def test_components_validate(config: dict[str, Any]) -> None:
     _drop(config, "CFC-11")
     with pytest.raises(InputValidationError, match="calculated EESC needs"):
@@ -288,6 +309,21 @@ def test_run_ensemble_validates_before_running(config: dict[str, Any]) -> None:
     assert [(i.kind, i.location) for i in info.value.issues] == [
         (IssueKind.OUT_OF_RANGE, "b: climate.deep_ocean_efficacy"),
         (IssueKind.NON_FINITE, "bad: Emissions|BC"),
+    ]
+
+
+def test_run_ensemble_checks_prescribed_forcing_scales(config: dict[str, Any]) -> None:
+    pytest.importorskip("xarray")
+    _species(config, "Solar")["forcing_scale"] = math.nan
+    with pytest.raises(InputValidationError) as info:
+        run_ensemble(
+            {"a": config},
+            {"s": _inputs(config)},
+            _time_axis(),
+            scale_prescribed_forcing=True,
+        )
+    assert [(i.kind, i.location) for i in info.value.issues] == [
+        (IssueKind.NON_FINITE, "a: Solar.forcing_scale"),
     ]
 
 

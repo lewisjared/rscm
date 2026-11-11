@@ -10,7 +10,7 @@ from rscm import names
 from rscm.fair import naming
 from rscm.fair.config import emission_drivers, is_ghg, species_outputs
 from rscm.fair.run import _on_timebounds, _setup_model
-from rscm.fair.validation import check_config, check_inputs
+from rscm.fair.validation import check_config, check_inputs, check_prescribed_scales
 from rscm.spec import run_all
 from rscm.validation import Validator
 
@@ -64,10 +64,15 @@ def _validate(
     configs: Mapping[Hashable, FairConfig],
     scenarios: Mapping[str, Inputs],
     time_axis: TimeAxis,
+    *,
+    scale_prescribed_forcing: bool,
 ) -> None:
     """Check every configuration and scenario, so a bad one fails before any run."""
     v = Validator()
     valid = [name for name in configs if check_config(configs[name], v, at=f"{name}: ")]
+    if scale_prescribed_forcing:
+        for name in valid:
+            check_prescribed_scales(configs[name], v, at=f"{name}: ")
     for scenario, inputs in scenarios.items():
         for name in valid:
             check_inputs(configs[name], inputs, time_axis, v, at=f"{scenario}: ")
@@ -103,7 +108,12 @@ def run_ensemble(
         msg = "run_ensemble needs xarray: pip install 'rscm[fair]'"
         raise ImportError(msg) from error
 
-    _validate(configs, scenarios, time_axis)
+    _validate(
+        configs,
+        scenarios,
+        time_axis,
+        scale_prescribed_forcing=scale_prescribed_forcing,
+    )
     config_names = list(configs)
     first = configs[config_names[0]]
     species = [s["name"] for s in first["species"]]

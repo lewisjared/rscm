@@ -128,6 +128,12 @@ def test_initial_state_is_unsupported(
     assert _issues(f) == {(IssueKind.UNSUPPORTED, location)}
 
 
+def test_initial_gas_partitions_are_unsupported() -> None:
+    f = _fair()
+    f.gas_partitions.loc[{"specie": "CO2"}] = 0.5
+    assert _issues(f) == {(IssueKind.UNSUPPORTED, "CO2.gas_partitions")}
+
+
 def test_uninitialised_state_is_rejected() -> None:
     f = _fair()
     initialise(f.temperature, np.nan)
