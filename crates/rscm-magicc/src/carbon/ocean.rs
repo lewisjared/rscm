@@ -160,8 +160,8 @@ impl OceanCarbon {
         let integral: FloatValue = state
             .flux_history
             .iter()
-            .enumerate()
-            .map(|(i, &flux)| flux * state.irf[n - 1 - i])
+            .zip(state.irf[..n].iter().rev())
+            .map(|(flux, irf)| flux * irf)
             .sum();
         self.parameters.delta_dic(integral)
     }

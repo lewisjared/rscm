@@ -1,6 +1,7 @@
 """Pre-run validation of `rscm.magicc.full.from_magicc7`."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -275,16 +276,11 @@ def inputs():
     return full.load_inputs()
 
 
-def _replace(history: pr.AerosolHistory, years=None, values=None) -> pr.AerosolHistory:
-    return pr.AerosolHistory(
-        history.years if years is None else years,
-        history.values if values is None else values,
-    )
-
-
 def test_solar_file_must_cover_the_run(inputs):
     solar = inputs["file_solar_rf"]
-    short = _replace(solar, np.asarray(solar.years)[:3], np.asarray(solar.values)[:3])
+    short = replace(
+        solar, years=np.asarray(solar.years)[:3], values=np.asarray(solar.values)[:3]
+    )
 
     found = issues(input_files={**inputs, "file_solar_rf": short})
 
@@ -293,7 +289,9 @@ def test_solar_file_must_cover_the_run(inputs):
 
 def test_concentration_file_must_cover_its_prescribed_years(inputs):
     co2 = inputs["file_co2_conc"]
-    short = _replace(co2, np.asarray(co2.years)[:3], np.asarray(co2.values)[:3])
+    short = replace(
+        co2, years=np.asarray(co2.years)[:3], values=np.asarray(co2.values)[:3]
+    )
 
     found = issues(input_files={**inputs, "file_co2_conc": short})
 
@@ -310,7 +308,7 @@ def test_concentration_files_must_be_finite_and_positive(inputs, value, kind):
     found = issues(
         input_files={
             **inputs,
-            "file_ch4_conc": _replace(inputs["file_ch4_conc"], values=values),
+            "file_ch4_conc": replace(inputs["file_ch4_conc"], values=values),
         }
     )
 
@@ -329,7 +327,7 @@ def test_non_finite_prescribed_forcing_is_rejected(inputs):
     values[:] = np.nan
     files = {
         **inputs,
-        "file_landuse_rf": _replace(inputs["file_landuse_rf"], values=values),
+        "file_landuse_rf": replace(inputs["file_landuse_rf"], values=values),
     }
 
     found = issues(input_files=files)

@@ -392,17 +392,6 @@ HALOCARBON_PARAMETERS = {
 }
 """HalocarbonChemistry parameters and their MAGICC7 names."""
 
-HALOCARBON_SHARED = {
-    "include_variable_oh_lifetime": "use_tauoh_var",
-    "include_variable_stratospheric_lifetime": "use_taustrat_var",
-    "stratospheric_lifetime_sensitivity": "taustrat_sens2meridflux",
-}
-"""
-HalocarbonChemistry parameters that MAGICC7 sets for F-gases and Montreal gases
-apart, as ``fgas_<name>`` and ``mhalo_<name>``.
-RSCM shares one value, so the two must agree.
-"""
-
 
 THERMAL_EXPANSION_FILES = {
     "SLR_THEXP_PARAMS_CMIP5MEAN.CFG": (
@@ -503,21 +492,25 @@ def file_initial_concentrations(
     return out
 
 
+@cache
+def _halocarbon_variables() -> tuple[str, ...]:
+    component = HalocarbonChemistryBuilder.from_parameters({}).build()
+    return tuple(d.name for d in component.definitions())
+
+
 def halocarbon_forcing(group: str) -> list[str]:
     """ERF variables of each species in a halocarbon `group`, in MAGICC7's order."""
-    component = HalocarbonChemistryBuilder.from_parameters({}).build()
     prefix = f"{ERF}|{group}|"
-    return [d.name for d in component.definitions() if d.name.startswith(prefix)]
+    return [name for name in _halocarbon_variables() if name.startswith(prefix)]
 
 
 def halocarbon_species() -> list[str]:
     """Names of the halocarbons the chain reads emissions of, in kt per year."""
-    component = HalocarbonChemistryBuilder.from_parameters({}).build()
     prefix = f"{EMISSIONS}|"
     return [
-        d.name.removeprefix(prefix)
-        for d in component.definitions()
-        if d.name.startswith(prefix)
+        name.removeprefix(prefix)
+        for name in _halocarbon_variables()
+        if name.startswith(prefix)
     ]
 
 
@@ -972,7 +965,7 @@ OLBL_COEFFICIENTS = {
 
 def _ghg_method(parameters: Mapping[str, Any]) -> dict[str, Any]:
     p = parameters
-    method = p["core_co2ch4n2o_rfmethod"].strip().upper()
+    method = _upper(p["core_co2ch4n2o_rfmethod"])
     if method == "OLBL":
         return {
             "method": method,
@@ -1251,15 +1244,8 @@ def _check_choices(v: Validator, p: Mapping[str, Any]) -> None:
 
 
 def _check_ranges(v: Validator, p: Mapping[str, Any]) -> None:
-    for key in POSITIVE_PARAMETERS:
-        v.check(
-            float(p[key]) > 0.0,
-            IssueKind.OUT_OF_RANGE,
-            key,
-            f"{p[key]} must be positive",
-        )
-    if p["core_landheatcapacity_apply"]:
-        key = "core_landhc_effthickness"
+    land = ("core_landhc_effthickness",) if p["core_landheatcapacity_apply"] else ()
+    for key in (*POSITIVE_PARAMETERS, *land):
         v.check(
             float(p[key]) > 0.0,
             IssueKind.OUT_OF_RANGE,
@@ -1372,13 +1358,13 @@ def _check_files(
 
 
 def _check_prescribed(
-    prescribed: Mapping[str, NDArray[np.float64]], climate: Mapping[str, Any]
+    v: Validator,
+    prescribed: Mapping[str, NDArray[np.float64]],
+    climate: Mapping[str, Any],
 ) -> None:
-    v = Validator()
     for name, values in prescribed.items():
         v.finite(child(ERF, name), values)
     v.finite("file_volcanic_rf", climate["subannual_forcing"]["values"])
-    v.raise_if_any()
 
 
 def natural_emissions(
@@ -1550,7 +1536,8 @@ def from_magicc7(  # noqa: PLR0913
             "start_year": float(p["slr_expansion_startyear"]),
         }
     prescribed = prescribed_forcing(time, native, p, files)
-    _check_prescribed(prescribed, climate)
+    _check_prescribed(v, prescribed, climate)
+    v.raise_if_any()
     agents = forcing_agents(p, time, prescribed, native)
     permafrost = {"include_permafrost": bool(p["pf_apply"])}
     switch = concentration_switch_years(time, p)

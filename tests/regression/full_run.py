@@ -510,10 +510,8 @@ def default_model() -> Model:
     return emissions_driven.setup_model(config, inputs, run.time_axis).run()
 
 
-@cache
-def long_model() -> Model:
-    """The emissions-driven model of MAGICC7's default run to 2300."""
-    run = load_long()
+def _recorded_model(run: FullRun) -> Model:
+    """The emissions-driven model of a recorded run with its own parameters."""
     config, inputs = full.from_magicc7(
         run.time_axis,
         magicc7_emissions(run),
@@ -521,19 +519,18 @@ def long_model() -> Model:
         convention=Convention.MAGICC7,
     )
     return emissions_driven.setup_model(config, inputs, run.time_axis).run()
+
+
+@cache
+def long_model() -> Model:
+    """The emissions-driven model of MAGICC7's default run to 2300."""
+    return _recorded_model(load_long())
 
 
 @cache
 def ar6_model(member: int) -> Model:
     """The emissions-driven model of an AR6 ensemble member."""
-    run = load_ar6(member)
-    config, inputs = full.from_magicc7(
-        run.time_axis,
-        magicc7_emissions(run),
-        parameters=run.parameters,
-        convention=Convention.MAGICC7,
-    )
-    return emissions_driven.setup_model(config, inputs, run.time_axis).run()
+    return _recorded_model(load_ar6(member))
 
 
 @cache

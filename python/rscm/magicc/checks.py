@@ -1,5 +1,5 @@
 """
-Checks on a MAGICC7 configuration and its inputs before `from_magicc7` builds a model.
+Classification of MAGICC7 configuration keys, which `from_magicc7` checks.
 
 Every MAGICC7 configuration key is one of:
 
