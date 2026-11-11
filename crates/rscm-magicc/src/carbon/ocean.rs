@@ -249,7 +249,9 @@ impl OceanCarbon {
             }
 
             state.flux_history.push_back(flux);
-            if state.flux_history.len() > p.maximum_history_months {
+            if p.maximum_history_months
+                .is_some_and(|max| state.flux_history.len() > max)
+            {
                 state.flux_history.pop_front();
             }
 
@@ -557,7 +559,7 @@ mod tests {
         let monthly = run_years(&default_component(), &mut fresh_state(), PI, 8.0, 0.0, 20);
         let fine = OceanCarbon::from_parameters(OceanCarbonParameters {
             steps_per_year: 24,
-            maximum_history_months: 12000,
+            maximum_history_months: Some(12000),
             ..Default::default()
         });
         let fine = run_years(&fine, &mut fresh_state(), PI, 8.0, 0.0, 20);
@@ -579,13 +581,21 @@ mod tests {
     #[test]
     fn test_flux_history_bounded() {
         let params = OceanCarbonParameters {
-            maximum_history_months: 24,
+            maximum_history_months: Some(24),
             ..Default::default()
         };
         let component = OceanCarbon::from_parameters(params);
         let mut state = fresh_state();
         run_years(&component, &mut state, PI, 5.0, 0.0, 5);
         assert_eq!(component.history_length(&state), 24);
+    }
+
+    #[test]
+    fn test_flux_history_kept_by_default() {
+        let component = default_component();
+        let mut state = fresh_state();
+        run_years(&component, &mut state, PI, 5.0, 0.0, 3);
+        assert_eq!(component.history_length(&state), 36);
     }
 
     #[test]

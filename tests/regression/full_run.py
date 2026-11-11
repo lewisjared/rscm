@@ -62,6 +62,7 @@ NITROGEN = DATA.with_name("03_ssp245_emissions_nitrogen")
 DEFAULT = DATA.with_name("05_ssp245_default")
 SEALEVEL = DATA.with_name("04_ssp245_emissions_sealevel")
 CONCENTRATIONS = DATA.with_name("07_ssp245_concentrations")
+LONG = DATA.with_name("08_ssp245_default_2300")
 
 # MAGICC region names in RSCM four-box order.
 BOXES = (
@@ -161,6 +162,12 @@ def load_permafrost() -> FullRun:
 def load_default() -> FullRun:
     """Load MAGICC7's default run, which prescribes concentrations until 2015."""
     return _with_inputs(_read(DEFAULT))
+
+
+@cache
+def load_long() -> FullRun:
+    """Load MAGICC7's default run to 2300, with its own emissions."""
+    return _read(LONG)
 
 
 @cache
@@ -499,6 +506,19 @@ def default_model() -> Model:
     run = load_default()
     config, inputs = full.from_magicc7(
         run.time_axis, magicc7_emissions(run), convention=Convention.MAGICC7
+    )
+    return emissions_driven.setup_model(config, inputs, run.time_axis).run()
+
+
+@cache
+def long_model() -> Model:
+    """The emissions-driven model of MAGICC7's default run to 2300."""
+    run = load_long()
+    config, inputs = full.from_magicc7(
+        run.time_axis,
+        magicc7_emissions(run),
+        parameters=run.parameters,
+        convention=Convention.MAGICC7,
     )
     return emissions_driven.setup_model(config, inputs, run.time_axis).run()
 

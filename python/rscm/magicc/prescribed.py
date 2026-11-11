@@ -113,11 +113,8 @@ def on_axis(
 
 
 def _switch_index(years: NDArray[np.float64], year: float) -> int:
-    index = round(year - years[0])
-    if not 0 <= index < len(years):
-        msg = f"switch year {year} is outside the run"
-        raise ValueError(msg)
-    return index
+    """Index of ``year``, moved onto the first or last run year like MAGICC7 does."""
+    return int(np.clip(round(year - years[0]), 0, len(years) - 1))
 
 
 def _extend(
@@ -330,7 +327,14 @@ def _nitrate_total(  # noqa: PLR0913
     rf = rf * factor
 
     product = (nh3_i * 0.5 + nh3_b * 0.5) * (nox_b * 0.5 + nox_i * 0.5)
-    hemisphere = ((rf + rf) * product) / (product + product)
+    denominator = product + product
+    # MAGICC7 sets the hemispheric forcing to zero without anthropogenic NOx x NH3.
+    hemisphere = np.divide(
+        (rf + rf) * product,
+        denominator,
+        out=np.zeros_like(denominator),
+        where=denominator != 0.0,
+    )
     w = np.asarray(pattern, dtype=np.float64)
     land = area_fractions()[1::2] * 2
     ocean = 1 - land
@@ -427,6 +431,8 @@ def _cloud_drive(
 ) -> tuple[NDArray[np.float64], float]:
     """Each year's emissions plus the next year's, and that sum at ``start``."""
     e = np.asarray(emissions, dtype=np.float64)
+    # The final year has no next year, so it reuses the previous sum.
+    start = min(start, len(e) - 2)
     if natural is None:
         forward = e[1:] + e[:-1]
         return forward, forward[start]

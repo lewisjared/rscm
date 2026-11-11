@@ -206,6 +206,11 @@
       "description": "Regional CO2 ERF pattern in each region of the four-box grid (MAGICC7 `RF_REGIONS_CO2`).\n\nunit: dimensionless\n\nRelative weights for the CO2 ERF fraction of each region in the LAMCALC solver,\nnormalised by their global area-weighted sum as in MAGICC7.\n\nDefault values from `MAGCFG_DEFAULTALL.CFG` (AR6 calibration):\n`[1.4089, 1.37045, 1.43333, 1.33257]`."
     },
     {
+      "name": "include_unset_lamcalc_error",
+      "type": "bool",
+      "description": "Reproduce MAGICC7 v7.5.3 reading LAMCALC's first error, `DIFF(1)`, unset."
+    },
+    {
       "name": "efficacy_method",
       "type": "EfficacyMethod",
       "description": "How efficacies scale the ERF (MAGICC7 `RF_EFFICACY_APPLY`).\n\n`none` leaves the ERF unchanged, `unit` divides it by the internal efficacy,\nand `ar6` scales it by `co2_efficacy / internal_efficacy`."
