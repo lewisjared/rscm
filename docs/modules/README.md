@@ -75,6 +75,9 @@ lists the cases and the measured differences.
 ### Known gaps
 
 Most come from the "Differences from MAGICC7" notes in each component's Rust documentation.
+`from_magicc7` rejects a configuration that switches on any of them,
+and `rscm.magicc.checks.UNSUPPORTED_PARAMETERS` lists each key with the values it rejects.
+See [validation and exit codes](../magicc_runs.md#validation-and-exit-codes).
 
 - **Initialisation**: CH4 and N2O natural emissions are fixed component parameters.
   `rscm.magicc.full.natural_emissions` calculates MAGICC7's budget-closing values,
@@ -87,6 +90,11 @@ Most come from the "Differences from MAGICC7" notes in each component's Rust doc
   The last year runs 12 substeps where MAGICC7 runs 11.
   See [time conventions](time_conventions.md).
 - **Terrestrial Carbon**: `from_magicc7` supports only `co2_plantboxresp_method` 2.
+- **Halocarbon Chemistry**: only MAGICC7's species, with their default lifetimes and atoms.
+  F-gases and Montreal Protocol gases share the variable lifetime switches.
+- **Forcing**: no holding forcing constant after a year (`RF_*_CONSTANTAFTERYR`),
+  forcing-only run modes (`RF_TOTAL_RUNMODUS`), initialisation methods other than the default,
+  extra forcing files or future volcanic means other than the default.
 - **Ocean Carbon**: no BOXDIFF IRF, radiative-only switch, biological pump or circulation change.
 - **CO2 Budget**: no concentration cap, no inverse fossil emissions while CO2 is prescribed,
   and no zero-emissions switch (`CO2_ZEROEMIS_AFTERXPGC_APPLY`).

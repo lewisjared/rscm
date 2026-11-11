@@ -27,7 +27,7 @@ import numpy as np
 
 from rscm._lib.magicc import ClimateUDEBBuilder, HalocarbonChemistryBuilder
 from rscm.core import TimeAxis
-from rscm.magicc import emissions_driven, model
+from rscm.magicc import checks, emissions_driven, model
 from rscm.magicc import prescribed as pr
 from rscm.names import (
     ATMOSPHERIC_BURDEN_CH4_BIOSPHERE,
@@ -54,6 +54,7 @@ from rscm.names import (
     emissions_unit,
 )
 from rscm.names import prescribed as prescribed_input
+from rscm.validation import IssueKind, Validator
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Mapping, Sequence
@@ -73,11 +74,13 @@ __all__ = [
     "PRESCRIBED_AGENTS",
     "REWRITTEN_PARAMETERS",
     "SECTORAL_EMISSIONS",
+    "THERMAL_EXPANSION_FILES",
     "climate_parameters",
     "concentration_switch_years",
     "default_initial_concentrations",
     "default_parameters",
     "efficacy_climate",
+    "file_initial_concentrations",
     "forcing_agents",
     "from_magicc7",
     "halocarbon_species",
@@ -288,6 +291,9 @@ TERRESTRIAL_PARAMETERS = {
     "fertilisation_factor": "co2_fertilization_factor",
     "fertilisation_factor2": "co2_fertilization_factor2",
     "fertilisation_method": "co2_fertilization_method",
+    "fertilisation_start_year": "co2_fertilization_yrstart",
+    "gifford_concentration_for_zero_npp": "co2_gifford_conc_for_zeronpp",
+    "temperature_feedback_start_year": "co2_tempfeedback_yrstart",
     "plant_respiration_fertilisation_scale": "co2_plantboxresp_fertscale",
     "respiration_pi": "co2_respiration_initial",
     "npp_to_plant_fraction": "co2_fraction_npp_2_plant",
@@ -296,6 +302,7 @@ TERRESTRIAL_PARAMETERS = {
     "detritus_to_soil_fraction": "co2_fraction_detritus_2_soil",
     "deforestation_plant_fraction": "co2_fraction_deforest_plant",
     "deforestation_detritus_fraction": "co2_fraction_deforest_detritus",
+    "deforestation_no_regrowth_fraction": "co2_norgrwth_frac_defo",
 }
 """TerrestrialCarbon parameters and their MAGICC7 names."""
 
@@ -314,6 +321,7 @@ OCEAN_CARBON_PARAMETERS = {
     "gas_exchange_scale": "oceancc_scale_gasxchange",
     "irf_scale": "oceancc_scale_impulseresponse",
     "temperature_sensitivity": "oceancc_tempfeedback",
+    "temperature_feedback_start_year": "co2_tempfeedback_yrstart",
 }
 """OceanCarbon parameters and their MAGICC7 names."""
 
@@ -344,16 +352,101 @@ CLIMATE_PARAMETERS = {
 """ClimateUDEB parameters and their MAGICC7 names."""
 
 
-# CH4Chemistry defaults of the lifetimes combined into ``non_oh_lifetime``
-CH4_OTHER_LIFETIMES = {
-    "soil_lifetime": 150.0,
-    "stratospheric_lifetime": 120.0,
-    "tropospheric_cl_lifetime": 200.0,
+CH4_PARAMETERS = {
+    "feedback_start_year": "ch4_feed_yrstart",
+    "initial_ch4_lifetime": "ch4_tautot_init",
+    "soil_lifetime": "ch4_tausoil",
+    "stratospheric_lifetime": "ch4_taustrat",
+    "tropospheric_cl_lifetime": "ch4_tautropcl",
+    "ch4_self_feedback": "ch4_s",
+    "oh_sensitivity_scale": "ch4_scaleohsens",
+    "oh_nox_sensitivity": "ch4_anox",
+    "oh_co_sensitivity": "ch4_aco",
+    "oh_nmvoc_sensitivity": "ch4_avoc",
+    "temperature_sensitivity": "ch4_tautempsensitivity",
+    "tg_per_ppb": "ch4_ppb2tgch4",
+    "mixing_box_size": "ch4_mixboxsize",
 }
+"""CH4Chemistry parameters and their MAGICC7 names."""
+
+N2O_PARAMETERS = {
+    "feedback_start_year": "n2o_feed_yrstart",
+    "initial_n2o_lifetime": "n2o_tauinit",
+    "lifetime_feedback": "n2o_s",
+    "stratospheric_delay": "n2o_stratmixdelay",
+    "tg_per_ppb": "n2o_ppb2tgn",
+    "meridional_flux_change_per_degree": "gen_meridflux_chngperdeg",
+    "lifetime_sensitivity_to_meridional_flux": "n2o_taustrat_sens2meridflux",
+    "meridional_flux_reference_year": "gen_change_meridionalflux_yr",
+}
+"""N2OChemistry parameters and their MAGICC7 names."""
+
+HALOCARBON_PARAMETERS = {
+    "br_cl_ratio": "stratoz_br_vs_cl_scale",
+    "cfc11_release_factor": "mhalo_releasefactorc11",
+    "stratospheric_delay": "gen_eesc_stratmixdelay",
+    "air_molar_mass": "gen_air_grammpromol",
+    "atmosphere_mass": "gen_atm_totmass_1e21gramm",
+    "meridional_flux_reference_year": "gen_change_meridionalflux_yr",
+    "meridional_flux_change_per_degree": "gen_meridflux_chngperdeg",
+}
+"""HalocarbonChemistry parameters and their MAGICC7 names."""
+
+HALOCARBON_SHARED = {
+    "include_variable_oh_lifetime": "use_tauoh_var",
+    "include_variable_stratospheric_lifetime": "use_taustrat_var",
+    "stratospheric_lifetime_sensitivity": "taustrat_sens2meridflux",
+}
+"""
+HalocarbonChemistry parameters that MAGICC7 sets for F-gases and Montreal gases
+apart, as ``fgas_<name>`` and ``mhalo_<name>``.
+RSCM shares one value, so the two must agree.
+"""
 
 
-# CH4 lifetime against soil, stratospheric and chlorine loss, as in MAGICC7
-_CH4_NON_OH_LIFETIME = 1.0 / sum(1.0 / tau for tau in CH4_OTHER_LIFETIMES.values())
+THERMAL_EXPANSION_FILES = {
+    "SLR_THEXP_PARAMS_CMIP5MEAN.CFG": (
+        52.2368,
+        0.9938,
+        1.0333,
+        0.6065,
+        24.2643,
+        0.7408,
+    ),
+}
+"""
+``slr_expansion_params`` in each ``file_slr_thexp_params`` MAGICC7 v7.5.3 ships.
+MAGICC7 reads the file after the configuration, so it overrides the parameter.
+"""
+
+
+def _thermal_expansion_coefficients(parameters: Mapping[str, Any]) -> Sequence[float]:
+    given = parameters["slr_expansion_params"]
+    file = str(parameters["file_slr_thexp_params"]).strip()
+    return THERMAL_EXPANSION_FILES[file] if file else given
+
+
+FEEDBACK_START_YEARS = (
+    "ch4_feed_yrstart",
+    "co2_fertilization_yrstart",
+    "co2_tempfeedback_yrstart",
+    "n2o_feed_yrstart",
+)
+"""Years that MAGICC7 moves into the run when they fall outside it."""
+
+
+def _ch4_non_oh_lifetime(parameters: Mapping[str, Any]) -> float:
+    """CH4 lifetime against soil, stratospheric and chlorine loss, as in MAGICC7."""
+    p = parameters
+    return 1.0 / (
+        1.0 / p["ch4_tausoil"] + 1.0 / p["ch4_taustrat"] + 1.0 / p["ch4_tautropcl"]
+    )
+
+
+def _ch4_oh_lifetime(parameters: Mapping[str, Any]) -> float:
+    return 1.0 / (
+        1.0 / parameters["ch4_tautot_init"] - 1.0 / _ch4_non_oh_lifetime(parameters)
+    )
 
 
 def _ch4_burdens(
@@ -386,6 +479,28 @@ def default_initial_concentrations() -> dict[str, float]:
     CO2 is in ppm, CH4 and N2O in ppb and halocarbons in ppt.
     """
     return dict(_defaults()["initial_concentrations"])
+
+
+def file_initial_concentrations(
+    start_year: float,
+    parameters: Mapping[str, Any] | None = None,
+    inputs: Mapping[str, pr.AerosolHistory] | None = None,
+) -> dict[str, float]:
+    """Concentrations in ``start_year`` from the concentration files, as MAGICC7 starts.
+
+    A file that starts later gives its first value.
+    Species without a file in ``inputs`` keep `default_initial_concentrations`.
+    ``inputs`` defaults to `load_inputs` of ``parameters``.
+    """
+    p = parameters or default_parameters()
+    files = inputs if inputs is not None else load_inputs(p)
+    out = default_initial_concentrations()
+    for group in _concentration_files(p).values():
+        for species, _ in group:
+            key = _concentration_key(species)
+            if key in files:
+                out[species] = float(pr.on_axis(files[key], [start_year])[0, 0])
+    return out
 
 
 def halocarbon_forcing(group: str) -> list[str]:
@@ -1025,26 +1140,245 @@ def _native(
     return magicc7_units(emissions)
 
 
-def _validate_emissions(
-    emissions: Mapping[str, ArrayLike], n: int, halocarbons: Sequence[str]
+def _check_emissions(
+    v: Validator, emissions: Mapping[str, ArrayLike], n: int, halocarbons: Sequence[str]
 ) -> dict[str, NDArray[np.float64]]:
     required = [f"{s}|{sector}" for s in SECTORAL_EMISSIONS for sector in SECTORS]
-    missing = [name for name in (*required, *halocarbons) if name not in emissions]
-    if missing:
-        msg = f"missing emissions: {missing}"
-        raise ValueError(msg)
-    unknown = set(emissions) - {*required, *halocarbons}
-    if unknown:
-        msg = f"unknown emissions: {sorted(unknown)}"
-        raise ValueError(msg)
+    for name in (*required, *halocarbons):
+        v.check(name in emissions, IssueKind.MISSING, name, "no emissions given")
+    known = {*required, *halocarbons}
     out = {}
     for name, values in emissions.items():
+        if not v.check(
+            name in known, IssueKind.UNKNOWN_KEY, name, "not an emitted species"
+        ):
+            continue
         array = np.asarray(values, dtype=np.float64)
-        if array.shape != (n,) or not np.all(np.isfinite(array)):
-            msg = f"emissions {name!r} must be {n} finite values, one per year"
-            raise ValueError(msg)
-        out[name] = array
+        if v.check(
+            array.shape == (n,),
+            IssueKind.SHAPE,
+            name,
+            f"has shape {array.shape}, not {n} values, one per year of the run",
+        ) and v.finite(name, array):
+            out[name] = array
     return out
+
+
+def _check_initial_concentrations(
+    v: Validator, given: Mapping[str, float] | None
+) -> None:
+    species = default_initial_concentrations()
+    for name, value in (given or {}).items():
+        location = f"initial_concentrations[{name}]"
+        if not v.check(
+            name in species, IssueKind.UNKNOWN_KEY, location, "not a species"
+        ):
+            continue
+        if v.finite(location, value):
+            v.check(
+                float(value) >= 0.0,
+                IssueKind.OUT_OF_RANGE,
+                location,
+                f"concentration {value} is negative",
+            )
+
+
+OCEAN_CARBON_METHODS = ("3D-GFDL", "2D-BERN", "HILDA")
+"""``oceancc_model`` values RSCM implements, out of MAGICC7's four."""
+
+POSITIVE_PARAMETERS = (
+    "core_climatesensitivity",
+    "core_mixedlayer_depth",
+    "ch4_tautot_init",
+    "n2o_tauinit",
+)
+"""Parameters that must be positive."""
+
+SCALED_AGENTS = (
+    "soxi_dir",
+    "bci_dir",
+    "oci_dir",
+    "no3t_dir",
+    "landuse_albedo",
+    "mineraldust_dir",
+    "bcsnow_albedo",
+    "cloud_albedo_aer",
+)
+"""Prescribed agents scaled as ``rf_<agent>_apply`` sets, see `SCALING_APPLY`."""
+
+COMPUTED_PATTERNS = ("aer_dir", "bc", "bcsnow", "landuse", "no3", "oc", "sox")
+"""``rf_regions_<agent>`` that `forcing_agents` replaces with forcing patterns."""
+
+HEMISPHERIC_PATTERNS = ("fgas", "tropoz")
+"""``rf_regions_<agent>`` normalised within each hemisphere."""
+
+
+def _upper(value: Any) -> str:
+    return str(value).strip().upper()
+
+
+def _check_choices(v: Validator, p: Mapping[str, Any]) -> None:
+    choices: list[tuple[str, Any, Collection[Any]]] = [
+        ("oceancc_model", _upper(p["oceancc_model"]), OCEAN_CARBON_METHODS),
+        ("co2_plantboxresp_method", p["co2_plantboxresp_method"], (2,)),
+        (
+            "core_co2ch4n2o_rfmethod",
+            _upper(p["core_co2ch4n2o_rfmethod"]),
+            ("OLBL", "IPCCTAR"),
+        ),
+        ("rf_efficacy_apply", p["rf_efficacy_apply"], tuple(EFFICACY_METHODS)),
+        *(
+            (f"rf_{agent}_apply", p[f"rf_{agent}_apply"], tuple(SCALING_APPLY))
+            for agent in SCALED_AGENTS
+        ),
+        ("fgas_n", p["fgas_n"], (len(halocarbon_species()) - 18,)),
+    ]
+    if p["out_sealevel"]:
+        choices.append(
+            (
+                "file_slr_thexp_params",
+                str(p["file_slr_thexp_params"]).strip(),
+                ("", *THERMAL_EXPANSION_FILES),
+            )
+        )
+    for key, value, implemented in choices:
+        v.check(
+            value in implemented,
+            IssueKind.UNSUPPORTED,
+            key,
+            f"{value!r} is not implemented, only {', '.join(map(repr, implemented))}",
+        )
+
+
+def _check_ranges(v: Validator, p: Mapping[str, Any]) -> None:
+    for key in POSITIVE_PARAMETERS:
+        v.check(
+            float(p[key]) > 0.0,
+            IssueKind.OUT_OF_RANGE,
+            key,
+            f"{p[key]} must be positive",
+        )
+    if p["core_landheatcapacity_apply"]:
+        key = "core_landhc_effthickness"
+        v.check(
+            float(p[key]) > 0.0,
+            IssueKind.OUT_OF_RANGE,
+            key,
+            f"{p[key]} must be positive",
+        )
+    sinks = ("ch4_tausoil", "ch4_taustrat", "ch4_tautropcl")
+    for key in sinks:
+        value = float(p[key])
+        if value == 0.0:
+            v.add(
+                IssueKind.UNSUPPORTED,
+                key,
+                "0 leaves the sink out in MAGICC7, but RSCM needs all three CH4 sinks",
+            )
+        else:
+            v.check(
+                value > 0.0, IssueKind.OUT_OF_RANGE, key, f"{value} must be positive"
+            )
+    if all(float(p[k]) > 0.0 for k in (*sinks, "ch4_tautot_init")):
+        non_oh = _ch4_non_oh_lifetime(p)
+        v.check(
+            p["ch4_tautot_init"] < non_oh,
+            IssueKind.OUT_OF_RANGE,
+            "ch4_tautot_init",
+            f"{p['ch4_tautot_init']} must be shorter than the {non_oh:.4g} yr lifetime"
+            " against the other sinks, or the OH lifetime is negative",
+        )
+    agents = {
+        *CALCULATED_AGENTS.values(),
+        *PRESCRIBED_AGENTS.values(),
+        "tropoz",
+        "dust",
+    }
+    for agent in sorted(agents - set(COMPUTED_PATTERNS)):
+        key = f"rf_regions_{agent}"
+        if key not in p:
+            continue
+        pattern = np.asarray(p[key], dtype=np.float64)
+        if not (
+            v.check(pattern.shape == (4,), IssueKind.SHAPE, key, "must have 4 boxes")
+            and v.finite(key, pattern)
+        ):
+            continue
+        halves = (
+            (pattern[:2], pattern[2:]) if agent in HEMISPHERIC_PATTERNS else (pattern,)
+        )
+        v.check(
+            all(np.any(h != 0.0) for h in halves),
+            IssueKind.OUT_OF_RANGE,
+            key,
+            f"{pattern.tolist()} is zero"
+            f"{' in a hemisphere' if len(halves) > 1 else ''},"
+            " so it cannot be normalised",
+        )
+
+
+def _check_files(
+    v: Validator,
+    time: NDArray[np.float64],
+    p: Mapping[str, Any],
+    files: Mapping[str, pr.AerosolHistory],
+) -> None:
+    for key in INPUT_FILES:
+        v.check(key in files, IssueKind.MISSING, key, f"no input file {p[key]!r}")
+    if "file_solar_rf" in files:
+        last = files["file_solar_rf"].last_year()
+        v.check(
+            last >= time[-1],
+            IssueKind.SHAPE,
+            "file_solar_rf",
+            f"{p['file_solar_rf']!r} ends in {last:g},"
+            f" before the run ends in {time[-1]:g}",
+        )
+    budget_years = {}
+    for gas in ("ch4", "n2o"):
+        last = float(p[f"{gas}_lastbudgetyear"])
+        first = last - p[f"{gas}_budget_avgyears"]
+        if first >= time[0] and last <= time[-1]:
+            budget_years[gas.upper()] = last
+    groups = _concentration_files(p)
+    for group, switch in concentration_switch_years(time, p).items():
+        if switch is None:
+            continue
+        for species, file in groups[group]:
+            if not file.strip():
+                continue
+            key = _concentration_key(species)
+            if not v.check(
+                key in files, IssueKind.MISSING, key, f"no input file {file!r}"
+            ):
+                continue
+            until = max(min(switch, time[-1]), budget_years.get(species, time[0]))
+            history = files[key]
+            v.check(
+                history.last_year() >= until,
+                IssueKind.SHAPE,
+                key,
+                f"{file!r} ends in {history.last_year():g}, before the concentrations"
+                f" it prescribes end in {until:g}",
+            )
+            values = np.asarray(history.values, dtype=np.float64)
+            if v.finite(key, values) and np.any(values < 0.0):
+                v.add(
+                    IssueKind.OUT_OF_RANGE,
+                    key,
+                    f"{file!r} has negative concentrations,"
+                    f" first {values[values < 0][0]}",
+                )
+
+
+def _check_prescribed(
+    prescribed: Mapping[str, NDArray[np.float64]], climate: Mapping[str, Any]
+) -> None:
+    v = Validator()
+    for name, values in prescribed.items():
+        v.finite(child(ERF, name), values)
+    v.finite("file_volcanic_rf", climate["subannual_forcing"]["values"])
+    v.raise_if_any()
 
 
 def natural_emissions(
@@ -1077,8 +1411,8 @@ def natural_emissions(
         },
         convention,
     )
-    non_oh_lifetime = _CH4_NON_OH_LIFETIME
-    oh_lifetime = 1.0 / (1.0 / p["ch4_tautot_init"] - 1.0 / non_oh_lifetime)
+    non_oh_lifetime = _ch4_non_oh_lifetime(p)
+    oh_lifetime = _ch4_oh_lifetime(p)
     budget = {
         "CH4": (
             (oh_lifetime, non_oh_lifetime),
@@ -1110,16 +1444,6 @@ def natural_emissions(
             anthropogenic += _sequential_sum(e[:-1].tolist())
         out[gas] = removal * tg_per_ppb / n - anthropogenic * 0.5 / n
     return out
-
-
-def _override[T](
-    argument: str, defaults: dict[str, T], given: Mapping[str, T] | None
-) -> dict[str, T]:
-    unknown = sorted(set(given or {}) - set(defaults))
-    if unknown:
-        msg = f"unknown {argument}: {', '.join(unknown)}"
-        raise ValueError(msg)
-    return {**defaults, **(given or {})}
 
 
 def _pre_run_fgas(
@@ -1173,7 +1497,8 @@ def from_magicc7(  # noqa: PLR0913
     for [rscm.magicc.concentration_driven][].
     ``input_files`` replaces the files from `load_inputs`.
     Load them once and pass them to every translation of an ensemble.
-    ``initial_concentrations`` overrides `default_initial_concentrations`.
+    ``initial_concentrations`` overrides `file_initial_concentrations`,
+    the concentration files in the first year.
     ``bugs`` names the MAGICC7 release whose known bugs to reproduce,
     or the names from `MAGICC7_BUGS` to reproduce, so ``()`` fixes them all.
 
@@ -1182,30 +1507,50 @@ def from_magicc7(  # noqa: PLR0913
     """
     model.check_axis(time_axis)
     time = np.asarray(time_axis.values(), dtype=np.float64)
+    given = dict(parameters or {})
     driver = (
         {f"{group}_switchfromconc2emis_year": np.inf for group in CONCENTRATION_UNITS}
         if concentration_driven
         else {}
     )
     p = ChainMap(driver, cast("dict[str, Any]", parameters or {}), default_parameters())
-    files = dict(input_files) if input_files is not None else load_inputs(p)
-    conc = _override(
-        "initial_concentrations",
-        default_initial_concentrations(),
-        initial_concentrations,
+    v = Validator()
+    defaults = _defaults()
+    checks.check_parameters(
+        v,
+        given,
+        defaults["parameters"],
+        defaults.get("unsupported", {}),
+        (time[0], time[-1]),
     )
+    _check_choices(v, p)
+    _check_ranges(v, p)
     species = halocarbon_species()
-    data = _validate_emissions(emissions, len(time), species)
+    data = _check_emissions(v, emissions, len(time), species)
+    _check_initial_concentrations(v, initial_concentrations)
+    v.raise_if_any()
+    p = p.new_child(
+        {k: float(np.clip(p[k], time[0], time[-1])) for k in FEEDBACK_START_YEARS}
+    )
+    files = dict(input_files) if input_files is not None else load_inputs(p)
+    _check_files(v, time, p, files)
+    v.raise_if_any()
+    conc = {
+        **file_initial_concentrations(time[0], p, files),
+        **(initial_concentrations or {}),
+    }
     native = _native(data, convention)
-    if p["co2_plantboxresp_method"] != 2:  # noqa: PLR2004
-        msg = "only co2_plantboxresp_method 2 is implemented"
-        raise ValueError(msg)
 
     include = _included(bugs)
     climate = climate_parameters(p, files, time[0], time[-1], bugs)
     if p["out_sealevel"]:
-        climate["thermal_expansion"] = {}
+        climate["thermal_expansion"] = {
+            "coefficients": list(_thermal_expansion_coefficients(p)),
+            "scaling": p["slr_expansion_scaling"],
+            "start_year": float(p["slr_expansion_startyear"]),
+        }
     prescribed = prescribed_forcing(time, native, p, files)
+    _check_prescribed(prescribed, climate)
     agents = forcing_agents(p, time, prescribed, native)
     permafrost = {"include_permafrost": bool(p["pf_apply"])}
     switch = concentration_switch_years(time, p)
@@ -1216,26 +1561,32 @@ def from_magicc7(  # noqa: PLR0913
     components: dict[str, dict[str, Any]] = {
         "CH4Chemistry": {
             **permafrost,
+            **{ours: p[theirs] for ours, theirs in CH4_PARAMETERS.items()},
             "concentration_switch_year": switch["ch4"],
-            "initial_ch4_lifetime": p["ch4_tautot_init"],
-            "tg_per_ppb": p["ch4_ppb2tgch4"],
-            "mixing_box_size": p["ch4_mixboxsize"],
+            "include_temperature_feedback": p["ch4_include_tempfeedback"] == 1,
+            "include_emissions_feedback": p["ch4_taufeedback_bynoxvocco"] != 0,
             **_natural(natural, "CH4"),
         },
         "CH4Oxidation": {
             **permafrost,
             "permafrost_fraction": p["pf_co2fromch4oxinatm_fraction"],
+            "non_oh_lifetime": _ch4_non_oh_lifetime(p),
             "tg_per_ppb": p["ch4_ppb2tgch4"],
             "mixing_box_size": p["ch4_mixboxsize"],
             **_natural(natural, "CH4"),
         },
         "N2OChemistry": {
+            **{ours: p[theirs] for ours, theirs in N2O_PARAMETERS.items()},
             "concentration_switch_year": switch["n2o"],
-            "initial_n2o_lifetime": p["n2o_tauinit"],
-            "tg_per_ppb": p["n2o_ppb2tgn"],
+            "include_meridional_flux_feedback": p["n2o_use_taustrat_var"] == 1,
             **_natural(natural, "N2O"),
         },
         "HalocarbonChemistry": {
+            **{ours: p[theirs] for ours, theirs in HALOCARBON_PARAMETERS.items()},
+            "include_variable_oh_lifetime": p["mhalo_use_tauoh_var"] == 1,
+            "include_variable_stratospheric_lifetime": p["mhalo_use_taustrat_var"] == 1,
+            "stratospheric_lifetime_sensitivity": p["mhalo_taustrat_sens2meridflux"],
+            "initial_ch4_oh_lifetime": _ch4_oh_lifetime(p),
             "fgas_switch_year": switch["fgas"],
             "montreal_gases_switch_year": switch["mhalo"],
             "fgas_forcing_scale": p["rf_fgassum_scale"],
@@ -1262,6 +1613,7 @@ def from_magicc7(  # noqa: PLR0913
         },
         "OceanCarbon": {
             **{k: p[v] for k, v in OCEAN_CARBON_PARAMETERS.items()},
+            "method": _upper(p["oceancc_model"]),
             **permafrost,
             "concentration_switch_year": switch["co2"],
         },
