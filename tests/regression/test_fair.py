@@ -381,6 +381,38 @@ def test_ensemble_prescribed() -> None:
     _assert_ensemble_member(result.sel(scenario="ssp245", config="config"), run)
 
 
+def test_ensemble_concentration() -> None:
+    """Inverse emissions of concentration-driven gases sit on the step start."""
+    pytest.importorskip("xarray")
+    run = load("ssp245_concentration")
+    result = run_ensemble(
+        {"config": run.config},
+        {"ssp245": _inputs(run.config, run.timebounds, run.timepoints)},
+        run.time_axis,
+    )
+    _assert_ensemble_member(result.sel(scenario="ssp245", config="config"), run)
+
+
+def test_ensemble_concentration_co2() -> None:
+    """CO2 FFI emissions no component reads still reach the results."""
+    pytest.importorskip("xarray")
+    run = load("ssp245")
+    config = copy.deepcopy(run.config)
+    next(s for s in config["species"] if s["name"] == "CO2")["input_mode"] = (
+        "concentration"
+    )
+    inputs = _inputs(run.config, run.timebounds, run.timepoints)
+    co2 = naming.concentration("CO2")
+    inputs[co2] = (run.rscm(co2), "ppm")
+
+    result = run_ensemble({"c": config}, {"s": inputs}, run.time_axis)
+
+    emissions = result.emissions.sel(scenario="s", config="c")
+    fossil = inputs[naming.emissions("CO2 FFI")][0]
+    npt.assert_array_equal(emissions.sel(specie="CO2 FFI"), fossil)
+    assert_close(emissions.sel(specie="CO2"), run.timepoints["emissions|CO2"], "CO2")
+
+
 def test_first_prescribed_forcing() -> None:
     """The first forcing and imbalance are the prescribed forcing, as in FaIR."""
     run = load("ssp245_prescribed")
@@ -444,6 +476,13 @@ def test_from_fair() -> None:
         if properties[s]["input_mode"] == "forcing":
             fill(f.forcing, run.fair(f"forcing|{s}")[:, None, None], specie=s)
     initialise(f.concentration, f.species_configs["baseline_concentration"])
+    for state in (
+        f.temperature,
+        f.cumulative_emissions,
+        f.airborne_emissions,
+        f.ocean_heat_content_change,
+    ):
+        initialise(state, 0)
 
     config, inputs, time_axis = from_fair(f)
 

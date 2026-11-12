@@ -11,6 +11,8 @@
 //! and a feedback $\lambda$ on the surface air temperature change $T$ at the start of the step.
 //! The forcing scale is `forcing_scale * (1 + tropospheric_adjustment)`.
 //! A cumulative emissions driver reads an emissions rate and accumulates it over the run.
+//! With `skip_nan_terms`, a NaN term drops out of the sum, as in FaIR's `np.nansum`.
+//! FaIR sums every linear forcing this way apart from ozone.
 //!
 //! # Inputs
 //!
@@ -79,6 +81,9 @@ pub struct LinearForcingParameters {
     /// Name of the surface air temperature change input.
     #[serde(default = "surface_temperature")]
     pub surface_temperature: String,
+    /// Whether a NaN term drops out of the sum rather than making the forcing NaN.
+    #[serde(default)]
+    pub skip_nan_terms: bool,
 }
 
 /// Running sums of the emission rates of cumulative drivers, in driver order.
@@ -112,6 +117,18 @@ impl LinearForcing {
         Self { parameters }
     }
 
+    /// Forcing before the temperature feedback, for driver values in driver order.
+    pub fn forcing(&self, values: impl IntoIterator<Item = FloatValue>) -> FloatValue {
+        let p = &self.parameters;
+        let scale = p.forcing_scale * (1.0 + p.tropospheric_adjustment);
+        p.drivers
+            .iter()
+            .zip(values)
+            .map(|(driver, value)| (value - driver.baseline) * driver.radiative_efficiency * scale)
+            .filter(|term| !(p.skip_nan_terms && term.is_nan()))
+            .fold(0.0, |forcing, term| forcing + term)
+    }
+
     fn initial_state(&self) -> LinearForcingState {
         LinearForcingState {
             emissions_sum: vec![0.0; self.parameters.drivers.len()],
@@ -127,18 +144,18 @@ impl LinearForcing {
     ) -> RSCMResult<OutputState> {
         let p = &self.parameters;
         let dt = t_next - t_current;
-        let scale = p.forcing_scale * (1.0 + p.tropospheric_adjustment);
-        let mut forcing = 0.0;
-        for (driver, sum) in p.drivers.iter().zip(state.emissions_sum.iter_mut()) {
-            let value = match driver.driver {
+        let values = p
+            .drivers
+            .iter()
+            .zip(state.emissions_sum.iter_mut())
+            .map(|(driver, sum)| match driver.driver {
                 Driver::Emissions | Driver::Concentration => get(input_state, &driver.variable),
                 Driver::CumulativeEmissions => {
                     *sum += get(input_state, &driver.variable);
                     *sum * dt
                 }
-            };
-            forcing += (value - driver.baseline) * driver.radiative_efficiency * scale;
-        }
+            });
+        let forcing = self.forcing(values);
         let temperature = get(input_state, &p.surface_temperature);
         let mut output = OutputState::with_capacity(1);
         output.insert(
@@ -189,5 +206,42 @@ impl Component for LinearForcing {
             .downcast_mut::<LinearForcingState>()
             .ok_or_else(|| RSCMError::Error("Internal state is not LinearForcingState".into()))?;
         self.solve_impl(t_current, t_next, input_state, state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn linear(skip_nan_terms: bool) -> LinearForcing {
+        let driver = |variable: &str, baseline| LinearDriver {
+            variable: variable.into(),
+            unit: "Mt/yr".into(),
+            driver: Driver::Emissions,
+            baseline,
+            radiative_efficiency: 0.5,
+        };
+        LinearForcing::from_parameters(LinearForcingParameters {
+            forcing: "Effective Radiative Forcing|Aerosols|Direct Effect".into(),
+            drivers: vec![
+                driver("Emissions|BC", 1.0),
+                driver("Emissions|OC", f64::NAN),
+            ],
+            forcing_scale: 2.0,
+            tropospheric_adjustment: 0.0,
+            temperature_feedback: 0.0,
+            surface_temperature: surface_temperature(),
+            skip_nan_terms,
+        })
+    }
+
+    #[test]
+    fn nan_terms_drop_out_when_skipped() {
+        assert_eq!(linear(true).forcing([3.0, 4.0]), 2.0);
+    }
+
+    #[test]
+    fn nan_terms_make_the_forcing_nan_by_default() {
+        assert!(linear(false).forcing([3.0, 4.0]).is_nan());
     }
 }

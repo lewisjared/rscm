@@ -9,8 +9,10 @@ import numpy as np
 from rscm import names
 from rscm.fair import naming
 from rscm.fair.config import emission_drivers, is_ghg, species_outputs
-from rscm.fair.run import setup_model
+from rscm.fair.run import _on_timebounds, _setup_model
+from rscm.fair.validation import check_config, check_inputs, check_prescribed_scales
 from rscm.spec import run_all
+from rscm.validation import Validator
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Mapping
@@ -38,21 +40,46 @@ SCALAR_ATTRIBUTES = {
 }
 
 
-def _values(outputs: TimeseriesCollection, variable: str) -> NDArray[np.float64]:
+def _values(
+    outputs: TimeseriesCollection, variable: str, inputs: Inputs, n_bounds: int
+) -> NDArray[np.float64]:
+    """Values of a variable on the timebounds, from the inputs if nothing reads it."""
     series = outputs.get_timeseries_by_name(variable)
-    if series is None:
-        msg = f"The model has no {variable!r}"
-        raise KeyError(msg)
-    return np.asarray(series.values())
+    if series is not None:
+        return np.asarray(series.values())
+    if variable in inputs:
+        return _on_timebounds(variable, inputs[variable][0], n_bounds)
+    msg = f"The model has no {variable!r}"
+    raise KeyError(msg)
 
 
-def _emissions(config: FairConfig, s: Species) -> tuple[list[str], slice] | None:
-    """Variables summing to a species' emissions and the slice onto timepoints."""
+def _emissions(config: FairConfig, s: Species) -> list[str] | None:
+    """Variables summing to a species' emissions."""
     if s["input_mode"] == "concentration" and is_ghg(s):
-        # The inverse emissions of a step are written at its end.
-        return [naming.inverse_emissions(s["name"])], slice(1, None)
-    drivers = emission_drivers(config, s)
-    return (drivers, slice(None, -1)) if drivers else None
+        return [naming.inverse_emissions(s["name"])]
+    return emission_drivers(config, s) or None
+
+
+def _validate(
+    configs: Mapping[Hashable, FairConfig],
+    scenarios: Mapping[str, Inputs],
+    time_axis: TimeAxis,
+    *,
+    scale_prescribed_forcing: bool,
+) -> None:
+    """Check every configuration and scenario, so a bad one fails before any run."""
+    v = Validator()
+    # Inputs are checked for every configuration with well-formed species.
+    valid = [name for name in configs if check_config(configs[name], v, at=f"{name}: ")]
+    if scale_prescribed_forcing:
+        for name in valid:
+            check_prescribed_scales(configs[name], v, at=f"{name}: ")
+    for scenario, inputs in scenarios.items():
+        for name in valid:
+            check_inputs(configs[name], inputs, time_axis, v, at=f"{scenario}: ")
+    # Configurations with the same species share each input issue.
+    v.issues[:] = list(dict.fromkeys(v.issues))
+    v.raise_if_any()
 
 
 def run_ensemble(
@@ -69,6 +96,7 @@ def run_ensemble(
     `scenarios` maps each scenario to its inputs, see `rscm.fair.setup_model`.
     The configurations of each scenario run in parallel on ``n_threads`` threads,
     or one per core.
+    Every configuration and scenario is validated before the first run.
     The dataset has FaIR's `temperature`, `emissions`, `concentration`, `forcing`,
     `forcing_sum`, `airborne_emissions`, `cumulative_emissions`,
     `ocean_heat_content_change` and `toa_imbalance`,
@@ -81,6 +109,12 @@ def run_ensemble(
         msg = "run_ensemble needs xarray: pip install 'rscm[fair]'"
         raise ImportError(msg) from error
 
+    _validate(
+        configs,
+        scenarios,
+        time_axis,
+        scale_prescribed_forcing=scale_prescribed_forcing,
+    )
     config_names = list(configs)
     first = configs[config_names[0]]
     species = [s["name"] for s in first["species"]]
@@ -118,6 +152,7 @@ def run_ensemble(
 
     # FaIR has zero airborne emissions of the species without a gas cycle.
     data["airborne_emissions"][..., [not is_ghg(s) for s in first["species"]]] = 0.0
+    n_bounds = len(bounds)
     timestep = bounds[1] - bounds[0]
     index = {s: k for k, s in enumerate(species)}
     species_series = {}
@@ -131,18 +166,18 @@ def run_ensemble(
             for s, variable in variables.items()
         ]
         emission_series[name] = [
-            (index[s["name"]], *found)
+            (index[s["name"]], found)
             for s in config["species"]
             if (found := _emissions(config, s)) is not None
         ]
         # The gas cycle accumulates greenhouse gas emissions.
         accumulated[name] = [
-            k for k, *_ in emission_series[name] if not is_ghg(config["species"][k])
+            k for k, _ in emission_series[name] if not is_ghg(config["species"][k])
         ]
 
     for i, inputs in enumerate(scenarios.values()):
         setups = [
-            setup_model(
+            _setup_model(
                 configs[name],
                 inputs,
                 time_axis,
@@ -155,22 +190,25 @@ def run_ensemble(
             outputs = model.timeseries()
             for layer in range(n_layers):
                 data["temperature"][:, i, j, layer] = _values(
-                    outputs, naming.layer_temperature(layer)
+                    outputs, naming.layer_temperature(layer), inputs, n_bounds
                 )
             for attribute, variable in SCALAR_ATTRIBUTES.items():
-                data[attribute][:, i, j] = _values(outputs, variable)
+                data[attribute][:, i, j] = _values(outputs, variable, inputs, n_bounds)
             for attribute, k, variable in species_series[name]:
-                data[attribute][:, i, j, k] = _values(outputs, variable)
-            for k, variables, timepoints in emission_series[name]:
+                data[attribute][:, i, j, k] = _values(
+                    outputs, variable, inputs, n_bounds
+                )
+            for k, variables in emission_series[name]:
                 data["emissions"][:, i, j, k] = np.sum(
-                    [_values(outputs, v)[timepoints] for v in variables], axis=0
+                    [_values(outputs, v, inputs, n_bounds)[:-1] for v in variables],
+                    axis=0,
                 )
             for k in accumulated[name]:
+                # FaIR starts from its initial cumulative emissions, which from_fair
+                # requires to be 0.
                 cumulative = data["cumulative_emissions"][:, i, j, k]
                 cumulative[0] = 0.0
-                cumulative[1:] = (
-                    np.cumsum(data["emissions"][:, i, j, k]) * timestep + cumulative[0]
-                )
+                cumulative[1:] = np.cumsum(data["emissions"][:, i, j, k]) * timestep
 
     return xr.Dataset(
         {name: (dims[name], array) for name, array in data.items()}, coords=coords
