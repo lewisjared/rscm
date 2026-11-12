@@ -84,7 +84,7 @@
     {
       "name": "method",
       "type": "OceanCarbonMethod",
-      "description": "Ocean carbon method (MAGICC7 `OCEANCC_MODEL`).\n\nThis field is informational only: it does not select the\ncorresponding IRF coefficients or physical parameters.\nUse the named constructors (`gfdl_3d()`, `bern_2d()`, `hilda()`) to get a\nself-consistent parameter set for a given method.\nSetting only this field leaves the IRF parameters at their 3D-GFDL defaults."
+      "description": "Ocean carbon method (MAGICC7 `OCEANCC_MODEL`).\n\nDeserialising selects this method's IRF and physical parameters\nfor every field not given.\nConstructing the struct directly does not, so use `for_method` there."
     },
     {
       "name": "co2_pi",
@@ -138,8 +138,8 @@
     },
     {
       "name": "maximum_history_months",
-      "type": "usize",
-      "description": "Maximum flux history length in substeps.\n\nLimits memory for the IRF convolution.\n6000 monthly substeps are 500 years."
+      "type": "Option<usize>",
+      "description": "Maximum flux history length in substeps, or `None` to keep the whole run as MAGICC7 does\n\nA cap drops the oldest fluxes from the IRF convolution."
     },
     {
       "name": "irf_switch_time",

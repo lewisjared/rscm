@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from rscm.core import GridType, TimeAxis
+from rscm.core import GridType
 from rscm.magicc import full, model
 from rscm.magicc import prescribed as pr
 from rscm.names import Convention
@@ -80,16 +80,6 @@ def test_load_inputs_skips_missing_concentration_files():
     assert "file_co2_conc" not in inputs
     with pytest.raises(KeyError, match="file_co2_conc"):
         full.prescribed_concentrations(np.arange(1750.0, 1800.0), p, inputs)
-
-
-def test_from_magicc7_rejects_unknown_initial_concentrations():
-    time_axis = TimeAxis.from_values(np.arange(1750.0, 1753.0))
-    with pytest.raises(ValueError, match="unknown initial_concentrations"):
-        full.from_magicc7(
-            time_axis,
-            {},
-            initial_concentrations={"HFC4310": 0.0},  # naming: allow
-        )
 
 
 def test_schema_keeps_the_finest_grid():

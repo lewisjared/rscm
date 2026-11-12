@@ -473,6 +473,7 @@ class FGasRegions(TypedDict, total=False):
     normalised globally. Those below ``lower_lifetime`` follow it normalised within
     each hemisphere, scaled by each hemisphere's share of fossil CO2 emissions.
     Lifetimes in between mix the two linearly.
+    After ``last_split_year`` the split follows that year's emissions.
     """
 
     regional_pattern: tuple[float, float, float, float]
@@ -480,6 +481,7 @@ class FGasRegions(TypedDict, total=False):
     upper_lifetime: float
     nh_land_fraction: float
     sh_land_fraction: float
+    last_split_year: float | None
 
 class HalocarbonChemistryParameters(TypedDict, total=False):
     """Parameters for halocarbon chemistry component.
@@ -657,7 +659,7 @@ class OceanCarbonParameters(TypedDict, total=False):
     ocean_surface_area: float
     sst_pi: float
     steps_per_year: int
-    maximum_history_months: int
+    maximum_history_months: int | None
     irf_switch_time: float
     irf_early: dict[str, Any]
     irf_late: dict[str, Any]
@@ -693,8 +695,8 @@ class OceanCarbonBuilder(ComponentBuilder):
     - `ocean_surface_area` (`float`, default `3.55e14`): Ocean surface area (m^2).
     - `sst_pi` (`float`, default `17.7`): Pre-industrial sea surface temperature (C).
     - `steps_per_year` (`int`, default `12`): Substeps per year.
-    - `maximum_history_months` (`int`, default `6000`): Maximum flux history length
-      (months).
+    - `maximum_history_months` (`int | None`, default `None`): Maximum flux history
+      length (substeps), or `None` to keep the whole run as MAGICC7 does.
     - `include_temperature_feedback` (`bool`, default `True`): Enable temperature
       feedback on pCO2.
     - `temperature_feedback_start_year` (`float`, default `1900.0`): Year from which

@@ -189,6 +189,8 @@ pub struct HalocarbonChemistryParameters {
 /// Those below `lower_lifetime` follow it normalised within each hemisphere,
 /// scaled by each hemisphere's share of fossil CO2 emissions, as MAGICC7 does.
 /// Lifetimes in between mix the two linearly.
+/// After `last_split_year` the split follows that year's emissions,
+/// as MAGICC7 splits scenario years like the last year of its historical file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -214,6 +216,11 @@ pub struct FGasRegions {
     ///
     /// unit: dimensionless
     pub sh_land_fraction: FloatValue,
+    /// Last year whose own fossil CO2 emissions split the pattern
+    /// (the last year of MAGICC7's `FILE_CO2I_EMIS`), or `None` to use every year's own
+    ///
+    /// unit: yr
+    pub last_split_year: Option<FloatValue>,
 }
 
 impl Default for FGasRegions {
@@ -224,6 +231,7 @@ impl Default for FGasRegions {
             upper_lifetime: 8.0,
             nh_land_fraction: 0.42,
             sh_land_fraction: 0.21,
+            last_split_year: Some(2014.0),
         }
     }
 }
@@ -232,7 +240,8 @@ impl FGasRegions {
     /// Box forcing per unit global forcing of a species with lifetime `tau`.
     ///
     /// `fossil_co2` is the global fossil CO2 emission, split equally between the land boxes
-    /// as MAGICC7 splits global emissions. Without emissions the pattern is global.
+    /// as MAGICC7 splits global emissions, so only whether it is zero matters.
+    /// Without emissions the pattern is global.
     pub fn pattern(&self, tau: FloatValue, fossil_co2: FloatValue) -> [FloatValue; 4] {
         let area = [
             (1.0 - self.nh_land_fraction) / 2.0,
@@ -718,6 +727,7 @@ mod tests {
             upper_lifetime: 8.0,
             nh_land_fraction: 0.5,
             sh_land_fraction: 0.5,
+            last_split_year: None,
         }
     }
 
