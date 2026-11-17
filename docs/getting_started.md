@@ -167,13 +167,13 @@ See [Key Concepts](key_concepts.md#dependency-graph) for details.
 ## Common errors
 
 **Missing time axis.**
-Always call `with_time_axis` before `build()`.
-Without one, the model does not run on the years of your data.
+Call `with_time_axis` before `build()`.
+Without one, `build()` raises a `ValueError`.
 
 **Misspelt variable names.**
-A misspelt prescribed variable leaves the input it was meant for unsupplied,
-so `build()` raises a `ValueError` that names the variable.
-Compare the name in the message with the one you passed.
+`build()` raises a `ValueError` for a prescribed variable no component reads,
+and suggests the closest name a component does read.
+An input left unsupplied raises a `ValueError` that names the input and the components that read it.
 `ModelBuilder.prescribed_inputs()` lists every input no component produces, with its unit and consumers,
 and the [Components](components/index.md) reference lists the names each component reads and writes.
 
@@ -181,10 +181,6 @@ and the [Components](components/index.md) reference lists the names each compone
 `from_parameters` needs every parameter, and its `ValueError` names what is missing.
 Start from the defaults in `TwoLayerParameters`, as the quickstart does,
 or from the component's entry in the [Components](components/index.md) reference.
-
-**Integer time arrays.**
-Pass float arrays to `TimeAxis.from_values` and `TimeAxis.from_bounds`,
-such as `np.arange(1850.0, 2101.0)` rather than `np.arange(1850, 2101)`.
 
 **Graph rendering in the notebooks.**
 `model.as_dot()` returns plain DOT text and needs nothing extra.

@@ -51,7 +51,9 @@ temperature = boxes @ prescribed.area_fractions()
 The time axis must have annual steps and start in 1750, the year of MAGICC7's initial state.
 With the default parameters it must reach 2019,
 the year to which MAGICC7 scales its prescribed aerosol and land-use forcing.
-`from_magicc7` rejects steps that are not annual, but does not check the start year.
+`from_magicc7` rejects steps that are not annual or not on whole years,
+and a run that ends after the last year of a packaged forcing file, naming the file.
+It does not check the start year.
 A run that starts in another year begins from MAGICC7's 1750 state, so it does not match MAGICC7.
 
 `emissions` holds one value per year for `"<species>|Fossil"` and `"<species>|Biosphere"`
