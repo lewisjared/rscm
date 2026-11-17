@@ -7,6 +7,11 @@ pub enum RSCMError {
     #[error("{0}")]
     Error(String),
 
+    /// A Python `KeyboardInterrupt`, `SystemExit` or other non-`Exception` raised in a component,
+    /// re-raised unchanged at the Python boundary.
+    #[error("{0}")]
+    Interrupt(pyo3::PyErr),
+
     #[error("Extrapolation is not allowed. Target={0}, {1} interpolation range={2}")]
     ExtrapolationNotAllowed(f32, String, f32),
 

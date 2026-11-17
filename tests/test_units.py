@@ -102,3 +102,12 @@ def test_original_is_preserved():
     unit = Unit("Gt C / yr")
     assert unit.original == "Gt C / yr"
     assert repr(unit) == "Unit('GtC/yr')"
+
+
+@pytest.mark.parametrize(
+    "unit, symbol",
+    [("blah blah", "blah"), ("Gt CO2/yer", "yer"), ("notaunit", "notaunit")],
+)
+def test_unknown_unit_symbol_is_an_error(unit, symbol):
+    with pytest.raises(ValueError, match=f"unknown unit: '{symbol}'"):
+        Unit(unit)

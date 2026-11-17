@@ -298,6 +298,7 @@ class VariableDefinition:
         grid: GridType = GridType.Scalar,
         timeseries_type: TimeseriesType | None = None,
     ): ...
+    def __repr__(self) -> str: ...
 
 @final
 class PrescribedInput:
@@ -355,7 +356,17 @@ class PythonComponent(RustComponent):
     so it is rarely needed directly.
     """
 
-    def __init__(self, component: Component) -> None: ...
+    def __init__(self, component: Component) -> None:
+        """Wrap a component instance.
+
+        Raises
+        ------
+        TypeError
+            If `component` is a class rather than an instance.
+        ValueError
+            If a declared unit names an unknown unit or species.
+        """
+    def __repr__(self) -> str: ...
     def input_names(self) -> list[str]:
         """Get the names of all input variables required by this component."""
     def output_names(self) -> list[str]:
@@ -483,6 +494,7 @@ class ModelBuilder:
     """Builder for a model"""
 
     def __init__(self) -> None: ...
+    def __repr__(self) -> str: ...
     def with_time_axis(self, time_axis: TimeAxis) -> Self:
         """Set the time axis the model is solved on."""
     def with_component(

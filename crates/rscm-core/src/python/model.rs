@@ -1,9 +1,9 @@
 use crate::component::TimeseriesType;
-use crate::errors::RSCMResult;
+use crate::errors::{RSCMError, RSCMResult};
 use crate::model::{self, Model, ModelBuilder};
 use crate::python::component::{PyPythonComponent, PythonComponent};
 use crate::python::timeseries::{
-    PyFourBoxTimeseries, PyHemisphericTimeseries, PyTimeAxis, PyTimeseries,
+    time_axis_repr, PyFourBoxTimeseries, PyHemisphericTimeseries, PyTimeAxis, PyTimeseries,
 };
 use crate::python::timeseries_collection::PyTimeseriesCollection;
 use crate::python::PyRustComponent;
@@ -24,6 +24,13 @@ impl PyModelBuilder {
     #[new]
     fn new() -> Self {
         Self(ModelBuilder::new())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ModelBuilder(time_axis={})",
+            time_axis_repr(&self.0.time_axis)
+        )
     }
 
     /// Add a Rust component, a `PythonComponent` or an `rscm.component.Component` instance.
@@ -237,6 +244,14 @@ pub struct PyModel(pub Model);
 impl PyModel {
     // Not exposing initialiser deliberately
 
+    fn __repr__(&self) -> String {
+        let finished = if self.0.finished() { "True" } else { "False" };
+        format!(
+            "Model(current_time={:?}, finished={finished})",
+            self.0.current_time()
+        )
+    }
+
     fn current_time(&self) -> Time {
         self.0.current_time()
     }
@@ -246,18 +261,14 @@ impl PyModel {
     }
 
     fn step(mut self_: PyRefMut<Self>) -> PyResult<()> {
-        self_
-            .0
-            .try_step()
-            .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+        self_.0.try_step().map_err(PyErr::from)
     }
 
     /// Run to the end, releasing the GIL so other threads can run models meanwhile.
     fn run(mut self_: PyRefMut<Self>) -> PyResult<()> {
         let py = self_.py();
         let model = &mut self_.0;
-        py.detach(|| model.try_run())
-            .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+        py.detach(|| model.try_run()).map_err(PyErr::from)
     }
 
     fn as_dot(&self) -> String {
@@ -344,11 +355,21 @@ fn on_pool<R: Send>(n_threads: Option<usize>, work: impl FnOnce() -> R + Send) -
 }
 
 /// Unwrap per-model results, or raise `error` with the failure count and the first failure.
+///
+/// A Python interrupt raised in any model is re-raised unchanged.
 fn all_ok<T>(
-    results: Vec<RSCMResult<T>>,
+    mut results: Vec<RSCMResult<T>>,
     action: &str,
     error: fn(String) -> PyErr,
 ) -> PyResult<Vec<T>> {
+    if let Some(i) = results
+        .iter()
+        .position(|r| matches!(r, Err(RSCMError::Interrupt(_))))
+    {
+        if let Err(err) = results.swap_remove(i) {
+            return Err(err.into());
+        }
+    }
     let failed = results.iter().filter(|r| r.is_err()).count();
     let total = results.len();
     results

@@ -86,7 +86,7 @@
 use crate::errors::RSCMError;
 use crate::schema::{AggregateDefinition, SchemaVariableDefinition, VariableSchema};
 use crate::units::python::PyUnit;
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::prelude::*;
 use pyo3::{pymodule, wrap_pymodule, Bound, PyResult};
 
@@ -152,7 +152,10 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 impl From<RSCMError> for PyErr {
     fn from(e: RSCMError) -> PyErr {
-        PyRuntimeError::new_err(e.to_string())
+        match e {
+            RSCMError::Interrupt(err) => err,
+            e => PyRuntimeError::new_err(e.to_string()),
+        }
     }
 }
 
@@ -170,6 +173,9 @@ pub(crate) fn resolve_index(index: isize, len: usize) -> Option<usize> {
 
 /// Convert a Python exception into an error that keeps its traceback.
 pub(crate) fn rscm_error_from_py(py: Python<'_>, err: PyErr) -> RSCMError {
+    if !err.is_instance_of::<PyException>(py) {
+        return RSCMError::Interrupt(err);
+    }
     let traceback = err
         .traceback(py)
         .and_then(|tb| tb.format().ok())

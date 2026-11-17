@@ -6,9 +6,10 @@ use crate::python::state::{
     PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyStateValue, PyTimeseriesWindow,
 };
 use crate::timeseries::{FloatValue, Time, TimeAxis};
-use pyo3::exceptions::PyTypeError;
+use crate::units::Unit;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -134,6 +135,33 @@ impl VariableDefinition {
             timeseries_type,
         }
     }
+
+    fn __repr__(&self) -> String {
+        let timeseries_type = self
+            .timeseries_type
+            .map(|t| format!(", timeseries_type={t:?}"))
+            .unwrap_or_default();
+        format!(
+            "VariableDefinition(name='{}', unit='{}', role={:?}, grid={:?}{timeseries_type})",
+            self.name, self.unit, self.role, self.grid
+        )
+    }
+}
+
+/// Repr of a wrapped component: its kind, name and variables.
+fn component_repr(kind: &str, name: &str, component: &dyn Component) -> String {
+    let quoted = |names: Vec<String>| {
+        names
+            .iter()
+            .map(|n| format!("'{n}'"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    format!(
+        "{kind}({name}, inputs=[{}], outputs=[{}])",
+        quoted(component.input_names()),
+        quoted(component.output_names())
+    )
 }
 
 /// Python wrapper for a Component defined in Rust
@@ -146,6 +174,13 @@ impl VariableDefinition {
 pub struct PyRustComponent(pub Arc<dyn Component + Send + Sync>);
 
 impl_component!(PyRustComponent);
+
+#[pymethods]
+impl PyRustComponent {
+    fn __repr__(&self) -> String {
+        component_repr("RustComponent", self.0.typetag_name(), self.0.as_ref())
+    }
+}
 
 /// Wrapper to convert a Py<PyAny> (Python Class) into a Component
 pub struct PythonComponent {
@@ -164,8 +199,24 @@ impl PythonComponent {
     /// Wrap a Python component, reading its definitions once.
     pub fn new(py: Python<'_>, component: Py<PyAny>) -> PyResult<Self> {
         let bound = component.bind(py);
+        if let Ok(class) = bound.cast::<PyType>() {
+            let name = class.qualname()?;
+            return Err(PyTypeError::new_err(format!(
+                "{name} is a class, pass an instance such as {name}(...)"
+            )));
+        }
         let name = bound.get_type().qualname()?.to_string();
-        let definitions = bound.call_method0("definitions")?.extract()?;
+        let definitions: Vec<VariableDefinition> = bound.call_method0("definitions")?.extract()?;
+        for definition in definitions.iter().filter(|d| !d.unit.is_empty()) {
+            Unit::parse(&definition.unit)
+                .and_then(|unit| unit.dimension())
+                .map_err(|e| {
+                    PyValueError::new_err(format!(
+                        "{name} declares '{}' with unit '{}': {e}",
+                        definition.name, definition.unit
+                    ))
+                })?;
+        }
         Ok(Self {
             component,
             name,
@@ -428,3 +479,10 @@ impl PyPythonComponent {
 }
 
 impl_component!(PyPythonComponent);
+
+#[pymethods]
+impl PyPythonComponent {
+    fn __repr__(&self) -> String {
+        component_repr("PythonComponent", &self.0.name, self.0.as_ref())
+    }
+}

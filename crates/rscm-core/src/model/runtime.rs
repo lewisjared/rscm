@@ -532,10 +532,11 @@ impl Model {
 
         let output_state = component
             .solve_with_state(start, end, &input_state, internal_state.as_mut())
-            .map_err(|err| {
-                RSCMError::Error(format!(
+            .map_err(|err| match err {
+                RSCMError::Interrupt(_) => err,
+                err => RSCMError::Error(format!(
                     "{component_name} failed during {start}..{end}: {err}"
-                ))
+                )),
             })?;
 
         for (key, state_value) in &output_state {

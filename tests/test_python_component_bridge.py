@@ -1,5 +1,7 @@
 """Tests for how Python components run inside a Rust model."""
 
+import re
+
 import numpy as np
 import pytest
 
@@ -15,6 +17,7 @@ from rscm.core import (
     VariableDefinition,
     VariableRole,
     VariableSchema,
+    run_models,
 )
 
 YEARS = np.arange(2000.0, 2005.0)
@@ -155,6 +158,54 @@ def test_solve_error_raises_runtime_error_with_traceback():
     message = str(excinfo.value)
     assert "ValueError: bad physics" in message
     assert 'raise ValueError("bad physics")' in message
+
+
+class Interrupting(Component):
+    emissions = Input("Emissions|CO2", unit="GtC/yr")
+    out = Output("Out", unit="GtC/yr")
+
+    def __init__(self, exception: BaseException):
+        self.exception = exception
+
+    def solve(self, t_current, t_next, inputs):
+        raise self.exception
+
+
+@pytest.mark.parametrize("exception", [KeyboardInterrupt(), SystemExit(3)])
+def test_solve_reraises_interrupts_unchanged(exception):
+    with pytest.raises(type(exception)) as excinfo:
+        build(Interrupting(exception)).run()
+    assert excinfo.value is exception
+
+    with pytest.raises(type(exception)):
+        build(Interrupting(exception)).step()
+
+    with pytest.raises(type(exception)):
+        run_models([build(Accumulator(1.0)), build(Interrupting(exception))])
+
+
+def test_component_class_instead_of_instance_names_the_fix():
+    with pytest.raises(
+        TypeError,
+        match=r"Accumulator is a class, pass an instance such as Accumulator\(\.\.\.\)",
+    ):
+        ModelBuilder().with_component(Accumulator)
+    with pytest.raises(TypeError, match="pass an instance"):
+        PythonComponent(Accumulator)
+
+
+@pytest.mark.parametrize("unit", ["not a unit $$", "Gt CO2/yer"])
+def test_unknown_declared_unit_is_an_error(unit):
+    class BadUnit(Component):
+        out = Output("Out", unit=unit)
+
+        def solve(self, t_current, t_next, inputs):
+            return self.Outputs(out=1.0)
+
+    with pytest.raises(
+        ValueError, match=f"BadUnit declares 'Out' with unit '{re.escape(unit)}'"
+    ):
+        ModelBuilder().with_component(BadUnit())
 
 
 def test_solve_returning_plain_dict_names_the_fix():
