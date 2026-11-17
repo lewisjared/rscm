@@ -27,6 +27,7 @@
 //!   the response functions overflow from an age of 216 years (`include_response_overflow`),
 //!   and a delayed region releases one year of melt before it starts (`include_early_release`).
 
+use crate::bounds::Bounded;
 use crate::parameters::{
     ClimateUDEBParameters, SeaLevelRiseParameters, SurfaceMassBalance, ThermalExpansion,
 };
@@ -195,10 +196,10 @@ impl SeaLevelRise {
 
     fn smb_step(p: &SurfaceMassBalance, smb: FloatValue, temperature: FloatValue) -> FloatValue {
         let melt = p.linear_fraction * temperature
-            + (1.0 - p.linear_fraction) * temperature.max(0.0).powf(p.exponent);
-        let remaining = p
-            .volume
-            .map_or(1.0, |v| (1.0 - smb / v).max(0.0).powf(p.volume_exponent));
+            + (1.0 - p.linear_fraction) * temperature.at_least(0.0).powf(p.exponent);
+        let remaining = p.volume.map_or(1.0, |v| {
+            (1.0 - smb / v).at_least(0.0).powf(p.volume_exponent)
+        });
         smb + p.sensitivity * melt * remaining
     }
 
@@ -213,9 +214,9 @@ impl SeaLevelRise {
         if year >= p.start_year && temperature != 0.0 {
             for (volume, case) in state.greenland_discharge_volume.iter_mut().zip(cases) {
                 let discharge = (-case.sensitivity * *volume * (case.exponent * temperature).exp())
-                    .min(0.0)
-                    .max(-*volume);
-                *volume = (*volume + discharge).max(0.0);
+                    .at_most(0.0)
+                    .at_least(-*volume);
+                *volume = (*volume + discharge).at_least(0.0);
             }
         }
         let [low, high] = [0, 1].map(|i| cases[i].volume - state.greenland_discharge_volume[i]);
@@ -244,7 +245,7 @@ impl SeaLevelRise {
                     let x = age as FloatValue;
                     [x, x * x, x * x * x, x * x * x * x]
                 };
-                (c[0] * x4 + c[1] * x3 + c[2] * x2 + c[3] * x + c[4]).max(0.0)
+                (c[0] * x4 + c[1] * x3 + c[2] * x2 + c[3] * x + c[4]).at_least(0.0)
             };
             let region_start = p.start_year + region.delay as FloatValue;
             if year < region_start {
