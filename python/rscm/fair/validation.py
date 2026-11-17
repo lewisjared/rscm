@@ -604,12 +604,19 @@ def _check_aci_inputs(
         return
     drivers = aerosol_drivers(config, "aci_shape", key="shape")
     values = []
-    for _, d in drivers:
+    n = len(bounds)
+    for s, d in drivers:
         given = inputs.get(d["variable"])
         # Calculated drivers or drivers in other units are only known in the run.
-        if given is None or given[1] != d["unit"]:
+        if (
+            naming.prescribed_variable(s) != (d["variable"], d["unit"])
+            or given is None
+            or given[1] != d["unit"]
+        ):
             return
-        values.append(np.asarray(given[0], dtype=np.float64)[: len(bounds) - 1])
+        array = np.asarray(given[0], dtype=np.float64)
+        # A step reads its emissions average and its end concentration.
+        values.append(array[: n - 1] if d["driver"] == "emissions" else array[1:n])
     bad = np.flatnonzero(_aci_argument(drivers, values) <= 0)
     if bad.size:
         variables = ", ".join(d["variable"] for _, d in drivers)

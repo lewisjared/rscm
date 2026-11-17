@@ -124,6 +124,29 @@ def test_prescribed_ghg_forcing_is_unsupported(config: dict[str, Any]) -> None:
     assert (IssueKind.UNSUPPORTED, "CH4.input_mode") in _issues(config)
 
 
+def test_aci_skips_drivers_of_other_input_modes(config: dict[str, Any]) -> None:
+    """GasCycle overwrites the concentration of an emissions-driven species."""
+    _species(config, "CH4")["aci_shape"] = 0.001
+    inputs = _inputs(config)
+    inputs[naming.concentration("CH4")] = (np.r_[np.ones(5), np.full(6, -1e4)], "ppb")
+    validate(config, inputs, _time_axis())
+
+
+def test_aci_reads_prescribed_concentrations_at_step_end(
+    config: dict[str, Any],
+) -> None:
+    ch4 = _species(config, "CH4")
+    ch4["input_mode"] = "concentration"
+    ch4["aci_shape"] = -0.001
+    inputs = _inputs(config)
+    inputs[naming.concentration("CH4")] = (np.r_[np.ones(N_BOUNDS - 1), 1e4], "ppb")
+    with pytest.raises(InputValidationError) as info:
+        validate(config, inputs, _time_axis())
+    (issue,) = info.value.issues
+    assert issue.location == "Aerosol-cloud interactions"
+    assert "1759" in issue.message
+
+
 @pytest.mark.parametrize(
     ("key", "value", "kind"),
     [
