@@ -29,14 +29,10 @@ macro_rules! create_component_builder {
         impl $builder_name {
             #[staticmethod]
             pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
-                use pyo3::exceptions::PyValueError;
-
-                // todo: figure out how to use an attrs class as parameters instead of a dict
-                let parameters = pythonize::depythonize::<$component_parameters>(&parameters);
-                match parameters {
-                    Ok(parameters) => Ok(Self { parameters }),
-                    Err(e) => Err(PyValueError::new_err(format!("{}", e))),
-                }
+                let parameters = $crate::python::parameters::depythonize_parameters::<
+                    $component_parameters,
+                >(stringify!($rust_component), &parameters)?;
+                Ok(Self { parameters })
             }
             pub fn build(&self) -> PyRustComponent {
                 PyRustComponent(std::sync::Arc::new(<$rust_component>::from_parameters(
@@ -59,11 +55,15 @@ macro_rules! create_fallible_component_builder {
 
         #[pymethods]
         impl $builder_name {
+            /// Check the parameters, raising ValueError if the component would reject them.
             #[staticmethod]
             pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
-                pythonize::depythonize::<$component_parameters>(&parameters)
-                    .map(|parameters| Self { parameters })
-                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+                let parameters = $crate::python::parameters::depythonize_parameters::<
+                    $component_parameters,
+                >(stringify!($rust_component), &parameters)?;
+                <$rust_component>::from_parameters(parameters.clone())
+                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+                Ok(Self { parameters })
             }
 
             pub fn build(&self) -> PyResult<PyRustComponent> {

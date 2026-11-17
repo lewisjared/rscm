@@ -168,3 +168,157 @@ fn prescribed_inputs_lists_unproduced_inputs() {
         ]
     );
 }
+
+fn constant(value: f64, start: f64, end: f64) -> Timeseries<f64> {
+    let values = Array::range(start, end, 1.0);
+    Timeseries::new(
+        Array::from_elem(values.len(), value).insert_axis(Axis(1)),
+        Arc::new(TimeAxis::from_values(values)),
+        crate::spatial::ScalarGrid,
+        "W/m^2".to_string(),
+        InterpolationStrategy::from(PreviousStrategy::new(true)),
+    )
+}
+
+fn ocean_builder() -> ModelBuilder {
+    let mut builder = builder();
+    builder.with_component(Arc::new(Ocean));
+    builder
+}
+
+#[test]
+fn build_without_time_axis_fails() {
+    let error = ModelBuilder::new()
+        .with_component(Arc::new(Ocean))
+        .with_prescribed_variable("forcing", series("W/m^2"))
+        .build()
+        .expect_err("a model needs a time axis");
+    assert!(matches!(error, RSCMError::MissingTimeAxis), "{error}");
+}
+
+#[test]
+fn build_without_components_fails() {
+    let error = builder().build().expect_err("a model needs a component");
+    assert!(matches!(error, RSCMError::NoComponents), "{error}");
+}
+
+#[test]
+fn unknown_initial_value_suggests_close_match() {
+    let error = ocean_builder()
+        .with_prescribed_variable("forcing", series("W/m^2"))
+        .with_initial_values(HashMap::from([("ocean_haet".to_string(), 0.0)]))
+        .build()
+        .expect_err("an initial value nothing reads must not build");
+    assert_eq!(
+        error.to_string(),
+        "Initial value for 'ocean_haet' is not used: no component reads or produces it. \
+         Did you mean 'ocean_heat'?"
+    );
+}
+
+#[test]
+fn unknown_initial_grid_value_fails() {
+    let error = ocean_builder()
+        .with_prescribed_variable("forcing", series("W/m^2"))
+        .with_initial_grid_values(HashMap::from([("nothing".to_string(), vec![0.0])]))
+        .build()
+        .expect_err("an initial value nothing reads must not build");
+    assert!(
+        matches!(&error, RSCMError::UnknownInitialValue { variable, suggestions } if variable == "nothing" && suggestions.is_empty()),
+        "{error}"
+    );
+}
+
+#[test]
+fn unread_prescribed_variable_suggests_close_match() {
+    let error = ocean_builder()
+        .with_prescribed_variable("forcing", series("W/m^2"))
+        .with_prescribed_variable("forcng", series("W/m^2"))
+        .build()
+        .expect_err("a prescribed variable nothing reads must not build");
+    assert_eq!(
+        error.to_string(),
+        "Prescribed variable 'forcng' is not used: no component reads it. Did you mean 'forcing'?"
+    );
+}
+
+#[test]
+fn unread_variable_in_a_collection_is_ignored() {
+    let mut collection = crate::timeseries_collection::TimeseriesCollection::new();
+    collection.add_timeseries("forcing".to_string(), series("W/m^2"));
+    collection.add_timeseries("unrelated".to_string(), series("W/m^2"));
+    ocean_builder()
+        .with_prescribed_collection(collection)
+        .build()
+        .expect("collections may hold extra variables");
+}
+
+#[test]
+fn prescribing_an_output_fails() {
+    let error = ocean_builder()
+        .with_prescribed_variable("forcing", series("W/m^2"))
+        .with_prescribed_variable("ocean_heat", series("J"))
+        .build()
+        .expect_err("prescribing a produced variable must not build");
+    assert!(
+        matches!(&error, RSCMError::PrescribedOutput { variable, component } if variable == "ocean_heat" && component == "Ocean"),
+        "{error}"
+    );
+}
+
+#[test]
+fn later_prescribed_data_replaces_earlier() {
+    let mut collection = crate::timeseries_collection::TimeseriesCollection::new();
+    collection.add_timeseries("forcing".to_string(), constant(1.0, 2000.0, 2004.0));
+    let mut builder = ocean_builder();
+    builder
+        .with_prescribed_collection(collection.clone())
+        .with_prescribed_variable("forcing", constant(2.0, 2000.0, 2004.0))
+        .with_prescribed_variable("forcing", constant(3.0, 2000.0, 2004.0));
+    let forcing = |builder: &ModelBuilder| {
+        builder
+            .build()
+            .unwrap()
+            .timeseries()
+            .get_data("forcing")
+            .unwrap()
+            .as_scalar()
+            .unwrap()
+            .values()[[0, 0]]
+    };
+    assert_eq!(forcing(&builder), 3.0);
+    builder.with_prescribed_collection(collection);
+    assert_eq!(forcing(&builder), 1.0);
+}
+
+#[test]
+fn extrapolated_prescribed_data_warns() {
+    let (_, warnings) = ocean_builder()
+        .with_prescribed_variable("forcing", constant(1.0, 2001.0, 2003.0))
+        .build_with_warnings()
+        .unwrap();
+    assert_eq!(
+        warnings,
+        ["Prescribed data for 'forcing' covers 2001 to 2003, so it is extrapolated back to 2000"]
+    );
+    let mut builder = ocean_builder();
+    builder.with_time_axis(TimeAxis::from_values(Array::range(2000.0, 2010.0, 1.0)));
+    let (_, warnings) = builder
+        .with_prescribed_variable("forcing", constant(1.0, 2001.0, 2003.0))
+        .build_with_warnings()
+        .unwrap();
+    assert_eq!(
+        warnings,
+        ["Prescribed data for 'forcing' covers 2001 to 2003, \
+          so it is extrapolated back to 2000 and forward to 2009"]
+    );
+}
+
+#[test]
+fn covering_prescribed_data_does_not_warn() {
+    let (_, warnings) = ocean_builder()
+        .with_prescribed_variable("forcing", constant(1.0, 2000.0, 2004.0))
+        .build_with_warnings()
+        .unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+}

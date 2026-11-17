@@ -87,10 +87,11 @@ fn axis() -> TimeAxis {
 
 fn builder(components: Vec<Arc<dyn Component + Send + Sync>>) -> ModelBuilder {
     let mut builder = ModelBuilder::new();
-    builder
-        .with_time_axis(axis())
-        .with_initial_values(HashMap::from([("Pool".to_string(), 0.0)]));
+    builder.with_time_axis(axis());
     for component in components {
+        if component.definitions().iter().any(|d| d.name == "Pool") {
+            builder.with_initial_values(HashMap::from([("Pool".to_string(), 0.0)]));
+        }
         builder.with_component(component);
     }
     builder

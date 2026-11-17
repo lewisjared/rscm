@@ -397,6 +397,15 @@ impl TimeseriesCollection {
         });
     }
 
+    /// Add a timeseries on any grid, replacing any existing timeseries with the same name.
+    pub fn set_data(&mut self, name: String, data: impl Into<TimeseriesData>) {
+        let data = data.into();
+        match self.get_by_name_mut(&name) {
+            Some(item) => item.data = data,
+            None => self.insert(TimeseriesItem { data, name }),
+        }
+    }
+
     /// Get a timeseries item by variable name.
     ///
     /// Returns the full [`TimeseriesItem`] including metadata. Use [`get_data`](Self::get_data)

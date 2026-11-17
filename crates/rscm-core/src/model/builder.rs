@@ -1,7 +1,7 @@
 //! Model builder for constructing models from components.
 
 use crate::component::{Component, GridType, TimeseriesType, VariableDefinition, VariableRole};
-use crate::errors::{RSCMError, RSCMResult};
+use crate::errors::{close_matches, RSCMError, RSCMResult};
 use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, PreviousStrategy,
 };
@@ -11,7 +11,6 @@ use crate::state::VariableSource;
 use crate::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
 use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData};
 use crate::units::Unit;
-use numpy::ndarray::Array;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Graph;
@@ -47,10 +46,11 @@ pub struct PrescribedInput {
 pub struct ModelBuilder {
     components: Vec<C>,
     pub(crate) prescribed_variables: TimeseriesCollection,
+    /// Names given to `with_prescribed_variable`, which must be read by the model.
+    explicit_prescribed: BTreeSet<String>,
     initial_values: HashMap<String, FloatValue>,
     initial_grid_values: HashMap<String, Vec<FloatValue>>,
-    /// The time axis for the model.
-    pub time_axis: Arc<TimeAxis>,
+    time_axis: Option<Arc<TimeAxis>>,
     schema: Option<VariableSchema>,
     /// Custom weights for grid aggregation, keyed by grid.
     ///
@@ -72,7 +72,8 @@ impl ModelBuilder {
             initial_values: HashMap::new(),
             initial_grid_values: HashMap::new(),
             prescribed_variables: TimeseriesCollection::new(),
-            time_axis: Arc::new(TimeAxis::from_values(Array::range(2000.0, 2100.0, 1.0))),
+            explicit_prescribed: BTreeSet::new(),
+            time_axis: None,
             schema: None,
             grid_weights: HashMap::new(),
             lagged_variables: BTreeSet::new(),
@@ -368,26 +369,29 @@ impl ModelBuilder {
         self
     }
 
-    /// Supply prescribed data for a variable, on any grid.
+    /// Supply prescribed data for a variable, on any grid, replacing any earlier data for it.
     ///
-    /// Any unneeded timeseries will be ignored.
-    /// [`Self::build`] converts the data into the variable's unit, or fails if the units are incompatible.
+    /// [`Self::build`] fails if no component reads the variable or a component produces it.
+    /// It converts the data into the variable's unit, or fails if the units are incompatible.
     pub fn with_prescribed_variable(
         &mut self,
         name: &str,
         timeseries: impl Into<TimeseriesData>,
     ) -> &mut Self {
         self.prescribed_variables
-            .add_data(name.to_string(), timeseries);
+            .set_data(name.to_string(), timeseries);
+        self.explicit_prescribed.insert(name.to_string());
         self
     }
 
-    /// Supply prescribed data from a collection.
+    /// Supply prescribed data from a collection, replacing any earlier data for the same variables.
     ///
     /// Any unneeded timeseries will be ignored.
     /// [`Self::build`] converts the data into the variable's unit, or fails if the units are incompatible.
     pub fn with_prescribed_collection(&mut self, collection: TimeseriesCollection) -> &mut Self {
-        self.prescribed_variables.extend(collection);
+        for item in collection {
+            self.prescribed_variables.set_data(item.name, item.data);
+        }
         self
     }
 
@@ -399,6 +403,7 @@ impl ModelBuilder {
     /// for the next step.
     /// Building a model where any variables which have `VariableRole::State`, but
     /// do not have an initial value will result in an error.
+    /// Building also fails for a name no component reads or produces.
     pub fn with_initial_values(
         &mut self,
         initial_values: HashMap<String, FloatValue>,
@@ -412,7 +417,8 @@ impl ModelBuilder {
     /// Adds initial values for grid variables, one per region in grid order.
     ///
     /// These take precedence over a uniform value given to [`Self::with_initial_values`].
-    /// Building fails if the number of values does not match the variable's grid.
+    /// Building fails if the number of values does not match the variable's grid,
+    /// or for a name no component reads or produces.
     pub fn with_initial_grid_values(
         &mut self,
         initial_values: HashMap<String, Vec<FloatValue>>,
@@ -424,8 +430,14 @@ impl ModelBuilder {
     /// Specify the time axis that will be used by the model.
     ///
     /// This time axis defines the steps (including bounds) on which the model will be iterated.
-    pub fn with_time_axis(&mut self, time_axis: TimeAxis) -> &mut Self {
-        self.time_axis = Arc::new(time_axis);
+    /// [`Self::build`] fails without one.
+    /// The time axis set with `with_time_axis`, if any.
+    pub fn time_axis(&self) -> Option<&Arc<TimeAxis>> {
+        self.time_axis.as_ref()
+    }
+
+    pub fn with_time_axis(&mut self, time_axis: impl Into<Arc<TimeAxis>>) -> &mut Self {
+        self.time_axis = Some(time_axis.into());
         self
     }
 
@@ -644,14 +656,33 @@ impl ModelBuilder {
     /// Interpolate prescribed data onto the model's time axis in the unit the model stores it in.
     ///
     /// Returns an error if the data's unit cannot be converted into `unit`.
+    /// Pushes a warning onto `warnings` if the data has to be extrapolated to cover the axis.
     fn prescribed_in_unit<G: SpatialGrid>(
-        &self,
         name: &str,
         ts: &GridTimeseries<FloatValue, G>,
         unit: &str,
+        time_axis: &Arc<TimeAxis>,
+        warnings: &mut Vec<String>,
     ) -> RSCMResult<GridTimeseries<FloatValue, G>> {
         let conversion = Self::check_unit_compatibility(name, "prescribed data", ts.unit(), unit)?;
-        let ts = ts.to_owned().interpolate_into(self.time_axis.clone());
+        let data_axis = ts.time_axis();
+        let (start, end) = (*data_axis.first(), *data_axis.last());
+        let times = time_axis.values();
+        let (model_start, model_end) = (times[0], times[times.len() - 1]);
+        let mut directions = Vec::new();
+        if model_start < start {
+            directions.push(format!("back to {model_start}"));
+        }
+        if model_end > end {
+            directions.push(format!("forward to {model_end}"));
+        }
+        if !directions.is_empty() {
+            warnings.push(format!(
+                "Prescribed data for '{name}' covers {start} to {end}, so it is extrapolated {}",
+                directions.join(" and ")
+            ));
+        }
+        let ts = ts.to_owned().interpolate_into(time_axis.clone());
         Ok(match conversion {
             Some(conversion) => ts.convert_unit(conversion.factor, unit.to_string()),
             None => ts,
@@ -661,8 +692,28 @@ impl ModelBuilder {
     /// Builds the component graph for the registered components and creates a concrete model.
     ///
     /// Returns an error if the component definitions are inconsistent.
+    /// Logs any warnings from [`Self::build_with_warnings`].
     pub fn build(&self) -> RSCMResult<Model> {
+        let (model, warnings) = self.build_with_warnings()?;
+        for message in warnings {
+            tracing::warn!("{message}");
+        }
+        Ok(model)
+    }
+
+    /// Like [`Self::build`], but also returns warnings, such as prescribed data that had to be extrapolated.
+    pub fn build_with_warnings(&self) -> RSCMResult<(Model, Vec<String>)> {
         use crate::spatial::ScalarRegion;
+
+        let time_axis = self.time_axis.clone().ok_or(RSCMError::MissingTimeAxis)?;
+        let has_aggregates = self
+            .schema
+            .as_ref()
+            .is_some_and(|s| !s.aggregates.is_empty());
+        if self.components.is_empty() && !has_aggregates {
+            return Err(RSCMError::NoComponents);
+        }
+        let mut warnings = Vec::new();
 
         // todo: refactor once this is more stable
         let mut graph: CGraph = Graph::new();
@@ -924,6 +975,7 @@ impl ModelBuilder {
             }
         }
 
+        self.check_supplied_values_are_read(&definitions, &prescribed, &variable_owners)?;
         check_acyclic(&graph, &component_defs, &names, &aggregate_nodes)?;
         resolve_timeseries_types(
             &mut definitions,
@@ -1021,11 +1073,17 @@ impl ModelBuilder {
             match storage_grid {
                 GridType::Scalar => {
                     if let Some(TimeseriesData::Scalar(ts)) = prescribed_data {
-                        let ts = self.prescribed_in_unit(&name, ts, storage_unit)?;
+                        let ts = Self::prescribed_in_unit(
+                            &name,
+                            ts,
+                            storage_unit,
+                            &time_axis,
+                            &mut warnings,
+                        )?;
                         collection.add_timeseries(name, ts);
                     } else {
                         let mut ts = Timeseries::new_empty_scalar(
-                            self.time_axis.clone(),
+                            time_axis.clone(),
                             definition.unit,
                             interp.clone(),
                         );
@@ -1037,11 +1095,17 @@ impl ModelBuilder {
                 }
                 GridType::FourBox => {
                     if let Some(TimeseriesData::FourBox(ts)) = prescribed_data {
-                        let ts = self.prescribed_in_unit(&name, ts, storage_unit)?;
+                        let ts = Self::prescribed_in_unit(
+                            &name,
+                            ts,
+                            storage_unit,
+                            &time_axis,
+                            &mut warnings,
+                        )?;
                         collection.add_four_box_timeseries(name, ts);
                     } else {
                         let mut ts = GridTimeseries::new_empty(
-                            self.time_axis.clone(),
+                            time_axis.clone(),
                             self.create_four_box_grid(),
                             definition.unit,
                             interp.clone(),
@@ -1065,11 +1129,17 @@ impl ModelBuilder {
                 }
                 GridType::Hemispheric => {
                     if let Some(TimeseriesData::Hemispheric(ts)) = prescribed_data {
-                        let ts = self.prescribed_in_unit(&name, ts, storage_unit)?;
+                        let ts = Self::prescribed_in_unit(
+                            &name,
+                            ts,
+                            storage_unit,
+                            &time_axis,
+                            &mut warnings,
+                        )?;
                         collection.add_hemispheric_timeseries(name, ts);
                     } else {
                         let mut ts = GridTimeseries::new_empty(
-                            self.time_axis.clone(),
+                            time_axis.clone(),
                             self.create_hemispheric_grid(),
                             definition.unit,
                             interp.clone(),
@@ -1101,7 +1171,7 @@ impl ModelBuilder {
             graph,
             initial_node,
             collection,
-            self.time_axis.clone(),
+            time_axis,
             self.grid_weights.clone(),
             read_transforms,
             write_transforms,
@@ -1117,8 +1187,56 @@ impl ModelBuilder {
             model.component_states.insert(node_idx, state);
         }
 
-        Ok(model)
+        Ok((model, warnings))
     }
+
+    /// Check that every initial value names a model variable,
+    /// and that every variable prescribed by name is read and produced by no component.
+    ///
+    /// `prescribed` holds the variables the model takes from prescribed data.
+    fn check_supplied_values_are_read(
+        &self,
+        definitions: &HashMap<String, ResolvedVariable>,
+        prescribed: &HashSet<String>,
+        owners: &HashMap<String, String>,
+    ) -> RSCMResult<()> {
+        let initial_names: BTreeSet<&String> = self
+            .initial_values
+            .keys()
+            .chain(self.initial_grid_values.keys())
+            .collect();
+        if let Some(variable) = initial_names
+            .into_iter()
+            .find(|n| !definitions.contains_key(*n))
+        {
+            return Err(RSCMError::UnknownInitialValue {
+                variable: variable.clone(),
+                suggestions: close_matches(variable, &sorted_names(definitions.keys())),
+            });
+        }
+        for variable in &self.explicit_prescribed {
+            if let Some(component) = owners.get(variable) {
+                return Err(RSCMError::PrescribedOutput {
+                    variable: variable.clone(),
+                    component: component.clone(),
+                });
+            }
+            if !prescribed.contains(variable) {
+                let unproduced = prescribed.iter().filter(|n| !owners.contains_key(*n));
+                return Err(RSCMError::UnusedPrescribedVariable {
+                    variable: variable.clone(),
+                    suggestions: close_matches(variable, &sorted_names(unproduced)),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+fn sorted_names<'a>(names: impl Iterator<Item = &'a String>) -> Vec<&'a str> {
+    let mut names: Vec<&str> = names.map(String::as_str).collect();
+    names.sort_unstable();
+    names
 }
 
 /// Check that no feedback loop is left unlagged.

@@ -2,17 +2,16 @@ use crate::component::TimeseriesType;
 use crate::errors::{RSCMError, RSCMResult};
 use crate::model::{self, Model, ModelBuilder};
 use crate::python::component::{PyPythonComponent, PythonComponent};
-use crate::python::timeseries::{
-    time_axis_repr, PyFourBoxTimeseries, PyHemisphericTimeseries, PyTimeAxis, PyTimeseries,
-};
-use crate::python::timeseries_collection::PyTimeseriesCollection;
+use crate::python::timeseries::{time_axis_repr, PyTimeAxis};
+use crate::python::timeseries_collection::{extract_timeseries_data, PyTimeseriesCollection};
 use crate::python::PyRustComponent;
 use crate::schema::VariableSchema;
 use crate::timeseries::{FloatValue, Time};
-use crate::timeseries_collection::TimeseriesData;
-use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyRuntimeError, PyUserWarning, PyValueError};
 use pyo3::prelude::*;
+use rayon::prelude::*;
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::sync::Arc;
 
 #[pyclass]
@@ -27,10 +26,10 @@ impl PyModelBuilder {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "ModelBuilder(time_axis={})",
-            time_axis_repr(&self.0.time_axis)
-        )
+        match self.0.time_axis() {
+            Some(time_axis) => format!("ModelBuilder(time_axis={})", time_axis_repr(time_axis)),
+            None => "ModelBuilder(time_axis=None)".to_string(),
+        }
     }
 
     /// Add a Rust component, a `PythonComponent` or an `rscm.component.Component` instance.
@@ -53,9 +52,7 @@ impl PyModelBuilder {
         mut self_: PyRefMut<'py, Self>,
         time_axis: Bound<PyTimeAxis>,
     ) -> PyResult<PyRefMut<'py, Self>> {
-        let time_axis = time_axis.borrow().0.clone();
-
-        self_.0.time_axis = time_axis;
+        self_.0.with_time_axis(time_axis.borrow().0.clone());
         Ok(self_)
     }
 
@@ -81,18 +78,7 @@ impl PyModelBuilder {
         name: &str,
         timeseries: Bound<'py, PyAny>,
     ) -> PyResult<PyRefMut<'py, Self>> {
-        let data: TimeseriesData = if let Ok(ts) = timeseries.cast::<PyTimeseries>() {
-            ts.borrow().0.clone().into()
-        } else if let Ok(ts) = timeseries.cast::<PyFourBoxTimeseries>() {
-            ts.borrow().0.clone().into()
-        } else if let Ok(ts) = timeseries.cast::<PyHemisphericTimeseries>() {
-            ts.borrow().0.clone().into()
-        } else {
-            return Err(PyTypeError::new_err(format!(
-                "Expected Timeseries, FourBoxTimeseries or HemisphericTimeseries for '{name}', got {}",
-                timeseries.get_type().name()?
-            )));
-        };
+        let data = extract_timeseries_data(name, &timeseries)?;
         self_.0.with_prescribed_variable(name, data);
         Ok(self_)
     }
@@ -228,11 +214,14 @@ impl PyModelBuilder {
         self.0.prescribed_inputs()
     }
 
-    fn build(&self) -> PyResult<PyModel> {
-        self.0
-            .build()
-            .map(PyModel)
-            .map_err(|e| PyValueError::new_err(e.to_string()))
+    /// Build the model, raising ValueError if it is inconsistent and warning about extrapolated data.
+    fn build(&self, py: Python<'_>) -> PyResult<PyModel> {
+        let (model, warnings) = self
+            .0
+            .build_with_warnings()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        warn_all(py, &warnings)?;
+        Ok(PyModel(model))
     }
 }
 
@@ -341,6 +330,15 @@ impl PyModel {
     }
 }
 
+/// Raise each message as a `UserWarning` pointing at the caller.
+fn warn_all(py: Python<'_>, messages: &[String]) -> PyResult<()> {
+    let category = py.get_type::<PyUserWarning>();
+    for message in messages {
+        PyErr::warn(py, &category, &CString::new(message.as_str())?, 1)?;
+    }
+    Ok(())
+}
+
 /// Run `work` on a pool of `n_threads` threads, or on rayon's global pool.
 fn on_pool<R: Send>(n_threads: Option<usize>, work: impl FnOnce() -> R + Send) -> PyResult<R> {
     match n_threads {
@@ -394,9 +392,21 @@ pub fn py_build_models(
     n_threads: Option<usize>,
 ) -> PyResult<Vec<PyModel>> {
     let builders: Vec<&ModelBuilder> = builders.iter().map(|b| &b.0).collect();
-    let results = py.detach(|| on_pool(n_threads, || model::build_models(&builders)))?;
-    let models = all_ok(results, "build", PyValueError::new_err::<String>)?;
-    Ok(models.into_iter().map(PyModel).collect())
+    let results = py.detach(|| {
+        on_pool(n_threads, || {
+            builders
+                .par_iter()
+                .map(|b| b.build_with_warnings())
+                .collect::<Vec<_>>()
+        })
+    })?;
+    let built = all_ok(results, "build", PyValueError::new_err::<String>)?;
+    let mut models = Vec::with_capacity(built.len());
+    for (model, warnings) in built {
+        warn_all(py, &warnings)?;
+        models.push(PyModel(model));
+    }
+    Ok(models)
 }
 
 /// Run every model in parallel, raising RuntimeError for the first that fails.

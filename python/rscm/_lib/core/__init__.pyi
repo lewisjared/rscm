@@ -189,7 +189,18 @@ class HemisphericTimeseries:
 @final
 class TimeseriesCollection:
     def __init__(self) -> None: ...
-    def add_timeseries(self, name: str, timeseries: Timeseries) -> None: ...
+    def add_timeseries(
+        self,
+        name: str,
+        timeseries: Timeseries | FourBoxTimeseries | HemisphericTimeseries,
+    ) -> None:
+        """Add a timeseries on any grid, raising ValueError if the name is taken."""
+    def __getitem__(
+        self, name: str
+    ) -> Timeseries | FourBoxTimeseries | HemisphericTimeseries:
+        """Get a timeseries on any grid, raising KeyError with close matches."""
+    def __contains__(self, name: str) -> bool: ...
+    def __len__(self) -> int: ...
     def get_timeseries_by_name(self, name: str) -> Timeseries | None:
         """
         Get a scalar timeseries from the collection by name.
@@ -329,6 +340,11 @@ class ComponentBuilder(Protocol):
     def from_parameters(parameters: dict[str, F]) -> ComponentBuilder:
         """
         Create a builder object from parameters
+
+        Raises
+        ------
+        ValueError
+            Naming every missing or unknown parameter, or a parameter with a bad value.
 
         Returns
         -------
@@ -496,7 +512,7 @@ class ModelBuilder:
     def __init__(self) -> None: ...
     def __repr__(self) -> str: ...
     def with_time_axis(self, time_axis: TimeAxis) -> Self:
-        """Set the time axis the model is solved on."""
+        """Set the time axis the model is solved on. `build` fails without one."""
     def with_component(
         self, component: RustComponent | PythonComponent | Component
     ) -> Self:
@@ -507,20 +523,34 @@ class ModelBuilder:
         or an `rscm.component.Component` instance, which it wraps.
         """
     def with_initial_values(self, initial_values: dict[str, F]) -> Self:
-        """Set initial values for state variables, which are required at build time."""
+        """
+        Set initial values for state variables, which are required at build time.
+
+        `build` fails for a name no component reads or produces.
+        """
     def with_initial_grid_values(self, initial_values: dict[str, list[F]]) -> Self:
-        """Add initial values for grid variables, one per region in grid order."""
+        """
+        Add initial values for grid variables, one per region in grid order.
+
+        `build` fails for a name no component reads or produces.
+        """
     def with_prescribed_variable(
         self,
         name: str,
         timeseries: Timeseries | FourBoxTimeseries | HemisphericTimeseries,
     ) -> Self:
-        """Supply prescribed data for a variable on any grid.
+        """
+        Supply prescribed data for a variable on any grid, replacing earlier data.
 
-        Data no component needs is ignored.
+        `build` fails if no component reads the variable,
+        or if a component produces it.
         """
     def with_prescribed_collection(self, timeseries: TimeseriesCollection) -> Self:
-        """Supply prescribed data from a collection. Unneeded timeseries are ignored."""
+        """
+        Supply prescribed data from a collection, replacing earlier data.
+
+        Unneeded timeseries are ignored.
+        """
     def with_lag(self, variable: str) -> Self:
         """
         Lag every edge from a variable.
@@ -621,13 +651,15 @@ class ModelBuilder:
         """
         Build a concrete model from the provided information.
 
+        Warns with a `UserWarning` for prescribed data that has to be extrapolated
+        to cover the time axis.
+
         Raises
         ------
-        Exception
-            If the model cannot be solved because the provided information is
-            inconsistent.
-
-            TODO: improve this error reporting
+        ValueError
+            If the provided information is inconsistent or incomplete,
+            such as a missing time axis or initial value,
+            or a name that matches no variable.
 
         Returns
         -------

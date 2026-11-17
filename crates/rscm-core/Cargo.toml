@@ -28,7 +28,9 @@ log = "0.4"
 num = "0.4"
 is_close = "0.1"
 thiserror = "2.0"
+strsim = "0.11"
 pythonize = "0.27.0"
+serde_path_to_error = "0.1"
 toml = "0.9"
 rayon.workspace = true
 owo-colors = { version = "4", optional = true }
