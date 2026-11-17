@@ -479,3 +479,27 @@ class TestTargetFromDataframe:
 def test_chain_to_dataframe_is_typed(sampler):
     chain: Chain = sampler.run(2, WalkerInit.from_prior())
     assert chain.to_dataframe().shape == (2 * sampler.default_n_walkers(), 2)
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "flat_samples",
+        "flat_log_probs",
+        "r_hat",
+        "ess",
+        "autocorr_time",
+        "to_parameter_dict",
+        "to_dataframe",
+    ],
+)
+def test_chain_rejects_negative_discard(sampler, method):
+    chain = sampler.run(2, WalkerInit.from_prior())
+    with pytest.raises(ValueError, match="discard must not be negative, got -1"):
+        getattr(chain, method)(discard=-1)
+
+
+def test_chain_is_converged_rejects_negative_discard(sampler):
+    chain = sampler.run(2, WalkerInit.from_prior())
+    with pytest.raises(ValueError, match="discard must not be negative"):
+        chain.is_converged(discard=-1)

@@ -11,3 +11,4 @@ Fixed several edge cases in `rscm.calibrate`:
 - `ParameterSet.add` silently accepted a duplicate name, and `set_reference_period` accepted a start after the end.
 - `Chain.merge` with itself failed.
 - `Chain.r_hat`, `ess` and `autocorr_time` returned an empty dict without explanation on a short chain. They now warn.
+- `Chain` methods that take `discard` raised `OverflowError` for a negative value. They now raise `ValueError`.
