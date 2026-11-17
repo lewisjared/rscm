@@ -48,9 +48,12 @@ boxes = timeseries.get_four_box_timeseries_by_name("Surface Air Temperature Chan
 temperature = boxes @ prescribed.area_fractions()
 ```
 
-The time axis has annual steps and should start in 1750, the year of MAGICC7's initial state.
+The time axis must have annual steps and start in 1750, the year of MAGICC7's initial state.
 With the default parameters it must reach 2019,
 the year to which MAGICC7 scales its prescribed aerosol and land-use forcing.
+`from_magicc7` rejects steps that are not annual, but does not check the start year.
+A run that starts in another year begins from MAGICC7's 1750 state, so it does not match MAGICC7.
+
 `emissions` holds one value per year for `"<species>|Fossil"` and `"<species>|Biosphere"`
 of each species in `full.SECTORAL_EMISSIONS`, in the units that mapping gives.
 These are the gcages units, such as `Mt CO2/yr` and `Mt SO2/yr`.
@@ -60,6 +63,20 @@ takes the emissions in the units MAGICC7 reads instead, such as `GtC/yr` and `Mt
 Missing, unknown, misshapen or non-finite emissions raise `InputValidationError`,
 see [Validation and exit codes](#validation-and-exit-codes).
 Emissions are annual mean rates, labelled by the year they start, as MAGICC7 input files are.
+
+The `emissions` keys are species and sector, such as `CO2|Fossil` or `CFC12`,
+not RSCM variable names such as `Emissions|CO2|Fossil`.
+MAGICC7 and its output files name the sectors `MAGICC Fossil and Industrial` and `MAGICC AFOLU`.
+`rscm.names.convert_variable_name` translates those names, and the few species names that differ,
+to RSCM's:
+
+```python
+from rscm.names import convert_variable_name
+
+convert_variable_name("Emissions|CO2|MAGICC AFOLU")  # "Emissions|CO2|Biosphere"
+```
+
+Drop the leading `Emissions|` from the translated name to get the `emissions` key.
 
 `run()` returns the `Model` after its last step.
 Read outputs from `model.timeseries()`.
@@ -162,9 +179,9 @@ MAGICC emissions-driven
   time axis  1750 to 2101, 351 steps
   components (12, in the order added)
     Permafrost           18 parameters
-    CH4Chemistry         6 parameters
+    CH4Chemistry         18 parameters
     ...
-    ClimateUDEB          26 parameters
+    ClimateUDEB          29 parameters
   lags (4)
     Surface Air Temperature Change -> every consumer
     Atmospheric Concentrations|CO2 -> TerrestrialCarbon
