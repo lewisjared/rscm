@@ -178,6 +178,18 @@ def test_diff_compares_arrays(spec, time_axis):
     assert diff(setup(["a"]), setup(["a"])).endswith("identical")
 
 
+def test_diff_shows_ragged_lists(spec, time_axis):
+    def setup(values):
+        parameters = {**TWO_LAYER, "values": values}
+        return dataclasses.replace(
+            spec, components={"TwoLayer": ComponentSpec(TwoLayerBuilder, parameters)}
+        ).bind({}, time_axis)
+
+    assert diff(setup([[1], [2, 3]]), setup([[1], [2, 4]])).splitlines()[1:] == [
+        "  ~ TwoLayer.values: [[1], [2, 3]] -> [[1], [2, 4]]"
+    ]
+
+
 def test_flatten_keeps_identities_that_share_a_last_segment():
     agents = [
         {"variable": "Emissions|CO2", "scale": 1.0},

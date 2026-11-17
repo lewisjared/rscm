@@ -320,7 +320,8 @@ def _changed(a: Any, b: Any) -> bool:
 def _show(value: Any) -> str:
     if isinstance(value, float) and math.isinf(value):
         return "inf" if value > 0 else "-inf"
-    if isinstance(value, list | np.ndarray) and np.ndim(value) and len(value) > 4:  # noqa: PLR2004
+    sized = isinstance(value, list) or (isinstance(value, np.ndarray) and value.ndim)
+    if sized and len(value) > 4:  # noqa: PLR2004
         return f"<{len(value)} values>"
     return repr(value)
 
