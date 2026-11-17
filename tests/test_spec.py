@@ -145,6 +145,51 @@ def test_spec_copies_nested_lists_and_other_objects():
     assert component.parameters["pattern"][0] == 0.1
 
 
+def test_spec_shares_read_only_arrays():
+    shared = np.array([0.1, 0.2])
+    shared.flags.writeable = False
+    view = np.array([0.1, 0.2])[:]
+    view.flags.writeable = False
+    component = ComponentSpec(TwoLayerBuilder, {"shared": shared, "view": view})
+    assert component.parameters["shared"] is shared
+    assert component.parameters["view"] is not view
+
+    objects = np.array([[1.0]], dtype=object)
+    objects.flags.writeable = False
+    component = ComponentSpec(TwoLayerBuilder, {"objects": objects})
+    assert component.parameters["objects"] is not objects
+
+
+def test_diff_compares_arrays(spec, time_axis):
+    def setup(values):
+        parameters = {**TWO_LAYER, "values": np.array(values)}
+        return dataclasses.replace(
+            spec, components={"TwoLayer": ComponentSpec(TwoLayerBuilder, parameters)}
+        ).bind({}, time_axis)
+
+    a = setup([1.0] * 5)
+    assert diff(a, setup([1.0] * 5)).endswith("identical")
+    assert diff(a, setup([2.0] * 5)).splitlines()[1:] == [
+        "  ~ TwoLayer.values: <5 values> -> <5 values>"
+    ]
+    assert diff(setup(0.1), setup(0.2)).splitlines()[1:] == [
+        "  ~ TwoLayer.values: array(0.1) -> array(0.2)"
+    ]
+    assert diff(setup(["a"]), setup(["a"])).endswith("identical")
+
+
+def test_diff_shows_ragged_lists(spec, time_axis):
+    def setup(values):
+        parameters = {**TWO_LAYER, "values": values}
+        return dataclasses.replace(
+            spec, components={"TwoLayer": ComponentSpec(TwoLayerBuilder, parameters)}
+        ).bind({}, time_axis)
+
+    assert diff(setup([[1], [2, 3]]), setup([[1], [2, 4]])).splitlines()[1:] == [
+        "  ~ TwoLayer.values: [[1], [2, 3]] -> [[1], [2, 4]]"
+    ]
+
+
 def test_flatten_keeps_identities_that_share_a_last_segment():
     agents = [
         {"variable": "Emissions|CO2", "scale": 1.0},

@@ -4,6 +4,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+from rscm.magicc import ClimateUDEBBuilder
 from rscm.magicc import prescribed as pr
 
 
@@ -57,3 +58,19 @@ def test_harmonise_needs_a_target_or_factor():
 
     with pytest.raises(ValueError, match="harmonisation_target or factor"):
         pr._harmonise(np.ones((3, 4)), years, 2001, None)
+
+
+def test_volcanic_substeps_build_from_a_shared_array():
+    times = np.arange(2000.0, 2002.0, 1 / 12) + 1 / 12
+    forcing = pr.volcanic_substeps(times, -np.ones(24), -np.ones(24))
+    assert not forcing["values"].flags.writeable
+    ClimateUDEBBuilder.from_parameters({"subannual_forcing": forcing}).build()
+
+    with pytest.raises(ValueError, match="2-D float64"):
+        ClimateUDEBBuilder.from_parameters(
+            {"subannual_forcing": {**forcing, "values": np.ones(4, dtype=np.float32)}}
+        )
+    with pytest.raises(ValueError, match="4 boxes"):
+        ClimateUDEBBuilder.from_parameters(
+            {"subannual_forcing": {**forcing, "values": np.ones((24, 3))}}
+        )

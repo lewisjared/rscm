@@ -1279,6 +1279,7 @@ version = "0.8.0"
 dependencies = [
  "approx",
  "ndarray",
+ "numpy",
  "pyo3",
  "pythonize",
  "rscm-components",

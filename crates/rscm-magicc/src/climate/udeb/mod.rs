@@ -233,6 +233,19 @@ impl ClimateUDEB {
             )));
         }
 
+        if let Some(f) = &parameters.subannual_forcing {
+            if !(f.scale.is_finite() && f.efficacy.is_finite())
+                || !f.internal_efficacy.is_finite()
+                || f.internal_efficacy == 0.0
+            {
+                return Err(RSCMError::Error(format!(
+                    "invalid subannual_forcing: scale and efficacy must be finite and \
+                     internal_efficacy finite and nonzero, got {}, {} and {}",
+                    f.scale, f.efficacy, f.internal_efficacy
+                )));
+            }
+        }
+
         // Calculate lambda_ocean and lambda_land via LAMCALC iteration.
         // This accounts for inter-box heat exchange when matching the
         // land-ocean warming ratio (RLO) at the given ECS.
@@ -587,22 +600,26 @@ impl ClimateUDEB {
 
         // The last substep takes the internal efficacy from the previous year's sensitivity
         // and the others the one before, so the first two years start from the initial one.
-        let subannual_scales = match &self.parameters.subannual_forcing {
-            Some(SubannualForcing {
-                regional_pattern: Some(_),
-                internal_efficacy,
-                efficacy,
-                ..
-            }) => {
-                let previous = state.subannual_internal_efficacy;
-                let current = state
-                    .subannual_next_internal_efficacy
-                    .unwrap_or(*internal_efficacy);
-                state.subannual_internal_efficacy = Some(current);
-                (efficacy / previous.unwrap_or(current), efficacy / current)
-            }
-            _ => (1.0, 1.0),
-        };
+        let subannual_scales = self
+            .parameters
+            .subannual_forcing
+            .as_ref()
+            .map_or((1.0, 1.0), |f| {
+                let (previous, current) = if f.regional_pattern.is_some() {
+                    let current = state
+                        .subannual_next_internal_efficacy
+                        .unwrap_or(f.internal_efficacy);
+                    let previous = state.subannual_internal_efficacy.unwrap_or(current);
+                    state.subannual_internal_efficacy = Some(current);
+                    (previous, current)
+                } else {
+                    (f.internal_efficacy, f.internal_efficacy)
+                };
+                (
+                    f.scale * (f.efficacy / previous),
+                    f.scale * (f.efficacy / current),
+                )
+            });
 
         // Pre-compute ground heat capacity if enabled
         let c_ground = if self.parameters.include_land_heat_capacity {
@@ -1878,6 +1895,7 @@ mod tests {
         let scaled = ClimateUDEB::from_parameters(params(SubannualForcing {
             start: 2000.0,
             values: vec![box_values; 36],
+            scale: 1.0,
             regional_pattern: Some(pattern),
             internal_efficacy: 2.0,
             efficacy: 1.0,
@@ -1915,6 +1933,7 @@ mod tests {
                 .iter()
                 .map(|d| box_values.map(|v| v * (1.0 / d)))
                 .collect(),
+            scale: 1.0,
             regional_pattern: None,
             internal_efficacy: 1.0,
             efficacy: 1.0,
@@ -1935,6 +1954,55 @@ mod tests {
             assert_same_climate(&state_scaled, &state_unscaled, 1e-12);
         }
         assert_eq!(state_scaled.subannual_internal_efficacy, Some(e1));
+    }
+
+    #[test]
+    fn test_subannual_scale_and_efficacy_match_prescaled_values() {
+        let box_values = [1.0, 0.5, 0.8, 0.3];
+        let component = |values: [FloatValue; 4], scale, efficacy, internal_efficacy| {
+            ClimateUDEB::from_parameters(ClimateUDEBParameters {
+                subannual_forcing: Some(SubannualForcing {
+                    start: 2000.0,
+                    values: vec![values; 24],
+                    scale,
+                    regional_pattern: None,
+                    internal_efficacy,
+                    efficacy,
+                }),
+                ..Default::default()
+            })
+            .unwrap()
+        };
+        let raw = component(box_values, 0.74, 1.2, 1.1);
+        let prescaled = component(box_values.map(|v| v * 0.74 * (1.2 / 1.1)), 1.0, 1.0, 1.0);
+
+        let items = yearly_items([0.0, 1.0, 2.0, 3.0]);
+        let (mut state_raw, mut state_prescaled) = (raw.initial_state(), prescaled.initial_state());
+        for year in [2000.0, 2001.0] {
+            let input_state = InputState::build(items.iter().collect(), year);
+            raw.solve_with_state(year, year + 1.0, &input_state, &mut state_raw)
+                .unwrap();
+            prescaled
+                .solve_with_state(year, year + 1.0, &input_state, &mut state_prescaled)
+                .unwrap();
+            assert_same_climate(&state_raw, &state_prescaled, 1e-12);
+        }
+    }
+
+    #[test]
+    fn test_subannual_forcing_rejects_zero_internal_efficacy() {
+        let result = ClimateUDEB::from_parameters(ClimateUDEBParameters {
+            subannual_forcing: Some(SubannualForcing {
+                start: 2000.0,
+                values: vec![[1.0; 4]; 12],
+                scale: 1.0,
+                regional_pattern: None,
+                internal_efficacy: 0.0,
+                efficacy: 1.0,
+            }),
+            ..Default::default()
+        });
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1960,6 +2028,7 @@ mod tests {
                 subannual_forcing: Some(SubannualForcing {
                     start: 2000.0,
                     values: vec![values; 12],
+                    scale: 1.0,
                     regional_pattern: None,
                     internal_efficacy: 1.0,
                     efficacy: 1.0,
