@@ -64,6 +64,29 @@ pub struct ModelBuilder {
     missing_prescribed_allowed: bool,
 }
 
+/// Check weights suit a grid: one per region of a four-box or hemispheric grid,
+/// accepted by its `try_with_weights`.
+pub fn check_grid_weights(grid: GridType, weights: &[f64]) -> Result<(), String> {
+    use crate::spatial::{FourBoxGrid, HemisphericGrid};
+    let expected = match grid {
+        GridType::Scalar => {
+            return Err("Cannot set weights for the scalar grid, which has no regions".into())
+        }
+        GridType::FourBox => 4,
+        GridType::Hemispheric => 2,
+    };
+    if weights.len() != expected {
+        return Err(format!(
+            "Weights length {} does not match {grid} grid size {expected}",
+            weights.len()
+        ));
+    }
+    match grid {
+        GridType::FourBox => FourBoxGrid::try_with_weights(weights.try_into().unwrap()).map(|_| ()),
+        _ => HemisphericGrid::try_with_weights(weights.try_into().unwrap()).map(|_| ()),
+    }
+}
+
 impl ModelBuilder {
     /// Create a new model builder with default settings.
     pub fn new() -> Self {
@@ -282,38 +305,9 @@ impl ModelBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if:
-    /// - `grid` is `Scalar` (scalars have no weights)
-    /// - `weights` length does not match the grid size (4 for four-box, 2 for hemispheric)
-    /// - `weights` do not sum to approximately 1.0 (within 1e-6)
+    /// Panics where [`check_grid_weights`] returns an error.
     pub fn with_grid_weights(&mut self, grid: GridType, weights: Vec<f64>) -> &mut Self {
-        // Validate grid
-        let expected_size = match grid {
-            GridType::Scalar => {
-                panic!("Cannot set weights for the scalar grid, which has no regions")
-            }
-            GridType::FourBox => 4,
-            GridType::Hemispheric => 2,
-        };
-
-        // Validate weights length
-        assert_eq!(
-            weights.len(),
-            expected_size,
-            "Weights length {} does not match {} grid size {}",
-            weights.len(),
-            grid,
-            expected_size
-        );
-
-        // Validate weights sum to 1.0
-        let sum: f64 = weights.iter().sum();
-        assert!(
-            (sum - 1.0).abs() < 1e-6,
-            "Weights must sum to 1.0, got {}",
-            sum
-        );
-
+        check_grid_weights(grid, &weights).unwrap_or_else(|e| panic!("{e}"));
         self.grid_weights.insert(grid, weights);
         self
     }
@@ -1064,7 +1058,9 @@ impl ModelBuilder {
             if let Some(values) = initial_grid {
                 if values.len() != expected_len {
                     return Err(RSCMError::Error(format!(
-                        "Initial values for {name} must have {expected_len} entries, got {}",
+                        "Initial grid values for '{name}' on the {storage_grid} grid need \
+                         {expected_len} value{}, got {}",
+                        if expected_len == 1 { "" } else { "s" },
                         values.len()
                     )));
                 }

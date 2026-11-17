@@ -61,15 +61,17 @@ impl HemisphericGrid {
     ///
     /// # Panics
     ///
-    /// Panics if weights do not sum to approximately 1.0 (within 1e-6)
+    /// Panics where [`Self::try_with_weights`] returns an error.
     pub fn with_weights(weights: [FloatValue; 2]) -> Self {
-        let sum: FloatValue = weights.iter().sum();
-        assert!(
-            (sum - 1.0).abs() < 1e-6,
-            "Weights must sum to 1.0, got {}",
-            sum
-        );
-        Self { weights }
+        Self::try_with_weights(weights).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Create a hemispheric grid with custom weights.
+    ///
+    /// Fails unless the weights are finite, not negative and sum to 1.0 within 1e-6.
+    pub fn try_with_weights(weights: [FloatValue; 2]) -> Result<Self, String> {
+        super::check_weights(&weights)?;
+        Ok(Self { weights })
     }
 
     /// Get the aggregation weights for this grid

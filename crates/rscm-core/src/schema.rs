@@ -595,6 +595,22 @@ impl VariableSchema {
     }
 }
 
+impl VariableSchema {
+    /// Check a variable or aggregate the Python API adds has a new name and a known unit.
+    fn check_new(&self, name: &str, unit: &str) -> pyo3::PyResult<()> {
+        if self.contains(name) {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "The schema already defines '{name}'"
+            )));
+        }
+        crate::python::check_unit(unit).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "'{name}' has unit '{unit}', which is not a known unit: {e}. Use '' for no unit"
+            ))
+        })
+    }
+}
+
 #[pymethods]
 impl VariableSchema {
     #[new]
@@ -605,13 +621,20 @@ impl VariableSchema {
     /// Add a scalar variable to the schema (Python API)
     #[pyo3(name = "add_variable")]
     #[pyo3(signature = (name, unit, grid=None))]
-    fn py_add_variable(&mut self, name: String, unit: String, grid: Option<GridType>) {
+    fn py_add_variable(
+        &mut self,
+        name: String,
+        unit: String,
+        grid: Option<GridType>,
+    ) -> pyo3::PyResult<()> {
+        self.check_new(&name, &unit)?;
         let def = SchemaVariableDefinition {
             name: name.clone(),
             unit,
             grid: grid.unwrap_or(GridType::Scalar),
         };
         self.variables.insert(name, def);
+        Ok(())
     }
 
     /// Add an aggregate to the schema (Python API)
@@ -634,6 +657,7 @@ impl VariableSchema {
         weights: Option<Vec<f64>>,
         grid: Option<GridType>,
     ) -> pyo3::PyResult<()> {
+        self.check_new(&name, &unit)?;
         let op = match operation {
             "sum" => AggregateOp::Sum,
             "mean" => AggregateOp::Mean,

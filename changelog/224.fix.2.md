@@ -11,3 +11,9 @@ Common mistakes in the core Python API raise `ValueError`, `IndexError` or `Type
 `FourBoxSlice` and `HemisphericSlice` iterate, and compare equal by value, as does `TimeAxis`.
 A `KeyboardInterrupt` or `SystemExit` raised in a Python component's `solve` reaches the caller unchanged, rather than as a `RuntimeError`.
 `TimeAxis`, `Model`, `ModelBuilder`, `VariableDefinition`, `RustComponent` and `PythonComponent` have concise reprs.
+Calling a component's `solve` directly with a collection that lacks an input raises `KeyError` naming the input,
+instead of a `PanicException`.
+`ModelBuilder.with_grid_weights` with NaN weights raises `ValueError` instead of panicking.
+`TimeAxis`, `Timeseries`, `InterpolationStrategy` and `Model` can be pickled and copied with `copy.deepcopy`.
+A `Model` round-trips through its TOML form, so it needs components that `to_toml` can serialise.
+`Timeseries.interpolation_strategy` returns the strategy a timeseries was made with.

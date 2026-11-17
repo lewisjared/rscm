@@ -69,3 +69,8 @@ rscm._lib.magicc.TroposphericOzoneRegions
 # =============================================================================
 rscm._lib.calibrate.Chain.to_dataframe
 rscm._lib.calibrate.Target.from_dataframe
+
+# =============================================================================
+# PyO3 enum members, which stubs declare with auto() so they type as the enum
+# =============================================================================
+(?s:rscm\._lib\.core\.InterpolationStrategy\.(Linear|Next|Previous)$)

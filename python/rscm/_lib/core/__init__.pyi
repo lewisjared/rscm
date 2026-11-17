@@ -82,7 +82,15 @@ class Timeseries:
         time_axis: TimeAxis,
         unit: str,
         interpolation_strategy: InterpolationStrategy,
-    ) -> None: ...
+    ) -> None:
+        """Create a timeseries of `values` on `time_axis`.
+
+        Raises
+        ------
+        ValueError
+            If `unit` is not empty and is not a unit `Unit` parses,
+            or `values` does not match `time_axis`.
+        """
     @staticmethod
     def from_values(values: ArrayLike, time_axis: TimeAxis) -> Timeseries: ...
     def with_interpolation_strategy(
@@ -104,6 +112,8 @@ class Timeseries:
     def unit(self) -> str: ...
     @property
     def time_axis(self) -> TimeAxis: ...
+    @property
+    def interpolation_strategy(self) -> InterpolationStrategy: ...
     def latest_value(self) -> F | None: ...
     def at(self, time_index: int) -> F | None:
         """Return the value at `time_index`, or None out of range.
@@ -331,7 +341,14 @@ class RustComponent(Protocol):
     def definitions(self) -> list[VariableDefinition]: ...
     def solve(
         self, t_current: float, t_next: float, collection: TimeseriesCollection
-    ) -> dict[str, StateValue]: ...
+    ) -> dict[str, StateValue]:
+        """Solve one step on its own, reading every input from `collection`.
+
+        Raises
+        ------
+        KeyError
+            If `collection` has no timeseries for an input.
+        """
 
 class ComponentBuilder(Protocol):
     """Builder that creates a RustComponent from parameters."""
@@ -448,7 +465,14 @@ class VariableSchema:
 
     def __init__(self) -> None: ...
     def add_variable(self, name: str, unit: str, grid: GridType | None = None) -> None:
-        """Add a variable to the schema."""
+        """Add a variable to the schema.
+
+        Raises
+        ------
+        ValueError
+            If the schema already defines `name`, or `unit` is not empty
+            and is not a unit `Unit` parses.
+        """
 
     def add_aggregate(
         self,
@@ -480,8 +504,10 @@ class VariableSchema:
         Raises
         ------
         ValueError
-            If operation is "weighted_sum" but weights not provided, or
-            if operation is not one of "sum", "mean" or "weighted_sum".
+            If operation is "weighted_sum" but weights not provided,
+            if operation is not one of "sum", "mean" or "weighted_sum",
+            if the schema already defines `name`,
+            or if `unit` is not empty and is not a unit `Unit` parses.
         """
 
     def contains(self, name: str) -> bool:

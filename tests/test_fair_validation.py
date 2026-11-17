@@ -175,6 +175,32 @@ def test_gas_boxes_match(config: dict[str, Any]) -> None:
     assert _issues(config) == {(IssueKind.SHAPE, "CO2.unperturbed_lifetime")}
 
 
+@pytest.mark.parametrize(
+    "fractions", [[0.5, 0.0, 0.0, 0.0], [1.5, -0.5, 0.0, 0.0], [0.5, 0.5, 0.5, -0.5]]
+)
+def test_partition_fractions_sum_to_one(
+    fractions: list[float], config: dict[str, Any]
+) -> None:
+    _species(config, "CO2")["partition_fraction"] = fractions
+    assert _issues(config) == {(IssueKind.OUT_OF_RANGE, "CO2.partition_fraction")}
+
+
+def test_partition_fractions_allow_rounding(config: dict[str, Any]) -> None:
+    _species(config, "CO2")["partition_fraction"] = [0.2173, 0.224, 0.2824, 0.2762]
+    validate(config)
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, 0.0, -44.0])
+def test_molecular_weight(value: float, config: dict[str, Any]) -> None:
+    _species(config, "N2O")["molecular_weight"] = value
+    kind = (
+        IssueKind.NON_FINITE
+        if math.isnan(value) or math.isinf(value)
+        else (IssueKind.OUT_OF_RANGE)
+    )
+    assert _issues(config) == {(kind, "N2O.molecular_weight")}
+
+
 @pytest.mark.parametrize("key", ["g0", "iirf_0"])
 def test_infinite_lifetime_scaling(key: str, config: dict[str, Any]) -> None:
     _species(config, "HFC-134a")[key] = math.inf
@@ -546,6 +572,24 @@ def test_run_ensemble_needs_a_config(config: dict[str, Any]) -> None:
     assert [(i.kind, i.location) for i in info.value.issues] == [
         (IssueKind.MISSING, "configs"),
     ]
+
+
+def test_run_ensemble_needs_a_scenario(config: dict[str, Any]) -> None:
+    pytest.importorskip("xarray")
+    with pytest.raises(InputValidationError) as info:
+        run_ensemble({"a": config}, {}, _time_axis())
+    assert [(i.kind, i.location) for i in info.value.issues] == [
+        (IssueKind.MISSING, "scenarios"),
+    ]
+
+
+@pytest.mark.parametrize("argument", ["configs", "scenarios"])
+def test_run_ensemble_needs_mappings(argument: str, config: dict[str, Any]) -> None:
+    pytest.importorskip("xarray")
+    arguments = {"configs": {"a": config}, "scenarios": {"s": _inputs(config)}}
+    arguments[argument] = list(arguments[argument].values())
+    with pytest.raises(TypeError, match=f"{argument} must be a mapping"):
+        run_ensemble(**arguments, time_axis=_time_axis())
 
 
 def _ensemble_issues(

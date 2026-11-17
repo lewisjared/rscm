@@ -5,6 +5,12 @@ use pyo3::exceptions::{PyUserWarning, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+/// The number of burn-in samples to drop, which must not be negative.
+fn discard_count(discard: isize) -> PyResult<usize> {
+    usize::try_from(discard)
+        .map_err(|_| PyValueError::new_err(format!("discard must not be negative, got {discard}")))
+}
+
 impl PyChain {
     /// A diagnostic as a dict, warning when it is empty because too few samples remain.
     fn diagnostic<'py>(
@@ -115,8 +121,13 @@ impl PyChain {
     /// >>> samples = chain.flat_samples(discard=100)
     /// >>> print(samples.shape)  # (n_samples, n_parameters)
     #[pyo3(signature = (discard=0))]
-    fn flat_samples<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyArray2<f64>> {
-        self.0.flat_samples(discard).to_pyarray(py)
+    fn flat_samples<'py>(
+        &self,
+        py: Python<'py>,
+        discard: isize,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let discard = discard_count(discard)?;
+        Ok(self.0.flat_samples(discard).to_pyarray(py))
     }
 
     /// Get flattened log probabilities, optionally discarding initial burn-in samples.
@@ -137,8 +148,13 @@ impl PyChain {
     /// >>> log_probs = chain.flat_log_probs(discard=100)
     /// >>> print(log_probs.shape)  # (n_samples,)
     #[pyo3(signature = (discard=0))]
-    fn flat_log_probs<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyArray1<f64>> {
-        self.0.flat_log_probs(discard).to_pyarray(py)
+    fn flat_log_probs<'py>(
+        &self,
+        py: Python<'py>,
+        discard: isize,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let discard = discard_count(discard)?;
+        Ok(self.0.flat_log_probs(discard).to_pyarray(py))
     }
 
     /// Compute the Gelman-Rubin statistic (R-hat) for each parameter.
@@ -168,7 +184,8 @@ impl PyChain {
     /// Gelman, A., & Rubin, D. B. (1992). Inference from iterative simulation using
     /// multiple sequences. Statistical Science, 7(4), 457-472.
     #[pyo3(signature = (discard=0))]
-    fn r_hat<'py>(&self, py: Python<'py>, discard: usize) -> PyResult<Bound<'py, PyDict>> {
+    fn r_hat<'py>(&self, py: Python<'py>, discard: isize) -> PyResult<Bound<'py, PyDict>> {
+        let discard = discard_count(discard)?;
         self.diagnostic(
             py,
             "r_hat",
@@ -198,8 +215,9 @@ impl PyChain {
     /// >>> if chain.is_converged(discard=100, threshold=1.1):
     /// ...     print("Chain has converged!")
     #[pyo3(signature = (discard=0, threshold=1.1))]
-    fn is_converged(&self, discard: usize, threshold: f64) -> bool {
-        self.0.is_converged(discard, threshold)
+    fn is_converged(&self, discard: isize, threshold: f64) -> PyResult<bool> {
+        let discard = discard_count(discard)?;
+        Ok(self.0.is_converged(discard, threshold))
     }
 
     /// Compute the effective sample size (ESS) for each parameter.
@@ -229,7 +247,8 @@ impl PyChain {
     /// Gelman, A., Carlin, J. B., Stern, H. S., Dunson, D. B., Vehtari, A., &
     /// Rubin, D. B. (2013). Bayesian Data Analysis (3rd ed.). CRC Press.
     #[pyo3(signature = (discard=0))]
-    fn ess<'py>(&self, py: Python<'py>, discard: usize) -> PyResult<Bound<'py, PyDict>> {
+    fn ess<'py>(&self, py: Python<'py>, discard: isize) -> PyResult<Bound<'py, PyDict>> {
+        let discard = discard_count(discard)?;
         self.diagnostic(
             py,
             "ess",
@@ -270,7 +289,8 @@ impl PyChain {
     /// >>> for param, time in tau.items():
     /// ...     print(f"{param}: τ = {time:.1f} (thin by ~{time:.0f} for independence)")
     #[pyo3(signature = (discard=0))]
-    fn autocorr_time<'py>(&self, py: Python<'py>, discard: usize) -> PyResult<Bound<'py, PyDict>> {
+    fn autocorr_time<'py>(&self, py: Python<'py>, discard: isize) -> PyResult<Bound<'py, PyDict>> {
+        let discard = discard_count(discard)?;
         let result = self.0.autocorr_time(discard);
         self.diagnostic(py, "autocorr_time", discard, MIN_SAMPLES_AUTOCORR, result)
     }
@@ -295,13 +315,18 @@ impl PyChain {
     /// >>> import matplotlib.pyplot as plt
     /// >>> plt.hist(param_dict["x"], bins=50)
     #[pyo3(signature = (discard=0))]
-    fn to_parameter_dict<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyDict> {
+    fn to_parameter_dict<'py>(
+        &self,
+        py: Python<'py>,
+        discard: isize,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let discard = discard_count(discard)?;
         let result = self.0.to_parameter_map(discard);
         let dict = PyDict::new(py);
         for (name, values) in result {
-            dict.set_item(name, values.to_pyarray(py)).unwrap();
+            dict.set_item(name, values.to_pyarray(py))?;
         }
-        dict
+        Ok(dict)
     }
 
     /// Save the chain to a file.
