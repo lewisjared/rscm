@@ -57,14 +57,26 @@ from rscm.two_layer import TwoLayerBuilder
 model_builder = ModelBuilder()
 
 # %% tags=["remove_input"]
+import shutil
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import pydot
 from IPython.display import SVG, display
 
 
+def graphviz_missing() -> bool:
+    """Report and return True when Graphviz's `dot` binary is not installed."""
+    if shutil.which("dot"):
+        return False
+    print("Graph not rendered: install Graphviz to provide the `dot` binary.")
+    return True
+
+
 def show_graph(model):
     """Render the component graph, labelling each node with its component name."""
+    if graphviz_missing():
+        return
     graph = pydot.graph_from_dot_data(model.as_dot())[0]
     for node in graph.get_nodes():
         label = node.get_label()
