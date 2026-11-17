@@ -35,12 +35,15 @@ def test_component_definitions():
 
 
 def test_component_invalid():
-    with pytest.raises(ValueError, match="missing field `conversion_factor`"):
+    with pytest.raises(
+        ValueError,
+        match=r"Invalid TestComponent parameters: missing conversion_factor \(float\)",
+    ):
         ExampleComponentBuilder.from_parameters({})
 
     with pytest.raises(
         ValueError,
-        match="unexpected type: 'NoneType' object cannot be cast as 'Mapping'",
+        match="TestComponent parameters must be a dict, not NoneType",
     ):
         # noinspection PyTypeChecker
         ExampleComponentBuilder.from_parameters(None).build()

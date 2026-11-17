@@ -136,14 +136,15 @@ def emissions() -> Timeseries:
 
 
 def build(component: Component):
-    return (
+    builder = (
         ModelBuilder()
         .with_time_axis(AXIS)
         .with_component(component)
         .with_prescribed_variable("Emissions|CO2", emissions())
-        .with_initial_values({"Carbon Stock": 0.0})
-        .build()
     )
+    if isinstance(component, Accumulator):
+        builder.with_initial_values({"Carbon Stock": 0.0})
+    return builder.build()
 
 
 def test_solve_error_raises_runtime_error_with_traceback():

@@ -49,7 +49,8 @@
 //!     ocean_heat_transfer: 0.7,   // W/(m² K) - heat exchange coefficient
 //!     heat_capacity_surface: 8.0, // W yr/(m² K) - surface layer (~80m mixed layer)
 //!     heat_capacity_deep: 100.0,  // W yr/(m² K) - deep ocean
-//! });
+//! })
+//! .unwrap();
 //! ```
 //!
 //! ## Integration with RSCM Models
@@ -70,7 +71,7 @@
 //!         ocean_heat_transfer: 0.7,
 //!         heat_capacity_surface: 8.0,
 //!         heat_capacity_deep: 100.0,
-//!     })))
+//!     }).unwrap()))
 //!     .build();
 //! ```
 //!

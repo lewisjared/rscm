@@ -59,19 +59,18 @@ link!(Carbon, inputs: ["temperature"], output: "co2", state: false);
 link!(Ozone, inputs: ["temperature"], output: "ozone", state: false);
 link!(OtherCarbon, inputs: [], output: "co2", state: false);
 
+/// A builder with an initial value of zero for every variable the components read or produce.
 fn builder(components: Vec<Arc<dyn Component + Send + Sync>>) -> ModelBuilder {
     let mut builder = ModelBuilder::new();
-    builder
-        .with_time_axis(TimeAxis::from_values(Array::range(2000.0, 2006.0, 1.0)))
-        .with_initial_values(HashMap::from([
-            ("temperature".to_string(), 0.0),
-            ("co2".to_string(), 0.0),
-            ("a".to_string(), 0.0),
-            ("b".to_string(), 0.0),
-            ("c".to_string(), 0.0),
-            ("ozone".to_string(), 0.0),
-        ]));
+    builder.with_time_axis(TimeAxis::from_values(Array::range(2000.0, 2006.0, 1.0)));
     for component in components {
+        builder.with_initial_values(
+            component
+                .definitions()
+                .into_iter()
+                .map(|definition| (definition.name, 0.0))
+                .collect(),
+        );
         builder.with_component(component);
     }
     builder

@@ -8,18 +8,18 @@ from rscm._lib.core import InterpolationStrategy, Model, Timeseries
 from rscm._lib.two_layer import TwoLayerBuilder
 from rscm.core import ModelBuilder
 
+PARAMETERS = dict(
+    lambda0=1.0,
+    a=0.0,
+    deep_ocean_efficacy=1.0,
+    ocean_heat_transfer=0.7,
+    heat_capacity_deep=100.0,
+    heat_capacity_surface=8.0,
+)
+
 
 def test_model(time_axis):
-    component = TwoLayerBuilder.from_parameters(
-        dict(
-            lambda0=0.0,
-            a=0.0,
-            deep_ocean_efficacy=0.0,
-            ocean_heat_transfer=0.0,
-            heat_capacity_deep=0.0,
-            heat_capacity_surface=0.0,
-        )
-    ).build()
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
 
     builder = ModelBuilder()
     builder.with_time_axis(time_axis).with_component(component)
@@ -45,16 +45,7 @@ def test_model(time_axis):
 
 
 def test_missing_prescribed_input(time_axis):
-    component = TwoLayerBuilder.from_parameters(
-        dict(
-            lambda0=0.0,
-            a=0.0,
-            deep_ocean_efficacy=0.0,
-            ocean_heat_transfer=0.0,
-            heat_capacity_deep=0.0,
-            heat_capacity_surface=0.0,
-        )
-    ).build()
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
     builder = (
         ModelBuilder()
         .with_time_axis(time_axis)
@@ -75,16 +66,7 @@ def test_missing_prescribed_input(time_axis):
 
 
 def test_missing_initial_value_names_the_builder_method(time_axis):
-    component = TwoLayerBuilder.from_parameters(
-        dict(
-            lambda0=0.0,
-            a=0.0,
-            deep_ocean_efficacy=0.0,
-            ocean_heat_transfer=0.0,
-            heat_capacity_deep=0.0,
-            heat_capacity_surface=0.0,
-        )
-    ).build()
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
     builder = (
         ModelBuilder()
         .with_time_axis(time_axis)
@@ -100,16 +82,7 @@ def test_missing_initial_value_names_the_builder_method(time_axis):
 
 
 def test_model_serialisation(time_axis):
-    component = TwoLayerBuilder.from_parameters(
-        dict(
-            lambda0=0.0,
-            a=0.0,
-            deep_ocean_efficacy=0.0,
-            ocean_heat_transfer=0.0,
-            heat_capacity_deep=0.0,
-            heat_capacity_surface=0.0,
-        )
-    ).build()
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
 
     builder = ModelBuilder()
     builder.with_time_axis(time_axis).with_component(component)
@@ -152,16 +125,7 @@ def test_model_serialisation(time_axis):
 
 
 def test_coupling_formats(time_axis):
-    component = TwoLayerBuilder.from_parameters(
-        dict(
-            lambda0=0.0,
-            a=0.0,
-            deep_ocean_efficacy=0.0,
-            ocean_heat_transfer=0.0,
-            heat_capacity_deep=0.0,
-            heat_capacity_surface=0.0,
-        )
-    ).build()
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
     model = (
         ModelBuilder()
         .with_time_axis(time_axis)

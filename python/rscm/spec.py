@@ -41,6 +41,7 @@ from rscm.core import (
     HemisphericTimeseries,
     ModelBuilder,
     Timeseries,
+    TimeseriesCollection,
     build_models,
     run_models,
 )
@@ -150,8 +151,11 @@ class ModelSetup:
             builder.with_component(component.build())
         for lag in spec.lags:
             lag.add_to(builder)
+        # A collection ignores scenario variables this model does not read.
+        scenario = TimeseriesCollection()
         for name, timeseries in self.prescribed.items():
-            builder.with_prescribed_variable(name, timeseries)
+            scenario.add_timeseries(name, timeseries)
+        builder.with_prescribed_collection(scenario)
         builder.with_initial_values(dict(spec.initial_values))
         builder.with_initial_grid_values(
             {name: list(values) for name, values in spec.initial_grid_values.items()}

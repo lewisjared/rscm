@@ -25,7 +25,7 @@ class ConfigError(Exception):
     pass
 
 
-class ValidationError(ConfigError):
+class ValidationError(ConfigError, ValueError):
     """
     Raised for validation failures.
 
@@ -63,7 +63,7 @@ class IncompatibleSchemaError(ConfigError):
         message = (
             f"Incompatible schema version: config has version {config_version}, "
             f"but loader supports version {loader_version}. "
-            f"See migration guide: https://docs.rscm.dev/config-migration"
+            "See https://rscm.readthedocs.io/en/latest/model_configuration/#schema-versioning"
         )
         super().__init__(message)
         self.config_version = config_version

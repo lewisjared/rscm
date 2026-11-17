@@ -88,6 +88,15 @@ class TwoLayerBuilder(ComponentBuilder):
 
     @staticmethod
     def from_parameters(parameters: dict[str, float]) -> TwoLayerBuilder:
-        """Create a builder from a parameter dictionary."""
+        """
+        Create a builder from a parameter dictionary.
+
+        Raises
+        ------
+        ValueError
+            If a parameter is missing, unknown or not finite,
+            `a` or `ocean_heat_transfer` is negative,
+            or another parameter is not positive.
+        """
     def build(self) -> RustComponent:
         """Build the two-layer model component."""

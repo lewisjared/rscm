@@ -94,6 +94,7 @@ mod component;
 mod example_component;
 mod model;
 pub mod names;
+pub mod parameters;
 pub mod spatial;
 pub mod state;
 pub mod timeseries;

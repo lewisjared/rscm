@@ -72,6 +72,38 @@ pub enum RSCMError {
     )]
     MissingPrescribedInput { inputs: Vec<(String, Vec<String>)> },
 
+    /// A builder with no time axis.
+    #[error("The model has no time axis. Set one with with_time_axis() before building.")]
+    MissingTimeAxis,
+
+    /// A builder with no components.
+    #[error("The model has no components. Add one with with_component() before building.")]
+    NoComponents,
+
+    /// An initial value for a variable no component reads or produces.
+    #[error(
+        "Initial value for '{variable}' is not used: no component reads or produces it.{}",
+        format_close_matches(suggestions)
+    )]
+    UnknownInitialValue {
+        variable: String,
+        suggestions: Vec<String>,
+    },
+
+    /// Prescribed data, given by name, for a variable no component reads.
+    #[error(
+        "Prescribed variable '{variable}' is not used: no component reads it.{}",
+        format_close_matches(suggestions)
+    )]
+    UnusedPrescribedVariable {
+        variable: String,
+        suggestions: Vec<String>,
+    },
+
+    /// Prescribed data, given by name, for a variable a component produces.
+    #[error("Prescribed variable '{variable}' is produced by component '{component}', so the prescribed data would be overwritten. Drop the prescribed data, or remove the component.")]
+    PrescribedOutput { variable: String, component: String },
+
     /// Two components produce the same variable.
     #[error("Variable '{variable}' has more than one producer: {}", components.join(", "))]
     MultipleProducers {
@@ -249,4 +281,34 @@ fn format_missing_inputs(inputs: &[(String, Vec<String>)]) -> String {
         .map(|(variable, consumers)| format!("'{variable}' (read by {})", consumers.join(", ")))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// " Did you mean ...?" for `suggestions`, or nothing if there are none.
+pub(crate) fn format_close_matches(suggestions: &[String]) -> String {
+    match suggestions {
+        [] => String::new(),
+        [one] => format!(" Did you mean '{one}'?"),
+        many => format!(
+            " Did you mean one of {}?",
+            many.iter()
+                .map(|s| format!("'{s}'"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// Up to three of `candidates` that look like `name`, closest first.
+pub fn close_matches(name: &str, candidates: &[&str]) -> Vec<String> {
+    let mut scored: Vec<(f64, &str)> = candidates
+        .iter()
+        .map(|c| (strsim::normalized_levenshtein(name, c), *c))
+        .filter(|(score, _)| *score >= 0.6)
+        .collect();
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(b.1)));
+    scored
+        .into_iter()
+        .take(3)
+        .map(|(_, c)| c.to_string())
+        .collect()
 }
