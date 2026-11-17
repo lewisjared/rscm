@@ -55,6 +55,18 @@ if TYPE_CHECKING:
 __all__ = ["ComponentSpec", "Lag", "ModelSetup", "ModelSpec", "diff", "run_all"]
 
 
+_ATOMIC = frozenset({bool, int, float, str, type(None)})
+
+
+def _copy(value: Any) -> Any:
+    """Deep copy ``value``, faster than `copy.deepcopy` on lists of numbers."""
+    if type(value) is dict:
+        return {k: v if type(v) in _ATOMIC else _copy(v) for k, v in value.items()}
+    if type(value) is list:
+        return [v if type(v) in _ATOMIC else _copy(v) for v in value]
+    return copy.deepcopy(value)
+
+
 @dataclass(frozen=True)
 class ComponentSpec:
     """A component as its builder and the parameters it is built from."""
@@ -65,7 +77,7 @@ class ComponentSpec:
 
     def __post_init__(self) -> None:
         # A copy, so later edits to the caller's configuration leave the spec unchanged.
-        object.__setattr__(self, "parameters", copy.deepcopy(dict(self.parameters)))
+        object.__setattr__(self, "parameters", _copy(dict(self.parameters)))
 
     def configure(self) -> Any:
         """Return the builder configured with the parameters, before building."""
