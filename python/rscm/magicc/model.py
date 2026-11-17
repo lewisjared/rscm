@@ -26,6 +26,7 @@ into it.
 
 from __future__ import annotations
 
+import difflib
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -64,6 +65,7 @@ from rscm.names import (
     SURFACE_AIR_TEMPERATURE_CHANGE,
 )
 from rscm.spec import ComponentSpec, Lag, ModelSetup, ModelSpec
+from rscm.validation import InputValidationError, Issue, IssueKind, Validator
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Mapping, Sequence
@@ -81,6 +83,7 @@ __all__ = [
     "ModelConfig",
     "build_from_components",
     "check_axis",
+    "check_on_axis",
     "component_specs",
     "setup",
     "with_lags",
@@ -210,21 +213,88 @@ def build_from_components(  # noqa: PLR0913
 
 
 def check_axis(time_axis: TimeAxis) -> None:
-    """Raise `ValueError` unless ``time_axis`` has at least two annual steps."""
-    if len(time_axis) < 2 or np.any(np.diff(time_axis.bounds()) != 1.0):  # noqa: PLR2004
-        msg = "time_axis must have at least two annual steps"
-        raise ValueError(msg)
+    """Raise `InputValidationError` unless ``time_axis`` has two or more annual steps.
+
+    The bounds must be whole years, as MAGICC7 steps from January to January.
+    """
+    bounds = np.asarray(time_axis.bounds())
+    if (
+        len(time_axis) < 2  # noqa: PLR2004
+        or np.any(np.diff(bounds) != 1.0)
+        or np.any(bounds != np.round(bounds))
+    ):
+        raise InputValidationError(
+            [
+                Issue(
+                    IssueKind.SHAPE,
+                    "time_axis",
+                    "must have at least two steps of one year, on whole years",
+                )
+            ]
+        )
 
 
-def _on_axis(inputs: Inputs, n: int) -> dict[str, tuple[NDArray[np.float64], str]]:
+def check_on_axis(
+    v: Validator, name: str, values: Any, time: NDArray[np.float64]
+) -> NDArray[np.float64] | None:
+    """Return ``values`` as an array, or None after reporting a non-numeric value.
+
+    A pandas object's index must equal ``time``, so values are not read out of order.
+    """
+    index = getattr(values, "index", None)
+    if (
+        index is not None
+        and not callable(index)
+        and not (
+            len(index) == len(time) and np.array_equal(np.asarray(index, float), time)
+        )
+    ):
+        v.add(
+            IssueKind.SHAPE,
+            name,
+            f"index runs {index[0]} to {index[-1]}, not the time axis values"
+            f" {time[0]:g} to {time[-1]:g}",
+        )
+        return None
+    try:
+        return np.asarray(values, dtype=np.float64)
+    except (TypeError, ValueError):
+        v.add(IssueKind.TYPE, name, "values must be numbers")
+        return None
+
+
+def _on_axis(
+    v: Validator, inputs: Inputs, time: NDArray[np.float64]
+) -> dict[str, tuple[NDArray[np.float64], str]]:
+    n = len(time)
     out = {}
     for name, (values, unit) in inputs.items():
-        array = np.asarray(values, dtype=np.float64)
-        if array.ndim not in (1, 2) or array.shape[0] != n:
-            msg = f"input {name!r} has shape {array.shape}, expected {n} time bounds"
-            raise ValueError(msg)
-        out[name] = (array, unit)
+        array = check_on_axis(v, name, values, time)
+        if array is None:
+            continue
+        if not v.check(
+            array.ndim in (1, 2)
+            and array.shape[0] == n
+            and (array.ndim == 1 or array.shape[1] in (2, 4)),
+            IssueKind.SHAPE,
+            name,
+            f"has shape {array.shape}, expected {n} time bounds"
+            " and 2 or 4 columns for a regional variable",
+        ):
+            continue
+        if v.finite(name, array):
+            out[name] = (array, unit)
     return out
+
+
+def _check_read(
+    v: Validator, inputs: Collection[str], components: Collection[RustComponent]
+) -> None:
+    read = {d.name for c in components for d in c.definitions()}
+    for name in sorted(set(inputs) - read):
+        close = difflib.get_close_matches(name, read, n=1)
+        hint = f", did you mean {close[0]!r}?" if close else ""
+        v.add(IssueKind.UNKNOWN_KEY, name, f"no component reads this input{hint}")
 
 
 def component_specs(
@@ -296,9 +366,16 @@ def setup(  # noqa: PLR0913
     come from the forcing at the first time bound.
     """
     check_axis(time_axis)
-    prescribed = _on_axis(inputs, len(time_axis))
+    v = Validator()
+    for key in ("components", "initial_values"):
+        v.check(key in config, IssueKind.MISSING, key, "not in the configuration")
+    v.raise_if_any()
+    time = np.asarray(time_axis.values(), dtype=np.float64)
+    prescribed = _on_axis(v, inputs, time)
     specs = component_specs(config, required=required, optional=optional)
     components = {key: spec.build() for key, spec in specs.items()}
+    _check_read(v, inputs, components.values())
+    v.raise_if_any()
     first = {key: values[0] for key, (values, _) in prescribed.items()}
     aggregation = specs["ForcingAggregation"]
     total, boxes = aggregation.configure().aggregate(
