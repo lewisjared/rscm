@@ -215,6 +215,8 @@ pub struct InputState<'a> {
     state: Vec<&'a TimeseriesItem>,
     /// Optional transform context for grid aggregation
     transform_context: Option<Cow<'a, TransformContext>>,
+    /// Read transform of each item in `state`, which replaces `transform_context` when set.
+    input_transforms: Option<&'a [Option<ReadTransformInfo>]>,
 }
 
 /// Order names by length and then by name, which settles most comparisons by length alone.
@@ -229,6 +231,7 @@ impl<'a> InputState<'a> {
             time_index: None,
             state: values,
             transform_context: None,
+            input_transforms: None,
         }
     }
 
@@ -243,6 +246,7 @@ impl<'a> InputState<'a> {
             time_index: None,
             state: values,
             transform_context: Some(Cow::Owned(transform_context)),
+            input_transforms: None,
         }
     }
 
@@ -257,6 +261,7 @@ impl<'a> InputState<'a> {
             time_index: None,
             state: values,
             transform_context: transform_context.map(Cow::Borrowed),
+            input_transforms: None,
         }
     }
 
@@ -266,12 +271,23 @@ impl<'a> InputState<'a> {
             time_index: None,
             state: vec![],
             transform_context: None,
+            input_transforms: None,
         }
     }
 
     /// Test if the state contains a value with the given name
     pub fn has(&self, name: &str) -> bool {
         self.find(name).is_some()
+    }
+
+    /// Read each item with the transform at its position, instead of looking it up by name.
+    pub(crate) fn with_input_transforms(
+        mut self,
+        input_transforms: &'a [Option<ReadTransformInfo>],
+    ) -> Self {
+        debug_assert_eq!(input_transforms.len(), self.state.len());
+        self.input_transforms = Some(input_transforms);
+        self
     }
 
     /// Set the index of the current time in the time axis that most items share.
@@ -295,12 +311,29 @@ impl<'a> InputState<'a> {
 
     /// Item named `name`, by binary search when the items are in [`lookup_order`].
     fn find(&self, name: &str) -> Option<&'a TimeseriesItem> {
-        let index = self
-            .state
+        self.position(name).map(|index| self.state[index])
+    }
+
+    fn position(&self, name: &str) -> Option<usize> {
+        self.state
             .binary_search_by(|item| lookup_order(&item.name, name))
             .ok()
-            .or_else(|| self.state.iter().position(|item| item.name == name))?;
-        Some(self.state[index])
+            .or_else(|| self.state.iter().position(|item| item.name == name))
+    }
+
+    /// Item named `name` and its read transform, panicking if there is no such item.
+    fn lookup(&self, name: &str) -> (&'a TimeseriesItem, Option<&ReadTransformInfo>) {
+        let index = self
+            .position(name)
+            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
+        let transform = match self.input_transforms {
+            Some(transforms) => transforms[index].as_ref(),
+            None => self
+                .transform_context
+                .as_ref()
+                .and_then(|ctx| ctx.read_transforms.get(name)),
+        };
+        (self.state[index], transform)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &&TimeseriesItem> {
@@ -323,29 +356,17 @@ impl<'a> InputState<'a> {
     ///
     /// Panics if the variable is not found or cannot be accessed as scalar.
     pub fn get_scalar_window(&self, name: &str) -> ScalarWindow<'_> {
-        self.scalar_window(name)
-            .with_timeseries_type(self.timeseries_type(name))
+        let (item, transform) = self.lookup(name);
+        self.scalar_window(name, item, transform)
+            .with_timeseries_type(timeseries_type(transform))
     }
 
-    /// Point or average type of `name`, from its read transform.
-    fn timeseries_type(&self, name: &str) -> TimeseriesType {
-        self.transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name))
-            .map_or(TimeseriesType::Point, |t| t.timeseries_type)
-    }
-
-    fn scalar_window(&self, name: &str) -> ScalarWindow<'_> {
-        let item = self
-            .find(name)
-            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
-
-        // Check if there's a read transform for this variable
-        let transform = self
-            .transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name));
-
+    fn scalar_window(
+        &self,
+        name: &str,
+        item: &'a TimeseriesItem,
+        transform: Option<&ReadTransformInfo>,
+    ) -> ScalarWindow<'_> {
         // If there's a transform, use the source grid and unit conversion factor
         if let Some(transform) = transform {
             let unit_factor = transform.unit_conversion_factor;
@@ -361,14 +382,16 @@ impl<'a> InputState<'a> {
 
                     let time_index = self.time_index(ts.time_axis_ref(), name);
 
-                    return ScalarWindow::FromFourBox(AggregatingFourBoxWindow::with_source(
-                        ts,
-                        time_index,
-                        &item.name,
-                        transform.weights.clone(),
-                        unit_factor,
-                        transform.variable_source,
-                    ));
+                    return ScalarWindow::FromFourBox(
+                        AggregatingFourBoxWindow::with_borrowed_weights(
+                            ts,
+                            time_index,
+                            &item.name,
+                            transform.weights.as_deref(),
+                            unit_factor,
+                            transform.variable_source,
+                        ),
+                    );
                 }
                 GridType::Hemispheric => {
                     let ts = item
@@ -384,11 +407,11 @@ impl<'a> InputState<'a> {
                     let time_index = self.time_index(ts.time_axis_ref(), name);
 
                     return ScalarWindow::FromHemispheric(
-                        AggregatingHemisphericWindow::with_source(
+                        AggregatingHemisphericWindow::with_borrowed_weights(
                             ts,
                             time_index,
                             &item.name,
-                            transform.weights.clone(),
+                            transform.weights.as_deref(),
                             unit_factor,
                             transform.variable_source,
                         ),
@@ -421,13 +444,7 @@ impl<'a> InputState<'a> {
 
         let time_index = self.time_index(ts.time_axis_ref(), name);
 
-        // Get variable source from transform context if available
-        let source = self
-            .transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name))
-            .map(|t| t.variable_source)
-            .unwrap_or(VariableSource::Prescribed);
+        let source = transform.map_or(VariableSource::Prescribed, |t| t.variable_source);
 
         ScalarWindow::Direct(TimeseriesWindow::with_source(
             ts, time_index, &item.name, 1.0, // no unit conversion for direct access
@@ -444,9 +461,7 @@ impl<'a> InputState<'a> {
     ///
     /// Panics if the variable is not found or is not a four-box timeseries.
     pub fn get_four_box_window(&self, name: &str) -> GridTimeseriesWindow<'_, FourBoxGrid> {
-        let item = self
-            .find(name)
-            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
+        let (item, transform) = self.lookup(name);
 
         let ts = item
             .data
@@ -457,15 +472,12 @@ impl<'a> InputState<'a> {
         let time_index = self.time_index(ts.time_axis_ref(), name);
 
         // Check if there's a unit conversion factor and variable source
-        let (unit_factor, source) = self
-            .transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name))
+        let (unit_factor, source) = transform
             .map(|t| (t.unit_conversion_factor, t.variable_source))
             .unwrap_or((1.0, VariableSource::Prescribed));
 
         GridTimeseriesWindow::with_source(ts, time_index, &item.name, unit_factor, source)
-            .with_timeseries_type(self.timeseries_type(name))
+            .with_timeseries_type(timeseries_type(transform))
     }
 
     /// Get a Hemispheric GridTimeseriesWindow for the named variable
@@ -481,21 +493,17 @@ impl<'a> InputState<'a> {
     ///
     /// Panics if the variable is not found or cannot be accessed as Hemispheric.
     pub fn get_hemispheric_window(&self, name: &str) -> HemisphericWindow<'_> {
-        self.hemispheric_window(name)
-            .with_timeseries_type(self.timeseries_type(name))
+        let (item, transform) = self.lookup(name);
+        self.hemispheric_window(name, item, transform)
+            .with_timeseries_type(timeseries_type(transform))
     }
 
-    fn hemispheric_window(&self, name: &str) -> HemisphericWindow<'_> {
-        let item = self
-            .find(name)
-            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
-
-        // Check if there's a read transform for this variable
-        let transform = self
-            .transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name));
-
+    fn hemispheric_window(
+        &self,
+        name: &str,
+        item: &'a TimeseriesItem,
+        transform: Option<&ReadTransformInfo>,
+    ) -> HemisphericWindow<'_> {
         // If there's a transform from FourBox, aggregate
         if let Some(transform) = transform {
             let unit_factor = transform.unit_conversion_factor;
@@ -547,18 +555,17 @@ impl<'a> InputState<'a> {
 
         let time_index = self.time_index(ts.time_axis_ref(), name);
 
-        // Get variable source from transform context if available
-        let source = self
-            .transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name))
-            .map(|t| t.variable_source)
-            .unwrap_or(VariableSource::Prescribed);
+        let source = transform.map_or(VariableSource::Prescribed, |t| t.variable_source);
 
         HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
             ts, time_index, &item.name, 1.0, source,
         ))
     }
+}
+
+/// Point or average type from a read transform, a point without one.
+fn timeseries_type(transform: Option<&ReadTransformInfo>) -> TimeseriesType {
+    transform.map_or(TimeseriesType::Point, |t| t.timeseries_type)
 }
 
 impl<'a> IntoIterator for InputState<'a> {
