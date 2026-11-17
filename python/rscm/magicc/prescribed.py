@@ -128,6 +128,8 @@ def _extend(
     y = np.asarray(years, dtype=np.float64)
     out = on_axis(history, y, before=before)
     sw = _switch_index(y, history.last_year())
+    if sw == len(y) - 1:
+        return out
     mid = forward_midyear(extender)[sw:, None]
     out[sw:] = mid * out[sw] / mid[0]
     return out
