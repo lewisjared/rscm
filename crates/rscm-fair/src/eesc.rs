@@ -22,10 +22,11 @@
 //!   Its default name is `Equivalent Effective Stratospheric Chlorine`.
 
 use crate::constants::get;
-use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
+use rscm_core::component::{
+    Component, ComponentState, InputState, OutputWriter, VariableDefinition,
+};
 use rscm_core::errors::RSCMResult;
 use rscm_core::names::EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE;
-use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
@@ -120,24 +121,22 @@ impl Component for EESC {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let concentrations = self
             .parameters
             .halogens
             .iter()
             .map(|h| get(input_state, &h.concentration))
             .collect::<Vec<_>>();
-        let mut output = OutputState::with_capacity(1);
-        output.insert(
-            self.parameters.output.clone(),
-            StateValue::Scalar(self.eesc(&concentrations)),
-        );
-        Ok(output)
+        out.set(&self.parameters.output, self.eesc(&concentrations));
+        Ok(())
     }
 }
 

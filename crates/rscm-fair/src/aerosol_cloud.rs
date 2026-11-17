@@ -28,9 +28,10 @@
 
 use crate::constants::{driver_definitions, get, one, surface_temperature};
 use crate::driver::Driver;
-use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
+use rscm_core::component::{
+    Component, ComponentState, InputState, OutputWriter, VariableDefinition,
+};
 use rscm_core::errors::{RSCMError, RSCMResult};
-use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
@@ -167,12 +168,14 @@ impl Component for AerosolCloud {
         )
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let p = &self.parameters;
         let values: Vec<_> = p
             .drivers
@@ -180,12 +183,11 @@ impl Component for AerosolCloud {
             .map(|d| get(input_state, &d.variable))
             .collect();
         let temperature = get(input_state, &p.surface_temperature);
-        let mut output = OutputState::with_capacity(1);
-        output.insert(
-            p.forcing.clone(),
-            StateValue::Scalar(self.forcing(&values) + temperature * p.temperature_feedback),
+        out.set(
+            &p.forcing,
+            self.forcing(&values) + temperature * p.temperature_feedback,
         );
-        Ok(output)
+        Ok(())
     }
 }
 

@@ -34,10 +34,11 @@ use crate::constants::{
     efficacy_adjusted_forcing, forcing_unit, get, one, surface_temperature, temperature_unit,
     total_forcing,
 };
-use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
+use rscm_core::component::{
+    Component, ComponentState, InputState, OutputWriter, VariableDefinition,
+};
 use rscm_core::errors::RSCMResult;
 use rscm_core::forcing::{ForcingCategory, ForcingSubtotals};
-use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
@@ -138,19 +139,20 @@ impl Component for ForcingAggregation {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let p = &self.parameters;
         let temperature = if self.has_feedback() {
             get(input_state, &p.surface_temperature)
         } else {
             0.0
         };
-        let mut output = OutputState::with_capacity(p.agents.len() + 5);
         let mut total = 0.0;
         let mut adjusted = 0.0;
         let mut subtotals = ForcingSubtotals::default();
@@ -158,7 +160,7 @@ impl Component for ForcingAggregation {
             let input = agent.prescribed.as_ref().unwrap_or(&agent.forcing);
             let forcing = get(input_state, input) + temperature * agent.temperature_feedback;
             if agent.prescribed.is_some() {
-                output.insert(agent.forcing.clone(), StateValue::Scalar(forcing));
+                out.set(&agent.forcing, forcing);
             }
             if !forcing.is_nan() {
                 total += forcing;
@@ -166,10 +168,10 @@ impl Component for ForcingAggregation {
                 subtotals = subtotals + agent.category.subtotals(forcing);
             }
         }
-        output.insert(p.total.clone(), StateValue::Scalar(total));
-        output.insert(p.efficacy_adjusted.clone(), StateValue::Scalar(adjusted));
-        subtotals.insert_into(&mut output);
-        Ok(output)
+        out.set(&p.total, total);
+        subtotals.write_to(out);
+        out.set(&p.efficacy_adjusted, adjusted);
+        Ok(())
     }
 }
 
@@ -177,6 +179,7 @@ impl Component for ForcingAggregation {
 mod tests {
     use super::*;
     use rscm_core::names::{ERF_AEROSOLS, ERF_ANTHROPOGENIC, ERF_GREENHOUSE_GASES};
+    use rscm_core::state::StateValue;
     use rscm_core::timeseries::Timeseries;
     use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
 

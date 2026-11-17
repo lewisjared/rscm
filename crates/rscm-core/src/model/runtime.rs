@@ -2,7 +2,10 @@
 
 use crate::component::{ComponentState, GridType, TimeseriesType};
 use crate::errors::{RSCMError, RSCMResult};
-use crate::state::{lookup_order, InputState, ReadTransformInfo, StateValue, VariableSource};
+use crate::state::{
+    lookup_order, InputPlan, InputState, OutputBuffer, ReadTransformInfo, StateValue,
+    VariableSource,
+};
 use crate::timeseries::{Time, TimeAxis};
 use crate::timeseries_collection::TimeseriesCollection;
 use petgraph::dot::{Config, Dot};
@@ -129,12 +132,10 @@ pub struct Model {
 struct ComponentPlan {
     node: NodeIndex,
     name: String,
-    /// Collection index of each input in `lookup_order`, which no step changes.
-    inputs: Vec<usize>,
-    /// Read transform of each input, aligned with `inputs`.
-    input_transforms: Vec<Option<ReadTransformInfo>>,
-    /// Declared outputs in `lookup_order`.
-    outputs: Vec<OutputPlan>,
+    inputs: InputPlan,
+    outputs: OutputBuffer,
+    /// Target of each declared output, aligned with `outputs`.
+    targets: Vec<Option<OutputTarget>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -143,12 +144,6 @@ struct OutputTarget {
     /// Source and target grid of a write transform.
     transform: Option<(GridType, GridType)>,
     timeseries_type: TimeseriesType,
-}
-
-#[derive(Debug)]
-struct OutputPlan {
-    name: String,
-    target: OutputTarget,
 }
 
 impl Model {
@@ -417,8 +412,8 @@ impl Model {
     fn component_plan(&self, node: NodeIndex) -> ComponentPlan {
         let component = &self.components[node];
         let name = Self::extract_component_name(component);
-        let mut inputs: Vec<usize> = component
-            .input_names()
+        let input_names = component.input_names();
+        let indices = input_names
             .iter()
             .map(|input| {
                 self.collection
@@ -426,31 +421,28 @@ impl Model {
                     .unwrap_or_else(|| panic!("No timeseries with variable='{}'", input))
             })
             .collect();
-        inputs.sort_by(|&a, &b| {
-            lookup_order(&self.collection.item(a).name, &self.collection.item(b).name)
-        });
-        let input_transforms = inputs
+        let mut order: Vec<u32> = (0..input_names.len() as u32).collect();
+        order.sort_by(|&a, &b| lookup_order(&input_names[a as usize], &input_names[b as usize]));
+        let transforms = input_names
             .iter()
-            .map(|&index| self.read_transform(&self.collection.item(index).name, &name))
+            .map(|input| self.read_transform(input, &name))
             .collect();
-        let mut outputs: Vec<OutputPlan> = component
-            .output_names()
-            .into_iter()
-            .filter_map(|output| {
-                let target = self.output_target(&output)?;
-                Some(OutputPlan {
-                    name: output,
-                    target,
-                })
-            })
+        let outputs = OutputBuffer::new(component.output_names());
+        let targets = outputs
+            .names()
+            .iter()
+            .map(|output| self.output_target(output))
             .collect();
-        outputs.sort_by(|a, b| lookup_order(&a.name, &b.name));
         ComponentPlan {
             node,
             name,
-            inputs,
-            input_transforms,
+            inputs: InputPlan {
+                indices,
+                order,
+                transforms,
+            },
             outputs,
+            targets,
         }
     }
 
@@ -505,17 +497,12 @@ impl Model {
     /// The updated state from the component is then pushed into the model's timeseries collection
     /// to be later used by other components.
     /// A point output is stored at the step's end and an average at its start.
-    fn step_model_component(&mut self, plan: &ComponentPlan) -> RSCMResult<()> {
+    fn step_model_component(&mut self, plan: &mut ComponentPlan) -> RSCMResult<()> {
         let component = &self.components[plan.node];
         let component_name = &plan.name;
-        let items = plan
-            .inputs
-            .iter()
-            .map(|&index| self.collection.item(index))
-            .collect();
-        let input_state = InputState::build(items, self.current_time())
-            .with_input_transforms(&plan.input_transforms)
-            .with_time_index(self.time_index);
+        let input_state =
+            InputState::planned(self.collection.items(), &plan.inputs, self.current_time())
+                .with_time_index(self.time_index);
 
         let (start, end) = self.current_time_bounds();
 
@@ -525,30 +512,51 @@ impl Model {
             .get_mut(&plan.node)
             .expect("Component state not initialised, a bug in Model::build()");
 
-        let output_state = component
-            .solve_with_state(start, end, &input_state, internal_state.as_mut())
+        component
+            .solve_into(
+                start,
+                end,
+                &input_state,
+                internal_state.as_mut(),
+                &mut plan.outputs.writer(),
+            )
             .map_err(|err| {
                 RSCMError::Error(format!(
                     "{component_name} failed during {start}..{end}: {err}"
                 ))
             })?;
 
-        for (key, state_value) in &output_state {
-            let target = match plan
-                .outputs
-                .binary_search_by(|o| lookup_order(&o.name, key))
-            {
-                Ok(i) => Some(plan.outputs[i].target),
-                Err(_) => self.output_target(key),
-            };
-            let target = target.ok_or_else(|| {
-                RSCMError::Error(format!(
-                    "{component_name} returned undeclared output {key} during {start}..{end}"
-                ))
-            })?;
-            let data = self.collection.data_mut(target.index);
-            let final_value = if let Some((source_grid, target_grid)) = target.transform {
-                aggregate_state_value(
+        for position in 0..plan.targets.len() {
+            if let Some(value) = plan.outputs.take(position) {
+                let key = &plan.outputs.names()[position];
+                self.write_output(&plan.name, key, plan.targets[position], &value)?;
+            }
+        }
+        for (key, value) in plan.outputs.take_undeclared() {
+            let target = self.output_target(&key);
+            self.write_output(&plan.name, &key, target, &value)?;
+        }
+        Ok(())
+    }
+
+    /// Store a component's output `key` for the current step.
+    fn write_output(
+        &mut self,
+        component_name: &str,
+        key: &str,
+        target: Option<OutputTarget>,
+        state_value: &StateValue,
+    ) -> RSCMResult<()> {
+        let (start, end) = self.current_time_bounds();
+        let target = target.ok_or_else(|| {
+            RSCMError::Error(format!(
+                "{component_name} returned undeclared output {key} during {start}..{end}"
+            ))
+        })?;
+        let aggregated;
+        let final_value = match target.transform {
+            Some((source_grid, target_grid)) => {
+                aggregated = aggregate_state_value(
                     state_value,
                     source_grid,
                     target_grid,
@@ -558,26 +566,26 @@ impl Model {
                     RSCMError::Error(format!(
                         "{component_name} could not aggregate {key} during {start}..{end}: {err}"
                     ))
-                })?
-            } else {
-                state_value.clone()
-            };
-            let at = match target.timeseries_type {
-                TimeseriesType::Point => self.time_index + 1,
-                TimeseriesType::Average => self.time_index,
-            };
-            let result = match &final_value {
-                StateValue::Scalar(v) => data.set_scalar(key, at, *v),
-                StateValue::FourBox(slice) => data.set_four_box(key, at, slice),
-                StateValue::Hemispheric(slice) => data.set_hemispheric(key, at, slice),
-            };
-            result.map_err(|err| {
-                RSCMError::Error(format!(
-                    "{component_name} could not write {key} during {start}..{end}: {err}"
-                ))
-            })?;
-        }
-        Ok(())
+                })?;
+                &aggregated
+            }
+            None => state_value,
+        };
+        let at = match target.timeseries_type {
+            TimeseriesType::Point => self.time_index + 1,
+            TimeseriesType::Average => self.time_index,
+        };
+        let data = self.collection.data_mut(target.index);
+        let result = match final_value {
+            StateValue::Scalar(v) => data.set_scalar(key, at, *v),
+            StateValue::FourBox(slice) => data.set_four_box(key, at, slice),
+            StateValue::Hemispheric(slice) => data.set_hemispheric(key, at, slice),
+        };
+        result.map_err(|err| {
+            RSCMError::Error(format!(
+                "{component_name} could not write {key} during {start}..{end}: {err}"
+            ))
+        })
     }
 
     /// The order components run in within a step, including the graph's root node.
@@ -606,7 +614,7 @@ impl Model {
 
     /// Step the model forward a step by solving each component for the current step.
     fn step_model(&mut self) -> RSCMResult<()> {
-        let plan = match self.plan.take() {
+        let mut plan = match self.plan.take() {
             Some(plan) => plan,
             None => self
                 .execution_order()?
@@ -615,7 +623,7 @@ impl Model {
                 .collect(),
         };
         let result = plan
-            .iter()
+            .iter_mut()
             .try_for_each(|component| self.step_model_component(component));
         self.plan = Some(plan);
         result

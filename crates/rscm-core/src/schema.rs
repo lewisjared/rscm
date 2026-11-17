@@ -804,8 +804,9 @@ pub fn compute_aggregate(contributors: &[f64], op: &AggregateOp) -> f64 {
 // Aggregate components
 // =============================================================================
 
-use crate::component::{Component, InputState, OutputState, VariableDefinition, VariableRole};
-use crate::state::StateValue;
+use crate::component::{
+    Component, ComponentState, InputState, OutputWriter, VariableDefinition, VariableRole,
+};
 use crate::timeseries::Time;
 
 /// The component that computes an aggregate from its contributors.
@@ -868,14 +869,14 @@ impl Component for AggregateComponent {
         defs
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
-        let mut output = OutputState::new();
-
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         match self.grid {
             GridType::Scalar => {
                 let values: Vec<f64> = self
@@ -885,7 +886,7 @@ impl Component for AggregateComponent {
                     .collect();
 
                 let result = compute_aggregate(&values, &self.operation);
-                output.insert(self.aggregate_name.clone(), StateValue::Scalar(result));
+                out.set(&self.aggregate_name, result);
             }
             GridType::FourBox => {
                 use crate::state::FourBoxSlice;
@@ -906,7 +907,7 @@ impl Component for AggregateComponent {
                     result.0[i] = agg;
                 }
 
-                output.insert(self.aggregate_name.clone(), StateValue::FourBox(result));
+                out.set(&self.aggregate_name, result);
             }
             GridType::Hemispheric => {
                 use crate::state::HemisphericSlice;
@@ -927,11 +928,11 @@ impl Component for AggregateComponent {
                     result.0[i] = agg;
                 }
 
-                output.insert(self.aggregate_name.clone(), StateValue::Hemispheric(result));
+                out.set(&self.aggregate_name, result);
             }
         }
 
-        Ok(output)
+        Ok(())
     }
 }
 

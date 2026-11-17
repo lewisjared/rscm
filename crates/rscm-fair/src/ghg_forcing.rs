@@ -26,9 +26,10 @@
 
 use crate::constants::{forcing_unit, get, one, surface_temperature, temperature_unit};
 use rscm_components::meinshausen2020::Meinshausen2020;
-use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
+use rscm_core::component::{
+    Component, ComponentState, InputState, OutputWriter, VariableDefinition,
+};
 use rscm_core::errors::RSCMResult;
-use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
@@ -167,25 +168,23 @@ impl Component for GHGForcing {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let concentrations: Vec<_> = self
             .species()
             .map(|s| get(input_state, &s.concentration))
             .collect();
         let temperature = get(input_state, &self.parameters.surface_temperature);
-        let mut output = OutputState::with_capacity(concentrations.len());
         for (s, f) in self.species().zip(self.forcing(&concentrations)) {
-            output.insert(
-                s.forcing.clone(),
-                StateValue::Scalar(f + temperature * s.temperature_feedback),
-            );
+            out.set(&s.forcing, f + temperature * s.temperature_feedback);
         }
-        Ok(output)
+        Ok(())
     }
 }
 

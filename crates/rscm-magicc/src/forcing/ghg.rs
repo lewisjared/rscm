@@ -36,7 +36,8 @@
 
 use crate::parameters::{ForcingMethod, GHGForcingParameters};
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputState, OutputWriter, VariableDefinition,
+    VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -243,12 +244,14 @@ impl Component for GHGForcing {
         Self::generated_definitions()
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let inputs = GHGForcingInputs::from_input_state(input_state);
 
         let co2 = inputs.co2_concentration.get();
@@ -265,7 +268,8 @@ impl Component for GHGForcing {
             ch4_strat_h2o_erf: self.ch4_strat_h2o_erf(ch4),
         };
 
-        Ok(outputs.into())
+        outputs.write_to(out);
+        Ok(())
     }
 }
 

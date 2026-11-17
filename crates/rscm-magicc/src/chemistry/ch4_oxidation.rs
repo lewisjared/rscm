@@ -16,7 +16,8 @@
 use crate::parameters::CH4OxidationParameters;
 use crate::reference::{permafrost_emissions, require_annual};
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputState, OutputWriter, VariableDefinition,
+    VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::names::EMISSIONS_CH4_PERMAFROST;
@@ -139,12 +140,14 @@ impl Component for CH4Oxidation {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         require_annual("CH4Oxidation", t_current, t_next)?;
         let inputs = CH4OxidationInputs::from_input_state(input_state);
         let pools = CH4Pools {
@@ -168,14 +171,15 @@ impl Component for CH4Oxidation {
             inputs.concentration.interval()?,
             inputs.oh_lifetime.get(),
         );
-        Ok(CH4OxidationOutputs {
+        CH4OxidationOutputs {
             fossil_burden: next.fossil,
             biosphere_burden: next.biosphere,
             natural_burden: next.natural,
             permafrost_burden: next.permafrost,
             co2_emissions,
         }
-        .into())
+        .write_to(out);
+        Ok(())
     }
 }
 

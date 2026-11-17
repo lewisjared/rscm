@@ -37,7 +37,8 @@
 use crate::parameters::CO2BudgetParameters;
 use crate::reference::{permafrost_emissions, prescribed_concentration, prescribed_definition};
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputState, OutputWriter, VariableDefinition,
+    VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::names::{
@@ -141,12 +142,14 @@ impl Component for CO2Budget {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let inputs = CO2BudgetInputs::from_input_state(input_state);
 
         let co2_start = inputs.co2_concentration.get();
@@ -192,7 +195,8 @@ impl Component for CO2Budget {
             airborne_fraction,
         };
 
-        Ok(outputs.into())
+        outputs.write_to(out);
+        Ok(())
     }
 }
 
