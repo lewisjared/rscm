@@ -10,9 +10,14 @@ from rscm import names
 from rscm.fair import naming
 from rscm.fair.config import emission_drivers, is_ghg, species_outputs
 from rscm.fair.run import _on_timebounds, _setup_model
-from rscm.fair.validation import check_config, check_inputs, check_prescribed_scales
+from rscm.fair.validation import (
+    check_config,
+    check_inputs,
+    check_prescribed_scales,
+    check_timebounds,
+)
 from rscm.spec import run_all
-from rscm.validation import Validator
+from rscm.validation import IssueKind, Validator
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Mapping
@@ -60,6 +65,49 @@ def _emissions(config: FairConfig, s: Species) -> list[str] | None:
     return emission_drivers(config, s) or None
 
 
+def _check_shared_layout(
+    v: Validator, configs: Mapping[Hashable, FairConfig], valid: list[Hashable]
+) -> bool:
+    """Record configurations whose species or layers differ from the first one."""
+    if not valid:
+        return True
+    before = len(v.issues)
+    first, *others = valid
+    species = [s["name"] for s in configs[first]["species"]]
+    n_layers = np.size(configs[first]["climate"].get("ocean_heat_capacity"))
+    for name in others:
+        other = [s["name"] for s in configs[name]["species"]]
+        missing = [s for s in species if s not in other]
+        extra = [s for s in other if s not in species]
+        if missing or extra:
+            differences = [
+                f"{verb} {', '.join(found)}"
+                for verb, found in (("lacks", missing), ("adds", extra))
+                if found
+            ]
+            v.add(
+                IssueKind.SHAPE,
+                f"{name}: species",
+                f"{' and '.join(differences)} compared with {first!r}, "
+                "but every configuration needs the same species",
+            )
+        elif other != species:
+            v.add(
+                IssueKind.SHAPE,
+                f"{name}: species",
+                f"has the species of {first!r} in another order, "
+                "but every configuration needs them in the same order",
+            )
+        layers = np.size(configs[name]["climate"].get("ocean_heat_capacity"))
+        v.check(
+            layers == n_layers,
+            IssueKind.SHAPE,
+            f"{name}: climate.ocean_heat_capacity",
+            f"has {layers} layers but {first!r} has {n_layers}",
+        )
+    return len(v.issues) == before
+
+
 def _validate(
     configs: Mapping[Hashable, FairConfig],
     scenarios: Mapping[str, Inputs],
@@ -69,13 +117,17 @@ def _validate(
 ) -> None:
     """Check every configuration and scenario, so a bad one fails before any run."""
     v = Validator()
+    if not configs:
+        v.add(IssueKind.MISSING, "configs", "the ensemble needs a configuration")
+    timed = check_timebounds(v, time_axis.values())
     # Inputs are checked for every configuration with well-formed species.
     valid = [name for name in configs if check_config(configs[name], v, at=f"{name}: ")]
+    shared = _check_shared_layout(v, configs, valid)
     if scale_prescribed_forcing:
         for name in valid:
             check_prescribed_scales(configs[name], v, at=f"{name}: ")
     for scenario, inputs in scenarios.items():
-        for name in valid:
+        for name in valid if timed and shared else []:
             check_inputs(configs[name], inputs, time_axis, v, at=f"{scenario}: ")
     # Configurations with the same species share each input issue.
     v.issues[:] = list(dict.fromkeys(v.issues))
@@ -92,7 +144,7 @@ def run_ensemble(
 ) -> xr.Dataset:
     """Run every configuration on every scenario and collect the results like FaIR.
 
-    The configurations must share their species and layers.
+    The configurations must share their species, in the same order, and layers.
     `scenarios` maps each scenario to its inputs, see `rscm.fair.setup_model`.
     The configurations of each scenario run in parallel on ``n_threads`` threads,
     or one per core.
@@ -119,15 +171,6 @@ def run_ensemble(
     first = configs[config_names[0]]
     species = [s["name"] for s in first["species"]]
     n_layers = len(first["climate"]["ocean_heat_capacity"])
-    for name in config_names[1:]:
-        other = configs[name]
-        if [s["name"] for s in other["species"]] != species or len(
-            other["climate"]["ocean_heat_capacity"]
-        ) != n_layers:
-            msg = (
-                f"Config {name!r} has other species or layers than {config_names[0]!r}"
-            )
-            raise ValueError(msg)
 
     bounds = np.asarray(time_axis.values(), dtype=np.float64)
     coords: dict[str, Any] = {
