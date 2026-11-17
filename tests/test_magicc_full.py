@@ -122,3 +122,23 @@ def test_nitrogen_deposition_fixes_nh3_double_count():
 
     np.testing.assert_allclose(reproduced, 2e-3)
     np.testing.assert_allclose(fixed, 3e-3)
+
+
+@pytest.mark.parametrize(("end", "last"), [(2000.0, 2000.0), (2100.0, 2015.0)])
+def test_volcanic_pattern_stops_at_the_run_end(end, last):
+    p = full.default_parameters()
+    files = full.load_inputs(p)
+    volcanic = files["file_volcanic_rf"]
+    values = np.asarray(volcanic.values)
+    expected = pr.volcanic_pattern(
+        volcanic.years,
+        values[:, 0],
+        values[:, 1],
+        start_year=1750.0,
+        last_year=last,
+        scale=p["rf_volcanic_scale"],
+    )
+
+    climate = full.climate_parameters(p, files, 1750.0, end)
+
+    assert climate["subannual_forcing"]["regional_pattern"] == list(expected)

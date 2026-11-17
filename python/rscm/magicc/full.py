@@ -71,8 +71,10 @@ if TYPE_CHECKING:
 __all__ = [
     "BUG_COMPATIBILITY",
     "EFFICACY_METHODS",
+    "FITTED_CONCENTRATIONS",
     "INPUT_FILES",
     "MAGICC7_BUGS",
+    "PREINDUSTRIAL_YEAR",
     "PRESCRIBED_AGENTS",
     "REWRITTEN_PARAMETERS",
     "SECTORAL_EMISSIONS",
@@ -779,7 +781,8 @@ def climate_parameters(
 ) -> dict[str, Any]:
     """ClimateUDEB parameters, with regional and monthly volcanic forcing.
 
-    With ``end_year``, months after the run ends are left out.
+    With ``end_year``, months after the run ends are left out,
+    also from the regional pattern.
     ``bugs`` selects the bugs to reproduce, see `reproduced_bugs`.
     """
     p = parameters
@@ -790,7 +793,7 @@ def climate_parameters(
         values[:, 0],
         values[:, 1],
         start_year=start_year,
-        last_year=p["rf_volc_forc_pattern_max_last_year"],
+        last_year=min(p["rf_volc_forc_pattern_max_last_year"], end_year or np.inf),
         scale=p["rf_volcanic_scale"],
     )
     base = {ours: p[theirs] for ours, theirs in CLIMATE_PARAMETERS.items()}
@@ -1182,12 +1185,15 @@ def _check_initial_concentrations(
         if not isinstance(value, numbers.Real):
             v.add(IssueKind.TYPE, location, f"{value!r} is not a number")
         elif v.finite(location, value):
-            positive = name in LOGARITHMIC_GASES
+            lowest, unit = FITTED_CONCENTRATIONS.get(name, (0.0, ""))
             v.check(
-                float(value) > 0.0 if positive else float(value) >= 0.0,
+                float(value) >= lowest,
                 IssueKind.OUT_OF_RANGE,
                 location,
-                f"{value} must be {'positive' if positive else 'zero or more'}",
+                f"{value} is below {lowest:g} {unit}, the lowest {name} concentration"
+                " the forcing formulae are fitted to"
+                if unit
+                else f"{value} must be zero or more",
             )
 
 
@@ -1262,8 +1268,18 @@ def _check_bugs(v: Validator, bugs: Any) -> None:
 OCEAN_CARBON_METHODS = ("3D-GFDL", "2D-BERN", "HILDA")
 """``oceancc_model`` values RSCM implements, out of MAGICC7's four."""
 
-LOGARITHMIC_GASES = ("CO2", "CH4", "N2O")
-"""Gases whose forcing takes the logarithm or root of the concentration."""
+FITTED_CONCENTRATIONS = {
+    "CO2": (180.0, "ppm"),
+    "CH4": (340.0, "ppb"),
+    "N2O": (200.0, "ppb"),
+}
+"""Lowest concentration and unit of each gas the forcing formulae are fitted to.
+
+The ranges are those of Etminan et al. (2016).
+"""
+
+PREINDUSTRIAL_YEAR = 1750.0
+"""MAGICC7's ``rf_preind_referenceyr``, the year its forcing is measured from."""
 
 SWITCHES = (
     "ch4_include_tempfeedback",
@@ -1670,8 +1686,7 @@ def from_magicc7(  # noqa: PLR0913
 ) -> tuple[ModelConfig, Inputs]:
     """Translate a MAGICC7 run into the configuration and inputs of a MAGICC model.
 
-    ``time_axis`` has annual steps starting in the preindustrial year,
-    1750 in MAGICC7's default configuration.
+    ``time_axis`` has annual steps starting in `PREINDUSTRIAL_YEAR`.
     ``emissions`` has one value per year for ``"<species>|Fossil"`` and
     ``"<species>|Biosphere"`` of each species in `SECTORAL_EMISSIONS`, in its unit,
     and for each name from `halocarbon_species`, in kt of the gas per year.
@@ -1713,6 +1728,14 @@ def from_magicc7(  # noqa: PLR0913
     _check_values(v, given, defaults["parameters"], p)
     species = halocarbon_species()
     data = _check_emissions(v, emissions, time, species)
+    v.check(
+        time[0] == PREINDUSTRIAL_YEAR,
+        IssueKind.OUT_OF_RANGE,
+        "time_axis",
+        f"starts in {time[0]:g}, but must start in {PREINDUSTRIAL_YEAR:g},"
+        " MAGICC7's preindustrial reference year, as RSCM measures forcing"
+        " from the first year",
+    )
     _check_initial_concentrations(v, initial_concentrations)
     _check_bugs(v, bugs)
     v.raise_if_any()
