@@ -43,15 +43,19 @@ pub struct SubannualForcing {
     /// Values per box (NH ocean, NH land, SH ocean, SH land), one per substep
     /// with `steps_per_year` substeps a year. Zero outside the given range.
     pub values: Vec<[FloatValue; 4]>,
+    /// Factor on every value, such as MAGICC7's `rf_volcanic_scale`.
+    #[serde(default = "one")]
+    pub scale: FloatValue,
     /// Regional pattern whose internal efficacy divides `efficacy` for the values of each year,
     /// taken from the equilibrium climate sensitivity of the year before.
     /// A substep belongs to the year it ends in.
     #[serde(default)]
     pub regional_pattern: Option<[FloatValue; 4]>,
-    /// Efficacy over the internal efficacy when `regional_pattern` is set.
+    /// Efficacy over the internal efficacy.
     #[serde(default = "one")]
     pub efficacy: FloatValue,
-    /// Internal efficacy dividing the values of the first two years when `regional_pattern` is set.
+    /// Internal efficacy dividing `efficacy` in every year without `regional_pattern`,
+    /// and in the first two years with it.
     #[serde(default = "one")]
     pub internal_efficacy: FloatValue,
 }

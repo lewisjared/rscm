@@ -574,10 +574,12 @@ def volcanic_substeps(  # noqa: PLR0913
 
     Each valid month in ``times`` (decimal years) drives the substep ending
     at that time, matching MAGICC7's reading of ``.MON`` files.
-    With ``regional_pattern``, ClimateUDEB divides ``efficacy`` by the internal
-    efficacy, which it recalculates each year,
+    ClimateUDEB multiplies the values by ``scale`` and ``efficacy`` over the internal
+    efficacy.
+    With ``regional_pattern`` it recalculates the internal efficacy each year,
     and ``internal_efficacy`` applies only in the first year.
     Months more than a year after ``until`` are left out, as no run to then reads them.
+    The values are a read-only array that specs share, so never make it writeable.
     """
     t = np.asarray(times, dtype=np.float64)
     nh = np.asarray(northern, dtype=np.float64)
@@ -586,15 +588,15 @@ def volcanic_substeps(  # noqa: PLR0913
     if until is not None:
         ok &= t <= until + 1
     t, nh, sh = t[ok], nh[ok], sh[ok]
-    factor = scale
-    if regional_pattern is None:
-        factor *= efficacy / internal_efficacy
-    values = np.stack([nh, nh, sh, sh], axis=1) * factor
-    out: dict[str, object] = {"start": float(t[0]) - 1 / 12, "values": values.tolist()}
+    values = np.stack([nh, nh, sh, sh], axis=1)
+    values.flags.writeable = False
+    out: dict[str, object] = {
+        "start": float(t[0]) - 1 / 12,
+        "values": values,
+        "scale": scale,
+        "internal_efficacy": internal_efficacy,
+        "efficacy": efficacy,
+    }
     if regional_pattern is not None:
-        out |= {
-            "regional_pattern": list(regional_pattern),
-            "internal_efficacy": internal_efficacy,
-            "efficacy": efficacy,
-        }
+        out["regional_pattern"] = list(regional_pattern)
     return out

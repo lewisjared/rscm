@@ -64,6 +64,13 @@ def _copy(value: Any) -> Any:
         return {k: v if type(v) in _ATOMIC else _copy(v) for k, v in value.items()}
     if type(value) is list:
         return [v if type(v) in _ATOMIC else _copy(v) for v in value]
+    # Specs share read-only arrays that own their data, treating them as immutable.
+    if (
+        isinstance(value, np.ndarray)
+        and not value.flags.writeable
+        and value.base is None
+    ):
+        return value
     return copy.deepcopy(value)
 
 
@@ -298,10 +305,16 @@ def _differ(a: Any, b: Any) -> bool:
     return not np.array_equal(np.asarray(a), np.asarray(b), equal_nan=True)
 
 
+def _changed(a: Any, b: Any) -> bool:
+    if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
+        return a is not b and _differ(a, b)
+    return bool(a != b)
+
+
 def _show(value: Any) -> str:
     if isinstance(value, float) and math.isinf(value):
         return "inf" if value > 0 else "-inf"
-    if isinstance(value, list) and len(value) > 4:  # noqa: PLR2004
+    if isinstance(value, list | np.ndarray) and len(value) > 4:  # noqa: PLR2004
         return f"<{len(value)} values>"
     return repr(value)
 
@@ -342,7 +355,8 @@ def _diff_components(
             )
         pa = _flatten(dict(ca[name].parameters), "")
         pb = _flatten(dict(cb[name].parameters), "")
-        changed = sorted(k for k in pa.keys() | pb.keys() if pa.get(k) != pb.get(k))
+        keys = pa.keys() | pb.keys()
+        changed = sorted(k for k in keys if _changed(pa.get(k), pb.get(k)))
         lines += [
             f"  ~ {name}.{k}: {_show(pa.get(k))} -> {_show(pb.get(k))}"
             for k in changed[:limit]

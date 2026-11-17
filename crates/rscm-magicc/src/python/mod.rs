@@ -1,4 +1,7 @@
+use numpy::{PyReadonlyArray2, PyUntypedArray};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyList};
 use pyo3::{pymodule, Bound, PyResult};
 use rscm_core::names::{
     HEAT_UPTAKE, OCEAN_HEAT_CONTENT, SEA_LEVEL_RISE_THERMAL_EXPANSION, SEA_SURFACE_TEMPERATURE,
@@ -7,6 +10,7 @@ use rscm_core::names::{
 
 use rscm_core::create_component_builder;
 use rscm_core::python::PyRustComponent;
+use rscm_core::timeseries::FloatValue;
 
 use crate::carbon::{CO2Budget, OceanCarbon, Permafrost, TerrestrialCarbon};
 use crate::chemistry::{CH4Chemistry, CH4Oxidation, HalocarbonChemistry, N2OChemistry};
@@ -63,11 +67,13 @@ impl ClimateUDEBBuilder {
     pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
         use pyo3::exceptions::PyValueError;
 
-        let parameters = pythonize::depythonize::<ClimateUDEBParameters>(&parameters);
-        match parameters {
-            Ok(parameters) => Ok(Self { parameters }),
-            Err(e) => Err(PyValueError::new_err(format!("{}", e))),
+        let (parameters, values) = take_subannual_values(&parameters)?;
+        let mut parameters = pythonize::depythonize::<ClimateUDEBParameters>(&parameters)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        if let (Some(forcing), Some(values)) = (parameters.subannual_forcing.as_mut(), values) {
+            forcing.values = values;
         }
+        Ok(Self { parameters })
     }
     pub fn build(&self) -> PyResult<PyRustComponent> {
         use pyo3::exceptions::PyValueError;
@@ -76,6 +82,51 @@ impl ClimateUDEBBuilder {
             .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
         Ok(PyRustComponent(std::sync::Arc::new(component)))
     }
+}
+
+/// Subannual forcing values, one row of four boxes per substep.
+type SubannualValues = Vec<[FloatValue; 4]>;
+
+/// The parameters without a numpy array of subannual forcing values, and those values.
+///
+/// pythonize reads lists and tuples but not numpy arrays.
+fn take_subannual_values<'py>(
+    parameters: &Bound<'py, PyAny>,
+) -> PyResult<(Bound<'py, PyAny>, Option<SubannualValues>)> {
+    let unchanged = || Ok((parameters.clone(), None));
+    let Ok(dict) = parameters.cast::<PyDict>() else {
+        return unchanged();
+    };
+    let forcing = dict.get_item("subannual_forcing")?;
+    let Some(forcing) = forcing.as_ref().and_then(|f| f.cast::<PyDict>().ok()) else {
+        return unchanged();
+    };
+    let values = forcing.get_item("values")?;
+    if !values
+        .as_ref()
+        .is_some_and(|v| v.is_instance_of::<PyUntypedArray>())
+    {
+        return unchanged();
+    }
+    let array = values
+        .and_then(|v| v.extract::<PyReadonlyArray2<FloatValue>>().ok())
+        .ok_or_else(|| PyValueError::new_err("subannual_forcing values must be 2-D float64"))?;
+    let array = array.as_array();
+    if array.ncols() != 4 {
+        return Err(PyValueError::new_err(format!(
+            "subannual_forcing values need 4 boxes per substep, got {}",
+            array.ncols()
+        )));
+    }
+    let rows = array
+        .outer_iter()
+        .map(|row| [row[0], row[1], row[2], row[3]])
+        .collect();
+    let forcing = forcing.copy()?;
+    forcing.set_item("values", PyList::empty(parameters.py()))?;
+    let dict = dict.copy()?;
+    dict.set_item("subannual_forcing", forcing)?;
+    Ok((dict.into_any(), Some(rows)))
 }
 
 // Chemistry components
