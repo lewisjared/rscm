@@ -168,24 +168,17 @@ See [Key Concepts](key_concepts.md#dependency-graph) for details.
 
 **Missing time axis.**
 Always call `with_time_axis` before `build()`.
-Without one, the builder falls back to annual steps from 2000 to 2099,
-whatever years the prescribed data covers.
+Without one, the model does not run on the years of your data.
 
 **Misspelt variable names.**
-A prescribed variable whose name no component reads is ignored,
-so a typo shows up as the correctly spelt input being missing:
-
-```text
-ValueError: Inputs with no producer, prescribed data or initial value:
-'Effective Radiative Forcing' (read by TwoLayer).
-```
-
+A misspelt prescribed variable leaves the input it was meant for unsupplied,
+so `build()` raises a `ValueError` that names the variable.
 Compare the name in the message with the one you passed.
 `ModelBuilder.prescribed_inputs()` lists every input no component produces, with its unit and consumers,
 and the [Components](components/index.md) reference lists the names each component reads and writes.
 
 **Missing parameters.**
-`from_parameters` needs every parameter, and names the first one missing, such as ``missing field `a` ``.
+`from_parameters` needs every parameter, and its `ValueError` names what is missing.
 Start from the defaults in `TwoLayerParameters`, as the quickstart does,
 or from the component's entry in the [Components](components/index.md) reference.
 
