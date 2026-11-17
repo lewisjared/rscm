@@ -52,6 +52,40 @@ CLIMATE_CONFIGS = (
     "gamma_autocorrelation",
 )
 GAMMA_AUTOCORRELATION = 2.0
+# Species configs FaIR copies from the species CSV, apart from the gas boxes.
+SPECIES_CONFIGS = (
+    "tropospheric_adjustment",
+    "forcing_efficacy",
+    "forcing_temperature_feedback",
+    "forcing_scale",
+    "molecular_weight",
+    "baseline_concentration",
+    "forcing_reference_concentration",
+    "iirf_0",
+    "iirf_airborne",
+    "iirf_uptake",
+    "iirf_temperature",
+    "baseline_emissions",
+    "g0",
+    "g1",
+    "greenhouse_gas_radiative_efficiency",
+    "contrails_radiative_efficiency",
+    "erfari_radiative_efficiency",
+    "h2o_stratospheric_factor",
+    "lapsi_radiative_efficiency",
+    "land_use_cumulative_emissions_to_forcing",
+    "ozone_radiative_efficiency",
+    "cl_atoms",
+    "br_atoms",
+    "fractional_release",
+    "ch4_lifetime_chemical_sensitivity",
+    "aci_shape",
+)
+PROPERTY_FLAGS = (
+    "greenhouse_gas",
+    "aerosol_chemistry_from_emissions",
+    "aerosol_chemistry_from_concentration",
+)
 
 # Calculated forcing types that sum their drivers linearly.
 LINEAR_TYPES = ("ari", "ozone", "contrails", "lapsi", "h2o stratospheric", "land use")
@@ -249,10 +283,6 @@ def _eesc(config: FairConfig) -> ComponentSpec:
 
 
 def _ghg_forcing(config: FairConfig, gases: list[Species]) -> ComponentSpec:
-    if config["options"]["ghg_method"] != "meinshausen2020":
-        msg = f"ghg_method {config['options']['ghg_method']!r} is not implemented"
-        raise NotImplementedError(msg)
-
     def gas(entry: Species) -> dict[str, Any]:
         return {
             "concentration": naming.concentration(entry["name"]),
@@ -267,13 +297,10 @@ def _ghg_forcing(config: FairConfig, gases: list[Species]) -> ComponentSpec:
             **_scale(entry),
         }
 
-    major = {}
-    for kind in ("co2", "ch4", "n2o"):
-        found = [s for s in gases if s["type"] == kind]
-        if not found:
-            msg = "Meinshausen et al. (2020) forcing needs CO2, CH4 and N2O"
-            raise ValueError(msg)
-        major[kind] = gas(found[0])
+    major = {
+        kind: gas(next(s for s in gases if s["type"] == kind))
+        for kind in ("co2", "ch4", "n2o")
+    }
     minor = [gas(s) for s in gases if s["type"] not in major]
     return ComponentSpec(GHGForcingBuilder, {**major, "minor": minor})
 
@@ -322,24 +349,26 @@ def _chemistry_drivers(
     ]
 
 
-def _aerosol_drivers(
+def aerosol_drivers(
     config: FairConfig, coefficient: str, key: str = "radiative_efficiency"
-) -> list[dict[str, Any]]:
-    """Drivers in species order.
+) -> list[tuple[Species, dict[str, Any]]]:
+    """Species and drivers of an aerosol forcing, in species order.
 
+    Species with a missing or zero `coefficient` are left out,
+    as FaIR's NaN-skipping sum drops their terms.
     Calculated EESC is left out because FaIR calculates it after the aerosol forcing,
     so it is missing when the aerosol forcing reads it.
     """
     drivers = []
     for s in config["species"]:
-        if _missing(s.get(coefficient)):
+        if not _nonzero(s.get(coefficient)):
             continue
         if s["aerosol_chemistry_from_emissions"]:
-            drivers.append(_driver(s, "emissions", coefficient, key=key))
+            drivers.append((s, _driver(s, "emissions", coefficient, key=key)))
         elif s["aerosol_chemistry_from_concentration"] and not (
             s["type"] == "eesc" and s["input_mode"] == "calculated"
         ):
-            drivers.append(_driver(s, "concentration", coefficient, key=key))
+            drivers.append((s, _driver(s, "concentration", coefficient, key=key)))
     return drivers
 
 
@@ -356,18 +385,32 @@ _LINEAR_DRIVERS = {
 }
 
 
-def _linear_drivers(config: FairConfig, kind: str) -> list[dict[str, Any]]:
+# Coefficient of each linear forcing type.
+LINEAR_COEFFICIENTS = {
+    "ari": "erfari_radiative_efficiency",
+    "ozone": "ozone_radiative_efficiency",
+    **{kind: coefficient for kind, (coefficient, _, _) in _LINEAR_DRIVERS.items()},
+}
+
+
+def linear_drivers(
+    config: FairConfig, kind: str
+) -> list[tuple[Species, dict[str, Any]]]:
+    """Species and drivers of a linear forcing type, in species order."""
     species = config["species"]
     if kind == "ari":
-        return _aerosol_drivers(config, "erfari_radiative_efficiency")
+        return aerosol_drivers(config, LINEAR_COEFFICIENTS[kind])
     if kind == "ozone":
-        coefficient = "ozone_radiative_efficiency"
-        return _chemistry_drivers(
-            config, "concentration", coefficient
-        ) + _chemistry_drivers(config, "emissions", coefficient)
+        coefficient = LINEAR_COEFFICIENTS[kind]
+        return [
+            (s, _driver(s, driver, coefficient))
+            for driver in ("concentration", "emissions")
+            for s in species
+            if s[f"aerosol_chemistry_from_{driver}"]
+        ]
     coefficient, driver, baselined = _LINEAR_DRIVERS[kind]
     return [
-        _driver(s, driver, coefficient, baselined=baselined)
+        (s, _driver(s, driver, coefficient, baselined=baselined))
         for s in species
         if _nonzero(s.get(coefficient))
     ]
@@ -378,7 +421,9 @@ def _linear_forcing(config: FairConfig, entry: Species) -> ComponentSpec:
         LinearForcingBuilder,
         {
             "forcing": naming.forcing(entry),
-            "drivers": _linear_drivers(config, entry["type"]),
+            "drivers": [d for _, d in linear_drivers(config, entry["type"])],
+            # FaIR sums every linear forcing apart from ozone with np.nansum.
+            "skip_nan_terms": entry["type"] != "ozone",
             "temperature_feedback": _value(entry["forcing_temperature_feedback"]),
             **_scale(entry),
         },
@@ -390,7 +435,9 @@ def _aerosol_cloud(config: FairConfig, entry: Species) -> ComponentSpec:
         AerosolCloudBuilder,
         {
             "forcing": naming.forcing(entry),
-            "drivers": _aerosol_drivers(config, "aci_shape", key="shape"),
+            "drivers": [
+                d for _, d in aerosol_drivers(config, "aci_shape", key="shape")
+            ],
             "scale": config["species_configs"]["aci_scale"],
             "temperature_feedback": _value(entry["forcing_temperature_feedback"]),
             **_scale(entry),
@@ -486,12 +533,18 @@ def component_specs(
     Each linear forcing is named by its species, such as ``LinearForcing[ozone]``.
     Without `energy_balance`, another climate component must write the surface
     temperature from the total effective radiative forcing.
+    Raises an `InputValidationError` if the configuration is invalid.
     """
+    from rscm.fair.validation import validate  # noqa: PLC0415 (circular import)
+
+    validate(config)
+    return _component_specs(config, energy_balance=energy_balance)
+
+
+def _component_specs(
+    config: FairConfig, *, energy_balance: bool
+) -> dict[str, ComponentSpec]:
     gases = [s for s in config["species"] if is_ghg(s)]
-    prescribed = [s["name"] for s in gases if s["input_mode"] == "forcing"]
-    if prescribed:
-        msg = f"FaIR overwrites prescribed greenhouse gas forcing: {prescribed}"
-        raise ValueError(msg)
     result = {}
     if thornhill(config):
         result["CH4Lifetime"] = _ch4_lifetime(config)

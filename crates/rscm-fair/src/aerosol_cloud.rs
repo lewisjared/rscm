@@ -134,7 +134,9 @@ impl AerosolCloud {
                 .zip(values)
                 .filter(|(d, _)| d.driver == driver)
                 .map(|(d, v)| d.shape * v)
-                .sum()
+                // FaIR's np.nansum drops a NaN term.
+                .filter(|term| !term.is_nan())
+                .fold(0.0, |sum, term| sum + term)
         };
         p.scale * (1.0 + sum(Driver::Emissions) + sum(Driver::Concentration)).ln()
     }
@@ -213,6 +215,37 @@ mod tests {
         .unwrap();
         assert_relative_eq!(c.forcing(&[2.4]), 0.0);
         assert!(c.forcing(&[100.0]) < 0.0);
+    }
+
+    #[test]
+    fn nan_terms_drop_out() {
+        let driver = |variable: &str, baseline| CloudDriver {
+            variable: variable.into(),
+            unit: "Mt/yr".into(),
+            driver: Driver::Emissions,
+            baseline,
+            shape: 0.0169,
+        };
+        let parameters = |drivers| AerosolCloudParameters {
+            forcing: ERF_AEROSOLS_INDIRECT_EFFECT.into(),
+            drivers,
+            scale: -1.03,
+            forcing_scale: 1.0,
+            tropospheric_adjustment: 0.0,
+            temperature_feedback: 0.0,
+            surface_temperature: surface_temperature(),
+        };
+        let sulfur =
+            AerosolCloud::from_parameters(parameters(vec![driver(EMISSIONS_SOX, 2.4)])).unwrap();
+        let with_nan = AerosolCloud::from_parameters(parameters(vec![
+            driver(EMISSIONS_SOX, 2.4),
+            driver("Emissions|BC", f64::NAN),
+        ]))
+        .unwrap();
+        assert_eq!(
+            with_nan.forcing(&[100.0, f64::NAN]),
+            sulfur.forcing(&[100.0])
+        );
     }
 
     #[test]

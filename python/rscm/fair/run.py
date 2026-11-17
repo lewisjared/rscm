@@ -11,12 +11,13 @@ from rscm.core import InterpolationStrategy, Timeseries
 from rscm.fair import naming
 from rscm.fair.config import (
     FairConfig,
-    component_specs,
+    _component_specs,
     forcing_agents,
     forcing_subtotals,
     initial_values,
     lags,
 )
+from rscm.fair.validation import validate
 from rscm.spec import ModelSetup, ModelSpec
 
 if TYPE_CHECKING:
@@ -71,7 +72,25 @@ def setup_model(
 
     FaIR ignores `forcing_scale` for prescribed forcing.
     `scale_prescribed_forcing` applies it to the inputs, as fair-calibrate does.
+    Raises an `InputValidationError` before building anything
+    if the configuration or inputs are invalid, see `rscm.fair.validation`.
     """
+    validate(
+        config, inputs, time_axis, scale_prescribed_forcing=scale_prescribed_forcing
+    )
+    return _setup_model(
+        config, inputs, time_axis, scale_prescribed_forcing=scale_prescribed_forcing
+    )
+
+
+def _setup_model(
+    config: FairConfig,
+    inputs: Mapping[str, tuple[ArrayLike, str]],
+    time_axis: TimeAxis,
+    *,
+    scale_prescribed_forcing: bool,
+) -> ModelSetup:
+    """`setup_model` for a configuration and inputs that are already validated."""
     n_timebounds = len(time_axis)
     scales = prescribed_forcing_scales(config) if scale_prescribed_forcing else {}
     prescribed = {}
@@ -92,10 +111,12 @@ def setup_model(
         if s["input_mode"] == "forcing" and name in first:
             initial[naming.forcing(s)] = first[name]
     total = float(np.nansum([initial[agent] for agent in agents]))
-    initial[names.ERF] = initial[names.NET_ENERGY_IMBALANCE] = total
+    # FaIR starts its energy balance state from the first total forcing.
+    for name in (names.ERF, names.NET_ENERGY_IMBALANCE, names.STOCHASTIC_FORCING):
+        initial[name] = total
     initial |= forcing_subtotals(config, initial)
     spec = ModelSpec(
-        components=component_specs(config),
+        components=_component_specs(config, energy_balance=True),
         lags=lags(config),
         initial_values=initial,
         name="FaIR",

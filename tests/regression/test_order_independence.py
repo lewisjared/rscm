@@ -99,9 +99,9 @@ def test_fair_shuffled(monkeypatch, case):
     run = test_fair.load(case)
     inputs = test_fair._inputs(run.config, run.timebounds, run.timepoints)
     expected = _outputs(fair_run.setup_model(run.config, inputs, run.time_axis).run())
-    original = fair_run.component_specs
+    original = fair_run._component_specs
     for seed in range(3):
-        monkeypatch.setattr(fair_run, "component_specs", _shuffled(original, seed))
+        monkeypatch.setattr(fair_run, "_component_specs", _shuffled(original, seed))
         _assert_identical(
             _outputs(fair_run.setup_model(run.config, inputs, run.time_axis).run()),
             expected,

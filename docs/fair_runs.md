@@ -141,16 +141,69 @@ so another component can write `Surface Air Temperature Change` from `Effective 
 The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateUDEB` this way.
 `initial_values` takes the same flag.
 
+## Validation
+
+`setup_model`, `components`, `run_ensemble`, `read_calibration` and `from_fair`
+check the configuration and inputs before building a model.
+They collect every problem and raise one `rscm.validation.InputValidationError`,
+whose issues each name a kind and a location:
+a configuration key such as `climate.ocean_heat_capacity`,
+a species parameter such as `HFC-23.forcing_reference_concentration`,
+or an input variable.
+`rscm.fair.validation.validate(config, inputs, time_axis)` runs the same checks on their own.
+
+They reject:
+
+- Unknown configuration keys and calibration columns (`unknown-key`).
+- Fewer than two ocean layers, non-positive heat capacities or mismatched layer lengths.
+- NaN or infinite climate parameters, and species parameters that a calculation reads,
+  such as the CH4 lifetime sensitivity of each precursor
+  or the `forcing_scale` of prescribed forcing when `scale_prescribed_forcing` applies it.
+  Terms a calculation skips, such as a zero coefficient, are not checked.
+- Species a calculation needs but the configuration lacks (`missing`):
+  calculated CO2 without CO2 FFI and CO2 AFOLU in emissions mode,
+  land use without CO2 AFOLU, calculated EESC without CFC-11,
+  and Meinshausen 2020 forcing without CO2, CH4 and N2O.
+- Missing inputs, inputs of the wrong length and a time axis with fewer than two bounds.
+- NaN or infinite inputs, apart from emissions at the last bound, which no step reads.
+- Options RSCM lacks (`unsupported`), listed under the differences below.
+
+`error.exit_code` follows `sysexits.h`, so a script can `sys.exit(error.exit_code)`:
+
+| Kind | Exit code |
+| --- | --- |
+| `non-finite`, `out-of-range`, `shape` | 65 (`EX_DATAERR`) |
+| `missing`, `unknown-key` | 78 (`EX_CONFIG`) |
+| `unsupported` | 69 (`EX_UNAVAILABLE`) |
+
+The error takes the exit code of its first issue.
+
 ## Differences from FaIR
 
-- Stochastic runs are not supported. `read_calibration` ignores the stochastic parameters
-  and `from_fair` rejects a stochastic config.
 - Only the Meinshausen 2020 greenhouse gas method is implemented.
-- `components` rejects greenhouse gases with prescribed forcing.
+  `leach2021`, `etminan2016` and `myhre1998` are rejected as unsupported.
+- Greenhouse gases with prescribed forcing are rejected as unsupported.
   FaIR 2.2.5 overwrites it with the forcing of the unset concentration, which is NaN,
   so it drops out of the total.
+- Like FaIR's `np.nansum`, ERFari, ERFaci, the minor linear forcings and the total skip a NaN term.
+  Ozone forcing is a plain sum, as in FaIR, so a NaN term makes it NaN.
+  Validation rejects NaN parameters and inputs before the run, so this only matters
+  for terms a calculation drops, such as a species without a coefficient.
 - FaIR calculates EESC after the aerosol forcing, so calculated EESC never reaches ERFari or ERFaci.
   `rscm.fair` leaves it out of those drivers to match. Prescribed EESC does reach them.
+- `from_fair` reads species properties from `properties_df`, as FaIR runs from it,
+  and copies FaIR's arrays.
+  It rejects as unsupported what RSCM cannot reproduce:
+    - A stochastic config.
+    - `temperature_prescribed`.
+    - A `ghg_forcing_offset` other than FaIR's default.
+    - An initial state other than FaIR's default, such as a nonzero temperature,
+      cumulative emissions, gas partitions, forcing or a concentration away from the baseline.
+      An uninitialised (NaN) initial state is rejected as non-finite.
+    - A FAIR that has already run.
+      FaIR overwrites its gas partitions with their final state,
+      and adds any temperature feedback to prescribed forcing in place.
+- `run_ensemble` starts cumulative emissions from 0, the only initial value `from_fair` accepts.
 - Restarts from a previous run are not supported.
 
 ## Parity tests
@@ -168,4 +221,5 @@ uv run --no-project --with fair==2.2.5 --with numpy==2.4.2 \
 
 The script disables NumPy's AVX-512 `exp`.
 It differs from the C library's by an ulp,
-which CO2's 1e9-year gas box turns into a relative difference of about 5e-9.
+which CO2's 1e9-year gas box turns into a relative difference
+that reaches 4.8e-7 over 2500-year runs.
