@@ -2,9 +2,7 @@
 
 use crate::component::{ComponentState, GridType, TimeseriesType};
 use crate::errors::{RSCMError, RSCMResult};
-use crate::state::{
-    lookup_order, InputState, ReadTransformInfo, StateValue, TransformContext, VariableSource,
-};
+use crate::state::{lookup_order, InputState, ReadTransformInfo, StateValue, VariableSource};
 use crate::timeseries::{Time, TimeAxis};
 use crate::timeseries_collection::TimeseriesCollection;
 use petgraph::dot::{Config, Dot};
@@ -133,7 +131,8 @@ struct ComponentPlan {
     name: String,
     /// Collection index of each input in `lookup_order`, which no step changes.
     inputs: Vec<usize>,
-    transforms: Option<TransformContext>,
+    /// Read transform of each input, aligned with `inputs`.
+    input_transforms: Vec<Option<ReadTransformInfo>>,
     /// Declared outputs in `lookup_order`.
     outputs: Vec<OutputPlan>,
 }
@@ -418,37 +417,8 @@ impl Model {
     fn component_plan(&self, node: NodeIndex) -> ComponentPlan {
         let component = &self.components[node];
         let name = Self::extract_component_name(component);
-        let input_names = component.input_names();
-        let mut read_transform_info = HashMap::new();
-        for input in &input_names {
-            let key = (input.clone(), name.clone());
-            let unit_factor = self.unit_conversions.get(&key).copied().unwrap_or(1.0);
-            let variable_source = self.variable_sources.get(&key).copied().unwrap_or_default();
-            let timeseries_type = self.timeseries_type(input).unwrap_or(TimeseriesType::Point);
-            let source_grid = self
-                .read_transforms
-                .get(input)
-                .map_or_else(|| self.stored_grid(input), |t| t.source_grid);
-            // A grid input always carries the model's weights, so a global read of it uses them.
-            if source_grid != GridType::Scalar
-                || (unit_factor - 1.0).abs() > f64::EPSILON
-                || variable_source != VariableSource::Prescribed
-                || timeseries_type != TimeseriesType::Point
-            {
-                let weights = self.grid_weights.get(&source_grid).cloned();
-                read_transform_info.insert(
-                    input.clone(),
-                    ReadTransformInfo::new(source_grid, weights)
-                        .with_conversion_factor(unit_factor)
-                        .with_source(variable_source)
-                        .with_timeseries_type(timeseries_type),
-                );
-            }
-        }
-        let transforms = (!read_transform_info.is_empty()).then_some(TransformContext {
-            read_transforms: read_transform_info,
-        });
-        let mut inputs: Vec<usize> = input_names
+        let mut inputs: Vec<usize> = component
+            .input_names()
             .iter()
             .map(|input| {
                 self.collection
@@ -459,6 +429,10 @@ impl Model {
         inputs.sort_by(|&a, &b| {
             lookup_order(&self.collection.item(a).name, &self.collection.item(b).name)
         });
+        let input_transforms = inputs
+            .iter()
+            .map(|&index| self.read_transform(&self.collection.item(index).name, &name))
+            .collect();
         let mut outputs: Vec<OutputPlan> = component
             .output_names()
             .into_iter()
@@ -475,9 +449,33 @@ impl Model {
             node,
             name,
             inputs,
-            transforms,
+            input_transforms,
             outputs,
         }
+    }
+
+    /// How `component` reads `input`, or `None` for a plain scalar read.
+    fn read_transform(&self, input: &str, component: &str) -> Option<ReadTransformInfo> {
+        let key = (input.to_string(), component.to_string());
+        let unit_factor = self.unit_conversions.get(&key).copied().unwrap_or(1.0);
+        let variable_source = self.variable_sources.get(&key).copied().unwrap_or_default();
+        let timeseries_type = self.timeseries_type(input).unwrap_or(TimeseriesType::Point);
+        let source_grid = self
+            .read_transforms
+            .get(input)
+            .map_or_else(|| self.stored_grid(input), |t| t.source_grid);
+        // A grid input always carries the model's weights, so a global read of it uses them.
+        let plain = source_grid == GridType::Scalar
+            && (unit_factor - 1.0).abs() <= f64::EPSILON
+            && variable_source == VariableSource::Prescribed
+            && timeseries_type == TimeseriesType::Point;
+        (!plain).then(|| {
+            let weights = self.grid_weights.get(&source_grid).cloned();
+            ReadTransformInfo::new(source_grid, weights)
+                .with_conversion_factor(unit_factor)
+                .with_source(variable_source)
+                .with_timeseries_type(timeseries_type)
+        })
     }
 
     /// Grid of the stored series `name`, or `Scalar` if there is none.
@@ -515,12 +513,9 @@ impl Model {
             .iter()
             .map(|&index| self.collection.item(index))
             .collect();
-        let input_state = InputState::build_with_transforms_ref(
-            items,
-            self.current_time(),
-            plan.transforms.as_ref(),
-        )
-        .with_time_index(self.time_index);
+        let input_state = InputState::build(items, self.current_time())
+            .with_input_transforms(&plan.input_transforms)
+            .with_time_index(self.time_index);
 
         let (start, end) = self.current_time_bounds();
 

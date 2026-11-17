@@ -155,12 +155,28 @@ impl<'a> AggregatingFourBoxWindow<'a> {
         unit_conversion_factor: f64,
         variable_source: VariableSource,
     ) -> Self {
-        let weights = weights.map(|w| {
-            let arr: [f64; 4] = w
-                .as_slice()
-                .try_into()
-                .expect("four-box grid weights must have 4 elements");
-            arr
+        Self::with_borrowed_weights(
+            timeseries,
+            time_index,
+            name,
+            weights.as_deref(),
+            unit_conversion_factor,
+            variable_source,
+        )
+    }
+
+    /// [`Self::with_source`] with borrowed weights, so a read allocates nothing.
+    pub(crate) fn with_borrowed_weights(
+        timeseries: &'a GridTimeseries<FloatValue, FourBoxGrid>,
+        time_index: usize,
+        name: &'a str,
+        weights: Option<&[f64]>,
+        unit_conversion_factor: f64,
+        variable_source: VariableSource,
+    ) -> Self {
+        let weights = weights.map(|w| -> [f64; 4] {
+            w.try_into()
+                .expect("four-box grid weights must have 4 elements")
         });
         Self {
             timeseries,
@@ -343,12 +359,28 @@ impl<'a> AggregatingHemisphericWindow<'a> {
         unit_conversion_factor: f64,
         variable_source: VariableSource,
     ) -> Self {
-        let weights = weights.map(|w| {
-            let arr: [f64; 2] = w
-                .as_slice()
-                .try_into()
-                .expect("Hemispheric weights must have 2 elements");
-            arr
+        Self::with_borrowed_weights(
+            timeseries,
+            time_index,
+            name,
+            weights.as_deref(),
+            unit_conversion_factor,
+            variable_source,
+        )
+    }
+
+    /// [`Self::with_source`] with borrowed weights, so a read allocates nothing.
+    pub(crate) fn with_borrowed_weights(
+        timeseries: &'a GridTimeseries<FloatValue, HemisphericGrid>,
+        time_index: usize,
+        name: &'a str,
+        weights: Option<&[f64]>,
+        unit_conversion_factor: f64,
+        variable_source: VariableSource,
+    ) -> Self {
+        let weights = weights.map(|w| -> [f64; 2] {
+            w.try_into()
+                .expect("Hemispheric weights must have 2 elements")
         });
         Self {
             timeseries,
