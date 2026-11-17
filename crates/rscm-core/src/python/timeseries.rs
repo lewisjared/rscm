@@ -1,13 +1,14 @@
 use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, NextStrategy, PreviousStrategy,
 };
-use crate::python::resolve_index;
+use crate::python::{check_unit, resolve_index};
 use crate::spatial::{FourBoxGrid, HemisphericGrid, ScalarGrid, ScalarRegion};
 use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis, Timeseries};
 use numpy::ndarray::{Array, Axis, Dimension, Ix1, Ix2};
 use numpy::{PyArray1, PyArray2, PyArrayDyn, PyArrayMethods, ToPyArray as _};
 use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 use std::sync::Arc;
 
 /// Read an array-like of reals as a float64 array with the dimensions of `D`.
@@ -32,11 +33,23 @@ fn float_array<D: Dimension>(values: &Bound<PyAny>, name: &str) -> PyResult<Arra
         })
 }
 
+fn checked_unit(kind: &str, unit: String) -> PyResult<String> {
+    check_unit(&unit).map_err(|e| {
+        PyValueError::new_err(format!(
+            "{kind} unit '{unit}' is not a known unit: {e}. Use '' for no unit"
+        ))
+    })?;
+    Ok(unit)
+}
+
 fn length_mismatch(values: usize, time_axis: usize) -> PyErr {
     PyValueError::new_err(format!(
         "values has length {values} but time_axis has length {time_axis}"
     ))
 }
+
+/// A callable and its arguments, which `__reduce__` returns to pickle an object.
+pub(crate) type Reduced<'py> = (Bound<'py, PyAny>, Bound<'py, PyTuple>);
 
 pub(crate) fn time_axis_repr(axis: &TimeAxis) -> String {
     format!(
@@ -47,7 +60,7 @@ pub(crate) fn time_axis_repr(axis: &TimeAxis) -> String {
     )
 }
 
-#[pyclass]
+#[pyclass(module = "rscm._lib.core")]
 #[pyo3(name = "TimeAxis")]
 pub struct PyTimeAxis(pub Arc<TimeAxis>);
 
@@ -59,6 +72,11 @@ impl PyTimeAxis {
 
     fn __eq__(&self, other: PyRef<Self>) -> bool {
         self.0.bounds() == other.0.bounds()
+    }
+
+    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<Reduced<'py>> {
+        let from_bounds = py.get_type::<Self>().getattr("from_bounds")?;
+        Ok((from_bounds, (self.bounds(py),).into_pyobject(py)?))
     }
 
     #[staticmethod]
@@ -98,13 +116,36 @@ impl PyTimeAxis {
     }
 }
 
-#[derive(Clone)]
-#[pyclass(frozen)]
+#[derive(Clone, PartialEq)]
+#[pyclass(frozen, eq, module = "rscm._lib.core")]
 #[pyo3(name = "InterpolationStrategy")]
 pub enum PyInterpolationStrategy {
     Linear,
     Previous,
     Next,
+}
+
+#[pymethods]
+impl PyInterpolationStrategy {
+    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<Reduced<'py>> {
+        let name = match self {
+            Self::Linear => "Linear",
+            Self::Previous => "Previous",
+            Self::Next => "Next",
+        };
+        let getattr = py.import("builtins")?.getattr("getattr")?;
+        Ok((getattr, (py.get_type::<Self>(), name).into_pyobject(py)?))
+    }
+}
+
+impl From<&InterpolationStrategy> for PyInterpolationStrategy {
+    fn from(value: &InterpolationStrategy) -> Self {
+        match value {
+            InterpolationStrategy::Linear(_) => PyInterpolationStrategy::Linear,
+            InterpolationStrategy::Previous(_) => PyInterpolationStrategy::Previous,
+            InterpolationStrategy::Next(_) => PyInterpolationStrategy::Next,
+        }
+    }
 }
 
 impl From<PyInterpolationStrategy> for InterpolationStrategy {
@@ -121,7 +162,7 @@ impl From<PyInterpolationStrategy> for InterpolationStrategy {
     }
 }
 
-#[pyclass]
+#[pyclass(module = "rscm._lib.core")]
 #[pyo3(name = "Timeseries")]
 pub struct PyTimeseries(pub Timeseries<FloatValue>);
 
@@ -135,6 +176,7 @@ impl PyTimeseries {
         interpolation_strategy: PyInterpolationStrategy,
     ) -> PyResult<Self> {
         let interpolation_strategy: InterpolationStrategy = interpolation_strategy.into();
+        let unit = checked_unit("Timeseries", unit)?;
 
         let values = float_array::<Ix1>(&values, "values")?;
         let time_axis = time_axis.borrow().0.clone();
@@ -174,6 +216,21 @@ impl PyTimeseries {
 
     fn __repr__(&self) -> String {
         format!("<Timeseries len={}>", self.0.len())
+    }
+
+    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<Reduced<'py>> {
+        let args = (
+            self.values(py),
+            self.time_axis(),
+            self.unit(),
+            self.interpolation_strategy(),
+        );
+        Ok((py.get_type::<Self>().into_any(), args.into_pyobject(py)?))
+    }
+
+    #[getter]
+    fn interpolation_strategy(&self) -> PyInterpolationStrategy {
+        self.0.interpolation_strategy().into()
     }
 
     fn set(&mut self, time_index: isize, value: FloatValue) -> PyResult<()> {
@@ -259,6 +316,7 @@ impl PyFourBoxTimeseries {
         unit: String,
         interpolation_strategy: PyInterpolationStrategy,
     ) -> PyResult<Self> {
+        let unit = checked_unit("FourBoxTimeseries", unit)?;
         let values = float_array::<Ix2>(&values, "values")?;
         let time_axis = time_axis.borrow().0.clone();
         if values.nrows() != time_axis.len() || values.ncols() != 4 {
@@ -319,6 +377,7 @@ impl PyHemisphericTimeseries {
         unit: String,
         interpolation_strategy: PyInterpolationStrategy,
     ) -> PyResult<Self> {
+        let unit = checked_unit("HemisphericTimeseries", unit)?;
         let values = float_array::<Ix2>(&values, "values")?;
         let time_axis = time_axis.borrow().0.clone();
         if values.nrows() != time_axis.len() || values.ncols() != 2 {

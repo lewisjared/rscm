@@ -172,6 +172,14 @@ pub(crate) fn resolve_index(index: isize, len: usize) -> Option<usize> {
     (resolved < len).then_some(resolved)
 }
 
+/// Check a unit parses with the same parser as `Unit`, allowing an empty unit.
+pub(crate) fn check_unit(unit: &str) -> Result<(), crate::units::ParseError> {
+    if unit.is_empty() {
+        return Ok(());
+    }
+    crate::units::Unit::parse(unit)?.dimension().map(|_| ())
+}
+
 /// Convert a Python exception into an error that keeps its traceback.
 pub(crate) fn rscm_error_from_py(py: Python<'_>, err: PyErr) -> RSCMError {
     if !err.is_instance_of::<PyException>(py) {

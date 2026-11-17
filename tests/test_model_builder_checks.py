@@ -6,7 +6,10 @@ import numpy as np
 import pytest
 
 from rscm.core import (
+    FourBoxGrid,
     FourBoxTimeseries,
+    GridType,
+    HemisphericGrid,
     InterpolationStrategy,
     ModelBuilder,
     TimeAxis,
@@ -171,3 +174,53 @@ class TestTwoLayerParameters:
     def test_rejects_unphysical_values(self, name, value, match):
         with pytest.raises(ValueError, match=match):
             TwoLayerBuilder.from_parameters({**PARAMETERS, name: value})
+
+
+class TestGridWeights:
+    @pytest.mark.parametrize(
+        ("grid", "weights", "match"),
+        [
+            (GridType.FourBox, [-0.5, 1.0, 0.25, 0.25], "must not be negative"),
+            (GridType.Hemispheric, [float("nan"), 1.0], "must be finite"),
+            (GridType.FourBox, [0.5, 0.5, 0.0, 0.0], "Southern hemisphere"),
+        ],
+    )
+    def test_builder_rejects_bad_weights(self, grid, weights, match):
+        with pytest.raises(ValueError, match=match):
+            ModelBuilder().with_grid_weights(grid, weights)
+
+    @pytest.mark.parametrize(
+        ("grid", "weights"),
+        [
+            (FourBoxGrid, [-0.5, 1.0, 0.25, 0.25]),
+            (HemisphericGrid, [1.5, -0.5]),
+            (HemisphericGrid, [float("nan"), 1.0]),
+        ],
+    )
+    def test_grids_reject_bad_weights(self, grid, weights):
+        with pytest.raises(ValueError, match="Weights must"):
+            grid(weights)
+        with pytest.raises(ValueError, match="Weights must"):
+            grid.with_weights(weights)
+
+
+@pytest.mark.parametrize("values", [[], [0.0, 0.0, 0.0, 0.0]])
+def test_initial_grid_values_need_one_per_region(values):
+    b = builder().with_prescribed_variable(ERF, forcing(1.0))
+    b.with_initial_grid_values({TEMPERATURE: values})
+    with pytest.raises(
+        ValueError,
+        match=f"Initial grid values for '{TEMPERATURE}' on the scalar grid "
+        f"need 1 value, got {len(values)}",
+    ):
+        b.build()
+
+
+def test_solving_without_an_input_names_it():
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
+    collection = TimeseriesCollection()
+    collection.add_timeseries(ERF, forcing(1.0))
+    with pytest.raises(
+        KeyError, match=f"solve needs the input '{TEMPERATURE}'.*no timeseries of that"
+    ):
+        component.solve(2000.0, 2001.0, collection)

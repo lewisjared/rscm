@@ -1,12 +1,11 @@
 /// Macros for exposing a component to Python and using components written in Python from Rust
 use crate::component::{Component, InputState, OutputState};
 use crate::errors::{RSCMError, RSCMResult};
-use crate::python::rscm_error_from_py;
 use crate::python::state::{
     PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyStateValue, PyTimeseriesWindow,
 };
+use crate::python::{check_unit, rscm_error_from_py};
 use crate::timeseries::{FloatValue, Time, TimeAxis};
-use crate::units::Unit;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
@@ -99,6 +98,17 @@ macro_rules! impl_component {
                 t_next: Time,
                 collection: $crate::python::timeseries_collection::PyTimeseriesCollection,
             ) -> PyResult<HashMap<String, $crate::python::state::PyStateValue>> {
+                if let Some(missing) = self
+                    .0
+                    .input_names()
+                    .into_iter()
+                    .find(|name| collection.0.get_by_name(name).is_none())
+                {
+                    return Err(pyo3::exceptions::PyKeyError::new_err(format!(
+                        "solve needs the input '{missing}', but the collection has no \
+                         timeseries of that name"
+                    )));
+                }
                 let input_state =
                     $crate::model::extract_state(&collection.0, self.0.inputs(), t_current);
 
@@ -207,15 +217,13 @@ impl PythonComponent {
         }
         let name = bound.get_type().qualname()?.to_string();
         let definitions: Vec<VariableDefinition> = bound.call_method0("definitions")?.extract()?;
-        for definition in definitions.iter().filter(|d| !d.unit.is_empty()) {
-            Unit::parse(&definition.unit)
-                .and_then(|unit| unit.dimension())
-                .map_err(|e| {
-                    PyValueError::new_err(format!(
-                        "{name} declares '{}' with unit '{}': {e}",
-                        definition.name, definition.unit
-                    ))
-                })?;
+        for definition in &definitions {
+            check_unit(&definition.unit).map_err(|e| {
+                PyValueError::new_err(format!(
+                    "{name} declares '{}' with unit '{}': {e}",
+                    definition.name, definition.unit
+                ))
+            })?;
         }
         Ok(Self {
             component,

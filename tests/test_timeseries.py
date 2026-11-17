@@ -1,3 +1,7 @@
+import copy
+import pickle
+import re
+
 import numpy as np
 import numpy.testing as npt
 import pytest
@@ -96,7 +100,7 @@ class TestTimeseries:
         ts = Timeseries(
             values=time_axis.values(),
             time_axis=time_axis,
-            unit="Test",
+            unit="K",
             interpolation_strategy=InterpolationStrategy.Next,
         )
 
@@ -115,7 +119,7 @@ class TestTimeseries:
             Timeseries(
                 values=values,
                 time_axis=time_axis,
-                unit="Test",
+                unit="K",
                 interpolation_strategy=InterpolationStrategy.Next,
             )
 
@@ -184,3 +188,45 @@ class TestTimeseries:
         assert timeseries.at_time(1850) == 1850.0
         assert timeseries.at_time(1850.5) == 1850.5
         assert timeseries.at_time(2100.0) == 2100.0
+
+
+def _copies(obj):
+    return [copy.copy(obj), copy.deepcopy(obj), pickle.loads(pickle.dumps(obj))]  # noqa: S301
+
+
+def test_time_axis_round_trips():
+    axis = TimeAxis.from_bounds([2000.0, 2001.0, 2005.0])
+    for restored in _copies(axis):
+        assert restored == axis
+        assert restored is not axis
+
+
+@pytest.mark.parametrize(
+    "strategy",
+    [
+        InterpolationStrategy.Linear,
+        InterpolationStrategy.Previous,
+        InterpolationStrategy.Next,
+    ],
+)
+def test_timeseries_round_trips(strategy):
+    axis = TimeAxis.from_values(np.arange(2000.0, 2005.0))
+    ts = Timeseries([1.0, 2.0, 3.0, np.nan, np.nan], axis, "W/m^2", strategy)
+    for restored in _copies(ts):
+        npt.assert_array_equal(restored.values(), ts.values())
+        assert restored.time_axis == axis
+        assert restored.unit == "W/m^2"
+        assert restored.interpolation_strategy == strategy
+        assert restored.latest == ts.latest
+
+
+@pytest.mark.parametrize("unit", ["notaunit!!", "Gt CO2/yer"])
+def test_timeseries_rejects_unknown_unit(unit):
+    axis = TimeAxis.from_values(np.arange(2000.0, 2005.0))
+    with pytest.raises(ValueError, match=f"Timeseries unit '{re.escape(unit)}'"):
+        Timeseries(np.zeros(5), axis, unit, InterpolationStrategy.Linear)
+
+
+def test_timeseries_allows_an_empty_unit():
+    axis = TimeAxis.from_values(np.arange(2000.0, 2005.0))
+    assert Timeseries(np.zeros(5), axis, "", InterpolationStrategy.Linear).unit == ""

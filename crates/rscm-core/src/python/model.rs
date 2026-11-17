@@ -2,7 +2,7 @@ use crate::component::TimeseriesType;
 use crate::errors::{RSCMError, RSCMResult};
 use crate::model::{self, Model, ModelBuilder};
 use crate::python::component::{PyPythonComponent, PythonComponent};
-use crate::python::timeseries::{time_axis_repr, PyTimeAxis};
+use crate::python::timeseries::{time_axis_repr, PyTimeAxis, Reduced};
 use crate::python::timeseries_collection::{extract_timeseries_data, PyTimeseriesCollection};
 use crate::python::PyRustComponent;
 use crate::schema::VariableSchema;
@@ -160,7 +160,8 @@ impl PyModelBuilder {
     ///         - Hemispheric: [Northern, Southern]
     ///
     /// Raises:
-    ///     ValueError: If grid is Scalar, weights have wrong length, or don't sum to 1.0
+    ///     ValueError: If grid is Scalar, or the weights have the wrong length,
+    ///         are not finite, are negative or don't sum to 1.0
     ///
     /// Example:
     ///     >>> builder = ModelBuilder()
@@ -170,38 +171,7 @@ impl PyModelBuilder {
         grid: crate::component::GridType,
         weights: Vec<f64>,
     ) -> PyResult<PyRefMut<'py, Self>> {
-        use pyo3::exceptions::PyValueError;
-
-        // Validate grid
-        let expected_size = match grid {
-            crate::component::GridType::Scalar => {
-                return Err(PyValueError::new_err(
-                    "Cannot set weights for the scalar grid, which has no regions",
-                ))
-            }
-            crate::component::GridType::FourBox => 4,
-            crate::component::GridType::Hemispheric => 2,
-        };
-
-        // Validate weights length
-        if weights.len() != expected_size {
-            return Err(PyValueError::new_err(format!(
-                "Weights length {} does not match {} grid size {}",
-                weights.len(),
-                grid,
-                expected_size
-            )));
-        }
-
-        // Validate weights sum to 1.0
-        let sum: f64 = weights.iter().sum();
-        if (sum - 1.0).abs() >= 1e-6 {
-            return Err(PyValueError::new_err(format!(
-                "Weights must sum to 1.0, got {}",
-                sum
-            )));
-        }
-
+        model::check_grid_weights(grid, &weights).map_err(PyValueError::new_err)?;
         self_.0.with_grid_weights(grid, weights);
         Ok(self_)
     }
@@ -225,7 +195,7 @@ impl PyModelBuilder {
     }
 }
 
-#[pyclass]
+#[pyclass(module = "rscm._lib.core")]
 #[pyo3(name = "Model")]
 pub struct PyModel(pub Model);
 
@@ -317,6 +287,11 @@ impl PyModel {
             Ok(serialised) => Ok(serialised),
             Err(e) => Err(PyValueError::new_err(format!("{}", e))),
         }
+    }
+
+    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<Reduced<'py>> {
+        let from_toml = py.get_type::<Self>().getattr("from_toml")?;
+        Ok((from_toml, (self.to_toml()?,).into_pyobject(py)?))
     }
 
     /// Initialise a model from a TOML representation

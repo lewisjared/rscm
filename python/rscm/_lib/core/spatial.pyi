@@ -70,7 +70,14 @@ class FourBoxGrid:
         """Create a four-box grid with MAGICC standard (equal) weights"""
     @staticmethod
     def with_weights(weights: tuple[float, float, float, float]) -> FourBoxGrid:
-        """Create a four-box grid with custom weights"""
+        """Create a four-box grid with custom weights.
+
+        Raises
+        ------
+        ValueError
+            Unless the weights are finite, not negative and sum to 1,
+            with weight in each hemisphere.
+        """
     def grid_name(self) -> str: ...
     def size(self) -> int: ...
     def region_names(self) -> list[str]: ...
@@ -106,7 +113,13 @@ class HemisphericGrid:
         """Create a hemispheric grid with equal weights (0.5 each)"""
     @staticmethod
     def with_weights(weights: tuple[float, float]) -> HemisphericGrid:
-        """Create a hemispheric grid with custom weights"""
+        """Create a hemispheric grid with custom weights.
+
+        Raises
+        ------
+        ValueError
+            Unless the weights are finite, not negative and sum to 1.
+        """
     def grid_name(self) -> str: ...
     def size(self) -> int: ...
     def region_names(self) -> list[str]: ...

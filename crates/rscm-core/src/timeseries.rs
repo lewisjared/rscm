@@ -411,6 +411,11 @@ where
         &self.unit
     }
 
+    /// Get the interpolation strategy
+    pub fn interpolation_strategy(&self) -> &InterpolationStrategy {
+        &self.interpolation_strategy
+    }
+
     /// Get the index of the latest valid step
     pub fn latest(&self) -> usize {
         self.latest

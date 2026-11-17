@@ -2,6 +2,7 @@ use crate::spatial::{
     FourBoxGrid, FourBoxRegion, HemisphericGrid, HemisphericRegion, ScalarGrid, ScalarRegion,
     SpatialGrid,
 };
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::{pymodule, Bound, PyResult};
 
@@ -112,10 +113,10 @@ pub struct PyFourBoxGrid(pub FourBoxGrid);
 impl PyFourBoxGrid {
     #[new]
     #[pyo3(signature = (weights=None))]
-    fn new(weights: Option<[f64; 4]>) -> Self {
+    fn new(weights: Option<[f64; 4]>) -> PyResult<Self> {
         match weights {
-            Some(w) => Self(FourBoxGrid::with_weights(w)),
-            None => Self(FourBoxGrid::magicc_standard()),
+            Some(w) => Self::with_weights(w),
+            None => Ok(Self(FourBoxGrid::magicc_standard())),
         }
     }
 
@@ -125,8 +126,10 @@ impl PyFourBoxGrid {
     }
 
     #[staticmethod]
-    fn with_weights(weights: [f64; 4]) -> Self {
-        Self(FourBoxGrid::with_weights(weights))
+    fn with_weights(weights: [f64; 4]) -> PyResult<Self> {
+        FourBoxGrid::try_with_weights(weights)
+            .map(Self)
+            .map_err(PyValueError::new_err)
     }
 
     fn __repr__(&self) -> String {
@@ -163,10 +166,10 @@ pub struct PyHemisphericGrid(pub HemisphericGrid);
 impl PyHemisphericGrid {
     #[new]
     #[pyo3(signature = (weights=None))]
-    fn new(weights: Option<[f64; 2]>) -> Self {
+    fn new(weights: Option<[f64; 2]>) -> PyResult<Self> {
         match weights {
-            Some(w) => Self(HemisphericGrid::with_weights(w)),
-            None => Self(HemisphericGrid::equal_weights()),
+            Some(w) => Self::with_weights(w),
+            None => Ok(Self(HemisphericGrid::equal_weights())),
         }
     }
 
@@ -176,8 +179,10 @@ impl PyHemisphericGrid {
     }
 
     #[staticmethod]
-    fn with_weights(weights: [f64; 2]) -> Self {
-        Self(HemisphericGrid::with_weights(weights))
+    fn with_weights(weights: [f64; 2]) -> PyResult<Self> {
+        HemisphericGrid::try_with_weights(weights)
+            .map(Self)
+            .map_err(PyValueError::new_err)
     }
 
     fn __repr__(&self) -> String {
