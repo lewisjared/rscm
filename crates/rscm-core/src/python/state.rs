@@ -4,17 +4,40 @@
 //! and typed output slices (FourBoxSlice, HemisphericSlice).
 
 use crate::component::TimeseriesType;
+use crate::python::resolve_index;
 use crate::spatial::{FourBoxRegion, HemisphericRegion};
 use crate::state::{FourBoxSlice, HemisphericSlice, ReadIndex, StateValue, VariableSource};
 use crate::timeseries::{FloatValue, Time};
 use numpy::{PyArray1, ToPyArray};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::{pymodule, Bound, PyResult};
 
 // =============================================================================
 // Python Typed Output Slices
 // =============================================================================
+
+/// Index of a region looked up by its number, from 0 to `n - 1`.
+fn region_index(region: isize, n: usize) -> PyResult<usize> {
+    usize::try_from(region)
+        .ok()
+        .filter(|&r| r < n)
+        .ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "Invalid region index: {region}. Must be 0-{}.",
+                n - 1
+            ))
+        })
+}
+
+/// Index into a slice of `n` regions, counting negative indices from the end.
+fn sequence_index(index: isize, n: usize) -> PyResult<usize> {
+    resolve_index(index, n).ok_or_else(|| {
+        PyIndexError::new_err(format!(
+            "region index {index} is out of range for {n} regions"
+        ))
+    })
+}
 
 /// Python wrapper for FourBoxSlice
 ///
@@ -111,33 +134,13 @@ impl PyFourBoxSlice {
     }
 
     /// Get value by region index
-    fn get(&self, region: usize) -> PyResult<FloatValue> {
-        match region {
-            0 => Ok(self.0.get(FourBoxRegion::NorthernOcean)),
-            1 => Ok(self.0.get(FourBoxRegion::NorthernLand)),
-            2 => Ok(self.0.get(FourBoxRegion::SouthernOcean)),
-            3 => Ok(self.0.get(FourBoxRegion::SouthernLand)),
-            _ => Err(PyValueError::new_err(format!(
-                "Invalid region index: {}. Must be 0-3.",
-                region
-            ))),
-        }
+    fn get(&self, region: isize) -> PyResult<FloatValue> {
+        Ok(self.0 .0[region_index(region, 4)?])
     }
 
     /// Set value by region index
-    fn set(&mut self, region: usize, value: FloatValue) -> PyResult<()> {
-        match region {
-            0 => self.0.set(FourBoxRegion::NorthernOcean, value),
-            1 => self.0.set(FourBoxRegion::NorthernLand, value),
-            2 => self.0.set(FourBoxRegion::SouthernOcean, value),
-            3 => self.0.set(FourBoxRegion::SouthernLand, value),
-            _ => {
-                return Err(PyValueError::new_err(format!(
-                    "Invalid region index: {}. Must be 0-3.",
-                    region
-                )))
-            }
-        }
+    fn set(&mut self, region: isize, value: FloatValue) -> PyResult<()> {
+        self.0 .0[region_index(region, 4)?] = value;
         Ok(())
     }
 
@@ -183,12 +186,17 @@ impl PyFourBoxSlice {
         )
     }
 
-    fn __getitem__(&self, index: usize) -> PyResult<FloatValue> {
-        self.get(index)
+    fn __getitem__(&self, index: isize) -> PyResult<FloatValue> {
+        Ok(self.0 .0[sequence_index(index, 4)?])
     }
 
-    fn __setitem__(&mut self, index: usize, value: FloatValue) -> PyResult<()> {
-        self.set(index, value)
+    fn __setitem__(&mut self, index: isize, value: FloatValue) -> PyResult<()> {
+        self.0 .0[sequence_index(index, 4)?] = value;
+        Ok(())
+    }
+
+    fn __eq__(&self, other: PyRef<Self>) -> bool {
+        self.0 == other.0
     }
 
     fn __len__(&self) -> usize {
@@ -252,29 +260,13 @@ impl PyHemisphericSlice {
     }
 
     /// Get value by region index
-    fn get(&self, region: usize) -> PyResult<FloatValue> {
-        match region {
-            0 => Ok(self.0.get(HemisphericRegion::Northern)),
-            1 => Ok(self.0.get(HemisphericRegion::Southern)),
-            _ => Err(PyValueError::new_err(format!(
-                "Invalid region index: {}. Must be 0-1.",
-                region
-            ))),
-        }
+    fn get(&self, region: isize) -> PyResult<FloatValue> {
+        Ok(self.0 .0[region_index(region, 2)?])
     }
 
     /// Set value by region index
-    fn set(&mut self, region: usize, value: FloatValue) -> PyResult<()> {
-        match region {
-            0 => self.0.set(HemisphericRegion::Northern, value),
-            1 => self.0.set(HemisphericRegion::Southern, value),
-            _ => {
-                return Err(PyValueError::new_err(format!(
-                    "Invalid region index: {}. Must be 0-1.",
-                    region
-                )))
-            }
-        }
+    fn set(&mut self, region: isize, value: FloatValue) -> PyResult<()> {
+        self.0 .0[region_index(region, 2)?] = value;
         Ok(())
     }
 
@@ -310,12 +302,17 @@ impl PyHemisphericSlice {
         )
     }
 
-    fn __getitem__(&self, index: usize) -> PyResult<FloatValue> {
-        self.get(index)
+    fn __getitem__(&self, index: isize) -> PyResult<FloatValue> {
+        Ok(self.0 .0[sequence_index(index, 2)?])
     }
 
-    fn __setitem__(&mut self, index: usize, value: FloatValue) -> PyResult<()> {
-        self.set(index, value)
+    fn __setitem__(&mut self, index: isize, value: FloatValue) -> PyResult<()> {
+        self.0 .0[sequence_index(index, 2)?] = value;
+        Ok(())
+    }
+
+    fn __eq__(&self, other: PyRef<Self>) -> bool {
+        self.0 == other.0
     }
 
     fn __len__(&self) -> usize {
@@ -496,6 +493,9 @@ impl WindowMeta {
         value: impl Fn(usize) -> T,
         lerp: impl Fn(T, T, f64) -> T,
     ) -> PyResult<T> {
+        if t.is_nan() {
+            return Err(PyValueError::new_err("Cannot interpolate at a NaN time"));
+        }
         let times = self.times()?;
         let last = times
             .len()
@@ -512,6 +512,11 @@ impl WindowMeta {
         let fraction = (t - times[before]) / (times[after] - times[before]);
         Ok(lerp(value(before), value(after), fraction))
     }
+}
+
+fn history_step(n: isize) -> PyResult<usize> {
+    usize::try_from(n)
+        .map_err(|_| PyIndexError::new_err(format!("history step must be non-negative, got {n}")))
 }
 
 fn lerp(start: FloatValue, end: FloatValue, fraction: f64) -> FloatValue {
@@ -587,7 +592,7 @@ impl PyTimeseriesWindow {
     /// A point reads index N+1, or N for own state and a lagged edge.
     /// An average reads index N, or N-1 for own state.
     fn get(&self) -> PyResult<FloatValue> {
-        self.history(0)
+        self.history(0)?
             .ok_or_else(|| PyValueError::new_err("No value available at current index"))
     }
 
@@ -597,10 +602,11 @@ impl PyTimeseriesWindow {
     }
 
     /// Value `n` steps before the one `get()` returns, or None before the first step.
-    fn history(&self, n: usize) -> Option<FloatValue> {
-        self.index()
-            .history(n)
-            .and_then(|i| self.values.get(i).copied())
+    fn history(&self, n: isize) -> PyResult<Option<FloatValue>> {
+        Ok(self
+            .index()
+            .history(history_step(n)?)
+            .and_then(|i| self.values.get(i).copied()))
     }
 
     /// Number of values `history` can read.
@@ -718,7 +724,7 @@ impl PyFourBoxTimeseriesWindow {
     /// A point reads index N+1, or N for own state and a lagged edge.
     /// An average reads index N, or N-1 for own state.
     fn get(&self) -> PyResult<PyFourBoxSlice> {
-        self.history(0)
+        self.history(0)?
             .ok_or_else(|| PyValueError::new_err("No value available at current index"))
     }
 
@@ -728,11 +734,12 @@ impl PyFourBoxTimeseriesWindow {
     }
 
     /// Regional values `n` steps before those `get()` returns, or None before the first step.
-    fn history(&self, n: usize) -> Option<PyFourBoxSlice> {
-        self.index()
-            .history(n)
+    fn history(&self, n: isize) -> PyResult<Option<PyFourBoxSlice>> {
+        Ok(self
+            .index()
+            .history(history_step(n)?)
             .and_then(|i| self.values.get(i))
-            .map(|v| PyFourBoxSlice(FourBoxSlice::from_array(*v)))
+            .map(|v| PyFourBoxSlice(FourBoxSlice::from_array(*v))))
     }
 
     /// Number of values `history` can read.
@@ -771,13 +778,8 @@ impl PyFourBoxTimeseriesWindow {
     }
 
     /// Get a single region's timeseries as a TimeseriesWindow
-    fn region(&self, region: usize) -> PyResult<PyTimeseriesWindow> {
-        if region >= 4 {
-            return Err(PyValueError::new_err(format!(
-                "Invalid region index: {}. Must be 0-3.",
-                region
-            )));
-        }
+    fn region(&self, region: isize) -> PyResult<PyTimeseriesWindow> {
+        let region = region_index(region, 4)?;
         let values: Vec<FloatValue> = self.values.iter().map(|v| v[region]).collect();
         Ok(PyTimeseriesWindow {
             values,
@@ -853,7 +855,7 @@ impl PyHemisphericTimeseriesWindow {
     /// A point reads index N+1, or N for own state and a lagged edge.
     /// An average reads index N, or N-1 for own state.
     fn get(&self) -> PyResult<PyHemisphericSlice> {
-        self.history(0)
+        self.history(0)?
             .ok_or_else(|| PyValueError::new_err("No value available at current index"))
     }
 
@@ -863,11 +865,12 @@ impl PyHemisphericTimeseriesWindow {
     }
 
     /// Regional values `n` steps before those `get()` returns, or None before the first step.
-    fn history(&self, n: usize) -> Option<PyHemisphericSlice> {
-        self.index()
-            .history(n)
+    fn history(&self, n: isize) -> PyResult<Option<PyHemisphericSlice>> {
+        Ok(self
+            .index()
+            .history(history_step(n)?)
             .and_then(|i| self.values.get(i))
-            .map(|v| PyHemisphericSlice(HemisphericSlice::from_array(*v)))
+            .map(|v| PyHemisphericSlice(HemisphericSlice::from_array(*v))))
     }
 
     /// Number of values `history` can read.
@@ -906,13 +909,8 @@ impl PyHemisphericTimeseriesWindow {
     }
 
     /// Get a single region's timeseries as a TimeseriesWindow
-    fn region(&self, region: usize) -> PyResult<PyTimeseriesWindow> {
-        if region >= 2 {
-            return Err(PyValueError::new_err(format!(
-                "Invalid region index: {}. Must be 0-1.",
-                region
-            )));
-        }
+    fn region(&self, region: isize) -> PyResult<PyTimeseriesWindow> {
+        let region = region_index(region, 2)?;
         let values: Vec<FloatValue> = self.values.iter().map(|v| v[region]).collect();
         Ok(PyTimeseriesWindow {
             values,

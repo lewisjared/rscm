@@ -47,7 +47,7 @@ where
         // Clip the index to exclude the last bound
         let end_segment_idx = min(end_segment_idx, y.len() - 1);
 
-        if segment_options == SegmentOptions::OnBoundary {
+        if segment_options == SegmentOptions::OnBoundary || y.len() == 1 {
             // Fast return
             return Ok(y[end_segment_idx]);
         }
@@ -64,7 +64,6 @@ where
                 (time1, time2, y1, y2)
             }
             SegmentOptions::ExtrapolateForward => {
-                assert!(y.len() >= 2);
                 // Use last two points (excludes the influence of the bound of the last value
                 let time1 = time[y.len() - 2];
                 let y1 = y[y.len() - 2];
@@ -136,6 +135,27 @@ mod tests {
             let err = res.err().unwrap();
             assert!(err.to_string().starts_with("Extrapolation is not allowed"))
         })
+    }
+
+    #[test]
+    fn test_linear_single_value_is_constant() {
+        let time = array![0.0, 1.0];
+        let y = array![5.0];
+        let strategy = LinearSplineStrategy::new(true);
+
+        for t in [-1.0, 0.5, 2.0] {
+            assert_eq!(strategy.interpolate(&time, &y, t).unwrap(), 5.0);
+        }
+    }
+
+    #[test]
+    fn test_nan_target_is_an_error() {
+        let time = array![0.0, 1.0, 2.0];
+        let y = array![5.0, 6.0];
+        let strategy = LinearSplineStrategy::new(true);
+
+        let err = strategy.interpolate(&time, &y, f64::NAN).unwrap_err();
+        assert!(err.to_string().contains("NaN time"));
     }
 
     #[test]

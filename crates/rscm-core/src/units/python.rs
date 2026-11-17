@@ -82,7 +82,7 @@ impl PyUnit {
     /// Raises
     /// ------
     /// ValueError
-    ///     If the unit string cannot be parsed, including an unknown species token.
+    ///     If the unit string cannot be parsed, or names an unknown unit or species.
     ///
     /// Examples
     /// --------
@@ -92,6 +92,9 @@ impl PyUnit {
     #[new]
     fn new(unit_str: &str) -> PyResult<Self> {
         let inner = Unit::parse(unit_str).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        inner
+            .dimension()
+            .map_err(|e| PyValueError::new_err(format!("{e} in '{unit_str}'")))?;
         Ok(Self { inner })
     }
 

@@ -2,7 +2,7 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING, Literal, Protocol, Self, TypeVar, final
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from .state import StateValue
 
@@ -28,20 +28,41 @@ class TimeAxis:
     """
 
     @staticmethod
-    def from_values(values: Arr) -> TimeAxis:
-        """Create from step start times. The last step is as long as the one before."""
+    def from_values(values: ArrayLike) -> TimeAxis:
+        """Create from step start times. The last step is as long as the one before.
+
+        Raises
+        ------
+        ValueError
+            If there are fewer than 2 values,
+            or they are not finite and strictly increasing.
+        """
     @staticmethod
-    def from_bounds(bounds: Arr) -> TimeAxis:
-        """Create from step bounds, one more than the number of steps."""
+    def from_bounds(bounds: ArrayLike) -> TimeAxis:
+        """Create from step bounds, one more than the number of steps.
+
+        Raises
+        ------
+        ValueError
+            If there are fewer than 2 bounds,
+            or they are not finite and strictly increasing.
+        """
     def values(self) -> Arr:
         """Return the start time of each step."""
     def bounds(self) -> Arr:
         """Return the bounds of the steps."""
     def __len__(self) -> int: ...
-    def at(self, time_index: int) -> F:
-        """Return the start time of the step at `time_index`."""
-    def at_bounds(self, time_index: int) -> tuple[F, F]:
-        """Return the start and end of the step at `time_index`."""
+    def __eq__(self, other: object, /) -> bool: ...
+    def at(self, time_index: int) -> F | None:
+        """Return the start time of the step at `time_index`, or None out of range.
+
+        A negative index counts from the end.
+        """
+    def at_bounds(self, time_index: int) -> tuple[F, F] | None:
+        """Return the start and end of the step at `time_index`, or None out of range.
+
+        A negative index counts from the end.
+        """
 
 @final
 class InterpolationStrategy(Enum):
@@ -57,18 +78,25 @@ class Timeseries:
 
     def __init__(
         self,
-        values: Arr,
+        values: ArrayLike,
         time_axis: TimeAxis,
         unit: str,
         interpolation_strategy: InterpolationStrategy,
     ) -> None: ...
     @staticmethod
-    def from_values(values: Arr, time_axis: TimeAxis) -> Timeseries: ...
+    def from_values(values: ArrayLike, time_axis: TimeAxis) -> Timeseries: ...
     def with_interpolation_strategy(
         self, interpolation_strategy: InterpolationStrategy
     ) -> Timeseries: ...
     def __len__(self) -> int: ...
-    def set(self, time_index: int, value: float) -> None: ...
+    def set(self, time_index: int, value: float) -> None:
+        """Set the value at `time_index`, counting a negative index from the end.
+
+        Raises
+        ------
+        IndexError
+            If `time_index` is out of range.
+        """
     def values(self) -> Arr: ...
     @property
     def latest(self) -> int: ...
@@ -77,7 +105,11 @@ class Timeseries:
     @property
     def time_axis(self) -> TimeAxis: ...
     def latest_value(self) -> F | None: ...
-    def at(self, time_index: int) -> F: ...
+    def at(self, time_index: int) -> F | None:
+        """Return the value at `time_index`, or None out of range.
+
+        A negative index counts from the end.
+        """
     def at_time(self, time: F) -> F:
         """
         Interpolates a value for a given time using the current interpolation strategy.
@@ -89,6 +121,8 @@ class Timeseries:
 
         Raises
         ------
+        ValueError
+            If `time` is NaN.
         RuntimeError
             Something went wrong during the interpolation.
 
@@ -106,7 +140,7 @@ class FourBoxTimeseries:
 
     def __init__(
         self,
-        values: NDArray[np.float64],
+        values: ArrayLike,
         time_axis: TimeAxis,
         unit: str,
         interpolation_strategy: InterpolationStrategy,
@@ -132,7 +166,7 @@ class HemisphericTimeseries:
 
     def __init__(
         self,
-        values: NDArray[np.float64],
+        values: ArrayLike,
         time_axis: TimeAxis,
         unit: str,
         interpolation_strategy: InterpolationStrategy,
@@ -264,6 +298,7 @@ class VariableDefinition:
         grid: GridType = GridType.Scalar,
         timeseries_type: TimeseriesType | None = None,
     ): ...
+    def __repr__(self) -> str: ...
 
 @final
 class PrescribedInput:
@@ -321,7 +356,17 @@ class PythonComponent(RustComponent):
     so it is rarely needed directly.
     """
 
-    def __init__(self, component: Component) -> None: ...
+    def __init__(self, component: Component) -> None:
+        """Wrap a component instance.
+
+        Raises
+        ------
+        TypeError
+            If `component` is a class rather than an instance.
+        ValueError
+            If a declared unit names an unknown unit or species.
+        """
+    def __repr__(self) -> str: ...
     def input_names(self) -> list[str]:
         """Get the names of all input variables required by this component."""
     def output_names(self) -> list[str]:
@@ -449,6 +494,7 @@ class ModelBuilder:
     """Builder for a model"""
 
     def __init__(self) -> None: ...
+    def __repr__(self) -> str: ...
     def with_time_axis(self, time_axis: TimeAxis) -> Self:
         """Set the time axis the model is solved on."""
     def with_component(
