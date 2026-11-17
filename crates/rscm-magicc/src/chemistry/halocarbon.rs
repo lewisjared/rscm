@@ -54,7 +54,7 @@
 use crate::parameters::{HalocarbonChemistryParameters, HalocarbonSpecies};
 use crate::reference::{feedback_warming, prescribed_definition, prescribed_input, require_annual};
 use rscm_core::component::{
-    Component, InputState, OutputState, TimeseriesType, VariableDefinition,
+    Component, ComponentState, InputState, OutputWriter, TimeseriesType, VariableDefinition,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::names::{
@@ -319,16 +319,17 @@ impl Component for HalocarbonChemistry {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         require_annual("HalocarbonChemistry", t_current, t_next)?;
         let (oh_scale, strat_scale) = self.scale_factors(t_current, input_state);
         let names = self.names();
-        let mut output = OutputState::with_capacity(2 * (names[0].len() + names[1].len()) + 3);
         let mut forcing = [0.0; 2];
         let mut fgas_boxes = [0.0; 4];
         let mut eesc = 0.0;
@@ -365,10 +366,10 @@ impl Component for HalocarbonChemistry {
                 } else {
                     StateValue::Scalar(species_forcing)
                 };
-                output.insert(names.forcing.clone(), value);
+                out.set(&names.forcing, value);
                 let delayed = lagged(&window, next, self.parameters.stratospheric_delay);
                 eesc += self.eesc_contribution(species, delayed);
-                output.insert(names.concentration.clone(), StateValue::Scalar(next));
+                out.set(&names.concentration, next);
             }
         }
 
@@ -377,16 +378,10 @@ impl Component for HalocarbonChemistry {
         } else {
             StateValue::Scalar(forcing[0])
         };
-        output.insert(ERF_F_GASES.to_string(), fgas);
-        output.insert(
-            ERF_MONTREAL_PROTOCOL_HALOGEN_GASES.to_string(),
-            StateValue::Scalar(forcing[1]),
-        );
-        output.insert(
-            EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE.to_string(),
-            StateValue::Scalar(eesc),
-        );
-        Ok(output)
+        out.set(ERF_F_GASES, fgas);
+        out.set(ERF_MONTREAL_PROTOCOL_HALOGEN_GASES, forcing[1]);
+        out.set(EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE, eesc);
+        Ok(())
     }
 }
 

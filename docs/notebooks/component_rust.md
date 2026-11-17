@@ -151,6 +151,10 @@ pub struct CO2ERFOutputs {
     pub erf: FloatValue,
 }
 
+impl CO2ERFOutputs {
+    pub fn write_to(self, out: &mut OutputWriter) { ... }
+}
+
 impl From<CO2ERFOutputs> for OutputState { ... }
 ```
 
@@ -296,10 +300,46 @@ impl Component for Lagged {
 }
 ```
 
-The model calls `solve_with_state` and keeps one state per component.
+The model keeps one state per component and passes it to `solve_with_state`.
 The state is serialised with the model, so `Model::to_toml` checkpoints it and `from_toml` resumes from it.
 `solve` is only used when the component is solved on its own, so it starts from a fresh state.
 See `OceanCarbon` in `crates/rscm-magicc/src/carbon/ocean.rs` for a full example.
+
+## Writing Outputs Directly
+
+`solve` returns an `OutputState`, a map keyed by `String` that is built every step.
+A component in a hot path can override `solve_into` instead,
+which writes each output into a buffer the model reuses:
+
+```rust
+#[typetag::serde]
+impl Component for CO2ERF {
+    // definitions() as before
+
+    fn solve_into(
+        &self,
+        _t_current: Time,
+        _t_next: Time,
+        input_state: &InputState,
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
+        let inputs = CO2ERFInputs::from_input_state(input_state);
+        let erf = self.calculate_erf(inputs.concentration.get());
+        CO2ERFOutputs { erf }.write_to(out);
+        Ok(())
+    }
+}
+```
+
+- `solve` defaults to solving into a fresh initial state, so a component that overrides `solve_into` can leave it out.
+- A stateful component that overrides `solve_into` also overrides `solve_with_state`,
+  as `OutputBuffer::collect(self.output_names(), |out| self.solve_into(t_current, t_next, input_state, internal_state, out))`.
+- `out.set(name, value)` writes an output by name.
+  Writing outputs in declaration order skips the search for each name.
+- Reading inputs in declaration order also skips the search, as `from_input_state` does.
+
+See `HalocarbonChemistry` in `crates/rscm-magicc/src/chemistry/halocarbon.rs` for a component that writes by name.
 
 ## ODE-Based Components
 

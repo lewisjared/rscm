@@ -410,9 +410,9 @@ impl TimeseriesCollection {
         self.position(name).map(|index| &mut self.timeseries[index])
     }
 
-    /// The item at an index from `position`, valid until the next insertion.
-    pub(crate) fn item(&self, index: usize) -> &TimeseriesItem {
-        &self.timeseries[index]
+    /// Items by the indices `position` returns, valid until the next insertion.
+    pub(crate) fn items(&self) -> &[TimeseriesItem] {
+        &self.timeseries
     }
 
     pub(crate) fn data_mut(&mut self, index: usize) -> &mut TimeseriesData {

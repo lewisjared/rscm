@@ -48,12 +48,13 @@ use crate::constants::{
     total_forcing, EARTH_RADIUS, SECONDS_PER_YEAR,
 };
 use nalgebra::{DMatrix, DVector};
-use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
+use rscm_core::component::{
+    Component, ComponentState, InputState, OutputWriter, VariableDefinition,
+};
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::names::{
     ocean_layer_temperature, NET_ENERGY_IMBALANCE, OCEAN_HEAT_CONTENT, STOCHASTIC_FORCING,
 };
-use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
@@ -262,12 +263,14 @@ impl Component for EnergyBalance {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let dt = t_next - t_current;
         let n = self.n_layers();
         let p = &self.parameters;
@@ -290,17 +293,13 @@ impl Component for EnergyBalance {
                 * std::f64::consts::PI
                 * SECONDS_PER_YEAR;
 
-        let mut output = OutputState::with_capacity(n + 3);
-        output.insert(STOCHASTIC_FORCING.to_string(), StateValue::Scalar(state[0]));
+        out.set(STOCHASTIC_FORCING, state[0]);
         for (layer, t) in temperatures.iter().enumerate() {
-            output.insert(self.layer_temperature(layer), StateValue::Scalar(*t));
+            out.set(&self.layer_temperature(layer), *t);
         }
-        output.insert(
-            NET_ENERGY_IMBALANCE.to_string(),
-            StateValue::Scalar(imbalance),
-        );
-        output.insert(OCEAN_HEAT_CONTENT.to_string(), StateValue::Scalar(heat));
-        Ok(output)
+        out.set(OCEAN_HEAT_CONTENT, heat);
+        out.set(NET_ENERGY_IMBALANCE, imbalance);
+        Ok(())
     }
 }
 

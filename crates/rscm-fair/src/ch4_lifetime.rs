@@ -29,11 +29,10 @@
 
 use crate::constants::{get, surface_temperature, temperature_unit};
 use rscm_core::component::{
-    Component, InputState, OutputState, TimeseriesType, VariableDefinition,
+    Component, ComponentState, InputState, OutputWriter, TimeseriesType, VariableDefinition,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::names::LIFETIME_SCALING_CH4;
-use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
@@ -139,23 +138,24 @@ impl Component for CH4Lifetime {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let p = &self.parameters;
         let get_of = |x: &Precursor| get(input_state, &x.variable);
         let emissions: Vec<_> = p.emissions.iter().map(get_of).collect();
         let concentrations: Vec<_> = p.concentrations.iter().map(get_of).collect();
         let temperature = get(input_state, &p.surface_temperature);
-        let mut output = OutputState::with_capacity(1);
-        output.insert(
-            p.output.clone(),
-            StateValue::Scalar(self.alpha(&emissions, &concentrations, temperature)),
+        out.set(
+            &p.output,
+            self.alpha(&emissions, &concentrations, temperature),
         );
-        Ok(output)
+        Ok(())
     }
 }
 

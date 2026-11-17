@@ -47,7 +47,8 @@ use crate::reference::{
     prescribed_definition, require_annual,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
+    VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -299,7 +300,8 @@ impl OceanCarbon {
         t_next: Time,
         input_state: &InputState,
         state: &mut OceanCarbonState,
-    ) -> RSCMResult<OutputState> {
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         require_annual("OceanCarbon", t_current, t_next)?;
         let inputs = OceanCarbonInputs::from_input_state(input_state);
 
@@ -348,7 +350,8 @@ impl OceanCarbon {
             co2_end_of_year: result.co2,
         };
 
-        Ok(outputs.into())
+        outputs.write_to(out);
+        Ok(())
     }
 }
 
@@ -376,17 +379,6 @@ impl Component for OceanCarbon {
         definitions
     }
 
-    fn solve(
-        &self,
-        t_current: Time,
-        t_next: Time,
-        input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
-        // For standalone use, create a temporary state
-        let mut state = OceanCarbonState::default();
-        self.solve_impl(t_current, t_next, input_state, &mut state)
-    }
-
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
         Box::new(OceanCarbonState::default())
     }
@@ -398,11 +390,24 @@ impl Component for OceanCarbon {
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
     ) -> RSCMResult<OutputState> {
+        OutputBuffer::collect(self.output_names(), |out| {
+            self.solve_into(t_current, t_next, input_state, internal_state, out)
+        })
+    }
+
+    fn solve_into(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<OceanCarbonState>()
             .expect("OceanCarbon: invalid state type (expected OceanCarbonState)");
-        self.solve_impl(t_current, t_next, input_state, state)
+        self.solve_impl(t_current, t_next, input_state, state, out)
     }
 }
 

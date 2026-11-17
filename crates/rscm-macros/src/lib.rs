@@ -534,6 +534,17 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
         }))
         .collect();
 
+    // Writes in declaration order, which `OutputWriter` resolves without a search.
+    let output_writes: Vec<TokenStream2> = output_fields
+        .iter()
+        .chain(state_fields.iter())
+        .map(|f| {
+            let name = &f.rust_name;
+            let var_name = &f.variable_name;
+            quote! { out.set(#var_name, self.#name); }
+        })
+        .collect();
+
     // Generate code to construct Inputs from InputState
     let input_field_constructions: Vec<TokenStream2> = input_fields
         .iter()
@@ -645,6 +656,13 @@ pub fn derive_component_io(input: TokenStream) -> TokenStream {
                     declared
                 };
                 #metadata
+            }
+        }
+
+        impl #outputs_name {
+            /// Write each output to a component's output for the step.
+            pub fn write_to(self, out: &mut ::rscm_core::state::OutputWriter) {
+                #(#output_writes)*
             }
         }
 

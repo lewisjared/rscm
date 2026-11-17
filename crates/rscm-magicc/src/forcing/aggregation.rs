@@ -38,11 +38,13 @@ use crate::climate::lamcalc::{
     calc_internal_efficacy, compute_qfrac, hemispheric_qfrac, lamcalc, LAMCALCParameters,
 };
 use crate::parameters::{EfficacyMethod, ForcingAgent, ForcingAggregationParameters, ForcingTerm};
-use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
+use rscm_core::component::{
+    Component, ComponentState, InputState, OutputWriter, VariableDefinition,
+};
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::forcing::ForcingSubtotals;
 use rscm_core::names::{EFFICACY_ADJUSTED_ERF, EQUILIBRIUM_CLIMATE_SENSITIVITY, ERF, ERF_2XCO2};
-use rscm_core::state::{FourBoxSlice, StateValue};
+use rscm_core::state::FourBoxSlice;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
@@ -322,12 +324,14 @@ impl Component for ForcingAggregation {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let forcing: Vec<Vec<Forcing>> = self
             .parameters
             .agents
@@ -364,14 +368,10 @@ impl Component for ForcingAggregation {
             }
         };
         let ((total, adjusted), subtotals) = self.aggregate_with(&forcing, &internal);
-        let mut output = OutputState::new();
-        output.insert(ERF.to_string(), StateValue::Scalar(total));
-        subtotals.insert_into(&mut output);
-        output.insert(
-            EFFICACY_ADJUSTED_ERF.to_string(),
-            StateValue::FourBox(FourBoxSlice::from_array(adjusted)),
-        );
-        Ok(output)
+        out.set(ERF, total);
+        subtotals.write_to(out);
+        out.set(EFFICACY_ADJUSTED_ERF, FourBoxSlice::from_array(adjusted));
+        Ok(())
     }
 }
 
@@ -380,6 +380,7 @@ mod tests {
     use super::*;
     use crate::parameters::{EfficacyClimate, ForcingAgent};
     use rscm_core::forcing::ForcingCategory;
+    use rscm_core::state::StateValue;
     use rscm_core::state::{ReadTransformInfo, TransformContext, VariableSource};
     use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
     use std::collections::HashMap;

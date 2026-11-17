@@ -121,6 +121,8 @@ In Rust, the `ComponentIO` derive macro generates the same declarations from att
 
 The [Python Components](notebooks/component_python.py) and [Rust Components](notebooks/component_rust.md)
 tutorials walk through writing a component and using it in a model.
+A Rust component can implement `solve_into` instead of `solve`,
+which writes its outputs without building a map each step.
 
 ## Models
 

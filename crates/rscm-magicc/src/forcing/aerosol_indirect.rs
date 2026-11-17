@@ -56,7 +56,8 @@
 
 use crate::parameters::AerosolIndirectParameters;
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputState, OutputWriter, VariableDefinition,
+    VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -156,12 +157,14 @@ impl Component for AerosolIndirect {
         Self::generated_definitions()
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let inputs = AerosolIndirectInputs::from_input_state(input_state);
 
         let sox = inputs.sox_emissions.get();
@@ -173,7 +176,8 @@ impl Component for AerosolIndirect {
             indirect_erf: forcing,
         };
 
-        Ok(outputs.into())
+        outputs.write_to(out);
+        Ok(())
     }
 }
 
