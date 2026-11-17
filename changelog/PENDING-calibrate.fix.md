@@ -1,0 +1,13 @@
+Fixed several edge cases in `rscm.calibrate`:
+
+- `Bound` sampling hung when the bounds held no probability mass. `Bound` now samples by inverse CDF and raises `ValueError` for such bounds.
+- Ctrl-C and `SystemExit` raised inside a model were swallowed. They now stop sampling and point estimation and propagate.
+- `EnsembleSampler` and `PointEstimator` passed parameter values to the model by position. They now map them by name and raise `ValueError` if the runner's `parameter_names` do not match the `ParameterSet`.
+- `resume_from_checkpoint` accepted a checkpoint with different parameter names or thinning.
+- Ragged `WalkerInit.explicit` positions panicked. `WalkerInit.ball` accepted a non-positive radius and its docs called the radius a standard deviation.
+- NaN priors, observations, reference periods and stretch parameters passed validation.
+- `Target.from_dataframe` failed for a DataFrame without a `variable` column and with index levels, sorted the variables, and accepted NaN variables and datetime times.
+- `thin=0`, `thin` greater than `n_iterations`, `optimise` with `n_samples=0` and `create_simple_callback(0)` now raise `ValueError`.
+- `ParameterSet.add` silently accepted a duplicate name, and `set_reference_period` accepted a start after the end.
+- `Chain.merge` with itself failed.
+- `Chain.r_hat`, `ess` and `autocorr_time` returned an empty dict without explanation on a short chain. They now warn.

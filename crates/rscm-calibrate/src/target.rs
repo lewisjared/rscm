@@ -40,12 +40,17 @@ impl Observation {
     /// * `uncertainty` - 1-sigma uncertainty (must be positive)
     ///
     /// # Errors
-    /// Returns an error if uncertainty is not positive.
+    /// Returns an error unless `time` and `value` are finite and `uncertainty` is finite and positive.
     pub fn new(time: f64, value: f64, uncertainty: f64) -> Result<Self> {
-        if uncertainty <= 0.0 {
-            return Err(Error::InvalidParameter(
-                "Uncertainty must be positive".to_string(),
-            ));
+        if !(time.is_finite() && value.is_finite()) {
+            return Err(Error::InvalidParameter(format!(
+                "Observation: time ({time}) and value ({value}) must be finite"
+            )));
+        }
+        if !(uncertainty.is_finite() && uncertainty > 0.0) {
+            return Err(Error::InvalidParameter(format!(
+                "Observation: uncertainty ({uncertainty}) must be finite and positive"
+            )));
         }
         Ok(Self {
             time,
@@ -139,9 +144,17 @@ impl VariableTarget {
     ///
     /// When set, observations will be interpreted as anomalies relative to the
     /// mean over this period.
-    pub fn with_reference_period(&mut self, start: f64, end: f64) -> &mut Self {
+    ///
+    /// # Errors
+    /// Returns an error unless `start` and `end` are finite and `start <= end`.
+    pub fn with_reference_period(&mut self, start: f64, end: f64) -> Result<&mut Self> {
+        if !(start.is_finite() && end.is_finite() && start <= end) {
+            return Err(Error::InvalidParameter(format!(
+                "reference period start ({start}) and end ({end}) must be finite with start <= end"
+            )));
+        }
         self.reference_period = Some(start..=end);
-        self
+        Ok(self)
     }
 
     /// Get observations within a time range.
@@ -291,6 +304,9 @@ mod tests {
     fn observation_invalid_uncertainty() {
         assert!(Observation::new(2020.0, 1.2, 0.0).is_err());
         assert!(Observation::new(2020.0, 1.2, -0.1).is_err());
+        assert!(Observation::new(2020.0, 1.2, f64::NAN).is_err());
+        assert!(Observation::new(2020.0, f64::NAN, 0.1).is_err());
+        assert!(Observation::new(f64::INFINITY, 1.2, 0.1).is_err());
     }
 
     #[test]
@@ -319,9 +335,11 @@ mod tests {
     #[test]
     fn variable_target_reference_period() {
         let mut target = VariableTarget::new("Temperature");
-        target.with_reference_period(1850.0, 1900.0);
+        target.with_reference_period(1850.0, 1900.0).unwrap();
 
         assert_eq!(target.reference_period, Some(1850.0..=1900.0));
+        assert!(target.with_reference_period(1900.0, 1850.0).is_err());
+        assert!(target.with_reference_period(f64::NAN, 1900.0).is_err());
     }
 
     #[test]
@@ -359,7 +377,8 @@ mod tests {
             .unwrap()
             .add(2021.0, 1.3, 0.1)
             .unwrap()
-            .with_reference_period(1850.0, 1900.0);
+            .with_reference_period(1850.0, 1900.0)
+            .unwrap();
 
         target
             .add_variable("Ocean Heat Content")
@@ -428,7 +447,8 @@ mod tests {
             .add_variable("Temperature")
             .add(2020.0, 1.2, 0.1)
             .unwrap()
-            .with_reference_period(1850.0, 1900.0);
+            .with_reference_period(1850.0, 1900.0)
+            .unwrap();
 
         let json = serde_json::to_string(&target).unwrap();
         let deserialised: Target = serde_json::from_str(&json).unwrap();

@@ -245,10 +245,6 @@ class TestTarget:
         with pytest.raises(TypeError):
             VariableTarget("temp")
 
-    @pytest.mark.skipif(
-        not hasattr(Target, "from_dataframe"),
-        reason="pandas optional dependency",
-    )
     def test_from_dataframe(self):
         """Test DataFrame constructor."""
         pd = pytest.importorskip("pandas")
@@ -400,7 +396,8 @@ class TestChain:
         )
         sampler = EnsembleSampler(parameters, runner, GaussianLikelihood(), target)
         starts = [float(w) for w in range(sampler.default_n_walkers())]
-        chain = sampler.run(6, WalkerInit.explicit([[s] for s in starts]), thin=2)
+        with pytest.warns(RuntimeWarning, match="proposal rejected"):
+            chain = sampler.run(6, WalkerInit.explicit([[s] for s in starts]), thin=2)
 
         df = chain.to_dataframe(discard=1)
 

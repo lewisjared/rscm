@@ -8,6 +8,12 @@
 use super::chain::Chain;
 use indexmap::IndexMap;
 
+/// Stored samples after discard needed for [`Chain::r_hat`], which splits each walker in half.
+pub const MIN_SAMPLES_R_HAT: usize = 4;
+
+/// Stored samples after discard needed for [`Chain::ess`] and [`Chain::autocorr_time`].
+pub const MIN_SAMPLES_AUTOCORR: usize = 10;
+
 impl Chain {
     /// Compute the Gelman-Rubin statistic (R-hat) for each parameter.
     ///
@@ -44,8 +50,7 @@ impl Chain {
         }
 
         let n_kept_samples = self.len() - discard;
-        if n_kept_samples < 4 {
-            // Need at least 4 samples to split chains
+        if n_kept_samples < MIN_SAMPLES_R_HAT {
             return result;
         }
 
@@ -174,8 +179,7 @@ impl Chain {
         }
 
         let n_kept_samples = self.len() - discard;
-        if n_kept_samples < 10 {
-            // Need at least 10 samples for meaningful autocorrelation
+        if n_kept_samples < MIN_SAMPLES_AUTOCORR {
             return result;
         }
 
@@ -264,8 +268,7 @@ impl Chain {
         }
 
         let n_kept_samples = self.len() - discard;
-        if n_kept_samples < 10 {
-            // Need at least 10 samples for meaningful autocorrelation
+        if n_kept_samples < MIN_SAMPLES_AUTOCORR {
             return result;
         }
 

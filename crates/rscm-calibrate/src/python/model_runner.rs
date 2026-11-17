@@ -5,7 +5,7 @@
 use crate::likelihood::{ModelOutput, VariableOutput};
 use crate::model_runner::ModelRunner;
 use crate::{Error, Result};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::sync::{Arc, Mutex};
@@ -42,6 +42,8 @@ pub struct PyModelRunner {
     parameter_names: Vec<String>,
     /// Output variable names to extract
     output_variables: Vec<String>,
+    /// A KeyboardInterrupt or SystemExit raised during a run, re-raised once the run stops
+    interrupt: Arc<Mutex<Option<PyErr>>>,
 }
 
 #[pymethods]
@@ -98,6 +100,7 @@ impl PyModelRunner {
             factory: Arc::new(Mutex::new(model_factory)),
             parameter_names,
             output_variables,
+            interrupt: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -166,12 +169,47 @@ impl PyModelRunner {
 
         // Call factory and return result directly
         let factory = self.factory.lock().unwrap();
-        let result = factory
-            .bind(py)
-            .call1((param_dict,))
-            .map_err(|e| PyValueError::new_err(format!("Model factory failed: {}", e)))?;
+        let result = factory.bind(py).call1((param_dict,)).map_err(|e| {
+            if e.is_instance_of::<PyException>(py) {
+                PyValueError::new_err(format!("Model factory failed: {}", e))
+            } else {
+                e
+            }
+        })?;
 
         Ok(result.into())
+    }
+}
+
+impl PyModelRunner {
+    /// Take the interrupt raised during the last run, if any.
+    pub(crate) fn take_interrupt(&self) -> Option<PyErr> {
+        self.interrupt.lock().unwrap().take()
+    }
+
+    fn is_interrupted(&self) -> bool {
+        self.interrupt.lock().unwrap().is_some()
+    }
+
+    /// Call the factory, keeping a KeyboardInterrupt, SystemExit or pending signal to re-raise.
+    fn call_factory<'py>(
+        &self,
+        py: Python<'py>,
+        param_dict: Bound<'py, PyDict>,
+    ) -> Result<Bound<'py, PyAny>> {
+        let factory = self.factory.lock().unwrap();
+        let result = py
+            .check_signals()
+            .and_then(|()| factory.bind(py).call1((param_dict,)));
+        result.map_err(|e| {
+            if e.is_instance_of::<PyException>(py) {
+                Error::ModelError(format!("Model factory failed: {}", e))
+            } else {
+                let message = e.to_string();
+                *self.interrupt.lock().unwrap() = Some(e);
+                Error::Interrupted(message)
+            }
+        })
     }
 }
 
@@ -199,12 +237,7 @@ impl ModelRunner for PyModelRunner {
                 })?;
             }
 
-            // Call factory
-            let factory = self.factory.lock().unwrap();
-            let result = factory
-                .bind(py)
-                .call1((param_dict,))
-                .map_err(|e| Error::ModelError(format!("Model factory failed: {}", e)))?;
+            let result = self.call_factory(py, param_dict)?;
 
             // Parse result: dict[str, dict[float, float]]
             let result_dict = result
@@ -272,11 +305,18 @@ impl ModelRunner for PyModelRunner {
     }
 
     fn run_batch(&self, parameter_sets: &[Vec<f64>]) -> Vec<Result<ModelOutput>> {
-        // Sequential execution for now
-        // Python GIL prevents true parallelism with Python callables
+        // Sequential: the GIL prevents parallel calls to a Python callable.
         parameter_sets
             .iter()
-            .map(|parameters| self.run(parameters))
+            .map(|parameters| {
+                if self.is_interrupted() {
+                    Err(Error::Interrupted(
+                        "an earlier run was interrupted".to_string(),
+                    ))
+                } else {
+                    self.run(parameters)
+                }
+            })
             .collect()
     }
 }

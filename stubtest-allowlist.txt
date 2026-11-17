@@ -63,3 +63,9 @@ rscm._lib.magicc.TroposphericOzoneRegions
 # =============================================================================
 (?s:rscm\._lib(\.[a-z_]+)*\.[A-Z][A-Za-z]*\.__init__$)
 (?s:rscm\._lib(\.[a-z_]+)*\.[A-Z][A-Za-z]*\.__new__$)
+
+# =============================================================================
+# Pure-Python helpers attached to PyO3 classes in rscm.calibrate
+# =============================================================================
+rscm._lib.calibrate.Chain.to_dataframe
+rscm._lib.calibrate.Target.from_dataframe

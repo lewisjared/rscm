@@ -13,11 +13,11 @@ pub enum WalkerInit {
     /// Sample walkers from the prior distribution
     FromPrior,
 
-    /// Initialise walkers in a ball around a point
+    /// Initialise walkers uniformly in a box around a point
     Ball {
         /// Centre point for the ball
         centre: Vec<f64>,
-        /// Radius of the ball (standard deviation in each dimension)
+        /// Width of the box: each coordinate is drawn from `centre ± radius / 2`
         radius: f64,
     },
 
@@ -58,13 +58,23 @@ impl WalkerInit {
                     )));
                 }
 
+                if !(radius.is_finite() && *radius > 0.0) {
+                    return Err(Error::InvalidParameter(format!(
+                        "Ball radius ({radius}) must be finite and positive"
+                    )));
+                }
+                if !centre.iter().all(|c| c.is_finite()) {
+                    return Err(Error::InvalidParameter(format!(
+                        "Ball centre {centre:?} must be finite"
+                    )));
+                }
+
                 let n_parameters = parameters.len();
                 let mut positions = Array2::zeros((n_walkers, n_parameters));
 
                 for i in 0..n_walkers {
                     for j in 0..n_parameters {
-                        // Sample from normal distribution around centre
-                        let offset = rng.random::<f64>() - 0.5; // Uniform(-0.5, 0.5)
+                        let offset = rng.random::<f64>() - 0.5;
                         positions[[i, j]] = centre[j] + offset * radius;
                     }
                 }
@@ -75,7 +85,7 @@ impl WalkerInit {
                 // Validate dimensions
                 if positions.nrows() != n_walkers {
                     return Err(Error::InvalidParameter(format!(
-                        "Explicit positions have {} walkers, expected {}",
+                        "Explicit positions have {} rows but n_walkers is {}",
                         positions.nrows(),
                         n_walkers
                     )));
@@ -161,6 +171,23 @@ mod tests {
 
         let result = init.initialise(10, &parameters, &mut rng);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_walker_init_ball_invalid_radius() {
+        let parameters = ParameterSet::new()
+            .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
+            .clone();
+        let mut rng = ChaCha8Rng::seed_from_u64(42);
+
+        for radius in [0.0, -1.0, f64::NAN] {
+            let init = WalkerInit::Ball {
+                centre: vec![0.5],
+                radius,
+            };
+            let err = init.initialise(4, &parameters, &mut rng).unwrap_err();
+            assert!(err.to_string().contains("radius"));
+        }
     }
 
     #[test]

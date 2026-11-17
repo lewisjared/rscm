@@ -106,6 +106,10 @@ impl ParameterSet {
     ///
     /// Returns `&mut self` for fluent chaining.
     ///
+    /// # Panics
+    ///
+    /// Panics if a parameter called `name` already exists.
+    ///
     /// # Examples
     ///
     /// ```
@@ -120,7 +124,12 @@ impl ParameterSet {
         name: impl Into<String>,
         distribution: Box<dyn Distribution>,
     ) -> &mut Self {
-        self.parameters.insert(name.into(), distribution);
+        let name = name.into();
+        assert!(
+            !self.parameters.contains_key(&name),
+            "ParameterSet: parameter '{name}' already exists"
+        );
+        self.parameters.insert(name, distribution);
         self
     }
 
@@ -129,6 +138,11 @@ impl ParameterSet {
     /// The order matches the index used in parameter vectors.
     pub fn parameter_names(&self) -> Vec<&str> {
         self.parameters.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// Whether a parameter called `name` exists.
+    pub fn contains(&self, name: &str) -> bool {
+        self.parameters.contains_key(name)
     }
 
     /// Get the number of parameters.
@@ -390,6 +404,24 @@ mod tests {
         let parameters = ParameterSet::from_map(map);
         assert_eq!(parameters.len(), 2);
         assert_eq!(parameters.parameter_names(), vec!["x", "y"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "already exists")]
+    fn test_duplicate_name_panics() {
+        ParameterSet::new()
+            .add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()))
+            .add("x", Box::new(Uniform::new(0.0, 2.0).unwrap()));
+    }
+
+    #[test]
+    fn test_log_prior_nan() {
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+        assert_eq!(
+            parameters.log_prior(&[f64::NAN]).unwrap(),
+            f64::NEG_INFINITY
+        );
     }
 
     #[test]
