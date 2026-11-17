@@ -40,36 +40,61 @@ from each agent's `category`
 
 ## Running a calibrated member
 
-`read_calibration` reads fair-calibrate's species CSV and posterior CSV, as FaIR's `override_defaults` does.
-fair-calibrate scales prescribed forcing by its `forcing_scale` outside FaIR,
-so `scale_prescribed_forcing=True` does the same.
+FaIR's parameters come from [fair-calibrate](https://github.com/chrisroadmap/fair-calibrate),
+which publishes a species CSV and a posterior of calibrated members on Zenodo.
+The RSCM repository keeps the species CSV and three members of the v1.6.1 posterior
+([Zenodo record 23208444](https://zenodo.org/records/23208444))
+in `tests/regression/data/fair/calibration`,
+and FaIR's run of each over the CMIP7 history in `tests/regression/data/fair`.
+These files are not part of the `rscm` package,
+so this example runs from the root of a clone of the repository.
+Download the full posterior from Zenodo to run other members.
+
+`read_calibration` reads the species CSV and the posterior CSV, as FaIR's `override_defaults` does,
+and returns one configuration per member.
+FaIR's emissions are on timepoints, one per step.
+Prescribed concentrations and forcing are on timebounds, one more than the steps.
 
 ```python
+import pandas as pd
 from rscm.core import TimeAxis
 from rscm.fair import naming, read_calibration, setup_model
 
+data = "tests/regression/data/fair"
 configs = read_calibration(
-    "species_configs_properties.csv",
-    "calibrated_constrained_parameters.csv",
+    f"{data}/calibration/species_configs_properties.csv",
+    f"{data}/calibration/calibrated_constrained_parameters.csv",
 )
 config = configs[1939]
 
-# emissions[name] has one value per step and forcing[name] one per bound
+timepoints = pd.read_csv(f"{data}/calibrated_1939_timepoints.csv.gz", index_col=0)
+timebounds = pd.read_csv(f"{data}/calibrated_1939_timebounds.csv.gz", index_col=0)
+
 inputs = {}
 for entry in config["species"]:
     variable = naming.prescribed_variable(entry)
     if variable is not None:
         name, unit = variable
-        source = emissions if entry["input_mode"] == "emissions" else forcing
-        inputs[name] = (source[entry["name"]], unit)
+        mode = entry["input_mode"]
+        frame = timepoints if mode == "emissions" else timebounds
+        inputs[name] = (frame[f"{mode}|{entry['name']}"].to_numpy(), unit)
 
-model = setup_model(
-    config, inputs, TimeAxis.from_values(timebounds), scale_prescribed_forcing=True
-).run()
+time_axis = TimeAxis.from_values(timebounds.index.to_numpy(dtype=float))
+model = setup_model(config, inputs, time_axis).run()
 temperature = model.timeseries().get_timeseries_by_name("Surface Air Temperature Change")
+print(f"{temperature.values()[-1]:.2f} K in 2024")
 ```
 
-`read_config` reads a species CSV without a posterior, with the climate configs given directly.
+```text
+1.13 K in 2024
+```
+
+This matches FaIR's `temperature|0` column in the same file to within 1e-14 K.
+
+fair-calibrate scales prescribed forcing by its `forcing_scale` outside FaIR.
+The forcing in these files is already scaled.
+Pass `scale_prescribed_forcing=True` to `setup_model` to apply the scale to unscaled forcing,
+such as fair-calibrate's own input files.
 
 ## Ensembles
 
@@ -79,12 +104,7 @@ with `timebounds`, `scenario`, `config`, `specie` and `layer` dimensions:
 ```python
 from rscm.fair import run_ensemble
 
-result = run_ensemble(
-    configs,
-    {"historical": inputs},
-    TimeAxis.from_values(timebounds),
-    scale_prescribed_forcing=True,
-)
+result = run_ensemble(configs, {"historical": inputs}, time_axis)
 result.temperature.sel(layer=0, scenario="historical")
 ```
 

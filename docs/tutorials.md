@@ -136,6 +136,8 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 - Check the hand-built model against MAGICC7 v7.5.3 and the packaged emissions-driven model
 - Run the concentration-driven model from the same configuration
 
+It reads MAGICC7 reference runs from the repository's tests, so it needs a clone of RSCM, not a PyPI install.
+
 [**Start Tutorial: A Coupled MAGICC Model**](notebooks/magicc_coupled_model.py)
 
 [**Reference: MAGICC Runs**](magicc_runs.md)

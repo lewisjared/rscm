@@ -37,6 +37,11 @@
 # Code that only reads files, tidies tables or draws figures is hidden on this page.
 # The downloadable notebook has all of it.
 #
+# **This notebook needs a clone of the RSCM repository.**
+# The emissions and MAGICC7 results come from `tests/regression/data/full_run`,
+# which is not part of the `rscm` package on PyPI.
+# Run it from a clone with RSCM installed from it, as the [Developer Guide](../../developers/) describes.
+#
 # ## Related Resources
 #
 # - [Coupled Models](../coupled_model/): the `ModelBuilder` basics this notebook builds on
@@ -46,6 +51,7 @@
 
 # %%
 import re
+import shutil
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -99,7 +105,10 @@ def reference_run(name):
     """Read a MAGICC7 reference run indexed by RSCM name and region, one column per year."""
     relative = Path("tests/regression/data/full_run") / f"{name}.csv.gz"
     candidates = [*Path.cwd().parents, Path.cwd(), *Path(rscm.__file__).parents]
-    directory = next(d for d in candidates if (d / relative).exists())
+    directory = next((d for d in candidates if (d / relative).exists()), None)
+    if directory is None:
+        msg = f"{relative} not found: run this notebook from a clone of the RSCM repository"
+        raise FileNotFoundError(msg)
     data = pd.read_csv(directory / relative)
     data["variable"] = data["variable"].map(convert_variable_name)
     data = data.set_index(["variable", "region"])
@@ -738,8 +747,18 @@ def tidy_graph(model, components, lagged):
     return graph
 
 
+def graphviz_missing() -> bool:
+    """Report and return True when Graphviz's `dot` binary is not installed."""
+    if shutil.which("dot"):
+        return False
+    print("Graph not rendered: install Graphviz to provide the `dot` binary.")
+    return True
+
+
 def show_svg(graph):
     """Display a graph as SVG that scales to the page width."""
+    if graphviz_missing():
+        return
     svg = graph.create_svg().decode()
     size = r'<svg width="[^"]*" height="[^"]*"'
     display(SVG(re.sub(size, "<svg", svg, count=1)))

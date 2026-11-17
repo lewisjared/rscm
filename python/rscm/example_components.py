@@ -91,8 +91,8 @@ class LinearConcentration(Component):
         dt = t_next - t_current
 
         # Get current values from inputs
-        emissions = inputs.emissions.current
-        conc_prev = inputs.concentration.current
+        emissions = inputs.emissions.get()
+        conc_prev = inputs.concentration.get()
 
         # Calculate airborne emissions
         airborne = emissions * self.airborne_fraction

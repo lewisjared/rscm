@@ -14,102 +14,66 @@ pip install rscm
 The wheels include the compiled Rust extension, so no Rust toolchain is required.
 To work on RSCM itself, build from source as described in the [Developer Guide](developers/index.md).
 
-## Quickstart: Running a Climate Model
+Optional extras:
 
-Let's run the two-layer climate model to calculate the temperature response to radiative forcing.
-The plotting step uses matplotlib, which is not an RSCM dependency.
+- `pip install 'rscm[fair]'` adds xarray, for FaIR ensembles.
+- The tutorial notebooks draw component graphs with [Graphviz](https://graphviz.org/download/).
+  Install it with your system package manager, for example `apt install graphviz` or `brew install graphviz`.
+  Without it the notebooks still run and skip the graphs.
 
-### Step 1: Import and Set Up
+## Quickstart: a temperature projection
+
+This runs the two-layer energy balance model with its default parameters
+under a forcing ramp from 0 to 4 W/m^2 over 1850 to 2100, and plots the warming.
+The plot uses matplotlib, which is not an RSCM dependency.
 
 ```python
+from dataclasses import asdict
+
+import matplotlib.pyplot as plt
 import numpy as np
-from rscm.core import (
-    ModelBuilder,
-    TimeAxis,
-    Timeseries,
-    InterpolationStrategy,
-)
+from rscm.config.models.two_layer import TwoLayerParameters
+from rscm.core import InterpolationStrategy, ModelBuilder, TimeAxis, Timeseries
 from rscm.two_layer import TwoLayerBuilder
-```
 
-### Step 2: Define the Time Axis
-
-The time axis specifies when the model runs:
-
-```python
-# Annual steps from 1850 to 2100
-time_axis = TimeAxis.from_values(np.arange(1850.0, 2101.0, 1.0))
-```
-
-### Step 3: Create Input Data
-
-Provide radiative forcing as a prescribed timeseries:
-
-```python
-# Simple forcing scenario: 0 before 1950, then ramping to 4 W/m^2
+time_axis = TimeAxis.from_values(np.arange(1850.0, 2101.0))
 forcing = Timeseries(
-    values=np.array([0.0, 0.0, 2.0, 4.0]),
-    time_axis=TimeAxis.from_bounds(np.array([1850.0, 1950.0, 2000.0, 2050.0, 2100.0])),
-    unit="W/m^2",
-    interpolation_strategy=InterpolationStrategy.Linear,
+    np.linspace(0.0, 4.0, len(time_axis)), time_axis, "W/m^2", InterpolationStrategy.Linear
 )
-```
+two_layer = TwoLayerBuilder.from_parameters(asdict(TwoLayerParameters())).build()
 
-### Step 4: Build and Run the Model
-
-```python
-# Create a two-layer climate component. All six parameters are required.
-two_layer = TwoLayerBuilder.from_parameters({
-    "lambda0": 1.2,                # Climate feedback parameter (W/m^2/K)
-    "a": 0.0,                      # Nonlinear feedback coefficient (W/m^2/K^2)
-    "deep_ocean_efficacy": 1.0,    # Ocean heat uptake efficacy
-    "ocean_heat_transfer": 0.8,    # Heat exchange coefficient (W/m^2/K)
-    "heat_capacity_surface": 7.0,  # Surface layer heat capacity (W yr/m^2/K)
-    "heat_capacity_deep": 100.0,   # Deep ocean heat capacity (W yr/m^2/K)
-}).build()
-
-# Build and run the model
 model = (
     ModelBuilder()
     .with_time_axis(time_axis)
     .with_component(two_layer)
     .with_prescribed_variable("Effective Radiative Forcing", forcing)
-    .with_initial_values({
-        "Surface Air Temperature Change": 0.0,
-        "Ocean Temperature|Layer 2": 0.0,
-    })
-).build()
-
+    .with_initial_values({"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0})
+    .build()
+)
 model.run()
-```
 
-`build()` raises an exception if the components and inputs are inconsistent.
-`run()` raises `RuntimeError` if a component fails during a step.
-Rebuild the model before retrying a failed run, because component state may already have changed.
-
-### Step 5: Analyse Results
-
-`model.timeseries()` returns every variable in the model as a `TimeseriesCollection`:
-
-```python
-results = model.timeseries()
-temperature = results.get_timeseries_by_name("Surface Air Temperature Change")
+temperature = model.timeseries().get_timeseries_by_name("Surface Air Temperature Change")
 print(f"{temperature.values()[-1]:.2f} K in 2100")
+plt.plot(time_axis.values(), temperature.values())
 ```
 
 ```text
-3.44 K in 2100
+2.89 K in 2100
 ```
 
-Plot it against the model years with matplotlib:
+What each step does:
 
-```python
-import matplotlib.pyplot as plt
-
-plt.plot(time_axis.values(), temperature.values())
-plt.xlabel("Year")
-plt.ylabel("Temperature Anomaly (K)")
-```
+- `TimeAxis` sets the years the model steps through, here annual from 1850 to 2100.
+- `Timeseries` holds the prescribed forcing.
+  `InterpolationStrategy` controls how it is read between its points.
+- [`TwoLayerParameters`][rscm.config.models.two_layer.TwoLayerParameters] holds the default parameters.
+  Override any of them, for example `TwoLayerParameters(lambda0=1.2)`.
+  `TwoLayerBuilder.from_parameters` needs all six, so start from the defaults rather than a hand-written dict.
+- `ModelBuilder` couples the components, the prescribed data and an initial value for every state variable.
+  `build()` raises an exception if they are inconsistent.
+- `run()` raises `RuntimeError` if a component fails during a step.
+  Rebuild the model before retrying a failed run, because component state may already have changed.
+- `model.timeseries()` returns every variable in the model as a `TimeseriesCollection`.
 
 ## Available Models and Components
 
@@ -200,6 +164,32 @@ The order you add components in does not matter.
 A feedback loop must lag one of its edges with `with_lag` or `with_lag_for`, or `build()` fails.
 See [Key Concepts](key_concepts.md#dependency-graph) for details.
 
+## Common errors
+
+**Missing time axis.**
+Always call `with_time_axis` before `build()`.
+Without one, the model does not run on the years of your data.
+
+**Misspelt variable names.**
+A misspelt prescribed variable leaves the input it was meant for unsupplied,
+so `build()` raises a `ValueError` that names the variable.
+Compare the name in the message with the one you passed.
+`ModelBuilder.prescribed_inputs()` lists every input no component produces, with its unit and consumers,
+and the [Components](components/index.md) reference lists the names each component reads and writes.
+
+**Missing parameters.**
+`from_parameters` needs every parameter, and its `ValueError` names what is missing.
+Start from the defaults in `TwoLayerParameters`, as the quickstart does,
+or from the component's entry in the [Components](components/index.md) reference.
+
+**Integer time arrays.**
+Pass float arrays to `TimeAxis.from_values` and `TimeAxis.from_bounds`,
+such as `np.arange(1850.0, 2101.0)` rather than `np.arange(1850, 2101)`.
+
+**Graph rendering in the notebooks.**
+`model.as_dot()` returns plain DOT text and needs nothing extra.
+Rendering it to an image needs the Graphviz `dot` binary, see [Installation](#installation).
+
 ## Next Steps
 
 - **[Tutorials](tutorials.md)**: Step-by-step guides for common tasks
@@ -207,7 +197,8 @@ See [Key Concepts](key_concepts.md#dependency-graph) for details.
 - **[Coupled Models](notebooks/coupled_model.py)**: Build a feedback-coupled carbon cycle and climate model
 - **[Variable Schemas](notebooks/variable_schema.py)**: Aggregate outputs from multiple components
   (e.g. sum forcing agents into totals)
-- **[MAGICC Runs](magicc_runs.md)**: Run the full MAGICC7 chain or smaller MAGICC runners on SSP scenarios
+- **[MAGICC Runs](magicc_runs.md)**: Run the emissions-driven or concentration-driven MAGICC7 model
+  from your own emissions
 - **[MAGICC Coupled Model](notebooks/magicc_coupled_model.py)**: Couple the MAGICC components yourself
 - **[Spatial Grids](grids.md)**: Work with regional climate data
 - **[Configuration Layer](model_configuration.md)**: Define models in TOML files
