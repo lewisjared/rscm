@@ -5,6 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from rscm.core import TimeAxis
@@ -477,3 +478,150 @@ def test_bad_thermal_expansion_coefficients_are_rejected(value, kind):
     }
 
     assert issues(parameters=parameters) == {(kind, "slr_expansion_params")}
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "kind"),
+    [
+        ("core_climatesensitivity", np.inf, IssueKind.NON_FINITE),
+        ("core_feedback_qsensitivity", np.nan, IssueKind.NON_FINITE),
+        ("core_delq2xco2", 0.0, IssueKind.OUT_OF_RANGE),
+        ("core_delq2xco2", np.nan, IssueKind.NON_FINITE),
+        ("core_climatesensitivity", "3.0", IssueKind.TYPE),
+        ("core_climatesensitivity", None, IssueKind.TYPE),
+        ("core_climatesensitivity", [3.0], IssueKind.TYPE),
+        ("oceancc_model", 3, IssueKind.TYPE),
+        ("rf_regions_ch4", ["1", 1.0, 1.0, 1.0], IssueKind.TYPE),
+        ("pf_apply", "0", IssueKind.TYPE),
+        ("pf_apply", "False", IssueKind.TYPE),
+        ("out_sealevel", 2, IssueKind.OUT_OF_RANGE),
+    ],
+)
+def test_parameters_must_be_finite_values_of_their_type(key, value, kind):
+    assert issues(parameters={key: value}) == {(kind, key)}
+
+
+@pytest.mark.parametrize("value", [0, 1, False, True, np.int64(1)])
+def test_switches_take_zero_one_or_bool(value):
+    config, _ = translate(parameters={"pf_apply": value})
+
+    assert ("Permafrost" in config["components"]) == bool(value)
+
+
+def test_numbers_of_any_numeric_type_are_accepted():
+    translate(parameters={"core_climatesensitivity": np.float32(3.0)})
+    translate(parameters={"core_climatesensitivity": 3})
+
+
+def test_infinite_years_are_accepted():
+    translate(parameters={"co2_switchfromconc2emis_year": np.inf})
+
+
+@pytest.mark.parametrize(
+    ("given", "kind"),
+    [
+        ({"CO2": 0.0}, IssueKind.OUT_OF_RANGE),
+        ({"CH4": 0.0}, IssueKind.OUT_OF_RANGE),
+        ({"CO2": "280"}, IssueKind.TYPE),
+        ({"CO2": None}, IssueKind.TYPE),
+    ],
+)
+def test_initial_concentrations_must_be_positive_numbers(given, kind):
+    (name,) = given
+
+    assert issues(initial_concentrations=given) == {
+        (kind, f"initial_concentrations[{name}]")
+    }
+
+
+def test_zero_halocarbon_initial_concentrations_are_accepted():
+    translate(initial_concentrations={"CFC11": 0.0})
+
+
+@pytest.mark.parametrize(
+    ("bugs", "kind"),
+    [
+        (None, IssueKind.TYPE),
+        (7, IssueKind.TYPE),
+        ([7], IssueKind.TYPE),
+        (["bogus"], IssueKind.UNKNOWN_KEY),
+        ("7.5.4", IssueKind.UNKNOWN_KEY),
+    ],
+)
+def test_bad_bugs_are_rejected(bugs, kind):
+    assert issues(bugs=bugs) == {(kind, "bugs")}
+
+
+@pytest.mark.parametrize(
+    "years",
+    [
+        np.arange(1750.0, 1766.0),
+        np.arange(2000.0, 2101.0),
+        np.arange(2016.0, 2101.0),
+    ],
+)
+def test_runs_outside_the_forcing_files_are_rejected(years):
+    with pytest.raises(InputValidationError) as error:
+        translate(years=years)
+
+    (issue,) = error.value.issues
+    assert (issue.kind, issue.location) == (IssueKind.OUT_OF_RANGE, "time_axis")
+    assert "1999" in issue.message
+    assert "1766" in issue.message
+
+
+def test_runs_just_inside_the_forcing_files_are_accepted():
+    translate(years=np.arange(1999.0, 2101.0))
+    translate(years=np.arange(1750.0, 1767.0))
+
+
+def test_half_year_axis_is_rejected():
+    with pytest.raises(InputValidationError, match="time_axis"):
+        translate(years=YEARS + 0.5)
+
+
+@pytest.mark.parametrize("species", ["SOx", "BC", "OC"])
+def test_constant_industrial_aerosol_emissions_are_rejected(species):
+    emissions = ramp_emissions()
+    emissions[f"{species}|Fossil"] = np.full(len(YEARS), 10.0)
+
+    found = issues(emissions=emissions)
+
+    assert found == {(IssueKind.OUT_OF_RANGE, f"{species}|Fossil")}
+
+
+def test_zero_black_carbon_emissions_are_rejected():
+    emissions = ramp_emissions()
+    emissions["BC|Fossil"] = np.zeros(len(YEARS))
+    emissions["BC|Biosphere"] = np.zeros(len(YEARS))
+
+    found = issues(emissions=emissions)
+
+    assert found == {
+        (IssueKind.OUT_OF_RANGE, "BC|Fossil"),
+        (IssueKind.OUT_OF_RANGE, "BC|Fossil + BC|Biosphere"),
+    }
+
+
+def test_constant_aerosol_emissions_are_accepted_when_the_run_ends_with_the_files():
+    years = np.arange(1750.0, 2016.0)
+    emissions = ramp_emissions(len(years))
+    emissions["SOx|Fossil"] = np.full(len(years), 10.0)
+
+    translate(years=years, emissions=emissions)
+
+
+def test_emissions_may_be_lists_but_not_strings():
+    emissions = {k: list(v) for k, v in ramp_emissions().items()}
+    translate(emissions=emissions)
+    emissions["CFC11"] = ["a"] * len(YEARS)
+
+    assert issues(emissions=emissions) == {(IssueKind.TYPE, "CFC11")}
+
+
+def test_emissions_series_must_follow_the_time_axis():
+    emissions = {k: pd.Series(v, index=YEARS) for k, v in ramp_emissions().items()}
+    translate(emissions=emissions)
+    emissions["CFC11"] = emissions["CFC11"][::-1]
+
+    assert issues(emissions=emissions) == {(IssueKind.SHAPE, "CFC11")}

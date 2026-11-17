@@ -26,6 +26,7 @@
 //! Carbon moved between them divides one rounding residue by another,
 //! so emissions after such a refreeze depend on the last bits of the temperature.
 
+use crate::bounds::Bounded;
 use crate::parameters::{PermafrostParameters, PermafrostSoil};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
@@ -203,8 +204,8 @@ impl Permafrost {
         let soil_temp = offsets.map(|offset| summer_max + offset);
         let moisture = soil_temp.map(|soil_temp| {
             let water = (p.soil_water_slope * soil_temp + p.soil_water_offset)
-                .max(p.minimum_soil_water)
-                .min(1.0);
+                .at_least(p.minimum_soil_water)
+                .at_most(1.0);
             (1.0 - (-water).exp()) / (1.0 - (-1.0 as FloatValue).exp())
         });
         Season {
@@ -225,8 +226,8 @@ impl Permafrost {
                     + (soil.maximum_anaerobic_fraction - soil.initial_anaerobic_fraction)
                         * moisture
                         * soil.anaerobic_moisture_sensitivity)
-                    .min(soil.maximum_anaerobic_fraction)
-                    .max(0.0)
+                    .at_most(soil.maximum_anaerobic_fraction)
+                    .at_least(0.0)
             })
             .sum::<FloatValue>();
         1.0 - anaerobic_fraction / 12.0
@@ -276,11 +277,11 @@ impl Permafrost {
         let thaw = thaw_rate * dt;
         let split = band.aerobic_fraction;
         let new_aerobic = (thaw * split * frozen)
-            .min(frozen * split)
-            .max(-old_aerobic_area);
+            .at_most(frozen * split)
+            .at_least(-old_aerobic_area);
         let new_anaerobic = (thaw * (1.0 - split) * frozen)
-            .min((1.0 - split) * frozen)
-            .max(-old_anaerobic_area);
+            .at_most((1.0 - split) * frozen)
+            .at_least(-old_anaerobic_area);
         let (moved_aerobic, moved_anaerobic) = if new_aerobic >= 0.0 {
             let density = density(band.frozen_pool, frozen);
             (density * new_aerobic, density * new_anaerobic)
@@ -290,14 +291,14 @@ impl Permafrost {
                 density(anaerobic_pool, old_anaerobic_area) * new_anaerobic,
             )
         };
-        let new_aerobic_pool = (new_aerobic_pool + moved_aerobic).max(0.0);
-        let new_anaerobic_pool = (new_anaerobic_pool + moved_anaerobic).max(0.0);
-        let aerobic_area = (aerobic_area + new_aerobic).max(0.0);
-        let anaerobic_area = (anaerobic_area + new_anaerobic).max(0.0);
-        band.frozen_pool = (band.frozen_pool - moved_aerobic - moved_anaerobic).max(0.0);
+        let new_aerobic_pool = (new_aerobic_pool + moved_aerobic).at_least(0.0);
+        let new_anaerobic_pool = (new_anaerobic_pool + moved_anaerobic).at_least(0.0);
+        let aerobic_area = (aerobic_area + new_aerobic).at_least(0.0);
+        let anaerobic_area = (anaerobic_area + new_anaerobic).at_least(0.0);
+        band.frozen_pool = (band.frozen_pool - moved_aerobic - moved_anaerobic).at_least(0.0);
         band.frozen_area =
             (frozen - (aerobic_area - old_aerobic_area) - (anaerobic_area - old_anaerobic_area))
-                .max(0.0);
+                .at_least(0.0);
 
         let (aerobic_sum, anaerobic_sum) = (
             new_aerobic_pool + aerobic_pool,

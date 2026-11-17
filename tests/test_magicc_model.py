@@ -4,6 +4,7 @@ import copy
 import math
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from rscm.core import TimeAxis
@@ -11,6 +12,7 @@ from rscm.magicc import concentration_driven, emissions_driven, full, model
 from rscm.magicc.prescribed import area_fractions
 from rscm.names import ERF, SECTORS, prescribed
 from rscm.spec import diff, run_all
+from rscm.validation import InputValidationError, IssueKind
 
 # MAGICC7 harmonises prescribed forcing in 2019.
 YEARS = np.arange(1750.0, 2021.0)
@@ -37,6 +39,12 @@ def translated(emissions, input_files):
     return full.from_magicc7(
         TimeAxis.from_values(YEARS), emissions, input_files=input_files
     )
+
+
+def setup_issues(config, inputs, years=YEARS):
+    with pytest.raises(InputValidationError) as error:
+        emissions_driven.setup_model(config, inputs, TimeAxis.from_values(years))
+    return {(i.kind, i.location): i.message for i in error.value.issues}
 
 
 def test_setup_builds_an_unrun_model(translated):
@@ -74,10 +82,65 @@ def test_setup_model_rejects_inputs_off_the_axis(translated):
     name = next(iter(inputs))
     values, unit = inputs[name]
 
-    with pytest.raises(ValueError, match=f"input '{name}'"):
-        emissions_driven.setup_model(
-            config, {**inputs, name: (values[:-1], unit)}, TimeAxis.from_values(YEARS)
-        )
+    found = setup_issues(config, {**inputs, name: (values[:-1], unit)})
+
+    assert set(found) == {(IssueKind.SHAPE, name)}
+
+
+def test_setup_model_reports_bad_inputs_together(translated):
+    config, inputs = translated
+    co2 = "Emissions|CO2|Fossil"
+    values, unit = inputs[co2]
+    nan = np.array(values, dtype=np.float64)
+    nan[100] = np.nan
+    columns = np.zeros((len(YEARS), 3))
+
+    found = setup_issues(
+        config,
+        {
+            **inputs,
+            co2: (nan, unit),
+            "Emissions|CH4": (columns, "Mt CH4 / yr"),
+            "Emissions|CO2|Fosil": (values, unit),
+        },
+    )
+
+    assert set(found) == {
+        (IssueKind.NON_FINITE, co2),
+        (IssueKind.SHAPE, "Emissions|CH4"),
+        (IssueKind.UNKNOWN_KEY, "Emissions|CO2|Fosil"),
+    }
+    assert "2 or 4 columns" in found[(IssueKind.SHAPE, "Emissions|CH4")]
+    assert co2 in found[(IssueKind.UNKNOWN_KEY, "Emissions|CO2|Fosil")]
+
+
+def test_setup_model_needs_components():
+    found = setup_issues({}, {})
+
+    assert set(found) == {
+        (IssueKind.MISSING, "components"),
+        (IssueKind.MISSING, "initial_values"),
+    }
+
+
+def test_setup_model_rejects_a_series_off_the_axis(translated):
+    config, inputs = translated
+    name = "Emissions|CO2|Fossil"
+    values, unit = inputs[name]
+    aligned = pd.Series(values, index=YEARS)
+    emissions_driven.setup_model(
+        config, {**inputs, name: (aligned, unit)}, TimeAxis.from_values(YEARS)
+    )
+
+    found = setup_issues(config, {**inputs, name: (aligned[::-1], unit)})
+
+    assert set(found) == {(IssueKind.SHAPE, name)}
+
+
+@pytest.mark.parametrize("years", [YEARS + 0.5, np.arange(1750.0, 1761.0, 2.0)])
+def test_check_axis_needs_whole_annual_years(years):
+    with pytest.raises(InputValidationError, match="time_axis"):
+        model.check_axis(TimeAxis.from_values(years))
 
 
 def test_concentration_driven_follows_prescribed_concentrations(emissions, input_files):

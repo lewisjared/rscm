@@ -16,6 +16,7 @@
 //! Each component has an associated parameters struct in the `parameters` module
 //! with sensible defaults matching MAGICC7 default configuration.
 
+mod bounds;
 pub mod carbon;
 pub mod chemistry;
 pub mod climate;
