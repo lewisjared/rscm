@@ -154,6 +154,11 @@ def test_spec_shares_read_only_arrays():
     assert component.parameters["shared"] is shared
     assert component.parameters["view"] is not view
 
+    objects = np.array([[1.0]], dtype=object)
+    objects.flags.writeable = False
+    component = ComponentSpec(TwoLayerBuilder, {"objects": objects})
+    assert component.parameters["objects"] is not objects
+
 
 def test_diff_compares_arrays(spec, time_axis):
     def setup(values):
@@ -167,6 +172,10 @@ def test_diff_compares_arrays(spec, time_axis):
     assert diff(a, setup([2.0] * 5)).splitlines()[1:] == [
         "  ~ TwoLayer.values: <5 values> -> <5 values>"
     ]
+    assert diff(setup(0.1), setup(0.2)).splitlines()[1:] == [
+        "  ~ TwoLayer.values: array(0.1) -> array(0.2)"
+    ]
+    assert diff(setup(["a"]), setup(["a"])).endswith("identical")
 
 
 def test_flatten_keeps_identities_that_share_a_last_segment():

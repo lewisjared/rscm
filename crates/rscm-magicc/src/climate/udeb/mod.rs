@@ -233,6 +233,19 @@ impl ClimateUDEB {
             )));
         }
 
+        if let Some(f) = &parameters.subannual_forcing {
+            if !(f.scale.is_finite() && f.efficacy.is_finite())
+                || !f.internal_efficacy.is_finite()
+                || f.internal_efficacy == 0.0
+            {
+                return Err(RSCMError::Error(format!(
+                    "invalid subannual_forcing: scale and efficacy must be finite and \
+                     internal_efficacy finite and nonzero, got {}, {} and {}",
+                    f.scale, f.efficacy, f.internal_efficacy
+                )));
+            }
+        }
+
         // Calculate lambda_ocean and lambda_land via LAMCALC iteration.
         // This accounts for inter-box heat exchange when matching the
         // land-ocean warming ratio (RLO) at the given ECS.
@@ -1974,6 +1987,22 @@ mod tests {
                 .unwrap();
             assert_same_climate(&state_raw, &state_prescaled, 1e-12);
         }
+    }
+
+    #[test]
+    fn test_subannual_forcing_rejects_zero_internal_efficacy() {
+        let result = ClimateUDEB::from_parameters(ClimateUDEBParameters {
+            subannual_forcing: Some(SubannualForcing {
+                start: 2000.0,
+                values: vec![[1.0; 4]; 12],
+                scale: 1.0,
+                regional_pattern: None,
+                internal_efficacy: 0.0,
+                efficacy: 1.0,
+            }),
+            ..Default::default()
+        });
+        assert!(result.is_err());
     }
 
     #[test]

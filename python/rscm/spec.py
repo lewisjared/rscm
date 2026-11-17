@@ -69,6 +69,7 @@ def _copy(value: Any) -> Any:
         isinstance(value, np.ndarray)
         and not value.flags.writeable
         and value.base is None
+        and not value.dtype.hasobject
     ):
         return value
     return copy.deepcopy(value)
@@ -307,14 +308,19 @@ def _differ(a: Any, b: Any) -> bool:
 
 def _changed(a: Any, b: Any) -> bool:
     if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
-        return a is not b and _differ(a, b)
+        if a is b:
+            return False
+        try:
+            return _differ(a, b)
+        except TypeError:  # equal_nan needs a numeric dtype
+            return not np.array_equal(np.asarray(a), np.asarray(b))
     return bool(a != b)
 
 
 def _show(value: Any) -> str:
     if isinstance(value, float) and math.isinf(value):
         return "inf" if value > 0 else "-inf"
-    if isinstance(value, list | np.ndarray) and len(value) > 4:  # noqa: PLR2004
+    if isinstance(value, list | np.ndarray) and np.ndim(value) and len(value) > 4:  # noqa: PLR2004
         return f"<{len(value)} values>"
     return repr(value)
 
