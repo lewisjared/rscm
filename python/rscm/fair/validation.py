@@ -13,6 +13,7 @@ or an input variable.
 
 from __future__ import annotations
 
+import difflib
 import math
 from typing import TYPE_CHECKING, Any
 
@@ -33,6 +34,9 @@ from rscm.fair.config import (
     linear_drivers,
     thornhill,
 )
+from rscm.fair.config import (
+    _calculated as _calculated_species,
+)
 from rscm.validation import IssueKind, Validator
 
 if TYPE_CHECKING:
@@ -43,7 +47,7 @@ if TYPE_CHECKING:
     from rscm.core import TimeAxis
     from rscm.fair.config import FairConfig, Species
 
-__all__ = ["check_config", "check_inputs", "validate"]
+__all__ = ["check_config", "check_inputs", "check_timebounds", "validate"]
 
 CONFIG_KEYS = ("options", "climate", "species_configs", "species")
 # Metadata the fixture configurations carry.
@@ -88,6 +92,9 @@ INPUT_MODES = {
     **dict.fromkeys((*LINEAR_TYPES, "aci"), _FORCING_MODES),
     **dict.fromkeys(("volcanic", "solar", "unspecified"), ("forcing",)),
 }
+# FaIR's species types that more than one species may have.
+REPEATABLE_TYPES = ("other halogen", "f-gas", "other slcf", "unspecified")
+_BOX_PARAMETERS = ("partition_fraction", "unperturbed_lifetime")
 # Gas cycle parameters whose NaN reaches the concentrations.
 # FaIR sets a NaN lifetime scaling to 1, so the iIRF and g parameters may be NaN.
 _GAS_PARAMETERS = (
@@ -96,6 +103,7 @@ _GAS_PARAMETERS = (
     "concentration_per_emission",
 )
 _SCALE_PARAMETERS = ("forcing_scale", "tropospheric_adjustment")
+_ROOT_PARAMETERS = ("baseline_concentration", "forcing_reference_concentration")
 # FaIR sets a NaN lifetime scaling to 1, so only infinity is invalid.
 _LIFETIME_SCALING_PARAMETERS = (
     "iirf_0",
@@ -114,11 +122,17 @@ def _number(value: Any) -> float:
         return math.nan
 
 
-def _finite(v: Validator, location: str, value: Any) -> bool:
+def _finite(v: Validator, location: str, value: Any, *, scalar: bool = True) -> bool:
+    """Check a value is a finite number, or an array of them unless `scalar`."""
     try:
-        array = np.asarray(math.nan if value is None else value, dtype=np.float64)
+        array = np.asarray(math.nan if value is None else value)
     except (TypeError, ValueError):
+        array = np.asarray(None)
+    if array.dtype.kind not in "biuf":
         v.add(IssueKind.NON_FINITE, location, f"{value!r} is not a number")
+        return False
+    if scalar and array.ndim:
+        v.add(IssueKind.SHAPE, location, f"is {value!r}, expected a single number")
         return False
     if array.ndim:
         return v.finite(location, array)
@@ -127,15 +141,20 @@ def _finite(v: Validator, location: str, value: Any) -> bool:
     )
 
 
+def _sign(v: Validator, location: str, value: Any, *, zero: bool = False) -> None:
+    """Check a finite value or array is positive, or not negative if `zero`."""
+    values = np.atleast_1d(np.asarray(value, dtype=np.float64))
+    v.check(
+        bool((values >= 0).all() if zero else (values > 0).all()),
+        IssueKind.OUT_OF_RANGE,
+        location,
+        f"must {'not be negative' if zero else 'be positive'}, got {value}",
+    )
+
+
 def _positive(v: Validator, location: str, value: Any) -> None:
     if _finite(v, location, value):
-        values = np.atleast_1d(np.asarray(value, dtype=np.float64))
-        v.check(
-            bool((values > 0).all()),
-            IssueKind.OUT_OF_RANGE,
-            location,
-            f"must be positive, got {value}",
-        )
+        _sign(v, location, value)
 
 
 def _keys(
@@ -155,7 +174,8 @@ def _keys(
 
 
 def _species_parameter(v: Validator, entry: Species, key: str, *, at: str) -> bool:
-    return _finite(v, f"{at}{entry['name']}.{key}", entry[key])
+    location = f"{at}{entry['name']}.{key}"
+    return _finite(v, location, entry[key], scalar=key not in _BOX_PARAMETERS)
 
 
 def _check_options(v: Validator, options: Mapping[str, Any], at: str) -> None:
@@ -199,10 +219,10 @@ def _check_climate(v: Validator, climate: Mapping[str, Any], at: str) -> None:
     transfer: Any = climate.get("ocean_heat_transfer")
     # A present but null parameter is non-finite, not missing.
     has_capacity = "ocean_heat_capacity" in climate and _finite(
-        v, f"{at}climate.ocean_heat_capacity", capacity
+        v, f"{at}climate.ocean_heat_capacity", capacity, scalar=False
     )
     has_transfer = "ocean_heat_transfer" in climate and _finite(
-        v, f"{at}climate.ocean_heat_transfer", transfer
+        v, f"{at}climate.ocean_heat_transfer", transfer, scalar=False
     )
     if has_capacity:
         n_layers = len(np.atleast_1d(capacity))
@@ -212,9 +232,9 @@ def _check_climate(v: Validator, climate: Mapping[str, Any], at: str) -> None:
             f"{at}climate.ocean_heat_capacity",
             f"the energy balance needs at least two layers, got {n_layers}",
         )
-        _positive(v, f"{at}climate.ocean_heat_capacity", capacity)
+        _sign(v, f"{at}climate.ocean_heat_capacity", capacity)
     if has_transfer:
-        _positive(v, f"{at}climate.ocean_heat_transfer", transfer)
+        _sign(v, f"{at}climate.ocean_heat_transfer", transfer)
     if has_capacity and has_transfer:
         v.check(
             len(np.atleast_1d(capacity)) == len(np.atleast_1d(transfer)),
@@ -277,7 +297,7 @@ def _check_gas(v: Validator, s: Species, at: str) -> None:
             "FaIR overwrites the prescribed forcing of a greenhouse gas",
         )
     lengths = []
-    for key in ("partition_fraction", "unperturbed_lifetime"):
+    for key in _BOX_PARAMETERS:
         if _species_parameter(v, s, key, at=at):
             shape = np.shape(s[key])
             if v.check(
@@ -287,6 +307,8 @@ def _check_gas(v: Validator, s: Species, at: str) -> None:
                 f"has shape {shape}, expected one value per gas box",
             ):
                 lengths.append(shape[0])
+                if key == "unperturbed_lifetime":
+                    _sign(v, f"{at}{s['name']}.{key}", s[key], zero=True)
     if len(lengths) == 2 and lengths[0] != lengths[1]:  # noqa: PLR2004
         v.add(
             IssueKind.SHAPE,
@@ -297,7 +319,10 @@ def _check_gas(v: Validator, s: Species, at: str) -> None:
     if s["type"] not in ("co2", "ch4", "n2o"):
         keys.append("greenhouse_gas_radiative_efficiency")
     for key in keys:
-        _species_parameter(v, s, key, at=at)
+        finite = _species_parameter(v, s, key, at=at)
+        # Meinshausen et al. (2020) takes the log of CO2 and the root of N2O and CH4.
+        if finite and s["type"] in ("co2", "ch4", "n2o") and key in _ROOT_PARAMETERS:
+            _sign(v, f"{at}{s['name']}.{key}", s[key], zero=s["type"] != "co2")
     for key in _LIFETIME_SCALING_PARAMETERS:
         v.check(
             not math.isinf(_number(s[key])),
@@ -323,6 +348,29 @@ def _check_drivers(
         )
         # An unbaselined driver has a zero baseline.
         _finite(v, f"{at}{s['name']}.{baseline}", driver["baseline"])
+
+
+def _aci_argument(
+    drivers: list[tuple[Species, dict[str, Any]]], values: list[Any]
+) -> Any:
+    """Return the argument of the aerosol-cloud logarithm, `1 + sum(shape * value)`."""
+    return 1 + sum(d["shape"] * np.asarray(x) for (_, d), x in zip(drivers, values))
+
+
+def _check_aci_baseline(
+    v: Validator,
+    aci: Species,
+    drivers: list[tuple[Species, dict[str, Any]]],
+    at: str,
+) -> None:
+    argument = _aci_argument(drivers, [_number(d["baseline"]) for _, d in drivers])
+    v.check(
+        not argument <= 0,
+        IssueKind.OUT_OF_RANGE,
+        f"{at}{aci['name']}",
+        f"1 + the sum of aci_shape times each baseline is {argument:g}, "
+        "but its logarithm needs it positive",
+    )
 
 
 def _calculated(species: list[Species], kind: str) -> bool:
@@ -354,10 +402,11 @@ def _check_species(v: Validator, config: FairConfig, at: str) -> None:
     for kind, coefficient in LINEAR_COEFFICIENTS.items():
         if _calculated(species, kind):
             _check_drivers(v, linear_drivers(config, kind), coefficient, at)
-    if _calculated(species, "aci"):
+    if (aci := _calculated_species(config, "aci")) is not None:
         drivers = aerosol_drivers(config, "aci_shape", key="shape")
         _check_drivers(v, drivers, "aci_shape", at)
         _finite(v, f"{at}species_configs.aci_scale", species_configs.get("aci_scale"))
+        _check_aci_baseline(v, aci, drivers, at)
     if thornhill(config):
         _check_ch4_lifetime(v, config, at)
     if _calculated(species, "eesc"):
@@ -407,7 +456,28 @@ def _check_entries(v: Validator, species: list[Species], at: str) -> bool:
                 f"which takes {INPUT_MODES[kind]}",
             )
             valid = False
+    _check_duplicates(v, species, at)
     return valid
+
+
+def _check_duplicates(v: Validator, species: list[Species], at: str) -> None:
+    """Record repeated names, and repeated types FaIR allows only once."""
+    seen = set()
+    first_of_type: dict[str, str] = {}
+    for s in species:
+        name, kind = s.get("name", "?"), s.get("type")
+        if name in seen:
+            v.add(IssueKind.UNSUPPORTED, f"{at}{name}.name", "names two species")
+        seen.add(name)
+        if kind not in INPUT_MODES or kind in REPEATABLE_TYPES:
+            continue
+        if kind in first_of_type:
+            v.add(
+                IssueKind.UNSUPPORTED,
+                f"{at}{name}.type",
+                f"FaIR allows one {kind!r} species, and {first_of_type[kind]} has it",
+            )
+        first_of_type.setdefault(kind, name)
 
 
 def check_config(config: FairConfig, v: Validator, *, at: str = "") -> bool:
@@ -450,6 +520,92 @@ def _length_ok(
     return False
 
 
+def check_timebounds(
+    v: Validator, bounds: ArrayLike, *, location: str = "time_axis"
+) -> bool:
+    """Record the issues of FaIR timebounds, which need two or more, evenly spaced."""
+    array = np.asarray(bounds, dtype=np.float64)
+    if array.ndim != 1 or len(array) < 2:  # noqa: PLR2004
+        v.add(IssueKind.SHAPE, location, f"needs at least two bounds, got {array.size}")
+        return False
+    if not v.finite(location, array):
+        return False
+    steps = np.diff(array)
+    if not (steps > 0).all():
+        i = int(np.argmax(steps <= 0))
+        v.add(
+            IssueKind.OUT_OF_RANGE,
+            location,
+            f"must increase, but {array[i + 1]} follows {array[i]}",
+        )
+        return False
+    return v.check(
+        bool(np.allclose(steps, steps[0], rtol=1e-6, atol=0)),
+        IssueKind.UNSUPPORTED,
+        location,
+        f"FaIR needs a constant step, but the steps range from {steps.min()} "
+        f"to {steps.max()}",
+    )
+
+
+def _known_inputs(config: FairConfig) -> set[str]:
+    """Variables any species of a configuration takes, in any of its input modes."""
+    known = set()
+    for s in config["species"]:
+        for mode in INPUT_MODES[s["type"]]:
+            prescribed = naming.prescribed_variable({**s, "input_mode": mode})
+            if prescribed is not None:
+                known.add(prescribed[0])
+    return known
+
+
+def _check_unknown_inputs(
+    v: Validator, config: FairConfig, inputs: Iterable[str], at: str
+) -> None:
+    known = _known_inputs(config)
+    for variable in inputs:
+        if variable in known:
+            continue
+        close = difflib.get_close_matches(variable, sorted(known), n=1)
+        hint = f", did you mean {close[0]!r}?" if close else ""
+        v.add(
+            IssueKind.UNKNOWN_KEY,
+            f"{at}{variable}",
+            f"no species of the configuration takes this input{hint}",
+        )
+
+
+def _check_aci_inputs(
+    v: Validator,
+    config: FairConfig,
+    inputs: Mapping[str, tuple[ArrayLike, str]],
+    bounds: np.ndarray[Any, Any],
+    at: str,
+) -> None:
+    """Check prescribed aerosol-cloud drivers keep the logarithm defined."""
+    aci = _calculated_species(config, "aci")
+    if aci is None:
+        return
+    drivers = aerosol_drivers(config, "aci_shape", key="shape")
+    values = []
+    for _, d in drivers:
+        given = inputs.get(d["variable"])
+        # Calculated drivers or drivers in other units are only known in the run.
+        if given is None or given[1] != d["unit"]:
+            return
+        values.append(np.asarray(given[0], dtype=np.float64)[: len(bounds) - 1])
+    bad = np.flatnonzero(_aci_argument(drivers, values) <= 0)
+    if bad.size:
+        variables = ", ".join(d["variable"] for _, d in drivers)
+        v.add(
+            IssueKind.OUT_OF_RANGE,
+            f"{at}{aci['name']}",
+            f"{variables} make 1 + the sum of aci_shape times each driver "
+            f"non-positive in the step from {bounds[bad[0]]:g}, "
+            "so its logarithm is undefined",
+        )
+
+
 def check_inputs(
     config: FairConfig,
     inputs: Mapping[str, tuple[ArrayLike, str]],
@@ -458,18 +614,14 @@ def check_inputs(
     *,
     at: str = "",
 ) -> bool:
-    """Record the issues of the inputs of a valid configuration.
+    """Record the issues of the inputs of a valid configuration on valid timebounds.
 
+    Each input must be a variable some species takes.
     Each prescribed variable must cover the time axis and be finite over the run.
     """
     before = len(v.issues)
     n_bounds = len(time_axis)
-    v.check(
-        n_bounds >= 2,  # noqa: PLR2004
-        IssueKind.SHAPE,
-        f"{at}time_axis",
-        f"needs at least two bounds, got {n_bounds}",
-    )
+    _check_unknown_inputs(v, config, inputs, at)
     for s in config["species"]:
         prescribed = naming.prescribed_variable(s)
         if prescribed is None:
@@ -494,6 +646,9 @@ def check_inputs(
                 v.finite(location, array[: n_bounds - 1])
         elif _length_ok(v, location, array, (n_bounds,)):
             v.finite(location, array)
+    if len(v.issues) == before:
+        bounds = np.asarray(time_axis.values(), dtype=np.float64)
+        _check_aci_inputs(v, config, inputs, bounds, at)
     return len(v.issues) == before
 
 
@@ -517,9 +672,10 @@ def validate(
     `scale_prescribed_forcing` also checks the scales of prescribed forcing.
     """
     v = Validator()
+    timed = time_axis is not None and check_timebounds(v, time_axis.values())
     if check_config(config, v):
         if scale_prescribed_forcing:
             check_prescribed_scales(config, v)
-        if inputs is not None and time_axis is not None:
+        if inputs is not None and time_axis is not None and timed:
             check_inputs(config, inputs, time_axis, v)
     v.raise_if_any()

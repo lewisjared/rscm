@@ -10,7 +10,7 @@ from rscm.core import TimeAxis
 from rscm.fair import naming
 from rscm.fair.config import CLIMATE_CONFIGS, PROPERTY_FLAGS, FairConfig, Species
 from rscm.fair.loaders import make_config
-from rscm.fair.validation import check_config, check_inputs
+from rscm.fair.validation import check_config, check_inputs, check_timebounds
 from rscm.validation import IssueKind, Validator
 
 if TYPE_CHECKING:
@@ -32,6 +32,9 @@ def _plain(value: Any) -> Any:
 
 def _only(labels: list[Any], kind: str, given: Hashable | None) -> Hashable:
     if given is not None:
+        if given not in labels:
+            msg = f"FAIR has no {kind} {given!r}, only {labels}"
+            raise ValueError(msg)
         return given
     if len(labels) != 1:
         msg = f"FAIR has {len(labels)} {kind}s, so choose one"
@@ -196,6 +199,8 @@ def from_fair(
     config = _only(list(f.configs), "config", config)
     scenario = _only(list(f.scenarios), "scenario", scenario)
     v = Validator()
+    bounds = np.asarray(f.timebounds, dtype=np.float64)
+    timed = check_timebounds(v, bounds, location="timebounds")
     _check_options(f, v, config, scenario)
     climate_configs = f.climate_configs.sel(config=config)
     species_configs = f.species_configs.sel(config=config)
@@ -238,8 +243,11 @@ def from_fair(
         br_cl_ods_potential=float(f.br_cl_ods_potential),
         ch4_min=float(f._ch4_min),
     )
-    time_axis = TimeAxis.from_values(np.asarray(f.timebounds, dtype=np.float64))
-    if check_config(fair_config, v):
+    valid = check_config(fair_config, v)
+    if not timed:
+        v.raise_if_any()
+    time_axis = TimeAxis.from_values(bounds)
+    if valid:
         check_inputs(fair_config, inputs, time_axis, v)
     v.raise_if_any()
     return fair_config, inputs, time_axis
