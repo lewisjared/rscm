@@ -239,3 +239,20 @@ def test_run_all_matches_running_each_setup(translated):
             actual.timeseries().get_timeseries_by_name(ERF).values(),
             setup.run().timeseries().get_timeseries_by_name(ERF).values(),
         )
+
+
+def test_ipcctar_runs_from_an_initial_co2_below_the_olbl_range(emissions, input_files):
+    time_axis = TimeAxis.from_values(YEARS)
+    config, inputs = full.from_magicc7(
+        time_axis,
+        emissions,
+        input_files=input_files,
+        concentration_driven=True,
+        parameters={"core_co2ch4n2o_rfmethod": "IPCCTAR"},
+        initial_concentrations={"CO2": 179.0},
+    )
+
+    model = concentration_driven.setup_model(config, inputs, time_axis).run()
+    forcing = model.timeseries().get_timeseries_by_name(f"{ERF}|CO2").values()
+
+    assert np.isfinite(forcing[1:]).all()

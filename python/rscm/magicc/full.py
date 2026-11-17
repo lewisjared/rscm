@@ -1193,7 +1193,7 @@ def _check_initial_concentrations(
                     location,
                     f"{value} must be zero or more",
                 )
-            elif method == "IPCCTAR" and name != "CO2":
+            elif method == "IPCCTAR":
                 v.check(
                     value > 0,
                     IssueKind.OUT_OF_RANGE,
@@ -1201,16 +1201,12 @@ def _check_initial_concentrations(
                     f"{value} must be positive for the IPCCTAR forcing",
                 )
             else:
-                reason = (
-                    "as its logarithmic forcing runs away from a lower start"
-                    if method == "IPCCTAR"
-                    else "the lowest the forcing formulae are fitted to"
-                )
                 v.check(
                     value >= lowest,
                     IssueKind.OUT_OF_RANGE,
                     location,
-                    f"{value} is below {lowest:g} {unit}, {reason}",
+                    f"{value} is below {lowest:g} {unit}, "
+                    "the lowest the OLBL forcing formulae are fitted to",
                 )
 
 
@@ -1293,7 +1289,7 @@ FITTED_CONCENTRATIONS = {
 """Lowest concentration and unit of each gas the forcing formulae are fitted to.
 
 The ranges are those of Etminan et al. (2016), which the OLBL formulae fit.
-IPCCTAR checks only the CO2 floor, as its log forcing runs away from a lower start.
+IPCCTAR is not fitted to them, so it only needs positive concentrations.
 """
 
 PREINDUSTRIAL_YEAR = 1750.0

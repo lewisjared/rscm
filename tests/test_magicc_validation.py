@@ -560,9 +560,9 @@ def test_initial_concentrations_must_be_positive_numbers(given, kind):
         ({"N2O": 199.0}, True),
         ({"CH4": 1.0}, True),
         ({"CFC11": 0.0}, True),
+        ({"CO2": 179.0}, True),
         ({"N2O": 0.0}, False),
-        ({"CO2": 1e-9}, False),
-        ({"CO2": 179.0}, False),
+        ({"CO2": 0.0}, False),
     ],
 )
 def test_ipcctar_initial_concentrations(given, ok):
