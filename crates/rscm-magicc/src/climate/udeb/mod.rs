@@ -1980,10 +1980,10 @@ mod tests {
         let (mut state_raw, mut state_prescaled) = (raw.initial_state(), prescaled.initial_state());
         for year in [2000.0, 2001.0] {
             let input_state = InputState::build(items.iter().collect(), year);
-            raw.solve_impl(year, year + 1.0, &input_state, &mut state_raw)
+            raw.solve_with_state(year, year + 1.0, &input_state, &mut state_raw)
                 .unwrap();
             prescaled
-                .solve_impl(year, year + 1.0, &input_state, &mut state_prescaled)
+                .solve_with_state(year, year + 1.0, &input_state, &mut state_prescaled)
                 .unwrap();
             assert_same_climate(&state_raw, &state_prescaled, 1e-12);
         }
