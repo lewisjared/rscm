@@ -134,6 +134,17 @@ class TestNonFiniteInput:
         with pytest.raises(ValueError, match="finite"):
             make()
 
+    def test_lognormal_tiny_std_dev_bounds(self):
+        dist = Bound(LogNormal(mean=1.0, std_dev=1e-10), 0.5, 1.5)
+        assert dist.log_pdf(1.0) > 0.0
+
+    @pytest.mark.parametrize(
+        ("mean", "std_dev"), [(1.0, 1e-200), (1.0, 1e200), (1e-300, 1e300)]
+    )
+    def test_lognormal_degenerate_mean_std_dev(self, mean, std_dev):
+        with pytest.raises(ValueError, match="mean"):
+            LogNormal(mean=mean, std_dev=std_dev)
+
     @pytest.mark.parametrize(
         "dist", [Uniform(0.0, 1.0), Normal(0.0, 1.0), LogNormal(mu=0.0, sigma=1.0)]
     )

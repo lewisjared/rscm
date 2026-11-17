@@ -354,7 +354,8 @@ impl LogNormal {
     ///
     /// # Errors
     ///
-    /// Returns an error unless `mean` and `std_dev` are finite and positive.
+    /// Returns an error unless `mean` and `std_dev` are finite and positive
+    /// and give a finite μ and a finite, positive σ.
     pub fn from_mean_std_dev(mean: f64, std_dev: f64) -> Result<Self> {
         if !(mean.is_finite() && mean > 0.0) {
             return Err(Error::InvalidParameter(format!(
@@ -367,15 +368,17 @@ impl LogNormal {
             )));
         }
 
-        let variance = std_dev * std_dev;
-        let mean_sq = mean * mean;
-        let sigma_sq = (variance / mean_sq + 1.0).ln();
+        let ratio = std_dev / mean;
+        let sigma_sq = (ratio * ratio).ln_1p();
         let mu = mean.ln() - 0.5 * sigma_sq;
-
-        Ok(Self {
-            mu,
-            sigma: sigma_sq.sqrt(),
-        })
+        let sigma = sigma_sq.sqrt();
+        if !(mu.is_finite() && sigma.is_finite() && sigma > 0.0) {
+            return Err(Error::InvalidParameter(format!(
+                "LogNormal: mean ({mean}) and std_dev ({std_dev}) give mu ({mu}) and sigma ({sigma}), \
+                 which must be finite with sigma positive"
+            )));
+        }
+        Ok(Self { mu, sigma })
     }
 
     /// Get the μ parameter (mean of ln(X)).
@@ -820,6 +823,16 @@ mod tests {
         assert!(Normal::new(0.0, f64::NAN).is_err());
         assert!(LogNormal::new(0.0, f64::NAN).is_err());
         assert!(LogNormal::from_mean_std_dev(f64::NAN, 1.0).is_err());
+    }
+
+    #[test]
+    fn test_lognormal_from_mean_std_dev_degenerate() {
+        let tiny = LogNormal::from_mean_std_dev(1.0, 1e-10).unwrap();
+        assert!(tiny.sigma() > 0.0);
+        assert!(Bound::new(Box::new(tiny), 0.5, 1.5).is_ok());
+        assert!(LogNormal::from_mean_std_dev(1.0, 1e-200).is_err());
+        assert!(LogNormal::from_mean_std_dev(1.0, 1e200).is_err());
+        assert!(LogNormal::from_mean_std_dev(1e300, 1e300).is_ok());
     }
 
     #[test]
