@@ -133,6 +133,18 @@ def test_spec_keeps_a_copy_of_its_parameters():
     assert component.parameters["agents"][0]["efficacy"] == 1.0
 
 
+def test_spec_copies_nested_lists_and_other_objects():
+    values = [[1.0, 2.0], [3.0, 4.0]]
+    pattern = np.array([0.1, 0.2])
+    component = ComponentSpec(
+        TwoLayerBuilder, {"forcing": {"values": values}, "pattern": pattern}
+    )
+    values[0][0] = 9.0
+    pattern[0] = 9.0
+    assert component.parameters["forcing"]["values"] == [[1.0, 2.0], [3.0, 4.0]]
+    assert component.parameters["pattern"][0] == 0.1
+
+
 def test_flatten_keeps_identities_that_share_a_last_segment():
     agents = [
         {"variable": "Emissions|CO2", "scale": 1.0},
