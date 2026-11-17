@@ -32,7 +32,8 @@ use crate::parameters::{
     ClimateUDEBParameters, SeaLevelRiseParameters, SurfaceMassBalance, ThermalExpansion,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
+    VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -279,7 +280,8 @@ impl SeaLevelRise {
         t_current: Time,
         input_state: &InputState,
         state: &mut SeaLevelRiseState,
-    ) -> RSCMResult<OutputState> {
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         if state.antarctic_regions.len() != self.parameters.antarctic_discharge.regions.len() {
             *state = self.initial_state();
         }
@@ -307,7 +309,7 @@ impl SeaLevelRise {
         }
         let greenland_discharge = self.greenland_discharge(state, year, temperature);
         let antarctic_discharge = self.antarctic_discharge(state, year, temperature);
-        Ok(SeaLevelRiseOutputs {
+        SeaLevelRiseOutputs {
             total: thermal_expansion
                 + state.glaciers
                 + state.greenland_smb
@@ -320,7 +322,8 @@ impl SeaLevelRise {
             antarctic_smb: state.antarctic_smb,
             antarctic_discharge,
         }
-        .into())
+        .write_to(out);
+        Ok(())
     }
 }
 
@@ -336,16 +339,6 @@ impl Component for SeaLevelRise {
         Self::generated_definitions()
     }
 
-    fn solve(
-        &self,
-        t_current: Time,
-        _t_next: Time,
-        input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
-        let mut state = self.initial_state();
-        self.solve_impl(t_current, input_state, &mut state)
-    }
-
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
         Box::new(self.initial_state())
     }
@@ -353,15 +346,28 @@ impl Component for SeaLevelRise {
     fn solve_with_state(
         &self,
         t_current: Time,
-        _t_next: Time,
+        t_next: Time,
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
     ) -> RSCMResult<OutputState> {
+        OutputBuffer::collect(self.output_names(), |out| {
+            self.solve_into(t_current, t_next, input_state, internal_state, out)
+        })
+    }
+
+    fn solve_into(
+        &self,
+        t_current: Time,
+        _t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<SeaLevelRiseState>()
             .ok_or_else(|| RSCMError::Error("Internal state should be SeaLevelRiseState".into()))?;
-        self.solve_impl(t_current, input_state, state)
+        self.solve_impl(t_current, input_state, state, out)
     }
 }
 

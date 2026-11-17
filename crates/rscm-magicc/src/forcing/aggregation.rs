@@ -38,11 +38,14 @@ use crate::climate::lamcalc::{
     calc_internal_efficacy, compute_qfrac, hemispheric_qfrac, lamcalc, LAMCALCParameters,
 };
 use crate::parameters::{EfficacyMethod, ForcingAgent, ForcingAggregationParameters, ForcingTerm};
-use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
+use rscm_core::component::{
+    Component, ComponentState, InputState, OutputWriter, VariableDefinition,
+};
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::forcing::ForcingSubtotals;
 use rscm_core::names::{EFFICACY_ADJUSTED_ERF, EQUILIBRIUM_CLIMATE_SENSITIVITY, ERF, ERF_2XCO2};
-use rscm_core::state::{FourBoxSlice, StateValue};
+use rscm_core::spatial::FourBoxRegion;
+use rscm_core::state::FourBoxSlice;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
@@ -157,47 +160,48 @@ impl ForcingAggregation {
             .agents
             .iter()
             .zip(values)
-            .map(|(agent, value)| self.agent_forcing(agent, std::slice::from_ref(value)))
+            .map(|(agent, value)| self.agent_forcing(agent, value))
             .collect();
-        self.aggregate_with(&forcing, &self.initial_internal_efficacies())
+        self.aggregate_with(&forcing, &|_| 1, &self.initial_internal_efficacies())
             .0
     }
 
-    /// Global and box ERF of each of an agent's variables.
-    fn agent_forcing(&self, agent: &ForcingAgent, values: &[Vec<FloatValue>]) -> Vec<Forcing> {
+    /// Global and box ERF of one of an agent's variables,
+    /// from four box values for a regional agent and a global value otherwise.
+    fn agent_forcing(&self, agent: &ForcingAgent, value: &[FloatValue]) -> Forcing {
         let area = *self.parameters.grid().weights();
-        let qfrac = if agent.hemispheric {
-            hemispheric_qfrac(&agent.regional_pattern, &area)
+        if agent.regional {
+            let boxes: [FloatValue; 4] = std::array::from_fn(|i| value[i]);
+            let global = (0..4).fold(0.0, |sum, i| sum + boxes[i] * area[i]);
+            (global, boxes)
         } else {
-            compute_qfrac(&agent.regional_pattern, &area)
-        };
-        values
-            .iter()
-            .map(|value| {
-                if agent.regional {
-                    let boxes: [FloatValue; 4] = std::array::from_fn(|i| value[i]);
-                    let global = (0..4).fold(0.0, |sum, i| sum + boxes[i] * area[i]);
-                    (global, boxes)
-                } else {
-                    (value[0], qfrac.map(|q| value[0] * q))
-                }
-            })
-            .collect()
+            let qfrac = if agent.hemispheric {
+                hemispheric_qfrac(&agent.regional_pattern, &area)
+            } else {
+                compute_qfrac(&agent.regional_pattern, &area)
+            };
+            (value[0], qfrac.map(|q| value[0] * q))
+        }
     }
 
     /// Total forcing and global subtotals, both added in the order of `summation`.
+    ///
+    /// `forcing` holds each agent's `parts(agent)` variables in turn.
     fn aggregate_with(
         &self,
-        forcing: &[Vec<Forcing>],
+        forcing: &[Forcing],
+        parts: &dyn Fn(&ForcingAgent) -> usize,
         internal: &[FloatValue],
     ) -> (Forcing, ForcingSubtotals) {
+        let mut rest = forcing;
         let per_agent: Vec<(Forcing, ForcingSubtotals)> = self
             .parameters
             .agents
             .iter()
-            .zip(forcing)
             .zip(internal)
-            .map(|((agent, parts), internal)| {
+            .map(|(agent, internal)| {
+                let (parts, tail) = rest.split_at(parts(agent));
+                rest = tail;
                 let scale = match self.parameters.efficacy_method {
                     EfficacyMethod::None => 1.0,
                     EfficacyMethod::Unit => 1.0 / internal,
@@ -226,6 +230,13 @@ impl ForcingAggregation {
         total.unwrap_or_default()
     }
 }
+
+const REGIONS: [FourBoxRegion; 4] = [
+    FourBoxRegion::NorthernOcean,
+    FourBoxRegion::NorthernLand,
+    FourBoxRegion::SouthernOcean,
+    FourBoxRegion::SouthernLand,
+];
 
 /// Global ERF and efficacy-adjusted (or plain) box forcing.
 type Forcing = (FloatValue, [FloatValue; 4]);
@@ -281,11 +292,11 @@ fn validate_summation(parameters: &ForcingAggregationParameters) -> RSCMResult<(
 }
 
 /// Variables read for an agent.
-fn agent_inputs(agent: &ForcingAgent) -> Vec<&str> {
+fn agent_inputs(agent: &ForcingAgent) -> &[String] {
     if agent.sum_of.is_empty() {
-        vec![agent.variable.as_str()]
+        std::slice::from_ref(&agent.variable)
     } else {
-        agent.sum_of.iter().map(String::as_str).collect()
+        &agent.sum_of
     }
 }
 
@@ -297,7 +308,7 @@ impl Component for ForcingAggregation {
             .agents
             .iter()
             .flat_map(|agent| {
-                agent_inputs(agent).into_iter().map(|name| {
+                agent_inputs(agent).iter().map(|name| {
                     if agent.regional {
                         VariableDefinition::four_box_input(name, "W/m^2")
                     } else {
@@ -322,28 +333,27 @@ impl Component for ForcingAggregation {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         _t_current: Time,
         _t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
-        let forcing: Vec<Vec<Forcing>> = self
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
+        let forcing: Vec<Forcing> = self
             .parameters
             .agents
             .iter()
-            .map(|agent| {
-                let values = agent_inputs(agent)
-                    .into_iter()
-                    .map(|name| {
-                        if agent.regional {
-                            input_state.get_four_box_window(name).get_all()
-                        } else {
-                            vec![input_state.get_scalar_window(name).get()]
-                        }
-                    })
-                    .collect::<Vec<Vec<FloatValue>>>();
-                self.agent_forcing(agent, &values)
+            .flat_map(|agent| agent_inputs(agent).iter().map(move |name| (agent, name)))
+            .map(|(agent, name)| {
+                if agent.regional {
+                    let window = input_state.get_four_box_window(name);
+                    let boxes = REGIONS.map(|region| window.get(region));
+                    self.agent_forcing(agent, &boxes)
+                } else {
+                    self.agent_forcing(agent, &[input_state.get_scalar_window(name).get()])
+                }
             })
             .collect();
         let internal = match &self.parameters.climate {
@@ -363,15 +373,12 @@ impl Component for ForcingAggregation {
                 })?
             }
         };
-        let ((total, adjusted), subtotals) = self.aggregate_with(&forcing, &internal);
-        let mut output = OutputState::new();
-        output.insert(ERF.to_string(), StateValue::Scalar(total));
-        subtotals.insert_into(&mut output);
-        output.insert(
-            EFFICACY_ADJUSTED_ERF.to_string(),
-            StateValue::FourBox(FourBoxSlice::from_array(adjusted)),
-        );
-        Ok(output)
+        let ((total, adjusted), subtotals) =
+            self.aggregate_with(&forcing, &|agent| agent_inputs(agent).len(), &internal);
+        out.set(ERF, total);
+        subtotals.write_to(out);
+        out.set(EFFICACY_ADJUSTED_ERF, FourBoxSlice::from_array(adjusted));
+        Ok(())
     }
 }
 
@@ -380,6 +387,7 @@ mod tests {
     use super::*;
     use crate::parameters::{EfficacyClimate, ForcingAgent};
     use rscm_core::forcing::ForcingCategory;
+    use rscm_core::state::StateValue;
     use rscm_core::state::{ReadTransformInfo, TransformContext, VariableSource};
     use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
     use std::collections::HashMap;
@@ -519,8 +527,8 @@ mod tests {
     fn solve_takes_internal_efficacy_from_start_of_step() {
         let c = with_climate(vec![agent(false, 1.5, 1.0)]);
         let expected = |ecs: FloatValue, q: FloatValue| {
-            let forcing = [c.agent_forcing(&c.parameters().agents[0], &[vec![1.0]])];
-            c.aggregate_with(&forcing, &c.internal_efficacies(ecs, q).unwrap())
+            let forcing = [c.agent_forcing(&c.parameters().agents[0], &[1.0])];
+            c.aggregate_with(&forcing, &|_| 1, &c.internal_efficacies(ecs, q).unwrap())
                 .0
                  .1
         };

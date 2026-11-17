@@ -29,7 +29,8 @@
 use crate::bounds::Bounded;
 use crate::parameters::{PermafrostParameters, PermafrostSoil};
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
+    VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -199,15 +200,11 @@ impl Permafrost {
         })
     }
 
-    fn season(&self, offsets: &[FloatValue; 12], summer_max: FloatValue) -> Season {
+    fn season(&self, moisture: &Moisture, summer_max: FloatValue) -> Season {
         let p = &self.parameters;
-        let soil_temp = offsets.map(|offset| summer_max + offset);
-        let moisture = soil_temp.map(|soil_temp| {
-            let water = (p.soil_water_slope * soil_temp + p.soil_water_offset)
-                .at_least(p.minimum_soil_water)
-                .at_most(1.0);
-            (1.0 - (-water).exp()) / (1.0 - (-1.0 as FloatValue).exp())
-        });
+        let soil_temp = moisture.offsets.map(|offset| summer_max + offset);
+        let moisture = soil_temp
+            .map(|soil_temp| moisture.at(p.soil_water_slope * soil_temp + p.soil_water_offset));
         Season {
             summer_max,
             q10_temperature: soil_temp
@@ -244,10 +241,17 @@ impl Permafrost {
         let anaerobic_base =
             p.anaerobic_decomposition_ratio * soil.decomposition_ratio / p.aerobic_turnover_time;
         let (mut aerobic, mut anaerobic) = (0.0, 0.0);
+        let shared_q10 = soil.q10_aerobic_alpha == soil.q10_anaerobic_alpha;
         for (temperature, moisture) in season.q10_temperature.iter().zip(&season.moisture) {
             let q10 = |alpha: FloatValue| (alpha * temperature).exp();
-            aerobic += base * q10(soil.q10_aerobic_alpha) * moisture;
-            anaerobic += q10(soil.q10_anaerobic_alpha) * anaerobic_base;
+            let aerobic_q10 = q10(soil.q10_aerobic_alpha);
+            let anaerobic_q10 = if shared_q10 {
+                aerobic_q10
+            } else {
+                q10(soil.q10_anaerobic_alpha)
+            };
+            aerobic += base * aerobic_q10 * moisture;
+            anaerobic += anaerobic_q10 * anaerobic_base;
         }
         (aerobic / 12.0, anaerobic / 12.0)
     }
@@ -262,8 +266,13 @@ impl Permafrost {
     ) -> Decomposition {
         let summer_max = season.summer_max;
         let aerobic_fraction = self.aerobic_fraction(soil, season);
-        let thaw_rate =
-            summer_max.signum() * summer_max.abs().powf(soil.thaw_exponent) * soil.thaw_rate;
+        // pow(x, 1) is exactly x, and skipping it saves a libm call per band.
+        let magnitude = if soil.thaw_exponent == 1.0 {
+            summer_max.abs()
+        } else {
+            summer_max.abs().powf(soil.thaw_exponent)
+        };
+        let thaw_rate = summer_max.signum() * magnitude * soil.thaw_rate;
 
         let frozen = band.frozen_area;
         let thawed = 1.0 - frozen;
@@ -335,9 +344,9 @@ impl Permafrost {
         let arctic = p.arctic_amplification * temperature;
         // Each pool is summed over bands before the soil types are combined, as in MAGICC7.
         let (mut ms, mut peat) = (Decomposition::default(), Decomposition::default());
-        let offsets = self.seasonal_offsets();
+        let moisture = Moisture::new(self.seasonal_offsets(), p.minimum_soil_water);
         for i in 0..p.n_bands {
-            let season = self.season(&offsets, arctic - self.melting_temp(i));
+            let season = self.season(&moisture, arctic - self.melting_temp(i));
             for (soil, band, total) in [
                 (&p.mineral_soil, &mut state.mineral_soil[i], &mut ms),
                 (&p.peat, &mut state.peat[i], &mut peat),
@@ -366,19 +375,56 @@ impl Permafrost {
         t_next: Time,
         input_state: &InputState,
         state: &mut PermafrostState,
-    ) -> RSCMResult<OutputState> {
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         if state.mineral_soil.len() != self.parameters.n_bands {
             *state = self.initial_state();
         }
         let inputs = PermafrostInputs::from_input_state(input_state);
         let (co2_emissions, ch4_emissions) =
             self.step(state, inputs.temperature.get(), t_next - t_current);
-        Ok(PermafrostOutputs {
+        PermafrostOutputs {
             co2_emissions,
             ch4_emissions,
             thawed_area: self.thawed_area(state),
         }
-        .into())
+        .write_to(out);
+        Ok(())
+    }
+}
+
+/// Soil moisture from soil water, with its value at the minimum water worked out once.
+///
+/// Soil below freezing sits at the minimum, so most months of most bands take that value.
+struct Moisture {
+    offsets: [FloatValue; 12],
+    minimum_water: FloatValue,
+    scale: FloatValue,
+    at_minimum: FloatValue,
+}
+
+impl Moisture {
+    fn new(offsets: [FloatValue; 12], minimum_water: FloatValue) -> Self {
+        let scale = 1.0 - (-1.0 as FloatValue).exp();
+        Self {
+            offsets,
+            minimum_water,
+            scale,
+            at_minimum: Self::compute(minimum_water.min(1.0), scale),
+        }
+    }
+
+    fn compute(water: FloatValue, scale: FloatValue) -> FloatValue {
+        (1.0 - (-water).exp()) / scale
+    }
+
+    /// Moisture at `water`, raised to the minimum and capped at 1 first.
+    fn at(&self, water: FloatValue) -> FloatValue {
+        if water > self.minimum_water || water.is_nan() {
+            Self::compute(water.at_most(1.0), self.scale)
+        } else {
+            self.at_minimum
+        }
     }
 }
 
@@ -416,16 +462,6 @@ impl Component for Permafrost {
         Self::generated_definitions()
     }
 
-    fn solve(
-        &self,
-        t_current: Time,
-        t_next: Time,
-        input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
-        let mut state = self.initial_state();
-        self.solve_impl(t_current, t_next, input_state, &mut state)
-    }
-
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
         Box::new(self.initial_state())
     }
@@ -437,11 +473,24 @@ impl Component for Permafrost {
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
     ) -> RSCMResult<OutputState> {
+        OutputBuffer::collect(self.output_names(), |out| {
+            self.solve_into(t_current, t_next, input_state, internal_state, out)
+        })
+    }
+
+    fn solve_into(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<PermafrostState>()
             .ok_or_else(|| RSCMError::Error("Internal state should be PermafrostState".into()))?;
-        self.solve_impl(t_current, t_next, input_state, state)
+        self.solve_impl(t_current, t_next, input_state, state, out)
     }
 }
 
@@ -531,7 +580,11 @@ mod tests {
     }
 
     fn season(component: &Permafrost, summer_max: FloatValue) -> Season {
-        component.season(&component.seasonal_offsets(), summer_max)
+        let p = component.parameters();
+        component.season(
+            &Moisture::new(component.seasonal_offsets(), p.minimum_soil_water),
+            summer_max,
+        )
     }
 
     /// Mineral soil band, half thawed, with thawed carbon densities 20 (aerobic) and 10 (anaerobic).

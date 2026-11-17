@@ -9,7 +9,7 @@
 
 use crate::component::VariableDefinition;
 use crate::names::{ERF_AEROSOLS, ERF_ANTHROPOGENIC, ERF_GREENHOUSE_GASES};
-use crate::state::{OutputState, StateValue};
+use crate::state::OutputWriter;
 use crate::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -83,13 +83,13 @@ impl ForcingSubtotals {
     }
 
     /// Write the subtotals into a component's output.
-    pub fn insert_into(&self, output: &mut OutputState) {
+    pub fn write_to(&self, out: &mut OutputWriter) {
         for (name, value) in [
             (ERF_GREENHOUSE_GASES, self.greenhouse_gases),
             (ERF_AEROSOLS, self.aerosols),
             (ERF_ANTHROPOGENIC, self.anthropogenic),
         ] {
-            output.insert(name.to_string(), StateValue::Scalar(value));
+            out.set(name, value);
         }
     }
 }

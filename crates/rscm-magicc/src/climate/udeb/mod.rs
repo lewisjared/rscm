@@ -75,8 +75,8 @@ use crate::parameters::{
     SECONDS_PER_YEAR,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, TimeseriesType,
-    VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
+    TimeseriesType, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::names::{
@@ -532,7 +532,8 @@ impl ClimateUDEB {
         t_next: Time,
         input_state: &InputState,
         state: &mut ClimateUDEBState,
-    ) -> RSCMResult<OutputState> {
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         self.ensure_state_initialised(state);
 
         // MAGICC7 interpolates forcing at each sub-annual time point:
@@ -804,14 +805,14 @@ impl ClimateUDEB {
         // SST is the mean of the two ocean box temperatures
         let sst = (sst_nh + sst_sh) / 2.0;
 
-        let mut outputs: OutputState = ClimateUDEBOutputs {
+        ClimateUDEBOutputs {
             surface_temperature,
             heat_uptake,
             ocean_heat_content,
             sst,
             ecs: adjusted_ecs,
         }
-        .into();
+        .write_to(out);
         if let (Some(expansion), Some(start)) =
             (&self.parameters.thermal_expansion, start_ocean_temperatures)
         {
@@ -830,17 +831,11 @@ impl ClimateUDEB {
                     &state.ocean_temperatures,
                 );
             }
-            outputs.insert(
-                ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE.to_string(),
-                StateValue::Scalar(annual_mean_temp),
-            );
-            outputs.insert(
-                SEA_LEVEL_RISE_THERMAL_EXPANSION.to_string(),
-                StateValue::Scalar(state.thermal_expansion),
-            );
+            out.set(ANNUAL_MEAN_SURFACE_AIR_TEMPERATURE_CHANGE, annual_mean_temp);
+            out.set(SEA_LEVEL_RISE_THERMAL_EXPANSION, state.thermal_expansion);
         }
 
-        Ok(outputs)
+        Ok(())
     }
 }
 
@@ -886,7 +881,9 @@ impl Component for ClimateUDEB {
     ) -> RSCMResult<OutputState> {
         // For standalone use, create a temporary state
         let mut state = ClimateUDEBState::default();
-        self.solve_impl(t_current, t_next, input_state, &mut state)
+        OutputBuffer::collect(self.output_names(), |out| {
+            self.solve_impl(t_current, t_next, input_state, &mut state, out)
+        })
     }
 
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
@@ -900,11 +897,24 @@ impl Component for ClimateUDEB {
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
     ) -> RSCMResult<OutputState> {
+        OutputBuffer::collect(self.output_names(), |out| {
+            self.solve_into(t_current, t_next, input_state, internal_state, out)
+        })
+    }
+
+    fn solve_into(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<ClimateUDEBState>()
             .expect("ClimateUDEB: invalid state type (expected ClimateUDEBState)");
-        self.solve_impl(t_current, t_next, input_state, state)
+        self.solve_impl(t_current, t_next, input_state, state, out)
     }
 }
 
@@ -1242,7 +1252,7 @@ mod tests {
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
 
         let output = component
-            .solve_impl(2000.0, 2001.0, &input_state, &mut state)
+            .solve_with_state(2000.0, 2001.0, &input_state, &mut state)
             .expect("solve_impl failed");
 
         // Extract SST from output
@@ -1491,14 +1501,14 @@ mod tests {
 
         let input_state = InputState::build(vec![&erf_item, &surf_item], 2000.0);
         let output = component
-            .solve_impl(2000.0, 2001.0, &input_state, &mut state)
+            .solve_with_state(2000.0, 2001.0, &input_state, &mut state)
             .expect("solve_impl failed");
 
         // Compare with default component (also `none`)
         let default_comp = default_component();
         let mut default_st = default_state(&default_comp);
         let output_default = default_comp
-            .solve_impl(2000.0, 2001.0, &input_state, &mut default_st)
+            .solve_with_state(2000.0, 2001.0, &input_state, &mut default_st)
             .expect("solve_impl failed");
 
         let sst_mode0 = match output.get("Sea Surface Temperature").unwrap() {
@@ -1559,7 +1569,7 @@ mod tests {
         let comp_0 = ClimateUDEB::from_parameters(params_0).unwrap();
         let mut state_0 = default_state(&comp_0);
         let out_0 = comp_0
-            .solve_impl(2000.0, 2001.0, &input_state, &mut state_0)
+            .solve_with_state(2000.0, 2001.0, &input_state, &mut state_0)
             .expect("solve failed");
 
         // ar6: AR6 efficacy adjustment
@@ -1570,7 +1580,7 @@ mod tests {
         let comp_2 = ClimateUDEB::from_parameters(params_2).unwrap();
         let mut state_2 = default_state(&comp_2);
         let out_2 = comp_2
-            .solve_impl(2000.0, 2001.0, &input_state, &mut state_2)
+            .solve_with_state(2000.0, 2001.0, &input_state, &mut state_2)
             .expect("solve failed");
 
         let sst_0 = match out_0.get("Sea Surface Temperature").unwrap() {
@@ -1693,7 +1703,7 @@ mod tests {
             };
             let comp = ClimateUDEB::from_parameters(params).unwrap();
             let mut state = default_state(&comp);
-            comp.solve_impl(2000.0, 2001.0, &input_state, &mut state)
+            comp.solve_with_state(2000.0, 2001.0, &input_state, &mut state)
                 .expect("solve failed")
         };
         let out_1 = solve(EfficacyMethod::Unit, 1.2);
@@ -1753,7 +1763,7 @@ mod tests {
         let comp_2a = ClimateUDEB::from_parameters(params_2a).unwrap();
         let mut state_2a = default_state(&comp_2a);
         let out_2a = comp_2a
-            .solve_impl(2000.0, 2001.0, &input_state, &mut state_2a)
+            .solve_with_state(2000.0, 2001.0, &input_state, &mut state_2a)
             .expect("solve failed");
 
         // ar6 with co2_efficacy=1.1 (10% additional efficacy)
@@ -1765,7 +1775,7 @@ mod tests {
         let comp_2b = ClimateUDEB::from_parameters(params_2b).unwrap();
         let mut state_2b = default_state(&comp_2b);
         let out_2b = comp_2b
-            .solve_impl(2000.0, 2001.0, &input_state, &mut state_2b)
+            .solve_with_state(2000.0, 2001.0, &input_state, &mut state_2b)
             .expect("solve failed");
 
         let sst_2a = match out_2a.get("Sea Surface Temperature").unwrap() {
@@ -1946,10 +1956,10 @@ mod tests {
         for year in [2000.0, 2001.0, 2002.0] {
             let input_state = InputState::build(items.iter().collect(), year);
             scaled
-                .solve_impl(year, year + 1.0, &input_state, &mut state_scaled)
+                .solve_with_state(year, year + 1.0, &input_state, &mut state_scaled)
                 .unwrap();
             unscaled
-                .solve_impl(year, year + 1.0, &input_state, &mut state_unscaled)
+                .solve_with_state(year, year + 1.0, &input_state, &mut state_unscaled)
                 .unwrap();
             assert_same_climate(&state_scaled, &state_unscaled, 1e-12);
         }
@@ -1967,7 +1977,7 @@ mod tests {
         let input_state = InputState::build(items.iter().collect(), 2000.0);
         let mut state = component.initial_state();
         component
-            .solve_impl(2000.0, 2001.0, &input_state, &mut state)
+            .solve_with_state(2000.0, 2001.0, &input_state, &mut state)
             .unwrap();
         assert!(state.ocean_temperatures[0].iter().all(|t| t.is_finite()));
     }
@@ -1990,7 +2000,7 @@ mod tests {
             let input_state = InputState::build(items.iter().collect(), 2000.0);
             let mut state = component.initial_state();
             let out = component
-                .solve_impl(2000.0, 2001.0, &input_state, &mut state)
+                .solve_with_state(2000.0, 2001.0, &input_state, &mut state)
                 .unwrap();
             match out["Heat Uptake"] {
                 StateValue::Scalar(v) => v,
@@ -2021,11 +2031,11 @@ mod tests {
 
         let mut warm = annual.initial_state();
         annual
-            .solve_impl(0.0, 1.0, &input_state, &mut warm)
+            .solve_with_state(0.0, 1.0, &input_state, &mut warm)
             .unwrap();
         let mut state_annual = warm.clone();
         annual
-            .solve_impl(1.0, 2.0, &input_state, &mut state_annual)
+            .solve_with_state(1.0, 2.0, &input_state, &mut state_annual)
             .unwrap();
 
         let run_monthly = |hold_alpha: bool| {
@@ -2036,7 +2046,7 @@ mod tests {
                 }
                 let t = month as FloatValue / 12.0;
                 monthly
-                    .solve_impl(t, t + 1.0 / 12.0, &input_state, &mut state)
+                    .solve_with_state(t, t + 1.0 / 12.0, &input_state, &mut state)
                     .unwrap();
             }
             state

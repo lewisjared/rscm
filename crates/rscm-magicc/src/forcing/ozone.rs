@@ -38,7 +38,9 @@
 use crate::bounds::Bounded;
 use crate::parameters::OzoneForcingParameters;
 use crate::reference::{first_value, require_annual, value_at_year};
-use rscm_core::component::{Component, InputState, OutputState, VariableDefinition};
+use rscm_core::component::{
+    Component, ComponentState, InputState, OutputWriter, VariableDefinition,
+};
 use rscm_core::errors::RSCMResult;
 use rscm_core::names::{
     child, ATMOSPHERIC_CONCENTRATIONS_CH4, ATMOSPHERIC_CONCENTRATIONS_N2O, EMISSIONS,
@@ -147,12 +149,14 @@ impl Component for OzoneForcing {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         require_annual("OzoneForcing", t_current, t_next)?;
         let p = &self.parameters;
         let window = |name| input_state.get_scalar_window(name);
@@ -188,16 +192,11 @@ impl Component for OzoneForcing {
             )),
             None => StateValue::Scalar(trop),
         };
-        let mut output = OutputState::new();
-        output.insert(ERF_OZONE_TROPOSPHERIC.to_string(), trop);
-        for (name, value) in [
-            (ERF_OZONE_STRATOSPHERIC, strat),
-            (ERF_OZONE_N2O_FEEDBACK, n2o_ozone),
-            (ERF_OZONE_TEMPERATURE_FEEDBACK, temperature),
-        ] {
-            output.insert(name.to_string(), StateValue::Scalar(value));
-        }
-        Ok(output)
+        out.set(ERF_OZONE_STRATOSPHERIC, strat);
+        out.set(ERF_OZONE_TROPOSPHERIC, trop);
+        out.set(ERF_OZONE_N2O_FEEDBACK, n2o_ozone);
+        out.set(ERF_OZONE_TEMPERATURE_FEEDBACK, temperature);
+        Ok(())
     }
 }
 

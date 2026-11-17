@@ -58,8 +58,8 @@ use super::nitrogen::{NitrogenBudget, NitrogenDrivers, NitrogenState};
 use crate::parameters::TerrestrialCarbonParameters;
 use crate::reference::feedback_warming;
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputState, TimeseriesType,
-    VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
+    TimeseriesType, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -712,7 +712,8 @@ impl TerrestrialCarbon {
         t_next: Time,
         input_state: &InputState,
         state: &mut TerrestrialCarbonState,
-    ) -> RSCMResult<OutputState> {
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let dt = t_next - t_current;
         if !dt.is_finite() || (dt - 1.0).abs() >= 1e-6 {
             return Err(RSCMError::Error(format!(
@@ -768,7 +769,7 @@ impl TerrestrialCarbon {
             total_respiration: result.total_respiration,
         };
 
-        let mut output: OutputState = outputs.into();
+        outputs.write_to(out);
         if let Some(budget) = result.nitrogen {
             let values = [
                 budget.limitation,
@@ -778,16 +779,13 @@ impl TerrestrialCarbon {
                 budget.losses,
             ];
             for ((name, _, _), value) in NITROGEN_OUTPUTS.iter().zip(values) {
-                output.insert(name.to_string(), StateValue::Scalar(value));
+                out.set(name, value);
             }
             if self.prognostic_fixation() {
-                output.insert(
-                    NITROGEN_FLUX_FIXATION.to_string(),
-                    StateValue::Scalar(budget.fixation),
-                );
+                out.set(NITROGEN_FLUX_FIXATION, budget.fixation);
             }
         }
-        Ok(output)
+        Ok(())
     }
 
     fn prognostic_fixation(&self) -> bool {
@@ -853,20 +851,6 @@ impl Component for TerrestrialCarbon {
         definitions
     }
 
-    /// Stateless single-step solve. Creates a fresh internal state each call,
-    /// so state-dependent features (CO2 extrapolation, cumulative Biosphere emissions,
-    /// regrowth attribution, mass conservation) will not accumulate across calls.
-    /// For multi-step simulations, use `solve_with_state` instead.
-    fn solve(
-        &self,
-        t_current: Time,
-        t_next: Time,
-        input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
-        let mut state = TerrestrialCarbonState::default();
-        self.solve_impl(t_current, t_next, input_state, &mut state)
-    }
-
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
         Box::new(TerrestrialCarbonState::default())
     }
@@ -878,11 +862,24 @@ impl Component for TerrestrialCarbon {
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
     ) -> RSCMResult<OutputState> {
+        OutputBuffer::collect(self.output_names(), |out| {
+            self.solve_into(t_current, t_next, input_state, internal_state, out)
+        })
+    }
+
+    fn solve_into(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<TerrestrialCarbonState>()
             .expect("Internal state should be TerrestrialCarbonState");
-        self.solve_impl(t_current, t_next, input_state, state)
+        self.solve_impl(t_current, t_next, input_state, state, out)
     }
 }
 

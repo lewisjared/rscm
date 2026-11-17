@@ -65,7 +65,8 @@ use crate::reference::{
     reference_value, require_annual, value_at_year,
 };
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputState, OutputWriter, VariableDefinition,
+    VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::names::{
@@ -297,12 +298,14 @@ impl Component for CH4Chemistry {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         require_annual("CH4Chemistry", t_current, t_next)?;
         let inputs = CH4ChemistryInputs::from_input_state(input_state);
         let feedback_year = self.parameters.feedback_start_year;
@@ -356,20 +359,17 @@ impl Component for CH4Chemistry {
         let sink = burden + inverse_emissions + permafrost + self.parameters.natural_emissions
             - self.concentration_to_burden(new_concentration);
 
-        let mut outputs: OutputState = CH4ChemistryOutputs {
+        CH4ChemistryOutputs {
             ch4_concentration: new_concentration,
             ch4_lifetime: lifetime,
             ch4_oh_lifetime: oh_lifetime,
             ch4_effective_lifetime: burden / sink,
         }
-        .into();
+        .write_to(out);
         if self.parameters.concentration_switch_year.is_some() {
-            outputs.insert(
-                INVERSE_EMISSIONS_CH4.to_string(),
-                StateValue::Scalar(inverse_emissions),
-            );
+            out.set(INVERSE_EMISSIONS_CH4, inverse_emissions);
         }
-        Ok(outputs)
+        Ok(())
     }
 }
 

@@ -33,6 +33,7 @@ use crate::timeseries_collection::TimeseriesItem;
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::HashMap;
 
 // =============================================================================
@@ -212,9 +213,42 @@ pub struct InputState<'a> {
     current_time: Time,
     /// Index of `current_time` in the time axis that most items share.
     time_index: Option<usize>,
-    state: Vec<&'a TimeseriesItem>,
+    state: Items<'a>,
     /// Optional transform context for grid aggregation
     transform_context: Option<Cow<'a, TransformContext>>,
+    /// Position after the last item read, which is checked first.
+    next: Cell<usize>,
+}
+
+/// Where a component's inputs sit in a collection and how each is read, in declaration order.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct InputPlan {
+    pub(crate) indices: Vec<usize>,
+    /// Positions in [`lookup_order`] of their names.
+    pub(crate) order: Vec<u32>,
+    pub(crate) transforms: Vec<Option<ReadTransformInfo>>,
+}
+
+#[derive(Debug, Clone)]
+enum Items<'a> {
+    Listed(Vec<&'a TimeseriesItem>),
+    Planned {
+        items: &'a [TimeseriesItem],
+        plan: &'a InputPlan,
+    },
+}
+
+impl<'a> Items<'a> {
+    fn get(&self, position: usize) -> Option<&'a TimeseriesItem> {
+        match self {
+            Items::Listed(items) => items.get(position).copied(),
+            Items::Planned { items, plan } => plan.indices.get(position).map(|&i| &items[i]),
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &'a TimeseriesItem> + '_ {
+        (0..).map_while(|position| self.get(position))
+    }
 }
 
 /// Order names by length and then by name, which settles most comparisons by length alone.
@@ -227,8 +261,9 @@ impl<'a> InputState<'a> {
         Self {
             current_time,
             time_index: None,
-            state: values,
+            state: Items::Listed(values),
             transform_context: None,
+            next: Cell::new(0),
         }
     }
 
@@ -241,8 +276,9 @@ impl<'a> InputState<'a> {
         Self {
             current_time,
             time_index: None,
-            state: values,
+            state: Items::Listed(values),
             transform_context: Some(Cow::Owned(transform_context)),
+            next: Cell::new(0),
         }
     }
 
@@ -255,8 +291,9 @@ impl<'a> InputState<'a> {
         Self {
             current_time,
             time_index: None,
-            state: values,
+            state: Items::Listed(values),
             transform_context: transform_context.map(Cow::Borrowed),
+            next: Cell::new(0),
         }
     }
 
@@ -264,14 +301,30 @@ impl<'a> InputState<'a> {
         Self {
             current_time: f64::NAN,
             time_index: None,
-            state: vec![],
+            state: Items::Listed(vec![]),
             transform_context: None,
+            next: Cell::new(0),
         }
     }
 
     /// Test if the state contains a value with the given name
     pub fn has(&self, name: &str) -> bool {
         self.find(name).is_some()
+    }
+
+    /// Build an InputState over the planned `items` of a collection, without collecting them.
+    pub(crate) fn planned(
+        items: &'a [TimeseriesItem],
+        plan: &'a InputPlan,
+        current_time: Time,
+    ) -> Self {
+        Self {
+            current_time,
+            time_index: None,
+            state: Items::Planned { items, plan },
+            transform_context: None,
+            next: Cell::new(0),
+        }
     }
 
     /// Set the index of the current time in the time axis that most items share.
@@ -295,15 +348,51 @@ impl<'a> InputState<'a> {
 
     /// Item named `name`, by binary search when the items are in [`lookup_order`].
     fn find(&self, name: &str) -> Option<&'a TimeseriesItem> {
-        let index = self
-            .state
-            .binary_search_by(|item| lookup_order(&item.name, name))
-            .ok()
-            .or_else(|| self.state.iter().position(|item| item.name == name))?;
-        Some(self.state[index])
+        self.position(name).and_then(|index| self.state.get(index))
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &&TimeseriesItem> {
+    /// Position of `name`, checking the one after the last read first,
+    /// so reads in declaration order skip the search.
+    fn position(&self, name: &str) -> Option<usize> {
+        let next = self.next.get();
+        let position = if self.state.get(next).is_some_and(|item| item.name == name) {
+            Some(next)
+        } else {
+            match &self.state {
+                Items::Listed(items) => items
+                    .binary_search_by(|item| lookup_order(&item.name, name))
+                    .ok()
+                    .or_else(|| items.iter().position(|item| item.name == name)),
+                Items::Planned { items, plan } => plan
+                    .order
+                    .binary_search_by(|&p| {
+                        lookup_order(&items[plan.indices[p as usize]].name, name)
+                    })
+                    .ok()
+                    .map(|k| plan.order[k] as usize),
+            }
+        }?;
+        self.next.set(position + 1);
+        Some(position)
+    }
+
+    /// Item named `name` and its read transform, panicking if there is no such item.
+    fn lookup(&self, name: &str) -> (&'a TimeseriesItem, Option<&ReadTransformInfo>) {
+        let index = self
+            .position(name)
+            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
+        let transform = match &self.state {
+            Items::Planned { plan, .. } => plan.transforms[index].as_ref(),
+            Items::Listed(_) => self
+                .transform_context
+                .as_ref()
+                .and_then(|ctx| ctx.read_transforms.get(name)),
+        };
+        let item = self.state.get(index).expect("a position within the items");
+        (item, transform)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &'a TimeseriesItem> + '_ {
         self.state.iter()
     }
 
@@ -323,29 +412,17 @@ impl<'a> InputState<'a> {
     ///
     /// Panics if the variable is not found or cannot be accessed as scalar.
     pub fn get_scalar_window(&self, name: &str) -> ScalarWindow<'_> {
-        self.scalar_window(name)
-            .with_timeseries_type(self.timeseries_type(name))
+        let (item, transform) = self.lookup(name);
+        self.scalar_window(name, item, transform)
+            .with_timeseries_type(timeseries_type(transform))
     }
 
-    /// Point or average type of `name`, from its read transform.
-    fn timeseries_type(&self, name: &str) -> TimeseriesType {
-        self.transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name))
-            .map_or(TimeseriesType::Point, |t| t.timeseries_type)
-    }
-
-    fn scalar_window(&self, name: &str) -> ScalarWindow<'_> {
-        let item = self
-            .find(name)
-            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
-
-        // Check if there's a read transform for this variable
-        let transform = self
-            .transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name));
-
+    fn scalar_window(
+        &self,
+        name: &str,
+        item: &'a TimeseriesItem,
+        transform: Option<&ReadTransformInfo>,
+    ) -> ScalarWindow<'_> {
         // If there's a transform, use the source grid and unit conversion factor
         if let Some(transform) = transform {
             let unit_factor = transform.unit_conversion_factor;
@@ -361,14 +438,16 @@ impl<'a> InputState<'a> {
 
                     let time_index = self.time_index(ts.time_axis_ref(), name);
 
-                    return ScalarWindow::FromFourBox(AggregatingFourBoxWindow::with_source(
-                        ts,
-                        time_index,
-                        &item.name,
-                        transform.weights.clone(),
-                        unit_factor,
-                        transform.variable_source,
-                    ));
+                    return ScalarWindow::FromFourBox(
+                        AggregatingFourBoxWindow::with_borrowed_weights(
+                            ts,
+                            time_index,
+                            &item.name,
+                            transform.weights.as_deref(),
+                            unit_factor,
+                            transform.variable_source,
+                        ),
+                    );
                 }
                 GridType::Hemispheric => {
                     let ts = item
@@ -384,11 +463,11 @@ impl<'a> InputState<'a> {
                     let time_index = self.time_index(ts.time_axis_ref(), name);
 
                     return ScalarWindow::FromHemispheric(
-                        AggregatingHemisphericWindow::with_source(
+                        AggregatingHemisphericWindow::with_borrowed_weights(
                             ts,
                             time_index,
                             &item.name,
-                            transform.weights.clone(),
+                            transform.weights.as_deref(),
                             unit_factor,
                             transform.variable_source,
                         ),
@@ -421,13 +500,7 @@ impl<'a> InputState<'a> {
 
         let time_index = self.time_index(ts.time_axis_ref(), name);
 
-        // Get variable source from transform context if available
-        let source = self
-            .transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name))
-            .map(|t| t.variable_source)
-            .unwrap_or(VariableSource::Prescribed);
+        let source = transform.map_or(VariableSource::Prescribed, |t| t.variable_source);
 
         ScalarWindow::Direct(TimeseriesWindow::with_source(
             ts, time_index, &item.name, 1.0, // no unit conversion for direct access
@@ -444,9 +517,7 @@ impl<'a> InputState<'a> {
     ///
     /// Panics if the variable is not found or is not a four-box timeseries.
     pub fn get_four_box_window(&self, name: &str) -> GridTimeseriesWindow<'_, FourBoxGrid> {
-        let item = self
-            .find(name)
-            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
+        let (item, transform) = self.lookup(name);
 
         let ts = item
             .data
@@ -457,15 +528,12 @@ impl<'a> InputState<'a> {
         let time_index = self.time_index(ts.time_axis_ref(), name);
 
         // Check if there's a unit conversion factor and variable source
-        let (unit_factor, source) = self
-            .transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name))
+        let (unit_factor, source) = transform
             .map(|t| (t.unit_conversion_factor, t.variable_source))
             .unwrap_or((1.0, VariableSource::Prescribed));
 
         GridTimeseriesWindow::with_source(ts, time_index, &item.name, unit_factor, source)
-            .with_timeseries_type(self.timeseries_type(name))
+            .with_timeseries_type(timeseries_type(transform))
     }
 
     /// Get a Hemispheric GridTimeseriesWindow for the named variable
@@ -481,21 +549,17 @@ impl<'a> InputState<'a> {
     ///
     /// Panics if the variable is not found or cannot be accessed as Hemispheric.
     pub fn get_hemispheric_window(&self, name: &str) -> HemisphericWindow<'_> {
-        self.hemispheric_window(name)
-            .with_timeseries_type(self.timeseries_type(name))
+        let (item, transform) = self.lookup(name);
+        self.hemispheric_window(name, item, transform)
+            .with_timeseries_type(timeseries_type(transform))
     }
 
-    fn hemispheric_window(&self, name: &str) -> HemisphericWindow<'_> {
-        let item = self
-            .find(name)
-            .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
-
-        // Check if there's a read transform for this variable
-        let transform = self
-            .transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name));
-
+    fn hemispheric_window(
+        &self,
+        name: &str,
+        item: &'a TimeseriesItem,
+        transform: Option<&ReadTransformInfo>,
+    ) -> HemisphericWindow<'_> {
         // If there's a transform from FourBox, aggregate
         if let Some(transform) = transform {
             let unit_factor = transform.unit_conversion_factor;
@@ -547,13 +611,7 @@ impl<'a> InputState<'a> {
 
         let time_index = self.time_index(ts.time_axis_ref(), name);
 
-        // Get variable source from transform context if available
-        let source = self
-            .transform_context
-            .as_ref()
-            .and_then(|ctx| ctx.read_transforms.get(name))
-            .map(|t| t.variable_source)
-            .unwrap_or(VariableSource::Prescribed);
+        let source = transform.map_or(VariableSource::Prescribed, |t| t.variable_source);
 
         HemisphericWindow::Direct(GridTimeseriesWindow::with_source(
             ts, time_index, &item.name, 1.0, source,
@@ -561,12 +619,17 @@ impl<'a> InputState<'a> {
     }
 }
 
+/// Point or average type from a read transform, a point without one.
+fn timeseries_type(transform: Option<&ReadTransformInfo>) -> TimeseriesType {
+    transform.map_or(TimeseriesType::Point, |t| t.timeseries_type)
+}
+
 impl<'a> IntoIterator for InputState<'a> {
     type Item = &'a TimeseriesItem;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.state.into_iter()
+        self.state.iter().collect::<Vec<_>>().into_iter()
     }
 }
 
@@ -580,6 +643,113 @@ impl<'a> IntoIterator for InputState<'a> {
 /// The model writes these values to the appropriate timeseries based on the
 /// variable's grid in `VariableDefinition`.
 pub type OutputState = HashMap<String, StateValue>;
+
+/// Values a component writes in one step, held by the position of each declared output.
+#[derive(Debug, Clone, Default)]
+pub struct OutputBuffer {
+    names: Vec<String>,
+    /// Positions in [`lookup_order`] of their names.
+    order: Vec<u32>,
+    values: Vec<Option<StateValue>>,
+    undeclared: Vec<(String, StateValue)>,
+}
+
+impl OutputBuffer {
+    /// A buffer for the outputs `names`, usually `Component::output_names`.
+    pub fn new(names: Vec<String>) -> Self {
+        let mut order: Vec<u32> = (0..names.len() as u32).collect();
+        order.sort_by(|&a, &b| lookup_order(&names[a as usize], &names[b as usize]));
+        Self {
+            values: vec![None; names.len()],
+            names,
+            order,
+            undeclared: Vec::new(),
+        }
+    }
+
+    /// Outputs `f` writes to a fresh buffer, for a `solve_with_state` over `solve_into`.
+    pub fn collect(
+        names: Vec<String>,
+        f: impl FnOnce(&mut OutputWriter) -> crate::errors::RSCMResult<()>,
+    ) -> crate::errors::RSCMResult<OutputState> {
+        let mut buffer = Self::new(names);
+        f(&mut buffer.writer())?;
+        Ok(buffer.into_output_state())
+    }
+
+    /// Write access for one step.
+    pub fn writer(&mut self) -> OutputWriter<'_> {
+        OutputWriter {
+            buffer: self,
+            next: 0,
+        }
+    }
+
+    pub(crate) fn names(&self) -> &[String] {
+        &self.names
+    }
+
+    /// Take the value written to the declared output at `position`.
+    pub(crate) fn take(&mut self, position: usize) -> Option<StateValue> {
+        self.values[position].take()
+    }
+
+    /// Take the values written to names that are not declared.
+    pub(crate) fn take_undeclared(&mut self) -> Vec<(String, StateValue)> {
+        std::mem::take(&mut self.undeclared)
+    }
+
+    pub fn into_output_state(self) -> OutputState {
+        self.names
+            .into_iter()
+            .zip(self.values)
+            .filter_map(|(name, value)| Some((name, value?)))
+            .chain(self.undeclared)
+            .collect()
+    }
+
+    fn position(&self, name: &str, next: usize) -> Option<usize> {
+        if self.names.get(next).is_some_and(|n| n == name) {
+            return Some(next);
+        }
+        self.order
+            .binary_search_by(|&p| lookup_order(&self.names[p as usize], name))
+            .ok()
+            .map(|k| self.order[k] as usize)
+    }
+}
+
+/// Write access to a component's outputs for one step.
+///
+/// Writing outputs in declaration order skips the search for each name.
+pub struct OutputWriter<'a> {
+    buffer: &'a mut OutputBuffer,
+    next: usize,
+}
+
+impl OutputWriter<'_> {
+    /// Write `value` to the output `name`.
+    pub fn set(&mut self, name: &str, value: impl Into<StateValue>) {
+        let value = value.into();
+        match self.buffer.position(name, self.next) {
+            Some(position) => {
+                self.buffer.values[position] = Some(value);
+                self.next = position + 1;
+            }
+            None => self.buffer.undeclared.push((name.to_string(), value)),
+        }
+    }
+
+    /// Write every value of `state`.
+    pub fn extend(&mut self, state: OutputState) {
+        for (name, value) in state {
+            match self.buffer.position(&name, self.next) {
+                Some(position) => self.buffer.values[position] = Some(value),
+                None => self.buffer.undeclared.push((name, value)),
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1013,5 +1183,79 @@ mod input_state_window_tests {
                 .1,
             vec![17.0, 16.0, 12.0, 11.0]
         );
+    }
+
+    #[test]
+    fn planned_state_reads_in_any_order() {
+        let items = vec![
+            create_scalar_item("Long name", vec![1.0, 2.0]),
+            create_scalar_item("B", vec![3.0, 4.0]),
+            create_scalar_item("Unread", vec![0.0, 0.0]),
+            create_scalar_item("A", vec![5.0, 6.0]),
+        ];
+        let plan = InputPlan {
+            indices: vec![0, 3, 1],
+            order: vec![1, 2, 0],
+            transforms: vec![None, None, None],
+        };
+        let state = InputState::planned(&items, &plan, 2000.0);
+        for (name, expected) in [
+            ("Long name", 2.0),
+            ("A", 6.0),
+            ("B", 4.0),
+            ("B", 4.0),
+            ("A", 6.0),
+            ("Long name", 2.0),
+        ] {
+            assert_eq!(state.get_scalar_window(name).get(), expected, "{name}");
+        }
+        assert!(!state.has("Unread"));
+        assert_eq!(
+            state
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Long name", "A", "B"]
+        );
+    }
+}
+
+#[cfg(test)]
+mod output_buffer_tests {
+    use super::*;
+
+    #[test]
+    fn writes_by_name_in_any_order() {
+        let mut buffer = OutputBuffer::new(vec!["Long name".into(), "B".into(), "A".into()]);
+        let mut out = buffer.writer();
+        out.set("A", 1.0);
+        out.set("Long name", 2.0);
+        out.set("B", 3.0);
+        out.set("Undeclared", 4.0);
+        out.set("B", 5.0);
+        assert_eq!(buffer.take(1), Some(StateValue::Scalar(5.0)));
+        assert_eq!(buffer.take(1), None);
+        assert_eq!(
+            buffer.take_undeclared(),
+            [("Undeclared".to_string(), StateValue::Scalar(4.0))]
+        );
+        let state = buffer.into_output_state();
+        assert_eq!(state.len(), 2);
+        assert_eq!(state["A"], StateValue::Scalar(1.0));
+        assert_eq!(state["Long name"], StateValue::Scalar(2.0));
+    }
+
+    #[test]
+    fn collect_extends_from_an_output_state() {
+        let state = OutputBuffer::collect(vec!["A".into()], |out| {
+            out.extend(OutputState::from([
+                ("A".to_string(), StateValue::Scalar(1.0)),
+                ("B".to_string(), StateValue::Scalar(2.0)),
+            ]));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(state.len(), 2);
+        assert_eq!(state["B"], StateValue::Scalar(2.0));
     }
 }

@@ -48,7 +48,8 @@ use crate::reference::{
     require_annual, value_at_year,
 };
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
+    Component, ComponentState, GridType, InputState, OutputState, OutputWriter, VariableDefinition,
+    VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::names::ATMOSPHERIC_CONCENTRATIONS_N2O;
@@ -168,12 +169,14 @@ impl Component for N2OChemistry {
         definitions
     }
 
-    fn solve(
+    fn solve_into(
         &self,
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
+        _internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         require_annual("N2OChemistry", t_current, t_next)?;
         let inputs = N2OChemistryInputs::from_input_state(input_state);
         let p = &self.parameters;
@@ -215,7 +218,8 @@ impl Component for N2OChemistry {
             n2o_lifetime: lifetime,
         };
 
-        Ok(outputs.into())
+        outputs.write_to(out);
+        Ok(())
     }
 }
 

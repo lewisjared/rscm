@@ -1,7 +1,7 @@
 use crate::errors::RSCMResult;
 pub use crate::state::{
     FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, HemisphericWindow, InputState,
-    OutputState, ScalarWindow, TimeseriesWindow, VariableSource,
+    OutputBuffer, OutputState, OutputWriter, ScalarWindow, TimeseriesWindow, VariableSource,
 };
 use crate::timeseries::Time;
 use crate::units::Unit;
@@ -451,13 +451,26 @@ pub trait Component: Debug + Send + Sync {
 
     /// Solve the component until `t_next`
     ///
-    /// The result should contain values for the current step for all output variables
+    /// The result should contain values for the current step for all output variables.
+    /// Implement this, [`Self::solve_with_state`] or [`Self::solve_into`].
+    /// The default solves into a fresh initial state.
     fn solve(
         &self,
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-    ) -> RSCMResult<OutputState>;
+    ) -> RSCMResult<OutputState> {
+        let mut state = self.create_initial_state();
+        let mut buffer = OutputBuffer::new(self.output_names());
+        self.solve_into(
+            t_current,
+            t_next,
+            input_state,
+            state.as_mut(),
+            &mut buffer.writer(),
+        )?;
+        Ok(buffer.into_output_state())
+    }
 
     /// Solve with internal state support.
     ///
@@ -480,6 +493,22 @@ pub trait Component: Debug + Send + Sync {
         // Default: ignore state, call existing solve()
         let _ = internal_state;
         self.solve(t_current, t_next, input_state)
+    }
+
+    /// Solve one step, writing each output to `output`.
+    ///
+    /// The model calls this, and the default copies the result of [`Self::solve_with_state`].
+    /// Override it to skip building an [`OutputState`] each step.
+    fn solve_into(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+        output: &mut OutputWriter,
+    ) -> RSCMResult<()> {
+        output.extend(self.solve_with_state(t_current, t_next, input_state, internal_state)?);
+        Ok(())
     }
 
     /// Create the initial state for this component.

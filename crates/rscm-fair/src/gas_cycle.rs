@@ -45,10 +45,10 @@
 use crate::constants::{get, surface_temperature, temperature_unit};
 use crate::driver::Driver;
 use rscm_core::component::{
-    Component, ComponentState, InputState, OutputState, TimeseriesType, VariableDefinition,
+    Component, ComponentState, InputState, OutputBuffer, OutputState, OutputWriter, TimeseriesType,
+    VariableDefinition,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
-use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
@@ -330,10 +330,10 @@ impl GasCycle {
         t_next: Time,
         input_state: &InputState,
         state: &mut GasCycleState,
-    ) -> RSCMResult<OutputState> {
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let dt = t_next - t_current;
         let temperature = get(input_state, &self.parameters.surface_temperature);
-        let mut output = OutputState::with_capacity(3 * self.parameters.species.len());
         for (species, gas) in self.parameters.species.iter().zip(state.gases.iter_mut()) {
             let alpha = match &species.lifetime_scaling {
                 Some(name) => get(input_state, name),
@@ -348,29 +348,26 @@ impl GasCycle {
                         .reduce(|a, b| a + b)
                         .unwrap_or(0.0);
                     let concentration = Self::step_emissions(species, gas, emissions, alpha, dt);
-                    output.insert(
-                        species.concentration.clone(),
-                        StateValue::Scalar(concentration),
-                    );
+                    out.set(&species.concentration, concentration);
                 }
                 Driver::Concentration => {
                     let concentration = get(input_state, &species.concentration);
                     let emissions =
                         Self::step_concentration(species, gas, concentration, alpha, dt);
                     if let Some(name) = &species.inverse_emissions {
-                        output.insert(name.clone(), StateValue::Scalar(emissions));
+                        out.set(name, emissions);
                     }
                 }
                 Driver::CumulativeEmissions => unreachable!("rejected by from_parameters"),
             }
             if let Some(name) = &species.airborne_emissions {
-                output.insert(name.clone(), StateValue::Scalar(gas.airborne));
+                out.set(name, gas.airborne);
             }
             if let Some(name) = &species.cumulative_emissions {
-                output.insert(name.clone(), StateValue::Scalar(gas.cumulative));
+                out.set(name, gas.cumulative);
             }
         }
-        Ok(output)
+        Ok(())
     }
 }
 
@@ -420,18 +417,6 @@ impl Component for GasCycle {
         definitions
     }
 
-    /// Stateless solve from empty boxes, so only correct for the first step.
-    /// Models use `solve_with_state`.
-    fn solve(
-        &self,
-        t_current: Time,
-        t_next: Time,
-        input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
-        let mut state = self.initial_state();
-        self.solve_impl(t_current, t_next, input_state, &mut state)
-    }
-
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
         Box::new(self.initial_state())
     }
@@ -443,11 +428,24 @@ impl Component for GasCycle {
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
     ) -> RSCMResult<OutputState> {
+        OutputBuffer::collect(self.output_names(), |out| {
+            self.solve_into(t_current, t_next, input_state, internal_state, out)
+        })
+    }
+
+    fn solve_into(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<GasCycleState>()
             .ok_or_else(|| RSCMError::Error("Internal state is not GasCycleState".into()))?;
-        self.solve_impl(t_current, t_next, input_state, state)
+        self.solve_impl(t_current, t_next, input_state, state, out)
     }
 }
 

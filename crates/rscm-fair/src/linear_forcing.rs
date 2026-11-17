@@ -32,10 +32,10 @@
 use crate::constants::{driver_definitions, get, one, surface_temperature};
 use crate::driver::Driver;
 use rscm_core::component::{
-    Component, ComponentState, InputState, OutputState, VariableDefinition,
+    Component, ComponentState, InputState, OutputBuffer, OutputState, OutputWriter,
+    VariableDefinition,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
-use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
@@ -141,7 +141,8 @@ impl LinearForcing {
         t_next: Time,
         input_state: &InputState,
         state: &mut LinearForcingState,
-    ) -> RSCMResult<OutputState> {
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let p = &self.parameters;
         let dt = t_next - t_current;
         let values = p
@@ -157,12 +158,8 @@ impl LinearForcing {
             });
         let forcing = self.forcing(values);
         let temperature = get(input_state, &p.surface_temperature);
-        let mut output = OutputState::with_capacity(1);
-        output.insert(
-            p.forcing.clone(),
-            StateValue::Scalar(forcing + temperature * p.temperature_feedback),
-        );
-        Ok(output)
+        out.set(&p.forcing, forcing + temperature * p.temperature_feedback);
+        Ok(())
     }
 }
 
@@ -179,17 +176,6 @@ impl Component for LinearForcing {
         )
     }
 
-    /// Stateless solve with no emissions before this step, so only correct for the first step
-    /// when a driver is cumulative.
-    fn solve(
-        &self,
-        t_current: Time,
-        t_next: Time,
-        input_state: &InputState,
-    ) -> RSCMResult<OutputState> {
-        self.solve_impl(t_current, t_next, input_state, &mut self.initial_state())
-    }
-
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
         Box::new(self.initial_state())
     }
@@ -201,11 +187,24 @@ impl Component for LinearForcing {
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
     ) -> RSCMResult<OutputState> {
+        OutputBuffer::collect(self.output_names(), |out| {
+            self.solve_into(t_current, t_next, input_state, internal_state, out)
+        })
+    }
+
+    fn solve_into(
+        &self,
+        t_current: Time,
+        t_next: Time,
+        input_state: &InputState,
+        internal_state: &mut dyn ComponentState,
+        out: &mut OutputWriter,
+    ) -> RSCMResult<()> {
         let state = internal_state
             .as_any_mut()
             .downcast_mut::<LinearForcingState>()
             .ok_or_else(|| RSCMError::Error("Internal state is not LinearForcingState".into()))?;
-        self.solve_impl(t_current, t_next, input_state, state)
+        self.solve_impl(t_current, t_next, input_state, state, out)
     }
 }
 
