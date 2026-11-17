@@ -554,6 +554,31 @@ def test_initial_concentrations_must_be_positive_numbers(given, kind):
     }
 
 
+@pytest.mark.parametrize(
+    ("given", "ok"),
+    [
+        ({"N2O": 199.0}, True),
+        ({"CH4": 1.0}, True),
+        ({"CFC11": 0.0}, True),
+        ({"N2O": 0.0}, False),
+        ({"CO2": 1e-9}, False),
+        ({"CO2": 179.0}, False),
+    ],
+)
+def test_ipcctar_initial_concentrations(given, ok):
+    kwargs = {
+        "parameters": {"core_co2ch4n2o_rfmethod": "IPCCTAR"},
+        "initial_concentrations": given,
+    }
+    if ok:
+        translate(**kwargs)
+    else:
+        (name,) = given
+        assert issues(**kwargs) == {
+            (IssueKind.OUT_OF_RANGE, f"initial_concentrations[{name}]")
+        }
+
+
 def test_zero_halocarbon_initial_concentrations_are_accepted():
     translate(initial_concentrations={"CFC11": 0.0})
 

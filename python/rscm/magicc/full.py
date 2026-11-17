@@ -1173,7 +1173,7 @@ def _check_emissions(
 
 
 def _check_initial_concentrations(
-    v: Validator, given: Mapping[str, float] | None
+    v: Validator, given: Mapping[str, float] | None, method: str
 ) -> None:
     species = default_initial_concentrations()
     for name, value in (given or {}).items():
@@ -1186,15 +1186,32 @@ def _check_initial_concentrations(
             v.add(IssueKind.TYPE, location, f"{value!r} is not a number")
         elif v.finite(location, value):
             lowest, unit = FITTED_CONCENTRATIONS.get(name, (0.0, ""))
-            v.check(
-                float(value) >= lowest,
-                IssueKind.OUT_OF_RANGE,
-                location,
-                f"{value} is below {lowest:g} {unit}, the lowest {name} concentration"
-                " the forcing formulae are fitted to"
-                if unit
-                else f"{value} must be zero or more",
-            )
+            if not unit:
+                v.check(
+                    value >= 0,
+                    IssueKind.OUT_OF_RANGE,
+                    location,
+                    f"{value} must be zero or more",
+                )
+            elif method == "IPCCTAR" and name != "CO2":
+                v.check(
+                    value > 0,
+                    IssueKind.OUT_OF_RANGE,
+                    location,
+                    f"{value} must be positive for the IPCCTAR forcing",
+                )
+            else:
+                reason = (
+                    "as its logarithmic forcing runs away from a lower start"
+                    if method == "IPCCTAR"
+                    else "the lowest the forcing formulae are fitted to"
+                )
+                v.check(
+                    value >= lowest,
+                    IssueKind.OUT_OF_RANGE,
+                    location,
+                    f"{value} is below {lowest:g} {unit}, {reason}",
+                )
 
 
 def _is_year(key: str) -> bool:
@@ -1275,7 +1292,8 @@ FITTED_CONCENTRATIONS = {
 }
 """Lowest concentration and unit of each gas the forcing formulae are fitted to.
 
-The ranges are those of Etminan et al. (2016).
+The ranges are those of Etminan et al. (2016), which the OLBL formulae fit.
+IPCCTAR checks only the CO2 floor, as its log forcing runs away from a lower start.
 """
 
 PREINDUSTRIAL_YEAR = 1750.0
@@ -1736,7 +1754,9 @@ def from_magicc7(  # noqa: PLR0913
         " MAGICC7's preindustrial reference year, as RSCM measures forcing"
         " from the first year",
     )
-    _check_initial_concentrations(v, initial_concentrations)
+    _check_initial_concentrations(
+        v, initial_concentrations, _upper(p["core_co2ch4n2o_rfmethod"])
+    )
     _check_bugs(v, bugs)
     v.raise_if_any()
     p = p.new_child(

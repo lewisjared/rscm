@@ -101,8 +101,10 @@ The keyword arguments of `from_magicc7` override MAGICC7's setup:
   As in MAGICC7 these are the concentration files' values in the first year,
   which `full.file_initial_concentrations()` gives.
   A gas the translation does not track, or a negative or non-finite value, is rejected.
-  So are CO2 below 180 ppm, CH4 below 340 ppb and N2O below 200 ppb,
-  the lowest concentrations the forcing formulae are fitted to (Etminan et al. 2016).
+  With the default OLBL forcing, so are CO2 below 180 ppm, CH4 below 340 ppb and N2O below 200 ppb,
+  the lowest concentrations its formulae are fitted to (Etminan et al. 2016).
+  With IPCCTAR, CO2 below 180 ppm and CH4 or N2O that is not positive are rejected,
+  as the logarithmic CO2 forcing runs away from a lower start.
 - `input_files` replaces the input files that `full.load_inputs` reads.
   Load them once and pass them to every translation of an ensemble.
 - `concentration_driven=True` prescribes every concentration for the whole run,
