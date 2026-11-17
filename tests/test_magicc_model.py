@@ -137,6 +137,21 @@ def test_setup_model_rejects_a_series_off_the_axis(translated):
     assert set(found) == {(IssueKind.SHAPE, name)}
 
 
+@pytest.mark.parametrize(
+    "series",
+    [pd.Series([], dtype=float), pd.Series(1.0, index=[f"y{y:g}" for y in YEARS])],
+    ids=["empty", "text-index"],
+)
+def test_setup_model_names_a_series_with_a_bad_index(translated, series):
+    config, inputs = translated
+    name = "Emissions|CO2|Fossil"
+    unit = inputs[name][1]
+
+    found = setup_issues(config, {**inputs, name: (series, unit)})
+
+    assert set(found) == {(IssueKind.SHAPE, name)}
+
+
 @pytest.mark.parametrize("years", [YEARS + 0.5, np.arange(1750.0, 1761.0, 2.0)])
 def test_check_axis_needs_whole_annual_years(years):
     with pytest.raises(InputValidationError, match="time_axis"):

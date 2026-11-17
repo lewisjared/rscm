@@ -676,6 +676,12 @@ def test_emissions_series_must_follow_the_time_axis():
     assert issues(emissions=emissions) == {(IssueKind.SHAPE, "CFC11")}
 
 
+def test_empty_emissions_series_is_named():
+    emissions = {**ramp_emissions(), "CFC11": pd.Series([], dtype=float)}
+
+    assert issues(emissions=emissions) == {(IssueKind.SHAPE, "CFC11")}
+
+
 def test_non_positive_concentration_stops_the_run():
     years = np.arange(1750.0, 2101.0)
     emissions = ramp_emissions(len(years))

@@ -242,20 +242,24 @@ def check_on_axis(
     A pandas object's index must equal ``time``, so values are not read out of order.
     """
     index = getattr(values, "index", None)
-    if (
-        index is not None
-        and not callable(index)
-        and not (
-            len(index) == len(time) and np.array_equal(np.asarray(index, float), time)
-        )
-    ):
-        v.add(
-            IssueKind.SHAPE,
-            name,
-            f"index runs {index[0]} to {index[-1]}, not the time axis values"
-            f" {time[0]:g} to {time[-1]:g}",
-        )
-        return None
+    if index is not None and not callable(index):
+        expected = f"the time axis values {time[0]:g} to {time[-1]:g}"
+        if len(index) == 0:
+            v.add(IssueKind.SHAPE, name, f"is empty, not {expected}")
+            return None
+        try:
+            on_axis = len(index) == len(time) and np.array_equal(
+                np.asarray(index, float), time
+            )
+        except (TypeError, ValueError):
+            on_axis = False
+        if not on_axis:
+            v.add(
+                IssueKind.SHAPE,
+                name,
+                f"index runs {index[0]} to {index[-1]}, not {expected}",
+            )
+            return None
     try:
         return np.asarray(values, dtype=np.float64)
     except (TypeError, ValueError):
