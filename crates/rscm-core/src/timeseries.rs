@@ -1,4 +1,4 @@
-use crate::errors::RSCMResult;
+use crate::errors::{RSCMError, RSCMResult};
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
 use crate::interpolate::Interp1d;
 use crate::spatial::SpatialGrid;
@@ -7,7 +7,6 @@ use num::Float;
 use numpy::ndarray::prelude::*;
 use numpy::ndarray::{Array, Array1, Array2, Axis};
 use serde::{Deserialize, Serialize};
-use std::iter::zip;
 use std::sync::Arc;
 
 /// The type of float used in time calculations
@@ -25,11 +24,27 @@ pub struct TimeAxis {
     bounds: Array1<Time>,
 }
 
-fn check_monotonic_increasing(arr: &Array1<Time>) -> bool {
-    let mut zipped_arr = zip(arr.slice(s![0..arr.len() - 1]), arr.slice(s![1..]));
-
-    // Check that [i + 1] > [i]
-    zipped_arr.all(|(&a, &b)| b > a)
+/// Check that `points` has at least two finite, strictly increasing entries.
+fn validate_points(points: &Array1<Time>, noun: &str) -> RSCMResult<()> {
+    if points.len() < 2 {
+        return Err(RSCMError::Error(format!(
+            "A time axis needs at least 2 {noun}, got {}",
+            points.len()
+        )));
+    }
+    if let Some((index, value)) = points.iter().enumerate().find(|(_, v)| !v.is_finite()) {
+        return Err(RSCMError::Error(format!(
+            "Time axis {noun} must be finite, got {value} at index {index}"
+        )));
+    }
+    if let Some(index) = (1..points.len()).find(|&i| points[i] <= points[i - 1]) {
+        return Err(RSCMError::Error(format!(
+            "Time axis {noun} must strictly increase, got {} at index {index} after {}",
+            points[index],
+            points[index - 1]
+        )));
+    }
+    Ok(())
 }
 
 /// Axis for a time series
@@ -44,9 +59,6 @@ fn check_monotonic_increasing(arr: &Array1<Time>) -> bool {
 /// Generally, decimal year values are used throughout
 impl TimeAxis {
     fn new(bounds: Array1<Time>) -> Self {
-        let is_monotonic = check_monotonic_increasing(&bounds);
-        assert!(is_monotonic);
-
         // Lookups binary-search the values as a slice.
         let bounds = if bounds.is_standard_layout() {
             bounds
@@ -69,8 +81,18 @@ impl TimeAxis {
     /// let expected: (Time, Time) = (3.0, 4.0);
     /// assert_eq!(ta.at_bounds(2).unwrap(), expected);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the values are invalid, see [`TimeAxis::try_from_values`].
     pub fn from_values(values: Array1<Time>) -> Self {
-        assert!(values.len() >= 2);
+        Self::try_from_values(values).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Initialise using values, checking that there are at least two finite,
+    /// strictly increasing values.
+    pub fn try_from_values(values: Array1<Time>) -> RSCMResult<Self> {
+        validate_points(&values, "values")?;
         let step = values[values.len() - 1] - values[values.len() - 2];
 
         let mut bounds = Array::zeros(values.len() + 1);
@@ -79,7 +101,8 @@ impl TimeAxis {
         let last_idx = bounds.len() - 1;
 
         bounds[last_idx] = bounds[last_idx - 1] + step;
-        Self::new(bounds)
+        validate_points(&bounds, "bounds")?;
+        Ok(Self::new(bounds))
     }
 
     /// Initialise using bounds
@@ -92,10 +115,19 @@ impl TimeAxis {
     /// let ta = TimeAxis::from_bounds(array![1.0, 2.0, 3.0, 4.0]);
     /// assert_eq!(ta.len(), 3);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bounds are invalid, see [`TimeAxis::try_from_bounds`].
     pub fn from_bounds(bounds: Array1<Time>) -> Self {
-        assert!(bounds.len() > 1);
+        Self::try_from_bounds(bounds).unwrap_or_else(|e| panic!("{e}"))
+    }
 
-        Self::new(bounds)
+    /// Initialise using bounds, checking that there are at least two finite,
+    /// strictly increasing bounds.
+    pub fn try_from_bounds(bounds: Array1<Time>) -> RSCMResult<Self> {
+        validate_points(&bounds, "bounds")?;
+        Ok(Self::new(bounds))
     }
 
     pub fn values(&self) -> ArrayView1<'_, Time> {
@@ -894,11 +926,39 @@ mod tests {
     use crate::interpolate::strategies::{InterpolationStrategy, NextStrategy, PreviousStrategy};
     use crate::spatial::{FourBoxRegion, HemisphericRegion, ScalarRegion};
     use is_close::is_close;
+    use std::iter::zip;
 
     #[test]
     #[should_panic]
     fn check_monotonic_values() {
         Timeseries::from_values(array![1.0, 2.0, 3.0], array![2020.0, 1.0, 2021.0,]);
+    }
+
+    #[test]
+    fn time_axis_rejects_invalid_points() {
+        let cases = [
+            (array![], "at least 2 values, got 0"),
+            (array![2000.0], "at least 2 values, got 1"),
+            (
+                array![2000.0, 1999.0],
+                "strictly increase, got 1999 at index 1 after 2000",
+            ),
+            (
+                array![2000.0, 2000.0],
+                "strictly increase, got 2000 at index 1 after 2000",
+            ),
+            (
+                array![2000.0, f64::NAN, 2002.0],
+                "finite, got NaN at index 1",
+            ),
+            (array![2000.0, f64::INFINITY], "finite, got inf at index 1"),
+        ];
+        for (values, expected) in cases {
+            let err = TimeAxis::try_from_values(values).unwrap_err().to_string();
+            assert!(err.contains(expected), "{err}");
+        }
+        let err = TimeAxis::try_from_bounds(array![2000.0]).unwrap_err();
+        assert!(err.to_string().contains("at least 2 bounds, got 1"));
     }
 
     #[test]

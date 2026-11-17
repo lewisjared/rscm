@@ -156,6 +156,18 @@ impl From<RSCMError> for PyErr {
     }
 }
 
+/// Resolve a Python sequence index against `len`, counting negative indices from the end.
+///
+/// Returns `None` when the index is out of range.
+pub(crate) fn resolve_index(index: isize, len: usize) -> Option<usize> {
+    let resolved = if index < 0 {
+        len.checked_sub(index.unsigned_abs())?
+    } else {
+        index.unsigned_abs()
+    };
+    (resolved < len).then_some(resolved)
+}
+
 /// Convert a Python exception into an error that keeps its traceback.
 pub(crate) fn rscm_error_from_py(py: Python<'_>, err: PyErr) -> RSCMError {
     let traceback = err

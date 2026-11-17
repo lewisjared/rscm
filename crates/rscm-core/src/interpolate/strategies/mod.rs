@@ -30,6 +30,11 @@ where
     T: Data,
     T::Elem: Float,
 {
+    if target.is_nan() {
+        return Err(RSCMError::Error(
+            "Cannot interpolate at a NaN time".to_string(),
+        ));
+    }
     let end_segment_idx = find_segment_index(&target, time_bounds);
 
     let needs_extrap_forward = end_segment_idx == time_bounds.len();
