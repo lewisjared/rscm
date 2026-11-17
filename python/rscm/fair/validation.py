@@ -94,6 +94,8 @@ INPUT_MODES = {
 }
 # FaIR's species types that more than one species may have.
 REPEATABLE_TYPES = ("other halogen", "f-gas", "other slcf", "unspecified")
+# Allows fractions rounded to four decimal places, as in FaIR's species file.
+PARTITION_TOLERANCE = 1e-3
 _BOX_PARAMETERS = ("partition_fraction", "unperturbed_lifetime")
 # Gas cycle parameters whose NaN reaches the concentrations.
 # FaIR sets a NaN lifetime scaling to 1, so the iIRF and g parameters may be NaN.
@@ -289,6 +291,17 @@ def _check_dependencies(v: Validator, species: list[Species], at: str) -> None:
             )
 
 
+def _check_partition(v: Validator, location: str, fractions: Any) -> None:
+    fractions = np.asarray(fractions, dtype=np.float64)
+    v.check(
+        bool((fractions >= 0).all())
+        and math.isclose(fractions.sum(), 1, abs_tol=PARTITION_TOLERANCE),
+        IssueKind.OUT_OF_RANGE,
+        location,
+        f"must not be negative and must sum to 1, got {fractions.tolist()}",
+    )
+
+
 def _check_gas(v: Validator, s: Species, at: str) -> None:
     if s["input_mode"] == "forcing":
         v.add(
@@ -309,12 +322,15 @@ def _check_gas(v: Validator, s: Species, at: str) -> None:
                 lengths.append(shape[0])
                 if key == "unperturbed_lifetime":
                     _sign(v, f"{at}{s['name']}.{key}", s[key], zero=True)
+                else:
+                    _check_partition(v, f"{at}{s['name']}.{key}", s[key])
     if len(lengths) == 2 and lengths[0] != lengths[1]:  # noqa: PLR2004
         v.add(
             IssueKind.SHAPE,
             f"{at}{s['name']}.unperturbed_lifetime",
             "needs one lifetime per partition fraction",
         )
+    _positive(v, f"{at}{s['name']}.molecular_weight", s["molecular_weight"])
     keys = [*_GAS_PARAMETERS, "forcing_reference_concentration", *_SCALE_PARAMETERS]
     if s["type"] not in ("co2", "ch4", "n2o"):
         keys.append("greenhouse_gas_radiative_efficiency")

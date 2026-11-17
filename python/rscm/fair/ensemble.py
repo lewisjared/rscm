@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -20,7 +21,7 @@ from rscm.spec import run_all
 from rscm.validation import IssueKind, Validator
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable, Mapping
+    from collections.abc import Hashable
 
     import xarray as xr
     from numpy.typing import ArrayLike, NDArray
@@ -116,9 +117,21 @@ def _validate(
     scale_prescribed_forcing: bool,
 ) -> None:
     """Check every configuration and scenario, so a bad one fails before any run."""
+    for argument, value, item in (
+        ("configs", configs, "configuration"),
+        ("scenarios", scenarios, "inputs"),
+    ):
+        if not isinstance(value, Mapping):
+            msg = (
+                f"{argument} must be a mapping from each name to its {item}, "
+                f"got {type(value).__name__}"
+            )
+            raise TypeError(msg)
     v = Validator()
     if not configs:
         v.add(IssueKind.MISSING, "configs", "the ensemble needs a configuration")
+    if not scenarios:
+        v.add(IssueKind.MISSING, "scenarios", "the ensemble needs a scenario")
     timed = check_timebounds(v, time_axis.values())
     # Inputs are checked for every configuration with well-formed species.
     valid = [name for name in configs if check_config(configs[name], v, at=f"{name}: ")]
