@@ -5,6 +5,7 @@
 //! outputs for comparison with observations.
 
 use crate::likelihood::{ModelOutput, VariableOutput};
+use crate::parameter_set::ParameterSet;
 use crate::{Error, Result};
 use rayon::prelude::*;
 use rscm_core::model::Model;
@@ -85,6 +86,54 @@ pub trait ModelRunner {
             .map(|parameters| self.run(parameters))
             .collect()
     }
+}
+
+/// Maps vectors in [`ParameterSet`] order to the order of a runner's `parameter_names`.
+///
+/// Runners and parameter sets may list the same names in different orders.
+#[derive(Debug, Clone)]
+pub(crate) struct ParameterOrder(Option<Vec<usize>>);
+
+impl ParameterOrder {
+    /// Fails unless `runner_names` names each parameter in `parameters` exactly once.
+    pub(crate) fn new(parameters: &ParameterSet, runner_names: &[String]) -> Result<Self> {
+        let names = parameters.parameter_names();
+        if names
+            .iter()
+            .copied()
+            .eq(runner_names.iter().map(String::as_str))
+        {
+            return Ok(Self(None));
+        }
+        let order: Option<Vec<usize>> = runner_names
+            .iter()
+            .map(|name| names.iter().position(|p| p == name))
+            .collect();
+        match order {
+            Some(order) if order.len() == names.len() && is_permutation(&order) => {
+                Ok(Self(Some(order)))
+            }
+            _ => Err(Error::InvalidParameter(format!(
+                "runner parameter_names {runner_names:?} must name each ParameterSet parameter \
+                 {names:?} exactly once"
+            ))),
+        }
+    }
+
+    /// `values` (in parameter set order) in the runner's order.
+    pub(crate) fn apply<'a>(&self, values: &'a [f64]) -> std::borrow::Cow<'a, [f64]> {
+        match &self.0 {
+            None => std::borrow::Cow::Borrowed(values),
+            Some(order) => std::borrow::Cow::Owned(order.iter().map(|&i| values[i]).collect()),
+        }
+    }
+}
+
+fn is_permutation(order: &[usize]) -> bool {
+    let mut seen = vec![false; order.len()];
+    order
+        .iter()
+        .all(|&i| !std::mem::replace(&mut seen[i], true))
 }
 
 /// Default model runner using a factory closure.
@@ -715,5 +764,27 @@ mod tests {
 
         let results = runner.run_batch(&[vec![1.0], vec![2.0]]);
         assert!(results.iter().all(|r| r.is_err()));
+    }
+
+    fn names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn parameter_order_maps_by_name() {
+        let mut parameters = ParameterSet::new();
+        parameters.add("a", Box::new(crate::Uniform::new(0.0, 1.0).unwrap()));
+        parameters.add("b", Box::new(crate::Uniform::new(0.0, 1.0).unwrap()));
+
+        let same = ParameterOrder::new(&parameters, &names(&["a", "b"])).unwrap();
+        assert_eq!(same.apply(&[1.0, 2.0]).as_ref(), &[1.0, 2.0]);
+
+        let swapped = ParameterOrder::new(&parameters, &names(&["b", "a"])).unwrap();
+        assert_eq!(swapped.apply(&[1.0, 2.0]).as_ref(), &[2.0, 1.0]);
+
+        for bad in [&["a"][..], &["a", "c"], &["a", "a"], &["a", "b", "c"]] {
+            let err = ParameterOrder::new(&parameters, &names(bad)).unwrap_err();
+            assert!(err.to_string().contains("parameter_names"));
+        }
     }
 }

@@ -8,8 +8,8 @@ use crate::{
 };
 
 use super::{
-    likelihood::PyGaussianLikelihood, model_runner::PyModelRunner, parameter_set::PyParameterSet,
-    target::PyTarget,
+    into_py_err, likelihood::PyGaussianLikelihood, model_runner::PyModelRunner,
+    parameter_set::PyParameterSet, target::PyTarget, warn_failures,
 };
 
 /// Optimisation algorithm for point estimation.
@@ -84,6 +84,18 @@ impl PyOptimisationResult {
         self.inner.converged
     }
 
+    /// Number of evaluations rejected because the prior, model or likelihood failed.
+    #[getter]
+    fn n_failed_evaluations(&self) -> usize {
+        self.inner.failures.count
+    }
+
+    /// Message of the first failed evaluation, or None if none failed.
+    #[getter]
+    fn first_failure(&self) -> Option<String> {
+        self.inner.failures.first.clone()
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "OptimisationResult(best_log_likelihood={:.4}, n_evaluations={}, converged={})",
@@ -100,6 +112,9 @@ impl PyOptimisationResult {
 ///
 /// The estimator tracks all evaluated parameter sets and their log likelihoods,
 /// enabling analysis of the optimisation trajectory.
+///
+/// Raises ValueError if the runner's `parameter_names` do not name each parameter exactly once.
+/// They may be in a different order: values are passed to the runner by name.
 ///
 /// # Examples
 ///
@@ -149,15 +164,15 @@ impl PyPointEstimator {
         runner: PyModelRunner,
         likelihood: PyGaussianLikelihood,
         target: PyTarget,
-    ) -> Self {
-        Self {
-            inner: PointEstimator::new(
-                parameters.into_inner(),
-                runner,
-                likelihood,
-                target.into_inner(),
-            ),
-        }
+    ) -> PyResult<Self> {
+        let inner = PointEstimator::new(
+            parameters.into_inner(),
+            runner,
+            likelihood,
+            target.into_inner(),
+        )
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+        Ok(Self { inner })
     }
 
     /// Get the number of parameters.
@@ -189,7 +204,8 @@ impl PyPointEstimator {
     /// # Arguments
     ///
     /// * `optimiser` - Optimisation algorithm to use
-    /// * `n_samples` - Number of samples to evaluate (interpretation depends on algorithm)
+    /// * `n_samples` - Number of samples to evaluate, at least 1
+    /// * `seed` - Seed for sampling, so equal seeds give equal results
     ///
     /// # Returns
     ///
@@ -197,7 +213,11 @@ impl PyPointEstimator {
     ///
     /// # Raises
     ///
-    /// ValueError: If optimisation fails or finds no valid samples.
+    /// ValueError: If `n_samples` is 0, or optimisation fails or finds no valid samples.
+    ///
+    /// # Warns
+    ///
+    /// RuntimeWarning: If evaluations failed and were rejected.
     ///
     /// # Examples
     ///
@@ -206,15 +226,20 @@ impl PyPointEstimator {
     /// print(f"Best: {result.best_parameters}")
     /// print(f"Log likelihood: {result.best_log_likelihood}")
     /// ```
+    #[pyo3(signature = (optimiser, n_samples, *, seed=None))]
     fn optimise(
         &mut self,
+        py: Python<'_>,
         optimiser: PyOptimiser,
         n_samples: usize,
+        seed: Option<u64>,
     ) -> PyResult<PyOptimisationResult> {
+        self.inner.runner().take_interrupt();
         let result = self
             .inner
-            .optimise(optimiser.inner, n_samples)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+            .optimise(optimiser.inner, n_samples, seed)
+            .map_err(|e| into_py_err(e, self.inner.runner()))?;
+        warn_failures(py, &result.failures)?;
 
         Ok(PyOptimisationResult { inner: result })
     }

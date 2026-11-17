@@ -50,7 +50,7 @@
 //!     runner,      // Takes runner directly (not boxed)
 //!     likelihood,  // Takes likelihood directly (not boxed)
 //!     target,
-//! );
+//! ).unwrap();
 //!
 //! let chain = sampler.run(
 //!     1000,                          // iterations
@@ -120,10 +120,48 @@ pub enum Error {
 
     #[error("Model execution failed: {0}")]
     ModelError(String),
+
+    /// The run was interrupted (e.g. Ctrl-C) and must stop rather than reject the proposal.
+    #[error("Interrupted: {0}")]
+    Interrupted(String),
+}
+
+/// A seeded RNG for reproducible runs, or an RNG seeded from the OS when `seed` is `None`.
+pub(crate) fn rng_from_seed(seed: Option<u64>) -> rand::rngs::StdRng {
+    use rand::SeedableRng;
+    seed.map_or_else(rand::make_rng, rand::rngs::StdRng::seed_from_u64)
+}
+
+/// Failed evaluations that were rejected rather than stopping a run.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Failures {
+    /// Number of failed prior, model or likelihood evaluations
+    pub count: usize,
+    /// Message of the first failure
+    pub first: Option<String>,
+}
+
+impl Failures {
+    /// Record `error`, unless it is an interrupt, which is returned so the run stops.
+    pub(crate) fn record(&mut self, error: Error) -> Result<()> {
+        if matches!(error, Error::Interrupted(_)) {
+            return Err(error);
+        }
+        self.count += 1;
+        self.first.get_or_insert_with(|| error.to_string());
+        Ok(())
+    }
+
+    pub(crate) fn extend(&mut self, other: &Failures) {
+        self.count += other.count;
+        if self.first.is_none() {
+            self.first.clone_from(&other.first);
+        }
+    }
 }
 
 /// Why no point had a finite log posterior, for an error naming the `what` that was evaluated.
-pub(crate) fn no_valid_reason(first_error: Option<&Error>, what: &str) -> String {
+pub(crate) fn no_valid_reason(first_error: Option<&impl std::fmt::Display>, what: &str) -> String {
     first_error.map_or_else(
         || format!("every {what} is outside the prior support or has zero likelihood"),
         |e| format!("first error: {e}"),

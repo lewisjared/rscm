@@ -551,19 +551,19 @@ print(f"Merged: {merged_chain.n_iterations} iterations")
 chain.to_dataframe(discard=200).head()
 
 # %% [markdown]
-# Observations can also come from a DataFrame.
-# `Target.from_dataframe` needs a `variable` column, even for a single variable.
+# Observations can also come from a DataFrame, one row per observation.
+# A `variable` column groups rows by variable.
+# For a single variable, pass its name as `variable=` instead.
 
 # %%
 obs_df = pd.DataFrame(
     {
-        "variable": "y",
         "time": x_obs,
         "value": y_obs,
         "uncertainty": uncertainty,
     }
 )
-df_target = Target.from_dataframe(obs_df)
+df_target = Target.from_dataframe(obs_df, variable="y")
 
 print(f"Variables: {df_target.variable_names()}")
 print(f"Observations: {df_target.n_observations()}")

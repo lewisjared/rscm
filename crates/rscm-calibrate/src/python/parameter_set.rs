@@ -73,6 +73,11 @@ impl PyParameterSet {
     /// ParameterSet
     ///     Self for chaining
     ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a parameter called `name` already exists.
+    ///
     /// Examples
     /// --------
     /// >>> from rscm._lib.calibrate import ParameterSet, Uniform, Normal
@@ -81,7 +86,12 @@ impl PyParameterSet {
         mut slf: PyRefMut<'_, Self>,
         name: String,
         distribution: PyDistribution,
-    ) -> PyRefMut<'_, Self> {
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        if slf.0.contains(&name) {
+            return Err(PyValueError::new_err(format!(
+                "ParameterSet: parameter '{name}' already exists"
+            )));
+        }
         let dist_box: Box<dyn Distribution> = match distribution {
             PyDistribution::Uniform(u) => Box::new(u.0.clone()),
             PyDistribution::Normal(n) => Box::new(n.0.clone()),
@@ -90,7 +100,7 @@ impl PyParameterSet {
         };
 
         slf.0.add(name, dist_box);
-        slf
+        Ok(slf)
     }
 
     /// Get parameter names in definition order.

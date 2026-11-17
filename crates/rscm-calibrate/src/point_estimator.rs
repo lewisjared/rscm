@@ -5,7 +5,7 @@
 
 use crate::{
     likelihood::{log_posterior, LikelihoodFn},
-    model_runner::ModelRunner,
+    model_runner::{ModelRunner, ParameterOrder},
     parameter_set::ParameterSet,
     target::Target,
     Result,
@@ -33,6 +33,9 @@ pub struct PointEstimator<R: ModelRunner, L: LikelihoodFn> {
 
     /// Log likelihood values for each evaluated parameter set
     evaluated_log_likelihoods: Vec<f64>,
+
+    /// Maps parameter set order to the runner's parameter order
+    order: ParameterOrder,
 }
 
 impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
@@ -44,15 +47,27 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
     /// * `runner` - Model runner for evaluating parameter sets
     /// * `likelihood` - Likelihood function
     /// * `target` - Target observations
-    pub fn new(parameters: ParameterSet, runner: R, likelihood: L, target: Target) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// Fails unless the runner's `parameter_names` name each parameter exactly once.
+    /// The runner may list them in a different order: values are passed to it by name.
+    pub fn new(parameters: ParameterSet, runner: R, likelihood: L, target: Target) -> Result<Self> {
+        let order = ParameterOrder::new(&parameters, runner.parameter_names())?;
+        Ok(Self {
             parameters,
             runner,
             likelihood,
             target,
             evaluated_parameters: Vec::new(),
             evaluated_log_likelihoods: Vec::new(),
-        }
+            order,
+        })
+    }
+
+    /// Get the model runner.
+    pub fn runner(&self) -> &R {
+        &self.runner
     }
 
     /// Get the number of parameters.
@@ -109,7 +124,7 @@ impl<R: ModelRunner, L: LikelihoodFn> PointEstimator<R, L> {
         log_posterior(
             &self.parameters,
             parameters,
-            || self.runner.run(parameters),
+            || self.runner.run(&self.order.apply(parameters)),
             &self.likelihood,
             &self.target,
         )
@@ -212,7 +227,7 @@ mod tests {
         let likelihood = GaussianLikelihood::default();
         let target = Target::new();
 
-        let estimator = PointEstimator::new(parameters, runner, likelihood, target);
+        let estimator = PointEstimator::new(parameters, runner, likelihood, target).unwrap();
 
         assert_eq!(estimator.n_parameters(), 1);
         assert_eq!(estimator.parameter_names(), vec!["x"]);
@@ -235,7 +250,7 @@ mod tests {
             .add_observation(obs1)
             .add_observation(obs2);
 
-        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target).unwrap();
 
         // Evaluate at x=0.0 (mean of prior)
         let log_post = estimator.evaluate(&[0.0]);
@@ -266,7 +281,7 @@ mod tests {
         let obs = Observation::new(0.0, 5.0, 0.1).unwrap();
         target.add_variable("y").add_observation(obs);
 
-        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target).unwrap();
 
         // No evaluations yet
         assert!(estimator.best().is_none());
@@ -296,7 +311,7 @@ mod tests {
         let likelihood = GaussianLikelihood::default();
         let target = Target::new();
 
-        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target).unwrap();
 
         // Evaluate some points
         estimator.evaluate(&[0.0]);
@@ -317,11 +332,14 @@ mod tests {
         parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
         parameters.add("y", Box::new(Uniform::new(-5.0, 5.0).unwrap()));
 
-        let runner = ConstantModel::new(5.0);
+        let runner = ConstantModel {
+            parameter_names: vec!["x".to_string(), "y".to_string()],
+            constant_value: 5.0,
+        };
         let likelihood = GaussianLikelihood::default();
         let target = Target::new();
 
-        let estimator = PointEstimator::new(parameters, runner, likelihood, target);
+        let estimator = PointEstimator::new(parameters, runner, likelihood, target).unwrap();
 
         let (lower, upper) = estimator.bounds();
 
@@ -343,7 +361,7 @@ mod tests {
         let likelihood = GaussianLikelihood::default();
         let target = Target::new();
 
-        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target).unwrap();
 
         // Model failure should return NEG_INFINITY
         let log_post = estimator.evaluate(&[0.0]);
