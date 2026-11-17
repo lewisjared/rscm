@@ -8,3 +8,11 @@ Fixed MAGICC edge cases that gave wrong results or unhelpful errors.
 - `setup_model` reports non-finite inputs, inputs no component reads, inputs with the wrong number of columns and a missing `components` or `initial_values`.
 - A time axis must be on whole years.
 - A pandas input must have an index equal to the time axis values, where it used to be read in order.
+- `from_magicc7` requires the time axis to start in 1750, MAGICC7's preindustrial reference year.
+  A run starting in another year measured forcing from the wrong concentrations and did not match MAGICC7.
+- `from_magicc7` rejects initial CO2, CH4 and N2O concentrations below the range the forcing formulae are fitted to,
+  180 ppm, 340 ppb and 200 ppb, which used to run to the 25 K temperature cap.
+- A run whose CO2, CH4 or N2O concentration falls to zero or below raises an error naming the gas and year,
+  where it used to continue with NaN.
+- A run ending before 2015 takes the volcanic forcing pattern up to its last year, as MAGICC7 does.
+  It used to differ from MAGICC7 by up to 0.01 K.

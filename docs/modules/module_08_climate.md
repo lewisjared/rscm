@@ -48,7 +48,8 @@ and the slow response of the deep ocean.
   `rscm.magicc.prescribed.volcanic_pattern` reproduces MAGICC7's regional pattern,
   which is derived from the run itself:
   the mean monthly box forcing, scaled by `RF_VOLCANIC_SCALE`,
-  from the first year to `RF_VOLC_FORC_PATTERN_MAX_LAST_YEAR`, less its global mean and 1.
+  from the first year to `RF_VOLC_FORC_PATTERN_MAX_LAST_YEAR` or the run's last year if earlier,
+  less its global mean and 1.
   The global mean sums box times area, as MAGICC7 does, because the hemispheric mean rounds differently.
   Substeps 1 to 11 take the previous year's volcanic internal efficacy and substep 12 the current one.
   The first year keeps the initial value.
