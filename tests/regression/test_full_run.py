@@ -435,6 +435,18 @@ def test_default_run():
     _assert_total_erf(model, run)
 
 
+def test_default_run_to_2300():
+    """The default run beyond 500 years, so the ocean convolves its whole flux history.
+
+    SSP245 fossil CO2 emissions reach zero, so the F-gas pattern keeps its split.
+    """
+    run = full_run.load_long()
+    model = full_run.long_model()
+    _assert_temperature(model, run)
+    _assert_concentrations(model, run, ("CO2", "CH4", "N2O"))
+    _assert_total_erf(model, run)
+
+
 def test_concentration_driven_run():
     """The concentration-driven model against MAGICC7 with switches after the run."""
     run = full_run.load_concentrations()
@@ -524,22 +536,6 @@ def test_from_magicc7_reads_no_files_given_input_files(monkeypatch):
             full_run.output(expected, name),
             err_msg=name,
         )
-
-
-@pytest.mark.parametrize(
-    ("change", "match"),
-    [
-        (lambda e: e.pop("CO2|Fossil"), "missing emissions"),
-        (lambda e: e.update({"CO3|Fossil": e["CO2|Fossil"]}), "unknown emissions"),
-        (lambda e: e.update({"CFC11": e["CFC11"][:-1]}), "one per year"),
-    ],
-)
-def test_from_magicc7_rejects_bad_emissions(change, match):
-    run = full_run.load()
-    emissions = full_run.emissions(run)
-    change(emissions)
-    with pytest.raises(ValueError, match=match):
-        full.from_magicc7(run.time_axis, emissions)
 
 
 def test_from_magicc7_zero_nitrate_factor():

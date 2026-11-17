@@ -359,8 +359,8 @@ Beyond these:
 - There is no radiative-only switch (`OCEANCC_RAD_SETTING`).
 - The concentration cap is not implemented
   (see [CO2 budget](module_11_co2_budget.md#differences-from-magicc7)).
-- The flux history keeps the last `maximum_history_months` substeps (6000, or 500 years).
-  Longer runs drop the oldest months from the convolution, where MAGICC7 keeps them all.
+- The flux history keeps the whole run, as MAGICC7 does.
+  `maximum_history_months` can cap it, which drops the oldest months from the convolution.
 
 ## References
 

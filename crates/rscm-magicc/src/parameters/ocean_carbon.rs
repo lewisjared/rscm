@@ -219,11 +219,10 @@ pub struct OceanCarbonParameters {
     /// Substeps per year, 12 (monthly) by default as in MAGICC7
     pub steps_per_year: usize,
 
-    /// Maximum flux history length in substeps.
+    /// Maximum flux history length in substeps, or `None` to keep the whole run as MAGICC7 does
     ///
-    /// Limits memory for the IRF convolution.
-    /// 6000 monthly substeps are 500 years.
-    pub maximum_history_months: usize,
+    /// A cap drops the oldest fluxes from the IRF convolution.
+    pub maximum_history_months: Option<usize>,
 
     /// Time at which the IRF switches from its early to its late form
     ///
@@ -295,7 +294,8 @@ struct GivenOceanCarbonParameters {
     ocean_surface_area: Option<FloatValue>,
     sst_pi: Option<FloatValue>,
     steps_per_year: Option<usize>,
-    maximum_history_months: Option<usize>,
+    #[serde(default, deserialize_with = "given")]
+    maximum_history_months: Option<Option<usize>>,
     irf_switch_time: Option<FloatValue>,
     irf_early: Option<IRFForm>,
     irf_late: Option<IRFForm>,
@@ -405,7 +405,7 @@ impl OceanCarbonParameters {
             delta_ospp_coefficients: DELTA_OSPP_COEFFICIENTS,
 
             steps_per_year: 12,
-            maximum_history_months: 6000,
+            maximum_history_months: None,
             include_temperature_feedback: true,
             temperature_feedback_start_year: 1900.0,
             flux_change_limit: 0.04,
@@ -457,7 +457,7 @@ impl OceanCarbonParameters {
             delta_ospp_coefficients: DELTA_OSPP_COEFFICIENTS,
 
             steps_per_year: 12,
-            maximum_history_months: 6000,
+            maximum_history_months: None,
             include_temperature_feedback: true,
             temperature_feedback_start_year: 1900.0,
             flux_change_limit: 0.04,
@@ -509,7 +509,7 @@ impl OceanCarbonParameters {
             delta_ospp_coefficients: DELTA_OSPP_COEFFICIENTS,
 
             steps_per_year: 12,
-            maximum_history_months: 6000,
+            maximum_history_months: None,
             include_temperature_feedback: true,
             temperature_feedback_start_year: 1900.0,
             flux_change_limit: 0.04,

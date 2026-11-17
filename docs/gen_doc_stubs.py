@@ -48,6 +48,7 @@ DIRECTIVE_OPTIONS: dict[str, dict[str, Any]] = {
             "load_inputs",
             "natural_emissions",
             "default_initial_concentrations",
+            "file_initial_concentrations",
             "climate_parameters",
             "forcing_agents",
             "prescribed_concentrations",
@@ -64,6 +65,7 @@ DIRECTIVE_OPTIONS: dict[str, dict[str, Any]] = {
             "INPUT_FILES",
             "PRESCRIBED_AGENTS",
             "NORMYEAR_PATTERNS",
+            "THERMAL_EXPANSION_FILES",
         ],
     },
 }

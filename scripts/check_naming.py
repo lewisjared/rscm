@@ -29,6 +29,7 @@ SYNONYM_PATHS = (
     "docs/notebooks/units_tutorial.py",
     "docs/modules/",
     "tests/regression/data/",
+    "python/rscm/magicc/data/magicc7/",
 )
 SYNONYMS = {r"HFC4310\b"}
 # MAGICC7 parameter keys keep MAGICC7's spelling.

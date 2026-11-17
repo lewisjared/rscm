@@ -18,7 +18,8 @@
 //! - `Surface Air Temperature Change` (K), only with the `include_variable_stratospheric_lifetime` parameter:
 //!   shortens the stratospheric lifetimes
 //! - `Emissions|CO2|Fossil` (GtC/yr), only with the `fgas_regions` parameter:
-//!   spreads short-lived F-gases between the hemispheres
+//!   spreads short-lived F-gases between the hemispheres,
+//!   with each year after `last_split_year` split like that year
 //!
 //! # States
 //!
@@ -331,11 +332,10 @@ impl Component for HalocarbonChemistry {
         let mut forcing = [0.0; 2];
         let mut fgas_boxes = [0.0; 4];
         let mut eesc = 0.0;
-        let fossil_co2 = self
-            .parameters
-            .fgas_regions
-            .as_ref()
-            .map(|_| input_state.get_scalar_window(EMISSIONS_CO2_FOSSIL).get());
+        let fossil_co2 = self.parameters.fgas_regions.as_ref().map(|regions| {
+            let window = input_state.get_scalar_window(EMISSIONS_CO2_FOSSIL);
+            split_emissions(&window, t_current, regions.last_split_year)
+        });
 
         let scales = [
             self.parameters.fgas_forcing_scale,
@@ -390,6 +390,25 @@ impl Component for HalocarbonChemistry {
     }
 }
 
+/// Fossil CO2 emissions that split the F-gas pattern in the year `t_current`.
+///
+/// After `last_split_year` it is that year's, or the earliest available after it.
+fn split_emissions(
+    window: &ScalarWindow<'_>,
+    t_current: Time,
+    last_split_year: Option<FloatValue>,
+) -> FloatValue {
+    match last_split_year {
+        Some(year) if t_current > year => {
+            let steps = (t_current - year).round() as usize;
+            window
+                .history(steps.min(window.history_len().saturating_sub(1)))
+                .unwrap_or_else(|| window.get())
+        }
+        _ => window.get(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,6 +419,23 @@ mod tests {
 
     fn species(name: &str) -> HalocarbonSpecies {
         component().parameters().get_species(name).unwrap().clone()
+    }
+
+    #[test]
+    fn test_split_emissions_hold_the_last_split_year() {
+        let ts = rscm_core::timeseries::Timeseries::from_values(
+            ndarray::array![3.0, 2.0, 0.0, 0.0],
+            ndarray::array![2013.0, 2014.0, 2015.0, 2016.0],
+        );
+        let window = |i| {
+            let window = rscm_core::state::TimeseriesWindow::new(&ts, i, "e");
+            ScalarWindow::Direct(window.with_timeseries_type(TimeseriesType::Average))
+        };
+
+        assert_eq!(split_emissions(&window(3), 2016.0, None), 0.0);
+        assert_eq!(split_emissions(&window(1), 2014.0, Some(2014.0)), 2.0);
+        assert_eq!(split_emissions(&window(3), 2016.0, Some(2014.0)), 2.0);
+        assert_eq!(split_emissions(&window(3), 2016.0, Some(2000.0)), 3.0);
     }
 
     #[test]

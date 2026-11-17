@@ -57,7 +57,8 @@ These are the gcages units, such as `Mt CO2/yr` and `Mt SO2/yr`.
 It also holds one array per halocarbon in `full.halocarbon_species()`, in kt of the gas per year.
 `convention=Convention.MAGICC7`, with `Convention` from `rscm.names`,
 takes the emissions in the units MAGICC7 reads instead, such as `GtC/yr` and `Mt S/yr`.
-Missing, unknown or misshapen emissions raise `ValueError`.
+Missing, unknown, misshapen or non-finite emissions raise `InputValidationError`,
+see [Validation and exit codes](#validation-and-exit-codes).
 Emissions are annual mean rates, labelled by the year they start, as MAGICC7 input files are.
 
 `run()` returns the `Model` after its last step.
@@ -72,11 +73,12 @@ The keyword arguments of `from_magicc7` override MAGICC7's setup:
 
 - `parameters` takes MAGICC7 configuration names in lower case, such as `core_climatesensitivity`.
   `full.default_parameters()` gives MAGICC7 v7.5.3's defaults for every name the translation reads.
-  Names it does not read are ignored without a warning, so a misspelt name changes nothing
-  ([#162](https://github.com/lewisjared/rscm/issues/162)).
-- `initial_concentrations` overrides MAGICC7's 1750 concentrations,
-  which `full.default_initial_concentrations()` gives.
-  A gas it does not name raises `ValueError`.
+  A name that is neither read nor known to MAGICC7 is rejected, with the closest known name as a hint.
+  A MAGICC7 name for a feature RSCM lacks is rejected when its value would change the run.
+- `initial_concentrations` overrides the concentrations the run starts from.
+  As in MAGICC7 these are the concentration files' values in the first year,
+  which `full.file_initial_concentrations()` gives.
+  A gas the translation does not track, or a negative or non-finite value, is rejected.
 - `input_files` replaces the input files that `full.load_inputs` reads.
   Load them once and pass them to every translation of an ensemble.
 - `concentration_driven=True` prescribes every concentration for the whole run,
@@ -87,6 +89,32 @@ and MAGICC7's input files packaged in `rscm.magicc`.
 This covers aerosols, black carbon on snow, land-use albedo, solar and volcanic forcing.
 `full.prescribed_forcing` returns the four-box ERF of each of these agents before efficacies.
 `full.natural_emissions` calculates the natural CH4 and N2O emissions that close MAGICC7's budget.
+
+## Validation and exit codes
+
+`from_magicc7` checks the configuration, emissions and input files before it builds anything.
+It collects every problem and raises them together as one `rscm.validation.InputValidationError`,
+a `ValueError` whose `issues` name the kind, location and reason of each.
+Its `exit_code` follows BSD `sysexits.h`, from the first issue:
+
+| Kind           | Exit code | Rejects                                                                                                   |
+| -------------- | --------- | --------------------------------------------------------------------------------------------------------- |
+| `unknown-key`  | 78        | A configuration name MAGICC7 does not have, or an emissions or initial concentration name RSCM does not track |
+| `missing`      | 78        | An absent emissions series, input file or concentration file needed before its switch year               |
+| `unsupported`  | 69        | A MAGICC7 switch or value for a feature RSCM lacks, such as `oceancc_model = "BOXDIFF"`                   |
+| `non-finite`   | 65        | NaN or infinity in emissions, initial concentrations, concentration files or the prescribed forcing      |
+| `out-of-range` | 65        | Negative concentrations, a non-positive climate sensitivity, depth or lifetime, or an all-zero pattern   |
+| `shape`        | 65        | Emissions not one per year, a pattern without four boxes, or a file that ends before the years it covers |
+
+`rscm.magicc.checks` holds the classification of every MAGICC7 configuration name RSCM does not read.
+`IGNORED_PARAMETERS` lists those with no effect on RSCM's outputs, such as output switches,
+with the reason for each.
+`UNSUPPORTED_PARAMETERS` lists those RSCM lacks, with the values each rejects.
+Most reject only a value other than MAGICC7's default,
+so a full MAGICC7 configuration dump passes unchanged.
+
+Like MAGICC7, the translation moves feedback start years and harmonisation years outside the run
+onto its first or last year.
 
 ## Configuration and inputs
 
@@ -217,11 +245,18 @@ and NOx, CO and NMVOC drive tropospheric ozone.
 
 - `core_co2ch4n2o_rfmethod` selects the GHG forcing formulas:
   OLBL (after Etminan et al., 2016, the default) or IPCCTAR (from the IPCC Third Assessment Report).
-  With IPCCTAR it applies no rapid adjustment, because MAGICC7 ignores `core_rfrapidadjust_*` there.
+  With IPCCTAR it applies no rapid adjustment, because MAGICC7 ignores `core_rfrapidadjust_*` there,
+  and reads `ch4_radeff_wm2perppb` and `n2o_radeff_wm2perppb`.
 - `co2_fertilization_method` and `co2_plantboxresp_fertscale` set CO2 fertilisation.
 - `co2_feedbackfactor_*` and `co2_tempfeedback_switch` set the carbon cycle temperature feedbacks.
 - `co2_plantboxresp_method` must be 2, the only respiration method implemented.
-  Other values raise `ValueError`.
+  Other values are rejected as unsupported.
+- `oceancc_model` selects the ocean carbon IRF: 3D-GFDL (the default), 2D-BERN or HILDA.
+  BOXDIFF is rejected as unsupported.
+- The `ch4_*`, `n2o_*` and `mhalo_*` lifetime, feedback and meridional flux parameters
+  set `CH4Chemistry`, `CH4Oxidation`, `N2OChemistry` and `HalocarbonChemistry`.
+  The `fgas_*` lifetime switches must agree with their `mhalo_*` counterparts,
+  because RSCM shares one setting between both groups.
 - `rf_efficacy_apply` sets how efficacies apply, including to the monthly volcanic forcing.
   `full.EFFICACY_METHODS` maps its 0, 1 and 2 to the `none`, `unit` and `ar6` efficacy methods.
   With 1, forcing is divided by each agent's internal efficacy and efficacies are ignored,
@@ -235,6 +270,9 @@ and NOx, CO and NMVOC drive tropospheric ozone.
 - `ncycle_apply=1` limits NPP by nitrogen, reading fixation from MAGICC7's packaged `NCYCLE_NFIX3.IN`.
   `ncycle_apply_ndep_from_emis=1` adds deposition from NOx and NH3.
 - `out_sealevel=1` adds `SeaLevelRise` and thermal expansion in `ClimateUDEB`.
+  As in MAGICC7, a non-blank `file_slr_thexp_params` replaces `slr_expansion_params`,
+  and `slr_expansion_scaling` scales the result.
+  `full.THERMAL_EXPANSION_FILES` lists the files RSCM knows.
 
 With `Permafrost`, set `include_permafrost` on `CH4Chemistry`, `CH4Oxidation`, `OceanCarbon`
 and `CO2Budget` to feed permafrost emissions back, as `from_magicc7` does.

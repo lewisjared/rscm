@@ -9,12 +9,14 @@ against its own MAGICC counterpart as well as the coupled model.
 A second run enables permafrost and a third nitrogen limitation with deposition
 from emissions. A fourth writes sea level rise,
 the variants each change one climate, efficacy or method switch,
-and a last run prescribes concentrations throughout.
+a run prescribes concentrations throughout,
+and a last run is the default run extended to 2300.
 Their emissions and inputs are unchanged,
 so only the variables compared against the coupled model are kept.
 
 Usage (`utils.DEFAULT_MAGICC_ROOT` unless `MAGICC_ROOT` is set):
     uv run --group regression scripts/regression/generate_full_run.py
+    uv run --group regression scripts/regression/generate_full_run.py <case> ...
 
 Output:
     tests/regression/data/full_run/01_ssp245_emissions.csv.gz
@@ -26,6 +28,7 @@ Output:
     tests/regression/data/full_run/05_ssp245_default*
     tests/regression/data/full_run/06_ssp245_emissions_<variant>*
     tests/regression/data/full_run/07_ssp245_concentrations*
+    tests/regression/data/full_run/08_ssp245_default_2300*
     python/rscm/magicc/data/magicc7/*.gz (the run's forcing input files)
     python/rscm/magicc/data/magicc7/defaults.json (the configuration the chain reads)
 """
@@ -33,7 +36,7 @@ Output:
 import gzip
 import json
 import shutil
-from collections import ChainMap
+import sys
 from fnmatch import fnmatchcase
 from pathlib import Path
 
@@ -148,6 +151,16 @@ DEFAULT_VARIABLES = (
     "Effective Radiative Forcing|Volcanic",
 )
 
+# Variables kept from each variant.
+VARIANT_VARIABLES = (
+    "Surface Temperature",
+    "Atmospheric Concentrations|CO2",
+    "Atmospheric Concentrations|CH4",
+    "Atmospheric Concentrations|N2O",
+    "Effective Radiative Forcing",
+    "Effective Radiative Forcing|Volcanic",
+)
+
 # Concentrations prescribed for the whole run, which switches after it ends.
 CONCENTRATIONS = make_config(
     DEFAULT,
@@ -169,6 +182,12 @@ CONCENTRATIONS_VARIABLES = (
     "Net Atmosphere to Ocean Flux|CO2",
     "CH4_INVERSE_EMMS",
 )
+
+# The default run beyond 500 years, longer than any cap on the ocean flux history.
+LONG = make_config(DEFAULT, endyear=2300)
+
+# Variables kept from the long run, with its emissions after the reference run ends.
+LONG_VARIABLES = (*VARIANT_VARIABLES, "Emissions|*")
 
 # Climate, efficacy and method switches of the emissions run, each changed alone.
 VARIANTS = {
@@ -192,15 +211,6 @@ VARIANTS = {
     "no_carbon_temperature_feedback": {"co2_tempfeedback_switch": 0},
 }
 
-# Variables kept from each variant.
-VARIANT_VARIABLES = (
-    "Surface Temperature",
-    "Atmospheric Concentrations|CO2",
-    "Atmospheric Concentrations|CH4",
-    "Atmospheric Concentrations|N2O",
-    "Effective Radiative Forcing",
-    "Effective Radiative Forcing|Volcanic",
-)
 
 # Name, configuration, kept variables, CARBONCYCLE.OUT columns
 # and whether to write the run's parameters.
@@ -224,6 +234,7 @@ CASES = (
         (),
         True,
     ),
+    ("08_ssp245_default_2300", LONG, LONG_VARIABLES, (), True),
     *(
         (
             f"06_ssp245_emissions_{name}",
@@ -331,6 +342,8 @@ def write_defaults() -> None:
     time_axis = TimeAxis.from_values(np.array([float(c[:4]) for c in data.columns]))
     defaults = {"parameters": {}, "initial_concentrations": concentrations}
     full._defaults = lambda: defaults
+    # Every key is unknown until the defaults are written.
+    full.checks.check_parameters = lambda *args: None
     recorder = _Recorder(config)
     for pf_apply, ncycle_apply in ((0, 0), (1, 0), (0, 1)):
         recorder["pf_apply"] = pf_apply
@@ -347,20 +360,43 @@ def write_defaults() -> None:
         for k, v in switched.items()
         if k.removesuffix("_apply") + "_factor" in config
     }
+    # A plain dict, since copying a ChainMap would read every key
+    switched_recorder = _Recorder(
+        {**config, **switched, "core_upwell_thresh_oneglobal": 0, "out_sealevel": 1}
+    )
     full.from_magicc7(
         time_axis,
         emissions,
-        parameters=ChainMap({**switched, "core_upwell_thresh_oneglobal": 0}, recorder),
+        parameters=switched_recorder,
         convention=Convention.MAGICC7,
     )
-    parameters = {key: config[key] for key in sorted(recorder.used)}
+    used = recorder.used | switched_recorder.used
+    parameters = {key: config[key] for key in sorted(used)}
     with open(PACKAGE_DATA / "defaults.json", "w") as f:
         json.dump(
-            {"parameters": parameters, "initial_concentrations": concentrations},
+            {
+                "parameters": parameters,
+                "initial_concentrations": concentrations,
+                "unsupported": unsupported_defaults(config),
+            },
             f,
             indent=1,
         )
         f.write("\n")
+
+
+def unsupported_defaults(config: dict) -> dict:
+    """MAGICC7's defaults of the unsupported keys, before a run overwrites them."""
+    import f90nml  # noqa: PLC0415
+
+    from rscm.magicc import checks  # noqa: PLC0415
+
+    cfg = f90nml.read(MAGICC_ROOT / "run" / "MAGCFG_DEFAULTALL.CFG")["nml_allcfgs"]
+    return {
+        key: cfg.get(key, config[key])
+        for key in sorted(checks.UNSUPPORTED_PARAMETERS)
+        if key in config
+    }
 
 
 def read_carboncycle(path: Path, columns: tuple[str, ...]) -> pd.DataFrame:
@@ -412,7 +448,8 @@ def run_case(  # noqa: PLR0913
         )
         res = m.run(**config)
 
-    table = res.filter(year=range(1750, 2106)).timeseries().reset_index()
+    years = range(config["startyear"], config["endyear"] + 1)
+    table = res.filter(year=years).timeseries().reset_index()
     rows = zip(table.variable, table.region)
     table = table[[_kept(v, r, variables) for v, r in rows]]
     if carboncycle:
@@ -430,11 +467,14 @@ def run_case(  # noqa: PLR0913
 
 
 def main() -> None:
-    """Run MAGICC for every case and copy the inputs."""
+    """Run MAGICC for every case and copy the inputs, or only the cases named."""
+    names = sys.argv[1:]
     for case in CASES:
-        run_case(*case)
-    copy_inputs()
-    write_defaults()
+        if not names or case[0] in names:
+            run_case(*case)
+    if not names:
+        copy_inputs()
+        write_defaults()
 
 
 if __name__ == "__main__":
