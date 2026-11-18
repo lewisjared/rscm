@@ -129,7 +129,7 @@ def test_initial_value_in_an_incompatible_unit_fails():
         .with_component(Accumulator())
         .with_initial_values({"Heat": (2.0, "GtC")})
     )
-    with pytest.raises(Exception, match="Incompatible units"):
+    with pytest.raises(ValueError, match="Incompatible units"):
         builder.build()
 
 

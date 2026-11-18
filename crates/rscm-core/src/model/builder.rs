@@ -1094,13 +1094,20 @@ impl ModelBuilder {
                 }
                 None => Ok(1.0),
             };
-            let scalar_factor = initial_factor(&self.initial_value_units)?;
-            let grid_factor = initial_factor(&self.initial_grid_value_units)?;
-            let initial_val = self.initial_values.get(&name).map(|v| v * scalar_factor);
-            let initial_grid: Option<Vec<FloatValue>> = self
-                .initial_grid_values
-                .get(&name)
-                .map(|values| values.iter().map(|v| v * grid_factor).collect());
+            // Grid values take precedence, so a superseded scalar's unit is not checked.
+            let initial_grid: Option<Vec<FloatValue>> = match self.initial_grid_values.get(&name) {
+                Some(values) => {
+                    let factor = initial_factor(&self.initial_grid_value_units)?;
+                    Some(values.iter().map(|v| v * factor).collect())
+                }
+                None => None,
+            };
+            let initial_val = match self.initial_values.get(&name) {
+                Some(value) if initial_grid.is_none() => {
+                    Some(value * initial_factor(&self.initial_value_units)?)
+                }
+                _ => None,
+            };
             let initial_grid = initial_grid.as_ref();
             let expected_len = match storage_grid {
                 GridType::Scalar => 1,

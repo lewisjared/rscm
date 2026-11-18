@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Literal, Protocol, Self, TypeVar, final
 
@@ -566,23 +567,25 @@ class ModelBuilder:
         Takes a Rust component, a `PythonComponent`
         or an `rscm.component.Component` instance, which it wraps.
         """
-    def with_initial_values(self, initial_values: dict[str, F | tuple[F, str]]) -> Self:
+    def with_initial_values(
+        self, initial_values: Mapping[str, F | tuple[F, str]]
+    ) -> Self:
         """
         Set initial values for state variables, which are required at build time.
 
         A bare value is in the unit the model stores the variable in.
         A `(value, unit)` pair is converted into that unit.
-        `build` fails for a name no component reads or produces,
+        `build` fails for a name the model has no variable for,
         or for a unit incompatible with the stored one.
         """
     def with_initial_grid_values(
-        self, initial_values: dict[str, list[F] | tuple[list[F], str]]
+        self, initial_values: Mapping[str, list[F] | tuple[list[F], str]]
     ) -> Self:
         """
         Add initial values for grid variables, one per region in grid order.
 
         Units work as for `with_initial_values`.
-        `build` fails for a name no component reads or produces.
+        `build` fails for a name the model has no variable for.
         """
     def with_prescribed_variable(
         self,

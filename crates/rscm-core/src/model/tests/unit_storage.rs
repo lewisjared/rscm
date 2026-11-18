@@ -393,3 +393,24 @@ fn coupling_reports_the_direction_and_units_of_each_conversion() {
         ]
     );
 }
+
+#[test]
+fn a_superseded_scalar_initial_unit_is_not_checked() {
+    let model = ModelBuilder::new()
+        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+        .with_component(Arc::new(FourBoxProducer {
+            unit: "W/m^2".to_string(),
+        }))
+        .with_initial_values_in_units(
+            [("Regional Forcing".to_string(), (1.0, "J".to_string()))].into(),
+        )
+        .with_initial_grid_values(
+            [("Regional Forcing".to_string(), vec![1.0, 2.0, 3.0, 4.0])].into(),
+        )
+        .build()
+        .expect("the grid values replace the scalar");
+
+    let item = model.timeseries().get_by_name("Regional Forcing").unwrap();
+    let values = item.data.as_four_box().unwrap().at_time_index(0).unwrap();
+    assert_eq!(values, vec![1.0, 2.0, 3.0, 4.0]);
+}

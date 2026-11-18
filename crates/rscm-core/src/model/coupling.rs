@@ -244,9 +244,15 @@ impl Model {
             return Vec::new();
         };
         let stored_unit = stored.unit().to_string();
+        let reads = matches!(def.role, VariableRole::Input | VariableRole::State);
+        let writes = matches!(def.role, VariableRole::Output | VariableRole::State);
         let key = (def.name.clone(), component.to_string());
-        let read_factor = self.unit_conversions().get(&key).copied();
-        let write_factor = self.write_factor(&def.name, &def.unit);
+        let read_factor = reads
+            .then(|| self.unit_conversions().get(&key).copied())
+            .flatten();
+        let write_factor = writes
+            .then(|| self.write_factor(&def.name, &def.unit))
+            .flatten();
         let info = |direction: &str, from: &str, to: &str, factor: f64| ConversionInfo {
             variable: def.name.clone(),
             component: component.to_string(),
@@ -255,14 +261,8 @@ impl Model {
             to: to.to_string(),
             factor,
         };
-        let reads = matches!(def.role, VariableRole::Input | VariableRole::State);
-        let writes = matches!(def.role, VariableRole::Output | VariableRole::State);
-        let read = read_factor
-            .filter(|_| reads)
-            .map(|f| info("read", &stored_unit, &def.unit, f));
-        let write = write_factor
-            .filter(|_| writes)
-            .map(|f| info("write", &def.unit, &stored_unit, f));
+        let read = read_factor.map(|f| info("read", &stored_unit, &def.unit, f));
+        let write = write_factor.map(|f| info("write", &def.unit, &stored_unit, f));
         read.into_iter().chain(write).collect()
     }
 

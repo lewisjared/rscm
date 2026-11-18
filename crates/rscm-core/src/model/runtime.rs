@@ -445,7 +445,7 @@ impl Model {
             .collect();
         let outputs = OutputBuffer::new(component.output_names());
         let declared_units: HashMap<String, String> = component
-            .definitions()
+            .outputs()
             .into_iter()
             .map(|def| (def.name, def.unit))
             .collect();
