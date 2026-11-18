@@ -53,6 +53,7 @@ rscm/
 │   ├── rscm-macros/          # Procedural macros (ComponentIO)
 │   ├── rscm-two-layer/       # Two-layer climate model component
 │   ├── rscm-magicc/          # MAGICC components
+│   ├── rscm-fair/            # FaIR components
 │   ├── rscm-calibrate/       # Parameter estimation and MCMC sampling
 │   └── rscm-doc-gen/         # Component metadata generator for the docs
 ├── python/
@@ -60,8 +61,11 @@ rscm/
 │       ├── core.py           # Re-exports from Rust
 │       ├── component.py      # Python component base class
 │       ├── components.py     # Builders for rscm-components
+│       ├── names.py          # Shared variable names and unit tables
+│       ├── spec.py           # ModelSetup and run_all, shared by the model packages
 │       ├── two_layer/        # Two-layer model namespace
-│       ├── magicc/           # MAGICC builders and runner
+│       ├── magicc/           # MAGICC builders and models
+│       ├── fair/             # FaIR builders and models
 │       ├── calibrate/        # Calibration API
 │       ├── config/           # Configuration layer
 │       ├── _lib/             # Type stubs (.pyi) for the extension
@@ -141,10 +145,29 @@ Write it in Rust, with the `ComponentIO` derive macro, for performance or comple
 | `make docs-serve`                        | Serve documentation locally with live reload   |
 | `cargo doc --workspace --no-deps --open` | Build and open Rust docs                       |
 
+## Contributing
+
+Keep pull requests small and focused on one change.
+Write prose in British English.
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
+(`feat:`, `fix:`, `chore:`).
+The changelog is not generated from commit messages.
+Add a [changelog fragment](https://github.com/lewisjared/rscm/blob/main/changelog/README.md)
+in `changelog/` for each user-facing change.
+
+## Releasing
+
+Versions follow [PEP 440](https://peps.python.org/pep-0440/) and [Semantic Versioning](https://semver.org/).
+
+1. Run the [Bump version workflow](https://github.com/lewisjared/rscm/actions/workflows/bump.yaml)
+   on `main` and choose a `bump_rule` (`patch`, `minor` or `major`).
+   It updates the versions, compiles the changelog with `towncrier`, commits and pushes a `v*` tag.
+1. The tag triggers the [Release workflow](https://github.com/lewisjared/rscm/actions/workflows/release.yaml).
+   It builds the wheels and sdist, publishes the crates to crates.io and the package to PyPI,
+   and creates a GitHub release.
+
 ## Further Reading
 
-- [Development Practices](development.md): Workflows, versioning, releasing
-- [Rust Tips](rust_tips.md): Rust-specific guidance
 - [Naming Conventions](naming_conventions.md): How to name identifiers, parameters, variables and units
 - [Key Concepts](../key_concepts.md): Core abstractions (Component, Model, Timeseries)
 - [ComponentIO Macro](../notebooks/component_rust.md): Detailed macro documentation

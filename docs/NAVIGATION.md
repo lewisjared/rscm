@@ -31,9 +31,10 @@ See https://oprypin.github.io/mkdocs-literate-nav/
   * [Python Components](notebooks/component_python.py)
   * [Rust Components](notebooks/component_rust.md)
   * [External Modules](external_modules.md)
-  * [Development Practices](developers/development.md)
   * [Documenting Components](developers/documenting_components.md)
   * [Naming Conventions](developers/naming_conventions.md)
-  * [Rust Tips](developers/rust_tips.md)
   * [Troubleshooting](developers/troubleshooting.md)
+  * Architecture Decisions
+    * [Builder Owns Step Coupling](adr/0001-builder-owns-step-coupling.md)
+    * [Point and Average Variables](adr/0002-point-and-average-variables.md)
 * [Changelog](changelog.md)
