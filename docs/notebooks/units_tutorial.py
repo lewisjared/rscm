@@ -259,15 +259,18 @@ for target in [flux, Unit("Mt CH4/yr")]:
 # %% [markdown]
 # ## Integration with Model Building
 #
-# When a model has a `VariableSchema`, the builder compares each component's declared units with the schema:
+# A model stores each variable in one unit:
+# the schema's unit, or without a schema the unit its producer declares.
+# The builder checks every component's declared unit against it.
+# The units must have the same dimension and count the same species family.
 #
-# 1. **Validates compatibility**: the schema unit and component unit must have the same dimension
-#    and count the same species family.
-# 2. **Calculates conversion factors**: the builder computes the multiplier needed at runtime.
-# 3. **Applies conversion at runtime**: values are converted as Rust components read their inputs.
+# At runtime the model converts values on both sides of the store,
+# for Rust and Python components alike:
 #
-# The builder also converts prescribed data into the unit the model stores it in:
-# the schema's unit, or without a schema the unit the components declare.
+# - A component's output is converted into the stored unit as it is written.
+# - A component's input is converted into its declared unit as it is read.
+#
+# The builder also converts prescribed data into the stored unit.
 # Data in a unit with a different dimension or species, or a unit the parser cannot read, fails `build()`.
 #
 # Below, the schema stores CO₂ emissions in `MtCO2/yr`.
@@ -309,7 +312,8 @@ model = (
 ).build()
 
 # %% [markdown]
-# The "Unit Conversions" section of `coupling()` lists the factor applied to each component input.
+# The "Unit Conversions" section of `coupling()` lists each conversion,
+# its direction and the factor applied.
 
 # %%
 print(model.coupling("plain"))
@@ -322,7 +326,24 @@ concentration = model.timeseries().get_timeseries_by_name(
 print(f"CO2 concentration in 2010: {concentration.values()[-1]:.1f} ppm")
 
 # %% [markdown]
-# Python components receive values in the schema's units, without conversion.
+# ### Initial values
+#
+# A bare initial value is in the stored unit.
+# Pass a `(value, unit)` pair to give it in another unit, which the builder converts:
+#
+# ```python
+# builder.with_initial_values({"Cumulative Emissions|CO2": (2200.0, "Gt CO2")})
+# ```
+#
+# `with_initial_grid_values` takes `(values, unit)` pairs the same way.
+#
+# ### Results in another unit
+#
+# `convert_to` returns a copy of a timeseries in another compatible unit,
+# for example to compare results with reference data:
+
+# %%
+concentration.convert_to("ppb").values()[-1]
 
 # %% [markdown]
 # ## Summary
@@ -335,5 +356,6 @@ print(f"CO2 concentration in 2010: {concentration.values()[-1]:.1f} ppm")
 # | `unit.is_compatible(other)` | Check if conversion is possible |
 # | `unit.conversion_factor(other)` | Get the conversion multiplier |
 # | `unit.convert(value, other)` | Convert a value to another unit |
+# | `timeseries.convert_to(unit)` | Copy a timeseries into another unit |
 #
-# In a model, declare units in the `VariableSchema` and the builder converts Rust component inputs for you.
+# In a model, declare units in the `VariableSchema` and the model converts component inputs and outputs for you.

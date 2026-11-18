@@ -3,7 +3,7 @@
 //! [`Model::coupling`] reports the order components run in, every edge between them
 //! with whether it lags, and each variable's source and timeseries type.
 
-use crate::component::{DeclaredVariable, GridType, VariableRole};
+use crate::component::{DeclaredVariable, GridType, VariableDefinition, VariableRole};
 use crate::errors::RSCMResult;
 use crate::state::VariableSource;
 use petgraph::visit::EdgeRef;
@@ -55,6 +55,11 @@ pub struct TransformInfo {
 pub struct ConversionInfo {
     pub variable: String,
     pub component: String,
+    /// `read` for the stored unit into the component's, `write` for the reverse.
+    pub direction: String,
+    pub from: String,
+    pub to: String,
+    /// Multiplier taking a value in `from` to `to`.
     pub factor: f64,
 }
 
@@ -176,7 +181,10 @@ impl Coupling {
             self.unit_conversions
                 .iter()
                 .map(|c| {
-                    let detail = format!("(in {}, x{})", c.component, c.factor);
+                    let detail = format!(
+                        "{} -> {} ({} by {}, x{})",
+                        c.from, c.to, c.direction, c.component, c.factor
+                    );
                     format!("{} {}", c.variable, paint(&detail, Style::Dim))
                 })
                 .collect(),
@@ -230,6 +238,33 @@ impl Style {
 }
 
 impl Model {
+    /// The conversions `component` applies to the variable `def` declares.
+    fn conversions_for(&self, component: &str, def: &VariableDefinition) -> Vec<ConversionInfo> {
+        let key = (def.name.clone(), component.to_string());
+        let (Some(&factor), Some(stored)) = (
+            self.unit_conversions().get(&key),
+            self.timeseries().get_data(&def.name),
+        ) else {
+            return Vec::new();
+        };
+        let stored_unit = stored.unit().to_string();
+        let info = |direction: &str, from: &str, to: &str, factor: f64| ConversionInfo {
+            variable: def.name.clone(),
+            component: component.to_string(),
+            direction: direction.to_string(),
+            from: from.to_string(),
+            to: to.to_string(),
+            factor,
+        };
+        let read = info("read", &stored_unit, &def.unit, factor);
+        let write = info("write", &def.unit, &stored_unit, 1.0 / factor);
+        match def.role {
+            VariableRole::Input => vec![read],
+            VariableRole::Output => vec![write],
+            VariableRole::State => vec![read, write],
+        }
+    }
+
     /// Report the model's coupling: the order the runtime steps components in,
     /// every edge with whether it lags, and each variable's source and timeseries type.
     ///
@@ -256,6 +291,7 @@ impl Model {
 
         let mut components = Vec::new();
         let mut edges = Vec::new();
+        let mut unit_conversions = Vec::new();
         for (position, &nx) in order.iter().enumerate() {
             let name = &names[&nx];
             let mut component_edges: Vec<CouplingEdge> = self
@@ -274,6 +310,7 @@ impl Model {
             let mut outputs = Vec::new();
             let mut states = Vec::new();
             for def in self.components[nx].definitions() {
+                unit_conversions.extend(self.conversions_for(name, &def));
                 let mut info = DeclaredVariable::from_definition(&def);
                 if let Some(timeseries_type) = self.timeseries_type(&def.name) {
                     info.timeseries_type = timeseries_type;
@@ -318,17 +355,13 @@ impl Model {
             });
         }
 
-        let mut unit_conversions: Vec<ConversionInfo> = self
-            .unit_conversions()
-            .iter()
-            .map(|((var, comp), factor)| ConversionInfo {
-                variable: var.clone(),
-                component: comp.clone(),
-                factor: *factor,
-            })
-            .collect();
-        unit_conversions
-            .sort_by(|a, b| (&a.variable, &a.component).cmp(&(&b.variable, &b.component)));
+        unit_conversions.sort_by(|a, b| {
+            (&a.variable, &a.component, &a.direction).cmp(&(
+                &b.variable,
+                &b.component,
+                &b.direction,
+            ))
+        });
 
         Ok(Coupling {
             components,

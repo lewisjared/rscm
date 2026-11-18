@@ -50,6 +50,7 @@ pub struct ModelBuilder {
     explicit_prescribed: BTreeSet<String>,
     initial_values: HashMap<String, FloatValue>,
     initial_grid_values: HashMap<String, Vec<FloatValue>>,
+    initial_value_units: HashMap<String, String>,
     time_axis: Option<Arc<TimeAxis>>,
     schema: Option<VariableSchema>,
     /// Custom weights for grid aggregation, keyed by grid.
@@ -94,6 +95,7 @@ impl ModelBuilder {
             components: vec![],
             initial_values: HashMap::new(),
             initial_grid_values: HashMap::new(),
+            initial_value_units: HashMap::new(),
             prescribed_variables: TimeseriesCollection::new(),
             explicit_prescribed: BTreeSet::new(),
             time_axis: None,
@@ -418,6 +420,16 @@ impl ModelBuilder {
         initial_values: HashMap<String, Vec<FloatValue>>,
     ) -> &mut Self {
         self.initial_grid_values.extend(initial_values);
+        self
+    }
+
+    /// Sets the unit each named variable's initial values are given in.
+    ///
+    /// Building converts them into the unit the model stores the variable in,
+    /// and fails if the units are incompatible.
+    /// Initial values without a unit are taken to be in the stored unit already.
+    pub fn with_initial_value_units(&mut self, units: HashMap<String, String>) -> &mut Self {
+        self.initial_value_units.extend(units);
         self
     }
 
@@ -1050,8 +1062,19 @@ impl ModelBuilder {
             // With a schema, the store holds each variable in the schema's unit.
             let schema_unit = self.schema.as_ref().and_then(|s| s.get_unit(&name));
             let storage_unit = schema_unit.unwrap_or(&definition.unit);
-            let initial_val = self.initial_values.get(&name).copied();
-            let initial_grid = self.initial_grid_values.get(&name);
+            let initial_factor = match self.initial_value_units.get(&name) {
+                Some(unit) => {
+                    Self::check_unit_compatibility(&name, "initial value", unit, storage_unit)?
+                        .map_or(1.0, |conversion| conversion.factor)
+                }
+                None => 1.0,
+            };
+            let initial_val = self.initial_values.get(&name).map(|v| v * initial_factor);
+            let initial_grid: Option<Vec<FloatValue>> = self
+                .initial_grid_values
+                .get(&name)
+                .map(|values| values.iter().map(|v| v * initial_factor).collect());
+            let initial_grid = initial_grid.as_ref();
             let expected_len = match storage_grid {
                 GridType::Scalar => 1,
                 GridType::Hemispheric => 2,
@@ -1202,6 +1225,7 @@ impl ModelBuilder {
             .initial_values
             .keys()
             .chain(self.initial_grid_values.keys())
+            .chain(self.initial_value_units.keys())
             .collect();
         if let Some(variable) = initial_names
             .into_iter()

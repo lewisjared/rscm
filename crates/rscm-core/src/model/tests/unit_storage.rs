@@ -227,3 +227,117 @@ fn grid_outputs_are_converted_in_every_region() {
     let values: Vec<FloatValue> = ts.at_time_index(1).unwrap().to_vec();
     assert_eq!(values, vec![1000.0, 2000.0, 3000.0, 4000.0]);
 }
+
+#[test]
+fn initial_values_with_a_unit_are_converted_into_the_stored_unit() {
+    let model = run(ModelBuilder::new()
+        .with_schema(VariableSchema::new().variable("Heat", "J"))
+        .with_component(Arc::new(Accumulator {
+            unit: "kJ".to_string(),
+        }))
+        .with_initial_values([("Heat".to_string(), 2.0)].into())
+        .with_initial_value_units([("Heat".to_string(), "kJ".to_string())].into()));
+
+    let ts = model.timeseries().get_by_name("Heat").unwrap();
+    let ts = ts.data.as_scalar().unwrap();
+    assert!(is_close!(ts.at_scalar(0).unwrap(), 2000.0));
+    assert_stored(&model, "Heat", 3000.0, "J");
+}
+
+#[test]
+fn initial_grid_values_with_a_unit_are_converted_in_every_region() {
+    let model = ModelBuilder::new()
+        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+        .with_schema(VariableSchema::new().variable_with_grid(
+            "Regional Forcing",
+            "mW/m^2",
+            crate::component::GridType::FourBox,
+        ))
+        .with_component(Arc::new(FourBoxProducer {
+            unit: "W/m^2".to_string(),
+        }))
+        .with_initial_grid_values(
+            [("Regional Forcing".to_string(), vec![1.0, 2.0, 3.0, 4.0])].into(),
+        )
+        .with_initial_value_units([("Regional Forcing".to_string(), "W/m^2".to_string())].into())
+        .build()
+        .expect("model builds");
+
+    let item = model.timeseries().get_by_name("Regional Forcing").unwrap();
+    let values = item.data.as_four_box().unwrap().at_time_index(0).unwrap();
+    assert_eq!(values, vec![1000.0, 2000.0, 3000.0, 4000.0]);
+}
+
+#[test]
+fn an_incompatible_initial_value_unit_fails_the_build() {
+    let result = ModelBuilder::new()
+        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+        .with_component(Arc::new(Accumulator {
+            unit: "J".to_string(),
+        }))
+        .with_initial_values([("Heat".to_string(), 0.0)].into())
+        .with_initial_value_units([("Heat".to_string(), "GtC".to_string())].into())
+        .build();
+
+    let Err(err) = result else {
+        panic!("build should fail");
+    };
+    let err = err.to_string();
+    assert!(err.contains("Incompatible units"), "{err}");
+}
+
+#[test]
+fn an_initial_value_unit_for_an_unknown_variable_fails_the_build() {
+    let result = ModelBuilder::new()
+        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+        .with_component(Arc::new(Accumulator {
+            unit: "J".to_string(),
+        }))
+        .with_initial_values([("Heat".to_string(), 0.0)].into())
+        .with_initial_value_units([("Hat".to_string(), "J".to_string())].into())
+        .build();
+
+    assert!(matches!(
+        result.err(),
+        Some(crate::errors::RSCMError::UnknownInitialValue { .. })
+    ));
+}
+
+#[test]
+fn coupling_reports_the_direction_and_units_of_each_conversion() {
+    let model = run(ModelBuilder::new()
+        .with_schema(schema())
+        .with_component(Arc::new(Producer {
+            unit: "kW/m^2".to_string(),
+            value: 1.0,
+        }))
+        .with_component(Arc::new(Consumer {
+            unit: "kW/m^2".to_string(),
+        })));
+
+    let conversions: Vec<_> = model
+        .coupling()
+        .unwrap()
+        .unit_conversions
+        .into_iter()
+        .map(|c| (c.variable, c.component, c.direction, c.from, c.to, c.factor))
+        .collect();
+    let row = |v: &str, c: &str, d: &str, from: &str, to: &str, f: f64| {
+        (v.into(), c.into(), d.into(), from.into(), to.into(), f)
+    };
+    assert_eq!(
+        conversions,
+        vec![
+            row("Forcing", "Consumer", "read", "W/m^2", "kW/m^2", 0.001),
+            row("Forcing", "Producer", "write", "kW/m^2", "W/m^2", 1000.0),
+            row(
+                "Forcing Copy",
+                "Consumer",
+                "write",
+                "kW/m^2",
+                "W/m^2",
+                1000.0
+            ),
+        ]
+    );
+}

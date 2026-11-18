@@ -416,6 +416,9 @@ Grid variables have their own methods:
 - `with_initial_grid_values({name: [...]})` sets the initial value of a grid state variable,
   with one value per region in grid order.
 
+An initial value is in the unit the model stores the variable in.
+Either method also takes a `(value, unit)` pair, which the builder converts into that unit.
+
 See [Gridded Prescribed Data and Initial Values](grids.md#gridded-prescribed-data-and-initial-values)
 for examples.
 

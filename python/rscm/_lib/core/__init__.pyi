@@ -112,6 +112,12 @@ class Timeseries:
     def unit(self) -> str: ...
     @property
     def time_axis(self) -> TimeAxis: ...
+    def convert_to(self, unit: str) -> Timeseries:
+        """
+        Return a copy of the series in `unit`.
+
+        Raises `ValueError` if `unit` is not compatible with the series' unit.
+        """
     @property
     def interpolation_strategy(self) -> InterpolationStrategy: ...
     def latest_value(self) -> F | None: ...
@@ -169,6 +175,12 @@ class FourBoxTimeseries:
     def unit(self) -> str: ...
     @property
     def time_axis(self) -> TimeAxis: ...
+    def convert_to(self, unit: str) -> FourBoxTimeseries:
+        """
+        Return a copy of the series in `unit`.
+
+        Raises `ValueError` if `unit` is not compatible with the series' unit.
+        """
 
 @final
 class HemisphericTimeseries:
@@ -195,6 +207,12 @@ class HemisphericTimeseries:
     def unit(self) -> str: ...
     @property
     def time_axis(self) -> TimeAxis: ...
+    def convert_to(self, unit: str) -> HemisphericTimeseries:
+        """
+        Return a copy of the series in `unit`.
+
+        Raises `ValueError` if `unit` is not compatible with the series' unit.
+        """
 
 @final
 class TimeseriesCollection:
@@ -548,16 +566,22 @@ class ModelBuilder:
         Takes a Rust component, a `PythonComponent`
         or an `rscm.component.Component` instance, which it wraps.
         """
-    def with_initial_values(self, initial_values: dict[str, F]) -> Self:
+    def with_initial_values(self, initial_values: dict[str, F | tuple[F, str]]) -> Self:
         """
         Set initial values for state variables, which are required at build time.
 
-        `build` fails for a name no component reads or produces.
+        A bare value is in the unit the model stores the variable in.
+        A `(value, unit)` pair is converted into that unit.
+        `build` fails for a name no component reads or produces,
+        or for a unit incompatible with the stored one.
         """
-    def with_initial_grid_values(self, initial_values: dict[str, list[F]]) -> Self:
+    def with_initial_grid_values(
+        self, initial_values: dict[str, list[F] | tuple[list[F], str]]
+    ) -> Self:
         """
         Add initial values for grid variables, one per region in grid order.
 
+        Units work as for `with_initial_values`.
         `build` fails for a name no component reads or produces.
         """
     def with_prescribed_variable(

@@ -58,17 +58,21 @@ impl PyModelBuilder {
 
     fn with_initial_values(
         mut self_: PyRefMut<Self>,
-        initial_values: HashMap<String, FloatValue>,
+        initial_values: HashMap<String, MaybeWithUnit<FloatValue>>,
     ) -> PyRefMut<Self> {
-        self_.0.with_initial_values(initial_values);
+        let (values, units) = split_units(initial_values);
+        self_.0.with_initial_values(values);
+        self_.0.with_initial_value_units(units);
         self_
     }
 
     fn with_initial_grid_values(
         mut self_: PyRefMut<Self>,
-        initial_values: HashMap<String, Vec<FloatValue>>,
+        initial_values: HashMap<String, MaybeWithUnit<Vec<FloatValue>>>,
     ) -> PyRefMut<Self> {
-        self_.0.with_initial_grid_values(initial_values);
+        let (values, units) = split_units(initial_values);
+        self_.0.with_initial_grid_values(values);
+        self_.0.with_initial_value_units(units);
         self_
     }
 
@@ -395,4 +399,31 @@ pub fn py_run_models(
     let mut refs: Vec<&mut Model> = models.iter_mut().map(|m| &mut m.0).collect();
     let results = py.detach(|| on_pool(n_threads, || model::run_models(&mut refs)))?;
     all_ok(results, "run", PyRuntimeError::new_err::<String>).map(|_| ())
+}
+
+/// An initial value, optionally paired with the unit it is given in.
+#[derive(FromPyObject)]
+enum MaybeWithUnit<T> {
+    WithUnit((T, String)),
+    Bare(T),
+}
+
+/// Separate values from the units given for some of them.
+fn split_units<T>(
+    entries: HashMap<String, MaybeWithUnit<T>>,
+) -> (HashMap<String, T>, HashMap<String, String>) {
+    let mut values = HashMap::new();
+    let mut units = HashMap::new();
+    for (name, entry) in entries {
+        match entry {
+            MaybeWithUnit::WithUnit((value, unit)) => {
+                units.insert(name.clone(), unit);
+                values.insert(name, value);
+            }
+            MaybeWithUnit::Bare(value) => {
+                values.insert(name, value);
+            }
+        }
+    }
+    (values, units)
 }

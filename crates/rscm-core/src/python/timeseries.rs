@@ -263,6 +263,14 @@ impl PyTimeseries {
         self.0.unit().to_string()
     }
 
+    /// A copy of the series in `unit`, which must be compatible with the series' unit.
+    fn convert_to(&self, unit: &str) -> PyResult<Self> {
+        self.0
+            .convert_to(unit)
+            .map(Self)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
     #[getter]
     fn time_axis(&self) -> PyTimeAxis {
         PyTimeAxis(self.0.time_axis())
@@ -356,6 +364,14 @@ impl PyFourBoxTimeseries {
         self.0.unit().to_string()
     }
 
+    /// A copy of the series in `unit`, which must be compatible with the series' unit.
+    fn convert_to(&self, unit: &str) -> PyResult<Self> {
+        self.0
+            .convert_to(unit)
+            .map(Self)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
     #[getter]
     fn time_axis(&self) -> PyTimeAxis {
         PyTimeAxis(self.0.time_axis())
@@ -415,6 +431,14 @@ impl PyHemisphericTimeseries {
     #[getter]
     fn unit(&self) -> String {
         self.0.unit().to_string()
+    }
+
+    /// A copy of the series in `unit`, which must be compatible with the series' unit.
+    fn convert_to(&self, unit: &str) -> PyResult<Self> {
+        self.0
+            .convert_to(unit)
+            .map(Self)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     #[getter]
