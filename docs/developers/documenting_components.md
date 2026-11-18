@@ -158,11 +158,12 @@ class SimpleEmissionsToConcentration(Component):
     a linear airborne fraction model:
 
     $$
-    C(t) = C(t-1) + \alpha \cdot E(t) \cdot \frac{M_{CO2}}{M_C}
+    C(t + \Delta t) = C(t) + \alpha \cdot E(t) \cdot \Delta t \cdot \frac{M_C}{M_{CO2}} \cdot k
     $$
 
     where $\alpha$ is the airborne fraction (fraction of emissions
-    remaining in the atmosphere).
+    remaining in the atmosphere), $E$ the emissions in Gt CO2/yr,
+    $\Delta t$ the step length in years and $k$ the ppm per GtC.
     """
 
     emissions = Input("Emissions|CO2", unit="Gt CO2/yr")
