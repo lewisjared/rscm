@@ -841,6 +841,8 @@ impl ModelBuilder {
         if let Some(schema) = &self.schema {
             // First validate the schema itself
             schema.validate()?;
+            // The store holds the schema's unit, so producer-relative factors do not apply.
+            unit_conversions.clear();
 
             // Validate each component against the schema and collect transformations
             for (component, (requires, provides)) in self.components.iter().zip(&component_defs) {
@@ -1080,7 +1082,7 @@ impl ModelBuilder {
                     } else {
                         let mut ts = Timeseries::new_empty_scalar(
                             time_axis.clone(),
-                            definition.unit,
+                            storage_unit.to_string(),
                             interp.clone(),
                         );
                         if let Some(val) = initial_grid.map(|v| v[0]).or(initial_val) {
@@ -1103,7 +1105,7 @@ impl ModelBuilder {
                         let mut ts = GridTimeseries::new_empty(
                             time_axis.clone(),
                             self.create_four_box_grid(),
-                            definition.unit,
+                            storage_unit.to_string(),
                             interp.clone(),
                         );
                         use crate::spatial::FourBoxRegion;
@@ -1137,7 +1139,7 @@ impl ModelBuilder {
                         let mut ts = GridTimeseries::new_empty(
                             time_axis.clone(),
                             self.create_hemispheric_grid(),
-                            definition.unit,
+                            storage_unit.to_string(),
                             interp.clone(),
                         );
                         use crate::spatial::HemisphericRegion;

@@ -3,10 +3,10 @@
 use crate::component::{ComponentState, GridType, TimeseriesType};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::state::{
-    lookup_order, InputPlan, InputState, OutputBuffer, ReadTransformInfo, StateValue,
-    VariableSource,
+    lookup_order, FourBoxSlice, HemisphericSlice, InputPlan, InputState, OutputBuffer,
+    ReadTransformInfo, StateValue, VariableSource,
 };
-use crate::timeseries::{Time, TimeAxis};
+use crate::timeseries::{FloatValue, Time, TimeAxis};
 use crate::timeseries_collection::TimeseriesCollection;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
@@ -98,7 +98,8 @@ pub struct Model {
     /// Unit conversions needed at runtime.
     ///
     /// Key: (variable_name, component_name) -> conversion factor
-    /// The factor converts from schema units to component units when reading.
+    /// The factor converts from the stored unit to the component's unit when reading,
+    /// and its inverse converts a producer's output into the stored unit when writing.
     #[serde(
         default,
         skip_serializing_if = "HashMap::is_empty",
@@ -144,6 +145,21 @@ struct OutputTarget {
     /// Source and target grid of a write transform.
     transform: Option<(GridType, GridType)>,
     timeseries_type: TimeseriesType,
+    /// Factor from the producer's unit to the stored unit.
+    unit_factor: FloatValue,
+}
+
+/// `value` multiplied by `factor` in every region.
+fn scale_state_value(value: &StateValue, factor: FloatValue) -> StateValue {
+    match value {
+        StateValue::Scalar(v) => StateValue::Scalar(v * factor),
+        StateValue::FourBox(slice) => StateValue::FourBox(FourBoxSlice::from_array(
+            slice.as_array().map(|v| v * factor),
+        )),
+        StateValue::Hemispheric(slice) => StateValue::Hemispheric(HemisphericSlice::from_array(
+            slice.as_array().map(|v| v * factor),
+        )),
+    }
 }
 
 impl Model {
@@ -431,7 +447,7 @@ impl Model {
         let targets = outputs
             .names()
             .iter()
-            .map(|output| self.output_target(output))
+            .map(|output| self.output_target(output, &name))
             .collect();
         ComponentPlan {
             node,
@@ -477,9 +493,13 @@ impl Model {
             .map_or(GridType::Scalar, |item| item.data.grid())
     }
 
-    /// Where an output is stored and how it is transformed on the way.
-    fn output_target(&self, name: &str) -> Option<OutputTarget> {
+    /// Where `component`'s output `name` is stored and how it is transformed on the way.
+    fn output_target(&self, name: &str, component: &str) -> Option<OutputTarget> {
         let index = self.collection.position(name)?;
+        let unit_factor = self
+            .unit_conversions
+            .get(&(name.to_string(), component.to_string()))
+            .map_or(1.0, |read_factor| 1.0 / read_factor);
         let transform = self
             .write_transforms
             .get(name)
@@ -489,6 +509,7 @@ impl Model {
             index,
             transform,
             timeseries_type,
+            unit_factor,
         })
     }
 
@@ -534,7 +555,7 @@ impl Model {
             }
         }
         for (key, value) in plan.outputs.take_undeclared() {
-            let target = self.output_target(&key);
+            let target = self.output_target(&key, &plan.name);
             self.write_output(&plan.name, &key, target, &value)?;
         }
         Ok(())
@@ -554,6 +575,13 @@ impl Model {
                 "{component_name} returned undeclared output {key} during {start}..{end}"
             ))
         })?;
+        let converted;
+        let state_value = if (target.unit_factor - 1.0).abs() > FloatValue::EPSILON {
+            converted = scale_state_value(state_value, target.unit_factor);
+            &converted
+        } else {
+            state_value
+        };
         let aggregated;
         let final_value = match target.transform {
             Some((source_grid, target_grid)) => {
