@@ -37,6 +37,7 @@ lint-python:
 .PHONY: validate-pyi
 validate-pyi: build-dev  ## Validate .pyi stubs match the actual module
 	uv run python -m mypy.stubtest rscm._lib --allowlist stubtest-allowlist.txt
+	cargo test -q -p rscm-magicc --test python_stub_parameters
 
 .PHONY: lint-rust
 lint-rust:

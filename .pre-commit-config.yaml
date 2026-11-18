@@ -37,6 +37,15 @@ repos:
         language: python
         entry: python scripts/check_naming.py
         types: [text]
+      # stubtest cannot see TypedDicts, so this compares them with the serialised Rust parameters.
+      - id: magicc-stub-parameters
+        name: magicc.pyi parameter TypedDicts match Rust
+        language: system
+        entry: >-
+          bash -c 'LD_LIBRARY_PATH="$(uv run --no-sync python -c "import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          cargo test -q -p rscm-magicc --test python_stub_parameters'
+        files: "^(python/rscm/_lib/magicc\\.pyi|crates/rscm-magicc/src/parameters/.*\\.rs)$"
+        pass_filenames: false
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: 'v0.14.11'
     hooks:
