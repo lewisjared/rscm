@@ -17,7 +17,7 @@ This guide covers common issues encountered when building, running, and developi
     ```toml
     [tool.maturin]
     manifest-path = "crates/rscm/Cargo.toml"  # Correct
-    # manifest-path = "Cargo.toml"            # Wrong - workspace root has no package
+    # manifest-path = "Cargo.toml"            # Wrong: the workspace root has no package
     ```
 
 2. **Stale build artifacts**
@@ -129,6 +129,21 @@ model = (
 
 If the input is meant to be empty, call `with_missing_prescribed_allowed()` before `build()`.
 The input is then NaN.
+
+#### UnknownInitialValue and UnusedPrescribedVariable
+
+```
+Prescribed variable 'Effective Radiative Forcing|Total' is not used: no component reads it.
+```
+
+**Cause:** An initial value names a variable no component reads or produces,
+or prescribed data names a variable no component reads.
+This is usually a misspelt name.
+
+**Fix:** Use the name the component declares.
+The error lists close matches when it finds any.
+Prescribed data for a variable a component produces fails with `PrescribedOutput`,
+because the component would overwrite it.
 
 #### Missing input when calling `solve` directly
 
@@ -377,7 +392,7 @@ All timeseries in a model run should use compatible time axes:
 
 ```python
 # Ensure emissions and other inputs cover the full simulation period
-times = np.arange(1750, 2100, 1)  # Annual from 1750-2100
+times = np.arange(1750, 2101)  # Annual bounds from 1750 to 2100
 ```
 
 ### Forgetting to Rebuild

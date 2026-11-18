@@ -189,8 +189,3 @@ The constants in `rscm_core::names` are the settled names, so look there before 
 6. Import the constant in every other Rust module, Python module and test.
 7. If another convention spells it differently, add the mapping to the tables in `python/rscm/names.py`.
 8. Renaming a variable is a breaking change, so it needs a `breaking` changelog fragment.
-
-## Not settled yet
-
-- What a `run_` function returns differs between runners until the build and run rework.
-- `parameters=` holds different things across the MAGICC runners, and stays that way for now.

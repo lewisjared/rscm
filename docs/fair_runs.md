@@ -10,7 +10,8 @@ It reproduces FaIR's default methods to a relative tolerance of 1e-9:
 Variables use RSCM names (see `rscm.fair.naming`) and keep FaIR's units.
 FaIR's emissions are on timepoints, one per step.
 Its concentrations, forcing and temperatures are on timebounds, one more than the steps.
-The runners take a time axis with a step starting at each timebound, `TimeAxis.from_values(timebounds)`.
+`setup_model` and `run_ensemble` take a time axis with a step starting at each timebound,
+`TimeAxis.from_values(timebounds)`.
 
 ## Components
 
@@ -52,8 +53,7 @@ Download the full posterior from Zenodo to run other members.
 
 `read_calibration` reads the species CSV and the posterior CSV, as FaIR's `override_defaults` does,
 and returns one configuration per member.
-FaIR's emissions are on timepoints, one per step.
-Prescribed concentrations and forcing are on timebounds, one more than the steps.
+Emissions come from the timepoints file, and prescribed concentrations and forcing from the timebounds file.
 
 ```python
 import pandas as pd
@@ -99,7 +99,7 @@ such as fair-calibrate's own input files.
 ## Ensembles
 
 `run_ensemble` runs every configuration on every scenario and returns an `xarray.Dataset` in FaIR's layout,
-with `timebounds`, `scenario`, `config`, `specie` and `layer` dimensions:
+with `timebounds`, `timepoints`, `scenario`, `config`, `specie` and `layer` dimensions:
 
 ```python
 from rscm.fair import run_ensemble
@@ -159,7 +159,8 @@ such as the species parameters and inputs that switch when a gas becomes concent
 `components(config, energy_balance=False)` leaves out `EnergyBalance`,
 so another component can write `Surface Air Temperature Change` from `Effective Radiative Forcing`.
 The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateUDEB` this way.
-`initial_values` takes the same flag.
+`initial_values` takes the same flag,
+and `with_lags(builder, config)` adds FaIR's feedback lags to a `ModelBuilder` of these components.
 
 ## Validation
 

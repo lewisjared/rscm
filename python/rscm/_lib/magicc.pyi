@@ -35,6 +35,9 @@ Forcing:
 
 from typing import Any, Literal, NotRequired, Required, TypedDict, final
 
+import numpy as np
+from numpy.typing import NDArray
+
 from rscm._lib.core import ComponentBuilder, RustComponent
 
 # Climate Components
@@ -58,15 +61,25 @@ class ClimateUDEBParameters(TypedDict, total=False):
     ecs: float
     erf_2xco2: float
     land_ocean_warming_ratio: float
+    feedback_forcing_sensitivity: float
+    feedback_cumulative_temperature_sensitivity: float
+    feedback_cumulative_temperature_period: float
     land_ocean_heat_exchange: float
     north_south_heat_exchange: float
     amplify_ocean_to_land: float
     nh_land_fraction: float
     sh_land_fraction: float
+    depth_dependent_area: float
+    include_land_heat_capacity: bool
+    land_ground_heat_exchange: float
+    land_heat_capacity_effective_thickness: float
+    co2_regional_pattern: tuple[float, float, float, float]
     efficacy_method: Literal["none", "unit", "ar6"]
     co2_efficacy: float
     include_regional_forcing: bool
+    subannual_forcing: SubannualForcing | None
     time_varying_erf_2xco2: bool
+    ocean_temperature_profile: Literal["analytical", "cmip5"]
     temperature_adjustment_alpha: float
     temperature_adjustment_gamma: float
     polar_sinking_ratio: float
@@ -105,6 +118,12 @@ class ClimateUDEBBuilder(ComponentBuilder):
     - `ecs` (`float`, default `3.0`): Equilibrium climate sensitivity (K).
     - `erf_2xco2` (`float`, default `3.71`): 2xCO2 effective radiative forcing (W/m^2).
     - `land_ocean_warming_ratio` (`float`, default `1.317`): Land-ocean warming ratio.
+    - `feedback_forcing_sensitivity` (`float`, default `7.84e-9`): Change in climate
+      sensitivity with the ERF level.
+    - `feedback_cumulative_temperature_sensitivity` (`float`, default `0.08`): Change in
+      climate sensitivity with cumulative warming.
+    - `feedback_cumulative_temperature_period` (`float`, default `300.0`): Period over
+      which warming is accumulated (yr).
     - `land_ocean_heat_exchange` (`float`, default `1.44`): Land-ocean heat exchange
       coefficient (W/m^2/K).
     - `north_south_heat_exchange` (`float`, default `0.31`): Inter-hemispheric heat
@@ -113,6 +132,27 @@ class ClimateUDEBBuilder(ComponentBuilder):
       amplification factor.
     - `nh_land_fraction` (`float`, default `0.42`): Northern Hemisphere land fraction.
     - `sh_land_fraction` (`float`, default `0.21`): Southern Hemisphere land fraction.
+    - `depth_dependent_area` (`float`, default `1.0`): Ocean basin narrowing with depth,
+      from 0 (cylindrical) to 1 (full hypsometric profile).
+    - `include_land_heat_capacity` (`bool`, default `True`): Apply the ground heat
+      reservoir under land.
+    - `land_ground_heat_exchange` (`float`, default `0.1`): Land-ground heat exchange
+      coefficient (W/m^2/K).
+    - `land_heat_capacity_effective_thickness` (`float`, default `300.0`): Effective
+      thickness of the ground heat reservoir (m).
+    - `co2_regional_pattern` (`tuple`, default `(1.4089, 1.37045, 1.43333, 1.33257)`):
+      Regional CO2 ERF pattern of the four boxes.
+    - `efficacy_method` (`"none"`, `"unit"` or `"ar6"`, default `"none"`): How
+      efficacies scale the ERF.
+    - `co2_efficacy` (`float`, default `1.0`): CO2 efficacy, used by `ar6` only.
+    - `include_regional_forcing` (`bool`, default `False`): Read the four-box
+      efficacy-adjusted ERF from `ForcingAggregation`.
+    - `subannual_forcing` (`SubannualForcing`, optional): Regional ERF applied at each
+      substep on top of the annual input, as MAGICC7 applies volcanic forcing.
+    - `time_varying_erf_2xco2` (`bool`, default `False`): Read
+      `2xCO2 Effective Radiative Forcing` each year instead of using `erf_2xco2`.
+    - `ocean_temperature_profile` (`"analytical"` or `"cmip5"`, default `"cmip5"`):
+      Initial ocean temperature profile.
     - `temperature_adjustment_alpha` (`float`, default `1.04`): Ocean-to-atmosphere
       temperature adjustment alpha.
     - `temperature_adjustment_gamma` (`float`, default `-0.002`): Ocean-to-atmosphere
@@ -122,6 +162,10 @@ class ClimateUDEBBuilder(ComponentBuilder):
     - `steps_per_year` (`int`, default `12`): Substeps per year.
     - `maximum_temperature` (`float`, default `25.0`): Highest temperature change a run
       may reach before it fails (K).
+    - `include_unset_lamcalc_error` (`bool`, default `True`): Reproduce MAGICC7 v7.5.3
+      reading LAMCALC's first error unset.
+    - `thermal_expansion` (`ThermalExpansion`, optional): Write the annual mean warming
+      and the thermal expansion of the ocean.
 
     Inputs, outputs and states are listed on the
     [ClimateUDEB component page][component-magicc-climateudeb].
@@ -153,6 +197,19 @@ class ClimateUDEBBuilder(ComponentBuilder):
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the UDEB climate model component."""
+
+class SubannualForcing(TypedDict, total=False):
+    """Efficacy-adjusted regional ERF applied by ClimateUDEB at each substep.
+
+    Values are zero outside the given range.
+    """
+
+    start: Required[float]
+    values: Required[list[tuple[float, float, float, float]] | NDArray[np.float64]]
+    scale: float
+    regional_pattern: tuple[float, float, float, float] | None
+    efficacy: float
+    internal_efficacy: float
 
 class ThermalExpansion(TypedDict, total=False):
     """Thermal expansion of the ocean, calculated by ClimateUDEB.
@@ -1143,6 +1200,11 @@ class ForcingAgent(TypedDict, total=False):
     """Variables added in order into this agent before its efficacy applies.
 
     Empty reads ``variable`` itself.
+    """
+    efficacy_per_variable: bool
+    """Apply the efficacy to each ``sum_of`` variable before summing.
+
+    MAGICC7 does this for halocarbons.
     """
 
 type ForcingCategory = Literal["greenhouse_gas", "aerosol", "anthropogenic", "natural"]

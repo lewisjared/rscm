@@ -49,7 +49,8 @@ temperature = boxes @ prescribed.area_fractions()
 ```
 
 The time axis must have annual steps on whole years and start in 1750, MAGICC7's preindustrial reference year.
-RSCM measures forcing from the first year's concentrations, so a run that starts in another year would not match MAGICC7.
+RSCM measures forcing from the first year's concentrations,
+so a run that starts in another year would not match MAGICC7.
 The run must end in or after 1766, the year after the last aerosol or land-use forcing file starts,
 and no later than the solar forcing file ends, 2500 for the packaged one.
 `from_magicc7` rejects any other time axis, stating the years it allows.
@@ -169,6 +170,7 @@ An input off the time axis raises `ValueError`.
 The models carry MAGICC7's feedback lags, `rscm.magicc.model.LAGS`.
 So chemistry and the carbon cycle use the temperature and CO2 at the start of each year,
 and forcing uses the concentrations at its end.
+`rscm.magicc.with_lags(builder)` adds the same lags to a `ModelBuilder` of MAGICC components wired by hand.
 
 ## Inspecting a model before building
 
@@ -334,7 +336,7 @@ in every year from 1750 to 2105.
 It checks four-box surface air temperature change, the CO2, CH4 and N2O concentrations and total ERF
 at a relative tolerance of 1e-9 and an absolute tolerance of 1e-12, set in `tests/regression/full_run.py`.
 The tolerance asks for scientific parity rather than bit-for-bit agreement,
-but most cases currently agree to the last bit.
+but most cases agree to the last bit.
 The cases are:
 
 - MAGICC7's default run, which prescribes concentrations until 2015 and includes permafrost.

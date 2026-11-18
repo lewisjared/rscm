@@ -15,20 +15,19 @@
 # %% [markdown]
 # # Components in Python
 #
-# This notebook demonstrates how to create climate model components in Python
-# that integrate seamlessly with RSCM's Rust core.
-#
-# Python components can be coupled with Rust-native components in the same model,
-# enabling rapid prototyping while maintaining performance for production code.
+# This notebook shows how to write climate model components in Python.
+# Python components couple with Rust components in the same model,
+# so a component can be prototyped in Python before it is ported to Rust.
 #
 # ## Overview
 #
-# Create Python components by subclassing `rscm.component.Component` with
-# declarative `Input`, `Output`, and `State` descriptors. This provides:
+# Create Python components by subclassing `rscm.component.Component`
+# and declaring variables with `Input`, `Output` and `State` descriptors.
+# This provides:
 #
-# - Auto-generated `definitions()` method
-# - Type-safe input/output access
-# - Support for scalar and grid-based (four-box, hemispheric) variables
+# - A generated `definitions()` method.
+# - Typed input and output access.
+# - Scalar and grid-based (four-box, hemispheric) variables.
 #
 # ## Related Resources
 #
@@ -55,12 +54,11 @@ from rscm.core import (
 # %% [markdown]
 # ## Creating a Typed Component
 #
-# To create a component, subclass `rscm.component.Component` and declare
-# inputs/outputs using descriptors. The metaclass automatically generates:
+# The metaclass of `rscm.component.Component` generates:
 #
-# - `definitions()` method returning `list[VariableDefinition]`
-# - Inner `Inputs` class with typed fields for each input
-# - Inner `Outputs` class for constructing return values
+# - A `definitions()` method returning `list[VariableDefinition]`.
+# - An inner `Inputs` class with a typed field for each input.
+# - An inner `Outputs` class for constructing return values.
 #
 # `solve()` reads each input with `get()`,
 # the value the model hands the component for the step.
@@ -104,9 +102,8 @@ scale_component = ScaleComponent(scale_factor=3, scale_year=2015)
 # %% [markdown]
 # ### Auto-generated Definitions
 #
-# The `definitions()` method is automatically generated from the descriptors.
-# This tells the model what inputs the component requires and what outputs
-# it produces:
+# `definitions()` is generated from the descriptors.
+# It tells the model what the component reads and writes:
 
 # %%
 for defn in scale_component.definitions():
@@ -131,7 +128,8 @@ wrapped = PythonComponent(scale_component)
 # %% [markdown]
 # ### Direct Component Invocation
 #
-# You can call `solve()` directly on the wrapped component for testing.
+# Call `solve()` on the wrapped component to test it.
+# Outside a model, each point input needs a value at `t_next`.
 # `solve()` returns `dict[str, StateValue]`, and `.to_scalar()` extracts the float value:
 
 # %%
@@ -155,11 +153,11 @@ print(f"Output value: {result['output'].to_scalar()}")
 # %% [markdown]
 # ## Using Components in a Model
 #
-# Components are typically used within a `Model` that handles:
+# A `Model` handles:
 #
-# - Stepping
-# - Dependency resolution between components
-# - State management across steps
+# - Stepping through the time axis.
+# - Ordering components by their dependencies.
+# - Carrying state between steps.
 
 # %%
 input_ts = Timeseries(
@@ -197,8 +195,9 @@ plt.title("ScaleComponent: Input vs Output")
 plt.show()
 
 # %% [markdown]
-# The output lags the input by one step, because the component reads its input at the start
-# of a step and writes its output at the end.
+# The output follows the input with no lag.
+# The component writes its output at the end of each step,
+# and `get()` reads a prescribed point at the end of the step too.
 # The model steps every 10 years, so the first step that starts after 2015 runs from 2020 to 2030.
 # The tripled output therefore first appears in 2030.
 
@@ -304,12 +303,12 @@ PythonComponent(regional).solve(2000, 2001, forcing)["Surface Air Temperature Ch
 # %% [markdown]
 # ## StateValue: Understanding Component Outputs
 #
-# Component `solve()` methods return `dict[str, StateValue]`. The `StateValue`
-# class wraps scalar or grid values:
+# A wrapped component's `solve()` returns `dict[str, StateValue]`.
+# `StateValue` wraps a scalar or grid value:
 #
-# - `StateValue.scalar(float)`: single global value
-# - `StateValue.four_box(FourBoxSlice)`: four regional values
-# - `StateValue.hemispheric(HemisphericSlice)`: two hemispheric values
+# - `StateValue.scalar(float)`: one global value.
+# - `StateValue.four_box(FourBoxSlice)`: four regional values.
+# - `StateValue.hemispheric(HemisphericSlice)`: two hemispheric values.
 #
 # Use accessor methods to extract values:
 
@@ -329,7 +328,7 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # %% [markdown]
 # ## Input Access Patterns
 #
-# The typed `Inputs` class provides several ways to access input data:
+# Each field of the typed `Inputs` class is a window over the input:
 #
 # | Method | Description |
 # |--------|-------------|
@@ -345,7 +344,8 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # For grid inputs, `get()` and `interval()` return a `FourBoxSlice` or `HemisphericSlice`,
 # and `region(i)` returns a scalar window for one region.
 #
-# Inputs arrive in the declared unit and grid when the model has a schema.
+# Inputs arrive in the unit and grid the component declares,
+# converted from the schema's where they differ.
 # See [Step Semantics](../../key_concepts/#step-semantics) for how the model picks the step.
 
 # %% [markdown]
@@ -361,11 +361,11 @@ print(f"  to_scalar (aggregated): {grid_val.to_scalar()}")
 # %% [markdown]
 # ## Summary
 #
-# Key points for creating Python components:
+# To create a Python component:
 #
-# 1. Subclass `rscm.component.Component`
-# 2. Declare variables with `Input()`, `Output()`, or `State()` descriptors
-# 3. Implement `solve(t_current, t_next, inputs)` returning `self.Outputs(...)`
-# 4. Pass an instance to `ModelBuilder.with_component()`
-# 5. Use `grid="four_box"` or `grid="hemispheric"` for spatial variables
-# 6. Component outputs are `StateValue` objects, so use `.to_scalar()` for floats
+# 1. Subclass `rscm.component.Component`.
+# 2. Declare variables with `Input()`, `Output()` or `State()` descriptors.
+# 3. Implement `solve(t_current, t_next, inputs)` returning `self.Outputs(...)`.
+# 4. Pass an instance to `ModelBuilder.with_component()`.
+# 5. Use `grid="four_box"` or `grid="hemispheric"` for spatial variables.
+# 6. A wrapped component's `solve()` returns `StateValue` objects, so use `.to_scalar()` for floats.

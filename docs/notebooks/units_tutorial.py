@@ -22,7 +22,8 @@
 # - **Flexible parsing**: `W/m^2`, `W / m ^ 2` and `W m^-2` are the same unit.
 # - **Dimensional analysis**: conversions are only allowed between units of the same dimension.
 # - **Species**: a mass unit can name what it counts, as in `Mt CH4/yr` or `Gt C/yr`.
-# - **Climate-specific units**: concentrations (ppm, ppb), radiative forcing (W/m²) and emission rates (GtC/yr).
+# - **Climate-specific units**: concentrations (ppm, ppb), radiative forcing (W/m²)
+#   and emission rates (GtC/yr).
 # - **Conversion factors**: multipliers between compatible units,
 #   including molecular mass ratios such as CO₂ to C (44/12).
 
@@ -255,6 +256,15 @@ for target in [flux, Unit("Mt CH4/yr")]:
         gtc_yr.conversion_factor(target)
     except ValueError as e:
         print(f"Error: {e}")
+
+# %% [markdown]
+# Parsing a unit with an unknown symbol, such as a misspelt `yr`, also raises a `ValueError`.
+
+# %%
+try:
+    Unit("Gt CO2/yer")
+except ValueError as e:
+    print(f"Error: {e}")
 
 # %% [markdown]
 # ## Integration with Model Building

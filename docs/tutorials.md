@@ -22,7 +22,7 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 
 1. [Coupled Models](notebooks/coupled_model.py): Combine components
 2. [A Coupled MAGICC Model](notebooks/magicc_coupled_model.py): Assemble MAGICC7's full chain
-3. [MAGICC Runs](magicc_runs.md): the emissions-driven and concentration-driven models
+3. [MAGICC Runs](magicc_runs.md): The emissions-driven and concentration-driven models
 
 ### Creating New Components
 

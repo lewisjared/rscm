@@ -171,7 +171,7 @@ A grid input returns every region at once, or one region by index:
     ```rust
     let no = inputs.regional_temp.get(FourBoxRegion::NorthernOcean);
     let all_regions = inputs.regional_temp.get_all();  // Vec<f64> in region order
-    let global_mean = inputs.regional_temp.grid().aggregate_global(&all_regions);  // weighted by the grid weights
+    let global_mean = inputs.regional_temp.grid().aggregate_global(&all_regions);  // grid-weighted
     ```
 
 Hemispheric inputs work the same way, with `HemisphericSlice` and `HemisphericRegion`.
@@ -244,8 +244,6 @@ and the model handles transformations transparently.
 
 **Read-side aggregation:** When a component declares an input at a coarser resolution than the schema,
 the data is automatically aggregated when the component reads it.
-This currently only works for Rust components.
-Python components receive the window at the schema's resolution.
 
 **Write-side aggregation:** When a component produces output at a finer resolution than the schema declares,
 the data is automatically aggregated when writing to the collection.
@@ -307,7 +305,7 @@ A component producing four-box output can feed directly into a component expecti
 
 === "Rust"
 
-    Rust components also support read-side aggregation.
+    Read-side aggregation works the same way.
     Here the schema stores the four-box values and the Scalar consumer reads the aggregate:
 
     ```rust
@@ -385,6 +383,7 @@ In Rust, `Model::required_transformations()` returns the same information.
 Its values have shape `(n_times, 4)` in region order.
 Pass it to `ModelBuilder.with_prescribed_variable()`.
 It is interpolated onto the model time axis like a scalar `Timeseries`.
+`HemisphericTimeseries` does the same for hemispheric data, with shape `(n_times, 2)`.
 
 `ModelBuilder.with_initial_grid_values()` sets the initial value of a grid state variable,
 with one value per region in grid order.
@@ -432,10 +431,10 @@ print(heat.values()[-1])
 ```
 
 ```text
-[2.4e+08 3.6e+08 1.6e+08 2.8e+08]
+[3.6e+08 5.4e+08 2.4e+08 4.2e+08]
 ```
 
-Four-box prescribed data also feeds Rust components that read a Scalar input.
+Four-box prescribed data also feeds components that read a Scalar input.
 Declare the variable as FourBox in the schema, and the input is aggregated with the grid weights on read.
 Here the carbon cycle from [Getting Started](getting_started.md#coupling-components),
 built with a nonzero `alpha_temperature`, reads the area-weighted mean of the regional temperatures:
@@ -457,8 +456,6 @@ model = (
 
 `model.coupling("plain")` then lists `Surface Air Temperature Change four_box -> scalar (read)`.
 
-There is no Hemispheric equivalent of `FourBoxTimeseries` in Python yet.
-
 ## Grid Coupling Validation
 
 When building a model **without a schema**,
@@ -478,6 +475,7 @@ Error message:
 ```text
 ValueError: Grid mismatch for variable 'Surface Air Temperature Change': producer component 'Producer'
 outputs four_box but consumer component 'Consumer' expects scalar.
+...
 ```
 
 **Fixes:**
