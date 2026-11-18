@@ -514,6 +514,7 @@ and compares the area-weighted land and ocean equilibrium temperatures with $RLO
 - Monthly substeps (`STEPSPERYEAR = 12`) also give the annual means and resolve El Niño variability.
 - `CORE_MAXIMAL_TEMPERATURE = 25` K caps every temperature.
   MAGICC7 logs a warning when the cap binds, which signals an unreasonable parameter set.
+  RSCM raises an error instead of capping.
 
 ## Issues in MAGICC7
 

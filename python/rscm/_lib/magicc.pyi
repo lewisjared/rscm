@@ -120,8 +120,8 @@ class ClimateUDEBBuilder(ComponentBuilder):
     - `polar_sinking_ratio` (`float`, default `0.2`): Polar sinking water temperature
       ratio.
     - `steps_per_year` (`int`, default `12`): Substeps per year.
-    - `maximum_temperature` (`float`, default `25.0`): Maximum temperature anomaly cap
-      (K).
+    - `maximum_temperature` (`float`, default `25.0`): Highest temperature change a run
+      may reach before it fails (K).
 
     Inputs, outputs and states are listed on the
     [ClimateUDEB component page][component-magicc-climateudeb].
