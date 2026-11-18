@@ -157,8 +157,7 @@ def reference_run(name):
 # ## Emissions
 #
 # The model needs emissions for every input that no component produces.
-# This notebook takes them from the MAGICC7 v7.5.3 SSP2-4.5 run that RSCM's regression tests use,
-# so it needs a clone of the RSCM repository with RSCM installed from it.
+# This notebook takes them from the MAGICC7 v7.5.3 SSP2-4.5 run that RSCM's regression tests use.
 # The same file holds MAGICC7's results, which the run is checked against later.
 # A hidden helper, `reference_run`, reads such a file as a table indexed by variable and region,
 # with one column per year.
@@ -285,8 +284,8 @@ plt.show()
 #
 # Each builder takes a dictionary of parameters keyed by their Rust names.
 # Omitted parameters take the MAGICC7 defaults documented on each builder.
-# The cells below set the rest from the MAGICC7 configuration, as `full.from_magicc7` does.
-# The helpers in `rscm.magicc.full` handle the components with long parameter lists.
+# The cells below set the rest from the MAGICC7 configuration, as `full.from_magicc7` does,
+# using the `rscm.magicc.full` helpers for the components with long parameter lists.
 #
 # Natural CH4 and N2O emissions are not parameters MAGICC7 reads.
 # It derives them from the concentration budget over a window of years
@@ -479,7 +478,7 @@ pd.DataFrame(
 # and the land and ocean the CO2 at the start of the year,
 # while forcing uses the concentrations at its end.
 # `SeaLevelRise` reads the annual mean warming of the same year.
-# `rscm.magicc.with_lags` adds these lags to a builder.
+# `rscm.magicc.with_lags` adds these lags, `rscm.magicc.model.LAGS`, to a builder.
 
 # %%
 lag = ["Surface Air Temperature Change"]
@@ -1043,8 +1042,8 @@ print(config["components"]["ClimateUDEB"]["ecs"])
 # Without `parameters`, `from_magicc7` uses MAGICC7's default configuration.
 # It prescribes concentrations from MAGICC7's packaged files until 2015
 # and the model calculates them from emissions after.
-# Natural emissions close the budget against those observed concentrations,
-# so CO2, CH4 and N2O follow the observations until 2015 rather than drifting.
+# CO2, CH4 and N2O therefore follow the observations until 2015,
+# without the early N2O dip of the emissions-driven run.
 #
 # Overriding single parameters runs experiments.
 # A small sweep over `core_climatesensitivity` (ECS) shows the carbon-cycle feedback at work:
@@ -1071,6 +1070,9 @@ sweep = {
     )
     for ecs in (2.0, 3.0, 4.5)
 }
+for ecs, timeseries in sweep.items():
+    co2 = timeseries.get_timeseries_by_name("Atmospheric Concentrations|CO2").values()
+    print(f"ECS {ecs} K: CO2 in 2100 is {co2[years == 2100][0]:.0f} ppm")
 
 # %% tags=["remove_input"]
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
@@ -1119,7 +1121,6 @@ concentrations = (
 
 # %% [markdown]
 # Until 2015 its temperature matches the MAGICC7 default run, which prescribes the same concentrations.
-# The inverse CH4 emissions are those that reproduce the prescribed CH4.
 
 # %% tags=["remove_input"]
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))

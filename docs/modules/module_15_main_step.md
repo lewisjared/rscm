@@ -24,13 +24,13 @@ The climate module runs monthly substeps inside the year.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
 - **Tests**: `tests/regression/test_full_run.py::test_default_run`
   checks temperature, every concentration and total ERF against MAGICC7 v7.5.3.
-  `test_from_magicc7_rejects_bad_emissions` checks the emissions validation.
+  `tests/test_magicc_validation.py::test_bad_emissions_are_rejected` checks the emissions validation.
   `test_coupled_run` covers the chain with permafrost and the parameter variants.
   [MAGICC runs](../magicc_runs.md#running-a-magicc7-configuration) shows how to use it.
 
 RSCM has no `magicc_step_year`.
 Each MAGICC7 module is a component, and the `Model` solves them in dependency order every annual step.
-Components added producer first are coupled within the step.
+A component reads its producers' outputs from the same step, whatever order they were added in.
 Feedbacks such as temperature on the carbon cycle read the value from the start of the step,
 through a lag, as in MAGICC7.
 [Key concepts](../key_concepts.md#dependency-graph) describes the dependency graph and step semantics.

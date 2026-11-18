@@ -131,8 +131,7 @@ def show_graph(model):
 # %% [markdown]
 # ## Inspecting the Execution Graph
 #
-# The most useful debugging tool is `coupling()`,
-# which shows what the builder decided about the model's coupling.
+# `coupling()` shows what the builder decided about the model's coupling.
 # It lists components in the order the runtime steps them.
 #
 # For each component, you can see:
@@ -141,13 +140,14 @@ def show_graph(model):
 #   - `(prescribed)`: supplied to the model rather than produced by a component.
 #   - `(upstream from X)`: produced by component `X` earlier in the same step.
 #   - `(lagged from X)`: component `X`'s value from the previous step.
-#   - `(own_state)`: this component's own state from the previous step.
-# - **`<>` (magenta)**: state variables (read the previous value, write a new value).
+#   - `(lagged)`: a prescribed variable read with a lag, so the previous step's value.
+# - **`<>` (magenta)**: state variables, which the component reads from the previous step and writes anew.
 # - **`->` (blue)**: output variables produced by this component.
 # - **Grid tags** (yellow): non-scalar grids (for example `[four_box]`).
 # - **`point` or `average`**: whether the value holds at an instant or over a step.
 #
-# A "Lagged Edges" section then lists every edge that reads the previous step.
+# Sections after the components list every lagged edge ("Lagged Edges"),
+# grid transformation ("Grid Transforms") and unit conversion ("Unit Conversions"), when the model has any.
 #
 # The `format` parameter controls the output style:
 #
@@ -341,7 +341,7 @@ try:
         .with_prescribed_variable("Emissions|CO2", emissions)
         .with_prescribed_variable("Surface Air Temperature Change", surface_temp)
     ).build()
-except Exception as e:
+except ValueError as e:
     print(f"Build failed: {e}")
 
 # %% [markdown]
@@ -401,4 +401,4 @@ except RuntimeError as e:
 # - Read the errors: build errors explain missing initial values and schema or grid mismatches,
 #   and runtime errors name the failing component and time interval.
 #
-# For debugging Rust components, see the [Rust Development Tips](../../developers/rust_tips/) guide.
+# For common build and coupling errors, see [Troubleshooting](../../developers/troubleshooting/).

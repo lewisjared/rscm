@@ -15,9 +15,9 @@
 # %% [markdown]
 # # Working with Grid Variables
 #
-# This notebook demonstrates how to use spatially-resolved variables in RSCM.
-# You will learn to work with four-box and hemispheric grids, couple scalar
-# components with gridded components, and understand grid validation patterns.
+# This notebook shows how to use spatially resolved variables in RSCM.
+# It covers the four-box and hemispheric grids, coupling scalar components with gridded ones,
+# and the grid checks the model builder makes.
 #
 # ## Overview
 #
@@ -66,8 +66,7 @@ from rscm.core import (
 #
 # ### Four-box grid
 #
-# The four-box grid divides the globe into four regions based on hemisphere
-# and surface type:
+# The four-box grid divides the globe into four regions by hemisphere and surface type:
 #
 # ```
 #           |   Ocean   |   Land   |
@@ -129,8 +128,8 @@ print(f"  Weights: {hemi_grid.weights()}")
 # %% [markdown]
 # ## Grid Aggregation
 #
-# Grid values can be aggregated to a global scalar using area-weighted averaging.
-# This is essential when connecting gridded components to scalar components.
+# Grid values aggregate to a global scalar by area-weighted averaging.
+# This connects gridded components to scalar components.
 
 # %%
 # Warming above pre-industrial in K, ordered [NO, NL, SO, SL]
@@ -188,15 +187,14 @@ print(f"Approach 2 (compute-then-aggregate): {response_aggregated:.3f}")
 # %% [markdown]
 # The two differ because the function is nonlinear.
 #
-# **Best practice**: Use compute-then-aggregate when regional differences in
-# the nonlinear response are physically meaningful.
+# **Best practice**: use compute-then-aggregate when regional differences in the nonlinear response
+# are physically meaningful.
 
 # %% [markdown]
 # ## Using Grid Components in a Model
 #
-# Now let's use a real gridded component in a model. The
-# `FourBoxOceanHeatUptake` takes scalar forcing as input and
-# disaggregates it to regional ocean heat uptake values.
+# `FourBoxOceanHeatUptake` is a built-in gridded component.
+# It takes a scalar forcing and splits it into regional ocean heat uptake values.
 
 # %%
 heat_uptake_component = FourBoxOceanHeatUptakeBuilder.from_parameters(
@@ -282,9 +280,9 @@ plt.show()
 # %% [markdown]
 # ### Aggregating Grid Output Back to Scalar
 #
-# To verify conservation, we can aggregate the regional values back to a
-# global mean. With these ratios averaging to 1.0 and equal grid
-# weights, the aggregated value should match the input forcing.
+# To verify conservation, aggregate the regional values back to a global mean.
+# The ratios average to 1.0 and the grid weights are equal,
+# so the aggregated value matches the input forcing.
 #
 # A component reads a prescribed point at the end of the step, where it also writes its outputs.
 # The uptake stored at a time point therefore comes from the forcing at the same point.
@@ -301,8 +299,7 @@ for label, i in [("First step", 0), ("Last step", -1)]:
 # %% [markdown]
 # ## Working with Hemispheric Grids
 #
-# Hemispheric grids are useful when the ocean-land distinction is less
-# important than the North-South gradient.
+# Hemispheric grids suit cases where the north-south gradient matters more than the ocean-land contrast.
 
 # %%
 # Warming in K, ordered [Northern, Southern]
@@ -370,6 +367,7 @@ class LandOceanContrast(Component):
 #
 # `LandOceanContrast` reads the start of the step,
 # so it sees `RegionalWarming`'s output one step after it is written.
+# Its first value is NaN, because no temperature exists at the start of the first step.
 # `get()` would read this step's output instead.
 
 # %%
@@ -575,7 +573,7 @@ class HemisphericToFourBox(Component):
 
     def solve(self, t_current, t_next, inputs):
         """Scale each hemisphere so that its ocean and land values average to it."""
-        hemi, _ = inputs.hemispheric.interval()
+        hemi = inputs.hemispheric.get()
         return self.Outputs(
             four_box=FourBoxSlice(
                 northern_ocean=hemi.northern * self.ocean_factor,

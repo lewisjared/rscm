@@ -84,7 +84,8 @@ heat_capacity_deep = 100.0    # Deep ocean (W yr/(m² K))
 The shipped configs record their schema version as `config_schema` under `[model]`,
 and `ModelConfig` has a matching `config_schema` field.
 Unknown top-level keys are logged as a warning and ignored.
-`build_model` raises `ValidationError` for unknown keys in `[time]`, `[components]` and `[inputs]`.
+`build_model` raises `ValidationError` for unknown keys in `[time]`, `[components]` and `[inputs]`,
+and for a `[components.climate]` type other than `TwoLayer`.
 `[time]` needs integer `start` and `end` years.
 Input files are not supported yet, so an `[inputs]` entry with a `file` raises `ValidationError`.
 `load_config` does not check the schema version.
@@ -226,12 +227,14 @@ print(markdown)
 json_data = export_parameter_json(TwoLayerParameters)
 ```
 
-**Generated markdown example:**
+**Generated markdown example (abridged):**
 
 ```markdown
 # TwoLayerParameters
 
 Two-layer energy balance model parameters.
+
+...
 
 ## Parameters
 
@@ -290,7 +293,7 @@ The builder:
 6. Prescribes the constant `[inputs]` and the `prescribed` timeseries
 7. Assembles and returns the model
 
-`build_model` raises `ValueError` if no forcing is given.
+`build_model` raises `ValueError` if neither `[inputs]` nor `prescribed` gives the forcing.
 
 `build_model` only supports `type = "two-layer"` and raises `ValueError` for any other model type.
 `MAGICCConfig` in `rscm.config.models.magicc` describes MAGICC parameters,

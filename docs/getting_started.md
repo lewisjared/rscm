@@ -16,7 +16,8 @@ To work on RSCM itself, build from source as described in the [Developer Guide](
 
 Optional extras:
 
-- `pip install 'rscm[fair]'` adds xarray, for FaIR ensembles.
+- `pip install 'rscm[fair]'` adds xarray, for FaIR ensembles,
+  and the `fair` package, to convert a `fair.FAIR`.
 - The tutorial notebooks draw component graphs with [Graphviz](https://graphviz.org/download/).
   Install it with your system package manager, for example `apt install graphviz` or `brew install graphviz`.
   Without it the notebooks still run and skip the graphs.
@@ -89,6 +90,7 @@ RSCM ships with pre-built components for common climate modelling tasks:
 `rscm.magicc` reimplements MAGICC7's modules,
 and `rscm.magicc.emissions_driven` and `rscm.magicc.concentration_driven` build the full chain.
 See [MAGICC Runs](magicc_runs.md) to run it, and the [MAGICC module specs](modules/README.md) for each module.
+`rscm.fair` ports FaIR v2.2.5, see [FaIR Runs](fair_runs.md).
 
 The [Components](components/index.md) reference lists the inputs, outputs and parameters of every component.
 
@@ -134,7 +136,8 @@ schema.add_aggregate(
 )
 ```
 
-The builder chain takes the schema, the components, the emissions and an initial value for every state variable.
+The builder chain takes the schema, the components, the emissions
+and an initial value for every state variable.
 Temperature feeds back on the carbon cycle, so the carbon cycle reads the previous step's temperature:
 
 ```python
@@ -196,6 +199,7 @@ Rendering it to an image needs the Graphviz `dot` binary, see [Installation](#in
 - **[MAGICC Runs](magicc_runs.md)**: Run the emissions-driven or concentration-driven MAGICC7 model
   from your own emissions
 - **[MAGICC Coupled Model](notebooks/magicc_coupled_model.py)**: Couple the MAGICC components yourself
+- **[FaIR Runs](fair_runs.md)**: Run the FaIR v2.2.5 port, alone or as an ensemble
 - **[Spatial Grids](grids.md)**: Work with regional climate data
 - **[Configuration Layer](model_configuration.md)**: Define models in TOML files
 - **[Python API](api/rscm/index.md)**: Full API documentation

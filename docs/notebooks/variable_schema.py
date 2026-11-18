@@ -151,7 +151,8 @@ print("\n".join(sorted(model_no_schema.timeseries().names())))
 # - **Aggregates**: derived values computed from other variables.
 #
 # The function below declares the concentrations and forcings of the two gases.
-# Later sections reuse it to try other aggregates.
+# Later sections call it for a fresh schema to try other aggregates,
+# because `add_variable()` and `add_aggregate()` raise a `ValueError` for a name the schema already defines.
 
 
 # %%
@@ -272,7 +273,7 @@ ghg_concentrations = {
 # %% [markdown]
 # ### Mean Aggregation
 #
-# A `Mean` aggregate averages its contributors.
+# A `mean` aggregate averages its contributors.
 
 # %%
 mean_schema = ghg_variables()
@@ -510,9 +511,9 @@ table.loc[1980:2030].round(3)
 # %%
 try:
     bad_schema = VariableSchema()
-    bad_schema.add_variable("A", "units")
+    bad_schema.add_variable("A", "W/m^2")
     bad_schema.add_aggregate(
-        name="Total", unit="units", operation="sum", contributors=["A", "B"]
+        name="Total", unit="W/m^2", operation="sum", contributors=["A", "B"]
     )
     bad_schema.validate()
 except ValueError as e:
@@ -540,10 +541,10 @@ except ValueError as e:
 try:
     bad_schema = VariableSchema()
     for name in ["A", "B", "C"]:
-        bad_schema.add_variable(name, "units")
+        bad_schema.add_variable(name, "W/m^2")
     bad_schema.add_aggregate(
         name="Total",
-        unit="units",
+        unit="W/m^2",
         operation="weighted_sum",
         contributors=["A", "B", "C"],
         weights=[0.5, 0.5],
@@ -559,10 +560,10 @@ except ValueError as e:
 try:
     bad_schema = VariableSchema()
     bad_schema.add_aggregate(
-        name="A", unit="units", operation="sum", contributors=["B"]
+        name="A", unit="W/m^2", operation="sum", contributors=["B"]
     )
     bad_schema.add_aggregate(
-        name="B", unit="units", operation="sum", contributors=["A"]
+        name="B", unit="W/m^2", operation="sum", contributors=["A"]
     )
     bad_schema.validate()
 except ValueError as e:
@@ -575,8 +576,7 @@ except ValueError as e:
 # A component that reads or writes a variable missing from the schema fails to build,
 # as does one that declares a unit with a different dimension.
 # Here the aerosol component meets the GHG-only schema from earlier.
-# The error suggests `schema.variable(...)`, the Rust builder method.
-# In Python, add the variable with `add_variable()`.
+# Add the missing variable with `add_variable()`.
 
 # %%
 try:
@@ -592,7 +592,7 @@ except ValueError as e:
 
 # %% [markdown]
 # Units only need the same dimension and species family, not the same spelling.
-# When a Rust component declares a compatible unit that differs from the schema,
+# When a component declares a compatible unit that differs from the schema,
 # the model converts values as the component reads them.
 # See the [Units tutorial](../units_tutorial/) for details.
 
@@ -600,7 +600,7 @@ except ValueError as e:
 # ## Inspecting a Schema
 #
 # The `variables` and `aggregates` attributes expose the schema's definitions.
-# `VariableSchema` has no serialisation method yet,
+# `VariableSchema` has no serialisation method,
 # but you can read these definitions to export them yourself.
 
 # %%

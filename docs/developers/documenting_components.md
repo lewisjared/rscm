@@ -165,7 +165,7 @@ class SimpleEmissionsToConcentration(Component):
     remaining in the atmosphere).
     """
 
-    emissions = Input("Emissions|CO2", unit="GtCO2")
+    emissions = Input("Emissions|CO2", unit="Gt CO2/yr")
     concentration = State("Atmospheric Concentrations|CO2", unit="ppm")
 
     def __init__(self, airborne_fraction: float, ppm_per_gtc: float):
@@ -255,20 +255,23 @@ The generated component pages appear under `site/components/`.
 
 Follow the hierarchical naming convention:
 
-- `Emissions|CO2` - CO2 emissions
-- `Atmospheric Concentrations|CO2` - Atmospheric CO2 concentration
-- `Effective Radiative Forcing|CO2` - ERF from CO2
-- `Surface Air Temperature Change` - Global mean surface air temperature change
+- `Emissions|CO2`: CO2 emissions
+- `Atmospheric Concentrations|CO2`: atmospheric CO2 concentration
+- `Effective Radiative Forcing|CO2`: ERF from CO2
+- `Surface Air Temperature Change`: global mean surface air temperature change
+
+Shared names live in `rscm.names`.
+See [Naming Conventions](naming_conventions.md) for the full rules.
 
 ### Units
 
 Use unit strings that `rscm.core.Unit` can parse:
 
-- `GtCO2`, `GtC` - Gigatonnes of CO2 or carbon
-- `ppm` - Parts per million
-- `W/m^2` - Watts per square metre
-- `K` - Kelvin
-- `yr` - Years
+- `Mt CO2/yr`, `Gt C/yr`: emissions and fluxes, as a mass of a species per year
+- `ppm`: parts per million
+- `W/m^2`: watts per square metre
+- `K`: kelvin
+- `J`: joules
 
 ### Equations
 

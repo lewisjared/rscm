@@ -36,7 +36,7 @@ Each has its own start year and can be switched independently.
   Unit tests in `sea_level.rs` cover expansion, interpolation, zero warming and the Greenland volume limit.
 
 The equations below are the formulation RSCM reproduces.
-Comparison with MAGICC7 output corrected the earlier reading of the Fortran in several places:
+Comparison with MAGICC7 output settled several details that a reading of the Fortran gets wrong:
 the start-year gates, the thermal expansion weighting, and the Levermann forcing and convolution.
 
 ## Equations

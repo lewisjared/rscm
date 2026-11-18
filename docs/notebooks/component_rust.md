@@ -1,16 +1,16 @@
 # Components in Rust
 
-This guide demonstrates how to implement climate model components in Rust
-using the `ComponentIO` derive macro.
+This guide shows how to implement climate model components in Rust
+with the `ComponentIO` derive macro.
 
 ## Overview
 
 Components are the building blocks of RSCM models.
 Each component:
 
-- Declares its inputs, outputs, and state variables via the `ComponentIO` derive macro
-- Implements the `Component` trait with `definitions()` and `solve()` methods
-- Can be coupled with other components in a model
+- Declares its inputs, outputs and state variables with the `ComponentIO` derive macro.
+- Implements the `Component` trait with `definitions()` and `solve()` methods.
+- Couples with other components in a model.
 
 ## Related Resources
 
@@ -29,8 +29,7 @@ A component module starts with these imports:
 
 ```rust
 use rscm_core::component::{
-    Component, GridType, InputState, OutputState, VariableDefinition, VariableRole,
-    ScalarWindow,
+    Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::RSCMResult;
 use rscm_core::state::StateValue;
@@ -48,24 +47,28 @@ The component struct derives `ComponentIO` and declares its inputs and outputs w
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CO2ERFParameters {
-    /// ERF due to a doubling of atmospheric CO2 concentrations (W/m^2)
+    /// 2xCO2 effective radiative forcing, from doubling the pre-industrial CO2 concentration
+    /// unit: W/m^2
     pub erf_2xco2: FloatValue,
-    /// Pre-industrial atmospheric CO2 concentration (ppm)
+    /// Pre-industrial atmospheric CO2 concentration
+    /// unit: ppm
     pub co2_pi: FloatValue,
 }
 
 /// CO2 effective radiative forcing component
 ///
-/// Computes ERF using the standard logarithmic relationship:
-/// $$ ERF = \frac{ERF_{2xCO2}}{\log(2)} \cdot \log\left(\frac{C}{C_0}\right) $$
+/// The forcing is
+///
+/// $$ ERF = \frac{ERF_{2xCO2}}{\log(2)} \cdot \log\left(1 + \frac{C - C_0}{C_0}\right) $$
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
-#[component(tags = ["radiative-forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
+#[component(tags = ["forcing", "co2", "simple", "stable"], category = "Radiative Forcing")]
 #[inputs(
-    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
+    concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm", description = "Atmospheric CO2 concentration" },
 )]
 #[outputs(
-    erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2" },
+    erf { name = "Effective Radiative Forcing|CO2", unit = "W/m^2", description = "Effective radiative forcing of CO2" },
 )]
 pub struct CO2ERF {
     parameters: CO2ERFParameters,
@@ -122,7 +125,11 @@ The later listings on this page leave them out.
 | `#[states(field { name, unit, grid }, ...)]`   | Variables read at the start and written at the end      |
 | `#[component(tags = [...], category = "...")]` | Optional metadata for the generated component docs      |
 
-`grid` is optional and is one of `"scalar"` (the default), `"four_box"` or `"hemispheric"`.
+Each variable also takes these optional keys:
+
+- `grid`: `"scalar"` (the default), `"four_box"` or `"hemispheric"`.
+- `timeseries_type`: `"point"` or `"average"`, overriding the type inferred from the unit.
+- `description`: documents the variable on the generated component page.
 
 ## What the Macro Generates
 
@@ -142,7 +149,8 @@ impl<'a> CO2ERFInputs<'a> {
 
 `from_input_state` panics if a declared variable is missing from the input state.
 Inside a model every declared variable is present.
-A variable with no producer and no prescribed data reads as NaN rather than failing.
+An input with no producer, prescribed data or initial value fails `build()`,
+unless `with_missing_prescribed_allowed` fills it with NaN.
 
 ### Output Struct
 
@@ -188,23 +196,23 @@ See [Step Semantics](../key_concepts.md#step-semantics) for the details.
 
 ## State Variables
 
-For variables that are both read and written each step, use `#[states(...)]`:
+For variables that are both read and written each step, use `#[states(...)]`.
+`CarbonCycle` reads emissions and temperature and carries three states:
 
 ```rust
-#[derive(Debug, Serialize, Deserialize, ComponentIO)]
+#[derive(Debug, Clone, Serialize, Deserialize, ComponentIO)]
 #[inputs(
     emissions { name = "Emissions|CO2", unit = "GtC/yr" },
-)]
-#[outputs(
-    uptake { name = "Net Atmosphere to Land Flux|CO2", unit = "GtC/yr" },
+    temperature { name = "Surface Air Temperature Change", unit = "K" },
 )]
 #[states(
     concentration { name = "Atmospheric Concentrations|CO2", unit = "ppm" },
-    cumulative { name = "Cumulative Emissions|CO2", unit = "Gt C" },
+    cumulative_emissions { name = "Cumulative Emissions|CO2", unit = "GtC" },
+    cumulative_uptake { name = "Cumulative Carbon Uptake|Land", unit = "GtC" },
 )]
 pub struct CarbonCycle {
-    pub tau: FloatValue,
-    pub co2_pi: FloatValue,
+    parameters: CarbonCycleParameters,
+    solver_options: SolverOptions,
 }
 ```
 
@@ -301,7 +309,7 @@ impl Component for Lagged {
 ```
 
 The model keeps one state per component and passes it to `solve_with_state`.
-The state is serialised with the model, so `Model::to_toml` checkpoints it and `from_toml` resumes from it.
+The state is serialised with the model, so a saved model (`Model.to_toml` in Python) resumes from it.
 `solve` is only used when the component is solved on its own, so it starts from a fresh state.
 See `OceanCarbon` in `crates/rscm-magicc/src/carbon/ocean.rs` for a full example.
 
@@ -309,7 +317,8 @@ See `OceanCarbon` in `crates/rscm-magicc/src/carbon/ocean.rs` for a full example
 
 `solve` returns an `OutputState`, a map keyed by `String` that is built every step.
 A component in a hot path can override `solve_into` instead,
-which writes each output into a buffer the model reuses:
+which writes each output into a buffer the model reuses.
+`OutputWriter` and `ComponentState` are in `rscm_core::component`:
 
 ```rust
 #[typetag::serde]
@@ -332,9 +341,15 @@ impl Component for CO2ERF {
 }
 ```
 
-- `solve` defaults to solving into a fresh initial state, so a component that overrides `solve_into` can leave it out.
-- A stateful component that overrides `solve_into` also overrides `solve_with_state`,
-  as `OutputBuffer::collect(self.output_names(), |out| self.solve_into(t_current, t_next, input_state, internal_state, out))`.
+- `solve` defaults to solving into a fresh initial state,
+  so a component that overrides `solve_into` can leave it out.
+- A stateful component that overrides `solve_into` also overrides `solve_with_state`:
+
+  ```rust
+  OutputBuffer::collect(self.output_names(), |out| {
+      self.solve_into(t_current, t_next, input_state, internal_state, out)
+  })
+  ```
 - `out.set(name, value)` writes an output by name.
   Writing outputs in declaration order skips the search for each name.
 - Reading inputs in declaration order also skips the search, as `from_input_state` does.

@@ -22,7 +22,8 @@
 # - **Flexible parsing**: `W/m^2`, `W / m ^ 2` and `W m^-2` are the same unit.
 # - **Dimensional analysis**: conversions are only allowed between units of the same dimension.
 # - **Species**: a mass unit can name what it counts, as in `Mt CH4/yr` or `Gt C/yr`.
-# - **Climate-specific units**: concentrations (ppm, ppb), radiative forcing (W/m²) and emission rates (GtC/yr).
+# - **Climate-specific units**: concentrations (ppm, ppb), radiative forcing (W/m²)
+#   and emission rates (GtC/yr).
 # - **Conversion factors**: multipliers between compatible units,
 #   including molecular mass ratios such as CO₂ to C (44/12).
 
@@ -257,6 +258,15 @@ for target in [flux, Unit("Mt CH4/yr")]:
         print(f"Error: {e}")
 
 # %% [markdown]
+# Parsing a unit with an unknown symbol, such as a misspelt `yr`, also raises a `ValueError`.
+
+# %%
+try:
+    Unit("Gt CO2/yer")
+except ValueError as e:
+    print(f"Error: {e}")
+
+# %% [markdown]
 # ## Integration with Model Building
 #
 # When a model has a `VariableSchema`, the builder compares each component's declared units with the schema:
@@ -264,7 +274,7 @@ for target in [flux, Unit("Mt CH4/yr")]:
 # 1. **Validates compatibility**: the schema unit and component unit must have the same dimension
 #    and count the same species family.
 # 2. **Calculates conversion factors**: the builder computes the multiplier needed at runtime.
-# 3. **Applies conversion at runtime**: values are converted as Rust components read their inputs.
+# 3. **Applies conversion at runtime**: values are converted as components read their inputs.
 #
 # The builder also converts prescribed data into the unit the model stores it in:
 # the schema's unit, or without a schema the unit the components declare.
@@ -322,9 +332,6 @@ concentration = model.timeseries().get_timeseries_by_name(
 print(f"CO2 concentration in 2010: {concentration.values()[-1]:.1f} ppm")
 
 # %% [markdown]
-# Python components receive values in the schema's units, without conversion.
-
-# %% [markdown]
 # ## Summary
 #
 # | Method | Description |
@@ -336,4 +343,4 @@ print(f"CO2 concentration in 2010: {concentration.values()[-1]:.1f} ppm")
 # | `unit.conversion_factor(other)` | Get the conversion multiplier |
 # | `unit.convert(value, other)` | Convert a value to another unit |
 #
-# In a model, declare units in the `VariableSchema` and the builder converts Rust component inputs for you.
+# In a model, declare units in the `VariableSchema` and the builder converts component inputs for you.

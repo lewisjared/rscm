@@ -21,7 +21,8 @@ runs a model and plots its warming in about 20 lines.
 
     ---
 
-    Build new components in Rust or Python. Contribute to RSCM development.
+    Build new components in Rust or Python.
+    Contribute to RSCM development.
 
     [:octicons-arrow-right-24: Developer Guide](developers/index.md)
 
@@ -33,5 +34,6 @@ runs a model and plots its warming in about 20 lines.
 - **[Key Concepts](key_concepts.md)**: Understand Components, Models, and Timeseries
 - **[MAGICC Runs](magicc_runs.md)**: Run the emissions-driven or concentration-driven MAGICC7 model
 - **[MAGICC Coupled Model](notebooks/magicc_coupled_model.py)**: Couple the MAGICC components yourself
+- **[FaIR Runs](fair_runs.md)**: Run the FaIR v2.2.5 port, alone or as an ensemble
 - **[MAGICC Modules](modules/README.md)**: Module specifications and implementation status
 - **[Python API](api/rscm/index.md)**: Full API documentation
