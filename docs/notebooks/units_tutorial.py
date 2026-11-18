@@ -315,7 +315,7 @@ model = (
     .with_initial_values(
         {
             "Cumulative Carbon Uptake|Land": 0.0,
-            "Cumulative Emissions|CO2": 0.0,
+            "Cumulative Emissions|CO2": (0.0, "Gt CO2"),
             "Atmospheric Concentrations|CO2": 280.0,
         }
     )
@@ -340,17 +340,8 @@ print(f"CO2 concentration in 2010: {concentration.values()[-1]:.1f} ppm")
 #
 # A bare initial value is in the stored unit.
 # Pass a `(value, unit)` pair to give it in another unit, which the builder converts.
-# In the model above, the cumulative emissions could start from 2200 Gt CO2:
-#
-# ```python
-# .with_initial_values(
-#     {
-#         "Cumulative Carbon Uptake|Land": 0.0,
-#         "Cumulative Emissions|CO2": (2200.0, "Gt CO2"),
-#         "Atmospheric Concentrations|CO2": 280.0,
-#     }
-# )
-# ```
+# The model above gives the cumulative emissions as `(0.0, "Gt CO2")`,
+# which the builder converts into the schema's `Gt C`.
 #
 # `with_initial_grid_values` takes `(values, unit)` pairs the same way.
 #
