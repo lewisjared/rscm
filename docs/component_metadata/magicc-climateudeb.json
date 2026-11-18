@@ -253,7 +253,7 @@
     {
       "name": "maximum_temperature",
       "type": "FloatValue",
-      "description": "Cap on the temperature change, to prevent runaway temperatures (MAGICC7 `CORE_MAXIMAL_TEMPERATURE`)\n\nunit: K\n\nDefault: 25.0\nMAGICC7: CORE_MAXIMAL_TEMPERATURE"
+      "description": "Highest temperature change a run may reach before it fails.\nMAGICC7 caps temperatures here instead (`CORE_MAXIMAL_TEMPERATURE`).\n\nunit: K\n\nDefault: 25.0\nMAGICC7: CORE_MAXIMAL_TEMPERATURE"
     }
   ],
   "source_file": "crates/rscm-magicc/src/climate/udeb/mod.rs"
