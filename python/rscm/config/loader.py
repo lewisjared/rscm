@@ -85,7 +85,15 @@ def load_config(path: str | Path) -> dict[str, Any]:
         config = tomllib.load(f)
 
     # Check for unknown top-level keys and warn
-    known_top_level = {"schema", "time", "components", "inputs", "outputs", "model"}
+    known_top_level = {
+        "schema",
+        "time",
+        "components",
+        "inputs",
+        "outputs",
+        "model",
+        "initial_values",
+    }
     unknown = find_unknown_keys(config, known_top_level)
     if unknown:
         logger.warning(

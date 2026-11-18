@@ -51,6 +51,8 @@ class IssueKind(Enum):
     """An input holds NaN or infinity."""
     OUT_OF_RANGE = ("out-of-range", ExitCode.DATA)
     """A value is outside its physical or numerical domain."""
+    TYPE = ("type", ExitCode.DATA)
+    """A value has the wrong type, such as a string where a number belongs."""
     SHAPE = ("shape", ExitCode.DATA)
     """An input has the wrong length or does not cover the time axis."""
     MISSING = ("missing", ExitCode.CONFIG)

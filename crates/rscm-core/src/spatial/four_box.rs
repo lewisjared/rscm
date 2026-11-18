@@ -84,36 +84,34 @@ impl FourBoxGrid {
     /// Create a four-box grid with custom weights
     ///
     /// Weights should typically be based on the actual surface area fractions
-    /// of each region. They must sum to 1.0.
+    /// of each region.
     ///
     /// # Panics
     ///
-    /// Panics if weights do not sum to approximately 1.0 (within 1e-6), or if
-    /// the northern hemisphere weights (NorthernOcean + NorthernLand) or
-    /// southern hemisphere weights (SouthernOcean + SouthernLand) sum to zero,
-    /// which would cause division by zero in hemispheric transformations.
+    /// Panics where [`Self::try_with_weights`] returns an error.
     pub fn with_weights(weights: [FloatValue; 4]) -> Self {
-        let sum: FloatValue = weights.iter().sum();
-        assert!(
-            (sum - 1.0).abs() < 1e-6,
-            "Weights must sum to 1.0, got {}",
-            sum
-        );
+        Self::try_with_weights(weights).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Create a four-box grid with custom weights.
+    ///
+    /// Fails unless the weights are finite, not negative and sum to 1.0 within 1e-6,
+    /// with non-zero weight in each hemisphere for hemispheric transformations.
+    pub fn try_with_weights(weights: [FloatValue; 4]) -> Result<Self, String> {
+        super::check_weights(&weights)?;
         let northern_sum = weights[FourBoxRegion::NorthernOcean as usize]
             + weights[FourBoxRegion::NorthernLand as usize];
         let southern_sum = weights[FourBoxRegion::SouthernOcean as usize]
             + weights[FourBoxRegion::SouthernLand as usize];
-        assert!(
-            northern_sum > 1e-10,
-            "Northern hemisphere weights must be non-zero for hemispheric transformation, got {}",
-            northern_sum
-        );
-        assert!(
-            southern_sum > 1e-10,
-            "Southern hemisphere weights must be non-zero for hemispheric transformation, got {}",
-            southern_sum
-        );
-        Self { weights }
+        for (hemisphere, sum) in [("Northern", northern_sum), ("Southern", southern_sum)] {
+            if sum <= 1e-10 {
+                return Err(format!(
+                    "{hemisphere} hemisphere weights must be non-zero for hemispheric \
+                     transformation, got {sum}"
+                ));
+            }
+        }
+        Ok(Self { weights })
     }
 
     /// Get the aggregation weights for this grid

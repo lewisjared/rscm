@@ -1,14 +1,14 @@
 /// Macros for exposing a component to Python and using components written in Python from Rust
 use crate::component::{Component, InputState, OutputState};
 use crate::errors::{RSCMError, RSCMResult};
-use crate::python::rscm_error_from_py;
 use crate::python::state::{
     PyFourBoxTimeseriesWindow, PyHemisphericTimeseriesWindow, PyStateValue, PyTimeseriesWindow,
 };
+use crate::python::{check_unit, rscm_error_from_py};
 use crate::timeseries::{FloatValue, Time, TimeAxis};
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -28,14 +28,10 @@ macro_rules! create_component_builder {
         impl $builder_name {
             #[staticmethod]
             pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
-                use pyo3::exceptions::PyValueError;
-
-                // todo: figure out how to use an attrs class as parameters instead of a dict
-                let parameters = pythonize::depythonize::<$component_parameters>(&parameters);
-                match parameters {
-                    Ok(parameters) => Ok(Self { parameters }),
-                    Err(e) => Err(PyValueError::new_err(format!("{}", e))),
-                }
+                let parameters = $crate::python::parameters::depythonize_parameters::<
+                    $component_parameters,
+                >(stringify!($rust_component), &parameters)?;
+                Ok(Self { parameters })
             }
             pub fn build(&self) -> PyRustComponent {
                 PyRustComponent(std::sync::Arc::new(<$rust_component>::from_parameters(
@@ -58,11 +54,15 @@ macro_rules! create_fallible_component_builder {
 
         #[pymethods]
         impl $builder_name {
+            /// Check the parameters, raising ValueError if the component would reject them.
             #[staticmethod]
             pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
-                pythonize::depythonize::<$component_parameters>(&parameters)
-                    .map(|parameters| Self { parameters })
-                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+                let parameters = $crate::python::parameters::depythonize_parameters::<
+                    $component_parameters,
+                >(stringify!($rust_component), &parameters)?;
+                <$rust_component>::from_parameters(parameters.clone())
+                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+                Ok(Self { parameters })
             }
 
             pub fn build(&self) -> PyResult<PyRustComponent> {
@@ -98,6 +98,17 @@ macro_rules! impl_component {
                 t_next: Time,
                 collection: $crate::python::timeseries_collection::PyTimeseriesCollection,
             ) -> PyResult<HashMap<String, $crate::python::state::PyStateValue>> {
+                if let Some(missing) = self
+                    .0
+                    .input_names()
+                    .into_iter()
+                    .find(|name| collection.0.get_by_name(name).is_none())
+                {
+                    return Err(pyo3::exceptions::PyKeyError::new_err(format!(
+                        "solve needs the input '{missing}', but the collection has no \
+                         timeseries of that name"
+                    )));
+                }
                 let input_state =
                     $crate::model::extract_state(&collection.0, self.0.inputs(), t_current);
 
@@ -134,6 +145,33 @@ impl VariableDefinition {
             timeseries_type,
         }
     }
+
+    fn __repr__(&self) -> String {
+        let timeseries_type = self
+            .timeseries_type
+            .map(|t| format!(", timeseries_type={t:?}"))
+            .unwrap_or_default();
+        format!(
+            "VariableDefinition(name='{}', unit='{}', role={:?}, grid={:?}{timeseries_type})",
+            self.name, self.unit, self.role, self.grid
+        )
+    }
+}
+
+/// Repr of a wrapped component: its kind, name and variables.
+fn component_repr(kind: &str, name: &str, component: &dyn Component) -> String {
+    let quoted = |names: Vec<String>| {
+        names
+            .iter()
+            .map(|n| format!("'{n}'"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    format!(
+        "{kind}({name}, inputs=[{}], outputs=[{}])",
+        quoted(component.input_names()),
+        quoted(component.output_names())
+    )
 }
 
 /// Python wrapper for a Component defined in Rust
@@ -146,6 +184,13 @@ impl VariableDefinition {
 pub struct PyRustComponent(pub Arc<dyn Component + Send + Sync>);
 
 impl_component!(PyRustComponent);
+
+#[pymethods]
+impl PyRustComponent {
+    fn __repr__(&self) -> String {
+        component_repr("RustComponent", self.0.typetag_name(), self.0.as_ref())
+    }
+}
 
 /// Wrapper to convert a Py<PyAny> (Python Class) into a Component
 pub struct PythonComponent {
@@ -164,8 +209,22 @@ impl PythonComponent {
     /// Wrap a Python component, reading its definitions once.
     pub fn new(py: Python<'_>, component: Py<PyAny>) -> PyResult<Self> {
         let bound = component.bind(py);
+        if let Ok(class) = bound.cast::<PyType>() {
+            let name = class.qualname()?;
+            return Err(PyTypeError::new_err(format!(
+                "{name} is a class, pass an instance such as {name}(...)"
+            )));
+        }
         let name = bound.get_type().qualname()?.to_string();
-        let definitions = bound.call_method0("definitions")?.extract()?;
+        let definitions: Vec<VariableDefinition> = bound.call_method0("definitions")?.extract()?;
+        for definition in &definitions {
+            check_unit(&definition.unit).map_err(|e| {
+                PyValueError::new_err(format!(
+                    "{name} declares '{}' with unit '{}': {e}",
+                    definition.name, definition.unit
+                ))
+            })?;
+        }
         Ok(Self {
             component,
             name,
@@ -428,3 +487,10 @@ impl PyPythonComponent {
 }
 
 impl_component!(PyPythonComponent);
+
+#[pymethods]
+impl PyPythonComponent {
+    fn __repr__(&self) -> String {
+        component_repr("PythonComponent", &self.0.name, self.0.as_ref())
+    }
+}

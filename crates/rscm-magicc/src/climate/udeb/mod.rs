@@ -66,6 +66,7 @@
 
 mod ocean_column;
 
+use crate::bounds::Bounded;
 use crate::climate::lamcalc::{self, LAMCALCResult};
 use crate::climate::sea_level::thermal_expansion_increment;
 use crate::climate::state::{ClimateUDEBState, OceanAreaFactors};
@@ -424,7 +425,8 @@ impl ClimateUDEB {
         };
 
         let q_factor = 1.0
-            + self.parameters.feedback_forcing_sensitivity * (global_forcing.max(0.0) - erf_2xco2);
+            + self.parameters.feedback_forcing_sensitivity
+                * (global_forcing.at_least(0.0) - erf_2xco2);
 
         self.parameters.ecs * cumt_factor * q_factor
     }
@@ -496,7 +498,7 @@ impl ClimateUDEB {
         let numerator = land_forcing * land_fraction + k_lo * alpha * ocean_temp;
         let denominator = lambda_land * land_fraction + k_lo;
 
-        (numerator / denominator).min(self.parameters.maximum_temperature)
+        (numerator / denominator).at_most(self.parameters.maximum_temperature)
     }
 
     /// Convert ocean SST to surface air temperature.
@@ -1179,6 +1181,33 @@ mod tests {
         // With RLO > 1, land should eventually be warmer
         // But this depends on the forcing level and equilibrium assumptions
         assert!(land_temp.is_finite(), "Land temperature should be finite");
+    }
+
+    #[test]
+    fn test_nan_forcing_gives_nan_not_capped_temperatures() {
+        let component = default_component();
+        let mut state = default_state(&component);
+
+        let land =
+            component.calculate_land_temperature(1.0, FloatValue::NAN, 0.42, component.lambda_land);
+        let ecs = component.adjusted_ecs(FloatValue::NAN, 3.71, 0.0);
+        let sst = component.step_hemisphere(
+            &mut state,
+            0,
+            FloatValue::NAN,
+            FloatValue::NAN,
+            1.0 / 12.0,
+            component.lambda_ocean,
+            component.lambda_land,
+            0.0,
+            0.0,
+            component.parameters.temperature_adjustment_alpha,
+        );
+
+        assert!(land.is_nan(), "land temperature {land}");
+        assert!(ecs.is_nan(), "adjusted ECS {ecs}");
+        assert!(sst.is_nan(), "sea surface temperature {sst}");
+        assert!(state.ocean_temperatures[0].iter().all(|t| t.is_nan()));
     }
 
     #[test]

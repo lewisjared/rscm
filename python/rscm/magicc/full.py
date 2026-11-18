@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import copy
 import json
+import numbers
 from collections import ChainMap
+from collections.abc import Collection
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -57,7 +59,7 @@ from rscm.names import prescribed as prescribed_input
 from rscm.validation import IssueKind, Validator
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from numpy.typing import ArrayLike, NDArray
 
@@ -69,8 +71,10 @@ if TYPE_CHECKING:
 __all__ = [
     "BUG_COMPATIBILITY",
     "EFFICACY_METHODS",
+    "FITTED_CONCENTRATIONS",
     "INPUT_FILES",
     "MAGICC7_BUGS",
+    "PREINDUSTRIAL_YEAR",
     "PRESCRIBED_AGENTS",
     "REWRITTEN_PARAMETERS",
     "SECTORAL_EMISSIONS",
@@ -777,7 +781,8 @@ def climate_parameters(
 ) -> dict[str, Any]:
     """ClimateUDEB parameters, with regional and monthly volcanic forcing.
 
-    With ``end_year``, months after the run ends are left out.
+    With ``end_year``, months after the run ends are left out,
+    also from the regional pattern.
     ``bugs`` selects the bugs to reproduce, see `reproduced_bugs`.
     """
     p = parameters
@@ -788,7 +793,7 @@ def climate_parameters(
         values[:, 0],
         values[:, 1],
         start_year=start_year,
-        last_year=p["rf_volc_forc_pattern_max_last_year"],
+        last_year=min(p["rf_volc_forc_pattern_max_last_year"], end_year or np.inf),
         scale=p["rf_volcanic_scale"],
     )
     base = {ours: p[theirs] for ours, theirs in CLIMATE_PARAMETERS.items()}
@@ -1136,8 +1141,12 @@ def _native(
 
 
 def _check_emissions(
-    v: Validator, emissions: Mapping[str, ArrayLike], n: int, halocarbons: Sequence[str]
+    v: Validator,
+    emissions: Mapping[str, ArrayLike],
+    time: NDArray[np.float64],
+    halocarbons: Sequence[str],
 ) -> dict[str, NDArray[np.float64]]:
+    n = len(time)
     required = [f"{s}|{sector}" for s in SECTORAL_EMISSIONS for sector in SECTORS]
     for name in (*required, *halocarbons):
         v.check(name in emissions, IssueKind.MISSING, name, "no emissions given")
@@ -1148,19 +1157,23 @@ def _check_emissions(
             name in known, IssueKind.UNKNOWN_KEY, name, "not an emitted species"
         ):
             continue
-        array = np.asarray(values, dtype=np.float64)
-        if v.check(
-            array.shape == (n,),
-            IssueKind.SHAPE,
-            name,
-            f"has shape {array.shape}, not {n} values, one per year of the run",
-        ) and v.finite(name, array):
+        array = model.check_on_axis(v, name, values, time)
+        if (
+            array is not None
+            and v.check(
+                array.shape == (n,),
+                IssueKind.SHAPE,
+                name,
+                f"has shape {array.shape}, not {n} values, one per year of the run",
+            )
+            and v.finite(name, array)
+        ):
             out[name] = array
     return out
 
 
 def _check_initial_concentrations(
-    v: Validator, given: Mapping[str, float] | None
+    v: Validator, given: Mapping[str, float] | None, method: str
 ) -> None:
     species = default_initial_concentrations()
     for name, value in (given or {}).items():
@@ -1169,20 +1182,139 @@ def _check_initial_concentrations(
             name in species, IssueKind.UNKNOWN_KEY, location, "not a species"
         ):
             continue
-        if v.finite(location, value):
-            v.check(
-                float(value) >= 0.0,
-                IssueKind.OUT_OF_RANGE,
-                location,
-                f"concentration {value} is negative",
+        if not isinstance(value, numbers.Real):
+            v.add(IssueKind.TYPE, location, f"{value!r} is not a number")
+        elif v.finite(location, value):
+            lowest, unit = FITTED_CONCENTRATIONS.get(name, (0.0, ""))
+            if not unit:
+                v.check(
+                    value >= 0,
+                    IssueKind.OUT_OF_RANGE,
+                    location,
+                    f"{value} must be zero or more",
+                )
+            elif method == "IPCCTAR":
+                v.check(
+                    value > 0,
+                    IssueKind.OUT_OF_RANGE,
+                    location,
+                    f"{value} must be positive for the IPCCTAR forcing",
+                )
+            else:
+                v.check(
+                    value >= lowest,
+                    IssueKind.OUT_OF_RANGE,
+                    location,
+                    f"{value} is below {lowest:g} {unit}, "
+                    "the lowest the OLBL forcing formulae are fitted to",
+                )
+
+
+def _is_year(key: str) -> bool:
+    return "year" in key or "yr" in key
+
+
+def _check_types(
+    v: Validator, given: Mapping[str, Any], defaults: Mapping[str, Any]
+) -> set[str]:
+    """Check given values have the type of the default, returning the keys that do not.
+
+    Numbers must be finite, apart from years, and switches 0 or 1.
+    """
+    bad = set()
+    for key in sorted(given.keys() & defaults.keys()):
+        value, default = given[key], defaults[key]
+        names = isinstance(default, list) and isinstance(default[0], str)
+        if isinstance(default, list):
+            expected = "a list of strings" if names else "a list of numbers"
+            ok = isinstance(value, list | tuple | np.ndarray) and all(
+                isinstance(x, str) if names else isinstance(x, numbers.Real)
+                for x in value
             )
+        elif isinstance(default, str):
+            expected, ok = "a string", isinstance(value, str)
+        else:
+            expected, ok = "a number", isinstance(value, numbers.Real)
+        if not ok:
+            v.add(IssueKind.TYPE, key, f"{value!r} is not {expected}")
+            bad.add(key)
+        elif isinstance(default, str) or names or _is_year(key):
+            continue
+        elif not v.finite(key, value) or not v.check(
+            key not in SWITCHES or value in (0, 1),
+            IssueKind.OUT_OF_RANGE,
+            key,
+            f"{value!r} must be 0 or 1",
+        ):
+            bad.add(key)
+    return bad
+
+
+def _check_values(
+    v: Validator,
+    given: Mapping[str, Any],
+    defaults: Mapping[str, Any],
+    p: ChainMap[str, Any],
+) -> None:
+    """Check types, then choices and ranges with mistyped values set to defaults."""
+    bad = _check_types(v, given, defaults)
+    typed = p.new_child({key: defaults[key] for key in bad})
+    _check_choices(v, typed)
+    _check_ranges(v, typed)
+
+
+def _check_bugs(v: Validator, bugs: Any) -> None:
+    names = [bugs] if isinstance(bugs, str) else bugs
+    if not isinstance(names, Collection) or not all(isinstance(n, str) for n in names):
+        v.add(
+            IssueKind.TYPE,
+            "bugs",
+            f"{bugs!r} is not a release name or a collection of MAGICC7_BUGS names",
+        )
+        return
+    try:
+        reproduced_bugs(bugs)
+    except ValueError as error:
+        v.add(IssueKind.UNKNOWN_KEY, "bugs", str(error))
 
 
 OCEAN_CARBON_METHODS = ("3D-GFDL", "2D-BERN", "HILDA")
 """``oceancc_model`` values RSCM implements, out of MAGICC7's four."""
 
+FITTED_CONCENTRATIONS = {
+    "CO2": (180.0, "ppm"),
+    "CH4": (340.0, "ppb"),
+    "N2O": (200.0, "ppb"),
+}
+"""Lowest concentration and unit of each gas the forcing formulae are fitted to.
+
+The ranges are those of Etminan et al. (2016), which the OLBL formulae fit.
+IPCCTAR is not fitted to them, so it only needs positive concentrations.
+"""
+
+PREINDUSTRIAL_YEAR = 1750.0
+"""MAGICC7's ``rf_preind_referenceyr``, the year its forcing is measured from."""
+
+SWITCHES = (
+    "ch4_include_tempfeedback",
+    "co2_tempfeedback_switch",
+    "core_landheatcapacity_apply",
+    "core_upwell_thresh_oneglobal",
+    "mhalo_use_tauoh_var",
+    "mhalo_use_taustrat_var",
+    "n2o_use_taustrat_var",
+    "ncycle_apply",
+    "ncycle_apply_cn_initial_values",
+    "ncycle_apply_ndep_from_emis",
+    "ncycle_apply_prognostic_nfix",
+    "out_sealevel",
+    "pf_apply",
+)
+"""Parameters that switch a process on with 1 or off with 0."""
+
 POSITIVE_PARAMETERS = (
     "core_climatesensitivity",
+    "core_delq2xco2",
     "core_mixedlayer_depth",
     "ch4_tautot_init",
     "n2o_tauinit",
@@ -1326,6 +1458,18 @@ def _check_files(
 ) -> None:
     for key in INPUT_FILES:
         v.check(key in files, IssueKind.MISSING, key, f"no input file {p[key]!r}")
+    forcing = [files[k] for k in INPUT_FILES if k in files and k != "file_solar_rf"]
+    if forcing:
+        latest_start = np.floor(min(f.last_year() for f in forcing)) - 1
+        earliest_end = max(float(np.asarray(f.years)[0]) for f in forcing) + 1
+        v.check(
+            time[0] <= latest_start and time[-1] >= earliest_end,
+            IssueKind.OUT_OF_RANGE,
+            "time_axis",
+            f"runs {time[0]:g} to {time[-1]:g}, but the forcing files support runs"
+            f" starting in or before {latest_start:g} and ending in or after"
+            f" {earliest_end:g}, in steps of one year",
+        )
     if "file_solar_rf" in files:
         last = files["file_solar_rf"].last_year()
         v.check(
@@ -1372,6 +1516,45 @@ def _check_files(
                     f"{file!r} has negative concentrations,"
                     f" first {values[values < 0][0]}",
                 )
+
+
+def _check_aerosol_extension(
+    v: Validator,
+    time: NDArray[np.float64],
+    emissions: Mapping[str, NDArray[np.float64]],
+    files: Mapping[str, pr.AerosolHistory],
+) -> None:
+    """Check the emissions that extend aerosol forcing files are nonzero where they end.
+
+    MAGICC7 extends these files in proportion to the emissions, so zero cannot scale.
+    """
+    extenders: list[tuple[str, tuple[str, ...], str, bool]] = [
+        *(
+            (f"{s}|Fossil", (f"{s}|Fossil",), f"file_{s.lower()}i_rf", True)
+            for s in ("SOx", "BC", "OC")
+        ),
+        (
+            "BC|Fossil + BC|Biosphere",
+            ("BC|Fossil", "BC|Biosphere"),
+            "file_bcsnow_rf",
+            False,
+        ),
+    ]
+    for location, names, key, relative in extenders:
+        if key not in files or not all(n in emissions for n in names):
+            continue
+        values = np.sum([emissions[n] for n in names], axis=0)
+        if relative:
+            values = values - values[0]
+        what = "change since the first year" if relative else "total"
+        i = pr._switch_index(time, files[key].last_year())
+        v.check(
+            i == len(time) - 1 or pr.forward_midyear(values)[i] != 0.0,
+            IssueKind.OUT_OF_RANGE,
+            location,
+            f"the midyear {what} is zero in {time[i]:g}, where {key} ends,"
+            " so its forcing cannot be extended",
+        )
 
 
 def _load_checked(v: Validator, p: Mapping[str, Any]) -> dict[str, pr.AerosolHistory]:
@@ -1517,8 +1700,7 @@ def from_magicc7(  # noqa: PLR0913
 ) -> tuple[ModelConfig, Inputs]:
     """Translate a MAGICC7 run into the configuration and inputs of a MAGICC model.
 
-    ``time_axis`` has annual steps starting in the preindustrial year,
-    1750 in MAGICC7's default configuration.
+    ``time_axis`` has annual steps starting in `PREINDUSTRIAL_YEAR`.
     ``emissions`` has one value per year for ``"<species>|Fossil"`` and
     ``"<species>|Biosphere"`` of each species in `SECTORAL_EMISSIONS`, in its unit,
     and for each name from `halocarbon_species`, in kt of the gas per year.
@@ -1557,17 +1739,28 @@ def from_magicc7(  # noqa: PLR0913
         defaults.get("unsupported", {}),
         (time[0], time[-1]),
     )
-    _check_choices(v, p)
-    _check_ranges(v, p)
+    _check_values(v, given, defaults["parameters"], p)
     species = halocarbon_species()
-    data = _check_emissions(v, emissions, len(time), species)
-    _check_initial_concentrations(v, initial_concentrations)
+    data = _check_emissions(v, emissions, time, species)
+    v.check(
+        time[0] == PREINDUSTRIAL_YEAR,
+        IssueKind.OUT_OF_RANGE,
+        "time_axis",
+        f"starts in {time[0]:g}, but must start in {PREINDUSTRIAL_YEAR:g},"
+        " MAGICC7's preindustrial reference year, as RSCM measures forcing"
+        " from the first year",
+    )
+    _check_initial_concentrations(
+        v, initial_concentrations, _upper(p["core_co2ch4n2o_rfmethod"])
+    )
+    _check_bugs(v, bugs)
     v.raise_if_any()
     p = p.new_child(
         {k: float(np.clip(p[k], time[0], time[-1])) for k in FEEDBACK_START_YEARS}
     )
     files = dict(input_files) if input_files is not None else _load_checked(v, p)
     _check_files(v, time, p, files)
+    _check_aerosol_extension(v, time, data, files)
     v.raise_if_any()
     conc = {
         **file_initial_concentrations(time[0], p, files),

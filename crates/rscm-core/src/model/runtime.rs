@@ -520,10 +520,11 @@ impl Model {
                 internal_state.as_mut(),
                 &mut plan.outputs.writer(),
             )
-            .map_err(|err| {
-                RSCMError::Error(format!(
+            .map_err(|err| match err {
+                RSCMError::Interrupt(_) => err,
+                err => RSCMError::Error(format!(
                     "{component_name} failed during {start}..{end}: {err}"
-                ))
+                )),
             })?;
 
         for position in 0..plan.targets.len() {

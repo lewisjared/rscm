@@ -1,14 +1,22 @@
 //! Grid weight configuration tests.
 
 use crate::component::GridType;
+use crate::model::null_component::NullComponent;
 use crate::model::ModelBuilder;
 use crate::schema::VariableSchema;
 use crate::timeseries::TimeAxis;
 use numpy::ndarray::Array;
+use std::sync::Arc;
+
+fn builder() -> ModelBuilder {
+    let mut builder = ModelBuilder::new();
+    builder.with_component(Arc::new(NullComponent {}));
+    builder
+}
 
 #[test]
 fn test_with_grid_weights_four_box_valid() {
-    let mut builder = ModelBuilder::new();
+    let mut builder = builder();
     builder.with_grid_weights(GridType::FourBox, vec![0.36, 0.14, 0.36, 0.14]);
 
     // Build and check the model has the weights
@@ -25,7 +33,7 @@ fn test_with_grid_weights_four_box_valid() {
 
 #[test]
 fn test_with_grid_weights_hemispheric_valid() {
-    let mut builder = ModelBuilder::new();
+    let mut builder = builder();
     builder.with_grid_weights(GridType::Hemispheric, vec![0.6, 0.4]);
 
     let model = builder
@@ -42,21 +50,21 @@ fn test_with_grid_weights_hemispheric_valid() {
 #[test]
 #[should_panic(expected = "Cannot set weights for the scalar grid")]
 fn test_with_grid_weights_scalar_panics() {
-    let mut builder = ModelBuilder::new();
+    let mut builder = builder();
     builder.with_grid_weights(GridType::Scalar, vec![1.0]);
 }
 
 #[test]
 #[should_panic(expected = "Weights length")]
 fn test_with_grid_weights_wrong_length_panics() {
-    let mut builder = ModelBuilder::new();
+    let mut builder = builder();
     builder.with_grid_weights(GridType::FourBox, vec![0.5, 0.5]); // Wrong: 2 instead of 4
 }
 
 #[test]
 #[should_panic(expected = "Weights must sum to 1.0")]
 fn test_with_grid_weights_wrong_sum_panics() {
-    let mut builder = ModelBuilder::new();
+    let mut builder = builder();
     builder.with_grid_weights(GridType::FourBox, vec![0.3, 0.3, 0.3, 0.3]);
     // Sum = 1.2
 }
@@ -68,7 +76,7 @@ fn test_custom_weights_applied_to_four_box_timeseries() {
 
     let schema = VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
 
-    let model = ModelBuilder::new()
+    let model = builder()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_schema(schema)
         .with_grid_weights(GridType::FourBox, custom_weights.clone())
@@ -82,7 +90,7 @@ fn test_custom_weights_applied_to_four_box_timeseries() {
 
 #[test]
 fn test_model_get_grid_weights_returns_none_for_unset() {
-    let model = ModelBuilder::new()
+    let model = builder()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .build()
         .unwrap();
@@ -99,7 +107,7 @@ fn test_grid_weights_serialisation_roundtrip() {
     let custom_weights = vec![0.36, 0.14, 0.36, 0.14];
     let schema = VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
 
-    let model = ModelBuilder::new()
+    let model = builder()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_schema(schema)
         .with_grid_weights(GridType::FourBox, custom_weights.clone())
@@ -119,7 +127,7 @@ fn test_grid_weights_serialisation_roundtrip() {
 
 #[test]
 fn test_empty_grid_weights_not_serialised() {
-    let model = ModelBuilder::new()
+    let model = builder()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .build()
         .unwrap();

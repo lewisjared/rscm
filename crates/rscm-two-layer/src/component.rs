@@ -12,7 +12,7 @@ use std::sync::Arc;
 use rscm_core::component::{
     Component, GridType, InputState, OutputState, ScalarWindow, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::ivp::{get_last_step, IVPBuilder, IVP};
 use rscm_core::state::StateValue;
 use rscm_core::timeseries::{FloatValue, Time};
@@ -128,7 +128,8 @@ pub struct TwoLayerParameters {
 ///     ocean_heat_transfer: 0.7,   // Heat exchange coefficient
 ///     heat_capacity_surface: 8.0, // ~80m mixed layer
 ///     heat_capacity_deep: 100.0,  // Deep ocean
-/// });
+/// })
+/// .unwrap();
 /// ```
 ///
 /// # References
@@ -186,9 +187,8 @@ impl IVP<Time, ModelState> for TwoLayer {
 impl TwoLayer {
     /// Creates a new two-layer model component from the given parameters.
     ///
-    /// # Arguments
-    ///
-    /// * `parameters` - Physical parameters controlling the model behaviour
+    /// Returns an error naming every parameter that is not finite,
+    /// or not positive where the physics needs it.
     ///
     /// # Example
     ///
@@ -202,10 +202,64 @@ impl TwoLayer {
     ///     ocean_heat_transfer: 0.7,
     ///     heat_capacity_surface: 8.0,
     ///     heat_capacity_deep: 100.0,
-    /// });
+    /// })
+    /// .unwrap();
     /// ```
-    pub fn from_parameters(parameters: TwoLayerParameters) -> Self {
-        Self { parameters }
+    pub fn from_parameters(parameters: TwoLayerParameters) -> RSCMResult<Self> {
+        let p = &parameters;
+        let checks = [
+            ("lambda0", p.lambda0, Limit::Positive),
+            ("a", p.a, Limit::NonNegative),
+            (
+                "deep_ocean_efficacy",
+                p.deep_ocean_efficacy,
+                Limit::Positive,
+            ),
+            (
+                "ocean_heat_transfer",
+                p.ocean_heat_transfer,
+                Limit::NonNegative,
+            ),
+            (
+                "heat_capacity_surface",
+                p.heat_capacity_surface,
+                Limit::Positive,
+            ),
+            ("heat_capacity_deep", p.heat_capacity_deep, Limit::Positive),
+        ];
+        let problems: Vec<String> = checks
+            .into_iter()
+            .filter_map(|(name, value, bound)| bound.violation(name, value))
+            .collect();
+        if !problems.is_empty() {
+            return Err(RSCMError::Error(format!(
+                "Invalid TwoLayer parameters: {}",
+                problems.join("; ")
+            )));
+        }
+        Ok(Self { parameters })
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Limit {
+    Positive,
+    NonNegative,
+}
+
+impl Limit {
+    fn violation(self, name: &str, value: FloatValue) -> Option<String> {
+        let (ok, requirement) = match self {
+            Limit::Positive => (value > 0.0, "positive"),
+            Limit::NonNegative => (value >= 0.0, "zero or more"),
+        };
+        if !value.is_finite() {
+            Some(format!("{name} must be finite, got {value}"))
+        } else if !ok {
+            Some(format!("{name} must be {requirement}, got {value}"))
+        } else {
+            None
+        }
     }
 }
 
@@ -264,6 +318,45 @@ mod tests {
             heat_capacity_surface: 8.0, // W yr / (m^2 K) - realistic ocean mixed layer
             heat_capacity_deep: 100.0,  // W yr / (m^2 K) - deep ocean
         })
+        .unwrap()
+    }
+
+    fn parameters() -> TwoLayerParameters {
+        TwoLayerParameters {
+            lambda0: 1.0,
+            a: 0.0,
+            deep_ocean_efficacy: 1.0,
+            ocean_heat_transfer: 0.7,
+            heat_capacity_surface: 8.0,
+            heat_capacity_deep: 100.0,
+        }
+    }
+
+    #[test]
+    fn invalid_parameters_are_rejected() {
+        let error = TwoLayer::from_parameters(TwoLayerParameters {
+            lambda0: FloatValue::NAN,
+            heat_capacity_surface: 0.0,
+            ocean_heat_transfer: -0.1,
+            ..parameters()
+        })
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Invalid TwoLayer parameters: lambda0 must be finite, got NaN; \
+             ocean_heat_transfer must be zero or more, got -0.1; \
+             heat_capacity_surface must be positive, got 0"
+        );
+    }
+
+    #[test]
+    fn zero_feedback_curvature_and_heat_transfer_are_allowed() {
+        TwoLayer::from_parameters(TwoLayerParameters {
+            a: 0.0,
+            ocean_heat_transfer: 0.0,
+            ..parameters()
+        })
+        .unwrap();
     }
 
     fn create_input_state_with_erf(

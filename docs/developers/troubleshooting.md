@@ -133,10 +133,10 @@ The input is then NaN.
 #### Missing input when calling `solve` directly
 
 ```
-pyo3_runtime.PanicException: No timeseries with variable='Emissions|CO2'
+KeyError: "solve needs the input 'Emissions|CO2', but the collection has no timeseries of that name"
 ```
 
-**Cause:** A component's `solve` was called directly without one of its declared inputs.
+**Cause:** A component's `solve` was called directly with a collection that lacks one of its declared inputs.
 Inside a model this does not happen.
 A declared input with no producer and no prescribed data fails the build with `MissingPrescribedInput` instead.
 
@@ -268,7 +268,7 @@ values[0] = 999.0
 collection.add_timeseries("Surface Air Temperature Change", Timeseries(values, time_axis, "K", strategy))
 ```
 
-`add_timeseries` panics if the name already exists (`pyo3_runtime.PanicException` in Python).
+`add_timeseries` raises `ValueError` if the name already exists.
 Build a new collection to replace a timeseries.
 
 ## PyO3 Binding Issues

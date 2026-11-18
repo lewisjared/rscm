@@ -154,18 +154,46 @@ each component as its builder and parameters, the lags, initial values and grid 
 Binding prescribed data and a time axis gives a [`ModelSetup`][rscm.spec.ModelSetup],
 which prints a summary, lists the inputs nothing supplies and builds the model.
 
+This spec couples the one-box carbon cycle to the two-layer model.
+The carbon cycle reads the previous year's temperature through the lag:
+
 ```python
+from dataclasses import asdict
+
+import numpy as np
+from rscm.components import CarbonCycleBuilder
+from rscm.config.models.two_layer import TwoLayerParameters
+from rscm.core import InterpolationStrategy, TimeAxis, Timeseries
 from rscm.spec import ComponentSpec, Lag, ModelSpec
+from rscm.two_layer import TwoLayerBuilder
+
+time_axis = TimeAxis.from_values(np.arange(1850.0, 2101.0))
+emissions = Timeseries(
+    np.full(len(time_axis), 10.0), time_axis, "GtC/yr", InterpolationStrategy.Previous
+)
+forcing = Timeseries(
+    np.linspace(0.0, 4.0, len(time_axis)), time_axis, "W/m^2", InterpolationStrategy.Linear
+)
 
 spec = ModelSpec(
     components={
-        "CarbonCycle": ComponentSpec(CarbonCycleBuilder, {"tau": 30.0}),
-        "Temperature": ComponentSpec(TemperatureBuilder, {"ecs": 3.0}),
+        "CarbonCycle": ComponentSpec(
+            CarbonCycleBuilder, {"tau": 30.0, "co2_pi": 278.0, "alpha_temperature": 0.0}
+        ),
+        "TwoLayer": ComponentSpec(TwoLayerBuilder, asdict(TwoLayerParameters())),
     },
     lags=(Lag("Surface Air Temperature Change"),),
-    initial_values={"Atmospheric Concentrations|CO2": 280.0},
+    initial_values={
+        "Atmospheric Concentrations|CO2": 278.0,
+        "Cumulative Emissions|CO2": 0.0,
+        "Cumulative Carbon Uptake|Land": 0.0,
+        "Surface Air Temperature Change": 0.0,
+        "Ocean Temperature|Layer 2": 0.0,
+    },
 )
-setup = spec.bind({"Emissions|CO2": emissions_ts}, time_axis)
+setup = spec.bind(
+    {"Emissions|CO2": emissions, "Effective Radiative Forcing": forcing}, time_axis
+)
 print(setup)
 setup.prescribed_inputs()  # inputs no component produces, and whether each is supplied
 model = setup.build()

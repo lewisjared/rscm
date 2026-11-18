@@ -42,8 +42,9 @@ heat_capacity_surface = 8.0
 heat_capacity_deep = 100.0
 
 [inputs]
-# Input files would be specified here
-# "Effective Radiative Forcing" = { file = "data/erf.csv", unit = "W/m^2" }
+# Zero forcing gives a pre-industrial control run.
+# Pass real forcing to build_model(config, prescribed={...}).
+"Effective Radiative Forcing" = { value = 0.0, unit = "W/m^2" }
 
 [initial_values]
 # Initial state variable values (defaults to 0 if not specified)

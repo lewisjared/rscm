@@ -1,4 +1,6 @@
+import copy
 import json
+import pickle
 
 import numpy as np
 import numpy.testing as npt
@@ -8,18 +10,18 @@ from rscm._lib.core import InterpolationStrategy, Model, Timeseries
 from rscm._lib.two_layer import TwoLayerBuilder
 from rscm.core import ModelBuilder
 
+PARAMETERS = dict(
+    lambda0=1.0,
+    a=0.0,
+    deep_ocean_efficacy=1.0,
+    ocean_heat_transfer=0.7,
+    heat_capacity_deep=100.0,
+    heat_capacity_surface=8.0,
+)
+
 
 def test_model(time_axis):
-    component = TwoLayerBuilder.from_parameters(
-        dict(
-            lambda0=0.0,
-            a=0.0,
-            deep_ocean_efficacy=0.0,
-            ocean_heat_transfer=0.0,
-            heat_capacity_deep=0.0,
-            heat_capacity_surface=0.0,
-        )
-    ).build()
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
 
     builder = ModelBuilder()
     builder.with_time_axis(time_axis).with_component(component)
@@ -45,16 +47,7 @@ def test_model(time_axis):
 
 
 def test_missing_prescribed_input(time_axis):
-    component = TwoLayerBuilder.from_parameters(
-        dict(
-            lambda0=0.0,
-            a=0.0,
-            deep_ocean_efficacy=0.0,
-            ocean_heat_transfer=0.0,
-            heat_capacity_deep=0.0,
-            heat_capacity_surface=0.0,
-        )
-    ).build()
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
     builder = (
         ModelBuilder()
         .with_time_axis(time_axis)
@@ -75,16 +68,7 @@ def test_missing_prescribed_input(time_axis):
 
 
 def test_missing_initial_value_names_the_builder_method(time_axis):
-    component = TwoLayerBuilder.from_parameters(
-        dict(
-            lambda0=0.0,
-            a=0.0,
-            deep_ocean_efficacy=0.0,
-            ocean_heat_transfer=0.0,
-            heat_capacity_deep=0.0,
-            heat_capacity_surface=0.0,
-        )
-    ).build()
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
     builder = (
         ModelBuilder()
         .with_time_axis(time_axis)
@@ -100,16 +84,7 @@ def test_missing_initial_value_names_the_builder_method(time_axis):
 
 
 def test_model_serialisation(time_axis):
-    component = TwoLayerBuilder.from_parameters(
-        dict(
-            lambda0=0.0,
-            a=0.0,
-            deep_ocean_efficacy=0.0,
-            ocean_heat_transfer=0.0,
-            heat_capacity_deep=0.0,
-            heat_capacity_surface=0.0,
-        )
-    ).build()
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
 
     builder = ModelBuilder()
     builder.with_time_axis(time_axis).with_component(component)
@@ -152,16 +127,7 @@ def test_model_serialisation(time_axis):
 
 
 def test_coupling_formats(time_axis):
-    component = TwoLayerBuilder.from_parameters(
-        dict(
-            lambda0=0.0,
-            a=0.0,
-            deep_ocean_efficacy=0.0,
-            ocean_heat_transfer=0.0,
-            heat_capacity_deep=0.0,
-            heat_capacity_surface=0.0,
-        )
-    ).build()
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
     model = (
         ModelBuilder()
         .with_time_axis(time_axis)
@@ -183,3 +149,36 @@ def test_coupling_formats(time_axis):
     assert "TwoLayer" in model.coupling()
     with pytest.raises(ValueError, match="Unknown format"):
         model.coupling("yaml")
+
+
+@pytest.mark.parametrize(
+    "round_trip",
+    [copy.deepcopy, lambda m: pickle.loads(pickle.dumps(m))],  # noqa: S301
+)
+def test_model_copies(time_axis, round_trip):
+    component = TwoLayerBuilder.from_parameters(PARAMETERS).build()
+    erf = Timeseries(
+        np.ones(len(time_axis)), time_axis, "W/m^2", InterpolationStrategy.Next
+    )
+    model = (
+        ModelBuilder()
+        .with_time_axis(time_axis)
+        .with_component(component)
+        .with_prescribed_variable("Effective Radiative Forcing", erf)
+        .with_initial_values(
+            {"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0}
+        )
+        .build()
+    )
+    model.step()
+
+    restored = round_trip(model)
+
+    assert restored.current_time() == model.current_time()
+    model.run()
+    restored.run()
+    temperature = "Surface Air Temperature Change"
+    npt.assert_array_equal(
+        restored.timeseries()[temperature].values(),
+        model.timeseries()[temperature].values(),
+    )

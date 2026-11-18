@@ -304,6 +304,23 @@ pub use four_box::{FourBoxGrid, FourBoxRegion};
 pub use hemispheric::{HemisphericGrid, HemisphericRegion};
 pub use scalar::{ScalarGrid, ScalarRegion};
 
+/// Check area weights are finite, not negative and sum to 1 within 1e-6.
+pub(crate) fn check_weights(weights: &[FloatValue]) -> Result<(), String> {
+    if let Some(w) = weights.iter().find(|w| !w.is_finite()) {
+        return Err(format!("Weights must be finite, got {w} in {weights:?}"));
+    }
+    if let Some(w) = weights.iter().find(|w| **w < 0.0) {
+        return Err(format!(
+            "Weights must not be negative, got {w} in {weights:?}"
+        ));
+    }
+    let sum: FloatValue = weights.iter().sum();
+    if (sum - 1.0).abs() >= 1e-6 {
+        return Err(format!("Weights must sum to 1.0, got {sum}"));
+    }
+    Ok(())
+}
+
 /// Trait for spatial grid structures used in climate models
 ///
 /// A spatial grid defines how climate variables are discretised spatially.

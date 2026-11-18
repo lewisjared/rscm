@@ -7,6 +7,7 @@
 
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
+use statrs::distribution::ContinuousCDF;
 
 use crate::{Error, Result};
 
@@ -72,6 +73,18 @@ pub trait Distribution: Send + Sync {
     /// These bounds are used by optimisers to constrain parameter searches.
     fn bounds(&self) -> Option<(f64, f64)>;
 
+    /// Cumulative distribution function at `x`, if it has a closed form.
+    ///
+    /// [`Bound`] uses it to reject bounds without probability mass and to sample by inverse CDF.
+    fn cdf(&self, _x: f64) -> Option<f64> {
+        None
+    }
+
+    /// Inverse of [`cdf`](Self::cdf) at probability `p`, if it has a closed form.
+    fn inverse_cdf(&self, _p: f64) -> Option<f64> {
+        None
+    }
+
     /// Clone the distribution into a boxed trait object.
     ///
     /// Required for cloning `Box<dyn Distribution>`.
@@ -126,12 +139,16 @@ impl Uniform {
     ///
     /// # Errors
     ///
-    /// Returns an error if `low >= high`.
+    /// Returns an error unless `low` and `high` are finite and `low < high`.
     pub fn new(low: f64, high: f64) -> Result<Self> {
+        if !(low.is_finite() && high.is_finite()) {
+            return Err(Error::InvalidParameter(format!(
+                "Uniform: low ({low}) and high ({high}) must be finite"
+            )));
+        }
         if low >= high {
             return Err(Error::InvalidParameter(format!(
-                "Uniform: low ({}) must be less than high ({})",
-                low, high
+                "Uniform: low ({low}) must be less than high ({high})"
             )));
         }
         Ok(Self { low, high })
@@ -155,15 +172,23 @@ impl Distribution for Uniform {
     }
 
     fn log_pdf(&self, x: f64) -> f64 {
-        if x < self.low || x > self.high {
-            f64::NEG_INFINITY
-        } else {
+        if (self.low..=self.high).contains(&x) {
             -(self.high - self.low).ln()
+        } else {
+            f64::NEG_INFINITY
         }
     }
 
     fn bounds(&self) -> Option<(f64, f64)> {
         Some((self.low, self.high))
+    }
+
+    fn cdf(&self, x: f64) -> Option<f64> {
+        Some(((x - self.low) / (self.high - self.low)).clamp(0.0, 1.0))
+    }
+
+    fn inverse_cdf(&self, p: f64) -> Option<f64> {
+        Some(self.low + p * (self.high - self.low))
     }
 
     fn clone_box(&self) -> Box<dyn Distribution> {
@@ -223,12 +248,16 @@ impl Normal {
     ///
     /// # Errors
     ///
-    /// Returns an error if `std_dev <= 0`.
+    /// Returns an error unless `mean` is finite and `std_dev` is finite and positive.
     pub fn new(mean: f64, std_dev: f64) -> Result<Self> {
-        if std_dev <= 0.0 {
+        if !mean.is_finite() {
             return Err(Error::InvalidParameter(format!(
-                "Normal: std_dev ({}) must be positive",
-                std_dev
+                "Normal: mean ({mean}) must be finite"
+            )));
+        }
+        if !(std_dev.is_finite() && std_dev > 0.0) {
+            return Err(Error::InvalidParameter(format!(
+                "Normal: std_dev ({std_dev}) must be finite and positive"
             )));
         }
         Ok(Self { mean, std_dev })
@@ -243,6 +272,11 @@ impl Normal {
     pub fn std_dev(&self) -> f64 {
         self.std_dev
     }
+
+    fn statrs(&self) -> statrs::distribution::Normal {
+        statrs::distribution::Normal::new(self.mean, self.std_dev)
+            .expect("Normal parameters validated at construction")
+    }
 }
 
 #[typetag::serde]
@@ -254,12 +288,23 @@ impl Distribution for Normal {
     }
 
     fn log_pdf(&self, x: f64) -> f64 {
+        if x.is_nan() {
+            return f64::NEG_INFINITY;
+        }
         let z = (x - self.mean) / self.std_dev;
         -0.5 * z * z - self.std_dev.ln() - 0.5 * (2.0 * std::f64::consts::PI).ln()
     }
 
     fn bounds(&self) -> Option<(f64, f64)> {
         None
+    }
+
+    fn cdf(&self, x: f64) -> Option<f64> {
+        Some(self.statrs().cdf(x))
+    }
+
+    fn inverse_cdf(&self, p: f64) -> Option<f64> {
+        Some(self.statrs().inverse_cdf(p))
     }
 
     fn clone_box(&self) -> Box<dyn Distribution> {
@@ -288,12 +333,16 @@ impl LogNormal {
     ///
     /// # Errors
     ///
-    /// Returns an error if `sigma <= 0`.
+    /// Returns an error unless `mu` is finite and `sigma` is finite and positive.
     pub fn new(mu: f64, sigma: f64) -> Result<Self> {
-        if sigma <= 0.0 {
+        if !mu.is_finite() {
             return Err(Error::InvalidParameter(format!(
-                "LogNormal: sigma ({}) must be positive",
-                sigma
+                "LogNormal: mu ({mu}) must be finite"
+            )));
+        }
+        if !(sigma.is_finite() && sigma > 0.0) {
+            return Err(Error::InvalidParameter(format!(
+                "LogNormal: sigma ({sigma}) must be finite and positive"
             )));
         }
         Ok(Self { mu, sigma })
@@ -305,30 +354,31 @@ impl LogNormal {
     ///
     /// # Errors
     ///
-    /// Returns an error if `mean <= 0` or `std_dev <= 0`.
+    /// Returns an error unless `mean` and `std_dev` are finite and positive
+    /// and give a finite μ and a finite, positive σ.
     pub fn from_mean_std_dev(mean: f64, std_dev: f64) -> Result<Self> {
-        if mean <= 0.0 {
+        if !(mean.is_finite() && mean > 0.0) {
             return Err(Error::InvalidParameter(format!(
-                "LogNormal: mean ({}) must be positive",
-                mean
+                "LogNormal: mean ({mean}) must be finite and positive"
             )));
         }
-        if std_dev <= 0.0 {
+        if !(std_dev.is_finite() && std_dev > 0.0) {
             return Err(Error::InvalidParameter(format!(
-                "LogNormal: std_dev ({}) must be positive",
-                std_dev
+                "LogNormal: std_dev ({std_dev}) must be finite and positive"
             )));
         }
 
-        let variance = std_dev * std_dev;
-        let mean_sq = mean * mean;
-        let sigma_sq = (variance / mean_sq + 1.0).ln();
+        let ratio = std_dev / mean;
+        let sigma_sq = (ratio * ratio).ln_1p();
         let mu = mean.ln() - 0.5 * sigma_sq;
-
-        Ok(Self {
-            mu,
-            sigma: sigma_sq.sqrt(),
-        })
+        let sigma = sigma_sq.sqrt();
+        if !(mu.is_finite() && sigma.is_finite() && sigma > 0.0) {
+            return Err(Error::InvalidParameter(format!(
+                "LogNormal: mean ({mean}) and std_dev ({std_dev}) give mu ({mu}) and sigma ({sigma}), \
+                 which must be finite with sigma positive"
+            )));
+        }
+        Ok(Self { mu, sigma })
     }
 
     /// Get the μ parameter (mean of ln(X)).
@@ -339,6 +389,11 @@ impl LogNormal {
     /// Get the σ parameter (standard deviation of ln(X)).
     pub fn sigma(&self) -> f64 {
         self.sigma
+    }
+
+    fn statrs(&self) -> statrs::distribution::LogNormal {
+        statrs::distribution::LogNormal::new(self.mu, self.sigma)
+            .expect("LogNormal parameters validated at construction")
     }
 }
 
@@ -351,7 +406,7 @@ impl Distribution for LogNormal {
     }
 
     fn log_pdf(&self, x: f64) -> f64 {
-        if x <= 0.0 {
+        if x.is_nan() || x <= 0.0 {
             return f64::NEG_INFINITY;
         }
         let log_x = x.ln();
@@ -361,6 +416,14 @@ impl Distribution for LogNormal {
 
     fn bounds(&self) -> Option<(f64, f64)> {
         Some((0.0, f64::INFINITY))
+    }
+
+    fn cdf(&self, x: f64) -> Option<f64> {
+        Some(self.statrs().cdf(x))
+    }
+
+    fn inverse_cdf(&self, p: f64) -> Option<f64> {
+        Some(self.statrs().inverse_cdf(p))
     }
 
     fn clone_box(&self) -> Box<dyn Distribution> {
@@ -377,21 +440,18 @@ impl LogNormal {
     }
 }
 
-/// Wrapper that applies hard bounds to any distribution via rejection sampling.
+/// Wrapper that truncates any distribution to `[low, high]`.
 ///
-/// This allows constraining unbounded distributions (e.g., Normal) to a finite interval.
-/// Samples are rejected and resampled until they fall within `[low, high]`.
+/// This allows constraining unbounded distributions (e.g., Normal) to an interval.
 ///
 /// # Algorithm
 ///
-/// - **Sampling**: Rejection sampling - draw from inner distribution until value is in bounds
+/// - **Sampling**: inverse CDF over the inner probability mass in `[low, high]`
+///   when the inner distribution has a closed-form CDF, rejection sampling otherwise
 /// - **Density**: Returns inner distribution's log-PDF for values in bounds, -∞ otherwise
 ///
-/// # Performance Note
-///
-/// Rejection sampling can be inefficient if the bounds exclude most of the inner
-/// distribution's probability mass. For example, bounding a Normal(0, 1) to [10, 20]
-/// will require many samples on average.
+/// Construction fails when `[low, high]` holds no probability mass of the inner distribution
+/// to double precision, such as Normal(0, 1) bounded to [10, 20].
 ///
 /// # Example
 ///
@@ -444,13 +504,28 @@ impl Bound {
     ///
     /// # Errors
     ///
-    /// Returns an error if `low >= high`.
+    /// Returns an error unless `low < high` (either may be infinite)
+    /// and `[low, high]` holds probability mass of `distribution`.
     pub fn new(distribution: Box<dyn Distribution>, low: f64, high: f64) -> Result<Self> {
-        if low >= high {
+        if low.is_nan() || high.is_nan() || low >= high {
             return Err(Error::InvalidParameter(format!(
-                "Bound: low ({}) must be less than high ({})",
-                low, high
+                "Bound: low ({low}) must be less than high ({high})"
             )));
+        }
+        if let Some((support_low, support_high)) = distribution.bounds() {
+            if high < support_low || low > support_high {
+                return Err(Error::InvalidParameter(format!(
+                    "Bound: [{low}, {high}] does not overlap the support \
+                     [{support_low}, {support_high}] of the inner distribution"
+                )));
+            }
+        }
+        if let (Some(cdf_low), Some(cdf_high)) = (distribution.cdf(low), distribution.cdf(high)) {
+            if cdf_high.is_nan() || cdf_low.is_nan() || cdf_high <= cdf_low {
+                return Err(Error::InvalidParameter(format!(
+                    "Bound: [{low}, {high}] holds no probability mass of the inner distribution"
+                )));
+            }
         }
         Ok(Self {
             distribution,
@@ -475,29 +550,69 @@ impl Bound {
     }
 }
 
-#[typetag::serde]
-impl Distribution for Bound {
-    fn sample_dyn(&self, rng: &mut dyn rand::Rng) -> f64 {
-        // Rejection sampling: keep sampling until we get a value in bounds.
-        loop {
+/// Rejection sampling gives up after this many draws, for inner distributions without a CDF.
+const MAX_REJECTION_DRAWS: usize = 1_000_000;
+
+impl Bound {
+    /// Inner CDF at `low` and `high`, when the inner distribution has a closed-form CDF.
+    fn cdf_range(&self) -> Option<(f64, f64)> {
+        Some((
+            self.distribution.cdf(self.low)?,
+            self.distribution.cdf(self.high)?,
+        ))
+    }
+
+    fn sample_impl(&self, rng: &mut dyn rand::Rng) -> f64 {
+        if let Some((cdf_low, cdf_high)) = self.cdf_range() {
+            let p = cdf_low + rng.random::<f64>() * (cdf_high - cdf_low);
+            if let Some(x) = self.distribution.inverse_cdf(p) {
+                return x.clamp(self.low, self.high);
+            }
+        }
+        for _ in 0..MAX_REJECTION_DRAWS {
             let x = self.distribution.sample_dyn(rng);
-            if x >= self.low && x <= self.high {
+            if (self.low..=self.high).contains(&x) {
                 return x;
             }
         }
+        panic!(
+            "Bound: no sample fell in [{}, {}] after {MAX_REJECTION_DRAWS} draws",
+            self.low, self.high
+        )
+    }
+}
+
+#[typetag::serde]
+impl Distribution for Bound {
+    fn sample_dyn(&self, rng: &mut dyn rand::Rng) -> f64 {
+        self.sample_impl(rng)
     }
 
     fn log_pdf(&self, x: f64) -> f64 {
-        if x < self.low || x > self.high {
-            f64::NEG_INFINITY
-        } else {
-            // Return unnormalised PDF - normalisation constant doesn't affect MCMC
+        if (self.low..=self.high).contains(&x) {
+            // Unnormalised: the normalisation constant cancels in MCMC.
             self.distribution.log_pdf(x)
+        } else {
+            f64::NEG_INFINITY
         }
     }
 
     fn bounds(&self) -> Option<(f64, f64)> {
         Some((self.low, self.high))
+    }
+
+    fn cdf(&self, x: f64) -> Option<f64> {
+        let (cdf_low, cdf_high) = self.cdf_range()?;
+        let inner = self.distribution.cdf(x.clamp(self.low, self.high))?;
+        Some((inner - cdf_low) / (cdf_high - cdf_low))
+    }
+
+    fn inverse_cdf(&self, p: f64) -> Option<f64> {
+        let (cdf_low, cdf_high) = self.cdf_range()?;
+        let x = self
+            .distribution
+            .inverse_cdf(cdf_low + p * (cdf_high - cdf_low))?;
+        Some(x.clamp(self.low, self.high))
     }
 
     fn clone_box(&self) -> Box<dyn Distribution> {
@@ -508,12 +623,7 @@ impl Distribution for Bound {
 impl Bound {
     /// Sample a value from the distribution.
     pub fn sample<R: RngExt>(&self, rng: &mut R) -> f64 {
-        loop {
-            let x = self.distribution.sample_dyn(rng);
-            if x >= self.low && x <= self.high {
-                return x;
-            }
-        }
+        self.sample_impl(rng)
     }
 }
 
@@ -671,5 +781,73 @@ mod tests {
     fn test_bound_validation() {
         assert!(Bound::new(Box::new(Normal::new(0.0, 1.0).unwrap()), 1.0, 1.0).is_err());
         assert!(Bound::new(Box::new(Normal::new(0.0, 1.0).unwrap()), 2.0, 1.0).is_err());
+        assert!(Bound::new(Box::new(Normal::new(0.0, 1.0).unwrap()), f64::NAN, 1.0).is_err());
+    }
+
+    #[test]
+    fn test_bound_without_mass_is_rejected() {
+        let normal = Bound::new(Box::new(Normal::new(0.0, 1.0).unwrap()), 100.0, 101.0);
+        assert!(normal
+            .unwrap_err()
+            .to_string()
+            .contains("no probability mass"));
+        let uniform = Bound::new(Box::new(Uniform::new(0.0, 1.0).unwrap()), 5.0, 6.0);
+        assert!(uniform
+            .unwrap_err()
+            .to_string()
+            .contains("does not overlap"));
+    }
+
+    #[test]
+    fn test_bound_far_tail_sampling() {
+        let dist = Bound::new(Box::new(Normal::new(0.0, 1.0).unwrap()), 7.0, 9.0).unwrap();
+        let mut rng = rand::rng();
+        for _ in 0..100 {
+            assert!((7.0..=9.0).contains(&dist.sample(&mut rng)));
+        }
+    }
+
+    #[test]
+    fn test_nested_bound_cdf() {
+        let inner = Bound::new(Box::new(Uniform::new(0.0, 4.0).unwrap()), 1.0, 3.0).unwrap();
+        let outer = Bound::new(Box::new(inner), 2.0, 5.0).unwrap();
+        assert_abs_diff_eq!(outer.cdf(2.5).unwrap(), 0.5, epsilon = 1e-12);
+        assert_abs_diff_eq!(outer.inverse_cdf(0.5).unwrap(), 2.5, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_non_finite_parameters_rejected() {
+        assert!(Uniform::new(f64::NAN, 1.0).is_err());
+        assert!(Uniform::new(0.0, f64::INFINITY).is_err());
+        assert!(Normal::new(f64::NAN, 1.0).is_err());
+        assert!(Normal::new(0.0, f64::NAN).is_err());
+        assert!(LogNormal::new(0.0, f64::NAN).is_err());
+        assert!(LogNormal::from_mean_std_dev(f64::NAN, 1.0).is_err());
+    }
+
+    #[test]
+    fn test_lognormal_from_mean_std_dev_degenerate() {
+        let tiny = LogNormal::from_mean_std_dev(1.0, 1e-10).unwrap();
+        assert!(tiny.sigma() > 0.0);
+        assert!(Bound::new(Box::new(tiny), 0.5, 1.5).is_ok());
+        assert!(LogNormal::from_mean_std_dev(1.0, 1e-200).is_err());
+        assert!(LogNormal::from_mean_std_dev(1.0, 1e200).is_err());
+        assert!(LogNormal::from_mean_std_dev(1e300, 1e300).is_ok());
+    }
+
+    #[test]
+    fn test_log_pdf_nan() {
+        let uniform = Uniform::new(0.0, 1.0).unwrap();
+        assert_eq!(uniform.log_pdf(f64::NAN), f64::NEG_INFINITY);
+        assert_eq!(
+            Normal::new(0.0, 1.0).unwrap().log_pdf(f64::NAN),
+            f64::NEG_INFINITY
+        );
+        assert_eq!(
+            LogNormal::new(0.0, 1.0).unwrap().log_pdf(f64::NAN),
+            f64::NEG_INFINITY
+        );
+        let bound = Bound::new(Box::new(uniform), 0.1, 0.9).unwrap();
+        assert_eq!(bound.log_pdf(f64::NAN), f64::NEG_INFINITY);
     }
 }

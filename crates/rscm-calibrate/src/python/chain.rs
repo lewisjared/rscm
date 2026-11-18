@@ -1,8 +1,42 @@
-use crate::sampler::Chain;
+use crate::sampler::{Chain, MIN_SAMPLES_AUTOCORR, MIN_SAMPLES_R_HAT};
+use indexmap::IndexMap;
 use numpy::{PyArray1, PyArray2, ToPyArray};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyUserWarning, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+
+/// The number of burn-in samples to drop, which must not be negative.
+fn discard_count(discard: isize) -> PyResult<usize> {
+    usize::try_from(discard)
+        .map_err(|_| PyValueError::new_err(format!("discard must not be negative, got {discard}")))
+}
+
+impl PyChain {
+    /// A diagnostic as a dict, warning when it is empty because too few samples remain.
+    fn diagnostic<'py>(
+        &self,
+        py: Python<'py>,
+        name: &str,
+        discard: usize,
+        min_samples: usize,
+        result: IndexMap<String, f64>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        if result.is_empty() && !self.0.parameter_names().is_empty() {
+            let kept = self.0.len().saturating_sub(discard);
+            let message = format!(
+                "{name} needs at least {min_samples} stored samples after discard, \
+                 got {kept} (len {}, discard {discard})",
+                self.0.len()
+            );
+            super::warn::<PyUserWarning>(py, &message)?;
+        }
+        let dict = PyDict::new(py);
+        for (name, value) in result {
+            dict.set_item(name, value)?;
+        }
+        Ok(dict)
+    }
+}
 
 /// Python wrapper for Chain.
 ///
@@ -55,6 +89,20 @@ impl PyChain {
         self.0.parameter_names().to_vec()
     }
 
+    /// Number of evaluations rejected because the prior, model or likelihood failed.
+    ///
+    /// Counts only the sampling run that produced this chain object, not a saved or loaded chain.
+    #[getter]
+    fn n_failed_evaluations(&self) -> usize {
+        self.0.failures().count
+    }
+
+    /// Message of the first failed evaluation, or None if none failed.
+    #[getter]
+    fn first_failure(&self) -> Option<String> {
+        self.0.failures().first.clone()
+    }
+
     /// Get flattened samples, optionally discarding initial burn-in samples.
     ///
     /// Parameters
@@ -73,8 +121,13 @@ impl PyChain {
     /// >>> samples = chain.flat_samples(discard=100)
     /// >>> print(samples.shape)  # (n_samples, n_parameters)
     #[pyo3(signature = (discard=0))]
-    fn flat_samples<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyArray2<f64>> {
-        self.0.flat_samples(discard).to_pyarray(py)
+    fn flat_samples<'py>(
+        &self,
+        py: Python<'py>,
+        discard: isize,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let discard = discard_count(discard)?;
+        Ok(self.0.flat_samples(discard).to_pyarray(py))
     }
 
     /// Get flattened log probabilities, optionally discarding initial burn-in samples.
@@ -95,8 +148,13 @@ impl PyChain {
     /// >>> log_probs = chain.flat_log_probs(discard=100)
     /// >>> print(log_probs.shape)  # (n_samples,)
     #[pyo3(signature = (discard=0))]
-    fn flat_log_probs<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyArray1<f64>> {
-        self.0.flat_log_probs(discard).to_pyarray(py)
+    fn flat_log_probs<'py>(
+        &self,
+        py: Python<'py>,
+        discard: isize,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let discard = discard_count(discard)?;
+        Ok(self.0.flat_log_probs(discard).to_pyarray(py))
     }
 
     /// Compute the Gelman-Rubin statistic (R-hat) for each parameter.
@@ -113,7 +171,7 @@ impl PyChain {
     /// Returns
     /// -------
     /// dict[str, float]
-    ///     Map from parameter name to R-hat value. Returns empty dict if insufficient samples.
+    ///     Map from parameter name to R-hat value. Empty, with a UserWarning, if too few samples remain.
     ///
     /// Examples
     /// --------
@@ -126,13 +184,15 @@ impl PyChain {
     /// Gelman, A., & Rubin, D. B. (1992). Inference from iterative simulation using
     /// multiple sequences. Statistical Science, 7(4), 457-472.
     #[pyo3(signature = (discard=0))]
-    fn r_hat<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyDict> {
-        let result = self.0.r_hat(discard);
-        let dict = PyDict::new(py);
-        for (name, value) in result {
-            dict.set_item(name, value).unwrap();
-        }
-        dict
+    fn r_hat<'py>(&self, py: Python<'py>, discard: isize) -> PyResult<Bound<'py, PyDict>> {
+        let discard = discard_count(discard)?;
+        self.diagnostic(
+            py,
+            "r_hat",
+            discard,
+            MIN_SAMPLES_R_HAT,
+            self.0.r_hat(discard),
+        )
     }
 
     /// Check if the chain has converged based on R-hat statistic.
@@ -155,8 +215,9 @@ impl PyChain {
     /// >>> if chain.is_converged(discard=100, threshold=1.1):
     /// ...     print("Chain has converged!")
     #[pyo3(signature = (discard=0, threshold=1.1))]
-    fn is_converged(&self, discard: usize, threshold: f64) -> bool {
-        self.0.is_converged(discard, threshold)
+    fn is_converged(&self, discard: isize, threshold: f64) -> PyResult<bool> {
+        let discard = discard_count(discard)?;
+        Ok(self.0.is_converged(discard, threshold))
     }
 
     /// Compute the effective sample size (ESS) for each parameter.
@@ -173,7 +234,7 @@ impl PyChain {
     /// Returns
     /// -------
     /// dict[str, float]
-    ///     Map from parameter name to ESS value. Returns empty dict if insufficient samples.
+    ///     Map from parameter name to ESS value. Empty, with a UserWarning, if too few samples remain.
     ///
     /// Examples
     /// --------
@@ -186,13 +247,15 @@ impl PyChain {
     /// Gelman, A., Carlin, J. B., Stern, H. S., Dunson, D. B., Vehtari, A., &
     /// Rubin, D. B. (2013). Bayesian Data Analysis (3rd ed.). CRC Press.
     #[pyo3(signature = (discard=0))]
-    fn ess<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyDict> {
-        let result = self.0.ess(discard);
-        let dict = PyDict::new(py);
-        for (name, value) in result {
-            dict.set_item(name, value).unwrap();
-        }
-        dict
+    fn ess<'py>(&self, py: Python<'py>, discard: isize) -> PyResult<Bound<'py, PyDict>> {
+        let discard = discard_count(discard)?;
+        self.diagnostic(
+            py,
+            "ess",
+            discard,
+            MIN_SAMPLES_AUTOCORR,
+            self.0.ess(discard),
+        )
     }
 
     /// Compute the integrated autocorrelation time for each parameter.
@@ -217,8 +280,8 @@ impl PyChain {
     /// Returns
     /// -------
     /// dict[str, float]
-    ///     Map from parameter name to autocorrelation time. Returns empty dict if
-    ///     insufficient samples (< 10 after discard).
+    ///     Map from parameter name to autocorrelation time.
+    ///     Empty, with a UserWarning, if fewer than 10 samples remain after discard.
     ///
     /// Examples
     /// --------
@@ -226,13 +289,10 @@ impl PyChain {
     /// >>> for param, time in tau.items():
     /// ...     print(f"{param}: τ = {time:.1f} (thin by ~{time:.0f} for independence)")
     #[pyo3(signature = (discard=0))]
-    fn autocorr_time<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyDict> {
+    fn autocorr_time<'py>(&self, py: Python<'py>, discard: isize) -> PyResult<Bound<'py, PyDict>> {
+        let discard = discard_count(discard)?;
         let result = self.0.autocorr_time(discard);
-        let dict = PyDict::new(py);
-        for (name, value) in result {
-            dict.set_item(name, value).unwrap();
-        }
-        dict
+        self.diagnostic(py, "autocorr_time", discard, MIN_SAMPLES_AUTOCORR, result)
     }
 
     /// Convert chain samples to a dictionary mapping parameter names to sample arrays.
@@ -255,13 +315,18 @@ impl PyChain {
     /// >>> import matplotlib.pyplot as plt
     /// >>> plt.hist(param_dict["x"], bins=50)
     #[pyo3(signature = (discard=0))]
-    fn to_parameter_dict<'py>(&self, py: Python<'py>, discard: usize) -> Bound<'py, PyDict> {
+    fn to_parameter_dict<'py>(
+        &self,
+        py: Python<'py>,
+        discard: isize,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let discard = discard_count(discard)?;
         let result = self.0.to_parameter_map(discard);
         let dict = PyDict::new(py);
         for (name, values) in result {
-            dict.set_item(name, values.to_pyarray(py)).unwrap();
+            dict.set_item(name, values.to_pyarray(py))?;
         }
-        dict
+        Ok(dict)
     }
 
     /// Save the chain to a file.
@@ -330,9 +395,11 @@ impl PyChain {
     /// Examples
     /// --------
     /// >>> chain1.merge(chain2)
-    fn merge(&mut self, other: &PyChain) -> PyResult<()> {
-        self.0
-            .merge(&other.0)
+    fn merge(slf: &Bound<'_, Self>, other: &Bound<'_, Self>) -> PyResult<()> {
+        let other_chain = other.borrow().0.clone();
+        slf.borrow_mut()
+            .0
+            .merge(&other_chain)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 

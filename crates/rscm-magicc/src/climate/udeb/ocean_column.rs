@@ -5,6 +5,7 @@
 //! and ocean heat content diagnostics.
 
 use super::{heat_capacity_per_metre, ClimateUDEB};
+use crate::bounds::Bounded;
 use crate::climate::state::ClimateUDEBState;
 use crate::parameters::{CP_SEAWATER, DIFFUSIVITY_CM2S_TO_M2YR, EARTH_SURFACE_AREA, RHO_SEAWATER};
 use rscm_core::state::FourBoxSlice;
@@ -36,7 +37,7 @@ impl ClimateUDEB {
             .map(|slope| {
                 let k = (slope * (t_top - t_bottom) + self.parameters.vertical_diffusivity)
                     * DIFFUSIVITY_CM2S_TO_M2YR;
-                k.max(kappa_min_m2yr)
+                k.at_least(kappa_min_m2yr)
             })
             .collect()
     }
@@ -164,7 +165,7 @@ impl ClimateUDEB {
 
         let max_temp = p.maximum_temperature;
         for (old, &temp) in state.ocean_temperatures[hemi].iter_mut().zip(d.iter()) {
-            *old = temp.min(max_temp);
+            *old = temp.at_most(max_temp);
         }
 
         state.ocean_temperatures[hemi][0]

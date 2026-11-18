@@ -74,6 +74,8 @@ def setup_model(
     `scale_prescribed_forcing` applies it to the inputs, as fair-calibrate does.
     Raises an `InputValidationError` before building anything
     if the configuration or inputs are invalid, see `rscm.fair.validation`.
+    Emissions so negative that a CO2, CH4 or N2O concentration reaches zero
+    give NaN forcing, as in FaIR, and only show in the run.
     """
     validate(
         config, inputs, time_axis, scale_prescribed_forcing=scale_prescribed_forcing

@@ -124,6 +124,29 @@ def test_prescribed_ghg_forcing_is_unsupported(config: dict[str, Any]) -> None:
     assert (IssueKind.UNSUPPORTED, "CH4.input_mode") in _issues(config)
 
 
+def test_aci_skips_drivers_of_other_input_modes(config: dict[str, Any]) -> None:
+    """GasCycle overwrites the concentration of an emissions-driven species."""
+    _species(config, "CH4")["aci_shape"] = 0.001
+    inputs = _inputs(config)
+    inputs[naming.concentration("CH4")] = (np.r_[np.ones(5), np.full(6, -1e4)], "ppb")
+    validate(config, inputs, _time_axis())
+
+
+def test_aci_reads_prescribed_concentrations_at_step_end(
+    config: dict[str, Any],
+) -> None:
+    ch4 = _species(config, "CH4")
+    ch4["input_mode"] = "concentration"
+    ch4["aci_shape"] = -0.001
+    inputs = _inputs(config)
+    inputs[naming.concentration("CH4")] = (np.r_[np.ones(N_BOUNDS - 1), 1e4], "ppb")
+    with pytest.raises(InputValidationError) as info:
+        validate(config, inputs, _time_axis())
+    (issue,) = info.value.issues
+    assert issue.location == "Aerosol-cloud interactions"
+    assert "1759" in issue.message
+
+
 @pytest.mark.parametrize(
     ("key", "value", "kind"),
     [
@@ -173,6 +196,32 @@ def test_gas_boxes_are_one_dimensional(
 def test_gas_boxes_match(config: dict[str, Any]) -> None:
     _species(config, "CO2")["unperturbed_lifetime"] = [1.0, 2.0]
     assert _issues(config) == {(IssueKind.SHAPE, "CO2.unperturbed_lifetime")}
+
+
+@pytest.mark.parametrize(
+    "fractions", [[0.5, 0.0, 0.0, 0.0], [1.5, -0.5, 0.0, 0.0], [0.5, 0.5, 0.5, -0.5]]
+)
+def test_partition_fractions_sum_to_one(
+    fractions: list[float], config: dict[str, Any]
+) -> None:
+    _species(config, "CO2")["partition_fraction"] = fractions
+    assert _issues(config) == {(IssueKind.OUT_OF_RANGE, "CO2.partition_fraction")}
+
+
+def test_partition_fractions_allow_rounding(config: dict[str, Any]) -> None:
+    _species(config, "CO2")["partition_fraction"] = [0.2173, 0.224, 0.2824, 0.2762]
+    validate(config)
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, 0.0, -44.0])
+def test_molecular_weight(value: float, config: dict[str, Any]) -> None:
+    _species(config, "N2O")["molecular_weight"] = value
+    kind = (
+        IssueKind.NON_FINITE
+        if math.isnan(value) or math.isinf(value)
+        else (IssueKind.OUT_OF_RANGE)
+    )
+    assert _issues(config) == {(kind, "N2O.molecular_weight")}
 
 
 @pytest.mark.parametrize("key", ["g0", "iirf_0"])
@@ -399,3 +448,224 @@ def test_read_calibration_validates_each_member(tmp_path: Path) -> None:
     assert [(i.kind, i.location) for i in info.value.issues] == [
         (IssueKind.NON_FINITE, f"{member}: climate.ocean_heat_transfer"),
     ]
+
+
+def _axis_issues(
+    config: dict[str, Any], bounds: list[float]
+) -> set[tuple[IssueKind, str]]:
+    with pytest.raises(InputValidationError) as info:
+        validate(config, _inputs(config), TimeAxis.from_values(np.asarray(bounds)))
+    return {(issue.kind, issue.location) for issue in info.value.issues}
+
+
+def test_uneven_time_axis_is_unsupported(config: dict[str, Any]) -> None:
+    bounds = [1750.0, 1751.0, 1753.0, *np.arange(1754.0, 1762.0)]
+    assert _axis_issues(config, bounds) == {(IssueKind.UNSUPPORTED, "time_axis")}
+
+
+def test_fractional_even_time_axis_passes(config: dict[str, Any]) -> None:
+    validate(config, _inputs(config), TimeAxis.from_values(1750 + 0.1 * np.arange(11)))
+
+
+def test_run_ensemble_rejects_uneven_time_axis(config: dict[str, Any]) -> None:
+    pytest.importorskip("xarray")
+    bounds = np.r_[1750.0, 1751.0, 1753.0, np.arange(1754.0, 1762.0)]
+    with pytest.raises(InputValidationError) as info:
+        run_ensemble(
+            {"a": config}, {"s": _inputs(config)}, TimeAxis.from_values(bounds)
+        )
+    assert [(i.kind, i.location) for i in info.value.issues] == [
+        (IssueKind.UNSUPPORTED, "time_axis"),
+    ]
+
+
+def _copy(config: dict[str, Any], name: str, new_name: str) -> None:
+    entry = copy.deepcopy(_species(config, name))
+    entry["name"] = new_name
+    config["species"].append(entry)
+
+
+@pytest.mark.parametrize(
+    ("name", "copied"),
+    [
+        ("CO2", "CO2b"),
+        ("CFC-11", "CFC-11b"),
+        ("Aerosol-radiation interactions", "ari2"),
+        ("Sulfur", "Sulfur2"),
+    ],
+)
+def test_duplicate_species_type_is_unsupported(
+    name: str, copied: str, config: dict[str, Any]
+) -> None:
+    _copy(config, name, copied)
+    assert _issues(config) == {(IssueKind.UNSUPPORTED, f"{copied}.type")}
+
+
+def test_repeatable_species_type_passes(config: dict[str, Any]) -> None:
+    _copy(config, "NF3", "NF3b")
+    validate(config)
+
+
+def test_duplicate_species_name(config: dict[str, Any]) -> None:
+    config["species"].append(copy.deepcopy(_species(config, "NF3")))
+    assert _issues(config) == {(IssueKind.UNSUPPORTED, "NF3.name")}
+
+
+@pytest.mark.parametrize(
+    ("name", "key", "value"),
+    [
+        ("CO2", "unperturbed_lifetime", [-1.0, 394.4, 36.54, 4.304]),
+        ("CO2", "forcing_reference_concentration", 0.0),
+        ("CO2", "baseline_concentration", 0.0),
+        ("CH4", "baseline_concentration", -10.0),
+        ("N2O", "forcing_reference_concentration", -1.0),
+    ],
+)
+def test_gas_parameter_out_of_range(
+    name: str, key: str, value: Any, config: dict[str, Any]
+) -> None:
+    _species(config, name)[key] = value
+    assert _issues(config) == {(IssueKind.OUT_OF_RANGE, f"{name}.{key}")}
+
+
+@pytest.mark.parametrize(
+    ("name", "key", "value"),
+    [
+        ("CO2", "unperturbed_lifetime", [0.0, 394.4, 36.54, 4.304]),
+        ("CH4", "baseline_concentration", 0.0),
+        ("HFC-23", "forcing_reference_concentration", 0.0),
+        ("HFC-23", "baseline_concentration", -10.0),
+        ("Sulfur", "aci_shape", -0.01),
+    ],
+)
+def test_gas_parameters_fair_runs_pass(
+    name: str, key: str, value: Any, config: dict[str, Any]
+) -> None:
+    _species(config, name)[key] = value
+    validate(config, _inputs(config), _time_axis())
+
+
+def test_aci_baseline_needs_a_logarithm(config: dict[str, Any]) -> None:
+    _species(config, "Sulfur")["aci_shape"] = -1.0
+    assert _issues(config) == {(IssueKind.OUT_OF_RANGE, "Aerosol-cloud interactions")}
+
+
+def test_aci_emissions_need_a_logarithm(config: dict[str, Any]) -> None:
+    inputs = _inputs(config)
+    inputs["Emissions|SOx"] = (np.r_[np.ones(4), np.full(6, -1e4)], "Mt SO2/yr")
+    with pytest.raises(InputValidationError) as info:
+        validate(config, inputs, _time_axis())
+    (issue,) = info.value.issues
+    assert (issue.kind, issue.location) == (
+        IssueKind.OUT_OF_RANGE,
+        "Aerosol-cloud interactions",
+    )
+    assert "1754" in issue.message
+    assert "Emissions|SOx" in issue.message
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "kind"),
+    [
+        ("ocean_heat_capacity", ["8", "14", "100"], IssueKind.NON_FINITE),
+        ("deep_ocean_efficacy", [1.1, 1.2], IssueKind.SHAPE),
+        ("deep_ocean_efficacy", "1.1", IssueKind.NON_FINITE),
+    ],
+)
+def test_climate_parameter_types(
+    key: str, value: Any, kind: IssueKind, config: dict[str, Any]
+) -> None:
+    config["climate"][key] = value
+    assert _issues(config) == {(kind, f"climate.{key}")}
+
+
+def test_scalar_species_parameter(config: dict[str, Any]) -> None:
+    _species(config, "HFC-23")["forcing_scale"] = [1.0, 2.0]
+    config["options"]["iirf_max"] = "100"
+    assert _issues(config) == {
+        (IssueKind.SHAPE, "HFC-23.forcing_scale"),
+        (IssueKind.NON_FINITE, "options.iirf_max"),
+    }
+
+
+def test_run_ensemble_needs_a_config(config: dict[str, Any]) -> None:
+    pytest.importorskip("xarray")
+    with pytest.raises(InputValidationError) as info:
+        run_ensemble({}, {"s": _inputs(config)}, _time_axis())
+    assert [(i.kind, i.location) for i in info.value.issues] == [
+        (IssueKind.MISSING, "configs"),
+    ]
+
+
+def test_run_ensemble_needs_a_scenario(config: dict[str, Any]) -> None:
+    pytest.importorskip("xarray")
+    with pytest.raises(InputValidationError) as info:
+        run_ensemble({"a": config}, {}, _time_axis())
+    assert [(i.kind, i.location) for i in info.value.issues] == [
+        (IssueKind.MISSING, "scenarios"),
+    ]
+
+
+@pytest.mark.parametrize("argument", ["configs", "scenarios"])
+def test_run_ensemble_needs_mappings(argument: str, config: dict[str, Any]) -> None:
+    pytest.importorskip("xarray")
+    arguments = {"configs": {"a": config}, "scenarios": {"s": _inputs(config)}}
+    arguments[argument] = list(arguments[argument].values())
+    with pytest.raises(TypeError, match=f"{argument} must be a mapping"):
+        run_ensemble(**arguments, time_axis=_time_axis())
+
+
+def _ensemble_issues(
+    config: dict[str, Any], other: dict[str, Any]
+) -> list[tuple[IssueKind, str, str]]:
+    pytest.importorskip("xarray")
+    with pytest.raises(InputValidationError) as info:
+        run_ensemble({"a": config, "b": other}, {"s": _inputs(config)}, _time_axis())
+    return [(i.kind, i.location, i.message) for i in info.value.issues]
+
+
+def test_run_ensemble_names_missing_species(config: dict[str, Any]) -> None:
+    other = copy.deepcopy(config)
+    _drop(other, "NF3")
+    ((kind, location, message),) = _ensemble_issues(config, other)
+    assert (kind, location) == (IssueKind.SHAPE, "b: species")
+    assert "NF3" in message
+
+
+def test_run_ensemble_needs_the_same_species_order(config: dict[str, Any]) -> None:
+    other = copy.deepcopy(config)
+    other["species"] = other["species"][::-1]
+    ((kind, location, message),) = _ensemble_issues(config, other)
+    assert (kind, location) == (IssueKind.SHAPE, "b: species")
+    assert "order" in message
+
+
+def test_run_ensemble_needs_the_same_layers(config: dict[str, Any]) -> None:
+    other = copy.deepcopy(config)
+    other["climate"]["ocean_heat_capacity"] = [8.0, 14.0]
+    other["climate"]["ocean_heat_transfer"] = [1.1, 1.6]
+    ((kind, location, _),) = _ensemble_issues(config, other)
+    assert (kind, location) == (IssueKind.SHAPE, "b: climate.ocean_heat_capacity")
+
+
+def test_unknown_input(config: dict[str, Any]) -> None:
+    inputs = _inputs(config)
+    inputs["Emissions|co2|fossil"] = inputs.pop("Emissions|CO2|Fossil")
+    inputs["Emissions|Bogus"] = (np.ones(N_BOUNDS - 1), "Mt X/yr")
+    with pytest.raises(InputValidationError) as info:
+        validate(config, inputs, _time_axis())
+    issues = {(i.kind, i.location): i.message for i in info.value.issues}
+    assert set(issues) == {
+        (IssueKind.MISSING, "Emissions|CO2|Fossil"),
+        (IssueKind.UNKNOWN_KEY, "Emissions|co2|fossil"),
+        (IssueKind.UNKNOWN_KEY, "Emissions|Bogus"),
+    }
+    message = issues[IssueKind.UNKNOWN_KEY, "Emissions|co2|fossil"]
+    assert "'Emissions|CO2|Fossil'" in message
+
+
+def test_inputs_of_other_input_modes_are_known(config: dict[str, Any]) -> None:
+    """A scenario may hold the inputs of other modes, as ensembles share it."""
+    inputs = _inputs(config)
+    inputs[naming.concentration("CH4")] = (np.ones(N_BOUNDS), "ppb")
+    validate(config, inputs, _time_axis())

@@ -29,12 +29,11 @@ impl StretchMove {
     ///
     /// # Arguments
     ///
-    /// * `a` - Scale parameter, must be > 1.0. Recommended value is 2.0.
+    /// * `a` - Scale parameter, finite and greater than 1. Recommended value is 2.0.
     pub fn new(a: f64) -> Result<Self> {
-        if a <= 1.0 {
+        if !(a.is_finite() && a > 1.0) {
             return Err(Error::InvalidParameter(format!(
-                "Stretch move scale parameter must be > 1.0, got {}",
-                a
+                "stretch parameter a ({a}) must be finite and greater than 1"
             )));
         }
         Ok(Self { a })
@@ -151,6 +150,9 @@ mod tests {
 
         let result = StretchMove::new(0.5);
         assert!(result.is_err());
+
+        assert!(StretchMove::new(f64::NAN).is_err());
+        assert!(StretchMove::new(f64::INFINITY).is_err());
     }
 
     #[test]

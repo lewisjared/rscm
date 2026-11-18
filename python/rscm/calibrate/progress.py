@@ -107,12 +107,17 @@ def create_simple_callback(print_every: int = 100):
     Parameters
     ----------
     print_every : int, optional
-        Print progress every N iterations (default: 100)
+        Print progress every N iterations, at least 1 (default: 100)
 
     Returns
     -------
     callable
         A callback function that can be passed to run_with_progress()
+
+    Raises
+    ------
+    ValueError
+        If `print_every` is less than 1
 
     Examples
     --------
@@ -126,6 +131,9 @@ def create_simple_callback(print_every: int = 100):
     ...     progress_callback=callback,
     ... )
     """
+    if print_every < 1:
+        msg = f"print_every must be a positive integer, got {print_every}"
+        raise ValueError(msg)
 
     def callback(progress_info):
         """Print progress information at regular intervals."""

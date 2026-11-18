@@ -58,6 +58,7 @@
 //! `Prescribed Atmospheric Concentrations|CH4` until that year, and `Inverse Emissions|CH4`
 //! holds the anthropogenic emissions that would reproduce it.
 
+use crate::bounds::Bounded;
 use crate::parameters::CH4ChemistryParameters;
 use crate::reference::{
     feedback_warming, permafrost_emissions, prescribed_concentration, prescribed_definition,
@@ -186,7 +187,7 @@ impl CH4Chemistry {
         let alpha = self.parameters.temperature_sensitivity;
         let initial_oh_lifetime = self.parameters.initial_oh_lifetime();
         initial_oh_lifetime
-            / (initial_oh_lifetime / oh_lifetime + alpha * temperature_change.max(0.0))
+            / (initial_oh_lifetime / oh_lifetime + alpha * temperature_change.at_least(0.0))
     }
 
     /// Calculate total lifetime from OH lifetime and non-OH sinks
@@ -249,7 +250,7 @@ impl CH4Chemistry {
             } else {
                 (burden + burden_next) / 2.0
             };
-            oh_lifetime = base_lifetime * (burden_mean / burden_reference).max(1.0).powf(x);
+            oh_lifetime = base_lifetime * (burden_mean / burden_reference).at_least(1.0).powf(x);
             if iteration > 0 {
                 oh_lifetime *= 1.0 - 0.5 * x * delta_burden / burden;
             }

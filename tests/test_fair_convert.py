@@ -158,3 +158,22 @@ def test_nan_emissions_are_rejected() -> None:
     f = _fair()
     f.emissions[5, 0, 0, SPECIES.index("CH4")] = np.nan
     assert _issues(f) == {(IssueKind.NON_FINITE, "Emissions|CH4")}
+
+
+@pytest.mark.parametrize(
+    ("bounds", "kind"),
+    [
+        (lambda b: b[:1], IssueKind.SHAPE),
+        (lambda b: b[::-1], IssueKind.OUT_OF_RANGE),
+        (lambda b: np.r_[b[:-1], b[-1] + 1], IssueKind.UNSUPPORTED),
+    ],
+)
+def test_bad_timebounds_are_rejected(bounds: Any, kind: IssueKind) -> None:
+    f = _fair()
+    f.timebounds = bounds(np.asarray(f.timebounds))
+    assert (kind, "timebounds") in _issues(f)
+
+
+def test_unknown_config_names_the_configs() -> None:
+    with pytest.raises(ValueError, match=r"no config 'zzz'.*\['c'\]"):
+        from_fair(_fair(), config="zzz")

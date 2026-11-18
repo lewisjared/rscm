@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from typing import Self, final
 
 import numpy as np
+import pandas as pd
 from numpy.typing import NDArray
 
 # Type aliases
@@ -138,22 +139,22 @@ class Bound:
     """
     Bounded wrapper for any distribution.
 
-    Constrains samples from an underlying distribution to lie within [low, high]
-    using rejection sampling.
+    Truncates an underlying distribution to [low, high], sampling by inverse CDF.
 
     Parameters
     ----------
     distribution : Uniform | Normal | LogNormal | Bound
         The distribution to bound
     low : float
-        Lower bound (inclusive)
+        Lower bound (inclusive, may be -inf)
     high : float
-        Upper bound (inclusive)
+        Upper bound (inclusive, may be inf)
 
     Raises
     ------
     ValueError
-        If low >= high
+        If low >= high or either is NaN, or [low, high] holds no probability mass
+        of the distribution
     """
 
     def __init__(
@@ -210,6 +211,11 @@ class ParameterSet:
         -------
         Self
             Returns self for method chaining
+
+        Raises
+        ------
+        ValueError
+            If a parameter called `name` already exists
         """
     def sample_random(self, n: int) -> Arr:
         """
@@ -440,7 +446,7 @@ class Target:
         Raises
         ------
         ValueError
-            If variable not found
+            If variable not found, or start and end are not finite with start <= end
         """
     def get_variable(self, name: str) -> VariableTarget | None:
         """
@@ -462,6 +468,29 @@ class Target:
         """Get names of all variables with observations."""
     def n_observations(self) -> int:
         """Get the total number of observations across all variables."""
+    @staticmethod
+    def from_dataframe(
+        df: pd.DataFrame,
+        variable: str | None = None,
+        time_col: str = "time",
+        value_col: str = "value",
+        uncertainty_col: str | None = None,
+        relative_error: F | None = None,
+    ) -> Target:
+        """
+        Create a Target from a pandas DataFrame, one observation per row.
+
+        Columns may also be index levels.
+        See `rscm.calibrate.pandas_helpers.target_from_dataframe`.
+
+        Raises
+        ------
+        ValueError
+            If a required column is missing, `variable` is needed but not given,
+            a `variable` entry is missing, or an observation is invalid
+        TypeError
+            If the time column is not numeric
+        """
     def time_range(self) -> tuple[F, F] | None:
         """
         Get the time range covered by all observations.
@@ -619,24 +648,39 @@ class WalkerInit:
     @staticmethod
     def ball(centre: Sequence[F], radius: F) -> WalkerInit:
         """
-        Initialise walkers in a ball around a point.
+        Initialise walkers in a box around a point.
+
+        Each coordinate is drawn uniformly from `centre ± radius / 2`.
 
         Parameters
         ----------
         centre : array-like
             Centre point for initialisation
         radius : float
-            Radius of ball for random initialisation
+            Width of the box in each parameter, finite and positive
+
+        Raises
+        ------
+        ValueError
+            If `radius` is not finite and positive
         """
     @staticmethod
     def explicit(positions: list[list[F]]) -> WalkerInit:
         """
         Initialise walkers at explicit positions.
 
+        The number of rows sets the number of walkers,
+        unless `n_walkers` is passed to the run.
+
         Parameters
         ----------
         positions : list[list[float]]
             2D list of walker positions, shape (n_walkers, n_parameters)
+
+        Raises
+        ------
+        ValueError
+            If there are fewer than 2 rows or the rows differ in length
         """
 
 @final
@@ -722,7 +766,8 @@ class Chain:
         Returns
         -------
         dict[str, float]
-            R-hat statistic for each parameter. Values < 1.1 indicate convergence.
+            R-hat statistic for each parameter. Values < 1.1 indicate convergence..
+            Empty, with a UserWarning, if fewer than 4 samples remain after discard.
         """
     def ess(self, discard: int = 0) -> dict[str, F]:
         """
@@ -736,7 +781,8 @@ class Chain:
         Returns
         -------
         dict[str, float]
-            Effective sample size for each parameter
+            Effective sample size for each parameter.
+            Empty, with a UserWarning, if fewer than 10 samples remain after discard.
         """
     def autocorr_time(self, discard: int = 0) -> dict[str, F]:
         """
@@ -750,7 +796,8 @@ class Chain:
         Returns
         -------
         dict[str, float]
-            Autocorrelation time for each parameter
+            Autocorrelation time for each parameter.
+            Empty, with a UserWarning, if fewer than 10 samples remain after discard.
         """
     def is_converged(self, discard: int = 0, threshold: F = 1.1) -> bool:
         """
@@ -796,6 +843,8 @@ class Chain:
         """
         Merge another chain into this one (in-place).
 
+        Merging a chain with itself doubles it.
+
         Parameters
         ----------
         other : Chain
@@ -815,6 +864,30 @@ class Chain:
     @property
     def n_iterations(self) -> int:
         """Total iterations run."""
+    @property
+    def n_failed_evaluations(self) -> int:
+        """
+        Number of evaluations rejected because the prior, model or likelihood failed.
+
+        Counts only the run that produced this chain object, not a loaded chain.
+        """
+    @property
+    def first_failure(self) -> str | None:
+        """Message of the first failed evaluation, or None if none failed."""
+    def to_dataframe(self, discard: int = 0) -> pd.DataFrame:
+        """
+        Convert the chain to a pandas DataFrame.
+
+        Parameters
+        ----------
+        discard : int, optional
+            Number of initial samples to discard as burn-in
+
+        Returns
+        -------
+        pandas.DataFrame
+            One column per parameter plus log_prob, indexed by (walker, iteration)
+        """
     def __len__(self) -> int:
         """Return number of stored samples per walker."""
 
@@ -836,6 +909,12 @@ class EnsembleSampler:
         Likelihood function
     target : Target
         Observation targets
+
+    Raises
+    ------
+    ValueError
+        If the runner's `parameter_names` do not name each parameter exactly once.
+        They may be in a different order: values are passed to the runner by name.
 
     Examples
     --------
@@ -864,6 +943,9 @@ class EnsembleSampler:
         n_iterations: int,
         init: WalkerInit,
         thin: int = 1,
+        *,
+        n_walkers: int | None = None,
+        seed: int | None = None,
     ) -> Chain:
         """
         Run MCMC sampling.
@@ -875,7 +957,13 @@ class EnsembleSampler:
         init : WalkerInit
             Initialisation strategy
         thin : int, optional
-            Store every Nth sample (default: 1)
+            Store every Nth sample, between 1 and `n_iterations` (default: 1)
+        n_walkers : int, optional
+            Number of walkers, even and at least 2.
+            Defaults to the rows of explicit positions, else `default_n_walkers()`.
+        seed : int, optional
+            Seed for walker initialisation and sampling.
+            Equal seeds give equal chains.
 
         Returns
         -------
@@ -887,6 +975,12 @@ class EnsembleSampler:
         ValueError
             If no initial walker has a finite log posterior.
             The message includes the first prior, model or likelihood error.
+
+        Warns
+        -----
+        RuntimeWarning
+            If evaluations failed and their proposals were rejected.
+            `Chain.n_failed_evaluations` and `Chain.first_failure` give the details.
         """
     def run_with_progress(
         self,
@@ -894,6 +988,9 @@ class EnsembleSampler:
         init: WalkerInit,
         thin: int,
         progress_callback: Callable[[ProgressInfo], None],
+        *,
+        n_walkers: int | None = None,
+        seed: int | None = None,
     ) -> Chain:
         """
         Run MCMC with progress callback.
@@ -909,6 +1006,12 @@ class EnsembleSampler:
         progress_callback : callable
             Function called with ProgressInfo after each iteration.
             An exception it raises stops sampling and propagates unchanged.
+        n_walkers : int, optional
+            Number of walkers, even and at least 2.
+            Defaults to the rows of explicit positions, else `default_n_walkers()`.
+        seed : int, optional
+            Seed for walker initialisation and sampling.
+            Equal seeds give equal chains.
 
         Returns
         -------
@@ -923,6 +1026,9 @@ class EnsembleSampler:
         checkpoint_every: int,
         checkpoint_path: str,
         progress_callback: Callable[[ProgressInfo], None] | None = None,
+        *,
+        n_walkers: int | None = None,
+        seed: int | None = None,
     ) -> Chain:
         """
         Run MCMC with checkpointing.
@@ -942,6 +1048,12 @@ class EnsembleSampler:
         progress_callback : callable, optional
             Progress callback function.
             An exception it raises stops sampling and propagates unchanged.
+        n_walkers : int, optional
+            Number of walkers, even and at least 2.
+            Defaults to the rows of explicit positions, else `default_n_walkers()`.
+        seed : int, optional
+            Seed for walker initialisation and sampling.
+            Equal seeds give equal chains.
 
         Returns
         -------
@@ -955,6 +1067,8 @@ class EnsembleSampler:
         checkpoint_every: int,
         checkpoint_path: str,
         progress_callback: Callable[[ProgressInfo], None] | None = None,
+        *,
+        seed: int | None = None,
     ) -> Chain:
         """
         Resume sampling from checkpoint.
@@ -972,11 +1086,19 @@ class EnsembleSampler:
         progress_callback : callable, optional
             Progress callback function.
             An exception it raises stops sampling and propagates unchanged.
+        seed : int, optional
+            Seed for the remaining iterations
 
         Returns
         -------
         Chain
             MCMC chain with all samples (original + new)
+
+        Raises
+        ------
+        ValueError
+            If the checkpoint's parameter names or thinning interval
+            differ from this run's
         """
     @staticmethod
     def with_stretch_parameter(
@@ -1000,7 +1122,7 @@ class EnsembleSampler:
         target : Target
             Target observations to calibrate against
         a : float
-            Stretch move parameter (default is 2.0). Must be > 1.0.
+            Stretch move parameter (default is 2.0). Must be finite and greater than 1.
 
         Returns
         -------
@@ -1066,6 +1188,12 @@ class OptimisationResult:
     @property
     def converged(self) -> bool:
         """Whether the optimiser converged."""
+    @property
+    def n_failed_evaluations(self) -> int:
+        """Number of evaluations rejected because prior, model or likelihood failed."""
+    @property
+    def first_failure(self) -> str | None:
+        """Message of the first failed evaluation, or None if none failed."""
 
 @final
 class PointEstimator:
@@ -1083,6 +1211,12 @@ class PointEstimator:
     target : Target
         Observation targets
 
+    Raises
+    ------
+    ValueError
+        If the runner's `parameter_names` do not name each parameter exactly once.
+        They may be in a different order: values are passed to the runner by name.
+
     Examples
     --------
     >>> estimator = PointEstimator(parameters, runner, likelihood, target)
@@ -1098,7 +1232,9 @@ class PointEstimator:
         likelihood: GaussianLikelihood,
         target: Target,
     ) -> None: ...
-    def optimise(self, optimiser: Optimiser, n_samples: int) -> OptimisationResult:
+    def optimise(
+        self, optimiser: Optimiser, n_samples: int, *, seed: int | None = None
+    ) -> OptimisationResult:
         """
         Run optimisation to find best-fit parameters.
 
@@ -1107,12 +1243,24 @@ class PointEstimator:
         optimiser : Optimiser
             Optimisation algorithm
         n_samples : int
-            Number of samples to evaluate (for random search)
+            Number of samples to evaluate (for random search), at least 1
+        seed : int, optional
+            Seed for sampling, so equal seeds give equal results
 
         Returns
         -------
         OptimisationResult
             Optimisation result with best parameters
+
+        Raises
+        ------
+        ValueError
+            If `n_samples` is 0, or no sample has a finite log posterior
+
+        Warns
+        -----
+        RuntimeWarning
+            If evaluations failed and were rejected
         """
     def clear_history(self) -> None:
         """Clear evaluation history."""

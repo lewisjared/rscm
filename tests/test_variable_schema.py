@@ -64,20 +64,20 @@ class TestVariableSchemaBuilder:
 
     def test_add_aggregate_mean(self):
         schema = VariableSchema()
-        schema.add_variable("Value|A", "units")
-        schema.add_variable("Value|B", "units")
-        schema.add_aggregate("Average", "units", "mean", ["Value|A", "Value|B"])
+        schema.add_variable("Value|A", "W/m^2")
+        schema.add_variable("Value|B", "W/m^2")
+        schema.add_aggregate("Average", "W/m^2", "mean", ["Value|A", "Value|B"])
 
         agg = schema.aggregates["Average"]
         assert agg.operation_type == "mean"
 
     def test_add_aggregate_weighted(self):
         schema = VariableSchema()
-        schema.add_variable("Value|A", "units")
-        schema.add_variable("Value|B", "units")
+        schema.add_variable("Value|A", "W/m^2")
+        schema.add_variable("Value|B", "W/m^2")
         schema.add_aggregate(
             "Weighted Total",
-            "units",
+            "W/m^2",
             "weighted_sum",
             ["Value|A", "Value|B"],
             weights=[0.6, 0.4],
@@ -89,26 +89,68 @@ class TestVariableSchemaBuilder:
 
     def test_weighted_requires_weights(self):
         schema = VariableSchema()
-        schema.add_variable("Value|A", "units")
+        schema.add_variable("Value|A", "W/m^2")
 
         with pytest.raises(ValueError, match="weights must be provided"):
-            schema.add_aggregate("Weighted", "units", "weighted_sum", ["Value|A"])
+            schema.add_aggregate("Weighted", "W/m^2", "weighted_sum", ["Value|A"])
 
     def test_invalid_operation_raises(self):
         schema = VariableSchema()
-        schema.add_variable("Value|A", "units")
+        schema.add_variable("Value|A", "W/m^2")
 
         with pytest.raises(ValueError, match="Unknown operation"):
-            schema.add_aggregate("Bad", "units", "Invalid", ["Value|A"])
+            schema.add_aggregate("Bad", "W/m^2", "Invalid", ["Value|A"])
 
     def test_contains(self):
         schema = VariableSchema()
-        schema.add_variable("Var1", "units")
-        schema.add_aggregate("Agg1", "units", "sum", ["Var1"])
+        schema.add_variable("Var1", "W/m^2")
+        schema.add_aggregate("Agg1", "W/m^2", "sum", ["Var1"])
 
         assert schema.contains("Var1")
         assert schema.contains("Agg1")
         assert not schema.contains("Nonexistent")
+
+
+class TestVariableSchemaInputs:
+    @pytest.mark.parametrize("method", ["add_variable", "add_aggregate"])
+    def test_duplicate_name(self, method):
+        schema = VariableSchema()
+        schema.add_variable("Effective Radiative Forcing|CO2", "W/m^2")
+        schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
+        args = {
+            "add_variable": ("Effective Radiative Forcing|CO2", "W/m^2"),
+            "add_aggregate": (
+                "Effective Radiative Forcing|CO2",
+                "W/m^2",
+                "sum",
+                ["Effective Radiative Forcing|CH4"],
+            ),
+        }[method]
+        with pytest.raises(
+            ValueError,
+            match="already defines 'Effective Radiative Forcing\\|CO2'",
+        ):
+            getattr(schema, method)(*args)
+
+    def test_duplicate_aggregate(self):
+        schema = VariableSchema()
+        schema.add_variable("A", "W/m^2")
+        schema.add_aggregate("Total", "W/m^2", "sum", ["A"])
+        with pytest.raises(ValueError, match="already defines 'Total'"):
+            schema.add_variable("Total", "W/m^2")
+
+    @pytest.mark.parametrize("method", ["add_variable", "add_aggregate"])
+    def test_unknown_unit(self, method):
+        schema = VariableSchema()
+        args = ("Total", "notaunit!!", "sum", ["A"])
+        n = 2 if method == "add_variable" else 4
+        with pytest.raises(ValueError, match="'Total' has unit 'notaunit!!'"):
+            getattr(schema, method)(*args[:n])
+
+    def test_empty_unit(self):
+        schema = VariableSchema()
+        schema.add_variable("Ratio", "")
+        assert schema.variables["Ratio"].unit == ""
 
 
 class TestVariableSchemaValidation:
@@ -173,12 +215,12 @@ class TestVariableSchemaValidation:
 
     def test_weight_count_mismatch_fails(self):
         schema = VariableSchema()
-        schema.add_variable("A", "units")
-        schema.add_variable("B", "units")
-        schema.add_variable("C", "units")
+        schema.add_variable("A", "W/m^2")
+        schema.add_variable("B", "W/m^2")
+        schema.add_variable("C", "W/m^2")
         schema.add_aggregate(
             "Total",
-            "units",
+            "W/m^2",
             "weighted_sum",
             ["A", "B", "C"],
             weights=[0.5, 0.5],  # 2 weights, 3 contributors
@@ -191,8 +233,8 @@ class TestVariableSchemaValidation:
         # Need to construct this manually since the Python API doesn't allow
         # adding aggregates that reference undefined contributors before validation
         schema = VariableSchema()
-        schema.add_aggregate("A", "units", "sum", ["B"])
-        schema.add_aggregate("B", "units", "sum", ["A"])
+        schema.add_aggregate("A", "W/m^2", "sum", ["B"])
+        schema.add_aggregate("B", "W/m^2", "sum", ["A"])
 
         with pytest.raises(ValueError, match="Circular dependency"):
             schema.validate()

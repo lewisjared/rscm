@@ -11,6 +11,7 @@ use super::likelihood::PyGaussianLikelihood;
 use super::model_runner::PyModelRunner;
 use super::parameter_set::PyParameterSet;
 use super::target::PyTarget;
+use super::{into_py_err, warn_failures};
 
 /// Walker initialisation strategy.
 ///
@@ -26,7 +27,7 @@ pub struct PyWalkerInit {
 enum WalkerInitInner {
     FromPrior,
     Ball { centre: Vec<f64>, radius: f64 },
-    Explicit { positions: Vec<Vec<f64>> },
+    Explicit { positions: Array2<f64> },
 }
 
 impl PyWalkerInit {
@@ -38,18 +39,15 @@ impl PyWalkerInit {
                 centre: centre.clone(),
                 radius: *radius,
             },
-            WalkerInitInner::Explicit { positions } => {
-                // Convert Vec<Vec<f64>> to Array2<f64>
-                let n_walkers = positions.len();
-                let n_parameters = positions.first().map_or(0, |row| row.len());
-                let flat: Vec<f64> = positions
-                    .iter()
-                    .flat_map(|row| row.iter().copied())
-                    .collect();
-                let array = Array2::from_shape_vec((n_walkers, n_parameters), flat)
-                    .expect("Invalid explicit positions shape");
-                WalkerInit::Explicit(array)
-            }
+            WalkerInitInner::Explicit { positions } => WalkerInit::Explicit(positions.clone()),
+        }
+    }
+
+    /// Number of explicit walker positions, if any.
+    fn n_explicit(&self) -> Option<usize> {
+        match &self.inner {
+            WalkerInitInner::Explicit { positions } => Some(positions.nrows()),
+            _ => None,
         }
     }
 }
@@ -68,30 +66,72 @@ impl PyWalkerInit {
 
     /// Create a Ball initialisation strategy.
     ///
+    /// Each walker coordinate is drawn uniformly from `centre ± radius / 2`,
+    /// so walkers fill a box of width `radius` around `centre`.
+    ///
     /// Parameters
     /// ----------
     /// centre : list[float]
     ///     Parameter values at the centre of the ball
     /// radius : float
-    ///     Radius of the ball (standard deviation for each parameter)
+    ///     Width of the box in each parameter, finite and positive
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If `radius` is not finite and positive
     #[staticmethod]
-    fn ball(centre: Vec<f64>, radius: f64) -> Self {
-        PyWalkerInit {
-            inner: WalkerInitInner::Ball { centre, radius },
+    fn ball(centre: Vec<f64>, radius: f64) -> PyResult<Self> {
+        if !(radius.is_finite() && radius > 0.0) {
+            return Err(PyValueError::new_err(format!(
+                "radius ({radius}) must be finite and positive"
+            )));
         }
+        Ok(PyWalkerInit {
+            inner: WalkerInitInner::Ball { centre, radius },
+        })
     }
 
     /// Create an Explicit initialisation strategy.
+    ///
+    /// The number of rows sets the number of walkers unless `n_walkers` is passed to the run.
     ///
     /// Parameters
     /// ----------
     /// positions : list[list[float]]
     ///     2D array of walker positions, shape (n_walkers, n_parameters)
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If there are fewer than 2 rows or the rows differ in length
     #[staticmethod]
-    fn explicit(positions: Vec<Vec<f64>>) -> Self {
-        PyWalkerInit {
-            inner: WalkerInitInner::Explicit { positions },
+    fn explicit(positions: Vec<Vec<f64>>) -> PyResult<Self> {
+        if positions.len() < 2 {
+            return Err(PyValueError::new_err(format!(
+                "positions must have at least 2 rows (one per walker), got {}",
+                positions.len()
+            )));
         }
+        let n_parameters = positions[0].len();
+        if let Some((i, row)) = positions
+            .iter()
+            .enumerate()
+            .find(|(_, row)| row.len() != n_parameters)
+        {
+            return Err(PyValueError::new_err(format!(
+                "positions rows must all have the same length: row 0 has {n_parameters} values, \
+                 row {i} has {}",
+                row.len()
+            )));
+        }
+        let n_walkers = positions.len();
+        let flat: Vec<f64> = positions.into_iter().flatten().collect();
+        let positions = Array2::from_shape_vec((n_walkers, n_parameters), flat)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(PyWalkerInit {
+            inner: WalkerInitInner::Explicit { positions },
+        })
     }
 
     fn __repr__(&self) -> String {
@@ -101,7 +141,7 @@ impl PyWalkerInit {
                 format!("WalkerInit.ball({:?}, {})", centre, radius)
             }
             WalkerInitInner::Explicit { positions } => {
-                format!("WalkerInit.explicit({} walkers)", positions.len())
+                format!("WalkerInit.explicit({} walkers)", positions.nrows())
             }
         }
     }
@@ -168,14 +208,22 @@ fn python_progress_callback(
     }
 }
 
-/// Convert a sampling result, re-raising any exception from the progress callback.
-fn into_py_chain(chain: crate::Result<Chain>, raised: Option<PyErr>) -> PyResult<PyChain> {
+/// Convert a sampling result, re-raising any exception from the progress callback or model.
+///
+/// Warns when evaluations failed and their proposals were rejected.
+fn into_py_chain(
+    py: Python<'_>,
+    chain: crate::Result<Chain>,
+    raised: Option<PyErr>,
+    runner: &PyModelRunner,
+) -> PyResult<PyChain> {
     if let Some(err) = raised {
+        runner.take_interrupt();
         return Err(err);
     }
-    chain
-        .map(PyChain)
-        .map_err(|e| PyValueError::new_err(e.to_string()))
+    let chain = chain.map_err(|e| into_py_err(e, runner))?;
+    warn_failures(py, chain.failures())?;
+    Ok(PyChain(chain))
 }
 
 /// Affine-invariant ensemble sampler for Bayesian parameter estimation.
@@ -206,6 +254,12 @@ fn into_py_chain(chain: crate::Result<Chain>, raised: Option<PyErr>) -> PyResult
 ///     Likelihood function for computing log probability of observations
 /// target : Target
 ///     Target observations to calibrate against with uncertainties
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the runner's `parameter_names` do not name each parameter exactly once.
+///     They may be in a different order: values are passed to the runner by name.
 ///
 /// Examples
 /// --------
@@ -263,6 +317,49 @@ pub struct PyEnsembleSampler {
     sampler: EnsembleSampler<PyModelRunner, PyGaussianLikelihood>,
 }
 
+impl PyEnsembleSampler {
+    /// Shared implementation of the run methods.
+    #[allow(clippy::too_many_arguments)]
+    fn run_impl(
+        &self,
+        py: Python<'_>,
+        n_iterations: usize,
+        init: &PyWalkerInit,
+        thin: usize,
+        checkpoint_every: usize,
+        checkpoint_path: String,
+        progress_callback: Option<Py<PyAny>>,
+        n_walkers: Option<usize>,
+        seed: Option<u64>,
+    ) -> PyResult<PyChain> {
+        let n_walkers = n_walkers
+            .or_else(|| init.n_explicit())
+            .unwrap_or_else(|| self.sampler.default_n_walkers());
+        let rust_init = init.to_rust();
+        let runner = self.sampler.runner();
+        runner.take_interrupt();
+
+        let mut raised = None;
+        let callback = progress_callback.map(|cb| python_progress_callback(cb, &mut raised));
+
+        // Release the GIL while sampling, except for callback and model calls.
+        let chain = py.detach(|| {
+            self.sampler.run_with_checkpoint_and_walkers(
+                n_iterations,
+                rust_init,
+                n_walkers,
+                thin,
+                checkpoint_every,
+                checkpoint_path,
+                callback,
+                seed,
+            )
+        });
+
+        into_py_chain(py, chain, raised, runner)
+    }
+}
+
 #[pymethods]
 impl PyEnsembleSampler {
     #[new]
@@ -271,9 +368,10 @@ impl PyEnsembleSampler {
         runner: PyModelRunner,
         likelihood: PyGaussianLikelihood,
         target: PyTarget,
-    ) -> Self {
-        let sampler = EnsembleSampler::new(parameters.0, runner, likelihood, target.0);
-        PyEnsembleSampler { sampler }
+    ) -> PyResult<Self> {
+        let sampler = EnsembleSampler::new(parameters.0, runner, likelihood, target.0)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(PyEnsembleSampler { sampler })
     }
 
     /// Get the default number of walkers for this sampler.
@@ -295,7 +393,13 @@ impl PyEnsembleSampler {
     /// init : WalkerInit
     ///     Walker initialisation strategy
     /// thin : int, optional
-    ///     Thinning interval (store every thin-th sample). Default is 1.
+    ///     Thinning interval (store every thin-th sample), between 1 and `n_iterations`.
+    ///     Default is 1.
+    /// n_walkers : int, optional
+    ///     Number of walkers, even and at least 2.
+    ///     Defaults to the rows of explicit positions, else `default_n_walkers()`.
+    /// seed : int, optional
+    ///     Seed for walker initialisation and sampling, so equal seeds give equal chains.
     ///
     /// Returns
     /// -------
@@ -308,17 +412,36 @@ impl PyEnsembleSampler {
     ///     If no initial walker has a finite log posterior.
     ///     The message includes the first prior, model or likelihood error.
     ///
+    /// Warns
+    /// -----
+    /// RuntimeWarning
+    ///     If evaluations failed and their proposals were rejected.
+    ///     `Chain.n_failed_evaluations` and `Chain.first_failure` give the details.
+    ///
     /// Examples
     /// --------
-    /// >>> chain = sampler.run(1000, WalkerInit.from_prior(), thin=1)
-    #[pyo3(signature = (n_iterations, init, thin=1))]
-    fn run(&self, n_iterations: usize, init: PyWalkerInit, thin: usize) -> PyResult<PyChain> {
-        let rust_init = init.to_rust();
-        let chain = self
-            .sampler
-            .run(n_iterations, rust_init, thin)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-        Ok(PyChain(chain))
+    /// >>> chain = sampler.run(1000, WalkerInit.from_prior(), thin=1, seed=42)
+    #[pyo3(signature = (n_iterations, init, thin=1, *, n_walkers=None, seed=None))]
+    fn run(
+        &self,
+        py: Python<'_>,
+        n_iterations: usize,
+        init: PyWalkerInit,
+        thin: usize,
+        n_walkers: Option<usize>,
+        seed: Option<u64>,
+    ) -> PyResult<PyChain> {
+        self.run_impl(
+            py,
+            n_iterations,
+            &init,
+            thin,
+            0,
+            String::new(),
+            None,
+            n_walkers,
+            seed,
+        )
     }
 
     /// Run the ensemble sampler with progress callback.
@@ -334,6 +457,10 @@ impl PyEnsembleSampler {
     /// progress_callback : callable
     ///     Callback function that receives ProgressInfo objects.
     ///     An exception it raises stops sampling and propagates unchanged.
+    /// n_walkers : int, optional
+    ///     Number of walkers, as for `run`
+    /// seed : int, optional
+    ///     Seed for walker initialisation and sampling
     ///
     /// Returns
     /// -------
@@ -345,7 +472,8 @@ impl PyEnsembleSampler {
     /// >>> def show_progress(info):
     /// ...     print(f"Iteration {info.iteration}/{info.n_iterations}, acceptance={info.acceptance_rate:.2f}")
     /// >>> chain = sampler.run_with_progress(1000, WalkerInit.from_prior(), 1, show_progress)
-    #[pyo3(signature = (n_iterations, init, thin, progress_callback))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (n_iterations, init, thin, progress_callback, *, n_walkers=None, seed=None))]
     fn run_with_progress(
         &self,
         py: Python<'_>,
@@ -353,19 +481,20 @@ impl PyEnsembleSampler {
         init: PyWalkerInit,
         thin: usize,
         progress_callback: Py<PyAny>,
+        n_walkers: Option<usize>,
+        seed: Option<u64>,
     ) -> PyResult<PyChain> {
-        let rust_init = init.to_rust();
-
-        let mut raised = None;
-        let callback = python_progress_callback(progress_callback, &mut raised);
-
-        // Release GIL during sampling (except for callback invocations)
-        let chain = py.detach(|| {
-            self.sampler
-                .run_with_progress(n_iterations, rust_init, thin, callback)
-        });
-
-        into_py_chain(chain, raised)
+        self.run_impl(
+            py,
+            n_iterations,
+            &init,
+            thin,
+            0,
+            String::new(),
+            Some(progress_callback),
+            n_walkers,
+            seed,
+        )
     }
 
     /// Run the ensemble sampler with checkpointing.
@@ -388,6 +517,10 @@ impl PyEnsembleSampler {
     /// progress_callback : callable, optional
     ///     Optional callback function that receives ProgressInfo objects.
     ///     An exception it raises stops sampling and propagates unchanged.
+    /// n_walkers : int, optional
+    ///     Number of walkers, as for `run`
+    /// seed : int, optional
+    ///     Seed for walker initialisation and sampling
     ///
     /// Returns
     /// -------
@@ -400,7 +533,7 @@ impl PyEnsembleSampler {
     /// ...     1000, WalkerInit.from_prior(), 1, 100, "checkpoint"
     /// ... )
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (n_iterations, init, thin, checkpoint_every, checkpoint_path, progress_callback=None))]
+    #[pyo3(signature = (n_iterations, init, thin, checkpoint_every, checkpoint_path, progress_callback=None, *, n_walkers=None, seed=None))]
     fn run_with_checkpoint(
         &self,
         py: Python<'_>,
@@ -410,26 +543,20 @@ impl PyEnsembleSampler {
         checkpoint_every: usize,
         checkpoint_path: String,
         progress_callback: Option<Py<PyAny>>,
+        n_walkers: Option<usize>,
+        seed: Option<u64>,
     ) -> PyResult<PyChain> {
-        let rust_init = init.to_rust();
-
-        // Create optional callback closure
-        let mut raised = None;
-        let callback = progress_callback.map(|cb| python_progress_callback(cb, &mut raised));
-
-        // Release GIL during sampling
-        let chain = py.detach(|| {
-            self.sampler.run_with_checkpoint(
-                n_iterations,
-                rust_init,
-                thin,
-                checkpoint_every,
-                checkpoint_path,
-                callback,
-            )
-        });
-
-        into_py_chain(chain, raised)
+        self.run_impl(
+            py,
+            n_iterations,
+            &init,
+            thin,
+            checkpoint_every,
+            checkpoint_path,
+            progress_callback,
+            n_walkers,
+            seed,
+        )
     }
 
     /// Resume a checkpointed run.
@@ -449,17 +576,25 @@ impl PyEnsembleSampler {
     /// progress_callback : callable, optional
     ///     Optional callback function that receives ProgressInfo objects.
     ///     An exception it raises stops sampling and propagates unchanged.
+    /// seed : int, optional
+    ///     Seed for the remaining iterations
     ///
     /// Returns
     /// -------
     /// Chain
     ///     The complete chain including both resumed and new samples
     ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the checkpoint's parameter names or thinning interval differ from this run's.
+    ///
     /// Examples
     /// --------
     /// >>> # Resume from checkpoint and run to 2000 total iterations
     /// >>> chain = sampler.resume_from_checkpoint(2000, 1, 100, "checkpoint")
-    #[pyo3(signature = (n_iterations, thin, checkpoint_every, checkpoint_path, progress_callback=None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (n_iterations, thin, checkpoint_every, checkpoint_path, progress_callback=None, *, seed=None))]
     fn resume_from_checkpoint(
         &self,
         py: Python<'_>,
@@ -468,12 +603,15 @@ impl PyEnsembleSampler {
         checkpoint_every: usize,
         checkpoint_path: String,
         progress_callback: Option<Py<PyAny>>,
+        seed: Option<u64>,
     ) -> PyResult<PyChain> {
-        // Create optional callback closure
+        let runner = self.sampler.runner();
+        runner.take_interrupt();
+
         let mut raised = None;
         let callback = progress_callback.map(|cb| python_progress_callback(cb, &mut raised));
 
-        // Release GIL during sampling
+        // Release the GIL while sampling, except for callback and model calls.
         let chain = py.detach(|| {
             self.sampler.resume_from_checkpoint(
                 n_iterations,
@@ -481,10 +619,11 @@ impl PyEnsembleSampler {
                 checkpoint_every,
                 checkpoint_path,
                 callback,
+                seed,
             )
         });
 
-        into_py_chain(chain, raised)
+        into_py_chain(py, chain, raised, runner)
     }
 
     /// Create a sampler with custom stretch move parameter.
@@ -500,7 +639,7 @@ impl PyEnsembleSampler {
     /// target : Target
     ///     Target observations to calibrate against
     /// a : float
-    ///     Stretch move parameter (default is 2.0). Must be > 1.0.
+    ///     Stretch move parameter (default is 2.0). Must be finite and greater than 1.
     ///
     /// Returns
     /// -------
@@ -521,8 +660,8 @@ impl PyEnsembleSampler {
         a: f64,
     ) -> PyResult<Self> {
         let sampler = EnsembleSampler::new(parameters.0, runner, likelihood, target.0)
-            .with_stretch_parameter(a)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+            .and_then(|sampler| sampler.with_stretch_parameter(a))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(PyEnsembleSampler { sampler })
     }
 

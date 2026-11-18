@@ -473,3 +473,72 @@ class TestVariableDefinitionWithGrid:
             "Precipitation", "mm / yr", VariableRole.Input, GridType.Hemispheric
         )
         assert str(req.grid) == str(GridType.Hemispheric)
+
+
+@pytest.mark.parametrize(
+    "slice_type, values",
+    [
+        (FourBoxSlice, [1.0, 2.0, 3.0, 4.0]),
+        (HemisphericSlice, [1.0, 2.0]),
+    ],
+)
+class TestSliceSequence:
+    """Slices behave as fixed-length sequences of regional values."""
+
+    def test_iterate(self, slice_type, values):
+        assert list(slice_type.from_array(values)) == values
+
+    def test_negative_index(self, slice_type, values):
+        s = slice_type.from_array(values)
+        assert s[-1] == values[-1]
+        s[-1] = 42.0
+        assert s[len(values) - 1] == 42.0
+
+    @pytest.mark.parametrize("offset", [0, 5])
+    def test_out_of_range_index(self, slice_type, values, offset):
+        s = slice_type.from_array(values)
+        n = len(values)
+        for index in (n + offset, -n - 1 - offset):
+            with pytest.raises(
+                IndexError, match=f"region index {index} is out of range"
+            ):
+                s[index]
+            with pytest.raises(
+                IndexError, match=f"region index {index} is out of range"
+            ):
+                s[index] = 1.0
+
+    def test_get_negative_region(self, slice_type, values):
+        with pytest.raises(ValueError, match="Invalid region index: -1"):
+            slice_type.from_array(values).get(-1)
+
+    def test_equality(self, slice_type, values):
+        s = slice_type.from_array(values)
+        assert s == slice_type.from_array(values)
+        assert s != slice_type.uniform(0.0)
+        assert s != values
+
+
+class TestWindowEdgeCases:
+    def test_history_negative(self):
+        w = TimeseriesWindow([1.0, 2.0, 3.0], 1)
+        with pytest.raises(
+            IndexError, match="history step must be non-negative, got -1"
+        ):
+            w.history(-1)
+
+    @pytest.mark.parametrize(
+        "window",
+        [
+            TimeseriesWindow([1.0, 2.0], 0, times=[2000.0, 2001.0]),
+            FourBoxTimeseriesWindow(
+                [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]], 0, times=[2000.0, 2001.0]
+            ),
+            HemisphericTimeseriesWindow(
+                [[1.0, 2.0], [3.0, 4.0]], 0, times=[2000.0, 2001.0]
+            ),
+        ],
+    )
+    def test_interpolate_nan(self, window):
+        with pytest.raises(ValueError, match="Cannot interpolate at a NaN time"):
+            window.interpolate(float("nan"))

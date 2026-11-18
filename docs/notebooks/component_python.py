@@ -164,7 +164,7 @@ print(f"Output value: {result['output'].to_scalar()}")
 # %%
 input_ts = Timeseries(
     np.asarray([1.0, 2.0, 3.0]),
-    TimeAxis.from_values(np.asarray([1850.0, 2000.0, 2100.0])),
+    TimeAxis.from_values(np.asarray([1750.0, 2000.0, 2100.0])),
     "K",
     InterpolationStrategy.Previous,
 )

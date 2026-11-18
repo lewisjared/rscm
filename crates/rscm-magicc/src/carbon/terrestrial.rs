@@ -50,6 +50,7 @@
 //! - `Nitrogen Pool` (Gt N), only with the `nitrogen` parameter
 //! - `Nitrogen Flux|{Uptake,Recycling,Losses}` (Gt N/yr), only with the `nitrogen` parameter
 
+use crate::bounds::Bounded;
 use rscm_core::names::{NITROGEN_FLUX_DEPOSITION, NITROGEN_FLUX_FIXATION};
 use std::any::Any;
 
@@ -325,7 +326,7 @@ impl TerrestrialCarbon {
         let half_k = 0.5 * k_eff * dt;
 
         let new_pool = ((1.0 - half_k) * pool_current + flux_in * dt) / (1.0 + half_k);
-        let new_pool = new_pool.max(0.0);
+        let new_pool = new_pool.at_least(0.0);
 
         // Turnover flux (average over step)
         let turnover = 0.5 * k_eff * (pool_current + new_pool);
@@ -484,7 +485,7 @@ impl TerrestrialCarbon {
             state.co2_ref = co2_extrap;
             state.co2_ref_max = co2_extrap;
         } else {
-            state.co2_ref = co2_extrap.min(state.co2_ref_max);
+            state.co2_ref = co2_extrap.at_most(state.co2_ref_max);
         }
         let co2_ref = state.co2_ref;
 
@@ -593,7 +594,7 @@ impl TerrestrialCarbon {
             // Re-advance no-feedback pool with gross deforestation
             new_nf_pools[0] =
                 (nf_pool * (1.0 - half_k) + nf_net_flux_plant - gross_defo[0]) / (1.0 + half_k);
-            new_nf_pools[0] = new_nf_pools[0].max(0.0);
+            new_nf_pools[0] = new_nf_pools[0].at_least(0.0);
         }
 
         // No-feedback plant turnover uses preliminary pool (before gross defo),
@@ -623,7 +624,7 @@ impl TerrestrialCarbon {
 
             new_nf_pools[1] =
                 (nf_pool * (1.0 - half_k) + nf_net_flux - gross_defo[1]) / (1.0 + half_k);
-            new_nf_pools[1] = new_nf_pools[1].max(0.0);
+            new_nf_pools[1] = new_nf_pools[1].at_least(0.0);
         }
 
         // No-feedback detritus turnover for soil (uses preliminary pool)
@@ -650,7 +651,7 @@ impl TerrestrialCarbon {
 
             new_nf_pools[2] =
                 (nf_pool * (1.0 - half_k) + nf_net_flux - gross_defo[2]) / (1.0 + half_k);
-            new_nf_pools[2] = new_nf_pools[2].max(0.0);
+            new_nf_pools[2] = new_nf_pools[2].at_least(0.0);
         }
 
         // Step 13: Advance main pools with feedbacks using gross deforestation

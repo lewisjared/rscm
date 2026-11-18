@@ -90,40 +90,53 @@ def chain_to_dataframe(chain, discard=0):
     return df
 
 
-def target_from_dataframe(
-    df, time_col="time", value_col="value", uncertainty_col=None, relative_error=None
+def target_from_dataframe(  # noqa: PLR0913
+    df,
+    variable=None,
+    time_col="time",
+    value_col="value",
+    uncertainty_col=None,
+    relative_error=None,
 ):
     """
     Create a Target from a pandas DataFrame.
 
-    This is a convenience constructor for creating Target objects from
-    tabular data in pandas format.
+    Each row is one observation.
+    Columns may also be index levels, including levels of a MultiIndex.
 
     Parameters
     ----------
     df : pandas.DataFrame
-        DataFrame containing observations. Should have columns for time,
-        values, and optionally uncertainties. If the DataFrame has a
-        'variable' column, it will be used to group observations by variable.
-        Otherwise all data is treated as a single variable (must specify
-        variable name in index or pass as single group).
+        Observations with time and value columns and,
+        unless `relative_error` is given, uncertainties.
+        A `variable` column groups rows by variable.
+        Without one, pass the variable name as `variable`.
+    variable : str, optional
+        Variable name for every row, for a DataFrame without a `variable` column
     time_col : str, optional
-        Name of the time column (default: 'time')
+        Name of the time column (default: 'time').
+        Times must be numeric, such as decimal years.
     value_col : str, optional
         Name of the value column (default: 'value')
     uncertainty_col : str, optional
-        Name of the uncertainty column (default: None). If None and
-        relative_error is None, uncertainties are required to be in the
-        DataFrame with column name 'uncertainty'.
+        Name of the 1-sigma uncertainty column (default: 'uncertainty')
     relative_error : float, optional
-        If specified, use this relative error (as a fraction) to compute
-        uncertainties as `relative_error * abs(value)`. This overrides
-        uncertainty_col. (default: None)
+        If given, each uncertainty is `relative_error * abs(value)`
+        and any uncertainty column is ignored.
 
     Returns
     -------
     Target
         Target object containing the observations from the DataFrame
+
+    Raises
+    ------
+    ValueError
+        If a required column is missing, `variable` is needed but not given,
+        a `variable` entry is missing, or an observation is invalid
+        (non-finite, or with a non-positive uncertainty)
+    TypeError
+        If the time column is not numeric
 
     Examples
     --------
@@ -135,8 +148,7 @@ def target_from_dataframe(
     ...         "uncertainty": [0.1, 0.1, 0.1, 0.15],
     ...     }
     ... )
-    >>> target = Target.from_dataframe(df)
-    >>> target.add_variable("Surface Air Temperature Change", df)
+    >>> target = Target.from_dataframe(df, variable="Surface Air Temperature Change")
 
     >>> # Multiple variables
     >>> df = pd.DataFrame(
@@ -161,55 +173,60 @@ def target_from_dataframe(
     ...         "value": [0.0, 0.2, 0.5, 1.0],
     ...     }
     ... )
-    >>> target = Target.from_dataframe(df, relative_error=0.1)  # 10% error
-
-    Notes
-    -----
-    This function is currently a placeholder and needs to be implemented
-    based on the specific Target API requirements. The implementation should:
-
-    1. Check if 'variable' column exists for multi-variable data
-    2. Group by variable if present
-    3. For each group/variable:
-        - Extract time, value arrays
-        - Compute or extract uncertainties
-        - Create Observation objects
-        - Add to VariableTarget
-    4. Construct and return Target
-
-    Raises
-    ------
-    ValueError
-        If required columns are missing or data format is invalid
+    >>> target = Target.from_dataframe(df, variable="y", relative_error=0.1)
     """
     from rscm._lib.calibrate import Target  # noqa: PLC0415
 
-    target = Target()
-
-    # Check if multi-variable format
-    if "variable" in df.columns:
-        # Group by variable
-        for var_name, var_df in df.groupby("variable"):
-            _add_variable_from_df(
-                target,
-                str(var_name),
-                var_df,
-                time_col,
-                value_col,
-                uncertainty_col,
-                relative_error,
-            )
+    if relative_error is None:
+        uncertainty_col = uncertainty_col or "uncertainty"
     else:
-        # Single variable - need variable name
-        # For now, raise error - user should specify variable explicitly
+        uncertainty_col = None
+
+    columns = [time_col, value_col] + ([uncertainty_col] if uncertainty_col else [])
+    index_levels = [name for name in df.index.names if name is not None]
+    df = df.reset_index(level=index_levels) if index_levels else df
+
+    missing = [column for column in columns if column not in df.columns]
+    if missing:
+        hint = "" if relative_error is not None else ", or pass relative_error"
+        msg = f"DataFrame is missing column(s) {missing}{hint}"
+        raise ValueError(msg)
+
+    if not pd.api.types.is_numeric_dtype(df[time_col]):
         msg = (
-            "DataFrame must have 'variable' column for automatic variable detection. "
-            "For single-variable data, create Target manually:\n"
-            "  target = Target()\n"
-            "  target.add_variable(variable_name, observations)"
+            f"Column '{time_col}' must be numeric (e.g. decimal years), "
+            f"got {df[time_col].dtype}"
+        )
+        raise TypeError(msg)
+
+    if "variable" in df.columns:
+        if variable is not None:
+            msg = "Pass either a 'variable' column or variable=..., not both"
+            raise ValueError(msg)
+        n_missing = int(df["variable"].isna().sum())
+        if n_missing:
+            msg = f"{n_missing} row(s) have a missing variable"
+            raise ValueError(msg)
+        groups = df.groupby("variable", sort=False)
+    elif variable is not None:
+        groups = [(variable, df)]
+    else:
+        msg = (
+            "DataFrame has no 'variable' column: pass the variable name as variable=..."
         )
         raise ValueError(msg)
 
+    target = Target()
+    for var_name, var_df in groups:
+        _add_variable_from_df(
+            target,
+            str(var_name),
+            var_df,
+            time_col,
+            value_col,
+            uncertainty_col,
+            relative_error,
+        )
     return target
 
 
@@ -217,31 +234,15 @@ def _add_variable_from_df(  # noqa: PLR0913
     target, var_name, df, time_col, value_col, uncertainty_col, relative_error
 ):
     """Add a single variable from a DataFrame to a Target."""
-    times = df[time_col].values
-    values = df[value_col].values
+    times = df[time_col].to_numpy(dtype=float)
+    values = df[value_col].to_numpy(dtype=float)
 
-    # Determine uncertainties
     if relative_error is not None:
-        # Use relative error - add observations with relative uncertainty
         for t, v in zip(times, values):
             target.add_observation_relative(
                 var_name, float(t), float(v), float(relative_error)
             )
     else:
-        # Use absolute uncertainties
-        if uncertainty_col is not None:
-            uncertainties = df[uncertainty_col].values
-        elif "uncertainty" in df.columns:
-            uncertainties = df["uncertainty"].values
-        else:
-            msg = (
-                f"No uncertainty information provided for variable '{var_name}'. "
-                "Specify uncertainty_col or relative_error parameter."
-            )
-            raise ValueError(msg)
-
-        # Add observations with absolute uncertainty
+        uncertainties = df[uncertainty_col].to_numpy(dtype=float)
         for t, v, u in zip(times, values, uncertainties):
             target.add_observation(var_name, float(t), float(v), float(u))
-
-    return target

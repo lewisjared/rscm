@@ -48,9 +48,13 @@ boxes = timeseries.get_four_box_timeseries_by_name("Surface Air Temperature Chan
 temperature = boxes @ prescribed.area_fractions()
 ```
 
-The time axis has annual steps and should start in 1750, the year of MAGICC7's initial state.
-With the default parameters it must reach 2019,
-the year to which MAGICC7 scales its prescribed aerosol and land-use forcing.
+The time axis must have annual steps on whole years and start in 1750, MAGICC7's preindustrial reference year.
+RSCM measures forcing from the first year's concentrations, so a run that starts in another year would not match MAGICC7.
+The run must end in or after 1766, the year after the last aerosol or land-use forcing file starts,
+and no later than the solar forcing file ends, 2500 for the packaged one.
+`from_magicc7` rejects any other time axis, stating the years it allows.
+A run that ends before 2019 scales its aerosol and land-use forcing in its last year, as MAGICC7 does.
+
 `emissions` holds one value per year for `"<species>|Fossil"` and `"<species>|Biosphere"`
 of each species in `full.SECTORAL_EMISSIONS`, in the units that mapping gives.
 These are the gcages units, such as `Mt CO2/yr` and `Mt SO2/yr`.
@@ -61,8 +65,26 @@ Missing, unknown, misshapen or non-finite emissions raise `InputValidationError`
 see [Validation and exit codes](#validation-and-exit-codes).
 Emissions are annual mean rates, labelled by the year they start, as MAGICC7 input files are.
 
+The `emissions` keys are species and sector, such as `CO2|Fossil` or `CFC12`,
+not RSCM variable names such as `Emissions|CO2|Fossil`.
+MAGICC7 and its output files name the sectors `MAGICC Fossil and Industrial` and `MAGICC AFOLU`.
+`rscm.names.convert_variable_name` translates those names, and the few species names that differ,
+to RSCM's:
+
+```python
+from rscm.names import convert_variable_name
+
+convert_variable_name("Emissions|CO2|MAGICC AFOLU")  # "Emissions|CO2|Biosphere"
+```
+
+Drop the leading `Emissions|` from the translated name to get the `emissions` key.
+
 `run()` returns the `Model` after its last step.
 Read outputs from `model.timeseries()`.
+A CO2, CH4 or N2O concentration that falls to zero or below, such as under large negative emissions,
+stops the run with a `RuntimeError` naming the gas and year, where MAGICC7 stops on the NaN forcing it gives.
+As in MAGICC7, ocean and land temperature changes are capped at 25 K.
+MAGICC7 warns that such a run is invalid, but RSCM does not warn yet.
 Surface air temperature change and other regional variables are four-box timeseries
 in northern ocean, northern land, southern ocean, southern land order.
 Their grid weights are always MAGICC7's default land fractions, 42% of the northern hemisphere
@@ -79,6 +101,10 @@ The keyword arguments of `from_magicc7` override MAGICC7's setup:
   As in MAGICC7 these are the concentration files' values in the first year,
   which `full.file_initial_concentrations()` gives.
   A gas the translation does not track, or a negative or non-finite value, is rejected.
+  With the default OLBL forcing, so are CO2 below 180 ppm, CH4 below 340 ppb and N2O below 200 ppb,
+  the lowest concentrations its formulae are fitted to (Etminan et al. 2016).
+  With IPCCTAR, only CO2, CH4 or N2O that is not positive is rejected.
+  A very low initial CO2 can then run to the 25 K temperature cap, as it does in MAGICC7.
 - `input_files` replaces the input files that `full.load_inputs` reads.
   Load them once and pass them to every translation of an ensemble.
 - `concentration_driven=True` prescribes every concentration for the whole run,
@@ -103,7 +129,7 @@ Its `exit_code` follows BSD `sysexits.h`, from the first issue:
 | `missing`      | 78        | An absent emissions series, input file or concentration file needed before its switch year               |
 | `unsupported`  | 69        | A MAGICC7 switch or value for a feature RSCM lacks, such as `oceancc_model = "BOXDIFF"`                   |
 | `non-finite`   | 65        | NaN or infinity in emissions, initial concentrations, concentration files or the prescribed forcing      |
-| `out-of-range` | 65        | Negative concentrations, a non-positive climate sensitivity, depth or lifetime, or an all-zero pattern   |
+| `out-of-range` | 65        | Negative concentrations, initial concentrations below the fitted range, a run not starting in 1750 or ending too early, a non-positive climate sensitivity, depth or lifetime, or an all-zero pattern |
 | `shape`        | 65        | Emissions not one per year, a pattern without four boxes, or a file that ends before the years it covers |
 
 `rscm.magicc.checks` holds the classification of every MAGICC7 configuration name RSCM does not read.
@@ -162,9 +188,9 @@ MAGICC emissions-driven
   time axis  1750 to 2101, 351 steps
   components (12, in the order added)
     Permafrost           18 parameters
-    CH4Chemistry         6 parameters
+    CH4Chemistry         18 parameters
     ...
-    ClimateUDEB          26 parameters
+    ClimateUDEB          29 parameters
   lags (4)
     Surface Air Temperature Change -> every consumer
     Atmospheric Concentrations|CO2 -> TerrestrialCarbon

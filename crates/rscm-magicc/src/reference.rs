@@ -1,5 +1,6 @@
 //! Fixed calendar-year references used by MAGICC7 feedbacks
 
+use crate::bounds::Bounded;
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::names::prescribed;
 use rscm_core::state::ScalarWindow;
@@ -59,7 +60,7 @@ pub(crate) fn feedback_warming(
     if t_current < start_year {
         return 0.0;
     }
-    (temperature.get() - value_at_year(temperature, t_current, start_year)).max(0.0)
+    (temperature.get() - value_at_year(temperature, t_current, start_year)).at_least(0.0)
 }
 
 /// Permafrost emissions named `name` when `enabled`, otherwise zero.

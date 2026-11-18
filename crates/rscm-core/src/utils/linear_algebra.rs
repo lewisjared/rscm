@@ -50,13 +50,20 @@ pub fn thomas_solve(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {
     let mut d_prime = vec![0.0; n];
 
     // Forward sweep
-    assert!(b[0].abs() > 1e-15, "Zero pivot encountered at row 0");
+    assert!(
+        b[0].abs() > 1e-15 || b[0].is_nan(),
+        "Zero pivot encountered at row 0"
+    );
     c_prime[0] = c[0] / b[0];
     d_prime[0] = d[0] / b[0];
 
     for i in 1..n {
         let denom = b[i] - a[i] * c_prime[i - 1];
-        assert!(denom.abs() > 1e-15, "Zero pivot encountered at row {}", i);
+        assert!(
+            denom.abs() > 1e-15 || denom.is_nan(),
+            "Zero pivot encountered at row {}",
+            i
+        );
 
         if i < n - 1 {
             c_prime[i] = c[i] / denom;
@@ -177,13 +184,20 @@ pub fn thomas_solve_inplace(a: &[f64], b: &mut [f64], c: &mut [f64], d: &mut [f6
     assert!(n > 0, "System must have at least one equation");
 
     // Forward sweep
-    assert!(b[0].abs() > 1e-15, "Zero pivot encountered at row 0");
+    assert!(
+        b[0].abs() > 1e-15 || b[0].is_nan(),
+        "Zero pivot encountered at row 0"
+    );
     c[0] /= b[0];
     d[0] /= b[0];
 
     for i in 1..n {
         let denom = b[i] - a[i] * c[i - 1];
-        assert!(denom.abs() > 1e-15, "Zero pivot encountered at row {}", i);
+        assert!(
+            denom.abs() > 1e-15 || denom.is_nan(),
+            "Zero pivot encountered at row {}",
+            i
+        );
         if i < n - 1 {
             c[i] /= denom;
         }
@@ -333,6 +347,18 @@ mod tests {
 
         assert_eq!(x.len(), 1);
         assert!((x[0] - 2.0).abs() < 1e-10, "x[0] = {} (expected 2.0)", x[0]);
+    }
+
+    #[test]
+    fn test_thomas_nan_pivot_gives_nan() {
+        let a = [0.0, 1.0];
+        let mut b = [f64::NAN, 2.0];
+        let mut c = [1.0, 0.0];
+        let mut d = [1.0, 1.0];
+
+        thomas_solve_inplace(&a, &mut b, &mut c, &mut d);
+
+        assert!(d.iter().all(|x| x.is_nan()), "{d:?}");
     }
 
     #[test]

@@ -3,7 +3,7 @@
 //! This module contains the `Chain` struct for storing MCMC samples with support
 //! for thinning, serialisation, and merging chains from checkpointed runs.
 
-use crate::{Error, Result};
+use crate::{Error, Failures, Result};
 use indexmap::IndexMap;
 use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,10 @@ pub struct Chain {
 
     /// Total number of iterations run (including thinned samples)
     pub(crate) n_iterations: usize,
+
+    /// Evaluations rejected because they failed, in this process only (not saved)
+    #[serde(skip)]
+    pub(crate) failures: Failures,
 }
 
 impl Chain {
@@ -47,6 +51,7 @@ impl Chain {
             parameter_names,
             thin: thin.max(1), // Ensure at least 1
             n_iterations: 0,
+            failures: Failures::default(),
         }
     }
 
@@ -95,6 +100,13 @@ impl Chain {
     /// Get parameter names.
     pub fn parameter_names(&self) -> &[String] {
         &self.parameter_names
+    }
+
+    /// Evaluations rejected during sampling because the prior, model or likelihood failed.
+    ///
+    /// Not saved with the chain, so a loaded chain reports none.
+    pub fn failures(&self) -> &Failures {
+        &self.failures
     }
 
     /// Get flattened samples, optionally discarding initial burn-in samples.
@@ -272,6 +284,7 @@ impl Chain {
         self.samples.extend(other.samples.iter().cloned());
         self.log_probs.extend(other.log_probs.iter().cloned());
         self.n_iterations += other.n_iterations;
+        self.failures.extend(&other.failures);
 
         Ok(())
     }

@@ -11,14 +11,14 @@
 //! ```ignore
 //! use rscm_calibrate::{Optimiser, PointEstimator};
 //!
-//! let estimator = PointEstimator::new(parameters, runner, likelihood, target);
-//! let result = estimator.optimise(Optimiser::RandomSearch, 1000)?;
+//! let estimator = PointEstimator::new(parameters, runner, likelihood, target)?;
+//! let result = estimator.optimise(Optimiser::RandomSearch, 1000, None)?;
 //!
 //! println!("Best parameters: {:?}", result.best_parameters);
 //! println!("Best log likelihood: {}", result.best_log_likelihood);
 //! ```
 
-use crate::{point_estimator::PointEstimator, Result};
+use crate::{point_estimator::PointEstimator, rng_from_seed, Error, Failures, Result};
 
 /// Optimisation algorithm to use for point estimation.
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +49,9 @@ pub struct OptimisationResult {
 
     /// Whether the optimiser converged
     pub converged: bool,
+
+    /// Evaluations rejected because the prior, model or likelihood failed
+    pub failures: Failures,
 }
 
 impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> PointEstimator<R, L> {
@@ -57,7 +60,8 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
     /// # Arguments
     ///
     /// * `optimiser` - Optimisation algorithm to use
-    /// * `n_samples` - Number of samples to evaluate
+    /// * `n_samples` - Number of samples to evaluate, at least 1
+    /// * `seed` - Seed for sampling, so equal seeds give equal results. `None` seeds from the OS.
     ///
     /// # Returns
     ///
@@ -66,36 +70,48 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
     /// # Example
     ///
     /// ```ignore
-    /// let result = estimator.optimise(Optimiser::RandomSearch, 1000)?;
+    /// let result = estimator.optimise(Optimiser::RandomSearch, 1000, None)?;
     /// ```
     pub fn optimise(
         &mut self,
         optimiser: Optimiser,
         n_samples: usize,
+        seed: Option<u64>,
     ) -> Result<OptimisationResult> {
+        if n_samples == 0 {
+            return Err(Error::InvalidParameter(
+                "n_samples must be at least 1".to_string(),
+            ));
+        }
         match optimiser {
-            Optimiser::RandomSearch => self.optimise_random_search(n_samples),
+            Optimiser::RandomSearch => self.optimise_random_search(n_samples, seed),
         }
     }
 
     /// Optimise using random search.
     ///
     /// Samples n_samples parameter sets from the prior and returns the best.
-    fn optimise_random_search(&mut self, n_samples: usize) -> Result<OptimisationResult> {
-        // Sample parameters from prior
-        let samples = self.sample_initial_parameters(n_samples);
+    fn optimise_random_search(
+        &mut self,
+        n_samples: usize,
+        seed: Option<u64>,
+    ) -> Result<OptimisationResult> {
+        let samples = self.sample_initial_parameters(n_samples, seed);
 
         let mut best_parameters: Option<Vec<f64>> = None;
         let mut best_log_posterior = f64::NEG_INFINITY;
         let mut best_log_likelihood = f64::NEG_INFINITY;
 
-        let mut first_error = None;
+        let mut failures = Failures::default();
 
         for parameters in samples.iter() {
-            let log_posterior = self.try_evaluate(parameters).unwrap_or_else(|e| {
-                first_error.get_or_insert(e);
-                f64::NEG_INFINITY
-            });
+            let log_posterior = match self.try_evaluate(parameters) {
+                Ok(log_posterior) => log_posterior,
+                Err(e) => {
+                    failures.record(e)?;
+                    f64::NEG_INFINITY
+                }
+            };
 
             if log_posterior > best_log_posterior {
                 best_log_posterior = log_posterior;
@@ -113,8 +129,8 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
         }
 
         let best = best_parameters.ok_or_else(|| {
-            let reason = crate::no_valid_reason(first_error.as_ref(), "sample");
-            crate::Error::SamplingError(format!("Random search found no valid samples ({reason})"))
+            let reason = crate::no_valid_reason(failures.first.as_ref(), "sample");
+            Error::SamplingError(format!("Random search found no valid samples ({reason})"))
         })?;
 
         Ok(OptimisationResult {
@@ -123,13 +139,14 @@ impl<R: crate::model_runner::ModelRunner, L: crate::likelihood::LikelihoodFn> Po
             best_log_posterior,
             n_evaluations: n_samples,
             converged: true, // Random search always "converges"
+            failures,
         })
     }
 
     /// Draw `n` parameter vectors from the prior.
-    fn sample_initial_parameters(&self, n: usize) -> Vec<Vec<f64>> {
+    fn sample_initial_parameters(&self, n: usize, seed: Option<u64>) -> Vec<Vec<f64>> {
         self.parameters
-            .sample_random(n)
+            .sample_random_with_rng(n, &mut rng_from_seed(seed))
             .outer_iter()
             .map(|row| row.to_vec())
             .collect()
@@ -192,11 +209,11 @@ mod tests {
         let runner = QuadraticModel::new();
         let likelihood = GaussianLikelihood::default();
 
-        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target).unwrap();
 
         // Run random search
         let result = estimator
-            .optimise(Optimiser::RandomSearch, 100)
+            .optimise(Optimiser::RandomSearch, 100, None)
             .expect("Optimisation should succeed");
 
         // Check result
@@ -257,10 +274,10 @@ mod tests {
         let runner = Quadratic2D::new();
         let likelihood = GaussianLikelihood::default();
 
-        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target);
+        let mut estimator = PointEstimator::new(parameters, runner, likelihood, target).unwrap();
 
         let result = estimator
-            .optimise(Optimiser::RandomSearch, 500)
+            .optimise(Optimiser::RandomSearch, 500, None)
             .expect("Optimisation should succeed");
 
         // Check parameters are in bounds
@@ -296,10 +313,11 @@ mod tests {
             runner,
             GaussianLikelihood::default(),
             Target::new(),
-        );
+        )
+        .unwrap();
 
         let err = estimator
-            .optimise(Optimiser::RandomSearch, 10)
+            .optimise(Optimiser::RandomSearch, 10, None)
             .expect_err("no evaluation succeeded");
 
         assert!(err.to_string().contains("no valid samples"), "got: {err}");
@@ -319,10 +337,11 @@ mod tests {
             QuadraticModel::new(),
             GaussianLikelihood::default(),
             target,
-        );
+        )
+        .unwrap();
 
         let result = estimator
-            .optimise(Optimiser::RandomSearch, 50)
+            .optimise(Optimiser::RandomSearch, 50, None)
             .expect("samples drawn from a Normal prior are valid");
 
         assert!(result.best_log_posterior.is_finite());
@@ -330,5 +349,43 @@ mod tests {
             .evaluated_parameters()
             .iter()
             .all(|p| p[0].is_finite()));
+    }
+
+    fn failing_estimator(
+        threshold: Option<f64>,
+    ) -> PointEstimator<crate::test_support::FailingModel, GaussianLikelihood> {
+        let mut parameters = ParameterSet::new();
+        parameters.add("x", Box::new(Uniform::new(0.0, 1.0).unwrap()));
+        let mut target = Target::new();
+        target.add_variable("value").add(0.0, 0.2, 0.1).unwrap();
+        PointEstimator::new(
+            parameters,
+            crate::test_support::FailingModel::new(threshold),
+            GaussianLikelihood::default(),
+            target,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_random_search_seed_and_failures() {
+        let run = |seed| {
+            failing_estimator(Some(0.5))
+                .optimise(Optimiser::RandomSearch, 40, Some(seed))
+                .unwrap()
+        };
+        let (a, b) = (run(7), run(7));
+        assert_eq!(a.best_parameters, b.best_parameters);
+        assert_eq!(a.failures, b.failures);
+        assert!(a.failures.count > 0);
+        assert!(a.failures.first.unwrap().contains("solver diverged"));
+    }
+
+    #[test]
+    fn test_random_search_rejects_zero_samples() {
+        let err = failing_estimator(None)
+            .optimise(Optimiser::RandomSearch, 0, None)
+            .unwrap_err();
+        assert!(err.to_string().contains("n_samples"), "got: {err}");
     }
 }

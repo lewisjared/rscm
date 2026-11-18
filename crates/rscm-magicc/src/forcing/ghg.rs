@@ -39,7 +39,7 @@ use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputState, OutputWriter, VariableDefinition,
     VariableRole,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -246,7 +246,7 @@ impl Component for GHGForcing {
 
     fn solve_into(
         &self,
-        _t_current: Time,
+        t_current: Time,
         _t_next: Time,
         input_state: &InputState,
         _internal_state: &mut dyn ComponentState,
@@ -257,6 +257,19 @@ impl Component for GHGForcing {
         let co2 = inputs.co2_concentration.get();
         let ch4 = inputs.ch4_concentration.get();
         let n2o = inputs.n2o_concentration.get();
+        // MAGICC7 stops on the NaN forcing a non-positive concentration gives.
+        for (gas, value, unit) in [
+            ("CO2", co2, "ppm"),
+            ("CH4", ch4, "ppb"),
+            ("N2O", n2o, "ppb"),
+        ] {
+            if value <= 0.0 {
+                return Err(RSCMError::Error(format!(
+                    "{gas} concentration is {value} {unit} in {t_current}, \
+                     but GHG forcing needs positive CO2, CH4 and N2O concentrations"
+                )));
+            }
+        }
 
         let result = self.calculate_forcings(co2, ch4, n2o);
 
@@ -585,6 +598,46 @@ mod tests {
     }
 
     // ===== Component Trait Tests =====
+
+    fn solve_with(co2: FloatValue, ch4: FloatValue, n2o: FloatValue) -> RSCMResult<OutputState> {
+        use rscm_core::timeseries::Timeseries;
+        use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
+        let items: Vec<_> = [("CO2", co2), ("CH4", ch4), ("N2O", n2o)]
+            .into_iter()
+            .map(|(gas, value)| TimeseriesItem {
+                data: TimeseriesData::Scalar(Timeseries::from_values(
+                    ndarray::array![value, value],
+                    ndarray::array![2000.0, 2001.0],
+                )),
+                name: format!("Atmospheric Concentrations|{gas}"),
+            })
+            .collect();
+        let input_state = InputState::build(items.iter().collect(), 2000.0);
+        olbl_component().solve(2000.0, 2001.0, &input_state)
+    }
+
+    #[test]
+    fn test_solve_rejects_non_positive_concentrations() {
+        let error = solve_with(-5.0, 800.0, 270.0).unwrap_err().to_string();
+        assert!(
+            error.contains("CO2 concentration is -5 ppm in 2000"),
+            "{error}"
+        );
+        let error = solve_with(400.0, 800.0, 0.0).unwrap_err().to_string();
+        assert!(
+            error.contains("N2O concentration is 0 ppb in 2000"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn test_solve_keeps_nan_concentrations() {
+        let output = solve_with(FloatValue::NAN, 800.0, 270.0).unwrap();
+        assert!(output["Effective Radiative Forcing|CO2"]
+            .as_scalar()
+            .unwrap()
+            .is_nan());
+    }
 
     #[test]
     fn test_definitions() {

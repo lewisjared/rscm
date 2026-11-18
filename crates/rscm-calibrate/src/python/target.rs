@@ -20,7 +20,7 @@ use pyo3::prelude::*;
 /// Raises
 /// ------
 /// ValueError
-///     If uncertainty is not positive
+///     If time or value is not finite, or uncertainty is not finite and positive
 #[pyclass(name = "Observation")]
 #[derive(Clone)]
 pub struct PyObservation(pub Observation);
@@ -154,7 +154,7 @@ impl PyTarget {
     /// Raises
     /// ------
     /// ValueError
-    ///     If uncertainty is not positive
+    ///     If time or value is not finite, or uncertainty is not finite and positive
     fn add_observation(
         mut slf: PyRefMut<'_, Self>,
         variable: String,
@@ -192,7 +192,7 @@ impl PyTarget {
     /// Raises
     /// ------
     /// ValueError
-    ///     If computed uncertainty is not positive
+    ///     If time or value is not finite, or the computed uncertainty is not finite and positive
     fn add_observation_relative(
         mut slf: PyRefMut<'_, Self>,
         variable: String,
@@ -229,7 +229,7 @@ impl PyTarget {
     /// Raises
     /// ------
     /// ValueError
-    ///     If variable doesn't exist
+    ///     If the variable doesn't exist, or `start` and `end` are not finite with `start <= end`
     fn set_reference_period(
         mut slf: PyRefMut<'_, Self>,
         variable: String,
@@ -239,7 +239,8 @@ impl PyTarget {
         slf.0
             .get_variable_mut(&variable)
             .ok_or_else(|| PyValueError::new_err(format!("Variable '{}' not found", variable)))?
-            .with_reference_period(start, end);
+            .with_reference_period(start, end)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(slf)
     }
 

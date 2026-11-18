@@ -35,6 +35,7 @@
 //! Each change is the sum of the fossil and biosphere changes, in MAGICC7's order.
 //! Aviation NOx is not separated from other NOx.
 
+use crate::bounds::Bounded;
 use crate::parameters::OzoneForcingParameters;
 use crate::reference::{first_value, require_annual, value_at_year};
 use rscm_core::component::{
@@ -89,7 +90,7 @@ impl OzoneForcing {
     /// Stratospheric ozone ERF from EESC and its threshold-year value.
     pub fn strat_forcing(&self, eesc: FloatValue, eesc_threshold: FloatValue) -> FloatValue {
         let p = &self.parameters;
-        let excess = ((eesc - eesc_threshold) / 100.0).max(0.0);
+        let excess = ((eesc - eesc_threshold) / 100.0).at_least(0.0);
         p.stratospheric_o3_scale * excess.powf(p.stratospheric_cl_exponent)
     }
 

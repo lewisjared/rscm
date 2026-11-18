@@ -63,6 +63,8 @@ class InputSpec:
     ----------
     file
         Path to input data file (optional)
+    value
+        Constant value of the input over the whole time axis (optional)
     unit
         Physical unit of the input (optional)
     required
@@ -70,6 +72,7 @@ class InputSpec:
     """
 
     file: str | None = None
+    value: float | None = None
     unit: str | None = None
     required: bool = False
 

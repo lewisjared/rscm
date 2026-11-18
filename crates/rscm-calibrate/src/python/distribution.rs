@@ -21,7 +21,7 @@ impl PyUniform {
     /// Raises
     /// ------
     /// ValueError
-    ///     If low >= high
+    ///     If low or high is not finite, or low >= high
     #[new]
     fn new(low: f64, high: f64) -> PyResult<Self> {
         Uniform::new(low, high)
@@ -100,7 +100,7 @@ impl PyNormal {
     /// Raises
     /// ------
     /// ValueError
-    ///     If std_dev <= 0
+    ///     If mean is not finite, or std_dev is not finite and positive
     #[new]
     fn new(mean: f64, std_dev: f64) -> PyResult<Self> {
         Normal::new(mean, std_dev)
@@ -272,21 +272,22 @@ pub struct PyBound(pub Bound);
 
 #[pymethods]
 impl PyBound {
-    /// Constrain a distribution to bounds using rejection sampling.
+    /// Truncate a distribution to [low, high], sampling by inverse CDF.
     ///
     /// Parameters
     /// ----------
-    /// distribution : Uniform | Normal | LogNormal
+    /// distribution : Uniform | Normal | LogNormal | Bound
     ///     The distribution to constrain
     /// low : float
-    ///     Lower bound (inclusive)
+    ///     Lower bound (inclusive, may be -inf)
     /// high : float
-    ///     Upper bound (inclusive)
+    ///     Upper bound (inclusive, may be inf)
     ///
     /// Raises
     /// ------
     /// ValueError
-    ///     If low >= high
+    ///     If low >= high or either is NaN, or [low, high] holds no probability mass
+    ///     of the distribution
     #[new]
     fn new(distribution: PyDistribution, low: f64, high: f64) -> PyResult<Self> {
         let dist_box: Box<dyn Distribution> = match distribution {

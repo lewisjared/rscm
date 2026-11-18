@@ -2,7 +2,7 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING, Literal, Protocol, Self, TypeVar, final
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from .state import StateValue
 
@@ -28,20 +28,41 @@ class TimeAxis:
     """
 
     @staticmethod
-    def from_values(values: Arr) -> TimeAxis:
-        """Create from step start times. The last step is as long as the one before."""
+    def from_values(values: ArrayLike) -> TimeAxis:
+        """Create from step start times. The last step is as long as the one before.
+
+        Raises
+        ------
+        ValueError
+            If there are fewer than 2 values,
+            or they are not finite and strictly increasing.
+        """
     @staticmethod
-    def from_bounds(bounds: Arr) -> TimeAxis:
-        """Create from step bounds, one more than the number of steps."""
+    def from_bounds(bounds: ArrayLike) -> TimeAxis:
+        """Create from step bounds, one more than the number of steps.
+
+        Raises
+        ------
+        ValueError
+            If there are fewer than 2 bounds,
+            or they are not finite and strictly increasing.
+        """
     def values(self) -> Arr:
         """Return the start time of each step."""
     def bounds(self) -> Arr:
         """Return the bounds of the steps."""
     def __len__(self) -> int: ...
-    def at(self, time_index: int) -> F:
-        """Return the start time of the step at `time_index`."""
-    def at_bounds(self, time_index: int) -> tuple[F, F]:
-        """Return the start and end of the step at `time_index`."""
+    def __eq__(self, other: object, /) -> bool: ...
+    def at(self, time_index: int) -> F | None:
+        """Return the start time of the step at `time_index`, or None out of range.
+
+        A negative index counts from the end.
+        """
+    def at_bounds(self, time_index: int) -> tuple[F, F] | None:
+        """Return the start and end of the step at `time_index`, or None out of range.
+
+        A negative index counts from the end.
+        """
 
 @final
 class InterpolationStrategy(Enum):
@@ -57,18 +78,33 @@ class Timeseries:
 
     def __init__(
         self,
-        values: Arr,
+        values: ArrayLike,
         time_axis: TimeAxis,
         unit: str,
         interpolation_strategy: InterpolationStrategy,
-    ) -> None: ...
+    ) -> None:
+        """Create a timeseries of `values` on `time_axis`.
+
+        Raises
+        ------
+        ValueError
+            If `unit` is not empty and is not a unit `Unit` parses,
+            or `values` does not match `time_axis`.
+        """
     @staticmethod
-    def from_values(values: Arr, time_axis: TimeAxis) -> Timeseries: ...
+    def from_values(values: ArrayLike, time_axis: TimeAxis) -> Timeseries: ...
     def with_interpolation_strategy(
         self, interpolation_strategy: InterpolationStrategy
     ) -> Timeseries: ...
     def __len__(self) -> int: ...
-    def set(self, time_index: int, value: float) -> None: ...
+    def set(self, time_index: int, value: float) -> None:
+        """Set the value at `time_index`, counting a negative index from the end.
+
+        Raises
+        ------
+        IndexError
+            If `time_index` is out of range.
+        """
     def values(self) -> Arr: ...
     @property
     def latest(self) -> int: ...
@@ -76,8 +112,14 @@ class Timeseries:
     def unit(self) -> str: ...
     @property
     def time_axis(self) -> TimeAxis: ...
+    @property
+    def interpolation_strategy(self) -> InterpolationStrategy: ...
     def latest_value(self) -> F | None: ...
-    def at(self, time_index: int) -> F: ...
+    def at(self, time_index: int) -> F | None:
+        """Return the value at `time_index`, or None out of range.
+
+        A negative index counts from the end.
+        """
     def at_time(self, time: F) -> F:
         """
         Interpolates a value for a given time using the current interpolation strategy.
@@ -89,6 +131,8 @@ class Timeseries:
 
         Raises
         ------
+        ValueError
+            If `time` is NaN.
         RuntimeError
             Something went wrong during the interpolation.
 
@@ -106,7 +150,7 @@ class FourBoxTimeseries:
 
     def __init__(
         self,
-        values: NDArray[np.float64],
+        values: ArrayLike,
         time_axis: TimeAxis,
         unit: str,
         interpolation_strategy: InterpolationStrategy,
@@ -132,7 +176,7 @@ class HemisphericTimeseries:
 
     def __init__(
         self,
-        values: NDArray[np.float64],
+        values: ArrayLike,
         time_axis: TimeAxis,
         unit: str,
         interpolation_strategy: InterpolationStrategy,
@@ -155,7 +199,18 @@ class HemisphericTimeseries:
 @final
 class TimeseriesCollection:
     def __init__(self) -> None: ...
-    def add_timeseries(self, name: str, timeseries: Timeseries) -> None: ...
+    def add_timeseries(
+        self,
+        name: str,
+        timeseries: Timeseries | FourBoxTimeseries | HemisphericTimeseries,
+    ) -> None:
+        """Add a timeseries on any grid, raising ValueError if the name is taken."""
+    def __getitem__(
+        self, name: str
+    ) -> Timeseries | FourBoxTimeseries | HemisphericTimeseries:
+        """Get a timeseries on any grid, raising KeyError with close matches."""
+    def __contains__(self, name: str) -> bool: ...
+    def __len__(self) -> int: ...
     def get_timeseries_by_name(self, name: str) -> Timeseries | None:
         """
         Get a scalar timeseries from the collection by name.
@@ -264,6 +319,7 @@ class VariableDefinition:
         grid: GridType = GridType.Scalar,
         timeseries_type: TimeseriesType | None = None,
     ): ...
+    def __repr__(self) -> str: ...
 
 @final
 class PrescribedInput:
@@ -285,7 +341,14 @@ class RustComponent(Protocol):
     def definitions(self) -> list[VariableDefinition]: ...
     def solve(
         self, t_current: float, t_next: float, collection: TimeseriesCollection
-    ) -> dict[str, StateValue]: ...
+    ) -> dict[str, StateValue]:
+        """Solve one step on its own, reading every input from `collection`.
+
+        Raises
+        ------
+        KeyError
+            If `collection` has no timeseries for an input.
+        """
 
 class ComponentBuilder(Protocol):
     """Builder that creates a RustComponent from parameters."""
@@ -294,6 +357,11 @@ class ComponentBuilder(Protocol):
     def from_parameters(parameters: dict[str, F]) -> ComponentBuilder:
         """
         Create a builder object from parameters
+
+        Raises
+        ------
+        ValueError
+            Naming every missing or unknown parameter, or a parameter with a bad value.
 
         Returns
         -------
@@ -321,7 +389,17 @@ class PythonComponent(RustComponent):
     so it is rarely needed directly.
     """
 
-    def __init__(self, component: Component) -> None: ...
+    def __init__(self, component: Component) -> None:
+        """Wrap a component instance.
+
+        Raises
+        ------
+        TypeError
+            If `component` is a class rather than an instance.
+        ValueError
+            If a declared unit names an unknown unit or species.
+        """
+    def __repr__(self) -> str: ...
     def input_names(self) -> list[str]:
         """Get the names of all input variables required by this component."""
     def output_names(self) -> list[str]:
@@ -387,7 +465,14 @@ class VariableSchema:
 
     def __init__(self) -> None: ...
     def add_variable(self, name: str, unit: str, grid: GridType | None = None) -> None:
-        """Add a variable to the schema."""
+        """Add a variable to the schema.
+
+        Raises
+        ------
+        ValueError
+            If the schema already defines `name`, or `unit` is not empty
+            and is not a unit `Unit` parses.
+        """
 
     def add_aggregate(
         self,
@@ -419,8 +504,10 @@ class VariableSchema:
         Raises
         ------
         ValueError
-            If operation is "weighted_sum" but weights not provided, or
-            if operation is not one of "sum", "mean" or "weighted_sum".
+            If operation is "weighted_sum" but weights not provided,
+            if operation is not one of "sum", "mean" or "weighted_sum",
+            if the schema already defines `name`,
+            or if `unit` is not empty and is not a unit `Unit` parses.
         """
 
     def contains(self, name: str) -> bool:
@@ -449,8 +536,9 @@ class ModelBuilder:
     """Builder for a model"""
 
     def __init__(self) -> None: ...
+    def __repr__(self) -> str: ...
     def with_time_axis(self, time_axis: TimeAxis) -> Self:
-        """Set the time axis the model is solved on."""
+        """Set the time axis the model is solved on. `build` fails without one."""
     def with_component(
         self, component: RustComponent | PythonComponent | Component
     ) -> Self:
@@ -461,20 +549,34 @@ class ModelBuilder:
         or an `rscm.component.Component` instance, which it wraps.
         """
     def with_initial_values(self, initial_values: dict[str, F]) -> Self:
-        """Set initial values for state variables, which are required at build time."""
+        """
+        Set initial values for state variables, which are required at build time.
+
+        `build` fails for a name no component reads or produces.
+        """
     def with_initial_grid_values(self, initial_values: dict[str, list[F]]) -> Self:
-        """Add initial values for grid variables, one per region in grid order."""
+        """
+        Add initial values for grid variables, one per region in grid order.
+
+        `build` fails for a name no component reads or produces.
+        """
     def with_prescribed_variable(
         self,
         name: str,
         timeseries: Timeseries | FourBoxTimeseries | HemisphericTimeseries,
     ) -> Self:
-        """Supply prescribed data for a variable on any grid.
+        """
+        Supply prescribed data for a variable on any grid, replacing earlier data.
 
-        Data no component needs is ignored.
+        `build` fails if no component reads the variable,
+        or if a component produces it.
         """
     def with_prescribed_collection(self, timeseries: TimeseriesCollection) -> Self:
-        """Supply prescribed data from a collection. Unneeded timeseries are ignored."""
+        """
+        Supply prescribed data from a collection, replacing earlier data.
+
+        Unneeded timeseries are ignored.
+        """
     def with_lag(self, variable: str) -> Self:
         """
         Lag every edge from a variable.
@@ -575,13 +677,15 @@ class ModelBuilder:
         """
         Build a concrete model from the provided information.
 
+        Warns with a `UserWarning` for prescribed data that has to be extrapolated
+        to cover the time axis.
+
         Raises
         ------
-        Exception
-            If the model cannot be solved because the provided information is
-            inconsistent.
-
-            TODO: improve this error reporting
+        ValueError
+            If the provided information is inconsistent or incomplete,
+            such as a missing time axis or initial value,
+            or a name that matches no variable.
 
         Returns
         -------

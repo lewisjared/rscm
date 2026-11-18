@@ -29,7 +29,18 @@ It is also a testbed for modularising MAGICC and reimplementing it in Rust.
 * MCMC calibration and point estimation (`rscm.calibrate`).
 
 <!--- --8<-- [end:description] -->
-## Getting Started
+## Quickstart
+
+```bash
+pip install rscm
+```
+
+The [quickstart](https://rscm.readthedocs.io/en/latest/getting_started/#quickstart-a-temperature-projection)
+runs the two-layer model under a forcing ramp and plots its warming in about 20 lines.
+The [documentation](https://rscm.readthedocs.io/en/latest/) covers the MAGICC and FaIR models,
+coupling components and writing your own.
+
+## Development
 
 <!--- --8<-- [start:getting-started-dev] -->
 

@@ -41,6 +41,7 @@
 //! With `concentration_switch_year` the concentration follows
 //! `Prescribed Atmospheric Concentrations|N2O` until that year.
 
+use crate::bounds::Bounded;
 use crate::parameters::N2OChemistryParameters;
 use crate::reference::{
     feedback_warming, prescribed_concentration, prescribed_definition, reference_value,
@@ -105,7 +106,7 @@ impl N2OChemistry {
         }
         let p = &self.parameters;
         1.0 / (1.0
-            + temperature_change.max(0.0)
+            + temperature_change.at_least(0.0)
                 * p.meridional_flux_change_per_degree
                 * p.lifetime_sensitivity_to_meridional_flux)
     }
@@ -141,7 +142,7 @@ impl N2OChemistry {
             };
             tau = tau_base
                 * (burden_mean / burden_reference)
-                    .max(1.0)
+                    .at_least(1.0)
                     .powf(self.parameters.lifetime_feedback);
             burden_next = burden + (total_emissions - burden_lagged / tau) * dt;
         }

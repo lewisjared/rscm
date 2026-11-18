@@ -30,7 +30,7 @@
 //!     .add(2020.0, 1.2, 0.1).unwrap();
 //!
 //! // Create and run sampler
-//! let sampler = EnsembleSampler::new(parameters, runner, GaussianLikelihood::new(), target);
+//! let sampler = EnsembleSampler::new(parameters, runner, GaussianLikelihood::new(), target)?;
 //! let chain = sampler.run(1000, WalkerInit::FromPrior, 1)?;
 //!
 //! // Check convergence and extract samples
@@ -53,6 +53,7 @@ mod state;
 
 // Re-export public API
 pub use chain::Chain;
+pub use diagnostics::{MIN_SAMPLES_AUTOCORR, MIN_SAMPLES_R_HAT};
 pub use ensemble::EnsembleSampler;
 pub use init::WalkerInit;
 pub use moves::StretchMove;

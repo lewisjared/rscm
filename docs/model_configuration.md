@@ -15,36 +15,21 @@ The configuration layer provides:
 
 ## Quick Start
 
-/// warning | Work in progress
-`build_model(config)` builds the time axis and components and sets zero initial values,
-but it does not yet read the `[inputs]` or `[initial_values]` tables.
-A model built from `configs/two-layer/defaults.toml` therefore has no forcing, and its temperatures are NaN.
-///
-
-Until `build_model` reads inputs, take the parameters and time axis from the config
-and assemble the model with `ModelBuilder`.
+`build_model(config)` builds a model from a config.
+`configs/two-layer/defaults.toml` gives a constant zero forcing in its `[inputs]` table,
+so pass the forcing for your experiment with `prescribed`.
 Run this from the repository root, where the example configs live:
 
 ```python
 import numpy as np
-from rscm.config import load_config
-from rscm.core import InterpolationStrategy, ModelBuilder, TimeAxis, Timeseries
-from rscm.two_layer import TwoLayerBuilder
+from rscm.config import build_model, load_config
+from rscm.core import InterpolationStrategy, TimeAxis, Timeseries
 
 config = load_config("configs/two-layer/defaults.toml")
-params = config["components"]["climate"]["parameters"]
-time_axis = TimeAxis.from_values(
-    np.arange(config["time"]["start"], config["time"]["end"] + 1, dtype=float)
-)
+time_axis = TimeAxis.from_values(np.arange(config["time"]["start"], config["time"]["end"] + 1))
 erf = Timeseries(np.linspace(0.0, 4.0, len(time_axis)), time_axis, "W/m^2", InterpolationStrategy.Linear)
 
-model = (
-    ModelBuilder()
-    .with_time_axis(time_axis)
-    .with_component(TwoLayerBuilder.from_parameters(params).build())
-    .with_prescribed_variable("Effective Radiative Forcing", erf)
-    .with_initial_values({"Surface Air Temperature Change": 0.0, "Ocean Temperature|Layer 2": 0.0})
-).build()
+model = build_model(config, prescribed={"Effective Radiative Forcing": erf})
 model.run()
 ```
 
@@ -78,7 +63,7 @@ heat_capacity_surface = 8.0   # Surface layer (W yr/(m² K))
 heat_capacity_deep = 100.0    # Deep ocean (W yr/(m² K))
 
 [inputs]
-# "Effective Radiative Forcing" = { file = "data/erf.csv", unit = "W/m^2" }
+"Effective Radiative Forcing" = { value = 0.0, unit = "W/m^2" }
 
 [initial_values]
 # "Surface Air Temperature Change" = 0.0
@@ -92,13 +77,16 @@ heat_capacity_deep = 100.0    # Deep ocean (W yr/(m² K))
 | `model` | Model metadata (name, type, version) |
 | `time` | Time axis configuration |
 | `components` | Component definitions and parameters |
-| `inputs` | Input data file specifications |
+| `inputs` | Constant inputs, as a `value` and `unit` |
+| `initial_values` | Initial values for state variables |
 | `outputs` | Output specifications |
 
 The shipped configs record their schema version as `config_schema` under `[model]`,
 and `ModelConfig` has a matching `config_schema` field.
 Unknown top-level keys are logged as a warning and ignored.
-`initial_values` is not yet a known key, so the `[initial_values]` table in `defaults.toml` logs a warning.
+`build_model` raises `ValidationError` for unknown keys in `[time]`, `[components]` and `[inputs]`.
+`[time]` needs integer `start` and `end` years.
+Input files are not supported yet, so an `[inputs]` entry with a `file` raises `ValidationError`.
 `load_config` does not check the schema version.
 Call `check_schema_version` yourself (see [Schema Versioning](#schema-versioning)).
 
@@ -139,11 +127,11 @@ deep_ocean_efficacy = 1.3 # Higher efficacy
 ## Programmatic Configuration
 
 The TOML examples above live in `configs/two-layer/`.
-Configurations can also be built in Python and passed to `build_model`,
-with the limitation described in the [Quick Start](#quick-start):
+Configurations can also be built in Python and passed to `build_model`:
 
 ```python
-from rscm.config.base import TimeConfig
+from rscm.config import build_model
+from rscm.config.base import InputSpec, TimeConfig
 from rscm.config.models.two_layer import TwoLayerConfig, TwoLayerParameters
 
 config = TwoLayerConfig(
@@ -153,8 +141,13 @@ config = TwoLayerConfig(
         lambda0=0.8,
         deep_ocean_efficacy=1.2,
     ),
+    inputs={"Effective Radiative Forcing": InputSpec(value=3.7, unit="W/m^2")},
 )
+model = build_model(config)
+model.run()
 ```
+
+Pass `prescribed=` to `build_model` instead of `inputs=` for forcing that changes over time.
 
 ## Parameter Metadata System
 
@@ -293,10 +286,11 @@ The builder:
 2. Looks up component builder in registry
 3. Constructs components with parameters
 4. Creates an annual time axis from `start` to `end` inclusive
-5. Sets zero initial values for the state variables
-6. Assembles and returns the model
+5. Sets the initial values for the state variables, zero unless `[initial_values]` gives one
+6. Prescribes the constant `[inputs]` and the `prescribed` timeseries
+7. Assembles and returns the model
 
-It adds no prescribed inputs yet, as the [Quick Start](#quick-start) warns.
+`build_model` raises `ValueError` if no forcing is given.
 
 `build_model` only supports `type = "two-layer"` and raises `ValueError` for any other model type.
 `MAGICCConfig` in `rscm.config.models.magicc` describes MAGICC parameters,
@@ -407,7 +401,7 @@ check_schema_version("2.0.0", "1.0.0")  # Raises IncompatibleSchemaError
 
 ```text
 ConfigError (base)
-├── ValidationError          # Reserved for config validation, not yet raised
+├── ValidationError          # Invalid config, also a ValueError
 ├── IncompatibleSchemaError  # Schema version mismatch
 └── ComponentNotFoundError   # Component not in registry
 ```
