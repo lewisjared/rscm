@@ -256,3 +256,15 @@ def test_ipcctar_runs_from_an_initial_co2_below_the_olbl_range(emissions, input_
     forcing = model.timeseries().get_timeseries_by_name(f"{ERF}|CO2").values()
 
     assert np.isfinite(forcing[1:]).all()
+
+
+def test_run_fails_past_the_maximum_temperature(translated):
+    config, inputs = translated
+    climate = {**config["components"]["ClimateUDEB"], "maximum_temperature": 0.1}
+    components = {**config["components"], "ClimateUDEB": climate}
+    setup = emissions_driven.setup_model(
+        {**config, "components": components}, inputs, TimeAxis.from_values(YEARS)
+    )
+
+    with pytest.raises(RuntimeError, match=r"above the maximum_temperature of 0\.1 K"):
+        setup.run()

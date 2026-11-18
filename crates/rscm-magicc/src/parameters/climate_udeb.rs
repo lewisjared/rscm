@@ -392,7 +392,8 @@ pub struct ClimateUDEBParameters {
     /// Default: 12 (monthly)
     pub steps_per_year: usize,
 
-    /// Cap on the temperature change, to prevent runaway temperatures (MAGICC7 `CORE_MAXIMAL_TEMPERATURE`)
+    /// Highest temperature change a run may reach before it fails.
+    /// MAGICC7 caps temperatures here instead (`CORE_MAXIMAL_TEMPERATURE`).
     ///
     /// unit: K
     ///

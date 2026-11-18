@@ -163,10 +163,7 @@ impl ClimateUDEB {
 
         thomas_solve_inplace(a, b, cc, d);
 
-        let max_temp = p.maximum_temperature;
-        for (old, &temp) in state.ocean_temperatures[hemi].iter_mut().zip(d.iter()) {
-            *old = temp.at_most(max_temp);
-        }
+        state.ocean_temperatures[hemi].copy_from_slice(d);
 
         state.ocean_temperatures[hemi][0]
     }

@@ -83,8 +83,8 @@ Drop the leading `Emissions|` from the translated name to get the `emissions` ke
 Read outputs from `model.timeseries()`.
 A CO2, CH4 or N2O concentration that falls to zero or below, such as under large negative emissions,
 stops the run with a `RuntimeError` naming the gas and year, where MAGICC7 stops on the NaN forcing it gives.
-As in MAGICC7, ocean and land temperature changes are capped at 25 K.
-MAGICC7 warns that such a run is invalid, but RSCM does not warn yet.
+An ocean or land temperature change above 25 K stops the run with a `RuntimeError` naming the year.
+MAGICC7 caps the temperature there and warns that the run is invalid.
 Surface air temperature change and other regional variables are four-box timeseries
 in northern ocean, northern land, southern ocean, southern land order.
 Their grid weights are always MAGICC7's default land fractions, 42% of the northern hemisphere
@@ -104,7 +104,7 @@ The keyword arguments of `from_magicc7` override MAGICC7's setup:
   With the default OLBL forcing, so are CO2 below 180 ppm, CH4 below 340 ppb and N2O below 200 ppb,
   the lowest concentrations its formulae are fitted to (Etminan et al. 2016).
   With IPCCTAR, only CO2, CH4 or N2O that is not positive is rejected.
-  A very low initial CO2 can then run to the 25 K temperature cap, as it does in MAGICC7.
+  A very low initial CO2 can then warm past 25 K, which stops the run.
 - `input_files` replaces the input files that `full.load_inputs` reads.
   Load them once and pass them to every translation of an ensemble.
 - `concentration_driven=True` prescribes every concentration for the whole run,
