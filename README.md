@@ -24,8 +24,12 @@ It is also a testbed for modularising MAGICC and reimplementing it in Rust.
   * GHG, ozone and aerosol forcing, and forcing aggregation with efficacies.
   * The upwelling-diffusion climate and sea level rise.
 * Emissions-driven and concentration-driven MAGICC models (`rscm.magicc.emissions_driven`,
-  `rscm.magicc.concentration_driven`), with `rscm.magicc.full.from_magicc7` to translate MAGICC7's configuration.
+  `rscm.magicc.concentration_driven`),
+  with `rscm.magicc.full.from_magicc7` to translate MAGICC7's configuration.
   They match MAGICC7 v7.5.3 on its SSP245 runs.
+* A port of FaIR v2.2.5 (`rscm.fair`), with ensemble runs and conversion from a configured `fair.FAIR`.
+* Model specs and setups (`rscm.spec`) to inspect, compare and run many models in parallel.
+* TOML model configuration (`rscm.config`) and shared variable names (`rscm.names`).
 * MCMC calibration and point estimation (`rscm.calibrate`).
 
 <!--- --8<-- [end:description] -->

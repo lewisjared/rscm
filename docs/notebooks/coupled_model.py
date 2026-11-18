@@ -322,7 +322,8 @@ print(model.current_time_bounds())
 # %% [markdown]
 # `model.timeseries()` returns the results as a `TimeseriesCollection`.
 # A short `as_dataframe` helper (in the downloadable notebook) converts it to a pandas DataFrame.
-# After one step only the first time point is filled.
+# After one step the modelled variables have values up to the end of that step (1755).
+# Later time points are NaN.
 
 # %%
 results = as_dataframe(model.timeseries(), time_axis)

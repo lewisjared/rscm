@@ -37,6 +37,8 @@ lint-python:
 .PHONY: validate-pyi
 validate-pyi: build-dev  ## Validate .pyi stubs match the actual module
 	uv run python -m mypy.stubtest rscm._lib --allowlist stubtest-allowlist.txt
+	LD_LIBRARY_PATH="$$(uv run --no-sync python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
+		cargo test -q -p rscm-magicc --test python_stub_parameters
 
 .PHONY: lint-rust
 lint-rust:

@@ -236,7 +236,8 @@ A loop that no lag breaks fails `build()` with an error that lists the component
 and the `with_lag_for` calls that would break it.
 Edges into a component that holds its own state come first.
 The builder never chooses a lag itself.
-Packaged models carry their lags in their setups, such as `rscm.magicc.model.LAGS` and `rscm.fair.lags(config)`.
+Packaged models carry their lags in their setups,
+such as `rscm.magicc.model.LAGS` and `rscm.fair.lags(config)`.
 
 ### Model Execution
 
@@ -287,7 +288,6 @@ The builder decides which value `get()` returns, from how the model is wired:
 
 A prescribed input reads the same index as an upstream output,
 so a component reads the same value whether the variable is prescribed or modelled.
-`with_lag(variable)` and `with_lag_for(variable, consumer)` make an edge read the previous step.
 A lagged input's `get()` gives last step's value, and its `interval()` gives last step's start and end.
 Adding a lag changes the model wiring, not the component.
 
@@ -365,26 +365,12 @@ In Rust, `rscm_core::model::build_models` and `run_models` return one result per
 | **Prescribed** | Supplied to the model        | Emissions scenarios, prescribed forcing |
 | **Modelled**   | Computed by model components | CO2 concentration, temperature          |
 
-Whether a variable is prescribed or modelled is determined by the components in the model,
-not by any intrinsic property of the variable itself.
-During the build phase, the `ModelBuilder` analyses all component definitions to identify:
+The components in the model decide whether a variable is prescribed or modelled.
+Any input that no component produces must be supplied with `with_prescribed_variable()`.
+CO2 concentration is modelled in a carbon-cycle model that calculates it from emissions,
+and prescribed in a temperature-only model.
 
-1. **Required inputs**: Variables that components need to read
-2. **Produced outputs**: Variables that components write
-
-Any required input that is not produced by another component in the model
-must be supplied as prescribed data via `with_prescribed_variable()`.
-The same variable can be prescribed in one model configuration and modelled in another,
-depending on which components are included.
-
-For example, CO2 concentration might be:
-
-- **Modelled** in a full carbon-cycle model where a component calculates concentration from emissions
-- **Prescribed** in a temperature-only model where concentration is prescribed directly
-
-The builder collects every component's outputs and states first,
-so the order components are added does not matter.
-It then decides each input's source in this order, stopping at the first match:
+The builder decides each input's source in this order, stopping at the first match:
 
 ```mermaid
 flowchart TD
@@ -409,7 +395,8 @@ naming each missing variable and the components that read it.
 `with_missing_prescribed_allowed()` builds the model anyway, with the missing inputs filled with NaN.
 State variables are also checked: `build()` raises `ValueError` if one has no initial value.
 
-Scalar prescribed data uses `with_prescribed_variable()` and scalar initial values use `with_initial_values()`.
+Scalar prescribed data uses `with_prescribed_variable()`,
+and scalar initial values use `with_initial_values()`.
 Grid variables have their own methods:
 
 - `with_prescribed_variable(name, FourBoxTimeseries(...))` supplies four-box prescribed data.
@@ -440,7 +427,8 @@ and `VariableDefinition::with_timeseries_type` sets it on a hand-written definit
 
 The producer decides the type and its consumers inherit it.
 An input that declares a different type makes `build()` fail.
-`ModelBuilder.with_timeseries_type(variable, TimeseriesType.Average)` declares the type of a prescribed variable.
+`ModelBuilder.with_timeseries_type(variable, TimeseriesType.Average)`
+declares the type of a prescribed variable.
 Without it, a consumer's declaration or the unit decides.
 `Model.timeseries_type(variable)` returns the resolved type.
 
@@ -454,17 +442,14 @@ so prescribing an average with values a model wrote for it gives the same result
 An average a component writes has no value at the last time,
 because no step starts there.
 
-`get()` reads a point at the step's end, index N+1, whether it is prescribed or produced upstream.
-A component's own state and a lagged edge read the step's start, index N.
-`get()` reads an average at its own step, index N, and a component's own average at the step before.
+`get()` reads each type at the index in the [Step Semantics](#step-semantics) table.
 A lag holds when the variable is prescribed,
 so a prescribed run must declare the lags the coupled run declares.
 `rscm.magicc.with_lags` adds MAGICC7's lags, and `rscm.fair.with_lags` adds FaIR's.
 With those lags, prescribing a point or an average with values a model wrote for it
 gives the same results as modelling it.
 
-A lag on an average fails `build()` for now,
-because the first step has no previous value to read.
+A lag on an average fails `build()`, because the first step has no previous value to read.
 
 The type sets the interpolation of each series the builder creates:
 `Previous` for an average and `Linear` for a point.
@@ -512,7 +497,7 @@ values are interpolated according to the `InterpolationStrategy`:
 
 | Strategy   | Behaviour                                     |
 | ---------- | --------------------------------------------- |
-| `Linear`   | Linear interpolation between points (default) |
+| `Linear`   | Linear interpolation between points           |
 | `Previous` | Step function using the previous value        |
 | `Next`     | Step function using the next value            |
 
@@ -568,7 +553,8 @@ the quantity, then the species, then the sector, then any further breakdown.
 For example `Emissions|CO2|Fossil` is the fossil sector of the CO2 emissions.
 
 - A child segment is always a part or breakdown of its parent.
-- Other qualifiers lead the first segment, as in `Prescribed Atmospheric Concentrations|CO2` or `Net Emissions|CO2`.
+- Other qualifiers lead the first segment,
+  as in `Prescribed Atmospheric Concentrations|CO2` or `Net Emissions|CO2`.
 - The grid is metadata on the variable, not part of its name.
 - A name never encodes a step position such as the start or end of a year. The timeseries type carries it.
 - A statistic appears only when a point and an average form of the same quantity coexist,
@@ -589,19 +575,13 @@ to RSCM names.
 
 ## Variable Schema
 
-A **VariableSchema** declares model variables and their aggregation relationships,
-so derived values are computed automatically from multiple component outputs.
+A **VariableSchema** declares a model's variables and the aggregates computed from them,
+so a total needs no component of its own.
+For example, a schema can:
 
-### Why Use Variable Schema?
-
-When building climate models, you often need to aggregate multiple forcing agents into totals:
-
-- Sum CO2, CH4, and N2O forcing into "Effective Radiative Forcing|Greenhouse Gases"
-- Compute weighted averages across regions
-- Build hierarchical aggregates (e.g., "Effective Radiative Forcing" from sub-totals)
-
-Without a schema, you'd need to write custom aggregation components.
-With VariableSchema, you declare the relationships and RSCM handles the rest.
+- Sum CO2, CH4 and N2O forcing into `Effective Radiative Forcing|Greenhouse Gases`.
+- Take a weighted sum across regions.
+- Build `Effective Radiative Forcing` from subtotals that are themselves aggregates.
 
 ### Declaring a Schema
 
@@ -616,7 +596,16 @@ schema.add_variable("Effective Radiative Forcing|CH4", "W/m^2")
 schema.add_variable("Effective Radiative Forcing|N2O", "W/m^2")
 
 # Declare an aggregate and its contributors
-schema.add_aggregate("Effective Radiative Forcing|Greenhouse Gases", "W/m^2", "sum", ["Effective Radiative Forcing|CO2", "Effective Radiative Forcing|CH4", "Effective Radiative Forcing|N2O"])
+schema.add_aggregate(
+    "Effective Radiative Forcing|Greenhouse Gases",
+    "W/m^2",
+    "sum",
+    [
+        "Effective Radiative Forcing|CO2",
+        "Effective Radiative Forcing|CH4",
+        "Effective Radiative Forcing|N2O",
+    ],
+)
 
 schema.validate()
 ```
@@ -652,7 +641,7 @@ model = (
 During build, RSCM:
 
 1. Validates that all aggregate contributors exist
-2. Checks for circular dependencies
+2. Checks that no aggregate contributes to itself
 3. Adds a node to the dependency graph for each aggregate, which runs after its contributors
 4. Ensures unit consistency between contributors and aggregates
 

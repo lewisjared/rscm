@@ -111,6 +111,8 @@ model.step()
 # - `components`: the component graph, with each component's type and parameters.
 # - `collection`: every timeseries, with values solved so far and NaN for later time points.
 # - `time_axis`: the model's time bounds.
+# - `variable_sources`: where each component's inputs come from (prescribed, upstream, lagged or own state).
+# - `timeseries_types`: whether each variable is a point or an average.
 # - `component_states`: internal state that components carry between steps.
 #
 # Most of the string is timeseries values.
@@ -178,7 +180,7 @@ print(f"Finished at {resumed.current_time()}")
 # ## Limitations
 #
 # - A restored model keeps its original time axis and prescribed data.
-#   There is no API yet to change these on a restored model.
+#   There is no API to change these on a restored model.
 #   To run new scenarios from a branch point,
 #   see the [Scenario Pipeline](../scenario_pipeline/) tutorial.
 # - A Python component is saved through its `to_json()` and `from_json()` methods,

@@ -131,7 +131,7 @@ plt.show()
 # The carbon cycle reads the surface air temperature change,
 # but `alpha_temperature=0` turns that feedback off, so a constant zero series stands in for it.
 #
-# To add a temperature response, you would add a climate component such as TwoLayer,
+# A temperature response needs a climate component such as TwoLayer,
 # with a `VariableSchema` aggregate that sums the forcing from each species.
 # See [Coupled Models](../coupled_model/) and [Variable Schemas](../variable_schema/).
 

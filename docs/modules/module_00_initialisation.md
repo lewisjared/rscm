@@ -20,7 +20,7 @@ The work is split between the model framework and the MAGICC7 runner:
 - **Model set-up**: `ModelBuilder` assembles components and prescribed data into a `Model`,
   see [Key Concepts](../key_concepts.md#modelbuilder-pattern).
   `Timeseries` and `TimeseriesCollection` replace the `DATASTORE`,
-  and the `FourBox` grid replaces `DATBOX`, see [Spatial Grids](../grids.md#four_box-magicc-standard).
+  and the `FourBox` grid replaces `DATBOX`, see [Spatial Grids](../grids.md#fourbox-magicc-standard).
 - **MAGICC7 initialisation**: `rscm.magicc.full.from_magicc7` (`python/rscm/magicc/full.py`).
   `default_parameters` returns MAGICC7 v7.5.3's defaults,
   packaged in `python/rscm/magicc/data/magicc7/defaults.json`.

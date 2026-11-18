@@ -22,8 +22,8 @@ whose oxidation adds CO2 to fossil emissions.
 - **Tests**: `test_coupled_run` and `test_default_run` in `tests/regression/test_full_run.py`
   check the CH4 concentration, and `test_coupled_run` the CO2 that oxidation adds.
   `tests/test_magicc_full.py` checks the budget-closing natural emissions,
-  and `tests/test_magicc_emissions.py::test_ch4_budget_shared_between_chemistry_and_oxidation`
-  the coupling between the two components.
+  and `tests/test_magicc_validation.py::test_ch4_lifetimes_reach_every_component`
+  that `from_magicc7` gives both components the same lifetimes.
   Both Rust files have unit tests, including MAGICC7's first emissions-driven year.
 
 ## Equations

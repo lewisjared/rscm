@@ -53,6 +53,7 @@ rscm._lib.magicc.GreenlandDischarge
 rscm._lib.magicc.HalocarbonSpecies
 rscm._lib.magicc.PermafrostSoil
 rscm._lib.magicc.PrognosticFixation
+rscm._lib.magicc.SubannualForcing
 rscm._lib.magicc.SurfaceMassBalance
 rscm._lib.magicc.ThermalExpansion
 rscm._lib.magicc.TroposphericOzoneRegions

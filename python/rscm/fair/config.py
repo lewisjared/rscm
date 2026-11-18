@@ -530,7 +530,7 @@ def component_specs(
 ) -> dict[str, ComponentSpec]:
     """Components reproducing a FaIR run, by name, in the order they are added.
 
-    Each linear forcing is named by its species, such as ``LinearForcing[ozone]``.
+    Each linear forcing is named by its species, such as ``LinearForcing[Ozone]``.
     Without `energy_balance`, another climate component must write the surface
     temperature from the total effective radiative forcing.
     Raises an `InputValidationError` if the configuration is invalid.

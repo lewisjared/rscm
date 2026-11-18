@@ -53,7 +53,7 @@ from rscm.calibrate import (
     progress,
 )
 
-# Seeds the observation noise only: the Rust samplers use their own unseeded RNG.
+# Seeds the observation noise. The estimators and samplers below take their own `seed`.
 np.random.seed(42)
 
 # %% [markdown]
@@ -117,12 +117,12 @@ def plot_posteriors(
 # %% [markdown]
 # ## Part 1: Quadratic Model Calibration
 #
-# We start with a simple quadratic model, `y = a*x² + b*x + c`.
-# This demonstrates the complete workflow without climate model complexity.
+# The first example fits a quadratic model, `y = a*x² + b*x + c`.
+# It shows the whole workflow without the complexity of a climate model.
 #
 # ### Synthetic Observations
 #
-# We create synthetic observations from a "true" model with known parameters.
+# The observations come from a "true" model with known parameters, plus noise.
 
 # %%
 true_params = {"a": -0.3, "b": 3.0, "c": 1.5}
@@ -209,13 +209,13 @@ runner = ModelRunner(
 # %% [markdown]
 # ### Point Estimation
 #
-# Random search over the prior finds the parameter set that best fits the observations.
-# 1000 samples are enough for three parameters.
+# Random search draws parameter sets from the prior and keeps the one that best fits the observations.
+# 1000 draws give a rough fit for three parameters, which the MCMC sampling below refines.
 
 # %%
 likelihood = GaussianLikelihood()
 estimator = PointEstimator(parameters, runner, likelihood, target)
-result = estimator.optimise(Optimiser.random_search(), n_samples=1000)
+result = estimator.optimise(Optimiser.random_search(), n_samples=1000, seed=2)
 
 best_parameters = dict(zip(estimator.parameter_names, result.best_parameters))
 print(f"Best log likelihood: {result.best_log_likelihood:.3f}")
@@ -248,6 +248,7 @@ chain = sampler.run_with_progress(
     init=WalkerInit.from_prior(),
     thin=1,
     progress_callback=progress.create_simple_callback(print_every=500),
+    seed=0,
 )
 
 print(f"{sampler.default_n_walkers()} walkers, {chain.n_iterations} iterations")
@@ -312,7 +313,7 @@ plt.show()
 # %% [markdown]
 # ## Part 2: Two-Layer Climate Model
 #
-# Now we calibrate a climate model: the two-layer energy balance model.
+# The second example calibrates the two-layer energy balance model.
 # It simulates surface and deep ocean temperatures in response to radiative forcing.
 #
 # ### Running the Model
@@ -371,7 +372,7 @@ print(f"True: {true_temp:.3f} K, observed: {obs_temp:.3f} ± {obs_uncertainty} K
 # %% [markdown]
 # ### Calibration Setup
 #
-# We calibrate two parameters: `lambda0` (climate feedback) and `a` (nonlinear feedback).
+# Two parameters are calibrated: `lambda0` (climate feedback) and `a` (nonlinear feedback).
 # The others stay fixed at their true values,
 # so the model factory merges the sampled values into `fixed_climate_params`.
 
@@ -411,7 +412,9 @@ climate_runner = ModelRunner(
 climate_estimator = PointEstimator(
     climate_params, climate_runner, GaussianLikelihood(), climate_target
 )
-climate_result = climate_estimator.optimise(Optimiser.random_search(), n_samples=1000)
+climate_result = climate_estimator.optimise(
+    Optimiser.random_search(), n_samples=1000, seed=0
+)
 
 best_climate_params = dict(
     zip(climate_estimator.parameter_names, climate_result.best_parameters)
@@ -433,7 +436,7 @@ pd.DataFrame(
 # ### Climate MCMC Sampling
 #
 # The walkers start near the point estimate rather than across the whole prior.
-# `WalkerInit.ball(centre, radius)` spreads them uniformly over a box of width `radius` around `centre`.
+# `WalkerInit.ball(centre, radius)` draws each coordinate uniformly from `centre ± radius / 2`.
 # `WalkerInit.explicit(positions)` takes one row of parameter values per walker instead.
 
 # %%
@@ -445,6 +448,7 @@ climate_chain = climate_sampler.run_with_progress(
     init=WalkerInit.ball(climate_result.best_parameters, 0.01),
     thin=1,
     progress_callback=progress.create_simple_callback(print_every=500),
+    seed=0,
 )
 
 print(f"Converged: {climate_chain.is_converged(discard)}")
