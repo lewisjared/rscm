@@ -1,7 +1,7 @@
 //! Bounds on physical state that keep NaN
 //!
 //! `f64::min` and `f64::max` return the other operand when one is NaN,
-//! which would turn a failed calculation into a plausible value such as the temperature cap.
+//! which would turn a failed calculation into a plausible value such as zero.
 
 use rscm_core::timeseries::FloatValue;
 

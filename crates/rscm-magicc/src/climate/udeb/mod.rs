@@ -498,7 +498,26 @@ impl ClimateUDEB {
         let numerator = land_forcing * land_fraction + k_lo * alpha * ocean_temp;
         let denominator = lambda_land * land_fraction + k_lo;
 
-        (numerator / denominator).at_most(self.parameters.maximum_temperature)
+        numerator / denominator
+    }
+
+    /// Fail once any ocean layer or land box warms past `maximum_temperature`,
+    /// where MAGICC7 caps the temperature and carries on.
+    fn check_temperatures(&self, state: &ClimateUDEBState, time: Time) -> RSCMResult<()> {
+        let maximum = self.parameters.maximum_temperature;
+        let hottest = state
+            .ocean_temperatures
+            .iter()
+            .flatten()
+            .chain(&state.land_temperatures)
+            .fold(FloatValue::NEG_INFINITY, |a, &b| a.max(b));
+        if hottest > maximum {
+            return Err(RSCMError::Error(format!(
+                "temperature change reached {hottest:.2} K in {time:.2}, above the maximum_temperature \
+                 of {maximum} K"
+            )));
+        }
+        Ok(())
     }
 
     /// Convert ocean SST to surface air temperature.
@@ -742,6 +761,8 @@ impl ClimateUDEB {
                 sh_land,
                 current_lambda_land,
             );
+
+            self.check_temperatures(state, t_current + frac)?;
 
             // Update inter-hemispheric heat flux for the NEXT substep
             // using this substep's air temperatures (MAGICC7 lines 3174-3177).
