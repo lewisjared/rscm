@@ -85,7 +85,8 @@ The shipped configs record their schema version as `config_schema` under `[model
 and `ModelConfig` has a matching `config_schema` field.
 Unknown top-level keys are logged as a warning and ignored.
 `build_model` raises `ValidationError` for unknown keys in `[time]`, `[components]` and `[inputs]`,
-and for a `[components.climate]` type other than `TwoLayer`.
+and for a registered `[components.climate]` type other than `TwoLayer`.
+An unregistered type raises `ComponentNotFoundError`.
 `[time]` needs integer `start` and `end` years.
 Input files are not supported yet, so an `[inputs]` entry with a `file` raises `ValidationError`.
 `load_config` does not check the schema version.
