@@ -108,6 +108,20 @@ def test_initial_values(initial, expected):
     npt.assert_allclose(values, expected + 1000.0 * np.arange(4))
 
 
+def test_bare_initial_value_replaces_one_with_a_unit():
+    model = (
+        ModelBuilder()
+        .with_time_axis(AXIS)
+        .with_schema(schema(Heat="J"))
+        .with_component(Accumulator())
+        .with_initial_values({"Heat": (2.0, "kJ")})
+        .with_initial_values({"Heat": 3.0})
+        .build()
+    )
+
+    assert model.timeseries().get_timeseries_by_name("Heat").at(0) == 3.0
+
+
 def test_initial_value_in_an_incompatible_unit_fails():
     builder = (
         ModelBuilder()

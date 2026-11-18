@@ -240,14 +240,13 @@ impl Style {
 impl Model {
     /// The conversions `component` applies to the variable `def` declares.
     fn conversions_for(&self, component: &str, def: &VariableDefinition) -> Vec<ConversionInfo> {
-        let key = (def.name.clone(), component.to_string());
-        let (Some(&factor), Some(stored)) = (
-            self.unit_conversions().get(&key),
-            self.timeseries().get_data(&def.name),
-        ) else {
+        let Some(stored) = self.timeseries().get_data(&def.name) else {
             return Vec::new();
         };
         let stored_unit = stored.unit().to_string();
+        let key = (def.name.clone(), component.to_string());
+        let read_factor = self.unit_conversions().get(&key).copied();
+        let write_factor = self.write_factor(&def.name, &def.unit);
         let info = |direction: &str, from: &str, to: &str, factor: f64| ConversionInfo {
             variable: def.name.clone(),
             component: component.to_string(),
@@ -256,13 +255,15 @@ impl Model {
             to: to.to_string(),
             factor,
         };
-        let read = info("read", &stored_unit, &def.unit, factor);
-        let write = info("write", &def.unit, &stored_unit, 1.0 / factor);
-        match def.role {
-            VariableRole::Input => vec![read],
-            VariableRole::Output => vec![write],
-            VariableRole::State => vec![read, write],
-        }
+        let reads = matches!(def.role, VariableRole::Input | VariableRole::State);
+        let writes = matches!(def.role, VariableRole::Output | VariableRole::State);
+        let read = read_factor
+            .filter(|_| reads)
+            .map(|f| info("read", &stored_unit, &def.unit, f));
+        let write = write_factor
+            .filter(|_| writes)
+            .map(|f| info("write", &def.unit, &stored_unit, f));
+        read.into_iter().chain(write).collect()
     }
 
     /// Report the model's coupling: the order the runtime steps components in,

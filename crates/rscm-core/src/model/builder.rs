@@ -50,7 +50,10 @@ pub struct ModelBuilder {
     explicit_prescribed: BTreeSet<String>,
     initial_values: HashMap<String, FloatValue>,
     initial_grid_values: HashMap<String, Vec<FloatValue>>,
+    /// Units of the entries in `initial_values` given in one, keyed by name.
     initial_value_units: HashMap<String, String>,
+    /// Units of the entries in `initial_grid_values` given in one, keyed by name.
+    initial_grid_value_units: HashMap<String, String>,
     time_axis: Option<Arc<TimeAxis>>,
     schema: Option<VariableSchema>,
     /// Custom weights for grid aggregation, keyed by grid.
@@ -96,6 +99,7 @@ impl ModelBuilder {
             initial_values: HashMap::new(),
             initial_grid_values: HashMap::new(),
             initial_value_units: HashMap::new(),
+            initial_grid_value_units: HashMap::new(),
             prescribed_variables: TimeseriesCollection::new(),
             explicit_prescribed: BTreeSet::new(),
             time_axis: None,
@@ -405,7 +409,23 @@ impl ModelBuilder {
         initial_values: HashMap<String, FloatValue>,
     ) -> &mut Self {
         for (name, value) in initial_values.into_iter() {
+            self.initial_value_units.remove(&name);
             self.initial_values.insert(name, value);
+        }
+        self
+    }
+
+    /// Like [`Self::with_initial_values`], with each value given in its own unit.
+    ///
+    /// Building converts the values into the unit the model stores each variable in,
+    /// and fails if the units are incompatible.
+    pub fn with_initial_values_in_units(
+        &mut self,
+        initial_values: HashMap<String, (FloatValue, String)>,
+    ) -> &mut Self {
+        for (name, (value, unit)) in initial_values {
+            self.initial_values.insert(name.clone(), value);
+            self.initial_value_units.insert(name, unit);
         }
         self
     }
@@ -419,17 +439,22 @@ impl ModelBuilder {
         &mut self,
         initial_values: HashMap<String, Vec<FloatValue>>,
     ) -> &mut Self {
-        self.initial_grid_values.extend(initial_values);
+        for (name, values) in initial_values {
+            self.initial_grid_value_units.remove(&name);
+            self.initial_grid_values.insert(name, values);
+        }
         self
     }
 
-    /// Sets the unit each named variable's initial values are given in.
-    ///
-    /// Building converts them into the unit the model stores the variable in,
-    /// and fails if the units are incompatible.
-    /// Initial values without a unit are taken to be in the stored unit already.
-    pub fn with_initial_value_units(&mut self, units: HashMap<String, String>) -> &mut Self {
-        self.initial_value_units.extend(units);
+    /// Like [`Self::with_initial_grid_values`], with each variable's values given in their own unit.
+    pub fn with_initial_grid_values_in_units(
+        &mut self,
+        initial_values: HashMap<String, (Vec<FloatValue>, String)>,
+    ) -> &mut Self {
+        for (name, (values, unit)) in initial_values {
+            self.initial_grid_values.insert(name.clone(), values);
+            self.initial_grid_value_units.insert(name, unit);
+        }
         self
     }
 
@@ -1062,18 +1087,20 @@ impl ModelBuilder {
             // With a schema, the store holds each variable in the schema's unit.
             let schema_unit = self.schema.as_ref().and_then(|s| s.get_unit(&name));
             let storage_unit = schema_unit.unwrap_or(&definition.unit);
-            let initial_factor = match self.initial_value_units.get(&name) {
+            let initial_factor = |units: &HashMap<String, String>| match units.get(&name) {
                 Some(unit) => {
-                    Self::check_unit_compatibility(&name, "initial value", unit, storage_unit)?
-                        .map_or(1.0, |conversion| conversion.factor)
+                    Self::check_unit_compatibility(&name, "initial value", unit, storage_unit)
+                        .map(|c| c.map_or(1.0, |conversion| conversion.factor))
                 }
-                None => 1.0,
+                None => Ok(1.0),
             };
-            let initial_val = self.initial_values.get(&name).map(|v| v * initial_factor);
+            let scalar_factor = initial_factor(&self.initial_value_units)?;
+            let grid_factor = initial_factor(&self.initial_grid_value_units)?;
+            let initial_val = self.initial_values.get(&name).map(|v| v * scalar_factor);
             let initial_grid: Option<Vec<FloatValue>> = self
                 .initial_grid_values
                 .get(&name)
-                .map(|values| values.iter().map(|v| v * initial_factor).collect());
+                .map(|values| values.iter().map(|v| v * grid_factor).collect());
             let initial_grid = initial_grid.as_ref();
             let expected_len = match storage_grid {
                 GridType::Scalar => 1,
@@ -1225,7 +1252,6 @@ impl ModelBuilder {
             .initial_values
             .keys()
             .chain(self.initial_grid_values.keys())
-            .chain(self.initial_value_units.keys())
             .collect();
         if let Some(variable) = initial_names
             .into_iter()

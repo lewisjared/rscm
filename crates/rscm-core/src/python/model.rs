@@ -60,9 +60,9 @@ impl PyModelBuilder {
         mut self_: PyRefMut<Self>,
         initial_values: HashMap<String, MaybeWithUnit<FloatValue>>,
     ) -> PyRefMut<Self> {
-        let (values, units) = split_units(initial_values);
-        self_.0.with_initial_values(values);
-        self_.0.with_initial_value_units(units);
+        let (bare, with_units) = split_units(initial_values);
+        self_.0.with_initial_values(bare);
+        self_.0.with_initial_values_in_units(with_units);
         self_
     }
 
@@ -70,9 +70,9 @@ impl PyModelBuilder {
         mut self_: PyRefMut<Self>,
         initial_values: HashMap<String, MaybeWithUnit<Vec<FloatValue>>>,
     ) -> PyRefMut<Self> {
-        let (values, units) = split_units(initial_values);
-        self_.0.with_initial_grid_values(values);
-        self_.0.with_initial_value_units(units);
+        let (bare, with_units) = split_units(initial_values);
+        self_.0.with_initial_grid_values(bare);
+        self_.0.with_initial_grid_values_in_units(with_units);
         self_
     }
 
@@ -408,22 +408,22 @@ enum MaybeWithUnit<T> {
     Bare(T),
 }
 
-/// Separate values from the units given for some of them.
+/// Separate bare values from those given with a unit.
+#[allow(clippy::type_complexity)]
 fn split_units<T>(
     entries: HashMap<String, MaybeWithUnit<T>>,
-) -> (HashMap<String, T>, HashMap<String, String>) {
-    let mut values = HashMap::new();
-    let mut units = HashMap::new();
+) -> (HashMap<String, T>, HashMap<String, (T, String)>) {
+    let mut bare = HashMap::new();
+    let mut with_units = HashMap::new();
     for (name, entry) in entries {
         match entry {
-            MaybeWithUnit::WithUnit((value, unit)) => {
-                units.insert(name.clone(), unit);
-                values.insert(name, value);
+            MaybeWithUnit::WithUnit(pair) => {
+                with_units.insert(name, pair);
             }
             MaybeWithUnit::Bare(value) => {
-                values.insert(name, value);
+                bare.insert(name, value);
             }
         }
     }
-    (values, units)
+    (bare, with_units)
 }

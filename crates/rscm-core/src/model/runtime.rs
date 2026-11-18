@@ -444,10 +444,17 @@ impl Model {
             .map(|input| self.read_transform(input, &name))
             .collect();
         let outputs = OutputBuffer::new(component.output_names());
+        let declared_units: HashMap<String, String> = component
+            .definitions()
+            .into_iter()
+            .map(|def| (def.name, def.unit))
+            .collect();
         let targets = outputs
             .names()
             .iter()
-            .map(|output| self.output_target(output, &name))
+            .map(|output| {
+                self.output_target(output, declared_units.get(output).map(String::as_str))
+            })
             .collect();
         ComponentPlan {
             node,
@@ -494,12 +501,11 @@ impl Model {
     }
 
     /// Where `component`'s output `name` is stored and how it is transformed on the way.
-    fn output_target(&self, name: &str, component: &str) -> Option<OutputTarget> {
+    fn output_target(&self, name: &str, declared_unit: Option<&str>) -> Option<OutputTarget> {
         let index = self.collection.position(name)?;
-        let unit_factor = self
-            .unit_conversions
-            .get(&(name.to_string(), component.to_string()))
-            .map_or(1.0, |read_factor| 1.0 / read_factor);
+        let unit_factor = declared_unit
+            .and_then(|unit| self.write_factor(name, unit))
+            .unwrap_or(1.0);
         let transform = self
             .write_transforms
             .get(name)
@@ -511,6 +517,18 @@ impl Model {
             timeseries_type,
             unit_factor,
         })
+    }
+
+    /// The factor taking `name` from `declared_unit` into the unit it is stored in,
+    /// or `None` when the units match.
+    pub(crate) fn write_factor(&self, name: &str, declared_unit: &str) -> Option<FloatValue> {
+        let stored_unit = self.collection.get_data(name)?.unit();
+        if stored_unit == declared_unit {
+            return None;
+        }
+        let factor = crate::units::conversion_factor(declared_unit, stored_unit)
+            .unwrap_or_else(|e| panic!("'{name}' passed unit validation but cannot convert: {e}"));
+        (factor != 1.0).then_some(factor)
     }
 
     /// Solve a single component for the current step.
@@ -555,7 +573,7 @@ impl Model {
             }
         }
         for (key, value) in plan.outputs.take_undeclared() {
-            let target = self.output_target(&key, &plan.name);
+            let target = self.output_target(&key, None);
             self.write_output(&plan.name, &key, target, &value)?;
         }
         Ok(())

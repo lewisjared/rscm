@@ -235,8 +235,7 @@ fn initial_values_with_a_unit_are_converted_into_the_stored_unit() {
         .with_component(Arc::new(Accumulator {
             unit: "kJ".to_string(),
         }))
-        .with_initial_values([("Heat".to_string(), 2.0)].into())
-        .with_initial_value_units([("Heat".to_string(), "kJ".to_string())].into()));
+        .with_initial_values_in_units([("Heat".to_string(), (2.0, "kJ".to_string()))].into()));
 
     let ts = model.timeseries().get_by_name("Heat").unwrap();
     let ts = ts.data.as_scalar().unwrap();
@@ -256,10 +255,13 @@ fn initial_grid_values_with_a_unit_are_converted_in_every_region() {
         .with_component(Arc::new(FourBoxProducer {
             unit: "W/m^2".to_string(),
         }))
-        .with_initial_grid_values(
-            [("Regional Forcing".to_string(), vec![1.0, 2.0, 3.0, 4.0])].into(),
+        .with_initial_grid_values_in_units(
+            [(
+                "Regional Forcing".to_string(),
+                (vec![1.0, 2.0, 3.0, 4.0], "W/m^2".to_string()),
+            )]
+            .into(),
         )
-        .with_initial_value_units([("Regional Forcing".to_string(), "W/m^2".to_string())].into())
         .build()
         .expect("model builds");
 
@@ -275,8 +277,7 @@ fn an_incompatible_initial_value_unit_fails_the_build() {
         .with_component(Arc::new(Accumulator {
             unit: "J".to_string(),
         }))
-        .with_initial_values([("Heat".to_string(), 0.0)].into())
-        .with_initial_value_units([("Heat".to_string(), "GtC".to_string())].into())
+        .with_initial_values_in_units([("Heat".to_string(), (0.0, "GtC".to_string()))].into())
         .build();
 
     let Err(err) = result else {
@@ -287,20 +288,71 @@ fn an_incompatible_initial_value_unit_fails_the_build() {
 }
 
 #[test]
-fn an_initial_value_unit_for_an_unknown_variable_fails_the_build() {
-    let result = ModelBuilder::new()
-        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+fn a_bare_initial_value_replaces_one_given_in_a_unit() {
+    let model = run(ModelBuilder::new()
+        .with_schema(VariableSchema::new().variable("Heat", "J"))
         .with_component(Arc::new(Accumulator {
-            unit: "J".to_string(),
+            unit: "kJ".to_string(),
         }))
-        .with_initial_values([("Heat".to_string(), 0.0)].into())
-        .with_initial_value_units([("Hat".to_string(), "J".to_string())].into())
-        .build();
+        .with_initial_values_in_units([("Heat".to_string(), (2.0, "kJ".to_string()))].into())
+        .with_initial_values([("Heat".to_string(), 3.0)].into()));
 
-    assert!(matches!(
-        result.err(),
-        Some(crate::errors::RSCMError::UnknownInitialValue { .. })
+    let ts = model.timeseries().get_by_name("Heat").unwrap();
+    assert!(is_close!(
+        ts.data.as_scalar().unwrap().at_scalar(0).unwrap(),
+        3.0
     ));
+}
+
+/// Writes `value` to `output` in `output_unit`, after reading `input` if it has one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Relay {
+    input: Option<(String, String)>,
+    output: (String, String),
+    value: FloatValue,
+}
+
+#[typetag::serde]
+impl Component for Relay {
+    fn definitions(&self) -> Vec<VariableDefinition> {
+        let mut defs = vec![VariableDefinition::new(
+            &self.output.0,
+            &self.output.1,
+            VariableRole::Output,
+        )];
+        if let Some((name, unit)) = &self.input {
+            defs.push(VariableDefinition::new(name, unit, VariableRole::Input));
+        }
+        defs
+    }
+
+    fn solve(&self, _: Time, _: Time, input_state: &InputState) -> RSCMResult<OutputState> {
+        let value = match &self.input {
+            Some((name, _)) => input_state.get_scalar_window(name).get(),
+            None => self.value,
+        };
+        let mut output = OutputState::new();
+        output.insert(self.output.0.clone(), StateValue::Scalar(value));
+        Ok(output)
+    }
+}
+
+#[test]
+fn a_reading_instance_does_not_convert_another_instances_output() {
+    let model = run(ModelBuilder::new()
+        .with_component(Arc::new(Relay {
+            input: None,
+            output: ("Energy".to_string(), "kJ".to_string()),
+            value: 1.0,
+        }))
+        .with_component(Arc::new(Relay {
+            input: Some(("Energy".to_string(), "J".to_string())),
+            output: ("Energy Copy".to_string(), "J".to_string()),
+            value: 0.0,
+        })));
+
+    assert_stored(&model, "Energy", 1.0, "kJ");
+    assert_stored(&model, "Energy Copy", 1000.0, "J");
 }
 
 #[test]
