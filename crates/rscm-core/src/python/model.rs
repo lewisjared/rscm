@@ -1,6 +1,6 @@
 use crate::component::TimeseriesType;
 use crate::errors::{RSCMError, RSCMResult};
-use crate::model::{self, Model, ModelBuilder};
+use crate::model::{self, Model, ModelBuilder, RegionValues};
 use crate::python::component::{PyPythonComponent, PythonComponent};
 use crate::python::timeseries::{time_axis_repr, PyTimeAxis, Reduced};
 use crate::python::timeseries_collection::{extract_timeseries_data, PyTimeseriesCollection};
@@ -60,9 +60,12 @@ impl PyModelBuilder {
         mut self_: PyRefMut<Self>,
         initial_values: HashMap<String, MaybeWithUnit<FloatValue>>,
     ) -> PyRefMut<Self> {
-        let (bare, with_units) = split_units(initial_values);
-        self_.0.with_initial_values(bare);
-        self_.0.with_initial_values_in_units(with_units);
+        for (name, entry) in initial_values {
+            let (value, unit) = entry.into_parts();
+            self_
+                .0
+                .with_initial_value(name, RegionValues::Uniform(value), unit);
+        }
         self_
     }
 
@@ -70,9 +73,12 @@ impl PyModelBuilder {
         mut self_: PyRefMut<Self>,
         initial_values: HashMap<String, MaybeWithUnit<Vec<FloatValue>>>,
     ) -> PyRefMut<Self> {
-        let (bare, with_units) = split_units(initial_values);
-        self_.0.with_initial_grid_values(bare);
-        self_.0.with_initial_grid_values_in_units(with_units);
+        for (name, entry) in initial_values {
+            let (values, unit) = entry.into_parts();
+            self_
+                .0
+                .with_initial_value(name, RegionValues::PerRegion(values), unit);
+        }
         self_
     }
 
@@ -408,22 +414,11 @@ enum MaybeWithUnit<T> {
     Bare(T),
 }
 
-/// Separate bare values from those given with a unit.
-#[allow(clippy::type_complexity)]
-fn split_units<T>(
-    entries: HashMap<String, MaybeWithUnit<T>>,
-) -> (HashMap<String, T>, HashMap<String, (T, String)>) {
-    let mut bare = HashMap::new();
-    let mut with_units = HashMap::new();
-    for (name, entry) in entries {
-        match entry {
-            MaybeWithUnit::WithUnit(pair) => {
-                with_units.insert(name, pair);
-            }
-            MaybeWithUnit::Bare(value) => {
-                bare.insert(name, value);
-            }
+impl<T> MaybeWithUnit<T> {
+    fn into_parts(self) -> (T, Option<String>) {
+        match self {
+            Self::WithUnit((value, unit)) => (value, Some(unit)),
+            Self::Bare(value) => (value, None),
         }
     }
-    (bare, with_units)
 }

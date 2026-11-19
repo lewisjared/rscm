@@ -5,6 +5,7 @@
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition, VariableRole};
 use crate::errors::RSCMResult;
+use crate::model::TransformDirection::{self, Read, Write};
 use crate::model::{Model, ModelBuilder};
 use crate::schema::VariableSchema;
 use crate::state::{FourBoxSlice, StateValue};
@@ -374,43 +375,42 @@ fn coupling_reports_the_direction_and_units_of_each_conversion() {
         .into_iter()
         .map(|c| (c.variable, c.component, c.direction, c.from, c.to, c.factor))
         .collect();
-    let row = |v: &str, c: &str, d: &str, from: &str, to: &str, f: f64| {
-        (v.into(), c.into(), d.into(), from.into(), to.into(), f)
+    let row = |v: &str, c: &str, d: TransformDirection, from: &str, to: &str, f: f64| {
+        (v.into(), c.into(), d, from.into(), to.into(), f)
     };
     assert_eq!(
         conversions,
         vec![
-            row("Forcing", "Consumer", "read", "W/m^2", "kW/m^2", 0.001),
-            row("Forcing", "Producer", "write", "kW/m^2", "W/m^2", 1000.0),
-            row(
-                "Forcing Copy",
-                "Consumer",
-                "write",
-                "kW/m^2",
-                "W/m^2",
-                1000.0
-            ),
+            row("Forcing", "Consumer", Read, "W/m^2", "kW/m^2", 0.001),
+            row("Forcing", "Producer", Write, "kW/m^2", "W/m^2", 1000.0),
+            row("Forcing Copy", "Consumer", Write, "kW/m^2", "W/m^2", 1000.0),
         ]
     );
 }
 
 #[test]
-fn a_superseded_scalar_initial_unit_is_not_checked() {
-    let model = ModelBuilder::new()
-        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
-        .with_component(Arc::new(FourBoxProducer {
-            unit: "W/m^2".to_string(),
-        }))
-        .with_initial_values_in_units(
-            [("Regional Forcing".to_string(), (1.0, "J".to_string()))].into(),
-        )
-        .with_initial_grid_values(
-            [("Regional Forcing".to_string(), vec![1.0, 2.0, 3.0, 4.0])].into(),
-        )
-        .build()
-        .expect("the grid values replace the scalar");
+fn the_latest_initial_value_for_a_name_wins() {
+    let build = |grid_last: bool| {
+        let mut builder = ModelBuilder::new();
+        builder
+            .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2023.0, 1.0)))
+            .with_component(Arc::new(FourBoxProducer {
+                unit: "W/m^2".to_string(),
+            }));
+        let scalar = [("Regional Forcing".to_string(), (1.0, "kW/m^2".to_string()))];
+        let grid = [("Regional Forcing".to_string(), vec![1.0, 2.0, 3.0, 4.0])];
+        if grid_last {
+            builder.with_initial_values_in_units(scalar.into());
+            builder.with_initial_grid_values(grid.into());
+        } else {
+            builder.with_initial_grid_values(grid.into());
+            builder.with_initial_values_in_units(scalar.into());
+        }
+        let model = builder.build().unwrap();
+        let item = model.timeseries().get_by_name("Regional Forcing").unwrap();
+        item.data.as_four_box().unwrap().at_time_index(0).unwrap()
+    };
 
-    let item = model.timeseries().get_by_name("Regional Forcing").unwrap();
-    let values = item.data.as_four_box().unwrap().at_time_index(0).unwrap();
-    assert_eq!(values, vec![1.0, 2.0, 3.0, 4.0]);
+    assert_eq!(build(true), vec![1.0, 2.0, 3.0, 4.0]);
+    assert_eq!(build(false), vec![1000.0; 4]);
 }

@@ -585,6 +585,7 @@ class ModelBuilder:
         Add initial values for grid variables, one per region in grid order.
 
         Units work as for `with_initial_values`.
+        Each name holds one initial value, so the latest call for a name wins.
         `build` fails for a name the model has no variable for.
         """
     def with_prescribed_variable(

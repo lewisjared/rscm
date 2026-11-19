@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use super::runtime::Model;
-use super::types::RequiredTransformation;
+use super::types::{RequiredTransformation, TransformDirection};
 
 /// A component and the variables it declares.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,7 +47,7 @@ pub struct TransformInfo {
     pub variable: String,
     pub from: GridType,
     pub to: GridType,
-    pub direction: String,
+    pub direction: TransformDirection,
 }
 
 /// Unit conversion applied at runtime.
@@ -55,8 +55,8 @@ pub struct TransformInfo {
 pub struct ConversionInfo {
     pub variable: String,
     pub component: String,
-    /// `read` for the stored unit into the component's, `write` for the reverse.
-    pub direction: String,
+    /// `Read` for the stored unit into the component's, `Write` for the reverse.
+    pub direction: TransformDirection,
     pub from: String,
     pub to: String,
     /// Multiplier taking a value in `from` to `to`.
@@ -253,16 +253,17 @@ impl Model {
         let write_factor = writes
             .then(|| self.write_factor(&def.name, &def.unit))
             .flatten();
-        let info = |direction: &str, from: &str, to: &str, factor: f64| ConversionInfo {
+        let info = |direction, from: &str, to: &str, factor| ConversionInfo {
             variable: def.name.clone(),
             component: component.to_string(),
-            direction: direction.to_string(),
+            direction,
             from: from.to_string(),
             to: to.to_string(),
             factor,
         };
-        let read = read_factor.map(|f| info("read", &stored_unit, &def.unit, f));
-        let write = write_factor.map(|f| info("write", &def.unit, &stored_unit, f));
+        let read = read_factor.map(|f| info(TransformDirection::Read, &stored_unit, &def.unit, f));
+        let write =
+            write_factor.map(|f| info(TransformDirection::Write, &def.unit, &stored_unit, f));
         read.into_iter().chain(write).collect()
     }
 
@@ -379,13 +380,13 @@ fn collect_transforms(
 ) -> Vec<TransformInfo> {
     let mut transforms: Vec<TransformInfo> = read
         .values()
-        .map(|t| (t, "read"))
-        .chain(write.values().map(|t| (t, "write")))
+        .map(|t| (t, TransformDirection::Read))
+        .chain(write.values().map(|t| (t, TransformDirection::Write)))
         .map(|(t, direction)| TransformInfo {
             variable: t.variable.clone(),
             from: t.source_grid,
             to: t.target_grid,
-            direction: direction.to_string(),
+            direction,
         })
         .collect();
     transforms.sort_by(|a, b| {
