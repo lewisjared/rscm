@@ -253,3 +253,19 @@ def test_run_builders_raises_an_interrupt_before_a_build_failure():
 
     with pytest.raises(KeyboardInterrupt):
         run_builders([unbuildable, interrupting])
+
+
+def test_run_builders_raises_an_interrupt_before_an_iterable_error():
+    erf = Timeseries(np.ones(len(AXIS)), AXIS, "W/m^2", InterpolationStrategy.Previous)
+
+    def builders():
+        yield (
+            ModelBuilder()
+            .with_time_axis(AXIS)
+            .with_component(Interrupting())
+            .with_prescribed_variable("Effective Radiative Forcing", erf)
+        )
+        raise ValueError("bad setup")  # noqa: TRY003
+
+    with pytest.raises(KeyboardInterrupt):
+        run_builders(builders())

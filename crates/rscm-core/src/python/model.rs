@@ -8,7 +8,7 @@ use crate::python::timeseries_collection::{extract_timeseries_data, PyTimeseries
 use crate::python::PyRustComponent;
 use crate::schema::VariableSchema;
 use crate::timeseries::{FloatValue, Time};
-use pyo3::exceptions::{PyRuntimeError, PyUserWarning, PyValueError};
+use pyo3::exceptions::{PyException, PyRuntimeError, PyUserWarning, PyValueError};
 use pyo3::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -445,17 +445,23 @@ pub fn py_run_builders(
             model::build_and_run(&builder)
         })
     });
-    if let Some(err) = source_error {
+    // Interrupts come first, from the iterable and then from any model, ahead of ordinary errors.
+    if let Some(err) = source_error.take_if(|e| !e.is_instance_of::<PyException>(py)) {
         return Err(err);
     }
     let mut results = results;
-    if let Some(i) = results
-        .iter()
-        .position(|r| matches!(r, Ok((_, _, Err(RSCMError::Interrupt(_))))))
-    {
-        if let Ok((_, _, Err(err))) = results.swap_remove(i) {
+    if let Some(i) = results.iter().position(|r| {
+        matches!(
+            r,
+            Err(RSCMError::Interrupt(_)) | Ok((_, _, Err(RSCMError::Interrupt(_))))
+        )
+    }) {
+        if let Err(err) | Ok((_, _, Err(err))) = results.swap_remove(i) {
             return Err(err.into());
         }
+    }
+    if let Some(err) = source_error {
+        return Err(err);
     }
     let built = all_ok(results, "build", PyValueError::new_err::<String>)?;
     let mut runs = Vec::with_capacity(built.len());
