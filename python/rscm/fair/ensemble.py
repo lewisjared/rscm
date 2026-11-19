@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from rscm import names
+from rscm.core import ThreadPool
 from rscm.fair import naming
 from rscm.fair.config import emission_drivers, is_ghg, species_outputs
 from rscm.fair.run import _on_timebounds, _setup_model
@@ -231,8 +232,9 @@ def run_ensemble(
             k for k, _ in emission_series[name] if not is_ghg(config["species"][k])
         ]
 
+    pool = ThreadPool(n_threads) if n_threads is not None else None
     for i, inputs in enumerate(scenarios.values()):
-        setups = [
+        setups = (
             _setup_model(
                 configs[name],
                 inputs,
@@ -240,8 +242,8 @@ def run_ensemble(
                 scale_prescribed_forcing=scale_prescribed_forcing,
             )
             for name in config_names
-        ]
-        models = run_all(setups, n_threads=n_threads)
+        )
+        models = run_all(setups, pool=pool)
         for j, (name, model) in enumerate(zip(config_names, models, strict=True)):
             outputs = model.timeseries()
             for layer in range(n_layers):

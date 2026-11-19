@@ -28,7 +28,7 @@ mod tests;
 pub(crate) use builder::RegionValues;
 pub use builder::{check_grid_weights, ModelBuilder, PrescribedInput};
 pub use coupling::{ComponentCoupling, ConversionInfo, Coupling, CouplingEdge, TransformInfo};
-pub use parallel::{build_models, run_models};
+pub use parallel::{build_and_run, build_models, run_each, run_models, Pool};
 pub use runtime::Model;
 pub use state_extraction::{extract_state, extract_state_with_transforms};
 pub use types::{GraphEdge, RequiredTransformation, TransformDirection, UnitConversionInfo};

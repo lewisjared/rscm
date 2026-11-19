@@ -2,6 +2,7 @@ use crate::component::TimeseriesType;
 use crate::errors::{RSCMError, RSCMResult};
 use crate::model::{self, Model, ModelBuilder, RegionValues};
 use crate::python::component::{PyPythonComponent, PythonComponent};
+use crate::python::pool::{resolve_pool, PyThreadPool};
 use crate::python::timeseries::{time_axis_repr, PyTimeAxis, Reduced};
 use crate::python::timeseries_collection::{extract_timeseries_data, PyTimeseriesCollection};
 use crate::python::PyRustComponent;
@@ -324,19 +325,6 @@ fn warn_all(py: Python<'_>, messages: &[String]) -> PyResult<()> {
     Ok(())
 }
 
-/// Run `work` on a pool of `n_threads` threads, or on rayon's global pool.
-fn on_pool<R: Send>(n_threads: Option<usize>, work: impl FnOnce() -> R + Send) -> PyResult<R> {
-    match n_threads {
-        None => Ok(work()),
-        Some(0) => Err(PyValueError::new_err("n_threads must be at least 1")),
-        Some(n) => rayon::ThreadPoolBuilder::new()
-            .num_threads(n)
-            .build()
-            .map(|pool| pool.install(work))
-            .map_err(|e| PyRuntimeError::new_err(e.to_string())),
-    }
-}
-
 /// Unwrap per-model results, or raise `error` with the failure count and the first failure.
 ///
 /// A Python interrupt raised in any model is re-raised unchanged.
@@ -370,21 +358,23 @@ fn all_ok<T>(
 
 /// Build every builder in parallel, raising ValueError for the first that fails.
 #[pyfunction]
-#[pyo3(name = "build_models", signature = (builders, *, n_threads = None))]
+#[pyo3(name = "build_models", signature = (builders, *, n_threads = None, pool = None))]
 pub fn py_build_models(
     py: Python<'_>,
     builders: Vec<PyRef<'_, PyModelBuilder>>,
     n_threads: Option<usize>,
+    pool: Option<PyRef<'_, PyThreadPool>>,
 ) -> PyResult<Vec<PyModel>> {
+    let pool = resolve_pool(n_threads, pool.as_deref())?;
     let builders: Vec<&ModelBuilder> = builders.iter().map(|b| &b.0).collect();
     let results = py.detach(|| {
-        on_pool(n_threads, || {
+        pool.install(|| {
             builders
                 .par_iter()
                 .map(|b| b.build_with_warnings())
                 .collect::<Vec<_>>()
         })
-    })?;
+    });
     let built = all_ok(results, "build", PyValueError::new_err::<String>)?;
     let mut models = Vec::with_capacity(built.len());
     for (model, warnings) in built {
@@ -396,14 +386,16 @@ pub fn py_build_models(
 
 /// Run every model in parallel, raising RuntimeError for the first that fails.
 #[pyfunction]
-#[pyo3(name = "run_models", signature = (models, *, n_threads = None))]
+#[pyo3(name = "run_models", signature = (models, *, n_threads = None, pool = None))]
 pub fn py_run_models(
     py: Python<'_>,
     mut models: Vec<PyRefMut<'_, PyModel>>,
     n_threads: Option<usize>,
+    pool: Option<PyRef<'_, PyThreadPool>>,
 ) -> PyResult<()> {
+    let pool = resolve_pool(n_threads, pool.as_deref())?;
     let mut refs: Vec<&mut Model> = models.iter_mut().map(|m| &mut m.0).collect();
-    let results = py.detach(|| on_pool(n_threads, || model::run_models(&mut refs)))?;
+    let results = py.detach(|| pool.install(|| model::run_models(&mut refs)));
     all_ok(results, "run", PyRuntimeError::new_err::<String>).map(|_| ())
 }
 
@@ -421,4 +413,49 @@ impl<T> MaybeWithUnit<T> {
             Self::Bare(value) => (value, None),
         }
     }
+}
+
+/// Build and run each builder from an iterable in parallel, starting each run as its builder arrives.
+///
+/// Raises the iterable's own error, then ValueError if a builder fails, then RuntimeError
+/// if a run fails.
+#[pyfunction]
+#[pyo3(name = "run_builders", signature = (builders, *, n_threads = None, pool = None))]
+pub fn py_run_builders(
+    py: Python<'_>,
+    builders: &Bound<'_, PyAny>,
+    n_threads: Option<usize>,
+    pool: Option<PyRef<'_, PyThreadPool>>,
+) -> PyResult<Vec<PyModel>> {
+    let pool = resolve_pool(n_threads, pool.as_deref())?;
+    let iterator = builders.try_iter()?.unbind();
+    let mut source_error = None;
+    // The iterator takes the GIL per item, so Python components in running models can take it
+    // in between, and the wait for the last runs happens without it.
+    let results = py.detach(|| {
+        let source = std::iter::from_fn(|| {
+            Python::attach(|py| {
+                let item = iterator.bind(py).clone().next()?;
+                let builder =
+                    item.and_then(|item| Ok(item.cast::<PyModelBuilder>()?.borrow().0.clone()));
+                builder.map_err(|e| source_error = Some(e)).ok()
+            })
+        });
+        pool.map_each(source, |_, builder: ModelBuilder| {
+            model::build_and_run(&builder)
+        })
+    });
+    if let Some(err) = source_error {
+        return Err(err);
+    }
+    let built = all_ok(results, "build", PyValueError::new_err::<String>)?;
+    let mut runs = Vec::with_capacity(built.len());
+    let mut models = Vec::with_capacity(built.len());
+    for (model, warnings, run) in built {
+        warn_all(py, &warnings)?;
+        runs.push(run);
+        models.push(PyModel(model));
+    }
+    all_ok(runs, "run", PyRuntimeError::new_err::<String>)?;
+    Ok(models)
 }

@@ -109,16 +109,18 @@ result.temperature.sel(layer=0, scenario="historical")
 ```
 
 Each member is its own model.
-The members of each scenario run in parallel, on `n_threads` threads or one per core.
+The members of each scenario run in parallel, on `n_threads` threads or one per core,
+and each member starts running while the next is set up.
 It needs xarray, from the `fair` extra (`pip install 'rscm[fair]'`).
 
-`rscm.spec.run_all` runs any list of setups in parallel and returns the models,
-for results in another layout:
+`rscm.spec.run_all` runs any iterable of setups in parallel and returns the models,
+for results in another layout.
+A generator lets each setup start running while the next is made:
 
 ```python
 from rscm.spec import run_all
 
-setups = [setup_model(c, inputs, time_axis) for c in configs.values()]
+setups = (setup_model(c, inputs, time_axis) for c in configs.values())
 models = run_all(setups)
 ```
 

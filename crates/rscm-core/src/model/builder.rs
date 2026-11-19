@@ -92,6 +92,7 @@ impl InitialValue {
 /// The builder generates a graph that defines the inter-component dependencies
 /// and determines what variables are modelled and prescribed to the model.
 /// This graph is used by the model to define the order in which components are solved.
+#[derive(Clone)]
 pub struct ModelBuilder {
     components: Vec<C>,
     pub(crate) prescribed_variables: TimeseriesCollection,

@@ -42,14 +42,20 @@ from rscm.core import (
     ModelBuilder,
     Timeseries,
     TimeseriesCollection,
-    build_models,
-    run_models,
+    run_builders,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Mapping, Sequence
+    from collections.abc import Collection, Iterable, Mapping, Sequence
 
-    from rscm.core import GridType, Model, PrescribedInput, TimeAxis, VariableSchema
+    from rscm.core import (
+        GridType,
+        Model,
+        PrescribedInput,
+        ThreadPool,
+        TimeAxis,
+        VariableSchema,
+    )
 
     Prescribed = Timeseries | FourBoxTimeseries | HemisphericTimeseries
 
@@ -228,17 +234,24 @@ class ModelSetup:
 
 
 def run_all(
-    setups: Sequence[ModelSetup], *, n_threads: int | None = None
+    setups: Iterable[ModelSetup],
+    *,
+    n_threads: int | None = None,
+    pool: ThreadPool | None = None,
 ) -> list[Model]:
     """Build and run every setup in parallel and return the models in input order.
 
     The setups can come from any model, such as FaIR and MAGICC together.
+    Each setup starts running as soon as it arrives,
+    so a generator of setups overlaps making later setups with running earlier ones.
     ``n_threads`` is the number of threads, or None for one per core.
+    Pass a [ThreadPool][rscm.core.ThreadPool] as ``pool`` instead
+    to reuse its threads across calls.
     Python components hold the GIL while they solve, so they run one at a time.
     """
-    models = build_models([setup.builder() for setup in setups], n_threads=n_threads)
-    run_models(models, n_threads=n_threads)
-    return models
+    return run_builders(
+        (setup.builder() for setup in setups), n_threads=n_threads, pool=pool
+    )
 
 
 def _axis(time_axis: TimeAxis) -> str:

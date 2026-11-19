@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Literal, Protocol, Self, TypeVar, final
 
@@ -909,8 +909,38 @@ class Model:
         New model object with the state as defined in the TOML string.
         """
 
+@final
+class ThreadPool:
+    """
+    A thread pool for building and running models, built once and reused across calls.
+
+    Pass it as ``pool`` to [build_models][], [run_models][] and [run_builders][]
+    to avoid starting new threads on every call.
+    """
+
+    def __init__(self, n_threads: int | None = None) -> None:
+        """
+        Start a pool.
+
+        Parameters
+        ----------
+        n_threads
+            Number of threads, or None for rayon's shared pool with one thread per core.
+
+        Raises
+        ------
+        ValueError
+            If ``n_threads`` is 0.
+        """
+    @property
+    def n_threads(self) -> int:
+        """Number of threads the pool runs work on."""
+
 def build_models(
-    builders: list[ModelBuilder], *, n_threads: int | None = None
+    builders: list[ModelBuilder],
+    *,
+    n_threads: int | None = None,
+    pool: ThreadPool | None = None,
 ) -> list[Model]:
     """
     Build every builder in parallel, in input order.
@@ -921,14 +951,22 @@ def build_models(
         Builders to build. Each is left unchanged and can be built again.
     n_threads
         Number of threads, or None for one per core.
+    pool
+        Pool to run on instead of ``n_threads``.
 
     Raises
     ------
     ValueError
-        If a builder fails, naming the first that did.
+        If a builder fails, naming the first that did,
+        or if both ``n_threads`` and ``pool`` are given.
     """
 
-def run_models(models: list[Model], *, n_threads: int | None = None) -> None:
+def run_models(
+    models: list[Model],
+    *,
+    n_threads: int | None = None,
+    pool: ThreadPool | None = None,
+) -> None:
     """
     Run every model to completion in parallel.
 
@@ -941,6 +979,8 @@ def run_models(models: list[Model], *, n_threads: int | None = None) -> None:
         Models to run. A model may appear only once.
     n_threads
         Number of threads, or None for one per core.
+    pool
+        Pool to run on instead of ``n_threads``.
 
     Raises
     ------
@@ -948,4 +988,40 @@ def run_models(models: list[Model], *, n_threads: int | None = None) -> None:
         If a model fails, naming the first that did.
         The other models still run to completion.
         Rebuild the failed ones before retrying.
+    ValueError
+        If both ``n_threads`` and ``pool`` are given.
+    """
+
+def run_builders(
+    builders: Iterable[ModelBuilder],
+    *,
+    n_threads: int | None = None,
+    pool: ThreadPool | None = None,
+) -> list[Model]:
+    """
+    Build and run every builder in parallel and return the models in input order.
+
+    Each builder starts building and running as soon as the iterable yields it,
+    so a generator that makes builders overlaps with the runs of earlier ones.
+    The results are the same as [build_models][] followed by [run_models][].
+    An error raised by the iterable stops it,
+    and is raised once the builders it already yielded have run.
+
+    Parameters
+    ----------
+    builders
+        Builders to build and run. Each is left unchanged and can be built again.
+    n_threads
+        Number of threads, or None for one per core.
+    pool
+        Pool to run on instead of ``n_threads``.
+
+    Raises
+    ------
+    ValueError
+        If a builder fails, naming the first that did,
+        or if both ``n_threads`` and ``pool`` are given.
+    RuntimeError
+        If a run fails, naming the first that did.
+        The other models still run to completion.
     """
