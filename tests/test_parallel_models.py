@@ -1,6 +1,8 @@
 """Tests for building and running models in parallel."""
 
-import threading
+import subprocess
+import sys
+import textwrap
 
 import numpy as np
 import numpy.testing as npt
@@ -187,21 +189,67 @@ def test_run_builders_raises_the_iterables_error():
 
 
 def test_run_builders_with_python_components_does_not_deadlock():
-    # The producer takes the GIL per builder while running models take it per solve.
-    def builders():
-        for factor in range(32):
-            sum(range(10_000))
-            yield scaled_builder(float(factor))
+    # A subprocess, because a deadlock holding the GIL would also hang a test thread.
+    script = textwrap.dedent(
+        """
+        import numpy as np
+        from rscm.component import Component, Input, Output
+        from rscm.core import (
+            InterpolationStrategy, ModelBuilder, ThreadPool, TimeAxis, Timeseries,
+            run_builders,
+        )
 
-    result = {}
+        axis = TimeAxis.from_values(np.arange(1850.0, 2000.0, 5))
 
-    def run():
-        result["models"] = run_builders(builders(), pool=ThreadPool(4))
+        class Scaled(Component):
+            forcing = Input("Effective Radiative Forcing", unit="W/m^2")
+            out = Output("Scaled Forcing", unit="W/m^2")
 
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
-    thread.join(timeout=60)
+            def __init__(self, factor):
+                self.factor = factor
 
-    assert not thread.is_alive(), "run_builders deadlocked"
-    for factor, model in enumerate(result["models"]):
-        npt.assert_array_equal(scaled_output(model)[1:], float(factor))
+            def solve(self, t_current, t_next, inputs):
+                return self.Outputs(out=self.factor * inputs.forcing.get())
+
+        def builders():
+            erf = Timeseries(
+                np.ones(len(axis)), axis, "W/m^2", InterpolationStrategy.Previous
+            )
+            for factor in range(32):
+                sum(range(10_000))
+                yield (
+                    ModelBuilder()
+                    .with_time_axis(axis)
+                    .with_component(Scaled(float(factor)))
+                    .with_prescribed_variable("Effective Radiative Forcing", erf)
+                )
+
+        models = run_builders(builders(), pool=ThreadPool(4))
+        for factor, model in enumerate(models):
+            series = model.timeseries().get_timeseries_by_name("Scaled Forcing")
+            assert (series.values()[1:] == factor).all()
+        """
+    )
+    subprocess.run([sys.executable, "-c", script], check=True, timeout=120)  # noqa: S603
+
+
+class Interrupting(Component):
+    forcing = Input("Effective Radiative Forcing", unit="W/m^2")
+    out = Output("Scaled Forcing", unit="W/m^2")
+
+    def solve(self, t_current, t_next, inputs):
+        raise KeyboardInterrupt
+
+
+def test_run_builders_raises_an_interrupt_before_a_build_failure():
+    erf = Timeseries(np.ones(len(AXIS)), AXIS, "W/m^2", InterpolationStrategy.Previous)
+    unbuildable = ModelBuilder().with_time_axis(AXIS).with_component(Scaled(1.0))
+    interrupting = (
+        ModelBuilder()
+        .with_time_axis(AXIS)
+        .with_component(Interrupting())
+        .with_prescribed_variable("Effective Radiative Forcing", erf)
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        run_builders([unbuildable, interrupting])

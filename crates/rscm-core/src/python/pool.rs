@@ -61,13 +61,57 @@ fn python_pool(n_threads: Option<usize>) -> PyResult<Pool> {
 }
 
 /// One Python thread state per pool worker, kept for the worker's lifetime.
+/// Stop pool workers touching Python before finalisation, when taking the GIL would end their thread.
+#[pyfunction]
+fn close_thread_states(py: Python<'_>) {
+    py.detach(thread_state::close);
+}
+
+/// Register `close_thread_states` to run at interpreter exit.
+pub(crate) fn register_shutdown(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let close = wrap_pyfunction!(close_thread_states, m)?;
+    m.py()
+        .import("atexit")?
+        .call_method1("register", (close,))?;
+    Ok(())
+}
+
 mod thread_state {
     use pyo3::ffi;
     use std::cell::Cell;
+    use std::sync::{Condvar, Mutex};
 
     thread_local! {
         static KEPT: Cell<Option<(ffi::PyGILState_STATE, *mut ffi::PyThreadState)>> =
             const { Cell::new(None) };
+    }
+
+    /// Whether workers may still take the GIL, and how many are doing so.
+    static GATE: Mutex<(bool, usize)> = Mutex::new((false, 0));
+    static IDLE: Condvar = Condvar::new();
+
+    /// Run `op` unless the gate is closed, keeping `close` waiting until it finishes.
+    fn through_gate(op: impl FnOnce()) {
+        {
+            let mut gate = GATE.lock().unwrap_or_else(|e| e.into_inner());
+            if gate.0 {
+                return;
+            }
+            gate.1 += 1;
+        }
+        op();
+        let mut gate = GATE.lock().unwrap_or_else(|e| e.into_inner());
+        gate.1 -= 1;
+        IDLE.notify_all();
+    }
+
+    /// Close the gate and wait for workers inside it. Call without holding the GIL.
+    pub fn close() {
+        let mut gate = GATE.lock().unwrap_or_else(|e| e.into_inner());
+        gate.0 = true;
+        while gate.1 > 0 {
+            gate = IDLE.wait(gate).unwrap_or_else(|e| e.into_inner());
+        }
     }
 
     fn interpreter_running() -> bool {
@@ -76,30 +120,35 @@ mod thread_state {
     }
 
     pub fn keep() {
-        if !interpreter_running() {
-            return;
-        }
-        // SAFETY: the interpreter is running, and the thread state is detached before returning,
-        // so this thread holds no GIL between tasks.
-        let kept = unsafe {
-            let gil = ffi::PyGILState_Ensure();
-            (gil, ffi::PyEval_SaveThread())
-        };
-        KEPT.with(|cell| cell.set(Some(kept)));
+        through_gate(|| {
+            if !interpreter_running() {
+                return;
+            }
+            // SAFETY: the interpreter is running and cannot start finalising until the gate
+            // is passed. The state is detached before returning, so no GIL is held between tasks.
+            let kept = unsafe {
+                let gil = ffi::PyGILState_Ensure();
+                (gil, ffi::PyEval_SaveThread())
+            };
+            KEPT.with(|cell| cell.set(Some(kept)));
+        });
     }
 
+    /// Free the kept state, or leak it after shutdown starts, for finalisation to free.
     pub fn release() {
         let Some((gil, state)) = KEPT.with(Cell::take) else {
             return;
         };
-        // Leaked at shutdown: finalisation frees the thread states itself.
-        if !interpreter_running() {
-            return;
-        }
-        // SAFETY: `state` is this thread's own state, saved by `keep` and not yet released.
-        unsafe {
-            ffi::PyEval_RestoreThread(state);
-            ffi::PyGILState_Release(gil);
-        }
+        through_gate(|| {
+            if !interpreter_running() {
+                return;
+            }
+            // SAFETY: `state` is this thread's own state, saved by `keep` and not yet released,
+            // and the interpreter cannot start finalising until the gate is passed.
+            unsafe {
+                ffi::PyEval_RestoreThread(state);
+                ffi::PyGILState_Release(gil);
+            }
+        });
     }
 }

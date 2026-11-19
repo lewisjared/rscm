@@ -448,6 +448,15 @@ pub fn py_run_builders(
     if let Some(err) = source_error {
         return Err(err);
     }
+    let mut results = results;
+    if let Some(i) = results
+        .iter()
+        .position(|r| matches!(r, Ok((_, _, Err(RSCMError::Interrupt(_))))))
+    {
+        if let Ok((_, _, Err(err))) = results.swap_remove(i) {
+            return Err(err.into());
+        }
+    }
     let built = all_ok(results, "build", PyValueError::new_err::<String>)?;
     let mut runs = Vec::with_capacity(built.len());
     let mut models = Vec::with_capacity(built.len());

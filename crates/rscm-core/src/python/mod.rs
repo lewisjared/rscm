@@ -134,6 +134,7 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(model::py_run_models, m)?)?;
     m.add_function(wrap_pyfunction!(model::py_run_builders, m)?)?;
     m.add_class::<pool::PyThreadPool>()?;
+    pool::register_shutdown(m)?;
 
     // Schema types (for variable definitions and aggregates)
     m.add_class::<VariableSchema>()?;
