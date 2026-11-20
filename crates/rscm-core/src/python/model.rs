@@ -436,8 +436,8 @@ pub fn py_run_builders(
         let source = std::iter::from_fn(|| {
             Python::attach(|py| {
                 let item = iterator.bind(py).clone().next()?;
-                let builder =
-                    item.and_then(|item| Ok(item.cast::<PyModelBuilder>()?.borrow().0.clone()));
+                let builder = item
+                    .and_then(|item| Ok(item.cast::<PyModelBuilder>()?.try_borrow()?.0.clone()));
                 builder.map_err(|e| source_error = Some(e)).ok()
             })
         });

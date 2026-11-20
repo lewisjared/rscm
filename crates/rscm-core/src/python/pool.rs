@@ -52,12 +52,15 @@ pub(crate) fn resolve_pool(
 /// Without this, every Python component solve on a worker creates and deletes a thread state,
 /// which makes Python components several times slower on free-threaded builds.
 fn python_pool(n_threads: Option<usize>) -> PyResult<Pool> {
+    if n_threads == Some(0) {
+        return Err(PyValueError::new_err("n_threads must be at least 1"));
+    }
     Pool::configured(n_threads, |builder| {
         builder
             .start_handler(|_| thread_state::keep())
             .exit_handler(|_| thread_state::release())
     })
-    .map_err(|e| PyValueError::new_err(e.to_string()))
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }
 
 /// One Python thread state per pool worker, kept for the worker's lifetime.
