@@ -350,13 +350,29 @@ models = build_models([make_builder(p) for p in parameter_sets])
 run_models(models)
 ```
 
-`rscm.spec.run_all` does both for a list of setups.
+`run_builders` does both for any iterable of builders,
+starting each run as soon as the iterable yields its builder,
+so a generator that makes builders overlaps with the runs of earlier ones.
+`rscm.spec.run_all` does the same for setups.
 Each model owns its state, so the results are the same as running the models in turn.
 `n_threads` limits the thread count, and the default is one thread per core.
+Each call with `n_threads` starts its own threads.
+A `ThreadPool` passed as `pool` keeps one set of threads across calls:
+
+```python
+from rscm.core import ThreadPool, run_builders
+
+pool = ThreadPool(8)
+for batch in batches:
+    models = run_builders((make_builder(p) for p in batch), pool=pool)
+```
+
 Python components hold the GIL while they solve, so models with Python components gain less.
 `run_models` runs every model even when one fails,
 then raises `RuntimeError` naming the first that failed.
 In Rust, `rscm_core::model::build_models` and `run_models` return one result per model.
+`rscm_core::model::run_each` streams builders from an iterator onto a `Pool`,
+and passes each run model, or its error, to a function on the worker thread.
 
 ### Prescribed vs Modelled Variables
 

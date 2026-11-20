@@ -12,6 +12,8 @@ climate models.
   as `ModelBuilder.prescribed_inputs` lists them.
 - [Model][] is a coupled set of components solved on a common time axis.
 - [build_models][] and [run_models][] build and run many models in parallel.
+- [run_builders][] builds and runs models as an iterable yields their builders.
+- [ThreadPool][] keeps one set of threads for many of those calls.
 
 **Time series**
 
@@ -83,6 +85,7 @@ from rscm._lib.core import (
     ModelBuilder,
     PrescribedInput,
     PythonComponent,
+    ThreadPool,
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
@@ -92,6 +95,7 @@ from rscm._lib.core import (
     VariableRole,
     VariableSchema,
     build_models,
+    run_builders,
     run_models,
 )
 from rscm._lib.core.spatial import (
@@ -133,6 +137,7 @@ __all__ = [
     "ScalarGrid",
     "ScalarRegion",
     "StateValue",
+    "ThreadPool",
     "TimeAxis",
     "Timeseries",
     "TimeseriesCollection",
@@ -144,5 +149,6 @@ __all__ = [
     "VariableSchema",
     "VariableSource",
     "build_models",
+    "run_builders",
     "run_models",
 ]
