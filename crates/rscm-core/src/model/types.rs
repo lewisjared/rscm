@@ -91,8 +91,8 @@ pub struct UnitConversionInfo {
     pub target_unit: String,
 }
 
-/// Direction of a grid transformation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Direction of a grid transformation or unit conversion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransformDirection {
     /// Read-side: aggregating schema data before component reads it
@@ -101,6 +101,15 @@ pub enum TransformDirection {
     /// Write-side: aggregating component output before storing in schema
     /// (e.g., component produces FourBox, schema wants Scalar)
     Write,
+}
+
+impl std::fmt::Display for TransformDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Read => "read",
+            Self::Write => "write",
+        })
+    }
 }
 
 /// A required grid transformation identified during validation.

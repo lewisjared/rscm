@@ -38,6 +38,55 @@ pub struct PrescribedInput {
     pub supplied: bool,
 }
 
+/// A variable's value at the first step, the same in every region or one per region.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum RegionValues {
+    Uniform(FloatValue),
+    PerRegion(Vec<FloatValue>),
+}
+
+/// An initial value and, when not given in the stored unit, its unit.
+#[derive(Debug, Clone, PartialEq)]
+struct InitialValue {
+    values: RegionValues,
+    unit: Option<String>,
+}
+
+impl InitialValue {
+    /// One value per region of `grid`, converted into `storage_unit`.
+    fn resolve(
+        &self,
+        name: &str,
+        storage_unit: &str,
+        grid: GridType,
+    ) -> RSCMResult<Vec<FloatValue>> {
+        let factor = match &self.unit {
+            Some(unit) => {
+                ModelBuilder::check_unit_compatibility(name, "initial value", unit, storage_unit)?
+                    .map_or(1.0, |conversion| conversion.factor)
+            }
+            None => 1.0,
+        };
+        let expected_len = match grid {
+            GridType::Scalar => 1,
+            GridType::Hemispheric => 2,
+            GridType::FourBox => 4,
+        };
+        match &self.values {
+            RegionValues::Uniform(value) => Ok(vec![value * factor; expected_len]),
+            RegionValues::PerRegion(values) if values.len() == expected_len => {
+                Ok(values.iter().map(|v| v * factor).collect())
+            }
+            RegionValues::PerRegion(values) => Err(RSCMError::Error(format!(
+                "Initial grid values for '{name}' on the {grid} grid need \
+                 {expected_len} value{}, got {}",
+                if expected_len == 1 { "" } else { "s" },
+                values.len()
+            ))),
+        }
+    }
+}
+
 /// Build a new model from a set of components.
 ///
 /// The builder generates a graph that defines the inter-component dependencies
@@ -48,8 +97,7 @@ pub struct ModelBuilder {
     pub(crate) prescribed_variables: TimeseriesCollection,
     /// Names given to `with_prescribed_variable`, which must be read by the model.
     explicit_prescribed: BTreeSet<String>,
-    initial_values: HashMap<String, FloatValue>,
-    initial_grid_values: HashMap<String, Vec<FloatValue>>,
+    initial_values: HashMap<String, InitialValue>,
     time_axis: Option<Arc<TimeAxis>>,
     schema: Option<VariableSchema>,
     /// Custom weights for grid aggregation, keyed by grid.
@@ -93,7 +141,6 @@ impl ModelBuilder {
         Self {
             components: vec![],
             initial_values: HashMap::new(),
-            initial_grid_values: HashMap::new(),
             prescribed_variables: TimeseriesCollection::new(),
             explicit_prescribed: BTreeSet::new(),
             time_axis: None,
@@ -284,8 +331,7 @@ impl ModelBuilder {
             .into_iter()
             .map(|(name, (definition, consumers))| PrescribedInput {
                 supplied: self.prescribed_variables.get_data(&name).is_some()
-                    || self.initial_values.contains_key(&name)
-                    || self.initial_grid_values.contains_key(&name),
+                    || self.initial_values.contains_key(&name),
                 definition,
                 consumers: consumers.into_iter().collect(),
             })
@@ -402,22 +448,62 @@ impl ModelBuilder {
         &mut self,
         initial_values: HashMap<String, FloatValue>,
     ) -> &mut Self {
-        for (name, value) in initial_values.into_iter() {
-            self.initial_values.insert(name, value);
+        for (name, value) in initial_values {
+            self.with_initial_value(name, RegionValues::Uniform(value), None);
+        }
+        self
+    }
+
+    /// Like [`Self::with_initial_values`], with each value given in its own unit.
+    ///
+    /// Building converts the values into the unit the model stores each variable in,
+    /// and fails if the units are incompatible.
+    pub fn with_initial_values_in_units(
+        &mut self,
+        initial_values: HashMap<String, (FloatValue, String)>,
+    ) -> &mut Self {
+        for (name, (value, unit)) in initial_values {
+            self.with_initial_value(name, RegionValues::Uniform(value), Some(unit));
         }
         self
     }
 
     /// Adds initial values for grid variables, one per region in grid order.
     ///
-    /// These take precedence over a uniform value given to [`Self::with_initial_values`].
+    /// Each name holds one initial value, so the latest call for a name replaces
+    /// a value given to [`Self::with_initial_values`] and the reverse.
     /// Building fails if the number of values does not match the variable's grid,
     /// or for a name no component reads or produces.
     pub fn with_initial_grid_values(
         &mut self,
         initial_values: HashMap<String, Vec<FloatValue>>,
     ) -> &mut Self {
-        self.initial_grid_values.extend(initial_values);
+        for (name, values) in initial_values {
+            self.with_initial_value(name, RegionValues::PerRegion(values), None);
+        }
+        self
+    }
+
+    /// Like [`Self::with_initial_grid_values`], with each variable's values given in their own unit.
+    pub fn with_initial_grid_values_in_units(
+        &mut self,
+        initial_values: HashMap<String, (Vec<FloatValue>, String)>,
+    ) -> &mut Self {
+        for (name, (values, unit)) in initial_values {
+            self.with_initial_value(name, RegionValues::PerRegion(values), Some(unit));
+        }
+        self
+    }
+
+    /// Set one variable's initial value, in the stored unit when `unit` is `None`.
+    pub(crate) fn with_initial_value(
+        &mut self,
+        name: String,
+        values: RegionValues,
+        unit: Option<String>,
+    ) -> &mut Self {
+        self.initial_values
+            .insert(name, InitialValue { values, unit });
         self
     }
 
@@ -841,6 +927,8 @@ impl ModelBuilder {
         if let Some(schema) = &self.schema {
             // First validate the schema itself
             schema.validate()?;
+            // The store holds the schema's unit, so producer-relative factors do not apply.
+            unit_conversions.clear();
 
             // Validate each component against the schema and collect transformations
             for (component, (requires, provides)) in self.components.iter().zip(&component_defs) {
@@ -986,10 +1074,7 @@ impl ModelBuilder {
 
         // Validate that all state variables have initial values
         for (name, def) in &definitions {
-            if def.role == VariableRole::State
-                && !self.initial_values.contains_key(name)
-                && !self.initial_grid_values.contains_key(name)
-            {
+            if def.role == VariableRole::State && !self.initial_values.contains_key(name) {
                 let component = variable_owners
                     .get(name)
                     .cloned()
@@ -1048,24 +1133,11 @@ impl ModelBuilder {
             // With a schema, the store holds each variable in the schema's unit.
             let schema_unit = self.schema.as_ref().and_then(|s| s.get_unit(&name));
             let storage_unit = schema_unit.unwrap_or(&definition.unit);
-            let initial_val = self.initial_values.get(&name).copied();
-            let initial_grid = self.initial_grid_values.get(&name);
-            let expected_len = match storage_grid {
-                GridType::Scalar => 1,
-                GridType::Hemispheric => 2,
-                GridType::FourBox => 4,
-            };
-            if let Some(values) = initial_grid {
-                if values.len() != expected_len {
-                    return Err(RSCMError::Error(format!(
-                        "Initial grid values for '{name}' on the {storage_grid} grid need \
-                         {expected_len} value{}, got {}",
-                        if expected_len == 1 { "" } else { "s" },
-                        values.len()
-                    )));
-                }
-            }
-
+            let initial = self
+                .initial_values
+                .get(&name)
+                .map(|initial| initial.resolve(&name, storage_unit, storage_grid))
+                .transpose()?;
             match storage_grid {
                 GridType::Scalar => {
                     if let Some(TimeseriesData::Scalar(ts)) = prescribed_data {
@@ -1080,11 +1152,11 @@ impl ModelBuilder {
                     } else {
                         let mut ts = Timeseries::new_empty_scalar(
                             time_axis.clone(),
-                            definition.unit,
+                            storage_unit.to_string(),
                             interp.clone(),
                         );
-                        if let Some(val) = initial_grid.map(|v| v[0]).or(initial_val) {
-                            ts.set(0, ScalarRegion::Global, val);
+                        if let Some(values) = &initial {
+                            ts.set(0, ScalarRegion::Global, values[0]);
                         }
                         collection.add_timeseries(name, ts);
                     }
@@ -1103,22 +1175,11 @@ impl ModelBuilder {
                         let mut ts = GridTimeseries::new_empty(
                             time_axis.clone(),
                             self.create_four_box_grid(),
-                            definition.unit,
+                            storage_unit.to_string(),
                             interp.clone(),
                         );
-                        use crate::spatial::FourBoxRegion;
-                        let regions = [
-                            FourBoxRegion::NorthernOcean,
-                            FourBoxRegion::NorthernLand,
-                            FourBoxRegion::SouthernOcean,
-                            FourBoxRegion::SouthernLand,
-                        ];
-                        if let Some(values) = initial_grid {
+                        if let Some(values) = &initial {
                             ts.set_all(0, values);
-                        } else if let Some(val) = initial_val {
-                            for region in regions {
-                                ts.set(0, region, val);
-                            }
                         }
                         collection.add_four_box_timeseries(name, ts);
                     }
@@ -1137,17 +1198,11 @@ impl ModelBuilder {
                         let mut ts = GridTimeseries::new_empty(
                             time_axis.clone(),
                             self.create_hemispheric_grid(),
-                            definition.unit,
+                            storage_unit.to_string(),
                             interp.clone(),
                         );
-                        use crate::spatial::HemisphericRegion;
-                        let regions = [HemisphericRegion::Northern, HemisphericRegion::Southern];
-                        if let Some(values) = initial_grid {
+                        if let Some(values) = &initial {
                             ts.set_all(0, values);
-                        } else if let Some(val) = initial_val {
-                            for region in regions {
-                                ts.set(0, region, val);
-                            }
                         }
                         collection.add_hemispheric_timeseries(name, ts);
                     }
@@ -1196,11 +1251,7 @@ impl ModelBuilder {
         prescribed: &HashSet<String>,
         owners: &HashMap<String, String>,
     ) -> RSCMResult<()> {
-        let initial_names: BTreeSet<&String> = self
-            .initial_values
-            .keys()
-            .chain(self.initial_grid_values.keys())
-            .collect();
+        let initial_names: BTreeSet<&String> = self.initial_values.keys().collect();
         if let Some(variable) = initial_names
             .into_iter()
             .find(|n| !definitions.contains_key(*n))

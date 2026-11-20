@@ -100,6 +100,15 @@ impl TimeseriesData {
         }
     }
 
+    /// The unit the series is stored in.
+    pub fn unit(&self) -> &str {
+        match self {
+            TimeseriesData::Scalar(ts) => ts.unit(),
+            TimeseriesData::FourBox(ts) => ts.unit(),
+            TimeseriesData::Hemispheric(ts) => ts.unit(),
+        }
+    }
+
     /// The grid the series is stored on.
     pub fn grid(&self) -> GridType {
         match self {

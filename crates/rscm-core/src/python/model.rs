@@ -1,6 +1,6 @@
 use crate::component::TimeseriesType;
 use crate::errors::{RSCMError, RSCMResult};
-use crate::model::{self, Model, ModelBuilder};
+use crate::model::{self, Model, ModelBuilder, RegionValues};
 use crate::python::component::{PyPythonComponent, PythonComponent};
 use crate::python::timeseries::{time_axis_repr, PyTimeAxis, Reduced};
 use crate::python::timeseries_collection::{extract_timeseries_data, PyTimeseriesCollection};
@@ -58,17 +58,27 @@ impl PyModelBuilder {
 
     fn with_initial_values(
         mut self_: PyRefMut<Self>,
-        initial_values: HashMap<String, FloatValue>,
+        initial_values: HashMap<String, MaybeWithUnit<FloatValue>>,
     ) -> PyRefMut<Self> {
-        self_.0.with_initial_values(initial_values);
+        for (name, entry) in initial_values {
+            let (value, unit) = entry.into_parts();
+            self_
+                .0
+                .with_initial_value(name, RegionValues::Uniform(value), unit);
+        }
         self_
     }
 
     fn with_initial_grid_values(
         mut self_: PyRefMut<Self>,
-        initial_values: HashMap<String, Vec<FloatValue>>,
+        initial_values: HashMap<String, MaybeWithUnit<Vec<FloatValue>>>,
     ) -> PyRefMut<Self> {
-        self_.0.with_initial_grid_values(initial_values);
+        for (name, entry) in initial_values {
+            let (values, unit) = entry.into_parts();
+            self_
+                .0
+                .with_initial_value(name, RegionValues::PerRegion(values), unit);
+        }
         self_
     }
 
@@ -395,4 +405,20 @@ pub fn py_run_models(
     let mut refs: Vec<&mut Model> = models.iter_mut().map(|m| &mut m.0).collect();
     let results = py.detach(|| on_pool(n_threads, || model::run_models(&mut refs)))?;
     all_ok(results, "run", PyRuntimeError::new_err::<String>).map(|_| ())
+}
+
+/// An initial value, optionally paired with the unit it is given in.
+#[derive(FromPyObject)]
+enum MaybeWithUnit<T> {
+    WithUnit((T, String)),
+    Bare(T),
+}
+
+impl<T> MaybeWithUnit<T> {
+    fn into_parts(self) -> (T, Option<String>) {
+        match self {
+            Self::WithUnit((value, unit)) => (value, Some(unit)),
+            Self::Bare(value) => (value, None),
+        }
+    }
 }

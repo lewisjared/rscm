@@ -628,6 +628,19 @@ where
         self
     }
 
+    /// A copy of the series in `unit`, which must be compatible with the series' unit.
+    pub fn convert_to(&self, unit: &str) -> RSCMResult<Self> {
+        let factor = crate::units::conversion_factor(&self.unit, unit).map_err(|e| {
+            RSCMError::Error(format!(
+                "Cannot convert from '{}' to '{unit}': {e}",
+                self.unit
+            ))
+        })?;
+        Ok(self
+            .clone()
+            .convert_unit(<T as From<Time>>::from(factor), unit.to_string()))
+    }
+
     /// Multiply every value by `factor` and relabel the series with `unit`.
     pub(crate) fn convert_unit(mut self, factor: T, unit: String) -> Self {
         self.values.mapv_inplace(|v| v * factor);
@@ -1379,5 +1392,21 @@ data = [2020.0, 2021.0, 2022.0, 2023.0]
                 ts.at(0, FourBoxRegion::NorthernOcean)
             );
         }
+    }
+
+    #[test]
+    fn convert_to_rescales_and_relabels() {
+        let ts = Timeseries::from_values(array![1.0, 2.0], array![2000.0, 2001.0]);
+        let ts = Timeseries::new(
+            ts.values().clone(),
+            ts.time_axis(),
+            crate::spatial::ScalarGrid,
+            "GtC/yr".to_string(),
+            ts.interpolation_strategy().clone(),
+        );
+        let converted = ts.convert_to("MtC/yr").unwrap();
+        assert_eq!(converted.unit(), "MtC/yr");
+        assert_eq!(converted.values().column(0).to_vec(), vec![1000.0, 2000.0]);
+        assert!(ts.convert_to("W/m^2").is_err());
     }
 }
