@@ -377,6 +377,11 @@ impl Model {
         &self.write_transforms
     }
 
+    #[cfg(test)]
+    pub(crate) fn write_transforms_mut(&mut self) -> &mut HashMap<String, RequiredTransformation> {
+        &mut self.write_transforms
+    }
+
     /// Get unit conversions.
     ///
     /// Returns the unit conversion factors keyed by (variable_name, component_name).
@@ -615,6 +620,24 @@ impl Model {
         Ok(())
     }
 
+    fn grid_mismatch(
+        &self,
+        component_name: &str,
+        key: &str,
+        expected: GridType,
+        actual: GridType,
+    ) -> RSCMError {
+        let (start, end) = self.current_time_bounds();
+        let err = RSCMError::GridOutputMismatch {
+            variable: key.to_string(),
+            expected_grid: format!("{expected:?}"),
+            component_grid: format!("{actual:?}"),
+        };
+        RSCMError::Error(format!(
+            "{component_name} could not write {key} during {start}..{end}: {err}"
+        ))
+    }
+
     /// A component's output `key` converted to the unit and grid it is stored in.
     fn stage_output(
         &self,
@@ -635,14 +658,7 @@ impl Model {
             |(source_grid, _)| source_grid,
         );
         if value.grid() != expected_grid {
-            let err = RSCMError::GridOutputMismatch {
-                variable: key.to_string(),
-                expected_grid: format!("{expected_grid:?}"),
-                component_grid: format!("{:?}", value.grid()),
-            };
-            return Err(RSCMError::Error(format!(
-                "{component_name} could not write {key} during {start}..{end}: {err}"
-            )));
+            return Err(self.grid_mismatch(component_name, key, expected_grid, value.grid()));
         }
         let value = if (target.unit_factor - 1.0).abs() > FloatValue::EPSILON {
             scale_state_value(&value, target.unit_factor)
@@ -663,6 +679,10 @@ impl Model {
             })?,
             None => value,
         };
+        let stored_grid = self.collection.items()[target.index].data.grid();
+        if value.grid() != stored_grid {
+            return Err(self.grid_mismatch(component_name, key, stored_grid, value.grid()));
+        }
         let at = match target.timeseries_type {
             TimeseriesType::Point => self.time_index + 1,
             TimeseriesType::Average => self.time_index,

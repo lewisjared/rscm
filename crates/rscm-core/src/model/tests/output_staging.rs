@@ -2,7 +2,7 @@
 
 use crate::component::{Component, GridType, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
-use crate::model::{Model, ModelBuilder};
+use crate::model::{Model, ModelBuilder, RequiredTransformation, TransformDirection};
 use crate::schema::VariableSchema;
 use crate::state::{FourBoxSlice, HemisphericSlice, StateValue};
 use crate::timeseries::{Time, TimeAxis};
@@ -85,8 +85,66 @@ fn undeclared_output_fails_even_when_stored() {
     assert_a_unwritten(&model);
 }
 
+/// A model where `A` is written before `T`, and `T` goes through a `source` to `target` write transform.
+fn model_with_write_transform(
+    t_output: VariableDefinition,
+    emitted_t: StateValue,
+    source: GridType,
+    target: GridType,
+) -> Model {
+    let mut model = builder()
+        .with_component(Arc::new(Emitter {
+            declared: vec![VariableDefinition::scalar_output("A", "K"), t_output],
+            emitted: vec![
+                ("A".into(), StateValue::Scalar(1.0)),
+                ("T".into(), emitted_t),
+            ],
+        }))
+        .build()
+        .unwrap();
+    model.write_transforms_mut().insert(
+        "T".into(),
+        RequiredTransformation {
+            variable: "T".into(),
+            unit: "K".into(),
+            source_grid: source,
+            target_grid: target,
+            direction: TransformDirection::Write,
+        },
+    );
+    model
+}
+
 #[test]
 fn failing_aggregation_commits_nothing() {
+    let mut model = model_with_write_transform(
+        VariableDefinition::scalar_output("T", "K"),
+        StateValue::Scalar(2.0),
+        GridType::Scalar,
+        GridType::FourBox,
+    );
+
+    let error = first_step_error(&mut model);
+    assert!(error.contains("could not aggregate T"), "{error}");
+    assert_a_unwritten(&model);
+}
+
+#[test]
+fn aggregated_value_off_the_stored_grid_commits_nothing() {
+    let mut model = model_with_write_transform(
+        VariableDefinition::four_box_output("T", "K"),
+        StateValue::FourBox(FourBoxSlice::from_array([1.0, 2.0, 3.0, 4.0])),
+        GridType::FourBox,
+        GridType::Scalar,
+    );
+
+    let error = first_step_error(&mut model);
+    assert!(error.contains("could not write T"), "{error}");
+    assert_a_unwritten(&model);
+}
+
+#[test]
+fn value_off_the_transform_source_grid_commits_nothing() {
     let schema = VariableSchema::new()
         .variable_with_grid("A", "K", GridType::Scalar)
         .variable_with_grid("T", "K", GridType::Scalar);
