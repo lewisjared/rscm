@@ -11,6 +11,7 @@ climate models.
 - [PrescribedInput][] is an input no component produces,
   as `ModelBuilder.prescribed_inputs` lists them.
 - [Model][] is a coupled set of components solved on a common time axis.
+- [Record][] is a model's spec and state at one step, to restore or branch a model from.
 - [build_models][] and [run_models][] build and run many models in parallel.
 - [run_builders][] builds and runs models as an iterable yields their builders.
 - [ThreadPool][] keeps one set of threads for many of those calls.
@@ -85,6 +86,7 @@ from rscm._lib.core import (
     ModelBuilder,
     PrescribedInput,
     PythonComponent,
+    Record,
     ThreadPool,
     TimeAxis,
     Timeseries,
@@ -134,6 +136,7 @@ __all__ = [
     "ModelBuilder",
     "PrescribedInput",
     "PythonComponent",
+    "Record",
     "ScalarGrid",
     "ScalarRegion",
     "StateValue",

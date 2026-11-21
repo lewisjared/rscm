@@ -1,5 +1,8 @@
 """Tests for how Python components run inside a Rust model."""
 
+import copy
+import json
+import pickle
 import re
 
 import numpy as np
@@ -10,8 +13,10 @@ from rscm.core import (
     FourBoxTimeseries,
     GridType,
     InterpolationStrategy,
+    Model,
     ModelBuilder,
     PythonComponent,
+    Record,
     TimeAxis,
     Timeseries,
     VariableDefinition,
@@ -34,6 +39,20 @@ class Accumulator(Component):
     def solve(self, t_current, t_next, inputs):
         stock = inputs.stock.get() + self.rate * inputs.emissions.get()
         return self.Outputs(stock=stock)
+
+
+class Counter(Component):
+    """Adds its call count to the emissions, keeping the count as an attribute."""
+
+    emissions = Input("Emissions|CO2", unit="GtC/yr")
+    out = Output("Out", unit="GtC/yr")
+
+    def __init__(self):
+        self.calls = 0
+
+    def solve(self, t_current, t_next, inputs):
+        self.calls += 1
+        return self.Outputs(out=inputs.emissions.get() + self.calls)
 
 
 class Failing(Component):
@@ -288,14 +307,23 @@ def test_scalar_input_aggregates_four_box_variable():
     np.testing.assert_allclose(out[1:], 2.2)
 
 
-def test_toml_round_trip_restores_python_component():
+@pytest.mark.parametrize(
+    "round_trip",
+    [
+        lambda m: Model.restore(Record.from_json(m.checkpoint().to_json())),
+        copy.deepcopy,
+        lambda m: pickle.loads(pickle.dumps(m)),  # noqa: S301
+    ],
+)
+def test_mid_run_checkpoint_restores_python_component(round_trip):
     reference = build(Accumulator(rate=2.0))
     reference.run()
 
     model = build(Accumulator(rate=2.0))
     model.step()
     model.step()
-    restored = type(model).from_toml(model.to_toml())
+    restored = round_trip(model)
+    assert restored.current_time() == model.current_time()
     restored.run()
 
     np.testing.assert_allclose(
@@ -304,18 +332,91 @@ def test_toml_round_trip_restores_python_component():
     )
 
 
-def test_to_toml_reports_unserialisable_attributes():
+def test_record_snapshots_mutable_python_components():
+    reference = build(Counter())
+    reference.run()
+    expected = reference.timeseries()["Out"].values()
+
+    model = build(Counter())
+    model.step()
+    record = model.checkpoint()
+    model.run()
+    first, second = Model.restore(record), Model.restore(record)
+    first.run()
+    second.run()
+
+    np.testing.assert_array_equal(first.timeseries()["Out"].values(), expected)
+    np.testing.assert_array_equal(second.timeseries()["Out"].values(), expected)
+
+
+def test_branch_replaces_future_emissions_and_python_parameters():
+    new_emissions = Timeseries(
+        np.array([1.0, 2.0, 30.0, 40.0, 50.0]),
+        AXIS,
+        "GtC/yr",
+        InterpolationStrategy.Previous,
+    )
+    fresh = (
+        ModelBuilder()
+        .with_time_axis(AXIS)
+        .with_component(Accumulator(rate=3.0))
+        .with_prescribed_variable("Emissions|CO2", new_emissions)
+        .with_initial_values({"Carbon Stock": 0.0})
+        .build()
+    )
+    fresh.run()
+
+    model = build(Accumulator(rate=3.0))
+    model.step()
+    model.step()
+    branched = Model.branch(
+        model.checkpoint(),
+        prescribed={"Emissions|CO2": new_emissions},
+        parameters={"Accumulator": Accumulator(rate=3.0)},
+    )
+    branched.run()
+
+    np.testing.assert_allclose(
+        branched.timeseries()["Carbon Stock"].values(),
+        fresh.timeseries()["Carbon Stock"].values(),
+    )
+
+
+def test_branch_rejects_another_component_type():
+    record = build(Accumulator(rate=2.0)).checkpoint()
+
+    with pytest.raises(ValueError, match="has type Accumulator"):
+        Model.branch(record, parameters={"Accumulator": Failing()})
+
+
+def test_record_of_another_format_is_rejected():
+    saved = json.loads(build(Accumulator(rate=2.0)).checkpoint().to_json())
+    saved["format"] = 99
+
+    with pytest.raises(ValueError, match="format 99, but this rscm reads format 1"):
+        Record.from_json(json.dumps(saved))
+
+
+def test_record_of_another_rscm_version_warns():
+    saved = json.loads(build(Accumulator(rate=2.0)).checkpoint().to_json())
+    saved["rscm"] = "0.0.1"
+
+    with pytest.warns(UserWarning, match="written by rscm 0.0.1"):
+        Model.restore(Record.from_json(json.dumps(saved)))
+
+
+def test_record_reports_unserialisable_attributes():
     model = build(Unserialisable(rate=2.0))
 
     with pytest.raises(ValueError, match=r"Override to_json\(\) and from_json\(\)"):
-        model.to_toml()
+        model.checkpoint()
 
 
-def test_to_toml_rejects_slotted_attributes():
+def test_record_rejects_slotted_attributes():
     model = build(Slotted(rate=2.0))
 
     with pytest.raises(ValueError, match=r"__slots__.*Override to_json\(\)"):
-        model.to_toml()
+        model.checkpoint()
 
 
 def run_forcing_reader(reader, forcing: Timeseries | None = None):

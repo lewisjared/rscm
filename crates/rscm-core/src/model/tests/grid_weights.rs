@@ -102,7 +102,7 @@ fn test_model_get_grid_weights_returns_none_for_unset() {
 
 #[test]
 fn test_grid_weights_serialisation_roundtrip() {
-    use crate::model::Model;
+    use crate::model::{Model, Record};
 
     let custom_weights = vec![0.36, 0.14, 0.36, 0.14];
     let schema = VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
@@ -114,30 +114,11 @@ fn test_grid_weights_serialisation_roundtrip() {
         .build()
         .unwrap();
 
-    // Serialise and deserialise
-    let serialised = toml::to_string(&model).unwrap();
-    let deserialised: Model = toml::from_str(&serialised).unwrap();
+    let json = model.checkpoint().unwrap().to_json().unwrap();
+    let restored = Model::restore(&Record::from_json(&json).unwrap()).unwrap();
 
-    // Verify weights are preserved
     assert_eq!(
-        deserialised.get_grid_weights(GridType::FourBox),
+        restored.get_grid_weights(GridType::FourBox),
         Some(&custom_weights)
-    );
-}
-
-#[test]
-fn test_empty_grid_weights_not_serialised() {
-    let model = builder()
-        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
-        .build()
-        .unwrap();
-
-    let serialised = toml::to_string(&model).unwrap();
-
-    // The grid_weights section should not appear
-    assert!(
-        !serialised.contains("grid_weights"),
-        "Empty grid_weights should not be serialised: {}",
-        serialised
     );
 }

@@ -309,7 +309,7 @@ impl Component for Lagged {
 ```
 
 The model keeps one state per component and passes it to `solve_with_state`.
-The state is serialised with the model, so a saved model (`Model.to_toml` in Python) resumes from it.
+The state is saved in the model's record, so a model restored from `Model::checkpoint` resumes from it.
 `solve` is only used when the component is solved on its own, so it starts from a fresh state.
 See `OceanCarbon` in `crates/rscm-magicc/src/carbon/ocean.rs` for a full example.
 

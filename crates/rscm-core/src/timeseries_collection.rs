@@ -100,6 +100,15 @@ impl TimeseriesData {
         }
     }
 
+    /// The number of time steps and regions of the stored values.
+    pub(crate) fn shape(&self) -> (usize, usize) {
+        match self {
+            TimeseriesData::Scalar(ts) => ts.values().dim(),
+            TimeseriesData::FourBox(ts) => ts.values().dim(),
+            TimeseriesData::Hemispheric(ts) => ts.values().dim(),
+        }
+    }
+
     /// The unit the series is stored in.
     pub fn unit(&self) -> &str {
         match self {
@@ -208,6 +217,22 @@ impl TimeseriesData {
         match self {
             TimeseriesData::Hemispheric(ts) => Some(ts),
             _ => None,
+        }
+    }
+
+    /// Copy the time steps before `end` from `other`, which must have the same grid and length.
+    pub(crate) fn copy_steps_from(&mut self, other: &TimeseriesData, end: usize) {
+        match (self, other) {
+            (TimeseriesData::Scalar(to), TimeseriesData::Scalar(from)) => {
+                to.copy_rows_from(from, end)
+            }
+            (TimeseriesData::FourBox(to), TimeseriesData::FourBox(from)) => {
+                to.copy_rows_from(from, end)
+            }
+            (TimeseriesData::Hemispheric(to), TimeseriesData::Hemispheric(from)) => {
+                to.copy_rows_from(from, end)
+            }
+            _ => panic!("copy_steps_from needs matching grids"),
         }
     }
 
