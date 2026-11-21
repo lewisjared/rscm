@@ -41,6 +41,20 @@ class Accumulator(Component):
         return self.Outputs(stock=stock)
 
 
+class Counter(Component):
+    """Adds its call count to the emissions, keeping the count as an attribute."""
+
+    emissions = Input("Emissions|CO2", unit="GtC/yr")
+    out = Output("Out", unit="GtC/yr")
+
+    def __init__(self):
+        self.calls = 0
+
+    def solve(self, t_current, t_next, inputs):
+        self.calls += 1
+        return self.Outputs(out=inputs.emissions.get() + self.calls)
+
+
 class Failing(Component):
     emissions = Input("Emissions|CO2", unit="GtC/yr")
     out = Output("Out", unit="GtC/yr")
@@ -318,6 +332,23 @@ def test_mid_run_checkpoint_restores_python_component(round_trip):
     )
 
 
+def test_record_snapshots_mutable_python_components():
+    reference = build(Counter())
+    reference.run()
+    expected = reference.timeseries()["Out"].values()
+
+    model = build(Counter())
+    model.step()
+    record = model.checkpoint()
+    model.run()
+    first, second = Model.restore(record), Model.restore(record)
+    first.run()
+    second.run()
+
+    np.testing.assert_array_equal(first.timeseries()["Out"].values(), expected)
+    np.testing.assert_array_equal(second.timeseries()["Out"].values(), expected)
+
+
 def test_branch_replaces_future_emissions_and_python_parameters():
     new_emissions = Timeseries(
         np.array([1.0, 2.0, 30.0, 40.0, 50.0]),
@@ -375,17 +406,17 @@ def test_record_of_another_rscm_version_warns():
 
 
 def test_record_reports_unserialisable_attributes():
-    record = build(Unserialisable(rate=2.0)).checkpoint()
+    model = build(Unserialisable(rate=2.0))
 
     with pytest.raises(ValueError, match=r"Override to_json\(\) and from_json\(\)"):
-        record.to_json()
+        model.checkpoint()
 
 
 def test_record_rejects_slotted_attributes():
-    record = build(Slotted(rate=2.0)).checkpoint()
+    model = build(Slotted(rate=2.0))
 
     with pytest.raises(ValueError, match=r"__slots__.*Override to_json\(\)"):
-        record.to_json()
+        model.checkpoint()
 
 
 def run_forcing_reader(reader, forcing: Timeseries | None = None):

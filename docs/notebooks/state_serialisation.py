@@ -193,5 +193,7 @@ print(f"Finished at {resumed.current_time()}")
 # - A Python component is saved through its `to_json()` and `from_json()` methods,
 #   so its class must be importable when the model is restored.
 #   Restoring imports the module the file names, so only load checkpoints you trust.
+# - JSON has no NaN, so a component parameter or internal state that is NaN or infinite cannot be recorded.
+#   Timeseries values can be NaN.
 # - A checkpoint from another RSCM version restores with a warning,
 #   and its results may differ from the run that wrote it.

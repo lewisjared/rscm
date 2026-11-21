@@ -314,12 +314,18 @@ impl PyModel {
 
     /// The record of the model at its current step, to resume or branch from later.
     fn checkpoint(&self) -> PyResult<PyRecord> {
-        Ok(PyRecord(self.0.checkpoint()?))
+        self.0
+            .checkpoint()
+            .map(PyRecord)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     /// The record of a run, the same as `checkpoint`, for reading results after `run`.
     fn output(&self) -> PyResult<PyRecord> {
-        Ok(PyRecord(self.0.output()?))
+        self.0
+            .output()
+            .map(PyRecord)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     /// Rebuild a model from a record and load its values and states.

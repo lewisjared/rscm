@@ -100,6 +100,15 @@ impl TimeseriesData {
         }
     }
 
+    /// The number of time steps and regions of the stored values.
+    pub(crate) fn shape(&self) -> (usize, usize) {
+        match self {
+            TimeseriesData::Scalar(ts) => ts.values().dim(),
+            TimeseriesData::FourBox(ts) => ts.values().dim(),
+            TimeseriesData::Hemispheric(ts) => ts.values().dim(),
+        }
+    }
+
     /// The unit the series is stored in.
     pub fn unit(&self) -> &str {
         match self {

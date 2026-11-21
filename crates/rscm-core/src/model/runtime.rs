@@ -540,6 +540,11 @@ impl Model {
 
     /// Step the model forward a step by solving each component for the current step.
     fn step_model(&mut self) -> RSCMResult<()> {
+        if self.step_plan.steps.is_empty() && self.components.node_count() > 1 {
+            return Err(RSCMError::Error(
+                "The model has components but no step plan, so build it with ModelBuilder".into(),
+            ));
+        }
         let plan = std::mem::take(&mut self.step_plan);
         let mut buffers = self
             .buffers

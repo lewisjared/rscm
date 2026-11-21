@@ -40,6 +40,8 @@ pub struct Branch {
     /// Prescribed data replacing the record's from the step after the branch point.
     pub prescribed: TimeseriesCollection,
     /// Components replacing those of the same label, each of the same type.
+    ///
+    /// Each takes over the saved internal state of the one it replaces, so it must use the same state layout.
     pub parameters: BTreeMap<String, C>,
 }
 
@@ -67,11 +69,21 @@ impl Record {
 
     /// Read a record from JSON, failing if its format is not [`RECORD_FORMAT`].
     pub fn from_json(json: &str) -> RSCMResult<Self> {
-        let read_error = |e| RSCMError::Error(format!("Could not read the record: {e}"));
+        let read_error = |e| read_error("the record", e);
         let header: Header = serde_json::from_str(json).map_err(read_error)?;
         check_format(header.format)?;
         serde_json::from_str(json).map_err(read_error)
     }
+}
+
+/// An error reading `what` back from JSON, which writes a non-finite float as null.
+pub(crate) fn read_error(what: &str, err: serde_json::Error) -> RSCMError {
+    let hint = if err.to_string().contains("invalid type: null") {
+        ", a NaN or infinite component parameter or state cannot be recorded"
+    } else {
+        ""
+    };
+    RSCMError::Error(format!("Could not read {what}: {err}{hint}"))
 }
 
 /// How the saved values are loaded into the rebuilt model.
@@ -99,7 +111,7 @@ impl Model {
         Ok(Record {
             format: RECORD_FORMAT,
             rscm: env!("CARGO_PKG_VERSION").to_string(),
-            builder: self.builder.clone(),
+            builder: Arc::new(self.builder.snapshot()?),
             time_index: self.time_index,
             values: self.collection.clone(),
             timeseries_types: self.timeseries_types.clone(),
@@ -126,7 +138,7 @@ impl Model {
     /// Fails if the record's format differs, or if the rebuilt model stores a different set of variables,
     /// or any in another unit, grid or timeseries type.
     pub fn restore_with_warnings(record: &Record) -> RSCMResult<(Model, Vec<String>)> {
-        Self::rebuild(record, &record.builder, Load::All)
+        Self::rebuild(record, &record.builder.snapshot()?, Load::All)
     }
 
     /// Rebuild a model from a record with new future prescribed data or component parameters,
@@ -149,7 +161,7 @@ impl Model {
         record: &Record,
         branch: Branch,
     ) -> RSCMResult<(Model, Vec<String>)> {
-        let mut builder = ModelBuilder::clone(&record.builder);
+        let mut builder = record.builder.snapshot()?;
         let inputs = builder.prescribed_inputs();
         for item in branch.prescribed.iter() {
             let name = &item.name;
@@ -238,13 +250,13 @@ impl Model {
                     ),
                 );
             }
-            if saved.len() != rebuilt.len() {
+            if saved.shape() != rebuilt.shape() {
                 return mismatch(
                     name,
                     format!(
-                        "has {} steps in the rebuilt model but {} in the record",
-                        rebuilt.len(),
-                        saved.len()
+                        "has values of shape {:?} (steps, regions) in the rebuilt model but {:?} in the record",
+                        rebuilt.shape(),
+                        saved.shape()
                     ),
                 );
             }

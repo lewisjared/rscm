@@ -902,6 +902,11 @@ class Model:
 
         `Model.restore` continues the run from the record.
         Pickling and `copy.deepcopy` go through a record too.
+
+        Raises
+        ------
+        ValueError
+            If a component cannot be serialised.
         """
     def output(self) -> Record:
         """Record the model, as `checkpoint` does, to read results after `run`."""
@@ -942,6 +947,8 @@ class Model:
             Prescribed data replacing the record's, by variable name.
         parameters
             Components replacing those with the same label, each of the same type.
+            Each takes over the saved internal state of the one it replaces,
+            so it must use the same state layout.
 
         Raises
         ------
@@ -973,11 +980,6 @@ class Record:
     def to_json(self) -> str:
         """
         Serialise the record as JSON.
-
-        Raises
-        ------
-        ValueError
-            If a Python component cannot be serialised.
         """
     @staticmethod
     def from_json(json: str) -> Record:

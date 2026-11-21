@@ -367,3 +367,41 @@ fn a_branch_rejects_prescribed_data_for_a_modelled_variable() {
     .unwrap_err();
     assert!(err.to_string().contains("'Stock'"), "{err}");
 }
+
+#[test]
+fn a_record_with_another_value_shape_fails_restore_naming_the_variable() {
+    let mut model = builder(base_emissions()).build().unwrap();
+    model.step();
+    let mut saved: serde_json::Value =
+        serde_json::from_str(&model.checkpoint().unwrap().to_json().unwrap()).unwrap();
+    let stock = saved["values"]["timeseries"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|item| item["name"] == "Stock")
+        .unwrap();
+    let values = &mut stock["data"]["scalar"]["values"];
+    values["dim"] = serde_json::json!([10, 2]);
+    let data = values["data"].as_array().unwrap();
+    let doubled: Vec<_> = data.iter().chain(data).cloned().collect();
+    values["data"] = serde_json::Value::Array(doubled);
+
+    let record = Record::from_json(&saved.to_string()).unwrap();
+    let err = Model::restore(&record).unwrap_err().to_string();
+    assert!(err.contains("'Stock' has values of shape (10, 1)"), "{err}");
+}
+
+#[test]
+fn a_model_without_a_plan_does_not_step() {
+    let mut graph = crate::model::types::CGraph::new();
+    let initial = graph.add_node(Arc::new(crate::model::null_component::NullComponent {}));
+    graph.add_node(Arc::new(Accumulate {
+        rate: 1.0,
+        unit: "GtC".into(),
+    }));
+    let mut model = Model::new(graph, initial, TimeseriesCollection::new(), time_axis());
+
+    let err = model.try_step().unwrap_err().to_string();
+    assert!(err.contains("no step plan"), "{err}");
+    assert_eq!(model.time_index(), 0);
+}

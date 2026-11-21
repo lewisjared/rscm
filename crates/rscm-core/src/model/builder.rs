@@ -437,6 +437,20 @@ impl ModelBuilder {
         self
     }
 
+    /// A copy whose components are rebuilt from their serialised form, so it shares no mutable state.
+    pub(crate) fn snapshot(&self) -> RSCMResult<ModelBuilder> {
+        let mut copy = self.clone();
+        for (component, label) in copy.components.iter_mut().zip(&self.labels) {
+            let value = serde_json::to_value(&**component).map_err(|e| {
+                RSCMError::Error(format!("Could not serialise component {label}: {e}"))
+            })?;
+            let fresh: Box<dyn Component> = serde_json::from_value(value)
+                .map_err(|e| super::record::read_error(&format!("component {label}"), e))?;
+            *component = Arc::from(fresh);
+        }
+        Ok(copy)
+    }
+
     /// Replace the component labelled `label` with another of the same type.
     pub(crate) fn replace_component(&mut self, label: &str, component: C) -> RSCMResult<()> {
         let index = self.labels.iter().position(|l| l == label).ok_or_else(|| {
