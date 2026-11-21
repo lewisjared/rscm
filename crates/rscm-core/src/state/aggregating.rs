@@ -189,8 +189,17 @@ impl<'a> AggregatingFourBoxWindow<'a> {
         }
     }
 
+    /// Weighted mean of `values` after converting each into the reader's unit.
     fn aggregate(&self, values: &[FloatValue]) -> FloatValue {
-        let aggregated = match &self.weights {
+        let factor = self.unit_conversion_factor;
+        let converted: Vec<FloatValue>;
+        let values = if factor == 1.0 {
+            values
+        } else {
+            converted = values.iter().map(|v| v * factor).collect();
+            &converted
+        };
+        match &self.weights {
             Some(weights) => {
                 let mut sum = 0.0;
                 for (v, w) in values.iter().zip(weights.iter()) {
@@ -201,8 +210,7 @@ impl<'a> AggregatingFourBoxWindow<'a> {
                 sum
             }
             None => self.timeseries.grid().aggregate_global(values),
-        };
-        aggregated * self.unit_conversion_factor
+        }
     }
 
     /// Set whether the variable is a point or an average, which decides whether `interval()` exists.
@@ -393,8 +401,17 @@ impl<'a> AggregatingHemisphericWindow<'a> {
         }
     }
 
+    /// Weighted mean of `values` after converting each into the reader's unit.
     fn aggregate(&self, values: &[FloatValue]) -> FloatValue {
-        let aggregated = match &self.weights {
+        let factor = self.unit_conversion_factor;
+        let converted: Vec<FloatValue>;
+        let values = if factor == 1.0 {
+            values
+        } else {
+            converted = values.iter().map(|v| v * factor).collect();
+            &converted
+        };
+        match &self.weights {
             Some(weights) => {
                 let mut sum = 0.0;
                 for (v, w) in values.iter().zip(weights.iter()) {
@@ -405,8 +422,7 @@ impl<'a> AggregatingHemisphericWindow<'a> {
                 sum
             }
             None => self.timeseries.grid().aggregate_global(values),
-        };
-        aggregated * self.unit_conversion_factor
+        }
     }
 
     /// Set whether the variable is a point or an average, which decides whether `interval()` exists.
@@ -709,9 +725,9 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
     fn aggregate_to_hemispheric(&self, values: &[FloatValue]) -> [FloatValue; 2] {
         // FourBox: [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand]
         // Hemispheric: [Northern, Southern]
-        // Average ocean+land for each hemisphere, then apply unit conversion
-        let northern = (values[0] + values[1]) / 2.0 * self.unit_conversion_factor;
-        let southern = (values[2] + values[3]) / 2.0 * self.unit_conversion_factor;
+        let f = self.unit_conversion_factor;
+        let northern = (values[0] * f + values[1] * f) / 2.0;
+        let southern = (values[2] * f + values[3] * f) / 2.0;
         [northern, southern]
     }
 

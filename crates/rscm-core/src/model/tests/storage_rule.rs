@@ -273,3 +273,16 @@ fn coarser_write_to_a_finer_schema_store_is_a_build_error() {
 
     assert_grid_mismatch(err, "ScalarWriter", "writes", "the schema declares");
 }
+
+#[test]
+fn read_converts_the_unit_before_aggregating_the_grid() {
+    let mut model = builder()
+        .with_component(echo("T", "mK", "Global"))
+        .with_prescribed_variable("T", four_box_data())
+        .build()
+        .unwrap();
+    model.run();
+
+    let expected = FourBoxGrid::magicc_standard().aggregate_global(&BOXES.map(|v| v * 1000.0));
+    assert_eq!(stored(&model, "Global").2, expected);
+}

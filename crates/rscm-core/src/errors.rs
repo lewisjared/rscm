@@ -197,22 +197,6 @@ pub enum RSCMError {
     )]
     AggregateCircularDependency { cycle: String },
 
-    /// Component output not defined in schema
-    #[error("Component '{component}' outputs variable '{variable}' which is not defined in the schema. Add it to the schema with unit '{unit}', or remove the schema constraint.")]
-    SchemaUndefinedOutput {
-        component: String,
-        variable: String,
-        unit: String,
-    },
-
-    /// Component input not defined in schema or produced by any component
-    #[error("Component '{component}' requires variable '{variable}' which is not defined in the schema. Add it to the schema with unit '{unit}', or remove the schema constraint.")]
-    SchemaUndefinedInput {
-        component: String,
-        variable: String,
-        unit: String,
-    },
-
     /// Component output unit mismatch with schema
     #[error("Unit mismatch for variable '{variable}': component '{component}' uses '{component_unit}' but schema defines '{schema_unit}'.")]
     ComponentSchemaUnitMismatch {

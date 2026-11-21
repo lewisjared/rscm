@@ -23,7 +23,7 @@ use super::storage::{resolve_storage, Storage};
 use super::types::{
     CGraph, GraphEdge, RequiredTransformation, ResolvedVariable, TransformDirection, C,
 };
-use super::validation::{check_schema_covers, resolve_timeseries_types};
+use super::validation::resolve_timeseries_types;
 
 /// An input that no component or schema aggregate produces, so the model must be given it.
 #[pyclass(frozen, get_all)]
@@ -402,12 +402,9 @@ impl ModelBuilder {
 
     /// Set the variable schema for the model.
     ///
-    /// The schema defines all variables (including aggregates) that the model uses.
-    /// When a schema is provided, the builder validates:
-    /// - Component outputs are defined in the schema
-    /// - Component inputs are defined in the schema or produced by other components
-    /// - Units and grid types match between components and schema
-    ///
+    /// Each schema entry sets the unit and grid its variable is stored in,
+    /// and each aggregate adds a component that computes it.
+    /// A variable without an entry is stored as its producer declares it, or as its prescribed data is.
     /// Variables defined in the schema but not produced by any component will
     /// be initialised to NaN.
     pub fn with_schema(&mut self, schema: VariableSchema) -> &mut Self {
@@ -725,7 +722,6 @@ impl ModelBuilder {
 
         if let Some(schema) = &self.schema {
             schema.validate()?;
-            check_schema_covers(schema, names, &component_defs, &modelled)?;
             // A schema variable no component reads or produces is still stored, empty or prescribed.
             prescribed.extend(
                 schema

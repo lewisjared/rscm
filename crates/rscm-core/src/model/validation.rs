@@ -2,40 +2,9 @@
 
 use crate::component::{TimeseriesType, VariableDefinition, VariableRole};
 use crate::errors::{RSCMError, RSCMResult};
-use crate::schema::VariableSchema;
-use petgraph::graph::NodeIndex;
 use std::collections::HashMap;
 
 use super::types::ResolvedVariable;
-
-/// Check that every component output is in the schema,
-/// and every input is in the schema or produced by a component.
-pub(crate) fn check_schema_covers(
-    schema: &VariableSchema,
-    labels: &[String],
-    component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
-    produced: &HashMap<String, NodeIndex>,
-) -> RSCMResult<()> {
-    for (label, (requires, provides)) in labels.iter().zip(component_defs) {
-        if let Some(output) = provides.iter().find(|d| !schema.contains(&d.name)) {
-            return Err(RSCMError::SchemaUndefinedOutput {
-                component: label.clone(),
-                variable: output.name.clone(),
-                unit: output.unit.clone(),
-            });
-        }
-        let undefined =
-            |d: &&VariableDefinition| !schema.contains(&d.name) && !produced.contains_key(&d.name);
-        if let Some(input) = requires.iter().find(undefined) {
-            return Err(RSCMError::SchemaUndefinedInput {
-                component: label.clone(),
-                variable: input.name.clone(),
-                unit: input.unit.clone(),
-            });
-        }
-    }
-    Ok(())
-}
 
 /// Resolve each variable's timeseries type and check that every declaration agrees with it.
 ///
