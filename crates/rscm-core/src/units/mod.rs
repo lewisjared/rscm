@@ -121,9 +121,72 @@ pub use parser::{ParseError, ParsedUnit, UnitFactor};
 pub use registry::{UnitInfo, UnitRegistry, UNIT_REGISTRY};
 pub use species::Species;
 
+use crate::errors::{RSCMError, RSCMResult};
+
+/// The factor taking values of `variable` from unit `from` into unit `to`,
+/// or `None` when no conversion is needed.
+///
+/// Fails if either unit does not parse or the units cannot be converted into each other.
+pub fn factor(variable: &str, from: &str, to: &str) -> RSCMResult<Option<f64>> {
+    if from == to {
+        return Ok(None);
+    }
+    let parse = |unit: &str| {
+        Unit::parse(unit).map_err(|e| RSCMError::UnitParseError {
+            variable: variable.to_string(),
+            unit_string: unit.to_string(),
+            details: e.to_string(),
+        })
+    };
+    let (parsed_from, parsed_to) = (parse(from)?, parse(to)?);
+    if parsed_from == parsed_to {
+        return Ok(None);
+    }
+    if !parsed_from.is_compatible(&parsed_to) {
+        return Err(RSCMError::incompatible_units(
+            variable,
+            &parsed_from,
+            &parsed_to,
+        ));
+    }
+    let factor =
+        parsed_from
+            .conversion_factor(&parsed_to)
+            .map_err(|e| RSCMError::UnitParseError {
+                variable: variable.to_string(),
+                unit_string: format!("{from} -> {to}"),
+                details: e.to_string(),
+            })?;
+    Ok((factor != 1.0).then_some(factor))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn factor_is_none_for_equivalent_units() {
+        assert_eq!(factor("x", "W/m^2", "W / m^2").unwrap(), None);
+        assert_eq!(factor("x", "K", "K").unwrap(), None);
+    }
+
+    #[test]
+    fn factor_converts_from_the_first_unit_to_the_second() {
+        let f = factor("x", "km", "m").unwrap().unwrap();
+        assert_eq!(f, 1000.0);
+    }
+
+    #[test]
+    fn factor_rejects_incompatible_and_unparseable_units() {
+        assert!(matches!(
+            factor("x", "K", "W/m^2"),
+            Err(RSCMError::IncompatibleUnits { .. })
+        ));
+        assert!(matches!(
+            factor("x", "", "K"),
+            Err(RSCMError::UnitParseError { .. })
+        ));
+    }
 
     /// Test that the main example from the task works correctly.
     #[test]

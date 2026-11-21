@@ -22,14 +22,17 @@ pub enum RSCMError {
     #[error("Unsupported grid transformation from {from} to {to}. This transformation is not defined because it would require additional physical assumptions. Consider writing a component that explicitly handles this disaggregation, or use an intermediate transformation.")]
     UnsupportedGridTransformation { from: String, to: String },
 
-    /// Grid mismatch between connected components
-    #[error("Grid mismatch for variable '{variable}': producer component '{producer_component}' outputs {producer_grid} but consumer component '{consumer_component}' expects {consumer_grid}. \n\nPossible resolutions:\n  1. Change {producer_component} to output {consumer_grid}\n  2. Change {consumer_component} to accept {producer_grid}\n  3. Insert a grid transformation component between them\n  4. If aggregation is acceptable, the model coupler can auto-transform from finer to coarser grids")]
+    /// A component declares a variable on a finer grid than the one it is stored on.
+    #[error("Grid mismatch for variable '{variable}': {component} {access} it on the {declared_grid} grid, but it is stored on the {stored_grid} grid, as {stored_by}. A finer grid aggregates to a coarser one, never the reverse.\n\nPossible resolutions:\n  1. Change {component} to use the {stored_grid} grid\n  2. Store the variable on the {declared_grid} grid, with a schema entry or finer prescribed data\n  3. Insert a component that disaggregates it with explicit assumptions")]
     GridTypeMismatch {
         variable: String,
-        producer_component: String,
-        consumer_component: String,
-        producer_grid: String,
-        consumer_grid: String,
+        component: String,
+        /// `reads` or `writes`.
+        access: String,
+        declared_grid: String,
+        stored_grid: String,
+        /// What sets the stored grid, such as `the schema declares`.
+        stored_by: String,
     },
 
     /// Missing initial value for a state variable
@@ -193,22 +196,6 @@ pub enum RSCMError {
         "Circular dependency detected in aggregate schema: {cycle}. Aggregates cannot form cycles."
     )]
     AggregateCircularDependency { cycle: String },
-
-    /// Component output not defined in schema
-    #[error("Component '{component}' outputs variable '{variable}' which is not defined in the schema. Add it to the schema with unit '{unit}', or remove the schema constraint.")]
-    SchemaUndefinedOutput {
-        component: String,
-        variable: String,
-        unit: String,
-    },
-
-    /// Component input not defined in schema or produced by any component
-    #[error("Component '{component}' requires variable '{variable}' which is not defined in the schema. Add it to the schema with unit '{unit}', or remove the schema constraint.")]
-    SchemaUndefinedInput {
-        component: String,
-        variable: String,
-        unit: String,
-    },
 
     /// Component output unit mismatch with schema
     #[error("Unit mismatch for variable '{variable}': component '{component}' uses '{component_unit}' but schema defines '{schema_unit}'.")]

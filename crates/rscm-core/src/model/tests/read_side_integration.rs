@@ -424,7 +424,7 @@ fn test_read_disaggregation_scalar_to_four_box_rejected() {
     let err = result.unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("Grid transformation not supported"),
+        msg.contains("Grid mismatch"),
         "Error should mention unsupported transformation: {}",
         msg
     );

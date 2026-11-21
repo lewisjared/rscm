@@ -554,12 +554,8 @@ impl Model {
     /// or `None` when the units match.
     pub(crate) fn write_factor(&self, name: &str, declared_unit: &str) -> Option<FloatValue> {
         let stored_unit = self.collection.get_data(name)?.unit();
-        if stored_unit == declared_unit {
-            return None;
-        }
-        let factor = crate::units::conversion_factor(declared_unit, stored_unit)
-            .unwrap_or_else(|e| panic!("'{name}' passed unit validation but cannot convert: {e}"));
-        (factor != 1.0).then_some(factor)
+        crate::units::factor(name, declared_unit, stored_unit)
+            .unwrap_or_else(|e| panic!("the build checks every write converts: {e}"))
     }
 
     /// Solve a single component for the current step.

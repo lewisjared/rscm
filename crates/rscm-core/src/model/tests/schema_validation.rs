@@ -43,62 +43,51 @@ fn test_model_with_valid_schema() {
         .unwrap();
 }
 
-#[test]
-fn test_schema_rejects_undefined_output() {
-    // Schema missing the output variable
-    let schema = VariableSchema::new().variable("Emissions|CO2", "GtC / yr");
-    // Missing "Atmospheric Concentrations|CO2"
+fn test_component() -> Arc<TestComponent> {
+    Arc::new(TestComponent::from_parameters(TestComponentParameters {
+        conversion_factor: 0.5,
+    }))
+}
 
-    let result = ModelBuilder::new()
-        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
-        .with_schema(schema)
-        .with_component(Arc::new(TestComponent::from_parameters(
-            TestComponentParameters {
-                conversion_factor: 0.5,
-            },
-        )))
-        .with_prescribed_variable("Emissions|CO2", get_emissions())
-        .build();
-
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("Atmospheric Concentrations|CO2"),
-        "Error should mention missing variable: {}",
-        msg
-    );
-    assert!(
-        msg.contains("not defined in the schema"),
-        "Error should indicate schema issue: {}",
-        msg
-    );
+fn stored_unit(model: &crate::model::Model, name: &str) -> String {
+    model
+        .timeseries()
+        .get_data(name)
+        .unwrap()
+        .unit()
+        .to_string()
 }
 
 #[test]
-fn test_schema_rejects_undefined_input() {
-    // Schema missing the input variable (and no component produces it)
-    let schema = VariableSchema::new().variable("Atmospheric Concentrations|CO2", "ppm");
-    // Missing "Emissions|CO2"
+fn test_output_missing_from_the_schema_is_stored_as_its_producer_declares() {
+    let schema = VariableSchema::new().variable("Emissions|CO2", "GtCO2 / yr");
 
-    let result = ModelBuilder::new()
+    let model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_schema(schema)
-        .with_component(Arc::new(TestComponent::from_parameters(
-            TestComponentParameters {
-                conversion_factor: 0.5,
-            },
-        )))
-        .build();
+        .with_component(test_component())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
+        .build()
+        .unwrap();
 
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("Emissions|CO2"),
-        "Error should mention missing variable: {}",
-        msg
-    );
+    assert_eq!(stored_unit(&model, "Emissions|CO2"), "GtCO2 / yr");
+    assert_eq!(stored_unit(&model, "Atmospheric Concentrations|CO2"), "ppm");
+}
+
+#[test]
+fn test_input_missing_from_the_schema_keeps_its_prescribed_unit() {
+    let schema = VariableSchema::new().variable("Atmospheric Concentrations|CO2", "ppb");
+
+    let model = ModelBuilder::new()
+        .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
+        .with_schema(schema)
+        .with_component(test_component())
+        .with_prescribed_variable("Emissions|CO2", get_emissions())
+        .build()
+        .unwrap();
+
+    assert_eq!(stored_unit(&model, "Emissions|CO2"), "GtC / yr");
+    assert_eq!(stored_unit(&model, "Atmospheric Concentrations|CO2"), "ppb");
 }
 
 #[test]
@@ -161,7 +150,7 @@ fn test_schema_rejects_disaggregation_on_read() {
     let err = result.unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("Grid transformation not supported"),
+        msg.contains("Grid mismatch"),
         "Error should indicate unsupported transformation: {}",
         msg
     );

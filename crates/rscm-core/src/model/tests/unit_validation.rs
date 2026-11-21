@@ -680,17 +680,19 @@ fn stored_emissions(model: &Model) -> &Timeseries<FloatValue> {
 }
 
 #[test]
-fn test_prescribed_data_converted_into_declared_unit() {
+fn test_prescribed_only_data_stays_in_supplied_unit() {
     let model = emissions_model("GtC / yr", get_emissions("MtCO2 / yr")).unwrap();
 
     let stored = stored_emissions(&model);
-    assert_eq!(stored.unit(), "GtC / yr");
-    let expected = 10.0 * 12.0 / 44.0 / 1000.0;
-    let value = stored.at_scalar(0).unwrap();
-    assert!(
-        (value - expected).abs() < 1e-6 * expected,
-        "10 MtCO2/yr should be stored as {expected} GtC/yr, got {value}"
+    assert_eq!(stored.unit(), "MtCO2 / yr");
+    assert_eq!(stored.at_scalar(0).unwrap(), 10.0);
+    let key = (
+        "Emissions|CO2".to_string(),
+        "EmissionsToConcentration".to_string(),
     );
+    let factor = model.unit_conversions()[&key];
+    let expected = 12.0 / 44.0 / 1000.0;
+    assert!((factor - expected).abs() < 1e-12 * expected, "{factor}");
 }
 
 #[test]
@@ -795,7 +797,7 @@ fn four_box_model(unit: &str) -> RSCMResult<Model> {
 }
 
 #[test]
-fn test_four_box_prescribed_data_converted() {
+fn test_four_box_prescribed_data_stays_in_supplied_unit() {
     let model = four_box_model("mK").unwrap();
 
     let stored = model
@@ -803,8 +805,13 @@ fn test_four_box_prescribed_data_converted() {
         .get_data("Surface Air Temperature Change")
         .and_then(|data| data.as_four_box())
         .unwrap();
-    assert_eq!(stored.unit(), "K");
-    assert_eq!(stored.at_time_index(0).unwrap(), vec![0.001; 4]);
+    assert_eq!(stored.unit(), "mK");
+    assert_eq!(stored.at_time_index(0).unwrap(), vec![1.0; 4]);
+    let key = (
+        "Surface Air Temperature Change".to_string(),
+        "FourBoxReader".to_string(),
+    );
+    assert_eq!(model.unit_conversions()[&key], 0.001);
 }
 
 #[test]

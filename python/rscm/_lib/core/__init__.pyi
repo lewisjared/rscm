@@ -659,11 +659,12 @@ class ModelBuilder:
         """
     def with_schema(self, schema: VariableSchema) -> Self:
         """
-        Add a variable schema to the model for validation and aggregation.
+        Add a variable schema to the model for storage and aggregation.
 
-        The schema defines the variables the model expects and any aggregates
-        that should be computed. Component inputs/outputs are validated against
-        the schema at build time.
+        Each entry sets the unit and grid its variable is stored in,
+        and each aggregate adds a component that computes it.
+        A variable without an entry is stored as its producer declares it,
+        or as its prescribed data is.
 
         Parameters
         ----------

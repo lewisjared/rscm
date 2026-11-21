@@ -166,41 +166,12 @@ A declared input with no producer and no prescribed data fails the build with `M
 #### GridTypeMismatch
 
 ```
-Grid mismatch for variable 'Surface Air Temperature Change': producer component 'A' outputs four_box but consumer component 'B' expects scalar.
+Grid mismatch for variable 'Surface Air Temperature Change': B reads it on the four_box grid, but it is stored on the scalar grid, as its producer A declares.
 ```
 
-**Cause:** Two connected components use different spatial grids.
-
-**Fixes:**
-
-1. Change the producer component to output the required grid
-2. Change the consumer component to accept the available grid
-3. Insert a grid transformation component between them
-4. Use automatic aggregation (four-box to scalar aggregation uses the grid weights)
-
-#### UnsupportedGridTransformation
-
-```
-Unsupported grid transformation from Hemispheric to FourBox.
-```
-
-**Cause:** RSCM cannot automatically transform between these grids without additional physics assumptions.
-
-**Fix:** Write a component that implements the transformation with appropriate physics.
-
-#### GridTransformationNotSupported
-
-```
-Grid transformation not supported for variable 'Surface Air Temperature Change': cannot transform from scalar to four_box.
-```
-
-**Cause:** A component requires a finer grid resolution than the schema or producer provides. This occurs with [schema-driven auto-aggregation](../grids.md#schema-driven-auto-aggregation) when:
-
-- A component declares a four-box input but the schema declares Scalar
-- A component declares a Hemispheric input but the schema declares Scalar
-- A component declares a four-box input but the schema declares Hemispheric
-
-Disaggregation (broadcasting coarse data to finer grids) is not supported because it would require inventing spatial structure that doesn't exist.
+**Cause:** A component reads or writes a variable on a finer grid than the one it is [stored on](../grids.md#where-a-variable-is-stored).
+A finer grid aggregates to a coarser one, but disaggregation (broadcasting coarse data to finer grids)
+is not supported because it would require inventing spatial structure that doesn't exist.
 
 **Fixes:**
 
@@ -247,6 +218,16 @@ Disaggregation (broadcasting coarse data to finer grids) is not supported becaus
     ```
 
     The [Spatial Grids tutorial](../notebooks/grid_variables.py) builds and runs a disaggregation component.
+
+#### UnsupportedGridTransformation
+
+```
+Unsupported grid transformation from Hemispheric to FourBox.
+```
+
+**Cause:** RSCM cannot automatically transform between these grids without additional physics assumptions.
+
+**Fix:** Write a component that implements the transformation with appropriate physics.
 
 #### FeedbackLoop
 
@@ -377,10 +358,10 @@ for defn in component.definitions():
 ### Unit Mismatches
 
 Components define expected units.
-The builder converts prescribed data into the unit the model stores it in,
-for example `MtCO2/yr` to `GtC/yr`.
-That is the schema's unit, or without a schema the unit the components declare.
-With a `VariableSchema`, the model also converts compatible units when components read inputs.
+Each variable is stored in one unit, as [the storage rule](../grids.md#where-a-variable-is-stored) decides,
+and every read and write converts between it and the component's declared unit, for example `MtCO2/yr` to `GtC/yr`.
+Prescribed data with a schema entry or a producer is converted into that unit when the model is built.
+Otherwise it stays in the unit supplied.
 Incompatible units, such as `K` and `W/m^2`, fail when the model is built,
 as do units of different species, such as `Mt CH4/yr` and `Mt CO2/yr`,
 and unit strings the parser cannot read.
