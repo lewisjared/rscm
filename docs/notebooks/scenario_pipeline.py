@@ -18,11 +18,11 @@
 # This tutorial runs several future scenarios from one shared historical run.
 # The pattern has three steps:
 #
-# 1. Run the model over the historical period.
-# 2. Read the state variables at the branch point (2015) from the historical results.
-# 3. Build a new model for each scenario, starting from those values.
+# 1. Run the model over the historical period, up to the branch point (2015).
+# 2. Record the model there with `Model.checkpoint()`.
+# 3. Branch a model for each scenario from that record with `Model.branch()`, giving it the scenario's emissions.
 #
-# Every scenario then starts from the same historical state,
+# Every scenario then starts from the same historical state, including any internal component state,
 # so differences between them come only from their emissions pathways.
 #
 # ## Related Resources
@@ -37,6 +37,7 @@ import numpy as np
 from rscm.components import CarbonCycleBuilder, CO2ERFBuilder
 from rscm.core import (
     InterpolationStrategy,
+    Model,
     ModelBuilder,
     TimeAxis,
     Timeseries,
@@ -72,17 +73,27 @@ EMISSIONS_BREAKPOINTS = {
     ),
 }
 
-emissions = {
-    name: Timeseries(
+
+def emissions_timeseries(times: list[float], values: list[float]) -> Timeseries:
+    """CO2 emissions interpolating linearly between breakpoints."""
+    return Timeseries(
         np.array(values),
         TimeAxis.from_values(np.array(times)),
         "GtC/yr",
         InterpolationStrategy.Linear,
     )
+
+
+historical_times, historical_values = EMISSIONS_BREAKPOINTS["historical"]
+historical_emissions = emissions_timeseries(historical_times, historical_values)
+# Each scenario continues the historical pathway, so its series covers the whole run.
+scenario_emissions = {
+    name: emissions_timeseries(
+        historical_times + times[1:], historical_values + values[1:]
+    )
     for name, (times, values) in EMISSIONS_BREAKPOINTS.items()
+    if name != "historical"
 }
-historical_emissions = emissions.pop("historical")
-scenario_emissions = emissions
 
 # %% tags=["remove_input"]
 import matplotlib.pyplot as plt
@@ -127,7 +138,7 @@ plt.show()
 # Emissions -> [Carbon Cycle] -> CO2 Concentration -> [CO2 ERF] -> Forcing
 # ```
 #
-# `build_model` wraps the builder chain, because the historical run and every scenario use it.
+# `build_model` wraps the builder chain.
 # The carbon cycle reads the surface air temperature change,
 # but `alpha_temperature=0` turns that feedback off, so a constant zero series stands in for it.
 #
@@ -171,69 +182,52 @@ def build_model(time_axis: TimeAxis, co2_emissions: Timeseries, initial_values: 
 # %% [markdown]
 # ## Step 1: Run the Historical Period
 #
-# The historical time axis uses decadal steps before 1900, 5-yearly steps to 2000 and annual steps to 2015.
-# The future runs use their own annual axis, so the two periods can have different resolutions.
+# The time axis uses decadal steps before 1900, 5-yearly steps to 2000 and annual steps to 2100.
+# The model is built with one scenario's emissions, which match every other scenario up to 2015,
+# and stepped until it reaches the branch point.
 
 # %%
-historical_time_axis = TimeAxis.from_values(
+time_axis = TimeAxis.from_values(
     np.concatenate(
         [
             np.arange(T_START, 1900.0, 10.0),
             np.arange(1900.0, 2000.0, 5.0),
-            np.arange(2000.0, T_BRANCH + 1, 1.0),
+            np.arange(2000.0, T_END + 1, 1.0),
         ]
     )
 )
 
-historical_model = build_model(
-    historical_time_axis, historical_emissions, PRE_INDUSTRIAL
-)
-historical_model.run()
+historical_model = build_model(time_axis, scenario_emissions["ssp245"], PRE_INDUSTRIAL)
+while historical_model.current_time() < T_BRANCH:
+    historical_model.step()
+historical_model.current_time()
 
 # %% [markdown]
-# `to_toml()` serialises the whole model, so the historical end state can be archived or inspected later.
-# Its top-level tables show what it holds.
-# See [State Serialisation](../state_serialisation/) for restoring a model from this string.
-
-# %%
-historical_state = historical_model.to_toml()
-tables = [
-    line.strip("[]") for line in historical_state.splitlines() if line.startswith("[")
-]
-list(dict.fromkeys(table.split(".")[0] for table in tables))
-
-# %% [markdown]
-# ## Step 2: Read the Branch-Point State
+# ## Step 2: Record the Branch Point
 #
-# The state variables at 2015 come from the historical results.
-# They are the same variables that `PRE_INDUSTRIAL` set for 1750.
+# `checkpoint()` returns a `Record` holding the model's builder, its values up to 2015
+# and each component's internal state.
+# It serialises as JSON, so the historical state can be archived or shared.
+# See [State Serialisation](../state_serialisation/) for what a record holds.
 
 # %%
-historical_results = historical_model.timeseries()
-branch_state = {
-    name: historical_results.get_timeseries_by_name(name).at_time(T_BRANCH)
-    for name in PRE_INDUSTRIAL
-}
-branch_state
+branch_point = historical_model.checkpoint()
+historical_results = branch_point.timeseries()
+print(
+    f"Recorded at step {branch_point.time_index}, {len(branch_point.to_json())} bytes of JSON"
+)
 
 # %% [markdown]
 # ## Step 3: Run the Scenarios
 #
-# Each scenario gets a fresh model on the future time axis, starting from `branch_state`.
-#
-# A model restored with `Model.from_toml()` keeps its original time axis and prescribed data,
-# so it cannot be extended with new scenario data.
-# Rebuilding from the state variables works here because these components keep no
-# internal state between steps.
-# Components with internal state store it in the `component_states` section of the TOML,
-# which this approach does not carry over.
+# `Model.branch()` rebuilds the model from the record with each scenario's emissions.
+# Values up to the branch point stay as recorded, so the new emissions take effect after it.
+# The time axis cannot change, and `parameters` can also swap a component's parameters by its label.
 
 # %%
-future_time_axis = TimeAxis.from_values(np.arange(T_BRANCH, T_END + 1, 1.0))
-
 scenario_results = {}
 for scenario, co2_emissions in scenario_emissions.items():
-    model = build_model(future_time_axis, co2_emissions, branch_state)
+    model = Model.branch(branch_point, prescribed={"Emissions|CO2": co2_emissions})
     model.run()
     scenario_results[scenario] = model.timeseries()
 
@@ -323,10 +317,10 @@ plt.show()
 #
 # ## Key Patterns
 #
-# - **State extraction**: Read the branch-point values from `model.timeseries()`
-#   to initialise the scenario runs.
-# - **Component reuse**: These components hold only parameters, so they can be rebuilt for each scenario.
-# - **Time axis management**: Historical and future periods can have different temporal resolutions.
+# - **Branching**: `Model.branch()` starts every scenario from one recorded historical state,
+#   including component internal state.
+# - **Records**: `checkpoint()` saves the branch point, so later scenarios can branch from a file.
+# - **Time axis management**: One time axis can use coarser steps in the historical period.
 #
 # ## Next Steps
 #

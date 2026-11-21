@@ -264,16 +264,16 @@ for _ in range(5):
 # %% [markdown]
 # ## Using Serialisation for Debugging
 #
-# `to_toml()` captures the full model state as a checkpoint.
+# `checkpoint()` captures the full model state as a `Record`, which serialises as JSON.
 # This is useful for sharing a problematic state with collaborators,
 # creating reproducible test cases, or inspecting the exact state at one point.
 # [State Serialisation](../state_serialisation/) describes the format.
 #
-# A model restored with `Model.from_toml()` continues from the same point
+# A model restored with `Model.restore()` continues from the same point
 # and gives the same results as the original.
 
 # %%
-restored_model = Model.from_toml(model.to_toml())
+restored_model = Model.restore(model.checkpoint())
 assert restored_model.current_time() == model.current_time()
 
 restored_model.run()
@@ -397,7 +397,7 @@ except RuntimeError as e:
 # - Check inputs marked `(prescribed)` if a model built with `with_missing_prescribed_allowed()`
 #   gives NaN.
 # - Use `step()` to stop at a point of interest and read values with `get_timeseries_by_name()`.
-# - Save a problem state with `to_toml()` to reproduce or share it.
+# - Save a problem state with `checkpoint().to_json()` to reproduce or share it.
 # - Read the errors: build errors explain missing initial values and schema or grid mismatches,
 #   and runtime errors name the failing component and time interval.
 #
