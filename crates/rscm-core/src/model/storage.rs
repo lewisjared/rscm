@@ -150,7 +150,7 @@ fn set_unit(resolved: &mut ResolvedVariable, unit: &str) {
 /// The aggregation from the finer to the coarser of the declared and stored grids, if they differ.
 ///
 /// Fails if the side that must be finer is coarser.
-fn grid_transform(
+pub(crate) fn grid_transform(
     def: &VariableDefinition,
     component: &str,
     stored_grid: GridType,

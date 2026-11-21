@@ -27,9 +27,10 @@ pub use aggregating::{
 };
 
 use crate::component::{GridType, TimeseriesType};
+use crate::model::{Read, Step};
 use crate::spatial::FourBoxGrid;
 use crate::timeseries::{FloatValue, Time, TimeAxis};
-use crate::timeseries_collection::TimeseriesItem;
+use crate::timeseries_collection::{TimeseriesCollection, TimeseriesItem};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -200,16 +201,6 @@ impl std::fmt::Display for VariableSource {
     }
 }
 
-/// Transform context for automatic grid aggregation.
-///
-/// This holds the information needed to transform grid data during read operations.
-/// It is passed to InputState when the model has configured grid transformations.
-#[derive(Debug, Clone, Default)]
-pub struct TransformContext {
-    /// Map from variable name to the read transformation info
-    pub read_transforms: HashMap<String, ReadTransformInfo>,
-}
-
 /// Input state for a component
 ///
 /// A state is a collection of values
@@ -223,8 +214,6 @@ pub struct InputState<'a> {
     /// Index of `current_time` in the time axis that most items share.
     time_index: Option<usize>,
     state: Items<'a>,
-    /// Optional transform context for grid aggregation
-    transform_context: Option<Cow<'a, TransformContext>>,
     /// Position after the last item read, which is checked first.
     next: Cell<usize>,
 }
@@ -243,7 +232,7 @@ enum Items<'a> {
     Listed(Vec<&'a TimeseriesItem>),
     Planned {
         items: &'a [TimeseriesItem],
-        plan: &'a InputPlan,
+        plan: Cow<'a, InputPlan>,
     },
 }
 
@@ -260,6 +249,16 @@ impl<'a> Items<'a> {
     }
 }
 
+impl InputPlan {
+    pub(crate) fn from_step(step: &Step) -> Self {
+        Self {
+            indices: step.reads.iter().map(|read| read.slot).collect(),
+            order: step.lookup_order.clone(),
+            transforms: step.reads.iter().map(Read::transform_info).collect(),
+        }
+    }
+}
+
 /// Order names by length and then by name, which settles most comparisons by length alone.
 pub(crate) fn lookup_order(a: &str, b: &str) -> std::cmp::Ordering {
     a.len().cmp(&b.len()).then_with(|| a.cmp(b))
@@ -271,37 +270,6 @@ impl<'a> InputState<'a> {
             current_time,
             time_index: None,
             state: Items::Listed(values),
-            transform_context: None,
-            next: Cell::new(0),
-        }
-    }
-
-    /// Build an InputState with transform context for grid aggregation.
-    pub fn build_with_transforms(
-        values: Vec<&'a TimeseriesItem>,
-        current_time: Time,
-        transform_context: TransformContext,
-    ) -> Self {
-        Self {
-            current_time,
-            time_index: None,
-            state: Items::Listed(values),
-            transform_context: Some(Cow::Owned(transform_context)),
-            next: Cell::new(0),
-        }
-    }
-
-    /// Build an InputState that borrows an optional transform context.
-    pub fn build_with_transforms_ref(
-        values: Vec<&'a TimeseriesItem>,
-        current_time: Time,
-        transform_context: Option<&'a TransformContext>,
-    ) -> Self {
-        Self {
-            current_time,
-            time_index: None,
-            state: Items::Listed(values),
-            transform_context: transform_context.map(Cow::Borrowed),
             next: Cell::new(0),
         }
     }
@@ -311,7 +279,6 @@ impl<'a> InputState<'a> {
             current_time: f64::NAN,
             time_index: None,
             state: Items::Listed(vec![]),
-            transform_context: None,
             next: Cell::new(0),
         }
     }
@@ -330,8 +297,27 @@ impl<'a> InputState<'a> {
         Self {
             current_time,
             time_index: None,
-            state: Items::Planned { items, plan },
-            transform_context: None,
+            state: Items::Planned {
+                items,
+                plan: Cow::Borrowed(plan),
+            },
+            next: Cell::new(0),
+        }
+    }
+
+    /// Build an InputState that reads `collection` as one step of a plan reads it.
+    pub fn from_step(
+        collection: &'a TimeseriesCollection,
+        step: &Step,
+        current_time: Time,
+    ) -> Self {
+        Self {
+            current_time,
+            time_index: None,
+            state: Items::Planned {
+                items: collection.items(),
+                plan: Cow::Owned(InputPlan::from_step(step)),
+            },
             next: Cell::new(0),
         }
     }
@@ -392,10 +378,7 @@ impl<'a> InputState<'a> {
             .unwrap_or_else(|| panic!("Variable '{}' not found in input state", name));
         let transform = match &self.state {
             Items::Planned { plan, .. } => plan.transforms[index].as_ref(),
-            Items::Listed(_) => self
-                .transform_context
-                .as_ref()
-                .and_then(|ctx| ctx.read_transforms.get(name)),
+            Items::Listed(_) => None,
         };
         let item = self.state.get(index).expect("a position within the items");
         (item, transform)
@@ -694,10 +677,6 @@ impl OutputBuffer {
         }
     }
 
-    pub(crate) fn names(&self) -> &[String] {
-        &self.names
-    }
-
     /// Take the value written to the declared output at `position`.
     pub(crate) fn take(&mut self, position: usize) -> Option<StateValue> {
         self.values[position].take()
@@ -878,6 +857,30 @@ mod input_state_window_tests {
     use numpy::ndarray::{Array2, Axis};
     use std::sync::Arc;
 
+    /// `items` read in order, each with its transform.
+    fn with_reads(
+        items: &[TimeseriesItem],
+        transforms: Vec<ReadTransformInfo>,
+        current_time: Time,
+    ) -> InputState<'_> {
+        let mut order: Vec<u32> = (0..items.len() as u32).collect();
+        order.sort_by(|&a, &b| lookup_order(&items[a as usize].name, &items[b as usize].name));
+        let plan = InputPlan {
+            indices: (0..items.len()).collect(),
+            order,
+            transforms: transforms.into_iter().map(Some).collect(),
+        };
+        InputState {
+            current_time,
+            time_index: None,
+            state: Items::Planned {
+                items,
+                plan: Cow::Owned(plan),
+            },
+            next: Cell::new(0),
+        }
+    }
+
     fn create_scalar_item(name: &str, values: Vec<FloatValue>) -> TimeseriesItem {
         // Create time axis that matches values length
         let n = values.len();
@@ -1028,19 +1031,14 @@ mod input_state_window_tests {
 
     #[test]
     fn test_input_state_scalar_window_with_unit_conversion() {
-        use std::collections::HashMap;
-
         let item = create_scalar_item("Emissions", vec![1.0, 2.0, 3.0]);
-
-        // Create transform context with unit conversion factor
-        let mut read_transforms = HashMap::new();
-        read_transforms.insert(
-            "Emissions".to_string(),
-            ReadTransformInfo::with_unit_conversion(1000.0), // Convert Gt to Mt
+        let state = with_reads(
+            std::slice::from_ref(&item),
+            vec![
+                ReadTransformInfo::with_unit_conversion(1000.0), // Convert Gt to Mt
+            ],
+            2000.0,
         );
-        let transform_ctx = TransformContext { read_transforms };
-
-        let state = InputState::build_with_transforms(vec![&item], 2000.0, transform_ctx);
 
         let window = state.get_scalar_window("Emissions");
 
@@ -1052,19 +1050,14 @@ mod input_state_window_tests {
 
     #[test]
     fn test_input_state_four_box_window_with_unit_conversion() {
-        use std::collections::HashMap;
-
         let item = create_four_box_item("Temperature");
-
-        // Create transform context with unit conversion factor
-        let mut read_transforms = HashMap::new();
-        read_transforms.insert(
-            "Temperature".to_string(),
-            ReadTransformInfo::with_unit_conversion(0.1), // Convert from deci-degrees to degrees
+        let state = with_reads(
+            std::slice::from_ref(&item),
+            vec![
+                ReadTransformInfo::with_unit_conversion(0.1), // Convert from deci-degrees to degrees
+            ],
+            2000.0,
         );
-        let transform_ctx = TransformContext { read_transforms };
-
-        let state = InputState::build_with_transforms(vec![&item], 2000.0, transform_ctx);
 
         let window = state.get_four_box_window("Temperature");
 
@@ -1077,19 +1070,12 @@ mod input_state_window_tests {
     #[test]
     fn test_input_state_four_box_to_scalar_with_unit_conversion() {
         use crate::component::GridType;
-        use std::collections::HashMap;
-
         let item = create_four_box_item("Forcing");
-
-        // Create transform context with grid aggregation AND unit conversion
-        let mut read_transforms = HashMap::new();
-        read_transforms.insert(
-            "Forcing".to_string(),
-            ReadTransformInfo::new(GridType::FourBox, None).with_conversion_factor(2.0),
+        let state = with_reads(
+            std::slice::from_ref(&item),
+            vec![ReadTransformInfo::new(GridType::FourBox, None).with_conversion_factor(2.0)],
+            2000.0,
         );
-        let transform_ctx = TransformContext { read_transforms };
-
-        let state = InputState::build_with_transforms(vec![&item], 2000.0, transform_ctx);
 
         let window = state.get_scalar_window("Forcing");
 
@@ -1101,25 +1087,18 @@ mod input_state_window_tests {
     #[test]
     fn test_input_state_hemispheric_window_with_unit_conversion() {
         use crate::component::GridType;
-        use std::collections::HashMap;
-
         let item = create_hemispheric_item("Precipitation");
-
-        // Create transform context with unit conversion
-        let mut read_transforms = HashMap::new();
-        read_transforms.insert(
-            "Precipitation".to_string(),
-            ReadTransformInfo {
+        let state = with_reads(
+            std::slice::from_ref(&item),
+            vec![ReadTransformInfo {
                 source_grid: GridType::Hemispheric,
                 weights: None,
                 unit_conversion_factor: 0.001, // Convert mm/yr to m/yr
                 variable_source: VariableSource::Prescribed,
                 timeseries_type: TimeseriesType::Point,
-            },
+            }],
+            2000.0,
         );
-        let transform_ctx = TransformContext { read_transforms };
-
-        let state = InputState::build_with_transforms(vec![&item], 2000.0, transform_ctx);
 
         let window = state.get_hemispheric_window("Precipitation");
 
@@ -1132,19 +1111,12 @@ mod input_state_window_tests {
     #[test]
     fn test_input_state_four_box_to_hemispheric_with_unit_conversion() {
         use crate::component::GridType;
-        use std::collections::HashMap;
-
         let item = create_four_box_item("Temperature");
-
-        // Create transform context to aggregate FourBox -> Hemispheric with conversion
-        let mut read_transforms = HashMap::new();
-        read_transforms.insert(
-            "Temperature".to_string(),
-            ReadTransformInfo::new(GridType::FourBox, None).with_conversion_factor(2.0),
+        let state = with_reads(
+            std::slice::from_ref(&item),
+            vec![ReadTransformInfo::new(GridType::FourBox, None).with_conversion_factor(2.0)],
+            2000.0,
         );
-        let transform_ctx = TransformContext { read_transforms };
-
-        let state = InputState::build_with_transforms(vec![&item], 2000.0, transform_ctx);
 
         let window = state.get_hemispheric_window("Temperature");
 
@@ -1158,25 +1130,19 @@ mod input_state_window_tests {
     #[test]
     fn test_input_state_windows_carry_timeseries_type() {
         use crate::component::GridType;
-        use std::collections::HashMap;
 
-        let emissions = create_scalar_item("Emissions", vec![1.0, 2.0, 3.0]);
-        let temperature = create_four_box_item("Temperature");
-        let read_transforms = HashMap::from([
-            (
-                "Emissions".to_string(),
+        let items = [
+            create_scalar_item("Emissions", vec![1.0, 2.0, 3.0]),
+            create_four_box_item("Temperature"),
+        ];
+        let state = with_reads(
+            &items,
+            vec![
                 ReadTransformInfo::default().with_timeseries_type(TimeseriesType::Average),
-            ),
-            (
-                "Temperature".to_string(),
                 ReadTransformInfo::new(GridType::FourBox, None)
                     .with_source(VariableSource::Upstream),
-            ),
-        ]);
-        let state = InputState::build_with_transforms(
-            vec![&emissions, &temperature],
+            ],
             2001.0,
-            TransformContext { read_transforms },
         );
 
         let emissions = state.get_scalar_window("Emissions");

@@ -110,7 +110,7 @@ macro_rules! impl_component {
                     )));
                 }
                 let input_state =
-                    $crate::model::extract_state(&collection.0, self.0.inputs(), t_current);
+                    $crate::model::extract_state(&collection.0, self.0.inputs(), t_current)?;
 
                 let output_state = self.0.solve(t_current, t_next, &input_state)?;
                 // Return StateValue wrapped in PyStateValue for Python interoperability

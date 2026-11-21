@@ -525,7 +525,6 @@ mod tests {
     use super::*;
     use crate::example_components::{TestComponent, TestComponentParameters};
     use crate::timeseries::Timeseries;
-    use crate::timeseries_collection::TimeseriesItem;
     use ndarray::array;
 
     #[test]
@@ -534,24 +533,15 @@ mod tests {
             conversion_factor: 2.0,
         });
 
-        let emissions_co2 = TimeseriesItem {
-            data: crate::timeseries_collection::TimeseriesData::Scalar(Timeseries::from_values(
-                array![1.1, 1.3],
-                array![2020.0, 2021.0],
-            )),
-            name: "Emissions|CO2".to_string(),
-        };
+        let mut collection = crate::timeseries_collection::TimeseriesCollection::new();
+        collection.add_timeseries(
+            "Emissions|CO2".to_string(),
+            Timeseries::from_values(array![1.1, 1.3], array![2020.0, 2021.0]),
+        );
 
         // Emissions are an average, which a prescribed input reads at the step's start (index 0)
-        let transforms = crate::state::TransformContext {
-            read_transforms: std::collections::HashMap::from([(
-                "Emissions|CO2".to_string(),
-                crate::state::ReadTransformInfo::default()
-                    .with_timeseries_type(TimeseriesType::Average),
-            )]),
-        };
         let input_state =
-            InputState::build_with_transforms(vec![&emissions_co2], 2020.0, transforms);
+            crate::model::extract_state(&collection, component.inputs(), 2020.0).unwrap();
         assert_eq!(input_state.get_scalar_window("Emissions|CO2").get(), 1.1);
 
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();
