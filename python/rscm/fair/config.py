@@ -569,10 +569,14 @@ def _component_specs(
 
 def components(
     config: FairConfig, *, energy_balance: bool = True
-) -> list[RustComponent]:
-    """Build the components of `component_specs`, in the order they are added."""
+) -> dict[str, RustComponent]:
+    """Build the components of `component_specs` by label, in the order they are added.
+
+    Add each with `ModelBuilder.with_component_as(label, component)`,
+    because the linear forcings share a type and `lags` names the labels.
+    """
     specs = component_specs(config, energy_balance=energy_balance)
-    return [spec.build() for spec in specs.values()]
+    return {label: spec.build() for label, spec in specs.items()}
 
 
 def lags(config: FairConfig) -> tuple[Lag, ...]:
@@ -584,7 +588,7 @@ def lags(config: FairConfig) -> tuple[Lag, ...]:
     result = [Lag(names.SURFACE_AIR_TEMPERATURE_CHANGE)]
     if thornhill(config):
         result += [
-            Lag(driver["variable"], "CH4Lifetime")
+            Lag(driver["variable"], into=["CH4Lifetime"])
             for driver in _chemistry_drivers(
                 config, "concentration", CH4_LIFETIME_SENSITIVITY, key="sensitivity"
             )

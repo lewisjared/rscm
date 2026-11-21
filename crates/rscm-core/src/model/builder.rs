@@ -30,9 +30,9 @@ use super::validation::{resolve_timeseries_types, verify_definition};
 #[pyclass(frozen, get_all)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrescribedInput {
-    /// The variable as its first consumer, by name, declares it.
+    /// The variable as its first consumer, by label, declares it.
     pub definition: VariableDefinition,
-    /// The components that read it, sorted by name.
+    /// The labels of the components that read it, sorted.
     pub consumers: Vec<String>,
     /// Whether prescribed data or an initial value supplies it.
     pub supplied: bool,
@@ -95,6 +95,8 @@ impl InitialValue {
 #[derive(Clone)]
 pub struct ModelBuilder {
     components: Vec<C>,
+    /// Label of each component, aligned with `components`.
+    labels: Vec<String>,
     pub(crate) prescribed_variables: TimeseriesCollection,
     /// Names given to `with_prescribed_variable`, which must be read by the model.
     explicit_prescribed: BTreeSet<String>,
@@ -141,6 +143,7 @@ impl ModelBuilder {
     pub fn new() -> Self {
         Self {
             components: vec![],
+            labels: vec![],
             initial_values: HashMap::new(),
             prescribed_variables: TimeseriesCollection::new(),
             explicit_prescribed: BTreeSet::new(),
@@ -171,9 +174,9 @@ impl ModelBuilder {
         self
     }
 
-    /// Lag the edge from `variable` into `consumer` alone.
+    /// Lag the edge from `variable` into the component labelled `consumer` alone.
     ///
-    /// `consumer` is the component's name, such as `"OceanCarbon"`.
+    /// `consumer` is a label, such as `"OceanCarbon"`, or the name of a schema aggregate.
     /// Other consumers of `variable` still read this step's value.
     pub fn with_lag_for(&mut self, variable: &str, consumer: &str) -> &mut Self {
         self.lagged_edges
@@ -191,7 +194,7 @@ impl ModelBuilder {
     /// Check that every lag names a variable and an edge of the model.
     fn validate_lags(
         &self,
-        names: &[String],
+        labels: &[String],
         component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
     ) -> RSCMResult<()> {
         let aggregates = self.schema.as_ref().map(|s| &s.aggregates);
@@ -210,26 +213,43 @@ impl ModelBuilder {
         }
         for (variable, consumer) in &self.lagged_edges {
             let lag = format!("with_lag_for({variable:?}, {consumer:?})");
-            if !names.contains(consumer) {
-                let known: BTreeSet<&str> = names.iter().map(String::as_str).collect();
+            let reads = if let Some(index) = labels.iter().position(|l| l == consumer) {
+                component_defs[index]
+                    .0
+                    .iter()
+                    .any(|r| &r.name == variable && r.role == VariableRole::Input)
+            } else if let Some(aggregate) = aggregates.and_then(|a| a.get(consumer)) {
+                aggregate.contributors.contains(variable)
+            } else {
+                let mut known: BTreeSet<&str> = labels.iter().map(String::as_str).collect();
+                known.extend(
+                    aggregates
+                        .into_iter()
+                        .flat_map(|a| a.keys().map(String::as_str)),
+                );
                 return Err(RSCMError::InvalidLag {
                     lag,
-                    reason: format!("no component named {consumer:?}, components are {known:?}"),
+                    reason: format!("no component labelled {consumer:?}, labels are {known:?}"),
                 });
-            }
-            let reads = names
-                .iter()
-                .zip(component_defs)
-                .filter(|(n, _)| *n == consumer)
-                .any(|(_, (requires, _))| {
-                    requires
-                        .iter()
-                        .any(|r| &r.name == variable && r.role == VariableRole::Input)
-                });
+            };
             if !reads {
                 return Err(RSCMError::InvalidLag {
                     lag,
                     reason: format!("{consumer} does not read {variable:?} as an input"),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Check that no two components, or a component and a schema aggregate, share a label.
+    fn check_unique_labels(&self) -> RSCMResult<()> {
+        let aggregates = self.schema.iter().flat_map(|s| s.aggregates.keys());
+        let mut seen = HashSet::new();
+        for label in self.labels.iter().chain(aggregates) {
+            if !seen.insert(label.as_str()) {
+                return Err(RSCMError::DuplicateLabel {
+                    label: label.clone(),
                 });
             }
         }
@@ -290,17 +310,12 @@ impl ModelBuilder {
     /// each marked with whether prescribed data or an initial value supplies it.
     /// `build` fails if any is not supplied, unless missing inputs are allowed.
     pub fn prescribed_inputs(&self) -> Vec<PrescribedInput> {
-        let names: Vec<String> = self
-            .components
-            .iter()
-            .map(Model::extract_component_name)
-            .collect();
         let component_defs: Vec<_> = self
             .components
             .iter()
             .map(|component| (component.inputs(), component.outputs()))
             .collect();
-        self.collect_prescribed_inputs(&names, &component_defs)
+        self.collect_prescribed_inputs(&self.labels, &component_defs)
     }
 
     fn collect_prescribed_inputs(
@@ -404,8 +419,22 @@ impl ModelBuilder {
         self
     }
 
-    /// Register a component with the builder.
+    /// Register a component, labelled with its type name.
+    ///
+    /// [`Self::build`] fails if another component has the same label,
+    /// so register a second instance of a type with [`Self::with_component_as`].
     pub fn with_component(&mut self, component: Arc<dyn Component + Send + Sync>) -> &mut Self {
+        let label = Model::extract_component_name(&component);
+        self.with_component_as(label, component)
+    }
+
+    /// Register a component under `label`, which lags, the coupling report and errors name it by.
+    pub fn with_component_as(
+        &mut self,
+        label: impl Into<String>,
+        component: Arc<dyn Component + Send + Sync>,
+    ) -> &mut Self {
+        self.labels.push(label.into());
         self.components.push(component);
         self
     }
@@ -831,18 +860,17 @@ impl ModelBuilder {
             .map(|component| (component.inputs(), component.outputs()))
             .collect();
 
-        let names: Vec<String> = self
-            .components
-            .iter()
-            .map(Model::extract_component_name)
-            .collect();
-        self.validate_lags(&names, &component_defs)?;
+        let names = &self.labels;
+        self.check_unique_labels()?;
+        self.validate_lags(names, &component_defs)?;
 
         let nodes: Vec<NodeIndex> = self
             .components
             .iter()
             .map(|component| graph.add_node(component.clone()))
             .collect();
+        let mut node_labels: BTreeMap<NodeIndex, String> =
+            nodes.iter().copied().zip(names.iter().cloned()).collect();
 
         // Every producer is known before any input is classified, so registration order is irrelevant.
         for (index, (_, provides)) in component_defs.iter().enumerate() {
@@ -932,13 +960,11 @@ impl ModelBuilder {
             unit_conversions.clear();
 
             // Validate each component against the schema and collect transformations
-            for (component, (requires, provides)) in self.components.iter().zip(&component_defs) {
-                let component_name = Model::extract_component_name(component);
-
+            for (component_name, (requires, provides)) in names.iter().zip(&component_defs) {
                 let (component_transforms, component_unit_conversions) = self
                     .validate_component_against_schema(
                         schema,
-                        &component_name,
+                        component_name,
                         requires,
                         provides,
                         &modelled,
@@ -998,15 +1024,14 @@ impl ModelBuilder {
                 let agg_node = graph.add_node(Arc::new(agg_component));
                 aggregate_nodes.insert(agg_node);
 
-                // Track the component name for variable ownership
-                let agg_component_name = format!("Aggregate:{}", agg_name);
-                variable_owners.insert(agg_name.clone(), agg_component_name.clone());
-                let runtime_name = Model::extract_component_name(&graph[agg_node]);
+                // An aggregate's label is its schema name.
+                variable_owners.insert(agg_name.clone(), agg_name.clone());
+                node_labels.insert(agg_node, agg_name.clone());
 
                 // Add dependency edges from contributor sources to the aggregate's component
                 let mut has_dependencies = false;
                 for contributor in &agg_def.contributors {
-                    let source = if self.is_lagged(contributor, &runtime_name) {
+                    let source = if self.is_lagged(contributor, agg_name) {
                         VariableSource::Lagged
                     } else if let Some(&producer_node) = modelled.get(contributor) {
                         graph.add_edge(
@@ -1024,7 +1049,7 @@ impl ModelBuilder {
                     } else {
                         VariableSource::Prescribed
                     };
-                    variable_sources.insert((contributor.clone(), runtime_name.clone()), source);
+                    variable_sources.insert((contributor.clone(), agg_name.clone()), source);
                 }
 
                 // If the aggregate has no component dependencies, link to initial node
@@ -1059,10 +1084,16 @@ impl ModelBuilder {
         }
 
         self.check_supplied_values_are_read(&definitions, &prescribed, &variable_owners)?;
-        check_acyclic(&graph, &component_defs, &names, &aggregate_nodes)?;
+        check_acyclic(
+            &graph,
+            &component_defs,
+            names,
+            &node_labels,
+            &aggregate_nodes,
+        )?;
         resolve_timeseries_types(
             &mut definitions,
-            &names,
+            names,
             &component_defs,
             &self.timeseries_types,
             self.state_type_check,
@@ -1088,7 +1119,7 @@ impl ModelBuilder {
         }
 
         if !self.missing_prescribed_allowed {
-            self.check_prescribed_supplied(&names, &component_defs)?;
+            self.check_prescribed_supplied(names, &component_defs)?;
         }
 
         // Store transformations for runtime grid auto-aggregation
@@ -1231,6 +1262,7 @@ impl ModelBuilder {
             variable_sources,
         );
         model.timeseries_types = timeseries_types;
+        model.labels = node_labels;
 
         // Initialise component states for each node
         for node_idx in model.components.node_indices() {
@@ -1295,6 +1327,7 @@ fn check_acyclic(
     graph: &CGraph,
     component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
     names: &[String],
+    labels: &BTreeMap<NodeIndex, String>,
     aggregate_nodes: &HashSet<NodeIndex>,
 ) -> RSCMResult<()> {
     if !petgraph::algo::is_cyclic_directed(graph) {
@@ -1314,19 +1347,16 @@ fn check_acyclic(
             continue;
         }
         let members: HashSet<NodeIndex> = scc.iter().copied().collect();
-        components.extend(
-            scc.iter()
-                .map(|&n| Model::extract_component_name(&graph[n])),
-        );
+        components.extend(scc.iter().map(|n| labels[n].clone()));
         for edge in graph.edge_references() {
             if !(members.contains(&edge.source()) && members.contains(&edge.target())) {
                 continue;
             }
             let variable = edge.weight().name().to_string();
             variables.insert(variable.clone());
-            // Aggregate components always read this step's contributions, so their inputs cannot lag.
+            // Suggest lags into components only, since a lagged aggregate shifts every reader of its total.
             if !aggregate_nodes.contains(&edge.target()) {
-                let consumer = Model::extract_component_name(&graph[edge.target()]);
+                let consumer = labels[&edge.target()].clone();
                 let rank = !stateful.contains(consumer.as_str());
                 suggestions.insert((rank, variable, consumer));
             }

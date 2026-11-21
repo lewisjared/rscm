@@ -341,11 +341,14 @@ impl Component for Relay {
 #[test]
 fn a_reading_instance_does_not_convert_another_instances_output() {
     let model = run(ModelBuilder::new()
-        .with_component(Arc::new(Relay {
-            input: None,
-            output: ("Energy".to_string(), "kJ".to_string()),
-            value: 1.0,
-        }))
+        .with_component_as(
+            "Source",
+            Arc::new(Relay {
+                input: None,
+                output: ("Energy".to_string(), "kJ".to_string()),
+                value: 1.0,
+            }),
+        )
         .with_component(Arc::new(Relay {
             input: Some(("Energy".to_string(), "J".to_string())),
             output: ("Energy Copy".to_string(), "J".to_string()),

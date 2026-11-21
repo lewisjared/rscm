@@ -19,6 +19,22 @@ use std::sync::Arc;
 #[pyo3(name = "ModelBuilder")]
 pub struct PyModelBuilder(pub ModelBuilder);
 
+/// A Rust component, a `PythonComponent` or an `rscm.component.Component` instance as a component.
+fn to_component(
+    component: Bound<'_, PyAny>,
+) -> PyResult<Arc<dyn crate::component::Component + Send + Sync>> {
+    if let Ok(rust) = component.cast::<PyRustComponent>() {
+        return Ok(rust.borrow().0.clone());
+    }
+    if let Ok(wrapped) = component.cast::<PyPythonComponent>() {
+        return Ok(wrapped.borrow().0.clone());
+    }
+    Ok(Arc::new(PythonComponent::new(
+        component.py(),
+        component.unbind(),
+    )?))
+}
+
 #[pymethods]
 impl PyModelBuilder {
     #[new]
@@ -33,19 +49,25 @@ impl PyModelBuilder {
         }
     }
 
-    /// Add a Rust component, a `PythonComponent` or an `rscm.component.Component` instance.
+    /// Add a Rust component, a `PythonComponent` or an `rscm.component.Component` instance,
+    /// labelled with its type name.
     fn with_component<'py>(
         mut self_: PyRefMut<'py, Self>,
         component: Bound<'py, PyAny>,
     ) -> PyResult<PyRefMut<'py, Self>> {
-        if let Ok(rust) = component.cast::<PyRustComponent>() {
-            self_.0.with_component(rust.borrow().0.clone());
-        } else if let Ok(wrapped) = component.cast::<PyPythonComponent>() {
-            self_.0.with_component(wrapped.borrow().0.clone());
-        } else {
-            let wrapped = PythonComponent::new(component.py(), component.unbind())?;
-            self_.0.with_component(Arc::new(wrapped));
-        }
+        let component = to_component(component)?;
+        self_.0.with_component(component);
+        Ok(self_)
+    }
+
+    /// Add a component under `label`, which lags and the coupling report name it by.
+    fn with_component_as<'py>(
+        mut self_: PyRefMut<'py, Self>,
+        label: String,
+        component: Bound<'py, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        let component = to_component(component)?;
+        self_.0.with_component_as(label, component);
         Ok(self_)
     }
 
@@ -110,7 +132,7 @@ impl PyModelBuilder {
         self_
     }
 
-    /// Lag the edge from `variable` into the component named `consumer` alone.
+    /// Lag the edge from `variable` into the component labelled `consumer` alone.
     fn with_lag_for<'py>(
         mut self_: PyRefMut<'py, Self>,
         variable: &str,

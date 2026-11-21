@@ -516,10 +516,13 @@ def test_climate_udeb_smoke() -> None:
     climate = ClimateUDEBBuilder.from_parameters(
         {"ecs": 3.0, "nh_land_fraction": nh, "sh_land_fraction": sh}
     )
-    chain = [*components(run.config, energy_balance=False), climate.build()]
+    chain = {
+        **components(run.config, energy_balance=False),
+        "ClimateUDEB": climate.build(),
+    }
 
     schema = VariableSchema()
-    definitions = [d for c in chain for d in c.definitions()]
+    definitions = [d for c in chain.values() for d in c.definitions()]
     # Producers first, so the schema keeps ClimateUDEB's four-box temperature.
     for d in sorted(definitions, key=lambda d: d.role == VariableRole.Input):
         if not schema.contains(d.name):
@@ -534,8 +537,8 @@ def test_climate_udeb_smoke() -> None:
             GridType.FourBox, [(1 - nh) / 2, nh / 2, (1 - sh) / 2, sh / 2]
         )
     )
-    for component in chain:
-        builder.with_component(component)
+    for label, component in chain.items():
+        builder.with_component_as(label, component)
     with_lags(builder, run.config)
     inputs = _inputs(run.config, run.timebounds, run.timepoints)
     n_bounds = len(axis.values())

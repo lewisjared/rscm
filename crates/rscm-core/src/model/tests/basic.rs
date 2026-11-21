@@ -174,6 +174,9 @@ data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
 "Atmospheric Concentrations|CO2" = "point"
 "Emissions|CO2" = "average"
 
+[labels]
+1 = "TestComponent"
+
 [component_states.0]
 state_type = "unit"
 
