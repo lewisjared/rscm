@@ -297,7 +297,7 @@ mod tests {
         item("Atmospheric Burden|CH4|Permafrost", 0.0, 0.0);
         let component = CH4Oxidation::new();
         let input_state =
-            rscm_core::model::extract_state(&collection, component.inputs(), 2000.0).unwrap();
+            rscm_core::model::extract_state(&collection, &component.definitions(), 2000.0).unwrap();
         let output = component.solve(2000.0, 2001.0, &input_state).unwrap();
         let (next, co2) = component.solve_oxidation(
             pools(100.0, 300.0, 700.0 * CONV - 400.0),

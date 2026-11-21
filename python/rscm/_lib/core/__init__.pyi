@@ -419,10 +419,6 @@ class PythonComponent(RustComponent):
             If a declared unit names an unknown unit or species.
         """
     def __repr__(self) -> str: ...
-    def input_names(self) -> list[str]:
-        """Get the names of all input variables required by this component."""
-    def output_names(self) -> list[str]:
-        """Get the names of all output variables produced by this component."""
 
 @final
 class SchemaVariableDefinition:

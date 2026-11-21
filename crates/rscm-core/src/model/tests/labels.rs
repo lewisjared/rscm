@@ -76,10 +76,6 @@ fn values(model: &Model, variable: &str) -> Vec<FloatValue> {
     data.as_scalar().unwrap().values().iter().copied().collect()
 }
 
-fn key(variable: &str, label: &str) -> (String, String) {
-    (variable.to_string(), label.to_string())
-}
-
 #[test]
 fn instances_of_one_type_couple_independently() {
     let mut model = builder()
@@ -90,11 +86,12 @@ fn instances_of_one_type_couple_independently() {
         .unwrap();
     model.run();
 
-    let sources = model.variable_sources();
-    assert_eq!(sources[&key("Energy", "Now")], VariableSource::Upstream);
-    assert_eq!(sources[&key("Energy", "Before")], VariableSource::Lagged);
-    assert!(!model.unit_conversions().contains_key(&key("Energy", "Now")));
-    assert_eq!(model.unit_conversions()[&key("Energy", "Before")], 1e-3);
+    let now = super::read(&model, "Energy", "Now");
+    let before = super::read(&model, "Energy", "Before");
+    assert_eq!(now.source, VariableSource::Upstream);
+    assert_eq!(before.source, VariableSource::Lagged);
+    assert!(now.unit.is_none());
+    assert_eq!(before.unit.as_ref().unwrap().factor, 1e-3);
 
     // Each step stores a reader's output at the step's end.
     assert_eq!(values(&model, "Energy"), [0.0, 1.0, 2.0, 3.0]);
@@ -189,7 +186,7 @@ fn a_lag_into_an_aggregate_reads_the_previous_step() {
 
     let model = run(true);
     assert_eq!(
-        model.variable_sources()[&key("Energy", "Total")],
+        super::read(&model, "Energy", "Total").source,
         VariableSource::Lagged
     );
     let coupling = model.coupling().unwrap();

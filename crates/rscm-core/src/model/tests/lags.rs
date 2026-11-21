@@ -77,7 +77,7 @@ fn builder(components: Vec<Arc<dyn Component + Send + Sync>>) -> ModelBuilder {
 }
 
 fn source(model: &Model, variable: &str, component: &str) -> VariableSource {
-    model.variable_sources()[&(variable.to_string(), component.to_string())]
+    super::read(model, variable, component).source
 }
 
 fn values(model: &Model, variable: &str) -> Vec<FloatValue> {
@@ -141,7 +141,10 @@ fn lagged_loop_builds_in_any_order() {
         VariableSource::Lagged
     );
     assert_eq!(source(&forward, "co2", "Climate"), VariableSource::Upstream);
-    assert_eq!(forward.variable_sources(), backward.variable_sources());
+    assert_eq!(
+        super::read_sources(&forward),
+        super::read_sources(&backward)
+    );
     for variable in ["temperature", "co2"] {
         assert_eq!(values(&forward, variable), values(&backward, variable));
     }
@@ -171,7 +174,7 @@ fn shuffled_chain_gives_identical_sources() {
     for model in &models {
         assert_eq!(source(model, "a", "ChainB"), VariableSource::Upstream);
         assert_eq!(source(model, "b", "ChainC"), VariableSource::Upstream);
-        assert_eq!(model.variable_sources(), models[0].variable_sources());
+        assert_eq!(super::read_sources(model), super::read_sources(&models[0]));
         assert_eq!(values(model, "c"), values(&models[0], "c"));
     }
     assert_eq!(values(&models[0], "c"), [0.0, 3.0, 3.0, 3.0, 3.0, 3.0]);

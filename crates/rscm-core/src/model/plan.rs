@@ -10,7 +10,7 @@ use petgraph::graph::NodeIndex;
 use serde::{Deserialize, Serialize};
 
 use crate::component::{
-    DeclaredVariable, GridType, TimeseriesType, VariableDefinition, VariableRole,
+    reads_and_writes, DeclaredVariable, GridType, TimeseriesType, VariableDefinition, VariableRole,
 };
 use crate::errors::{RSCMError, RSCMResult};
 use crate::state::{lookup_order, ReadTransformInfo, VariableSource};
@@ -19,14 +19,16 @@ use crate::units;
 
 use super::coupling::{ComponentCoupling, Coupling, CouplingEdge};
 use super::runtime::execution_order;
-use super::storage::grid_transform;
-use super::types::{CGraph, RequiredTransformation, TransformDirection, UnitConversionInfo};
+use super::storage::{grid_conversion, read_unit, GridConversions, UnitConversions};
+use super::types::{CGraph, TransformDirection};
 
 /// How a model steps: each component in execution order, with how it reads and writes.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct StepPlan {
-    /// Components in the order the runtime steps them, without the graph's root node.
+    /// Components in the order the runtime steps them.
     pub steps: Vec<Step>,
+    /// Whether each stored variable is a point or an average.
+    pub timeseries_types: BTreeMap<String, TimeseriesType>,
 }
 
 /// One component's part of a step.
@@ -34,11 +36,11 @@ pub struct StepPlan {
 pub struct Step {
     pub node: NodeIndex,
     pub label: String,
-    /// One per input and state, aligned with the component's `input_names()`.
+    /// One per input and state, in the order the component defines them.
     pub reads: Vec<Read>,
     /// Positions in `reads`, sorted by [`lookup_order`] of their names.
     pub lookup_order: Vec<u32>,
-    /// One per output and state, aligned with the component's `output_names()`.
+    /// One per output and state, in the order the component defines them.
     pub writes: Vec<Write>,
 }
 
@@ -112,16 +114,14 @@ pub struct Conversion {
 /// What the builder decided, for [`resolve`] to turn into a plan.
 pub(crate) struct Decisions<'a> {
     pub graph: &'a CGraph,
-    pub initial_node: NodeIndex,
     pub labels: &'a BTreeMap<NodeIndex, String>,
     pub collection: &'a TimeseriesCollection,
     /// Source of each input, keyed by variable and consumer label.
     pub sources: &'a HashMap<(String, String), VariableSource>,
     /// Label of the component or aggregate producing each modelled variable.
     pub producers: &'a HashMap<String, String>,
-    pub read_conversions: &'a [UnitConversionInfo],
-    /// Grid aggregations, each with the label of the component that applies it.
-    pub transformations: &'a [(String, RequiredTransformation)],
+    pub read_units: &'a UnitConversions,
+    pub grids: &'a GridConversions,
     pub timeseries_types: &'a BTreeMap<String, TimeseriesType>,
     pub grid_weights: &'a HashMap<GridType, Vec<f64>>,
 }
@@ -135,36 +135,37 @@ pub(crate) fn resolve(decisions: &Decisions) -> RSCMResult<StepPlan> {
     })?;
     let steps = order
         .into_iter()
-        .filter(|&node| node != decisions.initial_node)
-        .map(|node| resolve_step(decisions, node))
+        .map(|node| {
+            let (reads, writes) = reads_and_writes(&decisions.graph[node].definitions());
+            resolve_definitions(
+                decisions,
+                node,
+                decisions.labels[&node].clone(),
+                reads,
+                writes,
+            )
+        })
         .collect::<RSCMResult<_>>()?;
-    Ok(StepPlan { steps })
+    Ok(StepPlan {
+        steps,
+        timeseries_types: decisions.timeseries_types.clone(),
+    })
 }
 
-fn resolve_step(d: &Decisions, node: NodeIndex) -> RSCMResult<Step> {
-    let component = &d.graph[node];
-    resolve_definitions(
-        d,
-        node,
-        d.labels[&node].clone(),
-        component.inputs(),
-        component.outputs(),
-    )
-}
-
-/// How a component solved on its own reads `inputs` from `collection`.
+/// How a component solved on its own reads its inputs and states, among `definitions`, from `collection`.
 ///
 /// Its state reads as its own and every other input as prescribed.
 /// A series with no unit is taken to be in the declared unit.
 pub fn resolve_standalone(
     label: &str,
     collection: &TimeseriesCollection,
-    inputs: Vec<VariableDefinition>,
+    definitions: &[VariableDefinition],
 ) -> RSCMResult<Step> {
+    let (inputs, _) = reads_and_writes(definitions);
     let label = label.to_string();
     let mut sources = HashMap::new();
-    let mut read_conversions = Vec::new();
-    let mut transformations = Vec::new();
+    let mut read_units = HashMap::new();
+    let mut grids = HashMap::new();
     let mut timeseries_types = BTreeMap::new();
     for def in &inputs {
         let (_, stored) = stored(collection, &def.name)?;
@@ -175,37 +176,26 @@ pub fn resolve_standalone(
         sources.insert((def.name.clone(), label.clone()), source);
         let stored_unit = stored.unit();
         if !stored_unit.is_empty() {
-            if let Some(factor) = units::factor(&def.name, stored_unit, &def.unit)? {
-                read_conversions.push(UnitConversionInfo {
-                    variable: def.name.clone(),
-                    component: label.clone(),
-                    factor,
-                    source_unit: stored_unit.to_string(),
-                    target_unit: def.unit.clone(),
-                });
+            if let Some(unit) = read_unit(def, stored_unit)? {
+                read_units.insert((label.clone(), def.name.clone()), unit);
             }
         }
-        if let Some(t) = grid_transform(
-            def,
-            &label,
-            stored.grid(),
-            "the data supplied",
-            TransformDirection::Read,
-        )? {
-            transformations.push((label.clone(), t));
+        let direction = TransformDirection::Read;
+        let stored_by = "the data supplied";
+        if let Some(grid) = grid_conversion(def, &label, stored.grid(), stored_by, direction)? {
+            grids.insert((label.clone(), def.name.clone(), direction), grid);
         }
         timeseries_types.insert(def.name.clone(), def.resolved_timeseries_type());
     }
     let graph = CGraph::new();
     let decisions = Decisions {
         graph: &graph,
-        initial_node: NodeIndex::end(),
         labels: &BTreeMap::new(),
         collection,
         sources: &sources,
         producers: &HashMap::new(),
-        read_conversions: &read_conversions,
-        transformations: &transformations,
+        read_units: &read_units,
+        grids: &grids,
         timeseries_types: &timeseries_types,
         grid_weights: &HashMap::new(),
     };
@@ -220,15 +210,9 @@ fn resolve_definitions(
     outputs: Vec<VariableDefinition>,
 ) -> RSCMResult<Step> {
     let grid_conversion = |variable: &str, direction| {
-        d.transformations
-            .iter()
-            .find(|(component, t)| {
-                component == &label && t.variable == variable && t.direction == direction
-            })
-            .map(|(_, t)| GridConversion {
-                from: t.source_grid,
-                to: t.target_grid,
-            })
+        d.grids
+            .get(&(label.clone(), variable.to_string(), direction))
+            .copied()
     };
 
     let mut reads = Vec::new();
@@ -242,14 +226,9 @@ fn resolve_definitions(
         let timeseries_type = timeseries_type(d, &definition.name);
         let stored_grid = stored.grid();
         let unit = d
-            .read_conversions
-            .iter()
-            .find(|c| c.component == label && c.variable == definition.name)
-            .map(|c| UnitConversion {
-                from: c.source_unit.clone(),
-                to: c.target_unit.clone(),
-                factor: c.factor,
-            });
+            .read_units
+            .get(&(label.clone(), definition.name.clone()))
+            .cloned();
         let factor = unit.as_ref().map_or(1.0, |u| u.factor);
         // A grid input always carries the model's weights, so a global read of it uses them.
         let plain = stored_grid == GridType::Scalar

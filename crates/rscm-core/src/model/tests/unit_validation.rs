@@ -453,21 +453,15 @@ fn test_unit_conversion_applied_at_runtime_gtc_to_mtc() {
         .build()
         .expect("Model should build successfully");
 
-    // Check that unit conversion was registered
-    let conversions = model.unit_conversions();
-    assert!(
-        !conversions.is_empty(),
-        "Unit conversions should be registered"
-    );
-
-    // Find the conversion for our input
-    let factor = conversions
-        .get(&("Input".to_string(), "ScaleAndOutput".to_string()))
-        .expect("Should have conversion for Input/ScaleAndOutput");
+    let factor = super::read(&model, "Input", "ScaleAndOutput")
+        .unit
+        .as_ref()
+        .expect("Should have conversion for Input/ScaleAndOutput")
+        .factor;
 
     // GtC -> MtC conversion factor is 1000 (1 Gt = 1000 Mt)
     assert!(
-        (*factor - 1000.0).abs() < 0.001,
+        (factor - 1000.0).abs() < 0.001,
         "Conversion factor should be 1000, got {}",
         factor
     );
@@ -571,11 +565,10 @@ fn test_unit_conversion_combined_with_prefix_and_molecular_weight() {
         .expect("Model should build successfully");
 
     // Verify the conversion factor
-    let factor = model
-        .unit_conversions()
-        .get(&("Input".to_string(), "ScaleAndOutput".to_string()))
-        .copied()
-        .unwrap_or(1.0);
+    let factor = super::read(&model, "Input", "ScaleAndOutput")
+        .unit
+        .as_ref()
+        .map_or(1.0, |unit| unit.factor);
 
     // Expected: 1000 * 44/12 = 3666.67
     let expected_factor = 1000.0 * 44.0 / 12.0;
@@ -633,16 +626,9 @@ fn test_no_conversion_when_units_match() {
         .build()
         .expect("Model should build successfully");
 
-    // Should have no conversions registered (or factor of 1.0)
-    let conversions = model.unit_conversions();
-    let factor = conversions
-        .get(&("Input".to_string(), "ScaleAndOutput".to_string()))
-        .copied()
-        .unwrap_or(1.0);
-
-    assert!(
-        (factor - 1.0).abs() < 0.0001
-            || !conversions.contains_key(&("Input".to_string(), "ScaleAndOutput".to_string())),
+    assert_eq!(
+        super::read(&model, "Input", "ScaleAndOutput").unit,
+        None,
         "No conversion should be registered for matching units"
     );
 
@@ -686,11 +672,11 @@ fn test_prescribed_only_data_stays_in_supplied_unit() {
     let stored = stored_emissions(&model);
     assert_eq!(stored.unit(), "MtCO2 / yr");
     assert_eq!(stored.at_scalar(0).unwrap(), 10.0);
-    let key = (
-        "Emissions|CO2".to_string(),
-        "EmissionsToConcentration".to_string(),
-    );
-    let factor = model.unit_conversions()[&key];
+    let factor = super::read(&model, "Emissions|CO2", "EmissionsToConcentration")
+        .unit
+        .as_ref()
+        .unwrap()
+        .factor;
     let expected = 12.0 / 44.0 / 1000.0;
     assert!((factor - expected).abs() < 1e-12 * expected, "{factor}");
 }
@@ -807,11 +793,8 @@ fn test_four_box_prescribed_data_stays_in_supplied_unit() {
         .unwrap();
     assert_eq!(stored.unit(), "mK");
     assert_eq!(stored.at_time_index(0).unwrap(), vec![1.0; 4]);
-    let key = (
-        "Surface Air Temperature Change".to_string(),
-        "FourBoxReader".to_string(),
-    );
-    assert_eq!(model.unit_conversions()[&key], 0.001);
+    let read = super::read(&model, "Surface Air Temperature Change", "FourBoxReader");
+    assert_eq!(read.unit.as_ref().unwrap().factor, 0.001);
 }
 
 #[test]

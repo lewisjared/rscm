@@ -15,18 +15,21 @@ use crate::schema::VariableSchema;
 use crate::timeseries_collection::TimeseriesCollection;
 use crate::units::{self, Unit};
 
-use super::types::{
-    RequiredTransformation, ResolvedVariable, TransformDirection, UnitConversionInfo,
-};
+use super::plan::{GridConversion, UnitConversion};
+use super::types::{ResolvedVariable, TransformDirection};
+
+/// Each reader's unit conversion, keyed by its label and the variable.
+pub(crate) type UnitConversions = HashMap<(String, String), UnitConversion>;
+/// Each grid aggregation, keyed by the label of the component applying it, the variable and direction.
+pub(crate) type GridConversions = HashMap<(String, String, TransformDirection), GridConversion>;
 
 /// Where every variable is stored and how each component reaches it.
 pub(crate) struct Storage {
     /// Stored unit, grid and role of each variable.
     pub definitions: HashMap<String, ResolvedVariable>,
-    /// Factor from the stored unit to each reader's declared unit, where they differ.
-    pub read_conversions: Vec<UnitConversionInfo>,
-    /// Grid aggregations on reads and writes, each with the label of the component that applies it.
-    pub transformations: Vec<(String, RequiredTransformation)>,
+    /// Stored unit to each reader's declared unit, where they differ.
+    pub read_units: UnitConversions,
+    pub grids: GridConversions,
 }
 
 /// Apply the storage rule to every variable a component, schema or aggregate declares.
@@ -98,47 +101,35 @@ pub(crate) fn resolve_storage(
         }
     }
 
-    let mut read_conversions = Vec::new();
-    let mut transformations = Vec::new();
+    let mut read_units = HashMap::new();
+    let mut grids = HashMap::new();
     for (label, (requires, provides)) in labels.iter().zip(component_defs) {
         for def in requires {
             let stored = &definitions[&def.name];
-            if let Some(factor) = units::factor(&def.name, &stored.unit, &def.unit)? {
-                read_conversions.push(UnitConversionInfo {
-                    variable: def.name.clone(),
-                    component: label.clone(),
-                    factor,
-                    source_unit: stored.unit.clone(),
-                    target_unit: def.unit.clone(),
-                });
+            if let Some(unit) = read_unit(def, &stored.unit)? {
+                read_units.insert((label.clone(), def.name.clone()), unit);
             }
-            let transform = grid_transform(
-                def,
-                label,
-                stored.grid,
-                &stored_by[&def.name],
-                TransformDirection::Read,
-            )?;
-            transformations.extend(transform.map(|t| (label.clone(), t)));
+            let direction = TransformDirection::Read;
+            let stored_by = &stored_by[&def.name];
+            if let Some(grid) = grid_conversion(def, label, stored.grid, stored_by, direction)? {
+                grids.insert((label.clone(), def.name.clone(), direction), grid);
+            }
         }
         for def in provides {
             let stored = &definitions[&def.name];
             units::factor(&def.name, &def.unit, &stored.unit)?;
-            let transform = grid_transform(
-                def,
-                label,
-                stored.grid,
-                &stored_by[&def.name],
-                TransformDirection::Write,
-            )?;
-            transformations.extend(transform.map(|t| (label.clone(), t)));
+            let direction = TransformDirection::Write;
+            let stored_by = &stored_by[&def.name];
+            if let Some(grid) = grid_conversion(def, label, stored.grid, stored_by, direction)? {
+                grids.insert((label.clone(), def.name.clone(), direction), grid);
+            }
         }
     }
 
     Ok(Storage {
         definitions,
-        read_conversions,
-        transformations,
+        read_units,
+        grids,
     })
 }
 
@@ -147,24 +138,38 @@ fn set_unit(resolved: &mut ResolvedVariable, unit: &str) {
     resolved.parsed_unit = Unit::parse(unit).ok();
 }
 
+/// The conversion from `stored_unit` to the unit `def` declares, if they differ.
+pub(crate) fn read_unit(
+    def: &VariableDefinition,
+    stored_unit: &str,
+) -> RSCMResult<Option<UnitConversion>> {
+    Ok(
+        units::factor(&def.name, stored_unit, &def.unit)?.map(|factor| UnitConversion {
+            from: stored_unit.to_string(),
+            to: def.unit.clone(),
+            factor,
+        }),
+    )
+}
+
 /// The aggregation from the finer to the coarser of the declared and stored grids, if they differ.
 ///
 /// Fails if the side that must be finer is coarser.
-pub(crate) fn grid_transform(
+pub(crate) fn grid_conversion(
     def: &VariableDefinition,
     component: &str,
     stored_grid: GridType,
     stored_by: &str,
     direction: TransformDirection,
-) -> RSCMResult<Option<RequiredTransformation>> {
+) -> RSCMResult<Option<GridConversion>> {
     if def.grid == stored_grid {
         return Ok(None);
     }
-    let (source_grid, target_grid) = match direction {
+    let (from, to) = match direction {
         TransformDirection::Read => (stored_grid, def.grid),
         TransformDirection::Write => (def.grid, stored_grid),
     };
-    if !source_grid.can_aggregate_to(target_grid) {
+    if !from.can_aggregate_to(to) {
         return Err(RSCMError::GridTypeMismatch {
             variable: def.name.clone(),
             component: component.to_string(),
@@ -174,11 +179,5 @@ pub(crate) fn grid_transform(
             stored_by: stored_by.to_string(),
         });
     }
-    Ok(Some(RequiredTransformation {
-        variable: def.name.clone(),
-        unit: def.unit.clone(),
-        source_grid,
-        target_grid,
-        direction,
-    }))
+    Ok(Some(GridConversion { from, to }))
 }

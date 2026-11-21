@@ -2,7 +2,7 @@
 
 use crate::component::{Component, GridType, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
-use crate::model::ModelBuilder;
+use crate::model::{GridConversion, ModelBuilder};
 use crate::schema::VariableSchema;
 use crate::state::{FourBoxSlice, HemisphericSlice, StateValue};
 use crate::timeseries::{FloatValue, Time, TimeAxis};
@@ -85,10 +85,12 @@ fn test_write_aggregation_four_box_to_scalar_execution() {
         .build()
         .expect("Model should build");
 
-    // Verify write transform is registered
-    assert!(
-        model.write_transforms().contains_key("Temperature"),
-        "Write transform should be registered"
+    assert_eq!(
+        super::write(&model, "Temperature", "FourBoxWriter").grid,
+        Some(GridConversion {
+            from: GridType::FourBox,
+            to: GridType::Scalar,
+        })
     );
 
     // Run one step
@@ -261,10 +263,10 @@ fn test_no_schema_no_aggregation() {
         .build()
         .expect("Model should build without schema");
 
-    // Verify no write transforms
-    assert!(
-        model.write_transforms().is_empty(),
-        "Should have no write transforms without schema"
+    assert_eq!(
+        super::write(&model, "Temperature", "FourBoxWriter").grid,
+        None,
+        "Should have no write aggregation without schema"
     );
 
     model.step();

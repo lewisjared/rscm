@@ -255,12 +255,17 @@ mod tests {
         let component =
             FourBoxOceanHeatUptake::from_parameters(FourBoxOceanHeatUptakeParameters::default());
 
-        let inputs = component.input_names();
-        assert_eq!(inputs.len(), 1);
-        assert!(inputs.contains(&rscm_core::names::ERF.to_string()));
-
-        let outputs = component.output_names();
-        assert_eq!(outputs.len(), 1);
-        assert!(outputs.contains(&"Heat Uptake".to_string()));
+        let roles: Vec<(String, VariableRole)> = component
+            .definitions()
+            .into_iter()
+            .map(|d| (d.name, d.role))
+            .collect();
+        assert_eq!(
+            roles,
+            [
+                (rscm_core::names::ERF.to_string(), VariableRole::Input),
+                ("Heat Uptake".to_string(), VariableRole::Output),
+            ]
+        );
     }
 }

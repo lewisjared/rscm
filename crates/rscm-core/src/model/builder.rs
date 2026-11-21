@@ -1,6 +1,8 @@
 //! Model builder for constructing models from components.
 
-use crate::component::{Component, GridType, TimeseriesType, VariableDefinition, VariableRole};
+use crate::component::{
+    reads_and_writes, Component, GridType, TimeseriesType, VariableDefinition, VariableRole,
+};
 use crate::errors::{close_matches, RSCMError, RSCMResult};
 use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, PreviousStrategy,
@@ -18,13 +20,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
-use super::null_component::NullComponent;
 use super::plan::{resolve, Decisions};
 use super::runtime::Model;
 use super::storage::{resolve_storage, Storage};
-use super::types::{
-    CGraph, GraphEdge, RequiredTransformation, ResolvedVariable, TransformDirection, C,
-};
+use super::types::{CGraph, ResolvedVariable, C};
 use super::validation::resolve_timeseries_types;
 
 /// An input that no component or schema aggregate produces, so the model must be given it.
@@ -314,7 +313,7 @@ impl ModelBuilder {
         let component_defs: Vec<_> = self
             .components
             .iter()
-            .map(|component| (component.inputs(), component.outputs()))
+            .map(|component| reads_and_writes(&component.definitions()))
             .collect();
         self.collect_prescribed_inputs(&self.labels, &component_defs)
     }
@@ -640,6 +639,11 @@ impl ModelBuilder {
         })
     }
 
+    /// The custom weights for `grid`, if any.
+    pub(crate) fn grid_weights(&self, grid: GridType) -> Option<&Vec<f64>> {
+        self.grid_weights.get(&grid)
+    }
+
     /// Builds the component graph for the registered components and creates a concrete model.
     ///
     /// Returns an error if the component definitions are inconsistent.
@@ -676,7 +680,6 @@ impl ModelBuilder {
         // This enables different components to have different source classifications
         // for the same variable (e.g., State for owner, Upstream for consumers)
         let mut variable_sources: HashMap<(String, String), VariableSource> = HashMap::new();
-        let initial_node = graph.add_node(Arc::new(NullComponent {}));
         let mut aggregate_nodes: HashSet<NodeIndex> = HashSet::new();
 
         // Track pending aggregate dependencies: (component_node, variable_name, definition)
@@ -694,7 +697,7 @@ impl ModelBuilder {
         let component_defs: Vec<_> = self
             .components
             .iter()
-            .map(|component| (component.inputs(), component.outputs()))
+            .map(|component| reads_and_writes(&component.definitions()))
             .collect();
 
         let names = &self.labels;
@@ -726,7 +729,6 @@ impl ModelBuilder {
         for (index, (requires, _)) in component_defs.iter().enumerate() {
             let node = nodes[index];
             let component_name = &names[index];
-            let mut has_dependencies = false;
 
             for def in requires {
                 let name = &def.name;
@@ -740,23 +742,16 @@ impl ModelBuilder {
                     prescribed.insert(name.clone());
                     VariableSource::Lagged
                 } else if let Some(producer) = producer {
-                    graph.add_edge(producer, node, GraphEdge::Variable(def.clone()));
-                    has_dependencies = true;
+                    graph.add_edge(producer, node, def.clone());
                     VariableSource::Upstream
                 } else if aggregate_names.contains(name) {
                     pending_aggregate_deps.push((node, name.clone(), def.clone()));
-                    has_dependencies = true;
                     VariableSource::Upstream
                 } else {
                     prescribed.insert(name.clone());
                     VariableSource::Prescribed
                 };
                 variable_sources.insert((name.clone(), component_name.clone()), source);
-            }
-
-            if !has_dependencies {
-                // Link to the initial node so the graph stays connected.
-                graph.add_edge(initial_node, node, GraphEdge::Link);
             }
         }
 
@@ -773,8 +768,8 @@ impl ModelBuilder {
         }
         let Storage {
             mut definitions,
-            read_conversions,
-            transformations,
+            read_units,
+            grids,
         } = resolve_storage(
             self.schema.as_ref(),
             names,
@@ -801,7 +796,6 @@ impl ModelBuilder {
                 node_labels.insert(agg_node, agg_name.clone());
 
                 // Add dependency edges from contributor sources to the aggregate's component
-                let mut has_dependencies = false;
                 for contributor in &agg_def.contributors {
                     let source = if self.is_lagged(contributor, agg_name) {
                         VariableSource::Lagged
@@ -809,24 +803,18 @@ impl ModelBuilder {
                         graph.add_edge(
                             producer_node,
                             agg_node,
-                            GraphEdge::Variable(VariableDefinition::with_grid(
+                            VariableDefinition::with_grid(
                                 contributor,
                                 &agg_def.unit,
                                 VariableRole::Input,
                                 agg_def.grid,
-                            )),
+                            ),
                         );
-                        has_dependencies = true;
                         VariableSource::Upstream
                     } else {
                         VariableSource::Prescribed
                     };
                     variable_sources.insert((contributor.clone(), agg_name.clone()), source);
-                }
-
-                // If the aggregate has no component dependencies, link to initial node
-                if !has_dependencies {
-                    graph.add_edge(initial_node, agg_node, GraphEdge::Link);
                 }
 
                 // Register the aggregate output as modelled
@@ -836,7 +824,7 @@ impl ModelBuilder {
             // Resolve pending aggregate dependencies now that aggregate components are in the graph
             for (component_node, var_name, def) in pending_aggregate_deps {
                 if let Some(&agg_node) = modelled.get(&var_name) {
-                    graph.add_edge(agg_node, component_node, GraphEdge::Variable(def));
+                    graph.add_edge(agg_node, component_node, def);
                 }
             }
         }
@@ -878,22 +866,6 @@ impl ModelBuilder {
 
         if !self.missing_prescribed_allowed {
             self.check_prescribed_supplied(names, &component_defs)?;
-        }
-
-        // Store transformations for runtime grid auto-aggregation
-        // Split into read and write transforms for efficient lookup during execution
-        let mut read_transforms: HashMap<String, RequiredTransformation> = HashMap::new();
-        let mut write_transforms: HashMap<String, RequiredTransformation> = HashMap::new();
-
-        for (_, transform) in transformations.iter().cloned() {
-            match transform.direction {
-                TransformDirection::Read => {
-                    read_transforms.insert(transform.variable.clone(), transform);
-                }
-                TransformDirection::Write => {
-                    write_transforms.insert(transform.variable.clone(), transform);
-                }
-            }
         }
 
         // Create the timeseries collection using the information from the components
@@ -996,48 +968,22 @@ impl ModelBuilder {
 
         let step_plan = resolve(&Decisions {
             graph: &graph,
-            initial_node,
             labels: &node_labels,
             collection: &collection,
             sources: &variable_sources,
             producers: &variable_owners,
-            read_conversions: &read_conversions,
-            transformations: &transformations,
+            read_units: &read_units,
+            grids: &grids,
             timeseries_types: &timeseries_types,
             grid_weights: &self.grid_weights,
         })?;
-
-        // Build unit conversion map from collected conversion info
-        // Key: (variable_name, component_name) -> conversion factor
-        let unit_conversion_map: HashMap<(String, String), f64> = read_conversions
-            .into_iter()
-            .map(|info| ((info.variable.clone(), info.component.clone()), info.factor))
-            .collect();
-
-        // Add the components to the graph
-        let mut model = Model::with_variable_sources(
+        let model = Model::from_plan(
             graph,
-            initial_node,
             collection,
             time_axis,
-            self.grid_weights.clone(),
-            read_transforms,
-            write_transforms,
-            unit_conversion_map,
-            variable_sources,
+            step_plan,
+            Arc::new(self.clone()),
         );
-        model.timeseries_types = timeseries_types;
-        model.labels = node_labels;
-        model.step_plan = step_plan;
-        model.builder = Arc::new(self.clone());
-
-        // Initialise component states for each node
-        for node_idx in model.components.node_indices() {
-            let component = &model.components[node_idx];
-            let state = component.create_initial_state();
-            model.component_states.insert(node_idx, state);
-        }
-
         Ok((model, warnings))
     }
 
@@ -1119,7 +1065,7 @@ fn check_acyclic(
             if !(members.contains(&edge.source()) && members.contains(&edge.target())) {
                 continue;
             }
-            let variable = edge.weight().name().to_string();
+            let variable = edge.weight().name.clone();
             variables.insert(variable.clone());
             // Suggest lags into components only, since a lagged aggregate shifts every reader of its total.
             if !aggregate_nodes.contains(&edge.target()) {

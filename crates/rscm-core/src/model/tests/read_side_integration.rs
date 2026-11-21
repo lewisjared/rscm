@@ -6,7 +6,7 @@
 use crate::component::{Component, GridType, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
-use crate::model::ModelBuilder;
+use crate::model::{GridConversion, ModelBuilder};
 use crate::schema::VariableSchema;
 use crate::spatial::SpatialGrid;
 use crate::spatial::{FourBoxGrid, HemisphericGrid, HemisphericRegion};
@@ -211,10 +211,12 @@ fn test_read_aggregation_four_box_to_scalar() {
 
     let mut model = builder.build().expect("Model should build");
 
-    // Verify read transform is registered
-    assert!(
-        model.read_transforms().contains_key("Temperature"),
-        "Read transform should be registered for Temperature"
+    assert_eq!(
+        super::read(&model, "Temperature", "ScalarReader").grid,
+        Some(GridConversion {
+            from: GridType::FourBox,
+            to: GridType::Scalar,
+        })
     );
 
     // Run one step
@@ -264,10 +266,12 @@ fn test_read_aggregation_four_box_to_hemispheric() {
 
     let mut model = builder.build().expect("Model should build");
 
-    // Verify read transform is registered
-    assert!(
-        model.read_transforms().contains_key("Temperature"),
-        "Read transform should be registered"
+    assert_eq!(
+        super::read(&model, "Temperature", "HemisphericReader").grid,
+        Some(GridConversion {
+            from: GridType::FourBox,
+            to: GridType::Hemispheric,
+        })
     );
 
     model.step();
@@ -315,9 +319,12 @@ fn test_read_aggregation_hemispheric_to_scalar() {
 
     let mut model = builder.build().expect("Model should build");
 
-    assert!(
-        model.read_transforms().contains_key("Temperature"),
-        "Read transform should be registered"
+    assert_eq!(
+        super::read(&model, "Temperature", "ScalarReader").grid,
+        Some(GridConversion {
+            from: GridType::Hemispheric,
+            to: GridType::Scalar,
+        })
     );
 
     model.step();
@@ -456,9 +463,12 @@ fn test_read_aggregation_chain_write_then_read() {
         .expect("Model should build");
 
     // FourBoxWriter writes FourBox, ScalarReader reads as Scalar via read aggregation
-    assert!(
-        model.read_transforms().contains_key("Temperature"),
-        "Read transform should be registered"
+    assert_eq!(
+        super::read(&model, "Temperature", "ScalarReader").grid,
+        Some(GridConversion {
+            from: GridType::FourBox,
+            to: GridType::Scalar,
+        })
     );
 
     // First step: FourBoxWriter writes to index 1, ScalarReader reads from index 0 (NaN)

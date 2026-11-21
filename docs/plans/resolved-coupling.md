@@ -144,3 +144,15 @@ Each gets an independent Codex review before the next one starts.
 - Update `docs/grids.md`, `docs/key_concepts.md` and the `.pyi` stubs.
 - Gate: `make lint`, `make validate-pyi`, `make test`, `make parity`.
 - Changelog: `breaking` (removed constructors, accessors and trait methods).
+
+## Status
+
+The stack is complete: #232, #233, #234, #235, #236, #237 and section 7's PR.
+`resolve` and the `StepPlan` are the only owners of coupling, and `ModelBuilder` is the only construction path.
+`Model` keeps its component graph for execution and `as_dot`, without the synthetic root.
+
+Deferred follow-ups:
+
+- A NaN or infinite component parameter or state cannot round-trip a `Record`, because JSON writes it as null.
+- Branching with new parameters checks storage, but not that each component's saved state suits its new parameters.
+- Standalone `Component.solve` and `extract_state` resolve with `resolve_standalone`, not through a one-component `ModelBuilder`.

@@ -919,7 +919,7 @@ impl Component for ClimateUDEB {
     ) -> RSCMResult<OutputState> {
         // For standalone use, create a temporary state
         let mut state = ClimateUDEBState::default();
-        OutputBuffer::collect(self.output_names(), |out| {
+        OutputBuffer::collect(&self.definitions(), |out| {
             self.solve_impl(t_current, t_next, input_state, &mut state, out)
         })
     }
@@ -935,7 +935,7 @@ impl Component for ClimateUDEB {
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
     ) -> RSCMResult<OutputState> {
-        OutputBuffer::collect(self.output_names(), |out| {
+        OutputBuffer::collect(&self.definitions(), |out| {
             self.solve_into(t_current, t_next, input_state, internal_state, out)
         })
     }
