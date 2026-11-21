@@ -1,19 +1,16 @@
 //! What the builder decided about a model's coupling.
 //!
 //! [`Model::coupling`] reports the order components run in, every edge between them
-//! with whether it lags, and each variable's source and timeseries type.
+//! with whether it lags, each variable's source and timeseries type, and every conversion.
 
-use crate::component::{DeclaredVariable, GridType, VariableDefinition, VariableRole};
+use crate::component::{DeclaredVariable, GridType};
 use crate::errors::RSCMResult;
-use crate::state::VariableSource;
-use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
+use super::plan::Conversion;
 use super::runtime::Model;
-use super::types::{RequiredTransformation, TransformDirection};
 
 /// A component and the variables it declares.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,29 +38,7 @@ pub struct CouplingEdge {
     pub lagged: bool,
 }
 
-/// Grid transformation applied at runtime.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransformInfo {
-    pub variable: String,
-    pub from: GridType,
-    pub to: GridType,
-    pub direction: TransformDirection,
-}
-
-/// Unit conversion applied at runtime.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversionInfo {
-    pub variable: String,
-    pub component: String,
-    /// `Read` for the stored unit into the component's, `Write` for the reverse.
-    pub direction: TransformDirection,
-    pub from: String,
-    pub to: String,
-    /// Multiplier taking a value in `from` to `to`.
-    pub factor: f64,
-}
-
-/// A model's coupling: execution order, edges, each input's variable source, grid transforms and unit conversions.
+/// A model's coupling: execution order, edges, each input's variable source and every conversion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Coupling {
     /// Components in the order the runtime steps them.
@@ -71,10 +46,9 @@ pub struct Coupling {
     /// Edges ordered by consumer, then variable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edges: Vec<CouplingEdge>,
+    /// Unit and grid conversions of each read and write, ordered by variable, component and direction.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub grid_transforms: Vec<TransformInfo>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unit_conversions: Vec<ConversionInfo>,
+    pub conversions: Vec<Conversion>,
 }
 
 impl Coupling {
@@ -168,24 +142,29 @@ impl Coupling {
         );
         section(
             "Grid Transforms",
-            self.grid_transforms
+            self.conversions
                 .iter()
-                .map(|t| {
-                    let detail = format!("{} -> {} ({})", t.from, t.to, t.direction);
-                    format!("{} {}", t.variable, paint(&detail, Style::Dim))
+                .filter_map(|c| {
+                    let grid = c.grid?;
+                    let detail = format!(
+                        "{} -> {} ({} by {})",
+                        grid.from, grid.to, c.direction, c.component
+                    );
+                    Some(format!("{} {}", c.variable, paint(&detail, Style::Dim)))
                 })
                 .collect(),
         );
         section(
             "Unit Conversions",
-            self.unit_conversions
+            self.conversions
                 .iter()
-                .map(|c| {
+                .filter_map(|c| {
+                    let unit = c.unit.as_ref()?;
                     let detail = format!(
                         "{} -> {} ({} by {}, x{})",
-                        c.from, c.to, c.direction, c.component, c.factor
+                        unit.from, unit.to, c.direction, c.component, unit.factor
                     );
-                    format!("{} {}", c.variable, paint(&detail, Style::Dim))
+                    Some(format!("{} {}", c.variable, paint(&detail, Style::Dim)))
                 })
                 .collect(),
         );
@@ -238,166 +217,14 @@ impl Style {
 }
 
 impl Model {
-    /// The conversions `component` applies to the variable `def` declares.
-    fn conversions_for(&self, component: &str, def: &VariableDefinition) -> Vec<ConversionInfo> {
-        let Some(stored) = self.timeseries().get_data(&def.name) else {
-            return Vec::new();
-        };
-        let stored_unit = stored.unit().to_string();
-        let reads = matches!(def.role, VariableRole::Input | VariableRole::State);
-        let writes = matches!(def.role, VariableRole::Output | VariableRole::State);
-        let key = (def.name.clone(), component.to_string());
-        let read_factor = reads
-            .then(|| self.unit_conversions().get(&key).copied())
-            .flatten();
-        let write_factor = writes
-            .then(|| self.write_factor(&def.name, &def.unit))
-            .flatten();
-        let info = |direction, from: &str, to: &str, factor| ConversionInfo {
-            variable: def.name.clone(),
-            component: component.to_string(),
-            direction,
-            from: from.to_string(),
-            to: to.to_string(),
-            factor,
-        };
-        let read = read_factor.map(|f| info(TransformDirection::Read, &stored_unit, &def.unit, f));
-        let write =
-            write_factor.map(|f| info(TransformDirection::Write, &def.unit, &stored_unit, f));
-        read.into_iter().chain(write).collect()
-    }
-
     /// Report the model's coupling: the order the runtime steps components in,
-    /// every edge with whether it lags, and each variable's source and timeseries type.
+    /// every edge with whether it lags, each variable's source and timeseries type,
+    /// and the conversions each component applies.
     ///
-    /// Fails only if the component graph has a cycle, which a built model never has.
+    /// Fails only for a model without a plan whose coupling maps name a variable it does not store.
     pub fn coupling(&self) -> RSCMResult<Coupling> {
-        let order: Vec<_> = self
-            .execution_order()?
-            .into_iter()
-            .filter(|&nx| nx != self.initial_node)
-            .collect();
-        let names: HashMap<_, _> = order
-            .iter()
-            .map(|&nx| (nx, self.component_label(nx)))
-            .collect();
-        let producers: HashMap<String, &str> = order
-            .iter()
-            .flat_map(|nx| {
-                self.components[*nx]
-                    .output_names()
-                    .into_iter()
-                    .map(|output| (output, names[nx].as_str()))
-            })
-            .collect();
-
-        let mut components = Vec::new();
-        let mut edges = Vec::new();
-        let mut unit_conversions = Vec::new();
-        for (position, &nx) in order.iter().enumerate() {
-            let name = &names[&nx];
-            let mut component_edges: Vec<CouplingEdge> = self
-                .components
-                .edges_directed(nx, Direction::Incoming)
-                .filter(|e| e.source() != self.initial_node && e.source() != nx)
-                .map(|e| CouplingEdge {
-                    producer: names[&e.source()].clone(),
-                    consumer: name.clone(),
-                    variable: e.weight().name().to_string(),
-                    lagged: false,
-                })
-                .collect();
-
-            let mut inputs = Vec::new();
-            let mut outputs = Vec::new();
-            let mut states = Vec::new();
-            for def in self.components[nx].definitions() {
-                unit_conversions.extend(self.conversions_for(name, &def));
-                let mut info = DeclaredVariable::from_definition(&def);
-                if let Some(timeseries_type) = self.timeseries_type(&def.name) {
-                    info.timeseries_type = timeseries_type;
-                }
-                match def.role {
-                    VariableRole::Input => {
-                        let source = self
-                            .variable_sources()
-                            .get(&(info.name.clone(), name.clone()))
-                            .copied()
-                            .unwrap_or_default();
-                        if source == VariableSource::Lagged {
-                            if let Some(producer) = producers.get(&info.name) {
-                                component_edges.push(CouplingEdge {
-                                    producer: producer.to_string(),
-                                    consumer: name.clone(),
-                                    variable: info.name.clone(),
-                                    lagged: true,
-                                });
-                            }
-                        }
-                        info.source = Some(source);
-                        inputs.push(info);
-                    }
-                    VariableRole::Output => outputs.push(info),
-                    VariableRole::State => {
-                        info.source = Some(VariableSource::OwnState);
-                        states.push(info);
-                    }
-                }
-            }
-
-            component_edges
-                .sort_by(|a, b| (&a.variable, &a.producer).cmp(&(&b.variable, &b.producer)));
-            edges.extend(component_edges);
-            components.push(ComponentCoupling {
-                order: position,
-                name: name.clone(),
-                inputs,
-                outputs,
-                states,
-            });
-        }
-
-        unit_conversions.sort_by(|a, b| {
-            (&a.variable, &a.component, &a.direction).cmp(&(
-                &b.variable,
-                &b.component,
-                &b.direction,
-            ))
-        });
-
-        Ok(Coupling {
-            components,
-            edges,
-            grid_transforms: collect_transforms(self.read_transforms(), self.write_transforms()),
-            unit_conversions,
-        })
+        Ok(self.resolved_plan()?.report())
     }
-}
-
-fn collect_transforms(
-    read: &HashMap<String, RequiredTransformation>,
-    write: &HashMap<String, RequiredTransformation>,
-) -> Vec<TransformInfo> {
-    let mut transforms: Vec<TransformInfo> = read
-        .values()
-        .map(|t| (t, TransformDirection::Read))
-        .chain(write.values().map(|t| (t, TransformDirection::Write)))
-        .map(|(t, direction)| TransformInfo {
-            variable: t.variable.clone(),
-            from: t.source_grid,
-            to: t.target_grid,
-            direction,
-        })
-        .collect();
-    transforms.sort_by(|a, b| {
-        (&a.variable, &a.direction, &a.from, &a.to).cmp(&(
-            &b.variable,
-            &b.direction,
-            &b.from,
-            &b.to,
-        ))
-    });
-    transforms
 }
 
 #[cfg(test)]
@@ -410,6 +237,7 @@ mod tests {
     use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
     use crate::model::ModelBuilder;
     use crate::spatial::ScalarGrid;
+    use crate::state::VariableSource;
     use crate::timeseries::{Time, TimeAxis, Timeseries};
     use ndarray::array;
     use serde::{Deserialize, Serialize};

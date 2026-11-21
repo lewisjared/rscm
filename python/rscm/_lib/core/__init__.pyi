@@ -874,7 +874,9 @@ class Model:
 
         Lists components in the order the runtime steps them,
         every edge between them with whether it lags,
-        and each variable's unit, grid, source and timeseries type.
+        each variable's unit, grid, source and timeseries type,
+        and the unit and grid conversions of each read and write,
+        with the label of the component that applies them.
 
         Parameters
         ----------

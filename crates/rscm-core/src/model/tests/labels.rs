@@ -124,7 +124,7 @@ fn coupling_and_errors_name_labels() {
         .collect();
     assert_eq!(lagged, [("Before", true), ("Now", false)]);
     let conversions: Vec<&str> = coupling
-        .unit_conversions
+        .conversions
         .iter()
         .map(|c| c.component.as_str())
         .collect();

@@ -454,7 +454,7 @@ for label, m in [("Equal weights", equal_model), ("MAGICC weights", weighted_mod
     print(f"{label}: {np.round(temps[1:4], 3)}")
 
 # %% [markdown]
-# `coupling()` lists the grid transformations the model applies.
+# `coupling()` lists the grid transformations the model applies, with the component that applies each.
 
 # %%
 print(weighted_model.coupling("plain"))
