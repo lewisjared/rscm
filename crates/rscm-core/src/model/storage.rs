@@ -25,8 +25,8 @@ pub(crate) struct Storage {
     pub definitions: HashMap<String, ResolvedVariable>,
     /// Factor from the stored unit to each reader's declared unit, where they differ.
     pub read_conversions: Vec<UnitConversionInfo>,
-    /// Grid aggregations on reads and writes.
-    pub transformations: Vec<RequiredTransformation>,
+    /// Grid aggregations on reads and writes, each with the label of the component that applies it.
+    pub transformations: Vec<(String, RequiredTransformation)>,
 }
 
 /// Apply the storage rule to every variable a component, schema or aggregate declares.
@@ -119,7 +119,7 @@ pub(crate) fn resolve_storage(
                 &stored_by[&def.name],
                 TransformDirection::Read,
             )?;
-            transformations.extend(transform);
+            transformations.extend(transform.map(|t| (label.clone(), t)));
         }
         for def in provides {
             let stored = &definitions[&def.name];
@@ -131,7 +131,7 @@ pub(crate) fn resolve_storage(
                 &stored_by[&def.name],
                 TransformDirection::Write,
             )?;
-            transformations.extend(transform);
+            transformations.extend(transform.map(|t| (label.clone(), t)));
         }
     }
 

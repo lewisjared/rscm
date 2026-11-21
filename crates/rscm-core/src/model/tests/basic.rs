@@ -182,6 +182,35 @@ state_type = "unit"
 
 [component_states.1]
 state_type = "unit"
+
+[[step_plan.steps]]
+node = 1
+label = "TestComponent"
+lookup_order = [0]
+
+[[step_plan.steps.reads]]
+slot = 1
+source = "prescribed"
+timeseries_type = "average"
+stored_grid = "scalar"
+plain = false
+
+[step_plan.steps.reads.definition]
+name = "Emissions|CO2"
+unit = "GtC/yr"
+role = "input"
+grid = "scalar"
+
+[[step_plan.steps.writes]]
+slot = 0
+timeseries_type = "point"
+stored_grid = "scalar"
+
+[step_plan.steps.writes.definition]
+name = "Atmospheric Concentrations|CO2"
+unit = "ppm"
+role = "output"
+grid = "scalar"
 "#;
 
     assert_eq!(serialised, expected);

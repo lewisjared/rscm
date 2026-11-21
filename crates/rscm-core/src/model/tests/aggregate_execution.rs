@@ -527,7 +527,7 @@ fn test_flux_aggregate_reads_prescribed_and_upstream_at_step_start() {
         .build()
         .unwrap();
 
-    let coupling = model.coupling().unwrap();
+    let coupling = model.coupling();
     let agg_component = coupling
         .components
         .iter()

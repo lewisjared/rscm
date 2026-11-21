@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
+use super::plan::Conversion;
 use super::runtime::Model;
 use super::types::{RequiredTransformation, TransformDirection};
 
@@ -41,29 +42,7 @@ pub struct CouplingEdge {
     pub lagged: bool,
 }
 
-/// Grid transformation applied at runtime.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransformInfo {
-    pub variable: String,
-    pub from: GridType,
-    pub to: GridType,
-    pub direction: TransformDirection,
-}
-
-/// Unit conversion applied at runtime.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversionInfo {
-    pub variable: String,
-    pub component: String,
-    /// `Read` for the stored unit into the component's, `Write` for the reverse.
-    pub direction: TransformDirection,
-    pub from: String,
-    pub to: String,
-    /// Multiplier taking a value in `from` to `to`.
-    pub factor: f64,
-}
-
-/// A model's coupling: execution order, edges, each input's variable source, grid transforms and unit conversions.
+/// A model's coupling: execution order, edges, each input's variable source and every conversion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Coupling {
     /// Components in the order the runtime steps them.
@@ -71,10 +50,9 @@ pub struct Coupling {
     /// Edges ordered by consumer, then variable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edges: Vec<CouplingEdge>,
+    /// Unit and grid conversions of each read and write, ordered by variable, component and direction.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub grid_transforms: Vec<TransformInfo>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unit_conversions: Vec<ConversionInfo>,
+    pub conversions: Vec<Conversion>,
 }
 
 impl Coupling {
@@ -168,24 +146,29 @@ impl Coupling {
         );
         section(
             "Grid Transforms",
-            self.grid_transforms
+            self.conversions
                 .iter()
-                .map(|t| {
-                    let detail = format!("{} -> {} ({})", t.from, t.to, t.direction);
-                    format!("{} {}", t.variable, paint(&detail, Style::Dim))
+                .filter_map(|c| {
+                    let grid = c.grid?;
+                    let detail = format!(
+                        "{} -> {} ({} by {})",
+                        grid.from, grid.to, c.direction, c.component
+                    );
+                    Some(format!("{} {}", c.variable, paint(&detail, Style::Dim)))
                 })
                 .collect(),
         );
         section(
             "Unit Conversions",
-            self.unit_conversions
+            self.conversions
                 .iter()
-                .map(|c| {
+                .filter_map(|c| {
+                    let unit = c.unit.as_ref()?;
                     let detail = format!(
                         "{} -> {} ({} by {}, x{})",
-                        c.from, c.to, c.direction, c.component, c.factor
+                        unit.from, unit.to, c.direction, c.component, unit.factor
                     );
-                    format!("{} {}", c.variable, paint(&detail, Style::Dim))
+                    Some(format!("{} {}", c.variable, paint(&detail, Style::Dim)))
                 })
                 .collect(),
         );
@@ -237,6 +220,37 @@ impl Style {
     }
 }
 
+/// Grid transformation applied at runtime.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransformInfo {
+    pub variable: String,
+    pub from: GridType,
+    pub to: GridType,
+    pub direction: TransformDirection,
+}
+
+/// Unit conversion applied at runtime.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversionInfo {
+    pub variable: String,
+    pub component: String,
+    /// `Read` for the stored unit into the component's, `Write` for the reverse.
+    pub direction: TransformDirection,
+    pub from: String,
+    pub to: String,
+    /// Multiplier taking a value in `from` to `to`.
+    pub factor: f64,
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegacyCoupling {
+    #[serde(flatten)]
+    pub coupling: Coupling,
+    pub grid_transforms: Vec<TransformInfo>,
+    pub unit_conversions: Vec<ConversionInfo>,
+}
+
 impl Model {
     /// The conversions `component` applies to the variable `def` declares.
     fn conversions_for(&self, component: &str, def: &VariableDefinition) -> Vec<ConversionInfo> {
@@ -268,10 +282,14 @@ impl Model {
     }
 
     /// Report the model's coupling: the order the runtime steps components in,
-    /// every edge with whether it lags, and each variable's source and timeseries type.
-    ///
-    /// Fails only if the component graph has a cycle, which a built model never has.
-    pub fn coupling(&self) -> RSCMResult<Coupling> {
+    /// every edge with whether it lags, each variable's source and timeseries type,
+    /// and the conversions each component applies.
+    pub fn coupling(&self) -> Coupling {
+        self.plan().report()
+    }
+
+    #[doc(hidden)]
+    pub fn legacy_coupling(&self) -> RSCMResult<LegacyCoupling> {
         let order: Vec<_> = self
             .execution_order()?
             .into_iter()
@@ -365,12 +383,95 @@ impl Model {
             ))
         });
 
-        Ok(Coupling {
-            components,
-            edges,
+        Ok(LegacyCoupling {
+            coupling: Coupling {
+                components,
+                edges,
+                conversions: Vec::new(),
+            },
             grid_transforms: collect_transforms(self.read_transforms(), self.write_transforms()),
             unit_conversions,
         })
+    }
+}
+
+#[cfg(test)]
+impl Model {
+    /// Panic unless the plan's report agrees with the report derived from the coupling maps.
+    ///
+    /// The maps key grid transforms by variable alone, so they hold one of each variable's readers.
+    pub(crate) fn check_report_matches_legacy(&self) {
+        use std::collections::BTreeSet;
+
+        let legacy = self.legacy_coupling().unwrap();
+        let report = self.coupling();
+        let json = |value: &dyn erased_json::Json| value.json();
+        assert_eq!(json(&report.components), json(&legacy.coupling.components));
+        assert_eq!(report.edges, legacy.coupling.edges);
+
+        let units: Vec<_> = report
+            .conversions
+            .iter()
+            .filter_map(|c| {
+                let u = c.unit.as_ref()?;
+                Some((
+                    &c.variable,
+                    &c.component,
+                    c.direction,
+                    &u.from,
+                    &u.to,
+                    u.factor.to_bits(),
+                ))
+            })
+            .collect();
+        let legacy_units: Vec<_> = legacy
+            .unit_conversions
+            .iter()
+            .map(|c| {
+                (
+                    &c.variable,
+                    &c.component,
+                    c.direction,
+                    &c.from,
+                    &c.to,
+                    c.factor.to_bits(),
+                )
+            })
+            .collect();
+        assert_eq!(units, legacy_units);
+
+        let grids: BTreeSet<_> = report
+            .conversions
+            .iter()
+            .filter_map(|c| c.grid.map(|g| (&c.variable, c.direction, g.from, g.to)))
+            .collect();
+        let legacy_grids: BTreeSet<_> = legacy
+            .grid_transforms
+            .iter()
+            .map(|t| (&t.variable, t.direction, t.from, t.to))
+            .collect();
+        assert!(
+            legacy_grids.is_subset(&grids),
+            "{legacy_grids:?} not in {grids:?}"
+        );
+        let keys = |set: &BTreeSet<(&String, TransformDirection, GridType, GridType)>| {
+            set.iter()
+                .map(|&(v, d, _, _)| (v.clone(), d))
+                .collect::<BTreeSet<_>>()
+        };
+        assert_eq!(keys(&grids), keys(&legacy_grids));
+    }
+}
+
+#[cfg(test)]
+mod erased_json {
+    pub trait Json {
+        fn json(&self) -> String;
+    }
+    impl<T: serde::Serialize> Json for T {
+        fn json(&self) -> String {
+            serde_json::to_string(self).unwrap()
+        }
     }
 }
 
@@ -483,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_coupling_execution_order() {
-        let coupling = build_test_model().coupling().unwrap();
+        let coupling = build_test_model().coupling();
 
         assert_eq!(coupling.components.len(), 2);
         assert_eq!(coupling.components[0].name, "EmissionsComponent");
@@ -494,7 +595,7 @@ mod tests {
 
     #[test]
     fn test_coupling_inputs_outputs() {
-        let coupling = build_test_model().coupling().unwrap();
+        let coupling = build_test_model().coupling();
 
         let emissions = &coupling.components[0];
         assert_eq!(emissions.inputs.len(), 1);
@@ -511,7 +612,7 @@ mod tests {
 
     #[test]
     fn test_coupling_sources_and_types() {
-        let coupling = build_test_model().coupling().unwrap();
+        let coupling = build_test_model().coupling();
 
         let emissions = &coupling.components[0].inputs[0];
         assert_eq!(emissions.source, Some(VariableSource::Prescribed));
@@ -524,7 +625,7 @@ mod tests {
 
     #[test]
     fn test_coupling_edges() {
-        let coupling = build_test_model().coupling().unwrap();
+        let coupling = build_test_model().coupling();
 
         assert_eq!(
             coupling.edges,
@@ -539,7 +640,7 @@ mod tests {
 
     #[test]
     fn test_coupling_json_roundtrip() {
-        let coupling = build_test_model().coupling().unwrap();
+        let coupling = build_test_model().coupling();
         let parsed: Coupling = serde_json::from_str(&coupling.to_json()).unwrap();
 
         assert_eq!(parsed.components.len(), coupling.components.len());
@@ -549,7 +650,7 @@ mod tests {
 
     #[test]
     fn test_coupling_display_plain() {
-        let plain = build_test_model().coupling().unwrap().to_string();
+        let plain = build_test_model().coupling().to_string();
 
         assert!(plain.contains("[0] EmissionsComponent"));
         assert!(plain.contains("[1] ForcingComponent"));
@@ -563,7 +664,7 @@ mod tests {
 
     #[test]
     fn test_coupling_rich_output() {
-        let rich = build_test_model().coupling().unwrap().to_rich();
+        let rich = build_test_model().coupling().to_rich();
 
         #[cfg(feature = "rich-debug")]
         assert!(rich.contains("\x1b["));
@@ -573,7 +674,7 @@ mod tests {
 
     #[test]
     fn test_coupling_compact_json() {
-        let compact = build_test_model().coupling().unwrap().to_json_compact();
+        let compact = build_test_model().coupling().to_json_compact();
 
         assert!(!compact.contains('\n'));
         let parsed: Coupling = serde_json::from_str(&compact).unwrap();

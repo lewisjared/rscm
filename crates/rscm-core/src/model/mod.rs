@@ -15,6 +15,7 @@ mod builder;
 mod coupling;
 mod null_component;
 mod parallel;
+mod plan;
 mod runtime;
 mod state_extraction;
 mod storage;
@@ -28,8 +29,11 @@ mod tests;
 // Public re-exports
 pub(crate) use builder::RegionValues;
 pub use builder::{check_grid_weights, ModelBuilder, PrescribedInput};
-pub use coupling::{ComponentCoupling, ConversionInfo, Coupling, CouplingEdge, TransformInfo};
+pub use coupling::{
+    ComponentCoupling, ConversionInfo, Coupling, CouplingEdge, LegacyCoupling, TransformInfo,
+};
 pub use parallel::{build_and_run, build_models, run_each, run_models, Pool};
+pub use plan::{Conversion, GridConversion, Read, Step, StepPlan, UnitConversion, Write};
 pub use runtime::Model;
 pub use state_extraction::{extract_state, extract_state_with_transforms};
 pub use types::{GraphEdge, RequiredTransformation, TransformDirection, UnitConversionInfo};

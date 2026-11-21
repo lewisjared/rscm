@@ -15,6 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+use super::plan::StepPlan;
 use super::transformations::aggregate_state_value;
 use super::types::{CGraph, RequiredTransformation};
 
@@ -126,6 +127,9 @@ pub struct Model {
     /// Uses Box<dyn ComponentState> with typetag for serialisation.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) component_states: BTreeMap<NodeIndex, Box<dyn ComponentState>>,
+    /// Every coupling decision, resolved by the builder.
+    #[serde(default)]
+    pub(crate) step_plan: StepPlan,
     /// Execution order and read context of each component, built on the first step.
     #[serde(skip)]
     plan: Option<Vec<ComponentPlan>>,
@@ -174,6 +178,14 @@ fn scale_state_value(value: &StateValue, factor: FloatValue) -> StateValue {
             slice.as_array().map(|v| v * factor),
         )),
     }
+}
+
+/// The order components run in within a step, or a node on a cycle.
+///
+/// Self-edges describe a component's own state and do not constrain the order.
+pub(crate) fn execution_order(graph: &CGraph) -> Result<Vec<NodeIndex>, NodeIndex> {
+    let graph = EdgeFiltered::from_fn(graph, |edge| edge.source() != edge.target());
+    petgraph::algo::toposort(&graph, None).map_err(|cycle| cycle.node_id())
 }
 
 impl Model {
@@ -311,6 +323,7 @@ impl Model {
             timeseries_types: BTreeMap::new(),
             labels: BTreeMap::new(),
             component_states: BTreeMap::new(),
+            step_plan: StepPlan::default(),
             plan: None,
         }
     }
@@ -711,12 +724,61 @@ impl Model {
     /// of different lengths feed an aggregate. Self-edges describe a component's
     /// own state and do not constrain the order within a step.
     pub(crate) fn execution_order(&self) -> RSCMResult<Vec<NodeIndex>> {
-        let graph = EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
-        petgraph::algo::toposort(&graph, None).map_err(|cycle| RSCMError::FeedbackLoop {
-            components: vec![self.component_label(cycle.node_id())],
+        execution_order(&self.components).map_err(|node| RSCMError::FeedbackLoop {
+            components: vec![self.component_label(node)],
             variables: vec![],
             suggestions: vec![],
         })
+    }
+
+    /// Every coupling decision the builder made, in execution order.
+    ///
+    /// Empty for a model made without the builder.
+    pub fn plan(&self) -> &StepPlan {
+        &self.step_plan
+    }
+
+    /// Panic unless the step plan holds what the runtime derives from the coupling maps,
+    /// and its report agrees with the report derived from them.
+    #[cfg(test)]
+    pub(crate) fn check_plan_matches_maps(&self) {
+        let order: Vec<NodeIndex> = self
+            .execution_order()
+            .unwrap()
+            .into_iter()
+            .filter(|&node| node != self.initial_node)
+            .collect();
+        let planned: Vec<NodeIndex> = self.step_plan.steps.iter().map(|s| s.node).collect();
+        assert_eq!(planned, order);
+        for step in &self.step_plan.steps {
+            let runtime = self.component_plan(step.node);
+            assert_eq!(step.label, runtime.name);
+            let slots: Vec<usize> = step.reads.iter().map(|r| r.slot).collect();
+            assert_eq!(slots, runtime.inputs.indices, "{}", step.label);
+            assert_eq!(step.lookup_order, runtime.inputs.order, "{}", step.label);
+            let transforms: Vec<_> = step.reads.iter().map(|r| r.transform_info()).collect();
+            assert_eq!(
+                format!("{transforms:?}"),
+                format!("{:?}", runtime.inputs.transforms),
+                "{}",
+                step.label
+            );
+            let names: Vec<&String> = step.writes.iter().map(|w| &w.definition.name).collect();
+            assert_eq!(names, runtime.outputs.names().iter().collect::<Vec<_>>());
+            for (write, target) in step.writes.iter().zip(&runtime.targets) {
+                let target = target.expect("every output is stored");
+                assert_eq!(write.slot, target.index);
+                assert_eq!(write.timeseries_type, target.timeseries_type);
+                assert_eq!(write.grid.map(|g| (g.from, g.to)), target.transform);
+                let factor = write.unit.as_ref().map_or(1.0, |u| u.factor);
+                assert_eq!(factor.to_bits(), target.unit_factor.to_bits());
+                let weights = target
+                    .transform
+                    .and_then(|(from, _)| self.grid_weights.get(&from).cloned());
+                assert_eq!(write.weights, weights);
+            }
+        }
+        self.check_report_matches_legacy();
     }
 
     /// Nodes of the plan the runtime built on its first step.

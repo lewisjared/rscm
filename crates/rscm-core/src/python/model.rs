@@ -304,11 +304,16 @@ impl PyModel {
                 )))
             }
         };
+        Ok(render(&self.0.coupling()))
+    }
+
+    /// The coupling report derived from the coupling maps, as JSON, kept to compare with `coupling`.
+    fn _legacy_coupling(&self) -> PyResult<String> {
         let coupling = self
             .0
-            .coupling()
+            .legacy_coupling()
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-        Ok(render(&coupling))
+        Ok(serde_json::to_string(&coupling).expect("the report is serialisable"))
     }
 
     /// Generate a JSON representation of the model

@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use super::null_component::NullComponent;
+use super::plan::{resolve, Decisions};
 use super::runtime::Model;
 use super::storage::{resolve_storage, Storage};
 use super::types::{
@@ -845,7 +846,7 @@ impl ModelBuilder {
         let mut read_transforms: HashMap<String, RequiredTransformation> = HashMap::new();
         let mut write_transforms: HashMap<String, RequiredTransformation> = HashMap::new();
 
-        for transform in transformations {
+        for (_, transform) in transformations.iter().cloned() {
             match transform.direction {
                 TransformDirection::Read => {
                     read_transforms.insert(transform.variable.clone(), transform);
@@ -954,6 +955,19 @@ impl ModelBuilder {
             }
         }
 
+        let step_plan = resolve(&Decisions {
+            graph: &graph,
+            initial_node,
+            labels: &node_labels,
+            collection: &collection,
+            sources: &variable_sources,
+            producers: &variable_owners,
+            read_conversions: &read_conversions,
+            transformations: &transformations,
+            timeseries_types: &timeseries_types,
+            grid_weights: &self.grid_weights,
+        })?;
+
         // Build unit conversion map from collected conversion info
         // Key: (variable_name, component_name) -> conversion factor
         let unit_conversion_map: HashMap<(String, String), f64> = read_conversions
@@ -975,6 +989,9 @@ impl ModelBuilder {
         );
         model.timeseries_types = timeseries_types;
         model.labels = node_labels;
+        model.step_plan = step_plan;
+        #[cfg(test)]
+        model.check_plan_matches_maps();
 
         // Initialise component states for each node
         for node_idx in model.components.node_indices() {

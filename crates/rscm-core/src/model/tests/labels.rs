@@ -110,7 +110,7 @@ fn coupling_and_errors_name_labels() {
         .with_lag_for("Energy", "Before")
         .build()
         .unwrap();
-    let coupling = model.coupling().unwrap();
+    let coupling = model.coupling();
     let names: Vec<&str> = coupling
         .components
         .iter()
@@ -124,7 +124,7 @@ fn coupling_and_errors_name_labels() {
         .collect();
     assert_eq!(lagged, [("Before", true), ("Now", false)]);
     let conversions: Vec<&str> = coupling
-        .unit_conversions
+        .conversions
         .iter()
         .map(|c| c.component.as_str())
         .collect();
@@ -192,7 +192,7 @@ fn a_lag_into_an_aggregate_reads_the_previous_step() {
         model.variable_sources()[&key("Energy", "Total")],
         VariableSource::Lagged
     );
-    let coupling = model.coupling().unwrap();
+    let coupling = model.coupling();
     assert!(coupling.components.iter().any(|c| c.name == "Total"));
     assert_eq!(values(&model, "Total")[1..], [0.0, 1.0, 2.0]);
     assert_eq!(values(&run(false), "Total")[1..], [1.0, 2.0, 3.0]);
