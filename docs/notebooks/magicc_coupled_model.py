@@ -470,7 +470,8 @@ pd.DataFrame(
 # The builder links every component to the producers of its inputs, whatever order they are added in.
 # A loop must lag one of its edges, so the reader sees the value from the previous step.
 # `with_lag(variable)` lags every reader of a variable,
-# and `with_lag_for(variable, consumer)` lags one.
+# and `with_lag_for(variable, label)` lags the component with that label.
+# `with_component_as(label, component)` sets a component's label, which defaults to its type name.
 # Building a model with a loop that no lag breaks fails, and the error suggests the lags that would break it.
 #
 # MAGICC7 lags these edges.
@@ -649,8 +650,8 @@ def build_model(n_years, initial_agents):
         .with_schema(schema)
         .with_grid_weights(GridType.FourBox, list(area))
     )
-    for component in components.values():
-        builder.with_component(component)
+    for label, component in components.items():
+        builder.with_component_as(label, component)
     for variable in lag:
         builder.with_lag(variable)
     for variable, consumer in lag_for:

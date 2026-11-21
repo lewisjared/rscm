@@ -111,20 +111,32 @@ class ComponentSpec:
 
 @dataclass(frozen=True)
 class Lag:
-    """A lag on ``variable``, into ``consumer`` alone or into every consumer."""
+    """A lag on ``variable`` into the components labelled in ``into``.
+
+    A label is a component's key in
+    [ModelSpec.components][rscm.spec.ModelSpec.components],
+    or the name of a schema aggregate.
+    An empty ``into`` lags every consumer.
+    """
 
     variable: str
-    consumer: str | None = None
+    into: Sequence[str] = ()
+
+    def __post_init__(self) -> None:
+        if isinstance(self.into, str):
+            msg = f"Lag into must be a sequence of labels, not {self.into!r}"
+            raise TypeError(msg)
+        object.__setattr__(self, "into", tuple(self.into))
 
     def add_to(self, builder: ModelBuilder) -> None:
         """Add the lag to a model builder."""
-        if self.consumer is None:
+        if not self.into:
             builder.with_lag(self.variable)
-        else:
-            builder.with_lag_for(self.variable, self.consumer)
+        for label in self.into:
+            builder.with_lag_for(self.variable, label)
 
     def __str__(self) -> str:
-        return f"{self.variable} -> {self.consumer or 'every consumer'}"
+        return f"{self.variable} -> {', '.join(self.into) or 'every consumer'}"
 
 
 @dataclass(frozen=True)
@@ -132,7 +144,10 @@ class ModelSpec:
     """The components, lags and initial state of a model, before it has inputs."""
 
     components: Mapping[str, ComponentSpec]
-    """Each component by name, in the order they are added to the model."""
+    """Each component by label, in the order they are added to the model.
+
+    Lags, the coupling report and errors name a component by its label.
+    """
     lags: Sequence[Lag] = ()
     initial_values: Mapping[str, float] = field(default_factory=dict)
     initial_grid_values: Mapping[str, Sequence[float]] = field(default_factory=dict)
@@ -173,8 +188,8 @@ class ModelSetup:
             builder.with_schema(spec.schema)
         for grid, weights in spec.grid_weights.items():
             builder.with_grid_weights(grid, list(weights))
-        for component in spec.components.values():
-            builder.with_component(component.build())
+        for label, component in spec.components.items():
+            builder.with_component_as(label, component.build())
         for lag in spec.lags:
             lag.add_to(builder)
         # A collection ignores scenario variables this model does not read.

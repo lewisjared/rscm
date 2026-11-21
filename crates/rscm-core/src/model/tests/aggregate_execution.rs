@@ -65,10 +65,13 @@ fn test_aggregate_waits_for_unequal_length_branches() {
         (Some("middle"), "long"),
         (None, "short"),
     ] {
-        builder.with_component(Arc::new(ChainForcing {
-            input: input.map(String::from),
-            output: output.into(),
-        }));
+        builder.with_component_as(
+            output,
+            Arc::new(ChainForcing {
+                input: input.map(String::from),
+                output: output.into(),
+            }),
+        );
     }
     let mut model = builder.build().unwrap();
     model.run();
@@ -528,7 +531,7 @@ fn test_flux_aggregate_reads_prescribed_and_upstream_at_step_start() {
     let agg_component = coupling
         .components
         .iter()
-        .find(|c| c.name == "AggregateComponent")
+        .find(|c| c.name == "Emissions")
         .unwrap();
     let sources: HashMap<_, _> = agg_component
         .inputs

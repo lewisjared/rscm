@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use super::transformations::aggregate_state_value;
-use super::types::{CGraph, RequiredTransformation, C};
+use super::types::{CGraph, RequiredTransformation};
 
 /// Custom serialisation for HashMap<(String, String), T> to work with JSON.
 /// Serialises as a Vec of (key1, key2, value) tuples.
@@ -119,6 +119,9 @@ pub struct Model {
     /// Whether each variable is a point or an average.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) timeseries_types: BTreeMap<String, TimeseriesType>,
+    /// Label of each component node, set by the builder.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) labels: BTreeMap<NodeIndex, String>,
     /// Internal state for each component, keyed by node index.
     /// Uses Box<dyn ComponentState> with typetag for serialisation.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -306,6 +309,7 @@ impl Model {
             unit_conversions,
             variable_sources,
             timeseries_types: BTreeMap::new(),
+            labels: BTreeMap::new(),
             component_states: BTreeMap::new(),
             plan: None,
         }
@@ -404,10 +408,20 @@ impl Model {
         self.timeseries_types.get(variable).copied()
     }
 
-    /// Extract component name from a Component for unit conversion lookup.
+    /// The label of the component at `node`, which keys its coupling.
+    ///
+    /// A model made without the builder falls back to the component's type name.
+    pub fn component_label(&self, node: NodeIndex) -> String {
+        self.labels
+            .get(&node)
+            .cloned()
+            .unwrap_or_else(|| Self::extract_component_name(&self.components[node]))
+    }
+
+    /// The type name of a component, its default label.
     ///
     /// Extracts the type name (before the first '{', ' ', or '(') from the Debug output.
-    pub(crate) fn extract_component_name(component: &C) -> String {
+    pub(crate) fn extract_component_name(component: &(impl std::fmt::Debug + ?Sized)) -> String {
         /// Keeps output up to the first delimiter, then stops the formatting.
         struct TypeName(String);
         impl std::fmt::Write for TypeName {
@@ -443,7 +457,7 @@ impl Model {
     /// Read context of a component, from the model's transforms, conversions and sources.
     fn component_plan(&self, node: NodeIndex) -> ComponentPlan {
         let component = &self.components[node];
-        let name = Self::extract_component_name(component);
+        let name = self.component_label(node);
         let input_names = component.input_names();
         let indices = input_names
             .iter()
@@ -703,9 +717,7 @@ impl Model {
     pub(crate) fn execution_order(&self) -> RSCMResult<Vec<NodeIndex>> {
         let graph = EdgeFiltered::from_fn(&self.components, |edge| edge.source() != edge.target());
         petgraph::algo::toposort(&graph, None).map_err(|cycle| RSCMError::FeedbackLoop {
-            components: vec![Self::extract_component_name(
-                &self.components[cycle.node_id()],
-            )],
+            components: vec![self.component_label(cycle.node_id())],
             variables: vec![],
             suggestions: vec![],
         })

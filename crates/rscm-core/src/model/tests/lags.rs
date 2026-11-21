@@ -232,7 +232,7 @@ fn invalid_lags_fail_to_build() {
             builder(vec![Arc::new(Carbon)])
                 .with_lag_for("temperature", "Nobody")
                 .build(),
-            "no component named \"Nobody\"",
+            "no component labelled \"Nobody\"",
         ),
         (
             builder(vec![Arc::new(Carbon)])
