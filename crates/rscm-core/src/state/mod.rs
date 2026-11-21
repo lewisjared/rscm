@@ -96,6 +96,15 @@ impl StateValue {
         }
     }
 
+    /// The grid this value is laid out on.
+    pub fn grid(&self) -> GridType {
+        match self {
+            StateValue::Scalar(_) => GridType::Scalar,
+            StateValue::FourBox(_) => GridType::FourBox,
+            StateValue::Hemispheric(_) => GridType::Hemispheric,
+        }
+    }
+
     /// Check if this is a scalar value
     pub fn is_scalar(&self) -> bool {
         matches!(self, StateValue::Scalar(_))
@@ -697,6 +706,12 @@ impl OutputBuffer {
     /// Take the values written to names that are not declared.
     pub(crate) fn take_undeclared(&mut self) -> Vec<(String, StateValue)> {
         std::mem::take(&mut self.undeclared)
+    }
+
+    /// Drop every value written so far.
+    pub(crate) fn clear(&mut self) {
+        self.values.fill(None);
+        self.undeclared.clear();
     }
 
     pub fn into_output_state(self) -> OutputState {

@@ -122,6 +122,14 @@ class DictForcingReader:
         return {"Seen": 0.0}
 
 
+class DictUndeclaredWriter:
+    def definitions(self):
+        return [VariableDefinition("Out", "W/m^2", VariableRole.Output)]
+
+    def solve(self, t_current, t_next, inputs):
+        return {"Out": 1.0, "Forcing": 2.0}
+
+
 class Slotted(Accumulator):
     __slots__ = ("cache",)
 
@@ -376,3 +384,22 @@ def test_dict_component_aggregates_grid_input_with_stored_weights():
     untyped = run_four_box_forcing_reader(DictForcingReader(GridType.FourBox))
 
     np.testing.assert_allclose(untyped, 2500.0 * np.arange(2.0, 6.0))
+
+
+def test_dict_component_undeclared_output_fails_and_writes_nothing():
+    model = (
+        ModelBuilder()
+        .with_time_axis(AXIS)
+        .with_component(Producer())
+        .with_component(DictUndeclaredWriter())
+        .build()
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"DictUndeclaredWriter returned undeclared output Forcing during 2000",
+    ):
+        model.step()
+
+    out = model.timeseries().get_timeseries_by_name("Out").values()
+    assert np.isnan(out).all()
