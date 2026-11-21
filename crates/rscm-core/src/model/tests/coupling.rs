@@ -9,8 +9,13 @@ use crate::VariableSource;
 use numpy::ndarray::Array;
 use petgraph::visit::Bfs;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+thread_local! {
+    static EXECUTED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
 
 macro_rules! link {
     ($name:ident, inputs: [$($input:expr),*], output: $output:expr) => {
@@ -32,6 +37,7 @@ macro_rules! link {
                 _t_next: Time,
                 _input_state: &InputState,
             ) -> RSCMResult<OutputState> {
+                EXECUTED.with_borrow_mut(|executed| executed.push(stringify!($name).to_string()));
                 Ok(HashMap::from([($output.to_string(), StateValue::Scalar(1.0))]))
             }
         }
@@ -67,7 +73,7 @@ fn names(
 }
 
 #[test]
-fn order_matches_runtime_plan_where_bfs_differs() {
+fn reported_order_is_executed_order_where_bfs_differs() {
     let mut model = model();
     let reported: Vec<String> = model
         .coupling()
@@ -84,9 +90,9 @@ fn order_matches_runtime_plan_where_bfs_differs() {
     }
     assert_eq!(names(&model, visited), ["Source", "Sink", "Mid"]);
 
+    EXECUTED.with_borrow_mut(Vec::clear);
     model.step();
-    let planned = names(&model, model.planned_order().unwrap());
-    assert_eq!(reported, planned);
+    assert_eq!(EXECUTED.take(), reported);
     assert_eq!(reported, ["Source", "Mid", "Sink"]);
 }
 

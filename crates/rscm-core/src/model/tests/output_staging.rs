@@ -2,7 +2,7 @@
 
 use crate::component::{Component, GridType, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
-use crate::model::{Model, ModelBuilder, RequiredTransformation, TransformDirection};
+use crate::model::{GridConversion, Model, ModelBuilder};
 use crate::schema::VariableSchema;
 use crate::state::{FourBoxSlice, HemisphericSlice, StateValue};
 use crate::timeseries::{Time, TimeAxis};
@@ -85,7 +85,7 @@ fn undeclared_output_fails_even_when_stored() {
     assert_a_unwritten(&model);
 }
 
-/// A model where `A` is written before `T`, and `T` goes through a `source` to `target` write transform.
+/// A model where `A` is written before `T`, and `T` goes through a `source` to `target` write aggregation.
 fn model_with_write_transform(
     t_output: VariableDefinition,
     emitted_t: StateValue,
@@ -102,16 +102,10 @@ fn model_with_write_transform(
         }))
         .build()
         .unwrap();
-    model.write_transforms_mut().insert(
-        "T".into(),
-        RequiredTransformation {
-            variable: "T".into(),
-            unit: "K".into(),
-            source_grid: source,
-            target_grid: target,
-            direction: TransformDirection::Write,
-        },
-    );
+    model.step_plan.steps[0].writes[1].grid = Some(GridConversion {
+        from: source,
+        to: target,
+    });
     model
 }
 

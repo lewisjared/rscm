@@ -671,6 +671,8 @@ pub struct AggregatingFourBoxToHemisphericWindow<'a> {
     /// Source type determining get() behaviour
     variable_source: VariableSource,
     timeseries_type: TimeseriesType,
+    /// Area weights of the four boxes, `None` for equal weights.
+    weights: Option<[f64; 4]>,
 }
 
 impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
@@ -719,16 +721,33 @@ impl<'a> AggregatingFourBoxToHemisphericWindow<'a> {
             unit_conversion_factor,
             variable_source,
             timeseries_type: TimeseriesType::Point,
+            weights: None,
         }
+    }
+
+    /// Weight each box by its area within its hemisphere, as the model's grid weights give it.
+    pub fn with_weights(mut self, weights: Option<&[f64]>) -> Self {
+        self.weights = weights.map(|w| {
+            w.try_into()
+                .expect("four-box grid weights must have 4 elements")
+        });
+        self
     }
 
     fn aggregate_to_hemispheric(&self, values: &[FloatValue]) -> [FloatValue; 2] {
         // FourBox: [NorthernOcean, NorthernLand, SouthernOcean, SouthernLand]
         // Hemispheric: [Northern, Southern]
         let f = self.unit_conversion_factor;
-        let northern = (values[0] * f + values[1] * f) / 2.0;
-        let southern = (values[2] * f + values[3] * f) / 2.0;
-        [northern, southern]
+        match self.weights {
+            None => [
+                (values[0] * f + values[1] * f) / 2.0,
+                (values[2] * f + values[3] * f) / 2.0,
+            ],
+            Some(w) => [
+                (values[0] * f * w[0] + values[1] * f * w[1]) / (w[0] + w[1]),
+                (values[2] * f * w[2] + values[3] * f * w[3]) / (w[2] + w[3]),
+            ],
+        }
     }
 
     /// Set whether the variable is a point or an average, which decides whether `interval()` exists.
