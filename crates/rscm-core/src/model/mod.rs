@@ -29,9 +29,7 @@ mod tests;
 // Public re-exports
 pub(crate) use builder::RegionValues;
 pub use builder::{check_grid_weights, ModelBuilder, PrescribedInput};
-pub use coupling::{
-    ComponentCoupling, ConversionInfo, Coupling, CouplingEdge, LegacyCoupling, TransformInfo,
-};
+pub use coupling::{ComponentCoupling, Coupling, CouplingEdge};
 pub use parallel::{build_and_run, build_models, run_each, run_models, Pool};
 pub use plan::{Conversion, GridConversion, Read, Step, StepPlan, UnitConversion, Write};
 pub use runtime::Model;

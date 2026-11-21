@@ -1,20 +1,15 @@
 //! What the builder decided about a model's coupling.
 //!
 //! [`Model::coupling`] reports the order components run in, every edge between them
-//! with whether it lags, and each variable's source and timeseries type.
+//! with whether it lags, each variable's source and timeseries type, and every conversion.
 
-use crate::component::{DeclaredVariable, GridType, VariableDefinition, VariableRole};
-use crate::errors::RSCMResult;
-use crate::state::VariableSource;
-use petgraph::visit::EdgeRef;
-use petgraph::Direction;
+use crate::component::{DeclaredVariable, GridType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
 use super::plan::Conversion;
 use super::runtime::Model;
-use super::types::{RequiredTransformation, TransformDirection};
 
 /// A component and the variables it declares.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,285 +215,13 @@ impl Style {
     }
 }
 
-/// Grid transformation applied at runtime.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransformInfo {
-    pub variable: String,
-    pub from: GridType,
-    pub to: GridType,
-    pub direction: TransformDirection,
-}
-
-/// Unit conversion applied at runtime.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversionInfo {
-    pub variable: String,
-    pub component: String,
-    /// `Read` for the stored unit into the component's, `Write` for the reverse.
-    pub direction: TransformDirection,
-    pub from: String,
-    pub to: String,
-    /// Multiplier taking a value in `from` to `to`.
-    pub factor: f64,
-}
-
-#[doc(hidden)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LegacyCoupling {
-    #[serde(flatten)]
-    pub coupling: Coupling,
-    pub grid_transforms: Vec<TransformInfo>,
-    pub unit_conversions: Vec<ConversionInfo>,
-}
-
 impl Model {
-    /// The conversions `component` applies to the variable `def` declares.
-    fn conversions_for(&self, component: &str, def: &VariableDefinition) -> Vec<ConversionInfo> {
-        let Some(stored) = self.timeseries().get_data(&def.name) else {
-            return Vec::new();
-        };
-        let stored_unit = stored.unit().to_string();
-        let reads = matches!(def.role, VariableRole::Input | VariableRole::State);
-        let writes = matches!(def.role, VariableRole::Output | VariableRole::State);
-        let key = (def.name.clone(), component.to_string());
-        let read_factor = reads
-            .then(|| self.unit_conversions().get(&key).copied())
-            .flatten();
-        let write_factor = writes
-            .then(|| self.write_factor(&def.name, &def.unit))
-            .flatten();
-        let info = |direction, from: &str, to: &str, factor| ConversionInfo {
-            variable: def.name.clone(),
-            component: component.to_string(),
-            direction,
-            from: from.to_string(),
-            to: to.to_string(),
-            factor,
-        };
-        let read = read_factor.map(|f| info(TransformDirection::Read, &stored_unit, &def.unit, f));
-        let write =
-            write_factor.map(|f| info(TransformDirection::Write, &def.unit, &stored_unit, f));
-        read.into_iter().chain(write).collect()
-    }
-
     /// Report the model's coupling: the order the runtime steps components in,
     /// every edge with whether it lags, each variable's source and timeseries type,
     /// and the conversions each component applies.
     pub fn coupling(&self) -> Coupling {
         self.plan().report()
     }
-
-    #[doc(hidden)]
-    pub fn legacy_coupling(&self) -> RSCMResult<LegacyCoupling> {
-        let order: Vec<_> = self
-            .execution_order()?
-            .into_iter()
-            .filter(|&nx| nx != self.initial_node)
-            .collect();
-        let names: HashMap<_, _> = order
-            .iter()
-            .map(|&nx| (nx, self.component_label(nx)))
-            .collect();
-        let producers: HashMap<String, &str> = order
-            .iter()
-            .flat_map(|nx| {
-                self.components[*nx]
-                    .output_names()
-                    .into_iter()
-                    .map(|output| (output, names[nx].as_str()))
-            })
-            .collect();
-
-        let mut components = Vec::new();
-        let mut edges = Vec::new();
-        let mut unit_conversions = Vec::new();
-        for (position, &nx) in order.iter().enumerate() {
-            let name = &names[&nx];
-            let mut component_edges: Vec<CouplingEdge> = self
-                .components
-                .edges_directed(nx, Direction::Incoming)
-                .filter(|e| e.source() != self.initial_node && e.source() != nx)
-                .map(|e| CouplingEdge {
-                    producer: names[&e.source()].clone(),
-                    consumer: name.clone(),
-                    variable: e.weight().name().to_string(),
-                    lagged: false,
-                })
-                .collect();
-
-            let mut inputs = Vec::new();
-            let mut outputs = Vec::new();
-            let mut states = Vec::new();
-            for def in self.components[nx].definitions() {
-                unit_conversions.extend(self.conversions_for(name, &def));
-                let mut info = DeclaredVariable::from_definition(&def);
-                if let Some(timeseries_type) = self.timeseries_type(&def.name) {
-                    info.timeseries_type = timeseries_type;
-                }
-                match def.role {
-                    VariableRole::Input => {
-                        let source = self
-                            .variable_sources()
-                            .get(&(info.name.clone(), name.clone()))
-                            .copied()
-                            .unwrap_or_default();
-                        if source == VariableSource::Lagged {
-                            if let Some(producer) = producers.get(&info.name) {
-                                component_edges.push(CouplingEdge {
-                                    producer: producer.to_string(),
-                                    consumer: name.clone(),
-                                    variable: info.name.clone(),
-                                    lagged: true,
-                                });
-                            }
-                        }
-                        info.source = Some(source);
-                        inputs.push(info);
-                    }
-                    VariableRole::Output => outputs.push(info),
-                    VariableRole::State => {
-                        info.source = Some(VariableSource::OwnState);
-                        states.push(info);
-                    }
-                }
-            }
-
-            component_edges
-                .sort_by(|a, b| (&a.variable, &a.producer).cmp(&(&b.variable, &b.producer)));
-            edges.extend(component_edges);
-            components.push(ComponentCoupling {
-                order: position,
-                name: name.clone(),
-                inputs,
-                outputs,
-                states,
-            });
-        }
-
-        unit_conversions.sort_by(|a, b| {
-            (&a.variable, &a.component, &a.direction).cmp(&(
-                &b.variable,
-                &b.component,
-                &b.direction,
-            ))
-        });
-
-        Ok(LegacyCoupling {
-            coupling: Coupling {
-                components,
-                edges,
-                conversions: Vec::new(),
-            },
-            grid_transforms: collect_transforms(self.read_transforms(), self.write_transforms()),
-            unit_conversions,
-        })
-    }
-}
-
-#[cfg(test)]
-impl Model {
-    /// Panic unless the plan's report agrees with the report derived from the coupling maps.
-    ///
-    /// The maps key grid transforms by variable alone, so they hold one of each variable's readers.
-    pub(crate) fn check_report_matches_legacy(&self) {
-        use std::collections::BTreeSet;
-
-        let legacy = self.legacy_coupling().unwrap();
-        let report = self.coupling();
-        let json = |value: &dyn erased_json::Json| value.json();
-        assert_eq!(json(&report.components), json(&legacy.coupling.components));
-        assert_eq!(report.edges, legacy.coupling.edges);
-
-        let units: Vec<_> = report
-            .conversions
-            .iter()
-            .filter_map(|c| {
-                let u = c.unit.as_ref()?;
-                Some((
-                    &c.variable,
-                    &c.component,
-                    c.direction,
-                    &u.from,
-                    &u.to,
-                    u.factor.to_bits(),
-                ))
-            })
-            .collect();
-        let legacy_units: Vec<_> = legacy
-            .unit_conversions
-            .iter()
-            .map(|c| {
-                (
-                    &c.variable,
-                    &c.component,
-                    c.direction,
-                    &c.from,
-                    &c.to,
-                    c.factor.to_bits(),
-                )
-            })
-            .collect();
-        assert_eq!(units, legacy_units);
-
-        let grids: BTreeSet<_> = report
-            .conversions
-            .iter()
-            .filter_map(|c| c.grid.map(|g| (&c.variable, c.direction, g.from, g.to)))
-            .collect();
-        let legacy_grids: BTreeSet<_> = legacy
-            .grid_transforms
-            .iter()
-            .map(|t| (&t.variable, t.direction, t.from, t.to))
-            .collect();
-        assert!(
-            legacy_grids.is_subset(&grids),
-            "{legacy_grids:?} not in {grids:?}"
-        );
-        let keys = |set: &BTreeSet<(&String, TransformDirection, GridType, GridType)>| {
-            set.iter()
-                .map(|&(v, d, _, _)| (v.clone(), d))
-                .collect::<BTreeSet<_>>()
-        };
-        assert_eq!(keys(&grids), keys(&legacy_grids));
-    }
-}
-
-#[cfg(test)]
-mod erased_json {
-    pub trait Json {
-        fn json(&self) -> String;
-    }
-    impl<T: serde::Serialize> Json for T {
-        fn json(&self) -> String {
-            serde_json::to_string(self).unwrap()
-        }
-    }
-}
-
-fn collect_transforms(
-    read: &HashMap<String, RequiredTransformation>,
-    write: &HashMap<String, RequiredTransformation>,
-) -> Vec<TransformInfo> {
-    let mut transforms: Vec<TransformInfo> = read
-        .values()
-        .map(|t| (t, TransformDirection::Read))
-        .chain(write.values().map(|t| (t, TransformDirection::Write)))
-        .map(|(t, direction)| TransformInfo {
-            variable: t.variable.clone(),
-            from: t.source_grid,
-            to: t.target_grid,
-            direction,
-        })
-        .collect();
-    transforms.sort_by(|a, b| {
-        (&a.variable, &a.direction, &a.from, &a.to).cmp(&(
-            &b.variable,
-            &b.direction,
-            &b.from,
-            &b.to,
-        ))
-    });
-    transforms
 }
 
 #[cfg(test)]
@@ -511,6 +234,7 @@ mod tests {
     use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
     use crate::model::ModelBuilder;
     use crate::spatial::ScalarGrid;
+    use crate::state::VariableSource;
     use crate::timeseries::{Time, TimeAxis, Timeseries};
     use ndarray::array;
     use serde::{Deserialize, Serialize};

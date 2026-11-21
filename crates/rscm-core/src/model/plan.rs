@@ -251,7 +251,7 @@ fn timeseries_type(d: &Decisions, name: &str) -> TimeseriesType {
 
 impl Read {
     /// How the runtime reads this input, or `None` for a plain read.
-    pub(crate) fn transform_info(&self) -> Option<ReadTransformInfo> {
+    pub fn transform_info(&self) -> Option<ReadTransformInfo> {
         (!self.plain).then(|| {
             ReadTransformInfo::new(self.stored_grid, self.weights.clone())
                 .with_conversion_factor(self.unit.as_ref().map_or(1.0, |u| u.factor))

@@ -738,8 +738,7 @@ impl Model {
         &self.step_plan
     }
 
-    /// Panic unless the step plan holds what the runtime derives from the coupling maps,
-    /// and its report agrees with the report derived from them.
+    /// Panic unless the step plan holds what the runtime derives from the coupling maps.
     #[cfg(test)]
     pub(crate) fn check_plan_matches_maps(&self) {
         let order: Vec<NodeIndex> = self
@@ -778,7 +777,6 @@ impl Model {
                 assert_eq!(write.weights, weights);
             }
         }
-        self.check_report_matches_legacy();
     }
 
     /// Nodes of the plan the runtime built on its first step.

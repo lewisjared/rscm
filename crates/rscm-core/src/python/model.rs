@@ -285,7 +285,8 @@ impl PyModel {
     /// Report the model's coupling.
     ///
     /// Lists components in the order the runtime steps them, every edge between them
-    /// with whether it lags, and each variable's unit, grid, source and timeseries type.
+    /// with whether it lags, each variable's unit, grid, source and timeseries type,
+    /// and the unit and grid conversions of each read and write, with the component's label.
     ///
     /// Parameters
     /// ----------
@@ -305,15 +306,6 @@ impl PyModel {
             }
         };
         Ok(render(&self.0.coupling()))
-    }
-
-    /// The coupling report derived from the coupling maps, as JSON, kept to compare with `coupling`.
-    fn _legacy_coupling(&self) -> PyResult<String> {
-        let coupling = self
-            .0
-            .legacy_coupling()
-            .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-        Ok(serde_json::to_string(&coupling).expect("the report is serialisable"))
     }
 
     /// Generate a JSON representation of the model

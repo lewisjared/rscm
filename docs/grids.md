@@ -383,9 +383,10 @@ To see which transformations the model will perform, print its coupling:
 print(model.coupling("plain"))
 ```
 
-The `Grid Transforms` section lists each transformed variable,
-for example `Surface Air Temperature Change four_box -> scalar (write)`.
-In Rust, `Model::required_transformations()` returns the same information.
+The `Grid Transforms` section lists each read and write that aggregates, with the component's label,
+for example `Surface Air Temperature Change four_box -> scalar (read by OceanCarbon)` in MAGICC7.
+Two components reading one variable at different grids give two lines.
+In Rust, `Model::plan()` returns each component's reads and writes in execution order.
 
 ## Gridded Prescribed Data and Initial Values
 
@@ -465,7 +466,7 @@ model = (
 ).build()
 ```
 
-`model.coupling("plain")` then lists `Surface Air Temperature Change four_box -> scalar (read)`.
+`model.coupling("plain")` then lists `Surface Air Temperature Change four_box -> scalar (read by CarbonCycle)`.
 
 ## Grid Coupling Validation
 
