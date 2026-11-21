@@ -61,7 +61,7 @@ fn two_grids() -> Model {
 
 #[test]
 fn two_consumers_at_different_grids_report_two_reads() {
-    let coupling = two_grids().coupling();
+    let coupling = two_grids().coupling().unwrap();
     let reads: Vec<_> = coupling
         .conversions
         .iter()
@@ -196,4 +196,18 @@ fn the_plan_survives_serialisation() {
     let model = two_grids();
     let restored: Model = toml::from_str(&toml::to_string(&model).unwrap()).unwrap();
     assert_eq!(restored.plan(), model.plan());
+}
+
+#[test]
+fn a_save_without_a_plan_reports_from_its_coupling_maps() {
+    let model = two_grids();
+    let saved = toml::to_string(&model).unwrap();
+    let without_plan = &saved[..saved.find("[[step_plan.steps]]").unwrap()];
+    let restored: Model = toml::from_str(without_plan).unwrap();
+
+    assert!(restored.plan().steps.is_empty());
+    assert_eq!(
+        restored.coupling().unwrap().to_json(),
+        model.coupling().unwrap().to_json()
+    );
 }

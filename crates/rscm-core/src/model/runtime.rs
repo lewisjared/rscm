@@ -1,6 +1,6 @@
 //! Model struct and runtime execution.
 
-use crate::component::{ComponentState, GridType, TimeseriesType};
+use crate::component::{ComponentState, GridType, TimeseriesType, VariableDefinition};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::state::{
     lookup_order, FourBoxSlice, HemisphericSlice, InputPlan, InputState, OutputBuffer,
@@ -15,9 +15,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use super::plan::StepPlan;
+use super::plan::{resolve, Decisions, StepPlan};
 use super::transformations::aggregate_state_value;
-use super::types::{CGraph, RequiredTransformation};
+use super::types::{CGraph, RequiredTransformation, TransformDirection, UnitConversionInfo};
 
 /// Custom serialisation for HashMap<(String, String), T> to work with JSON.
 /// Serialises as a Vec of (key1, key2, value) tuples.
@@ -186,6 +186,21 @@ fn scale_state_value(value: &StateValue, factor: FloatValue) -> StateValue {
 pub(crate) fn execution_order(graph: &CGraph) -> Result<Vec<NodeIndex>, NodeIndex> {
     let graph = EdgeFiltered::from_fn(graph, |edge| edge.source() != edge.target());
     petgraph::algo::toposort(&graph, None).map_err(|cycle| cycle.node_id())
+}
+
+fn transform(
+    def: &VariableDefinition,
+    source_grid: GridType,
+    target_grid: GridType,
+    direction: TransformDirection,
+) -> RequiredTransformation {
+    RequiredTransformation {
+        variable: def.name.clone(),
+        unit: def.unit.clone(),
+        source_grid,
+        target_grid,
+        direction,
+    }
 }
 
 impl Model {
@@ -733,9 +748,72 @@ impl Model {
 
     /// Every coupling decision the builder made, in execution order.
     ///
-    /// Empty for a model made without the builder.
+    /// Empty for a model made without the builder or restored from a save that has no plan.
     pub fn plan(&self) -> &StepPlan {
         &self.step_plan
+    }
+
+    /// The plan the builder resolved, or for a model without one, the plan its coupling maps give.
+    pub(crate) fn resolved_plan(&self) -> RSCMResult<std::borrow::Cow<'_, StepPlan>> {
+        if !self.step_plan.steps.is_empty() {
+            return Ok(std::borrow::Cow::Borrowed(&self.step_plan));
+        }
+        let labels: BTreeMap<NodeIndex, String> = self
+            .components
+            .node_indices()
+            .map(|node| (node, self.component_label(node)))
+            .collect();
+        let mut producers = HashMap::new();
+        let mut read_conversions = Vec::new();
+        let mut transformations = Vec::new();
+        for (&node, label) in &labels {
+            let component = &self.components[node];
+            for def in component.outputs() {
+                producers.insert(def.name.clone(), label.clone());
+                let stored_grid = self.stored_grid(&def.name);
+                if self.write_transforms.contains_key(&def.name) && def.grid != stored_grid {
+                    transformations.push((
+                        label.clone(),
+                        transform(&def, def.grid, stored_grid, TransformDirection::Write),
+                    ));
+                }
+            }
+            for def in component.inputs() {
+                let key = (def.name.clone(), label.clone());
+                if let (Some(&factor), Some(stored)) = (
+                    self.unit_conversions.get(&key),
+                    self.collection.get_data(&def.name),
+                ) {
+                    read_conversions.push(UnitConversionInfo {
+                        variable: def.name.clone(),
+                        component: label.clone(),
+                        factor,
+                        source_unit: stored.unit().to_string(),
+                        target_unit: def.unit.clone(),
+                    });
+                }
+                let stored_grid = self.stored_grid(&def.name);
+                if self.read_transforms.contains_key(&def.name) && def.grid != stored_grid {
+                    transformations.push((
+                        label.clone(),
+                        transform(&def, stored_grid, def.grid, TransformDirection::Read),
+                    ));
+                }
+            }
+        }
+        resolve(&Decisions {
+            graph: &self.components,
+            initial_node: self.initial_node,
+            labels: &labels,
+            collection: &self.collection,
+            sources: &self.variable_sources,
+            producers: &producers,
+            read_conversions: &read_conversions,
+            transformations: &transformations,
+            timeseries_types: &self.timeseries_types,
+            grid_weights: &self.grid_weights,
+        })
+        .map(std::borrow::Cow::Owned)
     }
 
     /// Panic unless the step plan holds what the runtime derives from the coupling maps.
@@ -749,6 +827,20 @@ impl Model {
             .collect();
         let planned: Vec<NodeIndex> = self.step_plan.steps.iter().map(|s| s.node).collect();
         assert_eq!(planned, order);
+        let mut unplanned = Model::with_variable_sources(
+            self.components.clone(),
+            self.initial_node,
+            self.collection.clone(),
+            self.time_axis.clone(),
+            self.grid_weights.clone(),
+            self.read_transforms.clone(),
+            self.write_transforms.clone(),
+            self.unit_conversions.clone(),
+            self.variable_sources.clone(),
+        );
+        unplanned.timeseries_types = self.timeseries_types.clone();
+        unplanned.labels = self.labels.clone();
+        assert_eq!(*unplanned.resolved_plan().unwrap(), self.step_plan);
         for step in &self.step_plan.steps {
             let runtime = self.component_plan(step.node);
             assert_eq!(step.label, runtime.name);

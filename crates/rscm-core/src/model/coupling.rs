@@ -4,6 +4,7 @@
 //! with whether it lags, each variable's source and timeseries type, and every conversion.
 
 use crate::component::{DeclaredVariable, GridType};
+use crate::errors::RSCMResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -219,8 +220,10 @@ impl Model {
     /// Report the model's coupling: the order the runtime steps components in,
     /// every edge with whether it lags, each variable's source and timeseries type,
     /// and the conversions each component applies.
-    pub fn coupling(&self) -> Coupling {
-        self.plan().report()
+    ///
+    /// Fails only for a model without a plan whose coupling maps name a variable it does not store.
+    pub fn coupling(&self) -> RSCMResult<Coupling> {
+        Ok(self.resolved_plan()?.report())
     }
 }
 
@@ -308,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_coupling_execution_order() {
-        let coupling = build_test_model().coupling();
+        let coupling = build_test_model().coupling().unwrap();
 
         assert_eq!(coupling.components.len(), 2);
         assert_eq!(coupling.components[0].name, "EmissionsComponent");
@@ -319,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_coupling_inputs_outputs() {
-        let coupling = build_test_model().coupling();
+        let coupling = build_test_model().coupling().unwrap();
 
         let emissions = &coupling.components[0];
         assert_eq!(emissions.inputs.len(), 1);
@@ -336,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_coupling_sources_and_types() {
-        let coupling = build_test_model().coupling();
+        let coupling = build_test_model().coupling().unwrap();
 
         let emissions = &coupling.components[0].inputs[0];
         assert_eq!(emissions.source, Some(VariableSource::Prescribed));
@@ -349,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_coupling_edges() {
-        let coupling = build_test_model().coupling();
+        let coupling = build_test_model().coupling().unwrap();
 
         assert_eq!(
             coupling.edges,
@@ -364,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_coupling_json_roundtrip() {
-        let coupling = build_test_model().coupling();
+        let coupling = build_test_model().coupling().unwrap();
         let parsed: Coupling = serde_json::from_str(&coupling.to_json()).unwrap();
 
         assert_eq!(parsed.components.len(), coupling.components.len());
@@ -374,7 +377,7 @@ mod tests {
 
     #[test]
     fn test_coupling_display_plain() {
-        let plain = build_test_model().coupling().to_string();
+        let plain = build_test_model().coupling().unwrap().to_string();
 
         assert!(plain.contains("[0] EmissionsComponent"));
         assert!(plain.contains("[1] ForcingComponent"));
@@ -388,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_coupling_rich_output() {
-        let rich = build_test_model().coupling().to_rich();
+        let rich = build_test_model().coupling().unwrap().to_rich();
 
         #[cfg(feature = "rich-debug")]
         assert!(rich.contains("\x1b["));
@@ -398,7 +401,7 @@ mod tests {
 
     #[test]
     fn test_coupling_compact_json() {
-        let compact = build_test_model().coupling().to_json_compact();
+        let compact = build_test_model().coupling().unwrap().to_json_compact();
 
         assert!(!compact.contains('\n'));
         let parsed: Coupling = serde_json::from_str(&compact).unwrap();

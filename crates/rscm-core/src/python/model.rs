@@ -305,7 +305,11 @@ impl PyModel {
                 )))
             }
         };
-        Ok(render(&self.0.coupling()))
+        let coupling = self
+            .0
+            .coupling()
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+        Ok(render(&coupling))
     }
 
     /// Generate a JSON representation of the model

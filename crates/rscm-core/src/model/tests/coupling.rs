@@ -71,6 +71,7 @@ fn order_matches_runtime_plan_where_bfs_differs() {
     let mut model = model();
     let reported: Vec<String> = model
         .coupling()
+        .unwrap()
         .components
         .into_iter()
         .map(|c| c.name)
@@ -91,7 +92,7 @@ fn order_matches_runtime_plan_where_bfs_differs() {
 
 #[test]
 fn edges_flag_lags() {
-    let coupling = model().coupling();
+    let coupling = model().coupling().unwrap();
     let edge = |producer: &str, consumer: &str, variable: &str, lagged| CouplingEdge {
         producer: producer.into(),
         consumer: consumer.into(),
