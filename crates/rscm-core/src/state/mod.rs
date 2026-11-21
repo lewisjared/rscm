@@ -573,7 +573,8 @@ impl<'a> InputState<'a> {
                         &item.name,
                         unit_factor,
                         transform.variable_source,
-                    ),
+                    )
+                    .with_weights(transform.weights.as_deref()),
                 );
             }
 
