@@ -1,13 +1,11 @@
-//! Null component for graph initialisation.
+//! A component with no variables, for tests.
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
 use crate::timeseries::Time;
 use serde::{Deserialize, Serialize};
 
-/// A null component that does nothing.
-///
-/// Used as an initial component to ensure that the model graph is connected.
+/// A component that declares and does nothing.
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct NullComponent {}
 

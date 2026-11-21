@@ -862,7 +862,7 @@ impl Component for TerrestrialCarbon {
         input_state: &InputState,
         internal_state: &mut dyn ComponentState,
     ) -> RSCMResult<OutputState> {
-        OutputBuffer::collect(self.output_names(), |out| {
+        OutputBuffer::collect(&self.definitions(), |out| {
             self.solve_into(t_current, t_next, input_state, internal_state, out)
         })
     }

@@ -390,18 +390,3 @@ fn a_record_with_another_value_shape_fails_restore_naming_the_variable() {
     let err = Model::restore(&record).unwrap_err().to_string();
     assert!(err.contains("'Stock' has values of shape (10, 1)"), "{err}");
 }
-
-#[test]
-fn a_model_without_a_plan_does_not_step() {
-    let mut graph = crate::model::types::CGraph::new();
-    let initial = graph.add_node(Arc::new(crate::model::null_component::NullComponent {}));
-    graph.add_node(Arc::new(Accumulate {
-        rate: 1.0,
-        unit: "GtC".into(),
-    }));
-    let mut model = Model::new(graph, initial, TimeseriesCollection::new(), time_axis());
-
-    let err = model.try_step().unwrap_err().to_string();
-    assert!(err.contains("no step plan"), "{err}");
-    assert_eq!(model.time_index(), 0);
-}

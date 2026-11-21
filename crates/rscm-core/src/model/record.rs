@@ -99,12 +99,15 @@ impl Model {
     /// The record of the model at its current step, to resume or branch from later.
     pub fn checkpoint(&self) -> RSCMResult<Record> {
         let states = self
-            .labels
+            .step_plan
+            .steps
             .iter()
-            .map(|(node, label)| {
-                let state = serde_json::to_value(&self.component_states[node]).map_err(|e| {
-                    RSCMError::Error(format!("Could not serialise the state of {label}: {e}"))
-                })?;
+            .map(|step| {
+                let label = &step.label;
+                let state =
+                    serde_json::to_value(&self.component_states[&step.node]).map_err(|e| {
+                        RSCMError::Error(format!("Could not serialise the state of {label}: {e}"))
+                    })?;
                 Ok((label.clone(), state))
             })
             .collect::<RSCMResult<_>>()?;
@@ -114,7 +117,7 @@ impl Model {
             builder: Arc::new(self.builder.snapshot()?),
             time_index: self.time_index,
             values: self.collection.clone(),
-            timeseries_types: self.timeseries_types.clone(),
+            timeseries_types: self.step_plan.timeseries_types.clone(),
             states,
         })
     }
@@ -260,7 +263,7 @@ impl Model {
                     ),
                 );
             }
-            let rebuilt_type = self.timeseries_types.get(name);
+            let rebuilt_type = self.step_plan.timeseries_types.get(name);
             let saved_type = record.timeseries_types.get(name);
             if rebuilt_type != saved_type {
                 let show =
@@ -285,7 +288,7 @@ impl Model {
                 .values
                 .get_data(name)
                 .expect("checked by check_storage");
-            let end = match (load, self.timeseries_types.get(name)) {
+            let end = match (load, self.step_plan.timeseries_types.get(name)) {
                 (Load::All, _) => saved.len(),
                 (Load::History, Some(TimeseriesType::Average)) => record.time_index,
                 (Load::History, _) => record.time_index + 1,
@@ -295,16 +298,19 @@ impl Model {
     }
 
     fn load_states(&mut self, record: &Record) -> RSCMResult<()> {
-        if let Some(label) = record
-            .states
-            .keys()
-            .find(|label| !self.labels.values().any(|l| l == *label))
-        {
+        if let Some(label) = record.states.keys().find(|label| {
+            !self
+                .step_plan
+                .steps
+                .iter()
+                .any(|step| &step.label == *label)
+        }) {
             return Err(RSCMError::Error(format!(
                 "Cannot restore the record: it has a state for '{label}', which the rebuilt model lacks"
             )));
         }
-        for (node, label) in &self.labels {
+        for step in &self.step_plan.steps {
+            let label = &step.label;
             let Some(saved) = record.states.get(label) else {
                 return Err(RSCMError::Error(format!(
                     "Cannot restore the record: it has no state for '{label}'"
@@ -314,7 +320,7 @@ impl Model {
                 serde_json::from_value(saved.clone()).map_err(|e| {
                     RSCMError::Error(format!("Could not read the state of {label}: {e}"))
                 })?;
-            self.component_states.insert(*node, state);
+            self.component_states.insert(step.node, state);
         }
         Ok(())
     }

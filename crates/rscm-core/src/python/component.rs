@@ -84,24 +84,17 @@ macro_rules! impl_component {
                 self.0.definitions()
             }
 
-            fn input_names(&self) -> Vec<String> {
-                self.0.input_names()
-            }
-
-            fn output_names(&self) -> Vec<String> {
-                self.0.output_names()
-            }
-
             pub fn solve(
                 &mut self,
                 t_current: Time,
                 t_next: Time,
                 collection: $crate::python::timeseries_collection::PyTimeseriesCollection,
             ) -> PyResult<HashMap<String, $crate::python::state::PyStateValue>> {
-                if let Some(missing) = self
-                    .0
-                    .input_names()
-                    .into_iter()
+                let definitions = self.0.definitions();
+                if let Some(missing) = definitions
+                    .iter()
+                    .filter(|d| d.role.is_read())
+                    .map(|d| &d.name)
                     .find(|name| collection.0.get_by_name(name).is_none())
                 {
                     return Err(pyo3::exceptions::PyKeyError::new_err(format!(
@@ -110,7 +103,7 @@ macro_rules! impl_component {
                     )));
                 }
                 let input_state =
-                    $crate::model::extract_state(&collection.0, self.0.inputs(), t_current)?;
+                    $crate::model::extract_state(&collection.0, &definitions, t_current)?;
 
                 let output_state = self.0.solve(t_current, t_next, &input_state)?;
                 // Return StateValue wrapped in PyStateValue for Python interoperability
@@ -160,17 +153,19 @@ impl VariableDefinition {
 
 /// Repr of a wrapped component: its kind, name and variables.
 fn component_repr(kind: &str, name: &str, component: &dyn Component) -> String {
-    let quoted = |names: Vec<String>| {
-        names
+    let definitions = component.definitions();
+    let quoted = |keep: fn(VariableRole) -> bool| {
+        definitions
             .iter()
-            .map(|n| format!("'{n}'"))
+            .filter(|d| keep(d.role))
+            .map(|d| format!("'{}'", d.name))
             .collect::<Vec<_>>()
             .join(", ")
     };
     format!(
         "{kind}({name}, inputs=[{}], outputs=[{}])",
-        quoted(component.input_names()),
-        quoted(component.output_names())
+        quoted(VariableRole::is_read),
+        quoted(VariableRole::is_written)
     )
 }
 

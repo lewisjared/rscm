@@ -263,6 +263,9 @@ such as `rscm.magicc.model.LAGS` and `rscm.fair.lags(config)`.
 Each step runs from `t_current` (index N) to `t_next` (index N+1).
 Within a step the model solves every producer before its consumers,
 using a topological sort of the graph.
+`build()` resolves this order, with each read's source and every unit and grid conversion, once into a step plan.
+The model steps the plan, `coupling()` reports it and `Model::plan()` returns it in Rust.
+Restoring or branching a record builds the model again, so it resolves the plan the same way.
 Each component reads its inputs with `get()`.
 It writes a point output to index N+1, the step's end,
 and an average output to index N, the step's start
