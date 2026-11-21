@@ -233,12 +233,26 @@ The model only applies the aggregations automatically.
 It rejects broadcasts when coupling components,
 as described in [Schema-Driven Auto-Aggregation](#schema-driven-auto-aggregation).
 
+## Where a Variable Is Stored
+
+One rule decides the unit and grid each variable is stored in:
+
+- A variable with a `VariableSchema` entry is stored as the entry says.
+- Otherwise it is stored as its producer declares it.
+- A variable no component produces keeps the unit and grid of its prescribed data,
+  or takes its first reader's declaration when it has none.
+
+Every read converts the stored values to the reader's declared unit and grid,
+and every write converts the writer's declared unit and grid to the stored ones.
+Only the aggregations in the [transformation table](#transformation-between-grids) apply,
+so a finer grid aggregates to a coarser one, on reads and writes alike.
+Disaggregation (broadcasting from coarser to finer grids) is **not supported**,
+because it would require inventing spatial structure.
+A component that declares a finer grid than the stored one fails the build.
+
 ## Schema-Driven Auto-Aggregation
 
-When using a `VariableSchema`,
-RSCM can automatically aggregate grid data when components use different resolutions.
-The schema declares the "native" grid for each variable,
-and the model handles transformations transparently.
+A `VariableSchema` sets the stored grid of each variable it lists.
 
 ### How It Works
 
@@ -247,10 +261,6 @@ the data is automatically aggregated when the component reads it.
 
 **Write-side aggregation:** When a component produces output at a finer resolution than the schema declares,
 the data is automatically aggregated when writing to the collection.
-
-Only the aggregations in the [transformation table](#transformation-between-grids) apply.
-Disaggregation (broadcasting from coarser to finer grids) is **not supported**,
-because it would require inventing spatial structure.
 
 ### Example: FourBox to Scalar Auto-Aggregation
 
@@ -435,7 +445,8 @@ print(heat.values()[-1])
 ```
 
 Four-box prescribed data also feeds components that read a Scalar input.
-Declare the variable as FourBox in the schema, and the input is aggregated with the grid weights on read.
+The data's grid is the stored grid, so the input is aggregated with the grid weights on read.
+A schema entry declares the stored grid explicitly.
 Here the carbon cycle from [Getting Started](getting_started.md#coupling-components),
 built with a nonzero `alpha_temperature`, reads the area-weighted mean of the regional temperatures:
 
@@ -458,31 +469,30 @@ model = (
 
 ## Grid Coupling Validation
 
-When building a model **without a schema**,
-RSCM validates that connected components use compatible grids:
+The build checks every read and write against the stored grid,
+with or without a schema:
 
 ```python
-# Without schema - this will fail at build time:
 class Producer(Component):
-    output = Output("Surface Air Temperature Change", unit="K", grid="four_box")
+    output = Output("Surface Air Temperature Change", unit="K")  # Scalar
 
 class Consumer(Component):
-    input = Input("Surface Air Temperature Change", unit="K")  # Scalar - MISMATCH!
+    input = Input("Surface Air Temperature Change", unit="K", grid="four_box")
 ```
 
 Error message:
 
 ```text
-ValueError: Grid mismatch for variable 'Surface Air Temperature Change': producer component 'Producer'
-outputs four_box but consumer component 'Consumer' expects scalar.
+ValueError: Grid mismatch for variable 'Surface Air Temperature Change': Consumer reads it on the four_box grid,
+but it is stored on the scalar grid, as its producer Producer declares.
 ...
 ```
 
 **Fixes:**
 
-1. **Add a schema** to enable auto-aggregation (recommended)
-2. Ensure producer and consumer use the same grid
-3. Add an explicit aggregation component
+1. Change the consumer to read the coarser grid
+2. Store the variable on the finer grid, with a schema entry or finer prescribed data
+3. Add an explicit disaggregation component
 
 ## Best Practices
 

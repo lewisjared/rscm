@@ -161,7 +161,7 @@ fn test_schema_rejects_disaggregation_on_read() {
     let err = result.unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("Grid transformation not supported"),
+        msg.contains("Grid mismatch"),
         "Error should indicate unsupported transformation: {}",
         msg
     );

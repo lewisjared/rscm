@@ -539,7 +539,7 @@ class TestGridAutoAggregation:
 
         # Should fail during build - broadcast is not supported
         with pytest.raises(
-            ValueError, match="cannot transform from scalar to four_box"
+            ValueError, match="FourBoxReader reads it on the four_box grid"
         ):
             (
                 ModelBuilder()

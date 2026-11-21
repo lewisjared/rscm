@@ -51,4 +51,4 @@ and each author had to pick between `at_start`, `at_end`, `get` and `previous` t
 - `model.coupling()` replaces `debug_info()` ordering.
   It shows the order, each lagged edge and each variable's [timeseries type](0002-point-and-average-variables.md).
 - A missing prescribed variable is a build error unless a builder flag allows it,
-  and units of prescribed data are converted at build time or rejected.
+  and units of prescribed data are checked at build time and converted to the stored unit, or rejected.

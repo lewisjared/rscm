@@ -2,94 +2,39 @@
 
 use crate::component::{TimeseriesType, VariableDefinition, VariableRole};
 use crate::errors::{RSCMError, RSCMResult};
-use crate::units::Unit;
+use crate::schema::VariableSchema;
+use petgraph::graph::NodeIndex;
 use std::collections::HashMap;
 
-use super::types::{ResolvedVariable, UnitConversionInfo};
+use super::types::ResolvedVariable;
 
-/// Result of unit validation between two definitions.
-#[derive(Debug)]
-pub(crate) enum UnitValidationResult {
-    /// Units are identical (string match), no conversion needed.
-    Identical,
-    /// Units are different but dimensionally compatible, conversion factor provided.
-    Compatible { factor: f64 },
-}
-
-/// Checks if the new definition is valid.
-///
-/// If any definitions share a name then the units must be dimensionally compatible
-/// and grid types must be equivalent (unless a schema is present).
-/// When `has_schema` is true, grid type checking is skipped because the schema validation
-/// will handle grid compatibility with relaxed rules (allowing aggregation).
-///
-/// Returns an error if the variable definition is inconsistent with any existing definitions.
-/// Returns an optional `UnitConversionInfo` if the units differ but are compatible.
-pub(crate) fn verify_definition(
-    definitions: &mut HashMap<String, ResolvedVariable>,
-    definition: &VariableDefinition,
-    component_name: &str,
-    existing_component_name: Option<&str>,
-    has_schema: bool,
-) -> RSCMResult<Option<UnitConversionInfo>> {
-    let existing = definitions.get(&definition.name);
-    match existing {
-        Some(existing) => {
-            // First check for exact string match (fast path)
-            if existing.unit != definition.unit {
-                // Units differ - check dimensional compatibility
-                let validation_result = validate_unit_compatibility(
-                    &existing.unit,
-                    &definition.unit,
-                    &definition.name,
-                )?;
-
-                // Skip grid type check when schema is present
-                if !has_schema && existing.grid != definition.grid {
-                    return Err(RSCMError::GridTypeMismatch {
-                        variable: definition.name.clone(),
-                        producer_component: existing_component_name
-                            .unwrap_or("unknown")
-                            .to_string(),
-                        consumer_component: component_name.to_string(),
-                        producer_grid: existing.grid.to_string(),
-                        consumer_grid: definition.grid.to_string(),
-                    });
-                }
-
-                // Return conversion info if units are compatible but different
-                if let UnitValidationResult::Compatible { factor } = validation_result {
-                    return Ok(Some(UnitConversionInfo {
-                        variable: definition.name.clone(),
-                        component: component_name.to_string(),
-                        factor,
-                        source_unit: existing.unit.clone(),
-                        target_unit: definition.unit.clone(),
-                    }));
-                }
-            } else {
-                // Units match exactly - still check grid type
-                if !has_schema && existing.grid != definition.grid {
-                    return Err(RSCMError::GridTypeMismatch {
-                        variable: definition.name.clone(),
-                        producer_component: existing_component_name
-                            .unwrap_or("unknown")
-                            .to_string(),
-                        consumer_component: component_name.to_string(),
-                        producer_grid: existing.grid.to_string(),
-                        consumer_grid: definition.grid.to_string(),
-                    });
-                }
-            }
+/// Check that every component output is in the schema,
+/// and every input is in the schema or produced by a component.
+pub(crate) fn check_schema_covers(
+    schema: &VariableSchema,
+    labels: &[String],
+    component_defs: &[(Vec<VariableDefinition>, Vec<VariableDefinition>)],
+    produced: &HashMap<String, NodeIndex>,
+) -> RSCMResult<()> {
+    for (label, (requires, provides)) in labels.iter().zip(component_defs) {
+        if let Some(output) = provides.iter().find(|d| !schema.contains(&d.name)) {
+            return Err(RSCMError::SchemaUndefinedOutput {
+                component: label.clone(),
+                variable: output.name.clone(),
+                unit: output.unit.clone(),
+            });
         }
-        None => {
-            definitions.insert(
-                definition.name.clone(),
-                ResolvedVariable::from_definition(definition),
-            );
+        let undefined =
+            |d: &&VariableDefinition| !schema.contains(&d.name) && !produced.contains_key(&d.name);
+        if let Some(input) = requires.iter().find(undefined) {
+            return Err(RSCMError::SchemaUndefinedInput {
+                component: label.clone(),
+                variable: input.name.clone(),
+                unit: input.unit.clone(),
+            });
         }
     }
-    Ok(None)
+    Ok(())
 }
 
 /// Resolve each variable's timeseries type and check that every declaration agrees with it.
@@ -175,53 +120,4 @@ pub(crate) fn resolve_timeseries_types(
         }
     }
     Ok(())
-}
-
-/// Validates that two unit strings are dimensionally compatible.
-///
-/// Returns `UnitValidationResult::Identical` if the normalised units are the same,
-/// `UnitValidationResult::Compatible` with the conversion factor if they have the same dimension,
-/// or an error if they are incompatible.
-fn validate_unit_compatibility(
-    existing_unit: &str,
-    new_unit: &str,
-    variable_name: &str,
-) -> RSCMResult<UnitValidationResult> {
-    // Parse both units
-    let parsed_existing = Unit::parse(existing_unit).map_err(|e| RSCMError::UnitParseError {
-        variable: variable_name.to_string(),
-        unit_string: existing_unit.to_string(),
-        details: e.to_string(),
-    })?;
-
-    let parsed_new = Unit::parse(new_unit).map_err(|e| RSCMError::UnitParseError {
-        variable: variable_name.to_string(),
-        unit_string: new_unit.to_string(),
-        details: e.to_string(),
-    })?;
-
-    // Check if they're the same after normalisation
-    if parsed_existing == parsed_new {
-        return Ok(UnitValidationResult::Identical);
-    }
-
-    // Check dimensional compatibility and get conversion factor
-    if parsed_existing.is_compatible(&parsed_new) {
-        // Calculate conversion factor from existing (source) to new (target)
-        let factor = parsed_existing
-            .conversion_factor(&parsed_new)
-            .map_err(|e| RSCMError::UnitParseError {
-                variable: variable_name.to_string(),
-                unit_string: format!("{existing_unit} -> {new_unit}"),
-                details: e.to_string(),
-            })?;
-
-        Ok(UnitValidationResult::Compatible { factor })
-    } else {
-        Err(RSCMError::incompatible_units(
-            variable_name,
-            &parsed_existing,
-            &parsed_new,
-        ))
-    }
 }

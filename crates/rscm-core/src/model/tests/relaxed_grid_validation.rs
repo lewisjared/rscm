@@ -231,7 +231,7 @@ fn test_write_side_scalar_to_four_box_rejected() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
-        err.contains("Grid transformation not supported"),
+        err.contains("Grid mismatch"),
         "Should indicate transformation not supported: {}",
         err
     );
@@ -255,7 +255,7 @@ fn test_write_side_scalar_to_hemispheric_rejected() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
-        err.contains("Grid transformation not supported"),
+        err.contains("Grid mismatch"),
         "Should indicate transformation not supported: {}",
         err
     );
@@ -278,7 +278,7 @@ fn test_write_side_hemispheric_to_four_box_rejected() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
-        err.contains("Grid transformation not supported"),
+        err.contains("Grid mismatch"),
         "Should indicate transformation not supported: {}",
         err
     );
@@ -363,7 +363,7 @@ fn test_read_side_scalar_schema_four_box_consumer_rejected() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
-        err.contains("Grid transformation not supported"),
+        err.contains("Grid mismatch"),
         "Should indicate transformation not supported: {}",
         err
     );

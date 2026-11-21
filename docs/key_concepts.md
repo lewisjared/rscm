@@ -418,10 +418,14 @@ flowchart TD
   D -->|no| X["Prescribed: values supplied with the model"]
   X --> E{"Was data supplied?"}
   E -->|no| M["Build error: MissingPrescribedInput, unless with_missing_prescribed_allowed()"]
-  E -->|yes| F{"Is its unit compatible with the stored unit?"}
-  F -->|yes| V["Converted to the stored unit"]
-  F -->|no| W["Build error: IncompatibleUnits or UnitParseError"]
+  E -->|yes| F{"Can each reader's unit and grid be reached from the stored ones?"}
+  F -->|yes| V["Stored as its schema entry says, or as supplied, and converted on each read"]
+  F -->|no| W["Build error: IncompatibleUnits, UnitParseError or GridTypeMismatch"]
 ```
+
+A prescribed variable without a schema entry keeps the unit and grid of its data,
+so `model.timeseries()` reports it as supplied.
+[Where a Variable Is Stored](grids.md#where-a-variable-is-stored) gives the full rule.
 
 `model.coupling()` shows the source the builder chose for every input.
 
