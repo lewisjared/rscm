@@ -158,11 +158,13 @@ such as the species parameters and inputs that switch when a gas becomes concent
 
 ## Other climate components
 
-`components(config, energy_balance=False)` leaves out `EnergyBalance`,
+`components(config, energy_balance=False)` returns the components by label and leaves out `EnergyBalance`,
 so another component can write `Surface Air Temperature Change` from `Effective Radiative Forcing`.
 The regression tests couple FaIR's gas cycle and forcing with MAGICC's `ClimateUDEB` this way.
 `initial_values` takes the same flag,
 and `with_lags(builder, config)` adds FaIR's feedback lags to a `ModelBuilder` of these components.
+Add each with `builder.with_component_as(label, component)`,
+because the linear forcings share a type and the lags name the labels.
 
 ## Validation
 

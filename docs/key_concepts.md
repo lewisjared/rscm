@@ -228,9 +228,28 @@ builder.with_lag_for("Atmospheric Concentrations|CO2", "OceanCarbon")  # only Oc
 ```
 
 `with_lag(variable)` lags every edge from the variable.
-`with_lag_for(variable, consumer)` lags one edge, so other consumers still see this step's value.
-`consumer` is the component's type name, such as `"OceanCarbon"`.
+`with_lag_for(variable, label)` lags the edge into the component with that label,
+so other consumers still see this step's value.
 A lag holds whether the variable is produced by a component or prescribed.
+
+### Labels
+
+Each component has a **label** that names it in lags, the coupling report and errors.
+`with_component(component)` labels it with its type name, such as `"OceanCarbon"`,
+or a Python component with its class `__name__`.
+`with_component_as(label, component)` sets the label,
+so two instances of one type can read in different units and lag independently:
+
+```python
+builder.with_component_as("LinearForcing[Ozone]", ozone)
+builder.with_component_as("LinearForcing[Solar]", solar)
+builder.with_lag_for("Surface Air Temperature Change", "LinearForcing[Ozone]")
+```
+
+Two components with one label fail `build()`.
+A schema aggregate is labelled with its name, so `with_lag_for(contributor, aggregate)` lags its read of one contributor.
+A `ModelSpec` labels each component with its key in `components`,
+and `Lag(variable, into=[labels])` lags those components, or every consumer when `into` is empty.
 
 A loop that no lag breaks fails `build()` with an error that lists the components and variables in the loop,
 and the `with_lag_for` calls that would break it.

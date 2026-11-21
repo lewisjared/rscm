@@ -194,10 +194,9 @@ MAGICC emissions-driven
     CH4Chemistry         18 parameters
     ...
     ClimateUDEB          29 parameters
-  lags (4)
+  lags (3)
     Surface Air Temperature Change -> every consumer
-    Atmospheric Concentrations|CO2 -> TerrestrialCarbon
-    Atmospheric Concentrations|CO2 -> OceanCarbon
+    Atmospheric Concentrations|CO2 -> TerrestrialCarbon, OceanCarbon
     Equilibrium Climate Sensitivity -> ForcingAggregation
   prescribed data (113)
     Effective Radiative Forcing            13

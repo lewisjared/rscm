@@ -444,7 +444,8 @@ erf_schema.add_aggregate(
 # The model builder resolves the dependency graph, whatever order the components are added in.
 #
 # Temperature feeds back on the carbon cycle, so the components form a feedback loop.
-# `with_lag_for("Surface Air Temperature Change", "CarbonCycle")` breaks it:
+# `with_lag_for("Surface Air Temperature Change", "CarbonCycle")` breaks it,
+# naming the carbon cycle by its label, which defaults to its type name:
 # the carbon cycle reads the temperature the Two-Layer model wrote in the previous step.
 # The feedback loop therefore closes across steps rather than within one.
 # Without the lag, `build()` fails and suggests this call.
