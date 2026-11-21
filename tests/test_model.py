@@ -6,7 +6,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from rscm._lib.core import InterpolationStrategy, Model, Timeseries
+from rscm._lib.core import InterpolationStrategy, Model, Record, Timeseries
 from rscm._lib.two_layer import TwoLayerBuilder
 from rscm.core import ModelBuilder
 
@@ -105,9 +105,11 @@ def test_model_serialisation(time_axis):
 
     model.step()
 
-    serialised_model = model.to_toml()
+    record = Record.from_json(model.checkpoint().to_json())
+    assert record.format == 1
+    assert record.time_index == 1
 
-    new_model = Model.from_toml(serialised_model)
+    new_model = Model.restore(record)
 
     assert new_model.as_dot() == model.as_dot()
     assert new_model.current_time() == model.current_time()

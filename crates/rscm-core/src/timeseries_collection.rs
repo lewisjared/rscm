@@ -211,6 +211,22 @@ impl TimeseriesData {
         }
     }
 
+    /// Copy the time steps before `end` from `other`, which must have the same grid and length.
+    pub(crate) fn copy_steps_from(&mut self, other: &TimeseriesData, end: usize) {
+        match (self, other) {
+            (TimeseriesData::Scalar(to), TimeseriesData::Scalar(from)) => {
+                to.copy_rows_from(from, end)
+            }
+            (TimeseriesData::FourBox(to), TimeseriesData::FourBox(from)) => {
+                to.copy_rows_from(from, end)
+            }
+            (TimeseriesData::Hemispheric(to), TimeseriesData::Hemispheric(from)) => {
+                to.copy_rows_from(from, end)
+            }
+            _ => panic!("copy_steps_from needs matching grids"),
+        }
+    }
+
     /// Set a scalar value at the given time index
     ///
     /// # Errors

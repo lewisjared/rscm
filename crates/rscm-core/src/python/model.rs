@@ -312,31 +312,109 @@ impl PyModel {
         Ok(render(&coupling))
     }
 
-    /// Generate a JSON representation of the model
-    ///
-    /// This includes the components, their internal state and the model's
-    /// state.
-    fn to_toml(&self) -> PyResult<String> {
-        let serialised = toml::to_string(&self.0);
-        match serialised {
-            Ok(serialised) => Ok(serialised),
-            Err(e) => Err(PyValueError::new_err(format!("{}", e))),
+    /// The record of the model at its current step, to resume or branch from later.
+    fn checkpoint(&self) -> PyResult<PyRecord> {
+        Ok(PyRecord(self.0.checkpoint()?))
+    }
+
+    /// The record of a run, the same as `checkpoint`, for reading results after `run`.
+    fn output(&self) -> PyResult<PyRecord> {
+        Ok(PyRecord(self.0.output()?))
+    }
+
+    /// Rebuild a model from a record and load its values and states.
+    #[staticmethod]
+    fn restore(py: Python<'_>, record: PyRef<'_, PyRecord>) -> PyResult<Self> {
+        let (model, warnings) = Model::restore_with_warnings(&record.0)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        warn_all(py, &warnings)?;
+        Ok(PyModel(model))
+    }
+
+    /// Rebuild a model from a record with new future prescribed data or component parameters.
+    #[staticmethod]
+    #[pyo3(signature = (record, *, prescribed = None, parameters = None))]
+    fn branch(
+        py: Python<'_>,
+        record: PyRef<'_, PyRecord>,
+        prescribed: Option<HashMap<String, Bound<'_, PyAny>>>,
+        parameters: Option<HashMap<String, Bound<'_, PyAny>>>,
+    ) -> PyResult<Self> {
+        let mut branch = model::Branch::default();
+        for (name, timeseries) in prescribed.unwrap_or_default() {
+            let data = extract_timeseries_data(&name, &timeseries)?;
+            branch.prescribed.set_data(name, data);
         }
+        for (label, component) in parameters.unwrap_or_default() {
+            branch.parameters.insert(label, to_component(component)?);
+        }
+        let (model, warnings) = Model::branch_with_warnings(&record.0, branch)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        warn_all(py, &warnings)?;
+        Ok(PyModel(model))
     }
 
     fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<Reduced<'py>> {
-        let from_toml = py.get_type::<Self>().getattr("from_toml")?;
-        Ok((from_toml, (self.to_toml()?,).into_pyobject(py)?))
+        let restore = py.get_type::<Self>().getattr("restore")?;
+        Ok((restore, (self.checkpoint()?,).into_pyobject(py)?))
+    }
+}
+
+/// A model's spec and state at one step, serialised as JSON.
+#[pyclass(module = "rscm._lib.core", frozen)]
+#[pyo3(name = "Record")]
+pub struct PyRecord(pub model::Record);
+
+#[pymethods]
+impl PyRecord {
+    fn __repr__(&self) -> String {
+        format!(
+            "Record(format={}, rscm={:?}, time_index={})",
+            self.0.format, self.0.rscm, self.0.time_index
+        )
     }
 
-    /// Initialise a model from a TOML representation
+    /// The layout version of the record.
+    #[getter]
+    fn format(&self) -> u32 {
+        self.0.format
+    }
+
+    /// The rscm version that wrote the record.
+    #[getter]
+    fn rscm(&self) -> &str {
+        &self.0.rscm
+    }
+
+    /// The index of the next step to solve.
+    #[getter]
+    fn time_index(&self) -> usize {
+        self.0.time_index
+    }
+
+    /// Every stored timeseries.
+    fn timeseries(&self) -> PyTimeseriesCollection {
+        PyTimeseriesCollection(self.0.values.clone())
+    }
+
+    /// Serialise the record as JSON.
+    fn to_json(&self) -> PyResult<String> {
+        self.0
+            .to_json()
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    /// Read a record from JSON, raising ValueError if its format is not this rscm's.
     #[staticmethod]
-    fn from_toml(string: String) -> PyResult<Self> {
-        let deserialised = toml::from_str::<Model>(string.as_str());
-        match deserialised {
-            Ok(deserialised) => Ok(PyModel(deserialised)),
-            Err(e) => Err(PyValueError::new_err(format!("{}", e))),
-        }
+    fn from_json(json: &str) -> PyResult<Self> {
+        model::Record::from_json(json)
+            .map(PyRecord)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<Reduced<'py>> {
+        let from_json = py.get_type::<Self>().getattr("from_json")?;
+        Ok((from_json, (self.to_json()?,).into_pyobject(py)?))
     }
 }
 

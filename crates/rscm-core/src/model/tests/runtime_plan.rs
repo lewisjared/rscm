@@ -230,30 +230,3 @@ fn a_state_converts_on_read_and_on_write() {
         assert!(is_close!(*value, expected), "{stored:?}");
     }
 }
-
-#[test]
-fn a_save_without_a_plan_steps_like_the_original() {
-    let build = || {
-        builder()
-            .with_component(Arc::new(Clock))
-            .with_component(Mirror::new(
-                VariableDefinition::scalar_input("x", "1"),
-                "seen",
-            ))
-            .build()
-            .unwrap()
-    };
-    let mut original = build();
-    let saved = toml::to_string(&build()).unwrap();
-    let without_plan = &saved[..saved.find("[[step_plan.steps]]").unwrap()];
-    let mut restored: Model = toml::from_str(without_plan).unwrap();
-    assert!(restored.plan().steps.is_empty());
-
-    original.run();
-    restored.run();
-    assert_eq!(restored.plan(), original.plan());
-    assert_eq!(
-        scalar(&restored, "seen")[1..],
-        scalar(&original, "seen")[1..]
-    );
-}

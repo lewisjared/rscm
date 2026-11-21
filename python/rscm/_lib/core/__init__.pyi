@@ -896,32 +896,98 @@ class Model:
         Clone of the timeseries held by the model
         """
 
-    def to_toml(self) -> str:
+    def checkpoint(self) -> Record:
         """
-        Serialise the current state of the model to a TOML string.
+        Record the model at its current step, to resume or branch from later.
 
-        This string can be used to recreate the model at a later time using
-        `~Model.from_toml`.
-
-        Returns
-        -------
-        String representation of the model, including the state required to recreate
-        the model at a later time.
+        `Model.restore` continues the run from the record.
+        Pickling and `copy.deepcopy` go through a record too.
         """
-
+    def output(self) -> Record:
+        """Record the model, as `checkpoint` does, to read results after `run`."""
     @staticmethod
-    def from_toml(string: str) -> Model:
+    def restore(record: Record) -> Model:
         """
-        Create a model from a TOML string.
+        Rebuild a model from a record and load its values and component states.
+
+        Warns if another rscm version wrote the record.
+
+        Raises
+        ------
+        ValueError
+            If the rebuilt model stores a different set of variables,
+            or any in another unit, grid or timeseries type.
+        """
+    @staticmethod
+    def branch(
+        record: Record,
+        *,
+        prescribed: Mapping[str, Timeseries | FourBoxTimeseries | HemisphericTimeseries]
+        | None = None,
+        parameters: Mapping[str, RustComponent | PythonComponent | Component]
+        | None = None,
+    ) -> Model:
+        """
+        Rebuild a model from a record with new prescribed data or component parameters.
+
+        Values up to the record's step stay as saved,
+        so new prescribed data takes effect after it.
+        The time axis cannot change.
 
         Parameters
         ----------
-        string
-            TOML string representing the model
+        record
+            The record to branch from.
+        prescribed
+            Prescribed data replacing the record's, by variable name.
+        parameters
+            Components replacing those with the same label, each of the same type.
 
-        Returns
-        -------
-        New model object with the state as defined in the TOML string.
+        Raises
+        ------
+        ValueError
+            If a label is unknown, a component has another type,
+            or the new components change what the model stores.
+        """
+
+@final
+class Record:
+    """
+    A model's spec and state at one step: a checkpoint, or the output of a finished run.
+
+    It holds the model's builder, the step index, every stored timeseries
+    and each component's internal state, and serialises as JSON.
+    """
+
+    @property
+    def format(self) -> int:
+        """The layout version of the record."""
+    @property
+    def rscm(self) -> str:
+        """The rscm version that wrote the record."""
+    @property
+    def time_index(self) -> int:
+        """The index of the next step to solve."""
+    def timeseries(self) -> TimeseriesCollection:
+        """Every stored timeseries."""
+    def to_json(self) -> str:
+        """
+        Serialise the record as JSON.
+
+        Raises
+        ------
+        ValueError
+            If a Python component cannot be serialised.
+        """
+    @staticmethod
+    def from_json(json: str) -> Record:
+        """
+        Read a record from JSON.
+
+        Raises
+        ------
+        ValueError
+            If the record has another format than this rscm reads.
         """
 
 @final

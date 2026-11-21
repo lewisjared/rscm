@@ -297,6 +297,44 @@ impl TimeAxis {
 /// assert_eq!(ts.len(), 3);
 /// assert_eq!(ts.grid().size(), 4);
 /// ```
+/// Serialises an array as ndarray does, but with NaN as null, which JSON can represent.
+mod nan_as_null {
+    use super::*;
+    use serde::{Deserializer, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct Shaped<T> {
+        v: u8,
+        dim: [usize; 2],
+        data: Vec<Option<T>>,
+    }
+
+    pub fn serialize<S: Serializer, T: Float + Serialize>(
+        values: &Array2<T>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        Shaped {
+            v: 1,
+            dim: [values.nrows(), values.ncols()],
+            data: values.iter().map(|v| (!v.is_nan()).then_some(*v)).collect(),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>, T: Float + Deserialize<'de>>(
+        deserializer: D,
+    ) -> Result<Array2<T>, D::Error> {
+        let shaped = Shaped::<T>::deserialize(deserializer)?;
+        let data = shaped
+            .data
+            .into_iter()
+            .map(|v| v.unwrap_or(T::nan()))
+            .collect();
+        Array2::from_shape_vec((shaped.dim[0], shaped.dim[1]), data)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GridTimeseries<T, G>
 where
@@ -306,6 +344,10 @@ where
     #[serde(default, skip)]
     grid: G,
     /// Values stored as `Array2<T>`: shape (time, space)
+    #[serde(
+        with = "nan_as_null",
+        bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>")
+    )]
     values: Array2<T>,
     time_axis: Arc<TimeAxis>,
     unit: String,
@@ -443,6 +485,19 @@ where
                 self.latest = time_index;
             }
         }
+    }
+
+    /// Copy the rows before `end` from `other`, which must have the same shape.
+    pub(crate) fn copy_rows_from(&mut self, other: &Self, end: usize) {
+        self.values
+            .slice_mut(s![..end, ..])
+            .assign(&other.values.slice(s![..end, ..]));
+        self.latest = self
+            .values
+            .rows()
+            .into_iter()
+            .rposition(|row| row.iter().all(|v| !v.is_nan()))
+            .unwrap_or(0);
     }
 
     /// Set all regional values at a specific time index
@@ -1070,7 +1125,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn serialise_and_deserialise_with_nan_json() {
         let data = array![1.0, 1.5, FloatValue::nan()];
         let years = Array::range(2020.0, 2023.0, 1.0);
@@ -1080,43 +1134,13 @@ mod tests {
         let serialised = serde_json::to_string(&timeseries).unwrap();
         assert_eq!(
             serialised,
-            r#"{"unit":"","values":{"v":1,"dim":[3],"data":[1.0,1.5,null]},"time_axis":{"bounds":{"v":1,"dim":[4],"data":[2020.0,2021.0,2022.0,2023.0]}},"latest":2,"interpolation_strategy":"linear"}"#
+            r#"{"values":{"v":1,"dim":[3,1],"data":[1.0,1.5,null]},"time_axis":{"bounds":{"v":1,"dim":[4],"data":[2020.0,2021.0,2022.0,2023.0]}},"unit":"","latest":1,"interpolation_strategy":"linear"}"#
         );
 
-        // This panics as it can't handle null -> NaN values
-        serde_json::from_str::<Timeseries<f64>>(&serialised).unwrap();
-    }
-
-    #[test]
-    fn serialise_and_deserialise_with_nan_toml() {
-        let data = array![1.0, 1.5, FloatValue::nan()];
-        let years = Array::range(2020.0, 2023.0, 1.0);
-
-        let timeseries = Timeseries::from_values(data, years);
-
-        let serialised = toml::to_string(&timeseries).unwrap();
-
-        let expected = "unit = \"\"
-latest = 1
-interpolation_strategy = \"linear\"
-
-[values]
-v = 1
-dim = [3, 1]
-data = [1.0, 1.5, nan]
-
-[time_axis.bounds]
-v = 1
-dim = [4]
-data = [2020.0, 2021.0, 2022.0, 2023.0]
-";
-
-        assert_eq!(serialised, expected);
-
-        let deserialised = toml::from_str::<Timeseries<f64>>(&serialised).unwrap();
-
+        let deserialised = serde_json::from_str::<Timeseries<f64>>(&serialised).unwrap();
+        assert_eq!(deserialised.latest(), 1);
         assert!(zip(timeseries.values(), deserialised.values())
-            .all(|(x0, x1)| { is_close!(*x0, *x1) || (x0.is_nan() && x0.is_nan()) }))
+            .all(|(x0, x1)| { is_close!(*x0, *x1) || (x0.is_nan() && x1.is_nan()) }))
     }
 
     mod grid_timeseries_tests {
