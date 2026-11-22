@@ -40,7 +40,6 @@ from rscm.core import (
     ModelBuilder,
     TimeAxis,
     Timeseries,
-    TimeseriesCollection,
     VariableSchema,
 )
 from rscm.two_layer import TwoLayerBuilder
@@ -85,18 +84,6 @@ def show_graph(model):
     display(SVG(graph.create_svg()))
 
 
-def as_dataframe(collection: TimeseriesCollection, time_axis: TimeAxis) -> pd.DataFrame:
-    """Convert a timeseries collection to a DataFrame indexed by (variable, unit)."""
-    series = [collection.get_timeseries_by_name(name) for name in collection.names()]
-    index = pd.MultiIndex.from_tuples(
-        [(name, ts.unit) for name, ts in zip(collection.names(), series)],
-        names=["variable", "unit"],
-    )
-    return pd.DataFrame(
-        [ts.values() for ts in series], columns=time_axis.values(), index=index
-    )
-
-
 def plot_variables(
     results: pd.DataFrame, variables: list[str], steps: tuple[str, ...] = ()
 ):
@@ -107,7 +94,7 @@ def plot_variables(
         drawstyle = "steps-post" if var in steps else "default"
         ax.plot(data.columns, data.iloc[0], drawstyle=drawstyle)
         ax.set_title(var)
-        ax.set_ylabel(data.index[0])
+        ax.set_ylabel(data.index.get_level_values("unit")[0])
         ax.grid(True, alpha=0.3)
     for ax in axes[-1]:
         ax.set_xlabel("Year")
@@ -320,12 +307,12 @@ print(model.current_time_bounds())
 
 # %% [markdown]
 # `model.timeseries()` returns the results as a `TimeseriesCollection`.
-# A short `as_dataframe` helper (in the downloadable notebook) converts it to a pandas DataFrame.
+# `to_dataframe()` converts it to a pandas DataFrame indexed by variable, unit and region.
 # After one step the modelled variables have values up to the end of that step (1755).
 # Later time points are NaN.
 
 # %%
-results = as_dataframe(model.timeseries(), time_axis)
+results = model.timeseries().to_dataframe()
 results.iloc[:, :3]
 
 # %% [markdown]
@@ -333,7 +320,7 @@ results.iloc[:, :3]
 
 # %%
 model.run()
-results = as_dataframe(model.timeseries(), time_axis)
+results = model.timeseries().to_dataframe()
 
 # %% tags=["remove_input"]
 plot_variables(
@@ -510,7 +497,7 @@ show_graph(feedback_model)
 
 # %%
 feedback_model.run()
-feedback_results = as_dataframe(feedback_model.timeseries(), time_axis)
+feedback_results = feedback_model.timeseries().to_dataframe()
 
 # %% tags=["remove_input"]
 plot_variables(
@@ -532,7 +519,7 @@ plot_variables(
 # %%
 no_feedback_model = build_feedback_model(alpha_temperature=0.0)
 no_feedback_model.run()
-no_feedback_results = as_dataframe(no_feedback_model.timeseries(), time_axis)
+no_feedback_results = no_feedback_model.timeseries().to_dataframe()
 
 # %% tags=["remove_input"]
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
@@ -547,7 +534,7 @@ for ax, var in zip(
         ax.plot(data.columns, data.iloc[0], style, label=label)
     ax.set_title(var)
     ax.set_xlabel("Year")
-    ax.set_ylabel(data.index[0])
+    ax.set_ylabel(data.index.get_level_values("unit")[0])
     ax.legend()
     ax.grid(True, alpha=0.3)
 fig.tight_layout()

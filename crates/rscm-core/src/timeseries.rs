@@ -435,6 +435,17 @@ where
         &self.grid
     }
 
+    /// Replace the grid, keeping the values.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `grid` has another number of regions.
+    pub fn with_grid(mut self, grid: G) -> Self {
+        assert_eq!(grid.size(), self.grid.size(), "Grid size must not change");
+        self.grid = grid;
+        self
+    }
+
     /// Get the time axis
     pub fn time_axis(&self) -> Arc<TimeAxis> {
         self.time_axis.clone()

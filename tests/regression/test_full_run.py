@@ -274,13 +274,7 @@ def test_permafrost():
 
 def _all_outputs(model):
     ts = model.timeseries()
-    getters = (ts.get_timeseries_by_name, ts.get_four_box_timeseries_by_name)
-    return {
-        name: next(s for s in (get(name) for get in getters) if s is not None)
-        .values()
-        .copy()
-        for name in ts.names()
-    }
+    return {name: ts[name].values().copy() for name in ts}
 
 
 WRITES = (VariableRole.Output, VariableRole.State)

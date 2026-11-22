@@ -1,13 +1,17 @@
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Literal, Protocol, Self, TypeVar, final
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from .spatial import FourBoxGrid, HemisphericGrid
 from .state import StateValue
 
 if TYPE_CHECKING:
+    import pandas as pd
+    import xarray as xr
+
     from rscm.component import Component
 
 T = TypeVar("T")
@@ -93,7 +97,19 @@ class Timeseries:
             or `values` does not match `time_axis`.
         """
     @staticmethod
-    def from_values(values: ArrayLike, time_axis: TimeAxis) -> Timeseries: ...
+    def from_values(
+        values: ArrayLike, time_axis: TimeAxis, unit: str = ""
+    ) -> Timeseries:
+        """Create a linearly interpolated timeseries of `values` on `time_axis`.
+
+        Raises
+        ------
+        ValueError
+            If `unit` is not empty and is not a unit `Unit` parses,
+            or `values` does not match `time_axis`.
+        """
+    def interpolate_into(self, time_axis: TimeAxis) -> Timeseries:
+        """Return a copy on `time_axis`, interpolated with the series' strategy."""
     def with_interpolation_strategy(
         self, interpolation_strategy: InterpolationStrategy
     ) -> None: ...
@@ -161,10 +177,13 @@ class FourBoxTimeseries:
         time_axis: TimeAxis,
         unit: str,
         interpolation_strategy: InterpolationStrategy,
+        *,
+        grid: FourBoxGrid | None = None,
     ) -> None:
         """Create from values with shape (n_times, 4) in grid order.
 
         The order is NH ocean, NH land, SH ocean, SH land.
+        `grid` sets the weights, by default those of `FourBoxGrid()`.
         """
 
     def __len__(self) -> int: ...
@@ -182,6 +201,18 @@ class FourBoxTimeseries:
 
         Raises `ValueError` if `unit` is not compatible with the series' unit.
         """
+    @property
+    def interpolation_strategy(self) -> InterpolationStrategy: ...
+    @property
+    def grid(self) -> FourBoxGrid:
+        """The grid, with the weights that `global_mean` uses.
+
+        A model's series carry the model's grid weights.
+        """
+    def global_mean(self) -> Timeseries:
+        """Return the mean over the regions at each step, weighted by the grid."""
+    def interpolate_into(self, time_axis: TimeAxis) -> FourBoxTimeseries:
+        """Return a copy on `time_axis`, interpolated with the series' strategy."""
 
 @final
 class HemisphericTimeseries:
@@ -193,10 +224,13 @@ class HemisphericTimeseries:
         time_axis: TimeAxis,
         unit: str,
         interpolation_strategy: InterpolationStrategy,
+        *,
+        grid: HemisphericGrid | None = None,
     ) -> None:
         """Create from values with shape (n_times, 2) in grid order.
 
-        The order is northern, southern, with equal hemisphere weights.
+        The order is northern, southern.
+        `grid` sets the weights, by default those of `HemisphericGrid()`.
         """
 
     def __len__(self) -> int: ...
@@ -214,6 +248,18 @@ class HemisphericTimeseries:
 
         Raises `ValueError` if `unit` is not compatible with the series' unit.
         """
+    @property
+    def interpolation_strategy(self) -> InterpolationStrategy: ...
+    @property
+    def grid(self) -> HemisphericGrid:
+        """The grid, with the weights that `global_mean` uses.
+
+        A model's series carry the model's grid weights.
+        """
+    def global_mean(self) -> Timeseries:
+        """Return the mean over the regions at each step, weighted by the grid."""
+    def interpolate_into(self, time_axis: TimeAxis) -> HemisphericTimeseries:
+        """Return a copy on `time_axis`, interpolated with the series' strategy."""
 
 @final
 class TimeseriesCollection:
@@ -230,6 +276,34 @@ class TimeseriesCollection:
         """Get a timeseries on any grid, raising KeyError with close matches."""
     def __contains__(self, name: str) -> bool: ...
     def __len__(self) -> int: ...
+    def __iter__(self) -> Iterator[str]:
+        """Iterate over the names of the timeseries on every grid."""
+    def to_dataframe(self, *, global_mean: bool = False) -> pd.DataFrame:
+        """Return a wide DataFrame of every series, see `rscm.interop.to_dataframe`."""
+    def to_xarray(self, *, global_mean: bool = False) -> xr.Dataset:
+        """Return an xarray Dataset of every series, see `rscm.interop.to_xarray`."""
+    @staticmethod
+    def from_dataframe(
+        df: pd.DataFrame,
+        *,
+        time_axis: TimeAxis | None = None,
+        interpolation_strategy: InterpolationStrategy
+        | Mapping[str, InterpolationStrategy]
+        | None = None,
+        grid_weights: Mapping[GridType, Sequence[float]] | None = None,
+    ) -> TimeseriesCollection:
+        """Read a wide DataFrame, see `rscm.interop.from_dataframe`."""
+    @staticmethod
+    def from_xarray(
+        ds: xr.Dataset,
+        *,
+        time_axis: TimeAxis | None = None,
+        interpolation_strategy: InterpolationStrategy
+        | Mapping[str, InterpolationStrategy]
+        | None = None,
+        grid_weights: Mapping[GridType, Sequence[float]] | None = None,
+    ) -> TimeseriesCollection:
+        """Read an xarray Dataset, see `rscm.interop.from_xarray`."""
     def get_timeseries_by_name(self, name: str) -> Timeseries | None:
         """
         Get a scalar timeseries from the collection by name.
@@ -245,7 +319,12 @@ class TimeseriesCollection:
         Returns
         -------
         A clone of the timeseries or None if the collection doesn't contain
-        a scalar timeseries by that name.
+        a timeseries by that name.
+
+        Raises
+        ------
+        TypeError
+            If the timeseries is on another grid.
         """
     def get_four_box_timeseries_by_name(self, name: str) -> FourBoxTimeseries | None:
         """
@@ -259,7 +338,12 @@ class TimeseriesCollection:
         Returns
         -------
         A clone of the timeseries or None if the collection doesn't contain
-        a four-box timeseries by that name.
+        a timeseries by that name.
+
+        Raises
+        ------
+        TypeError
+            If the timeseries is on another grid.
         """
     def get_hemispheric_timeseries_by_name(
         self, name: str
@@ -275,7 +359,12 @@ class TimeseriesCollection:
         Returns
         -------
         A clone of the timeseries or None if the collection doesn't contain
-        a hemispheric timeseries by that name.
+        a timeseries by that name.
+
+        Raises
+        ------
+        TypeError
+            If the timeseries is on another grid.
         """
     def names(self) -> list[str]: ...
     def timeseries(self) -> list[Timeseries]:
@@ -285,9 +374,8 @@ class TimeseriesCollection:
         These are clones of the original timeseries,
         so they can be modified without affecting the original.
 
-        Note: This only returns scalar timeseries. Use
-        get_four_box_timeseries_by_name() or get_hemispheric_timeseries_by_name()
-        to retrieve grid timeseries.
+        Note: This only returns scalar timeseries.
+        Iterate over the collection or use `to_dataframe` for every grid.
 
         Returns
         -------
