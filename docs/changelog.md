@@ -1,3 +1,316 @@
+## rscm 0.9.0 (2026-11-22)
+
+### ⚠️ Breaking Changes ⚠️
+
+- `InputState::iter` now yields `&TimeseriesItem` rather than `&&TimeseriesItem`, and `ForcingSubtotals::insert_into` is replaced by `ForcingSubtotals::write_to`. ([#222](https://github.com/lewisjared/rscm/pull/222))
+- `rscm.magicc.full.from_magicc7` requires the time axis to start in 1750, MAGICC7's preindustrial reference year.
+  A run starting in another year measured greenhouse gas forcing from the wrong concentrations and did not match MAGICC7. ([#224](https://github.com/lewisjared/rscm/pull/224))
+- `ModelBuilder.build` now raises instead of falling back to silent defaults:
+
+  - A builder with no time axis raises, where it used to run on 2000 to 2099.
+  - A builder with no components raises.
+  - `with_initial_values` and `with_initial_grid_values` raise for a name no component reads or produces, suggesting close matches.
+  - `with_prescribed_variable` raises for a variable no component reads, suggesting close matches, and for a variable a component produces. Collections passed to `with_prescribed_collection` still ignore variables the model does not read.
+  - `TwoLayerBuilder.from_parameters` rejects parameters that are not finite, a negative `a` or `ocean_heat_transfer`, and a feedback, efficacy or heat capacity that is not positive. In Rust, `TwoLayer::from_parameters` returns a `Result`.
+  - `build_model` in `rscm.config` needs a `[time]` table with integer `start` and `end` years, rejects unknown keys in `[time]` and `[components]`, checks the climate component type, and raises if no forcing is given instead of returning NaN temperatures. Give the forcing as a constant `[inputs]` entry or pass it with the new `prescribed` argument.
+  - `rscm.config.ValidationError` is now also a `ValueError`.
+
+  ([#224](https://github.com/lewisjared/rscm/pull/224))
+- Tightened checks in the core Python API that may reject code that ran before:
+
+  - `Unit` raises `ValueError` for an unknown unit symbol, such as `Unit("Gt CO2/yer")`, which used to parse.
+  - A Python component that declares a unit with an unknown symbol raises `ValueError` when added to a `ModelBuilder`. An empty unit is still allowed.
+  - Indexing a `FourBoxSlice` or `HemisphericSlice` out of range raises `IndexError` rather than `ValueError`.
+  - `TimeAxis`, `FourBoxSlice` and `HemisphericSlice` compare by value, so they are no longer hashable.
+  - `Timeseries`, `FourBoxTimeseries` and `HemisphericTimeseries` raise `ValueError` for a unit `Unit` cannot parse,
+    such as `"notaunit!!"`. An empty unit is still allowed.
+  - `VariableSchema.add_variable` and `add_aggregate` raise `ValueError` for a name the schema already defines,
+    where they used to replace it, and for a unit `Unit` cannot parse.
+  - `ModelBuilder.with_grid_weights`, `FourBoxGrid` and `HemisphericGrid` reject negative or non-finite weights.
+    `FourBoxGrid` and `HemisphericGrid` raise `ValueError` for bad weights rather than panicking.
+
+  ([#224](https://github.com/lewisjared/rscm/pull/224))
+- A MAGICC run whose ocean or land temperature change exceeds `maximum_temperature` (25 K) raises a `RuntimeError` naming the year.
+  It used to cap the temperature and carry on, as MAGICC7 does, giving a plausible but invalid result. ([#228](https://github.com/lewisjared/rscm/pull/228))
+- Each variable now holds a single initial value.
+  The latest of `with_initial_values` and `with_initial_grid_values` for a name wins,
+  where before grid values always took precedence over a uniform value. ([#230](https://github.com/lewisjared/rscm/pull/230))
+- A component that returns an output it does not declare now fails the step with an error naming the component, the variable and the step.
+  Previously the value was written unconverted when a timeseries of that name existed.
+  Declare every output a component returns. ([#232](https://github.com/lewisjared/rscm/pull/232))
+- Components now have labels, and lags name a label rather than a type name.
+  `ModelBuilder.with_component` labels a component with its type name, or a Python component with its class `__name__`, and `with_component_as(label, component)` sets the label.
+  Two components with one label now fail `build()`, so register a second instance of a type with `with_component_as`.
+  `Lag(variable, into=[labels])` replaced `Lag(variable, consumer)`, `ModelSpec` labels each component with its key in `components`, and `rscm.fair.components` returns the components in a dict by label.
+  A schema aggregate is labelled and reported with its name, so `with_lag_for(contributor, aggregate)` lags its read of one contributor. ([#233](https://github.com/lewisjared/rscm/pull/233))
+- One storage rule now decides the unit and grid of every variable, with or without a `VariableSchema`.
+  A variable is stored as its schema entry says, otherwise as its producer declares it.
+  With a schema, results for a variable whose producer declares another unit, such as `kW/m^2` under a `W/m^2` schema, come out converted and labelled with the schema unit.
+  A prescribed variable that no component produces and no schema entry lists keeps the unit and grid of the data supplied, so `model.timeseries()` reports it as supplied and each component converts it on read.
+  Before, it was converted into the unit and grid of its first reader.
+  A schema is now only an override: a variable it omits no longer fails `build()` with `SchemaUndefinedOutput` or `SchemaUndefinedInput`, which were removed.
+  `GridTypeMismatch` now names the component, whether it reads or writes the variable, and what set the stored grid. ([#234](https://github.com/lewisjared/rscm/pull/234))
+- Changed `Model.coupling()` to list a conversion for each read and write with the label of the component that applies it.
+  The JSON report's `conversions` list replaced `grid_transforms` and `unit_conversions`, so two components reading one variable at different grids now give two entries.
+  In Rust, `Conversion` replaced `TransformInfo` and `ConversionInfo`. ([#235](https://github.com/lewisjared/rscm/pull/235))
+- `Component.solve` now converts each input from the unit of the supplied timeseries to the unit the component declares, and fails on an incompatible unit or a read onto a finer grid.
+  A timeseries with no unit is taken to be in the declared unit.
+  In Rust, `extract_state` takes a component's `definitions()` and returns a `Result`.
+  `TransformContext`, `InputState::build_with_transforms` and `extract_state_with_transforms` were removed in favour of `extract_state`. ([#236](https://github.com/lewisjared/rscm/pull/236))
+- Replaced TOML model serialisation with JSON `Record`s.
+  `Model.to_toml`, `Model.from_toml` and Rust `Model::from_checkpoint` were removed, and `Model` no longer implements `Serialize` or `Deserialize`.
+  Checkpoints saved by earlier versions cannot be read.
+  A record of another format is an error, and one from another rscm version restores with a warning. ([#237](https://github.com/lewisjared/rscm/pull/237))
+- Removed the Rust `Model` constructors (`Model::new` and the `with_*` variants), so models are only built with `ModelBuilder`.
+  Removed `Model::read_transforms`, `write_transforms`, `required_transformations`, `unit_conversions` and `variable_sources`, with `RequiredTransformation`, `UnitConversionInfo`, `GraphEdge` and the `grid_transform` module.
+  `Model::plan()` and `coupling()` report the same decisions.
+  Removed `inputs`, `outputs`, `input_names` and `output_names` from the `Component` trait and the Python `input_names()` and `output_names()` methods. Use `definitions()` and each definition's role.
+  `as_dot()` no longer includes a `NullComponent` root node. ([#238](https://github.com/lewisjared/rscm/pull/238))
+- `ClimateUDEB` now rejects land fractions that give invalid grid weights with an error, and the MAGICC fertilisation method rejects a non-finite value. ([#240](https://github.com/lewisjared/rscm/pull/240))
+
+### Features
+
+- `from_magicc7` now reproduces every member of MAGICC7's AR6 probabilistic ensemble within a relative 1e-9.
+  To get there:
+
+  - It supports fixed factors for prescribed aerosol, albedo and cloud forcing (`rf_<agent>_apply=2`).
+  - It applies the `rf_fgassum_scale` and `rf_mhalosum_scale` halocarbon forcing scales.
+  - `TerrestrialCarbon` normalises its carbon flow fractions and pre-industrial respiration as MAGICC7 does.
+  - `OceanCarbonParameters` takes the defaults of its `method` when deserialised.
+  - LAMCALC, the volcanic forcing pattern and the cloud albedo weights round as MAGICC7 does.
+
+  `from_magicc7` takes `bugs`, the MAGICC7 release whose known bugs to reproduce or the names of the bugs.
+  It defaults to `"7.5.3"`.
+  `bugs=()` fixes the LAMCALC, NH3 deposition and Antarctic discharge bugs listed in `full.MAGICC7_BUGS`.
+
+  ([#216](https://github.com/lewisjared/rscm/pull/216))
+- Added `rscm.validation`, which collects every problem in a run's inputs and configuration
+  and raises them together as one `InputValidationError` before the run.
+  Each problem kind maps to a `sysexits.h` exit code, available as `error.exit_code`. ([#218](https://github.com/lewisjared/rscm/pull/218))
+- Added `Component::solve_into` for Rust components, which writes outputs into a buffer the model reuses instead of returning an `OutputState` map each step.
+  The `ComponentIO` derive generates `Outputs::write_to` for it, and `solve` now defaults to solving into a fresh initial state.
+  FaIR and MAGICC components use it, which makes MAGICC runs about 20% faster and FaIR runs about three times faster. ([#222](https://github.com/lewisjared/rscm/pull/222))
+- Added reproducible calibration runs and failure reporting to `rscm.calibrate`:
+
+  - The `EnsembleSampler` run methods and `PointEstimator.optimise` take a `seed` keyword.
+  - The `EnsembleSampler` run methods take an `n_walkers` keyword, which defaults to the number of `WalkerInit.explicit` rows.
+  - Failed model evaluations are counted in `n_failed_evaluations` and `first_failure` on `Chain` and `OptimisationResult`, with a `RuntimeWarning`.
+  - `Chain.to_dataframe` and `Target.from_dataframe` are in the type stubs, and `HAS_PANDAS` is removed.
+
+  ([#224](https://github.com/lewisjared/rscm/pull/224))
+- Added unit conveniences:
+
+  - `Timeseries`, `FourBoxTimeseries` and `HemisphericTimeseries` gain `convert_to(unit)`, returning a copy in another compatible unit.
+  - In Python, `with_initial_values` and `with_initial_grid_values` accept a `(value, unit)` pair, converted into the unit the model stores the variable in.
+    Rust has `with_initial_values_in_units` and `with_initial_grid_values_in_units` for the same.
+
+  ([#230](https://github.com/lewisjared/rscm/pull/230))
+- Added `rscm.core.ThreadPool`, which keeps one set of threads across calls.
+  `build_models`, `run_models` and `rscm.spec.run_all` take it as `pool`, and `n_threads` still works.
+
+  Added `rscm.core.run_builders`, which builds and runs models as an iterable yields their builders.
+  `rscm.spec.run_all` uses it and accepts any iterable of setups,
+  so a generator of setups overlaps setting up later models with running earlier ones.
+  `rscm.fair.run_ensemble` sets up each member while earlier ones run, on one pool for all scenarios.
+
+  Added `rscm_core::model::Pool` and `rscm_core::model::run_each`,
+  which stream many model runs onto a reused pool in Rust. ([#231](https://github.com/lewisjared/rscm/pull/231))
+- Added `Model::plan()` in Rust, which returns how each component reads and writes every variable, in execution order. ([#235](https://github.com/lewisjared/rscm/pull/235))
+- Added `Record`, holding a model's builder, stored timeseries and component states at one step.
+  `Model.checkpoint()` and `Model.output()` return one, and `Model.restore(record)` continues the run from it exactly.
+  Added `Model.branch(record, prescribed=..., parameters=...)`, which continues from a record with new future prescribed data or replacement components by label. ([#237](https://github.com/lewisjared/rscm/pull/237))
+- `Model.restore` and `Model.branch` now check each saved component state against its component's parameters,
+  and fail naming the component's label when it does not fit.
+  A branch that reorders FaIR `GasCycle` species, or changes a species, driver, box, band, layer, region or ocean substep count, fails instead of running with the wrong state.
+  Rust components implement the new `Component::check_state` to opt in. ([#239](https://github.com/lewisjared/rscm/pull/239))
+
+### Improvements
+
+- Models now resolve how each component reads its inputs once, when they are built.
+  This makes MAGICC runs about 12% faster and FaIR runs about 17% faster. ([#221](https://github.com/lewisjared/rscm/pull/221))
+- `import rscm` now gives access to its submodules, so `rscm.core.TimeAxis` works without `import rscm.core`.
+  Submodules still load only on first use.
+  `rscm.__version__` falls back to the extension version when the package metadata is missing. ([#224](https://github.com/lewisjared/rscm/pull/224))
+- MAGICC's permafrost component skips repeated `exp` and `powf` calls, which makes it about 40% faster with unchanged results. ([#225](https://github.com/lewisjared/rscm/pull/225))
+- Sped up copying component parameters in `ComponentSpec`, so building a MAGICC model spends about 4 ms less in Python. ([#226](https://github.com/lewisjared/rscm/pull/226))
+- Sped up building a MAGICC model by about 5 ms of Python time, by passing the monthly volcanic forcing to `ClimateUDEB` as a shared read-only array.
+  `ClimateUDEB`'s `subannual_forcing` gained a `scale` parameter and applied `efficacy` over `internal_efficacy` with or without a regional pattern.
+  `rscm.magicc.prescribed.volcanic_substeps` now returns the unscaled values as a numpy array along with these scalars. ([#227](https://github.com/lewisjared/rscm/pull/227))
+- Python components ran about 13% faster when models were run in parallel,
+  because each pool thread now keeps one Python thread state instead of creating one for every solve. ([#231](https://github.com/lewisjared/rscm/pull/231))
+
+### Bug Fixes
+
+- Added input validation to `rscm.fair`.
+  `setup_model`, `components`, `run_ensemble`, `read_calibration` and `from_fair` raise one `rscm.validation.InputValidationError` listing every problem before a model is built.
+  It covers unknown keys, non-finite parameters and inputs, fewer than two ocean layers, missing species, input lengths and FaIR options that `from_fair` cannot reproduce.
+
+  Fixed several differences from FaIR:
+
+  - `run_ensemble` inverted concentrations to emissions over the wrong steps.
+  - `run_ensemble` failed when CO2 was concentration-driven.
+  - `from_fair` returned views of FaIR's arrays and ignored `properties_df`.
+  - ERFari, ERFaci and the minor linear forcings did not skip a NaN term as FaIR does.
+  - The energy balance started from zero forcing, which changed the second temperature when the first prescribed forcing was nonzero.
+
+  ([#219](https://github.com/lewisjared/rscm/pull/219))
+- `from_magicc7` now checks its configuration and inputs before it builds a model,
+  and raises every problem together as one `rscm.validation.InputValidationError`.
+
+  - An unknown configuration name is rejected with the closest known name, rather than ignored.
+  - A MAGICC7 switch for a feature RSCM lacks is rejected when its value would change the run.
+    `rscm.magicc.checks` classifies every MAGICC7 name RSCM does not read as ignorable or unsupported.
+  - Non-finite emissions, concentrations and prescribed forcing are rejected,
+    as are negative concentrations, non-positive sensitivities, depths and lifetimes,
+    all-zero regional patterns and input files that end before the years they must cover.
+
+  It also fixes these differences from MAGICC7:
+
+  - `OceanCarbon` keeps the whole flux history by default, as MAGICC7 does,
+    so runs past 2250 no longer drift.
+  - After 2014 the F-gas forcing pattern splits between the hemispheres like 2014,
+    so it no longer turns global when fossil CO2 emissions reach zero.
+  - Nitrate forcing is zero rather than NaN without anthropogenic NOx and NH3.
+  - Runs start from the concentration files' values in their first year, as MAGICC7 does.
+  - `slr_expansion_scaling` and `file_slr_thexp_params` set thermal expansion.
+  - The CH4, N2O and halocarbon lifetime, feedback and meridional flux parameters reach their components.
+  - IPCCTAR forcing reads the CH4 and N2O radiative efficiencies.
+  - Feedback start years and harmonisation years outside the run move onto its first or last year.
+
+  ([#220](https://github.com/lewisjared/rscm/pull/220))
+- Fixed MAGICC edge cases that gave wrong results or unhelpful errors.
+
+  - NaN in the climate state now stays NaN, where the temperature cap and other bounds used to turn it into a plausible value such as 25 K.
+  - `from_magicc7` rejects parameters of the wrong type, non-finite parameters, switches other than 0 or 1, a zero `core_delq2xco2` and zero initial CO2, CH4 or N2O concentrations, naming the parameter.
+    Strings such as `pf_apply="0"` used to switch processes on.
+  - `from_magicc7` rejects a bad `bugs` argument and runs outside the years the forcing files support, stating the supported start and end years.
+  - `from_magicc7` rejects SOx, BC or OC emissions that cannot extend the aerosol forcing files, such as constant emissions, naming the emissions.
+  - `setup_model` reports non-finite inputs, inputs no component reads, inputs with the wrong number of columns and a missing `components` or `initial_values`.
+  - A time axis must be on whole years.
+  - A pandas input must have an index equal to the time axis values, where it used to be read in order.
+  - `from_magicc7` rejects initial CO2, CH4 and N2O concentrations below the range the OLBL forcing formulae are fitted to,
+    180 ppm, 340 ppb and 200 ppb, which used to warm past 25 K.
+    With IPCCTAR forcing it rejects only CO2, CH4 and N2O that are not positive.
+  - A run whose CO2, CH4 or N2O concentration falls to zero or below raises an error naming the gas and year,
+    where it used to continue with NaN.
+  - A run ending before 2015 takes the volcanic forcing pattern up to its last year, as MAGICC7 does.
+    It used to differ from MAGICC7 by up to 0.01 K.
+
+  ([#224](https://github.com/lewisjared/rscm/pull/224))
+- Fixed the example `LinearConcentration` component,
+  which failed on its first step because it read its inputs with the removed `current` accessor. ([#224](https://github.com/lewisjared/rscm/pull/224))
+- Common mistakes in the core Python API raise `ValueError`, `IndexError` or `TypeError` instead of a `PanicException`, which escaped `except Exception`:
+
+  - `TimeAxis.from_values` and `TimeAxis.from_bounds` reject fewer than 2 points and unsorted, duplicate, NaN or infinite times, naming the first bad index.
+  - `Timeseries.set` raises `IndexError` out of range, and `Timeseries.at_time(nan)` raises `ValueError`.
+  - Linear interpolation of a single-step `Timeseries` holds its one value instead of panicking.
+  - Window `interpolate(nan)` raises `ValueError` rather than returning the first value.
+  - Passing a `Component` class to `ModelBuilder.with_component` or `PythonComponent` says to pass an instance.
+
+  `TimeAxis`, `Timeseries`, `FourBoxTimeseries` and `HemisphericTimeseries` accept any array-like of reals, such as `np.arange(2000, 2010)` or a list, and name the shape of an array with the wrong dimensions.
+  `TimeAxis.at`, `TimeAxis.at_bounds`, `Timeseries.at`, `Timeseries.set` and slice indexing count negative indices from the end.
+  `FourBoxSlice` and `HemisphericSlice` iterate.
+  A `KeyboardInterrupt` or `SystemExit` raised in a Python component's `solve` reaches the caller unchanged, rather than as a `RuntimeError`.
+  `TimeAxis`, `Model`, `ModelBuilder`, `VariableDefinition`, `RustComponent` and `PythonComponent` have concise reprs.
+  Calling a component's `solve` directly with a collection that lacks an input raises `KeyError` naming the input,
+  instead of a `PanicException`.
+  `ModelBuilder.with_grid_weights` with NaN weights raises `ValueError` instead of panicking.
+  `TimeAxis`, `Timeseries`, `InterpolationStrategy` and `Model` can be pickled and copied with `copy.deepcopy`.
+  A `Model` goes through a `Record`, so its components must serialise to JSON.
+  `Timeseries.interpolation_strategy` returns the strategy a timeseries was made with.
+
+  ([#224](https://github.com/lewisjared/rscm/pull/224))
+- Fixed several edge cases in `rscm.calibrate`:
+
+  - `Bound` sampling hung when the bounds held no probability mass. `Bound` now samples by inverse CDF and raises `ValueError` for such bounds.
+  - Ctrl-C and `SystemExit` raised inside a model were swallowed. They now stop sampling and point estimation and propagate.
+  - `EnsembleSampler` and `PointEstimator` passed parameter values to the model by position. They now map them by name and raise `ValueError` if the runner's `parameter_names` do not match the `ParameterSet`.
+  - `resume_from_checkpoint` accepted a checkpoint with different parameter names or thinning.
+  - Ragged `WalkerInit.explicit` positions panicked. `WalkerInit.ball` accepted a non-positive radius and its docs called the radius a standard deviation.
+  - NaN priors, observations, reference periods and stretch parameters passed validation.
+  - `Target.from_dataframe` failed for a DataFrame without a `variable` column and with index levels, sorted the variables, and accepted NaN variables and datetime times.
+  - `thin=0`, `thin` greater than `n_iterations`, `optimise` with `n_samples=0` and `create_simple_callback(0)` now raise `ValueError`.
+  - `ParameterSet.add` silently accepted a duplicate name, and `set_reference_period` accepted a start after the end.
+  - `Chain.merge` with itself failed.
+  - `Chain.r_hat`, `ess` and `autocorr_time` returned an empty dict without explanation on a short chain. They now warn.
+  - `Chain` methods that take `discard` raised `OverflowError` for a negative value. They now raise `ValueError`.
+  - `LogNormal(mean=..., std_dev=...)` with a tiny or huge `std_dev` relative to `mean` produced a degenerate sigma, and `Bound` around it panicked. Small ratios are now converted accurately, and a ratio that still gives a zero or infinite sigma raises `ValueError`.
+
+  ([#224](https://github.com/lewisjared/rscm/pull/224))
+- `rscm.fair` validation now rejects more inputs that FaIR cannot run, naming each one:
+
+  - Time axes with fewer than two bounds, non-finite or decreasing bounds, or uneven steps.
+    An uneven axis used to give wrong cumulative emissions.
+    `from_fair` checks FaIR's timebounds before building a time axis.
+  - Repeated species names, and a second species of a type FaIR allows once, such as `co2`, `cfc-11` or `ari`.
+  - Greenhouse gas `partition_fraction` values that are negative or do not sum to 1 within 0.001,
+    and a `molecular_weight` that is not finite or not positive.
+  - A negative `unperturbed_lifetime`, a CO2 `baseline_concentration` or `forcing_reference_concentration`
+    that is not positive, and a negative one for CH4 or N2O.
+  - An `aci_shape` or prescribed aerosol emissions or concentrations that leave the aerosol-cloud logarithm
+    undefined, naming the first year.
+    Inputs of a species' other input modes are not checked, as the run calculates that driver.
+  - Strings where numbers belong, and arrays where a parameter takes one number.
+  - Input variables no species takes, suggesting the closest name.
+  - An ensemble with no configurations or no scenarios.
+  - Ensemble configurations with other species, species order or layers, naming the differences.
+
+  `from_fair` with an unknown `config` or `scenario` now lists the available ones.
+  `run_ensemble` raises `TypeError` when `configs` or `scenarios` is not a mapping from each name to its
+  configuration or inputs.
+
+  ([#224](https://github.com/lewisjared/rscm/pull/224))
+- Fixed model building and configuration edge cases:
+
+  - Prescribing a variable twice, or after a collection holding it, now replaces the earlier data instead of panicking.
+  - `TimeseriesCollection.add_timeseries` raises `ValueError` for a duplicate name instead of panicking, and accepts four-box and hemispheric timeseries.
+  - `TimeseriesCollection` supports `collection[name]`, which raises `KeyError` with close matches, as well as `in` and `len`.
+  - `ModelBuilder.build` and `build_models` warn when prescribed data has to be extrapolated to cover the time axis, naming the variable and the years.
+  - Component builders' `from_parameters` errors name the component, list every missing parameter with its type, suggest close matches for unknown parameters and name the parameter with a wrong type.
+  - `build_model` reads `[initial_values]` and constant `[inputs]` entries, and the shipped `configs/two-layer/defaults.toml` loads without a warning and runs to finite temperatures.
+  - The incompatible schema error links to the schema versioning docs.
+
+  ([#224](https://github.com/lewisjared/rscm/pull/224))
+- The `rscm._lib.magicc` type stubs now list every `ClimateUDEB` parameter, including `subannual_forcing`,
+  and `ForcingAgent.efficacy_per_variable`.
+  `Timeseries.with_interpolation_strategy` is typed as returning `None`,
+  and a variable missing from a schema no longer suggests the Rust-only `schema.variable(...)`. ([#229](https://github.com/lewisjared/rscm/pull/229))
+- With a schema, a component whose output unit differs from the schema's now has its output converted into the schema unit as it is written.
+  Before, the value was stored unconverted, so consumers read it scaled by the wrong factor and the result carried the component's unit label. ([#230](https://github.com/lewisjared/rscm/pull/230))
+- A component whose outputs fail conversion, aggregation or the grid check now leaves all of that step's outputs unwritten, rather than keeping the ones written before the failure.
+  A value on the wrong grid for its write aggregation now raises an error instead of panicking. ([#232](https://github.com/lewisjared/rscm/pull/232))
+- Two instances of one component type no longer share unit conversions, variable sources and lags, so each reads in its own unit and lags on its own. ([#233](https://github.com/lewisjared/rscm/pull/233))
+- Prescribed data on a finer grid than its first reader is now stored and aggregated for each coarser reader, instead of being dropped.
+  Without a schema, a component reading a coarser grid than its producer writes now reads the aggregated value instead of failing to build.
+  A read that converts both unit and grid now converts each region before aggregating, as writes do. ([#234](https://github.com/lewisjared/rscm/pull/234))
+- Fixed a hemispheric read of a four-box variable, which averaged each hemisphere's boxes equally and ignored the model's grid weights. ([#236](https://github.com/lewisjared/rscm/pull/236))
+- Fixed checkpointing, restoring, pickling and copying a model whose component has a NaN or infinite parameter or state, such as a FaIR aerosol-cloud driver with a NaN baseline.
+  Records now write a non-finite float as the string `"NaN"`, `"inf"` or `"-inf"`, and timeseries keep infinities too.
+  Records that wrote NaN timeseries values as `null` still load.
+  NumPy scalars of any numeric type, and NumPy arrays, are accepted as component parameters. ([#240](https://github.com/lewisjared/rscm/pull/240))
+
+### Improved Documentation
+
+- Reworked the getting started guide around a short quickstart
+  that runs the two-layer model from its default parameters,
+  and added a common errors section.
+  Made the FaIR calibrated-member example runnable from a clone of the repository,
+  and said where the calibration data comes from.
+  Fixed stale MAGICC and key concepts examples,
+  and documented the MAGICC time axis requirement and emissions key format.
+  The notebooks now skip graph rendering with a note when Graphviz is not installed. ([#224](https://github.com/lewisjared/rscm/pull/224))
+- Checked the tutorials and reference pages against the current API and fixed claims the code no longer matched,
+  such as unit conversion and regional aggregation applying only to Rust components,
+  an output lagging its input by one step, and stale example output.
+  Added the architecture decision records to the navigation,
+  and removed the RustRover tips and the finished FaIR port notes. ([#229](https://github.com/lewisjared/rscm/pull/229))
+- The [units tutorial](notebooks/units_tutorial.py) now says Python components get unit conversion like Rust components, and covers `convert_to` and initial values with units. ([#230](https://github.com/lewisjared/rscm/pull/230))
+
+### Trivial/Internal Changes
+
+- [#223](https://github.com/lewisjared/rscm/pull/223)
+
+
 ## rscm 0.8.0 (2026-11-08)
 
 ### ⚠️ Breaking Changes ⚠️
