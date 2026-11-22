@@ -101,16 +101,14 @@
 //! - **FourBox**: Four regions (Northern Ocean, Northern Land, Southern Ocean, Southern Land)
 //! - **Hemispheric**: Two hemispheres (Northern, Southern)
 //!
-//! Grid transformations (e.g., FourBox to Scalar aggregation) are handled automatically
-//! by the [`grid_transform`] module when components on different grids
-//! are connected.
+//! The model aggregates a finer grid to a coarser one (e.g., FourBox to Scalar)
+//! when a component reads or writes a variable on a grid other than the one it is stored on.
 
 // Allow macro-generated code to reference this crate by name
 extern crate self as rscm_core;
 
 pub mod component;
 mod example_components;
-pub mod grid_transform;
 pub mod interpolate;
 pub mod ivp;
 pub mod model;

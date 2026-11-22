@@ -206,8 +206,8 @@ heat_uptake_component = FourBoxOceanHeatUptakeBuilder.from_parameters(
     }
 ).build()
 
-print(f"Inputs:  {heat_uptake_component.input_names()}")
-print(f"Outputs: {heat_uptake_component.output_names()}")
+for definition in heat_uptake_component.definitions():
+    print(definition)
 
 # %% [markdown]
 # ### Setting Up the Model

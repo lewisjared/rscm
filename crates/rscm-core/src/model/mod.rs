@@ -13,6 +13,7 @@
 
 mod builder;
 mod coupling;
+#[cfg(test)]
 mod null_component;
 mod parallel;
 mod plan;
@@ -38,4 +39,4 @@ pub use plan::{
 pub use record::{Branch, Record, RECORD_FORMAT};
 pub use runtime::Model;
 pub use state_extraction::extract_state;
-pub use types::{GraphEdge, RequiredTransformation, TransformDirection, UnitConversionInfo};
+pub use types::TransformDirection;

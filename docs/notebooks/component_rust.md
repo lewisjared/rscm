@@ -346,7 +346,7 @@ impl Component for CO2ERF {
 - A stateful component that overrides `solve_into` also overrides `solve_with_state`:
 
   ```rust
-  OutputBuffer::collect(self.output_names(), |out| {
+  OutputBuffer::collect(&self.definitions(), |out| {
       self.solve_into(t_current, t_next, input_state, internal_state, out)
   })
   ```

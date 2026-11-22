@@ -67,7 +67,6 @@ fn names(
 ) -> Vec<String> {
     nodes
         .into_iter()
-        .filter(|&nx| nx != model.initial_node)
         .map(|nx| Model::extract_component_name(&model.components[nx]))
         .collect()
 }
@@ -83,7 +82,8 @@ fn reported_order_is_executed_order_where_bfs_differs() {
         .map(|c| c.name)
         .collect();
 
-    let mut bfs = Bfs::new(&model.components, model.initial_node);
+    let source = petgraph::graph::NodeIndex::new(0);
+    let mut bfs = Bfs::new(&model.components, source);
     let mut visited = Vec::new();
     while let Some(nx) = bfs.next(&model.components) {
         visited.push(nx);

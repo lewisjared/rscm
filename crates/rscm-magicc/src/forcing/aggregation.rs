@@ -515,7 +515,8 @@ mod tests {
             collection.add_timeseries(item.name, ts);
         }
         // MAGICC7 lags the sensitivity into the aggregation
-        let mut step = resolve_standalone("ForcingAggregation", &collection, c.inputs()).unwrap();
+        let mut step =
+            resolve_standalone("ForcingAggregation", &collection, &c.definitions()).unwrap();
         for read in &mut step.reads {
             if read.definition.name == EQUILIBRIUM_CLIMATE_SENSITIVITY {
                 read.source = VariableSource::Lagged;

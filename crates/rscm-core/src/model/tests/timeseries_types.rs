@@ -31,8 +31,9 @@ macro_rules! declared {
                 _input_state: &InputState,
             ) -> RSCMResult<OutputState> {
                 Ok(self
-                    .outputs()
+                    .definitions()
                     .into_iter()
+                    .filter(|d| d.role.is_written())
                     .map(|d| (d.name, StateValue::Scalar(t_next)))
                     .collect())
             }

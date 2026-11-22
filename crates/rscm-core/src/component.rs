@@ -38,6 +38,32 @@ impl VariableRole {
     }
 }
 
+impl VariableRole {
+    /// Whether a component reads the variable, as an input or its own state.
+    pub fn is_read(self) -> bool {
+        matches!(self, VariableRole::Input | VariableRole::State)
+    }
+
+    /// Whether a component writes the variable, as an output or its own state.
+    pub fn is_written(self) -> bool {
+        matches!(self, VariableRole::Output | VariableRole::State)
+    }
+}
+
+/// The definitions a component reads, then those it writes, with a state in both.
+pub(crate) fn reads_and_writes(
+    definitions: &[VariableDefinition],
+) -> (Vec<VariableDefinition>, Vec<VariableDefinition>) {
+    let pick = |keep: fn(VariableRole) -> bool| {
+        definitions
+            .iter()
+            .filter(|d| keep(d.role))
+            .cloned()
+            .collect()
+    };
+    (pick(VariableRole::is_read), pick(VariableRole::is_written))
+}
+
 /// The spatial layout of a variable's values.
 ///
 /// Coupling validation compares the grids that components declare.
@@ -414,40 +440,10 @@ impl ComponentState for () {
 /// (i.e. where `dyn Component` is used; see `models.rs`).
 #[typetag::serde(tag = "type")]
 pub trait Component: Debug + Send + Sync {
+    /// Every variable the component reads or writes, each with its role.
+    ///
+    /// No two components in a model may write the same variable.
     fn definitions(&self) -> Vec<VariableDefinition>;
-
-    /// Variables that are required to solve this component
-    ///
-    /// Returns all `Input` and `State` definitions.
-    fn inputs(&self) -> Vec<VariableDefinition> {
-        self.definitions()
-            .iter()
-            .filter(|d| matches!(d.role, VariableRole::Input | VariableRole::State))
-            .cloned()
-            .collect()
-    }
-    fn input_names(&self) -> Vec<String> {
-        self.inputs().into_iter().map(|d| d.name).collect()
-    }
-
-    /// Variables that are solved by this component
-    ///
-    /// The names of the solved variables must be unique for a given model.
-    /// i.e. No two components within a model can produce the same variable names.
-    /// These names can contain '|' to namespace variables to avoid collisions,
-    /// for example, 'Emissions|CO2' and 'Atmospheric Concentrations|CO2'
-    ///
-    /// Returns all `Output` and `State` definitions.
-    fn outputs(&self) -> Vec<VariableDefinition> {
-        self.definitions()
-            .iter()
-            .filter(|d| matches!(d.role, VariableRole::Output | VariableRole::State))
-            .cloned()
-            .collect()
-    }
-    fn output_names(&self) -> Vec<String> {
-        self.outputs().into_iter().map(|d| d.name).collect()
-    }
 
     /// Solve the component until `t_next`
     ///
@@ -461,7 +457,7 @@ pub trait Component: Debug + Send + Sync {
         input_state: &InputState,
     ) -> RSCMResult<OutputState> {
         let mut state = self.create_initial_state();
-        let mut buffer = OutputBuffer::new(self.output_names());
+        let mut buffer = OutputBuffer::for_definitions(&self.definitions());
         self.solve_into(
             t_current,
             t_next,
@@ -541,7 +537,7 @@ mod tests {
 
         // Emissions are an average, which a prescribed input reads at the step's start (index 0)
         let input_state =
-            crate::model::extract_state(&collection, component.inputs(), 2020.0).unwrap();
+            crate::model::extract_state(&collection, &component.definitions(), 2020.0).unwrap();
         assert_eq!(input_state.get_scalar_window("Emissions|CO2").get(), 1.1);
 
         let output_state = component.solve(2020.0, 2021.0, &input_state).unwrap();

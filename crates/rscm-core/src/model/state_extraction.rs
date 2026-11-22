@@ -9,15 +9,15 @@ use super::plan::resolve_standalone;
 
 /// Extract the input state for solving one component on its own at `t_current`.
 ///
-/// `inputs` are the component's input definitions, as `Component::inputs` returns them.
+/// `definitions` are the component's, and only its inputs and states are read.
 /// A state input reads as the component's own state and every other input as prescribed,
 /// converted to its declared unit and grid.
-pub fn extract_state(
-    collection: &TimeseriesCollection,
-    inputs: Vec<VariableDefinition>,
+pub fn extract_state<'a>(
+    collection: &'a TimeseriesCollection,
+    definitions: &[VariableDefinition],
     t_current: Time,
-) -> RSCMResult<InputState<'_>> {
-    let step = resolve_standalone("Component", collection, inputs)?;
+) -> RSCMResult<InputState<'a>> {
+    let step = resolve_standalone("Component", collection, definitions)?;
     Ok(InputState::from_step(collection, &step, t_current))
 }
 
@@ -49,7 +49,7 @@ mod tests {
         );
 
         let inputs = vec![VariableDefinition::scalar_input("Forcing", "W/m^2")];
-        let state = extract_state(&collection, inputs, 2000.0).unwrap();
+        let state = extract_state(&collection, &inputs, 2000.0).unwrap();
 
         // A prescribed point reads the step's end, averaged with equal weights.
         assert_eq!(state.get_scalar_window("Forcing").get(), 6.5);
@@ -74,7 +74,7 @@ mod tests {
     fn an_input_reads_in_its_declared_unit() {
         let collection = collection("Forcing", "W/m^2");
         let inputs = vec![VariableDefinition::scalar_input("Forcing", "mW/m^2")];
-        let state = extract_state(&collection, inputs, 2000.0).unwrap();
+        let state = extract_state(&collection, &inputs, 2000.0).unwrap();
 
         assert_eq!(state.get_scalar_window("Forcing").get(), 2000.0);
     }
@@ -83,7 +83,7 @@ mod tests {
     fn a_state_reads_its_own_previous_value() {
         let collection = collection("Heat", "J");
         let inputs = vec![VariableDefinition::new("Heat", "J", VariableRole::State)];
-        let state = extract_state(&collection, inputs, 2000.0).unwrap();
+        let state = extract_state(&collection, &inputs, 2000.0).unwrap();
 
         assert_eq!(state.get_scalar_window("Heat").get(), 1.0);
     }
@@ -95,7 +95,7 @@ mod tests {
             VariableDefinition::scalar_input("Forcing", "K"),
             VariableDefinition::four_box_input("Forcing", "W/m^2"),
         ] {
-            assert!(extract_state(&collection, vec![input], 2000.0).is_err());
+            assert!(extract_state(&collection, &[input], 2000.0).is_err());
         }
     }
 }

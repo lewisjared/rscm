@@ -130,7 +130,7 @@ fn test_variable_sources_disambiguation() {
         .unwrap();
 
     // Verify variable sources
-    let sources = model.variable_sources();
+    let sources = super::read_sources(&model);
 
     // Producer component sees "Surface Air Temperature Change" as OwnState (reads its own previous state)
     let producer_source = sources.get(&(
@@ -278,7 +278,7 @@ fn test_variable_sources_with_prescribed_input() {
         .unwrap();
 
     // Verify variable source for prescribed input
-    let sources = model.variable_sources();
+    let sources = super::read_sources(&model);
 
     let consumer_source = sources.get(&(
         "Effective Radiative Forcing".to_string(),
@@ -350,7 +350,7 @@ fn test_multiple_consumers_same_upstream() {
         .unwrap();
 
     // Verify variable sources
-    let sources = model.variable_sources();
+    let sources = super::read_sources(&model);
 
     // Producer sees it as OwnState
     let producer_source = sources.get(&(

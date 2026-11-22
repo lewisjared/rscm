@@ -3,20 +3,20 @@
 use crate::component::{ComponentState, GridType, TimeseriesType};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::state::{
-    FourBoxSlice, HemisphericSlice, InputPlan, InputState, OutputBuffer, StateValue, VariableSource,
+    FourBoxSlice, HemisphericSlice, InputPlan, InputState, OutputBuffer, StateValue,
 };
 use crate::timeseries::{FloatValue, Time, TimeAxis};
 use crate::timeseries_collection::TimeseriesCollection;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeFiltered, EdgeRef};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use super::builder::ModelBuilder;
 use super::plan::{Step, StepPlan, Write};
 use super::transformations::aggregate_state_value;
-use super::types::{CGraph, RequiredTransformation};
+use super::types::CGraph;
 
 /// A coupled set of components that are solved on a common time axis.
 ///
@@ -34,14 +34,8 @@ use super::types::{CGraph, RequiredTransformation};
 /// then the ERF component will be solved after the carbon cycle model.
 #[derive(Debug)]
 pub struct Model {
-    /// A directed graph with components as nodes and the edges defining the state dependencies
-    /// between nodes.
-    /// This graph is traversed on every step to ensure that any state dependencies are
-    /// solved before another component needs the state.
+    /// Components as nodes, with an edge for each variable one passes to another.
     pub(crate) components: CGraph,
-    /// The base node of the graph from where to begin traversing.
-    #[allow(dead_code)]
-    pub(crate) initial_node: NodeIndex,
     /// The model state.
     ///
     /// Variable names within the model are unique and these variable names are used by
@@ -49,35 +43,6 @@ pub struct Model {
     pub(crate) collection: TimeseriesCollection,
     time_axis: Arc<TimeAxis>,
     pub(crate) time_index: usize,
-    /// Custom weights for grid aggregation, keyed by grid.
-    ///
-    /// Used for grid transformations during model execution.
-    grid_weights: HashMap<GridType, Vec<f64>>,
-    /// Read-side transformations: variable name -> transformation needed when component reads.
-    ///
-    /// When a component reads a variable at a coarser grid than the schema declares,
-    /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
-    read_transforms: HashMap<String, RequiredTransformation>,
-    /// Write-side transformations: variable name -> transformation needed when component writes.
-    ///
-    /// When a component writes a variable at a finer grid than the schema declares,
-    /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
-    write_transforms: HashMap<String, RequiredTransformation>,
-    /// Unit conversions needed at runtime.
-    ///
-    /// Key: (variable_name, component_name) -> conversion factor
-    /// The factor converts from the stored unit to the component's unit when reading,
-    /// and its inverse converts a producer's output into the stored unit when writing.
-    unit_conversions: HashMap<(String, String), f64>,
-    /// Variable source types for get() behaviour.
-    /// Key: (variable_name, component_name) -> source type.
-    /// This matches the unit_conversions pattern since the same variable
-    /// can have different sources for different components.
-    variable_sources: HashMap<(String, String), VariableSource>,
-    /// Whether each variable is a point or an average.
-    pub(crate) timeseries_types: BTreeMap<String, TimeseriesType>,
-    /// Label of each component node, set by the builder.
-    pub(crate) labels: BTreeMap<NodeIndex, String>,
     /// Internal state for each component, keyed by node index.
     /// Uses Box<dyn ComponentState> with typetag for serialisation.
     pub(crate) component_states: BTreeMap<NodeIndex, Box<dyn ComponentState>>,
@@ -144,143 +109,27 @@ pub(crate) fn execution_order(graph: &CGraph) -> Result<Vec<NodeIndex>, NodeInde
 }
 
 impl Model {
-    /// Create a new Model with the given components and collection.
-    pub fn new(
+    /// A model at its first step, stepping `step_plan` with a fresh state for each component.
+    pub(crate) fn from_plan(
         components: CGraph,
-        initial_node: NodeIndex,
         collection: TimeseriesCollection,
         time_axis: Arc<TimeAxis>,
+        step_plan: StepPlan,
+        builder: Arc<ModelBuilder>,
     ) -> Self {
-        Self::with_grid_weights(
-            components,
-            initial_node,
-            collection,
-            time_axis,
-            HashMap::new(),
-        )
-    }
-
-    /// Create a new Model with custom grid weights.
-    ///
-    /// The grid_weights are used for grid transformations during model execution.
-    pub fn with_grid_weights(
-        components: CGraph,
-        initial_node: NodeIndex,
-        collection: TimeseriesCollection,
-        time_axis: Arc<TimeAxis>,
-        grid_weights: HashMap<GridType, Vec<f64>>,
-    ) -> Self {
-        Self::with_transforms(
-            components,
-            initial_node,
-            collection,
-            time_axis,
-            grid_weights,
-            HashMap::new(),
-            HashMap::new(),
-        )
-    }
-
-    /// Create a new Model with grid weights and transformations.
-    ///
-    /// This is the full constructor that includes both grid weights and the
-    /// read/write transformations for automatic grid aggregation.
-    pub fn with_transforms(
-        components: CGraph,
-        initial_node: NodeIndex,
-        collection: TimeseriesCollection,
-        time_axis: Arc<TimeAxis>,
-        grid_weights: HashMap<GridType, Vec<f64>>,
-        read_transforms: HashMap<String, RequiredTransformation>,
-        write_transforms: HashMap<String, RequiredTransformation>,
-    ) -> Self {
-        Self::with_unit_conversions(
-            components,
-            initial_node,
-            collection,
-            time_axis,
-            grid_weights,
-            read_transforms,
-            write_transforms,
-            HashMap::new(),
-        )
-    }
-
-    /// Create a new Model with all transformations including unit conversions.
-    ///
-    /// This is the complete constructor that includes grid weights, read/write
-    /// transformations, and unit conversions for automatic unit translation at runtime.
-    ///
-    /// # Arguments
-    ///
-    /// * `unit_conversions` - Map from (variable_name, component_name) to conversion factor.
-    ///   The factor is multiplied with the stored value to convert from schema units to
-    ///   component units when reading.
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_unit_conversions(
-        components: CGraph,
-        initial_node: NodeIndex,
-        collection: TimeseriesCollection,
-        time_axis: Arc<TimeAxis>,
-        grid_weights: HashMap<GridType, Vec<f64>>,
-        read_transforms: HashMap<String, RequiredTransformation>,
-        write_transforms: HashMap<String, RequiredTransformation>,
-        unit_conversions: HashMap<(String, String), f64>,
-    ) -> Self {
-        Self::with_variable_sources(
-            components,
-            initial_node,
-            collection,
-            time_axis,
-            grid_weights,
-            read_transforms,
-            write_transforms,
-            unit_conversions,
-            HashMap::new(),
-        )
-    }
-
-    /// Create a new Model with all transformations including unit conversions and variable sources.
-    ///
-    /// This is the most complete constructor that includes grid weights, read/write
-    /// transformations, unit conversions, and variable source information.
-    ///
-    /// # Arguments
-    ///
-    /// * `unit_conversions` - Map from (variable_name, component_name) to conversion factor.
-    ///   The factor is multiplied with the stored value to convert from schema units to
-    ///   component units when reading.
-    /// * `variable_sources` - Map from (variable_name, component_name) to source type.
-    ///   Used by TimeseriesWindow to pick the index `get()` reads.
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_variable_sources(
-        components: CGraph,
-        initial_node: NodeIndex,
-        collection: TimeseriesCollection,
-        time_axis: Arc<TimeAxis>,
-        grid_weights: HashMap<GridType, Vec<f64>>,
-        read_transforms: HashMap<String, RequiredTransformation>,
-        write_transforms: HashMap<String, RequiredTransformation>,
-        unit_conversions: HashMap<(String, String), f64>,
-        variable_sources: HashMap<(String, String), VariableSource>,
-    ) -> Self {
+        let component_states = components
+            .node_indices()
+            .map(|node| (node, components[node].create_initial_state()))
+            .collect();
         Self {
             components,
-            initial_node,
             collection,
             time_axis,
             time_index: 0,
-            grid_weights,
-            read_transforms,
-            write_transforms,
-            unit_conversions,
-            variable_sources,
-            timeseries_types: BTreeMap::new(),
-            labels: BTreeMap::new(),
-            component_states: BTreeMap::new(),
-            step_plan: StepPlan::default(),
+            component_states,
+            step_plan,
             buffers: None,
-            builder: Arc::new(ModelBuilder::new()),
+            builder,
         }
     }
 
@@ -303,66 +152,12 @@ impl Model {
     ///
     /// Returns the custom weights if configured, or None if using defaults.
     pub fn get_grid_weights(&self, grid: GridType) -> Option<&Vec<f64>> {
-        self.grid_weights.get(&grid)
-    }
-
-    /// Get all required transformations for introspection.
-    ///
-    /// Returns a vector of all required transformations, both read-side and write-side.
-    /// This is useful for debugging and understanding what grid aggregations will occur.
-    pub fn required_transformations(&self) -> Vec<&RequiredTransformation> {
-        self.read_transforms
-            .values()
-            .chain(self.write_transforms.values())
-            .collect()
-    }
-
-    /// Get read-side transformations.
-    ///
-    /// These transformations aggregate data when components read variables at coarser
-    /// resolutions than the schema declares.
-    pub fn read_transforms(&self) -> &HashMap<String, RequiredTransformation> {
-        &self.read_transforms
-    }
-
-    /// Get write-side transformations.
-    ///
-    /// These transformations aggregate data when components write variables at finer
-    /// resolutions than the schema declares.
-    pub fn write_transforms(&self) -> &HashMap<String, RequiredTransformation> {
-        &self.write_transforms
-    }
-
-    /// Get unit conversions.
-    ///
-    /// Returns the unit conversion factors keyed by (variable_name, component_name).
-    /// Each factor converts from schema units to component units when reading.
-    pub fn unit_conversions(&self) -> &HashMap<(String, String), f64> {
-        &self.unit_conversions
-    }
-
-    /// Get variable sources.
-    ///
-    /// Returns the variable source types keyed by (variable_name, component_name).
-    /// This enables different components to have different source classifications for the same variable.
-    /// For example, a state variable is `OwnState` for the producer component but `Upstream` for consumers.
-    pub fn variable_sources(&self) -> &HashMap<(String, String), VariableSource> {
-        &self.variable_sources
+        self.builder.grid_weights(grid)
     }
 
     /// Whether `variable` is a point or an average, or `None` if the model has no such variable.
     pub fn timeseries_type(&self, variable: &str) -> Option<TimeseriesType> {
-        self.timeseries_types.get(variable).copied()
-    }
-
-    /// The label of the component at `node`, which keys its coupling.
-    ///
-    /// A model made without the builder falls back to the component's type name.
-    pub fn component_label(&self, node: NodeIndex) -> String {
-        self.labels
-            .get(&node)
-            .cloned()
-            .unwrap_or_else(|| Self::extract_component_name(&self.components[node]))
+        self.step_plan.timeseries_types.get(variable).copied()
     }
 
     /// The type name of a component, its default label.
@@ -532,19 +327,12 @@ impl Model {
     }
 
     /// Every coupling decision the builder made, in execution order.
-    ///
-    /// Empty for a model made without the builder.
     pub fn plan(&self) -> &StepPlan {
         &self.step_plan
     }
 
     /// Step the model forward a step by solving each component for the current step.
     fn step_model(&mut self) -> RSCMResult<()> {
-        if self.step_plan.steps.is_empty() && self.components.node_count() > 1 {
-            return Err(RSCMError::Error(
-                "The model has components but no step plan, so build it with ModelBuilder".into(),
-            ));
-        }
         let plan = std::mem::take(&mut self.step_plan);
         let mut buffers = self
             .buffers
@@ -603,7 +391,7 @@ impl Model {
         Dot::with_attr_getters(
             &self.components,
             &[Config::NodeNoLabel, Config::EdgeNoLabel],
-            &|_, er| format!("label = {:?}", er.weight().name()),
+            &|_, er| format!("label = {:?}", er.weight().name),
             &|_, (_, component)| {
                 // Escape quotes and backslashes for DOT format
                 let debug_str = format!("{:?}", component);

@@ -26,7 +26,7 @@ pub use aggregating::{
     HemisphericWindow, ReadTransformInfo, ScalarWindow,
 };
 
-use crate::component::{GridType, TimeseriesType};
+use crate::component::{GridType, TimeseriesType, VariableDefinition};
 use crate::model::{Read, Step};
 use crate::spatial::FourBoxGrid;
 use crate::timeseries::{FloatValue, Time, TimeAxis};
@@ -648,7 +648,7 @@ pub struct OutputBuffer {
 }
 
 impl OutputBuffer {
-    /// A buffer for the outputs `names`, usually `Component::output_names`.
+    /// A buffer for the outputs `names`.
     pub fn new(names: Vec<String>) -> Self {
         let mut order: Vec<u32> = (0..names.len() as u32).collect();
         order.sort_by(|&a, &b| lookup_order(&names[a as usize], &names[b as usize]));
@@ -660,12 +660,23 @@ impl OutputBuffer {
         }
     }
 
-    /// Outputs `f` writes to a fresh buffer, for a `solve_with_state` over `solve_into`.
+    /// A buffer for every output and state among a component's `definitions`.
+    pub fn for_definitions(definitions: &[VariableDefinition]) -> Self {
+        Self::new(
+            definitions
+                .iter()
+                .filter(|d| d.role.is_written())
+                .map(|d| d.name.clone())
+                .collect(),
+        )
+    }
+
+    /// Outputs `f` writes to a fresh buffer for `definitions`, for a `solve_with_state` over `solve_into`.
     pub fn collect(
-        names: Vec<String>,
+        definitions: &[VariableDefinition],
         f: impl FnOnce(&mut OutputWriter) -> crate::errors::RSCMResult<()>,
     ) -> crate::errors::RSCMResult<OutputState> {
-        let mut buffer = Self::new(names);
+        let mut buffer = Self::for_definitions(definitions);
         f(&mut buffer.writer())?;
         Ok(buffer.into_output_state())
     }
@@ -1229,7 +1240,8 @@ mod output_buffer_tests {
 
     #[test]
     fn collect_extends_from_an_output_state() {
-        let state = OutputBuffer::collect(vec!["A".into()], |out| {
+        let definitions = [VariableDefinition::scalar_output("A", "K")];
+        let state = OutputBuffer::collect(&definitions, |out| {
             out.extend(OutputState::from([
                 ("A".to_string(), StateValue::Scalar(1.0)),
                 ("B".to_string(), StateValue::Scalar(2.0)),

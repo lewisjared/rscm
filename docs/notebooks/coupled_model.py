@@ -301,7 +301,6 @@ model = (
 # %% [markdown]
 # `model.as_dot()` returns the component graph in Graphviz DOT format.
 # Each node is a component and each edge is a variable passed between them.
-# `NullComponent` is an empty root that links the components without upstream dependencies.
 
 # %% tags=["remove_input"]
 show_graph(model)
@@ -501,7 +500,6 @@ print(feedback_model.coupling())
 # %% [markdown]
 # The component graph shows:
 #
-# - **NullComponent**: the root.
 # - **CarbonCycle**: takes emissions and temperature, outputs CO2 concentration.
 # - **CO2ERF**: takes CO2 concentration, outputs radiative forcing.
 # - **AggregateComponent**: sums the forcing contributors declared in the schema.

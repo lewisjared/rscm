@@ -77,9 +77,7 @@ fn dot() {
         .unwrap();
 
     let exp = r#"digraph {
-    0 [ label = "NullComponent"]
-    1 [ label = "TestComponent { parameters: TestComponentParameters { conversion_factor: 0.5 } }"]
-    0 -> 1 [ label = ""]
+    0 [ label = "TestComponent { parameters: TestComponentParameters { conversion_factor: 0.5 } }"]
 }
 "#;
 
