@@ -302,6 +302,12 @@ RSCM reproduces these unless the entry says otherwise.
 ## Differences from MAGICC7
 
 - **First F-gas year**: RSCM starts from $C_{pi}$, and `test_halocarbons` compares from the second year.
+- **F-gas forcing at the first time bound**: MAGICC7 starts the four-box F-gas forcing
+  from its value over the first step.
+  `rscm.magicc.model.setup` reproduces it by solving HalocarbonChemistry's first step
+  after CH4Chemistry, so it follows the OH lifetime and every halocarbon parameter.
+  `rscm.magicc.full.v8_fgas_split` gives MAGICC v8's split,
+  which follows `RF_REGIONS_FGAS` for every lifetime and starts from zero.
 - **Montreal Protocol pattern**: RSCM applies the lifetime-dependent pattern to F-gases only.
   The Montreal Protocol gases reach `ForcingAggregation` as global forcing spread by `RF_REGIONS_MHALO`,
   and `test_coupled_run` reaches parity with MAGICC7's temperature that way.

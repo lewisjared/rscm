@@ -25,7 +25,7 @@ See [issues in MAGICC7](#issues-in-magicc7).
 - **Component**: `TerrestrialCarbon` with its `nitrogen` parameters set (off by default).
 - **Source**: `crates/rscm-magicc/src/carbon/nitrogen.rs`,
   parameters in `crates/rscm-magicc/src/parameters/nitrogen.rs`.
-  Deposition from emissions is calculated in Python by `rscm.magicc.full.nitrogen_inputs`.
+  Deposition from emissions is calculated in Rust from the `deposition_from_emissions` parameters.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
   `rscm.magicc.full.from_magicc7` reads `ncycle_apply` and the `ncycle_*` parameters.
 - **Tests**: `tests/regression/test_full_run.py::test_nitrogen_coupled_run` runs the coupled SSP245 chain
@@ -128,7 +128,8 @@ $$
 | Previous respiration     | (internal to `TerrestrialCarbon`)   | GtC/yr   | `CO2_TOTALRESPIRATION(t-1)`          |
 | Fertilisation factor     | (internal to `TerrestrialCarbon`)   | 1        | `CO2_EFF_FERTILIZATION_FACTOR`       |
 | NPP temperature factor   | (internal to `TerrestrialCarbon`)   | 1        | `CO2_EFF_NPP_TEMPFEEDBACK`           |
-| Deposition               | `Nitrogen Flux|Deposition`          | Gt N/yr  | `DAT_NCYCLE_NDEP`, or NOx and NH3 emissions |
+| Deposition               | `Nitrogen Flux|Deposition`          | Gt N/yr  | `DAT_NCYCLE_NDEP`                    |
+| NOx and NH3 emissions    | `Emissions|{NOx,NH3}|{Fossil,Biosphere}` | Mt N/yr | `DAT_{NOX,NH3}{I,B}_EMIS`      |
 | Prescribed fixation      | `Nitrogen Flux|Fixation`            | Gt N/yr  | `DAT_NCYCLE_NFIX`                    |
 
 | Output or state          | RSCM variable                       | Unit     | Fortran variable                     |
@@ -142,7 +143,9 @@ $$
 | Reference pool and NPP   | (component state)                   | Gt N, GtC/yr | `NCYCLE_NPOOL_0`, `CO2_CURRENT_NPP_0` |
 
 `Nitrogen Flux|Fixation` is an input when fixation is prescribed and an output when it is prognostic.
-Deposition is always an input, so the component does not write it back.
+With `deposition_from_emissions` set, the component reads the NOx and NH3 emissions
+and calculates deposition from them, instead of reading `Nitrogen Flux|Deposition`.
+Deposition is not written back as an output.
 MAGICC7 writes the outputs to `CARBONCYCLE.OUT` and `CARBONCYCLE.BINOUT`.
 
 ## Parameters
@@ -233,7 +236,8 @@ where the second term should be `DAT_NH3B_EMIS`
 ```
 
 Industrial NH3 is counted twice and biomass-burning NH3 is left out.
-RSCM keeps the bug for parity unless `from_magicc7` leaves out `nh3_deposition_counted_twice` from `bugs`.
+RSCM keeps the bug for parity through `include_nh3_counted_twice` in `deposition_from_emissions`.
+`from_magicc7` turns it off when `bugs` leaves out `nh3_deposition_counted_twice`.
 
 ### Other issues
 

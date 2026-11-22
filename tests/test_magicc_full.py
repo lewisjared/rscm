@@ -106,25 +106,32 @@ def test_reproduced_bugs():
         full.reproduced_bugs(["lamcalc"])
 
 
-def test_nitrogen_deposition_fixes_nh3_double_count():
+def test_nitrogen_deposition_from_emissions_passes_nox_and_nh3():
     p = full.default_parameters() | {
+        "ncycle_apply": 1,
         "ncycle_apply_ndep_from_emis": 1,
         "ncycle_apply_prognostic_nfix": 1,
-        "ncycle_frac_ndep_land": 1.0,
+        "ncycle_frac_ndep_land": 0.5,
     }
     n = len(YEARS)
     emissions = {
-        "NOx|Fossil": np.zeros(n),
-        "NOx|Biosphere": np.zeros(n),
-        "NH3|Fossil": np.ones(n),
-        "NH3|Biosphere": np.full(n, 2.0),
+        f"{gas}|{sector}": np.full(n, 1.0)
+        for gas in ("NOx", "NH3")
+        for sector in ("Fossil", "Biosphere")
     }
 
-    (reproduced,) = full.nitrogen_inputs(YEARS, emissions, p, {}).values()
-    (fixed,) = full.nitrogen_inputs(YEARS, emissions, p, {}, bugs=()).values()
+    inputs = full.nitrogen_inputs(YEARS, emissions, p, {})
+    reproduced = full.nitrogen_parameters(p)["deposition_from_emissions"]
+    fixed = full.nitrogen_parameters(p, bugs=())["deposition_from_emissions"]
 
-    np.testing.assert_allclose(reproduced, 2e-3)
-    np.testing.assert_allclose(fixed, 3e-3)
+    assert sorted(inputs) == [
+        "Emissions|NH3|Biosphere",
+        "Emissions|NH3|Fossil",
+        "Emissions|NOx|Biosphere",
+        "Emissions|NOx|Fossil",
+    ]
+    assert reproduced == {"land_fraction": 0.5, "include_nh3_counted_twice": True}
+    assert not fixed["include_nh3_counted_twice"]
 
 
 @pytest.mark.parametrize(("end", "last"), [(2000.0, 2000.0), (2100.0, 2015.0)])

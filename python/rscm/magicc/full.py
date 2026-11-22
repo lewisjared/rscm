@@ -29,7 +29,7 @@ import numpy as np
 
 from rscm._lib.magicc import CH4ChemistryBuilder, HalocarbonChemistryBuilder
 from rscm.core import TimeAxis
-from rscm.magicc import checks, emissions_driven, model
+from rscm.magicc import checks, model
 from rscm.magicc import prescribed as pr
 from rscm.names import (
     ATMOSPHERIC_CONCENTRATIONS,
@@ -59,7 +59,6 @@ if TYPE_CHECKING:
 
     from numpy.typing import ArrayLike, NDArray
 
-    from rscm.core import Model
     from rscm.magicc.model import ModelConfig
 
     Inputs = dict[str, tuple[NDArray[np.float64], str]]
@@ -94,6 +93,7 @@ __all__ = [
     "prescribed_concentrations",
     "prescribed_forcing",
     "reproduced_bugs",
+    "v8_fgas_split",
 ]
 
 DATA = Path(__file__).parent / "data" / "magicc7"
@@ -1023,9 +1023,12 @@ def permafrost_parameters(parameters: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def nitrogen_parameters(parameters: Mapping[str, Any]) -> dict[str, Any] | None:
+def nitrogen_parameters(
+    parameters: Mapping[str, Any], bugs: str | Collection[str] = "7.5.3"
+) -> dict[str, Any] | None:
     """Nitrogen limitation parameters from the ``ncycle_*`` configuration.
 
+    ``bugs`` selects the bugs to reproduce, see `reproduced_bugs`.
     Returns None when ``ncycle_apply`` is off.
     """
     p = parameters
@@ -1034,6 +1037,10 @@ def nitrogen_parameters(parameters: Mapping[str, Any]) -> dict[str, Any] | None:
     fixation = {
         "maximum_fixation_rate": p["ncycle_nfix_vmax"],
         "half_saturation_npp": p["ncycle_nfix_km"],
+    }
+    deposition = {
+        "land_fraction": p["ncycle_frac_ndep_land"],
+        "include_nh3_counted_twice": _included(bugs)["nh3_deposition_counted_twice"],
     }
     return {
         "uptake_nc_ratio": p["ncycle_ncratio_uptake"],
@@ -1044,6 +1051,9 @@ def nitrogen_parameters(parameters: Mapping[str, Any]) -> dict[str, Any] | None:
         "availability_factor_c": p["ncycle_npp2navail_factor_c"],
         "loss_turnover_time": p["ncycle_turnovertime_losses"],
         "prognostic_fixation": fixation if p["ncycle_apply_prognostic_nfix"] else None,
+        "deposition_from_emissions": (
+            deposition if p["ncycle_apply_ndep_from_emis"] else None
+        ),
     }
 
 
@@ -1052,12 +1062,14 @@ def nitrogen_inputs(
     emissions: Mapping[str, NDArray[np.float64]],
     parameters: Mapping[str, Any],
     inputs: Mapping[str, pr.AerosolHistory],
-    bugs: str | Collection[str] = "7.5.3",
-) -> dict[str, NDArray[np.float64]]:
-    """Nitrogen deposition and fixation (Gt N/yr) driving the nitrogen limitation.
+) -> dict[str, tuple[NDArray[np.float64], str]]:
+    """Return the inputs driving the nitrogen limitation, with their units.
 
+    With ``ncycle_apply_ndep_from_emis`` these are the NOx and NH3 emissions by sector,
+    from which TerrestrialCarbon calculates deposition.
+    Otherwise deposition is read from its file.
+    Fixation is read from its file unless it is prognostic.
     ``emissions`` are in MAGICC7's units, see `magicc7_units`.
-    ``bugs`` selects the bugs to reproduce, see `reproduced_bugs`.
     A deposition file missing from ``inputs`` gives no deposition,
     as in MAGICC7 v7.5.3, which ships without its default deposition file.
     """
@@ -1072,19 +1084,18 @@ def nitrogen_inputs(
         return np.where(np.isnan(values), last, values)
 
     if p["ncycle_apply_ndep_from_emis"]:
-        twice = _included(bugs)["nh3_deposition_counted_twice"]
-        nh3 = emissions["NH3|Fossil" if twice else "NH3|Biosphere"]
-        nitrogen = (
-            emissions["NOx|Fossil"]
-            + emissions["NOx|Biosphere"]
-            + (emissions["NH3|Fossil"] + nh3)
-        )
-        deposition = 1e-3 * p["ncycle_frac_ndep_land"] * nitrogen
+        out = {
+            child(child(EMISSIONS, gas), sector): (
+                emissions[f"{gas}|{sector}"],
+                MAGICC7_EMISSIONS_UNITS[gas],
+            )
+            for gas in ("NOx", "NH3")
+            for sector in SECTORS
+        }
     else:
-        deposition = series("file_ndep_in")
-    out = {NITROGEN_FLUX_DEPOSITION: deposition}
+        out = {NITROGEN_FLUX_DEPOSITION: (series("file_ndep_in"), "Gt N/yr")}
     if not p["ncycle_apply_prognostic_nfix"]:
-        out[NITROGEN_FLUX_FIXATION] = series("file_nfix_in")
+        out[NITROGEN_FLUX_FIXATION] = (series("file_nfix_in"), "Gt N/yr")
     return out
 
 
@@ -1636,23 +1647,6 @@ def natural_emissions(
     return out
 
 
-def _pre_run_fgas(
-    config: ModelConfig, inputs: Inputs, time: NDArray[np.float64]
-) -> list[float]:
-    """F-gas forcing in the second year of a two-year run of ``config``."""
-    result = emissions_driven.setup_model(
-        config,
-        {name: (values[:2], unit) for name, (values, unit) in inputs.items()},
-        TimeAxis.from_values(time[:2]),
-    ).run()
-    return _second_year(result, ERF_F_GASES)
-
-
-def _second_year(model: Model, name: str) -> list[float]:
-    values = np.asarray(model.timeseries()[name].values())
-    return [float(v) for v in np.atleast_1d(values[1])]
-
-
 def from_magicc7(  # noqa: PLR0913
     time_axis: TimeAxis,
     emissions: Mapping[str, ArrayLike],
@@ -1683,9 +1677,6 @@ def from_magicc7(  # noqa: PLR0913
     the concentration files in the first year.
     ``bugs`` names the MAGICC7 release whose known bugs to reproduce,
     or the names from `MAGICC7_BUGS` to reproduce, so ``()`` fixes them all.
-
-    As in MAGICC7, the F-gas forcing at the first time bound is that of the second year,
-    which a two-year run of the translated configuration calculates.
     """
     model.check_axis(time_axis)
     time = np.asarray(time_axis.values(), dtype=np.float64)
@@ -1745,7 +1736,7 @@ def from_magicc7(  # noqa: PLR0913
     agents = forcing_agents(p, time, prescribed, native)
     permafrost = {"include_permafrost": bool(p["pf_apply"])}
     switch = concentration_switch_years(time, p)
-    nitrogen = nitrogen_parameters(p)
+    nitrogen = nitrogen_parameters(p, bugs)
     source = "ncycle" if nitrogen and p["ncycle_apply_cn_initial_values"] else "co2"
     natural = natural_emissions(time, native, p, files, Convention.MAGICC7)
     components: dict[str, dict[str, Any]] = {
@@ -1867,12 +1858,22 @@ def from_magicc7(  # noqa: PLR0913
         },
     }
     if nitrogen:
-        inputs |= {
-            name: (values, "Gt N/yr")
-            for name, values in nitrogen_inputs(time, native, p, files, bugs).items()
-        }
+        inputs |= nitrogen_inputs(time, native, p, files)
     inputs |= {child(ERF, name): (v, "W/m^2") for name, v in prescribed.items()}
 
     config: ModelConfig = {"components": components, "initial_values": initial}
-    config["initial_forcing"] = {ERF_F_GASES: _pre_run_fgas(config, inputs, time)}
     return config, inputs
+
+
+def v8_fgas_split(config: ModelConfig) -> ModelConfig:
+    """Return ``config`` with MAGICC v8's F-gas forcing split.
+
+    Every F-gas follows ``rf_regions_fgas`` normalised globally, whatever its lifetime,
+    and the F-gas forcing at the first time bound is zero
+    rather than MAGICC7 v7.5.3's forcing over the first step.
+    """
+    out = copy.deepcopy(config)
+    halocarbon = out["components"]["HalocarbonChemistry"]
+    halocarbon["fgas_regions"] |= {"lower_lifetime": 0.0, "upper_lifetime": 0.0}
+    out["initial_forcing"] = {**out.get("initial_forcing", {}), ERF_F_GASES: [0.0] * 4}
+    return out
