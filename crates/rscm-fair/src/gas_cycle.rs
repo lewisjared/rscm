@@ -55,6 +55,7 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 
 /// One greenhouse gas.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GasSpecies {
@@ -118,6 +119,7 @@ pub struct GasSpecies {
 }
 
 /// Parameters of [`GasCycle`].
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GasCycleParameters {
@@ -137,6 +139,7 @@ fn default_maximum_iirf() -> FloatValue {
 }
 
 /// Box contents and emission totals of one gas.
+#[rscm_core::params]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GasState {
     /// Concentration variable of the gas, which names it.

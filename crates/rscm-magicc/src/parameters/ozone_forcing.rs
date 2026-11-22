@@ -5,6 +5,7 @@ use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
 /// Parameters for `OzoneForcing`, named after their MAGICC7 counterparts.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -70,6 +71,7 @@ pub struct OzoneForcingParameters {
 }
 
 /// Regional pattern of tropospheric ozone ERF, normalised within each hemisphere.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

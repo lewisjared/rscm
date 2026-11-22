@@ -3,7 +3,7 @@
 use crate::errors::close_matches;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyMapping;
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyMapping, PyString, PyTuple};
 use serde::de::{self, DeserializeOwned, DeserializeSeed, IntoDeserializer, MapAccess, Visitor};
 use std::cell::RefCell;
 use std::fmt;
@@ -16,7 +16,8 @@ pub fn depythonize_parameters<T: DeserializeOwned>(
     component: &str,
     parameters: &Bound<'_, PyAny>,
 ) -> PyResult<T> {
-    let mut depythonizer = pythonize::Depythonizer::from_object(parameters);
+    let plain = plain_numbers(parameters)?;
+    let mut depythonizer = pythonize::Depythonizer::from_object(&plain);
     let error = match serde_path_to_error::deserialize::<_, T>(&mut depythonizer) {
         Ok(value) => return Ok(value),
         Err(error) => error,
@@ -76,6 +77,66 @@ pub fn depythonize_parameters<T: DeserializeOwned>(
         "Invalid {component} parameters: {}",
         problems.join("; ")
     )))
+}
+
+/// Deserialise `value` with `pythonize`, after [`plain_numbers`].
+pub fn depythonize<T: DeserializeOwned>(value: &Bound<'_, PyAny>) -> PyResult<T> {
+    pythonize::depythonize(&plain_numbers(value)?).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+/// A copy of `value` with NumPy scalars and arrays as Python numbers and lists.
+///
+/// A float field reads any type, but `pythonize` only reads the built-in numbers there.
+pub fn plain_numbers<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let py = value.py();
+    if let Ok(mapping) = value.cast::<PyMapping>() {
+        let plain = PyDict::new(py);
+        for item in mapping.items()?.iter() {
+            let (key, item): (Bound<PyAny>, Bound<PyAny>) = item.extract()?;
+            plain.set_item(key, plain_numbers(&item)?)?;
+        }
+        return Ok(plain.into_any());
+    }
+    if let Ok(list) = value.cast::<PyList>() {
+        let items = list
+            .iter()
+            .map(|item| plain_numbers(&item))
+            .collect::<PyResult<Vec<_>>>()?;
+        return Ok(PyList::new(py, items)?.into_any());
+    }
+    if let Ok(tuple) = value.cast::<PyTuple>() {
+        let items = tuple
+            .iter()
+            .map(|item| plain_numbers(&item))
+            .collect::<PyResult<Vec<_>>>()?;
+        return Ok(PyTuple::new(py, items)?.into_any());
+    }
+    if is_builtin_scalar(value) {
+        return Ok(value.clone());
+    }
+    // A NumPy array becomes a list, but a scalar such as a longdouble can stay a NumPy scalar.
+    let ndim = value
+        .getattr("ndim")
+        .and_then(|n| n.extract::<usize>())
+        .unwrap_or(0);
+    if ndim > 0 && value.hasattr("tolist")? {
+        return plain_numbers(&value.call_method0("tolist")?);
+    }
+    if let Ok(index) = value.call_method0("__index__") {
+        return Ok(index);
+    }
+    if value.hasattr("__float__")? {
+        return value.call_method0("__float__");
+    }
+    Ok(value.clone())
+}
+
+fn is_builtin_scalar(value: &Bound<'_, PyAny>) -> bool {
+    value.is_none()
+        || value.is_instance_of::<PyBool>()
+        || value.is_instance_of::<PyInt>()
+        || value.is_instance_of::<PyFloat>()
+        || value.is_instance_of::<PyString>()
 }
 
 /// Whether deserialising `T` fails without `field`.
@@ -231,7 +292,15 @@ impl<'de> de::Deserializer<'de> for Placeholder<'_> {
         deserialize_option => "optional", |v| v.visit_none();
         deserialize_seq => "list", |v| v.visit_seq(de::value::SeqDeserializer::new(std::iter::empty::<f64>()));
         deserialize_map => "dict", |v| v.visit_map(de::value::MapDeserializer::new(std::iter::empty::<(f64, f64)>()));
-        deserialize_any => "value", |_v| Err(de::Error::custom("no placeholder"));
+    }
+
+    fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, ProbeError> {
+        if format!("{}", &visitor as &dyn de::Expected) == crate::non_finite::EXPECTING {
+            self.record("float");
+            return visitor.visit_f64(0.0);
+        }
+        self.record("value");
+        Err(de::Error::custom("no placeholder"))
     }
 
     fn deserialize_struct<V: Visitor<'de>>(
@@ -272,6 +341,7 @@ mod tests {
     use super::*;
     use serde::Deserialize;
 
+    #[crate::params]
     #[derive(Deserialize)]
     #[allow(dead_code)]
     struct Parameters {

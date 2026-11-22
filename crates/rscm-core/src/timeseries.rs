@@ -297,38 +297,34 @@ impl TimeAxis {
 /// assert_eq!(ts.len(), 3);
 /// assert_eq!(ts.grid().size(), 4);
 /// ```
-/// Serialises an array as ndarray does, but with NaN as null, which JSON can represent.
-mod nan_as_null {
+/// Serialises an array as ndarray does, with the [`non_finite`](crate::non_finite) encoding.
+/// Reading also takes null as NaN, which older records wrote.
+mod values_serde {
     use super::*;
+    use crate::non_finite::{NonFinite, NullAsNan};
     use serde::{Deserializer, Serializer};
 
-    #[derive(Serialize, Deserialize)]
-    struct Shaped<T> {
-        v: u8,
+    #[derive(Deserialize)]
+    struct Shaped {
         dim: [usize; 2],
-        data: Vec<Option<T>>,
+        data: Vec<NullAsNan>,
     }
 
-    pub fn serialize<S: Serializer, T: Float + Serialize>(
+    pub fn serialize<S: Serializer, T: Float + NonFinite + Clone>(
         values: &Array2<T>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
-        Shaped {
-            v: 1,
-            dim: [values.nrows(), values.ncols()],
-            data: values.iter().map(|v| (!v.is_nan()).then_some(*v)).collect(),
-        }
-        .serialize(serializer)
+        values.serialize_non_finite(serializer)
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>, T: Float + Deserialize<'de>>(
+    pub fn deserialize<'de, D: Deserializer<'de>, T: Float>(
         deserializer: D,
     ) -> Result<Array2<T>, D::Error> {
-        let shaped = Shaped::<T>::deserialize(deserializer)?;
+        let shaped = Shaped::deserialize(deserializer)?;
         let data = shaped
             .data
             .into_iter()
-            .map(|v| v.unwrap_or(T::nan()))
+            .map(|v| T::from(v.0).unwrap_or_else(T::nan))
             .collect();
         Array2::from_shape_vec((shaped.dim[0], shaped.dim[1]), data)
             .map_err(serde::de::Error::custom)
@@ -345,8 +341,8 @@ where
     grid: G,
     /// Values stored as `Array2<T>`: shape (time, space)
     #[serde(
-        with = "nan_as_null",
-        bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>")
+        with = "values_serde",
+        bound(serialize = "T: crate::non_finite::NonFinite", deserialize = "")
     )]
     values: Array2<T>,
     time_axis: Arc<TimeAxis>,
@@ -998,8 +994,6 @@ mod tests {
     use super::*;
     use crate::interpolate::strategies::{InterpolationStrategy, NextStrategy, PreviousStrategy};
     use crate::spatial::{FourBoxRegion, HemisphericRegion, ScalarRegion};
-    use is_close::is_close;
-    use std::iter::zip;
 
     #[test]
     #[should_panic]
@@ -1125,22 +1119,39 @@ mod tests {
     }
 
     #[test]
-    fn serialise_and_deserialise_with_nan_json() {
-        let data = array![1.0, 1.5, FloatValue::nan()];
-        let years = Array::range(2020.0, 2023.0, 1.0);
+    fn serialise_and_deserialise_with_non_finite_json() {
+        let data = array![
+            1.0,
+            FloatValue::INFINITY,
+            FloatValue::NEG_INFINITY,
+            FloatValue::nan()
+        ];
+        let years = Array::range(2020.0, 2024.0, 1.0);
 
         let timeseries = Timeseries::from_values(data, years);
 
         let serialised = serde_json::to_string(&timeseries).unwrap();
         assert_eq!(
             serialised,
-            r#"{"values":{"v":1,"dim":[3,1],"data":[1.0,1.5,null]},"time_axis":{"bounds":{"v":1,"dim":[4],"data":[2020.0,2021.0,2022.0,2023.0]}},"unit":"","latest":1,"interpolation_strategy":"linear"}"#
+            r#"{"values":{"v":1,"dim":[4,1],"data":[1.0,"inf","-inf","NaN"]},"time_axis":{"bounds":{"v":1,"dim":[5],"data":[2020.0,2021.0,2022.0,2023.0,2024.0]}},"unit":"","latest":2,"interpolation_strategy":"linear"}"#
         );
 
         let deserialised = serde_json::from_str::<Timeseries<f64>>(&serialised).unwrap();
-        assert_eq!(deserialised.latest(), 1);
-        assert!(zip(timeseries.values(), deserialised.values())
-            .all(|(x0, x1)| { is_close!(*x0, *x1) || (x0.is_nan() && x1.is_nan()) }))
+        assert_eq!(deserialised.latest(), 2);
+        let values: Vec<_> = deserialised.values().iter().copied().collect();
+        assert_eq!(
+            values[..3],
+            [1.0, FloatValue::INFINITY, FloatValue::NEG_INFINITY]
+        );
+        assert!(values[3].is_nan());
+    }
+
+    #[test]
+    fn deserialise_null_as_nan() {
+        let json = r#"{"values":{"v":1,"dim":[2,1],"data":[1.0,null]},"time_axis":{"bounds":{"v":1,"dim":[3],"data":[2020.0,2021.0,2022.0]}},"unit":"","latest":0,"interpolation_strategy":"linear"}"#;
+        let deserialised = serde_json::from_str::<Timeseries<f64>>(json).unwrap();
+        assert_eq!(deserialised.values()[[0, 0]], 1.0);
+        assert!(deserialised.values()[[1, 0]].is_nan());
     }
 
     mod grid_timeseries_tests {

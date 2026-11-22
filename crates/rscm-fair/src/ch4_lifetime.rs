@@ -38,6 +38,7 @@ use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 
 /// A precursor of the CH4 lifetime.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Precursor {
@@ -52,6 +53,7 @@ pub struct Precursor {
 }
 
 /// Parameters of [`CH4Lifetime`].
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CH4LifetimeParameters {

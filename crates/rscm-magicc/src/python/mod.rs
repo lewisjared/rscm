@@ -65,11 +65,9 @@ impl ClimateUDEBBuilder {
 
     #[staticmethod]
     pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
-        use pyo3::exceptions::PyValueError;
-
         let (parameters, values) = take_subannual_values(&parameters)?;
-        let mut parameters = pythonize::depythonize::<ClimateUDEBParameters>(&parameters)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mut parameters =
+            rscm_core::python::parameters::depythonize::<ClimateUDEBParameters>(&parameters)?;
         if let (Some(forcing), Some(values)) = (parameters.subannual_forcing.as_mut(), values) {
             forcing.values = values;
         }
@@ -161,8 +159,8 @@ pub struct GHGForcingBuilder {
 impl GHGForcingBuilder {
     #[staticmethod]
     pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
-        let parameters = pythonize::depythonize::<GHGForcingParameters>(&parameters)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        let parameters =
+            rscm_core::python::parameters::depythonize::<GHGForcingParameters>(&parameters)?;
         Ok(Self { parameters })
     }
 
@@ -220,9 +218,8 @@ pub struct ForcingAggregationBuilder {
 impl ForcingAggregationBuilder {
     #[staticmethod]
     pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
-        pythonize::depythonize::<ForcingAggregationParameters>(&parameters)
+        rscm_core::python::parameters::depythonize::<ForcingAggregationParameters>(&parameters)
             .map(|parameters| Self { parameters })
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
     }
 
     /// Total effective radiative forcing and four-box efficacy-adjusted forcing.

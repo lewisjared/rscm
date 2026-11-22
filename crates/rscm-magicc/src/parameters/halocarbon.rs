@@ -16,6 +16,7 @@ const ATOMIC_MASSES: [FloatValue; 8] = [
 const MOLAR_MASS_ORDER: [usize; 8] = [0, 6, 4, 7, 1, 5, 3, 2];
 
 /// A halocarbon species.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HalocarbonSpecies {
@@ -87,6 +88,7 @@ impl HalocarbonSpecies {
 }
 
 /// Parameters for halocarbon chemistry.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -191,6 +193,7 @@ pub struct HalocarbonChemistryParameters {
 /// Lifetimes in between mix the two linearly.
 /// After `last_split_year` the split follows that year's emissions,
 /// as MAGICC7 splits scenario years like the last year of its historical file.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

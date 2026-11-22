@@ -163,6 +163,14 @@ class TestTwoLayerParameters:
             TwoLayerBuilder.from_parameters({**PARAMETERS, "lambda0": "1.0"})
 
     @pytest.mark.parametrize(
+        "value",
+        [np.longdouble(1.2), np.float32(1.2), np.int64(1), np.array(1.2)],
+        ids=["longdouble", "float32", "int64", "zero-dimensional array"],
+    )
+    def test_accepts_numpy_numbers(self, value):
+        TwoLayerBuilder.from_parameters({**PARAMETERS, "lambda0": value}).build()
+
+    @pytest.mark.parametrize(
         ("name", "value", "match"),
         [
             ("heat_capacity_surface", 0.0, "must be positive, got 0"),

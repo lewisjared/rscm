@@ -19,8 +19,7 @@ use serde::{Deserialize, Serialize};
 /// a `Blended` variant for fractional values.
 ///
 /// MAGICC7 `CO2_FERTILIZATION_METHOD`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(from = "FloatValue", into = "FloatValue")]
+#[derive(Debug, Clone)]
 pub enum FertilisationMethod {
     /// No CO2 fertilisation (MAGICC7 value < 1.0)
     None,
@@ -70,6 +69,26 @@ impl From<FertilisationMethod> for FloatValue {
     }
 }
 
+/// Serialised as the MAGICC7 value.
+impl Serialize for FertilisationMethod {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        rscm_core::non_finite::serialize(&self.as_f64(), serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FertilisationMethod {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value: FloatValue = rscm_core::non_finite::deserialize(deserializer)?;
+        if value.is_finite() {
+            Ok(Self::from(value))
+        } else {
+            Err(serde::de::Error::custom(format!(
+                "the fertilisation method must be finite, not {value}"
+            )))
+        }
+    }
+}
+
 /// Parameters for terrestrial carbon cycle calculations.
 ///
 /// The terrestrial carbon cycle tracks three carbon pools:
@@ -97,6 +116,7 @@ impl From<FertilisationMethod> for FloatValue {
 ///    $$f_T = \exp(\gamma \times \Delta T)$$
 ///
 /// 3. **Time-varying turnover**: Cumulative deforestation reduces pool turnover times.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

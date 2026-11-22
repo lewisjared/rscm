@@ -153,6 +153,5 @@ The stack is complete: #232, #233, #234, #235, #236, #237 and section 7's PR.
 
 Deferred follow-ups:
 
-- A NaN or infinite component parameter or state cannot round-trip a `Record`, because JSON writes it as null.
 - Branching with new parameters checks storage, but not that each component's saved state suits its new parameters.
 - Standalone `Component.solve` and `extract_state` resolve with `resolve_standalone`, not through a one-component `ModelBuilder`.

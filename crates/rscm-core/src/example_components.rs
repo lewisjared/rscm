@@ -132,6 +132,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Parameters for the derived test component
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct TestComponentParameters {
     pub conversion_factor: FloatValue,

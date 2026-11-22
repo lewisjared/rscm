@@ -2,6 +2,7 @@
 
 import copy
 import json
+import math
 import pickle
 import re
 
@@ -147,6 +148,23 @@ class DictUndeclaredWriter:
 
     def solve(self, t_current, t_next, inputs):
         return {"Out": 1.0, "Forcing": 2.0}
+
+
+class NonFinite(Component):
+    """Skips a NaN offset and caps at an infinite limit, both attributes."""
+
+    emissions = Input("Emissions|CO2", unit="GtC/yr")
+    out = Output("Out", unit="GtC/yr")
+
+    def __init__(self):
+        self.offset = math.nan
+        self.limit = math.inf
+
+    def solve(self, t_current, t_next, inputs):
+        value = inputs.emissions.get()
+        if not math.isnan(self.offset):
+            value += self.offset
+        return self.Outputs(out=min(value, self.limit))
 
 
 class Slotted(Accumulator):
@@ -329,6 +347,28 @@ def test_mid_run_checkpoint_restores_python_component(round_trip):
     np.testing.assert_allclose(
         restored.timeseries().get_timeseries_by_name("Carbon Stock").values(),
         reference.timeseries().get_timeseries_by_name("Carbon Stock").values(),
+    )
+
+
+@pytest.mark.parametrize(
+    "round_trip",
+    [
+        lambda m: Model.restore(Record.from_json(m.checkpoint().to_json())),
+        copy.deepcopy,
+        lambda m: pickle.loads(pickle.dumps(m)),  # noqa: S301
+    ],
+)
+def test_non_finite_attributes_round_trip(round_trip):
+    reference = build(NonFinite())
+    reference.run()
+
+    model = build(NonFinite())
+    model.step()
+    restored = round_trip(model)
+    restored.run()
+
+    np.testing.assert_array_equal(
+        restored.timeseries()["Out"].values(), reference.timeseries()["Out"].values()
     )
 
 

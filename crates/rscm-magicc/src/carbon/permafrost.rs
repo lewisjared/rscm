@@ -46,6 +46,7 @@ const MTCH4_PER_GTC_DENOMINATOR: FloatValue = 12.0;
 const MTCH4_PER_GTC: FloatValue = MTCH4_PER_GTC_NUMERATOR / MTCH4_PER_GTC_DENOMINATOR;
 
 /// Carbon and area of one soil type in one zonal band.
+#[rscm_core::params]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SoilBand {
     pub frozen_area: FloatValue,

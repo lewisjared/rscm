@@ -7,6 +7,7 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Parameters of one permafrost soil type (mineral soil or peat).
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -90,6 +91,7 @@ impl Default for PermafrostSoil {
 ///
 /// The permafrost region is split into zonal bands whose melting threshold rises
 /// linearly from `minimum_melting_temperature` in the south to `maximum_melting_temperature` in the north.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

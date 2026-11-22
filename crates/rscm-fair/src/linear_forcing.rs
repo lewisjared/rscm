@@ -42,6 +42,7 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 
 /// One driver of the forcing.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LinearDriver {
@@ -59,6 +60,7 @@ pub struct LinearDriver {
 }
 
 /// Parameters of [`LinearForcing`].
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LinearForcingParameters {
@@ -87,6 +89,7 @@ pub struct LinearForcingParameters {
 }
 
 /// Running sums of the emission rates of cumulative drivers, in driver order.
+#[rscm_core::params]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LinearForcingState {
     /// One sum per driver, zero for other drivers.

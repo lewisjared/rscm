@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
 /// One driver of aerosol-cloud interactions.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CloudDriver {
@@ -56,6 +57,7 @@ pub struct CloudDriver {
 }
 
 /// Parameters of [`AerosolCloud`].
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AerosolCloudParameters {

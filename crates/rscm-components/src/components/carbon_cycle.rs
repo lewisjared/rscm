@@ -20,6 +20,7 @@ use std::sync::Arc;
 type ModelState = Vector3<FloatValue>;
 
 /// Parameters for the one-box carbon cycle component
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CarbonCycleParameters {
@@ -35,6 +36,7 @@ pub struct CarbonCycleParameters {
 }
 
 /// Solver options for the ODE integration
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SolverOptions {

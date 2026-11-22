@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 /// This holds the ocean layer temperatures and upwelling rates that persist
 /// across solve() calls. Unlike coupled state (VariableRole::State), this
 /// is private to the component and not shared between components.
+#[rscm_core::params]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClimateUDEBState {
     /// Ocean layer temperatures for each hemisphere (NH=0, SH=1).

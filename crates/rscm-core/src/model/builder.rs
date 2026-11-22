@@ -39,6 +39,7 @@ pub struct PrescribedInput {
 }
 
 /// A variable's value at the first step, the same in every region or one per region.
+#[rscm_core::params]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum RegionValues {

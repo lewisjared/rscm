@@ -43,9 +43,13 @@ and the other types above by their short names.
 Import them in the module that derives `ComponentIO`, even where your own code does not use them.
 
 The parameters are a plain serialisable struct.
+`#[rscm_core::params]`, placed above the serde derive, lets its float fields hold NaN and infinities,
+which a record writes as `"NaN"`, `"inf"` and `"-inf"`.
+Put it on every parameter and state struct with a float field.
 The component struct derives `ComponentIO` and declares its inputs and outputs with struct-level attributes:
 
 ```rust
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CO2ERFParameters {
@@ -229,6 +233,7 @@ Define a state type that implements `ComponentState`:
 use rscm_core::component::ComponentState;
 use std::any::Any;
 
+#[rscm_core::params]
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct LaggedState {
     pub history: Vec<FloatValue>,

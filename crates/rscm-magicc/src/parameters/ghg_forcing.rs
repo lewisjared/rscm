@@ -50,6 +50,7 @@ pub enum ForcingMethod {
 /// radiative forcing (ERF), rapid adjustment factors are applied:
 ///
 /// $$ERF_X = F_X \cdot \alpha_X$$
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

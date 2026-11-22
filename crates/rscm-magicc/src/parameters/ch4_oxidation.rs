@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// emissions (`CH4_INCL_CH4OX`). Biogenic CH4 is excluded because its carbon
 /// was recently taken from the atmosphere.
 /// The CH4 budget parameters must match `CH4Chemistry`.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

@@ -15,6 +15,7 @@ use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
 /// Nitrogen state carried between years.
+#[rscm_core::params]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NitrogenState {
     /// Nitrogen pool in the last year before limitation (Gt N)

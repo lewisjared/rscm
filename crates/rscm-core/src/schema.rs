@@ -56,6 +56,7 @@ use std::collections::{HashMap, HashSet};
 ///
 /// Note: This enum cannot use `#[pyclass]` directly because PyO3 doesn't support
 /// complex enums with data variants. Python bindings are provided via wrapper types.
+#[rscm_core::params]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AggregateOp {

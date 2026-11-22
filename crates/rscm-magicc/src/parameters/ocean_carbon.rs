@@ -23,6 +23,7 @@
 //! See `docs/modules/module_10_ocean_carbon.md` for full specification.
 
 use super::co2_budget::GTC_PER_PPM;
+use rscm_core::non_finite::NonFinite;
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -79,6 +80,7 @@ pub enum OceanCarbonMethod {
 /// Represents the mathematical form of the IRF used to calculate how a pulse
 /// of carbon in the mixed layer decays over time. Different ocean models use
 /// different functional forms for different time regimes.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IRFForm {
@@ -157,6 +159,7 @@ impl IRFForm {
 ///
 /// When deserialised, `method` selects the defaults of the other fields,
 /// as `for_method` gives them.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize)]
 pub struct OceanCarbonParameters {
     /// Ocean carbon method (MAGICC7 `OCEANCC_MODEL`).
@@ -279,12 +282,13 @@ pub struct OceanCarbonParameters {
 }
 
 /// Fields given when deserialising, each replacing its method's default.
+#[rscm_core::params]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GivenOceanCarbonParameters {
     method: Option<OceanCarbonMethod>,
     co2_pi: Option<FloatValue>,
-    #[serde(default, deserialize_with = "given")]
+    #[serde(default, deserialize_with = "given_floats")]
     pco2_pi: Option<Option<FloatValue>>,
     gas_exchange_scale: Option<FloatValue>,
     gas_exchange_tau: Option<FloatValue>,
@@ -306,13 +310,18 @@ struct GivenOceanCarbonParameters {
     flux_change_limit: Option<FloatValue>,
     gtc_per_ppm: Option<FloatValue>,
     include_permafrost: Option<bool>,
-    #[serde(default, deserialize_with = "given")]
+    #[serde(default, deserialize_with = "given_floats")]
     concentration_switch_year: Option<Option<FloatValue>>,
 }
 
 /// Distinguishes a given null from an absent field.
 fn given<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> {
     T::deserialize(d).map(Some)
+}
+
+/// Like [`given`], reading floats with [`rscm_core::non_finite`].
+fn given_floats<'de, D: Deserializer<'de>, T: NonFinite>(d: D) -> Result<Option<T>, D::Error> {
+    T::deserialize_non_finite(d).map(Some)
 }
 
 impl<'de> Deserialize<'de> for OceanCarbonParameters {
@@ -945,6 +954,20 @@ mod tests {
             "DIC conversion factor seems out of range: {:.2}",
             factor
         );
+    }
+
+    #[test]
+    fn optional_floats_keep_non_finite_values() {
+        let params = OceanCarbonParameters {
+            pco2_pi: Some(FloatValue::NAN),
+            concentration_switch_year: Some(FloatValue::INFINITY),
+            ..OceanCarbonParameters::default()
+        };
+        let json = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["pco2_pi"], "NaN");
+        let parsed: OceanCarbonParameters = serde_json::from_value(json).unwrap();
+        assert!(parsed.pco2_pi.unwrap().is_nan());
+        assert_eq!(parsed.concentration_switch_year, Some(FloatValue::INFINITY));
     }
 
     #[test]

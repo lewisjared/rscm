@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Optional harmonisation scales the forcing to match a target value at a
 /// reference year. This is useful for calibrating to observed/modelled forcing.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -213,6 +214,7 @@ impl Default for AerosolDirectParameters {
 ///   parameters. Here, they are combined into a single coefficient.
 /// - **Optical thickness proxy**: MAGICC7 uses aerosol optical thickness.
 ///   Here, emissions are used directly as a proxy.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

@@ -14,6 +14,7 @@ use rscm_core::ComponentIO;
 use serde::{Deserialize, Serialize};
 
 /// Parameters for the CO2 ERF component
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CO2ERFParameters {

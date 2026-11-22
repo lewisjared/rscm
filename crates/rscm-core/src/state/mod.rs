@@ -63,6 +63,7 @@ use std::collections::HashMap;
 /// let hemispheric = StateValue::Hemispheric(HemisphericSlice::from_array([15.0, 10.0]));
 /// assert_eq!(hemispheric.to_scalar(), 12.5); // Mean of both hemispheres
 /// ```
+#[rscm_core::params]
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StateValue {
@@ -761,6 +762,32 @@ impl OutputWriter<'_> {
 mod tests {
     use super::*;
     use crate::timeseries_collection::TimeseriesData;
+
+    #[test]
+    fn regional_state_values_keep_non_finite_floats() {
+        let values = [
+            StateValue::FourBox(FourBoxSlice::from_array([
+                FloatValue::NAN,
+                FloatValue::INFINITY,
+                FloatValue::NEG_INFINITY,
+                1.0,
+            ])),
+            StateValue::Hemispheric(HemisphericSlice::from_array([
+                FloatValue::INFINITY,
+                FloatValue::NEG_INFINITY,
+            ])),
+        ];
+        for value in values {
+            let json = serde_json::to_string(&value).unwrap();
+            assert!(json.contains("\"inf\""), "{json}");
+            let read: StateValue = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                serde_json::to_string(&read).unwrap(),
+                json,
+                "{value:?} did not round-trip"
+            );
+        }
+    }
 
     #[test]
     fn test_state_value_scalar() {

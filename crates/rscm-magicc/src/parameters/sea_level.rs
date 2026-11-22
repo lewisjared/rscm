@@ -24,6 +24,7 @@ fn over_defaults<'de, D: Deserializer<'de>, T: Serialize + DeserializeOwned>(
 }
 
 /// Thermal expansion of the ocean, calculated by `ClimateUDEB`.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -51,6 +52,7 @@ impl Default for ThermalExpansion {
 }
 
 /// Mountain glaciers and small ice caps.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -110,6 +112,7 @@ const GLACIER_EQUILIBRIUM_SEA_LEVEL: [FloatValue; 104] = [
 ///
 /// Each year adds `sensitivity * (linear_fraction * T + (1 - linear_fraction) * max(T, 0)^exponent)`,
 /// reduced by `max(1 - S / volume, 0)^volume_exponent` when `volume` is set.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -173,6 +176,7 @@ impl Default for SurfaceMassBalance {
 }
 
 /// One discharge case of the Greenland ice sheet.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -226,6 +230,7 @@ fn high_over_defaults<'de, D: Deserializer<'de>>(d: D) -> Result<DischargeCase, 
 }
 
 /// Solid ice discharge of the Greenland ice sheet, interpolated between a low and a high case.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -263,6 +268,7 @@ impl Default for GreenlandDischarge {
 }
 
 /// One Antarctic drainage region.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AntarcticRegion {
@@ -286,6 +292,7 @@ pub struct AntarcticRegion {
 ///
 /// Basal melt from subsurface ocean warming is convolved with each region's
 /// response function.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

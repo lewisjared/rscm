@@ -16,6 +16,7 @@ pub const GTC_PER_PPM: f64 = 2.123;
 ///
 /// where fluxes are positive when removing CO2 from the atmosphere and the
 /// land flux includes Biosphere CO2 emissions.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

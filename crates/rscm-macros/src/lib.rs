@@ -712,3 +712,36 @@ pub fn derive_component_metadata(input: TokenStream) -> TokenStream {
         }
     })
 }
+
+mod params;
+
+/// Keep NaN and infinities in the serde form of a struct or enum.
+///
+/// Adds `#[serde(with = "rscm_core::non_finite")]` to every field holding floats,
+/// so a non-finite float is written as `"NaN"`, `"inf"` or `"-inf"` rather than JSON's `null`.
+/// A float is `f64`, `f32` or `FloatValue`, alone or in the containers `rscm_core::non_finite` supports.
+/// It leaves a field alone that sets `with`, `serialize_with`, `deserialize_with` or `skip`.
+///
+/// Place it above the serde derive, which would otherwise not see the added attributes.
+///
+/// ```ignore
+/// #[rscm_core::params]
+/// #[derive(Serialize, Deserialize)]
+/// #[serde(deny_unknown_fields)]
+/// pub struct ExampleParameters {
+///     pub baseline: FloatValue,
+///     pub shape: Option<Vec<FloatValue>>,
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn params(args: TokenStream, input: TokenStream) -> TokenStream {
+    if !args.is_empty() {
+        return syn::Error::new(Span::call_site(), "params takes no arguments")
+            .to_compile_error()
+            .into();
+    }
+    let item = parse_macro_input!(input as syn::Item);
+    params::expand(item)
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
+}
